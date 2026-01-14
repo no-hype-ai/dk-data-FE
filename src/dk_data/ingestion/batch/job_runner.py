@@ -64,14 +64,17 @@ class LocalJobRunner(JobRunner):
     """
 
     # Mapping of job names to commands
+    # Scripts are organized under /app/scripts/{data,ops,utils}/
     JOB_COMMANDS = {
         "fetch-cms-all": ["python", "-m", "ingestion.fetch_data", "--source", "all"],
         "fetch-cms-hospitals": ["python", "-m", "ingestion.fetch_data", "--source", "cms_hospital_info"],
         "fetch-cms-inpatient": ["python", "-m", "ingestion.fetch_data", "--source", "cms_inpatient"],
         "fetch-acc-tvc": ["python", "-m", "ingestion.fetch_data", "--source", "acc_tvc"],
         "fetch-hrsa": ["python", "-m", "ingestion.fetch_data", "--source", "hrsa"],
-        "catalog-refresh": ["python", "scripts/catalog_refresh.py"],
-        "sqlmesh-run": ["sqlmesh", "plan", "--auto-apply"],
+        "catalog-refresh": ["python", "scripts/data/catalog_refresh.py"],
+        "sqlmesh-run": ["bash", "scripts/data/run_sqlmesh.sh"],
+        "check-freshness": ["python", "scripts/data/check_freshness.py"],
+        "purge-history": ["python", "scripts/data/purge_history.py"],
     }
 
     def __init__(self, db_config: dict[str, Any]):

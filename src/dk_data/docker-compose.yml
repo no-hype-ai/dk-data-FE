@@ -104,10 +104,15 @@ services:
       JOB_RUNNER_MODE: "local"
       LOG_LEVEL: "info"
     volumes:
-      # Mount scripts and data directories for local job execution
-      - ./scripts:/app/scripts:ro
+      # Mount scripts from project root (organized by purpose)
+      - ../../scripts:/app/scripts:ro
+      # Mount legacy scripts location for backwards compatibility
+      - ./scripts:/app/legacy_scripts:ro
+      # Data and logs directories
       - ./data:/app/data
       - ./logs:/app/logs
+      # Mount ingestion module for fetch jobs
+      - ./ingestion:/app/ingestion:ro
     networks:
       - tavr-network
     healthcheck:
