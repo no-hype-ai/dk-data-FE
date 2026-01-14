@@ -1,0 +1,132 @@
+# SQLMesh Data Quality Audits
+# These audits run after each model refresh to ensure data integrity
+
+audits:
+  # ============================================================================
+  # Staging Model Audits
+  # ============================================================================
+
+  - name: stg_hospitals_not_null
+    description: Critical fields in staging.hospitals must not be null
+    model: staging.hospitals
+    query: |
+      SELECT COUNT(*) as failures
+      FROM staging.hospitals
+      WHERE hospital_id IS NULL
+         OR hospital_name IS NULL
+         OR state IS NULL
+
+  - name: stg_hospitals_unique_id
+    description: Hospital ID must be unique in staging.hospitals
+    model: staging.hospitals
+    query: |
+      SELECT COUNT(*) as failures
+      FROM (
+        SELECT hospital_id
+        FROM staging.hospitals
+        GROUP BY hospital_id
+        HAVING COUNT(*) > 1
+      ) dups
+
+  - name: stg_tavr_volumes_valid_drg
+    description: Only TAVR DRG codes (266, 267) should be present
+    model: staging.tavr_volumes
+    query: |
+      SELECT COUNT(*) as failures
+      FROM staging.tavr_volumes
+      WHERE drg_code NOT IN ('266', '267')
+
+  - name: stg_tavr_volumes_positive
+    description: Discharge counts must be positive
+    model: staging.tavr_volumes
+    query: |
+      SELECT COUNT(*) as failures
+      FROM staging.tavr_volumes
+      WHERE medicare_discharges <= 0
+         OR estimated_total_discharges <= 0
+
+  - name: stg_certifications_valid_body
+    description: Certifying body must be a known value
+    model: staging.certifications
+    query: |
+      SELECT COUNT(*) as failures
+      FROM staging.certifications
+      WHERE certifying_body NOT IN ('ACC', 'STS', 'CMS')
+
+  # ============================================================================
+  # Mart Model Audits
+  # ============================================================================
+
+  - name: dim_hospital_unique_id
+    description: Only one record per hospital_id
+    model: mart.dim_hospital
+    query: |
+      SELECT COUNT(*) as failures
+      FROM (
+        SELECT hospital_id
+        FROM mart.dim_hospital
+        GROUP BY hospital_id
+        HAVING COUNT(*) > 1
+      ) dups
+
+  - name: dim_hospital_valid_tier
+    description: Network tier must be valid
+    model: mart.dim_hospital
+    query: |
+      SELECT COUNT(*) as failures
+      FROM mart.dim_hospital
+      WHERE network_tier NOT IN ('Tier 1', 'Tier 2', 'Tier 3', 'Tier 4')
+        AND network_tier IS NOT NULL
+
+  - name: fact_tavr_program_valid_yoy
+    description: YoY change should be within reasonable bounds (-1 to 10)
+    model: mart.fact_tavr_program
+    query: |
+      SELECT COUNT(*) as failures
+      FROM mart.fact_tavr_program
+      WHERE yoy_volume_change < -1.0  -- More than 100% decrease
+         OR yoy_volume_change > 10.0  -- More than 1000% increase
+
+  - name: fact_financial_valid_quartile
+    description: Margin quartile must be 1-4
+    model: mart.fact_financial_metrics
+    query: |
+      SELECT COUNT(*) as failures
+      FROM mart.fact_financial_metrics
+      WHERE margin_quartile NOT IN (1, 2, 3, 4)
+        AND margin_quartile IS NOT NULL
+
+  # ============================================================================
+  # Freshness Audits
+  # ============================================================================
+
+  - name: stg_hospitals_freshness
+    description: staging.hospitals should be updated within last 7 days
+    model: staging.hospitals
+    query: |
+      SELECT COUNT(*) as failures
+      FROM staging.hospitals
+      WHERE _updated_at < NOW() - INTERVAL '7 days'
+      HAVING COUNT(*) = (SELECT COUNT(*) FROM staging.hospitals)
+
+  # ============================================================================
+  # Referential Integrity Audits
+  # ============================================================================
+
+  - name: tavr_volumes_hospital_exists
+    description: All hospitals in tavr_volumes must exist in hospitals
+    model: staging.tavr_volumes
+    query: |
+      SELECT COUNT(*) as failures
+      FROM staging.tavr_volumes v
+      LEFT JOIN staging.hospitals h ON v.hospital_id = h.hospital_id
+      WHERE h.hospital_id IS NULL
+
+  - name: fact_tavr_hospital_key_valid
+    description: All hospital_keys must reference valid dim_hospital records
+    model: mart.fact_tavr_program
+    query: |
+      SELECT COUNT(*) as failures
+      FROM mart.fact_tavr_program f
+      LEFT JOIN mart.dim_hospital h ON f.hospital_key = h.hospital_key
+      WHERE h.hospital_key IS NULL

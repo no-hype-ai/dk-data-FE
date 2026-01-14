@@ -1,0 +1,105 @@
+# TAVR Data Infrastructure - Cron Schedule Configuration
+# =====================================================
+#
+# This file contains the recommended cron schedule for automated data refresh.
+# To install, edit your crontab with: crontab -e
+# Then add the relevant lines below.
+#
+# Environment Setup:
+#   Ensure the following environment variables are set in /etc/environment
+#   or exported in your shell profile:
+#   - POSTGRES_HOST
+#   - POSTGRES_PORT
+#   - POSTGRES_USER
+#   - POSTGRES_PASSWORD
+#   - POSTGRES_DB
+#   - HRSA_API_URL (optional)
+#
+# Log files are written to: edwards/logs/
+#
+# =====================================================
+
+# Set PATH to include Python and PostgreSQL tools
+PATH=/usr/local/bin:/usr/bin:/bin
+
+# Set working directory (update this path)
+EDWARDS_HOME=/path/to/edwards
+
+# =====================================================
+# WEEKLY: CMS Data Refresh (Sunday at 2:00 AM)
+# =====================================================
+# CMS Medicare Inpatient, Hospital Info, and Cost Reports
+# Updated weekly as CMS publishes new data
+
+0 2 * * 0 cd $EDWARDS_HOME && ./scripts/refresh_data.sh --source cms_inpatient >> logs/cron_cms.log 2>&1
+15 2 * * 0 cd $EDWARDS_HOME && ./scripts/refresh_data.sh --source cms_hospital_info >> logs/cron_cms.log 2>&1
+30 2 * * 0 cd $EDWARDS_HOME && ./scripts/refresh_data.sh --source cms_cost_reports >> logs/cron_cms.log 2>&1
+
+# =====================================================
+# MONTHLY: Full Data Pipeline (1st of month at 3:00 AM)
+# =====================================================
+# Run complete ingestion and transformation pipeline
+
+0 3 1 * * cd $EDWARDS_HOME && ./scripts/refresh_data.sh >> logs/cron_monthly.log 2>&1
+
+# =====================================================
+# MONTHLY: Score Recalculation (1st of month at 5:00 AM)
+# =====================================================
+# Recalculate TRS scores after monthly data refresh
+
+0 5 1 * * cd $EDWARDS_HOME && ./scripts/run_sqlmesh.sh run >> logs/cron_scoring.log 2>&1
+
+# =====================================================
+# MONTHLY: History Purge (1st of month at 6:00 AM)
+# =====================================================
+# Purge score history older than 2 years
+
+0 6 1 * * cd $EDWARDS_HOME && python scripts/purge_history.py --force >> logs/cron_purge.log 2>&1
+
+# =====================================================
+# DAILY: Data Quality Checks (6:00 AM)
+# =====================================================
+# Run freshness and quality monitoring
+
+0 6 * * * cd $EDWARDS_HOME && python scripts/check_freshness.py >> logs/cron_quality.log 2>&1
+
+# =====================================================
+# WEEKLY: HRSA API Refresh (Monday at 1:00 AM)
+# =====================================================
+# HRSA HPSA data from API
+
+0 1 * * 1 cd $EDWARDS_HOME && ./scripts/refresh_data.sh --source hrsa >> logs/cron_hrsa.log 2>&1
+
+# =====================================================
+# QUARTERLY: ACC TVC Refresh (1st of Jan, Apr, Jul, Oct)
+# =====================================================
+# ACC Transcatheter Valve Certification data
+
+0 4 1 1,4,7,10 * cd $EDWARDS_HOME && ./scripts/refresh_data.sh --source acc_tvc >> logs/cron_acc.log 2>&1
+
+# =====================================================
+# LOG ROTATION (Weekly on Sunday at midnight)
+# =====================================================
+# Rotate and compress old log files
+
+0 0 * * 0 find $EDWARDS_HOME/logs -name "*.log" -mtime +30 -exec gzip {} \;
+0 0 * * 0 find $EDWARDS_HOME/logs -name "*.gz" -mtime +90 -delete
+
+# =====================================================
+# NOTES
+# =====================================================
+#
+# Schedule Summary:
+# - Daily: Quality checks (6 AM)
+# - Weekly: CMS data + HRSA (Sunday 2 AM, Monday 1 AM)
+# - Monthly: Full pipeline + scoring + purge (1st, 3-6 AM)
+# - Quarterly: ACC TVC (1st of quarter months, 4 AM)
+#
+# Monitoring:
+# - Check logs/cron_*.log for execution status
+# - Query api.data_catalog for freshness status
+# - Review meta.refresh_log for refresh history
+#
+# Manual Refresh:
+# - Run: ./scripts/refresh_data.sh
+# - Or specific source: ./scripts/refresh_data.sh --source hrsa

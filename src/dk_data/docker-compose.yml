@@ -1,0 +1,80 @@
+# TAVR Targeting Tool - Docker Compose
+# Feature: 002-tavr-targeting-tool
+#
+# Services:
+#   - postgrest: REST API layer for PostgreSQL
+#   - metabase: BI dashboard tool
+#
+# External dependency:
+#   - PostgreSQL database (configured in .env.local)
+#
+# Usage:
+#   docker compose --env-file .env.local up -d
+#   docker compose --env-file .env.local down
+
+services:
+  # ==========================================================================
+  # PostgREST - REST API for PostgreSQL
+  # ==========================================================================
+  postgrest:
+    image: postgrest/postgrest:v12.2.3
+    container_name: tavr-postgrest
+    restart: unless-stopped
+    ports:
+      - "${POSTGREST_PORT:-3030}:3000"
+    environment:
+      # Database connection (use host.docker.internal to reach host PostgreSQL)
+      PGRST_DB_URI: "postgres://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@host.docker.internal:${POSTGRES_PORT:-5433}/${POSTGRES_DB:-edwards_tavr}"
+      PGRST_DB_SCHEMAS: "api"
+      PGRST_DB_ANON_ROLE: "api_user"
+      PGRST_DB_POOL: "10"
+      PGRST_DB_POOL_ACQUISITION_TIMEOUT: "10"
+      PGRST_SERVER_HOST: "0.0.0.0"
+      PGRST_SERVER_PORT: "3000"
+      PGRST_MAX_ROWS: "1000"
+      PGRST_LOG_LEVEL: "info"
+      PGRST_DB_PREPARED_STATEMENTS: "true"
+      PGRST_OPENAPI_MODE: "follow-privileges"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    networks:
+      - tavr-network
+
+  # ==========================================================================
+  # Metabase - BI Dashboard Tool
+  # ==========================================================================
+  metabase:
+    image: metabase/metabase:v0.50.26
+    platform: linux/amd64
+    container_name: tavr-metabase
+    restart: unless-stopped
+    ports:
+      - "${METABASE_PORT:-3000}:3000"
+    environment:
+      # Metabase application database (embedded H2 for simplicity)
+      MB_DB_TYPE: "h2"
+      MB_DB_FILE: "/metabase-data/metabase.db"
+      # Java memory settings
+      JAVA_OPTS: "-Xmx1g"
+      # Timezone
+      MB_JAVA_TIMEZONE: "US/Pacific"
+    volumes:
+      - metabase-data:/metabase-data
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    networks:
+      - tavr-network
+
+# ==========================================================================
+# Networks
+# ==========================================================================
+networks:
+  tavr-network:
+    driver: bridge
+
+# ==========================================================================
+# Volumes
+# ==========================================================================
+volumes:
+  metabase-data:
+    driver: local
