@@ -194,27 +194,103 @@ The TRS is a composite score (0-1000 points) across five domains:
 
 ## API Endpoints
 
-| Endpoint | Description |
-|----------|-------------|
-| `GET /targets` | Scored TAVR clinic targets |
-| `GET /hospitals` | Hospital details with certifications |
-| `GET /data_catalog` | Data source freshness and quality |
-| `GET /scoring_details` | Detailed scoring factor breakdown |
+### Data Views
+
+| Endpoint | Description | Auth Required |
+|----------|-------------|---------------|
+| `GET /targets` | Scored TAVR clinic targets (full) | Yes |
+| `GET /targets_public` | Basic target list (limited fields) | No |
+| `GET /hospitals` | Hospital details with certifications | No |
+| `GET /scoring_details` | Detailed scoring factor breakdown | Yes |
+
+### Catalog & Jobs
+
+| Endpoint | Description | Auth Required |
+|----------|-------------|---------------|
+| `GET /catalog` | Full data catalog with health status | Yes |
+| `GET /catalog_public` | Public catalog (limited fields) | No |
+| `GET /jobs` | Batch job definitions and status | Yes |
+| `GET /job_runs` | Job execution history | Yes |
+| `GET /health` | System health check | No |
 
 ### Query Examples
 
 ```bash
 # Top 10 Tier A targets in California
-curl "http://localhost:3000/targets?tier_classification=eq.A&state=eq.CA&limit=10&order=total_trs.desc"
+curl "http://localhost:3030/targets?tier_classification=eq.A&state=eq.CA&limit=10&order=total_trs.desc"
 
 # Hospitals with TAVR certification
-curl "http://localhost:3000/hospitals?has_tavr_certification=eq.true"
+curl "http://localhost:3030/hospitals?has_tavr_certification=eq.true"
 
 # Scoring breakdown for a specific hospital
-curl "http://localhost:3000/scoring_details?hospital_id=eq.030064"
+curl "http://localhost:3030/scoring_details?hospital_id=eq.030064"
 
-# Data source freshness
-curl "http://localhost:3000/data_catalog"
+# Data catalog with health status
+curl "http://localhost:3030/catalog"
+
+# Filter catalog by topic tags (uses PostgREST array operators)
+curl "http://localhost:3030/catalog?topic_tags=cs.{cms}"
+
+# System health check
+curl "http://localhost:3030/health"
+
+# Batch jobs list
+curl "http://localhost:3030/jobs?is_enabled=eq.true"
+```
+
+## Make Targets
+
+The project includes comprehensive Makefile targets for common operations:
+
+### Development
+
+```bash
+make dev            # Start development environment (PostgREST)
+make up             # Start services
+make down           # Stop services
+make status         # Show system status
+make logs           # Show recent logs
+```
+
+### Database
+
+```bash
+make init-db        # Initialize database schema
+make db-shell       # Open PostgreSQL shell
+make db-status      # Check database status and record counts
+```
+
+### Data Fetching & Ingestion
+
+```bash
+make fetch          # Show available fetch commands
+make fetch-all      # Fetch data from ALL external sources
+make fetch-cms-hospitals    # Fetch CMS Hospital Info
+make fetch-cms-inpatient    # Fetch CMS Medicare Inpatient
+```
+
+### Catalog & Batch Jobs
+
+```bash
+make catalog-refresh    # Refresh catalog semantic metadata
+make catalog-status     # Show catalog health summary
+make batch-status       # Show batch job status
+make batch-trigger JOB=fetch-cms-all    # Trigger a batch job
+make batch-runs         # Show recent job runs
+```
+
+### SQLMesh
+
+```bash
+make sqlmesh-info   # Show SQLMesh project info
+make sqlmesh-plan   # Preview SQLMesh changes
+make sqlmesh-run    # Apply SQLMesh transformations
+```
+
+### API Testing
+
+```bash
+make api-test       # Show API endpoints and examples
 ```
 
 ## Data Refresh
@@ -223,19 +299,36 @@ curl "http://localhost:3000/data_catalog"
 
 ```bash
 # Refresh all sources
-./scripts/refresh_data.sh
+make fetch-all
 
 # Refresh specific source
-./scripts/refresh_data.sh --source hrsa
+make fetch-cms-hospitals
+
+# Refresh catalog metadata
+make catalog-refresh
+
+# Run SQLMesh transformations
+make sqlmesh-run
+```
+
+### Batch Job Triggers (via API)
+
+```bash
+# Trigger a job via the job-trigger service
+make batch-trigger JOB=fetch-cms-all
+
+# Or via curl
+curl -X POST http://localhost:8000/jobs/fetch-cms-all/trigger
 ```
 
 ### Scheduled Refresh
 
-See `crontab.txt` for recommended schedule:
-- Daily: Quality checks
-- Weekly: CMS data, HRSA API
-- Monthly: Full pipeline, scoring recalculation, history purge
-- Quarterly: ACC TVC data
+Jobs are defined in `meta.batch_jobs` and can be run via:
+- Kubernetes CronJobs (production)
+- Manual triggers via Job Trigger API
+- Makefile targets (development)
+
+See `.gitops/` for Kubernetes CronJob definitions.
 
 ## AI Enrichment
 

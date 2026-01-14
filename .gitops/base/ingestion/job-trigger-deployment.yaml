@@ -1,0 +1,118 @@
+# Job Trigger Service Deployment
+# Feature: 001-data-layer-postgrest-gitops
+# Task: T030
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: job-trigger
+  namespace: tavr-data
+  labels:
+    app: job-trigger
+    app.kubernetes.io/name: job-trigger
+    app.kubernetes.io/component: ingestion
+    app.kubernetes.io/part-of: tavr-data-platform
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: job-trigger
+  template:
+    metadata:
+      labels:
+        app: job-trigger
+        app.kubernetes.io/name: job-trigger
+    spec:
+      serviceAccountName: job-trigger
+      containers:
+        - name: job-trigger
+          image: tavr-job-trigger:latest
+          ports:
+            - containerPort: 8000
+              name: http
+          env:
+            - name: POSTGRES_HOST
+              valueFrom:
+                secretKeyRef:
+                  name: postgres-credentials
+                  key: host
+            - name: POSTGRES_PORT
+              valueFrom:
+                secretKeyRef:
+                  name: postgres-credentials
+                  key: port
+            - name: POSTGRES_USER
+              valueFrom:
+                secretKeyRef:
+                  name: postgres-credentials
+                  key: username
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: postgres-credentials
+                  key: password
+            - name: POSTGRES_DB
+              valueFrom:
+                secretKeyRef:
+                  name: postgres-credentials
+                  key: database
+            - name: K8S_NAMESPACE
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.namespace
+          resources:
+            requests:
+              memory: "64Mi"
+              cpu: "50m"
+            limits:
+              memory: "256Mi"
+              cpu: "200m"
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 8000
+            initialDelaySeconds: 10
+            periodSeconds: 30
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 8000
+            initialDelaySeconds: 5
+            periodSeconds: 10
+---
+# ServiceAccount for job-trigger to create K8s Jobs
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: job-trigger
+  namespace: tavr-data
+  labels:
+    app: job-trigger
+---
+# Role for creating jobs in namespace
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: job-creator
+  namespace: tavr-data
+rules:
+  - apiGroups: ["batch"]
+    resources: ["jobs", "cronjobs"]
+    verbs: ["get", "list", "create", "delete"]
+  - apiGroups: [""]
+    resources: ["pods", "pods/log"]
+    verbs: ["get", "list"]
+---
+# RoleBinding
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: job-trigger-can-create-jobs
+  namespace: tavr-data
+subjects:
+  - kind: ServiceAccount
+    name: job-trigger
+    namespace: tavr-data
+roleRef:
+  kind: Role
+  name: job-creator
+  apiGroup: rbac.authorization.k8s.io

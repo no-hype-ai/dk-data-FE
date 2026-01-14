@@ -1,0 +1,78 @@
+# CronJob for fetching all CMS data sources
+# Feature: 001-data-layer-postgrest-gitops
+# Task: T028
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: fetch-cms-all
+  namespace: tavr-data
+  labels:
+    app: fetch-cms-all
+    app.kubernetes.io/name: fetch-cms-all
+    app.kubernetes.io/component: ingestion
+    app.kubernetes.io/part-of: tavr-data-platform
+spec:
+  schedule: "0 2 * * 0"  # Every Sunday at 2 AM
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      backoffLimit: 2
+      activeDeadlineSeconds: 3600  # 1 hour timeout
+      template:
+        metadata:
+          labels:
+            app: fetch-cms-all
+        spec:
+          restartPolicy: OnFailure
+          containers:
+            - name: fetch-cms
+              image: tavr-data-ingestion:latest
+              command:
+                - python
+                - -m
+                - ingestion.fetch_data
+                - --source
+                - all
+                - --data-dir
+                - /data/raw
+              env:
+                - name: POSTGRES_HOST
+                  valueFrom:
+                    secretKeyRef:
+                      name: postgres-credentials
+                      key: host
+                - name: POSTGRES_PORT
+                  valueFrom:
+                    secretKeyRef:
+                      name: postgres-credentials
+                      key: port
+                - name: POSTGRES_USER
+                  valueFrom:
+                    secretKeyRef:
+                      name: postgres-credentials
+                      key: username
+                - name: POSTGRES_PASSWORD
+                  valueFrom:
+                    secretKeyRef:
+                      name: postgres-credentials
+                      key: password
+                - name: POSTGRES_DB
+                  valueFrom:
+                    secretKeyRef:
+                      name: postgres-credentials
+                      key: database
+              volumeMounts:
+                - name: data-volume
+                  mountPath: /data
+              resources:
+                requests:
+                  memory: "256Mi"
+                  cpu: "100m"
+                limits:
+                  memory: "1Gi"
+                  cpu: "500m"
+          volumes:
+            - name: data-volume
+              emptyDir: {}

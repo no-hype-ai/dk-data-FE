@@ -1,0 +1,9 @@
+# Job Trigger Service Dependencies
+# Feature: 001-data-layer-postgrest-gitops
+# Task: T045
+
+fastapi>=0.109.0
+uvicorn>=0.27.0
+pydantic>=2.0.0
+psycopg2-binary>=2.9.0
+kubernetes>=29.0.0

@@ -280,7 +280,14 @@ CREATE TABLE IF NOT EXISTS meta.data_sources (
     last_refresh_status VARCHAR(20),
     record_count INTEGER,
     is_active BOOLEAN NOT NULL DEFAULT TRUE,
-    created_at TIMESTAMP NOT NULL DEFAULT NOW()
+    created_at TIMESTAMP NOT NULL DEFAULT NOW(),
+    -- New fields for enhanced catalog (T005)
+    topic_tags TEXT[] DEFAULT '{}',
+    column_descriptions JSONB DEFAULT '{}',
+    staleness_threshold_hours INTEGER DEFAULT 24,
+    table_size_bytes BIGINT,
+    ai_description TEXT,
+    target_tables TEXT[] DEFAULT '{}'
 );
 
 CREATE TABLE IF NOT EXISTS meta.refresh_log (
@@ -309,14 +316,92 @@ CREATE TABLE IF NOT EXISTS meta.data_quality (
 );
 
 -- =============================================================================
+-- T006: Table Health Tracking
+-- Purpose: Track health status based on freshness and data quality metrics
+-- =============================================================================
+
+CREATE TABLE IF NOT EXISTS meta.table_health (
+    health_id SERIAL PRIMARY KEY,
+    source_id INTEGER NOT NULL REFERENCES meta.data_sources(source_id),
+    check_timestamp TIMESTAMP NOT NULL DEFAULT NOW(),
+    health_status VARCHAR(20) NOT NULL,
+    freshness_hours INTEGER,
+    null_rate DECIMAL(5,4),
+    validation_error_count INTEGER DEFAULT 0,
+    row_count INTEGER,
+    row_count_change INTEGER,
+    details JSONB,
+    CONSTRAINT valid_health_status CHECK (health_status IN ('healthy', 'stale', 'unhealthy')),
+    CONSTRAINT valid_null_rate CHECK (null_rate >= 0 AND null_rate <= 1)
+);
+
+-- =============================================================================
+-- T007: Batch Job Definitions
+-- Purpose: Track batch job configurations and execution status
+-- =============================================================================
+
+CREATE TABLE IF NOT EXISTS meta.batch_jobs (
+    job_id SERIAL PRIMARY KEY,
+    job_name VARCHAR(100) NOT NULL UNIQUE,
+    description TEXT,
+    cron_schedule VARCHAR(50),
+    source_ids INTEGER[],
+    is_enabled BOOLEAN NOT NULL DEFAULT TRUE,
+    last_run_at TIMESTAMP,
+    last_run_status VARCHAR(20),
+    last_run_duration_seconds INTEGER,
+    next_scheduled_run TIMESTAMP,
+    created_at TIMESTAMP NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMP NOT NULL DEFAULT NOW()
+);
+
+-- =============================================================================
+-- T008: Batch Job Execution History
+-- Purpose: Detailed execution history for batch jobs
+-- =============================================================================
+
+CREATE TABLE IF NOT EXISTS meta.batch_job_runs (
+    run_id SERIAL PRIMARY KEY,
+    job_id INTEGER NOT NULL REFERENCES meta.batch_jobs(job_id),
+    triggered_by VARCHAR(50) NOT NULL,
+    triggered_by_user VARCHAR(100),
+    started_at TIMESTAMP NOT NULL,
+    completed_at TIMESTAMP,
+    status VARCHAR(20) NOT NULL,
+    records_processed INTEGER,
+    error_message TEXT,
+    k8s_job_name VARCHAR(255),
+    CONSTRAINT valid_run_status CHECK (status IN ('running', 'success', 'failure', 'cancelled'))
+);
+
+-- =============================================================================
 -- POSTGREST ROLES AND PERMISSIONS
 -- =============================================================================
 
--- Create anonymous role for read access
+-- Create anonymous role for read access (limited)
 DO $$
 BEGIN
     IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = 'web_anon') THEN
         CREATE ROLE web_anon NOLOGIN;
+    END IF;
+END
+$$;
+
+-- T050: Create analyst role with extended permissions
+-- Analysts can access detailed scoring and financial data
+DO $$
+BEGIN
+    IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = 'analyst') THEN
+        CREATE ROLE analyst NOLOGIN;
+    END IF;
+END
+$$;
+
+-- Create api_user role for authenticated API access
+DO $$
+BEGIN
+    IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = 'api_user') THEN
+        CREATE ROLE api_user NOLOGIN;
     END IF;
 END
 $$;
@@ -330,15 +415,41 @@ BEGIN
 END
 $$;
 
--- Grant web_anon to authenticator
+-- Grant roles to authenticator (for role switching via JWT)
 GRANT web_anon TO authenticator;
+GRANT analyst TO authenticator;
+GRANT api_user TO authenticator;
 
--- Grant usage on api schema
+-- Grant usage on api schema to all roles
 GRANT USAGE ON SCHEMA api TO web_anon;
+GRANT USAGE ON SCHEMA api TO analyst;
+GRANT USAGE ON SCHEMA api TO api_user;
 
--- Grant select on all current and future tables in api schema
+-- Anonymous role: limited access (public views only)
 GRANT SELECT ON ALL TABLES IN SCHEMA api TO web_anon;
 ALTER DEFAULT PRIVILEGES IN SCHEMA api GRANT SELECT ON TABLES TO web_anon;
+
+-- Analyst role: extended access to scoring and mart schemas
+GRANT USAGE ON SCHEMA scoring TO analyst;
+GRANT USAGE ON SCHEMA mart TO analyst;
+GRANT USAGE ON SCHEMA meta TO analyst;
+GRANT SELECT ON ALL TABLES IN SCHEMA scoring TO analyst;
+GRANT SELECT ON ALL TABLES IN SCHEMA mart TO analyst;
+GRANT SELECT ON ALL TABLES IN SCHEMA meta TO analyst;
+GRANT SELECT ON ALL TABLES IN SCHEMA api TO analyst;
+
+-- API user role: full read access
+GRANT USAGE ON SCHEMA raw TO api_user;
+GRANT USAGE ON SCHEMA staging TO api_user;
+GRANT USAGE ON SCHEMA scoring TO api_user;
+GRANT USAGE ON SCHEMA mart TO api_user;
+GRANT USAGE ON SCHEMA meta TO api_user;
+GRANT SELECT ON ALL TABLES IN SCHEMA raw TO api_user;
+GRANT SELECT ON ALL TABLES IN SCHEMA staging TO api_user;
+GRANT SELECT ON ALL TABLES IN SCHEMA scoring TO api_user;
+GRANT SELECT ON ALL TABLES IN SCHEMA mart TO api_user;
+GRANT SELECT ON ALL TABLES IN SCHEMA meta TO api_user;
+GRANT SELECT ON ALL TABLES IN SCHEMA api TO api_user;
 
 -- =============================================================================
 -- API SCHEMA VIEWS
@@ -457,6 +568,14 @@ CREATE INDEX IF NOT EXISTS idx_scoring_target_scores_hospital ON scoring.target_
 CREATE INDEX IF NOT EXISTS idx_scoring_target_scores_date ON scoring.target_scores(score_date);
 CREATE INDEX IF NOT EXISTS idx_scoring_score_factors_score ON scoring.score_factors(score_id);
 
+-- T009: Indexes for catalog and health tracking performance
+CREATE INDEX IF NOT EXISTS idx_data_sources_topic_tags ON meta.data_sources USING GIN(topic_tags);
+CREATE INDEX IF NOT EXISTS idx_data_sources_active ON meta.data_sources(is_active) WHERE is_active = TRUE;
+CREATE INDEX IF NOT EXISTS idx_table_health_source_timestamp ON meta.table_health(source_id, check_timestamp DESC);
+CREATE INDEX IF NOT EXISTS idx_table_health_status ON meta.table_health(health_status);
+CREATE INDEX IF NOT EXISTS idx_batch_job_runs_job_started ON meta.batch_job_runs(job_id, started_at DESC);
+CREATE INDEX IF NOT EXISTS idx_batch_job_runs_status ON meta.batch_job_runs(status) WHERE status = 'running';
+
 -- =============================================================================
 -- COMPLETION MESSAGE
 -- =============================================================================
@@ -467,5 +586,7 @@ BEGIN
     RAISE NOTICE 'Schemas created: raw, staging, mart, scoring, meta, api';
     RAISE NOTICE 'Roles created: web_anon, authenticator';
     RAISE NOTICE 'API views created: targets, hospitals, data_catalog, scoring_details';
+    RAISE NOTICE 'New meta tables: table_health, batch_jobs, batch_job_runs';
+    RAISE NOTICE 'Enhanced meta.data_sources with: topic_tags, column_descriptions, ai_description';
 END
 $$;

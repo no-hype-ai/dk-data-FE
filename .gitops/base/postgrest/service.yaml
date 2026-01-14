@@ -1,0 +1,22 @@
+# PostgREST Service
+# Feature: 001-data-layer-postgrest-gitops
+# Task: T025
+apiVersion: v1
+kind: Service
+metadata:
+  name: postgrest
+  namespace: tavr-data
+  labels:
+    app: postgrest
+    app.kubernetes.io/name: postgrest
+    app.kubernetes.io/component: api
+    app.kubernetes.io/part-of: tavr-data-platform
+spec:
+  type: ClusterIP
+  ports:
+    - port: 3000
+      targetPort: 3000
+      protocol: TCP
+      name: http
+  selector:
+    app: postgrest

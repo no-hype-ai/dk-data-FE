@@ -1,0 +1,10 @@
+# Namespace for TAVR Data Platform
+# Feature: 001-data-layer-postgrest-gitops
+# Task: T023
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: tavr-data
+  labels:
+    app.kubernetes.io/name: tavr-data-platform
+    app.kubernetes.io/part-of: edwards-tavr

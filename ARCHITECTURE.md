@@ -1199,7 +1199,98 @@ python -m ingestion.generate source {name} \
 
 ---
 
-## 10. Future Roadmap
+## 10. Role-Based Access Control
+
+The platform implements role-based access control (RBAC) via PostgREST JWT authentication.
+
+### Available Roles
+
+| Role | Description | Access Level |
+|------|-------------|--------------|
+| `web_anon` | Anonymous/unauthenticated users | Public views only (`catalog_public`, `targets_public`, `health`) |
+| `analyst` | Authenticated analysts | Extended access to scoring, mart, and meta schemas |
+| `api_user` | Authenticated API users | Full read access to all schemas |
+
+### JWT Authentication
+
+PostgREST uses JWT tokens for authentication and role switching. To access protected endpoints:
+
+1. **Generate a JWT token** with your secret key:
+   ```python
+   import jwt
+   from datetime import datetime, timedelta
+
+   token = jwt.encode(
+       {
+           "role": "analyst",  # or "api_user"
+           "exp": datetime.utcnow() + timedelta(hours=24)
+       },
+       "your-secret-key",
+       algorithm="HS256"
+   )
+   ```
+
+2. **Include the token** in API requests:
+   ```bash
+   curl -H "Authorization: Bearer <token>" \
+       http://localhost:3030/catalog
+   ```
+
+### Configuration
+
+Set the JWT secret in your environment:
+
+```bash
+# .env.local
+PGRST_JWT_SECRET=your-secure-secret-key-at-least-32-chars
+
+# Generate a secure secret:
+openssl rand -base64 32
+```
+
+### View Access by Role
+
+| View | `web_anon` | `analyst` | `api_user` |
+|------|------------|-----------|------------|
+| `catalog_public` | ✓ | ✓ | ✓ |
+| `targets_public` | ✓ | ✓ | ✓ |
+| `health` | ✓ | ✓ | ✓ |
+| `catalog` (full) | ✗ | ✓ | ✓ |
+| `jobs` | ✗ | ✓ | ✓ |
+| `job_runs` | ✗ | ✓ | ✓ |
+| `targets` (full) | ✗ | ✓ | ✓ |
+| `scoring_details` | ✗ | ✓ | ✓ |
+| Direct schema access | ✗ | `scoring`, `mart`, `meta` | All schemas |
+
+### Adding New Roles
+
+To add a new role:
+
+1. Create the role in `init_database.sql`:
+   ```sql
+   DO $$
+   BEGIN
+       IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = 'new_role') THEN
+           CREATE ROLE new_role NOLOGIN;
+       END IF;
+   END
+   $$;
+   ```
+
+2. Grant to authenticator:
+   ```sql
+   GRANT new_role TO authenticator;
+   ```
+
+3. Grant specific permissions:
+   ```sql
+   GRANT USAGE ON SCHEMA api TO new_role;
+   GRANT SELECT ON api.specific_view TO new_role;
+   ```
+
+---
+
+## 11. Future Roadmap
 
 1. **Template CLI Tool** - Implement the generator described in Section 8
 2. **Abstract BaseSource** - Add base class for sources (Section 7.1)
