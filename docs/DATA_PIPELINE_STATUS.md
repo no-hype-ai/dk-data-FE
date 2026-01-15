@@ -60,7 +60,7 @@ This document tracks the current status of the TAVR data pipeline, identifies ga
 | Table | Records | Source | Status | Notes |
 |-------|---------|--------|--------|-------|
 | `raw.cms_hospital_info` | 5,421 | CMS Provider Data | ✅ Complete | Hospital demographics, ratings |
-| `raw.cms_medicare_inpatient` | 1,179 | CMS Data Portal | ✅ Complete | TAVR DRG 266/267 only, FY2023 |
+| `raw.cms_medicare_inpatient` | 3,494 | CMS Data Portal | ✅ Complete | TAVR DRG 266/267, FY2021-2023 |
 | `raw.cms_cost_reports` | 6,086 | CMS HCRIS | ✅ Complete | Financial metrics, FY2023 |
 | `raw.hrsa_shortage_areas` | 73,056 | HRSA Data Warehouse | ✅ Complete | Primary Care HPSAs |
 | `raw.acc_tvc_certification` | 0 | ACC Website | ⚠️ No Source | No public API/CSV available |
@@ -70,7 +70,7 @@ This document tracks the current status of the TAVR data pipeline, identifies ga
 | Table | Records | Status | Notes |
 |-------|---------|--------|-------|
 | `staging.hospitals` | 5,421 | ✅ Complete | Cleaned hospital master data |
-| `staging.tavr_volumes` | 1,179 | ✅ Complete | TAVR volumes by hospital/DRG |
+| `staging.tavr_volumes` | 3,494 | ✅ Complete | TAVR volumes by hospital/DRG/year (FY2021-2023) |
 | `staging.certifications` | 0 | ⚠️ Blocked | Depends on ACC TVC data |
 | `staging.geographic_designations` | 5,421 | ✅ Complete | 92% HPSA match rate |
 
@@ -78,8 +78,8 @@ This document tracks the current status of the TAVR data pipeline, identifies ga
 
 | Table | Records | Status | Notes |
 |-------|---------|--------|-------|
-| `mart.dim_hospital` | 5,421 | ✅ Complete | Hospital dimension |
-| `mart.fact_tavr_program` | 704 | ✅ Complete | Hospitals with TAVR programs |
+| `mart.dim_hospital` | 5,421 | ✅ Complete | Hospital dimension with bed_count |
+| `mart.fact_tavr_program` | 2,069 | ✅ Complete | TAVR programs FY2021-2023 with YoY growth |
 | `mart.fact_financial_metrics` | 4,981 | ✅ Complete | Operating margins, quartiles |
 
 ### Scoring Layer
@@ -93,8 +93,9 @@ This document tracks the current status of the TAVR data pipeline, identifies ga
 
 | Table | Records | Status | Notes |
 |-------|---------|--------|-------|
-| `targeting.targeting_scores` | 704 | ✅ Functional | All Low/DNQ without internal data |
+| `targeting.targeting_scores` | 704 | ✅ Functional | 84 Medium, 427 Low, 193 DNQ (need internal data for High) |
 | `targeting.targeting_summary` | 2 | ✅ Functional | Summary aggregations |
+| `targeting.volume_history` | 2,069 | ✅ Complete | TAVR volumes FY2021-2023 with YoY growth |
 
 ---
 
@@ -169,7 +170,7 @@ These tables require data from internal systems (CRM, sales, contracts).
 
 **Data Source:** Auto-populated from CMS data
 
-**Current Status:** 708 records (FY2023 only)
+**Current Status:** ✅ 2,069 records (FY2021: 675, FY2022: 690, FY2023: 704) with YoY growth calculated
 
 ---
 
@@ -183,10 +184,11 @@ These tables require data from internal systems (CRM, sales, contracts).
 - [ ] **emr_systems** - Compile from sales intelligence
 - [ ] **champions** - Export from CRM contacts
 
-#### 2. Load Historical CMS Data
-- [ ] Fetch CMS Medicare Inpatient data for FY2021, FY2022
-- [ ] Calculate YoY growth percentages in `targeting.volume_history`
-- [ ] Update growth_score calculations in targeting model
+#### 2. Load Historical CMS Data ✅ COMPLETED
+- [x] Fetch CMS Medicare Inpatient data for FY2021, FY2022
+- [x] Calculate YoY growth percentages in `targeting.volume_history`
+- [x] Update growth_score calculations in targeting model
+- **Results:** 2,069 program-years across 704 hospitals (2021: 675, 2022: 690, 2023: 704)
 
 ### Medium Priority
 
@@ -196,14 +198,18 @@ These tables require data from internal systems (CRM, sales, contracts).
 - [ ] Contact ACC for data access options
 
 #### 4. Enhance dim_hospital
-- [ ] Add `bed_count` from CMS cost reports
+- [x] Add `bed_count` from CMS cost reports (93.5% coverage - 5,066 of 5,421)
 - [ ] Add `teaching_status` from CMS data
 - [ ] Add `urban_rural` classification
 
-#### 5. Create API Views
-- [ ] Create `api.hospitals` view for PostgREST
-- [ ] Create `api.targeting_scores` view
-- [ ] Create `api.summary` view
+#### 5. Create API Views ✅ COMPLETED
+- [x] Create `api.hospitals` view for PostgREST
+- [x] Create `api.tavr_programs` view
+- [x] Create `api.financial_metrics` view
+- [x] Create `api.targeting` view
+- [x] Create `api.scoring` view
+- [x] Create `api.hpsa` view
+- [x] Create `api.summary` view
 - [ ] Set up row-level security if needed
 
 ### Low Priority
@@ -265,3 +271,7 @@ uv run sqlmesh -p src/dk_data/sqlmesh plan --auto-apply
 | 2026-01-15 | Fixed CMS column mappings | Claude |
 | 2026-01-15 | Fixed HRSA column mappings | Claude |
 | 2026-01-15 | Created targeting stub tables | Claude |
+| 2026-01-15 | Pushed data to Neon cloud database | Claude |
+| 2026-01-15 | Created PostgREST API views (6 views + summary) | Claude |
+| 2026-01-15 | Added bed_count to dim_hospital from CMS cost reports | Claude |
+| 2026-01-15 | Loaded historical CMS data (FY2021, FY2022) for YoY growth | Claude |
