@@ -18,19 +18,34 @@ from ..utils.validators import CMSHospitalInfoRecord
 
 logger = logging.getLogger(__name__)
 
-# CMS column mapping
+# CMS column mapping - supports multiple column name formats
 COLUMN_MAPPING = {
+    # Provider ID variations
     'Facility ID': 'provider_id',
+    # Hospital name variations
     'Facility Name': 'hospital_name',
+    # Address variations
     'Address': 'address',
+    # City variations
     'City': 'city',
+    'City/Town': 'city',
+    # State variations
     'State': 'state',
+    # ZIP Code variations
     'ZIP Code': 'zip_code',
+    # County variations
     'County Name': 'county_name',
+    'County/Parish': 'county_name',
+    # Phone variations
     'Phone Number': 'phone_number',
+    'Telephone Number': 'phone_number',
+    # Hospital Type variations
     'Hospital Type': 'hospital_type',
+    # Ownership variations
     'Hospital Ownership': 'hospital_ownership',
+    # Emergency Services variations
     'Emergency Services': 'emergency_services',
+    # Rating variations
     'Hospital overall rating': 'hospital_overall_rating',
 }
 
