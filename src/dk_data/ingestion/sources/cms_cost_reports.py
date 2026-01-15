@@ -19,15 +19,24 @@ from ..utils.validators import CMSCostReportRecord
 
 logger = logging.getLogger(__name__)
 
-# Column mapping for cost report data
+# Column mapping for cost report data - supports multiple column name formats
 COLUMN_MAPPING = {
+    # Provider ID
     'Provider CCN': 'provider_id',
+    # Fiscal year dates
     'Fiscal Year Begin Date': 'fiscal_year_begin',
     'Fiscal Year End Date': 'fiscal_year_end',
+    # Bed count variations
     'Total Beds': 'total_beds',
+    'Number of Beds': 'total_beds',
+    # Discharge count variations
     'Total Discharges': 'total_discharges',
+    'Total Discharges (V + XVIII + XIX + Unknown)': 'total_discharges',
+    # Revenue variations
     'Net Patient Revenue': 'net_patient_revenue',
+    # Operating expenses variations
     'Total Operating Expenses': 'total_operating_expenses',
+    'Less Total Operating Expense': 'total_operating_expenses',
 }
 
 

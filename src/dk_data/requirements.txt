@@ -26,6 +26,13 @@ python-dotenv>=1.0.0
 beautifulsoup4>=4.12.0
 lxml>=5.0.0
 
+# API framework (for job trigger service)
+fastapi>=0.109.0
+uvicorn>=0.27.0
+
+# Kubernetes client (for job triggers in K8s)
+kubernetes>=29.0.0
+
 # Testing (optional, for development)
 pytest>=8.0.0
 pytest-postgresql>=6.0.0

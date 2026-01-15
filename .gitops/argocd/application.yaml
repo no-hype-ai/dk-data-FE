@@ -1,0 +1,90 @@
+# ArgoCD Application for TAVR Data Platform
+# Feature: 001-data-layer-postgrest-gitops
+# Task: T036
+#
+# This manifest defines how ArgoCD should deploy the TAVR data platform.
+# Apply this to your ArgoCD instance to enable GitOps deployment.
+#
+# Usage:
+#   kubectl apply -f .gitops/argocd/application.yaml -n argocd
+
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: tavr-data-platform
+  namespace: argocd
+  labels:
+    app.kubernetes.io/name: tavr-data-platform
+    app.kubernetes.io/part-of: edwards-tavr
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: default
+
+  source:
+    # UPDATE: Replace with your repository URL
+    repoURL: https://github.com/your-org/dk-data-fe.git
+    targetRevision: HEAD
+    path: .gitops/overlays/dev  # Change to staging or prod as needed
+
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: tavr-data-dev  # Matches the overlay namespace
+
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+      allowEmpty: false
+    syncOptions:
+      - CreateNamespace=true
+      - PrunePropagationPolicy=foreground
+      - PruneLast=true
+    retry:
+      limit: 5
+      backoff:
+        duration: 5s
+        factor: 2
+        maxDuration: 3m
+
+  # Health checks
+  ignoreDifferences:
+    - group: apps
+      kind: Deployment
+      jsonPointers:
+        - /spec/replicas  # Allow HPA to manage replicas
+
+---
+# Production Application (separate for approval workflows)
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: tavr-data-platform-prod
+  namespace: argocd
+  labels:
+    app.kubernetes.io/name: tavr-data-platform
+    app.kubernetes.io/part-of: edwards-tavr
+    environment: prod
+spec:
+  project: default
+
+  source:
+    repoURL: https://github.com/your-org/dk-data-fe.git
+    targetRevision: HEAD
+    path: .gitops/overlays/prod
+
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: tavr-data-prod
+
+  syncPolicy:
+    # Manual sync for production - requires approval
+    syncOptions:
+      - CreateNamespace=true
+      - PrunePropagationPolicy=foreground
+    retry:
+      limit: 3
+      backoff:
+        duration: 10s
+        factor: 2
+        maxDuration: 5m

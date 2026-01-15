@@ -21,9 +21,17 @@ WITH hospital_counties AS (
 ),
 hpsa_by_county AS (
     -- Aggregate HPSA designations by state/county
+    -- HRSA county_name format: "Macon County, AL" - extract just "Macon"
     SELECT
         state_abbr,
-        county_name,
+        -- Normalize county name: extract part before " County" or use as-is
+        UPPER(TRIM(
+            CASE
+                WHEN county_name LIKE '% County,%' THEN SPLIT_PART(county_name, ' County,', 1)
+                WHEN county_name LIKE '% County' THEN SPLIT_PART(county_name, ' County', 1)
+                ELSE county_name
+            END
+        )) AS county_name_normalized,
         -- Primary Care HPSA
         BOOL_OR(hpsa_type = 'Primary Care') AS is_hpsa_primary_care,
         -- Mental Health HPSA
@@ -35,7 +43,8 @@ hpsa_by_county AS (
     FROM raw.hrsa_shortage_areas
     WHERE state_abbr IS NOT NULL
       AND county_name IS NOT NULL
-    GROUP BY state_abbr, county_name
+      AND county_name != ''
+    GROUP BY state_abbr, county_name_normalized
 )
 SELECT
     h.hospital_id,
@@ -49,5 +58,5 @@ SELECT
 FROM hospital_counties h
 LEFT JOIN hpsa_by_county hp ON (
     UPPER(h.state) = UPPER(hp.state_abbr)
-    AND UPPER(h.county_name) = UPPER(hp.county_name)
+    AND UPPER(h.county_name) = hp.county_name_normalized
 );

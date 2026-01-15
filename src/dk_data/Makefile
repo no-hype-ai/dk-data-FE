@@ -8,6 +8,7 @@
         fetch fetch-all fetch-cms-inpatient fetch-cms-hospitals fetch-hrsa \
         fetch-acc-tvc fetch-cost-reports ingest-all \
         refresh-all sqlmesh-plan sqlmesh-run sqlmesh-info \
+        catalog-refresh catalog-status batch-trigger \
         test validate clean progress
 
 # Load environment variables
@@ -98,13 +99,28 @@ api-stop: ## Stop PostgREST API container
 api-test: ## Test API endpoints
 	@echo "$(GREEN)API Endpoints$(NC)"
 	@echo "============="
-	@echo "Targets:   curl 'http://localhost:$(POSTGREST_PORT)/targets'"
-	@echo "Hospitals: curl 'http://localhost:$(POSTGREST_PORT)/hospitals'"
-	@echo "Scores:    curl 'http://localhost:$(POSTGREST_PORT)/scoring_details'"
-	@echo "Catalog:   curl 'http://localhost:$(POSTGREST_PORT)/data_catalog'"
 	@echo ""
-	@echo "$(YELLOW)Sample request:$(NC)"
+	@echo "$(YELLOW)Data Views:$(NC)"
+	@echo "  Targets:   curl 'http://localhost:$(POSTGREST_PORT)/targets'"
+	@echo "  Hospitals: curl 'http://localhost:$(POSTGREST_PORT)/hospitals'"
+	@echo "  Scores:    curl 'http://localhost:$(POSTGREST_PORT)/scoring_details'"
+	@echo ""
+	@echo "$(YELLOW)Catalog & Jobs:$(NC)"
+	@echo "  Catalog:   curl 'http://localhost:$(POSTGREST_PORT)/catalog'"
+	@echo "  Jobs:      curl 'http://localhost:$(POSTGREST_PORT)/jobs'"
+	@echo "  Job Runs:  curl 'http://localhost:$(POSTGREST_PORT)/job_runs'"
+	@echo "  Health:    curl 'http://localhost:$(POSTGREST_PORT)/health'"
+	@echo ""
+	@echo "$(YELLOW)Filtering Examples:$(NC)"
+	@echo "  By topic:  curl 'http://localhost:$(POSTGREST_PORT)/catalog?topic_tags=cs.{cms}'"
+	@echo "  By status: curl 'http://localhost:$(POSTGREST_PORT)/catalog?health_status=eq.healthy'"
+	@echo "  Enabled:   curl 'http://localhost:$(POSTGREST_PORT)/jobs?is_enabled=eq.true'"
+	@echo ""
+	@echo "$(YELLOW)Sample request (targets):$(NC)"
 	@curl -s 'http://localhost:$(POSTGREST_PORT)/targets?limit=3' | python3 -m json.tool 2>/dev/null || echo "$(RED)API not running$(NC)"
+	@echo ""
+	@echo "$(YELLOW)Sample request (catalog):$(NC)"
+	@curl -s 'http://localhost:$(POSTGREST_PORT)/catalog?limit=3' | python3 -m json.tool 2>/dev/null || echo "$(RED)API not running$(NC)"
 
 #==============================================================================
 # DATABASE OPERATIONS
@@ -130,6 +146,9 @@ init-db: ## Initialize database schema
 	@docker exec $(POSTGRES_CONTAINER) psql -U $(POSTGRES_USER) -c "CREATE DATABASE $(POSTGRES_DB);" 2>/dev/null || true
 	@docker exec -i $(POSTGRES_CONTAINER) psql -U $(POSTGRES_USER) -d $(POSTGRES_DB) < sql/init_database.sql
 	@docker exec -i $(POSTGRES_CONTAINER) psql -U $(POSTGRES_USER) -d $(POSTGRES_DB) < sql/seed_data_sources.sql
+	@docker exec -i $(POSTGRES_CONTAINER) psql -U $(POSTGRES_USER) -d $(POSTGRES_DB) < sql/seed_batch_jobs.sql 2>/dev/null || true
+	@docker exec -i $(POSTGRES_CONTAINER) psql -U $(POSTGRES_USER) -d $(POSTGRES_DB) < sql/api_views.sql 2>/dev/null || true
+	@docker exec -i $(POSTGRES_CONTAINER) psql -U $(POSTGRES_USER) -d $(POSTGRES_DB) < sql/catalog_functions.sql 2>/dev/null || true
 	@docker exec -i $(POSTGRES_CONTAINER) psql -U $(POSTGRES_USER) -d $(POSTGRES_DB) < sql/score_history_trigger.sql 2>/dev/null || true
 	@echo "$(GREEN)Database initialized$(NC)"
 
@@ -238,6 +257,68 @@ sqlmesh-diff: ## Show diff of pending model changes
 	@. $(VENV)/bin/activate && cd sqlmesh && sqlmesh diff
 
 #==============================================================================
+# CATALOG & BATCH JOBS
+#==============================================================================
+
+catalog-refresh: ## Refresh catalog semantic metadata (descriptions, topic_tags)
+	@echo "$(YELLOW)Refreshing catalog metadata...$(NC)"
+	@. $(VENV)/bin/activate && python scripts/catalog_refresh.py 2>&1 | tee -a $(LOGS_DIR)/catalog.log
+	@echo "$(GREEN)Catalog refresh complete$(NC)"
+
+catalog-check: ## Check catalog status without making changes
+	@echo "$(YELLOW)Checking catalog status...$(NC)"
+	@. $(VENV)/bin/activate && python scripts/catalog_refresh.py --check-only
+
+catalog-status: ## Show catalog health summary
+	@echo "$(CYAN)Catalog Health Status$(NC)"
+	@echo "====================="
+	@docker exec $(POSTGRES_CONTAINER) psql -U $(POSTGRES_USER) -d $(POSTGRES_DB) -c "\
+		SELECT \
+			c.source_name, \
+			c.health_status, \
+			c.freshness_hours || ' hrs' as freshness, \
+			COALESCE(array_length(c.topic_tags, 1), 0) as tags, \
+			CASE WHEN c.ai_description IS NOT NULL THEN 'Yes' ELSE 'No' END as has_ai_desc \
+		FROM api.catalog c \
+		ORDER BY c.source_name;" 2>/dev/null || echo "$(RED)Database not accessible$(NC)"
+
+batch-status: ## Show batch job status
+	@echo "$(CYAN)Batch Job Status$(NC)"
+	@echo "================="
+	@docker exec $(POSTGRES_CONTAINER) psql -U $(POSTGRES_USER) -d $(POSTGRES_DB) -c "\
+		SELECT \
+			job_name, \
+			is_enabled as enabled, \
+			last_run_status as status, \
+			TO_CHAR(last_run_at, 'YYYY-MM-DD HH24:MI') as last_run, \
+			cron_schedule as schedule \
+		FROM meta.batch_jobs \
+		ORDER BY job_name;" 2>/dev/null || echo "$(RED)Database not accessible$(NC)"
+
+batch-trigger: ## Trigger a batch job (usage: make batch-trigger JOB=fetch-cms-all)
+	@if [ -z "$(JOB)" ]; then \
+		echo "$(RED)Usage: make batch-trigger JOB=<job-name>$(NC)"; \
+		echo "Available jobs:"; \
+		curl -s http://localhost:8000/jobs | python3 -c "import sys,json; [print(f'  - {j[\"job_name\"]}') for j in json.load(sys.stdin)]" 2>/dev/null || echo "  Job trigger service not running"; \
+		exit 1; \
+	fi
+	@echo "$(YELLOW)Triggering job: $(JOB)$(NC)"
+	@curl -s -X POST "http://localhost:8000/jobs/$(JOB)/trigger" | python3 -m json.tool 2>/dev/null || echo "$(RED)Job trigger service not running$(NC)"
+
+batch-runs: ## Show recent job runs
+	@echo "$(CYAN)Recent Job Runs$(NC)"
+	@echo "================"
+	@curl -s "http://localhost:8000/runs?limit=10" | python3 -c "\
+import sys,json; \
+runs = json.load(sys.stdin); \
+print(f'{'Job':<20} {'Status':<10} {'Started':<20} {'Duration'}'); \
+print('-'*60); \
+for r in runs: \
+    started = r['started_at'][:19] if r['started_at'] else 'N/A'; \
+    duration = 'running' if not r['completed_at'] else 'done'; \
+    print(f\"{r['job_name']:<20} {r['status']:<10} {started:<20} {duration}\")" 2>/dev/null || echo "$(RED)Job trigger service not running$(NC)"
+
+#==============================================================================
 # FULL PIPELINE
 #==============================================================================
 
@@ -275,12 +356,19 @@ status: ## Show system status
 	@echo "================================"
 	@echo ""
 	@echo "$(YELLOW)Services:$(NC)"
-	@printf "  PostgreSQL:  "; docker exec $(POSTGRES_CONTAINER) pg_isready -q && echo "$(GREEN)running$(NC) ($(POSTGRES_HOST):$(POSTGRES_PORT))" || echo "$(RED)not accessible$(NC)"
-	@printf "  PostgREST:   "; docker ps -q -f name=$(POSTGREST_CONTAINER) | grep -q . && echo "$(GREEN)running$(NC) (http://localhost:$(POSTGREST_PORT))" || echo "$(RED)stopped$(NC)"
+	@printf "  PostgreSQL:   "; docker exec $(POSTGRES_CONTAINER) pg_isready -q && echo "$(GREEN)running$(NC) ($(POSTGRES_HOST):$(POSTGRES_PORT))" || echo "$(RED)not accessible$(NC)"
+	@printf "  PostgREST:    "; docker ps -q -f name=$(POSTGREST_CONTAINER) | grep -q . && echo "$(GREEN)running$(NC) (http://localhost:$(POSTGREST_PORT))" || echo "$(RED)stopped$(NC)"
+	@printf "  Job Trigger:  "; curl -s http://localhost:8000/health >/dev/null 2>&1 && echo "$(GREEN)running$(NC) (http://localhost:8000)" || echo "$(RED)stopped$(NC)"
 	@echo ""
 	@echo "$(YELLOW)Endpoints:$(NC)"
-	@echo "  Database: $(POSTGRES_HOST):$(POSTGRES_PORT)/$(POSTGRES_DB)"
-	@echo "  API:      http://localhost:$(POSTGREST_PORT)"
+	@echo "  Database:    $(POSTGRES_HOST):$(POSTGRES_PORT)/$(POSTGRES_DB)"
+	@echo "  API:         http://localhost:$(POSTGREST_PORT)"
+	@echo "  Job Trigger: http://localhost:8000"
+	@echo ""
+	@echo "$(YELLOW)API Endpoints:$(NC)"
+	@echo "  Catalog:   http://localhost:$(POSTGREST_PORT)/catalog"
+	@echo "  Jobs:      http://localhost:$(POSTGREST_PORT)/jobs"
+	@echo "  Health:    http://localhost:$(POSTGREST_PORT)/health"
 	@echo ""
 	@$(MAKE) -s db-status 2>/dev/null || true
 

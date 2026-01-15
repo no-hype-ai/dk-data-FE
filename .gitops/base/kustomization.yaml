@@ -1,0 +1,32 @@
+# Kustomize Base Configuration
+# Feature: 001-data-layer-postgrest-gitops
+# Task: T027
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+namespace: tavr-data
+
+labels:
+  - pairs:
+      app.kubernetes.io/part-of: tavr-data-platform
+      app.kubernetes.io/managed-by: kustomize
+    includeSelectors: false
+
+resources:
+  - namespace.yaml
+  # PostgREST API
+  - postgrest/deployment.yaml
+  - postgrest/service.yaml
+  - postgrest/configmap.yaml
+  - postgrest/secret.yaml
+  # Batch Jobs (ingestion)
+  - ingestion/cronjob-cms-all.yaml
+  # Catalog refresh
+  - catalog/cronjob-refresh.yaml
+  # Job trigger service
+  - ingestion/job-trigger-deployment.yaml
+  - ingestion/job-trigger-service.yaml
+
+images:
+  - name: postgrest/postgrest
+    newTag: v12.0.2

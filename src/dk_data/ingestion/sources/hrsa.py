@@ -110,15 +110,156 @@ def calculate_data_hash(data: List[Dict]) -> str:
     return hashlib.md5(json_str.encode()).hexdigest()
 
 
+def load_hrsa_from_csv(filepath: str, batch_size: int = 500) -> dict:
+    """
+    Load HRSA shortage area data from CSV file.
+
+    Args:
+        filepath: Path to HRSA CSV file.
+        batch_size: Number of records to commit at once.
+
+    Returns:
+        Dictionary with ingestion statistics.
+    """
+    import pandas as pd
+
+    logger.info(f"Loading HRSA shortage areas from CSV: {filepath}")
+
+    try:
+        df = pd.read_csv(filepath, dtype=str, low_memory=False)
+        logger.info(f"Loaded {len(df)} records from CSV")
+    except Exception as e:
+        logger.error(f"Failed to read CSV: {e}")
+        return {'status': 'failed', 'error': str(e)}
+
+    # Map CSV columns to our schema (HRSA BCD_HPSA_FCT_DET CSV format)
+    # Source: https://data.hrsa.gov/DataDownload/DD_Files/BCD_HPSA_FCT_DET_PC.csv
+    column_mapping = {
+        # HPSA ID variations
+        'HPSA_ID': 'hpsa_id',
+        'HPSA Source ID': 'hpsa_id',
+        'HPSA ID': 'hpsa_id',
+        # HPSA Name variations
+        'HPSA_Name': 'hpsa_name',
+        'HPSA Name': 'hpsa_name',
+        # HPSA Type variations (Primary Care, Mental Health, Dental)
+        'HPSA_Type': 'hpsa_type',
+        'HPSA Type Description': 'hpsa_type',
+        'HPSA Discipline Class': 'hpsa_type',
+        # Designation Type variations
+        'Designation_Type': 'designation_type',
+        'HPSA Designation Type Description': 'designation_type',
+        'Designation Type': 'designation_type',
+        # State abbreviation variations
+        'State_Abbr': 'state_abbr',
+        'State Abbreviation': 'state_abbr',
+        'Primary State Abbreviation': 'state_abbr',
+        # County name variations
+        'County_Name': 'county_name',
+        'Common County Name': 'county_name',
+        'County Equivalent Name': 'county_name',
+        # HPSA Score variations
+        'HPSA_Score': 'hpsa_score',
+        'HPSA Score': 'hpsa_score',
+        # Rural status variations
+        'Rural_Status': 'rural_status',
+        'Rural Status': 'rural_status',
+        'HPSA Metropolitan Indicator Description': 'rural_status',
+        'Metropolitan Indicator': 'rural_status',
+        # Designation date
+        'HPSA Designation Date': 'designation_date',
+    }
+
+    # Rename columns we find
+    rename_map = {}
+    for csv_col, db_col in column_mapping.items():
+        if csv_col in df.columns:
+            rename_map[csv_col] = db_col
+
+    df = df.rename(columns=rename_map)
+
+    # Keep only the columns we need (handles duplicate column names after rename)
+    target_cols = ['hpsa_id', 'hpsa_name', 'hpsa_type', 'designation_type',
+                   'state_abbr', 'county_name', 'hpsa_score', 'rural_status',
+                   'designation_date']
+    available_cols = [c for c in target_cols if c in df.columns]
+    df = df.loc[:, ~df.columns.duplicated()][available_cols]
+
+    # Calculate hash
+    source_hash = hashlib.md5(df.to_csv(index=False).encode()).hexdigest()[:32]
+
+    records_inserted = 0
+    records_failed = 0
+    errors = []
+
+    with get_connection() as conn:
+        with conn.cursor() as cur:
+            # Clear existing data (full refresh)
+            cur.execute("TRUNCATE TABLE raw.hrsa_shortage_areas")
+
+            for idx, row in df.iterrows():
+                try:
+                    # Parse designation date if present
+                    designation_date = None
+                    if pd.notna(row.get('designation_date')):
+                        try:
+                            designation_date = pd.to_datetime(row['designation_date']).date()
+                        except Exception:
+                            pass
+
+                    cur.execute("""
+                        INSERT INTO raw.hrsa_shortage_areas (
+                            hpsa_id, hpsa_name, hpsa_type, designation_type,
+                            state_abbr, county_name, hpsa_score, designation_date,
+                            rural_status, _source_hash
+                        ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                    """, (
+                        row.get('hpsa_id', ''),
+                        row.get('hpsa_name', ''),
+                        row.get('hpsa_type', ''),
+                        row.get('designation_type', ''),
+                        row.get('state_abbr', ''),
+                        row.get('county_name', ''),
+                        int(row['hpsa_score']) if pd.notna(row.get('hpsa_score')) else None,
+                        designation_date,
+                        row.get('rural_status', ''),
+                        source_hash
+                    ))
+                    records_inserted += 1
+
+                    if records_inserted % batch_size == 0:
+                        conn.commit()
+
+                except Exception as e:
+                    records_failed += 1
+                    if len(errors) < 10:
+                        errors.append({'index': idx, 'error': str(e)})
+
+            conn.commit()
+
+    logger.info(f"HRSA CSV load complete: {records_inserted} inserted, {records_failed} failed")
+
+    return {
+        'status': 'success',
+        'records_fetched': len(df),
+        'records_inserted': records_inserted,
+        'records_failed': records_failed,
+        'source_hash': source_hash,
+        'errors': errors
+    }
+
+
 def load_hrsa_shortage_areas(
+    filepath: str = None,
     hpsa_types: List[str] = None,
     states: List[str] = None,
     batch_size: int = 500
 ) -> dict:
     """
-    Load HRSA shortage area data from API.
+    Load HRSA shortage area data from CSV file or API.
 
     Args:
+        filepath: Path to CSV file (if provided, loads from file).
         hpsa_types: List of HPSA types to fetch (default: Primary Care only).
         states: List of states to filter (default: all states).
         batch_size: Number of records to commit at once.
@@ -126,6 +267,11 @@ def load_hrsa_shortage_areas(
     Returns:
         Dictionary with ingestion statistics.
     """
+    # If filepath provided, load from CSV
+    if filepath:
+        return load_hrsa_from_csv(filepath, batch_size)
+
+    # Otherwise try API
     if hpsa_types is None:
         hpsa_types = ['Primary Care']
 

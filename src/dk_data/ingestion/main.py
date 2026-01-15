@@ -45,7 +45,8 @@ SOURCES = {
         'name': 'HRSA Shortage Areas',
         'description': 'Health Professional Shortage Areas',
         'loader': hrsa.load_hrsa_shortage_areas,
-        'requires_file': False,  # API-based
+        'requires_file': False,  # Can use API or file
+        'accepts_file': True,  # File is optional
     },
 }
 
@@ -124,6 +125,9 @@ def run_ingestion(source: str, **kwargs) -> dict:
     if source_info.get('requires_file'):
         if 'filepath' not in kwargs or not kwargs['filepath']:
             raise ValueError(f"Source '{source}' requires a file path")
+        loader_kwargs['filepath'] = kwargs['filepath']
+    elif source_info.get('accepts_file') and kwargs.get('filepath'):
+        # Optional file parameter
         loader_kwargs['filepath'] = kwargs['filepath']
 
     if source_info.get('requires_fiscal_year'):

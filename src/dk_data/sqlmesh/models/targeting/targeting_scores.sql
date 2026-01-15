@@ -201,8 +201,8 @@ SELECT
         WHEN h.bed_count >= 200 THEN 'Medium'
         ELSE 'Small'
     END AS bed_size_category,
-    h.urban_rural,
-    h.teaching_status,
+    h.hospital_type,
+    h.ownership_type,
 
     -- Champion info (first of each type)
     cc.champion_name AS clinical_champion,

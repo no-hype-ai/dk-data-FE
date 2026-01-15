@@ -1,0 +1,512 @@
+openapi: 3.1.0
+info:
+  title: TAVR Data Platform API
+  description: |
+    REST API for the TAVR Data Infrastructure Platform.
+
+    This API provides access to:
+    - Hospital targeting data and scores
+    - Data catalog with health monitoring
+    - Batch job management and triggers
+
+    The API is powered by PostgREST, which auto-generates endpoints from PostgreSQL views.
+  version: 2.0.0
+  contact:
+    name: Data Platform Team
+
+servers:
+  - url: http://localhost:3030
+    description: Local development
+  - url: https://api.tavr-data.internal
+    description: Production (internal)
+
+tags:
+  - name: Catalog
+    description: Data catalog and metadata endpoints
+  - name: Jobs
+    description: Batch job management
+  - name: Targets
+    description: Hospital targeting data (existing)
+  - name: Health
+    description: System health checks
+
+paths:
+  /catalog:
+    get:
+      tags:
+        - Catalog
+      summary: List data catalog entries
+      description: |
+        Returns metadata about all data sources including health status,
+        freshness, and semantic information for AI retrieval.
+      operationId: getCatalog
+      parameters:
+        - name: topic_tags
+          in: query
+          description: Filter by topic tags (PostgREST array contains)
+          schema:
+            type: string
+          example: "cs.{cms,hospital}"
+        - name: health_status
+          in: query
+          description: Filter by health status
+          schema:
+            type: string
+            enum: [healthy, stale, unhealthy]
+        - name: source_type
+          in: query
+          description: Filter by source type
+          schema:
+            type: string
+            enum: [api, file, scrape]
+        - name: select
+          in: query
+          description: Select specific fields
+          schema:
+            type: string
+          example: "source_name,description,health_status"
+        - name: order
+          in: query
+          description: Sort order
+          schema:
+            type: string
+          example: "source_name.asc"
+        - name: limit
+          in: query
+          description: Maximum results
+          schema:
+            type: integer
+            default: 100
+        - name: offset
+          in: query
+          description: Pagination offset
+          schema:
+            type: integer
+            default: 0
+      responses:
+        '200':
+          description: List of catalog entries
+          headers:
+            Content-Range:
+              description: Pagination info (e.g., "0-9/25")
+              schema:
+                type: string
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/CatalogEntry'
+        '400':
+          description: Invalid query parameters
+
+  /catalog/{source_name}:
+    get:
+      tags:
+        - Catalog
+      summary: Get single catalog entry
+      description: Returns detailed metadata for a specific data source.
+      operationId: getCatalogEntry
+      parameters:
+        - name: source_name
+          in: path
+          required: true
+          schema:
+            type: string
+          example: "cms_hospital_info"
+      responses:
+        '200':
+          description: Catalog entry details
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CatalogEntry'
+        '404':
+          description: Source not found
+
+  /jobs:
+    get:
+      tags:
+        - Jobs
+      summary: List batch jobs
+      description: Returns all configured batch jobs with their current status.
+      operationId: getJobs
+      parameters:
+        - name: is_enabled
+          in: query
+          description: Filter by enabled status
+          schema:
+            type: boolean
+        - name: last_run_status
+          in: query
+          description: Filter by last run status
+          schema:
+            type: string
+            enum: [success, failure, running]
+      responses:
+        '200':
+          description: List of batch jobs
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/BatchJob'
+
+  /jobs/{job_name}/trigger:
+    post:
+      tags:
+        - Jobs
+      summary: Trigger batch job
+      description: |
+        Manually trigger a batch job to run immediately.
+        Creates a Kubernetes Job from the CronJob template.
+      operationId: triggerJob
+      parameters:
+        - name: job_name
+          in: path
+          required: true
+          schema:
+            type: string
+          example: "fetch-cms-all"
+      requestBody:
+        description: Optional trigger parameters
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                sources:
+                  type: array
+                  items:
+                    type: string
+                  description: Subset of sources to fetch (optional)
+                force:
+                  type: boolean
+                  default: false
+                  description: Force run even if recently completed
+      responses:
+        '202':
+          description: Job triggered successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/JobTriggerResponse'
+        '400':
+          description: Invalid request
+        '404':
+          description: Job not found
+        '409':
+          description: Job already running
+
+  /job_runs:
+    get:
+      tags:
+        - Jobs
+      summary: List job execution history
+      description: Returns recent batch job executions with status and metrics.
+      operationId: getJobRuns
+      parameters:
+        - name: job_name
+          in: query
+          description: Filter by job name
+          schema:
+            type: string
+        - name: status
+          in: query
+          description: Filter by run status
+          schema:
+            type: string
+            enum: [running, success, failure, cancelled]
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 50
+        - name: order
+          in: query
+          schema:
+            type: string
+          example: "started_at.desc"
+      responses:
+        '200':
+          description: List of job runs
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/JobRun'
+
+  /health:
+    get:
+      tags:
+        - Health
+      summary: System health check
+      description: Returns overall system health status for monitoring.
+      operationId: getHealth
+      responses:
+        '200':
+          description: System is healthy
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HealthCheck'
+        '503':
+          description: System is unhealthy
+
+  # Existing endpoints (reference)
+  /targets:
+    get:
+      tags:
+        - Targets
+      summary: List hospital targets
+      description: Returns scored hospital targets with filtering and pagination.
+      operationId: getTargets
+      parameters:
+        - name: state
+          in: query
+          schema:
+            type: string
+          example: "eq.CA"
+        - name: tier_classification
+          in: query
+          schema:
+            type: string
+          example: "eq.A"
+        - name: total_trs
+          in: query
+          schema:
+            type: string
+          example: "gte.80"
+        - name: order
+          in: query
+          schema:
+            type: string
+          example: "total_trs.desc"
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 100
+      responses:
+        '200':
+          description: List of targets
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Target'
+
+components:
+  schemas:
+    CatalogEntry:
+      type: object
+      properties:
+        source_id:
+          type: integer
+          example: 1
+        source_name:
+          type: string
+          example: "cms_hospital_info"
+        source_type:
+          type: string
+          enum: [api, file, scrape]
+          example: "api"
+        description:
+          type: string
+          example: "CMS Hospital General Information dataset"
+        ai_description:
+          type: string
+          example: "Contains hospital demographics, ownership, bed counts, and quality ratings from CMS"
+        topic_tags:
+          type: array
+          items:
+            type: string
+          example: ["cms", "hospital", "demographics"]
+        column_descriptions:
+          type: object
+          additionalProperties:
+            type: object
+            properties:
+              description:
+                type: string
+              type:
+                type: string
+              examples:
+                type: array
+                items:
+                  type: string
+        refresh_frequency:
+          type: string
+          example: "weekly"
+        last_successful_refresh:
+          type: string
+          format: date-time
+        record_count:
+          type: integer
+          example: 5432
+        table_size_bytes:
+          type: integer
+          example: 2456789
+        health_status:
+          type: string
+          enum: [healthy, stale, unhealthy]
+          example: "healthy"
+        freshness_hours:
+          type: integer
+          example: 12
+        null_rate:
+          type: number
+          format: float
+          example: 0.02
+        validation_error_count:
+          type: integer
+          example: 0
+        status_color:
+          type: string
+          enum: [green, yellow, red]
+          example: "green"
+
+    BatchJob:
+      type: object
+      properties:
+        job_id:
+          type: integer
+        job_name:
+          type: string
+          example: "fetch-cms-all"
+        description:
+          type: string
+          example: "Fetch all CMS data sources"
+        cron_schedule:
+          type: string
+          example: "0 2 * * 0"
+        is_enabled:
+          type: boolean
+        last_run_at:
+          type: string
+          format: date-time
+        last_run_status:
+          type: string
+          enum: [success, failure, running]
+        last_run_duration_seconds:
+          type: integer
+        next_scheduled_run:
+          type: string
+          format: date-time
+        source_names:
+          type: array
+          items:
+            type: string
+
+    JobTriggerResponse:
+      type: object
+      properties:
+        job_id:
+          type: string
+          example: "fetch-cms-all-manual-1705234567"
+        status:
+          type: string
+          example: "created"
+        message:
+          type: string
+          example: "Job triggered successfully"
+        k8s_job_name:
+          type: string
+          example: "fetch-cms-all-manual-1705234567"
+
+    JobRun:
+      type: object
+      properties:
+        run_id:
+          type: integer
+        job_name:
+          type: string
+        triggered_by:
+          type: string
+          enum: [schedule, manual, api]
+        triggered_by_user:
+          type: string
+          nullable: true
+        started_at:
+          type: string
+          format: date-time
+        completed_at:
+          type: string
+          format: date-time
+          nullable: true
+        status:
+          type: string
+          enum: [running, success, failure, cancelled]
+        records_processed:
+          type: integer
+          nullable: true
+        error_message:
+          type: string
+          nullable: true
+        duration_seconds:
+          type: number
+          nullable: true
+
+    HealthCheck:
+      type: object
+      properties:
+        status:
+          type: string
+          enum: [healthy, degraded, unhealthy]
+        timestamp:
+          type: string
+          format: date-time
+        components:
+          type: object
+          properties:
+            database:
+              type: string
+              enum: [up, down]
+            postgrest:
+              type: string
+              enum: [up, down]
+            catalog:
+              type: object
+              properties:
+                healthy_count:
+                  type: integer
+                stale_count:
+                  type: integer
+                unhealthy_count:
+                  type: integer
+
+    Target:
+      type: object
+      description: Hospital target with scores (existing schema)
+      properties:
+        hospital_id:
+          type: string
+        hospital_name:
+          type: string
+        state:
+          type: string
+        city:
+          type: string
+        total_trs:
+          type: integer
+        tier_classification:
+          type: string
+          enum: [A, B, C, D, E]
+        clinical_readiness_score:
+          type: integer
+        data_completeness:
+          type: number
+
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: JWT token for authenticated endpoints
+
+security:
+  - {} # Anonymous access for read operations
+  - bearerAuth: [] # JWT for write operations
