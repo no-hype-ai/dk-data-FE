@@ -132,23 +132,42 @@ def load_hrsa_from_csv(filepath: str, batch_size: int = 500) -> dict:
         logger.error(f"Failed to read CSV: {e}")
         return {'status': 'failed', 'error': str(e)}
 
-    # Map CSV columns to our schema (HRSA CSV format)
+    # Map CSV columns to our schema (HRSA BCD_HPSA_FCT_DET CSV format)
+    # Source: https://data.hrsa.gov/DataDownload/DD_Files/BCD_HPSA_FCT_DET_PC.csv
     column_mapping = {
+        # HPSA ID variations
         'HPSA_ID': 'hpsa_id',
         'HPSA Source ID': 'hpsa_id',
+        'HPSA ID': 'hpsa_id',
+        # HPSA Name variations
         'HPSA_Name': 'hpsa_name',
         'HPSA Name': 'hpsa_name',
+        # HPSA Type variations (Primary Care, Mental Health, Dental)
         'HPSA_Type': 'hpsa_type',
         'HPSA Type Description': 'hpsa_type',
+        'HPSA Discipline Class': 'hpsa_type',
+        # Designation Type variations
         'Designation_Type': 'designation_type',
         'HPSA Designation Type Description': 'designation_type',
+        'Designation Type': 'designation_type',
+        # State abbreviation variations
         'State_Abbr': 'state_abbr',
         'State Abbreviation': 'state_abbr',
+        'Primary State Abbreviation': 'state_abbr',
+        # County name variations
         'County_Name': 'county_name',
+        'Common County Name': 'county_name',
+        'County Equivalent Name': 'county_name',
+        # HPSA Score variations
         'HPSA_Score': 'hpsa_score',
         'HPSA Score': 'hpsa_score',
+        # Rural status variations
         'Rural_Status': 'rural_status',
+        'Rural Status': 'rural_status',
         'HPSA Metropolitan Indicator Description': 'rural_status',
+        'Metropolitan Indicator': 'rural_status',
+        # Designation date
+        'HPSA Designation Date': 'designation_date',
     }
 
     # Rename columns we find
@@ -159,8 +178,15 @@ def load_hrsa_from_csv(filepath: str, batch_size: int = 500) -> dict:
 
     df = df.rename(columns=rename_map)
 
+    # Keep only the columns we need (handles duplicate column names after rename)
+    target_cols = ['hpsa_id', 'hpsa_name', 'hpsa_type', 'designation_type',
+                   'state_abbr', 'county_name', 'hpsa_score', 'rural_status',
+                   'designation_date']
+    available_cols = [c for c in target_cols if c in df.columns]
+    df = df.loc[:, ~df.columns.duplicated()][available_cols]
+
     # Calculate hash
-    source_hash = hashlib.md5(df.to_json().encode()).hexdigest()[:32]
+    source_hash = hashlib.md5(df.to_csv(index=False).encode()).hexdigest()[:32]
 
     records_inserted = 0
     records_failed = 0
@@ -173,12 +199,20 @@ def load_hrsa_from_csv(filepath: str, batch_size: int = 500) -> dict:
 
             for idx, row in df.iterrows():
                 try:
+                    # Parse designation date if present
+                    designation_date = None
+                    if pd.notna(row.get('designation_date')):
+                        try:
+                            designation_date = pd.to_datetime(row['designation_date']).date()
+                        except Exception:
+                            pass
+
                     cur.execute("""
                         INSERT INTO raw.hrsa_shortage_areas (
                             hpsa_id, hpsa_name, hpsa_type, designation_type,
-                            state_abbr, county_name, hpsa_score, rural_status,
-                            _source_hash
-                        ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+                            state_abbr, county_name, hpsa_score, designation_date,
+                            rural_status, _source_hash
+                        ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                     """, (
                         row.get('hpsa_id', ''),
                         row.get('hpsa_name', ''),
@@ -187,6 +221,7 @@ def load_hrsa_from_csv(filepath: str, batch_size: int = 500) -> dict:
                         row.get('state_abbr', ''),
                         row.get('county_name', ''),
                         int(row['hpsa_score']) if pd.notna(row.get('hpsa_score')) else None,
+                        designation_date,
                         row.get('rural_status', ''),
                         source_hash
                     ))
