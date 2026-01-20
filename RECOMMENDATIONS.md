@@ -2,77 +2,411 @@
 ## Scalable & Robust Infrastructure for Pharma Platform Behavior Labs AI
 
 **Project**: dk-data-FE
-**Assessment Date**: 2026-01-19
-**Based on**: Codebase analysis + 20 open GitHub issues
+**Assessment Date**: 2026-01-20
+**Based on**: Codebase analysis + 20 open GitHub issues + dk-alchemy shared infrastructure review
 
 ---
 
 ## Executive Summary
 
-The dk-data-FE platform provides a solid MVP foundation for TAVR data infrastructure with PostgREST API, SQLMesh transformations, and GitOps deployment. To evolve into a production-grade, enterprise-ready data foundation for pharma AI/ML workloads, the following areas require attention:
+The dk-data-FE platform provides a solid MVP foundation for TAVR data infrastructure with PostgREST API, SQLMesh transformations, and GitOps deployment.
 
-| Priority | Category | Issues | Risk Level |
-|----------|----------|--------|------------|
-| **P0** | Security | 3 | 🔴 Critical |
-| **P1** | Operations & Reliability | 5 | 🟠 High |
-| **P2** | Compliance & Governance | 4 | 🟡 Medium |
-| **P3** | Architecture & Quality | 8 | 🟢 Low |
+**Key Finding**: The dk-alchemy shared infrastructure already provides many production-grade capabilities that dk-data-fe should leverage rather than rebuild. This significantly reduces the work required to achieve production readiness.
+
+### Infrastructure Availability Matrix
+
+| Capability | Status | Source | Action Required |
+|------------|--------|--------|-----------------|
+| Observability (Metrics/Logs/Traces) | ✅ Available | dk-alchemy | Instrument apps, add dashboards |
+| Secrets Management | ✅ Available | dk-alchemy (Doppler) | Add secrets to Doppler project |
+| PostgreSQL HA + Backups | ✅ Available | dk-alchemy (CNPG) | Use shared or create dedicated cluster |
+| Redis Cache | ✅ Available | dk-alchemy | Connect to shared instance |
+| Object Storage (S3) | ✅ Available | dk-alchemy (MinIO) | Use for backups/exports |
+| Ingress + TLS | ✅ Available | dk-alchemy (Traefik + cert-manager) | Configure IngressRoute |
+| GitOps Deployment | ✅ Available | dk-alchemy (ArgoCD) | Add bootstrap application |
+| API Gateway | ⚠️ Partial | dk-alchemy (Traefik) | Add rate limiting config |
+| Application Code | 🔧 Required | dk-data-fe | Security hardening, testing |
+
+### Revised Priority Matrix
+
+| Priority | Category | Issues | Risk Level | Effort |
+|----------|----------|--------|------------|--------|
+| **P0** | Security | 3 | 🔴 Critical | Low (use Doppler) |
+| **P1** | Operations & Reliability | 5 | 🟠 High | **Low** (leverage dk-alchemy) |
+| **P2** | Compliance & Governance | 4 | 🟡 Medium | Medium |
+| **P3** | Architecture & Quality | 8 | 🟢 Low | Medium |
+
+---
+
+## 🏗️ dk-alchemy Integration Guide
+
+### Available Shared Infrastructure
+
+The dk-alchemy repository (`/Users/nicholas/Code/dk-alchemy`) provides a production-grade Kubernetes platform with:
+
+```
+dk-alchemy/
+├── .gitops/                    # ArgoCD GitOps control plane
+│   ├── repositories/           # Bootstrap layer (AppProjects, credentials)
+│   ├── root/                   # ApplicationSets for infrastructure
+│   └── external/               # External app bootstraps ← ADD dk-data-fe HERE
+├── k8s/infrastructure/         # 25 core services
+│   ├── postgres/               # CNPG-managed PostgreSQL (HA, backups)
+│   ├── redis/                  # Redis Sentinel HA
+│   ├── minio/                  # S3-compatible object storage
+│   ├── grafana/                # Dashboards & visualization
+│   ├── mimir/                  # Metrics storage (Prometheus-compatible)
+│   ├── loki/                   # Log aggregation
+│   ├── tempo/                  # Distributed tracing
+│   ├── alloy/                  # OTLP telemetry collector
+│   ├── doppler-operator/       # Secrets management
+│   ├── cert-manager/           # TLS certificates
+│   └── ...
+├── k8s/components/             # Reusable Kustomize components
+│   ├── hpa-standard/           # HorizontalPodAutoscaler
+│   ├── pdb-standard/           # PodDisruptionBudget
+│   └── otlp-collector/         # OpenTelemetry config
+└── grafana/                    # GitOps-managed dashboards
+    ├── dashboards/applications/  ← ADD dk-data-fe dashboards HERE
+    └── alerts/                   ← ADD dk-data-fe alerts HERE
+```
+
+### Step 1: Add dk-data-fe to ArgoCD
+
+Create bootstrap application in dk-alchemy:
+
+```yaml
+# dk-alchemy/.gitops/external/dk-data-fe.yaml
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: dk-data-fe-bootstrap-prod
+  namespace: argocd
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: dk-data-fe-bootstrap
+  source:
+    repoURL: https://github.com/data-kinetic/dk-data-fe.git
+    targetRevision: main
+    path: .gitops/prod/apps
+    directory:
+      recurse: false
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: argocd
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+---
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: dk-data-fe-bootstrap-staging
+  namespace: argocd
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: dk-data-fe-bootstrap
+  source:
+    repoURL: https://github.com/data-kinetic/dk-data-fe.git
+    targetRevision: staging
+    path: .gitops/staging/apps
+    directory:
+      recurse: false
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: argocd
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+```
+
+Create AppProject for permissions:
+
+```yaml
+# dk-alchemy/.gitops/repositories/dk-data-fe-bootstrap-project.yaml
+apiVersion: argoproj.io/v1alpha1
+kind: AppProject
+metadata:
+  name: dk-data-fe-bootstrap
+  namespace: argocd
+spec:
+  description: dk-data-fe data platform bootstrap
+  sourceRepos:
+    - https://github.com/data-kinetic/dk-data-fe.git
+  destinations:
+    - namespace: argocd
+      server: https://kubernetes.default.svc
+    - namespace: dk-data-fe-prod
+      server: https://kubernetes.default.svc
+    - namespace: dk-data-fe-staging
+      server: https://kubernetes.default.svc
+  clusterResourceWhitelist:
+    - group: ''
+      kind: Namespace
+  namespaceResourceWhitelist:
+    - group: argoproj.io
+      kind: Application
+    - group: argoproj.io
+      kind: AppProject
+    - group: '*'
+      kind: '*'
+```
+
+### Step 2: Create dk-data-fe GitOps Structure
+
+Restructure dk-data-fe to follow dk-alchemy patterns:
+
+```
+dk-data-fe/
+├── .gitops/
+│   ├── prod/
+│   │   └── apps/
+│   │       ├── kustomization.yaml
+│   │       ├── namespace.yaml
+│   │       ├── postgrest-app.yaml      # ArgoCD Application
+│   │       ├── job-trigger-app.yaml    # ArgoCD Application
+│   │       └── cronjobs-app.yaml       # ArgoCD Application
+│   └── staging/
+│       └── apps/
+│           └── ... (same structure, smaller resources)
+├── k8s/
+│   ├── postgrest/
+│   │   ├── base/
+│   │   │   ├── kustomization.yaml
+│   │   │   ├── deployment.yaml
+│   │   │   ├── service.yaml
+│   │   │   └── configmap.yaml
+│   │   └── overlays/
+│   │       ├── prod/kustomization.yaml
+│   │       └── staging/kustomization.yaml
+│   ├── job-trigger/
+│   │   └── ... (same pattern)
+│   └── cronjobs/
+│       └── ... (same pattern)
+└── src/dk_data/
+    └── ... (application code)
+```
+
+### Step 3: Configure Secrets via Doppler
+
+Add dk-data-fe secrets to the `dk-infrastructure` Doppler project:
+
+```bash
+# Required secrets for dk-data-fe
+POSTGRES_PASSWORD=<generated>
+POSTGREST_JWT_SECRET=<256-bit-base64>
+POSTGREST_AUTHENTICATOR_PASSWORD=<generated>
+```
+
+Create DopplerSecret in dk-data-fe namespace:
+
+```yaml
+# k8s/postgrest/base/doppler-secret.yaml
+apiVersion: secrets.doppler.com/v1alpha1
+kind: DopplerSecret
+metadata:
+  name: dk-data-fe-secrets
+  namespace: dk-data-fe-prod
+spec:
+  tokenSecret:
+    name: doppler-token-dk-infrastructure
+  managedSecret:
+    name: dk-data-fe-secrets
+    type: Opaque
+  config: prod  # or staging
+  project: dk-infrastructure
+```
+
+### Step 4: Connect to Shared Services
+
+**PostgreSQL Connection**:
+```yaml
+# Option A: Use shared cluster
+POSTGRES_HOST: postgres-rw.infra.svc.cluster.local
+POSTGRES_PORT: "5432"
+POSTGRES_DB: dk_data_fe  # Request database creation
+
+# Option B: Dedicated CNPG cluster (recommended for isolation)
+# Create via CNPG Cluster CRD in dk-data-fe namespace
+```
+
+**Redis Connection** (for caching):
+```yaml
+REDIS_HOST: redis-master.infra.svc.cluster.local
+REDIS_PORT: "6379"
+```
+
+**MinIO Connection** (for backups/exports):
+```yaml
+S3_ENDPOINT: http://minio.infra.svc.cluster.local:9000
+S3_BUCKET: dk-data-fe-backups
+```
+
+### Step 5: Instrument for Observability
+
+The dk-alchemy observability stack uses:
+- **Alloy** (DaemonSet) - Collects OTLP telemetry
+- **Mimir** - Prometheus-compatible metrics
+- **Loki** - Log aggregation
+- **Tempo** - Distributed tracing
+
+**Python instrumentation**:
+```python
+# src/dk_data/observability.py
+from opentelemetry import trace, metrics
+from opentelemetry.exporter.otlp.proto.grpc.trace_exporter import OTLPSpanExporter
+from opentelemetry.exporter.otlp.proto.grpc.metric_exporter import OTLPMetricExporter
+from opentelemetry.sdk.trace import TracerProvider
+from opentelemetry.sdk.metrics import MeterProvider
+from opentelemetry.sdk.resources import Resource
+import structlog
+
+# Configure OTLP export to Alloy
+resource = Resource.create({"service.name": "dk-data-fe"})
+
+# Tracing
+trace.set_tracer_provider(TracerProvider(resource=resource))
+trace.get_tracer_provider().add_span_processor(
+    BatchSpanProcessor(OTLPSpanExporter(endpoint="alloy.infra.svc.cluster.local:4317"))
+)
+
+# Metrics
+metrics.set_meter_provider(MeterProvider(resource=resource))
+
+# Structured logging (auto-collected by Alloy)
+structlog.configure(
+    processors=[
+        structlog.processors.JSONRenderer()
+    ]
+)
+```
+
+**Deployment annotations for auto-instrumentation**:
+```yaml
+# k8s/postgrest/base/deployment.yaml
+metadata:
+  annotations:
+    prometheus.io/scrape: "true"
+    prometheus.io/port: "3000"
+    prometheus.io/path: "/metrics"
+spec:
+  template:
+    metadata:
+      labels:
+        app: postgrest
+        app.kubernetes.io/part-of: dk-data-fe
+```
+
+### Step 6: Add Grafana Dashboards
+
+Create dashboard in dk-alchemy GitOps:
+
+```json
+// dk-alchemy/grafana/dashboards/applications/dk-data-fe.json
+{
+  "title": "dk-data-fe Data Platform",
+  "uid": "dk-data-fe",
+  "panels": [
+    {
+      "title": "API Request Rate",
+      "type": "timeseries",
+      "datasource": "Mimir",
+      "targets": [{"expr": "rate(http_requests_total{service=\"dk-data-fe\"}[5m])"}]
+    },
+    {
+      "title": "Data Freshness",
+      "type": "stat",
+      "datasource": "PostgreSQL",
+      "targets": [{"rawSql": "SELECT source_name, EXTRACT(EPOCH FROM NOW() - last_refresh)/3600 as hours_stale FROM meta.data_sources"}]
+    },
+    {
+      "title": "Ingestion Job Status",
+      "type": "table",
+      "datasource": "PostgreSQL",
+      "targets": [{"rawSql": "SELECT job_name, status, started_at, completed_at FROM meta.batch_job_runs ORDER BY started_at DESC LIMIT 20"}]
+    }
+  ]
+}
+```
+
+Add alert rules:
+
+```yaml
+# dk-alchemy/grafana/alerts/dk-data-fe.yaml
+groups:
+  - name: dk-data-fe
+    rules:
+      - alert: DataStale
+        expr: dk_data_fe_data_age_hours > 48
+        for: 1h
+        labels:
+          severity: warning
+        annotations:
+          summary: "Data source {{ $labels.source }} is stale"
+
+      - alert: IngestionJobFailed
+        expr: dk_data_fe_job_status{status="failed"} > 0
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Ingestion job {{ $labels.job_name }} failed"
+```
 
 ---
 
 ## 🔴 P0: Critical Security Issues
 
-### 1. Credential Management (Issue #2)
+### 1. Credential Management (Issue #2) - ✅ USE DOPPLER
 
 **Current State**: Hardcoded credentials in `docker-compose.yml` and `init_database.sql`
 
-**Recommendations**:
-```bash
-# 1. Use external secrets management
-# Kubernetes: External Secrets Operator + AWS Secrets Manager/Vault
-# Local: .env files (gitignored) with docker-compose env_file
-
-# 2. Remove hardcoded passwords from SQL files
-# Use environment variable substitution via init scripts
-```
+**Solution**: Leverage dk-alchemy's Doppler integration (already deployed)
 
 **Action Items**:
-- [ ] Install External Secrets Operator in Kubernetes
-- [ ] Migrate credentials to AWS Secrets Manager or HashiCorp Vault
-- [ ] Create `.env.example` template, gitignore actual `.env`
-- [ ] Replace SQL hardcoded passwords with entrypoint script substitution
-- [ ] Add pre-commit hook to scan for secrets (gitleaks)
+- [ ] Add dk-data-fe secrets to Doppler `dk-infrastructure` project
+- [ ] Create DopplerSecret CRD in dk-data-fe namespace
+- [ ] Remove hardcoded passwords from SQL files (use env substitution)
+- [ ] Create `.env.example` for local development (gitignored `.env`)
+- [ ] Add pre-commit hook with gitleaks for secret scanning
 
-### 2. JWT Secret Configuration (Issue #3)
+**Local Development**:
+```bash
+# Use Doppler CLI for local secrets
+doppler run --project dk-infrastructure --config dev -- docker-compose up
+```
+
+### 2. JWT Secret Configuration (Issue #3) - ✅ USE DOPPLER
 
 **Current State**: Weak default JWT secret, no rotation mechanism
 
-**Recommendations**:
-```yaml
-# Generate strong secrets (32+ bytes, base64 encoded)
-PGRST_JWT_SECRET: "${JWT_SECRET}"  # From secrets manager
-PGRST_JWT_SECRET_IS_BASE64: "true"
-
-# Add JWT claim validation
-PGRST_JWT_AUD: "tavr-api"  # Audience claim
-PGRST_JWT_ROLE_CLAIM_KEY: ".role"
-```
+**Solution**: Store JWT secret in Doppler with strong generation
 
 **Action Items**:
-- [ ] Generate 256-bit minimum JWT secrets
-- [ ] Implement secret rotation procedure
+- [ ] Generate 256-bit JWT secret: `openssl rand -base64 32`
+- [ ] Store in Doppler as `POSTGREST_JWT_SECRET`
+- [ ] Configure PostgREST to use base64 decoding
+- [ ] Document rotation procedure in runbook
 - [ ] Add audience claim validation
-- [ ] Configure token expiration (short-lived: 15-60 min)
-- [ ] Add refresh token mechanism for long sessions
+
+```yaml
+# PostgREST config via Doppler
+PGRST_JWT_SECRET: "${POSTGREST_JWT_SECRET}"  # From Doppler
+PGRST_JWT_SECRET_IS_BASE64: "true"
+PGRST_JWT_AUD: "dk-data-fe-api"
+```
 
 ### 3. API Access Control (Issue #4)
 
-**Current State**: Overly permissive `web_anon` role with access to sensitive data
+**Current State**: Overly permissive `web_anon` role
 
-**Recommendations**:
+**Recommendations** (unchanged - this is application-level):
 ```sql
 -- Principle of least privilege
--- web_anon: Only public catalog and health endpoints
 GRANT SELECT ON api.catalog_public TO web_anon;
 GRANT SELECT ON api.health TO web_anon;
 REVOKE ALL ON api.targets FROM web_anon;
@@ -82,142 +416,144 @@ REVOKE ALL ON api.scoring FROM web_anon;
 CREATE ROLE internal_api;  -- Internal services
 CREATE ROLE analyst;       -- Data analysts
 CREATE ROLE ml_service;    -- AI/ML pipelines
+```
 
--- Row-level security for multi-tenancy
-ALTER TABLE targeting.targeting_scores ENABLE ROW LEVEL SECURITY;
-CREATE POLICY region_isolation ON targeting.targeting_scores
-    USING (region = current_setting('app.current_region', true));
+**Rate Limiting via Traefik** (dk-alchemy):
+```yaml
+# k8s/postgrest/base/middleware.yaml
+apiVersion: traefik.io/v1alpha1
+kind: Middleware
+metadata:
+  name: dk-data-fe-ratelimit
+spec:
+  rateLimit:
+    average: 100
+    burst: 200
+    period: 1m
 ```
 
 **Action Items**:
 - [ ] Audit all `GRANT` statements and reduce permissions
 - [ ] Implement row-level security for sensitive tables
 - [ ] Create service-specific API roles
+- [ ] Configure Traefik rate limiting middleware
 - [ ] Add API key authentication for external integrations
-- [ ] Implement rate limiting at the API gateway level
 
 ---
 
 ## 🟠 P1: Operations & Reliability
 
-### 4. Observability Stack (Issue #11)
+### 4. Observability Stack (Issue #11) - ✅ ALREADY AVAILABLE
 
-**Current State**: No centralized logging, metrics, or tracing
+**Status**: dk-alchemy provides complete observability stack
 
-**Recommendations**:
+| Component | dk-alchemy Service | Endpoint |
+|-----------|-------------------|----------|
+| Metrics | Mimir | `mimir.infra.svc.cluster.local:9009` |
+| Logs | Loki | `loki.infra.svc.cluster.local:3100` |
+| Traces | Tempo | `tempo.infra.svc.cluster.local:4317` |
+| Dashboards | Grafana | `grafana.infra.svc.cluster.local:3000` |
+| Collector | Alloy | `alloy.infra.svc.cluster.local:4317` |
+
+**Action Items** (instrument dk-data-fe apps):
+- [ ] Add OpenTelemetry SDK to Python services
+- [ ] Configure OTLP export to Alloy endpoint
+- [ ] Add structlog for JSON logging (auto-collected)
+- [ ] Create dk-data-fe dashboard in `dk-alchemy/grafana/dashboards/applications/`
+- [ ] Add alert rules in `dk-alchemy/grafana/alerts/`
+- [ ] Add Prometheus annotations to deployments
+
+### 5. Database Backup & Recovery (Issue #13) - ✅ AVAILABLE VIA CNPG
+
+**Status**: dk-alchemy's CNPG operator provides automated PostgreSQL backups
+
+**Option A: Use Shared PostgreSQL** (simpler):
 ```yaml
-# Recommended Stack: OpenTelemetry + Prometheus + Grafana + Loki
-
-# 1. Structured Logging (Python)
-import structlog
-logger = structlog.get_logger()
-logger.info("batch_job_started", job_name="cms_inpatient", run_id=uuid)
-
-# 2. Metrics (Prometheus)
-# - API latency histograms
-# - Job success/failure counters
-# - Data freshness gauges
-# - Row count metrics by table
-
-# 3. Tracing (OpenTelemetry)
-# - Request traces through API → DB
-# - Job execution spans
-# - External API call traces
+# Request database in shared cluster
+# Backups handled automatically by CNPG → MinIO
 ```
 
-**Architecture**:
-```
-┌─────────────────────────────────────────────────────────────┐
-│                    Observability Stack                      │
-├─────────────────────────────────────────────────────────────┤
-│  ┌─────────┐    ┌─────────┐    ┌─────────┐    ┌─────────┐  │
-│  │ Grafana │    │ Loki    │    │Prometheus│   │ Jaeger  │  │
-│  │Dashboard│◄───│ Logs    │    │ Metrics │   │ Traces  │  │
-│  └────▲────┘    └────▲────┘    └────▲────┘   └────▲────┘  │
-│       │              │              │             │        │
-│       └──────────────┴──────────────┴─────────────┘        │
-│                           ▲                                 │
-│                 OpenTelemetry Collector                     │
-├─────────────────────────────────────────────────────────────┤
-│  PostgREST │ Job Trigger │ Ingestion Jobs │ PostgreSQL     │
-└─────────────────────────────────────────────────────────────┘
+**Option B: Dedicated CNPG Cluster** (recommended for isolation):
+```yaml
+# k8s/postgres/base/cluster.yaml
+apiVersion: postgresql.cnpg.io/v1
+kind: Cluster
+metadata:
+  name: dk-data-fe-postgres
+  namespace: dk-data-fe-prod
+spec:
+  instances: 2  # HA with automatic failover
+
+  storage:
+    storageClass: local-path-fast  # NVMe storage
+    size: 50Gi
+
+  backup:
+    barmanObjectStore:
+      destinationPath: s3://dk-data-fe-backups/postgres/
+      endpointURL: http://minio.infra.svc.cluster.local:9000
+      s3Credentials:
+        accessKeyId:
+          name: minio-credentials
+          key: access-key
+        secretAccessKey:
+          name: minio-credentials
+          key: secret-key
+    retentionPolicy: "30d"
+
+  bootstrap:
+    initdb:
+      database: edwards_tavr
+      owner: app_user
 ```
 
 **Action Items**:
-- [ ] Add structlog to Python services
-- [ ] Deploy Prometheus + Grafana in Kubernetes
-- [ ] Create dashboards for data freshness, job health, API latency
-- [ ] Add alerting rules for critical failures
-- [ ] Integrate with PagerDuty/Slack for on-call alerts
-
-### 5. Database Backup & Recovery (Issue #13)
-
-**Current State**: No defined backup strategy
-
-**Recommendations**:
-```yaml
-# For Pharma/Healthcare: RPO < 1 hour, RTO < 4 hours
-
-# 1. PostgreSQL Continuous Archiving (WAL)
-# Enable WAL archiving to S3
-archive_mode = on
-archive_command = 'aws s3 cp %p s3://backups/wal/%f'
-
-# 2. Daily Logical Backups
-# CronJob: pg_dump with encryption
-0 2 * * * pg_dump -Fc edwards_tavr | gpg --encrypt -r backup@company.com | aws s3 cp - s3://backups/daily/$(date +%Y%m%d).dump.gpg
-
-# 3. Point-in-Time Recovery (PITR)
-# Using pgBackRest for managed PITR
-```
-
-**For Production**: Consider managed PostgreSQL (AWS RDS, Cloud SQL) with:
-- Automated backups with 35-day retention
-- Multi-AZ deployment for HA
-- Read replicas for analytics queries
-- Automatic failover
-
-**Action Items**:
-- [ ] Enable WAL archiving to S3
-- [ ] Create backup CronJob with encryption
+- [ ] Decide: shared vs dedicated PostgreSQL cluster
+- [ ] If dedicated: create CNPG Cluster CRD
+- [ ] Configure backup retention policy (30 days recommended)
 - [ ] Document and test recovery procedures
-- [ ] Implement backup verification (restore to staging weekly)
-- [ ] Consider managed PostgreSQL for production
+- [ ] Set up backup monitoring alerts
 
 ### 6. Kubernetes Resource Management (Issue #12)
 
-**Current State**: No resource limits defined, risk of OOMKill and noisy neighbor
+**Status**: Need to add resource specs to dk-data-fe deployments
 
-**Recommendations**:
+**Use dk-alchemy components**:
 ```yaml
-# .gitops/base/postgrest/deployment.yaml
-spec:
-  containers:
-  - name: postgrest
-    resources:
-      requests:
-        memory: "256Mi"
-        cpu: "100m"
-      limits:
-        memory: "512Mi"
-        cpu: "500m"
+# k8s/postgrest/overlays/prod/kustomization.yaml
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
 
-# Ingestion jobs (bursty workloads)
-# .gitops/base/ingestion/cronjob-cms-all.yaml
+resources:
+  - ../../base
+
+components:
+  # Import shared HPA and PDB from dk-alchemy
+  - ../../../../../dk-alchemy/k8s/components/hpa-production
+  - ../../../../../dk-alchemy/k8s/components/pdb-standard
+
+patches:
+  - path: resources-patch.yaml
+```
+
+```yaml
+# k8s/postgrest/overlays/prod/resources-patch.yaml
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: postgrest
 spec:
-  jobTemplate:
+  template:
     spec:
-      template:
-        spec:
-          containers:
-          - name: ingestion
-            resources:
-              requests:
-                memory: "512Mi"
-                cpu: "200m"
-              limits:
-                memory: "2Gi"
-                cpu: "1000m"
+      containers:
+      - name: postgrest
+        resources:
+          requests:
+            memory: "256Mi"
+            cpu: "100m"
+          limits:
+            memory: "512Mi"
+            cpu: "500m"
 ```
 
 **Resource Guidelines**:
@@ -230,96 +566,130 @@ spec:
 
 **Action Items**:
 - [ ] Add resource requests/limits to all deployments
-- [ ] Configure HorizontalPodAutoscaler for PostgREST
-- [ ] Set up PodDisruptionBudgets for high availability
+- [ ] Use dk-alchemy HPA component for PostgREST
+- [ ] Use dk-alchemy PDB component for high availability
 - [ ] Add namespace resource quotas
 
 ### 7. External API Resilience (Issue #5)
 
-**Current State**: Basic retry with no circuit breaker, jitter, or caching
+**Status**: Application-level changes required
 
-**Recommendations**:
+**Leverage Redis for caching** (available in dk-alchemy):
 ```python
-# Enhanced retry with exponential backoff + jitter
+import redis
 from tenacity import retry, stop_after_attempt, wait_exponential_jitter
+
+# Connect to shared Redis
+redis_client = redis.Redis(
+    host="redis-master.infra.svc.cluster.local",
+    port=6379,
+    decode_responses=True
+)
 
 @retry(
     stop=stop_after_attempt(5),
-    wait=wait_exponential_jitter(initial=1, max=60, jitter=5),
-    retry=retry_if_exception_type((RequestException, Timeout))
+    wait=wait_exponential_jitter(initial=1, max=60, jitter=5)
 )
-def fetch_with_resilience(url: str) -> Response:
-    return session.get(url, timeout=30)
+def fetch_with_cache(url: str, ttl: int = 3600) -> dict:
+    cache_key = f"api_cache:{hashlib.md5(url.encode()).hexdigest()}"
 
-# Circuit breaker pattern
-from pybreaker import CircuitBreaker
-cms_breaker = CircuitBreaker(
-    fail_max=5,
-    reset_timeout=300,  # 5 minutes
-    exclude=[HTTPError(404)]  # Don't trip on 404s
-)
+    # Check cache first
+    cached = redis_client.get(cache_key)
+    if cached:
+        return json.loads(cached)
 
-@cms_breaker
-def fetch_cms_data():
-    ...
+    # Fetch and cache
+    response = session.get(url, timeout=30)
+    response.raise_for_status()
+    data = response.json()
 
-# Response caching for idempotent requests
-# Use Redis or S3 for caching API responses with TTL
+    redis_client.setex(cache_key, ttl, json.dumps(data))
+    return data
 ```
 
 **Action Items**:
 - [ ] Replace urllib3 Retry with tenacity
 - [ ] Add circuit breaker pattern (pybreaker)
-- [ ] Implement response caching layer
-- [ ] Add fallback data sources (CSV snapshots)
+- [ ] Implement Redis caching layer for external APIs
+- [ ] Add fallback data sources (CSV snapshots in MinIO)
 - [ ] Create monitoring for external API health
 
-### 8. Job Monitoring & Alerting (Issue #6)
+### 8. Job Monitoring & Alerting (Issue #6) - ✅ USE GRAFANA ALERTS
 
-**Current State**: Silent CronJob failures, no freshness monitoring
+**Status**: Leverage dk-alchemy's Grafana alerting
 
-**Recommendations**:
+**Add dk-data-fe specific alerts**:
 ```yaml
-# 1. Job failure alerting
-# .gitops/base/ingestion/cronjob-cms-all.yaml
-spec:
-  failedJobsHistoryLimit: 3
-  successfulJobsHistoryLimit: 3
-
-# 2. Data freshness monitoring
-# SQL view for freshness
-CREATE VIEW meta.data_freshness AS
-SELECT
-    source_name,
-    MAX(ingested_at) as last_ingested,
-    NOW() - MAX(ingested_at) as age,
-    CASE
-        WHEN NOW() - MAX(ingested_at) > refresh_interval THEN 'STALE'
-        ELSE 'FRESH'
-    END as status
-FROM meta.data_sources ds
-LEFT JOIN meta.batch_job_runs bjr ON ds.job_name = bjr.job_name
-GROUP BY ds.source_name, ds.refresh_interval;
-
-# 3. Prometheus alerting rules
+# dk-alchemy/grafana/alerts/dk-data-fe.yaml
 groups:
-- name: data-freshness
-  rules:
-  - alert: DataStale
-    expr: data_freshness_age_hours > 48
-    for: 1h
-    labels:
-      severity: warning
-    annotations:
-      summary: "Data source {{ $labels.source }} is stale"
+  - name: dk-data-fe-jobs
+    rules:
+      - alert: IngestionJobFailed
+        expr: |
+          kube_job_status_failed{namespace="dk-data-fe-prod"} > 0
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Ingestion job {{ $labels.job_name }} failed"
+
+      - alert: DataFreshnessSLA
+        expr: |
+          (time() - dk_data_fe_last_ingestion_timestamp{}) / 3600 > 48
+        for: 1h
+        labels:
+          severity: warning
+        annotations:
+          summary: "Data source {{ $labels.source }} exceeds 48h freshness SLA"
+
+      - alert: CronJobMissedSchedule
+        expr: |
+          time() - kube_cronjob_status_last_schedule_time{namespace="dk-data-fe-prod"} > 86400
+        for: 1h
+        labels:
+          severity: warning
+        annotations:
+          summary: "CronJob {{ $labels.cronjob }} missed scheduled execution"
+```
+
+**Expose custom metrics**:
+```python
+# src/dk_data/metrics.py
+from prometheus_client import Counter, Gauge, Histogram
+
+# Job metrics
+job_runs_total = Counter(
+    'dk_data_fe_job_runs_total',
+    'Total job runs',
+    ['job_name', 'status']
+)
+
+job_duration_seconds = Histogram(
+    'dk_data_fe_job_duration_seconds',
+    'Job execution duration',
+    ['job_name']
+)
+
+# Data freshness metrics
+data_freshness_hours = Gauge(
+    'dk_data_fe_data_freshness_hours',
+    'Hours since last data refresh',
+    ['source']
+)
+
+rows_ingested_total = Counter(
+    'dk_data_fe_rows_ingested_total',
+    'Total rows ingested',
+    ['source', 'table']
+)
 ```
 
 **Action Items**:
-- [ ] Add Prometheus metrics for job runs
-- [ ] Create data freshness monitoring view
-- [ ] Configure alerting for job failures
-- [ ] Add Slack/PagerDuty integration
-- [ ] Implement job dependency tracking
+- [ ] Add Prometheus metrics to ingestion jobs
+- [ ] Create data freshness gauge metrics
+- [ ] Add alert rules to dk-alchemy/grafana/alerts/
+- [ ] Configure Slack/PagerDuty integration (if not already)
+- [ ] Create job dependency tracking view
 
 ---
 
@@ -327,86 +697,47 @@ groups:
 
 ### 9. Audit Trail (Issue #17)
 
-**Current State**: No audit logging for data changes or API access
-
-**Recommendations for Healthcare/Pharma**:
+**Recommendations** (unchanged - database-level):
 ```sql
--- 1. Change Data Capture (CDC) with temporal tables
-CREATE TABLE targeting.targeting_scores_history (
-    id UUID,
-    hospital_id VARCHAR(20),
-    score NUMERIC,
-    valid_from TIMESTAMP DEFAULT NOW(),
-    valid_to TIMESTAMP DEFAULT 'infinity',
-    changed_by TEXT DEFAULT current_user,
-    operation CHAR(1)  -- I/U/D
-);
+-- Enable pgAudit extension
+CREATE EXTENSION IF NOT EXISTS pgaudit;
 
--- Trigger for audit trail
-CREATE OR REPLACE FUNCTION audit_trigger()
-RETURNS TRIGGER AS $$
-BEGIN
-    IF TG_OP = 'DELETE' THEN
-        INSERT INTO targeting.targeting_scores_history
-        VALUES (OLD.*, NOW(), 'infinity', current_user, 'D');
-        RETURN OLD;
-    ELSIF TG_OP = 'UPDATE' THEN
-        INSERT INTO targeting.targeting_scores_history
-        VALUES (OLD.*, NOW(), 'infinity', current_user, 'U');
-        RETURN NEW;
-    ELSIF TG_OP = 'INSERT' THEN
-        INSERT INTO targeting.targeting_scores_history
-        VALUES (NEW.*, NOW(), 'infinity', current_user, 'I');
-        RETURN NEW;
-    END IF;
-END;
-$$ LANGUAGE plpgsql;
+-- Configure audit logging
+ALTER SYSTEM SET pgaudit.log = 'write, ddl';
+ALTER SYSTEM SET pgaudit.log_catalog = off;
+ALTER SYSTEM SET pgaudit.log_level = 'log';
 
--- 2. API access logging
--- PostgREST logs + structured log aggregation
--- Or: pgAudit extension for comprehensive logging
+-- Logs automatically collected by Loki via dk-alchemy's Alloy
 ```
 
 **Action Items**:
-- [ ] Enable pgAudit extension for SQL audit logging
+- [ ] Enable pgAudit extension in CNPG cluster config
 - [ ] Create history tables for sensitive data
-- [ ] Implement CDC triggers
-- [ ] Configure log retention (7 years for healthcare)
-- [ ] Add log shipping to immutable storage (S3 Glacier)
+- [ ] Implement CDC triggers for targeting tables
+- [ ] Logs auto-shipped to Loki (retention configured in dk-alchemy)
+- [ ] Create Grafana dashboard for audit queries
 
 ### 10. PII/PHI Data Handling (Issue #18)
 
-**Current State**: Unclear classification and handling of sensitive data
-
-**Recommendations**:
+**Recommendations** (unchanged - application-level):
 ```sql
--- 1. Data classification schema
+-- Data classification schema
 CREATE TABLE meta.data_classification (
     table_schema TEXT,
     table_name TEXT,
     column_name TEXT,
     classification TEXT CHECK (classification IN ('PUBLIC', 'INTERNAL', 'CONFIDENTIAL', 'PHI')),
-    pii_type TEXT,  -- name, address, email, phone, medical_record
+    pii_type TEXT,
     masking_rule TEXT,
     retention_days INT
 );
 
--- 2. Column-level encryption for PHI
--- Use pgcrypto for encryption at rest
-CREATE EXTENSION IF NOT EXISTS pgcrypto;
-
--- Encrypt sensitive columns
-ALTER TABLE targeting.champions
-    ADD COLUMN email_encrypted BYTEA;
-UPDATE targeting.champions
-    SET email_encrypted = pgp_sym_encrypt(email, current_setting('app.encryption_key'));
-
--- 3. Dynamic data masking for analysts
+-- Dynamic data masking
 CREATE VIEW api.champions_masked AS
 SELECT
     id,
     hospital_id,
-    CASE WHEN current_user = 'analyst'
+    CASE WHEN current_user IN ('analyst', 'web_anon')
          THEN regexp_replace(email, '(.{2}).*@', '\1***@')
          ELSE email
     END as email,
@@ -416,18 +747,16 @@ FROM targeting.champions;
 
 **Action Items**:
 - [ ] Inventory all data fields and classify sensitivity
-- [ ] Implement encryption for PHI columns
+- [ ] Implement encryption for PHI columns (pgcrypto)
 - [ ] Create masked views for analyst access
 - [ ] Document data flow diagrams showing PHI paths
 - [ ] Add data processing agreements (DPA) documentation
 
 ### 11. Data Retention Policy (Issue #19)
 
-**Current State**: No defined retention or deletion procedures
-
-**Recommendations**:
+**Recommendations** (unchanged - application-level):
 ```sql
--- 1. Retention policy table
+-- Retention policy table
 CREATE TABLE meta.retention_policies (
     schema_name TEXT,
     table_name TEXT,
@@ -436,75 +765,41 @@ CREATE TABLE meta.retention_policies (
     legal_hold BOOLEAN DEFAULT FALSE
 );
 
--- 2. Automated retention enforcement
--- CronJob to enforce retention
-CREATE OR REPLACE FUNCTION enforce_retention()
+-- Archive to MinIO before deletion
+CREATE OR REPLACE FUNCTION archive_and_delete()
 RETURNS void AS $$
-DECLARE
-    policy RECORD;
 BEGIN
-    FOR policy IN SELECT * FROM meta.retention_policies WHERE NOT legal_hold
-    LOOP
-        EXECUTE format(
-            'DELETE FROM %I.%I WHERE created_at < NOW() - INTERVAL ''%s days''',
-            policy.schema_name,
-            policy.table_name,
-            policy.retention_days
-        );
-    END LOOP;
+    -- Export to MinIO via pg_dump or COPY TO
+    -- Then delete from source table
 END;
 $$ LANGUAGE plpgsql;
-
--- 3. Retention periods by data type
--- Raw ingested data: 3 years
--- Audit logs: 7 years (healthcare compliance)
--- Job run history: 1 year
--- Analytics/mart tables: 5 years
 ```
 
 **Action Items**:
 - [ ] Define retention periods by data classification
-- [ ] Create automated retention enforcement job
+- [ ] Create automated retention CronJob
+- [ ] Archive to MinIO before deletion
 - [ ] Implement legal hold capability
-- [ ] Document data lifecycle in compliance docs
-- [ ] Add retention audit reports
+- [ ] Document data lifecycle
 
 ### 12. Database Migration Strategy (Issue #9)
 
-**Current State**: No versioned migrations, manual SQL execution
-
-**Recommendations**:
+**Recommendations** (unchanged):
 ```python
-# Use Alembic or Flyway for migrations
-
-# Directory structure
-migrations/
-├── versions/
-│   ├── 001_initial_schema.sql
-│   ├── 002_add_audit_tables.sql
-│   ├── 003_add_retention_policies.sql
-│   └── ...
-├── alembic.ini
-└── env.py
-
-# Migration workflow
-# 1. Create migration
-alembic revision --autogenerate -m "add_audit_tables"
-
-# 2. Review and edit generated migration
-# 3. Apply to dev
-alembic upgrade head
-
-# 4. Test thoroughly
-# 5. Apply to staging/prod via GitOps
+# Use Alembic for migrations
+# migrations/
+# ├── versions/
+# │   ├── 001_initial_schema.sql
+# │   └── ...
+# ├── alembic.ini
+# └── env.py
 ```
 
 **Action Items**:
-- [ ] Choose migration tool (Alembic recommended for Python)
+- [ ] Set up Alembic for migrations
 - [ ] Convert existing SQL to versioned migrations
 - [ ] Add migration CI checks
-- [ ] Document rollback procedures
-- [ ] Integrate with GitOps deployment
+- [ ] Integrate with ArgoCD sync hooks
 
 ---
 
@@ -512,231 +807,104 @@ alembic upgrade head
 
 ### 13. Multi-Tenancy & Generalization (Issue #8)
 
-**Current State**: Tight coupling to Edwards/TAVR use case
-
-**Recommendations**:
+**Recommendations** (unchanged):
 ```yaml
-# 1. Configuration-driven naming
 # config/project.yaml
 project:
   name: "${PROJECT_NAME:-dk-data}"
   database: "${DATABASE_NAME:-data_platform}"
-  namespace: "${K8S_NAMESPACE:-data-platform}"
+  namespace: "${K8S_NAMESPACE:-dk-data-fe}"
 
 data_domains:
   - name: tavr
     enabled: true
     schemas: [raw_tavr, staging_tavr, mart_tavr]
-  - name: oncology
-    enabled: false
-    schemas: [raw_onc, staging_onc, mart_onc]
-
-# 2. Schema isolation per domain
-# raw_tavr, staging_tavr, mart_tavr
-# raw_oncology, staging_oncology, mart_oncology
-
-# 3. Generic table naming
-# raw.hospital_info (not raw.cms_hospital_info)
-# staging.procedure_volumes (not staging.tavr_volumes)
 ```
 
 **Action Items**:
 - [ ] Create configuration layer for project naming
 - [ ] Implement domain-based schema partitioning
-- [ ] Generalize table names where possible
 - [ ] Document multi-tenancy patterns
 - [ ] Create template for new therapeutic areas
 
 ### 14. Test Coverage (Issue #15)
 
-**Current State**: Unknown test coverage, minimal automated testing
-
-**Recommendations**:
-```python
-# Test pyramid for data platform
-
-# 1. Unit tests (fast, isolated)
-# tests/unit/test_validators.py
-def test_hospital_validator_rejects_invalid_ccn():
-    with pytest.raises(ValidationError):
-        HospitalRecord(ccn="invalid", name="Test")
-
-# 2. Integration tests (database required)
-# tests/integration/test_ingestion.py
-@pytest.fixture
-def test_db(postgresql):
-    """Ephemeral test database."""
-    ...
-
-def test_cms_ingestor_loads_data(test_db):
-    ingestor = CMSInpatientIngestor(test_db)
-    result = ingestor.ingest(sample_data)
-    assert result.rows_inserted == 100
-
-# 3. Contract tests (API schema validation)
-# tests/contract/test_api_contract.py
-def test_api_matches_openapi_spec():
-    spec = load_openapi_spec("contracts/openapi.yaml")
-    response = requests.get(f"{API_URL}/hospitals")
-    validate_response(response, spec, "/hospitals", "get")
-
-# 4. Data quality tests (Great Expectations)
-# tests/data_quality/test_hospital_data.py
-@pytest.fixture
-def ge_context():
-    return gx.get_context()
-
-def test_hospital_ccn_format(ge_context):
-    batch = ge_context.get_batch("hospitals")
-    result = batch.expect_column_values_to_match_regex("ccn", r"^\d{6}$")
-    assert result.success
-```
-
-**Coverage Targets**:
-| Layer | Target | Current |
-|-------|--------|---------|
-| Unit tests | 80% | Unknown |
-| Integration tests | Critical paths | Minimal |
-| Contract tests | All API endpoints | None |
-| Data quality tests | All staging tables | None |
-
-**Action Items**:
+**Action Items** (unchanged):
 - [ ] Add pytest-cov to measure coverage
 - [ ] Write unit tests for validators and utilities
 - [ ] Add integration tests with pytest-postgresql
 - [ ] Implement Great Expectations for data quality
-- [ ] Add CI gates for coverage thresholds
+- [ ] Add CI gates for coverage thresholds (80% target)
 
 ### 15. Error Handling (Issue #14)
 
-**Current State**: Incomplete error handling in fetchers
-
-**Recommendations**:
-```python
-# Structured error handling pattern
-from dataclasses import dataclass
-from enum import Enum
-
-class ErrorSeverity(Enum):
-    WARNING = "warning"    # Partial success, continue
-    ERROR = "error"        # Task failed, retry possible
-    CRITICAL = "critical"  # System failure, human intervention
-
-@dataclass
-class IngestionError:
-    source: str
-    severity: ErrorSeverity
-    message: str
-    context: dict
-    timestamp: datetime
-    recoverable: bool
-
-class IngestionResult:
-    def __init__(self):
-        self.rows_processed = 0
-        self.rows_inserted = 0
-        self.rows_updated = 0
-        self.errors: List[IngestionError] = []
-
-    @property
-    def success(self) -> bool:
-        return not any(e.severity == ErrorSeverity.CRITICAL for e in self.errors)
-
-    def to_metrics(self) -> dict:
-        return {
-            "rows_processed": self.rows_processed,
-            "rows_inserted": self.rows_inserted,
-            "error_count": len(self.errors),
-            "error_types": Counter(e.severity.value for e in self.errors)
-        }
-```
-
-**Action Items**:
+**Action Items** (unchanged):
 - [ ] Define error taxonomy and severity levels
 - [ ] Implement structured IngestionResult returns
 - [ ] Add error aggregation and reporting
 - [ ] Create runbooks for common error scenarios
-- [ ] Add error metrics to observability stack
+- [ ] Add error metrics to observability (Mimir)
 
 ### 16. Dependency Management (Issue #20)
 
-**Current State**: Loose version constraints, no lock file
-
-**Recommendations**:
-```toml
-# pyproject.toml with version bounds
-[project]
-name = "dk-data-fe"
-version = "1.0.0"
-requires-python = ">=3.11,<3.13"
-
-dependencies = [
-    "sqlmesh>=0.90.0,<1.0.0",
-    "psycopg2-binary>=2.9.9,<3.0.0",
-    "pandas>=2.0.0,<3.0.0",
-    "pydantic>=2.5.0,<3.0.0",
-    "requests>=2.31.0,<3.0.0",
-    "fastapi>=0.109.0,<1.0.0",
-]
-
-[project.optional-dependencies]
-dev = [
-    "pytest>=8.0.0",
-    "pytest-cov>=4.0.0",
-    "ruff>=0.1.0",
-]
-
-# Generate lock file
-# uv pip compile pyproject.toml -o requirements.lock
-```
-
-**Action Items**:
+**Action Items** (unchanged):
 - [ ] Add upper version bounds to all dependencies
-- [ ] Generate and commit lock file (uv.lock or requirements.lock)
+- [ ] Commit uv.lock file
 - [ ] Split dev/prod dependencies
 - [ ] Configure Dependabot for automated updates
 - [ ] Add security scanning (safety, pip-audit)
 
 ### 17. Version Alignment (Issue #21)
 
-**Current State**: PostgREST version mismatch between docker-compose and k8s
-
-**Recommendations**:
-```yaml
-# Single source of truth: versions.yaml
-versions:
-  postgrest: "v12.2.3"
-  postgres: "16-alpine"
-  metabase: "v0.50.26"
-  python: "3.11-slim"
-
-# Reference in docker-compose
-postgrest:
-  image: postgrest/postgrest:${POSTGREST_VERSION:-v12.2.3}
-
-# Reference in kustomization.yaml via patch
-images:
-  - name: postgrest/postgrest
-    newTag: v12.2.3  # Keep in sync with versions.yaml
-```
+**Follow dk-alchemy patterns**:
+- PostgREST images managed via ArgoCD Image Updater
+- Versions pinned in kustomization.yaml
 
 **Action Items**:
-- [ ] Create versions.yaml as single source of truth
-- [ ] Align all version references
-- [ ] Add CI check for version consistency
+- [ ] Align PostgREST version across docker-compose and k8s
+- [ ] Let ArgoCD Image Updater manage version updates
 - [ ] Document version upgrade procedures
 
 ---
 
-## AI/ML Platform Integration Recommendations
+## AI/ML Platform Integration
 
-For use as a data foundation for Behavior Labs AI:
+### Integration with Behavior Labs AI
 
-### Data Access Patterns
+dk-data-fe should integrate with the existing Behavior Labs platform (also deployed via dk-alchemy):
 
-```python
-# 1. Feature Store Integration
-# Expose materialized features via PostgREST
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                     dk-alchemy Kubernetes Cluster               │
+├─────────────────────────────────────────────────────────────────┤
+│                                                                 │
+│  ┌──────────────────────┐    ┌──────────────────────┐          │
+│  │  behaviorlabs-prod   │    │   dk-data-fe-prod    │          │
+│  │  ┌────────────────┐  │    │  ┌────────────────┐  │          │
+│  │  │   ML Models    │  │◄───│  │   PostgREST    │  │          │
+│  │  │   LLM Agents   │  │    │  │   API Layer    │  │          │
+│  │  └────────────────┘  │    │  └───────┬────────┘  │          │
+│  └──────────────────────┘    │          │           │          │
+│                              │  ┌───────▼────────┐  │          │
+│                              │  │   PostgreSQL   │  │          │
+│                              │  │  (CNPG/shared) │  │          │
+│                              │  └────────────────┘  │          │
+│                              └──────────────────────┘          │
+│                                                                 │
+│  ┌────────────────────────────────────────────────────────────┐│
+│  │                    infra namespace                         ││
+│  │  ┌────────┐ ┌────────┐ ┌────────┐ ┌────────┐ ┌──────────┐ ││
+│  │  │ Mimir  │ │  Loki  │ │ Tempo  │ │Grafana │ │ Doppler  │ ││
+│  │  │metrics │ │  logs  │ │ traces │ │dashbrd │ │ secrets  │ ││
+│  │  └────────┘ └────────┘ └────────┘ └────────┘ └──────────┘ ││
+│  └────────────────────────────────────────────────────────────┘│
+└─────────────────────────────────────────────────────────────────┘
+```
+
+### Feature Store for ML
+
+```sql
+-- Expose features via PostgREST for ML consumption
 CREATE MATERIALIZED VIEW ml.hospital_features AS
 SELECT
     h.hospital_id,
@@ -751,170 +919,461 @@ JOIN mart.fact_tavr_program t USING (hospital_id)
 JOIN mart.fact_financial_metrics f USING (hospital_id)
 JOIN scoring.target_scores s USING (hospital_id);
 
-# 2. Batch prediction data export
-# Schedule nightly export to S3 for ML training
-CREATE OR REPLACE FUNCTION ml.export_training_data()
-RETURNS void AS $$
-BEGIN
-    COPY (SELECT * FROM ml.hospital_features)
-    TO PROGRAM 'aws s3 cp - s3://ml-data/features/hospitals_$(date +%Y%m%d).parquet'
-    WITH (FORMAT parquet);
-END;
-$$ LANGUAGE plpgsql;
-
-# 3. Real-time inference via API
-# POST /rpc/get_prediction_features
-CREATE FUNCTION api.get_prediction_features(p_hospital_ids TEXT[])
-RETURNS SETOF ml.hospital_features AS $$
-    SELECT * FROM ml.hospital_features
-    WHERE hospital_id = ANY(p_hospital_ids);
-$$ LANGUAGE sql SECURITY DEFINER;
+-- API endpoint: GET /hospital_features
+GRANT SELECT ON ml.hospital_features TO ml_service;
 ```
 
-### Model Metadata Integration
+### LiteLLM Integration
 
-```sql
--- Track ML model deployments and predictions
-CREATE SCHEMA ml_ops;
+dk-alchemy provides LiteLLM proxy for unified LLM access:
+```python
+# Use LiteLLM for Claude SDK enrichment
+import litellm
 
-CREATE TABLE ml_ops.models (
-    model_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    model_name TEXT NOT NULL,
-    model_version TEXT NOT NULL,
-    trained_at TIMESTAMP DEFAULT NOW(),
-    metrics JSONB,  -- {"accuracy": 0.85, "f1": 0.82}
-    feature_schema JSONB,
-    artifact_path TEXT,
-    status TEXT CHECK (status IN ('training', 'validated', 'deployed', 'deprecated'))
-);
+litellm.api_base = "http://litellm.infra.svc.cluster.local:4000"
 
-CREATE TABLE ml_ops.predictions (
-    prediction_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    model_id UUID REFERENCES ml_ops.models,
-    hospital_id VARCHAR(20),
-    prediction JSONB,
-    confidence NUMERIC,
-    predicted_at TIMESTAMP DEFAULT NOW(),
-    feedback JSONB  -- Ground truth when available
-);
-```
-
-### Recommended Architecture for AI Platform
-
-```
-┌─────────────────────────────────────────────────────────────────┐
-│                     Behavior Labs AI Platform                   │
-├─────────────────────────────────────────────────────────────────┤
-│                                                                 │
-│  ┌─────────────┐  ┌─────────────┐  ┌─────────────────────────┐ │
-│  │  ML Models  │  │  LLM Agents │  │  Analytics Dashboards   │ │
-│  └──────┬──────┘  └──────┬──────┘  └────────────┬────────────┘ │
-│         │                │                      │               │
-│         └────────────────┼──────────────────────┘               │
-│                          │                                      │
-│                          ▼                                      │
-│  ┌───────────────────────────────────────────────────────────┐ │
-│  │                    API Gateway                            │ │
-│  │         (Authentication, Rate Limiting, Caching)          │ │
-│  └───────────────────────────────────────────────────────────┘ │
-│                          │                                      │
-├──────────────────────────┼──────────────────────────────────────┤
-│                          │                                      │
-│                          ▼                                      │
-│  ┌───────────────────────────────────────────────────────────┐ │
-│  │                   PostgREST API                           │ │
-│  │    /hospitals  /features  /predictions  /rpc/...          │ │
-│  └───────────────────────────────────────────────────────────┘ │
-│                          │                                      │
-│                          ▼                                      │
-│  ┌───────────────────────────────────────────────────────────┐ │
-│  │                    PostgreSQL                              │ │
-│  │  ┌─────────┐ ┌─────────┐ ┌─────────┐ ┌─────────────────┐  │ │
-│  │  │   raw   │ │ staging │ │   mart  │ │     ml_ops      │  │ │
-│  │  │ schemas │ │ schemas │ │ schemas │ │ models/preds    │  │ │
-│  │  └─────────┘ └─────────┘ └─────────┘ └─────────────────┘  │ │
-│  └───────────────────────────────────────────────────────────┘ │
-│                                                                 │
-│  ┌───────────────────────────────────────────────────────────┐ │
-│  │                 Data Ingestion Layer                       │ │
-│  │     CMS │ HRSA │ ACC │ Internal CRM │ Model Feedback       │ │
-│  └───────────────────────────────────────────────────────────┘ │
-│                                                                 │
-└─────────────────────────────────────────────────────────────────┘
+response = litellm.completion(
+    model="claude-sonnet-4-20250514",
+    messages=[{"role": "user", "content": "Enrich hospital data..."}]
+)
 ```
 
 ---
 
-## Implementation Roadmap
+## Revised Implementation Roadmap
 
-### Phase 1: Security Hardening (Week 1-2)
-1. Credential management (Issue #2, #3)
-2. API access control (Issue #4)
-3. Basic audit logging
+### Phase 1: dk-alchemy Integration (Week 1)
+1. Create bootstrap application in dk-alchemy
+2. Restructure dk-data-fe for GitOps patterns
+3. Add secrets to Doppler
+4. Configure namespace and RBAC
 
-### Phase 2: Operations Foundation (Week 3-4)
-1. Observability stack deployment
-2. Backup strategy implementation
-3. Kubernetes resource limits
-4. Job monitoring and alerting
+### Phase 2: Security & Observability (Week 2)
+1. Remove hardcoded credentials
+2. Configure JWT via Doppler
+3. Instrument apps for OTLP
+4. Create Grafana dashboards and alerts
 
-### Phase 3: Compliance & Governance (Week 5-6)
-1. Full audit trail implementation
-2. PII/PHI data classification
-3. Retention policy enforcement
-4. Migration tooling
+### Phase 3: Database & Storage (Week 3)
+1. Deploy CNPG cluster (or use shared)
+2. Configure automated backups to MinIO
+3. Set up Redis caching for external APIs
+4. Implement API access control
 
-### Phase 4: Quality & Scale (Week 7-8)
-1. Test coverage improvement
-2. Error handling standardization
-3. Dependency management
-4. Documentation automation
+### Phase 4: Compliance & Quality (Week 4-5)
+1. Enable pgAudit for audit trail
+2. Implement data retention policies
+3. Add test coverage
+4. Set up database migrations
 
-### Phase 5: AI Platform Integration (Week 9-10)
-1. ML feature store views
-2. Prediction logging tables
-3. Model metadata tracking
-4. API optimizations for ML workloads
+### Phase 5: ML Platform Integration (Week 6)
+1. Create feature store materialized views
+2. Configure ML service role
+3. Integrate with Behavior Labs platform
+4. Add prediction logging
 
 ---
 
-## Summary of Open Issues by Priority
+## 🧹 Codebase Cleanup & Technical Debt
 
-| Issue | Title | Priority | Category |
-|-------|-------|----------|----------|
-| #2 | Hardcoded Credentials | P0 | Security |
-| #3 | Insecure JWT Secret | P0 | Security |
-| #4 | Overly Permissive API Access | P0 | Security |
-| #11 | No Observability Stack | P1 | Operations |
-| #12 | No K8s Resource Limits | P1 | Operations |
-| #13 | No Backup Strategy | P1 | Operations |
-| #5 | Brittle External APIs | P1 | Reliability |
-| #6 | Silent Job Failures | P1 | Reliability |
-| #9 | No Migration Strategy | P2 | Governance |
-| #17 | No Audit Trail | P2 | Compliance |
-| #18 | Unclear PII/PHI Handling | P2 | Compliance |
-| #19 | No Retention Policy | P2 | Compliance |
-| #7 | Tight Coupling to TAVR | P3 | Architecture |
-| #8 | SQLMesh Dependencies | P3 | Architecture |
-| #10 | Data Validation Gaps | P3 | Quality |
-| #14 | Incomplete Error Handling | P3 | Quality |
-| #15 | Unknown Test Coverage | P3 | Quality |
-| #16 | Documentation Drift | P3 | Quality |
-| #20 | Dependency Versions | P3 | Dependencies |
-| #21 | PostgREST Version Mismatch | P3 | Dependencies |
+### Overview
+
+A thorough analysis of the dk-data-fe codebase identified significant duplication, inconsistent organization, and committed artifacts that should be cleaned up before production deployment.
+
+### Cleanup Priority Matrix
+
+| Priority | Category | Items | Impact |
+|----------|----------|-------|--------|
+| 🔴 **Critical** | Duplicate Code | 18 files | Maintenance risk, confusion |
+| 🔴 **Critical** | Committed Data | 74+ MB | Repository bloat, security |
+| 🟠 **High** | Config Sprawl | 6 files | Inconsistent deployments |
+| 🟠 **High** | Documentation | 8+ files | Confusion, drift |
+| 🟡 **Medium** | Dead Code | ~20 instances | Code quality |
+| 🟢 **Low** | Naming | Various | Developer experience |
+
+---
+
+### 🔴 Critical: Duplicate Files
+
+#### 1. Duplicate Python Scripts (14 files)
+
+Scripts exist in **BOTH** `/scripts/` AND `/src/dk_data/scripts/`:
+
+| Script | Location 1 | Location 2 | Status |
+|--------|-----------|------------|--------|
+| `catalog_refresh.py` | `/scripts/data/` | `/src/dk_data/scripts/` | Identical |
+| `check_freshness.py` | `/scripts/data/` | `/src/dk_data/scripts/` | Identical |
+| `load_targeting_data.py` | `/scripts/data/` | `/src/dk_data/scripts/` | Identical |
+| `purge_history.py` | `/scripts/data/` | `/src/dk_data/scripts/` | Identical |
+| `run_enrichment.py` | `/scripts/data/` | `/src/dk_data/scripts/` | Identical |
+| `validate_api.py` | `/scripts/ops/` | `/src/dk_data/scripts/` | Identical |
+| `validate_performance.py` | `/scripts/ops/` | `/src/dk_data/scripts/` | Identical |
+| `metabase_client.py` | `/scripts/utils/` | `/src/dk_data/scripts/` | Identical |
+| `provision_metabase.py` | `/scripts/utils/` | `/src/dk_data/scripts/` | Identical |
+| `setup_logging.py` | `/scripts/utils/` | `/src/dk_data/scripts/` | Identical |
+
+**Action Items**:
+- [ ] Choose canonical location: `/src/dk_data/scripts/` (follows package structure)
+- [ ] Remove `/scripts/` directory entirely
+- [ ] Update docker-compose.yml volume mounts (remove legacy mount at line 110)
+- [ ] Update Makefile references
+
+#### 2. Duplicate Shell Scripts (4 files)
+
+| Script | Location 1 | Location 2 |
+|--------|-----------|------------|
+| `install_cron.sh` | `/scripts/ops/` | `/src/dk_data/scripts/` |
+| `start_api.sh` | `/scripts/ops/` | `/src/dk_data/scripts/` |
+| `refresh_data.sh` | `/scripts/data/` | `/src/dk_data/scripts/` |
+| `run_sqlmesh.sh` | `/scripts/data/` | `/src/dk_data/scripts/` |
+
+**Action Items**:
+- [ ] Consolidate to `/src/dk_data/scripts/`
+- [ ] Remove duplicates from `/scripts/`
+
+#### 3. Duplicate SQL Table Definitions
+
+**Critical Issue**: Two different versions of targeting tables exist:
+
+| File | Lines | Tables | Status |
+|------|-------|--------|--------|
+| `/src/dk_data/database/targeting_tables.sql` | 126 | 5 tables | Simplified, outdated |
+| `/src/dk_data/sql/targeting_tables.sql` | 348 | 6 tables | Complete, with constraints |
+
+**Differences**:
+- `/sql/` version has `targeting.financial_details` table (missing in `/database/`)
+- `/sql/` version has proper CHECK constraints and audit columns
+- `/database/` version is an earlier, simplified version
+
+**Action Items**:
+- [ ] Keep `/src/dk_data/sql/targeting_tables.sql` as canonical
+- [ ] Delete `/src/dk_data/database/targeting_tables.sql`
+- [ ] Verify no references to deleted file remain
+
+---
+
+### 🔴 Critical: Committed Artifacts
+
+#### 1. Data Files (74+ MB)
+
+**Location**: `/data/raw/`
+
+| File | Size |
+|------|------|
+| `cms_inpatient_full_fy2021_20260115.csv` | 38 MB |
+| `cms_inpatient_full_fy2022_20260115.csv` | 36 MB |
+| `cms_inpatient_tavr_fy2021_20260115.csv` | 322 KB |
+| `cms_inpatient_tavr_fy2022_20260115.csv` | 329 KB |
+
+**Issue**: These are in `.gitignore` but were committed before the ignore rule was added.
+
+**Action Items**:
+- [ ] Remove data files from git history: `git filter-branch` or `git-filter-repo`
+- [ ] Verify `.gitignore` covers `/data/` directory
+- [ ] Add data files to MinIO for persistence (not git)
+
+#### 2. Log Files (1.5 MB)
+
+**Location**: `/logs/`
+
+| Pattern | Count |
+|---------|-------|
+| `sqlmesh_2026_01_14_*.log` | ~10 files |
+| `sqlmesh_2026_01_15_*.log` | ~10 files |
+
+**Action Items**:
+- [ ] Remove log files from git: `git rm -r --cached logs/`
+- [ ] Verify `.gitignore` line 47 (`logs/`) is effective
+- [ ] Configure log shipping to Loki instead of local files
+
+#### 3. Python Bytecode
+
+**Issue**: `__pycache__/` directories may be in git history.
+
+**Action Items**:
+- [ ] Run: `find . -type d -name __pycache__ -exec rm -rf {} +`
+- [ ] Run: `git rm -r --cached '**/__pycache__'`
+- [ ] Verify `.gitignore` covers `__pycache__/` and `*.pyc`
+
+---
+
+### 🟠 High: Configuration Sprawl
+
+#### 1. Dual Makefile Structure
+
+| File | Lines | Purpose |
+|------|-------|---------|
+| `/Makefile` | 402 | Root orchestration |
+| `/src/dk_data/Makefile` | 444 | Detailed tasks |
+
+**Problem**: Overlapping targets, unclear which is primary.
+
+**Action Items**:
+- [ ] Consolidate to single `/Makefile` at root
+- [ ] Move detailed targets to root Makefile with proper grouping
+- [ ] Delete `/src/dk_data/Makefile`
+- [ ] Update documentation to reference single Makefile
+
+#### 2. Dependency Specification Mismatch
+
+| File | Dependencies | Missing |
+|------|-------------|---------|
+| `/pyproject.toml` | 16 packages | `fastapi`, `uvicorn`, `kubernetes` |
+| `/src/dk_data/requirements.txt` | 15+ packages | Complete |
+
+**Problem**: Installing via `pip install .` won't include FastAPI dependencies needed for job-trigger.
+
+**Action Items**:
+- [ ] Sync `pyproject.toml` dependencies with `requirements.txt`
+- [ ] Add missing: `fastapi>=0.109.0`, `uvicorn>=0.27.0`, `kubernetes>=29.0.0`
+- [ ] Consider making `requirements.txt` generated from `pyproject.toml`
+
+#### 3. Docker Compose Files
+
+| File | Lines | Purpose |
+|------|-------|---------|
+| `/src/dk_data/docker-compose.yml` | 168 | Main compose |
+| `/src/dk_data/docker-compose.prod.yml` | 69 | Production overrides |
+
+**Action Items**:
+- [ ] Move to root: `/docker-compose.yml` and `/docker-compose.prod.yml`
+- [ ] Or rename to `/docker/compose.yml` for clarity
+- [ ] Update documentation paths
+
+---
+
+### 🟠 High: Documentation Redundancy
+
+#### Overlapping Documentation
+
+| File | Lines | Topic |
+|------|-------|-------|
+| `ARCHITECTURE.md` | 1304 | System design |
+| `README.md` | 328 | Quick start |
+| `RECOMMENDATIONS.md` | 1011 | Platform recommendations |
+| `docs/api-examples.md` | 353 | API usage |
+| `docs/DATA_PIPELINE_STATUS.md` | 277 | Pipeline status |
+| `specs/001.../spec.md` | ~300 | Feature specification |
+| `specs/001.../quickstart.md` | ~100 | Quick start (duplicates README) |
+| `CLAUDE.md` | 29 | Auto-generated |
+
+**Problem**: Architecture described in 5+ places; API examples in 3+ places.
+
+**Action Items**:
+- [ ] Keep `README.md` as entry point (quick start only)
+- [ ] Keep `ARCHITECTURE.md` as detailed reference
+- [ ] Keep `RECOMMENDATIONS.md` as operational guide
+- [ ] Move `docs/api-examples.md` content to `ARCHITECTURE.md`
+- [ ] Delete `specs/001.../quickstart.md` (duplicates README)
+- [ ] Archive `DATA_PIPELINE_STATUS.md` or merge into ARCHITECTURE.md
+- [ ] Add "Documentation Map" to README showing what's where
+
+---
+
+### 🟡 Medium: Dead Code & Unused Imports
+
+#### Unused `json` Import
+
+Files with `import json` but no usage (use `psycopg2.extras.Json` instead):
+
+| File | Line |
+|------|------|
+| `/scripts/data/catalog_refresh.py` | 15 |
+| `/scripts/ops/validate_api.py` | ~5 |
+| `/scripts/ops/validate_performance.py` | ~5 |
+
+**Action Items**:
+- [ ] Run `ruff check --select F401` to find all unused imports
+- [ ] Remove unused imports
+- [ ] Add `ruff` to CI to prevent future issues
+
+#### Unnecessary `sys.path` Manipulation
+
+Multiple files use this pattern unnecessarily:
+```python
+sys.path.insert(0, str(__file__).rsplit('/scripts', 1)[0])
+```
+
+**Files affected**:
+- `/src/dk_data/ingestion/fetch_data.py` (lines 17-18)
+- Various scripts in `/scripts/`
+
+**Action Items**:
+- [ ] Remove `sys.path` manipulation from package modules
+- [ ] Rely on proper package installation via `pyproject.toml`
+
+---
+
+### 🟡 Medium: GitOps Structure Issues
+
+#### Current Structure vs dk-alchemy Pattern
+
+**Current** (missing items marked with ❌):
+
+```
+.gitops/
+├── base/
+│   ├── catalog/
+│   ├── ingestion/
+│   └── postgrest/
+├── overlays/
+│   ├── dev/
+│   ├── staging/
+│   └── prod/
+└── argocd/
+    └── application.yaml
+```
+
+**Missing for dk-alchemy integration**:
+- ❌ `namespace.yaml` - Namespace definition
+- ❌ `serviceaccount.yaml` - Service accounts
+- ❌ `networkpolicy.yaml` - Network isolation
+- ❌ `ingress.yaml` or `ingressroute.yaml` - External access
+- ❌ `doppler-secret.yaml` - Doppler integration
+- ❌ Proper kustomization.yaml files following dk-alchemy patterns
+
+**Action Items**:
+- [ ] Restructure to match dk-alchemy external app pattern
+- [ ] Add missing resources (namespace, service account, network policy)
+- [ ] Create proper `kustomization.yaml` with component references
+- [ ] Add DopplerSecret CRD for secrets management
+
+---
+
+### 🟢 Low: Naming Inconsistencies
+
+#### Fetcher Method Naming
+
+Inconsistent method names across fetcher classes:
+
+| Fetcher | Methods |
+|---------|---------|
+| `CMSInpatientFetcher` | `get_download_url()`, `get_api_endpoints()` |
+| `CMSHospitalInfoFetcher` | `get_api_endpoints()` |
+| `CMSCostReportsFetcher` | `get_api_endpoints()` |
+| `HRSAFetcher` | Different pattern |
+
+**Action Items**:
+- [ ] Standardize fetcher interface methods
+- [ ] Document expected methods in `BaseFetcher` docstring
+- [ ] Consider adding abstract methods for required interface
+
+#### SQL Comment Style Inconsistency
+
+| File | Style |
+|------|-------|
+| `/database/targeting_tables.sql` | Simple: `COMMENT ON TABLE...` |
+| `/sql/targeting_tables.sql` | Detailed: `-- T002: Purpose...` |
+
+**Action Items**:
+- [ ] After consolidating SQL files, standardize comment style
+- [ ] Use task-based comments (`-- T00X:`) for traceability
+
+---
+
+### Cleanup Implementation Plan
+
+#### Week 1: Critical Cleanup
+```bash
+# 1. Remove duplicate scripts
+rm -rf scripts/
+
+# 2. Remove duplicate SQL
+rm src/dk_data/database/targeting_tables.sql
+
+# 3. Remove committed artifacts from git
+git rm -r --cached data/ logs/
+git commit -m "Remove committed data and log files"
+
+# 4. Clean git history (optional, requires force push)
+git filter-repo --invert-paths --path data/ --path logs/
+```
+
+#### Week 2: Configuration Consolidation
+```bash
+# 1. Consolidate Makefile
+cat src/dk_data/Makefile >> Makefile  # Merge unique targets
+rm src/dk_data/Makefile
+
+# 2. Sync dependencies
+# Edit pyproject.toml to add missing deps
+
+# 3. Move docker-compose to root
+mv src/dk_data/docker-compose*.yml ./
+```
+
+#### Week 3: Documentation & GitOps
+```bash
+# 1. Consolidate documentation
+# Manual: merge api-examples.md into ARCHITECTURE.md
+rm specs/001-data-layer-postgrest-gitops/quickstart.md
+
+# 2. Restructure .gitops/
+# Follow dk-alchemy patterns
+```
+
+---
+
+### Cleanup Checklist
+
+#### Critical (Do First)
+- [ ] Remove `/scripts/` directory (keep `/src/dk_data/scripts/`)
+- [ ] Remove `/src/dk_data/database/targeting_tables.sql`
+- [ ] Remove committed data files from git
+- [ ] Remove committed log files from git
+- [ ] Sync `pyproject.toml` with `requirements.txt`
+
+#### High Priority
+- [ ] Consolidate to single Makefile
+- [ ] Consolidate documentation
+- [ ] Fix docker-compose location
+- [ ] Update .gitignore and verify effectiveness
+
+#### Medium Priority
+- [ ] Remove unused imports (run `ruff`)
+- [ ] Remove unnecessary `sys.path` manipulation
+- [ ] Restructure `.gitops/` for dk-alchemy
+- [ ] Add missing GitOps resources
+
+#### Low Priority
+- [ ] Standardize fetcher method names
+- [ ] Standardize SQL comment style
+- [ ] Add documentation map to README
+
+---
+
+## Summary: What's New vs What's Available
+
+| Capability | Build New | Use dk-alchemy | Notes |
+|------------|-----------|----------------|-------|
+| Observability | ❌ | ✅ | Mimir/Loki/Tempo/Grafana |
+| Secrets Management | ❌ | ✅ | Doppler Operator |
+| PostgreSQL HA | ❌ | ✅ | CNPG Operator |
+| Backups | ❌ | ✅ | CNPG → MinIO |
+| TLS Certificates | ❌ | ✅ | cert-manager |
+| Ingress | ❌ | ✅ | Traefik |
+| GitOps | ❌ | ✅ | ArgoCD |
+| Caching | ❌ | ✅ | Redis |
+| Object Storage | ❌ | ✅ | MinIO |
+| LLM Proxy | ❌ | ✅ | LiteLLM |
+| API Security | ✅ | - | PostgREST RBAC |
+| Data Validation | ✅ | - | Application code |
+| Test Coverage | ✅ | - | Application code |
+| Audit Trail | ✅ | Partial | pgAudit + Loki |
+| Data Retention | ✅ | - | Application code |
 
 ---
 
 ## References
 
-- [PostgREST Security Best Practices](https://postgrest.org/en/stable/auth.html)
-- [PostgreSQL Security Hardening](https://www.postgresql.org/docs/current/auth-methods.html)
-- [HIPAA Technical Safeguards](https://www.hhs.gov/hipaa/for-professionals/security/guidance/index.html)
+- [dk-alchemy Documentation](https://github.com/data-kinetic/dk-alchemy/tree/main/docs)
+- [CNPG Documentation](https://cloudnative-pg.io/documentation/)
+- [Doppler Documentation](https://docs.doppler.com/)
 - [OpenTelemetry Python](https://opentelemetry.io/docs/instrumentation/python/)
-- [Great Expectations](https://docs.greatexpectations.io/)
-- [Kubernetes Best Practices](https://kubernetes.io/docs/concepts/configuration/manage-resources-containers/)
+- [ArgoCD ApplicationSets](https://argo-cd.readthedocs.io/en/stable/user-guide/application-set/)
 
 ---
 
-*Document generated: 2026-01-19*
-*Next review: Monthly or after major changes*
+*Document generated: 2026-01-20*
+*Updated with dk-alchemy integration recommendations*
+*Next review: After Phase 1 completion*
