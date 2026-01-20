@@ -1,0 +1,169 @@
+# IngressRoute Contract for dk-data-fe
+# Feature: 002-production-readiness
+# Purpose: Define external access via Traefik with TLS and rate limiting
+#
+# Endpoints:
+# - api.dk-data-fe.example.com → PostgREST (public API)
+# - jobs.dk-data-fe.example.com → Job-Trigger (internal/admin)
+---
+# Rate limiting middleware (FR-005)
+apiVersion: traefik.io/v1alpha1
+kind: Middleware
+metadata:
+  name: rate-limit
+  namespace: dk-data-fe-prod
+spec:
+  rateLimit:
+    average: 100    # 100 requests per minute average
+    burst: 50       # Allow burst of 50 requests
+    period: 1m
+    sourceCriterion:
+      ipStrategy:
+        depth: 1    # Use first X-Forwarded-For IP
+
+---
+# CORS middleware for API access
+apiVersion: traefik.io/v1alpha1
+kind: Middleware
+metadata:
+  name: cors-headers
+  namespace: dk-data-fe-prod
+spec:
+  headers:
+    accessControlAllowMethods:
+      - GET
+      - POST
+      - OPTIONS
+    accessControlAllowHeaders:
+      - Authorization
+      - Content-Type
+      - Accept
+    accessControlAllowOriginList:
+      - "https://dashboard.example.com"  # Update with actual origins
+    accessControlMaxAge: 86400
+
+---
+# Security headers middleware
+apiVersion: traefik.io/v1alpha1
+kind: Middleware
+metadata:
+  name: security-headers
+  namespace: dk-data-fe-prod
+spec:
+  headers:
+    frameDeny: true
+    contentTypeNosniff: true
+    browserXssFilter: true
+    referrerPolicy: "strict-origin-when-cross-origin"
+    customResponseHeaders:
+      X-Content-Type-Options: "nosniff"
+      X-Frame-Options: "DENY"
+
+---
+# JWT authentication middleware (for protected endpoints)
+apiVersion: traefik.io/v1alpha1
+kind: Middleware
+metadata:
+  name: jwt-auth
+  namespace: dk-data-fe-prod
+spec:
+  plugin:
+    jwt:
+      source: header
+      headerName: Authorization
+      headerValuePrefix: "Bearer "
+      # JWT verification handled by PostgREST, this just ensures header exists
+      required: false  # Allow anonymous for health/catalog
+
+---
+# PostgREST IngressRoute (public API)
+apiVersion: traefik.io/v1alpha1
+kind: IngressRoute
+metadata:
+  name: dk-data-fe-api
+  namespace: dk-data-fe-prod
+  labels:
+    app.kubernetes.io/name: dk-data-fe
+    app.kubernetes.io/component: ingress
+spec:
+  entryPoints:
+    - websecure
+  routes:
+    # Health endpoint (no auth, no rate limit)
+    - match: Host(`api.dk-data-fe.example.com`) && PathPrefix(`/health`)
+      kind: Rule
+      services:
+        - name: postgrest
+          port: 3000
+      middlewares:
+        - name: security-headers
+
+    # Data catalog (public, rate limited)
+    - match: Host(`api.dk-data-fe.example.com`) && PathPrefix(`/data_catalog`)
+      kind: Rule
+      services:
+        - name: postgrest
+          port: 3000
+      middlewares:
+        - name: rate-limit
+        - name: cors-headers
+        - name: security-headers
+
+    # Protected API endpoints (auth required, rate limited)
+    - match: Host(`api.dk-data-fe.example.com`) && PathPrefix(`/`)
+      kind: Rule
+      services:
+        - name: postgrest
+          port: 3000
+      middlewares:
+        - name: rate-limit
+        - name: cors-headers
+        - name: security-headers
+        - name: jwt-auth
+  tls:
+    certResolver: letsencrypt
+    domains:
+      - main: api.dk-data-fe.example.com
+
+---
+# Job-Trigger IngressRoute (internal/admin)
+apiVersion: traefik.io/v1alpha1
+kind: IngressRoute
+metadata:
+  name: dk-data-fe-jobs
+  namespace: dk-data-fe-prod
+  labels:
+    app.kubernetes.io/name: dk-data-fe
+    app.kubernetes.io/component: ingress
+spec:
+  entryPoints:
+    - websecure
+  routes:
+    - match: Host(`jobs.dk-data-fe.example.com`)
+      kind: Rule
+      services:
+        - name: job-trigger
+          port: 8000
+      middlewares:
+        - name: rate-limit
+        - name: security-headers
+        # Add IP whitelist for internal access only
+  tls:
+    certResolver: letsencrypt
+    domains:
+      - main: jobs.dk-data-fe.example.com
+
+---
+# Contract Verification
+#
+# Before deployment:
+# [ ] DNS records created for api.dk-data-fe.example.com
+# [ ] DNS records created for jobs.dk-data-fe.example.com
+# [ ] cert-manager configured with letsencrypt resolver
+# [ ] Traefik ingress controller running with websecure entrypoint
+# [ ] CORS origins updated for actual frontend domains
+#
+# Testing:
+# - curl -I https://api.dk-data-fe.example.com/health
+# - curl https://api.dk-data-fe.example.com/data_catalog
+# - Verify rate limiting with ab -n 200 -c 10 https://api.dk-data-fe.example.com/

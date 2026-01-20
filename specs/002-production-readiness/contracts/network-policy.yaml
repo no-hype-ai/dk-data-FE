@@ -1,0 +1,187 @@
+# NetworkPolicy Contract for dk-data-fe
+# Feature: 002-production-readiness
+# Purpose: Define pod-to-pod communication rules (zero-trust networking)
+#
+# Principles:
+# 1. Deny all by default, allow explicitly
+# 2. PostgREST: Accept from Traefik ingress only
+# 3. All services: Allow egress to PostgreSQL
+# 4. All services: Allow egress to observability stack
+---
+# Default deny all ingress and egress
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: default-deny-all
+  namespace: dk-data-fe-prod
+spec:
+  podSelector: {}  # Applies to all pods in namespace
+  policyTypes:
+    - Ingress
+    - Egress
+
+---
+# PostgREST: Allow ingress from Traefik
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-postgrest-ingress
+  namespace: dk-data-fe-prod
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: postgrest
+  policyTypes:
+    - Ingress
+  ingress:
+    # From Traefik ingress controller
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: traefik
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/name: traefik
+      ports:
+        - protocol: TCP
+          port: 3000
+    # From internal services (job-trigger health checks)
+    - from:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/part-of: dk-data-fe
+      ports:
+        - protocol: TCP
+          port: 3000
+
+---
+# Job-Trigger: Allow ingress from Traefik and internal
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-job-trigger-ingress
+  namespace: dk-data-fe-prod
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: job-trigger
+  policyTypes:
+    - Ingress
+  ingress:
+    # From Traefik (for API access)
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: traefik
+      ports:
+        - protocol: TCP
+          port: 8000
+    # From within namespace
+    - from:
+        - podSelector: {}
+      ports:
+        - protocol: TCP
+          port: 8000
+
+---
+# All pods: Allow egress to PostgreSQL (CNPG)
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-postgres-egress
+  namespace: dk-data-fe-prod
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/part-of: dk-data-fe
+  policyTypes:
+    - Egress
+  egress:
+    # To CNPG PostgreSQL cluster
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: postgres
+          podSelector:
+            matchLabels:
+              cnpg.io/cluster: postgres  # CNPG cluster name
+      ports:
+        - protocol: TCP
+          port: 5432
+
+---
+# All pods: Allow egress to observability stack
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-observability-egress
+  namespace: dk-data-fe-prod
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/part-of: dk-data-fe
+  policyTypes:
+    - Egress
+  egress:
+    # To Alloy (OTLP collector)
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: monitoring
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/name: alloy
+      ports:
+        - protocol: TCP
+          port: 4317  # OTLP gRPC
+        - protocol: TCP
+          port: 4318  # OTLP HTTP
+
+---
+# All pods: Allow DNS resolution
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-dns-egress
+  namespace: dk-data-fe-prod
+spec:
+  podSelector: {}
+  policyTypes:
+    - Egress
+  egress:
+    - to:
+        - namespaceSelector: {}
+          podSelector:
+            matchLabels:
+              k8s-app: kube-dns
+      ports:
+        - protocol: UDP
+          port: 53
+        - protocol: TCP
+          port: 53
+
+---
+# CronJobs: Allow egress to external data sources
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-cronjob-external-egress
+  namespace: dk-data-fe-prod
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/component: batch-job
+  policyTypes:
+    - Egress
+  egress:
+    # Allow HTTPS to external APIs (CMS, HRSA, etc.)
+    - to:
+        - ipBlock:
+            cidr: 0.0.0.0/0
+            except:
+              - 10.0.0.0/8      # Block internal ranges
+              - 172.16.0.0/12
+              - 192.168.0.0/16
+      ports:
+        - protocol: TCP
+          port: 443
