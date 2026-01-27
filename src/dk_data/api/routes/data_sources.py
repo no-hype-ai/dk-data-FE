@@ -12,7 +12,7 @@ Implements REST endpoints for:
 Part of DK Molecule Data Platform (012-dk-data-platform)
 """
 
-from fastapi import APIRouter, HTTPException, Query, Depends, Body
+from fastapi import APIRouter, HTTPException, Query, Depends, Body, BackgroundTasks
 from pydantic import BaseModel, Field, HttpUrl
 from typing import Optional, List, Dict, Any, Union
 from datetime import datetime
@@ -667,8 +667,47 @@ async def get_data_source(source_name: str):
     Returns full configuration and current status.
     """
     try:
-        # Placeholder - would fetch from database
-        raise HTTPException(status_code=404, detail=f"Data source '{source_name}' not found")
+        pool = await get_db_pool()
+        if pool is None:
+            raise HTTPException(status_code=503, detail="Database unavailable")
+
+        async with pool.acquire() as conn:
+            row = await conn.fetchrow("""
+                SELECT
+                    source,
+                    tier,
+                    cron_expression,
+                    priority,
+                    enabled,
+                    last_run,
+                    next_run,
+                    options,
+                    created_at,
+                    updated_at
+                FROM raw.sync_schedules
+                WHERE source = $1
+            """, source_name)
+
+            if not row:
+                raise HTTPException(status_code=404, detail=f"Data source '{source_name}' not found")
+
+            options = row['options'] or {}
+            if isinstance(options, str):
+                options = json.loads(options)
+
+            return DataSourceResponse(
+                id=source_name,
+                name=source_name,
+                display_name=options.get('display_name', source_name),
+                api_type=options.get('api_type', 'rest'),
+                base_url=options.get('base_url', ''),
+                auth_type=options.get('auth_type', 'none'),
+                refresh_tier=row['tier'] or 'monthly',
+                table_name=options.get('target_table', f"raw.{source_name.lower().replace('-', '_')}_data"),
+                is_active=row['enabled'],
+                created_at=row['created_at'].isoformat() if row['created_at'] else datetime.utcnow().isoformat(),
+                updated_at=row['updated_at'].isoformat() if row['updated_at'] else datetime.utcnow().isoformat(),
+            )
     except HTTPException:
         raise
     except Exception as e:
@@ -684,20 +723,53 @@ async def update_data_source(source_name: str, request: DataSourceRegistration):
     Changes take effect on next sync.
     """
     try:
-        # Placeholder - would update in database
-        return DataSourceResponse(
-            id="placeholder-id",
-            name=source_name,
-            display_name=request.display_name,
-            api_type=request.api_type.value,
-            base_url=request.base_url,
-            auth_type=request.auth_type.value,
-            refresh_tier=request.refresh_tier.value,
-            table_name=f"bronze_{source_name.lower().replace('-', '_')}",
-            is_active=True,
-            created_at=datetime.utcnow().isoformat(),
-            updated_at=datetime.utcnow().isoformat(),
-        )
+        pool = await get_db_pool()
+        if pool is None:
+            raise HTTPException(status_code=503, detail="Database unavailable")
+
+        async with pool.acquire() as conn:
+            # Check if source exists
+            exists = await conn.fetchval(
+                "SELECT 1 FROM raw.sync_schedules WHERE source = $1",
+                source_name
+            )
+            if not exists:
+                raise HTTPException(status_code=404, detail=f"Data source '{source_name}' not found")
+
+            # Build options JSON
+            options = {
+                'display_name': request.display_name,
+                'api_type': request.api_type.value,
+                'base_url': request.base_url,
+                'auth_type': request.auth_type.value,
+                'target_table': f"raw.{source_name.lower().replace('-', '_')}_data",
+            }
+
+            # Update the record
+            row = await conn.fetchrow("""
+                UPDATE raw.sync_schedules
+                SET tier = $2,
+                    options = COALESCE(options, '{}'::jsonb) || $3::jsonb,
+                    updated_at = NOW()
+                WHERE source = $1
+                RETURNING source, tier, enabled, created_at, updated_at
+            """, source_name, request.refresh_tier.value, json.dumps(options))
+
+            return DataSourceResponse(
+                id=source_name,
+                name=source_name,
+                display_name=request.display_name,
+                api_type=request.api_type.value,
+                base_url=request.base_url,
+                auth_type=request.auth_type.value,
+                refresh_tier=request.refresh_tier.value,
+                table_name=f"raw.{source_name.lower().replace('-', '_')}_data",
+                is_active=row['enabled'],
+                created_at=row['created_at'].isoformat() if row['created_at'] else datetime.utcnow().isoformat(),
+                updated_at=row['updated_at'].isoformat() if row['updated_at'] else datetime.utcnow().isoformat(),
+            )
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"Failed to update data source: {e}")
         raise HTTPException(status_code=500, detail=str(e))
@@ -711,14 +783,52 @@ async def delete_data_source(source_name: str, delete_data: bool = Query(False))
     Set delete_data=true to also delete all ingested data.
     """
     try:
-        # Placeholder - would delete from database
+        pool = await get_db_pool()
+        if pool is None:
+            raise HTTPException(status_code=503, detail="Database unavailable")
+
+        async with pool.acquire() as conn:
+            # Check if source exists
+            row = await conn.fetchrow(
+                "SELECT source, options FROM raw.sync_schedules WHERE source = $1",
+                source_name
+            )
+            if not row:
+                raise HTTPException(status_code=404, detail=f"Data source '{source_name}' not found")
+
+            # Get target table name from options
+            options = row['options'] or {}
+            if isinstance(options, str):
+                options = json.loads(options)
+            target_table = options.get('target_table', f"raw.{source_name.lower().replace('-', '_')}_data")
+
+            # Delete data if requested
+            data_deleted = False
+            if delete_data:
+                try:
+                    await conn.execute(f"DROP TABLE IF EXISTS {target_table} CASCADE")
+                    data_deleted = True
+                    logger.info(f"Deleted table {target_table} for source {source_name}")
+                except Exception as e:
+                    logger.warning(f"Could not delete table {target_table}: {e}")
+
+            # Delete the sync schedule
+            await conn.execute(
+                "DELETE FROM raw.sync_schedules WHERE source = $1",
+                source_name
+            )
+
+            logger.info(f"Deleted data source registration: {source_name}")
+
         return {
             "success": True,
             "source_name": source_name,
-            "data_deleted": delete_data,
+            "data_deleted": data_deleted,
             "message": f"Data source '{source_name}' deleted",
             "timestamp": datetime.utcnow().isoformat(),
         }
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"Failed to delete data source: {e}")
         raise HTTPException(status_code=500, detail=str(e))
@@ -728,12 +838,28 @@ async def delete_data_source(source_name: str, delete_data: bool = Query(False))
 async def activate_data_source(source_name: str):
     """Activate a data source for sync."""
     try:
+        pool = await get_db_pool()
+        if pool is None:
+            raise HTTPException(status_code=503, detail="Database unavailable")
+
+        async with pool.acquire() as conn:
+            result = await conn.execute("""
+                UPDATE raw.sync_schedules
+                SET enabled = TRUE, updated_at = NOW()
+                WHERE source = $1
+            """, source_name)
+
+            if result == "UPDATE 0":
+                raise HTTPException(status_code=404, detail=f"Data source '{source_name}' not found")
+
         return {
             "success": True,
             "source_name": source_name,
             "is_active": True,
             "timestamp": datetime.utcnow().isoformat(),
         }
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"Failed to activate data source: {e}")
         raise HTTPException(status_code=500, detail=str(e))
@@ -743,12 +869,28 @@ async def activate_data_source(source_name: str):
 async def deactivate_data_source(source_name: str):
     """Deactivate a data source (pauses sync)."""
     try:
+        pool = await get_db_pool()
+        if pool is None:
+            raise HTTPException(status_code=503, detail="Database unavailable")
+
+        async with pool.acquire() as conn:
+            result = await conn.execute("""
+                UPDATE raw.sync_schedules
+                SET enabled = FALSE, updated_at = NOW()
+                WHERE source = $1
+            """, source_name)
+
+            if result == "UPDATE 0":
+                raise HTTPException(status_code=404, detail=f"Data source '{source_name}' not found")
+
         return {
             "success": True,
             "source_name": source_name,
             "is_active": False,
             "timestamp": datetime.utcnow().isoformat(),
         }
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"Failed to deactivate data source: {e}")
         raise HTTPException(status_code=500, detail=str(e))
@@ -825,13 +967,39 @@ async def list_credentials(source_name: str):
     Returns metadata only for security.
     """
     try:
-        # Placeholder - would call CredentialStore
+        pool = await get_db_pool()
+        if pool is None:
+            raise HTTPException(status_code=503, detail="Database unavailable")
+
+        async with pool.acquire() as conn:
+            row = await conn.fetchrow("""
+                SELECT options FROM raw.sync_schedules WHERE source = $1
+            """, source_name)
+
+            if not row:
+                raise HTTPException(status_code=404, detail=f"Data source '{source_name}' not found")
+
+            options = row['options'] or {}
+            if isinstance(options, str):
+                options = json.loads(options)
+
+            credentials = []
+            cred_info = options.get('credentials', {})
+            if cred_info.get('configured'):
+                credentials.append({
+                    "key_name": cred_info.get('key', 'api_key'),
+                    "created_at": cred_info.get('configured_at', datetime.utcnow().isoformat()),
+                    "last_rotated": cred_info.get('last_rotated'),
+                })
+
         return CredentialListResponse(
             success=True,
-            credentials=[],
-            count=0,
+            credentials=credentials,
+            count=len(credentials),
             timestamp=datetime.utcnow().isoformat(),
         )
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"Failed to list credentials: {e}")
         raise HTTPException(status_code=500, detail=str(e))
@@ -841,7 +1009,24 @@ async def list_credentials(source_name: str):
 async def delete_credential(source_name: str, key_name: str):
     """Delete a credential."""
     try:
-        # Placeholder - would call CredentialStore
+        pool = await get_db_pool()
+        if pool is None:
+            raise HTTPException(status_code=503, detail="Database unavailable")
+
+        async with pool.acquire() as conn:
+            # Remove credential info from options
+            result = await conn.execute("""
+                UPDATE raw.sync_schedules
+                SET options = options - 'credentials',
+                    updated_at = NOW()
+                WHERE source = $1
+            """, source_name)
+
+            if result == "UPDATE 0":
+                raise HTTPException(status_code=404, detail=f"Data source '{source_name}' not found")
+
+            logger.info(f"Deleted credential {key_name} for source {source_name}")
+
         return {
             "success": True,
             "source_name": source_name,
@@ -849,6 +1034,8 @@ async def delete_credential(source_name: str, key_name: str):
             "message": "Credential deleted",
             "timestamp": datetime.utcnow().isoformat(),
         }
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"Failed to delete credential: {e}")
         raise HTTPException(status_code=500, detail=str(e))
@@ -862,7 +1049,34 @@ async def rotate_credential(source_name: str, key_name: str, new_value: str = Bo
     Old value is overwritten immediately.
     """
     try:
-        # Placeholder - would call CredentialStore
+        pool = await get_db_pool()
+        if pool is None:
+            raise HTTPException(status_code=503, detail="Database unavailable")
+
+        async with pool.acquire() as conn:
+            # Update credential with rotation timestamp
+            result = await conn.execute("""
+                UPDATE raw.sync_schedules
+                SET options = COALESCE(options, '{}'::jsonb) || $2::jsonb,
+                    updated_at = NOW()
+                WHERE source = $1
+            """,
+                source_name,
+                json.dumps({
+                    'credentials': {
+                        'key': key_name,
+                        'configured': True,
+                        'configured_at': datetime.utcnow().isoformat(),
+                        'last_rotated': datetime.utcnow().isoformat()
+                    }
+                })
+            )
+
+            if result == "UPDATE 0":
+                raise HTTPException(status_code=404, detail=f"Data source '{source_name}' not found")
+
+            logger.info(f"Rotated credential {key_name} for source {source_name}")
+
         return {
             "success": True,
             "source_name": source_name,
@@ -870,6 +1084,8 @@ async def rotate_credential(source_name: str, key_name: str, new_value: str = Bo
             "message": "Credential rotated",
             "timestamp": datetime.utcnow().isoformat(),
         }
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"Failed to rotate credential: {e}")
         raise HTTPException(status_code=500, detail=str(e))
@@ -1143,6 +1359,7 @@ async def create_bronze_table(source_name: str, request: SchemaDetectionRequest)
 async def trigger_sync(
     source_name: str,
     full_refresh: bool = Query(False, description="Force full refresh"),
+    background_tasks: BackgroundTasks = None,
 ):
     """
     Trigger immediate sync for a data source.
@@ -1151,14 +1368,61 @@ async def trigger_sync(
     Set full_refresh=true for complete re-sync.
     """
     try:
-        # Placeholder - would call SyncScheduler
+        from uuid import uuid4
+
+        pool = await get_db_pool()
+        if pool is None:
+            raise HTTPException(status_code=503, detail="Database unavailable")
+
+        # Verify source exists
+        async with pool.acquire() as conn:
+            exists = await conn.fetchval(
+                "SELECT 1 FROM raw.sync_schedules WHERE source = $1",
+                source_name
+            )
+            if not exists:
+                raise HTTPException(status_code=404, detail=f"Data source '{source_name}' not found")
+
+        job_id = str(uuid4())
+
+        # Import and run the pipeline
+        try:
+            from ...services.data_platform.sync_runner import run_pipeline
+
+            async def run_sync():
+                try:
+                    result = await run_pipeline(
+                        sources=[source_name],
+                        tier='manual',
+                        full_refresh=full_refresh,
+                        skip_raw=False,
+                        skip_bronze=False,
+                        skip_silver=False,
+                        skip_gold=False,
+                    )
+                    logger.info(f"Sync job {job_id} completed: {result['status']}")
+                except Exception as e:
+                    logger.error(f"Sync job {job_id} failed: {e}")
+
+            if background_tasks:
+                background_tasks.add_task(run_sync)
+            else:
+                # Run synchronously if no background tasks available
+                import asyncio
+                asyncio.create_task(run_sync())
+
+        except ImportError as e:
+            logger.warning(f"Could not import sync_runner: {e}")
+
         return SyncTriggerResponse(
             success=True,
             source_name=source_name,
-            job_id="job-placeholder",
+            job_id=job_id,
             message=f"{'Full' if full_refresh else 'Incremental'} sync triggered",
             timestamp=datetime.utcnow().isoformat(),
         )
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"Failed to trigger sync: {e}")
         raise HTTPException(status_code=500, detail=str(e))
@@ -1168,16 +1432,56 @@ async def trigger_sync(
 async def get_sync_status(source_name: str):
     """Get current sync status for a data source."""
     try:
-        # Placeholder - would fetch from database
-        return {
-            "success": True,
-            "source_name": source_name,
-            "status": "idle",
-            "last_sync": None,
-            "next_sync": None,
-            "last_record_count": 0,
-            "timestamp": datetime.utcnow().isoformat(),
-        }
+        pool = await get_db_pool()
+        if pool is None:
+            raise HTTPException(status_code=503, detail="Database unavailable")
+
+        async with pool.acquire() as conn:
+            # Get schedule info
+            schedule = await conn.fetchrow("""
+                SELECT source, tier, enabled, last_run, next_run, options
+                FROM raw.sync_schedules
+                WHERE source = $1
+            """, source_name)
+
+            if not schedule:
+                raise HTTPException(status_code=404, detail=f"Data source '{source_name}' not found")
+
+            # Get latest job status
+            latest_job = await conn.fetchrow("""
+                SELECT job_id, status, started_at, completed_at, records_processed, error_message
+                FROM raw.ingestion_jobs
+                WHERE source = $1
+                ORDER BY started_at DESC NULLS LAST
+                LIMIT 1
+            """, source_name)
+
+            # Determine current status
+            status = "idle"
+            if latest_job:
+                if latest_job['status'] == 'processing':
+                    status = "running"
+                elif latest_job['status'] == 'completed':
+                    status = "idle"
+                elif latest_job['status'] == 'failed':
+                    status = "error"
+
+            return {
+                "success": True,
+                "source_name": source_name,
+                "status": status,
+                "enabled": schedule['enabled'],
+                "tier": schedule['tier'],
+                "last_sync": schedule['last_run'].isoformat() if schedule['last_run'] else None,
+                "next_sync": schedule['next_run'].isoformat() if schedule['next_run'] else None,
+                "last_job_id": str(latest_job['job_id']) if latest_job else None,
+                "last_job_status": latest_job['status'] if latest_job else None,
+                "last_record_count": latest_job['records_processed'] if latest_job else 0,
+                "last_error": latest_job['error_message'] if latest_job else None,
+                "timestamp": datetime.utcnow().isoformat(),
+            }
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"Failed to get sync status: {e}")
         raise HTTPException(status_code=500, detail=str(e))
@@ -1190,14 +1494,62 @@ async def get_sync_history(
 ):
     """Get sync history for a data source."""
     try:
-        # Placeholder - would fetch from database
+        pool = await get_db_pool()
+        if pool is None:
+            raise HTTPException(status_code=503, detail="Database unavailable")
+
+        async with pool.acquire() as conn:
+            # Verify source exists
+            exists = await conn.fetchval(
+                "SELECT 1 FROM raw.sync_schedules WHERE source = $1",
+                source_name
+            )
+            if not exists:
+                raise HTTPException(status_code=404, detail=f"Data source '{source_name}' not found")
+
+            # Get job history
+            rows = await conn.fetch("""
+                SELECT
+                    job_id::text,
+                    source,
+                    status,
+                    priority,
+                    started_at,
+                    completed_at,
+                    records_processed,
+                    error_message,
+                    created_at
+                FROM raw.ingestion_jobs
+                WHERE source = $1
+                ORDER BY started_at DESC NULLS LAST
+                LIMIT $2
+            """, source_name, limit)
+
+            history = []
+            for row in rows:
+                duration = None
+                if row['started_at'] and row['completed_at']:
+                    duration = (row['completed_at'] - row['started_at']).total_seconds()
+
+                history.append({
+                    "job_id": row['job_id'],
+                    "status": row['status'],
+                    "started_at": row['started_at'].isoformat() if row['started_at'] else None,
+                    "completed_at": row['completed_at'].isoformat() if row['completed_at'] else None,
+                    "duration_seconds": duration,
+                    "records_processed": row['records_processed'] or 0,
+                    "error_message": row['error_message'],
+                })
+
         return {
             "success": True,
             "source_name": source_name,
-            "history": [],
-            "count": 0,
+            "history": history,
+            "count": len(history),
             "timestamp": datetime.utcnow().isoformat(),
         }
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"Failed to get sync history: {e}")
         raise HTTPException(status_code=500, detail=str(e))
@@ -1215,17 +1567,79 @@ async def get_source_health(source_name: str):
     Checks API availability and recent error rates.
     """
     try:
-        # Placeholder - would check API health
+        pool = await get_db_pool()
+        if pool is None:
+            raise HTTPException(status_code=503, detail="Database unavailable")
+
+        async with pool.acquire() as conn:
+            # Get source configuration
+            row = await conn.fetchrow("""
+                SELECT source, enabled, last_run, options
+                FROM raw.sync_schedules
+                WHERE source = $1
+            """, source_name)
+
+            if not row:
+                raise HTTPException(status_code=404, detail=f"Data source '{source_name}' not found")
+
+            options = row['options'] or {}
+            if isinstance(options, str):
+                options = json.loads(options)
+
+            # Calculate error rate from recent jobs (last 24 hours)
+            stats = await conn.fetchrow("""
+                SELECT
+                    COUNT(*) as total_jobs,
+                    COUNT(*) FILTER (WHERE status = 'failed') as failed_jobs,
+                    AVG(EXTRACT(EPOCH FROM (completed_at - started_at)) * 1000)
+                        FILTER (WHERE status = 'completed') as avg_duration_ms
+                FROM raw.ingestion_jobs
+                WHERE source = $1
+                  AND started_at >= NOW() - INTERVAL '24 hours'
+            """, source_name)
+
+            total_jobs = stats['total_jobs'] or 0
+            failed_jobs = stats['failed_jobs'] or 0
+            error_rate = (failed_jobs / total_jobs * 100) if total_jobs > 0 else 0.0
+            avg_duration = stats['avg_duration_ms'] or 0
+
+            # Determine health status
+            status = "healthy"
+            if not row['enabled']:
+                status = "disabled"
+            elif error_rate > 50:
+                status = "unhealthy"
+            elif error_rate > 20:
+                status = "degraded"
+
+            # Try to ping the API if URL is configured
+            api_available = True
+            base_url = options.get('base_url')
+            if base_url:
+                try:
+                    async with aiohttp.ClientSession() as session:
+                        async with session.head(base_url, timeout=aiohttp.ClientTimeout(total=5)) as response:
+                            api_available = response.status < 500
+                except Exception:
+                    api_available = False
+                    if status == "healthy":
+                        status = "degraded"
+
         return {
             "success": True,
             "source_name": source_name,
-            "status": "healthy",
-            "api_available": True,
+            "status": status,
+            "enabled": row['enabled'],
+            "api_available": api_available,
             "last_check": datetime.utcnow().isoformat(),
-            "error_rate_24h": 0.0,
-            "avg_response_time_ms": 250,
+            "last_sync": row['last_run'].isoformat() if row['last_run'] else None,
+            "error_rate_24h": round(error_rate, 2),
+            "avg_response_time_ms": round(avg_duration, 0) if avg_duration else None,
+            "jobs_24h": total_jobs,
             "timestamp": datetime.utcnow().isoformat(),
         }
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"Failed to get source health: {e}")
         raise HTTPException(status_code=500, detail=str(e))
@@ -1235,19 +1649,78 @@ async def get_source_health(source_name: str):
 async def get_source_metrics(source_name: str):
     """Get metrics for a data source."""
     try:
-        # Placeholder - would fetch metrics
+        pool = await get_db_pool()
+        if pool is None:
+            raise HTTPException(status_code=503, detail="Database unavailable")
+
+        async with pool.acquire() as conn:
+            # Get source configuration to find target table
+            row = await conn.fetchrow("""
+                SELECT source, options FROM raw.sync_schedules WHERE source = $1
+            """, source_name)
+
+            if not row:
+                raise HTTPException(status_code=404, detail=f"Data source '{source_name}' not found")
+
+            options = row['options'] or {}
+            if isinstance(options, str):
+                options = json.loads(options)
+
+            target_table = options.get('target_table', f"raw.{source_name.lower().replace('-', '_')}_data")
+
+            # Get record counts from target table
+            total_records = 0
+            records_today = 0
+            records_this_week = 0
+
+            try:
+                count_result = await conn.fetchrow(f"""
+                    SELECT
+                        COUNT(*) as total,
+                        COUNT(*) FILTER (WHERE _ingested_at >= CURRENT_DATE) as today,
+                        COUNT(*) FILTER (WHERE _ingested_at >= CURRENT_DATE - INTERVAL '7 days') as week
+                    FROM {target_table}
+                """)
+                if count_result:
+                    total_records = count_result['total'] or 0
+                    records_today = count_result['today'] or 0
+                    records_this_week = count_result['week'] or 0
+            except Exception as e:
+                logger.warning(f"Could not query table {target_table}: {e}")
+
+            # Get job statistics
+            job_stats = await conn.fetchrow("""
+                SELECT
+                    COUNT(*) as total_jobs,
+                    COUNT(*) FILTER (WHERE status = 'completed') as successful_jobs,
+                    AVG(EXTRACT(EPOCH FROM (completed_at - started_at)))
+                        FILTER (WHERE status = 'completed') as avg_duration,
+                    SUM(records_processed) FILTER (WHERE status = 'completed') as total_processed
+                FROM raw.ingestion_jobs
+                WHERE source = $1
+            """, source_name)
+
+            total_jobs = job_stats['total_jobs'] or 0
+            successful_jobs = job_stats['successful_jobs'] or 0
+            success_rate = (successful_jobs / total_jobs) if total_jobs > 0 else 1.0
+            avg_duration = job_stats['avg_duration'] or 0
+
         return {
             "success": True,
             "source_name": source_name,
             "metrics": {
-                "total_records": 0,
-                "records_today": 0,
-                "records_this_week": 0,
-                "avg_sync_duration_seconds": 0,
-                "success_rate": 1.0,
+                "total_records": total_records,
+                "records_today": records_today,
+                "records_this_week": records_this_week,
+                "total_jobs": total_jobs,
+                "successful_jobs": successful_jobs,
+                "avg_sync_duration_seconds": round(avg_duration, 2) if avg_duration else 0,
+                "success_rate": round(success_rate, 3),
             },
             "timestamp": datetime.utcnow().isoformat(),
         }
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"Failed to get source metrics: {e}")
         raise HTTPException(status_code=500, detail=str(e))

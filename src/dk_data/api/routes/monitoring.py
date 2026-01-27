@@ -24,6 +24,8 @@ from prometheus_client import (
 from starlette.responses import Response
 from loguru import logger
 
+from ..dependencies import get_sync_db_url
+
 # Import DK Data Platform metrics
 try:
     from ...services.data_platform.metrics import (
@@ -252,15 +254,7 @@ async def database_stats():
 
     try:
         import psycopg2
-        db_url = os.getenv('DATABASE_URL')
-        if not db_url:
-            # Build from individual env vars (Docker container uses these)
-            db_host = os.getenv('POSTGRES_HOST', 'postgres')
-            db_port = os.getenv('POSTGRES_PORT', '5432')
-            db_name = os.getenv('POSTGRES_DB', 'edwards_tavr')
-            db_user = os.getenv('POSTGRES_USER', 'postgres')
-            db_pass = os.getenv('POSTGRES_PASSWORD', 'postgres')
-            db_url = f'postgresql://{db_user}:{db_pass}@{db_host}:{db_port}/{db_name}'
+        db_url = get_sync_db_url()
         conn = psycopg2.connect(db_url)
         cur = conn.cursor()
 
@@ -339,38 +333,92 @@ async def pipeline_health():
     Get overall pipeline health status.
     Checks Bronze, Silver, and Gold layers.
     """
-    # This would normally query the database
-    # Placeholder implementation
-    return PipelineHealth(
-        status="healthy",
-        bronze_sources=[
-            SourceHealth(
-                source_id="clinicaltrials_gov",
-                last_sync=datetime.utcnow() - timedelta(hours=2),
+    import os
+    import psycopg2
+
+    bronze_sources = []
+    silver_health = LayerHealth(layer="silver", record_count=0, last_update=None, status="unknown")
+    gold_health = LayerHealth(layer="gold", record_count=0, last_update=None, status="unknown")
+    overall_status = "healthy"
+
+    try:
+        db_url = get_sync_db_url()
+
+        conn = psycopg2.connect(db_url)
+        cur = conn.cursor()
+
+        # Get Bronze source health from sync_schedules
+        cur.execute("""
+            SELECT source, tier, enabled, last_run, next_run
+            FROM raw.sync_schedules
+            WHERE enabled = TRUE
+            ORDER BY last_run DESC NULLS LAST
+            LIMIT 10
+        """)
+        for row in cur.fetchall():
+            source_name, tier, enabled, last_run, next_run = row
+            # Check for recent errors
+            cur.execute("""
+                SELECT COUNT(*) FROM raw.ingestion_jobs
+                WHERE source = %s AND status = 'failed'
+                  AND started_at >= NOW() - INTERVAL '24 hours'
+            """, (source_name,))
+            error_count = cur.fetchone()[0] or 0
+
+            source_status = "healthy"
+            if error_count > 5:
+                source_status = "unhealthy"
+                overall_status = "degraded"
+            elif error_count > 0:
+                source_status = "warning"
+
+            bronze_sources.append(SourceHealth(
+                source_id=source_name,
+                last_sync=last_run,
                 records_pending=0,
-                error_count=0,
-                status="healthy",
-            ),
-            SourceHealth(
-                source_id="openfda_labels",
-                last_sync=datetime.utcnow() - timedelta(hours=4),
-                records_pending=0,
-                error_count=0,
-                status="healthy",
-            ),
-        ],
-        silver=LayerHealth(
+                error_count=error_count,
+                status=source_status,
+            ))
+
+        # Get Silver layer health
+        cur.execute("SELECT COUNT(*), MAX(updated_at) FROM silver.molecules")
+        result = cur.fetchone()
+        silver_count = result[0] or 0
+        silver_update = result[1]
+        silver_health = LayerHealth(
             layer="silver",
-            record_count=0,
-            last_update=datetime.utcnow() - timedelta(hours=1),
-            status="healthy",
-        ),
-        gold=LayerHealth(
-            layer="gold",
-            record_count=0,
-            last_update=datetime.utcnow() - timedelta(hours=1),
-            status="healthy",
-        ),
+            record_count=silver_count,
+            last_update=silver_update,
+            status="healthy" if silver_count > 0 else "empty",
+        )
+
+        # Get Gold layer health (check if gold schema exists)
+        try:
+            cur.execute("""
+                SELECT COUNT(*) FROM silver.molecules WHERE needs_review = FALSE
+            """)
+            gold_count = cur.fetchone()[0] or 0
+            gold_health = LayerHealth(
+                layer="gold",
+                record_count=gold_count,
+                last_update=datetime.utcnow(),
+                status="healthy" if gold_count > 0 else "empty",
+            )
+        except Exception:
+            gold_health = LayerHealth(layer="gold", record_count=0, last_update=None, status="not_configured")
+
+        cur.close()
+        conn.close()
+
+    except Exception as e:
+        logger.error(f"Failed to get pipeline health: {e}")
+        overall_status = "error"
+
+    return PipelineHealth(
+        status=overall_status,
+        bronze_sources=bronze_sources,
+        silver=silver_health,
+        gold=gold_health,
         last_check=datetime.utcnow(),
     )
 
@@ -415,10 +463,76 @@ async def list_recent_runs(
     """
     List recent pipeline runs.
     """
-    # Placeholder - would query bronze_ingestion_runs, silver_transformation_runs, gold_aggregation_runs
+    import os
+    import psycopg2
+
+    runs = []
+    total = 0
+
+    try:
+        db_url = get_sync_db_url()
+
+        conn = psycopg2.connect(db_url)
+        cur = conn.cursor()
+
+        # Build query with filters
+        query = """
+            SELECT
+                job_id::text,
+                source,
+                status,
+                priority,
+                started_at,
+                completed_at,
+                records_processed,
+                error_message,
+                error_details
+            FROM raw.ingestion_jobs
+            WHERE 1=1
+        """
+        params = []
+
+        if status:
+            query += " AND status = %s"
+            params.append(status)
+
+        query += " ORDER BY started_at DESC NULLS LAST LIMIT %s"
+        params.append(limit)
+
+        cur.execute(query, params)
+
+        for row in cur.fetchall():
+            job_id, source, job_status, priority, started_at, completed_at, records, error_msg, error_details = row
+            duration = None
+            if started_at and completed_at:
+                duration = (completed_at - started_at).total_seconds()
+
+            runs.append({
+                "run_id": job_id,
+                "pipeline_type": "raw_ingestion",
+                "source": source,
+                "status": job_status,
+                "priority": priority,
+                "started_at": started_at.isoformat() if started_at else None,
+                "completed_at": completed_at.isoformat() if completed_at else None,
+                "duration_seconds": duration,
+                "records_processed": records or 0,
+                "error_message": error_msg,
+            })
+
+        # Get total count
+        cur.execute("SELECT COUNT(*) FROM raw.ingestion_jobs")
+        total = cur.fetchone()[0] or 0
+
+        cur.close()
+        conn.close()
+
+    except Exception as e:
+        logger.error(f"Failed to list recent runs: {e}")
+
     return {
-        "runs": [],
-        "total": 0,
+        "runs": runs,
+        "total": total,
         "filters": {
             "pipeline_type": pipeline_type,
             "status": status,
@@ -464,14 +578,7 @@ async def list_data_sources():
     sources = []
 
     try:
-        db_url = os.getenv('DATABASE_URL')
-        if not db_url:
-            db_host = os.getenv('POSTGRES_HOST', 'postgres')
-            db_port = os.getenv('POSTGRES_PORT', '5432')
-            db_name = os.getenv('POSTGRES_DB', 'edwards_tavr')
-            db_user = os.getenv('POSTGRES_USER', 'postgres')
-            db_pass = os.getenv('POSTGRES_PASSWORD', 'postgres')
-            db_url = f'postgresql://{db_user}:{db_pass}@{db_host}:{db_port}/{db_name}'
+        db_url = get_sync_db_url()
 
         conn = psycopg2.connect(db_url)
         cur = conn.cursor()
@@ -766,5 +873,48 @@ async def get_sync_job_status(job_id: str):
     """
     Get status of a specific sync job.
     """
-    # Placeholder - would query database
-    raise HTTPException(status_code=404, detail="Job not found")
+    import psycopg2
+
+    try:
+        db_url = get_sync_db_url()
+
+        conn = psycopg2.connect(db_url)
+        cur = conn.cursor()
+
+        cur.execute("""
+            SELECT id, source, job_type, status, started_at, completed_at,
+                   records_processed, records_failed, error_message, options
+            FROM raw.ingestion_jobs
+            WHERE id::text = %s
+        """, (job_id,))
+        row = cur.fetchone()
+
+        cur.close()
+        conn.close()
+
+        if not row:
+            raise HTTPException(status_code=404, detail="Job not found")
+
+        duration = None
+        if row[4] and row[5]:  # started_at and completed_at
+            duration = (row[5] - row[4]).total_seconds()
+
+        return {
+            "job_id": str(row[0]),
+            "source": row[1],
+            "job_type": row[2] or "bronze_ingest",
+            "status": row[3],
+            "started_at": row[4].isoformat() if row[4] else None,
+            "completed_at": row[5].isoformat() if row[5] else None,
+            "duration_seconds": duration,
+            "records_processed": row[6] or 0,
+            "records_failed": row[7] or 0,
+            "error_message": row[8],
+            "options": row[9] if row[9] else {},
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to get job status: {e}")
+        raise HTTPException(status_code=500, detail=str(e))

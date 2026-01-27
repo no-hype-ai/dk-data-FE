@@ -285,20 +285,140 @@ async def resolve_identifier(request: IdentifierResolutionRequest):
     Auto-detects identifier type if not provided.
     """
     try:
-        # Placeholder response
-        return IdentifierResolutionResponse(
-            success=True,
-            identifier=request.identifier,
-            detected_type=request.identifier_type or "name",
-            molecule_id=None,
-            inchi_key=None,
-            canonical_name=None,
-            confidence=0.0,
-            match_type="none",
-            needs_review=True,
-            resolution_path=["auto_detect"],
-            timestamp=datetime.utcnow().isoformat()
-        )
+        pool = await get_db_pool()
+        if pool is None:
+            return IdentifierResolutionResponse(
+                success=False,
+                identifier=request.identifier,
+                detected_type="unknown",
+                molecule_id=None,
+                inchi_key=None,
+                canonical_name=None,
+                confidence=0.0,
+                match_type="none",
+                needs_review=True,
+                resolution_path=["database_unavailable"],
+                timestamp=datetime.utcnow().isoformat()
+            )
+
+        # Try to get resolver service
+        resolver = await get_resolver_service()
+        if resolver:
+            result = await resolver.resolve(request.identifier, request.identifier_type)
+            return IdentifierResolutionResponse(
+                success=result.success,
+                identifier=request.identifier,
+                detected_type=result.identifier_type.value if result.identifier_type else "unknown",
+                molecule_id=str(result.molecule_id) if result.molecule_id else None,
+                inchi_key=result.inchi_key,
+                canonical_name=result.canonical_name,
+                confidence=result.confidence,
+                match_type=result.match_type,
+                needs_review=result.needs_review,
+                resolution_path=result.resolution_path,
+                timestamp=datetime.utcnow().isoformat()
+            )
+
+        # Fallback: direct database lookup
+        async with pool.acquire() as conn:
+            identifier = request.identifier.strip()
+            resolution_path = ["direct_lookup"]
+
+            # Try to detect identifier type
+            detected_type = request.identifier_type or "name"
+
+            # Check if it's an InChI Key pattern
+            if len(identifier) == 27 and '-' in identifier:
+                detected_type = "inchi_key"
+                resolution_path.append("inchi_key_pattern")
+
+            # Check if it matches common ID patterns
+            if identifier.upper().startswith("CHEMBL"):
+                detected_type = "chembl_id"
+            elif identifier.upper().startswith("DB"):
+                detected_type = "drugbank_id"
+            elif identifier.isdigit():
+                detected_type = "pubchem_cid"
+
+            # Search in molecules table
+            mol = await conn.fetchrow("""
+                SELECT
+                    m.id::text as molecule_id,
+                    m.inchi_key,
+                    m.canonical_name,
+                    m.needs_review
+                FROM silver.molecules m
+                WHERE m.inchi_key = $1
+                   OR LOWER(m.canonical_name) = LOWER($1)
+                   OR EXISTS (
+                       SELECT 1 FROM silver.identifier_mappings im
+                       WHERE im.molecule_id = m.id AND im.identifier_value = $1
+                   )
+                LIMIT 1
+            """, identifier)
+
+            if mol:
+                resolution_path.append("found_in_molecules")
+                return IdentifierResolutionResponse(
+                    success=True,
+                    identifier=request.identifier,
+                    detected_type=detected_type,
+                    molecule_id=mol['molecule_id'],
+                    inchi_key=mol['inchi_key'],
+                    canonical_name=mol['canonical_name'],
+                    confidence=1.0 if mol['inchi_key'] == identifier else 0.9,
+                    match_type="exact" if mol['inchi_key'] == identifier else "name",
+                    needs_review=mol['needs_review'],
+                    resolution_path=resolution_path,
+                    timestamp=datetime.utcnow().isoformat()
+                )
+
+            # Try fuzzy name match
+            fuzzy_match = await conn.fetchrow("""
+                SELECT
+                    m.id::text as molecule_id,
+                    m.inchi_key,
+                    m.canonical_name,
+                    m.needs_review,
+                    similarity(LOWER(m.canonical_name), LOWER($1)) as sim
+                FROM silver.molecules m
+                WHERE similarity(LOWER(m.canonical_name), LOWER($1)) > 0.3
+                ORDER BY sim DESC
+                LIMIT 1
+            """, identifier)
+
+            if fuzzy_match and fuzzy_match['sim'] > 0.5:
+                resolution_path.append("fuzzy_match")
+                return IdentifierResolutionResponse(
+                    success=True,
+                    identifier=request.identifier,
+                    detected_type="name",
+                    molecule_id=fuzzy_match['molecule_id'],
+                    inchi_key=fuzzy_match['inchi_key'],
+                    canonical_name=fuzzy_match['canonical_name'],
+                    confidence=float(fuzzy_match['sim']),
+                    match_type="fuzzy",
+                    needs_review=True,
+                    resolution_path=resolution_path,
+                    timestamp=datetime.utcnow().isoformat()
+                )
+
+            # No match found
+            resolution_path.append("no_match")
+            return IdentifierResolutionResponse(
+                success=False,
+                identifier=request.identifier,
+                detected_type=detected_type,
+                molecule_id=None,
+                inchi_key=None,
+                canonical_name=None,
+                confidence=0.0,
+                match_type="none",
+                needs_review=True,
+                resolution_path=resolution_path,
+                timestamp=datetime.utcnow().isoformat()
+            )
+
     except Exception as e:
         logger.error(f"Identifier resolution failed: {e}")
         raise HTTPException(status_code=500, detail=str(e))

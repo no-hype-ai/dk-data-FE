@@ -174,8 +174,7 @@ async def get_competitors(
         elif level == 2:
             graph_level = GraphLevel.N_PLUS_2
 
-        # For now, this would need to load from database
-        # Placeholder that returns empty list
+        # Get competitors from database via service
         competitors = await service.get_competitors(
             molecule_id=molecule_id,
             level=graph_level,
@@ -235,15 +234,99 @@ async def get_graph_visualization(
     """
     logger.info(f"Getting visualization for {molecule_id}")
 
-    # This would load from database and return formatted data
-    # Placeholder response
-    return {
-        "nodes": [],
-        "edges": [],
-        "layout": layout,
-        "format": format,
-        "core_id": molecule_id,
-    }
+    try:
+        service = get_graph_service()
+
+        # Get competitors from the service
+        competitors = await service.get_competitors(
+            molecule_id=molecule_id,
+            level=None,
+            min_score=0.0,
+        )
+
+        # Build nodes and edges for visualization
+        nodes = []
+        edges = []
+
+        # Add core molecule as central node
+        nodes.append({
+            "id": molecule_id,
+            "label": molecule_id,
+            "type": "core",
+            "level": 0,
+            "x": 0,
+            "y": 0,
+        })
+
+        # Add competitor nodes and edges
+        for i, comp in enumerate(competitors):
+            comp_id = comp.get("id", f"comp_{i}")
+            comp_level = comp.get("level", 1)
+
+            # Calculate position based on layout
+            if layout == "circular":
+                import math
+                angle = (2 * math.pi * i) / max(len(competitors), 1)
+                radius = 100 * comp_level
+                x = radius * math.cos(angle)
+                y = radius * math.sin(angle)
+            elif layout == "hierarchical":
+                x = (i % 5 - 2) * 150
+                y = comp_level * 150
+            else:  # force layout - positions computed by client
+                x = None
+                y = None
+
+            nodes.append({
+                "id": comp_id,
+                "label": comp.get("name", comp_id),
+                "type": "competitor",
+                "level": comp_level,
+                "development_stage": comp.get("development_stage"),
+                "threat_score": comp.get("threat_score", 0),
+                "x": x,
+                "y": y,
+            })
+
+            # Add edge from core (or parent) to competitor
+            edges.append({
+                "source": molecule_id,
+                "target": comp_id,
+                "type": "competes_with",
+                "discovered_via": comp.get("discovered_via", []),
+            })
+
+        # Format for cytoscape if requested
+        if format == "cytoscape":
+            return {
+                "elements": {
+                    "nodes": [{"data": n} for n in nodes],
+                    "edges": [{"data": e} for e in edges],
+                },
+                "layout": {"name": layout},
+                "core_id": molecule_id,
+            }
+
+        # Default D3 format
+        return {
+            "nodes": nodes,
+            "links": edges,  # D3 uses "links"
+            "layout": layout,
+            "format": format,
+            "core_id": molecule_id,
+        }
+
+    except Exception as e:
+        logger.error(f"Graph visualization failed: {e}")
+        # Return empty graph on error
+        return {
+            "nodes": [{"id": molecule_id, "label": molecule_id, "type": "core", "level": 0}],
+            "links": [] if format == "d3" else None,
+            "edges": [] if format != "d3" else None,
+            "layout": layout,
+            "format": format,
+            "core_id": molecule_id,
+        }
 
 
 @router.post("/{molecule_id}/refresh")

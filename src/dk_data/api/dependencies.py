@@ -25,17 +25,36 @@ _db_pool: Optional["asyncpg.Pool"] = None
 
 
 def get_database_url() -> str:
-    """Build database URL from environment."""
+    """Build database URL from environment.
+
+    Required environment variables (set in .env file):
+    - DATABASE_URL: Full connection string, OR
+    - POSTGRES_HOST, POSTGRES_PORT, POSTGRES_DB, POSTGRES_USER, POSTGRES_PASSWORD
+    """
     db_url = os.getenv('DATABASE_URL')
     if db_url:
         return db_url
 
-    db_host = os.getenv('POSTGRES_HOST', 'postgres')
+    db_host = os.getenv('POSTGRES_HOST', 'localhost')
     db_port = os.getenv('POSTGRES_PORT', '5432')
     db_name = os.getenv('POSTGRES_DB', 'edwards_tavr')
     db_user = os.getenv('POSTGRES_USER', 'postgres')
-    db_pass = os.getenv('POSTGRES_PASSWORD', 'postgres')
+    db_pass = os.getenv('POSTGRES_PASSWORD')
+
+    if not db_pass:
+        logger.warning("POSTGRES_PASSWORD not set in environment. Database connection may fail.")
+        db_pass = ''
+
     return f'postgresql://{db_user}:{db_pass}@{db_host}:{db_port}/{db_name}'
+
+
+def get_sync_db_url() -> str:
+    """Get database URL for synchronous connections (psycopg2).
+
+    This is the same as get_database_url() but provided as a separate function
+    for clarity when used with psycopg2 instead of asyncpg.
+    """
+    return get_database_url()
 
 
 async def init_db_pool():
