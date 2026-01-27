@@ -1,0 +1,14 @@
+# Kustomization for Molecule Pipeline
+# Feature: 012-dk-data-platform
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+labels:
+  - pairs:
+      app.kubernetes.io/part-of: dk-data-platform
+      app.kubernetes.io/component: molecule-pipeline
+    includeSelectors: false
+
+resources:
+  - configmap-sources.yaml
+  - cronjob-pipeline.yaml

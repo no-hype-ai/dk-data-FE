@@ -1,0 +1,38 @@
+# Prometheus configuration for DK Data Platform
+# Scrapes metrics from the backend API service
+
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+
+# Alerting configuration (optional)
+alerting:
+  alertmanagers: []
+
+# Rule files (optional)
+rule_files: []
+
+# Scrape configurations
+scrape_configs:
+  # Prometheus self-monitoring
+  - job_name: 'prometheus'
+    static_configs:
+      - targets: ['localhost:9090']
+
+  # DK Data Platform - All application metrics
+  - job_name: 'dk-data-platform'
+    static_configs:
+      - targets: ['job-trigger:8000']
+    metrics_path: '/api/v1/monitoring/metrics'
+    scrape_interval: 15s
+
+  # PostgREST health (optional)
+  # - job_name: 'postgrest'
+  #   static_configs:
+  #     - targets: ['postgrest:3000']
+  #   metrics_path: '/health'
+
+  # PostgreSQL metrics (if postgres-exporter is enabled)
+  # - job_name: 'postgres'
+  #   static_configs:
+  #     - targets: ['postgres-exporter:9187']

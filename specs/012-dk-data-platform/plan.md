@@ -1,8 +1,16 @@
 # Implementation Plan: DK Molecule Data Platform (012)
 
-**Spec**: `/Users/pschloz/Desktop/DataKinetic/trials-predictor/.specify/specs/012-dk-data-platform/spec.md`
+**Spec**: `/Users/pschloz/Desktop/DataKinetic/dk-data-FE/specs/012-dk-data-platform/spec.md`
 **Generated**: 2026-01-23
+**Updated**: 2026-01-24 (Post-Clarification)
 **Priority**: P0 - Core Infrastructure
+
+## Related Documents
+
+- **Research**: `research.md` - Technical decisions and rationale
+- **Data Model**: `data-model.md` - Entity schemas and relationships
+- **API Contracts**: `contracts/` - OpenAPI specifications
+- **Quickstart**: `quickstart.md` - Development setup guide
 
 ---
 
@@ -117,21 +125,37 @@ app/backend/
 
 ---
 
+## Clarified Requirements (2026-01-24)
+
+The following decisions were made during the clarification session:
+
+| Question | Decision | Impact |
+|----------|----------|--------|
+| Disaster Recovery Objectives | **RTO: 1 hour, RPO: 15 minutes** | pgBackRest with WAL archiving, warm standby |
+| Source Precedence | **DrugBank > ChEMBL > PubChem > Others** | Entity resolution merge order |
+| Data Freshness | **Tiered**: Daily (trials), Weekly (FAERS), Monthly (reference) | Scheduler configuration |
+| Low-Confidence Resolution | **Quarantine**: Silver with `needs_review=true`, excluded from Gold | Review queue required |
+| Testing Strategy | **End-to-end testing** with real API samples | Golden datasets, pipeline integration tests |
+
+---
+
 ## Architecture Decisions
 
-### AD-001: Medallion Architecture (Bronze/Silver/Gold)
+### AD-001: Extended Medallion Architecture (Raw → Bronze → Silver → Gold)
 
-**Decision**: Implement industry-standard Medallion pattern for data refinement
+**Decision**: Implement extended Medallion pattern with Raw layer for audit compliance
 
 **Rationale**:
-- Bronze preserves raw data for regulatory audit trails
-- Silver provides normalized, deduplicated entities
-- Gold delivers pre-computed aggregations for sub-second queries
+- **Raw**: JSONB storage of original API responses for audit/compliance (indefinite retention)
+- **Bronze**: Typed columns extracted from Raw, source structure preserved
+- **Silver**: Entity resolution using InChI Key, cross-source linking
+- **Gold**: Pre-computed aggregations for sub-second queries
 - Each layer has distinct retention and transformation rules
 
 **Alternatives Considered**:
 - Direct ETL to single layer: Rejected - loses auditability
 - Lambda architecture: Rejected - overkill for batch-oriented workloads
+- Data Vault: Rejected - better for slowly-changing dimensions, overkill here
 
 ### AD-002: InChI Key as Canonical Identifier
 
@@ -176,6 +200,48 @@ app/backend/
 - Molecules can have different lifecycle stages per indication
 - Example: Drug X at Phase 3 for oncology, Phase 2 for autoimmune
 - Enables indication-specific alerts and validation
+
+### AD-006: Automatic Data Loading with Change Detection
+
+**Decision**: Implement incremental sync with checksum-based change detection
+
+**Rationale**:
+- Hash each record to detect changes without full comparison
+- Only process new/modified records in each sync
+- Source-specific handlers respect API rate limits
+- Tiered refresh schedule balances freshness vs. API load
+
+**Refresh Schedule**:
+| Tier | Sources | Frequency |
+|------|---------|-----------|
+| Daily | ClinicalTrials.gov, OpenFDA Labels | 02:00 UTC |
+| Weekly | OpenFDA FAERS, OpenAlex | Sunday 02:00 UTC |
+| Monthly | ChEMBL, DrugBank, PubChem, UniProt, PDB, SIDER | 1st of month |
+
+### AD-007: PostgREST for Gold Layer API
+
+**Decision**: Use PostgREST instead of custom FastAPI endpoints for Gold layer
+
+**Rationale**:
+- Zero custom code for CRUD operations
+- Automatic filtering, sorting, pagination
+- JWT integration with PostgreSQL RLS
+- OpenAPI auto-generated
+
+**Custom Endpoints**: FastAPI still used for:
+- Fuzzy search (`/resolve/search`)
+- Entity resolution (`/resolve`)
+- Pipeline operations (`/pipeline/*`)
+
+### AD-008: Quarantine Workflow for Low-Confidence Resolution
+
+**Decision**: Records with resolution confidence <0.8 are quarantined
+
+**Implementation**:
+- Promote to Silver with `needs_review=true` flag
+- Exclude from Gold layer views
+- Manual review queue in application layer
+- Approved records automatically flow to Gold
 
 ---
 
@@ -322,55 +388,149 @@ user_tracked_molecules (1) ──── (*) user_annotations
 ## Implementation Phases
 
 ### Phase 1: Foundation (Weeks 1-2)
-- Database migrations for all layers
-- Core services: IdentifierResolver, FuzzyMatcher
-- JWT authentication and RBAC
-- Base models for Bronze/Silver/Gold
+**Objective**: Database infrastructure and core schema
 
-### Phase 2: Bronze + Silver (Weeks 3-4)
-- Data source registration
-- Bronze ingestion service
-- Silver transformation pipeline
-- Entity resolution across sources
+- [ ] Deploy PostgreSQL 14+ with pg_trgm, pgvector extensions
+- [ ] Configure pgBackRest (RTO 1hr, RPO 15min)
+- [ ] Create schema namespaces: raw, bronze, silver, gold, app
+- [ ] Database migrations for Raw layer (10 JSONB tables)
+- [ ] Set up connection pooling (PgBouncer)
+- [ ] JWT authentication service
+- [ ] RBAC middleware (viewer, analyst, data_ops, admin)
 
-### Phase 3: Gold + Lifecycle (Weeks 5-6)
-- Gold aggregation service
-- Lifecycle stage detection
-- Evidence linking
-- Confidence scoring
+**Deliverables**: PostgreSQL running, backup validated, auth working
 
-### Phase 4: Onboarding Application (Weeks 7-8)
-- 10-step wizard implementation
-- Evidence requirements
-- Stage validation
-- Audit logging
+### Phase 2: Raw + Bronze Layer (Weeks 3-4)
+**Objective**: Data ingestion with source structure preservation
 
-### Phase 5: Operations + Polish (Weeks 9-10)
-- Pipeline monitoring dashboard
-- Incremental updates
-- Alert service
-- Bulk onboarding
-- Documentation
+- [ ] Implement source-specific fetchers (10 sources)
+- [ ] Rate limiting and retry logic per source
+- [ ] Checksum-based change detection
+- [ ] Bronze table migrations (typed columns)
+- [ ] SQLMesh models for Raw → Bronze transformation
+- [ ] Data source registry service
+- [ ] Ingestion monitoring (Prometheus metrics)
+
+**Deliverables**: All sources loading to Bronze, change detection working
+
+### Phase 3: Entity Resolution + Silver Layer (Weeks 5-6)
+**Objective**: Cross-source linking via InChI Key
+
+- [ ] Identifier mapping table
+- [ ] InChI Key resolution (RDKit SMILES → InChI)
+- [ ] External API resolution (PubChem, ChEMBL)
+- [ ] Fuzzy name matching (pg_trgm, threshold 0.3)
+- [ ] Confidence scoring algorithm
+- [ ] Quarantine workflow (needs_review flag)
+- [ ] Silver table migrations
+- [ ] SQLMesh models for Bronze → Silver transformation
+
+**Deliverables**: Entity resolution running, 95%+ accuracy on known molecules
+
+### Phase 4: Gold Layer + API (Weeks 7-8)
+**Objective**: Decision-ready views and REST API
+
+- [ ] Gold views: molecule_profile, safety_signals, competitive_landscape
+- [ ] PostgREST configuration
+- [ ] Row-level security policies
+- [ ] Search endpoint (fuzzy matching)
+- [ ] Cross-reference endpoint
+- [ ] Safety signals endpoint
+- [ ] SQLMesh models for Silver → Gold aggregation
+
+**Deliverables**: API serving <200ms queries, OpenAPI documentation
+
+### Phase 5: Automatic Data Loading (Weeks 9-10)
+**Objective**: Scheduled sync with tiered freshness
+
+- [ ] Kubernetes CronJobs for each tier (daily/weekly/monthly)
+- [ ] Incremental sync logic
+- [ ] Full refresh capability (manual trigger)
+- [ ] Sync job tracking and history
+- [ ] Error handling and alerting
+- [ ] Rate limit monitoring
+
+**Deliverables**: Automated sync running on schedule, alerts configured
+
+### Phase 6: Testing + Validation (Weeks 11-12)
+**Objective**: Comprehensive E2E testing
+
+- [ ] Unit tests for resolution functions
+- [ ] Integration tests with testcontainers
+- [ ] E2E pipeline tests with real API samples
+- [ ] Golden datasets (Core 100, Edge Cases, Conflict Set)
+- [ ] Performance benchmarks (bulk load, query latency)
+- [ ] Security testing (auth, RLS)
+
+**Deliverables**: 90%+ coverage on resolution, golden dataset passing
+
+### Phase 7: Deployment + Operations (Week 13)
+**Objective**: Production-ready deployment
+
+- [ ] Kubernetes manifests (Helm chart)
+- [ ] Secrets management
+- [ ] Grafana dashboards (pipeline health, data quality)
+- [ ] Alerting rules (sync failures, quarantine queue)
+- [ ] Backup/restore validation
+- [ ] Operations documentation
+
+**Deliverables**: Production deployment, runbooks complete
 
 ---
 
 ## Risks & Mitigations
 
-| Risk | Mitigation |
-|------|------------|
-| External API rate limits | Exponential backoff, request queuing |
-| InChI Key coverage gaps | Fallback to DrugBank ID for biologics |
-| Fuzzy matching false positives | Confidence threshold + manual review queue |
-| Pipeline failures | Bronze preservation, idempotent transformations |
-| Schema changes in source APIs | Graceful degradation, alerting |
+| Risk | Impact | Mitigation |
+|------|--------|------------|
+| External API rate limits | Data freshness delays | Exponential backoff, distributed scheduling, tiered refresh |
+| InChI Key coverage gaps | 5% biologics unresolved | Fallback to DrugBank ID, biologic_mappings table |
+| Fuzzy matching false positives | Bad data in Gold | Quarantine workflow, confidence threshold 0.8, manual review |
+| Low entity resolution accuracy | Decision quality impact | Source precedence (DrugBank > ChEMBL > PubChem), golden datasets |
+| Pipeline failures | Data staleness | Raw layer preservation, idempotent transformations, retry logic |
+| Schema changes in source APIs | Sync failures | Version detection, schema validation, graceful degradation |
+| Large data volumes | Storage/query performance | Partitioning, incremental loads, index optimization |
+| Security breach | Data exposure | JWT auth, RLS, audit logging, MFA for admin |
+| Disaster recovery failure | Extended downtime | pgBackRest with WAL archiving, RTO 1hr/RPO 15min tested |
 
 ---
 
 ## Dependencies
 
-- PostgreSQL 16+ with pg_trgm extension
+- PostgreSQL 14+ with pg_trgm, pgvector extensions
+- pgBackRest for backup/recovery
+- PostgREST v14 for API generation
 - RDKit Python library
 - SQLMesh
 - Redis
 - Prometheus + Grafana (existing)
-- External APIs: ClinicalTrials.gov, OpenFDA, ChEMBL, PubChem
+- Kubernetes (k3s or bare metal)
+
+---
+
+## External Data Sources
+
+| Source | Records Available | API Type | Rate Limit | Priority |
+|--------|-------------------|----------|------------|----------|
+| ChEMBL | 2.4M molecules | REST | 1 req/sec | High |
+| PubChem | 116M compounds | REST | 5 req/sec | High |
+| ClinicalTrials.gov | 500K+ studies | REST | 3 req/sec | High |
+| OpenFDA FAERS | 28M+ events | REST | 240/min | High |
+| OpenFDA Labels | 175K+ labels | REST | 240/min | Medium |
+| DrugBank | 16K drugs | REST | API key | High |
+| UniProt | 250M+ proteins | REST | 25 req/sec | Medium |
+| RCSB PDB | 220K+ structures | REST | 10 req/sec | Medium |
+| SIDER | 1.4K drugs | Flat files | N/A | Medium |
+| OpenAlex | 250M+ works | REST | 100K/day | Low |
+
+---
+
+## Data Volume Estimates (5-Year)
+
+| Layer | Current | Year 1 | Year 5 |
+|-------|---------|--------|--------|
+| Raw | 0 | 50 GB | 250 GB |
+| Bronze | 0 | 100 GB | 500 GB |
+| Silver | 0 | 50 GB | 250 GB |
+| Gold | 0 | 10 GB | 50 GB |
+
+Storage recommendation: Start with 500 GB, scale to 2 TB

@@ -51,6 +51,26 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# Include additional routers
+import sys
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..'))
+try:
+    from api.routes import (
+        data_platform_router,
+        monitoring_router,
+        data_sources_router,
+        onboarding_router,
+        alerts_router,
+    )
+    app.include_router(data_platform_router, prefix="/api/v1")
+    app.include_router(monitoring_router, prefix="/api/v1")
+    app.include_router(data_sources_router, prefix="/api/v1")
+    app.include_router(onboarding_router, prefix="/api/v1")
+    app.include_router(alerts_router, prefix="/api/v1")
+    logger.info("Loaded additional API routers: data_platform, monitoring, data_sources, onboarding, alerts")
+except ImportError as e:
+    logger.warning(f"Could not load additional routers: {e}")
+
 
 # Pydantic models
 class JobInfo(BaseModel):

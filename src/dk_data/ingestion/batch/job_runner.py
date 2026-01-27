@@ -66,6 +66,7 @@ class LocalJobRunner(JobRunner):
     # Mapping of job names to commands
     # Scripts are organized under /app/scripts/{data,ops,utils}/
     JOB_COMMANDS = {
+        # TAVR jobs
         "fetch-cms-all": ["python", "-m", "ingestion.fetch_data", "--source", "all"],
         "fetch-cms-hospitals": ["python", "-m", "ingestion.fetch_data", "--source", "cms_hospital_info"],
         "fetch-cms-inpatient": ["python", "-m", "ingestion.fetch_data", "--source", "cms_inpatient"],
@@ -75,6 +76,17 @@ class LocalJobRunner(JobRunner):
         "sqlmesh-run": ["bash", "scripts/data/run_sqlmesh.sh"],
         "check-freshness": ["python", "scripts/data/check_freshness.py"],
         "purge-history": ["python", "scripts/data/purge_history.py"],
+        # Molecule platform jobs
+        "fetch-chembl": ["python", "-m", "ingestion.fetch_molecules", "--source", "chembl"],
+        "fetch-pubchem": ["python", "-m", "ingestion.fetch_molecules", "--source", "pubchem"],
+        "fetch-clinicaltrials": ["python", "-m", "ingestion.fetch_molecules", "--source", "clinicaltrials"],
+        "fetch-openfda-labels": ["python", "-m", "ingestion.fetch_molecules", "--source", "openfda_labels"],
+        "fetch-openfda-faers": ["python", "-m", "ingestion.fetch_molecules", "--source", "openfda_faers"],
+        "fetch-sider": ["python", "-m", "ingestion.fetch_molecules", "--source", "sider"],
+        "mol-bronze-transform": ["python", "-m", "ingestion.transform_molecules", "--layer", "bronze"],
+        "mol-silver-transform": ["python", "-m", "ingestion.transform_molecules", "--layer", "silver"],
+        "mol-gold-aggregate": ["python", "-m", "ingestion.transform_molecules", "--layer", "gold"],
+        "mol-pipeline-full": ["python", "-m", "ingestion.run_molecule_pipeline"],
     }
 
     def __init__(self, db_config: dict[str, Any]):

@@ -1,0 +1,34 @@
+# ConfigMap for molecule data source configuration
+# Feature: 012-dk-data-platform
+# Note: Primary source of truth is meta.data_sources table
+#       This ConfigMap is for Kubernetes-specific settings only
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: molecule-pipeline-config
+  namespace: tavr-data
+  labels:
+    app.kubernetes.io/name: molecule-pipeline
+    app.kubernetes.io/component: molecule-ingestion
+    app.kubernetes.io/part-of: dk-data-platform
+data:
+  # Default batch size for fetching
+  BATCH_SIZE: "100"
+
+  # Pipeline modes
+  # - "all": Fetch all active sources from meta.data_sources
+  # - Specific source name: Fetch only that source
+  FETCH_MODE: "all"
+
+  # Transform layers to run
+  # - "all": Run bronze -> silver -> gold
+  # - "bronze", "silver", "gold": Run specific layer
+  TRANSFORM_LAYERS: "all"
+
+  # Enable/disable pipeline phases
+  ENABLE_FETCH: "true"
+  ENABLE_TRANSFORM: "true"
+  ENABLE_RESOLUTION: "true"
+
+  # Logging level
+  LOG_LEVEL: "INFO"

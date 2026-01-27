@@ -1,0 +1,418 @@
+openapi: 3.1.0
+info:
+  title: DK Molecule Data Platform - Molecules API
+  version: 1.0.0
+  description: |
+    REST API for molecule lookup, search, and data access from the Gold layer.
+    Auto-generated via PostgREST from PostgreSQL schema.
+
+servers:
+  - url: /api/v1
+    description: Production API
+
+security:
+  - bearerAuth: []
+
+paths:
+  /molecules:
+    get:
+      summary: List molecules
+      description: Retrieve paginated list of molecules from gold_molecule_profile
+      operationId: listMolecules
+      tags:
+        - Molecules
+      parameters:
+        - $ref: '#/components/parameters/limit'
+        - $ref: '#/components/parameters/offset'
+        - $ref: '#/components/parameters/order'
+        - name: inchi_key
+          in: query
+          description: Filter by exact InChI Key
+          schema:
+            type: string
+            pattern: '^[A-Z]{14}-[A-Z]{10}-[A-Z]$'
+        - name: name
+          in: query
+          description: Filter by name (supports ilike pattern)
+          schema:
+            type: string
+        - name: development_status
+          in: query
+          description: Filter by development status
+          schema:
+            type: string
+            enum: [preclinical, phase_1, phase_2, phase_3, approved, withdrawn]
+      responses:
+        '200':
+          description: List of molecules
+          headers:
+            Content-Range:
+              schema:
+                type: string
+              description: Pagination info (e.g., "0-24/1000")
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/MoleculeProfile'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /molecules/{inchi_key}:
+    get:
+      summary: Get molecule by InChI Key
+      description: Retrieve complete molecule profile including cross-references
+      operationId: getMolecule
+      tags:
+        - Molecules
+      parameters:
+        - name: inchi_key
+          in: path
+          required: true
+          schema:
+            type: string
+            pattern: '^[A-Z]{14}-[A-Z]{10}-[A-Z]$'
+      responses:
+        '200':
+          description: Molecule profile
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MoleculeProfile'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /molecules/search:
+    post:
+      summary: Search molecules
+      description: |
+        Full-text and fuzzy search across molecule names, synonyms, and identifiers.
+        Uses pg_trgm trigram similarity for fuzzy matching.
+      operationId: searchMolecules
+      tags:
+        - Molecules
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                query:
+                  type: string
+                  description: Search query (name, synonym, or identifier)
+                  example: "aspirin"
+                fuzzy:
+                  type: boolean
+                  default: true
+                  description: Enable fuzzy matching
+                similarity_threshold:
+                  type: number
+                  minimum: 0
+                  maximum: 1
+                  default: 0.3
+                  description: Minimum similarity score for fuzzy matches
+                limit:
+                  type: integer
+                  default: 20
+                  maximum: 100
+              required:
+                - query
+      responses:
+        '200':
+          description: Search results
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  results:
+                    type: array
+                    items:
+                      allOf:
+                        - $ref: '#/components/schemas/MoleculeProfile'
+                        - type: object
+                          properties:
+                            similarity_score:
+                              type: number
+                  total_count:
+                    type: integer
+
+  /molecules/{inchi_key}/safety:
+    get:
+      summary: Get safety signals
+      description: Retrieve aggregated safety data from FAERS and SIDER
+      operationId: getMoleculeSafety
+      tags:
+        - Safety
+      parameters:
+        - name: inchi_key
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Safety signals
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SafetySignals'
+
+  /molecules/{inchi_key}/clinical-trials:
+    get:
+      summary: Get clinical trials
+      description: Retrieve all clinical trials associated with this molecule
+      operationId: getMoleculeTrials
+      tags:
+        - Clinical Trials
+      parameters:
+        - name: inchi_key
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: status
+          in: query
+          description: Filter by trial status
+          schema:
+            type: string
+            enum: [recruiting, active, completed, terminated, withdrawn]
+      responses:
+        '200':
+          description: Clinical trials
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/ClinicalTrial'
+
+  /molecules/{inchi_key}/cross-references:
+    get:
+      summary: Get cross-references
+      description: Retrieve all source identifiers linked to this molecule
+      operationId: getMoleculeCrossRefs
+      tags:
+        - Cross-References
+      parameters:
+        - name: inchi_key
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Cross-references by source
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CrossReferences'
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+
+  parameters:
+    limit:
+      name: limit
+      in: query
+      description: Maximum number of records to return
+      schema:
+        type: integer
+        default: 20
+        maximum: 1000
+    offset:
+      name: offset
+      in: query
+      description: Number of records to skip
+      schema:
+        type: integer
+        default: 0
+    order:
+      name: order
+      in: query
+      description: Sort order (column.asc or column.desc)
+      schema:
+        type: string
+        example: "name.asc"
+
+  responses:
+    Unauthorized:
+      description: Authentication required
+      content:
+        application/json:
+          schema:
+            type: object
+            properties:
+              message:
+                type: string
+                example: "JWT token required"
+    NotFound:
+      description: Resource not found
+      content:
+        application/json:
+          schema:
+            type: object
+            properties:
+              message:
+                type: string
+
+  schemas:
+    MoleculeProfile:
+      type: object
+      properties:
+        inchi_key:
+          type: string
+          description: Master identifier (InChI Key)
+        canonical_name:
+          type: string
+          description: Preferred name (from highest-precedence source)
+        molecular_formula:
+          type: string
+        molecular_weight:
+          type: number
+        smiles:
+          type: string
+          description: Canonical SMILES structure
+        inchi:
+          type: string
+          description: Full InChI string
+        development_status:
+          type: string
+          enum: [preclinical, phase_1, phase_2, phase_3, approved, withdrawn]
+        therapeutic_areas:
+          type: array
+          items:
+            type: string
+        mechanism_of_action:
+          type: string
+        primary_targets:
+          type: array
+          items:
+            type: string
+        approval_date:
+          type: string
+          format: date
+        data_sources:
+          type: array
+          items:
+            type: string
+          description: Sources contributing to this profile
+        resolution_confidence:
+          type: number
+          minimum: 0
+          maximum: 1
+        last_updated:
+          type: string
+          format: date-time
+
+    SafetySignals:
+      type: object
+      properties:
+        inchi_key:
+          type: string
+        faers_total_reports:
+          type: integer
+        faers_serious_reports:
+          type: integer
+        top_adverse_events:
+          type: array
+          items:
+            type: object
+            properties:
+              meddra_pt:
+                type: string
+              count:
+                type: integer
+              reporting_rate:
+                type: number
+        sider_known_effects:
+          type: array
+          items:
+            type: object
+            properties:
+              effect:
+                type: string
+              frequency:
+                type: string
+        boxed_warnings:
+          type: array
+          items:
+            type: string
+        signal_detection_date:
+          type: string
+          format: date
+
+    ClinicalTrial:
+      type: object
+      properties:
+        nct_id:
+          type: string
+        title:
+          type: string
+        phase:
+          type: string
+        status:
+          type: string
+        conditions:
+          type: array
+          items:
+            type: string
+        interventions:
+          type: array
+          items:
+            type: string
+        enrollment:
+          type: integer
+        start_date:
+          type: string
+          format: date
+        primary_completion_date:
+          type: string
+          format: date
+        sponsor:
+          type: string
+
+    CrossReferences:
+      type: object
+      properties:
+        inchi_key:
+          type: string
+        drugbank_id:
+          type: string
+        chembl_id:
+          type: string
+        pubchem_cid:
+          type: integer
+        unii:
+          type: string
+        cas_number:
+          type: string
+        rxcui:
+          type: string
+        ndc_codes:
+          type: array
+          items:
+            type: string
+        pdb_ligand_ids:
+          type: array
+          items:
+            type: string
+        all_identifiers:
+          type: array
+          items:
+            type: object
+            properties:
+              source:
+                type: string
+              identifier_type:
+                type: string
+              identifier_value:
+                type: string
+              confidence:
+                type: number

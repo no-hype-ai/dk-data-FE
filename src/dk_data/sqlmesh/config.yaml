@@ -21,10 +21,17 @@ model_defaults:
 # Physical schema mapping
 # Maps logical schema names to actual PostgreSQL schemas
 physical_schema_mapping:
+  # TAVR schemas
   raw: raw
   staging: staging
   mart: mart
   scoring: scoring
+  # Molecule platform schemas
+  mol_raw: mol_raw
+  mol_bronze: mol_bronze
+  mol_silver: mol_silver
+  mol_gold: mol_gold
+  mol_app: mol_app
 
 # Project metadata
 project: tavr_data_infrastructure

@@ -26,6 +26,8 @@ resources:
   # Job trigger service
   - ingestion/job-trigger-deployment.yaml
   - ingestion/job-trigger-service.yaml
+  # Molecule Pipeline (Feature: 012-dk-data-platform)
+  - molecules/
 
 images:
   - name: postgrest/postgrest

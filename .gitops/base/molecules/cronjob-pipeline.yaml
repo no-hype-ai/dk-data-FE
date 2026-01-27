@@ -1,0 +1,243 @@
+# Dynamic Molecule Pipeline CronJob
+# Feature: 012-dk-data-platform
+# Description: Runs the full molecule pipeline (fetch -> transform -> resolve)
+#              Sources are loaded dynamically from meta.data_sources table
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: mol-pipeline-full
+  namespace: tavr-data
+  labels:
+    app: mol-pipeline
+    app.kubernetes.io/name: mol-pipeline
+    app.kubernetes.io/component: molecule-pipeline
+    app.kubernetes.io/part-of: dk-data-platform
+spec:
+  schedule: "0 1 * * *"  # Daily at 1 AM (full pipeline)
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 5
+  failedJobsHistoryLimit: 5
+  jobTemplate:
+    spec:
+      backoffLimit: 2
+      activeDeadlineSeconds: 14400  # 4 hour timeout
+      template:
+        metadata:
+          labels:
+            app: mol-pipeline
+        spec:
+          restartPolicy: OnFailure
+          containers:
+            - name: pipeline
+              image: dk-data-ingestion:latest
+              command:
+                - python
+                - -m
+                - ingestion.run_molecule_pipeline
+              env:
+                # Database credentials
+                - name: POSTGRES_HOST
+                  valueFrom:
+                    secretKeyRef:
+                      name: postgres-credentials
+                      key: host
+                - name: POSTGRES_PORT
+                  valueFrom:
+                    secretKeyRef:
+                      name: postgres-credentials
+                      key: port
+                - name: POSTGRES_USER
+                  valueFrom:
+                    secretKeyRef:
+                      name: postgres-credentials
+                      key: username
+                - name: POSTGRES_PASSWORD
+                  valueFrom:
+                    secretKeyRef:
+                      name: postgres-credentials
+                      key: password
+                - name: POSTGRES_DB
+                  valueFrom:
+                    secretKeyRef:
+                      name: postgres-credentials
+                      key: database
+                # Pipeline configuration from ConfigMap
+                - name: BATCH_SIZE
+                  valueFrom:
+                    configMapKeyRef:
+                      name: molecule-pipeline-config
+                      key: BATCH_SIZE
+                - name: LOG_LEVEL
+                  valueFrom:
+                    configMapKeyRef:
+                      name: molecule-pipeline-config
+                      key: LOG_LEVEL
+                # Optional API keys
+                - name: OPENFDA_API_KEY
+                  valueFrom:
+                    secretKeyRef:
+                      name: api-credentials
+                      key: openfda-api-key
+                      optional: true
+                - name: DRUGBANK_API_KEY
+                  valueFrom:
+                    secretKeyRef:
+                      name: api-credentials
+                      key: drugbank-api-key
+                      optional: true
+              resources:
+                requests:
+                  memory: "1Gi"
+                  cpu: "500m"
+                limits:
+                  memory: "4Gi"
+                  cpu: "2000m"
+---
+# Fetch-only CronJob (runs more frequently for daily sources)
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: mol-fetch-daily
+  namespace: tavr-data
+  labels:
+    app: mol-fetch-daily
+    app.kubernetes.io/name: mol-fetch-daily
+    app.kubernetes.io/component: molecule-ingestion
+    app.kubernetes.io/part-of: dk-data-platform
+spec:
+  schedule: "0 2 * * *"  # Daily at 2 AM
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      backoffLimit: 2
+      activeDeadlineSeconds: 7200  # 2 hour timeout
+      template:
+        metadata:
+          labels:
+            app: mol-fetch-daily
+        spec:
+          restartPolicy: OnFailure
+          containers:
+            - name: fetch
+              image: dk-data-ingestion:latest
+              command:
+                - python
+                - -m
+                - ingestion.fetch_molecules
+                - --source
+                - all
+              env:
+                - name: POSTGRES_HOST
+                  valueFrom:
+                    secretKeyRef:
+                      name: postgres-credentials
+                      key: host
+                - name: POSTGRES_PORT
+                  valueFrom:
+                    secretKeyRef:
+                      name: postgres-credentials
+                      key: port
+                - name: POSTGRES_USER
+                  valueFrom:
+                    secretKeyRef:
+                      name: postgres-credentials
+                      key: username
+                - name: POSTGRES_PASSWORD
+                  valueFrom:
+                    secretKeyRef:
+                      name: postgres-credentials
+                      key: password
+                - name: POSTGRES_DB
+                  valueFrom:
+                    secretKeyRef:
+                      name: postgres-credentials
+                      key: database
+                - name: BATCH_SIZE
+                  valueFrom:
+                    configMapKeyRef:
+                      name: molecule-pipeline-config
+                      key: BATCH_SIZE
+                - name: OPENFDA_API_KEY
+                  valueFrom:
+                    secretKeyRef:
+                      name: api-credentials
+                      key: openfda-api-key
+                      optional: true
+              resources:
+                requests:
+                  memory: "512Mi"
+                  cpu: "200m"
+                limits:
+                  memory: "2Gi"
+                  cpu: "1000m"
+---
+# Transform CronJob (runs after fetch completes)
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: mol-transform-all
+  namespace: tavr-data
+  labels:
+    app: mol-transform
+    app.kubernetes.io/name: mol-transform
+    app.kubernetes.io/component: molecule-transform
+    app.kubernetes.io/part-of: dk-data-platform
+spec:
+  schedule: "0 6 * * *"  # Daily at 6 AM (after fetch)
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      backoffLimit: 2
+      activeDeadlineSeconds: 7200  # 2 hour timeout
+      template:
+        metadata:
+          labels:
+            app: mol-transform
+        spec:
+          restartPolicy: OnFailure
+          containers:
+            - name: transform
+              image: dk-data-ingestion:latest
+              command:
+                - python
+                - -m
+                - ingestion.transform_molecules
+                - --layer
+                - all
+              env:
+                - name: POSTGRES_HOST
+                  valueFrom:
+                    secretKeyRef:
+                      name: postgres-credentials
+                      key: host
+                - name: POSTGRES_PORT
+                  valueFrom:
+                    secretKeyRef:
+                      name: postgres-credentials
+                      key: port
+                - name: POSTGRES_USER
+                  valueFrom:
+                    secretKeyRef:
+                      name: postgres-credentials
+                      key: username
+                - name: POSTGRES_PASSWORD
+                  valueFrom:
+                    secretKeyRef:
+                      name: postgres-credentials
+                      key: password
+                - name: POSTGRES_DB
+                  valueFrom:
+                    secretKeyRef:
+                      name: postgres-credentials
+                      key: database
+              resources:
+                requests:
+                  memory: "1Gi"
+                  cpu: "500m"
+                limits:
+                  memory: "4Gi"
+                  cpu: "2000m"
