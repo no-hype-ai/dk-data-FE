@@ -3,6 +3,24 @@
 **Feature**: 012-dk-data-platform
 **Created**: 2026-01-24
 **Status**: Complete
+**Updated**: 2026-01-27 (Naming convention clarified)
+
+---
+
+## Schema Naming Convention
+
+Tables are organized into PostgreSQL schemas by layer:
+
+| Schema | Purpose | Example Tables |
+|--------|---------|----------------|
+| `raw` | Unprocessed API responses | `raw.chembl`, `raw.clinicaltrials` |
+| `bronze` | Source-native typed data | `bronze.chembl`, `bronze.pubchem` |
+| `silver` | Entity-resolved normalized data | `silver.molecules`, `silver.clinical_trials` |
+| `gold` | Pre-aggregated analytics | `gold.molecule_profile`, `gold.competitive_landscape` |
+| `application` | User-specific data | `application.user_tracked_molecules` |
+
+**Note**: Tables use schema prefixes (e.g., `silver.molecules`) rather than underscore naming (e.g., `silver_molecules`).
+The primary key for most tables is `id` (UUID), with `molecule_id` used as foreign keys referencing `silver.molecules(id)`.
 
 ---
 
@@ -35,56 +53,60 @@
 │  │ record_hash     │                                                      │              │
 │  └─────────────────┘                                                      │              │
 │                                                                           │              │
-│  SILVER LAYER (Entity-Resolved)                                           │              │
-│  ──────────────────────────────                                           │              │
+│  SILVER LAYER (Entity-Resolved) - Schema: silver                          │              │
+│  ───────────────────────────────────────────                              │              │
 │                                                                           │              │
 │  ┌─────────────────┐      ┌─────────────────┐      ┌─────────────────┐   │              │
-│  │ silver_molecules│◄────▶│ silver_id_maps  │◄────▶│ silver_aliases  │   │              │
+│  │silver.molecules │◄────▶│silver.id_maps   │◄────▶│silver.aliases   │   │              │
 │  │─────────────────│      │─────────────────│      │─────────────────│   │              │
-│  │ molecule_id (PK)│      │ mapping_id (PK) │      │ alias_id (PK)   │   │              │
+│  │ id (PK)         │      │ id (PK)         │      │ id (PK)         │   │              │
 │  │ inchi_key (UK)  │      │ molecule_id (FK)│      │ molecule_id (FK)│   │              │
-│  │ chembl_id       │      │ identifier_type │      │ alias_name      │   │              │
-│  │ drugbank_id     │      │ identifier_value│      │ alias_type      │   │              │
-│  │ pubchem_cid     │      │ source          │      │ region          │   │              │
-│  │ canonical_name  │      │ confidence      │      └─────────────────┘   │              │
-│  │ needs_review    │      └─────────────────┘                            │              │
+│  │ canonical_name  │      │ identifier_type │      │ alias_name      │   │              │
+│  │ canonical_smiles│      │ identifier_value│      │ alias_type      │   │              │
+│  │ molecule_type   │      │ source          │      │ region          │   │              │
+│  │ development_    │      │ confidence      │      └─────────────────┘   │              │
+│  │   status        │      └─────────────────┘                            │              │
+│  │ needs_review    │                                                     │              │
 │  └────────┬────────┘                                                     │              │
 │           │                                                              │              │
 │           │ 1:N                                                          │              │
 │           ▼                                                              │              │
 │  ┌─────────────────┐      ┌─────────────────┐      ┌─────────────────┐   │              │
-│  │ silver_trials   │      │ silver_labels   │      │ silver_events   │◄──┘              │
+│  │silver.clinical_ │      │silver.drug_     │      │silver.adverse_  │◄──┘              │
+│  │       trials    │      │       labels    │      │       events    │                  │
 │  │─────────────────│      │─────────────────│      │─────────────────│                  │
-│  │ trial_id (PK)   │      │ label_id (PK)   │      │ event_id (PK)   │                  │
+│  │ id (PK)         │      │ id (PK)         │      │ id (PK)         │                  │
 │  │ nct_id (UK)     │      │ set_id (UK)     │      │ source_report_id│                  │
 │  │ molecule_id (FK)│      │ molecule_id (FK)│      │ molecule_id (FK)│                  │
-│  │ phase           │      │ brand_name      │      │ reaction_meddra │                  │
-│  │ status          │      │ indications     │      │ outcome         │                  │
+│  │ phase           │      │ brand_name      │      │ meddra_pt       │                  │
+│  │ status          │      │ indications_    │      │ outcome         │                  │
+│  │                 │      │   and_usage     │      │                 │                  │
 │  └─────────────────┘      └─────────────────┘      └─────────────────┘                  │
 │                                                                                          │
-│  GOLD LAYER (Aggregated)                                                                │
-│  ───────────────────────                                                                │
+│  GOLD LAYER (Aggregated) - Schema: gold                                                 │
+│  ──────────────────────────────────────                                                 │
 │  ┌─────────────────┐      ┌─────────────────┐      ┌─────────────────┐                  │
-│  │ gold_molecule   │      │ gold_competitive│      │ gold_safety     │                  │
-│  │ _profile        │      │ _landscape      │      │ _signals        │                  │
+│  │gold.molecule_   │      │gold.competitive_│      │gold.safety_     │                  │
+│  │      profile    │      │      landscape  │      │      signals    │                  │
 │  │─────────────────│      │─────────────────│      │─────────────────│                  │
+│  │ profile_id (PK) │      │ landscape_id(PK)│      │ signal_id (PK)  │                  │
 │  │ molecule_id (FK)│      │ indication      │      │ molecule_id (FK)│                  │
-│  │ lifecycle_stage │      │ molecules[]     │      │ signal_type     │                  │
-│  │ data_complete   │      │ market_share    │      │ prr_score       │                  │
-│  │ confidence      │      │ pipeline_count  │      │ ror_score       │                  │
+│  │ lifecycle_stage │      │ molecules[]     │      │ prr_score       │                  │
+│  │ data_complete   │      │ market_share    │      │ ror_score       │                  │
 │  └─────────────────┘      └─────────────────┘      └─────────────────┘                  │
 │                                                                                          │
-│  APPLICATION LAYER                                                                       │
-│  ─────────────────                                                                       │
+│  APPLICATION LAYER - Schema: application                                                │
+│  ───────────────────────────────────────                                                │
 │  ┌─────────────────┐      ┌─────────────────┐      ┌─────────────────┐                  │
-│  │ user_tracked    │      │ user_annotations│      │ alert_configs   │                  │
-│  │ _molecules      │      │─────────────────│      │─────────────────│                  │
-│  │─────────────────│      │ annotation_id   │      │ config_id (PK)  │                  │
-│  │ tracking_id (PK)│      │ molecule_id (FK)│      │ user_id         │                  │
-│  │ user_id         │      │ user_id         │      │ molecule_id (FK)│                  │
-│  │ molecule_id (FK)│      │ annotation_type │      │ alert_type      │                  │
-│  │ indication      │      │ content         │      │ threshold       │                  │
-│  │ lifecycle_stage │      │ is_private      │      │ is_active       │                  │
+│  │application.user_│      │application.user_│      │application.     │                  │
+│  │tracked_molecules│      │    annotations  │      │  alert_configs  │                  │
+│  │─────────────────│      │─────────────────│      │─────────────────│                  │
+│  │ id (PK)         │      │ id (PK)         │      │ id (PK)         │                  │
+│  │ user_id         │      │ molecule_id (FK)│      │ user_id         │                  │
+│  │ molecule_id (FK)│      │ user_id         │      │ molecule_id (FK)│                  │
+│  │ indication      │      │ annotation_type │      │ alert_type      │                  │
+│  │ lifecycle_stage │      │ content         │      │ threshold       │                  │
+│  │                 │      │ is_private      │      │ is_active       │                  │
 │  └─────────────────┘      └─────────────────┘      └─────────────────┘                  │
 │                                                                                          │
 └─────────────────────────────────────────────────────────────────────────────────────────┘
@@ -155,51 +177,53 @@ Source-native typed columns. Example for ClinicalTrials.gov:
 
 ### 3. Silver Layer Tables
 
-#### silver_molecules
+**Schema**: `silver`
+
+#### silver.molecules
 Master molecule identity table with entity resolution.
 
 | Field | Type | Constraints | Description |
 |-------|------|-------------|-------------|
-| `molecule_id` | UUID | PK, DEFAULT gen_random_uuid() | Canonical molecule ID |
-| `inchi_key` | VARCHAR(27) | UNIQUE, NOT NULL | Master identifier |
-| `chembl_id` | VARCHAR(30) | | ChEMBL identifier |
-| `drugbank_id` | VARCHAR(20) | | DrugBank identifier |
-| `pubchem_cid` | BIGINT | | PubChem compound ID |
-| `rxnorm_cui` | VARCHAR(20) | | RxNorm concept ID |
-| `unii` | VARCHAR(20) | | FDA UNII |
-| `cas_number` | VARCHAR(20) | | CAS registry number |
+| `id` | UUID | PK, DEFAULT uuid_generate_v4() | Canonical molecule ID |
+| `inchi_key` | VARCHAR(27) | UNIQUE | Master identifier (NULL for biologics) |
 | `canonical_name` | VARCHAR(500) | | Preferred name |
-| `brand_names` | TEXT[] | | Array of brand names |
-| `generic_names` | TEXT[] | | Array of generic names |
-| `smiles` | TEXT | | Canonical SMILES |
+| `name_source` | VARCHAR(50) | | Which source provided the canonical name |
+| `canonical_smiles` | TEXT | | Canonical SMILES |
+| `inchi` | TEXT | | InChI string |
 | `molecular_formula` | VARCHAR(200) | | Molecular formula |
-| `molecule_type` | VARCHAR(50) | | small_molecule, biologic, etc. |
-| `therapeutic_areas` | TEXT[] | | Therapeutic classifications |
-| `atc_codes` | TEXT[] | | ATC codes |
-| `needs_review` | BOOLEAN | DEFAULT FALSE | Quarantine flag |
+| `molecular_weight` | NUMERIC(12,4) | | Molecular weight |
+| `molecule_type` | VARCHAR(50) | | small_molecule, protein, antibody, peptide, etc. |
+| `therapeutic_areas` | JSONB | | Therapeutic classifications |
+| `mechanism_of_action` | TEXT | | MOA description |
+| `development_status` | VARCHAR(50) | | preclinical, phase_1, phase_2, phase_3, approved, withdrawn |
+| `max_phase` | INTEGER | | Maximum clinical phase reached |
+| `first_approval_year` | INTEGER | | Year of first approval |
+| `approval_date` | DATE | | First approval date |
+| `resolution_confidence` | NUMERIC(3,2) | DEFAULT 1.0 | Entity resolution confidence (0-1) |
+| `needs_review` | BOOLEAN | DEFAULT FALSE | Quarantine flag for <0.8 confidence |
 | `review_reason` | TEXT | | Why flagged for review |
-| `resolution_confidence` | DECIMAL(3,2) | | Entity resolution confidence |
-| `reviewed_at` | TIMESTAMPTZ | | When reviewed |
-| `reviewed_by` | VARCHAR(100) | | Who reviewed |
+| `data_sources` | JSONB | | Array of sources contributing to this record |
+| `primary_source` | VARCHAR(50) | | Highest precedence source |
 | `created_at` | TIMESTAMPTZ | DEFAULT NOW() | Creation time |
 | `updated_at` | TIMESTAMPTZ | DEFAULT NOW() | Last update time |
-| `source_count` | INTEGER | DEFAULT 1 | Number of sources |
 
-**Indexes**: inchi_key, chembl_id, drugbank_id, pubchem_cid, canonical_name, needs_review
+**Indexes**: inchi_key, canonical_name, development_status, needs_review (partial), canonical_name (GIN trigram)
+
+**Note**: Cross-reference identifiers (chembl_id, drugbank_id, pubchem_cid, etc.) are stored in `silver.identifier_mappings` rather than denormalized in this table.
 
 ---
 
-#### silver_identifier_mappings
+#### silver.identifier_mappings
 Cross-reference mapping table for identifier resolution.
 
 | Field | Type | Constraints | Description |
 |-------|------|-------------|-------------|
-| `mapping_id` | UUID | PK | Mapping record ID |
-| `molecule_id` | UUID | FK → silver_molecules | Master molecule reference |
-| `identifier_type` | VARCHAR(30) | NOT NULL | inchi_key, chembl_id, etc. |
+| `id` | UUID | PK, DEFAULT uuid_generate_v4() | Mapping record ID |
+| `molecule_id` | UUID | FK → silver.molecules(id) ON DELETE CASCADE | Master molecule reference |
+| `identifier_type` | VARCHAR(30) | NOT NULL | inchi_key, chembl_id, drugbank_id, pubchem_cid, rxnorm_cui, unii, cas_number, etc. |
 | `identifier_value` | VARCHAR(500) | NOT NULL | The identifier value |
-| `source` | VARCHAR(50) | NOT NULL | Which API provided this |
-| `confidence` | DECIMAL(3,2) | DEFAULT 1.0 | 0-1 confidence score |
+| `source` | VARCHAR(50) | NOT NULL | Which API provided this mapping |
+| `confidence` | NUMERIC(3,2) | DEFAULT 1.0 | 0-1 confidence score |
 | `is_primary` | BOOLEAN | DEFAULT FALSE | Primary ID for this type? |
 | `is_validated` | BOOLEAN | DEFAULT FALSE | Has been validated? |
 | `validated_at` | TIMESTAMPTZ | | Validation timestamp |
@@ -208,53 +232,66 @@ Cross-reference mapping table for identifier resolution.
 | `updated_at` | TIMESTAMPTZ | DEFAULT NOW() | Last update |
 
 **Constraints**: UNIQUE(molecule_id, identifier_type, identifier_value)
-**Indexes**: (identifier_type, identifier_value), molecule_id
+**Indexes**: (identifier_type, identifier_value), molecule_id, source
 
 ---
 
-#### silver_molecule_aliases
+#### silver.molecule_aliases
 Name aliases for fuzzy resolution.
 
 | Field | Type | Constraints | Description |
 |-------|------|-------------|-------------|
-| `alias_id` | UUID | PK | Alias record ID |
-| `molecule_id` | UUID | FK → silver_molecules | Master molecule reference |
+| `id` | UUID | PK, DEFAULT uuid_generate_v4() | Alias record ID |
+| `molecule_id` | UUID | FK → silver.molecules(id) ON DELETE CASCADE | Master molecule reference |
 | `alias_name` | VARCHAR(500) | NOT NULL | The alias name |
-| `alias_type` | VARCHAR(30) | NOT NULL | brand_name, generic_name, inn, synonym |
-| `region` | VARCHAR(50) | | USA, EU, etc. (for regional names) |
-| `language` | VARCHAR(10) | | en, de, ja, etc. |
+| `alias_type` | VARCHAR(30) | NOT NULL | brand_name, generic_name, inn, synonym, trade_name, code_name |
+| `alias_name_normalized` | VARCHAR(500) | | Lowercase, no special chars (for search) |
+| `region` | VARCHAR(50) | | USA, EU, JP, etc. (for regional names) |
+| `language` | VARCHAR(10) | DEFAULT 'en' | en, de, ja, etc. |
 | `source` | VARCHAR(50) | NOT NULL | Source of this alias |
-| `alias_name_normalized` | VARCHAR(500) | | Lowercase, no special chars |
 | `created_at` | TIMESTAMPTZ | DEFAULT NOW() | Creation time |
 
-**Indexes**: alias_name_normalized (GIN with pg_trgm), molecule_id
+**Constraints**: UNIQUE(molecule_id, alias_name, alias_type)
+**Indexes**: alias_name_normalized, molecule_id, alias_name_normalized (GIN with pg_trgm)
 
 ---
 
-#### silver_clinical_trials
+#### silver.clinical_trials
 Normalized clinical trial data.
 
 | Field | Type | Constraints | Description |
 |-------|------|-------------|-------------|
-| `trial_id` | UUID | PK | Internal trial ID |
-| `nct_id` | VARCHAR(20) | UNIQUE, NOT NULL | ClinicalTrials.gov ID |
-| `molecule_id` | UUID | FK → silver_molecules | Linked molecule |
+| `id` | UUID | PK, DEFAULT uuid_generate_v4() | Internal trial ID |
+| `molecule_id` | UUID | FK → silver.molecules(id) | Linked molecule |
+| `nct_id` | VARCHAR(15) | UNIQUE, NOT NULL | ClinicalTrials.gov ID |
+| `org_study_id` | VARCHAR(100) | | Organization study ID |
 | `title` | TEXT | | Trial title |
 | `brief_summary` | TEXT | | Summary |
 | `phase` | VARCHAR(20) | | Phase 1, 2, 3, 4, N/A |
-| `status` | VARCHAR(50) | | Current status |
 | `study_type` | VARCHAR(50) | | Interventional, Observational |
-| `conditions` | TEXT[] | | Conditions studied |
-| `intervention_names` | TEXT[] | | Drug names in trial |
-| `enrollment_target` | INTEGER | | Target enrollment |
-| `enrollment_actual` | INTEGER | | Actual enrollment |
+| `status` | VARCHAR(50) | | Current status |
 | `start_date` | DATE | | Trial start |
 | `completion_date` | DATE | | Expected completion |
+| `primary_completion_date` | DATE | | Primary completion date |
 | `sponsor` | VARCHAR(500) | | Lead sponsor |
 | `sponsor_type` | VARCHAR(50) | | Industry, NIH, Academic |
-| `has_results` | BOOLEAN | DEFAULT FALSE | Results available? |
-| `outcome_type` | VARCHAR(50) | | Success, Failure, Inconclusive |
-| `bronze_source_id` | UUID | | Source Bronze record |
+| `collaborators` | JSONB | | Array of collaborators |
+| `allocation` | VARCHAR(50) | | Randomized, etc. |
+| `intervention_model` | VARCHAR(100) | | Parallel, Crossover, etc. |
+| `masking` | VARCHAR(100) | | Double-blind, Open-label, etc. |
+| `enrollment` | INTEGER | | Target enrollment |
+| `eligibility_criteria` | TEXT | | Eligibility criteria |
+| `minimum_age` | VARCHAR(20) | | Minimum age |
+| `maximum_age` | VARCHAR(20) | | Maximum age |
+| `sex` | VARCHAR(20) | | All, Male, Female |
+| `conditions` | JSONB | | Array of conditions studied |
+| `interventions` | JSONB | | Array of interventions |
+| `primary_outcomes` | JSONB | | Primary outcome measures |
+| `secondary_outcomes` | JSONB | | Secondary outcome measures |
+| `locations` | JSONB | | Trial locations |
+| `countries` | JSONB | | Countries involved |
+| `source` | VARCHAR(50) | DEFAULT 'clinicaltrials_gov' | Data source |
+| `source_updated_at` | TIMESTAMPTZ | | When source last updated |
 | `created_at` | TIMESTAMPTZ | DEFAULT NOW() | Creation time |
 | `updated_at` | TIMESTAMPTZ | DEFAULT NOW() | Last update |
 
@@ -262,143 +299,182 @@ Normalized clinical trial data.
 
 ---
 
-#### silver_drug_labels
+#### silver.drug_labels
 Normalized FDA drug label data.
 
 | Field | Type | Constraints | Description |
 |-------|------|-------------|-------------|
-| `label_id` | UUID | PK | Internal label ID |
-| `set_id` | VARCHAR(50) | UNIQUE, NOT NULL | SPL set ID |
+| `id` | UUID | PK, DEFAULT uuid_generate_v4() | Internal label ID |
+| `molecule_id` | UUID | FK → silver.molecules(id) | Linked molecule |
+| `set_id` | VARCHAR(50) | NOT NULL | SPL set ID |
 | `spl_id` | VARCHAR(50) | | SPL ID |
-| `molecule_id` | UUID | FK → silver_molecules | Linked molecule |
-| `brand_name` | VARCHAR(500) | | Brand name |
-| `generic_name` | VARCHAR(500) | | Generic name |
+| `version` | INTEGER | | Label version |
+| `brand_name` | TEXT | | Brand name |
+| `generic_name` | TEXT | | Generic name |
 | `manufacturer` | VARCHAR(500) | | Manufacturer |
 | `application_number` | VARCHAR(20) | | NDA/BLA number |
-| `approval_date` | DATE | | Approval date |
-| `marketing_status` | VARCHAR(50) | | Marketing status |
-| `route_of_administration` | TEXT[] | | Routes |
-| `dosage_forms` | TEXT[] | | Dosage forms |
-| `indications` | TEXT | | Indications text |
+| `product_type` | VARCHAR(100) | | Product type |
+| `indications_and_usage` | TEXT | | Indications section |
+| `dosage_and_administration` | TEXT | | Dosage section |
 | `contraindications` | TEXT | | Contraindications |
 | `warnings` | TEXT | | Warnings |
 | `boxed_warning` | TEXT | | Boxed warning if any |
-| `adverse_reactions` | TEXT | | Adverse reactions |
+| `adverse_reactions` | TEXT | | Adverse reactions section |
 | `drug_interactions` | TEXT | | Drug interactions |
+| `mechanism_of_action` | TEXT | | MOA from label |
 | `effective_date` | DATE | | Label effective date |
-| `bronze_source_id` | UUID | | Source Bronze record |
+| `source` | VARCHAR(50) | DEFAULT 'openfda_labels' | Data source |
+| `source_updated_at` | TIMESTAMPTZ | | When source last updated |
 | `created_at` | TIMESTAMPTZ | DEFAULT NOW() | Creation time |
 | `updated_at` | TIMESTAMPTZ | DEFAULT NOW() | Last update |
 
-**Indexes**: set_id, molecule_id, brand_name, generic_name, application_number
+**Constraints**: UNIQUE(set_id, version)
+**Indexes**: molecule_id, set_id, brand_name
 
 ---
 
-#### silver_adverse_events
-Normalized adverse event data from FAERS and SIDER.
+#### silver.adverse_events
+Aggregated adverse event data from FAERS.
 
 | Field | Type | Constraints | Description |
 |-------|------|-------------|-------------|
-| `event_id` | UUID | PK | Internal event ID |
-| `source` | VARCHAR(20) | NOT NULL | faers, sider, eudravigilance |
-| `source_report_id` | VARCHAR(100) | | Original report ID |
-| `molecule_id` | UUID | FK → silver_molecules | Linked molecule |
-| `drug_name_reported` | VARCHAR(500) | | Drug name as reported |
-| `reaction_meddra_pt` | VARCHAR(500) | | MedDRA Preferred Term |
-| `reaction_meddra_code` | VARCHAR(20) | | MedDRA code |
-| `seriousness` | VARCHAR(50) | | Serious, Non-serious |
-| `outcome` | VARCHAR(50) | | Death, Hospitalization, etc. |
-| `patient_age` | INTEGER | | Patient age |
-| `patient_sex` | VARCHAR(10) | | M, F, Unknown |
-| `report_date` | DATE | | Report date |
-| `country` | VARCHAR(50) | | Country of report |
-| `bronze_source_id` | UUID | | Source Bronze record |
+| `id` | UUID | PK, DEFAULT uuid_generate_v4() | Internal event ID |
+| `molecule_id` | UUID | FK → silver.molecules(id) | Linked molecule |
+| `meddra_pt` | VARCHAR(200) | | MedDRA Preferred Term |
+| `meddra_pt_code` | VARCHAR(20) | | MedDRA PT code |
+| `meddra_soc` | VARCHAR(200) | | System Organ Class |
+| `meddra_soc_code` | VARCHAR(20) | | MedDRA SOC code |
+| `report_count` | INTEGER | DEFAULT 0 | Number of reports |
+| `serious_count` | INTEGER | DEFAULT 0 | Number of serious reports |
+| `death_count` | INTEGER | DEFAULT 0 | Number of death reports |
+| `hospitalization_count` | INTEGER | DEFAULT 0 | Number of hospitalization reports |
+| `reporting_rate` | NUMERIC(10,4) | | Rate per 1000 reports |
+| `prr` | NUMERIC(10,4) | | Proportional Reporting Ratio |
+| `ror` | NUMERIC(10,4) | | Reporting Odds Ratio |
+| `first_report_date` | DATE | | First report date |
+| `last_report_date` | DATE | | Most recent report |
+| `source` | VARCHAR(50) | DEFAULT 'openfda_faers' | Data source |
 | `created_at` | TIMESTAMPTZ | DEFAULT NOW() | Creation time |
+| `updated_at` | TIMESTAMPTZ | DEFAULT NOW() | Last update |
 
-**Indexes**: molecule_id, reaction_meddra_pt, source, report_date
+**Constraints**: UNIQUE(molecule_id, meddra_pt_code)
+**Indexes**: molecule_id, meddra_pt, meddra_soc
 
 ---
 
 ### 4. Gold Layer Tables
 
-#### gold_molecule_profile
+**Schema**: `gold`
+
+#### gold.molecule_profile
 Pre-aggregated molecule profiles for decision support.
 
 | Field | Type | Constraints | Description |
 |-------|------|-------------|-------------|
-| `profile_id` | UUID | PK | Profile record ID |
-| `molecule_id` | UUID | FK → silver_molecules, UNIQUE | Master molecule |
+| `profile_id` | UUID | PK, DEFAULT gen_random_uuid() | Profile record ID |
+| `molecule_id` | UUID | FK → silver.molecules(id), UNIQUE | Master molecule |
+| `preferred_name` | VARCHAR(500) | | Molecule name |
+| `molecule_type` | VARCHAR(30) | | Type of molecule |
+| `inchi_key` | VARCHAR(27) | | InChI key (denormalized) |
 | `lifecycle_stage` | VARCHAR(50) | | Detected lifecycle stage |
-| `stage_confidence` | DECIMAL(3,2) | | Confidence in stage detection |
-| `data_completeness` | DECIMAL(3,2) | | % of data fields populated |
-| `trial_count` | INTEGER | | Number of clinical trials |
-| `active_trial_count` | INTEGER | | Actively recruiting trials |
-| `label_count` | INTEGER | | Number of FDA labels |
-| `indication_count` | INTEGER | | Number of indications |
-| `adverse_event_count` | INTEGER | | Total adverse events |
-| `serious_ae_count` | INTEGER | | Serious adverse events |
-| `publication_count` | INTEGER | | Related publications |
-| `patent_expiry_date` | DATE | | Earliest patent expiry |
-| `first_approval_date` | DATE | | First FDA approval |
-| `last_updated` | TIMESTAMPTZ | DEFAULT NOW() | Last aggregation time |
+| `lifecycle_stage_confidence` | DECIMAL | | Confidence in stage detection |
+| `lifecycle_last_detected` | TIMESTAMPTZ | | When stage was last detected |
+| `drugbank_id` | VARCHAR(20) | | DrugBank ID (denormalized) |
+| `chembl_id` | VARCHAR(20) | | ChEMBL ID (denormalized) |
+| `pubchem_cid` | VARCHAR(20) | | PubChem CID (denormalized) |
+| `rxnorm_cui` | VARCHAR(20) | | RxNorm CUI (denormalized) |
+| `unii` | VARCHAR(20) | | FDA UNII (denormalized) |
+| `approved_indications` | JSONB | | Array of approved indications |
+| `pipeline_indications` | JSONB | | Array of pipeline indications |
+| `boxed_warning_count` | INTEGER | DEFAULT 0 | Number of boxed warnings |
+| `serious_ae_count` | INTEGER | DEFAULT 0 | Serious adverse events |
+| `ae_summary` | JSONB | | Top adverse events with counts |
+| `therapeutic_area` | VARCHAR(100) | | Primary therapeutic area |
+| `mechanism_of_action` | VARCHAR(500) | | MOA |
+| `competitor_count` | INTEGER | DEFAULT 0 | Number of competitors |
+| `earliest_patent_expiry` | DATE | | Earliest patent expiry |
+| `patent_count` | INTEGER | DEFAULT 0 | Number of patents |
+| `exclusivity_expiry` | DATE | | Exclusivity expiry date |
+| `data_completeness_score` | DECIMAL | | Data completeness (0-1) |
+| `data_sources` | JSONB | | Sources with record counts |
+| `last_data_update` | TIMESTAMPTZ | | Last data update |
+| `created_at` | TIMESTAMPTZ | DEFAULT NOW() | Creation time |
+| `updated_at` | TIMESTAMPTZ | DEFAULT NOW() | Last aggregation time |
+| `aggregation_run_id` | UUID | | Which aggregation run |
 
-**Note**: View definition excludes needs_review=TRUE from silver_molecules
+**Indexes**: preferred_name, lifecycle_stage, drugbank_id, therapeutic_area
+
+**Note**: This view excludes molecules where needs_review=TRUE from silver.molecules
 
 ---
 
-#### gold_competitive_landscape
+#### gold.competitive_landscape
 Competitive analysis by indication.
 
 | Field | Type | Constraints | Description |
 |-------|------|-------------|-------------|
-| `landscape_id` | UUID | PK | Landscape record ID |
+| `landscape_id` | UUID | PK, DEFAULT gen_random_uuid() | Landscape record ID |
 | `indication` | VARCHAR(500) | NOT NULL | Therapeutic indication |
-| `indication_mesh_id` | VARCHAR(20) | | MeSH term ID |
-| `molecule_ids` | UUID[] | | Molecules in this landscape |
-| `approved_count` | INTEGER | | Approved drugs |
-| `phase3_count` | INTEGER | | Phase 3 candidates |
-| `phase2_count` | INTEGER | | Phase 2 candidates |
-| `phase1_count` | INTEGER | | Phase 1 candidates |
+| `indication_mesh` | VARCHAR(50) | | MeSH term ID |
+| `therapeutic_area` | VARCHAR(100) | | Therapeutic area |
+| `total_molecules` | INTEGER | DEFAULT 0 | Total molecules in landscape |
+| `approved_count` | INTEGER | DEFAULT 0 | Approved drugs |
+| `phase_3_count` | INTEGER | DEFAULT 0 | Phase 3 candidates |
+| `phase_2_count` | INTEGER | DEFAULT 0 | Phase 2 candidates |
+| `phase_1_count` | INTEGER | DEFAULT 0 | Phase 1 candidates |
+| `preclinical_count` | INTEGER | DEFAULT 0 | Preclinical candidates |
 | `market_leaders` | JSONB | | Top molecules by market share |
 | `recent_approvals` | JSONB | | Last 2 years approvals |
-| `pipeline_trends` | JSONB | | Pipeline activity trends |
-| `last_updated` | TIMESTAMPTZ | DEFAULT NOW() | Last aggregation time |
+| `late_stage_pipeline` | JSONB | | Late-stage pipeline molecules |
+| `moa_distribution` | JSONB | | MOA distribution |
+| `upcoming_patent_expiries` | JSONB | | Upcoming patent expiries |
+| `created_at` | TIMESTAMPTZ | DEFAULT NOW() | Creation time |
+| `updated_at` | TIMESTAMPTZ | DEFAULT NOW() | Last aggregation time |
+| `snapshot_date` | DATE | DEFAULT CURRENT_DATE | Snapshot date |
+
+**Constraints**: UNIQUE(indication, snapshot_date)
+**Indexes**: indication, therapeutic_area, snapshot_date
 
 ---
 
-#### gold_safety_signals
+#### gold.safety_signals
 Aggregated safety signal analysis.
 
 | Field | Type | Constraints | Description |
 |-------|------|-------------|-------------|
-| `signal_id` | UUID | PK | Signal record ID |
-| `molecule_id` | UUID | FK → silver_molecules | Master molecule |
-| `reaction_meddra_pt` | VARCHAR(500) | | MedDRA Preferred Term |
-| `reaction_soc` | VARCHAR(200) | | System Organ Class |
-| `case_count` | INTEGER | | Number of cases |
-| `prr_score` | DECIMAL(8,4) | | Proportional Reporting Ratio |
-| `ror_score` | DECIMAL(8,4) | | Reporting Odds Ratio |
-| `ic_score` | DECIMAL(8,4) | | Information Component |
-| `signal_strength` | VARCHAR(20) | | Strong, Moderate, Weak |
+| `signal_id` | UUID | PK, DEFAULT gen_random_uuid() | Signal record ID |
+| `molecule_id` | UUID | FK → silver.molecules(id) ON DELETE CASCADE | Master molecule |
+| `reaction_name` | VARCHAR(500) | NOT NULL | Reaction name |
+| `reaction_meddra_pt` | VARCHAR(100) | | MedDRA Preferred Term code |
+| `case_count` | INTEGER | DEFAULT 0 | Number of cases |
+| `serious_count` | INTEGER | DEFAULT 0 | Serious cases |
+| `fatal_count` | INTEGER | DEFAULT 0 | Fatal cases |
+| `pro_score` | DECIMAL | | Proportional Reporting Ratio |
+| `ror_score` | DECIMAL | | Reporting Odds Ratio |
+| `is_signal` | BOOLEAN | DEFAULT FALSE | Is this a signal? |
 | `first_reported` | DATE | | First report date |
 | `last_reported` | DATE | | Most recent report |
 | `trend_direction` | VARCHAR(20) | | Increasing, Stable, Decreasing |
-| `last_updated` | TIMESTAMPTZ | DEFAULT NOW() | Last calculation time |
+| `vs_class_average` | DECIMAL | | Comparison to therapeutic class |
+| `calculated_at` | TIMESTAMPTZ | DEFAULT NOW() | Calculation time |
+| `faers_quarter` | VARCHAR(10) | | FAERS quarter (e.g., '2026Q1') |
 
-**Constraints**: UNIQUE(molecule_id, reaction_meddra_pt)
+**Indexes**: molecule_id, is_signal (partial), reaction_meddra_pt
 
 ---
 
 ### 5. Application Layer Tables
 
-#### user_tracked_molecules
+**Schema**: `application`
+
+#### application.user_tracked_molecules
 User's tracked molecule portfolio.
 
 | Field | Type | Constraints | Description |
 |-------|------|-------------|-------------|
-| `tracking_id` | UUID | PK | Tracking record ID |
+| `id` | UUID | PK, DEFAULT gen_random_uuid() | Tracking record ID |
 | `user_id` | UUID | NOT NULL | User who is tracking |
-| `molecule_id` | UUID | FK → silver_molecules | Tracked molecule |
+| `molecule_id` | UUID | FK → silver.molecules(id) | Tracked molecule |
 | `indication` | VARCHAR(500) | | Specific indication tracked |
 | `lifecycle_stage` | VARCHAR(50) | | User's assessed stage |
 | `stage_validated` | BOOLEAN | DEFAULT FALSE | Has stage been validated? |
@@ -413,15 +489,15 @@ User's tracked molecule portfolio.
 
 ---
 
-#### user_annotations
+#### application.user_annotations
 User-added annotations and evidence.
 
 | Field | Type | Constraints | Description |
 |-------|------|-------------|-------------|
-| `annotation_id` | UUID | PK | Annotation record ID |
+| `id` | UUID | PK, DEFAULT gen_random_uuid() | Annotation record ID |
 | `user_id` | UUID | NOT NULL | User who created |
-| `molecule_id` | UUID | FK → silver_molecules | Related molecule |
-| `tracking_id` | UUID | FK → user_tracked_molecules | Related tracking record |
+| `molecule_id` | UUID | FK → silver.molecules(id) | Related molecule |
+| `tracking_id` | UUID | FK → application.user_tracked_molecules(id) | Related tracking record |
 | `annotation_type` | VARCHAR(50) | | evidence, note, document, link |
 | `title` | VARCHAR(500) | | Annotation title |
 | `content` | TEXT | | Annotation content |
@@ -436,14 +512,14 @@ User-added annotations and evidence.
 
 ---
 
-#### alert_configs
+#### application.alert_configs
 User alert configuration.
 
 | Field | Type | Constraints | Description |
 |-------|------|-------------|-------------|
-| `config_id` | UUID | PK | Config record ID |
+| `id` | UUID | PK, DEFAULT gen_random_uuid() | Config record ID |
 | `user_id` | UUID | NOT NULL | User who configured |
-| `molecule_id` | UUID | FK → silver_molecules | Molecule to monitor |
+| `molecule_id` | UUID | FK → silver.molecules(id) | Molecule to monitor |
 | `alert_type` | VARCHAR(50) | NOT NULL | stage_change, safety_signal, trial_update, etc. |
 | `threshold` | JSONB | | Alert-specific thresholds |
 | `channels` | TEXT[] | | email, in_app, webhook |
