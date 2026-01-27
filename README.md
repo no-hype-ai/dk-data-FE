@@ -219,46 +219,69 @@ curl -X POST http://localhost:8000/jobs/catalog-refresh/trigger
 curl http://localhost:8000/runs
 ```
 
-### Molecule Onboarding API
+### Data Source Onboarding API
 
-The platform provides APIs for onboarding users and molecules:
+The platform provides comprehensive APIs for onboarding new external data sources:
 
 ```bash
-# User onboarding
-curl -X POST http://localhost:8000/api/v1/onboarding/user \
+# Register a new data source
+curl -X POST http://localhost:8000/api/v1/data-sources/register \
   -H "Content-Type: application/json" \
   -d '{
-    "email": "user@example.com",
-    "name": "John Doe",
-    "role": "analyst",
-    "organization": "Pharma Corp",
-    "therapeutic_areas": ["oncology", "cardiology"]
+    "name": "new_api_source",
+    "display_name": "New API Source",
+    "api_type": "rest",
+    "base_url": "https://api.example.com",
+    "auth_type": "api_key",
+    "refresh_tier": "daily",
+    "rate_limit_requests": 10,
+    "batch_size": 100
   }'
 
-# Molecule tracking setup
-curl -X POST http://localhost:8000/api/v1/onboarding/molecules \
+# Test connection to a data source
+curl -X POST http://localhost:8000/api/v1/data-sources/test-connection \
   -H "Content-Type: application/json" \
   -d '{
-    "user_id": "user-uuid",
-    "molecules": [
-      {"name": "Dupilumab", "identifier_type": "drug_name"},
-      {"name": "DUPIXENT", "identifier_type": "brand_name"}
+    "source_name": "new_api_source",
+    "base_url": "https://api.example.com",
+    "auth_type": "api_key"
+  }'
+
+# Store credentials for a data source
+curl -X POST http://localhost:8000/api/v1/data-sources/{source_name}/credentials \
+  -H "Content-Type: application/json" \
+  -d '{
+    "key_name": "api_key",
+    "value": "your-api-key-here",
+    "credential_type": "api_key"
+  }'
+
+# Auto-detect schema from sample responses
+curl -X POST http://localhost:8000/api/v1/data-sources/{source_name}/detect-schema \
+  -H "Content-Type: application/json" \
+  -d '{
+    "sample_responses": [
+      {"id": 1, "name": "Example", "value": 123.45}
     ]
   }'
 
-# Bulk molecule onboarding
-curl -X POST http://localhost:8000/api/v1/onboarding/molecules/bulk \
-  -H "Content-Type: application/json" \
-  -d '{
-    "identifiers": [
-      {"value": "CHEMBL1201586", "type": "chembl_id"},
-      {"value": "DB05429", "type": "drugbank_id"}
-    ]
-  }'
+# Generate and create bronze table
+curl -X POST http://localhost:8000/api/v1/data-sources/{source_name}/generate-table
 
-# Check onboarding status
-curl http://localhost:8000/api/v1/onboarding/status/{user_id}
+# Trigger initial sync
+curl -X POST http://localhost:8000/api/v1/data-sources/{source_name}/sync
+
+# List all data sources
+curl http://localhost:8000/api/v1/data-sources
+
+# Get data source details
+curl http://localhost:8000/api/v1/data-sources/{source_name}
+
+# Check sync status
+curl http://localhost:8000/api/v1/data-sources/{source_name}/sync/status
 ```
+
+**Note**: The frontend UI (`http://localhost:3001`) provides a guided 5-step wizard for data source onboarding with schema detection and table generation.
 
 ## Project Structure
 
@@ -455,6 +478,29 @@ Once services are running:
 
 ### Adding a new data source (Medallion Architecture)
 
+**Option 1: Via API (Recommended)**
+
+Use the data source onboarding API or UI:
+
+```bash
+# Register via API
+curl -X POST http://localhost:8000/api/v1/data-sources/register \
+  -H "Content-Type: application/json" \
+  -d '{...}'
+
+# Or use the frontend UI at http://localhost:3001
+```
+
+The onboarding process will:
+1. Register the source in `raw.sync_schedules`
+2. Store credentials securely
+3. Auto-detect schema from sample responses
+4. Generate bronze table automatically
+5. Create SQLMesh transformation model
+6. Set up sync schedule
+
+**Option 2: Manual Configuration**
+
 1. Add source configuration to `raw.sync_schedules`:
    ```sql
    INSERT INTO raw.sync_schedules (source, tier, cron_expression, priority, options)
@@ -467,37 +513,39 @@ Once services are running:
 5. Bronze table will be created automatically on first sync
 6. Add transformation logic for bronze → silver → gold
 
-## Molecule Platform Features
+## Data Source Onboarding
 
-### Molecule Onboarding
+The platform provides comprehensive **data source onboarding** capabilities for adding new external data sources to the medallion architecture:
 
-The platform supports onboarding users and tracking molecules through a comprehensive API:
+### Features
 
-**User Onboarding**:
-- Create user accounts with roles and therapeutic areas
-- Track user preferences and access levels
-- Manage organization affiliations
+- **5-Step Onboarding Wizard**: Guided UI for configuring new data sources
+- **Auto-Schema Detection**: Automatically detects schema from sample API responses
+- **Credential Management**: Secure storage and rotation of API keys and tokens
+- **Connection Testing**: Validate API connectivity before onboarding
+- **Automatic Table Generation**: Creates bronze layer tables automatically
+- **SQLMesh Model Generation**: Auto-generates transformation models
+- **Pagination Support**: Configure offset, page-based, or cursor pagination
+- **Incremental Sync**: Set up incremental data fetching by date fields
+- **Rate Limiting**: Configure request rate limits per source
 
-**Molecule Tracking**:
-- Set up molecule tracking by various identifiers (drug name, brand name, ChEMBL ID, DrugBank ID, etc.)
-- Bulk onboarding support for multiple molecules
-- Automatic entity resolution and deduplication
+### Onboarding Process
 
-**API Endpoints**:
-- `POST /api/v1/onboarding/user` - Onboard a new user
-- `POST /api/v1/onboarding/molecules` - Set up molecule tracking
-- `POST /api/v1/onboarding/molecules/bulk` - Bulk molecule onboarding
-- `GET /api/v1/onboarding/status/{user_id}` - Check onboarding status
-
-See the [Molecule Onboarding API](#molecule-onboarding-api) section above for examples.
+1. **Register Source**: Provide API details (base URL, auth type, etc.)
+2. **Store Credentials**: Securely store API keys or tokens
+3. **Test Connection**: Validate connectivity and fetch sample data
+4. **Detect Schema**: Auto-detect table structure from sample responses
+5. **Generate Tables**: Create bronze layer table and SQLMesh model
+6. **Trigger Sync**: Start initial data ingestion
 
 ### Data Platform Features
 
 - **Pipeline Scheduler**: Automated data syncs (daily/weekly/monthly)
-- **Dynamic Source Configuration**: Add new data sources via API
+- **Dynamic Source Configuration**: Add new data sources via API without code changes
 - **Entity Resolution**: Automatic molecule deduplication across sources
 - **Identifier Linking**: Cross-reference molecules by various identifiers
 - **Data Quality Monitoring**: Track data freshness and quality metrics
+- **Medallion Architecture**: Automatic bronze → silver → gold transformations
 
 ## Optional Services
 
@@ -516,9 +564,9 @@ Metabase provides a user-friendly interface for querying and visualizing data:
 #   Password: postgres
 ```
 
-### Frontend (Onboarding UI)
+### Frontend (Data Source Onboarding UI)
 
-The data platform onboarding UI helps configure and manage data sources:
+The data source onboarding UI provides a guided 5-step wizard for onboarding new external data sources:
 
 ```bash
 # Start with frontend profile
@@ -526,6 +574,15 @@ docker compose -f src/dk_data/docker-compose.yml --profile frontend up -d
 
 # Access at http://localhost:3001
 ```
+
+**Features**:
+- Step 1: Source registration (name, API type, base URL)
+- Step 2: Credential management (API keys, tokens)
+- Step 3: Connection testing and sample data fetching
+- Step 4: Schema detection and table generation
+- Step 5: Sync configuration and initial data load
+
+The UI automatically generates bronze layer tables and SQLMesh models based on detected schemas.
 
 ### Monitoring Stack
 
