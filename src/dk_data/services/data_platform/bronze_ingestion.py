@@ -8,8 +8,9 @@ Part of DK Molecule Data Platform (012-dk-data-platform)
 """
 
 import json
+import re
 from datetime import datetime
-from typing import Dict, Any, Optional, List, Callable
+from typing import Dict, Any, Optional, List, Callable, Tuple
 from dataclasses import dataclass
 import logging
 
@@ -314,6 +315,126 @@ class BronzeIngestionService:
 
         return result
 
+    def _extract_drug_names_from_alternative_fields(self, label: Dict) -> Tuple[Optional[str], Optional[str]]:
+        """
+        Extract drug names from alternative fields when openfda section is empty.
+        
+        Returns:
+            Tuple of (generic_name, brand_name) extracted from alternative fields
+        """
+        generic_name = None
+        brand_name = None
+        
+        # Try to extract from description field (e.g., "Ofloxacin Ophthalmic Solution USP, 0.3%")
+        description = self._first_or_join(label.get('description'))
+        if description:
+            # Look for drug name patterns in description
+            # Pattern: Drug name followed by formulation (e.g., "Ofloxacin Ophthalmic Solution")
+            drug_patterns = [
+                r'\b([A-Z][a-z]+(?: [A-Z][a-z]+)*)\s+(?:Ophthalmic|Oral|Topical|Injectable|Solution|Tablet|Capsule|Cream|Ointment|Gel|Suspension|Injection)',
+                r'\b([A-Z][a-z]+(?: [A-Z][a-z]+)*)\s+(?:USP|HCl|Gluconate|Acetate)',
+            ]
+            for pattern in drug_patterns:
+                match = re.search(pattern, description, re.IGNORECASE)
+                if match:
+                    candidate = match.group(1).strip()
+                    # Filter out common non-drug words
+                    if candidate and len(candidate) > 3 and candidate not in ['Contains', 'Active', 'Purpose', 'Description']:
+                        generic_name = candidate
+                        logger.debug(f"Extracted generic name from description: {generic_name}")
+                        break
+        
+        # Try to extract from active_ingredient field
+        active_ingredients = label.get('active_ingredient', [])
+        if active_ingredients:
+            # Handle both list and string formats
+            if isinstance(active_ingredients, list) and len(active_ingredients) > 0:
+                first_ingredient = active_ingredients[0]
+            elif isinstance(active_ingredients, str):
+                first_ingredient = active_ingredients
+            else:
+                first_ingredient = None
+            
+            if first_ingredient:
+                # Extract drug name from active ingredient string
+                # Examples: "Ofloxacin 0.3%", "Pseudoephedrine HCl 60 mg", "Chlorhexidine Gluconate 4%"
+                ingredient_text = str(first_ingredient)
+                
+                # Remove common prefixes
+                cleaned = re.sub(r'^(?:ACTIVE INGREDIENTS?:?|Active Ingredient.*?---|BRONZE ACTIVE INGREDIENTS?:?)\s*', '', ingredient_text, flags=re.IGNORECASE)
+                # Remove percentages and concentrations
+                cleaned = re.sub(r'\s+\d+\.?\d*\s*%', '', cleaned)
+                cleaned = re.sub(r'\s+\d+\s*(mg|g|mL|mcg|mcg/mL|mg/mL|mg/tablet)', '', cleaned, flags=re.IGNORECASE)
+                # Remove parenthetical info
+                cleaned = re.sub(r'\s*\([^)]+\)', '', cleaned)
+                # Remove dots and ellipses used as separators
+                cleaned = re.sub(r'\.{3,}', ' ', cleaned)
+                cleaned = re.sub(r'\s*\.\s*$', '', cleaned)
+                # Remove common label text patterns
+                cleaned = re.sub(r'DESCRIPTION\s+', '', cleaned, flags=re.IGNORECASE)
+                cleaned = re.sub(r'Purpose\s+', '', cleaned, flags=re.IGNORECASE)
+                cleaned = re.sub(r'medication\s*', '', cleaned, flags=re.IGNORECASE)
+                cleaned = cleaned.strip()
+                
+                # Extract the main drug name (usually first 1-4 words, capitalized)
+                words = cleaned.split()
+                if len(words) >= 1:
+                    # Take first 1-4 capitalized words as drug name
+                    drug_words = []
+                    for word in words[:4]:
+                        # Clean word
+                        word = word.strip('.,:;')
+                        if not word:
+                            continue
+                        # Include word if it starts with capital and is meaningful
+                        if word and word[0].isupper() and len(word) > 2:
+                            # Skip common non-drug words
+                            if word.upper() not in ['ACTIVE', 'INGREDIENT', 'INGREDIENTS', 'PURPOSE', 'EACH', 'BOTTLE', 'DESCRIPTION']:
+                                drug_words.append(word)
+                            else:
+                                break
+                        elif word and word[0].isupper() and len(word) > 1:
+                            drug_words.append(word)
+                        else:
+                            break
+                    if drug_words:
+                        extracted = ' '.join(drug_words)
+                        # Clean up common patterns and extra spaces
+                        extracted = re.sub(r'\s+', ' ', extracted).strip()
+                        # Remove trailing common words
+                        extracted = re.sub(r'\s+(Solution|Tablet|Capsule|Cream|Ointment|Gel)$', '', extracted, flags=re.IGNORECASE)
+                        if extracted:
+                            generic_name = generic_name or extracted
+                            logger.debug(f"Extracted generic name from active_ingredient: {generic_name}")
+        
+        # Try to extract brand name from package_label_principal_display_panel
+        display_panel = self._first_or_join(label.get('package_label_principal_display_panel'))
+        if display_panel:
+            # Look for product names (usually at the beginning, before descriptions)
+            lines = display_panel.split('\n')
+            for line in lines[:10]:  # Check first 10 lines
+                line = line.strip()
+                if line and 3 < len(line) < 100:
+                    # Check if it looks like a product name (starts with capital, not all caps)
+                    if line[0].isupper() and not line.isupper():
+                        # Skip common label text
+                        skip_patterns = ['PRINCIPAL DISPLAY', 'NDC', 'NET WT', 'NET WEIGHT', 'LABEL', 
+                                        'IMAGE', 'PRINCIPAL', 'DISPLAY', 'PANEL', 'APPLICATOR', 'BOX']
+                        if not any(skip in line.upper() for skip in skip_patterns):
+                            # Extract first meaningful word/phrase (up to 3 words)
+                            words = line.split()
+                            if words:
+                                # Take first 1-3 words that look like a brand name
+                                brand_candidate = ' '.join(words[:3])
+                                # Remove common suffixes
+                                brand_candidate = re.sub(r'\s+(?:SPF|USP|HCl|CHG|NDC).*$', '', brand_candidate, flags=re.IGNORECASE)
+                                if len(brand_candidate) > 2:
+                                    brand_name = brand_candidate
+                                    logger.debug(f"Extracted brand name from display panel: {brand_name}")
+                                    break
+        
+        return (generic_name, brand_name)
+    
     async def _insert_bronze_label(self, conn, label: Dict, raw_id):
         """Insert a single FDA label into Bronze."""
         set_id = label.get('set_id')
@@ -327,6 +448,18 @@ class BronzeIngestionService:
 
         openfda = label.get('openfda', {})
         effective_time = self._parse_label_date(label.get('effective_time'))
+        
+        # Extract brand_name and generic_name from openfda first
+        brand_name = self._first_or_none(openfda.get('brand_name'))
+        generic_name = self._first_or_none(openfda.get('generic_name'))
+        
+        # If openfda is empty or missing names, try alternative fields
+        if (not brand_name and not generic_name) or (openfda == {}):
+            extracted_generic, extracted_brand = self._extract_drug_names_from_alternative_fields(label)
+            generic_name = generic_name or extracted_generic
+            brand_name = brand_name or extracted_brand
+            if generic_name or brand_name:
+                logger.info(f"Extracted drug names from alternative fields for set_id {set_id}: generic={generic_name}, brand={brand_name}")
 
         await conn.execute("""
             INSERT INTO bronze.openfda_labels (
@@ -342,7 +475,8 @@ class BronzeIngestionService:
                 $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25
             )
             ON CONFLICT (set_id, version) DO UPDATE SET
-                brand_name = EXCLUDED.brand_name,
+                brand_name = COALESCE(EXCLUDED.brand_name, bronze.openfda_labels.brand_name),
+                generic_name = COALESCE(EXCLUDED.generic_name, bronze.openfda_labels.generic_name),
                 boxed_warning = EXCLUDED.boxed_warning,
                 adverse_reactions = EXCLUDED.adverse_reactions,
                 processed_to_silver = FALSE,
@@ -352,8 +486,8 @@ class BronzeIngestionService:
             set_id,
             label.get('id'),
             self._safe_int(label.get('version', '1')),
-            self._first_or_none(openfda.get('brand_name')),
-            self._first_or_none(openfda.get('generic_name')),
+            json.dumps([brand_name]) if brand_name else None,
+            json.dumps([generic_name]) if generic_name else None,
             self._first_or_none(openfda.get('manufacturer_name')),
             self._first_or_none(openfda.get('application_number')),
             self._first_or_none(openfda.get('product_type')),
