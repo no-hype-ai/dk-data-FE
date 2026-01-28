@@ -1,0 +1,30 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+labels:
+  - pairs:
+      app.kubernetes.io/part-of: dk-data
+      app.kubernetes.io/managed-by: kustomize
+    includeSelectors: false
+
+resources:
+  # PostgREST API
+  - postgrest/deployment.yaml
+  - postgrest/service.yaml
+  - postgrest/configmap.yaml
+  # Ingestion services
+  - ingestion/job-trigger-deployment.yaml
+  - ingestion/job-trigger-service.yaml
+  - ingestion/cronjob-cms-all.yaml
+  - ingestion/cronjob-refresh.yaml
+  # Database initialization
+  - db-init-job.yaml
+  # Networking
+  - ingress.yaml
+  - middleware-rate-limit.yaml
+  - networkpolicy.yaml
+  # Secrets
+  - doppler-secret.yaml
+  # Observability
+  - service-monitor.yaml
+  - alert-rules.yaml

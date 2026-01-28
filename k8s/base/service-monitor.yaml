@@ -1,0 +1,55 @@
+---
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: dk-data-postgrest
+  labels:
+    app.kubernetes.io/name: dk-data
+    app.kubernetes.io/component: postgrest
+    release: mimir
+spec:
+  selector:
+    matchLabels:
+      app: postgrest
+  endpoints:
+    - port: http
+      path: /
+      interval: 30s
+      scrapeTimeout: 10s
+      honorLabels: true
+---
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: dk-data-job-trigger
+  labels:
+    app.kubernetes.io/name: dk-data
+    app.kubernetes.io/component: job-trigger
+    release: mimir
+spec:
+  selector:
+    matchLabels:
+      app: job-trigger
+  endpoints:
+    - port: http
+      path: /metrics
+      interval: 30s
+      scrapeTimeout: 10s
+---
+apiVersion: monitoring.coreos.com/v1
+kind: PodMonitor
+metadata:
+  name: dk-data-cronjobs
+  labels:
+    app.kubernetes.io/name: dk-data
+    app.kubernetes.io/component: cronjobs
+    release: mimir
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/part-of: dk-data
+      app.kubernetes.io/component: batch-job
+  podMetricsEndpoints:
+    - port: metrics
+      path: /metrics
+      interval: 15s

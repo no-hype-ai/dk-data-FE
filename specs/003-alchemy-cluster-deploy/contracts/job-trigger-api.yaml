@@ -1,0 +1,143 @@
+# Job Trigger API Contract
+# Internal-only: http://job-trigger.dk-data-prod.svc.cluster.local:8000
+# NOT exposed via public Ingress.
+
+openapi: "3.0.3"
+info:
+  title: dk-data Job Trigger API
+  version: "1.0.0"
+  description: |
+    Internal FastAPI service for triggering and monitoring batch data ingestion jobs.
+    Accessible only within the Kubernetes cluster via ClusterIP service.
+
+servers:
+  - url: http://job-trigger.dk-data-prod.svc.cluster.local:8000
+    description: Production (internal)
+  - url: http://job-trigger.dk-data-staging.svc.cluster.local:8000
+    description: Staging (internal)
+
+paths:
+  /health:
+    get:
+      summary: Health check
+      description: Returns service health with database connectivity status
+      responses:
+        "200":
+          description: Service healthy
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: "healthy"
+                  database:
+                    type: string
+                    example: "connected"
+
+  /metrics:
+    get:
+      summary: Prometheus metrics
+      description: Returns metrics in Prometheus exposition format
+      responses:
+        "200":
+          description: Prometheus metrics text
+          content:
+            text/plain:
+              schema:
+                type: string
+
+  /jobs:
+    get:
+      summary: List available batch jobs
+      parameters:
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 50
+      responses:
+        "200":
+          description: Array of job definitions
+
+  /jobs/{job_name}:
+    get:
+      summary: Get specific job details
+      parameters:
+        - name: job_name
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Job definition
+        "404":
+          description: Job not found
+
+  /jobs/{job_name}/trigger:
+    post:
+      summary: Trigger a batch job execution
+      parameters:
+        - name: job_name
+          in: path
+          required: true
+          schema:
+            type: string
+            enum:
+              - fetch-cms-all
+              - fetch-cms-hospitals
+              - fetch-cms-inpatient
+              - fetch-cms-cost-reports
+              - fetch-hrsa
+              - fetch-acc-tvc
+              - sqlmesh-run
+              - catalog-refresh
+      responses:
+        "200":
+          description: Job triggered successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  run_id:
+                    type: string
+                  job_name:
+                    type: string
+                  status:
+                    type: string
+                    enum: [PENDING, RUNNING]
+        "404":
+          description: Job not found
+        "409":
+          description: Job already running
+
+  /runs:
+    get:
+      summary: List recent job runs
+      parameters:
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 20
+      responses:
+        "200":
+          description: Array of job run records
+
+  /runs/{run_id}:
+    get:
+      summary: Get specific job run details
+      parameters:
+        - name: run_id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Job run details with status, timestamps, records processed
+        "404":
+          description: Run not found
