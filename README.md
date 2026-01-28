@@ -359,16 +359,33 @@ dk-data-fe/
 ├── src/dk_data/             # Main application code
 │   ├── docker-compose.yml   # Local development stack
 │   ├── docker-compose.prod.yml  # Production overrides
+│   ├── data/                # Bronze layer data loaders
+│   │   ├── load_orange_book.py    # FDA Orange Book
+│   │   ├── load_ema.py            # EMA authorized medicines
+│   │   ├── load_drugbank.py       # DrugBank database
+│   │   ├── load_bindingdb.py      # BindingDB affinities
+│   │   ├── load_tdc_data.py       # TDC ADMET datasets
+│   │   ├── load_uniprot.py        # UniProt proteins
+│   │   ├── load_pdb.py            # PDB structures
+│   │   ├── load_uspto_patents.py  # USPTO patents
+│   │   └── load_openalex.py       # OpenAlex publications
 │   ├── ingestion/           # Data ingestion modules
 │   │   ├── batch/           # Job trigger service
 │   │   ├── fetchers/        # Data source fetchers
 │   │   └── sources/        # Source-specific loaders
+│   ├── models/              # Pydantic models
+│   │   └── data_platform/   # Medallion layer base models
+│   ├── services/            # Business logic services
+│   │   ├── data_platform/   # Medallion architecture services
+│   │   └── external_apis/   # External API clients
 │   ├── sql/                 # SQL schemas and migrations
-│   ├── models/              # SQLMesh models
+│   ├── sqlmesh/             # SQLMesh transformation models
 │   ├── frontend/            # Data platform onboarding UI (optional)
 │   └── monitoring/          # Prometheus/Grafana configs (optional)
 ├── specs/                   # Feature specifications
 └── docs/                    # Additional documentation
+    ├── MEDALLION_ARCHITECTURE.md  # Medallion layer documentation
+    └── DATA_LOADERS.md            # Data loader reference
 ```
 
 ## Data Sources
@@ -380,6 +397,44 @@ dk-data-fe/
 | `cms_cost_reports` | Hospital financial metrics (HCRIS) | Annual |
 | `acc_tvc` | ACC Transcatheter Valve Certifications | Quarterly |
 | `hrsa_shortage_areas` | Health Professional Shortage Areas | Monthly |
+
+### Molecule Platform Data Loaders
+
+The platform includes data loaders for pharmaceutical and scientific data sources. These populate the bronze layer of the medallion architecture.
+
+| Loader | Description | Target Table |
+|--------|-------------|--------------|
+| `load_orange_book` | FDA Orange Book (approved drugs, patents, exclusivities) | `bronze.orange_book_*` |
+| `load_ema` | EMA authorized medicines | `bronze.ema` |
+| `load_drugbank` | DrugBank database (drugs, interactions, targets) | `bronze.drugbank_*` |
+| `load_bindingdb` | BindingDB binding affinity data | `bronze.bindingdb_affinities` |
+| `load_tdc_data` | TDC ADMET datasets with molecular descriptors | `bronze.tdc_*` |
+| `load_uniprot` | UniProt protein targets | `bronze.uniprot` |
+| `load_pdb` | RCSB PDB protein structures | `bronze.pdb` |
+| `load_uspto_patents` | USPTO patent data | `bronze.uspto_patents` |
+| `load_openalex` | OpenAlex scientific publications | `bronze.openalex` |
+
+**Usage Examples**:
+```bash
+# Regulatory data
+python -m dk_data.data.load_orange_book --download
+python -m dk_data.data.load_ema --download
+python -m dk_data.data.load_drugbank --xml /path/to/drugbank.xml
+
+# Chemical/molecular data
+python -m dk_data.data.load_bindingdb /path/to/BindingDB_All.tsv
+python -m dk_data.data.load_tdc_data --category absorption
+
+# Protein data
+python -m dk_data.data.load_uniprot --mode drug-targets
+python -m dk_data.data.load_pdb --mode drug-targets
+
+# Patents & Publications
+python -m dk_data.data.load_uspto_patents --mode drugs
+python -m dk_data.data.load_openalex --mode drugs
+```
+
+For detailed documentation, see [docs/DATA_LOADERS.md](docs/DATA_LOADERS.md).
 
 ## Database Schemas
 
@@ -409,7 +464,7 @@ The platform implements a **medallion architecture** for molecule/drug data:
 
 **Data Flow**: `raw` → `bronze` → `silver` → `gold` → `mol_api`
 
-Tables are created automatically during data ingestion and transformation - see [Medallion Architecture](#medallion-architecture) section below.
+Tables are created automatically during data ingestion and transformation. For detailed documentation, see [docs/MEDALLION_ARCHITECTURE.md](docs/MEDALLION_ARCHITECTURE.md).
 
 ## Environment Variables
 
@@ -531,6 +586,34 @@ Once services are running:
 1. Create view in `src/dk_data/sql/api_views.sql` or `src/dk_data/sql/migrations/021_mol_api_views.sql`
 2. Grant permissions to appropriate roles
 3. PostgREST will auto-generate the endpoint
+
+### Medallion Layer Base Models
+
+The platform provides Pydantic base models for each medallion layer in `src/dk_data/models/data_platform/base.py`:
+
+```python
+from dk_data.models.data_platform import RawBaseModel, BronzeBaseModel, SilverBaseModel, GoldBaseModel
+
+# Raw layer: Unmodified API responses
+class MyRawRecord(RawBaseModel):
+    request_id: str
+    response_body: Dict[str, Any]
+    processed_to_bronze: bool = False
+
+# Bronze layer: Source-native typed data
+class MyBronzeRecord(BronzeBaseModel):
+    raw_source_id: UUID
+    source: str
+    processed_to_silver: bool = False
+
+# Silver layer: Entity-resolved normalized data
+class MySilverRecord(SilverBaseModel):
+    source: str
+
+# Gold layer: Aggregated analytics views
+class MyGoldRecord(GoldBaseModel):
+    pass
+```
 
 ### Adding a new data source (Medallion Architecture)
 
