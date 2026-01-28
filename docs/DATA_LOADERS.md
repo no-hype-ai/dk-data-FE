@@ -10,7 +10,133 @@ Data loaders fetch data from external sources and populate bronze layer tables. 
 - Includes progress tracking
 - Handles rate limiting
 
+## Quick Reference
+
+| Loader | Data Source | Tables | Priority |
+|--------|-------------|--------|----------|
+| `load_clinicaltrials` | ClinicalTrials.gov | `bronze.clinicaltrials` | Critical |
+| `load_openfda_faers` | OpenFDA FAERS | `bronze.openfda_faers` | Critical |
+| `load_openfda_labels` | OpenFDA Labels | `bronze.openfda_labels` | High |
+| `load_orange_book` | FDA Orange Book | `bronze.orange_book_*` | High |
+| `load_ema` | EMA | `bronze.ema` | High |
+| `load_drugbank` | DrugBank | `bronze.drugbank_*` | High |
+| `load_chembl_bulk` | ChEMBL | `bronze.chembl_activities` | High |
+| `load_chembl_extended` | ChEMBL | `bronze.chembl_drug_*` | Medium |
+| `load_pubchem_bulk` | PubChem | `bronze.pubchem_compounds` | High |
+| `load_pubchem_extended` | PubChem | `bronze.pubchem_*` | Medium |
+| `load_bindingdb` | BindingDB | `bronze.bindingdb_affinities` | High |
+| `load_sider` | SIDER | `bronze.sider_*` | High |
+| `load_tdc_data` | TDC | `bronze.tdc_*` | Medium |
+| `load_tdc_admet` | TDC | `bronze.tdc_admet_*` | Medium |
+| `load_uniprot` | UniProt | `bronze.uniprot` | Medium |
+| `load_pdb` | RCSB PDB | `bronze.pdb` | Medium |
+| `load_uspto_patents` | USPTO | `bronze.uspto_patents` | High |
+| `load_openalex` | OpenAlex | `bronze.openalex` | Medium |
+
 ## Available Loaders
+
+### Clinical & Safety Data
+
+#### `load_clinicaltrials.py` - ClinicalTrials.gov
+
+Loads clinical trial data from ClinicalTrials.gov API v2.
+
+```bash
+# Load all trials (paginated)
+python -m dk_data.data.load_clinicaltrials
+
+# Search by condition
+python -m dk_data.data.load_clinicaltrials --condition "diabetes"
+
+# Search by drug
+python -m dk_data.data.load_clinicaltrials --intervention "metformin"
+
+# Limit records
+python -m dk_data.data.load_clinicaltrials --limit 10000
+```
+
+**Tables**:
+- `bronze.clinicaltrials`
+
+**Data Source**: https://clinicaltrials.gov/
+
+---
+
+#### `load_openfda_faers.py` - FDA Adverse Events
+
+Loads adverse event reports from OpenFDA FAERS API.
+
+```bash
+# Load all recent events
+python -m dk_data.data.load_openfda_faers --limit 10000
+
+# Filter by drug
+python -m dk_data.data.load_openfda_faers --drug "aspirin"
+
+# Filter by reaction
+python -m dk_data.data.load_openfda_faers --reaction "headache"
+
+# Only serious events
+python -m dk_data.data.load_openfda_faers --serious
+```
+
+**Tables**:
+- `bronze.openfda_faers`
+
+**Data Source**: https://open.fda.gov/apis/drug/event/
+
+**Environment**: `OPENFDA_API_KEY` (optional, for higher rate limits)
+
+---
+
+#### `load_openfda_labels.py` - FDA Drug Labels
+
+Loads structured product labeling (SPL) from OpenFDA.
+
+```bash
+# Load all labels
+python -m dk_data.data.load_openfda_labels --limit 5000
+
+# Filter by drug
+python -m dk_data.data.load_openfda_labels --drug "lipitor"
+
+# Filter by manufacturer
+python -m dk_data.data.load_openfda_labels --manufacturer "pfizer"
+```
+
+**Tables**:
+- `bronze.openfda_labels`
+
+**Data Source**: https://open.fda.gov/apis/drug/label/
+
+**Environment**: `OPENFDA_API_KEY` (optional)
+
+---
+
+#### `load_sider.py` - SIDER Side Effects
+
+Loads side effects and indications from SIDER database.
+
+```bash
+# Download and load all SIDER data
+python -m dk_data.data.load_sider --download
+
+# Load from existing files
+python -m dk_data.data.load_sider --data-dir /path/to/sider
+
+# Load only side effects
+python -m dk_data.data.load_sider --side-effects-only
+```
+
+**Tables**:
+- `bronze.sider_drugs`
+- `bronze.sider_side_effects`
+- `bronze.sider_indications`
+- `bronze.sider_frequencies`
+
+**Data Source**: http://sideeffects.embl.de/
+
+---
 
 ### Regulatory & Approved Drugs
 
@@ -83,6 +209,105 @@ python -m dk_data.data.load_drugbank --xml /path/to/full_database.xml --limit 10
 
 ### Chemical & Molecular Data
 
+#### `load_chembl_bulk.py` - ChEMBL Bulk Loader
+
+Loads ChEMBL bioactivity data from the bulk SQLite download (~3GB).
+
+```bash
+# Download and load ChEMBL data
+python -m dk_data.data.load_chembl_bulk
+
+# Just download the database
+python -m dk_data.data.load_chembl_bulk --download-only
+
+# Load all activities (standalone, ~20M records)
+python -m dk_data.data.load_chembl_bulk --standalone
+
+# Limit activities
+python -m dk_data.data.load_chembl_bulk --limit 100000
+```
+
+**Tables**:
+- `bronze.chembl_activities`
+- `bronze.chembl_targets`
+
+**Data Source**: https://www.ebi.ac.uk/chembl/
+
+**Requirements**: `pip install chembl-downloader`
+
+---
+
+#### `load_chembl_extended.py` - ChEMBL Extended Data
+
+Loads additional ChEMBL tables: mechanisms, indications, warnings.
+
+```bash
+# Load all extended tables
+python -m dk_data.data.load_chembl_extended
+
+# Load specific table
+python -m dk_data.data.load_chembl_extended --table drug_mechanism
+
+# List available tables
+python -m dk_data.data.load_chembl_extended --list-tables
+```
+
+**Tables**:
+- `bronze.chembl_drug_mechanism`
+- `bronze.chembl_drug_indication`
+- `bronze.chembl_drug_warning`
+- `bronze.chembl_component_sequences`
+
+**Data Source**: https://www.ebi.ac.uk/chembl/
+
+---
+
+#### `load_pubchem_bulk.py` - PubChem Bulk Loader
+
+Bulk loads PubChem compound properties using FTP mapping files.
+
+```bash
+# Download mapping and load
+python -m dk_data.data.load_pubchem_bulk
+
+# Download only
+python -m dk_data.data.load_pubchem_bulk --download-only
+
+# Limit compounds
+python -m dk_data.data.load_pubchem_bulk --limit 10000
+```
+
+**Tables**:
+- `bronze.pubchem_compounds`
+
+**Data Source**: https://pubchem.ncbi.nlm.nih.gov/
+
+---
+
+#### `load_pubchem_extended.py` - PubChem Extended Data
+
+Loads PubChem bioassays, cross-references, and safety data.
+
+```bash
+# Load all data types
+python -m dk_data.data.load_pubchem_extended --all
+
+# Load specific types
+python -m dk_data.data.load_pubchem_extended --bioassays --limit 1000
+python -m dk_data.data.load_pubchem_extended --xrefs --limit 1000
+python -m dk_data.data.load_pubchem_extended --safety --limit 1000
+```
+
+**Tables**:
+- `bronze.pubchem_bioassays`
+- `bronze.pubchem_xrefs`
+- `bronze.pubchem_safety`
+- `bronze.pubchem_pharmacology`
+
+**Data Source**: https://pubchem.ncbi.nlm.nih.gov/
+
+---
+
 #### `load_bindingdb.py` - BindingDB
 
 Loads binding affinity data (Ki, IC50, Kd, EC50).
@@ -121,6 +346,38 @@ python -m dk_data.data.load_tdc_data --dataset Caco2_Wang
 - `bronze.tdc_datasets`
 - `bronze.tdc_compounds`
 - `bronze.compounds` (shared)
+
+**Data Source**: https://tdcommons.ai/
+
+**Requirements**: `pip install PyTDC rdkit`
+
+---
+
+#### `load_tdc_admet.py` - TDC ADMET Benchmarks
+
+Loads all 22 TDC ADMET benchmark datasets with Y labels and scaffold splits.
+
+```bash
+# Load all 22 datasets
+python -m dk_data.data.load_tdc_admet
+
+# Load specific datasets
+python -m dk_data.data.load_tdc_admet --datasets caco2_wang hia_hou herg
+
+# Show dataset information
+python -m dk_data.data.load_tdc_admet --info
+```
+
+**Tables**:
+- `bronze.tdc_admet_datasets`
+- `bronze.tdc_admet_values`
+
+**Available Datasets**:
+- Absorption: caco2_wang, hia_hou, pgp_broccatelli, bioavailability_ma
+- Distribution: bbb_martins, ppbr_az, vdss_lombardo
+- Metabolism: cyp2c9_veith, cyp2d6_veith, cyp3a4_veith, half_life_obach, clearance_*
+- Toxicity: herg, ames, dili, ld50_zhu
+- Physicochemical: lipophilicity_astrazeneca, solubility_aqsoldb
 
 **Data Source**: https://tdcommons.ai/
 
