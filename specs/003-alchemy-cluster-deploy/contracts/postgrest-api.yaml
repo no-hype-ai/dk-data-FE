@@ -1,0 +1,100 @@
+# PostgREST API Contract
+# Exposed at: https://data.behaviorlabs.ai (prod)
+#              https://data.preview.behaviorlabs.ai (staging)
+#
+# PostgREST auto-generates OpenAPI from PostgreSQL views.
+# This contract defines the expected endpoints and access control.
+
+openapi: "3.0.3"
+info:
+  title: dk-data PostgREST API
+  version: "1.0.0"
+  description: |
+    Auto-generated REST API from PostgreSQL views in the `api` schema.
+    Authentication via JWT Bearer token with role claim.
+
+servers:
+  - url: https://data.behaviorlabs.ai
+    description: Production
+  - url: https://data.preview.behaviorlabs.ai
+    description: Staging
+
+paths:
+  /:
+    get:
+      summary: OpenAPI schema
+      description: Returns the auto-generated OpenAPI spec (PostgREST root)
+      security: []
+      responses:
+        "200":
+          description: OpenAPI JSON schema
+
+  /data_catalog:
+    get:
+      summary: Public data catalog
+      description: Lists available data sources and their health status
+      security: []  # web_anon access (no JWT required)
+      responses:
+        "200":
+          description: Array of data catalog entries
+
+  /health:
+    get:
+      summary: Health check
+      description: Returns health status of the API
+      security: []  # web_anon access
+      responses:
+        "200":
+          description: Health status
+
+  /targets:
+    get:
+      summary: Targeting data
+      description: Hospital targeting scores and metadata
+      security:
+        - jwt_bearer: []  # Requires analyst or api_user role
+      responses:
+        "200":
+          description: Array of target records
+        "401":
+          description: Missing or invalid JWT
+
+  /scoring:
+    get:
+      summary: Scoring data
+      description: ML scoring features and risk profiles
+      security:
+        - jwt_bearer: []  # Requires analyst or api_user role
+      responses:
+        "200":
+          description: Array of scoring records
+
+  /data_sources:
+    get:
+      summary: Data source status
+      description: Source freshness and ingestion metadata
+      security:
+        - jwt_bearer: []  # Requires analyst or api_user role
+      responses:
+        "200":
+          description: Array of data source records
+
+components:
+  securitySchemes:
+    jwt_bearer:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: |
+        JWT token with role claim. Supported roles:
+        - web_anon: health + data_catalog only (default, no token needed)
+        - analyst: targets, scoring, data_sources, data_catalog
+        - api_user: all tables in api schema
+
+        Token structure:
+        {
+          "role": "analyst",
+          "exp": 1735689600,
+          "iat": 1735603200,
+          "sub": "user@example.com"
+        }

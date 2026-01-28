@@ -45,7 +45,7 @@ def setup_telemetry(
         environment: Deployment environment (default: from ENVIRONMENT env var)
 
     Environment Variables:
-        OTEL_EXPORTER_OTLP_ENDPOINT: OTLP collector endpoint (default: alloy.monitoring:4317)
+        OTEL_EXPORTER_OTLP_ENDPOINT: OTLP collector endpoint (default: alloy.infra.svc.cluster.local:4317)
         ENVIRONMENT: Deployment environment (default: "dev")
         OTEL_ENABLED: Set to "false" to disable telemetry (useful for local dev)
     """
@@ -74,7 +74,7 @@ def setup_telemetry(
     provider = TracerProvider(resource=resource)
 
     # Set up OTLP exporter
-    otlp_endpoint = os.getenv("OTEL_EXPORTER_OTLP_ENDPOINT", "alloy.monitoring:4317")
+    otlp_endpoint = os.getenv("OTEL_EXPORTER_OTLP_ENDPOINT", "alloy.infra.svc.cluster.local:4317")
 
     try:
         exporter = OTLPSpanExporter(

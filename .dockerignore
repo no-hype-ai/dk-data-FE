@@ -46,6 +46,11 @@ docs/
 specs/
 .specify/
 
+# GitOps and Kubernetes manifests (not needed in container)
+.gitops/
+k8s/
+.github/
+
 # OS files
 .DS_Store
 Thumbs.db
