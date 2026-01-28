@@ -1,0 +1,140 @@
+---
+# Default deny all ingress and egress
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: dk-data-default-deny
+spec:
+  podSelector: {}
+  policyTypes:
+    - Ingress
+    - Egress
+
+---
+# Allow ingress to PostgREST from approved sources
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: dk-data-postgrest-ingress
+spec:
+  podSelector:
+    matchLabels:
+      app: postgrest
+  policyTypes:
+    - Ingress
+  ingress:
+    # Traefik ingress controller (public traffic)
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+      ports:
+        - protocol: TCP
+          port: 3000
+    # BehaviorLabs apps
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: behaviorlabs-prod
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: behaviorlabs-staging
+      ports:
+        - protocol: TCP
+          port: 3000
+    # Agent Mesh apps
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: agentmesh-prod
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: agentmesh-staging
+      ports:
+        - protocol: TCP
+          port: 3000
+    # Shared infrastructure (monitoring scrape)
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: infra
+      ports:
+        - protocol: TCP
+          port: 3000
+
+---
+# Allow ingress to Job Trigger from internal sources only
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: dk-data-job-trigger-ingress
+spec:
+  podSelector:
+    matchLabels:
+      app: job-trigger
+  policyTypes:
+    - Ingress
+  ingress:
+    # Same-namespace access (CronJobs, other dk-data pods)
+    - from:
+        - podSelector: {}
+      ports:
+        - protocol: TCP
+          port: 8000
+    # Monitoring scrape from infra
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: infra
+      ports:
+        - protocol: TCP
+          port: 8000
+
+---
+# Allow egress to required services
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: dk-data-egress
+spec:
+  podSelector: {}
+  policyTypes:
+    - Egress
+  egress:
+    # DNS
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+      ports:
+        - protocol: UDP
+          port: 53
+        - protocol: TCP
+          port: 53
+    # PostgreSQL (shared CNPG cluster)
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: infra
+      ports:
+        - protocol: TCP
+          port: 5432
+    # Alloy (OTLP telemetry)
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: infra
+      ports:
+        - protocol: TCP
+          port: 4317
+    # External HTTPS (CMS APIs, HRSA, ACC) — for CronJob pods
+    - to:
+        - ipBlock:
+            cidr: 0.0.0.0/0
+            except:
+              - 10.0.0.0/8
+              - 172.16.0.0/12
+              - 192.168.0.0/16
+      ports:
+        - protocol: TCP
+          port: 443
