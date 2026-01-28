@@ -1,30 +1,45 @@
 """
 Job Trigger API
-Feature: 001-data-layer-postgrest-gitops
-Task: T044
+Feature: 002-production-readiness
+Tasks: T044, T059, T060
 
 FastAPI service for triggering and monitoring batch jobs.
+Includes OpenTelemetry instrumentation and Prometheus metrics.
 """
 
-import logging
 import os
 from datetime import datetime
 from typing import Any
 
 import psycopg2
-from fastapi import FastAPI, HTTPException, Query
+from fastapi import FastAPI, HTTPException, Query, Response
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from psycopg2.extras import RealDictCursor
 
 from job_runner import JobStatus, get_job_runner
 
-# Configure logging
-logging.basicConfig(
-    level=os.getenv("LOG_LEVEL", "INFO").upper(),
-    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
-)
-logger = logging.getLogger(__name__)
+# Import observability (must be before other imports that use logging)
+try:
+    from dk_data.observability import setup_telemetry, setup_logging, get_logger
+    from dk_data.observability.metrics import get_metrics, get_metrics_content_type, HTTP_REQUESTS_TOTAL
+    OBSERVABILITY_AVAILABLE = True
+except ImportError:
+    OBSERVABILITY_AVAILABLE = False
+    import logging
+    logging.basicConfig(
+        level=os.getenv("LOG_LEVEL", "INFO").upper(),
+        format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+    )
+
+# Initialize observability
+if OBSERVABILITY_AVAILABLE:
+    setup_telemetry("job-trigger")
+    setup_logging("job-trigger")
+    logger = get_logger(__name__)
+else:
+    import logging
+    logger = logging.getLogger(__name__)
 
 # Database configuration
 DB_CONFIG = {
@@ -116,6 +131,22 @@ async def health_check():
         timestamp=datetime.now(),
         database=db_status,
         version="1.0.0",
+    )
+
+
+@app.get("/metrics")
+async def metrics():
+    """
+    Prometheus metrics endpoint.
+    Feature: 002-production-readiness
+    Task: T060
+    """
+    if not OBSERVABILITY_AVAILABLE:
+        raise HTTPException(status_code=501, detail="Observability not available")
+
+    return Response(
+        content=get_metrics(),
+        media_type=get_metrics_content_type(),
     )
 
 

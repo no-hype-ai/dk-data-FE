@@ -1,10 +1,10 @@
 # Dev Environment Overlay
-# Feature: 001-data-layer-postgrest-gitops
+# Feature: 002-production-readiness
 # Task: T032
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 
-namespace: tavr-data-dev
+namespace: dk-data-fe-dev
 
 namePrefix: dev-
 
@@ -43,15 +43,14 @@ patches:
       kind: ConfigMap
       name: postgrest-config
 
-  # Override secrets for dev (use external secrets in real deployments)
+  # Override DopplerSecret config for dev
   - patch: |-
-      apiVersion: v1
-      kind: Secret
+      apiVersion: secrets.doppler.com/v1alpha1
+      kind: DopplerSecret
       metadata:
-        name: postgrest-secrets
-      stringData:
-        PGRST_DB_URI: "postgres://authenticator:dev_password@postgres:5432/edwards_tavr_dev"
-        PGRST_JWT_SECRET: "dev-jwt-secret-not-for-production"
+        name: dk-data-fe-secrets
+      spec:
+        config: dev
     target:
-      kind: Secret
-      name: postgrest-secrets
+      kind: DopplerSecret
+      name: dk-data-fe-secrets

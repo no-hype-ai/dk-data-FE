@@ -1,16 +1,15 @@
 # Job Trigger Service Deployment
-# Feature: 001-data-layer-postgrest-gitops
-# Task: T030
+# Feature: 002-production-readiness
+# Tasks: T030, T067
 apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: job-trigger
-  namespace: tavr-data
   labels:
     app: job-trigger
     app.kubernetes.io/name: job-trigger
     app.kubernetes.io/component: ingestion
-    app.kubernetes.io/part-of: tavr-data-platform
+    app.kubernetes.io/part-of: dk-data-fe
 spec:
   replicas: 1
   selector:
@@ -21,41 +20,54 @@ spec:
       labels:
         app: job-trigger
         app.kubernetes.io/name: job-trigger
+        app.kubernetes.io/part-of: dk-data-fe
     spec:
       serviceAccountName: job-trigger
       containers:
         - name: job-trigger
-          image: tavr-job-trigger:latest
+          image: dk-data-fe-job-trigger:latest
           ports:
             - containerPort: 8000
               name: http
           env:
+            # Database credentials from Doppler
             - name: POSTGRES_HOST
               valueFrom:
                 secretKeyRef:
-                  name: postgres-credentials
-                  key: host
+                  name: dk-data-fe-secrets
+                  key: POSTGRES_HOST
             - name: POSTGRES_PORT
               valueFrom:
                 secretKeyRef:
-                  name: postgres-credentials
-                  key: port
+                  name: dk-data-fe-secrets
+                  key: POSTGRES_PORT
             - name: POSTGRES_USER
               valueFrom:
                 secretKeyRef:
-                  name: postgres-credentials
-                  key: username
+                  name: dk-data-fe-secrets
+                  key: POSTGRES_USER
             - name: POSTGRES_PASSWORD
               valueFrom:
                 secretKeyRef:
-                  name: postgres-credentials
-                  key: password
+                  name: dk-data-fe-secrets
+                  key: POSTGRES_PASSWORD
             - name: POSTGRES_DB
               valueFrom:
                 secretKeyRef:
-                  name: postgres-credentials
-                  key: database
+                  name: dk-data-fe-secrets
+                  key: POSTGRES_DB
             - name: K8S_NAMESPACE
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.namespace
+            # OpenTelemetry configuration (T067)
+            - name: OTEL_EXPORTER_OTLP_ENDPOINT
+              value: "alloy.monitoring:4317"
+            - name: OTEL_ENABLED
+              value: "true"
+            - name: SERVICE_VERSION
+              value: "1.0.0"
+            - name: ENVIRONMENT
               valueFrom:
                 fieldRef:
                   fieldPath: metadata.namespace
@@ -84,16 +96,15 @@ apiVersion: v1
 kind: ServiceAccount
 metadata:
   name: job-trigger
-  namespace: tavr-data
   labels:
     app: job-trigger
+    app.kubernetes.io/part-of: dk-data-fe
 ---
 # Role for creating jobs in namespace
 apiVersion: rbac.authorization.k8s.io/v1
 kind: Role
 metadata:
   name: job-creator
-  namespace: tavr-data
 rules:
   - apiGroups: ["batch"]
     resources: ["jobs", "cronjobs"]
@@ -107,11 +118,9 @@ apiVersion: rbac.authorization.k8s.io/v1
 kind: RoleBinding
 metadata:
   name: job-trigger-can-create-jobs
-  namespace: tavr-data
 subjects:
   - kind: ServiceAccount
     name: job-trigger
-    namespace: tavr-data
 roleRef:
   kind: Role
   name: job-creator

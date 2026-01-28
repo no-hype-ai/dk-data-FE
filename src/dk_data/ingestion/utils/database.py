@@ -1,6 +1,11 @@
-"""Database connection utilities with connection pooling."""
+"""Database connection utilities with connection pooling.
+
+Feature: 002-production-readiness
+Task: T022 - Graceful failure when secrets missing
+"""
 
 import os
+import sys
 import logging
 from contextlib import contextmanager
 from typing import Generator, Optional
@@ -20,13 +25,63 @@ logger = logging.getLogger(__name__)
 _connection_pool: Optional[pool.ThreadedConnectionPool] = None
 
 
+class MissingSecretError(Exception):
+    """Raised when required secrets are not configured."""
+    pass
+
+
+def _check_required_secrets() -> None:
+    """
+    Validate that required database secrets are configured.
+
+    Raises:
+        MissingSecretError: If required secrets are missing.
+    """
+    required_secrets = ['POSTGRES_PASSWORD']
+    missing = []
+
+    for secret in required_secrets:
+        value = os.getenv(secret)
+        if not value or value in ('', 'postgres', 'changeme', 'REPLACE_WITH_SECURE_SECRET_IN_PRODUCTION'):
+            missing.append(secret)
+
+    if missing:
+        error_msg = (
+            f"\n{'='*60}\n"
+            f"CONFIGURATION ERROR: Missing required secrets\n"
+            f"{'='*60}\n"
+            f"\nThe following required secrets are not configured:\n"
+            f"  - {', '.join(missing)}\n"
+            f"\nTo fix this:\n"
+            f"\n1. For local development:\n"
+            f"   cp .env.example .env\n"
+            f"   # Edit .env and set {', '.join(missing)}\n"
+            f"\n2. For production (recommended):\n"
+            f"   Use Doppler to inject secrets:\n"
+            f"   doppler run -- python your_script.py\n"
+            f"\n3. For Kubernetes:\n"
+            f"   Secrets are managed via DopplerSecret CRD.\n"
+            f"   See .gitops/base/secrets/doppler-secret.yaml\n"
+            f"\n{'='*60}\n"
+        )
+        logger.error(error_msg)
+        raise MissingSecretError(error_msg)
+
+
 def get_connection_params() -> dict:
-    """Get database connection parameters from environment."""
+    """
+    Get database connection parameters from environment.
+
+    Raises:
+        MissingSecretError: If required secrets are not configured.
+    """
+    _check_required_secrets()
+
     return {
         'host': os.getenv('POSTGRES_HOST', 'localhost'),
         'port': int(os.getenv('POSTGRES_PORT', '5433')),
         'user': os.getenv('POSTGRES_USER', 'postgres'),
-        'password': os.getenv('POSTGRES_PASSWORD', 'postgres'),
+        'password': os.getenv('POSTGRES_PASSWORD'),
         'database': os.getenv('POSTGRES_DB', 'edwards_tavr'),
     }
 

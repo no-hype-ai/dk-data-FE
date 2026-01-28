@@ -1,0 +1,32 @@
+# PostgREST Kustomization Base
+# Feature: 002-production-readiness
+# Task: T106
+#
+# Contains all PostgREST-related Kubernetes resources.
+# Used by ArgoCD Application for GitOps deployment.
+---
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+labels:
+  - pairs:
+      app.kubernetes.io/part-of: dk-data-fe
+      app.kubernetes.io/managed-by: kustomize
+    includeSelectors: false
+
+resources:
+  # Core PostgREST resources (from .gitops/base)
+  # Note: These will be copied here as part of US5 migration
+  # - deployment.yaml
+  # - service.yaml
+  # - configmap.yaml
+
+  # Ingress and middleware
+  - ingress-route.yaml
+  - middleware-rate-limit.yaml
+  - middleware-cors.yaml
+  - middleware-security.yaml
+
+images:
+  - name: postgrest/postgrest
+    newTag: v12.2.3

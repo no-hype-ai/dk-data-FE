@@ -32,12 +32,12 @@
 
 **Purpose**: Project initialization, tooling, and backup preparation
 
-- [ ] T001 Create backup branch before any destructive operations using `git branch backup-pre-production-$(date +%Y%m%d)`
-- [ ] T002 [P] Install git-filter-repo tool for history rewrite using `brew install git-filter-repo`
-- [ ] T003 [P] Install gitleaks for secret scanning using `brew install gitleaks`
-- [ ] T004 [P] Configure Doppler CLI with `doppler login` and verify access to dk-infrastructure project
-- [ ] T005 [P] Create .gitleaks.toml configuration file at repository root for secret scanning rules
-- [ ] T006 Verify dk-alchemy cluster access with `kubectl get nodes` and ArgoCD connectivity
+- [X] T001 Create backup branch before any destructive operations using `git branch backup-pre-production-$(date +%Y%m%d)`
+- [X] T002 [P] Install git-filter-repo tool for history rewrite using `brew install git-filter-repo`
+- [X] T003 [P] Install gitleaks for secret scanning using `brew install gitleaks`
+- [X] T004 [P] Configure Doppler CLI with `doppler login` and verify access to dk-infrastructure project
+- [X] T005 [P] Create .gitleaks.toml configuration file at repository root for secret scanning rules
+- [ ] T006 Verify dk-alchemy cluster access with `kubectl get nodes` and ArgoCD connectivity *(Requires: cluster access)*
 
 ---
 
@@ -47,10 +47,10 @@
 
 **⚠️ CRITICAL**: No user story work can begin until this phase is complete
 
-- [ ] T007 Run baseline gitleaks scan and document current secret locations using `gitleaks detect --source . -v > /tmp/gitleaks-baseline.txt`
-- [ ] T008 [P] Create test directory structure for future tests at tests/contract/, tests/integration/, tests/unit/
-- [ ] T009 [P] Document all duplicate file pairs by running `diff -r scripts/ src/dk_data/scripts/` and saving output
-- [ ] T010 Verify MinIO bucket access for data file migration at dk-minio/dk-data-fe/
+- [X] T007 Run baseline gitleaks scan and document current secret locations using `gitleaks detect --source . -v > /tmp/gitleaks-baseline.txt`
+- [X] T008 [P] Create test directory structure for future tests at tests/contract/, tests/integration/, tests/unit/
+- [X] T009 [P] Document all duplicate file pairs by running `diff -r scripts/ src/dk_data/scripts/` and saving output
+- [ ] T010 Verify MinIO bucket access for data file migration at dk-minio/dk-data-fe/ *(Requires: MinIO access)*
 
 **Checkpoint**: Foundation ready - user story implementation can now begin
 
@@ -66,19 +66,19 @@
 
 ### Implementation for User Story 1
 
-- [ ] T011 [US1] Add required secrets to Doppler project dk-infrastructure config prod: POSTGRES_HOST, POSTGRES_PORT, POSTGRES_USER, POSTGRES_PASSWORD, POSTGRES_DB, PGRST_JWT_SECRET (256-bit), ANTHROPIC_API_KEY
-- [ ] T012 [US1] Create Doppler service token for dk-data-fe-prod and store in temporary secure location
-- [ ] T013 [P] [US1] Create DopplerSecret CRD manifest at .gitops/base/secrets/doppler-secret.yaml per contracts/doppler-secret.yaml
-- [ ] T014 [P] [US1] Create doppler-token-dk-data-fe Secret manifest at .gitops/base/secrets/doppler-token.yaml (placeholder for CI injection)
-- [ ] T015 [US1] Update .gitops/base/kustomization.yaml to include secrets/ directory resources
-- [ ] T016 [US1] Remove hardcoded PGRST_DB_URI from .gitops/base/postgrest/secret.yaml, reference DopplerSecret instead
-- [ ] T017 [US1] Remove hardcoded PGRST_JWT_SECRET placeholder from .gitops/base/postgrest/secret.yaml
-- [ ] T018 [US1] Update .gitops/base/postgrest/deployment.yaml to mount secrets from dk-data-fe-secrets
-- [ ] T019 [P] [US1] Update src/dk_data/docker-compose.yml to use environment variable references without defaults for POSTGRES_PASSWORD
-- [ ] T020 [P] [US1] Update src/dk_data/docker-compose.yml to use environment variable references without defaults for POSTGREST_PASSWORD
-- [ ] T021 [US1] Create .env.example file at repository root documenting required environment variables (no actual values)
-- [ ] T022 [US1] Add graceful failure with clear error message when secrets missing in src/dk_data/ingestion/utils/database.py
-- [ ] T023 [US1] Run gitleaks scan to verify no secrets remain in current code: `gitleaks detect --source .`
+- [X] T011 [US1] Add required secrets to Doppler project dk-infrastructure config prod: POSTGRES_HOST, POSTGRES_PORT, POSTGRES_USER, POSTGRES_PASSWORD, POSTGRES_DB, PGRST_JWT_SECRET (256-bit), ANTHROPIC_API_KEY
+- [X] T012 [US1] Create Doppler service token for dk-data-fe-prod and store in temporary secure location
+- [X] T013 [P] [US1] Create DopplerSecret CRD manifest at .gitops/base/secrets/doppler-secret.yaml per contracts/doppler-secret.yaml
+- [X] T014 [P] [US1] Create doppler-token-dk-data-fe Secret manifest at .gitops/base/secrets/doppler-token.yaml (placeholder for CI injection)
+- [X] T015 [US1] Update .gitops/base/kustomization.yaml to include secrets/ directory resources
+- [X] T016 [US1] Remove hardcoded PGRST_DB_URI from .gitops/base/postgrest/secret.yaml, reference DopplerSecret instead
+- [X] T017 [US1] Remove hardcoded PGRST_JWT_SECRET placeholder from .gitops/base/postgrest/secret.yaml
+- [X] T018 [US1] Update .gitops/base/postgrest/deployment.yaml to mount secrets from dk-data-fe-secrets
+- [X] T019 [P] [US1] Update src/dk_data/docker-compose.yml to use environment variable references without defaults for POSTGRES_PASSWORD
+- [X] T020 [P] [US1] Update src/dk_data/docker-compose.yml to use environment variable references without defaults for POSTGREST_PASSWORD
+- [X] T021 [US1] Create .env.example file at repository root documenting required environment variables (no actual values)
+- [X] T022 [US1] Add graceful failure with clear error message when secrets missing in src/dk_data/ingestion/utils/database.py
+- [X] T023 [US1] Run gitleaks scan to verify no secrets remain in current code: `gitleaks detect --source .`
 
 **Checkpoint**: User Story 1 complete - secrets managed via Doppler, no hardcoded credentials
 
@@ -94,21 +94,21 @@
 
 ### Implementation for User Story 2
 
-- [ ] T024 [US2] Compare and identify any differences between duplicate files: `diff scripts/catalog_refresh.py src/dk_data/scripts/catalog_refresh.py`
-- [ ] T025 [US2] Merge any unique content from /scripts/ into /src/dk_data/scripts/ ensuring canonical versions are complete
-- [ ] T026 [US2] Remove duplicate /scripts/ directory from repository root using `rm -rf scripts/`
-- [ ] T027 [P] [US2] Compare SQL files: `diff sql/targeting_tables.sql src/dk_data/sql/targeting_tables.sql`
-- [ ] T028 [US2] Remove duplicate /sql/ directory from repository root if it exists
-- [ ] T029 [US2] Update src/dk_data/docker-compose.yml volume mount: remove `../../scripts:/app/scripts:ro` line
-- [ ] T030 [US2] Update src/dk_data/docker-compose.yml volume mount: change legacy_scripts path to use canonical location only
-- [ ] T031 [US2] Move src/dk_data/docker-compose.yml to repository root as docker-compose.yml (FR-022)
-- [ ] T032 [US2] Move src/dk_data/docker-compose.prod.yml to repository root as docker-compose.prod.yml
-- [ ] T033 [US2] Update volume paths in root docker-compose.yml to reference src/dk_data/ correctly
-- [ ] T034 [P] [US2] Remove duplicate Makefile from src/dk_data/Makefile if it exists
-- [ ] T035 [US2] Consolidate all make targets into single root Makefile
-- [ ] T036 [US2] Add `make help` target to root Makefile showing all available commands
-- [ ] T037 [US2] Create CI check script at scripts/check-duplicates.sh to detect future duplicate files
-- [ ] T038 [US2] Commit deduplication changes: "chore: consolidate scripts and configs to canonical locations"
+- [X] T024 [US2] Compare and identify any differences between duplicate files: `diff scripts/catalog_refresh.py src/dk_data/scripts/catalog_refresh.py`
+- [X] T025 [US2] Merge any unique content from /scripts/ into /src/dk_data/scripts/ ensuring canonical versions are complete *(Files were identical)*
+- [X] T026 [US2] Remove duplicate /scripts/ directory from repository root using `rm -rf scripts/`
+- [X] T027 [P] [US2] Compare SQL files: `diff sql/targeting_tables.sql src/dk_data/sql/targeting_tables.sql` *(No duplicate SQL directory)*
+- [X] T028 [US2] Remove duplicate /sql/ directory from repository root if it exists *(Did not exist)*
+- [X] T029 [US2] Update src/dk_data/docker-compose.yml volume mount: remove `../../scripts:/app/scripts:ro` line
+- [X] T030 [US2] Update src/dk_data/docker-compose.yml volume mount: change legacy_scripts path to use canonical location only
+- [X] T031 [US2] Move src/dk_data/docker-compose.yml to repository root as docker-compose.yml (FR-022)
+- [X] T032 [US2] Move src/dk_data/docker-compose.prod.yml to repository root as docker-compose.prod.yml
+- [X] T033 [US2] Update volume paths in root docker-compose.yml to reference src/dk_data/ correctly
+- [X] T034 [P] [US2] Remove duplicate Makefile from src/dk_data/Makefile if it exists
+- [X] T035 [US2] Consolidate all make targets into single root Makefile *(Updated root Makefile compose path)*
+- [X] T036 [US2] Add `make help` target to root Makefile showing all available commands *(Already existed)*
+- [X] T037 [US2] Create CI check script at scripts/check-duplicates.sh to detect future duplicate files
+- [ ] T038 [US2] Commit deduplication changes: "chore: consolidate scripts and configs to canonical locations" *(Pending user request)*
 
 **Checkpoint**: User Story 2 complete - single source of truth for all scripts and configs
 
@@ -126,20 +126,20 @@
 
 ### Implementation for User Story 3
 
-- [ ] T039 [US3] Notify all team members of upcoming git history rewrite via team communication channel
-- [ ] T040 [US3] Ensure all team members have pushed pending changes and created local backups
-- [ ] T041 [US3] Upload existing data files to MinIO: `mc cp --recursive data/raw/ dk-minio/dk-data-fe/raw/`
-- [ ] T042 [US3] Verify MinIO upload successful: `mc ls dk-minio/dk-data-fe/raw/`
-- [ ] T043 [US3] Remove /data/ directory from git history: `git filter-repo --path data/ --invert-paths --force`
-- [ ] T044 [US3] Remove /logs/ directory from git history: `git filter-repo --path logs/ --invert-paths --force`
-- [ ] T045 [P] [US3] Update .gitignore to include: /data/, !/data/README.md, /logs/, *.log, *.csv
-- [ ] T046 [US3] Create data/README.md explaining where to obtain data files (MinIO location, download instructions)
-- [ ] T047 [US3] Create empty logs/.gitkeep to preserve directory structure
-- [ ] T048 [US3] Verify repository size reduced: `git count-objects -vH` (target: <10MB)
-- [ ] T049 [US3] Force push rewritten history: `git push --force --all` (COORDINATE WITH TEAM)
-- [ ] T050 [US3] Force push tags: `git push --force --tags`
-- [ ] T051 [US3] Notify team to re-clone or reset their local repositories
-- [ ] T052 [US3] Verify fresh clone size and time: clone to temp directory and measure
+- [ ] T039 [US3] Notify all team members of upcoming git history rewrite via team communication channel *(Requires: team coordination)*
+- [ ] T040 [US3] Ensure all team members have pushed pending changes and created local backups *(Requires: team coordination)*
+- [ ] T041 [US3] Upload existing data files to MinIO: `mc cp --recursive data/raw/ dk-minio/dk-data-fe/raw/` *(Requires: MinIO access)*
+- [ ] T042 [US3] Verify MinIO upload successful: `mc ls dk-minio/dk-data-fe/raw/` *(Requires: MinIO access)*
+- [ ] T043 [US3] Remove /data/ directory from git history: `git filter-repo --path data/ --invert-paths --force` *(Requires: team coordination)*
+- [ ] T044 [US3] Remove /logs/ directory from git history: `git filter-repo --path logs/ --invert-paths --force` *(Requires: team coordination)*
+- [X] T045 [P] [US3] Update .gitignore to include: /data/, !/data/README.md, /logs/, *.log, *.csv
+- [X] T046 [US3] Create data/README.md explaining where to obtain data files (MinIO location, download instructions)
+- [X] T047 [US3] Create empty logs/.gitkeep to preserve directory structure
+- [ ] T048 [US3] Verify repository size reduced: `git count-objects -vH` (target: <10MB) *(After git filter-repo)*
+- [ ] T049 [US3] Force push rewritten history: `git push --force --all` (COORDINATE WITH TEAM) *(Requires: team coordination)*
+- [ ] T050 [US3] Force push tags: `git push --force --tags` *(Requires: team coordination)*
+- [ ] T051 [US3] Notify team to re-clone or reset their local repositories *(Requires: team coordination)*
+- [ ] T052 [US3] Verify fresh clone size and time: clone to temp directory and measure *(After force push)*
 
 **Checkpoint**: User Story 3 complete - repository lean and fast to clone
 
@@ -155,21 +155,21 @@
 
 ### Implementation for User Story 4
 
-- [ ] T053 [US4] Add OpenTelemetry dependencies to pyproject.toml: opentelemetry-api, opentelemetry-sdk, opentelemetry-exporter-otlp, opentelemetry-instrumentation-fastapi, opentelemetry-instrumentation-psycopg2, opentelemetry-instrumentation-requests
-- [ ] T054 [US4] Add structlog and prometheus-client dependencies to pyproject.toml
-- [ ] T055 [US4] Run `uv lock` to update lock file with new dependencies
-- [ ] T056 [US4] Create src/dk_data/observability/__init__.py with setup_telemetry() function per research.md
-- [ ] T057 [P] [US4] Create src/dk_data/observability/metrics.py with Prometheus metric definitions per data-model.md
-- [ ] T058 [P] [US4] Create src/dk_data/observability/logging.py with structured JSON logging configuration
-- [ ] T059 [US4] Update src/dk_data/ingestion/batch/api.py to call setup_telemetry("job-trigger") on startup
-- [ ] T060 [US4] Add /metrics endpoint to src/dk_data/ingestion/batch/api.py exposing Prometheus metrics
-- [ ] T061 [US4] Update src/dk_data/ingestion/batch/job_runner.py to emit job duration and record count metrics
+- [X] T053 [US4] Add OpenTelemetry dependencies to pyproject.toml: opentelemetry-api, opentelemetry-sdk, opentelemetry-exporter-otlp, opentelemetry-instrumentation-fastapi, opentelemetry-instrumentation-psycopg2, opentelemetry-instrumentation-requests
+- [X] T054 [US4] Add structlog and prometheus-client dependencies to pyproject.toml
+- [X] T055 [US4] Run `uv lock` to update lock file with new dependencies
+- [X] T056 [US4] Create src/dk_data/observability/__init__.py with setup_telemetry() function per research.md
+- [X] T057 [P] [US4] Create src/dk_data/observability/metrics.py with Prometheus metric definitions per data-model.md
+- [X] T058 [P] [US4] Create src/dk_data/observability/logging.py with structured JSON logging configuration
+- [X] T059 [US4] Update src/dk_data/ingestion/batch/api.py to call setup_telemetry("job-trigger") on startup
+- [X] T060 [US4] Add /metrics endpoint to src/dk_data/ingestion/batch/api.py exposing Prometheus metrics
+- [X] T061 [US4] Update src/dk_data/ingestion/batch/job_runner.py to emit job duration and record count metrics
 - [ ] T062 [US4] Update all fetchers in src/dk_data/ingestion/fetchers/ to use structured logging with correlation IDs
-- [ ] T063 [P] [US4] Create ServiceMonitor manifest at .gitops/base/observability/service-monitor.yaml per contracts/service-monitor.yaml
-- [ ] T064 [P] [US4] Create PrometheusRule manifest at .gitops/base/observability/alert-rules.yaml per contracts/alert-rules.yaml
+- [X] T063 [P] [US4] Create ServiceMonitor manifest at .gitops/base/observability/service-monitor.yaml per contracts/service-monitor.yaml
+- [X] T064 [P] [US4] Create PrometheusRule manifest at .gitops/base/observability/alert-rules.yaml per contracts/alert-rules.yaml
 - [ ] T065 [US4] Create Grafana dashboard JSON at .gitops/base/observability/grafana-dashboard.json for data freshness, job status, API health
-- [ ] T066 [US4] Update .gitops/base/kustomization.yaml to include observability/ directory resources
-- [ ] T067 [US4] Add OTEL_EXPORTER_OTLP_ENDPOINT environment variable to job-trigger deployment at .gitops/base/ingestion/job-trigger-deployment.yaml
+- [X] T066 [US4] Update .gitops/base/kustomization.yaml to include observability/ directory resources
+- [X] T067 [US4] Add OTEL_EXPORTER_OTLP_ENDPOINT environment variable to job-trigger deployment at .gitops/base/ingestion/job-trigger-deployment.yaml
 - [ ] T068 [US4] Test observability locally using docker-compose with Jaeger all-in-one for trace verification
 
 **Checkpoint**: User Story 4 complete - full observability into platform operations
@@ -229,18 +229,18 @@
 
 ### Implementation for User Story 6
 
-- [ ] T097 [US6] Create SQL migration file at src/dk_data/sql/migrations/002_role_restrictions.sql to restrict web_anon permissions
-- [ ] T098 [US6] Add SQL to revoke all from web_anon and grant only health, data_catalog endpoints
-- [ ] T099 [US6] Add SQL to grant analyst role SELECT on api.targets, api.scoring, api.data_sources
-- [ ] T100 [US6] Add SQL to grant api_user role SELECT on ALL TABLES IN SCHEMA api
+- [X] T097 [US6] Create SQL migration file at src/dk_data/sql/migrations/002_role_restrictions.sql to restrict web_anon permissions
+- [X] T098 [US6] Add SQL to revoke all from web_anon and grant only health, data_catalog endpoints
+- [X] T099 [US6] Add SQL to grant analyst role SELECT on api.targets, api.scoring, api.data_sources
+- [X] T100 [US6] Add SQL to grant api_user role SELECT on ALL TABLES IN SCHEMA api
 - [ ] T101 [US6] Document JWT token format and role claim structure in README.md API section
-- [ ] T102 [US6] Create IngressRoute manifest at k8s/postgrest/base/ingress-route.yaml per contracts/ingress-route.yaml
-- [ ] T103 [P] [US6] Create rate-limit Middleware at k8s/postgrest/base/middleware-rate-limit.yaml (100 req/min per IP)
-- [ ] T104 [P] [US6] Create cors-headers Middleware at k8s/postgrest/base/middleware-cors.yaml
-- [ ] T105 [P] [US6] Create security-headers Middleware at k8s/postgrest/base/middleware-security.yaml
-- [ ] T106 [US6] Update k8s/postgrest/base/kustomization.yaml to include IngressRoute and Middleware resources
-- [ ] T107 [US6] Test role restrictions locally: verify anonymous cannot access /targets, analyst can with JWT
-- [ ] T108 [US6] Test rate limiting: send >100 requests in 1 minute, verify 429 response
+- [X] T102 [US6] Create IngressRoute manifest at k8s/postgrest/base/ingress-route.yaml per contracts/ingress-route.yaml
+- [X] T103 [P] [US6] Create rate-limit Middleware at k8s/postgrest/base/middleware-rate-limit.yaml (100 req/min per IP)
+- [X] T104 [P] [US6] Create cors-headers Middleware at k8s/postgrest/base/middleware-cors.yaml
+- [X] T105 [P] [US6] Create security-headers Middleware at k8s/postgrest/base/middleware-security.yaml
+- [X] T106 [US6] Update k8s/postgrest/base/kustomization.yaml to include IngressRoute and Middleware resources
+- [ ] T107 [US6] Test role restrictions locally: verify anonymous cannot access /targets, analyst can with JWT *(Requires: running database)*
+- [ ] T108 [US6] Test rate limiting: send >100 requests in 1 minute, verify 429 response *(Requires: running cluster)*
 
 **Checkpoint**: User Story 6 complete - API properly secured with RBAC and rate limiting
 

@@ -30,8 +30,8 @@ CROSS   := ✗
 ARROW   := →
 
 # Docker Compose configuration
-COMPOSE_DIR := src/dk_data
-COMPOSE_FILE := $(COMPOSE_DIR)/docker-compose.yml
+# Feature: 002-production-readiness - docker-compose.yml now at root
+COMPOSE_FILE := docker-compose.yml
 DC := docker compose -f $(COMPOSE_FILE)
 
 # API endpoints

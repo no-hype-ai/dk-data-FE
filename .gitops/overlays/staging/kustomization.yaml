@@ -1,10 +1,10 @@
 # Staging Environment Overlay
-# Feature: 001-data-layer-postgrest-gitops
+# Feature: 002-production-readiness
 # Task: T033
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 
-namespace: tavr-data-staging
+namespace: dk-data-fe-staging
 
 namePrefix: staging-
 
@@ -40,15 +40,14 @@ patches:
       kind: ConfigMap
       name: postgrest-config
 
-  # Override secrets for staging (use external secrets in real deployments)
+  # Override DopplerSecret config for staging
   - patch: |-
-      apiVersion: v1
-      kind: Secret
+      apiVersion: secrets.doppler.com/v1alpha1
+      kind: DopplerSecret
       metadata:
-        name: postgrest-secrets
-      stringData:
-        PGRST_DB_URI: "postgres://authenticator:staging_password@postgres:5432/edwards_tavr_staging"
-        PGRST_JWT_SECRET: "staging-jwt-secret-replace-me"
+        name: dk-data-fe-secrets
+      spec:
+        config: stg
     target:
-      kind: Secret
-      name: postgrest-secrets
+      kind: DopplerSecret
+      name: dk-data-fe-secrets

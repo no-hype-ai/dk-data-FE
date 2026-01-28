@@ -1,0 +1,169 @@
+# Prometheus Alert Rules for dk-data-fe
+# Feature: 002-production-readiness
+# Task: T064
+#
+# Alerting rules for data platform health monitoring.
+# Alerts are sent to Alertmanager and routed to appropriate channels.
+#
+# Severity Levels:
+#   - critical: Immediate action required, pages on-call
+#   - warning: Should be addressed within 24 hours
+#   - info: Informational, review during business hours
+---
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: dk-data-fe-alerts
+  labels:
+    app.kubernetes.io/name: dk-data-fe
+    app.kubernetes.io/component: alerts
+    prometheus: mimir
+spec:
+  groups:
+    # =========================================================================
+    # Data Freshness Alerts
+    # =========================================================================
+    - name: dk-data-fe.data-freshness
+      interval: 5m
+      rules:
+        - alert: DataSourceStale
+          expr: |
+            (time() - dk_data_source_last_refresh_timestamp) > 172800
+          for: 30m
+          labels:
+            severity: warning
+            team: data-platform
+          annotations:
+            summary: "Data source {{ $labels.source_name }} is stale"
+            description: |
+              Data source {{ $labels.source_name }} (ID: {{ $labels.source_id }})
+              has not been refreshed in over 48 hours.
+              Last refresh: {{ $value | humanizeDuration }} ago.
+            runbook_url: "https://docs.example.com/runbooks/data-staleness"
+
+        - alert: DataSourceCriticallyStale
+          expr: |
+            (time() - dk_data_source_last_refresh_timestamp) > 604800
+          for: 1h
+          labels:
+            severity: critical
+            team: data-platform
+          annotations:
+            summary: "Data source {{ $labels.source_name }} critically stale (>7 days)"
+            description: |
+              Data source {{ $labels.source_name }} has not been refreshed in over 7 days.
+              This may indicate a broken ingestion pipeline.
+
+    # =========================================================================
+    # API Health Alerts
+    # =========================================================================
+    - name: dk-data-fe.api-health
+      interval: 30s
+      rules:
+        - alert: APIHighErrorRate
+          expr: |
+            (
+              sum(rate(http_requests_total{namespace=~"dk-data-fe.*", status=~"5.."}[5m]))
+              /
+              sum(rate(http_requests_total{namespace=~"dk-data-fe.*"}[5m]))
+            ) > 0.05
+          for: 5m
+          labels:
+            severity: critical
+            team: data-platform
+          annotations:
+            summary: "High API error rate (>5%)"
+            description: |
+              PostgREST API is returning >5% 5xx errors.
+              Current error rate: {{ $value | humanizePercentage }}
+
+        - alert: APIHighLatency
+          expr: |
+            histogram_quantile(0.95,
+              sum(rate(http_request_duration_seconds_bucket{namespace=~"dk-data-fe.*"}[5m])) by (le)
+            ) > 0.1
+          for: 10m
+          labels:
+            severity: warning
+            team: data-platform
+          annotations:
+            summary: "API p95 latency >100ms"
+            description: |
+              PostgREST API p95 latency is {{ $value | humanizeDuration }}.
+              This exceeds the 100ms SLA target.
+
+        - alert: APIUnavailable
+          expr: |
+            up{job="postgrest", namespace=~"dk-data-fe.*"} == 0
+          for: 2m
+          labels:
+            severity: critical
+            team: data-platform
+          annotations:
+            summary: "PostgREST API is unavailable"
+            description: "PostgREST service is not responding to health checks."
+
+    # =========================================================================
+    # Batch Job Alerts
+    # =========================================================================
+    - name: dk-data-fe.batch-jobs
+      interval: 1m
+      rules:
+        - alert: BatchJobFailed
+          expr: |
+            increase(batch_job_failures_total{namespace=~"dk-data-fe.*"}[1h]) > 0
+          for: 0m
+          labels:
+            severity: warning
+            team: data-platform
+          annotations:
+            summary: "Batch job {{ $labels.job_name }} failed"
+            description: |
+              Batch job {{ $labels.job_name }} has failed.
+              Check logs: kubectl logs -n {{ $labels.namespace }} job/{{ $labels.job_name }}
+
+        - alert: BatchJobStuck
+          expr: |
+            (time() - batch_job_last_success_timestamp{namespace=~"dk-data-fe.*"}) > 86400
+          for: 30m
+          labels:
+            severity: warning
+            team: data-platform
+          annotations:
+            summary: "Batch job {{ $labels.job_name }} hasn't succeeded in 24h"
+            description: |
+              Job {{ $labels.job_name }} has not completed successfully in over 24 hours.
+
+    # =========================================================================
+    # Resource Alerts
+    # =========================================================================
+    - name: dk-data-fe.resources
+      interval: 1m
+      rules:
+        - alert: PodHighMemory
+          expr: |
+            (
+              container_memory_usage_bytes{namespace=~"dk-data-fe.*"}
+              /
+              container_spec_memory_limit_bytes{namespace=~"dk-data-fe.*"}
+            ) > 0.85
+          for: 15m
+          labels:
+            severity: warning
+            team: data-platform
+          annotations:
+            summary: "Pod {{ $labels.pod }} memory usage >85%"
+            description: |
+              Pod {{ $labels.pod }} is using {{ $value | humanizePercentage }} of its memory limit.
+
+        - alert: PodRestarting
+          expr: |
+            increase(kube_pod_container_status_restarts_total{namespace=~"dk-data-fe.*"}[1h]) > 3
+          for: 0m
+          labels:
+            severity: warning
+            team: data-platform
+          annotations:
+            summary: "Pod {{ $labels.pod }} restarting frequently"
+            description: |
+              Pod {{ $labels.pod }} has restarted {{ $value }} times in the last hour.
