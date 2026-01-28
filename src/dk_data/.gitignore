@@ -47,7 +47,16 @@ Thumbs.db
 logs/
 
 # Data files (large datasets should not be committed)
-data/
+# Note: data/ directory contains Python loader scripts which ARE tracked
+# Only ignore downloaded data files, not the loaders
+data/*.tsv
+data/*.tsv.gz
+data/*.zip
+data/*.xml
+data/*.gz
+data/pubchem_bulk/
+data/bindingdb/
+data/sider/
 *.csv
 *.xlsx
 *.json
