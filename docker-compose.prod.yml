@@ -1,12 +1,12 @@
-# TAVR Data Platform - Production Override
-# Feature: 001-data-layer-postgrest-gitops
-# Task: T042
+# dk-data-fe - Production Override
+# Feature: 002-production-readiness
+# Task: T032
 #
 # Production-like settings for local testing.
 # Usage:
 #   docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d
 #
-# Or set COMPOSE_FILE in .env.local:
+# Or set COMPOSE_FILE in .env:
 #   COMPOSE_FILE=docker-compose.yml:docker-compose.prod.yml
 
 services:
@@ -20,8 +20,6 @@ services:
       PGRST_DB_POOL: "20"
       PGRST_DB_POOL_ACQUISITION_TIMEOUT: "30"
       PGRST_MAX_ROWS: "10000"
-      # Enable JWT authentication (requires PGRST_JWT_SECRET)
-      # PGRST_JWT_SECRET: "${PGRST_JWT_SECRET}"
     deploy:
       resources:
         limits:
@@ -38,8 +36,6 @@ services:
     restart: always
     environment:
       LOG_LEVEL: "warning"
-      # In production, use K8s job runner
-      # JOB_RUNNER_MODE: "k8s"
     deploy:
       resources:
         limits:

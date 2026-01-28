@@ -1,10 +1,10 @@
 # Production Environment Overlay
-# Feature: 001-data-layer-postgrest-gitops
+# Feature: 002-production-readiness
 # Task: T034
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 
-namespace: tavr-data-prod
+namespace: dk-data-fe-prod
 
 namePrefix: prod-
 
@@ -16,6 +16,7 @@ labels:
 resources:
   - ../../base
 
+# Production-specific patches
 patches:
   # PostgREST - 3 replicas for HA with production resources
   - patch: |-
@@ -77,16 +78,5 @@ patches:
       kind: ConfigMap
       name: postgrest-config
 
-  # Production secrets - MUST be replaced via external secrets manager
-  # These are placeholders only - DO NOT use in production
-  - patch: |-
-      apiVersion: v1
-      kind: Secret
-      metadata:
-        name: postgrest-secrets
-      stringData:
-        PGRST_DB_URI: "postgres://authenticator:REPLACE_VIA_EXTERNAL_SECRETS@postgres:5432/edwards_tavr"
-        PGRST_JWT_SECRET: "REPLACE_VIA_EXTERNAL_SECRETS"
-    target:
-      kind: Secret
-      name: postgrest-secrets
+  # DopplerSecret uses prod config by default (from base)
+  # No override needed for production

@@ -1,12 +1,16 @@
-# TAVR Targeting Tool - Docker Compose
-# Feature: 001-data-layer-postgrest-gitops
-# Tasks: T038-T041
+# dk-data-fe Docker Compose
+# Feature: 002-production-readiness
+# Tasks: T031, T033
 #
 # Services:
 #   - postgres: PostgreSQL database
 #   - postgrest: REST API layer for PostgreSQL
 #   - job-trigger: FastAPI service for triggering batch jobs
 #   - metabase: BI dashboard tool
+#
+# Prerequisites:
+#   1. Copy .env.example to .env and configure required secrets
+#   2. Or use Doppler: doppler run -- docker compose up
 #
 # Usage:
 #   docker compose up -d
@@ -25,20 +29,21 @@ services:
   # ==========================================================================
   postgres:
     image: postgres:16-alpine
-    container_name: tavr-postgres
+    container_name: dk-data-fe-postgres
     restart: unless-stopped
     ports:
       - "${POSTGRES_PORT:-5433}:5432"
     environment:
       POSTGRES_USER: "${POSTGRES_USER:-postgres}"
-      POSTGRES_PASSWORD: "${POSTGRES_PASSWORD:-postgres}"
+      # SECURITY: No default password - must be set via environment or .env file
+      POSTGRES_PASSWORD: "${POSTGRES_PASSWORD:?POSTGRES_PASSWORD must be set}"
       POSTGRES_DB: "${POSTGRES_DB:-edwards_tavr}"
     volumes:
       - postgres-data:/var/lib/postgresql/data
       # Mount SQL files for initialization
-      - ./sql:/docker-entrypoint-initdb.d:ro
+      - ./src/dk_data/sql:/docker-entrypoint-initdb.d:ro
     networks:
-      - tavr-network
+      - dk-data-fe-network
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-postgres} -d ${POSTGRES_DB:-edwards_tavr}"]
       interval: 10s
@@ -51,13 +56,14 @@ services:
   # ==========================================================================
   postgrest:
     image: postgrest/postgrest:v12.2.3
-    container_name: tavr-postgrest
+    container_name: dk-data-fe-postgrest
     restart: unless-stopped
     ports:
       - "${POSTGREST_PORT:-3030}:3000"
     environment:
       # Database connection - connects to postgres service within docker network
-      PGRST_DB_URI: "postgres://authenticator:${POSTGREST_PASSWORD:-postgrest_secret_change_me}@postgres:5432/${POSTGRES_DB:-edwards_tavr}"
+      # SECURITY: No default password - must be set via environment or .env file
+      PGRST_DB_URI: "postgres://authenticator:${POSTGREST_PASSWORD:?POSTGREST_PASSWORD must be set}@postgres:5432/${POSTGRES_DB:-edwards_tavr}"
       PGRST_DB_SCHEMAS: "api"
       PGRST_DB_ANON_ROLE: "web_anon"
       PGRST_DB_POOL: "10"
@@ -72,7 +78,7 @@ services:
       PGRST_JWT_SECRET: "${PGRST_JWT_SECRET:-}"
       PGRST_JWT_ROLE_CLAIM_KEY: ".role"
     networks:
-      - tavr-network
+      - dk-data-fe-network
     healthcheck:
       test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:3000/"]
       interval: 30s
@@ -88,9 +94,9 @@ services:
   # ==========================================================================
   job-trigger:
     build:
-      context: ./ingestion/batch
+      context: ./src/dk_data/ingestion/batch
       dockerfile: Dockerfile
-    container_name: tavr-job-trigger
+    container_name: dk-data-fe-job-trigger
     restart: unless-stopped
     ports:
       - "${JOB_TRIGGER_PORT:-8000}:8000"
@@ -98,23 +104,22 @@ services:
       POSTGRES_HOST: "postgres"
       POSTGRES_PORT: "5432"
       POSTGRES_USER: "${POSTGRES_USER:-postgres}"
-      POSTGRES_PASSWORD: "${POSTGRES_PASSWORD:-postgres}"
+      # SECURITY: No default password - must be set via environment or .env file
+      POSTGRES_PASSWORD: "${POSTGRES_PASSWORD:?POSTGRES_PASSWORD must be set}"
       POSTGRES_DB: "${POSTGRES_DB:-edwards_tavr}"
       # For local dev, use subprocess runner instead of K8s
       JOB_RUNNER_MODE: "local"
       LOG_LEVEL: "info"
     volumes:
-      # Mount scripts from project root (organized by purpose)
-      - ../../scripts:/app/scripts:ro
-      # Mount legacy scripts location for backwards compatibility
-      - ./scripts:/app/legacy_scripts:ro
+      # Mount scripts from canonical location
+      - ./src/dk_data/scripts:/app/scripts:ro
       # Data and logs directories
       - ./data:/app/data
       - ./logs:/app/logs
       # Mount ingestion module for fetch jobs
-      - ./ingestion:/app/ingestion:ro
+      - ./src/dk_data/ingestion:/app/ingestion:ro
     networks:
-      - tavr-network
+      - dk-data-fe-network
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
       interval: 30s
@@ -131,7 +136,7 @@ services:
   metabase:
     image: metabase/metabase:v0.50.26
     platform: linux/amd64
-    container_name: tavr-metabase
+    container_name: dk-data-fe-metabase
     restart: unless-stopped
     ports:
       - "${METABASE_PORT:-3000}:3000"
@@ -148,13 +153,13 @@ services:
     extra_hosts:
       - "host.docker.internal:host-gateway"
     networks:
-      - tavr-network
+      - dk-data-fe-network
 
 # ==========================================================================
 # Networks
 # ==========================================================================
 networks:
-  tavr-network:
+  dk-data-fe-network:
     driver: bridge
 
 # ==========================================================================

@@ -1,0 +1,33 @@
+# CORS Middleware for dk-data-fe
+# Feature: 002-production-readiness
+# Task: T104
+#
+# Configures Cross-Origin Resource Sharing for API access.
+# Origins should be updated in overlay kustomization per environment.
+---
+apiVersion: traefik.io/v1alpha1
+kind: Middleware
+metadata:
+  name: cors-headers
+  labels:
+    app.kubernetes.io/name: dk-data-fe
+    app.kubernetes.io/component: middleware
+spec:
+  headers:
+    accessControlAllowMethods:
+      - GET
+      - POST
+      - PUT
+      - DELETE
+      - OPTIONS
+    accessControlAllowHeaders:
+      - Authorization
+      - Content-Type
+      - Accept
+      - X-Request-ID
+    accessControlAllowOriginList:
+      # Update these in overlay kustomization
+      - "https://dashboard.example.com"
+      - "https://metabase.example.com"
+    accessControlAllowCredentials: true
+    accessControlMaxAge: 86400  # 24 hours

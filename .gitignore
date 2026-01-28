@@ -44,14 +44,20 @@ Thumbs.db
 
 # Logs
 *.log
-logs/
+/logs/
+!/logs/.gitkeep
+!/logs/README.md
 
 # Data files (large datasets should not be committed)
-data/
+# Store in MinIO instead: mc cp --recursive data/raw/ dk-minio/dk-data-fe/raw/
+/data/
+!/data/README.md
+!/data/.gitkeep
 *.csv
 *.xlsx
 *.json
 !tests/fixtures/*.json
+!.specify/**/*.json
 
 # SQLMesh cache and state
 .sqlmesh/

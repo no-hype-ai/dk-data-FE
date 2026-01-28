@@ -1,0 +1,105 @@
+# ServiceMonitor Contract for dk-data-fe
+# Feature: 002-production-readiness
+# Purpose: Define Prometheus scrape configuration for metrics collection
+#
+# This contract ensures:
+# 1. All dk-data-fe services expose /metrics endpoint
+# 2. Metrics are collected by Mimir via Prometheus scraping
+# 3. Standard labels are applied for querying
+---
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: dk-data-fe-postgrest
+  namespace: dk-data-fe-prod
+  labels:
+    app.kubernetes.io/name: dk-data-fe
+    app.kubernetes.io/component: postgrest
+    release: mimir  # Required for Mimir discovery
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: postgrest
+      app.kubernetes.io/part-of: dk-data-fe
+  endpoints:
+    - port: metrics
+      path: /metrics
+      interval: 30s
+      scrapeTimeout: 10s
+      honorLabels: true
+  namespaceSelector:
+    matchNames:
+      - dk-data-fe-prod
+      - dk-data-fe-staging
+
+---
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: dk-data-fe-job-trigger
+  namespace: dk-data-fe-prod
+  labels:
+    app.kubernetes.io/name: dk-data-fe
+    app.kubernetes.io/component: job-trigger
+    release: mimir
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: job-trigger
+      app.kubernetes.io/part-of: dk-data-fe
+  endpoints:
+    - port: http
+      path: /metrics
+      interval: 30s
+      scrapeTimeout: 10s
+  namespaceSelector:
+    matchNames:
+      - dk-data-fe-prod
+      - dk-data-fe-staging
+
+---
+# Required Metrics Contract
+#
+# PostgREST must expose (via sidecar or built-in):
+# - postgrest_requests_total{method, path, status}
+# - postgrest_request_duration_seconds{method, path}
+# - postgrest_db_pool_size
+# - postgrest_db_pool_available
+#
+# Job-Trigger (FastAPI) must expose:
+# - http_requests_total{method, path, status}
+# - http_request_duration_seconds{method, path}
+# - batch_job_duration_seconds{job_name}
+# - batch_job_records_processed{job_name}
+# - batch_job_failures_total{job_name}
+# - batch_job_last_success_timestamp{job_name}
+#
+# Data Freshness (custom exporter or pushed):
+# - dk_data_source_last_refresh_timestamp{source_id, source_name}
+# - dk_data_source_row_count{source_id, source_name}
+# - dk_data_source_staleness_hours{source_id, source_name}
+
+---
+# PodMonitor for CronJobs (ephemeral pods)
+apiVersion: monitoring.coreos.com/v1
+kind: PodMonitor
+metadata:
+  name: dk-data-fe-cronjobs
+  namespace: dk-data-fe-prod
+  labels:
+    app.kubernetes.io/name: dk-data-fe
+    app.kubernetes.io/component: cronjobs
+    release: mimir
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/part-of: dk-data-fe
+      app.kubernetes.io/component: batch-job
+  podMetricsEndpoints:
+    - port: metrics
+      path: /metrics
+      interval: 15s  # Shorter interval for ephemeral pods
+  namespaceSelector:
+    matchNames:
+      - dk-data-fe-prod
+      - dk-data-fe-staging

@@ -1,0 +1,76 @@
+# ServiceMonitor for dk-data-fe metrics collection
+# Feature: 002-production-readiness
+# Task: T063
+#
+# Configures Prometheus to scrape metrics from dk-data-fe services.
+# Metrics are sent to Mimir via the Prometheus operator.
+---
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: dk-data-fe-postgrest
+  labels:
+    app.kubernetes.io/name: dk-data-fe
+    app.kubernetes.io/component: postgrest
+    release: mimir  # Required for Mimir discovery
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: postgrest
+      app.kubernetes.io/part-of: dk-data-fe
+  endpoints:
+    - port: metrics
+      path: /metrics
+      interval: 30s
+      scrapeTimeout: 10s
+      honorLabels: true
+  namespaceSelector:
+    matchNames:
+      - dk-data-fe-prod
+      - dk-data-fe-staging
+---
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: dk-data-fe-job-trigger
+  labels:
+    app.kubernetes.io/name: dk-data-fe
+    app.kubernetes.io/component: job-trigger
+    release: mimir
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: job-trigger
+      app.kubernetes.io/part-of: dk-data-fe
+  endpoints:
+    - port: http
+      path: /metrics
+      interval: 30s
+      scrapeTimeout: 10s
+  namespaceSelector:
+    matchNames:
+      - dk-data-fe-prod
+      - dk-data-fe-staging
+---
+# PodMonitor for CronJobs (ephemeral pods)
+apiVersion: monitoring.coreos.com/v1
+kind: PodMonitor
+metadata:
+  name: dk-data-fe-cronjobs
+  labels:
+    app.kubernetes.io/name: dk-data-fe
+    app.kubernetes.io/component: cronjobs
+    release: mimir
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/part-of: dk-data-fe
+      app.kubernetes.io/component: batch-job
+  podMetricsEndpoints:
+    - port: metrics
+      path: /metrics
+      interval: 15s  # Shorter interval for ephemeral pods
+  namespaceSelector:
+    matchNames:
+      - dk-data-fe-prod
+      - dk-data-fe-staging
