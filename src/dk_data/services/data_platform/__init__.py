@@ -119,6 +119,21 @@ from .table_generator import (
     DataSourceRegistration,
 )
 
+# Dynamic Silver Transformation
+from .dynamic_silver_transformation import (
+    DynamicSilverTransformation,
+    TransformationResult as DynamicTransformationResult,
+    register_source,
+    transform_source,
+)
+
+# SQLMesh Model Generator
+from .sqlmesh_model_generator import (
+    SQLMeshModelGenerator,
+    TransformationRule,
+    GeneratedModel,
+)
+
 __all__ = [
     # Entity Resolution
     'IdentifierResolver',
@@ -209,4 +224,15 @@ __all__ = [
     'TableGenerator',
     'TableGenerationResult',
     'DataSourceRegistration',
+
+    # Dynamic Silver Transformation
+    'DynamicSilverTransformation',
+    'DynamicTransformationResult',
+    'register_source',
+    'transform_source',
+
+    # SQLMesh Model Generator
+    'SQLMeshModelGenerator',
+    'TransformationRule',
+    'GeneratedModel',
 ]

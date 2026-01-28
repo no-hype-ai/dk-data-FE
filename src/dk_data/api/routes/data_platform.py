@@ -1136,9 +1136,13 @@ async def get_pipeline_status():
                 WHERE UPPER(status) IN ('RECRUITING', 'ACTIVE, NOT RECRUITING', 'ENROLLING BY INVITATION')
             """) or 0
 
-            # Get adverse event counts - using medallion architecture
-            faers_count = await conn.fetchval("SELECT COUNT(*) FROM bronze.openfda_faers") or 0
-            sider_count = await conn.fetchval("SELECT COUNT(*) FROM bronze.sider_adverse_reactions") or 0
+            # Get adverse event counts - dynamically from silver layer
+            ae_molecules = await conn.fetchval(
+                "SELECT COUNT(DISTINCT molecule_id) FROM silver.adverse_events"
+            ) or 0
+            ae_reports = await conn.fetchval(
+                "SELECT COALESCE(SUM(report_count), 0) FROM silver.adverse_events"
+            ) or 0
 
         return PipelineStatusResponse(
             success=True,
@@ -1152,8 +1156,8 @@ async def get_pipeline_status():
                 "active": trials_active
             },
             adverse_events={
-                "molecules_with_events": faers_count,
-                "total_reports": faers_count + sider_count
+                "molecules_with_events": ae_molecules,
+                "total_reports": ae_reports
             },
             last_refresh=datetime.utcnow().isoformat(),
             timestamp=datetime.utcnow().isoformat()
@@ -1206,28 +1210,28 @@ async def trigger_source_ingestion(
     """
     Trigger ingestion for a specific data source.
 
-    Supports both built-in sources and dynamically onboarded sources.
+    Supports all registered sources from the database (raw.sync_schedules).
     """
-    builtin_sources = [
-        "clinicaltrials", "openfda_faers", "openfda_labels",
-        "chembl", "pubchem", "drugbank", "uniprot", "openalex"
-    ]
+    pool = await get_db_pool()
+    if pool is None:
+        raise HTTPException(status_code=503, detail="Database unavailable")
 
-    # Check if it's a built-in source or a dynamically registered one
-    if source not in builtin_sources:
-        # Check database for dynamic sources
-        pool = await get_db_pool()
-        if pool:
-            async with pool.acquire() as conn:
-                exists = await conn.fetchval(
-                    "SELECT 1 FROM raw.sync_schedules WHERE source = $1",
-                    source
-                )
-                if not exists:
-                    raise HTTPException(
-                        status_code=404,
-                        detail=f"Source '{source}' not found. Register it first or use one of: {', '.join(builtin_sources)}"
-                    )
+    # Check database for registered sources (fully dynamic)
+    async with pool.acquire() as conn:
+        exists = await conn.fetchval(
+            "SELECT 1 FROM raw.sync_schedules WHERE source = $1",
+            source
+        )
+        if not exists:
+            # Get available sources for error message
+            available = await conn.fetch(
+                "SELECT source FROM raw.sync_schedules WHERE enabled = true ORDER BY source"
+            )
+            available_sources = [r['source'] for r in available]
+            raise HTTPException(
+                status_code=404,
+                detail=f"Source '{source}' not found. Available sources: {', '.join(available_sources)}"
+            )
 
     try:
         from uuid import uuid4
@@ -1266,7 +1270,7 @@ async def trigger_source_ingestion(
 @router.post("/pipeline/run", response_model=IngestionTriggerResponse)
 async def trigger_full_pipeline(
     background_tasks: BackgroundTasks,
-    tier: str = Query("manual", description="Sync tier: daily, weekly, monthly, manual"),
+    tier: str = Query("manual", description="Sync tier: daily, weekly, monthly, manual, on_demand"),
     transform_only: bool = Query(False, description="Skip API fetching, only transform existing data"),
 ):
     """
@@ -1274,6 +1278,7 @@ async def trigger_full_pipeline(
 
     This runs the complete Raw → Bronze → Silver → Gold pipeline.
     Use transform_only=true to process existing data without fetching from APIs.
+    Sources are loaded dynamically from raw.sync_schedules based on tier.
     """
     try:
         from uuid import uuid4
@@ -1281,14 +1286,30 @@ async def trigger_full_pipeline(
 
         job_id = str(uuid4())
 
-        # Determine sources based on tier
-        tier_sources = {
-            'daily': ['clinicaltrials', 'openfda_labels'],
-            'weekly': ['openfda_faers', 'chembl', 'openalex'],
-            'monthly': ['pubchem', 'uniprot', 'drugbank'],
-            'manual': ['clinicaltrials', 'openfda_faers', 'openfda_labels', 'chembl'],
-        }
-        sources = tier_sources.get(tier, tier_sources['manual'])
+        # Load sources dynamically from database based on tier
+        pool = await get_db_pool()
+        if pool is None:
+            raise HTTPException(status_code=503, detail="Database unavailable")
+
+        async with pool.acquire() as conn:
+            if tier == 'manual':
+                # For manual, get all enabled sources
+                rows = await conn.fetch(
+                    "SELECT source FROM raw.sync_schedules WHERE enabled = true ORDER BY priority DESC"
+                )
+            else:
+                # Get sources for specific tier
+                rows = await conn.fetch(
+                    "SELECT source FROM raw.sync_schedules WHERE tier = $1 AND enabled = true ORDER BY priority DESC",
+                    tier
+                )
+            sources = [r['source'] for r in rows]
+
+        if not sources:
+            raise HTTPException(
+                status_code=400,
+                detail=f"No enabled sources found for tier '{tier}'. Configure sources in raw.sync_schedules."
+            )
 
         async def run_full_pipeline():
             try:
@@ -2525,21 +2546,38 @@ async def trigger_tier_sync(
     """
     Manually trigger a tier sync.
 
-    Tiers:
-    - daily: ClinicalTrials.gov, OpenFDA Labels
-    - weekly: FAERS, ChEMBL, OpenAlex
-    - monthly: PubChem, UniProt, DrugBank
+    Tiers are loaded dynamically from raw.sync_schedules.
+    Standard tiers: daily, weekly, monthly, on_demand
     """
-    tier_sources = {
-        'daily': ['clinicaltrials', 'openfda_labels'],
-        'weekly': ['openfda_faers', 'chembl', 'openalex'],
-        'monthly': ['pubchem', 'uniprot', 'drugbank'],
-    }
+    pool = await get_db_pool()
+    if pool is None:
+        raise HTTPException(status_code=503, detail="Database unavailable")
 
-    if tier not in tier_sources:
+    # Load sources dynamically from database
+    async with pool.acquire() as conn:
+        # Validate tier exists
+        valid_tiers = await conn.fetch(
+            "SELECT DISTINCT tier FROM raw.sync_schedules WHERE tier IS NOT NULL"
+        )
+        valid_tier_names = [r['tier'] for r in valid_tiers]
+
+        if tier not in valid_tier_names:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Invalid tier. Must be one of: {', '.join(valid_tier_names)}"
+            )
+
+        # Get sources for this tier
+        rows = await conn.fetch(
+            "SELECT source FROM raw.sync_schedules WHERE tier = $1 AND enabled = true ORDER BY priority DESC",
+            tier
+        )
+        sources = [r['source'] for r in rows]
+
+    if not sources:
         raise HTTPException(
             status_code=400,
-            detail=f"Invalid tier. Must be one of: {', '.join(tier_sources.keys())}"
+            detail=f"No enabled sources found for tier '{tier}'"
         )
 
     try:
@@ -2547,7 +2585,6 @@ async def trigger_tier_sync(
         from ...services.data_platform.sync_runner import run_pipeline
 
         job_id = str(uuid4())
-        sources = tier_sources[tier]
 
         async def run_tier_sync():
             try:
@@ -2675,3 +2712,463 @@ async def update_schedule(
     except Exception as e:
         logger.error(f"Failed to update schedule: {e}")
         raise HTTPException(status_code=500, detail=str(e))
+
+
+# ============================================================================
+# DYNAMIC ONBOARDING ENDPOINTS
+# Zero-code data source onboarding with SQLMesh integration
+# ============================================================================
+
+class SourceRegistrationRequest(BaseModel):
+    """Request to register a new data source."""
+    source_name: str = Field(..., description="Unique name for the source")
+    source_table: str = Field(..., description="Bronze table name (e.g., 'bronze.new_source')")
+    column_mappings: Dict[str, str] = Field(
+        ...,
+        description="Bronze -> Silver column mappings",
+        example={"inchi_key": "inchi_key", "drug_name": "canonical_name"}
+    )
+    identifier_mappings: Optional[Dict[str, str]] = Field(
+        None,
+        description="Identifier extraction rules",
+        example={"drugbank_id": "drugbank_id"}
+    )
+    name_mappings: Optional[Dict[str, str]] = Field(
+        None,
+        description="Name extraction rules",
+        example={"generic": "name", "synonyms": "synonyms"}
+    )
+    source_precedence: int = Field(
+        10,
+        description="Priority (lower = higher)",
+        ge=1,
+        le=100
+    )
+    dedup_strategy: str = Field(
+        "inchi_key",
+        description="Deduplication strategy",
+        pattern="^(inchi_key|identifier_match|name_fuzzy|composite)$"
+    )
+    generate_models: bool = Field(
+        True,
+        description="Whether to generate SQLMesh models"
+    )
+
+
+class SourceRegistrationResponse(BaseModel):
+    """Response from source registration."""
+    success: bool
+    source_name: str
+    message: str
+    models_generated: Optional[List[str]] = None
+
+
+class DynamicTransformationRequest(BaseModel):
+    """Request to run transformation."""
+    source_name: Optional[str] = Field(
+        None,
+        description="Source to transform (None = all sources)"
+    )
+    batch_size: Optional[int] = Field(
+        None,
+        description="Override batch size",
+        ge=100,
+        le=10000
+    )
+    dry_run: bool = Field(
+        False,
+        description="If True, don't commit changes"
+    )
+
+
+class DynamicTransformationResponse(BaseModel):
+    """Response from transformation."""
+    source_name: str
+    records_processed: int
+    records_inserted: int
+    records_updated: int
+    records_linked: int
+    identifiers_extracted: int
+    names_extracted: int
+    duration_seconds: float
+    success: bool
+    errors: List[str] = []
+
+
+class SchemaDetectionRequest(BaseModel):
+    """Request for schema detection from samples."""
+    source_name: str
+    sample_data: List[Dict[str, Any]] = Field(
+        ...,
+        description="Sample JSON records from the API",
+        min_length=1,
+        max_length=100
+    )
+    flatten_depth: int = Field(2, description="Max depth to flatten nested JSON")
+
+
+class SchemaDetectionResponse(BaseModel):
+    """Response from schema detection."""
+    source_name: str
+    detected_columns: List[Dict[str, Any]]
+    suggested_primary_key: Optional[str]
+    suggested_indexes: List[str]
+    create_table_sql: str
+
+
+class ModelGenerationRequest(BaseModel):
+    """Request to generate SQLMesh models."""
+    source_name: Optional[str] = Field(
+        None,
+        description="Source to generate models for (None = all)"
+    )
+    regenerate_all: bool = Field(
+        False,
+        description="Force regeneration of all models"
+    )
+
+
+class ModelGenerationResponse(BaseModel):
+    """Response from model generation."""
+    models_generated: int
+    models: List[Dict[str, str]]
+    message: str
+
+
+class SourceStatusResponse(BaseModel):
+    """Status of a data source."""
+    source_name: str
+    enabled: bool
+    source_table: str
+    target_table: str
+    source_precedence: int
+    last_run_at: Optional[datetime]
+    last_run_records: Optional[int]
+    models_generated: List[str]
+
+
+async def get_dynamic_transformation_service():
+    """Get DynamicSilverTransformation instance."""
+    from ...services.data_platform.dynamic_silver_transformation import DynamicSilverTransformation
+    pool = await get_db_pool()
+    if pool is None:
+        return None
+    return DynamicSilverTransformation(pool)
+
+
+async def get_sqlmesh_model_generator():
+    """Get SQLMeshModelGenerator instance."""
+    from ...services.data_platform.sqlmesh_model_generator import SQLMeshModelGenerator
+    pool = await get_db_pool()
+    if pool is None:
+        return None
+    return SQLMeshModelGenerator(pool)
+
+
+@router.post("/sources/register", response_model=SourceRegistrationResponse, tags=["dynamic-onboarding"])
+async def register_data_source(
+    request: SourceRegistrationRequest,
+    transformation_service = Depends(get_dynamic_transformation_service)
+):
+    """
+    Register a new data source for transformation.
+
+    This endpoint enables zero-code onboarding of new data sources:
+    1. Stores transformation rules in the database
+    2. Optionally generates SQLMesh models
+    3. Makes the source ready for transformation
+
+    After registration, call POST /transform to run the transformation.
+    """
+    if transformation_service is None:
+        raise HTTPException(status_code=503, detail="Database unavailable")
+
+    success, message = await transformation_service.register_new_source(
+        source_name=request.source_name,
+        source_table=request.source_table,
+        column_mappings=request.column_mappings,
+        identifier_mappings=request.identifier_mappings,
+        name_mappings=request.name_mappings,
+        source_precedence=request.source_precedence,
+        dedup_strategy=request.dedup_strategy,
+        generate_models=request.generate_models
+    )
+
+    if not success:
+        raise HTTPException(status_code=400, detail=message)
+
+    # Extract model paths from message if generated
+    models_generated = None
+    if request.generate_models and "models:" in message:
+        import re
+        match = re.search(r'\[(.*?)\]', message)
+        if match:
+            models_generated = [m.strip().strip("'") for m in match.group(1).split(",")]
+
+    return SourceRegistrationResponse(
+        success=True,
+        source_name=request.source_name,
+        message=message,
+        models_generated=models_generated
+    )
+
+
+@router.post("/dynamic-transform", response_model=List[DynamicTransformationResponse], tags=["dynamic-onboarding"])
+async def run_dynamic_transformation(
+    request: DynamicTransformationRequest,
+    transformation_service = Depends(get_dynamic_transformation_service)
+):
+    """
+    Run Bronze -> Silver transformation.
+
+    If source_name is provided, transforms only that source.
+    Otherwise, transforms all enabled sources in precedence order.
+    """
+    if transformation_service is None:
+        raise HTTPException(status_code=503, detail="Database unavailable")
+
+    if request.source_name:
+        result = await transformation_service.transform_source(
+            source_name=request.source_name,
+            batch_size=request.batch_size,
+            dry_run=request.dry_run
+        )
+        results = [result]
+    else:
+        results = await transformation_service.transform_all_sources(
+            dry_run=request.dry_run
+        )
+
+    return [
+        DynamicTransformationResponse(
+            source_name=r.source_name,
+            records_processed=r.records_processed,
+            records_inserted=r.records_inserted,
+            records_updated=r.records_updated,
+            records_linked=r.records_linked,
+            identifiers_extracted=r.identifiers_extracted,
+            names_extracted=r.names_extracted,
+            duration_seconds=r.duration_seconds,
+            success=r.success,
+            errors=r.errors
+        )
+        for r in results
+    ]
+
+
+@router.post("/schema/detect", response_model=SchemaDetectionResponse, tags=["dynamic-onboarding"])
+async def detect_schema(request: SchemaDetectionRequest):
+    """
+    Detect schema from sample JSON data.
+
+    Provide sample API responses and get back:
+    - Detected columns with PostgreSQL types
+    - Suggested primary key
+    - Suggested indexes
+    - CREATE TABLE SQL
+    """
+    from ...services.data_platform.schema_detector import SchemaDetector
+    from ...services.data_platform.table_generator import TableGenerator
+
+    pool = await get_db_pool()
+    if pool is None:
+        raise HTTPException(status_code=503, detail="Database unavailable")
+
+    detector = SchemaDetector()
+    table_generator = TableGenerator(pool)
+
+    # Detect schema
+    schema = detector.detect_schema(
+        request.sample_data,
+        table_name=request.source_name,
+        max_flatten_depth=request.flatten_depth
+    )
+
+    # Generate CREATE TABLE SQL
+    create_sql = table_generator._generate_create_table_sql(
+        request.source_name,
+        schema,
+        schema_name="bronze"
+    )
+
+    return SchemaDetectionResponse(
+        source_name=request.source_name,
+        detected_columns=[
+            {
+                "name": col.name,
+                "type": col.pg_type.value,
+                "nullable": col.nullable,
+                "is_unique": col.is_unique
+            }
+            for col in schema.columns
+        ],
+        suggested_primary_key=schema.primary_key,
+        suggested_indexes=schema.suggested_indexes,
+        create_table_sql=create_sql
+    )
+
+
+@router.post("/models/generate", response_model=ModelGenerationResponse, tags=["dynamic-onboarding"])
+async def generate_models(
+    request: ModelGenerationRequest,
+    model_generator = Depends(get_sqlmesh_model_generator)
+):
+    """
+    Generate SQLMesh models from transformation rules.
+
+    If source_name is provided, generates models only for that source.
+    Otherwise, generates models for all sources.
+    """
+    if model_generator is None:
+        raise HTTPException(status_code=503, detail="Database unavailable")
+
+    if request.regenerate_all or request.source_name:
+        models = await model_generator.generate_all_models(
+            source_name=request.source_name
+        )
+    else:
+        models = await model_generator.regenerate_if_needed()
+
+    return ModelGenerationResponse(
+        models_generated=len(models),
+        models=[
+            {"name": m.model_name, "path": m.file_path}
+            for m in models
+        ],
+        message=f"Generated {len(models)} SQLMesh models"
+    )
+
+
+@router.get("/transformation-sources", response_model=List[SourceStatusResponse], tags=["dynamic-onboarding"])
+async def list_transformation_sources(enabled_only: bool = True):
+    """
+    List all registered data sources for dynamic transformation.
+    """
+    pool = await get_db_pool()
+    if pool is None:
+        raise HTTPException(status_code=503, detail="Database unavailable")
+
+    async with pool.acquire() as conn:
+        query = """
+            SELECT
+                r.source_name,
+                r.enabled,
+                r.source_table,
+                r.target_table,
+                r.source_precedence,
+                r.last_run_at,
+                r.last_run_records,
+                COALESCE(
+                    array_agg(m.model_name) FILTER (WHERE m.model_name IS NOT NULL),
+                    ARRAY[]::text[]
+                ) AS models_generated
+            FROM raw.silver_transformation_rules r
+            LEFT JOIN raw.generated_sqlmesh_models m ON m.source_rule_id = r.id
+        """
+        if enabled_only:
+            query += " WHERE r.enabled = true"
+        query += " GROUP BY r.id ORDER BY r.source_precedence ASC"
+
+        rows = await conn.fetch(query)
+
+    return [
+        SourceStatusResponse(
+            source_name=row['source_name'],
+            enabled=row['enabled'],
+            source_table=row['source_table'],
+            target_table=row['target_table'],
+            source_precedence=row['source_precedence'],
+            last_run_at=row['last_run_at'],
+            last_run_records=row['last_run_records'],
+            models_generated=row['models_generated']
+        )
+        for row in rows
+    ]
+
+
+@router.get("/transformation-sources/{source_name}", response_model=SourceStatusResponse, tags=["dynamic-onboarding"])
+async def get_transformation_source(source_name: str):
+    """
+    Get details for a specific data source.
+    """
+    pool = await get_db_pool()
+    if pool is None:
+        raise HTTPException(status_code=503, detail="Database unavailable")
+
+    async with pool.acquire() as conn:
+        row = await conn.fetchrow("""
+            SELECT
+                r.source_name,
+                r.enabled,
+                r.source_table,
+                r.target_table,
+                r.source_precedence,
+                r.last_run_at,
+                r.last_run_records,
+                COALESCE(
+                    array_agg(m.model_name) FILTER (WHERE m.model_name IS NOT NULL),
+                    ARRAY[]::text[]
+                ) AS models_generated
+            FROM raw.silver_transformation_rules r
+            LEFT JOIN raw.generated_sqlmesh_models m ON m.source_rule_id = r.id
+            WHERE r.source_name = $1
+            GROUP BY r.id
+        """, source_name)
+
+    if not row:
+        raise HTTPException(status_code=404, detail=f"Source not found: {source_name}")
+
+    return SourceStatusResponse(
+        source_name=row['source_name'],
+        enabled=row['enabled'],
+        source_table=row['source_table'],
+        target_table=row['target_table'],
+        source_precedence=row['source_precedence'],
+        last_run_at=row['last_run_at'],
+        last_run_records=row['last_run_records'],
+        models_generated=row['models_generated']
+    )
+
+
+@router.delete("/transformation-sources/{source_name}", tags=["dynamic-onboarding"])
+async def disable_transformation_source(source_name: str):
+    """
+    Disable a data source (soft delete).
+    """
+    pool = await get_db_pool()
+    if pool is None:
+        raise HTTPException(status_code=503, detail="Database unavailable")
+
+    async with pool.acquire() as conn:
+        result = await conn.execute("""
+            UPDATE raw.silver_transformation_rules
+            SET enabled = false, updated_at = NOW()
+            WHERE source_name = $1
+        """, source_name)
+
+    if result == "UPDATE 0":
+        raise HTTPException(status_code=404, detail=f"Source not found: {source_name}")
+
+    return {"message": f"Source '{source_name}' disabled"}
+
+
+@router.post("/transformation-sources/{source_name}/enable", tags=["dynamic-onboarding"])
+async def enable_transformation_source(source_name: str):
+    """
+    Re-enable a disabled data source.
+    """
+    pool = await get_db_pool()
+    if pool is None:
+        raise HTTPException(status_code=503, detail="Database unavailable")
+
+    async with pool.acquire() as conn:
+        result = await conn.execute("""
+            UPDATE raw.silver_transformation_rules
+            SET enabled = true, updated_at = NOW()
+            WHERE source_name = $1
+        """, source_name)
+
+    if result == "UPDATE 0":
+        raise HTTPException(status_code=404, detail=f"Source not found: {source_name}")
+
+    return {"message": f"Source '{source_name}' enabled"}

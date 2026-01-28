@@ -75,3 +75,9 @@ coverage.xml
 *.temp
 tmp/
 temp/
+
+# Production deployment
+backups/
+nginx/ssl/*.pem
+nginx/ssl/*.key
+nginx/ssl/*.crt

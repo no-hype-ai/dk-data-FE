@@ -59,7 +59,7 @@ services:
     environment:
       # Database connection - connects to postgres service within docker network
       PGRST_DB_URI: "postgres://authenticator:${POSTGREST_PASSWORD:-postgrest_secret_change_me}@postgres:5432/${POSTGRES_DB:-edwards_tavr}"
-      PGRST_DB_SCHEMAS: "api,mol_api"
+      PGRST_DB_SCHEMAS: "api,mol_api,gold,silver,bronze"
       PGRST_DB_ANON_ROLE: "web_anon"
       PGRST_DB_POOL: "10"
       PGRST_DB_POOL_ACQUISITION_TIMEOUT: "10"
