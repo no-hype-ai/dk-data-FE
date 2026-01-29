@@ -1,14 +1,15 @@
 """
 Job Runner Module
-Feature: 001-data-layer-postgrest-gitops
-Task: T043
+Feature: 002-production-readiness
+Tasks: T043, T061
 
 Executes batch jobs either locally (subprocess) or via Kubernetes.
+Includes Prometheus metrics for job monitoring.
 """
 
-import logging
 import os
 import subprocess
+import time
 import uuid
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
@@ -19,7 +20,34 @@ from typing import Any
 import psycopg2
 from psycopg2.extras import RealDictCursor
 
-logger = logging.getLogger(__name__)
+# Import observability metrics
+try:
+    from dk_data.observability.metrics import (
+        record_job_duration,
+        record_job_records,
+        increment_job_failure,
+        mark_job_success,
+    )
+    from dk_data.observability import get_logger
+    logger = get_logger(__name__)
+    METRICS_AVAILABLE = True
+except ImportError:
+    import logging
+    logger = logging.getLogger(__name__)
+    METRICS_AVAILABLE = False
+
+    # Define no-op metric functions
+    def record_job_duration(job_name: str, duration: float) -> None:
+        pass
+
+    def record_job_records(job_name: str, count: int) -> None:
+        pass
+
+    def increment_job_failure(job_name: str) -> None:
+        pass
+
+    def mark_job_success(job_name: str) -> None:
+        pass
 
 
 class JobStatus(Enum):
@@ -151,6 +179,7 @@ class LocalJobRunner(JobRunner):
     def run_job(self, job_name: str, triggered_by: str, user: str | None = None) -> JobResult:
         """Execute a job locally via subprocess."""
         if job_name not in self.JOB_COMMANDS:
+            increment_job_failure(job_name)
             return JobResult(
                 run_id=None,
                 job_name=job_name,
@@ -162,11 +191,12 @@ class LocalJobRunner(JobRunner):
             )
 
         started_at = datetime.now()
+        start_time = time.time()
         run_id = self._record_job_start(job_name, triggered_by, user)
 
         try:
             command = self.JOB_COMMANDS[job_name]
-            logger.info(f"Running job {job_name}: {' '.join(command)}")
+            logger.info(f"Running job {job_name}", command=" ".join(command), run_id=run_id)
 
             result = subprocess.run(
                 command,
@@ -184,15 +214,21 @@ class LocalJobRunner(JobRunner):
             )
 
             completed_at = datetime.now()
+            duration = time.time() - start_time
+
+            # Record job duration metric
+            record_job_duration(job_name, duration)
 
             if result.returncode == 0:
                 status = JobStatus.SUCCESS
                 error_message = None
-                logger.info(f"Job {job_name} completed successfully")
+                mark_job_success(job_name)
+                logger.info(f"Job {job_name} completed successfully", duration=duration, run_id=run_id)
             else:
                 status = JobStatus.FAILURE
                 error_message = result.stderr[:1000] if result.stderr else "Unknown error"
-                logger.error(f"Job {job_name} failed: {error_message}")
+                increment_job_failure(job_name)
+                logger.error(f"Job {job_name} failed", error=error_message, duration=duration, run_id=run_id)
 
             self._record_job_completion(run_id, status, None, error_message)
 
@@ -207,7 +243,11 @@ class LocalJobRunner(JobRunner):
             )
 
         except subprocess.TimeoutExpired:
+            duration = time.time() - start_time
+            record_job_duration(job_name, duration)
+            increment_job_failure(job_name)
             self._record_job_completion(run_id, JobStatus.FAILURE, None, "Job timed out")
+            logger.error(f"Job {job_name} timed out", duration=duration, run_id=run_id)
             return JobResult(
                 run_id=run_id,
                 job_name=job_name,
@@ -218,8 +258,12 @@ class LocalJobRunner(JobRunner):
                 error_message="Job timed out after 1 hour",
             )
         except Exception as e:
+            duration = time.time() - start_time
+            record_job_duration(job_name, duration)
+            increment_job_failure(job_name)
             error_msg = str(e)[:1000]
             self._record_job_completion(run_id, JobStatus.FAILURE, None, error_msg)
+            logger.error(f"Job {job_name} failed with exception", error=error_msg, duration=duration, run_id=run_id)
             return JobResult(
                 run_id=run_id,
                 job_name=job_name,

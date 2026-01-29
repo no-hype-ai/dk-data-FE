@@ -1,0 +1,60 @@
+# Docker ignore file for dk-data-fe
+# Feature: 002-production-readiness
+
+# Git
+.git/
+.gitignore
+.gitleaks.toml
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+.venv/
+venv/
+*.egg-info/
+dist/
+build/
+
+# Development files
+.env
+.env.*
+!.env.example
+*.log
+logs/
+
+# Data files (should be in MinIO, not Docker image)
+data/
+*.csv
+*.xlsx
+
+# IDE
+.idea/
+.vscode/
+*.swp
+
+# Testing
+.pytest_cache/
+.coverage
+htmlcov/
+tests/
+
+# Documentation and specs
+*.md
+!README.md
+docs/
+specs/
+.specify/
+
+# GitOps and Kubernetes manifests (not needed in container)
+.gitops/
+k8s/
+.github/
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Build artifacts
+*.tar.gz
+*.zip

@@ -1,0 +1,65 @@
+# Gitleaks configuration for dk-data-fe
+# Feature: 002-production-readiness
+# Purpose: Secret scanning rules and allowlist patterns
+
+title = "dk-data-fe gitleaks config"
+
+[extend]
+# Use default gitleaks rules as base
+useDefault = true
+
+[allowlist]
+description = "Allowed patterns for dk-data-fe"
+paths = [
+    '''specs/.*\.md$''',           # Allow example secrets in spec docs
+    '''tests/fixtures/.*''',       # Allow test fixtures
+    '''\.gitleaks\.toml$''',       # This config file
+    '''contracts/.*\.yaml$''',     # Contract examples
+    '''\.datakinetic/.*\.md$''',   # Allow documentation files
+    '''docker-compose\.yml$''',    # Allow docker-compose (uses env var substitution)
+]
+
+# Allow environment variable references (not actual secrets)
+regexes = [
+    # Environment variable references with bash syntax
+    '''\$\{[A-Z_]+(?::-[^}]*)?\}''',
+    '''\$\{[A-Z_]+:\?[^}]+\}''',
+    '''\$\([A-Z_]+\)''',
+    # Postgres connection strings using env vars
+    '''postgres://[^:]+:\$\{[^}]+\}@''',
+    # Placeholder values
+    '''REPLACE_VIA_EXTERNAL_SECRETS''',
+    '''REPLACE_WITH_SECURE_SECRET''',
+    '''changeme''',
+    '''_password''',
+    '''_secret_change_me''',
+    '''not-for-production''',
+    '''replace-me''',
+    # Documentation/example formats
+    '''user:password@host:port''',
+]
+
+# Additional rules specific to this project
+[[rules]]
+id = "postgres-connection-string"
+description = "PostgreSQL connection string with credentials"
+regex = '''postgres(ql)?://[^:]+:[^@]+@[^/]+'''
+tags = ["database", "postgres"]
+
+[[rules]]
+id = "jwt-secret-assignment"
+description = "JWT secret assignment in code or config"
+regex = '''(JWT|jwt)[-_]?(SECRET|secret)\s*[=:]\s*["'][^"']{20,}["']'''
+tags = ["jwt", "secret"]
+
+[[rules]]
+id = "anthropic-api-key"
+description = "Anthropic API key"
+regex = '''sk-ant-[a-zA-Z0-9-_]{20,}'''
+tags = ["api", "anthropic"]
+
+[[rules]]
+id = "doppler-token"
+description = "Doppler service token"
+regex = '''dp\.st\.[a-zA-Z0-9]{20,}'''
+tags = ["doppler", "token"]

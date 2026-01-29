@@ -1,0 +1,64 @@
+# dk-data-fe - Production Override
+# Feature: 002-production-readiness
+# Task: T032
+#
+# Production-like settings for local testing.
+# Usage:
+#   docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d
+#
+# Or set COMPOSE_FILE in .env:
+#   COMPOSE_FILE=docker-compose.yml:docker-compose.prod.yml
+
+services:
+  # ==========================================================================
+  # PostgREST - Production settings
+  # ==========================================================================
+  postgrest:
+    restart: always
+    environment:
+      PGRST_LOG_LEVEL: "warn"
+      PGRST_DB_POOL: "20"
+      PGRST_DB_POOL_ACQUISITION_TIMEOUT: "30"
+      PGRST_MAX_ROWS: "10000"
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+          cpus: '0.5'
+        reservations:
+          memory: 128M
+          cpus: '0.1'
+
+  # ==========================================================================
+  # Job Trigger - Production settings
+  # ==========================================================================
+  job-trigger:
+    restart: always
+    environment:
+      LOG_LEVEL: "warning"
+    deploy:
+      resources:
+        limits:
+          memory: 256M
+          cpus: '0.25'
+        reservations:
+          memory: 64M
+          cpus: '0.05'
+
+  # ==========================================================================
+  # Metabase - Production settings
+  # ==========================================================================
+  metabase:
+    restart: always
+    environment:
+      JAVA_OPTS: "-Xmx2g"
+      MB_ENABLE_EMBEDDING: "true"
+      MB_JETTY_HOST: "0.0.0.0"
+    deploy:
+      resources:
+        limits:
+          memory: 2G
+          cpus: '1.0'
+        reservations:
+          memory: 1G
+          cpus: '0.5'
