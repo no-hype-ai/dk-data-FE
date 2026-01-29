@@ -10,7 +10,6 @@
 import React, { useState } from 'react';
 import {
   Play,
-  RefreshCw,
   CheckCircle,
   XCircle,
   AlertTriangle,
