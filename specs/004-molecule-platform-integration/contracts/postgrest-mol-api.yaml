@@ -1,0 +1,99 @@
+openapi: "3.1.0"
+info:
+  title: Molecule PostgREST API (Public)
+  description: |
+    Public read-only access to molecule data via PostgREST.
+    Exposed through Traefik ingress at data.behaviorlabs.ai (prod)
+    and data.preview.behaviorlabs.ai (staging).
+    Schema: mol_api
+  version: "1.0.0"
+
+servers:
+  - url: https://data.preview.behaviorlabs.ai
+    description: Staging
+  - url: https://data.behaviorlabs.ai
+    description: Production
+
+paths:
+  /mol_api/molecule_profiles:
+    get:
+      summary: Query molecule profiles (gold layer)
+      description: |
+        PostgREST auto-generated endpoint for mol_api.molecule_profiles view.
+        Supports filtering, ordering, pagination via PostgREST query syntax.
+      tags: [mol_api]
+      parameters:
+        - name: canonical_name
+          in: query
+          description: Filter by name (PostgREST operators: eq, like, ilike)
+          schema:
+            type: string
+        - name: development_status
+          in: query
+          description: Filter by status
+          schema:
+            type: string
+            enum: [preclinical, phase_1, phase_2, phase_3, approved, withdrawn]
+        - name: order
+          in: query
+          description: Sort order (PostgREST syntax)
+          schema:
+            type: string
+        - name: limit
+          in: query
+          schema:
+            type: integer
+        - name: offset
+          in: query
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Molecule profiles
+          headers:
+            Content-Range:
+              description: Pagination range
+              schema:
+                type: string
+
+  /mol_api/safety_signals:
+    get:
+      summary: Query safety signal aggregations (gold layer)
+      tags: [mol_api]
+      responses:
+        "200":
+          description: Safety signal data
+
+  /mol_api/competitive_landscapes:
+    get:
+      summary: Query competitive landscape data (gold layer)
+      tags: [mol_api]
+      responses:
+        "200":
+          description: Competitive landscape data
+
+  /mol_api/molecule_search:
+    post:
+      summary: Fuzzy molecule search (RPC function)
+      description: |
+        PostgREST RPC endpoint calling mol_api.molecule_search(query, threshold, limit).
+        Uses pg_trgm for fuzzy text matching.
+      tags: [mol_api]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                query:
+                  type: string
+                threshold:
+                  type: number
+                  default: 0.3
+                limit:
+                  type: integer
+                  default: 20
+      responses:
+        "200":
+          description: Search results with similarity scores
