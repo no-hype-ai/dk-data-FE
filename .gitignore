@@ -64,6 +64,10 @@ data/*.gz
 *.json
 !tests/fixtures/*.json
 !.specify/**/*.json
+!src/dk_data/frontend/*.json
+!src/dk_data/frontend/package.json
+!src/dk_data/frontend/tsconfig.json
+!src/dk_data/frontend/tsconfig.node.json
 
 # SQLMesh cache and state
 .sqlmesh/
