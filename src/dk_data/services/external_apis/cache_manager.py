@@ -8,9 +8,8 @@ each data source's update frequency.
 import json
 import os
 from dataclasses import dataclass
-from datetime import timedelta
 from enum import Enum
-from typing import Any, Optional, Union
+from typing import Any, Optional
 
 import redis.asyncio as redis
 from loguru import logger

@@ -7,11 +7,10 @@ Part of DK Molecule Data Platform (012-dk-data-platform)
 """
 
 from datetime import datetime
-from typing import Dict, Any, Optional, List, Tuple, Set
+from typing import Dict, Any, Optional, List
 from dataclasses import dataclass, field
 from enum import Enum
 import re
-import json
 import logging
 from collections import defaultdict
 

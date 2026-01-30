@@ -11,10 +11,9 @@ import hashlib
 import os
 from datetime import datetime
 from pathlib import Path
-from typing import Dict, Any, Optional, List, Tuple
+from typing import Dict, Optional, List
 from dataclasses import dataclass
 from uuid import UUID
-import json
 import logging
 
 from jinja2 import Environment, BaseLoader
@@ -633,7 +632,6 @@ SELECT * FROM deduplicated;
 
 async def main():
     """CLI entry point for model generation."""
-    import asyncio
     import asyncpg
     import sys
 

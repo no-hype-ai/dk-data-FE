@@ -16,11 +16,9 @@ Part of DK Molecule Data Platform (012-dk-data-platform)
 
 import json
 import re
-import os
 from datetime import datetime, timezone
-from typing import Dict, Any, List, Optional, Tuple
-from dataclasses import dataclass, field, asdict
-from enum import Enum
+from typing import Dict, Any, List, Optional
+from dataclasses import dataclass, field
 import logging
 
 logger = logging.getLogger(__name__)

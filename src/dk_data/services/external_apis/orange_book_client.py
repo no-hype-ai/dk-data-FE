@@ -12,15 +12,13 @@ The Orange Book is published in downloadable text/zip files rather than a REST A
 This client downloads and parses these files.
 """
 
-import os
 import io
 import zipfile
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from datetime import datetime, date
 from typing import Optional, List, Dict, Any
 from pathlib import Path
 from enum import Enum
-import asyncio
 
 import aiohttp
 from loguru import logger
@@ -31,7 +29,7 @@ class ExclusivityCode(str, Enum):
     NCE = "NCE"  # New Chemical Entity - 5 years
     ODE = "ODE"  # Orphan Drug Exclusivity - 7 years
     PED = "PED"  # Pediatric Exclusivity - 6 months added
-    I = "I"      # 180-day generic exclusivity
+    GENERIC_180 = "I"  # 180-day generic exclusivity (FDA code: I)
     NP = "NP"    # New Patient Population
     NDF = "NDF"  # New Dosage Form
     NC = "NC"    # New Combination
@@ -264,7 +262,7 @@ class OrangeBookClient:
                     if fields[8] and fields[8] != "Approved Prior to Jan 1, 1982":
                         try:
                             approval_date = datetime.strptime(fields[8], "%b %d, %Y").date()
-                        except:
+                        except Exception:
                             pass
 
                     product = OrangeBookProduct(
@@ -284,7 +282,7 @@ class OrangeBookClient:
                         applicant_full_name=fields[13] if len(fields) > 13 else None,
                     )
                     products.append(product)
-                except Exception as e:
+                except Exception:
                     continue
 
         except Exception as e:
@@ -313,7 +311,7 @@ class OrangeBookClient:
                     if fields[4]:
                         try:
                             expire_date = datetime.strptime(fields[4], "%b %d, %Y").date()
-                        except:
+                        except Exception:
                             pass
 
                     patent = OrangeBookPatent(
@@ -327,7 +325,7 @@ class OrangeBookClient:
                         delist_flag=fields[8] == "Y" if len(fields) > 8 else False,
                     )
                     patents.append(patent)
-                except Exception as e:
+                except Exception:
                     continue
 
         except Exception as e:
@@ -356,7 +354,7 @@ class OrangeBookClient:
                     if fields[3]:
                         try:
                             excl_date = datetime.strptime(fields[3], "%b %d, %Y").date()
-                        except:
+                        except Exception:
                             pass
 
                     excl = OrangeBookExclusivity(
@@ -366,7 +364,7 @@ class OrangeBookClient:
                         exclusivity_date=excl_date,
                     )
                     exclusivities.append(excl)
-                except:
+                except Exception:
                     continue
 
         except Exception as e:

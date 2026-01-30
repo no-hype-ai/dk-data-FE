@@ -148,6 +148,14 @@ __all__ = [
     "OntologyMappings",
     "get_ontology_loader",
     "get_ontology_mappings",
+    # IVA Evidence Report Workflow
+    "IVAEvidenceReportWorkflow",
+    "generate_iva_evidence_report",
+    "EvidenceReportInputs",
+    "EvidenceReportOutputs",
+    "CEJNarrativePillar",
+    "EvidenceStrength",
+    "GapStatus",
     # Competitive Graph
     "CompetitiveGraphService",
     # Coverage

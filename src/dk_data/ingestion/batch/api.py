@@ -22,7 +22,7 @@ from job_runner import JobStatus, get_job_runner
 # Import observability (must be before other imports that use logging)
 try:
     from dk_data.observability import setup_telemetry, setup_logging, get_logger
-    from dk_data.observability.metrics import get_metrics, get_metrics_content_type, HTTP_REQUESTS_TOTAL
+    from dk_data.observability.metrics import get_metrics, get_metrics_content_type
     OBSERVABILITY_AVAILABLE = True
 except ImportError:
     OBSERVABILITY_AVAILABLE = False
@@ -46,16 +46,53 @@ DB_CONFIG = {
     "host": os.getenv("POSTGRES_HOST", "localhost"),
     "port": int(os.getenv("POSTGRES_PORT", "5432")),
     "user": os.getenv("POSTGRES_USER", "postgres"),
-    "password": os.getenv("POSTGRES_PASSWORD", "postgres"),
-    "database": os.getenv("POSTGRES_DB", "edwards_tavr"),
+    "password": os.getenv("POSTGRES_PASSWORD", ""),
+    "database": os.getenv("POSTGRES_DB", "dk_data"),
 }
 
 # FastAPI app
 app = FastAPI(
-    title="TAVR Job Trigger API",
-    description="API for triggering and monitoring batch data jobs",
-    version="1.0.0",
+    title="DK Data Platform API",
+    description="API for triggering and monitoring batch data jobs (TAVR + Molecule Platform)",
+    version="2.0.0",
 )
+
+# Molecule platform routers (004-molecule-platform-integration)
+# Try/except pattern for graceful degradation if molecule modules unavailable
+try:
+    from dk_data.api.routes.data_platform import router as data_platform_router
+    app.include_router(data_platform_router, prefix="/api/v1", tags=["molecule-platform"])
+    logger.info("Loaded molecule data_platform router")
+except ImportError as e:
+    logger.warning(f"Molecule data_platform router not available: {e}")
+
+try:
+    from dk_data.api.routes.monitoring import router as monitoring_router
+    app.include_router(monitoring_router, prefix="/api/v1", tags=["molecule-monitoring"])
+    logger.info("Loaded molecule monitoring router")
+except ImportError as e:
+    logger.warning(f"Molecule monitoring router not available: {e}")
+
+try:
+    from dk_data.api.routes.data_sources import router as data_sources_router
+    app.include_router(data_sources_router, prefix="/api/v1", tags=["molecule-data-sources"])
+    logger.info("Loaded molecule data_sources router")
+except ImportError as e:
+    logger.warning(f"Molecule data_sources router not available: {e}")
+
+try:
+    from dk_data.api.routes.onboarding import router as onboarding_router
+    app.include_router(onboarding_router, prefix="/api/v1", tags=["molecule-onboarding"])
+    logger.info("Loaded molecule onboarding router")
+except ImportError as e:
+    logger.warning(f"Molecule onboarding router not available: {e}")
+
+try:
+    from dk_data.api.routes.alerts import router as alerts_router
+    app.include_router(alerts_router, prefix="/api/v1", tags=["molecule-alerts"])
+    logger.info("Loaded molecule alerts router")
+except ImportError as e:
+    logger.warning(f"Molecule alerts router not available: {e}")
 
 # CORS middleware
 app.add_middleware(

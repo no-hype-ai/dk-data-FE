@@ -9,7 +9,7 @@ Part of DK Molecule Data Platform (012-dk-data-platform)
 from datetime import datetime, date
 from typing import Optional, List, Dict, Any
 from uuid import UUID
-from pydantic import BaseModel, Field, ConfigDict
+from pydantic import BaseModel, ConfigDict
 
 
 class MoleculeProfileBase(BaseModel):

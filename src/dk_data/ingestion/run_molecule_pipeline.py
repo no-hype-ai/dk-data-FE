@@ -101,8 +101,8 @@ def run_resolution_phase() -> dict:
             host=os.getenv('POSTGRES_HOST', 'localhost'),
             port=int(os.getenv('POSTGRES_PORT', '5432')),
             user=os.getenv('POSTGRES_USER', 'postgres'),
-            password=os.getenv('POSTGRES_PASSWORD', 'postgres'),
-            dbname=os.getenv('POSTGRES_DB', 'edwards_tavr'),
+            password=os.getenv('POSTGRES_PASSWORD', ''),
+            dbname=os.getenv('POSTGRES_DB', 'dk_data'),
         )
 
         resolver = IdentifierResolver(conn)

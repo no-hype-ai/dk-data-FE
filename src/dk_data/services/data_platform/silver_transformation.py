@@ -9,12 +9,11 @@ Part of DK Molecule Data Platform (012-dk-data-platform)
 """
 
 import json
-from datetime import datetime
-from typing import Dict, Any, Optional, List, Tuple
+from typing import Dict, Optional, List
 from dataclasses import dataclass
 import logging
 
-from .identifier_resolver import IdentifierResolver, IdentifierType, ResolutionResult
+from .identifier_resolver import IdentifierResolver, IdentifierType
 from .fuzzy_matcher import FuzzyMatcher
 
 logger = logging.getLogger(__name__)
@@ -222,7 +221,7 @@ class SilverTransformationService:
             if record['pref_name']:
                 updates.append(f"canonical_name = ${len(params) + 1}")
                 params.append(record['pref_name'])
-                updates.append(f"name_source = 'chembl'")
+                updates.append("name_source = 'chembl'")
 
             if record['canonical_smiles']:
                 updates.append(f"canonical_smiles = ${len(params) + 1}")

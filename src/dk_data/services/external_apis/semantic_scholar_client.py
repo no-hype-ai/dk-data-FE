@@ -10,8 +10,8 @@ Rate limit: 100 requests/5 minutes (unauthenticated), 1 request/second with API 
 """
 
 from dataclasses import dataclass, field
-from datetime import datetime, date, timedelta
-from typing import Optional, List, Dict, Any, Set
+from datetime import datetime, date
+from typing import Optional, List, Dict, Any
 import aiohttp
 import asyncio
 from loguru import logger

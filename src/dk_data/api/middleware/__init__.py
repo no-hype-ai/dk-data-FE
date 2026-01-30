@@ -23,7 +23,7 @@ if os.path.exists(_middleware_py_path):
     CORSHeadersMiddleware = _base_middleware.CORSHeadersMiddleware
     SecurityHeadersMiddleware = _base_middleware.SecurityHeadersMiddleware
 
-from .rbac import (
+from .rbac import (  # noqa: E402
     get_current_user,
     require_auth,
     RoleChecker,

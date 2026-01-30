@@ -267,7 +267,7 @@ class LifecycleService:
                 # Get dates
                 start_date = self._parse_date(trial.get("startDate"))
                 completion_date = self._parse_date(trial.get("completionDate"))
-                first_posted = self._parse_date(trial.get("firstPostedDate"))
+                self._parse_date(trial.get("firstPostedDate"))
 
                 # Map phase
                 lifecycle_phase = self.TRIAL_PHASE_MAP.get(phase)

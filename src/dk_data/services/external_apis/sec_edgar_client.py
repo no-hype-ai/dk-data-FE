@@ -17,8 +17,7 @@ Data Extraction Strategy:
 import os
 import re
 import html.parser
-from dataclasses import dataclass, field
-from datetime import date, datetime
+from datetime import datetime
 from typing import Any, Dict, List, Optional, Tuple
 import xml.etree.ElementTree as ET
 
@@ -26,7 +25,6 @@ from bs4 import BeautifulSoup
 from loguru import logger
 
 from .base_client import APIClientConfig, BaseAPIClient
-from .cache_manager import CacheManager, DataSource
 from .sec_rate_limiter import SECRateLimiter
 from ...models.market_intelligence import Filing, ProductRevenue, PipelineAsset
 
@@ -768,7 +766,7 @@ class SECEdgarClient(BaseAPIClient):
                         if isinstance(fact, dict):
                             value = fact.get('value')
                             context_id = fact.get('contextId')
-                            unit = fact.get('unitId', 'USD')
+                            fact.get('unitId', 'USD')
                             
                             if value and context_id:
                                 # Get context to extract period
@@ -782,7 +780,7 @@ class SECEdgarClient(BaseAPIClient):
                                     try:
                                         from datetime import datetime
                                         year = datetime.fromisoformat(end_date.replace('Z', '')).year
-                                    except:
+                                    except Exception:
                                         pass
                                 
                                 # Try to extract product name from concept ID or label

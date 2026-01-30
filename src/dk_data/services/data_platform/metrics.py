@@ -410,7 +410,7 @@ def refresh_metrics_from_database_sync():
             cur.execute("SELECT COUNT(*) FROM silver.resolution_queue WHERE status = 'pending'")
             pending = cur.fetchone()[0] or 0
             set_resolution_queue_pending(pending)
-        except:
+        except Exception:
             set_resolution_queue_pending(0)
 
         # Entity resolution success rate (estimate from cross-references) - using medallion architecture
@@ -520,7 +520,7 @@ def refresh_metrics_from_database_sync():
                     cur.execute(f"SELECT COUNT(*) FROM {table}")
                     count = cur.fetchone()[0] or 0
                     layer_count += count
-                except:
+                except Exception:
                     pass
             set_layer_record_count(layer, layer_count)
 
@@ -536,7 +536,7 @@ def refresh_metrics_from_database_sync():
                 cur.execute(f"SELECT COUNT(*) FROM {table} WHERE processed_to_bronze = FALSE")
                 count = cur.fetchone()[0] or 0
                 set_raw_unprocessed(source, count)
-            except:
+            except Exception:
                 set_raw_unprocessed(source, 0)
 
         # Unprocessed counts in bronze layer (use correct table names)
@@ -551,7 +551,7 @@ def refresh_metrics_from_database_sync():
                 cur.execute(f"SELECT COUNT(*) FROM {table} WHERE processed_to_silver = FALSE")
                 count = cur.fetchone()[0] or 0
                 set_bronze_unprocessed(source, count)
-            except:
+            except Exception:
                 set_bronze_unprocessed(source, 0)
 
         # Simulate pipeline processing metrics based on actual data
@@ -573,7 +573,7 @@ def refresh_metrics_from_database_sync():
                     increment = random.randint(1, min(10, max(1, count // 1000)))
                     if PROMETHEUS_AVAILABLE:
                         DK_PIPELINE_RECORDS_PROCESSED.labels(layer=layer, source=source).inc(increment)
-            except:
+            except Exception:
                 pass
 
         # =============================================================================
@@ -616,7 +616,7 @@ def refresh_metrics_from_database_sync():
                     cur.execute(f"SELECT COUNT(*) FROM {full_table}")
                     count = cur.fetchone()[0] or 0
                     set_table_record_count(layer, table, count)
-                except Exception as e:
+                except Exception:
                     # Table might not exist, set to 0
                     set_table_record_count(layer, table, 0)
 

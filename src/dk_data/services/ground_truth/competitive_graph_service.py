@@ -20,7 +20,7 @@ from ...models.competitive_graph import (
     DevelopmentStage,
 )
 from ..external_apis.openfda_client import OpenFDAClient
-from ..external_apis.clinicaltrials_client import ClinicalTrialsClient
+from ..external_apis.clinicaltrials_client import ClinicalTrialsClient, ClinicalTrial
 from ..external_apis.rxnorm_client import RxNormClient
 from ..external_apis.umls_client import UMLSClient
 
@@ -479,7 +479,7 @@ class CompetitiveGraphService:
                     target_id=node.id,
                     dimension=CompetitiveDimension.MOA,
                     score=self._calculate_moa_score(drug, source_node, node),
-                    discovered_via=f"OpenFDA:pharm_class_moa",
+                    discovered_via="OpenFDA:pharm_class_moa",
                     evidence=[f"MOA: {moa}"],
                 )
 
@@ -548,7 +548,7 @@ class CompetitiveGraphService:
                         target_id=node.id,
                         dimension=CompetitiveDimension.TARGET,
                         score=self._calculate_target_score(target, source_node, node),
-                        discovered_via=f"RxNorm:ingredient_class",
+                        discovered_via="RxNorm:ingredient_class",
                         evidence=[f"Target: {target}"],
                     )
 
@@ -620,7 +620,7 @@ class CompetitiveGraphService:
                     target_id=node.id,
                     dimension=CompetitiveDimension.CLASS,
                     score=0.5,  # Default class score
-                    discovered_via=f"OpenFDA:pharm_class_epc",
+                    discovered_via="OpenFDA:pharm_class_epc",
                     evidence=[f"ATC: {atc_prefix}"],
                 )
 
@@ -837,7 +837,6 @@ class CompetitiveGraphService:
             # Get concept to determine if brand or generic
             concept = await self._rxnorm.get_concept(rxcui)
             if concept:
-                tty = concept.tty  # Term type
                 name = concept.name
 
                 # SBD = Semantic Branded Drug, SCD = Semantic Clinical Drug
@@ -949,7 +948,7 @@ class CompetitiveGraphService:
         existing_labels = existing_node.metadata.get("fda_labels", [])
         new_labels = new_node.metadata.get("fda_labels", [])
         if new_labels:
-            existing_app_nums = {l.get("application_number") for l in existing_labels if l}
+            existing_app_nums = {lbl.get("application_number") for lbl in existing_labels if lbl}
             for label in new_labels:
                 if label and label.get("application_number") not in existing_app_nums:
                     existing_labels.append(label)

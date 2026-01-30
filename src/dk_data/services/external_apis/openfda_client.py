@@ -19,8 +19,8 @@ from typing import Any, Dict, List, Optional
 
 from loguru import logger
 
-from .base_client import APIClientConfig, BaseAPIClient
-from .cache_manager import CacheManager, DataSource
+from .base_client import APIClientConfig, BaseAPIClient, APIResponse
+from .cache_manager import CacheManager
 
 
 @dataclass

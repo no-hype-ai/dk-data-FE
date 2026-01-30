@@ -6,8 +6,8 @@ Manages scheduled data synchronization across tiers.
 Part of DK Molecule Data Platform (012-dk-data-platform)
 """
 
-from datetime import datetime, timedelta, time
-from typing import Dict, Any, Optional, List, Callable
+from datetime import datetime, timedelta
+from typing import Dict, Any, Optional, List
 from uuid import UUID, uuid4
 from enum import Enum
 from dataclasses import dataclass

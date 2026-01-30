@@ -7,14 +7,13 @@ Runs as part of the daily/weekly pipeline to maintain cross-references.
 Part of DK Molecule Data Platform (012-dk-data-platform)
 """
 
-import asyncio
 import logging
 from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Dict, List, Optional, Any, Set
 from enum import Enum
 
-from .identifier_resolver import IdentifierResolver, IdentifierType, ResolutionResult
+from .identifier_resolver import IdentifierResolver, IdentifierType
 from .external_resolver import ExternalResolverService
 
 logger = logging.getLogger(__name__)

@@ -14,21 +14,13 @@ from fastapi import APIRouter, HTTPException, Query, Depends, BackgroundTasks
 from pydantic import BaseModel, Field
 from typing import Optional, List, Dict, Any
 from datetime import datetime
-from enum import Enum
 from loguru import logger
-import os
 
 # Import services (will be injected via dependency)
 from ...services.data_platform import (
-    IdentifierResolver,
-    IdentifierType,
-    FuzzyMatcher,
-    GoldAggregationService,
     ResolutionQueueService,
-    ResolutionAction,
-    QueuePriority,
 )
-from ..dependencies import get_db_pool, get_gold_service, get_resolver_service, get_queue_service
+from ..dependencies import get_db_pool, get_gold_service, get_resolver_service
 
 router = APIRouter(prefix="/data-platform", tags=["data-platform"])
 
@@ -2122,11 +2114,11 @@ async def list_gold_lifecycle_stages(
                 params.append(stage)
                 param_idx += 1
 
-            where_clause = " AND ".join(conditions)
+            " AND ".join(conditions)
 
             # Try gold view first
             try:
-                query = f"""
+                query = """
                     SELECT
                         molecule_id::text,
                         canonical_name,

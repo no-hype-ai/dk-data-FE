@@ -1,6 +1,5 @@
 """Configuration settings for the Drug Data Enrichment Service."""
 
-import os
 from typing import Optional
 from pydantic_settings import BaseSettings
 
@@ -49,9 +48,9 @@ class DatabaseSettings(BaseSettings):
 
     host: str = "localhost"
     port: int = 5432
-    name: str = "edwards_tavr"
+    name: str = "dk_data"
     user: str = "postgres"
-    password: str = "postgres"
+    password: str = ""
 
     @property
     def url(self) -> str:

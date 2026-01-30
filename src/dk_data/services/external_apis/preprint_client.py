@@ -9,7 +9,7 @@ API Documentation:
 """
 
 from dataclasses import dataclass, field
-from datetime import datetime, date
+from datetime import datetime, date, timedelta
 from typing import Optional, List, Dict, Any
 import aiohttp
 from loguru import logger
@@ -312,7 +312,3 @@ class PrePrintClient(BaseAPIClient):
                     return response.status < 500
         except Exception:
             return False
-
-
-# Import timedelta at module level
-from datetime import timedelta

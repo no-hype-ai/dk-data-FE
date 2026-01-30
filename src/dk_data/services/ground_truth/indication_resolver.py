@@ -21,16 +21,11 @@ from loguru import logger
 
 from ...models.indication import (
     ICD10Code,
-    ICD10Level,
-    Indication,
-    IndicationSource,
 )
 from ..external_apis import (
     UMLSClient,
-    UMLSConcept,
     get_umls_client,
     WHOICDClient,
-    ICDCode,
     get_who_icd_client,
 )
 from .ontology_loader import get_ontology_loader, OntologyLoader
@@ -561,7 +556,7 @@ class IndicationResolver:
         related_codes = [icd10_code]
 
         # Parse the code structure
-        code_len = len(icd10_code.replace(".", ""))
+        len(icd10_code.replace(".", ""))
 
         if include_parents:
             # Get parent codes by truncating

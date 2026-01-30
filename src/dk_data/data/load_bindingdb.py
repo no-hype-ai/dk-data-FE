@@ -32,7 +32,7 @@ DB_CONFIG = {
     "port": int(os.getenv("POSTGRES_PORT", "5432")),
     "database": os.getenv("POSTGRES_DB", "dk_data"),
     "user": os.getenv("POSTGRES_USER", "postgres"),
-    "password": os.getenv("POSTGRES_PASSWORD", "postgres"),
+    "password": os.getenv("POSTGRES_PASSWORD", ""),
 }
 
 
@@ -218,7 +218,7 @@ def load_bindingdb(
     cursor.execute("SELECT COUNT(*) FROM bronze.bindingdb_affinities")
     final_count = cursor.fetchone()[0]
 
-    logger.info(f"\n=== Load Complete ===")
+    logger.info("\n=== Load Complete ===")
     logger.info(f"Total inserted: {inserted:,}")
     logger.info(f"Skipped (no data): {skipped:,}")
     logger.info(f"Errors: {errors:,}")

@@ -14,8 +14,8 @@ from enum import Enum
 import asyncio
 from loguru import logger
 
-from ..external_apis.ema_client import EMAClient, EMAProduct
-from ..external_apis.health_canada_client import HealthCanadaClient, HealthCanadaProduct
+from ..external_apis.ema_client import EMAClient
+from ..external_apis.health_canada_client import HealthCanadaClient
 from ..external_apis.openfda_client import OpenFDAClient
 
 

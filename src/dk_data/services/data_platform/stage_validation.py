@@ -13,7 +13,7 @@ from dataclasses import dataclass
 from enum import Enum
 import logging
 
-from .evidence_requirements import EvidenceRequirementService, StageEvidenceReport
+from .evidence_requirements import EvidenceRequirementService
 
 logger = logging.getLogger(__name__)
 

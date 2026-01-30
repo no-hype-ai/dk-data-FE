@@ -25,7 +25,6 @@ import os
 import sys
 import gzip
 from pathlib import Path
-from typing import Optional
 
 import requests
 import psycopg2
@@ -38,7 +37,7 @@ DB_CONFIG = {
     "port": int(os.getenv("POSTGRES_PORT", "5432")),
     "database": os.getenv("POSTGRES_DB", "dk_data"),
     "user": os.getenv("POSTGRES_USER", "postgres"),
-    "password": os.getenv("POSTGRES_PASSWORD", "postgres"),
+    "password": os.getenv("POSTGRES_PASSWORD", ""),
 }
 
 # SIDER 4.1 URLs
@@ -355,7 +354,7 @@ class SIDERLoader:
             try:
                 if val and val != '':
                     return float(val)
-            except:
+            except Exception:
                 pass
             return None
 

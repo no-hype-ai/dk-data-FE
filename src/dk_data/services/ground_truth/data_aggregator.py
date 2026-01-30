@@ -13,7 +13,7 @@ Supports graceful degradation when non-critical sources fail.
 import asyncio
 from dataclasses import dataclass, field
 from datetime import datetime
-from typing import Any, Dict, List, Optional, Set, Tuple
+from typing import Any, Dict, List, Optional
 
 from loguru import logger
 
@@ -28,15 +28,12 @@ from ..external_apis import (
     OpenFDAClient,
     DrugLabel,
     RxNormClient,
-    RxNormConcept,
     UMLSClient,
     get_clinicaltrials_client,
     get_openfda_client,
     get_rxnorm_client,
     get_umls_client,
     is_critical_source,
-    CriticalAPIError,
-    NonCriticalAPIError,
 )
 
 

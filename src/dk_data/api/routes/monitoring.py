@@ -8,11 +8,10 @@ Provides:
 - /api/v1/monitoring/run - Trigger pipeline run
 """
 
-import os
 from datetime import datetime, timedelta
 from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel
 from prometheus_client import (
     Counter,
@@ -244,7 +243,6 @@ async def database_stats():
     Get live database statistics as JSON.
     Queries actual database tables for real counts.
     """
-    import os
     stats = {
         "timestamp": datetime.utcnow().isoformat(),
         "tables": {},
@@ -276,7 +274,7 @@ async def database_stats():
             try:
                 cur.execute(f"SELECT COUNT(*) FROM {schema}.{table}")
                 stats["tables"][table] = cur.fetchone()[0]
-            except:
+            except Exception:
                 stats["tables"][table] = 0
 
         # Summary stats
@@ -333,7 +331,6 @@ async def pipeline_health():
     Get overall pipeline health status.
     Checks Bronze, Silver, and Gold layers.
     """
-    import os
     import psycopg2
 
     bronze_sources = []
@@ -463,7 +460,6 @@ async def list_recent_runs(
     """
     List recent pipeline runs.
     """
-    import os
     import psycopg2
 
     runs = []
@@ -547,7 +543,6 @@ async def list_data_sources():
     List configured data sources and their status.
     Returns real-time health status for all data sources.
     """
-    import os
     import psycopg2
 
     # Source configurations with display names and types

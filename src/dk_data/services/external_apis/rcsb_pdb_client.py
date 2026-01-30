@@ -146,7 +146,7 @@ class RCSBPDBClient(BaseAPIClient[Dict[str, Any]]):
             # Parse basic info
             rcsb_entry = entry.get("rcsb_entry_info", {})
             struct_info = entry.get("struct", {})
-            cell_info = entry.get("cell", {})
+            entry.get("cell", {})
             exptl = entry.get("exptl", [{}])[0] if entry.get("exptl") else {}
             reflns = entry.get("reflns", [{}])[0] if entry.get("reflns") else {}
 
@@ -438,7 +438,7 @@ class RCSBPDBClient(BaseAPIClient[Dict[str, Any]]):
 
                 # Check if response is successful and has content
                 if response.status_code == 204 or not response.content:
-                    logger.debug(f"PDB antibody search returned no results")
+                    logger.debug("PDB antibody search returned no results")
                     return []
 
                 if response.status_code != 200:

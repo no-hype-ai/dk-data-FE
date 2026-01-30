@@ -3,7 +3,6 @@
 Loads Transcatheter Valve Certification data from ACC/NCDR.
 """
 
-import os
 import hashlib
 import logging
 from pathlib import Path

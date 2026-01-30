@@ -10,7 +10,6 @@ Reference: https://www.sec.gov/developer
 import asyncio
 import time
 from dataclasses import dataclass, field
-from typing import Optional
 
 
 @dataclass

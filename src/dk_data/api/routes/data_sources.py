@@ -12,12 +12,11 @@ Implements REST endpoints for:
 Part of DK Molecule Data Platform (012-dk-data-platform)
 """
 
-from fastapi import APIRouter, HTTPException, Query, Depends, Body, BackgroundTasks
-from pydantic import BaseModel, Field, HttpUrl
-from typing import Optional, List, Dict, Any, Union
+from fastapi import APIRouter, HTTPException, Query, Body, BackgroundTasks
+from pydantic import BaseModel, Field
+from typing import Optional, List, Dict, Any
 from datetime import datetime
 from enum import Enum
-from uuid import UUID
 from loguru import logger
 import json
 import re

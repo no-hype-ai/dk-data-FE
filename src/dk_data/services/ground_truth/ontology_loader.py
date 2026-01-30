@@ -16,7 +16,6 @@ To enable dynamic WHO ICD resolution, set:
 - Or call enable_dynamic_resolution() after initialization
 """
 
-import asyncio
 import os
 from dataclasses import dataclass, field
 from pathlib import Path

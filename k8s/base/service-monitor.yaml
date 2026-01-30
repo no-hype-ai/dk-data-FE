@@ -53,3 +53,26 @@ spec:
     - port: metrics
       path: /metrics
       interval: 15s
+---
+# Molecule Pipeline PodMonitor (004-molecule-platform-integration)
+apiVersion: monitoring.coreos.com/v1
+kind: PodMonitor
+metadata:
+  name: dk-data-molecule-cronjobs
+  labels:
+    app.kubernetes.io/name: dk-data
+    app.kubernetes.io/component: molecule-ingestion
+    release: mimir
+spec:
+  selector:
+    matchExpressions:
+      - key: app
+        operator: In
+        values:
+          - mol-fetch-daily
+          - mol-fetch-weekly
+          - mol-transform
+  podMetricsEndpoints:
+    - path: /metrics
+      interval: 30s
+      scrapeTimeout: 10s

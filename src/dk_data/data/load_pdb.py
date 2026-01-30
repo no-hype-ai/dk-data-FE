@@ -44,7 +44,7 @@ DB_CONFIG = {
     "port": int(os.getenv("POSTGRES_PORT", "5432")),
     "database": os.getenv("POSTGRES_DB", "dk_data"),
     "user": os.getenv("POSTGRES_USER", "postgres"),
-    "password": os.getenv("POSTGRES_PASSWORD", "postgres"),
+    "password": os.getenv("POSTGRES_PASSWORD", ""),
 }
 
 # RCSB PDB API
@@ -195,7 +195,7 @@ def parse_pdb_entry(data: Dict[str, Any]) -> Dict[str, Any]:
             release_date = datetime.fromisoformat(
                 entry["rcsb_accession_info"]["initial_release_date"].replace("Z", "+00:00")
             ).date()
-        except:
+        except Exception:
             pass
 
     return {

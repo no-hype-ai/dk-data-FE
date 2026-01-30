@@ -12,14 +12,13 @@ API Documentation: https://lhncbc.nlm.nih.gov/RxNav/APIs/
 Rate Limit: No official limit, but be conservative (10 req/sec)
 """
 
-import os
 from dataclasses import dataclass, field
-from typing import Any, Dict, List, Optional, Set
+from typing import Any, Dict, List, Optional
 
 from loguru import logger
 
-from .base_client import APIClientConfig, BaseAPIClient
-from .cache_manager import CacheManager, DataSource
+from .base_client import APIClientConfig, BaseAPIClient, APIResponse
+from .cache_manager import CacheManager
 
 
 @dataclass
@@ -344,7 +343,7 @@ class RxNormClient(BaseAPIClient[Dict[str, Any]]):
             RxCUI or None
         """
         try:
-            result = await self._get(f"/ndcstatus", params={"ndc": ndc})
+            result = await self._get("/ndcstatus", params={"ndc": ndc})
 
             status = result.get("ndcStatus", {})
             return status.get("rxcui")

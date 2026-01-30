@@ -8,11 +8,9 @@ Part of DK Molecule Data Platform (012-dk-data-platform)
 """
 
 import re
-import hashlib
 from enum import Enum
 from dataclasses import dataclass, field
-from typing import Optional, List, Dict, Any, Tuple
-from datetime import datetime
+from typing import Optional, List, Dict, Any
 import logging
 
 logger = logging.getLogger(__name__)
@@ -200,8 +198,8 @@ class IdentifierResolver:
     def _check_rdkit(self) -> bool:
         """Check if RDKit is available for structure conversion."""
         try:
-            from rdkit import Chem
-            from rdkit.Chem.inchi import MolFromInchi, MolToInchi
+            from rdkit import Chem  # noqa: F401
+            from rdkit.Chem.inchi import MolFromInchi, MolToInchi  # noqa: F401
             return True
         except ImportError:
             logger.warning("RDKit not available - structure-based resolution disabled")

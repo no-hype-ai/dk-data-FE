@@ -6,14 +6,13 @@ Implements T041: DataSufficiencyScore calculation for molecules.
 
 from dataclasses import dataclass
 from datetime import datetime
-from typing import Dict, List, Optional, Any
+from typing import Dict, List, Optional
 from loguru import logger
 
 from ...models.coverage import (
     DataSufficiencyScore,
     SourceCoverage,
     CategoryScore,
-    CoverageStatus,
     DataCategory,
     CoverageGap,
     CoverageReport,

@@ -6,7 +6,7 @@ Typed extraction from raw_drugbank JSON/XML.
 Part of DK Molecule Data Platform (012-dk-data-platform)
 """
 
-from datetime import datetime, date
+from datetime import datetime
 from typing import Optional, List, Dict, Any
 from uuid import UUID
 from pydantic import BaseModel, Field, ConfigDict

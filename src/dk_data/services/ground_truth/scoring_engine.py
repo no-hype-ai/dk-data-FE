@@ -11,9 +11,8 @@ scoring_config.yaml. Supports:
 
 import os
 from dataclasses import dataclass, field
-from datetime import date, timedelta
 from enum import Enum
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Dict, List, Optional
 
 import yaml
 from loguru import logger
@@ -422,19 +421,19 @@ class ScoringEngine:
 
         # Stage-based factors
         if competitor.development_stage in [DevelopmentStage.APPROVED, DevelopmentStage.MARKETED]:
-            factors.append(f"Already approved/marketed")
+            factors.append("Already approved/marketed")
         elif competitor.development_stage == DevelopmentStage.SUBMITTED:
-            factors.append(f"Regulatory submission pending")
+            factors.append("Regulatory submission pending")
         elif competitor.development_stage == DevelopmentStage.PHASE_3:
-            factors.append(f"Late-stage development (Phase 3)")
+            factors.append("Late-stage development (Phase 3)")
 
         # Dimension-based factors
         if dimension_scores.get(CompetitiveDimension.INDICATION, 0) > 0.5:
-            factors.append(f"High indication overlap")
+            factors.append("High indication overlap")
         if dimension_scores.get(CompetitiveDimension.MOA, 0) > 0.5:
-            factors.append(f"Same mechanism of action")
+            factors.append("Same mechanism of action")
         if dimension_scores.get(CompetitiveDimension.TARGET, 0) > 0.5:
-            factors.append(f"Targets same molecular pathway")
+            factors.append("Targets same molecular pathway")
 
         # Sponsor-based factors
         if competitor.sponsor:

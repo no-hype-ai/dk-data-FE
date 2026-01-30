@@ -17,7 +17,7 @@ import os
 import sys
 import time
 from datetime import datetime
-from typing import List, Optional, Dict, Any
+from typing import List, Dict, Any
 from uuid import uuid4
 import logging
 
@@ -97,7 +97,7 @@ async def run_dynamic_source_ingestion(
     import json
     import hashlib
     from datetime import datetime, timedelta
-    from urllib.parse import urlencode, urlparse, parse_qs, urljoin
+    from urllib.parse import urlencode
 
     try:
         async with pool.acquire() as conn:
@@ -457,7 +457,6 @@ async def run_raw_ingestion(
         FDADrugsIngestion,
         IMGTIngestion,
         CDCVaccinesIngestion,
-        DataSource,
     )
 
     results = {}

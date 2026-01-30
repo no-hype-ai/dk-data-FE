@@ -8,7 +8,6 @@ Part of DK Molecule Data Platform (012-dk-data-platform)
 
 import os
 from typing import Optional, AsyncGenerator
-from contextlib import asynccontextmanager
 from loguru import logger
 
 try:
@@ -37,7 +36,7 @@ def get_database_url() -> str:
 
     db_host = os.getenv('POSTGRES_HOST', 'localhost')
     db_port = os.getenv('POSTGRES_PORT', '5432')
-    db_name = os.getenv('POSTGRES_DB', 'edwards_tavr')
+    db_name = os.getenv('POSTGRES_DB', 'dk_data')
     db_user = os.getenv('POSTGRES_USER', 'postgres')
     db_pass = os.getenv('POSTGRES_PASSWORD')
 
@@ -137,3 +136,23 @@ async def get_queue_service():
     if pool is None:
         return None
     return ResolutionQueueService(pool)
+
+
+async def get_current_user() -> dict:
+    """
+    Get current authenticated user (stub for internal-only API).
+
+    In production, this would validate JWT tokens and return user info.
+    For internal-only molecule API routes, returns a default service user.
+
+    Returns:
+        dict: User info with id, email, and roles
+    """
+    # Internal-only API - no authentication required for molecule routes
+    # This stub enables route registration without full auth setup
+    return {
+        "id": "system",
+        "email": "system@datakinetic.io",
+        "roles": ["admin", "api_user"],
+        "authenticated": True,
+    }

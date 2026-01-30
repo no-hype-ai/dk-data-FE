@@ -109,7 +109,7 @@ class ResolutionQueueService:
         Returns:
             Queue item ID
         """
-        priority = self._calculate_priority(confidence_score)
+        self._calculate_priority(confidence_score)
 
         async with self.db_pool.acquire() as conn:
             row = await conn.fetchrow("""

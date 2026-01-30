@@ -71,3 +71,40 @@ patches:
     target:
       kind: ConfigMap
       name: postgrest-config
+
+  # Molecule Pipeline ConfigMap — production settings
+  - patch: |-
+      apiVersion: v1
+      kind: ConfigMap
+      metadata:
+        name: molecule-pipeline-config
+      data:
+        BATCH_SIZE: "200"
+        LOG_LEVEL: "INFO"
+    target:
+      kind: ConfigMap
+      name: molecule-pipeline-config
+
+  # Mol-transform CronJob — production resources (higher memory for gold aggregation)
+  - patch: |-
+      apiVersion: batch/v1
+      kind: CronJob
+      metadata:
+        name: mol-transform
+      spec:
+        jobTemplate:
+          spec:
+            template:
+              spec:
+                containers:
+                  - name: mol-transform
+                    resources:
+                      requests:
+                        memory: "1Gi"
+                        cpu: "500m"
+                      limits:
+                        memory: "2Gi"
+                        cpu: "1000m"
+    target:
+      kind: CronJob
+      name: mol-transform

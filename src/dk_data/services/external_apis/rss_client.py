@@ -10,8 +10,8 @@ Monitors RSS feeds from:
 - Company IR (investor relations) feeds
 """
 
-from dataclasses import dataclass, field
-from datetime import datetime, date
+from dataclasses import dataclass
+from datetime import datetime
 from typing import Optional, List, Dict, Any
 import aiohttp
 import xml.etree.ElementTree as ET

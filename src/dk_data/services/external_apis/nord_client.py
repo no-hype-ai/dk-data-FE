@@ -12,18 +12,14 @@ publicly available rare disease database and organization directory.
 Website: https://rarediseases.org/
 """
 
-import os
 import re
 from dataclasses import dataclass, field
-from datetime import date
 from typing import Any, Dict, List, Optional
-from urllib.parse import quote_plus, urljoin
 
-import httpx
 from loguru import logger
 
 from .base_client import APIClientConfig, BaseAPIClient
-from .cache_manager import CacheManager, DataSource
+from .cache_manager import CacheManager
 
 
 @dataclass

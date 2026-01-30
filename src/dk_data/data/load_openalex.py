@@ -33,7 +33,7 @@ import os
 import sys
 import asyncio
 from datetime import datetime, timedelta
-from typing import List, Dict, Any, Optional
+from typing import List, Dict, Any
 import argparse
 
 import psycopg2
@@ -48,7 +48,7 @@ DB_CONFIG = {
     "port": int(os.getenv("POSTGRES_PORT", "5432")),
     "database": os.getenv("POSTGRES_DB", "dk_data"),
     "user": os.getenv("POSTGRES_USER", "postgres"),
-    "password": os.getenv("POSTGRES_PASSWORD", "postgres"),
+    "password": os.getenv("POSTGRES_PASSWORD", ""),
 }
 
 # OpenAlex API
@@ -199,7 +199,7 @@ def parse_work(work: Dict[str, Any]) -> Dict[str, Any]:
     if work.get("publication_date"):
         try:
             pub_date = datetime.strptime(work["publication_date"], "%Y-%m-%d").date()
-        except:
+        except Exception:
             pass
 
     # Parse journal info
@@ -287,7 +287,7 @@ async def load_for_drugs(conn, limit: int = None) -> int:
                 LIMIT 100
             """)
             drug_names = [row[0] for row in cur.fetchall()]
-    except:
+    except Exception:
         pass
 
     if not drug_names:

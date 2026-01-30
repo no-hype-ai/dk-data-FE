@@ -5,7 +5,6 @@ Task: T022 - Graceful failure when secrets missing
 """
 
 import os
-import sys
 import logging
 from contextlib import contextmanager
 from typing import Generator, Optional

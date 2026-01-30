@@ -12,14 +12,13 @@ Website: https://tdcommons.ai
 Data hosted on: Harvard Dataverse
 """
 
-import os
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Any, Dict, List, Optional
 
 from loguru import logger
 
 from .base_client import APIClientConfig, APIResponse, BaseAPIClient
-from .cache_manager import CacheManager, DataSource
+from .cache_manager import CacheManager
 
 
 @dataclass

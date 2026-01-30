@@ -8,7 +8,7 @@ regulatory milestones, and data completeness/coverage.
 from dataclasses import dataclass, field
 from datetime import datetime, date
 from enum import Enum
-from typing import Any, Dict, List, Optional, Set
+from typing import Any, Dict, List, Optional
 
 
 class RegulatoryAgency(str, Enum):

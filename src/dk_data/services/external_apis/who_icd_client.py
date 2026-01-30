@@ -17,7 +17,7 @@ from typing import Any, Dict, List, Optional
 
 from loguru import logger
 
-from .base_client import APIClientConfig, BaseAPIClient, APIResponse
+from .base_client import APIClientConfig, BaseAPIClient
 from .cache_manager import CacheManager
 
 
@@ -216,7 +216,7 @@ class WHOICDClient(BaseAPIClient[Dict[str, Any]]):
             return None
 
         # Add auth header
-        client = await self._get_client()
+        await self._get_client()
         self.config.headers["Authorization"] = f"Bearer {token}"
 
         try:

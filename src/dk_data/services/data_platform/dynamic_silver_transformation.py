@@ -7,7 +7,6 @@ Reads rules from database and executes transformations without hardcoded logic.
 Part of DK Molecule Data Platform (012-dk-data-platform)
 """
 
-import asyncio
 from datetime import datetime
 from typing import Dict, Any, Optional, List, Tuple
 from dataclasses import dataclass

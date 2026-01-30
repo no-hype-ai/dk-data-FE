@@ -9,7 +9,6 @@ Part of DK Molecule Data Platform (012-dk-data-platform)
 
 import hashlib
 import json
-import asyncio
 from datetime import datetime, timedelta
 from typing import Dict, Any, Optional, List
 from dataclasses import dataclass

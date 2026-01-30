@@ -10,15 +10,13 @@ API Documentation: https://data.cms.gov/
 Rate Limit: No strict limit, but respectful usage recommended
 """
 
-import os
-from dataclasses import dataclass, field
-from datetime import date
+from dataclasses import dataclass
 from typing import Any, Dict, List, Optional
 
 from loguru import logger
 
 from .base_client import APIClientConfig, BaseAPIClient
-from .cache_manager import CacheManager, DataSource
+from .cache_manager import CacheManager
 
 
 @dataclass

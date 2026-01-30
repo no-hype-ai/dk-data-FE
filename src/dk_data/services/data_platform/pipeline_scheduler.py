@@ -14,10 +14,9 @@ Part of DK Molecule Data Platform (012-dk-data-platform)
 import asyncio
 import os
 import signal
-import sys
 import time
 from datetime import datetime, timedelta
-from typing import Dict, Any, Optional, List
+from typing import Dict, Any, List
 import logging
 
 # Configure logging
@@ -487,7 +486,7 @@ class PipelineScheduler:
             try:
                 await self.get_pool()
                 break
-            except Exception as e:
+            except Exception:
                 logger.warning(f"Waiting for database... ({i+1}/30)")
                 await asyncio.sleep(2)
 

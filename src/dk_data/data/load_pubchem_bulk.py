@@ -23,7 +23,6 @@ Environment:
 """
 
 import os
-import sys
 import gzip
 import time
 import urllib.request
@@ -41,7 +40,7 @@ DB_CONFIG = {
     "port": int(os.getenv("POSTGRES_PORT", "5432")),
     "database": os.getenv("POSTGRES_DB", "dk_data"),
     "user": os.getenv("POSTGRES_USER", "postgres"),
-    "password": os.getenv("POSTGRES_PASSWORD", "postgres"),
+    "password": os.getenv("POSTGRES_PASSWORD", ""),
 }
 
 PUBCHEM_FTP_BASE = "https://ftp.ncbi.nlm.nih.gov/pubchem/Compound/Extras/"
@@ -113,7 +112,7 @@ class PubChemBulkLoader:
             return local_path
 
         url = PUBCHEM_FTP_BASE + CID_INCHIKEY_FILE
-        logger.info(f"Downloading PubChem InChI Key mapping (~6.8GB)...")
+        logger.info("Downloading PubChem InChI Key mapping (~6.8GB)...")
 
         response = urllib.request.urlopen(url)
         total_size = int(response.headers.get('content-length', 0))

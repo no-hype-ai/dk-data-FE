@@ -9,12 +9,11 @@ Implements:
 Part of DK Molecule Data Platform (012-dk-data-platform)
 """
 
-from fastapi import APIRouter, HTTPException, Query, Depends, BackgroundTasks
+from fastapi import APIRouter, HTTPException, Query, BackgroundTasks
 from pydantic import BaseModel, Field, EmailStr
 from typing import Optional, List, Dict, Any
 from datetime import datetime
 from uuid import UUID, uuid4
-from enum import Enum
 from loguru import logger
 
 from ...services.ground_truth.onboarding_service import (
@@ -23,11 +22,8 @@ from ...services.ground_truth.onboarding_service import (
 )
 from ...models.application.onboarding import (
     OnboardingRequest,
-    OnboardingResponse,
     OnboardingStatus,
     IdentifierInput,
-    BulkOnboardingRequest,
-    BulkOnboardingResponse,
 )
 
 

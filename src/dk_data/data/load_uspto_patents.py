@@ -32,8 +32,8 @@ Environment:
 import os
 import sys
 import asyncio
-from datetime import datetime, timedelta
-from typing import List, Dict, Any, Optional
+from datetime import datetime
+from typing import List, Dict, Any
 import argparse
 
 import psycopg2
@@ -48,7 +48,7 @@ DB_CONFIG = {
     "port": int(os.getenv("POSTGRES_PORT", "5432")),
     "database": os.getenv("POSTGRES_DB", "dk_data"),
     "user": os.getenv("POSTGRES_USER", "postgres"),
-    "password": os.getenv("POSTGRES_PASSWORD", "postgres"),
+    "password": os.getenv("POSTGRES_PASSWORD", ""),
 }
 
 # PatentsView API
@@ -149,7 +149,7 @@ def parse_patent(patent: Dict[str, Any], drug_name: str = None) -> Dict[str, Any
     if patent.get("patent_date"):
         try:
             grant_date = datetime.strptime(patent["patent_date"], "%Y-%m-%d").date()
-        except:
+        except Exception:
             pass
 
     # Calculate expiry (20 years from filing for utility patents)
@@ -254,7 +254,7 @@ async def load_for_drugs(conn, limit: int = None) -> int:
                 LIMIT 200
             """)
             drug_names = [row[0] for row in cur.fetchall()]
-    except:
+    except Exception:
         pass
 
     if not drug_names:

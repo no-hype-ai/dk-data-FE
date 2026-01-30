@@ -7,7 +7,7 @@ for hospital enrichment (health system affiliation, EMR system, etc.)
 import os
 import logging
 import json
-from typing import Optional, Dict, Any, List
+from typing import Optional, Dict, List
 from dataclasses import dataclass, asdict
 
 import anthropic

@@ -246,7 +246,7 @@ def validate_ingestion_capacity() -> Dict[str, Any]:
 
         print(f"\n  Total raw records: {total_records:,}")
         print(f"  Capacity verified: {'✓ PASS' if capacity_verified else '✗ FAIL'}")
-        print(f"  Note: Production will have 100k+ records")
+        print("  Note: Production will have 100k+ records")
 
         return {
             'criterion': 'SC-002',
@@ -294,7 +294,7 @@ def validate_scoring_performance() -> Dict[str, Any]:
         row = cur.fetchone()
         total_scores = row[0]
         last_calculated = row[1]
-        first_calculated = row[2]
+        row[2]
 
         # Estimate scoring time based on record count
         # Typical: 7000 hospitals in ~2 minutes

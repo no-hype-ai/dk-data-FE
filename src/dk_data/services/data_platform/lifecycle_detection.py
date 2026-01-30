@@ -7,7 +7,7 @@ Implements confidence scoring based on available evidence.
 Part of DK Molecule Data Platform (012-dk-data-platform)
 """
 
-from datetime import datetime, date
+from datetime import datetime
 from typing import Dict, Any, Optional, List, Tuple
 from dataclasses import dataclass
 from enum import Enum

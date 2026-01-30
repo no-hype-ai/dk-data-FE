@@ -19,7 +19,6 @@ Environment:
 """
 
 import os
-import sys
 import time
 from typing import Optional, List, Dict, Any
 
@@ -34,7 +33,7 @@ DB_CONFIG = {
     "port": int(os.getenv("POSTGRES_PORT", "5432")),
     "database": os.getenv("POSTGRES_DB", "dk_data"),
     "user": os.getenv("POSTGRES_USER", "postgres"),
-    "password": os.getenv("POSTGRES_PASSWORD", "postgres"),
+    "password": os.getenv("POSTGRES_PASSWORD", ""),
 }
 
 OPENFDA_API_BASE = "https://api.fda.gov/drug/event.json"
@@ -340,7 +339,7 @@ def main():
         cursor.execute("SELECT COUNT(*) FROM bronze.openfda_faers")
         count = cursor.fetchone()[0]
 
-        logger.info(f"\n=== Summary ===")
+        logger.info("\n=== Summary ===")
         logger.info(f"Loaded in this run: {total}")
         logger.info(f"Total in database: {count:,}")
 

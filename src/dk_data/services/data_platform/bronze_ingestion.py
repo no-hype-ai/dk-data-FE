@@ -10,7 +10,7 @@ Part of DK Molecule Data Platform (012-dk-data-platform)
 import json
 import re
 from datetime import datetime
-from typing import Dict, Any, Optional, List, Callable, Tuple
+from typing import Dict, Optional, List, Tuple
 from dataclasses import dataclass
 import logging
 

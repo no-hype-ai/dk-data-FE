@@ -28,8 +28,7 @@ Environment:
 import os
 import sys
 import asyncio
-from datetime import datetime
-from typing import List, Dict, Any, Optional
+from typing import List
 import argparse
 
 import psycopg2
@@ -37,10 +36,7 @@ from psycopg2.extras import Json
 from loguru import logger
 from tqdm import tqdm
 
-# Add parent to path for imports
-sys.path.insert(0, str(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
-
-from services.external_apis.uniprot_client import UniProtClient, UniProtProtein
+from dk_data.services.external_apis.uniprot_client import UniProtClient, UniProtProtein
 
 # Database config
 DB_CONFIG = {
@@ -48,7 +44,7 @@ DB_CONFIG = {
     "port": int(os.getenv("POSTGRES_PORT", "5432")),
     "database": os.getenv("POSTGRES_DB", "dk_data"),
     "user": os.getenv("POSTGRES_USER", "postgres"),
-    "password": os.getenv("POSTGRES_PASSWORD", "postgres"),
+    "password": os.getenv("POSTGRES_PASSWORD", ""),
 }
 
 
@@ -163,7 +159,7 @@ async def load_drug_targets(conn, client: UniProtClient, limit: int = None) -> i
                 LIMIT 1000
             """)
             accessions = [row[0] for row in cur.fetchall()]
-    except:
+    except Exception:
         pass
 
     if accessions:

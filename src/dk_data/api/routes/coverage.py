@@ -6,7 +6,7 @@ Implements T042: Coverage score endpoint.
 
 from typing import Optional
 from fastapi import APIRouter, HTTPException, Query
-from pydantic import BaseModel, Field
+from pydantic import BaseModel
 from loguru import logger
 
 from ...services.ground_truth.coverage_service import CoverageService

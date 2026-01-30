@@ -23,8 +23,7 @@ from ...models.competitive_graph import (
     DevelopmentStage,
     ThreatAssessment,
 )
-from ...models.indication import Indication
-from ...models.lifecycle import DataCoverage, DrugLifecycle
+from ...models.lifecycle import DataCoverage
 
 from .graph_builder import GraphBuilder, GraphBuilderConfig, get_graph_builder
 from .scoring_engine import ScoringEngine, ScoringConfig, get_scoring_engine
@@ -465,11 +464,9 @@ class GroundTruthService:
             Health status for each component
         """
         from ..external_apis import (
-            get_umls_client,
             get_rxnorm_client,
             get_openfda_client,
             get_clinicaltrials_client,
-            get_ema_client,
         )
 
         status = {

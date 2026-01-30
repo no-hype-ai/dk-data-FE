@@ -12,8 +12,6 @@ from dataclasses import dataclass, field
 from datetime import datetime, date
 from typing import Optional, List, Dict, Any
 from enum import Enum
-import asyncio
-import aiohttp
 from loguru import logger
 
 from .base_client import APIClientConfig, BaseAPIClient

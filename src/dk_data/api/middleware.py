@@ -196,7 +196,7 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
         response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
 
         # Only add HSTS in production (when not localhost)
-        if not request.url.hostname in ["localhost", "127.0.0.1"]:
+        if request.url.hostname not in ["localhost", "127.0.0.1"]:
             response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
 
         return response

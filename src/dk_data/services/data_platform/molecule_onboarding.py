@@ -12,10 +12,9 @@ Part of DK Molecule Data Platform (012-dk-data-platform)
 """
 
 from datetime import datetime
-from typing import Dict, Any, Optional, List, Tuple
+from typing import Dict, Any, Optional, List
 from uuid import UUID, uuid4
 import logging
-import asyncio
 
 from ...models.application.onboarding import (
     OnboardingRequest,

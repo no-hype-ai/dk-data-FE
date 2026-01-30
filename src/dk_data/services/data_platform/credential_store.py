@@ -7,7 +7,6 @@ Part of DK Molecule Data Platform (012-dk-data-platform)
 """
 
 import os
-import base64
 import hashlib
 import secrets
 from datetime import datetime

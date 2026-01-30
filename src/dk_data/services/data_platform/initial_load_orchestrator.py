@@ -21,6 +21,7 @@ Part of DK Molecule Data Platform (012-dk-data-platform)
 
 import asyncio
 import aiohttp
+import io
 import json
 import os
 import sys
@@ -2535,7 +2536,7 @@ class InitialLoadOrchestrator:
         print(f"Phase: {state.current_phase}")
         print(f"Started: {state.started_at}")
         print(f"Disk Space: {state.disk_space_gb:.1f} GB")
-        print(f"\nSources:")
+        print("\nSources:")
         print(f"{'-'*70}")
 
         for source_id, progress in state.sources.items():

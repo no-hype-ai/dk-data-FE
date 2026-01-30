@@ -31,8 +31,7 @@ Environment:
 import os
 import sys
 import asyncio
-from datetime import datetime
-from typing import List, Dict, Any, Optional
+from typing import List
 import argparse
 
 import psycopg2
@@ -40,10 +39,7 @@ from psycopg2.extras import Json
 from loguru import logger
 from tqdm import tqdm
 
-# Add parent to path for imports
-sys.path.insert(0, str(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
-
-from services.external_apis.orange_book_client import (
+from dk_data.services.external_apis.orange_book_client import (
     OrangeBookClient,
     OrangeBookProduct,
     OrangeBookPatent,
@@ -56,7 +52,7 @@ DB_CONFIG = {
     "port": int(os.getenv("POSTGRES_PORT", "5432")),
     "database": os.getenv("POSTGRES_DB", "dk_data"),
     "user": os.getenv("POSTGRES_USER", "postgres"),
-    "password": os.getenv("POSTGRES_PASSWORD", "postgres"),
+    "password": os.getenv("POSTGRES_PASSWORD", ""),
 }
 
 
@@ -332,7 +328,7 @@ async def main():
         pat_count = insert_patents(conn, patents, args.limit)
         excl_count = insert_exclusivities(conn, exclusivities, args.limit)
 
-        logger.info(f"Orange Book loading complete:")
+        logger.info("Orange Book loading complete:")
         logger.info(f"  Products: {prod_count}")
         logger.info(f"  Patents: {pat_count}")
         logger.info(f"  Exclusivities: {excl_count}")

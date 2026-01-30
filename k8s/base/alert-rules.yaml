@@ -94,6 +94,75 @@ spec:
             description: |
               CronJob {{ $labels.cronjob }} has missed its scheduled execution by over 1 hour.
 
+    # Molecule Pipeline Alerts (004-molecule-platform-integration)
+    - name: molecule-pipeline
+      interval: 5m
+      rules:
+        - alert: MoleculeFetchFailed
+          expr: |
+            increase(kube_job_status_failed{namespace=~"dk-data-.*", job_name=~"mol-fetch-.*"}[1h]) > 0
+          for: 0m
+          labels:
+            severity: warning
+            team: data-platform
+          annotations:
+            summary: "Molecule fetch job {{ $labels.job_name }} failed"
+            description: |
+              Molecule data fetch CronJob {{ $labels.job_name }} failed in the last hour.
+              Check job logs for details.
+
+        - alert: MoleculeTransformStale
+          expr: |
+            (time() - max(kube_job_status_completion_time{namespace=~"dk-data-.*", job_name=~"mol-transform-.*"}) by (namespace)) > 172800
+          for: 30m
+          labels:
+            severity: warning
+            team: data-platform
+          annotations:
+            summary: "No successful molecule transform in 48h"
+            description: |
+              The molecule transform pipeline has not completed successfully in over 48 hours.
+              Bronze → Silver → Gold transformation may be stalled.
+
+        - alert: BronzeToSilverBacklog
+          expr: |
+            dk_data_bronze_unprocessed_count{namespace=~"dk-data-.*"} > 10000
+          for: 1h
+          labels:
+            severity: warning
+            team: data-platform
+          annotations:
+            summary: "Large bronze-to-silver backlog (>10k records)"
+            description: |
+              There are {{ $value }} unprocessed bronze records waiting for silver transformation.
+              This may indicate transform job failures or capacity issues.
+
+        - alert: EntityResolutionQueueHigh
+          expr: |
+            dk_data_resolution_queue_size{namespace=~"dk-data-.*"} > 1000
+          for: 30m
+          labels:
+            severity: warning
+            team: data-platform
+          annotations:
+            summary: "Entity resolution queue backlog >1000"
+            description: |
+              The entity resolution queue has {{ $value }} items pending review.
+              Manual review may be required for low-confidence matches.
+
+        - alert: MoleculeQuarantineHigh
+          expr: |
+            dk_data_quarantine_count{namespace=~"dk-data-.*"} > 500
+          for: 1h
+          labels:
+            severity: warning
+            team: data-platform
+          annotations:
+            summary: "High quarantine count (>500 molecules)"
+            description: |
+              {{ $value }} molecules are in quarantine status.
+              Review and resolve quarantine reasons.
+
     - name: dk-data.resources
       interval: 1m
       rules:

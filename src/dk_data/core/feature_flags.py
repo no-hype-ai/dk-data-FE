@@ -6,7 +6,6 @@ All feature flags are controlled via environment variables with sensible default
 """
 
 import os
-from typing import Optional
 from functools import lru_cache
 
 

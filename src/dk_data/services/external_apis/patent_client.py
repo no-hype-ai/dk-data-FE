@@ -87,7 +87,7 @@ class PatentsViewClient(BaseAPIClient):
     REGISTRATION_URL = "https://patentsview-support.atlassian.net/servicedesk/customer/portals"
     AUTH_REQUIRED_MESSAGE = (
         "PatentsView API requires an API key. "
-        f"Register at: https://patentsview-support.atlassian.net/servicedesk/customer/portals "
+        "Register at: https://patentsview-support.atlassian.net/servicedesk/customer/portals "
         "and set PATENTSVIEW_API_KEY environment variable."
     )
 

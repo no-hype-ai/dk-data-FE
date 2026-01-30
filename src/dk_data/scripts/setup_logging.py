@@ -19,8 +19,7 @@ import os
 import sys
 import logging
 from pathlib import Path
-from logging.handlers import RotatingFileHandler, TimedRotatingFileHandler
-from datetime import datetime
+from logging.handlers import RotatingFileHandler
 
 
 # Default log directory

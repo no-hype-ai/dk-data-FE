@@ -49,6 +49,31 @@ patches:
       kind: DopplerSecret
       name: dk-data-secrets
 
+  # Molecule Pipeline ConfigMap — staging overrides (lower batch, debug logging)
+  - patch: |-
+      apiVersion: v1
+      kind: ConfigMap
+      metadata:
+        name: molecule-pipeline-config
+      data:
+        BATCH_SIZE: "50"
+        LOG_LEVEL: "DEBUG"
+    target:
+      kind: ConfigMap
+      name: molecule-pipeline-config
+
+  # Mol-fetch-daily CronJob — staging schedule (more frequent for testing)
+  - patch: |-
+      apiVersion: batch/v1
+      kind: CronJob
+      metadata:
+        name: mol-fetch-daily
+      spec:
+        schedule: "0 */6 * * *"
+    target:
+      kind: CronJob
+      name: mol-fetch-daily
+
   # Ingress — staging hostname and middleware namespace
   - patch: |-
       - op: replace

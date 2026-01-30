@@ -17,6 +17,11 @@ resources:
   - ingestion/job-trigger-service.yaml
   - ingestion/cronjob-cms-all.yaml
   - ingestion/cronjob-refresh.yaml
+  # Molecule platform ingestion (004-molecule-platform-integration)
+  - ingestion/cronjob-mol-fetch-daily.yaml
+  - ingestion/cronjob-mol-fetch-weekly.yaml
+  - ingestion/cronjob-mol-transform.yaml
+  - ingestion/molecule-pipeline-config.yaml
   # Database initialization
   - db-init-job.yaml
   # Networking

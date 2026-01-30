@@ -5,20 +5,17 @@ Implements T109-T113: VisualizationService for D3.js, Cytoscape.js, Timeline.js 
 """
 
 import math
-from datetime import datetime
 from typing import Dict, List, Optional, Any
 from loguru import logger
 
 from ...models.competitive_graph import (
     CompetitiveLandscapeGraph,
-    CompetitiveNode,
-    CompetitiveEdge,
     GraphLevel,
     CompetitiveDimension,
 )
 from ..external_apis.clinicaltrials_client import ClinicalTrialsClient
 from ..external_apis.openfda_client import OpenFDAClient
-from .global_regulatory_service import GlobalRegulatoryService, RegulatoryRegion, ApprovalStatus
+from .global_regulatory_service import GlobalRegulatoryService, ApprovalStatus
 from .lifecycle_service import LifecycleService, MilestoneType
 
 

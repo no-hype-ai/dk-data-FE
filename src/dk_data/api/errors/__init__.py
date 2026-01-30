@@ -7,7 +7,6 @@ Part of DK Molecule Data Platform (012-dk-data-platform)
 """
 
 # Import from the parent errors.py module (Ground Truth errors)
-import sys
 import os
 # We need to import from the sibling errors.py file which is now shadowed
 # Load it directly
@@ -28,7 +27,7 @@ if os.path.exists(_errors_py_path):
     DataSource = _gt_errors.DataSource
     ErrorCode = _gt_errors.ErrorCode
 
-from .data_platform_errors import (
+from .data_platform_errors import (  # noqa: E402
     # Base exceptions
     DataPlatformError,
     NotFoundError,
@@ -55,7 +54,7 @@ from .data_platform_errors import (
 )
 
 # Import validation/rate limit errors from data platform (renamed to avoid conflict)
-from .data_platform_errors import (
+from .data_platform_errors import (  # noqa: E402
     ValidationError as DataPlatformValidationError,
     RateLimitError as DataPlatformRateLimitError,
     DataSourceError as DataPlatformDataSourceError,

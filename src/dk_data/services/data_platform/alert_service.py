@@ -6,13 +6,12 @@ Handles molecule change detection and user notification delivery.
 Part of DK Molecule Data Platform (012-dk-data-platform)
 """
 
-from datetime import datetime, timedelta
+from datetime import datetime
 from typing import Dict, Any, Optional, List
 from uuid import UUID, uuid4
 from enum import Enum
 from dataclasses import dataclass
 import logging
-import asyncio
 
 logger = logging.getLogger(__name__)
 
@@ -305,7 +304,7 @@ class AlertService:
             param_idx = 2
 
             if unread_only:
-                query += f" AND ah.read_at IS NULL"
+                query += " AND ah.read_at IS NULL"
 
             if molecule_id:
                 query += f" AND ah.molecule_id = ${param_idx}"

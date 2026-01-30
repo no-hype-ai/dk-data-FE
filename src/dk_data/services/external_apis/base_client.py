@@ -11,7 +11,6 @@ Provides a consistent interface for all external API clients with:
 
 import asyncio
 import hashlib
-import os
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta

@@ -11,16 +11,15 @@ API Documentation: https://clinicaltrials.gov/data-api/api
 Rate Limit: 100 requests/minute (1.67/sec)
 """
 
-import os
 from dataclasses import dataclass, field
 from datetime import date, datetime
 from enum import Enum
-from typing import Any, Dict, List, Optional, Set
+from typing import Any, Dict, List, Optional
 
 from loguru import logger
 
 from .base_client import APIClientConfig, BaseAPIClient
-from .cache_manager import CacheManager, DataSource
+from .cache_manager import CacheManager
 
 
 class TrialPhase(str, Enum):

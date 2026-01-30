@@ -265,7 +265,7 @@ def print_summary(results: dict):
             status_icon = '✓' if status == 'success' else '⚠' if status == 'partial' else '✗'
             models_count = len(layer_result.get('models', {}))
             success = layer_result.get('success_count', 0)
-            failed = layer_result.get('fail_count', 0)
+            layer_result.get('fail_count', 0)
             print(f"\n  {status_icon} {layer.upper():10} ({success}/{models_count} models)")
 
             for model_name, model_result in layer_result.get('models', {}).items():

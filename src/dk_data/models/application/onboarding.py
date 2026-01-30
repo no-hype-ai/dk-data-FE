@@ -7,7 +7,7 @@ Part of DK Molecule Data Platform (012-dk-data-platform)
 """
 
 from datetime import datetime
-from typing import Optional, List, Dict, Any, Union
+from typing import Optional, List, Dict, Any
 from uuid import UUID
 from enum import Enum
 from pydantic import BaseModel, Field, ConfigDict

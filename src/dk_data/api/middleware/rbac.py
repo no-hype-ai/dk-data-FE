@@ -8,10 +8,10 @@ Part of DK Molecule Data Platform (012-dk-data-platform)
 """
 
 from functools import wraps
-from typing import Optional, List, Callable
+from typing import Optional, Callable
 import logging
 
-from fastapi import Request, HTTPException, Depends
+from fastapi import HTTPException, Depends
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 
 from ...services.auth.jwt_service import (

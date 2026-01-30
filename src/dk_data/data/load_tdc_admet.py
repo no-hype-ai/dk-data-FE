@@ -47,7 +47,7 @@ DB_CONFIG = {
     "port": int(os.getenv("POSTGRES_PORT", "5432")),
     "database": os.getenv("POSTGRES_DB", "dk_data"),
     "user": os.getenv("POSTGRES_USER", "postgres"),
-    "password": os.getenv("POSTGRES_PASSWORD", "postgres"),
+    "password": os.getenv("POSTGRES_PASSWORD", ""),
 }
 
 TDC_ADMET_DATASETS = {
@@ -286,7 +286,7 @@ def main():
     cursor.execute("SELECT COUNT(*) FROM bronze.tdc_admet_values")
     value_count = cursor.fetchone()[0]
 
-    logger.info(f"\n=== Summary ===")
+    logger.info("\n=== Summary ===")
     logger.info(f"Datasets loaded: {dataset_count}")
     logger.info(f"Total ADMET values: {value_count:,}")
 

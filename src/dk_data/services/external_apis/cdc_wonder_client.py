@@ -13,16 +13,14 @@ Note: CDC WONDER requires agreed terms of use. Some datasets require special acc
 Rate Limit: Respectful usage recommended (no official limit)
 """
 
-import os
 import xml.etree.ElementTree as ET
 from dataclasses import dataclass, field
-from datetime import date
 from typing import Any, Dict, List, Optional, Tuple
 
 from loguru import logger
 
 from .base_client import APIClientConfig, BaseAPIClient
-from .cache_manager import CacheManager, DataSource
+from .cache_manager import CacheManager
 
 
 @dataclass

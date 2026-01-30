@@ -28,7 +28,7 @@ import os
 import sys
 import json
 import asyncio
-from datetime import datetime, date
+from datetime import datetime
 from pathlib import Path
 from typing import List, Dict, Any, Optional
 import argparse
@@ -51,7 +51,7 @@ DB_CONFIG = {
     "port": int(os.getenv("POSTGRES_PORT", "5432")),
     "database": os.getenv("POSTGRES_DB", "dk_data"),
     "user": os.getenv("POSTGRES_USER", "postgres"),
-    "password": os.getenv("POSTGRES_PASSWORD", "postgres"),
+    "password": os.getenv("POSTGRES_PASSWORD", ""),
 }
 
 # Data paths
@@ -148,7 +148,7 @@ async def download_ema_data() -> Optional[List[Dict[str, Any]]]:
                         medicine["authorization_date"] = auth_date.strftime("%Y-%m-%d")
                     else:
                         medicine["authorization_date"] = str(auth_date)
-                except:
+                except Exception:
                     pass
 
             medicines.append(medicine)
@@ -195,7 +195,7 @@ def insert_medicines(conn, medicines: List[Dict[str, Any]], limit: int = None) -
                 if medicine.get("authorization_date"):
                     try:
                         auth_date = datetime.strptime(medicine["authorization_date"], "%Y-%m-%d").date()
-                    except:
+                    except Exception:
                         pass
 
                 cur.execute("""

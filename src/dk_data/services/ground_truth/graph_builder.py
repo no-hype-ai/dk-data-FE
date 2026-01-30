@@ -231,7 +231,7 @@ class GraphBuilder:
 
         # Build N+2 level (competitors' competitors)
         if self.config.max_depth >= 2:
-            logger.info(f"Building N+2 competitors")
+            logger.info("Building N+2 competitors")
             await self._build_n_plus_2(graph, n_plus_1_nodes[:self.config.max_nodes_per_level])
 
         # Calculate build time

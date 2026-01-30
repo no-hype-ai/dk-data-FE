@@ -12,10 +12,9 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Optional, List, Dict, Any, TYPE_CHECKING
 from enum import Enum
-import asyncio
 from loguru import logger
 
-from ..external_apis.openalex_client import OpenAlexClient, Author, Publication
+from ..external_apis.openalex_client import OpenAlexClient, Author
 
 if TYPE_CHECKING:
     from .news_service import NewsService
@@ -511,7 +510,7 @@ class PatientAdvocacyService:
         # Get news items to analyze sentiment
         try:
             news_service = self._get_news_service()
-            from .news_service import NewsType, AlertPriority
+            from .news_service import AlertPriority
 
             news_items = await news_service.get_news_for_molecule(
                 molecule_name,

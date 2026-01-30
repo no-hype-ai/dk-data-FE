@@ -7,7 +7,6 @@ Supports refresh of materialized views and cache invalidation.
 Part of DK Molecule Data Platform (012-dk-data-platform)
 """
 
-import json
 from datetime import datetime
 from typing import Dict, Any, Optional, List
 from dataclasses import dataclass
@@ -373,7 +372,7 @@ class GoldAggregationService:
 
             if therapeutic_area:
                 params.append(therapeutic_area)
-                conditions.append(f"therapeutic_areas @> ${{len(params)}}::jsonb")
+                conditions.append("therapeutic_areas @> ${len(params)}::jsonb")
 
             if mechanism:
                 params.append(f"%{mechanism}%")

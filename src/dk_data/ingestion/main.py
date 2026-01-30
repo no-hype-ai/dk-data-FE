@@ -213,14 +213,14 @@ Examples:
             batch_size=args.batch_size
         )
 
-        print(f"\nIngestion Result:")
+        print("\nIngestion Result:")
         print("-" * 40)
         for key, value in result.items():
             if key != 'errors':
                 print(f"  {key}: {value}")
 
         if result.get('errors'):
-            print(f"\nFirst few errors:")
+            print("\nFirst few errors:")
             for err in result['errors'][:5]:
                 print(f"  - {err}")
 

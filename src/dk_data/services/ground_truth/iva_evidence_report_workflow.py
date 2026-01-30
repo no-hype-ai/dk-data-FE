@@ -30,12 +30,10 @@ Usage:
 
 from __future__ import annotations
 
-import os
 import json
-import asyncio
 from dataclasses import dataclass, field
-from datetime import datetime, date
-from typing import Optional, List, Dict, Any, Tuple
+from datetime import datetime
+from typing import Optional, List, Dict, Any
 from uuid import uuid4, UUID
 from enum import Enum
 
@@ -1025,7 +1023,7 @@ class IVAEvidenceReportWorkflow:
 
             # Step 2-5: Run analysis pipeline
             try:
-                analysis_result = await self.analysis_team.arun(
+                await self.analysis_team.arun(
                     message=f"Analyze evidence for {inputs.drug_name} in {indication}. Organize by CEJ pillar, identify gaps, analyze competitive coverage, and flag positioning cautions.",
                     context={
                         "drug_name": inputs.drug_name,
@@ -1270,7 +1268,7 @@ class IVAEvidenceReportWorkflow:
                 if isinstance(endpoints, str):
                     try:
                         endpoints = json.loads(endpoints)
-                    except:
+                    except Exception:
                         endpoints = []
 
                 data_point = pub.get("title", "")[:100]
@@ -1305,7 +1303,6 @@ class IVAEvidenceReportWorkflow:
         indication: str,
     ) -> List[EvidenceGap]:
         """Generate evidence gaps using fallback."""
-        gaps = []
 
         # Standard gap analysis based on indication
         gap_templates = {
@@ -1363,7 +1360,6 @@ class IVAEvidenceReportWorkflow:
         indication: str,
     ) -> List[CoverageMatrix]:
         """Generate coverage parity matrices using fallback."""
-        matrices = []
 
         # Standard coverage categories
         coverage_templates = {

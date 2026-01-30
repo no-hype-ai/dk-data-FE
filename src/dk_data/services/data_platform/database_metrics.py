@@ -5,7 +5,6 @@ Queries actual database tables to provide real metrics for Grafana dashboards.
 Replaces hardcoded demo data with live database statistics.
 """
 
-import asyncio
 from datetime import datetime, timedelta
 from typing import Dict, Any, Optional
 from loguru import logger
@@ -112,7 +111,7 @@ class DatabaseMetricsService:
                     'status': 'healthy' if drugbank_count else 'empty',
                     'last_sync': datetime.utcnow() - timedelta(days=7)  # Would query actual sync table
                 }
-            except:
+            except Exception:
                 stats['drugbank'] = {'record_count': 0, 'status': 'error'}
 
             # ClinicalTrials.gov - using medallion architecture
@@ -125,7 +124,7 @@ class DatabaseMetricsService:
                     'status': 'healthy' if ct_count else 'empty',
                     'last_sync': datetime.utcnow() - timedelta(days=1)
                 }
-            except:
+            except Exception:
                 stats['clinicaltrials_gov'] = {'record_count': 0, 'status': 'error'}
 
             # OpenFDA FAERS - using medallion architecture
@@ -138,7 +137,7 @@ class DatabaseMetricsService:
                     'status': 'healthy' if faers_count else 'empty',
                     'last_sync': datetime.utcnow() - timedelta(days=1)
                 }
-            except:
+            except Exception:
                 stats['openfda_faers'] = {'record_count': 0, 'status': 'error'}
 
             # FDA Labels - using medallion architecture
@@ -151,7 +150,7 @@ class DatabaseMetricsService:
                     'status': 'healthy' if labels_count else 'empty',
                     'last_sync': datetime.utcnow() - timedelta(days=2)
                 }
-            except:
+            except Exception:
                 stats['openfda_labels'] = {'record_count': 0, 'status': 'error'}
 
             # ChEMBL
@@ -164,7 +163,7 @@ class DatabaseMetricsService:
                     'status': 'healthy' if chembl_count else 'empty',
                     'last_sync': datetime.utcnow() - timedelta(days=30)
                 }
-            except:
+            except Exception:
                 stats['chembl'] = {'record_count': 0, 'status': 'error'}
 
             # PubChem
@@ -177,7 +176,7 @@ class DatabaseMetricsService:
                     'status': 'healthy' if pubchem_count else 'empty',
                     'last_sync': datetime.utcnow() - timedelta(days=30)
                 }
-            except:
+            except Exception:
                 stats['pubchem'] = {'record_count': 0, 'status': 'error'}
 
             # SIDER - using medallion architecture
@@ -190,7 +189,7 @@ class DatabaseMetricsService:
                     'status': 'healthy' if sider_count else 'empty',
                     'last_sync': datetime.utcnow() - timedelta(days=90)
                 }
-            except:
+            except Exception:
                 stats['sider'] = {'record_count': 0, 'status': 'error'}
 
         return stats

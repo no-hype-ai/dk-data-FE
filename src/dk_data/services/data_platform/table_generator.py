@@ -11,7 +11,6 @@ from typing import Dict, Any, Optional, List
 from uuid import UUID, uuid4
 from dataclasses import dataclass
 import logging
-import json
 
 from .schema_detector import SchemaDetector, TableSchema, ColumnSchema, PostgresType
 

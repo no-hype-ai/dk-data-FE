@@ -6,7 +6,7 @@ Implements T114-T118: Visualization endpoints for D3.js, Cytoscape.js, Timeline.
 
 from typing import List, Optional
 from fastapi import APIRouter, HTTPException, Query
-from pydantic import BaseModel, Field
+from pydantic import BaseModel
 from loguru import logger
 
 from ...services.ground_truth.visualization_service import VisualizationService

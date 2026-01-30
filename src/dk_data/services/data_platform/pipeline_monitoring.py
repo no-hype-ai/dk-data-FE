@@ -6,14 +6,13 @@ Monitors data pipeline health, tracks runs, and exposes Prometheus metrics.
 Part of DK Molecule Data Platform (012-dk-data-platform)
 """
 
-from datetime import datetime, timedelta
+from datetime import datetime
 from typing import Dict, Any, Optional, List
 from uuid import UUID, uuid4
 from dataclasses import dataclass, field
 from enum import Enum
 import logging
-import time
-from prometheus_client import Counter, Histogram, Gauge, Info
+from prometheus_client import Counter, Histogram, Gauge
 
 logger = logging.getLogger(__name__)
 
@@ -390,8 +389,8 @@ class PipelineMonitoringService:
             }
 
         # Calculate overall status
-        all_healthy = all(l.get("status") == "healthy" for l in layers.values())
-        any_unhealthy = any(l.get("status") == "unhealthy" for l in layers.values())
+        all_healthy = all(layer.get("status") == "healthy" for layer in layers.values())
+        any_unhealthy = any(layer.get("status") == "unhealthy" for layer in layers.values())
         overall = "healthy" if all_healthy else "unhealthy" if any_unhealthy else "degraded"
 
         # Update Prometheus gauges

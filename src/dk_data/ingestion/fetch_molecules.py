@@ -32,8 +32,8 @@ def get_db_config() -> dict:
         'host': os.getenv('POSTGRES_HOST', 'localhost'),
         'port': int(os.getenv('POSTGRES_PORT', '5432')),
         'user': os.getenv('POSTGRES_USER', 'postgres'),
-        'password': os.getenv('POSTGRES_PASSWORD', 'postgres'),
-        'database': os.getenv('POSTGRES_DB', 'edwards_tavr'),
+        'password': os.getenv('POSTGRES_PASSWORD', ''),
+        'database': os.getenv('POSTGRES_DB', 'dk_data'),
     }
 
 
@@ -46,7 +46,7 @@ def get_connection_string() -> str:
 async def list_sources():
     """Print available molecule data sources."""
     try:
-        from services.data_platform import REFRESH_SCHEDULE
+        from dk_data.services.data_platform import REFRESH_SCHEDULE
 
         print("\nAvailable Molecule Data Sources:")
         print("=" * 70)
@@ -80,7 +80,7 @@ async def fetch_source(source: str, batch_size: int = 100) -> dict:
         Fetch result dictionary
     """
     try:
-        from services.data_platform import (
+        from dk_data.services.data_platform import (
             ChEMBLIngestion,
             PubChemIngestion,
             ClinicalTrialsIngestion,
@@ -142,31 +142,31 @@ async def fetch_source_with_clients(source: str, batch_size: int = 100) -> dict:
 
     try:
         if source == 'chembl':
-            from services.external_apis.chembl_client import ChEMBLClient
+            from dk_data.services.external_apis.chembl_client import ChEMBLClient
             async with ChEMBLClient() as client:
                 molecules = await client.get_approved_drugs(limit=batch_size)
                 return {'status': 'success', 'records': len(molecules), 'source': source}
 
         elif source == 'clinicaltrials':
-            from services.external_apis.clinicaltrials_client import ClinicalTrialsClient
+            from dk_data.services.external_apis.clinicaltrials_client import ClinicalTrialsClient
             async with ClinicalTrialsClient() as client:
                 trials = await client.search_trials(query="drug", max_results=batch_size)
                 return {'status': 'success', 'records': len(trials), 'source': source}
 
         elif source == 'openfda':
-            from services.external_apis.openfda_client import OpenFDAClient
+            from dk_data.services.external_apis.openfda_client import OpenFDAClient
             async with OpenFDAClient() as client:
                 labels = await client.search_drug_labels(limit=batch_size)
                 return {'status': 'success', 'records': len(labels), 'source': source}
 
         elif source == 'openalex':
-            from services.external_apis.openalex_client import OpenAlexClient
+            from dk_data.services.external_apis.openalex_client import OpenAlexClient
             async with OpenAlexClient() as client:
                 works = await client.search_works(query="pharmaceutical", per_page=batch_size)
                 return {'status': 'success', 'records': len(works), 'source': source}
 
         elif source == 'uniprot':
-            from services.external_apis.uniprot_client import UniProtClient
+            from dk_data.services.external_apis.uniprot_client import UniProtClient
             async with UniProtClient() as client:
                 proteins = await client.search_proteins(query="drug target", limit=batch_size)
                 return {'status': 'success', 'records': len(proteins), 'source': source}
@@ -192,7 +192,7 @@ async def fetch_all(batch_size: int = 100) -> dict:
     sources = ['chembl', 'pubchem', 'clinicaltrials', 'openfda', 'uniprot', 'openalex']
 
     try:
-        from services.data_platform import REFRESH_SCHEDULE
+        from dk_data.services.data_platform import REFRESH_SCHEDULE
         sources = list(REFRESH_SCHEDULE.keys())
     except ImportError:
         pass

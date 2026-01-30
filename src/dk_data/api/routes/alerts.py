@@ -6,7 +6,7 @@ Endpoints for managing pipeline and data quality alerts.
 Part of DK Molecule Data Platform (012-dk-data-platform)
 """
 
-from fastapi import APIRouter, HTTPException, Query, Depends, BackgroundTasks
+from fastapi import APIRouter, HTTPException, Query, Depends
 from typing import Optional, List
 from uuid import UUID, uuid4
 from pydantic import BaseModel, Field
@@ -15,7 +15,7 @@ from enum import Enum
 import logging
 import json
 
-from ..dependencies import get_db_pool
+from ..dependencies import get_db_pool, get_current_user
 
 logger = logging.getLogger(__name__)
 

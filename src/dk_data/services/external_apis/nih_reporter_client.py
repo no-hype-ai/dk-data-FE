@@ -12,7 +12,6 @@ API Documentation: https://api.reporter.nih.gov/
 Rate Limit: 1 request per second (no authentication required)
 """
 
-import os
 from dataclasses import dataclass, field
 from datetime import date
 from typing import Any, Dict, List, Optional
@@ -20,7 +19,7 @@ from typing import Any, Dict, List, Optional
 from loguru import logger
 
 from .base_client import APIClientConfig, BaseAPIClient
-from .cache_manager import CacheManager, DataSource
+from .cache_manager import CacheManager
 
 
 @dataclass
