@@ -111,7 +111,7 @@ spec:
           port: 53
         - protocol: TCP
           port: 53
-    # PostgreSQL (shared CNPG cluster)
+    # PostgreSQL (shared CNPG cluster - prod)
     - to:
         - namespaceSelector:
             matchLabels:
@@ -119,11 +119,27 @@ spec:
       ports:
         - protocol: TCP
           port: 5432
-    # Alloy (OTLP telemetry)
+    # PostgreSQL (shared CNPG cluster - staging)
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: infra-staging
+      ports:
+        - protocol: TCP
+          port: 5432
+    # Alloy (OTLP telemetry - prod)
     - to:
         - namespaceSelector:
             matchLabels:
               kubernetes.io/metadata.name: infra
+      ports:
+        - protocol: TCP
+          port: 4317
+    # Alloy (OTLP telemetry - staging)
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: infra-staging
       ports:
         - protocol: TCP
           port: 4317
