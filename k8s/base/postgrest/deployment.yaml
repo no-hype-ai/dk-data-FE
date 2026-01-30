@@ -29,8 +29,7 @@ spec:
             - configMapRef:
                 name: postgrest-config
           env:
-            - name: PGRST_DB_URI
-              value: "postgres://$(POSTGRES_USER):$(POSTGRES_PASSWORD)@$(POSTGRES_HOST):$(POSTGRES_PORT)/$(POSTGRES_DB)"
+            # Database connection - must be defined before PGRST_DB_URI for $(VAR) expansion
             - name: POSTGRES_HOST
               valueFrom:
                 secretKeyRef:
@@ -56,6 +55,9 @@ spec:
                 secretKeyRef:
                   name: dk-data-secrets
                   key: POSTGRES_DB
+            # PostgREST configuration - uses variables defined above
+            - name: PGRST_DB_URI
+              value: "postgres://$(POSTGRES_USER):$(POSTGRES_PASSWORD)@$(POSTGRES_HOST):$(POSTGRES_PORT)/$(POSTGRES_DB)"
             - name: PGRST_JWT_SECRET
               valueFrom:
                 secretKeyRef:
