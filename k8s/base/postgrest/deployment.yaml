@@ -60,7 +60,7 @@ spec:
               valueFrom:
                 secretKeyRef:
                   name: dk-data-secrets
-                  key: PGRST_JWT_SECRET
+                  key: JWT_SECRET
             - name: PGRST_JWT_ROLE_CLAIM_KEY
               value: ".role"
           resources:
