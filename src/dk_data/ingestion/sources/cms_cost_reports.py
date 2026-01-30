@@ -4,7 +4,6 @@ Loads hospital financial metrics from CMS Cost Reports (HCRIS).
 Source: https://data.cms.gov/provider-compliance/cost-report
 """
 
-import os
 import hashlib
 import logging
 from pathlib import Path

@@ -110,14 +110,14 @@ def get_tracer(name: str = __name__) -> trace.Tracer:
 
 
 # Re-export commonly used components
-from .metrics import (
+from .metrics import (  # noqa: E402
     setup_metrics,
     record_job_duration,
     record_job_records,
     increment_job_failure,
     record_data_source_refresh,
 )
-from .logging import setup_logging, get_logger
+from .logging import setup_logging, get_logger  # noqa: E402
 
 __all__ = [
     "setup_telemetry",

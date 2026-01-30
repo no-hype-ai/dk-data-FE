@@ -9,7 +9,7 @@ to programmatically create and manage dashboards, questions, and database connec
 
 import os
 import logging
-from typing import Optional, Any
+from typing import Optional
 from dataclasses import dataclass
 import requests
 

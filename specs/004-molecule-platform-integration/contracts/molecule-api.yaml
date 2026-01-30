@@ -1,0 +1,257 @@
+openapi: "3.1.0"
+info:
+  title: Molecule Platform API (Internal)
+  description: |
+    Internal-only FastAPI endpoints for molecule platform operations.
+    These routes are registered on the existing job-trigger FastAPI app
+    and are NOT exposed via public ingress.
+  version: "1.0.0"
+
+servers:
+  - url: http://job-trigger.dk-data-{env}.svc.cluster.local:8000
+    description: Internal cluster access only
+
+paths:
+  # --- Molecule Search & Profiles ---
+  /api/v1/data-platform/search:
+    post:
+      summary: Search molecules by name or identifier
+      operationId: searchMolecules
+      tags: [data-platform]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/MoleculeSearchRequest"
+      responses:
+        "200":
+          description: Matching molecules
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/MoleculeSearchResult"
+
+  /api/v1/data-platform/molecules/{molecule_id}:
+    get:
+      summary: Get molecule profile
+      operationId: getMoleculeProfile
+      tags: [data-platform]
+      parameters:
+        - name: molecule_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: Molecule profile
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MoleculeProfileResponse"
+        "404":
+          description: Molecule not found
+
+  /api/v1/data-platform/molecules/{molecule_id}/safety:
+    get:
+      summary: Get safety signals for molecule
+      operationId: getMoleculeSafety
+      tags: [data-platform]
+      parameters:
+        - name: molecule_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: Safety signal summary
+
+  /api/v1/data-platform/resolution-queue:
+    get:
+      summary: List low-confidence matches pending review
+      operationId: getResolutionQueue
+      tags: [data-platform]
+      parameters:
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 50
+        - name: offset
+          in: query
+          schema:
+            type: integer
+            default: 0
+      responses:
+        "200":
+          description: Resolution queue entries
+
+  # --- Data Sources ---
+  /api/v1/data-sources:
+    get:
+      summary: List registered data sources
+      operationId: listDataSources
+      tags: [data-sources]
+      responses:
+        "200":
+          description: All registered sources with sync status
+
+  # --- Monitoring ---
+  /api/v1/monitoring/pipeline-health:
+    get:
+      summary: Pipeline health summary
+      operationId: getPipelineHealth
+      tags: [monitoring]
+      responses:
+        "200":
+          description: Health status per source and layer
+
+  /api/v1/monitoring/data-freshness:
+    get:
+      summary: Data freshness per source
+      operationId: getDataFreshness
+      tags: [monitoring]
+      responses:
+        "200":
+          description: Last sync time and staleness per source
+
+  # --- Alerts ---
+  /api/v1/alerts:
+    get:
+      summary: List alert configurations
+      operationId: listAlerts
+      tags: [alerts]
+      responses:
+        "200":
+          description: Alert rules
+
+  # --- Existing TAVR Endpoints (unchanged) ---
+  /health:
+    get:
+      summary: Health check (existing)
+      operationId: healthCheck
+      tags: [tavr]
+      responses:
+        "200":
+          description: Service healthy
+
+  /jobs:
+    get:
+      summary: List batch jobs (existing + molecule jobs)
+      operationId: listJobs
+      tags: [tavr]
+      responses:
+        "200":
+          description: All registered jobs
+
+  /jobs/{job_name}/trigger:
+    post:
+      summary: Trigger batch job (existing + molecule jobs)
+      operationId: triggerJob
+      tags: [tavr]
+      parameters:
+        - name: job_name
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Job triggered
+
+components:
+  schemas:
+    MoleculeSearchRequest:
+      type: object
+      required: [query]
+      properties:
+        query:
+          type: string
+          minLength: 2
+          description: Molecule name, identifier, or partial match
+        threshold:
+          type: number
+          format: float
+          default: 0.3
+          minimum: 0.0
+          maximum: 1.0
+          description: Minimum similarity score for fuzzy matches
+        limit:
+          type: integer
+          default: 20
+          minimum: 1
+          maximum: 100
+
+    MoleculeSearchResult:
+      type: object
+      properties:
+        molecule_id:
+          type: string
+          format: uuid
+        inchi_key:
+          type: string
+          nullable: true
+        canonical_name:
+          type: string
+        similarity:
+          type: number
+          format: float
+        match_type:
+          type: string
+          enum: [exact, fuzzy, identifier]
+
+    MoleculeProfileResponse:
+      type: object
+      properties:
+        molecule_id:
+          type: string
+          format: uuid
+        inchi_key:
+          type: string
+        canonical_name:
+          type: string
+        canonical_smiles:
+          type: string
+          nullable: true
+        molecular_formula:
+          type: string
+          nullable: true
+        molecular_weight:
+          type: number
+          nullable: true
+        molecule_type:
+          type: string
+          enum: [small_molecule, protein, antibody, peptide, unknown]
+        development_status:
+          type: string
+          enum: [preclinical, phase_1, phase_2, phase_3, approved, withdrawn]
+        max_phase:
+          type: integer
+          nullable: true
+        clinical_trial_count:
+          type: integer
+        safety_events_count:
+          type: integer
+        identifiers:
+          type: array
+          items:
+            $ref: "#/components/schemas/IdentifierMapping"
+
+    IdentifierMapping:
+      type: object
+      properties:
+        identifier_type:
+          type: string
+        identifier_value:
+          type: string
+        source:
+          type: string
+        confidence:
+          type: number
+          format: float

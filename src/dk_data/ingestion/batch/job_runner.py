@@ -94,6 +94,7 @@ class LocalJobRunner(JobRunner):
     # Mapping of job names to commands
     # Scripts are organized under /app/scripts/{data,ops,utils}/
     JOB_COMMANDS = {
+        # TAVR jobs (existing)
         "fetch-cms-all": ["python", "-m", "ingestion.fetch_data", "--source", "all"],
         "fetch-cms-hospitals": ["python", "-m", "ingestion.fetch_data", "--source", "cms_hospital_info"],
         "fetch-cms-inpatient": ["python", "-m", "ingestion.fetch_data", "--source", "cms_inpatient"],
@@ -103,6 +104,16 @@ class LocalJobRunner(JobRunner):
         "sqlmesh-run": ["bash", "scripts/data/run_sqlmesh.sh"],
         "check-freshness": ["python", "scripts/data/check_freshness.py"],
         "purge-history": ["python", "scripts/data/purge_history.py"],
+        # Molecule platform jobs (004-molecule-platform-integration)
+        "fetch-clinicaltrials": ["python", "-m", "dk_data.ingestion.fetch_molecules", "--source", "clinicaltrials"],
+        "fetch-openfda-labels": ["python", "-m", "dk_data.ingestion.fetch_molecules", "--source", "openfda_labels"],
+        "fetch-openfda-faers": ["python", "-m", "dk_data.ingestion.fetch_molecules", "--source", "openfda_faers"],
+        "fetch-chembl": ["python", "-m", "dk_data.ingestion.fetch_molecules", "--source", "chembl"],
+        "fetch-pubchem": ["python", "-m", "dk_data.ingestion.fetch_molecules", "--source", "pubchem"],
+        "mol-bronze-transform": ["python", "-m", "dk_data.ingestion.transform_molecules", "--layer", "bronze"],
+        "mol-silver-transform": ["python", "-m", "dk_data.ingestion.transform_molecules", "--layer", "silver"],
+        "mol-gold-aggregate": ["python", "-m", "dk_data.ingestion.transform_molecules", "--layer", "gold"],
+        "mol-pipeline-full": ["python", "-m", "dk_data.ingestion.run_molecule_pipeline"],
     }
 
     def __init__(self, db_config: dict[str, Any]):
@@ -197,7 +208,7 @@ class LocalJobRunner(JobRunner):
                     "POSTGRES_PORT": str(self.db_config.get("port", 5432)),
                     "POSTGRES_USER": self.db_config.get("user", "postgres"),
                     "POSTGRES_PASSWORD": self.db_config.get("password", ""),
-                    "POSTGRES_DB": self.db_config.get("database", "edwards_tavr"),
+                    "POSTGRES_DB": self.db_config.get("database", "dk_data"),
                 }},
             )
 
@@ -298,7 +309,7 @@ class K8sJobRunner(JobRunner):
     Used in production Kubernetes environments.
     """
 
-    def __init__(self, db_config: dict[str, Any], namespace: str = "tavr-data"):
+    def __init__(self, db_config: dict[str, Any], namespace: str = "dk-data"):
         self.db_config = db_config
         self.namespace = namespace
         self._k8s_client = None
@@ -456,7 +467,7 @@ def get_job_runner(db_config: dict[str, Any]) -> JobRunner:
     mode = os.getenv("JOB_RUNNER_MODE", "local")
 
     if mode == "k8s":
-        namespace = os.getenv("K8S_NAMESPACE", "tavr-data")
+        namespace = os.getenv("K8S_NAMESPACE", "dk-data")
         return K8sJobRunner(db_config, namespace)
     else:
         return LocalJobRunner(db_config)

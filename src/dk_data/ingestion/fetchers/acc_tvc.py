@@ -164,7 +164,7 @@ class ACCTVCFetcher(BaseFetcher):
                 try:
                     facility_data = json.loads(marker.get('data-facility', '{}'))
                     facilities.append(facility_data)
-                except:
+                except Exception:
                     continue
 
             return facilities

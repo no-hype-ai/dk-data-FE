@@ -25,7 +25,7 @@ from typing import Optional
 # Add parent directory to path for imports
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from scripts.metabase_client import MetabaseClient, MetabaseConfig, MetabaseAPIError, get_client_from_env
+from scripts.metabase_client import MetabaseClient, MetabaseAPIError, get_client_from_env
 
 # Configure logging
 logging.basicConfig(

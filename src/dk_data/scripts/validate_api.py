@@ -4,10 +4,8 @@
 Validates that the PostgreSQL API views match the OpenAPI specification.
 """
 
-import os
 import sys
 import yaml
-import json
 from pathlib import Path
 
 

@@ -23,7 +23,6 @@ from ingestion.utils.database import (
 from claude_sdk.enrichment import (
     HospitalEnrichmentAgent,
     HospitalContext,
-    HospitalEnrichmentData,
     update_staging_hospitals
 )
 

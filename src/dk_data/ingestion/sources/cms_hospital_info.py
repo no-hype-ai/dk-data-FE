@@ -4,7 +4,6 @@ Loads hospital demographics, ownership, and quality ratings from CMS.
 Source: https://data.cms.gov/provider-data/dataset/xubh-q36u
 """
 
-import os
 import hashlib
 import logging
 from pathlib import Path

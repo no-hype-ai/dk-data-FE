@@ -328,7 +328,7 @@ class CMSCostReportsFetcher(BaseFetcher):
                     extracted_files.append(str(filepath))
 
                     try:
-                        df = pd.read_csv(filepath, nrows=0)
+                        pd.read_csv(filepath, nrows=0)
                         with open(filepath, 'r') as f:
                             total_records += sum(1 for _ in f) - 1
                     except Exception:
@@ -388,7 +388,7 @@ class CMSCostReportsFetcher(BaseFetcher):
             logger.warning(f"Failed to process cost reports: {e}")
             return None
 
-    def _extract_key_metrics(self, rpt_df, nmrc_df) -> 'pd.DataFrame':
+    def _extract_key_metrics(self, rpt_df, nmrc_df):
         """
         Extract key financial metrics from cost report data.
 
@@ -399,7 +399,6 @@ class CMSCostReportsFetcher(BaseFetcher):
         Returns:
             Processed dataframe with key metrics.
         """
-        import pandas as pd
 
         try:
             # Get unique providers from report file

@@ -1,0 +1,26 @@
+# Molecule Pipeline ConfigMap
+# 004-molecule-platform-integration
+# Runtime configuration for molecule ingestion and transformation jobs
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: molecule-pipeline-config
+  labels:
+    app.kubernetes.io/part-of: dk-data
+    app.kubernetes.io/component: ingestion
+data:
+  # Batch processing
+  BATCH_SIZE: "100"
+  FETCH_MODE: "incremental"
+  TRANSFORM_LAYERS: "all"
+
+  # Feature toggles
+  ENABLE_FETCH: "true"
+  ENABLE_TRANSFORM: "true"
+  ENABLE_RESOLUTION: "true"
+
+  # Entity resolution
+  ENTITY_RESOLUTION_THRESHOLD: "0.80"
+
+  # Logging
+  LOG_LEVEL: "INFO"

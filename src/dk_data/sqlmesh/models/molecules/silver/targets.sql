@@ -1,0 +1,97 @@
+-- SQLMesh Model: Silver Targets
+-- Normalized molecular target data from UniProt and ChEMBL
+-- Part of: 012-dk-data-platform
+
+MODEL (
+    name silver.targets,
+    kind INCREMENTAL_BY_UNIQUE_KEY (
+        unique_key uniprot_id,
+        when_matched_update_all TRUE
+    ),
+    cron '@monthly',
+    audits (
+        not_null(columns := (uniprot_id, target_name)),
+        unique_values(columns := (uniprot_id))
+    ),
+    grain uniprot_id
+);
+
+WITH uniprot_targets AS (
+    SELECT
+        uniprot_id,
+        protein_name AS target_name,
+        short_name,
+        gene_name,
+        entry_name,
+        entry_type,
+        organism_scientific,
+        organism_common,
+        taxonomy_id,
+        sequence,
+        sequence_length,
+        molecular_weight,
+        go_terms,
+        pdb_structures,
+        keywords,
+        -- Determine target type from entry type and keywords
+        CASE
+            WHEN keywords::TEXT ILIKE '%kinase%' THEN 'kinase'
+            WHEN keywords::TEXT ILIKE '%receptor%' THEN 'receptor'
+            WHEN keywords::TEXT ILIKE '%enzyme%' THEN 'enzyme'
+            WHEN keywords::TEXT ILIKE '%transporter%' THEN 'transporter'
+            WHEN keywords::TEXT ILIKE '%ion channel%' THEN 'ion_channel'
+            WHEN keywords::TEXT ILIKE '%protease%' THEN 'protease'
+            ELSE 'other'
+        END AS target_type,
+        source,
+        source_updated_at,
+        created_at
+    FROM bronze.uniprot
+    WHERE
+        processed_to_silver = FALSE
+        AND uniprot_id IS NOT NULL
+        AND protein_name IS NOT NULL
+)
+
+SELECT
+    gen_random_uuid() AS id,
+    uniprot_id,
+    target_name,
+    short_name AS target_short_name,
+    gene_name AS gene_symbol,
+    entry_name,
+    target_type,
+    organism_scientific AS organism,
+    organism_common,
+    taxonomy_id,
+    sequence_length,
+    molecular_weight,
+    -- Extract GO terms as separate fields
+    (SELECT jsonb_agg(g->>'id')
+     FROM jsonb_array_elements(go_terms) AS g
+     WHERE g->>'id' LIKE 'GO:0008150%') AS go_biological_process,
+    (SELECT jsonb_agg(g->>'id')
+     FROM jsonb_array_elements(go_terms) AS g
+     WHERE g->>'id' LIKE 'GO:0005575%') AS go_cellular_component,
+    (SELECT jsonb_agg(g->>'id')
+     FROM jsonb_array_elements(go_terms) AS g
+     WHERE g->>'id' LIKE 'GO:0003674%') AS go_molecular_function,
+    -- PDB count
+    COALESCE(jsonb_array_length(pdb_structures), 0) AS pdb_structure_count,
+    pdb_structures,
+    keywords,
+    NULL::TEXT AS chembl_target_id,  -- To be linked if available
+    source,
+    source_updated_at,
+    NOW() AS created_at,
+    NOW() AS updated_at
+FROM uniprot_targets;
+
+
+-- Post-insert: Mark Bronze records as processed
+@post_incremental(
+    UPDATE bronze.uniprot
+    SET processed_to_silver = TRUE
+    WHERE processed_to_silver = FALSE
+    AND uniprot_id IN (SELECT uniprot_id FROM silver.targets)
+);

@@ -1,6 +1,6 @@
 """Pydantic validation models for raw data entities."""
 
-from datetime import date, datetime
+from datetime import date
 from decimal import Decimal
 from typing import Optional
 from pydantic import BaseModel, Field, field_validator, ConfigDict

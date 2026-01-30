@@ -22,7 +22,6 @@ Usage:
     python load_targeting_data.py --input "/path/to/targeting.csv" --refresh-volumes
 """
 
-import os
 import sys
 import logging
 import argparse

@@ -4,19 +4,15 @@ Loads TAVR procedure volumes (DRG 266/267) from CMS Medicare Inpatient files.
 Source: https://data.cms.gov/provider-summary-by-type-of-service/medicare-inpatient-hospitals
 """
 
-import os
 import hashlib
 import logging
 from pathlib import Path
-from typing import Optional
-from datetime import datetime
 
 import pandas as pd
 from pydantic import ValidationError
 
 from ..utils.database import get_cursor, get_connection
 from ..utils.validators import CMSMedicareInpatientRecord, TAVR_DRG_CODES
-from ..utils.retry import retry_with_backoff
 
 logger = logging.getLogger(__name__)
 
