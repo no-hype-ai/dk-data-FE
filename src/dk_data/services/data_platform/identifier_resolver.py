@@ -7,6 +7,7 @@ Implements source precedence: DrugBank > ChEMBL > PubChem > Others
 Part of DK Molecule Data Platform (012-dk-data-platform)
 """
 
+import os
 import re
 from enum import Enum
 from dataclasses import dataclass, field
@@ -176,10 +177,11 @@ class IdentifierResolver:
     4. Fuzzy Name Matching: Use pg_trgm for name similarity
     5. Create New Entity: If no match found, create new molecule
 
-    Quarantine: Records with confidence < 0.8 are marked needs_review=True
+    Quarantine: Records with confidence below threshold are marked needs_review=True
     """
 
-    CONFIDENCE_THRESHOLD = 0.8  # Below this, records are quarantined
+    # Configurable via ENTITY_RESOLUTION_THRESHOLD env var (default: 0.8)
+    CONFIDENCE_THRESHOLD = float(os.getenv("ENTITY_RESOLUTION_THRESHOLD", "0.8"))
 
     def __init__(self, db_pool, fuzzy_matcher=None, external_apis=None):
         """
