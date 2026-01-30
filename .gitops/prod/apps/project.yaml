@@ -9,7 +9,7 @@ spec:
   description: dk-data production deployment
 
   sourceRepos:
-    - https://github.com/data-kinetic-projects/dk-data-FE.git
+    - https://github.com/data-kinetic/dk-data-fe.git
 
   destinations:
     - namespace: dk-data-prod

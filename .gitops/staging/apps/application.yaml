@@ -12,7 +12,7 @@ spec:
   project: dk-data
 
   source:
-    repoURL: https://github.com/data-kinetic-projects/dk-data-FE.git
+    repoURL: https://github.com/data-kinetic/dk-data-fe.git
     targetRevision: staging
     path: k8s/overlays/staging
 

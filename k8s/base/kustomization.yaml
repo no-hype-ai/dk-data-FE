@@ -30,6 +30,6 @@ resources:
   - networkpolicy.yaml
   # Secrets
   - doppler-secret.yaml
-  # Observability
-  - service-monitor.yaml
-  - alert-rules.yaml
+  # Observability (disabled - requires Prometheus Operator CRDs)
+  # - service-monitor.yaml
+  # - alert-rules.yaml
