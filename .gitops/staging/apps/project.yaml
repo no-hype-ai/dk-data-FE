@@ -1,3 +1,6 @@
+# AppProject is defined in prod/apps/project.yaml with consolidated destinations
+# This file is kept for reference but the project.yaml in prod contains both namespaces
+# To avoid duplicate resource errors in ArgoCD, staging references the consolidated project
 apiVersion: argoproj.io/v1alpha1
 kind: AppProject
 metadata:
@@ -6,12 +9,15 @@ metadata:
   finalizers:
     - resources-finalizer.argocd.argoproj.io
 spec:
-  description: dk-data staging deployment
+  description: dk-data platform deployment (production and staging)
 
   sourceRepos:
     - https://github.com/data-kinetic/dk-data-fe.git
 
+  # Consolidated destinations for both environments
   destinations:
+    - namespace: dk-data-prod
+      server: https://kubernetes.default.svc
     - namespace: dk-data-staging
       server: https://kubernetes.default.svc
 

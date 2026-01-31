@@ -1,0 +1,64 @@
+# JWT Security Contract
+# Defines requirements for JWT authentication in PostgREST
+
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: jwt-security-contract
+  labels:
+    app.kubernetes.io/part-of: dk-data
+    contract-type: security
+data:
+  # JWT Algorithm Configuration
+  algorithm: HS256
+
+  # Minimum secret requirements
+  min_secret_length: "32"  # 256 bits
+  secret_source: doppler
+  secret_key_name: PGRST_JWT_SECRET
+
+  # Token requirements
+  required_claims: |
+    - role: Required. PostgreSQL role to assume (web_anon, analyst, api_user)
+    - exp: Required. Expiration timestamp (Unix epoch seconds)
+
+  optional_claims: |
+    - iat: Issued-at timestamp
+    - sub: Subject identifier (user/service ID)
+    - aud: Audience (optional, for multi-tenant scenarios)
+
+  # Validation rules
+  validation_rules: |
+    1. JWT secret MUST be at least 32 characters (256 bits)
+    2. JWT secret MUST NOT be empty or default value
+    3. Token MUST include valid 'role' claim
+    4. Token MUST include valid 'exp' claim in the future
+    5. Role claim MUST match an existing PostgreSQL role
+    6. Role MUST be granted to 'authenticator' role
+
+  # Supported roles
+  allowed_roles: |
+    - web_anon: Unauthenticated/anonymous access
+    - analyst: TAVR data read access
+    - api_user: Full API read + molecule write access
+
+  # Security enforcement
+  empty_secret_behavior: deny_all_requests
+  invalid_token_behavior: return_401
+  expired_token_behavior: return_401
+  unknown_role_behavior: return_403
+
+---
+# Init container validation script reference
+# Used in PostgREST deployment to validate JWT secret before startup
+
+# Validation script (inline in deployment):
+# if [ -z "$PGRST_JWT_SECRET" ]; then
+#   echo "ERROR: PGRST_JWT_SECRET is not set"
+#   exit 1
+# fi
+# if [ ${#PGRST_JWT_SECRET} -lt 32 ]; then
+#   echo "ERROR: PGRST_JWT_SECRET must be at least 32 characters"
+#   exit 1
+# fi
+# echo "JWT secret validation passed"
