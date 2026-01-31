@@ -19,6 +19,28 @@ spec:
         app.kubernetes.io/name: postgrest
         app.kubernetes.io/part-of: dk-data
     spec:
+      initContainers:
+        # T009: Validate JWT secret meets minimum security requirements
+        - name: jwt-secret-validator
+          image: busybox:1.36
+          command:
+            - /bin/sh
+            - -c
+            - |
+              echo "Validating JWT secret..."
+              SECRET_LENGTH=$(echo -n "$JWT_SECRET" | wc -c)
+              if [ "$SECRET_LENGTH" -lt 32 ]; then
+                echo "ERROR: JWT_SECRET must be at least 32 characters (256 bits) for HS256"
+                echo "Current length: $SECRET_LENGTH characters"
+                exit 1
+              fi
+              echo "JWT secret validation passed ($SECRET_LENGTH characters)"
+          env:
+            - name: JWT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: dk-data-secrets
+                  key: JWT_SECRET
       containers:
         - name: postgrest
           image: postgrest/postgrest:v12.2.3
@@ -72,13 +94,25 @@ spec:
             limits:
               memory: "512Mi"
               cpu: "500m"
-          livenessProbe:
+          # T038: Health probes - TCP for startup reliability, HTTP for application health
+          # NOTE: HTTP probes require api.health view to exist (created by db-init job)
+          #       and web_anon role to have USAGE on schema api + SELECT on api.health
+          startupProbe:
             tcpSocket:
+              port: 3000
+            failureThreshold: 30
+            periodSeconds: 2
+          livenessProbe:
+            httpGet:
+              path: /health
               port: 3000
             initialDelaySeconds: 10
             periodSeconds: 30
+            timeoutSeconds: 5
           readinessProbe:
-            tcpSocket:
+            httpGet:
+              path: /health
               port: 3000
             initialDelaySeconds: 5
             periodSeconds: 10
+            timeoutSeconds: 5

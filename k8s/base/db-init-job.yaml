@@ -215,7 +215,83 @@ spec:
               ALTER DEFAULT PRIVILEGES IN SCHEMA mol_app GRANT USAGE, SELECT ON SEQUENCES TO api_user;
               SQL
 
-              # --- Step 9: Cross-database isolation ---
+              # --- Step 9: Create API views ---
+              echo "Creating API views..."
+              psql -d dk_data <<'SQL'
+              -- api.health: Health check endpoint for Kubernetes probes
+              CREATE OR REPLACE VIEW api.health AS
+              SELECT
+                'ok'::text AS status,
+                now() AS timestamp,
+                current_database() AS database;
+
+              -- api.data_catalog: Metadata about available data sources
+              CREATE OR REPLACE VIEW api.data_catalog AS
+              SELECT
+                schemaname,
+                tablename,
+                n_live_tup AS row_count,
+                last_vacuum,
+                last_analyze
+              FROM pg_stat_user_tables
+              WHERE schemaname IN ('raw', 'staging', 'mart', 'mol_raw', 'mol_bronze', 'mol_silver', 'mol_gold')
+              ORDER BY schemaname, tablename;
+
+              -- api.targets: Hospital targeting data (placeholder)
+              CREATE OR REPLACE VIEW api.targets AS
+              SELECT
+                'placeholder'::text AS hospital_id,
+                'No data loaded'::text AS name,
+                'N/A'::text AS tier,
+                0::numeric AS score,
+                now() AS updated_at
+              WHERE false;
+
+              -- api.scoring: Scoring breakdown details (placeholder)
+              CREATE OR REPLACE VIEW api.scoring AS
+              SELECT
+                'placeholder'::text AS hospital_id,
+                'No data loaded'::text AS factor,
+                0::numeric AS weight,
+                0::numeric AS score
+              WHERE false;
+
+              -- api.data_sources: Data source configuration (placeholder)
+              CREATE OR REPLACE VIEW api.data_sources AS
+              SELECT
+                'placeholder'::text AS source_name,
+                'none'::text AS source_type,
+                now() AS last_fetch,
+                'pending'::text AS status
+              WHERE false;
+              SQL
+
+              # --- Step 10: Grant permissions on API views ---
+              echo "Granting permissions on API views..."
+              psql -d dk_data <<'SQL'
+              -- Clean slate: revoke all existing permissions from web_anon on api schema
+              REVOKE ALL PRIVILEGES ON ALL TABLES IN SCHEMA api FROM web_anon;
+
+              -- web_anon: only health and data_catalog (public endpoints)
+              GRANT SELECT ON api.health TO web_anon;
+              GRANT SELECT ON api.data_catalog TO web_anon;
+
+              -- analyst: read access to targets, scoring, data_sources, data_catalog
+              GRANT SELECT ON api.targets TO analyst;
+              GRANT SELECT ON api.scoring TO analyst;
+              GRANT SELECT ON api.data_sources TO analyst;
+              GRANT SELECT ON api.data_catalog TO analyst;
+              GRANT SELECT ON api.health TO analyst;
+
+              -- api_user: full read access to all api views
+              GRANT SELECT ON api.health TO api_user;
+              GRANT SELECT ON api.data_catalog TO api_user;
+              GRANT SELECT ON api.targets TO api_user;
+              GRANT SELECT ON api.scoring TO api_user;
+              GRANT SELECT ON api.data_sources TO api_user;
+              SQL
+
+              # --- Step 11: Cross-database isolation ---
               echo "Enforcing cross-database isolation..."
               psql -d postgres <<'SQL'
               DO $$
@@ -227,4 +303,37 @@ spec:
               END $$;
               SQL
 
+              # --- Step 12: Verification ---
+              echo "=== Verification ==="
+              echo "Checking roles..."
+              ROLE_COUNT=$(psql -d dk_data -Atc "SELECT COUNT(*) FROM pg_roles WHERE rolname IN ('authenticator', 'web_anon', 'analyst', 'api_user', 'readonly')")
+              if [ "$ROLE_COUNT" -eq 5 ]; then
+                echo "✓ All 5 roles created successfully"
+              else
+                echo "✗ ERROR: Expected 5 roles, found $ROLE_COUNT"
+                exit 1
+              fi
+
+              echo "Checking schemas..."
+              SCHEMA_COUNT=$(psql -d dk_data -Atc "SELECT COUNT(*) FROM pg_namespace WHERE nspname IN ('raw', 'staging', 'mart', 'scoring', 'meta', 'api', 'mol_raw', 'mol_bronze', 'mol_silver', 'mol_gold', 'mol_app', 'mol_api')")
+              if [ "$SCHEMA_COUNT" -eq 12 ]; then
+                echo "✓ All 12 schemas created successfully"
+              else
+                echo "✗ ERROR: Expected 12 schemas, found $SCHEMA_COUNT"
+                exit 1
+              fi
+
+              echo "Checking API views..."
+              VIEW_COUNT=$(psql -d dk_data -Atc "SELECT COUNT(*) FROM information_schema.views WHERE table_schema = 'api'")
+              if [ "$VIEW_COUNT" -ge 5 ]; then
+                echo "✓ Found $VIEW_COUNT API views"
+              else
+                echo "✗ ERROR: Expected at least 5 views, found $VIEW_COUNT"
+                exit 1
+              fi
+
+              echo ""
               echo "=== Database initialization complete ==="
+              echo "Roles: authenticator, web_anon, analyst, api_user, readonly"
+              echo "Schemas: raw, staging, mart, scoring, meta, api, mol_*"
+              echo "Views: api.health, api.data_catalog, api.targets, api.scoring, api.data_sources"
