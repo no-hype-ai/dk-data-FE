@@ -6,6 +6,9 @@ These tests verify:
 - Anonymous access is properly restricted
 - JWT tokens are validated correctly
 - Role-based permissions are enforced
+
+Note: These are integration tests that require PostgREST to be running.
+Mark with @pytest.mark.integration and skip if service unavailable.
 """
 
 import os
@@ -16,6 +19,22 @@ import time
 # Test configuration
 POSTGREST_URL = os.getenv("POSTGREST_URL", "http://localhost:3030")
 JWT_SECRET = os.getenv("JWT_SECRET", "test-secret-must-be-at-least-32-chars")
+
+# Skip integration tests if POSTGREST_URL is not reachable
+def postgrest_available():
+    """Check if PostgREST is available."""
+    try:
+        import httpx
+        with httpx.Client(timeout=2.0) as client:
+            client.get(f"{POSTGREST_URL}/")
+        return True
+    except Exception:
+        return False
+
+skip_if_no_postgrest = pytest.mark.skipif(
+    not postgrest_available(),
+    reason="PostgREST not available at POSTGREST_URL"
+)
 
 
 def create_jwt_token(role: str, secret: str = JWT_SECRET, expired: bool = False) -> str:
@@ -29,6 +48,7 @@ def create_jwt_token(role: str, secret: str = JWT_SECRET, expired: bool = False)
     return jwt.encode(payload, secret, algorithm="HS256")
 
 
+@skip_if_no_postgrest
 class TestAnonymousAccess:
     """Test that anonymous access is properly restricted."""
 
@@ -62,6 +82,7 @@ class TestAnonymousAccess:
         assert response.status_code in (401, 403)
 
 
+@skip_if_no_postgrest
 class TestJWTValidation:
     """Test JWT token validation."""
 
@@ -86,6 +107,7 @@ class TestJWTValidation:
         assert response.status_code in (401, 403)
 
 
+@skip_if_no_postgrest
 class TestRoleBasedAccess:
     """Test role-based access control."""
 
@@ -139,6 +161,10 @@ class TestRoleBasedAccess:
 class TestJWTSecretRequirements:
     """Test JWT secret security requirements."""
 
+    @pytest.mark.skipif(
+        not os.getenv("JWT_SECRET"),
+        reason="JWT_SECRET not set - this test validates production secrets"
+    )
     def test_jwt_secret_minimum_length(self):
         """JWT secret must be at least 32 characters (256 bits)."""
         secret = os.getenv("JWT_SECRET", "")
