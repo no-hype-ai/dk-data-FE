@@ -35,14 +35,14 @@ patches:
       kind: Deployment
       name: postgrest
 
-  # Job Trigger — 2 replicas for availability
+  # Job Trigger — disabled until image is published
   - patch: |-
       apiVersion: apps/v1
       kind: Deployment
       metadata:
         name: job-trigger
       spec:
-        replicas: 2
+        replicas: 0
         template:
           spec:
             containers:
