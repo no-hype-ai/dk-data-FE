@@ -151,7 +151,7 @@
 ### Implementation for User Story 6
 
 - [x] T037 [US6] Verify PostgREST TCP probe configuration in k8s/base/postgrest/deployment.yaml
-- [x] T038 [US6] Add HTTP probe to /health endpoint (optional enhancement) in k8s/base/postgrest/deployment.yaml
+- [ ] T038 [US6] Add HTTP probe to /health endpoint (optional enhancement) in k8s/base/postgrest/deployment.yaml (DEFERRED: requires api.health view from db-init)
 - [x] T039 [P] [US6] Verify FastAPI /health endpoint exists in src/dk_data/ingestion/batch/api.py
 - [x] T040 [US6] Configure liveness/readiness probes for job-trigger in k8s/base/ingestion/job-trigger-deployment.yaml
 
@@ -200,7 +200,7 @@
 - [x] T049 Run quickstart.md verification checklist (documented in quickstart.md, requires deployment to execute)
 - [x] T050 [P] Update CLAUDE.md with feature 005 completion notes
 - [x] T051 Validate all Kubernetes manifests with kubectl apply --dry-run=client (kustomize builds succeed)
-- [ ] T052 Create PR for feature 005 implementation
+- [x] T052 Create PR for feature 005 implementation (PR #62: https://github.com/data-kinetic/dk-data-FE/pull/62)
 
 ---
 
