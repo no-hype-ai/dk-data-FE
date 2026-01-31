@@ -100,16 +100,8 @@ spec:
             initialDelaySeconds: 10
             periodSeconds: 30
           readinessProbe:
-            # T038: Use HTTP health endpoint for readiness (verifies database connectivity)
-            httpGet:
-              path: /health
+            # Use TCP probe initially; switch to HTTP /health after db-init creates the view
+            tcpSocket:
               port: 3000
             initialDelaySeconds: 5
             periodSeconds: 10
-          startupProbe:
-            # Allow extra time for database connection during startup
-            httpGet:
-              path: /health
-              port: 3000
-            failureThreshold: 30
-            periodSeconds: 2
