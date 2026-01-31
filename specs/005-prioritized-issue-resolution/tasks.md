@@ -167,8 +167,8 @@
 
 ### Implementation for User Story 7
 
-- [ ] T041 [US7] Verify Prometheus Operator CRDs exist in cluster (MANUAL: requires cluster access)
-- [ ] T042 [US7] Uncomment ServiceMonitor in k8s/base/kustomization.yaml (if CRDs exist) (MANUAL: depends on T041)
+- [x] T041 [US7] Verify Prometheus Operator CRDs exist in cluster (VERIFIED: CRDs NOT AVAILABLE - ServiceMonitor/PrometheusRule not installed)
+- [ ] T042 [US7] Uncomment ServiceMonitor in k8s/base/kustomization.yaml (BLOCKED: Prometheus CRDs not installed in cluster)
 - [x] T043 [P] [US7] Update ServiceMonitor namespace selectors in k8s/base/service-monitor.yaml (already has correct selectors)
 - [x] T044 [US7] Verify structured JSON logging in job-trigger service (observability module available)
 
@@ -186,7 +186,7 @@
 
 - [x] T045 [US8] Add CronJob failure alert rule in k8s/base/alert-rules.yaml (BatchJobFailed, CronJobMissedSchedule already exist)
 - [x] T046 [P] [US8] Add data staleness alert rule in k8s/base/alert-rules.yaml (DataSourceStale, DataSourceCriticallyStale already exist)
-- [ ] T047 [US8] Uncomment PrometheusRule in k8s/base/kustomization.yaml (if CRDs exist) (MANUAL: depends on T041)
+- [ ] T047 [US8] Uncomment PrometheusRule in k8s/base/kustomization.yaml (BLOCKED: Prometheus CRDs not installed in cluster)
 - [x] T048 [US8] Document alert routing configuration in specs/005-prioritized-issue-resolution/quickstart.md (covered in troubleshooting section)
 
 **Checkpoint**: Alert rules defined and documented
@@ -200,7 +200,7 @@
 - [x] T049 Run quickstart.md verification checklist (documented in quickstart.md, requires deployment to execute)
 - [x] T050 [P] Update CLAUDE.md with feature 005 completion notes
 - [x] T051 Validate all Kubernetes manifests with kubectl apply --dry-run=client (kustomize builds succeed)
-- [ ] T052 Create PR for feature 005 implementation
+- [x] T052 Create PR for feature 005 implementation (PR #62: https://github.com/data-kinetic/dk-data-FE/pull/62)
 
 ---
 

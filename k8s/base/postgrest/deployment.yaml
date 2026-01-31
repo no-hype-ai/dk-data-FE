@@ -94,22 +94,25 @@ spec:
             limits:
               memory: "512Mi"
               cpu: "500m"
-          livenessProbe:
+          # T038: Health probes - TCP for startup reliability, HTTP for application health
+          # NOTE: HTTP probes require api.health view to exist (created by db-init job)
+          #       and web_anon role to have USAGE on schema api + SELECT on api.health
+          startupProbe:
             tcpSocket:
+              port: 3000
+            failureThreshold: 30
+            periodSeconds: 2
+          livenessProbe:
+            httpGet:
+              path: /health
               port: 3000
             initialDelaySeconds: 10
             periodSeconds: 30
+            timeoutSeconds: 5
           readinessProbe:
-            # T038: Use HTTP health endpoint for readiness (verifies database connectivity)
             httpGet:
               path: /health
               port: 3000
             initialDelaySeconds: 5
             periodSeconds: 10
-          startupProbe:
-            # Allow extra time for database connection during startup
-            httpGet:
-              path: /health
-              port: 3000
-            failureThreshold: 30
-            periodSeconds: 2
+            timeoutSeconds: 5
