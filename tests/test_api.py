@@ -6,9 +6,6 @@ These tests verify:
 - All API views are accessible
 - Response format is correct JSON
 - Required fields are present
-
-Note: These are integration tests that require PostgREST to be running.
-Mark with @pytest.mark.integration and skip if service unavailable.
 """
 
 import os
@@ -19,22 +16,6 @@ import time
 # Test configuration
 POSTGREST_URL = os.getenv("POSTGREST_URL", "http://localhost:3030")
 JWT_SECRET = os.getenv("JWT_SECRET", "test-secret-must-be-at-least-32-chars")
-
-# Skip integration tests if POSTGREST_URL is not reachable
-def postgrest_available():
-    """Check if PostgREST is available."""
-    try:
-        import httpx
-        with httpx.Client(timeout=2.0) as client:
-            client.get(f"{POSTGREST_URL}/")
-        return True
-    except Exception:
-        return False
-
-skip_if_no_postgrest = pytest.mark.skipif(
-    not postgrest_available(),
-    reason="PostgREST not available at POSTGREST_URL"
-)
 
 
 def create_jwt_token(role: str) -> str:
@@ -47,7 +28,6 @@ def create_jwt_token(role: str) -> str:
     return jwt.encode(payload, JWT_SECRET, algorithm="HS256")
 
 
-@skip_if_no_postgrest
 class TestHealthEndpoint:
     """Test api.health endpoint."""
 
@@ -74,7 +54,6 @@ class TestHealthEndpoint:
         assert data[0]["database"] == "dk_data"
 
 
-@skip_if_no_postgrest
 class TestDataCatalogEndpoint:
     """Test api.data_catalog endpoint."""
 
@@ -96,7 +75,6 @@ class TestDataCatalogEndpoint:
             assert "row_count" in entry
 
 
-@skip_if_no_postgrest
 class TestTargetsEndpoint:
     """Test api.targets endpoint."""
 
@@ -124,7 +102,6 @@ class TestTargetsEndpoint:
         assert isinstance(data, list)
 
 
-@skip_if_no_postgrest
 class TestScoringEndpoint:
     """Test api.scoring endpoint."""
 
@@ -143,7 +120,6 @@ class TestScoringEndpoint:
         assert isinstance(data, list)
 
 
-@skip_if_no_postgrest
 class TestDataSourcesEndpoint:
     """Test api.data_sources endpoint."""
 
@@ -162,7 +138,6 @@ class TestDataSourcesEndpoint:
         assert isinstance(data, list)
 
 
-@skip_if_no_postgrest
 class TestOpenAPISpec:
     """Test PostgREST OpenAPI specification."""
 
