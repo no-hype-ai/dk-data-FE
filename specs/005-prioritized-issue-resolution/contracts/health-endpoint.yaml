@@ -1,0 +1,161 @@
+# Health Endpoint Contract
+# Defines the health check API endpoint specification
+
+openapi: 3.0.3
+info:
+  title: dk-data Health API
+  version: 1.0.0
+  description: Health check endpoint for Kubernetes probes and monitoring
+
+servers:
+  - url: https://data.behaviorlabs.ai
+    description: Production
+  - url: https://data.preview.behaviorlabs.ai
+    description: Staging
+
+paths:
+  /health:
+    get:
+      operationId: getHealth
+      summary: Health check endpoint
+      description: |
+        Returns the health status of the PostgREST API and database connection.
+        This endpoint is publicly accessible (no authentication required).
+      tags:
+        - Health
+      security: []  # No authentication required
+      responses:
+        '200':
+          description: Service is healthy
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/HealthResponse'
+              example:
+                - status: "ok"
+                  timestamp: "2026-01-30T12:00:00Z"
+                  database: "dk_data"
+        '500':
+          description: Service is unhealthy (database connection failed)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /data_catalog:
+    get:
+      operationId: getDataCatalog
+      summary: List available data sources
+      description: |
+        Returns metadata about available data tables including row counts
+        and last update times. Publicly accessible.
+      tags:
+        - Metadata
+      security: []  # No authentication required
+      responses:
+        '200':
+          description: Data catalog listing
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/DataCatalogEntry'
+              example:
+                - schemaname: "raw"
+                  tablename: "cms_data"
+                  row_count: 15000
+                  last_vacuum: "2026-01-30T06:00:00Z"
+                  last_analyze: "2026-01-30T06:00:00Z"
+
+components:
+  schemas:
+    HealthResponse:
+      type: object
+      required:
+        - status
+        - timestamp
+        - database
+      properties:
+        status:
+          type: string
+          enum: [ok]
+          description: Health status (always 'ok' if responding)
+        timestamp:
+          type: string
+          format: date-time
+          description: Current server timestamp
+        database:
+          type: string
+          description: Database name
+          example: dk_data
+
+    DataCatalogEntry:
+      type: object
+      required:
+        - schemaname
+        - tablename
+        - row_count
+      properties:
+        schemaname:
+          type: string
+          description: PostgreSQL schema name
+        tablename:
+          type: string
+          description: Table name
+        row_count:
+          type: integer
+          description: Approximate row count
+        last_vacuum:
+          type: string
+          format: date-time
+          nullable: true
+          description: Last vacuum timestamp
+        last_analyze:
+          type: string
+          format: date-time
+          nullable: true
+          description: Last analyze timestamp
+
+    ErrorResponse:
+      type: object
+      properties:
+        message:
+          type: string
+          description: Error message
+        code:
+          type: string
+          description: Error code
+        hint:
+          type: string
+          description: Hint for resolving the error
+
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: |
+        JWT token with 'role' claim matching a PostgreSQL role.
+        Not required for /health and /data_catalog endpoints.
+
+# Kubernetes probe configuration reference
+x-kubernetes-probes:
+  livenessProbe:
+    httpGet:
+      path: /health
+      port: 3000
+    initialDelaySeconds: 10
+    periodSeconds: 30
+    timeoutSeconds: 5
+    failureThreshold: 3
+  readinessProbe:
+    httpGet:
+      path: /health
+      port: 3000
+    initialDelaySeconds: 5
+    periodSeconds: 10
+    timeoutSeconds: 5
+    failureThreshold: 3

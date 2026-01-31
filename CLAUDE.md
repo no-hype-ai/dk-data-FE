@@ -1,12 +1,13 @@
 # dk-data-fe Development Guidelines
 
-Auto-generated from all feature plans. Last updated: 2026-01-14
+Auto-generated from all feature plans. Last updated: 2026-01-30
 
 ## Active Technologies
 - Python 3.11+ (Job Trigger FastAPI service), SQL (PostgreSQL 16.4), YAML (Kubernetes manifests) + PostgREST v12.2.3, FastAPI, uvicorn, psycopg2-binary, opentelemetry-*, structlog, prometheus-client, kubernetes clien (003-alchemy-cluster-deploy)
 - Shared CloudNativePG PostgreSQL 16.4 cluster (`postgresql.infra.svc.cluster.local:5432`), dedicated `dk_data` database (003-alchemy-cluster-deploy)
 - Python 3.11+ + FastAPI, psycopg2-binary, httpx (new), pyjwt (new), SQLMesh, Pydantic, structlog, OpenTelemetry, prometheus-client, kubernetes (004-molecule-platform-integration)
 - PostgreSQL 16+ via PostgREST v12.x, 12 schemas (6 existing + 6 new molecule schemas) (004-molecule-platform-integration)
+- Python 3.11+, SQL (PostgreSQL 16.4), YAML (Kubernetes manifests) + PostgREST v12.2.3, FastAPI, uvicorn, psycopg2-binary, opentelemetry-*, structlog, prometheus-clien (005-prioritized-issue-resolution)
 
 - Python 3.11+ (existing ingestion layer), SQL (PostgreSQL 16+) + PostgREST v12.x, SQLMesh, psycopg2, Pydantic, requests (001-data-layer-postgrest-gitops)
 
@@ -26,10 +27,42 @@ cd src [ONLY COMMANDS FOR ACTIVE TECHNOLOGIES][ONLY COMMANDS FOR ACTIVE TECHNOLO
 Python 3.11+ (existing ingestion layer), SQL (PostgreSQL 16+): Follow standard conventions
 
 ## Recent Changes
+- 005-prioritized-issue-resolution: Added Python 3.11+, SQL (PostgreSQL 16.4), YAML (Kubernetes manifests) + PostgREST v12.2.3, FastAPI, uvicorn, psycopg2-binary, opentelemetry-*, structlog, prometheus-clien
 - 004-molecule-platform-integration: Added Python 3.11+ + FastAPI, psycopg2-binary, httpx (new), pyjwt (new), SQLMesh, Pydantic, structlog, OpenTelemetry, prometheus-client, kubernetes
 - 003-alchemy-cluster-deploy: Added Python 3.11+ (Job Trigger FastAPI service), SQL (PostgreSQL 16.4), YAML (Kubernetes manifests) + PostgREST v12.2.3, FastAPI, uvicorn, psycopg2-binary, opentelemetry-*, structlog, prometheus-client, kubernetes clien
 
-- 001-data-layer-postgrest-gitops: Added Python 3.11+ (existing ingestion layer), SQL (PostgreSQL 16+) + PostgREST v12.x, SQLMesh, psycopg2, Pydantic, requests
 
 <!-- MANUAL ADDITIONS START -->
+
+## Feature 005: Prioritized Issue Resolution (Completed 2026-01-30)
+
+Security and infrastructure improvements addressing critical GitHub issues:
+
+### Key Changes
+- **Security**: JWT secret validation (min 256-bit), restricted `web_anon` role permissions
+- **Database**: API views (`api.health`, `api.data_catalog`, `api.targets`, `api.scoring`, `api.data_sources`)
+- **CI/CD**: New PR testing workflow (`.github/workflows/ci.yaml`), branch+SHA image tags
+- **Health**: HTTP readiness probe on PostgREST `/health`, job-trigger enabled (staging:1, prod:2)
+- **Observability**: ServiceMonitor and PrometheusRule ready (require Prometheus Operator CRDs)
+
+### Testing
+```bash
+# Run security and API tests
+pytest tests/test_security.py tests/test_api.py -v
+
+# Validate manifests
+kubectl kustomize k8s/overlays/staging --enable-helm > /dev/null
+```
+
+### Verification
+```bash
+# Anonymous access test
+curl https://data.preview.behaviorlabs.ai/health  # Should succeed
+curl https://data.preview.behaviorlabs.ai/targets # Should return 401/403
+
+# Authenticated access
+export TOKEN=$(python3 -c "import jwt; print(jwt.encode({'role':'analyst','exp':...}, 'secret'))")
+curl -H "Authorization: Bearer $TOKEN" https://data.preview.behaviorlabs.ai/targets
+```
+
 <!-- MANUAL ADDITIONS END -->

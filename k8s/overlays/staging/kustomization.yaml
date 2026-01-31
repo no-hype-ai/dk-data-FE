@@ -24,14 +24,14 @@ patches:
       kind: Deployment
       name: postgrest
 
-  # Job-trigger — disabled until image is published
+  # Job-trigger — enabled for staging (T033)
   - patch: |-
       apiVersion: apps/v1
       kind: Deployment
       metadata:
         name: job-trigger
       spec:
-        replicas: 0
+        replicas: 1
     target:
       kind: Deployment
       name: job-trigger

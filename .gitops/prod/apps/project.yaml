@@ -6,13 +6,16 @@ metadata:
   finalizers:
     - resources-finalizer.argocd.argoproj.io
 spec:
-  description: dk-data production deployment
+  description: dk-data platform deployment (production and staging)
 
   sourceRepos:
     - https://github.com/data-kinetic/dk-data-fe.git
 
+  # Consolidated destinations for both environments
   destinations:
     - namespace: dk-data-prod
+      server: https://kubernetes.default.svc
+    - namespace: dk-data-staging
       server: https://kubernetes.default.svc
 
   clusterResourceWhitelist:

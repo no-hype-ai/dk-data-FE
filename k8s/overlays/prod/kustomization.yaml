@@ -35,14 +35,14 @@ patches:
       kind: Deployment
       name: postgrest
 
-  # Job Trigger — disabled until image is published
+  # Job Trigger — enabled for production with HA (T034)
   - patch: |-
       apiVersion: apps/v1
       kind: Deployment
       metadata:
         name: job-trigger
       spec:
-        replicas: 0
+        replicas: 2
         template:
           spec:
             containers:

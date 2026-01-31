@@ -1,0 +1,87 @@
+# Role Permissions Contract
+# Defines PostgreSQL role permissions for PostgREST API access
+
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: role-permissions-contract
+  labels:
+    app.kubernetes.io/part-of: dk-data
+    contract-type: authorization
+data:
+  # Role hierarchy
+  role_hierarchy: |
+    authenticator (LOGIN, NOINHERIT)
+      ├── web_anon (NOLOGIN)
+      ├── analyst (NOLOGIN)
+      └── api_user (NOLOGIN)
+    readonly (LOGIN) - separate, not under authenticator
+
+  # web_anon permissions (unauthenticated)
+  web_anon_permissions: |
+    api schema:
+      - USAGE: yes
+      - health: SELECT
+      - data_catalog: SELECT
+      - targets: DENIED
+      - scoring: DENIED
+      - data_sources: DENIED
+    mol_api schema:
+      - USAGE: yes
+      - ALL TABLES: SELECT
+    Other schemas: DENIED
+
+  # analyst permissions
+  analyst_permissions: |
+    api schema:
+      - USAGE: yes
+      - health: SELECT
+      - data_catalog: SELECT
+      - targets: SELECT
+      - scoring: SELECT
+      - data_sources: SELECT
+    mol_api schema:
+      - USAGE: yes
+      - ALL TABLES: SELECT
+    Other schemas: DENIED
+
+  # api_user permissions
+  api_user_permissions: |
+    api schema:
+      - USAGE: yes
+      - ALL TABLES: SELECT
+      - DEFAULT PRIVILEGES: SELECT on new tables
+    mol_api schema:
+      - USAGE: yes
+      - ALL TABLES: SELECT
+    mol_raw, mol_bronze, mol_silver, mol_gold, mol_app schemas:
+      - USAGE: yes
+      - ALL TABLES: ALL (SELECT, INSERT, UPDATE, DELETE)
+      - ALL SEQUENCES: USAGE, SELECT
+      - DEFAULT PRIVILEGES: ALL on new tables/sequences
+
+  # readonly permissions (direct DB access)
+  readonly_permissions: |
+    api schema:
+      - USAGE: yes
+      - ALL TABLES: SELECT
+    mart schema:
+      - USAGE: yes
+      - ALL TABLES: SELECT
+    mol_* schemas:
+      - USAGE: yes
+      - ALL TABLES: SELECT
+
+  # Permission enforcement order
+  enforcement_order: |
+    1. REVOKE all existing permissions (clean slate)
+    2. GRANT USAGE on schemas
+    3. GRANT table-level permissions
+    4. Set ALTER DEFAULT PRIVILEGES for future tables
+
+  # Security notes
+  security_notes: |
+    - web_anon has NO access to sensitive data (targets, scoring)
+    - All roles require explicit GRANT, no default access
+    - REVOKE statements ensure clean permission state on re-run
+    - authenticator uses NOINHERIT to force explicit role switching
