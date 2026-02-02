@@ -229,13 +229,13 @@ spec:
               CREATE OR REPLACE VIEW api.data_catalog AS
               SELECT
                 schemaname,
-                tablename,
+                relname AS tablename,
                 n_live_tup AS row_count,
                 last_vacuum,
                 last_analyze
               FROM pg_stat_user_tables
               WHERE schemaname IN ('raw', 'staging', 'mart', 'mol_raw', 'mol_bronze', 'mol_silver', 'mol_gold')
-              ORDER BY schemaname, tablename;
+              ORDER BY schemaname, relname;
 
               -- api.targets: Hospital targeting data (placeholder)
               CREATE OR REPLACE VIEW api.targets AS
