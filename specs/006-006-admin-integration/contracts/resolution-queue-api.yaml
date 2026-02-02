@@ -1,0 +1,198 @@
+# Resolution Queue API Contract
+# PostgREST endpoint specification for Compass resolution workflow
+
+openapi: 3.0.3
+info:
+  title: dk-data Resolution Queue API
+  description: |
+    Molecule resolution queue endpoint for Admin App Compass features.
+    This endpoint is restricted to authenticated users with analyst or api_user role.
+    Anonymous (web_anon) access is explicitly denied.
+  version: 1.0.0
+
+servers:
+  - url: https://dk-data.behaviorlabs.ai
+    description: Production
+  - url: https://dk-data-staging.behaviorlabs.ai
+    description: Staging
+
+paths:
+  /resolution_queue:
+    get:
+      summary: List pending resolution items
+      description: |
+        Returns pending molecule resolution items for workflow management.
+        Only shows items with status != 'completed'.
+
+        **Authorization Required**: analyst or api_user role
+      operationId: listResolutionQueue
+      tags:
+        - Resolution
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: select
+          in: query
+          description: Columns to return
+          schema:
+            type: string
+            example: id,source_id,target_smiles,status,priority
+        - name: status
+          in: query
+          description: Filter by status
+          schema:
+            type: string
+            enum:
+              - pending
+              - in_progress
+              - failed
+        - name: priority
+          in: query
+          description: Filter by priority (supports range operators)
+          schema:
+            type: string
+            example: gte.5
+        - name: source_id
+          in: query
+          description: Filter by source identifier
+          schema:
+            type: string
+        - name: order
+          in: query
+          description: Sort order
+          schema:
+            type: string
+            default: priority.desc,created_at.asc
+        - name: limit
+          in: query
+          description: Maximum results
+          schema:
+            type: integer
+            default: 50
+            maximum: 500
+        - name: offset
+          in: query
+          description: Pagination offset
+          schema:
+            type: integer
+            default: 0
+      responses:
+        '200':
+          description: List of pending resolution items
+          headers:
+            Content-Range:
+              description: Pagination range
+              schema:
+                type: string
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/ResolutionItem'
+              example:
+                - id: "660e8400-e29b-41d4-a716-446655440001"
+                  source_id: "chembl_compound_12345"
+                  target_smiles: "CC(=O)Oc1ccccc1C(=O)O"
+                  status: "pending"
+                  priority: 10
+                  created_at: "2026-01-20T14:00:00Z"
+                  resolved_at: null
+        '401':
+          description: Unauthorized - missing or invalid JWT
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                message: "JWT token required"
+                code: "PGRST301"
+        '403':
+          description: Forbidden - insufficient role permissions
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                message: "permission denied for view resolution_queue"
+                code: "42501"
+                hint: "Requires analyst or api_user role"
+        '503':
+          description: Service unavailable
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: |
+        JWT token must include role claim with 'analyst' or 'api_user'.
+        web_anon role is explicitly denied access to this endpoint.
+
+  schemas:
+    ResolutionItem:
+      type: object
+      required:
+        - id
+        - source_id
+        - target_smiles
+        - status
+        - priority
+        - created_at
+      properties:
+        id:
+          type: string
+          format: uuid
+          description: Resolution item identifier
+        source_id:
+          type: string
+          description: External source reference (e.g., ChEMBL ID)
+          example: "chembl_compound_12345"
+        target_smiles:
+          type: string
+          description: SMILES string to resolve
+          example: "CC(=O)Oc1ccccc1C(=O)O"
+        status:
+          type: string
+          enum:
+            - pending
+            - in_progress
+            - failed
+          description: |
+            Current resolution status.
+            Note: 'completed' items are filtered out of this view.
+        priority:
+          type: integer
+          description: Processing priority (higher = sooner)
+          minimum: 0
+          maximum: 100
+          example: 10
+        created_at:
+          type: string
+          format: date-time
+          description: When item was added to queue
+        resolved_at:
+          type: string
+          format: date-time
+          nullable: true
+          description: When resolution completed (null if pending/in_progress)
+
+    Error:
+      type: object
+      required:
+        - message
+      properties:
+        message:
+          type: string
+          description: Error message
+        code:
+          type: string
+          description: PostgreSQL error code
+        hint:
+          type: string
+          description: Suggestion for resolution
