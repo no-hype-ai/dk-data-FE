@@ -82,7 +82,7 @@ spec:
               # --- Step 4: Create roles ---
               echo "Creating roles..."
               psql -d dk_data <<'SQL'
-              DO $$
+              DO $role$
               BEGIN
                 IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'authenticator') THEN
                   CREATE ROLE authenticator LOGIN NOINHERIT;
@@ -99,7 +99,7 @@ spec:
                 IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'readonly') THEN
                   CREATE ROLE readonly LOGIN;
                 END IF;
-              END $$;
+              END $role$;
               SQL
 
               # --- Step 5: Set authenticator password ---
@@ -123,7 +123,7 @@ spec:
               -- web_anon: minimal access
               REVOKE ALL PRIVILEGES ON ALL TABLES IN SCHEMA api FROM web_anon;
               GRANT USAGE ON SCHEMA api TO web_anon;
-              DO $$
+              DO $perm$
               BEGIN
                 IF EXISTS (SELECT 1 FROM information_schema.tables
                            WHERE table_schema = 'api' AND table_name = 'data_catalog') THEN
@@ -133,11 +133,11 @@ spec:
                            WHERE table_schema = 'api' AND table_name = 'health') THEN
                   EXECUTE 'GRANT SELECT ON api.health TO web_anon';
                 END IF;
-              END $$;
+              END $perm$;
 
               -- analyst: read targets, scoring, data_sources, data_catalog
               GRANT USAGE ON SCHEMA api TO analyst;
-              DO $$
+              DO $perm$
               BEGIN
                 IF EXISTS (SELECT 1 FROM information_schema.tables
                            WHERE table_schema = 'api' AND table_name = 'targets') THEN
@@ -155,7 +155,7 @@ spec:
                            WHERE table_schema = 'api' AND table_name = 'data_catalog') THEN
                   EXECUTE 'GRANT SELECT ON api.data_catalog TO analyst';
                 END IF;
-              END $$;
+              END $perm$;
 
               -- api_user: full read access to api schema
               GRANT USAGE ON SCHEMA api TO api_user;
@@ -256,13 +256,42 @@ spec:
                 0::numeric AS score
               WHERE false;
 
-              -- api.data_sources: Data source configuration (placeholder)
+              -- api.data_sources: Data source configuration (enhanced for Compass)
               CREATE OR REPLACE VIEW api.data_sources AS
               SELECT
-                'placeholder'::text AS source_name,
+                '00000000-0000-0000-0000-000000000000'::uuid AS id,
+                'placeholder'::text AS name,
                 'none'::text AS source_type,
-                now() AS last_fetch,
-                'pending'::text AS status
+                now() AS last_fetch_at,
+                'pending'::text AS status,
+                0::bigint AS record_count,
+                NULL::text AS error_message
+              WHERE false;
+
+              -- api.molecules: Molecule discovery data for Compass search (placeholder)
+              -- Source: mol_gold.molecules when available
+              CREATE OR REPLACE VIEW api.molecules AS
+              SELECT
+                '00000000-0000-0000-0000-000000000000'::uuid AS id,
+                'placeholder'::text AS smiles,
+                'placeholder'::text AS inchi_key,
+                'No molecules loaded'::text AS name,
+                0::numeric AS molecular_weight,
+                now() AS created_at,
+                now() AS updated_at
+              WHERE false;
+
+              -- api.resolution_queue: Pending molecule resolution items for Compass workflow (placeholder)
+              -- Source: mol_app.resolution_queue when available
+              CREATE OR REPLACE VIEW api.resolution_queue AS
+              SELECT
+                '00000000-0000-0000-0000-000000000000'::uuid AS id,
+                'placeholder'::text AS source_id,
+                'placeholder'::text AS target_smiles,
+                'pending'::text AS status,
+                0::integer AS priority,
+                now() AS created_at,
+                NULL::timestamptz AS resolved_at
               WHERE false;
               SQL
 
@@ -289,18 +318,30 @@ spec:
               GRANT SELECT ON api.targets TO api_user;
               GRANT SELECT ON api.scoring TO api_user;
               GRANT SELECT ON api.data_sources TO api_user;
+              GRANT SELECT ON api.molecules TO api_user;
+              GRANT SELECT ON api.resolution_queue TO api_user;
+
+              -- Compass views: web_anon gets molecules and data_sources (public), but NOT resolution_queue
+              GRANT SELECT ON api.molecules TO web_anon;
+              GRANT SELECT ON api.data_sources TO web_anon;
+              -- Explicitly ensure web_anon cannot access resolution_queue (internal workflow)
+              REVOKE ALL ON api.resolution_queue FROM web_anon;
+
+              -- analyst: gets resolution_queue access
+              GRANT SELECT ON api.molecules TO analyst;
+              GRANT SELECT ON api.resolution_queue TO analyst;
               SQL
 
               # --- Step 11: Cross-database isolation ---
               echo "Enforcing cross-database isolation..."
               psql -d postgres <<'SQL'
-              DO $$
+              DO $iso$
               BEGIN
                 IF EXISTS (SELECT 1 FROM pg_database WHERE datname = 'behavior_labs') THEN
                   EXECUTE 'REVOKE CONNECT ON DATABASE behavior_labs FROM authenticator';
                   EXECUTE 'REVOKE CONNECT ON DATABASE behavior_labs FROM readonly';
                 END IF;
-              END $$;
+              END $iso$;
               SQL
 
               # --- Step 12: Verification ---
@@ -325,10 +366,10 @@ spec:
 
               echo "Checking API views..."
               VIEW_COUNT=$(psql -d dk_data -Atc "SELECT COUNT(*) FROM information_schema.views WHERE table_schema = 'api'")
-              if [ "$VIEW_COUNT" -ge 5 ]; then
+              if [ "$VIEW_COUNT" -ge 7 ]; then
                 echo "✓ Found $VIEW_COUNT API views"
               else
-                echo "✗ ERROR: Expected at least 5 views, found $VIEW_COUNT"
+                echo "✗ ERROR: Expected at least 7 views, found $VIEW_COUNT"
                 exit 1
               fi
 
@@ -336,4 +377,4 @@ spec:
               echo "=== Database initialization complete ==="
               echo "Roles: authenticator, web_anon, analyst, api_user, readonly"
               echo "Schemas: raw, staging, mart, scoring, meta, api, mol_*"
-              echo "Views: api.health, api.data_catalog, api.targets, api.scoring, api.data_sources"
+              echo "Views: api.health, api.data_catalog, api.targets, api.scoring, api.data_sources, api.molecules, api.resolution_queue"
