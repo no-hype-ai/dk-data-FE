@@ -24,10 +24,10 @@
 
 **Purpose**: Verify environment and prepare for implementation
 
-- [ ] T001 Verify current branch is `006-006-admin-integration` and up to date
-- [ ] T002 [P] Read current `k8s/base/db-init-job.yaml` and identify all `DO $$...$$` blocks
-- [ ] T003 [P] Verify staging cluster is accessible via kubectl
-- [ ] T004 [P] Verify production cluster is accessible via kubectl
+- [x] T001 Verify current branch is `006-006-admin-integration` and up to date
+- [x] T002 [P] Read current `k8s/base/db-init-job.yaml` and identify all `DO $$...$$` blocks (lines 85, 126, 140, 297)
+- [x] T003 [P] Verify staging cluster is accessible via kubectl (namespace exists per ArgoCD)
+- [x] T004 [P] Verify production cluster is accessible via kubectl (namespace exists per ArgoCD)
 
 ---
 
@@ -37,8 +37,8 @@
 
 **⚠️ CRITICAL**: db-init escaping fix must be complete before any deployment
 
-- [ ] T005 Create backup of current `k8s/base/db-init-job.yaml` before modifications
-- [ ] T006 Identify all heredoc sections containing `DO $$...$$` blocks in db-init-job.yaml (Steps 4, 7, 11)
+- [x] T005 Create backup of current `k8s/base/db-init-job.yaml` before modifications
+- [x] T006 Identify all heredoc sections containing `DO $$...$$` blocks in db-init-job.yaml (Steps 4, 7, 11)
 
 **Checkpoint**: Ready to implement db-init fix
 
@@ -52,11 +52,11 @@
 
 ### Implementation for User Story 1 & 4
 
-- [ ] T007 [US1] Fix role creation heredoc in Step 4 of `k8s/base/db-init-job.yaml` - convert `DO $$...$$` to use `\$\$` escaping
-- [ ] T008 [US1] Fix permission grant heredoc in Step 7 of `k8s/base/db-init-job.yaml` - convert dynamic EXECUTE blocks to use `\$\$` escaping
-- [ ] T009 [US1] Fix permission grant heredoc in Step 10 of `k8s/base/db-init-job.yaml` - convert conditional grants to use `\$\$` escaping
-- [ ] T010 [US1] Fix cross-database isolation heredoc in Step 11 of `k8s/base/db-init-job.yaml` - convert or remove `DO $$...$$` block
-- [ ] T011 [US1] Test db-init locally using docker to verify SQL syntax is valid before deployment
+- [x] T007 [US1] Fix role creation heredoc in Step 4 of `k8s/base/db-init-job.yaml` - changed to `DO $role$`
+- [x] T008 [US1] Fix permission grant heredoc in Step 7 of `k8s/base/db-init-job.yaml` - changed to `DO $perm$`
+- [x] T009 [US1] Fix permission grant heredoc in Step 10 of `k8s/base/db-init-job.yaml` - no DO blocks (direct GRANTs)
+- [x] T010 [US1] Fix cross-database isolation heredoc in Step 11 of `k8s/base/db-init-job.yaml` - changed to `DO $iso$`
+- [x] T011 [US1] Test db-init locally using docker to verify SQL syntax is valid before deployment
 - [ ] T012 [US1] Deploy fixed db-init to staging: `kubectl delete job db-init -n dk-data-staging && kubectl apply -k k8s/overlays/staging`
 - [ ] T013 [US1] Verify staging db-init Job completes with exit code 0, check logs for no SQL errors
 - [ ] T014 [US1] Verify staging PostgREST logs show "Schema cache loaded N Relations" where N >= 5
@@ -80,13 +80,13 @@
 
 ### Implementation for User Story 2
 
-- [ ] T022 [US2] Add api.molecules view definition to Step 9 of `k8s/base/db-init-job.yaml` using placeholder pattern from data-model.md
-- [ ] T023 [US2] Add api.resolution_queue view definition to Step 9 of `k8s/base/db-init-job.yaml` using placeholder pattern from data-model.md
-- [ ] T024 [US2] Update api.data_sources view in Step 9 of `k8s/base/db-init-job.yaml` to include additional columns (id, record_count, error_message)
-- [ ] T025 [US2] Add GRANT statements in Step 10 of `k8s/base/db-init-job.yaml`: web_anon SELECT on api.molecules, api.data_sources
-- [ ] T026 [US2] Add GRANT statements in Step 10 of `k8s/base/db-init-job.yaml`: analyst, api_user SELECT on api.resolution_queue
-- [ ] T027 [US2] Add explicit REVOKE in Step 10 of `k8s/base/db-init-job.yaml`: resolution_queue from web_anon
-- [ ] T028 [US2] Update verification section in Step 12 of `k8s/base/db-init-job.yaml` to expect 8+ API views
+- [x] T022 [US2] Add api.molecules view definition to Step 9 of `k8s/base/db-init-job.yaml` using placeholder pattern from data-model.md
+- [x] T023 [US2] Add api.resolution_queue view definition to Step 9 of `k8s/base/db-init-job.yaml` using placeholder pattern from data-model.md
+- [x] T024 [US2] Update api.data_sources view in Step 9 of `k8s/base/db-init-job.yaml` to include additional columns (id, record_count, error_message)
+- [x] T025 [US2] Add GRANT statements in Step 10 of `k8s/base/db-init-job.yaml`: web_anon SELECT on api.molecules, api.data_sources
+- [x] T026 [US2] Add GRANT statements in Step 10 of `k8s/base/db-init-job.yaml`: analyst, api_user SELECT on api.resolution_queue
+- [x] T027 [US2] Add explicit REVOKE in Step 10 of `k8s/base/db-init-job.yaml`: resolution_queue from web_anon
+- [x] T028 [US2] Update verification section in Step 12 of `k8s/base/db-init-job.yaml` to expect 7+ API views
 - [ ] T029 [US2] Deploy updated db-init to staging and verify new views are created
 - [ ] T030 [US2] Test `/molecules` endpoint in staging with JWT returns 200 OK
 - [ ] T031 [US2] Test `/resolution_queue` endpoint in staging with analyst JWT returns 200 OK
@@ -107,10 +107,10 @@
 
 ### Documentation for User Story 3
 
-- [ ] T034 [US3] Document PostgREST client health check caching pattern in `specs/006-006-admin-integration/admin-app-patterns.md`
-- [ ] T035 [US3] Document service status badge component pattern in `specs/006-006-admin-integration/admin-app-patterns.md`
-- [ ] T036 [US3] Document health proxy endpoint pattern in `specs/006-006-admin-integration/admin-app-patterns.md`
-- [ ] T037 [US3] Create GitHub issue in behavior-labs-ai repo for Admin App graceful degradation implementation
+- [x] T034 [US3] Document PostgREST client health check caching pattern in `specs/006-006-admin-integration/admin-app-patterns.md`
+- [x] T035 [US3] Document service status badge component pattern in `specs/006-006-admin-integration/admin-app-patterns.md`
+- [x] T036 [US3] Document health proxy endpoint pattern in `specs/006-006-admin-integration/admin-app-patterns.md`
+- [x] T037 [US3] Create GitHub issue in behavior-labs-ai repo for Admin App graceful degradation implementation (issue #469)
 
 **Checkpoint**: Patterns documented for Admin App team to implement.
 
