@@ -24,7 +24,7 @@ spec:
         - name: ghcr-credentials
       containers:
         - name: job-trigger
-          image: ghcr.io/data-kinetic/dk-data-fe/job-trigger:latest
+          image: ghcr.io/data-kinetic/dk-data-fe/job-trigger:staging-f0b30ec
           ports:
             - containerPort: 8000
               name: http
