@@ -1,0 +1,180 @@
+# Molecules API Contract
+# PostgREST endpoint specification for Compass molecule search
+
+openapi: 3.0.3
+info:
+  title: dk-data Molecules API
+  description: Molecule search and discovery endpoint for Admin App Compass features
+  version: 1.0.0
+
+servers:
+  - url: https://dk-data.behaviorlabs.ai
+    description: Production
+  - url: https://dk-data-staging.behaviorlabs.ai
+    description: Staging
+
+paths:
+  /molecules:
+    get:
+      summary: List molecules
+      description: |
+        Returns a paginated list of molecules. Supports PostgREST filtering,
+        ordering, and pagination via query parameters.
+      operationId: listMolecules
+      tags:
+        - Molecules
+      security:
+        - bearerAuth: []
+        - anonymous: []
+      parameters:
+        - name: select
+          in: query
+          description: Columns to return (PostgREST column selection)
+          schema:
+            type: string
+            example: id,smiles,name,molecular_weight
+        - name: name
+          in: query
+          description: Filter by molecule name (supports ilike)
+          schema:
+            type: string
+            example: ilike.*aspirin*
+        - name: smiles
+          in: query
+          description: Filter by SMILES string
+          schema:
+            type: string
+        - name: inchi_key
+          in: query
+          description: Filter by InChI key
+          schema:
+            type: string
+        - name: molecular_weight
+          in: query
+          description: Filter by molecular weight range
+          schema:
+            type: string
+            example: gte.100,lte.500
+        - name: order
+          in: query
+          description: Sort order (PostgREST ordering)
+          schema:
+            type: string
+            example: created_at.desc
+        - name: limit
+          in: query
+          description: Maximum results to return
+          schema:
+            type: integer
+            default: 100
+            maximum: 1000
+        - name: offset
+          in: query
+          description: Results offset for pagination
+          schema:
+            type: integer
+            default: 0
+      responses:
+        '200':
+          description: List of molecules
+          headers:
+            Content-Range:
+              description: Pagination range (e.g., "0-99/1000")
+              schema:
+                type: string
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Molecule'
+              example:
+                - id: "550e8400-e29b-41d4-a716-446655440000"
+                  smiles: "CC(=O)Oc1ccccc1C(=O)O"
+                  inchi_key: "BSYNRYMUTXBXSQ-UHFFFAOYSA-N"
+                  name: "Aspirin"
+                  molecular_weight: 180.16
+                  created_at: "2026-01-15T10:30:00Z"
+                  updated_at: "2026-01-15T10:30:00Z"
+        '401':
+          description: Unauthorized - invalid or missing JWT
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '503':
+          description: Service unavailable - database connection error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: JWT token with role claim
+    anonymous:
+      type: apiKey
+      in: header
+      name: X-Anonymous
+      description: Anonymous access (web_anon role)
+
+  schemas:
+    Molecule:
+      type: object
+      required:
+        - id
+        - smiles
+        - created_at
+        - updated_at
+      properties:
+        id:
+          type: string
+          format: uuid
+          description: Unique molecule identifier
+        smiles:
+          type: string
+          description: Canonical SMILES representation
+          example: "CC(=O)Oc1ccccc1C(=O)O"
+        inchi_key:
+          type: string
+          nullable: true
+          description: InChI key for structure identification
+          example: "BSYNRYMUTXBXSQ-UHFFFAOYSA-N"
+        name:
+          type: string
+          nullable: true
+          description: Common or IUPAC name
+          example: "Aspirin"
+        molecular_weight:
+          type: number
+          format: double
+          nullable: true
+          description: Molecular weight in g/mol
+          example: 180.16
+        created_at:
+          type: string
+          format: date-time
+          description: Record creation timestamp
+        updated_at:
+          type: string
+          format: date-time
+          description: Last update timestamp
+
+    Error:
+      type: object
+      required:
+        - message
+      properties:
+        message:
+          type: string
+          description: Error message
+        code:
+          type: string
+          description: Error code
+        hint:
+          type: string
+          description: Suggestion for resolution
