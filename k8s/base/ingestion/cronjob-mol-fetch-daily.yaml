@@ -29,7 +29,7 @@ spec:
             - name: ghcr-credentials
           containers:
             - name: mol-fetch-daily
-              image: ghcr.io/data-kinetic/dk-data-fe/job-trigger:main-6067a54
+              image: ghcr.io/data-kinetic/dk-data-fe/job-trigger:main-76c48e1
               command: ["python", "-m", "dk_data.ingestion.fetch_molecules"]
               args: ["--source", "clinicaltrials,openfda"]
               env:
