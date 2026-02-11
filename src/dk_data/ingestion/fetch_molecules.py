@@ -74,6 +74,7 @@ async def fetch_source(source: str, batch_size: int = 100) -> dict:
 
     Each ingestion class has source-specific fetch methods (not a generic ingest()).
     This function maps source names to the correct class and method.
+    Requires a running Postgres with raw.* schema for storage.
 
     Args:
         source: Source name
@@ -91,6 +92,7 @@ async def fetch_source(source: str, batch_size: int = 100) -> dict:
             UniProtIngestion,
             OpenAlexIngestion,
         )
+        import asyncpg
 
         valid_sources = ['chembl', 'pubchem', 'clinicaltrials', 'openfda', 'uniprot', 'openalex']
         if source not in valid_sources:
@@ -98,45 +100,42 @@ async def fetch_source(source: str, batch_size: int = 100) -> dict:
 
         logger.info(f"Starting {source} fetch using data_platform services")
         db_url = get_connection_string()
+        db_pool = await asyncpg.create_pool(db_url, min_size=1, max_size=3)
 
+        service = None
         records = 0
-        if source == 'chembl':
-            service = ChEMBLIngestion(db_url)
-            result = await service.fetch_molecule_by_name("drug")
-            records = 1 if result else 0
+        try:
+            if source == 'chembl':
+                service = ChEMBLIngestion(db_pool)
+                result = await service.fetch_molecule_by_name("drug")
+                records = 1 if result else 0
+            elif source == 'pubchem':
+                service = PubChemIngestion(db_pool)
+                result = await service.fetch_compound_by_name("aspirin")
+                records = 1 if result else 0
+            elif source == 'clinicaltrials':
+                service = ClinicalTrialsIngestion(db_pool)
+                result = await service.fetch_studies(query="drug", page_size=batch_size)
+                records = 1 if result else 0
+            elif source == 'openfda':
+                service = OpenFDAIngestion(db_pool)
+                result = await service.fetch_drug_labels(limit=batch_size)
+                records = 1 if result else 0
+            elif source == 'uniprot':
+                service = UniProtIngestion(db_pool)
+                result = await service.search_proteins(query="drug target", limit=batch_size)
+                records = 1 if result else 0
+            elif source == 'openalex':
+                service = OpenAlexIngestion(db_pool)
+                result = await service.fetch_works(search="pharmaceutical", per_page=batch_size)
+                records = 1 if result else 0
 
-        elif source == 'pubchem':
-            service = PubChemIngestion(db_url)
-            result = await service.fetch_compound_by_name("aspirin")
-            records = 1 if result else 0
-
-        elif source == 'clinicaltrials':
-            service = ClinicalTrialsIngestion(db_url)
-            result = await service.fetch_studies(query="drug", page_size=batch_size)
-            records = 1 if result else 0
-
-        elif source == 'openfda':
-            service = OpenFDAIngestion(db_url)
-            result = await service.fetch_drug_labels(limit=batch_size)
-            records = 1 if result else 0
-
-        elif source == 'uniprot':
-            service = UniProtIngestion(db_url)
-            result = await service.search_proteins(query="drug target", limit=batch_size)
-            records = 1 if result else 0
-
-        elif source == 'openalex':
-            service = OpenAlexIngestion(db_url)
-            result = await service.fetch_works(search="pharmaceutical", per_page=batch_size)
-            records = 1 if result else 0
-
-        await service.close()
-        logger.info(f"Fetched {records} record(s) from {source}")
-        return {
-            'status': 'success',
-            'records': records,
-            'source': source,
-        }
+            logger.info(f"Fetched {records} record(s) from {source}")
+            return {'status': 'success', 'records': records, 'source': source}
+        finally:
+            if service:
+                await service.close()
+            await db_pool.close()
 
     except ImportError as e:
         logger.warning(f"data_platform import failed ({e}), trying external_apis clients")
@@ -177,8 +176,9 @@ async def fetch_source_with_clients(source: str, batch_size: int = 100) -> dict:
             from dk_data.services.external_apis.clinicaltrials_client import ClinicalTrialsClient
             client = ClinicalTrialsClient()
             try:
-                trials = await client.search_studies(query="drug", page_size=batch_size)
-                return {'status': 'success', 'records': len(trials) if trials else 0, 'source': source}
+                result = await client.search_studies(query="drug", page_size=batch_size)
+                records = result.total_count if result else 0
+                return {'status': 'success', 'records': records, 'source': source}
             finally:
                 await client.close()
 

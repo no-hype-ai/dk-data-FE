@@ -147,30 +147,20 @@ from .openalex_client import (
     OpenAlexClient,
     Author,
     Publication,
-    Institution,
-    WorkSearchResult,
-    get_openalex_client,
 )
 
 from .patent_client import (
     PatentsViewClient,
     Patent,
-    PatentSearchResult,
-    get_patentsview_client,
 )
 
 from .pubmed_client import (
     PubMedClient,
-    PubMedArticle,
-    PubMedSearchResult,
-    get_pubmed_client,
 )
 
 from .health_canada_client import (
     HealthCanadaClient,
     HealthCanadaProduct,
-    DrugStatusUpdate,
-    get_health_canada_client,
 )
 
 from .chembl_client import (
@@ -296,24 +286,14 @@ __all__ = [
     "OpenAlexClient",
     "Author",
     "Publication",
-    "Institution",
-    "WorkSearchResult",
-    "get_openalex_client",
     # Patents
     "PatentsViewClient",
     "Patent",
-    "PatentSearchResult",
-    "get_patentsview_client",
     # PubMed
     "PubMedClient",
-    "PubMedArticle",
-    "PubMedSearchResult",
-    "get_pubmed_client",
     # Health Canada
     "HealthCanadaClient",
     "HealthCanadaProduct",
-    "DrugStatusUpdate",
-    "get_health_canada_client",
     # ChEMBL
     "ChEMBLClient",
     "ChEMBLMolecule",
