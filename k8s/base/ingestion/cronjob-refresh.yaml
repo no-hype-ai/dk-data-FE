@@ -26,7 +26,7 @@ spec:
           restartPolicy: OnFailure
           containers:
             - name: catalog-refresh
-              image: ghcr.io/data-kinetic/dk-data-fe/job-trigger:staging-5cf1fc0
+              image: ghcr.io/data-kinetic/dk-data-fe/job-trigger:staging-32f6fe2
               command:
                 - python
                 - -m
