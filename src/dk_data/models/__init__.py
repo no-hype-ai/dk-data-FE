@@ -15,12 +15,10 @@ from . import application
 
 # Standalone models
 from .competitive_graph import (
-    DrugNode,
-    IndicationNode,
-    CompetitorEdge,
+    CompetitiveNode,
+    CompetitiveEdge,
     CompetitiveLandscapeGraph,
-    ThreatLevel,
-    CompetitorType,
+    ThreatAssessment,
 )
 
 from .coverage import (
@@ -50,12 +48,10 @@ __all__ = [
     "gold",
     "application",
     # Competitive Graph
-    "DrugNode",
-    "IndicationNode",
-    "CompetitorEdge",
+    "CompetitiveNode",
+    "CompetitiveEdge",
     "CompetitiveLandscapeGraph",
-    "ThreatLevel",
-    "CompetitorType",
+    "ThreatAssessment",
     # Coverage
     "CoverageStatus",
     "SourceCoverage",
