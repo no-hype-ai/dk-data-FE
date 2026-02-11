@@ -118,9 +118,12 @@ from .ahrq_hcup_client import (
     get_ahrq_hcup_client,
 )
 
-from .sec_edgar_client import (
-    SECEdgarClient,
-)
+try:
+    from .sec_edgar_client import (
+        SECEdgarClient,
+    )
+except ImportError:
+    SECEdgarClient = None  # models.market_intelligence not yet implemented
 
 from .sec_rate_limiter import (
     SECRateLimiter,
