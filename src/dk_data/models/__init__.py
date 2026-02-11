@@ -24,21 +24,22 @@ from .competitive_graph import (
 from .coverage import (
     CoverageStatus,
     SourceCoverage,
-    OverallCoverage,
     CoverageGap,
+    CoverageReport,
+    DataSufficiencyScore,
 )
 
 from .indication import (
     Indication,
-    IndicationMatch,
-    IndicationHierarchy,
+    DrugIndication,
+    ICD10Hierarchy,
+    IndicationOverlap,
 )
 
 from .lifecycle import (
     DataCoverage,
     DrugLifecycle,
-    LifecycleStage,
-    Milestone,
+    RegulatoryMilestone,
 )
 
 __all__ = [
@@ -55,15 +56,16 @@ __all__ = [
     # Coverage
     "CoverageStatus",
     "SourceCoverage",
-    "OverallCoverage",
     "CoverageGap",
+    "CoverageReport",
+    "DataSufficiencyScore",
     # Indication
     "Indication",
-    "IndicationMatch",
-    "IndicationHierarchy",
+    "DrugIndication",
+    "ICD10Hierarchy",
+    "IndicationOverlap",
     # Lifecycle
     "DataCoverage",
     "DrugLifecycle",
-    "LifecycleStage",
-    "Milestone",
+    "RegulatoryMilestone",
 ]
