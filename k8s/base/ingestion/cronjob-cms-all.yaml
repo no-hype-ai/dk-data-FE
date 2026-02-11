@@ -26,7 +26,7 @@ spec:
           restartPolicy: OnFailure
           containers:
             - name: fetch-cms
-              image: ghcr.io/data-kinetic/dk-data-fe/job-trigger:staging-576cbe1
+              image: ghcr.io/data-kinetic/dk-data-fe/job-trigger:staging-5cf1fc0
               command:
                 - python
                 - -m
