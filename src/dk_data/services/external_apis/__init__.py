@@ -168,13 +168,12 @@ from .chembl_client import (
     ChEMBLMolecule,
     ChEMBLActivity,
     ChEMBLTarget,
-    get_chembl_client,
 )
 
 from .uniprot_client import (
     UniProtClient,
     UniProtProtein,
-    ProteinFeature,
+    UniProtFeature,
     get_uniprot_client,
 )
 
@@ -299,11 +298,10 @@ __all__ = [
     "ChEMBLMolecule",
     "ChEMBLActivity",
     "ChEMBLTarget",
-    "get_chembl_client",
     # UniProt
     "UniProtClient",
     "UniProtProtein",
-    "ProteinFeature",
+    "UniProtFeature",
     "get_uniprot_client",
     # RSS
     "RSSFeedClient",
