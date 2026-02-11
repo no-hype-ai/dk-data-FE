@@ -20,6 +20,9 @@ spec:
       server: https://kubernetes.default.svc
     - namespace: dk-data-staging
       server: https://kubernetes.default.svc
+    # Staging on k3s-slave-1 (009-infra-evolution Phase 6)
+    - namespace: dk-data-staging
+      server: https://10.0.0.12:6443
 
   clusterResourceWhitelist:
     - group: ""
