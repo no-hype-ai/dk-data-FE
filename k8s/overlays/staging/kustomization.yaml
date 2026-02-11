@@ -90,13 +90,13 @@ patches:
   - patch: |-
       - op: replace
         path: /spec/rules/0/host
-        value: data.preview.behaviorlabs.ai
+        value: data.staging.behaviorlabs.ai
       - op: replace
         path: /spec/tls/0/hosts/0
-        value: data.preview.behaviorlabs.ai
+        value: data.staging.behaviorlabs.ai
       - op: replace
         path: /spec/tls/0/secretName
-        value: data-preview-behaviorlabs-ai-tls
+        value: data-staging-behaviorlabs-ai-tls
       - op: replace
         path: /metadata/annotations/traefik.ingress.kubernetes.io~1router.middlewares
         value: dk-data-staging-dk-data-rate-limit@kubernetescrd
