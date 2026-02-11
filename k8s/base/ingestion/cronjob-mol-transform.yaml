@@ -29,7 +29,7 @@ spec:
             - name: ghcr-credentials
           containers:
             - name: mol-transform
-              image: ghcr.io/data-kinetic/dk-data-fe/job-trigger:staging-311d0e0
+              image: ghcr.io/data-kinetic/dk-data-fe/job-trigger:staging-576cbe1
               command: ["python", "-m", "dk_data.ingestion.transform_molecules"]
               args: ["--layer", "all"]
               env:
