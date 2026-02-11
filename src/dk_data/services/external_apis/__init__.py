@@ -118,9 +118,12 @@ from .ahrq_hcup_client import (
     get_ahrq_hcup_client,
 )
 
-from .sec_edgar_client import (
-    SECEdgarClient,
-)
+try:
+    from .sec_edgar_client import (
+        SECEdgarClient,
+    )
+except ImportError:
+    SECEdgarClient = None  # models.market_intelligence not yet implemented
 
 from .sec_rate_limiter import (
     SECRateLimiter,
@@ -144,30 +147,20 @@ from .openalex_client import (
     OpenAlexClient,
     Author,
     Publication,
-    Institution,
-    WorkSearchResult,
-    get_openalex_client,
 )
 
 from .patent_client import (
     PatentsViewClient,
     Patent,
-    PatentSearchResult,
-    get_patentsview_client,
 )
 
 from .pubmed_client import (
     PubMedClient,
-    PubMedArticle,
-    PubMedSearchResult,
-    get_pubmed_client,
 )
 
 from .health_canada_client import (
     HealthCanadaClient,
     HealthCanadaProduct,
-    DrugStatusUpdate,
-    get_health_canada_client,
 )
 
 from .chembl_client import (
@@ -175,13 +168,12 @@ from .chembl_client import (
     ChEMBLMolecule,
     ChEMBLActivity,
     ChEMBLTarget,
-    get_chembl_client,
 )
 
 from .uniprot_client import (
     UniProtClient,
     UniProtProtein,
-    ProteinFeature,
+    UniProtFeature,
     get_uniprot_client,
 )
 
@@ -293,34 +285,23 @@ __all__ = [
     "OpenAlexClient",
     "Author",
     "Publication",
-    "Institution",
-    "WorkSearchResult",
-    "get_openalex_client",
     # Patents
     "PatentsViewClient",
     "Patent",
-    "PatentSearchResult",
-    "get_patentsview_client",
     # PubMed
     "PubMedClient",
-    "PubMedArticle",
-    "PubMedSearchResult",
-    "get_pubmed_client",
     # Health Canada
     "HealthCanadaClient",
     "HealthCanadaProduct",
-    "DrugStatusUpdate",
-    "get_health_canada_client",
     # ChEMBL
     "ChEMBLClient",
     "ChEMBLMolecule",
     "ChEMBLActivity",
     "ChEMBLTarget",
-    "get_chembl_client",
     # UniProt
     "UniProtClient",
     "UniProtProtein",
-    "ProteinFeature",
+    "UniProtFeature",
     "get_uniprot_client",
     # RSS
     "RSSFeedClient",

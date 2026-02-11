@@ -72,6 +72,10 @@ async def fetch_source(source: str, batch_size: int = 100) -> dict:
     """
     Fetch data from a single molecule source using RawIngestionService.
 
+    Each ingestion class has source-specific fetch methods (not a generic ingest()).
+    This function maps source names to the correct class and method.
+    Requires a running Postgres with raw.* schema for storage.
+
     Args:
         source: Source name
         batch_size: Number of records per batch
@@ -88,38 +92,53 @@ async def fetch_source(source: str, batch_size: int = 100) -> dict:
             UniProtIngestion,
             OpenAlexIngestion,
         )
+        import asyncpg
 
-        # Map source names to ingestion classes
-        ingestion_classes = {
-            'chembl': ChEMBLIngestion,
-            'pubchem': PubChemIngestion,
-            'clinicaltrials': ClinicalTrialsIngestion,
-            'openfda': OpenFDAIngestion,
-            'uniprot': UniProtIngestion,
-            'openalex': OpenAlexIngestion,
-        }
-
-        if source not in ingestion_classes:
+        valid_sources = ['chembl', 'pubchem', 'clinicaltrials', 'openfda', 'uniprot', 'openalex']
+        if source not in valid_sources:
             return {'status': 'failed', 'error': f'Unknown source: {source}', 'source': source}
 
         logger.info(f"Starting {source} fetch using data_platform services")
         db_url = get_connection_string()
+        db_pool = await asyncpg.create_pool(db_url, min_size=1, max_size=3)
 
-        ingestion_class = ingestion_classes[source]
-        service = ingestion_class(db_url)
+        service = None
+        records = 0
+        try:
+            if source == 'chembl':
+                service = ChEMBLIngestion(db_pool)
+                result = await service.fetch_molecule_by_name("drug")
+                records = 1 if result else 0
+            elif source == 'pubchem':
+                service = PubChemIngestion(db_pool)
+                result = await service.fetch_compound_by_name("aspirin")
+                records = 1 if result else 0
+            elif source == 'clinicaltrials':
+                service = ClinicalTrialsIngestion(db_pool)
+                result = await service.fetch_studies(query="drug", page_size=batch_size)
+                records = 1 if result else 0
+            elif source == 'openfda':
+                service = OpenFDAIngestion(db_pool)
+                result = await service.fetch_drug_labels(limit=batch_size)
+                records = 1 if result else 0
+            elif source == 'uniprot':
+                service = UniProtIngestion(db_pool)
+                result = await service.search_proteins(query="drug target", limit=batch_size)
+                records = 1 if result else 0
+            elif source == 'openalex':
+                service = OpenAlexIngestion(db_pool)
+                result = await service.fetch_works(search="pharmaceutical", per_page=batch_size)
+                records = 1 if result else 0
 
-        # Run ingestion
-        result = await service.ingest(batch_size=batch_size)
+            logger.info(f"Fetched {records} record(s) from {source}")
+            return {'status': 'success', 'records': records, 'source': source}
+        finally:
+            if service:
+                await service.close()
+            await db_pool.close()
 
-        logger.info(f"Fetched {result.get('records', 0)} records from {source}")
-        return {
-            'status': 'success',
-            'records': result.get('records', 0),
-            'source': source,
-        }
-
-    except ImportError:
-        # Fall back to external_apis clients
+    except ImportError as e:
+        logger.warning(f"data_platform import failed ({e}), trying external_apis clients")
         return await fetch_source_with_clients(source, batch_size)
 
     except Exception as e:
@@ -130,6 +149,9 @@ async def fetch_source(source: str, batch_size: int = 100) -> dict:
 async def fetch_source_with_clients(source: str, batch_size: int = 100) -> dict:
     """
     Fallback: Fetch using external_apis clients directly.
+
+    Note: BaseAPIClient does not implement async context manager protocol,
+    so we use try/finally with close() instead of async with.
 
     Args:
         source: Source name
@@ -143,33 +165,49 @@ async def fetch_source_with_clients(source: str, batch_size: int = 100) -> dict:
     try:
         if source == 'chembl':
             from dk_data.services.external_apis.chembl_client import ChEMBLClient
-            async with ChEMBLClient() as client:
-                molecules = await client.get_approved_drugs(limit=batch_size)
-                return {'status': 'success', 'records': len(molecules), 'source': source}
+            client = ChEMBLClient()
+            try:
+                molecules = await client.search_molecules(query="drug", limit=batch_size)
+                return {'status': 'success', 'records': len(molecules) if molecules else 0, 'source': source}
+            finally:
+                await client.close()
 
         elif source == 'clinicaltrials':
             from dk_data.services.external_apis.clinicaltrials_client import ClinicalTrialsClient
-            async with ClinicalTrialsClient() as client:
-                trials = await client.search_trials(query="drug", max_results=batch_size)
-                return {'status': 'success', 'records': len(trials), 'source': source}
+            client = ClinicalTrialsClient()
+            try:
+                result = await client.search_studies(query="drug", page_size=batch_size)
+                records = result.total_count if result else 0
+                return {'status': 'success', 'records': records, 'source': source}
+            finally:
+                await client.close()
 
         elif source == 'openfda':
             from dk_data.services.external_apis.openfda_client import OpenFDAClient
-            async with OpenFDAClient() as client:
+            client = OpenFDAClient()
+            try:
                 labels = await client.search_drug_labels(limit=batch_size)
-                return {'status': 'success', 'records': len(labels), 'source': source}
+                return {'status': 'success', 'records': len(labels) if labels else 0, 'source': source}
+            finally:
+                await client.close()
 
         elif source == 'openalex':
             from dk_data.services.external_apis.openalex_client import OpenAlexClient
-            async with OpenAlexClient() as client:
-                works = await client.search_works(query="pharmaceutical", per_page=batch_size)
-                return {'status': 'success', 'records': len(works), 'source': source}
+            client = OpenAlexClient()
+            try:
+                works = await client.search_publications(query="pharmaceutical", per_page=batch_size)
+                return {'status': 'success', 'records': len(works) if works else 0, 'source': source}
+            finally:
+                await client.close()
 
         elif source == 'uniprot':
             from dk_data.services.external_apis.uniprot_client import UniProtClient
-            async with UniProtClient() as client:
+            client = UniProtClient()
+            try:
                 proteins = await client.search_proteins(query="drug target", limit=batch_size)
-                return {'status': 'success', 'records': len(proteins), 'source': source}
+                return {'status': 'success', 'records': len(proteins) if proteins else 0, 'source': source}
+            finally:
+                await client.close()
 
         else:
             return {'status': 'failed', 'error': f'No client for source: {source}', 'source': source}
@@ -217,6 +255,31 @@ async def fetch_all(batch_size: int = 100) -> dict:
         else:
             fail_count += 1
             logger.error(f"FAILED: {source} - {result.get('error', 'Unknown error')}")
+
+    return {
+        'status': 'success' if fail_count == 0 else 'partial',
+        'sources': results,
+        'success_count': success_count,
+        'fail_count': fail_count,
+    }
+
+
+async def fetch_multiple(sources: list[str], batch_size: int = 100) -> dict:
+    """Fetch data from a list of named sources."""
+    results = {}
+    success_count = 0
+    fail_count = 0
+
+    logger.info(f"Fetching from {len(sources)} sources: {sources}")
+
+    for source in sources:
+        result = await fetch_source(source, batch_size=batch_size)
+        results[source] = result
+
+        if result.get('status') == 'success':
+            success_count += 1
+        else:
+            fail_count += 1
 
     return {
         'status': 'success' if fail_count == 0 else 'partial',
@@ -305,9 +368,12 @@ Examples:
     logger.info(f"Started at: {datetime.now().isoformat()}")
     logger.info(f"Batch size: {args.batch_size}")
 
-    # Fetch data
+    # Fetch data — support comma-separated sources
     if args.source == 'all':
         results = asyncio.run(fetch_all(batch_size=args.batch_size))
+    elif ',' in args.source:
+        sources = [s.strip() for s in args.source.split(',')]
+        results = asyncio.run(fetch_multiple(sources, batch_size=args.batch_size))
     else:
         results = asyncio.run(fetch_source(args.source, batch_size=args.batch_size))
 

@@ -15,32 +15,31 @@ from . import application
 
 # Standalone models
 from .competitive_graph import (
-    DrugNode,
-    IndicationNode,
-    CompetitorEdge,
+    CompetitiveNode,
+    CompetitiveEdge,
     CompetitiveLandscapeGraph,
-    ThreatLevel,
-    CompetitorType,
+    ThreatAssessment,
 )
 
 from .coverage import (
     CoverageStatus,
     SourceCoverage,
-    OverallCoverage,
     CoverageGap,
+    CoverageReport,
+    DataSufficiencyScore,
 )
 
 from .indication import (
     Indication,
-    IndicationMatch,
-    IndicationHierarchy,
+    DrugIndication,
+    ICD10Hierarchy,
+    IndicationOverlap,
 )
 
 from .lifecycle import (
     DataCoverage,
     DrugLifecycle,
-    LifecycleStage,
-    Milestone,
+    RegulatoryMilestone,
 )
 
 __all__ = [
@@ -50,24 +49,23 @@ __all__ = [
     "gold",
     "application",
     # Competitive Graph
-    "DrugNode",
-    "IndicationNode",
-    "CompetitorEdge",
+    "CompetitiveNode",
+    "CompetitiveEdge",
     "CompetitiveLandscapeGraph",
-    "ThreatLevel",
-    "CompetitorType",
+    "ThreatAssessment",
     # Coverage
     "CoverageStatus",
     "SourceCoverage",
-    "OverallCoverage",
     "CoverageGap",
+    "CoverageReport",
+    "DataSufficiencyScore",
     # Indication
     "Indication",
-    "IndicationMatch",
-    "IndicationHierarchy",
+    "DrugIndication",
+    "ICD10Hierarchy",
+    "IndicationOverlap",
     # Lifecycle
     "DataCoverage",
     "DrugLifecycle",
-    "LifecycleStage",
-    "Milestone",
+    "RegulatoryMilestone",
 ]
