@@ -226,6 +226,31 @@ async def fetch_all(batch_size: int = 100) -> dict:
     }
 
 
+async def fetch_multiple(sources: list[str], batch_size: int = 100) -> dict:
+    """Fetch data from a list of named sources."""
+    results = {}
+    success_count = 0
+    fail_count = 0
+
+    logger.info(f"Fetching from {len(sources)} sources: {sources}")
+
+    for source in sources:
+        result = await fetch_source(source, batch_size=batch_size)
+        results[source] = result
+
+        if result.get('status') == 'success':
+            success_count += 1
+        else:
+            fail_count += 1
+
+    return {
+        'status': 'success' if fail_count == 0 else 'partial',
+        'sources': results,
+        'success_count': success_count,
+        'fail_count': fail_count,
+    }
+
+
 def print_summary(results: dict):
     """Print fetch summary."""
     print("\n" + "=" * 60)
@@ -305,9 +330,12 @@ Examples:
     logger.info(f"Started at: {datetime.now().isoformat()}")
     logger.info(f"Batch size: {args.batch_size}")
 
-    # Fetch data
+    # Fetch data — support comma-separated sources
     if args.source == 'all':
         results = asyncio.run(fetch_all(batch_size=args.batch_size))
+    elif ',' in args.source:
+        sources = [s.strip() for s in args.source.split(',')]
+        results = asyncio.run(fetch_multiple(sources, batch_size=args.batch_size))
     else:
         results = asyncio.run(fetch_source(args.source, batch_size=args.batch_size))
 
