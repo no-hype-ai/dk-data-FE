@@ -17,7 +17,7 @@
 #   docker compose down
 #
 # Initialize database after first start:
-#   docker compose exec postgres psql -U postgres -d edwards_tavr -f /docker-entrypoint-initdb.d/init_database.sql
+#   docker compose exec postgres psql -U postgres -d dk_data -f /docker-entrypoint-initdb.d/init_database.sql
 #
 # Health checks:
 #   curl http://localhost:3030/health
@@ -37,7 +37,7 @@ services:
       POSTGRES_USER: "${POSTGRES_USER:-postgres}"
       # SECURITY: No default password - must be set via environment or .env file
       POSTGRES_PASSWORD: "${POSTGRES_PASSWORD:?POSTGRES_PASSWORD must be set}"
-      POSTGRES_DB: "${POSTGRES_DB:-edwards_tavr}"
+      POSTGRES_DB: "${POSTGRES_DB:-dk_data}"
     volumes:
       - postgres-data:/var/lib/postgresql/data
       # Mount SQL files for initialization
@@ -45,7 +45,7 @@ services:
     networks:
       - dk-data-fe-network
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-postgres} -d ${POSTGRES_DB:-edwards_tavr}"]
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-postgres} -d ${POSTGRES_DB:-dk_data}"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -63,7 +63,7 @@ services:
     environment:
       # Database connection - connects to postgres service within docker network
       # SECURITY: No default password - must be set via environment or .env file
-      PGRST_DB_URI: "postgres://authenticator:${POSTGREST_PASSWORD:?POSTGREST_PASSWORD must be set}@postgres:5432/${POSTGRES_DB:-edwards_tavr}"
+      PGRST_DB_URI: "postgres://authenticator:${POSTGREST_PASSWORD:?POSTGREST_PASSWORD must be set}@postgres:5432/${POSTGRES_DB:-dk_data}"
       PGRST_DB_SCHEMAS: "api"
       PGRST_DB_ANON_ROLE: "web_anon"
       PGRST_DB_POOL: "10"
@@ -106,7 +106,7 @@ services:
       POSTGRES_USER: "${POSTGRES_USER:-postgres}"
       # SECURITY: No default password - must be set via environment or .env file
       POSTGRES_PASSWORD: "${POSTGRES_PASSWORD:?POSTGRES_PASSWORD must be set}"
-      POSTGRES_DB: "${POSTGRES_DB:-edwards_tavr}"
+      POSTGRES_DB: "${POSTGRES_DB:-dk_data}"
       # For local dev, use subprocess runner instead of K8s
       JOB_RUNNER_MODE: "local"
       LOG_LEVEL: "info"

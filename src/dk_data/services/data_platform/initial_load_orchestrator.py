@@ -2793,7 +2793,7 @@ Environment Variables:
 
     # Database connection
     import asyncpg
-    db_url = os.getenv('DATABASE_URL', 'postgresql://postgres:postgres@localhost:5433/edwards_tavr')
+    db_url = os.getenv('DATABASE_URL', 'postgresql://postgres:postgres@localhost:5433/dk_data')
 
     try:
         pool = await asyncpg.create_pool(

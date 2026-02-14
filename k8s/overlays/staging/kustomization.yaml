@@ -11,6 +11,10 @@ labels:
 resources:
   - ../../base
 
+images:
+  - name: ghcr.io/data-kinetic/dk-data-fe/job-trigger
+    newTag: staging-PLACEHOLDER
+
 patches:
   # PostgREST — 2 replicas for staging
   - patch: |-

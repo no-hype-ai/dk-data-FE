@@ -136,19 +136,19 @@ logs-jobs: ## Tail job-trigger logs
 init-db: ## Initialize database schema and seed data
 	@echo "$(BOLD)$(BLUE)$(ARROW) Initializing database...$(NC)"
 	@echo "  $(YELLOW)Running init_database.sql...$(NC)"
-	@$(DC) exec -T postgres psql -U postgres -d edwards_tavr -f /docker-entrypoint-initdb.d/init_database.sql > /dev/null 2>&1
+	@$(DC) exec -T postgres psql -U postgres -d dk_data -f /docker-entrypoint-initdb.d/init_database.sql > /dev/null 2>&1
 	@echo "  $(GREEN)$(CHECK) Schema created$(NC)"
 	@echo "  $(YELLOW)Running catalog_functions.sql...$(NC)"
-	@$(DC) exec -T postgres psql -U postgres -d edwards_tavr -f /docker-entrypoint-initdb.d/catalog_functions.sql > /dev/null 2>&1
+	@$(DC) exec -T postgres psql -U postgres -d dk_data -f /docker-entrypoint-initdb.d/catalog_functions.sql > /dev/null 2>&1
 	@echo "  $(GREEN)$(CHECK) Catalog functions created$(NC)"
 	@echo "  $(YELLOW)Running api_views.sql...$(NC)"
-	@$(DC) exec -T postgres psql -U postgres -d edwards_tavr -f /docker-entrypoint-initdb.d/api_views.sql > /dev/null 2>&1
+	@$(DC) exec -T postgres psql -U postgres -d dk_data -f /docker-entrypoint-initdb.d/api_views.sql > /dev/null 2>&1
 	@echo "  $(GREEN)$(CHECK) API views created$(NC)"
 	@echo "  $(YELLOW)Running seed_batch_jobs.sql...$(NC)"
-	@$(DC) exec -T postgres psql -U postgres -d edwards_tavr -f /docker-entrypoint-initdb.d/seed_batch_jobs.sql > /dev/null 2>&1
+	@$(DC) exec -T postgres psql -U postgres -d dk_data -f /docker-entrypoint-initdb.d/seed_batch_jobs.sql > /dev/null 2>&1
 	@echo "  $(GREEN)$(CHECK) Batch jobs seeded$(NC)"
 	@echo "  $(YELLOW)Running seed_data_sources.sql...$(NC)"
-	@$(DC) exec -T postgres psql -U postgres -d edwards_tavr -f /docker-entrypoint-initdb.d/seed_data_sources.sql > /dev/null 2>&1
+	@$(DC) exec -T postgres psql -U postgres -d dk_data -f /docker-entrypoint-initdb.d/seed_data_sources.sql > /dev/null 2>&1
 	@echo "  $(GREEN)$(CHECK) Data sources seeded$(NC)"
 	@echo ""
 	@echo "$(GREEN)$(CHECK) Database initialization complete$(NC)"
@@ -167,14 +167,14 @@ db-reset: ## Reset database (WARNING: destroys all data)
 
 .PHONY: psql
 psql: ## Open PostgreSQL shell
-	@$(DC) exec postgres psql -U postgres -d edwards_tavr
+	@$(DC) exec postgres psql -U postgres -d dk_data
 
 .PHONY: db-stats
 db-stats: ## Show database statistics
 	@echo ""
 	@echo "$(BOLD)$(CYAN)Database Statistics$(NC)"
 	@echo "$(CYAN)══════════════════════════════════════════════════════════════$(NC)"
-	@$(DC) exec -T postgres psql -U postgres -d edwards_tavr -c "\
+	@$(DC) exec -T postgres psql -U postgres -d dk_data -c "\
 		SELECT schemaname, \
 		       COUNT(*) as tables, \
 		       pg_size_pretty(SUM(pg_total_relation_size(schemaname || '.' || relname))) as size \
@@ -183,7 +183,7 @@ db-stats: ## Show database statistics
 		ORDER BY schemaname;"
 	@echo ""
 	@echo "$(BOLD)Raw Tables Row Counts:$(NC)"
-	@$(DC) exec -T postgres psql -U postgres -d edwards_tavr -c "\
+	@$(DC) exec -T postgres psql -U postgres -d dk_data -c "\
 		SELECT relname as table_name, n_live_tup as row_count \
 		FROM pg_stat_user_tables \
 		WHERE schemaname = 'raw' \

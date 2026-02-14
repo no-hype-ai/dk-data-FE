@@ -22,6 +22,12 @@ resources:
   - ingestion/cronjob-mol-fetch-weekly.yaml
   - ingestion/cronjob-mol-transform.yaml
   - ingestion/molecule-pipeline-config.yaml
+  # Backup
+  - backup/pg-backup-configmap.yaml
+  - backup/minio-credentials.yaml
+  - backup/pg-backup-daily.yaml
+  - backup/pg-backup-weekly.yaml
+  - backup/pg-backup-verify.yaml
   # Database initialization
   - db-init-job.yaml
   # Networking
@@ -30,6 +36,6 @@ resources:
   - networkpolicy.yaml
   # Secrets
   - doppler-secret.yaml
-  # Observability (disabled - requires Prometheus Operator CRDs)
-  # - service-monitor.yaml
-  # - alert-rules.yaml
+  # Observability (requires Prometheus Operator CRDs)
+  - service-monitor.yaml
+  - alert-rules.yaml

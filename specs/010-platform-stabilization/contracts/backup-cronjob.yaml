@@ -1,0 +1,45 @@
+# Backup CronJob Contract
+# Defines the interface for the pg_dump backup CronJob
+
+# --- Environment Variables (required) ---
+# POSTGRES_HOST:      Database hostname (from dk-data-secrets)
+# POSTGRES_PORT:      Database port (from dk-data-secrets)
+# POSTGRES_USER:      Database username (from dk-data-secrets)
+# POSTGRES_PASSWORD:  Database password (from dk-data-secrets)
+# POSTGRES_DB:        Database name (from dk-data-secrets)
+# MINIO_ENDPOINT:     MinIO S3 endpoint (minio.infra.svc.cluster.local:9000)
+# MINIO_ACCESS_KEY:   MinIO access key (from minio-backup-credentials)
+# MINIO_SECRET_KEY:   MinIO secret key (from minio-backup-credentials)
+# MINIO_BUCKET:       Target bucket name (postgres-backups)
+# BACKUP_TYPE:        daily | weekly
+# NAMESPACE:          Injected via downward API (metadata.namespace)
+
+# --- Backup Script Contract ---
+# Input:  Environment variables above
+# Output: Compressed pg_dump file uploaded to MinIO
+# Path:   {MINIO_BUCKET}/{NAMESPACE}/{BACKUP_TYPE}/dk_data_{timestamp}_{BACKUP_TYPE}.dump
+# Tags:   checksum={sha256}, objects={count}, pg_version=16
+#
+# Exit codes:
+#   0 = Success (backup created, verified, uploaded)
+#   1 = Failure (backup creation, verification, or upload failed)
+#
+# Verification steps (performed before upload completes):
+#   1. pg_restore --list: object count >= 10
+#   2. SHA256 checksum computed and stored as MinIO tag
+#   3. Remote file size matches local file size
+#
+# Retention cleanup (performed after upload):
+#   - daily: delete backups older than 7 days
+#   - weekly: delete backups older than 30 days
+
+# --- CronJob Schedule ---
+# pg-backup-daily:  "0 2 * * *"     (daily at 02:00 UTC)
+# pg-backup-weekly: "0 3 * * 0"     (Sunday at 03:00 UTC)
+# pg-backup-verify: "0 4 * * 1"     (Monday at 04:00 UTC)
+
+# --- Resource Limits ---
+# requests: { memory: 512Mi, cpu: 250m }
+# limits:   { memory: 2Gi,   cpu: 1000m }
+# activeDeadlineSeconds: 3600 (daily), 7200 (weekly)
+# backoffLimit: 2

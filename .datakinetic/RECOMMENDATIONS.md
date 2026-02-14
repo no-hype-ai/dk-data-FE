@@ -503,7 +503,7 @@ spec:
 
   bootstrap:
     initdb:
-      database: edwards_tavr
+      database: dk_data
       owner: app_user
 ```
 

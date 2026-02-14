@@ -53,6 +53,7 @@ Thumbs.db
 /data/
 !/data/README.md
 !/data/.gitkeep
+src/dk_data/data/raw/
 *.csv
 *.xlsx
 *.json

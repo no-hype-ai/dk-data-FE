@@ -1,0 +1,71 @@
+name: Promote to Production
+
+on:
+  workflow_run:
+    workflows: ["Build and Push Docker Image"]
+    types:
+      - completed
+    branches:
+      - main
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: data-kinetic/dk-data-fe/job-trigger
+
+jobs:
+  promote:
+    runs-on: ubuntu-latest
+    if: ${{ github.event.workflow_run.conclusion == 'success' }}
+    permissions:
+      contents: write
+      packages: write
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          ref: main
+          fetch-depth: 0
+
+      - name: Set short SHA
+        id: vars
+        run: echo "sha_short=$(git rev-parse --short HEAD)" >> $GITHUB_OUTPUT
+
+      - name: Install crane
+        uses: imjasonh/setup-crane@v0.4
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Get staging image tag
+        id: staging
+        run: |
+          STAGING_TAG="main-${{ steps.vars.outputs.sha_short }}"
+          echo "tag=${STAGING_TAG}" >> $GITHUB_OUTPUT
+          echo "Staging image tag: ${STAGING_TAG}"
+
+      - name: Tag image for production
+        run: |
+          STAGING_TAG="${{ steps.staging.outputs.tag }}"
+          PROD_TAG="prod-${{ steps.vars.outputs.sha_short }}"
+          echo "Promoting ${STAGING_TAG} -> ${PROD_TAG}"
+          crane tag "${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${STAGING_TAG}" "${PROD_TAG}"
+
+      - name: Update production overlay
+        run: |
+          PROD_TAG="prod-${{ steps.vars.outputs.sha_short }}"
+          cd k8s/overlays/prod
+          kustomize edit set image "ghcr.io/data-kinetic/dk-data-fe/job-trigger=ghcr.io/data-kinetic/dk-data-fe/job-trigger:${PROD_TAG}"
+
+      - name: Commit and push production overlay
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add k8s/overlays/prod/kustomization.yaml
+          git diff --staged --quiet || git commit -m "chore: promote image to prod-${{ steps.vars.outputs.sha_short }}"
+          git push

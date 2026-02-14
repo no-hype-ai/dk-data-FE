@@ -87,8 +87,8 @@ This platform ingests healthcare data from multiple sources, transforms it throu
 3. **Initialize database**:
    ```bash
    psql -h localhost -p 5433 -U postgres -f sql/init_database.sql
-   psql -h localhost -p 5433 -U postgres -d edwards_tavr -f sql/seed_data_sources.sql
-   psql -h localhost -p 5433 -U postgres -d edwards_tavr -f sql/score_history_trigger.sql
+   psql -h localhost -p 5433 -U postgres -d dk_data -f sql/seed_data_sources.sql
+   psql -h localhost -p 5433 -U postgres -d dk_data -f sql/score_history_trigger.sql
    ```
 
 4. **Load data**:
@@ -369,7 +369,7 @@ python scripts/check_freshness.py --json
 | `POSTGRES_PORT` | 5433 | PostgreSQL port |
 | `POSTGRES_USER` | postgres | Database user |
 | `POSTGRES_PASSWORD` | postgres | Database password |
-| `POSTGRES_DB` | edwards_tavr | Database name |
+| `POSTGRES_DB` | dk_data | Database name |
 | `ANTHROPIC_API_KEY` | - | For AI enrichment |
 
 ### PostgREST

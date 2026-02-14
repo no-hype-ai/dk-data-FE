@@ -11,6 +11,10 @@ labels:
 resources:
   - ../../base
 
+images:
+  - name: ghcr.io/data-kinetic/dk-data-fe/job-trigger
+    newTag: prod-PLACEHOLDER
+
 patches:
   # PostgREST — 3 replicas for HA with production resources
   - patch: |-

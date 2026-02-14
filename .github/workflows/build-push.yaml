@@ -52,26 +52,17 @@ jobs:
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
 
-      - name: Update image tags in manifests
+      - name: Update staging overlay image tag
         run: |
           NEW_TAG="${{ github.ref_name }}-${{ steps.vars.outputs.sha_short }}"
-          echo "Updating image tags to: $NEW_TAG"
-
-          # Update job-trigger deployment
-          sed -i "s|image: ghcr.io/data-kinetic/dk-data-fe/job-trigger:.*|image: ghcr.io/data-kinetic/dk-data-fe/job-trigger:${NEW_TAG}|g" \
-            k8s/base/ingestion/job-trigger-deployment.yaml
-
-          # Update CronJob manifests
-          for f in k8s/base/ingestion/cronjob-*.yaml; do
-            if [ -f "$f" ]; then
-              sed -i "s|image: ghcr.io/data-kinetic/dk-data-fe/job-trigger:.*|image: ghcr.io/data-kinetic/dk-data-fe/job-trigger:${NEW_TAG}|g" "$f"
-            fi
-          done
+          echo "Updating staging overlay image tag to: $NEW_TAG"
+          cd k8s/overlays/staging
+          kustomize edit set image "ghcr.io/data-kinetic/dk-data-fe/job-trigger=ghcr.io/data-kinetic/dk-data-fe/job-trigger:${NEW_TAG}"
 
       - name: Commit and push manifest updates
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add k8s/
+          git add k8s/overlays/staging/kustomization.yaml
           git diff --staged --quiet || git commit -m "chore: update image tag to ${{ github.ref_name }}-${{ steps.vars.outputs.sha_short }}"
           git push

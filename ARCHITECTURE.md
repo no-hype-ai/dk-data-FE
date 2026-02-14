@@ -251,7 +251,7 @@ gateways:
       type: postgres
       host: localhost
       port: 5433
-      database: edwards_tavr
+      database: dk_data
       user: postgres
       password: postgres
 

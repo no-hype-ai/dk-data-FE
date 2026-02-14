@@ -645,7 +645,7 @@ async def main():
     # Connect to database
     db_url = os.environ.get(
         "DATABASE_URL",
-        "postgresql://postgres:postgres@localhost:5433/edwards_tavr"
+        "postgresql://postgres:postgres@localhost:5433/dk_data"
     )
     pool = await asyncpg.create_pool(db_url)
 

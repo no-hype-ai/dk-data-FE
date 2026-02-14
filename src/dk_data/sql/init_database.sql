@@ -1,11 +1,11 @@
 -- TAVR Data Infrastructure Platform - Database Initialization
 -- Run this script to create all schemas and tables
--- Usage: psql -h localhost -p 5433 -U postgres -f init_database.sql
-
--- Create database if not exists (run separately as superuser)
--- CREATE DATABASE edwards_tavr;
-
-\connect edwards_tavr;
+-- Usage: psql -h localhost -p 5433 -U postgres -d dk_data -v AUTHENTICATOR_PASSWORD="'your_password'" -f init_database.sql
+--
+-- Required psql variables:
+--   AUTHENTICATOR_PASSWORD - Password for the PostgREST authenticator role
+--
+-- The caller must specify the target database via psql -d flag.
 
 -- =============================================================================
 -- SCHEMA CREATION
@@ -406,11 +406,23 @@ BEGIN
 END
 $$;
 
+-- Validate that a real password was provided (reject known defaults)
+DO $$
+BEGIN
+    IF :'AUTHENTICATOR_PASSWORD' IN ('postgrest_secret_change_me', 'password', 'changeme', '') THEN
+        RAISE EXCEPTION 'AUTHENTICATOR_PASSWORD must be set to a real password, not a default/placeholder value. '
+            'Pass via: psql -v AUTHENTICATOR_PASSWORD="''your_secure_password''"';
+    END IF;
+END
+$$;
+
 -- Create authenticator role
 DO $$
 BEGIN
     IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = 'authenticator') THEN
-        CREATE ROLE authenticator NOINHERIT LOGIN PASSWORD 'postgrest_secret_change_me';
+        EXECUTE format('CREATE ROLE authenticator NOINHERIT LOGIN PASSWORD %L', :'AUTHENTICATOR_PASSWORD');
+    ELSE
+        EXECUTE format('ALTER ROLE authenticator PASSWORD %L', :'AUTHENTICATOR_PASSWORD');
     END IF;
 END
 $$;

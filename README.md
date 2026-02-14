@@ -233,11 +233,11 @@ Create a `.env` file in `src/dk_data/` to override defaults:
 POSTGRES_PORT=5433
 POSTGRES_USER=postgres
 POSTGRES_PASSWORD=postgres
-POSTGRES_DB=edwards_tavr
+POSTGRES_DB=dk_data
 
 # PostgREST
 POSTGREST_PORT=3030
-POSTGREST_PASSWORD=postgrest_secret_change_me
+POSTGREST_PASSWORD=  # REQUIRED: set a secure password
 
 # Job Trigger
 JOB_TRIGGER_PORT=8000

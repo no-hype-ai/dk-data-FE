@@ -92,7 +92,7 @@ fi
 echo "Checking database connection..."
 POSTGRES_HOST="${POSTGRES_HOST:-localhost}"
 POSTGRES_PORT="${POSTGRES_PORT:-5433}"
-POSTGRES_DB="${POSTGRES_DB:-edwards_tavr}"
+POSTGRES_DB="${POSTGRES_DB:-dk_data}"
 
 if ! pg_isready -h "${POSTGRES_HOST}" -p "${POSTGRES_PORT}" -d "${POSTGRES_DB}" &> /dev/null; then
     echo "ERROR: Cannot connect to PostgreSQL at ${POSTGRES_HOST}:${POSTGRES_PORT}"
