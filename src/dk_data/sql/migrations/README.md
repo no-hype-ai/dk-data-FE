@@ -2,7 +2,7 @@
 
 This folder contains SQL migrations for the DK Data FE platform.
 
-**Database**: edwards_tavr (different from trials-predictor's pharma_predictor)
+**Database**: dk_data (different from trials-predictor's pharma_predictor)
 
 ## Medallion Architecture Schema
 

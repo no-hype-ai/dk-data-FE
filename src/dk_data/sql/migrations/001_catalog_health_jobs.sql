@@ -1,7 +1,7 @@
 -- Migration: 001_catalog_health_jobs
 -- Feature: 001-data-layer-postgrest-gitops
 -- Purpose: Add catalog enhancements, health tracking, and batch job tables
--- Run: psql -h localhost -p 5433 -U postgres -d edwards_tavr -f migrations/001_catalog_health_jobs.sql
+-- Run: psql -h localhost -p 5433 -U postgres -d dk_data -f migrations/001_catalog_health_jobs.sql
 
 -- =============================================================================
 -- T005: Enhance meta.data_sources with new columns

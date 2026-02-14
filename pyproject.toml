@@ -47,7 +47,9 @@ dependencies = [
 [project.optional-dependencies]
 dev = [
     "pytest>=8.0.0",
+    "pytest-cov>=6.0.0",
     "pytest-postgresql>=6.0.0",
+    "responses>=0.25.0",
     "ruff>=0.1.0",
 ]
 
@@ -57,3 +59,29 @@ build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/dk_data"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = [
+    "--cov=src/dk_data",
+    "--cov-report=term-missing",
+    "--cov-report=xml",
+    "--cov-fail-under=15",
+]
+
+[tool.coverage.run]
+source = ["src/dk_data"]
+branch = true
+omit = [
+    "src/dk_data/sqlmesh/*",
+    "src/dk_data/scripts/*",
+    "src/dk_data/data/*",
+    "tests/*",
+]
+
+[tool.coverage.report]
+exclude_lines = [
+    "pragma: no cover",
+    "if __name__ == .__main__.",
+    "if TYPE_CHECKING:",
+]

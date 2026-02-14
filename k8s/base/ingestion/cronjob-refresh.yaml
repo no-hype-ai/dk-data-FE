@@ -30,7 +30,7 @@ spec:
               command:
                 - python
                 - -m
-                - dk_data.catalog_refresh
+                - dk_data.scripts.catalog_refresh
               env:
                 - name: POSTGRES_HOST
                   valueFrom:

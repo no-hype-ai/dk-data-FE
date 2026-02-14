@@ -37,7 +37,7 @@ def get_db_connection():
         port=int(os.getenv('POSTGRES_PORT', '5433')),
         user=os.getenv('POSTGRES_USER', 'postgres'),
         password=os.getenv('POSTGRES_PASSWORD', 'postgres'),
-        database=os.getenv('POSTGRES_DB', 'edwards_tavr')
+        database=os.getenv('POSTGRES_DB', 'dk_data')
     )
 
 

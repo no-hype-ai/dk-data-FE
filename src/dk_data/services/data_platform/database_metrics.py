@@ -358,7 +358,7 @@ def get_metrics_service(database_url: str = None) -> DatabaseMetricsService:
         import os
         db_url = database_url or os.getenv(
             'DATABASE_URL',
-            'postgresql://postgres:postgres@localhost:5433/edwards_tavr'
+            'postgresql://postgres:postgres@localhost:5433/dk_data'
         )
         _metrics_service = DatabaseMetricsService(db_url)
 

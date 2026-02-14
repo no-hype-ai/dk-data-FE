@@ -1,0 +1,60 @@
+# CI Pipeline Contract
+# Defines the test and coverage requirements for the CI pipeline
+
+# --- Workflow: ci.yaml ---
+# Trigger: pull_request to main, staging
+# Jobs: lint, test, validate-manifests
+
+# --- Test Job Contract ---
+# Service: postgres:16 (POSTGRES_DB=dk_data_test)
+# Install: pip install -e ".[dev]" (includes pytest-cov, responses)
+# Run: pytest tests/ -v --tb=short --cov=src/dk_data --cov-report=term-missing --cov-report=xml --cov-fail-under=15
+#
+# Coverage threshold progression:
+#   Sprint 1: 15% (baseline)
+#   Sprint 2: 20%
+#   Sprint 3+: 30%
+#
+# Coverage reporting:
+#   - XML: coverage.xml (uploaded as artifact)
+#   - HTML: htmlcov/ (uploaded as artifact)
+#   - PR comment: MishaKav/pytest-coverage-comment action
+
+# --- Test Structure Contract ---
+# tests/
+# ├── conftest.py               (existing, shared fixtures)
+# ├── test_security.py          (existing, PostgREST access control)
+# ├── test_api.py               (existing, API endpoint validation)
+# ├── test_imports.py            (NEW, import smoke tests)
+# ├── test_pydantic_models.py   (NEW, model instantiation + validation)
+# ├── test_fastapi_endpoints.py (NEW, job-trigger API via TestClient)
+# ├── test_fetchers.py          (NEW, mocked HTTP using responses library)
+# ├── unit/                     (future expansion)
+# ├── integration/              (future expansion)
+# └── contract/                 (future expansion)
+
+# --- New Dev Dependencies ---
+# pytest-cov>=6.0.0
+# responses>=0.25.0
+# (pytest-httpx deferred for future httpx migration)
+
+# --- Build-Push Workflow Contract ---
+# Trigger: push to main, staging
+# Steps:
+#   1. Build Docker image from Dockerfile
+#   2. Push to ghcr.io/data-kinetic/dk-data-fe/job-trigger:{branch}-{sha}
+#   3. Update STAGING overlay only: kustomize edit set image ...
+#   4. Commit and push overlay changes
+#
+# Image tag format:
+#   Staging: staging-{short-sha}
+#   Production: prod-{short-sha} (set by promotion workflow)
+
+# --- Promotion Workflow Contract (NEW) ---
+# Trigger: workflow_run after staging validation succeeds
+# Steps:
+#   1. Validate staging health (curl staging endpoint)
+#   2. Get latest staging image tag
+#   3. crane tag staging image with prod-{sha} tag
+#   4. Update PRODUCTION overlay: kustomize edit set image ...
+#   5. Commit and push prod overlay changes

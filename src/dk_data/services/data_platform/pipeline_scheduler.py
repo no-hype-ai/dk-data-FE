@@ -222,7 +222,7 @@ class PipelineScheduler:
             if not db_url:
                 db_host = os.getenv('POSTGRES_HOST', 'postgres')
                 db_port = os.getenv('POSTGRES_PORT', '5432')
-                db_name = os.getenv('POSTGRES_DB', 'edwards_tavr')
+                db_name = os.getenv('POSTGRES_DB', 'dk_data')
                 db_user = os.getenv('POSTGRES_USER', 'postgres')
                 db_pass = os.getenv('POSTGRES_PASSWORD', 'postgres')
                 db_url = f'postgresql://{db_user}:{db_pass}@{db_host}:{db_port}/{db_name}'
