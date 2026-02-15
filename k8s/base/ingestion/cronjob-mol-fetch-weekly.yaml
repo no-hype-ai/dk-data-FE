@@ -31,7 +31,7 @@ spec:
             - name: mol-fetch-weekly
               image: ghcr.io/data-kinetic/dk-data-fe/job-trigger:main-5f46ed1
               command: ["python", "-m", "dk_data.ingestion.fetch_molecules"]
-              args: ["--source", "openfda,chembl,pubchem"]
+              args: ["--source", "openfda,chembl,pubchem,ema,orange_book"]
               env:
                 - name: POSTGRES_HOST
                   valueFrom:

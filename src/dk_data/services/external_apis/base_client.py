@@ -115,6 +115,15 @@ class BaseAPIClient(ABC, Generic[T]):
             )
         return self._client
 
+    async def __aenter__(self):
+        """Support async context manager protocol."""
+        return self
+
+    async def __aexit__(self, exc_type, exc_val, exc_tb):
+        """Close client on context manager exit."""
+        await self.close()
+        return False
+
     async def close(self) -> None:
         """Close the HTTP client."""
         if self._client is not None and not self._client.is_closed:

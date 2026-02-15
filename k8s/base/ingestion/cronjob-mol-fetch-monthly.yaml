@@ -1,0 +1,74 @@
+# Molecule Fetch Monthly CronJob
+# 004-molecule-platform-integration
+# Fetches data from monthly-refresh sources: BindingDB, SIDER, TDC ADMET
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: mol-fetch-monthly
+  labels:
+    app: mol-fetch-monthly
+    app.kubernetes.io/name: mol-fetch-monthly
+    app.kubernetes.io/component: ingestion
+    app.kubernetes.io/part-of: dk-data
+spec:
+  schedule: "0 8 1 * *"  # 1st of month, 8 AM UTC
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      backoffLimit: 2
+      activeDeadlineSeconds: 7200  # 2 hour timeout
+      template:
+        metadata:
+          labels:
+            app: mol-fetch-monthly
+        spec:
+          restartPolicy: Never
+          imagePullSecrets:
+            - name: ghcr-credentials
+          containers:
+            - name: mol-fetch-monthly
+              image: ghcr.io/data-kinetic/dk-data-fe/job-trigger:main-5f46ed1
+              command: ["python", "-m", "dk_data.ingestion.fetch_molecules"]
+              args: ["--source", "bindingdb,sider,tdc_admet,rxnorm,dailymed,fda_drugs,kegg_drug,ttd,pharmgkb,imgt,cdc_vaccines"]
+              env:
+                - name: POSTGRES_HOST
+                  valueFrom:
+                    secretKeyRef:
+                      name: dk-data-secrets
+                      key: POSTGRES_HOST
+                - name: POSTGRES_PORT
+                  valueFrom:
+                    secretKeyRef:
+                      name: dk-data-secrets
+                      key: POSTGRES_PORT
+                - name: POSTGRES_USER
+                  valueFrom:
+                    secretKeyRef:
+                      name: dk-data-secrets
+                      key: POSTGRES_USER
+                - name: POSTGRES_PASSWORD
+                  valueFrom:
+                    secretKeyRef:
+                      name: dk-data-secrets
+                      key: POSTGRES_PASSWORD
+                - name: POSTGRES_DB
+                  valueFrom:
+                    secretKeyRef:
+                      name: dk-data-secrets
+                      key: POSTGRES_DB
+                - name: OTEL_EXPORTER_OTLP_ENDPOINT
+                  value: "http://alloy.infra.svc.cluster.local:4317"
+                - name: OTEL_ENABLED
+                  value: "true"
+              envFrom:
+                - configMapRef:
+                    name: molecule-pipeline-config
+              resources:
+                requests:
+                  memory: "256Mi"
+                  cpu: "100m"
+                limits:
+                  memory: "512Mi"
+                  cpu: "300m"

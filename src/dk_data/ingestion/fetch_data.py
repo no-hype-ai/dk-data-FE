@@ -22,6 +22,18 @@ from ingestion.fetchers import (
     CMSCostReportsFetcher,
     ACCTVCFetcher,
     HRSAFetcher,
+    PubMedFetcher,
+    EMARegulatoryCIFetcher,
+    OpenAlexCIFetcher,
+    DrugBankFetcher,
+    USPTOPatentsFetcher,
+    JournalRSSFetcher,
+    USPTOCIFetcher,
+    HTABodiesFetcher,
+    EPOOPSFetcher,
+    CochraneFetcher,
+    MedicalNewsFetcher,
+    SECEdgarFetcher,
 )
 
 # Configure logging
@@ -57,6 +69,66 @@ FETCHERS = {
         'class': HRSAFetcher,
         'description': 'HRSA Health Professional Shortage Areas',
         'priority': 1,
+    },
+    'pubmed': {
+        'class': PubMedFetcher,
+        'description': 'PubMed literature (NCBI E-utilities)',
+        'priority': 2,
+    },
+    'ema_regulatory': {
+        'class': EMARegulatoryCIFetcher,
+        'description': 'EMA regulatory decisions (CHMP opinions, EPARs, safety signals)',
+        'priority': 2,
+    },
+    'openalex_ci': {
+        'class': OpenAlexCIFetcher,
+        'description': 'OpenAlex CI pharmaceutical research works',
+        'priority': 2,
+    },
+    'drugbank': {
+        'class': DrugBankFetcher,
+        'description': 'DrugBank drug data (credential-gated)',
+        'priority': 3,
+    },
+    'uspto_patents': {
+        'class': USPTOPatentsFetcher,
+        'description': 'USPTO PatentsView pharma patents (credential-gated)',
+        'priority': 3,
+    },
+    'journal_rss': {
+        'class': JournalRSSFetcher,
+        'description': 'Journal RSS feeds (NEJM, Lancet, JAMA, etc.)',
+        'priority': 2,
+    },
+    'uspto_ci': {
+        'class': USPTOCIFetcher,
+        'description': 'USPTO PatentsView CI pharma patents',
+        'priority': 2,
+    },
+    'hta_bodies': {
+        'class': HTABodiesFetcher,
+        'description': 'HTA body decisions (NICE, G-BA, HAS, PBAC)',
+        'priority': 2,
+    },
+    'epo_ops': {
+        'class': EPOOPSFetcher,
+        'description': 'EPO Open Patent Services (credential-gated)',
+        'priority': 3,
+    },
+    'cochrane': {
+        'class': CochraneFetcher,
+        'description': 'Cochrane Library systematic reviews',
+        'priority': 3,
+    },
+    'medical_news': {
+        'class': MedicalNewsFetcher,
+        'description': 'Medical news RSS (Medscape, Healio, FiercePharma)',
+        'priority': 3,
+    },
+    'sec_edgar': {
+        'class': SECEdgarFetcher,
+        'description': 'SEC EDGAR pharma filings (10-K, 10-Q, 8-K)',
+        'priority': 3,
     },
 }
 

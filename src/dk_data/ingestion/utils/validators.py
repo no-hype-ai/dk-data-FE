@@ -2,7 +2,7 @@
 
 from datetime import date
 from decimal import Decimal
-from typing import Optional
+from typing import Any, ClassVar, Dict, List, Optional, Set
 from pydantic import BaseModel, Field, field_validator, ConfigDict
 
 
@@ -190,6 +190,321 @@ class TargetScoreRecord(BaseModel):
         v = v.strip().upper()
         if v not in ('A', 'B', 'C', 'D', 'E'):
             raise ValueError("Tier must be A, B, C, D, or E")
+        return v
+
+
+# =============================================================================
+# CI Source Validators (Tier 4)
+# =============================================================================
+
+
+class PubMedRecord(BaseModel):
+    """Validation model for PubMed/MEDLINE articles."""
+
+    model_config = ConfigDict(str_strip_whitespace=True)
+
+    pmid: str = Field(..., min_length=1)
+    title: str = Field(..., min_length=1)
+    abstract: Optional[str] = None
+    authors: Optional[Any] = None  # JSONB
+    journal: Optional[str] = None
+    publication_date: Optional[date] = None
+    mesh_terms: Optional[list[str]] = None
+    doi: Optional[str] = None
+    publication_types: Optional[list[str]] = None
+    keywords: Optional[list[str]] = None
+
+    @field_validator('pmid')
+    @classmethod
+    def validate_pmid(cls, v: str) -> str:
+        v = v.strip()
+        if not v.isdigit():
+            raise ValueError('PMID must be numeric')
+        return v
+
+    @field_validator('doi')
+    @classmethod
+    def validate_doi(cls, v: Optional[str]) -> Optional[str]:
+        if v is None:
+            return None
+        v = v.strip()
+        if v and not v.startswith('10.'):
+            raise ValueError('DOI must start with 10.')
+        return v
+
+
+class OpenAlexCIRecord(BaseModel):
+    """Validation model for OpenAlex CI publications."""
+
+    model_config = ConfigDict(str_strip_whitespace=True)
+
+    work_id: str = Field(..., min_length=1)
+    doi: Optional[str] = None
+    title: Optional[str] = None
+    abstract: Optional[str] = None
+    publication_date: Optional[date] = None
+    cited_by_count: Optional[int] = Field(None, ge=0)
+    concepts: Optional[Any] = None  # JSONB
+    authorships: Optional[Any] = None  # JSONB
+    primary_location: Optional[Any] = None  # JSONB
+    open_access: Optional[Any] = None  # JSONB
+
+    @field_validator('work_id')
+    @classmethod
+    def validate_work_id(cls, v: str) -> str:
+        v = v.strip()
+        if not v.startswith('W'):
+            raise ValueError('OpenAlex work_id must start with W')
+        return v
+
+
+class EMARegulatoryCIRecord(BaseModel):
+    """Validation model for EMA regulatory decisions.
+
+    Maps 1:1 to raw.ema_regulatory columns (excluding underscore-prefixed
+    metadata columns that are set at INSERT time).
+    """
+
+    model_config = ConfigDict(str_strip_whitespace=True)
+
+    VALID_DOCUMENT_TYPES: ClassVar[Set[str]] = {
+        'chmp_opinion', 'epar', 'referral', 'safety_signal',
+    }
+    VALID_DECISION_TYPES: ClassVar[Set[str]] = {
+        'authorisation', 'variation', 'withdrawal', 'suspension',
+        'renewal', 'referral', 'orphan_designation', 'paediatric',
+        'advanced_therapy', 'biosimilar', 'conditional_approval',
+        'exceptional_circumstances', 'sunset_clause',
+    }
+
+    document_id: str = Field(..., min_length=1, max_length=100)
+    document_type: Optional[str] = Field(None, max_length=50)
+    product_name: Optional[str] = Field(None, max_length=500)
+    active_substance: Optional[str] = Field(None, max_length=500)
+    therapeutic_area: Optional[str] = Field(None, max_length=500)
+    decision_date: Optional[date] = None
+    decision_type: Optional[str] = Field(None, max_length=100)
+    document_url: Optional[str] = None
+    summary: Optional[str] = None
+
+    @field_validator('document_type')
+    @classmethod
+    def validate_document_type(cls, v: Optional[str]) -> Optional[str]:
+        if v is None:
+            return None
+        v = v.strip().lower()
+        # Allow document types not in the canonical set (API may return new types)
+        return v
+
+    @field_validator('decision_type')
+    @classmethod
+    def validate_decision_type(cls, v: Optional[str]) -> Optional[str]:
+        if v is None:
+            return None
+        v = v.strip().lower().replace(' ', '_').replace('-', '_')
+        if v not in cls.VALID_DECISION_TYPES:
+            raise ValueError(
+                f"Invalid decision_type '{v}'. "
+                f"Must be one of: {sorted(cls.VALID_DECISION_TYPES)}"
+            )
+        return v
+
+    @field_validator('decision_date', mode='before')
+    @classmethod
+    def parse_decision_date(cls, v: Any) -> Optional[date]:
+        """Accept ISO-format date strings and date objects."""
+        if v is None:
+            return None
+        if isinstance(v, date):
+            return v
+        if isinstance(v, str):
+            v = v.strip()
+            if not v:
+                return None
+            from datetime import datetime as _dt
+            try:
+                return _dt.strptime(v[:10], '%Y-%m-%d').date()
+            except ValueError:
+                raise ValueError(f'Cannot parse date: {v}')
+        return v
+
+
+class JournalRSSRecord(BaseModel):
+    """Validation model for Journal RSS feed articles."""
+
+    model_config = ConfigDict(str_strip_whitespace=True)
+
+    article_id: str = Field(..., min_length=1)
+    feed_source: str = Field(..., min_length=1)
+    title: Optional[str] = None
+    authors: Optional[str] = None
+    abstract: Optional[str] = None
+    publication_date: Optional[date] = None
+    link: Optional[str] = None
+    doi: Optional[str] = None
+    categories: Optional[list[str]] = None
+
+
+class USPTOCIRecord(BaseModel):
+    """Validation model for USPTO CI patents."""
+
+    model_config = ConfigDict(str_strip_whitespace=True)
+
+    patent_id: str = Field(..., min_length=1)
+    title: Optional[str] = None
+    abstract: Optional[str] = None
+    inventors: Optional[Any] = None  # JSONB
+    assignees: Optional[Any] = None  # JSONB
+    filing_date: Optional[date] = None
+    grant_date: Optional[date] = None
+    cpc_codes: Optional[list[str]] = None
+    claims_count: Optional[int] = Field(None, ge=0)
+
+
+class USPTOPatentsRecord(BaseModel):
+    """Validation model for USPTO PatentsView direct patent data."""
+
+    model_config = ConfigDict(str_strip_whitespace=True)
+
+    patent_number: str = Field(..., min_length=1)
+    title: Optional[str] = None
+    abstract: Optional[str] = None
+    inventors: Optional[Any] = None  # JSONB
+    assignees: Optional[Any] = None  # JSONB
+    filing_date: Optional[date] = None
+    grant_date: Optional[date] = None
+    cpc_codes: Optional[list[str]] = None
+    claims_count: Optional[int] = Field(None, ge=0)
+
+
+class DrugBankRecord(BaseModel):
+    """Validation model for DrugBank drug entries."""
+
+    model_config = ConfigDict(str_strip_whitespace=True)
+
+    drugbank_id: str = Field(..., min_length=1)  # DB00001 format
+    name: Optional[str] = None
+    description: Optional[str] = None
+    cas_number: Optional[str] = None
+    categories: Optional[list[str]] = None
+    targets: Optional[Any] = None  # JSONB
+    enzymes: Optional[Any] = None  # JSONB
+    indication: Optional[str] = None
+    pharmacodynamics: Optional[str] = None
+
+    @field_validator('drugbank_id')
+    @classmethod
+    def validate_drugbank_id(cls, v: str) -> str:
+        v = v.strip()
+        if not v.startswith('DB'):
+            raise ValueError('DrugBank ID must start with DB')
+        return v
+
+
+class HTADecisionRecord(BaseModel):
+    """Validation model for HTA body decisions."""
+
+    model_config = ConfigDict(str_strip_whitespace=True)
+
+    VALID_AGENCIES: ClassVar[Set[str]] = {'nice', 'gba', 'has', 'pbac'}
+
+    decision_id: str = Field(..., min_length=1)
+    agency: str = Field(..., min_length=1)
+    drug_name: Optional[str] = None
+    indication: Optional[str] = None
+    decision_type: Optional[str] = None
+    decision_date: Optional[date] = None
+    document_url: Optional[str] = None
+    summary: Optional[str] = None
+
+    @field_validator('agency')
+    @classmethod
+    def validate_agency(cls, v: str) -> str:
+        v = v.strip().lower()
+        if v not in cls.VALID_AGENCIES:
+            raise ValueError(f'agency must be one of {cls.VALID_AGENCIES}')
+        return v
+
+
+class EPOPatentRecord(BaseModel):
+    """Validation model for EPO OPS patents."""
+
+    model_config = ConfigDict(str_strip_whitespace=True)
+
+    publication_id: str = Field(..., min_length=1)
+    title: Optional[str] = None
+    abstract: Optional[str] = None
+    applicants: Optional[Any] = None  # JSONB
+    inventors: Optional[Any] = None  # JSONB
+    filing_date: Optional[date] = None
+    publication_date: Optional[date] = None
+    ipc_codes: Optional[list[str]] = None
+    family_id: Optional[str] = None
+
+
+class CochraneReviewRecord(BaseModel):
+    """Validation model for Cochrane reviews."""
+
+    model_config = ConfigDict(str_strip_whitespace=True)
+
+    review_id: str = Field(..., min_length=1)
+    title: Optional[str] = None
+    authors: Optional[str] = None
+    abstract: Optional[str] = None
+    publication_date: Optional[date] = None
+    review_type: Optional[str] = None
+    interventions: Optional[list[str]] = None
+    conditions: Optional[list[str]] = None
+    conclusions: Optional[str] = None
+    doi: Optional[str] = None
+
+
+class MedicalNewsRecord(BaseModel):
+    """Validation model for medical news articles."""
+
+    model_config = ConfigDict(str_strip_whitespace=True)
+
+    article_id: str = Field(..., min_length=1)
+    source_name: str = Field(..., min_length=1)
+    title: Optional[str] = None
+    summary: Optional[str] = None
+    publication_date: Optional[date] = None
+    url: Optional[str] = None
+    drug_mentions: Optional[list[str]] = None
+    therapeutic_areas: Optional[list[str]] = None
+
+
+class SECEdgarRecord(BaseModel):
+    """Validation model for SEC EDGAR filings."""
+
+    model_config = ConfigDict(str_strip_whitespace=True)
+
+    VALID_FILING_TYPES: ClassVar[Set[str]] = {'10-K', '10-Q', '8-K'}
+
+    accession_number: str = Field(..., min_length=1)
+    company_name: Optional[str] = None
+    cik: Optional[str] = None
+    filing_type: str = Field(..., min_length=1)
+    filing_date: Optional[date] = None
+    document_url: Optional[str] = None
+    description: Optional[str] = None
+
+    @field_validator('filing_type')
+    @classmethod
+    def validate_filing_type(cls, v: str) -> str:
+        v = v.strip().upper()
+        if v not in cls.VALID_FILING_TYPES:
+            raise ValueError(f'filing_type must be one of {cls.VALID_FILING_TYPES}')
+        return v
+
+    @field_validator('cik')
+    @classmethod
+    def validate_cik(cls, v: Optional[str]) -> Optional[str]:
+        if v is None:
+            return None
+        v = v.strip()
+        if v and not v.isdigit():
+            raise ValueError('CIK must be numeric')
         return v
 
 
