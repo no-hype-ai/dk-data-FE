@@ -1,16 +1,16 @@
 # Open Issues Reconciliation
 
 **Date**: 2026-02-15 (updated)
-**Branch**: main (post-merge of PR #89 — 012-platform-hardening, PR #90 — promote workflow fix)
-**Open Issues**: 8
+**Branch**: main (post-merge of PR #92 — 013-observability-governance)
+**Open Issues**: 3
 
 ---
 
 ## Executive Summary
 
-Since the initial reconciliation (2026-02-14), **all Sprint 1 and Sprint 2 items are complete**. PR #89 (012-platform-hardening) resolved 7 issues in a single feature branch covering Dockerfile fixes, API views, data sources, dependency management, and secret documentation. PR #90 fixed a race condition in the production promotion workflow.
+Since the initial reconciliation (2026-02-14), **all Sprint 1, Sprint 2, and Sprint 3 items are complete**. PR #89 (012-platform-hardening) resolved 7 issues. PR #90 fixed a production promotion race condition. PR #92 (013-observability-governance) resolved 5 issues covering metrics scraping, audit trail, migration runner, and data classification/retention.
 
-Of the 8 remaining open issues, 2 are from the original reconciliation (#52, #84) and 6 are older platform issues (#8, #9, #16, #17, #18, #19) that predate the reconciliation scope.
+Of the 3 remaining open issues, 2 are from the original reconciliation (#52, #84) and 1 is an older architecture debt item (#8). Issues #9, #16, #17, #18, #19 were all closed by PR #92.
 
 ---
 
@@ -41,9 +41,21 @@ Of the 8 remaining open issues, 2 are from the original reconciliation (#52, #84
 
 Fixed race condition in `.github/workflows/promote-to-prod.yaml` — production promotion now reads the staging image tag from the overlay kustomization.yaml instead of computing from HEAD SHA (which pointed to the manifest commit, not the build commit).
 
+### Closed — PR #92 (013-observability-governance, 2026-02-15)
+
+| Issue | Title | What Was Done |
+|-------|-------|---------------|
+| #91 | Enable full observability: deploy ServiceMonitors, verify metrics endpoint, add PostgREST exporter | Fixed ServiceMonitor/PodMonitor labels (`release: mimir`), added `batch-job` labels to 15 CronJob pod templates, replaced PostgREST ServiceMonitor with Probe CRD (blackbox-exporter), updated `APIUnavailable` alert to `probe_success` metric |
+| #17 | No audit trail for data changes and API access | Two-layer audit trail: `AuditLoggingMiddleware` (FastAPI, async thread pool) + PostgreSQL trigger via `current_setting('request.jwt.claims')`; `api.audit_log` view restricted to `api_user`; migration 067 |
+| #9 | No database migration strategy | Lightweight migration runner (`run_migrations.py`) with SHA-256 checksums, `--baseline`/`--dry-run` flags, `meta.schema_migrations` tracking table, `api.migration_status` view; migration 068 |
+| #18 | Unclear PII/PHI data handling | 4-tier data classification (public/internal/pii/confidential) for 43 tables; `raw.orcid` identified as PII with 6 fields; `api.data_classification` view; migration 069 |
+| #19 | No defined data retention policy | Retention-based `purge_by_classification()` with `--all-tables` flag; retention_days column on `meta.data_sources`; `docs/DATA_CLASSIFICATION.md`; migration 070 |
+
+198 new tests added (all passing). Also addressed #16 (documentation drift) via comprehensive spec artifacts and `DATA_CLASSIFICATION.md`.
+
 ---
 
-## Remaining Open Issues (8)
+## Remaining Open Issues (3)
 
 ### Near-Term — Actionable
 
@@ -63,16 +75,9 @@ Fixed race condition in `.github/workflows/promote-to-prod.yaml` — production 
 
 ### Older Platform Issues
 
-These predate the reconciliation scope and represent longer-term architectural debt:
-
 | Issue | Title | Priority | Notes |
 |-------|-------|----------|-------|
 | #8 | Tight coupling to Edwards/TAVR use case | P3 | Ongoing — new fetcher pattern (BaseFetcher) is generic, but legacy code still TAVR-specific |
-| #9 | No database migration strategy | P2 | Partially addressed — migrations 025-066 exist but no automated runner (manual SQL execution) |
-| #16 | Documentation drift risk | P3 | CLAUDE.md auto-updated per feature; DOPPLER_SECRETS.md added in PR #89 |
-| #17 | No audit trail for data changes | P3 | Not yet addressed |
-| #18 | Unclear PII/PHI data handling | P2 | Not yet addressed — ORCID data may contain researcher PII |
-| #19 | No defined data retention policy | P3 | Not yet addressed |
 
 ---
 
@@ -80,9 +85,9 @@ These predate the reconciliation scope and represent longer-term architectural d
 
 ### Immediate (next session)
 - Review #84 (LiteLLM) — close if not needed, or spike evaluation
-- Review #8, #9, #16, #17, #18, #19 — triage and close any that are no longer relevant
+- Review #8 — triage whether TAVR decoupling is worth a dedicated effort
 
-### Next Feature (Sprint 3)
+### Next Feature (Sprint 4)
 - **#52** — Frontend integration against the 6 available API views
 - **mol_gold compute architecture** — decide on pre-computation vs FastAPI sidecar for molecule property endpoints
 
@@ -93,11 +98,11 @@ These predate the reconciliation scope and represent longer-term architectural d
 | Issue | Status | Theme | Blocked By |
 |-------|--------|-------|------------|
 | #8 | Open | Architecture debt | — |
-| #9 | Open | Platform engineering | — |
-| #16 | Open | Documentation | — |
-| #17 | Open | Observability | — |
-| #18 | Open | Security/compliance | — |
-| #19 | Open | Data governance | — |
+| #9 | **Closed** (PR #92) | Platform engineering | — |
+| #16 | **Closed** (PR #92) | Documentation | — |
+| #17 | **Closed** (PR #92) | Observability | — |
+| #18 | **Closed** (PR #92) | Security/compliance | — |
+| #19 | **Closed** (PR #92) | Data governance | — |
 | #52 | Open | Frontend | mol_gold compute decision |
 | #84 | Open | Optional | Decision needed |
 
@@ -109,5 +114,7 @@ These predate the reconciliation scope and represent longer-term architectural d
 |--------|-------|--------|
 | Closed (pre-reconciliation) | 4 | #78, #80, #82, #83 |
 | Closed (PR #89) | 7 | #88, #81, #42, #50, #51, #20, #57 |
-| Remaining open | 8 | #8, #9, #16, #17, #18, #19, #52, #84 |
-| **Total resolved this cycle** | **11** | |
+| Closed (PR #92) | 5 | #91, #17, #9, #18, #19 |
+| Also addressed (PR #92) | 1 | #16 (documentation drift — comprehensive specs + DATA_CLASSIFICATION.md) |
+| Remaining open | 3 | #8, #52, #84 |
+| **Total resolved this cycle** | **17** | |
