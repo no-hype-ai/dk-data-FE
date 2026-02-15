@@ -321,15 +321,19 @@ spec:
               -- P0+P1: Empty-schema placeholders (contract-first, no backing data)
               -- ================================================================
 
-              -- api.company_pipeline — Placeholder for specs 031, 033
+              -- api.company_pipeline — Backed by mol_gold.company_pipeline (012-platform-hardening)
               CREATE OR REPLACE VIEW api.company_pipeline AS
               SELECT
-                NULL::text       AS company_name,
-                NULL::text       AS molecule_name,
-                NULL::text       AS indication,
-                NULL::text       AS phase,
-                NULL::text       AS status
-              WHERE false;
+                  id,
+                  company_name,
+                  molecule_name,
+                  indication,
+                  phase,
+                  status,
+                  mechanism_of_action,
+                  source,
+                  last_updated
+              FROM mol_gold.company_pipeline;
 
               -- api.shap_explanations — Placeholder for spec 032
               CREATE OR REPLACE VIEW api.shap_explanations AS
@@ -359,25 +363,77 @@ spec:
                 NULL::integer    AS radius
               WHERE false;
 
-              -- api.trial_publication_features — Placeholder for specs 032, 033, 034
+              -- api.trial_publication_features — Backed by mol_gold.trial_publication_features (012-platform-hardening)
               CREATE OR REPLACE VIEW api.trial_publication_features AS
               SELECT
-                NULL::text       AS nct_id,
-                NULL::text       AS publication_doi,
-                NULL::numeric    AS overlap_score,
-                NULL::text       AS feature_type
-              WHERE false;
+                  id,
+                  nct_id,
+                  publication_doi,
+                  publication_pmid,
+                  overlap_score,
+                  feature_type,
+                  trial_title,
+                  publication_title,
+                  source
+              FROM mol_gold.trial_publication_features;
 
-              -- api.patents — Placeholder for specs 033, 034 (conditional on PatentsView API key)
+              -- api.patents — Backed by silver.patents (012-platform-hardening)
               CREATE OR REPLACE VIEW api.patents AS
               SELECT
-                NULL::text       AS patent_id,
-                NULL::text       AS title,
-                NULL::text       AS assignee,
-                NULL::date       AS filing_date,
-                NULL::date       AS grant_date,
-                NULL::text       AS abstract
-              WHERE false;
+                  id,
+                  patent_number,
+                  title,
+                  assignee,
+                  filing_date,
+                  expiration_date,
+                  molecule_id,
+                  cpc_codes,
+                  country,
+                  status,
+                  source,
+                  ingested_at
+              FROM silver.patents;
+
+              -- api.molecule_targets — Backed by mol_silver.targets (012-platform-hardening)
+              CREATE OR REPLACE VIEW api.molecule_targets AS
+              SELECT
+                  id,
+                  target_name,
+                  target_type,
+                  uniprot_accession,
+                  gene_symbol,
+                  organism,
+                  molecule_name,
+                  action_type,
+                  binding_affinity,
+                  source
+              FROM mol_silver.targets;
+
+              -- api.sider_side_effects — Backed by bronze.sider (012-platform-hardening)
+              CREATE OR REPLACE VIEW api.sider_side_effects AS
+              SELECT
+                  id,
+                  drug_name,
+                  side_effect,
+                  meddra_id,
+                  frequency,
+                  source,
+                  ingested_at
+              FROM bronze.sider;
+
+              -- api.bioactivity — Backed by silver.bioactivity (012-platform-hardening)
+              CREATE OR REPLACE VIEW api.bioactivity AS
+              SELECT
+                  id,
+                  molecule_id,
+                  target_name,
+                  activity_type,
+                  activity_value,
+                  activity_unit,
+                  assay_type,
+                  source,
+                  ingested_at
+              FROM silver.bioactivity;
               SQL
 
               # --- Step 10: Grant permissions on API views ---
@@ -425,6 +481,9 @@ spec:
               GRANT SELECT ON api.fingerprints TO web_anon, analyst, api_user;
               GRANT SELECT ON api.trial_publication_features TO web_anon, analyst, api_user;
               GRANT SELECT ON api.patents TO web_anon, analyst, api_user;
+              GRANT SELECT ON api.molecule_targets TO web_anon, analyst, api_user;
+              GRANT SELECT ON api.sider_side_effects TO web_anon, analyst, api_user;
+              GRANT SELECT ON api.bioactivity TO web_anon, analyst, api_user;
               SQL
 
               # --- Step 11: Cross-database isolation ---
@@ -461,10 +520,10 @@ spec:
 
               echo "Checking API views..."
               VIEW_COUNT=$(psql -d dk_data -Atc "SELECT COUNT(*) FROM information_schema.views WHERE table_schema = 'api'")
-              if [ "$VIEW_COUNT" -ge 15 ]; then
+              if [ "$VIEW_COUNT" -ge 18 ]; then
                 echo "✓ Found $VIEW_COUNT API views"
               else
-                echo "✗ ERROR: Expected at least 15 views, found $VIEW_COUNT"
+                echo "✗ ERROR: Expected at least 18 views, found $VIEW_COUNT"
                 exit 1
               fi
 
@@ -472,4 +531,4 @@ spec:
               echo "=== Database initialization complete ==="
               echo "Roles: authenticator, web_anon, analyst, api_user, readonly"
               echo "Schemas: raw, staging, mart, scoring, meta, api, mol_*"
-              echo "Views: api.health, api.data_catalog, api.targets, api.scoring, api.data_sources, api.molecules, api.resolution_queue, api.competitive_landscape, api.molecule_properties, api.company_pipeline, api.shap_explanations, api.synthesizability_scores, api.fingerprints, api.trial_publication_features, api.patents"
+              echo "Views: api.health, api.data_catalog, api.targets, api.scoring, api.data_sources, api.molecules, api.resolution_queue, api.competitive_landscape, api.molecule_properties, api.company_pipeline, api.shap_explanations, api.synthesizability_scores, api.fingerprints, api.trial_publication_features, api.patents, api.molecule_targets, api.sider_side_effects, api.bioactivity"

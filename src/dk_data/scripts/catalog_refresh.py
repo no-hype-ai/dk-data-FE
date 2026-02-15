@@ -489,6 +489,39 @@ SOURCE_METADATA = {
         "staleness_threshold_hours": 24,
         "target_tables": ["raw.sec_edgar"],
     },
+    "uniprot": {
+        "topic_tags": ["protein", "drug-target", "molecular-biology", "uniprot"],
+        "ai_description": "UniProt protein database entries for drug target identification. Contains protein accessions, gene names, organism, function annotations, and sequence data for reviewed human drug targets.",
+        "column_descriptions": {
+            "accession": {"description": "UniProt accession number", "type": "string", "examples": ["P00533", "Q9Y6K9"]},
+            "gene_name": {"description": "Primary gene name (HGNC symbol)", "type": "string"},
+            "organism": {"description": "Source organism scientific name", "type": "string"},
+        },
+        "staleness_threshold_hours": 168,
+        "target_tables": ["raw.uniprot"],
+    },
+    "pdb": {
+        "topic_tags": ["protein-structure", "crystallography", "drug-target", "pdb"],
+        "ai_description": "RCSB Protein Data Bank entries for 3D protein structure data. Contains PDB IDs, experimental methods, resolution, and deposit dates for drug target structures.",
+        "column_descriptions": {
+            "pdb_id": {"description": "4-character PDB identifier", "type": "string", "examples": ["1ABC", "2XYZ"]},
+            "method": {"description": "Experimental method (X-RAY DIFFRACTION, ELECTRON MICROSCOPY, etc.)", "type": "string"},
+            "resolution": {"description": "Structure resolution in Angstroms", "type": "float"},
+        },
+        "staleness_threshold_hours": 168,
+        "target_tables": ["raw.pdb"],
+    },
+    "orcid": {
+        "topic_tags": ["researcher", "kol", "author", "orcid"],
+        "ai_description": "ORCID researcher profiles for key opinion leader identification in pharmaceutical research. Contains names, affiliations, publication counts, and external identifiers.",
+        "column_descriptions": {
+            "orcid_id": {"description": "ORCID iD in format 0000-0000-0000-000X", "type": "string"},
+            "family_name": {"description": "Researcher family/last name", "type": "string"},
+            "works_count": {"description": "Total number of publications", "type": "integer"},
+        },
+        "staleness_threshold_hours": 168,
+        "target_tables": ["raw.orcid"],
+    },
 }
 
 

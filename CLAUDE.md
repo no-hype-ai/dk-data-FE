@@ -13,6 +13,8 @@ Auto-generated from all feature plans. Last updated: 2026-01-30
 - PostgreSQL 16.4 (shared infra namespace), MinIO (backup storage, infra namespace) (010-platform-stabilization)
 - Python 3.11+ (existing codebase) + psycopg2-binary, Pydantic, httpx, requests, structlog, opentelemetry-sdk, pandas, feedparser (new, for RSS) (011-datasource-integration)
 - PostgreSQL 16.4 via CloudNativePG — schemas: `mol_raw`, `mol_bronze`, `mol_silver`, `mol_gold`, `raw`, `staging`, `meta`, `api` (011-datasource-integration)
+- Python 3.11+ (existing codebase) + psycopg2-binary, Pydantic, httpx, requests, structlog, opentelemetry-sdk, feedparser, uv (new — dependency management) (012-platform-hardening)
+- PostgreSQL 16.4 via CloudNativePG — schemas: raw, staging, meta, api, mol_raw, mol_bronze, mol_silver, mol_gold (012-platform-hardening)
 
 - Python 3.11+ (existing ingestion layer), SQL (PostgreSQL 16+) + PostgREST v12.x, SQLMesh, psycopg2, Pydantic, requests (001-data-layer-postgrest-gitops)
 
@@ -32,9 +34,9 @@ cd src [ONLY COMMANDS FOR ACTIVE TECHNOLOGIES][ONLY COMMANDS FOR ACTIVE TECHNOLO
 Python 3.11+ (existing ingestion layer), SQL (PostgreSQL 16+): Follow standard conventions
 
 ## Recent Changes
+- 012-platform-hardening: Added Python 3.11+ (existing codebase) + psycopg2-binary, Pydantic, httpx, requests, structlog, opentelemetry-sdk, feedparser, uv (new — dependency management)
 - 011-datasource-integration: Added Python 3.11+ (existing codebase) + psycopg2-binary, Pydantic, httpx, requests, structlog, opentelemetry-sdk, pandas, feedparser (new, for RSS)
 - 010-platform-stabilization: Added Python 3.11+, SQL (PostgreSQL 16.4), YAML (Kubernetes manifests), Bash (backup/setup scripts) + FastAPI, PostgREST v12.2.3, psycopg2-binary, pytest-cov (new), responses (new), Kustomize, crane (new CI tool)
-- 006-006-admin-integration: Added SQL (PostgreSQL 16.4), YAML (Kubernetes manifests), TypeScript (Admin App components) + PostgREST v12.2.3, PostgreSQL 16.4, Next.js (Admin App)
 
 
 <!-- MANUAL ADDITIONS START -->

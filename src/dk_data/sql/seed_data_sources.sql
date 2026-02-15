@@ -95,7 +95,17 @@ VALUES
      'Medical news from Medscape, Healio, and FiercePharma RSS feeds', 'daily', TRUE),
 
     ('sec_edgar', 'api', 'https://efts.sec.gov/LATEST/search-index',
-     'SEC EDGAR pharmaceutical company filings (10-K, 10-Q, 8-K)', 'daily', TRUE)
+     'SEC EDGAR pharmaceutical company filings (10-K, 10-Q, 8-K)', 'daily', TRUE),
+
+    -- Molecule data sources (012-platform-hardening)
+    ('uniprot', 'api', 'https://rest.uniprot.org/uniprotkb',
+     'UniProt protein database for drug target identification and annotation', 'weekly', TRUE),
+
+    ('pdb', 'api', 'https://data.rcsb.org/rest/v1',
+     'RCSB Protein Data Bank for 3D protein structure data', 'weekly', TRUE),
+
+    ('orcid', 'api', 'https://pub.orcid.org/v3.0',
+     'ORCID researcher profiles for key opinion leader identification', 'weekly', TRUE)
 
 ON CONFLICT (source_name) DO UPDATE SET
     source_url = EXCLUDED.source_url,

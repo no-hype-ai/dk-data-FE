@@ -18,6 +18,9 @@ from .epo_ops import EPOOPSFetcher
 from .cochrane import CochraneFetcher
 from .medical_news import MedicalNewsFetcher
 from .sec_edgar import SECEdgarFetcher
+from .uniprot import UniProtFetcher
+from .pdb import PDBFetcher
+from .orcid import ORCIDFetcher
 
 __all__ = [
     'BaseFetcher',
@@ -38,4 +41,7 @@ __all__ = [
     'CochraneFetcher',
     'MedicalNewsFetcher',
     'SECEdgarFetcher',
+    'UniProtFetcher',
+    'PDBFetcher',
+    'ORCIDFetcher',
 ]

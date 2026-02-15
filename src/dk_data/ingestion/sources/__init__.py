@@ -18,4 +18,7 @@ __all__ = [
     'cochrane',
     'medical_news',
     'sec_edgar',
+    'uniprot',
+    'pdb',
+    'orcid',
 ]
