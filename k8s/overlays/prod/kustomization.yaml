@@ -17,7 +17,7 @@ images:
 
   # PostgREST — 3 replicas for HA with production resources
 
-  # Job Trigger — disabled until image is published (GHCR permissions needed)
+  # Job Trigger — 2 replicas for production
 
   # PostgREST config overrides for production
 
@@ -52,7 +52,7 @@ patches:
     metadata:
       name: job-trigger
     spec:
-      replicas: 0
+      replicas: 2
       template:
         spec:
           containers:
