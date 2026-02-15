@@ -2,9 +2,11 @@
 """Score History Purge Script.
 
 Purges score history records older than 2 years (rolling window retention policy).
+Optionally purges all tables governed by meta.data_classification retention policies.
 
 Usage:
     python purge_history.py [--dry-run] [--days DAYS]
+    python purge_history.py --all-tables [--dry-run]
 """
 
 import argparse
@@ -136,6 +138,192 @@ def purge_old_history(retention_days: int, dry_run: bool = False) -> dict:
     }
 
 
+# Mapping of schema prefixes to their default timestamp column
+TIMESTAMP_COLUMN_MAP = {
+    'raw': 'fetched_at',
+    'meta': '_logged_at',
+}
+
+# Default timestamp column for schemas not in the map
+DEFAULT_TIMESTAMP_COLUMN = 'created_at'
+
+# Batch size for deletes
+PURGE_BATCH_SIZE = 1000
+
+
+def _get_timestamp_column(schema_name: str) -> str:
+    """Determine the timestamp column for a given schema."""
+    return TIMESTAMP_COLUMN_MAP.get(schema_name, DEFAULT_TIMESTAMP_COLUMN)
+
+
+def purge_by_classification(conn, dry_run: bool = False) -> dict:
+    """Purge records from all tables with retention policies defined in meta.data_classification.
+
+    Reads retention_days from meta.data_classification for all non-perpetual tables.
+    For each table, deletes records older than retention_days using the appropriate
+    timestamp column.
+
+    Args:
+        conn: A psycopg2 database connection.
+        dry_run: If True, report what would be purged without deleting.
+
+    Returns:
+        A summary dict with 'tables_processed', 'total_records_purged', and per-table details.
+    """
+    summary = {
+        'status': 'dry_run' if dry_run else 'success',
+        'tables_processed': 0,
+        'total_records_purged': 0,
+        'details': [],
+    }
+
+    with conn.cursor() as cur:
+        # Read all classification rows where retention is defined (non-perpetual)
+        cur.execute("""
+            SELECT schema_name, table_name, classification, retention_days, retention_policy
+            FROM meta.data_classification
+            WHERE retention_days IS NOT NULL
+              AND table_name != '*'
+            ORDER BY schema_name, table_name
+        """)
+        rows = cur.fetchall()
+
+    if not rows:
+        logger.info("No tables with retention policies found in meta.data_classification")
+        return summary
+
+    for schema_name, table_name, classification, retention_days, retention_policy in rows:
+        ts_col = _get_timestamp_column(schema_name)
+        cutoff_date = datetime.now() - timedelta(days=retention_days)
+        qualified_table = f"{schema_name}.{table_name}"
+
+        # Check if table actually exists before attempting purge
+        with conn.cursor() as cur:
+            cur.execute("""
+                SELECT EXISTS (
+                    SELECT 1 FROM information_schema.tables
+                    WHERE table_schema = %s AND table_name = %s
+                )
+            """, (schema_name, table_name))
+            exists = cur.fetchone()[0]
+
+        if not exists:
+            logger.debug(f"Skipping {qualified_table}: table does not exist")
+            continue
+
+        # Check if the timestamp column exists on this table
+        with conn.cursor() as cur:
+            cur.execute("""
+                SELECT EXISTS (
+                    SELECT 1 FROM information_schema.columns
+                    WHERE table_schema = %s AND table_name = %s AND column_name = %s
+                )
+            """, (schema_name, table_name, ts_col))
+            col_exists = cur.fetchone()[0]
+
+        if not col_exists:
+            logger.warning(
+                f"Skipping {qualified_table}: timestamp column '{ts_col}' not found"
+            )
+            continue
+
+        # Count records eligible for purge
+        with conn.cursor() as cur:
+            cur.execute(
+                f"SELECT COUNT(*) FROM {qualified_table} WHERE {ts_col} < %s",
+                (cutoff_date,)
+            )
+            count_to_purge = cur.fetchone()[0]
+
+        table_detail = {
+            'table': qualified_table,
+            'classification': classification,
+            'retention_days': retention_days,
+            'retention_policy': retention_policy,
+            'timestamp_column': ts_col,
+            'cutoff_date': str(cutoff_date.date()),
+            'records_to_purge': count_to_purge,
+            'records_purged': 0,
+        }
+
+        if count_to_purge == 0:
+            logger.info(f"{qualified_table}: no records older than {cutoff_date.date()}")
+            summary['details'].append(table_detail)
+            summary['tables_processed'] += 1
+            continue
+
+        if dry_run:
+            logger.info(
+                f"[DRY RUN] {qualified_table}: would purge {count_to_purge} records "
+                f"older than {cutoff_date.date()} (retention={retention_days}d)"
+            )
+            summary['details'].append(table_detail)
+            summary['tables_processed'] += 1
+            continue
+
+        # Delete in batches to avoid long-running transactions
+        total_deleted = 0
+        while True:
+            with conn.cursor() as cur:
+                cur.execute(
+                    f"""
+                    DELETE FROM {qualified_table}
+                    WHERE ctid IN (
+                        SELECT ctid FROM {qualified_table}
+                        WHERE {ts_col} < %s
+                        LIMIT %s
+                    )
+                    """,
+                    (cutoff_date, PURGE_BATCH_SIZE)
+                )
+                batch_deleted = cur.rowcount
+            conn.commit()
+
+            total_deleted += batch_deleted
+            if batch_deleted < PURGE_BATCH_SIZE:
+                break
+
+        table_detail['records_purged'] = total_deleted
+        summary['details'].append(table_detail)
+        summary['tables_processed'] += 1
+        summary['total_records_purged'] += total_deleted
+
+        logger.info(
+            f"{qualified_table}: purged {total_deleted} records "
+            f"(retention={retention_days}d, cutoff={cutoff_date.date()})"
+        )
+
+        # Log to meta.refresh_log
+        with conn.cursor() as cur:
+            cur.execute("""
+                INSERT INTO meta.refresh_log (
+                    source_id,
+                    refresh_started_at,
+                    refresh_completed_at,
+                    status,
+                    records_fetched,
+                    records_inserted,
+                    records_updated,
+                    error_message
+                )
+                SELECT
+                    source_id,
+                    NOW(),
+                    NOW(),
+                    'success',
+                    0,
+                    0,
+                    %s,
+                    'Classification-based purge of ' || %s || ': removed records older than ' || %s::text
+                FROM meta.data_sources
+                WHERE source_name = 'score_history_purge'
+                LIMIT 1
+            """, (total_deleted, qualified_table, cutoff_date.date()))
+        conn.commit()
+
+    return summary
+
+
 def print_purge_report(stats: dict) -> None:
     """Print a formatted purge report."""
     print("\n" + "=" * 60)
@@ -188,6 +376,11 @@ def main():
         action='store_true',
         help='Skip confirmation prompt'
     )
+    parser.add_argument(
+        '--all-tables',
+        action='store_true',
+        help='Purge all tables governed by meta.data_classification retention policies'
+    )
 
     args = parser.parse_args()
 
@@ -202,6 +395,31 @@ def main():
     init_connection_pool()
 
     try:
+        # --all-tables: classification-based purge across all governed tables
+        if args.all_tables:
+            with get_connection() as conn:
+                result = purge_by_classification(conn, dry_run=args.dry_run)
+
+            print("\n" + "=" * 60)
+            print("Classification-Based Purge Report")
+            print("=" * 60)
+            print(f"Tables processed: {result['tables_processed']}")
+            print(f"Total records purged: {result['total_records_purged']:,}")
+            if result['details']:
+                print("-" * 60)
+                for detail in result['details']:
+                    purged = detail.get('records_purged', 0)
+                    to_purge = detail.get('records_to_purge', 0)
+                    label = f"would purge {to_purge:,}" if args.dry_run else f"purged {purged:,}"
+                    print(
+                        f"  {detail['table']}: {label} "
+                        f"(retention={detail['retention_days']}d, "
+                        f"class={detail['classification']})"
+                    )
+            print("=" * 60 + "\n")
+            return 0
+
+        # Default: single-table score_history purge
         # Get purge statistics
         stats = get_purge_stats(args.days)
         print_purge_report(stats)
@@ -224,7 +442,7 @@ def main():
         # Execute purge
         result = purge_old_history(args.days, dry_run=False)
 
-        print(f"\n✅ Successfully purged {result['records_purged']:,} records")
+        print(f"\nSuccessfully purged {result['records_purged']:,} records")
         return 0
 
     except Exception as e:

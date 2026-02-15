@@ -58,14 +58,14 @@ spec:
 
         - alert: APIUnavailable
           expr: |
-            up{job="postgrest", namespace=~"dk-data-.*"} == 0
+            probe_success{job="dk-data-postgrest"} == 0
           for: 2m
           labels:
             severity: critical
             team: data-platform
           annotations:
             summary: "PostgREST API is unavailable"
-            description: "PostgREST service is not responding to health checks."
+            description: "PostgREST /health probe is failing. Service may be down or unreachable."
 
     - name: dk-data.batch-jobs
       interval: 1m

@@ -2,15 +2,25 @@
 API Middleware.
 
 Implements T335: Cache-Control headers and request tracking.
+Implements T012: AuditLoggingMiddleware for API request auditing.
 """
 
+import base64
+import json
+import os
 import time
 import uuid
+from concurrent.futures import ThreadPoolExecutor
 from typing import Callable, Dict, Optional
+
+import psycopg2
 from fastapi import Request, Response
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.types import ASGIApp
 from loguru import logger
+
+# Thread pool for async audit writes (avoids blocking the event loop)
+_audit_executor = ThreadPoolExecutor(max_workers=2, thread_name_prefix="audit")
 
 
 class CacheControlMiddleware(BaseHTTPMiddleware):
@@ -202,6 +212,125 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
         return response
 
 
+class AuditLoggingMiddleware(BaseHTTPMiddleware):
+    """
+    Middleware to write API audit trail entries to meta.api_audit_log.
+
+    Feature: 013-observability-governance (US3: Audit Trail)
+    Task: T012
+
+    Captures request metadata (method, path, user role, response time) and
+    writes audit entries asynchronously via a background thread pool so the
+    main request/response cycle is not blocked.
+
+    Skips auditing for /health and /metrics endpoints to avoid noise.
+    """
+
+    # Paths excluded from audit logging
+    SKIP_PATHS = ("/health", "/metrics")
+
+    def __init__(self, app: ASGIApp, database_url: Optional[str] = None):
+        super().__init__(app)
+        self.database_url = database_url or os.getenv("DATABASE_URL", "")
+
+    async def dispatch(self, request: Request, call_next: Callable) -> Response:
+        path = request.url.path
+
+        # Skip health and metrics endpoints
+        if path in self.SKIP_PATHS:
+            return await call_next(request)
+
+        start_time = time.time()
+
+        # Collect request metadata before calling next handler
+        request_id = request.headers.get("X-Request-ID", str(uuid.uuid4()))
+        method = request.method
+        query_params = dict(request.query_params) if request.query_params else None
+        ip_address = request.headers.get("X-Forwarded-For", "").split(",")[0].strip() or None
+        user_agent = request.headers.get("User-Agent")
+
+        # Extract user_role and user_sub from JWT Authorization header
+        user_role = None
+        user_sub = None
+        auth_header = request.headers.get("Authorization", "")
+        if auth_header.startswith("Bearer "):
+            try:
+                token = auth_header[7:]
+                # Decode payload without verification (we only need claims for audit)
+                parts = token.split(".")
+                if len(parts) >= 2:
+                    # Pad base64 if needed
+                    payload_b64 = parts[1]
+                    padding = 4 - len(payload_b64) % 4
+                    if padding != 4:
+                        payload_b64 += "=" * padding
+                    payload = json.loads(base64.urlsafe_b64decode(payload_b64))
+                    user_role = payload.get("role")
+                    user_sub = payload.get("sub")
+            except Exception:
+                # JWT decode failures are not audit-blocking
+                pass
+
+        # Process the request
+        try:
+            response = await call_next(request)
+        except Exception:
+            raise
+
+        # Calculate response time
+        response_time_ms = int((time.time() - start_time) * 1000)
+        status_code = response.status_code
+
+        # Write audit entry asynchronously (fire-and-forget)
+        audit_entry = {
+            "request_id": request_id,
+            "method": method,
+            "path": path,
+            "query_params": json.dumps(query_params) if query_params else None,
+            "user_role": user_role,
+            "user_sub": user_sub,
+            "ip_address": ip_address,
+            "user_agent": user_agent,
+            "status_code": status_code,
+            "response_time_ms": response_time_ms,
+            "source": "job-trigger",
+        }
+
+        if self.database_url:
+            _audit_executor.submit(self._write_audit_entry, audit_entry)
+
+        return response
+
+    def _write_audit_entry(self, entry: dict) -> None:
+        """Write a single audit entry to meta.api_audit_log (runs in thread pool)."""
+        conn = None
+        try:
+            conn = psycopg2.connect(self.database_url)
+            cursor = conn.cursor()
+            cursor.execute(
+                """
+                INSERT INTO meta.api_audit_log
+                    (request_id, method, path, query_params, user_role, user_sub,
+                     ip_address, user_agent, status_code, response_time_ms, source)
+                VALUES
+                    (%(request_id)s, %(method)s, %(path)s, %(query_params)s,
+                     %(user_role)s, %(user_sub)s, %(ip_address)s::INET,
+                     %(user_agent)s, %(status_code)s, %(response_time_ms)s, %(source)s)
+                """,
+                entry,
+            )
+            conn.commit()
+            cursor.close()
+        except Exception as exc:
+            logger.warning(f"Audit log write failed: {exc}")
+        finally:
+            if conn is not None:
+                try:
+                    conn.close()
+                except Exception:
+                    pass
+
+
 def setup_middleware(app):
     """
     Configure all middleware for the FastAPI application.
@@ -217,6 +346,9 @@ def setup_middleware(app):
 
     # Request tracking
     app.add_middleware(RequestTrackingMiddleware)
+
+    # Audit logging (after tracking, before cache control)
+    app.add_middleware(AuditLoggingMiddleware)
 
     # Cache control
     app.add_middleware(CacheControlMiddleware)

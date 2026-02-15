@@ -23,6 +23,8 @@ spec:
         metadata:
           labels:
             app: fetch-journal-rss
+            app.kubernetes.io/component: batch-job
+            app.kubernetes.io/part-of: dk-data
         spec:
           restartPolicy: Never
           imagePullSecrets:

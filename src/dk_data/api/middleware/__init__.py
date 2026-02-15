@@ -22,6 +22,7 @@ if os.path.exists(_middleware_py_path):
     RequestTrackingMiddleware = _base_middleware.RequestTrackingMiddleware
     CORSHeadersMiddleware = _base_middleware.CORSHeadersMiddleware
     SecurityHeadersMiddleware = _base_middleware.SecurityHeadersMiddleware
+    AuditLoggingMiddleware = _base_middleware.AuditLoggingMiddleware
 
 from .rbac import (  # noqa: E402
     get_current_user,
@@ -49,6 +50,7 @@ __all__ = [
     'RequestTrackingMiddleware',
     'CORSHeadersMiddleware',
     'SecurityHeadersMiddleware',
+    'AuditLoggingMiddleware',
 
     # RBAC middleware
     'get_current_user',

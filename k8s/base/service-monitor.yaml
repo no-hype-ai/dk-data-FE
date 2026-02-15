@@ -1,22 +1,29 @@
 ---
+# PostgREST Probe (013-observability-governance, US2)
+# PostgREST v12.2.3 does not expose Prometheus metrics natively.
+# This Probe CRD uses blackbox-exporter to check the /health endpoint.
+# If blackbox-exporter is not deployed, this resource will be ignored.
+# The APIUnavailable alert references probe_success from this probe.
 apiVersion: monitoring.coreos.com/v1
-kind: ServiceMonitor
+kind: Probe
 metadata:
-  name: dk-data-postgrest
+  name: dk-data-postgrest-probe
   labels:
     app.kubernetes.io/name: dk-data
     app.kubernetes.io/component: postgrest
     release: mimir
 spec:
-  selector:
-    matchLabels:
-      app: postgrest
-  endpoints:
-    - port: http
-      path: /
-      interval: 30s
-      scrapeTimeout: 10s
-      honorLabels: true
+  jobName: dk-data-postgrest
+  prober:
+    url: blackbox-exporter.infra.svc.cluster.local:9115
+    path: /probe
+  module: http_2xx
+  targets:
+    staticConfig:
+      static:
+        - postgrest:3000/health
+      labels:
+        app: postgrest
 ---
 apiVersion: monitoring.coreos.com/v1
 kind: ServiceMonitor

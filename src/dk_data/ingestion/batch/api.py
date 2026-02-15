@@ -103,6 +103,18 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# Audit logging middleware (013-observability-governance, US3: Audit Trail)
+try:
+    from dk_data.api.middleware import AuditLoggingMiddleware, RequestTrackingMiddleware, CacheControlMiddleware
+
+    # Order: RequestTracking (outer) -> AuditLogging -> CacheControl (inner)
+    app.add_middleware(RequestTrackingMiddleware)
+    app.add_middleware(AuditLoggingMiddleware)
+    app.add_middleware(CacheControlMiddleware)
+    logger.info("Audit logging middleware registered")
+except ImportError as e:
+    logger.warning(f"Audit logging middleware not available: {e}")
+
 
 # Pydantic models
 class JobInfo(BaseModel):
