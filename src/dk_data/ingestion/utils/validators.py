@@ -508,6 +508,73 @@ class SECEdgarRecord(BaseModel):
         return v
 
 
+# =============================================================================
+# Molecule Data Source Validators (012-platform-hardening)
+# =============================================================================
+
+
+class UniProtRecord(BaseModel):
+    """Validation model for UniProt protein entries."""
+
+    model_config = ConfigDict(str_strip_whitespace=True)
+
+    accession: str = Field(..., min_length=1, max_length=20)
+    entry_name: Optional[str] = Field(None, max_length=50)
+    protein_name: Optional[str] = None
+    gene_name: Optional[str] = Field(None, max_length=50)
+    organism: Optional[str] = Field(None, max_length=200)
+    sequence_length: Optional[int] = Field(None, ge=0)
+    function_description: Optional[str] = None
+
+    @field_validator('accession')
+    @classmethod
+    def validate_accession(cls, v: str) -> str:
+        v = v.strip()
+        if not v:
+            raise ValueError('UniProt accession cannot be empty')
+        return v
+
+
+class PDBRecord(BaseModel):
+    """Validation model for RCSB PDB structure entries."""
+
+    model_config = ConfigDict(str_strip_whitespace=True)
+
+    pdb_id: str = Field(..., min_length=4, max_length=4)
+    title: Optional[str] = None
+    method: Optional[str] = Field(None, max_length=100)
+    resolution: Optional[float] = Field(None, ge=0)
+    deposit_date: Optional[str] = None
+
+    @field_validator('pdb_id')
+    @classmethod
+    def validate_pdb_id(cls, v: str) -> str:
+        v = v.strip().upper()
+        if len(v) != 4:
+            raise ValueError('PDB ID must be exactly 4 characters')
+        return v
+
+
+class ORCIDRecord(BaseModel):
+    """Validation model for ORCID researcher profiles."""
+
+    model_config = ConfigDict(str_strip_whitespace=True)
+
+    orcid_id: str = Field(..., min_length=19, max_length=19)
+    given_names: Optional[str] = Field(None, max_length=255)
+    family_name: Optional[str] = Field(None, max_length=255)
+    credit_name: Optional[str] = Field(None, max_length=500)
+
+    @field_validator('orcid_id')
+    @classmethod
+    def validate_orcid_id(cls, v: str) -> str:
+        v = v.strip()
+        parts = v.split('-')
+        if len(parts) != 4 or not all(len(p) == 4 for p in parts):
+            raise ValueError('ORCID iD must be in format 0000-0000-0000-000X')
+        return v
+
+
 # TAVR-specific DRG codes
 TAVR_DRG_CODES = {'266', '267'}
 

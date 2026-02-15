@@ -35,6 +35,10 @@ resources:
   - ingestion/cronjob-fetch-cochrane.yaml
   - ingestion/cronjob-fetch-news.yaml
   - ingestion/cronjob-fetch-sec-edgar.yaml
+  # Molecule data sources (012-platform-hardening)
+  - ingestion/cronjob-fetch-uniprot.yaml
+  - ingestion/cronjob-fetch-pdb.yaml
+  - ingestion/cronjob-fetch-orcid.yaml
   - ingestion/molecule-pipeline-config.yaml
   # Backup
   - backup/pg-backup-configmap.yaml
@@ -50,6 +54,7 @@ resources:
   - networkpolicy.yaml
   # Secrets
   - doppler-secret.yaml
+  - ghcr-secret.yaml
   # Observability (requires Prometheus Operator CRDs)
   - service-monitor.yaml
   - alert-rules.yaml

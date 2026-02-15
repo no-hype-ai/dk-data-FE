@@ -11,12 +11,8 @@ import argparse
 import logging
 import sys
 from datetime import datetime
-from pathlib import Path
 
-# Add parent to path for imports
-sys.path.insert(0, str(Path(__file__).parent.parent))
-
-from ingestion.fetchers import (
+from dk_data.ingestion.fetchers import (
     CMSInpatientFetcher,
     CMSHospitalInfoFetcher,
     CMSCostReportsFetcher,
@@ -34,6 +30,9 @@ from ingestion.fetchers import (
     CochraneFetcher,
     MedicalNewsFetcher,
     SECEdgarFetcher,
+    UniProtFetcher,
+    PDBFetcher,
+    ORCIDFetcher,
 )
 
 # Configure logging
@@ -128,6 +127,21 @@ FETCHERS = {
     'sec_edgar': {
         'class': SECEdgarFetcher,
         'description': 'SEC EDGAR pharma filings (10-K, 10-Q, 8-K)',
+        'priority': 3,
+    },
+    'uniprot': {
+        'class': UniProtFetcher,
+        'description': 'UniProt protein targets (drug target data)',
+        'priority': 3,
+    },
+    'pdb': {
+        'class': PDBFetcher,
+        'description': 'RCSB PDB protein structures',
+        'priority': 3,
+    },
+    'orcid': {
+        'class': ORCIDFetcher,
+        'description': 'ORCID researcher profiles (KOL identification)',
         'priority': 3,
     },
 }

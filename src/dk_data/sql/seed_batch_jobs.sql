@@ -37,6 +37,9 @@ DECLARE
     v_cochrane_id INTEGER;
     v_medical_news_id INTEGER;
     v_sec_edgar_id INTEGER;
+    v_uniprot_id INTEGER;
+    v_pdb_id INTEGER;
+    v_orcid_id INTEGER;
 BEGIN
     -- Get source IDs
     SELECT source_id INTO v_cms_inpatient_id FROM meta.data_sources WHERE source_name = 'cms_medicare_inpatient';
@@ -69,6 +72,9 @@ BEGIN
     SELECT source_id INTO v_cochrane_id FROM meta.data_sources WHERE source_name = 'cochrane';
     SELECT source_id INTO v_medical_news_id FROM meta.data_sources WHERE source_name = 'medical_news';
     SELECT source_id INTO v_sec_edgar_id FROM meta.data_sources WHERE source_name = 'sec_edgar';
+    SELECT source_id INTO v_uniprot_id FROM meta.data_sources WHERE source_name = 'uniprot';
+    SELECT source_id INTO v_pdb_id FROM meta.data_sources WHERE source_name = 'pdb';
+    SELECT source_id INTO v_orcid_id FROM meta.data_sources WHERE source_name = 'orcid';
 
     -- Job 1: fetch-cms-all - Fetches all CMS data sources
     INSERT INTO meta.batch_jobs (
@@ -420,6 +426,51 @@ BEGIN
         ARRAY[v_sec_edgar_id],
         TRUE,
         NOW() + INTERVAL '1 day'
+    )
+    ON CONFLICT (job_name) DO UPDATE SET
+        description = EXCLUDED.description,
+        source_ids = EXCLUDED.source_ids;
+
+    -- Job 22: fetch-uniprot - Weekly UniProt fetch
+    INSERT INTO meta.batch_jobs (
+        job_name, description, cron_schedule, source_ids, is_enabled, next_scheduled_run
+    ) VALUES (
+        'fetch-uniprot',
+        'Fetch UniProt protein target data for drug discovery',
+        '0 17 * * 0',
+        ARRAY[v_uniprot_id],
+        TRUE,
+        NOW() + INTERVAL '1 week'
+    )
+    ON CONFLICT (job_name) DO UPDATE SET
+        description = EXCLUDED.description,
+        source_ids = EXCLUDED.source_ids;
+
+    -- Job 23: fetch-pdb - Weekly PDB fetch
+    INSERT INTO meta.batch_jobs (
+        job_name, description, cron_schedule, source_ids, is_enabled, next_scheduled_run
+    ) VALUES (
+        'fetch-pdb',
+        'Fetch RCSB PDB protein structure data',
+        '0 18 * * 0',
+        ARRAY[v_pdb_id],
+        TRUE,
+        NOW() + INTERVAL '1 week'
+    )
+    ON CONFLICT (job_name) DO UPDATE SET
+        description = EXCLUDED.description,
+        source_ids = EXCLUDED.source_ids;
+
+    -- Job 24: fetch-orcid - Weekly ORCID fetch
+    INSERT INTO meta.batch_jobs (
+        job_name, description, cron_schedule, source_ids, is_enabled, next_scheduled_run
+    ) VALUES (
+        'fetch-orcid',
+        'Fetch ORCID researcher profiles for KOL identification',
+        '0 18 * * 0',
+        ARRAY[v_orcid_id],
+        TRUE,
+        NOW() + INTERVAL '1 week'
     )
     ON CONFLICT (job_name) DO UPDATE SET
         description = EXCLUDED.description,

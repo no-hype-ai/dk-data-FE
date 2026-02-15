@@ -23,10 +23,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 RUN useradd --create-home --shell /bin/bash appuser
 
 COPY --from=builder /install /usr/local
-COPY --from=builder /build/src/dk_data /app/dk_data
 
 WORKDIR /app
-ENV PYTHONPATH=/app
 
 USER appuser
 
