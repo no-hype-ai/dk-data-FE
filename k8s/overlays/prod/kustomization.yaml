@@ -4,111 +4,111 @@ kind: Kustomization
 namespace: dk-data-prod
 
 labels:
-  - pairs:
-      environment: production
-    includeSelectors: false
+- pairs:
+    environment: production
 
 resources:
-  - ../../base
+- ../../base
 
 images:
-  - name: ghcr.io/data-kinetic/dk-data-fe/job-trigger
-    newTag: prod-PLACEHOLDER
+- name: ghcr.io/data-kinetic/dk-data-fe/job-trigger
+  newName: ghcr.io/data-kinetic/dk-data-fe/job-trigger
+  newTag: prod-8cd6adb
 
-patches:
   # PostgREST — 3 replicas for HA with production resources
-  - patch: |-
-      apiVersion: apps/v1
-      kind: Deployment
-      metadata:
-        name: postgrest
-      spec:
-        replicas: 3
-        template:
-          spec:
-            containers:
-              - name: postgrest
-                resources:
-                  requests:
-                    memory: "256Mi"
-                    cpu: "200m"
-                  limits:
-                    memory: "1Gi"
-                    cpu: "1000m"
-    target:
-      kind: Deployment
-      name: postgrest
 
   # Job Trigger — disabled until image is published (GHCR permissions needed)
-  - patch: |-
-      apiVersion: apps/v1
-      kind: Deployment
-      metadata:
-        name: job-trigger
-      spec:
-        replicas: 0
-        template:
-          spec:
-            containers:
-              - name: job-trigger
-                resources:
-                  requests:
-                    memory: "128Mi"
-                    cpu: "100m"
-                  limits:
-                    memory: "512Mi"
-                    cpu: "500m"
-    target:
-      kind: Deployment
-      name: job-trigger
 
   # PostgREST config overrides for production
-  - patch: |-
-      apiVersion: v1
-      kind: ConfigMap
-      metadata:
-        name: postgrest-config
-      data:
-        PGRST_LOG_LEVEL: "error"
-        PGRST_DB_POOL: "20"
-        PGRST_DB_POOL_ACQUISITION_TIMEOUT: "30"
-    target:
-      kind: ConfigMap
-      name: postgrest-config
 
   # Molecule Pipeline ConfigMap — production settings
-  - patch: |-
-      apiVersion: v1
-      kind: ConfigMap
-      metadata:
-        name: molecule-pipeline-config
-      data:
-        BATCH_SIZE: "200"
-        LOG_LEVEL: "INFO"
-    target:
-      kind: ConfigMap
-      name: molecule-pipeline-config
 
   # Mol-transform CronJob — production resources (higher memory for gold aggregation)
-  - patch: |-
-      apiVersion: batch/v1
-      kind: CronJob
-      metadata:
-        name: mol-transform
-      spec:
-        jobTemplate:
-          spec:
-            template:
-              spec:
-                containers:
-                  - name: mol-transform
-                    resources:
-                      requests:
-                        memory: "1Gi"
-                        cpu: "500m"
-                      limits:
-                        memory: "2Gi"
-                        cpu: "1000m"
-    target:
-      kind: CronJob
+patches:
+- patch: |-
+    apiVersion: apps/v1
+    kind: Deployment
+    metadata:
+      name: postgrest
+    spec:
+      replicas: 3
+      template:
+        spec:
+          containers:
+            - name: postgrest
+              resources:
+                requests:
+                  memory: "256Mi"
+                  cpu: "200m"
+                limits:
+                  memory: "1Gi"
+                  cpu: "1000m"
+  target:
+    kind: Deployment
+    name: postgrest
+- patch: |-
+    apiVersion: apps/v1
+    kind: Deployment
+    metadata:
+      name: job-trigger
+    spec:
+      replicas: 0
+      template:
+        spec:
+          containers:
+            - name: job-trigger
+              resources:
+                requests:
+                  memory: "128Mi"
+                  cpu: "100m"
+                limits:
+                  memory: "512Mi"
+                  cpu: "500m"
+  target:
+    kind: Deployment
+    name: job-trigger
+- patch: |-
+    apiVersion: v1
+    kind: ConfigMap
+    metadata:
+      name: postgrest-config
+    data:
+      PGRST_LOG_LEVEL: "error"
+      PGRST_DB_POOL: "20"
+      PGRST_DB_POOL_ACQUISITION_TIMEOUT: "30"
+  target:
+    kind: ConfigMap
+    name: postgrest-config
+- patch: |-
+    apiVersion: v1
+    kind: ConfigMap
+    metadata:
+      name: molecule-pipeline-config
+    data:
+      BATCH_SIZE: "200"
+      LOG_LEVEL: "INFO"
+  target:
+    kind: ConfigMap
+    name: molecule-pipeline-config
+- patch: |-
+    apiVersion: batch/v1
+    kind: CronJob
+    metadata:
       name: mol-transform
+    spec:
+      jobTemplate:
+        spec:
+          template:
+            spec:
+              containers:
+                - name: mol-transform
+                  resources:
+                    requests:
+                      memory: "1Gi"
+                      cpu: "500m"
+                    limits:
+                      memory: "2Gi"
+                      cpu: "1000m"
+  target:
+    kind: CronJob
+    name: mol-transform
