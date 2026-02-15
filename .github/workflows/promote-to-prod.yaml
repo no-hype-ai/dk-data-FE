@@ -28,10 +28,6 @@ jobs:
           ref: main
           fetch-depth: 0
 
-      - name: Set short SHA
-        id: vars
-        run: echo "sha_short=$(git rev-parse --short HEAD)" >> $GITHUB_OUTPUT
-
       - name: Install crane
         uses: imjasonh/setup-crane@v0.4
 
@@ -42,23 +38,28 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Get staging image tag
+      - name: Get staging image tag from overlay
         id: staging
         run: |
-          STAGING_TAG="main-${{ steps.vars.outputs.sha_short }}"
+          # Read the actual image tag from the staging overlay instead of
+          # computing from HEAD (which may be a manifest commit, not the
+          # build commit — causing MANIFEST_UNKNOWN errors).
+          STAGING_TAG=$(awk '/newTag:/ {print $2}' k8s/overlays/staging/kustomization.yaml)
+          SHORT_SHA=${STAGING_TAG#main-}
           echo "tag=${STAGING_TAG}" >> $GITHUB_OUTPUT
-          echo "Staging image tag: ${STAGING_TAG}"
+          echo "sha_short=${SHORT_SHA}" >> $GITHUB_OUTPUT
+          echo "Staging image tag: ${STAGING_TAG} (sha: ${SHORT_SHA})"
 
       - name: Tag image for production
         run: |
           STAGING_TAG="${{ steps.staging.outputs.tag }}"
-          PROD_TAG="prod-${{ steps.vars.outputs.sha_short }}"
+          PROD_TAG="prod-${{ steps.staging.outputs.sha_short }}"
           echo "Promoting ${STAGING_TAG} -> ${PROD_TAG}"
           crane tag "${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${STAGING_TAG}" "${PROD_TAG}"
 
       - name: Update production overlay
         run: |
-          PROD_TAG="prod-${{ steps.vars.outputs.sha_short }}"
+          PROD_TAG="prod-${{ steps.staging.outputs.sha_short }}"
           cd k8s/overlays/prod
           kustomize edit set image "ghcr.io/data-kinetic/dk-data-fe/job-trigger=ghcr.io/data-kinetic/dk-data-fe/job-trigger:${PROD_TAG}"
 
@@ -67,5 +68,5 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git add k8s/overlays/prod/kustomization.yaml
-          git diff --staged --quiet || git commit -m "chore: promote image to prod-${{ steps.vars.outputs.sha_short }}"
+          git diff --staged --quiet || git commit -m "chore: promote image to prod-${{ steps.staging.outputs.sha_short }}"
           git push
