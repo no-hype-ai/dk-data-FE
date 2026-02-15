@@ -83,27 +83,43 @@ SOURCE_METADATA = {
         "target_tables": ["staging.hospitals", "mart.dim_hospital"],
     },
     "acc_tvc": {
-        "topic_tags": ["acc", "certification", "tavr", "quality"],
-        "ai_description": "ACC TVT Registry certification data for TAVR programs. Indicates which hospitals have official ACC certification for transcatheter valve procedures.",
+        "topic_tags": ["acc", "certification", "tavr", "quality", "ncdr", "tvt"],
+        "ai_description": "ACC Transcatheter Valve Certification and TVT Registry data from NCDR Public Reporting API. Contains TAVR volumes, quality ratings, and certification status for facilities participating in the STS/ACC TVT Registry.",
         "column_descriptions": {
             "facility_name": {
-                "description": "Name of the certified facility",
+                "description": "Branded name of the certified facility (FacilityBrandedName)",
                 "type": "string",
+            },
+            "facility_linking_id": {
+                "description": "NCDR unique facility linking identifier",
+                "type": "string",
+            },
+            "npi": {
+                "description": "National Provider Identifier",
+                "type": "string",
+            },
+            "state": {
+                "description": "Two-letter US state code",
+                "type": "string",
+            },
+            "cumulative_tavr_volume": {
+                "description": "Cumulative total TAVR procedures performed at the facility",
+                "type": "integer",
+            },
+            "annual_tavr_volume": {
+                "description": "Annual TAVR procedure volume",
+                "type": "integer",
+            },
+            "participant_rating": {
+                "description": "NCDR quality participant rating (1-3 scale)",
+                "type": "integer",
             },
             "certification_type": {
-                "description": "Type of ACC certification (TAVR, MITRAL, etc.)",
+                "description": "Type of ACC certification (Transcatheter Valve Certification)",
                 "type": "string",
             },
-            "certification_date": {
-                "description": "Date certification was granted",
-                "type": "date",
-            },
-            "expiration_date": {
-                "description": "Date certification expires",
-                "type": "date",
-            },
         },
-        "staleness_threshold_hours": 720,  # Monthly
+        "staleness_threshold_hours": 2160,  # Quarterly — 90 days
         "target_tables": ["staging.certifications"],
     },
     "hrsa_shortage_areas": {
@@ -145,6 +161,333 @@ SOURCE_METADATA = {
         },
         "staleness_threshold_hours": 2160,  # Quarterly - 90 days
         "target_tables": ["mart.fact_financial_metrics"],
+    },
+    "bindingdb": {
+        "topic_tags": ["molecule", "binding", "affinity", "drug-target"],
+        "ai_description": "BindingDB binding affinity measurements for drug-target interactions. Contains IC50, Ki, Kd values for protein-ligand binding. Used for molecular pharmacology analysis and target identification.",
+        "column_descriptions": {
+            "response_body": {
+                "description": "Complete BindingDB API response with binding measurements",
+                "type": "jsonb",
+            },
+        },
+        "staleness_threshold_hours": 720,
+        "target_tables": ["mol_bronze.bindingdb", "mol_silver.bioactivity"],
+    },
+    "orange_book": {
+        "topic_tags": ["molecule", "fda", "patent", "exclusivity", "generic"],
+        "ai_description": "FDA Orange Book listing of approved drug products with therapeutic equivalence evaluations, patent information, and exclusivity data. Key source for generic drug competition and patent expiry analysis.",
+        "column_descriptions": {
+            "response_body": {
+                "description": "Complete FDA Orange Book CSV parsed response",
+                "type": "jsonb",
+            },
+        },
+        "staleness_threshold_hours": 168,
+        "target_tables": ["mol_bronze.orange_book"],
+    },
+    "sider": {
+        "topic_tags": ["molecule", "side-effect", "adverse-reaction", "safety"],
+        "ai_description": "SIDER database of drug side effects mined from drug labels and adverse event reports. Links drugs to MedDRA-coded adverse reactions with frequency information.",
+        "column_descriptions": {
+            "response_body": {
+                "description": "Complete SIDER data file parsed as structured JSON",
+                "type": "jsonb",
+            },
+        },
+        "staleness_threshold_hours": 720,
+        "target_tables": ["mol_bronze.sider", "mol_gold.safety_signals"],
+    },
+    "tdc_admet": {
+        "topic_tags": ["molecule", "admet", "pharmacokinetics", "toxicity", "prediction"],
+        "ai_description": "Therapeutics Data Commons ADMET property predictions. Contains absorption, distribution, metabolism, excretion, and toxicity predictions for drug compounds from ML models.",
+        "column_descriptions": {
+            "response_body": {
+                "description": "Complete TDC ADMET API response with property predictions",
+                "type": "jsonb",
+            },
+        },
+        "staleness_threshold_hours": 720,
+        "target_tables": ["mol_bronze.tdc_admet"],
+    },
+    "ema": {
+        "topic_tags": ["molecule", "regulatory", "ema", "european", "approval"],
+        "ai_description": "European Medicines Agency approved medicines database. Contains marketing authorization details, EPAR documents, and regulatory decisions for medicines in the EU market.",
+        "column_descriptions": {
+            "response_body": {
+                "description": "Complete EMA API response with medicine details",
+                "type": "jsonb",
+            },
+        },
+        "staleness_threshold_hours": 168,
+        "target_tables": ["mol_bronze.ema"],
+    },
+    "rxnorm": {
+        "topic_tags": ["molecule", "nomenclature", "drug-name", "nlm"],
+        "ai_description": "NLM RxNorm normalized drug nomenclature. Provides standardized drug names, ingredient mappings, and dose form classifications for drug name harmonization across data sources.",
+        "column_descriptions": {
+            "response_body": {
+                "description": "Complete RxNorm API response with drug concept data",
+                "type": "jsonb",
+            },
+        },
+        "staleness_threshold_hours": 168,
+        "target_tables": ["mol_bronze.rxnorm"],
+    },
+    "dailymed": {
+        "topic_tags": ["molecule", "label", "spl", "fda"],
+        "ai_description": "NLM DailyMed structured product labeling. Contains FDA-approved drug labels with dosing, indications, warnings, and pharmacology sections in structured format.",
+        "column_descriptions": {
+            "response_body": {
+                "description": "Complete DailyMed SPL response with label sections",
+                "type": "jsonb",
+            },
+        },
+        "staleness_threshold_hours": 168,
+        "target_tables": ["mol_bronze.dailymed"],
+    },
+    "fda_drugs": {
+        "topic_tags": ["molecule", "fda", "approval", "regulatory"],
+        "ai_description": "FDA Drugs@FDA database of approved drug products. Contains approval history, regulatory actions, review documents, and therapeutic equivalence data for FDA-regulated drugs.",
+        "column_descriptions": {
+            "response_body": {
+                "description": "Complete FDA Drugs@FDA API response with approval data",
+                "type": "jsonb",
+            },
+        },
+        "staleness_threshold_hours": 168,
+        "target_tables": ["mol_bronze.fda_drugs"],
+    },
+    "kegg_drug": {
+        "topic_tags": ["molecule", "pathway", "target", "kegg"],
+        "ai_description": "KEGG Drug database linking drugs to biological pathways, molecular targets, and disease associations. Key source for mechanism of action and pathway analysis.",
+        "column_descriptions": {
+            "response_body": {
+                "description": "Complete KEGG Drug API response with pathway data",
+                "type": "jsonb",
+            },
+        },
+        "staleness_threshold_hours": 720,
+        "target_tables": ["mol_bronze.kegg_drug"],
+    },
+    "ttd": {
+        "topic_tags": ["molecule", "target", "drug-target", "therapeutic"],
+        "ai_description": "Therapeutic Target Database linking therapeutic targets to drugs and diseases. Contains target validation status, drug-target binding data, and clinical trial mappings.",
+        "column_descriptions": {
+            "response_body": {
+                "description": "Complete TTD API response with target-drug data",
+                "type": "jsonb",
+            },
+        },
+        "staleness_threshold_hours": 720,
+        "target_tables": ["mol_bronze.ttd"],
+    },
+    "pharmgkb": {
+        "topic_tags": ["molecule", "pharmacogenomics", "genetic", "variant"],
+        "ai_description": "PharmGKB pharmacogenomics knowledge base. Contains gene-drug-disease relationships, clinical pharmacogenomic guidelines, and variant-drug response annotations.",
+        "column_descriptions": {
+            "response_body": {
+                "description": "Complete PharmGKB API response with pharmacogenomic data",
+                "type": "jsonb",
+            },
+        },
+        "staleness_threshold_hours": 720,
+        "target_tables": ["mol_bronze.pharmgkb"],
+    },
+    "imgt": {
+        "topic_tags": ["molecule", "antibody", "biologic", "immunogenetics"],
+        "ai_description": "ImMunoGeneTics information system for antibody and biologic sequence data. Contains immunoglobulin gene sequences, antibody structures, and nomenclature for biologic drug analysis.",
+        "column_descriptions": {
+            "response_body": {
+                "description": "Complete IMGT API response with antibody sequence data",
+                "type": "jsonb",
+            },
+        },
+        "staleness_threshold_hours": 720,
+        "target_tables": ["mol_bronze.imgt"],
+    },
+    "cdc_vaccines": {
+        "topic_tags": ["molecule", "vaccine", "immunization", "cdc"],
+        "ai_description": "CDC vaccine information including recommended schedules, coverage rates, and safety monitoring data. Used for vaccine pipeline competitive analysis and market sizing.",
+        "column_descriptions": {
+            "response_body": {
+                "description": "Complete CDC vaccine API response with schedule data",
+                "type": "jsonb",
+            },
+        },
+        "staleness_threshold_hours": 720,
+        "target_tables": ["mol_bronze.cdc_vaccines"],
+    },
+    "pubmed": {
+        "topic_tags": ["ci", "literature", "pubmed", "pharmaceutical"],
+        "ai_description": "PubMed literature from NCBI E-utilities. Contains pharmaceutical research articles with abstracts, MeSH terms, and citation data for competitive intelligence monitoring.",
+        "column_descriptions": {
+            "pmid": {
+                "description": "PubMed unique article identifier",
+                "type": "string",
+            },
+            "title": {
+                "description": "Article title",
+                "type": "string",
+            },
+            "publication_date": {
+                "description": "Date of publication",
+                "type": "date",
+            },
+            "mesh_terms": {
+                "description": "Medical Subject Heading terms assigned to article",
+                "type": "jsonb",
+            },
+        },
+        "staleness_threshold_hours": 24,
+        "target_tables": ["raw.pubmed"],
+    },
+    "openalex_ci": {
+        "topic_tags": ["ci", "literature", "openalex", "research"],
+        "ai_description": "OpenAlex pharmaceutical research works. Contains scholarly works with citation counts, concept tags, and institutional affiliations for competitive intelligence analysis.",
+        "column_descriptions": {
+            "work_id": {
+                "description": "OpenAlex unique work identifier (W-prefixed)",
+                "type": "string",
+            },
+            "doi": {
+                "description": "Digital Object Identifier for the work",
+                "type": "string",
+            },
+            "cited_by_count": {
+                "description": "Number of citations received",
+                "type": "integer",
+            },
+            "publication_date": {
+                "description": "Date of publication",
+                "type": "date",
+            },
+        },
+        "staleness_threshold_hours": 24,
+        "target_tables": ["raw.openalex_ci"],
+    },
+    "ema_regulatory": {
+        "topic_tags": ["ci", "regulatory", "ema", "european"],
+        "ai_description": "EMA regulatory decisions including CHMP opinions, EPAR documents, and safety signals. Key source for tracking European pharmaceutical regulatory landscape.",
+        "column_descriptions": {
+            "document_id": {
+                "description": "EMA unique document identifier",
+                "type": "string",
+            },
+            "document_type": {
+                "description": "Type of regulatory document (chmp_opinion, epar, safety_signal)",
+                "type": "string",
+            },
+            "decision_type": {
+                "description": "Type of regulatory decision (authorisation, variation, withdrawal, etc.)",
+                "type": "string",
+            },
+            "decision_date": {
+                "description": "Date the regulatory decision was made",
+                "type": "date",
+            },
+        },
+        "staleness_threshold_hours": 168,
+        "target_tables": ["raw.ema_regulatory"],
+    },
+    "drugbank": {
+        "topic_tags": ["ci", "drug", "target", "pharmacology"],
+        "ai_description": "DrugBank comprehensive drug data including targets, enzymes, pharmacology, and drug-drug interactions. Credential-gated source requiring DRUGBANK_API_KEY.",
+        "column_descriptions": {
+            "drugbank_id": {"description": "DrugBank unique identifier (DB-prefixed)", "type": "string"},
+            "name": {"description": "Drug name", "type": "string"},
+            "targets": {"description": "Drug target proteins", "type": "jsonb"},
+        },
+        "staleness_threshold_hours": 720,
+        "target_tables": ["raw.drugbank"],
+    },
+    "uspto_patents": {
+        "topic_tags": ["ci", "patent", "uspto", "pharmaceutical"],
+        "ai_description": "USPTO PatentsView pharmaceutical patents filtered by CPC codes A61K/A61P/C07D. Credential-gated source requiring USPTO_API_KEY.",
+        "column_descriptions": {
+            "patent_number": {"description": "USPTO patent number", "type": "string"},
+            "cpc_codes": {"description": "Cooperative Patent Classification codes", "type": "array"},
+            "grant_date": {"description": "Patent grant date", "type": "date"},
+        },
+        "staleness_threshold_hours": 168,
+        "target_tables": ["raw.uspto_patents"],
+    },
+    "journal_rss": {
+        "topic_tags": ["ci", "literature", "rss", "journal"],
+        "ai_description": "Journal RSS feeds from NEJM, Lancet, JAMA, BMJ, and Nature Medicine. Daily ingestion of pharmaceutical research article metadata.",
+        "column_descriptions": {
+            "article_id": {"description": "Unique article identifier (DOI or URL hash)", "type": "string"},
+            "feed_source": {"description": "Journal name or feed URL", "type": "string"},
+            "doi": {"description": "Digital Object Identifier", "type": "string"},
+        },
+        "staleness_threshold_hours": 24,
+        "target_tables": ["raw.journal_rss"],
+    },
+    "uspto_ci": {
+        "topic_tags": ["ci", "patent", "uspto", "competitive-intelligence"],
+        "ai_description": "USPTO PatentsView CI patents with query-scoped search terms from meta.ci_search_terms. Filtered by pharmaceutical CPC codes.",
+        "column_descriptions": {
+            "patent_id": {"description": "USPTO patent identifier", "type": "string"},
+            "cpc_codes": {"description": "Cooperative Patent Classification codes", "type": "array"},
+            "filing_date": {"description": "Patent filing date", "type": "date"},
+        },
+        "staleness_threshold_hours": 168,
+        "target_tables": ["raw.uspto_ci"],
+    },
+    "hta_bodies": {
+        "topic_tags": ["ci", "regulatory", "hta", "reimbursement"],
+        "ai_description": "HTA body decisions from NICE (UK), G-BA (Germany), HAS (France), and PBAC (Australia). Query-scoped drug name matching.",
+        "column_descriptions": {
+            "decision_id": {"description": "HTA decision unique identifier", "type": "string"},
+            "agency": {"description": "HTA agency code (nice, gba, has, pbac)", "type": "string"},
+            "decision_type": {"description": "Type of HTA decision", "type": "string"},
+        },
+        "staleness_threshold_hours": 168,
+        "target_tables": ["raw.hta_decisions"],
+    },
+    "epo_ops": {
+        "topic_tags": ["ci", "patent", "epo", "european"],
+        "ai_description": "EPO Open Patent Services pharmaceutical patents with OAuth2 authentication and IPC code filtering. Credential-gated source.",
+        "column_descriptions": {
+            "publication_id": {"description": "EPO publication identifier", "type": "string"},
+            "ipc_codes": {"description": "International Patent Classification codes", "type": "array"},
+            "family_id": {"description": "Patent family identifier", "type": "string"},
+        },
+        "staleness_threshold_hours": 168,
+        "target_tables": ["raw.epo_patents"],
+    },
+    "cochrane": {
+        "topic_tags": ["ci", "evidence", "cochrane", "systematic-review"],
+        "ai_description": "Cochrane Library systematic reviews for pharmaceutical interventions. Monthly search for evidence-based medicine assessments.",
+        "column_descriptions": {
+            "review_id": {"description": "Cochrane review unique identifier", "type": "string"},
+            "review_type": {"description": "Type of review (intervention, diagnostic, etc.)", "type": "string"},
+            "interventions": {"description": "Drug/treatment interventions studied", "type": "array"},
+        },
+        "staleness_threshold_hours": 720,
+        "target_tables": ["raw.cochrane_reviews"],
+    },
+    "medical_news": {
+        "topic_tags": ["ci", "news", "media", "pharmaceutical"],
+        "ai_description": "Medical news from Medscape, Healio, and FiercePharma RSS feeds. Extracts drug mentions from article titles and summaries.",
+        "column_descriptions": {
+            "article_id": {"description": "Unique article identifier (source+URL hash)", "type": "string"},
+            "source_name": {"description": "News source (medscape, healio, fiercepharma)", "type": "string"},
+            "drug_mentions": {"description": "Drug names mentioned in article", "type": "array"},
+        },
+        "staleness_threshold_hours": 24,
+        "target_tables": ["raw.medical_news"],
+    },
+    "sec_edgar": {
+        "topic_tags": ["ci", "financial", "sec", "regulatory"],
+        "ai_description": "SEC EDGAR pharmaceutical company filings (10-K, 10-Q, 8-K) filtered by SIC codes 2830-2836. Daily monitoring of pharma financial disclosures.",
+        "column_descriptions": {
+            "accession_number": {"description": "SEC filing accession number", "type": "string"},
+            "filing_type": {"description": "Filing type (10-K, 10-Q, 8-K)", "type": "string"},
+            "cik": {"description": "SEC Central Index Key for the company", "type": "string"},
+        },
+        "staleness_threshold_hours": 24,
+        "target_tables": ["raw.sec_edgar"],
     },
 }
 

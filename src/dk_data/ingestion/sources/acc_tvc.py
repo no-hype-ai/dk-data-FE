@@ -1,6 +1,11 @@
 """ACC TVC Certification Data Ingestor.
 
-Loads Transcatheter Valve Certification data from ACC/NCDR.
+Loads Transcatheter Valve Certification data from NCDR Public Reporting
+CSV files into the ``raw.acc_tvc_certification`` table.
+
+Supports two CSV formats:
+  1. NCDR TVTMetrics / merged CSV  (columns: FacilityBrandedName, State, ...)
+  2. Legacy / manual upload CSV     (columns: Facility Name, City, ...)
 """
 
 import hashlib
@@ -17,8 +22,27 @@ from ..utils.validators import ACCTVCCertificationRecord
 
 logger = logging.getLogger(__name__)
 
-# Column mapping for ACC TVC data
-COLUMN_MAPPING = {
+# Column mapping for NCDR TVTMetrics / Hospitals merged CSV
+NCDR_COLUMN_MAPPING = {
+    'FacilityBrandedName': 'facility_name',
+    'Address': 'facility_address',
+    'City': 'city',
+    'State': 'state',
+    'StateCode': 'state',
+    'Zip': 'zip_code',
+    'TranscatheterValveCertification': 'certification_type',
+    'CumulativeTAVRvolume': 'cumulative_tavr_volume',
+    'AnnualTAVRVolume': 'annual_tavr_volume',
+    'ParticipantRating': 'participant_rating',
+    'FacilityLinkingID': 'facility_linking_id',
+    'MPN': 'mpn',
+    'AHA': 'aha_id',
+    'NPI': 'npi',
+    'EnrollmentDate': 'enrollment_date',
+}
+
+# Column mapping for legacy / manual-upload CSV
+LEGACY_COLUMN_MAPPING = {
     'Facility Name': 'facility_name',
     'Address': 'facility_address',
     'City': 'city',
@@ -61,12 +85,40 @@ def parse_date(value) -> Optional[datetime]:
     return None
 
 
+def _detect_format(columns: list[str]) -> str:
+    """Detect whether the CSV is NCDR format or legacy format.
+
+    Returns:
+        'ncdr' or 'legacy'
+    """
+    ncdr_indicators = {'FacilityBrandedName', 'FacilityLinkingID', 'RegistryName'}
+    if ncdr_indicators & set(columns):
+        return 'ncdr'
+    return 'legacy'
+
+
+def _apply_column_mapping(df: pd.DataFrame, fmt: str) -> pd.DataFrame:
+    """Rename columns based on detected format."""
+    mapping = NCDR_COLUMN_MAPPING if fmt == 'ncdr' else LEGACY_COLUMN_MAPPING
+
+    rename_map = {}
+    for orig_col in df.columns:
+        for map_key, map_val in mapping.items():
+            if orig_col.strip() == map_key:
+                rename_map[orig_col] = map_val
+                break
+
+    return df.rename(columns=rename_map)
+
+
 def load_acc_tvc_certifications(
     filepath: str,
     batch_size: int = 500
 ) -> dict:
-    """
-    Load ACC TVC Certification data from CSV file.
+    """Load ACC TVC Certification data from CSV file.
+
+    Handles both NCDR PublicReportingApi CSVs and legacy manual-upload
+    CSVs via automatic column-format detection.
 
     Args:
         filepath: Path to the ACC TVC CSV file.
@@ -100,15 +152,10 @@ def load_acc_tvc_certifications(
     # Normalize column names
     df.columns = df.columns.str.strip()
 
-    # Apply column mapping
-    rename_map = {}
-    for orig_col in df.columns:
-        for map_key, map_val in COLUMN_MAPPING.items():
-            if orig_col.lower() == map_key.lower():
-                rename_map[orig_col] = map_val
-                break
-
-    df = df.rename(columns=rename_map)
+    # Auto-detect format and apply mapping
+    fmt = _detect_format(list(df.columns))
+    logger.info(f"Detected CSV format: {fmt}")
+    df = _apply_column_mapping(df, fmt)
 
     logger.info(f"Found {len(df)} certification records")
 
@@ -123,7 +170,7 @@ def load_acc_tvc_certifications(
                 try:
                     # Determine certification type
                     cert_type = row.get('certification_type', 'Transcatheter Valve Certification')
-                    if pd.isna(cert_type) or not cert_type.strip():
+                    if pd.isna(cert_type) or not str(cert_type).strip():
                         cert_type = 'Transcatheter Valve Certification'
 
                     # Validate record
@@ -133,7 +180,7 @@ def load_acc_tvc_certifications(
                         city=row.get('city'),
                         state=row.get('state'),
                         zip_code=row.get('zip_code'),
-                        certification_type=cert_type,
+                        certification_type=str(cert_type).strip(),
                         certification_date=parse_date(row.get('certification_date')),
                         expiration_date=parse_date(row.get('expiration_date'))
                     )

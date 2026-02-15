@@ -20,7 +20,21 @@ resources:
   # Molecule platform ingestion (004-molecule-platform-integration)
   - ingestion/cronjob-mol-fetch-daily.yaml
   - ingestion/cronjob-mol-fetch-weekly.yaml
+  - ingestion/cronjob-mol-fetch-monthly.yaml
   - ingestion/cronjob-mol-transform.yaml
+  # CI source ingestion (011-datasource-integration)
+  - ingestion/cronjob-fetch-pubmed.yaml
+  - ingestion/cronjob-fetch-ema-reg.yaml
+  - ingestion/cronjob-fetch-openalex-ci.yaml
+  - ingestion/cronjob-fetch-drugbank.yaml
+  - ingestion/cronjob-fetch-uspto-patents.yaml
+  - ingestion/cronjob-fetch-journal-rss.yaml
+  - ingestion/cronjob-fetch-uspto-ci.yaml
+  - ingestion/cronjob-fetch-hta.yaml
+  - ingestion/cronjob-fetch-epo.yaml
+  - ingestion/cronjob-fetch-cochrane.yaml
+  - ingestion/cronjob-fetch-news.yaml
+  - ingestion/cronjob-fetch-sec-edgar.yaml
   - ingestion/molecule-pipeline-config.yaml
   # Backup
   - backup/pg-backup-configmap.yaml
