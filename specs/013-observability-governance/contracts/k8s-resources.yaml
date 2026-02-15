@@ -1,0 +1,75 @@
+# K8s Resource Contracts: Observability & Platform Governance
+# Feature: 013-observability-governance
+# Date: 2026-02-15
+#
+# These contracts define expected K8s resources and their critical fields.
+
+---
+# US1: ServiceMonitor resources (already exist, verify labels)
+servicemonitors:
+  - name: dk-data-job-trigger
+    labels:
+      release: mimir
+    selector:
+      matchLabels:
+        app: job-trigger
+    endpoints:
+      - port: http  # 8000
+        path: /metrics
+        interval: 30s
+
+  - name: dk-data-postgrest
+    labels:
+      release: mimir
+    selector:
+      matchLabels:
+        app: postgrest
+    endpoints:
+      - port: http  # 3000
+        path: /
+        interval: 30s
+
+# US1: PodMonitor resources (already exist, verify labels)
+podmonitors:
+  - name: dk-data-cronjobs
+    labels:
+      release: mimir
+    selector:
+      matchLabels:
+        app.kubernetes.io/component: batch-job
+    podMetricsEndpoints:
+      - port: metrics
+        path: /metrics
+        interval: 15s
+
+# US1: PrometheusRule (already exists, verify labels)
+prometheusrules:
+  - name: dk-data-alerts
+    labels:
+      prometheus: mimir
+    groups:
+      - data-freshness  # DataSourceStale, DataSourceCriticallyStale
+      - api-health       # APIHighErrorRate, APIUnavailable
+      - batch-jobs       # BatchJobFailed, CronJobMissedSchedule
+      - molecule-pipeline # MoleculeFetchFailed, etc.
+      - resources         # PodHighMemory, JobTriggerNotReady
+
+---
+# US2: PostgREST probe (new resource)
+# Option A: Probe CRD (if blackbox-exporter deployed)
+probes:
+  - name: dk-data-postgrest-probe
+    labels:
+      release: mimir
+    spec:
+      prober:
+        url: blackbox-exporter.infra:9115  # verify actual service name
+      targets:
+        staticConfig:
+          static:
+            - postgrest.dk-data-staging:3000  # staging
+          labels:
+            app: postgrest
+
+# Option B: If no blackbox-exporter, use ServiceMonitor with /health path
+# (update existing dk-data-postgrest ServiceMonitor)

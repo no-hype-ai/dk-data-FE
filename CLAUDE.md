@@ -15,6 +15,8 @@ Auto-generated from all feature plans. Last updated: 2026-01-30
 - PostgreSQL 16.4 via CloudNativePG — schemas: `mol_raw`, `mol_bronze`, `mol_silver`, `mol_gold`, `raw`, `staging`, `meta`, `api` (011-datasource-integration)
 - Python 3.11+ (existing codebase) + psycopg2-binary, Pydantic, httpx, requests, structlog, opentelemetry-sdk, feedparser, uv (new — dependency management) (012-platform-hardening)
 - PostgreSQL 16.4 via CloudNativePG — schemas: raw, staging, meta, api, mol_raw, mol_bronze, mol_silver, mol_gold (012-platform-hardening)
+- Python 3.11+, SQL (PostgreSQL 16.4), YAML (Kubernetes manifests) + FastAPI, psycopg2-binary, Pydantic, prometheus-client, structlog, PostgREST v12.2.3 (013-observability-governance)
+- PostgreSQL 16.4 via CloudNativePG (shared `postgresql.infra.svc.cluster.local:5432`) (013-observability-governance)
 
 - Python 3.11+ (existing ingestion layer), SQL (PostgreSQL 16+) + PostgREST v12.x, SQLMesh, psycopg2, Pydantic, requests (001-data-layer-postgrest-gitops)
 
@@ -34,9 +36,9 @@ cd src [ONLY COMMANDS FOR ACTIVE TECHNOLOGIES][ONLY COMMANDS FOR ACTIVE TECHNOLO
 Python 3.11+ (existing ingestion layer), SQL (PostgreSQL 16+): Follow standard conventions
 
 ## Recent Changes
+- 013-observability-governance: Added Python 3.11+, SQL (PostgreSQL 16.4), YAML (Kubernetes manifests) + FastAPI, psycopg2-binary, Pydantic, prometheus-client, structlog, PostgREST v12.2.3
 - 012-platform-hardening: Added Python 3.11+ (existing codebase) + psycopg2-binary, Pydantic, httpx, requests, structlog, opentelemetry-sdk, feedparser, uv (new — dependency management)
 - 011-datasource-integration: Added Python 3.11+ (existing codebase) + psycopg2-binary, Pydantic, httpx, requests, structlog, opentelemetry-sdk, pandas, feedparser (new, for RSS)
-- 010-platform-stabilization: Added Python 3.11+, SQL (PostgreSQL 16.4), YAML (Kubernetes manifests), Bash (backup/setup scripts) + FastAPI, PostgREST v12.2.3, psycopg2-binary, pytest-cov (new), responses (new), Kustomize, crane (new CI tool)
 
 
 <!-- MANUAL ADDITIONS START -->
