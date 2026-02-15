@@ -7,6 +7,8 @@ metadata:
     app.kubernetes.io/component: database
     app.kubernetes.io/part-of: dk-data
   annotations:
+    argocd.argoproj.io/hook: Sync
+    argocd.argoproj.io/hook-delete-policy: BeforeHookCreation
     argocd.argoproj.io/sync-wave: "1"
 spec:
   backoffLimit: 3
@@ -295,6 +297,147 @@ spec:
               WHERE false;
               SQL
 
+              # --- Step 9b: Create table-backed API views (conditional) ---
+              echo "Creating table-backed API views..."
+              psql -d dk_data <<'SQL'
+              -- Views backed by mol_gold tables (created only if backing tables exist)
+              DO $views$
+              BEGIN
+                IF EXISTS (SELECT 1 FROM information_schema.tables
+                           WHERE table_schema = 'mol_gold' AND table_name = 'competitive_landscape') THEN
+                  EXECUTE 'CREATE OR REPLACE VIEW api.competitive_landscape AS
+                    SELECT indication, approved_count, phase3_count
+                    FROM mol_gold.competitive_landscape';
+                ELSE
+                  EXECUTE 'CREATE OR REPLACE VIEW api.competitive_landscape AS
+                    SELECT NULL::text AS indication, 0::integer AS approved_count, 0::integer AS phase3_count WHERE false';
+                END IF;
+
+                IF EXISTS (SELECT 1 FROM information_schema.tables
+                           WHERE table_schema = 'mol_gold' AND table_name = 'molecule_profiles') THEN
+                  EXECUTE 'CREATE OR REPLACE VIEW api.molecule_properties AS
+                    SELECT molecule_id, lifecycle_stage, data_completeness, trial_count, ae_count
+                    FROM mol_gold.molecule_profiles';
+                ELSE
+                  EXECUTE 'CREATE OR REPLACE VIEW api.molecule_properties AS
+                    SELECT NULL::uuid AS molecule_id, NULL::text AS lifecycle_stage, 0::numeric AS data_completeness, 0::integer AS trial_count, 0::integer AS ae_count WHERE false';
+                END IF;
+
+                IF EXISTS (SELECT 1 FROM information_schema.tables
+                           WHERE table_schema = 'mol_gold' AND table_name = 'company_pipeline') THEN
+                  EXECUTE 'CREATE OR REPLACE VIEW api.company_pipeline AS
+                    SELECT id, company_name, molecule_name, indication, phase, status, mechanism_of_action, source, last_updated
+                    FROM mol_gold.company_pipeline';
+                ELSE
+                  EXECUTE 'CREATE OR REPLACE VIEW api.company_pipeline AS
+                    SELECT NULL::uuid AS id, NULL::text AS company_name, NULL::text AS molecule_name, NULL::text AS indication, NULL::text AS phase, NULL::text AS status, NULL::text AS mechanism_of_action, NULL::text AS source, NULL::timestamptz AS last_updated WHERE false';
+                END IF;
+
+                IF EXISTS (SELECT 1 FROM information_schema.tables
+                           WHERE table_schema = 'mol_gold' AND table_name = 'trial_publication_features') THEN
+                  EXECUTE 'CREATE OR REPLACE VIEW api.trial_publication_features AS
+                    SELECT id, nct_id, publication_doi, publication_pmid, overlap_score, feature_type, trial_title, publication_title, source
+                    FROM mol_gold.trial_publication_features';
+                ELSE
+                  EXECUTE 'CREATE OR REPLACE VIEW api.trial_publication_features AS
+                    SELECT NULL::uuid AS id, NULL::text AS nct_id, NULL::text AS publication_doi, NULL::text AS publication_pmid, 0::numeric AS overlap_score, NULL::text AS feature_type, NULL::text AS trial_title, NULL::text AS publication_title, NULL::text AS source WHERE false';
+                END IF;
+
+                IF EXISTS (SELECT 1 FROM pg_namespace WHERE nspname = 'silver')
+                   AND EXISTS (SELECT 1 FROM information_schema.tables
+                               WHERE table_schema = 'silver' AND table_name = 'patents') THEN
+                  EXECUTE 'CREATE OR REPLACE VIEW api.patents AS
+                    SELECT id, patent_number, title, assignee, filing_date, expiration_date, molecule_id, cpc_codes, country, status, source, ingested_at
+                    FROM silver.patents';
+                ELSE
+                  EXECUTE 'CREATE OR REPLACE VIEW api.patents AS
+                    SELECT NULL::uuid AS id, NULL::text AS patent_number, NULL::text AS title, NULL::text AS assignee, NULL::date AS filing_date, NULL::date AS expiration_date, NULL::uuid AS molecule_id, NULL::text[] AS cpc_codes, NULL::text AS country, NULL::text AS status, NULL::text AS source, NULL::timestamptz AS ingested_at WHERE false';
+                END IF;
+
+                IF EXISTS (SELECT 1 FROM information_schema.tables
+                           WHERE table_schema = 'mol_silver' AND table_name = 'targets') THEN
+                  EXECUTE 'CREATE OR REPLACE VIEW api.molecule_targets AS
+                    SELECT id, target_name, target_type, uniprot_accession, gene_symbol, organism, molecule_name, action_type, binding_affinity, source
+                    FROM mol_silver.targets';
+                ELSE
+                  EXECUTE 'CREATE OR REPLACE VIEW api.molecule_targets AS
+                    SELECT NULL::uuid AS id, NULL::text AS target_name, NULL::text AS target_type, NULL::text AS uniprot_accession, NULL::text AS gene_symbol, NULL::text AS organism, NULL::text AS molecule_name, NULL::text AS action_type, NULL::numeric AS binding_affinity, NULL::text AS source WHERE false';
+                END IF;
+
+                IF EXISTS (SELECT 1 FROM pg_namespace WHERE nspname = 'bronze')
+                   AND EXISTS (SELECT 1 FROM information_schema.tables
+                               WHERE table_schema = 'bronze' AND table_name = 'sider') THEN
+                  EXECUTE 'CREATE OR REPLACE VIEW api.sider_side_effects AS
+                    SELECT id, drug_name, side_effect, meddra_id, frequency, source, ingested_at
+                    FROM bronze.sider';
+                ELSE
+                  EXECUTE 'CREATE OR REPLACE VIEW api.sider_side_effects AS
+                    SELECT NULL::uuid AS id, NULL::text AS drug_name, NULL::text AS side_effect, NULL::text AS meddra_id, NULL::text AS frequency, NULL::text AS source, NULL::timestamptz AS ingested_at WHERE false';
+                END IF;
+
+                IF EXISTS (SELECT 1 FROM pg_namespace WHERE nspname = 'silver')
+                   AND EXISTS (SELECT 1 FROM information_schema.tables
+                               WHERE table_schema = 'silver' AND table_name = 'bioactivity') THEN
+                  EXECUTE 'CREATE OR REPLACE VIEW api.bioactivity AS
+                    SELECT id, molecule_id, target_name, activity_type, activity_value, activity_unit, assay_type, source, ingested_at
+                    FROM silver.bioactivity';
+                ELSE
+                  EXECUTE 'CREATE OR REPLACE VIEW api.bioactivity AS
+                    SELECT NULL::uuid AS id, NULL::uuid AS molecule_id, NULL::text AS target_name, NULL::text AS activity_type, NULL::numeric AS activity_value, NULL::text AS activity_unit, NULL::text AS assay_type, NULL::text AS source, NULL::timestamptz AS ingested_at WHERE false';
+                END IF;
+              END $views$;
+
+              -- Pure placeholder views (no backing tables needed)
+              CREATE OR REPLACE VIEW api.shap_explanations AS
+              SELECT NULL::uuid AS molecule_id, NULL::text AS model_id, NULL::text AS feature_name, NULL::numeric AS shap_value, NULL::numeric AS base_value WHERE false;
+
+              CREATE OR REPLACE VIEW api.synthesizability_scores AS
+              SELECT NULL::uuid AS molecule_id, NULL::numeric AS sa_score, NULL::numeric AS sc_score, NULL::timestamptz AS computed_at WHERE false;
+
+              CREATE OR REPLACE VIEW api.fingerprints AS
+              SELECT NULL::uuid AS molecule_id, NULL::text AS fingerprint_type, NULL::text AS fingerprint_bits, NULL::integer AS radius WHERE false;
+
+              -- Audit, migration, data classification views (conditional)
+              DO $audit_view$
+              BEGIN
+                IF EXISTS (SELECT 1 FROM information_schema.tables
+                           WHERE table_schema = 'meta' AND table_name = 'api_audit_log') THEN
+                  EXECUTE '
+                    CREATE OR REPLACE VIEW api.audit_log AS
+                    SELECT id, request_id, timestamp, source, method, path,
+                           user_role, user_sub, status_code, response_time_ms,
+                           action, category, details, created_at
+                    FROM meta.api_audit_log
+                    ORDER BY timestamp DESC';
+                END IF;
+              END $audit_view$;
+
+              DO $mig_view$
+              BEGIN
+                IF EXISTS (SELECT 1 FROM information_schema.tables
+                           WHERE table_schema = 'meta' AND table_name = 'schema_migrations') THEN
+                  EXECUTE '
+                    CREATE OR REPLACE VIEW api.migration_status AS
+                    SELECT version, filename, applied_at, applied_by, execution_time_ms
+                    FROM meta.schema_migrations
+                    ORDER BY version';
+                END IF;
+              END $mig_view$;
+
+              DO $class_view$
+              BEGIN
+                IF EXISTS (SELECT 1 FROM information_schema.tables
+                           WHERE table_schema = 'meta' AND table_name = 'data_classification') THEN
+                  EXECUTE '
+                    CREATE OR REPLACE VIEW api.data_classification AS
+                    SELECT schema_name, table_name, classification, pii_fields,
+                           retention_days, retention_policy, notes
+                    FROM meta.data_classification
+                    ORDER BY classification, schema_name, table_name';
+                END IF;
+              END $class_view$;
+              SQL
+
               # --- Step 10: Grant permissions on API views ---
               echo "Granting permissions on API views..."
               psql -d dk_data <<'SQL'
@@ -330,6 +473,30 @@ spec:
               -- analyst: gets resolution_queue access
               GRANT SELECT ON api.molecules TO analyst;
               GRANT SELECT ON api.resolution_queue TO analyst;
+
+              -- Stabilization + governance views (grant only if they exist)
+              DO $grants$
+              DECLARE
+                v_name text;
+              BEGIN
+                FOR v_name IN SELECT table_name FROM information_schema.views
+                  WHERE table_schema = 'api'
+                  AND table_name IN ('competitive_landscape', 'molecule_properties', 'company_pipeline',
+                    'shap_explanations', 'synthesizability_scores', 'fingerprints',
+                    'trial_publication_features', 'patents', 'molecule_targets',
+                    'sider_side_effects', 'bioactivity')
+                LOOP
+                  EXECUTE format('GRANT SELECT ON api.%I TO web_anon, analyst, api_user', v_name);
+                END LOOP;
+
+                -- audit_log, migration_status, data_classification: api_user only
+                FOR v_name IN SELECT table_name FROM information_schema.views
+                  WHERE table_schema = 'api'
+                  AND table_name IN ('audit_log', 'migration_status', 'data_classification')
+                LOOP
+                  EXECUTE format('GRANT SELECT ON api.%I TO api_user', v_name);
+                END LOOP;
+              END $grants$;
               SQL
 
               # --- Step 11: Cross-database isolation ---
@@ -377,4 +544,6 @@ spec:
               echo "=== Database initialization complete ==="
               echo "Roles: authenticator, web_anon, analyst, api_user, readonly"
               echo "Schemas: raw, staging, mart, scoring, meta, api, mol_*"
-              echo "Views: api.health, api.data_catalog, api.targets, api.scoring, api.data_sources, api.molecules, api.resolution_queue"
+              echo "Core views: api.health, api.data_catalog, api.targets, api.scoring, api.data_sources, api.molecules, api.resolution_queue"
+              echo "Extended views (conditional): competitive_landscape, molecule_properties, company_pipeline, patents, molecule_targets, sider_side_effects, bioactivity, trial_publication_features"
+              echo "Placeholder views: shap_explanations, synthesizability_scores, fingerprints"
