@@ -81,6 +81,7 @@ SELECT
     -- Source Tracking
     id AS bronze_id,
     'clinicaltrials_gov' AS source,
+    ingested_at,
     ingested_at AS source_updated_at,
     NOW() AS created_at,
     NOW() AS updated_at

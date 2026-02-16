@@ -70,9 +70,9 @@ class TestDataCatalogEndpoint:
         data = response.json()
         if len(data) > 0:
             entry = data[0]
-            assert "schemaname" in entry
-            assert "tablename" in entry
-            assert "row_count" in entry
+            assert "source_name" in entry
+            assert "source_type" in entry
+            assert "description" in entry
 
 
 class TestTargetsEndpoint:
