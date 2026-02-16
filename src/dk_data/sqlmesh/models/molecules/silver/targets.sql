@@ -88,10 +88,6 @@ SELECT
 FROM uniprot_targets;
 
 
--- Post-insert: Mark Bronze records as processed
-@post_incremental(
-    UPDATE bronze.uniprot
-    SET processed_to_silver = TRUE
-    WHERE processed_to_silver = FALSE
-    AND uniprot_id IN (SELECT uniprot_id FROM silver.targets)
-);
+-- NOTE: Bronze processed_to_silver flag updates are handled outside SQLMesh.
+-- Silver models use INCREMENTAL_BY_UNIQUE_KEY with when_matched_update_all,
+-- so reprocessing is idempotent.

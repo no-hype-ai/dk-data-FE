@@ -91,6 +91,19 @@ patches:
   target:
     kind: CronJob
     name: mol-fetch-daily
+  # API fetch CronJobs — suspended in staging by default.
+  # Unsuspend one-by-one during validation after deployment:
+  #   kubectl -n dk-data-staging patch cronjob fetch-pubmed -p '{"spec":{"suspend":false}}'
+- patch: |-
+    apiVersion: batch/v1
+    kind: CronJob
+    metadata:
+      name: placeholder
+    spec:
+      suspend: true
+  target:
+    kind: CronJob
+    labelSelector: app.kubernetes.io/component=ingestion
 - patch: |-
     - op: replace
       path: /spec/rules/0/host

@@ -41,7 +41,7 @@ jobs:
         ports:
           - 5432:5432
         options: >-
-          --health-cmd pg_isready
+          --health-cmd "pg_isready -U postgres"
           --health-interval 10s
           --health-timeout 5s
           --health-retries 5
@@ -65,6 +65,66 @@ jobs:
           pip install uv
           uv lock --check || echo "::warning::Lock file out of date with pyproject.toml"
 
+      - name: Initialize test database
+        env:
+          PGHOST: localhost
+          PGPORT: 5432
+          PGUSER: postgres
+          PGPASSWORD: postgres
+          PGDATABASE: dk_data_test
+        run: |
+          # Create all required schemas
+          psql <<'SQL'
+          CREATE SCHEMA IF NOT EXISTS raw;
+          CREATE SCHEMA IF NOT EXISTS staging;
+          CREATE SCHEMA IF NOT EXISTS mart;
+          CREATE SCHEMA IF NOT EXISTS scoring;
+          CREATE SCHEMA IF NOT EXISTS meta;
+          CREATE SCHEMA IF NOT EXISTS api;
+          CREATE SCHEMA IF NOT EXISTS mol_raw;
+          CREATE SCHEMA IF NOT EXISTS mol_bronze;
+          CREATE SCHEMA IF NOT EXISTS mol_silver;
+          CREATE SCHEMA IF NOT EXISTS mol_gold;
+          CREATE SCHEMA IF NOT EXISTS mol_app;
+          CREATE SCHEMA IF NOT EXISTS mol_api;
+          CREATE SCHEMA IF NOT EXISTS bronze;
+          CREATE SCHEMA IF NOT EXISTS silver;
+          CREATE SCHEMA IF NOT EXISTS gold;
+          SQL
+          # Initialize tables, roles, and views
+          psql -v AUTHENTICATOR_PASSWORD="ci_test_password_32chars_min!!" \
+            -f src/dk_data/sql/init_database.sql || true
+          echo "Database initialized (non-fatal errors from roles/auth are expected in CI)"
+
+      - name: Run migrations
+        continue-on-error: true
+        env:
+          POSTGRES_HOST: localhost
+          POSTGRES_PORT: 5432
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: dk_data_test
+        run: python -m dk_data.scripts.run_migrations
+
+      - name: Start PostgREST
+        run: |
+          docker run -d --name postgrest \
+            --network host \
+            -e PGRST_DB_URI="postgresql://authenticator:ci_test_password_32chars_min!!@localhost:5432/dk_data_test" \
+            -e PGRST_DB_ANON_ROLE="web_anon" \
+            -e PGRST_DB_SCHEMAS="api" \
+            -e PGRST_JWT_SECRET="test-secret-must-be-at-least-32-chars" \
+            -e PGRST_SERVER_PORT="3030" \
+            postgrest/postgrest:v12.2.3
+          # Wait for PostgREST to be ready
+          for i in $(seq 1 30); do
+            if curl -sf http://localhost:3030/ > /dev/null 2>&1; then
+              echo "PostgREST is ready"
+              break
+            fi
+            sleep 1
+          done
+
       - name: Run tests with coverage
         env:
           POSTGRES_HOST: localhost
@@ -72,6 +132,8 @@ jobs:
           POSTGRES_USER: postgres
           POSTGRES_PASSWORD: postgres
           POSTGRES_DB: dk_data_test
+          POSTGREST_URL: http://localhost:3030
+          JWT_SECRET: test-secret-must-be-at-least-32-chars
         run: pytest tests/ -v --tb=short
 
       - name: Upload coverage artifact
@@ -103,7 +165,7 @@ jobs:
         ports:
           - 5432:5432
         options: >-
-          --health-cmd pg_isready
+          --health-cmd "pg_isready -U postgres"
           --health-interval 10s
           --health-timeout 5s
           --health-retries 5

@@ -6,7 +6,7 @@ Task: T027 — Bronze model contract tests
 Tests verify that each bronze SQL model file:
 - Exists and is readable
 - Contains correct MODEL declaration (name, kind, grain, audits)
-- Uses @incremental_time_filter(_loaded_at) for incremental processing
+- Uses _loaded_at BETWEEN @start_dt AND @end_dt for incremental processing
 - Has correct source table reference (raw.*)
 - Contains expected output columns
 - Has pharma classification logic (is_pharma_related)
@@ -92,7 +92,7 @@ class TestBronzeUSPTOPatents:
         assert "ingested_at" in self.sql
 
     def test_incremental_filter(self):
-        assert "@incremental_time_filter(_loaded_at)" in self.sql
+        assert "_loaded_at BETWEEN @start_dt AND @end_dt" in self.sql
 
     def test_pharma_classification(self):
         assert "A61K" in self.sql
@@ -138,7 +138,7 @@ class TestBronzeUSPTOCI:
         assert "ingested_at" in self.sql
 
     def test_incremental_filter(self):
-        assert "@incremental_time_filter(_loaded_at)" in self.sql
+        assert "_loaded_at BETWEEN @start_dt AND @end_dt" in self.sql
 
 
 # ---------------------------------------------------------------------------
@@ -184,7 +184,7 @@ class TestBronzeEPOPatents:
         assert "ingested_at" in self.sql
 
     def test_incremental_filter(self):
-        assert "@incremental_time_filter(_loaded_at)" in self.sql
+        assert "_loaded_at BETWEEN @start_dt AND @end_dt" in self.sql
 
 
 # ---------------------------------------------------------------------------
@@ -227,7 +227,7 @@ class TestBronzeUSPTOTrademarks:
         assert "5 = ANY" in self.sql
 
     def test_incremental_filter(self):
-        assert "@incremental_time_filter(_loaded_at)" in self.sql
+        assert "_loaded_at BETWEEN @start_dt AND @end_dt" in self.sql
 
 
 # ---------------------------------------------------------------------------
@@ -275,4 +275,4 @@ class TestBronzeEUIPOTrademarks:
         assert "5 = ANY" in self.sql
 
     def test_incremental_filter(self):
-        assert "@incremental_time_filter(_loaded_at)" in self.sql
+        assert "_loaded_at BETWEEN @start_dt AND @end_dt" in self.sql

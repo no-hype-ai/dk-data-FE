@@ -56,10 +56,26 @@ END $$;
 GRANT USAGE ON SCHEMA api TO analyst;
 
 -- Analyst can view targets, scoring, and data sources
-GRANT SELECT ON api.targets TO analyst;
-GRANT SELECT ON api.scoring TO analyst;
-GRANT SELECT ON api.data_sources TO analyst;
-GRANT SELECT ON api.data_catalog TO analyst;
+-- Use IF EXISTS guards for views that may not yet be created in all environments
+DO $$
+BEGIN
+    IF EXISTS (SELECT 1 FROM information_schema.tables
+               WHERE table_schema = 'api' AND table_name = 'targets') THEN
+        EXECUTE 'GRANT SELECT ON api.targets TO analyst';
+    END IF;
+    IF EXISTS (SELECT 1 FROM information_schema.tables
+               WHERE table_schema = 'api' AND table_name = 'scoring') THEN
+        EXECUTE 'GRANT SELECT ON api.scoring TO analyst';
+    END IF;
+    IF EXISTS (SELECT 1 FROM information_schema.tables
+               WHERE table_schema = 'api' AND table_name = 'data_sources') THEN
+        EXECUTE 'GRANT SELECT ON api.data_sources TO analyst';
+    END IF;
+    IF EXISTS (SELECT 1 FROM information_schema.tables
+               WHERE table_schema = 'api' AND table_name = 'data_catalog') THEN
+        EXECUTE 'GRANT SELECT ON api.data_catalog TO analyst';
+    END IF;
+END $$;
 
 -- Analyst can also view metadata
 DO $$

@@ -32,8 +32,8 @@ spec:
           containers:
             - name: fetch-uspto-ci
               image: ghcr.io/data-kinetic/dk-data-fe/job-trigger:main-5f46ed1
-              command: ["python", "-m", "dk_data.ingestion.fetch_data"]
-              args: ["--source", "uspto_ci"]
+              command: ["python", "-m", "dk_data.ingestion.main"]
+              args: ["uspto_ci"]
               env:
                 - name: POSTGRES_HOST
                   valueFrom:

@@ -107,10 +107,6 @@ SELECT
 FROM enriched;
 
 
--- Post-insert: Mark Bronze records as processed
-@post_incremental(
-    UPDATE bronze.openalex
-    SET processed_to_silver = TRUE
-    WHERE processed_to_silver = FALSE
-    AND doi IN (SELECT doi FROM silver.publications WHERE doi IS NOT NULL)
-);
+-- NOTE: Bronze processed_to_silver flag updates are handled outside SQLMesh.
+-- Silver models use INCREMENTAL_BY_UNIQUE_KEY with when_matched_update_all,
+-- so reprocessing is idempotent.

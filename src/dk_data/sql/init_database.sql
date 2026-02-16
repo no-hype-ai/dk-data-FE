@@ -547,6 +547,34 @@ LEFT JOIN meta.data_quality dq ON ds.source_id = dq.source_id
     AND dq.check_date = (SELECT MAX(check_date) FROM meta.data_quality WHERE source_id = ds.source_id)
 WHERE ds.is_active = TRUE;
 
+-- View: Health Check (placeholder — overridden by db-init-job.yaml with richer data)
+CREATE OR REPLACE VIEW api.health AS
+SELECT
+    'ok'::text AS status,
+    now() AS timestamp,
+    current_database() AS database;
+
+-- View: Scoring (placeholder — overridden by db-init-job.yaml when scoring tables exist)
+CREATE OR REPLACE VIEW api.scoring AS
+SELECT
+    'placeholder'::text AS hospital_id,
+    'No data loaded'::text AS factor,
+    0::numeric AS weight,
+    0::numeric AS score
+WHERE false;
+
+-- View: Data Sources (placeholder — overridden by db-init-job.yaml with meta.data_sources)
+CREATE OR REPLACE VIEW api.data_sources AS
+SELECT
+    '00000000-0000-0000-0000-000000000000'::uuid AS id,
+    'placeholder'::text AS name,
+    'none'::text AS source_type,
+    now() AS last_fetch_at,
+    'pending'::text AS status,
+    0::bigint AS record_count,
+    NULL::text AS error_message
+WHERE false;
+
 -- View: Scoring Details (Factor Breakdown)
 CREATE OR REPLACE VIEW api.scoring_details AS
 SELECT

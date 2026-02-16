@@ -32,8 +32,8 @@ spec:
           containers:
             - name: fetch-journal-rss
               image: ghcr.io/data-kinetic/dk-data-fe/job-trigger:main-5f46ed1
-              command: ["python", "-m", "dk_data.ingestion.fetch_data"]
-              args: ["--source", "journal_rss"]
+              command: ["python", "-m", "dk_data.ingestion.main"]
+              args: ["journal_rss"]
               env:
                 - name: POSTGRES_HOST
                   valueFrom:

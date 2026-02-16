@@ -83,10 +83,6 @@ deduplicated AS (
 SELECT * FROM deduplicated;
 
 
--- Post-insert: Mark Bronze records as processed
-@post_incremental(
-    UPDATE bronze.chembl_molecules
-    SET processed_to_silver = TRUE
-    WHERE processed_to_silver = FALSE
-    AND inchi_key IN (SELECT inchi_key FROM silver.molecules)
-);
+-- NOTE: Bronze processed_to_silver flag updates are handled outside SQLMesh.
+-- Silver models use INCREMENTAL_BY_UNIQUE_KEY with when_matched_update_all,
+-- so reprocessing is idempotent.

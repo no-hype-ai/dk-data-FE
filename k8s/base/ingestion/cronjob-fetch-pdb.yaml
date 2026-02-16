@@ -32,8 +32,8 @@ spec:
           containers:
             - name: fetch-pdb
               image: ghcr.io/data-kinetic/dk-data-fe/job-trigger:main-5f46ed1
-              command: ["python", "-m", "dk_data.ingestion.fetch_data"]
-              args: ["--source", "pdb"]
+              command: ["python", "-m", "dk_data.ingestion.main"]
+              args: ["pdb"]
               env:
                 - name: POSTGRES_HOST
                   valueFrom:

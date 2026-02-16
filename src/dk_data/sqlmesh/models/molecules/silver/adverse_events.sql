@@ -83,14 +83,6 @@ aggregated AS (
 SELECT * FROM aggregated;
 
 
--- Post-insert: Mark Bronze FAERS records as processed for linked drugs
-@post_incremental(
-    UPDATE bronze.faers_events f
-    SET processed_to_silver = TRUE
-    WHERE processed_to_silver = FALSE
-    AND EXISTS (
-        SELECT 1 FROM silver.molecules m
-        WHERE LOWER(f.drug_name) = LOWER(m.canonical_name)
-           OR similarity(LOWER(f.drug_name), LOWER(m.canonical_name)) > 0.8
-    )
-);
+-- NOTE: Bronze processed_to_silver flag updates are handled outside SQLMesh.
+-- Silver models use INCREMENTAL_BY_UNIQUE_KEY with when_matched_update_all,
+-- so reprocessing is idempotent.

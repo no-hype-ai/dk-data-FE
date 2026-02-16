@@ -95,4 +95,4 @@ WHERE
     response_status = 200
     AND processed_to_bronze = FALSE
     AND response_body->>'drugbank_id' IS NOT NULL
-    AND @incremental_time_filter(request_timestamp);
+    AND request_timestamp BETWEEN @start_dt AND @end_dt;

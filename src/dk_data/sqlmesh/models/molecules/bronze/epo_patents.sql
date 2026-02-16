@@ -58,4 +58,4 @@ SELECT
 
 FROM raw.epo_patents r
 WHERE r.publication_id IS NOT NULL
-  AND @incremental_time_filter(_loaded_at)
+  AND _loaded_at BETWEEN @start_dt AND @end_dt

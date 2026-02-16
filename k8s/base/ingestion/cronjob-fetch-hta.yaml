@@ -32,8 +32,8 @@ spec:
           containers:
             - name: fetch-hta
               image: ghcr.io/data-kinetic/dk-data-fe/job-trigger:main-5f46ed1
-              command: ["python", "-m", "dk_data.ingestion.fetch_data"]
-              args: ["--source", "hta_bodies"]
+              command: ["python", "-m", "dk_data.ingestion.main"]
+              args: ["hta_bodies"]
               env:
                 - name: POSTGRES_HOST
                   valueFrom:
