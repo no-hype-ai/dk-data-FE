@@ -63,8 +63,9 @@ class TestSilverPatents:
     def test_model_unique_key(self):
         assert "unique_key patent_number" in self.model_block
 
-    def test_model_when_matched_update_all(self):
-        assert "when_matched_update_all TRUE" in self.model_block
+    def test_model_default_update_on_match(self):
+        """INCREMENTAL_BY_UNIQUE_KEY defaults to update all columns (no when_matched needed)."""
+        assert "when_matched_update_all" not in self.model_block
 
     def test_model_audits(self):
         assert "not_null" in self.model_block
@@ -186,8 +187,9 @@ class TestSilverTrademarks:
         assert "trademark_identifier" in self.model_block
         assert "source" in self.model_block
 
-    def test_model_when_matched_update_all(self):
-        assert "when_matched_update_all TRUE" in self.model_block
+    def test_model_default_update_on_match(self):
+        """INCREMENTAL_BY_UNIQUE_KEY defaults to update all columns (no when_matched needed)."""
+        assert "when_matched_update_all" not in self.model_block
 
     def test_model_audits(self):
         assert "not_null" in self.model_block

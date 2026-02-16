@@ -5,8 +5,7 @@
 MODEL (
     name silver.patents,
     kind INCREMENTAL_BY_UNIQUE_KEY (
-        unique_key patent_number,
-        when_matched_update_all TRUE
+        unique_key patent_number
     ),
     cron '@monthly',
     audits (

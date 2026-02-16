@@ -5,8 +5,7 @@
 MODEL (
     name silver.publications,
     kind INCREMENTAL_BY_UNIQUE_KEY (
-        unique_key doi,
-        when_matched_update_all TRUE
+        unique_key doi
     ),
     cron '@weekly',
     audits (
@@ -108,5 +107,5 @@ FROM enriched;
 
 
 -- NOTE: Bronze processed_to_silver flag updates are handled outside SQLMesh.
--- Silver models use INCREMENTAL_BY_UNIQUE_KEY with when_matched_update_all,
+-- Silver models use INCREMENTAL_BY_UNIQUE_KEY with INCREMENTAL_BY_UNIQUE_KEY (default: update all columns on match),
 -- so reprocessing is idempotent.

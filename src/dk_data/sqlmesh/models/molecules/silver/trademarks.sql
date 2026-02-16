@@ -5,8 +5,7 @@
 MODEL (
     name silver.trademarks,
     kind INCREMENTAL_BY_UNIQUE_KEY (
-        unique_key (trademark_identifier, source),
-        when_matched_update_all TRUE
+        unique_key (trademark_identifier, source)
     ),
     cron '@weekly',
     audits (

@@ -174,8 +174,7 @@ $TEMPLATE$
 MODEL (
     name silver.{{ source_name }}_molecules,
     kind INCREMENTAL_BY_UNIQUE_KEY (
-        unique_key inchi_key,
-        when_matched_update_all TRUE
+        unique_key inchi_key
     ),
     cron '{{ cron_schedule }}',
     grain inchi_key

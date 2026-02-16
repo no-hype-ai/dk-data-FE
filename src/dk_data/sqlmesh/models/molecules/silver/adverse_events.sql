@@ -5,8 +5,7 @@
 MODEL (
     name silver.adverse_events,
     kind INCREMENTAL_BY_UNIQUE_KEY (
-        unique_key (molecule_id, meddra_pt),
-        when_matched_update_all TRUE
+        unique_key (molecule_id, meddra_pt)
     ),
     cron '@weekly',
     audits (
@@ -84,5 +83,5 @@ SELECT * FROM aggregated;
 
 
 -- NOTE: Bronze processed_to_silver flag updates are handled outside SQLMesh.
--- Silver models use INCREMENTAL_BY_UNIQUE_KEY with when_matched_update_all,
+-- Silver models use INCREMENTAL_BY_UNIQUE_KEY with INCREMENTAL_BY_UNIQUE_KEY (default: update all columns on match),
 -- so reprocessing is idempotent.

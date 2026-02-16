@@ -5,8 +5,7 @@
 MODEL (
     name silver.targets,
     kind INCREMENTAL_BY_UNIQUE_KEY (
-        unique_key uniprot_id,
-        when_matched_update_all TRUE
+        unique_key uniprot_id
     ),
     cron '@monthly',
     audits (
@@ -89,5 +88,5 @@ FROM uniprot_targets;
 
 
 -- NOTE: Bronze processed_to_silver flag updates are handled outside SQLMesh.
--- Silver models use INCREMENTAL_BY_UNIQUE_KEY with when_matched_update_all,
+-- Silver models use INCREMENTAL_BY_UNIQUE_KEY with INCREMENTAL_BY_UNIQUE_KEY (default: update all columns on match),
 -- so reprocessing is idempotent.

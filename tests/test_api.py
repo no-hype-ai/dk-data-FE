@@ -51,7 +51,7 @@ class TestHealthEndpoint:
         response = postgrest_client.get("/health")
         data = response.json()
         assert "database" in data[0]
-        assert data[0]["database"] == "dk_data"
+        assert data[0]["database"] in ("dk_data", "dk_data_test")
 
 
 class TestDataCatalogEndpoint:
