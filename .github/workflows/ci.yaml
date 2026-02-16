@@ -178,11 +178,9 @@ jobs:
           POSTGRES_USER: postgres
           POSTGRES_PASSWORD: postgres
           POSTGRES_DB: dk_data
-          SQLMESH_CONFIG: src/dk_data/sqlmesh/config.yaml
         run: |
           set -o pipefail
-          cd src/dk_data
-          sqlmesh plan --no-prompts --no-auto-categorization 2>&1 | tee /tmp/sqlmesh-plan.log
+          sqlmesh -p src/dk_data/sqlmesh plan --no-prompts --no-auto-categorization 2>&1 | tee /tmp/sqlmesh-plan.log
           echo "SQLMesh model validation passed"
 
   validate-manifests:
