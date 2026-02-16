@@ -32,6 +32,10 @@ physical_schema_mapping:
   mol_silver: mol_silver
   mol_gold: mol_gold
   mol_app: mol_app
+  # IP/patent/trademark schemas (014-uspto-euipo-model-datasource)
+  bronze: bronze
+  silver: silver
+  gold: gold
 
 # Project metadata
 project: tavr_data_infrastructure
