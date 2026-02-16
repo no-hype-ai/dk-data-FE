@@ -148,7 +148,7 @@ Fixed race condition in `.github/workflows/promote-to-prod.yaml` — production 
 
 ---
 
-## Current Cluster Status (2026-02-16 03:35 UTC)
+## Current Cluster Status (2026-02-16 04:40 UTC)
 
 ### Prod (k3s-master-1, `dk-data-prod`)
 
@@ -157,27 +157,30 @@ Fixed race condition in `.github/workflows/promote-to-prod.yaml` — production 
 | PostgREST | **3/3 Running** | Image: `postgrest:v12.2.3`, 0 restarts |
 | job-trigger | **2/2 Running** | Image: `prod-5da0abb`, 0 restarts |
 | PostgreSQL (infra) | **Healthy** | 3 instances, `infra` namespace |
-| ArgoCD app | **Healthy / OutOfSync** | 5 orphaned resources (old job objects) |
-| `mol-fetch-daily` | Succeeding | Last run: 77min ago |
-| `mol-transform` | Succeeding | Last run: 21h ago |
-| `catalog-refresh` | Succeeding | Last run: 21h ago |
-| `fetch-cms-all` | Succeeding | Last run: 25h ago |
-| `fetch-*` (13 new) | **All failing** | BackoffLimitExceeded, needs diagnosis |
-| `pg-backup-*` | **Failing** | Missing MinIO credentials in secret |
+| ArgoCD app | **Healthy** | Failed jobs cleaned up (27 deleted) |
+| `mol-fetch-daily` | Succeeding | Last run: recent |
+| `mol-transform` | Succeeding | Last run: recent |
+| `catalog-refresh` | Succeeding | Last run: recent |
+| `fetch-cms-all` | Succeeding | Latest run succeeded |
+| `fetch-*` (13 new) | **Pending next run** | Failed jobs cleaned up; test-pubmed succeeded manually |
+| `pg-backup-*` | **Blocked** | Awaiting Doppler MinIO credentials |
+| NetworkPolicy | **Needs promotion** | Same-namespace rules only on staging branch |
 
 ### Staging (k3s-slave-1, `dk-data-staging`)
 
 | Component | Status | Details |
 |-----------|--------|---------|
-| PostgREST | **2/2 Running** | Image: `postgrest:v12.2.3`, 0 restarts (fixed 2026-02-16) |
-| job-trigger | **1/1 Running** | Image: `staging-787f93b`, 0 restarts |
-| PostgreSQL (infra-staging) | **1/1 Healthy** | Fixed 2026-02-16, was down ~5 days |
-| ArgoCD app | **Healthy / OutOfSync** | 4 orphaned resources (old job objects) |
-| `mol-fetch-daily` | Succeeding | Every 6h schedule, last run: 3h49m ago |
-| `mol-fetch-weekly` | Succeeding | Last run: 24h ago |
-| `mol-transform` | Succeeding | Last run: 21h ago |
-| `fetch-*` (13 new) | **Not yet fired** | Created ~3h ago, first runs pending per schedule |
-| `pg-backup-*` | **Failing** | Same MinIO credential issue as prod |
+| PostgREST | **2/2 Running** | Health check: 200 OK, database connected |
+| job-trigger | **1/1 Running** | Image: latest staging build |
+| PostgreSQL (infra-staging) | **1/1 Healthy** | Stable since fix |
+| ArgoCD app | **Healthy** | NetworkPolicy fix deployed, no failed jobs |
+| `mol-fetch-daily` | Succeeding | Every 6h schedule |
+| `mol-fetch-weekly` | Succeeding | Latest run succeeded |
+| `mol-transform` | Succeeding | Latest run succeeded |
+| `fetch-*` (13 new) | **Pending first run** | Awaiting scheduled times |
+| `pg-backup-*` | **Blocked** | Awaiting Doppler MinIO credentials |
+| NetworkPolicy | **Fixed** | Intra-namespace ingress/egress deployed |
+| PriorityClass | **Deployed** | Via ArgoCD `infra-priority-classes-staging` (Healthy) |
 
 ---
 
@@ -185,49 +188,33 @@ Fixed race condition in `.github/workflows/promote-to-prod.yaml` — production 
 
 ### High Priority
 
-- [ ] **Diagnose prod fetch-* failures** — manually create a job from one CronJob and watch logs:
-  ```bash
-  # On k3s-master-1:
-  kubectl create job test-pubmed --from=cronjob/fetch-pubmed -n dk-data-prod
-  kubectl logs -f job/test-pubmed -n dk-data-prod
-  ```
+- [x] **Diagnose prod fetch-* failures** — test-pubmed succeeded (47 records, exit code 0). Transient first-run issue.
 - [ ] **Fix MinIO backup credentials** — add `MINIO_ACCESS_KEY` and `MINIO_SECRET_KEY` to Doppler `dk-data-fe` project (both `prd` and `stg` configs), then verify `pg-backup-daily` succeeds
-- [ ] **Verify staging fetch-* jobs work** — wait for first scheduled runs or manually trigger one:
-  ```bash
-  # On k3s-slave-1:
-  kubectl create job test-pubmed --from=cronjob/fetch-pubmed -n dk-data-staging
-  kubectl logs -f job/test-pubmed -n dk-data-staging
-  ```
-- [ ] **Verify staging PostgREST API is serving** — test health and authenticated endpoints:
-  ```bash
-  # From within the staging cluster:
-  kubectl exec -n dk-data-staging deploy/job-trigger -- python -c "import httpx; print(httpx.get('http://postgrest.dk-data-staging.svc:3000/health').status_code)"
-  ```
+- [ ] **Verify staging fetch-* jobs work** — awaiting first scheduled runs (daily jobs at various UTC hours)
+- [x] **Verify staging PostgREST API is serving** — confirmed 200 OK with healthy database connection
+- [x] **Fix NetworkPolicy intra-namespace traffic** — added same-namespace ingress/egress rules (deployed to staging)
+- [ ] **Promote staging fixes to prod** — NetworkPolicy + DopplerSecret fixes need merge to `main`
 
 ### Medium Priority
 
-- [ ] **Clean up failed job objects** — both clusters have accumulated failed job objects that show as orphaned resources in ArgoCD. These can be pruned:
-  ```bash
-  kubectl delete jobs --field-selector status.successful=0 -n dk-data-prod
-  kubectl delete jobs --field-selector status.successful=0 -n dk-data-staging
-  ```
-- [ ] **Verify staging catalog-refresh** — this failed 3 times while postgres was down. Next run is at 06:00 UTC — confirm it succeeds with postgres restored
-- [ ] **Permanent PriorityClass fix in dk-alchemy** — add staging PriorityClass deployment to GitOps so it survives node rebuilds
+- [x] **Clean up failed job objects** — 27 failed jobs deleted on prod, staging had none
+- [ ] **Verify staging catalog-refresh** — next run at 06:00 UTC
+- [x] **Permanent PriorityClass fix in dk-alchemy** — PR #190 merged, ArgoCD app Healthy, PriorityClasses deployed
 
 ### Low Priority
 
 - [ ] **Review #84 (LiteLLM)** — close if not needed, or spike evaluation
 - [ ] **Review #8 (TAVR coupling)** — triage whether decoupling is worth a dedicated effort
-- [ ] **Verify `pg-backup-verify` CronJob** — scheduled `0 4 * * 1` (Monday 04:00 UTC), hasn't run yet; will also fail due to missing MinIO credentials
+- [ ] **Verify `pg-backup-verify` CronJob** — blocked until Doppler MinIO credentials are configured
 
 ---
 
 ## Recommended Next Steps
 
-### Immediate (this session or next)
-1. **Diagnose prod fetch-* failures** — manually trigger one job and watch logs to identify root cause
-2. **Fix pg-backup credentials** — add MinIO keys to Doppler, verify backup runs
-3. **Permanent PriorityClass fix** — update dk-alchemy to deploy PriorityClasses to staging cluster
+### Immediate
+1. **Promote staging → main** — NetworkPolicy fix + DopplerSecret fix need to reach prod via PR
+2. **Add Doppler MinIO secrets** — add `MINIO_ACCESS_KEY` and `MINIO_SECRET_KEY` to Doppler `dk-data-fe` project (`prd` and `stg` configs)
+3. **Monitor fetch-* next runs** — confirm all 13 sources succeed on their next scheduled run (prod and staging)
 
 ### Next Feature (Sprint 4)
 - **#52** — Frontend integration against the 6 available API views
