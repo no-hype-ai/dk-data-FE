@@ -294,8 +294,8 @@ Examples:
     )
     parser.add_argument(
         '--data-dir', '-d',
-        default='./data/raw',
-        help='Directory to store downloaded files (default: ./data/raw)'
+        default='/tmp/data/raw',
+        help='Directory to store downloaded files (default: /tmp/data/raw)'
     )
     parser.add_argument(
         '--list', '-l',
