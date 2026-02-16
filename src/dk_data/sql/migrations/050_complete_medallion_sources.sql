@@ -714,37 +714,21 @@ CREATE INDEX IF NOT EXISTS idx_silver_pgx_gene ON silver.pharmacogenomics(gene_s
 CREATE INDEX IF NOT EXISTS idx_silver_pgx_variant ON silver.pharmacogenomics(variant_id);
 CREATE INDEX IF NOT EXISTS idx_silver_pgx_evidence ON silver.pharmacogenomics(level_of_evidence);
 
--- Silver Bioactivity Table (for BindingDB data)
-CREATE TABLE IF NOT EXISTS silver.bioactivity (
-    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-    molecule_id UUID REFERENCES silver.molecules(id),
-
-    -- Target info
-    target_id UUID,  -- references silver.targets if available
-    target_name TEXT NOT NULL,
-    target_uniprot_id VARCHAR(20),
-    target_organism VARCHAR(200),
-
-    -- Activity measurement
-    activity_type VARCHAR(50) NOT NULL,  -- Ki, IC50, EC50, Kd
-    activity_value NUMERIC NOT NULL,
-    activity_unit VARCHAR(50) DEFAULT 'nM',
-    activity_relation VARCHAR(10) DEFAULT '=',  -- =, <, >, ~
-
-    -- Source info
-    source VARCHAR(50) NOT NULL,
-    source_id VARCHAR(100),  -- Original ID from source
-    pmid VARCHAR(20),
-    doi VARCHAR(200),
-
-    created_at TIMESTAMPTZ DEFAULT NOW(),
-    updated_at TIMESTAMPTZ DEFAULT NOW()
-);
+-- Silver Bioactivity Table — already created in 040_silver_layer_tables.sql
+-- Add columns that 040 may not include (idempotent ALTER)
+DO $$
+BEGIN
+    ALTER TABLE silver.bioactivity ADD COLUMN IF NOT EXISTS target_id UUID;
+    ALTER TABLE silver.bioactivity ADD COLUMN IF NOT EXISTS source_id VARCHAR(100);
+    ALTER TABLE silver.bioactivity ADD COLUMN IF NOT EXISTS pmid VARCHAR(20);
+    ALTER TABLE silver.bioactivity ADD COLUMN IF NOT EXISTS doi VARCHAR(200);
+    ALTER TABLE silver.bioactivity ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ DEFAULT NOW();
+EXCEPTION WHEN undefined_table THEN
+    NULL;  -- table does not exist yet, 040 will create it
+END $$;
 
 CREATE INDEX IF NOT EXISTS idx_silver_bioact_molecule ON silver.bioactivity(molecule_id);
-CREATE INDEX IF NOT EXISTS idx_silver_bioact_target ON silver.bioactivity(target_uniprot_id);
 CREATE INDEX IF NOT EXISTS idx_silver_bioact_type ON silver.bioactivity(activity_type);
-CREATE INDEX IF NOT EXISTS idx_silver_bioact_source ON silver.bioactivity(source);
 
 -- ============================================================================
 -- STEP 5: PIPELINE JOBS TABLE FOR LINKING HISTORY
