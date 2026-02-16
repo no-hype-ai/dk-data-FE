@@ -10,6 +10,14 @@ MODEL (
     ),
     cron '@daily',
     grain (molecule_id, alias_name_normalized),
+    columns (
+        molecule_id UUID,
+        alias_name TEXT,
+        alias_name_normalized TEXT,
+        alias_type TEXT,
+        source TEXT,
+        created_at TIMESTAMPTZ
+    ),
     audits (
         not_null(columns := (molecule_id)),
         not_null(columns := (alias_name))
