@@ -4,11 +4,13 @@
 -- Purpose: Add optional retention_days column to data_sources for per-source retention override
 -- Run: psql -h localhost -p 5433 -U postgres -d dk_data -f migrations/070_retention_column.sql
 
-BEGIN;
-
-ALTER TABLE meta.data_sources ADD COLUMN IF NOT EXISTS retention_days INTEGER DEFAULT NULL;
-
-COMMIT;
+DO $$
+BEGIN
+    ALTER TABLE meta.data_sources ADD COLUMN IF NOT EXISTS retention_days INTEGER DEFAULT NULL;
+EXCEPTION WHEN undefined_table THEN
+    RAISE NOTICE 'meta.data_sources does not exist yet — skipping retention_days column';
+END
+$$;
 
 -- =============================================================================
 -- COMPLETION MESSAGE
