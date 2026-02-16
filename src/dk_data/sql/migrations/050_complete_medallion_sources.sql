@@ -627,22 +627,28 @@ CREATE INDEX IF NOT EXISTS idx_bronze_uspto_processed ON bronze.uspto_patents(pr
 -- STEP 3: UPDATE DATA SOURCE CONFIGURATION
 -- ============================================================================
 
-INSERT INTO data_source_config (source_id, source_name, api_type, base_url, auth_type, refresh_tier, rate_limit_per_second)
-VALUES
-    ('rxnorm', 'RxNorm', 'REST', 'https://rxnav.nlm.nih.gov/REST', 'none', 'weekly', 10.0),
-    ('tdc_admet', 'TDC ADMET', 'File', 'https://tdcommons.ai', 'none', 'monthly', NULL),
-    ('pharmgkb', 'PharmGKB', 'REST', 'https://api.pharmgkb.org/v1/data', 'none', 'monthly', 5.0),
-    ('websearch', 'Web Search', 'REST', NULL, 'api_key', 'on_demand', 1.0),
-    ('kegg_drug', 'KEGG Drug', 'REST', 'https://rest.kegg.jp', 'none', 'monthly', 5.0),
-    ('who_inn', 'WHO INN', 'File', 'https://www.who.int/medicines', 'none', 'monthly', NULL),
-    ('bindingdb', 'BindingDB', 'REST', 'https://www.bindingdb.org/axis2/services/BDBService', 'none', 'monthly', 1.0),
-    ('ema', 'EMA', 'REST', 'https://api.ema.europa.eu/api', 'none', 'weekly', 5.0),
-    ('orange_book', 'FDA Orange Book', 'File', 'https://www.fda.gov/media', 'none', 'weekly', NULL),
-    ('uspto_patents', 'USPTO Patents', 'REST', 'https://api.patentsview.org', 'none', 'weekly', 5.0)
-ON CONFLICT (source_id) DO UPDATE SET
-    base_url = EXCLUDED.base_url,
-    refresh_tier = EXCLUDED.refresh_tier,
-    updated_at = NOW();
+-- Insert data source config (table may not exist in all environments)
+DO $$
+BEGIN
+    INSERT INTO data_source_config (source_id, source_name, api_type, base_url, auth_type, refresh_tier, rate_limit_per_second)
+    VALUES
+        ('rxnorm', 'RxNorm', 'REST', 'https://rxnav.nlm.nih.gov/REST', 'none', 'weekly', 10.0),
+        ('tdc_admet', 'TDC ADMET', 'File', 'https://tdcommons.ai', 'none', 'monthly', NULL),
+        ('pharmgkb', 'PharmGKB', 'REST', 'https://api.pharmgkb.org/v1/data', 'none', 'monthly', 5.0),
+        ('websearch', 'Web Search', 'REST', NULL, 'api_key', 'on_demand', 1.0),
+        ('kegg_drug', 'KEGG Drug', 'REST', 'https://rest.kegg.jp', 'none', 'monthly', 5.0),
+        ('who_inn', 'WHO INN', 'File', 'https://www.who.int/medicines', 'none', 'monthly', NULL),
+        ('bindingdb', 'BindingDB', 'REST', 'https://www.bindingdb.org/axis2/services/BDBService', 'none', 'monthly', 1.0),
+        ('ema', 'EMA', 'REST', 'https://api.ema.europa.eu/api', 'none', 'weekly', 5.0),
+        ('orange_book', 'FDA Orange Book', 'File', 'https://www.fda.gov/media', 'none', 'weekly', NULL),
+        ('uspto_patents', 'USPTO Patents', 'REST', 'https://api.patentsview.org', 'none', 'weekly', 5.0)
+    ON CONFLICT (source_id) DO UPDATE SET
+        base_url = EXCLUDED.base_url,
+        refresh_tier = EXCLUDED.refresh_tier,
+        updated_at = NOW();
+EXCEPTION WHEN undefined_table THEN
+    NULL;  -- data_source_config table not yet created
+END $$;
 
 -- ============================================================================
 -- STEP 4: CREATE SILVER LAYER TABLES FOR NEW SOURCES
@@ -771,8 +777,14 @@ CREATE INDEX IF NOT EXISTS idx_pipeline_jobs_type_completed ON raw.pipeline_jobs
 -- STEP 6: LOG MIGRATION
 -- ============================================================================
 
-INSERT INTO public.pharma_predictor_db (key, value, description)
-VALUES ('medallion_migration_050', NOW()::text, 'Complete medallion architecture with all 16 data sources')
-ON CONFLICT (key) DO UPDATE SET value = NOW()::text, updated_at = NOW();
+-- Log migration completion (table may not exist in all environments)
+DO $$
+BEGIN
+    INSERT INTO public.pharma_predictor_db (key, value, description)
+    VALUES ('medallion_migration_050', NOW()::text, 'Complete medallion architecture with all 16 data sources')
+    ON CONFLICT (key) DO UPDATE SET value = NOW()::text, updated_at = NOW();
+EXCEPTION WHEN undefined_table THEN
+    NULL;  -- pharma_predictor_db table not available
+END $$;
 
 COMMIT;
