@@ -23,6 +23,7 @@ SELECT
     r.patent_id AS patent_number,
     r.title AS patent_title,
     r.abstract AS patent_abstract,
+    r.filing_date,
     r.grant_date AS patent_date,
 
     -- Classification

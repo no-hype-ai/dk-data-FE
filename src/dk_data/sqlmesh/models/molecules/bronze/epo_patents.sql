@@ -23,6 +23,7 @@ SELECT
     r.publication_id AS patent_number,
     r.title AS patent_title,
     r.abstract AS patent_abstract,
+    r.filing_date,
     r.publication_date AS patent_date,
 
     -- Classification (IPC codes, not CPC)
