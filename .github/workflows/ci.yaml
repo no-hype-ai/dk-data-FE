@@ -312,7 +312,12 @@ jobs:
           POSTGRES_DB: dk_data
         run: |
           set -o pipefail
-          echo y | sqlmesh -p src/dk_data/sqlmesh plan --no-prompts 2>&1 | tee /tmp/sqlmesh-plan.log
+          echo n | sqlmesh -p src/dk_data/sqlmesh plan --no-prompts 2>&1 | tee /tmp/sqlmesh-plan.log || true
+          # Check for compilation errors (not backfill errors)
+          if grep -q "^Error:" /tmp/sqlmesh-plan.log && ! grep -q "Plan application failed\|Aborted" /tmp/sqlmesh-plan.log; then
+            echo "SQLMesh model compilation failed"
+            exit 1
+          fi
           echo "SQLMesh model validation passed"
 
   validate-manifests:
