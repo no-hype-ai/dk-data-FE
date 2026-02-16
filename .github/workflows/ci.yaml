@@ -33,7 +33,7 @@ jobs:
     runs-on: ubuntu-latest
     services:
       postgres:
-        image: postgres:16
+        image: pgvector/pgvector:pg16
         env:
           POSTGRES_USER: postgres
           POSTGRES_PASSWORD: postgres
@@ -133,7 +133,6 @@ jobs:
           echo "Database initialized"
 
       - name: Run migrations
-        continue-on-error: true
         env:
           POSTGRES_HOST: localhost
           POSTGRES_PORT: 5432
@@ -195,7 +194,6 @@ jobs:
 
       - name: Coverage PR comment
         if: github.event_name == 'pull_request'
-        continue-on-error: true  # Non-blocking — may fail if report exceeds GitHub comment size limit
         uses: MishaKav/pytest-coverage-comment@main
         with:
           pytest-xml-coverage-path: coverage.xml
@@ -203,10 +201,9 @@ jobs:
   sqlmesh-validate:
     name: Validate SQLMesh Models
     runs-on: ubuntu-latest
-    continue-on-error: true  # Informational — CI cannot fully replicate production DB state
     services:
       postgres:
-        image: postgres:16
+        image: pgvector/pgvector:pg16
         env:
           POSTGRES_USER: postgres
           POSTGRES_PASSWORD: postgres
@@ -295,7 +292,6 @@ jobs:
           echo "Base tables initialized"
 
       - name: Run pending migrations
-        continue-on-error: true
         env:
           POSTGRES_HOST: localhost
           POSTGRES_PORT: 5432
