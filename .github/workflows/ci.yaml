@@ -312,7 +312,7 @@ jobs:
           POSTGRES_DB: dk_data
         run: |
           set -o pipefail
-          sqlmesh -p src/dk_data/sqlmesh plan --no-prompts 2>&1 | tee /tmp/sqlmesh-plan.log
+          echo y | sqlmesh -p src/dk_data/sqlmesh plan --no-prompts 2>&1 | tee /tmp/sqlmesh-plan.log
           echo "SQLMesh model validation passed"
 
   validate-manifests:
