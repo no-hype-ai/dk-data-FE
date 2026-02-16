@@ -70,6 +70,39 @@ patches:
   target:
     kind: DopplerSecret
     name: dk-data-secrets
+  # DopplerSecret — staging config for MinIO backup credentials
+- patch: |-
+    apiVersion: secrets.doppler.com/v1alpha1
+    kind: DopplerSecret
+    metadata:
+      name: minio-backup-credentials
+    spec:
+      config: stg
+  target:
+    kind: DopplerSecret
+    name: minio-backup-credentials
+  # pg-backup CronJobs — staging MinIO endpoint (infra-staging namespace)
+- patch: |-
+    - op: replace
+      path: /spec/jobTemplate/spec/template/spec/containers/0/env/5/value
+      value: "minio.infra-staging.svc.cluster.local:9000"
+  target:
+    kind: CronJob
+    name: pg-backup-daily
+- patch: |-
+    - op: replace
+      path: /spec/jobTemplate/spec/template/spec/containers/0/env/5/value
+      value: "minio.infra-staging.svc.cluster.local:9000"
+  target:
+    kind: CronJob
+    name: pg-backup-weekly
+- patch: |-
+    - op: replace
+      path: /spec/jobTemplate/spec/template/spec/containers/0/env/0/value
+      value: "minio.infra-staging.svc.cluster.local:9000"
+  target:
+    kind: CronJob
+    name: pg-backup-verify
 - patch: |-
     apiVersion: v1
     kind: ConfigMap
