@@ -8,7 +8,7 @@
 #   ./scripts/validate-staging-ingestion.sh phase1        # Pre-flight only
 #   ./scripts/validate-staging-ingestion.sh phase2        # Manual single-source runs
 #   ./scripts/validate-staging-ingestion.sh phase3        # Incremental validation
-#   ./scripts/validate-staging-ingestion.sh unsuspend     # Unsuspend all CronJobs
+#   ./scripts/validate-staging-ingestion.sh status        # Check CronJob status
 set -euo pipefail
 
 NS="${NAMESPACE:-dk-data-staging}"
@@ -125,18 +125,15 @@ phase1() {
     fi
   done
 
-  # 1f. CronJobs are suspended
+  # 1f. CronJobs are deployed and active
   echo ""
-  echo "1f. Ingestion CronJobs suspended"
-  local suspended_count
-  suspended_count=$(kubectl -n "$NS" get cronjobs -l app.kubernetes.io/component=ingestion \
-    -o jsonpath='{range .items[*]}{.metadata.name}={.spec.suspend}{"\n"}{end}' 2>/dev/null | grep -c '=true' || true)
+  echo "1f. Ingestion CronJobs deployed"
   local total_ingestion
   total_ingestion=$(kubectl -n "$NS" get cronjobs -l app.kubernetes.io/component=ingestion --no-headers 2>/dev/null | wc -l | tr -d ' ')
-  if [ "$suspended_count" = "$total_ingestion" ]; then
-    pass "All $suspended_count/$total_ingestion ingestion CronJobs suspended"
+  if [ "$total_ingestion" -ge 17 ] 2>/dev/null; then
+    pass "Ingestion CronJobs deployed: $total_ingestion"
   else
-    warn "$suspended_count/$total_ingestion suspended (some may be manually unsuspended)"
+    fail "Ingestion CronJobs: ${total_ingestion:-0} (expected >= 17)"
   fi
 
   echo ""
@@ -289,26 +286,17 @@ phase3() {
 }
 
 # ──────────────────────────────────────────────────
-# Unsuspend: Enable all CronJobs after validation
+# Status: Show CronJob schedule and last run
 # ──────────────────────────────────────────────────
-unsuspend() {
+status() {
   echo ""
   echo "═══════════════════════════════════════════════════"
-  echo " Unsuspending All Ingestion CronJobs"
+  echo " Ingestion CronJob Status"
   echo "═══════════════════════════════════════════════════"
   echo ""
 
-  local cronjobs
-  cronjobs=$(kubectl -n "$NS" get cronjobs -l app.kubernetes.io/component=ingestion \
-    -o jsonpath='{range .items[*]}{.metadata.name}{"\n"}{end}' 2>/dev/null)
-
-  for cj in $cronjobs; do
-    kubectl -n "$NS" patch cronjob "$cj" -p '{"spec":{"suspend":false}}' >/dev/null 2>&1
-    pass "Unsuspended: $cj"
-  done
-
-  echo ""
-  echo "All ingestion CronJobs unsuspended. They will fire on their next scheduled time."
+  kubectl -n "$NS" get cronjobs -l app.kubernetes.io/component=ingestion \
+    -o custom-columns='NAME:.metadata.name,SCHEDULE:.spec.schedule,SUSPEND:.spec.suspend,LAST:.status.lastScheduleTime' 2>/dev/null
 }
 
 # ──────────────────────────────────────────────────
@@ -324,7 +312,7 @@ case "$PHASE" in
   phase1)    phase1 ;;
   phase2)    phase2 ;;
   phase3)    phase3 ;;
-  unsuspend) unsuspend ;;
+  status)    status ;;
   all)
     phase1
     if [ "$FAILURES" -gt 0 ]; then
@@ -343,11 +331,11 @@ case "$PHASE" in
       exit 1
     else
       echo -e "${GREEN}All checks passed.${NC}"
-      echo "Run './scripts/validate-staging-ingestion.sh unsuspend' to enable CronJobs."
+      echo "CronJobs are active and will fire on their next scheduled time."
     fi
     ;;
   *)
-    echo "Usage: $0 {phase1|phase2|phase3|unsuspend|all}"
+    echo "Usage: $0 {phase1|phase2|phase3|status|all}"
     exit 1
     ;;
 esac
