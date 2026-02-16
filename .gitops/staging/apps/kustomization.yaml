@@ -3,5 +3,6 @@ kind: Kustomization
 
 resources:
   - namespace.yaml
-  - project.yaml
+  # project.yaml removed — AppProject is shared between prod and staging,
+  # owned by dk-data-bootstrap-prod to avoid tracking-id conflicts
   - application.yaml
