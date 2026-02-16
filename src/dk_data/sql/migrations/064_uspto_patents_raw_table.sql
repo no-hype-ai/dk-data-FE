@@ -23,8 +23,20 @@ CREATE TABLE IF NOT EXISTS raw.uspto_patents (
     UNIQUE (patent_number)
 );
 
-CREATE INDEX IF NOT EXISTS idx_uspto_patents_grant ON raw.uspto_patents(grant_date DESC);
-CREATE INDEX IF NOT EXISTS idx_uspto_patents_cpc ON raw.uspto_patents USING GIN(cpc_codes);
+-- Indexes are conditional — table may have been created by 025 with different columns
+DO $$
+BEGIN
+    CREATE INDEX IF NOT EXISTS idx_uspto_patents_grant ON raw.uspto_patents(grant_date DESC);
+EXCEPTION WHEN undefined_column THEN
+    NULL;  -- Column 'grant_date' not in 025's schema
+END $$;
+
+DO $$
+BEGIN
+    CREATE INDEX IF NOT EXISTS idx_uspto_patents_cpc ON raw.uspto_patents USING GIN(cpc_codes);
+EXCEPTION WHEN undefined_column THEN
+    NULL;  -- Column 'cpc_codes' not in 025's schema
+END $$;
 
 -- =============================================================================
 -- Migration complete
