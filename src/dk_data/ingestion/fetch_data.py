@@ -233,9 +233,12 @@ def fetch_source(source: str, year: int = None, data_dir: str = None) -> dict:
                 load_result.get('records_failed', 0),
             )
             result['load_result'] = load_result
+            if load_result.get('status') == 'failed':
+                result['status'] = 'partial'
         except Exception as e:
             logger.error("Failed to load %s records to database: %s", source, e)
             result['load_error'] = str(e)
+            result['status'] = 'partial'
 
     return result
 

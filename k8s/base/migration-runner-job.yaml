@@ -60,22 +60,8 @@ spec:
               # Step 2: Seed/update data source catalog
               echo "Seeding data source catalog..."
               python -c "
-              import psycopg2, importlib.resources, pathlib
-              sql_path = pathlib.Path(__file__).resolve().parent / 'dk_data' / 'sql' / 'seed_data_sources.sql'
-              # Try installed package path first, then common container paths
-              for p in [
-                  sql_path,
-                  pathlib.Path('/usr/local/lib/python3.11/site-packages/dk_data/sql/seed_data_sources.sql'),
-                  pathlib.Path('/app/src/dk_data/sql/seed_data_sources.sql'),
-              ]:
-                  if p.exists():
-                      sql = p.read_text()
-                      break
-              else:
-                  # Use importlib.resources as last resort
-                  import importlib.resources as res
-                  sql = res.files('dk_data.sql').joinpath('seed_data_sources.sql').read_text()
-              import os
+              import importlib.resources, os, psycopg2
+              sql = importlib.resources.files('dk_data.sql').joinpath('seed_data_sources.sql').read_text()
               conn = psycopg2.connect(
                   host=os.environ['POSTGRES_HOST'],
                   port=os.environ['POSTGRES_PORT'],

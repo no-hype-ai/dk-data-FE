@@ -23,7 +23,7 @@ on:
 
 env:
   STAGING_URL: "https://data.staging.behaviorlabs.ai"
-  PROD_URL: "https://data.preview.behaviorlabs.ai"
+  PROD_URL: "https://data.behaviorlabs.ai"
 
 jobs:
   verify-deployment:

@@ -89,11 +89,17 @@ class USPTOTrademarksFetcher(BaseFetcher):
 
             all_records: List[Dict[str, Any]] = []
             seen_sns: set = set()
+            batch_errors: int = 0
+            batches_attempted: int = 0
 
             # Process in batches using multi-case endpoint
             for i in range(0, len(serial_numbers), BATCH_SIZE):
                 batch = serial_numbers[i : i + BATCH_SIZE]
+                batches_attempted += 1
                 records = self._fetch_batch(batch)
+
+                if not records:
+                    batch_errors += 1
 
                 for rec in records:
                     sn = rec.get("serial_number")
@@ -108,13 +114,21 @@ class USPTOTrademarksFetcher(BaseFetcher):
                 str(sorted(seen_sns)).encode()
             ).hexdigest()
 
+            # Determine status: failed if all batches errored, partial if some
+            if not all_records and batch_errors == batches_attempted and batches_attempted > 0:
+                status = "failed"
+            elif batch_errors > 0:
+                status = "partial"
+            else:
+                status = "success"
+
             result = {
-                "status": "success",
+                "status": status,
                 "records": all_records,
                 "record_count": len(all_records),
                 "hash": content_hash,
             }
-            self.log_fetch_result({"status": "success", "records": len(all_records)})
+            self.log_fetch_result({"status": status, "records": len(all_records)})
             return result
 
         except Exception as e:

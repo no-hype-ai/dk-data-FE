@@ -100,6 +100,8 @@ class EUIPOTrademarksFetcher(BaseFetcher):
                 self.backend, nice_classes, days_back, max_records,
             )
 
+            self._api_errors = 0
+
             if self.backend == "ibm_gateway":
                 raw_records = self._fetch_ibm_gateway(nice_classes, date_from, max_records)
             else:
@@ -121,13 +123,21 @@ class EUIPOTrademarksFetcher(BaseFetcher):
                 str(sorted(seen_ids)).encode()
             ).hexdigest()
 
+            # Determine status: failed if API errors and no records
+            if not all_records and self._api_errors > 0:
+                status = "failed"
+            elif self._api_errors > 0:
+                status = "partial"
+            else:
+                status = "success"
+
             result = {
-                "status": "success",
+                "status": status,
                 "records": all_records,
                 "record_count": len(all_records),
                 "hash": content_hash,
             }
-            self.log_fetch_result({"status": "success", "records": len(all_records)})
+            self.log_fetch_result({"status": status, "records": len(all_records)})
             return result
 
         except Exception as e:
@@ -176,6 +186,7 @@ class EUIPOTrademarksFetcher(BaseFetcher):
 
                 if response.status_code >= 500:
                     logger.warning("TMview returned %d, stopping pagination", response.status_code)
+                    self._api_errors += 1
                     break
 
                 response.raise_for_status()
@@ -195,6 +206,7 @@ class EUIPOTrademarksFetcher(BaseFetcher):
 
             except Exception as e:
                 logger.warning("TMview request failed at page %d: %s", page_index, e)
+                self._api_errors += 1
                 break
 
         return records
@@ -240,6 +252,7 @@ class EUIPOTrademarksFetcher(BaseFetcher):
 
                 if response.status_code >= 500:
                     logger.warning("IBM Gateway returned %d, stopping", response.status_code)
+                    self._api_errors += 1
                     break
 
                 response.raise_for_status()
@@ -259,6 +272,7 @@ class EUIPOTrademarksFetcher(BaseFetcher):
 
             except Exception as e:
                 logger.warning("IBM Gateway request failed at page %d: %s", page_index, e)
+                self._api_errors += 1
                 break
 
         return records

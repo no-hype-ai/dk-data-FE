@@ -220,7 +220,7 @@ class TestEUIPOFetchTMview:
                 fetcher = EUIPOTrademarksFetcher(data_dir=tmpdir)
             result = fetcher.fetch(days_back=1)
 
-        assert result["status"] == "success"
+        assert result["status"] == "failed"
         assert result["record_count"] == 0
 
     @responses.activate

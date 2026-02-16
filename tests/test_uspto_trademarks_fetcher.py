@@ -182,7 +182,7 @@ class TestUSPTOTrademarksFetchWithMock:
                 fetcher = USPTOTrademarksFetcher(data_dir=tmpdir)
             result = fetcher.fetch(serial_numbers=["90123456"])
 
-        assert result["status"] == "success"
+        assert result["status"] == "failed"
         assert result["record_count"] == 0
 
     @responses.activate
@@ -200,7 +200,7 @@ class TestUSPTOTrademarksFetchWithMock:
                 fetcher = USPTOTrademarksFetcher(data_dir=tmpdir)
             result = fetcher.fetch(serial_numbers=["90123456"])
 
-        assert result["status"] == "success"
+        assert result["status"] == "failed"
         assert result["record_count"] == 0
 
     @responses.activate

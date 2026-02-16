@@ -166,6 +166,7 @@ jobs:
           POSTGRES_DB: dk_data
           SQLMESH_CONFIG: src/dk_data/sqlmesh/config.yaml
         run: |
+          set -o pipefail
           cd src/dk_data
           sqlmesh plan --no-prompts --no-auto-categorization 2>&1 | tee /tmp/sqlmesh-plan.log
           echo "SQLMesh model validation passed"
