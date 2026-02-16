@@ -186,13 +186,17 @@ class USPTOPatentsFetcher(BaseFetcher):
             ]
         }
 
-        # Fields to return
+        # Fields to return — must include all fields used by _normalize_patent
         fields = [
             "patent_number",
             "patent_title",
             "patent_abstract",
             "patent_date",
             "patent_num_claims",
+            "inventors",
+            "assignees",
+            "cpcs",
+            "app_date",
         ]
 
         payload = {

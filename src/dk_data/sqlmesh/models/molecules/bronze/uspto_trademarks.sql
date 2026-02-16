@@ -26,6 +26,7 @@ SELECT
 
     -- Status
     r.status,
+    r.status_code,
     r.status_date,
 
     -- Dates
@@ -40,12 +41,20 @@ SELECT
         ELSE NULL
     END AS nice_classes,
 
+    -- US-specific classification
+    CASE
+        WHEN r.us_classes IS NOT NULL
+        THEN to_jsonb(r.us_classes)
+        ELSE NULL
+    END AS us_classes,
+
     -- Ownership
     r.owner_name,
     r.owner_entity_type,
 
     -- Description
     r.goods_and_services,
+    r.description_of_mark,
 
     -- Pharma relevance: Nice Class 5 = Pharmaceuticals
     5 = ANY(COALESCE(r.nice_classes, '{}')) AS is_pharma_related,

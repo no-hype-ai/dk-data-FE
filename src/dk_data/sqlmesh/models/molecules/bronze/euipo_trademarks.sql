@@ -26,6 +26,7 @@ SELECT
     -- EUIPO-specific classification fields
     r.mark_kind,
     r.mark_feature,
+    r.mark_basis,
 
     -- Applicant info
     r.applicant_name,
@@ -49,6 +50,9 @@ SELECT
 
     -- Description
     r.goods_and_services,
+
+    -- Trademark image
+    r.image_url,
 
     -- Pharma relevance: Nice Class 5 = Pharmaceuticals
     5 = ANY(COALESCE(r.nice_classes, '{}')) AS is_pharma_related,

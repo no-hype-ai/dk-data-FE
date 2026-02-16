@@ -212,12 +212,17 @@ class USPTOCIFetcher(BaseFetcher):
             List of normalized patent record dicts.
         """
         all_records: List[Dict[str, Any]] = []
+        # Fields to return — must include all fields used by _normalize_patent
         fields = [
             "patent_number",
             "patent_title",
             "patent_abstract",
             "patent_date",
             "patent_num_claims",
+            "inventors",
+            "assignees",
+            "cpcs",
+            "app_date",
         ]
 
         for page in range(1, max_pages + 1):

@@ -120,7 +120,7 @@ def load_euipo_trademarks_data(
                             record.expiry_date,
                             record.nice_classes,
                             record.goods_and_services,
-                            None,  # image_url not in validator (stored from raw only)
+                            record.image_url,
                             source_file or "euipo_tmview",
                             source_hash,
                         ),

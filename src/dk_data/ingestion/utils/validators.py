@@ -629,6 +629,7 @@ class EUIPOTrademarkRecord(BaseModel):
     expiry_date: Optional[date] = None
     nice_classes: Optional[List[int]] = None
     goods_and_services: Optional[str] = None
+    image_url: Optional[str] = None
 
     @field_validator('application_number')
     @classmethod

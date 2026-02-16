@@ -47,9 +47,13 @@ uspto_patents AS (
         patent_date AS grant_date,
         filing_date,
         assignee_organization AS assignee,
+        assignee_type,
         inventors,
         cpc_codes,
+        NULL::JSONB AS ipc_codes,
         num_claims,
+        is_pharma_related,
+        NULL::TEXT AS family_id,
         'uspto_patents' AS source
     FROM bronze.uspto_patents
     WHERE processed_to_silver = FALSE
@@ -65,9 +69,13 @@ uspto_ci AS (
         patent_date AS grant_date,
         filing_date,
         assignee_organization AS assignee,
+        NULL::TEXT AS assignee_type,
         inventors,
         cpc_codes,
+        NULL::JSONB AS ipc_codes,
         num_claims,
+        is_pharma_related,
+        NULL::TEXT AS family_id,
         'uspto_ci' AS source
     FROM bronze.uspto_ci
     WHERE processed_to_silver = FALSE
@@ -83,9 +91,13 @@ epo_patents AS (
         patent_date AS grant_date,
         filing_date,
         assignee_organization AS assignee,
+        NULL::TEXT AS assignee_type,
         inventors,
-        ipc_codes AS cpc_codes,
+        cpc_codes,
+        ipc_codes,
         num_claims,
+        is_pharma_related,
+        family_id,
         'epo_ops' AS source
     FROM bronze.epo_patents
     WHERE processed_to_silver = FALSE
@@ -98,8 +110,12 @@ combined AS (
     SELECT
         patent_number, NULL AS title, NULL AS abstract,
         NULL::DATE AS filing_date, grant_date, expiry_date,
-        NULL AS assignee, NULL::JSONB AS inventors,
-        NULL::JSONB AS cpc_codes, NULL::INTEGER AS num_claims,
+        NULL AS assignee, NULL::TEXT AS assignee_type,
+        NULL::JSONB AS inventors,
+        NULL::JSONB AS cpc_codes, NULL::JSONB AS ipc_codes,
+        NULL::INTEGER AS num_claims,
+        NULL::BOOLEAN AS is_pharma_related,
+        NULL::TEXT AS family_id,
         pediatric_extension, country,
         drug_name AS molecule_name,
         'drugbank' AS source,
@@ -111,8 +127,9 @@ combined AS (
     SELECT
         patent_number, title, abstract,
         filing_date, grant_date, NULL::DATE AS expiry_date,
-        assignee, inventors,
-        cpc_codes, num_claims,
+        assignee, assignee_type, inventors,
+        cpc_codes, ipc_codes, num_claims,
+        is_pharma_related, family_id,
         NULL::BOOLEAN AS pediatric_extension, 'US' AS country,
         NULL AS molecule_name,
         source,
@@ -124,8 +141,9 @@ combined AS (
     SELECT
         patent_number, title, abstract,
         filing_date, grant_date, NULL::DATE AS expiry_date,
-        assignee, inventors,
-        cpc_codes, num_claims,
+        assignee, assignee_type, inventors,
+        cpc_codes, ipc_codes, num_claims,
+        is_pharma_related, family_id,
         NULL::BOOLEAN AS pediatric_extension, 'US' AS country,
         NULL AS molecule_name,
         source,
@@ -137,8 +155,9 @@ combined AS (
     SELECT
         patent_number, title, abstract,
         filing_date, grant_date, NULL::DATE AS expiry_date,
-        assignee, inventors,
-        cpc_codes, num_claims,
+        assignee, assignee_type, inventors,
+        cpc_codes, ipc_codes, num_claims,
+        is_pharma_related, family_id,
         NULL::BOOLEAN AS pediatric_extension, 'EP' AS country,
         NULL AS molecule_name,
         source,
@@ -156,17 +175,20 @@ SELECT DISTINCT ON (patent_number)
     grant_date,
     expiry_date,
     assignee,
+    assignee_type,
     NULL::TEXT AS assignee_normalized,
     inventors,
     NULL::TEXT AS patent_type,
     country,
     cpc_codes,
-    NULL::JSONB AS ipc_codes,
+    ipc_codes,
+    family_id,
     CASE
         WHEN expiry_date < CURRENT_DATE THEN 'expired'
         WHEN grant_date IS NULL THEN 'pending'
         ELSE 'active'
     END AS status,
+    is_pharma_related,
     pediatric_extension,
     CASE WHEN pediatric_extension = TRUE THEN 180 ELSE 0 END AS extension_days,
     NULL::JSONB AS related_patents,
