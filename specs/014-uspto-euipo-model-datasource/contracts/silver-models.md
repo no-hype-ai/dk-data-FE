@@ -13,7 +13,7 @@
 
 ### Change Required
 
-Currently reads only from `bronze.drugbank`. Must add CTEs for `bronze.uspto_patents`, `bronze.uspto_ci`, and `bronze.epo_patents`, then UNION ALL with `DISTINCT ON (patent_number)` deduplication.
+**Structural refactor** (not just additive): The current model has 2 CTEs (`drugbank_patents` + `enriched`) reading only from `bronze.drugbank`. This must be replaced with a multi-source UNION ALL pattern: 4 source CTEs (`drugbank_patents`, `uspto_patents`, `uspto_ci`, `epo_patents`) + 1 `combined` CTE for the UNION ALL + `DISTINCT ON (patent_number)` deduplication with source priority. The existing `enriched` CTE is removed in favor of the unified output SELECT.
 
 ### Output Schema (extended)
 

@@ -79,7 +79,7 @@ As a platform operator, I need all patent and trademark data sources (USPTO CI, 
 
 **Why this priority**: Without metrics integration, pipeline failures go undetected. The existing metrics system already tracks other sources but omits all patent/trademark sources.
 
-**Independent Test**: Can be tested by querying the `/metrics` endpoint and verifying that labels for `uspto_patents`, `uspto_ci`, `epo_patents`, `uspto_trademarks`, and `euipo_trademarks` appear in `dk_source_health_status`, `dk_raw_unprocessed_total`, and `dk_table_record_count` gauges.
+**Independent Test**: Can be tested by querying the `/metrics` endpoint and verifying that labels for `uspto_patents`, `uspto_ci`, `epo_patents`, `uspto_trademarks`, and `euipo_trademarks` appear in `dk_source_health_status` and `dk_table_record_count` gauges.
 
 **Acceptance Scenarios**:
 
@@ -148,12 +148,12 @@ As a developer, I need all new fetchers, loaders, validators, and models to be c
 - **FR-007**: System MUST create `silver.trademarks` SQLMesh model to UNION ALL records from `bronze.uspto_trademarks` and `bronze.euipo_trademarks` with a `source` column distinguishing US from EU trademarks. Deduplication is within-registry only (by PK per source); no cross-registry deduplication is performed — the same mark registered in both USPTO and EUIPO results in two separate silver records.
 - **FR-008**: System MUST register both the USPTO trademark fetcher and EUIPO trademark fetcher in the `FETCHERS` dict in `fetch_data.py` with appropriate priority.
 - **FR-009**: System MUST add both `uspto_trademarks` and `euipo_trademarks` to the `seed_data_sources.sql` seed data.
-- **FR-010**: System MUST update `metrics.py` to include all 5 IP sources (`uspto_patents`, `uspto_ci`, `epo_patents`, `uspto_trademarks`, `euipo_trademarks`) in source health tracking, unprocessed count tracking, layer record counts, and external API health dicts.
+- **FR-010**: System MUST register all 5 IP sources (`uspto_patents`, `uspto_ci`, `epo_patents`, `uspto_trademarks`, `euipo_trademarks`) in the existing Prometheus metrics infrastructure. The `dk_source_health_status` Gauge and `dk_table_record_count` Gauge already exist in `services/data_platform/metrics.py` — IP sources must be added to the `local_sources`, `layer_tables`, and `raw_sources` dicts so that `refresh_metrics_from_database_sync()` populates their labels automatically. Loaders MUST call the existing `record_data_source_refresh()` (in `observability/metrics.py`) after successful batch commits to update refresh timestamps and row counts. No new Prometheus Gauge objects are needed (duplicate registration would crash the process).
 - **FR-011**: System MUST create Kubernetes CronJob manifests for both USPTO trademark and EUIPO trademark ingestion following the existing CronJob pattern (weekly schedule, image reference, required secrets).
 - **FR-012**: System MUST include at least 12 tests for the EUIPO trademark fetcher and validator, and at least 14 tests for the USPTO trademark fetcher and validator, following the existing test patterns (mocked HTTP, Pydantic validation).
 - **FR-013**: System MUST throttle EUIPO API requests to no more than 30 requests per minute, and USPTO TSDR API requests to no more than 60 requests per minute (4 per minute for multi-case batch), to respect rate limits.
 - **FR-014**: System MUST maintain a `trademark_status_history` table (in raw schema) that records status changes for both USPTO and EUIPO trademarks. Each ingestion run compares the fetched status against the last recorded status; if different, a new history row is inserted with the trademark identifier, old_status, new_status, and change_detected_at timestamp.
-- **FR-015**: System MUST update `gold.molecule_profile` to include an IP trademark section that aggregates trademark data from `silver.trademarks`, linked to molecules via `silver.molecule_aliases` (matching trademark `mark_name` against known brand names, trade names, and product names — NOT generic/INN names, since trademarks are registered under brand names). The section MUST include trademark count (US + EU), active/registered count, and latest status per registry for each molecule.
+- **FR-015**: System MUST update `gold.molecule_profile` to include an IP trademark section that aggregates trademark data from `silver.trademarks`, linked to molecules via `silver.molecule_aliases` where `alias_type IN ('brand', 'trade', 'product')` — NOT `canonical` (which contains INN/generic names like "adalimumab"), since trademarks are registered under brand names (e.g., "Humira"). The section MUST include trademark count (US + EU), active/registered count, and latest status per registry for each molecule.
 
 ### Key Entities
 

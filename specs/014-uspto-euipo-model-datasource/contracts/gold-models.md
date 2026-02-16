@@ -9,7 +9,7 @@
 
 ### Change Required
 
-Add a new CTE `trademark_info` that aggregates trademark data from `silver.trademarks`, linked to molecules via `silver.molecule_aliases` (which contains brand names, trade names, and product names from DrugBank, FDA labels, and Orange Book). Uses case-insensitive equality matching on alias names — NOT substring matching on `canonical_name`, since trademarks are registered under brand names (e.g., "Humira"), not generic/INN names (e.g., "adalimumab"). Add 6 new columns to the final SELECT.
+Add a new CTE `trademark_info` that aggregates trademark data from `silver.trademarks`, linked to molecules via `silver.molecule_aliases` (filtering to `alias_type IN ('brand', 'trade', 'product')` — brand names, trade names, and product names from DrugBank, FDA labels, and Orange Book). Uses case-insensitive equality matching on alias names — NOT substring matching on `canonical_name`, since trademarks are registered under brand names (e.g., "Humira"), not generic/INN names (e.g., "adalimumab"). Excludes `canonical` alias_type which contains INN/generic names. Add 6 new columns to the final SELECT.
 
 ### New CTE
 
@@ -39,7 +39,7 @@ trademark_info AS (
                 ON LOWER(t2.mark_name) = LOWER(ma2.alias_name)
             WHERE ma2.molecule_id = ma.molecule_id
               AND t2.source = 'uspto_trademarks'
-              AND ma2.alias_type IN ('brand', 'trade', 'product', 'canonical')
+              AND ma2.alias_type IN ('brand', 'trade', 'product')
             ORDER BY t2.filing_date DESC NULLS LAST
             LIMIT 1
         ) AS latest_us_trademark_status,
@@ -50,14 +50,14 @@ trademark_info AS (
                 ON LOWER(t3.mark_name) = LOWER(ma3.alias_name)
             WHERE ma3.molecule_id = ma.molecule_id
               AND t3.source = 'euipo_trademarks'
-              AND ma3.alias_type IN ('brand', 'trade', 'product', 'canonical')
+              AND ma3.alias_type IN ('brand', 'trade', 'product')
             ORDER BY t3.filing_date DESC NULLS LAST
             LIMIT 1
         ) AS latest_eu_trademark_status
     FROM silver.molecule_aliases ma
     JOIN silver.trademarks t
         ON LOWER(t.mark_name) = LOWER(ma.alias_name)
-    WHERE ma.alias_type IN ('brand', 'trade', 'product', 'canonical')
+    WHERE ma.alias_type IN ('brand', 'trade', 'product')
     GROUP BY ma.molecule_id
 )
 ```
@@ -87,5 +87,5 @@ LEFT JOIN trademark_info tm ON mb.molecule_id = tm.molecule_id
 - AC-3: US and EU trademark counts are independent.
 - AC-4: Latest status is per-registry (most recent by filing_date).
 - AC-5: Existing columns are unchanged (no regression).
-- AC-6: Linking uses `silver.molecule_aliases` (brand/trade/product/canonical names), NOT substring matching on `canonical_name`.
+- AC-6: Linking uses `silver.molecule_aliases` (brand/trade/product names only), NOT substring matching on `canonical_name`. Excludes `canonical` alias_type because canonical = INN/generic names (e.g., "adalimumab"), whereas trademarks are registered under brand names (e.g., "Humira").
 - AC-7: COUNT DISTINCT on `(trademark_identifier || '|' || source)` prevents double-counting when a molecule has multiple aliases matching the same trademark.

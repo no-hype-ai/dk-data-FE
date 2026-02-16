@@ -160,7 +160,7 @@ SQLMesh model. Currently broken (reads JSONB `response_body`). Must be refactore
 
 | Column | Type | Source | Notes |
 |--------|------|--------|-------|
-| id | UUID | generated | uuid_generate_v4() |
+| id | UUID | generated | gen_random_uuid() |
 | patent_number | VARCHAR(50) | raw.patent_number | PK, grain |
 | patent_title | TEXT | raw.title | Renamed from title |
 | patent_abstract | TEXT | raw.abstract | |

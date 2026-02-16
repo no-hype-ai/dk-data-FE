@@ -30,6 +30,23 @@ class USPTOTrademarksFetcher(BaseFetcher):
     SOURCE_NAME = "uspto_trademarks"
     BASE_URL = "https://tsdrapi.uspto.gov"
 
+    # Rate limit: 60 req/min standard, 4 req/min for multi-case batch
+    REQUEST_DELAY = 1.0  # seconds between standard requests
+    BATCH_REQUEST_DELAY = 15.0  # seconds between batch requests
+
+    def __init__(self, data_dir: Optional[str] = None):
+        """Initialize the USPTO Trademarks fetcher.
+
+        Reads USPTO_TSDR_API_KEY from the environment.
+        """
+        super().__init__(data_dir)
+        import os
+        self.api_key: Optional[str] = os.environ.get("USPTO_TSDR_API_KEY")
+        if self.api_key:
+            self.session.headers.update({"USPTO-API-KEY": self.api_key})
+        else:
+            logger.warning("USPTO_TSDR_API_KEY not set; TSDR API calls will fail")
+
     def get_latest_url(self) -> str:
         """Return the TSDR API base URL."""
 
@@ -45,7 +62,7 @@ class USPTOTrademarksFetcher(BaseFetcher):
         """
 
     @staticmethod
-    def _normalize_trademark(raw: dict) -> Optional[Dict[str, Any]]:
+    def _normalize_trademark(raw: Dict[str, Any]) -> Optional[Dict[str, Any]]:
         """Normalize TSDR API response to flat record.
 
         Maps Swagger Trademark object fields to raw table columns:
@@ -67,12 +84,13 @@ class USPTOTrademarksFetcher(BaseFetcher):
 ### Acceptance Criteria
 
 - AC-1: Fetcher extends `BaseFetcher` and is importable from `dk_data.ingestion.fetchers`.
-- AC-2: API key is read from `USPTO_TSDR_API_KEY` environment variable.
-- AC-3: Rate limiting respects 60 req/min (standard) and 4 req/min (batch).
-- AC-4: Returns `{"status": "success", "records": [...], "record_count": N, "hash": "..."}` on success (includes `record_count` per existing EPO/CI fetcher pattern).
-- AC-5: Returns `{"status": "success", "records": [], "record_count": 0, "hash": None}` on empty results.
-- AC-6: Returns `{"status": "failed", "records": [], "record_count": 0, "hash": None, "error": "..."}` on failure.
+- AC-2: API key is read from `USPTO_TSDR_API_KEY` environment variable in `__init__`.
+- AC-3: Rate limiting uses `time.sleep()` delays: 1.0s between standard requests (60/min), 15.0s between batch requests (4/min), following EPO OPS `OPS_REQUEST_DELAY` pattern.
+- AC-4: Returns `{"status": "success", "records": [...], "hash": "..."}` on success. Optionally includes `record_count` (not all existing fetchers return it — USPTOCIFetcher omits it, EPOOPSFetcher includes it).
+- AC-5: Returns `{"status": "success", "records": [], "hash": None}` on empty results.
+- AC-6: Returns `{"status": "failed", "records": [], "hash": None, "error": "..."}` on failure.
 - AC-7: Handles 401 (bad API key) gracefully with logged error.
+- AC-8: Hash computed using `hashlib.md5` (matching `BaseFetcher.calculate_hash` convention).
 
 ---
 
@@ -104,13 +122,22 @@ from typing import Any, Dict, List, Optional
 class EUIPOTrademarksFetcher(BaseFetcher):
     SOURCE_NAME = "euipo_trademarks"
 
-    def __init__(self, data_dir=None, backend=None):
+    # Rate limit: 30 req/min
+    REQUEST_DELAY = 2.0  # seconds between requests
+
+    def __init__(self, data_dir: Optional[str] = None, backend: Optional[str] = None):
         """Initialize with selectable backend.
 
         Args:
+            data_dir: Directory to store downloaded files.
             backend: 'tmview' or 'ibm_gateway'. Defaults to env EUIPO_BACKEND
                     or 'tmview' if not set.
         """
+        super().__init__(data_dir)
+        import os
+        self.backend = backend or os.environ.get("EUIPO_BACKEND", "tmview")
+        self.api_key: Optional[str] = os.environ.get("EUIPO_API_KEY")
+        self.secret_key: Optional[str] = os.environ.get("EUIPO_SECRET_KEY")
 
     def get_latest_url(self) -> str:
         """Return the active backend URL."""
@@ -145,7 +172,7 @@ class EUIPOTrademarksFetcher(BaseFetcher):
         """
 
     @staticmethod
-    def _normalize_trademark(raw: dict) -> Optional[Dict[str, Any]]:
+    def _normalize_trademark(raw: Dict[str, Any]) -> Optional[Dict[str, Any]]:
         """Normalize TMview/IBM response to flat record.
 
         Maps response fields to raw table columns:
@@ -167,10 +194,11 @@ class EUIPOTrademarksFetcher(BaseFetcher):
 - AC-2: Backend is selectable via `EUIPO_BACKEND` env var or constructor arg.
 - AC-3: TMview is the default if no env var is set.
 - AC-4: IBM Gateway uses OAuth2 token exchange + IBM Client ID header.
-- AC-5: Rate limiting respects 30 req/min.
+- AC-5: Rate limiting uses `time.sleep(2.0)` between requests (30 req/min), following EPO OPS `OPS_REQUEST_DELAY` pattern.
 - AC-6: Pagination stops at `max_records` limit.
 - AC-7: Handles HTTP 500 gracefully without crashing.
-- AC-8: Returns dict with `status`, `records`, `record_count`, `hash`, `error` keys (matching existing EPO/CI fetcher pattern).
+- AC-8: Returns dict with `status`, `records`, `hash`, `error` keys. Optionally includes `record_count` (not all existing fetchers return it).
+- AC-9: Hash computed using `hashlib.md5` (matching `BaseFetcher.calculate_hash` convention).
 
 ---
 
@@ -184,8 +212,11 @@ class EUIPOTrademarksFetcher(BaseFetcher):
 - Uses `get_connection()` internally (NOT a `conn` parameter)
 - Accepts `source_hash`, `source_file`, `batch_size` parameters
 - Returns `Dict[str, Any]` with `status`, `records_inserted`, `records_failed`, `errors`
-- Validates each record via Pydantic before INSERT
-- Batch commits every `batch_size` records
+- Validates each record via Pydantic before INSERT (separate `except ValidationError` and `except Exception` catches per record)
+- Batch commits every `batch_size` records (modulo pattern: `if i % batch_size == 0: conn.commit()`)
+- Error list truncated to first 10 entries: `errors[:10]` in return dict
+- Status logic: `"success" if records_inserted > 0 or records_failed == 0 else "failed"`
+- Log suppression: only log individual record errors if `records_failed <= 5`
 
 ```python
 import json
@@ -227,6 +258,8 @@ def load_uspto_trademarks_data(
 
 After upserting each record, compare `status` with the last known status in `raw.trademark_status_history` for that serial_number + source. If different, INSERT a new history row. This runs inside the same `get_connection()` block.
 
+**Error handling**: Wrap the history INSERT in a try/except — if the history write fails, log a warning but do NOT fail the main upsert. The history table is informational; the raw upsert must succeed independently.
+
 ---
 
 ## EUIPO Trademarks Loader (NEW)
@@ -235,7 +268,7 @@ After upserting each record, compare `status` with the last known status in `raw
 
 ### Interface
 
-**IMPORTANT**: Same pattern as USPTO loader above — follows `sources/epo_ops.py` conventions.
+**IMPORTANT**: Same pattern as USPTO loader above — follows `sources/epo_ops.py` conventions (see detailed notes in USPTO Trademarks Loader section).
 
 ```python
 import json
@@ -275,7 +308,42 @@ def load_euipo_trademarks_data(
 
 ### Status History Integration
 
-Same as USPTO loader — compare status and insert history row if changed.
+Same as USPTO loader — compare status and insert history row if changed. Same error handling: history INSERT failure must not block the main upsert.
+
+---
+
+## Module Registration (MODIFY)
+
+### `fetchers/__init__.py`
+
+**File**: `src/dk_data/ingestion/fetchers/__init__.py`
+
+Add imports and register in `__all__`:
+
+```python
+from .uspto_trademarks import USPTOTrademarksFetcher
+from .euipo_trademarks import EUIPOTrademarksFetcher
+
+__all__ = [
+    ...,
+    "USPTOTrademarksFetcher",
+    "EUIPOTrademarksFetcher",
+]
+```
+
+### `sources/__init__.py`
+
+**File**: `src/dk_data/ingestion/sources/__init__.py`
+
+Add module name strings to `__all__` (existing pattern uses bare strings, NOT function imports):
+
+```python
+__all__ = [
+    ...,
+    "uspto_trademarks",
+    "euipo_trademarks",
+]
+```
 
 ---
 

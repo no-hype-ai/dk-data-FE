@@ -21,7 +21,7 @@ The current model reads `r.response_body->'patents'` via `jsonb_array_elements()
 
 ```sql
 SELECT
-    uuid_generate_v4() AS id,
+    gen_random_uuid() AS id,
     r.patent_number,
     r.title AS patent_title,
     r.abstract AS patent_abstract,
@@ -70,7 +70,7 @@ WHERE r.patent_number IS NOT NULL
 
 ```sql
 SELECT
-    uuid_generate_v4() AS id,
+    gen_random_uuid() AS id,
     r.patent_id AS patent_number,
     r.title AS patent_title,
     r.abstract AS patent_abstract,
@@ -114,7 +114,7 @@ WHERE r.patent_id IS NOT NULL
 
 ```sql
 SELECT
-    uuid_generate_v4() AS id,
+    gen_random_uuid() AS id,
     r.publication_id AS patent_number,
     r.title AS patent_title,
     r.abstract AS patent_abstract,
@@ -161,7 +161,7 @@ WHERE r.publication_id IS NOT NULL
 
 ```sql
 SELECT
-    uuid_generate_v4() AS id,
+    gen_random_uuid() AS id,
     r.serial_number,
     r.mark_element,
     r.mark_type,
@@ -205,7 +205,7 @@ WHERE r.serial_number IS NOT NULL
 
 ```sql
 SELECT
-    uuid_generate_v4() AS id,
+    gen_random_uuid() AS id,
     r.application_number,
     r.mark_name,
     r.mark_kind,
