@@ -19,7 +19,6 @@ Sources:
 """
 
 import hashlib
-import json
 import logging
 from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional

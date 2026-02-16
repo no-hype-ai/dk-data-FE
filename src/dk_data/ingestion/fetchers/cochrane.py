@@ -12,8 +12,6 @@ Source: https://www.cochranelibrary.com/cdsr/reviews
 
 import hashlib
 import logging
-import os
-import re
 import time
 from datetime import datetime, timedelta
 from typing import Any, Dict, List, Optional

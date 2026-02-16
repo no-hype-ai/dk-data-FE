@@ -9,7 +9,7 @@ Tests use mocked HTTP responses so no external network calls are made.
 import os
 import tempfile
 from datetime import date
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 
 import pytest
 import responses
@@ -103,7 +103,7 @@ class TestUSPTOPatentsFetcherInit:
         """Verify the data directory is created on init."""
         data_path = tmp_path / "sub" / "raw"
         with patch.dict(os.environ, {"USPTO_API_KEY": "key"}):
-            fetcher = USPTOPatentsFetcher(data_dir=str(data_path))
+            USPTOPatentsFetcher(data_dir=str(data_path))  # side-effect: creates dir
         assert data_path.exists()
 
 

@@ -10,12 +10,10 @@ Tests cover:
 - CochraneReviewRecord validation (valid and invalid)
 """
 
-import tempfile
 from datetime import date
 from unittest.mock import MagicMock, patch
 
 import pytest
-import responses
 
 from dk_data.ingestion.fetchers.cochrane import CochraneFetcher
 from dk_data.ingestion.utils.validators import CochraneReviewRecord

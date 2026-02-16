@@ -8,7 +8,6 @@ Tests use mocked HTTP responses so no external network calls are made.
 
 import tempfile
 from datetime import date
-from unittest.mock import MagicMock, patch
 
 import pytest
 import responses

@@ -13,7 +13,6 @@ Docker build verification is done via quickstart.md commands.
 import importlib
 from pathlib import Path
 
-import pytest
 
 
 REPO_ROOT = Path(__file__).parent.parent

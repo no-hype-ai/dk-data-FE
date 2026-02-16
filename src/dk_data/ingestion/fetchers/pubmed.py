@@ -15,7 +15,6 @@ import logging
 import os
 import time
 import xml.etree.ElementTree as ET
-from datetime import datetime, timedelta
 from typing import Any, Dict, List, Optional
 
 from .base import BaseFetcher

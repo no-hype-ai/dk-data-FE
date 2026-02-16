@@ -10,7 +10,7 @@ Source: https://rest.uniprot.org/
 
 import hashlib
 import logging
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List
 
 from .base import BaseFetcher
 

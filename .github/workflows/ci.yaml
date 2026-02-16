@@ -148,6 +148,17 @@ jobs:
           SQL
           echo "All 15 schemas created"
 
+      - name: Initialize base tables
+        env:
+          PGHOST: localhost
+          PGPORT: 5432
+          PGUSER: postgres
+          PGPASSWORD: postgres
+          PGDATABASE: dk_data
+        run: |
+          psql -v AUTHENTICATOR_PASSWORD="'ci_test_password'" \
+            -f src/dk_data/sql/init_database.sql
+
       - name: Run pending migrations
         env:
           POSTGRES_HOST: localhost
