@@ -17,7 +17,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from psycopg2.extras import RealDictCursor
 
-from job_runner import JobStatus, get_job_runner
+from dk_data.ingestion.batch.job_runner import JobStatus, get_job_runner
 
 # Import observability (must be before other imports that use logging)
 try:
