@@ -571,9 +571,10 @@ CREATE TABLE IF NOT EXISTS bronze.orange_book (
     processing_error TEXT,
     record_hash VARCHAR(64),
 
-    UNIQUE(application_number, product_number, COALESCE(patent_number, ''))
 );
 
+CREATE UNIQUE INDEX IF NOT EXISTS idx_bronze_ob_unique
+    ON bronze.orange_book(application_number, product_number, COALESCE(patent_number, ''));
 CREATE INDEX IF NOT EXISTS idx_bronze_ob_app ON bronze.orange_book(application_number);
 CREATE INDEX IF NOT EXISTS idx_bronze_ob_ingredient ON bronze.orange_book(ingredient);
 CREATE INDEX IF NOT EXISTS idx_bronze_ob_trade ON bronze.orange_book(trade_name);
