@@ -91,10 +91,46 @@ jobs:
           CREATE SCHEMA IF NOT EXISTS silver;
           CREATE SCHEMA IF NOT EXISTS gold;
           SQL
-          # Initialize tables, roles, and views
+          # Create PostgREST roles before init_database.sql (which uses psql :var syntax
+          # that can fail in CI). This ensures the authenticator role exists for PostgREST.
+          psql <<'SQL'
+          DO $$
+          BEGIN
+            IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = 'web_anon') THEN
+              CREATE ROLE web_anon NOLOGIN;
+            END IF;
+            IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = 'analyst') THEN
+              CREATE ROLE analyst NOLOGIN;
+            END IF;
+            IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = 'api_user') THEN
+              CREATE ROLE api_user NOLOGIN;
+            END IF;
+            IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = 'authenticator') THEN
+              CREATE ROLE authenticator NOINHERIT LOGIN PASSWORD 'ci_test_password_32chars_min!!';
+            END IF;
+          END $$;
+          GRANT web_anon TO authenticator;
+          GRANT analyst TO authenticator;
+          GRANT api_user TO authenticator;
+          GRANT USAGE ON SCHEMA api TO web_anon, analyst, api_user;
+          SQL
+          # Initialize tables and views (role errors are non-fatal since we created them above)
           psql -v AUTHENTICATOR_PASSWORD="ci_test_password_32chars_min!!" \
             -f src/dk_data/sql/init_database.sql || true
-          echo "Database initialized (non-fatal errors from roles/auth are expected in CI)"
+          # Grant SELECT on all API views to roles (init_database.sql dynamic GRANTs may fail)
+          psql <<'SQL'
+          DO $$
+          DECLARE v_name TEXT;
+          BEGIN
+            FOR v_name IN
+              SELECT table_name FROM information_schema.views WHERE table_schema = 'api'
+            LOOP
+              EXECUTE format('GRANT SELECT ON api.%I TO web_anon, analyst, api_user', v_name);
+            END LOOP;
+          END $$;
+          ALTER DEFAULT PRIVILEGES IN SCHEMA api GRANT SELECT ON TABLES TO web_anon, analyst, api_user;
+          SQL
+          echo "Database initialized"
 
       - name: Run migrations
         continue-on-error: true
@@ -122,8 +158,20 @@ jobs:
               echo "PostgREST is ready"
               break
             fi
+            # Check if container is still running
+            if ! docker ps -q -f name=postgrest | grep -q .; then
+              echo "::error::PostgREST container exited unexpectedly"
+              docker logs postgrest 2>&1 || true
+              exit 1
+            fi
             sleep 1
           done
+          # Final check
+          curl -sf http://localhost:3030/ > /dev/null 2>&1 || {
+            echo "::error::PostgREST failed to start within 30s"
+            docker logs postgrest 2>&1 || true
+            exit 1
+          }
 
       - name: Run tests with coverage
         env:
@@ -219,9 +267,31 @@ jobs:
           PGPASSWORD: postgres
           PGDATABASE: dk_data
         run: |
+          # Create roles first (init_database.sql psql :var syntax can fail in CI)
+          psql <<'SQL'
+          DO $$
+          BEGIN
+            IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = 'web_anon') THEN
+              CREATE ROLE web_anon NOLOGIN;
+            END IF;
+            IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = 'analyst') THEN
+              CREATE ROLE analyst NOLOGIN;
+            END IF;
+            IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = 'api_user') THEN
+              CREATE ROLE api_user NOLOGIN;
+            END IF;
+            IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = 'authenticator') THEN
+              CREATE ROLE authenticator NOINHERIT LOGIN PASSWORD 'ci_test_password';
+            END IF;
+          END $$;
+          GRANT web_anon TO authenticator;
+          GRANT analyst TO authenticator;
+          GRANT api_user TO authenticator;
+          GRANT USAGE ON SCHEMA api TO web_anon, analyst, api_user;
+          SQL
           psql -v AUTHENTICATOR_PASSWORD="ci_test_password" \
             -f src/dk_data/sql/init_database.sql || true
-          echo "Base tables initialized (non-fatal errors from roles/auth are expected in CI)"
+          echo "Base tables initialized"
 
       - name: Run pending migrations
         continue-on-error: true

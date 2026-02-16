@@ -11,8 +11,8 @@ MODEL (
     cron '@daily',
     grain (molecule_id, alias_name_normalized),
     audits (
-        not_null(molecule_id),
-        not_null(alias_name)
+        not_null(columns := (molecule_id)),
+        not_null(columns := (alias_name))
     )
 );
 
