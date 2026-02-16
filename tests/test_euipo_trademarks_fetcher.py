@@ -294,14 +294,14 @@ class TestEUIPOFetchIBMGateway:
         # OAuth token
         responses.add(
             responses.POST,
-            "https://euipo.europa.eu/cas-server-webapp/oidc/accessToken",
+            "https://auth.euipo.europa.eu/oidc/accessToken",
             json=IBM_TOKEN_RESPONSE,
             status=200,
         )
         # Search results
         responses.add(
             responses.GET,
-            "https://api.euipo.europa.eu/trademark-search",
+            "https://api.euipo.europa.eu/trademark-search/trademarks",
             json=_make_tmview_response([SAMPLE_TRADEMARK]),
             status=200,
         )

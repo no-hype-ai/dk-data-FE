@@ -35,9 +35,9 @@ class EUIPOTrademarksFetcher(BaseFetcher):
     SOURCE_NAME = "euipo_trademarks"
     BASE_URL = "https://www.tmdn.org/tmview/api/search"
 
-    # IBM Gateway endpoints
-    IBM_GATEWAY_URL = "https://api.euipo.europa.eu/trademark-search"
-    IBM_TOKEN_URL = "https://euipo.europa.eu/cas-server-webapp/oidc/accessToken"
+    # IBM Gateway endpoints (EUIPO Official API)
+    IBM_GATEWAY_URL = "https://api.euipo.europa.eu/trademark-search/trademarks"
+    IBM_TOKEN_URL = "https://auth.euipo.europa.eu/oidc/accessToken"
 
     def __init__(
         self,
@@ -227,7 +227,7 @@ class EUIPOTrademarksFetcher(BaseFetcher):
         # Authenticate
         self._ensure_ibm_token()
 
-        page_index = 1  # IBM Gateway uses 1-based pagination
+        page_number = 0  # EUIPO Official API uses 0-based pagination
         while len(records) < max_records:
             headers = {
                 "Authorization": f"Bearer {self._access_token}",
@@ -238,8 +238,8 @@ class EUIPOTrademarksFetcher(BaseFetcher):
                 "niceClasses": ",".join(nice_classes),
                 "offices": "EM",
                 "applicationDateFrom": date_from,
-                "pageSize": min(PAGE_SIZE, max_records - len(records)),
-                "pageIndex": page_index,
+                "size": min(PAGE_SIZE, max_records - len(records)),
+                "page": page_number,
             }
 
             try:
@@ -267,11 +267,11 @@ class EUIPOTrademarksFetcher(BaseFetcher):
                 if len(items) < PAGE_SIZE:
                     break
 
-                page_index += 1
+                page_number += 1
                 time.sleep(REQUEST_DELAY)
 
             except Exception as e:
-                logger.warning("IBM Gateway request failed at page %d: %s", page_index, e)
+                logger.warning("IBM Gateway request failed at page %d: %s", page_number, e)
                 self._api_errors += 1
                 break
 
