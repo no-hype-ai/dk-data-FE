@@ -569,8 +569,7 @@ CREATE TABLE IF NOT EXISTS bronze.orange_book (
     processed_to_silver BOOLEAN DEFAULT FALSE,
     processed_at TIMESTAMPTZ,
     processing_error TEXT,
-    record_hash VARCHAR(64),
-
+    record_hash VARCHAR(64)
 );
 
 CREATE UNIQUE INDEX IF NOT EXISTS idx_bronze_ob_unique
