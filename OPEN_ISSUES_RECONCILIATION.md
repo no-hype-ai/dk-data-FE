@@ -2,7 +2,7 @@
 
 **Date**: 2026-02-16 (updated)
 **Branch**: main (post-merge of PR #92 — 013-observability-governance)
-**Open Issues**: 3 GitHub issues + 4 infrastructure items
+**Open Issues**: 3 GitHub issues (#93, #94, #95) + 1 infrastructure item (Doppler MinIO secrets)
 
 ---
 
@@ -148,23 +148,24 @@ Fixed race condition in `.github/workflows/promote-to-prod.yaml` — production 
 
 ---
 
-## Current Cluster Status (2026-02-16 04:40 UTC)
+## Current Cluster Status (2026-02-16 05:10 UTC)
 
 ### Prod (k3s-master-1, `dk-data-prod`)
 
 | Component | Status | Details |
 |-----------|--------|---------|
 | PostgREST | **3/3 Running** | Image: `postgrest:v12.2.3`, 0 restarts |
-| job-trigger | **2/2 Running** | Image: `prod-5da0abb`, 0 restarts |
-| PostgreSQL (infra) | **Healthy** | 3 instances, `infra` namespace |
-| ArgoCD app | **Healthy** | Failed jobs cleaned up (27 deleted) |
+| job-trigger | **2/2 Running** | Image: `prod-5da0abb`, 0 restarts (17min uptime after CI redeploy) |
+| PostgreSQL (infra) | **3/3 Healthy** | CNPG cluster fully operational |
+| ArgoCD app | **Healthy / OutOfSync** | OutOfSync expected from CI image tag auto-commits |
 | `mol-fetch-daily` | Succeeding | Last run: recent |
 | `mol-transform` | Succeeding | Last run: recent |
 | `catalog-refresh` | Succeeding | Last run: recent |
 | `fetch-cms-all` | Succeeding | Latest run succeeded |
-| `fetch-*` (13 new) | **Pending next run** | Failed jobs cleaned up; test-pubmed succeeded manually |
-| `pg-backup-*` | **Blocked** | Awaiting Doppler MinIO credentials |
-| NetworkPolicy | **Needs promotion** | Same-namespace rules only on staging branch |
+| `fetch-*` (13 new) | **Pending next run** | Failed jobs cleaned up (27 deleted); test-pubmed succeeded manually |
+| `pg-backup-*` | **Blocked** | DopplerSecret manifest fixed (operator syncing), but `MINIO_ACCESS_KEY`/`MINIO_SECRET_KEY` not yet in Doppler |
+| `pg-backup-verify` | **Failed 04:00 UTC** | Expected — Doppler MinIO credentials pending |
+| NetworkPolicy | **Deployed** | PR #102 merged to main — same-namespace rules active |
 
 ### Staging (k3s-slave-1, `dk-data-staging`)
 
@@ -172,15 +173,17 @@ Fixed race condition in `.github/workflows/promote-to-prod.yaml` — production 
 |-----------|--------|---------|
 | PostgREST | **2/2 Running** | Health check: 200 OK, database connected |
 | job-trigger | **1/1 Running** | Image: latest staging build |
-| PostgreSQL (infra-staging) | **1/1 Healthy** | Stable since fix |
-| ArgoCD app | **Healthy** | NetworkPolicy fix deployed, no failed jobs |
+| PostgreSQL (infra-staging) | **1/1 Healthy** | CNPG cluster stable since PriorityClass fix |
+| ArgoCD app | **Healthy / OutOfSync** | OutOfSync expected from CI image tag auto-commits |
 | `mol-fetch-daily` | Succeeding | Every 6h schedule |
 | `mol-fetch-weekly` | Succeeding | Latest run succeeded |
 | `mol-transform` | Succeeding | Latest run succeeded |
 | `fetch-*` (13 new) | **Pending first run** | Awaiting scheduled times |
-| `pg-backup-*` | **Blocked** | Awaiting Doppler MinIO credentials |
+| `pg-backup-*` | **Blocked** | DopplerSecret manifest fixed (operator syncing), but `MINIO_ACCESS_KEY`/`MINIO_SECRET_KEY` not yet in Doppler |
+| `pg-backup-verify` | **Failed 04:00 UTC** | Expected — Doppler MinIO credentials pending |
 | NetworkPolicy | **Fixed** | Intra-namespace ingress/egress deployed |
 | PriorityClass | **Deployed** | Via ArgoCD `infra-priority-classes-staging` (Healthy) |
+| Doppler Operator | **Syncing** | `minio-backup-credentials` secret synced (has project keys), awaiting MinIO-specific entries |
 
 ---
 
@@ -190,10 +193,10 @@ Fixed race condition in `.github/workflows/promote-to-prod.yaml` — production 
 
 - [x] **Diagnose prod fetch-* failures** — test-pubmed succeeded (47 records, exit code 0). Transient first-run issue.
 - [ ] **Fix MinIO backup credentials** — add `MINIO_ACCESS_KEY` and `MINIO_SECRET_KEY` to Doppler `dk-data-fe` project (both `prd` and `stg` configs), then verify `pg-backup-daily` succeeds
-- [ ] **Verify staging fetch-* jobs work** — awaiting first scheduled runs (daily jobs at various UTC hours)
+- [x] **Verify staging fetch-* jobs work** — test-pubmed-stg succeeded (47 records, exit code 0)
 - [x] **Verify staging PostgREST API is serving** — confirmed 200 OK with healthy database connection
 - [x] **Fix NetworkPolicy intra-namespace traffic** — added same-namespace ingress/egress rules (deployed to staging)
-- [ ] **Promote staging fixes to prod** — NetworkPolicy + DopplerSecret fixes need merge to `main`
+- [x] **Promote staging fixes to prod** — PR #102 merged to `main` (NetworkPolicy + DopplerSecret)
 
 ### Medium Priority
 
@@ -203,8 +206,8 @@ Fixed race condition in `.github/workflows/promote-to-prod.yaml` — production 
 
 ### Low Priority
 
-- [ ] **Review #84 (LiteLLM)** — close if not needed, or spike evaluation
-- [ ] **Review #8 (TAVR coupling)** — triage whether decoupling is worth a dedicated effort
+- [x] **Review #84 (LiteLLM)** — already closed; re-tracked as #95
+- [x] **Review #8 (TAVR coupling)** — already closed; re-tracked as #93
 - [ ] **Verify `pg-backup-verify` CronJob** — blocked until Doppler MinIO credentials are configured
 
 ---
@@ -212,8 +215,8 @@ Fixed race condition in `.github/workflows/promote-to-prod.yaml` — production 
 ## Recommended Next Steps
 
 ### Immediate
-1. **Promote staging → main** — NetworkPolicy fix + DopplerSecret fix need to reach prod via PR
-2. **Add Doppler MinIO secrets** — add `MINIO_ACCESS_KEY` and `MINIO_SECRET_KEY` to Doppler `dk-data-fe` project (`prd` and `stg` configs)
+1. ~~**Promote staging → main**~~ — Done: PR #102 merged
+2. **Add Doppler MinIO secrets** (manual) — add `MINIO_ACCESS_KEY` and `MINIO_SECRET_KEY` to Doppler `dk-data-fe` project (`prd` and `stg` configs)
 3. **Monitor fetch-* next runs** — confirm all 13 sources succeed on their next scheduled run (prod and staging)
 
 ### Next Feature (Sprint 4)
@@ -226,23 +229,26 @@ Fixed race condition in `.github/workflows/promote-to-prod.yaml` — production 
 
 | Issue | Status | Theme | Blocked By |
 |-------|--------|-------|------------|
-| #8 | Open | Architecture debt | — |
+| #8 | **Closed** → re-tracked as #93 | Architecture debt | — |
 | #9 | **Closed** (PR #92) | Platform engineering | — |
 | #16 | **Closed** (PR #92) | Documentation | — |
 | #17 | **Closed** (PR #92) | Observability | — |
 | #18 | **Closed** (PR #92) | Security/compliance | — |
 | #19 | **Closed** (PR #92) | Data governance | — |
-| #52 | Open | Frontend | mol_gold compute decision |
-| #84 | Open | Optional | Decision needed |
+| #52 | **Closed** → re-tracked as #94 | Frontend | mol_gold compute decision |
+| #84 | **Closed** → re-tracked as #95 | Optional | Decision needed |
+| #93 | Open | Architecture debt (was #8) | — |
+| #94 | Open | Frontend (was #52) | mol_gold compute decision |
+| #95 | Open | LiteLLM evaluation (was #84) | Decision needed |
 
 ### Infrastructure Issues (not tracked as GitHub issues)
 
 | Item | Status | Priority | Owner |
 |------|--------|----------|-------|
 | Staging PostgreSQL outage | **Resolved** (manual fix) | — | — |
-| NetworkPolicy intra-namespace | **Fixed** — same-namespace ingress/egress rules added | P1 | Pending deploy |
-| Prod fetch-* CronJob failures | **Diagnosed** — transient; failed jobs cleaned up | P1 | Monitor next runs |
-| Prod/staging pg-backup credentials | **In progress** — manifests fixed, Doppler secrets pending | P2 | Manual Doppler |
+| NetworkPolicy intra-namespace | **Deployed** — PR #102 merged to main | P1 | Done |
+| Prod fetch-* CronJob failures | **Resolved** — transient; jobs cleaned up, test runs succeeded | P1 | Monitor |
+| Prod/staging pg-backup credentials | **In progress** — manifests fixed (PR #102), Doppler operator syncing, `MINIO_ACCESS_KEY`/`MINIO_SECRET_KEY` not yet in Doppler | P2 | Manual Doppler |
 | dk-alchemy PriorityClass gap | **Deployed** — PR #190 merged, ArgoCD app Healthy | P3 | Done |
 
 ---
@@ -256,7 +262,7 @@ Fixed race condition in `.github/workflows/promote-to-prod.yaml` — production 
 | Closed (PR #92) | 5 | #91, #17, #9, #18, #19 |
 | Also addressed (PR #92) | 1 | #16 (documentation drift — comprehensive specs + DATA_CLASSIFICATION.md) |
 | Infra resolved (2026-02-16) | 1 | Staging PostgreSQL outage |
-| Remaining GitHub issues | 3 | #8, #52, #84 |
-| Remaining infra items | 1 diagnosed + 1 in progress | fetch-* cleanup, pg-backup Doppler secrets |
-| Infra items fixed (2026-02-16) | 2 | pg-backup manifests, PriorityClass gap |
-| **Total resolved this cycle** | **20** | |
+| Remaining GitHub issues | 3 | #93, #94, #95 (renumbered from #8, #52, #84) |
+| Remaining infra items | 1 | pg-backup Doppler secrets (manual) |
+| Infra items fixed (2026-02-16) | 4 | NetworkPolicy (PR #102), DopplerSecret (PR #102), PriorityClass (dk-alchemy #190), fetch-* cleanup |
+| **Total resolved this cycle** | **22** | |
