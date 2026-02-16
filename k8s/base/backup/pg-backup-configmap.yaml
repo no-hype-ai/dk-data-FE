@@ -15,6 +15,10 @@ data:
     echo "Namespace: ${NAMESPACE}"
     echo "Timestamp: $(date -u +%Y-%m-%dT%H:%M:%SZ)"
 
+    echo "--- Installing MinIO client ---"
+    wget -q https://dl.min.io/client/mc/release/linux-amd64/mc -O /usr/local/bin/mc
+    chmod +x /usr/local/bin/mc
+
     # Validate required environment variables
     for var in POSTGRES_HOST POSTGRES_PORT POSTGRES_USER POSTGRES_PASSWORD POSTGRES_DB \
                MINIO_ENDPOINT MINIO_ACCESS_KEY MINIO_SECRET_KEY MINIO_BUCKET BACKUP_TYPE NAMESPACE; do
@@ -104,6 +108,10 @@ data:
 
     echo "=== Backup Verification Script ==="
     echo "Namespace: ${NAMESPACE}"
+
+    echo "--- Installing MinIO client ---"
+    wget -q https://dl.min.io/client/mc/release/linux-amd64/mc -O /usr/local/bin/mc
+    chmod +x /usr/local/bin/mc
 
     # Configure MinIO client
     mc alias set backup "http://${MINIO_ENDPOINT}" "${MINIO_ACCESS_KEY}" "${MINIO_SECRET_KEY}" --api S3v4
