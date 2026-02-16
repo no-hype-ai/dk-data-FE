@@ -196,11 +196,6 @@ jobs:
             coverage.xml
             htmlcov/
 
-      - name: Coverage PR comment
-        if: github.event_name == 'pull_request'
-        uses: MishaKav/pytest-coverage-comment@main
-        with:
-          pytest-xml-coverage-path: coverage.xml
 
   sqlmesh-validate:
     name: Validate SQLMesh Models
@@ -317,7 +312,7 @@ jobs:
           POSTGRES_DB: dk_data
         run: |
           set -o pipefail
-          sqlmesh -p src/dk_data/sqlmesh plan --no-prompts --no-auto-categorization 2>&1 | tee /tmp/sqlmesh-plan.log
+          sqlmesh -p src/dk_data/sqlmesh plan --no-prompts 2>&1 | tee /tmp/sqlmesh-plan.log
           echo "SQLMesh model validation passed"
 
   validate-manifests:
