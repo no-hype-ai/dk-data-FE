@@ -29,6 +29,7 @@ spec:
       - CreateNamespace=false
       - PrunePropagationPolicy=foreground
       - PruneLast=true
+      - RespectIgnoreDifferences=true
     retry:
       limit: 5
       backoff:
@@ -41,3 +42,12 @@ spec:
       kind: Deployment
       jsonPointers:
         - /spec/replicas
+    # Doppler operator adds defaults (host, processors, verifyTLS) and
+    # strips tokenSecret.key, causing perpetual OutOfSync
+    - group: secrets.doppler.com
+      kind: DopplerSecret
+      jqPathExpressions:
+        - .spec.host
+        - .spec.processors
+        - .spec.verifyTLS
+        - .spec.tokenSecret.key
