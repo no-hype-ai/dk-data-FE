@@ -157,6 +157,53 @@ patent_info AS (
     FROM silver.patents
     WHERE molecule_id IS NOT NULL
     GROUP BY molecule_id
+),
+
+-- Trademark info (IP trademark section)
+-- Links trademarks to molecules via molecule_aliases (brand/trade/product names)
+-- Rationale: Trademarks are registered as brand names, not generic names.
+-- silver.molecule_aliases already aggregates brand names from DrugBank, FDA labels,
+-- Orange Book trade names, etc. — these are exactly what mark_name matches against.
+trademark_info AS (
+    SELECT
+        ma.molecule_id,
+        COUNT(DISTINCT t.trademark_identifier || '|' || t.source) AS trademark_count,
+        COUNT(DISTINCT t.trademark_identifier || '|' || t.source) FILTER (
+            WHERE t.status IN ('Registered', 'REGISTERED')
+        ) AS active_trademark_count,
+        COUNT(DISTINCT t.trademark_identifier || '|' || t.source) FILTER (
+            WHERE t.source = 'uspto_trademarks'
+        ) AS us_trademark_count,
+        COUNT(DISTINCT t.trademark_identifier || '|' || t.source) FILTER (
+            WHERE t.source = 'euipo_trademarks'
+        ) AS eu_trademark_count,
+        (
+            SELECT t2.status
+            FROM silver.trademarks t2
+            JOIN silver.molecule_aliases ma2
+                ON LOWER(t2.mark_name) = LOWER(ma2.alias_name)
+            WHERE ma2.molecule_id = ma.molecule_id
+              AND t2.source = 'uspto_trademarks'
+              AND ma2.alias_type IN ('brand', 'trade', 'product')
+            ORDER BY t2.filing_date DESC NULLS LAST
+            LIMIT 1
+        ) AS latest_us_trademark_status,
+        (
+            SELECT t3.status
+            FROM silver.trademarks t3
+            JOIN silver.molecule_aliases ma3
+                ON LOWER(t3.mark_name) = LOWER(ma3.alias_name)
+            WHERE ma3.molecule_id = ma.molecule_id
+              AND t3.source = 'euipo_trademarks'
+              AND ma3.alias_type IN ('brand', 'trade', 'product')
+            ORDER BY t3.filing_date DESC NULLS LAST
+            LIMIT 1
+        ) AS latest_eu_trademark_status
+    FROM silver.molecule_aliases ma
+    JOIN silver.trademarks t
+        ON LOWER(t.mark_name) = LOWER(ma.alias_name)
+    WHERE ma.alias_type IN ('brand', 'trade', 'product')
+    GROUP BY ma.molecule_id
 )
 
 SELECT
@@ -215,6 +262,14 @@ SELECT
     COALESCE(pat.patent_count, 0) AS patent_count,
     pat.earliest_patent_expiry,
 
+    -- IP Trademark section
+    COALESCE(tm.trademark_count, 0) AS trademark_count,
+    COALESCE(tm.active_trademark_count, 0) AS active_trademark_count,
+    COALESCE(tm.us_trademark_count, 0) AS us_trademark_count,
+    COALESCE(tm.eu_trademark_count, 0) AS eu_trademark_count,
+    tm.latest_us_trademark_status,
+    tm.latest_eu_trademark_status,
+
     -- Lifecycle stage (computed)
     CASE
         WHEN mb.development_status = 'approved' THEN 'Approved'
@@ -240,4 +295,5 @@ LEFT JOIN top_adverse_events tae ON mb.molecule_id = tae.molecule_id
 LEFT JOIN label_info li ON mb.molecule_id = li.molecule_id
 LEFT JOIN target_counts tgt ON mb.molecule_id = tgt.molecule_id
 LEFT JOIN publication_counts pub ON mb.molecule_id = pub.molecule_id
-LEFT JOIN patent_info pat ON mb.molecule_id = pat.molecule_id;
+LEFT JOIN patent_info pat ON mb.molecule_id = pat.molecule_id
+LEFT JOIN trademark_info tm ON mb.molecule_id = tm.molecule_id;

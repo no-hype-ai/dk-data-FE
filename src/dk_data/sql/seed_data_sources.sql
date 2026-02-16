@@ -105,7 +105,14 @@ VALUES
      'RCSB Protein Data Bank for 3D protein structure data', 'weekly', TRUE),
 
     ('orcid', 'api', 'https://pub.orcid.org/v3.0',
-     'ORCID researcher profiles for key opinion leader identification', 'weekly', TRUE)
+     'ORCID researcher profiles for key opinion leader identification', 'weekly', TRUE),
+
+    -- Trademark data sources (014-uspto-euipo-model-datasource)
+    ('uspto_trademarks', 'api', 'https://tsdrapi.uspto.gov/',
+     'USPTO TSDR trademark case status data for pharmaceutical trademarks (Nice Class 5)', 'weekly', TRUE),
+
+    ('euipo_trademarks', 'api', 'https://www.tmdn.org/tmview/api/search',
+     'EUIPO trademark data via TMview federated search for pharmaceutical trademarks (Nice Class 5)', 'weekly', TRUE)
 
 ON CONFLICT (source_name) DO UPDATE SET
     source_url = EXCLUDED.source_url,

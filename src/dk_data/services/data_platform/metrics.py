@@ -443,6 +443,12 @@ def refresh_metrics_from_database_sync():
             'fda_labels_raw': ('bronze.openfda_labels', False),
             'who_inn': ('bronze.who_inn_data', True),
             'drugbank_patents': ('bronze.drugbank_patents', True),
+            # IP data sources (014-uspto-euipo-model-datasource)
+            'uspto_patents': ('bronze.uspto_patents', True),
+            'uspto_ci': ('bronze.uspto_ci', True),
+            'epo_patents': ('bronze.epo_patents', True),
+            'uspto_trademarks': ('bronze.uspto_trademarks', True),
+            'euipo_trademarks': ('bronze.euipo_trademarks', True),
         }
 
         current_time = time.time()
@@ -530,6 +536,12 @@ def refresh_metrics_from_database_sync():
             'openfda_faers': 'raw.openfda_faers',
             'openfda_labels': 'raw.openfda_labels',
             'chembl': 'raw.chembl',
+            # IP data sources (014-uspto-euipo-model-datasource)
+            'uspto_patents': 'raw.uspto_patents',
+            'uspto_ci': 'raw.uspto_ci',
+            'epo_patents': 'raw.epo_patents',
+            'uspto_trademarks': 'raw.uspto_trademarks',
+            'euipo_trademarks': 'raw.euipo_trademarks',
         }
         for source, table in raw_sources.items():
             try:
@@ -584,17 +596,19 @@ def refresh_metrics_from_database_sync():
         layer_tables = {
             'raw': [
                 'chembl', 'clinicaltrials', 'drugbank', 'openalex',
-                'openfda_faers', 'openfda_labels', 'pdb', 'pubchem', 'sider', 'uniprot'
+                'openfda_faers', 'openfda_labels', 'pdb', 'pubchem', 'sider', 'uniprot',
+                'uspto_patents', 'uspto_ci', 'epo_patents', 'uspto_trademarks', 'euipo_trademarks'
             ],
             'bronze': [
                 'chembl', 'clinicaltrials', 'drugbank', 'openalex',
-                'openfda_faers', 'openfda_labels', 'pdb', 'pubchem', 'sider', 'uniprot'
+                'openfda_faers', 'openfda_labels', 'pdb', 'pubchem', 'sider', 'uniprot',
+                'uspto_patents', 'uspto_ci', 'epo_patents', 'uspto_trademarks', 'euipo_trademarks'
             ],
             'silver': [
                 'adverse_events', 'bioactivity', 'clinical_trials', 'drug_labels',
                 'identifier_mappings', 'molecule_aliases', 'molecule_publications',
                 'molecule_targets', 'molecules', 'patents', 'publications',
-                'resolution_queue', 'targets'
+                'resolution_queue', 'targets', 'trademarks'
             ],
             'gold': [
                 'company_pipeline', 'lifecycle_evidence', 'lifecycle_stages',

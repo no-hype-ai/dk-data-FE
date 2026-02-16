@@ -69,8 +69,13 @@ src/dk_data/
 │   ├── fetch_data.py                  # MODIFY — register new fetchers
 │   └── utils/
 │       └── validators.py              # MODIFY — add Pydantic models
+├── services/
+│   └── data_platform/
+│       └── metrics.py                 # MODIFY — add IP sources to local_sources, layer_tables, raw_sources dicts
 ├── observability/
-│   └── metrics.py                     # MODIFY — add 5 IP sources
+│   └── metrics.py                     # MODIFY — add IP_DATA_SOURCES constant only (Gauges already in data_platform/metrics.py)
+├── ingestion/
+│   └── transform_molecules.py         # MODIFY — add IP models to LAYER_MODELS dict (T035)
 ├── sql/
 │   ├── seed_data_sources.sql          # MODIFY — add trademark entries
 │   └── migrations/
@@ -118,12 +123,13 @@ tests/
 | SQLMesh Bronze | 4 (uspto_ci, epo_patents, uspto_trademarks, euipo_trademarks) | 1 (bronze.uspto_patents fix) |
 | SQLMesh Silver | 1 (trademarks.sql) | 1 (patents.sql UNION) |
 | SQLMesh Gold | 0 | 1 (molecule_profile.sql IP section) |
-| Metrics | 0 | 1 (metrics.py) |
+| Metrics | 0 | 2 (services/data_platform/metrics.py + observability/metrics.py) |
 | Seed Data | 0 | 1 (seed_data_sources.sql) |
 | K8s CronJobs | 2 (trademarks CronJobs) | 1 (kustomization.yaml) |
-| Fetcher Registry | 0 | 1 (fetchers/__init__.py) |
+| Fetcher Registry | 0 | 2 (fetchers/__init__.py + sources/__init__.py) |
 | Tests | 4 (2 fetcher + 2 contract) | 0 |
-| **Total** | **18** | **9** |
+| Transform | 0 | 1 (transform_molecules.py — add IP models to LAYER_MODELS) |
+| **Total** | **18** | **12** |
 
 ## Complexity Tracking
 

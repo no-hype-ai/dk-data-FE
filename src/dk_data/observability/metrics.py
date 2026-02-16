@@ -26,6 +26,18 @@ from prometheus_client import (
 )
 
 # =============================================================================
+# IP Data Sources (014-uspto-euipo-model-datasource)
+# =============================================================================
+
+IP_DATA_SOURCES = [
+    'uspto_patents',
+    'uspto_ci',
+    'epo_patents',
+    'uspto_trademarks',
+    'euipo_trademarks',
+]
+
+# =============================================================================
 # HTTP Metrics (supplementary to OpenTelemetry auto-instrumentation)
 # =============================================================================
 

@@ -1,9 +1,9 @@
--- SQLMesh Model: Bronze USPTO Patents
--- Transforms raw USPTO PatentsView flat columns into typed bronze layer
--- Part of: 014-uspto-euipo-model-datasource (fixes broken JSONB extraction from 012)
+-- SQLMesh Model: Bronze USPTO CI Patents
+-- Transforms raw USPTO PatentsView CI (query-scoped) patents into typed bronze layer
+-- Part of: 014-uspto-euipo-model-datasource
 
 MODEL (
-    name bronze.uspto_patents,
+    name bronze.uspto_ci,
     kind INCREMENTAL_BY_TIME_RANGE (
         time_column ingested_at,
         lookback 7
@@ -19,24 +19,21 @@ MODEL (
 SELECT
     gen_random_uuid() AS id,
 
-    -- Patent identification
-    r.patent_number,
+    -- Patent identification (patent_id → patent_number for schema consistency)
+    r.patent_id AS patent_number,
     r.title AS patent_title,
     r.abstract AS patent_abstract,
     r.grant_date AS patent_date,
 
     -- Classification
-    NULL::TEXT AS patent_type,
-    NULL::TEXT AS patent_kind,
     CASE
         WHEN r.cpc_codes IS NOT NULL
         THEN to_jsonb(r.cpc_codes)
         ELSE NULL
     END AS cpc_codes,
 
-    -- Assignee info (PatentsView API stores as JSONB array)
+    -- Assignee info (PatentsView API field name)
     r.assignees->0->>'assignee_organization' AS assignee_organization,
-    r.assignees->0->>'assignee_type' AS assignee_type,
 
     -- Inventors as JSONB
     r.inventors,
@@ -55,6 +52,6 @@ SELECT
     FALSE AS processed_to_silver,
     r._loaded_at AS ingested_at
 
-FROM raw.uspto_patents r
-WHERE r.patent_number IS NOT NULL
+FROM raw.uspto_ci r
+WHERE r.patent_id IS NOT NULL
   AND @incremental_time_filter(_loaded_at)
