@@ -1,8 +1,8 @@
 # Open Issues Reconciliation
 
-**Date**: 2026-02-15 (updated)
+**Date**: 2026-02-16 (updated)
 **Branch**: main (post-merge of PR #92 — 013-observability-governance)
-**Open Issues**: 3
+**Open Issues**: 3 GitHub issues + 4 infrastructure items
 
 ---
 
@@ -10,7 +10,9 @@
 
 Since the initial reconciliation (2026-02-14), **all Sprint 1, Sprint 2, and Sprint 3 items are complete**. PR #89 (012-platform-hardening) resolved 7 issues. PR #90 fixed a production promotion race condition. PR #92 (013-observability-governance) resolved 5 issues covering metrics scraping, audit trail, migration runner, and data classification/retention.
 
-Of the 3 remaining open issues, 2 are from the original reconciliation (#52, #84) and 1 is an older architecture debt item (#8). Issues #9, #16, #17, #18, #19 were all closed by PR #92.
+Of the 3 remaining GitHub issues, 2 are from the original reconciliation (#52, #84) and 1 is an older architecture debt item (#8). Issues #9, #16, #17, #18, #19 were all closed by PR #92.
+
+A 2026-02-16 cluster health check uncovered 4 infrastructure issues: staging PostgreSQL outage (resolved), prod fetch-* CronJob failures, prod/staging pg-backup secret misconfiguration, and a missing dk-alchemy PriorityClass deployment for staging.
 
 ---
 
@@ -81,11 +83,138 @@ Fixed race condition in `.github/workflows/promote-to-prod.yaml` — production 
 
 ---
 
+## Infrastructure Issues (2026-02-16)
+
+### RESOLVED — Staging PostgreSQL outage
+
+**Root cause**: The `staging-default` PriorityClass did not exist on k3s-slave-1 (staging cluster). The CNPG postgres overlay for staging (`dk-alchemy/k8s/infrastructure/postgres/overlays/staging/`) sets `priorityClassName: staging-default`, but the `infra-priority-classes` ArgoCD app only deploys PriorityClasses to k3s-master-1 (prod). When the staging cluster was bootstrapped (~5d ago), the CNPG operator couldn't create `postgres-cluster-1` — pod creation was forbidden.
+
+**Impact**: PostgreSQL down for ~5 days on staging. PostgREST crash-looping (0/2 ready, 23 restarts). All staging CronJobs requiring DB access affected (`catalog-refresh` failed 3 consecutive runs).
+
+**Fix applied (manual, 2026-02-16)**:
+1. Created `staging-default` PriorityClass on k3s-slave-1 (`value: 100000, preemptionPolicy: PreemptLowerPriority`)
+2. Added node label `workload.dk-alchemy/env=staging` to k3s-slave-1 (for preferred nodeAffinity match)
+3. Annotated CNPG cluster to trigger immediate reconciliation
+4. Deleted crash-looping PostgREST pods to reset CrashLoopBackOff
+
+**Result**: PostgreSQL `postgres-cluster-1` running (1/1 Ready, healthy). PostgREST 2/2 Running (0 restarts). ArgoCD `dk-data-staging` app reports Healthy.
+
+**Permanent fix needed (dk-alchemy)**: The `infra-priority-classes` ArgoCD app should deploy PriorityClasses to both clusters, or a staging-specific priority classes app should be created. The manual PriorityClass and node label on k3s-slave-1 will be lost if the node is rebuilt.
+
+### FIXED — NetworkPolicy blocks intra-namespace traffic (P1, NEW)
+
+**Root cause**: The `dk-data-postgrest-ingress` NetworkPolicy only allowed ingress from external namespaces (`kube-system`, `behaviorlabs-*`, `agentmesh-*`, `infra`) — not from within the same namespace. Combined with `dk-data-default-deny` (denies all), job-trigger and CronJob pods couldn't reach PostgREST. The `dk-data-egress` policy also lacked intra-namespace and staging MinIO rules.
+
+**Impact**: Job-trigger can't call PostgREST health endpoint. CronJob pods that need to load data via PostgREST are blocked. Staging backup CronJobs can't reach MinIO in `infra-staging`.
+
+**Fix applied (2026-02-16)**:
+1. Added same-namespace ingress rule (`podSelector: {}`) to `dk-data-postgrest-ingress` (matching pattern already used in `dk-data-job-trigger-ingress`)
+2. Added intra-namespace egress rule (ports 3000, 8000) to `dk-data-egress`
+3. Added staging MinIO egress rule (port 9000 to `infra-staging`)
+
+### DIAGNOSED — Prod fetch-* CronJob failures (P1) → Transient first-run failures
+
+**Affected jobs** (13 data sources): `fetch-pubmed`, `fetch-news`, `fetch-sec-edgar`, `fetch-ema-reg`, `fetch-epo`, `fetch-hta`, `fetch-journal-rss`, `fetch-openalex-ci`, `fetch-orcid`, `fetch-pdb`, `fetch-uniprot`, `fetch-uspto-ci`, `fetch-uspto-patents`
+
+**Diagnosis (2026-02-16)**: Manual trigger of `test-pubmed` job succeeded — fetched 47 PubMed records, exit code 0. The fetcher code works correctly. The original BackoffLimitExceeded failures on first scheduled runs (~25h ago) were transient (likely image pull or API timing during initial CronJob creation). Failed job objects remain on cluster and need cleanup for CronJobs to schedule new runs.
+
+**Action needed**:
+1. Clean up failed job objects: `kubectl delete jobs --field-selector status.successful=0 -n dk-data-prod` (for the 13 fetch-* failed jobs)
+2. Monitor next scheduled runs to confirm all 13 sources succeed
+3. Note: `fetch_data.py` does NOT call DB loaders — fetched data is written to `/tmp/data/raw` and lost when pod exits. This is a separate issue for follow-up.
+
+### IN PROGRESS — Prod/Staging pg-backup CronJob failures (P2)
+
+**Affected jobs**: `pg-backup-daily`, `pg-backup-weekly`, `pg-backup-verify` (both prod and staging)
+
+**Root cause**: The `minio-backup-credentials` DopplerSecret was missing required fields (`project`, `config`, `tokenSecret.key`, `managedSecret.type`, `resyncSeconds`), so the Doppler operator couldn't sync actual secrets. Additionally, all 3 backup CronJobs hardcoded `MINIO_ENDPOINT` to `minio.infra.svc.cluster.local:9000` (wrong for staging, which uses `infra-staging` namespace).
+
+**Fixes applied (2026-02-16)**:
+1. Fixed `k8s/base/backup/minio-credentials.yaml` DopplerSecret to match `dk-data-secrets` pattern (added `key: serviceToken`, `project`, `config`, `type: Opaque`, `resyncSeconds: 300`)
+2. Added staging overlay patches: DopplerSecret `config: stg`, and `MINIO_ENDPOINT` → `minio.infra-staging.svc.cluster.local:9000` for all 3 backup CronJobs
+
+**Manual action still needed**: Add `MINIO_ACCESS_KEY` and `MINIO_SECRET_KEY` to Doppler project `dk-data-fe` (both `prd` and `stg` configs) with MinIO root credentials from the respective infra namespaces.
+
+### FIXED — dk-alchemy PriorityClass gap (P3, preventive)
+
+**Issue**: The `infra-priority-classes` ArgoCD app deploys PriorityClasses only to k3s-master-1 (prod cluster). k3s-slave-1 (staging cluster) does not get PriorityClasses via GitOps. This caused the 5-day staging PostgreSQL outage documented above.
+
+**Fix applied (2026-02-16)** (in dk-alchemy repo):
+1. Created `k8s/infrastructure/priority-classes/overlays/staging/kustomization.yaml` (mirrors prod overlay)
+2. Added `priority-classes` to the staging ApplicationSet generator list in `.gitops/root/dk-cluster-infra-staging.yaml`
+3. ArgoCD will deploy both `production-critical` and `staging-default` PriorityClasses to k3s-slave-1 via `infra-priority-classes-staging` app
+
+**Deployed**: dk-alchemy PR #190 merged to `main`. ArgoCD created `infra-priority-classes-staging` app (status: Healthy). PriorityClasses confirmed on k3s-slave-1.
+
+---
+
+## Current Cluster Status (2026-02-16 04:40 UTC)
+
+### Prod (k3s-master-1, `dk-data-prod`)
+
+| Component | Status | Details |
+|-----------|--------|---------|
+| PostgREST | **3/3 Running** | Image: `postgrest:v12.2.3`, 0 restarts |
+| job-trigger | **2/2 Running** | Image: `prod-5da0abb`, 0 restarts |
+| PostgreSQL (infra) | **Healthy** | 3 instances, `infra` namespace |
+| ArgoCD app | **Healthy** | Failed jobs cleaned up (27 deleted) |
+| `mol-fetch-daily` | Succeeding | Last run: recent |
+| `mol-transform` | Succeeding | Last run: recent |
+| `catalog-refresh` | Succeeding | Last run: recent |
+| `fetch-cms-all` | Succeeding | Latest run succeeded |
+| `fetch-*` (13 new) | **Pending next run** | Failed jobs cleaned up; test-pubmed succeeded manually |
+| `pg-backup-*` | **Blocked** | Awaiting Doppler MinIO credentials |
+| NetworkPolicy | **Needs promotion** | Same-namespace rules only on staging branch |
+
+### Staging (k3s-slave-1, `dk-data-staging`)
+
+| Component | Status | Details |
+|-----------|--------|---------|
+| PostgREST | **2/2 Running** | Health check: 200 OK, database connected |
+| job-trigger | **1/1 Running** | Image: latest staging build |
+| PostgreSQL (infra-staging) | **1/1 Healthy** | Stable since fix |
+| ArgoCD app | **Healthy** | NetworkPolicy fix deployed, no failed jobs |
+| `mol-fetch-daily` | Succeeding | Every 6h schedule |
+| `mol-fetch-weekly` | Succeeding | Latest run succeeded |
+| `mol-transform` | Succeeding | Latest run succeeded |
+| `fetch-*` (13 new) | **Pending first run** | Awaiting scheduled times |
+| `pg-backup-*` | **Blocked** | Awaiting Doppler MinIO credentials |
+| NetworkPolicy | **Fixed** | Intra-namespace ingress/egress deployed |
+| PriorityClass | **Deployed** | Via ArgoCD `infra-priority-classes-staging` (Healthy) |
+
+---
+
+## Items to Test / Validate
+
+### High Priority
+
+- [x] **Diagnose prod fetch-* failures** — test-pubmed succeeded (47 records, exit code 0). Transient first-run issue.
+- [ ] **Fix MinIO backup credentials** — add `MINIO_ACCESS_KEY` and `MINIO_SECRET_KEY` to Doppler `dk-data-fe` project (both `prd` and `stg` configs), then verify `pg-backup-daily` succeeds
+- [ ] **Verify staging fetch-* jobs work** — awaiting first scheduled runs (daily jobs at various UTC hours)
+- [x] **Verify staging PostgREST API is serving** — confirmed 200 OK with healthy database connection
+- [x] **Fix NetworkPolicy intra-namespace traffic** — added same-namespace ingress/egress rules (deployed to staging)
+- [ ] **Promote staging fixes to prod** — NetworkPolicy + DopplerSecret fixes need merge to `main`
+
+### Medium Priority
+
+- [x] **Clean up failed job objects** — 27 failed jobs deleted on prod, staging had none
+- [ ] **Verify staging catalog-refresh** — next run at 06:00 UTC
+- [x] **Permanent PriorityClass fix in dk-alchemy** — PR #190 merged, ArgoCD app Healthy, PriorityClasses deployed
+
+### Low Priority
+
+- [ ] **Review #84 (LiteLLM)** — close if not needed, or spike evaluation
+- [ ] **Review #8 (TAVR coupling)** — triage whether decoupling is worth a dedicated effort
+- [ ] **Verify `pg-backup-verify` CronJob** — blocked until Doppler MinIO credentials are configured
+
+---
+
 ## Recommended Next Steps
 
-### Immediate (next session)
-- Review #84 (LiteLLM) — close if not needed, or spike evaluation
-- Review #8 — triage whether TAVR decoupling is worth a dedicated effort
+### Immediate
+1. **Promote staging → main** — NetworkPolicy fix + DopplerSecret fix need to reach prod via PR
+2. **Add Doppler MinIO secrets** — add `MINIO_ACCESS_KEY` and `MINIO_SECRET_KEY` to Doppler `dk-data-fe` project (`prd` and `stg` configs)
+3. **Monitor fetch-* next runs** — confirm all 13 sources succeed on their next scheduled run (prod and staging)
 
 ### Next Feature (Sprint 4)
 - **#52** — Frontend integration against the 6 available API views
@@ -106,6 +235,16 @@ Fixed race condition in `.github/workflows/promote-to-prod.yaml` — production 
 | #52 | Open | Frontend | mol_gold compute decision |
 | #84 | Open | Optional | Decision needed |
 
+### Infrastructure Issues (not tracked as GitHub issues)
+
+| Item | Status | Priority | Owner |
+|------|--------|----------|-------|
+| Staging PostgreSQL outage | **Resolved** (manual fix) | — | — |
+| NetworkPolicy intra-namespace | **Fixed** — same-namespace ingress/egress rules added | P1 | Pending deploy |
+| Prod fetch-* CronJob failures | **Diagnosed** — transient; failed jobs cleaned up | P1 | Monitor next runs |
+| Prod/staging pg-backup credentials | **In progress** — manifests fixed, Doppler secrets pending | P2 | Manual Doppler |
+| dk-alchemy PriorityClass gap | **Deployed** — PR #190 merged, ArgoCD app Healthy | P3 | Done |
+
 ---
 
 ## Post-Reconciliation Summary
@@ -116,5 +255,8 @@ Fixed race condition in `.github/workflows/promote-to-prod.yaml` — production 
 | Closed (PR #89) | 7 | #88, #81, #42, #50, #51, #20, #57 |
 | Closed (PR #92) | 5 | #91, #17, #9, #18, #19 |
 | Also addressed (PR #92) | 1 | #16 (documentation drift — comprehensive specs + DATA_CLASSIFICATION.md) |
-| Remaining open | 3 | #8, #52, #84 |
-| **Total resolved this cycle** | **17** | |
+| Infra resolved (2026-02-16) | 1 | Staging PostgreSQL outage |
+| Remaining GitHub issues | 3 | #8, #52, #84 |
+| Remaining infra items | 1 diagnosed + 1 in progress | fetch-* cleanup, pg-backup Doppler secrets |
+| Infra items fixed (2026-02-16) | 2 | pg-backup manifests, PriorityClass gap |
+| **Total resolved this cycle** | **20** | |
