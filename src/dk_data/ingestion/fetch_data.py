@@ -37,8 +37,6 @@ from dk_data.ingestion.fetchers import (
     USPTOTrademarksFetcher,
     EUIPOTrademarksFetcher,
 )
-from dk_data.ingestion.sources.uspto_trademarks import load_uspto_trademarks_data
-from dk_data.ingestion.sources.euipo_trademarks import load_euipo_trademarks_data
 
 # Configure logging
 logging.basicConfig(
@@ -162,13 +160,6 @@ FETCHERS = {
     },
 }
 
-# Loader functions for sources that need post-fetch persistence
-# Maps source name -> loader function
-LOADERS = {
-    'uspto_trademarks': load_uspto_trademarks_data,
-    'euipo_trademarks': load_euipo_trademarks_data,
-}
-
 
 def list_sources():
     """Print available data sources."""
@@ -213,32 +204,6 @@ def fetch_source(source: str, year: int = None, data_dir: str = None) -> dict:
             result = fetcher.fetch_all_years()
     else:
         result = fetcher.fetch()
-
-    # Invoke loader if available (persist fetched records to database)
-    if (
-        source in LOADERS
-        and result.get('status') == 'success'
-        and result.get('records')
-    ):
-        try:
-            loader = LOADERS[source]
-            load_result = loader(
-                result['records'],
-                source_hash=result.get('hash'),
-            )
-            logger.info(
-                "Loaded %s: %d inserted, %d failed",
-                source,
-                load_result.get('records_inserted', 0),
-                load_result.get('records_failed', 0),
-            )
-            result['load_result'] = load_result
-            if load_result.get('status') == 'failed':
-                result['status'] = 'partial'
-        except Exception as e:
-            logger.error("Failed to load %s records to database: %s", source, e)
-            result['load_error'] = str(e)
-            result['status'] = 'partial'
 
     return result
 
