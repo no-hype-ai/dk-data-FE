@@ -3,13 +3,15 @@
 **Feature**: 014-uspto-euipo-model-datasource
 **Date**: 2026-02-16
 
+> **Incremental processing**: All bronze models below use `r._loaded_at AS ingested_at` and `@incremental_time_filter(_loaded_at)`, matching the efficient pattern from `bronze.drugbank`. This ensures only new/updated rows are processed each run instead of full table scans.
+
 ## bronze.uspto_patents (MODIFY — fix JSONB to flat column)
 
 **File**: `src/dk_data/sqlmesh/models/molecules/bronze/uspto_patents.sql`
 **Kind**: INCREMENTAL_BY_TIME_RANGE (time_column: ingested_at, lookback: 7)
 **Cron**: @weekly
 **Grain**: patent_number
-**Audits**: not_null(patent_number), unique(patent_number)
+**Audits**: not_null(columns := (patent_number)), unique_values(columns := (patent_number))
 
 ### Change Required
 
@@ -41,9 +43,10 @@ SELECT
            OR code LIKE 'C07D%' OR code LIKE 'C07K%'
     ) AS is_pharma_related,
     FALSE AS processed_to_silver,
-    NOW() AS ingested_at
+    r._loaded_at AS ingested_at
 FROM raw.uspto_patents r
 WHERE r.patent_number IS NOT NULL
+  AND @incremental_time_filter(_loaded_at)
 ```
 
 ### Acceptance Criteria
@@ -61,7 +64,7 @@ WHERE r.patent_number IS NOT NULL
 **Kind**: INCREMENTAL_BY_TIME_RANGE (time_column: ingested_at, lookback: 7)
 **Cron**: @weekly
 **Grain**: patent_number
-**Audits**: not_null(patent_number), unique(patent_number)
+**Audits**: not_null(columns := (patent_number)), unique_values(columns := (patent_number))
 
 ### Output Schema
 
@@ -86,9 +89,10 @@ SELECT
            OR code LIKE 'C07D%' OR code LIKE 'C07K%'
     ) AS is_pharma_related,
     FALSE AS processed_to_silver,
-    NOW() AS ingested_at
+    r._loaded_at AS ingested_at
 FROM raw.uspto_ci r
 WHERE r.patent_id IS NOT NULL
+  AND @incremental_time_filter(_loaded_at)
 ```
 
 ### Acceptance Criteria
@@ -104,7 +108,7 @@ WHERE r.patent_id IS NOT NULL
 **Kind**: INCREMENTAL_BY_TIME_RANGE (time_column: ingested_at, lookback: 7)
 **Cron**: @weekly
 **Grain**: patent_number
-**Audits**: not_null(patent_number), unique(patent_number)
+**Audits**: not_null(columns := (patent_number)), unique_values(columns := (patent_number))
 
 ### Output Schema
 
@@ -131,9 +135,10 @@ SELECT
            OR code LIKE 'C07D%' OR code LIKE 'C07K%'
     ) AS is_pharma_related,
     FALSE AS processed_to_silver,
-    NOW() AS ingested_at
+    r._loaded_at AS ingested_at
 FROM raw.epo_patents r
 WHERE r.publication_id IS NOT NULL
+  AND @incremental_time_filter(_loaded_at)
 ```
 
 ### Acceptance Criteria
@@ -150,7 +155,7 @@ WHERE r.publication_id IS NOT NULL
 **Kind**: INCREMENTAL_BY_TIME_RANGE (time_column: ingested_at, lookback: 7)
 **Cron**: @weekly
 **Grain**: serial_number
-**Audits**: not_null(serial_number), unique(serial_number)
+**Audits**: not_null(columns := (serial_number)), unique_values(columns := (serial_number))
 
 ### Output Schema
 
@@ -175,9 +180,10 @@ SELECT
     r.goods_and_services,
     5 = ANY(COALESCE(r.nice_classes, '{}')) AS is_pharma_related,
     FALSE AS processed_to_silver,
-    NOW() AS ingested_at
+    r._loaded_at AS ingested_at
 FROM raw.uspto_trademarks r
 WHERE r.serial_number IS NOT NULL
+  AND @incremental_time_filter(_loaded_at)
 ```
 
 ### Acceptance Criteria
@@ -193,7 +199,7 @@ WHERE r.serial_number IS NOT NULL
 **Kind**: INCREMENTAL_BY_TIME_RANGE (time_column: ingested_at, lookback: 7)
 **Cron**: @weekly
 **Grain**: application_number
-**Audits**: not_null(application_number), unique(application_number)
+**Audits**: not_null(columns := (application_number)), unique_values(columns := (application_number))
 
 ### Output Schema
 
@@ -219,9 +225,10 @@ SELECT
     r.goods_and_services,
     5 = ANY(COALESCE(r.nice_classes, '{}')) AS is_pharma_related,
     FALSE AS processed_to_silver,
-    NOW() AS ingested_at
+    r._loaded_at AS ingested_at
 FROM raw.euipo_trademarks r
 WHERE r.application_number IS NOT NULL
+  AND @incremental_time_filter(_loaded_at)
 ```
 
 ### Acceptance Criteria

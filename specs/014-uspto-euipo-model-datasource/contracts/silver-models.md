@@ -9,7 +9,7 @@
 **Kind**: INCREMENTAL_BY_UNIQUE_KEY (unique_key: patent_number, when_matched_update_all: TRUE)
 **Cron**: @monthly
 **Grain**: patent_number
-**Audits**: not_null(patent_number), unique_values(patent_number)
+**Audits**: not_null(columns := (patent_number)), unique_values(columns := (patent_number))
 
 ### Change Required
 
@@ -205,7 +205,7 @@ ORDER BY patent_number,
 **Kind**: INCREMENTAL_BY_UNIQUE_KEY (unique_key: (trademark_identifier, source), when_matched_update_all: TRUE)
 **Cron**: @weekly
 **Grain**: (trademark_identifier, source)
-**Audits**: not_null(trademark_identifier), not_null(source)
+**Audits**: not_null(columns := (trademark_identifier)), not_null(columns := (source))
 
 ### Output Schema
 

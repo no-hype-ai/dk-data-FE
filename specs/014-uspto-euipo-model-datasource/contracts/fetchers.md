@@ -23,6 +23,9 @@
 ### Methods
 
 ```python
+from typing import Any, Dict, List, Optional
+
+
 class USPTOTrademarksFetcher(BaseFetcher):
     SOURCE_NAME = "uspto_trademarks"
     BASE_URL = "https://tsdrapi.uspto.gov"
@@ -30,7 +33,7 @@ class USPTOTrademarksFetcher(BaseFetcher):
     def get_latest_url(self) -> str:
         """Return the TSDR API base URL."""
 
-    def fetch(self, serial_numbers: list[str] = None, **kwargs) -> dict:
+    def fetch(self, serial_numbers: Optional[List[str]] = None, **kwargs) -> Dict[str, Any]:
         """Fetch trademark data for given serial numbers.
 
         Args:
@@ -38,11 +41,11 @@ class USPTOTrademarksFetcher(BaseFetcher):
                            If None, reads from raw table for weekly refresh.
 
         Returns:
-            dict with keys: status, records, hash
+            Dict[str, Any] with keys: status, records, record_count, hash
         """
 
     @staticmethod
-    def _normalize_trademark(raw: dict) -> dict | None:
+    def _normalize_trademark(raw: dict) -> Optional[Dict[str, Any]]:
         """Normalize TSDR API response to flat record.
 
         Maps Swagger Trademark object fields to raw table columns:
@@ -57,7 +60,7 @@ class USPTOTrademarksFetcher(BaseFetcher):
         """
 
     @staticmethod
-    def _build_batch_params(serial_numbers: list[str]) -> dict:
+    def _build_batch_params(serial_numbers: List[str]) -> Dict[str, Any]:
         """Build query params for multi-case batch endpoint."""
 ```
 
@@ -95,6 +98,9 @@ class USPTOTrademarksFetcher(BaseFetcher):
 ### Methods
 
 ```python
+from typing import Any, Dict, List, Optional
+
+
 class EUIPOTrademarksFetcher(BaseFetcher):
     SOURCE_NAME = "euipo_trademarks"
 
@@ -109,10 +115,10 @@ class EUIPOTrademarksFetcher(BaseFetcher):
     def get_latest_url(self) -> str:
         """Return the active backend URL."""
 
-    def fetch(self, nice_classes: list[str] = None,
+    def fetch(self, nice_classes: Optional[List[str]] = None,
               days_back: int = 7,
               max_records: int = 10000,
-              **kwargs) -> dict:
+              **kwargs) -> Dict[str, Any]:
         """Fetch EUIPO trademark data.
 
         Args:
@@ -121,17 +127,17 @@ class EUIPOTrademarksFetcher(BaseFetcher):
             max_records: Maximum records to return (pagination limit).
 
         Returns:
-            dict with keys: status, records, hash
+            Dict[str, Any] with keys: status, records, record_count, hash
         """
 
-    def _fetch_tmview(self, nice_classes, date_from, max_records) -> list[dict]:
+    def _fetch_tmview(self, nice_classes, date_from, max_records) -> List[Dict[str, Any]]:
         """Fetch from TMview API.
 
         POST https://www.tmdn.org/tmview/api/search
         Body: {pageSize, pageIndex, criteria: {niceClasses, tradeMarkOffices, ...}}
         """
 
-    def _fetch_ibm_gateway(self, nice_classes, date_from, max_records) -> list[dict]:
+    def _fetch_ibm_gateway(self, nice_classes, date_from, max_records) -> List[Dict[str, Any]]:
         """Fetch from IBM API Gateway.
 
         Uses OAuth2 token from EUIPO CAS server.
@@ -139,7 +145,7 @@ class EUIPOTrademarksFetcher(BaseFetcher):
         """
 
     @staticmethod
-    def _normalize_trademark(raw: dict) -> dict | None:
+    def _normalize_trademark(raw: dict) -> Optional[Dict[str, Any]]:
         """Normalize TMview/IBM response to flat record.
 
         Maps response fields to raw table columns:
@@ -182,15 +188,25 @@ class EUIPOTrademarksFetcher(BaseFetcher):
 - Batch commits every `batch_size` records
 
 ```python
+import json
+import logging
+from typing import Any, Dict, List, Optional
+
+from pydantic import ValidationError
+
 from ..utils.database import get_connection
 from ..utils.validators import USPTOTrademarkRecord
 
+logger = logging.getLogger(__name__)
+
+BATCH_SIZE = 500
+
 def load_uspto_trademarks_data(
-    records: list[dict],
-    source_hash: str | None = None,
-    source_file: str | None = None,
-    batch_size: int = 500,
-) -> dict[str, Any]:
+    records: List[Dict[str, Any]],
+    source_hash: Optional[str] = None,
+    source_file: Optional[str] = None,
+    batch_size: int = BATCH_SIZE,
+) -> Dict[str, Any]:
     """Upsert USPTO trademark records into raw.uspto_trademarks.
 
     Args:
@@ -222,15 +238,25 @@ After upserting each record, compare `status` with the last known status in `raw
 **IMPORTANT**: Same pattern as USPTO loader above — follows `sources/epo_ops.py` conventions.
 
 ```python
+import json
+import logging
+from typing import Any, Dict, List, Optional
+
+from pydantic import ValidationError
+
 from ..utils.database import get_connection
 from ..utils.validators import EUIPOTrademarkRecord
 
+logger = logging.getLogger(__name__)
+
+BATCH_SIZE = 500
+
 def load_euipo_trademarks_data(
-    records: list[dict],
-    source_hash: str | None = None,
-    source_file: str | None = None,
-    batch_size: int = 500,
-) -> dict[str, Any]:
+    records: List[Dict[str, Any]],
+    source_hash: Optional[str] = None,
+    source_file: Optional[str] = None,
+    batch_size: int = BATCH_SIZE,
+) -> Dict[str, Any]:
     """Upsert EUIPO trademark records into raw.euipo_trademarks.
 
     Args:
