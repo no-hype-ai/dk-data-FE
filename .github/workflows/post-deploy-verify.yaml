@@ -1,0 +1,164 @@
+name: Post-Deploy Verification
+
+on:
+  # Auto-trigger after build-push completes on staging
+  workflow_run:
+    workflows: ["Build and Push Docker Image"]
+    types:
+      - completed
+    branches:
+      - staging
+
+  # Manual trigger for ad-hoc verification
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: "Target environment"
+        required: true
+        default: "staging"
+        type: choice
+        options:
+          - staging
+          - prod
+
+env:
+  STAGING_URL: "https://data.staging.behaviorlabs.ai"
+  PROD_URL: "https://data.preview.behaviorlabs.ai"
+
+jobs:
+  verify-deployment:
+    name: Verify Deployment
+    runs-on: ubuntu-latest
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      github.event.workflow_run.conclusion == 'success'
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set target URL
+        id: target
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            ENV="${{ github.event.inputs.environment }}"
+          else
+            ENV="staging"
+          fi
+          if [ "$ENV" = "prod" ]; then
+            echo "url=${{ env.PROD_URL }}" >> $GITHUB_OUTPUT
+          else
+            echo "url=${{ env.STAGING_URL }}" >> $GITHUB_OUTPUT
+          fi
+          echo "env=$ENV" >> $GITHUB_OUTPUT
+          echo "Verifying $ENV deployment at URL"
+
+      - name: Wait for ArgoCD sync
+        run: |
+          echo "Waiting 90 seconds for ArgoCD to detect and sync changes..."
+          sleep 90
+
+      - name: Verify health endpoint
+        run: |
+          echo "Checking health endpoint..."
+          HTTP_CODE=$(curl -s -o /tmp/health.json -w "%{http_code}" "${{ steps.target.outputs.url }}/health" || echo "000")
+          if [ "$HTTP_CODE" = "200" ]; then
+            echo "✓ Health endpoint returned 200"
+            cat /tmp/health.json | python3 -m json.tool 2>/dev/null || cat /tmp/health.json
+          else
+            echo "✗ Health endpoint returned $HTTP_CODE"
+            cat /tmp/health.json 2>/dev/null || true
+            exit 1
+          fi
+
+      - name: Verify data catalog endpoint
+        run: |
+          echo "Checking data catalog..."
+          HTTP_CODE=$(curl -s -o /tmp/catalog.json -w "%{http_code}" "${{ steps.target.outputs.url }}/data_catalog" || echo "000")
+          if [ "$HTTP_CODE" = "200" ]; then
+            echo "✓ Data catalog endpoint returned 200"
+            TABLES=$(python3 -c "import json; data=json.load(open('/tmp/catalog.json')); print(len(data))" 2>/dev/null || echo "?")
+            echo "  Found $TABLES tables in catalog"
+          else
+            echo "✗ Data catalog endpoint returned $HTTP_CODE"
+            exit 1
+          fi
+
+      - name: Verify patents API view exists
+        run: |
+          echo "Checking patents API view..."
+          HTTP_CODE=$(curl -s -o /tmp/patents.json -w "%{http_code}" "${{ steps.target.outputs.url }}/patents?limit=1" || echo "000")
+          if [ "$HTTP_CODE" = "200" ]; then
+            echo "✓ Patents view accessible (200)"
+          elif [ "$HTTP_CODE" = "404" ]; then
+            echo "⚠ Patents view not yet created (404) — expected before first SQLMesh run"
+          else
+            echo "✗ Patents view returned unexpected $HTTP_CODE"
+            exit 1
+          fi
+
+      - name: Verify image tag updated
+        run: |
+          echo "Checking kustomize overlay for updated image tag..."
+          TAG=$(awk '/newTag:/ {print $2}' k8s/overlays/${{ steps.target.outputs.env }}/kustomization.yaml)
+          echo "Current image tag: $TAG"
+          if [ -z "$TAG" ]; then
+            echo "✗ No image tag found in overlay"
+            exit 1
+          fi
+          echo "✓ Image tag present: $TAG"
+
+      - name: Verify CronJob manifests in kustomize build
+        run: |
+          # Install kubectl
+          curl -sLO "https://dl.k8s.io/release/$(curl -sL https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl"
+          chmod +x kubectl
+          sudo mv kubectl /usr/local/bin/
+
+          echo "Checking CronJob manifests in kustomize build..."
+          MANIFESTS=$(kubectl kustomize k8s/overlays/${{ steps.target.outputs.env }} --enable-helm 2>/dev/null)
+
+          # Verify new trademark CronJobs are present
+          for CRONJOB in "fetch-uspto-trademarks" "fetch-euipo"; do
+            if echo "$MANIFESTS" | grep -q "name: $CRONJOB"; then
+              echo "✓ CronJob $CRONJOB found in manifests"
+            else
+              echo "✗ CronJob $CRONJOB missing from manifests"
+              exit 1
+            fi
+          done
+
+          # Verify existing CronJobs still present
+          for CRONJOB in "fetch-epo" "fetch-uniprot" "fetch-pdb" "fetch-orcid" "mol-transform"; do
+            if echo "$MANIFESTS" | grep -q "name: $CRONJOB"; then
+              echo "✓ Existing CronJob $CRONJOB still present"
+            else
+              echo "✗ Existing CronJob $CRONJOB missing — regression!"
+              exit 1
+            fi
+          done
+
+          # Verify migration-runner-job is present
+          if echo "$MANIFESTS" | grep -q "name: migration-runner"; then
+            echo "✓ Migration runner Job found in manifests"
+          else
+            echo "✗ Migration runner Job missing from manifests"
+            exit 1
+          fi
+
+      - name: Summary
+        if: always()
+        run: |
+          echo ""
+          echo "========================================="
+          echo "Post-Deploy Verification: ${{ steps.target.outputs.env }}"
+          echo "========================================="
+          echo "Target: ${{ steps.target.outputs.url }}"
+          echo ""
+          echo "Note: kubectl-based checks (pod status, on-cluster"
+          echo "SQLMesh validation) require cluster access and should"
+          echo "be performed manually if needed:"
+          echo ""
+          echo "  kubectl get cronjobs -n dk-data-${{ steps.target.outputs.env }}"
+          echo "  kubectl get jobs -n dk-data-${{ steps.target.outputs.env }} | grep migration"
+          echo "  kubectl logs job/migration-runner -n dk-data-${{ steps.target.outputs.env }}"

@@ -51,6 +51,7 @@ resources:
   - backup/pg-backup-verify.yaml
   # Database initialization
   - db-init-job.yaml
+  - migration-runner-job.yaml
   # Networking
   - ingress.yaml
   - middleware-rate-limit.yaml

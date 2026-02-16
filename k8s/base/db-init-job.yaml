@@ -79,6 +79,10 @@ spec:
               CREATE SCHEMA IF NOT EXISTS mol_gold;
               CREATE SCHEMA IF NOT EXISTS mol_app;
               CREATE SCHEMA IF NOT EXISTS mol_api;
+              -- IP/patent/trademark SQLMesh schemas (014-uspto-euipo-model-datasource)
+              CREATE SCHEMA IF NOT EXISTS bronze;
+              CREATE SCHEMA IF NOT EXISTS silver;
+              CREATE SCHEMA IF NOT EXISTS gold;
               SQL
 
               # --- Step 4: Create roles ---
@@ -541,11 +545,11 @@ spec:
               fi
 
               echo "Checking schemas..."
-              SCHEMA_COUNT=$(psql -d dk_data -Atc "SELECT COUNT(*) FROM pg_namespace WHERE nspname IN ('raw', 'staging', 'mart', 'scoring', 'meta', 'api', 'mol_raw', 'mol_bronze', 'mol_silver', 'mol_gold', 'mol_app', 'mol_api')")
-              if [ "$SCHEMA_COUNT" -eq 12 ]; then
-                echo "✓ All 12 schemas created successfully"
+              SCHEMA_COUNT=$(psql -d dk_data -Atc "SELECT COUNT(*) FROM pg_namespace WHERE nspname IN ('raw', 'staging', 'mart', 'scoring', 'meta', 'api', 'mol_raw', 'mol_bronze', 'mol_silver', 'mol_gold', 'mol_app', 'mol_api', 'bronze', 'silver', 'gold')")
+              if [ "$SCHEMA_COUNT" -eq 15 ]; then
+                echo "✓ All 15 schemas created successfully"
               else
-                echo "✗ ERROR: Expected 12 schemas, found $SCHEMA_COUNT"
+                echo "✗ ERROR: Expected 15 schemas, found $SCHEMA_COUNT"
                 exit 1
               fi
 
@@ -571,5 +575,5 @@ spec:
               echo ""
               echo "=== Database initialization complete ==="
               echo "Roles: authenticator, web_anon, analyst, api_user, readonly"
-              echo "Schemas: raw, staging, mart, scoring, meta, api, mol_*"
+              echo "Schemas: raw, staging, mart, scoring, meta, api, mol_*, bronze, silver, gold"
               echo "Views: api.health, api.data_catalog, api.targets, api.scoring, api.data_sources, api.molecules, api.resolution_queue, api.competitive_landscape, api.molecule_properties, api.company_pipeline, api.shap_explanations, api.synthesizability_scores, api.fingerprints, api.trial_publication_features, api.patents, api.molecule_targets, api.sider_side_effects, api.bioactivity, api.audit_log, api.migration_status, api.data_classification"

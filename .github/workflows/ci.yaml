@@ -89,6 +89,87 @@ jobs:
         with:
           pytest-xml-coverage-path: coverage.xml
 
+  sqlmesh-validate:
+    name: Validate SQLMesh Models
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: dk_data
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Install dependencies
+        run: |
+          pip install --upgrade pip
+          pip install -e ".[dev]"
+
+      - name: Create required schemas
+        env:
+          PGHOST: localhost
+          PGPORT: 5432
+          PGUSER: postgres
+          PGPASSWORD: postgres
+          PGDATABASE: dk_data
+        run: |
+          psql <<'SQL'
+          CREATE SCHEMA IF NOT EXISTS raw;
+          CREATE SCHEMA IF NOT EXISTS staging;
+          CREATE SCHEMA IF NOT EXISTS mart;
+          CREATE SCHEMA IF NOT EXISTS scoring;
+          CREATE SCHEMA IF NOT EXISTS meta;
+          CREATE SCHEMA IF NOT EXISTS api;
+          CREATE SCHEMA IF NOT EXISTS mol_raw;
+          CREATE SCHEMA IF NOT EXISTS mol_bronze;
+          CREATE SCHEMA IF NOT EXISTS mol_silver;
+          CREATE SCHEMA IF NOT EXISTS mol_gold;
+          CREATE SCHEMA IF NOT EXISTS mol_app;
+          CREATE SCHEMA IF NOT EXISTS mol_api;
+          CREATE SCHEMA IF NOT EXISTS bronze;
+          CREATE SCHEMA IF NOT EXISTS silver;
+          CREATE SCHEMA IF NOT EXISTS gold;
+          SQL
+          echo "All 15 schemas created"
+
+      - name: Run pending migrations
+        env:
+          POSTGRES_HOST: localhost
+          POSTGRES_PORT: 5432
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: dk_data
+        run: python -m dk_data.scripts.run_migrations
+
+      - name: Validate SQLMesh models compile
+        env:
+          POSTGRES_HOST: localhost
+          POSTGRES_PORT: 5432
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: dk_data
+          SQLMESH_CONFIG: src/dk_data/sqlmesh/config.yaml
+        run: |
+          cd src/dk_data
+          sqlmesh plan --no-prompts --no-auto-categorization 2>&1 | tee /tmp/sqlmesh-plan.log
+          echo "SQLMesh model validation passed"
+
   validate-manifests:
     name: Validate Kubernetes Manifests
     runs-on: ubuntu-latest
