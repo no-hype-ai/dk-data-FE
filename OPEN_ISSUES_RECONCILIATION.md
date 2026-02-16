@@ -101,6 +101,17 @@ Fixed race condition in `.github/workflows/promote-to-prod.yaml` — production 
 
 **Permanent fix needed (dk-alchemy)**: The `infra-priority-classes` ArgoCD app should deploy PriorityClasses to both clusters, or a staging-specific priority classes app should be created. The manual PriorityClass and node label on k3s-slave-1 will be lost if the node is rebuilt.
 
+### FIXED — NetworkPolicy blocks intra-namespace traffic (P1, NEW)
+
+**Root cause**: The `dk-data-postgrest-ingress` NetworkPolicy only allowed ingress from external namespaces (`kube-system`, `behaviorlabs-*`, `agentmesh-*`, `infra`) — not from within the same namespace. Combined with `dk-data-default-deny` (denies all), job-trigger and CronJob pods couldn't reach PostgREST. The `dk-data-egress` policy also lacked intra-namespace and staging MinIO rules.
+
+**Impact**: Job-trigger can't call PostgREST health endpoint. CronJob pods that need to load data via PostgREST are blocked. Staging backup CronJobs can't reach MinIO in `infra-staging`.
+
+**Fix applied (2026-02-16)**:
+1. Added same-namespace ingress rule (`podSelector: {}`) to `dk-data-postgrest-ingress` (matching pattern already used in `dk-data-job-trigger-ingress`)
+2. Added intra-namespace egress rule (ports 3000, 8000) to `dk-data-egress`
+3. Added staging MinIO egress rule (port 9000 to `infra-staging`)
+
 ### DIAGNOSED — Prod fetch-* CronJob failures (P1) → Transient first-run failures
 
 **Affected jobs** (13 data sources): `fetch-pubmed`, `fetch-news`, `fetch-sec-edgar`, `fetch-ema-reg`, `fetch-epo`, `fetch-hta`, `fetch-journal-rss`, `fetch-openalex-ci`, `fetch-orcid`, `fetch-pdb`, `fetch-uniprot`, `fetch-uspto-ci`, `fetch-uspto-patents`
@@ -133,7 +144,7 @@ Fixed race condition in `.github/workflows/promote-to-prod.yaml` — production 
 2. Added `priority-classes` to the staging ApplicationSet generator list in `.gitops/root/dk-cluster-infra-staging.yaml`
 3. ArgoCD will deploy both `production-critical` and `staging-default` PriorityClasses to k3s-slave-1 via `infra-priority-classes-staging` app
 
-**Pending**: dk-alchemy changes need to be committed and pushed to `main` branch for ArgoCD to pick up.
+**Deployed**: dk-alchemy PR #190 merged to `main`. ArgoCD created `infra-priority-classes-staging` app (status: Healthy). PriorityClasses confirmed on k3s-slave-1.
 
 ---
 
@@ -242,9 +253,10 @@ Fixed race condition in `.github/workflows/promote-to-prod.yaml` — production 
 | Item | Status | Priority | Owner |
 |------|--------|----------|-------|
 | Staging PostgreSQL outage | **Resolved** (manual fix) | — | — |
-| Prod fetch-* CronJob failures | **Diagnosed** — transient, need job cleanup | P1 | Cleanup pending |
+| NetworkPolicy intra-namespace | **Fixed** — same-namespace ingress/egress rules added | P1 | Pending deploy |
+| Prod fetch-* CronJob failures | **Diagnosed** — transient; failed jobs cleaned up | P1 | Monitor next runs |
 | Prod/staging pg-backup credentials | **In progress** — manifests fixed, Doppler secrets pending | P2 | Manual Doppler |
-| dk-alchemy PriorityClass gap | **Fixed** — staging overlay + AppSet updated | P3 | Pending push |
+| dk-alchemy PriorityClass gap | **Deployed** — PR #190 merged, ArgoCD app Healthy | P3 | Done |
 
 ---
 
