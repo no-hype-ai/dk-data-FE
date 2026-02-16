@@ -81,6 +81,7 @@ SELECT
     event AS raw_json,
     id AS raw_source_id,
     'openfda_faers' AS source,
+    request_timestamp,
     request_timestamp AS source_updated_at,
     FALSE AS processed_to_silver,
     NOW() AS created_at
