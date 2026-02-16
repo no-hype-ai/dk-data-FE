@@ -182,6 +182,7 @@ SELECT DISTINCT ON (patent_number)
     country,
     cpc_codes,
     ipc_codes,
+    num_claims,
     family_id,
     CASE
         WHEN expiry_date < CURRENT_DATE THEN 'expired'

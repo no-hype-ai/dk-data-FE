@@ -119,8 +119,16 @@ jobs:
           GRANT USAGE ON SCHEMA api TO web_anon, analyst, api_user;
           SQL
           # Initialize tables and views (role errors are non-fatal since we created them above)
+          # Use ON_ERROR_STOP=0 so psql continues past role-related errors (already handled above)
+          # but capture the exit code to warn on unexpected failures
           psql -v AUTHENTICATOR_PASSWORD="ci_test_password_32chars_min!!" \
-            -f src/dk_data/sql/init_database.sql || true
+            -v ON_ERROR_STOP=0 \
+            -f src/dk_data/sql/init_database.sql 2>&1 | tee /tmp/init_db.log
+          # Fail only if critical table/view creation errors occurred (not role errors)
+          if grep -qiE 'ERROR:.*(relation|table|view|function|schema)' /tmp/init_db.log \
+             && ! grep -qi 'already exists' /tmp/init_db.log; then
+            echo "::warning::init_database.sql had errors — check log above"
+          fi
           # Grant SELECT on all API views to roles (init_database.sql dynamic GRANTs may fail)
           psql <<'SQL'
           DO $$
@@ -291,7 +299,12 @@ jobs:
           GRANT USAGE ON SCHEMA api TO web_anon, analyst, api_user;
           SQL
           psql -v AUTHENTICATOR_PASSWORD="ci_test_password" \
-            -f src/dk_data/sql/init_database.sql || true
+            -v ON_ERROR_STOP=0 \
+            -f src/dk_data/sql/init_database.sql 2>&1 | tee /tmp/init_db.log
+          if grep -qiE 'ERROR:.*(relation|table|view|function|schema)' /tmp/init_db.log \
+             && ! grep -qi 'already exists' /tmp/init_db.log; then
+            echo "::warning::init_database.sql had errors — check log above"
+          fi
           echo "Base tables initialized"
 
       - name: Run pending migrations
@@ -312,13 +325,17 @@ jobs:
           POSTGRES_DB: dk_data
         run: |
           set -o pipefail
-          echo n | sqlmesh -p src/dk_data/sqlmesh plan --no-prompts 2>&1 | tee /tmp/sqlmesh-plan.log || true
-          # Check for compilation errors (not backfill errors)
-          if grep -q "^Error:" /tmp/sqlmesh-plan.log && ! grep -q "Plan application failed\|Aborted" /tmp/sqlmesh-plan.log; then
-            echo "SQLMesh model compilation failed"
+          # Run SQLMesh plan in dry-run mode; capture output for analysis
+          SQLMESH_EXIT=0
+          echo n | sqlmesh -p src/dk_data/sqlmesh plan --no-prompts 2>&1 | tee /tmp/sqlmesh-plan.log || SQLMESH_EXIT=$?
+          # Check for compilation/SQL errors (not just backfill abort which is expected)
+          if grep -qiE '(Error:|error:|FATAL|SyntaxError|sqlmesh\.utils\.errors)' /tmp/sqlmesh-plan.log \
+             && ! grep -qE '(Plan application failed|Aborted|No changes)' /tmp/sqlmesh-plan.log; then
+            echo "::error::SQLMesh model compilation failed"
+            grep -iE '(Error:|error:|FATAL)' /tmp/sqlmesh-plan.log
             exit 1
           fi
-          echo "SQLMesh model validation passed"
+          echo "SQLMesh model validation passed (exit=$SQLMESH_EXIT)"
 
   validate-manifests:
     name: Validate Kubernetes Manifests

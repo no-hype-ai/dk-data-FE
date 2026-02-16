@@ -33,6 +33,10 @@ get_pod() {
 run_sql() {
   local pod
   pod=$(get_pod)
+  if [ -z "$pod" ]; then
+    echo "ERROR: no job-trigger pod found" >&2
+    return 1
+  fi
   kubectl -n "$NS" exec "$pod" -- python3 -c "
 import psycopg2, os, json
 conn = psycopg2.connect(
@@ -69,25 +73,33 @@ phase1() {
   # 1b. Verify main.py SOURCES count inside the container
   echo ""
   echo "1b. SOURCES dict has 22 entries"
-  local count
-  count=$(kubectl -n "$NS" exec "$(get_pod)" -- \
-    python3 -c "from dk_data.ingestion.main import SOURCES; print(len(SOURCES))" 2>/dev/null)
-  if [ "$count" = "22" ]; then
-    pass "SOURCES count = $count"
+  if [ -z "$pod" ]; then
+    fail "Cannot check SOURCES — no pod"
   else
-    fail "SOURCES count = ${count:-ERROR} (expected 22)"
+    local count
+    count=$(kubectl -n "$NS" exec "$pod" -- \
+      python3 -c "from dk_data.ingestion.main import SOURCES; print(len(SOURCES))" 2>/dev/null)
+    if [ "$count" = "22" ]; then
+      pass "SOURCES count = $count"
+    else
+      fail "SOURCES count = ${count:-ERROR} (expected 22)"
+    fi
   fi
 
   # 1c. Verify main.py has _meta_name resolver
   echo ""
   echo "1c. _meta_name resolver works"
-  local meta_check
-  meta_check=$(kubectl -n "$NS" exec "$(get_pod)" -- \
-    python3 -c "from dk_data.ingestion.main import _meta_name; print(_meta_name('cms_inpatient'), _meta_name('pubmed'))" 2>/dev/null)
-  if echo "$meta_check" | grep -q "cms_medicare_inpatient pubmed"; then
-    pass "meta_name: $meta_check"
+  if [ -z "$pod" ]; then
+    fail "Cannot check _meta_name — no pod"
   else
-    fail "meta_name: ${meta_check:-ERROR}"
+    local meta_check
+    meta_check=$(kubectl -n "$NS" exec "$pod" -- \
+      python3 -c "from dk_data.ingestion.main import _meta_name; print(_meta_name('cms_inpatient'), _meta_name('pubmed'))" 2>/dev/null)
+    if echo "$meta_check" | grep -q "cms_medicare_inpatient pubmed"; then
+      pass "meta_name: $meta_check"
+    else
+      fail "meta_name: ${meta_check:-ERROR}"
+    fi
   fi
 
   # 1d. Check meta.data_sources has all 22 sources
@@ -183,6 +195,8 @@ phase2() {
       fail "Job did not complete: $status"
       echo "  Logs:"
       kubectl -n "$NS" logs "job/$job_name" --tail=20 2>/dev/null | sed 's/^/    /'
+      # Clean up failed job before continuing
+      kubectl -n "$NS" delete job "$job_name" --ignore-not-found=true >/dev/null 2>&1 &
       continue
     fi
 

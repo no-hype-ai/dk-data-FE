@@ -36,6 +36,9 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+        with:
+          # For workflow_run events, checkout the branch that triggered the build
+          ref: ${{ github.event.workflow_run.head_sha || github.sha }}
 
       - name: Set target URL
         id: target
@@ -106,7 +109,15 @@ jobs:
             echo "✗ No image tag found in overlay"
             exit 1
           fi
-          echo "✓ Image tag present: $TAG"
+          # Verify the tag contains the expected commit SHA (format: branch-SHA or SHA)
+          EXPECTED_SHA="${{ github.event.workflow_run.head_sha || github.sha }}"
+          SHORT_SHA="${EXPECTED_SHA:0:7}"
+          if echo "$TAG" | grep -q "$SHORT_SHA"; then
+            echo "✓ Image tag '$TAG' matches commit SHA ($SHORT_SHA)"
+          else
+            echo "⚠ Image tag '$TAG' does not contain expected SHA ($SHORT_SHA)"
+            echo "  This may indicate the overlay was not updated for this commit"
+          fi
 
       - name: Verify CronJob manifests in kustomize build
         run: |
