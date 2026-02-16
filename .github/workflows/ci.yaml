@@ -73,8 +73,12 @@ jobs:
           PGPASSWORD: postgres
           PGDATABASE: dk_data_test
         run: |
-          # Create all required schemas
+          # Create extensions and schemas
           psql <<'SQL'
+          CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
+          CREATE EXTENSION IF NOT EXISTS "pgcrypto";
+          CREATE EXTENSION IF NOT EXISTS "pg_trgm";
+          CREATE EXTENSION IF NOT EXISTS "vector";
           CREATE SCHEMA IF NOT EXISTS raw;
           CREATE SCHEMA IF NOT EXISTS staging;
           CREATE SCHEMA IF NOT EXISTS mart;
@@ -239,6 +243,10 @@ jobs:
           PGDATABASE: dk_data
         run: |
           psql <<'SQL'
+          CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
+          CREATE EXTENSION IF NOT EXISTS "pgcrypto";
+          CREATE EXTENSION IF NOT EXISTS "pg_trgm";
+          CREATE EXTENSION IF NOT EXISTS "vector";
           CREATE SCHEMA IF NOT EXISTS raw;
           CREATE SCHEMA IF NOT EXISTS staging;
           CREATE SCHEMA IF NOT EXISTS mart;
@@ -255,7 +263,7 @@ jobs:
           CREATE SCHEMA IF NOT EXISTS silver;
           CREATE SCHEMA IF NOT EXISTS gold;
           SQL
-          echo "All 15 schemas created"
+          echo "Extensions and schemas created"
 
       - name: Initialize base tables
         env:
