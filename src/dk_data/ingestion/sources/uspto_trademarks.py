@@ -11,6 +11,7 @@ Target table: raw.uspto_trademarks (see migration 071_uspto_trademarks_raw.sql)
 """
 
 import logging
+from datetime import date, datetime
 from typing import Any, Dict, List, Optional
 
 from pydantic import ValidationError
@@ -64,6 +65,10 @@ def load_uspto_trademarks_data(
         with conn.cursor() as cur:
             for idx, raw_record in enumerate(records):
                 try:
+                    # Parse dates before Pydantic validation
+                    for date_field in ("status_date", "filing_date", "registration_date"):
+                        raw_record[date_field] = _parse_date(raw_record.get(date_field))
+
                     # Validate with Pydantic
                     record = USPTOTrademarkRecord(**raw_record)
 
@@ -173,6 +178,31 @@ def load_uspto_trademarks_data(
         "records_failed": records_failed,
         "errors": errors[:10],
     }
+
+
+def _parse_date(value: Any) -> Optional[date]:
+    """Best-effort parsing of a date value from TSDR.
+
+    Accepts ISO strings (YYYY-MM-DD), datetime objects, date objects,
+    or None.
+    """
+    if value is None:
+        return None
+    if isinstance(value, date):
+        return value
+    if isinstance(value, datetime):
+        return value.date()
+    if isinstance(value, str):
+        for fmt in ("%Y-%m-%d", "%m/%d/%Y", "%Y-%m", "%Y"):
+            try:
+                return datetime.strptime(value[: len(fmt.replace("%", "0"))], fmt).date()
+            except (ValueError, IndexError):
+                continue
+        try:
+            return datetime.fromisoformat(value).date()
+        except (ValueError, TypeError):
+            pass
+    return None
 
 
 def _track_status_change(

@@ -54,7 +54,7 @@ euipo AS (
         mark_kind AS mark_type,
         mark_feature,
         status,
-        NULL::TEXT AS status_code,
+        NULL::INTEGER AS status_code,
         NULL::DATE AS status_date,
         filing_date,
         NULL::TEXT AS registration_number,

@@ -102,6 +102,7 @@ class USPTOCIFetcher(BaseFetcher):
             result = {
                 "status": "success",
                 "records": all_records,
+                "record_count": len(all_records),
                 "hash": content_hash,
             }
             self.log_fetch_result({"status": "success", "records": len(all_records)})
@@ -292,11 +293,28 @@ class USPTOCIFetcher(BaseFetcher):
         if not patent_id:
             return None
 
-        # Inventors (nested in API response)
-        inventors = patent.get("inventors")
+        # Normalize inventors (match Patents fetcher schema)
+        inventors = None
+        raw_inventors = patent.get("inventors")
+        if raw_inventors and isinstance(raw_inventors, list):
+            inventors = [
+                {
+                    "name_first": inv.get("inventor_name_first"),
+                    "name_last": inv.get("inventor_name_last"),
+                }
+                for inv in raw_inventors
+            ]
 
-        # Assignees (nested in API response)
-        assignees = patent.get("assignees")
+        # Normalize assignees (match Patents fetcher schema)
+        assignees = None
+        raw_assignees = patent.get("assignees")
+        if raw_assignees and isinstance(raw_assignees, list):
+            assignees = [
+                {
+                    "organization": asg.get("assignee_organization"),
+                }
+                for asg in raw_assignees
+            ]
 
         # CPC codes (PatentSearch uses cpc_current instead of cpcs)
         cpc_codes = None
@@ -311,6 +329,14 @@ class USPTOCIFetcher(BaseFetcher):
         application = patent.get("application") or {}
         filing_date = application.get("filing_date")
 
+        # Claims count — explicit int cast for safety
+        claims_count = patent.get("patent_num_claims")
+        if claims_count is not None:
+            try:
+                claims_count = int(claims_count)
+            except (ValueError, TypeError):
+                claims_count = None
+
         return {
             "patent_id": str(patent_id),
             "title": patent.get("patent_title"),
@@ -320,5 +346,5 @@ class USPTOCIFetcher(BaseFetcher):
             "filing_date": filing_date,
             "grant_date": patent.get("patent_date"),
             "cpc_codes": cpc_codes,
-            "claims_count": patent.get("patent_num_claims"),
+            "claims_count": claims_count,
         }

@@ -1,5 +1,5 @@
 -- SQLMesh Model: Bronze USPTO CI Patents
--- Transforms raw USPTO PatentsView CI (query-scoped) patents into typed bronze layer
+-- Transforms raw USPTO PatentSearch CI (query-scoped) patents into typed bronze layer
 -- Part of: 014-uspto-euipo-model-datasource
 
 MODEL (
@@ -33,8 +33,8 @@ SELECT
         ELSE NULL
     END AS cpc_codes,
 
-    -- Assignee info (PatentsView API field name)
-    r.assignees->0->>'assignee_organization' AS assignee_organization,
+    -- Assignee info (fetcher normalizes to {"organization": ...})
+    r.assignees->0->>'organization' AS assignee_organization,
 
     -- Inventors as JSONB
     r.inventors,

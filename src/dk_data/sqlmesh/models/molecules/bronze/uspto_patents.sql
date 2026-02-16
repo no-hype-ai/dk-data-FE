@@ -1,5 +1,5 @@
 -- SQLMesh Model: Bronze USPTO Patents
--- Transforms raw USPTO PatentsView flat columns into typed bronze layer
+-- Transforms raw USPTO PatentSearch flat columns into typed bronze layer
 -- Part of: 014-uspto-euipo-model-datasource (fixes broken JSONB extraction from 012)
 
 MODEL (
@@ -35,9 +35,9 @@ SELECT
         ELSE NULL
     END AS cpc_codes,
 
-    -- Assignee info (PatentsView API stores as JSONB array)
-    r.assignees->0->>'assignee_organization' AS assignee_organization,
-    r.assignees->0->>'assignee_type' AS assignee_type,
+    -- Assignee info (fetcher normalizes to {"organization": ..., "city": ..., ...})
+    r.assignees->0->>'organization' AS assignee_organization,
+    NULL::TEXT AS assignee_type,
 
     -- Inventors as JSONB
     r.inventors,

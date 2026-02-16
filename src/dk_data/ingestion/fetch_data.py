@@ -231,10 +231,12 @@ def fetch_all(data_dir: str = None) -> dict:
             result = fetch_source(source, data_dir=data_dir)
             results[source] = result
 
-            if result.get('status') == 'success':
+            status = result.get('status')
+            if status in ('success', 'partial'):
                 success_count += 1
                 records = result.get('records', result.get('total_records', 'N/A'))
-                logger.info(f"SUCCESS: {source} - {records} records")
+                suffix = ' (partial)' if status == 'partial' else ''
+                logger.info(f"SUCCESS{suffix}: {source} - {records} records")
             else:
                 fail_count += 1
                 error = result.get('error', 'Unknown error')
@@ -262,7 +264,7 @@ def print_summary(results: dict):
     if 'sources' in results:
         for source, result in results['sources'].items():
             status = result.get('status', 'unknown')
-            status_icon = '✓' if status == 'success' else '✗'
+            status_icon = '✓' if status in ('success', 'partial') else '✗'
             records = result.get('records', result.get('total_records', '-'))
             print(f"  {status_icon} {source:20} {status:10} {records} records")
 

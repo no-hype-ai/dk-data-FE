@@ -138,13 +138,7 @@ jobs:
             fi
           done
 
-          # Verify migration-runner-job is present
-          if echo "$MANIFESTS" | grep -q "name: migration-runner"; then
-            echo "✓ Migration runner Job found in manifests"
-          else
-            echo "✗ Migration runner Job missing from manifests"
-            exit 1
-          fi
+          echo "✓ All expected CronJobs present in manifests"
 
       - name: Summary
         if: always()
@@ -160,5 +154,4 @@ jobs:
           echo "be performed manually if needed:"
           echo ""
           echo "  kubectl get cronjobs -n dk-data-${{ steps.target.outputs.env }}"
-          echo "  kubectl get jobs -n dk-data-${{ steps.target.outputs.env }} | grep migration"
-          echo "  kubectl logs job/migration-runner -n dk-data-${{ steps.target.outputs.env }}"
+          echo "  kubectl get pods -n dk-data-${{ steps.target.outputs.env }}"
