@@ -164,7 +164,7 @@ class EUIPOTrademarksFetcher(BaseFetcher):
         Body: {pageSize, pageIndex, criteria: {niceClasses, tradeMarkOffices, ...}}
         """
         records: List[Dict[str, Any]] = []
-        page_index = 0
+        page_index = 1  # TMview uses 1-based pagination
 
         while len(records) < max_records:
             body = {
@@ -227,7 +227,7 @@ class EUIPOTrademarksFetcher(BaseFetcher):
         # Authenticate
         self._ensure_ibm_token()
 
-        page_index = 0
+        page_index = 1  # IBM Gateway uses 1-based pagination
         while len(records) < max_records:
             headers = {
                 "Authorization": f"Bearer {self._access_token}",

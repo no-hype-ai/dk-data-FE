@@ -365,7 +365,7 @@ def run_ingestion(source: str, **kwargs) -> dict:
 
         fetch_result = fetcher.fetch(**fetch_kwargs)
 
-        if fetch_result.get('status') != 'success' or not fetch_result.get('records'):
+        if fetch_result.get('status') == 'failed' or not fetch_result.get('records'):
             logger.warning(f"Fetch returned no records for {source}")
             log_to_meta(meta_source, fetch_result)
             return fetch_result
