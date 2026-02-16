@@ -5,11 +5,11 @@ gateways:
   local:
     connection:
       type: postgres
-      host: ${POSTGRES_HOST:-localhost}
-      port: 5432
-      user: ${POSTGRES_USER:-postgres}
-      password: ${POSTGRES_PASSWORD}
-      database: ${POSTGRES_DB:-dk_data}
+      host: "{{ env_var('POSTGRES_HOST', 'localhost') }}"
+      port: "{{ env_var('POSTGRES_PORT', '5432') | int }}"
+      user: "{{ env_var('POSTGRES_USER', 'postgres') }}"
+      password: "{{ env_var('POSTGRES_PASSWORD', '') }}"
+      database: "{{ env_var('POSTGRES_DB', 'dk_data') }}"
 
 default_gateway: local
 
@@ -40,13 +40,13 @@ physical_schema_mapping:
 # Project metadata
 project: tavr_data_infrastructure
 
-# Environment variables (loaded from .env.local)
+# Environment variables
 variables:
-  postgres_host: ${POSTGRES_HOST:-localhost}
-  postgres_port: ${POSTGRES_PORT:-5432}
-  postgres_user: ${POSTGRES_USER:-postgres}
-  postgres_password: ${POSTGRES_PASSWORD}
-  postgres_db: ${POSTGRES_DB:-dk_data}
+  postgres_host: "{{ env_var('POSTGRES_HOST', 'localhost') }}"
+  postgres_port: "{{ env_var('POSTGRES_PORT', '5432') }}"
+  postgres_user: "{{ env_var('POSTGRES_USER', 'postgres') }}"
+  postgres_password: "{{ env_var('POSTGRES_PASSWORD', '') }}"
+  postgres_db: "{{ env_var('POSTGRES_DB', 'dk_data') }}"
 
 # Plan options
 plan:

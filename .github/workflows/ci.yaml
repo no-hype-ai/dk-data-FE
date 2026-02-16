@@ -195,6 +195,7 @@ jobs:
 
       - name: Coverage PR comment
         if: github.event_name == 'pull_request'
+        continue-on-error: true  # Non-blocking — may fail if report exceeds GitHub comment size limit
         uses: MishaKav/pytest-coverage-comment@main
         with:
           pytest-xml-coverage-path: coverage.xml
