@@ -71,15 +71,15 @@ VALUES
     ('drugbank', 'api', 'https://go.drugbank.com/releases/latest',
      'DrugBank drug data with targets, enzymes, and pharmacology (credential-gated)', 'monthly', TRUE),
 
-    ('uspto_patents', 'api', 'https://api.patentsview.org/patents/query',
-     'USPTO PatentsView pharmaceutical patents with CPC code filtering', 'weekly', TRUE),
+    ('uspto_patents', 'api', 'https://search.patentsview.org/api/v1/patent/',
+     'USPTO PatentSearch pharmaceutical patents with CPC code filtering', 'weekly', TRUE),
 
     -- Medium-impact CI sources (US5)
     ('journal_rss', 'rss', 'https://www.nejm.org/action/showFeed',
      'Journal RSS feeds from NEJM, Lancet, JAMA, BMJ, Nature Medicine', 'daily', TRUE),
 
-    ('uspto_ci', 'api', 'https://api.patentsview.org/patents/query',
-     'USPTO PatentsView CI pharma patents with query-scoped search terms', 'weekly', TRUE),
+    ('uspto_ci', 'api', 'https://search.patentsview.org/api/v1/patent/',
+     'USPTO PatentSearch CI pharma patents with query-scoped search terms', 'weekly', TRUE),
 
     ('hta_bodies', 'api', 'https://www.nice.org.uk/guidance/published',
      'HTA body decisions from NICE, G-BA, HAS, and PBAC', 'weekly', TRUE),

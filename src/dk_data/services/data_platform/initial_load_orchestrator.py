@@ -337,21 +337,21 @@ DATA_SOURCES = {
         'batch_mode': True,
     },
     'uspto_patents': {
-        'name': 'USPTO PatentsView',
+        'name': 'USPTO PatentSearch',
         'api_type': 'rest',
-        'base_url': 'https://api.patentsview.org/patents/query',
+        'base_url': 'https://search.patentsview.org/api/v1/patent/',
         'tier': 'weekly',
         'pagination': {
-            'type': 'offset',
-            'page_size': 1000,
-            'offset_param': 'o',
+            'type': 'cursor',
+            'page_size': 100,
+            'cursor_param': 'after',
         },
         'rate_limit': 45,  # 45 requests per minute
         'requires_api_key': True,
-        'api_key_env': 'PATENTSVIEW_API_KEY',
+        'api_key_env': 'USPTO_API_KEY',
         'entity_linking': {
-            'identifier_field': 'patent_number',
-            'identifier_type': 'patent_number',
+            'identifier_field': 'patent_id',
+            'identifier_type': 'patent_id',
         },
     },
 }

@@ -129,7 +129,7 @@ These have full ingestion classes in `raw_ingestion.py` but are **not scheduled*
 | # | Source | Class | API URL | Auth | Frequency | Issue | Blocker |
 |---|--------|-------|---------|------|-----------|-------|---------|
 | 6 | **DrugBank** | — | XML download | License + API key | monthly | #41 | Commercial license required |
-| 7 | **USPTO Patents** | `USPTOPatentsIngestion` | `api.patentsview.org/patents/query` | API key | weekly | #47, #83 | API key needed |
+| 7 | **USPTO Patents** | `USPTOPatentsIngestion` | `search.patentsview.org/api/v1/patent/` | API key | weekly | #47, #83 | API key needed |
 | 8 | **PDB** | — | `pdbbind.org.cn` | Free registration | monthly | #50 | Registration required |
 | 9 | **ORCID** | — | `pub.orcid.org/v3.0` | OAuth2 | monthly | #51 | OAuth app registration |
 
@@ -138,7 +138,7 @@ These have full ingestion classes in `raw_ingestion.py` but are **not scheduled*
 ```bash
 /add-datasource "Enable DrugBank pharmaceutical database. Requires commercial license. XML download with API key. 17.4K drugs, 2.86M DDIs, targets, pathways. Monthly refresh. Issue #41. API key goes in Doppler as DRUGBANK_API_KEY."
 
-/add-datasource "Enable USPTO PatentsView API for pharmaceutical patent monitoring. Code exists in raw_ingestion.py (USPTOPatentsIngestion class). API: https://api.patentsview.org/patents/query. Requires API key. Weekly refresh. Issues #47, #83. API key goes in Doppler as USPTO_API_KEY."
+/add-datasource "Enable USPTO PatentSearch API for pharmaceutical patent monitoring. Code exists in raw_ingestion.py (USPTOPatentsIngestion class). API: https://search.patentsview.org/api/v1/patent/. Requires API key. Weekly refresh. Issues #47, #83. API key goes in Doppler as USPTO_API_KEY."
 
 /add-datasource "Enable PDB Protein Data Bank for 3D protein-ligand structures. Requires free registration at pdbbind.org.cn. Monthly refresh. Issue #50."
 
@@ -211,7 +211,7 @@ These are tracked in GitHub issues #26-35. They require **full implementation** 
 | # | Source | Issue | API URL | Auth | Frequency | CI Volume |
 |---|--------|-------|---------|------|-----------|-----------|
 | 4 | **Journal RSS/Atom** | #29 | configurable feeds | none | daily | 15-20% |
-| 5 | **USPTO PatentsView** (CI) | #30 | `api.patentsview.org/api/v1` | API key | weekly | 2-3% |
+| 5 | **USPTO PatentSearch** (CI) | #30 | `search.patentsview.org/api/v1/patent/` | API key | weekly | 2-3% |
 | 6 | **HTA Bodies** | #33 | multiple (NICE, G-BA, HAS, PBAC) | varies | weekly | 3-4% |
 
 **Invocations**:
@@ -219,7 +219,7 @@ These are tracked in GitHub issues #26-35. They require **full implementation** 
 ```bash
 /add-datasource "Add configurable journal RSS/Atom feed framework for medical publication monitoring. Needs to support multiple configurable feeds (NEJM, Lancet, JAMA, Nature Medicine, etc.) with per-project journal selection. Parse RSS/Atom XML, extract article metadata (title, authors, DOI, abstract, publication date). Daily refresh. No auth for most feeds. Store feed configs in meta schema. Issue #29."
 
-/add-datasource "Add USPTO PatentsView API fetcher for US patent monitoring. API: https://api.patentsview.org/api/v1. Endpoints: /patents, /inventors, /assignees. Requires API key. Weekly refresh. Filter by CPC codes A61K (medicinal preparations), A61P (therapeutic activity), C07D (heterocyclic compounds). Track patent grants, applications, assignments. Issue #30. Doppler secret: USPTO_PATENTSVIEW_API_KEY."
+/add-datasource "Add USPTO PatentSearch API fetcher for US patent monitoring. API: https://search.patentsview.org/api/v1/patent/. POST with JSON body, cursor-based pagination. Requires API key. Weekly refresh. Filter by CPC codes A61K (medicinal preparations), A61P (therapeutic activity), C07D (heterocyclic compounds). Track patent grants, applications, assignments. Issue #30. Doppler secret: USPTO_API_KEY."
 
 /add-datasource "Add HTA body decision fetchers for health technology assessment monitoring. Multiple sources: NICE (nice.org.uk/guidance), G-BA (g-ba.de), HAS (has-sante.fr), PBAC (pbs.gov.au). Each has different access patterns (API, RSS, scraping). Weekly refresh. Track appraisal decisions, technology assessments, pricing recommendations. Issue #33."
 ```

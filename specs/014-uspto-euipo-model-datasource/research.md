@@ -28,16 +28,16 @@
 The current implementation has two independent USPTO fetchers that were created during feature 011-datasource-integration:
 
 #### USPTO CI (Competitive Intelligence)
-- **API**: PatentsView API v1 (public, no auth required)
-- **Endpoint**: `https://api.patentsview.org/patents/query` (GET)
+- **API**: PatentSearch API (public, no auth required)
+- **Endpoint**: `https://search.patentsview.org/api/v1/patent/` (POST with JSON body)
 - **Query scope**: Search terms from `meta.ci_search_terms` table + CPC codes A61K, A61P, C07D
 - **Refresh**: Weekly (Sunday 14:00 UTC)
 - **Raw table**: `raw.uspto_ci` (patent_id PK)
 - **Loader**: Direct INSERT via `sources/uspto_ci.py`
 
 #### USPTO Patents (Credential-Gated)
-- **API**: PatentsView API v1 (with API key for higher rate limits)
-- **Endpoint**: `https://api.patentsview.org/patents/query` (POST with JSON body)
+- **API**: PatentSearch API (with API key for higher rate limits)
+- **Endpoint**: `https://search.patentsview.org/api/v1/patent/` (POST with JSON body)
 - **Query scope**: CPC code filter only (no search term scoping)
 - **Refresh**: Weekly (Sunday 17:00 UTC)
 - **Raw table**: `raw.uspto_patents` (patent_number PK)
@@ -45,7 +45,7 @@ The current implementation has two independent USPTO fetchers that were created 
 
 ### Key Architectural Observation
 
-Both USPTO fetchers hit the same API (PatentsView) but with different query strategies and different raw table schemas. The CI version uses GET with params; the Patents version uses POST with JSON body.
+Both USPTO fetchers hit the same PatentSearch API but with different query strategies and different raw table schemas. Both use POST with JSON body and cursor-based pagination (size/after). The legacy PatentsView API at `api.patentsview.org` was discontinued in May 2025 (returns 410 Gone).
 
 ### SQLMesh Model Status
 

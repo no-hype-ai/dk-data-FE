@@ -773,13 +773,13 @@ class OrangeBookIngestion(RawIngestionService):
 
 class USPTOPatentsIngestion(RawIngestionService):
     """
-    Specialized ingestion for USPTO PatentsView API.
+    Specialized ingestion for USPTO PatentSearch API.
 
-    PatentsView provides a RESTful API for accessing patent data
+    PatentSearch provides a RESTful API for accessing patent data
     from the USPTO, useful for tracking pharmaceutical patents.
     """
 
-    BASE_URL = "https://api.patentsview.org/patents/query"
+    BASE_URL = "https://search.patentsview.org/api/v1/patent/"
 
     async def fetch_patents_by_assignee(
         self,
@@ -791,14 +791,13 @@ class USPTOPatentsIngestion(RawIngestionService):
         session = await self._get_session()
 
         query = {
-            "q": {"assignee_organization": assignee},
+            "q": {"assignees.assignee_organization": assignee},
             "f": [
-                "patent_number", "patent_title", "patent_date",
-                "patent_abstract", "assignee_organization",
-                "inventor_first_name", "inventor_last_name",
-                "patent_type", "patent_kind"
+                "patent_id", "patent_title", "patent_date",
+                "patent_abstract", "assignees",
+                "inventors", "application"
             ],
-            "o": {"per_page": limit, "page": offset // limit + 1}
+            "o": {"size": limit}
         }
 
         try:
@@ -838,13 +837,13 @@ class USPTOPatentsIngestion(RawIngestionService):
         session = await self._get_session()
 
         query = {
-            "q": {"cpc_group_id": cpc_code},
+            "q": {"_begins": {"cpc_current.cpc_subgroup_id": cpc_code}},
             "f": [
-                "patent_number", "patent_title", "patent_date",
-                "patent_abstract", "assignee_organization",
-                "cpc_group_id", "patent_type"
+                "patent_id", "patent_title", "patent_date",
+                "patent_abstract", "assignees",
+                "cpc_current", "application"
             ],
-            "o": {"per_page": limit, "page": offset // limit + 1}
+            "o": {"size": limit}
         }
 
         try:
@@ -872,13 +871,12 @@ class USPTOPatentsIngestion(RawIngestionService):
         session = await self._get_session()
 
         query = {
-            "q": {"patent_number": patent_number},
+            "q": {"patent_id": patent_number},
             "f": [
-                "patent_number", "patent_title", "patent_date",
-                "patent_abstract", "assignee_organization",
-                "inventor_first_name", "inventor_last_name",
-                "cpc_group_id", "patent_type", "patent_kind",
-                "patent_num_claims", "patent_firstnamed_inventor_city"
+                "patent_id", "patent_title", "patent_date",
+                "patent_abstract", "assignees",
+                "inventors", "cpc_current",
+                "patent_num_claims", "application"
             ]
         }
 
