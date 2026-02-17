@@ -2,10 +2,11 @@
 Monitoring Routes - Pipeline Health and Prometheus Metrics
 Part of: 012-dk-data-platform
 
-Provides:
+Provides (mounted at /api/v1 via api.py):
 - /api/v1/monitoring/health - Pipeline health status
 - /api/v1/monitoring/metrics - Prometheus metrics endpoint
 - /api/v1/monitoring/run - Trigger pipeline run
+- /api/v1/monitoring/job-complete - CronJob completion reporting
 """
 
 from datetime import datetime, timedelta
@@ -41,7 +42,7 @@ from dk_data.observability.metrics import (
 )
 
 # Router
-router = APIRouter(prefix="/api/v1/monitoring", tags=["monitoring"])
+router = APIRouter(prefix="/monitoring", tags=["monitoring"])
 
 # Initialize metrics on module load
 if DK_METRICS_AVAILABLE:
@@ -140,7 +141,7 @@ async def report_job_completion(report: JobCompletionReport):
 
     record_job_duration(report.job_name, report.duration_seconds)
 
-    if report.source_name:
+    if report.source_name and report.status == "success":
         record_data_source_refresh(
             report.job_name, report.source_name, report.records_processed
         )
