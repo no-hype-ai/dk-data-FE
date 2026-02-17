@@ -92,7 +92,7 @@ class PubMedFetcher(BaseFetcher):
             logger.info(f"esearch returned {len(pmids)} PMIDs")
 
             # Step 2: efetch to retrieve article details in batches
-            records = self._efetch_batched(pmids, batch_size=retmax)
+            records = self._efetch_batched(pmids, batch_size=200)
 
             # Compute a deterministic hash over sorted PMIDs for change detection
             content_hash = hashlib.md5(
@@ -209,7 +209,7 @@ class PubMedFetcher(BaseFetcher):
     def _efetch_batched(
         self,
         pmids: List[str],
-        batch_size: int = 500,
+        batch_size: int = 200,
     ) -> List[Dict[str, Any]]:
         """Fetch article details for a list of PMIDs in batches."""
         all_records: List[Dict[str, Any]] = []
@@ -226,16 +226,19 @@ class PubMedFetcher(BaseFetcher):
         return all_records
 
     def _efetch(self, pmids: List[str]) -> List[Dict[str, Any]]:
-        """Fetch full article records for a batch of PMIDs."""
+        """Fetch full article records for a batch of PMIDs.
+
+        Uses POST to avoid 414 URI Too Long errors with large ID lists.
+        """
         url = f"{self.BASE_URL}/efetch.fcgi"
-        params = {
+        data = {
             **self._common_params(),
             "id": ",".join(pmids),
             "rettype": "xml",
             "retmode": "xml",
         }
 
-        response = self.session.get(url, params=params, timeout=120)
+        response = self.session.post(url, data=data, timeout=120)
         response.raise_for_status()
 
         return self._parse_efetch_xml(response.content)
