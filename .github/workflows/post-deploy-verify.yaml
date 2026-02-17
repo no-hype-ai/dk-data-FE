@@ -29,6 +29,8 @@ jobs:
   verify-deployment:
     name: Verify Deployment
     runs-on: ubuntu-latest
+    outputs:
+      env: ${{ steps.target.outputs.env }}
     if: >-
       github.event_name == 'workflow_dispatch' ||
       github.event.workflow_run.conclusion == 'success'
@@ -166,3 +168,278 @@ jobs:
           echo ""
           echo "  kubectl get cronjobs -n dk-data-${{ steps.target.outputs.env }}"
           echo "  kubectl get pods -n dk-data-${{ steps.target.outputs.env }}"
+
+  verify-observability:
+    name: Verify Observability (T033-T039)
+    runs-on: ubuntu-latest
+    needs: verify-deployment
+    if: always() && needs.verify-deployment.result == 'success'
+
+    env:
+      GRAFANA_URL: "https://grafana.behaviorlabs.ai"
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: sudo apt-get update && sudo apt-get install -y jq
+
+      - name: Install Doppler CLI
+        uses: dopplerhq/cli-action@v3
+
+      - name: Fetch Grafana API Key
+        id: secrets
+        run: |
+          GRAFANA_API_KEY=$(doppler secrets get GRAFANA_API_KEY --plain --project dk-infrastructure --config prd)
+          echo "::add-mask::$GRAFANA_API_KEY"
+          echo "GRAFANA_API_KEY=$GRAFANA_API_KEY" >> $GITHUB_ENV
+        env:
+          DOPPLER_TOKEN: ${{ secrets.DOPPLER_TOKEN }}
+
+      - name: Set namespace from environment
+        id: ns
+        run: |
+          ENV="${{ needs.verify-deployment.outputs.env }}"
+          echo "namespace=dk-data-${ENV}" >> $GITHUB_OUTPUT
+          echo "env=${ENV}" >> $GITHUB_OUTPUT
+          echo "Target namespace: dk-data-${ENV}"
+
+      - name: Wait for Alloy scrape cycle
+        run: |
+          echo "Waiting 120 seconds for Alloy to scrape new targets..."
+          sleep 120
+
+      # ── Datasource Discovery ──────────────────────────────────────
+      - name: Discover Grafana datasources
+        id: datasources
+        run: |
+          RESPONSE=$(curl -sf -H "Authorization: Bearer $GRAFANA_API_KEY" \
+            "$GRAFANA_URL/api/datasources" 2>/dev/null || echo "[]")
+
+          MIMIR_UID=$(echo "$RESPONSE" | jq -r '.[] | select(.type=="prometheus") | .uid' | head -1)
+          LOKI_UID=$(echo "$RESPONSE" | jq -r '.[] | select(.type=="loki") | .uid' | head -1)
+          TEMPO_UID=$(echo "$RESPONSE" | jq -r '.[] | select(.type=="tempo") | .uid' | head -1)
+
+          if [ -z "$MIMIR_UID" ] || [ "$MIMIR_UID" = "null" ]; then
+            echo "::error::Cannot discover Mimir datasource — aborting observability checks"
+            exit 1
+          fi
+
+          echo "mimir_uid=$MIMIR_UID" >> $GITHUB_OUTPUT
+          echo "loki_uid=$LOKI_UID" >> $GITHUB_OUTPUT
+          echo "tempo_uid=$TEMPO_UID" >> $GITHUB_OUTPUT
+          echo "Datasources — Mimir: $MIMIR_UID, Loki: $LOKI_UID, Tempo: $TEMPO_UID"
+
+      # ── Hard Check: Tier 1 kube-state-metrics (T033) ──────────────
+      - name: "Hard: Tier 1 — kube-state-metrics (T033)"
+        id: tier1
+        run: |
+          QUERY='kube_deployment_status_replicas{exported_namespace=~"dk-data.*"}'
+          ENCODED=$(python3 -c "import urllib.parse; print(urllib.parse.quote('$QUERY'))")
+          RESPONSE=$(curl -sf -H "Authorization: Bearer $GRAFANA_API_KEY" \
+            "$GRAFANA_URL/api/datasources/proxy/uid/${{ steps.datasources.outputs.mimir_uid }}/api/v1/query?query=${ENCODED}" \
+            2>/dev/null || echo '{"status":"error"}')
+
+          RESULT_COUNT=$(echo "$RESPONSE" | jq '.data.result | length // 0' 2>/dev/null || echo "0")
+          if [ "$RESULT_COUNT" -eq 0 ]; then
+            echo "::error::Tier 1 kube-state-metrics returned 0 results — kube-state-metrics may not be scraping dk-data namespace"
+            echo "result=fail" >> $GITHUB_OUTPUT
+            exit 1
+          else
+            echo "PASS: Tier 1 kube-state-metrics returned $RESULT_COUNT series"
+            echo "result=pass" >> $GITHUB_OUTPUT
+          fi
+
+      # ── Soft Check: Tier 1 — CronJob last success (T033) ─────────
+      - name: "Soft: Tier 1 — CronJob last success (T033)"
+        id: tier1_cronjob
+        run: |
+          QUERY='kube_cronjob_status_last_successful_time{exported_namespace=~"dk-data.*"}'
+          ENCODED=$(python3 -c "import urllib.parse; print(urllib.parse.quote('$QUERY'))")
+          RESPONSE=$(curl -sf -H "Authorization: Bearer $GRAFANA_API_KEY" \
+            "$GRAFANA_URL/api/datasources/proxy/uid/${{ steps.datasources.outputs.mimir_uid }}/api/v1/query?query=${ENCODED}" \
+            2>/dev/null || echo '{"status":"error"}')
+
+          RESULT_COUNT=$(echo "$RESPONSE" | jq '.data.result | length // 0' 2>/dev/null || echo "0")
+          if [ "$RESULT_COUNT" -eq 0 ]; then
+            echo "::warning::Tier 1 CronJob metrics returned 0 results — CronJobs may not have run yet"
+            echo "result=warn" >> $GITHUB_OUTPUT
+          else
+            echo "PASS: CronJob last_successful_time returned $RESULT_COUNT series"
+            echo "result=pass" >> $GITHUB_OUTPUT
+          fi
+
+      # ── Soft Check: Tier 2 — app up metric (T034) ────────────────
+      - name: "Soft: Tier 2 — job-trigger up (T034)"
+        id: tier2_up
+        run: |
+          QUERY='up{app="job-trigger",namespace=~"dk-data.*"}'
+          ENCODED=$(python3 -c "import urllib.parse; print(urllib.parse.quote('$QUERY'))")
+          RESPONSE=$(curl -sf -H "Authorization: Bearer $GRAFANA_API_KEY" \
+            "$GRAFANA_URL/api/datasources/proxy/uid/${{ steps.datasources.outputs.mimir_uid }}/api/v1/query?query=${ENCODED}" \
+            2>/dev/null || echo '{"status":"error"}')
+
+          RESULT_COUNT=$(echo "$RESPONSE" | jq '.data.result | length // 0' 2>/dev/null || echo "0")
+          if [ "$RESULT_COUNT" -eq 0 ]; then
+            echo "::warning::Tier 2 job-trigger up metric not found — Alloy may not have scraped yet (~2min after deploy)"
+            echo "result=warn" >> $GITHUB_OUTPUT
+          else
+            echo "PASS: job-trigger up metric returned $RESULT_COUNT series"
+            echo "result=pass" >> $GITHUB_OUTPUT
+          fi
+
+      # ── Soft Check: Tier 2 — HTTP request rate (T034) ────────────
+      - name: "Soft: Tier 2 — HTTP request rate (T034)"
+        id: tier2_http
+        run: |
+          QUERY='sum(rate(http_requests_total{namespace=~"dk-data.*"}[5m]))'
+          ENCODED=$(python3 -c "import urllib.parse; print(urllib.parse.quote('$QUERY'))")
+          RESPONSE=$(curl -sf -H "Authorization: Bearer $GRAFANA_API_KEY" \
+            "$GRAFANA_URL/api/datasources/proxy/uid/${{ steps.datasources.outputs.mimir_uid }}/api/v1/query?query=${ENCODED}" \
+            2>/dev/null || echo '{"status":"error"}')
+
+          RESULT_COUNT=$(echo "$RESPONSE" | jq '.data.result | length // 0' 2>/dev/null || echo "0")
+          if [ "$RESULT_COUNT" -eq 0 ]; then
+            echo "::warning::Tier 2 http_requests_total returned 0 results — needs traffic to job-trigger"
+            echo "result=warn" >> $GITHUB_OUTPUT
+          else
+            VALUE=$(echo "$RESPONSE" | jq -r '.data.result[0].value[1] // "0"' 2>/dev/null || echo "0")
+            echo "PASS: HTTP request rate = $VALUE req/s"
+            echo "result=pass" >> $GITHUB_OUTPUT
+          fi
+
+      # ── Soft Check: Tier 3 — PostgREST/Traefik metrics (T035) ────
+      - name: "Soft: Tier 3 — Traefik PostgREST metrics (T035)"
+        id: tier3_traefik
+        run: |
+          NS="${{ steps.ns.outputs.namespace }}"
+          QUERY="traefik_service_requests_total{service=~\"${NS}-dk-data-api.*\"}"
+          ENCODED=$(python3 -c "import urllib.parse; print(urllib.parse.quote('''$QUERY'''))")
+          RESPONSE=$(curl -sf -H "Authorization: Bearer $GRAFANA_API_KEY" \
+            "$GRAFANA_URL/api/datasources/proxy/uid/${{ steps.datasources.outputs.mimir_uid }}/api/v1/query?query=${ENCODED}" \
+            2>/dev/null || echo '{"status":"error"}')
+
+          RESULT_COUNT=$(echo "$RESPONSE" | jq '.data.result | length // 0' 2>/dev/null || echo "0")
+          if [ "$RESULT_COUNT" -eq 0 ]; then
+            echo "::warning::Tier 3 Traefik PostgREST metrics returned 0 results — needs external traffic to data API"
+            echo "result=warn" >> $GITHUB_OUTPUT
+          else
+            echo "PASS: Traefik PostgREST metrics returned $RESULT_COUNT series"
+            echo "result=pass" >> $GITHUB_OUTPUT
+          fi
+
+      # ── Soft Check: Alert rules provisioned (T036) ────────────────
+      - name: "Soft: Alert rules provisioned (T036)"
+        id: alerts
+        run: |
+          RESPONSE=$(curl -sf -H "Authorization: Bearer $GRAFANA_API_KEY" \
+            "$GRAFANA_URL/api/v1/provisioning/alert-rules" \
+            2>/dev/null || echo "[]")
+
+          DK_DATA_RULES=$(echo "$RESPONSE" | jq '[.[] | select(.title | test("dk-data"; "i"))] | length' 2>/dev/null || echo "0")
+          if [ "$DK_DATA_RULES" -eq 0 ]; then
+            echo "::warning::No dk-data alert rules found in Grafana — dashboards may not have synced yet"
+            echo "result=warn" >> $GITHUB_OUTPUT
+          else
+            echo "PASS: Found $DK_DATA_RULES dk-data alert rules provisioned"
+            echo "result=pass" >> $GITHUB_OUTPUT
+          fi
+
+      # ── Soft Check: Traces in Tempo (T038) ────────────────────────
+      - name: "Soft: Traces in Tempo (T038)"
+        id: traces
+        if: steps.datasources.outputs.tempo_uid != '' && steps.datasources.outputs.tempo_uid != 'null'
+        run: |
+          RESPONSE=$(curl -sf -H "Authorization: Bearer $GRAFANA_API_KEY" \
+            "$GRAFANA_URL/api/datasources/proxy/uid/${{ steps.datasources.outputs.tempo_uid }}/api/search?q=service.name%3Djob-trigger&limit=5" \
+            2>/dev/null || echo '{"traces":[]}')
+
+          TRACE_COUNT=$(echo "$RESPONSE" | jq '.traces | length // 0' 2>/dev/null || echo "0")
+          if [ "$TRACE_COUNT" -eq 0 ]; then
+            echo "::warning::No traces found for service.name=job-trigger in Tempo — needs processed requests"
+            echo "result=warn" >> $GITHUB_OUTPUT
+          else
+            echo "PASS: Found $TRACE_COUNT recent traces for job-trigger"
+            echo "result=pass" >> $GITHUB_OUTPUT
+          fi
+
+      # ── Soft Check: Structured logs in Loki (T039) ───────────────
+      - name: "Soft: Structured logs in Loki (T039)"
+        id: logs
+        if: steps.datasources.outputs.loki_uid != '' && steps.datasources.outputs.loki_uid != 'null'
+        run: |
+          NS="${{ steps.ns.outputs.namespace }}"
+          QUERY="{namespace=\"${NS}\", app=\"job-trigger\"} | json | trace_id != \"\""
+          ENCODED=$(python3 -c "import urllib.parse; print(urllib.parse.quote('''$QUERY'''))")
+          RESPONSE=$(curl -sf -H "Authorization: Bearer $GRAFANA_API_KEY" \
+            "$GRAFANA_URL/api/datasources/proxy/uid/${{ steps.datasources.outputs.loki_uid }}/loki/api/v1/query?query=${ENCODED}&limit=5" \
+            2>/dev/null || echo '{"status":"error"}')
+
+          RESULT_COUNT=$(echo "$RESPONSE" | jq '.data.result | length // 0' 2>/dev/null || echo "0")
+          if [ "$RESULT_COUNT" -eq 0 ]; then
+            echo "::warning::No structured logs with trace_id found in Loki — needs active logging with trace correlation"
+            echo "result=warn" >> $GITHUB_OUTPUT
+          else
+            echo "PASS: Found structured logs with trace_id in Loki ($RESULT_COUNT streams)"
+            echo "result=pass" >> $GITHUB_OUTPUT
+          fi
+
+      # ── Summary ───────────────────────────────────────────────────
+      - name: Observability verification summary
+        if: always()
+        run: |
+          echo ""
+          echo "============================================="
+          echo "Observability Verification: ${{ steps.ns.outputs.namespace }}"
+          echo "============================================="
+          echo ""
+
+          # Collect results
+          declare -A RESULTS
+          RESULTS[tier1_kube_state]="${{ steps.tier1.outputs.result }}"
+          RESULTS[tier1_cronjob]="${{ steps.tier1_cronjob.outputs.result }}"
+          RESULTS[tier2_up]="${{ steps.tier2_up.outputs.result }}"
+          RESULTS[tier2_http]="${{ steps.tier2_http.outputs.result }}"
+          RESULTS[tier3_traefik]="${{ steps.tier3_traefik.outputs.result }}"
+          RESULTS[alerts]="${{ steps.alerts.outputs.result }}"
+          RESULTS[traces]="${{ steps.traces.outputs.result }}"
+          RESULTS[logs]="${{ steps.logs.outputs.result }}"
+
+          # Print console table
+          printf "%-35s %s\n" "Check" "Result"
+          printf "%-35s %s\n" "-----------------------------------" "------"
+          printf "%-35s %s\n" "Tier 1: kube-state-metrics (T033)" "${RESULTS[tier1_kube_state]:-skip}"
+          printf "%-35s %s\n" "Tier 1: CronJob last success (T033)" "${RESULTS[tier1_cronjob]:-skip}"
+          printf "%-35s %s\n" "Tier 2: job-trigger up (T034)" "${RESULTS[tier2_up]:-skip}"
+          printf "%-35s %s\n" "Tier 2: HTTP request rate (T034)" "${RESULTS[tier2_http]:-skip}"
+          printf "%-35s %s\n" "Tier 3: Traefik PostgREST (T035)" "${RESULTS[tier3_traefik]:-skip}"
+          printf "%-35s %s\n" "Alert rules provisioned (T036)" "${RESULTS[alerts]:-skip}"
+          printf "%-35s %s\n" "Traces in Tempo (T038)" "${RESULTS[traces]:-skip}"
+          printf "%-35s %s\n" "Structured logs in Loki (T039)" "${RESULTS[logs]:-skip}"
+          echo ""
+
+          # GitHub Step Summary
+          {
+            echo "## Observability Verification Results"
+            echo ""
+            echo "**Namespace:** \`${{ steps.ns.outputs.namespace }}\`"
+            echo "**Grafana:** $GRAFANA_URL"
+            echo ""
+            echo "| Check | Task | Result |"
+            echo "|-------|------|--------|"
+            echo "| Tier 1: kube-state-metrics | T033 | ${RESULTS[tier1_kube_state]:-skip} |"
+            echo "| Tier 1: CronJob last success | T033 | ${RESULTS[tier1_cronjob]:-skip} |"
+            echo "| Tier 2: job-trigger up | T034 | ${RESULTS[tier2_up]:-skip} |"
+            echo "| Tier 2: HTTP request rate | T034 | ${RESULTS[tier2_http]:-skip} |"
+            echo "| Tier 3: Traefik PostgREST | T035 | ${RESULTS[tier3_traefik]:-skip} |"
+            echo "| Alert rules provisioned | T036 | ${RESULTS[alerts]:-skip} |"
+            echo "| Traces in Tempo | T038 | ${RESULTS[traces]:-skip} |"
+            echo "| Structured logs in Loki | T039 | ${RESULTS[logs]:-skip} |"
+            echo ""
+            echo "> Hard checks (fail workflow): Tier 1 kube-state-metrics"
+            echo "> Soft checks (warn only): All others — may need traffic or time to populate"
+            echo ""
+            echo "**Not automated (requires cluster access):**"
+            echo "- T037: Trigger CronJob + verify batch metrics (\`kubectl create job\`)"
+          } >> $GITHUB_STEP_SUMMARY
