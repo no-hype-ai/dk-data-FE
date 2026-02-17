@@ -4,6 +4,7 @@ Pipeline Monitoring Service
 Monitors data pipeline health, tracks runs, and exposes Prometheus metrics.
 
 Part of DK Molecule Data Platform (012-dk-data-platform)
+Refactored: 013-dk-data-observability — metrics imported from observability.metrics
 """
 
 from datetime import datetime
@@ -12,77 +13,21 @@ from uuid import UUID, uuid4
 from dataclasses import dataclass, field
 from enum import Enum
 import logging
-from prometheus_client import Counter, Histogram, Gauge
 
 logger = logging.getLogger(__name__)
 
-
-# ============================================================================
-# Prometheus Metrics
-# ============================================================================
-
-# Pipeline run metrics
-PIPELINE_RUNS_TOTAL = Counter(
-    'dk_pipeline_runs_total',
-    'Total number of pipeline runs',
-    ['layer', 'source', 'status']
-)
-
-PIPELINE_DURATION_SECONDS = Histogram(
-    'dk_pipeline_duration_seconds',
-    'Pipeline run duration in seconds',
-    ['layer', 'source'],
-    buckets=[1, 5, 10, 30, 60, 120, 300, 600, 1800, 3600]
-)
-
-PIPELINE_RECORDS_PROCESSED = Counter(
-    'dk_pipeline_records_processed_total',
-    'Total records processed by pipeline',
-    ['layer', 'source']
-)
-
-PIPELINE_ERRORS_TOTAL = Counter(
-    'dk_pipeline_errors_total',
-    'Total pipeline errors',
-    ['layer', 'source', 'error_type']
-)
-
-# Data freshness metrics
-SOURCE_LAST_SYNC = Gauge(
-    'dk_source_last_sync_timestamp',
-    'Timestamp of last successful sync',
-    ['source']
-)
-
-SOURCE_RECORDS_TOTAL = Gauge(
-    'dk_source_records_total',
-    'Total records for source',
-    ['source', 'layer']
-)
-
-# Entity resolution metrics
-RESOLUTION_QUEUE_SIZE = Gauge(
-    'dk_resolution_queue_size',
-    'Number of items in resolution queue',
-    ['priority']
-)
-
-RESOLUTION_SUCCESS_RATE = Gauge(
-    'dk_resolution_success_rate',
-    'Entity resolution success rate'
-)
-
-# Molecule metrics
-MOLECULES_TOTAL = Gauge(
-    'dk_molecules_total',
-    'Total molecules',
-    ['status']
-)
-
-MOLECULES_BY_STAGE = Gauge(
-    'dk_molecules_by_stage',
-    'Molecules by lifecycle stage',
-    ['stage']
+# Import all metrics from canonical source (013-dk-data-observability)
+from dk_data.observability.metrics import (
+    DK_PIPELINE_RUNS_TOTAL as PIPELINE_RUNS_TOTAL,
+    DK_PIPELINE_DURATION_SECONDS as PIPELINE_DURATION_SECONDS,
+    DK_PIPELINE_RECORDS_PROCESSED as PIPELINE_RECORDS_PROCESSED,
+    DK_PIPELINE_ERRORS as PIPELINE_ERRORS_TOTAL,
+    DK_SOURCE_LAST_SYNC as SOURCE_LAST_SYNC,
+    DK_SOURCE_RECORDS_TOTAL as SOURCE_RECORDS_TOTAL,
+    DK_RESOLUTION_QUEUE_SIZE as RESOLUTION_QUEUE_SIZE,
+    DK_RESOLUTION_SUCCESS_RATE as RESOLUTION_SUCCESS_RATE,
+    DK_MOLECULES_TOTAL as MOLECULES_TOTAL,
+    DK_MOLECULES_BY_STAGE as MOLECULES_BY_STAGE,
 )
 
 
@@ -280,7 +225,7 @@ class PipelineMonitoringService:
 
         if status == RunStatus.FAILED:
             PIPELINE_ERRORS_TOTAL.labels(
-                layer=layer, source=source, error_type="run_failed"
+                layer=layer, error_type="run_failed"
             ).inc()
 
         if status == RunStatus.SUCCESS:

@@ -101,6 +101,13 @@ def setup_telemetry(
     except Exception as e:
         logger.debug(f"Could not instrument psycopg2: {e}")
 
+    try:
+        from opentelemetry.instrumentation.httpx import HTTPXClientInstrumentor
+        HTTPXClientInstrumentor().instrument()
+        logger.debug("Instrumented: httpx")
+    except Exception as e:
+        logger.debug(f"Could not instrument httpx: {e}")
+
     _telemetry_initialized = True
 
 

@@ -13,13 +13,7 @@ from typing import Optional
 
 from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel
-from prometheus_client import (
-    Counter,
-    Gauge,
-    Histogram,
-    generate_latest,
-    CONTENT_TYPE_LATEST,
-)
+from prometheus_client import generate_latest, CONTENT_TYPE_LATEST
 from starlette.responses import Response
 from loguru import logger
 
@@ -37,6 +31,34 @@ except ImportError:
     refresh_metrics_from_database_sync = None
     logger.warning("DK Data Platform metrics not available")
 
+# Import all metrics from canonical source (013-dk-data-observability)
+from dk_data.observability.metrics import (
+    mark_job_success,
+    record_job_records,
+    record_job_duration,
+    increment_job_failure,
+    record_data_source_refresh,
+    DK_BRONZE_RECORDS_INGESTED as bronze_records_ingested,
+    DK_BRONZE_INGESTION_ERRORS as bronze_ingestion_errors,
+    DK_BRONZE_INGESTION_DURATION as bronze_ingestion_duration,
+    DK_BRONZE_UNPROCESSED_RECORDS as bronze_unprocessed_records,
+    DK_SILVER_RECORDS_TRANSFORMED as silver_records_transformed,
+    DK_SILVER_TRANSFORMATION_ERRORS as silver_transformation_errors,
+    DK_SILVER_MOLECULES_TOTAL as silver_molecules_total,
+    DK_SILVER_IDENTIFIER_MAPPINGS as silver_identifier_mappings,
+    DK_GOLD_PROFILES_TOTAL as gold_profiles_total,
+    DK_GOLD_AGGREGATION_DURATION as gold_aggregation_duration,
+    DK_RESOLUTION_REQUESTS as resolution_requests,
+    DK_RESOLUTION_LATENCY as resolution_latency,
+    DK_FUZZY_MATCH_REQUESTS as fuzzy_match_requests,
+    DK_FUZZY_MATCH_RESULTS as fuzzy_match_results,
+    DK_ONBOARDING_STARTED as onboarding_started,
+    DK_ONBOARDING_COMPLETED as onboarding_completed,
+    DK_ONBOARDING_STEP_DURATION as onboarding_step_duration,
+    DK_ALERTS_GENERATED as alerts_generated,
+    DK_ALERTS_DELIVERED as alerts_delivered,
+)
+
 # Router
 router = APIRouter(prefix="/api/v1/monitoring", tags=["monitoring"])
 
@@ -48,130 +70,6 @@ if DK_METRICS_AVAILABLE:
         refresh_metrics_from_database_sync()
     except Exception as e:
         logger.warning(f"Initial metrics refresh failed: {e}")
-
-
-# ==========================================
-# Prometheus Metrics Definitions
-# ==========================================
-
-# Bronze Layer Metrics
-bronze_records_ingested = Counter(
-    "dk_bronze_records_ingested_total",
-    "Total records ingested into Bronze layer",
-    ["source"],
-)
-
-bronze_ingestion_errors = Counter(
-    "dk_bronze_ingestion_errors_total",
-    "Total ingestion errors by source",
-    ["source", "error_type"],
-)
-
-bronze_ingestion_duration = Histogram(
-    "dk_bronze_ingestion_duration_seconds",
-    "Time spent on Bronze ingestion runs",
-    ["source"],
-    buckets=[1, 5, 10, 30, 60, 120, 300, 600],
-)
-
-bronze_unprocessed_records = Gauge(
-    "dk_bronze_unprocessed_records",
-    "Number of Bronze records pending Silver transformation",
-    ["source"],
-)
-
-# Silver Layer Metrics
-silver_records_transformed = Counter(
-    "dk_silver_records_transformed_total",
-    "Total records transformed to Silver layer",
-    ["source_table"],
-)
-
-silver_transformation_errors = Counter(
-    "dk_silver_transformation_errors_total",
-    "Total transformation errors",
-    ["source_table", "error_type"],
-)
-
-silver_molecules_total = Gauge(
-    "dk_silver_molecules_total",
-    "Total unique molecules in Silver layer",
-)
-
-silver_identifier_mappings = Gauge(
-    "dk_silver_identifier_mappings_total",
-    "Total identifier mappings",
-    ["identifier_type"],
-)
-
-# Gold Layer Metrics
-gold_profiles_total = Gauge(
-    "dk_gold_profiles_total",
-    "Total molecule profiles in Gold layer",
-)
-
-gold_aggregation_duration = Histogram(
-    "dk_gold_aggregation_duration_seconds",
-    "Time spent on Gold aggregation",
-    ["aggregation_type"],
-    buckets=[10, 30, 60, 120, 300, 600, 1200],
-)
-
-# Resolution Metrics
-resolution_requests = Counter(
-    "dk_resolution_requests_total",
-    "Total identifier resolution requests",
-    ["resolution_type"],  # cache_hit, local_db, external_api
-)
-
-resolution_latency = Histogram(
-    "dk_resolution_latency_seconds",
-    "Latency of identifier resolution",
-    ["resolution_type"],
-    buckets=[0.01, 0.05, 0.1, 0.25, 0.5, 1, 2.5, 5, 10],
-)
-
-fuzzy_match_requests = Counter(
-    "dk_fuzzy_match_requests_total",
-    "Total fuzzy matching requests",
-)
-
-fuzzy_match_results = Histogram(
-    "dk_fuzzy_match_results_count",
-    "Number of results returned per fuzzy match",
-    buckets=[0, 1, 5, 10, 25, 50, 100],
-)
-
-# Onboarding Metrics
-onboarding_started = Counter(
-    "dk_onboarding_started_total",
-    "Total onboarding wizards started",
-)
-
-onboarding_completed = Counter(
-    "dk_onboarding_completed_total",
-    "Total onboarding wizards completed",
-)
-
-onboarding_step_duration = Histogram(
-    "dk_onboarding_step_duration_seconds",
-    "Time spent on each onboarding step",
-    ["step_number"],
-    buckets=[5, 15, 30, 60, 120, 300],
-)
-
-# Alert Metrics
-alerts_generated = Counter(
-    "dk_alerts_generated_total",
-    "Total alerts generated",
-    ["alert_type", "severity"],
-)
-
-alerts_delivered = Counter(
-    "dk_alerts_delivered_total",
-    "Total alerts delivered",
-    ["delivery_method"],
-)
 
 
 # ==========================================
@@ -199,6 +97,16 @@ class PipelineHealth(BaseModel):
     silver: LayerHealth
     gold: LayerHealth
     last_check: datetime
+
+
+class JobCompletionReport(BaseModel):
+    """CronJob completion report (013-dk-data-observability T016)."""
+    job_name: str
+    status: str  # "success" | "failure"
+    duration_seconds: float
+    records_processed: int = 0
+    source_name: Optional[str] = None
+    error_message: Optional[str] = None
 
 
 class RunTriggerRequest(BaseModel):
@@ -235,6 +143,33 @@ async def prometheus_metrics():
         content=generate_latest(),
         media_type=CONTENT_TYPE_LATEST,
     )
+
+
+@router.post("/job-complete")
+async def report_job_completion(report: JobCompletionReport):
+    """
+    Called by CronJobs to report completion metrics.
+    Feature: 013-dk-data-observability (T016)
+    """
+    if report.status == "success":
+        mark_job_success(report.job_name)
+        record_job_records(report.job_name, report.records_processed)
+    else:
+        increment_job_failure(report.job_name)
+
+    record_job_duration(report.job_name, report.duration_seconds)
+
+    if report.source_name:
+        record_data_source_refresh(
+            report.job_name, report.source_name, report.records_processed
+        )
+
+    logger.info(
+        f"Job completion recorded: {report.job_name} "
+        f"status={report.status} duration={report.duration_seconds:.1f}s "
+        f"records={report.records_processed}"
+    )
+    return {"status": "recorded"}
 
 
 @router.get("/stats")

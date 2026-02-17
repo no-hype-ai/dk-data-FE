@@ -1,8 +1,10 @@
 """
-DK Data Platform Prometheus Metrics
+DK Data Platform Prometheus Metrics — Update Functions
 
-Exposes metrics for Grafana dashboards to visualize pipeline health,
-data freshness, and platform statistics.
+Feature: 013-dk-data-observability (refactored from 012-dk-data-platform)
+
+All metric DEFINITIONS are now in dk_data.observability.metrics (single source of truth).
+This module provides metric UPDATE FUNCTIONS that query the database and set gauge values.
 """
 
 import time
@@ -10,157 +12,39 @@ from typing import Optional
 from loguru import logger
 
 try:
-    from prometheus_client import Counter, Histogram, Gauge, generate_latest, CONTENT_TYPE_LATEST
+    from prometheus_client import CONTENT_TYPE_LATEST, generate_latest
     PROMETHEUS_AVAILABLE = True
 except ImportError:
     PROMETHEUS_AVAILABLE = False
     logger.warning("prometheus-client not installed, DK metrics disabled")
 
-
-# =============================================================================
-# Data Platform Metrics - Overview Dashboard
-# =============================================================================
-
+# Import all metric objects from the canonical location
 if PROMETHEUS_AVAILABLE:
-    # Entity counts
-    DK_MOLECULES_TOTAL = Gauge(
-        "dk_molecules_total",
-        "Total molecules in the platform",
-        ["status"],
-    )
-
-    DK_CLINICAL_TRIALS_TOTAL = Gauge(
-        "dk_clinical_trials_total",
-        "Total clinical trials tracked",
-        ["status"],
-    )
-
-    DK_ADVERSE_EVENTS_TOTAL = Gauge(
-        "dk_adverse_events_reports_total",
-        "Total adverse event reports",
-    )
-
-    DK_RESOLUTION_QUEUE_PENDING = Gauge(
-        "dk_resolution_queue_pending_total",
-        "Pending items in entity resolution queue",
-    )
-
-    # Lifecycle stage breakdown
-    DK_MOLECULES_BY_STAGE = Gauge(
-        "dk_molecules_by_lifecycle_stage",
-        "Molecules by lifecycle stage",
-        ["stage"],
-    )
-
-    DK_TRIALS_BY_PHASE = Gauge(
-        "dk_clinical_trials_by_phase",
-        "Clinical trials by phase",
-        ["phase"],
-    )
-
-    # Entity resolution
-    DK_ENTITY_RESOLUTION_SUCCESS_RATE = Gauge(
-        "dk_entity_resolution_success_rate",
-        "Entity resolution success rate (0-1)",
-    )
-
-    # Data freshness
-    DK_SOURCE_LAST_SYNC = Gauge(
-        "dk_source_last_sync_timestamp",
-        "Unix timestamp of last successful sync",
-        ["source"],
-    )
-
-    DK_SOURCE_HEALTH_STATUS = Gauge(
-        "dk_source_health_status",
-        "Data source health status (healthy=1, stale=0.5, error=0)",
-        ["source"],
-    )
-
-    # =============================================================================
-    # Pipeline Health Metrics
-    # =============================================================================
-
-    DK_PIPELINE_RECORDS_PROCESSED = Counter(
-        "dk_pipeline_records_processed_total",
-        "Total records processed by pipeline",
-        ["layer", "source"],
-    )
-
-    DK_PIPELINE_PROCESSING_DURATION = Histogram(
-        "dk_pipeline_processing_duration_seconds",
-        "Pipeline processing duration",
-        ["layer"],
-        buckets=[0.1, 0.25, 0.5, 1.0, 2.5, 5.0, 10.0, 30.0, 60.0],
-    )
-
-    DK_PIPELINE_ERRORS = Counter(
-        "dk_pipeline_errors_total",
-        "Pipeline errors",
-        ["layer", "error_type"],
-    )
-
-    DK_API_REQUESTS = Counter(
-        "dk_api_requests_total",
-        "API requests to data sources",
-        ["source", "status"],
-    )
-
-    DK_ALERTS_ACTIVE = Gauge(
-        "dk_alerts_active",
-        "Currently active alerts",
-        ["severity", "alert_type"],
-    )
-
-    # Pipeline Job Tracking
-    DK_PIPELINE_JOBS_TOTAL = Counter(
-        "dk_pipeline_jobs_total",
-        "Total pipeline jobs executed",
-        ["tier", "status"],
-    )
-
-    DK_PIPELINE_JOB_DURATION = Histogram(
-        "dk_pipeline_job_duration_seconds",
-        "Pipeline job total duration",
-        ["tier"],
-        buckets=[60, 300, 600, 1800, 3600, 7200, 14400],
-    )
-
-    DK_PIPELINE_LAST_SUCCESS = Gauge(
-        "dk_pipeline_last_success_timestamp",
-        "Unix timestamp of last successful pipeline run",
-        ["tier"],
-    )
-
-    DK_PIPELINE_ACTIVE = Gauge(
-        "dk_pipeline_active",
-        "Whether a pipeline is currently running (1) or not (0)",
-        ["tier"],
-    )
-
-    DK_LAYER_RECORD_COUNT = Gauge(
-        "dk_layer_record_count",
-        "Current record count per layer",
-        ["layer"],
-    )
-
-    DK_RAW_UNPROCESSED = Gauge(
-        "dk_raw_unprocessed_total",
-        "Unprocessed records in raw layer",
-        ["source"],
-    )
-
-    DK_BRONZE_UNPROCESSED = Gauge(
-        "dk_bronze_unprocessed_total",
-        "Unprocessed records in bronze layer",
-        ["source"],
-    )
-
-    # Table record counts by layer (for Grafana table panel)
-    DK_TABLE_RECORD_COUNT = Gauge(
-        "dk_table_record_count",
-        "Record count per table",
-        ["layer", "table_name"],
+    from dk_data.observability.metrics import (
+        DK_MOLECULES_TOTAL,
+        DK_CLINICAL_TRIALS_TOTAL,
+        DK_ADVERSE_EVENTS_TOTAL,
+        DK_RESOLUTION_QUEUE_PENDING,
+        DK_MOLECULES_BY_LIFECYCLE_STAGE,
+        DK_TRIALS_BY_PHASE,
+        DK_ENTITY_RESOLUTION_SUCCESS_RATE,
+        DK_SOURCE_LAST_SYNC,
+        DK_SOURCE_HEALTH_STATUS,
+        DK_PIPELINE_RECORDS_PROCESSED,
+        DK_PIPELINE_PROCESSING_DURATION,
+        DK_PIPELINE_ERRORS,
+        DK_API_REQUESTS,
+        DK_ALERTS_ACTIVE,
+        DK_PIPELINE_JOBS_TOTAL,
+        DK_PIPELINE_JOB_DURATION,
+        DK_PIPELINE_LAST_SUCCESS,
+        DK_PIPELINE_ACTIVE,
+        DK_LAYER_RECORD_COUNT,
+        DK_RAW_UNPROCESSED,
+        DK_BRONZE_UNPROCESSED,
+        DK_TABLE_RECORD_COUNT,
+        DK_QUARANTINE_COUNT,
+        IP_DATA_SOURCES,
     )
 
 
@@ -201,13 +85,13 @@ def set_molecules_by_stage(discovery: int = 0, preclinical: int = 0,
                            approved: int = 0, marketed: int = 0):
     """Update molecules by lifecycle stage."""
     if PROMETHEUS_AVAILABLE:
-        DK_MOLECULES_BY_STAGE.labels(stage="discovery").set(discovery)
-        DK_MOLECULES_BY_STAGE.labels(stage="preclinical").set(preclinical)
-        DK_MOLECULES_BY_STAGE.labels(stage="phase1").set(phase1)
-        DK_MOLECULES_BY_STAGE.labels(stage="phase2").set(phase2)
-        DK_MOLECULES_BY_STAGE.labels(stage="phase3").set(phase3)
-        DK_MOLECULES_BY_STAGE.labels(stage="approved").set(approved)
-        DK_MOLECULES_BY_STAGE.labels(stage="marketed").set(marketed)
+        DK_MOLECULES_BY_LIFECYCLE_STAGE.labels(stage="discovery").set(discovery)
+        DK_MOLECULES_BY_LIFECYCLE_STAGE.labels(stage="preclinical").set(preclinical)
+        DK_MOLECULES_BY_LIFECYCLE_STAGE.labels(stage="phase1").set(phase1)
+        DK_MOLECULES_BY_LIFECYCLE_STAGE.labels(stage="phase2").set(phase2)
+        DK_MOLECULES_BY_LIFECYCLE_STAGE.labels(stage="phase3").set(phase3)
+        DK_MOLECULES_BY_LIFECYCLE_STAGE.labels(stage="approved").set(approved)
+        DK_MOLECULES_BY_LIFECYCLE_STAGE.labels(stage="marketed").set(marketed)
 
 
 def set_trials_by_phase(phase1: int = 0, phase2: int = 0, phase3: int = 0, phase4: int = 0):
@@ -305,6 +189,12 @@ def set_table_record_count(layer: str, table_name: str, count: int):
         DK_TABLE_RECORD_COUNT.labels(layer=layer, table_name=table_name).set(count)
 
 
+def set_quarantine_count(count: int):
+    """Set quarantine molecule count."""
+    if PROMETHEUS_AVAILABLE:
+        DK_QUARANTINE_COUNT.set(count)
+
+
 # =============================================================================
 # Initialize metrics from database
 # =============================================================================
@@ -313,7 +203,6 @@ def initialize_demo_metrics():
     """Initialize metrics - schedules async database refresh."""
     if not PROMETHEUS_AVAILABLE:
         return
-    # Initial sync metrics will be updated by refresh_metrics_from_database
     logger.info("DK Data Platform metrics initialized - awaiting database refresh")
 
 
@@ -326,10 +215,8 @@ def refresh_metrics_from_database_sync():
         logger.warning("psycopg2 not available for sync metrics refresh")
         return
 
-    # Use Docker internal hostname (postgres) or external (localhost:5433)
     db_url = os.getenv('DATABASE_URL')
     if not db_url:
-        # Build from individual env vars (Docker container uses these)
         db_host = os.getenv('POSTGRES_HOST', 'postgres')
         db_port = os.getenv('POSTGRES_PORT', '5432')
         db_name = os.getenv('POSTGRES_DB', 'dk_data')
@@ -341,11 +228,10 @@ def refresh_metrics_from_database_sync():
         conn = psycopg2.connect(db_url)
         cur = conn.cursor()
 
-        # Get compound counts (molecules) - using medallion architecture
+        # Get compound counts (molecules)
         cur.execute("SELECT COUNT(*) FROM silver.molecules")
         total_compounds = cur.fetchone()[0] or 0
 
-        # Estimate published/draft/archived based on data quality
         cur.execute("SELECT COUNT(*) FROM silver.molecules WHERE canonical_smiles IS NOT NULL AND inchi_key IS NOT NULL")
         with_identifiers = cur.fetchone()[0] or 0
 
@@ -355,7 +241,7 @@ def refresh_metrics_from_database_sync():
             archived=0
         )
 
-        # Get clinical trial counts by status - using medallion architecture
+        # Get clinical trial counts by status
         cur.execute("""
             SELECT status, COUNT(*) as cnt
             FROM silver.clinical_trials
@@ -364,7 +250,6 @@ def refresh_metrics_from_database_sync():
         """)
         status_counts = {row[0].upper() if row[0] else 'UNKNOWN': row[1] for row in cur.fetchall()}
 
-        # Handle both uppercase and mixed case status values
         active_statuses = ['RECRUITING', 'NOT YET RECRUITING', 'ACTIVE, NOT RECRUITING', 'ENROLLING BY INVITATION', 'ACTIVE']
         completed_statuses = ['COMPLETED']
         terminated_statuses = ['TERMINATED', 'WITHDRAWN', 'SUSPENDED']
@@ -375,14 +260,14 @@ def refresh_metrics_from_database_sync():
 
         set_clinical_trials_count(active=active, completed=completed, terminated=terminated)
 
-        # Get adverse events count - using medallion architecture
+        # Get adverse events count
         cur.execute("SELECT COUNT(*) FROM bronze.openfda_faers")
         faers_count = cur.fetchone()[0] or 0
         cur.execute("SELECT COUNT(*) FROM bronze.sider_adverse_reactions")
         sider_count = cur.fetchone()[0] or 0
         set_adverse_events_count(faers_count + sider_count)
 
-        # Get clinical trials by phase - using medallion architecture
+        # Get clinical trials by phase
         cur.execute("""
             SELECT
                 CASE
@@ -405,7 +290,7 @@ def refresh_metrics_from_database_sync():
             phase4=phase_counts.get('Phase 4', 0)
         )
 
-        # Resolution queue from silver layer (if exists)
+        # Resolution queue
         try:
             cur.execute("SELECT COUNT(*) FROM silver.resolution_queue WHERE status = 'pending'")
             pending = cur.fetchone()[0] or 0
@@ -413,7 +298,7 @@ def refresh_metrics_from_database_sync():
         except Exception:
             set_resolution_queue_pending(0)
 
-        # Entity resolution success rate (estimate from cross-references) - using medallion architecture
+        # Entity resolution success rate
         cur.execute("SELECT COUNT(DISTINCT inchi_key) FROM silver.compound_cross_reference")
         resolved = cur.fetchone()[0] or 0
         if total_compounds > 0:
@@ -421,19 +306,22 @@ def refresh_metrics_from_database_sync():
         else:
             set_entity_resolution_success_rate(0.0)
 
-        # Data source health based on record counts
-        # Maps source name -> (table_name, optional: allow empty)
-        # After medallion migration: tables are in bronze/silver schemas
-        # Maps source name -> (schema.table_name, allow_empty)
+        # Quarantine count (013-dk-data-observability)
+        try:
+            cur.execute("SELECT COUNT(*) FROM silver.molecules WHERE needs_review = TRUE")
+            quarantine = cur.fetchone()[0] or 0
+            set_quarantine_count(quarantine)
+        except Exception:
+            set_quarantine_count(0)
+
+        # Data source health
         local_sources = {
-            # Silver layer (normalized entity data)
             'clinical_trials': ('silver.clinical_trials', False),
             'drug_labels': ('silver.drug_labels', False),
             'molecules': ('silver.molecules', False),
             'adverse_events': ('silver.adverse_events', True),
             'drug_interactions': ('silver.drug_interactions', True),
             'publications': ('silver.publications', True),
-            # Bronze layer (source-specific parsed data)
             'chembl': ('bronze.chembl', False),
             'drugbank': ('bronze.drugbank', False),
             'pubchem': ('bronze.pubchem', True),
@@ -443,7 +331,6 @@ def refresh_metrics_from_database_sync():
             'fda_labels_raw': ('bronze.openfda_labels', False),
             'who_inn': ('bronze.who_inn_data', True),
             'drugbank_patents': ('bronze.drugbank_patents', True),
-            # IP data sources (014-uspto-euipo-model-datasource)
             'uspto_patents': ('bronze.uspto_patents', True),
             'uspto_ci': ('bronze.uspto_ci', True),
             'epo_patents': ('bronze.epo_patents', True),
@@ -453,16 +340,13 @@ def refresh_metrics_from_database_sync():
 
         current_time = time.time()
 
-        # Check local database sources
         for source_name, (table, allow_empty) in local_sources.items():
             try:
-                # Handle schema.table format
                 if '.' in table:
                     schema, table_name = table.split('.', 1)
                 else:
                     schema, table_name = 'public', table
 
-                # First check if table exists
                 cur.execute("""
                     SELECT EXISTS (
                         SELECT FROM information_schema.tables
@@ -482,37 +366,29 @@ def refresh_metrics_from_database_sync():
                 if count > 0:
                     status = 'healthy'
                 elif allow_empty:
-                    status = 'stale'  # Table exists but empty
+                    status = 'stale'
                 else:
                     status = 'error'
                 set_source_health(source_name, status)
-                # Set last sync time (simulated based on data presence)
                 if count > 0:
-                    set_source_last_sync(source_name, current_time - (3600 * 24))  # 1 day ago
+                    set_source_last_sync(source_name, current_time - (3600 * 24))
             except Exception as e:
                 set_source_health(source_name, 'error')
                 logger.debug(f"Error checking {source_name}: {e}")
 
-        # External API sources - always healthy (availability checked separately)
         external_sources = [
-            'pubchem_api',
-            'openfda',
-            'clinicaltrials_gov',
-            'rxnorm',
-            'openalex',
-            'patentsview',
-            'ema',
+            'pubchem_api', 'openfda', 'clinicaltrials_gov',
+            'rxnorm', 'openalex', 'patentsview', 'ema',
         ]
         for source_name in external_sources:
             set_source_health(source_name, 'healthy')
             set_source_last_sync(source_name, current_time)
 
-        # No active alerts (would query alert table if exists)
         set_active_alerts("critical", "data_freshness", 0)
         set_active_alerts("warning", "api_latency", 0)
         set_active_alerts("info", "queue_backlog", 0)
 
-        # Layer record counts (use correct table names that exist in the database)
+        # Layer record counts
         layer_tables = {
             'raw': ['raw.clinicaltrials', 'raw.openfda_faers', 'raw.openfda_labels', 'raw.chembl'],
             'bronze': ['bronze.clinicaltrials', 'bronze.openfda_faers', 'bronze.openfda_labels', 'bronze.chembl'],
@@ -536,7 +412,6 @@ def refresh_metrics_from_database_sync():
             'openfda_faers': 'raw.openfda_faers',
             'openfda_labels': 'raw.openfda_labels',
             'chembl': 'raw.chembl',
-            # IP data sources (014-uspto-euipo-model-datasource)
             'uspto_patents': 'raw.uspto_patents',
             'uspto_ci': 'raw.uspto_ci',
             'epo_patents': 'raw.epo_patents',
@@ -551,7 +426,7 @@ def refresh_metrics_from_database_sync():
             except Exception:
                 set_raw_unprocessed(source, 0)
 
-        # Unprocessed counts in bronze layer (use correct table names)
+        # Unprocessed counts in bronze layer
         bronze_sources = {
             'clinicaltrials': 'bronze.clinicaltrials',
             'openfda_faers': 'bronze.openfda_faers',
@@ -566,8 +441,7 @@ def refresh_metrics_from_database_sync():
             except Exception:
                 set_bronze_unprocessed(source, 0)
 
-        # Simulate pipeline processing metrics based on actual data
-        # This increments counters to show activity in the rate() graphs
+        # Pipeline processing simulation
         import random
         pipeline_sources = [
             ('bronze', 'clinicaltrials', 'clinical_trials'),
@@ -581,18 +455,13 @@ def refresh_metrics_from_database_sync():
                 cur.execute(f"SELECT COUNT(*) FROM {table}")
                 count = cur.fetchone()[0] or 0
                 if count > 0:
-                    # Simulate small incremental processing (1-10 records per refresh)
                     increment = random.randint(1, min(10, max(1, count // 1000)))
                     if PROMETHEUS_AVAILABLE:
                         DK_PIPELINE_RECORDS_PROCESSED.labels(layer=layer, source=source).inc(increment)
             except Exception:
                 pass
 
-        # =============================================================================
-        # Table record counts by layer (for Grafana table panel)
-        # =============================================================================
-
-        # Define tables to track by layer
+        # Table record counts by layer
         layer_tables = {
             'raw': [
                 'chembl', 'clinicaltrials', 'drugbank', 'openalex',
@@ -631,7 +500,6 @@ def refresh_metrics_from_database_sync():
                     count = cur.fetchone()[0] or 0
                     set_table_record_count(layer, table, count)
                 except Exception:
-                    # Table might not exist, set to 0
                     set_table_record_count(layer, table, 0)
 
         cur.close()
@@ -640,7 +508,6 @@ def refresh_metrics_from_database_sync():
 
     except Exception as e:
         logger.error(f"Failed to refresh metrics from database: {e}")
-        # Fall back to empty metrics
         set_molecules_count(0, 0, 0)
         set_clinical_trials_count(0, 0, 0)
         set_adverse_events_count(0)
