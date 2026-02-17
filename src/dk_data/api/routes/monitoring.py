@@ -588,43 +588,41 @@ async def get_data_freshness():
     - Source-by-source freshness status
     - Staleness indicators
     - Next scheduled refresh times
+
+    Feature: 013-dk-data-observability (wired to DataFreshnessMonitor)
     """
-    # This would use DataFreshnessMonitor in production
+    from ..dependencies import get_db_pool
+    from ...services.data_platform.data_freshness_monitor import DataFreshnessMonitor
+
+    pool = await get_db_pool()
+    if pool is None:
+        raise HTTPException(status_code=503, detail="Database pool not available")
+
+    monitor = DataFreshnessMonitor(db_pool=pool)
+    try:
+        report = await monitor.get_freshness_report()
+    except Exception as e:
+        logger.error(f"Freshness report failed: {e}")
+        raise HTTPException(status_code=500, detail="Failed to generate freshness report")
+
     return {
-        "generated_at": datetime.utcnow().isoformat(),
-        "status": "healthy",
+        "generated_at": report.generated_at.isoformat(),
+        "status": report.overall_status.value,
         "sources": [
             {
-                "source": "clinicaltrials_gov",
-                "tier": "daily",
-                "status": "healthy",
-                "last_success": (datetime.utcnow() - timedelta(hours=6)).isoformat(),
-                "next_scheduled": (datetime.utcnow() + timedelta(hours=18)).isoformat(),
-                "record_count": 0,
-                "is_stale": False,
-            },
-            {
-                "source": "openfda_faers",
-                "tier": "daily",
-                "status": "healthy",
-                "last_success": (datetime.utcnow() - timedelta(hours=8)).isoformat(),
-                "next_scheduled": (datetime.utcnow() + timedelta(hours=16)).isoformat(),
-                "record_count": 0,
-                "is_stale": False,
-            },
-            {
-                "source": "drugbank",
-                "tier": "weekly",
-                "status": "healthy",
-                "last_success": (datetime.utcnow() - timedelta(days=3)).isoformat(),
-                "next_scheduled": (datetime.utcnow() + timedelta(days=4)).isoformat(),
-                "record_count": 0,
-                "is_stale": False,
-            },
+                "source": s.source,
+                "tier": s.tier.value,
+                "status": s.status.value,
+                "last_success": s.last_success.isoformat() if s.last_success else None,
+                "next_scheduled": s.next_scheduled.isoformat() if s.next_scheduled else None,
+                "record_count": s.record_count,
+                "is_stale": s.is_stale,
+            }
+            for s in report.sources
         ],
-        "healthy_count": 3,
-        "stale_count": 0,
-        "error_count": 0,
+        "healthy_count": report.healthy_count,
+        "stale_count": report.stale_count,
+        "error_count": report.error_count,
     }
 
 
@@ -632,29 +630,36 @@ async def get_data_freshness():
 async def get_source_freshness(source: str):
     """
     Get detailed freshness info for a specific source.
-    """
-    valid_sources = [
-        "clinicaltrials_gov", "openfda_faers", "openfda_labels",
-        "drugbank", "chembl", "pubchem", "uniprot", "openalex"
-    ]
 
-    if source not in valid_sources:
-        raise HTTPException(
-            status_code=404,
-            detail=f"Unknown source. Valid sources: {', '.join(valid_sources)}"
-        )
+    Feature: 013-dk-data-observability (wired to DataFreshnessMonitor)
+    """
+    from ..dependencies import get_db_pool
+    from ...services.data_platform.data_freshness_monitor import (
+        DataFreshnessMonitor,
+    )
+
+    pool = await get_db_pool()
+    if pool is None:
+        raise HTTPException(status_code=503, detail="Database pool not available")
+
+    monitor = DataFreshnessMonitor(db_pool=pool)
+    try:
+        freshness = await monitor.get_source_freshness(source)
+    except Exception as e:
+        logger.error(f"Source freshness query failed for {source}: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to query freshness for {source}")
 
     return {
-        "source": source,
-        "tier": "daily" if source.startswith("openfda") or source == "clinicaltrials_gov" else "weekly",
-        "status": "healthy",
-        "last_refresh": (datetime.utcnow() - timedelta(hours=6)).isoformat(),
-        "last_success": (datetime.utcnow() - timedelta(hours=6)).isoformat(),
-        "last_error": None,
-        "next_scheduled": (datetime.utcnow() + timedelta(hours=18)).isoformat(),
-        "record_count": 0,
-        "stale_threshold_hours": 36,
-        "is_stale": False,
+        "source": freshness.source,
+        "tier": freshness.tier.value,
+        "status": freshness.status.value,
+        "last_refresh": freshness.last_refresh.isoformat() if freshness.last_refresh else None,
+        "last_success": freshness.last_success.isoformat() if freshness.last_success else None,
+        "last_error": freshness.last_error,
+        "next_scheduled": freshness.next_scheduled.isoformat() if freshness.next_scheduled else None,
+        "record_count": freshness.record_count,
+        "stale_threshold_hours": freshness.stale_threshold_hours,
+        "is_stale": freshness.is_stale,
     }
 
 
@@ -665,18 +670,22 @@ async def get_source_metrics(
 ):
     """
     Get detailed metrics for a source over time.
+
+    Feature: 013-dk-data-observability (wired to DataFreshnessMonitor)
     """
-    return {
-        "source": source,
-        "period_days": days,
-        "total_jobs": 0,
-        "successful_jobs": 0,
-        "failed_jobs": 0,
-        "success_rate": 0.0,
-        "avg_duration_seconds": 0.0,
-        "total_records_processed": 0,
-        "jobs": [],
-    }
+    from ..dependencies import get_db_pool
+    from ...services.data_platform.data_freshness_monitor import DataFreshnessMonitor
+
+    pool = await get_db_pool()
+    if pool is None:
+        raise HTTPException(status_code=503, detail="Database pool not available")
+
+    monitor = DataFreshnessMonitor(db_pool=pool)
+    try:
+        return await monitor.get_source_metrics(source, days)
+    except Exception as e:
+        logger.error(f"Source metrics query failed for {source}: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to query metrics for {source}")
 
 
 # ==========================================
