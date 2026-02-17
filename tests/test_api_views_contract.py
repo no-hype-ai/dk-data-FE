@@ -42,8 +42,17 @@ class TestAPIViewDefinitions:
 
     @pytest.mark.parametrize("view_name", EXPECTED_VIEWS)
     def test_view_grant_exists(self, db_init_sql, view_name):
-        """Each API view must have a GRANT SELECT for api_user."""
-        assert f"GRANT SELECT ON {view_name}" in db_init_sql, (
+        """Each API view must have a GRANT SELECT — either literal or via dynamic format()."""
+        # Check for literal GRANT statement
+        has_literal_grant = f"GRANT SELECT ON {view_name}" in db_init_sql
+        # Check for dynamic GRANT via format() — view name appears in the
+        # conditional grants loop: IN ('company_pipeline', 'molecule_targets', ...)
+        short_name = view_name.replace("api.", "")
+        has_dynamic_grant = (
+            f"'{short_name}'" in db_init_sql
+            and "EXECUTE format('GRANT SELECT ON api.%I" in db_init_sql
+        )
+        assert has_literal_grant or has_dynamic_grant, (
             f"Missing GRANT for {view_name} in db-init-job.yaml"
         )
 

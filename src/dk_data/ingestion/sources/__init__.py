@@ -21,4 +21,6 @@ __all__ = [
     'uniprot',
     'pdb',
     'orcid',
+    'uspto_trademarks',
+    'euipo_trademarks',
 ]

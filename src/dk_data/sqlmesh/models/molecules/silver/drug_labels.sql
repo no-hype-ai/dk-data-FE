@@ -5,8 +5,7 @@
 MODEL (
     name silver.drug_labels,
     kind INCREMENTAL_BY_UNIQUE_KEY (
-        unique_key set_id,
-        when_matched_update_all TRUE
+        unique_key set_id
     ),
     cron '@weekly',
     audits (
@@ -124,10 +123,6 @@ SELECT
 FROM latest_version;
 
 
--- Post-insert: Mark Bronze records as processed
-@post_incremental(
-    UPDATE bronze.openfda_labels
-    SET processed_to_silver = TRUE
-    WHERE processed_to_silver = FALSE
-    AND set_id IN (SELECT set_id FROM silver.drug_labels)
-);
+-- NOTE: Bronze processed_to_silver flag updates are handled outside SQLMesh.
+-- Silver models use INCREMENTAL_BY_UNIQUE_KEY with INCREMENTAL_BY_UNIQUE_KEY (default: update all columns on match),
+-- so reprocessing is idempotent.

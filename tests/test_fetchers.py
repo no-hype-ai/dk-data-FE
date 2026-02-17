@@ -4,10 +4,8 @@ Tests BaseFetcher and concrete fetcher implementations with mocked
 external HTTP calls covering happy path, HTTP errors, and timeouts.
 """
 
-import json
 import tempfile
 from pathlib import Path
-from unittest.mock import patch
 
 import pytest
 import responses
@@ -48,7 +46,7 @@ class TestBaseFetcherSession:
     def test_data_dir_created(self):
         with tempfile.TemporaryDirectory() as tmpdir:
             data_path = Path(tmpdir) / "subdir" / "raw"
-            fetcher = ConcreteFetcher(data_dir=str(data_path))
+            ConcreteFetcher(data_dir=str(data_path))  # side-effect: creates dir
             assert data_path.exists()
 
 

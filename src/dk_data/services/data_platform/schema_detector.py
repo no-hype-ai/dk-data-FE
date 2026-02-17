@@ -451,7 +451,7 @@ class SchemaDetector:
             "WHERE",
             "    response_status = 200",
             "    AND processed_to_bronze = FALSE",
-            "    AND @incremental_time_filter(request_timestamp);",
+            "    AND request_timestamp BETWEEN @start_dt AND @end_dt;",
         ])
 
         return "\n".join(lines)

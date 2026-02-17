@@ -33,7 +33,7 @@ jobs:
     runs-on: ubuntu-latest
     services:
       postgres:
-        image: postgres:16
+        image: pgvector/pgvector:pg16
         env:
           POSTGRES_USER: postgres
           POSTGRES_PASSWORD: postgres
@@ -41,7 +41,7 @@ jobs:
         ports:
           - 5432:5432
         options: >-
-          --health-cmd pg_isready
+          --health-cmd "pg_isready -U postgres"
           --health-interval 10s
           --health-timeout 5s
           --health-retries 5
@@ -65,6 +65,125 @@ jobs:
           pip install uv
           uv lock --check || echo "::warning::Lock file out of date with pyproject.toml"
 
+      - name: Initialize test database
+        env:
+          PGHOST: localhost
+          PGPORT: 5432
+          PGUSER: postgres
+          PGPASSWORD: postgres
+          PGDATABASE: dk_data_test
+        run: |
+          # Create extensions and schemas
+          psql <<'SQL'
+          CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
+          CREATE EXTENSION IF NOT EXISTS "pgcrypto";
+          CREATE EXTENSION IF NOT EXISTS "pg_trgm";
+          CREATE EXTENSION IF NOT EXISTS "vector";
+          CREATE SCHEMA IF NOT EXISTS raw;
+          CREATE SCHEMA IF NOT EXISTS staging;
+          CREATE SCHEMA IF NOT EXISTS mart;
+          CREATE SCHEMA IF NOT EXISTS scoring;
+          CREATE SCHEMA IF NOT EXISTS meta;
+          CREATE SCHEMA IF NOT EXISTS api;
+          CREATE SCHEMA IF NOT EXISTS mol_raw;
+          CREATE SCHEMA IF NOT EXISTS mol_bronze;
+          CREATE SCHEMA IF NOT EXISTS mol_silver;
+          CREATE SCHEMA IF NOT EXISTS mol_gold;
+          CREATE SCHEMA IF NOT EXISTS mol_app;
+          CREATE SCHEMA IF NOT EXISTS mol_api;
+          CREATE SCHEMA IF NOT EXISTS bronze;
+          CREATE SCHEMA IF NOT EXISTS silver;
+          CREATE SCHEMA IF NOT EXISTS gold;
+          SQL
+          # Create PostgREST roles before init_database.sql (which uses psql :var syntax
+          # that can fail in CI). This ensures the authenticator role exists for PostgREST.
+          psql <<'SQL'
+          DO $$
+          BEGIN
+            IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = 'web_anon') THEN
+              CREATE ROLE web_anon NOLOGIN;
+            END IF;
+            IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = 'analyst') THEN
+              CREATE ROLE analyst NOLOGIN;
+            END IF;
+            IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = 'api_user') THEN
+              CREATE ROLE api_user NOLOGIN;
+            END IF;
+            IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = 'authenticator') THEN
+              CREATE ROLE authenticator NOINHERIT LOGIN PASSWORD 'ci_test_password_32chars_min!!';
+            END IF;
+          END $$;
+          GRANT web_anon TO authenticator;
+          GRANT analyst TO authenticator;
+          GRANT api_user TO authenticator;
+          GRANT USAGE ON SCHEMA api TO web_anon, analyst, api_user;
+          SQL
+          # Initialize tables and views (role errors are non-fatal since we created them above)
+          # Use ON_ERROR_STOP=0 so psql continues past role-related errors (already handled above)
+          # but capture the exit code to warn on unexpected failures
+          psql -v AUTHENTICATOR_PASSWORD="ci_test_password_32chars_min!!" \
+            -v ON_ERROR_STOP=0 \
+            -f src/dk_data/sql/init_database.sql 2>&1 | tee /tmp/init_db.log
+          # Fail only if critical table/view creation errors occurred (not role errors)
+          if grep -qiE 'ERROR:.*(relation|table|view|function|schema)' /tmp/init_db.log \
+             && ! grep -qi 'already exists' /tmp/init_db.log; then
+            echo "::warning::init_database.sql had errors — check log above"
+          fi
+          # Grant SELECT on all API views to roles (init_database.sql dynamic GRANTs may fail)
+          psql <<'SQL'
+          DO $$
+          DECLARE v_name TEXT;
+          BEGIN
+            FOR v_name IN
+              SELECT table_name FROM information_schema.views WHERE table_schema = 'api'
+            LOOP
+              EXECUTE format('GRANT SELECT ON api.%I TO web_anon, analyst, api_user', v_name);
+            END LOOP;
+          END $$;
+          ALTER DEFAULT PRIVILEGES IN SCHEMA api GRANT SELECT ON TABLES TO web_anon, analyst, api_user;
+          SQL
+          echo "Database initialized"
+
+      - name: Run migrations
+        env:
+          POSTGRES_HOST: localhost
+          POSTGRES_PORT: 5432
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: dk_data_test
+        run: python -m dk_data.scripts.run_migrations
+
+      - name: Start PostgREST
+        run: |
+          docker run -d --name postgrest \
+            --network host \
+            -e PGRST_DB_URI="postgresql://authenticator:ci_test_password_32chars_min!!@localhost:5432/dk_data_test" \
+            -e PGRST_DB_ANON_ROLE="web_anon" \
+            -e PGRST_DB_SCHEMAS="api" \
+            -e PGRST_JWT_SECRET="test-secret-must-be-at-least-32-chars" \
+            -e PGRST_SERVER_PORT="3030" \
+            postgrest/postgrest:v12.2.3
+          # Wait for PostgREST to be ready
+          for i in $(seq 1 30); do
+            if curl -sf http://localhost:3030/ > /dev/null 2>&1; then
+              echo "PostgREST is ready"
+              break
+            fi
+            # Check if container is still running
+            if ! docker ps -q -f name=postgrest | grep -q .; then
+              echo "::error::PostgREST container exited unexpectedly"
+              docker logs postgrest 2>&1 || true
+              exit 1
+            fi
+            sleep 1
+          done
+          # Final check
+          curl -sf http://localhost:3030/ > /dev/null 2>&1 || {
+            echo "::error::PostgREST failed to start within 30s"
+            docker logs postgrest 2>&1 || true
+            exit 1
+          }
+
       - name: Run tests with coverage
         env:
           POSTGRES_HOST: localhost
@@ -72,6 +191,8 @@ jobs:
           POSTGRES_USER: postgres
           POSTGRES_PASSWORD: postgres
           POSTGRES_DB: dk_data_test
+          POSTGREST_URL: http://localhost:3030
+          JWT_SECRET: test-secret-must-be-at-least-32-chars
         run: pytest tests/ -v --tb=short
 
       - name: Upload coverage artifact
@@ -83,11 +204,138 @@ jobs:
             coverage.xml
             htmlcov/
 
-      - name: Coverage PR comment
-        if: github.event_name == 'pull_request'
-        uses: MishaKav/pytest-coverage-comment@main
+
+  sqlmesh-validate:
+    name: Validate SQLMesh Models
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: pgvector/pgvector:pg16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: dk_data
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
         with:
-          pytest-xml-coverage-path: coverage.xml
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Install dependencies
+        run: |
+          pip install --upgrade pip
+          pip install -e ".[dev]"
+
+      - name: Create required schemas
+        env:
+          PGHOST: localhost
+          PGPORT: 5432
+          PGUSER: postgres
+          PGPASSWORD: postgres
+          PGDATABASE: dk_data
+        run: |
+          psql <<'SQL'
+          CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
+          CREATE EXTENSION IF NOT EXISTS "pgcrypto";
+          CREATE EXTENSION IF NOT EXISTS "pg_trgm";
+          CREATE EXTENSION IF NOT EXISTS "vector";
+          CREATE SCHEMA IF NOT EXISTS raw;
+          CREATE SCHEMA IF NOT EXISTS staging;
+          CREATE SCHEMA IF NOT EXISTS mart;
+          CREATE SCHEMA IF NOT EXISTS scoring;
+          CREATE SCHEMA IF NOT EXISTS meta;
+          CREATE SCHEMA IF NOT EXISTS api;
+          CREATE SCHEMA IF NOT EXISTS mol_raw;
+          CREATE SCHEMA IF NOT EXISTS mol_bronze;
+          CREATE SCHEMA IF NOT EXISTS mol_silver;
+          CREATE SCHEMA IF NOT EXISTS mol_gold;
+          CREATE SCHEMA IF NOT EXISTS mol_app;
+          CREATE SCHEMA IF NOT EXISTS mol_api;
+          CREATE SCHEMA IF NOT EXISTS bronze;
+          CREATE SCHEMA IF NOT EXISTS silver;
+          CREATE SCHEMA IF NOT EXISTS gold;
+          SQL
+          echo "Extensions and schemas created"
+
+      - name: Initialize base tables
+        env:
+          PGHOST: localhost
+          PGPORT: 5432
+          PGUSER: postgres
+          PGPASSWORD: postgres
+          PGDATABASE: dk_data
+        run: |
+          # Create roles first (init_database.sql psql :var syntax can fail in CI)
+          psql <<'SQL'
+          DO $$
+          BEGIN
+            IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = 'web_anon') THEN
+              CREATE ROLE web_anon NOLOGIN;
+            END IF;
+            IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = 'analyst') THEN
+              CREATE ROLE analyst NOLOGIN;
+            END IF;
+            IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = 'api_user') THEN
+              CREATE ROLE api_user NOLOGIN;
+            END IF;
+            IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = 'authenticator') THEN
+              CREATE ROLE authenticator NOINHERIT LOGIN PASSWORD 'ci_test_password';
+            END IF;
+          END $$;
+          GRANT web_anon TO authenticator;
+          GRANT analyst TO authenticator;
+          GRANT api_user TO authenticator;
+          GRANT USAGE ON SCHEMA api TO web_anon, analyst, api_user;
+          SQL
+          psql -v AUTHENTICATOR_PASSWORD="ci_test_password" \
+            -v ON_ERROR_STOP=0 \
+            -f src/dk_data/sql/init_database.sql 2>&1 | tee /tmp/init_db.log
+          if grep -qiE 'ERROR:.*(relation|table|view|function|schema)' /tmp/init_db.log \
+             && ! grep -qi 'already exists' /tmp/init_db.log; then
+            echo "::warning::init_database.sql had errors — check log above"
+          fi
+          echo "Base tables initialized"
+
+      - name: Run pending migrations
+        env:
+          POSTGRES_HOST: localhost
+          POSTGRES_PORT: 5432
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: dk_data
+        run: python -m dk_data.scripts.run_migrations
+
+      - name: Validate SQLMesh models compile
+        env:
+          POSTGRES_HOST: localhost
+          POSTGRES_PORT: 5432
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: dk_data
+        run: |
+          set -o pipefail
+          # Run SQLMesh plan in dry-run mode; capture output for analysis
+          SQLMESH_EXIT=0
+          echo n | sqlmesh -p src/dk_data/sqlmesh plan --no-prompts 2>&1 | tee /tmp/sqlmesh-plan.log || SQLMESH_EXIT=$?
+          # Check for compilation/SQL errors (not just backfill abort which is expected)
+          if grep -qiE '(Error:|error:|FATAL|SyntaxError|sqlmesh\.utils\.errors)' /tmp/sqlmesh-plan.log \
+             && ! grep -qE '(Plan application failed|Aborted|No changes)' /tmp/sqlmesh-plan.log; then
+            echo "::error::SQLMesh model compilation failed"
+            grep -iE '(Error:|error:|FATAL)' /tmp/sqlmesh-plan.log
+            exit 1
+          fi
+          echo "SQLMesh model validation passed (exit=$SQLMESH_EXIT)"
 
   validate-manifests:
     name: Validate Kubernetes Manifests

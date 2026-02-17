@@ -3,18 +3,17 @@
 Feature: 011-datasource-integration
 Task: T055-T057 — USPTO PatentsView CI source integration
 
-Fetches pharmaceutical-relevant patents from the USPTO PatentsView API
-v1.  Queries are scoped by search terms read from meta.ci_search_terms
+Fetches pharmaceutical-relevant patents from the USPTO PatentSearch API.
+Queries are scoped by search terms read from meta.ci_search_terms
 (drug_name, therapeutic_area) and filtered by CPC codes A61K, A61P,
 C07D (pharmaceutical chemistry).
 
-Weekly cadence with pagination via page/per_page parameters.
+Weekly cadence with cursor-based pagination.
 
-Source: https://api.patentsview.org
+Source: https://search.patentsview.org/api/v1/patent/
 """
 
 import hashlib
-import json
 import logging
 from datetime import datetime, timedelta
 from typing import Any, Dict, List, Optional
@@ -23,8 +22,8 @@ from .base import BaseFetcher
 
 logger = logging.getLogger(__name__)
 
-# PatentsView API endpoint
-PATENTSVIEW_API = "https://api.patentsview.org/patents/query"
+# PatentSearch API endpoint
+PATENTSVIEW_API = "https://search.patentsview.org/api/v1/patent/"
 
 # CPC codes relevant to pharmaceutical chemistry
 PHARMA_CPC_CODES = ["A61K", "A61P", "C07D"]
@@ -35,10 +34,10 @@ MAX_PAGES = 50  # Safety limit
 
 
 class USPTOCIFetcher(BaseFetcher):
-    """Fetcher for USPTO PatentsView API (CI scope)."""
+    """Fetcher for USPTO PatentSearch API (CI scope)."""
 
     SOURCE_NAME = "uspto_ci"
-    BASE_URL = "https://api.patentsview.org"
+    BASE_URL = "https://search.patentsview.org"
 
     def get_latest_url(self) -> str:
         """Return the PatentsView query endpoint URL."""
@@ -103,6 +102,7 @@ class USPTOCIFetcher(BaseFetcher):
             result = {
                 "status": "success",
                 "records": all_records,
+                "record_count": len(all_records),
                 "hash": content_hash,
             }
             self.log_fetch_result({"status": "success", "records": len(all_records)})
@@ -163,7 +163,7 @@ class USPTOCIFetcher(BaseFetcher):
     def _build_query(
         search_terms: List[str], since_date: str
     ) -> Dict[str, Any]:
-        """Build a PatentsView API query payload.
+        """Build a PatentSearch API query payload.
 
         Combines text search terms (OR) with CPC code filtering (OR)
         and a date range filter.
@@ -173,7 +173,7 @@ class USPTOCIFetcher(BaseFetcher):
             since_date: ISO date string for grant_date lower bound.
 
         Returns:
-            Query dict for the PatentsView API.
+            Query dict for the PatentSearch API.
         """
         # Text criteria: match any search term in title or abstract
         text_clauses = [
@@ -184,9 +184,9 @@ class USPTOCIFetcher(BaseFetcher):
             for term in search_terms
         ]
 
-        # CPC code criteria
+        # CPC code criteria (fully qualified nested field name)
         cpc_clauses = [
-            {"_begins": {"cpc_subgroup_id": code}}
+            {"_begins": {"cpc_current.cpc_subgroup_id": code}}
             for code in PHARMA_CPC_CODES
         ]
 
@@ -202,40 +202,56 @@ class USPTOCIFetcher(BaseFetcher):
     def _fetch_paginated(
         self, query: Dict[str, Any], *, max_pages: int = MAX_PAGES
     ) -> List[Dict[str, Any]]:
-        """Fetch paginated results from the PatentsView API.
+        """Fetch paginated results from the PatentSearch API.
+
+        Uses cursor-based pagination with size/after parameters.
 
         Args:
-            query: PatentsView query dict.
+            query: PatentSearch query dict.
             max_pages: Safety limit for pagination.
 
         Returns:
             List of normalized patent record dicts.
         """
         all_records: List[Dict[str, Any]] = []
+        # Fields to return — PatentSearch API field names
         fields = [
-            "patent_number",
+            "patent_id",
             "patent_title",
             "patent_abstract",
             "patent_date",
             "patent_num_claims",
+            "inventors",
+            "assignees",
+            "cpc_current",
+            "application",
         ]
 
-        for page in range(1, max_pages + 1):
+        after_cursor: Optional[str] = None
+
+        for _page in range(1, max_pages + 1):
+            options: Dict[str, Any] = {"size": PAGE_SIZE}
+            if after_cursor:
+                options["after"] = after_cursor
+
             payload = {
-                "q": json.dumps(query),
-                "f": json.dumps(fields),
-                "o": json.dumps({
-                    "page": page,
-                    "per_page": PAGE_SIZE,
-                }),
+                "q": query,
+                "f": fields,
+                "o": options,
             }
 
             try:
-                data = self.fetch_json(PATENTSVIEW_API, params=payload)
+                response = self.session.post(
+                    PATENTSVIEW_API,
+                    json=payload,
+                    timeout=60,
+                )
+                response.raise_for_status()
+                data = response.json()
             except Exception as e:
                 logger.warning(
-                    "PatentsView API request failed on page %d: %s",
-                    page, e,
+                    "PatentSearch API request failed at cursor %s: %s",
+                    after_cursor, e,
                 )
                 break
 
@@ -252,48 +268,83 @@ class USPTOCIFetcher(BaseFetcher):
             if len(patents) < PAGE_SIZE:
                 break
 
+            # Cursor for next page: last patent_id in results
+            last_patent = patents[-1]
+            after_cursor = str(last_patent.get("patent_id", ""))
+            if not after_cursor:
+                break
+
         logger.info(
-            "Fetched %d patent records from PatentsView", len(all_records)
+            "Fetched %d patent records from PatentSearch", len(all_records)
         )
         return all_records
 
     @staticmethod
     def _normalize_patent(patent: Dict[str, Any]) -> Optional[Dict[str, Any]]:
-        """Normalize a PatentsView patent record to the raw.uspto_ci schema.
+        """Normalize a PatentSearch patent record to the raw.uspto_ci schema.
 
         Args:
             patent: Raw patent dict from the API.
 
         Returns:
-            Normalized record dict, or None if patent_number is missing.
+            Normalized record dict, or None if patent_id is missing.
         """
-        patent_number = patent.get("patent_number")
-        if not patent_number:
+        patent_id = patent.get("patent_id")
+        if not patent_id:
             return None
 
-        # Inventors (nested in API response)
-        inventors = patent.get("inventors")
+        # Normalize inventors (match Patents fetcher schema)
+        inventors = None
+        raw_inventors = patent.get("inventors")
+        if raw_inventors and isinstance(raw_inventors, list):
+            inventors = [
+                {
+                    "name_first": inv.get("inventor_name_first"),
+                    "name_last": inv.get("inventor_name_last"),
+                }
+                for inv in raw_inventors
+            ]
 
-        # Assignees (nested in API response)
-        assignees = patent.get("assignees")
+        # Normalize assignees (match Patents fetcher schema)
+        assignees = None
+        raw_assignees = patent.get("assignees")
+        if raw_assignees and isinstance(raw_assignees, list):
+            assignees = [
+                {
+                    "organization": asg.get("assignee_organization"),
+                }
+                for asg in raw_assignees
+            ]
 
-        # CPC codes (nested list)
+        # CPC codes (PatentSearch uses cpc_current instead of cpcs)
         cpc_codes = None
-        raw_cpcs = patent.get("cpcs") or patent.get("cpc_subgroup_id")
+        raw_cpcs = patent.get("cpc_current")
         if isinstance(raw_cpcs, list):
             cpc_codes = [
                 c.get("cpc_subgroup_id", "") if isinstance(c, dict) else str(c)
                 for c in raw_cpcs
             ]
 
+        # Filing date from nested application object
+        application = patent.get("application") or {}
+        filing_date = application.get("filing_date")
+
+        # Claims count — explicit int cast for safety
+        claims_count = patent.get("patent_num_claims")
+        if claims_count is not None:
+            try:
+                claims_count = int(claims_count)
+            except (ValueError, TypeError):
+                claims_count = None
+
         return {
-            "patent_id": str(patent_number),
+            "patent_id": str(patent_id),
             "title": patent.get("patent_title"),
             "abstract": patent.get("patent_abstract"),
             "inventors": inventors,
             "assignees": assignees,
-            "filing_date": patent.get("app_date"),
+            "filing_date": filing_date,
             "grant_date": patent.get("patent_date"),
             "cpc_codes": cpc_codes,
-            "claims_count": patent.get("patent_num_claims"),
+            "claims_count": claims_count,
         }

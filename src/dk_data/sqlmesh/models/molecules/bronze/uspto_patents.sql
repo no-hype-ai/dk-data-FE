@@ -1,6 +1,6 @@
 -- SQLMesh Model: Bronze USPTO Patents
--- Transforms raw USPTO PatentsView API responses into typed bronze layer
--- Part of DK Molecule Data Platform (012-dk-data-platform)
+-- Transforms raw USPTO PatentSearch flat columns into typed bronze layer
+-- Part of: 014-uspto-euipo-model-datasource (fixes broken JSONB extraction from 012)
 
 MODEL (
     name bronze.uspto_patents,
@@ -11,89 +11,51 @@ MODEL (
     cron '@weekly',
     grain (patent_number),
     audits (
-        not_null(patent_number),
-        unique(patent_number)
+        not_null(columns := (patent_number)),
+        unique_values(columns := (patent_number))
     )
 );
 
 SELECT
-    uuid_generate_v4() AS id,
-    r.id AS raw_id,
+    gen_random_uuid() AS id,
 
     -- Patent identification
-    p->>'patent_number' AS patent_number,
-    p->>'patent_title' AS patent_title,
-    p->>'patent_abstract' AS patent_abstract,
-    CASE
-        WHEN p->>'patent_date' ~ '^\d{4}-\d{2}-\d{2}'
-        THEN (p->>'patent_date')::DATE
-        ELSE NULL
-    END AS patent_date,
+    r.patent_number,
+    r.title AS patent_title,
+    r.abstract AS patent_abstract,
+    r.filing_date,
+    r.grant_date AS patent_date,
 
     -- Classification
-    p->>'patent_type' AS patent_type,
-    p->>'patent_kind' AS patent_kind,
-    -- Extract CPC codes as JSONB array
-    (
-        SELECT jsonb_agg(DISTINCT cpc->>'cpc_group_id')
-        FROM jsonb_array_elements(COALESCE(p->'cpcs', '[]'::jsonb)) AS cpc
-        WHERE cpc->>'cpc_group_id' IS NOT NULL
-    ) AS cpc_codes,
+    NULL::TEXT AS patent_type,
+    NULL::TEXT AS patent_kind,
+    CASE
+        WHEN r.cpc_codes IS NOT NULL
+        THEN to_jsonb(r.cpc_codes)
+        ELSE NULL
+    END AS cpc_codes,
 
-    -- Assignee info
-    COALESCE(
-        p->'assignees'->0->>'assignee_organization',
-        (
-            SELECT a->>'assignee_organization'
-            FROM jsonb_array_elements(COALESCE(p->'assignees', '[]'::jsonb)) a
-            WHERE a->>'assignee_organization' IS NOT NULL
-            LIMIT 1
-        )
-    ) AS assignee_organization,
-    COALESCE(
-        p->'assignees'->0->>'assignee_type',
-        (
-            SELECT a->>'assignee_type'
-            FROM jsonb_array_elements(COALESCE(p->'assignees', '[]'::jsonb)) a
-            WHERE a->>'assignee_type' IS NOT NULL
-            LIMIT 1
-        )
-    ) AS assignee_type,
+    -- Assignee info (fetcher normalizes to {"organization": ..., "city": ..., ...})
+    r.assignees->0->>'organization' AS assignee_organization,
+    NULL::TEXT AS assignee_type,
 
     -- Inventors as JSONB
-    (
-        SELECT jsonb_agg(
-            jsonb_build_object(
-                'first_name', inv->>'inventor_first_name',
-                'last_name', inv->>'inventor_last_name',
-                'city', inv->>'inventor_city',
-                'country', inv->>'inventor_country'
-            )
-        )
-        FROM jsonb_array_elements(COALESCE(p->'inventors', '[]'::jsonb)) AS inv
-        WHERE inv->>'inventor_last_name' IS NOT NULL
-    ) AS inventors,
+    r.inventors,
 
     -- Claims count
-    (p->>'patent_num_claims')::INTEGER AS num_claims,
+    r.claims_count AS num_claims,
 
     -- Determine if pharma-related based on CPC codes
     EXISTS (
-        SELECT 1
-        FROM jsonb_array_elements(COALESCE(p->'cpcs', '[]'::jsonb)) AS cpc
-        WHERE cpc->>'cpc_group_id' LIKE 'A61K%'
-           OR cpc->>'cpc_group_id' LIKE 'A61P%'
-           OR cpc->>'cpc_group_id' LIKE 'C07D%'
-           OR cpc->>'cpc_group_id' LIKE 'C07K%'
+        SELECT 1 FROM unnest(COALESCE(r.cpc_codes, '{}')) AS code
+        WHERE code LIKE 'A61K%' OR code LIKE 'A61P%'
+           OR code LIKE 'C07D%' OR code LIKE 'C07K%'
     ) AS is_pharma_related,
 
     -- Processing metadata
     FALSE AS processed_to_silver,
-    NOW() AS ingested_at
+    r._loaded_at AS ingested_at
 
-FROM raw.uspto_patents r,
-     jsonb_array_elements(COALESCE(r.response_body->'patents', '[]'::jsonb)) AS p
-WHERE r.response_status = 200
-  AND r.processed_to_bronze = FALSE
-  AND r.response_body IS NOT NULL
-  AND p->>'patent_number' IS NOT NULL
+FROM raw.uspto_patents r
+WHERE r.patent_number IS NOT NULL
+  AND _loaded_at BETWEEN @start_dt AND @end_dt

@@ -10,8 +10,8 @@ MODEL (
     cron '@weekly',
     grain (molecule_id, publication_id),
     audits (
-        not_null(molecule_id),
-        not_null(publication_id)
+        not_null(columns := (molecule_id)),
+        not_null(columns := (publication_id))
     )
 );
 

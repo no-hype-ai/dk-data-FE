@@ -39,6 +39,9 @@ resources:
   - ingestion/cronjob-fetch-uniprot.yaml
   - ingestion/cronjob-fetch-pdb.yaml
   - ingestion/cronjob-fetch-orcid.yaml
+  # Trademark data sources (014-uspto-euipo-model-datasource)
+  - ingestion/cronjob-fetch-uspto-trademarks.yaml
+  - ingestion/cronjob-fetch-euipo.yaml
   - ingestion/molecule-pipeline-config.yaml
   # Backup
   - backup/pg-backup-configmap.yaml

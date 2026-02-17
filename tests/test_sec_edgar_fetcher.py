@@ -11,17 +11,14 @@ Tests cover:
 - SECEdgarRecord validation (valid and invalid)
 """
 
-import tempfile
 from datetime import date
 from unittest.mock import MagicMock, patch
 
 import pytest
-import responses
 
 from dk_data.ingestion.fetchers.sec_edgar import (
     SECEdgarFetcher,
     PHARMA_SIC_CODES,
-    FILING_TYPES,
     DEFAULT_SEC_USER_AGENT,
 )
 from dk_data.ingestion.utils.validators import SECEdgarRecord

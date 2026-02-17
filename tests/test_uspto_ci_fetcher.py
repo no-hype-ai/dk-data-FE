@@ -1,14 +1,13 @@
 """Tests for USPTO CI fetcher and validator with mocked HTTP.
 
 Feature: 011-datasource-integration
-Task: T055-T057 — USPTO PatentsView CI source integration
+Task: T055-T057 — USPTO PatentSearch CI source integration
 
 Tests use mocked HTTP responses so no external network calls are made.
 """
 
 import tempfile
 from datetime import date
-from unittest.mock import MagicMock, patch
 
 import pytest
 import responses
@@ -22,31 +21,34 @@ from dk_data.ingestion.utils.validators import USPTOCIRecord
 
 
 # ---------------------------------------------------------------------------
-# Sample PatentsView API response fixtures
+# Sample PatentSearch API response fixtures
 # ---------------------------------------------------------------------------
 
 SAMPLE_PATENT = {
-    "patent_number": "US-11234567-B2",
+    "patent_id": "US-11234567-B2",
     "patent_title": "Pharmaceutical composition for treating cancer",
     "patent_abstract": "A novel composition comprising a CDK4/6 inhibitor.",
     "patent_date": "2026-02-01",
     "patent_num_claims": 20,
-    "app_date": "2024-06-15",
+    "application": {
+        "filing_date": "2024-06-15",
+        "application_id": "16/123456",
+    },
     "inventors": [
-        {"inventor_first_name": "John", "inventor_last_name": "Smith"},
-        {"inventor_first_name": "Jane", "inventor_last_name": "Doe"},
+        {"inventor_name_first": "John", "inventor_name_last": "Smith"},
+        {"inventor_name_first": "Jane", "inventor_name_last": "Doe"},
     ],
     "assignees": [
         {"assignee_organization": "Pharma Corp"},
     ],
-    "cpcs": [
+    "cpc_current": [
         {"cpc_subgroup_id": "A61K31/00"},
         {"cpc_subgroup_id": "A61P35/00"},
     ],
 }
 
 SAMPLE_PATENT_MINIMAL = {
-    "patent_number": "US-99999999-B1",
+    "patent_id": "US-99999999-B1",
     "patent_title": "Minimal patent record",
     "patent_abstract": None,
     "patent_date": "2026-01-15",
@@ -54,11 +56,11 @@ SAMPLE_PATENT_MINIMAL = {
 }
 
 
-def _make_patentsview_response(patents, total=None):
-    """Build a mock PatentsView API response body."""
+def _make_patentsearch_response(patents, total_hits=None):
+    """Build a mock PatentSearch API response body."""
     return {
         "patents": patents,
-        "total_patent_count": total or len(patents),
+        "total_hits": total_hits or len(patents),
         "count": len(patents),
     }
 
@@ -74,7 +76,7 @@ class TestUSPTOCIFetcherInit:
         with tempfile.TemporaryDirectory() as tmpdir:
             fetcher = USPTOCIFetcher(data_dir=tmpdir)
             assert fetcher.SOURCE_NAME == "uspto_ci"
-            assert fetcher.BASE_URL == "https://api.patentsview.org"
+            assert fetcher.BASE_URL == "https://search.patentsview.org"
             assert fetcher.session is not None
 
     def test_fetcher_init_defaults(self):
@@ -101,9 +103,9 @@ class TestUSPTOCIFetch:
     def test_fetch_success(self):
         """Full happy-path: API returns patent results."""
         responses.add(
-            responses.GET,
+            responses.POST,
             PATENTSVIEW_API,
-            json=_make_patentsview_response(
+            json=_make_patentsearch_response(
                 [SAMPLE_PATENT, SAMPLE_PATENT_MINIMAL]
             ),
             status=200,
@@ -126,6 +128,7 @@ class TestUSPTOCIFetch:
         assert rec["title"] == "Pharmaceutical composition for treating cancer"
         assert "CDK4/6 inhibitor" in rec["abstract"]
         assert rec["grant_date"] == "2026-02-01"
+        assert rec["filing_date"] == "2024-06-15"
         assert rec["claims_count"] == 20
         assert rec["inventors"] is not None
 
@@ -133,9 +136,9 @@ class TestUSPTOCIFetch:
     def test_fetch_empty_results(self):
         """API returns zero results."""
         responses.add(
-            responses.GET,
+            responses.POST,
             PATENTSVIEW_API,
-            json=_make_patentsview_response([]),
+            json=_make_patentsearch_response([]),
             status=200,
         )
 
@@ -154,7 +157,7 @@ class TestUSPTOCIFetch:
     def test_fetch_api_error(self):
         """API returns a 500 error."""
         responses.add(
-            responses.GET,
+            responses.POST,
             PATENTSVIEW_API,
             json={"error": "Internal Server Error"},
             status=500,
@@ -185,25 +188,25 @@ class TestUSPTOCIFetch:
         """Pagination stops when fewer results than page size returned."""
         # Page 1: full page (100 patents)
         page1_patents = [
-            {**SAMPLE_PATENT, "patent_number": f"US-{i:08d}-B2"}
+            {**SAMPLE_PATENT, "patent_id": f"US-{i:08d}-B2"}
             for i in range(100)
         ]
         # Page 2: partial page
         page2_patents = [
-            {**SAMPLE_PATENT, "patent_number": f"US-P2-{i:04d}-B2"}
+            {**SAMPLE_PATENT, "patent_id": f"US-P2-{i:04d}-B2"}
             for i in range(10)
         ]
 
         responses.add(
-            responses.GET,
+            responses.POST,
             PATENTSVIEW_API,
-            json=_make_patentsview_response(page1_patents),
+            json=_make_patentsearch_response(page1_patents),
             status=200,
         )
         responses.add(
-            responses.GET,
+            responses.POST,
             PATENTSVIEW_API,
-            json=_make_patentsview_response(page2_patents),
+            json=_make_patentsearch_response(page2_patents),
             status=200,
         )
 
@@ -223,9 +226,9 @@ class TestUSPTOCIFetch:
         """Duplicate patent IDs are deduplicated."""
         # Same patent returned twice
         responses.add(
-            responses.GET,
+            responses.POST,
             PATENTSVIEW_API,
-            json=_make_patentsview_response([SAMPLE_PATENT, SAMPLE_PATENT]),
+            json=_make_patentsearch_response([SAMPLE_PATENT, SAMPLE_PATENT]),
             status=200,
         )
 
@@ -245,7 +248,7 @@ class TestUSPTOCIFetch:
 # ---------------------------------------------------------------------------
 
 class TestQueryBuilding:
-    """Tests for the PatentsView query builder."""
+    """Tests for the PatentSearch query builder."""
 
     def test_build_query_structure(self):
         query = USPTOCIFetcher._build_query(
@@ -259,8 +262,11 @@ class TestQueryBuilding:
         assert "_gte" in and_clauses[0]
         assert and_clauses[0]["_gte"]["patent_date"] == "2026-01-01"
 
-        # CPC clause
+        # CPC clause (now uses fully qualified nested field name)
         assert "_or" in and_clauses[1]
+        cpc_clauses = and_clauses[1]["_or"]
+        assert "_begins" in cpc_clauses[0]
+        assert "cpc_current.cpc_subgroup_id" in cpc_clauses[0]["_begins"]
 
         # Text clause
         assert "_or" in and_clauses[2]

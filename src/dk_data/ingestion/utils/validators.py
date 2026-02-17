@@ -2,7 +2,7 @@
 
 from datetime import date
 from decimal import Decimal
-from typing import Any, ClassVar, Dict, List, Optional, Set
+from typing import Any, ClassVar, List, Optional, Set
 from pydantic import BaseModel, Field, field_validator, ConfigDict
 
 
@@ -572,6 +572,71 @@ class ORCIDRecord(BaseModel):
         parts = v.split('-')
         if len(parts) != 4 or not all(len(p) == 4 for p in parts):
             raise ValueError('ORCID iD must be in format 0000-0000-0000-000X')
+        return v
+
+
+# =============================================================================
+# IP / Trademark Data Source Validators (014-uspto-euipo-model-datasource)
+# =============================================================================
+
+
+class USPTOTrademarkRecord(BaseModel):
+    """Validation model for USPTO TSDR trademark records."""
+
+    model_config = ConfigDict(str_strip_whitespace=True)
+
+    serial_number: str = Field(..., min_length=1)
+    mark_element: Optional[str] = None
+    mark_type: Optional[str] = Field(None, max_length=50)
+    status: Optional[str] = Field(None, max_length=100)
+    status_code: Optional[int] = None
+    status_date: Optional[date] = None
+    filing_date: Optional[date] = None
+    registration_number: Optional[str] = Field(None, max_length=20)
+    registration_date: Optional[date] = None
+    nice_classes: Optional[List[int]] = None
+    us_classes: Optional[List[str]] = None
+    owner_name: Optional[str] = None
+    owner_entity_type: Optional[str] = Field(None, max_length=50)
+    goods_and_services: Optional[str] = None
+    description_of_mark: Optional[str] = None
+
+    @field_validator('serial_number')
+    @classmethod
+    def validate_serial_number(cls, v: str) -> str:
+        v = v.strip()
+        if not v:
+            raise ValueError('serial_number cannot be empty')
+        return v
+
+
+class EUIPOTrademarkRecord(BaseModel):
+    """Validation model for EUIPO trademark records (TMview/IBM Gateway)."""
+
+    model_config = ConfigDict(str_strip_whitespace=True)
+
+    application_number: str = Field(..., min_length=1)
+    mark_name: Optional[str] = None
+    mark_kind: Optional[str] = Field(None, max_length=50)
+    mark_feature: Optional[str] = Field(None, max_length=50)
+    mark_basis: Optional[str] = Field(None, max_length=50)
+    applicant_name: Optional[str] = None
+    applicant_country: Optional[str] = Field(None, max_length=10)
+    representative_name: Optional[str] = None
+    status: Optional[str] = Field(None, max_length=100)
+    filing_date: Optional[date] = None
+    registration_date: Optional[date] = None
+    expiry_date: Optional[date] = None
+    nice_classes: Optional[List[int]] = None
+    goods_and_services: Optional[str] = None
+    image_url: Optional[str] = None
+
+    @field_validator('application_number')
+    @classmethod
+    def validate_application_number(cls, v: str) -> str:
+        v = v.strip()
+        if not v:
+            raise ValueError('application_number cannot be empty')
         return v
 
 

@@ -566,7 +566,7 @@ async def list_data_sources():
         "pubchem_api": {"name": "PubChem API", "type": "external_api", "endpoint": "pubchem.ncbi.nlm.nih.gov"},
         "rxnorm": {"name": "RxNorm", "type": "external_api", "endpoint": "rxnav.nlm.nih.gov"},
         "openalex": {"name": "OpenAlex", "type": "external_api", "endpoint": "api.openalex.org"},
-        "patentsview": {"name": "PatentsView", "type": "external_api", "endpoint": "api.patentsview.org"},
+        "patentsview": {"name": "PatentsView", "type": "external_api", "endpoint": "search.patentsview.org"},
         "ema": {"name": "EMA Medicines", "type": "external_api", "endpoint": "ema.europa.eu"},
     }
 

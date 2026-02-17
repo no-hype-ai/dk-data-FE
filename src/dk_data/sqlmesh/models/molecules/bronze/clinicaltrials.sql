@@ -91,6 +91,7 @@ SELECT
     response_body AS raw_json,
     id AS raw_source_id,
     'clinicaltrials_gov' AS source,
+    request_timestamp,
     request_timestamp AS source_updated_at,
     FALSE AS processed_to_silver,
     NOW() AS created_at
@@ -100,4 +101,4 @@ WHERE
     response_status = 200
     AND processed_to_bronze = FALSE
     AND response_body->'protocolSection'->'identificationModule'->>'nctId' IS NOT NULL
-    AND @incremental_time_filter(request_timestamp);
+    AND request_timestamp BETWEEN @start_dt AND @end_dt;

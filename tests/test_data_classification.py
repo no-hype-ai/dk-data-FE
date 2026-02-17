@@ -13,8 +13,7 @@ Tests verify:
   and respects retention_days, timestamp column mapping, and batch deletes
 """
 
-from datetime import datetime, timedelta
-from unittest.mock import MagicMock, patch, call
+from unittest.mock import MagicMock
 
 import pytest
 

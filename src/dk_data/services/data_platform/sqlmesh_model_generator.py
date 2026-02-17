@@ -202,8 +202,7 @@ class SQLMeshModelGenerator:
 MODEL (
     name silver.{rule.source_name}_molecules,
     kind INCREMENTAL_BY_UNIQUE_KEY (
-        unique_key {primary_dedup},
-        when_matched_update_all TRUE
+        unique_key {primary_dedup}
     ),
     cron '@daily',
     audits (
@@ -219,7 +218,7 @@ WITH source_data AS (
 {chr(10).join(column_selections)}
     FROM {rule.source_table}
     WHERE {' AND '.join(where_parts)}
-    {"AND @incremental_time_filter(" + rule.incremental_column + ")" if rule.incremental_column else ""}
+    {"AND " + rule.incremental_column + " BETWEEN @start_dt AND @end_dt" if rule.incremental_column else ""}
 ),
 
 deduplicated AS (
@@ -242,13 +241,9 @@ deduplicated AS (
 SELECT * FROM deduplicated;
 
 
--- Post-insert: Mark Bronze records as processed
-@post_incremental(
-    UPDATE {rule.source_table}
-    SET processed_to_silver = TRUE
-    WHERE processed_to_silver = FALSE
-    AND {primary_dedup} IN (SELECT {primary_dedup} FROM silver.{rule.source_name}_molecules)
-);
+-- NOTE: Bronze processed_to_silver flag updates are handled outside SQLMesh.
+-- Silver models use INCREMENTAL_BY_UNIQUE_KEY (default: update all columns on match),
+-- so reprocessing is idempotent.
 '''
         return model_sql
 

@@ -5,7 +5,6 @@ Feature: 012-platform-hardening (US5)
 
 from unittest.mock import patch
 
-import pytest
 
 from dk_data.ingestion.utils.secret_check import validate_secrets
 

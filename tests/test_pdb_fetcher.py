@@ -3,7 +3,6 @@
 Feature: 012-platform-hardening (US3)
 """
 
-import json
 import tempfile
 
 import pytest

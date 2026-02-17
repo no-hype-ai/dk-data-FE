@@ -21,6 +21,8 @@ from .sec_edgar import SECEdgarFetcher
 from .uniprot import UniProtFetcher
 from .pdb import PDBFetcher
 from .orcid import ORCIDFetcher
+from .uspto_trademarks import USPTOTrademarksFetcher
+from .euipo_trademarks import EUIPOTrademarksFetcher
 
 __all__ = [
     'BaseFetcher',
@@ -44,4 +46,6 @@ __all__ = [
     'UniProtFetcher',
     'PDBFetcher',
     'ORCIDFetcher',
+    'USPTOTrademarksFetcher',
+    'EUIPOTrademarksFetcher',
 ]

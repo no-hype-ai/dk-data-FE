@@ -1,7 +1,7 @@
 """Tests for USPTO Patents fetcher and validator.
 
 Feature: 011-datasource-integration
-Task: Phase 6 / US4 — credential-gated source (USPTO PatentsView)
+Task: Phase 6 / US4 — credential-gated source (USPTO PatentSearch)
 
 Tests use mocked HTTP responses so no external network calls are made.
 """
@@ -9,7 +9,7 @@ Tests use mocked HTTP responses so no external network calls are made.
 import os
 import tempfile
 from datetime import date
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 
 import pytest
 import responses
@@ -20,19 +20,19 @@ from dk_data.ingestion.utils.validators import USPTOPatentsRecord
 
 
 # ---------------------------------------------------------------------------
-# Sample PatentsView API response fixtures
+# Sample PatentSearch API response fixtures
 # ---------------------------------------------------------------------------
 
 SAMPLE_PATENT = {
-    "patent_number": "11234567",
+    "patent_id": "11234567",
     "patent_title": "Pharmaceutical composition for treating cancer",
     "patent_abstract": "A novel pharmaceutical composition comprising...",
     "patent_date": "2026-01-15",
     "patent_num_claims": 20,
     "inventors": [
         {
-            "inventor_first_name": "John",
-            "inventor_last_name": "Doe",
+            "inventor_name_first": "John",
+            "inventor_name_last": "Doe",
             "inventor_city": "Boston",
             "inventor_state": "MA",
             "inventor_country": "US",
@@ -46,15 +46,18 @@ SAMPLE_PATENT = {
             "assignee_country": "US",
         },
     ],
-    "cpcs": [
+    "cpc_current": [
         {"cpc_subgroup_id": "A61K31/00"},
         {"cpc_subgroup_id": "A61P35/00"},
     ],
-    "app_date": "2024-06-01",
+    "application": {
+        "filing_date": "2024-06-01",
+        "application_id": "16/123456",
+    },
 }
 
 SAMPLE_PATENT_MINIMAL = {
-    "patent_number": "11999999",
+    "patent_id": "11999999",
     "patent_title": "Simple drug delivery method",
     "patent_abstract": None,
     "patent_date": "2026-02-01",
@@ -62,14 +65,14 @@ SAMPLE_PATENT_MINIMAL = {
 }
 
 
-def _make_patentsview_response(patents, total_count=None):
-    """Build a mock PatentsView API response body."""
-    if total_count is None:
-        total_count = len(patents)
+def _make_patentsearch_response(patents, total_hits=None):
+    """Build a mock PatentSearch API response body."""
+    if total_hits is None:
+        total_hits = len(patents)
     return {
         "patents": patents,
         "count": len(patents),
-        "total_patent_count": total_count,
+        "total_hits": total_hits,
     }
 
 
@@ -86,7 +89,7 @@ class TestUSPTOPatentsFetcherInit:
             fetcher = USPTOPatentsFetcher(data_dir=str(tmp_path))
 
         assert fetcher.SOURCE_NAME == "uspto_patents"
-        assert fetcher.BASE_URL == "https://api.patentsview.org"
+        assert fetcher.BASE_URL == "https://search.patentsview.org"
         assert fetcher.data_dir == tmp_path
         assert fetcher.session is not None
         assert fetcher.api_key == "test-key-123"
@@ -103,7 +106,7 @@ class TestUSPTOPatentsFetcherInit:
         """Verify the data directory is created on init."""
         data_path = tmp_path / "sub" / "raw"
         with patch.dict(os.environ, {"USPTO_API_KEY": "key"}):
-            fetcher = USPTOPatentsFetcher(data_dir=str(data_path))
+            USPTOPatentsFetcher(data_dir=str(data_path))  # side-effect: creates dir
         assert data_path.exists()
 
 
@@ -118,7 +121,7 @@ class TestUSPTOPatentsGetLatestUrl:
         with patch.dict(os.environ, {"USPTO_API_KEY": "key"}):
             fetcher = USPTOPatentsFetcher(data_dir=str(tmp_path))
         url = fetcher.get_latest_url()
-        assert url == "https://api.patentsview.org/patents/query"
+        assert url == "https://search.patentsview.org/api/v1/patent/"
         assert url.startswith("https://")
 
 
@@ -134,8 +137,8 @@ class TestUSPTOPatentsFetchWithMock:
         """fetch() returns success with records when API responds."""
         responses.add(
             responses.POST,
-            "https://api.patentsview.org/patents/query",
-            json=_make_patentsview_response([SAMPLE_PATENT, SAMPLE_PATENT_MINIMAL]),
+            "https://search.patentsview.org/api/v1/patent/",
+            json=_make_patentsearch_response([SAMPLE_PATENT, SAMPLE_PATENT_MINIMAL]),
             status=200,
         )
 
@@ -154,8 +157,10 @@ class TestUSPTOPatentsFetchWithMock:
         assert rec["patent_number"] == "11234567"
         assert rec["title"] == "Pharmaceutical composition for treating cancer"
         assert rec["claims_count"] == 20
+        assert rec["filing_date"] == "2024-06-01"
         assert rec["inventors"] is not None
         assert len(rec["inventors"]) == 1
+        assert rec["inventors"][0]["name_first"] == "John"
         assert rec["assignees"] is not None
         assert rec["cpc_codes"] is not None
         assert "A61K31/00" in rec["cpc_codes"]
@@ -171,8 +176,8 @@ class TestUSPTOPatentsFetchWithMock:
         """fetch() returns success with 0 records on empty API response."""
         responses.add(
             responses.POST,
-            "https://api.patentsview.org/patents/query",
-            json=_make_patentsview_response([]),
+            "https://search.patentsview.org/api/v1/patent/",
+            json=_make_patentsearch_response([]),
             status=200,
         )
 
@@ -190,7 +195,7 @@ class TestUSPTOPatentsFetchWithMock:
         """fetch() returns failed when API returns error status."""
         responses.add(
             responses.POST,
-            "https://api.patentsview.org/patents/query",
+            "https://search.patentsview.org/api/v1/patent/",
             json={"error": "Unauthorized"},
             status=401,
         )
@@ -206,28 +211,28 @@ class TestUSPTOPatentsFetchWithMock:
 
     @responses.activate
     def test_fetch_pagination(self):
-        """fetch() paginates through multiple pages of results."""
+        """fetch() paginates through multiple pages via cursor."""
         # Page 1: full page (PAGE_SIZE=100 items)
         page1_patents = [
-            {**SAMPLE_PATENT, "patent_number": f"P1-{i:04d}"}
+            {**SAMPLE_PATENT, "patent_id": f"P1-{i:04d}"}
             for i in range(100)
         ]
         # Page 2: partial page (signals end of results)
         page2_patents = [
-            {**SAMPLE_PATENT, "patent_number": f"P2-{i:04d}"}
+            {**SAMPLE_PATENT, "patent_id": f"P2-{i:04d}"}
             for i in range(10)
         ]
 
         responses.add(
             responses.POST,
-            "https://api.patentsview.org/patents/query",
-            json=_make_patentsview_response(page1_patents),
+            "https://search.patentsview.org/api/v1/patent/",
+            json=_make_patentsearch_response(page1_patents),
             status=200,
         )
         responses.add(
             responses.POST,
-            "https://api.patentsview.org/patents/query",
-            json=_make_patentsview_response(page2_patents),
+            "https://search.patentsview.org/api/v1/patent/",
+            json=_make_patentsearch_response(page2_patents),
             status=200,
         )
 
@@ -244,13 +249,13 @@ class TestUSPTOPatentsFetchWithMock:
     def test_fetch_respects_max_records(self):
         """fetch() stops when max_records limit is reached."""
         patents = [
-            {**SAMPLE_PATENT, "patent_number": f"P-{i:04d}"}
+            {**SAMPLE_PATENT, "patent_id": f"P-{i:04d}"}
             for i in range(100)
         ]
         responses.add(
             responses.POST,
-            "https://api.patentsview.org/patents/query",
-            json=_make_patentsview_response(patents),
+            "https://search.patentsview.org/api/v1/patent/",
+            json=_make_patentsearch_response(patents),
             status=200,
         )
 
@@ -268,8 +273,8 @@ class TestUSPTOPatentsFetchWithMock:
         """fetch() still works without API key (may be rate limited)."""
         responses.add(
             responses.POST,
-            "https://api.patentsview.org/patents/query",
-            json=_make_patentsview_response([SAMPLE_PATENT_MINIMAL]),
+            "https://search.patentsview.org/api/v1/patent/",
+            json=_make_patentsearch_response([SAMPLE_PATENT_MINIMAL]),
             status=200,
         )
 
@@ -306,7 +311,7 @@ class TestPatentNormalization:
         assert result["grant_date"] == "2026-01-15"
 
     def test_normalize_patent_missing_number(self, tmp_path):
-        """Patent without patent_number returns None."""
+        """Patent without patent_id returns None."""
         with patch.dict(os.environ, {"USPTO_API_KEY": "key"}):
             fetcher = USPTOPatentsFetcher(data_dir=str(tmp_path))
 

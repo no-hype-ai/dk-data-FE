@@ -14,18 +14,13 @@ Tests cover:
 - MedicalNewsRecord validation (valid and invalid)
 """
 
-import tempfile
-import time
-from datetime import date, datetime
-from types import SimpleNamespace
-from unittest.mock import MagicMock, patch
+from datetime import date
 
 import pytest
 import responses
 
 from dk_data.ingestion.fetchers.medical_news import (
     MedicalNewsFetcher,
-    DEFAULT_RSS_FEEDS,
 )
 from dk_data.ingestion.utils.validators import MedicalNewsRecord
 

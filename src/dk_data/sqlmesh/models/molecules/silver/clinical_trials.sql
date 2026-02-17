@@ -81,6 +81,7 @@ SELECT
     -- Source Tracking
     id AS bronze_id,
     'clinicaltrials_gov' AS source,
+    ingested_at,
     ingested_at AS source_updated_at,
     NOW() AS created_at,
     NOW() AS updated_at
@@ -89,4 +90,4 @@ FROM bronze_clinicaltrials
 WHERE
     processed_to_silver = FALSE
     AND raw_data->>'nctId' IS NOT NULL
-    AND @incremental_time_filter(ingested_at);
+    AND ingested_at BETWEEN @start_dt AND @end_dt;

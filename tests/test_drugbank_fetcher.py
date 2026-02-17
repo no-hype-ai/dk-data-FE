@@ -7,10 +7,8 @@ Tests use mocked HTTP responses so no external network calls are made.
 """
 
 import os
-import tempfile
 import textwrap
-from datetime import date
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 
 import pytest
 from pydantic import ValidationError
@@ -131,7 +129,7 @@ class TestDrugBankFetcherInit:
         """Verify the data directory is created on init."""
         data_path = tmp_path / "sub" / "raw"
         with patch.dict(os.environ, {"DRUGBANK_API_KEY": "key"}):
-            fetcher = DrugBankFetcher(data_dir=str(data_path))
+            DrugBankFetcher(data_dir=str(data_path))  # side-effect: creates dir
         assert data_path.exists()
 
 

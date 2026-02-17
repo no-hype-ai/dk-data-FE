@@ -12,15 +12,14 @@ Tests cover:
 - Date parsing helper
 """
 
-import tempfile
 import textwrap
 from datetime import date
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 
 import pytest
 import responses
 
-from dk_data.ingestion.fetchers.epo_ops import EPOOPSFetcher, PHARMA_IPC_CODES
+from dk_data.ingestion.fetchers.epo_ops import EPOOPSFetcher
 from dk_data.ingestion.utils.validators import EPOPatentRecord
 
 
