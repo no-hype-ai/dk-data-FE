@@ -9,7 +9,7 @@ Provides (mounted at /api/v1 via api.py):
 - /api/v1/monitoring/job-complete - CronJob completion reporting
 """
 
-from datetime import datetime, timedelta
+from datetime import datetime
 from typing import Optional
 
 from fastapi import APIRouter, HTTPException, Query
