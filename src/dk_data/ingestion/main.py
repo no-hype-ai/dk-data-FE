@@ -6,6 +6,7 @@ Handles both file-based TAVR sources and API-based sources (fetch + load + log).
 """
 
 import argparse
+import json
 import logging
 import sys
 from datetime import datetime
@@ -315,7 +316,7 @@ def log_to_meta(source_name: str, result: dict) -> None:
                 result.get('records_fetched', result.get('records_inserted', 0)),
                 result.get('records_inserted', 0),
                 result.get('records_updated', 0),
-                result.get('errors', [])[:1000] if result.get('errors') else None
+                json.dumps(result['errors'][:5]) if result.get('errors') else None
             ))
 
             # Update data_sources
@@ -324,7 +325,7 @@ def log_to_meta(source_name: str, result: dict) -> None:
                 SET last_refresh_attempt = NOW(),
                     last_refresh_status = %s,
                     last_successful_refresh = CASE
-                        WHEN %s = 'success' THEN NOW()
+                        WHEN %s IN ('success', 'partial') THEN NOW()
                         ELSE last_successful_refresh
                     END,
                     record_count = COALESCE(%s, record_count)
@@ -497,7 +498,7 @@ Examples:
             for err in result['errors'][:5]:
                 print(f"  - {err}")
 
-        return 0 if result.get('status') in ('success', 'skipped') else 1
+        return 0 if result.get('status') in ('success', 'skipped', 'partial') else 1
 
     except Exception as e:
         logger.error(f"Ingestion failed: {e}")
