@@ -134,7 +134,7 @@ class TestOpenAlexCIFetcherInit:
         with tempfile.TemporaryDirectory() as tmpdir:
             import os
             data_path = os.path.join(tmpdir, "sub", "raw")
-            fetcher = OpenAlexCIFetcher(data_dir=data_path)
+            OpenAlexCIFetcher(data_dir=data_path)  # side-effect: creates dir
             assert os.path.exists(data_path)
 
 

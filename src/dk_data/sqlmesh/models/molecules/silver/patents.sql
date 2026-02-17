@@ -1,12 +1,11 @@
 -- SQLMesh Model: Silver Patents
--- Normalized patent data from DrugBank and Orange Book
--- Part of: 012-dk-data-platform
+-- Normalized patent data from DrugBank, USPTO Patents, USPTO CI, and EPO OPS
+-- Part of: 014-uspto-euipo-model-datasource (extended from 012)
 
 MODEL (
     name silver.patents,
     kind INCREMENTAL_BY_UNIQUE_KEY (
-        unique_key patent_number,
-        when_matched_update_all TRUE
+        unique_key patent_number
     ),
     cron '@monthly',
     audits (
@@ -39,61 +38,171 @@ WITH drugbank_patents AS (
         AND patent->>'number' IS NOT NULL
 ),
 
--- Deduplicate and enrich
-enriched AS (
-    SELECT DISTINCT ON (patent_number)
+-- USPTO Patents (PatentsView direct)
+uspto_patents AS (
+    SELECT
         patent_number,
-        country,
-        grant_date,
-        expiry_date,
-        -- Determine status
-        CASE
-            WHEN expiry_date < CURRENT_DATE THEN 'expired'
-            WHEN grant_date IS NULL THEN 'pending'
-            ELSE 'active'
-        END AS status,
-        pediatric_extension,
-        -- Calculate extension days
-        CASE
-            WHEN pediatric_extension = TRUE THEN 180
-            ELSE 0
-        END AS extension_days,
-        drugbank_id,
+        patent_title AS title,
+        patent_abstract AS abstract,
+        patent_date AS grant_date,
+        filing_date,
+        assignee_organization AS assignee,
+        assignee_type,
+        inventors,
+        cpc_codes,
+        NULL::JSONB AS ipc_codes,
+        num_claims,
+        is_pharma_related,
+        NULL::TEXT AS family_id,
+        'uspto_patents' AS source
+    FROM bronze.uspto_patents
+    WHERE processed_to_silver = FALSE
+      AND patent_number IS NOT NULL
+),
+
+-- USPTO CI (query-scoped)
+uspto_ci AS (
+    SELECT
+        patent_number,
+        patent_title AS title,
+        patent_abstract AS abstract,
+        patent_date AS grant_date,
+        filing_date,
+        assignee_organization AS assignee,
+        NULL::TEXT AS assignee_type,
+        inventors,
+        cpc_codes,
+        NULL::JSONB AS ipc_codes,
+        num_claims,
+        is_pharma_related,
+        NULL::TEXT AS family_id,
+        'uspto_ci' AS source
+    FROM bronze.uspto_ci
+    WHERE processed_to_silver = FALSE
+      AND patent_number IS NOT NULL
+),
+
+-- EPO Patents (European)
+epo_patents AS (
+    SELECT
+        patent_number,
+        patent_title AS title,
+        patent_abstract AS abstract,
+        patent_date AS grant_date,
+        filing_date,
+        assignee_organization AS assignee,
+        NULL::TEXT AS assignee_type,
+        inventors,
+        cpc_codes,
+        ipc_codes,
+        num_claims,
+        is_pharma_related,
+        family_id,
+        'epo_ops' AS source
+    FROM bronze.epo_patents
+    WHERE processed_to_silver = FALSE
+      AND patent_number IS NOT NULL
+),
+
+-- Combine all sources
+combined AS (
+    -- DrugBank records (existing format)
+    SELECT
+        patent_number, NULL AS title, NULL AS abstract,
+        NULL::DATE AS filing_date, grant_date, expiry_date,
+        NULL AS assignee, NULL::TEXT AS assignee_type,
+        NULL::JSONB AS inventors,
+        NULL::JSONB AS cpc_codes, NULL::JSONB AS ipc_codes,
+        NULL::INTEGER AS num_claims,
+        NULL::BOOLEAN AS is_pharma_related,
+        NULL::TEXT AS family_id,
+        pediatric_extension, country,
         drug_name AS molecule_name,
-        source,
-        source_updated_at,
-        created_at
+        'drugbank' AS source,
+        source_updated_at
     FROM drugbank_patents
-    ORDER BY patent_number, source_updated_at DESC
+
+    UNION ALL
+
+    SELECT
+        patent_number, title, abstract,
+        filing_date, grant_date, NULL::DATE AS expiry_date,
+        assignee, assignee_type, inventors,
+        cpc_codes, ipc_codes, num_claims,
+        is_pharma_related, family_id,
+        NULL::BOOLEAN AS pediatric_extension, 'US' AS country,
+        NULL AS molecule_name,
+        source,
+        NOW() AS source_updated_at
+    FROM uspto_patents
+
+    UNION ALL
+
+    SELECT
+        patent_number, title, abstract,
+        filing_date, grant_date, NULL::DATE AS expiry_date,
+        assignee, assignee_type, inventors,
+        cpc_codes, ipc_codes, num_claims,
+        is_pharma_related, family_id,
+        NULL::BOOLEAN AS pediatric_extension, 'US' AS country,
+        NULL AS molecule_name,
+        source,
+        NOW() AS source_updated_at
+    FROM uspto_ci
+
+    UNION ALL
+
+    SELECT
+        patent_number, title, abstract,
+        filing_date, grant_date, NULL::DATE AS expiry_date,
+        assignee, assignee_type, inventors,
+        cpc_codes, ipc_codes, num_claims,
+        is_pharma_related, family_id,
+        NULL::BOOLEAN AS pediatric_extension, 'EP' AS country,
+        NULL AS molecule_name,
+        source,
+        NOW() AS source_updated_at
+    FROM epo_patents
 )
 
-SELECT
+SELECT DISTINCT ON (patent_number)
     gen_random_uuid() AS id,
     patent_number,
     NULL::TEXT AS application_number,
-    NULL::TEXT AS title,
-    NULL::TEXT AS abstract,
-    NULL::DATE AS filing_date,
+    title,
+    abstract,
+    filing_date,
     grant_date,
     expiry_date,
-    NULL::TEXT AS assignee,
+    assignee,
+    assignee_type,
     NULL::TEXT AS assignee_normalized,
-    NULL::JSONB AS inventors,
+    inventors,
     NULL::TEXT AS patent_type,
     country,
-    NULL::JSONB AS cpc_codes,
-    NULL::JSONB AS ipc_codes,
-    status,
+    cpc_codes,
+    ipc_codes,
+    num_claims,
+    family_id,
+    CASE
+        WHEN expiry_date < CURRENT_DATE THEN 'expired'
+        WHEN grant_date IS NULL THEN 'pending'
+        ELSE 'active'
+    END AS status,
+    is_pharma_related,
     pediatric_extension,
-    extension_days,
+    CASE WHEN pediatric_extension = TRUE THEN 180 ELSE 0 END AS extension_days,
     NULL::JSONB AS related_patents,
-    NULL::UUID AS molecule_id,  -- To be linked by entity resolution
-    'drugbank' AS source,
+    NULL::UUID AS molecule_id,
+    source,
     source_updated_at,
     NOW() AS created_at,
     NOW() AS updated_at
-FROM enriched;
-
-
--- Post-insert would mark Bronze records as processed
--- But since we extract from patents array, we track differently
+FROM combined
+ORDER BY patent_number,
+    CASE source
+        WHEN 'drugbank' THEN 1
+        WHEN 'uspto_patents' THEN 2
+        WHEN 'uspto_ci' THEN 3
+        WHEN 'epo_ops' THEN 4
+    END

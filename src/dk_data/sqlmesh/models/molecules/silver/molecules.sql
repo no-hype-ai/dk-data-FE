@@ -5,8 +5,7 @@
 MODEL (
     name silver.molecules,
     kind INCREMENTAL_BY_UNIQUE_KEY (
-        unique_key inchi_key,
-        when_matched_update_all TRUE
+        unique_key inchi_key
     ),
     cron '@daily',
     audits (
@@ -83,10 +82,6 @@ deduplicated AS (
 SELECT * FROM deduplicated;
 
 
--- Post-insert: Mark Bronze records as processed
-@post_incremental(
-    UPDATE bronze.chembl_molecules
-    SET processed_to_silver = TRUE
-    WHERE processed_to_silver = FALSE
-    AND inchi_key IN (SELECT inchi_key FROM silver.molecules)
-);
+-- NOTE: Bronze processed_to_silver flag updates are handled outside SQLMesh.
+-- Silver models use INCREMENTAL_BY_UNIQUE_KEY with INCREMENTAL_BY_UNIQUE_KEY (default: update all columns on match),
+-- so reprocessing is idempotent.

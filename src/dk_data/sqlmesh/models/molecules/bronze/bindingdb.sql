@@ -11,8 +11,8 @@ MODEL (
     cron '@daily',
     grain (bindingdb_id),
     audits (
-        not_null(bindingdb_id),
-        unique(bindingdb_id)
+        not_null(columns := (bindingdb_id)),
+        unique_values(columns := (bindingdb_id))
     )
 );
 

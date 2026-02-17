@@ -11,9 +11,9 @@ MODEL (
     cron '@daily',
     grain (molecule_id, identifier_type, identifier_value),
     audits (
-        not_null(molecule_id),
-        not_null(identifier_type),
-        not_null(identifier_value)
+        not_null(columns := (molecule_id)),
+        not_null(columns := (identifier_type)),
+        not_null(columns := (identifier_value))
     )
 );
 

@@ -4,6 +4,7 @@ Pytest configuration and shared fixtures for dk-data tests.
 
 import os
 import pytest
+import httpx
 
 
 def pytest_configure(config):
@@ -39,3 +40,14 @@ def db_cursor(postgres_connection):
     yield cursor
     postgres_connection.rollback()
     cursor.close()
+
+
+@pytest.fixture(scope="session")
+def postgrest_client():
+    """Create an httpx client for PostgREST API testing.
+
+    Requires POSTGREST_URL env var (set by CI) or defaults to localhost:3030.
+    """
+    base_url = os.getenv("POSTGREST_URL", "http://localhost:3030")
+    with httpx.Client(base_url=base_url, timeout=10.0) as client:
+        yield client

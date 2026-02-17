@@ -12,7 +12,7 @@ MODEL (
     cron '@monthly',
     grain (stitch_id, meddra_concept_id),
     audits (
-        not_null(stitch_id)
+        not_null(columns := (stitch_id))
     )
 );
 

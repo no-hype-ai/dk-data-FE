@@ -211,11 +211,11 @@ class EPOOPSFetcher(BaseFetcher):
             try:
                 params = {
                     "q": cql,
-                    "Range": f"{start}-{end}",
                 }
                 headers = {
                     "Authorization": f"Bearer {self._access_token}",
                     "Accept": "application/xml",
+                    "Range": f"{start}-{end}",
                 }
 
                 response = self.session.get(

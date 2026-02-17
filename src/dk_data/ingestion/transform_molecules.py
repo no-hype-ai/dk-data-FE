@@ -48,6 +48,21 @@ LAYER_MODELS = {
         'mol_gold.safety_signals_agg',
         'mol_gold.trial_analytics_agg',
     ],
+    # IP / Patent / Trademark models (014-uspto-euipo-model-datasource)
+    'ip_bronze': [
+        'bronze.uspto_patents',
+        'bronze.uspto_ci',
+        'bronze.epo_patents',
+        'bronze.uspto_trademarks',
+        'bronze.euipo_trademarks',
+    ],
+    'ip_silver': [
+        'silver.patents',
+        'silver.trademarks',
+    ],
+    'ip_gold': [
+        'gold.molecule_profile',
+    ],
 }
 
 
@@ -206,8 +221,8 @@ def transform_all_layers() -> dict:
     total_success = 0
     total_fail = 0
 
-    # Process layers in order: bronze -> silver -> gold
-    for layer in ['bronze', 'silver', 'gold']:
+    # Process layers in order: molecule pipeline then IP pipeline
+    for layer in ['bronze', 'silver', 'gold', 'ip_bronze', 'ip_silver', 'ip_gold']:
         logger.info(f"\n{'='*60}")
         logger.info(f"Processing {layer.upper()} layer")
         logger.info(f"{'='*60}")
@@ -319,7 +334,7 @@ Examples:
 
     parser.add_argument(
         '--layer', '-l',
-        choices=['bronze', 'silver', 'gold', 'all'],
+        choices=['bronze', 'silver', 'gold', 'ip_bronze', 'ip_silver', 'ip_gold', 'all'],
         help='Layer to transform'
     )
     parser.add_argument(

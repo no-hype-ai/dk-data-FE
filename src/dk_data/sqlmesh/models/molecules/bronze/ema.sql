@@ -11,8 +11,8 @@ MODEL (
     cron '@weekly',
     grain (product_number),
     audits (
-        not_null(product_number),
-        unique(product_number)
+        not_null(columns := (product_number)),
+        unique_values(columns := (product_number))
     )
 );
 

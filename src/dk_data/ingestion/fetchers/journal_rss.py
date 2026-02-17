@@ -13,8 +13,7 @@ Daily cadence, deduplicates on article DOI or URL (stored as article_id).
 
 import hashlib
 import logging
-import os
-from datetime import date, datetime
+from datetime import datetime
 from typing import Any, Dict, List, Optional
 from urllib.parse import urlparse
 

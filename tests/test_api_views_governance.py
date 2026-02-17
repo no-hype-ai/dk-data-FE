@@ -175,8 +175,15 @@ class TestGrantPermissions:
     """Verify role-based access control on the audit log."""
 
     def test_api_user_select_grant_on_view(self, db_init_sql):
-        """api_user must be granted SELECT on api.audit_log."""
-        assert "GRANT SELECT ON api.audit_log TO api_user" in db_init_sql
+        """api_user must be granted SELECT on api.audit_log — literal or dynamic."""
+        has_literal = "GRANT SELECT ON api.audit_log TO api_user" in db_init_sql
+        # Dynamic grant via: EXECUTE format('GRANT SELECT ON api.%I TO api_user', v_name)
+        # where v_name loops over IN ('audit_log', ...)
+        has_dynamic = (
+            "'audit_log'" in db_init_sql
+            and "EXECUTE format('GRANT SELECT ON api.%I TO api_user'" in db_init_sql
+        )
+        assert has_literal or has_dynamic
 
     def test_web_anon_no_select_on_view(self, db_init_sql):
         """web_anon must NOT be granted SELECT on api.audit_log."""

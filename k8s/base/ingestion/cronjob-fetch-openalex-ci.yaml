@@ -32,8 +32,8 @@ spec:
           containers:
             - name: fetch-openalex-ci
               image: ghcr.io/data-kinetic/dk-data-fe/job-trigger:main-5f46ed1
-              command: ["python", "-m", "dk_data.ingestion.fetch_data"]
-              args: ["--source", "openalex_ci"]
+              command: ["python", "-m", "dk_data.ingestion.main"]
+              args: ["openalex_ci"]
               env:
                 - name: POSTGRES_HOST
                   valueFrom:
@@ -66,8 +66,8 @@ spec:
                   value: "true"
               resources:
                 requests:
-                  memory: "256Mi"
+                  memory: "512Mi"
                   cpu: "100m"
                 limits:
-                  memory: "512Mi"
-                  cpu: "300m"
+                  memory: "1Gi"
+                  cpu: "500m"

@@ -1,268 +1,205 @@
 # Open Issues Reconciliation
 
-**Date**: 2026-02-16 (updated)
-**Branch**: main (post-merge of PR #92 — 013-observability-governance)
-**Open Issues**: 3 GitHub issues (#93, #94, #95) + 1 infrastructure item (Doppler MinIO secrets)
+**Date**: 2026-02-17 (updated)
+**Branch**: staging (post-merge of PR #106 — unified ingestion pipeline + trademarks)
+**Open Issues**: 3 GitHub issues (#93, #94, #95) + 2 minor issues (#107, #108)
 
 ---
 
 ## Executive Summary
 
-Since the initial reconciliation (2026-02-14), **all Sprint 1, Sprint 2, and Sprint 3 items are complete**. PR #89 (012-platform-hardening) resolved 7 issues. PR #90 fixed a production promotion race condition. PR #92 (013-observability-governance) resolved 5 issues covering metrics scraping, audit trail, migration runner, and data classification/retention.
-
-Of the 3 remaining GitHub issues, 2 are from the original reconciliation (#52, #84) and 1 is an older architecture debt item (#8). Issues #9, #16, #17, #18, #19 were all closed by PR #92.
-
-A 2026-02-16 cluster health check uncovered 4 infrastructure issues: staging PostgreSQL outage (resolved), prod fetch-* CronJob failures, prod/staging pg-backup secret misconfiguration, and a missing dk-alchemy PriorityClass deployment for staging.
+Since the 2026-02-16 reconciliation, all infrastructure items have been resolved:
+- **pg-backup** fully working end-to-end on both clusters (Doppler MinIO creds added, image fixed to postgres:16-alpine, MinIO NetworkPolicy patched)
+- **PR #106** merged to staging (138 files, unified ingestion pipeline with 22 sources, resolves #109-#112)
+- **Staging database initialized**: meta tables created, 33 migrations applied, 41 data sources seeded
+- **Staging validation (Phase 1-3)**: SOURCES=22, CronJobs=22, pubmed backfill 3470 records, incremental fetch 108 records, journal_rss 169 records
+- **Two fetcher bugs fixed**: PubMed 414 URI Too Long (switched efetch to POST), meta logging `can't adapt type 'dict'` (JSON serialize errors)
+- **OpenAlex CI OOMKilled**: memory limit increased from 512Mi to 1Gi
 
 ---
 
-## Completed Work (since 2026-02-14)
+## Completed Work (2026-02-16 to 2026-02-17)
 
-### Closed — Previously Resolved (2026-02-14)
-
-| Issue | Title | Closed By |
-|-------|-------|-----------|
-| #78 | dk-data platform: remaining issues and integration roadmap | Superseded by this document |
-| #80 | Add missing gold/bronze tables required by behavior-labs-ai specs | Duplicate of #81 |
-| #82 | Import SIDER side effect database | PR #87 (011-datasource-integration) |
-| #83 | Unblock PatentsView API key | PR #87 (implementation complete) |
-
-### Closed — PR #89 (012-platform-hardening, 2026-02-15)
+### Closed — PR #106 (unified ingestion pipeline + trademarks, merged 2026-02-17)
 
 | Issue | Title | What Was Done |
 |-------|-------|---------------|
-| #88 | CronJob pods fail: ModuleNotFoundError | Fixed Dockerfile multi-stage build — removed redundant COPY and PYTHONPATH override, fixed absolute imports |
-| #81 | Create missing PostgREST API views | Added 6 API views (company_pipeline, molecule_targets, trial_publication_features, sider_side_effects, bioactivity, patents) with migration 065 and GRANTs |
-| #42 | Enable UniProt data source | UniProt fetcher, loader, validator, CronJob, seed SQL, catalog entry |
-| #50 | Enable PDB data source | PDB fetcher, loader, validator, CronJob, seed SQL, catalog entry |
-| #51 | Enable ORCID data source | ORCID fetcher, loader, validator, migration 066, CronJob, seed SQL, catalog entry |
-| #20 | Python dependency version management | All 38 deps pinned with upper bounds, uv.lock generated, CI lock freshness check |
-| #57 | Document Doppler secret configuration | docs/DOPPLER_SECRETS.md (14 secrets), startup validation module with 7 tests |
+| #109 | Implement unified ingestion entry point (main.py) | 22-source unified CLI with incremental fetching, meta logging, backfill windows |
+| #110 | Add trademark data sources (USPTO TSDR + EUIPO TMview) | Full fetcher/loader/validator/CronJob for both sources |
+| #111 | Deploy ingestion CronJobs for all 22 sources | 22 CronJobs with Kustomize image tag injection |
+| #112 | Staging validation script | `scripts/validate-staging-ingestion.sh` with 3 phases |
 
-### Additional Fix — PR #90 (2026-02-15)
+### Closed — PR #103 (backup image fix, merged 2026-02-16)
 
-Fixed race condition in `.github/workflows/promote-to-prod.yaml` — production promotion now reads the staging image tag from the overlay kustomization.yaml instead of computing from HEAD SHA (which pointed to the manifest commit, not the build commit).
+Fixed pg-backup CronJobs: changed image from `alpine:3.19` to `postgres:16-alpine` (provides `pg_dump`/`pg_restore`), added MinIO client (`mc`) download to backup/verify scripts.
 
-### Closed — PR #92 (013-observability-governance, 2026-02-15)
+### Infrastructure Resolved (2026-02-16 to 2026-02-17)
 
-| Issue | Title | What Was Done |
-|-------|-------|---------------|
-| #91 | Enable full observability: deploy ServiceMonitors, verify metrics endpoint, add PostgREST exporter | Fixed ServiceMonitor/PodMonitor labels (`release: mimir`), added `batch-job` labels to 15 CronJob pod templates, replaced PostgREST ServiceMonitor with Probe CRD (blackbox-exporter), updated `APIUnavailable` alert to `probe_success` metric |
-| #17 | No audit trail for data changes and API access | Two-layer audit trail: `AuditLoggingMiddleware` (FastAPI, async thread pool) + PostgreSQL trigger via `current_setting('request.jwt.claims')`; `api.audit_log` view restricted to `api_user`; migration 067 |
-| #9 | No database migration strategy | Lightweight migration runner (`run_migrations.py`) with SHA-256 checksums, `--baseline`/`--dry-run` flags, `meta.schema_migrations` tracking table, `api.migration_status` view; migration 068 |
-| #18 | Unclear PII/PHI data handling | 4-tier data classification (public/internal/pii/confidential) for 43 tables; `raw.orcid` identified as PII with 6 fields; `api.data_classification` view; migration 069 |
-| #19 | No defined data retention policy | Retention-based `purge_by_classification()` with `--all-tables` flag; retention_days column on `meta.data_sources`; `docs/DATA_CLASSIFICATION.md`; migration 070 |
+| Item | Fix |
+|------|-----|
+| MinIO backup credentials | Added `MINIO_ACCESS_KEY`/`MINIO_SECRET_KEY` to Doppler `dk-data-fe` (prd + stg) |
+| pg-backup image | Changed to `postgres:16-alpine`, added mc download (PR #103) |
+| MinIO NetworkPolicy | Added `dk-data-prod`/`dk-data-staging` to ingress rules (dk-alchemy PR #192) |
+| Backup end-to-end verified | Prod: 51KB/149 objects, Staging: 23KB/88 objects |
 
-198 new tests added (all passing). Also addressed #16 (documentation drift) via comprehensive spec artifacts and `DATA_CLASSIFICATION.md`.
+### Staging Pipeline Fixes (2026-02-17)
 
----
-
-## Remaining Open Issues (3)
-
-### Near-Term — Actionable
-
-#### #52 — Frontend integration — React onboarding wizard + dashboard
-**Priority**: P2
-**Effort**: Large (1-2 weeks)
-**Dependencies**: API views now exist (resolved by #81/PR #89)
-**Current state**: The frontend directory does not exist on main. The 6 API views from PR #89 now provide data endpoints. The mol_gold compute-on-demand views (molecule_properties, SHAP explanations, synthesizability scores) are still not implemented — these would require a FastAPI sidecar or pre-computation.
-**Recommendation**: Can begin basic frontend work against the 6 available API views. Defer mol_gold-dependent features until compute architecture is decided.
-
-#### #84 — Evaluate LiteLLM proxy integration for AI calls
-**Priority**: P3
-**Effort**: Small (evaluation) or Medium (migration)
-**Dependencies**: Decision on centralized LLM budgeting/observability
-**Current state**: dk-data-FE uses direct Anthropic SDK calls. The dk-litellm proxy exists but integration hasn't been implemented.
-**Recommendation**: Close as "won't fix" if centralized budgeting isn't a priority, or defer to post-MVP.
-
-### Older Platform Issues
-
-| Issue | Title | Priority | Notes |
-|-------|-------|----------|-------|
-| #8 | Tight coupling to Edwards/TAVR use case | P3 | Ongoing — new fetcher pattern (BaseFetcher) is generic, but legacy code still TAVR-specific |
+| Commit | Fix |
+|--------|-----|
+| `26114d4` | PubMed efetch: switched from GET to POST to avoid 414 URI Too Long (3499 PMIDs) |
+| `42b7ba4` | Meta logging: JSON-serialize errors list, treat `partial` status as success |
+| `27a4e23` | OpenAlex CI: increased memory limit from 512Mi to 1Gi (OOMKilled at 10K records) |
 
 ---
 
-## Infrastructure Issues (2026-02-16)
+## Staging Validation Results (2026-02-17)
 
-### RESOLVED — Staging PostgreSQL outage
+### Phase 1: Pre-flight
 
-**Root cause**: The `staging-default` PriorityClass did not exist on k3s-slave-1 (staging cluster). The CNPG postgres overlay for staging (`dk-alchemy/k8s/infrastructure/postgres/overlays/staging/`) sets `priorityClassName: staging-default`, but the `infra-priority-classes` ArgoCD app only deploys PriorityClasses to k3s-master-1 (prod). When the staging cluster was bootstrapped (~5d ago), the CNPG operator couldn't create `postgres-cluster-1` — pod creation was forbidden.
+| Check | Result |
+|-------|--------|
+| job-trigger pod running | PASS |
+| SOURCES dict = 22 entries | PASS |
+| _meta_name resolver | PASS (`cms_inpatient` → `cms_medicare_inpatient`) |
+| meta.data_sources active count | PASS (41 sources, >= 22 expected) |
+| All 22 expected source names in meta | PASS |
+| Ingestion CronJobs deployed | PASS (22 CronJobs) |
 
-**Impact**: PostgreSQL down for ~5 days on staging. PostgREST crash-looping (0/2 ready, 23 restarts). All staging CronJobs requiring DB access affected (`catalog-refresh` failed 3 consecutive runs).
+### Phase 2: Manual Single-Source Runs
 
-**Fix applied (manual, 2026-02-16)**:
-1. Created `staging-default` PriorityClass on k3s-slave-1 (`value: 100000, preemptionPolicy: PreemptLowerPriority`)
-2. Added node label `workload.dk-alchemy/env=staging` to k3s-slave-1 (for preferred nodeAffinity match)
-3. Annotated CNPG cluster to trigger immediate reconciliation
-4. Deleted crash-looping PostgREST pods to reset CrashLoopBackOff
+| Source | Status | Records |
+|--------|--------|---------|
+| pubmed (backfill, 30d) | partial | 3499 fetched, 3470 inserted, 29 empty-title validation errors |
+| journal_rss | success | 169 fetched, 169 inserted (6/8 feeds) |
+| uniprot | success | 0 records (expected — default query has no target proteins) |
 
-**Result**: PostgreSQL `postgres-cluster-1` running (1/1 Ready, healthy). PostgREST 2/2 Running (0 restarts). ArgoCD `dk-data-staging` app reports Healthy.
+### Phase 3: Incremental Validation
 
-**Permanent fix needed (dk-alchemy)**: The `infra-priority-classes` ArgoCD app should deploy PriorityClasses to both clusters, or a staging-specific priority classes app should be created. The manual PriorityClass and node label on k3s-slave-1 will be lost if the node is rebuilt.
+| Check | Result |
+|-------|--------|
+| Pubmed incremental detected prior refresh | PASS — "0.0 days ago — fetching 1 days" |
+| Incremental record count | 109 fetched, 108 inserted (vs 3499 backfill) |
+| meta.refresh_log entries | Both backfill and incremental logged correctly |
+| last_successful_refresh updated | PASS — partial status treated as success |
 
-### FIXED — NetworkPolicy blocks intra-namespace traffic (P1, NEW)
+### Scheduled CronJob Results (first 24h)
 
-**Root cause**: The `dk-data-postgrest-ingress` NetworkPolicy only allowed ingress from external namespaces (`kube-system`, `behaviorlabs-*`, `agentmesh-*`, `infra`) — not from within the same namespace. Combined with `dk-data-default-deny` (denies all), job-trigger and CronJob pods couldn't reach PostgREST. The `dk-data-egress` policy also lacked intra-namespace and staging MinIO rules.
-
-**Impact**: Job-trigger can't call PostgREST health endpoint. CronJob pods that need to load data via PostgREST are blocked. Staging backup CronJobs can't reach MinIO in `infra-staging`.
-
-**Fix applied (2026-02-16)**:
-1. Added same-namespace ingress rule (`podSelector: {}`) to `dk-data-postgrest-ingress` (matching pattern already used in `dk-data-job-trigger-ingress`)
-2. Added intra-namespace egress rule (ports 3000, 8000) to `dk-data-egress`
-3. Added staging MinIO egress rule (port 9000 to `infra-staging`)
-
-### DIAGNOSED — Prod fetch-* CronJob failures (P1) → Transient first-run failures
-
-**Affected jobs** (13 data sources): `fetch-pubmed`, `fetch-news`, `fetch-sec-edgar`, `fetch-ema-reg`, `fetch-epo`, `fetch-hta`, `fetch-journal-rss`, `fetch-openalex-ci`, `fetch-orcid`, `fetch-pdb`, `fetch-uniprot`, `fetch-uspto-ci`, `fetch-uspto-patents`
-
-**Diagnosis (2026-02-16)**: Manual trigger of `test-pubmed` job succeeded — fetched 47 PubMed records, exit code 0. The fetcher code works correctly. The original BackoffLimitExceeded failures on first scheduled runs (~25h ago) were transient (likely image pull or API timing during initial CronJob creation). Failed job objects remain on cluster and need cleanup for CronJobs to schedule new runs.
-
-**Action needed**:
-1. Clean up failed job objects: `kubectl delete jobs --field-selector status.successful=0 -n dk-data-prod` (for the 13 fetch-* failed jobs)
-2. Monitor next scheduled runs to confirm all 13 sources succeed
-3. Note: `fetch_data.py` does NOT call DB loaders — fetched data is written to `/tmp/data/raw` and lost when pod exits. This is a separate issue for follow-up.
-
-### IN PROGRESS — Prod/Staging pg-backup CronJob failures (P2)
-
-**Affected jobs**: `pg-backup-daily`, `pg-backup-weekly`, `pg-backup-verify` (both prod and staging)
-
-**Root cause**: The `minio-backup-credentials` DopplerSecret was missing required fields (`project`, `config`, `tokenSecret.key`, `managedSecret.type`, `resyncSeconds`), so the Doppler operator couldn't sync actual secrets. Additionally, all 3 backup CronJobs hardcoded `MINIO_ENDPOINT` to `minio.infra.svc.cluster.local:9000` (wrong for staging, which uses `infra-staging` namespace).
-
-**Fixes applied (2026-02-16)**:
-1. Fixed `k8s/base/backup/minio-credentials.yaml` DopplerSecret to match `dk-data-secrets` pattern (added `key: serviceToken`, `project`, `config`, `type: Opaque`, `resyncSeconds: 300`)
-2. Added staging overlay patches: DopplerSecret `config: stg`, and `MINIO_ENDPOINT` → `minio.infra-staging.svc.cluster.local:9000` for all 3 backup CronJobs
-
-**Manual action still needed**: Add `MINIO_ACCESS_KEY` and `MINIO_SECRET_KEY` to Doppler project `dk-data-fe` (both `prd` and `stg` configs) with MinIO root credentials from the respective infra namespaces.
-
-### FIXED — dk-alchemy PriorityClass gap (P3, preventive)
-
-**Issue**: The `infra-priority-classes` ArgoCD app deploys PriorityClasses only to k3s-master-1 (prod cluster). k3s-slave-1 (staging cluster) does not get PriorityClasses via GitOps. This caused the 5-day staging PostgreSQL outage documented above.
-
-**Fix applied (2026-02-16)** (in dk-alchemy repo):
-1. Created `k8s/infrastructure/priority-classes/overlays/staging/kustomization.yaml` (mirrors prod overlay)
-2. Added `priority-classes` to the staging ApplicationSet generator list in `.gitops/root/dk-cluster-infra-staging.yaml`
-3. ArgoCD will deploy both `production-critical` and `staging-default` PriorityClasses to k3s-slave-1 via `infra-priority-classes-staging` app
-
-**Deployed**: dk-alchemy PR #190 merged to `main`. ArgoCD created `infra-priority-classes-staging` app (status: Healthy). PriorityClasses confirmed on k3s-slave-1.
+| CronJob | Status | Notes |
+|---------|--------|-------|
+| fetch-pubmed (daily 11:00) | Succeeded | Before POST fix — succeeded with smaller result set |
+| fetch-journal-rss (daily 13:00) | Succeeded | |
+| fetch-sec-edgar (daily 16:00) | Succeeded | |
+| fetch-news (daily 16:00) | Succeeded | |
+| fetch-openalex-ci (daily 12:00) | **Failed (OOMKilled)** | Memory fix deployed (1Gi), awaiting next run |
+| fetch-cms-all (weekly Sun 02:00) | Succeeded | |
+| mol-fetch-daily (every 6h) | Succeeded | |
+| mol-fetch-weekly (Sun 03:00) | Succeeded | |
+| mol-transform (daily 06:00) | Succeeded | |
 
 ---
 
-## Current Cluster Status (2026-02-16 05:10 UTC)
+## Remaining Open Issues (5)
 
-### Prod (k3s-master-1, `dk-data-prod`)
+### Active
 
-| Component | Status | Details |
-|-----------|--------|---------|
-| PostgREST | **3/3 Running** | Image: `postgrest:v12.2.3`, 0 restarts |
-| job-trigger | **2/2 Running** | Image: `prod-5da0abb`, 0 restarts (17min uptime after CI redeploy) |
-| PostgreSQL (infra) | **3/3 Healthy** | CNPG cluster fully operational |
-| ArgoCD app | **Healthy / OutOfSync** | OutOfSync expected from CI image tag auto-commits |
-| `mol-fetch-daily` | Succeeding | Last run: recent |
-| `mol-transform` | Succeeding | Last run: recent |
-| `catalog-refresh` | Succeeding | Last run: recent |
-| `fetch-cms-all` | Succeeding | Latest run succeeded |
-| `fetch-*` (13 new) | **Pending next run** | Failed jobs cleaned up (27 deleted); test-pubmed succeeded manually |
-| `pg-backup-*` | **Blocked** | DopplerSecret manifest fixed (operator syncing), but `MINIO_ACCESS_KEY`/`MINIO_SECRET_KEY` not yet in Doppler |
-| `pg-backup-verify` | **Failed 04:00 UTC** | Expected — Doppler MinIO credentials pending |
-| NetworkPolicy | **Deployed** | PR #102 merged to main — same-namespace rules active |
+| Issue | Title | Priority | Status |
+|-------|-------|----------|--------|
+| #93 | Tight coupling to Edwards/TAVR use case | P3 | Architecture debt — ongoing |
+| #94 | Frontend integration — React onboarding wizard + dashboard | P2 | Blocked on mol_gold compute decision |
+| #95 | Evaluate LiteLLM proxy integration | P3 | Decision needed |
+| #107 | PubMed empty-title validation errors | P4 | 29/3499 records have empty titles — cosmetic |
+| #108 | OpenAlex CI OOMKilled on 10K+ records | P3 | Memory fix deployed, awaiting next scheduled run |
+
+### Note on #107 and #108
+
+These are minor issues discovered during staging validation. #107 could be fixed by relaxing the Pydantic title validation to allow empty strings (they're real PubMed entries without titles). #108 memory fix is already deployed and should resolve on next run.
+
+---
+
+## Current Cluster Status (2026-02-17 00:45 UTC)
 
 ### Staging (k3s-slave-1, `dk-data-staging`)
 
 | Component | Status | Details |
 |-----------|--------|---------|
-| PostgREST | **2/2 Running** | Health check: 200 OK, database connected |
-| job-trigger | **1/1 Running** | Image: latest staging build |
-| PostgreSQL (infra-staging) | **1/1 Healthy** | CNPG cluster stable since PriorityClass fix |
-| ArgoCD app | **Healthy / OutOfSync** | OutOfSync expected from CI image tag auto-commits |
-| `mol-fetch-daily` | Succeeding | Every 6h schedule |
-| `mol-fetch-weekly` | Succeeding | Latest run succeeded |
-| `mol-transform` | Succeeding | Latest run succeeded |
-| `fetch-*` (13 new) | **Pending first run** | Awaiting scheduled times |
-| `pg-backup-*` | **Blocked** | DopplerSecret manifest fixed (operator syncing), but `MINIO_ACCESS_KEY`/`MINIO_SECRET_KEY` not yet in Doppler |
-| `pg-backup-verify` | **Failed 04:00 UTC** | Expected — Doppler MinIO credentials pending |
-| NetworkPolicy | **Fixed** | Intra-namespace ingress/egress deployed |
-| PriorityClass | **Deployed** | Via ArgoCD `infra-priority-classes-staging` (Healthy) |
-| Doppler Operator | **Syncing** | `minio-backup-credentials` secret synced (has project keys), awaiting MinIO-specific entries |
+| PostgREST | **2/2 Running** | Healthy |
+| job-trigger | **1/1 Running** | Image: `staging-42b7ba4` |
+| PostgreSQL (infra-staging) | **1/1 Healthy** | All schemas + 33 migrations applied |
+| ArgoCD app | **Synced / Healthy** | |
+| CronJobs (22 ingestion) | **Active** | 5 daily sources succeeding, weekly sources awaiting Sunday |
+| pg-backup | **Working** | Verified end-to-end |
+| meta.data_sources | **41 active sources** | 22 ingestion + molecule + legacy |
+| meta.refresh_log | **Recording** | pubmed, journal_rss, uniprot entries confirmed |
+| raw.pubmed | **3578 records** | 3470 (backfill) + 108 (incremental) |
+| raw.journal_rss | **169 records** | From 6 journal feeds |
 
----
+### Prod (k3s-master-1, `dk-data-prod`)
 
-## Items to Test / Validate
-
-### High Priority
-
-- [x] **Diagnose prod fetch-* failures** — test-pubmed succeeded (47 records, exit code 0). Transient first-run issue.
-- [ ] **Fix MinIO backup credentials** — add `MINIO_ACCESS_KEY` and `MINIO_SECRET_KEY` to Doppler `dk-data-fe` project (both `prd` and `stg` configs), then verify `pg-backup-daily` succeeds
-- [x] **Verify staging fetch-* jobs work** — test-pubmed-stg succeeded (47 records, exit code 0)
-- [x] **Verify staging PostgREST API is serving** — confirmed 200 OK with healthy database connection
-- [x] **Fix NetworkPolicy intra-namespace traffic** — added same-namespace ingress/egress rules (deployed to staging)
-- [x] **Promote staging fixes to prod** — PR #102 merged to `main` (NetworkPolicy + DopplerSecret)
-
-### Medium Priority
-
-- [x] **Clean up failed job objects** — 27 failed jobs deleted on prod, staging had none
-- [ ] **Verify staging catalog-refresh** — next run at 06:00 UTC
-- [x] **Permanent PriorityClass fix in dk-alchemy** — PR #190 merged, ArgoCD app Healthy, PriorityClasses deployed
-
-### Low Priority
-
-- [x] **Review #84 (LiteLLM)** — already closed; re-tracked as #95
-- [x] **Review #8 (TAVR coupling)** — already closed; re-tracked as #93
-- [ ] **Verify `pg-backup-verify` CronJob** — blocked until Doppler MinIO credentials are configured
+| Component | Status | Details |
+|-----------|--------|---------|
+| PostgREST | **3/3 Running** | Healthy |
+| job-trigger | **2/2 Running** | |
+| PostgreSQL (infra) | **3/3 Healthy** | |
+| pg-backup | **Working** | Verified end-to-end |
+| fetch-* CronJobs | **Active** | Running on old image (pre-PR #106); will update when promoted to main |
 
 ---
 
 ## Recommended Next Steps
 
 ### Immediate
-1. ~~**Promote staging → main**~~ — Done: PR #102 merged
-2. **Add Doppler MinIO secrets** (manual) — add `MINIO_ACCESS_KEY` and `MINIO_SECRET_KEY` to Doppler `dk-data-fe` project (`prd` and `stg` configs)
-3. **Monitor fetch-* next runs** — confirm all 13 sources succeed on their next scheduled run (prod and staging)
+1. **Monitor OpenAlex CI next run** — verify 1Gi memory fix resolves OOMKilled
+2. **Monitor weekly CronJobs** — Sunday runs for epo, ema-reg, hta, uspto-*, cochrane, etc.
+3. **Promote staging fixes to main** — PR with pubmed POST fix, meta logging fix, OpenAlex memory increase
+
+### Short-term
+4. **File issues #107/#108** if not already tracked (or close if cosmetic/resolved)
+5. **Run prod database init** — meta tables + seeds + migrations need to run on prod (same as staging)
+6. **Clean up stale branches** — 5 remote branches already deleted
 
 ### Next Feature (Sprint 4)
-- **#52** — Frontend integration against the 6 available API views
-- **mol_gold compute architecture** — decide on pre-computation vs FastAPI sidecar for molecule property endpoints
+- **#94** — Frontend integration against available API views
+- **mol_gold compute architecture** — pre-computation vs FastAPI sidecar
 
 ---
 
 ## Issue Cross-Reference Matrix
 
-| Issue | Status | Theme | Blocked By |
-|-------|--------|-------|------------|
-| #8 | **Closed** → re-tracked as #93 | Architecture debt | — |
-| #9 | **Closed** (PR #92) | Platform engineering | — |
-| #16 | **Closed** (PR #92) | Documentation | — |
-| #17 | **Closed** (PR #92) | Observability | — |
-| #18 | **Closed** (PR #92) | Security/compliance | — |
-| #19 | **Closed** (PR #92) | Data governance | — |
-| #52 | **Closed** → re-tracked as #94 | Frontend | mol_gold compute decision |
-| #84 | **Closed** → re-tracked as #95 | Optional | Decision needed |
-| #93 | Open | Architecture debt (was #8) | — |
-| #94 | Open | Frontend (was #52) | mol_gold compute decision |
-| #95 | Open | LiteLLM evaluation (was #84) | Decision needed |
+| Issue | Status | Theme | Closed By |
+|-------|--------|-------|-----------|
+| #109 | **Closed** | Unified ingestion | PR #106 |
+| #110 | **Closed** | Trademark sources | PR #106 |
+| #111 | **Closed** | CronJob deployment | PR #106 |
+| #112 | **Closed** | Validation script | PR #106 |
+| #93 | Open | Architecture debt | — |
+| #94 | Open | Frontend | — |
+| #95 | Open | LiteLLM evaluation | — |
+| #107 | Open (minor) | PubMed validation | — |
+| #108 | Open (minor) | OpenAlex memory | Fix deployed |
 
-### Infrastructure Issues (not tracked as GitHub issues)
+### Infrastructure Issues
 
-| Item | Status | Priority | Owner |
-|------|--------|----------|-------|
-| Staging PostgreSQL outage | **Resolved** (manual fix) | — | — |
-| NetworkPolicy intra-namespace | **Deployed** — PR #102 merged to main | P1 | Done |
-| Prod fetch-* CronJob failures | **Resolved** — transient; jobs cleaned up, test runs succeeded | P1 | Monitor |
-| Prod/staging pg-backup credentials | **In progress** — manifests fixed (PR #102), Doppler operator syncing, `MINIO_ACCESS_KEY`/`MINIO_SECRET_KEY` not yet in Doppler | P2 | Manual Doppler |
-| dk-alchemy PriorityClass gap | **Deployed** — PR #190 merged, ArgoCD app Healthy | P3 | Done |
+| Item | Status | Resolution |
+|------|--------|------------|
+| Staging PostgreSQL outage | **Resolved** | PriorityClass fix (dk-alchemy PR #190) |
+| NetworkPolicy intra-namespace | **Resolved** | PR #102 merged to main |
+| Prod fetch-* CronJob failures | **Resolved** | Transient; jobs cleaned up |
+| pg-backup credentials | **Resolved** | Doppler creds added, image fixed (PR #103), NetworkPolicy fixed (dk-alchemy PR #192) |
+| dk-alchemy PriorityClass gap | **Resolved** | dk-alchemy PR #190 |
+| PubMed 414 URI Too Long | **Fixed** | Staging commit `26114d4` — POST for efetch |
+| Meta logging dict error | **Fixed** | Staging commit `42b7ba4` — JSON serialize |
+| OpenAlex CI OOMKilled | **Fixed** | Staging commit `27a4e23` — 1Gi memory |
 
 ---
 
 ## Post-Reconciliation Summary
 
-| Action | Count | Issues |
-|--------|-------|--------|
-| Closed (pre-reconciliation) | 4 | #78, #80, #82, #83 |
-| Closed (PR #89) | 7 | #88, #81, #42, #50, #51, #20, #57 |
-| Closed (PR #92) | 5 | #91, #17, #9, #18, #19 |
-| Also addressed (PR #92) | 1 | #16 (documentation drift — comprehensive specs + DATA_CLASSIFICATION.md) |
-| Infra resolved (2026-02-16) | 1 | Staging PostgreSQL outage |
-| Remaining GitHub issues | 3 | #93, #94, #95 (renumbered from #8, #52, #84) |
-| Remaining infra items | 1 | pg-backup Doppler secrets (manual) |
-| Infra items fixed (2026-02-16) | 4 | NetworkPolicy (PR #102), DopplerSecret (PR #102), PriorityClass (dk-alchemy #190), fetch-* cleanup |
-| **Total resolved this cycle** | **22** | |
+| Action | Count |
+|--------|-------|
+| Closed (previous cycles) | 16 issues |
+| Closed (PR #106) | 4 issues (#109-#112) |
+| Infrastructure items resolved | 8 |
+| Staging validation phases passed | 3/3 |
+| Fetcher bugs found and fixed | 3 |
+| Remaining GitHub issues | 5 (#93, #94, #95, #107, #108) |
+| **Total resolved this cycle** | **27** |

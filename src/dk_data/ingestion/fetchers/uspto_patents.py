@@ -3,12 +3,12 @@
 Feature: 011-datasource-integration
 Task: Phase 6 / US4 — credential-gated source (USPTO PatentsView)
 
-Fetches pharmaceutical patent data from the PatentsView API v1 using
+Fetches pharmaceutical patent data from the PatentSearch API using
 API key authentication. Filters by CPC codes A61K, A61P, C07D
 for pharma-relevant patents. Weekly refresh cadence.
 
-Source: https://api.patentsview.org
-Docs: https://patentsview.org/apis/api-endpoints
+Source: https://search.patentsview.org/api/v1/patent/
+Docs: https://search.patentsview.org/docs/docs/Search%20API/SearchAPIReference/
 """
 
 import hashlib
@@ -24,7 +24,7 @@ logger = logging.getLogger(__name__)
 # CPC codes for pharmaceutical patents
 PHARMA_CPC_CODES = ["A61K", "A61P", "C07D"]
 
-# PatentsView API page size (max 1000)
+# PatentSearch API page size (max 1000)
 PAGE_SIZE = 100
 
 # Safety limit: max records per fetch run
@@ -32,13 +32,13 @@ MAX_RECORDS = 10_000
 
 
 class USPTOPatentsFetcher(BaseFetcher):
-    """Fetcher for USPTO PatentsView pharmaceutical patents."""
+    """Fetcher for USPTO PatentSearch pharmaceutical patents."""
 
     SOURCE_NAME = "uspto_patents"
-    BASE_URL = "https://api.patentsview.org"
+    BASE_URL = "https://search.patentsview.org"
 
-    # PatentsView query endpoint
-    PATENTS_API = "https://api.patentsview.org/patents/query"
+    # PatentSearch API endpoint
+    PATENTS_API = "https://search.patentsview.org/api/v1/patent/"
 
     def __init__(self, data_dir: Optional[str] = None):
         """Initialize the USPTO Patents fetcher.
@@ -58,11 +58,11 @@ class USPTOPatentsFetcher(BaseFetcher):
             )
 
     def get_latest_url(self) -> str:
-        """Get the PatentsView API query endpoint URL."""
+        """Get the PatentSearch API query endpoint URL."""
         return self.PATENTS_API
 
     def fetch(self, **kwargs) -> Dict[str, Any]:
-        """Fetch pharmaceutical patents from the PatentsView API.
+        """Fetch pharmaceutical patents from the PatentSearch API.
 
         Keyword Args:
             days_back: Number of days to look back for grants (default: 7).
@@ -89,18 +89,18 @@ class USPTOPatentsFetcher(BaseFetcher):
             )
 
             all_records: List[Dict[str, Any]] = []
-            page = 1
+            after_cursor: Optional[str] = None
 
             while len(all_records) < max_records:
                 data = self._fetch_page(
                     days_back=days_back,
                     cpc_codes=cpc_codes,
-                    page=page,
+                    after=after_cursor,
                 )
 
                 patents = data.get("patents") or []
                 if not patents:
-                    logger.info("No more patents from PatentsView API")
+                    logger.info("No more patents from PatentSearch API")
                     break
 
                 for patent in patents:
@@ -112,7 +112,11 @@ class USPTOPatentsFetcher(BaseFetcher):
                 if len(patents) < PAGE_SIZE:
                     break
 
-                page += 1
+                # Cursor-based pagination: use last patent_id as cursor
+                last_patent = patents[-1]
+                after_cursor = str(last_patent.get("patent_id", ""))
+                if not after_cursor:
+                    break
 
                 if len(all_records) >= max_records:
                     all_records = all_records[:max_records]
@@ -154,14 +158,14 @@ class USPTOPatentsFetcher(BaseFetcher):
         self,
         days_back: int = 7,
         cpc_codes: Optional[List[str]] = None,
-        page: int = 1,
+        after: Optional[str] = None,
     ) -> Dict[str, Any]:
-        """Fetch a single page of patents from the PatentsView API.
+        """Fetch a single page of patents from the PatentSearch API.
 
         Args:
             days_back: Look-back window in days.
             cpc_codes: CPC code prefixes to filter.
-            page: Page number (1-based).
+            after: Cursor for pagination (last patent_id from previous page).
 
         Returns:
             Raw API response dict.
@@ -173,9 +177,9 @@ class USPTOPatentsFetcher(BaseFetcher):
             datetime.utcnow() - timedelta(days=days_back)
         ).strftime("%Y-%m-%d")
 
-        # Build the query filter for CPC codes
+        # Build the query filter for CPC codes (fully qualified nested field)
         cpc_conditions = [
-            {"_begins": {"cpc_subgroup_id": code}}
+            {"_begins": {"cpc_current.cpc_subgroup_id": code}}
             for code in cpc_codes
         ]
 
@@ -186,22 +190,28 @@ class USPTOPatentsFetcher(BaseFetcher):
             ]
         }
 
-        # Fields to return
+        # Fields to return — PatentSearch API field names
         fields = [
-            "patent_number",
+            "patent_id",
             "patent_title",
             "patent_abstract",
             "patent_date",
             "patent_num_claims",
+            "inventors",
+            "assignees",
+            "cpc_current",
+            "application",
         ]
+
+        # Cursor-based pagination
+        options: Dict[str, Any] = {"size": PAGE_SIZE}
+        if after:
+            options["after"] = after
 
         payload = {
             "q": query,
             "f": fields,
-            "o": {
-                "page": page,
-                "per_page": PAGE_SIZE,
-            },
+            "o": options,
         }
 
         headers = {
@@ -211,7 +221,7 @@ class USPTOPatentsFetcher(BaseFetcher):
         if self.api_key:
             headers["X-Api-Key"] = self.api_key
 
-        logger.debug("PatentsView API request page=%d", page)
+        logger.debug("PatentSearch API request after=%s", after)
         response = self.session.post(
             self.get_latest_url(),
             json=payload,
@@ -223,28 +233,28 @@ class USPTOPatentsFetcher(BaseFetcher):
         return response.json()
 
     def _normalize_patent(self, patent: Dict[str, Any]) -> Optional[Dict[str, Any]]:
-        """Normalize a PatentsView patent record.
+        """Normalize a PatentSearch patent record.
 
         Args:
-            patent: Raw patent dict from the PatentsView API.
+            patent: Raw patent dict from the PatentSearch API.
 
         Returns:
-            Normalized record dict, or None if patent_number is missing.
+            Normalized record dict, or None if patent_id is missing.
         """
-        patent_number = patent.get("patent_number")
-        if not patent_number:
+        patent_id = patent.get("patent_id")
+        if not patent_id:
             return None
 
-        patent_number = str(patent_number).strip()
+        patent_number = str(patent_id).strip()
 
-        # Parse inventors
+        # Parse inventors (PatentSearch uses inventor_name_first/inventor_name_last)
         inventors = None
         raw_inventors = patent.get("inventors")
         if raw_inventors and isinstance(raw_inventors, list):
             inventors = [
                 {
-                    "name_first": inv.get("inventor_first_name"),
-                    "name_last": inv.get("inventor_last_name"),
+                    "name_first": inv.get("inventor_name_first"),
+                    "name_last": inv.get("inventor_name_last"),
                     "city": inv.get("inventor_city"),
                     "state": inv.get("inventor_state"),
                     "country": inv.get("inventor_country"),
@@ -266,9 +276,9 @@ class USPTOPatentsFetcher(BaseFetcher):
                 for asg in raw_assignees
             ]
 
-        # Parse CPC codes
+        # Parse CPC codes (PatentSearch uses cpc_current instead of cpcs)
         cpc_codes = None
-        raw_cpcs = patent.get("cpcs")
+        raw_cpcs = patent.get("cpc_current")
         if raw_cpcs and isinstance(raw_cpcs, list):
             cpc_codes = list({
                 cpc.get("cpc_subgroup_id")
@@ -276,8 +286,11 @@ class USPTOPatentsFetcher(BaseFetcher):
                 if cpc.get("cpc_subgroup_id")
             })
 
-        # Parse dates
-        filing_date = patent.get("app_date") or patent.get("application_date")
+        # Parse filing date from nested application object
+        application = patent.get("application") or {}
+        filing_date = application.get("filing_date")
+
+        # Grant date
         grant_date = patent.get("patent_date")
 
         # Claims count

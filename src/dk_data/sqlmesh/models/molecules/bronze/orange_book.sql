@@ -11,7 +11,7 @@ MODEL (
     cron '@weekly',
     grain (application_number, product_number, patent_number),
     audits (
-        not_null(application_number)
+        not_null(columns := (application_number))
     )
 );
 

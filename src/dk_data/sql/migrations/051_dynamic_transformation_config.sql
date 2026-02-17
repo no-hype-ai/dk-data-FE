@@ -174,8 +174,7 @@ $TEMPLATE$
 MODEL (
     name silver.{{ source_name }}_molecules,
     kind INCREMENTAL_BY_UNIQUE_KEY (
-        unique_key inchi_key,
-        when_matched_update_all TRUE
+        unique_key inchi_key
     ),
     cron '{{ cron_schedule }}',
     grain inchi_key
@@ -187,7 +186,7 @@ WITH source_data AS (
     FROM {{ source_table }}
     WHERE processed_to_silver = FALSE
     {% if where_clause %}AND {{ where_clause }}{% endif %}
-    {% if incremental_column %}AND @incremental_time_filter({{ incremental_column }}){% endif %}
+    {% if incremental_column %}AND {{ incremental_column }} BETWEEN @start_dt AND @end_dt{% endif %}
 ),
 
 deduplicated AS (

@@ -5,8 +5,7 @@
 MODEL (
     name silver.publications,
     kind INCREMENTAL_BY_UNIQUE_KEY (
-        unique_key doi,
-        when_matched_update_all TRUE
+        unique_key doi
     ),
     cron '@weekly',
     audits (
@@ -107,10 +106,6 @@ SELECT
 FROM enriched;
 
 
--- Post-insert: Mark Bronze records as processed
-@post_incremental(
-    UPDATE bronze.openalex
-    SET processed_to_silver = TRUE
-    WHERE processed_to_silver = FALSE
-    AND doi IN (SELECT doi FROM silver.publications WHERE doi IS NOT NULL)
-);
+-- NOTE: Bronze processed_to_silver flag updates are handled outside SQLMesh.
+-- Silver models use INCREMENTAL_BY_UNIQUE_KEY with INCREMENTAL_BY_UNIQUE_KEY (default: update all columns on match),
+-- so reprocessing is idempotent.

@@ -80,19 +80,18 @@ from .coverage_service import (
 )
 
 from .feedback_service import (
-    FeedbackService,
+    UserFeedbackService as FeedbackService,
     FeedbackType,
-    Feedback,
+    FeedbackTicket as Feedback,
 )
 
 from .kol_service import (
-    KOLService,
+    KOLIntelligenceService as KOLService,
     KOL,
-    KOLSearchResult,
 )
 
 from .onboarding_service import (
-    OnboardingService,
+    UserOnboardingService as OnboardingService,
 )
 
 from .visualization_service import (
@@ -167,7 +166,6 @@ __all__ = [
     # KOL
     "KOLService",
     "KOL",
-    "KOLSearchResult",
     # Onboarding
     "OnboardingService",
     # Visualization

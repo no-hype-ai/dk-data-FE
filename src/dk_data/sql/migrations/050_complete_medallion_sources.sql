@@ -569,11 +569,11 @@ CREATE TABLE IF NOT EXISTS bronze.orange_book (
     processed_to_silver BOOLEAN DEFAULT FALSE,
     processed_at TIMESTAMPTZ,
     processing_error TEXT,
-    record_hash VARCHAR(64),
-
-    UNIQUE(application_number, product_number, COALESCE(patent_number, ''))
+    record_hash VARCHAR(64)
 );
 
+CREATE UNIQUE INDEX IF NOT EXISTS idx_bronze_ob_unique
+    ON bronze.orange_book(application_number, product_number, COALESCE(patent_number, ''));
 CREATE INDEX IF NOT EXISTS idx_bronze_ob_app ON bronze.orange_book(application_number);
 CREATE INDEX IF NOT EXISTS idx_bronze_ob_ingredient ON bronze.orange_book(ingredient);
 CREATE INDEX IF NOT EXISTS idx_bronze_ob_trade ON bronze.orange_book(trade_name);
@@ -627,22 +627,28 @@ CREATE INDEX IF NOT EXISTS idx_bronze_uspto_processed ON bronze.uspto_patents(pr
 -- STEP 3: UPDATE DATA SOURCE CONFIGURATION
 -- ============================================================================
 
-INSERT INTO data_source_config (source_id, source_name, api_type, base_url, auth_type, refresh_tier, rate_limit_per_second)
-VALUES
-    ('rxnorm', 'RxNorm', 'REST', 'https://rxnav.nlm.nih.gov/REST', 'none', 'weekly', 10.0),
-    ('tdc_admet', 'TDC ADMET', 'File', 'https://tdcommons.ai', 'none', 'monthly', NULL),
-    ('pharmgkb', 'PharmGKB', 'REST', 'https://api.pharmgkb.org/v1/data', 'none', 'monthly', 5.0),
-    ('websearch', 'Web Search', 'REST', NULL, 'api_key', 'on_demand', 1.0),
-    ('kegg_drug', 'KEGG Drug', 'REST', 'https://rest.kegg.jp', 'none', 'monthly', 5.0),
-    ('who_inn', 'WHO INN', 'File', 'https://www.who.int/medicines', 'none', 'monthly', NULL),
-    ('bindingdb', 'BindingDB', 'REST', 'https://www.bindingdb.org/axis2/services/BDBService', 'none', 'monthly', 1.0),
-    ('ema', 'EMA', 'REST', 'https://api.ema.europa.eu/api', 'none', 'weekly', 5.0),
-    ('orange_book', 'FDA Orange Book', 'File', 'https://www.fda.gov/media', 'none', 'weekly', NULL),
-    ('uspto_patents', 'USPTO Patents', 'REST', 'https://api.patentsview.org', 'none', 'weekly', 5.0)
-ON CONFLICT (source_id) DO UPDATE SET
-    base_url = EXCLUDED.base_url,
-    refresh_tier = EXCLUDED.refresh_tier,
-    updated_at = NOW();
+-- Insert data source config (table may not exist in all environments)
+DO $$
+BEGIN
+    INSERT INTO data_source_config (source_id, source_name, api_type, base_url, auth_type, refresh_tier, rate_limit_per_second)
+    VALUES
+        ('rxnorm', 'RxNorm', 'REST', 'https://rxnav.nlm.nih.gov/REST', 'none', 'weekly', 10.0),
+        ('tdc_admet', 'TDC ADMET', 'File', 'https://tdcommons.ai', 'none', 'monthly', NULL),
+        ('pharmgkb', 'PharmGKB', 'REST', 'https://api.pharmgkb.org/v1/data', 'none', 'monthly', 5.0),
+        ('websearch', 'Web Search', 'REST', NULL, 'api_key', 'on_demand', 1.0),
+        ('kegg_drug', 'KEGG Drug', 'REST', 'https://rest.kegg.jp', 'none', 'monthly', 5.0),
+        ('who_inn', 'WHO INN', 'File', 'https://www.who.int/medicines', 'none', 'monthly', NULL),
+        ('bindingdb', 'BindingDB', 'REST', 'https://www.bindingdb.org/axis2/services/BDBService', 'none', 'monthly', 1.0),
+        ('ema', 'EMA', 'REST', 'https://api.ema.europa.eu/api', 'none', 'weekly', 5.0),
+        ('orange_book', 'FDA Orange Book', 'File', 'https://www.fda.gov/media', 'none', 'weekly', NULL),
+        ('uspto_patents', 'USPTO Patents', 'REST', 'https://api.patentsview.org', 'none', 'weekly', 5.0)
+    ON CONFLICT (source_id) DO UPDATE SET
+        base_url = EXCLUDED.base_url,
+        refresh_tier = EXCLUDED.refresh_tier,
+        updated_at = NOW();
+EXCEPTION WHEN undefined_table THEN
+    NULL;  -- data_source_config table not yet created
+END $$;
 
 -- ============================================================================
 -- STEP 4: CREATE SILVER LAYER TABLES FOR NEW SOURCES
@@ -714,37 +720,21 @@ CREATE INDEX IF NOT EXISTS idx_silver_pgx_gene ON silver.pharmacogenomics(gene_s
 CREATE INDEX IF NOT EXISTS idx_silver_pgx_variant ON silver.pharmacogenomics(variant_id);
 CREATE INDEX IF NOT EXISTS idx_silver_pgx_evidence ON silver.pharmacogenomics(level_of_evidence);
 
--- Silver Bioactivity Table (for BindingDB data)
-CREATE TABLE IF NOT EXISTS silver.bioactivity (
-    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-    molecule_id UUID REFERENCES silver.molecules(id),
-
-    -- Target info
-    target_id UUID,  -- references silver.targets if available
-    target_name TEXT NOT NULL,
-    target_uniprot_id VARCHAR(20),
-    target_organism VARCHAR(200),
-
-    -- Activity measurement
-    activity_type VARCHAR(50) NOT NULL,  -- Ki, IC50, EC50, Kd
-    activity_value NUMERIC NOT NULL,
-    activity_unit VARCHAR(50) DEFAULT 'nM',
-    activity_relation VARCHAR(10) DEFAULT '=',  -- =, <, >, ~
-
-    -- Source info
-    source VARCHAR(50) NOT NULL,
-    source_id VARCHAR(100),  -- Original ID from source
-    pmid VARCHAR(20),
-    doi VARCHAR(200),
-
-    created_at TIMESTAMPTZ DEFAULT NOW(),
-    updated_at TIMESTAMPTZ DEFAULT NOW()
-);
+-- Silver Bioactivity Table — already created in 040_silver_layer_tables.sql
+-- Add columns that 040 may not include (idempotent ALTER)
+DO $$
+BEGIN
+    ALTER TABLE silver.bioactivity ADD COLUMN IF NOT EXISTS target_id UUID;
+    ALTER TABLE silver.bioactivity ADD COLUMN IF NOT EXISTS source_id VARCHAR(100);
+    ALTER TABLE silver.bioactivity ADD COLUMN IF NOT EXISTS pmid VARCHAR(20);
+    ALTER TABLE silver.bioactivity ADD COLUMN IF NOT EXISTS doi VARCHAR(200);
+    ALTER TABLE silver.bioactivity ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ DEFAULT NOW();
+EXCEPTION WHEN undefined_table THEN
+    NULL;  -- table does not exist yet, 040 will create it
+END $$;
 
 CREATE INDEX IF NOT EXISTS idx_silver_bioact_molecule ON silver.bioactivity(molecule_id);
-CREATE INDEX IF NOT EXISTS idx_silver_bioact_target ON silver.bioactivity(target_uniprot_id);
 CREATE INDEX IF NOT EXISTS idx_silver_bioact_type ON silver.bioactivity(activity_type);
-CREATE INDEX IF NOT EXISTS idx_silver_bioact_source ON silver.bioactivity(source);
 
 -- ============================================================================
 -- STEP 5: PIPELINE JOBS TABLE FOR LINKING HISTORY
@@ -787,8 +777,14 @@ CREATE INDEX IF NOT EXISTS idx_pipeline_jobs_type_completed ON raw.pipeline_jobs
 -- STEP 6: LOG MIGRATION
 -- ============================================================================
 
-INSERT INTO public.pharma_predictor_db (key, value, description)
-VALUES ('medallion_migration_050', NOW()::text, 'Complete medallion architecture with all 16 data sources')
-ON CONFLICT (key) DO UPDATE SET value = NOW()::text, updated_at = NOW();
+-- Log migration completion (table may not exist in all environments)
+DO $$
+BEGIN
+    INSERT INTO public.pharma_predictor_db (key, value, description)
+    VALUES ('medallion_migration_050', NOW()::text, 'Complete medallion architecture with all 16 data sources')
+    ON CONFLICT (key) DO UPDATE SET value = NOW()::text, updated_at = NOW();
+EXCEPTION WHEN undefined_table THEN
+    NULL;  -- pharma_predictor_db table not available
+END $$;
 
 COMMIT;

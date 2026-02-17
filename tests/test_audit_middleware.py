@@ -16,10 +16,9 @@ import json
 import os
 import sys
 import time
-from unittest.mock import MagicMock, patch, call
+from unittest.mock import MagicMock, patch
 
-import pytest
-from fastapi import FastAPI, Request
+from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 # Import AuditLoggingMiddleware directly from the middleware.py file
