@@ -31,32 +31,13 @@ except ImportError:
     refresh_metrics_from_database_sync = None
     logger.warning("DK Data Platform metrics not available")
 
-# Import all metrics from canonical source (013-dk-data-observability)
+# Import metric helpers from canonical source (013-dk-data-observability)
 from dk_data.observability.metrics import (
     mark_job_success,
     record_job_records,
     record_job_duration,
     increment_job_failure,
     record_data_source_refresh,
-    DK_BRONZE_RECORDS_INGESTED as bronze_records_ingested,
-    DK_BRONZE_INGESTION_ERRORS as bronze_ingestion_errors,
-    DK_BRONZE_INGESTION_DURATION as bronze_ingestion_duration,
-    DK_BRONZE_UNPROCESSED_RECORDS as bronze_unprocessed_records,
-    DK_SILVER_RECORDS_TRANSFORMED as silver_records_transformed,
-    DK_SILVER_TRANSFORMATION_ERRORS as silver_transformation_errors,
-    DK_SILVER_MOLECULES_TOTAL as silver_molecules_total,
-    DK_SILVER_IDENTIFIER_MAPPINGS as silver_identifier_mappings,
-    DK_GOLD_PROFILES_TOTAL as gold_profiles_total,
-    DK_GOLD_AGGREGATION_DURATION as gold_aggregation_duration,
-    DK_RESOLUTION_REQUESTS as resolution_requests,
-    DK_RESOLUTION_LATENCY as resolution_latency,
-    DK_FUZZY_MATCH_REQUESTS as fuzzy_match_requests,
-    DK_FUZZY_MATCH_RESULTS as fuzzy_match_results,
-    DK_ONBOARDING_STARTED as onboarding_started,
-    DK_ONBOARDING_COMPLETED as onboarding_completed,
-    DK_ONBOARDING_STEP_DURATION as onboarding_step_duration,
-    DK_ALERTS_GENERATED as alerts_generated,
-    DK_ALERTS_DELIVERED as alerts_delivered,
 )
 
 # Router
