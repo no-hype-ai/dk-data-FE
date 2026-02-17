@@ -14,8 +14,6 @@ from dataclasses import dataclass, field
 from enum import Enum
 import logging
 
-logger = logging.getLogger(__name__)
-
 # Import all metrics from canonical source (013-dk-data-observability)
 from dk_data.observability.metrics import (
     DK_PIPELINE_RUNS_TOTAL as PIPELINE_RUNS_TOTAL,
@@ -29,6 +27,8 @@ from dk_data.observability.metrics import (
     DK_MOLECULES_TOTAL as MOLECULES_TOTAL,
     DK_MOLECULES_BY_STAGE as MOLECULES_BY_STAGE,
 )
+
+logger = logging.getLogger(__name__)
 
 
 class PipelineLayer(str, Enum):
