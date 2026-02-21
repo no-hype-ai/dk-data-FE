@@ -174,9 +174,9 @@ class TestPubMedFetcher:
             status=200,
             content_type="text/xml",
         )
-        # Mock efetch
+        # Mock efetch (POST — avoids 414 URI Too Long with large ID lists)
         responses.add(
-            responses.GET,
+            responses.POST,
             "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/efetch.fcgi",
             body=EFETCH_XML_2_ARTICLES.encode(),
             status=200,
@@ -260,7 +260,7 @@ class TestPubMedFetcher:
             content_type="text/xml",
         )
         responses.add(
-            responses.GET,
+            responses.POST,
             "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/efetch.fcgi",
             body=b"Internal Server Error",
             status=500,
@@ -284,7 +284,7 @@ class TestPubMedFetcher:
             content_type="text/xml",
         )
         responses.add(
-            responses.GET,
+            responses.POST,
             "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/efetch.fcgi",
             body=EFETCH_XML_MALFORMED,
             status=200,

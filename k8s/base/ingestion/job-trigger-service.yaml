@@ -7,6 +7,10 @@ metadata:
     app.kubernetes.io/name: job-trigger
     app.kubernetes.io/component: ingestion
     app.kubernetes.io/part-of: dk-data
+  annotations:
+    prometheus.io/scrape: "true"
+    prometheus.io/port: "8000"
+    prometheus.io/path: "/metrics"
 spec:
   type: ClusterIP
   ports:

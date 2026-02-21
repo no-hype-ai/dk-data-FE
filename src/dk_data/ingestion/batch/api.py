@@ -32,6 +32,13 @@ except ImportError:
         format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
     )
 
+# FastAPI auto-instrumentation (013-dk-data-observability T022)
+try:
+    from opentelemetry.instrumentation.fastapi import FastAPIInstrumentor
+    FASTAPI_INSTRUMENTOR_AVAILABLE = True
+except ImportError:
+    FASTAPI_INSTRUMENTOR_AVAILABLE = False
+
 # Initialize observability
 if OBSERVABILITY_AVAILABLE:
     setup_telemetry("job-trigger")
@@ -56,6 +63,11 @@ app = FastAPI(
     description="API for triggering and monitoring batch data jobs (TAVR + Molecule Platform)",
     version="2.0.0",
 )
+
+# Auto-instrument FastAPI with OTel (013-dk-data-observability T022)
+if OBSERVABILITY_AVAILABLE and FASTAPI_INSTRUMENTOR_AVAILABLE:
+    FastAPIInstrumentor.instrument_app(app)
+    logger.info("FastAPI auto-instrumented with OpenTelemetry")
 
 # Molecule platform routers (004-molecule-platform-integration)
 # Try/except pattern for graceful degradation if molecule modules unavailable
@@ -189,9 +201,17 @@ async def metrics():
     Prometheus metrics endpoint.
     Feature: 002-production-readiness
     Task: T060
+    Updated: 013-dk-data-observability — refresh DB gauges before scrape
     """
     if not OBSERVABILITY_AVAILABLE:
         raise HTTPException(status_code=501, detail="Observability not available")
+
+    # Refresh DB-backed gauges so Prometheus gets current values
+    try:
+        from dk_data.services.data_platform.metrics import refresh_metrics_from_database_sync
+        refresh_metrics_from_database_sync()
+    except Exception as e:
+        logger.warning(f"Failed to refresh DB metrics before scrape: {e}")
 
     return Response(
         content=get_metrics(),

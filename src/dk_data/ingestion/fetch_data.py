@@ -8,8 +8,9 @@ Usage:
 """
 
 import argparse
-import logging
+import asyncio
 import sys
+import time
 from datetime import datetime
 from pathlib import Path
 
@@ -38,11 +39,16 @@ from dk_data.ingestion.fetchers import (
     EUIPOTrademarksFetcher,
 )
 
-# Configure logging
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-)
+# Observability (013-dk-data-observability T023+T028)
+try:
+    from dk_data.observability import setup_telemetry, get_tracer
+    from dk_data.observability.logging import setup_logging, get_logger
+    from dk_data.observability.reporting import report_completion
+    _OBS_AVAILABLE = True
+except ImportError:
+    _OBS_AVAILABLE = False
+
+import logging
 logger = logging.getLogger(__name__)
 
 
@@ -325,7 +331,14 @@ Examples:
 
     args = parser.parse_args()
 
-    if args.verbose:
+    # Configure observability (013-dk-data-observability)
+    global logger
+    job_name = f"fetch-{args.source}" if args.source else "fetch-cms"
+    if _OBS_AVAILABLE:
+        setup_telemetry(job_name)
+        setup_logging("fetch-cms")
+        logger = get_logger(__name__)
+    elif args.verbose:
         logging.getLogger().setLevel(logging.DEBUG)
 
     if args.list:
@@ -343,21 +356,58 @@ Examples:
     logger.info(f"Data directory: {data_dir.absolute()}")
     logger.info(f"Started at: {datetime.now().isoformat()}")
 
-    # Fetch data
-    if args.source == 'all':
-        results = fetch_all(data_dir=str(data_dir))
-    else:
-        results = fetch_source(args.source, year=args.year, data_dir=str(data_dir))
+    start_time = time.monotonic()
+    status = "failure"
+    records = 0
 
-    # Print summary
-    print_summary(results)
+    try:
+        tracer = get_tracer(__name__) if _OBS_AVAILABLE else None
 
-    logger.info(f"Completed at: {datetime.now().isoformat()}")
+        # Fetch data
+        if tracer:
+            with tracer.start_as_current_span(f"{job_name}-execution") as span:
+                span.set_attribute("source", args.source)
+                if args.source == 'all':
+                    results = fetch_all(data_dir=str(data_dir))
+                else:
+                    results = fetch_source(args.source, year=args.year, data_dir=str(data_dir))
+                records = results.get('success_count', results.get('records', 0))
+                span.set_attribute("records_fetched", records)
+        else:
+            if args.source == 'all':
+                results = fetch_all(data_dir=str(data_dir))
+            else:
+                results = fetch_source(args.source, year=args.year, data_dir=str(data_dir))
+            records = results.get('success_count', results.get('records', 0))
 
-    # Return exit code based on status
-    if results.get('status') == 'failed':
+        # Print summary
+        print_summary(results)
+
+        logger.info(f"Completed at: {datetime.now().isoformat()}")
+
+        # Return exit code based on status
+        if results.get('status') == 'failed':
+            return 1
+        status = "success"
+        return 0
+
+    except Exception as e:
+        logger.error(f"Fetch failed: {e}")
         return 1
-    return 0
+
+    finally:
+        duration = time.monotonic() - start_time
+        if _OBS_AVAILABLE:
+            try:
+                asyncio.run(report_completion(
+                    job_name=job_name,
+                    status=status,
+                    duration_seconds=duration,
+                    records_processed=records,
+                    source_name=args.source,
+                ))
+            except Exception as e:
+                logger.warning(f"Failed to report completion: {e}")
 
 
 if __name__ == '__main__':

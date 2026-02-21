@@ -13,16 +13,21 @@ Usage:
 
 import argparse
 import asyncio
-import logging
 import os
 import sys
+import time
 from datetime import datetime
 
-# Configure logging
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-)
+# Observability (013-dk-data-observability T023+T029)
+try:
+    from dk_data.observability import setup_telemetry, get_tracer
+    from dk_data.observability.logging import setup_logging, get_logger
+    from dk_data.observability.reporting import report_completion
+    _OBS_AVAILABLE = True
+except ImportError:
+    _OBS_AVAILABLE = False
+
+import logging
 logger = logging.getLogger(__name__)
 
 
@@ -354,7 +359,14 @@ Examples:
 
     args = parser.parse_args()
 
-    if args.verbose:
+    # Configure observability (013-dk-data-observability)
+    global logger
+    job_name = f"mol-fetch-{args.source}" if args.source else "mol-fetch"
+    if _OBS_AVAILABLE:
+        setup_telemetry("mol-fetch")
+        setup_logging("mol-fetch")
+        logger = get_logger(__name__)
+    elif args.verbose:
         logging.getLogger().setLevel(logging.DEBUG)
 
     if args.list:
@@ -368,24 +380,61 @@ Examples:
     logger.info(f"Started at: {datetime.now().isoformat()}")
     logger.info(f"Batch size: {args.batch_size}")
 
-    # Fetch data — support comma-separated sources
-    if args.source == 'all':
-        results = asyncio.run(fetch_all(batch_size=args.batch_size))
-    elif ',' in args.source:
-        sources = [s.strip() for s in args.source.split(',')]
-        results = asyncio.run(fetch_multiple(sources, batch_size=args.batch_size))
-    else:
-        results = asyncio.run(fetch_source(args.source, batch_size=args.batch_size))
+    start_time = time.monotonic()
+    status = "failure"
+    records = 0
 
-    # Print summary
-    print_summary(results)
+    try:
+        tracer = get_tracer(__name__) if _OBS_AVAILABLE else None
 
-    logger.info(f"Completed at: {datetime.now().isoformat()}")
+        async def _do_fetch():
+            nonlocal records
+            if args.source == 'all':
+                results = await fetch_all(batch_size=args.batch_size)
+            elif ',' in args.source:
+                sources = [s.strip() for s in args.source.split(',')]
+                results = await fetch_multiple(sources, batch_size=args.batch_size)
+            else:
+                results = await fetch_source(args.source, batch_size=args.batch_size)
+            records = results.get('success_count', results.get('records', 0))
+            return results
 
-    # Return exit code based on status
-    if results.get('status') == 'failed':
+        if tracer:
+            with tracer.start_as_current_span(f"{job_name}-execution") as span:
+                span.set_attribute("source", args.source)
+                span.set_attribute("batch_size", args.batch_size)
+                results = asyncio.run(_do_fetch())
+                span.set_attribute("records_fetched", records)
+        else:
+            results = asyncio.run(_do_fetch())
+
+        # Print summary
+        print_summary(results)
+
+        logger.info(f"Completed at: {datetime.now().isoformat()}")
+
+        if results.get('status') == 'failed':
+            return 1
+        status = "success"
+        return 0
+
+    except Exception as e:
+        logger.error(f"Molecule fetch failed: {e}")
         return 1
-    return 0
+
+    finally:
+        duration = time.monotonic() - start_time
+        if _OBS_AVAILABLE:
+            try:
+                asyncio.run(report_completion(
+                    job_name=job_name,
+                    status=status,
+                    duration_seconds=duration,
+                    records_processed=records,
+                    source_name=args.source,
+                ))
+            except Exception as e:
+                logger.warning(f"Failed to report completion: {e}")
 
 
 if __name__ == '__main__':

@@ -2,24 +2,19 @@
 Monitoring Routes - Pipeline Health and Prometheus Metrics
 Part of: 012-dk-data-platform
 
-Provides:
+Provides (mounted at /api/v1 via api.py):
 - /api/v1/monitoring/health - Pipeline health status
 - /api/v1/monitoring/metrics - Prometheus metrics endpoint
 - /api/v1/monitoring/run - Trigger pipeline run
+- /api/v1/monitoring/job-complete - CronJob completion reporting
 """
 
-from datetime import datetime, timedelta
+from datetime import datetime
 from typing import Optional
 
 from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel
-from prometheus_client import (
-    Counter,
-    Gauge,
-    Histogram,
-    generate_latest,
-    CONTENT_TYPE_LATEST,
-)
+from prometheus_client import generate_latest, CONTENT_TYPE_LATEST
 from starlette.responses import Response
 from loguru import logger
 
@@ -37,8 +32,17 @@ except ImportError:
     refresh_metrics_from_database_sync = None
     logger.warning("DK Data Platform metrics not available")
 
+# Import metric helpers from canonical source (013-dk-data-observability)
+from dk_data.observability.metrics import (
+    mark_job_success,
+    record_job_records,
+    record_job_duration,
+    increment_job_failure,
+    record_data_source_refresh,
+)
+
 # Router
-router = APIRouter(prefix="/api/v1/monitoring", tags=["monitoring"])
+router = APIRouter(prefix="/monitoring", tags=["monitoring"])
 
 # Initialize metrics on module load
 if DK_METRICS_AVAILABLE:
@@ -48,130 +52,6 @@ if DK_METRICS_AVAILABLE:
         refresh_metrics_from_database_sync()
     except Exception as e:
         logger.warning(f"Initial metrics refresh failed: {e}")
-
-
-# ==========================================
-# Prometheus Metrics Definitions
-# ==========================================
-
-# Bronze Layer Metrics
-bronze_records_ingested = Counter(
-    "dk_bronze_records_ingested_total",
-    "Total records ingested into Bronze layer",
-    ["source"],
-)
-
-bronze_ingestion_errors = Counter(
-    "dk_bronze_ingestion_errors_total",
-    "Total ingestion errors by source",
-    ["source", "error_type"],
-)
-
-bronze_ingestion_duration = Histogram(
-    "dk_bronze_ingestion_duration_seconds",
-    "Time spent on Bronze ingestion runs",
-    ["source"],
-    buckets=[1, 5, 10, 30, 60, 120, 300, 600],
-)
-
-bronze_unprocessed_records = Gauge(
-    "dk_bronze_unprocessed_records",
-    "Number of Bronze records pending Silver transformation",
-    ["source"],
-)
-
-# Silver Layer Metrics
-silver_records_transformed = Counter(
-    "dk_silver_records_transformed_total",
-    "Total records transformed to Silver layer",
-    ["source_table"],
-)
-
-silver_transformation_errors = Counter(
-    "dk_silver_transformation_errors_total",
-    "Total transformation errors",
-    ["source_table", "error_type"],
-)
-
-silver_molecules_total = Gauge(
-    "dk_silver_molecules_total",
-    "Total unique molecules in Silver layer",
-)
-
-silver_identifier_mappings = Gauge(
-    "dk_silver_identifier_mappings_total",
-    "Total identifier mappings",
-    ["identifier_type"],
-)
-
-# Gold Layer Metrics
-gold_profiles_total = Gauge(
-    "dk_gold_profiles_total",
-    "Total molecule profiles in Gold layer",
-)
-
-gold_aggregation_duration = Histogram(
-    "dk_gold_aggregation_duration_seconds",
-    "Time spent on Gold aggregation",
-    ["aggregation_type"],
-    buckets=[10, 30, 60, 120, 300, 600, 1200],
-)
-
-# Resolution Metrics
-resolution_requests = Counter(
-    "dk_resolution_requests_total",
-    "Total identifier resolution requests",
-    ["resolution_type"],  # cache_hit, local_db, external_api
-)
-
-resolution_latency = Histogram(
-    "dk_resolution_latency_seconds",
-    "Latency of identifier resolution",
-    ["resolution_type"],
-    buckets=[0.01, 0.05, 0.1, 0.25, 0.5, 1, 2.5, 5, 10],
-)
-
-fuzzy_match_requests = Counter(
-    "dk_fuzzy_match_requests_total",
-    "Total fuzzy matching requests",
-)
-
-fuzzy_match_results = Histogram(
-    "dk_fuzzy_match_results_count",
-    "Number of results returned per fuzzy match",
-    buckets=[0, 1, 5, 10, 25, 50, 100],
-)
-
-# Onboarding Metrics
-onboarding_started = Counter(
-    "dk_onboarding_started_total",
-    "Total onboarding wizards started",
-)
-
-onboarding_completed = Counter(
-    "dk_onboarding_completed_total",
-    "Total onboarding wizards completed",
-)
-
-onboarding_step_duration = Histogram(
-    "dk_onboarding_step_duration_seconds",
-    "Time spent on each onboarding step",
-    ["step_number"],
-    buckets=[5, 15, 30, 60, 120, 300],
-)
-
-# Alert Metrics
-alerts_generated = Counter(
-    "dk_alerts_generated_total",
-    "Total alerts generated",
-    ["alert_type", "severity"],
-)
-
-alerts_delivered = Counter(
-    "dk_alerts_delivered_total",
-    "Total alerts delivered",
-    ["delivery_method"],
-)
 
 
 # ==========================================
@@ -199,6 +79,16 @@ class PipelineHealth(BaseModel):
     silver: LayerHealth
     gold: LayerHealth
     last_check: datetime
+
+
+class JobCompletionReport(BaseModel):
+    """CronJob completion report (013-dk-data-observability T016)."""
+    job_name: str
+    status: str  # "success" | "failure"
+    duration_seconds: float
+    records_processed: int = 0
+    source_name: Optional[str] = None
+    error_message: Optional[str] = None
 
 
 class RunTriggerRequest(BaseModel):
@@ -235,6 +125,33 @@ async def prometheus_metrics():
         content=generate_latest(),
         media_type=CONTENT_TYPE_LATEST,
     )
+
+
+@router.post("/job-complete")
+async def report_job_completion(report: JobCompletionReport):
+    """
+    Called by CronJobs to report completion metrics.
+    Feature: 013-dk-data-observability (T016)
+    """
+    if report.status == "success":
+        mark_job_success(report.job_name)
+        record_job_records(report.job_name, report.records_processed)
+    else:
+        increment_job_failure(report.job_name)
+
+    record_job_duration(report.job_name, report.duration_seconds)
+
+    if report.source_name and report.status == "success":
+        record_data_source_refresh(
+            report.job_name, report.source_name, report.records_processed
+        )
+
+    logger.info(
+        f"Job completion recorded: {report.job_name} "
+        f"status={report.status} duration={report.duration_seconds:.1f}s "
+        f"records={report.records_processed}"
+    )
+    return {"status": "recorded"}
 
 
 @router.get("/stats")
@@ -671,43 +588,41 @@ async def get_data_freshness():
     - Source-by-source freshness status
     - Staleness indicators
     - Next scheduled refresh times
+
+    Feature: 013-dk-data-observability (wired to DataFreshnessMonitor)
     """
-    # This would use DataFreshnessMonitor in production
+    from ..dependencies import get_db_pool
+    from ...services.data_platform.data_freshness_monitor import DataFreshnessMonitor
+
+    pool = await get_db_pool()
+    if pool is None:
+        raise HTTPException(status_code=503, detail="Database pool not available")
+
+    monitor = DataFreshnessMonitor(db_pool=pool)
+    try:
+        report = await monitor.get_freshness_report()
+    except Exception as e:
+        logger.error(f"Freshness report failed: {e}")
+        raise HTTPException(status_code=500, detail="Failed to generate freshness report")
+
     return {
-        "generated_at": datetime.utcnow().isoformat(),
-        "status": "healthy",
+        "generated_at": report.generated_at.isoformat(),
+        "status": report.overall_status.value,
         "sources": [
             {
-                "source": "clinicaltrials_gov",
-                "tier": "daily",
-                "status": "healthy",
-                "last_success": (datetime.utcnow() - timedelta(hours=6)).isoformat(),
-                "next_scheduled": (datetime.utcnow() + timedelta(hours=18)).isoformat(),
-                "record_count": 0,
-                "is_stale": False,
-            },
-            {
-                "source": "openfda_faers",
-                "tier": "daily",
-                "status": "healthy",
-                "last_success": (datetime.utcnow() - timedelta(hours=8)).isoformat(),
-                "next_scheduled": (datetime.utcnow() + timedelta(hours=16)).isoformat(),
-                "record_count": 0,
-                "is_stale": False,
-            },
-            {
-                "source": "drugbank",
-                "tier": "weekly",
-                "status": "healthy",
-                "last_success": (datetime.utcnow() - timedelta(days=3)).isoformat(),
-                "next_scheduled": (datetime.utcnow() + timedelta(days=4)).isoformat(),
-                "record_count": 0,
-                "is_stale": False,
-            },
+                "source": s.source,
+                "tier": s.tier.value,
+                "status": s.status.value,
+                "last_success": s.last_success.isoformat() if s.last_success else None,
+                "next_scheduled": s.next_scheduled.isoformat() if s.next_scheduled else None,
+                "record_count": s.record_count,
+                "is_stale": s.is_stale,
+            }
+            for s in report.sources
         ],
-        "healthy_count": 3,
-        "stale_count": 0,
-        "error_count": 0,
+        "healthy_count": report.healthy_count,
+        "stale_count": report.stale_count,
+        "error_count": report.error_count,
     }
 
 
@@ -715,29 +630,36 @@ async def get_data_freshness():
 async def get_source_freshness(source: str):
     """
     Get detailed freshness info for a specific source.
-    """
-    valid_sources = [
-        "clinicaltrials_gov", "openfda_faers", "openfda_labels",
-        "drugbank", "chembl", "pubchem", "uniprot", "openalex"
-    ]
 
-    if source not in valid_sources:
-        raise HTTPException(
-            status_code=404,
-            detail=f"Unknown source. Valid sources: {', '.join(valid_sources)}"
-        )
+    Feature: 013-dk-data-observability (wired to DataFreshnessMonitor)
+    """
+    from ..dependencies import get_db_pool
+    from ...services.data_platform.data_freshness_monitor import (
+        DataFreshnessMonitor,
+    )
+
+    pool = await get_db_pool()
+    if pool is None:
+        raise HTTPException(status_code=503, detail="Database pool not available")
+
+    monitor = DataFreshnessMonitor(db_pool=pool)
+    try:
+        freshness = await monitor.get_source_freshness(source)
+    except Exception as e:
+        logger.error(f"Source freshness query failed for {source}: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to query freshness for {source}")
 
     return {
-        "source": source,
-        "tier": "daily" if source.startswith("openfda") or source == "clinicaltrials_gov" else "weekly",
-        "status": "healthy",
-        "last_refresh": (datetime.utcnow() - timedelta(hours=6)).isoformat(),
-        "last_success": (datetime.utcnow() - timedelta(hours=6)).isoformat(),
-        "last_error": None,
-        "next_scheduled": (datetime.utcnow() + timedelta(hours=18)).isoformat(),
-        "record_count": 0,
-        "stale_threshold_hours": 36,
-        "is_stale": False,
+        "source": freshness.source,
+        "tier": freshness.tier.value,
+        "status": freshness.status.value,
+        "last_refresh": freshness.last_refresh.isoformat() if freshness.last_refresh else None,
+        "last_success": freshness.last_success.isoformat() if freshness.last_success else None,
+        "last_error": freshness.last_error,
+        "next_scheduled": freshness.next_scheduled.isoformat() if freshness.next_scheduled else None,
+        "record_count": freshness.record_count,
+        "stale_threshold_hours": freshness.stale_threshold_hours,
+        "is_stale": freshness.is_stale,
     }
 
 
@@ -748,18 +670,22 @@ async def get_source_metrics(
 ):
     """
     Get detailed metrics for a source over time.
+
+    Feature: 013-dk-data-observability (wired to DataFreshnessMonitor)
     """
-    return {
-        "source": source,
-        "period_days": days,
-        "total_jobs": 0,
-        "successful_jobs": 0,
-        "failed_jobs": 0,
-        "success_rate": 0.0,
-        "avg_duration_seconds": 0.0,
-        "total_records_processed": 0,
-        "jobs": [],
-    }
+    from ..dependencies import get_db_pool
+    from ...services.data_platform.data_freshness_monitor import DataFreshnessMonitor
+
+    pool = await get_db_pool()
+    if pool is None:
+        raise HTTPException(status_code=503, detail="Database pool not available")
+
+    monitor = DataFreshnessMonitor(db_pool=pool)
+    try:
+        return await monitor.get_source_metrics(source, days)
+    except Exception as e:
+        logger.error(f"Source metrics query failed for {source}: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to query metrics for {source}")
 
 
 # ==========================================

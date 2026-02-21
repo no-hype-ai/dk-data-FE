@@ -6,9 +6,10 @@ Handles both file-based TAVR sources and API-based sources (fetch + load + log).
 """
 
 import argparse
+import asyncio
 import json
-import logging
 import sys
+import time
 from datetime import datetime
 from pathlib import Path
 
@@ -53,6 +54,16 @@ from .fetchers import (
 
 from .utils.database import init_connection_pool, close_connection_pool, get_cursor
 
+# Observability (013-dk-data-observability T023+T027)
+try:
+    from dk_data.observability import setup_telemetry, get_tracer
+    from dk_data.observability.logging import setup_logging, get_logger
+    from dk_data.observability.reporting import report_completion
+    _OBS_AVAILABLE = True
+except ImportError:
+    _OBS_AVAILABLE = False
+
+import logging
 logger = logging.getLogger(__name__)
 
 # Available data sources
@@ -458,19 +469,27 @@ Examples:
 
     args = parser.parse_args()
 
-    # Configure logging
-    log_level = logging.DEBUG if args.verbose else logging.INFO
-    logging.basicConfig(
-        level=log_level,
-        format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
-    )
+    # Resolve source from positional arg or --source flag
+    source = args.source or args.source_flag
+
+    # Configure observability (013-dk-data-observability)
+    global logger
+    job_name = f"fetch-{source}" if source else "ingestion-cli"
+    if _OBS_AVAILABLE:
+        setup_telemetry(job_name)
+        setup_logging(job_name)
+        logger = get_logger(__name__)
+    else:
+        log_level = logging.DEBUG if args.verbose else logging.INFO
+        logging.basicConfig(
+            level=log_level,
+            format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+        )
 
     if args.list:
         list_sources()
         return 0
 
-    # Resolve source from positional arg or --source flag
-    source = args.source or args.source_flag
     if not source:
         parser.print_help()
         return 1
@@ -478,14 +497,35 @@ Examples:
     # Initialize connection pool
     init_connection_pool()
 
+    start_time = time.monotonic()
+    status = "failure"
+    records = 0
+
     try:
-        result = run_ingestion(
-            source=source,
-            filepath=args.filepath,
-            fiscal_year=args.fiscal_year,
-            batch_size=args.batch_size,
-            data_dir=args.data_dir,
-        )
+        tracer = get_tracer(__name__) if _OBS_AVAILABLE else None
+
+        if tracer:
+            with tracer.start_as_current_span(f"{job_name}-execution") as span:
+                span.set_attribute("source", source)
+                span.set_attribute("batch_size", args.batch_size)
+                result = run_ingestion(
+                    source=source,
+                    filepath=args.filepath,
+                    fiscal_year=args.fiscal_year,
+                    batch_size=args.batch_size,
+                    data_dir=args.data_dir,
+                )
+                records = result.get('records_inserted', result.get('records_fetched', 0))
+                span.set_attribute("records_fetched", records)
+        else:
+            result = run_ingestion(
+                source=source,
+                filepath=args.filepath,
+                fiscal_year=args.fiscal_year,
+                batch_size=args.batch_size,
+                data_dir=args.data_dir,
+            )
+            records = result.get('records_inserted', result.get('records_fetched', 0))
 
         print("\nIngestion Result:")
         print("-" * 40)
@@ -498,7 +538,11 @@ Examples:
             for err in result['errors'][:5]:
                 print(f"  - {err}")
 
-        return 0 if result.get('status') in ('success', 'skipped', 'partial') else 1
+        if result.get('status') in ('success', 'skipped', 'partial'):
+            status = "success"
+            return 0
+        else:
+            return 1
 
     except Exception as e:
         logger.error(f"Ingestion failed: {e}")
@@ -506,6 +550,18 @@ Examples:
 
     finally:
         close_connection_pool()
+        duration = time.monotonic() - start_time
+        if _OBS_AVAILABLE:
+            try:
+                asyncio.run(report_completion(
+                    job_name=job_name,
+                    status=status,
+                    duration_seconds=duration,
+                    records_processed=records,
+                    source_name=source,
+                ))
+            except Exception as e:
+                logger.warning(f"Failed to report completion: {e}")
 
 
 if __name__ == '__main__':
