@@ -243,8 +243,16 @@ class MedicalNewsFetcher(BaseFetcher):
             val = getattr(entry, attr, None)
             if val:
                 try:
-                    # feedparser often provides dates as strings
-                    return str(val)[:10]
+                    s = str(val).strip()
+                    # Try common date formats before falling back to truncation
+                    for fmt in ("%b %d, %Y", "%B %d, %Y", "%d %b %Y", "%d %B %Y"):
+                        try:
+                            return datetime.strptime(s, fmt).strftime("%Y-%m-%d")
+                        except ValueError:
+                            continue
+                    # ISO-like format: safe to take first 10 chars
+                    if len(s) >= 10 and s[4] == "-":
+                        return s[:10]
                 except (TypeError, ValueError):
                     pass
 
