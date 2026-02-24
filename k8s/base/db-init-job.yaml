@@ -180,14 +180,11 @@ spec:
               # --- Step 8: Grant molecule schema permissions ---
               echo "Granting molecule schema permissions..."
               psql -d dk_data <<'SQL'
-              -- mol_api: read access for web_anon, analyst, api_user
-              GRANT USAGE ON SCHEMA mol_api TO web_anon;
+              -- mol_api: read access for analyst, api_user only (no web_anon)
               GRANT USAGE ON SCHEMA mol_api TO analyst;
               GRANT USAGE ON SCHEMA mol_api TO api_user;
-              GRANT SELECT ON ALL TABLES IN SCHEMA mol_api TO web_anon;
               GRANT SELECT ON ALL TABLES IN SCHEMA mol_api TO analyst;
               GRANT SELECT ON ALL TABLES IN SCHEMA mol_api TO api_user;
-              ALTER DEFAULT PRIVILEGES IN SCHEMA mol_api GRANT SELECT ON TABLES TO web_anon;
               ALTER DEFAULT PRIVILEGES IN SCHEMA mol_api GRANT SELECT ON TABLES TO analyst;
               ALTER DEFAULT PRIVILEGES IN SCHEMA mol_api GRANT SELECT ON TABLES TO api_user;
 
@@ -463,8 +460,11 @@ spec:
               # --- Step 10: Grant permissions on API views ---
               echo "Granting permissions on API views..."
               psql -d dk_data <<'SQL'
-              -- Clean slate: revoke all existing permissions from web_anon on api schema
+              -- Clean slate: revoke all existing permissions from web_anon on api and mol_api schemas
               REVOKE ALL PRIVILEGES ON ALL TABLES IN SCHEMA api FROM web_anon;
+              -- Defensive: revoke any stale web_anon grants from prior db-init runs
+              REVOKE ALL ON ALL TABLES IN SCHEMA mol_api FROM web_anon;
+              REVOKE USAGE ON SCHEMA mol_api FROM web_anon;
 
               -- web_anon: only health and data_catalog (public endpoints)
               GRANT SELECT ON api.health TO web_anon;
@@ -486,13 +486,7 @@ spec:
               GRANT SELECT ON api.molecules TO api_user;
               GRANT SELECT ON api.resolution_queue TO api_user;
 
-              -- Compass views: web_anon gets molecules and data_sources (public), but NOT resolution_queue
-              GRANT SELECT ON api.molecules TO web_anon;
-              GRANT SELECT ON api.data_sources TO web_anon;
-              -- Explicitly ensure web_anon cannot access resolution_queue (internal workflow)
-              REVOKE ALL ON api.resolution_queue FROM web_anon;
-
-              -- analyst: gets resolution_queue access
+              -- analyst: gets molecules, data_sources, and resolution_queue access
               GRANT SELECT ON api.molecules TO analyst;
               GRANT SELECT ON api.resolution_queue TO analyst;
 
@@ -508,7 +502,7 @@ spec:
                     'trial_publication_features', 'patents', 'molecule_targets',
                     'sider_side_effects', 'bioactivity')
                 LOOP
-                  EXECUTE format('GRANT SELECT ON api.%I TO web_anon, analyst, api_user', v_name);
+                  EXECUTE format('GRANT SELECT ON api.%I TO analyst, api_user', v_name);
                 END LOOP;
 
                 -- audit_log, migration_status, data_classification: api_user only

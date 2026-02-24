@@ -26,8 +26,7 @@ SELECT
 FROM raw.pubmed
 ORDER BY publication_date DESC;
 
-GRANT SELECT ON api.pubmed_publications TO web_anon;
-GRANT SELECT ON api.pubmed_publications TO analyst;
+GRANT SELECT ON api.pubmed_publications TO analyst, api_user;
 
 -- -----------------------------------------------------------------------------
 -- OpenAlex CI Publications
@@ -49,8 +48,7 @@ SELECT
 FROM raw.openalex_ci
 ORDER BY publication_date DESC;
 
-GRANT SELECT ON api.openalex_publications TO web_anon;
-GRANT SELECT ON api.openalex_publications TO analyst;
+GRANT SELECT ON api.openalex_publications TO analyst, api_user;
 
 -- -----------------------------------------------------------------------------
 -- EMA Regulatory Decisions
@@ -71,8 +69,7 @@ SELECT
 FROM raw.ema_regulatory
 ORDER BY decision_date DESC;
 
-GRANT SELECT ON api.ema_regulatory_decisions TO web_anon;
-GRANT SELECT ON api.ema_regulatory_decisions TO analyst;
+GRANT SELECT ON api.ema_regulatory_decisions TO analyst, api_user;
 
 -- -----------------------------------------------------------------------------
 -- Journal RSS Articles
@@ -93,8 +90,7 @@ SELECT
 FROM raw.journal_rss
 ORDER BY publication_date DESC;
 
-GRANT SELECT ON api.journal_articles TO web_anon;
-GRANT SELECT ON api.journal_articles TO analyst;
+GRANT SELECT ON api.journal_articles TO analyst, api_user;
 
 -- -----------------------------------------------------------------------------
 -- USPTO CI Patents
@@ -115,8 +111,7 @@ SELECT
 FROM raw.uspto_ci
 ORDER BY grant_date DESC;
 
-GRANT SELECT ON api.uspto_patents TO web_anon;
-GRANT SELECT ON api.uspto_patents TO analyst;
+GRANT SELECT ON api.uspto_patents TO analyst, api_user;
 
 -- -----------------------------------------------------------------------------
 -- HTA Decisions
@@ -136,8 +131,7 @@ SELECT
 FROM raw.hta_decisions
 ORDER BY decision_date DESC;
 
-GRANT SELECT ON api.hta_decisions TO web_anon;
-GRANT SELECT ON api.hta_decisions TO analyst;
+GRANT SELECT ON api.hta_decisions TO analyst, api_user;
 
 -- -----------------------------------------------------------------------------
 -- EPO Patents
@@ -158,8 +152,7 @@ SELECT
 FROM raw.epo_patents
 ORDER BY publication_date DESC;
 
-GRANT SELECT ON api.epo_patents TO web_anon;
-GRANT SELECT ON api.epo_patents TO analyst;
+GRANT SELECT ON api.epo_patents TO analyst, api_user;
 
 -- -----------------------------------------------------------------------------
 -- Cochrane Reviews
@@ -181,8 +174,7 @@ SELECT
 FROM raw.cochrane_reviews
 ORDER BY publication_date DESC;
 
-GRANT SELECT ON api.cochrane_reviews TO web_anon;
-GRANT SELECT ON api.cochrane_reviews TO analyst;
+GRANT SELECT ON api.cochrane_reviews TO analyst, api_user;
 
 -- -----------------------------------------------------------------------------
 -- Medical News
@@ -202,8 +194,7 @@ SELECT
 FROM raw.medical_news
 ORDER BY publication_date DESC;
 
-GRANT SELECT ON api.medical_news TO web_anon;
-GRANT SELECT ON api.medical_news TO analyst;
+GRANT SELECT ON api.medical_news TO analyst, api_user;
 
 -- -----------------------------------------------------------------------------
 -- SEC EDGAR Filings
@@ -222,5 +213,4 @@ SELECT
 FROM raw.sec_edgar
 ORDER BY filing_date DESC;
 
-GRANT SELECT ON api.sec_filings TO web_anon;
-GRANT SELECT ON api.sec_filings TO analyst;
+GRANT SELECT ON api.sec_filings TO analyst, api_user;
