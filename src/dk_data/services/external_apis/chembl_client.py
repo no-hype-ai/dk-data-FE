@@ -8,7 +8,8 @@ Provides access to ChEMBL database via their REST API:
 - Assay results
 
 API Documentation: https://www.ebi.ac.uk/chembl/api/data/docs
-Rate Limit: No strict limit, but be reasonable (~10 req/sec recommended)
+Rate Limit: ~1 req/s (shared IP limit without API key).
+  For enhanced access, contact chembl-help@ebi.ac.uk.
 """
 
 from dataclasses import dataclass, field
@@ -254,7 +255,7 @@ class ChEMBLClient(BaseAPIClient):
     def __init__(self, cache_ttl: int = 86400):
         config = APIClientConfig(
             base_url=self.BASE_URL,
-            requests_per_second=10.0,  # 10 requests per second
+            requests_per_second=1.0,  # Conservative: shared IP limit, no formal API key
             cache_ttl=cache_ttl,
         )
         super().__init__(config)

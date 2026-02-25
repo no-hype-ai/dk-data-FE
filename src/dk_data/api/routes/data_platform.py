@@ -3164,3 +3164,350 @@ async def enable_transformation_source(source_name: str):
         raise HTTPException(status_code=404, detail=f"Source not found: {source_name}")
 
     return {"message": f"Source '{source_name}' enabled"}
+
+
+# ============================================================================
+# On-Demand Transform Endpoint (015-assessment-dashboard-integration)
+# T054-T057: POST /transform-raw/{source}
+# ============================================================================
+
+import collections
+import time as _time
+import hashlib
+
+
+class TransformRequest(BaseModel):
+    """Request body for on-demand transform."""
+    molecule_id: Optional[str] = Field(None, description="Optional - scope transform to this molecule")
+    layers: List[str] = Field(
+        default=["bronze", "silver", "gold"],
+        description="Which layers to process"
+    )
+
+
+class TransformLayerResult(BaseModel):
+    """Result for a single layer transform."""
+    layer: str
+    model: str
+    rows_processed: int = 0
+    duration_ms: int = 0
+    status: str = "success"
+    error: Optional[str] = None
+
+
+class TransformResponse(BaseModel):
+    """Response from on-demand transform."""
+    source: str
+    status: str
+    schema_path: Optional[str] = None
+    layers: List[TransformLayerResult]
+    total_duration_ms: int
+    timestamp: str
+
+
+# Source → model routing map (T055)
+# Maps source name to its pipeline models (bronze, silver, gold)
+# mol_raw sources go through mol_bronze → mol_silver → mol_gold
+# raw sources go through bronze → silver → gold
+_SOURCE_MODEL_MAP: Dict[str, Dict[str, str]] = {
+    # mol_raw sources
+    "clinicaltrials": {
+        "bronze": "mol_bronze.clinical_trials",
+        "silver": "mol_silver.clinical_trials",
+        "gold": "mol_gold.molecule_profiles_agg",
+        "schema_path": "mol_raw→mol_bronze→mol_silver→mol_gold",
+    },
+    "chembl": {
+        "bronze": "mol_bronze.chembl_molecules",
+        "silver": "mol_silver.molecules_from_bronze",
+        "gold": "mol_gold.molecule_profiles_agg",
+        "schema_path": "mol_raw→mol_bronze→mol_silver→mol_gold",
+    },
+    "openfda_faers": {
+        "bronze": "mol_bronze.openfda_faers",
+        "silver": "mol_silver.adverse_events",
+        "gold": "mol_gold.safety_signals_agg",
+        "schema_path": "mol_raw→mol_bronze→mol_silver→mol_gold",
+    },
+    "openfda_labels": {
+        "bronze": "mol_bronze.openfda_labels",
+        "silver": "mol_silver.drug_labels",
+        "gold": "mol_gold.molecule_profiles_agg",
+        "schema_path": "mol_raw→mol_bronze→mol_silver→mol_gold",
+    },
+    "drugbank": {
+        "bronze": "mol_bronze.chembl_molecules",
+        "silver": "mol_silver.molecules_from_bronze",
+        "gold": "mol_gold.molecule_profiles_agg",
+        "schema_path": "mol_raw→mol_bronze→mol_silver→mol_gold",
+    },
+    "pubchem": {
+        "bronze": "mol_bronze.pubchem_compounds",
+        "silver": "mol_silver.molecules_from_bronze",
+        "gold": "mol_gold.molecule_profiles_agg",
+        "schema_path": "mol_raw→mol_bronze→mol_silver→mol_gold",
+    },
+    "openalex": {
+        "bronze": "bronze.openalex",
+        "silver": "silver.publications",
+        "schema_path": "raw→bronze→silver→gold",
+    },
+    "uniprot": {
+        "bronze": "bronze.uniprot",
+        "silver": "silver.targets",
+        "schema_path": "raw→bronze→silver→gold",
+    },
+    # raw (IP) sources
+    "pubmed": {
+        "bronze": "bronze.pubmed",
+        "silver": "silver.publications",
+        "schema_path": "raw→bronze→silver→gold",
+    },
+    "ema": {
+        "bronze": "bronze.ema",
+        "silver": "silver.regulatory_decisions",
+        "gold": "mol_gold.regulatory_timeline",
+        "schema_path": "raw→bronze→silver→gold",
+    },
+    "hta_decisions": {
+        "bronze": "bronze.hta_decisions",
+        "silver": "silver.regulatory_decisions",
+        "gold": "mol_gold.regulatory_timeline",
+        "schema_path": "raw→bronze→silver→gold",
+    },
+    "cochrane_reviews": {
+        "bronze": "bronze.cochrane_reviews",
+        "silver": "silver.publications",
+        "schema_path": "raw→bronze→silver→gold",
+    },
+    "sec_edgar": {
+        "bronze": "bronze.sec_edgar",
+        "silver": "silver.financial_data",
+        "gold": "mol_gold.financial_summary",
+        "schema_path": "raw→bronze→silver→gold",
+    },
+    "orcid": {
+        "bronze": "bronze.orcid",
+        "silver": "silver.researchers",
+        "gold": "mol_gold.kol_profiles",
+        "schema_path": "raw→bronze→silver→gold",
+    },
+    "journal_rss": {
+        "bronze": "bronze.journal_rss",
+        "silver": "silver.publications",
+        "schema_path": "raw→bronze→silver→gold",
+    },
+    "medical_news": {
+        "bronze": "bronze.medical_news",
+        "silver": "silver.news_signals",
+        "gold": "mol_gold.advocacy_sentiment",
+        "schema_path": "raw→bronze→silver→gold",
+    },
+    "cms_medicare_inpatient": {
+        "bronze": "bronze.cms_inpatient",
+        "silver": "silver.healthcare_facilities",
+        "schema_path": "raw→bronze→silver→gold",
+    },
+    "cms_hospital_info": {
+        "bronze": "bronze.cms_hospital_info",
+        "silver": "silver.healthcare_facilities",
+        "schema_path": "raw→bronze→silver→gold",
+    },
+    "cms_cost_reports": {
+        "bronze": "bronze.cms_cost_reports",
+        "silver": "silver.healthcare_facilities",
+        "schema_path": "raw→bronze→silver→gold",
+    },
+    "acc_tvc": {
+        "bronze": "bronze.acc_tvc",
+        "silver": "silver.healthcare_facilities",
+        "schema_path": "raw→bronze→silver→gold",
+    },
+    "hrsa": {
+        "bronze": "bronze.hrsa",
+        "silver": "silver.healthcare_facilities",
+        "schema_path": "raw→bronze→silver→gold",
+    },
+    "pdb_structures": {
+        "bronze": "bronze.pdb_structures",
+        "silver": "silver.targets",
+        "schema_path": "raw→bronze→silver→gold",
+    },
+    "who_icd": {
+        "bronze": "bronze.who_icd",
+        "silver": "silver.icd_codes",
+        "schema_path": "raw→bronze→silver→gold",
+    },
+    "uspto_patents": {
+        "bronze": "bronze.uspto_patents",
+        "silver": "silver.patents",
+        "gold": "gold.molecule_profile",
+        "schema_path": "raw→bronze→silver→gold",
+    },
+    "epo_patents": {
+        "bronze": "bronze.epo_patents",
+        "silver": "silver.patents",
+        "gold": "gold.molecule_profile",
+        "schema_path": "raw→bronze→silver→gold",
+    },
+    "orange_book": {
+        "bronze": "bronze.orange_book",
+        "silver": "silver.patents",
+        "gold": "gold.molecule_profile",
+        "schema_path": "raw→bronze→silver→gold",
+    },
+    "uspto_trademarks": {
+        "bronze": "bronze.uspto_trademarks",
+        "silver": "silver.trademarks",
+        "gold": "gold.molecule_profile",
+        "schema_path": "raw→bronze→silver→gold",
+    },
+    "euipo_trademarks": {
+        "bronze": "bronze.euipo_trademarks",
+        "silver": "silver.trademarks",
+        "gold": "gold.molecule_profile",
+        "schema_path": "raw→bronze→silver→gold",
+    },
+}
+
+
+# Rate limiting (T056): in-memory per-source counters
+_rate_limit_window: Dict[str, list] = collections.defaultdict(list)
+_RATE_LIMIT_MAX = 10  # requests per minute per source
+_RATE_LIMIT_WINDOW_SECONDS = 60
+
+
+def _check_rate_limit(source: str) -> Optional[int]:
+    """Check rate limit for a source. Returns retry_after seconds if limited, None if OK."""
+    now = _time.time()
+    window = _rate_limit_window[source]
+    # Prune old entries
+    _rate_limit_window[source] = [t for t in window if now - t < _RATE_LIMIT_WINDOW_SECONDS]
+    window = _rate_limit_window[source]
+
+    if len(window) >= _RATE_LIMIT_MAX:
+        oldest = min(window)
+        retry_after = int(_RATE_LIMIT_WINDOW_SECONDS - (now - oldest)) + 1
+        return max(retry_after, 1)
+    # Record this request
+    _rate_limit_window[source].append(now)
+    return None
+
+
+async def _acquire_advisory_lock(conn, source: str) -> bool:
+    """Attempt to acquire a PostgreSQL advisory lock for the source. Returns True if acquired."""
+    lock_key = int(hashlib.md5(source.encode()).hexdigest()[:8], 16)
+    result = await conn.fetchval("SELECT pg_try_advisory_xact_lock($1)", lock_key)
+    return result is True
+
+
+async def _run_transform_model(model_name: str) -> dict:
+    """Run a single SQLMesh model transform. Returns result dict."""
+    try:
+        from ...ingestion.transform_molecules import transform_model
+        result = transform_model(model_name)
+        return result
+    except Exception as e:
+        return {"status": "failed", "error": str(e)}
+
+
+@router.post("/transform-raw/{source}", tags=["on-demand-transform"])
+async def trigger_on_demand_transform(
+    source: str,
+    body: Optional[TransformRequest] = None,
+):
+    """
+    Trigger on-demand raw → bronze → silver → gold transformation for a specific source.
+
+    Uses same SQLMesh models as the daily batch pipeline.
+    Rate limited to 10 requests/minute/source.
+    Advisory locks prevent concurrent execution with batch transforms.
+    """
+    # Validate source exists in routing map
+    if source not in _SOURCE_MODEL_MAP:
+        raise HTTPException(status_code=404, detail=f"Unknown source: {source}")
+
+    # Rate limit check (T056)
+    retry_after = _check_rate_limit(source)
+    if retry_after is not None:
+        raise HTTPException(
+            status_code=429,
+            detail=f"Rate limit exceeded for source '{source}'",
+            headers={"Retry-After": str(retry_after)},
+        )
+
+    source_config = _SOURCE_MODEL_MAP[source]
+    schema_path = source_config.get("schema_path", "unknown")
+    requested_layers = (body.layers if body else ["bronze", "silver", "gold"])
+
+    start_total = _time.time()
+    layer_results: List[TransformLayerResult] = []
+    overall_status = "completed"
+
+    try:
+        pool = await get_db_pool()
+        if pool is None:
+            raise HTTPException(status_code=503, detail="Database unavailable")
+
+        # Advisory lock check (T057)
+        async with pool.acquire() as conn:
+            lock_acquired = await _acquire_advisory_lock(conn, source)
+            if not lock_acquired:
+                raise HTTPException(
+                    status_code=409,
+                    detail=f"Concurrent transform in progress for source '{source}'",
+                    headers={"Retry-After": "60"},
+                )
+
+            # Process each layer sequentially (bronze → silver → gold)
+            for layer in ["bronze", "silver", "gold"]:
+                if layer not in requested_layers:
+                    continue
+
+                model_name = source_config.get(layer)
+                if model_name is None:
+                    layer_results.append(TransformLayerResult(
+                        layer=layer, model="none", status="skipped",
+                    ))
+                    continue
+
+                layer_start = _time.time()
+                result = await _run_transform_model(model_name)
+                layer_duration = int((_time.time() - layer_start) * 1000)
+
+                layer_status = result.get("status", "failed")
+                rows = result.get("success_count", 0)
+
+                layer_results.append(TransformLayerResult(
+                    layer=layer,
+                    model=model_name,
+                    rows_processed=rows,
+                    duration_ms=layer_duration,
+                    status=layer_status,
+                    error=result.get("error"),
+                ))
+
+                if layer_status == "failed":
+                    overall_status = "partial"
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Transform failed for source {source}: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+    total_duration = int((_time.time() - start_total) * 1000)
+
+    # Check if any rows were processed
+    total_rows = sum(lr.rows_processed for lr in layer_results)
+    if total_rows == 0 and overall_status == "completed":
+        overall_status = "no_rows"
+
+    return TransformResponse(
+        source=source,
+        status=overall_status,
+        schema_path=schema_path,
+        layers=layer_results,
+        total_duration_ms=total_duration,
+        timestamp=datetime.utcnow().isoformat(),
+    )

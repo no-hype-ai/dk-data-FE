@@ -104,6 +104,28 @@ epo_patents AS (
       AND patent_number IS NOT NULL
 ),
 
+-- Feature 015: Orange Book patents
+orange_book_patents AS (
+    SELECT
+        patent_number,
+        patent_title AS title,
+        NULL::TEXT AS abstract,
+        NULL::DATE AS grant_date,
+        filing_date,
+        assignee_organization AS assignee,
+        NULL::TEXT AS assignee_type,
+        NULL::JSONB AS inventors,
+        NULL::JSONB AS cpc_codes,
+        NULL::JSONB AS ipc_codes,
+        NULL::INTEGER AS num_claims,
+        is_pharma_related,
+        NULL::TEXT AS family_id,
+        'orange_book' AS source
+    FROM bronze.orange_book
+    WHERE processed_to_silver = FALSE
+      AND patent_number IS NOT NULL
+),
+
 -- Combine all sources
 combined AS (
     -- DrugBank records (existing format)
@@ -163,6 +185,21 @@ combined AS (
         source,
         NOW() AS source_updated_at
     FROM epo_patents
+
+    UNION ALL
+
+    -- Feature 015: Orange Book
+    SELECT
+        patent_number, title, abstract,
+        filing_date, grant_date, NULL::DATE AS expiry_date,
+        assignee, assignee_type, inventors,
+        cpc_codes, ipc_codes, num_claims,
+        is_pharma_related, family_id,
+        NULL::BOOLEAN AS pediatric_extension, 'US' AS country,
+        NULL AS molecule_name,
+        source,
+        NOW() AS source_updated_at
+    FROM orange_book_patents
 )
 
 SELECT DISTINCT ON (patent_number)
@@ -205,4 +242,5 @@ ORDER BY patent_number,
         WHEN 'uspto_patents' THEN 2
         WHEN 'uspto_ci' THEN 3
         WHEN 'epo_ops' THEN 4
+        WHEN 'orange_book' THEN 5
     END

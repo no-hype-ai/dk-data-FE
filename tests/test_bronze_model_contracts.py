@@ -276,3 +276,173 @@ class TestBronzeEUIPOTrademarks:
 
     def test_incremental_filter(self):
         assert "_loaded_at BETWEEN @start_dt AND @end_dt" in self.sql
+
+
+# ===========================================================================
+# Feature 015: Assessment Dashboard Integration — 14 new bronze models
+# ===========================================================================
+# These models use JSONB envelope raw tables (response_body extraction)
+# rather than flat column raw tables (like USPTO/EUIPO above).
+# ===========================================================================
+
+
+class _BronzeJSONBModelTestBase:
+    """Base test class for bronze models that extract from JSONB response_body."""
+
+    MODEL_FILE: str = ""
+    MODEL_NAME: str = ""
+    GRAIN_COLUMN: str = ""
+    RAW_TABLE: str = ""
+    EXPECTED_COLUMNS: list = []
+
+    @pytest.fixture(autouse=True)
+    def setup(self):
+        self.sql = _read_model_sql(self.MODEL_FILE)
+        self.model_block = _extract_model_block(self.sql)
+
+    def test_model_name(self):
+        assert f"name {self.MODEL_NAME}" in self.model_block
+
+    def test_model_kind_incremental(self):
+        assert "INCREMENTAL_BY_TIME_RANGE" in self.model_block
+
+    def test_model_time_column(self):
+        assert "time_column request_timestamp" in self.model_block
+
+    def test_model_grain(self):
+        assert self.GRAIN_COLUMN in self.model_block
+
+    def test_reads_from_correct_raw_table(self):
+        assert f"FROM {self.RAW_TABLE}" in self.sql
+
+    def test_jsonb_extraction(self):
+        """JSONB envelope models should extract from response_body."""
+        assert "response_body" in self.sql
+
+    def test_processed_to_silver_output(self):
+        assert "processed_to_silver" in self.sql
+
+    def test_incremental_filter(self):
+        assert "request_timestamp BETWEEN @start_dt AND @end_dt" in self.sql
+
+    def test_processed_to_bronze_filter(self):
+        assert "processed_to_bronze = FALSE" in self.sql
+
+    def test_response_status_filter(self):
+        assert "response_status = 200" in self.sql
+
+    def test_expected_output_columns(self):
+        for col in self.EXPECTED_COLUMNS:
+            assert col in self.sql, f"Expected column '{col}' not found in {self.MODEL_FILE}"
+
+
+class TestBronzePubmed(_BronzeJSONBModelTestBase):
+    MODEL_FILE = "pubmed.sql"
+    MODEL_NAME = "bronze.pubmed"
+    GRAIN_COLUMN = "pmid"
+    RAW_TABLE = "raw.pubmed"
+    EXPECTED_COLUMNS = ["pmid", "title", "abstract", "authors", "journal", "pub_date", "mesh_terms", "doi"]
+
+
+class TestBronzeHTADecisions(_BronzeJSONBModelTestBase):
+    MODEL_FILE = "hta_decisions.sql"
+    MODEL_NAME = "bronze.hta_decisions"
+    GRAIN_COLUMN = "decision_id"
+    RAW_TABLE = "raw.hta_decisions"
+    EXPECTED_COLUMNS = ["agency", "drug_name", "indication", "decision", "decision_date", "recommendation", "therapeutic_area"]
+
+
+class TestBronzeCochraneReviews(_BronzeJSONBModelTestBase):
+    MODEL_FILE = "cochrane_reviews.sql"
+    MODEL_NAME = "bronze.cochrane_reviews"
+    GRAIN_COLUMN = "review_id"
+    RAW_TABLE = "raw.cochrane_reviews"
+    EXPECTED_COLUMNS = ["review_id", "title", "authors", "abstract", "pub_date", "doi", "review_type"]
+
+
+class TestBronzeSecEdgar(_BronzeJSONBModelTestBase):
+    MODEL_FILE = "sec_edgar.sql"
+    MODEL_NAME = "bronze.sec_edgar"
+    GRAIN_COLUMN = "filing_id"
+    RAW_TABLE = "raw.sec_edgar"
+    EXPECTED_COLUMNS = ["cik", "company_name", "filing_type", "filing_date", "revenue", "net_income", "total_assets"]
+
+
+class TestBronzeOrcid(_BronzeJSONBModelTestBase):
+    MODEL_FILE = "orcid.sql"
+    MODEL_NAME = "bronze.orcid"
+    GRAIN_COLUMN = "orcid_id"
+    RAW_TABLE = "raw.orcid"
+    EXPECTED_COLUMNS = ["orcid_id", "given_name", "family_name", "affiliations", "works_count", "research_areas"]
+
+
+class TestBronzeJournalRss(_BronzeJSONBModelTestBase):
+    MODEL_FILE = "journal_rss.sql"
+    MODEL_NAME = "bronze.journal_rss"
+    GRAIN_COLUMN = "entry_id"
+    RAW_TABLE = "raw.journal_rss"
+    EXPECTED_COLUMNS = ["title", "link", "pub_date", "journal_name", "summary", "authors", "doi"]
+
+
+class TestBronzeMedicalNews(_BronzeJSONBModelTestBase):
+    MODEL_FILE = "medical_news.sql"
+    MODEL_NAME = "bronze.medical_news"
+    GRAIN_COLUMN = "article_id"
+    RAW_TABLE = "raw.medical_news"
+    EXPECTED_COLUMNS = ["title", "link", "pub_date", "source_name", "summary", "drug_mentions", "sentiment"]
+
+
+class TestBronzeCmsInpatient(_BronzeJSONBModelTestBase):
+    MODEL_FILE = "cms_inpatient.sql"
+    MODEL_NAME = "bronze.cms_inpatient"
+    GRAIN_COLUMN = "record_id"
+    RAW_TABLE = "raw.cms_medicare_inpatient"
+    EXPECTED_COLUMNS = ["provider_id", "drg_code", "total_discharges", "avg_charges", "avg_payments", "fiscal_year"]
+
+
+class TestBronzeCmsHospitalInfo(_BronzeJSONBModelTestBase):
+    MODEL_FILE = "cms_hospital_info.sql"
+    MODEL_NAME = "bronze.cms_hospital_info"
+    GRAIN_COLUMN = "provider_id"
+    RAW_TABLE = "raw.cms_hospital_info"
+    EXPECTED_COLUMNS = ["provider_id", "hospital_name", "city", "state", "hospital_type", "ownership", "rating"]
+
+
+class TestBronzeCmsCostReports(_BronzeJSONBModelTestBase):
+    MODEL_FILE = "cms_cost_reports.sql"
+    MODEL_NAME = "bronze.cms_cost_reports"
+    GRAIN_COLUMN = "record_id"
+    RAW_TABLE = "raw.cms_cost_reports"
+    EXPECTED_COLUMNS = ["provider_id", "fiscal_year", "total_costs", "net_revenue", "operating_margin", "bed_count"]
+
+
+class TestBronzeAccTvc(_BronzeJSONBModelTestBase):
+    MODEL_FILE = "acc_tvc.sql"
+    MODEL_NAME = "bronze.acc_tvc"
+    GRAIN_COLUMN = "facility_id"
+    RAW_TABLE = "raw.acc_tvc_certification"
+    EXPECTED_COLUMNS = ["facility_id", "facility_name", "city", "state", "certification_type", "cert_date", "volumes"]
+
+
+class TestBronzeHrsa(_BronzeJSONBModelTestBase):
+    MODEL_FILE = "hrsa.sql"
+    MODEL_NAME = "bronze.hrsa"
+    GRAIN_COLUMN = "hpsa_id"
+    RAW_TABLE = "raw.hrsa_shortage_areas"
+    EXPECTED_COLUMNS = ["hpsa_id", "designation_type", "state", "county", "discipline", "score", "status"]
+
+
+class TestBronzePdbStructures(_BronzeJSONBModelTestBase):
+    MODEL_FILE = "pdb_structures.sql"
+    MODEL_NAME = "bronze.pdb_structures"
+    GRAIN_COLUMN = "pdb_id"
+    RAW_TABLE = "raw.pdb_structures"
+    EXPECTED_COLUMNS = ["pdb_id", "title", "resolution", "method", "organism", "ligand_id", "ligand_name", "uniprot_id"]
+
+
+class TestBronzeWhoIcd(_BronzeJSONBModelTestBase):
+    MODEL_FILE = "who_icd.sql"
+    MODEL_NAME = "bronze.who_icd"
+    GRAIN_COLUMN = "icd_code"
+    RAW_TABLE = "raw.who_icd"
+    EXPECTED_COLUMNS = ["icd_code", "title", "chapter", "block_id", "category", "includes", "excludes"]

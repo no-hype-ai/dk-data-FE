@@ -36,6 +36,9 @@ physical_schema_mapping:
   bronze: bronze
   silver: silver
   gold: gold
+  # Xenon application schema (015-assessment-dashboard-integration)
+  xenon: xenon
+  meta: meta
 
 # Project metadata
 project: tavr_data_infrastructure

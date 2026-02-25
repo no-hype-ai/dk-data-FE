@@ -19,6 +19,8 @@ Auto-generated from all feature plans. Last updated: 2026-01-30
 - PostgreSQL 16.4 via CloudNativePG (shared `postgresql.infra.svc.cluster.local:5432`) (013-observability-governance)
 - Python 3.11+ + FastAPI, SQLMesh, Pydantic, psycopg2-binary, requests, responses (test), structlog, OpenTelemetry, prometheus-client, kubernetes (014-uspto-euipo-model-datasource)
 - PostgreSQL 16.4 (CloudNativePG cluster, `postgresql.infra.svc.cluster.local:5432`, database `dk_data`) (014-uspto-euipo-model-datasource)
+- Python 3.11+, SQL (PostgreSQL 16.4) + FastAPI >=0.109.0, SQLMesh >=0.90.0, asyncpg >=0.29.0, psycopg2-binary >=2.9.9, httpx >=0.25.0, pyjwt >=2.8.0, Pydantic >=2.5.0, structlog >=24.0.0, OpenTelemetry (tracing+metrics), prometheus-client >=0.19.0, responses >=0.25.0 (test) (015-assessment-dashboard-integration)
+- PostgreSQL 16.4 via CloudNativePG (`postgresql.infra.svc.cluster.local:5432`, database `dk_data`). Schemas: 15 existing + 1 new (`xenon`). PostgREST v12.2.3 for REST API exposure. (015-assessment-dashboard-integration)
 
 - Python 3.11+ (existing ingestion layer), SQL (PostgreSQL 16+) + PostgREST v12.x, SQLMesh, psycopg2, Pydantic, requests (001-data-layer-postgrest-gitops)
 
@@ -38,9 +40,9 @@ cd src [ONLY COMMANDS FOR ACTIVE TECHNOLOGIES][ONLY COMMANDS FOR ACTIVE TECHNOLO
 Python 3.11+ (existing ingestion layer), SQL (PostgreSQL 16+): Follow standard conventions
 
 ## Recent Changes
+- 015-assessment-dashboard-integration: Added Python 3.11+, SQL (PostgreSQL 16.4) + FastAPI >=0.109.0, SQLMesh >=0.90.0, asyncpg >=0.29.0, psycopg2-binary >=2.9.9, httpx >=0.25.0, pyjwt >=2.8.0, Pydantic >=2.5.0, structlog >=24.0.0, OpenTelemetry (tracing+metrics), prometheus-client >=0.19.0, responses >=0.25.0 (test)
 - 014-uspto-euipo-model-datasource: Added Python 3.11+ + FastAPI, SQLMesh, Pydantic, psycopg2-binary, requests, responses (test), structlog, OpenTelemetry, prometheus-client, kubernetes
 - 013-observability-governance: Added Python 3.11+, SQL (PostgreSQL 16.4), YAML (Kubernetes manifests) + FastAPI, psycopg2-binary, Pydantic, prometheus-client, structlog, PostgREST v12.2.3
-- 012-platform-hardening: Added Python 3.11+ (existing codebase) + psycopg2-binary, Pydantic, httpx, requests, structlog, opentelemetry-sdk, feedparser, uv (new — dependency management)
 
 
 <!-- MANUAL ADDITIONS START -->

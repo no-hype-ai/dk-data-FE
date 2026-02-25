@@ -106,6 +106,14 @@ try:
 except ImportError as e:
     logger.warning(f"Molecule alerts router not available: {e}")
 
+# MCP data retrieval tools router (015-assessment-dashboard-integration T064)
+try:
+    from dk_data.api.routes.mcp import router as mcp_router
+    app.include_router(mcp_router, prefix="/api/v1", tags=["mcp"])
+    logger.info("Loaded MCP tools router")
+except ImportError as e:
+    logger.warning(f"MCP tools router not available: {e}")
+
 # CORS middleware
 app.add_middleware(
     CORSMiddleware,

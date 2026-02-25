@@ -53,6 +53,13 @@ LAYER_MODELS = {
         'mol_gold.molecule_profiles_agg',
         'mol_gold.safety_signals_agg',
         'mol_gold.trial_analytics_agg',
+        # 015-assessment-dashboard-integration
+        'mol_gold.kol_profiles',
+        'mol_gold.kol_network',
+        'mol_gold.advocacy_sentiment',
+        'mol_gold.trial_outcomes',
+        'mol_gold.regulatory_timeline',
+        'mol_gold.financial_summary',
     ],
     # IP / Patent / Trademark models (014-uspto-euipo-model-datasource)
     'ip_bronze': [
@@ -61,13 +68,41 @@ LAYER_MODELS = {
         'bronze.epo_patents',
         'bronze.uspto_trademarks',
         'bronze.euipo_trademarks',
+        # 015-assessment-dashboard-integration
+        'bronze.pubmed',
+        'bronze.ema',
+        'bronze.hta_decisions',
+        'bronze.cochrane_reviews',
+        'bronze.sec_edgar',
+        'bronze.orcid',
+        'bronze.journal_rss',
+        'bronze.medical_news',
+        'bronze.cms_inpatient',
+        'bronze.cms_hospital_info',
+        'bronze.cms_cost_reports',
+        'bronze.acc_tvc',
+        'bronze.hrsa',
+        'bronze.pdb_structures',
+        'bronze.who_icd',
     ],
     'ip_silver': [
         'silver.patents',
         'silver.trademarks',
+        # 015-assessment-dashboard-integration
+        'silver.publications',
+        'silver.targets',
+        'silver.regulatory_decisions',
+        'silver.financial_data',
+        'silver.researchers',
+        'silver.news_signals',
+        'silver.healthcare_facilities',
+        'silver.icd_codes',
     ],
     'ip_gold': [
         'gold.molecule_profile',
+        # 015-assessment-dashboard-integration
+        'mol_gold.kol_drug_associations',
+        'mol_gold.advocacy_groups',
     ],
 }
 

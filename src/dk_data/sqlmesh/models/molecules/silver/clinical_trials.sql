@@ -53,6 +53,7 @@ SELECT
     (raw_data->'protocolSection'->'statusModule'->'startDateStruct'->>'date')::DATE AS start_date,
     (raw_data->'protocolSection'->'statusModule'->'completionDateStruct'->>'date')::DATE AS completion_date,
     (raw_data->'protocolSection'->'statusModule'->'primaryCompletionDateStruct'->>'date')::DATE AS primary_completion_date,
+    (raw_data->'protocolSection'->'statusModule'->'completionDateStruct'->>'date')::DATE AS end_date,
 
     -- Conditions (as JSONB array)
     raw_data->'protocolSection'->'conditionsModule'->'conditions' AS conditions,
