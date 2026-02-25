@@ -46,12 +46,14 @@ def create_jwt_token(role: str, secret: str = JWT_SECRET, expired: bool = False)
 
 
 def analyst_headers() -> dict:
-    """Return authorization headers for analyst role."""
+    """Return authorization headers for analyst role targeting the xenon schema."""
     token = create_jwt_token("analyst")
     return {
         "Authorization": f"Bearer {token}",
         "Content-Type": "application/json",
         "Prefer": "return=representation",
+        "Content-Profile": "xenon",
+        "Accept-Profile": "xenon",
     }
 
 

@@ -36,17 +36,17 @@ class TestAnalystSchemaAccess:
     def test_analyst_can_select_mol_gold_molecule_profile(self, postgrest_client):
         """Analyst should have SELECT access to mol_gold tables."""
         token = create_jwt_token("analyst")
-        headers = {"Authorization": f"Bearer {token}"}
-        response = postgrest_client.get("/molecule_profile", headers=headers)
+        headers = {"Authorization": f"Bearer {token}", "Accept-Profile": "mol_gold"}
+        response = postgrest_client.get("/molecule_profiles", headers=headers)
         # 200 = data returned, 204 = no content (empty table) — both mean access granted
         assert response.status_code in (200, 204), (
-            f"Analyst should access mol_gold.molecule_profile, got {response.status_code}"
+            f"Analyst should access mol_gold.molecule_profiles, got {response.status_code}"
         )
 
     def test_analyst_can_select_mol_silver(self, postgrest_client):
         """Analyst should have SELECT access to mol_silver tables."""
         token = create_jwt_token("analyst")
-        headers = {"Authorization": f"Bearer {token}"}
+        headers = {"Authorization": f"Bearer {token}", "Accept-Profile": "mol_silver"}
         response = postgrest_client.get("/clinical_trials", headers=headers)
         assert response.status_code in (200, 204), (
             f"Analyst should access mol_silver.clinical_trials, got {response.status_code}"
@@ -55,8 +55,7 @@ class TestAnalystSchemaAccess:
     def test_analyst_can_select_meta(self, postgrest_client):
         """Analyst should have SELECT access to meta schema tables."""
         token = create_jwt_token("analyst")
-        headers = {"Authorization": f"Bearer {token}"}
-        # meta schema tables — try migration_history which should exist
+        headers = {"Authorization": f"Bearer {token}", "Accept-Profile": "meta"}
         response = postgrest_client.get("/migration_history", headers=headers)
         assert response.status_code in (200, 204, 404), (
             f"Analyst should access meta schema, got {response.status_code}"
@@ -65,7 +64,7 @@ class TestAnalystSchemaAccess:
     def test_analyst_can_read_xenon_assessment_generated(self, postgrest_client):
         """Analyst should have SELECT access to xenon.assessment_generated."""
         token = create_jwt_token("analyst")
-        headers = {"Authorization": f"Bearer {token}"}
+        headers = {"Authorization": f"Bearer {token}", "Accept-Profile": "xenon"}
         response = postgrest_client.get("/assessment_generated", headers=headers)
         assert response.status_code in (200, 204), (
             f"Analyst should access xenon.assessment_generated, got {response.status_code}"
@@ -74,7 +73,7 @@ class TestAnalystSchemaAccess:
     def test_analyst_can_read_xenon_publication_evidence(self, postgrest_client):
         """Analyst should have SELECT access to xenon.publication_evidence."""
         token = create_jwt_token("analyst")
-        headers = {"Authorization": f"Bearer {token}"}
+        headers = {"Authorization": f"Bearer {token}", "Accept-Profile": "xenon"}
         response = postgrest_client.get("/publication_evidence", headers=headers)
         assert response.status_code in (200, 204), (
             f"Analyst should access xenon.publication_evidence, got {response.status_code}"
@@ -87,8 +86,8 @@ class TestWebAnonSchemaRestriction:
     def test_web_anon_cannot_access_mol_gold(self, postgrest_client):
         """web_anon should NOT access mol_gold tables."""
         token = create_jwt_token("web_anon")
-        headers = {"Authorization": f"Bearer {token}"}
-        response = postgrest_client.get("/molecule_profile", headers=headers)
+        headers = {"Authorization": f"Bearer {token}", "Accept-Profile": "mol_gold"}
+        response = postgrest_client.get("/molecule_profiles", headers=headers)
         assert response.status_code in (401, 403, 404), (
             f"web_anon should not access mol_gold, got {response.status_code}"
         )
@@ -96,7 +95,7 @@ class TestWebAnonSchemaRestriction:
     def test_web_anon_cannot_access_mol_silver(self, postgrest_client):
         """web_anon should NOT access mol_silver tables."""
         token = create_jwt_token("web_anon")
-        headers = {"Authorization": f"Bearer {token}"}
+        headers = {"Authorization": f"Bearer {token}", "Accept-Profile": "mol_silver"}
         response = postgrest_client.get("/clinical_trials", headers=headers)
         assert response.status_code in (401, 403, 404), (
             f"web_anon should not access mol_silver, got {response.status_code}"
@@ -105,7 +104,7 @@ class TestWebAnonSchemaRestriction:
     def test_web_anon_cannot_access_xenon(self, postgrest_client):
         """web_anon should NOT access xenon schema tables."""
         token = create_jwt_token("web_anon")
-        headers = {"Authorization": f"Bearer {token}"}
+        headers = {"Authorization": f"Bearer {token}", "Accept-Profile": "xenon"}
         response = postgrest_client.get("/assessment_generated", headers=headers)
         assert response.status_code in (401, 403, 404), (
             f"web_anon should not access xenon, got {response.status_code}"
@@ -114,7 +113,7 @@ class TestWebAnonSchemaRestriction:
     def test_web_anon_cannot_access_meta(self, postgrest_client):
         """web_anon should NOT access meta schema tables."""
         token = create_jwt_token("web_anon")
-        headers = {"Authorization": f"Bearer {token}"}
+        headers = {"Authorization": f"Bearer {token}", "Accept-Profile": "meta"}
         response = postgrest_client.get("/migration_history", headers=headers)
         assert response.status_code in (401, 403, 404), (
             f"web_anon should not access meta, got {response.status_code}"
@@ -126,10 +125,10 @@ class TestUnauthenticatedAccess:
 
     def test_no_auth_cannot_access_mol_gold(self, postgrest_client):
         """Unauthenticated requests should not access mol_gold."""
-        response = postgrest_client.get("/molecule_profile")
+        response = postgrest_client.get("/molecule_profiles", headers={"Accept-Profile": "mol_gold"})
         assert response.status_code in (401, 403, 404)
 
     def test_no_auth_cannot_access_xenon(self, postgrest_client):
         """Unauthenticated requests should not access xenon."""
-        response = postgrest_client.get("/assessment_generated")
+        response = postgrest_client.get("/assessment_generated", headers={"Accept-Profile": "xenon"})
         assert response.status_code in (401, 403, 404)
