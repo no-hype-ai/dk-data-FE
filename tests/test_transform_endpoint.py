@@ -13,16 +13,6 @@ Tests verify:
 - Optional molecule_id scoping
 """
 
-# Pre-import to handle email-validator dependency issue in test environment.
-# The first import of data_platform may raise ImportError due to email-validator
-# not being installed (a Pydantic transitive dep). The module still caches, so
-# a second import succeeds. We force that here at module level.
-try:
-    from dk_data.api.routes import data_platform as _dp_module  # noqa: F401
-except ImportError:
-    pass  # Module is now cached; subsequent imports will work
-
-
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------

@@ -203,7 +203,7 @@ jobs:
             exit 1
           }
 
-      - name: Run tests with coverage
+      - name: Run unit tests with coverage
         env:
           POSTGRES_HOST: localhost
           POSTGRES_PORT: 5432
@@ -213,6 +213,17 @@ jobs:
           POSTGREST_URL: http://localhost:3030
           JWT_SECRET: test-secret-must-be-at-least-32-chars
         run: pytest tests/ -v --tb=short -m "not integration"
+
+      - name: Run integration tests (PostgREST)
+        env:
+          POSTGRES_HOST: localhost
+          POSTGRES_PORT: 5432
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: dk_data_test
+          POSTGREST_URL: http://localhost:3030
+          JWT_SECRET: test-secret-must-be-at-least-32-chars
+        run: pytest tests/ -v --tb=short -m "integration" --no-cov
 
       - name: Upload coverage artifact
         if: always()

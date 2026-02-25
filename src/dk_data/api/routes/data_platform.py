@@ -2718,17 +2718,17 @@ class SourceRegistrationRequest(BaseModel):
     column_mappings: Dict[str, str] = Field(
         ...,
         description="Bronze -> Silver column mappings",
-        example={"inchi_key": "inchi_key", "drug_name": "canonical_name"}
+        examples=[{"inchi_key": "inchi_key", "drug_name": "canonical_name"}],
     )
     identifier_mappings: Optional[Dict[str, str]] = Field(
         None,
         description="Identifier extraction rules",
-        example={"drugbank_id": "drugbank_id"}
+        examples=[{"drugbank_id": "drugbank_id"}],
     )
     name_mappings: Optional[Dict[str, str]] = Field(
         None,
         description="Name extraction rules",
-        example={"generic": "name", "synonyms": "synonyms"}
+        examples=[{"generic": "name", "synonyms": "synonyms"}],
     )
     source_precedence: int = Field(
         10,
