@@ -3171,9 +3171,9 @@ async def enable_transformation_source(source_name: str):
 # T054-T057: POST /transform-raw/{source}
 # ============================================================================
 
-import collections
-import time as _time
-import hashlib
+import collections  # noqa: E402
+import time as _time  # noqa: E402
+import hashlib  # noqa: E402
 
 
 class TransformRequest(BaseModel):

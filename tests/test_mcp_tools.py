@@ -11,8 +11,6 @@ Tests verify:
 - Timeout returns 408 error response
 """
 
-import pytest
-
 # Pre-import to handle email-validator dependency issue
 try:
     from dk_data.api.routes import mcp as _mcp_module  # noqa: F401

@@ -10,7 +10,7 @@ All 28 MCP tools organized by tier:
 """
 
 from dataclasses import dataclass, field
-from typing import Dict, Optional, Type
+from typing import Dict
 
 
 @dataclass

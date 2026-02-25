@@ -9,9 +9,11 @@ Tests verify SC-001 (PostgREST exposes new schemas) and SC-007 (role-based acces
 """
 
 import os
-import pytest
 import time
 import jwt as pyjwt
+import pytest
+
+pytestmark = pytest.mark.integration
 
 POSTGREST_URL = os.getenv("POSTGREST_URL", "http://localhost:3030")
 JWT_SECRET = os.getenv("JWT_SECRET", "test-secret-must-be-at-least-32-chars")

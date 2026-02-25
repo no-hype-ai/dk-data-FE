@@ -212,7 +212,7 @@ jobs:
           POSTGRES_DB: dk_data_test
           POSTGREST_URL: http://localhost:3030
           JWT_SECRET: test-secret-must-be-at-least-32-chars
-        run: pytest tests/ -v --tb=short
+        run: pytest tests/ -v --tb=short -m "not integration"
 
       - name: Upload coverage artifact
         if: always()

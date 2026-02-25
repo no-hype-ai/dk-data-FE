@@ -8,7 +8,7 @@ response_body JSONB format expected by its corresponding bronze model.
 """
 
 from abc import ABC, abstractmethod
-from typing import Any, Dict, Optional
+from typing import Any, Dict, Optional  # noqa: F401
 
 
 class BaseAdapter(ABC):

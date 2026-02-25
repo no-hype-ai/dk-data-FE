@@ -11,7 +11,7 @@ import os
 import uuid
 import time
 from datetime import datetime, timezone
-from typing import Any, Dict, Optional
+from typing import Dict, Optional
 
 import httpx
 from loguru import logger
