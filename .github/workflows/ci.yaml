@@ -160,6 +160,11 @@ jobs:
             END LOOP;
           END $$;
           ALTER DEFAULT PRIVILEGES IN SCHEMA api GRANT SELECT ON TABLES TO analyst, api_user;
+          ALTER DEFAULT PRIVILEGES IN SCHEMA mol_gold GRANT SELECT ON TABLES TO analyst, api_user;
+          ALTER DEFAULT PRIVILEGES IN SCHEMA mol_silver GRANT SELECT ON TABLES TO analyst, api_user;
+          ALTER DEFAULT PRIVILEGES IN SCHEMA meta GRANT SELECT ON TABLES TO analyst, api_user;
+          ALTER DEFAULT PRIVILEGES IN SCHEMA xenon GRANT SELECT, INSERT, UPDATE ON TABLES TO analyst;
+          ALTER DEFAULT PRIVILEGES IN SCHEMA xenon GRANT SELECT ON TABLES TO api_user;
           SQL
           echo "Database initialized"
 
