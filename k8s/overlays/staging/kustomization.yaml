@@ -71,6 +71,16 @@ patches:
     kind: DopplerSecret
     name: dk-data-secrets
 - patch: |-
+    apiVersion: secrets.doppler.com/v1alpha1
+    kind: DopplerSecret
+    metadata:
+      name: doppler-ghcr
+    spec:
+      config: stg
+  target:
+    kind: DopplerSecret
+    name: doppler-ghcr
+- patch: |-
     apiVersion: v1
     kind: ConfigMap
     metadata:

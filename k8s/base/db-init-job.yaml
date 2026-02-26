@@ -41,6 +41,11 @@ spec:
                   key: POSTGRES_PASSWORD
             - name: PGUSER
               value: "postgres"
+            - name: POSTGREST_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: dk-data-secrets
+                  key: POSTGREST_PASSWORD
           command:
             - /bin/bash
             - -c
@@ -112,9 +117,12 @@ spec:
 
               # --- Step 5: Set authenticator password ---
               echo "Setting authenticator password..."
-              AUTHENTICATOR_PASS=$(psql -d postgres -Atc "SELECT current_setting('app.authenticator_password', true)" 2>/dev/null || echo "")
-              if [ -n "$AUTHENTICATOR_PASS" ]; then
-                psql -d dk_data -c "ALTER ROLE authenticator PASSWORD '$AUTHENTICATOR_PASS'"
+              if [ -n "$POSTGREST_PASSWORD" ]; then
+                psql -d dk_data -c "ALTER ROLE authenticator PASSWORD '$POSTGREST_PASSWORD'"
+                echo "✓ authenticator password set from POSTGREST_PASSWORD secret"
+              else
+                echo "✗ WARNING: POSTGREST_PASSWORD not set — authenticator role will have no password"
+                echo "  PostgREST will fail to connect. Add POSTGREST_PASSWORD to Doppler dk-data-fe project."
               fi
 
               # --- Step 6: Grant role hierarchy ---
