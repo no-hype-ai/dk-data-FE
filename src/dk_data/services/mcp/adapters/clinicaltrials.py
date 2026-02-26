@@ -1,6 +1,8 @@
 """MCP Adapter: clinicaltrials
 Feature: 015-assessment-dashboard-integration
 """
+from urllib.parse import quote
+
 from .base import BaseAdapter
 
 
@@ -17,12 +19,10 @@ class Adapter(BaseAdapter):
     def raw_schema(self) -> str:
         return "mol_raw"
 
-    def normalize(self, api_response: dict) -> dict:
-        """Normalize ClinicalTrials.gov v2 search response.
+    def build_url(self, base_url: str, drug_name: str, params: dict) -> str:
+        """ClinicalTrials.gov v2 API uses query.term parameter."""
+        return f"{base_url}?query.term={quote(drug_name)}&pageSize=50"
 
-        The v2 API nests most fields under protocolSection, which
-        contains identificationModule, statusModule, descriptionModule,
-        designModule, etc.  This method flattens the protocolSection
-        nesting to match the mol_raw format.
-        """
+    def normalize(self, api_response: dict) -> dict:
+        """Normalize ClinicalTrials.gov v2 search response."""
         return api_response

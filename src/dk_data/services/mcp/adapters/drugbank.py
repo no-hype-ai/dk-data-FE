@@ -1,6 +1,8 @@
 """MCP Adapter: drugbank
 Feature: 015-assessment-dashboard-integration
 """
+from urllib.parse import quote
+
 from .base import BaseAdapter
 
 
@@ -17,11 +19,10 @@ class Adapter(BaseAdapter):
     def raw_schema(self) -> str:
         return "mol_raw"
 
-    def normalize(self, api_response: dict) -> dict:
-        """Normalize DrugBank REST JSON response.
+    def build_url(self, base_url: str, drug_name: str, params: dict) -> str:
+        """DrugBank API search. Note: requires API key for production use."""
+        return f"{base_url}?q={quote(drug_name)}"
 
-        DrugBank returns detailed drug records including identifiers,
-        pharmacology, interactions, and pathway data.  This method
-        normalizes the response to match the mol_raw format.
-        """
+    def normalize(self, api_response: dict) -> dict:
+        """Normalize DrugBank search response."""
         return api_response

@@ -1,6 +1,8 @@
 """MCP Adapter: openfda_faers
 Feature: 015-assessment-dashboard-integration
 """
+from urllib.parse import quote
+
 from .base import BaseAdapter
 
 
@@ -17,11 +19,10 @@ class Adapter(BaseAdapter):
     def raw_schema(self) -> str:
         return "mol_raw"
 
-    def normalize(self, api_response: dict) -> dict:
-        """Normalize OpenFDA drug/event (FAERS) response.
+    def build_url(self, base_url: str, drug_name: str, params: dict) -> str:
+        """OpenFDA drug/event (FAERS) uses search parameter with field queries."""
+        return f'{base_url}?search=patient.drug.openfda.generic_name:"{quote(drug_name)}"&limit=10'
 
-        The OpenFDA drug/event endpoint returns adverse event reports
-        with nested patient, drug, and reaction information.  This
-        method normalizes the response to match the mol_raw format.
-        """
+    def normalize(self, api_response: dict) -> dict:
+        """Normalize OpenFDA drug/event (FAERS) response."""
         return api_response

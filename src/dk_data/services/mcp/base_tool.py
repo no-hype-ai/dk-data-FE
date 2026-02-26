@@ -148,8 +148,8 @@ class BaseMCPTool:
             return response.json()
 
     def _build_url(self, drug_name: str, params: dict) -> str:
-        """Build the API URL. Override in subclasses for custom URL construction."""
-        return f"{self.api_base_url}?query={drug_name}"
+        """Build the API URL. Delegates to adapter.build_url for source-specific logic."""
+        return self.adapter.build_url(self.api_base_url, drug_name, params)
 
     async def _insert_raw_record(
         self,

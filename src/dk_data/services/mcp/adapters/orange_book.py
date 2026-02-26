@@ -1,13 +1,13 @@
 """MCP Adapter: orange_book
-
 Feature: 015-assessment-dashboard-integration
 """
+from urllib.parse import quote
 
 from .base import BaseAdapter
 
 
 class Adapter(BaseAdapter):
-    """Adapter for orange_book API responses."""
+    """Adapter for FDA Drugs@FDA (Orange Book) API responses."""
 
     @property
     def source_name(self) -> str:
@@ -20,6 +20,10 @@ class Adapter(BaseAdapter):
     @property
     def raw_schema(self) -> str:
         return "raw"
+
+    def build_url(self, base_url: str, drug_name: str, params: dict) -> str:
+        """FDA Drugs@FDA API uses openFDA search syntax."""
+        return f'{base_url}?search=openfda.generic_name:"{quote(drug_name)}"&limit=5'
 
     def normalize(self, api_response: dict) -> dict:
         """Normalize API response to match bronze model response_body format."""

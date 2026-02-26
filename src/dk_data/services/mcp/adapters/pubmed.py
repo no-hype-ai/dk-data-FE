@@ -1,6 +1,8 @@
 """MCP Adapter: pubmed
 Feature: 015-assessment-dashboard-integration
 """
+from urllib.parse import quote
+
 from .base import BaseAdapter
 
 
@@ -17,12 +19,10 @@ class Adapter(BaseAdapter):
     def raw_schema(self) -> str:
         return "raw"
 
-    def normalize(self, api_response: dict) -> dict:
-        """Normalize PubMed eutils response.
+    def build_url(self, base_url: str, drug_name: str, params: dict) -> str:
+        """PubMed eutils esearch uses db, term, retmode parameters."""
+        return f"{base_url}?db=pubmed&term={quote(drug_name)}&retmode=json&retmax=20"
 
-        PubMed eutils (esearch/efetch) returns article records with
-        MedlineCitation nesting containing article title, abstract,
-        authors, MeSH terms, and publication details.  This method
-        normalizes the response to match the raw format.
-        """
+    def normalize(self, api_response: dict) -> dict:
+        """Normalize PubMed eutils response."""
         return api_response

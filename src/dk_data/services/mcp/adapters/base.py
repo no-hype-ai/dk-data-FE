@@ -52,6 +52,13 @@ class BaseAdapter(ABC):
         """
         ...
 
+    def build_url(self, base_url: str, drug_name: str, params: dict) -> str:
+        """Build the API URL for this source. Override per-adapter for custom URL logic.
+
+        Default appends ?query={drug_name} which works for some APIs.
+        """
+        return f"{base_url}?query={drug_name}"
+
     def validate_against_bronze(self, normalized: dict) -> bool:
         """Validate that normalized data has required fields for the bronze model.
 

@@ -1,6 +1,8 @@
 """MCP Adapter: chembl
 Feature: 015-assessment-dashboard-integration
 """
+from urllib.parse import quote
+
 from .base import BaseAdapter
 
 
@@ -17,11 +19,10 @@ class Adapter(BaseAdapter):
     def raw_schema(self) -> str:
         return "mol_raw"
 
-    def normalize(self, api_response: dict) -> dict:
-        """Normalize ChEMBL REST search response.
+    def build_url(self, base_url: str, drug_name: str, params: dict) -> str:
+        """ChEMBL REST API uses q parameter with format=json."""
+        return f"{base_url}?q={quote(drug_name)}&format=json"
 
-        ChEMBL returns paginated results with molecule, assay, and
-        activity records.  This method normalizes the response to
-        match the mol_raw format.
-        """
+    def normalize(self, api_response: dict) -> dict:
+        """Normalize ChEMBL REST search response."""
         return api_response

@@ -1,6 +1,8 @@
 """MCP Adapter: openalex
 Feature: 015-assessment-dashboard-integration
 """
+from urllib.parse import quote
+
 from .base import BaseAdapter
 
 
@@ -17,12 +19,10 @@ class Adapter(BaseAdapter):
     def raw_schema(self) -> str:
         return "mol_raw"
 
-    def normalize(self, api_response: dict) -> dict:
-        """Normalize OpenAlex works search response.
+    def build_url(self, base_url: str, drug_name: str, params: dict) -> str:
+        """OpenAlex works API uses filter parameter for search."""
+        return f"{base_url}?filter=display_name.search:{quote(drug_name)}&per_page=20"
 
-        OpenAlex returns scholarly works with metadata including DOI,
-        title, authorships, concepts, cited_by_count, and open access
-        status.  This method normalizes the response to match the
-        mol_raw format.
-        """
+    def normalize(self, api_response: dict) -> dict:
+        """Normalize OpenAlex works search response."""
         return api_response

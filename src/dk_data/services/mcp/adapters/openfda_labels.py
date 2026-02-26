@@ -1,6 +1,8 @@
 """MCP Adapter: openfda_labels
 Feature: 015-assessment-dashboard-integration
 """
+from urllib.parse import quote
+
 from .base import BaseAdapter
 
 
@@ -17,12 +19,10 @@ class Adapter(BaseAdapter):
     def raw_schema(self) -> str:
         return "mol_raw"
 
-    def normalize(self, api_response: dict) -> dict:
-        """Normalize OpenFDA drug/label response.
+    def build_url(self, base_url: str, drug_name: str, params: dict) -> str:
+        """OpenFDA drug/label uses search parameter with openfda field queries."""
+        return f'{base_url}?search=openfda.generic_name:"{quote(drug_name)}"&limit=5'
 
-        The OpenFDA drug/label endpoint returns structured product
-        labeling (SPL) data including indications, warnings, dosage,
-        and pharmacology sections.  This method normalizes the
-        response to match the mol_raw format.
-        """
+    def normalize(self, api_response: dict) -> dict:
+        """Normalize OpenFDA drug/label response."""
         return api_response
