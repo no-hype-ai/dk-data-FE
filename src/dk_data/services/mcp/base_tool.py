@@ -19,8 +19,9 @@ from loguru import logger
 from .adapters.base import BaseAdapter
 from .rate_limiter import get_rate_limiter
 
-# Maps source names to (env_var, param_type) for API key injection.
-# param_type: "query" adds as URL param, "header" adds as Bearer token.
+# Maps source names to (env_var, param_type, param_name) for API key injection.
+# param_type: "query" adds as URL param, "header" adds as Bearer token,
+#             "oauth2_client_credentials" fetches a token first.
 _SOURCE_AUTH_MAP: Dict[str, tuple] = {
     "openalex": ("OPENALEX_API_KEY", "query", "api_key"),
     "openfda_faers": ("OPENFDA_API_KEY", "query", "api_key"),
@@ -28,6 +29,10 @@ _SOURCE_AUTH_MAP: Dict[str, tuple] = {
     "orange_book": ("OPENFDA_API_KEY", "query", "api_key"),
     "pubmed": ("NCBI_API_KEY", "query", "api_key"),
 }
+
+# WHO ICD-11 OAuth2 token cache
+_WHO_ICD_TOKEN: Optional[str] = None
+_WHO_ICD_TOKEN_EXPIRY: float = 0
 
 
 class BaseMCPTool:
@@ -77,9 +82,12 @@ class BaseMCPTool:
                     f"Rate limit exceeded for {self.source_name}", 429
                 )
 
-            # 2. Fetch from external API
-            timeout = self._rate_limiter.get_timeout(self.source_name)
-            api_response = await self._fetch_external(input_params, timeout)
+            # 2. Fetch data (local index for drugbank, external API for others)
+            if self.source_name == "drugbank":
+                api_response = self._lookup_drugbank(input_params)
+            else:
+                timeout = self._rate_limiter.get_timeout(self.source_name)
+                api_response = await self._fetch_external(input_params, timeout)
 
             # 3. Normalize via adapter
             normalized = self.adapter.normalize(api_response)
@@ -124,7 +132,7 @@ class BaseMCPTool:
         """Fetch data from the external API. Override for custom request logic.
 
         Automatically injects API keys from environment variables for known
-        sources (see _SOURCE_AUTH_MAP).
+        sources (see _SOURCE_AUTH_MAP).  WHO ICD uses OAuth2 client credentials.
         """
         drug_name = params.get("drug_name", "")
         url = self._build_url(drug_name, params)
@@ -142,10 +150,55 @@ class BaseMCPTool:
                 elif auth_type == "header":
                     headers["Authorization"] = f"Bearer {api_key}"
 
+        # WHO ICD-11 requires OAuth2 client credentials
+        if self.source_name == "who_icd":
+            token = await self._get_who_icd_token()
+            if token:
+                headers["Authorization"] = f"Bearer {token}"
+                headers["Accept"] = "application/json"
+                headers["Accept-Language"] = "en"
+                headers["API-Version"] = "v2"
+
         async with httpx.AsyncClient(timeout=timeout) as client:
             response = await client.get(url, params=query_params or None, headers=headers or None)
             response.raise_for_status()
             return response.json()
+
+    @staticmethod
+    async def _get_who_icd_token() -> Optional[str]:
+        """Fetch WHO ICD-11 OAuth2 token using client credentials grant."""
+        global _WHO_ICD_TOKEN, _WHO_ICD_TOKEN_EXPIRY
+
+        # Return cached token if still valid
+        if _WHO_ICD_TOKEN and time.monotonic() < _WHO_ICD_TOKEN_EXPIRY:
+            return _WHO_ICD_TOKEN
+
+        client_id = os.environ.get("WHO_ICD_CLIENT_ID")
+        client_secret = os.environ.get("WHO_ICD_CLIENT_SECRET")
+        if not client_id or not client_secret:
+            logger.warning("WHO_ICD_CLIENT_ID / WHO_ICD_CLIENT_SECRET not set")
+            return None
+
+        try:
+            async with httpx.AsyncClient(timeout=10) as client:
+                resp = await client.post(
+                    "https://icdaccessmanagement.who.int/connect/token",
+                    data={
+                        "client_id": client_id,
+                        "client_secret": client_secret,
+                        "scope": "icdapi_access",
+                        "grant_type": "client_credentials",
+                    },
+                )
+                resp.raise_for_status()
+                data = resp.json()
+                _WHO_ICD_TOKEN = data["access_token"]
+                # Expire 60s early to avoid edge-case failures
+                _WHO_ICD_TOKEN_EXPIRY = time.monotonic() + data.get("expires_in", 3600) - 60
+                return _WHO_ICD_TOKEN
+        except Exception as e:
+            logger.error(f"Failed to obtain WHO ICD token: {e}")
+            return None
 
     def _build_url(self, drug_name: str, params: dict) -> str:
         """Build the API URL. Delegates to adapter.build_url for source-specific logic."""
@@ -183,6 +236,30 @@ class BaseMCPTool:
         except Exception as e:
             logger.error(f"Failed to insert raw record: {e}")
             return None
+
+    @staticmethod
+    def _lookup_drugbank(params: dict) -> dict:
+        """Look up a drug in the local DrugBank XML index."""
+        from .adapters.drugbank import get_drug_index
+
+        drug_name = params.get("drug_name", "")
+        index = get_drug_index()
+        if index is None:
+            raise RuntimeError("DrugBank XML not available. Set DRUGBANK_XML_PATH env var.")
+
+        # Exact match first, then prefix search
+        key = drug_name.lower().strip()
+        entry = index.get(key)
+        if not entry:
+            # Try partial match
+            matches = [v for k, v in index.items() if key in k]
+            if matches:
+                entry = matches[0]
+
+        if not entry:
+            return {"drugs": [], "query": drug_name, "source": "drugbank_local_xml"}
+
+        return {"drugs": [entry], "query": drug_name, "source": "drugbank_local_xml"}
 
     def _error_response(self, request_id: str, error_code: str, message: str, status_code: int) -> dict:
         """Build a standard error response."""

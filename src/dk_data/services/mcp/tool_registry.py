@@ -159,12 +159,12 @@ TOOL_REGISTRY: Dict[str, ToolDefinition] = {
     ),
     "uspto-patents-search": ToolDefinition(
         name="uspto-patents-search",
-        description="Search USPTO for patent filings",
+        description="Search USPTO PatentsView for patent filings",
         tier="direct_query",
         raw_table="uspto_patents",
         raw_schema="raw",
         adapter_module="dk_data.services.mcp.adapters.uspto_patents",
-        api_base_url="https://developer.uspto.gov/ibd-api/v1/application/grants",
+        api_base_url="https://api.patentsview.org/patents/query",
     ),
     "epo-patents-search": ToolDefinition(
         name="epo-patents-search",
