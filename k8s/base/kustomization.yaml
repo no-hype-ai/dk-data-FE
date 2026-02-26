@@ -49,8 +49,10 @@ resources:
   - backup/pg-backup-daily.yaml
   - backup/pg-backup-weekly.yaml
   - backup/pg-backup-verify.yaml
-  # Database initialization
+  # Database initialization and seeding
   - db-init-job.yaml
+  # DrugBank seed (wave 2): unzips bundled XML and loads into bronze.drugbank_*
+  - job-drugbank-seed.yaml
   # Networking
   - ingress.yaml
   - middleware-rate-limit.yaml

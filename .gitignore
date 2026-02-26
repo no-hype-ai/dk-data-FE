@@ -50,9 +50,13 @@ Thumbs.db
 
 # Data files (large datasets should not be committed)
 # Store in MinIO instead: mc cp --recursive data/raw/ dk-minio/dk-data-fe/raw/
-/data/
+# Use /data/* (not /data/) so git traverses the directory and negations work
+/data/*
 !/data/README.md
 !/data/.gitkeep
+# Exception: DrugBank seed data (Git LFS, ~195MB zip baked into Docker image)
+!/data/drugbank/
+!/data/drugbank/*
 src/dk_data/data/raw/
 *.csv
 *.xlsx
