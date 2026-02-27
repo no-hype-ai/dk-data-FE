@@ -159,8 +159,17 @@ class BaseMCPTool:
                 headers["Accept-Language"] = "en"
                 headers["API-Version"] = "v2"
 
+        # Append query_params to the URL manually to avoid httpx replacing
+        # the existing query string built by the adapter's build_url().
+        # httpx.Request(params=...) overwrites the URL's query string,
+        # which strips adapter-built filters like ?search=openfda.generic_name:"X".
+        if query_params:
+            separator = "&" if "?" in url else "?"
+            extra = "&".join(f"{k}={v}" for k, v in query_params.items())
+            url = f"{url}{separator}{extra}"
+
         async with httpx.AsyncClient(timeout=timeout) as client:
-            response = await client.get(url, params=query_params or None, headers=headers or None)
+            response = await client.get(url, headers=headers or None)
             response.raise_for_status()
             return response.json()
 
