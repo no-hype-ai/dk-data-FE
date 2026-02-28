@@ -7,6 +7,7 @@ Flow: rate_limit → fetch_external_api → adapter.normalize() →
       insert_raw_record() → trigger_transform() → return_results
 """
 
+import json
 import os
 import uuid
 import time
@@ -97,7 +98,12 @@ class BaseMCPTool:
                 request_id, input_params, api_response, normalized
             )
 
-            # 5. Build response
+            # 5. Transform raw → bronze → silver → gold (on-demand)
+            if raw_record_id and self.db_pool:
+                await self._transform_to_bronze(raw_record_id, api_response)
+                await self._refresh_silver_gold(input_params, api_response)
+
+            # 6. Build response
             duration_ms = int((time.monotonic() - start_time) * 1000)
             return {
                 "status": "success",
@@ -239,12 +245,33 @@ class BaseMCPTool:
                     VALUES ($1, $2, NOW(), $3, $4::jsonb, 200, $5::jsonb, FALSE, NOW())
                 """,
                     record_id, request_id, self.api_base_url,
-                    str(input_params), str(api_response),
+                    json.dumps(input_params, default=str),
+                    json.dumps(api_response, default=str),
                 )
             return record_id
         except Exception as e:
             logger.error(f"Failed to insert raw record: {e}")
             return None
+
+    async def _transform_to_bronze(self, raw_record_id: str, api_response: dict) -> None:
+        """Transform raw record to bronze layer."""
+        try:
+            from .bronze_transformer import BronzeTransformer
+            transformer = BronzeTransformer(self.db_pool)
+            await transformer.transform(self.source_name, raw_record_id, api_response)
+        except Exception as e:
+            logger.error(f"Bronze transform failed for {self.source_name}: {e}")
+
+    async def _refresh_silver_gold(self, input_params: dict, api_response: dict) -> None:
+        """Refresh silver and gold layers for the affected molecule."""
+        try:
+            from .silver_gold_refresher import SilverGoldRefresher
+            refresher = SilverGoldRefresher(self.db_pool)
+            drug_name = input_params.get("drug_name", "")
+            if drug_name:
+                await refresher.refresh(drug_name, self.source_name, api_response)
+        except Exception as e:
+            logger.error(f"Silver/Gold refresh failed for {self.source_name}: {e}")
 
     @staticmethod
     def _lookup_drugbank(params: dict) -> dict:
