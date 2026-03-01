@@ -95,6 +95,8 @@ jobs:
           HTTP_CODE=$(curl -s -o /tmp/patents.json -w "%{http_code}" "${{ steps.target.outputs.url }}/patents?limit=1" || echo "000")
           if [ "$HTTP_CODE" = "200" ]; then
             echo "✓ Patents view accessible (200)"
+          elif [ "$HTTP_CODE" = "401" ]; then
+            echo "✓ Patents view exists but requires authentication (401) — expected for non-public endpoints"
           elif [ "$HTTP_CODE" = "404" ]; then
             echo "⚠ Patents view not yet created (404) — expected before first SQLMesh run"
           else
