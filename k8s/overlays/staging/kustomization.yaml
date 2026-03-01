@@ -28,6 +28,8 @@ images:
   # Mol-fetch-daily CronJob — staging schedule (more frequent for testing)
 
   # Ingress — staging hostname and middleware namespace
+# Fix minio-backup-credentials DopplerSecret for staging (base hardcodes config: prd)
+# Fix MINIO_ENDPOINT for staging backup CronJobs (base hardcodes infra namespace)
 patches:
 - patch: |-
     apiVersion: apps/v1
@@ -107,3 +109,27 @@ patches:
   target:
     kind: Ingress
     name: dk-data-api
+- patch: |-
+    apiVersion: secrets.doppler.com/v1alpha1
+    kind: DopplerSecret
+    metadata:
+      name: minio-backup-credentials
+    spec:
+      config: stg
+  target:
+    kind: DopplerSecret
+    name: minio-backup-credentials
+- patch: |-
+    - op: replace
+      path: /spec/jobTemplate/spec/template/spec/containers/0/env/5/value
+      value: "minio.infra-staging.svc.cluster.local:9000"
+  target:
+    kind: CronJob
+    name: pg-backup-daily
+- patch: |-
+    - op: replace
+      path: /spec/jobTemplate/spec/template/spec/containers/0/env/5/value
+      value: "minio.infra-staging.svc.cluster.local:9000"
+  target:
+    kind: CronJob
+    name: pg-backup-weekly
