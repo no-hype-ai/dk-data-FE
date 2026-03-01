@@ -25,6 +25,9 @@ logs/
 
 # Data files (should be in MinIO, not Docker image)
 data/
+# Exception: DrugBank seed data (Git LFS, baked into image for deployment seeding)
+!data/drugbank/
+!data/drugbank/.gitkeep
 *.csv
 *.xlsx
 
@@ -58,3 +61,4 @@ Thumbs.db
 # Build artifacts
 *.tar.gz
 *.zip
+!data/drugbank/*.zip

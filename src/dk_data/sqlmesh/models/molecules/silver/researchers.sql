@@ -1,0 +1,38 @@
+-- SQLMesh Model: Silver Researchers
+-- Normalized researcher profile data from ORCID
+-- Part of: 015-assessment-dashboard-integration
+
+MODEL (
+    name silver.researchers,
+    kind INCREMENTAL_BY_UNIQUE_KEY (
+        unique_key orcid_id
+    ),
+    cron '@weekly',
+    audits (
+        not_null(columns := (orcid_id)),
+        unique_values(columns := (orcid_id))
+    ),
+    grain orcid_id
+);
+
+SELECT
+    gen_random_uuid() AS id,
+    orcid_id,
+    given_name,
+    family_name,
+    -- Extract primary affiliation
+    affiliations->0->>'organization-name' AS affiliation,
+    affiliations->0->>'country' AS country,
+    works_count,
+    -- H-index approximation (will be enriched externally)
+    NULL::INTEGER AS h_index,
+    research_areas AS research_areas,
+    NULL::JSONB AS therapeutic_areas,
+    NULL::INTEGER AS grant_count,
+    source,
+    source_updated_at,
+    NOW() AS created_at,
+    NOW() AS updated_at
+FROM bronze.orcid
+WHERE processed_to_silver = FALSE
+  AND orcid_id IS NOT NULL;

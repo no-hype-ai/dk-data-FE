@@ -71,6 +71,19 @@ SELECT
     -- Enrollment totals
     SUM(ct.enrollment) AS total_enrollment,
 
+    -- Mechanism of action (from interventions data)
+    (
+        SELECT string_agg(DISTINCT intervention->>'interventionType', ', ')
+        FROM silver.clinical_trials ct2,
+             jsonb_array_elements(ct2.interventions) AS intervention
+        WHERE ct2.molecule_id = m.id
+          AND ct2.sponsor = ct.sponsor
+          AND intervention->>'interventionType' IS NOT NULL
+    ) AS mechanism_of_action,
+
+    -- Expected completion (max completion date for company-molecule)
+    MAX(ct.completion_date) AS expected_completion,
+
     NOW() AS computed_at
 
 FROM silver.clinical_trials ct

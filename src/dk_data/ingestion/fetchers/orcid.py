@@ -3,15 +3,24 @@
 Feature: 012-platform-hardening (US3)
 
 Fetches researcher profiles from the ORCID public API.
-Uses the public API (no registration required).
+Authenticates via OAuth2 client credentials grant for reliable access
+(12 req/s authenticated vs unauthenticated which may be blocked).
+
+Register at: https://orcid.org → Developer Tools
+Set ORCID_CLIENT_ID and ORCID_CLIENT_SECRET in Doppler.
 
 Source: https://pub.orcid.org/v3.0/
+Docs: https://info.orcid.org/documentation/api-tutorials/api-tutorial-searching-the-orcid-registry/
 """
 
 import hashlib
 import logging
+import os
 import time
+from datetime import datetime, timedelta
 from typing import Any, Dict, List, Optional
+
+import requests as req_lib
 
 from .base import BaseFetcher
 
@@ -19,16 +28,66 @@ logger = logging.getLogger(__name__)
 
 
 class ORCIDFetcher(BaseFetcher):
-    """Fetcher for ORCID researcher profiles via public API."""
+    """Fetcher for ORCID researcher profiles via public API with OAuth2."""
 
     SOURCE_NAME = "orcid"
     BASE_URL = "https://pub.orcid.org/v3.0"
+    TOKEN_URL = "https://orcid.org/oauth/token"
 
     MAX_RESULTS = 200
 
     def __init__(self, data_dir: Optional[str] = None):
         super().__init__(data_dir)
         self.session.headers.update({"Accept": "application/json"})
+
+        self._client_id = os.environ.get("ORCID_CLIENT_ID")
+        self._client_secret = os.environ.get("ORCID_CLIENT_SECRET")
+        self._access_token: Optional[str] = None
+        self._token_expires_at: Optional[datetime] = None
+
+        if self._client_id and self._client_secret:
+            logger.info("ORCID OAuth2 credentials detected; will use authenticated access")
+            self._authenticate()
+        else:
+            logger.warning(
+                "No ORCID_CLIENT_ID/ORCID_CLIENT_SECRET set. "
+                "Register at https://orcid.org → Developer Tools"
+            )
+
+    def _authenticate(self) -> None:
+        """Obtain OAuth2 access token via client credentials grant."""
+        try:
+            response = req_lib.post(
+                self.TOKEN_URL,
+                data={
+                    "client_id": self._client_id,
+                    "client_secret": self._client_secret,
+                    "grant_type": "client_credentials",
+                    "scope": "/read-public",
+                },
+                headers={"Accept": "application/json"},
+                timeout=30,
+            )
+            response.raise_for_status()
+            data = response.json()
+
+            self._access_token = data["access_token"]
+            expires_in = data.get("expires_in", 631138518)  # ORCID tokens are long-lived
+            self._token_expires_at = datetime.now() + timedelta(seconds=expires_in)
+
+            self.session.headers["Authorization"] = f"Bearer {self._access_token}"
+            logger.info("ORCID OAuth2 token obtained successfully")
+        except Exception as e:
+            logger.error(f"Failed to obtain ORCID OAuth2 token: {e}")
+            self._access_token = None
+
+    def _ensure_token(self) -> None:
+        """Refresh token if expired."""
+        if self._access_token and self._token_expires_at:
+            if datetime.now() < (self._token_expires_at - timedelta(seconds=60)):
+                return
+        if self._client_id and self._client_secret:
+            self._authenticate()
 
     def get_latest_url(self) -> str:
         return f"{self.BASE_URL}/search"
@@ -79,6 +138,7 @@ class ORCIDFetcher(BaseFetcher):
 
     def _search(self, query: str, max_results: int = 200) -> List[str]:
         """Search ORCID and return ORCID iDs."""
+        self._ensure_token()
         url = f"{self.BASE_URL}/search"
         params = {"q": query, "rows": str(min(max_results, 200))}
 
@@ -117,8 +177,8 @@ class ORCIDFetcher(BaseFetcher):
                     "raw_response": data,
                 })
 
-                # Rate limit: public API is 24 req/s but be conservative
-                time.sleep(0.1)
+                # Rate limit: 24 req/s max with OAuth2, 12 recommended
+                time.sleep(0.09)
 
             except Exception as e:
                 logger.warning(f"Failed to fetch ORCID profile {orcid_id}: {e}")

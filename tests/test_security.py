@@ -12,6 +12,7 @@ import os
 import pytest
 import jwt
 import time
+import uuid
 
 # Test configuration
 POSTGREST_URL = os.getenv("POSTGREST_URL", "http://localhost:3030")
@@ -146,6 +147,92 @@ class TestJWTSecretRequirements:
             f"JWT_SECRET must be at least 32 characters for HS256 security. "
             f"Current length: {len(secret)}"
         )
+
+
+@pytest.mark.integration
+class TestCrossServiceAuth:
+    """Test cross-service authentication for assessment dashboard integration."""
+
+    def test_analyst_can_read_mol_gold(self, postgrest_client):
+        """Analyst JWT grants SELECT on mol_gold.molecule_profiles."""
+        token = create_jwt_token("analyst")
+        headers = {"Authorization": f"Bearer {token}", "Accept-Profile": "mol_gold"}
+        response = postgrest_client.get("/molecule_profiles?limit=1", headers=headers)
+        assert response.status_code in (200, 204)
+
+    def test_analyst_can_read_mol_silver(self, postgrest_client):
+        """Analyst JWT grants SELECT on mol_silver tables."""
+        token = create_jwt_token("analyst")
+        headers = {"Authorization": f"Bearer {token}", "Accept-Profile": "mol_silver"}
+        response = postgrest_client.get("/clinical_trials?limit=1", headers=headers)
+        assert response.status_code in (200, 204)
+
+    def test_analyst_can_read_xenon(self, postgrest_client):
+        """Analyst JWT grants SELECT on xenon.assessment_generated."""
+        token = create_jwt_token("analyst")
+        headers = {"Authorization": f"Bearer {token}", "Accept-Profile": "xenon"}
+        response = postgrest_client.get("/assessment_generated?limit=1", headers=headers)
+        assert response.status_code in (200, 204)
+
+    def test_analyst_can_write_xenon(self, postgrest_client):
+        """Analyst JWT allows INSERT into xenon.assessment_generated via PostgREST POST."""
+        token = create_jwt_token("analyst")
+        headers = {
+            "Authorization": f"Bearer {token}",
+            "Content-Type": "application/json",
+            "Prefer": "return=representation",
+            "Content-Profile": "xenon",
+        }
+        test_molecule_id = str(uuid.uuid4())
+        payload = {
+            "molecule_id": test_molecule_id,
+            "section_type": "executive_summary",
+            "content": {"summary": "CI test record"},
+            "version": 1,
+        }
+        response = postgrest_client.post(
+            "/assessment_generated", json=payload, headers=headers
+        )
+        assert response.status_code in (200, 201)
+
+        # Cleanup: DELETE the test record (analyst has no DELETE — best effort)
+        postgrest_client.delete(
+            f"/assessment_generated?molecule_id=eq.{test_molecule_id}",
+            headers={"Authorization": f"Bearer {token}", "Accept-Profile": "xenon"},
+        )
+
+    def test_analyst_can_read_meta(self, postgrest_client):
+        """Analyst JWT grants SELECT on meta tables."""
+        token = create_jwt_token("analyst")
+        headers = {"Authorization": f"Bearer {token}", "Accept-Profile": "meta"}
+        response = postgrest_client.get("/migration_history?limit=1", headers=headers)
+        assert response.status_code in (200, 204, 404)
+
+    def test_web_anon_cannot_access_mol_gold(self, postgrest_client):
+        """web_anon role gets 401/403 on mol_gold.molecule_profiles."""
+        token = create_jwt_token("web_anon")
+        headers = {"Authorization": f"Bearer {token}", "Accept-Profile": "mol_gold"}
+        response = postgrest_client.get("/molecule_profiles?limit=1", headers=headers)
+        assert response.status_code in (401, 403)
+
+    def test_web_anon_cannot_access_xenon(self, postgrest_client):
+        """web_anon role gets 401/403 on xenon.assessment_generated."""
+        token = create_jwt_token("web_anon")
+        headers = {"Authorization": f"Bearer {token}", "Accept-Profile": "xenon"}
+        response = postgrest_client.get("/assessment_generated?limit=1", headers=headers)
+        assert response.status_code in (401, 403)
+
+    def test_web_anon_cannot_access_mcp(self):
+        """web_anon cannot access MCP tools endpoint."""
+        # Tested via test_mcp_tools.py — MCP requires get_current_user dependency
+        pytest.skip("MCP access tested via test_mcp_tools.py — requires get_current_user dependency")
+
+    def test_unauthenticated_cannot_access_mol_gold(self, postgrest_client):
+        """Unauthenticated request (no Authorization header) gets 401/403 on mol_gold."""
+        response = postgrest_client.get(
+            "/molecule_profiles?limit=1", headers={"Accept-Profile": "mol_gold"}
+        )
+        assert response.status_code in (401, 403)
 
 
 # Pytest fixtures

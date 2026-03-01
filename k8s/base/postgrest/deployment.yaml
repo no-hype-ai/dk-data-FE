@@ -51,7 +51,8 @@ spec:
             - configMapRef:
                 name: postgrest-config
           env:
-            # Database connection - must be defined before PGRST_DB_URI for $(VAR) expansion
+            # Database connection for PostgREST — connects as authenticator role (not superuser)
+            # so that JWT role-switching (web_anon, analyst, api_user) works correctly.
             - name: POSTGRES_HOST
               valueFrom:
                 secretKeyRef:
@@ -62,24 +63,20 @@ spec:
                 secretKeyRef:
                   name: dk-data-secrets
                   key: POSTGRES_PORT
-            - name: POSTGRES_USER
+            - name: POSTGREST_PASSWORD
               valueFrom:
                 secretKeyRef:
                   name: dk-data-secrets
-                  key: POSTGRES_USER
-            - name: POSTGRES_PASSWORD
-              valueFrom:
-                secretKeyRef:
-                  name: dk-data-secrets
-                  key: POSTGRES_PASSWORD
+                  key: POSTGREST_PASSWORD
             - name: POSTGRES_DB
               valueFrom:
                 secretKeyRef:
                   name: dk-data-secrets
                   key: POSTGRES_DB
-            # PostgREST configuration - uses variables defined above
+            # PostgREST must connect as authenticator (LOGIN, NOINHERIT) which then
+            # switches to the JWT-specified role per request.
             - name: PGRST_DB_URI
-              value: "postgres://$(POSTGRES_USER):$(POSTGRES_PASSWORD)@$(POSTGRES_HOST):$(POSTGRES_PORT)/$(POSTGRES_DB)"
+              value: "postgres://authenticator:$(POSTGREST_PASSWORD)@$(POSTGRES_HOST):$(POSTGRES_PORT)/$(POSTGRES_DB)"
             - name: PGRST_JWT_SECRET
               valueFrom:
                 secretKeyRef:

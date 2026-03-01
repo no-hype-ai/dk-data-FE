@@ -1,0 +1,49 @@
+# MCP Tool Rate Limits Configuration
+# Feature: 015-assessment-dashboard-integration
+
+defaults:
+  requests_per_second: 5
+  timeout_seconds: 30
+  burst_limit: 10
+
+sources:
+  clinicaltrials:
+    requests_per_second: 3
+    timeout_seconds: 60
+    burst_limit: 5
+  openfda_faers:
+    requests_per_second: 4
+    timeout_seconds: 30
+    burst_limit: 8
+  openfda_labels:
+    requests_per_second: 4
+    timeout_seconds: 30
+    burst_limit: 8
+  chembl:
+    requests_per_second: 5
+    timeout_seconds: 30
+    burst_limit: 10
+  pubmed:
+    requests_per_second: 3
+    timeout_seconds: 45
+    burst_limit: 5
+  openalex:
+    requests_per_second: 10
+    timeout_seconds: 30
+    burst_limit: 20
+  drugbank:
+    requests_per_second: 2
+    timeout_seconds: 30
+    burst_limit: 5
+  pubchem:
+    requests_per_second: 5
+    timeout_seconds: 30
+    burst_limit: 10
+  uniprot:
+    requests_per_second: 5
+    timeout_seconds: 30
+    burst_limit: 10
+  orange_book:
+    requests_per_second: 3
+    timeout_seconds: 30
+    burst_limit: 5

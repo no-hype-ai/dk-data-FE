@@ -4,7 +4,11 @@ Feature: 011-datasource-integration
 Task: Tier 4 CI source — OpenAlex publications
 
 Fetches pharma-relevant academic publications from the OpenAlex API
-using cursor-based pagination. Uses the polite pool via mailto header.
+using cursor-based pagination. Authenticates via OPENALEX_API_KEY
+(required since Feb 2026; the old mailto polite pool is deprecated).
+
+Register for a free API key at: https://openalex.org/settings/api
+Set via OPENALEX_API_KEY environment variable (stored in Doppler).
 
 Source: https://api.openalex.org
 Docs: https://docs.openalex.org
@@ -47,20 +51,28 @@ class OpenAlexCIFetcher(BaseFetcher):
     def __init__(self, data_dir: Optional[str] = None):
         """Initialize the OpenAlex CI fetcher.
 
-        Configures the polite pool mailto header for higher rate limits.
+        Reads OPENALEX_API_KEY from the environment (required since Feb 2026).
 
         Args:
             data_dir: Directory to store downloaded files.
         """
         super().__init__(data_dir)
 
-        # OpenAlex polite pool: provide mailto for faster rate limits
+        self.api_key: Optional[str] = os.environ.get("OPENALEX_API_KEY")
+        # mailto kept for User-Agent identification (best practice)
         mailto = os.environ.get("OPENALEX_MAILTO", "data-platform@datakinetic.com")
         self.session.headers.update({
             "User-Agent": f"DK-Data-Platform/1.0 (mailto:{mailto})",
             "Accept": "application/json",
         })
-        self.mailto = mailto
+
+        if self.api_key:
+            logger.info("OpenAlex API key detected; using authenticated access")
+        else:
+            logger.warning(
+                "No OPENALEX_API_KEY set — OpenAlex requires API keys since Feb 2026. "
+                "Register at https://openalex.org/settings/api"
+            )
 
     def get_latest_url(self) -> str:
         """Get the OpenAlex /works API endpoint URL."""
@@ -108,13 +120,14 @@ class OpenAlexCIFetcher(BaseFetcher):
                     "filter": filter_str,
                     "per_page": PAGE_SIZE,
                     "cursor": cursor,
-                    "mailto": self.mailto,
                     "select": (
                         "id,doi,title,publication_date,cited_by_count,"
                         "concepts,authorships,primary_location,open_access,"
                         "abstract_inverted_index"
                     ),
                 }
+                if self.api_key:
+                    params["api_key"] = self.api_key
 
                 data = self.fetch_json(self.get_latest_url(), params=params)
                 results = data.get("results", [])

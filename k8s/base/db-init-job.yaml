@@ -41,6 +41,11 @@ spec:
                   key: POSTGRES_PASSWORD
             - name: PGUSER
               value: "postgres"
+            - name: POSTGREST_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: dk-data-secrets
+                  key: POSTGREST_PASSWORD
           command:
             - /bin/bash
             - -c
@@ -83,6 +88,8 @@ spec:
               CREATE SCHEMA IF NOT EXISTS bronze;
               CREATE SCHEMA IF NOT EXISTS silver;
               CREATE SCHEMA IF NOT EXISTS gold;
+              -- Xenon application schema (015-assessment-dashboard-integration)
+              CREATE SCHEMA IF NOT EXISTS xenon;
               SQL
 
               # --- Step 4: Create roles ---
@@ -110,9 +117,12 @@ spec:
 
               # --- Step 5: Set authenticator password ---
               echo "Setting authenticator password..."
-              AUTHENTICATOR_PASS=$(psql -d postgres -Atc "SELECT current_setting('app.authenticator_password', true)" 2>/dev/null || echo "")
-              if [ -n "$AUTHENTICATOR_PASS" ]; then
-                psql -d dk_data -c "ALTER ROLE authenticator PASSWORD '$AUTHENTICATOR_PASS'"
+              if [ -n "$POSTGREST_PASSWORD" ]; then
+                psql -d dk_data -c "ALTER ROLE authenticator PASSWORD '$POSTGREST_PASSWORD'"
+                echo "✓ authenticator password set from POSTGREST_PASSWORD secret"
+              else
+                echo "✗ WARNING: POSTGREST_PASSWORD not set — authenticator role will have no password"
+                echo "  PostgREST will fail to connect. Add POSTGREST_PASSWORD to Doppler dk-data-fe project."
               fi
 
               # --- Step 6: Grant role hierarchy ---
@@ -216,6 +226,23 @@ spec:
               ALTER DEFAULT PRIVILEGES IN SCHEMA mol_silver GRANT USAGE, SELECT ON SEQUENCES TO api_user;
               ALTER DEFAULT PRIVILEGES IN SCHEMA mol_gold GRANT USAGE, SELECT ON SEQUENCES TO api_user;
               ALTER DEFAULT PRIVILEGES IN SCHEMA mol_app GRANT USAGE, SELECT ON SEQUENCES TO api_user;
+
+              -- 015-assessment-dashboard-integration: analyst access to new schemas
+              -- Constraint 7: Use existing analyst role (already granted to authenticator)
+              GRANT USAGE ON SCHEMA mol_gold TO analyst;
+              GRANT USAGE ON SCHEMA mol_silver TO analyst;
+              GRANT USAGE ON SCHEMA xenon TO analyst;
+              GRANT USAGE ON SCHEMA meta TO analyst;
+
+              GRANT SELECT ON ALL TABLES IN SCHEMA mol_gold TO analyst;
+              GRANT SELECT ON ALL TABLES IN SCHEMA mol_silver TO analyst;
+              GRANT SELECT ON ALL TABLES IN SCHEMA meta TO analyst;
+              GRANT SELECT, INSERT, UPDATE ON ALL TABLES IN SCHEMA xenon TO analyst;
+
+              ALTER DEFAULT PRIVILEGES IN SCHEMA mol_gold GRANT SELECT ON TABLES TO analyst;
+              ALTER DEFAULT PRIVILEGES IN SCHEMA mol_silver GRANT SELECT ON TABLES TO analyst;
+              ALTER DEFAULT PRIVILEGES IN SCHEMA xenon GRANT SELECT, INSERT, UPDATE ON TABLES TO analyst;
+              ALTER DEFAULT PRIVILEGES IN SCHEMA meta GRANT SELECT ON TABLES TO analyst;
               SQL
 
               # --- Step 9: Create API views ---
@@ -539,11 +566,11 @@ spec:
               fi
 
               echo "Checking schemas..."
-              SCHEMA_COUNT=$(psql -d dk_data -Atc "SELECT COUNT(*) FROM pg_namespace WHERE nspname IN ('raw', 'staging', 'mart', 'scoring', 'meta', 'api', 'mol_raw', 'mol_bronze', 'mol_silver', 'mol_gold', 'mol_app', 'mol_api', 'bronze', 'silver', 'gold')")
-              if [ "$SCHEMA_COUNT" -eq 15 ]; then
-                echo "✓ All 15 schemas created successfully"
+              SCHEMA_COUNT=$(psql -d dk_data -Atc "SELECT COUNT(*) FROM pg_namespace WHERE nspname IN ('raw', 'staging', 'mart', 'scoring', 'meta', 'api', 'mol_raw', 'mol_bronze', 'mol_silver', 'mol_gold', 'mol_app', 'mol_api', 'bronze', 'silver', 'gold', 'xenon')")
+              if [ "$SCHEMA_COUNT" -eq 16 ]; then
+                echo "✓ All 16 schemas created successfully"
               else
-                echo "✗ ERROR: Expected 15 schemas, found $SCHEMA_COUNT"
+                echo "✗ ERROR: Expected 16 schemas, found $SCHEMA_COUNT"
                 exit 1
               fi
 
@@ -569,5 +596,5 @@ spec:
               echo ""
               echo "=== Database initialization complete ==="
               echo "Roles: authenticator, web_anon, analyst, api_user, readonly"
-              echo "Schemas: raw, staging, mart, scoring, meta, api, mol_*, bronze, silver, gold"
+              echo "Schemas: raw, staging, mart, scoring, meta, api, mol_*, bronze, silver, gold, xenon"
               echo "Views: api.health, api.data_catalog, api.targets, api.scoring, api.data_sources, api.molecules, api.resolution_queue, api.competitive_landscape, api.molecule_properties, api.company_pipeline, api.shap_explanations, api.synthesizability_scores, api.fingerprints, api.trial_publication_features, api.patents, api.molecule_targets, api.sider_side_effects, api.bioactivity, api.audit_log, api.migration_status, api.data_classification"

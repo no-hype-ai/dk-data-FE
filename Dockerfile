@@ -26,6 +26,9 @@ COPY --from=builder /install /usr/local
 
 WORKDIR /app
 
+# Bundle DrugBank seed data (tracked in Git LFS, used by seed job and MCP adapter)
+COPY --chown=appuser:appuser data/drugbank/ /app/data/drugbank/
+
 USER appuser
 
 EXPOSE 8000

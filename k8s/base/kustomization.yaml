@@ -38,7 +38,7 @@ resources:
   # Molecule data sources (012-platform-hardening)
   - ingestion/cronjob-fetch-uniprot.yaml
   - ingestion/cronjob-fetch-pdb.yaml
-  - ingestion/cronjob-fetch-orcid.yaml
+  # - ingestion/cronjob-fetch-orcid.yaml  # Disabled — no ORCID membership; OpenAlex covers author data
   # Trademark data sources (014-uspto-euipo-model-datasource)
   - ingestion/cronjob-fetch-uspto-trademarks.yaml
   - ingestion/cronjob-fetch-euipo.yaml
@@ -49,8 +49,10 @@ resources:
   - backup/pg-backup-daily.yaml
   - backup/pg-backup-weekly.yaml
   - backup/pg-backup-verify.yaml
-  # Database initialization
+  # Database initialization and seeding
   - db-init-job.yaml
+  # DrugBank seed (wave 2): unzips bundled XML and loads into bronze.drugbank_*
+  - job-drugbank-seed.yaml
   # Networking
   - ingress.yaml
   - middleware-rate-limit.yaml

@@ -90,3 +90,16 @@ FROM uniprot_targets;
 -- NOTE: Bronze processed_to_silver flag updates are handled outside SQLMesh.
 -- Silver models use INCREMENTAL_BY_UNIQUE_KEY with INCREMENTAL_BY_UNIQUE_KEY (default: update all columns on match),
 -- so reprocessing is idempotent.
+
+-- =========================================================================
+-- Feature 015: PDB structural data enrichment
+-- PDB structures are joined to existing UniProt targets via uniprot_id.
+-- This enrichment adds experimental structure data (resolution, method)
+-- to target records that have PDB cross-references.
+--
+-- Integration note: PDB data enriches existing target records rather than
+-- adding new rows. The bronze.pdb_structures model provides pdb_id,
+-- resolution, method, ligand_id, ligand_name mapped via uniprot_id.
+-- A future iteration should LEFT JOIN pdb data into the main target query
+-- to populate pdb_structure_count with actual experimental counts.
+-- =========================================================================

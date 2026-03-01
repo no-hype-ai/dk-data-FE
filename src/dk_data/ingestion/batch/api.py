@@ -106,6 +106,14 @@ try:
 except ImportError as e:
     logger.warning(f"Molecule alerts router not available: {e}")
 
+# MCP data retrieval tools router (015-assessment-dashboard-integration T064)
+try:
+    from dk_data.api.routes.mcp import router as mcp_router
+    app.include_router(mcp_router, prefix="/api/v1", tags=["mcp"])
+    logger.info("Loaded MCP tools router")
+except ImportError as e:
+    logger.warning(f"MCP tools router not available: {e}")
+
 # CORS middleware
 app.add_middleware(
     CORSMiddleware,
@@ -126,6 +134,32 @@ try:
     logger.info("Audit logging middleware registered")
 except ImportError as e:
     logger.warning(f"Audit logging middleware not available: {e}")
+
+
+# ─── Audit log archival (weekly: move hot→cold after 365 days) ────────────────
+# Per FDA 21 CFR Part 11 & ICH E6(R3): audit data is NEVER deleted within the
+# regulatory retention period (min 2 years, up to 7-25 years).
+# This task only moves old rows from the fast hot table to the compressed archive.
+@app.on_event("startup")
+async def _schedule_audit_archive():
+    """Archive old audit log entries weekly via background loop."""
+    import asyncio
+    from dk_data.api.dependencies import get_db_pool
+
+    async def _archive_loop():
+        await asyncio.sleep(60)  # wait for db pool init
+        while True:
+            try:
+                pool = await get_db_pool()
+                async with pool.acquire() as conn:
+                    archived = await conn.fetchval("SELECT meta.archive_old_audit_logs(365)")
+                    if archived and archived > 0:
+                        logger.info(f"Audit log archival: moved {archived} rows older than 365 days to archive")
+            except Exception as e:
+                logger.debug(f"Audit log archival skipped: {e}")
+            await asyncio.sleep(604800)  # 7 days
+
+    asyncio.create_task(_archive_loop())
 
 
 # Pydantic models

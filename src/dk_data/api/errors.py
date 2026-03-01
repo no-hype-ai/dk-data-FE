@@ -50,7 +50,9 @@ class ErrorCode(str, Enum):
     GRAPH_BUILD_ERROR = "GRAPH_BUILD_ERROR"
     EXPORT_ERROR = "EXPORT_ERROR"
     TIMEOUT_ERROR = "TIMEOUT_ERROR"
+    TIMEOUT = "TIMEOUT"
     SERVICE_UNAVAILABLE = "SERVICE_UNAVAILABLE"
+    EXTERNAL_API_UNAVAILABLE = "EXTERNAL_API_UNAVAILABLE"
 
 
 class ErrorDetail(BaseModel):
@@ -271,6 +273,60 @@ class RateLimitError(GroundTruthError):
             source=source,
             details=details,
             suggestions=[f"Wait {retry_after} seconds before retrying" if retry_after else "Wait before retrying"],
+        )
+
+
+class MCPTimeoutError(GroundTruthError):
+    """Raised when an MCP tool request times out."""
+
+    def __init__(
+        self,
+        source: DataSource,
+        timeout_seconds: int,
+        operation: Optional[str] = None,
+    ):
+        details = {"timeout_seconds": timeout_seconds}
+        if operation:
+            details["operation"] = operation
+
+        super().__init__(
+            code=ErrorCode.TIMEOUT,
+            message=f"Request to {source.value} timed out after {timeout_seconds}s",
+            status_code=408,
+            source=source,
+            details=details,
+            suggestions=[
+                f"The {source.value} service may be slow — try again shortly",
+                "Consider reducing the scope of the query",
+            ],
+        )
+
+
+class ExternalAPIUnavailableError(GroundTruthError):
+    """Raised when an upstream external API is unreachable or returns 5xx."""
+
+    def __init__(
+        self,
+        source: DataSource,
+        upstream_status: Optional[int] = None,
+        original_error: Optional[str] = None,
+    ):
+        details: Dict[str, Any] = {}
+        if upstream_status:
+            details["upstream_status"] = upstream_status
+        if original_error:
+            details["original_error"] = original_error
+
+        super().__init__(
+            code=ErrorCode.EXTERNAL_API_UNAVAILABLE,
+            message=f"External API {source.value} is unavailable",
+            status_code=502,
+            source=source,
+            details=details,
+            suggestions=[
+                f"The {source.value} service may be down — try again later",
+                "Check the data source status page for outages",
+            ],
         )
 
 
