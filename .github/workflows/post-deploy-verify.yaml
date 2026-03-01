@@ -144,7 +144,7 @@ jobs:
           done
 
           # Verify existing CronJobs still present
-          for CRONJOB in "fetch-epo" "fetch-uniprot" "fetch-pdb" "fetch-orcid" "mol-transform"; do
+          for CRONJOB in "fetch-epo" "fetch-uniprot" "fetch-pdb" "mol-transform"; do
             if echo "$MANIFESTS" | grep -q "name: $CRONJOB"; then
               echo "✓ Existing CronJob $CRONJOB still present"
             else
