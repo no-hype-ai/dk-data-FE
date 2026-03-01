@@ -107,3 +107,29 @@ patches:
   target:
     kind: Ingress
     name: dk-data-api
+# Fix minio-backup-credentials DopplerSecret for staging (base hardcodes config: prd)
+- patch: |-
+    apiVersion: secrets.doppler.com/v1alpha1
+    kind: DopplerSecret
+    metadata:
+      name: minio-backup-credentials
+    spec:
+      config: stg
+  target:
+    kind: DopplerSecret
+    name: minio-backup-credentials
+# Fix MINIO_ENDPOINT for staging backup CronJobs (base hardcodes infra namespace)
+- patch: |-
+    - op: replace
+      path: /spec/jobTemplate/spec/template/spec/containers/0/env/5/value
+      value: "minio.infra-staging.svc.cluster.local:9000"
+  target:
+    kind: CronJob
+    name: pg-backup-daily
+- patch: |-
+    - op: replace
+      path: /spec/jobTemplate/spec/template/spec/containers/0/env/5/value
+      value: "minio.infra-staging.svc.cluster.local:9000"
+  target:
+    kind: CronJob
+    name: pg-backup-weekly
