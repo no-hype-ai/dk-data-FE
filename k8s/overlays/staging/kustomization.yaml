@@ -13,7 +13,7 @@ resources:
 images:
 - name: ghcr.io/data-kinetic/dk-data-fe/job-trigger
   newName: ghcr.io/data-kinetic/dk-data-fe/job-trigger
-  newTag: main-5f07f47
+  newTag: main-841a560
 
   # PostgREST — 2 replicas for staging
 
@@ -28,6 +28,8 @@ images:
   # Mol-fetch-daily CronJob — staging schedule (more frequent for testing)
 
   # Ingress — staging hostname and middleware namespace
+# Fix minio-backup-credentials DopplerSecret for staging (base hardcodes config: prd)
+# Fix MINIO_ENDPOINT for staging backup CronJobs (base hardcodes infra namespace)
 patches:
 - patch: |-
     apiVersion: apps/v1
@@ -107,7 +109,6 @@ patches:
   target:
     kind: Ingress
     name: dk-data-api
-# Fix minio-backup-credentials DopplerSecret for staging (base hardcodes config: prd)
 - patch: |-
     apiVersion: secrets.doppler.com/v1alpha1
     kind: DopplerSecret
@@ -118,7 +119,6 @@ patches:
   target:
     kind: DopplerSecret
     name: minio-backup-credentials
-# Fix MINIO_ENDPOINT for staging backup CronJobs (base hardcodes infra namespace)
 - patch: |-
     - op: replace
       path: /spec/jobTemplate/spec/template/spec/containers/0/env/5/value
