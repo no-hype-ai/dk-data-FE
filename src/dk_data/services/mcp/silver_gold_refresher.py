@@ -7,7 +7,7 @@ silver tables, and gold aggregates are rebuilt from silver.
 
 import json
 import uuid
-from datetime import datetime, timezone, date
+from datetime import datetime, date
 from typing import Optional
 
 from loguru import logger
