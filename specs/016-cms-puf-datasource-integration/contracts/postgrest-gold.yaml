@@ -1,0 +1,263 @@
+# PostgREST Gold Schema Contracts: CMS PUF Data Source Integration
+# Defines the REST API contracts for gold-layer tables exposed via PostgREST
+# Schema: gold | Auth: analyst JWT required | Base: /gold/
+
+# ============================================================================
+# PostgREST Configuration
+# ============================================================================
+
+config:
+  schema: gold
+  added_to: PGRST_DB_SCHEMAS
+  full_schema_list: "api,mol_api,mol_gold,mol_silver,xenon,meta,gold"
+  access_control:
+    analyst: "USAGE + SELECT on all tables"
+    web_anon: "NO ACCESS"
+
+# ============================================================================
+# gold.provider_profile
+# ============================================================================
+
+provider_profile:
+  description: "Unified provider profile combining NPPES, Part D, Physician PUF, Care Compare, Open Payments"
+  primary_key: npi
+  downstream_product: HCP Compass
+
+  endpoints:
+    - method: GET
+      path: /gold/provider_profile
+      description: "List/filter provider profiles"
+      auth: "Bearer analyst JWT"
+      query_params:
+        - name: npi
+          type: string
+          operators: [eq, in]
+          example: "npi=eq.1234567890"
+        - name: entity_type
+          type: string
+          operators: [eq]
+          example: "entity_type=eq.individual"
+        - name: state
+          type: string
+          operators: [eq]
+          json_path: "address->>'state'"
+        - name: specialty
+          type: string
+          operators: [eq, like, ilike]
+          example: "specialty=ilike.*cardiology*"
+        - name: select
+          type: string
+          description: "Column selection"
+          example: "select=npi,provider_name,specialty,mips_score"
+        - name: order
+          type: string
+          example: "order=mips_score.desc"
+        - name: limit
+          type: integer
+          default: 100
+          max: 1000
+      responses:
+        200:
+          description: "Array of provider profiles"
+          content_type: application/json
+        401:
+          description: "Missing or invalid JWT"
+        403:
+          description: "Insufficient role (web_anon)"
+
+    - method: GET
+      path: /gold/provider_profile?npi=eq.{npi}
+      description: "Single provider profile by NPI"
+      auth: "Bearer analyst JWT"
+      responses:
+        200:
+          description: "Single provider profile"
+          headers:
+            Content-Range: "0-0/1"
+        406:
+          description: "No matching NPI"
+
+  curl_examples:
+    - description: "Get provider by NPI"
+      command: |
+        curl -H "Authorization: Bearer $DK_DATA_API_KEY" \
+          "https://data.staging.behaviorlabs.ai/gold/provider_profile?npi=eq.1234567890"
+    - description: "Search cardiologists in Texas"
+      command: |
+        curl -H "Authorization: Bearer $DK_DATA_API_KEY" \
+          "https://data.staging.behaviorlabs.ai/gold/provider_profile?specialty=ilike.*cardiology*&select=npi,provider_name,specialty,mips_score&limit=50"
+
+# ============================================================================
+# gold.facility_profile
+# ============================================================================
+
+facility_profile:
+  description: "Unified facility profile combining POS, Hospital Quality, Inpatient PUF, PECOS/CHOW, ANCC Magnet"
+  primary_key: ccn
+  downstream_product: HCO Navigator
+
+  endpoints:
+    - method: GET
+      path: /gold/facility_profile
+      description: "List/filter facility profiles"
+      auth: "Bearer analyst JWT"
+      query_params:
+        - name: ccn
+          type: string
+          operators: [eq, in]
+          example: "ccn=eq.050454"
+        - name: facility_type
+          type: string
+          operators: [eq]
+        - name: overall_star_rating
+          type: integer
+          operators: [eq, gte, lte]
+          example: "overall_star_rating=gte.4"
+        - name: magnet_status
+          type: boolean
+          operators: [is]
+          example: "magnet_status=is.true"
+        - name: bed_count
+          type: integer
+          operators: [gte, lte]
+        - name: limit
+          type: integer
+          default: 100
+          max: 1000
+
+  curl_examples:
+    - description: "Get facility by CCN"
+      command: |
+        curl -H "Authorization: Bearer $DK_DATA_API_KEY" \
+          "https://data.staging.behaviorlabs.ai/gold/facility_profile?ccn=eq.050454"
+    - description: "5-star Magnet hospitals"
+      command: |
+        curl -H "Authorization: Bearer $DK_DATA_API_KEY" \
+          "https://data.staging.behaviorlabs.ai/gold/facility_profile?overall_star_rating=eq.5&magnet_status=is.true&select=ccn,facility_name,bed_count"
+
+# ============================================================================
+# gold.drug_market_profile
+# ============================================================================
+
+drug_market_profile:
+  description: "Drug market profile combining Part D/B Spending, NDC, Formulary, USP/RBCS classification"
+  primary_key: [drug_name, generic_name]
+  downstream_product: Lumina
+
+  endpoints:
+    - method: GET
+      path: /gold/drug_market_profile
+      description: "List/filter drug market profiles"
+      auth: "Bearer analyst JWT"
+      query_params:
+        - name: drug_name
+          type: string
+          operators: [eq, ilike]
+          example: "drug_name=eq.atorvastatin"
+        - name: generic_name
+          type: string
+          operators: [eq, ilike]
+        - name: usp_class
+          type: string
+          operators: [eq, ilike]
+        - name: part_d_total_spending
+          type: number
+          operators: [gte, lte]
+        - name: limit
+          type: integer
+          default: 100
+          max: 1000
+
+  curl_examples:
+    - description: "Get drug market profile"
+      command: |
+        curl -H "Authorization: Bearer $DK_DATA_API_KEY" \
+          "https://data.staging.behaviorlabs.ai/gold/drug_market_profile?drug_name=eq.atorvastatin"
+    - description: "Top drugs by Medicare spending"
+      command: |
+        curl -H "Authorization: Bearer $DK_DATA_API_KEY" \
+          "https://data.staging.behaviorlabs.ai/gold/drug_market_profile?order=part_d_total_spending.desc&limit=20"
+
+# ============================================================================
+# gold.market_analytics
+# ============================================================================
+
+market_analytics:
+  description: "Geographic market analytics with population, spending, conditions, provider density"
+  primary_key: [geo_level, geo_code, year]
+  downstream_product: SageAI
+
+  endpoints:
+    - method: GET
+      path: /gold/market_analytics
+      description: "List/filter market analytics by geography"
+      auth: "Bearer analyst JWT"
+      query_params:
+        - name: geo_level
+          type: string
+          operators: [eq]
+          example: "geo_level=eq.state"
+        - name: geo_code
+          type: string
+          operators: [eq]
+          example: "geo_code=eq.TX"
+        - name: year
+          type: integer
+          operators: [eq, gte, lte]
+          example: "year=eq.2024"
+        - name: limit
+          type: integer
+          default: 100
+          max: 1000
+
+  curl_examples:
+    - description: "State-level analytics for Texas"
+      command: |
+        curl -H "Authorization: Bearer $DK_DATA_API_KEY" \
+          "https://data.staging.behaviorlabs.ai/gold/market_analytics?geo_code=eq.TX&year=eq.2024"
+    - description: "All state-level data for 2024"
+      command: |
+        curl -H "Authorization: Bearer $DK_DATA_API_KEY" \
+          "https://data.staging.behaviorlabs.ai/gold/market_analytics?geo_level=eq.state&year=eq.2024&order=geo_name"
+
+# ============================================================================
+# gold.provider_network
+# ============================================================================
+
+provider_network:
+  description: "Provider-to-provider relationships (affiliations + inferred referrals)"
+  primary_key: [source_npi, dest_npi, relationship_type]
+  downstream_product: "All products"
+
+  endpoints:
+    - method: GET
+      path: /gold/provider_network
+      description: "Query provider relationships"
+      auth: "Bearer analyst JWT"
+      query_params:
+        - name: source_npi
+          type: string
+          operators: [eq]
+          example: "source_npi=eq.1234567890"
+        - name: dest_npi
+          type: string
+          operators: [eq]
+        - name: relationship_type
+          type: string
+          operators: [eq]
+          example: "relationship_type=eq.referral"
+        - name: confidence_score
+          type: number
+          operators: [gte, lte]
+          example: "confidence_score=gte.0.50"
+          description: "Filter by confidence threshold (recommended: >=0.50)"
+        - name: limit
+          type: integer
+          default: 100
+          max: 1000
+
+  curl_examples:
+    - description: "High-confidence referral network for provider"
+      command: |
+        curl -H "Authorization: Bearer $DK_DATA_API_KEY" \
+          "https://data.staging.behaviorlabs.ai/gold/provider_network?source_npi=eq.1234567890&confidence_score=gte.0.50"

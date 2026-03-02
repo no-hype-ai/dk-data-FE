@@ -1,0 +1,765 @@
+# MCP Tool Contracts: CMS PUF Data Source Integration
+# OpenAPI-style tool definitions for ~30 new MCP tools
+# Follows existing ToolDefinition pattern from tool_registry.py
+
+# ============================================================================
+# Tier 4: Provider & Claims
+# ============================================================================
+
+cms-nppes-search:
+  name: cms-nppes-search
+  description: "Search the CMS NPPES National Provider Registry by NPI, name, or state"
+  tier: provider_claims
+  raw_table: cms_nppes
+  raw_schema: raw
+  adapter_module: dk_data.services.mcp.adapters.nppes
+  api_base_url: "https://npiregistry.cms.hhs.gov/api/"
+  input_schema:
+    type: object
+    properties:
+      npi:
+        type: string
+        description: "10-digit National Provider Identifier"
+        pattern: "^\\d{10}$"
+      first_name:
+        type: string
+        description: "Provider first name (prefix match)"
+      last_name:
+        type: string
+        description: "Provider last name (prefix match)"
+      state:
+        type: string
+        description: "2-letter state code"
+        pattern: "^[A-Z]{2}$"
+      entity_type:
+        type: string
+        enum: ["individual", "organization"]
+    anyOf:
+      - required: [npi]
+      - required: [last_name]
+  output_schema:
+    type: object
+    properties:
+      results:
+        type: array
+        items:
+          type: object
+          properties:
+            npi: { type: string }
+            entity_type: { type: string }
+            provider_name: { type: string }
+            credential: { type: string }
+            specialty: { type: string }
+            address: { type: object }
+            phone: { type: string }
+            enumeration_date: { type: string, format: date }
+            deactivation_date: { type: string, format: date, nullable: true }
+      result_count: { type: integer }
+  rate_limit: "10 req/s (no auth)"
+  auth: none
+
+cms-partd-prescribers-search:
+  name: cms-partd-prescribers-search
+  description: "Query CMS Part D Prescriber PUF by NPI or drug name"
+  tier: provider_claims
+  raw_table: cms_part_d_prescribers
+  raw_schema: raw
+  adapter_module: dk_data.services.mcp.adapters.cms_partd_prescribers
+  api_base_url: "https://data.cms.gov/data-api/v1/dataset/{id}/data"
+  input_schema:
+    type: object
+    properties:
+      npi:
+        type: string
+        pattern: "^\\d{10}$"
+      drug_name:
+        type: string
+        description: "Generic drug name"
+      year:
+        type: integer
+        minimum: 2013
+        maximum: 2024
+    anyOf:
+      - required: [npi]
+      - required: [drug_name]
+  output_schema:
+    type: object
+    properties:
+      results:
+        type: array
+        items:
+          type: object
+          properties:
+            npi: { type: string }
+            drug_name: { type: string }
+            generic_name: { type: string }
+            total_claims: { type: integer }
+            total_drug_cost: { type: number }
+            beneficiary_count: { type: integer }
+            total_30day_fills: { type: number }
+            year: { type: integer }
+            suppressed: { type: boolean }
+  rate_limit: "5 req/s (Socrata)"
+  auth: none
+
+cms-partd-prescribers-summary-search:
+  name: cms-partd-prescribers-summary-search
+  description: "Query CMS Part D Provider Summary PUF by NPI"
+  tier: provider_claims
+  raw_table: cms_part_d_prescribers_summary
+  raw_schema: raw
+  adapter_module: dk_data.services.mcp.adapters.cms_partd_prescribers_summary
+  api_base_url: "https://data.cms.gov/data-api/v1/dataset/{id}/data"
+  input_schema:
+    type: object
+    required: [npi]
+    properties:
+      npi:
+        type: string
+        pattern: "^\\d{10}$"
+      year:
+        type: integer
+  rate_limit: "5 req/s"
+  auth: none
+
+cms-physician-puf-search:
+  name: cms-physician-puf-search
+  description: "Query CMS Physician/Supplier PUF by NPI or HCPCS code"
+  tier: provider_claims
+  raw_table: cms_physician_puf
+  raw_schema: raw
+  adapter_module: dk_data.services.mcp.adapters.cms_physician_puf
+  api_base_url: "https://data.cms.gov/data-api/v1/dataset/{id}/data"
+  input_schema:
+    type: object
+    properties:
+      npi:
+        type: string
+        pattern: "^\\d{10}$"
+      hcpcs_code:
+        type: string
+      year:
+        type: integer
+    anyOf:
+      - required: [npi]
+      - required: [hcpcs_code]
+  rate_limit: "5 req/s"
+  auth: none
+
+cms-physician-puf-summary-search:
+  name: cms-physician-puf-summary-search
+  description: "Query CMS Physician/Supplier Provider Summary PUF by NPI"
+  tier: provider_claims
+  raw_table: cms_physician_puf_summary
+  raw_schema: raw
+  adapter_module: dk_data.services.mcp.adapters.cms_physician_puf_summary
+  api_base_url: "https://data.cms.gov/data-api/v1/dataset/{id}/data"
+  input_schema:
+    type: object
+    required: [npi]
+    properties:
+      npi:
+        type: string
+        pattern: "^\\d{10}$"
+      year:
+        type: integer
+  rate_limit: "5 req/s"
+  auth: none
+
+cms-open-payments-search:
+  name: cms-open-payments-search
+  description: "Query CMS Open Payments by physician NPI or company name"
+  tier: provider_claims
+  raw_table: cms_open_payments
+  raw_schema: raw
+  adapter_module: dk_data.services.mcp.adapters.cms_open_payments
+  api_base_url: "https://openpaymentsdata.cms.gov/api/1/datastore/query/{id}"
+  input_schema:
+    type: object
+    properties:
+      npi:
+        type: string
+        pattern: "^\\d{10}$"
+      company_name:
+        type: string
+      year:
+        type: integer
+    anyOf:
+      - required: [npi]
+      - required: [company_name]
+  output_schema:
+    type: object
+    properties:
+      results:
+        type: array
+        items:
+          type: object
+          properties:
+            record_id: { type: string }
+            npi: { type: string }
+            payment_type: { type: string, enum: [general, research, ownership] }
+            payer_name: { type: string }
+            amount: { type: number }
+            nature_of_payment: { type: string }
+            date_of_payment: { type: string, format: date }
+            dispute_status: { type: string, nullable: true }
+      aggregate:
+        type: object
+        properties:
+          total_amount: { type: number }
+          total_records: { type: integer }
+          by_type: { type: object }
+  rate_limit: "5 req/s"
+  auth: none
+
+cms-care-compare-search:
+  name: cms-care-compare-search
+  description: "Query CMS Care Compare provider-level quality data"
+  tier: provider_claims
+  raw_table: cms_care_compare
+  raw_schema: raw
+  adapter_module: dk_data.services.mcp.adapters.cms_care_compare
+  api_base_url: "https://data.cms.gov/provider-data/api/1/datastore/query/{id}"
+  input_schema:
+    type: object
+    properties:
+      npi:
+        type: string
+        pattern: "^\\d{10}$"
+      provider_name:
+        type: string
+    anyOf:
+      - required: [npi]
+      - required: [provider_name]
+  rate_limit: "5 req/s"
+  auth: none
+
+# ============================================================================
+# Tier 5: Facility & Hospital
+# ============================================================================
+
+cms-provider-of-services-search:
+  name: cms-provider-of-services-search
+  description: "Query CMS Provider of Services (POS) facility file by CCN"
+  tier: facility_hospital
+  raw_table: cms_provider_of_services
+  raw_schema: raw
+  adapter_module: dk_data.services.mcp.adapters.cms_provider_of_services
+  api_base_url: "https://data.cms.gov/data-api/v1/dataset/{id}/data"
+  input_schema:
+    type: object
+    required: [ccn]
+    properties:
+      ccn:
+        type: string
+        description: "6-character CMS Certification Number"
+        pattern: "^[A-Z0-9]{6}$"
+  rate_limit: "5 req/s"
+  auth: none
+
+cms-pecos-search:
+  name: cms-pecos-search
+  description: "Query CMS PECOS enrollment data for provider-organization affiliations"
+  tier: facility_hospital
+  raw_table: cms_pecos
+  raw_schema: raw
+  adapter_module: dk_data.services.mcp.adapters.cms_pecos
+  api_base_url: "https://data.cms.gov/data-api/v1/dataset/{id}/data"
+  input_schema:
+    type: object
+    properties:
+      npi:
+        type: string
+        pattern: "^\\d{10}$"
+      enrollment_id:
+        type: string
+    anyOf:
+      - required: [npi]
+      - required: [enrollment_id]
+  rate_limit: "5 req/s"
+  auth: none
+
+cms-chow-search:
+  name: cms-chow-search
+  description: "Query CMS Change of Ownership (CHOW) data"
+  tier: facility_hospital
+  raw_table: cms_chow
+  raw_schema: raw
+  adapter_module: dk_data.services.mcp.adapters.cms_chow
+  api_base_url: "https://data.cms.gov/data-api/v1/dataset/{id}/data"
+  input_schema:
+    type: object
+    properties:
+      old_ccn:
+        type: string
+      new_ccn:
+        type: string
+  rate_limit: "5 req/s"
+  auth: none
+
+cms-facility-affiliation-search:
+  name: cms-facility-affiliation-search
+  description: "Query CMS Facility Affiliation data"
+  tier: facility_hospital
+  raw_table: cms_facility_affiliation
+  raw_schema: raw
+  adapter_module: dk_data.services.mcp.adapters.cms_facility_affiliation
+  api_base_url: "https://data.cms.gov/data-api/v1/dataset/{id}/data"
+  input_schema:
+    type: object
+    properties:
+      facility_ccn:
+        type: string
+      org_npi:
+        type: string
+        pattern: "^\\d{10}$"
+    anyOf:
+      - required: [facility_ccn]
+      - required: [org_npi]
+  rate_limit: "5 req/s"
+  auth: none
+
+cms-inpatient-puf-detail-search:
+  name: cms-inpatient-puf-detail-search
+  description: "Query CMS Inpatient PUF at provider+DRG level"
+  tier: facility_hospital
+  raw_table: cms_inpatient_puf_detail
+  raw_schema: raw
+  adapter_module: dk_data.services.mcp.adapters.cms_inpatient_puf_detail
+  api_base_url: "https://data.cms.gov/data-api/v1/dataset/{id}/data"
+  input_schema:
+    type: object
+    properties:
+      ccn:
+        type: string
+        pattern: "^[A-Z0-9]{6}$"
+      drg_code:
+        type: string
+      year:
+        type: integer
+    anyOf:
+      - required: [ccn]
+      - required: [drg_code]
+  rate_limit: "5 req/s"
+  auth: none
+
+cms-outpatient-puf-search:
+  name: cms-outpatient-puf-search
+  description: "Query CMS Outpatient PUF at provider+APC level"
+  tier: facility_hospital
+  raw_table: cms_outpatient_puf
+  raw_schema: raw
+  adapter_module: dk_data.services.mcp.adapters.cms_outpatient_puf
+  api_base_url: "https://data.cms.gov/data-api/v1/dataset/{id}/data"
+  input_schema:
+    type: object
+    properties:
+      ccn:
+        type: string
+        pattern: "^[A-Z0-9]{6}$"
+      apc_code:
+        type: string
+      year:
+        type: integer
+    anyOf:
+      - required: [ccn]
+      - required: [apc_code]
+  rate_limit: "5 req/s"
+  auth: none
+
+cms-hospital-quality-search:
+  name: cms-hospital-quality-search
+  description: "Query CMS Hospital Quality Star Ratings"
+  tier: facility_hospital
+  raw_table: cms_hospital_quality
+  raw_schema: raw
+  adapter_module: dk_data.services.mcp.adapters.cms_hospital_quality
+  api_base_url: "https://data.cms.gov/provider-data/api/1/datastore/query/{id}"
+  input_schema:
+    type: object
+    required: [facility_id]
+    properties:
+      facility_id:
+        type: string
+        description: "CMS Facility ID (CCN)"
+  rate_limit: "5 req/s"
+  auth: none
+
+cms-drg-weights-search:
+  name: cms-drg-weights-search
+  description: "Query CMS DRG relative weight table"
+  tier: facility_hospital
+  raw_table: cms_drg_weights
+  raw_schema: raw
+  adapter_module: dk_data.services.mcp.adapters.cms_drg_weights
+  api_base_url: "https://data.cms.gov/data-api/v1/dataset/{id}/data"
+  input_schema:
+    type: object
+    required: [ms_drg]
+    properties:
+      ms_drg:
+        type: string
+        description: "MS-DRG code"
+  rate_limit: "5 req/s"
+  auth: none
+
+ancc-magnet-search:
+  name: ancc-magnet-search
+  description: "Query ANCC Magnet-designated hospital list"
+  tier: facility_hospital
+  raw_table: ancc_magnet
+  raw_schema: raw
+  adapter_module: dk_data.services.mcp.adapters.ancc_magnet
+  api_base_url: "https://www.nursingworld.org/organizational-programs/magnet/find-a-magnet-organization/"
+  input_schema:
+    type: object
+    properties:
+      facility_name:
+        type: string
+      state:
+        type: string
+        pattern: "^[A-Z]{2}$"
+  rate_limit: "1 req/s (scrape)"
+  auth: none
+
+cms-hcpcs-search:
+  name: cms-hcpcs-search
+  description: "Query CMS HCPCS Level II code descriptions"
+  tier: facility_hospital
+  raw_table: cms_hcpcs_level2
+  raw_schema: raw
+  adapter_module: dk_data.services.mcp.adapters.cms_hcpcs
+  api_base_url: "https://data.cms.gov/data-api/v1/dataset/{id}/data"
+  input_schema:
+    type: object
+    required: [hcpcs_code]
+    properties:
+      hcpcs_code:
+        type: string
+  rate_limit: "5 req/s"
+  auth: none
+
+# ============================================================================
+# Tier 6: Drug, Market & Population
+# ============================================================================
+
+fda-ndc-search:
+  name: fda-ndc-search
+  description: "Query FDA National Drug Code Directory via openFDA API"
+  tier: drug_market_population
+  raw_table: fda_ndc
+  raw_schema: raw
+  adapter_module: dk_data.services.mcp.adapters.fda_ndc
+  api_base_url: "https://api.fda.gov/drug/ndc.json"
+  input_schema:
+    type: object
+    properties:
+      generic_name:
+        type: string
+      brand_name:
+        type: string
+      ndc:
+        type: string
+    anyOf:
+      - required: [generic_name]
+      - required: [brand_name]
+      - required: [ndc]
+  rate_limit: "40 req/min (no key), 240 req/min (with OPENFDA_API_KEY)"
+  auth: "OPENFDA_API_KEY (optional, query param 'api_key')"
+
+cms-partd-spending-search:
+  name: cms-partd-spending-search
+  description: "Query CMS Part D Spending by Drug"
+  tier: drug_market_population
+  raw_table: cms_part_d_spending
+  raw_schema: raw
+  adapter_module: dk_data.services.mcp.adapters.cms_partd_spending
+  api_base_url: "https://data.cms.gov/data-api/v1/dataset/{id}/data"
+  input_schema:
+    type: object
+    properties:
+      drug_name:
+        type: string
+      year:
+        type: integer
+    required: [drug_name]
+  rate_limit: "5 req/s"
+  auth: none
+
+cms-partb-spending-search:
+  name: cms-partb-spending-search
+  description: "Query CMS Part B Spending by Drug"
+  tier: drug_market_population
+  raw_table: cms_part_b_spending
+  raw_schema: raw
+  adapter_module: dk_data.services.mcp.adapters.cms_partb_spending
+  api_base_url: "https://data.cms.gov/data-api/v1/dataset/{id}/data"
+  input_schema:
+    type: object
+    properties:
+      drug_name:
+        type: string
+      hcpcs_code:
+        type: string
+    anyOf:
+      - required: [drug_name]
+      - required: [hcpcs_code]
+  rate_limit: "5 req/s"
+  auth: none
+
+cms-formulary-search:
+  name: cms-formulary-search
+  description: "Query CMS Part D Formulary Files for plan coverage"
+  tier: drug_market_population
+  raw_table: cms_formulary
+  raw_schema: raw
+  adapter_module: dk_data.services.mcp.adapters.cms_partd_formulary
+  api_base_url: "https://data.cms.gov/data-api/v1/dataset/{id}/data"
+  input_schema:
+    type: object
+    properties:
+      rxcui:
+        type: string
+      drug_name:
+        type: string
+      plan_id:
+        type: string
+    anyOf:
+      - required: [rxcui]
+      - required: [drug_name]
+  rate_limit: "5 req/s"
+  auth: none
+
+cms-rbcs-search:
+  name: cms-rbcs-search
+  description: "Query CMS Restructured BETOS Classification System"
+  tier: drug_market_population
+  raw_table: cms_rbcs
+  raw_schema: raw
+  adapter_module: dk_data.services.mcp.adapters.cms_rbcs
+  api_base_url: "https://data.cms.gov/data-api/v1/dataset/{id}/data"
+  input_schema:
+    type: object
+    required: [hcpcs_code]
+    properties:
+      hcpcs_code:
+        type: string
+  rate_limit: "5 req/s"
+  auth: none
+
+cms-price-lookup-search:
+  name: cms-price-lookup-search
+  description: "Query CMS Medicare Procedure Price Lookup"
+  tier: drug_market_population
+  raw_table: cms_price_lookup
+  raw_schema: raw
+  adapter_module: dk_data.services.mcp.adapters.cms_price_lookup
+  api_base_url: "https://data.cms.gov/data-api/v1/dataset/{id}/data"
+  input_schema:
+    type: object
+    required: [hcpcs_code]
+    properties:
+      hcpcs_code:
+        type: string
+      modifier:
+        type: string
+      mac_locality:
+        type: string
+  rate_limit: "5 req/s"
+  auth: none
+
+usp-drug-class-search:
+  name: usp-drug-class-search
+  description: "Query USP Drug Classification System therapeutic categories"
+  tier: drug_market_population
+  raw_table: usp_drug_class
+  raw_schema: raw
+  adapter_module: dk_data.services.mcp.adapters.usp_drug_class
+  api_base_url: "https://data.cms.gov/data-api/v1/dataset/{id}/data"
+  input_schema:
+    type: object
+    required: [drug_name]
+    properties:
+      drug_name:
+        type: string
+  rate_limit: "5 req/s"
+  auth: none
+
+cms-nucc-taxonomy-search:
+  name: cms-nucc-taxonomy-search
+  description: "Query NUCC Healthcare Provider Taxonomy codes"
+  tier: drug_market_population
+  raw_table: cms_nucc_taxonomy
+  raw_schema: raw
+  adapter_module: dk_data.services.mcp.adapters.cms_nucc_taxonomy
+  api_base_url: "https://nucc.org/index.php/code-sets-mainmenu-41/provider-taxonomy-mainmenu-40/csv-mainmenu-57"
+  input_schema:
+    type: object
+    required: [taxonomy_code]
+    properties:
+      taxonomy_code:
+        type: string
+        description: "10-character taxonomy code from NPPES"
+  rate_limit: "1 req/s (CSV download)"
+  auth: none
+
+cms-geographic-variation-search:
+  name: cms-geographic-variation-search
+  description: "Query CMS Geographic Variation PUF for regional analytics"
+  tier: drug_market_population
+  raw_table: cms_geographic_variation
+  raw_schema: raw
+  adapter_module: dk_data.services.mcp.adapters.cms_geographic_variation
+  api_base_url: "https://data.cms.gov/data-api/v1/dataset/{id}/data"
+  input_schema:
+    type: object
+    properties:
+      state:
+        type: string
+        pattern: "^[A-Z]{2}$"
+      hrr:
+        type: string
+      year:
+        type: integer
+    anyOf:
+      - required: [state]
+      - required: [hrr]
+  rate_limit: "5 req/s"
+  auth: none
+
+cms-chronic-conditions-search:
+  name: cms-chronic-conditions-search
+  description: "Query CMS Chronic Conditions PUF for disease prevalence"
+  tier: drug_market_population
+  raw_table: cms_chronic_conditions
+  raw_schema: raw
+  adapter_module: dk_data.services.mcp.adapters.cms_chronic_conditions
+  api_base_url: "https://data.cms.gov/data-api/v1/dataset/{id}/data"
+  input_schema:
+    type: object
+    properties:
+      geo_level:
+        type: string
+        enum: [state, county, hrr]
+      geo_code:
+        type: string
+      condition:
+        type: string
+      year:
+        type: integer
+  rate_limit: "5 req/s"
+  auth: none
+
+cms-post-acute-search:
+  name: cms-post-acute-search
+  description: "Query CMS Post-Acute Care PUFs (SNF, HHA, Hospice)"
+  tier: drug_market_population
+  raw_table: cms_post_acute
+  raw_schema: raw
+  adapter_module: dk_data.services.mcp.adapters.cms_post_acute
+  api_base_url: "https://data.cms.gov/data-api/v1/dataset/{id}/data"
+  input_schema:
+    type: object
+    properties:
+      facility_id:
+        type: string
+      care_type:
+        type: string
+        enum: [snf, hha, hospice]
+      year:
+        type: integer
+  rate_limit: "5 req/s"
+  auth: none
+
+cms-dmepos-search:
+  name: cms-dmepos-search
+  description: "Query CMS DMEPOS Utilization by Referring Provider"
+  tier: drug_market_population
+  raw_table: cms_dmepos
+  raw_schema: raw
+  adapter_module: dk_data.services.mcp.adapters.cms_dmepos
+  api_base_url: "https://data.cms.gov/data-api/v1/dataset/{id}/data"
+  input_schema:
+    type: object
+    properties:
+      npi:
+        type: string
+        pattern: "^\\d{10}$"
+      hcpcs_code:
+        type: string
+    anyOf:
+      - required: [npi]
+      - required: [hcpcs_code]
+  rate_limit: "5 req/s"
+  auth: none
+
+ddinter-interaction-search:
+  name: ddinter-interaction-search
+  description: "Query DDInter 2.0 drug-drug interaction database"
+  tier: drug_market_population
+  raw_table: ddinter
+  raw_schema: raw
+  adapter_module: dk_data.services.mcp.adapters.ddinter
+  api_base_url: "http://ddinter.scbdd.com/api/v1/"
+  input_schema:
+    type: object
+    required: [drug_a, drug_b]
+    properties:
+      drug_a:
+        type: string
+        description: "First drug name"
+      drug_b:
+        type: string
+        description: "Second drug name"
+  output_schema:
+    type: object
+    properties:
+      interaction_id: { type: string }
+      severity: { type: string, enum: [major, moderate, minor, unknown] }
+      mechanism: { type: string }
+      clinical_recommendation: { type: string }
+      evidence_level: { type: string }
+      bidirectional: { type: boolean }
+  rate_limit: "2 req/s (academic API)"
+  auth: none
+
+stabilis-compatibility-search:
+  name: stabilis-compatibility-search
+  description: "Query Stabilis 4.0 IV drug compatibility database"
+  tier: drug_market_population
+  raw_table: stabilis
+  raw_schema: raw
+  adapter_module: dk_data.services.mcp.adapters.stabilis
+  api_base_url: "https://www.stabilis.org/api/"
+  input_schema:
+    type: object
+    required: [drug_name]
+    properties:
+      drug_name:
+        type: string
+      solvent:
+        type: string
+  rate_limit: "2 req/s (academic API)"
+  auth: none
+
+cms-medicaid-pdl-search:
+  name: cms-medicaid-pdl-search
+  description: "Query CMS State Medicaid Preferred Drug Lists"
+  tier: drug_market_population
+  raw_table: cms_medicaid_pdl
+  raw_schema: raw
+  adapter_module: dk_data.services.mcp.adapters.cms_medicaid_pdl
+  api_base_url: "https://data.cms.gov/data-api/v1/dataset/{id}/data"
+  input_schema:
+    type: object
+    properties:
+      drug_name:
+        type: string
+      state:
+        type: string
+        pattern: "^[A-Z]{2}$"
+    anyOf:
+      - required: [drug_name]
+      - required: [state]
+  rate_limit: "5 req/s"
+  auth: none

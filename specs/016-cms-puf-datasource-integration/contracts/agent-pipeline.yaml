@@ -1,0 +1,460 @@
+# Agent Pipeline Contracts: CMS PUF Data Source Integration
+# Defines I/O contracts for 5 Claude SDK agents
+
+# ============================================================================
+# Common Infrastructure
+# ============================================================================
+
+common:
+  base_agent:
+    module: dk_data.claude_sdk.base_agent
+    class: BaseAgent
+    abstract_methods:
+      - _build_prompt(context: BaseModel) -> str
+      - _parse_response(raw_json: dict, context: BaseModel) -> BaseModel
+    shared_methods:
+      - process_single(context: BaseModel) -> AgentResult
+      - process_batch(contexts: List[BaseModel]) -> List[AgentResult]
+      - _extract_json(text: str) -> dict
+      - _log_execution() -> None  # writes to meta.agent_execution_log
+      - _check_quarantine(confidence, result) -> None  # routes to meta.agent_quarantine
+    config:
+      DEFAULT_MODEL: "claude-haiku-4-5-20251001"
+      DEFAULT_MIN_CONFIDENCE: 0.50
+
+  agent_registry:
+    module: dk_data.claude_sdk.agent_registry
+    dataclass: AgentDefinition
+    fields:
+      - name: str
+      - description: str
+      - module_path: str
+      - input_sources: List[str]
+      - output_targets: List[str]
+      - model: str
+      - cadence: str
+      - estimated_cost_per_run: float
+      - product_consumers: List[str]
+
+  runner:
+    module: dk_data.claude_sdk.runner
+    cli: "python -m dk_data.claude_sdk.runner --agent {name} --batch-size {n}"
+    args:
+      - "--agent": "Agent name from registry"
+      - "--batch-size": "Records per batch (default: 100)"
+      - "--dry-run": "Preview without execution"
+
+  validation:
+    tiers:
+      - tier: schema
+        description: "Pydantic model enforces types and constraints"
+        action: "Reject on validation error"
+      - tier: confidence
+        thresholds:
+          - range: ">=0.80"
+            action: "Write directly, needs_review=false"
+          - range: "0.50-0.79"
+            action: "Write with needs_review=true"
+          - range: "<0.50"
+            action: "Route to meta.agent_quarantine"
+      - tier: integrity
+        description: "Post-agent SQL assertions (volume sums, totals)"
+        action: "Log warning, do not roll back"
+
+  execution_log:
+    table: meta.agent_execution_log
+    fields:
+      - agent_name: VARCHAR(100)
+      - execution_start: TIMESTAMPTZ
+      - execution_end: TIMESTAMPTZ
+      - status: "running | completed | failed"
+      - records_processed: INTEGER
+      - records_written: INTEGER
+      - records_quarantined: INTEGER
+      - model_used: VARCHAR(100)
+      - total_input_tokens: INTEGER
+      - total_output_tokens: INTEGER
+      - estimated_cost_usd: NUMERIC(8,4)
+
+  quarantine:
+    table: meta.agent_quarantine
+    fields:
+      - agent_name: VARCHAR(100)
+      - entity_key: VARCHAR(100)
+      - entity_type: "provider | facility | drug | network"
+      - raw_llm_output: TEXT
+      - confidence_score: NUMERIC(3,2)
+      - rejection_reason: VARCHAR(200)
+      - review_status: "pending | approved | rejected"
+
+# ============================================================================
+# Agent 1: ServiceLineInference
+# ============================================================================
+
+service_line_inference:
+  name: service_line_inference
+  module: dk_data.claude_sdk.agents.service_line_inference
+  description: "Infer hospital service lines from DRG discharge volumes and POS service capabilities"
+  model: claude-haiku-4-5-20251001
+  cadence: monthly
+  schedule: "Day 1 of month"
+  k8s_cronjob: cronjob-agent-service-line.yaml
+  resource_limits:
+    memory: 512Mi
+    cpu: 500m
+    activeDeadlineSeconds: 14400  # 4 hours
+
+  input:
+    sources:
+      - bronze.cms_inpatient_puf_detail
+      - bronze.cms_provider_of_services
+    context_model:
+      name: FacilityServiceLineContext
+      fields:
+        - ccn: str
+        - facility_name: str
+        - facility_type: str
+        - bed_count: int
+        - drg_volumes: List[dict]  # [{drg_code, description, discharges, avg_charges}]
+        - service_capabilities: List[str]  # From POS file
+    batch_size: 100
+    total_entities: ~6000 hospitals
+
+  output:
+    target_table: silver.facility_service_lines
+    result_model:
+      name: ServiceLineResult
+      fields:
+        - ccn: str
+        - service_lines: List[dict]
+          # [{service_line: "Cardiology", confidence: 0.92, evidence: ["DRG 280", "DRG 281"]}]
+        - confidence_score: float
+    validation:
+      - "Sum of DRG volumes across service lines must equal total DRG volume"
+      - "Each DRG assigned to exactly one service line"
+      - "confidence_score range: 0.0-1.0"
+
+  cost_estimate:
+    llm_calls_per_month: ~30000
+    note: "80% deterministic DRG mapping; LLM only for ambiguous 20%"
+    estimated_cost: "$39/month"
+
+  system_prompt: |
+    You are a hospital service line analyst. Given a hospital's DRG discharge volumes
+    and service capability codes, classify each DRG into the appropriate service line.
+    Common service lines: Cardiology, Orthopedics, Neurology, Oncology, OB/GYN,
+    Pulmonology, General Surgery, Gastroenterology, Urology, ENT.
+
+    For each classification:
+    1. Map deterministic DRGs first (e.g., DRG 280-282 → Cardiology)
+    2. For ambiguous DRGs, use facility capabilities as context
+    3. Assign a confidence score (0.0-1.0) for each mapping
+
+    Return JSON: {"service_lines": [{"service_line": "...", "drgs": [...], "confidence": 0.95}]}
+
+# ============================================================================
+# Agent 2: IDNHierarchy
+# ============================================================================
+
+idn_hierarchy:
+  name: idn_hierarchy
+  module: dk_data.claude_sdk.agents.idn_hierarchy
+  description: "Construct IDN hierarchies from PECOS + CHOW + Facility Affiliation data"
+  model: claude-haiku-4-5-20251001
+  cadence: monthly
+  schedule: "Day 2 of month"
+  k8s_cronjob: cronjob-agent-idn-hierarchy.yaml
+  resource_limits:
+    memory: 512Mi
+    cpu: 500m
+    activeDeadlineSeconds: 14400
+
+  input:
+    sources:
+      - bronze.cms_pecos
+      - bronze.cms_chow
+      - bronze.cms_facility_affiliation
+    context_model:
+      name: IDNContext
+      fields:
+        - pecos_enrollments: List[dict]  # NPI-to-org mappings
+        - chow_events: List[dict]  # Ownership transfers
+        - affiliation_links: List[dict]  # Facility-to-org links
+        - known_systems: List[str]  # Top 50 US health systems for validation
+    batch_size: 50
+    total_entities: ~150 ambiguous systems
+
+  output:
+    target_table: silver.health_systems
+    result_model:
+      name: IDNHierarchyResult
+      fields:
+        - organization_npi: str
+        - system_name: str
+        - parent_org_npi: Optional[str]
+        - hierarchy_level: int
+        - affiliated_facilities: List[str]  # CCNs
+        - confidence_score: float
+        - confidence_source: str  # 'deterministic' | 'heuristic' | 'agent'
+    validation:
+      - "Top 50 US systems cross-referenced for accuracy"
+      - "No orphaned facilities (every CCN maps to exactly one system)"
+      - "Hierarchy depth <= 5 levels"
+
+  cost_estimate:
+    llm_calls_per_month: ~150
+    note: "Only ambiguous systems require LLM (80% deterministic from PECOS)"
+    estimated_cost: "$0.36/month"
+
+# ============================================================================
+# Agent 3: ReferralNetwork
+# ============================================================================
+
+referral_network:
+  name: referral_network
+  module: dk_data.claude_sdk.agents.referral_network
+  description: "Infer provider referral relationships from geographic and utilization data"
+  model: claude-haiku-4-5-20251001
+  cadence: monthly
+  schedule: "Day 5 of month"
+  k8s_cronjob: cronjob-agent-referral-network.yaml
+  resource_limits:
+    memory: 1Gi
+    cpu: 1000m
+    activeDeadlineSeconds: 28800  # 8 hours
+
+  input:
+    sources:
+      - silver.providers
+      - bronze.cms_post_acute
+      - bronze.cms_dmepos
+      - bronze.cms_pecos
+      - bronze.cms_facility_affiliation
+    context_model:
+      name: ReferralContext
+      fields:
+        - source_npi: str
+        - source_specialty: str
+        - source_location: dict  # {lat, lng, state, zip}
+        - candidate_npis: List[dict]  # Nearby providers with compatible specialties
+        - shared_patients_signal: float  # From Post-Acute/DMEPOS overlap
+        - organizational_link: Optional[str]  # From PECOS/Affiliation
+    batch_size: 200
+    total_entities: "~50K-200K provider pairs"
+
+  output:
+    target_table: gold.provider_network
+    result_model:
+      name: ReferralResult
+      fields:
+        - source_npi: str
+        - dest_npi: str
+        - relationship_type: str  # 'referral' | 'affiliation' | 'group_practice'
+        - confidence_score: float
+        - evidence_sources: List[str]
+        - strength: float
+        - bidirectional: bool
+    validation:
+      - "confidence_score >= 0.50 for gold table insertion"
+      - "<0.50 routed to quarantine"
+      - "No self-referrals (source_npi != dest_npi)"
+
+  cost_estimate:
+    llm_calls_per_month: "~50K-200K"
+    note: "After deterministic pre-filter; geographic proximity + shared utilization"
+    estimated_cost: "$130-336/month"
+
+# ============================================================================
+# Agent 4: ContactVerification
+# ============================================================================
+
+contact_verification:
+  name: contact_verification
+  module: dk_data.claude_sdk.agents.contact_verification
+  description: "Verify provider contact info via Google Places and USPS APIs (no LLM)"
+  model: none  # API-only agent, no LLM calls
+  cadence: monthly
+  schedule: "Day 10 of month"
+  k8s_cronjob: cronjob-agent-contact-verification.yaml
+  resource_limits:
+    memory: 256Mi
+    cpu: 250m
+    activeDeadlineSeconds: 14400
+
+  input:
+    sources:
+      - silver.providers
+    external_apis:
+      - name: Google Places API
+        env_var: GOOGLE_PLACES_API_KEY
+        purpose: "Phone number verification"
+        tier: "Basic (free, no billing required)"
+      - name: USPS Address Validation API
+        env_var: USPS_API_KEY
+        purpose: "Address standardization"
+        tier: "Free registration"
+    context_model:
+      name: ContactContext
+      fields:
+        - npi: str
+        - provider_name: str
+        - phone: Optional[str]
+        - address_line1: Optional[str]
+        - city: Optional[str]
+        - state: Optional[str]
+        - zip: Optional[str]
+    batch_size: 500
+    total_entities: "Top 10 states by provider count (~3M NPIs)"
+
+  output:
+    target_table: "UPDATE silver.providers"
+    result_model:
+      name: ContactVerificationResult
+      fields:
+        - npi: str
+        - phone_verified: bool
+        - address_verified: bool
+        - standardized_address: Optional[dict]
+        - verification_date: datetime
+    validation:
+      - "Phone: match Google Places phone for same name+address"
+      - "Address: USPS returns DPV confirmation code"
+
+  cost_estimate:
+    llm_calls_per_month: 0
+    note: "API-only agent; costs are API usage fees, not LLM"
+    estimated_cost: "$0 (free tier APIs)"
+
+# ============================================================================
+# Agent 5: StaffingDecomposition
+# ============================================================================
+
+staffing_decomposition:
+  name: staffing_decomposition
+  module: dk_data.claude_sdk.agents.staffing_decomposition
+  description: "Decompose HCRIS cost report staffing data into structured categories"
+  model: claude-haiku-4-5-20251001
+  cadence: monthly
+  schedule: "Day 3 of month"
+  k8s_cronjob: cronjob-agent-staffing-decomposition.yaml
+  resource_limits:
+    memory: 512Mi
+    cpu: 500m
+    activeDeadlineSeconds: 14400
+
+  input:
+    sources:
+      - raw.cms_cost_reports  # HCRIS Worksheet S-3/A
+    context_model:
+      name: StaffingContext
+      fields:
+        - ccn: str
+        - facility_name: str
+        - total_fte: float
+        - staffing_lines: List[dict]  # Raw HCRIS line items
+    batch_size: 100
+    total_entities: ~3000 hospitals with cost reports
+
+  output:
+    target_table: "Enrichment on silver.healthcare_facilities"
+    result_model:
+      name: StaffingResult
+      fields:
+        - ccn: str
+        - staffing_categories: List[dict]
+          # [{category: "Nursing", subcategory: "RN", fte: 234.5, confidence: 0.88}]
+        - total_decomposed_fte: float
+        - confidence_score: float
+    validation:
+      - "Decomposition sums to total_fte ± 2%"
+      - "Each HCRIS line assigned to exactly one category"
+      - "Standard categories: Nursing (RN/LPN/CNA), Admin, Therapy, Lab, Pharmacy, Other"
+
+  cost_estimate:
+    llm_calls_per_month: ~3000
+    estimated_cost: "$3.36/month"
+
+# ============================================================================
+# Agent 6: EquipmentInventoryInference
+# ============================================================================
+
+equipment_inventory_inference:
+  name: equipment_inventory_inference
+  module: dk_data.claude_sdk.agents.equipment_inventory
+  description: "Infer hospital equipment inventory from HCPCS procedure volumes and facility characteristics"
+  model: claude-haiku-4-5-20251001
+  cadence: monthly
+  schedule: "Day 4 of month"
+  k8s_cronjob: cronjob-agent-equipment-inventory.yaml
+  resource_limits:
+    memory: 512Mi
+    cpu: 500m
+    activeDeadlineSeconds: 14400  # 4 hours
+
+  input:
+    sources:
+      - silver.healthcare_facilities
+      - bronze.cms_hcpcs
+      - bronze.cms_outpatient_puf
+    context_model:
+      name: EquipmentContext
+      fields:
+        - ccn: str
+        - facility_name: str
+        - facility_type: str
+        - bed_count: int
+        - outpatient_procedures: List[dict]  # [{hcpcs_code, description, volume}]
+        - service_capabilities: List[str]
+    batch_size: 100
+    total_entities: ~4000 hospitals
+
+  output:
+    target_table: silver.equipment_inventory
+    result_model:
+      name: EquipmentResult
+      fields:
+        - ccn: str
+        - equipment_categories: List[dict]
+          # [{category: "MRI", quantity_estimate: 2, confidence: 0.85, evidence: ["CPT 70553: 1200 procedures"]}]
+        - confidence_score: float
+    validation:
+      - "Equipment categories from standard list: MRI, CT, PET, Linear Accelerator, Cath Lab, etc."
+      - "confidence_score range: 0.0-1.0"
+      - "Equipment estimates consistent with facility bed count and type"
+
+  cost_estimate:
+    llm_calls_per_month: ~6000
+    note: "60% deterministic HCPCS-to-equipment mapping; LLM for ambiguous 40%"
+    estimated_cost: "$6.72/month"
+
+# ============================================================================
+# Monthly Schedule
+# ============================================================================
+
+schedule:
+  description: "Staggered monthly execution to respect data dependencies"
+  timeline:
+    - day: 1
+      agent: service_line_inference
+      depends_on: "Bronze DRG data (loaded by weekly CronJobs)"
+    - day: 2
+      agent: idn_hierarchy
+      depends_on: "Bronze PECOS/CHOW/Affiliation + SEC EDGAR (loaded by monthly CronJobs)"
+    - day: 3
+      agent: staffing_decomposition
+      depends_on: "Raw HCRIS cost reports + BLS OEWS occupational mix"
+    - day: 4
+      agent: equipment_inventory_inference
+      depends_on: "silver.healthcare_facilities + bronze.cms_hcpcs + bronze.cms_outpatient_puf"
+    - day: 5
+      agent: referral_network
+      depends_on: "silver.providers + health_systems from days 1-2"
+    - day: 10
+      agent: contact_verification
+      depends_on: "Stable silver.providers (no upstream changes expected)"
+
+  total_monthly_cost: "$175-385"
+  model: claude-haiku-4-5-20251001
+  pricing:
+    input: "$0.80/1M tokens"
+    output: "$4.00/1M tokens"
