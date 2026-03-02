@@ -75,7 +75,7 @@
 
 **Alternatives Considered**:
 - Run agents in MCP invoke hot path: Latency too high (LLM call adds 2-5s). Monthly batch is appropriate for these enrichment tasks.
-- Use GPT-4o instead of Claude Haiku: Higher cost, external vendor dependency, and the existing codebase already uses Anthropic SDK.
+- Use GPT-4o instead of Claude Haiku: Higher cost, external vendor dependency, and the existing codebase already uses Claude models via LiteLLM proxy.
 - No BaseAgent (copy-paste per agent): Duplicates error handling, logging, quarantine logic across 6 agents.
 - Deterministic-only (no LLM): Works for ~80% of service line inference (DRG codes have deterministic mappings), but the remaining 20% ambiguous cases require semantic reasoning. IDN hierarchy and referral network have even higher ambiguity rates.
 

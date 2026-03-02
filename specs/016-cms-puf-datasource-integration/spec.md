@@ -406,7 +406,7 @@ Existing molecule pipeline (DrugBank, openFDA labels, ClinicalTrials, WHO ICD-11
 
 - **FR-032**: System MUST extend `BaseMCPTool._fetch_external()` to support query parameters beyond `drug_name`. Each adapter's `build_url()` MUST handle parameter extraction (`npi`, `provider_name`, `facility_id`, etc.) from the generic `params` dict. The change MUST be backward-compatible with existing adapters.
 - **FR-033**: System MUST add `refresh_provider(npi, source_name, api_response)` and `refresh_facility(ccn, source_name, api_response)` methods to `SilverGoldRefresher`. Provider resolution MUST use NPI (canonical, no fuzzy matching needed). Facility resolution MUST use CCN.
-- **FR-034**: System MUST implement a Service Line Inference Agent using Claude SDK that infers hospital service lines from DRG discharge volumes and POS service capability codes. MUST run monthly on ~6K hospitals. MUST use `claude-haiku-4-5-20251001` for cost efficiency. Output MUST populate `silver.facility_service_lines`.
+- **FR-034**: System MUST implement a Service Line Inference Agent using Claude SDK that infers hospital service lines from DRG discharge volumes and POS service capability codes. MUST run monthly on ~6K hospitals. MUST use `claude-haiku-4-5-20251001` via the cluster LiteLLM proxy (`http://litellm.infra.svc.cluster.local:4000`) for cost efficiency and unified LLM access. Output MUST populate `silver.facility_service_lines`.
 - **FR-035**: System MUST implement an IDN Hierarchy Construction Agent using Claude SDK that builds Integrated Delivery Network hierarchies from PECOS enrollment + CHOW M&A events + Facility Affiliation data + SEC EDGAR public filings (already in dk-data-fe, used for public health system executive listings and organizational structure). MUST resolve conflicting parent organizations and construct multi-level system trees. Output MUST populate `silver.health_systems`.
 - **FR-036**: System MUST implement a Contact Verification Pipeline that verifies provider contact information from NPPES against Google Places API (phone verification, free tier) and USPS Address Validation API (address standardization). MUST update `silver.providers` with verification status and confidence scores.
 - **FR-037**: System MUST implement a Referral Network Inference Agent using Claude SDK that infers provider-to-provider referral relationships from: (1) geographic proximity of providers sharing diagnosis patterns, (2) Post-Acute PUF facility-level referral volumes, (3) DMEPOS referring provider NPI data, (4) PECOS/Facility Affiliation organizational linkages. MUST produce `confidence_score` (0-1) per inferred edge. Monthly cadence. Output MUST populate `gold.provider_network`. MUST use `claude-haiku-4-5-20251001`.
@@ -527,7 +527,7 @@ Total estimated engineering effort: **~20-27 weeks** (based on original data sou
 - Q: What is the entity resolution strategy for providers? → A: NPI is a government-issued unique identifier — no fuzzy matching needed (unlike molecules). Simple lookup by NPI. For name-based searches, use NPPES first/last name fields with prefix matching. Deactivated NPIs tracked but excluded from default results.
 - Q: How should the Part D PUF's 25M records/year be handled? → A: Batch inserts with `executemany()`, commit every 10K rows. Table partitioning by year for query performance. Annual refresh — full year replacement, not incremental updates within a year.
 - Q: What is the refresh strategy for gold-layer profiles? → A: Gold tables refreshed via `silver_gold_refresher.py`, triggered either by MCP tool invocations (on-demand for specific NPI/CCN) or by post-ingestion batch refresh (after CronJob loads new data). Each gold record tracks `_refreshed_at` and per-source freshness timestamps.
-- Q: How do agentic processing tasks fit into the pipeline? → A: Claude SDK agents run as post-processing steps, NOT in the hot MCP invoke path. Monthly CronJobs. Use `claude-haiku-4-5-20251001` for cost efficiency (~$0.25/1M input tokens). ~6K hospitals per service line inference run. Results written to silver tables, then propagated to gold.
+- Q: How do agentic processing tasks fit into the pipeline? → A: Claude SDK agents run as post-processing steps, NOT in the hot MCP invoke path. Monthly CronJobs. Use `claude-haiku-4-5-20251001` via the cluster LiteLLM proxy (`http://litellm.infra.svc.cluster.local:4000`) for cost efficiency and unified LLM management. ~6K hospitals per service line inference run. Results written to silver tables, then propagated to gold.
 - Q: Should DDInter/Stabilis be treated as real-time APIs or cached datasets? → A: Cached datasets. Both are academic resources with unreliable API availability. Full dataset downloaded and cached locally. Fetcher operates in offline mode when API is unreachable. Refresh quarterly or when new versions are published.
 - Q: What is the data access control model for CMS PUF provider/payment data exposed via PostgREST? → A: Raw/bronze/silver internal only; gold tables exposed via PostgREST with existing RBAC (analyst JWT required).
 - Q: Should large PUF tables (Part D, Physician PUF) use PostgreSQL range partitioning by year? → A: Yes, partition by year at raw + bronze layer for Part D and Physician PUF.
@@ -585,7 +585,8 @@ Total estimated engineering effort: **~20-27 weeks** (based on original data sou
 | Stabilis 4.0 dataset | External | Available |
 | Google Places API (free tier) | External | Available (registration required) |
 | USPS Address Validation API | External | Available (registration required) |
-| Claude SDK + Haiku model access | Internal | Exists |
+| LiteLLM proxy (`litellm.infra.svc.cluster.local:4000`) | Internal | Exists (dk-alchemy infra namespace) |
+| Claude Haiku model access (via LiteLLM) | Internal | Exists |
 | Kubernetes CronJob scheduling | Internal | Exists |
 | SEC EDGAR pipeline | Internal | Exists in dk-data-fe (reference for IDN hierarchy) |
 | PubMed pipeline | Internal | Exists in dk-data-fe (extend for emails + conferences) |
@@ -657,12 +658,12 @@ This section documents the results of a comprehensive codebase audit to ensure t
 | `_parse_date()`, `_join_text()` helpers | `services/mcp/bronze_transformer.py` | Reuse in new bronze handler methods. |
 | `silver.identifier_mappings` UNION ALL pattern | `sqlmesh/models/molecules/silver/identifier_mappings.sql` | New `silver.provider_identifier_mappings` for NPI→org_npi, NPI→CCN cross-references. |
 | `gold.molecule_profile` multi-CTE pattern | `sqlmesh/models/molecules/gold/molecule_profile.sql` | Template for `gold.provider_profile` and `gold.facility_profile`. |
-| `_ensure_client()` + JSON extraction | `claude_sdk/enrichment.py`, `claude_sdk/scoring_agent.py` | Extract into `BaseAgent` ABC. Same Anthropic client init, same JSON extraction. |
+| `_ensure_client()` + JSON extraction | `claude_sdk/enrichment.py`, `claude_sdk/scoring_agent.py` | Extract into `BaseAgent` ABC. Replace direct Anthropic client init with `litellm.completion()` via cluster LiteLLM proxy. Same JSON extraction pattern. |
 | `tool_registry.py` ToolDefinition pattern | `services/mcp/tool_registry.py` | Mirror for `agent_registry.py` AgentDefinition dataclass. |
 | `record_job_duration()`, `@timed_job` | `observability/metrics.py` | Reuse for agent execution timing. Add `dk_providers_total`, `dk_facilities_total` gauges. |
 | `upsert_records()`, ThreadedConnectionPool | `utils/database.py` | All new loaders use existing DB utilities. |
 | Pydantic validators | `utils/validators.py` | Reuse for new source-specific validation. |
-| CronJob template | `k8s/base/ingestion/cronjob-fetch-pubmed.yaml` | All new CronJobs follow identical structure: concurrencyPolicy Forbid, backoffLimit 2, dk-data-secrets envFrom. |
+| CronJob template | `k8s/base/ingestion/cronjob-fetch-pubmed.yaml` | All new CronJobs follow identical structure: concurrencyPolicy Forbid, backoffLimit 2, individual `secretKeyRef` per DB key (NOT `envFrom`), `imagePullSecrets: ghcr-credentials`, K8s recommended labels, OTEL env vars, `successfulJobsHistoryLimit: 3`, `failedJobsHistoryLimit: 3`. See § CronJob Manifest Template below. |
 
 ### Pattern Compliance Rules (Zero-Drift Checklist)
 
@@ -679,7 +680,7 @@ This section documents the results of a comprehensive codebase audit to ensure t
 | **Metrics** | `dk_*` prefix, use Gauge/Counter from prometheus_client | `observability/metrics.py` |
 | **Rate limits** | Add to `config/rate_limits.yaml` under `sources:` section. Defaults: 5 req/s, 30s timeout | Existing YAML structure |
 | **Catalog seeds** | Add to `sql/seed_data_sources.sql` in `meta.data_sources` table | Existing seed entries |
-| **CronJob YAML** | concurrencyPolicy Forbid, backoffLimit 2, restartPolicy Never, dk-data-secrets envFrom, ghcr.io image | `cronjob-fetch-pubmed.yaml` |
+| **CronJob YAML** | concurrencyPolicy Forbid, backoffLimit 2, restartPolicy Never, individual `secretKeyRef` per DB key (POSTGRES_HOST/PORT/USER/PASSWORD/DB), `imagePullSecrets: [{name: ghcr-credentials}]`, `successfulJobsHistoryLimit: 3`, `failedJobsHistoryLimit: 3`, K8s labels (`app.kubernetes.io/name`, `/component: ingestion`, `/part-of: dk-data`), OTEL env as static `value:`, image `ghcr.io/data-kinetic/dk-data-fe/job-trigger:BRANCH-SHA` (exact name required for kustomize image transformer). See § CronJob Manifest Template. | `cronjob-fetch-pubmed.yaml` |
 
 ### Ontology Assessment
 
@@ -736,7 +737,9 @@ Pattern: Parent table with `year INTEGER NOT NULL` as partition key. PK is `(id,
 
 ### Model Consistency Note
 
-Existing agents use `claude-sonnet-4-20250514`. New agents intentionally use `claude-haiku-4-5-20251001` for cost optimization ($0.80/$4.00 per 1M tokens vs ~$3/$15 for Sonnet). This is by design — the enrichment tasks in feature 016 are higher-volume, lower-complexity than the existing hospital enrichment (which requires deeper reasoning). Both model choices are valid for their respective use cases.
+Existing agents use `claude-sonnet-4-20250514` via direct Anthropic SDK. New agents intentionally use `claude-haiku-4-5-20251001` for cost optimization ($0.80/$4.00 per 1M tokens vs ~$3/$15 for Sonnet). This is by design — the enrichment tasks in feature 016 are higher-volume, lower-complexity than the existing hospital enrichment (which requires deeper reasoning). Both model choices are valid for their respective use cases.
+
+**LLM Access Pattern**: All new agents MUST use the cluster LiteLLM proxy (`http://litellm.infra.svc.cluster.local:4000`) instead of direct Anthropic SDK calls. The LiteLLM proxy (hosted in dk-alchemy infra namespace) provides unified LLM access with centralized API key management, rate limiting, retries, and cost tracking. `BaseAgent` uses `litellm.completion()` with `LITELLM_API_BASE` env var (defaulting to `http://litellm.infra.svc.cluster.local:4000`). Agent CronJobs do NOT need `ANTHROPIC_API_KEY` — the proxy manages API keys centrally. This aligns with the dk-alchemy RECOMMENDATIONS.md pattern and resolves GitHub Issue #95 (LiteLLM evaluation) for this feature.
 
 ---
 
@@ -862,6 +865,118 @@ PGRST_DB_SCHEMAS: "api,mol_api,mol_gold,mol_silver,xenon,meta"
 # AFTER:
 PGRST_DB_SCHEMAS: "api,mol_api,mol_gold,mol_silver,xenon,meta,gold"
 ```
+
+### CronJob Manifest Template
+
+All new CronJob YAMLs MUST follow the established pattern from `cronjob-fetch-pubmed.yaml`. The codebase uses **individual `secretKeyRef`** entries for secrets (NOT `envFrom` with a secret ref). The `envFrom` keyword in existing YAMLs is only used for ConfigMap references (e.g., `molecule-pipeline-config`).
+
+**Mandatory elements** (verified against all existing CronJobs):
+
+```yaml
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: fetch-{source}
+  labels:
+    app: fetch-{source}
+    app.kubernetes.io/name: fetch-{source}
+    app.kubernetes.io/component: ingestion
+    app.kubernetes.io/part-of: dk-data
+spec:
+  schedule: "{cron expression}"
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      backoffLimit: 2
+      activeDeadlineSeconds: {timeout}
+      template:
+        metadata:
+          labels:
+            app: fetch-{source}
+            app.kubernetes.io/component: batch-job
+            app.kubernetes.io/part-of: dk-data
+        spec:
+          restartPolicy: Never
+          imagePullSecrets:
+            - name: ghcr-credentials
+          containers:
+            - name: fetch-{source}
+              image: ghcr.io/data-kinetic/dk-data-fe/job-trigger:main-{sha}  # exact name for kustomize
+              command: ["python", "-m", "dk_data.ingestion.main"]
+              args: ["{source_name}"]
+              env:
+                # DB credentials — individual secretKeyRef (NOT envFrom)
+                - name: POSTGRES_HOST
+                  valueFrom:
+                    secretKeyRef:
+                      name: dk-data-secrets
+                      key: POSTGRES_HOST
+                - name: POSTGRES_PORT
+                  valueFrom:
+                    secretKeyRef:
+                      name: dk-data-secrets
+                      key: POSTGRES_PORT
+                - name: POSTGRES_USER
+                  valueFrom:
+                    secretKeyRef:
+                      name: dk-data-secrets
+                      key: POSTGRES_USER
+                - name: POSTGRES_PASSWORD
+                  valueFrom:
+                    secretKeyRef:
+                      name: dk-data-secrets
+                      key: POSTGRES_PASSWORD
+                - name: POSTGRES_DB
+                  valueFrom:
+                    secretKeyRef:
+                      name: dk-data-secrets
+                      key: POSTGRES_DB
+                # Source-specific API keys (optional)
+                - name: {API_KEY_NAME}
+                  valueFrom:
+                    secretKeyRef:
+                      name: dk-data-secrets
+                      key: {API_KEY_NAME}
+                      optional: true
+                # Observability — static values
+                - name: OTEL_EXPORTER_OTLP_ENDPOINT
+                  value: "http://alloy.infra.svc.cluster.local:4317"
+                - name: OTEL_ENABLED
+                  value: "true"
+              resources:
+                requests:
+                  memory: "256Mi"
+                  cpu: "100m"
+                limits:
+                  memory: "512Mi"
+                  cpu: "300m"
+```
+
+**Agent CronJob variant** — uses different command/args split:
+```yaml
+command: ["python", "-m", "dk_data.claude_sdk.runner"]
+args: ["--agent", "{agent_name}", "--batch-size", "100"]
+env:
+  # ... same DB secretKeyRef block as above ...
+  # LiteLLM proxy — static cluster-internal URL (NOT from DopplerSecret)
+  - name: LITELLM_API_BASE
+    value: "http://litellm.infra.svc.cluster.local:4000"
+```
+
+**Image name requirement**: All CronJob YAMLs MUST use the exact base image name `ghcr.io/data-kinetic/dk-data-fe/job-trigger` (with any tag). The kustomize `images:` block in staging/prod overlays automatically replaces the tag via image transformer matching. Using a different image name will cause the CronJob to reference a stale or missing tag.
+
+### Deployment Flow (ArgoCD GitOps)
+
+New CronJobs deploy automatically via the existing ArgoCD GitOps pipeline:
+
+1. **Feature branch** (`016-cms-puf-datasource-integration`): CronJob YAMLs are created and added to `k8s/base/kustomization.yaml`. `build-push.yaml` does NOT trigger on feature branches — no image build or deploy.
+2. **Merge to `staging`**: CI workflow triggers → builds Docker image → pushes to GHCR with `staging-{shortSHA}` tag → auto-commits updated image tag to `k8s/overlays/staging/kustomization.yaml` → pushes manifest update.
+3. **ArgoCD staging sync**: ArgoCD Application (`dk-data-staging`) watches `staging` branch at `k8s/overlays/staging`. Auto-sync with `prune: true` and `selfHeal: true` detects new CronJob resources and deploys them to `dk-data-staging` namespace.
+4. **Promote to production**: After staging validation, `promote-to-prod.yaml` workflow tags the image for production. ArgoCD Application (`dk-data-prod`) watches `main` branch at `k8s/overlays/prod`, deploying to `dk-data-prod` namespace.
+
+**DopplerSecret**: Project `dk-data-fe`, config `prd` (base), patched to `stg` for staging overlay. Syncs every 300s to `dk-data-secrets` Kubernetes secret. All secrets (DB credentials, API keys) are managed in Doppler — agent CronJobs that need `LITELLM_API_BASE` set it as a static `value:` (cluster-internal URL), not from DopplerSecret.
 
 ### Per-Source Implementation Details
 
@@ -1094,7 +1209,7 @@ _RAW_SCHEMA_MAP["cms_nppes"] = "raw"
 
 **AgentRegistry** (`src/dk_data/claude_sdk/agent_registry.py`): Mirrors `tool_registry.py` pattern with `AgentDefinition` dataclass.
 
-**Runner CLI** (`src/dk_data/claude_sdk/runner.py`): Entry point for CronJobs: `python -m dk_data.claude_sdk.runner --agent service_line_inference --batch-size 100`
+**Runner CLI** (`src/dk_data/claude_sdk/runner.py`): Entry point for agent CronJobs: `python -m dk_data.claude_sdk.runner --agent service_line_inference --batch-size 100`. In K8s CronJob manifests, split as `command: ["python", "-m", "dk_data.claude_sdk.runner"]`, `args: ["--agent", "service_line_inference", "--batch-size", "100"]`.
 
 **Six agents** in `src/dk_data/claude_sdk/agents/`:
 
@@ -1112,14 +1227,16 @@ _RAW_SCHEMA_MAP["cms_nppes"] = "raw"
 **Validation**: Three-tier — (1) Pydantic schema validation, (2) confidence thresholding (>=0.80 direct write, 0.50-0.79 write with `needs_review = true`, <0.50 route to `meta.agent_quarantine`), (3) post-agent SQL integrity checks (volume sums, FTE totals, hierarchy completeness).
 
 **CronJob schedule** (staggered monthly, encoded dependencies via dates):
-| Day | Agent | Resources | Deadline | Secrets Required |
-|-----|-------|-----------|----------|-----------------|
-| 1 | ServiceLineInference | 512Mi/500m | 4h | `ANTHROPIC_API_KEY` |
-| 2 | IDNHierarchy | 512Mi/500m | 4h | `ANTHROPIC_API_KEY` |
-| 3 | StaffingDecomposition | 512Mi/500m | 4h | `ANTHROPIC_API_KEY` |
-| 4 | EquipmentInventoryInference | 512Mi/500m | 4h | `ANTHROPIC_API_KEY` |
-| 5 | ReferralNetwork | 1Gi/1000m | 8h | `ANTHROPIC_API_KEY` |
-| 10 | ContactVerification | 256Mi/250m | 4h | `GOOGLE_PLACES_API_KEY`, `USPS_API_KEY` |
+| Day | Agent | Resources | Deadline | Extra Env Vars |
+|-----|-------|-----------|----------|----------------|
+| 1 | ServiceLineInference | 512Mi/500m | 4h | `LITELLM_API_BASE` (static `value:`, not from DopplerSecret) |
+| 2 | IDNHierarchy | 512Mi/500m | 4h | `LITELLM_API_BASE` (static `value:`) |
+| 3 | StaffingDecomposition | 512Mi/500m | 4h | `LITELLM_API_BASE` (static `value:`) |
+| 4 | EquipmentInventoryInference | 512Mi/500m | 4h | `LITELLM_API_BASE` (static `value:`) |
+| 5 | ReferralNetwork | 1Gi/1000m | 8h | `LITELLM_API_BASE` (static `value:`) |
+| 10 | ContactVerification | 256Mi/250m | 4h | `GOOGLE_PLACES_API_KEY`, `USPS_API_KEY` (from `dk-data-secrets` via `secretKeyRef`) |
+
+All agent CronJobs also include the standard 5 DB `secretKeyRef` entries + OTEL static values (see § CronJob Manifest Template).
 
 ### Complete File Manifest
 

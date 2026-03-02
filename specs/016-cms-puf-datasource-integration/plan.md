@@ -10,7 +10,7 @@ Integrate ~54 free CMS/FDA/NLM/BLS/SEC public-use files and APIs to replace $232
 ## Technical Context
 
 **Language/Version**: Python 3.11+ (existing codebase), SQL (PostgreSQL 16.4)
-**Primary Dependencies**: FastAPI >=0.109.0, SQLMesh >=0.90.0, psycopg2-binary >=2.9.9, asyncpg >=0.29.0, httpx >=0.25.0, Pydantic >=2.5.0, structlog >=24.0.0, prometheus-client >=0.19.0, anthropic SDK (Claude Haiku), PostgREST v12.2.3
+**Primary Dependencies**: FastAPI >=0.109.0, SQLMesh >=0.90.0, psycopg2-binary >=2.9.9, asyncpg >=0.29.0, httpx >=0.25.0, Pydantic >=2.5.0, structlog >=24.0.0, prometheus-client >=0.19.0, litellm (LLM proxy client — replaces direct anthropic SDK for agents), PostgREST v12.2.3
 **Storage**: PostgreSQL 16.4 via CloudNativePG (`postgresql.infra.svc.cluster.local:5432`, database `dk_data`). Schemas: `raw`, `bronze`, `silver`, `gold` (new exposure), `meta`, `mol_raw`, `mol_bronze`, `mol_silver`, `mol_gold`, `xenon`, `api`, `mol_api`. Range partitioning for high-volume tables (Part D, Physician PUF).
 **Testing**: pytest with `@responses.activate` mocking, contract tests for SQLMesh models, integration tests with `@pytest.mark.integration`, psycopg2 fixtures with auto-rollback
 **Target Platform**: Linux server (Kubernetes cluster), CloudNativePG PostgreSQL, GitHub Actions CI
@@ -171,7 +171,7 @@ See [research.md](./research.md) for detailed findings (10 research tasks with d
 | NPPES 9.3 GB CSV | pandas `chunksize=50000`, streaming download, resume-on-failure | Memory-safe ingestion under 512 MB |
 | Range Partitioning | `PARTITION BY RANGE (year)` for Part D + Physician PUF raw+bronze tables | Query performance + annual partition-swap refresh |
 | Entity Resolution | NPI canonical key, NPPES authoritative, `source_precedence ASC` | Simple deterministic lookup — no fuzzy matching needed |
-| Agentic Processing | `BaseAgent` ABC, monthly CronJobs, Haiku `claude-haiku-4-5-20251001`, 3-tier validation | Cost control ($170-380/mo) + quality assurance |
+| Agentic Processing | `BaseAgent` ABC, monthly CronJobs, Haiku `claude-haiku-4-5-20251001` via LiteLLM proxy, 3-tier validation | Cost control ($170-380/mo) + unified LLM access via `litellm.infra.svc.cluster.local:4000` |
 | PostgREST Gold | Add `gold` to `PGRST_DB_SCHEMAS`, analyst-only JWT access | Downstream product API exposure |
 | Open Payments API | Separate API endpoint, `CMSSocrataFetcher`-compatible pagination | MCP tool + batch support |
 | DDInter/Stabilis | Full dataset cache, offline mode, quarterly refresh | Reliability for academic APIs |
@@ -295,7 +295,7 @@ User Stories 1+2 (Provider Lookup, Provider Search). Parallelizable per-source.
 5. 1 gold model: `provider_profile`
 6. Tool registry Tier 4 entries (7 tools)
 7. Bronze transformer handlers (7)
-8. 5 CronJobs + rate limits + catalog seeds
+8. 5 CronJobs (per spec.md § CronJob Manifest Template) + rate limits + catalog seeds
 
 ### Phase 4: Facility & Hospital (Tasks T056-T085)
 
@@ -323,11 +323,12 @@ User Story 4 (Drug Market Analysis). 9+1 sources including RxNorm bulk.
 
 User Story 9 (Bulk Data Refresh Pipeline). CronJob orchestration for all sources.
 
-1. ~33 CronJob manifests for data sources
-2. `kustomization.yaml` updates
-3. K8s manifest validation
+1. ~33 CronJob manifests for data sources — all follow spec.md § CronJob Manifest Template: individual `secretKeyRef` per DB key (NOT `envFrom`), `imagePullSecrets: ghcr-credentials`, K8s recommended labels, OTEL static values, image `ghcr.io/data-kinetic/dk-data-fe/job-trigger` (exact name for kustomize image transformer)
+2. `kustomization.yaml` updates — add all new CronJob resources
+3. K8s manifest validation — `kubectl kustomize k8s/overlays/staging --enable-helm > /dev/null`
 4. Rate limits for all sources
 5. Catalog seeds for all sources
+6. Deployment: CronJobs deploy automatically after merge to `staging` branch via ArgoCD auto-sync (`build-push.yaml` → image build → auto-commit tag → ArgoCD sync to `dk-data-staging` namespace). DopplerSecret project: `dk-data-fe`.
 
 ### Phase 7: Population & Geographic (Tasks T126-T140)
 
@@ -374,7 +375,7 @@ User Story 8 (Drug Interaction Check). DDInter, Stabilis, Medicaid PDL, RSS exte
 3. ContactVerification pipeline + CronJob (256Mi/250m, 4h deadline)
 4. StaffingDecomposition agent + CronJob
 5. EquipmentInventoryInference agent + CronJob
-6. 6 agent CronJob manifests + `ANTHROPIC_API_KEY` / `GOOGLE_PLACES_API_KEY` / `USPS_API_KEY` secrets
+6. 6 agent CronJob manifests following agent variant of spec.md § CronJob Manifest Template: `command: ["python", "-m", "dk_data.claude_sdk.runner"]`, `args: ["--agent", "{name}", "--batch-size", "N"]`. `LITELLM_API_BASE` as static `value:` (cluster-internal URL, NOT from DopplerSecret). ContactVerification uses `GOOGLE_PLACES_API_KEY` + `USPS_API_KEY` via `secretKeyRef` instead. All include standard 5 DB `secretKeyRef` entries + OTEL static values + `imagePullSecrets: ghcr-credentials`.
 
 ### Phase 12: Contact Enrichment (Tasks T211-T225)
 

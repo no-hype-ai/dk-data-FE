@@ -378,19 +378,19 @@ curl -H "Authorization: Bearer $DK_DATA_API_KEY" \
 
 ### Required for agent pipeline
 
-| Service | Doppler Var(s) | Registration URL | Notes |
-|---------|---------------|------------------|-------|
-| Anthropic (agents) | `ANTHROPIC_API_KEY` | https://console.anthropic.com/ | Required for all 5 Claude SDK agents. Haiku model. |
-| Google Places (contact verification) | `GOOGLE_PLACES_API_KEY` | https://console.cloud.google.com/ | ContactVerification agent only. |
-| USPS Address (contact verification) | `USPS_API_KEY` | https://www.usps.com/business/web-tools-apis/ | ContactVerification agent only. |
+| Service | Env Var / Config | Source | Notes |
+|---------|-----------------|--------|-------|
+| LiteLLM proxy (all LLM agents) | `LITELLM_API_BASE` | `http://litellm.infra.svc.cluster.local:4000` (cluster-internal) | All 5 Claude SDK agents route through LiteLLM proxy. No `ANTHROPIC_API_KEY` needed in agent pods — API keys managed centrally by LiteLLM in infra namespace. |
+| Google Places (contact verification) | `GOOGLE_PLACES_API_KEY` | https://console.cloud.google.com/ (Doppler) | ContactVerification agent only. API-only, no LLM calls. |
+| USPS Address (contact verification) | `USPS_API_KEY` | https://www.usps.com/business/web-tools-apis/ (Doppler) | ContactVerification agent only. API-only, no LLM calls. |
 
 ### After registration
 
 1. Add new env vars to Doppler (`dk-data-fe` project → `prd` config)
 2. The `DopplerSecret` CRD (`k8s/base/doppler-secret.yaml`) auto-syncs all
    Doppler vars to the `dk-data-secrets` K8s secret every 300s
-3. CronJobs and FastAPI pods reference these via `envFrom: secretRef`
-4. No K8s manifest changes needed — new vars are automatically available
+3. CronJobs reference secrets via individual `secretKeyRef` per key (NOT `envFrom` — see spec.md § CronJob Manifest Template). New Doppler keys are available immediately but require a `secretKeyRef` entry in each CronJob YAML that needs them.
+4. FastAPI (PostgREST) uses `envFrom: configMapRef` for config + individual `secretKeyRef` for secrets.
 
 ## Environment URLs
 

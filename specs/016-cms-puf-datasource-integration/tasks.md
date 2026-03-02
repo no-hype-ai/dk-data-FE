@@ -66,7 +66,7 @@
 
 ### Agent Infrastructure
 
-- [ ] T009 [P] Create `src/dk_data/claude_sdk/base_agent.py` — `BaseAgent(ABC)` with `SYSTEM_PROMPT`, `AGENT_NAME`, `DEFAULT_MODEL = "claude-haiku-4-5-20251001"`, `DEFAULT_MIN_CONFIDENCE = 0.50`. Abstract methods: `_build_prompt(context)`, `_parse_response(raw_json, context)`. Shared methods: `process_single()`, `process_batch()`, `_extract_json()` (strip markdown fences), `_log_execution()` (writes to `meta.agent_execution_log`), `_check_quarantine()` (routes <0.50 confidence to `meta.agent_quarantine`). Extract common patterns from existing `src/dk_data/claude_sdk/enrichment.py` and `src/dk_data/claude_sdk/scoring_agent.py`.
+- [ ] T009 [P] Create `src/dk_data/claude_sdk/base_agent.py` — `BaseAgent(ABC)` with `SYSTEM_PROMPT`, `AGENT_NAME`, `DEFAULT_MODEL = "claude-haiku-4-5-20251001"`, `DEFAULT_MIN_CONFIDENCE = 0.50`. Use `litellm.completion()` via cluster LiteLLM proxy (`http://litellm.infra.svc.cluster.local:4000`) instead of direct Anthropic SDK — reads `LITELLM_API_BASE` env var (default: `http://litellm.infra.svc.cluster.local:4000`). Abstract methods: `_build_prompt(context)`, `_parse_response(raw_json, context)`. Shared methods: `process_single()`, `process_batch()`, `_extract_json()` (strip markdown fences), `_log_execution()` (writes to `meta.agent_execution_log`), `_check_quarantine()` (routes <0.50 confidence to `meta.agent_quarantine`). Extract common patterns from existing `src/dk_data/claude_sdk/enrichment.py` and `src/dk_data/claude_sdk/scoring_agent.py`, replacing `anthropic.Anthropic()` with `litellm.completion()`.
 - [ ] T010 [P] Create `src/dk_data/claude_sdk/agent_registry.py` — `AgentDefinition` dataclass mirroring `ToolDefinition` pattern, with `AGENT_REGISTRY` dict. Fields: name, description, module_path, input_sources, output_targets, model, cadence, estimated_cost_per_run, product_consumers. Register 6 agents. See contracts/agent-pipeline.yaml.
 - [ ] T011 [P] Create `src/dk_data/claude_sdk/runner.py` — CLI entry point `python -m dk_data.claude_sdk.runner --agent {name} --batch-size {n} --dry-run`. Imports agent from registry, instantiates, runs `process_batch()`. Handles logging, error reporting, metrics emission.
 - [ ] T012 [P] Create `src/dk_data/claude_sdk/agents/__init__.py` — export all agent classes.
@@ -237,7 +237,7 @@
 
 ### CronJob Manifests — Provider Sources (7)
 
-- [ ] T070a [P] [US9] Create `k8s/base/ingestion/cronjob-fetch-nppes.yaml` — monthly (`0 3 1 * *`). Follow existing `cronjob-mol-fetch-daily.yaml` pattern: `concurrencyPolicy: Forbid`, `backoffLimit: 2`, resources 256Mi/100m → 512Mi/300m, `dk-data-secrets` envFrom.
+- [ ] T070a [P] [US9] Create `k8s/base/ingestion/cronjob-fetch-nppes.yaml` — monthly (`0 3 1 * *`), `activeDeadlineSeconds: 28800` (8h for 9.3GB). Follow `cronjob-fetch-pubmed.yaml` pattern (see spec.md § CronJob Manifest Template): `concurrencyPolicy: Forbid`, `backoffLimit: 2`, `restartPolicy: Never`, `successfulJobsHistoryLimit: 3`, `failedJobsHistoryLimit: 3`, `imagePullSecrets: [{name: ghcr-credentials}]`, image `ghcr.io/data-kinetic/dk-data-fe/job-trigger:main-{sha}` (exact name for kustomize), individual `secretKeyRef` per DB key (POSTGRES_HOST/PORT/USER/PASSWORD/DB — NOT `envFrom`), OTEL env as static `value:`, K8s recommended labels (`app.kubernetes.io/name`, `/component: ingestion`, `/part-of: dk-data`). Resources 256Mi/100m → 512Mi/300m. Command: `["python", "-m", "dk_data.ingestion.main"]`, args: `["nppes"]`.
 - [ ] T070b [P] [US9] Create `k8s/base/ingestion/cronjob-fetch-cms-partd.yaml` — weekly (`0 4 * * 0`). Note: weekly schedule checks for new annual release; downloads only when new data detected.
 - [ ] T070c [P] [US9] Create `k8s/base/ingestion/cronjob-fetch-cms-partd-summary.yaml` — weekly (`30 4 * * 0`).
 - [ ] T070d [P] [US9] Create `k8s/base/ingestion/cronjob-fetch-cms-physician-puf.yaml` — weekly (`0 5 * * 0`). Note: weekly schedule checks for new annual release.
@@ -352,7 +352,7 @@
 ### IDN Hierarchy Agent
 
 - [ ] T087 [US7] Create `src/dk_data/claude_sdk/agents/idn_hierarchy.py` — `IDNHierarchyAgent(BaseAgent)`. System prompt for resolving conflicting parent organizations in PECOS + CHOW + Facility Affiliation + SEC EDGAR (already in dk-data-fe, reference for public health system filings and organizational structure per FR-035). Input: `IDNContext` (PECOS enrollments, CHOW events, affiliation links, SEC EDGAR org data, top 50 US systems for validation). Output: `IDNHierarchyResult` per contracts/agent-pipeline.yaml. Three-stage: deterministic (~80%), heuristic, agent (~20% ambiguous).
-- [ ] T088 [P] [US7] Create CronJob `k8s/base/ingestion/cronjob-agent-idn-hierarchy.yaml` — monthly Day 2, 512Mi/500m, 4h deadline, requires ANTHROPIC_API_KEY.
+- [ ] T088 [P] [US7] Create CronJob `k8s/base/ingestion/cronjob-agent-idn-hierarchy.yaml` — monthly Day 2, 512Mi/500m, 4h deadline. Follow agent CronJob variant of spec.md § CronJob Manifest Template: `command: ["python", "-m", "dk_data.claude_sdk.runner"]`, `args: ["--agent", "idn_hierarchy", "--batch-size", "50"]`. Set `LITELLM_API_BASE` as static `value: "http://litellm.infra.svc.cluster.local:4000"` (NOT from DopplerSecret). Include standard 5 DB `secretKeyRef` entries + OTEL static values + `imagePullSecrets: ghcr-credentials` + K8s labels.
 - [ ] T089 [US7] Modify `src/dk_data/services/mcp/silver_gold_refresher.py` — add `_silver_health_systems()` handler to propagate system affiliations to `gold.facility_profile.system_affiliation`.
 
 **Checkpoint**: US7 complete. Health system hierarchies available with parent org, facilities, CHOW history.
@@ -394,28 +394,28 @@
 ### ServiceLineInference Agent
 
 - [ ] T099 [P] Create `src/dk_data/claude_sdk/agents/service_line_inference.py` — `ServiceLineInferenceAgent(BaseAgent)`. System prompt for DRG → service line classification. Input: `FacilityServiceLineContext` (ccn, drg_volumes, service_capabilities). Output: `ServiceLineResult`. 80% deterministic DRG mapping, 20% LLM for ambiguous. Validation: volume sums must match. See contracts/agent-pipeline.yaml.
-- [ ] T100 [P] Create CronJob `k8s/base/ingestion/cronjob-agent-service-line.yaml` — monthly Day 1, 512Mi/500m, 4h deadline.
+- [ ] T100 [P] Create CronJob `k8s/base/ingestion/cronjob-agent-service-line.yaml` — monthly Day 1, 512Mi/500m, 4h deadline. Agent CronJob variant: `command: ["python", "-m", "dk_data.claude_sdk.runner"]`, `args: ["--agent", "service_line_inference", "--batch-size", "100"]`. `LITELLM_API_BASE` as static `value:`. Standard DB `secretKeyRef` + OTEL + labels per § CronJob Manifest Template.
 
 ### ReferralNetwork Agent
 
 - [ ] T101 [P] Create `src/dk_data/claude_sdk/agents/referral_network.py` — `ReferralNetworkAgent(BaseAgent)`. Infer referral relationships from geographic proximity, Post-Acute PUF volumes, DMEPOS referring NPI, PECOS affiliations. Confidence scoring. Output to `gold.provider_network`. See contracts/agent-pipeline.yaml.
-- [ ] T102 [P] Create CronJob `k8s/base/ingestion/cronjob-agent-referral-network.yaml` — monthly Day 5, 1Gi/1000m, 8h deadline (largest agent).
+- [ ] T102 [P] Create CronJob `k8s/base/ingestion/cronjob-agent-referral-network.yaml` — monthly Day 5, 1Gi/1000m, 8h deadline (largest agent). Agent CronJob variant: `command: ["python", "-m", "dk_data.claude_sdk.runner"]`, `args: ["--agent", "referral_network", "--batch-size", "100"]`. `LITELLM_API_BASE` as static `value:`. Standard DB `secretKeyRef` + OTEL + labels per § CronJob Manifest Template.
 - [ ] T103 Create `src/dk_data/sqlmesh/models/molecules/gold/provider_network.sql` — `INCREMENTAL_BY_UNIQUE_KEY(unique_key (source_npi, dest_npi, relationship_type))`. Agent-produced referral relationships. Filter `WHERE confidence_score >= 0.50` in downstream queries.
 
 ### ContactVerification Agent
 
 - [ ] T104 [P] Create `src/dk_data/claude_sdk/agents/contact_verification.py` — `ContactVerificationAgent(BaseAgent)`. API-only (no LLM calls). Uses Google Places API for phone verification and USPS Address Validation API for address standardization. Updates `silver.providers` with `phone_verified`, `address_verified`, `verification_date`.
-- [ ] T105 [P] Create CronJob `k8s/base/ingestion/cronjob-agent-contact-verification.yaml` — monthly Day 10, 256Mi/250m, 4h deadline. Requires `GOOGLE_PLACES_API_KEY` and `USPS_API_KEY` (not ANTHROPIC_API_KEY).
+- [ ] T105 [P] Create CronJob `k8s/base/ingestion/cronjob-agent-contact-verification.yaml` — monthly Day 10, 256Mi/250m, 4h deadline. Agent CronJob variant: `command: ["python", "-m", "dk_data.claude_sdk.runner"]`, `args: ["--agent", "contact_verification", "--batch-size", "200"]`. Requires `GOOGLE_PLACES_API_KEY` and `USPS_API_KEY` (via `secretKeyRef` from `dk-data-secrets`). No `LITELLM_API_BASE` (API-only agent, no LLM calls). Standard DB `secretKeyRef` + OTEL + labels per § CronJob Manifest Template.
 
 ### StaffingDecomposition Agent
 
 - [ ] T106 [P] Create `src/dk_data/claude_sdk/agents/staffing_decomposition.py` — `StaffingDecompositionAgent(BaseAgent)`. Decompose HCRIS staffing data (Worksheet S-3/A) supplemented by BLS OEWS occupational mix ratios (FR-038) into structured categories (Nursing RN/LPN/CNA, Admin, Therapy, Lab, Pharmacy, Other). HCRIS provides ~60-70% overall coverage (~80% nursing); BLS OEWS improves departmental breakdown. Validation: decomposition sums to total_fte ± 2%.
-- [ ] T107 [P] Create CronJob `k8s/base/ingestion/cronjob-agent-staffing-decomposition.yaml` — monthly Day 3, 512Mi/500m, 4h deadline.
+- [ ] T107 [P] Create CronJob `k8s/base/ingestion/cronjob-agent-staffing-decomposition.yaml` — monthly Day 3, 512Mi/500m, 4h deadline. Agent CronJob variant with `LITELLM_API_BASE` as static `value:`. Standard DB `secretKeyRef` + OTEL + labels per § CronJob Manifest Template.
 
 ### EquipmentInventoryInference Agent (FR-047)
 
 - [ ] T106a [P] Create `src/dk_data/claude_sdk/agents/equipment_inventory_inference.py` — `EquipmentInventoryInferenceAgent(BaseAgent)`. Infer binary equipment presence (MRI, CT, PET, cath lab, linear accelerator, surgical robot) from POS service capability flags + DRG volume inference (high-volume cardiac DRGs → cath lab, neuro DRGs → MRI). Target ~50-60% binary presence accuracy. Output populates `silver.equipment_inventory`, enriches `gold.facility_profile`.
-- [ ] T106b [P] Create CronJob `k8s/base/ingestion/cronjob-agent-equipment-inventory.yaml` — monthly Day 4, 512Mi/500m, 4h deadline.
+- [ ] T106b [P] Create CronJob `k8s/base/ingestion/cronjob-agent-equipment-inventory.yaml` — monthly Day 4, 512Mi/500m, 4h deadline. Agent CronJob variant with `LITELLM_API_BASE` as static `value:`. Standard DB `secretKeyRef` + OTEL + labels per § CronJob Manifest Template.
 
 ### Agent CronJob Registration
 
@@ -733,7 +733,10 @@ With multiple developers after Phase 2:
 - Each user story is independently completable and testable after Phase 2
 - No test tasks generated (not explicitly requested in spec)
 - **Integration Audit tasks**: T004a (mcp.py §A), T005 (base_tool.py §B), T007 (silver_gold_refresher.py §C), T007a (cms_datasets.py §0.5), T030 (tool_registry §D), T055a (healthcare_facilities §E)
-- Agent CronJobs require `ANTHROPIC_API_KEY` in `dk-data-secrets` (except ContactVerification which needs `GOOGLE_PLACES_API_KEY` + `USPS_API_KEY`)
+- Agent CronJobs use the cluster LiteLLM proxy (`LITELLM_API_BASE=http://litellm.infra.svc.cluster.local:4000`) — no `ANTHROPIC_API_KEY` needed in agent pods (API keys managed centrally by LiteLLM in infra namespace). `LITELLM_API_BASE` is a static `value:` in the CronJob manifest (NOT from DopplerSecret — it's a cluster-internal URL). Exception: ContactVerification is API-only (needs `GOOGLE_PLACES_API_KEY` + `USPS_API_KEY` via `secretKeyRef`, no LLM calls)
+- **CronJob secret access**: All CronJobs use individual `secretKeyRef` per DB key (POSTGRES_HOST/PORT/USER/PASSWORD/DB) — NOT `envFrom` with a secret ref. Source-specific API keys also via individual `secretKeyRef` with `optional: true`. See spec.md § CronJob Manifest Template for the complete mandatory structure.
+- **CronJob image name**: All CronJob YAMLs MUST use `ghcr.io/data-kinetic/dk-data-fe/job-trigger` as the base image name. Kustomize overlays (staging/prod) automatically replace the tag via image transformer matching. Using a different image name breaks the tag update pipeline.
+- **Deployment flow**: `build-push.yaml` only triggers on `main` and `staging` branches — feature branches do NOT build images. CronJobs are deployed to staging when the feature branch is merged to `staging`: CI builds image → auto-commits tag to overlay → ArgoCD auto-syncs new resources to `dk-data-staging` namespace. DopplerSecret project: `dk-data-fe` (config: `prd` base, patched to `stg` for staging).
 - CMS data.cms.gov APIs are fully open — no API key registration needed for most sources
 - Year-partitioned tables (Part D, Physician PUF) need partition creation in migration 084 for years 2015-2025
 - Weekly CronJobs for annual PUF sources (Part D, Physician PUF) check for new annual releases — they download only when new data is detected. Annual PUFs use full-year replacement, not incremental within-year updates.
