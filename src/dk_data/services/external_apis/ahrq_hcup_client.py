@@ -245,7 +245,7 @@ class AHRQHCUPClient(BaseAPIClient[Dict[str, Any]]):
     """
 
     # HCUPnet base URL
-    BASE_URL = "https://hcupnet.ahrq.gov"
+    BASE_URL = "https://datatools.ahrq.gov/hcupnet"
 
     # Common CCS (Clinical Classifications Software) categories
     CCS_CATEGORIES = {
@@ -440,6 +440,9 @@ class AHRQHCUPClient(BaseAPIClient[Dict[str, Any]]):
         """
         Get trending conditions by utilization.
 
+        Queries HCUPnet for the most common CCS categories and compares
+        discharge counts across the requested year range.
+
         Args:
             setting: Care setting
             year_range: Years to analyze
@@ -447,26 +450,37 @@ class AHRQHCUPClient(BaseAPIClient[Dict[str, Any]]):
 
         Returns:
             List of conditions with trend data
+
+        Raises:
+            RuntimeError: If HCUPnet is unreachable or returns invalid data
         """
         if year_range is None:
             year_range = (2018, 2021)
 
-        # This would query HCUPnet for top conditions
-        # For now, return known high-volume conditions
-        high_volume_conditions = [
-            {"code": "108", "name": "Congestive heart failure", "trend": "stable"},
-            {"code": "100", "name": "Acute myocardial infarction", "trend": "decreasing"},
-            {"code": "122", "name": "Pneumonia", "trend": "variable"},
-            {"code": "127", "name": "COPD", "trend": "stable"},
-            {"code": "149", "name": "Biliary tract disease", "trend": "increasing"},
-            {"code": "203", "name": "Osteoarthritis", "trend": "increasing"},
-            {"code": "226", "name": "Hip fracture", "trend": "stable"},
-            {"code": "49", "name": "Diabetes with complications", "trend": "increasing"},
-            {"code": "109", "name": "Acute cerebrovascular disease", "trend": "stable"},
-            {"code": "128", "name": "Asthma", "trend": "decreasing"},
-        ]
+        # Query the top CCS categories we track
+        top_codes = ["108", "100", "122", "127", "149", "203", "226", "49", "109", "128"]
+        results = []
 
-        return high_volume_conditions[:limit]
+        for code in top_codes[:limit]:
+            description = self.CCS_CATEGORIES.get(code, code)
+            try:
+                stats = await self._get_stats_for_code(code, year_range[1], setting)
+                if stats:
+                    results.append({
+                        "code": code,
+                        "name": description,
+                        "year": year_range[1],
+                        "total_discharges": stats.total_discharges,
+                        "mean_los": stats.mean_los,
+                        "mean_charge": stats.mean_charge,
+                    })
+            except Exception as e:
+                logger.warning(f"Failed to get trending data for {code}: {e}")
+
+        if not results:
+            raise RuntimeError("HCUPnet is unreachable — no trending condition data available")
+
+        return results
 
     async def _get_stats_for_code(
         self,
@@ -480,10 +494,6 @@ class AHRQHCUPClient(BaseAPIClient[Dict[str, Any]]):
 
         # Get description
         description = self._get_code_description(code, code_type)
-
-        # Query HCUPnet for stats
-        # In production, this would make actual queries to HCUPnet
-        # For now, return structure with available data
 
         try:
             # Build HCUPnet query URL
@@ -502,15 +512,7 @@ class AHRQHCUPClient(BaseAPIClient[Dict[str, Any]]):
 
         except Exception as e:
             logger.warning(f"Could not retrieve HCUP stats for {code}: {e}")
-
-            # Return basic stats structure
-            return HCUPStats(
-                code=code,
-                code_type=code_type,
-                description=description,
-                setting=setting,
-                year=year,
-            )
+            raise
 
     async def _query_inpatient_data(
         self,
@@ -518,22 +520,42 @@ class AHRQHCUPClient(BaseAPIClient[Dict[str, Any]]):
         year: int,
         state: Optional[str]
     ) -> List[HospitalStayData]:
-        """Query HCUPnet for inpatient data."""
-        # Build query and execute
-        # In production, this would interface with HCUPnet
+        """Query HCUPnet for inpatient data.
 
-        try:
-            # Placeholder response structure
-            stay = HospitalStayData(
-                principal_diagnosis_code=ccs_code,
-                principal_diagnosis_desc=self.CCS_CATEGORIES.get(ccs_code, ccs_code),
-                year=year,
+        Fetches the HCUPnet web page for the given CCS code and parses
+        the resulting HTML into structured HospitalStayData.
+        Raises on failure so callers can handle errors explicitly.
+        """
+        description = self.CCS_CATEGORIES.get(ccs_code, ccs_code)
+
+        query_url = self._build_hcupnet_query_url(ccs_code, year, "inpatient")
+        await self._rate_limiter.acquire()
+
+        # HCUPnet migrated to Tableau dashboards — fetch from the Tableau embed URL
+        import httpx
+        async with httpx.AsyncClient(timeout=self.config.timeout) as http:
+            response = await http.get(query_url, headers=self.config.headers)
+
+        if response.status_code != 200:
+            raise RuntimeError(
+                f"HCUPnet inpatient query failed for {ccs_code}: HTTP {response.status_code}"
             )
 
-            return [stay]
-        except Exception as e:
-            logger.error(f"Error querying inpatient data: {e}")
-            return []
+        stats = self._parse_hcupnet_response(
+            response.text, ccs_code, self._determine_code_type(ccs_code),
+            year, "inpatient", description
+        )
+        stay = HospitalStayData(
+            principal_diagnosis_code=ccs_code,
+            principal_diagnosis_desc=description,
+            year=year,
+            number_of_stays=stats.total_stays,
+            mean_charges_per_stay=self._safe_float(stats.mean_charge),
+            mean_cost_per_stay=self._safe_float(stats.mean_cost),
+            mean_length_of_stay=stats.mean_los,
+            in_hospital_mortality_pct=stats.in_hospital_mortality_rate,
+        )
+        return [stay]
 
     async def _query_ed_data(
         self,
@@ -541,19 +563,40 @@ class AHRQHCUPClient(BaseAPIClient[Dict[str, Any]]):
         year: int,
         state: Optional[str]
     ) -> List[EmergencyVisitData]:
-        """Query HCUPnet for ED visit data."""
-        try:
-            visit = EmergencyVisitData(
-                diagnosis_code=ccs_code,
-                diagnosis_desc=self.CCS_CATEGORIES.get(ccs_code, ccs_code),
-                ccs_category=ccs_code,
-                year=year,
+        """Query HCUPnet for ED visit data.
+
+        Fetches the HCUPnet web page for the given CCS code (ED setting) and
+        parses the resulting HTML.
+        Raises on failure so callers can handle errors explicitly.
+        """
+        description = self.CCS_CATEGORIES.get(ccs_code, ccs_code)
+
+        query_url = self._build_hcupnet_query_url(ccs_code, year, "ed")
+        await self._rate_limiter.acquire()
+
+        # HCUPnet migrated to Tableau dashboards — fetch from the Tableau embed URL
+        import httpx
+        async with httpx.AsyncClient(timeout=self.config.timeout) as http:
+            response = await http.get(query_url, headers=self.config.headers)
+
+        if response.status_code != 200:
+            raise RuntimeError(
+                f"HCUPnet ED query failed for {ccs_code}: HTTP {response.status_code}"
             )
 
-            return [visit]
-        except Exception as e:
-            logger.error(f"Error querying ED data: {e}")
-            return []
+        stats = self._parse_hcupnet_response(
+            response.text, ccs_code, self._determine_code_type(ccs_code),
+            year, "ed", description
+        )
+        visit = EmergencyVisitData(
+            diagnosis_code=ccs_code,
+            diagnosis_desc=description,
+            ccs_category=ccs_code,
+            year=year,
+            number_of_visits=stats.total_discharges,
+            mean_charge=self._safe_float(stats.mean_charge),
+        )
+        return [visit]
 
     def _map_condition_to_ccs(self, condition: str) -> Optional[str]:
         """Map condition name to CCS code."""
@@ -632,27 +675,30 @@ class AHRQHCUPClient(BaseAPIClient[Dict[str, Any]]):
         # For ICD-10, would look up in code database
         return None
 
+    # Tableau embed base URLs for HCUPnet (migrated from hcupnet.ahrq.gov JSP)
+    TABLEAU_URLS = {
+        "inpatient": "https://dataviz.ahrq.gov/views/HCUPnet_Analysis_National_IP_Classifications_v2_1/TrendsDB",
+        "ed": "https://dataviz.ahrq.gov/views/HCUPnet_Analysis_National_ED_Classifications_v2_1/Trends",
+        "ambulatory": "https://dataviz.ahrq.gov/views/HCUPnet_Analysis_SEDD_Classifications_v2_1/Trends",
+    }
+
     def _build_hcupnet_query_url(
         self,
         code: str,
         year: int,
         setting: str
     ) -> str:
-        """Build HCUPnet query URL."""
-        # HCUPnet uses complex URL parameters
-        # This is a simplified version
-        base_path = "/HCUPnet.jsp"
+        """Build HCUPnet query URL.
 
-        # Map setting to HCUPnet database
-        db_map = {
-            "inpatient": "NIS",  # National Inpatient Sample
-            "ed": "NEDS",       # Nationwide Emergency Department Sample
-            "ambulatory": "SASD", # State Ambulatory Surgery Databases
-        }
-
-        db = db_map.get(setting, "NIS")
-
-        return f"{base_path}?Id=&Form=&JS=N&Action=%3E%3ENext%3E%3E&_SUMMARY=S&_TYPE=C&Tefession=1&_YEAR={year}&_DATABASE={db}&_CCS={code}"
+        Note: HCUPnet migrated from hcupnet.ahrq.gov (JSP) to
+        datatools.ahrq.gov (Tableau embeds). The Tableau dashboards
+        do not support direct HTTP queries — they require JavaScript
+        rendering. This method returns the Tableau embed URL for
+        reference, but callers should expect HTTP fetches to return
+        Tableau bootstrap HTML, not data tables.
+        """
+        tableau_url = self.TABLEAU_URLS.get(setting, self.TABLEAU_URLS["inpatient"])
+        return f"{tableau_url}?:showAppBanner=false&:display_count=n&:showVizHome=n&:embed=yes"
 
     def _parse_hcupnet_response(
         self,

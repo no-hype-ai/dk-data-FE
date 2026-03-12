@@ -205,6 +205,8 @@ dk-data-fe/
 
 ## Data Sources
 
+### Existing Sources
+
 | Source | Description | Refresh |
 |--------|-------------|---------|
 | `cms_medicare_inpatient` | TAVR procedure volumes (DRG 266/267) | Quarterly |
@@ -212,6 +214,57 @@ dk-data-fe/
 | `cms_cost_reports` | Hospital financial metrics (HCRIS) | Annual |
 | `acc_tvc` | ACC Transcatheter Valve Certifications | Quarterly |
 | `hrsa_shortage_areas` | Health Professional Shortage Areas | Monthly |
+
+### CMS PUF Data Sources (spec 016)
+
+30 new CMS/FDA/NLM public-use file sources integrated via the medallion pipeline (raw -> bronze -> silver -> gold). All are free -- no API keys required.
+
+#### Provider Sources (7)
+
+| Source | Type | Refresh | Raw Table |
+|--------|------|---------|-----------|
+| NPPES (NPI Registry) | CSV bulk | Weekly | `raw.cms_nppes` |
+| Part D Prescriber | CSV | Annual | `raw.cms_part_d_prescriber` |
+| Physician/Supplier PUF | CSV | Annual | `raw.cms_physician_puf` |
+| Open Payments (General) | CSV | Annual | `raw.cms_open_payments_general` |
+| Open Payments (Research) | CSV | Annual | `raw.cms_open_payments_research` |
+| Open Payments (Ownership) | CSV | Annual | `raw.cms_open_payments_ownership` |
+| Care Compare (Physicians) | API/CSV | Quarterly | `raw.cms_care_compare_physicians` |
+
+#### Facility Sources (10)
+
+| Source | Type | Refresh | Raw Table |
+|--------|------|---------|-----------|
+| Provider of Services (POS) | CSV | Annual | `raw.cms_pos` |
+| PECOS Enrollment | CSV | Monthly | `raw.cms_pecos` |
+| Change of Ownership (CHOW) | CSV | Annual | `raw.cms_chow` |
+| Hospital Affiliation | CSV | Annual | `raw.cms_hospital_affiliation` |
+| Inpatient PUF (DRG) | CSV | Annual | `raw.cms_inpatient_puf` |
+| Outpatient PUF | CSV | Annual | `raw.cms_outpatient_puf` |
+| Hospital Quality (Star Ratings) | CSV | Quarterly | `raw.cms_hospital_quality` |
+| Hospital General Info | CSV | Monthly | `raw.cms_hospital_general_info` |
+| HCRIS Cost Reports | CSV | Annual | `raw.cms_hcris` |
+| Magnet Recognition (ANCC) | Web scrape | Annual | `raw.cms_magnet` |
+
+#### Drug/Market Sources (13)
+
+| Source | Type | Refresh | Raw Table |
+|--------|------|---------|-----------|
+| NDC Directory | API/CSV | Monthly | `raw.cms_ndc` |
+| Part D Spending by Drug | CSV | Annual | `raw.cms_part_d_spending` |
+| Part B Spending by Drug | CSV | Annual | `raw.cms_part_b_spending` |
+| Medicare Formulary | CSV | Quarterly | `raw.cms_formulary` |
+| RBCS Classification | CSV | Annual | `raw.cms_rbcs` |
+| USP Drug Classification | CSV | Annual | `raw.cms_usp` |
+| NUCC Taxonomy | CSV | Annual | `raw.cms_nucc` |
+| Geographic Variation PUF | CSV | Annual | `raw.cms_geographic_variation` |
+| Chronic Conditions PUF | CSV | Annual | `raw.cms_chronic_conditions` |
+| Post-Acute Care PUF | CSV | Annual | `raw.cms_post_acute` |
+| DMEPOS Utilization | CSV | Annual | `raw.cms_dmepos` |
+| DDInter (Drug Interactions) | API | Monthly | `raw.cms_ddinter` |
+| Stabilis (IV Compatibility) | Web | Quarterly | `raw.cms_stabilis` |
+
+For agent enrichment and gold view documentation, see [docs/agents.md](docs/agents.md). For setup instructions, see [docs/quickstart.md](docs/quickstart.md).
 
 ## Database Schemas
 

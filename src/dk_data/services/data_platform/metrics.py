@@ -44,6 +44,15 @@ if PROMETHEUS_AVAILABLE:
         DK_BRONZE_UNPROCESSED,
         DK_TABLE_RECORD_COUNT,
         DK_QUARANTINE_COUNT,
+        # CMS metrics (016-cms-puf-datasource-integration)
+        CMS_SOURCE_HEALTH_STATUS,
+        CMS_SOURCE_LAST_SYNC_TIMESTAMP,
+        CMS_GOLD_VIEW_LAST_REFRESH_TIMESTAMP,
+        CMS_GOLD_VIEW_RECORD_COUNT,
+        CMS_AGENT_LAST_RUN_STATUS,
+        CMS_AGENT_QUARANTINE_PENDING,
+        CMS_AGENT_RECORDS_ENRICHED_TOTAL,
+        CMS_AGENT_RECORDS_QUARANTINED_TOTAL,
     )
 
 
@@ -337,6 +346,128 @@ def refresh_metrics_from_database_sync():
             'euipo_trademarks': ('bronze.euipo_trademarks', True),
         }
 
+        # CMS source health (016-cms-puf-datasource-integration)
+        cms_sources = {
+            'cms_care_compare': ('raw.cms_care_compare', True),
+            'cms_part_d_prescriber': ('raw.cms_part_d_prescriber', True),
+            'cms_physician_puf': ('raw.cms_physician_puf', True),
+            'cms_open_payments': ('raw.cms_open_payments', True),
+            'cms_pecos': ('raw.cms_pecos', True),
+            'cms_inpatient_puf': ('raw.cms_inpatient_puf', True),
+            'cms_outpatient_puf': ('raw.cms_outpatient_puf', True),
+            'cms_hospital_quality': ('raw.cms_hospital_quality', True),
+            'cms_hospital_affiliation': ('raw.cms_hospital_affiliation', True),
+            'cms_formulary': ('raw.cms_formulary', True),
+            'cms_part_d_spending': ('raw.cms_part_d_spending', True),
+            'cms_part_b_spending': ('raw.cms_part_b_spending', True),
+            'cms_ndc': ('raw.cms_ndc', True),
+            'cms_chow': ('raw.cms_chow', True),
+            'cms_geographic_variation': ('raw.cms_geographic_variation', True),
+            'cms_chronic_conditions': ('raw.cms_chronic_conditions', True),
+            'cms_dmepos': ('raw.cms_dmepos', True),
+            'cms_post_acute': ('raw.cms_post_acute', True),
+            'cms_rbcs': ('raw.cms_rbcs', True),
+            'cms_ddinter': ('raw.cms_ddinter', True),
+            'cms_nppes': ('raw.cms_nppes', True),
+            'cms_pos': ('raw.cms_pos', True),
+            'cms_hcris': ('raw.cms_hcris', True),
+            'cms_nucc': ('raw.cms_nucc', True),
+            'cms_magnet': ('raw.cms_magnet', True),
+            'cms_usp': ('raw.cms_usp', True),
+            'cms_stabilis': ('raw.cms_stabilis', True),
+        }
+        for source_name, (table, allow_empty) in cms_sources.items():
+            try:
+                schema, table_name = table.split('.', 1)
+                cur.execute("""
+                    SELECT EXISTS (
+                        SELECT FROM information_schema.tables
+                        WHERE table_schema = %s AND table_name = %s
+                    )
+                """, (schema, table_name))
+                table_exists = cur.fetchone()[0]
+                if not table_exists:
+                    CMS_SOURCE_HEALTH_STATUS.labels(source=source_name).set(0)
+                    continue
+                cur.execute(f"SELECT COUNT(*) FROM {table}")
+                count = cur.fetchone()[0] or 0
+                if count > 0:
+                    CMS_SOURCE_HEALTH_STATUS.labels(source=source_name).set(1)
+                    CMS_SOURCE_LAST_SYNC_TIMESTAMP.labels(source=source_name).set(current_time - 3600)
+                elif allow_empty:
+                    CMS_SOURCE_HEALTH_STATUS.labels(source=source_name).set(0.5)
+                else:
+                    CMS_SOURCE_HEALTH_STATUS.labels(source=source_name).set(0)
+            except Exception as e:
+                CMS_SOURCE_HEALTH_STATUS.labels(source=source_name).set(0)
+                logger.debug(f"Error checking CMS source {source_name}: {e}")
+
+        # CMS gold view record counts and freshness
+        cms_gold_views = [
+            'cms_provider_360', 'cms_facility_360', 'cms_drug_market',
+            'cms_geographic_access', 'cms_quality_composite',
+        ]
+        for view in cms_gold_views:
+            try:
+                cur.execute("""
+                    SELECT EXISTS (
+                        SELECT FROM information_schema.tables
+                        WHERE table_schema = 'gold' AND table_name = %s
+                    )
+                """, (view,))
+                if cur.fetchone()[0]:
+                    cur.execute(f"SELECT COUNT(*) FROM gold.{view}")
+                    count = cur.fetchone()[0] or 0
+                    CMS_GOLD_VIEW_RECORD_COUNT.labels(view=view).set(count)
+                    if count > 0:
+                        CMS_GOLD_VIEW_LAST_REFRESH_TIMESTAMP.labels(view=view).set(current_time - 3600)
+                else:
+                    CMS_GOLD_VIEW_RECORD_COUNT.labels(view=view).set(0)
+            except Exception as e:
+                CMS_GOLD_VIEW_RECORD_COUNT.labels(view=view).set(0)
+                logger.debug(f"Error checking CMS gold view {view}: {e}")
+
+        # CMS agent execution status and quarantine
+        cms_agents = [
+            'service_line_inference', 'idn_hierarchy', 'referral_network',
+            'contact_verification', 'staffing_decomposition', 'equipment_inventory',
+        ]
+        for agent in cms_agents:
+            try:
+                cur.execute("""
+                    SELECT EXISTS (
+                        SELECT FROM information_schema.tables
+                        WHERE table_schema = 'meta' AND table_name = 'agent_execution_log'
+                    )
+                """)
+                if cur.fetchone()[0]:
+                    cur.execute("""
+                        SELECT status FROM meta.agent_execution_log
+                        WHERE agent_name = %s ORDER BY completed_at DESC NULLS LAST LIMIT 1
+                    """, (agent,))
+                    row = cur.fetchone()
+                    if row:
+                        status_map = {'COMPLETED': 1, 'RUNNING': 0.75, 'FAILED': 0}
+                        CMS_AGENT_LAST_RUN_STATUS.labels(agent_name=agent).set(
+                            status_map.get(row[0], 0)
+                        )
+                    # Pending quarantine count
+                    cur.execute("""
+                        SELECT EXISTS (
+                            SELECT FROM information_schema.tables
+                            WHERE table_schema = 'meta' AND table_name = 'agent_quarantine'
+                        )
+                    """)
+                    if cur.fetchone()[0]:
+                        cur.execute("""
+                            SELECT COUNT(*) FROM meta.agent_quarantine
+                            WHERE agent_name = %s AND status = 'PENDING'
+                        """, (agent,))
+                        pending = cur.fetchone()[0] or 0
+                        CMS_AGENT_QUARANTINE_PENDING.labels(agent_name=agent).set(pending)
+            except Exception as e:
+                logger.debug(f"Error checking CMS agent {agent}: {e}")
+
         current_time = time.time()
 
         for source_name, (table, allow_empty) in local_sources.items():
@@ -416,6 +547,23 @@ def refresh_metrics_from_database_sync():
             'epo_patents': 'raw.epo_patents',
             'uspto_trademarks': 'raw.uspto_trademarks',
             'euipo_trademarks': 'raw.euipo_trademarks',
+            # CMS raw sources (016-cms-puf-datasource-integration)
+            'cms_care_compare': 'raw.cms_care_compare',
+            'cms_part_d_prescriber': 'raw.cms_part_d_prescriber',
+            'cms_physician_puf': 'raw.cms_physician_puf',
+            'cms_open_payments': 'raw.cms_open_payments',
+            'cms_pecos': 'raw.cms_pecos',
+            'cms_inpatient_puf': 'raw.cms_inpatient_puf',
+            'cms_outpatient_puf': 'raw.cms_outpatient_puf',
+            'cms_hospital_quality': 'raw.cms_hospital_quality',
+            'cms_hospital_affiliation': 'raw.cms_hospital_affiliation',
+            'cms_formulary': 'raw.cms_formulary',
+            'cms_part_d_spending': 'raw.cms_part_d_spending',
+            'cms_part_b_spending': 'raw.cms_part_b_spending',
+            'cms_ndc': 'raw.cms_ndc',
+            'cms_nppes': 'raw.cms_nppes',
+            'cms_pos': 'raw.cms_pos',
+            'cms_hcris': 'raw.cms_hcris',
         }
         for source, table in raw_sources.items():
             try:
@@ -465,22 +613,44 @@ def refresh_metrics_from_database_sync():
             'raw': [
                 'chembl', 'clinicaltrials', 'drugbank', 'openalex',
                 'openfda_faers', 'openfda_labels', 'pdb', 'pubchem', 'sider', 'uniprot',
-                'uspto_patents', 'uspto_ci', 'epo_patents', 'uspto_trademarks', 'euipo_trademarks'
+                'uspto_patents', 'uspto_ci', 'epo_patents', 'uspto_trademarks', 'euipo_trademarks',
+                # CMS sources (016-cms-puf-datasource-integration)
+                'cms_care_compare', 'cms_part_d_prescriber', 'cms_physician_puf',
+                'cms_open_payments', 'cms_pecos', 'cms_inpatient_puf', 'cms_outpatient_puf',
+                'cms_hospital_quality', 'cms_hospital_affiliation', 'cms_formulary',
+                'cms_part_d_spending', 'cms_part_b_spending', 'cms_ndc', 'cms_chow',
+                'cms_geographic_variation', 'cms_chronic_conditions', 'cms_dmepos',
+                'cms_post_acute', 'cms_rbcs', 'cms_ddinter', 'cms_nppes', 'cms_pos',
+                'cms_hcris', 'cms_nucc', 'cms_magnet', 'cms_usp', 'cms_stabilis',
             ],
             'bronze': [
                 'chembl', 'clinicaltrials', 'drugbank', 'openalex',
                 'openfda_faers', 'openfda_labels', 'pdb', 'pubchem', 'sider', 'uniprot',
-                'uspto_patents', 'uspto_ci', 'epo_patents', 'uspto_trademarks', 'euipo_trademarks'
+                'uspto_patents', 'uspto_ci', 'epo_patents', 'uspto_trademarks', 'euipo_trademarks',
+                # CMS bronze (SQLMesh-managed)
+                'cms_care_compare', 'cms_part_d_prescriber', 'cms_physician_puf',
+                'cms_open_payments', 'cms_pecos', 'cms_inpatient_puf', 'cms_outpatient_puf',
+                'cms_hospital_quality', 'cms_hospital_affiliation', 'cms_formulary',
+                'cms_part_d_spending', 'cms_part_b_spending', 'cms_ndc', 'cms_chow',
+                'cms_geographic_variation', 'cms_chronic_conditions', 'cms_dmepos',
+                'cms_post_acute', 'cms_rbcs', 'cms_ddinter', 'cms_nppes', 'cms_pos',
+                'cms_hcris', 'cms_nucc', 'cms_magnet', 'cms_usp', 'cms_stabilis',
             ],
             'silver': [
                 'adverse_events', 'bioactivity', 'clinical_trials', 'drug_labels',
                 'identifier_mappings', 'molecule_aliases', 'molecule_publications',
                 'molecule_targets', 'molecules', 'patents', 'publications',
-                'resolution_queue', 'targets', 'trademarks'
+                'resolution_queue', 'targets', 'trademarks',
+                # CMS silver composites
+                'cms_provider_360', 'cms_facility_360', 'cms_drug_market',
+                'cms_geographic_access', 'cms_quality_composite',
             ],
             'gold': [
                 'company_pipeline', 'lifecycle_evidence', 'lifecycle_stages',
-                'molecule_profile', 'safety_signals'
+                'molecule_profile', 'safety_signals',
+                # CMS gold views
+                'cms_provider_360', 'cms_facility_360', 'cms_drug_market',
+                'cms_geographic_access', 'cms_quality_composite',
             ],
             'public': [
                 'compounds', 'clinical_trials', 'drugbank_data', 'fda_labels',

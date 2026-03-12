@@ -176,17 +176,29 @@ async def run_dynamic_source_ingestion(
             credentials = options.get('credentials', {})
 
             if auth_type != 'none' and credentials.get('configured'):
-                # In production, retrieve from secure credential store
-                # For now, we'll use a placeholder pattern
                 cred_key = credentials.get('key', 'api_key')
-                # Note: In real impl, decrypt from secure storage
+                source_upper = source.upper().replace('-', '_')
+
                 if auth_type == 'api_key':
-                    headers[cred_key] = credentials.get('value', '')
+                    # Env-var-first: SYNC_APIKEY_{SOURCE} via Doppler, fall back to options dict
+                    env_val = os.environ.get(f"SYNC_APIKEY_{source_upper}")
+                    value = env_val or credentials.get('value', '')
+                    if not env_val and credentials.get('value'):
+                        logger.warning(f"Using options-dict credential for {source} — configure SYNC_APIKEY_{source_upper} in Doppler")
+                    headers[cred_key] = value
                 elif auth_type == 'bearer':
-                    headers['Authorization'] = f"Bearer {credentials.get('value', '')}"
+                    env_val = os.environ.get(f"SYNC_TOKEN_{source_upper}")
+                    value = env_val or credentials.get('value', '')
+                    if not env_val and credentials.get('value'):
+                        logger.warning(f"Using options-dict credential for {source} — configure SYNC_TOKEN_{source_upper} in Doppler")
+                    headers['Authorization'] = f"Bearer {value}"
                 elif auth_type == 'basic':
                     import base64
-                    encoded = base64.b64encode(credentials.get('value', '').encode()).decode()
+                    env_val = os.environ.get(f"SYNC_CRED_{source_upper}")
+                    value = env_val or credentials.get('value', '')
+                    if not env_val and credentials.get('value'):
+                        logger.warning(f"Using options-dict credential for {source} — configure SYNC_CRED_{source_upper} in Doppler")
+                    encoded = base64.b64encode(value.encode()).decode()
                     headers['Authorization'] = f"Basic {encoded}"
 
             # Add incremental date filter if configured

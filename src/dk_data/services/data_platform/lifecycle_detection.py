@@ -373,7 +373,7 @@ class LifecycleDetectionService:
         stage: LifecycleStage,
         confidence: float
     ):
-        """Update molecule's lifecycle stage in database."""
+        """Update molecule's lifecycle stage in database and record transition."""
         stage_map = {
             LifecycleStage.PRECLINICAL: 'preclinical',
             LifecycleStage.PHASE_1: 'phase_1',
@@ -397,6 +397,13 @@ class LifecycleDetectionService:
         max_phase = phase_map.get(stage, 0)
 
         async with self.db_pool.acquire() as conn:
+            # Get previous stage before update
+            prev_row = await conn.fetchrow("""
+                SELECT development_status FROM silver.molecules
+                WHERE id = $1::uuid
+            """, molecule_id)
+            previous_status = prev_row['development_status'] if prev_row else None
+
             await conn.execute("""
                 UPDATE silver.molecules
                 SET development_status = $2,
@@ -405,6 +412,17 @@ class LifecycleDetectionService:
                     updated_at = NOW()
                 WHERE id = $1::uuid
             """, molecule_id, status, max_phase, confidence)
+
+            # Record transition in audit table
+            try:
+                await conn.execute("""
+                    INSERT INTO silver.molecule_stage_history
+                        (molecule_id, previous_stage, new_stage, confidence, evidence_summary, detected_at)
+                    VALUES ($1::uuid, $2, $3, $4, $5, NOW())
+                """, molecule_id, previous_status, status, confidence,
+                    f"Auto-detected: {stage.value} (confidence={confidence:.2f})")
+            except Exception as e:
+                logger.warning(f"Failed to record stage transition for {molecule_id}: {e}")
 
     async def detect_all_molecules(self, limit: int = 100) -> List[LifecycleDetectionResult]:
         """
@@ -450,6 +468,23 @@ class LifecycleDetectionService:
         Returns:
             List of transition events
         """
-        # This would query an audit/history table
-        # For now, return empty list as placeholder
-        return []
+        async with self.db_pool.acquire() as conn:
+            rows = await conn.fetch("""
+                SELECT previous_stage, new_stage, confidence,
+                       evidence_summary, detected_at
+                FROM silver.molecule_stage_history
+                WHERE molecule_id = $1::uuid
+                  AND detected_at >= NOW() - make_interval(days => $2)
+                ORDER BY detected_at DESC
+            """, molecule_id, days)
+
+            return [
+                {
+                    "previous_stage": row["previous_stage"],
+                    "new_stage": row["new_stage"],
+                    "confidence": row["confidence"],
+                    "evidence_summary": row["evidence_summary"],
+                    "detected_at": row["detected_at"].isoformat() if row["detected_at"] else None,
+                }
+                for row in rows
+            ]

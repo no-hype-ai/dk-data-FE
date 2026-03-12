@@ -1,0 +1,28 @@
+-- Migration 084: CMS PUF Bronze Seeds (016-cms-puf-datasource-integration)
+-- Purpose: Placeholder documenting that bronze models are managed by SQLMesh
+-- Date: 2026-03-11
+--
+-- Bronze models for CMS PUF data live in:
+--   src/dk_data/sqlmesh/models/cms/bronze/
+--
+-- SQLMesh manages its own DDL for these models. This migration exists to
+-- maintain sequential numbering and document the bronze layer's location
+-- in the migration history.
+--
+-- Bronze models expected:
+--   - cms_bronze_nppes.sql
+--   - cms_bronze_part_d_prescriber.sql
+--   - cms_bronze_physician_puf.sql
+--   - cms_bronze_open_payments.sql
+--   - cms_bronze_pos.sql
+--   - cms_bronze_hospital_quality.sql
+--   - cms_bronze_hcris.sql
+--   - cms_bronze_ndc.sql
+--   - cms_bronze_part_d_spending.sql
+--   - cms_bronze_formulary.sql
+--   - cms_bronze_geographic_variation.sql
+--   - cms_bronze_dmepos.sql
+--
+-- No DDL changes required — SQLMesh handles bronze table creation.
+
+SELECT 1; -- no-op to keep migration runner happy

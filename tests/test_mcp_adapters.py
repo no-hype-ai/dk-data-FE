@@ -13,12 +13,12 @@ class TestBaseAdapterInterface:
     """Verify BaseAdapter contract."""
 
     def test_base_adapter_is_abstract(self):
-        from dk_data.services.mcp.adapters.base import BaseAdapter
+        from dk_data.services.pipeline.adapters.base import BaseAdapter
         with pytest.raises(TypeError):
             BaseAdapter()
 
     def test_subclass_must_implement_source_name(self):
-        from dk_data.services.mcp.adapters.base import BaseAdapter
+        from dk_data.services.pipeline.adapters.base import BaseAdapter
 
         class Incomplete(BaseAdapter):
             @property
@@ -31,7 +31,7 @@ class TestBaseAdapterInterface:
             Incomplete()
 
     def test_full_table_name_property(self):
-        from dk_data.services.mcp.adapters.base import BaseAdapter
+        from dk_data.services.pipeline.adapters.base import BaseAdapter
 
         class Complete(BaseAdapter):
             @property
@@ -46,7 +46,7 @@ class TestBaseAdapterInterface:
         assert adapter.full_table_name == "raw.my_table"
 
     def test_validate_against_bronze_default_true(self):
-        from dk_data.services.mcp.adapters.base import BaseAdapter
+        from dk_data.services.pipeline.adapters.base import BaseAdapter
 
         class Complete(BaseAdapter):
             @property
@@ -65,7 +65,7 @@ class TestClinicalTrialsAdapter:
     """Test ClinicalTrials.gov adapter normalization."""
 
     def _get_adapter(self):
-        from dk_data.services.mcp.adapters.clinicaltrials import Adapter
+        from dk_data.services.pipeline.adapters.clinicaltrials import Adapter
         return Adapter()
 
     def test_adapter_properties(self):
@@ -86,7 +86,7 @@ class TestChEMBLAdapter:
     """Test ChEMBL adapter normalization."""
 
     def _get_adapter(self):
-        from dk_data.services.mcp.adapters.chembl import Adapter
+        from dk_data.services.pipeline.adapters.chembl import Adapter
         return Adapter()
 
     def test_adapter_properties(self):
@@ -105,7 +105,7 @@ class TestDrugBankAdapter:
     """Test DrugBank adapter normalization (most critical — REST JSON vs XML)."""
 
     def _get_adapter(self):
-        from dk_data.services.mcp.adapters.drugbank import Adapter
+        from dk_data.services.pipeline.adapters.drugbank import Adapter
         return Adapter()
 
     def test_adapter_properties(self):
@@ -124,7 +124,7 @@ class TestOpenFDAFaersAdapter:
     """Test OpenFDA FAERS adapter normalization."""
 
     def _get_adapter(self):
-        from dk_data.services.mcp.adapters.openfda_faers import Adapter
+        from dk_data.services.pipeline.adapters.openfda_faers import Adapter
         return Adapter()
 
     def test_adapter_properties(self):
@@ -143,7 +143,7 @@ class TestPubMedAdapter:
     """Test PubMed adapter."""
 
     def _get_adapter(self):
-        from dk_data.services.mcp.adapters.pubmed import Adapter
+        from dk_data.services.pipeline.adapters.pubmed import Adapter
         return Adapter()
 
     def test_adapter_properties(self):
@@ -157,7 +157,7 @@ class TestSecEdgarAdapter:
     """Test SEC EDGAR adapter."""
 
     def _get_adapter(self):
-        from dk_data.services.mcp.adapters.sec_edgar import Adapter
+        from dk_data.services.pipeline.adapters.sec_edgar import Adapter
         return Adapter()
 
     def test_adapter_properties(self):
@@ -177,16 +177,46 @@ class TestAllAdaptersImportable:
         "uspto_patents", "epo_patents", "sec_edgar",
         "who_icd", "pdb_structures", "orcid",
         "journal_rss", "medical_news", "uspto_trademarks", "euipo_trademarks",
-        "cms_inpatient", "cms_hospital_info", "cms_cost_reports",
         "acc_tvc", "hrsa", "pubchem",
     ]
 
     @pytest.mark.parametrize("module_name", ADAPTER_MODULES)
     def test_adapter_importable(self, module_name):
         import importlib
-        mod = importlib.import_module(f"dk_data.services.mcp.adapters.{module_name}")
+        mod = importlib.import_module(f"dk_data.services.pipeline.adapters.{module_name}")
         assert hasattr(mod, "Adapter"), f"Missing Adapter class in {module_name}"
         adapter = mod.Adapter()
         assert adapter.source_name, f"Missing source_name in {module_name}"
         assert adapter.raw_table, f"Missing raw_table in {module_name}"
         assert adapter.raw_schema in ("mol_raw", "raw"), f"Invalid raw_schema in {module_name}"
+
+
+class TestAllCMSAdaptersImportable:
+    """Verify all 21 CMS data-tools adapter modules are importable."""
+
+    CMS_ADAPTER_MODULES = [
+        "cms_care_compare", "cms_part_d_prescriber", "cms_physician_puf",
+        "cms_open_payments", "cms_pecos", "cms_inpatient_puf",
+        "cms_outpatient_puf", "cms_hospital_quality", "cms_hospital_affiliation",
+        "cms_formulary", "cms_part_d_spending", "cms_part_b_spending",
+        "cms_ndc", "cms_chow", "cms_geographic_variation",
+        "cms_chronic_conditions", "cms_dmepos", "cms_post_acute",
+        "cms_rbcs", "cms_ddinter", "cms_bulk_stub",
+    ]
+
+    @pytest.mark.parametrize("module_name", CMS_ADAPTER_MODULES)
+    def test_cms_adapter_importable(self, module_name):
+        import importlib
+        mod = importlib.import_module(f"dk_data.services.data_tools.adapters.{module_name}")
+        assert hasattr(mod, "Adapter"), f"Missing Adapter class in {module_name}"
+        adapter = mod.Adapter()
+        assert adapter.source_name, f"Missing source_name in {module_name}"
+
+    def test_open_payments_has_multi_dataset(self):
+        from dk_data.services.data_tools.adapters.cms_open_payments import Adapter, _PAYMENT_DATASETS
+        assert len(_PAYMENT_DATASETS) == 3
+        assert "general" in _PAYMENT_DATASETS
+        assert "research" in _PAYMENT_DATASETS
+        assert "ownership" in _PAYMENT_DATASETS
+        adapter = Adapter()
+        assert hasattr(adapter, "build_all_query_urls")

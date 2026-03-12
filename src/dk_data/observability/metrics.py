@@ -447,6 +447,114 @@ DK_QUARANTINE_COUNT = Gauge(
 
 
 # =============================================================================
+# CMS Pipeline Metrics (016-cms-puf-datasource-integration, T113)
+# =============================================================================
+
+CMS_FETCH_DURATION_SECONDS = Histogram(
+    "cms_fetch_duration_seconds",
+    "Duration of CMS data source fetch operations",
+    ["source"],
+    buckets=[1, 5, 10, 30, 60, 120, 300, 600, 1800, 3600],
+)
+
+CMS_AGENT_COST_USD = Counter(
+    "cms_agent_cost_usd",
+    "Cumulative LLM cost in USD for CMS agent executions",
+    ["agent_name"],
+)
+
+CMS_RECORDS_INGESTED_TOTAL = Counter(
+    "cms_records_ingested_total",
+    "Total records ingested from CMS sources",
+    ["source"],
+)
+
+CMS_AGENT_EXECUTIONS_TOTAL = Counter(
+    "cms_agent_executions_total",
+    "Total CMS agent executions",
+    ["agent_name", "status"],
+)
+
+CMS_AGENT_QUARANTINE_TOTAL = Counter(
+    "cms_agent_quarantine_total",
+    "Total records quarantined by CMS agents",
+    ["agent_name"],
+)
+
+CMS_GOLD_REFRESH_DURATION_SECONDS = Histogram(
+    "cms_gold_refresh_duration_seconds",
+    "Duration of CMS gold view refresh",
+    buckets=[10, 30, 60, 120, 300, 600, 1200],
+)
+
+CMS_SOURCE_HEALTH_STATUS = Gauge(
+    "cms_source_health_status",
+    "CMS source health status (healthy=1, stale=0.5, error=0)",
+    ["source"],
+)
+
+CMS_SOURCE_LAST_SYNC_TIMESTAMP = Gauge(
+    "cms_source_last_sync_timestamp",
+    "Unix timestamp of last CMS source sync",
+    ["source"],
+)
+
+CMS_GOLD_VIEW_LAST_REFRESH_TIMESTAMP = Gauge(
+    "cms_gold_view_last_refresh_timestamp",
+    "Unix timestamp of last CMS gold view refresh",
+    ["view"],
+)
+
+CMS_GOLD_VIEW_RECORD_COUNT = Gauge(
+    "cms_gold_view_record_count",
+    "Record count in CMS gold views",
+    ["view"],
+)
+
+CMS_AGENT_LAST_RUN_STATUS = Gauge(
+    "cms_agent_last_run_status",
+    "Last CMS agent run status (1=completed, 0.5=partial, 0=failed)",
+    ["agent_name"],
+)
+
+CMS_BACKFILL_REQUESTS_TOTAL = Counter(
+    "cms_backfill_requests_total",
+    "Total CMS backfill requests",
+    ["source", "status"],
+)
+
+CMS_RATE_LIMIT_REJECTIONS_TOTAL = Counter(
+    "cms_rate_limit_rejections_total",
+    "Total CMS rate limit rejections",
+    ["source"],
+)
+
+CMS_EXTERNAL_API_REQUESTS_TOTAL = Counter(
+    "cms_external_api_requests_total",
+    "Total external API requests for CMS sources",
+    ["source", "status"],
+)
+
+CMS_AGENT_RECORDS_ENRICHED_TOTAL = Counter(
+    "cms_agent_records_enriched_total",
+    "Total records enriched by CMS agents",
+    ["agent_name"],
+)
+
+CMS_AGENT_RECORDS_QUARANTINED_TOTAL = Counter(
+    "cms_agent_records_quarantined_total",
+    "Total records quarantined by CMS agents",
+    ["agent_name"],
+)
+
+CMS_AGENT_QUARANTINE_PENDING = Gauge(
+    "cms_agent_quarantine_pending",
+    "Pending quarantine records for CMS agents",
+    ["agent_name"],
+)
+
+
+# =============================================================================
 # Helper Functions
 # =============================================================================
 
@@ -519,3 +627,45 @@ def timed_job(job_name: str):
                 record_job_duration(job_name, duration)
         return wrapper
     return decorator
+
+
+# =============================================================================
+# CMS Helper Functions (016-cms-puf-datasource-integration, T113)
+# =============================================================================
+
+def record_cms_fetch(source: str, duration_seconds: float, records: int) -> None:
+    """Record CMS fetch operation metrics."""
+    CMS_FETCH_DURATION_SECONDS.labels(source=source).observe(duration_seconds)
+    CMS_RECORDS_INGESTED_TOTAL.labels(source=source).inc(records)
+
+
+def record_cms_agent_execution(
+    agent_name: str, status: str, cost_usd: float = 0.0, quarantined: int = 0
+) -> None:
+    """Record CMS agent execution metrics."""
+    CMS_AGENT_EXECUTIONS_TOTAL.labels(agent_name=agent_name, status=status).inc()
+    if cost_usd > 0:
+        CMS_AGENT_COST_USD.labels(agent_name=agent_name).inc(cost_usd)
+    if quarantined > 0:
+        CMS_AGENT_QUARANTINE_TOTAL.labels(agent_name=agent_name).inc(quarantined)
+
+
+def record_cms_gold_refresh(duration_seconds: float) -> None:
+    """Record CMS gold view refresh duration."""
+    CMS_GOLD_REFRESH_DURATION_SECONDS.observe(duration_seconds)
+
+
+def record_cms_backfill_request(source: str, status: str) -> None:
+    """Record a CMS backfill request (status: backfilled, not_available, error)."""
+    CMS_BACKFILL_REQUESTS_TOTAL.labels(source=source, status=status).inc()
+
+
+def record_cms_rate_limit_rejection(source: str) -> None:
+    """Record a CMS rate limit rejection."""
+    CMS_RATE_LIMIT_REJECTIONS_TOTAL.labels(source=source).inc()
+
+
+def record_cms_external_api_request(source: str, success: bool) -> None:
+    """Record an external API request for a CMS source."""
+    status = "success" if success else "error"
+    CMS_EXTERNAL_API_REQUESTS_TOTAL.labels(source=source, status=status).inc()

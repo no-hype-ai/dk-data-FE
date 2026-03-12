@@ -1,0 +1,64 @@
+# Monthly agent orchestration — runs all 6 Silver+ enrichment agents sequentially
+# Feature: 016-cms-puf-datasource-integration (T086)
+# Schedule: 1st of each month at 6AM UTC (after data refresh CronJobs)
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: agents-monthly
+  labels:
+    app: dk-data-ingestion
+    component: agents
+    feature: "016-cms-puf"
+spec:
+  schedule: "0 6 1 * *"
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      backoffLimit: 3
+      activeDeadlineSeconds: 14400  # 4 hours for all 6 agents
+      template:
+        spec:
+          restartPolicy: OnFailure
+          containers:
+            - name: agents-monthly
+              image: ghcr.io/data-kinetic/dk-data-fe/job-trigger:main-5f46ed1
+              command:
+                - /bin/sh
+                - -c
+                - |
+                  set -e
+                  echo "Running Silver+ enrichment agents..."
+                  python -m dk_data.agents.service_line_inference
+                  python -m dk_data.agents.idn_hierarchy
+                  python -m dk_data.agents.referral_network
+                  python -m dk_data.agents.contact_verification
+                  python -m dk_data.agents.staffing_decomposition
+                  python -m dk_data.agents.equipment_inventory
+                  echo "All agents completed."
+              envFrom:
+                - secretRef:
+                    name: dk-data-secrets
+              env:
+                - name: LITELLM_BASE_URL
+                  valueFrom:
+                    secretKeyRef:
+                      name: dk-data-secrets
+                      key: LITELLM_BASE_URL
+                - name: LITELLM_API_KEY
+                  valueFrom:
+                    secretKeyRef:
+                      name: dk-data-secrets
+                      key: LITELLM_API_KEY
+                - name: OTEL_EXPORTER_OTLP_ENDPOINT
+                  value: "http://otel-collector.observability.svc.cluster.local:4317"
+                - name: OTEL_SERVICE_NAME
+                  value: "dk-data-agents-monthly"
+              resources:
+                requests:
+                  memory: "512Mi"
+                  cpu: "200m"
+                limits:
+                  memory: "1Gi"
+                  cpu: "500m"

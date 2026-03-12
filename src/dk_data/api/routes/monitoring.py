@@ -541,9 +541,24 @@ async def list_data_sources():
                     source_info["error_rate"] = 100.0
                     logger.debug(f"Error checking {source_id}: {e}")
             else:
-                # External API sources - assume healthy (actual check done by health endpoint)
+                # External API sources — derive latency from last successful sync job
                 source_info["status"] = "up"
-                source_info["latency_ms"] = 50  # Placeholder
+                try:
+                    cur.execute("""
+                        SELECT
+                            EXTRACT(EPOCH FROM (completed_at - started_at)) * 1000
+                        FROM raw.ingestion_jobs
+                        WHERE source = %s
+                          AND status = 'completed'
+                          AND started_at IS NOT NULL
+                          AND completed_at IS NOT NULL
+                        ORDER BY completed_at DESC
+                        LIMIT 1
+                    """, (source_id,))
+                    row = cur.fetchone()
+                    source_info["latency_ms"] = int(row[0]) if row and row[0] is not None else None
+                except Exception:
+                    source_info["latency_ms"] = None
 
             sources.append(source_info)
 
@@ -695,39 +710,45 @@ async def get_source_metrics(
 @router.get("/schedules")
 async def list_sync_schedules():
     """
-    List all configured sync schedules.
+    List all configured sync schedules from the database.
     """
+    import psycopg2
+
+    schedules = []
+
+    try:
+        db_url = get_sync_db_url()
+        conn = psycopg2.connect(db_url)
+        cur = conn.cursor()
+
+        cur.execute("""
+            SELECT source, tier, enabled, cron_expression, priority,
+                   last_run, next_run
+            FROM raw.sync_schedules
+            ORDER BY source
+        """)
+        for row in cur.fetchall():
+            source_name, tier, enabled, cron_expr, priority, last_run, next_run = row
+            schedules.append({
+                "source": source_name,
+                "tier": tier,
+                "cron_expression": cron_expr,
+                "priority": priority,
+                "enabled": enabled,
+                "last_run": last_run.isoformat() if last_run else None,
+                "next_run": next_run.isoformat() if next_run else None,
+            })
+
+        cur.close()
+        conn.close()
+
+    except Exception as e:
+        logger.error(f"Failed to list sync schedules: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to query sync schedules: {e}")
+
     return {
-        "schedules": [
-            {
-                "source": "clinicaltrials_gov",
-                "tier": "daily",
-                "cron_expression": "0 2 * * *",
-                "priority": "critical",
-                "enabled": True,
-                "last_run": None,
-                "next_run": None,
-            },
-            {
-                "source": "openfda_faers",
-                "tier": "daily",
-                "cron_expression": "0 2 * * *",
-                "priority": "critical",
-                "enabled": True,
-                "last_run": None,
-                "next_run": None,
-            },
-            {
-                "source": "drugbank",
-                "tier": "weekly",
-                "cron_expression": "0 3 * * 0",
-                "priority": "normal",
-                "enabled": True,
-                "last_run": None,
-                "next_run": None,
-            },
-        ],
-        "total": 3,
+        "schedules": schedules,
+        "total": len(schedules),
     }
 
 
@@ -738,11 +759,69 @@ async def list_sync_jobs(
     limit: int = Query(20, ge=1, le=100),
 ):
     """
-    List recent sync jobs.
+    List recent sync jobs from the database.
     """
+    import psycopg2
+
+    jobs = []
+    total = 0
+
+    try:
+        db_url = get_sync_db_url()
+        conn = psycopg2.connect(db_url)
+        cur = conn.cursor()
+
+        query = """
+            SELECT job_id::text, source, status, priority,
+                   started_at, completed_at, records_processed,
+                   error_message
+            FROM raw.ingestion_jobs
+            WHERE 1=1
+        """
+        params = []
+
+        if status:
+            query += " AND status = %s"
+            params.append(status)
+        if source:
+            query += " AND source = %s"
+            params.append(source)
+
+        query += " ORDER BY started_at DESC NULLS LAST LIMIT %s"
+        params.append(limit)
+
+        cur.execute(query, params)
+        for row in cur.fetchall():
+            job_id, src, job_status, priority, started_at, completed_at, records, error_msg = row
+            duration = None
+            if started_at and completed_at:
+                duration = (completed_at - started_at).total_seconds()
+
+            jobs.append({
+                "job_id": job_id,
+                "source": src,
+                "status": job_status,
+                "priority": priority,
+                "started_at": started_at.isoformat() if started_at else None,
+                "completed_at": completed_at.isoformat() if completed_at else None,
+                "duration_seconds": duration,
+                "records_processed": records or 0,
+                "error_message": error_msg,
+            })
+
+        cur.execute("SELECT COUNT(*) FROM raw.ingestion_jobs")
+        total = cur.fetchone()[0] or 0
+
+        cur.close()
+        conn.close()
+
+    except Exception as e:
+        logger.error(f"Failed to list sync jobs: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to query sync jobs: {e}")
+
     return {
-        "jobs": [],
-        "total": 0,
+        "jobs": jobs,
+        "total": total,
         "filters": {
             "status": status,
             "source": source,
@@ -754,11 +833,45 @@ async def list_sync_jobs(
 @router.get("/sync-jobs/active")
 async def list_active_sync_jobs():
     """
-    List currently running sync jobs.
+    List currently running sync jobs from the database.
     """
+    import psycopg2
+
+    active_jobs = []
+
+    try:
+        db_url = get_sync_db_url()
+        conn = psycopg2.connect(db_url)
+        cur = conn.cursor()
+
+        cur.execute("""
+            SELECT job_id::text, source, status, priority,
+                   started_at, records_processed
+            FROM raw.ingestion_jobs
+            WHERE status IN ('running', 'pending', 'in_progress')
+            ORDER BY started_at DESC NULLS LAST
+        """)
+        for row in cur.fetchall():
+            job_id, src, job_status, priority, started_at, records = row
+            active_jobs.append({
+                "job_id": job_id,
+                "source": src,
+                "status": job_status,
+                "priority": priority,
+                "started_at": started_at.isoformat() if started_at else None,
+                "records_processed": records or 0,
+            })
+
+        cur.close()
+        conn.close()
+
+    except Exception as e:
+        logger.error(f"Failed to list active sync jobs: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to query active sync jobs: {e}")
+
     return {
-        "active_jobs": [],
-        "count": 0,
+        "active_jobs": active_jobs,
+        "count": len(active_jobs),
     }
 
 

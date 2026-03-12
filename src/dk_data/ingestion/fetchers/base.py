@@ -22,14 +22,17 @@ class BaseFetcher(ABC):
     SOURCE_NAME: str = "base"
     BASE_URL: str = ""
 
-    def __init__(self, data_dir: Optional[str] = None):
+    def __init__(self, data_dir: Optional[str] = None, params: Optional[Dict[str, Any]] = None):
         """
         Initialize fetcher.
 
         Args:
             data_dir: Directory to store downloaded files. Defaults to ./data/raw
+            params: Generic parameters dict for source-specific configuration
+                    (e.g., year, state, file_type). Passed from CronJob args.
         """
         self.data_dir = Path(data_dir or os.environ.get('DATA_DIR', './data/raw'))
+        self.params = params or {}
         self.data_dir.mkdir(parents=True, exist_ok=True)
 
         # Set up session with retry logic
@@ -115,6 +118,104 @@ class BaseFetcher(ABC):
         response = self.session.get(url, params=params, timeout=60)
         response.raise_for_status()
         return response.json()
+
+    def download_file_conditional(
+        self,
+        url: str,
+        filename: str,
+        etag: Optional[str] = None,
+        last_modified: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        """Download a file, skipping if upstream hasn't changed (304 Not Modified).
+
+        Args:
+            url: URL to download from.
+            filename: Local filename to save as.
+            etag: ETag from previous download (sent as If-None-Match).
+            last_modified: Last-Modified from previous download (sent as If-Modified-Since).
+
+        Returns:
+            Dict with 'status' ('downloaded' or 'not_modified'), 'filepath',
+            'etag', and 'last_modified'.
+        """
+        headers: Dict[str, str] = {}
+        if etag:
+            headers['If-None-Match'] = etag
+        if last_modified:
+            headers['If-Modified-Since'] = last_modified
+
+        filepath = self.data_dir / filename
+        logger.info(f"Conditional download {url} to {filepath}")
+
+        response = self.session.get(url, stream=True, timeout=300, headers=headers)
+
+        if response.status_code == 304:
+            logger.info(f"[{self.SOURCE_NAME}] 304 Not Modified for {url}")
+            return {
+                "status": "not_modified",
+                "filepath": filepath if filepath.exists() else None,
+                "etag": etag,
+                "last_modified": last_modified,
+            }
+
+        response.raise_for_status()
+
+        with open(filepath, 'wb') as f:
+            for chunk in response.iter_content(chunk_size=8192):
+                f.write(chunk)
+
+        logger.info(f"Downloaded {filepath.stat().st_size / 1024 / 1024:.2f} MB")
+        return {
+            "status": "downloaded",
+            "filepath": filepath,
+            "etag": response.headers.get('ETag', etag),
+            "last_modified": response.headers.get('Last-Modified', last_modified),
+        }
+
+    def fetch_json_conditional(
+        self,
+        url: str,
+        params: Optional[Dict] = None,
+        etag: Optional[str] = None,
+        last_modified: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        """Fetch JSON, returning early on 304 Not Modified.
+
+        Args:
+            url: API URL.
+            params: Query parameters.
+            etag: ETag from previous request (sent as If-None-Match).
+            last_modified: Last-Modified from previous request (sent as If-Modified-Since).
+
+        Returns:
+            Dict with 'status' ('ok' or 'not_modified'), 'data', 'etag',
+            and 'last_modified'.
+        """
+        headers: Dict[str, str] = {}
+        if etag:
+            headers['If-None-Match'] = etag
+        if last_modified:
+            headers['If-Modified-Since'] = last_modified
+
+        logger.debug(f"Conditional JSON fetch from {url}")
+        response = self.session.get(url, params=params, timeout=60, headers=headers)
+
+        if response.status_code == 304:
+            logger.info(f"[{self.SOURCE_NAME}] 304 Not Modified for {url}")
+            return {
+                "status": "not_modified",
+                "data": None,
+                "etag": etag,
+                "last_modified": last_modified,
+            }
+
+        response.raise_for_status()
+        return {
+            "status": "ok",
+            "data": response.json(),
+            "etag": response.headers.get('ETag', etag),
+            "last_modified": response.headers.get('Last-Modified', last_modified),
+        }
 
     def log_fetch_result(self, result: Dict[str, Any]) -> None:
         """Log fetch result for monitoring."""

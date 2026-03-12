@@ -90,6 +90,7 @@ class CochraneFetcher(BaseFetcher):
                     term,
                     days_back=days_back,
                     max_records=max_records - len(all_records),
+                    resume_offset=kwargs.get('resume_offset', 0),
                 )
 
                 for rec in records:
@@ -119,6 +120,7 @@ class CochraneFetcher(BaseFetcher):
                 "record_count": 0,
                 "hash": None,
                 "error": str(e),
+                "last_offset": getattr(self, '_last_offset', 0),
             }
             self.log_fetch_result(result)
             return result
@@ -133,10 +135,11 @@ class CochraneFetcher(BaseFetcher):
         *,
         days_back: int = 90,
         max_records: int = 2000,
+        resume_offset: int = 0,
     ) -> List[Dict[str, Any]]:
         """Search Cochrane for systematic reviews matching a term."""
         records: List[Dict[str, Any]] = []
-        offset = 0
+        offset = resume_offset
         date_from = (datetime.utcnow() - timedelta(days=days_back)).strftime("%Y-%m-%d")
 
         while len(records) < max_records:
@@ -151,6 +154,7 @@ class CochraneFetcher(BaseFetcher):
                     "publishDateFrom": date_from,
                 }
 
+                self._last_offset = offset
                 data = self.fetch_json(self.get_latest_url(), params=params)
 
                 items = self._extract_items(data)

@@ -42,7 +42,44 @@ resources:
   # Trademark data sources (014-uspto-euipo-model-datasource)
   - ingestion/cronjob-fetch-uspto-trademarks.yaml
   - ingestion/cronjob-fetch-euipo.yaml
+  - ingestion/cronjob-fetch-euipo-designs.yaml
   - ingestion/molecule-pipeline-config.yaml
+  # CMS PUF data sources (016-cms-puf-datasource-integration)
+  # Phase 2: Provider sources
+  - ingestion/cronjob-fetch-cms-nppes.yaml
+  - ingestion/cronjob-fetch-cms-part-d-prescriber.yaml
+  - ingestion/cronjob-fetch-cms-physician-puf.yaml
+  - ingestion/cronjob-fetch-cms-open-payments.yaml
+  - ingestion/cronjob-fetch-cms-care-compare.yaml
+  # Phase 3: Facility sources
+  - ingestion/cronjob-fetch-cms-pos.yaml
+  - ingestion/cronjob-fetch-cms-pecos.yaml
+  - ingestion/cronjob-fetch-cms-chow.yaml
+  - ingestion/cronjob-fetch-cms-hospital-affiliation.yaml
+  - ingestion/cronjob-fetch-cms-inpatient-puf.yaml
+  - ingestion/cronjob-fetch-cms-outpatient-puf.yaml
+  - ingestion/cronjob-fetch-cms-hospital-quality.yaml
+  - ingestion/cronjob-fetch-cms-hospital-general-info.yaml
+  - ingestion/cronjob-fetch-cms-hcris.yaml
+  - ingestion/cronjob-fetch-cms-magnet.yaml
+  # Phase 4: Drug/Market sources
+  - ingestion/cronjob-fetch-cms-ndc.yaml
+  - ingestion/cronjob-fetch-cms-part-d-spending.yaml
+  - ingestion/cronjob-fetch-cms-part-b-spending.yaml
+  - ingestion/cronjob-fetch-cms-formulary.yaml
+  - ingestion/cronjob-fetch-cms-rbcs.yaml
+  - ingestion/cronjob-fetch-cms-usp.yaml
+  - ingestion/cronjob-fetch-cms-nucc.yaml
+  - ingestion/cronjob-fetch-cms-geographic-variation.yaml
+  - ingestion/cronjob-fetch-cms-chronic-conditions.yaml
+  - ingestion/cronjob-fetch-cms-post-acute.yaml
+  - ingestion/cronjob-fetch-cms-dmepos.yaml
+  - ingestion/cronjob-fetch-cms-ddinter.yaml
+  - ingestion/cronjob-fetch-cms-stabilis.yaml
+  # CMS orchestration jobs
+  - ingestion/cronjob-agents-monthly.yaml
+  - ingestion/cronjob-cms-gold-refresh.yaml
+  - ingestion/job-agent-template.yaml
   # Backup
   - backup/pg-backup-configmap.yaml
   - backup/minio-credentials.yaml

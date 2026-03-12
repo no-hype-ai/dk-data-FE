@@ -14,6 +14,7 @@ Docs: https://search.patentsview.org/docs/docs/Search%20API/SearchAPIReference/
 import hashlib
 import logging
 import os
+import time
 from datetime import datetime, timedelta
 from typing import Any, Dict, List, Optional
 
@@ -29,6 +30,9 @@ PAGE_SIZE = 100
 
 # Safety limit: max records per fetch run
 MAX_RECORDS = 10_000
+
+# PatentsView API rate limit: 45 req/min per API key
+REQUEST_DELAY = 1.4  # seconds between requests
 
 
 class USPTOPatentsFetcher(BaseFetcher):
@@ -111,6 +115,9 @@ class USPTOPatentsFetcher(BaseFetcher):
                 # Stop if we got fewer than a full page
                 if len(patents) < PAGE_SIZE:
                     break
+
+                # Rate limit: 45 req/min for PatentsView API
+                time.sleep(REQUEST_DELAY)
 
                 # Cursor-based pagination: use last patent_id as cursor
                 last_patent = patents[-1]

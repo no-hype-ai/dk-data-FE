@@ -1,263 +1,223 @@
 # PostgREST Gold Schema Contracts: CMS PUF Data Source Integration
-# Defines the REST API contracts for gold-layer tables exposed via PostgREST
-# Schema: gold | Auth: analyst JWT required | Base: /gold/
+# 5 gold-layer views exposed via PostgREST
+# Schema: gold | Auth: analyst/api_user JWT | Base: /gold/
+# Revised: 2026-03-11
 
 # ============================================================================
-# PostgREST Configuration
+# 1. Provider Profile (360-degree view)
 # ============================================================================
 
-config:
-  schema: gold
-  added_to: PGRST_DB_SCHEMAS
-  full_schema_list: "api,mol_api,mol_gold,mol_silver,xenon,meta,gold"
-  access_control:
-    analyst: "USAGE + SELECT on all tables"
-    web_anon: "NO ACCESS"
-
-# ============================================================================
-# gold.provider_profile
-# ============================================================================
-
-provider_profile:
-  description: "Unified provider profile combining NPPES, Part D, Physician PUF, Care Compare, Open Payments"
+gold.cms_provider_360:
+  description: |
+    Aggregated provider profile combining NPPES demographics, Part D prescribing,
+    Physician PUF procedures, Open Payments, and agent-enriched network data.
   primary_key: npi
-  downstream_product: HCP Compass
+  access: [analyst, api_user]
 
-  endpoints:
-    - method: GET
-      path: /gold/provider_profile
-      description: "List/filter provider profiles"
-      auth: "Bearer analyst JWT"
-      query_params:
-        - name: npi
-          type: string
-          operators: [eq, in]
-          example: "npi=eq.1234567890"
-        - name: entity_type
-          type: string
-          operators: [eq]
-          example: "entity_type=eq.individual"
-        - name: state
-          type: string
-          operators: [eq]
-          json_path: "address->>'state'"
-        - name: specialty
-          type: string
-          operators: [eq, like, ilike]
-          example: "specialty=ilike.*cardiology*"
-        - name: select
-          type: string
-          description: "Column selection"
-          example: "select=npi,provider_name,specialty,mips_score"
-        - name: order
-          type: string
-          example: "order=mips_score.desc"
-        - name: limit
-          type: integer
-          default: 100
-          max: 1000
-      responses:
-        200:
-          description: "Array of provider profiles"
-          content_type: application/json
-        401:
-          description: "Missing or invalid JWT"
-        403:
-          description: "Insufficient role (web_anon)"
+  columns:
+    # Identity
+    npi: { type: text, description: "10-digit NPI" }
+    entity_type: { type: text, description: "individual or organization" }
+    name_display: { type: text, description: "Formatted display name" }
+    credential: { type: text }
+    specialty_primary: { type: text }
+    specialty_secondary: { type: "text[]" }
+    practice_state: { type: text }
+    practice_city: { type: text }
+    practice_zip: { type: text }
 
-    - method: GET
-      path: /gold/provider_profile?npi=eq.{npi}
-      description: "Single provider profile by NPI"
-      auth: "Bearer analyst JWT"
-      responses:
-        200:
-          description: "Single provider profile"
-          headers:
-            Content-Range: "0-0/1"
-        406:
-          description: "No matching NPI"
+    # Prescribing (aggregated from Part D)
+    total_rx_claims: { type: integer, description: "Total Part D claims across all drugs" }
+    total_rx_cost: { type: numeric, description: "Total Part D drug cost" }
+    unique_drugs_prescribed: { type: integer }
+    top_drugs: { type: jsonb, description: "Top 10 drugs by claim count [{drug_name, claims, cost}]" }
 
-  curl_examples:
-    - description: "Get provider by NPI"
-      command: |
-        curl -H "Authorization: Bearer $DK_DATA_API_KEY" \
-          "https://data.staging.behaviorlabs.ai/gold/provider_profile?npi=eq.1234567890"
-    - description: "Search cardiologists in Texas"
-      command: |
-        curl -H "Authorization: Bearer $DK_DATA_API_KEY" \
-          "https://data.staging.behaviorlabs.ai/gold/provider_profile?specialty=ilike.*cardiology*&select=npi,provider_name,specialty,mips_score&limit=50"
+    # Procedures (aggregated from Physician PUF)
+    total_services: { type: numeric, description: "Total line service count" }
+    total_beneficiaries: { type: integer }
+    total_medicare_payment: { type: numeric }
+    top_procedures: { type: jsonb, description: "Top 10 HCPCS by volume [{hcpcs, description, count}]" }
+
+    # Payments (aggregated from Open Payments)
+    total_general_payments: { type: numeric }
+    total_research_payments: { type: numeric }
+    payment_count: { type: integer }
+    top_payers: { type: jsonb, description: "Top 5 payers [{name, amount}]" }
+
+    # Network (agent-enriched)
+    referral_count: { type: integer, description: "Number of inferred referral edges" }
+    network_centrality: { type: numeric, description: "Degree centrality in referral network" }
+
+    # Metadata
+    data_year: { type: integer, description: "Most recent data year" }
+    last_refreshed: { type: timestamptz }
+
+  example_queries:
+    - description: "Look up provider by NPI"
+      url: "/gold.cms_provider_360?npi=eq.1234567890"
+    - description: "Find high-prescribing providers in CA"
+      url: "/gold.cms_provider_360?practice_state=eq.CA&total_rx_claims=gte.10000&order=total_rx_claims.desc&limit=50"
+    - description: "Providers by specialty"
+      url: "/gold.cms_provider_360?specialty_primary=eq.Cardiology&order=total_services.desc"
 
 # ============================================================================
-# gold.facility_profile
+# 2. Facility Profile (360-degree view)
 # ============================================================================
 
-facility_profile:
-  description: "Unified facility profile combining POS, Hospital Quality, Inpatient PUF, PECOS/CHOW, ANCC Magnet"
+gold.cms_facility_360:
+  description: |
+    Aggregated facility profile combining POS, Hospital Quality, HCRIS cost data,
+    and agent-enriched service lines, staffing, and equipment.
   primary_key: ccn
-  downstream_product: HCO Navigator
+  access: [analyst, api_user]
 
-  endpoints:
-    - method: GET
-      path: /gold/facility_profile
-      description: "List/filter facility profiles"
-      auth: "Bearer analyst JWT"
-      query_params:
-        - name: ccn
-          type: string
-          operators: [eq, in]
-          example: "ccn=eq.050454"
-        - name: facility_type
-          type: string
-          operators: [eq]
-        - name: overall_star_rating
-          type: integer
-          operators: [eq, gte, lte]
-          example: "overall_star_rating=gte.4"
-        - name: magnet_status
-          type: boolean
-          operators: [is]
-          example: "magnet_status=is.true"
-        - name: bed_count
-          type: integer
-          operators: [gte, lte]
-        - name: limit
-          type: integer
-          default: 100
-          max: 1000
+  columns:
+    # Identity
+    ccn: { type: text, description: "6-char CMS Certification Number" }
+    facility_name: { type: text }
+    facility_type: { type: text }
+    state: { type: text }
+    county: { type: text }
+    city: { type: text }
+    bed_count: { type: integer }
+    ownership_type: { type: text }
 
-  curl_examples:
-    - description: "Get facility by CCN"
-      command: |
-        curl -H "Authorization: Bearer $DK_DATA_API_KEY" \
-          "https://data.staging.behaviorlabs.ai/gold/facility_profile?ccn=eq.050454"
-    - description: "5-star Magnet hospitals"
-      command: |
-        curl -H "Authorization: Bearer $DK_DATA_API_KEY" \
-          "https://data.staging.behaviorlabs.ai/gold/facility_profile?overall_star_rating=eq.5&magnet_status=is.true&select=ccn,facility_name,bed_count"
+    # Quality
+    star_rating: { type: integer, description: "CMS overall star rating (1-5)" }
+    mortality_score: { type: numeric }
+    readmission_score: { type: numeric }
+    patient_experience_score: { type: numeric }
+    safety_score: { type: numeric }
 
-# ============================================================================
-# gold.drug_market_profile
-# ============================================================================
+    # Cost (from HCRIS)
+    total_operating_cost: { type: numeric }
+    cost_per_discharge: { type: numeric }
+    case_mix_index: { type: numeric }
 
-drug_market_profile:
-  description: "Drug market profile combining Part D/B Spending, NDC, Formulary, USP/RBCS classification"
-  primary_key: [drug_name, generic_name]
-  downstream_product: Lumina
+    # Service Lines (agent-enriched)
+    service_lines: { type: jsonb, description: "Inferred service lines [{name, drg_count, volume}]" }
 
-  endpoints:
-    - method: GET
-      path: /gold/drug_market_profile
-      description: "List/filter drug market profiles"
-      auth: "Bearer analyst JWT"
-      query_params:
-        - name: drug_name
-          type: string
-          operators: [eq, ilike]
-          example: "drug_name=eq.atorvastatin"
-        - name: generic_name
-          type: string
-          operators: [eq, ilike]
-        - name: usp_class
-          type: string
-          operators: [eq, ilike]
-        - name: part_d_total_spending
-          type: number
-          operators: [gte, lte]
-        - name: limit
-          type: integer
-          default: 100
-          max: 1000
+    # Staffing (agent-enriched)
+    staffing_profile: { type: jsonb, description: "Decomposed staffing [{category, fte, cost}]" }
 
-  curl_examples:
-    - description: "Get drug market profile"
-      command: |
-        curl -H "Authorization: Bearer $DK_DATA_API_KEY" \
-          "https://data.staging.behaviorlabs.ai/gold/drug_market_profile?drug_name=eq.atorvastatin"
-    - description: "Top drugs by Medicare spending"
-      command: |
-        curl -H "Authorization: Bearer $DK_DATA_API_KEY" \
-          "https://data.staging.behaviorlabs.ai/gold/drug_market_profile?order=part_d_total_spending.desc&limit=20"
+    # Equipment (agent-enriched)
+    equipment_inventory: { type: jsonb, description: "Inferred equipment [{category, procedure_count}]" }
+
+    # System Affiliation (agent-enriched)
+    health_system_name: { type: text }
+    health_system_id: { type: text }
+
+    # Metadata
+    data_year: { type: integer }
+    last_refreshed: { type: timestamptz }
+
+  example_queries:
+    - description: "Look up facility by CCN"
+      url: "/gold.cms_facility_360?ccn=eq.050001"
+    - description: "5-star hospitals in Texas"
+      url: "/gold.cms_facility_360?state=eq.TX&star_rating=eq.5&order=bed_count.desc"
+    - description: "Facilities by health system"
+      url: "/gold.cms_facility_360?health_system_name=eq.HCA Healthcare"
 
 # ============================================================================
-# gold.market_analytics
+# 3. Drug Market Profile
 # ============================================================================
 
-market_analytics:
-  description: "Geographic market analytics with population, spending, conditions, provider density"
-  primary_key: [geo_level, geo_code, year]
-  downstream_product: SageAI
+gold.cms_drug_market_profile:
+  description: |
+    Drug-level market data combining NDC directory, Medicare spending,
+    formulary coverage, and therapeutic classification.
+  primary_key: ndc
+  access: [analyst, api_user]
 
-  endpoints:
-    - method: GET
-      path: /gold/market_analytics
-      description: "List/filter market analytics by geography"
-      auth: "Bearer analyst JWT"
-      query_params:
-        - name: geo_level
-          type: string
-          operators: [eq]
-          example: "geo_level=eq.state"
-        - name: geo_code
-          type: string
-          operators: [eq]
-          example: "geo_code=eq.TX"
-        - name: year
-          type: integer
-          operators: [eq, gte, lte]
-          example: "year=eq.2024"
-        - name: limit
-          type: integer
-          default: 100
-          max: 1000
+  columns:
+    ndc: { type: text, description: "11-digit NDC" }
+    drug_name: { type: text }
+    generic_name: { type: text }
+    labeler_name: { type: text }
+    route: { type: text }
+    dosage_form: { type: text }
+    part_d_total_spending: { type: numeric }
+    part_d_total_claims: { type: integer }
+    part_d_avg_cost_per_claim: { type: numeric }
+    part_b_total_spending: { type: numeric }
+    formulary_coverage_pct: { type: numeric, description: "% of Part D plans covering this drug" }
+    rbcs_category: { type: text, description: "RBCS therapeutic category" }
+    usp_category: { type: text, description: "USP drug classification" }
+    data_year: { type: integer }
+    last_refreshed: { type: timestamptz }
 
-  curl_examples:
-    - description: "State-level analytics for Texas"
-      command: |
-        curl -H "Authorization: Bearer $DK_DATA_API_KEY" \
-          "https://data.staging.behaviorlabs.ai/gold/market_analytics?geo_code=eq.TX&year=eq.2024"
-    - description: "All state-level data for 2024"
-      command: |
-        curl -H "Authorization: Bearer $DK_DATA_API_KEY" \
-          "https://data.staging.behaviorlabs.ai/gold/market_analytics?geo_level=eq.state&year=eq.2024&order=geo_name"
+  example_queries:
+    - description: "Look up drug by NDC"
+      url: "/gold.cms_drug_market_profile?ndc=eq.00002-7510-01"
+    - description: "Top Part D drugs by spending"
+      url: "/gold.cms_drug_market_profile?order=part_d_total_spending.desc&limit=50"
+    - description: "Drugs in a therapeutic category"
+      url: "/gold.cms_drug_market_profile?rbcs_category=eq.Immunology"
 
 # ============================================================================
-# gold.provider_network
+# 4. Market Analytics (Geographic + Population)
 # ============================================================================
 
-provider_network:
-  description: "Provider-to-provider relationships (affiliations + inferred referrals)"
-  primary_key: [source_npi, dest_npi, relationship_type]
-  downstream_product: "All products"
+gold.cms_market_analytics:
+  description: |
+    Geographic and population-level analytics combining CMS Geographic Variation,
+    Chronic Conditions, and Post-Acute Care PUFs.
+  primary_key: [state, county]
+  access: [analyst, api_user]
 
-  endpoints:
-    - method: GET
-      path: /gold/provider_network
-      description: "Query provider relationships"
-      auth: "Bearer analyst JWT"
-      query_params:
-        - name: source_npi
-          type: string
-          operators: [eq]
-          example: "source_npi=eq.1234567890"
-        - name: dest_npi
-          type: string
-          operators: [eq]
-        - name: relationship_type
-          type: string
-          operators: [eq]
-          example: "relationship_type=eq.referral"
-        - name: confidence_score
-          type: number
-          operators: [gte, lte]
-          example: "confidence_score=gte.0.50"
-          description: "Filter by confidence threshold (recommended: >=0.50)"
-        - name: limit
-          type: integer
-          default: 100
-          max: 1000
+  columns:
+    state: { type: text }
+    county: { type: text }
+    fips_code: { type: text }
+    total_beneficiaries: { type: integer }
+    per_capita_spending: { type: numeric }
+    diabetes_prevalence: { type: numeric }
+    heart_failure_prevalence: { type: numeric }
+    copd_prevalence: { type: numeric }
+    depression_prevalence: { type: numeric }
+    alzheimers_prevalence: { type: numeric }
+    snf_episodes: { type: integer, description: "Skilled nursing facility episodes" }
+    hha_episodes: { type: integer, description: "Home health agency episodes" }
+    irf_episodes: { type: integer, description: "Inpatient rehab facility episodes" }
+    hospice_episodes: { type: integer }
+    dmepos_spending: { type: numeric, description: "Durable medical equipment spending" }
+    data_year: { type: integer }
+    last_refreshed: { type: timestamptz }
 
-  curl_examples:
-    - description: "High-confidence referral network for provider"
-      command: |
-        curl -H "Authorization: Bearer $DK_DATA_API_KEY" \
-          "https://data.staging.behaviorlabs.ai/gold/provider_network?source_npi=eq.1234567890&confidence_score=gte.0.50"
+  example_queries:
+    - description: "Market analytics by state"
+      url: "/gold.cms_market_analytics?state=eq.CA&order=per_capita_spending.desc"
+    - description: "Counties with high diabetes prevalence"
+      url: "/gold.cms_market_analytics?diabetes_prevalence=gte.0.3&order=total_beneficiaries.desc"
+    - description: "Post-acute utilization in Florida"
+      url: "/gold.cms_market_analytics?state=eq.FL&select=county,snf_episodes,hha_episodes,hospice_episodes"
+
+# ============================================================================
+# 5. Provider Network (Referral Edges)
+# ============================================================================
+
+gold.cms_provider_network:
+  description: |
+    Inferred provider-to-provider relationships from shared patient analysis.
+    Agent-enriched from Physician PUF co-occurrence data.
+  primary_key: [source_npi, target_npi]
+  access: [analyst, api_user]
+
+  columns:
+    source_npi: { type: text }
+    target_npi: { type: text }
+    relationship_type: { type: text, description: "referral, shared_patient, co_practice" }
+    strength_score: { type: numeric, description: "0.0-1.0 relationship strength" }
+    shared_patient_count: { type: integer }
+    source_specialty: { type: text }
+    target_specialty: { type: text }
+    confidence_score: { type: numeric, description: "Agent confidence 0.0-1.0" }
+    data_year: { type: integer }
+    last_refreshed: { type: timestamptz }
+
+  example_queries:
+    - description: "Referral network for a provider"
+      url: "/gold.cms_provider_network?source_npi=eq.1234567890&order=strength_score.desc"
+    - description: "Strong cardiologist-to-surgeon referrals"
+      url: "/gold.cms_provider_network?source_specialty=eq.Cardiology&target_specialty=eq.Cardiac Surgery&strength_score=gte.0.7"

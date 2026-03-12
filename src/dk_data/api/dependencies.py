@@ -11,6 +11,13 @@ from typing import Optional, AsyncGenerator
 from loguru import logger
 
 try:
+    from fastapi import Header as _Header
+except ImportError:
+    # Fallback for non-FastAPI contexts (tests, CLI scripts)
+    def _Header(default=None):  # type: ignore[misc]
+        return default
+
+try:
     import asyncpg
     ASYNCPG_AVAILABLE = True
 except ImportError:
@@ -142,8 +149,8 @@ async def get_current_user() -> dict:
     """
     Get current authenticated user (stub for internal-only API).
 
-    In production, this would validate JWT tokens and return user info.
     For internal-only molecule API routes, returns a default service user.
+    Data-tools routes use get_jwt_user() for real JWT validation.
 
     Returns:
         dict: User info with id, email, and roles
@@ -154,5 +161,69 @@ async def get_current_user() -> dict:
         "id": "system",
         "email": "system@datakinetic.io",
         "roles": ["admin", "api_user"],
+        "role": "api_user",
         "authenticated": True,
     }
+
+
+def _get_jwt_secret() -> str:
+    """Load JWT secret — same key as PostgREST uses."""
+    secret = os.getenv("JWT_SECRET", "")
+    if not secret:
+        logger.warning("JWT_SECRET not set — JWT validation will fail")
+    return secret
+
+
+async def get_jwt_user(
+    authorization: Optional[str] = _Header(None),
+) -> dict:
+    """Validate a JWT bearer token using the shared PostgREST JWT secret.
+
+    Accepts the same tokens that PostgREST accepts. The ``role`` claim
+    determines the Postgres role (web_anon, analyst, api_user).
+
+    For internal/service calls without a token, falls back to api_user.
+
+    Args:
+        authorization: Raw Authorization header value (injected by FastAPI).
+
+    Returns:
+        dict with sub, role, raw_token (for forwarding to PostgREST).
+    """
+    import jwt as pyjwt  # PyJWT
+
+    # Allow unauthenticated internal calls (e.g., from CronJobs within the cluster)
+    if not authorization:
+        return {
+            "sub": "system",
+            "role": "api_user",
+            "raw_token": None,
+            "authenticated": False,
+        }
+
+    token = authorization.removeprefix("Bearer ").strip()
+    secret = _get_jwt_secret()
+
+    if not secret:
+        # No secret configured — pass through as api_user for dev/local
+        return {
+            "sub": "anonymous",
+            "role": "api_user",
+            "raw_token": token,
+            "authenticated": False,
+        }
+
+    try:
+        payload = pyjwt.decode(token, secret, algorithms=["HS256"])
+        return {
+            "sub": payload.get("sub", "unknown"),
+            "role": payload.get("role", "web_anon"),
+            "raw_token": token,
+            "authenticated": True,
+        }
+    except pyjwt.ExpiredSignatureError:
+        from fastapi import HTTPException
+        raise HTTPException(status_code=401, detail="Token expired")
+    except pyjwt.InvalidTokenError as e:
+        from fastapi import HTTPException
+        raise HTTPException(status_code=401, detail=f"Invalid token: {e}")

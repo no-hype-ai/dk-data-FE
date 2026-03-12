@@ -83,7 +83,9 @@ class MedicalNewsFetcher(BaseFetcher):
 
             all_records: List[Dict[str, Any]] = []
             seen_ids: set = set()
-            cutoff_date = datetime.utcnow() - timedelta(days=days_back)
+            cutoff_date = (datetime.utcnow() - timedelta(days=days_back)).replace(
+                hour=0, minute=0, second=0, microsecond=0
+            )
 
             for source_name, feed_url in feeds.items():
                 if len(all_records) >= max_records:

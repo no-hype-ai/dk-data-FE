@@ -1,0 +1,49 @@
+# Template for individual agent runs (ad-hoc via API trigger)
+# Feature: 016-cms-puf-datasource-integration (T087)
+# Usage: kubectl create job agent-<name>-$(date +%s) --from=cronjob/agents-monthly
+# Or triggered via POST /api/v1/agents/{agent_name}/run
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: agent-run  # Override with: agent-{name}-{timestamp}
+  labels:
+    app: dk-data-ingestion
+    component: agent-run
+    feature: "016-cms-puf"
+spec:
+  backoffLimit: 3
+  activeDeadlineSeconds: 3600  # 1 hour per agent
+  template:
+    spec:
+      restartPolicy: OnFailure
+      containers:
+        - name: agent-run
+          image: ghcr.io/data-kinetic/dk-data-fe/job-trigger:main-5f46ed1
+          command: ["python", "-m", "dk_data.agents.$(AGENT_NAME)"]
+          envFrom:
+            - secretRef:
+                name: dk-data-secrets
+          env:
+            - name: AGENT_NAME
+              value: "service_line_inference"  # Override per agent
+            - name: LITELLM_BASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: dk-data-secrets
+                  key: LITELLM_BASE_URL
+            - name: LITELLM_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: dk-data-secrets
+                  key: LITELLM_API_KEY
+            - name: OTEL_EXPORTER_OTLP_ENDPOINT
+              value: "http://otel-collector.observability.svc.cluster.local:4317"
+            - name: OTEL_SERVICE_NAME
+              value: "dk-data-agent-run"
+          resources:
+            requests:
+              memory: "512Mi"
+              cpu: "200m"
+            limits:
+              memory: "1Gi"
+              cpu: "500m"

@@ -853,10 +853,24 @@ class SECEdgarClient(BaseAPIClient):
         return value
     
     async def _fetch_xbrl(self, filing: Filing) -> Optional[Dict[str, Any]]:
-        """Fetch XBRL data for a filing."""
-        # TODO: Implement XBRL fetching
-        # XBRL files are typically in the filing directory as .xml files
-        return None
+        """Fetch XBRL company facts for the filing's company via the SEC API."""
+        cik = filing.company_cik or self._extract_cik_from_filing(filing)
+        cik_padded = cik.zfill(10)
+
+        await self.rate_limiter.acquire()
+        url = f"{self.BASE_URL}/api/xbrl/companyfacts/CIK{cik_padded}.json"
+
+        try:
+            client = await self._get_client()
+            response = await client.get(url, headers=self.headers)
+            if response.status_code != 200:
+                logger.debug(f"XBRL companyfacts not available for CIK {cik_padded}: HTTP {response.status_code}")
+                return None
+            data = response.json()
+            return data.get("facts")
+        except Exception as e:
+            logger.warning(f"Error fetching XBRL for CIK {cik_padded}: {e}")
+            return None
 
     async def _get_filing_documents(self, filing: Filing) -> Optional[List[Dict[str, Any]]]:
         """Fetch the filing index to get list of documents."""
@@ -885,11 +899,11 @@ class SECEdgarClient(BaseAPIClient):
         primary_doc = None
         if documents:
             # Look for the primary 10-K document (usually ends with .htm and contains "10k")
+            # Exclude exhibits (exhNNN, ex-NNN patterns)
             for doc in documents:
                 name = doc.get('name', '').lower()
                 if name.endswith('.htm') or name.endswith('.html'):
-                    # Prefer documents that contain "10k" or "10-k" in the name
-                    if '10k' in name or '10-k' in name:
+                    if ('10k' in name or '10-k' in name) and 'ex' not in name:
                         primary_doc = doc.get('name')
                         break
 
@@ -927,26 +941,131 @@ class SECEdgarClient(BaseAPIClient):
             return None
     
     async def _fetch_item1_business(self, filing: Filing) -> str:
-        """Fetch Item 1 (Business Description) section from 10-K."""
-        # TODO: Implement Item 1 extraction
+        """Fetch Item 1 (Business Description) section from 10-K.
+
+        Extracts text between 'Item 1. Business' and 'Item 1A. Risk Factors'.
+        Falls back to full document text if section markers are not found.
+        """
         html = await self._fetch_10k_html(filing)
-        if html:
-            # Extract Item 1 section using BeautifulSoup
-            soup = BeautifulSoup(html, 'html.parser')
-            # Look for "Item 1" or "PART I" sections
-            # This is a simplified version - full implementation needed
-            return soup.get_text()
-        return ""
+        if not html:
+            return ""
+
+        full_text = BeautifulSoup(html, 'html.parser').get_text()
+
+        # Try to find Item 1 boundaries
+        item1_patterns = [
+            r'(?i)item\s*1[\.\s]*\s*business',
+            r'(?i)ITEM\s+1[\.\s]+BUSINESS',
+        ]
+        item1a_patterns = [
+            r'(?i)item\s*1a[\.\s]*\s*risk\s*factors',
+            r'(?i)ITEM\s+1A[\.\s]+RISK\s+FACTORS',
+        ]
+
+        start_idx = None
+        for pattern in item1_patterns:
+            match = re.search(pattern, full_text)
+            if match:
+                start_idx = match.start()
+                break
+
+        end_idx = None
+        if start_idx is not None:
+            # Search for Item 1A after Item 1
+            for pattern in item1a_patterns:
+                match = re.search(pattern, full_text[start_idx + 50:])
+                if match:
+                    end_idx = start_idx + 50 + match.start()
+                    break
+
+        if start_idx is not None and end_idx is not None:
+            section = full_text[start_idx:end_idx].strip()
+            if len(section) > 200:
+                logger.info(f"Extracted Item 1 Business section ({len(section)} chars)")
+                return section
+
+        # Fallback: return full text
+        logger.debug("Item 1 markers not found, returning full document text")
+        return full_text
     
     def _extract_pipeline_assets(
         self,
         content: str,
         source_filing: str
     ) -> List[PipelineAsset]:
+        """Extract pipeline assets from Item 1 Business section text.
+
+        Uses regex-based extraction to find compounds with phase information,
+        indications, and partnership details.
         """
-        Extract pipeline assets from Item 1 Business section text.
-        
-        TODO: Implement NLP-based extraction
-        """
-        # Placeholder - NLP extraction to be implemented
-        return []
+        if not content or len(content) < 100:
+            return []
+
+        assets: Dict[str, PipelineAsset] = {}
+
+        # Phase patterns (order matters — more specific first)
+        phase_patterns = [
+            (r'(?i)\b(BLA|NDA)\b', 'NDA/BLA', 0.90),
+            (r'(?i)\bPhase\s*(?:III|3)\b', 'Phase 3', 0.85),
+            (r'(?i)\bPhase\s*(?:II(?:I|b|a)?|2(?:b|a)?)\b', 'Phase 2', 0.80),
+            (r'(?i)\bPhase\s*(?:I(?:b|a)?|1(?:b|a)?)\b', 'Phase 1', 0.75),
+            (r'(?i)\bpre[- ]?clinical\b', 'Pre-clinical', 0.65),
+            (r'(?i)\binvestigational\b', 'Investigational', 0.60),
+        ]
+
+        # Common disease/indication keywords
+        indication_patterns = [
+            r'(?i)\b(?:for\s+(?:the\s+)?treatment\s+of)\s+([A-Za-z\s\-]+?)(?:\.|,|\band\b)',
+            r'(?i)\b(?:indicated\s+for)\s+([A-Za-z\s\-]+?)(?:\.|,)',
+            r'(?i)\b(?:in\s+patients?\s+with)\s+([A-Za-z\s\-]+?)(?:\.|,)',
+        ]
+
+        # Split into sentences for context-aware extraction
+        sentences = re.split(r'(?<=[.!?])\s+', content)
+
+        for sentence in sentences:
+            for phase_re, phase_label, base_confidence in phase_patterns:
+                if not re.search(phase_re, sentence):
+                    continue
+
+                # Look for compound names: capitalized words or codes (e.g., BMS-986165, ABT-199)
+                compound_matches = re.findall(
+                    r'\b([A-Z][A-Z0-9]+-?\d+(?:-\d+)?)\b'       # codes like BMS-986165
+                    r'|\b([A-Z][a-z]{2,}(?:mab|nib|lib|zumab|tinib|ciclib|rafenib|ximab|umab|tug|parin))\b',  # INN stems
+                    sentence
+                )
+
+                for match_tuple in compound_matches:
+                    compound = match_tuple[0] or match_tuple[1]
+                    if not compound or len(compound) < 3:
+                        continue
+
+                    # Skip common false positives
+                    if compound.upper() in ('FDA', 'SEC', 'CEO', 'NDA', 'BLA', 'IND', 'EMA', 'USA', 'NYSE'):
+                        continue
+
+                    # Extract indication if present
+                    indication = None
+                    for ind_re in indication_patterns:
+                        ind_match = re.search(ind_re, sentence)
+                        if ind_match:
+                            indication = ind_match.group(1).strip()[:100]
+                            break
+
+                    key = compound.lower()
+                    confidence = base_confidence
+                    if indication:
+                        confidence = min(0.95, confidence + 0.10)
+
+                    if key not in assets or assets[key].extract_confidence < confidence:
+                        assets[key] = PipelineAsset(
+                            compound_name=compound,
+                            phase=phase_label,
+                            indication=indication,
+                            filing_accession=source_filing,
+                            extract_confidence=confidence,
+                        )
+
+        result = list(assets.values())
+        logger.info(f"Extracted {len(result)} pipeline assets from filing {source_filing}")
+        return result

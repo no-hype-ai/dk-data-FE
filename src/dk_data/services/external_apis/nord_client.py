@@ -12,6 +12,7 @@ publicly available rare disease database and organization directory.
 Website: https://rarediseases.org/
 """
 
+import json
 import re
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional
@@ -153,8 +154,9 @@ class NORDClient(BaseAPIClient[Dict[str, Any]]):
             requests_per_second=1.0,  # Respectful rate limit for web scraping
             cache_ttl=2592000,  # 30 days - rare disease info changes infrequently
             headers={
-                "Accept": "application/json, text/html",
-                "User-Agent": "DataKinetic-TrialsPredictor/1.0 (Research Platform)",
+                "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+                "User-Agent": "Mozilla/5.0 (compatible; DataKinetic/1.0; +https://datakinetic.io)",
+                "Accept-Language": "en-US,en;q=0.9",
             },
         )
         super().__init__(config, cache_manager)
@@ -208,9 +210,8 @@ class NORDClient(BaseAPIClient[Dict[str, Any]]):
                         if org:
                             organizations.append(org)
 
-            # If no direct organization results, create placeholder based on disease
+            # If AJAX search returned no orgs, try scraping the directory page
             if not organizations:
-                # Return common rare disease organizations
                 organizations = await self._get_common_organizations_for_disease(disease_name)
 
             return organizations[:limit]
@@ -347,25 +348,69 @@ class NORDClient(BaseAPIClient[Dict[str, Any]]):
         self,
         disease_name: str
     ) -> List[PatientAdvocacyOrg]:
-        """Get common patient advocacy organizations related to a disease."""
-        # Known major rare disease organizations
-        common_orgs = [
-            PatientAdvocacyOrg(
-                org_id="nord",
-                name="National Organization for Rare Disorders (NORD)",
-                website="https://rarediseases.org",
-                description="NORD is the leading advocacy organization for patients with rare diseases",
-                diseases=[disease_name],
-            ),
-            PatientAdvocacyOrg(
-                org_id="global-genes",
-                name="Global Genes",
-                website="https://globalgenes.org",
-                description="Global Genes is the leading rare disease patient advocacy organization",
-                diseases=[disease_name],
-            ),
-        ]
-        return common_orgs
+        """Scrape NORD's organization directory for a disease.
+
+        Attempts to find organizations by searching the NORD website
+        directly. Returns an empty list if NORD is unreachable.
+        """
+        try:
+            # Try the NORD organization search page directly
+            client = await self._get_client()
+            response = await client.get(
+                f"/organizations/?s={disease_name}",
+            )
+
+            if response.status_code != 200:
+                logger.warning(
+                    f"NORD organization directory returned {response.status_code} "
+                    f"for '{disease_name}'"
+                )
+                return []
+
+            # Parse organization links from the search results page
+            # Links may include tracking params: /organizations/{slug}/?_rt=...
+            orgs: List[PatientAdvocacyOrg] = []
+            # Match anchor tags with org links, capturing slug and link text
+            pattern = r'<a[^>]*href="(?:https://rarediseases\.org)?/organizations/([^/?]+)/[^"]*"[^>]*>([^<]+)</a>'
+            slugs_seen: set = set()
+            for match in re.finditer(pattern, response.text):
+                slug = match.group(1)
+                link_text = match.group(2).strip()
+                if slug and slug not in slugs_seen:
+                    slugs_seen.add(slug)
+                    # Use link text if available, fall back to slug conversion
+                    name = link_text if link_text else slug.replace('-', ' ').title()
+                    orgs.append(PatientAdvocacyOrg(
+                        org_id=slug,
+                        name=name,
+                        website=f"https://rarediseases.org/organizations/{slug}/",
+                        diseases=[disease_name],
+                    ))
+
+            # Fall back to href-only pattern if no anchor text matches found
+            if not orgs:
+                href_pattern = r'href="(?:https://rarediseases\.org)?/organizations/([^/?]+)/[^"]*"'
+                for slug in re.findall(href_pattern, response.text):
+                    if slug and slug not in slugs_seen:
+                        slugs_seen.add(slug)
+                        name = slug.replace('-', ' ').title()
+                        orgs.append(PatientAdvocacyOrg(
+                            org_id=slug,
+                            name=name,
+                            website=f"https://rarediseases.org/organizations/{slug}/",
+                            diseases=[disease_name],
+                        ))
+
+            if not orgs:
+                logger.info(
+                    f"No NORD organizations found for '{disease_name}'"
+                )
+
+            return orgs
+
+        except Exception as e:
+            logger.error(f"NORD organization search failed for '{disease_name}': {e}")
+            return []
 
     def _parse_organization_from_search(
         self,
@@ -430,20 +475,30 @@ class NORDClient(BaseAPIClient[Dict[str, Any]]):
         )
 
     def _parse_disease_list(self, html: str) -> List[RareDisease]:
-        """Parse list of diseases from HTML."""
+        """Parse list of diseases from embedded JSON data."""
         diseases = []
 
-        # Simple regex to find disease links
-        # Format: <a href="/rare-diseases/disease-slug/">Disease Name</a>
-        pattern = r'<a href="/rare-diseases/([^"]+)/"[^>]*>([^<]+)</a>'
-        matches = re.findall(pattern, html)
-
-        for slug, name in matches:
-            if slug and name and slug != "?filter=":
-                diseases.append(RareDisease(
-                    disease_id=slug,
-                    name=name.strip(),
-                ))
+        # NORD embeds disease data as JSON in: var predictiveSearchData = {...};
+        match = re.search(r'var\s+predictiveSearchData\s*=\s*(\{.+?\});', html, re.DOTALL)
+        if match:
+            try:
+                data = json.loads(match.group(1))
+                for item in data.get("data", []):
+                    title = item.get("title", "")
+                    if not title:
+                        continue
+                    # Extract slug from permalink
+                    permalink = item.get("permalink", "")
+                    slug_match = re.search(r'/([^/]+)/$', permalink)
+                    slug = slug_match.group(1) if slug_match else re.sub(r'[^a-z0-9]+', '-', title.lower()).strip('-')
+                    diseases.append(RareDisease(
+                        disease_id=slug,
+                        name=title,
+                        synonyms=item.get("synonyms", []),
+                        subdivisions=item.get("subdivisions", []),
+                    ))
+            except (json.JSONDecodeError, KeyError) as e:
+                logger.warning(f"Failed to parse NORD predictiveSearchData JSON: {e}")
 
         return diseases
 

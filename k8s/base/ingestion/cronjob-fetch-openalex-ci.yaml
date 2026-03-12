@@ -60,6 +60,12 @@ spec:
                     secretKeyRef:
                       name: dk-data-secrets
                       key: POSTGRES_DB
+                - name: OPENALEX_API_KEY
+                  valueFrom:
+                    secretKeyRef:
+                      name: dk-data-secrets
+                      key: OPENALEX_API_KEY
+                      optional: true
                 - name: OTEL_EXPORTER_OTLP_ENDPOINT
                   value: "http://alloy.infra.svc.cluster.local:4317"
                 - name: OTEL_ENABLED

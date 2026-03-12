@@ -1,0 +1,49 @@
+# Daily CMS gold view refresh via SQLMesh
+# Feature: 016-cms-puf-datasource-integration (T101)
+# Schedule: Daily at 5AM UTC (after nightly data loads)
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: cms-gold-refresh
+  labels:
+    app: dk-data-ingestion
+    component: gold-refresh
+    feature: "016-cms-puf"
+spec:
+  schedule: "0 5 * * *"
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      backoffLimit: 2
+      activeDeadlineSeconds: 3600
+      template:
+        spec:
+          restartPolicy: OnFailure
+          containers:
+            - name: cms-gold-refresh
+              image: ghcr.io/data-kinetic/dk-data-fe/job-trigger:main-5f46ed1
+              command:
+                - /bin/sh
+                - -c
+                - |
+                  set -e
+                  echo "Running SQLMesh plan for CMS models..."
+                  python -m sqlmesh plan --auto-apply --no-prompts
+                  echo "CMS gold views refreshed."
+              envFrom:
+                - secretRef:
+                    name: dk-data-secrets
+              env:
+                - name: OTEL_EXPORTER_OTLP_ENDPOINT
+                  value: "http://otel-collector.observability.svc.cluster.local:4317"
+                - name: OTEL_SERVICE_NAME
+                  value: "dk-data-cms-gold-refresh"
+              resources:
+                requests:
+                  memory: "512Mi"
+                  cpu: "200m"
+                limits:
+                  memory: "1Gi"
+                  cpu: "500m"

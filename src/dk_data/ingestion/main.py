@@ -12,6 +12,7 @@ import sys
 import time
 from datetime import datetime
 from pathlib import Path
+from typing import Optional, Dict, Any
 
 from .sources import cms_inpatient, cms_hospital_info, cms_cost_reports, acc_tvc, hrsa
 from .sources.pubmed import load_pubmed_data
@@ -31,6 +32,38 @@ from .sources.pdb import load_pdb_data
 from .sources.orcid import load_orcid_data
 from .sources.uspto_trademarks import load_uspto_trademarks_data
 from .sources.euipo_trademarks import load_euipo_trademarks_data
+from .sources.euipo_designs import load_euipo_designs_data
+# CMS PUF source loaders (016-cms-puf-datasource-integration)
+from .sources.cms_nppes import load_cms_nppes_data
+from .sources.cms_part_d_prescriber import load_cms_part_d_prescriber_data
+from .sources.cms_physician_puf import load_cms_physician_puf_data
+from .sources.cms_open_payments import load_cms_open_payments_data
+from .sources.cms_care_compare import load_cms_care_compare_data
+# CMS PUF Phase 3: Facility loaders
+from .sources.cms_pos import load_cms_pos_data
+from .sources.cms_pecos import load_cms_pecos_data
+from .sources.cms_chow import load_cms_chow_data
+from .sources.cms_hospital_affiliation import load_cms_hospital_affiliation_data
+from .sources.cms_inpatient_puf import load_cms_inpatient_puf_data
+from .sources.cms_outpatient_puf import load_cms_outpatient_puf_data
+from .sources.cms_hospital_quality import load_cms_hospital_quality_data
+from .sources.cms_hospital_general_info import load_cms_hospital_general_info_data
+from .sources.cms_hcris import load_cms_hcris_data
+from .sources.cms_magnet import load_cms_magnet_data
+# CMS PUF Phase 4: Drug/Market loaders
+from .sources.cms_ndc import load_cms_ndc_data
+from .sources.cms_part_d_spending import load_cms_part_d_spending_data
+from .sources.cms_part_b_spending import load_cms_part_b_spending_data
+from .sources.cms_formulary import load_cms_formulary_data
+from .sources.cms_rbcs import load_cms_rbcs_data
+from .sources.cms_usp import load_cms_usp_data
+from .sources.cms_nucc import load_cms_nucc_data
+from .sources.cms_geographic_variation import load_cms_geographic_variation_data
+from .sources.cms_chronic_conditions import load_cms_chronic_conditions_data
+from .sources.cms_post_acute import load_cms_post_acute_data
+from .sources.cms_dmepos import load_cms_dmepos_data
+from .sources.cms_ddinter import load_cms_ddinter_data
+from .sources.cms_stabilis import load_cms_stabilis_data
 
 from .fetchers import (
     PubMedFetcher,
@@ -50,6 +83,38 @@ from .fetchers import (
     ORCIDFetcher,
     USPTOTrademarksFetcher,
     EUIPOTrademarksFetcher,
+    EUIPODesignsFetcher,
+    # CMS PUF (016)
+    CMSNPPESFetcher,
+    CMSPartDPrescriberFetcher,
+    CMSPhysicianPUFFetcher,
+    CMSOpenPaymentsFetcher,
+    CMSCareCompareFetcher,
+    # Phase 3: Facility
+    CMSPOSFetcher,
+    CMSPECOSFetcher,
+    CMSCHOWFetcher,
+    CMSHospitalAffiliationFetcher,
+    CMSInpatientPUFFetcher,
+    CMSOutpatientPUFFetcher,
+    CMSHospitalQualityFetcher,
+    CMSHospitalGeneralInfoFetcher,
+    CMSHCRISFetcher,
+    CMSMagnetFetcher,
+    # Phase 4: Drug/Market
+    CMSNDCFetcher,
+    CMSPartDSpendingFetcher,
+    CMSPartBSpendingFetcher,
+    CMSFormularyFetcher,
+    CMSRBCSFetcher,
+    CMSUSPFetcher,
+    CMSNUCCFetcher,
+    CMSGeographicVariationFetcher,
+    CMSChronicConditionsFetcher,
+    CMSPostAcuteFetcher,
+    CMSDMEPOSFetcher,
+    CMSDDInterFetcher,
+    CMSStabilisFetcher,
 )
 
 from .utils.database import init_connection_pool, close_connection_pool, get_cursor
@@ -152,6 +217,7 @@ SOURCES = {
         'loader': load_journal_rss_data,
         'requires_file': False,
         'default_days_back': None,  # RSS feeds are inherently recent
+        'hash_skip_enabled': False,  # ephemeral feed, always reload
     },
     'uspto_ci': {
         'name': 'USPTO CI',
@@ -192,6 +258,7 @@ SOURCES = {
         'loader': load_medical_news_data,
         'requires_file': False,
         'default_days_back': 30,
+        'hash_skip_enabled': False,  # ephemeral feed, always reload
     },
     'sec_edgar': {
         'name': 'SEC EDGAR',
@@ -240,6 +307,241 @@ SOURCES = {
         'loader': load_euipo_trademarks_data,
         'requires_file': False,
         'default_days_back': 90,
+    },
+    'euipo_designs': {
+        'name': 'EUIPO Designs',
+        'description': 'EUIPO registered community design data (pharma packaging, medical devices)',
+        'fetcher': EUIPODesignsFetcher,
+        'loader': load_euipo_designs_data,
+        'requires_file': False,
+        'default_days_back': 90,
+    },
+    # ── CMS PUF sources (016-cms-puf-datasource-integration) ──────────────
+    'cms_nppes': {
+        'name': 'CMS NPPES',
+        'description': 'National Plan & Provider Enumeration System (bulk NPI registry)',
+        'fetcher': CMSNPPESFetcher,
+        'loader': load_cms_nppes_data,
+        'requires_file': False,
+        'default_days_back': None,  # full dump each run (weekly)
+    },
+    'cms_part_d_prescriber': {
+        'name': 'CMS Part D Prescriber',
+        'description': 'Medicare Part D prescriber-level drug utilization',
+        'fetcher': CMSPartDPrescriberFetcher,
+        'loader': load_cms_part_d_prescriber_data,
+        'requires_file': False,
+        'default_days_back': None,  # annual release
+    },
+    'cms_physician_puf': {
+        'name': 'CMS Physician PUF',
+        'description': 'Medicare Physician & Other Practitioners procedure utilization',
+        'fetcher': CMSPhysicianPUFFetcher,
+        'loader': load_cms_physician_puf_data,
+        'requires_file': False,
+        'default_days_back': None,  # annual release
+    },
+    'cms_open_payments': {
+        'name': 'CMS Open Payments',
+        'description': 'Industry payments to physicians (General, Research, Ownership)',
+        'fetcher': CMSOpenPaymentsFetcher,
+        'loader': load_cms_open_payments_data,
+        'requires_file': False,
+        'default_days_back': None,  # annual release
+    },
+    'cms_care_compare': {
+        'name': 'CMS Care Compare',
+        'description': 'Hospital quality ratings and general information',
+        'fetcher': CMSCareCompareFetcher,
+        'loader': load_cms_care_compare_data,
+        'requires_file': False,
+        'default_days_back': None,  # quarterly release
+    },
+    # ── CMS PUF Phase 3: Facility sources ─────────────────────────────────
+    'cms_pos': {
+        'name': 'CMS Provider of Services',
+        'description': 'Provider of Services file (facility demographics)',
+        'fetcher': CMSPOSFetcher,
+        'loader': load_cms_pos_data,
+        'requires_file': False,
+        'default_days_back': None,
+    },
+    'cms_pecos': {
+        'name': 'CMS PECOS',
+        'description': 'Medicare Provider Supplier Enrollment',
+        'fetcher': CMSPECOSFetcher,
+        'loader': load_cms_pecos_data,
+        'requires_file': False,
+        'default_days_back': None,
+    },
+    'cms_chow': {
+        'name': 'CMS CHOW',
+        'description': 'Change of Ownership records',
+        'fetcher': CMSCHOWFetcher,
+        'loader': load_cms_chow_data,
+        'requires_file': False,
+        'default_days_back': None,
+    },
+    'cms_hospital_affiliation': {
+        'name': 'CMS Hospital Affiliation',
+        'description': 'Hospital affiliation relationships',
+        'fetcher': CMSHospitalAffiliationFetcher,
+        'loader': load_cms_hospital_affiliation_data,
+        'requires_file': False,
+        'default_days_back': None,
+    },
+    'cms_inpatient_puf': {
+        'name': 'CMS Inpatient PUF',
+        'description': 'Medicare inpatient DRG volumes',
+        'fetcher': CMSInpatientPUFFetcher,
+        'loader': load_cms_inpatient_puf_data,
+        'requires_file': False,
+        'default_days_back': None,
+    },
+    'cms_outpatient_puf': {
+        'name': 'CMS Outpatient PUF',
+        'description': 'Medicare outpatient procedure volumes',
+        'fetcher': CMSOutpatientPUFFetcher,
+        'loader': load_cms_outpatient_puf_data,
+        'requires_file': False,
+        'default_days_back': None,
+    },
+    'cms_hospital_quality': {
+        'name': 'CMS Hospital Quality',
+        'description': 'Hospital star ratings',
+        'fetcher': CMSHospitalQualityFetcher,
+        'loader': load_cms_hospital_quality_data,
+        'requires_file': False,
+        'default_days_back': None,
+    },
+    'cms_hospital_general_info': {
+        'name': 'CMS Hospital General Info',
+        'description': 'Hospital general information',
+        'fetcher': CMSHospitalGeneralInfoFetcher,
+        'loader': load_cms_hospital_general_info_data,
+        'requires_file': False,
+        'default_days_back': None,
+    },
+    'cms_hcris': {
+        'name': 'CMS HCRIS',
+        'description': 'Healthcare Cost Report Information System',
+        'fetcher': CMSHCRISFetcher,
+        'loader': load_cms_hcris_data,
+        'requires_file': False,
+        'default_days_back': None,
+    },
+    'cms_magnet': {
+        'name': 'CMS Magnet',
+        'description': 'ANCC Magnet Recognition (web scrape)',
+        'fetcher': CMSMagnetFetcher,
+        'loader': load_cms_magnet_data,
+        'requires_file': False,
+        'default_days_back': None,
+    },
+    # ── CMS PUF Phase 4: Drug/Market sources ──────────────────────────────
+    'cms_ndc': {
+        'name': 'CMS NDC',
+        'description': 'National Drug Code Directory',
+        'fetcher': CMSNDCFetcher,
+        'loader': load_cms_ndc_data,
+        'requires_file': False,
+        'default_days_back': None,
+    },
+    'cms_part_d_spending': {
+        'name': 'CMS Part D Spending',
+        'description': 'Medicare Part D drug spending by drug',
+        'fetcher': CMSPartDSpendingFetcher,
+        'loader': load_cms_part_d_spending_data,
+        'requires_file': False,
+        'default_days_back': None,
+    },
+    'cms_part_b_spending': {
+        'name': 'CMS Part B Spending',
+        'description': 'Medicare Part B drug spending',
+        'fetcher': CMSPartBSpendingFetcher,
+        'loader': load_cms_part_b_spending_data,
+        'requires_file': False,
+        'default_days_back': None,
+    },
+    'cms_formulary': {
+        'name': 'CMS Formulary',
+        'description': 'Medicare plan formulary data',
+        'fetcher': CMSFormularyFetcher,
+        'loader': load_cms_formulary_data,
+        'requires_file': False,
+        'default_days_back': None,
+    },
+    'cms_rbcs': {
+        'name': 'CMS RBCS',
+        'description': 'Restructured BETOS Classification',
+        'fetcher': CMSRBCSFetcher,
+        'loader': load_cms_rbcs_data,
+        'requires_file': False,
+        'default_days_back': None,
+    },
+    'cms_usp': {
+        'name': 'CMS USP',
+        'description': 'USP Drug Classification',
+        'fetcher': CMSUSPFetcher,
+        'loader': load_cms_usp_data,
+        'requires_file': False,
+        'default_days_back': None,
+    },
+    'cms_nucc': {
+        'name': 'CMS NUCC',
+        'description': 'NUCC Provider Taxonomy',
+        'fetcher': CMSNUCCFetcher,
+        'loader': load_cms_nucc_data,
+        'requires_file': False,
+        'default_days_back': None,
+    },
+    'cms_geographic_variation': {
+        'name': 'CMS Geographic Variation',
+        'description': 'Medicare geographic comparisons',
+        'fetcher': CMSGeographicVariationFetcher,
+        'loader': load_cms_geographic_variation_data,
+        'requires_file': False,
+        'default_days_back': None,
+    },
+    'cms_chronic_conditions': {
+        'name': 'CMS Chronic Conditions',
+        'description': 'Chronic conditions prevalence by state',
+        'fetcher': CMSChronicConditionsFetcher,
+        'loader': load_cms_chronic_conditions_data,
+        'requires_file': False,
+        'default_days_back': None,
+    },
+    'cms_post_acute': {
+        'name': 'CMS Post-Acute',
+        'description': 'Post-acute care utilization',
+        'fetcher': CMSPostAcuteFetcher,
+        'loader': load_cms_post_acute_data,
+        'requires_file': False,
+        'default_days_back': None,
+    },
+    'cms_dmepos': {
+        'name': 'CMS DMEPOS',
+        'description': 'Durable medical equipment utilization',
+        'fetcher': CMSDMEPOSFetcher,
+        'loader': load_cms_dmepos_data,
+        'requires_file': False,
+        'default_days_back': None,
+    },
+    'cms_ddinter': {
+        'name': 'CMS DDInter',
+        'description': 'Drug-drug interactions (DDInter API)',
+        'fetcher': CMSDDInterFetcher,
+        'loader': load_cms_ddinter_data,
+        'requires_file': False,
+        'default_days_back': None,
+    },
+    'cms_stabilis': {
+        'name': 'CMS Stabilis',
+        'description': 'IV drug compatibility (Stabilis)',
+        'fetcher': CMSStabilisFetcher,
+        'loader': load_cms_stabilis_data,
+        'requires_file': False,
+        'default_days_back': None,
     },
 }
 
@@ -294,6 +596,63 @@ def _compute_days_back(source: str, source_info: dict) -> int | None:
     return days_back
 
 
+def get_last_content_hash(source_name: str) -> Optional[str]:
+    """Query meta.data_sources.last_content_hash for a source."""
+    try:
+        with get_cursor() as cur:
+            cur.execute("""
+                SELECT last_content_hash
+                FROM meta.data_sources
+                WHERE source_name = %s
+            """, (source_name,))
+            row = cur.fetchone()
+            if row and row[0]:
+                return row[0]
+    except Exception as e:
+        logger.warning(f"Could not read last_content_hash for {source_name}: {e}")
+    return None
+
+
+def get_conditional_headers(source_name: str) -> Dict[str, Optional[str]]:
+    """Query meta.data_sources for last_etag + last_modified_header."""
+    try:
+        with get_cursor() as cur:
+            cur.execute("""
+                SELECT last_etag, last_modified_header
+                FROM meta.data_sources
+                WHERE source_name = %s
+            """, (source_name,))
+            row = cur.fetchone()
+            if row:
+                return {"etag": row[0], "last_modified": row[1]}
+    except Exception as e:
+        logger.warning(f"Could not read conditional headers for {source_name}: {e}")
+    return {"etag": None, "last_modified": None}
+
+
+def get_checkpoint_offset(source_name: str) -> int:
+    """Get pagination_offset from last failed/partial run in meta.refresh_log."""
+    try:
+        with get_cursor() as cur:
+            cur.execute("""
+                SELECT rl.pagination_offset
+                FROM meta.refresh_log rl
+                JOIN meta.data_sources ds ON ds.source_id = rl.source_id
+                WHERE ds.source_name = %s
+                  AND rl.status IN ('failed', 'partial')
+                  AND rl.pagination_offset IS NOT NULL
+                  AND rl.pagination_offset > 0
+                ORDER BY rl.refresh_started_at DESC
+                LIMIT 1
+            """, (source_name,))
+            row = cur.fetchone()
+            if row and row[0]:
+                return row[0]
+    except Exception as e:
+        logger.warning(f"Could not read checkpoint offset for {source_name}: {e}")
+    return 0
+
+
 def log_to_meta(source_name: str, result: dict) -> None:
     """Log ingestion result to meta.refresh_log."""
     try:
@@ -316,9 +675,9 @@ def log_to_meta(source_name: str, result: dict) -> None:
                 INSERT INTO meta.refresh_log (
                     source_id, refresh_started_at, refresh_completed_at,
                     status, records_fetched, records_inserted, records_updated,
-                    error_message
+                    error_message, content_hash, pagination_offset, skipped_by_hash
                 ) VALUES (
-                    %s, %s, NOW(), %s, %s, %s, %s, %s
+                    %s, %s, NOW(), %s, %s, %s, %s, %s, %s, %s, %s
                 )
             """, (
                 source_id,
@@ -327,7 +686,10 @@ def log_to_meta(source_name: str, result: dict) -> None:
                 result.get('records_fetched', result.get('records_inserted', 0)),
                 result.get('records_inserted', 0),
                 result.get('records_updated', 0),
-                json.dumps(result['errors'][:5]) if result.get('errors') else None
+                json.dumps(result['errors'][:5]) if result.get('errors') else None,
+                result.get('content_hash'),
+                result.get('last_offset'),
+                result.get('skipped_by_hash', False),
             ))
 
             # Update data_sources
@@ -339,12 +701,18 @@ def log_to_meta(source_name: str, result: dict) -> None:
                         WHEN %s IN ('success', 'partial') THEN NOW()
                         ELSE last_successful_refresh
                     END,
-                    record_count = COALESCE(%s, record_count)
+                    record_count = COALESCE(%s, record_count),
+                    last_content_hash = COALESCE(%s, last_content_hash),
+                    last_etag = COALESCE(%s, last_etag),
+                    last_modified_header = COALESCE(%s, last_modified_header)
                 WHERE source_id = %s
             """, (
                 status,
                 status,
                 result.get('records_inserted'),
+                result.get('content_hash'),
+                result.get('etag'),
+                result.get('last_modified'),
                 source_id
             ))
 
@@ -370,23 +738,74 @@ def run_ingestion(source: str, **kwargs) -> dict:
         fetcher = source_info['fetcher'](data_dir=data_dir)
 
         # Compute incremental days_back from last successful refresh
-        fetch_kwargs = {}
+        fetch_kwargs: Dict[str, Any] = {}
         days_back = _compute_days_back(source, source_info)
         if days_back is not None:
             fetch_kwargs['days_back'] = days_back
 
+        # Conditional HTTP: pass cached etag/last_modified to fetcher
+        cond_headers = get_conditional_headers(meta_source)
+        if cond_headers.get('etag') or cond_headers.get('last_modified'):
+            fetch_kwargs['etag'] = cond_headers['etag']
+            fetch_kwargs['last_modified'] = cond_headers['last_modified']
+
+        # Checkpoint resume: pass last failed offset to fetcher
+        resume_offset = get_checkpoint_offset(meta_source)
+        if resume_offset > 0:
+            fetch_kwargs['resume_offset'] = resume_offset
+            logger.info(
+                "Resuming %s from checkpoint offset %d", source, resume_offset
+            )
+
         fetch_result = fetcher.fetch(**fetch_kwargs)
+
+        # Propagate conditional HTTP headers from fetch result
+        fetch_result.setdefault('etag', cond_headers.get('etag'))
+        fetch_result.setdefault('last_modified', cond_headers.get('last_modified'))
+
+        if fetch_result.get('status') == 'not_modified':
+            logger.info("Source %s returned 304 Not Modified, skipping load", source)
+            fetch_result['skipped_by_hash'] = True
+            fetch_result['content_hash'] = get_last_content_hash(meta_source)
+            fetch_result['status'] = 'skipped'
+            log_to_meta(meta_source, fetch_result)
+            return fetch_result
 
         if fetch_result.get('status') == 'failed' or not fetch_result.get('records'):
             logger.warning(f"Fetch returned no records for {source}")
             log_to_meta(meta_source, fetch_result)
             return fetch_result
 
+        # Hash-skip: compare content hash to last run
+        hash_skip_enabled = source_info.get('hash_skip_enabled', True)
+        current_hash = fetch_result.get('hash')
+        if hash_skip_enabled and current_hash:
+            previous_hash = get_last_content_hash(meta_source)
+            if previous_hash and current_hash == previous_hash:
+                logger.info(
+                    "Hash unchanged for %s (%s), skipping load", source, current_hash[:12]
+                )
+                result = {
+                    'status': 'skipped',
+                    'records_fetched': len(fetch_result.get('records', [])),
+                    'records_inserted': 0,
+                    'records_updated': 0,
+                    'skipped_by_hash': True,
+                    'content_hash': current_hash,
+                    'etag': fetch_result.get('etag'),
+                    'last_modified': fetch_result.get('last_modified'),
+                }
+                log_to_meta(meta_source, result)
+                return result
+
         loader = source_info['loader']
         result = loader(fetch_result['records'], source_hash=fetch_result.get('hash'))
         result['records_fetched'] = fetch_result.get(
             'record_count', len(fetch_result.get('records', []))
         )
+        result['content_hash'] = current_hash
+        result['etag'] = fetch_result.get('etag')
+        result['last_modified'] = fetch_result.get('last_modified')
         log_to_meta(meta_source, result)
         return result
 

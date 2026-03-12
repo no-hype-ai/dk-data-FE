@@ -100,14 +100,14 @@ sources:
 
   # raw sources — IP
   uspto_patents:
-    requests_per_second: 5     # PatentsView API: no auth required
+    requests_per_second: 0.75  # PatentsView API: 45 req/min per API key
     timeout_seconds: 30
-    burst_limit: 15
+    burst_limit: 5
 
   epo_patents:
-    requests_per_second: 10    # EPO OPS: registered users get generous limits
-    timeout_seconds: 30
-    burst_limit: 20
+    requests_per_second: 0.15  # EPO OPS: bandwidth-based (3.5-4 GB/week), 10 req/min registered
+    timeout_seconds: 60        # XML responses can be large
+    burst_limit: 3
 
   sec_edgar:
     requests_per_second: 10    # SEC EDGAR: 10 req/s, User-Agent required (no API key)
@@ -144,33 +144,23 @@ sources:
     burst_limit: 10
 
   uspto_trademarks:
-    requests_per_second: 5     # USPTO TSDR
+    requests_per_second: 1     # USPTO TSDR: 60 req/min standard, 4 req/min bulk
     timeout_seconds: 30
-    burst_limit: 15
+    burst_limit: 5
 
   euipo_trademarks:
-    requests_per_second: 5     # TMview search
+    requests_per_second: 0.5   # EUIPO Trademark Search: undisclosed limits, 2s delay conservative
     timeout_seconds: 30
-    burst_limit: 15
+    burst_limit: 3
+
+  euipo_designs:
+    requests_per_second: 0.5   # EUIPO Design Search: undisclosed limits, 2s delay conservative
+    timeout_seconds: 30
+    burst_limit: 3
 
   # =========================================================================
-  # Tier 3: Supplementary context tools (5)
+  # Tier 3: Supplementary context tools (2)
   # =========================================================================
-
-  cms_medicare_inpatient:
-    requests_per_second: 5     # CMS data.gov: fully open, no auth
-    timeout_seconds: 30
-    burst_limit: 10
-
-  cms_hospital_info:
-    requests_per_second: 5
-    timeout_seconds: 30
-    burst_limit: 10
-
-  cms_cost_reports:
-    requests_per_second: 5
-    timeout_seconds: 30
-    burst_limit: 10
 
   acc_tvc:
     requests_per_second: 5
@@ -181,3 +171,109 @@ sources:
     requests_per_second: 5     # HRSA: separate registration + web token
     timeout_seconds: 30
     burst_limit: 10
+
+  # =========================================================================
+  # CMS Queryable sources (20) — on-demand API queries via data-tools gateway
+  # All CMS data.gov endpoints are fully open (no auth key required).
+  # Rate limit: CMS recommends max 8 req/s across all datasets.
+  # =========================================================================
+
+  cms_care_compare:
+    requests_per_second: 5
+    timeout_seconds: 30
+    burst_limit: 10
+
+  cms_part_d_prescriber:
+    requests_per_second: 5
+    timeout_seconds: 30
+    burst_limit: 10
+
+  cms_physician_puf:
+    requests_per_second: 5
+    timeout_seconds: 30
+    burst_limit: 10
+
+  cms_open_payments:
+    requests_per_second: 5
+    timeout_seconds: 30
+    burst_limit: 10
+
+  cms_pecos:
+    requests_per_second: 5
+    timeout_seconds: 30
+    burst_limit: 10
+
+  cms_inpatient_puf:
+    requests_per_second: 5
+    timeout_seconds: 30
+    burst_limit: 10
+
+  cms_outpatient_puf:
+    requests_per_second: 5
+    timeout_seconds: 30
+    burst_limit: 10
+
+  cms_hospital_quality:
+    requests_per_second: 5
+    timeout_seconds: 30
+    burst_limit: 10
+
+  cms_hospital_affiliation:
+    requests_per_second: 5
+    timeout_seconds: 30
+    burst_limit: 10
+
+  cms_formulary:
+    requests_per_second: 5
+    timeout_seconds: 30
+    burst_limit: 10
+
+  cms_part_d_spending:
+    requests_per_second: 5
+    timeout_seconds: 30
+    burst_limit: 10
+
+  cms_part_b_spending:
+    requests_per_second: 5
+    timeout_seconds: 30
+    burst_limit: 10
+
+  cms_ndc:
+    requests_per_second: 4     # FDA API: shared with OpenFDA limits
+    timeout_seconds: 30
+    burst_limit: 10
+
+  cms_chow:
+    requests_per_second: 5
+    timeout_seconds: 30
+    burst_limit: 10
+
+  cms_geographic_variation:
+    requests_per_second: 5
+    timeout_seconds: 30
+    burst_limit: 10
+
+  cms_chronic_conditions:
+    requests_per_second: 5
+    timeout_seconds: 30
+    burst_limit: 10
+
+  cms_dmepos:
+    requests_per_second: 5
+    timeout_seconds: 30
+    burst_limit: 10
+
+  cms_post_acute:
+    requests_per_second: 5
+    timeout_seconds: 30
+    burst_limit: 10
+
+  cms_rbcs:
+    requests_per_second: 5
+    timeout_seconds: 30
+    burst_limit: 10
+
+  cms_ddinter:
+    requests_per_second: 2     # DDInter: small academic project, be conservative
+    timeout_seconds: 30
+    burst_limit: 5

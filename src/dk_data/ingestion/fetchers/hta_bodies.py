@@ -4,9 +4,8 @@ Feature: 011-datasource-integration
 Task: T058-T060 — HTA Bodies CI source integration
 
 Fetches technology appraisal decisions from Health Technology Assessment
-(HTA) bodies.  Currently implements NICE (UK) as the primary agency;
-G-BA (Germany), HAS (France), and PBAC (Australia) are provided as
-stubs that return empty results pending API/scraping implementation.
+(HTA) bodies.  Implements NICE (UK) via API, G-BA (Germany), HAS (France),
+and PBAC (Australia) via web scraping.
 
 Query-scoped from meta.ci_search_terms WHERE term_type = 'drug_name'.
 Weekly cadence.
@@ -20,8 +19,12 @@ Sources:
 
 import hashlib
 import logging
+import time
 from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional
+
+import requests
+from bs4 import BeautifulSoup
 
 from .base import BaseFetcher
 
@@ -171,9 +174,9 @@ class HTABodiesFetcher(BaseFetcher):
         """
         dispatch = {
             "nice": self._fetch_nice,
-            "gba": self._fetch_gba_stub,
-            "has": self._fetch_has_stub,
-            "pbac": self._fetch_pbac_stub,
+            "gba": self._fetch_gba,
+            "has": self._fetch_has,
+            "pbac": self._fetch_pbac,
         }
         handler = dispatch.get(agency)
         if handler is None:
@@ -295,35 +298,275 @@ class HTABodiesFetcher(BaseFetcher):
         }
 
     # ------------------------------------------------------------------
-    # Stub implementations for other agencies
+    # G-BA (Germany) — Nutzenbewertung scraper
     # ------------------------------------------------------------------
 
-    def _fetch_gba_stub(
+    GBA_URL = "https://www.g-ba.de/bewertungsverfahren/nutzenbewertung/"
+    GBA_DECISION_MAP = {
+        "zusatznutzen belegt": "Benefit proven",
+        "zusatznutzen nicht belegt": "Benefit not proven",
+        "geringerer nutzen": "Lesser benefit",
+        "nicht quantifizierbar": "Not quantifiable",
+        "beträchtlich": "Considerable benefit",
+        "erheblich": "Major benefit",
+        "gering": "Minor benefit",
+    }
+
+    def _fetch_gba(
         self, *, drug_names: List[str], days_back: int = 7
     ) -> List[Dict[str, Any]]:
-        """G-BA (Germany) — stub, returns empty results.
+        """Fetch G-BA Nutzenbewertung decisions by scraping the listing page."""
+        since_date = datetime.now(timezone.utc) - timedelta(days=days_back)
+        drug_names_lower = [d.lower() for d in drug_names] if drug_names else []
+        records: List[Dict[str, Any]] = []
 
-        TODO: Implement G-BA Nutzenbewertung scraping.
-        """
-        logger.info("G-BA fetcher is a stub; returning empty results")
-        return []
+        try:
+            resp = requests.get(
+                self.GBA_URL,
+                headers={"User-Agent": "DK-Data-Platform/1.0 (Research)"},
+                timeout=30,
+            )
+            resp.raise_for_status()
+            time.sleep(1)  # respectful crawling
 
-    def _fetch_has_stub(
+            soup = BeautifulSoup(resp.text, "html.parser")
+
+            for row in soup.select("table tr, .bewertung-item, .list-item, article"):
+                text = row.get_text(separator=" ", strip=True)
+                if not text:
+                    continue
+
+                # Try to extract a date from the row
+                date_str = self._extract_date_from_text(text)
+                if date_str:
+                    try:
+                        decision_date = datetime.strptime(date_str, "%Y-%m-%d").replace(tzinfo=timezone.utc)
+                        if decision_date < since_date:
+                            continue
+                    except ValueError:
+                        pass
+
+                # Check if any drug name matches
+                text_lower = text.lower()
+                if drug_names_lower and not any(dn in text_lower for dn in drug_names_lower):
+                    continue
+
+                # Extract decision type
+                decision_type = None
+                for gba_key, eng_val in self.GBA_DECISION_MAP.items():
+                    if gba_key in text_lower:
+                        decision_type = eng_val
+                        break
+
+                # Extract link
+                link_tag = row.find("a", href=True)
+                doc_url = None
+                if link_tag:
+                    href = link_tag["href"]
+                    doc_url = href if href.startswith("http") else f"https://www.g-ba.de{href}"
+
+                drug_name = self._match_drug_name(text, drug_names) or text[:80]
+                decision_id = f"gba-{hashlib.md5(text[:120].encode()).hexdigest()[:12]}"
+
+                records.append({
+                    "decision_id": decision_id,
+                    "agency": "gba",
+                    "drug_name": drug_name,
+                    "indication": None,
+                    "decision_type": decision_type,
+                    "decision_date": date_str,
+                    "document_url": doc_url,
+                    "summary": text[:300],
+                })
+
+        except Exception as e:
+            logger.warning("G-BA scraping failed: %s", e)
+
+        logger.info("Fetched %d G-BA decisions", len(records))
+        return records
+
+    # ------------------------------------------------------------------
+    # HAS (France) — Transparency Committee scraper
+    # ------------------------------------------------------------------
+
+    HAS_URL = "https://www.has-sante.fr/jcms/fc_2875171/en/transparency-committee"
+
+    def _fetch_has(
         self, *, drug_names: List[str], days_back: int = 7
     ) -> List[Dict[str, Any]]:
-        """HAS (France) — stub, returns empty results.
+        """Fetch HAS transparency committee opinions."""
+        since_date = datetime.now(timezone.utc) - timedelta(days=days_back)
+        drug_names_lower = [d.lower() for d in drug_names] if drug_names else []
+        records: List[Dict[str, Any]] = []
 
-        TODO: Implement HAS transparency committee opinion scraping.
-        """
-        logger.info("HAS fetcher is a stub; returning empty results")
-        return []
+        try:
+            resp = requests.get(
+                self.HAS_URL,
+                headers={
+                    "User-Agent": "DK-Data-Platform/1.0 (Research)",
+                    "Accept-Language": "en",
+                },
+                timeout=30,
+            )
+            resp.raise_for_status()
+            time.sleep(1)
 
-    def _fetch_pbac_stub(
+            soup = BeautifulSoup(resp.text, "html.parser")
+
+            for item in soup.select(".publication-item, .list-item, article, table tr"):
+                text = item.get_text(separator=" ", strip=True)
+                if not text:
+                    continue
+
+                date_str = self._extract_date_from_text(text)
+                if date_str:
+                    try:
+                        decision_date = datetime.strptime(date_str, "%Y-%m-%d").replace(tzinfo=timezone.utc)
+                        if decision_date < since_date:
+                            continue
+                    except ValueError:
+                        pass
+
+                text_lower = text.lower()
+                if drug_names_lower and not any(dn in text_lower for dn in drug_names_lower):
+                    continue
+
+                # Determine decision type
+                decision_type = None
+                if "favorable" in text_lower and "unfavorable" not in text_lower:
+                    decision_type = "Favorable"
+                elif "unfavorable" in text_lower or "unfavourable" in text_lower:
+                    decision_type = "Unfavorable"
+                elif "conditional" in text_lower:
+                    decision_type = "Conditional"
+
+                link_tag = item.find("a", href=True)
+                doc_url = None
+                if link_tag:
+                    href = link_tag["href"]
+                    doc_url = href if href.startswith("http") else f"https://www.has-sante.fr{href}"
+
+                drug_name = self._match_drug_name(text, drug_names) or text[:80]
+                decision_id = f"has-{hashlib.md5(text[:120].encode()).hexdigest()[:12]}"
+
+                records.append({
+                    "decision_id": decision_id,
+                    "agency": "has",
+                    "drug_name": drug_name,
+                    "indication": None,
+                    "decision_type": decision_type,
+                    "decision_date": date_str,
+                    "document_url": doc_url,
+                    "summary": text[:300],
+                })
+
+        except Exception as e:
+            logger.warning("HAS scraping failed: %s", e)
+
+        logger.info("Fetched %d HAS decisions", len(records))
+        return records
+
+    # ------------------------------------------------------------------
+    # PBAC (Australia) — Meeting Outcomes scraper
+    # ------------------------------------------------------------------
+
+    PBAC_URL = "https://www.pbs.gov.au/pbs/industry/listing/elements/pbac-meetings/pbac-meetings-outcomes"
+
+    def _fetch_pbac(
         self, *, drug_names: List[str], days_back: int = 7
     ) -> List[Dict[str, Any]]:
-        """PBAC (Australia) — stub, returns empty results.
+        """Fetch PBAC meeting outcome decisions."""
+        since_date = datetime.now(timezone.utc) - timedelta(days=days_back)
+        drug_names_lower = [d.lower() for d in drug_names] if drug_names else []
+        records: List[Dict[str, Any]] = []
 
-        TODO: Implement PBAC meeting outcomes scraping.
-        """
-        logger.info("PBAC fetcher is a stub; returning empty results")
-        return []
+        try:
+            resp = requests.get(
+                self.PBAC_URL,
+                headers={"User-Agent": "DK-Data-Platform/1.0 (Research)"},
+                timeout=30,
+            )
+            resp.raise_for_status()
+            time.sleep(0.5)  # 2 req/s
+
+            soup = BeautifulSoup(resp.text, "html.parser")
+
+            for row in soup.select("table tr, .outcome-item, article, .list-item"):
+                text = row.get_text(separator=" ", strip=True)
+                if not text:
+                    continue
+
+                date_str = self._extract_date_from_text(text)
+                if date_str:
+                    try:
+                        decision_date = datetime.strptime(date_str, "%Y-%m-%d").replace(tzinfo=timezone.utc)
+                        if decision_date < since_date:
+                            continue
+                    except ValueError:
+                        pass
+
+                text_lower = text.lower()
+                if drug_names_lower and not any(dn in text_lower for dn in drug_names_lower):
+                    continue
+
+                decision_type = None
+                if "recommended" in text_lower and "not recommended" not in text_lower:
+                    decision_type = "Recommended"
+                elif "not recommended" in text_lower:
+                    decision_type = "Not recommended"
+                elif "deferred" in text_lower:
+                    decision_type = "Deferred"
+
+                link_tag = row.find("a", href=True)
+                doc_url = None
+                if link_tag:
+                    href = link_tag["href"]
+                    doc_url = href if href.startswith("http") else f"https://www.pbs.gov.au{href}"
+
+                drug_name = self._match_drug_name(text, drug_names) or text[:80]
+                decision_id = f"pbac-{hashlib.md5(text[:120].encode()).hexdigest()[:12]}"
+
+                records.append({
+                    "decision_id": decision_id,
+                    "agency": "pbac",
+                    "drug_name": drug_name,
+                    "indication": None,
+                    "decision_type": decision_type,
+                    "decision_date": date_str,
+                    "document_url": doc_url,
+                    "summary": text[:300],
+                })
+
+        except Exception as e:
+            logger.warning("PBAC scraping failed: %s", e)
+
+        logger.info("Fetched %d PBAC decisions", len(records))
+        return records
+
+    # ------------------------------------------------------------------
+    # Shared helpers for agency scrapers
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def _extract_date_from_text(text: str) -> Optional[str]:
+        """Try to extract a YYYY-MM-DD date from free text."""
+        import re
+        # ISO dates
+        m = re.search(r'(\d{4}-\d{2}-\d{2})', text)
+        if m:
+            return m.group(1)
+        # DD/MM/YYYY or DD.MM.YYYY
+        m = re.search(r'(\d{1,2})[./](\d{1,2})[./](\d{4})', text)
+        if m:
+            day, month, year = m.group(1), m.group(2), m.group(3)
+            return f"{year}-{month.zfill(2)}-{day.zfill(2)}"
+        return None
+
+    @staticmethod
+    def _match_drug_name(text: str, drug_names: List[str]) -> Optional[str]:
+        """Return the first drug name found in text, preserving original casing."""
+        text_lower = text.lower()
+        for name in drug_names:
+            if name.lower() in text_lower:
+                return name
+        return None

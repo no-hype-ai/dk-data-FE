@@ -77,7 +77,7 @@ class PubMedFetcher(BaseFetcher):
 
         try:
             # Step 1: esearch to get PMIDs
-            pmids = self._esearch(query, days_back=days_back, retmax=retmax, max_results=max_results)
+            pmids = self._esearch(query, days_back=days_back, retmax=retmax, max_results=max_results, resume_offset=kwargs.get('resume_offset', 0))
 
             if not pmids:
                 result: Dict[str, Any] = {
@@ -114,6 +114,7 @@ class PubMedFetcher(BaseFetcher):
                 "records": [],
                 "hash": None,
                 "error": str(e),
+                "last_offset": getattr(self, '_last_offset', 0),
             }
             self.log_fetch_result(result)
             return result
@@ -143,6 +144,7 @@ class PubMedFetcher(BaseFetcher):
         days_back: int = 1,
         retmax: int = 500,
         max_results: int = 10000,
+        resume_offset: int = 0,
     ) -> List[str]:
         """Search PubMed and return a list of PMIDs.
 
@@ -151,7 +153,7 @@ class PubMedFetcher(BaseFetcher):
         """
         url = f"{self.BASE_URL}/esearch.fcgi"
         all_pmids: List[str] = []
-        retstart = 0
+        retstart = resume_offset
 
         while True:
             params = {
@@ -166,6 +168,7 @@ class PubMedFetcher(BaseFetcher):
             }
 
             logger.debug(f"esearch retstart={retstart}")
+            self._last_offset = retstart
             response = self.session.get(url, params=params, timeout=60)
             response.raise_for_status()
 

@@ -604,10 +604,45 @@ class BronzeIngestionService:
         )
 
     async def _insert_bronze_chembl_activity(self, conn, activity: Dict, raw_id):
-        """Insert a ChEMBL activity into Bronze - skipped as table doesn't exist."""
-        # bronze.chembl_activities table doesn't exist in current schema
-        # Activities could be added to a future migration
-        logger.debug(f"Skipping activity insert - table not implemented: {activity.get('activity_id')}")
+        """Insert a ChEMBL activity into Bronze."""
+        activity_id = activity.get('activity_id')
+        molecule_chembl_id = activity.get('molecule_chembl_id')
+        if not molecule_chembl_id:
+            return
+
+        await conn.execute("""
+            INSERT INTO bronze.chembl_activities (
+                raw_id, activity_id, molecule_chembl_id,
+                target_chembl_id, target_name, target_organism,
+                activity_type, activity_value, activity_units,
+                assay_chembl_id, assay_type, assay_description,
+                pchembl_value, data_validity_comment, pubmed_id
+            ) VALUES (
+                $1, $2, $3, $4, $5, $6, $7, $8, $9,
+                $10, $11, $12, $13, $14, $15
+            )
+            ON CONFLICT (molecule_chembl_id, activity_id) DO UPDATE SET
+                activity_value = COALESCE(EXCLUDED.activity_value, bronze.chembl_activities.activity_value),
+                pchembl_value = COALESCE(EXCLUDED.pchembl_value, bronze.chembl_activities.pchembl_value),
+                processed_to_silver = FALSE,
+                ingested_at = NOW()
+        """,
+            raw_id,
+            self._safe_int(activity_id),
+            molecule_chembl_id,
+            activity.get('target_chembl_id'),
+            activity.get('target_pref_name') or activity.get('target_name'),
+            activity.get('target_organism'),
+            activity.get('standard_type') or activity.get('activity_type'),
+            self._safe_float(activity.get('standard_value') or activity.get('activity_value')),
+            activity.get('standard_units') or activity.get('activity_units'),
+            activity.get('assay_chembl_id'),
+            activity.get('assay_type'),
+            activity.get('assay_description'),
+            self._safe_float(activity.get('pchembl_value')),
+            activity.get('data_validity_comment'),
+            activity.get('document_chembl_id') or str(activity.get('pubmed_id', '') or ''),
+        )
 
     async def process_bindingdb(self, limit: int = 100) -> TransformResult:
         """Transform raw BindingDB data to Bronze."""

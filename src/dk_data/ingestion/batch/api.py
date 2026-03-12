@@ -106,13 +106,21 @@ try:
 except ImportError as e:
     logger.warning(f"Molecule alerts router not available: {e}")
 
-# MCP data retrieval tools router (015-assessment-dashboard-integration T064)
+# Unified data tools gateway router (replaces MCP tools router)
 try:
-    from dk_data.api.routes.mcp import router as mcp_router
-    app.include_router(mcp_router, prefix="/api/v1", tags=["mcp"])
-    logger.info("Loaded MCP tools router")
+    from dk_data.api.routes.data_tools import router as data_tools_router
+    app.include_router(data_tools_router, prefix="/api/v1", tags=["data-tools"])
+    logger.info("Loaded data tools gateway router")
 except ImportError as e:
-    logger.warning(f"MCP tools router not available: {e}")
+    logger.warning(f"Data tools router not available: {e}")
+
+# Agent trigger + quarantine router (016-cms-puf-datasource-integration T085/T088)
+try:
+    from dk_data.api.routes.agents import router as agents_router
+    app.include_router(agents_router, prefix="/api/v1", tags=["agents"])
+    logger.info("Loaded agents router")
+except ImportError as e:
+    logger.warning(f"Agents router not available: {e}")
 
 # CORS middleware
 app.add_middleware(
@@ -227,6 +235,39 @@ async def health_check():
         database=db_status,
         version="1.0.0",
     )
+
+
+@app.post("/cms/gold/refresh")
+async def refresh_cms_gold():
+    """Trigger CMS gold view refresh via SQLMesh.
+
+    Feature: 016-cms-puf-datasource-integration (T102)
+    """
+    import subprocess
+    try:
+        result = subprocess.run(
+            ["python", "-m", "sqlmesh", "plan", "--auto-apply", "--no-prompts"],
+            capture_output=True,
+            text=True,
+            timeout=600,
+        )
+        if result.returncode != 0:
+            raise HTTPException(
+                status_code=500,
+                detail=f"SQLMesh refresh failed: {result.stderr[:500]}",
+            )
+        return {
+            "status": "success",
+            "message": "CMS gold views refreshed",
+            "timestamp": datetime.now().isoformat(),
+        }
+    except subprocess.TimeoutExpired:
+        raise HTTPException(status_code=504, detail="Gold refresh timed out after 600s")
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Gold refresh failed: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 @app.get("/metrics")

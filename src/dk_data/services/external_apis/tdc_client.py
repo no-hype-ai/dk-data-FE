@@ -302,28 +302,60 @@ class TDCClient(BaseAPIClient[Dict[str, Any]]):
             logger.error(f"Error fetching TDC dataset {dataset_name}: {e}")
             return APIResponse(success=False, error=str(e))
 
-    async def search_by_smiles(self, smiles: str) -> APIResponse:
+    async def search_by_smiles(self, smiles: str, db_pool=None) -> APIResponse:
         """
         Search for ADMET predictions by SMILES.
 
-        Note: This would typically use a local database of pre-loaded TDC data
-        or make predictions using trained models.
+        Queries the bronze.tdc_admet_data (or public.tdc_admet_data) table
+        for pre-loaded TDC data matching the given SMILES string.
 
         Args:
             smiles: SMILES string of the compound
+            db_pool: Optional asyncpg connection pool for database lookup
 
         Returns:
             APIResponse with available ADMET data
         """
         try:
-            # This would typically query a local database with pre-loaded TDC data
-            # For now, return a placeholder indicating the capability
+            if db_pool is not None:
+                async with db_pool.acquire() as conn:
+                    # Try bronze schema first, fall back to public
+                    rows = None
+                    for schema_table in ("bronze.tdc_admet_data", "public.tdc_admet_data"):
+                        try:
+                            rows = await conn.fetch(
+                                f"SELECT * FROM {schema_table} WHERE smiles = $1",
+                                smiles,
+                            )
+                            break
+                        except Exception:
+                            continue
+
+                    if rows:
+                        predictions = [dict(row) for row in rows]
+                        # Convert datetime/date values to strings for JSON serialization
+                        for pred in predictions:
+                            for k, v in pred.items():
+                                if hasattr(v, 'isoformat'):
+                                    pred[k] = v.isoformat()
+                        return APIResponse(
+                            success=True,
+                            data={
+                                "smiles": smiles,
+                                "predictions_available": True,
+                                "predictions": predictions,
+                                "count": len(predictions),
+                            },
+                            source="tdc_admet",
+                        )
+
+            # No DB pool or no rows found
             return APIResponse(
                 success=True,
                 data={
                     "smiles": smiles,
                     "predictions_available": False,
-                    "note": "ADMET predictions require pre-trained models or database lookup",
+                    "note": "No ADMET data found for this compound",
                 },
                 source="tdc_admet",
             )

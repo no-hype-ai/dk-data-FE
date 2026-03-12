@@ -1,0 +1,161 @@
+"""Source loader for CMS Inpatient PUF (DRG volumes) data."""
+import logging
+import os
+from datetime import datetime
+from typing import Any, Dict, List, Optional
+
+import psycopg2
+from psycopg2.extras import execute_values
+from pydantic import BaseModel, field_validator
+
+logger = logging.getLogger(__name__)
+
+
+class CmsInpatientPufRecord(BaseModel):
+    """Validated record for CMS Inpatient PUF data."""
+
+    ccn: str
+    drg_code: str
+    drg_description: Optional[str] = None
+    total_discharges: Optional[int] = None
+    avg_covered_charges: Optional[float] = None
+    avg_total_payments: Optional[float] = None
+    avg_medicare_payments: Optional[float] = None
+
+    @field_validator("ccn")
+    @classmethod
+    def ccn_not_empty(cls, v: str) -> str:
+        v = v.strip()
+        if not v:
+            raise ValueError("ccn must not be empty")
+        return v
+
+    @field_validator("drg_code")
+    @classmethod
+    def drg_code_not_empty(cls, v: str) -> str:
+        v = v.strip()
+        if not v:
+            raise ValueError("drg_code must not be empty")
+        return v
+
+    @field_validator("total_discharges", mode="before")
+    @classmethod
+    def coerce_discharges(cls, v):
+        if v is None or v == "":
+            return None
+        return int(v)
+
+    @field_validator("avg_covered_charges", "avg_total_payments", "avg_medicare_payments", mode="before")
+    @classmethod
+    def coerce_float(cls, v):
+        if v is None or v == "":
+            return None
+        return float(v)
+
+
+def load_cms_inpatient_puf_data(
+    records: List[Dict[str, Any]],
+    source_hash: Optional[str] = None,
+    source_file: Optional[str] = None,
+    batch_size: int = 500,
+) -> Dict[str, Any]:
+    """Load CMS Inpatient PUF records into raw.cms_inpatient_puf.
+
+    Args:
+        records: List of dicts from the fetcher.
+        source_hash: Hash identifying the source snapshot.
+        source_file: Original filename / URL.
+        batch_size: Rows per INSERT batch.
+
+    Returns:
+        Status dict with counts and errors.
+    """
+    validated: List[CmsInpatientPufRecord] = []
+    errors: List[Dict[str, Any]] = []
+
+    for idx, rec in enumerate(records):
+        try:
+            validated.append(CmsInpatientPufRecord(**rec))
+        except Exception as exc:
+            errors.append({"row": idx, "error": str(exc)})
+
+    if not validated:
+        return {
+            "status": "partial" if errors else "success",
+            "records_inserted": 0,
+            "records_failed": len(errors),
+            "errors": errors[:50],
+        }
+
+    loaded_at = datetime.utcnow()
+
+    conn = psycopg2.connect(
+        host=os.getenv("POSTGRES_HOST", "localhost"),
+        port=int(os.getenv("POSTGRES_PORT", "5432")),
+        user=os.getenv("POSTGRES_USER", "postgres"),
+        password=os.getenv("POSTGRES_PASSWORD", ""),
+        database=os.getenv("POSTGRES_DB", "dk_data"),
+    )
+
+    records_inserted = 0
+    try:
+        with conn.cursor() as cur:
+            for start in range(0, len(validated), batch_size):
+                batch = validated[start : start + batch_size]
+                values = [
+                    (
+                        r.ccn,
+                        r.drg_code,
+                        r.drg_description,
+                        r.total_discharges,
+                        r.avg_covered_charges,
+                        r.avg_total_payments,
+                        r.avg_medicare_payments,
+                        loaded_at,
+                        source_file,
+                        source_hash,
+                    )
+                    for r in batch
+                ]
+                execute_values(
+                    cur,
+                    """
+                    INSERT INTO raw.cms_inpatient_puf (
+                        ccn, drg_code, drg_description, total_discharges,
+                        avg_covered_charges, avg_total_payments, avg_medicare_payments,
+                        _loaded_at, _source_file, _source_hash
+                    ) VALUES %s
+                    ON CONFLICT (ccn, drg_code) DO UPDATE SET
+                        drg_description = EXCLUDED.drg_description,
+                        total_discharges = EXCLUDED.total_discharges,
+                        avg_covered_charges = EXCLUDED.avg_covered_charges,
+                        avg_total_payments = EXCLUDED.avg_total_payments,
+                        avg_medicare_payments = EXCLUDED.avg_medicare_payments,
+                        _loaded_at = EXCLUDED._loaded_at,
+                        _source_file = EXCLUDED._source_file,
+                        _source_hash = EXCLUDED._source_hash
+                    """,
+                    values,
+                )
+                records_inserted += len(batch)
+                logger.info(
+                    "cms_inpatient_puf: inserted batch %d–%d of %d",
+                    start,
+                    start + len(batch),
+                    len(validated),
+                )
+            conn.commit()
+    except Exception as exc:
+        conn.rollback()
+        logger.exception("cms_inpatient_puf: batch insert failed")
+        errors.append({"row": "batch", "error": str(exc)})
+    finally:
+        conn.close()
+
+    status = "success" if not errors else "partial"
+    return {
+        "status": status,
+        "records_inserted": records_inserted,
+        "records_failed": len(errors),
+        "errors": errors[:50],
+    }

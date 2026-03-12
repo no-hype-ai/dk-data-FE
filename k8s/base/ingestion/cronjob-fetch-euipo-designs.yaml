@@ -1,0 +1,85 @@
+# EUIPO Design Search Fetch CronJob
+# 014-uspto-euipo-model-datasource
+# Fetches registered community designs (pharma packaging, medical devices) from EUIPO
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: fetch-euipo-designs
+  labels:
+    app: fetch-euipo-designs
+    app.kubernetes.io/name: fetch-euipo-designs
+    app.kubernetes.io/component: ingestion
+    app.kubernetes.io/part-of: dk-data
+spec:
+  schedule: "30 18 * * 0"  # Sunday 6:30 PM UTC (after trademark fetch)
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      backoffLimit: 2
+      activeDeadlineSeconds: 3600
+      template:
+        metadata:
+          labels:
+            app: fetch-euipo-designs
+            app.kubernetes.io/component: batch-job
+            app.kubernetes.io/part-of: dk-data
+        spec:
+          restartPolicy: Never
+          imagePullSecrets:
+            - name: ghcr-credentials
+          containers:
+            - name: fetch-euipo-designs
+              image: ghcr.io/data-kinetic/dk-data-fe/job-trigger:main-5f46ed1
+              command: ["python", "-m", "dk_data.ingestion.main"]
+              args: ["euipo_designs"]
+              env:
+                - name: POSTGRES_HOST
+                  valueFrom:
+                    secretKeyRef:
+                      name: dk-data-secrets
+                      key: POSTGRES_HOST
+                - name: POSTGRES_PORT
+                  valueFrom:
+                    secretKeyRef:
+                      name: dk-data-secrets
+                      key: POSTGRES_PORT
+                - name: POSTGRES_USER
+                  valueFrom:
+                    secretKeyRef:
+                      name: dk-data-secrets
+                      key: POSTGRES_USER
+                - name: POSTGRES_PASSWORD
+                  valueFrom:
+                    secretKeyRef:
+                      name: dk-data-secrets
+                      key: POSTGRES_PASSWORD
+                - name: POSTGRES_DB
+                  valueFrom:
+                    secretKeyRef:
+                      name: dk-data-secrets
+                      key: POSTGRES_DB
+                - name: EUIPO_API_KEY
+                  valueFrom:
+                    secretKeyRef:
+                      name: dk-data-secrets
+                      key: EUIPO_API_KEY
+                      optional: true
+                - name: EUIPO_SECRET_KEY
+                  valueFrom:
+                    secretKeyRef:
+                      name: dk-data-secrets
+                      key: EUIPO_SECRET_KEY
+                      optional: true
+                - name: OTEL_EXPORTER_OTLP_ENDPOINT
+                  value: "http://alloy.infra.svc.cluster.local:4317"
+                - name: OTEL_ENABLED
+                  value: "true"
+              resources:
+                requests:
+                  memory: "256Mi"
+                  cpu: "100m"
+                limits:
+                  memory: "512Mi"
+                  cpu: "300m"

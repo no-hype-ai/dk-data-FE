@@ -15,6 +15,7 @@ Source: https://search.patentsview.org/api/v1/patent/
 
 import hashlib
 import logging
+import time
 from datetime import datetime, timedelta
 from typing import Any, Dict, List, Optional
 
@@ -31,6 +32,9 @@ PHARMA_CPC_CODES = ["A61K", "A61P", "C07D"]
 # Pagination settings
 PAGE_SIZE = 100
 MAX_PAGES = 50  # Safety limit
+
+# PatentsView API rate limit: 45 req/min per API key
+REQUEST_DELAY = 1.4  # seconds between requests
 
 
 class USPTOCIFetcher(BaseFetcher):
@@ -263,6 +267,9 @@ class USPTOCIFetcher(BaseFetcher):
                 record = self._normalize_patent(patent)
                 if record:
                     all_records.append(record)
+
+            # Rate limit: 45 req/min for PatentsView API
+            time.sleep(REQUEST_DELAY)
 
             # Stop when we receive fewer results than the page size
             if len(patents) < PAGE_SIZE:

@@ -640,6 +640,36 @@ class EUIPOTrademarkRecord(BaseModel):
         return v
 
 
+class EUIPODesignRecord(BaseModel):
+    """Validation model for EUIPO registered community design records."""
+
+    model_config = ConfigDict(str_strip_whitespace=True)
+
+    application_number: str = Field(..., min_length=1)
+    design_title: Optional[str] = None
+    applicant_name: Optional[str] = None
+    applicant_country: Optional[str] = Field(None, max_length=10)
+    representative_name: Optional[str] = None
+    designer_name: Optional[str] = None
+    status: Optional[str] = Field(None, max_length=100)
+    filing_date: Optional[date] = None
+    registration_date: Optional[date] = None
+    expiry_date: Optional[date] = None
+    publication_date: Optional[date] = None
+    locarno_classes: Optional[List[str]] = None
+    product_indication: Optional[str] = None
+    image_url: Optional[str] = None
+    number_of_designs: Optional[int] = None
+
+    @field_validator('application_number')
+    @classmethod
+    def validate_design_application_number(cls, v: str) -> str:
+        v = v.strip()
+        if not v:
+            raise ValueError('application_number cannot be empty')
+        return v
+
+
 # TAVR-specific DRG codes
 TAVR_DRG_CODES = {'266', '267'}
 

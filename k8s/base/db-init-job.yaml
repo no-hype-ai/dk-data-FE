@@ -540,6 +540,20 @@ spec:
                   EXECUTE format('GRANT SELECT ON api.%I TO api_user', v_name);
                 END LOOP;
               END $grants$;
+
+              -- CMS PUF gold views (016-cms-puf-datasource-integration)
+              DO $cms$
+              DECLARE
+                v_name text;
+              BEGIN
+                FOR v_name IN SELECT table_name FROM information_schema.views
+                  WHERE table_schema = 'api'
+                  AND table_name IN ('cms_provider_profile', 'cms_facility_profile',
+                    'cms_drug_market', 'cms_market_analytics', 'cms_provider_network')
+                LOOP
+                  EXECUTE format('GRANT SELECT ON api.%I TO analyst, api_user', v_name);
+                END LOOP;
+              END $cms$;
               SQL
 
               # --- Step 11: Cross-database isolation ---
@@ -576,10 +590,10 @@ spec:
 
               echo "Checking API views..."
               VIEW_COUNT=$(psql -d dk_data -Atc "SELECT COUNT(*) FROM information_schema.views WHERE table_schema = 'api'")
-              if [ "$VIEW_COUNT" -ge 7 ]; then
-                echo "✓ Found $VIEW_COUNT API views (7 core + conditional extended views)"
+              if [ "$VIEW_COUNT" -ge 12 ]; then
+                echo "✓ Found $VIEW_COUNT API views (7 core + 5 CMS + conditional extended views)"
               else
-                echo "✗ ERROR: Expected at least 7 views, found $VIEW_COUNT"
+                echo "✗ ERROR: Expected at least 12 views, found $VIEW_COUNT"
                 exit 1
               fi
 

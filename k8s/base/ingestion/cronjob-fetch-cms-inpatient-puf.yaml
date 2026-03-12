@@ -1,0 +1,76 @@
+# CMS Inpatient PUF Fetch Annual CronJob
+# 016-cms-puf-datasource-integration (Phase 3 — Facility MVP)
+# Fetches Medicare Inpatient PUF data annually
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: fetch-cms-inpatient-puf
+  labels:
+    app: dk-data-ingestion
+    source: cms-inpatient-puf
+    feature: "016-cms-puf"
+    app.kubernetes.io/name: fetch-cms-inpatient-puf
+    app.kubernetes.io/component: ingestion
+    app.kubernetes.io/part-of: dk-data
+spec:
+  schedule: "0 3 1 2 *"  # February 1st at 3 AM UTC
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      backoffLimit: 2
+      activeDeadlineSeconds: 3600  # 1-hour deadline
+      template:
+        metadata:
+          labels:
+            app: fetch-cms-inpatient-puf
+            app.kubernetes.io/component: batch-job
+            app.kubernetes.io/part-of: dk-data
+        spec:
+          restartPolicy: OnFailure
+          imagePullSecrets:
+            - name: ghcr-credentials
+          containers:
+            - name: fetch-cms-inpatient-puf
+              image: ghcr.io/data-kinetic/dk-data-fe/job-trigger:main-5f46ed1
+              command: ["python", "-m", "dk_data.ingestion.main", "cms_inpatient_puf"]
+              env:
+                - name: POSTGRES_HOST
+                  valueFrom:
+                    secretKeyRef:
+                      name: dk-data-secrets
+                      key: POSTGRES_HOST
+                - name: POSTGRES_PORT
+                  valueFrom:
+                    secretKeyRef:
+                      name: dk-data-secrets
+                      key: POSTGRES_PORT
+                - name: POSTGRES_USER
+                  valueFrom:
+                    secretKeyRef:
+                      name: dk-data-secrets
+                      key: POSTGRES_USER
+                - name: POSTGRES_PASSWORD
+                  valueFrom:
+                    secretKeyRef:
+                      name: dk-data-secrets
+                      key: POSTGRES_PASSWORD
+                - name: POSTGRES_DB
+                  valueFrom:
+                    secretKeyRef:
+                      name: dk-data-secrets
+                      key: POSTGRES_DB
+                - name: OTEL_EXPORTER_OTLP_ENDPOINT
+                  value: "http://alloy.infra.svc.cluster.local:4317"
+                - name: OTEL_ENABLED
+                  value: "true"
+                - name: OTEL_SERVICE_NAME
+                  value: "dk-data-fetch-cms-inpatient-puf"
+              resources:
+                requests:
+                  memory: "256Mi"
+                  cpu: "100m"
+                limits:
+                  memory: "512Mi"
+                  cpu: "300m"
