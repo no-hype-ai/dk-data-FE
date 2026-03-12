@@ -241,7 +241,8 @@ class TestBaseMCPTool:
 class TestPostgRESTClient:
     """Verify PostgREST client construction."""
 
-    def test_default_url(self):
+    def test_default_url(self, monkeypatch):
+        monkeypatch.delenv("POSTGREST_URL", raising=False)
         from dk_data.services.data_tools.postgrest_client import PostgRESTClient
         client = PostgRESTClient()
         assert "postgrest" in client.base_url
