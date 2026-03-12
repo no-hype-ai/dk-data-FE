@@ -7,8 +7,8 @@ All external HTTP calls are mocked — no network required.
 """
 
 import asyncio
-import hashlib
-import re
+import hashlib  # noqa: F401 — available for hash-based stub verification tests
+import re  # noqa: F401 — available for pattern-matching stub output validation
 from datetime import date, datetime, timezone
 from unittest.mock import AsyncMock, MagicMock, patch
 

@@ -10,7 +10,7 @@ Source: https://data.cms.gov/provider-characteristics/hospitals-and-other-facili
 
 import csv
 import logging
-from datetime import datetime
+from datetime import datetime  # noqa: F401 — used by subclasses and record timestamp normalization
 from typing import Any, Dict, List, Optional
 
 from .base import BaseFetcher

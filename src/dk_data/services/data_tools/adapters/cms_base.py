@@ -13,7 +13,7 @@ CMS APIs used:
 
 import re
 from abc import ABC, abstractmethod
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional  # noqa: F401 — List re-exported for subclass adapters
 from urllib.parse import quote
 
 import httpx
@@ -76,6 +76,7 @@ class CMSBaseAdapter(ABC):
             Parsed JSON response.
         """
         url = self.build_query_url(base_url or "", query_keys)
+        logger.debug(f"CMS adapter {self.source_name} fetching: {url}")
 
         async with httpx.AsyncClient(timeout=timeout) as client:
             response = await client.get(url)

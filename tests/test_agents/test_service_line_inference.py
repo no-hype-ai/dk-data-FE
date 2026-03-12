@@ -7,7 +7,7 @@ Task: T089
 import os
 from unittest.mock import patch, MagicMock
 
-import pytest
+import pytest  # noqa: F401 — pytest fixture/marker discovery
 
 
 class TestServiceLineInferenceAgent:

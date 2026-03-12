@@ -274,7 +274,8 @@ class TestJWTAuth:
         assert result["authenticated"] is False
 
     def test_invalid_token_raises(self):
-        import asyncio, os
+        import asyncio
+        import os
         os.environ["JWT_SECRET"] = "a" * 32
         from dk_data.api.dependencies import get_jwt_user
         try:

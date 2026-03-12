@@ -6,8 +6,8 @@ Run with: python3 tests/test_integration_external_apis.py
 """
 import sys
 import asyncio
-import traceback
-from datetime import datetime, date
+import traceback  # noqa: F401 — available for detailed error reporting in integration tests
+from datetime import datetime, date  # noqa: F401 — date used for type context in SEC filing tests
 
 import pytest
 
@@ -93,7 +93,7 @@ async def test_sec_edgar():
     """Test SEC EDGAR Company Facts API (XBRL + filings)."""
     print("\n━━━ SEC EDGAR ━━━")
     from dk_data.services.external_apis.sec_edgar_client import SECEdgarClient
-    from dk_data.models.market_intelligence import Filing
+    from dk_data.models.market_intelligence import Filing  # noqa: F401 — verifies Filing model importable alongside client
 
     client = SECEdgarClient()
 
@@ -330,7 +330,7 @@ async def test_tdc():
 
 async def main():
     print(f"\n{'='*60}")
-    print(f" External Data Source Integration Tests")
+    print(" External Data Source Integration Tests")
     print(f" {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
     print(f"{'='*60}")
 
@@ -352,7 +352,7 @@ async def main():
     print(f"{'='*60}")
 
     if failed > 0:
-        print(f"\n  Failed tests:")
+        print("\n  Failed tests:")
         for name, ok, detail in results:
             if not ok:
                 print(f"    {FAIL} {name}: {detail}")

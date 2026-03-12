@@ -347,6 +347,7 @@ def refresh_metrics_from_database_sync():
         }
 
         # CMS source health (016-cms-puf-datasource-integration)
+        current_time = time.time()
         cms_sources = {
             'cms_care_compare': ('raw.cms_care_compare', True),
             'cms_part_d_prescriber': ('raw.cms_part_d_prescriber', True),
@@ -465,6 +466,19 @@ def refresh_metrics_from_database_sync():
                         """, (agent,))
                         pending = cur.fetchone()[0] or 0
                         CMS_AGENT_QUARANTINE_PENDING.labels(agent_name=agent).set(pending)
+                        # Lifetime enriched / quarantined totals
+                        cur.execute("""
+                            SELECT COUNT(*) FROM meta.agent_quarantine
+                            WHERE agent_name = %s AND status = 'ENRICHED'
+                        """, (agent,))
+                        enriched = cur.fetchone()[0] or 0
+                        CMS_AGENT_RECORDS_ENRICHED_TOTAL.labels(agent_name=agent)._value.set(enriched)
+                        cur.execute("""
+                            SELECT COUNT(*) FROM meta.agent_quarantine
+                            WHERE agent_name = %s AND status = 'QUARANTINED'
+                        """, (agent,))
+                        quarantined = cur.fetchone()[0] or 0
+                        CMS_AGENT_RECORDS_QUARANTINED_TOTAL.labels(agent_name=agent)._value.set(quarantined)
             except Exception as e:
                 logger.debug(f"Error checking CMS agent {agent}: {e}")
 

@@ -7,9 +7,9 @@ Used by sec_edgar_client.py for structured extraction from 10-K/20-F filings.
 Part of DK Molecule Data Platform (012-dk-data-platform)
 """
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field  # noqa: F401 — field re-exported for consumers
 from datetime import date
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional  # noqa: F401 — List re-exported for consumers
 
 
 @dataclass

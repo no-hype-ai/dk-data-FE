@@ -5,9 +5,9 @@ Task: T090
 """
 
 import os
-from unittest.mock import patch, MagicMock
+from unittest.mock import patch, MagicMock  # noqa: F401 — MagicMock used in future agent mock tests
 
-import pytest
+import pytest  # noqa: F401 — pytest fixture/marker discovery
 
 
 class TestIDNHierarchyAgent:

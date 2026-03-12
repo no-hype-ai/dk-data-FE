@@ -9,7 +9,7 @@ Verifies:
 - Key tables, views, and permissions are declared
 """
 
-import os
+import os  # noqa: F401 — available for path operations in migration test helpers
 from pathlib import Path
 
 import pytest

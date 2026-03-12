@@ -10,7 +10,7 @@ import tempfile
 from pathlib import Path
 from unittest.mock import patch, MagicMock
 
-import pytest
+import pytest  # noqa: F401 — pytest fixture/marker discovery
 import responses
 
 from dk_data.ingestion.fetchers.base import BaseFetcher

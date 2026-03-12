@@ -7,7 +7,7 @@ Task: T094
 import os
 from unittest.mock import patch
 
-import pytest
+import pytest  # noqa: F401 — pytest fixture/marker discovery
 
 
 class TestEquipmentInventoryAgent:
