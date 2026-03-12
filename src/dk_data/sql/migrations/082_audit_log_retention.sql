@@ -110,10 +110,20 @@ $$ LANGUAGE plpgsql SECURITY DEFINER;
 DROP FUNCTION IF EXISTS meta.purge_old_audit_logs(INT);
 
 -- ─── Grants ─────────────────────────────────────────────────────────────────
-GRANT EXECUTE ON FUNCTION meta.archive_old_audit_logs(INT) TO dk_app;
-GRANT EXECUTE ON FUNCTION meta.purge_expired_audit_archives(INT) TO dk_app;
-GRANT INSERT, SELECT ON meta.api_audit_log_archive TO dk_app;
-GRANT SELECT ON meta.api_audit_log_archive TO web_anon;
+-- Note: web_anon is excluded — audit archives contain IP addresses, user agents,
+-- and JWT subjects which must not be exposed to unauthenticated users.
+DO $$
+BEGIN
+    IF EXISTS (SELECT FROM pg_roles WHERE rolname = 'dk_app') THEN
+        GRANT EXECUTE ON FUNCTION meta.archive_old_audit_logs(INT) TO dk_app;
+        GRANT EXECUTE ON FUNCTION meta.purge_expired_audit_archives(INT) TO dk_app;
+        GRANT INSERT, SELECT ON meta.api_audit_log_archive TO dk_app;
+    END IF;
+
+    IF EXISTS (SELECT FROM pg_roles WHERE rolname = 'analyst') THEN
+        GRANT SELECT ON meta.api_audit_log_archive TO analyst;
+    END IF;
+END $$;
 
 -- ─── Scheduled via pg_cron (if available) ───────────────────────────────────
 DO $cron$

@@ -13,7 +13,6 @@ Path resolution order:
 
 Falls back gracefully if no file is available.
 """
-import io
 import os
 import xml.etree.ElementTree as ET
 import zipfile

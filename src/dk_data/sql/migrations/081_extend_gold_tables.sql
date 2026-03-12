@@ -1,109 +1,121 @@
--- 081: Extend gold tables with columns needed by the silver→gold refresher.
--- All gold tables are currently empty, so this is purely additive.
+-- 081: Create gold schema tables for the silver->gold refresher.
+-- The refresher (silver_gold_refresher.py) writes to gold.* tables.
+-- These are separate from mol_gold.* (migration 020) which are SQLMesh-managed.
+-- The gold schema is used by the MCP on-demand pipeline for per-molecule aggregation.
 
--- ─── gold.molecule_profile ──────────────────────────────────────────────────
-ALTER TABLE gold.molecule_profile
-  ADD COLUMN IF NOT EXISTS molecule_type          TEXT,
-  ADD COLUMN IF NOT EXISTS inchi_key              TEXT,
-  ADD COLUMN IF NOT EXISTS lifecycle_stage        TEXT,
-  ADD COLUMN IF NOT EXISTS lifecycle_stage_confidence NUMERIC,
-  ADD COLUMN IF NOT EXISTS lifecycle_last_detected    TIMESTAMPTZ,
-  ADD COLUMN IF NOT EXISTS drugbank_id            TEXT,
-  ADD COLUMN IF NOT EXISTS chembl_id              TEXT,
-  ADD COLUMN IF NOT EXISTS pubchem_cid            TEXT,
-  ADD COLUMN IF NOT EXISTS pipeline_indications   JSONB,
-  ADD COLUMN IF NOT EXISTS serious_ae_count       INT DEFAULT 0,
-  ADD COLUMN IF NOT EXISTS ae_summary             JSONB,
-  ADD COLUMN IF NOT EXISTS earliest_patent_expiry TEXT,
-  ADD COLUMN IF NOT EXISTS patent_count           INT DEFAULT 0,
-  ADD COLUMN IF NOT EXISTS data_completeness_score NUMERIC,
-  ADD COLUMN IF NOT EXISTS data_sources           JSONB,
-  ADD COLUMN IF NOT EXISTS last_data_update       TIMESTAMPTZ,
-  ADD COLUMN IF NOT EXISTS updated_at             TIMESTAMPTZ DEFAULT NOW();
+BEGIN;
 
--- ─── gold.safety_signals ────────────────────────────────────────────────────
-ALTER TABLE gold.safety_signals
-  ADD COLUMN IF NOT EXISTS reaction_name     TEXT,
-  ADD COLUMN IF NOT EXISTS reaction_meddra_pt TEXT,
-  ADD COLUMN IF NOT EXISTS case_count        INT,
-  ADD COLUMN IF NOT EXISTS serious_count     INT,
-  ADD COLUMN IF NOT EXISTS fatal_count       INT,
-  ADD COLUMN IF NOT EXISTS pro_score         NUMERIC,
-  ADD COLUMN IF NOT EXISTS ror_score         NUMERIC,
-  ADD COLUMN IF NOT EXISTS is_signal         BOOLEAN DEFAULT FALSE;
+CREATE SCHEMA IF NOT EXISTS gold;
 
--- ─── gold.lifecycle_stages ──────────────────────────────────────────────────
-ALTER TABLE gold.lifecycle_stages
-  ADD COLUMN IF NOT EXISTS indication           TEXT,
-  ADD COLUMN IF NOT EXISTS stage_confidence      NUMERIC,
-  ADD COLUMN IF NOT EXISTS evidence_count        INT,
-  ADD COLUMN IF NOT EXISTS primary_evidence_type TEXT,
-  ADD COLUMN IF NOT EXISTS updated_at            TIMESTAMPTZ DEFAULT NOW();
+-- gold.molecule_profile
+CREATE TABLE IF NOT EXISTS gold.molecule_profile (
+    molecule_id TEXT PRIMARY KEY,
+    molecule_name TEXT,
+    molecule_type TEXT,
+    inchi_key TEXT,
+    lifecycle_stage TEXT,
+    lifecycle_stage_confidence NUMERIC,
+    lifecycle_last_detected TIMESTAMPTZ,
+    drugbank_id TEXT,
+    chembl_id TEXT,
+    pubchem_cid TEXT,
+    pipeline_indications JSONB,
+    serious_ae_count INT DEFAULT 0,
+    ae_summary JSONB,
+    therapeutic_area TEXT,
+    mechanism_of_action TEXT,
+    earliest_patent_expiry TEXT,
+    patent_count INT DEFAULT 0,
+    data_completeness_score NUMERIC,
+    data_sources JSONB,
+    last_data_update TIMESTAMPTZ,
+    updated_at TIMESTAMPTZ DEFAULT NOW()
+);
 
--- Add unique constraint on (molecule_id, indication) for upsert
-DO $$ BEGIN
-  IF NOT EXISTS (
-    SELECT 1 FROM pg_constraint
-    WHERE conname = 'lifecycle_stages_molecule_indication_uq'
-  ) THEN
-    ALTER TABLE gold.lifecycle_stages
-      ADD CONSTRAINT lifecycle_stages_molecule_indication_uq
-      UNIQUE (molecule_id, indication);
-  END IF;
+-- gold.safety_signals
+CREATE TABLE IF NOT EXISTS gold.safety_signals (
+    id TEXT PRIMARY KEY,
+    molecule_id TEXT NOT NULL,
+    event_name TEXT,
+    event_category TEXT,
+    report_count INT,
+    seriousness TEXT,
+    outcome TEXT,
+    reaction_name TEXT,
+    reaction_meddra_pt TEXT,
+    case_count INT,
+    serious_count INT,
+    fatal_count INT,
+    pro_score NUMERIC,
+    ror_score NUMERIC,
+    is_signal BOOLEAN DEFAULT FALSE
+);
+CREATE INDEX IF NOT EXISTS idx_gold_safety_mol ON gold.safety_signals(molecule_id);
+
+-- gold.lifecycle_stages
+CREATE TABLE IF NOT EXISTS gold.lifecycle_stages (
+    id TEXT PRIMARY KEY,
+    molecule_id TEXT NOT NULL,
+    stage TEXT,
+    event_type TEXT,
+    indication TEXT,
+    stage_confidence NUMERIC,
+    evidence_count INT,
+    primary_evidence_type TEXT,
+    updated_at TIMESTAMPTZ DEFAULT NOW(),
+    UNIQUE (molecule_id, indication)
+);
+
+-- gold.competitive_landscape
+CREATE TABLE IF NOT EXISTS gold.competitive_landscape (
+    id TEXT PRIMARY KEY,
+    molecule_id TEXT,
+    indication TEXT,
+    total_molecules INT,
+    phase_3_count INT,
+    phase_2_count INT,
+    phase_1_count INT,
+    snapshot_date DATE,
+    updated_at TIMESTAMPTZ DEFAULT NOW(),
+    UNIQUE (indication, snapshot_date)
+);
+
+-- gold.trial_outcomes
+CREATE TABLE IF NOT EXISTS gold.trial_outcomes (
+    id TEXT PRIMARY KEY,
+    molecule_id TEXT NOT NULL,
+    nct_id TEXT,
+    endpoint_name TEXT,
+    result TEXT,
+    phase TEXT,
+    status TEXT,
+    enrollment INT,
+    sponsor TEXT,
+    conditions JSONB,
+    updated_at TIMESTAMPTZ DEFAULT NOW(),
+    UNIQUE (nct_id)
+);
+CREATE INDEX IF NOT EXISTS idx_gold_trial_mol ON gold.trial_outcomes(molecule_id);
+
+-- Grants (web_anon excluded per security policy — migration 077, commit 4b78e3c)
+DO $$
+BEGIN
+    IF EXISTS (SELECT FROM pg_roles WHERE rolname = 'dk_app') THEN
+        GRANT USAGE ON SCHEMA gold TO dk_app;
+        GRANT SELECT, INSERT, UPDATE ON ALL TABLES IN SCHEMA gold TO dk_app;
+        ALTER DEFAULT PRIVILEGES IN SCHEMA gold GRANT SELECT, INSERT, UPDATE ON TABLES TO dk_app;
+    END IF;
+
+    IF EXISTS (SELECT FROM pg_roles WHERE rolname = 'analyst') THEN
+        GRANT USAGE ON SCHEMA gold TO analyst;
+        GRANT SELECT ON ALL TABLES IN SCHEMA gold TO analyst;
+        ALTER DEFAULT PRIVILEGES IN SCHEMA gold GRANT SELECT ON TABLES TO analyst;
+    END IF;
+
+    IF EXISTS (SELECT FROM pg_roles WHERE rolname = 'authenticator') THEN
+        GRANT USAGE ON SCHEMA gold TO authenticator;
+        GRANT SELECT ON ALL TABLES IN SCHEMA gold TO authenticator;
+    END IF;
 END $$;
 
--- ─── gold.competitive_landscape ─────────────────────────────────────────────
-ALTER TABLE gold.competitive_landscape
-  ADD COLUMN IF NOT EXISTS indication     TEXT,
-  ADD COLUMN IF NOT EXISTS total_molecules INT,
-  ADD COLUMN IF NOT EXISTS phase_3_count  INT,
-  ADD COLUMN IF NOT EXISTS phase_2_count  INT,
-  ADD COLUMN IF NOT EXISTS phase_1_count  INT,
-  ADD COLUMN IF NOT EXISTS snapshot_date  DATE,
-  ADD COLUMN IF NOT EXISTS updated_at     TIMESTAMPTZ DEFAULT NOW();
-
--- Add unique constraint on (indication, snapshot_date) for upsert
-DO $$ BEGIN
-  IF NOT EXISTS (
-    SELECT 1 FROM pg_constraint
-    WHERE conname = 'competitive_landscape_indication_date_uq'
-  ) THEN
-    ALTER TABLE gold.competitive_landscape
-      ADD CONSTRAINT competitive_landscape_indication_date_uq
-      UNIQUE (indication, snapshot_date);
-  END IF;
-END $$;
-
--- ─── gold.trial_outcomes ────────────────────────────────────────────────────
-ALTER TABLE gold.trial_outcomes
-  ADD COLUMN IF NOT EXISTS phase       TEXT,
-  ADD COLUMN IF NOT EXISTS status      TEXT,
-  ADD COLUMN IF NOT EXISTS enrollment  INT,
-  ADD COLUMN IF NOT EXISTS sponsor     TEXT,
-  ADD COLUMN IF NOT EXISTS conditions  JSONB,
-  ADD COLUMN IF NOT EXISTS updated_at  TIMESTAMPTZ DEFAULT NOW();
-
--- Add unique constraint on nct_id for upsert
-DO $$ BEGIN
-  IF NOT EXISTS (
-    SELECT 1 FROM pg_constraint
-    WHERE conname = 'trial_outcomes_nct_id_uq'
-  ) THEN
-    ALTER TABLE gold.trial_outcomes
-      ADD CONSTRAINT trial_outcomes_nct_id_uq
-      UNIQUE (nct_id);
-  END IF;
-END $$;
-
--- Grants
-GRANT SELECT, INSERT, UPDATE ON gold.molecule_profile     TO dk_app;
-GRANT SELECT, INSERT, UPDATE ON gold.safety_signals       TO dk_app;
-GRANT SELECT, INSERT, UPDATE ON gold.lifecycle_stages     TO dk_app;
-GRANT SELECT, INSERT, UPDATE ON gold.competitive_landscape TO dk_app;
-GRANT SELECT, INSERT, UPDATE ON gold.trial_outcomes       TO dk_app;
-
-GRANT SELECT ON gold.molecule_profile      TO web_anon;
-GRANT SELECT ON gold.safety_signals        TO web_anon;
-GRANT SELECT ON gold.lifecycle_stages      TO web_anon;
-GRANT SELECT ON gold.competitive_landscape TO web_anon;
-GRANT SELECT ON gold.trial_outcomes        TO web_anon;
+COMMIT;
