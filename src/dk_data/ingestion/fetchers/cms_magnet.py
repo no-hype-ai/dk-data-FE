@@ -109,21 +109,36 @@ class CMSMagnetFetcher(BaseFetcher):
 
         # Parse organization entries from the directory listing
         # The exact selectors depend on the ANCC website structure
-        org_entries = soup.select(
-            ".magnet-organization, .organization-listing, "
-            "table tbody tr, .directory-entry, .org-item"
-        )
+        # Try multiple CSS selector strategies — the ANCC website
+        # structure changes frequently.
+        selector_strategies = [
+            ".magnet-organization, .organization-listing, .directory-entry, .org-item",
+            "table tbody tr",
+            ".card, .list-group-item, .result-item",
+            "article, .content-item",
+            "tr",
+        ]
 
-        if not org_entries:
-            # Fallback: try to find any structured data in tables
-            org_entries = soup.find_all("tr")
-
-        for entry in org_entries:
-            record = self._parse_entry(entry)
-            if record and record.get("facility_name"):
-                records.append(record)
-                if max_records and len(records) >= max_records:
+        for selectors in selector_strategies:
+            org_entries = soup.select(selectors)
+            if org_entries:
+                for entry in org_entries:
+                    record = self._parse_entry(entry)
+                    if record and record.get("facility_name"):
+                        records.append(record)
+                        if max_records and len(records) >= max_records:
+                            break
+                if records:
                     break
+
+        if not records:
+            logger.warning(
+                "Magnet scraper found 0 organizations. The ANCC website "
+                "structure may have changed. URL: %s. "
+                "Response length: %d bytes. Manual investigation needed.",
+                MAGNET_DIRECTORY_URL,
+                len(response.text),
+            )
 
         logger.info("Scraped %d Magnet organizations", len(records))
         return records

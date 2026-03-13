@@ -15,6 +15,7 @@ Source: https://search.patentsview.org/api/v1/patent/
 
 import hashlib
 import logging
+import os
 import time
 from datetime import datetime, timedelta
 from typing import Any, Dict, List, Optional
@@ -43,6 +44,19 @@ class USPTOCIFetcher(BaseFetcher):
     SOURCE_NAME = "uspto_ci"
     BASE_URL = "https://search.patentsview.org"
 
+    def __init__(self, data_dir: Optional[str] = None):
+        """Initialize the USPTO CI fetcher with optional API key."""
+        super().__init__(data_dir)
+
+        self.api_key: Optional[str] = os.environ.get("PATENTSVIEW_API_KEY")
+        if self.api_key:
+            self.session.headers.update({"X-Api-Key": self.api_key})
+            logger.info("PatentsView API key configured")
+        else:
+            logger.info(
+                "PATENTSVIEW_API_KEY not set; PatentsView requests may be rate-limited"
+            )
+
     def get_latest_url(self) -> str:
         """Return the PatentsView query endpoint URL."""
         return PATENTSVIEW_API
@@ -66,15 +80,18 @@ class USPTOCIFetcher(BaseFetcher):
             search_terms = kwargs.get("search_terms") or self._get_search_terms()
 
             if not search_terms:
-                logger.warning("No USPTO CI search terms configured")
-                result: Dict[str, Any] = {
-                    "status": "success",
-                    "records": [],
-                    "hash": None,
-                    "message": "No search terms configured",
-                }
-                self.log_fetch_result(result)
-                return result
+                # Default fallback terms when meta.ci_search_terms is empty
+                search_terms = [
+                    "dupilumab",
+                    "semaglutide",
+                    "pembrolizumab",
+                    "adalimumab",
+                    "nivolumab",
+                ]
+                logger.info(
+                    "No search terms from DB; using %d default pharma terms for USPTO CI",
+                    len(search_terms),
+                )
 
             logger.info(
                 "Fetching USPTO patents (days_back=%d, terms=%d)",

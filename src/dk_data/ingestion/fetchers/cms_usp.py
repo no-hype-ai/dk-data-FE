@@ -20,6 +20,11 @@ class CMSUSPFetcher(BaseFetcher):
 
     SOURCE_NAME = "cms_usp"
     BASE_URL = "https://www.usp.org/healthcare-professionals/usp-medicare-model-guidelines"
+    # Alternative URLs to try if the primary URL returns 404
+    FALLBACK_URLS = [
+        "https://www.usp.org/usp-healthcare-professionals/usp-medicare-model-guidelines",
+        "https://www.usp.org/health-quality-safety/usp-medicare-model-guidelines",
+    ]
 
     def get_latest_url(self) -> str:
         """Return the USP Medicare Model Guidelines URL."""
@@ -41,6 +46,26 @@ class CMSUSPFetcher(BaseFetcher):
             logger.info("Scraping USP drug classification from %s", url)
 
             resp = self.session.get(url, timeout=60)
+
+            # If the primary URL returns 404, try fallback URLs
+            if resp.status_code == 404:
+                logger.warning(
+                    "USP primary URL returned 404: %s — trying fallback URLs", url
+                )
+                for fallback_url in self.FALLBACK_URLS:
+                    logger.info("Trying fallback URL: %s", fallback_url)
+                    resp = self.session.get(fallback_url, timeout=60)
+                    if resp.status_code != 404:
+                        break
+
+            if resp.status_code == 404:
+                raise RuntimeError(
+                    "USP Medicare Model Guidelines page not found. "
+                    "The URL may have changed — check https://www.usp.org for the "
+                    "current location of USP Medicare Model Guidelines. "
+                    f"Tried: {url} and {self.FALLBACK_URLS}"
+                )
+
             resp.raise_for_status()
             html = resp.text
 

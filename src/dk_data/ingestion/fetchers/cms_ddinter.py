@@ -9,7 +9,13 @@ Source: https://ddinter.scbdd.com/api
 import logging
 from typing import Any, Dict, List, Optional
 
+import urllib3
+
 from .base import BaseFetcher
+
+# DDInter server has an expired SSL certificate as of 2026-03.
+# Suppress the InsecureRequestWarning when using verify=False.
+urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
 logger = logging.getLogger(__name__)
 
@@ -40,6 +46,9 @@ class CMSDDInterFetcher(BaseFetcher):
         try:
             url = self.get_latest_url()
             logger.info("Fetching drug-drug interactions from %s", url)
+            logger.warning(
+                "Using verify=False for DDInter API (expired SSL cert on ddinter.scbdd.com)"
+            )
 
             records: List[Dict[str, Any]] = []
             page = 1
@@ -50,7 +59,7 @@ class CMSDDInterFetcher(BaseFetcher):
                 if drug_names:
                     params["drug"] = ",".join(drug_names)
 
-                resp = self.session.get(url, params=params, timeout=60)
+                resp = self.session.get(url, params=params, timeout=60, verify=False)
                 resp.raise_for_status()
                 data = resp.json()
 

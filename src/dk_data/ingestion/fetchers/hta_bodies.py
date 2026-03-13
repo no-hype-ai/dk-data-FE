@@ -65,6 +65,20 @@ class HTABodiesFetcher(BaseFetcher):
         try:
             drug_names = kwargs.get("drug_names") or self._get_drug_names()
 
+            if not drug_names:
+                # Default fallback terms when meta.ci_search_terms is empty
+                drug_names = [
+                    "dupilumab",
+                    "semaglutide",
+                    "pembrolizumab",
+                    "adalimumab",
+                    "nivolumab",
+                ]
+                logger.info(
+                    "No drug names from DB; using %d default pharma terms",
+                    len(drug_names),
+                )
+
             logger.info(
                 "Fetching HTA decisions (days_back=%d, agencies=%s, drugs=%d)",
                 days_back, agencies, len(drug_names),

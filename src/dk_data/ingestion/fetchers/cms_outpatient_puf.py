@@ -48,8 +48,8 @@ class CMSOutpatientPUFFetcher(BaseFetcher):
     SOURCE_NAME = "cms_outpatient_puf"
     BASE_URL = "https://data.cms.gov/provider-summary-by-type-of-service/medicare-outpatient-hospitals"
 
-    # API endpoint
-    API_ENDPOINT = "https://data.cms.gov/data-api/v1/dataset/medicare-outpatient-hospitals-by-provider-and-service/data"
+    # API endpoint (UUID-based — slug endpoints return empty)
+    API_ENDPOINT = "https://data.cms.gov/data-api/v1/dataset/ccbc9a44-40d4-46b4-a709-5caa59212e50/data"
 
     def get_latest_url(self) -> str:
         """Return the API endpoint for outpatient PUF data."""

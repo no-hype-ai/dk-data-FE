@@ -13,6 +13,8 @@ import hashlib
 import logging
 import os
 import xml.etree.ElementTree as ET
+import zipfile
+from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 from .base import BaseFetcher
@@ -35,6 +37,9 @@ class DrugBankFetcher(BaseFetcher):
     # Maximum number of drug entries to process (safety limit)
     MAX_ENTRIES = 50_000
 
+    # Default local ZIP path relative to project root
+    DEFAULT_LOCAL_ZIP = "data/drugbank/drugbank_all_full_database.xml.zip"
+
     def __init__(self, data_dir: Optional[str] = None):
         """Initialize the DrugBank fetcher.
 
@@ -45,11 +50,15 @@ class DrugBankFetcher(BaseFetcher):
         """
         super().__init__(data_dir)
         self.api_key: Optional[str] = os.environ.get("DRUGBANK_API_KEY")
+
+        # Resolve project root (walk up from this file to find the repo root)
+        self._project_root = Path(__file__).resolve().parents[4]  # src/dk_data/ingestion/fetchers -> root
+
         if self.api_key:
             logger.info("DrugBank API key detected")
         else:
-            logger.warning(
-                "No DRUGBANK_API_KEY set; DrugBank fetch will fail without authentication"
+            logger.info(
+                "No DRUGBANK_API_KEY set; will attempt local file before API download"
             )
 
     def get_latest_url(self) -> str:
@@ -59,8 +68,15 @@ class DrugBankFetcher(BaseFetcher):
     def fetch(self, **kwargs) -> Dict[str, Any]:
         """Fetch drug entries from the DrugBank XML download.
 
+        Supports loading from a local ZIP file to avoid needing API credentials.
+        Resolution order for the XML source:
+          1. ``file_path`` kwarg or ``self.params["file_path"]``
+          2. Default local ZIP at ``data/drugbank/drugbank_all_full_database.xml.zip``
+          3. API download (requires DRUGBANK_API_KEY)
+
         Keyword Args:
             max_entries: Maximum drug entries to process (default: 50000).
+            file_path: Explicit path to a local DrugBank XML or ZIP file.
 
         Returns:
             Dictionary with:
@@ -73,15 +89,23 @@ class DrugBankFetcher(BaseFetcher):
         max_entries = kwargs.get("max_entries", self.MAX_ENTRIES)
 
         try:
-            if not self.api_key:
-                raise ValueError(
-                    "DRUGBANK_API_KEY environment variable is required"
-                )
+            # Resolve local file path
+            local_file = self._resolve_local_file(kwargs.get("file_path"))
 
-            logger.info("Fetching DrugBank XML database")
+            if local_file:
+                logger.info("Using local DrugBank file: %s", local_file)
+                filepath = self._extract_xml_from_zip(local_file)
+            else:
+                # Fall back to API download
+                if not self.api_key:
+                    raise ValueError(
+                        "No local DrugBank file found and DRUGBANK_API_KEY "
+                        "environment variable is not set. Provide a local file "
+                        "via file_path or set the API key."
+                    )
 
-            # Download the XML file with API key auth
-            filepath = self._download_drugbank_xml()
+                logger.info("Fetching DrugBank XML database via API")
+                filepath = self._download_drugbank_xml()
 
             # Parse the XML file
             records = self._parse_drugbank_xml(filepath, max_entries=max_entries)
@@ -117,6 +141,78 @@ class DrugBankFetcher(BaseFetcher):
     # ------------------------------------------------------------------
     # Internal helpers
     # ------------------------------------------------------------------
+
+    def _resolve_local_file(self, file_path_kwarg: Optional[str] = None) -> Optional[Path]:
+        """Resolve a local DrugBank file, checking multiple sources.
+
+        Resolution order:
+          1. Explicit ``file_path`` kwarg
+          2. ``self.params["file_path"]``
+          3. Default local ZIP relative to project root
+
+        Returns:
+            Path to the local file if found, else None.
+        """
+        candidates = [
+            file_path_kwarg,
+            self.params.get("file_path"),
+        ]
+
+        for candidate in candidates:
+            if candidate:
+                p = Path(candidate)
+                if p.is_file():
+                    return p
+                logger.warning("Specified file_path does not exist: %s", candidate)
+
+        # Check default location relative to project root
+        default_path = self._project_root / self.DEFAULT_LOCAL_ZIP
+        if default_path.is_file():
+            return default_path
+
+        return None
+
+    def _extract_xml_from_zip(self, zip_path: Path) -> str:
+        """Extract the XML file from a DrugBank ZIP archive.
+
+        Args:
+            zip_path: Path to the ZIP file.
+
+        Returns:
+            Path to the extracted XML file.
+        """
+        if not zipfile.is_zipfile(zip_path):
+            # Not a ZIP — assume it's already a plain XML file
+            logger.info("File is not a ZIP; treating as plain XML: %s", zip_path)
+            return str(zip_path)
+
+        extract_dir = self.data_dir / "drugbank_extracted"
+        extract_dir.mkdir(parents=True, exist_ok=True)
+
+        with zipfile.ZipFile(zip_path, "r") as zf:
+            # Find the XML file inside the archive
+            xml_names = [n for n in zf.namelist() if n.lower().endswith(".xml")]
+            if not xml_names:
+                raise ValueError(
+                    f"No XML file found inside ZIP archive: {zip_path}"
+                )
+
+            xml_name = xml_names[0]
+            logger.info(
+                "Extracting '%s' from %s (%.2f MB compressed)",
+                xml_name,
+                zip_path.name,
+                zip_path.stat().st_size / 1024 / 1024,
+            )
+            zf.extract(xml_name, extract_dir)
+
+        extracted_path = extract_dir / xml_name
+        logger.info(
+            "Extracted DrugBank XML: %s (%.2f MB)",
+            extracted_path,
+            extracted_path.stat().st_size / 1024 / 1024,
+        )
+        return str(extracted_path)
 
     def _download_drugbank_xml(self) -> str:
         """Download the DrugBank XML file with authentication.

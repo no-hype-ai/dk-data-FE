@@ -96,11 +96,22 @@ class SECEdgarFetcher(BaseFetcher):
         sic_codes = kwargs.get("sic_codes", PHARMA_SIC_CODES)
         max_records = kwargs.get("max_records", MAX_RECORDS)
         days_back = kwargs.get("days_back", 7)
+        search_terms = kwargs.get("search_terms")
+
+        # Load search terms from DB if not provided; fall back to defaults
+        if not search_terms:
+            search_terms = self._load_search_terms()
+        if not search_terms:
+            search_terms = ["pharmaceutical", "drug", "FDA approval", "clinical trial"]
+            logger.info(
+                "No search terms from DB; using %d default pharma terms for SEC EDGAR",
+                len(search_terms),
+            )
 
         try:
             logger.info(
-                "Fetching SEC EDGAR filings (types=%s, sic=%s, days_back=%d)",
-                filing_types, sic_codes, days_back,
+                "Fetching SEC EDGAR filings (types=%s, sic=%s, days_back=%d, terms=%d)",
+                filing_types, sic_codes, days_back, len(search_terms),
             )
 
             all_records: List[Dict[str, Any]] = []
@@ -151,6 +162,33 @@ class SECEdgarFetcher(BaseFetcher):
     # ------------------------------------------------------------------
     # Search
     # ------------------------------------------------------------------
+
+    def _load_search_terms(self) -> List[str]:
+        """Load search terms from meta.ci_search_terms."""
+        try:
+            from ..utils.database import get_connection
+
+            with get_connection() as conn:
+                with conn.cursor() as cur:
+                    cur.execute(
+                        """
+                        SELECT term_value
+                        FROM meta.ci_search_terms
+                        WHERE term_type IN ('drug_name', 'company_name')
+                          AND is_active = TRUE
+                        ORDER BY term_id
+                        """
+                    )
+                    rows = cur.fetchall()
+
+            terms = [row[0] for row in rows]
+            if terms:
+                logger.info("Loaded %d search terms from meta.ci_search_terms", len(terms))
+            return terms
+
+        except Exception as e:
+            logger.warning("Could not read search terms from DB: %s", e)
+            return []
 
     def _search_filings(
         self,

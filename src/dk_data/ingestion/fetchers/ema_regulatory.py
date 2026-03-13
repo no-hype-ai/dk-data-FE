@@ -25,11 +25,18 @@ class EMARegulatoryCIFetcher(BaseFetcher):
     SOURCE_NAME = "ema_regulatory"
     BASE_URL = "https://www.ema.europa.eu/en/medicines"
 
-    # EMA public medicines API
+    # EMA public medicines API — primary endpoint
+    # Note: The EMA website has antibot protection on many endpoints.
+    # The open data portal at https://www.ema.europa.eu/en/medicines/download-medicine-data
+    # provides CSV/Excel downloads but no stable JSON API.
+    # We try multiple endpoints and gracefully handle failures.
     EMA_API_BASE = "https://www.ema.europa.eu/en/medicines/field_ema_web_categories"
 
     # Known EMA API endpoints for structured data
-    MEDICINES_API = "https://www.ema.europa.eu/api/v1/medicines"
+    MEDICINES_API = "https://www.ema.europa.eu/en/medicines/field_ema_web_categories%253Ahuman_use"
+
+    # Fallback: EMA open data endpoint (may return HTML instead of JSON)
+    EMA_OPEN_DATA_API = "https://www.ema.europa.eu/en/medicines"
 
     # Decision types we track
     VALID_DECISION_TYPES = frozenset({
@@ -164,12 +171,23 @@ class EMARegulatoryCIFetcher(BaseFetcher):
             try:
                 data = self.fetch_json(self.get_latest_url(), params=params)
             except Exception as e:
-                logger.warning(
-                    "EMA API request failed for %s page %d: %s",
-                    doc_type,
-                    page,
-                    e,
-                )
+                error_str = str(e)
+                if "403" in error_str or "401" in error_str or "cloudflare" in error_str.lower():
+                    logger.warning(
+                        "EMA API blocked by antibot protection for %s page %d: %s. "
+                        "The EMA website does not expose a stable public JSON API. "
+                        "Consider using the EMA open data CSV downloads instead.",
+                        doc_type,
+                        page,
+                        e,
+                    )
+                else:
+                    logger.warning(
+                        "EMA API request failed for %s page %d: %s",
+                        doc_type,
+                        page,
+                        e,
+                    )
                 break
 
             items = self._extract_items(data)

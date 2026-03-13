@@ -14,17 +14,27 @@ from .base import BaseFetcher
 
 logger = logging.getLogger(__name__)
 
+# CMS migrated from slug-based URLs to UUID-based data-api endpoints.
+# To find the correct UUID, search the CMS data catalog for the specific
+# chronic conditions dataset and update this value.
+DEFAULT_DATASET_UUID = ""  # Must be configured via params["dataset_uuid"]
+
 
 class CMSChronicConditionsFetcher(BaseFetcher):
     """Fetcher for CMS Medicare Chronic Conditions Prevalence data."""
 
     SOURCE_NAME = "cms_chronic_conditions"
-    BASE_URL = "https://data.cms.gov/medicare-chronic-conditions"
+    BASE_URL = "https://data.cms.gov/data-api/v1/dataset"
 
     def get_latest_url(self) -> str:
-        """Return the CMS chronic conditions data API URL."""
-        year = self.params.get("year", "latest")
-        return f"{self.BASE_URL}/data/{year}"
+        """Return the CMS chronic conditions data API URL (UUID-based)."""
+        uuid = self.params.get("dataset_uuid", DEFAULT_DATASET_UUID)
+        if not uuid:
+            raise ValueError(
+                "dataset_uuid must be provided in params for cms_chronic_conditions. "
+                "Find the UUID in the CMS data catalog at https://data.cms.gov"
+            )
+        return f"{self.BASE_URL}/{uuid}/data"
 
     def fetch(self, **kwargs) -> Dict[str, Any]:
         """Fetch chronic conditions records from CMS API.

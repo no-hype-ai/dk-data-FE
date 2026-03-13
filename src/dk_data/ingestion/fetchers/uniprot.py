@@ -23,8 +23,12 @@ class UniProtFetcher(BaseFetcher):
     SOURCE_NAME = "uniprot"
     BASE_URL = "https://rest.uniprot.org/uniprotkb"
 
-    # Default query: reviewed human proteins that are drug targets
-    DEFAULT_QUERY = "(reviewed:true) AND (organism_id:9606) AND (keyword:KW-0621)"
+    # Default query: reviewed human proteins with Pharmaceutical keyword.
+    # KW-0621 (Polymorphism) returned 0 results in smoke tests.
+    # KW-9993 (Pharmaceutical) is the correct keyword for drug targets.
+    # Fallback: omit keyword filter entirely and rely on size limit.
+    DEFAULT_QUERY = "(reviewed:true) AND (organism_id:9606) AND (keyword:KW-9993)"
+    FALLBACK_QUERY = "(reviewed:true) AND (organism_id:9606)"
     MAX_RESULTS = 500
 
     def get_latest_url(self) -> str:
@@ -45,6 +49,13 @@ class UniProtFetcher(BaseFetcher):
 
         try:
             records = self._search(query, size=max_results)
+
+            # If primary query returns empty, try fallback (broader query)
+            if not records and query == self.DEFAULT_QUERY:
+                logger.info(
+                    "UniProt primary query returned 0 results, trying fallback query"
+                )
+                records = self._search(self.FALLBACK_QUERY, size=max_results)
 
             content_hash = hashlib.md5(
                 ",".join(sorted(r.get("primaryAccession", "") for r in records)).encode()

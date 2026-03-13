@@ -104,8 +104,58 @@ class CMSStabilisFetcher(BaseFetcher):
             resp = self.session.get(url, timeout=60)
             resp.raise_for_status()
             records = self._parse_index_html(resp.text, max_records)
+
+            if not records:
+                # Regex may not match if Stabilis changed HTML structure.
+                # Try BeautifulSoup-based fallback parsing.
+                records = self._parse_index_html_bs4(resp.text, max_records)
+
+            if not records:
+                logger.warning(
+                    "Stabilis scraper found 0 records from index page. "
+                    "The website structure may have changed. URL: %s. "
+                    "Response length: %d bytes. Manual investigation needed.",
+                    url,
+                    len(resp.text),
+                )
         except Exception as exc:
             logger.warning("Failed to fetch compatibility index: %s", exc)
+
+        return records
+
+    @staticmethod
+    def _parse_index_html_bs4(
+        html: str, max_records: Optional[int] = None
+    ) -> List[Dict[str, Any]]:
+        """Fallback: parse compatibility index using BeautifulSoup."""
+        try:
+            from bs4 import BeautifulSoup
+        except ImportError:
+            logger.debug("BeautifulSoup not available for Stabilis fallback parsing")
+            return []
+
+        records: List[Dict[str, Any]] = []
+        soup = BeautifulSoup(html, "html.parser")
+
+        for row in soup.select("table tr"):
+            cells = row.find_all("td")
+            if len(cells) >= 3:
+                drug_a = cells[0].get_text(strip=True)
+                drug_b = cells[1].get_text(strip=True)
+                compatibility = cells[2].get_text(strip=True)
+
+                if drug_a and drug_b:
+                    records.append({
+                        "drug_a": drug_a,
+                        "drug_b": drug_b,
+                        "compatibility": compatibility,
+                        "solvent": cells[3].get_text(strip=True) if len(cells) > 3 else None,
+                        "concentration": cells[4].get_text(strip=True) if len(cells) > 4 else None,
+                        "reference": cells[5].get_text(strip=True) if len(cells) > 5 else None,
+                    })
+
+                if max_records and len(records) >= max_records:
+                    break
 
         return records
 

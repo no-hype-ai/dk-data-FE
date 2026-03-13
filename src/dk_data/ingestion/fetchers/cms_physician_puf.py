@@ -16,22 +16,28 @@ from .base import BaseFetcher
 
 logger = logging.getLogger(__name__)
 
+# CMS migrated from slug-based URLs to UUID-based data-api endpoints
+DATASET_UUID = "92396110-2aed-4d63-a6a2-5d6207d46a29"
+
+# Mapping from CMS API field names to normalised output field names
+API_FIELD_MAP = {
+    "Rndrng_NPI": "npi",
+    "Rndrng_Prvdr_Last_Org_Name": "nppes_provider_last_org_name",
+    "Rndrng_Prvdr_First_Name": "nppes_provider_first_name",
+    "Rndrng_Prvdr_State_Abrvtn": "nppes_provider_state",
+    "Rndrng_Prvdr_Type": "provider_type",
+    "HCPCS_Cd": "hcpcs_code",
+    "HCPCS_Desc": "hcpcs_description",
+    "Place_Of_Srvc": "place_of_service",
+    "Tot_Srvcs": "line_srvc_cnt",
+    "Tot_Benes": "bene_unique_cnt",
+    "Avg_Mdcr_Alowd_Amt": "average_medicare_allowed_amt",
+    "Avg_Sbmtd_Chrg": "average_submitted_chrg_amt",
+    "Avg_Mdcr_Pymt_Amt": "average_medicare_payment_amt",
+}
+
 # Normalised output field names
-KEY_FIELDS = [
-    "npi",
-    "nppes_provider_last_org_name",
-    "nppes_provider_first_name",
-    "nppes_provider_state",
-    "provider_type",
-    "hcpcs_code",
-    "hcpcs_description",
-    "place_of_service",
-    "line_srvc_cnt",
-    "bene_unique_cnt",
-    "average_medicare_allowed_amt",
-    "average_submitted_chrg_amt",
-    "average_medicare_payment_amt",
-]
+KEY_FIELDS = list(API_FIELD_MAP.values())
 
 # CMS API pagination defaults
 DEFAULT_PAGE_SIZE = 500
@@ -42,12 +48,11 @@ class CMSPhysicianPUFFetcher(BaseFetcher):
     """Fetcher for the CMS Physician/Supplier PUF data."""
 
     SOURCE_NAME = "cms_physician_puf"
-    BASE_URL = "https://data.cms.gov/provider-summary-by-type-of-service/medicare-physician-other-practitioners"
+    BASE_URL = "https://data.cms.gov/data-api/v1/dataset"
 
-    # CMS data.gov API endpoint
+    # CMS data-api UUID-based endpoint
     API_ENDPOINT = (
-        "https://data.cms.gov/data-api/v1/dataset/"
-        "medicare-physician-other-practitioners-by-provider-and-service/data"
+        f"https://data.cms.gov/data-api/v1/dataset/{DATASET_UUID}/data"
     )
 
     def get_latest_url(self) -> str:
@@ -163,11 +168,16 @@ class CMSPhysicianPUFFetcher(BaseFetcher):
 
     @staticmethod
     def _normalise(row: Dict[str, Any]) -> Dict[str, Any]:
-        """Extract and normalise key fields from a raw API row."""
+        """Extract and normalise key fields from a raw API row.
+
+        The CMS data-api returns fields like Rndrng_NPI, Rndrng_Prvdr_Last_Org_Name, etc.
+        We map these to our normalised output field names.
+        """
         record: Dict[str, Any] = {}
-        for field in KEY_FIELDS:
-            value = row.get(field) or row.get(field.upper()) or row.get(field.lower())
-            record[field] = value
+        for api_field, output_field in API_FIELD_MAP.items():
+            # Try the API field name first, then fall back to the output field name
+            value = row.get(api_field) or row.get(output_field)
+            record[output_field] = value
         return record
 
     def _save_and_hash(self, records: List[Dict], year: Optional[int] = None) -> Optional[str]:

@@ -55,6 +55,11 @@ class CMSRBCSFetcher(BaseFetcher):
                 resp.raise_for_status()
                 data = resp.json()
 
+                # The UUID-based API returns a JSON list directly,
+                # but may also return a dict with a nested list key
+                if isinstance(data, dict):
+                    data = data.get("data", data.get("results", []))
+
                 if not data:
                     break
 

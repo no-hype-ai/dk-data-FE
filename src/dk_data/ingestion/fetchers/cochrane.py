@@ -72,7 +72,18 @@ class CochraneFetcher(BaseFetcher):
                 search_terms = self._load_search_terms()
 
             if not search_terms:
-                search_terms = ["pharmaceutical intervention"]
+                # Default fallback terms when meta.ci_search_terms is empty
+                search_terms = [
+                    "dupilumab",
+                    "semaglutide",
+                    "pembrolizumab",
+                    "adalimumab",
+                    "nivolumab",
+                ]
+                logger.info(
+                    "No search terms from DB; using %d default pharma terms",
+                    len(search_terms),
+                )
 
             logger.info(
                 "Fetching Cochrane reviews (terms=%d, days_back=%d)",

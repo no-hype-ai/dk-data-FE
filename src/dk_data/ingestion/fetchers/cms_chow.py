@@ -38,8 +38,8 @@ class CMSCHOWFetcher(BaseFetcher):
     SOURCE_NAME = "cms_chow"
     BASE_URL = "https://data.cms.gov/provider-characteristics/hospitals-and-other-facilities"
 
-    # API endpoint
-    API_ENDPOINT = "https://data.cms.gov/data-api/v1/dataset/change-of-ownership/data"
+    # API endpoint (UUID-based — slug endpoints return empty)
+    API_ENDPOINT = "https://data.cms.gov/data-api/v1/dataset/c04031db-54ce-461c-85d1-d2613d71f167/data"
 
     # CSV download fallback
     CSV_URL = "https://data.cms.gov/provider-characteristics/hospitals-and-other-facilities/change-of-ownership/data?_format=csv&headers=display"

@@ -13,17 +13,20 @@ from .base import BaseFetcher
 
 logger = logging.getLogger(__name__)
 
+# CMS migrated from slug-based URLs to UUID-based data-api endpoints
+DATASET_UUID = "43ef03ce-2b60-40a8-958e-146195b5fec7"
+
 
 class CMSPostAcuteFetcher(BaseFetcher):
     """Fetcher for CMS Medicare Post-Acute Care and Hospice data."""
 
     SOURCE_NAME = "cms_post_acute"
-    BASE_URL = "https://data.cms.gov/provider-summary-by-type-of-service/medicare-post-acute-care-hospice"
+    BASE_URL = "https://data.cms.gov/data-api/v1/dataset"
 
     def get_latest_url(self) -> str:
-        """Return the CMS post-acute care data API URL."""
-        year = self.params.get("year", "latest")
-        return f"{self.BASE_URL}/data/{year}"
+        """Return the CMS post-acute care data API URL (UUID-based)."""
+        uuid = self.params.get("dataset_uuid", DATASET_UUID)
+        return f"{self.BASE_URL}/{uuid}/data"
 
     def fetch(self, **kwargs) -> Dict[str, Any]:
         """Fetch post-acute care records from CMS API.

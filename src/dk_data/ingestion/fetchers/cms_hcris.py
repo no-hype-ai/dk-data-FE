@@ -57,7 +57,7 @@ class CMSHCRISFetcher(BaseFetcher):
     def get_latest_url(self) -> str:
         """Return the download URL for the latest HCRIS file."""
         year = self.params.get("year", max(AVAILABLE_YEARS))
-        return f"{self.BASE_URL}/hosp10-{year}-HCRIS.zip"
+        return f"{self.BASE_URL}/HOSP10FY{year}.zip"
 
     def fetch(self, **kwargs) -> Dict[str, Any]:
         """Download and parse the HCRIS cost report data.

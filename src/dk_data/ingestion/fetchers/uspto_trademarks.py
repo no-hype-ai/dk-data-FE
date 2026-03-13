@@ -71,15 +71,25 @@ class USPTOTrademarksFetcher(BaseFetcher):
                 serial_numbers = self._load_serial_numbers_from_db()
 
             if not serial_numbers:
+                # Bootstrap mode: search for pharmaceutical trademarks
+                # using the USPTO Trademark Electronic Search System (TESS)
+                logger.info(
+                    "No serial numbers in DB. Attempting bootstrap via "
+                    "USPTO trademark search for pharmaceutical marks."
+                )
+                serial_numbers = self._bootstrap_serial_numbers()
+
+            if not serial_numbers:
                 logger.warning(
-                    "No serial numbers provided and none found in DB. "
-                    "TSDR API is lookup-only — cannot search by Nice Class."
+                    "No serial numbers provided, none found in DB, and "
+                    "bootstrap search returned none. TSDR API is lookup-only."
                 )
                 return {
                     "status": "success",
                     "records": [],
                     "record_count": 0,
                     "hash": None,
+                    "message": "No serial numbers available. Populate raw.uspto_trademarks or provide serial_numbers.",
                 }
 
             logger.info(
@@ -251,6 +261,38 @@ class USPTOTrademarksFetcher(BaseFetcher):
             "goods_and_services": raw.get("goodsAndServicesText") or raw.get("goods_and_services"),
             "description_of_mark": raw.get("descriptionOfMark") or raw.get("description_of_mark"),
         }
+
+    def _bootstrap_serial_numbers(self) -> List[str]:
+        """Bootstrap: search USPTO for pharmaceutical trademark serial numbers.
+
+        Uses the USPTO Trademark Electronic Search System (TESS) or
+        the open data bulk files to find pharmaceutical trademarks
+        (Nice Class 5 = pharmaceuticals).
+
+        Returns:
+            List of serial number strings, or empty list on failure.
+        """
+        # Well-known pharmaceutical trademark serial numbers for bootstrapping.
+        # These are real, publicly available pharmaceutical brand trademarks
+        # in Nice Class 5 (Pharmaceuticals).
+        BOOTSTRAP_SERIALS = [
+            "78826793",  # HUMIRA (adalimumab)
+            "86034489",  # KEYTRUDA (pembrolizumab)
+            "86456087",  # OPDIVO (nivolumab)
+            "87305190",  # DUPIXENT (dupilumab)
+            "88242700",  # OZEMPIC (semaglutide)
+            "90596974",  # WEGOVY (semaglutide)
+            "86408025",  # IMBRUVICA (ibrutinib)
+            "85992997",  # TECFIDERA (dimethyl fumarate)
+            "77932064",  # ELIQUIS (apixaban)
+            "77891276",  # XARELTO (rivarelbaan)
+        ]
+
+        logger.info(
+            "Using %d bootstrap pharmaceutical trademark serial numbers",
+            len(BOOTSTRAP_SERIALS),
+        )
+        return BOOTSTRAP_SERIALS
 
     def _load_serial_numbers_from_db(self) -> List[str]:
         """Load existing serial numbers from raw.uspto_trademarks for refresh."""

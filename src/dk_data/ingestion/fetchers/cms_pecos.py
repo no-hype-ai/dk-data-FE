@@ -38,8 +38,8 @@ class CMSPECOSFetcher(BaseFetcher):
     SOURCE_NAME = "cms_pecos"
     BASE_URL = "https://data.cms.gov/provider-characteristics/medicare-provider-supplier-enrollment"
 
-    # API endpoint for data access
-    API_ENDPOINT = "https://data.cms.gov/data-api/v1/dataset/medicare-provider-supplier-enrollment/data"
+    # API endpoint (UUID-based — slug endpoints return empty)
+    API_ENDPOINT = "https://data.cms.gov/data-api/v1/dataset/2457ea29-fc82-48b0-86ec-3b0755de7515/data"
 
     def get_latest_url(self) -> str:
         """Return the API endpoint for PECOS data."""

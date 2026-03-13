@@ -53,12 +53,17 @@ class USPTOPatentsFetcher(BaseFetcher):
             data_dir: Directory to store downloaded files.
         """
         super().__init__(data_dir)
-        self.api_key: Optional[str] = os.environ.get("USPTO_API_KEY")
+        self.api_key: Optional[str] = (
+            os.environ.get("PATENTSVIEW_API_KEY")
+            or os.environ.get("USPTO_API_KEY")
+        )
         if self.api_key:
-            logger.info("USPTO API key detected")
+            logger.info("PatentsView API key detected")
         else:
             logger.warning(
-                "No USPTO_API_KEY set; USPTO Patents fetch may fail or be rate-limited"
+                "No PATENTSVIEW_API_KEY (or USPTO_API_KEY) set. "
+                "The PatentsView API requires an API key — requests will return 403. "
+                "Get a key at https://patentsview.org/apis/keyrequest"
             )
 
     def get_latest_url(self) -> str:
