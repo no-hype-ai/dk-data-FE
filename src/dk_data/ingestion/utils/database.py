@@ -46,7 +46,13 @@ def _check_required_secrets() -> None:
 
     for secret in required_secrets:
         value = os.getenv(secret)
-        if not value or value in ('', 'postgres', 'changeme', 'REPLACE_WITH_SECURE_SECRET_IN_PRODUCTION'):
+        # In local/dev environments (POSTGRES_HOST=localhost), allow default passwords.
+        # In production/k8s the host is never localhost.
+        is_local = os.getenv('POSTGRES_HOST', 'localhost') in ('localhost', '127.0.0.1')
+        insecure_defaults = ('', 'changeme', 'REPLACE_WITH_SECURE_SECRET_IN_PRODUCTION')
+        if not is_local:
+            insecure_defaults += ('postgres',)
+        if not value or value in insecure_defaults:
             missing.append(secret)
 
     if missing:
