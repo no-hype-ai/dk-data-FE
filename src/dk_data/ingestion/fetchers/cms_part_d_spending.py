@@ -16,6 +16,7 @@ logger = logging.getLogger(__name__)
 
 # CMS migrated from slug-based URLs to UUID-based data-api endpoints
 DATASET_UUID = "7e0b4365-fd63-4a29-8f5e-e0ac9f66a81b"  # 2023 annual data
+DEFAULT_YEAR = 2023  # Year corresponding to the default dataset UUID
 
 
 class CMSPartDSpendingFetcher(BaseFetcher):
@@ -98,18 +99,30 @@ class CMSPartDSpendingFetcher(BaseFetcher):
 
     @staticmethod
     def _normalise(item: Dict[str, Any]) -> Optional[Dict[str, Any]]:
-        """Extract key fields from a Part D spending record."""
+        """Extract key fields from a Part D spending record.
+
+        The loader (CmsPartDSpendingRecord) expects:
+            brand_name, generic_name, total_spending, total_claims,
+            total_beneficiaries, avg_cost_per_claim, year
+        """
         brand = item.get("Brnd_Name") or item.get("brand_name", "")
         generic = item.get("Gnrc_Name") or item.get("generic_name", "")
         if not brand and not generic:
             return None
 
+        def _first_not_none(*keys):
+            for k in keys:
+                v = item.get(k)
+                if v is not None:
+                    return v
+            return None
+
         return {
             "brand_name": brand or None,
             "generic_name": generic or None,
-            "total_spending": item.get("Tot_Spndng") or item.get("total_spending"),
-            "total_claims": item.get("Tot_Clms") or item.get("total_claims"),
-            "total_beneficiaries": item.get("Tot_Benes") or item.get("total_beneficiaries"),
-            "avg_cost_per_claim": item.get("Avg_Spnd_Per_Clm") or item.get("avg_cost_per_claim"),
-            "year": item.get("year") or item.get("Year"),
+            "total_spending": _first_not_none("Tot_Spndng", "total_spending"),
+            "total_claims": _first_not_none("Tot_Clms", "total_claims"),
+            "total_beneficiaries": _first_not_none("Tot_Benes", "total_beneficiaries"),
+            "avg_cost_per_claim": _first_not_none("Avg_Spnd_Per_Clm", "avg_cost_per_claim"),
+            "year": _first_not_none("year", "Year") or DEFAULT_YEAR,
         }

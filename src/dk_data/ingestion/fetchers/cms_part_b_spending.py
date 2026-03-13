@@ -16,6 +16,7 @@ logger = logging.getLogger(__name__)
 
 # CMS migrated from slug-based URLs to UUID-based data-api endpoints
 DATASET_UUID = "76a714ad-3a2c-43ac-b76d-9dadf8f7d890"  # 2023 annual data
+DEFAULT_YEAR = 2023  # Year corresponding to the default dataset UUID
 
 
 class CMSPartBSpendingFetcher(BaseFetcher):
@@ -97,17 +98,34 @@ class CMSPartBSpendingFetcher(BaseFetcher):
 
     @staticmethod
     def _normalise(item: Dict[str, Any]) -> Optional[Dict[str, Any]]:
-        """Extract key fields from a Part B spending record."""
+        """Extract key fields from a Part B spending record.
+
+        The loader (CmsPartBSpendingRecord) expects:
+            hcpcs_code, brand_name (Optional), generic_name (Optional),
+            total_spending, total_claims, total_beneficiaries, year
+        """
         hcpcs = item.get("HCPCS_Cd") or item.get("hcpcs_code", "")
         if not hcpcs:
             return None
 
+        # The CMS Part B API provides Brnd_Name / Gnrc_Name on some datasets;
+        # older datasets only have HCPCS_Desc.  Map whichever is available.
+        brand = item.get("Brnd_Name") or item.get("brand_name")
+        generic = item.get("Gnrc_Name") or item.get("generic_name")
+
+        def _first_not_none(*keys):
+            for k in keys:
+                v = item.get(k)
+                if v is not None:
+                    return v
+            return None
+
         return {
             "hcpcs_code": hcpcs,
-            "hcpcs_description": item.get("HCPCS_Desc") or item.get("hcpcs_description"),
-            "total_spending": item.get("Tot_Spndng") or item.get("total_spending"),
-            "total_claims": item.get("Tot_Clms") or item.get("total_claims"),
-            "total_beneficiaries": item.get("Tot_Benes") or item.get("total_beneficiaries"),
-            "avg_cost_per_claim": item.get("Avg_Spnd_Per_Clm") or item.get("avg_cost_per_claim"),
-            "year": item.get("year") or item.get("Year"),
+            "brand_name": brand,
+            "generic_name": generic,
+            "total_spending": _first_not_none("Tot_Spndng", "total_spending"),
+            "total_claims": _first_not_none("Tot_Clms", "total_claims"),
+            "total_beneficiaries": _first_not_none("Tot_Benes", "total_beneficiaries"),
+            "year": _first_not_none("year", "Year") or DEFAULT_YEAR,
         }

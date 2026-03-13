@@ -16,21 +16,36 @@ from .base import BaseFetcher
 
 logger = logging.getLogger(__name__)
 
-# Normalised output field names
-KEY_FIELDS = [
-    "npi",
-    "prscrbr_last_org_name",
-    "prscrbr_first_name",
-    "prscrbr_city",
-    "prscrbr_state_abrvtn",
-    "prscrbr_type",
-    "brnd_name",
-    "gnrc_name",
-    "tot_clms",
-    "tot_30day_fill_cnt",
-    "tot_drug_cst",
-    "tot_benes",
-]
+# Mapping from CMS API field names → loader-expected field names
+FIELD_MAP = {
+    "npi": "npi",
+    "Npi": "npi",
+    "prscrbr_last_org_name": "prescriber_last_org_name",
+    "Prscrbr_Last_Org_Name": "prescriber_last_org_name",
+    "prscrbr_first_name": "prescriber_first_name",
+    "Prscrbr_First_Name": "prescriber_first_name",
+    "prscrbr_city": "prescriber_city",
+    "Prscrbr_City": "prescriber_city",
+    "prscrbr_state_abrvtn": "prescriber_state",
+    "Prscrbr_State_Abrvtn": "prescriber_state",
+    "prscrbr_type": "prescriber_type",
+    "Prscrbr_Type": "prescriber_type",
+    "brnd_name": "drug_brand_name",
+    "Brnd_Name": "drug_brand_name",
+    "gnrc_name": "drug_generic_name",
+    "Gnrc_Name": "drug_generic_name",
+    "tot_clms": "total_claims",
+    "Tot_Clms": "total_claims",
+    "tot_30day_fill_cnt": "total_30day_fills",
+    "Tot_30day_Fill_Cnt": "total_30day_fills",
+    "tot_drug_cst": "total_drug_cost",
+    "Tot_Drug_Cst": "total_drug_cost",
+    "tot_benes": "total_beneficiaries",
+    "Tot_Benes": "total_beneficiaries",
+}
+
+# CMS raw field names for extraction
+KEY_FIELDS = list({v for v in FIELD_MAP.values()})
 
 # CMS API pagination defaults
 DEFAULT_PAGE_SIZE = 500
@@ -170,14 +185,41 @@ class CMSPartDPrescriberFetcher(BaseFetcher):
         logger.info("Fetched %d Part D prescriber records", len(records))
         return records
 
-    @staticmethod
-    def _normalise(row: Dict[str, Any]) -> Dict[str, Any]:
-        """Extract and lowercase key fields from a raw API row."""
+    def _normalise(self, row: Dict[str, Any]) -> Dict[str, Any]:
+        """Map CMS API field names to loader-expected names.
+
+        The loader (CmsPartDPrescriberRecord) requires:
+            npi (str, 10 digits), drug_brand_name (str), year (int)
+        and optional prescriber_*, total_*, drug_generic_name fields.
+        """
         record: Dict[str, Any] = {}
-        for field in KEY_FIELDS:
-            # CMS API returns fields in various casings; try exact then upper
-            value = row.get(field) or row.get(field.upper()) or row.get(field.lower())
-            record[field] = value
+        for cms_key, loader_key in FIELD_MAP.items():
+            if cms_key in row and row[cms_key] is not None:
+                record[loader_key] = row[cms_key]
+
+        # Ensure npi is present — CMS API may use Npi, NPI, or npi
+        if "npi" not in record or not record["npi"]:
+            npi = row.get("Npi") or row.get("NPI") or row.get("npi") or ""
+            if npi:
+                record["npi"] = str(npi)
+
+        # Ensure year is always present (required by loader validator)
+        if "year" not in record or record.get("year") is None:
+            year = self.params.get("year")
+            if year:
+                record["year"] = int(year)
+            else:
+                # Default to the year from the dataset UUID mapping
+                record["year"] = 2023
+
+        # Ensure drug_brand_name is present (required by loader validator)
+        if "drug_brand_name" not in record or not record["drug_brand_name"]:
+            record["drug_brand_name"] = (
+                row.get("Brnd_Name") or row.get("brnd_name")
+                or row.get("Drug_Name") or row.get("drug_name")
+                or "Unknown"
+            )
+
         return record
 
     def _save_and_hash(self, records: List[Dict], year: Optional[int] = None) -> Optional[str]:

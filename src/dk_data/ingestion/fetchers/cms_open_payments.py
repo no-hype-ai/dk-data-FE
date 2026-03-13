@@ -7,6 +7,7 @@ Uses the Open Payments Data API (Datastore SQL endpoint).
 Source: https://openpaymentsdata.cms.gov
 """
 
+import hashlib
 import logging
 from datetime import datetime
 from typing import Any, Dict, List, Optional
@@ -210,8 +211,9 @@ class CMSOpenPaymentsFetcher(BaseFetcher):
                 break
 
             for row in page_records:
-                record = {field: row.get(field) for field in key_fields}
-                records.append(record)
+                record = self._normalise(row, payment_type)
+                if record:
+                    records.append(record)
 
             if max_records and len(records) >= max_records:
                 records = records[:max_records]
@@ -228,6 +230,61 @@ class CMSOpenPaymentsFetcher(BaseFetcher):
 
         logger.info("Fetched %d Open Payments (%s) records", len(records), payment_type)
         return records
+
+    def _normalise(self, row: Dict[str, Any], payment_type: str) -> Optional[Dict[str, Any]]:
+        """Map CMS Open Payments API field names to loader-expected names.
+
+        The loader (CmsOpenPaymentRecord) expects:
+            record_id, payment_type, covered_recipient_npi, manufacturer_name,
+            total_amount_usd, date_of_payment, nature_of_payment, form_of_payment
+
+        The API returns raw field names like:
+            applicable_manufacturer_or_applicable_gpo_making_payment_name,
+            total_amount_of_payment_usdollars, etc.
+        """
+        npi = row.get("covered_recipient_npi") or row.get("Covered_Recipient_NPI") or ""
+        manufacturer = (
+            row.get("applicable_manufacturer_or_applicable_gpo_making_payment_name")
+            or row.get("Applicable_Manufacturer_or_Applicable_GPO_Making_Payment_Name")
+            or ""
+        )
+        amount = (
+            row.get("total_amount_of_payment_usdollars")
+            or row.get("Total_Amount_of_Payment_USDollars")
+            or row.get("total_amount_invested_usdollars")
+            or row.get("Total_Amount_Invested_USDollars")
+        )
+        date = row.get("date_of_payment") or row.get("Date_of_Payment") or ""
+        nature = (
+            row.get("nature_of_payment_or_transfer_of_value")
+            or row.get("Nature_of_Payment_or_Transfer_of_Value")
+        )
+        form = (
+            row.get("form_of_payment_or_transfer_of_value")
+            or row.get("Form_of_Payment_or_Transfer_of_Value")
+        )
+
+        # Generate a deterministic record_id from key fields
+        hash_input = f"{npi}|{manufacturer}|{amount}|{date}".encode("utf-8")
+        record_id = hashlib.sha256(hash_input).hexdigest()[:32]
+
+        pt = self.params.get("payment_type", payment_type or "general")
+
+        try:
+            amount_float = float(amount) if amount is not None else None
+        except (ValueError, TypeError):
+            amount_float = None
+
+        return {
+            "record_id": record_id,
+            "payment_type": pt,
+            "covered_recipient_npi": npi or None,
+            "manufacturer_name": manufacturer or None,
+            "total_amount_usd": amount_float,
+            "date_of_payment": date or None,
+            "nature_of_payment": nature,
+            "form_of_payment": form,
+        }
 
     @staticmethod
     def _build_query(

@@ -85,7 +85,8 @@ def load_cms_part_d_spending_data(
                         total_beneficiaries, avg_cost_per_claim, year,
                         _loaded_at, _source_file, _source_hash
                     ) VALUES %s
-                    ON CONFLICT (brand_name, generic_name, year) DO UPDATE SET
+                    ON CONFLICT (brand_name, year) DO UPDATE SET
+                        generic_name = EXCLUDED.generic_name,
                         total_spending = EXCLUDED.total_spending,
                         total_claims = EXCLUDED.total_claims,
                         total_beneficiaries = EXCLUDED.total_beneficiaries,

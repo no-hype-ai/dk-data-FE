@@ -108,6 +108,7 @@ def load_cms_part_d_prescriber_data(
                         r.total_drug_cost,
                         r.total_beneficiaries,
                         r.year,
+                        r.drug_brand_name,  # populate PK column drug_name
                         loaded_at,
                         source_file,
                         source_hash,
@@ -122,10 +123,10 @@ def load_cms_part_d_prescriber_data(
                         prescriber_city, prescriber_state, prescriber_type,
                         drug_brand_name, drug_generic_name,
                         total_claims, total_30day_fills, total_drug_cost,
-                        total_beneficiaries, year,
+                        total_beneficiaries, year, drug_name,
                         _loaded_at, _source_file, _source_hash
                     ) VALUES %s
-                    ON CONFLICT (npi, drug_brand_name, year) DO UPDATE SET
+                    ON CONFLICT (npi, drug_name, year) DO UPDATE SET
                         prescriber_last_org_name = EXCLUDED.prescriber_last_org_name,
                         prescriber_first_name = EXCLUDED.prescriber_first_name,
                         prescriber_city = EXCLUDED.prescriber_city,
