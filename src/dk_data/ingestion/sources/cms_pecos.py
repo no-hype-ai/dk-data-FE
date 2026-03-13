@@ -85,10 +85,8 @@ def load_cms_pecos_data(
                         r.enrollment_id,
                         r.npi,
                         r.organization_name,
-                        r.org_npi,
-                        r.state,
                         r.enrollment_type,
-                        r.enrollment_date,
+                        r.state,
                         loaded_at,
                         source_file,
                         source_hash,
@@ -99,17 +97,15 @@ def load_cms_pecos_data(
                     cur,
                     """
                     INSERT INTO raw.cms_pecos (
-                        enrollment_id, npi, organization_name, org_npi,
-                        state, enrollment_type, enrollment_date,
+                        enrollment_id, npi, org_name,
+                        enrollment_type, enrollment_state,
                         _loaded_at, _source_file, _source_hash
                     ) VALUES %s
                     ON CONFLICT (enrollment_id) DO UPDATE SET
                         npi = EXCLUDED.npi,
-                        organization_name = EXCLUDED.organization_name,
-                        org_npi = EXCLUDED.org_npi,
-                        state = EXCLUDED.state,
+                        org_name = EXCLUDED.org_name,
                         enrollment_type = EXCLUDED.enrollment_type,
-                        enrollment_date = EXCLUDED.enrollment_date,
+                        enrollment_state = EXCLUDED.enrollment_state,
                         _loaded_at = EXCLUDED._loaded_at,
                         _source_file = EXCLUDED._source_file,
                         _source_hash = EXCLUDED._source_hash

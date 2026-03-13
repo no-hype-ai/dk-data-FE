@@ -3,11 +3,13 @@
 Feature: 011-datasource-integration
 Task: T064-T066 — Cochrane systematic reviews
 
-Fetches systematic reviews from the Cochrane Library related to
-pharmaceutical interventions, scoped by drug_name terms from
-meta.ci_search_terms.
+Fetches Cochrane systematic reviews from the PubMed/NCBI E-Utilities API.
+The Cochrane Library website uses Cloudflare antibot protection, blocking
+programmatic access. Since all Cochrane Database of Systematic Reviews
+(CDSR) articles are indexed in PubMed, we use PubMed as a reliable proxy.
 
-Source: https://www.cochranelibrary.com/cdsr/reviews
+Source: https://pubmed.ncbi.nlm.nih.gov/?term=Cochrane+Database+Syst+Rev
+API: https://eutils.ncbi.nlm.nih.gov/entrez/eutils/
 """
 
 import hashlib
@@ -15,6 +17,7 @@ import logging
 import time
 from datetime import datetime, timedelta
 from typing import Any, Dict, List, Optional
+from xml.etree import ElementTree
 
 from .base import BaseFetcher
 
@@ -23,18 +26,19 @@ logger = logging.getLogger(__name__)
 # Max records per fetch run
 MAX_RECORDS = 2000
 
-# Rate limit: be respectful to Cochrane servers
-REQUEST_DELAY = 2.0
+# NCBI rate limit: 3 requests per second (10 with API key)
+REQUEST_DELAY = 0.35
+
+# PubMed E-Utilities endpoints
+ESEARCH_URL = "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esearch.fcgi"
+EFETCH_URL = "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/efetch.fcgi"
 
 
 class CochraneFetcher(BaseFetcher):
-    """Fetcher for Cochrane Library systematic reviews."""
+    """Fetcher for Cochrane Library systematic reviews via PubMed."""
 
     SOURCE_NAME = "cochrane"
-    BASE_URL = "https://www.cochranelibrary.com"
-
-    # Cochrane search API endpoint
-    SEARCH_API = "https://www.cochranelibrary.com/api/search"
+    BASE_URL = "https://eutils.ncbi.nlm.nih.gov/entrez/eutils"
 
     # Page size for search results
     PAGE_SIZE = 50
@@ -44,16 +48,16 @@ class CochraneFetcher(BaseFetcher):
         super().__init__(data_dir)
 
         self.session.headers.update({
-            "Accept": "application/json",
+            "Accept": "application/xml, application/json",
             "User-Agent": "DK-Data-Platform/1.0 (Cochrane Research Integration)",
         })
 
     def get_latest_url(self) -> str:
-        """Get the Cochrane search API URL."""
-        return self.SEARCH_API
+        """Get the PubMed search API URL."""
+        return ESEARCH_URL
 
     def fetch(self, **kwargs) -> Dict[str, Any]:
-        """Fetch systematic reviews from Cochrane Library.
+        """Fetch Cochrane systematic reviews from PubMed.
 
         Keyword Args:
             search_terms: List of drug names to search (default: from DB).
@@ -72,7 +76,6 @@ class CochraneFetcher(BaseFetcher):
                 search_terms = self._load_search_terms()
 
             if not search_terms:
-                # Default fallback terms when meta.ci_search_terms is empty
                 search_terms = [
                     "dupilumab",
                     "semaglutide",
@@ -86,7 +89,7 @@ class CochraneFetcher(BaseFetcher):
                 )
 
             logger.info(
-                "Fetching Cochrane reviews (terms=%d, days_back=%d)",
+                "Fetching Cochrane reviews via PubMed (terms=%d, days_back=%d)",
                 len(search_terms), days_back,
             )
 
@@ -101,7 +104,6 @@ class CochraneFetcher(BaseFetcher):
                     term,
                     days_back=days_back,
                     max_records=max_records - len(all_records),
-                    resume_offset=kwargs.get('resume_offset', 0),
                 )
 
                 for rec in records:
@@ -131,13 +133,12 @@ class CochraneFetcher(BaseFetcher):
                 "record_count": 0,
                 "hash": None,
                 "error": str(e),
-                "last_offset": getattr(self, '_last_offset', 0),
             }
             self.log_fetch_result(result)
             return result
 
     # ------------------------------------------------------------------
-    # Search
+    # Search via PubMed E-Utilities
     # ------------------------------------------------------------------
 
     def _search_reviews(
@@ -146,117 +147,156 @@ class CochraneFetcher(BaseFetcher):
         *,
         days_back: int = 90,
         max_records: int = 2000,
-        resume_offset: int = 0,
     ) -> List[Dict[str, Any]]:
-        """Search Cochrane for systematic reviews matching a term."""
-        records: List[Dict[str, Any]] = []
-        offset = resume_offset
-        date_from = (datetime.utcnow() - timedelta(days=days_back)).strftime("%Y-%m-%d")
+        """Search PubMed for Cochrane reviews matching a drug term."""
+        # Build the PubMed query: Cochrane journal + drug term + date filter
+        query = f'"{term}" AND "Cochrane Database Syst Rev"[journal]'
 
-        while len(records) < max_records:
+        try:
+            # Step 1: ESearch to get PMIDs
+            search_params = {
+                "db": "pubmed",
+                "term": query,
+                "retmax": min(max_records, self.PAGE_SIZE),
+                "retmode": "json",
+                "datetype": "pdat",
+                "reldate": days_back,
+            }
+
+            resp = self.session.get(ESEARCH_URL, params=search_params, timeout=30)
+            resp.raise_for_status()
+            search_data = resp.json()
+
+            id_list = search_data.get("esearchresult", {}).get("idlist", [])
+            if not id_list:
+                return []
+
+            time.sleep(REQUEST_DELAY)
+
+            # Step 2: EFetch to get article details
+            records = self._fetch_article_details(id_list, term)
+            return records
+
+        except Exception as e:
+            logger.warning(
+                "PubMed search failed for Cochrane term '%s': %s", term, e
+            )
+            return []
+
+    def _fetch_article_details(
+        self, pmids: List[str], search_term: str
+    ) -> List[Dict[str, Any]]:
+        """Fetch full article details from PubMed for a list of PMIDs."""
+        records: List[Dict[str, Any]] = []
+
+        # Fetch in batches of 50
+        for i in range(0, len(pmids), self.PAGE_SIZE):
+            batch = pmids[i:i + self.PAGE_SIZE]
+
             try:
-                params = {
-                    "searchBy": "search-manager",
-                    "searchText": term,
-                    "searchType": "standard",
-                    "reviewType": "cdsr",
-                    "resultPerPage": self.PAGE_SIZE,
-                    "searchFrom": offset,
-                    "publishDateFrom": date_from,
+                fetch_params = {
+                    "db": "pubmed",
+                    "id": ",".join(batch),
+                    "retmode": "xml",
+                    "rettype": "abstract",
                 }
 
-                self._last_offset = offset
-                data = self.fetch_json(self.get_latest_url(), params=params)
+                resp = self.session.get(EFETCH_URL, params=fetch_params, timeout=30)
+                resp.raise_for_status()
 
-                items = self._extract_items(data)
-                if not items:
-                    break
+                # Parse XML response
+                root = ElementTree.fromstring(resp.content)
 
-                for item in items:
-                    normalized = self._normalize_review(item, term)
-                    if normalized:
-                        records.append(normalized)
+                for article in root.findall(".//PubmedArticle"):
+                    record = self._parse_pubmed_article(article, search_term)
+                    if record:
+                        records.append(record)
 
-                if len(items) < self.PAGE_SIZE:
-                    break
-
-                offset += self.PAGE_SIZE
                 time.sleep(REQUEST_DELAY)
 
             except Exception as e:
-                logger.warning(
-                    "Cochrane search failed for '%s' at offset %d: %s",
-                    term, offset, e,
-                )
-                break
+                logger.warning("PubMed EFetch failed for batch: %s", e)
 
         return records
 
     @staticmethod
-    def _extract_items(data: Any) -> List[Dict]:
-        """Extract result items from Cochrane API response."""
-        if isinstance(data, list):
-            return data
-
-        if isinstance(data, dict):
-            for key in ("results", "data", "items", "resultList"):
-                if key in data and isinstance(data[key], list):
-                    return data[key]
-
-        return []
-
-    def _normalize_review(
-        self, item: Dict[str, Any], search_term: str
+    def _parse_pubmed_article(
+        article: ElementTree.Element, search_term: str
     ) -> Optional[Dict[str, Any]]:
-        """Normalize a Cochrane review result into the raw schema."""
-        review_id = (
-            item.get("id")
-            or item.get("reviewId")
-            or item.get("doi")
-            or item.get("cdNumber")
-        )
-        if not review_id:
+        """Parse a PubmedArticle XML element into a Cochrane review record."""
+        medline = article.find(".//MedlineCitation")
+        if medline is None:
             return None
 
-        review_id = str(review_id).strip()
+        pmid_el = medline.find("PMID")
+        if pmid_el is None or not pmid_el.text:
+            return None
 
-        # Parse authors
-        authors = item.get("authors") or item.get("byline")
-        if isinstance(authors, list):
-            authors = "; ".join(str(a) for a in authors)
-        elif authors:
-            authors = str(authors)
+        review_id = f"pmid-{pmid_el.text}"
+
+        # Title
+        title_el = medline.find(".//ArticleTitle")
+        title = title_el.text if title_el is not None and title_el.text else None
+
+        # Authors
+        author_list = medline.findall(".//Author")
+        authors_parts = []
+        for author in author_list:
+            last = author.findtext("LastName", "")
+            initials = author.findtext("Initials", "")
+            if last:
+                authors_parts.append(f"{last} {initials}".strip())
+        authors = "; ".join(authors_parts) if authors_parts else None
+
+        # Abstract
+        abstract_parts = []
+        for abstract_text in medline.findall(".//AbstractText"):
+            label = abstract_text.get("Label", "")
+            text = abstract_text.text or ""
+            if label:
+                abstract_parts.append(f"{label}: {text}")
+            else:
+                abstract_parts.append(text)
+        abstract = " ".join(abstract_parts) if abstract_parts else None
 
         # Publication date
-        pub_date = (
-            item.get("publishDate")
-            or item.get("publication_date")
-            or item.get("date")
-        )
-        if pub_date:
-            pub_date = str(pub_date)[:10]
+        pub_date = None
+        date_el = medline.find(".//PubDate")
+        if date_el is not None:
+            year = date_el.findtext("Year", "")
+            month = date_el.findtext("Month", "01")
+            day = date_el.findtext("Day", "01")
+            if year:
+                # Convert month name to number if needed
+                try:
+                    month_num = datetime.strptime(month, "%b").month if not month.isdigit() else int(month)
+                    pub_date = f"{year}-{month_num:02d}-{int(day):02d}"
+                except (ValueError, TypeError):
+                    pub_date = f"{year}-01-01"
 
-        # Interventions
-        interventions = item.get("interventions") or []
-        if isinstance(interventions, str):
-            interventions = [i.strip() for i in interventions.split(",")]
+        # DOI
+        doi = None
+        for id_el in article.findall(".//ArticleId"):
+            if id_el.get("IdType") == "doi":
+                doi = id_el.text
 
-        # Conditions
-        conditions = item.get("conditions") or item.get("healthConditions") or []
-        if isinstance(conditions, str):
-            conditions = [c.strip() for c in conditions.split(",")]
+        # MeSH terms as conditions/interventions
+        mesh_terms = []
+        for mesh in medline.findall(".//MeshHeading/DescriptorName"):
+            if mesh.text:
+                mesh_terms.append(mesh.text)
 
         return {
             "review_id": review_id,
-            "title": item.get("title") or item.get("name"),
+            "title": title,
             "authors": authors,
-            "abstract": item.get("abstract") or item.get("summary"),
+            "abstract": abstract[:2000] if abstract else None,
             "publication_date": pub_date,
-            "review_type": item.get("reviewType") or "systematic_review",
-            "interventions": interventions if interventions else None,
-            "conditions": conditions if conditions else None,
-            "conclusions": item.get("conclusions") or item.get("authorsConclusions"),
-            "doi": item.get("doi"),
+            "review_type": "systematic_review",
+            "interventions": [search_term] if search_term else None,
+            "conditions": mesh_terms[:10] if mesh_terms else None,
+            "conclusions": None,
+            "doi": doi,
         }
 
     # ------------------------------------------------------------------

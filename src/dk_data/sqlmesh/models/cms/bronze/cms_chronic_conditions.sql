@@ -14,11 +14,11 @@ MODEL (
 );
 
 SELECT
-    UPPER(TRIM(state))                          AS state,
-    UPPER(TRIM(condition))                      AS condition,
-    COALESCE(prevalence_rate, 0)::NUMERIC(6,4)  AS prevalence_rate,
-    COALESCE(bene_count, 0)::INTEGER            AS bene_count,
-    year::INTEGER                               AS year,
+    UPPER(TRIM(state))                                          AS state,
+    UPPER(TRIM(condition))                                      AS condition,
+    COALESCE(prevalence_rate, 0)::NUMERIC(6,4)                  AS prevalence_rate,
+    COALESCE(total_beneficiaries_with_condition, 0)::INTEGER    AS total_beneficiaries_with_condition,
+    COALESCE(per_capita_spending, 0)::NUMERIC(12,2)             AS per_capita_spending,
     _loaded_at,
     _source_file,
     _source_hash

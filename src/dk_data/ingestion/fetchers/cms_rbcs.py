@@ -103,14 +103,26 @@ class CMSRBCSFetcher(BaseFetcher):
     @staticmethod
     def _normalise(item: Dict[str, Any]) -> Optional[Dict[str, Any]]:
         """Extract key fields from an RBCS classification record."""
-        hcpcs = item.get("HCPCS_CD") or item.get("hcpcs_code", "")
+        hcpcs = (
+            item.get("HCPCS_Cd") or item.get("HCPCS_CD")
+            or item.get("hcpcs_code", "")
+        )
         if not hcpcs:
             return None
 
         return {
             "hcpcs_code": hcpcs,
-            "rbcs_id": item.get("RBCS_ID") or item.get("rbcs_id"),
-            "rbcs_category": item.get("RBCS_CAT") or item.get("rbcs_category"),
-            "rbcs_subcategory": item.get("RBCS_SUBCAT") or item.get("rbcs_subcategory"),
-            "rbcs_family": item.get("RBCS_FAMILY") or item.get("rbcs_family"),
+            "rbcs_id": item.get("RBCS_Id") or item.get("RBCS_ID") or item.get("rbcs_id"),
+            "rbcs_category": (
+                item.get("RBCS_Cat") or item.get("RBCS_CAT")
+                or item.get("rbcs_category")
+            ),
+            "rbcs_subcategory": (
+                item.get("RBCS_Cat_Subcat") or item.get("RBCS_SUBCAT")
+                or item.get("rbcs_subcategory")
+            ),
+            "rbcs_family": (
+                item.get("RBCS_Family_Desc") or item.get("RBCS_FAMILY")
+                or item.get("rbcs_family")
+            ),
         }

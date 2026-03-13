@@ -6,6 +6,7 @@ provider-level episode counts, average payments, and readmission rates.
 Source: https://data.cms.gov/provider-summary-by-type-of-service/medicare-post-acute-care-hospice
 """
 
+import hashlib
 import logging
 from typing import Any, Dict, List, Optional
 
@@ -70,9 +71,9 @@ class CMSPostAcuteFetcher(BaseFetcher):
                     records = records[:max_records]
                     break
 
-            content_hash = self.calculate_hash(
+            content_hash = hashlib.md5(
                 str(len(records)).encode()
-            ) if records else None
+            ).hexdigest() if records else None
 
             result: Dict[str, Any] = {
                 "status": "success",
@@ -97,15 +98,33 @@ class CMSPostAcuteFetcher(BaseFetcher):
     @staticmethod
     def _normalise(item: Dict[str, Any]) -> Optional[Dict[str, Any]]:
         """Extract key fields from a post-acute care record."""
-        ccn = item.get("CCN") or item.get("ccn", "")
-        if not ccn:
+        provider_id = (
+            item.get("PRVDR_ID") or item.get("CCN")
+            or item.get("ccn", "")
+        )
+        if not provider_id:
             return None
 
         return {
-            "ccn": ccn,
-            "provider_name": item.get("Provider_Name") or item.get("provider_name"),
-            "provider_type": item.get("Provider_Type") or item.get("provider_type"),
-            "total_episodes": item.get("Total_Episodes") or item.get("total_episodes"),
-            "avg_episode_payment": item.get("Avg_Episode_Payment") or item.get("avg_episode_payment"),
-            "readmission_rate": item.get("Readmission_Rate") or item.get("readmission_rate"),
+            "ccn": provider_id,
+            "provider_name": (
+                item.get("PRVDR_NAME") or item.get("Provider_Name")
+                or item.get("provider_name")
+            ),
+            "provider_type": (
+                item.get("SRVC_CTGRY") or item.get("Provider_Type")
+                or item.get("provider_type")
+            ),
+            "total_episodes": (
+                item.get("TOT_EPSD_STAY_CNT") or item.get("Total_Episodes")
+                or item.get("total_episodes")
+            ),
+            "avg_episode_payment": (
+                item.get("TOT_MDCR_PYMT_AMT") or item.get("Avg_Episode_Payment")
+                or item.get("avg_episode_payment")
+            ),
+            "readmission_rate": (
+                item.get("Readmission_Rate") or item.get("readmission_rate")
+            ),
+            "year": item.get("YEAR") or item.get("year"),
         }

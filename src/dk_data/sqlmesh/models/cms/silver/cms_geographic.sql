@@ -40,7 +40,6 @@ chronic_pivot AS (
         ARRAY_AGG(DISTINCT condition ORDER BY condition) AS top_chronic_conditions,
         AVG(prevalence_rate)                    AS avg_chronic_prevalence
     FROM bronze.cms_chronic_conditions
-    WHERE year = (SELECT MAX(year) FROM bronze.cms_chronic_conditions)
     GROUP BY state
 ),
 

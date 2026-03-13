@@ -159,8 +159,9 @@ class TestUSPTOTrademarksFetchWithMock:
             with patch.dict(os.environ, {"USPTO_TSDR_API_KEY": "test-key"}):
                 fetcher = USPTOTrademarksFetcher(data_dir=tmpdir)
 
-            # Mock _load_serial_numbers_from_db to return empty
-            with patch.object(fetcher, "_load_serial_numbers_from_db", return_value=[]):
+            # Mock both DB lookup and bootstrap to return empty
+            with patch.object(fetcher, "_load_serial_numbers_from_db", return_value=[]), \
+                 patch.object(fetcher, "_bootstrap_serial_numbers", return_value=[]):
                 result = fetcher.fetch()
 
         assert result["status"] == "success"

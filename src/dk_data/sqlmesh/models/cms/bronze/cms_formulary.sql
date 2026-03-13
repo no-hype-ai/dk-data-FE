@@ -9,17 +9,20 @@ MODEL (
         batch_size 500
     ),
     cron '@daily',
-    audits (not_null(columns := (formulary_id, ndc))),
-    grain (formulary_id, ndc)
+    audits (not_null(columns := (rxcui))),
+    grain (contract_id, plan_id, rxcui)
 );
 
 SELECT
+    TRIM(contract_id)::TEXT                     AS contract_id,
+    TRIM(plan_id)::TEXT                         AS plan_id,
     TRIM(formulary_id)::TEXT                    AS formulary_id,
-    TRIM(ndc)::TEXT                             AS ndc,
-    tier_level::INTEGER                         AS tier_level,
-    COALESCE(prior_authorization, FALSE)        AS prior_authorization,
-    COALESCE(step_therapy, FALSE)               AS step_therapy,
-    COALESCE(quantity_limit, FALSE)             AS quantity_limit,
+    TRIM(rxcui)::TEXT                           AS rxcui,
+    TRIM(drug_name)::TEXT                       AS drug_name,
+    TRIM(tier_level)::TEXT                      AS tier_level,
+    TRIM(prior_auth)::TEXT                      AS prior_auth,
+    TRIM(step_therapy)::TEXT                    AS step_therapy,
+    TRIM(quantity_limit)::TEXT                   AS quantity_limit,
     _loaded_at,
     _source_file,
     _source_hash

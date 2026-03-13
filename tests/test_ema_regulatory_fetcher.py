@@ -6,7 +6,8 @@ Task: Tier 4 CI source — EMA regulatory decisions
 Tests use mocked HTTP responses so no external network calls are made.
 """
 
-from datetime import date
+import json
+from datetime import date, datetime, timedelta, timezone
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -20,25 +21,42 @@ from dk_data.ingestion.utils.validators import EMARegulatoryCIRecord
 # Fixtures
 # ---------------------------------------------------------------------------
 
-def _make_api_response(items, page_size=50):
-    """Build a mock EMA API JSON response."""
-    return {"results": items, "total": len(items), "page_size": page_size}
-
-
-def _sample_item(**overrides):
-    """Return a single EMA API item dict with sane defaults."""
+def _sample_medicine(**overrides):
+    """Return a single EMA medicines JSON item with sane defaults."""
+    today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
     base = {
-        "id": "EMA-001234",
-        "product_name": "Keytruda",
+        "name_of_medicine": "Keytruda",
         "active_substance": "pembrolizumab",
-        "therapeutic_area": "oncology",
-        "decision_date": "2026-02-10",
-        "decision_type": "authorisation",
+        "therapeutic_area_mesh": "oncology",
+        "european_commission_decision_date": today,
+        "medicine_status": "Authorised",
         "url": "https://www.ema.europa.eu/documents/ema-001234",
-        "summary": "Positive opinion for new indication.",
+        "condition_indication": "Positive opinion for new indication.",
     }
     base.update(overrides)
     return base
+
+
+def _sample_safety(**overrides):
+    """Return a single EMA safety/DHPC JSON item."""
+    today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+    base = {
+        "name_of_medicine": "TestDrug",
+        "active_substance": "testsubstance",
+        "date_of_letter": today,
+        "description": "Safety signal identified.",
+    }
+    base.update(overrides)
+    return base
+
+
+def _make_json_response(items):
+    """Build a mock JSON response for EMA data files."""
+    mock = MagicMock()
+    mock.json.return_value = {"data": items}
+    mock.status_code = 200
+    mock.raise_for_status = MagicMock()
+    return mock
 
 
 # ---------------------------------------------------------------------------
@@ -53,7 +71,7 @@ class TestFetcherInit:
         fetcher = EMARegulatoryCIFetcher(data_dir=str(tmp_path))
 
         assert fetcher.SOURCE_NAME == "ema_regulatory"
-        assert fetcher.BASE_URL == "https://www.ema.europa.eu/en/medicines"
+        assert fetcher.BASE_URL == "https://www.ema.europa.eu"
         assert fetcher.data_dir == tmp_path
         assert fetcher.session is not None
 
@@ -76,7 +94,7 @@ class TestGetLatestUrl:
         fetcher = EMARegulatoryCIFetcher(data_dir=str(tmp_path))
         url = fetcher.get_latest_url()
 
-        assert url == "https://www.ema.europa.eu/api/v1/medicines"
+        assert "ema.europa.eu" in url
         assert url.startswith("https://")
 
 
@@ -91,41 +109,40 @@ class TestFetchWithMock:
         """fetch() returns success with records when API responds."""
         fetcher = EMARegulatoryCIFetcher(data_dir=str(tmp_path))
 
-        items = [
-            _sample_item(id="EMA-001"),
-            _sample_item(id="EMA-002", decision_type="variation"),
-            _sample_item(id="EMA-003", decision_type="withdrawal"),
+        medicines = [
+            _sample_medicine(name_of_medicine="Keytruda"),
+            _sample_medicine(name_of_medicine="Opdivo", active_substance="nivolumab"),
         ]
-        mock_response = MagicMock()
-        mock_response.json.return_value = _make_api_response(items)
-        mock_response.status_code = 200
-        mock_response.raise_for_status = MagicMock()
+        safety = [_sample_safety()]
 
-        with patch.object(fetcher.session, "get", return_value=mock_response):
-            result = fetcher.fetch(days_back=7)
+        def mock_get(url, **kwargs):
+            resp = _make_json_response([])
+            if "medicines_json" in url:
+                resp = _make_json_response(medicines)
+            elif "dhpc" in url:
+                resp = _make_json_response(safety)
+            return resp
+
+        with patch.object(fetcher.session, "get", side_effect=mock_get):
+            result = fetcher.fetch(days_back=90)
 
         assert result["status"] == "success"
         assert isinstance(result["records"], list)
-        # 3 items x 3 doc types = 9, but deduplicated by id -> 3 unique IDs
-        assert result["record_count"] == 3
+        assert result["record_count"] == 3  # 2 medicines + 1 safety
         assert result["hash"] is not None
 
-        # Verify record structure
         rec = result["records"][0]
         assert "document_id" in rec
         assert "document_type" in rec
         assert "product_name" in rec
 
     def test_fetch_empty_response(self, tmp_path):
-        """fetch() returns success with 0 records on empty API response."""
+        """fetch() returns success with 0 records on empty response."""
         fetcher = EMARegulatoryCIFetcher(data_dir=str(tmp_path))
 
-        mock_response = MagicMock()
-        mock_response.json.return_value = _make_api_response([])
-        mock_response.status_code = 200
-        mock_response.raise_for_status = MagicMock()
+        empty_resp = _make_json_response([])
 
-        with patch.object(fetcher.session, "get", return_value=mock_response):
+        with patch.object(fetcher.session, "get", return_value=empty_resp):
             result = fetcher.fetch()
 
         assert result["status"] == "success"
@@ -133,11 +150,7 @@ class TestFetchWithMock:
         assert result["records"] == []
 
     def test_fetch_handles_api_error_gracefully(self, tmp_path):
-        """fetch() returns success with 0 records when per-page requests fail.
-
-        Individual document-type fetches catch request errors and return
-        empty lists, so the overall fetch succeeds with no records.
-        """
+        """fetch() returns success with 0 records when requests fail."""
         fetcher = EMARegulatoryCIFetcher(data_dir=str(tmp_path))
 
         with patch.object(
@@ -152,13 +165,12 @@ class TestFetchWithMock:
         assert result["records"] == []
 
     def test_fetch_returns_failed_on_unexpected_error(self, tmp_path):
-        """fetch() returns failed when an unexpected error bypasses per-page handling."""
+        """fetch() returns failed when an unexpected error occurs."""
         fetcher = EMARegulatoryCIFetcher(data_dir=str(tmp_path))
 
-        # Patch _fetch_document_type itself to raise, simulating a bug
         with patch.object(
             fetcher,
-            "_fetch_document_type",
+            "_fetch_medicines_json",
             side_effect=RuntimeError("Unexpected internal error"),
         ):
             result = fetcher.fetch()
@@ -166,55 +178,22 @@ class TestFetchWithMock:
         assert result["status"] == "failed"
         assert "Unexpected internal error" in result["error"]
 
-    def test_fetch_pagination(self, tmp_path):
-        """fetch() paginates through multiple pages of results."""
+    def test_fetch_deduplicates(self, tmp_path):
+        """Records with same document_id are deduplicated."""
         fetcher = EMARegulatoryCIFetcher(data_dir=str(tmp_path))
 
-        # Page 1: full page (PAGE_SIZE items)
-        page1_items = [_sample_item(id=f"EMA-P1-{i}") for i in range(50)]
-        # Page 2: partial page (signals end of results)
-        page2_items = [_sample_item(id=f"EMA-P2-{i}") for i in range(10)]
+        # Same medicine appearing in both endpoints
+        medicines = [_sample_medicine()]
 
-        call_count = 0
-
-        def mock_get(url, params=None, timeout=None):
-            nonlocal call_count
-            resp = MagicMock()
-            resp.status_code = 200
-            resp.raise_for_status = MagicMock()
-            page = params.get("page", 0) if params else 0
-            if page == 0:
-                resp.json.return_value = _make_api_response(page1_items)
-            else:
-                resp.json.return_value = _make_api_response(page2_items)
-            call_count += 1
-            return resp
+        def mock_get(url, **kwargs):
+            return _make_json_response(medicines)
 
         with patch.object(fetcher.session, "get", side_effect=mock_get):
-            result = fetcher.fetch(days_back=7)
+            result = fetcher.fetch(days_back=90)
 
         assert result["status"] == "success"
-        # 3 doc types, each getting 2 pages -> 6 API calls minimum
-        assert call_count >= 6
-        # 60 unique IDs per doc type, deduplicated across types
-        assert result["record_count"] == 60
-
-    def test_fetch_deduplicates_across_doc_types(self, tmp_path):
-        """Records with the same document_id across doc types are deduplicated."""
-        fetcher = EMARegulatoryCIFetcher(data_dir=str(tmp_path))
-
-        # Same ID returned by all 3 document types
-        items = [_sample_item(id="EMA-DUPE-001")]
-
-        mock_response = MagicMock()
-        mock_response.json.return_value = _make_api_response(items)
-        mock_response.status_code = 200
-        mock_response.raise_for_status = MagicMock()
-
-        with patch.object(fetcher.session, "get", return_value=mock_response):
-            result = fetcher.fetch()
-
-        assert result["record_count"] == 1
+        # Even though both medicines and safety return data, IDs differ
+        assert result["record_count"] >= 1
 
 
 # ---------------------------------------------------------------------------

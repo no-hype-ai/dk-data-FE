@@ -30,8 +30,10 @@ from .base import BaseFetcher
 
 logger = logging.getLogger(__name__)
 
-# NICE API base for technology appraisals
-NICE_API_BASE = "https://www.nice.org.uk/api/guidance/published"
+# NICE search API for technology appraisals
+# The old /api/guidance/published endpoint no longer exists (404).
+# NICE uses a Next.js app with an internal search API.
+NICE_API_BASE = "https://search-api.nice.org.uk/api/guidance/published"
 
 # Agency identifiers
 AGENCIES = ["nice", "gba", "has", "pbac"]
@@ -229,15 +231,25 @@ class HTABodiesFetcher(BaseFetcher):
             "from": since_date,
         }
 
-        try:
-            data = self.fetch_json(NICE_API_BASE, params=params)
-        except Exception as e:
-            logger.warning("NICE API request failed: %s", e)
-            return []
+        # Try the search API first, then fall back to the guidance page
+        nice_endpoints = [
+            NICE_API_BASE,
+            "https://www.nice.org.uk/guidance/published",
+        ]
 
-        items = self._extract_items(data)
+        items: List[Dict] = []
+        for endpoint in nice_endpoints:
+            try:
+                data = self.fetch_json(endpoint, params=params)
+                items = self._extract_items(data)
+                if items:
+                    break
+            except Exception as e:
+                logger.debug("NICE endpoint %s failed: %s", endpoint, e)
+                continue
+
         if not items:
-            logger.info("No NICE guidance items returned")
+            logger.info("No NICE guidance items returned from any endpoint")
             return []
 
         records: List[Dict[str, Any]] = []
@@ -484,7 +496,7 @@ class HTABodiesFetcher(BaseFetcher):
     # PBAC (Australia) — Meeting Outcomes scraper
     # ------------------------------------------------------------------
 
-    PBAC_URL = "https://www.pbs.gov.au/pbs/industry/listing/elements/pbac-meetings/pbac-meetings-outcomes"
+    PBAC_URL = "https://www.pbs.gov.au/info/industry/listing/elements/pbac-meetings/pbac-outcomes"
 
     def _fetch_pbac(
         self, *, drug_names: List[str], days_back: int = 7

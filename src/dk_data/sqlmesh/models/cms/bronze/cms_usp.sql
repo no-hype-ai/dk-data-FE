@@ -16,8 +16,7 @@ MODEL (
 SELECT
     UPPER(TRIM(usp_category))                   AS usp_category,
     UPPER(TRIM(usp_class))                      AS usp_class,
-    UPPER(TRIM(drug_name))                      AS drug_name,
-    TRIM(ndc)::TEXT                             AS ndc,
+    TRIM(drug_names)                            AS drug_names,
     _loaded_at,
     _source_file,
     _source_hash

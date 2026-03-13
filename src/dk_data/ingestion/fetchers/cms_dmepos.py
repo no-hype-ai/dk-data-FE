@@ -6,6 +6,7 @@ provider-level service counts, charges, and payments by HCPCS code.
 Source: https://data.cms.gov/provider-summary-by-type-of-service/medicare-durable-medical-equipment
 """
 
+import hashlib
 import logging
 from typing import Any, Dict, List, Optional
 
@@ -70,9 +71,9 @@ class CMSDMEPOSFetcher(BaseFetcher):
                     records = records[:max_records]
                     break
 
-            content_hash = self.calculate_hash(
+            content_hash = hashlib.md5(
                 str(len(records)).encode()
-            ) if records else None
+            ).hexdigest() if records else None
 
             result: Dict[str, Any] = {
                 "status": "success",
@@ -97,16 +98,37 @@ class CMSDMEPOSFetcher(BaseFetcher):
     @staticmethod
     def _normalise(item: Dict[str, Any]) -> Optional[Dict[str, Any]]:
         """Extract key fields from a DMEPOS utilization record."""
-        npi = item.get("Rndrng_NPI") or item.get("npi", "")
+        npi = (
+            item.get("Suplr_NPI") or item.get("Rndrng_NPI")
+            or item.get("npi", "")
+        )
         if not npi:
             return None
 
         return {
             "npi": npi,
-            "hcpcs_code": item.get("HCPCS_Cd") or item.get("hcpcs_code"),
-            "hcpcs_description": item.get("HCPCS_Desc") or item.get("hcpcs_description"),
-            "total_services": item.get("Tot_Srvcs") or item.get("total_services"),
-            "total_beneficiaries": item.get("Tot_Benes") or item.get("total_beneficiaries"),
-            "avg_submitted_charge": item.get("Avg_Sbmtd_Chrg") or item.get("avg_submitted_charge"),
-            "avg_medicare_payment": item.get("Avg_Mdcr_Pymt_Amt") or item.get("avg_medicare_payment"),
+            "hcpcs_code": (
+                item.get("HCPCS_Cd") or item.get("Suplr_HCPCS_Cd")
+                or item.get("hcpcs_code")
+            ),
+            "hcpcs_description": (
+                item.get("HCPCS_Desc") or item.get("Suplr_HCPCS_Desc")
+                or item.get("hcpcs_description")
+            ),
+            "total_services": (
+                item.get("Tot_Srvcs") or item.get("Suplr_Tot_Srvcs")
+                or item.get("total_services")
+            ),
+            "total_beneficiaries": (
+                item.get("Tot_Benes") or item.get("Suplr_Benes")
+                or item.get("total_beneficiaries")
+            ),
+            "avg_submitted_charge": (
+                item.get("Avg_Sbmtd_Chrg") or item.get("Suplr_Avg_Sbmtd_Chrg")
+                or item.get("avg_submitted_charge")
+            ),
+            "avg_medicare_payment": (
+                item.get("Avg_Mdcr_Pymt_Amt") or item.get("Suplr_Avg_Mdcr_Pymt_Amt")
+                or item.get("avg_medicare_payment")
+            ),
         }

@@ -12,36 +12,33 @@ logger = logging.getLogger(__name__)
 
 
 class CmsPhysicianPufRecord(BaseModel):
-    """Validated record for CMS Physician PUF data."""
+    """Validated record for CMS Physician PUF data.
+
+    Field names match fetcher output (API_FIELD_MAP values).
+    Fields not present in the DB schema are accepted but not inserted.
+    """
 
     npi: str
-    provider_last_org_name: Optional[str] = None
-    provider_first_name: Optional[str] = None
-    provider_state: Optional[str] = None
-    provider_type: Optional[str] = None
-    hcpcs_code: str
+    nppes_provider_last_org_name: Optional[str] = None  # not in DB
+    nppes_provider_first_name: Optional[str] = None  # not in DB
+    nppes_provider_state: Optional[str] = None  # not in DB
+    provider_type: Optional[str] = None  # not in DB
+    hcpcs_code: Optional[str] = None
     hcpcs_description: Optional[str] = None
-    place_of_service: Optional[str] = None
-    line_service_count: Optional[float] = None
-    beneficiary_unique_count: Optional[int] = None
-    avg_medicare_allowed_amt: Optional[float] = None
-    avg_submitted_charge_amt: Optional[float] = None
-    avg_medicare_payment_amt: Optional[float] = None
-    year: int
+    place_of_service: Optional[str] = None  # not in DB
+    line_srvc_cnt: Optional[float] = None  # DB column: line_srvc_cnt
+    bene_unique_cnt: Optional[int] = None  # DB column: bene_unique_cnt
+    average_medicare_allowed_amt: Optional[float] = None  # not in DB
+    average_submitted_chrg_amt: Optional[float] = None  # not in DB
+    average_medicare_payment_amt: Optional[float] = None  # DB column: avg_medicare_payment_amt
+    year: Optional[int] = None
 
     @field_validator("npi")
     @classmethod
-    def npi_must_be_10_digits(cls, v: str) -> str:
+    def npi_must_not_be_empty(cls, v: str) -> str:
         v = v.strip()
-        if not v.isdigit() or len(v) != 10:
-            raise ValueError(f"NPI must be exactly 10 digits, got '{v}'")
-        return v
-
-    @field_validator("year")
-    @classmethod
-    def year_reasonable(cls, v: int) -> int:
-        if v < 2000 or v > 2099:
-            raise ValueError(f"Year out of expected range: {v}")
+        if not v:
+            raise ValueError("npi must not be empty")
         return v
 
 
@@ -79,6 +76,26 @@ def load_cms_physician_puf_data(
             "errors": errors[:50],
         }
 
+    # Filter out records with null PK fields — the DB requires (npi, hcpcs_code, year)
+    # but the API legitimately returns records without hcpcs_code or year
+    before_count = len(validated)
+    validated = [r for r in validated if r.hcpcs_code and r.year is not None]
+    skipped_null_pk = before_count - len(validated)
+    if skipped_null_pk:
+        logger.info(
+            "cms_physician_puf: skipped %d records with null PK fields (hcpcs_code/year)",
+            skipped_null_pk,
+        )
+
+    if not validated:
+        return {
+            "status": "success",
+            "records_inserted": 0,
+            "records_failed": len(errors),
+            "records_skipped_null_pk": skipped_null_pk,
+            "errors": errors[:50],
+        }
+
     loaded_at = datetime.utcnow()
 
     conn = psycopg2.connect(
@@ -97,18 +114,11 @@ def load_cms_physician_puf_data(
                 values = [
                     (
                         r.npi,
-                        r.provider_last_org_name,
-                        r.provider_first_name,
-                        r.provider_state,
-                        r.provider_type,
                         r.hcpcs_code,
                         r.hcpcs_description,
-                        r.place_of_service,
-                        r.line_service_count,
-                        r.beneficiary_unique_count,
-                        r.avg_medicare_allowed_amt,
-                        r.avg_submitted_charge_amt,
-                        r.avg_medicare_payment_amt,
+                        r.line_srvc_cnt,
+                        r.bene_unique_cnt,
+                        r.average_medicare_payment_amt,
                         r.year,
                         loaded_at,
                         source_file,
@@ -120,25 +130,15 @@ def load_cms_physician_puf_data(
                     cur,
                     """
                     INSERT INTO raw.cms_physician_puf (
-                        npi, provider_last_org_name, provider_first_name,
-                        provider_state, provider_type,
-                        hcpcs_code, hcpcs_description, place_of_service,
-                        line_service_count, beneficiary_unique_count,
-                        avg_medicare_allowed_amt, avg_submitted_charge_amt,
+                        npi, hcpcs_code, hcpcs_description,
+                        line_srvc_cnt, bene_unique_cnt,
                         avg_medicare_payment_amt, year,
                         _loaded_at, _source_file, _source_hash
                     ) VALUES %s
                     ON CONFLICT (npi, hcpcs_code, year) DO UPDATE SET
-                        provider_last_org_name = EXCLUDED.provider_last_org_name,
-                        provider_first_name = EXCLUDED.provider_first_name,
-                        provider_state = EXCLUDED.provider_state,
-                        provider_type = EXCLUDED.provider_type,
                         hcpcs_description = EXCLUDED.hcpcs_description,
-                        place_of_service = EXCLUDED.place_of_service,
-                        line_service_count = EXCLUDED.line_service_count,
-                        beneficiary_unique_count = EXCLUDED.beneficiary_unique_count,
-                        avg_medicare_allowed_amt = EXCLUDED.avg_medicare_allowed_amt,
-                        avg_submitted_charge_amt = EXCLUDED.avg_submitted_charge_amt,
+                        line_srvc_cnt = EXCLUDED.line_srvc_cnt,
+                        bene_unique_cnt = EXCLUDED.bene_unique_cnt,
                         avg_medicare_payment_amt = EXCLUDED.avg_medicare_payment_amt,
                         _loaded_at = EXCLUDED._loaded_at,
                         _source_file = EXCLUDED._source_file,

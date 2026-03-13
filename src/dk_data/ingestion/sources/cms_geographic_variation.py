@@ -16,11 +16,12 @@ class CmsGeographicVariationRecord(BaseModel):
 
     state: str
     county: Optional[str] = None
-    total_beneficiaries: Optional[int] = None
+    total_beneficiaries: Optional[int] = None  # mapped to DB column bene_count
     total_actual_costs: Optional[float] = None
     per_capita_costs: Optional[float] = None
-    ip_covered_stays_per_1000: Optional[float] = None
-    er_visits_per_1000: Optional[float] = None
+    ip_covered_stays_per_1000: Optional[float] = None  # accepted from fetcher, not in DB
+    er_visits_per_1000: Optional[float] = None  # accepted from fetcher, not in DB
+    year: Optional[int] = None
 
     @field_validator("state")
     @classmethod
@@ -55,6 +56,26 @@ def load_cms_geographic_variation_data(
             "errors": errors[:50],
         }
 
+    # Filter out records with null PK fields — the DB requires (state, county, year)
+    # but the API legitimately returns records without county or year
+    before_count = len(validated)
+    validated = [r for r in validated if r.county and r.year is not None]
+    skipped_null_pk = before_count - len(validated)
+    if skipped_null_pk:
+        logger.info(
+            "cms_geographic_variation: skipped %d records with null PK fields (county/year)",
+            skipped_null_pk,
+        )
+
+    if not validated:
+        return {
+            "status": "success",
+            "records_inserted": 0,
+            "records_failed": len(errors),
+            "records_skipped_null_pk": skipped_null_pk,
+            "errors": errors[:50],
+        }
+
     loaded_at = datetime.utcnow()
 
     conn = psycopg2.connect(
@@ -77,8 +98,7 @@ def load_cms_geographic_variation_data(
                         r.total_beneficiaries,
                         r.total_actual_costs,
                         r.per_capita_costs,
-                        r.ip_covered_stays_per_1000,
-                        r.er_visits_per_1000,
+                        r.year,
                         loaded_at,
                         source_file,
                         source_hash,
@@ -89,16 +109,14 @@ def load_cms_geographic_variation_data(
                     cur,
                     """
                     INSERT INTO raw.cms_geographic_variation (
-                        state, county, total_beneficiaries, total_actual_costs,
-                        per_capita_costs, ip_covered_stays_per_1000, er_visits_per_1000,
+                        state, county, bene_count, total_actual_costs,
+                        per_capita_costs, year,
                         _loaded_at, _source_file, _source_hash
                     ) VALUES %s
-                    ON CONFLICT (state, county) DO UPDATE SET
-                        total_beneficiaries = EXCLUDED.total_beneficiaries,
+                    ON CONFLICT (state, county, year) DO UPDATE SET
+                        bene_count = EXCLUDED.bene_count,
                         total_actual_costs = EXCLUDED.total_actual_costs,
                         per_capita_costs = EXCLUDED.per_capita_costs,
-                        ip_covered_stays_per_1000 = EXCLUDED.ip_covered_stays_per_1000,
-                        er_visits_per_1000 = EXCLUDED.er_visits_per_1000,
                         _loaded_at = EXCLUDED._loaded_at,
                         _source_file = EXCLUDED._source_file,
                         _source_hash = EXCLUDED._source_hash

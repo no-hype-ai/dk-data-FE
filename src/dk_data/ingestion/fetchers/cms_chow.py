@@ -165,12 +165,31 @@ class CMSCHOWFetcher(BaseFetcher):
 
     @staticmethod
     def _normalise(row: Dict[str, Any]) -> Dict[str, Any]:
-        """Extract key fields from a raw row."""
-        record: Dict[str, Any] = {}
-        for field in KEY_FIELDS:
-            value = row.get(field) or row.get(field.upper()) or row.get(field.lower())
-            record[field] = value
-        return record
+        """Extract key fields from a raw CHOW row.
+
+        The CMS API returns fields like 'CCN - BUYER', 'ORGANIZATION NAME - BUYER'.
+        """
+        return {
+            "ccn": (
+                row.get("CCN - BUYER") or row.get("ccn") or ""
+            ),
+            "previous_owner": (
+                row.get("ORGANIZATION NAME - SELLER")
+                or row.get("previous_owner")
+            ),
+            "new_owner": (
+                row.get("ORGANIZATION NAME - BUYER")
+                or row.get("new_owner")
+            ),
+            "effective_date": (
+                row.get("EFFECTIVE DATE")
+                or row.get("effective_date")
+            ),
+            "provider_type": (
+                row.get("PROVIDER TYPE TEXT - BUYER")
+                or row.get("provider_type")
+            ),
+        }
 
     def _save_and_hash(self, records: List[Dict]) -> Optional[str]:
         """Persist records to a JSON file and return its MD5 hash."""

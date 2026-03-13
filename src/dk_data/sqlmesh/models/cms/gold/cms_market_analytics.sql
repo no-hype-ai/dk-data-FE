@@ -17,7 +17,7 @@ WITH national_avg AS (
     SELECT
         AVG(per_capita_costs)                   AS avg_per_capita_costs,
         AVG(avg_chronic_prevalence)             AS avg_chronic_prevalence,
-        AVG(post_acute_utilization_rate)        AS avg_post_acute_rate
+        AVG(national_post_acute_utilization_rate) AS avg_post_acute_rate
     FROM silver.cms_geographic
 )
 
@@ -48,12 +48,12 @@ SELECT
     END                                                                 AS chronic_burden_score,
 
     -- Post-acute utilization
-    g.post_acute_utilization_rate,
+    g.national_post_acute_utilization_rate,
 
     -- Post-acute dependency ratio: normalized utilization relative to national average
     CASE
         WHEN n.avg_post_acute_rate > 0
-        THEN ROUND(g.post_acute_utilization_rate / n.avg_post_acute_rate, 4)
+        THEN ROUND(g.national_post_acute_utilization_rate / n.avg_post_acute_rate, 4)
         ELSE NULL
     END                                                                 AS post_acute_dependency_ratio,
 

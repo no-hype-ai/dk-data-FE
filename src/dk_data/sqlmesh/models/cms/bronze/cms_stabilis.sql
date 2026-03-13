@@ -1,5 +1,5 @@
 -- SQLMesh Model: Bronze CMS Stabilis IV Compatibility
--- Normalizes raw IV Drug Stability/Compatibility reference to typed Bronze columns
+-- Normalizes raw IV Drug Compatibility pairs to typed Bronze columns
 -- Part of: 016-cms-puf-datasource-integration
 
 MODEL (
@@ -9,16 +9,17 @@ MODEL (
         batch_size 500
     ),
     cron '@daily',
-    audits (not_null(columns := (drug_name, route))),
-    grain (drug_name, route)
+    audits (not_null(columns := (drug_a, drug_b))),
+    grain (drug_a, drug_b)
 );
 
 SELECT
-    UPPER(TRIM(drug_name))                      AS drug_name,
-    UPPER(TRIM(route))                          AS route,
-    UPPER(TRIM(diluent))                        AS diluent,
-    COALESCE(stability_hours, 0)::NUMERIC(6,1)  AS stability_hours,
-    UPPER(TRIM(storage_condition))              AS storage_condition,
+    UPPER(TRIM(drug_a))                         AS drug_a,
+    UPPER(TRIM(drug_b))                         AS drug_b,
+    UPPER(TRIM(compatibility))                  AS compatibility,
+    TRIM(solvent)                               AS solvent,
+    TRIM(concentration)                         AS concentration,
+    TRIM(reference)                             AS reference,
     _loaded_at,
     _source_file,
     _source_hash

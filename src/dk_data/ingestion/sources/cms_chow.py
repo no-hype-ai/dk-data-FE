@@ -28,6 +28,16 @@ class CmsChowRecord(BaseModel):
             raise ValueError("ccn must not be empty")
         return v
 
+    @property
+    def chow_id(self) -> str:
+        """Derive a synthetic PK from ccn + effective_date."""
+        return f"{self.ccn}_{self.effective_date or 'unknown'}"
+
+    @property
+    def old_owner(self) -> Optional[str]:
+        """Map fetcher field 'previous_owner' to DB column 'old_owner'."""
+        return self.previous_owner
+
 
 def load_cms_chow_data(
     records: List[Dict[str, Any]],
@@ -80,11 +90,11 @@ def load_cms_chow_data(
                 batch = validated[start : start + batch_size]
                 values = [
                     (
+                        r.chow_id,
                         r.ccn,
-                        r.previous_owner,
+                        r.old_owner,
                         r.new_owner,
                         r.effective_date,
-                        r.provider_type,
                         loaded_at,
                         source_file,
                         source_hash,
@@ -95,14 +105,14 @@ def load_cms_chow_data(
                     cur,
                     """
                     INSERT INTO raw.cms_chow (
-                        ccn, previous_owner, new_owner, effective_date,
-                        provider_type,
+                        chow_id, ccn, old_owner, new_owner, effective_date,
                         _loaded_at, _source_file, _source_hash
                     ) VALUES %s
-                    ON CONFLICT (ccn, effective_date) DO UPDATE SET
-                        previous_owner = EXCLUDED.previous_owner,
+                    ON CONFLICT (chow_id) DO UPDATE SET
+                        ccn = EXCLUDED.ccn,
+                        old_owner = EXCLUDED.old_owner,
                         new_owner = EXCLUDED.new_owner,
-                        provider_type = EXCLUDED.provider_type,
+                        effective_date = EXCLUDED.effective_date,
                         _loaded_at = EXCLUDED._loaded_at,
                         _source_file = EXCLUDED._source_file,
                         _source_hash = EXCLUDED._source_hash

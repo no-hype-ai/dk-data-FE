@@ -14,12 +14,13 @@ logger = logging.getLogger(__name__)
 class CmsOutpatientPufRecord(BaseModel):
     """Validated record for CMS Outpatient PUF data."""
 
-    ccn: str
-    hcpcs_code: str
-    hcpcs_description: Optional[str] = None
+    ccn: str  # mapped to DB column provider_id
+    hcpcs_code: str  # mapped to DB column apc_code
+    hcpcs_description: Optional[str] = None  # accepted from fetcher, not in DB
     total_services: Optional[int] = None
-    avg_est_submitted_charges: Optional[float] = None
+    avg_est_submitted_charges: Optional[float] = None  # mapped to DB column avg_estimated_payment
     avg_total_payments: Optional[float] = None
+    year: Optional[int] = None
 
     @field_validator("ccn")
     @classmethod
@@ -86,6 +87,25 @@ def load_cms_outpatient_puf_data(
             "errors": errors[:50],
         }
 
+    # Filter out records with null PK fields — the DB requires (provider_id, apc_code, year)
+    before_count = len(validated)
+    validated = [r for r in validated if r.year is not None]
+    skipped_null_pk = before_count - len(validated)
+    if skipped_null_pk:
+        logger.info(
+            "cms_outpatient_puf: skipped %d records with null PK field (year)",
+            skipped_null_pk,
+        )
+
+    if not validated:
+        return {
+            "status": "success",
+            "records_inserted": 0,
+            "records_failed": len(errors),
+            "records_skipped_null_pk": skipped_null_pk,
+            "errors": errors[:50],
+        }
+
     loaded_at = datetime.utcnow()
 
     conn = psycopg2.connect(
@@ -105,10 +125,10 @@ def load_cms_outpatient_puf_data(
                     (
                         r.ccn,
                         r.hcpcs_code,
-                        r.hcpcs_description,
                         r.total_services,
                         r.avg_est_submitted_charges,
                         r.avg_total_payments,
+                        r.year,
                         loaded_at,
                         source_file,
                         source_hash,
@@ -119,14 +139,13 @@ def load_cms_outpatient_puf_data(
                     cur,
                     """
                     INSERT INTO raw.cms_outpatient_puf (
-                        ccn, hcpcs_code, hcpcs_description, total_services,
-                        avg_est_submitted_charges, avg_total_payments,
-                        _loaded_at, _source_file, _source_hash
+                        provider_id, apc_code, total_services,
+                        avg_estimated_payment, avg_total_payments,
+                        year, _loaded_at, _source_file, _source_hash
                     ) VALUES %s
-                    ON CONFLICT (ccn, hcpcs_code) DO UPDATE SET
-                        hcpcs_description = EXCLUDED.hcpcs_description,
+                    ON CONFLICT (provider_id, apc_code, year) DO UPDATE SET
                         total_services = EXCLUDED.total_services,
-                        avg_est_submitted_charges = EXCLUDED.avg_est_submitted_charges,
+                        avg_estimated_payment = EXCLUDED.avg_estimated_payment,
                         avg_total_payments = EXCLUDED.avg_total_payments,
                         _loaded_at = EXCLUDED._loaded_at,
                         _source_file = EXCLUDED._source_file,

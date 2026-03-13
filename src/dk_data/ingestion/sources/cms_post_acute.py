@@ -14,12 +14,13 @@ logger = logging.getLogger(__name__)
 class CmsPostAcuteRecord(BaseModel):
     """Validated record for CMS post-acute care data."""
 
-    ccn: str
-    provider_name: Optional[str] = None
+    ccn: str  # mapped to DB column provider_id
+    provider_name: Optional[str] = None  # accepted from fetcher, not in DB
     provider_type: Optional[str] = None
     total_episodes: Optional[int] = None
-    avg_episode_payment: Optional[float] = None
-    readmission_rate: Optional[float] = None
+    avg_episode_payment: Optional[float] = None  # mapped to DB column avg_spending_per_episode
+    readmission_rate: Optional[float] = None  # accepted from fetcher, not in DB
+    year: Optional[int] = None
 
     @field_validator("ccn")
     @classmethod
@@ -54,6 +55,26 @@ def load_cms_post_acute_data(
             "errors": errors[:50],
         }
 
+    # Filter out records with null PK fields — the DB requires (provider_id, year)
+    # but the API legitimately returns records without year
+    before_count = len(validated)
+    validated = [r for r in validated if r.year is not None]
+    skipped_null_pk = before_count - len(validated)
+    if skipped_null_pk:
+        logger.info(
+            "cms_post_acute: skipped %d records with null PK field (year)",
+            skipped_null_pk,
+        )
+
+    if not validated:
+        return {
+            "status": "success",
+            "records_inserted": 0,
+            "records_failed": len(errors),
+            "records_skipped_null_pk": skipped_null_pk,
+            "errors": errors[:50],
+        }
+
     loaded_at = datetime.utcnow()
 
     conn = psycopg2.connect(
@@ -72,11 +93,10 @@ def load_cms_post_acute_data(
                 values = [
                     (
                         r.ccn,
-                        r.provider_name,
                         r.provider_type,
                         r.total_episodes,
                         r.avg_episode_payment,
-                        r.readmission_rate,
+                        r.year,
                         loaded_at,
                         source_file,
                         source_hash,
@@ -87,16 +107,14 @@ def load_cms_post_acute_data(
                     cur,
                     """
                     INSERT INTO raw.cms_post_acute (
-                        ccn, provider_name, provider_type, total_episodes,
-                        avg_episode_payment, readmission_rate,
+                        provider_id, provider_type, total_episodes,
+                        avg_spending_per_episode, year,
                         _loaded_at, _source_file, _source_hash
                     ) VALUES %s
-                    ON CONFLICT (ccn) DO UPDATE SET
-                        provider_name = EXCLUDED.provider_name,
+                    ON CONFLICT (provider_id, year) DO UPDATE SET
                         provider_type = EXCLUDED.provider_type,
                         total_episodes = EXCLUDED.total_episodes,
-                        avg_episode_payment = EXCLUDED.avg_episode_payment,
-                        readmission_rate = EXCLUDED.readmission_rate,
+                        avg_spending_per_episode = EXCLUDED.avg_spending_per_episode,
                         _loaded_at = EXCLUDED._loaded_at,
                         _source_file = EXCLUDED._source_file,
                         _source_hash = EXCLUDED._source_hash

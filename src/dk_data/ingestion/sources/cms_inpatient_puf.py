@@ -14,13 +14,14 @@ logger = logging.getLogger(__name__)
 class CmsInpatientPufRecord(BaseModel):
     """Validated record for CMS Inpatient PUF data."""
 
-    ccn: str
+    ccn: str  # mapped to DB column provider_id
     drg_code: str
-    drg_description: Optional[str] = None
+    drg_description: Optional[str] = None  # accepted from fetcher, not in DB
     total_discharges: Optional[int] = None
     avg_covered_charges: Optional[float] = None
     avg_total_payments: Optional[float] = None
     avg_medicare_payments: Optional[float] = None
+    year: Optional[int] = None
 
     @field_validator("ccn")
     @classmethod
@@ -87,6 +88,25 @@ def load_cms_inpatient_puf_data(
             "errors": errors[:50],
         }
 
+    # Filter out records with null PK fields — the DB requires (provider_id, drg_code, year)
+    before_count = len(validated)
+    validated = [r for r in validated if r.year is not None]
+    skipped_null_pk = before_count - len(validated)
+    if skipped_null_pk:
+        logger.info(
+            "cms_inpatient_puf: skipped %d records with null PK field (year)",
+            skipped_null_pk,
+        )
+
+    if not validated:
+        return {
+            "status": "success",
+            "records_inserted": 0,
+            "records_failed": len(errors),
+            "records_skipped_null_pk": skipped_null_pk,
+            "errors": errors[:50],
+        }
+
     loaded_at = datetime.utcnow()
 
     conn = psycopg2.connect(
@@ -106,11 +126,11 @@ def load_cms_inpatient_puf_data(
                     (
                         r.ccn,
                         r.drg_code,
-                        r.drg_description,
                         r.total_discharges,
                         r.avg_covered_charges,
                         r.avg_total_payments,
                         r.avg_medicare_payments,
+                        r.year,
                         loaded_at,
                         source_file,
                         source_hash,
@@ -121,12 +141,11 @@ def load_cms_inpatient_puf_data(
                     cur,
                     """
                     INSERT INTO raw.cms_inpatient_puf (
-                        ccn, drg_code, drg_description, total_discharges,
+                        provider_id, drg_code, total_discharges,
                         avg_covered_charges, avg_total_payments, avg_medicare_payments,
-                        _loaded_at, _source_file, _source_hash
+                        year, _loaded_at, _source_file, _source_hash
                     ) VALUES %s
-                    ON CONFLICT (ccn, drg_code) DO UPDATE SET
-                        drg_description = EXCLUDED.drg_description,
+                    ON CONFLICT (provider_id, drg_code, year) DO UPDATE SET
                         total_discharges = EXCLUDED.total_discharges,
                         avg_covered_charges = EXCLUDED.avg_covered_charges,
                         avg_total_payments = EXCLUDED.avg_total_payments,

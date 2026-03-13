@@ -6,6 +6,7 @@ categories and classes used in Medicare Part D formulary tiering.
 Source: https://www.usp.org/healthcare-professionals/usp-medicare-model-guidelines
 """
 
+import hashlib
 import logging
 import re
 from typing import Any, Dict, List, Optional
@@ -71,9 +72,9 @@ class CMSUSPFetcher(BaseFetcher):
 
             records = self._parse_html(html, max_records=max_records)
 
-            content_hash = self.calculate_hash(
+            content_hash = hashlib.md5(
                 html.encode("utf-8")[:10000]
-            ) if records else None
+            ).hexdigest() if records else None
 
             result: Dict[str, Any] = {
                 "status": "success",

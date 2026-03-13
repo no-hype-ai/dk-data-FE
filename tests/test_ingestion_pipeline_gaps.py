@@ -271,13 +271,20 @@ class TestRunIngestionHashSkip:
     @patch("dk_data.ingestion.main.get_last_content_hash")
     @patch("dk_data.ingestion.main.get_checkpoint_offset", return_value=0)
     @patch("dk_data.ingestion.main.get_conditional_headers", return_value={"etag": None, "last_modified": None})
+    @patch("dk_data.ingestion.main.get_cursor")
     def test_hash_skip_when_unchanged(
-        self, mock_cond, mock_ckpt, mock_hash, mock_log
+        self, mock_cursor, mock_cond, mock_ckpt, mock_hash, mock_log
     ):
         from dk_data.ingestion.main import run_ingestion
 
         # Previous hash matches current fetch hash
         mock_hash.return_value = "deadbeef1234"
+
+        # Mock the advisory-lock cursor to return the matching hash
+        mock_cur = MagicMock()
+        mock_cur.fetchone.return_value = ("deadbeef1234",)
+        mock_cursor.return_value.__enter__ = MagicMock(return_value=mock_cur)
+        mock_cursor.return_value.__exit__ = MagicMock(return_value=False)
 
         mock_fetcher = MagicMock()
         mock_fetcher.return_value.fetch.return_value = {

@@ -232,8 +232,9 @@ class TestDrugBankFetchWithMock:
         xml_path = tmp_path / "drugbank_full.xml"
         xml_path.write_text(SAMPLE_DRUGBANK_XML)
 
-        # Mock the download to write our sample XML
-        with patch.object(fetcher, "_download_drugbank_xml", return_value=str(xml_path)):
+        # Mock both _resolve_local_file (to skip real file) and _download_drugbank_xml
+        with patch.object(fetcher, "_resolve_local_file", return_value=None), \
+             patch.object(fetcher, "_download_drugbank_xml", return_value=str(xml_path)):
             result = fetcher.fetch()
 
         assert result["status"] == "success"
@@ -241,13 +242,30 @@ class TestDrugBankFetchWithMock:
         assert len(result["records"]) == 2
         assert result["hash"] is not None
 
-    def test_fetch_fails_without_api_key(self, tmp_path):
-        """fetch() returns failed when no API key is set."""
+    def test_fetch_from_local_file(self, tmp_path):
+        """fetch() loads from a local XML file when available."""
         with patch.dict(os.environ, {}, clear=True):
             os.environ.pop("DRUGBANK_API_KEY", None)
             fetcher = DrugBankFetcher(data_dir=str(tmp_path))
 
-        result = fetcher.fetch()
+        xml_path = tmp_path / "drugbank_local.xml"
+        xml_path.write_text(SAMPLE_DRUGBANK_XML)
+
+        result = fetcher.fetch(file_path=str(xml_path))
+
+        assert result["status"] == "success"
+        assert result["record_count"] == 2
+        assert len(result["records"]) == 2
+
+    def test_fetch_fails_without_api_key(self, tmp_path):
+        """fetch() returns failed when no API key and no local file."""
+        with patch.dict(os.environ, {}, clear=True):
+            os.environ.pop("DRUGBANK_API_KEY", None)
+            fetcher = DrugBankFetcher(data_dir=str(tmp_path))
+
+        # Mock _resolve_local_file to ensure no local file is found
+        with patch.object(fetcher, "_resolve_local_file", return_value=None):
+            result = fetcher.fetch()
 
         assert result["status"] == "failed"
         assert "DRUGBANK_API_KEY" in result["error"]
@@ -258,11 +276,12 @@ class TestDrugBankFetchWithMock:
         with patch.dict(os.environ, {"DRUGBANK_API_KEY": "test-key"}):
             fetcher = DrugBankFetcher(data_dir=str(tmp_path))
 
-        with patch.object(
-            fetcher,
-            "_download_drugbank_xml",
-            side_effect=Exception("Connection refused"),
-        ):
+        with patch.object(fetcher, "_resolve_local_file", return_value=None), \
+             patch.object(
+                fetcher,
+                "_download_drugbank_xml",
+                side_effect=Exception("Connection refused"),
+             ):
             result = fetcher.fetch()
 
         assert result["status"] == "failed"
@@ -277,7 +296,8 @@ class TestDrugBankFetchWithMock:
         xml_path = tmp_path / "drugbank_full.xml"
         xml_path.write_text(empty_xml)
 
-        with patch.object(fetcher, "_download_drugbank_xml", return_value=str(xml_path)):
+        with patch.object(fetcher, "_resolve_local_file", return_value=None), \
+             patch.object(fetcher, "_download_drugbank_xml", return_value=str(xml_path)):
             result = fetcher.fetch()
 
         assert result["status"] == "success"

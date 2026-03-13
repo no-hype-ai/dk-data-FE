@@ -3,10 +3,16 @@
 Feature: 011-datasource-integration
 Task: Tier 4 CI source — EMA regulatory decisions
 
-Fetches CHMP opinions, EPAR documents, and safety signals from the
-European Medicines Agency public API.
+Fetches medicines data from the European Medicines Agency official
+JSON data files (updated twice daily at 06:00 and 18:00 CET).
 
-Source: https://www.ema.europa.eu/en/medicines
+The EMA website has antibot protection on its HTML pages, so we use
+the official bulk JSON data endpoints instead.
+
+Sources:
+- Medicines: https://www.ema.europa.eu/en/documents/report/medicines-output-medicines_json-report_en.json
+- Safety (DHPC): https://www.ema.europa.eu/en/documents/report/dhpc-output-json-report_en.json
+- Orphan designations: https://www.ema.europa.eu/en/documents/report/medicines-output-orphan_designations-json-report_en.json
 """
 
 import hashlib
@@ -18,25 +24,26 @@ from .base import BaseFetcher
 
 logger = logging.getLogger(__name__)
 
+# Official EMA JSON data file URLs (bulk dumps, updated twice daily)
+EMA_MEDICINES_JSON = (
+    "https://www.ema.europa.eu/en/documents/report/"
+    "medicines-output-medicines_json-report_en.json"
+)
+EMA_SAFETY_JSON = (
+    "https://www.ema.europa.eu/en/documents/report/"
+    "dhpc-output-json-report_en.json"
+)
+EMA_ORPHAN_JSON = (
+    "https://www.ema.europa.eu/en/documents/report/"
+    "medicines-output-orphan_designations-json-report_en.json"
+)
+
 
 class EMARegulatoryCIFetcher(BaseFetcher):
     """Fetcher for EMA regulatory decisions (CI tier)."""
 
     SOURCE_NAME = "ema_regulatory"
-    BASE_URL = "https://www.ema.europa.eu/en/medicines"
-
-    # EMA public medicines API — primary endpoint
-    # Note: The EMA website has antibot protection on many endpoints.
-    # The open data portal at https://www.ema.europa.eu/en/medicines/download-medicine-data
-    # provides CSV/Excel downloads but no stable JSON API.
-    # We try multiple endpoints and gracefully handle failures.
-    EMA_API_BASE = "https://www.ema.europa.eu/en/medicines/field_ema_web_categories"
-
-    # Known EMA API endpoints for structured data
-    MEDICINES_API = "https://www.ema.europa.eu/en/medicines/field_ema_web_categories%253Ahuman_use"
-
-    # Fallback: EMA open data endpoint (may return HTML instead of JSON)
-    EMA_OPEN_DATA_API = "https://www.ema.europa.eu/en/medicines"
+    BASE_URL = "https://www.ema.europa.eu"
 
     # Decision types we track
     VALID_DECISION_TYPES = frozenset({
@@ -55,33 +62,22 @@ class EMARegulatoryCIFetcher(BaseFetcher):
         "sunset_clause",
     })
 
-    # Document types fetched
-    DOCUMENT_TYPES = ["chmp_opinion", "epar", "safety_signal"]
-
-    # Default page size
-    PAGE_SIZE = 50
-
     def get_latest_url(self) -> str:
-        """Get URL for the EMA medicines API endpoint."""
-        return self.MEDICINES_API
+        """Get URL for the EMA medicines JSON data file."""
+        return EMA_MEDICINES_JSON
 
     def fetch(self, **kwargs) -> Dict[str, Any]:
-        """
-        Fetch recent EMA regulatory decisions.
+        """Fetch recent EMA regulatory decisions from official JSON data files.
 
         Keyword Args:
-            days_back: Number of days to look back (default: 7).
-            max_pages: Maximum number of pages to fetch (default: 20).
+            days_back: Number of days to look back (default: 90).
+            max_records: Optional cap on returned records.
 
         Returns:
-            Dictionary with:
-            - status: 'success' or 'failed'
-            - records: List of regulatory decision dicts
-            - hash: SHA-256 content hash
-            - error: Error message (if failed)
+            Dictionary with status, records, hash, error.
         """
-        days_back = kwargs.get("days_back", 7)
-        max_pages = kwargs.get("max_pages", 20)
+        days_back = kwargs.get("days_back", 90)
+        max_records: Optional[int] = kwargs.get("max_records") or self.params.get("max_records")
 
         try:
             logger.info(
@@ -90,12 +86,13 @@ class EMARegulatoryCIFetcher(BaseFetcher):
 
             all_records: List[Dict[str, Any]] = []
 
-            # Fetch each document type
-            for doc_type in self.DOCUMENT_TYPES:
-                records = self._fetch_document_type(
-                    doc_type, days_back=days_back, max_pages=max_pages
-                )
-                all_records.extend(records)
+            # Fetch medicines data (CHMP opinions + EPARs)
+            medicines_records = self._fetch_medicines_json(days_back=days_back)
+            all_records.extend(medicines_records)
+
+            # Fetch safety signals (DHPC)
+            safety_records = self._fetch_safety_json(days_back=days_back)
+            all_records.extend(safety_records)
 
             # Deduplicate by document_id
             seen_ids: set = set()
@@ -106,7 +103,9 @@ class EMARegulatoryCIFetcher(BaseFetcher):
                     seen_ids.add(doc_id)
                     unique_records.append(record)
 
-            # Compute content hash
+            if max_records:
+                unique_records = unique_records[:max_records]
+
             content_hash = self._compute_hash(unique_records)
 
             result: Dict[str, Any] = {
@@ -136,155 +135,176 @@ class EMARegulatoryCIFetcher(BaseFetcher):
     # Internal helpers
     # ------------------------------------------------------------------
 
-    def _fetch_document_type(
-        self,
-        doc_type: str,
-        *,
-        days_back: int = 7,
-        max_pages: int = 20,
-    ) -> List[Dict[str, Any]]:
-        """
-        Fetch paginated results for a single EMA document type.
-
-        Args:
-            doc_type: One of DOCUMENT_TYPES.
-            days_back: Look-back window in days.
-            max_pages: Safety limit for pagination.
-
-        Returns:
-            List of normalised record dicts.
-        """
+    def _fetch_medicines_json(self, *, days_back: int = 90) -> List[Dict[str, Any]]:
+        """Fetch and parse the EMA medicines JSON data file."""
         records: List[Dict[str, Any]] = []
-        since_date = (
-            datetime.now(timezone.utc) - timedelta(days=days_back)
-        ).strftime("%Y-%m-%d")
-        page = 0
+        since_date = datetime.now(timezone.utc) - timedelta(days=days_back)
 
-        while page < max_pages:
-            params = {
-                "type": doc_type,
-                "date_from": since_date,
-                "page": page,
-                "page_size": self.PAGE_SIZE,
-            }
+        try:
+            logger.info("Downloading EMA medicines JSON from %s", EMA_MEDICINES_JSON)
+            resp = self.session.get(EMA_MEDICINES_JSON, timeout=120)
+            resp.raise_for_status()
+            data = resp.json()
 
-            try:
-                data = self.fetch_json(self.get_latest_url(), params=params)
-            except Exception as e:
-                error_str = str(e)
-                if "403" in error_str or "401" in error_str or "cloudflare" in error_str.lower():
-                    logger.warning(
-                        "EMA API blocked by antibot protection for %s page %d: %s. "
-                        "The EMA website does not expose a stable public JSON API. "
-                        "Consider using the EMA open data CSV downloads instead.",
-                        doc_type,
-                        page,
-                        e,
-                    )
-                else:
-                    logger.warning(
-                        "EMA API request failed for %s page %d: %s",
-                        doc_type,
-                        page,
-                        e,
-                    )
-                break
-
-            items = self._extract_items(data)
-            if not items:
-                break
+            items = data.get("data", data) if isinstance(data, dict) else data
+            if not isinstance(items, list):
+                logger.warning("EMA medicines JSON: unexpected format")
+                return []
 
             for item in items:
-                normalised = self._normalise_record(item, doc_type)
-                if normalised:
-                    records.append(normalised)
+                record = self._normalise_medicine(item)
+                if not record:
+                    continue
 
-            # Stop when we receive fewer items than the page size
-            if len(items) < self.PAGE_SIZE:
-                break
+                # Filter by date if available
+                decision_date = record.get("decision_date")
+                if decision_date:
+                    try:
+                        dt = datetime.strptime(decision_date, "%Y-%m-%d").replace(tzinfo=timezone.utc)
+                        if dt < since_date:
+                            continue
+                    except ValueError:
+                        pass
 
-            page += 1
+                records.append(record)
 
-        logger.info(
-            "Fetched %d %s records from EMA", len(records), doc_type
-        )
+        except Exception as e:
+            logger.warning("EMA medicines JSON download failed: %s", e)
+
+        logger.info("Fetched %d medicine records from EMA JSON", len(records))
+        return records
+
+    def _fetch_safety_json(self, *, days_back: int = 90) -> List[Dict[str, Any]]:
+        """Fetch and parse the EMA safety (DHPC) JSON data file."""
+        records: List[Dict[str, Any]] = []
+        since_date = datetime.now(timezone.utc) - timedelta(days=days_back)
+
+        try:
+            logger.info("Downloading EMA safety JSON from %s", EMA_SAFETY_JSON)
+            resp = self.session.get(EMA_SAFETY_JSON, timeout=120)
+            resp.raise_for_status()
+            data = resp.json()
+
+            items = data.get("data", data) if isinstance(data, dict) else data
+            if not isinstance(items, list):
+                logger.warning("EMA safety JSON: unexpected format")
+                return []
+
+            for item in items:
+                record = self._normalise_safety(item)
+                if not record:
+                    continue
+
+                decision_date = record.get("decision_date")
+                if decision_date:
+                    try:
+                        dt = datetime.strptime(decision_date, "%Y-%m-%d").replace(tzinfo=timezone.utc)
+                        if dt < since_date:
+                            continue
+                    except ValueError:
+                        pass
+
+                records.append(record)
+
+        except Exception as e:
+            logger.warning("EMA safety JSON download failed: %s", e)
+
+        logger.info("Fetched %d safety records from EMA JSON", len(records))
         return records
 
     @staticmethod
-    def _extract_items(data: Any) -> List[Dict]:
-        """
-        Extract the list of items from an EMA API response.
-
-        The EMA API may return items under different keys depending on the
-        endpoint version.
-        """
-        if isinstance(data, list):
-            return data
-
-        if isinstance(data, dict):
-            for key in ("results", "data", "items", "content"):
-                if key in data and isinstance(data[key], list):
-                    return data[key]
-
-        return []
-
-    def _normalise_record(
-        self, item: Dict[str, Any], doc_type: str
-    ) -> Optional[Dict[str, Any]]:
-        """
-        Map a raw EMA API item to the raw.ema_regulatory schema.
-
-        Returns None when the item lacks a usable document ID.
-        """
-        document_id = (
-            item.get("id")
-            or item.get("document_id")
-            or item.get("medicine_id")
-            or item.get("product_number")
+    def _normalise_medicine(item: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+        """Normalize an EMA medicines JSON record."""
+        product_name = (
+            item.get("name_of_medicine")
+            or item.get("medicine_name")
+            or item.get("product_name")
         )
-        if not document_id:
+        if not product_name:
             return None
 
-        document_id = str(document_id).strip()
+        # Use medicine name + active substance as document_id
+        active_substance = (
+            item.get("active_substance")
+            or item.get("inn")
+            or item.get("active_ingredients")
+        )
+        document_id = f"ema-{hashlib.md5((product_name + str(active_substance)).encode()).hexdigest()[:12]}"
 
-        # Parse decision date from multiple possible fields
+        # Parse the most relevant date
         decision_date = (
-            item.get("decision_date")
-            or item.get("date")
+            item.get("european_commission_decision_date")
+            or item.get("marketing_authorisation_date")
             or item.get("revision_date")
+            or item.get("date_of_opinion")
         )
         if decision_date:
-            decision_date = str(decision_date)[:10]  # YYYY-MM-DD
+            decision_date = str(decision_date)[:10]
 
-        # Normalise decision_type
-        raw_decision_type = str(
-            item.get("decision_type")
-            or item.get("type")
+        # Determine decision type from medicine_status or category
+        raw_status = str(
+            item.get("medicine_status")
+            or item.get("authorisation_status")
             or item.get("category")
             or ""
         ).lower().replace(" ", "_").replace("-", "_")
 
-        decision_type: Optional[str] = (
-            raw_decision_type if raw_decision_type in self.VALID_DECISION_TYPES else None
-        )
+        decision_type = None
+        if "authorised" in raw_status or "authorized" in raw_status:
+            decision_type = "authorisation"
+        elif "withdrawn" in raw_status:
+            decision_type = "withdrawal"
+        elif "suspended" in raw_status:
+            decision_type = "suspension"
+        elif "refused" in raw_status:
+            decision_type = "withdrawal"
 
         return {
             "document_id": document_id,
-            "document_type": doc_type,
-            "product_name": item.get("product_name") or item.get("name"),
-            "active_substance": (
-                item.get("active_substance")
-                or item.get("inn")
-                or item.get("active_ingredients")
-            ),
+            "document_type": "epar",
+            "product_name": product_name,
+            "active_substance": active_substance,
             "therapeutic_area": (
-                item.get("therapeutic_area")
-                or item.get("atc_code")
+                item.get("therapeutic_area_mesh")
+                or item.get("therapeutic_area")
+                or item.get("atc_code_human")
             ),
             "decision_date": decision_date,
             "decision_type": decision_type,
-            "document_url": item.get("url") or item.get("document_url"),
-            "summary": item.get("summary") or item.get("description"),
+            "document_url": item.get("url") or item.get("ema_url"),
+            "summary": item.get("condition_indication"),
+        }
+
+    @staticmethod
+    def _normalise_safety(item: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+        """Normalize an EMA safety/DHPC JSON record."""
+        product_name = (
+            item.get("name_of_medicine")
+            or item.get("medicine_name")
+            or item.get("product_name")
+        )
+        if not product_name:
+            return None
+
+        document_id = f"ema-dhpc-{hashlib.md5(product_name.encode()).hexdigest()[:12]}"
+
+        decision_date = (
+            item.get("date_of_letter")
+            or item.get("date")
+        )
+        if decision_date:
+            decision_date = str(decision_date)[:10]
+
+        return {
+            "document_id": document_id,
+            "document_type": "safety_signal",
+            "product_name": product_name,
+            "active_substance": item.get("active_substance"),
+            "therapeutic_area": item.get("therapeutic_area"),
+            "decision_date": decision_date,
+            "decision_type": None,
+            "document_url": item.get("url"),
+            "summary": item.get("description") or item.get("title"),
         }
 
     @staticmethod

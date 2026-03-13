@@ -56,29 +56,36 @@ spending_b AS (
     GROUP BY hcpcs_code, hcpcs_description
 ),
 
+-- Formulary coverage: join to NDC via drug_name ≈ nonproprietary_name
+-- (CMS formulary is keyed by rxcui, not NDC; drug_name provides the crosswalk)
 formulary_coverage AS (
     SELECT
-        ndc,
-        COUNT(DISTINCT formulary_id)                AS formulary_count,
+        n.ndc,
+        COUNT(DISTINCT f.formulary_id)              AS formulary_count,
         ROUND(
-            COUNT(DISTINCT formulary_id)::NUMERIC /
+            COUNT(DISTINCT f.formulary_id)::NUMERIC /
             NULLIF((SELECT COUNT(DISTINCT formulary_id) FROM bronze.cms_formulary), 0),
             4
         )                                           AS formulary_coverage_pct,
-        ROUND(AVG(tier_level)::NUMERIC, 1)          AS avg_tier_level
-    FROM bronze.cms_formulary
-    GROUP BY ndc
+        ROUND(AVG(NULLIF(f.tier_level, '')::NUMERIC), 1) AS avg_tier_level
+    FROM bronze.cms_ndc n
+    INNER JOIN bronze.cms_formulary f
+        ON UPPER(TRIM(f.drug_name)) = n.nonproprietary_name
+    GROUP BY n.ndc
 ),
 
--- Deduplicate USP: one category per NDC (alphabetically first)
+-- USP classification: join via drug_names (comma-separated list) matching nonproprietary_name
+-- Deduplicate to one category per NDC (alphabetically first)
 usp_lookup AS (
-    SELECT DISTINCT ON (ndc)
-        ndc,
-        usp_category,
-        usp_class
-    FROM bronze.cms_usp
-    WHERE ndc IS NOT NULL
-    ORDER BY ndc, usp_category, usp_class
+    SELECT DISTINCT ON (n.ndc)
+        n.ndc,
+        u.usp_category,
+        u.usp_class
+    FROM bronze.cms_ndc n
+    INNER JOIN bronze.cms_usp u
+        ON POSITION(n.nonproprietary_name IN UPPER(u.drug_names)) > 0
+    WHERE n.nonproprietary_name IS NOT NULL
+    ORDER BY n.ndc, u.usp_category, u.usp_class
 )
 
 SELECT

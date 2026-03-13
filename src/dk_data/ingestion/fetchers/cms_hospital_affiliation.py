@@ -1,11 +1,12 @@
 """CMS Hospital Affiliation Fetcher.
 
-Fetches hospital affiliation data from the CMS Provider Data API.
-Maps relationships between hospitals and affiliated facilities.
+Fetches facility affiliation data from the CMS Provider Data API.
+Maps relationships between providers and affiliated facilities.
 
 Feature: 016-cms-puf-datasource-integration (Phase 3)
 
-Source: https://data.cms.gov/provider-data/dataset/hospital-affiliations
+Source: https://data.cms.gov/provider-data/dataset/27ea-46a8
+API: https://data.cms.gov/provider-data/api/1/datastore/query/27ea-46a8/0
 """
 
 import logging
@@ -16,12 +17,17 @@ from .base import BaseFetcher
 
 logger = logging.getLogger(__name__)
 
-# Key output fields
+# Key output fields — mapped from CMS Provider Data API column names
 KEY_FIELDS = [
-    "ccn",
-    "affiliated_ccn",
-    "affiliation_type",
-    "effective_date",
+    "npi",
+    "ind_pac_id",
+    "provider_last_name",
+    "provider_first_name",
+    "provider_middle_name",
+    "suff",
+    "facility_type",
+    "facility_affiliations_certification_number",
+    "facility_type_certification_number",
 ]
 
 # Pagination defaults
@@ -30,26 +36,17 @@ MAX_PAGES = 200
 
 
 class CMSHospitalAffiliationFetcher(BaseFetcher):
-    """Fetcher for CMS Hospital Affiliation data."""
+    """Fetcher for CMS Facility Affiliation data."""
 
     SOURCE_NAME = "cms_hospital_affiliation"
-    BASE_URL = "https://data.cms.gov/provider-data/dataset/hospital-affiliations"
-
-    # Provider Data API endpoints — try multiple known formats
-    # The datastore query endpoint may not exist for this dataset.
-    # CMS Provider Data API uses different URL patterns depending on the dataset.
-    API_ENDPOINTS = [
-        "https://data.cms.gov/provider-data/api/1/datastore/query/hospital-affiliations/0",
-        "https://data.cms.gov/provider-data/api/1/datastore/sql",
-        "https://data.cms.gov/data-api/v1/dataset/hospital-affiliations/data",
-    ]
+    BASE_URL = "https://data.cms.gov/provider-data/api/1/datastore/query/27ea-46a8/0"
 
     def get_latest_url(self) -> str:
-        """Return the API endpoint for hospital affiliation data."""
-        return f"{self.API_ENDPOINTS[0]}?limit={DEFAULT_PAGE_SIZE}&offset=0"
+        """Return the API endpoint for facility affiliation data."""
+        return f"{self.BASE_URL}?limit={DEFAULT_PAGE_SIZE}&offset=0"
 
     def fetch(self, **kwargs) -> Dict[str, Any]:
-        """Fetch hospital affiliation records via JSON API.
+        """Fetch facility affiliation records via JSON API.
 
         Keyword Args:
             max_records: Optional cap on returned records.
@@ -92,56 +89,32 @@ class CMSHospitalAffiliationFetcher(BaseFetcher):
         max_records: Optional[int] = None,
         resume_offset: int = 0,
     ) -> List[Dict[str, Any]]:
-        """Page through the hospital affiliation API.
-
-        Tries multiple CMS API endpoint formats since hospital affiliations
-        may not be available under the standard datastore query path.
+        """Page through the facility affiliation API.
 
         Args:
             max_records: Optional record cap.
+            resume_offset: Offset to resume from.
 
         Returns:
             List of normalised record dicts.
         """
-        # Try each endpoint until one returns data
-        for endpoint in self.API_ENDPOINTS:
-            records = self._try_endpoint(endpoint, max_records=max_records, resume_offset=resume_offset)
-            if records:
-                return records
-
-        logger.warning(
-            "Hospital Affiliation: all API endpoints returned empty results. "
-            "This dataset may not have a separate API endpoint. "
-            "Tried endpoints: %s",
-            self.API_ENDPOINTS,
-        )
-        return []
-
-    def _try_endpoint(
-        self,
-        endpoint: str,
-        max_records: Optional[int] = None,
-        resume_offset: int = 0,
-    ) -> List[Dict[str, Any]]:
-        """Try a single endpoint with pagination."""
         records: List[Dict[str, Any]] = []
         offset = resume_offset
         page_size = DEFAULT_PAGE_SIZE
 
         while True:
-            params: Dict[str, Any] = {"limit": page_size, "offset": offset, "size": page_size}
-            logger.debug("Fetching Hospital Affiliation from %s offset=%d", endpoint, offset)
+            params: Dict[str, Any] = {"limit": page_size, "offset": offset}
+            logger.debug("Fetching Hospital Affiliation offset=%d", offset)
 
             self._last_offset = offset
             try:
-                data = self.fetch_json(endpoint, params=params)
+                data = self.fetch_json(self.BASE_URL, params=params)
             except Exception as exc:
-                logger.debug("Hospital Affiliation endpoint %s failed: %s", endpoint, exc)
+                logger.warning("Hospital Affiliation fetch failed at offset %d: %s", offset, exc)
                 break
 
             page_records = data.get("results", []) if isinstance(data, dict) else data
             if isinstance(data, dict) and not page_records:
-                # Also try 'data' key
                 page_records = data.get("data", [])
 
             if not page_records:
@@ -165,7 +138,7 @@ class CMSHospitalAffiliationFetcher(BaseFetcher):
                 break
 
         if records:
-            logger.info("Fetched %d Hospital Affiliation records from %s", len(records), endpoint)
+            logger.info("Fetched %d Hospital Affiliation records", len(records))
         return records
 
     @staticmethod

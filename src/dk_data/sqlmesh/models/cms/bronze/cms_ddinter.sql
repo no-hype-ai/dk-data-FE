@@ -16,7 +16,8 @@ MODEL (
 SELECT
     UPPER(TRIM(drug_a))                         AS drug_a,
     UPPER(TRIM(drug_b))                         AS drug_b,
-    UPPER(TRIM(interaction_level))              AS interaction_level,
+    UPPER(TRIM(interaction_type))               AS interaction_type,
+    UPPER(TRIM(severity))                       AS severity,
     TRIM(description)                           AS description,
     _loaded_at,
     _source_file,

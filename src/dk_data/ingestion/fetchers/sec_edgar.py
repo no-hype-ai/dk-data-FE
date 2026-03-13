@@ -4,8 +4,8 @@ Feature: 011-datasource-integration
 Task: T070-T072 — SEC EDGAR pharmaceutical filings
 
 Fetches pharmaceutical company SEC filings (10-K, 10-Q, 8-K) from
-the EDGAR full-text search API. Filters by SIC codes 2830-2836
-(pharmaceutical preparations).
+the EDGAR full-text search API (EFTS). Uses the `forms` parameter
+for form-type filtering and `q` for full-text queries.
 
 Source: https://efts.sec.gov/LATEST/search-index
 Rate limit: 10 requests per second (SEC fair-access policy)
@@ -46,9 +46,6 @@ class SECEdgarFetcher(BaseFetcher):
 
     # EDGAR full-text search API
     SEARCH_API = "https://efts.sec.gov/LATEST/search-index"
-
-    # EDGAR company search
-    COMPANY_SEARCH_API = "https://www.sec.gov/cgi-bin/browse-edgar"
 
     # EDGAR submissions API (structured JSON)
     SUBMISSIONS_API = "https://data.sec.gov/submissions"
@@ -198,7 +195,10 @@ class SECEdgarFetcher(BaseFetcher):
         days_back: int = 7,
         max_records: int = 5000,
     ) -> List[Dict[str, Any]]:
-        """Search EDGAR for filings of a specific type."""
+        """Search EDGAR for filings of a specific type.
+
+        Uses the `forms` parameter for form-type filtering (not q=formType:).
+        """
         records: List[Dict[str, Any]] = []
         date_from = (datetime.utcnow() - timedelta(days=days_back)).strftime("%Y-%m-%d")
         date_to = datetime.utcnow().strftime("%Y-%m-%d")
@@ -208,7 +208,8 @@ class SECEdgarFetcher(BaseFetcher):
         while len(records) < max_records:
             try:
                 params = {
-                    "q": f'formType:"{filing_type}"',
+                    "q": "pharmaceutical",
+                    "forms": filing_type,
                     "dateRange": "custom",
                     "startdt": date_from,
                     "enddt": date_to,
@@ -272,9 +273,9 @@ class SECEdgarFetcher(BaseFetcher):
         source = hit.get("_source", hit)
 
         accession_number = (
-            source.get("accession_number")
+            source.get("adsh")
+            or source.get("accession_number")
             or source.get("accession_no")
-            or source.get("adsh")
             or hit.get("_id")
         )
         if not accession_number:
@@ -282,23 +283,29 @@ class SECEdgarFetcher(BaseFetcher):
 
         accession_number = str(accession_number).strip()
 
-        # Company info
-        company_name = (
-            source.get("company_name")
-            or source.get("entity_name")
-            or source.get("display_names", [None])[0]
-            if isinstance(source.get("display_names"), list)
-            else source.get("company_name")
-        )
+        # Company info — handle both string and array fields
+        display_names = source.get("display_names")
+        if isinstance(display_names, list) and display_names:
+            company_name = display_names[0]
+        else:
+            company_name = (
+                source.get("company_name")
+                or source.get("entity_name")
+            )
 
-        cik = source.get("cik") or source.get("entity_id")
-        if cik:
-            cik = str(cik).strip()
+        # CIK — handle array format
+        ciks = source.get("ciks")
+        if isinstance(ciks, list) and ciks:
+            cik = str(ciks[0]).strip()
+        else:
+            cik = source.get("cik") or source.get("entity_id")
+            if cik:
+                cik = str(cik).strip()
 
         # Filing date
         filing_date = (
-            source.get("filing_date")
-            or source.get("file_date")
+            source.get("file_date")
+            or source.get("filing_date")
             or source.get("date_filed")
         )
         if filing_date:
@@ -307,7 +314,6 @@ class SECEdgarFetcher(BaseFetcher):
         # Document URL
         document_url = source.get("file_url") or source.get("document_url")
         if not document_url and accession_number and cik:
-            # Construct URL from accession number
             acc_clean = accession_number.replace("-", "")
             document_url = (
                 f"https://www.sec.gov/Archives/edgar/data/{cik}/{acc_clean}/"
@@ -320,8 +326,12 @@ class SECEdgarFetcher(BaseFetcher):
             or source.get("form_name")
         )
 
-        # SIC code (for pharma filtering)
-        sic = source.get("sic") or source.get("assigned_sic")
+        # SIC code — handle array format (sics)
+        sics = source.get("sics")
+        if isinstance(sics, list) and sics:
+            sic = str(sics[0])
+        else:
+            sic = source.get("sic") or source.get("assigned_sic")
 
         return {
             "accession_number": accession_number,

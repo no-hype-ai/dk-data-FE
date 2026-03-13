@@ -7,6 +7,7 @@ broken down by state and county.
 Source: https://data.cms.gov/summary-statistics-on-use-and-payments/medicare-geographic-comparisons
 """
 
+import hashlib
 import logging
 from typing import Any, Dict, List, Optional
 
@@ -71,9 +72,9 @@ class CMSGeographicVariationFetcher(BaseFetcher):
                     records = records[:max_records]
                     break
 
-            content_hash = self.calculate_hash(
+            content_hash = hashlib.md5(
                 str(len(records)).encode()
-            ) if records else None
+            ).hexdigest() if records else None
 
             result: Dict[str, Any] = {
                 "status": "success",
@@ -98,16 +99,35 @@ class CMSGeographicVariationFetcher(BaseFetcher):
     @staticmethod
     def _normalise(item: Dict[str, Any]) -> Optional[Dict[str, Any]]:
         """Extract key fields from a geographic variation record."""
-        state = item.get("State") or item.get("state", "")
+        state = (
+            item.get("BENE_GEO_DESC") or item.get("State")
+            or item.get("state", "")
+        )
         if not state:
             return None
 
         return {
             "state": state,
-            "county": item.get("County") or item.get("county"),
-            "total_beneficiaries": item.get("Benes_Total") or item.get("total_beneficiaries"),
-            "total_actual_costs": item.get("Actual_Per_Capita_Costs") or item.get("total_actual_costs"),
-            "per_capita_costs": item.get("Per_Capita_Costs") or item.get("per_capita_costs"),
-            "ip_covered_stays_per_1000": item.get("IP_Cvrd_Stays_Per_1000") or item.get("ip_covered_stays_per_1000"),
-            "er_visits_per_1000": item.get("ER_Visits_Per_1000") or item.get("er_visits_per_1000"),
+            "county": item.get("BENE_GEO_CD") or item.get("County") or item.get("county"),
+            "total_beneficiaries": (
+                item.get("BENES_FFS_CNT") or item.get("Benes_Total")
+                or item.get("total_beneficiaries")
+            ),
+            "total_actual_costs": (
+                item.get("TOT_MDCR_STDZD_PYMT_AMT") or item.get("Actual_Per_Capita_Costs")
+                or item.get("total_actual_costs")
+            ),
+            "per_capita_costs": (
+                item.get("PER_CAPITA_MDCR_STDZD_PYMT_AMT") or item.get("Per_Capita_Costs")
+                or item.get("per_capita_costs")
+            ),
+            "ip_covered_stays_per_1000": (
+                item.get("IP_CVRD_STAYS_PER_1000_BENES") or item.get("IP_Cvrd_Stays_Per_1000")
+                or item.get("ip_covered_stays_per_1000")
+            ),
+            "er_visits_per_1000": (
+                item.get("ER_VISITS_PER_1000_BENES") or item.get("ER_Visits_Per_1000")
+                or item.get("er_visits_per_1000")
+            ),
+            "year": item.get("YEAR") or item.get("year"),
         }
