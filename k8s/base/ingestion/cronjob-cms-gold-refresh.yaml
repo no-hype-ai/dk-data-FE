@@ -19,11 +19,27 @@ spec:
       backoffLimit: 2
       activeDeadlineSeconds: 3600
       template:
+        metadata:
+          labels:
+            app: cms-gold-refresh
+            app.kubernetes.io/component: batch-job
+            app.kubernetes.io/part-of: dk-data
         spec:
           restartPolicy: OnFailure
+          imagePullSecrets:
+            - name: ghcr-credentials
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 1000
+            fsGroup: 1000
           containers:
             - name: cms-gold-refresh
               image: ghcr.io/data-kinetic/dk-data-fe/job-trigger:main-5f46ed1
+              securityContext:
+                allowPrivilegeEscalation: false
+                readOnlyRootFilesystem: true
+                capabilities:
+                  drop: ["ALL"]
               command:
                 - /bin/sh
                 - -c
@@ -37,7 +53,7 @@ spec:
                     name: dk-data-secrets
               env:
                 - name: OTEL_EXPORTER_OTLP_ENDPOINT
-                  value: "http://otel-collector.observability.svc.cluster.local:4317"
+                  value: "http://alloy.infra.svc.cluster.local:4317"
                 - name: OTEL_SERVICE_NAME
                   value: "dk-data-cms-gold-refresh"
               resources:

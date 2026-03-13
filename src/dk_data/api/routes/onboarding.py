@@ -12,7 +12,7 @@ Part of DK Molecule Data Platform (012-dk-data-platform)
 from fastapi import APIRouter, HTTPException, Query, BackgroundTasks
 from pydantic import BaseModel, Field, EmailStr
 from typing import Optional, List, Dict, Any
-from datetime import datetime
+from datetime import datetime, timezone
 from uuid import UUID, uuid4
 from loguru import logger
 
@@ -146,7 +146,7 @@ async def onboard_user(request: UserOnboardRequest):
             role=profile.role.value,
             onboarding_status=profile.onboarding_status.value,
             suggested_molecules=suggestions,
-            timestamp=datetime.utcnow().isoformat(),
+            timestamp=datetime.now(timezone.utc).isoformat(),
         )
 
     except Exception as e:
@@ -176,7 +176,7 @@ async def setup_molecule_tracking(request: MoleculeTrackingRequest):
             user_id=request.user_id,
             tracked_count=len(trackers),
             trackers=[t.to_dict() for t in trackers],
-            timestamp=datetime.utcnow().isoformat(),
+            timestamp=datetime.now(timezone.utc).isoformat(),
         )
 
     except ValueError as e:
@@ -204,7 +204,7 @@ async def get_user_profile(user_id: str):
             "success": True,
             "profile": profile.to_dict(),
             "tracked_molecules": [t.to_dict() for t in trackers],
-            "timestamp": datetime.utcnow().isoformat(),
+            "timestamp": datetime.now(timezone.utc).isoformat(),
         }
 
     except HTTPException:
@@ -236,7 +236,7 @@ async def get_molecule_suggestions(
             "therapeutic_areas": tas,
             "suggestions_count": len(suggestions),
             "suggestions": suggestions,
-            "timestamp": datetime.utcnow().isoformat(),
+            "timestamp": datetime.now(timezone.utc).isoformat(),
         }
 
     except Exception as e:
@@ -269,7 +269,7 @@ async def start_data_pipeline(request: PipelineStartRequest):
             stages_completed=status.stages_completed,
             stages_pending=status.stages_pending,
             errors=status.errors,
-            timestamp=datetime.utcnow().isoformat(),
+            timestamp=datetime.now(timezone.utc).isoformat(),
         )
 
     except Exception as e:
@@ -298,7 +298,7 @@ async def get_pipeline_status(job_id: str):
             stages_completed=status.stages_completed,
             stages_pending=status.stages_pending,
             errors=status.errors,
-            timestamp=datetime.utcnow().isoformat(),
+            timestamp=datetime.now(timezone.utc).isoformat(),
         )
 
     except HTTPException:
@@ -325,7 +325,7 @@ async def list_pipeline_jobs(
             "success": True,
             "jobs_count": len(jobs[:limit]),
             "jobs": [j.to_dict() for j in jobs[:limit]],
-            "timestamp": datetime.utcnow().isoformat(),
+            "timestamp": datetime.now(timezone.utc).isoformat(),
         }
 
     except Exception as e:
@@ -522,7 +522,7 @@ async def onboard_molecule(
             unmatched_identifiers=result.resolution_result.unmatched_identifiers if result.resolution_result else [],
             potential_matches=result.resolution_result.potential_matches if result.resolution_result else [],
             error_message=result.error_message,
-            created_at=result.created_at.isoformat() if result.created_at else datetime.utcnow().isoformat(),
+            created_at=result.created_at.isoformat() if result.created_at else datetime.now(timezone.utc).isoformat(),
             completed_at=result.completed_at.isoformat() if result.completed_at else None,
         )
 
@@ -550,7 +550,7 @@ async def onboard_molecules_bulk(
             raise HTTPException(status_code=503, detail="Molecule onboarding service unavailable")
 
         batch_id = uuid4()
-        created_at = datetime.utcnow()
+        created_at = datetime.now(timezone.utc)
         results = []
         errors = []
 
@@ -641,7 +641,7 @@ async def get_molecule_onboarding_status(request_id: str):
             molecule_id=str(result.molecule_id) if result.molecule_id else None,
             canonical_name=result.canonical_name,
             error_message=result.error_message,
-            created_at=result.created_at.isoformat() if result.created_at else datetime.utcnow().isoformat(),
+            created_at=result.created_at.isoformat() if result.created_at else datetime.now(timezone.utc).isoformat(),
             completed_at=result.completed_at.isoformat() if result.completed_at else None,
             data_sources_fetched=[],
             matched_identifiers={},
@@ -703,7 +703,7 @@ async def approve_molecule_resolution(
             "molecule_id": molecule_id,
             "status": "completed",
             "message": "Resolution approved and molecule linked",
-            "timestamp": datetime.utcnow().isoformat(),
+            "timestamp": datetime.now(timezone.utc).isoformat(),
         }
 
     except HTTPException:
@@ -749,7 +749,7 @@ async def resolve_molecule_identifier(
             "canonical_name": result.get('canonical_name'),
             "confidence": result.get('confidence', 0),
             "potential_matches": result.get('potential_matches', [])[:10],
-            "timestamp": datetime.utcnow().isoformat(),
+            "timestamp": datetime.now(timezone.utc).isoformat(),
         }
 
     except Exception as e:

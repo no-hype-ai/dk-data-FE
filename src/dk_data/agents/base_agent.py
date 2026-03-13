@@ -236,4 +236,7 @@ class BaseAgent(ABC):
             raise
         finally:
             if self._conn and not self._conn.closed:
-                self._conn.close()
+                try:
+                    self._conn.close()
+                except Exception as close_err:
+                    logger.warning(f"[{self.AGENT_NAME}] Error closing DB connection: {close_err}")

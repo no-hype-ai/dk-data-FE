@@ -9,10 +9,15 @@ import logging
 from contextlib import contextmanager
 from typing import Generator, Optional
 
+import re
+
 import psycopg2
-from psycopg2 import pool
+from psycopg2 import pool, sql
 from psycopg2.extras import RealDictCursor
 from dotenv import load_dotenv
+
+# SQL identifier validation — prevents injection via dynamic table/schema names
+_SAFE_IDENT_RE = re.compile(r'^[a-zA-Z_][a-zA-Z0-9_]*$')
 
 # Load environment variables
 load_dotenv('.env.local')
@@ -199,15 +204,27 @@ def table_exists(schema: str, table: str) -> bool:
 
 def get_table_count(schema: str, table: str) -> int:
     """Get the row count for a table."""
+    if not _SAFE_IDENT_RE.match(schema) or not _SAFE_IDENT_RE.match(table):
+        raise ValueError(f"Invalid identifier: {schema}.{table}")
     with get_cursor() as cur:
-        cur.execute(f"SELECT COUNT(*) FROM {schema}.{table}")
+        cur.execute(
+            sql.SQL("SELECT COUNT(*) FROM {}.{}").format(
+                sql.Identifier(schema), sql.Identifier(table)
+            )
+        )
         return cur.fetchone()[0]
 
 
 def truncate_table(schema: str, table: str) -> None:
     """Truncate a table (use with caution)."""
+    if not _SAFE_IDENT_RE.match(schema) or not _SAFE_IDENT_RE.match(table):
+        raise ValueError(f"Invalid identifier: {schema}.{table}")
     with get_cursor() as cur:
-        cur.execute(f"TRUNCATE TABLE {schema}.{table} CASCADE")
+        cur.execute(
+            sql.SQL("TRUNCATE TABLE {}.{} CASCADE").format(
+                sql.Identifier(schema), sql.Identifier(table)
+            )
+        )
         logger.info(f"Truncated table: {schema}.{table}")
 
 
@@ -234,22 +251,36 @@ def upsert_records(
     if not records:
         return 0
 
-    columns = list(records[0].keys())
-    placeholders = ', '.join(['%s'] * len(columns))
-    column_list = ', '.join(columns)
-    conflict_list = ', '.join(conflict_columns)
-    update_list = ', '.join([f"{col} = EXCLUDED.{col}" for col in update_columns])
+    # Validate all identifiers to prevent SQL injection
+    if not _SAFE_IDENT_RE.match(schema) or not _SAFE_IDENT_RE.match(table):
+        raise ValueError(f"Invalid identifier: {schema}.{table}")
 
-    sql = f"""
-        INSERT INTO {schema}.{table} ({column_list})
-        VALUES ({placeholders})
-        ON CONFLICT ({conflict_list})
-        DO UPDATE SET {update_list}
-    """
+    columns = list(records[0].keys())
+    for col in columns + conflict_columns + update_columns:
+        if not _SAFE_IDENT_RE.match(col):
+            raise ValueError(f"Invalid column name: {col}")
+
+    col_idents = sql.SQL(', ').join(sql.Identifier(c) for c in columns)
+    placeholders = sql.SQL(', ').join(sql.Placeholder() for _ in columns)
+    conflict_idents = sql.SQL(', ').join(sql.Identifier(c) for c in conflict_columns)
+    update_clause = sql.SQL(', ').join(
+        sql.SQL("{} = EXCLUDED.{}").format(sql.Identifier(c), sql.Identifier(c))
+        for c in update_columns
+    )
+
+    stmt = sql.SQL("""
+        INSERT INTO {}.{} ({})
+        VALUES ({})
+        ON CONFLICT ({})
+        DO UPDATE SET {}
+    """).format(
+        sql.Identifier(schema), sql.Identifier(table),
+        col_idents, placeholders, conflict_idents, update_clause,
+    )
 
     with get_cursor() as cur:
         for record in records:
             values = [record[col] for col in columns]
-            cur.execute(sql, values)
+            cur.execute(stmt, values)
 
     return len(records)

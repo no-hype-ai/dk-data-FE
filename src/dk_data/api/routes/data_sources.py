@@ -15,15 +15,33 @@ Part of DK Molecule Data Platform (012-dk-data-platform)
 from fastapi import APIRouter, HTTPException, Query, Body, BackgroundTasks
 from pydantic import BaseModel, Field
 from typing import Optional, List, Dict, Any
-from datetime import datetime
+from datetime import datetime, timezone
 from enum import Enum
 from loguru import logger
+import asyncio
 import json
 import re
 import aiohttp
-import asyncio
 
 from ..dependencies import get_db_pool
+
+
+# SQL identifier validation — prevents injection via dynamic table names
+_SAFE_IDENTIFIER_RE = re.compile(r'^[a-zA-Z_][a-zA-Z0-9_.]*$')
+
+
+def _validate_table_name(table_name: str) -> str:
+    """Validate and quote a table name to prevent SQL injection.
+
+    Accepts 'schema.table' or 'table' format with alphanumeric + underscore only.
+    Returns the table name unchanged if valid, raises ValueError otherwise.
+    """
+    if not table_name or not _SAFE_IDENTIFIER_RE.match(table_name):
+        raise ValueError(f"Invalid table name: {table_name!r}")
+    # Additional safety: limit length and prevent multiple dots
+    if table_name.count('.') > 1 or len(table_name) > 128:
+        raise ValueError(f"Invalid table name: {table_name!r}")
+    return table_name
 
 router = APIRouter(prefix="/data-sources", tags=["data-sources"])
 
@@ -404,14 +422,14 @@ async def register_data_source(request: DataSourceRegistration):
                 refresh_tier=request.refresh_tier.value,
                 table_name=f"raw.{source_id}_data",
                 is_active=True,
-                created_at=datetime.utcnow().isoformat(),
-                updated_at=datetime.utcnow().isoformat(),
+                created_at=datetime.now(timezone.utc).isoformat(),
+                updated_at=datetime.now(timezone.utc).isoformat(),
             )
     except HTTPException:
         raise
     except Exception as e:
         logger.error(f"Failed to register data source: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="Internal server error")
 
 
 class TestConnectionRequest(BaseModel):
@@ -492,7 +510,7 @@ async def test_connection(request: TestConnectionRequest):
                             record_count=0,
                             detected_fields=[],
                             error=f"HTTP {status_code}: {error_text[:200]}",
-                            timestamp=datetime.utcnow().isoformat()
+                            timestamp=datetime.now(timezone.utc).isoformat()
                         )
                     data = await response.json()
             else:  # POST
@@ -510,7 +528,7 @@ async def test_connection(request: TestConnectionRequest):
                             record_count=0,
                             detected_fields=[],
                             error=f"HTTP {status_code}: {error_text[:200]}",
-                            timestamp=datetime.utcnow().isoformat()
+                            timestamp=datetime.now(timezone.utc).isoformat()
                         )
                     data = await response.json()
 
@@ -546,7 +564,7 @@ async def test_connection(request: TestConnectionRequest):
             record_count=len(records),
             detected_fields=detected_fields,
             error=None,
-            timestamp=datetime.utcnow().isoformat()
+            timestamp=datetime.now(timezone.utc).isoformat()
         )
 
     except asyncio.TimeoutError:
@@ -558,7 +576,7 @@ async def test_connection(request: TestConnectionRequest):
             record_count=0,
             detected_fields=[],
             error=f"Connection timed out after {request.timeout_seconds}s",
-            timestamp=datetime.utcnow().isoformat()
+            timestamp=datetime.now(timezone.utc).isoformat()
         )
     except aiohttp.ClientError as e:
         return TestConnectionResponse(
@@ -569,7 +587,7 @@ async def test_connection(request: TestConnectionRequest):
             record_count=0,
             detected_fields=[],
             error=f"Connection error: {str(e)}",
-            timestamp=datetime.utcnow().isoformat()
+            timestamp=datetime.now(timezone.utc).isoformat()
         )
     except Exception as e:
         logger.error(f"Test connection failed: {e}")
@@ -581,7 +599,7 @@ async def test_connection(request: TestConnectionRequest):
             record_count=0,
             detected_fields=[],
             error=str(e),
-            timestamp=datetime.utcnow().isoformat()
+            timestamp=datetime.now(timezone.utc).isoformat()
         )
 
 
@@ -641,21 +659,21 @@ async def list_data_sources(
                     refresh_tier=row['tier'],
                     table_name=target_table.replace('raw.', 'bronze.') if target_table else None,
                     is_active=row['enabled'],
-                    created_at=row['created_at'].isoformat() if row['created_at'] else datetime.utcnow().isoformat(),
-                    updated_at=row['updated_at'].isoformat() if row['updated_at'] else datetime.utcnow().isoformat(),
+                    created_at=row['created_at'].isoformat() if row['created_at'] else datetime.now(timezone.utc).isoformat(),
+                    updated_at=row['updated_at'].isoformat() if row['updated_at'] else datetime.now(timezone.utc).isoformat(),
                 ))
 
         return DataSourceListResponse(
             success=True,
             sources=sources,
             count=len(sources),
-            timestamp=datetime.utcnow().isoformat(),
+            timestamp=datetime.now(timezone.utc).isoformat(),
         )
     except HTTPException:
         raise
     except Exception as e:
         logger.error(f"Failed to list data sources: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="Internal server error")
 
 
 @router.get("/{source_name}", response_model=DataSourceResponse)
@@ -704,14 +722,14 @@ async def get_data_source(source_name: str):
                 refresh_tier=row['tier'] or 'monthly',
                 table_name=options.get('target_table', f"raw.{source_name.lower().replace('-', '_')}_data"),
                 is_active=row['enabled'],
-                created_at=row['created_at'].isoformat() if row['created_at'] else datetime.utcnow().isoformat(),
-                updated_at=row['updated_at'].isoformat() if row['updated_at'] else datetime.utcnow().isoformat(),
+                created_at=row['created_at'].isoformat() if row['created_at'] else datetime.now(timezone.utc).isoformat(),
+                updated_at=row['updated_at'].isoformat() if row['updated_at'] else datetime.now(timezone.utc).isoformat(),
             )
     except HTTPException:
         raise
     except Exception as e:
         logger.error(f"Failed to get data source: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="Internal server error")
 
 
 @router.put("/{source_name}", response_model=DataSourceResponse)
@@ -764,14 +782,14 @@ async def update_data_source(source_name: str, request: DataSourceRegistration):
                 refresh_tier=request.refresh_tier.value,
                 table_name=f"raw.{source_name.lower().replace('-', '_')}_data",
                 is_active=row['enabled'],
-                created_at=row['created_at'].isoformat() if row['created_at'] else datetime.utcnow().isoformat(),
-                updated_at=row['updated_at'].isoformat() if row['updated_at'] else datetime.utcnow().isoformat(),
+                created_at=row['created_at'].isoformat() if row['created_at'] else datetime.now(timezone.utc).isoformat(),
+                updated_at=row['updated_at'].isoformat() if row['updated_at'] else datetime.now(timezone.utc).isoformat(),
             )
     except HTTPException:
         raise
     except Exception as e:
         logger.error(f"Failed to update data source: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="Internal server error")
 
 
 @router.delete("/{source_name}")
@@ -800,12 +818,13 @@ async def delete_data_source(source_name: str, delete_data: bool = Query(False))
             if isinstance(options, str):
                 options = json.loads(options)
             target_table = options.get('target_table', f"raw.{source_name.lower().replace('-', '_')}_data")
+            target_table = _validate_table_name(target_table)
 
             # Delete data if requested
             data_deleted = False
             if delete_data:
                 try:
-                    await conn.execute(f"DROP TABLE IF EXISTS {target_table} CASCADE")
+                    await conn.execute(f"DROP TABLE IF EXISTS {target_table} CASCADE")  # noqa: S608
                     data_deleted = True
                     logger.info(f"Deleted table {target_table} for source {source_name}")
                 except Exception as e:
@@ -824,13 +843,13 @@ async def delete_data_source(source_name: str, delete_data: bool = Query(False))
             "source_name": source_name,
             "data_deleted": data_deleted,
             "message": f"Data source '{source_name}' deleted",
-            "timestamp": datetime.utcnow().isoformat(),
+            "timestamp": datetime.now(timezone.utc).isoformat(),
         }
     except HTTPException:
         raise
     except Exception as e:
         logger.error(f"Failed to delete data source: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="Internal server error")
 
 
 @router.post("/{source_name}/activate")
@@ -855,13 +874,13 @@ async def activate_data_source(source_name: str):
             "success": True,
             "source_name": source_name,
             "is_active": True,
-            "timestamp": datetime.utcnow().isoformat(),
+            "timestamp": datetime.now(timezone.utc).isoformat(),
         }
     except HTTPException:
         raise
     except Exception as e:
         logger.error(f"Failed to activate data source: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="Internal server error")
 
 
 @router.post("/{source_name}/deactivate")
@@ -886,13 +905,13 @@ async def deactivate_data_source(source_name: str):
             "success": True,
             "source_name": source_name,
             "is_active": False,
-            "timestamp": datetime.utcnow().isoformat(),
+            "timestamp": datetime.now(timezone.utc).isoformat(),
         }
     except HTTPException:
         raise
     except Exception as e:
         logger.error(f"Failed to deactivate data source: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="Internal server error")
 
 
 # ============================================================================
@@ -937,7 +956,7 @@ async def store_credential(source_name: str, request: CredentialRequest):
                     'credentials': {
                         'key': request.key_name,
                         'configured': True,
-                        'configured_at': datetime.utcnow().isoformat()
+                        'configured_at': datetime.now(timezone.utc).isoformat()
                     }
                 })
             )
@@ -949,13 +968,13 @@ async def store_credential(source_name: str, request: CredentialRequest):
             "source_name": source_name,
             "key_name": request.key_name,
             "message": "Credential stored securely",
-            "timestamp": datetime.utcnow().isoformat(),
+            "timestamp": datetime.now(timezone.utc).isoformat(),
         }
     except HTTPException:
         raise
     except Exception as e:
         logger.error(f"Failed to store credential: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="Internal server error")
 
 
 @router.get("/{source_name}/credentials", response_model=CredentialListResponse)
@@ -987,7 +1006,7 @@ async def list_credentials(source_name: str):
             if cred_info.get('configured'):
                 credentials.append({
                     "key_name": cred_info.get('key', 'api_key'),
-                    "created_at": cred_info.get('configured_at', datetime.utcnow().isoformat()),
+                    "created_at": cred_info.get('configured_at', datetime.now(timezone.utc).isoformat()),
                     "last_rotated": cred_info.get('last_rotated'),
                 })
 
@@ -995,13 +1014,13 @@ async def list_credentials(source_name: str):
             success=True,
             credentials=credentials,
             count=len(credentials),
-            timestamp=datetime.utcnow().isoformat(),
+            timestamp=datetime.now(timezone.utc).isoformat(),
         )
     except HTTPException:
         raise
     except Exception as e:
         logger.error(f"Failed to list credentials: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="Internal server error")
 
 
 @router.delete("/{source_name}/credentials/{key_name}")
@@ -1031,13 +1050,13 @@ async def delete_credential(source_name: str, key_name: str):
             "source_name": source_name,
             "key_name": key_name,
             "message": "Credential deleted",
-            "timestamp": datetime.utcnow().isoformat(),
+            "timestamp": datetime.now(timezone.utc).isoformat(),
         }
     except HTTPException:
         raise
     except Exception as e:
         logger.error(f"Failed to delete credential: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="Internal server error")
 
 
 @router.post("/{source_name}/credentials/{key_name}/rotate")
@@ -1065,8 +1084,8 @@ async def rotate_credential(source_name: str, key_name: str, new_value: str = Bo
                     'credentials': {
                         'key': key_name,
                         'configured': True,
-                        'configured_at': datetime.utcnow().isoformat(),
-                        'last_rotated': datetime.utcnow().isoformat()
+                        'configured_at': datetime.now(timezone.utc).isoformat(),
+                        'last_rotated': datetime.now(timezone.utc).isoformat()
                     }
                 })
             )
@@ -1081,13 +1100,13 @@ async def rotate_credential(source_name: str, key_name: str, new_value: str = Bo
             "source_name": source_name,
             "key_name": key_name,
             "message": "Credential rotated",
-            "timestamp": datetime.utcnow().isoformat(),
+            "timestamp": datetime.now(timezone.utc).isoformat(),
         }
     except HTTPException:
         raise
     except Exception as e:
         logger.error(f"Failed to rotate credential: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="Internal server error")
 
 
 # ============================================================================
@@ -1171,13 +1190,13 @@ WHERE _ingested_at BETWEEN @start_ds AND @end_ds;
             indexes=[f"idx_{source_name}_ingested_at"],
             create_table_sql=ddl,
             sqlmesh_model=sqlmesh_model,
-            timestamp=datetime.utcnow().isoformat(),
+            timestamp=datetime.now(timezone.utc).isoformat(),
         )
     except HTTPException:
         raise
     except Exception as e:
         logger.error(f"Schema detection failed: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="Internal server error")
 
 
 class EntityLinkingConfig(BaseModel):
@@ -1254,7 +1273,7 @@ CREATE INDEX IF NOT EXISTS idx_{source_name}_payload_hash ON {table_name} ((_raw
             # Build options update including entity linking config
             options_update = {
                 'target_table': table_name,
-                'table_created_at': datetime.utcnow().isoformat()
+                'table_created_at': datetime.now(timezone.utc).isoformat()
             }
 
             # Add entity linking configuration if provided
@@ -1284,13 +1303,13 @@ CREATE INDEX IF NOT EXISTS idx_{source_name}_payload_hash ON {table_name} ((_raw
             "table_name": table_name,
             "ddl": ddl,
             "message": f"Table '{table_name}' created successfully",
-            "timestamp": datetime.utcnow().isoformat()
+            "timestamp": datetime.now(timezone.utc).isoformat()
         }
     except HTTPException:
         raise
     except Exception as e:
         logger.error(f"Failed to generate table: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="Internal server error")
 
 
 @router.post("/{source_name}/create-table")
@@ -1341,13 +1360,13 @@ async def create_bronze_table(source_name: str, request: SchemaDetectionRequest)
             "source_name": source_name,
             "table_name": table_name,
             "message": f"Created table {table_name}",
-            "timestamp": datetime.utcnow().isoformat(),
+            "timestamp": datetime.now(timezone.utc).isoformat(),
         }
     except HTTPException:
         raise
     except Exception as e:
         logger.error(f"Failed to create table: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="Internal server error")
 
 
 # ============================================================================
@@ -1418,13 +1437,13 @@ async def trigger_sync(
             source_name=source_name,
             job_id=job_id,
             message=f"{'Full' if full_refresh else 'Incremental'} sync triggered",
-            timestamp=datetime.utcnow().isoformat(),
+            timestamp=datetime.now(timezone.utc).isoformat(),
         )
     except HTTPException:
         raise
     except Exception as e:
         logger.error(f"Failed to trigger sync: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="Internal server error")
 
 
 @router.get("/{source_name}/sync/status")
@@ -1477,13 +1496,13 @@ async def get_sync_status(source_name: str):
                 "last_job_status": latest_job['status'] if latest_job else None,
                 "last_record_count": latest_job['records_processed'] if latest_job else 0,
                 "last_error": latest_job['error_message'] if latest_job else None,
-                "timestamp": datetime.utcnow().isoformat(),
+                "timestamp": datetime.now(timezone.utc).isoformat(),
             }
     except HTTPException:
         raise
     except Exception as e:
         logger.error(f"Failed to get sync status: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="Internal server error")
 
 
 @router.get("/{source_name}/sync/history")
@@ -1545,13 +1564,13 @@ async def get_sync_history(
             "source_name": source_name,
             "history": history,
             "count": len(history),
-            "timestamp": datetime.utcnow().isoformat(),
+            "timestamp": datetime.now(timezone.utc).isoformat(),
         }
     except HTTPException:
         raise
     except Exception as e:
         logger.error(f"Failed to get sync history: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="Internal server error")
 
 
 # ============================================================================
@@ -1630,18 +1649,18 @@ async def get_source_health(source_name: str):
             "status": status,
             "enabled": row['enabled'],
             "api_available": api_available,
-            "last_check": datetime.utcnow().isoformat(),
+            "last_check": datetime.now(timezone.utc).isoformat(),
             "last_sync": row['last_run'].isoformat() if row['last_run'] else None,
             "error_rate_24h": round(error_rate, 2),
             "avg_response_time_ms": round(avg_duration, 0) if avg_duration else None,
             "jobs_24h": total_jobs,
-            "timestamp": datetime.utcnow().isoformat(),
+            "timestamp": datetime.now(timezone.utc).isoformat(),
         }
     except HTTPException:
         raise
     except Exception as e:
         logger.error(f"Failed to get source health: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="Internal server error")
 
 
 @router.get("/{source_name}/metrics")
@@ -1716,13 +1735,13 @@ async def get_source_metrics(source_name: str):
                 "avg_sync_duration_seconds": round(avg_duration, 2) if avg_duration else 0,
                 "success_rate": round(success_rate, 3),
             },
-            "timestamp": datetime.utcnow().isoformat(),
+            "timestamp": datetime.now(timezone.utc).isoformat(),
         }
     except HTTPException:
         raise
     except Exception as e:
         logger.error(f"Failed to get source metrics: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="Internal server error")
 
 
 # ============================================================================
@@ -1782,13 +1801,13 @@ async def relink_unlinked_records(
             records_failed=result.records_failed,
             duration_seconds=result.duration_seconds,
             errors=result.errors[:5],  # Limit error messages
-            timestamp=datetime.utcnow().isoformat()
+            timestamp=datetime.now(timezone.utc).isoformat()
         )
     except HTTPException:
         raise
     except Exception as e:
         logger.error(f"Retroactive linking failed for {source_name}: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="Internal server error")
 
 
 @router.post("/relink-all", response_model=Dict[str, RelinkResponse])
@@ -1823,7 +1842,7 @@ async def relink_all_sources(
                 records_failed=result.records_failed,
                 duration_seconds=result.duration_seconds,
                 errors=result.errors[:5],
-                timestamp=datetime.utcnow().isoformat()
+                timestamp=datetime.now(timezone.utc).isoformat()
             )
 
         return response
@@ -1831,7 +1850,7 @@ async def relink_all_sources(
         raise
     except Exception as e:
         logger.error(f"Retroactive linking all sources failed: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="Internal server error")
 
 
 # ============================================================================
@@ -1871,10 +1890,10 @@ async def clear_raw_data(source_name: str):
             if not row or not row['target_table']:
                 raise HTTPException(status_code=404, detail=f"Source {source_name} not found")
 
-            target_table = row['target_table']
+            target_table = _validate_table_name(row['target_table'])
 
             # Delete all records
-            result = await conn.execute(f"DELETE FROM {target_table}")
+            result = await conn.execute(f"DELETE FROM {target_table}")  # noqa: S608
             deleted_count = int(result.split()[-1]) if result else 0
 
             # Reset sync state
@@ -1889,13 +1908,13 @@ async def clear_raw_data(source_name: str):
                 source_name=source_name,
                 records_cleared=deleted_count,
                 message=f"Cleared {deleted_count} raw records and reset sync state",
-                timestamp=datetime.utcnow().isoformat()
+                timestamp=datetime.now(timezone.utc).isoformat()
             )
     except HTTPException:
         raise
     except Exception as e:
         logger.error(f"Failed to clear raw data for {source_name}: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="Internal server error")
 
 
 @router.post("/{source_name}/full-refresh")
@@ -1933,7 +1952,8 @@ async def trigger_full_refresh(
                     SELECT options->>'target_table' FROM raw.sync_schedules WHERE source = $1
                 """, source_name)
                 if target_table:
-                    result = await conn.execute(f"DELETE FROM {target_table}")
+                    target_table = _validate_table_name(target_table)
+                    result = await conn.execute(f"DELETE FROM {target_table}")  # noqa: S608
                     cleared = int(result.split()[-1]) if result else 0
 
             # Reset sync state to force full refresh
@@ -1959,10 +1979,10 @@ async def trigger_full_refresh(
             "source_name": source_name,
             "records_cleared": cleared,
             "message": f"Full refresh triggered for {source_name}" + (f" (cleared {cleared} existing records)" if cleared else ""),
-            "timestamp": datetime.utcnow().isoformat()
+            "timestamp": datetime.now(timezone.utc).isoformat()
         }
     except HTTPException:
         raise
     except Exception as e:
         logger.error(f"Failed to trigger full refresh for {source_name}: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="Internal server error")

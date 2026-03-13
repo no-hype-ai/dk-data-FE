@@ -10,7 +10,7 @@ from fastapi import APIRouter, HTTPException, Query, Depends
 from typing import Optional, List
 from uuid import UUID, uuid4
 from pydantic import BaseModel, Field
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from enum import Enum
 import logging
 import json
@@ -170,7 +170,7 @@ async def create_alert_rule(
     db_pool = await get_db_pool()
 
     rule_id = uuid4()
-    now = datetime.utcnow()
+    now = datetime.now(timezone.utc)
 
     async with db_pool.acquire() as conn:
         await conn.execute("""
@@ -679,7 +679,7 @@ async def silence_alerts(
     db_pool = await get_db_pool()
 
     silence_id = uuid4()
-    expires_at = datetime.utcnow() + timedelta(minutes=request.duration_minutes)
+    expires_at = datetime.now(timezone.utc) + timedelta(minutes=request.duration_minutes)
 
     async with db_pool.acquire() as conn:
         await conn.execute("""

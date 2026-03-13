@@ -103,9 +103,12 @@ def refresh_volume_history(
     """
 
     if fiscal_years:
+        # Validate fiscal_years are integers to prevent injection
+        safe_years = [int(y) for y in fiscal_years]
+        year_array = "ARRAY[" + ",".join(str(y) for y in safe_years) + "]"
         volume_query = volume_query.replace(
             "GROUP BY provider_id, fiscal_year",
-            f"AND fiscal_year = ANY(ARRAY{fiscal_years}) GROUP BY provider_id, fiscal_year"
+            f"AND fiscal_year = ANY({year_array}) GROUP BY provider_id, fiscal_year"
         )
 
     records_processed = 0
@@ -114,7 +117,7 @@ def refresh_volume_history(
 
     if dry_run:
         with get_cursor() as cur:
-            cur.execute(f"SELECT COUNT(*) FROM ({volume_query}) q")
+            cur.execute(f"SELECT COUNT(*) FROM ({volume_query}) q")  # noqa: S608
             count = cur.fetchone()[0]
             logger.info(f"DRY RUN: Would process {count} volume_history records")
             return {

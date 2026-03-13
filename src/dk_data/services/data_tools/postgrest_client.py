@@ -24,6 +24,8 @@ def _postgrest_base_url() -> str:
 class PostgRESTClient:
     """Async client for querying PostgREST with JWT auth forwarding.
 
+    Maintains a single httpx.AsyncClient for connection reuse.
+
     Args:
         jwt_token: Bearer token to forward. If None, queries as anonymous
                    (web_anon role — read-only on api schema).
@@ -43,6 +45,19 @@ class PostgRESTClient:
         }
         if jwt_token:
             self._headers["Authorization"] = f"Bearer {jwt_token}"
+        self._client: Optional[httpx.AsyncClient] = None
+
+    async def _get_client(self) -> httpx.AsyncClient:
+        """Lazily create and reuse a single AsyncClient."""
+        if self._client is None or self._client.is_closed:
+            self._client = httpx.AsyncClient(timeout=10.0)
+        return self._client
+
+    async def close(self) -> None:
+        """Close the underlying HTTP client."""
+        if self._client and not self._client.is_closed:
+            await self._client.aclose()
+            self._client = None
 
     async def query_view(
         self,
@@ -72,14 +87,14 @@ class PostgRESTClient:
         )
 
         try:
-            async with httpx.AsyncClient(timeout=10.0) as client:
-                resp = await client.get(url, headers=headers)
-                if resp.status_code == 404:
-                    # View doesn't exist in this schema
-                    return []
-                resp.raise_for_status()
-                data = resp.json()
-                return data if isinstance(data, list) else [data]
+            client = await self._get_client()
+            resp = await client.get(url, headers=headers)
+            if resp.status_code == 404:
+                # View doesn't exist in this schema
+                return []
+            resp.raise_for_status()
+            data = resp.json()
+            return data if isinstance(data, list) else [data]
         except httpx.HTTPStatusError as e:
             logger.debug(f"PostgREST query failed ({schema}.{table}): {e.response.status_code}")
             return []
@@ -107,70 +122,71 @@ class PostgRESTClient:
         }
 
         try:
-            async with httpx.AsyncClient(timeout=10.0) as client:
-                # HEAD to get count from Content-Range
-                head_resp = await client.head(
-                    f"{self.base_url}/{quote(table)}?limit=0",
-                    headers=headers,
-                )
-                if head_resp.status_code == 404:
-                    return None
-                head_resp.raise_for_status()
+            client = await self._get_client()
 
-                # Parse Content-Range: */N or 0-0/N
-                content_range = head_resp.headers.get("Content-Range", "")
-                row_count = 0
-                if "/" in content_range:
-                    count_str = content_range.rsplit("/", 1)[-1]
-                    if count_str.isdigit():
-                        row_count = int(count_str)
+            # HEAD to get count from Content-Range
+            head_resp = await client.head(
+                f"{self.base_url}/{quote(table)}?limit=0",
+                headers=headers,
+            )
+            if head_resp.status_code == 404:
+                return None
+            head_resp.raise_for_status()
 
-                if row_count == 0:
-                    return {
-                        "schema": schema,
-                        "table": table,
-                        "row_count": 0,
-                        "last_updated": None,
-                        "freshness_hours": None,
-                    }
+            # Parse Content-Range: */N or 0-0/N
+            content_range = head_resp.headers.get("Content-Range", "")
+            row_count = 0
+            if "/" in content_range:
+                count_str = content_range.rsplit("/", 1)[-1]
+                if count_str.isdigit():
+                    row_count = int(count_str)
 
-                # Get newest row to approximate freshness.
-                # Try common timestamp columns in priority order.
-                for ts_col in ("last_refreshed", "gold_built_at", "profile_built_at",
-                               "_loaded_at", "ingested_at", "updated_at", "created_at"):
-                    ts_url = (
-                        f"{self.base_url}/{quote(table)}"
-                        f"?select={quote(ts_col)}"
-                        f"&order={quote(ts_col)}.desc"
-                        f"&limit=1"
-                    )
-                    ts_resp = await client.get(ts_url, headers=headers)
-                    if ts_resp.status_code == 200:
-                        rows = ts_resp.json()
-                        if rows and rows[0].get(ts_col):
-                            from datetime import datetime, timezone
-                            last_ts = rows[0][ts_col]
-                            try:
-                                dt = datetime.fromisoformat(last_ts.replace("Z", "+00:00"))
-                                delta = datetime.now(timezone.utc) - dt
-                                return {
-                                    "schema": schema,
-                                    "table": table,
-                                    "row_count": row_count,
-                                    "last_updated": last_ts,
-                                    "freshness_hours": round(delta.total_seconds() / 3600, 2),
-                                }
-                            except (ValueError, TypeError):
-                                pass
-
-                # No timestamp column found — return count only
+            if row_count == 0:
                 return {
                     "schema": schema,
                     "table": table,
-                    "row_count": row_count,
+                    "row_count": 0,
                     "last_updated": None,
                     "freshness_hours": None,
                 }
+
+            # Get newest row to approximate freshness.
+            # Try common timestamp columns in priority order.
+            for ts_col in ("last_refreshed", "gold_built_at", "profile_built_at",
+                           "_loaded_at", "ingested_at", "updated_at", "created_at"):
+                ts_url = (
+                    f"{self.base_url}/{quote(table)}"
+                    f"?select={quote(ts_col)}"
+                    f"&order={quote(ts_col)}.desc"
+                    f"&limit=1"
+                )
+                ts_resp = await client.get(ts_url, headers=headers)
+                if ts_resp.status_code == 200:
+                    rows = ts_resp.json()
+                    if rows and rows[0].get(ts_col):
+                        from datetime import datetime, timezone
+                        last_ts = rows[0][ts_col]
+                        try:
+                            dt = datetime.fromisoformat(last_ts.replace("Z", "+00:00"))
+                            delta = datetime.now(timezone.utc) - dt
+                            return {
+                                "schema": schema,
+                                "table": table,
+                                "row_count": row_count,
+                                "last_updated": last_ts,
+                                "freshness_hours": round(delta.total_seconds() / 3600, 2),
+                            }
+                        except (ValueError, TypeError):
+                            pass
+
+            # No timestamp column found — return count only
+            return {
+                "schema": schema,
+                "table": table,
+                "row_count": row_count,
+                "last_updated": None,
+                "freshness_hours": None,
+            }
 
         except Exception as e:
             logger.debug(f"PostgREST freshness check failed ({schema}.{table}): {e}")

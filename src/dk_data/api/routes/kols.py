@@ -11,7 +11,7 @@ Implements:
 from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel
 from typing import Optional, List, Dict, Any
-from datetime import datetime
+from datetime import datetime, timezone
 from loguru import logger
 
 from ...services.ground_truth.kol_service import (
@@ -96,7 +96,7 @@ async def get_kols_by_therapeutic_area(
             therapeutic_area=therapeutic_area,
             kols_count=len(kols),
             kols=[kol.to_dict() for kol in kols],
-            timestamp=datetime.utcnow().isoformat(),
+            timestamp=datetime.now(timezone.utc).isoformat(),
         )
 
     except Exception as e:
@@ -121,7 +121,7 @@ async def get_kols_for_drug(
             "drug_name": drug_name,
             "kols_count": len(kols),
             "kols": [kol.to_dict() for kol in kols],
-            "timestamp": datetime.utcnow().isoformat(),
+            "timestamp": datetime.now(timezone.utc).isoformat(),
         }
 
     except Exception as e:
@@ -159,7 +159,7 @@ async def get_kol_network(
                 for c in network.connections
             ],
             connected_kols=[kol.to_dict() for kol in network.connected_kols],
-            timestamp=datetime.utcnow().isoformat(),
+            timestamp=datetime.now(timezone.utc).isoformat(),
         )
 
     except Exception as e:
@@ -194,7 +194,7 @@ async def get_advocacy_groups(
             indication=indication,
             groups_count=len(groups),
             groups=[g.to_dict() for g in groups],
-            timestamp=datetime.utcnow().isoformat(),
+            timestamp=datetime.now(timezone.utc).isoformat(),
         )
 
     except Exception as e:
@@ -219,7 +219,7 @@ async def get_advocacy_sentiment(
         return {
             "success": True,
             **sentiment,
-            "timestamp": datetime.utcnow().isoformat(),
+            "timestamp": datetime.now(timezone.utc).isoformat(),
         }
 
     except Exception as e:

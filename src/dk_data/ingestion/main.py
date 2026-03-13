@@ -776,12 +776,33 @@ def run_ingestion(source: str, **kwargs) -> dict:
             log_to_meta(meta_source, fetch_result)
             return fetch_result
 
-        # Hash-skip: compare content hash to last run
+        # Hash-skip: compare content hash to last run.
+        # Uses a PostgreSQL advisory lock keyed on the source name hash to prevent
+        # TOCTOU races where two concurrent runs both read the same previous hash.
         hash_skip_enabled = source_info.get('hash_skip_enabled', True)
         current_hash = fetch_result.get('hash')
         if hash_skip_enabled and current_hash:
-            previous_hash = get_last_content_hash(meta_source)
-            if previous_hash and current_hash == previous_hash:
+            skip = False
+            try:
+                with get_cursor() as cur:
+                    # Advisory lock: hashtext(source_name) → bigint, held until cursor closes
+                    cur.execute("SELECT pg_advisory_lock(hashtext(%s))", (meta_source,))
+                    cur.execute("""
+                        SELECT last_content_hash FROM meta.data_sources
+                        WHERE source_name = %s
+                    """, (meta_source,))
+                    row = cur.fetchone()
+                    previous_hash = row[0] if row and row[0] else None
+                    if previous_hash and current_hash == previous_hash:
+                        skip = True
+                    # Lock released on cursor/connection close (get_cursor commits)
+            except Exception as e:
+                logger.warning(f"Hash-skip lock failed for {source}, proceeding with load: {e}")
+                previous_hash = get_last_content_hash(meta_source)
+                if previous_hash and current_hash == previous_hash:
+                    skip = True
+
+            if skip:
                 logger.info(
                     "Hash unchanged for %s (%s), skipping load", source, current_hash[:12]
                 )

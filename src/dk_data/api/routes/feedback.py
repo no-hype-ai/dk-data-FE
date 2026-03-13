@@ -10,7 +10,7 @@ Implements:
 from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel, Field
 from typing import Optional, List, Dict, Any
-from datetime import datetime
+from datetime import datetime, timezone
 from loguru import logger
 
 from ...services.ground_truth.feedback_service import (
@@ -142,7 +142,7 @@ async def submit_feedback(request: FeedbackSubmitRequest):
             priority=ticket.priority.value,
             status=ticket.status.value,
             message=f"Feedback submitted successfully. Assigned priority: {ticket.priority.value}",
-            timestamp=datetime.utcnow().isoformat(),
+            timestamp=datetime.now(timezone.utc).isoformat(),
         )
 
     except Exception as e:
@@ -175,7 +175,7 @@ async def rate_data_quality(
             molecule_id=molecule_id,
             ratings_submitted=len(ratings),
             categories_rated=[r.category.value for r in ratings],
-            timestamp=datetime.utcnow().isoformat(),
+            timestamp=datetime.now(timezone.utc).isoformat(),
         )
 
     except Exception as e:
@@ -208,7 +208,7 @@ async def get_feedback_analytics(
             top_data_sources=analytics.top_data_sources,
             trend_7d=analytics.trend_7d,
             avg_quality_rating=analytics.avg_quality_rating,
-            timestamp=datetime.utcnow().isoformat(),
+            timestamp=datetime.now(timezone.utc).isoformat(),
         )
 
     except Exception as e:
@@ -240,7 +240,7 @@ async def list_feedback_tickets(
             "success": True,
             "tickets_count": len(tickets),
             "tickets": [t.to_dict() for t in tickets],
-            "timestamp": datetime.utcnow().isoformat(),
+            "timestamp": datetime.now(timezone.utc).isoformat(),
         }
 
     except Exception as e:
@@ -263,7 +263,7 @@ async def get_feedback_ticket(ticket_id: str):
         return {
             "success": True,
             "ticket": ticket.to_dict(),
-            "timestamp": datetime.utcnow().isoformat(),
+            "timestamp": datetime.now(timezone.utc).isoformat(),
         }
 
     except HTTPException:
@@ -297,7 +297,7 @@ async def update_feedback_ticket(
             "success": True,
             "ticket": ticket.to_dict(),
             "message": f"Ticket status updated to {ticket.status.value}",
-            "timestamp": datetime.utcnow().isoformat(),
+            "timestamp": datetime.now(timezone.utc).isoformat(),
         }
 
     except HTTPException:
@@ -322,7 +322,7 @@ async def get_molecule_quality_score(molecule_id: str):
         return {
             "success": True,
             **score,
-            "timestamp": datetime.utcnow().isoformat(),
+            "timestamp": datetime.now(timezone.utc).isoformat(),
         }
 
     except Exception as e:

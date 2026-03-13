@@ -9,7 +9,7 @@ Provides (mounted at /api/v1 via api.py):
 - /api/v1/monitoring/job-complete - CronJob completion reporting
 """
 
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Optional
 
 from fastapi import APIRouter, HTTPException, Query
@@ -161,7 +161,7 @@ async def database_stats():
     Queries actual database tables for real counts.
     """
     stats = {
-        "timestamp": datetime.utcnow().isoformat(),
+        "timestamp": datetime.now(timezone.utc).isoformat(),
         "tables": {},
         "sources": {},
         "summary": {}
@@ -315,7 +315,7 @@ async def pipeline_health():
             gold_health = LayerHealth(
                 layer="gold",
                 record_count=gold_count,
-                last_update=datetime.utcnow(),
+                last_update=datetime.now(timezone.utc),
                 status="healthy" if gold_count > 0 else "empty",
             )
         except Exception:
@@ -333,7 +333,7 @@ async def pipeline_health():
         bronze_sources=bronze_sources,
         silver=silver_health,
         gold=gold_health,
-        last_check=datetime.utcnow(),
+        last_check=datetime.now(timezone.utc),
     )
 
 
@@ -898,7 +898,7 @@ async def trigger_source_sync(source: str):
         "source": source,
         "status": "pending",
         "message": f"Sync job queued for {source}",
-        "triggered_at": datetime.utcnow().isoformat(),
+        "triggered_at": datetime.now(timezone.utc).isoformat(),
     }
 
 

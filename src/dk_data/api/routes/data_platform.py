@@ -13,7 +13,7 @@ Part of DK Molecule Data Platform (012-dk-data-platform)
 from fastapi import APIRouter, HTTPException, Query, Depends, BackgroundTasks
 from pydantic import BaseModel, Field
 from typing import Optional, List, Dict, Any
-from datetime import datetime
+from datetime import datetime, timezone
 from loguru import logger
 
 # Import services (will be injected via dependency)
@@ -219,7 +219,7 @@ async def search_molecules(
                 query=query,
                 results=[],
                 count=0,
-                timestamp=datetime.utcnow().isoformat()
+                timestamp=datetime.now(timezone.utc).isoformat()
             )
 
         results = []
@@ -252,7 +252,7 @@ async def search_molecules(
             query=query,
             results=results,
             count=len(results),
-            timestamp=datetime.utcnow().isoformat()
+            timestamp=datetime.now(timezone.utc).isoformat()
         )
     except Exception as e:
         logger.error(f"Molecule search failed: {e}")
@@ -290,7 +290,7 @@ async def resolve_identifier(request: IdentifierResolutionRequest):
                 match_type="none",
                 needs_review=True,
                 resolution_path=["database_unavailable"],
-                timestamp=datetime.utcnow().isoformat()
+                timestamp=datetime.now(timezone.utc).isoformat()
             )
 
         # Try to get resolver service
@@ -308,7 +308,7 @@ async def resolve_identifier(request: IdentifierResolutionRequest):
                 match_type=result.match_type,
                 needs_review=result.needs_review,
                 resolution_path=result.resolution_path,
-                timestamp=datetime.utcnow().isoformat()
+                timestamp=datetime.now(timezone.utc).isoformat()
             )
 
         # Fallback: direct database lookup
@@ -362,7 +362,7 @@ async def resolve_identifier(request: IdentifierResolutionRequest):
                     match_type="exact" if mol['inchi_key'] == identifier else "name",
                     needs_review=mol['needs_review'],
                     resolution_path=resolution_path,
-                    timestamp=datetime.utcnow().isoformat()
+                    timestamp=datetime.now(timezone.utc).isoformat()
                 )
 
             # Try fuzzy name match
@@ -392,7 +392,7 @@ async def resolve_identifier(request: IdentifierResolutionRequest):
                     match_type="fuzzy",
                     needs_review=True,
                     resolution_path=resolution_path,
-                    timestamp=datetime.utcnow().isoformat()
+                    timestamp=datetime.now(timezone.utc).isoformat()
                 )
 
             # No match found
@@ -408,7 +408,7 @@ async def resolve_identifier(request: IdentifierResolutionRequest):
                 match_type="none",
                 needs_review=True,
                 resolution_path=resolution_path,
-                timestamp=datetime.utcnow().isoformat()
+                timestamp=datetime.now(timezone.utc).isoformat()
             )
 
     except Exception as e:
@@ -506,7 +506,7 @@ async def get_molecule_profile(molecule_id: str):
                 publication_count=pub_count,
                 aliases=None,
                 data_sources=['compounds'],
-                timestamp=datetime.utcnow().isoformat()
+                timestamp=datetime.now(timezone.utc).isoformat()
             )
 
     except HTTPException:
@@ -602,7 +602,7 @@ async def get_safety_signals(molecule_id: str):
                 boxed_warning=boxed_warning,
                 first_report_date=ae_counts['first_report'].isoformat() if ae_counts and ae_counts['first_report'] else None,
                 last_report_date=ae_counts['last_report'].isoformat() if ae_counts and ae_counts['last_report'] else None,
-                timestamp=datetime.utcnow().isoformat()
+                timestamp=datetime.now(timezone.utc).isoformat()
             )
 
     except HTTPException:
@@ -637,7 +637,7 @@ async def list_resolution_queue(
                 success=False,
                 items=[],
                 total_count=0,
-                timestamp=datetime.utcnow().isoformat()
+                timestamp=datetime.now(timezone.utc).isoformat()
             )
 
         # Build query conditions
@@ -722,7 +722,7 @@ async def list_resolution_queue(
             success=True,
             items=items,
             total_count=total_count,
-            timestamp=datetime.utcnow().isoformat()
+            timestamp=datetime.now(timezone.utc).isoformat()
         )
     except Exception as e:
         logger.error(f"Failed to list resolution queue: {e}")
@@ -750,7 +750,7 @@ async def get_queue_stats():
                 rejected_today=0,
                 merged_today=0,
                 avg_resolution_time_hours=0.0,
-                timestamp=datetime.utcnow().isoformat()
+                timestamp=datetime.now(timezone.utc).isoformat()
             )
 
         async with pool.acquire() as conn:
@@ -796,7 +796,7 @@ async def get_queue_stats():
                     rejected_today=today_stats['rejected'] or 0,
                     merged_today=today_stats['merged'] or 0,
                     avg_resolution_time_hours=float(avg_time) if avg_time else 0.0,
-                    timestamp=datetime.utcnow().isoformat()
+                    timestamp=datetime.now(timezone.utc).isoformat()
                 )
 
             except Exception as table_err:
@@ -809,7 +809,7 @@ async def get_queue_stats():
                     rejected_today=0,
                     merged_today=0,
                     avg_resolution_time_hours=0.0,
-                    timestamp=datetime.utcnow().isoformat()
+                    timestamp=datetime.now(timezone.utc).isoformat()
                 )
 
     except Exception as e:
@@ -936,7 +936,7 @@ async def perform_queue_action(item_id: str, request: QueueActionRequest):
             item_id=item_id,
             action=request.action,
             message=message,
-            timestamp=datetime.utcnow().isoformat()
+            timestamp=datetime.now(timezone.utc).isoformat()
         )
     except HTTPException:
         raise
@@ -999,7 +999,7 @@ async def bulk_approve_queue_items(request: BulkApproveRequest):
             "success": True,
             "approved_count": approved_count,
             "results": results,
-            "timestamp": datetime.utcnow().isoformat()
+            "timestamp": datetime.now(timezone.utc).isoformat()
         }
     except HTTPException:
         raise
@@ -1043,7 +1043,7 @@ async def find_potential_duplicates(
                     "success": True,
                     "item_id": item_id,
                     "duplicates": [],
-                    "timestamp": datetime.utcnow().isoformat()
+                    "timestamp": datetime.now(timezone.utc).isoformat()
                 }
 
             # Find similar molecules using trigram similarity
@@ -1079,7 +1079,7 @@ async def find_potential_duplicates(
                 "success": True,
                 "item_id": item_id,
                 "duplicates": duplicates,
-                "timestamp": datetime.utcnow().isoformat()
+                "timestamp": datetime.now(timezone.utc).isoformat()
             }
     except HTTPException:
         raise
@@ -1111,7 +1111,7 @@ async def get_pipeline_status():
                 trials={"total": 0, "active": 0},
                 adverse_events={"molecules_with_events": 0, "total_reports": 0},
                 last_refresh=None,
-                timestamp=datetime.utcnow().isoformat()
+                timestamp=datetime.now(timezone.utc).isoformat()
             )
 
         async with pool.acquire() as conn:
@@ -1151,8 +1151,8 @@ async def get_pipeline_status():
                 "molecules_with_events": ae_molecules,
                 "total_reports": ae_reports
             },
-            last_refresh=datetime.utcnow().isoformat(),
-            timestamp=datetime.utcnow().isoformat()
+            last_refresh=datetime.now(timezone.utc).isoformat(),
+            timestamp=datetime.now(timezone.utc).isoformat()
         )
     except Exception as e:
         logger.error(f"Failed to get pipeline status: {e}")
@@ -1187,7 +1187,7 @@ async def trigger_gold_refresh(background_tasks: BackgroundTasks):
             success=True,
             message="Gold layer refresh initiated",
             job_id=job_id,
-            timestamp=datetime.utcnow().isoformat()
+            timestamp=datetime.now(timezone.utc).isoformat()
         )
     except Exception as e:
         logger.error(f"Failed to trigger Gold refresh: {e}")
@@ -1252,7 +1252,7 @@ async def trigger_source_ingestion(
             success=True,
             message=f"Ingestion triggered for {source}",
             job_id=job_id,
-            timestamp=datetime.utcnow().isoformat()
+            timestamp=datetime.now(timezone.utc).isoformat()
         )
     except Exception as e:
         logger.error(f"Failed to trigger {source} ingestion: {e}")
@@ -1324,7 +1324,7 @@ async def trigger_full_pipeline(
             success=True,
             message=f"Full pipeline triggered (tier={tier}, transform_only={transform_only})",
             job_id=job_id,
-            timestamp=datetime.utcnow().isoformat()
+            timestamp=datetime.now(timezone.utc).isoformat()
         )
     except Exception as e:
         logger.error(f"Failed to trigger pipeline: {e}")
@@ -1357,7 +1357,7 @@ async def get_competitive_landscape(
                 "results": [],
                 "count": 0,
                 "filters": {"therapeutic_area": therapeutic_area, "mechanism": mechanism},
-                "timestamp": datetime.utcnow().isoformat()
+                "timestamp": datetime.now(timezone.utc).isoformat()
             }
 
         async with pool.acquire() as conn:
@@ -1444,7 +1444,7 @@ async def get_competitive_landscape(
                 "therapeutic_area": therapeutic_area,
                 "mechanism": mechanism
             },
-            "timestamp": datetime.utcnow().isoformat()
+            "timestamp": datetime.now(timezone.utc).isoformat()
         }
     except Exception as e:
         logger.error(f"Failed to get competitive landscape: {e}")
@@ -1473,7 +1473,7 @@ async def get_company_pipeline(
                 "company": company,
                 "pipeline": [],
                 "count": 0,
-                "timestamp": datetime.utcnow().isoformat()
+                "timestamp": datetime.now(timezone.utc).isoformat()
             }
 
         async with pool.acquire() as conn:
@@ -1563,7 +1563,7 @@ async def get_company_pipeline(
             "company": company,
             "pipeline": pipeline,
             "count": len(pipeline),
-            "timestamp": datetime.utcnow().isoformat()
+            "timestamp": datetime.now(timezone.utc).isoformat()
         }
     except Exception as e:
         logger.error(f"Failed to get company pipeline: {e}")
@@ -1592,7 +1592,7 @@ async def get_lifecycle_evidence(
                 "molecule_id": molecule_id,
                 "evidence": [],
                 "count": 0,
-                "timestamp": datetime.utcnow().isoformat()
+                "timestamp": datetime.now(timezone.utc).isoformat()
             }
 
         async with pool.acquire() as conn:
@@ -1719,7 +1719,7 @@ async def get_lifecycle_evidence(
             "molecule_id": molecule_id,
             "evidence": evidence,
             "count": len(evidence),
-            "timestamp": datetime.utcnow().isoformat()
+            "timestamp": datetime.now(timezone.utc).isoformat()
         }
     except Exception as e:
         logger.error(f"Failed to get lifecycle evidence: {e}")
@@ -1827,7 +1827,7 @@ async def list_gold_molecule_profiles(
                 total_count=0,
                 page=page,
                 page_size=page_size,
-                timestamp=datetime.utcnow().isoformat()
+                timestamp=datetime.now(timezone.utc).isoformat()
             )
 
         async with pool.acquire() as conn:
@@ -1958,7 +1958,7 @@ async def list_gold_molecule_profiles(
             total_count=total_count,
             page=page,
             page_size=page_size,
-            timestamp=datetime.utcnow().isoformat()
+            timestamp=datetime.now(timezone.utc).isoformat()
         )
     except Exception as e:
         logger.error(f"Failed to list gold molecule profiles: {e}")
@@ -1989,7 +1989,7 @@ async def list_gold_safety_signals(
                 success=False,
                 signals=[],
                 total_count=0,
-                timestamp=datetime.utcnow().isoformat()
+                timestamp=datetime.now(timezone.utc).isoformat()
             )
 
         async with pool.acquire() as conn:
@@ -2069,7 +2069,7 @@ async def list_gold_safety_signals(
             success=True,
             signals=signals,
             total_count=len(signals),
-            timestamp=datetime.utcnow().isoformat()
+            timestamp=datetime.now(timezone.utc).isoformat()
         )
     except Exception as e:
         logger.error(f"Failed to list gold safety signals: {e}")
@@ -2100,7 +2100,7 @@ async def list_gold_lifecycle_stages(
                 molecules=[],
                 stage_distribution={},
                 total_count=0,
-                timestamp=datetime.utcnow().isoformat()
+                timestamp=datetime.now(timezone.utc).isoformat()
             )
 
         async with pool.acquire() as conn:
@@ -2205,7 +2205,7 @@ async def list_gold_lifecycle_stages(
             molecules=molecules,
             stage_distribution=stage_distribution,
             total_count=len(molecules),
-            timestamp=datetime.utcnow().isoformat()
+            timestamp=datetime.now(timezone.utc).isoformat()
         )
     except Exception as e:
         logger.error(f"Failed to list gold lifecycle stages: {e}")
@@ -2229,7 +2229,7 @@ async def get_gold_data_quality():
             return {
                 "success": False,
                 "metrics": {},
-                "timestamp": datetime.utcnow().isoformat()
+                "timestamp": datetime.now(timezone.utc).isoformat()
             }
 
         async with pool.acquire() as conn:
@@ -2335,7 +2335,7 @@ async def get_gold_data_quality():
                         "rejected_total": queue_stats['rejected_total'] if queue_stats else 0,
                     },
                 },
-                "timestamp": datetime.utcnow().isoformat()
+                "timestamp": datetime.now(timezone.utc).isoformat()
             }
     except Exception as e:
         logger.error(f"Failed to get data quality metrics: {e}")
@@ -2378,7 +2378,7 @@ async def get_scheduler_status():
                 success=False,
                 schedules=[],
                 scheduler_running=False,
-                timestamp=datetime.utcnow().isoformat()
+                timestamp=datetime.now(timezone.utc).isoformat()
             )
 
         async with pool.acquire() as conn:
@@ -2428,7 +2428,7 @@ async def get_scheduler_status():
             success=True,
             schedules=schedules,
             scheduler_running=scheduler_running,
-            timestamp=datetime.utcnow().isoformat()
+            timestamp=datetime.now(timezone.utc).isoformat()
         )
     except Exception as e:
         logger.error(f"Failed to get scheduler status: {e}")
@@ -2454,7 +2454,7 @@ async def get_job_history(
                 success=False,
                 jobs=[],
                 total_count=0,
-                timestamp=datetime.utcnow().isoformat()
+                timestamp=datetime.now(timezone.utc).isoformat()
             )
 
         async with pool.acquire() as conn:
@@ -2523,7 +2523,7 @@ async def get_job_history(
             success=True,
             jobs=jobs,
             total_count=total_count,
-            timestamp=datetime.utcnow().isoformat()
+            timestamp=datetime.now(timezone.utc).isoformat()
         )
     except Exception as e:
         logger.error(f"Failed to get job history: {e}")
@@ -2599,7 +2599,7 @@ async def trigger_tier_sync(
             success=True,
             message=f"Tier '{tier}' sync triggered for sources: {', '.join(sources)}",
             job_id=job_id,
-            timestamp=datetime.utcnow().isoformat()
+            timestamp=datetime.now(timezone.utc).isoformat()
         )
     except Exception as e:
         logger.error(f"Failed to trigger tier sync: {e}")
@@ -2697,7 +2697,7 @@ async def update_schedule(
                     "priority": row['priority'],
                     "enabled": row['enabled'],
                 },
-                "timestamp": datetime.utcnow().isoformat()
+                "timestamp": datetime.now(timezone.utc).isoformat()
             }
     except HTTPException:
         raise
@@ -3509,5 +3509,5 @@ async def trigger_on_demand_transform(
         schema_path=schema_path,
         layers=layer_results,
         total_duration_ms=total_duration,
-        timestamp=datetime.utcnow().isoformat(),
+        timestamp=datetime.now(timezone.utc).isoformat(),
     )

@@ -217,6 +217,18 @@ class BaseFetcher(ABC):
             "last_modified": response.headers.get('Last-Modified', last_modified),
         }
 
+    def close(self) -> None:
+        """Close the underlying HTTP session to release connections."""
+        if self.session:
+            self.session.close()
+
+    def __del__(self) -> None:
+        """Best-effort cleanup on garbage collection."""
+        try:
+            self.close()
+        except Exception:
+            pass
+
     def log_fetch_result(self, result: Dict[str, Any]) -> None:
         """Log fetch result for monitoring."""
         timestamp = datetime.now().isoformat()

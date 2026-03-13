@@ -466,8 +466,9 @@ def main():
 
         cursor = conn.cursor()
         logger.info("\n=== SUMMARY ===")
+        from psycopg2 import sql as psql
         for table in ['pubchem_bioassays', 'pubchem_xrefs', 'pubchem_safety', 'pubchem_pharmacology']:
-            cursor.execute(f"SELECT COUNT(*) FROM bronze.{table}")
+            cursor.execute(psql.SQL("SELECT COUNT(*) FROM bronze.{}").format(psql.Identifier(table)))
             count = cursor.fetchone()[0]
             logger.info(f"bronze.{table}: {count:,} records")
 
