@@ -22,6 +22,9 @@ UPDATE raw.cms_ddinter
     WHERE interaction_level IS NOT NULL
       AND interaction_type IS NULL;
 
+-- Drop dependent views before dropping the old column
+DROP VIEW IF EXISTS gold.cms_ddinter CASCADE;
+
 ALTER TABLE raw.cms_ddinter
     DROP COLUMN IF EXISTS interaction_level;
 
