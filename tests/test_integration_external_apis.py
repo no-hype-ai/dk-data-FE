@@ -4,6 +4,7 @@ Integration tests for external data sources.
 These tests make REAL network calls to external APIs.
 Run with: python3 tests/test_integration_external_apis.py
 """
+import socket
 import sys
 import asyncio
 import traceback  # noqa: F401 — available for detailed error reporting in integration tests
@@ -13,7 +14,23 @@ import pytest
 
 sys.path.insert(0, "src")
 
-pytestmark = [pytest.mark.integration, pytest.mark.asyncio]
+
+def _port_open(host: str, port: int, timeout: float = 1.0) -> bool:
+    try:
+        with socket.create_connection((host, port), timeout=timeout):
+            return True
+    except OSError:
+        return False
+
+
+# These tests require a full local stack (docker-compose postgres on 5433 + external APIs)
+_LOCAL_DB_AVAILABLE = _port_open("localhost", 5433)
+
+pytestmark = [
+    pytest.mark.integration,
+    pytest.mark.asyncio,
+    pytest.mark.skipif(not _LOCAL_DB_AVAILABLE, reason="Local DB on port 5433 not available"),
+]
 
 PASS = "\033[92m✓\033[0m"
 FAIL = "\033[91m✗\033[0m"

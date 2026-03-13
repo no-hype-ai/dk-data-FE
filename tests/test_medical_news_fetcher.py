@@ -39,14 +39,14 @@ SAMPLE_RSS_XML = """\
       <title>New Drug Keytruda Shows Promise in Lung Cancer Trial</title>
       <link>https://www.medscape.com/viewarticle/12345</link>
       <description>&lt;p&gt;A new clinical trial demonstrates that Keytruda significantly improves survival.&lt;/p&gt;</description>
-      <pubDate>Mon, 10 Feb 2026 12:00:00 GMT</pubDate>
+      <pubDate>Mon, 10 Mar 2026 12:00:00 GMT</pubDate>
       <category>Oncology</category>
     </item>
     <item>
       <title>FDA Approves Humira Biosimilar</title>
       <link>https://www.medscape.com/viewarticle/12346</link>
       <description>The FDA has approved a new biosimilar for Humira.</description>
-      <pubDate>Tue, 11 Feb 2026 14:00:00 GMT</pubDate>
+      <pubDate>Tue, 11 Mar 2026 14:00:00 GMT</pubDate>
       <category>Rheumatology</category>
     </item>
   </channel>
