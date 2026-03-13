@@ -20,7 +20,7 @@ class CmsPartBSpendingRecord(BaseModel):
     total_spending: Optional[float] = None
     total_claims: Optional[int] = None
     total_beneficiaries: Optional[int] = None
-    year: Optional[str] = None
+    year: Optional[int] = None
 
     @field_validator("hcpcs_code")
     @classmethod

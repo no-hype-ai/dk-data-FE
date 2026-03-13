@@ -20,6 +20,9 @@ logger = logging.getLogger(__name__)
 FIELD_MAP = {
     "npi": "npi",
     "Npi": "npi",
+    "NPI": "npi",
+    "Prscrbr_NPI": "npi",
+    "prscrbr_npi": "npi",
     "prscrbr_last_org_name": "prescriber_last_org_name",
     "Prscrbr_Last_Org_Name": "prescriber_last_org_name",
     "prscrbr_first_name": "prescriber_first_name",
@@ -197,9 +200,12 @@ class CMSPartDPrescriberFetcher(BaseFetcher):
             if cms_key in row and row[cms_key] is not None:
                 record[loader_key] = row[cms_key]
 
-        # Ensure npi is present — CMS API may use Npi, NPI, or npi
+        # Ensure npi is present — CMS API may use Prscrbr_NPI, Npi, NPI, npi
         if "npi" not in record or not record["npi"]:
-            npi = row.get("Npi") or row.get("NPI") or row.get("npi") or ""
+            npi = (
+                row.get("Prscrbr_NPI") or row.get("prscrbr_npi")
+                or row.get("Npi") or row.get("NPI") or row.get("npi") or ""
+            )
             if npi:
                 record["npi"] = str(npi)
 
@@ -209,7 +215,6 @@ class CMSPartDPrescriberFetcher(BaseFetcher):
             if year:
                 record["year"] = int(year)
             else:
-                # Default to the year from the dataset UUID mapping
                 record["year"] = 2023
 
         # Ensure drug_brand_name is present (required by loader validator)
@@ -219,6 +224,11 @@ class CMSPartDPrescriberFetcher(BaseFetcher):
                 or row.get("Drug_Name") or row.get("drug_name")
                 or "Unknown"
             )
+
+        # Coerce empty strings to None for numeric fields
+        for key in ("total_claims", "total_30day_fills", "total_drug_cost", "total_beneficiaries"):
+            if key in record and record[key] == "":
+                record[key] = None
 
         return record
 

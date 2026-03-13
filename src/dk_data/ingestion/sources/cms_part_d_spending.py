@@ -20,7 +20,7 @@ class CmsPartDSpendingRecord(BaseModel):
     total_claims: Optional[int] = None
     total_beneficiaries: Optional[int] = None
     avg_cost_per_claim: Optional[float] = None
-    year: Optional[str] = None
+    year: Optional[int] = None
 
 
 def load_cms_part_d_spending_data(
@@ -62,8 +62,11 @@ def load_cms_part_d_spending_data(
         with conn.cursor() as cur:
             for start in range(0, len(validated), batch_size):
                 batch = validated[start : start + batch_size]
-                values = [
-                    (
+                # Deduplicate by (brand_name, year) to avoid
+                # "ON CONFLICT DO UPDATE cannot affect row a second time"
+                seen: dict = {}
+                for r in batch:
+                    seen[(r.brand_name, r.year)] = (
                         r.brand_name,
                         r.generic_name,
                         r.total_spending,
@@ -75,8 +78,7 @@ def load_cms_part_d_spending_data(
                         source_file,
                         source_hash,
                     )
-                    for r in batch
-                ]
+                values = list(seen.values())
                 execute_values(
                     cur,
                     """
