@@ -24,8 +24,11 @@ from .base import BaseFetcher
 
 logger = logging.getLogger(__name__)
 
-# PatentSearch API endpoint
-PATENTSVIEW_API = "https://search.patentsview.org/api/v1/patent/"
+# PatentSearch API endpoint — configurable for March 2026 migration to data.uspto.gov
+PATENTSVIEW_API = os.environ.get(
+    "PATENTSVIEW_API_URL",
+    "https://search.patentsview.org/api/v1/patent/",
+)
 
 # CPC codes relevant to pharmaceutical chemistry
 PHARMA_CPC_CODES = ["A61K", "A61P", "C07D"]
@@ -42,7 +45,7 @@ class USPTOCIFetcher(BaseFetcher):
     """Fetcher for USPTO PatentSearch API (CI scope)."""
 
     SOURCE_NAME = "uspto_ci"
-    BASE_URL = "https://search.patentsview.org"
+    BASE_URL = os.environ.get("PATENTSVIEW_BASE_URL", "https://search.patentsview.org")
 
     def __init__(self, data_dir: Optional[str] = None):
         """Initialize the USPTO CI fetcher with optional API key."""

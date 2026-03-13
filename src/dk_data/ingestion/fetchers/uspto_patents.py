@@ -39,10 +39,13 @@ class USPTOPatentsFetcher(BaseFetcher):
     """Fetcher for USPTO PatentSearch pharmaceutical patents."""
 
     SOURCE_NAME = "uspto_patents"
-    BASE_URL = "https://search.patentsview.org"
+    BASE_URL = os.environ.get("PATENTSVIEW_BASE_URL", "https://search.patentsview.org")
 
-    # PatentSearch API endpoint
-    PATENTS_API = "https://search.patentsview.org/api/v1/patent/"
+    # PatentSearch API endpoint — configurable for March 2026 migration to data.uspto.gov
+    PATENTS_API = os.environ.get(
+        "PATENTSVIEW_API_URL",
+        "https://search.patentsview.org/api/v1/patent/",
+    )
 
     def __init__(self, data_dir: Optional[str] = None):
         """Initialize the USPTO Patents fetcher.
