@@ -6,8 +6,7 @@ Task: Tier 4 CI source — EMA regulatory decisions
 Tests use mocked HTTP responses so no external network calls are made.
 """
 
-import json
-from datetime import date, datetime, timedelta, timezone
+from datetime import date, datetime, timezone
 from unittest.mock import MagicMock, patch
 
 import pytest

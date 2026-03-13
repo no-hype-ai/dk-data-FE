@@ -15,7 +15,7 @@ API: https://eutils.ncbi.nlm.nih.gov/entrez/eutils/
 import hashlib
 import logging
 import time
-from datetime import datetime, timedelta
+from datetime import datetime
 from typing import Any, Dict, List, Optional
 from xml.etree import ElementTree
 

@@ -187,7 +187,6 @@ class CMSOpenPaymentsFetcher(BaseFetcher):
         records: List[Dict[str, Any]] = []
         offset = resume_offset
         page_size = DEFAULT_PAGE_SIZE
-        key_fields = FIELDS_BY_TYPE.get(payment_type, GENERAL_FIELDS)
 
         while True:
             # DKAN datastore query endpoint with limit/offset pagination
