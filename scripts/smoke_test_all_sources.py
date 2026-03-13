@@ -11,7 +11,6 @@ Usage:
 import argparse
 import json
 import logging
-import os
 import sys
 import time
 import traceback
@@ -22,8 +21,8 @@ from pathlib import Path
 project_root = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(project_root / "src"))
 
-from dk_data.ingestion.main import SOURCES, log_to_meta, _meta_name
-from dk_data.ingestion.utils.database import init_connection_pool, close_connection_pool
+from dk_data.ingestion.main import SOURCES, log_to_meta, _meta_name  # noqa: E402
+from dk_data.ingestion.utils.database import init_connection_pool, close_connection_pool  # noqa: E402
 
 logging.basicConfig(
     level=logging.INFO,
