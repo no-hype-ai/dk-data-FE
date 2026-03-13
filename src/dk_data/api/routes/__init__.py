@@ -15,6 +15,7 @@ from .kols import router as kols_router
 from .visualize import router as visualize_router
 from .data_sources import router as data_sources_router
 from .data_tools import router as data_tools_router
+from .agents import router as agents_router
 
 __all__ = [
     "data_platform_router",
@@ -28,4 +29,5 @@ __all__ = [
     "visualize_router",
     "data_sources_router",
     "data_tools_router",
+    "agents_router",
 ]

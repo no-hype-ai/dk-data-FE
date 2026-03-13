@@ -24,6 +24,7 @@ import time
 from typing import Optional
 from functools import wraps
 
+from loguru import logger
 from prometheus_client import (
     Counter,
     Histogram,
@@ -559,8 +560,17 @@ CMS_AGENT_QUARANTINE_PENDING = Gauge(
 # =============================================================================
 
 def setup_metrics() -> None:
-    """Initialize metrics (called at service startup)."""
-    pass
+    """Initialize metrics at service startup.
+
+    Prometheus metrics are instantiated as module-level globals on import,
+    so this function ensures they are registered by importing the module.
+    Call at app startup to guarantee metrics are available before the first
+    request hits /metrics.
+    """
+    logger.info(
+        "Prometheus metrics initialized: %d collectors registered",
+        len(list(REGISTRY.collect())),
+    )
 
 
 def record_job_duration(job_name: str, duration_seconds: float) -> None:
