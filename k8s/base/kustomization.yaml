@@ -90,6 +90,8 @@ resources:
   - db-init-job.yaml
   # DrugBank seed (wave 2): unzips bundled XML and loads into bronze.drugbank_*
   - job-drugbank-seed.yaml
+  # USP MMG v9.0 seed (wave 2): loads alignment file into raw.cms_usp
+  - job-usp-seed.yaml
   # Networking
   - ingress.yaml
   - middleware-rate-limit.yaml

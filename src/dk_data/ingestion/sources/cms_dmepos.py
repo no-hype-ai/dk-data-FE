@@ -16,12 +16,11 @@ class CmsDmeposRecord(BaseModel):
 
     npi: str
     hcpcs_code: Optional[str] = None
-    hcpcs_description: Optional[str] = None  # accepted from fetcher, not stored in DB
-    total_services: Optional[int] = None
-    total_beneficiaries: Optional[int] = None
-    avg_submitted_charge: Optional[float] = None
-    avg_medicare_payment: Optional[float] = None
-    year: Optional[int] = None
+    hcpcs_description: Optional[str] = None
+    total_services: Optional[str] = None
+    total_beneficiaries: Optional[str] = None
+    avg_submitted_charge: Optional[str] = None
+    avg_medicare_payment: Optional[str] = None
 
     @field_validator("npi")
     @classmethod
@@ -56,26 +55,6 @@ def load_cms_dmepos_data(
             "errors": errors[:50],
         }
 
-    # Filter out records with null PK fields — the DB requires (npi, hcpcs_code, year)
-    # but the API legitimately returns records without hcpcs_code or year
-    before_count = len(validated)
-    validated = [r for r in validated if r.hcpcs_code and r.year is not None]
-    skipped_null_pk = before_count - len(validated)
-    if skipped_null_pk:
-        logger.info(
-            "cms_dmepos: skipped %d records with null PK fields (hcpcs_code/year)",
-            skipped_null_pk,
-        )
-
-    if not validated:
-        return {
-            "status": "success",
-            "records_inserted": 0,
-            "records_failed": len(errors),
-            "records_skipped_null_pk": skipped_null_pk,
-            "errors": errors[:50],
-        }
-
     loaded_at = datetime.utcnow()
 
     conn = psycopg2.connect(
@@ -95,11 +74,11 @@ def load_cms_dmepos_data(
                     (
                         r.npi,
                         r.hcpcs_code,
+                        r.hcpcs_description,
                         r.total_services,
                         r.total_beneficiaries,
                         r.avg_submitted_charge,
                         r.avg_medicare_payment,
-                        r.year,
                         loaded_at,
                         source_file,
                         source_hash,
@@ -110,11 +89,14 @@ def load_cms_dmepos_data(
                     cur,
                     """
                     INSERT INTO raw.cms_dmepos (
-                        npi, hcpcs_code, total_services,
-                        total_beneficiaries, avg_submitted_charge, avg_medicare_payment,
-                        year, _loaded_at, _source_file, _source_hash
+                        npi, hcpcs_code, hcpcs_description,
+                        total_services, total_beneficiaries,
+                        avg_submitted_charge, avg_medicare_payment,
+                        _loaded_at, _source_file, _source_hash
                     ) VALUES %s
-                    ON CONFLICT (npi, hcpcs_code, year) DO UPDATE SET
+                    ON CONFLICT (npi) DO UPDATE SET
+                        hcpcs_code = EXCLUDED.hcpcs_code,
+                        hcpcs_description = EXCLUDED.hcpcs_description,
                         total_services = EXCLUDED.total_services,
                         total_beneficiaries = EXCLUDED.total_beneficiaries,
                         avg_submitted_charge = EXCLUDED.avg_submitted_charge,

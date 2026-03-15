@@ -76,15 +76,19 @@ def load_cms_physician_puf_data(
             "errors": errors[:50],
         }
 
-    # Filter out records with null PK fields — the DB requires (npi, hcpcs_code, year)
-    # but the API legitimately returns records without hcpcs_code or year
+    # Default year for records without year (partitioned table requires year in PK)
+    # CMS datasets are implicitly versioned by year; use current year as fallback
+    default_year = datetime.now().year
     before_count = len(validated)
-    validated = [r for r in validated if r.hcpcs_code and r.year is not None]
-    skipped_null_pk = before_count - len(validated)
-    if skipped_null_pk:
+    for r in validated:
+        if r.year is None:
+            r.year = default_year
+    validated = [r for r in validated if r.hcpcs_code]
+    skipped = before_count - len(validated)
+    if skipped:
         logger.info(
-            "cms_physician_puf: skipped %d records with null PK fields (hcpcs_code/year)",
-            skipped_null_pk,
+            "cms_physician_puf: skipped %d records with null hcpcs_code",
+            skipped,
         )
 
     if not validated:
@@ -92,7 +96,6 @@ def load_cms_physician_puf_data(
             "status": "success",
             "records_inserted": 0,
             "records_failed": len(errors),
-            "records_skipped_null_pk": skipped_null_pk,
             "errors": errors[:50],
         }
 

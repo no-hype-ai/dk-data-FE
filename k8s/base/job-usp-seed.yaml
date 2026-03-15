@@ -1,0 +1,143 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: usp-seed
+  labels:
+    app.kubernetes.io/name: usp-seed
+    app.kubernetes.io/component: database
+    app.kubernetes.io/part-of: dk-data
+  annotations:
+    # Runs after db-init (wave 1) — creates tables then loads data
+    argocd.argoproj.io/hook: Sync
+    argocd.argoproj.io/hook-delete-policy: BeforeHookCreation
+    argocd.argoproj.io/sync-wave: "2"
+spec:
+  # Idempotent: ON CONFLICT DO UPDATE in loader; safe to re-run
+  backoffLimit: 1
+  # USP alignment file is small (~11k rows), completes in seconds
+  activeDeadlineSeconds: 300
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: usp-seed
+        app.kubernetes.io/part-of: dk-data
+    spec:
+      restartPolicy: Never
+      imagePullSecrets:
+        - name: ghcr-credentials
+      containers:
+        - name: usp-seed
+          image: ghcr.io/data-kinetic/dk-data-fe/job-trigger:main
+          command:
+            - /bin/bash
+            - -c
+            - |
+              set -euo pipefail
+
+              XLSX_PATH="/app/data/usp/usp_mmg_v9_alignment.xlsx"
+
+              if [ ! -f "$XLSX_PATH" ]; then
+                echo "ERROR: USP alignment file not found at $XLSX_PATH"
+                echo "Ensure the file is committed via Git LFS and baked into the image."
+                exit 1
+              fi
+
+              echo "=== USP MMG v9.0 seed job ==="
+              echo "Source: $XLSX_PATH"
+              echo "Target: ${POSTGRES_HOST}:${POSTGRES_PORT}/${POSTGRES_DB} (raw.cms_usp)"
+
+              # Skip if already loaded (more than 100 rows present)
+              ROW_COUNT=$(python3 -c "
+              import psycopg2, os
+              try:
+                conn = psycopg2.connect(
+                  host=os.environ['POSTGRES_HOST'],
+                  port=int(os.environ.get('POSTGRES_PORT', '5432')),
+                  database=os.environ['POSTGRES_DB'],
+                  user=os.environ['POSTGRES_USER'],
+                  password=os.environ['POSTGRES_PASSWORD'],
+                )
+                cur = conn.cursor()
+                cur.execute(\"SELECT COUNT(*) FROM raw.cms_usp\")
+                print(cur.fetchone()[0])
+                conn.close()
+              except Exception as e:
+                print(0)
+              " 2>/dev/null || echo "0")
+
+              if [ "$ROW_COUNT" -gt 100 ]; then
+                echo "USP already loaded ($ROW_COUNT records in raw.cms_usp). Skipping."
+                exit 0
+              fi
+
+              echo "raw.cms_usp has $ROW_COUNT rows — starting full load..."
+              python3 -c "
+              import sys
+              sys.path.insert(0, '/usr/local/lib/python3.11/site-packages')
+              from dk_data.ingestion.fetchers.cms_usp import CMSUSPFetcher
+              from dk_data.ingestion.sources.cms_usp import load_cms_usp_data
+
+              fetcher = CMSUSPFetcher()
+              result = fetcher.fetch()
+              records = result.get('records', [])
+              print(f'Fetched {len(records)} USP alignment records')
+
+              if records:
+                  lr = load_cms_usp_data(records, source_hash=result.get('hash'), source_file='$XLSX_PATH')
+                  print(f'Loaded: status={lr[\"status\"]}, inserted={lr[\"records_inserted\"]}')
+              else:
+                  print(f'ERROR: No records parsed. Status: {result.get(\"status\")}')
+                  if 'error' in result:
+                      print(f'Error: {result[\"error\"]}')
+                  sys.exit(1)
+              "
+
+              FINAL_COUNT=$(python3 -c "
+              import psycopg2, os
+              conn = psycopg2.connect(
+                host=os.environ['POSTGRES_HOST'],
+                port=int(os.environ.get('POSTGRES_PORT', '5432')),
+                database=os.environ['POSTGRES_DB'],
+                user=os.environ['POSTGRES_USER'],
+                password=os.environ['POSTGRES_PASSWORD'],
+              )
+              cur = conn.cursor()
+              cur.execute(\"SELECT COUNT(*) FROM raw.cms_usp\")
+              print(cur.fetchone()[0])
+              conn.close()
+              " 2>/dev/null || echo "unknown")
+
+              echo "=== USP seed complete: $FINAL_COUNT records loaded ==="
+          env:
+            - name: POSTGRES_HOST
+              valueFrom:
+                secretKeyRef:
+                  name: dk-data-secrets
+                  key: POSTGRES_HOST
+            - name: POSTGRES_PORT
+              valueFrom:
+                secretKeyRef:
+                  name: dk-data-secrets
+                  key: POSTGRES_PORT
+            - name: POSTGRES_USER
+              valueFrom:
+                secretKeyRef:
+                  name: dk-data-secrets
+                  key: POSTGRES_USER
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: dk-data-secrets
+                  key: POSTGRES_PASSWORD
+            - name: POSTGRES_DB
+              valueFrom:
+                secretKeyRef:
+                  name: dk-data-secrets
+                  key: POSTGRES_DB
+          resources:
+            requests:
+              memory: "128Mi"
+              cpu: "100m"
+            limits:
+              memory: "256Mi"
+              cpu: "250m"

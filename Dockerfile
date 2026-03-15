@@ -28,6 +28,8 @@ WORKDIR /app
 
 # Bundle DrugBank seed data (tracked in Git LFS, used by seed job and MCP adapter)
 COPY --chown=appuser:appuser data/drugbank/ /app/data/drugbank/
+# Bundle USP MMG v9.0 Alignment File (tracked in Git LFS, used by USP seed job)
+COPY --chown=appuser:appuser data/usp/ /app/data/usp/
 
 USER appuser
 

@@ -14,13 +14,12 @@ logger = logging.getLogger(__name__)
 class CmsOutpatientPufRecord(BaseModel):
     """Validated record for CMS Outpatient PUF data."""
 
-    ccn: str  # mapped to DB column provider_id
-    hcpcs_code: str  # mapped to DB column apc_code
-    hcpcs_description: Optional[str] = None  # accepted from fetcher, not in DB
-    total_services: Optional[int] = None
-    avg_est_submitted_charges: Optional[float] = None  # mapped to DB column avg_estimated_payment
-    avg_total_payments: Optional[float] = None
-    year: Optional[int] = None
+    ccn: str
+    apc_code: Optional[str] = None
+    apc_description: Optional[str] = None
+    total_services: Optional[str] = None
+    avg_submitted_charges: Optional[str] = None
+    avg_total_payments: Optional[str] = None
 
     @field_validator("ccn")
     @classmethod
@@ -30,28 +29,6 @@ class CmsOutpatientPufRecord(BaseModel):
             raise ValueError("ccn must not be empty")
         return v
 
-    @field_validator("hcpcs_code")
-    @classmethod
-    def hcpcs_code_not_empty(cls, v: str) -> str:
-        v = v.strip()
-        if not v:
-            raise ValueError("hcpcs_code must not be empty")
-        return v
-
-    @field_validator("total_services", mode="before")
-    @classmethod
-    def coerce_total_services(cls, v):
-        if v is None or v == "":
-            return None
-        return int(v)
-
-    @field_validator("avg_est_submitted_charges", "avg_total_payments", mode="before")
-    @classmethod
-    def coerce_float(cls, v):
-        if v is None or v == "":
-            return None
-        return float(v)
-
 
 def load_cms_outpatient_puf_data(
     records: List[Dict[str, Any]],
@@ -59,17 +36,7 @@ def load_cms_outpatient_puf_data(
     source_file: Optional[str] = None,
     batch_size: int = 500,
 ) -> Dict[str, Any]:
-    """Load CMS Outpatient PUF records into raw.cms_outpatient_puf.
-
-    Args:
-        records: List of dicts from the fetcher.
-        source_hash: Hash identifying the source snapshot.
-        source_file: Original filename / URL.
-        batch_size: Rows per INSERT batch.
-
-    Returns:
-        Status dict with counts and errors.
-    """
+    """Load CMS Outpatient PUF records into raw.cms_outpatient_puf."""
     validated: List[CmsOutpatientPufRecord] = []
     errors: List[Dict[str, Any]] = []
 
@@ -87,22 +54,18 @@ def load_cms_outpatient_puf_data(
             "errors": errors[:50],
         }
 
-    # Filter out records with null PK fields — the DB requires (provider_id, apc_code, year)
+    # Filter records with null apc_code (PK field)
     before_count = len(validated)
-    validated = [r for r in validated if r.year is not None]
-    skipped_null_pk = before_count - len(validated)
-    if skipped_null_pk:
-        logger.info(
-            "cms_outpatient_puf: skipped %d records with null PK field (year)",
-            skipped_null_pk,
-        )
+    validated = [r for r in validated if r.apc_code]
+    skipped = before_count - len(validated)
+    if skipped:
+        logger.info("cms_outpatient_puf: skipped %d records with null apc_code", skipped)
 
     if not validated:
         return {
             "status": "success",
             "records_inserted": 0,
             "records_failed": len(errors),
-            "records_skipped_null_pk": skipped_null_pk,
             "errors": errors[:50],
         }
 
@@ -124,11 +87,11 @@ def load_cms_outpatient_puf_data(
                 values = [
                     (
                         r.ccn,
-                        r.hcpcs_code,
+                        r.apc_code,
+                        r.apc_description,
                         r.total_services,
-                        r.avg_est_submitted_charges,
+                        r.avg_submitted_charges,
                         r.avg_total_payments,
-                        r.year,
                         loaded_at,
                         source_file,
                         source_hash,
@@ -139,13 +102,14 @@ def load_cms_outpatient_puf_data(
                     cur,
                     """
                     INSERT INTO raw.cms_outpatient_puf (
-                        provider_id, apc_code, total_services,
-                        avg_estimated_payment, avg_total_payments,
-                        year, _loaded_at, _source_file, _source_hash
+                        provider_id, apc_code, apc_description,
+                        total_services, avg_submitted_charges, avg_total_payments,
+                        _loaded_at, _source_file, _source_hash
                     ) VALUES %s
-                    ON CONFLICT (provider_id, apc_code, year) DO UPDATE SET
+                    ON CONFLICT (provider_id, apc_code) DO UPDATE SET
+                        apc_description = EXCLUDED.apc_description,
                         total_services = EXCLUDED.total_services,
-                        avg_estimated_payment = EXCLUDED.avg_estimated_payment,
+                        avg_submitted_charges = EXCLUDED.avg_submitted_charges,
                         avg_total_payments = EXCLUDED.avg_total_payments,
                         _loaded_at = EXCLUDED._loaded_at,
                         _source_file = EXCLUDED._source_file,

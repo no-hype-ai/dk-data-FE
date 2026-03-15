@@ -53,10 +53,16 @@ class CMSFormularyFetcher(BaseFetcher):
             url = self.get_latest_url()
             logger.info("Downloading formulary ZIP from %s", url)
 
-            resp = self.session.get(url, timeout=300, stream=True)
+            # Stream the large ZIP (500MB+) with extended timeout
+            resp = self.session.get(url, timeout=(30, 600), stream=True)
             resp.raise_for_status()
 
-            zip_bytes = resp.content
+            # Stream into memory in chunks to avoid read timeout
+            chunks = []
+            for chunk in resp.iter_content(chunk_size=1024 * 1024):
+                chunks.append(chunk)
+            zip_bytes = b"".join(chunks)
+            logger.info("Downloaded %d MB", len(zip_bytes) // (1024 * 1024))
             content_hash = hashlib.md5(zip_bytes[:4096]).hexdigest()
 
             records = self._parse_zip(zip_bytes, max_records)
@@ -83,49 +89,107 @@ class CMSFormularyFetcher(BaseFetcher):
     def _parse_zip(
         self, zip_bytes: bytes, max_records: Optional[int] = None
     ) -> List[Dict[str, Any]]:
-        """Extract and parse CSV from the formulary ZIP."""
+        """Extract and parse data files from the formulary ZIP.
+
+        The CMS formulary ZIP contains nested ZIPs, each holding a
+        pipe-delimited TXT file. We target the "basic drugs formulary"
+        inner ZIP which contains the core formulary records.
+        """
         records: List[Dict[str, Any]] = []
 
-        with zipfile.ZipFile(io.BytesIO(zip_bytes)) as zf:
-            csv_files = [n for n in zf.namelist() if n.lower().endswith(".csv")]
-            if not csv_files:
-                logger.warning("No CSV files found in formulary ZIP")
-                return records
+        try:
+            outer_zf = zipfile.ZipFile(io.BytesIO(zip_bytes))
+        except zipfile.BadZipFile:
+            logger.error("Outer ZIP is corrupt or non-standard — cannot open")
+            return records
 
-            for csv_name in csv_files:
-                with zf.open(csv_name) as f:
-                    reader = csv.DictReader(io.TextIOWrapper(f, encoding="utf-8"))
-                    for row in reader:
-                        record = self._normalise(row)
-                        if record:
-                            records.append(record)
+        # Find inner ZIPs that contain formulary data (skip pharmacy networks — too large)
+        target_prefixes = ("basic drugs",)
+        inner_zips = [
+            n for n in outer_zf.namelist()
+            if n.lower().endswith(".zip")
+            and any(n.lower().startswith(p) for p in target_prefixes)
+        ]
+
+        if not inner_zips:
+            # Fall back to any inner ZIP that isn't pharmacy networks
+            inner_zips = [
+                n for n in outer_zf.namelist()
+                if n.lower().endswith(".zip")
+                and not n.lower().startswith("pharmacy networks")
+                and not n.lower().startswith("sample")
+            ]
+
+        logger.info("Found %d inner ZIPs to process: %s", len(inner_zips), inner_zips)
+
+        for inner_name in inner_zips:
+            try:
+                inner_bytes = outer_zf.read(inner_name)
+                with zipfile.ZipFile(io.BytesIO(inner_bytes)) as inner_zf:
+                    # Look for TXT or CSV files inside the inner ZIP
+                    data_files = [
+                        n for n in inner_zf.namelist()
+                        if n.lower().endswith((".txt", ".csv"))
+                    ]
+                    for data_name in data_files:
+                        logger.info("Parsing %s / %s", inner_name, data_name)
+                        with inner_zf.open(data_name) as f:
+                            wrapper = io.TextIOWrapper(f, encoding="utf-8")
+                            reader = csv.DictReader(wrapper, delimiter="|")
+                            for row in reader:
+                                record = self._normalise(row)
+                                if record:
+                                    records.append(record)
+                                if max_records and len(records) >= max_records:
+                                    break
                         if max_records and len(records) >= max_records:
                             break
-                if max_records and len(records) >= max_records:
-                    break
+            except Exception as exc:
+                logger.warning("Failed to process inner ZIP %s: %s", inner_name, exc)
+                continue
+            if max_records and len(records) >= max_records:
+                break
 
+        outer_zf.close()
         logger.info("Parsed %d formulary records from ZIP", len(records))
         return records
 
     @staticmethod
     def _normalise(item: Dict[str, Any]) -> Optional[Dict[str, Any]]:
-        """Extract key fields from a formulary record."""
+        """Extract key fields from a formulary record.
+
+        The basic drugs formulary TXT uses pipe-delimited fields:
+        FORMULARY_ID|FORMULARY_VERSION|CONTRACT_YEAR|RXCUI|NDC|
+        TIER_LEVEL_VALUE|QUANTITY_LIMIT_YN|QUANTITY_LIMIT_AMOUNT|
+        QUANTITY_LIMIT_DAYS|PRIOR_AUTHORIZATION_YN|STEP_THERAPY_YN|
+        SELECTED_DRUG_YN
+        """
         rxcui = item.get("RXCUI") or item.get("rxcui", "")
-        if not rxcui:
+        formulary_id = item.get("FORMULARY_ID") or item.get("formulary_id", "")
+        if not rxcui or not formulary_id:
             return None
 
         return {
-            "contract_id": item.get("CONTRACT_ID") or item.get("contract_id"),
-            "plan_id": item.get("PLAN_ID") or item.get("plan_id"),
-            "formulary_id": item.get("FORMULARY_ID") or item.get("formulary_id"),
+            "formulary_id": formulary_id,
             "rxcui": rxcui,
-            "drug_name": item.get("DRUG_NAME") or item.get("drug_name"),
+            "ndc": item.get("NDC") or item.get("ndc"),
             "tier_level": item.get("TIER_LEVEL_VALUE") or item.get("tier_level"),
             "prior_auth": (
-                item.get("PRIOR_AUTHORIZATION") or item.get("prior_auth")
+                item.get("PRIOR_AUTHORIZATION_YN") or item.get("PRIOR_AUTHORIZATION")
+                or item.get("prior_auth")
             ),
-            "step_therapy": item.get("STEP_THERAPY") or item.get("step_therapy"),
+            "step_therapy": (
+                item.get("STEP_THERAPY_YN") or item.get("STEP_THERAPY")
+                or item.get("step_therapy")
+            ),
             "quantity_limit": (
-                item.get("QUANTITY_LIMIT") or item.get("quantity_limit")
+                item.get("QUANTITY_LIMIT_YN") or item.get("QUANTITY_LIMIT")
+                or item.get("quantity_limit")
+            ),
+            "quantity_limit_amount": (
+                item.get("QUANTITY_LIMIT_AMOUNT") or item.get("quantity_limit_amount")
+            ),
+            "quantity_limit_days": (
+                item.get("QUANTITY_LIMIT_DAYS") or item.get("quantity_limit_days")
             ),
         }

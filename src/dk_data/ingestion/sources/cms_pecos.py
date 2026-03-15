@@ -14,20 +14,20 @@ logger = logging.getLogger(__name__)
 class CmsPecosRecord(BaseModel):
     """Validated record for CMS PECOS enrollment data."""
 
-    enrollment_id: str
-    npi: Optional[str] = None
+    npi: str
+    enrollment_id: Optional[str] = None
     organization_name: Optional[str] = None
-    org_npi: Optional[str] = None
     state: Optional[str] = None
     enrollment_type: Optional[str] = None
-    enrollment_date: Optional[str] = None
+    first_name: Optional[str] = None
+    last_name: Optional[str] = None
 
-    @field_validator("enrollment_id")
+    @field_validator("npi")
     @classmethod
-    def enrollment_id_not_empty(cls, v: str) -> str:
+    def npi_not_empty(cls, v: str) -> str:
         v = v.strip()
         if not v:
-            raise ValueError("enrollment_id must not be empty")
+            raise ValueError("npi must not be empty")
         return v
 
 
@@ -37,17 +37,7 @@ def load_cms_pecos_data(
     source_file: Optional[str] = None,
     batch_size: int = 500,
 ) -> Dict[str, Any]:
-    """Load CMS PECOS records into raw.cms_pecos.
-
-    Args:
-        records: List of dicts from the fetcher.
-        source_hash: Hash identifying the source snapshot.
-        source_file: Original filename / URL.
-        batch_size: Rows per INSERT batch.
-
-    Returns:
-        Status dict with counts and errors.
-    """
+    """Load CMS PECOS records into raw.cms_pecos."""
     validated: List[CmsPecosRecord] = []
     errors: List[Dict[str, Any]] = []
 
@@ -82,11 +72,13 @@ def load_cms_pecos_data(
                 batch = validated[start : start + batch_size]
                 values = [
                     (
-                        r.enrollment_id,
                         r.npi,
+                        r.enrollment_id,
                         r.organization_name,
-                        r.enrollment_type,
                         r.state,
+                        r.enrollment_type,
+                        r.first_name,
+                        r.last_name,
                         loaded_at,
                         source_file,
                         source_hash,
@@ -97,15 +89,17 @@ def load_cms_pecos_data(
                     cur,
                     """
                     INSERT INTO raw.cms_pecos (
-                        enrollment_id, npi, org_name,
-                        enrollment_type, enrollment_state,
+                        npi, enrollment_id, organization_name,
+                        state, enrollment_type, first_name, last_name,
                         _loaded_at, _source_file, _source_hash
                     ) VALUES %s
-                    ON CONFLICT (enrollment_id) DO UPDATE SET
-                        npi = EXCLUDED.npi,
-                        org_name = EXCLUDED.org_name,
+                    ON CONFLICT (npi) DO UPDATE SET
+                        enrollment_id = EXCLUDED.enrollment_id,
+                        organization_name = EXCLUDED.organization_name,
+                        state = EXCLUDED.state,
                         enrollment_type = EXCLUDED.enrollment_type,
-                        enrollment_state = EXCLUDED.enrollment_state,
+                        first_name = EXCLUDED.first_name,
+                        last_name = EXCLUDED.last_name,
                         _loaded_at = EXCLUDED._loaded_at,
                         _source_file = EXCLUDED._source_file,
                         _source_hash = EXCLUDED._source_hash

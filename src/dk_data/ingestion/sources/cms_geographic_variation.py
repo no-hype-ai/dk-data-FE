@@ -31,6 +31,18 @@ class CmsGeographicVariationRecord(BaseModel):
             raise ValueError("state must not be empty")
         return v
 
+    @field_validator(
+        "total_beneficiaries", "total_actual_costs", "per_capita_costs",
+        "ip_covered_stays_per_1000", "er_visits_per_1000", "year",
+        mode="before",
+    )
+    @classmethod
+    def coerce_numeric(cls, v):
+        """CMS uses '*' for suppressed values — treat as None."""
+        if v is None or v == "" or v == "*":
+            return None
+        return v
+
 
 def load_cms_geographic_variation_data(
     records: List[Dict[str, Any]],
@@ -56,23 +68,34 @@ def load_cms_geographic_variation_data(
             "errors": errors[:50],
         }
 
-    # Filter out records with null PK fields — the DB requires (state, county, year)
-    # but the API legitimately returns records without county or year
+    # Coerce year to int and filter records missing year (required PK field)
+    for r in validated:
+        if r.year is not None:
+            try:
+                r.year = int(r.year)
+            except (ValueError, TypeError):
+                r.year = None
     before_count = len(validated)
-    validated = [r for r in validated if r.county and r.year is not None]
-    skipped_null_pk = before_count - len(validated)
-    if skipped_null_pk:
-        logger.info(
-            "cms_geographic_variation: skipped %d records with null PK fields (county/year)",
-            skipped_null_pk,
-        )
+    validated = [r for r in validated if r.year is not None]
+    skipped = before_count - len(validated)
+    if skipped:
+        logger.info("cms_geographic_variation: skipped %d records with null year", skipped)
+
+    # Deduplicate by PK (state, year) — API returns multiple cohort rows per state/year;
+    # keep the first (largest bene_count) per key
+    seen: dict = {}
+    for r in validated:
+        key = (r.state, r.year)
+        if key not in seen:
+            seen[key] = r
+    deduped = before_count - len(validated)
+    validated = list(seen.values())
 
     if not validated:
         return {
             "status": "success",
             "records_inserted": 0,
             "records_failed": len(errors),
-            "records_skipped_null_pk": skipped_null_pk,
             "errors": errors[:50],
         }
 
@@ -113,7 +136,8 @@ def load_cms_geographic_variation_data(
                         per_capita_costs, year,
                         _loaded_at, _source_file, _source_hash
                     ) VALUES %s
-                    ON CONFLICT (state, county, year) DO UPDATE SET
+                    ON CONFLICT (state, year) DO UPDATE SET
+                        county = EXCLUDED.county,
                         bene_count = EXCLUDED.bene_count,
                         total_actual_costs = EXCLUDED.total_actual_costs,
                         per_capita_costs = EXCLUDED.per_capita_costs,

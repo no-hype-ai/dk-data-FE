@@ -88,25 +88,6 @@ def load_cms_inpatient_puf_data(
             "errors": errors[:50],
         }
 
-    # Filter out records with null PK fields — the DB requires (provider_id, drg_code, year)
-    before_count = len(validated)
-    validated = [r for r in validated if r.year is not None]
-    skipped_null_pk = before_count - len(validated)
-    if skipped_null_pk:
-        logger.info(
-            "cms_inpatient_puf: skipped %d records with null PK field (year)",
-            skipped_null_pk,
-        )
-
-    if not validated:
-        return {
-            "status": "success",
-            "records_inserted": 0,
-            "records_failed": len(errors),
-            "records_skipped_null_pk": skipped_null_pk,
-            "errors": errors[:50],
-        }
-
     loaded_at = datetime.utcnow()
 
     conn = psycopg2.connect(
@@ -145,11 +126,12 @@ def load_cms_inpatient_puf_data(
                         avg_covered_charges, avg_total_payments, avg_medicare_payments,
                         year, _loaded_at, _source_file, _source_hash
                     ) VALUES %s
-                    ON CONFLICT (provider_id, drg_code, year) DO UPDATE SET
+                    ON CONFLICT (provider_id, drg_code) DO UPDATE SET
                         total_discharges = EXCLUDED.total_discharges,
                         avg_covered_charges = EXCLUDED.avg_covered_charges,
                         avg_total_payments = EXCLUDED.avg_total_payments,
                         avg_medicare_payments = EXCLUDED.avg_medicare_payments,
+                        year = EXCLUDED.year,
                         _loaded_at = EXCLUDED._loaded_at,
                         _source_file = EXCLUDED._source_file,
                         _source_hash = EXCLUDED._source_hash

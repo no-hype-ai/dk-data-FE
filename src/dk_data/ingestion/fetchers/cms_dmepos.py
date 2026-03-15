@@ -108,27 +108,27 @@ class CMSDMEPOSFetcher(BaseFetcher):
         return {
             "npi": npi,
             "hcpcs_code": (
-                item.get("HCPCS_Cd") or item.get("Suplr_HCPCS_Cd")
+                item.get("HCPCS_Cd") or item.get("Tot_Suplr_HCPCS_Cds")
                 or item.get("hcpcs_code")
             ),
             "hcpcs_description": (
-                item.get("HCPCS_Desc") or item.get("Suplr_HCPCS_Desc")
+                item.get("HCPCS_Desc") or item.get("Suplr_Prvdr_Spclty_Desc")
                 or item.get("hcpcs_description")
             ),
             "total_services": (
-                item.get("Tot_Srvcs") or item.get("Suplr_Tot_Srvcs")
+                item.get("Tot_Suplr_Srvcs") or item.get("Tot_Srvcs")
                 or item.get("total_services")
             ),
             "total_beneficiaries": (
-                item.get("Tot_Benes") or item.get("Suplr_Benes")
+                item.get("Tot_Suplr_Benes") or item.get("Tot_Benes")
                 or item.get("total_beneficiaries")
             ),
             "avg_submitted_charge": (
-                item.get("Avg_Sbmtd_Chrg") or item.get("Suplr_Avg_Sbmtd_Chrg")
+                item.get("Suplr_Sbmtd_Chrgs") or item.get("Avg_Sbmtd_Chrg")
                 or item.get("avg_submitted_charge")
             ),
             "avg_medicare_payment": (
-                item.get("Avg_Mdcr_Pymt_Amt") or item.get("Suplr_Avg_Mdcr_Pymt_Amt")
+                item.get("Suplr_Mdcr_Pymt_Amt") or item.get("Avg_Mdcr_Pymt_Amt")
                 or item.get("avg_medicare_payment")
             ),
         }

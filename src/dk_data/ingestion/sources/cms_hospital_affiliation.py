@@ -14,25 +14,22 @@ logger = logging.getLogger(__name__)
 class CmsHospitalAffiliationRecord(BaseModel):
     """Validated record for CMS Hospital Affiliation data."""
 
-    ccn: str
-    affiliated_ccn: str
-    affiliation_type: Optional[str] = None
-    effective_date: Optional[str] = None
+    npi: str
+    ind_pac_id: Optional[str] = None
+    provider_last_name: Optional[str] = None
+    provider_first_name: Optional[str] = None
+    provider_middle_name: Optional[str] = None
+    suff: Optional[str] = None
+    facility_type: Optional[str] = None
+    facility_affiliations_certification_number: Optional[str] = None
+    facility_type_certification_number: Optional[str] = None
 
-    @field_validator("ccn")
+    @field_validator("npi")
     @classmethod
-    def ccn_not_empty(cls, v: str) -> str:
+    def npi_not_empty(cls, v: str) -> str:
         v = v.strip()
         if not v:
-            raise ValueError("ccn must not be empty")
-        return v
-
-    @field_validator("affiliated_ccn")
-    @classmethod
-    def affiliated_ccn_not_empty(cls, v: str) -> str:
-        v = v.strip()
-        if not v:
-            raise ValueError("affiliated_ccn must not be empty")
+            raise ValueError("npi must not be empty")
         return v
 
 
@@ -42,17 +39,7 @@ def load_cms_hospital_affiliation_data(
     source_file: Optional[str] = None,
     batch_size: int = 500,
 ) -> Dict[str, Any]:
-    """Load CMS Hospital Affiliation records into raw.cms_hospital_affiliation.
-
-    Args:
-        records: List of dicts from the fetcher.
-        source_hash: Hash identifying the source snapshot.
-        source_file: Original filename / URL.
-        batch_size: Rows per INSERT batch.
-
-    Returns:
-        Status dict with counts and errors.
-    """
+    """Load CMS Hospital Affiliation records into raw.cms_hospital_affiliation."""
     validated: List[CmsHospitalAffiliationRecord] = []
     errors: List[Dict[str, Any]] = []
 
@@ -87,10 +74,15 @@ def load_cms_hospital_affiliation_data(
                 batch = validated[start : start + batch_size]
                 values = [
                     (
-                        r.ccn,
-                        r.affiliated_ccn,
-                        r.affiliation_type,
-                        r.effective_date,
+                        r.npi,
+                        r.ind_pac_id,
+                        r.provider_last_name,
+                        r.provider_first_name,
+                        r.provider_middle_name,
+                        r.suff,
+                        r.facility_type,
+                        r.facility_affiliations_certification_number,
+                        r.facility_type_certification_number,
                         loaded_at,
                         source_file,
                         source_hash,
@@ -101,12 +93,21 @@ def load_cms_hospital_affiliation_data(
                     cur,
                     """
                     INSERT INTO raw.cms_hospital_affiliation (
-                        ccn, affiliated_ccn, affiliation_type, effective_date,
+                        npi, ind_pac_id, provider_last_name, provider_first_name,
+                        provider_middle_name, suff, facility_type,
+                        facility_affiliations_certification_number,
+                        facility_type_certification_number,
                         _loaded_at, _source_file, _source_hash
                     ) VALUES %s
-                    ON CONFLICT (ccn, affiliated_ccn) DO UPDATE SET
-                        affiliation_type = EXCLUDED.affiliation_type,
-                        effective_date = EXCLUDED.effective_date,
+                    ON CONFLICT (npi, facility_affiliations_certification_number)
+                    DO UPDATE SET
+                        ind_pac_id = EXCLUDED.ind_pac_id,
+                        provider_last_name = EXCLUDED.provider_last_name,
+                        provider_first_name = EXCLUDED.provider_first_name,
+                        provider_middle_name = EXCLUDED.provider_middle_name,
+                        suff = EXCLUDED.suff,
+                        facility_type = EXCLUDED.facility_type,
+                        facility_type_certification_number = EXCLUDED.facility_type_certification_number,
                         _loaded_at = EXCLUDED._loaded_at,
                         _source_file = EXCLUDED._source_file,
                         _source_hash = EXCLUDED._source_hash

@@ -20,21 +20,21 @@ logger = logging.getLogger(__name__)
 # Key output fields
 KEY_FIELDS = [
     "ccn",
-    "hcpcs_code",
-    "hcpcs_description",
+    "apc_code",
+    "apc_description",
     "total_services",
-    "avg_est_submitted_charges",
+    "avg_submitted_charges",
     "avg_total_payments",
 ]
 
 # CMS column mapping from API response to normalised fields
 FIELD_MAP: Dict[str, str] = {
     "Rndrng_Prvdr_CCN": "ccn",
-    "HCPCS_Cd": "hcpcs_code",
-    "HCPCS_Desc": "hcpcs_description",
-    "Outptnt_Srvcs": "total_services",
-    "Avg_Est_Sbmtd_Chrgs": "avg_est_submitted_charges",
-    "Avg_Tot_Pymt_Amt": "avg_total_payments",
+    "APC_Cd": "apc_code",
+    "APC_Desc": "apc_description",
+    "CAPC_Srvcs": "total_services",
+    "Avg_Tot_Sbmtd_Chrgs": "avg_submitted_charges",
+    "Avg_Mdcr_Pymt_Amt": "avg_total_payments",
 }
 
 # Pagination defaults

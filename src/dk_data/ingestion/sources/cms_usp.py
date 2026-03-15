@@ -12,11 +12,23 @@ logger = logging.getLogger(__name__)
 
 
 class CmsUspRecord(BaseModel):
-    """Validated record for USP drug classification data."""
+    """Validated record for USP drug classification alignment data."""
 
+    rxcui: str
+    tty: Optional[str] = None
+    branded_name: Optional[str] = None
+    related_bn: Optional[str] = None
+    related_df: Optional[str] = None
     usp_category: str
     usp_class: str
-    drug_names: Optional[str] = None
+
+    @field_validator("rxcui")
+    @classmethod
+    def rxcui_not_empty(cls, v: str) -> str:
+        v = v.strip()
+        if not v:
+            raise ValueError("rxcui must not be empty")
+        return v
 
     @field_validator("usp_category")
     @classmethod
@@ -41,7 +53,7 @@ def load_cms_usp_data(
     source_file: Optional[str] = None,
     batch_size: int = 500,
 ) -> Dict[str, Any]:
-    """Load CMS USP records into raw.cms_usp."""
+    """Load CMS USP alignment records into raw.cms_usp."""
     validated: List[CmsUspRecord] = []
     errors: List[Dict[str, Any]] = []
 
@@ -58,6 +70,16 @@ def load_cms_usp_data(
             "records_failed": len(errors),
             "errors": errors[:50],
         }
+
+    # Deduplicate by PK (rxcui, usp_category, usp_class)
+    seen: set = set()
+    deduped: List[CmsUspRecord] = []
+    for r in validated:
+        key = (r.rxcui, r.usp_category, r.usp_class)
+        if key not in seen:
+            seen.add(key)
+            deduped.append(r)
+    validated = deduped
 
     loaded_at = datetime.utcnow()
 
@@ -76,9 +98,13 @@ def load_cms_usp_data(
                 batch = validated[start : start + batch_size]
                 values = [
                     (
+                        r.rxcui,
+                        r.tty,
+                        r.branded_name,
+                        r.related_bn,
+                        r.related_df,
                         r.usp_category,
                         r.usp_class,
-                        r.drug_names,
                         loaded_at,
                         source_file,
                         source_hash,
@@ -89,11 +115,15 @@ def load_cms_usp_data(
                     cur,
                     """
                     INSERT INTO raw.cms_usp (
-                        usp_category, usp_class, drug_names,
+                        rxcui, tty, branded_name, related_bn, related_df,
+                        usp_category, usp_class,
                         _loaded_at, _source_file, _source_hash
                     ) VALUES %s
-                    ON CONFLICT (usp_category, usp_class) DO UPDATE SET
-                        drug_names = EXCLUDED.drug_names,
+                    ON CONFLICT (rxcui, usp_category, usp_class) DO UPDATE SET
+                        tty = EXCLUDED.tty,
+                        branded_name = EXCLUDED.branded_name,
+                        related_bn = EXCLUDED.related_bn,
+                        related_df = EXCLUDED.related_df,
                         _loaded_at = EXCLUDED._loaded_at,
                         _source_file = EXCLUDED._source_file,
                         _source_hash = EXCLUDED._source_hash

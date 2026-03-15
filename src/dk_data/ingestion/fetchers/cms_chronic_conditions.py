@@ -26,8 +26,10 @@ logger = logging.getLogger(__name__)
 # Known CMS CSV download URLs for chronic conditions data.
 # CMS publishes these as static files; URLs change when data is updated.
 CHRONIC_CONDITIONS_CSV_URLS = [
-    "https://data.cms.gov/sites/default/files/2023-04/67b25b4e-0423-4ee1-b821-8fd06e6e8a4a/Specific_Chronic_Conditions_by_Geography.csv",
-    "https://data.cms.gov/sites/default/files/2024-01/Specific_Chronic_Conditions_by_Geography.csv",
+    # Data year 2018 (published 2020-11)
+    "https://data.cms.gov/sites/default/files/2020-11/CC_R20_P08_v10_D18_WWDSE_Cond.csv",
+    # Data year 2017 (published 2022-01)
+    "https://data.cms.gov/sites/default/files/2022-01/CC_R20_P08_v10_D17_WWDSE_Cond.csv",
 ]
 
 # CMS data-api endpoint (if a UUID becomes available)
@@ -141,8 +143,8 @@ class CMSChronicConditionsFetcher(BaseFetcher):
             try:
                 logger.info("Trying chronic conditions CSV: %s", url)
                 resp = self.session.get(url, timeout=120)
-                if resp.status_code == 404:
-                    logger.debug("CSV URL returned 404: %s", url)
+                if resp.status_code in (404,) or "not-found" in resp.url:
+                    logger.debug("CSV URL returned 404/not-found: %s", url)
                     continue
                 resp.raise_for_status()
                 return self._parse_csv(resp.text, max_records=max_records)
@@ -175,7 +177,19 @@ class CMSChronicConditionsFetcher(BaseFetcher):
 
     @staticmethod
     def _normalise(item: Dict[str, Any]) -> Optional[Dict[str, Any]]:
-        """Extract key fields from a chronic conditions record."""
+        """Extract key fields from a chronic conditions record.
+
+        The CSV contains rows for every (state, condition, age_group, demo)
+        combination. We only keep the aggregate rows where age=All, demo=All
+        to avoid duplicate (state, condition) pairs.
+        """
+        # Filter to aggregate rows only (All/All/All)
+        age_lvl = item.get("Bene_Age_Lvl", "All")
+        demo_lvl = item.get("Bene_Demo_Lvl", "All")
+        demo_desc = item.get("Bene_Demo_Desc", "All")
+        if age_lvl != "All" or demo_lvl != "All" or demo_desc != "All":
+            return None
+
         state = item.get("Bene_Geo_Desc") or item.get("state", "")
         condition = item.get("Bene_Cond") or item.get("condition", "")
         if not state or not condition:
@@ -188,5 +202,8 @@ class CMSChronicConditionsFetcher(BaseFetcher):
             "total_beneficiaries_with_condition": (
                 item.get("Bene_Cond_Cnt") or item.get("total_beneficiaries_with_condition")
             ),
-            "per_capita_spending": item.get("Per_Capita_Spndng") or item.get("per_capita_spending"),
+            "per_capita_spending": (
+                item.get("Tot_Mdcr_Pymt_PC") or item.get("Tot_Mdcr_Stdzd_Pymt_PC")
+                or item.get("Per_Capita_Spndng") or item.get("per_capita_spending")
+            ),
         }

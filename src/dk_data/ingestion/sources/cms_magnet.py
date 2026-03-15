@@ -17,8 +17,11 @@ class CmsMagnetRecord(BaseModel):
     facility_name: str
     city: Optional[str] = None
     state: str
-    designation_date: Optional[str] = None
-    redesignation_date: Optional[str] = None
+    country: Optional[str] = None
+    zip_code: Optional[str] = None
+    designation_year: Optional[str] = None
+    redesignation_years: Optional[str] = None
+    web_address: Optional[str] = None
 
     @field_validator("facility_name")
     @classmethod
@@ -43,17 +46,7 @@ def load_cms_magnet_data(
     source_file: Optional[str] = None,
     batch_size: int = 500,
 ) -> Dict[str, Any]:
-    """Load CMS Magnet records into raw.cms_magnet.
-
-    Args:
-        records: List of dicts from the fetcher.
-        source_hash: Hash identifying the source snapshot.
-        source_file: Original filename / URL.
-        batch_size: Rows per INSERT batch.
-
-    Returns:
-        Status dict with counts and errors.
-    """
+    """Load CMS Magnet records into raw.cms_magnet."""
     validated: List[CmsMagnetRecord] = []
     errors: List[Dict[str, Any]] = []
 
@@ -91,8 +84,11 @@ def load_cms_magnet_data(
                         r.facility_name,
                         r.city,
                         r.state,
-                        r.designation_date,
-                        r.redesignation_date,
+                        r.country,
+                        r.zip_code,
+                        r.designation_year,
+                        r.redesignation_years,
+                        r.web_address,
                         loaded_at,
                         source_file,
                         source_hash,
@@ -103,14 +99,17 @@ def load_cms_magnet_data(
                     cur,
                     """
                     INSERT INTO raw.cms_magnet (
-                        facility_name, city, state, designation_date,
-                        redesignation_date,
+                        facility_name, city, state, country, zip_code,
+                        designation_year, redesignation_years, web_address,
                         _loaded_at, _source_file, _source_hash
                     ) VALUES %s
                     ON CONFLICT (facility_name, state) DO UPDATE SET
                         city = EXCLUDED.city,
-                        designation_date = EXCLUDED.designation_date,
-                        redesignation_date = EXCLUDED.redesignation_date,
+                        country = EXCLUDED.country,
+                        zip_code = EXCLUDED.zip_code,
+                        designation_year = EXCLUDED.designation_year,
+                        redesignation_years = EXCLUDED.redesignation_years,
+                        web_address = EXCLUDED.web_address,
                         _loaded_at = EXCLUDED._loaded_at,
                         _source_file = EXCLUDED._source_file,
                         _source_hash = EXCLUDED._source_hash

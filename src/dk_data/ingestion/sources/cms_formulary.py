@@ -14,15 +14,23 @@ logger = logging.getLogger(__name__)
 class CmsFormularyRecord(BaseModel):
     """Validated record for CMS formulary data."""
 
-    contract_id: Optional[str] = None
-    plan_id: Optional[str] = None
-    formulary_id: Optional[str] = None
+    formulary_id: str
     rxcui: str
-    drug_name: Optional[str] = None
+    ndc: Optional[str] = None
     tier_level: Optional[str] = None
     prior_auth: Optional[str] = None
     step_therapy: Optional[str] = None
     quantity_limit: Optional[str] = None
+    quantity_limit_amount: Optional[str] = None
+    quantity_limit_days: Optional[str] = None
+
+    @field_validator("formulary_id")
+    @classmethod
+    def formulary_id_not_empty(cls, v: str) -> str:
+        v = v.strip()
+        if not v:
+            raise ValueError("formulary_id must not be empty")
+        return v
 
     @field_validator("rxcui")
     @classmethod
@@ -74,15 +82,15 @@ def load_cms_formulary_data(
                 batch = validated[start : start + batch_size]
                 values = [
                     (
-                        r.contract_id,
-                        r.plan_id,
                         r.formulary_id,
                         r.rxcui,
-                        r.drug_name,
+                        r.ndc,
                         r.tier_level,
                         r.prior_auth,
                         r.step_therapy,
                         r.quantity_limit,
+                        r.quantity_limit_amount,
+                        r.quantity_limit_days,
                         loaded_at,
                         source_file,
                         source_hash,
@@ -93,17 +101,19 @@ def load_cms_formulary_data(
                     cur,
                     """
                     INSERT INTO raw.cms_formulary (
-                        contract_id, plan_id, formulary_id, rxcui, drug_name,
-                        tier_level, prior_auth, step_therapy, quantity_limit,
+                        formulary_id, rxcui, ndc,
+                        tier_level, prior_auth, step_therapy,
+                        quantity_limit, quantity_limit_amount, quantity_limit_days,
                         _loaded_at, _source_file, _source_hash
                     ) VALUES %s
-                    ON CONFLICT (contract_id, plan_id, rxcui) DO UPDATE SET
-                        formulary_id = EXCLUDED.formulary_id,
-                        drug_name = EXCLUDED.drug_name,
+                    ON CONFLICT (formulary_id, rxcui) DO UPDATE SET
+                        ndc = EXCLUDED.ndc,
                         tier_level = EXCLUDED.tier_level,
                         prior_auth = EXCLUDED.prior_auth,
                         step_therapy = EXCLUDED.step_therapy,
                         quantity_limit = EXCLUDED.quantity_limit,
+                        quantity_limit_amount = EXCLUDED.quantity_limit_amount,
+                        quantity_limit_days = EXCLUDED.quantity_limit_days,
                         _loaded_at = EXCLUDED._loaded_at,
                         _source_file = EXCLUDED._source_file,
                         _source_hash = EXCLUDED._source_hash

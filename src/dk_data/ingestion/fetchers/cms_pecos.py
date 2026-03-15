@@ -18,14 +18,25 @@ logger = logging.getLogger(__name__)
 
 # Key output fields
 KEY_FIELDS = [
-    "enrollment_id",
     "npi",
+    "enrollment_id",
     "organization_name",
-    "org_npi",
     "state",
     "enrollment_type",
-    "enrollment_date",
+    "first_name",
+    "last_name",
 ]
+
+# Mapping from CMS API field names to normalised output field names
+API_FIELD_MAP: Dict[str, str] = {
+    "NPI": "npi",
+    "ENRLMT_ID": "enrollment_id",
+    "ORG_NAME": "organization_name",
+    "STATE_CD": "state",
+    "PROVIDER_TYPE_DESC": "enrollment_type",
+    "FIRST_NAME": "first_name",
+    "LAST_NAME": "last_name",
+}
 
 # Pagination defaults
 DEFAULT_PAGE_SIZE = 500
@@ -141,9 +152,9 @@ class CMSPECOSFetcher(BaseFetcher):
     def _normalise(row: Dict[str, Any]) -> Dict[str, Any]:
         """Extract key fields from a raw API row."""
         record: Dict[str, Any] = {}
-        for field in KEY_FIELDS:
-            value = row.get(field) or row.get(field.upper()) or row.get(field.lower())
-            record[field] = value
+        for api_field, output_field in API_FIELD_MAP.items():
+            value = row.get(api_field) or row.get(output_field)
+            record[output_field] = value
         return record
 
     def _save_and_hash(self, records: List[Dict]) -> Optional[str]:

@@ -57,9 +57,13 @@ Thumbs.db
 # Exception: DrugBank seed data (Git LFS, ~195MB zip baked into Docker image)
 !/data/drugbank/
 !/data/drugbank/*
+# Exception: USP MMG v9.0 Alignment File (Git LFS, ~546KB xlsx baked into Docker image)
+!/data/usp/
+!/data/usp/*
 src/dk_data/data/raw/
 *.csv
 *.xlsx
+!/data/usp/*.xlsx
 *.json
 !tests/fixtures/*.json
 !.specify/**/*.json

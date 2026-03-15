@@ -1,38 +1,53 @@
 """CMS USP (United States Pharmacopeia) Drug Classification Fetcher.
 
-Web-scrapes USP Medicare Model Guidelines to retrieve drug classification
-categories and classes used in Medicare Part D formulary tiering.
+Parses the USP Medicare Model Guidelines v9.0 Alignment File (Excel)
+to extract RxCUI-to-USP Category/Class mappings. The alignment file
+is bundled as a seed file since it requires one-time registration at
+https://go.usp.org/MMG_v9.0 and updates only tri-annually.
 
-Source: https://www.usp.org/healthcare-professionals/usp-medicare-model-guidelines
+Source: https://www.usp.org/health-quality-safety/usp-medicare-model-guidelines
 """
 
 import hashlib
 import logging
-import re
+from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 from .base import BaseFetcher
 
 logger = logging.getLogger(__name__)
 
+# Default data file location — mirrors DrugBank pattern:
+# repo: data/usp/ → Docker: /app/data/usp/ (COPY in Dockerfile)
+_DATA_DIR = Path(__file__).resolve().parents[4] / "data" / "usp"
+# In-container path (Dockerfile copies to /app/data/usp/)
+_CONTAINER_DIR = Path("/app/data/usp")
+DEFAULT_ALIGNMENT_FILE = (
+    _CONTAINER_DIR / "usp_mmg_v9_alignment.xlsx"
+    if _CONTAINER_DIR.exists()
+    else _DATA_DIR / "usp_mmg_v9_alignment.xlsx"
+)
+
 
 class CMSUSPFetcher(BaseFetcher):
-    """Fetcher for USP Drug Classification data via web scraping."""
+    """Fetcher for USP Drug Classification data from the MMG Alignment File."""
 
     SOURCE_NAME = "cms_usp"
-    BASE_URL = "https://www.usp.org/healthcare-professionals/usp-medicare-model-guidelines"
-    # Alternative URLs to try if the primary URL returns 404
-    FALLBACK_URLS = [
-        "https://www.usp.org/usp-healthcare-professionals/usp-medicare-model-guidelines",
-        "https://www.usp.org/health-quality-safety/usp-medicare-model-guidelines",
-    ]
+    BASE_URL = "https://www.usp.org/health-quality-safety/usp-medicare-model-guidelines"
 
     def get_latest_url(self) -> str:
-        """Return the USP Medicare Model Guidelines URL."""
-        return self.BASE_URL
+        """Return the seed file path."""
+        return str(self._get_alignment_path())
+
+    def _get_alignment_path(self) -> Path:
+        """Resolve the alignment file path from params or default."""
+        custom = self.params.get("alignment_file")
+        if custom:
+            return Path(custom)
+        return DEFAULT_ALIGNMENT_FILE
 
     def fetch(self, **kwargs) -> Dict[str, Any]:
-        """Scrape USP drug classification data.
+        """Parse USP alignment file and return RxCUI-to-category/class records.
 
         Keyword Args:
             max_records: Optional cap on returned records.
@@ -43,38 +58,20 @@ class CMSUSPFetcher(BaseFetcher):
         max_records: Optional[int] = kwargs.get("max_records") or self.params.get("max_records")
 
         try:
-            url = self.get_latest_url()
-            logger.info("Scraping USP drug classification from %s", url)
+            filepath = self._get_alignment_path()
 
-            resp = self.session.get(url, timeout=60)
-
-            # If the primary URL returns 404, try fallback URLs
-            if resp.status_code == 404:
-                logger.warning(
-                    "USP primary URL returned 404: %s — trying fallback URLs", url
-                )
-                for fallback_url in self.FALLBACK_URLS:
-                    logger.info("Trying fallback URL: %s", fallback_url)
-                    resp = self.session.get(fallback_url, timeout=60)
-                    if resp.status_code != 404:
-                        break
-
-            if resp.status_code == 404:
-                raise RuntimeError(
-                    "USP Medicare Model Guidelines page not found. "
-                    "The URL may have changed — check https://www.usp.org for the "
-                    "current location of USP Medicare Model Guidelines. "
-                    f"Tried: {url} and {self.FALLBACK_URLS}"
+            if not filepath.exists():
+                raise FileNotFoundError(
+                    f"USP alignment file not found at {filepath}. "
+                    "Download from https://go.usp.org/MMG_v9.0 and place in "
+                    f"{_SEEDS_DIR}/usp_mmg_v9_alignment.xlsx"
                 )
 
-            resp.raise_for_status()
-            html = resp.text
+            logger.info("Parsing USP alignment file: %s", filepath)
 
-            records = self._parse_html(html, max_records=max_records)
+            records = self._parse_alignment(filepath, max_records=max_records)
 
-            content_hash = hashlib.md5(
-                html.encode("utf-8")[:10000]
-            ).hexdigest() if records else None
+            content_hash = hashlib.md5(filepath.read_bytes()[:8192]).hexdigest()
 
             result: Dict[str, Any] = {
                 "status": "success",
@@ -96,48 +93,54 @@ class CMSUSPFetcher(BaseFetcher):
             return result
 
     @staticmethod
-    def _parse_html(html: str, max_records: Optional[int] = None) -> List[Dict[str, Any]]:
-        """Parse USP categories and classes from the HTML page.
+    def _parse_alignment(
+        filepath: Path, max_records: Optional[int] = None
+    ) -> List[Dict[str, Any]]:
+        """Parse the MMG v9.0 Alignment File Excel sheet."""
+        import openpyxl
 
-        Uses regex-based extraction for robustness against HTML structure
-        changes. Falls back to structured table parsing when available.
-        """
+        wb = openpyxl.load_workbook(filepath, read_only=True)
+        ws = wb.active
         records: List[Dict[str, Any]] = []
 
-        # Look for category headers and class listings in the HTML
-        # USP pages typically have categories as h2/h3 headings with classes listed below
-        category_pattern = re.compile(
-            r'<h[23][^>]*>\s*(?:Category\s+\d+[:\s-]*)?(.+?)\s*</h[23]>',
-            re.IGNORECASE,
-        )
-        class_pattern = re.compile(
-            r'<li[^>]*>\s*(.+?)\s*</li>',
-            re.IGNORECASE,
-        )
+        rows = ws.iter_rows(values_only=True)
+        header = next(rows, None)
+        if header is None:
+            wb.close()
+            return records
 
-        # Split by category headers
-        parts = category_pattern.split(html)
-        for i in range(1, len(parts), 2):
-            category_name = re.sub(r'<[^>]+>', '', parts[i]).strip()
-            if not category_name:
+        # Map header to indices
+        col_map = {str(h).strip().lower(): i for i, h in enumerate(header) if h}
+
+        rxcui_idx = col_map.get("rxcui", col_map.get("rxcui", 0))
+        tty_idx = col_map.get("tty", 1)
+        name_idx = col_map.get("branded name", 2)
+        bn_idx = col_map.get("related bn", 3)
+        df_idx = col_map.get("related df", 4)
+        cat_idx = col_map.get("category", 5)
+        cls_idx = col_map.get("class", 6)
+
+        for row in rows:
+            rxcui = row[rxcui_idx] if rxcui_idx < len(row) else None
+            category = row[cat_idx] if cat_idx < len(row) else None
+            usp_class = row[cls_idx] if cls_idx < len(row) else None
+
+            if not rxcui or not category or not usp_class:
                 continue
 
-            block = parts[i + 1] if i + 1 < len(parts) else ""
-            classes = class_pattern.findall(block)
+            records.append({
+                "rxcui": str(rxcui).strip(),
+                "tty": str(row[tty_idx]).strip() if tty_idx < len(row) and row[tty_idx] else None,
+                "branded_name": str(row[name_idx]).strip() if name_idx < len(row) and row[name_idx] else None,
+                "related_bn": str(row[bn_idx]).strip() if bn_idx < len(row) and row[bn_idx] else None,
+                "related_df": str(row[df_idx]).strip() if df_idx < len(row) and row[df_idx] else None,
+                "usp_category": str(category).strip(),
+                "usp_class": str(usp_class).strip(),
+            })
 
-            for cls in classes:
-                class_name = re.sub(r'<[^>]+>', '', cls).strip()
-                if not class_name:
-                    continue
+            if max_records and len(records) >= max_records:
+                break
 
-                records.append({
-                    "usp_category": category_name,
-                    "usp_class": class_name,
-                    "drug_names": None,  # Populated from linked detail pages
-                })
-
-                if max_records and len(records) >= max_records:
-                    return records
-
-        logger.info("Parsed %d USP classification records", len(records))
+        wb.close()
+        logger.info("Parsed %d USP alignment records from %s", len(records), filepath.name)
         return records
