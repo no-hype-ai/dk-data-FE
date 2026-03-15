@@ -64,7 +64,7 @@ class CMSUSPFetcher(BaseFetcher):
                 raise FileNotFoundError(
                     f"USP alignment file not found at {filepath}. "
                     "Download from https://go.usp.org/MMG_v9.0 and place in "
-                    f"{_SEEDS_DIR}/usp_mmg_v9_alignment.xlsx"
+                    f"{_DATA_DIR}/usp_mmg_v9_alignment.xlsx"
                 )
 
             logger.info("Parsing USP alignment file: %s", filepath)

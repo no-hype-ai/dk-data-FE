@@ -1,0 +1,242 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: grafana-cms-pipeline-dashboard
+  labels:
+    app.kubernetes.io/name: dk-data
+    app.kubernetes.io/component: observability
+    grafana_dashboard: "1"
+  annotations:
+    # Grafana sidecar auto-discovers ConfigMaps with label grafana_dashboard=1
+    k8s-sidecar-target-directory: /tmp/dashboards/dk-data
+data:
+  cms-pipeline-health.json: |
+    {
+      "annotations": {"list": []},
+      "description": "CMS PUF Data Pipeline - Source Freshness, Agent Costs, Ingestion Health",
+      "editable": true,
+      "fiscalYearStartMonth": 0,
+      "graphTooltip": 0,
+      "id": null,
+      "links": [
+        {"title": "Platform Overview", "url": "/d/dk-platform-overview", "type": "link"},
+        {"title": "Pipeline Health", "url": "/d/dk-pipeline-health", "type": "link"}
+      ],
+      "liveNow": false,
+      "panels": [
+        {
+          "collapsed": false,
+          "gridPos": {"h": 1, "w": 24, "x": 0, "y": 0},
+          "id": 100,
+          "panels": [],
+          "title": "CMS Pipeline Overview",
+          "type": "row"
+        },
+        {
+          "datasource": {"type": "prometheus", "uid": "prometheus"},
+          "fieldConfig": {
+            "defaults": {
+              "color": {"mode": "thresholds"},
+              "mappings": [],
+              "thresholds": {"mode": "absolute", "steps": [{"color": "green", "value": null}]}
+            }
+          },
+          "gridPos": {"h": 4, "w": 6, "x": 0, "y": 1},
+          "id": 101,
+          "options": {"colorMode": "value", "graphMode": "none", "justifyMode": "auto", "textMode": "auto", "reduceOptions": {"calcs": ["lastNotNull"]}},
+          "title": "CMS Sources Healthy",
+          "type": "stat",
+          "targets": [{"expr": "sum(cms_source_healthy)", "refId": "A"}]
+        },
+        {
+          "datasource": {"type": "prometheus", "uid": "prometheus"},
+          "fieldConfig": {
+            "defaults": {
+              "color": {"mode": "thresholds"},
+              "thresholds": {"mode": "absolute", "steps": [{"color": "green", "value": null}, {"color": "yellow", "value": 1}, {"color": "red", "value": 5}]}
+            }
+          },
+          "gridPos": {"h": 4, "w": 6, "x": 6, "y": 1},
+          "id": 102,
+          "options": {"colorMode": "value", "graphMode": "none", "justifyMode": "auto", "textMode": "auto", "reduceOptions": {"calcs": ["lastNotNull"]}},
+          "title": "CMS Sources Stale",
+          "type": "stat",
+          "targets": [{"expr": "sum(cms_source_stale)", "refId": "A"}]
+        },
+        {
+          "datasource": {"type": "prometheus", "uid": "prometheus"},
+          "fieldConfig": {"defaults": {"unit": "short"}},
+          "gridPos": {"h": 4, "w": 6, "x": 12, "y": 1},
+          "id": 103,
+          "options": {"colorMode": "value", "graphMode": "area", "reduceOptions": {"calcs": ["lastNotNull"]}},
+          "title": "CMS Records Ingested (total)",
+          "type": "stat",
+          "targets": [{"expr": "sum(cms_records_ingested_total)", "refId": "A"}]
+        },
+        {
+          "datasource": {"type": "prometheus", "uid": "prometheus"},
+          "fieldConfig": {
+            "defaults": {
+              "unit": "currencyUSD",
+              "thresholds": {"mode": "absolute", "steps": [{"color": "green", "value": null}, {"color": "yellow", "value": 200}, {"color": "red", "value": 385}]}
+            }
+          },
+          "gridPos": {"h": 4, "w": 6, "x": 18, "y": 1},
+          "id": 104,
+          "options": {"colorMode": "value", "graphMode": "area", "reduceOptions": {"calcs": ["lastNotNull"]}},
+          "title": "Agent Cost (monthly USD)",
+          "type": "stat",
+          "targets": [{"expr": "sum(cms_agent_cost_usd)", "refId": "A"}]
+        },
+        {
+          "collapsed": false,
+          "gridPos": {"h": 1, "w": 24, "x": 0, "y": 5},
+          "id": 200,
+          "panels": [],
+          "title": "Source Freshness",
+          "type": "row"
+        },
+        {
+          "datasource": {"type": "prometheus", "uid": "prometheus"},
+          "fieldConfig": {
+            "defaults": {
+              "unit": "h",
+              "thresholds": {"mode": "absolute", "steps": [{"color": "green", "value": null}, {"color": "yellow", "value": 168}, {"color": "red", "value": 720}]}
+            },
+            "overrides": []
+          },
+          "gridPos": {"h": 8, "w": 24, "x": 0, "y": 6},
+          "id": 201,
+          "options": {
+            "orientation": "horizontal",
+            "displayMode": "gradient",
+            "reduceOptions": {"calcs": ["lastNotNull"]}
+          },
+          "title": "Hours Since Last Sync (by source)",
+          "type": "bargauge",
+          "targets": [{"expr": "cms_source_freshness_hours", "legendFormat": "{{source}}", "refId": "A"}]
+        },
+        {
+          "collapsed": false,
+          "gridPos": {"h": 1, "w": 24, "x": 0, "y": 14},
+          "id": 300,
+          "panels": [],
+          "title": "Ingestion Performance",
+          "type": "row"
+        },
+        {
+          "datasource": {"type": "prometheus", "uid": "prometheus"},
+          "fieldConfig": {"defaults": {"unit": "s"}},
+          "gridPos": {"h": 8, "w": 12, "x": 0, "y": 15},
+          "id": 301,
+          "options": {"legend": {"displayMode": "table"}, "tooltip": {"mode": "multi"}},
+          "title": "Fetch Duration (seconds)",
+          "type": "timeseries",
+          "targets": [{"expr": "rate(cms_fetch_duration_seconds_sum[1h]) / rate(cms_fetch_duration_seconds_count[1h])", "legendFormat": "{{source}}", "refId": "A"}]
+        },
+        {
+          "datasource": {"type": "prometheus", "uid": "prometheus"},
+          "fieldConfig": {"defaults": {"unit": "short"}},
+          "gridPos": {"h": 8, "w": 12, "x": 12, "y": 15},
+          "id": 302,
+          "options": {"legend": {"displayMode": "table"}, "tooltip": {"mode": "multi"}},
+          "title": "Records Ingested (rate/hr)",
+          "type": "timeseries",
+          "targets": [{"expr": "rate(cms_records_ingested_total[1h]) * 3600", "legendFormat": "{{source}}", "refId": "A"}]
+        },
+        {
+          "collapsed": false,
+          "gridPos": {"h": 1, "w": 24, "x": 0, "y": 23},
+          "id": 400,
+          "panels": [],
+          "title": "Agent Enrichment",
+          "type": "row"
+        },
+        {
+          "datasource": {"type": "prometheus", "uid": "prometheus"},
+          "fieldConfig": {"defaults": {"unit": "currencyUSD"}},
+          "gridPos": {"h": 8, "w": 12, "x": 0, "y": 24},
+          "id": 401,
+          "title": "Agent Cost per Day",
+          "type": "timeseries",
+          "targets": [{"expr": "sum(increase(cms_agent_cost_usd[1d]))", "legendFormat": "daily cost", "refId": "A"}]
+        },
+        {
+          "datasource": {"type": "prometheus", "uid": "prometheus"},
+          "fieldConfig": {"defaults": {"unit": "short"}},
+          "gridPos": {"h": 8, "w": 12, "x": 12, "y": 24},
+          "id": 402,
+          "title": "Agent Records: Enriched vs Quarantined",
+          "type": "timeseries",
+          "targets": [
+            {"expr": "sum(increase(cms_agent_records_enriched_total[1d]))", "legendFormat": "enriched", "refId": "A"},
+            {"expr": "sum(increase(cms_agent_records_quarantined_total[1d]))", "legendFormat": "quarantined", "refId": "B"}
+          ]
+        },
+        {
+          "collapsed": false,
+          "gridPos": {"h": 1, "w": 24, "x": 0, "y": 32},
+          "id": 500,
+          "panels": [],
+          "title": "Gold Views",
+          "type": "row"
+        },
+        {
+          "datasource": {"type": "prometheus", "uid": "prometheus"},
+          "fieldConfig": {
+            "defaults": {
+              "unit": "h",
+              "thresholds": {"mode": "absolute", "steps": [{"color": "green", "value": null}, {"color": "yellow", "value": 24}, {"color": "red", "value": 72}]}
+            }
+          },
+          "gridPos": {"h": 6, "w": 12, "x": 0, "y": 33},
+          "id": 501,
+          "options": {"orientation": "horizontal", "displayMode": "gradient", "reduceOptions": {"calcs": ["lastNotNull"]}},
+          "title": "Gold View Age (hours)",
+          "type": "bargauge",
+          "targets": [{"expr": "cms_gold_view_age_hours", "legendFormat": "{{view}}", "refId": "A"}]
+        },
+        {
+          "datasource": {"type": "prometheus", "uid": "prometheus"},
+          "fieldConfig": {"defaults": {"unit": "short"}},
+          "gridPos": {"h": 6, "w": 12, "x": 12, "y": 33},
+          "id": 502,
+          "options": {"orientation": "horizontal", "displayMode": "gradient", "reduceOptions": {"calcs": ["lastNotNull"]}},
+          "title": "Gold View Record Counts",
+          "type": "bargauge",
+          "targets": [{"expr": "cms_gold_view_records", "legendFormat": "{{view}}", "refId": "A"}]
+        },
+        {
+          "collapsed": false,
+          "gridPos": {"h": 1, "w": 24, "x": 0, "y": 39},
+          "id": 600,
+          "panels": [],
+          "title": "Table Record Counts",
+          "type": "row"
+        },
+        {
+          "datasource": {"type": "prometheus", "uid": "prometheus"},
+          "fieldConfig": {"defaults": {"unit": "short"}},
+          "gridPos": {"h": 8, "w": 24, "x": 0, "y": 40},
+          "id": 601,
+          "options": {"orientation": "horizontal", "displayMode": "gradient", "reduceOptions": {"calcs": ["lastNotNull"]}},
+          "title": "CMS Table Record Counts (raw / silver / gold)",
+          "type": "bargauge",
+          "targets": [
+            {"expr": "cms_table_records{layer=\"raw\"}", "legendFormat": "raw.{{table}}", "refId": "A"},
+            {"expr": "cms_table_records{layer=\"silver\"}", "legendFormat": "silver.{{table}}", "refId": "B"},
+            {"expr": "cms_table_records{layer=\"gold\"}", "legendFormat": "gold.{{table}}", "refId": "C"}
+          ]
+        }
+      ],
+      "refresh": "30s",
+      "schemaVersion": 39,
+      "tags": ["dk-data", "cms", "pipeline"],
+      "templating": {"list": []},
+      "time": {"from": "now-7d", "to": "now"},
+      "timepicker": {},
+      "timezone": "utc",
+      "title": "CMS Pipeline Health",
+      "uid": "dk-cms-pipeline",
+      "version": 1
+    }

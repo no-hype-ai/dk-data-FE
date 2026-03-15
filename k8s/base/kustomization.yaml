@@ -102,3 +102,5 @@ resources:
   # Observability (requires Prometheus Operator CRDs)
   - service-monitor.yaml
   - alert-rules.yaml
+  # Grafana dashboards (auto-provisioned via sidecar)
+  - grafana-cms-dashboard.yaml
