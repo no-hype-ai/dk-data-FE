@@ -991,6 +991,15 @@ Examples:
     finally:
         close_connection_pool()
         duration = time.monotonic() - start_time
+
+        # Emit CMS-specific Prometheus metrics for CMS sources
+        if source.startswith("cms_"):
+            try:
+                from ..observability.metrics import record_cms_fetch
+                record_cms_fetch(source, duration, records)
+            except Exception:
+                pass
+
         if _OBS_AVAILABLE:
             try:
                 asyncio.run(report_completion(

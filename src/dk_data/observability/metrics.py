@@ -536,15 +536,15 @@ CMS_EXTERNAL_API_REQUESTS_TOTAL = Counter(
     ["source", "status"],
 )
 
-CMS_AGENT_RECORDS_ENRICHED_TOTAL = Counter(
+CMS_AGENT_RECORDS_ENRICHED_TOTAL = Gauge(
     "cms_agent_records_enriched_total",
-    "Total records enriched by CMS agents",
+    "Total records enriched by CMS agents (lifetime, from DB)",
     ["agent_name"],
 )
 
-CMS_AGENT_RECORDS_QUARANTINED_TOTAL = Counter(
+CMS_AGENT_RECORDS_QUARANTINED_TOTAL = Gauge(
     "cms_agent_records_quarantined_total",
-    "Total records quarantined by CMS agents",
+    "Total records quarantined by CMS agents (lifetime, from DB)",
     ["agent_name"],
 )
 

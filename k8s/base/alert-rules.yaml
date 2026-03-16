@@ -163,6 +163,113 @@ spec:
               {{ $value }} molecules are in quarantine status.
               Review and resolve quarantine reasons.
 
+    # CMS Pipeline Alerts (016-cms-puf-datasource-integration)
+    - name: cms-pipeline
+      interval: 5m
+      rules:
+        - alert: CMSSourceStale
+          expr: |
+            (time() - cms_source_last_sync_timestamp) > (30 * 86400)
+          for: 1h
+          labels:
+            severity: warning
+            team: data-platform
+          annotations:
+            summary: "CMS source {{ $labels.source }} is stale (>30 days)"
+            description: |
+              CMS source {{ $labels.source }} has not been refreshed in over 30 days.
+              Most CMS sources update monthly or quarterly.
+
+        - alert: CMSSourceCriticallyStale
+          expr: |
+            (time() - cms_source_last_sync_timestamp) > (90 * 86400)
+          for: 1h
+          labels:
+            severity: critical
+            team: data-platform
+          annotations:
+            summary: "CMS source {{ $labels.source }} critically stale (>90 days)"
+            description: |
+              CMS source {{ $labels.source }} has not been refreshed in over 90 days.
+              Investigate CronJob failures.
+
+        - alert: CMSFetchSlow
+          expr: |
+            histogram_quantile(0.95, rate(cms_fetch_duration_seconds_bucket[1h])) > 1800
+          for: 0m
+          labels:
+            severity: warning
+            team: data-platform
+          annotations:
+            summary: "CMS fetch p95 >30 minutes for {{ $labels.source }}"
+            description: |
+              CMS source {{ $labels.source }} fetch is taking over 30 minutes (p95).
+
+        - alert: CMSAgentFailed
+          expr: |
+            cms_agent_last_run_status == 0
+          for: 30m
+          labels:
+            severity: warning
+            team: data-platform
+          annotations:
+            summary: "CMS agent {{ $labels.agent_name }} last run failed"
+            description: |
+              Agent {{ $labels.agent_name }} last execution status is FAILED.
+              Check meta.agent_execution_log for details.
+
+        - alert: CMSAgentCostHigh
+          expr: |
+            sum(cms_agent_cost_usd) > 385
+          for: 1h
+          labels:
+            severity: warning
+            team: data-platform
+          annotations:
+            summary: "CMS agent monthly cost exceeds $385 budget"
+            description: |
+              Total CMS agent LLM cost is ${{ $value | printf "%.2f" }}, exceeding the $385/month budget.
+              Review agent batch sizes and model selection.
+
+        - alert: CMSQuarantineBacklog
+          expr: |
+            sum(cms_agent_quarantine_pending) > 100
+          for: 1h
+          labels:
+            severity: warning
+            team: data-platform
+          annotations:
+            summary: "CMS agent quarantine backlog >100 records"
+            description: |
+              {{ $value }} records pending review in agent quarantine.
+              Review via GET /api/v1/agents/quarantine.
+
+        - alert: CMSGoldViewStale
+          expr: |
+            (time() - cms_gold_view_last_refresh_timestamp) > (3 * 86400)
+          for: 1h
+          labels:
+            severity: warning
+            team: data-platform
+          annotations:
+            summary: "CMS gold view {{ $labels.view }} stale (>3 days)"
+            description: |
+              Gold view {{ $labels.view }} has not been refreshed in over 3 days.
+              Trigger refresh via POST /cms/gold/refresh.
+
+        - alert: CMSRateLimitSpike
+          expr: |
+            increase(cms_rate_limit_rejections_total[1h]) > 20
+          for: 0m
+          labels:
+            severity: warning
+            team: data-platform
+          annotations:
+            summary: "CMS rate limit rejections spike for {{ $labels.source }}"
+            description: |
+              {{ $value }} rate limit rejections in the last hour for {{ $labels.source }}.
+              May indicate API throttling or misconfigured fetch frequency.
+
     - name: dk-data.resources
       interval: 1m
       rules:

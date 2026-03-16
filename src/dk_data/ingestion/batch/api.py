@@ -244,6 +244,8 @@ async def refresh_cms_gold():
     Feature: 016-cms-puf-datasource-integration (T102)
     """
     import subprocess
+    import time as _time
+    refresh_start = _time.time()
     try:
         result = subprocess.run(
             ["python", "-m", "sqlmesh", "plan", "--auto-apply", "--no-prompts"],
@@ -251,6 +253,12 @@ async def refresh_cms_gold():
             text=True,
             timeout=600,
         )
+        refresh_duration = _time.time() - refresh_start
+        try:
+            from dk_data.observability.metrics import record_cms_gold_refresh
+            record_cms_gold_refresh(refresh_duration)
+        except Exception:
+            pass
         if result.returncode != 0:
             raise HTTPException(
                 status_code=500,
@@ -260,6 +268,7 @@ async def refresh_cms_gold():
             "status": "success",
             "message": "CMS gold views refreshed",
             "timestamp": datetime.now().isoformat(),
+            "duration_seconds": round(refresh_duration, 2),
         }
     except subprocess.TimeoutExpired:
         raise HTTPException(status_code=504, detail="Gold refresh timed out after 600s")

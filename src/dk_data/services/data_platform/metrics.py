@@ -394,7 +394,29 @@ def refresh_metrics_from_database_sync():
                 count = cur.fetchone()[0] or 0
                 if count > 0:
                     CMS_SOURCE_HEALTH_STATUS.labels(source=source_name).set(1)
-                    CMS_SOURCE_LAST_SYNC_TIMESTAMP.labels(source=source_name).set(current_time - 3600)
+                    # Query actual last sync timestamp from meta.refresh_log
+                    try:
+                        cur.execute("""
+                            SELECT EXTRACT(EPOCH FROM rl.refresh_completed_at)
+                            FROM meta.refresh_log rl
+                            JOIN meta.data_sources ds ON ds.source_id = rl.source_id
+                            WHERE ds.source_name = %s AND rl.status = 'success'
+                            ORDER BY rl.refresh_completed_at DESC LIMIT 1
+                        """, (source_name,))
+                        ts_row = cur.fetchone()
+                        if ts_row and ts_row[0]:
+                            CMS_SOURCE_LAST_SYNC_TIMESTAMP.labels(source=source_name).set(ts_row[0])
+                        else:
+                            # Fallback: query last_successful_refresh from data_sources
+                            cur.execute("""
+                                SELECT EXTRACT(EPOCH FROM last_successful_refresh)
+                                FROM meta.data_sources WHERE source_name = %s
+                            """, (source_name,))
+                            ds_row = cur.fetchone()
+                            if ds_row and ds_row[0]:
+                                CMS_SOURCE_LAST_SYNC_TIMESTAMP.labels(source=source_name).set(ds_row[0])
+                    except Exception:
+                        pass  # Table may not exist in local dev
                 elif allow_empty:
                     CMS_SOURCE_HEALTH_STATUS.labels(source=source_name).set(0.5)
                 else:
@@ -421,7 +443,18 @@ def refresh_metrics_from_database_sync():
                     count = cur.fetchone()[0] or 0
                     CMS_GOLD_VIEW_RECORD_COUNT.labels(view=view).set(count)
                     if count > 0:
-                        CMS_GOLD_VIEW_LAST_REFRESH_TIMESTAMP.labels(view=view).set(current_time - 3600)
+                        # Query actual last refresh from batch job runs or meta
+                        try:
+                            cur.execute("""
+                                SELECT EXTRACT(EPOCH FROM MAX(completed_at))
+                                FROM meta.batch_job_runs
+                                WHERE job_name = 'cms-gold-refresh' AND status = 'success'
+                            """)
+                            refresh_row = cur.fetchone()
+                            if refresh_row and refresh_row[0]:
+                                CMS_GOLD_VIEW_LAST_REFRESH_TIMESTAMP.labels(view=view).set(refresh_row[0])
+                        except Exception:
+                            pass
                 else:
                     CMS_GOLD_VIEW_RECORD_COUNT.labels(view=view).set(0)
             except Exception as e:
@@ -472,13 +505,13 @@ def refresh_metrics_from_database_sync():
                             WHERE agent_name = %s AND status = 'ENRICHED'
                         """, (agent,))
                         enriched = cur.fetchone()[0] or 0
-                        CMS_AGENT_RECORDS_ENRICHED_TOTAL.labels(agent_name=agent)._value.set(enriched)
+                        CMS_AGENT_RECORDS_ENRICHED_TOTAL.labels(agent_name=agent).set(enriched)
                         cur.execute("""
                             SELECT COUNT(*) FROM meta.agent_quarantine
                             WHERE agent_name = %s AND status = 'QUARANTINED'
                         """, (agent,))
                         quarantined = cur.fetchone()[0] or 0
-                        CMS_AGENT_RECORDS_QUARANTINED_TOTAL.labels(agent_name=agent)._value.set(quarantined)
+                        CMS_AGENT_RECORDS_QUARANTINED_TOTAL.labels(agent_name=agent).set(quarantined)
             except Exception as e:
                 logger.debug(f"Error checking CMS agent {agent}: {e}")
 
