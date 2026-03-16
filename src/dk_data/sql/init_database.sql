@@ -406,26 +406,35 @@ BEGIN
 END
 $$;
 
+-- Pass psql variable into PL/pgSQL via a GUC (psql does not expand :variables
+-- inside dollar-quoted blocks).
+SELECT set_config('app.authenticator_password', :'AUTHENTICATOR_PASSWORD', false);
+
 -- Validate that a real password was provided (reject known defaults)
 DO $$
 BEGIN
-    IF :'AUTHENTICATOR_PASSWORD' IN ('postgrest_secret_change_me', 'password', 'changeme', '') THEN
+    IF current_setting('app.authenticator_password') IN ('postgrest_secret_change_me', 'password', 'changeme', '') THEN
         RAISE EXCEPTION 'AUTHENTICATOR_PASSWORD must be set to a real password, not a default/placeholder value. '
-            'Pass via: psql -v AUTHENTICATOR_PASSWORD="''your_secure_password''"';
+            'Pass via: psql -v AUTHENTICATOR_PASSWORD="your_secure_password"';
     END IF;
 END
 $$;
 
 -- Create authenticator role
 DO $$
+DECLARE
+    _pwd text := current_setting('app.authenticator_password');
 BEGIN
     IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = 'authenticator') THEN
-        EXECUTE format('CREATE ROLE authenticator NOINHERIT LOGIN PASSWORD %L', :'AUTHENTICATOR_PASSWORD');
+        EXECUTE format('CREATE ROLE authenticator NOINHERIT LOGIN PASSWORD %L', _pwd);
     ELSE
-        EXECUTE format('ALTER ROLE authenticator PASSWORD %L', :'AUTHENTICATOR_PASSWORD');
+        EXECUTE format('ALTER ROLE authenticator PASSWORD %L', _pwd);
     END IF;
 END
 $$;
+
+-- Clear the temporary GUC
+SELECT set_config('app.authenticator_password', '', false);
 
 -- Grant roles to authenticator (for role switching via JWT)
 GRANT web_anon TO authenticator;

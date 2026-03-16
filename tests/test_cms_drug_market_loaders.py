@@ -114,18 +114,17 @@ class TestCmsFormularyLoader:
     def test_valid_record_passes_validation(self):
         from dk_data.ingestion.sources.cms_formulary import CmsFormularyRecord
         record = CmsFormularyRecord(
-            contract_id="H0001",
-            plan_id="001",
+            formulary_id="00012345",
             rxcui="352304",
-            drug_name="atorvastatin",
             tier_level="1",
         )
         assert record.rxcui == "352304"
+        assert record.formulary_id == "00012345"
 
     def test_empty_rxcui_rejected(self):
         from dk_data.ingestion.sources.cms_formulary import CmsFormularyRecord
         with pytest.raises(Exception):
-            CmsFormularyRecord(rxcui="  ")
+            CmsFormularyRecord(formulary_id="00012345", rxcui="  ")
 
     def test_loader_function_exists(self):
         from dk_data.ingestion.sources.cms_formulary import load_cms_formulary_data
@@ -176,21 +175,22 @@ class TestCmsUspLoader:
     def test_valid_record_passes_validation(self):
         from dk_data.ingestion.sources.cms_usp import CmsUspRecord
         record = CmsUspRecord(
+            rxcui="161",
             usp_category="Analgesics",
             usp_class="Opioid Analgesics",
-            drug_names="morphine, codeine",
         )
         assert record.usp_category == "Analgesics"
+        assert record.rxcui == "161"
 
     def test_empty_category_rejected(self):
         from dk_data.ingestion.sources.cms_usp import CmsUspRecord
         with pytest.raises(Exception):
-            CmsUspRecord(usp_category="  ", usp_class="Opioid Analgesics")
+            CmsUspRecord(rxcui="161", usp_category="  ", usp_class="Opioid Analgesics")
 
     def test_empty_class_rejected(self):
         from dk_data.ingestion.sources.cms_usp import CmsUspRecord
         with pytest.raises(Exception):
-            CmsUspRecord(usp_category="Analgesics", usp_class="  ")
+            CmsUspRecord(rxcui="161", usp_category="Analgesics", usp_class="  ")
 
     def test_loader_function_exists(self):
         from dk_data.ingestion.sources.cms_usp import load_cms_usp_data
@@ -342,7 +342,7 @@ class TestCmsDmeposLoader:
             npi="1234567890",
             hcpcs_code="E0601",
             hcpcs_description="CPAP device",
-            total_services=500,
+            total_services="500",
         )
         assert record.npi == "1234567890"
 

@@ -74,18 +74,19 @@ class TestCmsPecosLoader:
 
     def test_valid_record(self):
         from dk_data.ingestion.sources.cms_pecos import CmsPecosRecord
-        rec = CmsPecosRecord(enrollment_id="ENR001", npi="1234567890")
+        rec = CmsPecosRecord(npi="1234567890", enrollment_id="ENR001")
+        assert rec.npi == "1234567890"
         assert rec.enrollment_id == "ENR001"
 
-    def test_empty_enrollment_id_rejected(self):
+    def test_empty_npi_rejected(self):
         from dk_data.ingestion.sources.cms_pecos import CmsPecosRecord
         with pytest.raises(Exception):
-            CmsPecosRecord(enrollment_id="  ")
+            CmsPecosRecord(npi="  ")
 
     def test_optional_fields_default_none(self):
         from dk_data.ingestion.sources.cms_pecos import CmsPecosRecord
-        rec = CmsPecosRecord(enrollment_id="ENR001")
-        assert rec.npi is None
+        rec = CmsPecosRecord(npi="1234567890")
+        assert rec.enrollment_id is None
         assert rec.state is None
 
     def test_load_function_exists(self):
@@ -130,25 +131,19 @@ class TestCmsHospitalAffiliationLoader:
 
     def test_valid_record(self):
         from dk_data.ingestion.sources.cms_hospital_affiliation import CmsHospitalAffiliationRecord
-        rec = CmsHospitalAffiliationRecord(ccn="010001", affiliated_ccn="020002")
-        assert rec.ccn == "010001"
-        assert rec.affiliated_ccn == "020002"
+        rec = CmsHospitalAffiliationRecord(npi="1234567890")
+        assert rec.npi == "1234567890"
 
-    def test_empty_ccn_rejected(self):
+    def test_empty_npi_rejected(self):
         from dk_data.ingestion.sources.cms_hospital_affiliation import CmsHospitalAffiliationRecord
         with pytest.raises(Exception):
-            CmsHospitalAffiliationRecord(ccn="  ", affiliated_ccn="020002")
-
-    def test_empty_affiliated_ccn_rejected(self):
-        from dk_data.ingestion.sources.cms_hospital_affiliation import CmsHospitalAffiliationRecord
-        with pytest.raises(Exception):
-            CmsHospitalAffiliationRecord(ccn="010001", affiliated_ccn="  ")
+            CmsHospitalAffiliationRecord(npi="  ")
 
     def test_optional_fields_default_none(self):
         from dk_data.ingestion.sources.cms_hospital_affiliation import CmsHospitalAffiliationRecord
-        rec = CmsHospitalAffiliationRecord(ccn="010001", affiliated_ccn="020002")
-        assert rec.affiliation_type is None
-        assert rec.effective_date is None
+        rec = CmsHospitalAffiliationRecord(npi="1234567890")
+        assert rec.ind_pac_id is None
+        assert rec.facility_affiliations_certification_number is None
 
     def test_load_function_exists(self):
         from dk_data.ingestion.sources.cms_hospital_affiliation import load_cms_hospital_affiliation_data
@@ -208,33 +203,26 @@ class TestCmsOutpatientPufLoader:
 
     def test_valid_record(self):
         from dk_data.ingestion.sources.cms_outpatient_puf import CmsOutpatientPufRecord
-        rec = CmsOutpatientPufRecord(ccn="010001", hcpcs_code="99213")
+        rec = CmsOutpatientPufRecord(ccn="010001", apc_code="0634")
         assert rec.ccn == "010001"
-        assert rec.hcpcs_code == "99213"
+        assert rec.apc_code == "0634"
 
     def test_empty_ccn_rejected(self):
         from dk_data.ingestion.sources.cms_outpatient_puf import CmsOutpatientPufRecord
         with pytest.raises(Exception):
-            CmsOutpatientPufRecord(ccn="  ", hcpcs_code="99213")
+            CmsOutpatientPufRecord(ccn="  ")
 
-    def test_empty_hcpcs_code_rejected(self):
+    def test_total_services_is_string(self):
         from dk_data.ingestion.sources.cms_outpatient_puf import CmsOutpatientPufRecord
-        with pytest.raises(Exception):
-            CmsOutpatientPufRecord(ccn="010001", hcpcs_code="  ")
+        rec = CmsOutpatientPufRecord(ccn="010001", total_services="500")
+        assert rec.total_services == "500"
 
-    def test_total_services_coerced_from_string(self):
+    def test_optional_fields_default_none(self):
         from dk_data.ingestion.sources.cms_outpatient_puf import CmsOutpatientPufRecord
-        rec = CmsOutpatientPufRecord(ccn="010001", hcpcs_code="99213", total_services="500")
-        assert rec.total_services == 500
-
-    def test_float_fields_coerced(self):
-        from dk_data.ingestion.sources.cms_outpatient_puf import CmsOutpatientPufRecord
-        rec = CmsOutpatientPufRecord(
-            ccn="010001", hcpcs_code="99213",
-            avg_est_submitted_charges="1500.75",
-            avg_total_payments="800.25",
-        )
-        assert rec.avg_est_submitted_charges == 1500.75
+        rec = CmsOutpatientPufRecord(ccn="010001")
+        assert rec.apc_code is None
+        assert rec.avg_submitted_charges is None
+        assert rec.avg_total_payments is None
 
     def test_load_function_exists(self):
         from dk_data.ingestion.sources.cms_outpatient_puf import load_cms_outpatient_puf_data
@@ -378,8 +366,8 @@ class TestCmsMagnetLoader:
     def test_optional_fields_default_none(self):
         from dk_data.ingestion.sources.cms_magnet import CmsMagnetRecord
         rec = CmsMagnetRecord(facility_name="Johns Hopkins", state="MD")
-        assert rec.designation_date is None
-        assert rec.redesignation_date is None
+        assert rec.designation_year is None
+        assert rec.redesignation_years is None
 
     def test_load_function_exists(self):
         from dk_data.ingestion.sources.cms_magnet import load_cms_magnet_data

@@ -88,7 +88,6 @@ def load_cms_geographic_variation_data(
         key = (r.state, r.year)
         if key not in seen:
             seen[key] = r
-    deduped = before_count - len(validated)
     validated = list(seen.values())
 
     if not validated:
