@@ -184,12 +184,28 @@ class DynamicSourceTransformer:
                         else:
                             field_types[col_name] = pg_type
 
-            # Process all samples
+            # Process all samples — unwrap API envelope if present
             for row in rows:
                 payload = row['response_body']
                 if isinstance(payload, str):
                     payload = json.loads(payload)
-                extract_fields(payload)
+
+                # Detect API response envelope: {"results": [...], "meta": {...}}
+                # Common in openFDA, ClinicalTrials.gov, OpenAlex, PubChem
+                results_array = None
+                for envelope_key in ('results', 'studies', 'works', 'data', 'hits'):
+                    if isinstance(payload, dict) and envelope_key in payload and isinstance(payload[envelope_key], list):
+                        results_array = payload[envelope_key]
+                        break
+
+                if results_array and len(results_array) > 0:
+                    # Extract schema from the first few items in the results array
+                    for item in results_array[:5]:
+                        if isinstance(item, dict):
+                            extract_fields(item)
+                else:
+                    # No envelope — extract from the payload directly
+                    extract_fields(payload)
 
             # Convert to column list
             columns = [
@@ -289,24 +305,35 @@ class DynamicSourceTransformer:
                         if isinstance(payload, str):
                             payload = json.loads(payload)
 
-                        # Extract typed values and track extra fields
-                        values, extra_fields = self._extract_typed_values_with_extras(
-                            payload, data_columns, current_columns
-                        )
+                        # Detect API response envelope and unwrap results array
+                        items_to_process = [payload]
+                        for envelope_key in ('results', 'studies', 'works', 'data', 'hits'):
+                            if isinstance(payload, dict) and envelope_key in payload and isinstance(payload[envelope_key], list):
+                                items_to_process = payload[envelope_key]
+                                break
 
-                        # Track newly discovered fields for schema evolution
-                        for field_name, field_value in extra_fields.items():
-                            if field_name not in new_fields_discovered and field_name not in current_columns:
-                                pg_type = self._infer_pg_type(field_value)
-                                new_fields_discovered[field_name] = pg_type
+                        for item in items_to_process:
+                            if not isinstance(item, dict):
+                                continue
 
-                        # Insert into bronze with extra fields
-                        await self._insert_bronze_record(
-                            conn, bronze_table, data_columns, values,
-                            record['id'], source, record['request_timestamp'],
-                            extra_fields=extra_fields
-                        )
-                        result.records_inserted += 1
+                            # Extract typed values and track extra fields
+                            values, extra_fields = self._extract_typed_values_with_extras(
+                                item, data_columns, current_columns
+                            )
+
+                            # Track newly discovered fields for schema evolution
+                            for field_name, field_value in extra_fields.items():
+                                if field_name not in new_fields_discovered and field_name not in current_columns:
+                                    pg_type = self._infer_pg_type(field_value)
+                                    new_fields_discovered[field_name] = pg_type
+
+                            # Insert into bronze with extra fields
+                            await self._insert_bronze_record(
+                                conn, bronze_table, data_columns, values,
+                                record['id'], source, record['request_timestamp'],
+                                extra_fields=extra_fields
+                            )
+                            result.records_inserted += 1
 
                     except Exception as e:
                         result.records_failed += 1

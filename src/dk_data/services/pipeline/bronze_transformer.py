@@ -130,7 +130,10 @@ class BronzeTransformer:
         return len(rows)
 
     async def _transform_openfda_labels(self, raw_id: str, response: dict) -> int:
-        """Extract drug labels from OpenFDA Labels API response."""
+        """Extract drug labels from OpenFDA Labels API response.
+
+        Carries ALL label fields forward from raw to bronze — no column dropping.
+        """
         results = response.get("results", [])
         if not results:
             return 0
@@ -144,31 +147,61 @@ class BronzeTransformer:
             openfda = r.get("openfda", {})
             brand_names = openfda.get("brand_name", [])
             generic_names = openfda.get("generic_name", [])
+            manufacturers = openfda.get("manufacturer_name", [])
+            routes = openfda.get("route", [])
+            dosage_forms = openfda.get("dosage_form", [])
+            application_numbers = openfda.get("application_number", [])
 
             rows.append((
                 str(uuid.uuid4()), raw_id, set_id,
+                r.get("spl_id"),
+                r.get("version"),
                 brand_names[0] if brand_names else None,
                 generic_names[0] if generic_names else None,
+                manufacturers[0] if manufacturers else None,
+                application_numbers[0] if application_numbers else None,
+                r.get("product_type"),
+                json.dumps(routes) if routes else None,                     # route as jsonb
                 _join_text(r.get("indications_and_usage")),
-                _join_text(r.get("adverse_reactions")),
                 _join_text(r.get("dosage_and_administration")),
+                _join_text(r.get("contraindications")),
+                _join_text(r.get("warnings_and_cautions") or r.get("warnings")),
+                _join_text(r.get("boxed_warning")),
+                _join_text(r.get("adverse_reactions")),
+                _join_text(r.get("drug_interactions")),
+                _join_text(r.get("mechanism_of_action")),
+                r.get("effective_time"),
             ))
 
         if not rows:
             return 0
 
         async with self.db_pool.acquire() as conn:
+            # Use existing bronze.openfda_labels column names (47 columns already exist)
             await conn.executemany("""
                 INSERT INTO bronze.openfda_labels
-                (id, raw_id, set_id, brand_name, generic_name,
-                 indications, adverse_reactions, dosage)
-                VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+                (id, raw_id, set_id, spl_id, version,
+                 brand_name, generic_name, manufacturer_name, application_number,
+                 product_type, route, indications_and_usage,
+                 dosage_and_administration, contraindications, warnings_and_cautions,
+                 boxed_warning, adverse_reactions, drug_interactions,
+                 mechanism_of_action, effective_time)
+                VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10,
+                        $11, $12, $13, $14, $15, $16, $17, $18, $19, $20)
                 ON CONFLICT (set_id) DO UPDATE SET
                     brand_name = EXCLUDED.brand_name,
                     generic_name = EXCLUDED.generic_name,
-                    indications = EXCLUDED.indications,
+                    manufacturer_name = EXCLUDED.manufacturer_name,
+                    application_number = EXCLUDED.application_number,
+                    indications_and_usage = EXCLUDED.indications_and_usage,
+                    dosage_and_administration = EXCLUDED.dosage_and_administration,
                     adverse_reactions = EXCLUDED.adverse_reactions,
-                    dosage = EXCLUDED.dosage
+                    route = EXCLUDED.route,
+                    warnings_and_cautions = EXCLUDED.warnings_and_cautions,
+                    boxed_warning = EXCLUDED.boxed_warning,
+                    drug_interactions = EXCLUDED.drug_interactions,
+                    mechanism_of_action = EXCLUDED.mechanism_of_action,
+                    effective_time = EXCLUDED.effective_time
             """, rows)
         return len(rows)
 

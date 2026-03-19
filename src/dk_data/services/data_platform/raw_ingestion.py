@@ -360,10 +360,13 @@ class OpenFDAIngestion(RawIngestionService):
         limit: int = 100,
         skip: int = 0
     ) -> Optional[str]:
-        """Fetch FDA drug labels."""
+        """Fetch FDA drug labels. Searches both brand_name and generic_name."""
         search_parts = []
         if drug_name:
-            search_parts.append(f'openfda.brand_name:"{drug_name}"')
+            # Search both brand and generic name — the input could be either
+            search_parts.append(
+                f'(openfda.brand_name:"{drug_name}"+openfda.generic_name:"{drug_name}")'
+            )
         if application_number:
             search_parts.append(f'openfda.application_number:"{application_number}"')
 

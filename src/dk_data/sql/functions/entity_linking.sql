@@ -30,9 +30,93 @@ BEGIN
   EXCEPTION WHEN OTHERS THEN result := 'FAERS: ' || SQLERRM; END;
   RETURN NEXT;
 
+  -- Link Labels: bronze.openfda_labels → mol_silver.drug_labels
+  -- Uses ALL fields from bronze — no column dropping
   step := 'Link Labels';
-  SELECT count(*) INTO linked_count FROM mol_silver.drug_labels WHERE molecule_id IS NOT NULL;
-  result := linked_count || ' labels'; RETURN NEXT;
+  BEGIN
+    INSERT INTO mol_silver.drug_labels (
+      molecule_id, set_id, spl_id, brand_name, generic_name, manufacturer,
+      application_number, marketing_status, route_of_administration, dosage_forms,
+      indications, contraindications, warnings, boxed_warning,
+      adverse_reactions, drug_interactions, mechanism_of_action,
+      clinical_studies, effective_date, approval_date
+    )
+    SELECT DISTINCT ON (b.set_id)
+      m.molecule_id, b.set_id, b.spl_id,
+      trim(both '"[]' from b.brand_name::text),
+      trim(both '"[]' from b.generic_name::text),
+      b.manufacturer_name, b.application_number, 'approved',
+      CASE WHEN b.route IS NOT NULL AND b.route::text != 'null'
+        THEN ARRAY(SELECT jsonb_array_elements_text(b.route))
+        ELSE NULL END,
+      NULL,
+      b.indications_and_usage,
+      b.contraindications,
+      COALESCE(b.warnings_and_cautions, b.warnings),
+      b.boxed_warning,
+      b.adverse_reactions,
+      b.drug_interactions,
+      b.mechanism_of_action,
+      NULL,
+      b.effective_time,
+      b.effective_time
+    FROM bronze.openfda_labels b
+    CROSS JOIN mol_silver.molecules m
+    WHERE b.generic_name IS NOT NULL
+      AND b.set_id IS NOT NULL
+      AND (
+        -- Handle both plain text and JSON array ["NAME"] formats
+        LOWER(b.generic_name::text) = LOWER(m.canonical_name)
+        OR LOWER(trim(both '"[]' from b.generic_name::text)) = LOWER(m.canonical_name)
+      )
+    ON CONFLICT (set_id) DO UPDATE SET
+      molecule_id = EXCLUDED.molecule_id,
+      brand_name = COALESCE(EXCLUDED.brand_name, mol_silver.drug_labels.brand_name),
+      manufacturer = COALESCE(EXCLUDED.manufacturer, mol_silver.drug_labels.manufacturer),
+      indications = COALESCE(EXCLUDED.indications, mol_silver.drug_labels.indications),
+      adverse_reactions = COALESCE(EXCLUDED.adverse_reactions, mol_silver.drug_labels.adverse_reactions),
+      mechanism_of_action = COALESCE(EXCLUDED.mechanism_of_action, mol_silver.drug_labels.mechanism_of_action),
+      route_of_administration = COALESCE(EXCLUDED.route_of_administration, mol_silver.drug_labels.route_of_administration),
+      approval_date = COALESCE(EXCLUDED.approval_date, mol_silver.drug_labels.approval_date);
+    GET DIAGNOSTICS linked_count = ROW_COUNT;
+    result := '+' || linked_count || ' labels';
+  EXCEPTION WHEN OTHERS THEN result := 'Labels: ' || SQLERRM; END;
+  RETURN NEXT;
+
+  -- Link DrugBank Targets: bronze.drugbank_targets → mol_silver.targets
+  step := 'Link DrugBank Targets';
+  BEGIN
+    INSERT INTO mol_silver.targets (
+      molecule_id, molecule_name, target_name, target_type, action_type,
+      gene_symbol, uniprot_accession, source
+    )
+    SELECT m.molecule_id, m.canonical_name,
+      t.target_name, 'protein', array_to_string(t.actions, ', '),
+      t.gene_name, t.uniprot_id, 'drugbank'
+    FROM bronze.drugbank_targets t
+    JOIN bronze.drugbank_data d ON t.drugbank_id = d.drugbank_id
+    JOIN mol_silver.molecules m ON LOWER(d.drug_name) = LOWER(m.canonical_name)
+    ON CONFLICT DO NOTHING;
+    GET DIAGNOSTICS linked_count = ROW_COUNT;
+    result := '+' || linked_count || ' targets';
+  EXCEPTION WHEN OTHERS THEN result := 'DrugBank: ' || SQLERRM; END;
+  RETURN NEXT;
+
+  -- Link Financial Filings: silver.financial_filings molecule_id via brand name
+  step := 'Link Financial Filings';
+  BEGIN
+    UPDATE mol_silver.financial_filings f
+    SET molecule_id = m.molecule_id
+    FROM mol_silver.molecules m
+    WHERE f.molecule_id IS NULL
+      AND (
+        LOWER(f.product_name) = LOWER(m.canonical_name)
+        OR LOWER(f.product_name) = ANY(SELECT LOWER(unnest(m.brand_names)))
+      );
+    GET DIAGNOSTICS linked_count = ROW_COUNT;
+    result := '+' || linked_count || ' financial filings';
+  EXCEPTION WHEN OTHERS THEN result := 'Financial: ' || SQLERRM; END;
+  RETURN NEXT;
 
   step := 'Refresh Gold';
   BEGIN
@@ -47,7 +131,7 @@ BEGIN
       adverse_event_count = (SELECT count(*) FROM mol_silver.adverse_events ae WHERE ae.molecule_id = mp.molecule_id),
       last_updated = now();
     GET DIAGNOSTICS linked_count = ROW_COUNT;
-    result := 'Gold refreshed';
+    result := 'Gold refreshed (' || linked_count || ' profiles updated)';
   EXCEPTION WHEN OTHERS THEN result := 'Gold: ' || SQLERRM; END;
   RETURN NEXT;
   RETURN;

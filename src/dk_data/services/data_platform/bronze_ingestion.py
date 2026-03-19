@@ -486,8 +486,8 @@ class BronzeIngestionService:
             set_id,
             label.get('id'),
             self._safe_int(label.get('version', '1')),
-            json.dumps([brand_name]) if brand_name else None,
-            json.dumps([generic_name]) if generic_name else None,
+            brand_name,      # Plain text, not JSON array
+            generic_name,    # Plain text, not JSON array
             self._first_or_none(openfda.get('manufacturer_name')),
             self._first_or_none(openfda.get('application_number')),
             self._first_or_none(openfda.get('product_type')),
