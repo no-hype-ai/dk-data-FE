@@ -98,7 +98,7 @@ class DynamicSourceTransformer:
         sample_size: int = 10
     ) -> List[Dict[str, Any]]:
         """
-        Auto-detect Bronze schema from _raw_payload samples.
+        Auto-detect Bronze schema from response_body samples.
 
         Analyzes sample records to determine column names and types.
         Handles nested JSON by flattening to appropriate depth.
@@ -106,9 +106,9 @@ class DynamicSourceTransformer:
         async with self.db_pool.acquire() as conn:
             # Get sample payloads
             rows = await conn.fetch(f"""
-                SELECT _raw_payload
+                SELECT response_body
                 FROM {raw_table}
-                WHERE _raw_payload IS NOT NULL
+                WHERE response_body IS NOT NULL
                 LIMIT $1
             """, sample_size)
 
@@ -186,7 +186,7 @@ class DynamicSourceTransformer:
 
             # Process all samples
             for row in rows:
-                payload = row['_raw_payload']
+                payload = row['response_body']
                 if isinstance(payload, str):
                     payload = json.loads(payload)
                 extract_fields(payload)
@@ -213,7 +213,7 @@ class DynamicSourceTransformer:
         Transform raw JSON data to Bronze typed columns.
 
         FULLY DYNAMIC with SCHEMA EVOLUTION:
-        - Auto-detects schema from _raw_payload samples (larger sample size)
+        - Auto-detects schema from response_body samples (larger sample size)
         - Dynamically adds columns when new fields are discovered
         - Stores unmapped fields in _extra_fields JSONB column
         """
@@ -238,7 +238,7 @@ class DynamicSourceTransformer:
                 return result
 
             options = config['options']
-            raw_table = options.get('target_table', f'raw.{source}_data')
+            raw_table = options.get('target_table', f'raw.{source}')
             bronze_table = raw_table.replace('raw.', 'bronze.')
 
             # AUTO-DETECT schema from larger sample (100 records for better coverage)
@@ -251,20 +251,29 @@ class DynamicSourceTransformer:
                 # Ensure bronze schema exists
                 await conn.execute("CREATE SCHEMA IF NOT EXISTS bronze")
 
-                # Create bronze table if not exists
+                # Create bronze table if not exists (adds missing columns)
                 await self._create_bronze_table(conn, bronze_table, data_columns, source)
+
+                # Filter auto-detected columns to only those that exist in the table
+                # (SQLMesh may have created the table with different columns)
+                existing_cols = await conn.fetch(f"""
+                    SELECT column_name FROM information_schema.columns
+                    WHERE table_schema || '.' || table_name = $1
+                """, bronze_table)
+                existing_col_names = {r['column_name'] for r in existing_cols}
+                data_columns = [c for c in data_columns if c['name'] in existing_col_names]
 
                 # Get unprocessed raw records
                 raw_records = await conn.fetch(f"""
-                    SELECT id, _raw_payload, _ingested_at
+                    SELECT id, response_body, request_timestamp
                     FROM {raw_table}
-                    WHERE _raw_payload IS NOT NULL
+                    WHERE response_body IS NOT NULL
                     AND id NOT IN (
-                        SELECT COALESCE((raw_metadata->>'raw_id')::int, 0)
+                        SELECT (raw_metadata->>'raw_id')::uuid
                         FROM {bronze_table}
                         WHERE raw_metadata->>'source' = $1
                     )
-                    ORDER BY _ingested_at
+                    ORDER BY request_timestamp
                     LIMIT $2
                 """, source, batch_size)
 
@@ -276,7 +285,7 @@ class DynamicSourceTransformer:
 
                 for record in raw_records:
                     try:
-                        payload = record['_raw_payload']
+                        payload = record['response_body']
                         if isinstance(payload, str):
                             payload = json.loads(payload)
 
@@ -294,7 +303,7 @@ class DynamicSourceTransformer:
                         # Insert into bronze with extra fields
                         await self._insert_bronze_record(
                             conn, bronze_table, data_columns, values,
-                            record['id'], source, record['_ingested_at'],
+                            record['id'], source, record['request_timestamp'],
                             extra_fields=extra_fields
                         )
                         result.records_inserted += 1
@@ -667,7 +676,7 @@ class DynamicSourceTransformer:
         table_name: str,
         columns: List[Dict[str, Any]],
         values: Dict[str, Any],
-        raw_id: int,
+        raw_id: Any,  # UUID or int depending on raw table schema
         source: str,
         ingested_at: datetime,
         extra_fields: Optional[Dict[str, Any]] = None
@@ -689,7 +698,7 @@ class DynamicSourceTransformer:
         col_names.extend(['_extra_fields', '_raw_id', 'raw_metadata', 'bronze_hash', 'quality_score'])
 
         raw_metadata = json.dumps({
-            'raw_id': raw_id,
+            'raw_id': str(raw_id),  # Convert UUID to string for JSON serialization
             'source': source,
             'ingested_at': ingested_at.isoformat()
         })
@@ -774,7 +783,7 @@ class DynamicSourceTransformer:
                 return result
 
             options = config['options']
-            raw_table = options.get('target_table', f'raw.{source}_data')
+            raw_table = options.get('target_table', f'raw.{source}')
             bronze_table = raw_table.replace('raw.', 'bronze.')
             silver_table = raw_table.replace('raw.', 'silver.')
 
@@ -1517,7 +1526,7 @@ class DynamicSourceTransformer:
                 return result
 
             options = config['options']
-            raw_table = options.get('target_table', f'raw.{source}_data')
+            raw_table = options.get('target_table', f'raw.{source}')
             silver_table = raw_table.replace('raw.', 'silver.')
             gold_table = raw_table.replace('raw.', 'gold.')
 
@@ -1778,7 +1787,7 @@ class DynamicSourceTransformer:
                 result.errors.append(f"Entity linking not configured for {source}")
                 return result
 
-            raw_table = options.get('target_table', f'raw.{source}_data')
+            raw_table = options.get('target_table', f'raw.{source}')
             silver_table = raw_table.replace('raw.', 'silver.')
 
             # Get columns from silver table

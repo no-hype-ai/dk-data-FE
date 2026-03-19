@@ -28,6 +28,9 @@ data/
 # Exception: DrugBank seed data (Git LFS, baked into image for deployment seeding)
 !data/drugbank/
 !data/drugbank/.gitkeep
+# Exception: USP alignment data
+!data/usp/
+!data/usp/*.xlsx
 *.csv
 *.xlsx
 

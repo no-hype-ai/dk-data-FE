@@ -1194,10 +1194,16 @@ async def trigger_gold_refresh(background_tasks: BackgroundTasks):
         raise HTTPException(status_code=500, detail=str(e))
 
 
+class IngestionRequest(BaseModel):
+    drug_name: Optional[str] = None
+    molecule_id: Optional[str] = None
+    limit: int = 100
+
 @router.post("/ingest/{source}", response_model=IngestionTriggerResponse)
 async def trigger_source_ingestion(
     source: str,
-    background_tasks: BackgroundTasks
+    background_tasks: BackgroundTasks,
+    request: Optional[IngestionRequest] = None,
 ):
     """
     Trigger ingestion for a specific data source.
@@ -1231,6 +1237,8 @@ async def trigger_source_ingestion(
 
         job_id = str(uuid4())
 
+        drug_name = request.drug_name if request else None
+
         async def run_ingestion():
             try:
                 result = await run_pipeline(
@@ -1241,6 +1249,7 @@ async def trigger_source_ingestion(
                     skip_bronze=False,
                     skip_silver=False,
                     skip_gold=False,
+                    drug_name=drug_name,
                 )
                 logger.info(f"Ingestion job {job_id} completed: {result['status']}")
             except Exception as e:

@@ -2276,7 +2276,7 @@ class InitialLoadOrchestrator:
                 logger.info(f"Processing Raw→Bronze: {source}")
                 await self._update_source_progress(source, status=LoadStatus.LOADING_BRONZE.value)
 
-                result = await transformer.transform_raw_to_bronze(source, resume=True)
+                result = await transformer.transform_raw_to_bronze(source)
 
                 await self._update_source_progress(
                     source,
@@ -2323,7 +2323,7 @@ class InitialLoadOrchestrator:
                 logger.info(f"Processing Bronze→Silver: {source}")
                 await self._update_source_progress(source, status=LoadStatus.LOADING_SILVER.value)
 
-                result = await transformer.transform_bronze_to_silver(source, resume=True)
+                result = await transformer.transform_bronze_to_silver(source)
 
                 # Use records_linked from bulletproof transformer, fall back to records_inserted
                 linked = getattr(result, 'records_linked', 0) or result.records_inserted

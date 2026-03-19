@@ -17,7 +17,7 @@ import os
 import sys
 import time
 from datetime import datetime
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Optional
 from uuid import uuid4
 import logging
 
@@ -453,7 +453,8 @@ async def run_dynamic_source_ingestion(
 async def run_raw_ingestion(
     pool,
     sources: List[str],
-    metrics: PipelineMetrics
+    metrics: PipelineMetrics,
+    drug_name: Optional[str] = None,
 ) -> Dict[str, int]:
     """Run raw layer ingestion for specified sources."""
     from .raw_ingestion import (
@@ -477,35 +478,53 @@ async def run_raw_ingestion(
         try:
             logger.info(f"Starting raw ingestion for {source}")
 
-            if source == 'clinicaltrials':
+            if source == 'clinicaltrials' or source == 'clinicaltrials_gov':
                 service = ClinicalTrialsIngestion(pool)
-                # Fetch recent trials
                 count = 0
-                for condition in ['cancer', 'diabetes', 'cardiovascular', 'immunology']:
-                    result = await service.fetch_studies(condition=condition, page_size=100)
+                if drug_name:
+                    # Fetch trials for the specific drug (intervention search)
+                    result = await service.fetch_studies(intervention=drug_name, page_size=100)
                     if result:
                         count += 1
+                    # Also search by query for broader coverage
+                    result = await service.fetch_studies(query=drug_name, page_size=100)
+                    if result:
+                        count += 1
+                else:
+                    # Default: fetch by common conditions
+                    for condition in ['cancer', 'diabetes', 'cardiovascular', 'immunology']:
+                        result = await service.fetch_studies(condition=condition, page_size=100)
+                        if result:
+                            count += 1
                 results[source] = count
 
             elif source == 'openfda_faers':
                 service = OpenFDAIngestion(pool)
                 count = 0
-                # Fetch events for common drugs
-                for drug in ['aspirin', 'ibuprofen', 'metformin', 'atorvastatin']:
-                    result = await service.fetch_faers_events(drug_name=drug, limit=100)
+                if drug_name:
+                    result = await service.fetch_faers_events(drug_name=drug_name, limit=100)
                     if result:
                         count += 1
+                else:
+                    for drug in ['aspirin', 'ibuprofen', 'metformin', 'atorvastatin']:
+                        result = await service.fetch_faers_events(drug_name=drug, limit=100)
+                        if result:
+                            count += 1
                 results[source] = count
 
             elif source == 'openfda_labels':
                 service = OpenFDAIngestion(pool)
-                result = await service.fetch_drug_labels(limit=100)
+                if drug_name:
+                    result = await service.fetch_drug_labels(drug_name=drug_name, limit=100)
+                else:
+                    result = await service.fetch_drug_labels(limit=100)
                 results[source] = 1 if result else 0
 
             elif source == 'chembl':
                 service = ChEMBLIngestion(pool)
                 count = 0
-                for name in ['aspirin', 'imatinib', 'pembrolizumab']:
+                names = [drug_name] if drug_name else ['aspirin', 'imatinib', 'pembrolizumab']
+                for name in names:
                     result = await service.fetch_molecule_by_name(name)
                     if result:
                         count += 1
@@ -514,7 +533,8 @@ async def run_raw_ingestion(
             elif source == 'pubchem':
                 service = PubChemIngestion(pool)
                 count = 0
-                for name in ['aspirin', 'caffeine', 'glucose']:
+                names = [drug_name] if drug_name else ['aspirin', 'caffeine', 'glucose']
+                for name in names:
                     result = await service.fetch_compound_by_name(name)
                     if result:
                         count += 1
@@ -522,12 +542,14 @@ async def run_raw_ingestion(
 
             elif source == 'uniprot':
                 service = UniProtIngestion(pool)
-                result = await service.search_proteins("insulin receptor", limit=50)
+                query = drug_name if drug_name else "insulin receptor"
+                result = await service.search_proteins(query, limit=50)
                 results[source] = 1 if result else 0
 
             elif source == 'openalex':
                 service = OpenAlexIngestion(pool)
-                result = await service.fetch_works("drug development clinical trial", per_page=50)
+                query = drug_name if drug_name else "drug development clinical trial"
+                result = await service.fetch_works(query, per_page=50)
                 results[source] = 1 if result else 0
 
             # New sources for research codes and biologics
@@ -611,17 +633,24 @@ async def run_bronze_transformation(pool, metrics: PipelineMetrics) -> Dict[str,
         logger.warning("BulletproofTransformer not available, using DynamicSourceTransformer")
 
     # Get all raw tables and transform them
+    # Raw tables are named directly (e.g., raw.clinicaltrials, raw.openfda_faers)
+    # Exclude system/config tables
+    SYSTEM_TABLES = {'sync_schedules', 'initial_load_state', 'transformation_state',
+                     'transformation_config', 'data_sources', 'refresh_log'}
     async with pool.acquire() as conn:
         raw_tables = await conn.fetch("""
             SELECT table_name FROM information_schema.tables
-            WHERE table_schema = 'raw' AND table_name LIKE '%_data'
-            AND table_name NOT IN ('sync_schedules', 'initial_load_state', 'transformation_state', 'transformation_config')
+            WHERE table_schema = 'raw'
+            AND table_type = 'BASE TABLE'
+            AND table_name NOT IN ('sync_schedules', 'initial_load_state',
+                'transformation_state', 'transformation_config',
+                'data_sources', 'refresh_log')
         """)
 
     for row in raw_tables:
-        source = row['table_name'].replace('_data', '')
+        source = row['table_name']
         try:
-            result = await transformer.transform_raw_to_bronze(source, resume=True)
+            result = await transformer.transform_raw_to_bronze(source)
             results[source] = result.records_inserted
             metrics.records_bronze += result.records_inserted
             if result.errors:
@@ -669,7 +698,7 @@ async def run_silver_transformation(pool, metrics: PipelineMetrics) -> Dict[str,
     for row in bronze_tables:
         source = row['table_name']
         try:
-            result = await transformer.transform_bronze_to_silver(source, resume=True)
+            result = await transformer.transform_bronze_to_silver(source)
             linked = getattr(result, 'records_linked', 0) or result.records_inserted
             results[source] = linked
             metrics.records_silver += linked
@@ -1023,6 +1052,7 @@ async def run_pipeline(
     skip_bronze: bool = False,
     skip_silver: bool = False,
     skip_gold: bool = False,
+    drug_name: Optional[str] = None,
 ) -> Dict[str, Any]:
     """
     Run the full data pipeline.
@@ -1035,6 +1065,7 @@ async def run_pipeline(
         skip_bronze: Skip bronze transformation
         skip_silver: Skip silver transformation
         skip_gold: Skip gold aggregation
+        drug_name: Optional drug name to fetch data for (instead of hardcoded defaults)
 
     Returns:
         Pipeline execution results
@@ -1059,7 +1090,7 @@ async def run_pipeline(
         # Phase 1: Raw Ingestion
         if not skip_raw:
             logger.info("Phase 1: Raw Ingestion")
-            await run_raw_ingestion(pool, sources, metrics)
+            await run_raw_ingestion(pool, sources, metrics, drug_name=drug_name)
 
         # Phase 2: Bronze Transformation
         if not skip_bronze:
