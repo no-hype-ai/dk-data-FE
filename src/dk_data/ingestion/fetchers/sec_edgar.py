@@ -26,7 +26,7 @@ logger = logging.getLogger(__name__)
 PHARMA_SIC_CODES = ["2830", "2833", "2834", "2835", "2836"]
 
 # Filing types of interest
-FILING_TYPES = ["10-K", "10-Q", "8-K"]
+FILING_TYPES = ["10-K", "10-Q", "8-K", "20-F"]
 
 # Max records per fetch run
 MAX_RECORDS = 5000
@@ -95,6 +95,10 @@ class SECEdgarFetcher(BaseFetcher):
         days_back = kwargs.get("days_back", 7)
         search_terms = kwargs.get("search_terms")
 
+        # When a specific company name is provided, skip SIC filtering
+        # (the company name itself is the filter — we trust the caller)
+        skip_sic_filter = bool(search_terms)
+
         # Load search terms from DB if not provided; fall back to defaults
         if not search_terms:
             search_terms = self._load_search_terms()
@@ -123,6 +127,8 @@ class SECEdgarFetcher(BaseFetcher):
                     sic_codes=sic_codes,
                     days_back=days_back,
                     max_records=max_records - len(all_records),
+                    search_terms=search_terms,
+                    skip_sic_filter=skip_sic_filter,
                 )
 
                 for rec in records:
@@ -194,21 +200,32 @@ class SECEdgarFetcher(BaseFetcher):
         sic_codes: List[str],
         days_back: int = 7,
         max_records: int = 5000,
+        search_terms: Optional[List[str]] = None,
+        skip_sic_filter: bool = False,
     ) -> List[Dict[str, Any]]:
         """Search EDGAR for filings of a specific type.
 
         Uses the `forms` parameter for form-type filtering (not q=formType:).
+        When search_terms are provided (e.g. company name), searches for those
+        instead of the generic "pharmaceutical" keyword.
         """
         records: List[Dict[str, Any]] = []
         date_from = (datetime.utcnow() - timedelta(days=days_back)).strftime("%Y-%m-%d")
         date_to = datetime.utcnow().strftime("%Y-%m-%d")
+
+        # Use first search term as query, or default to "pharmaceutical"
+        # Wrap company names in quotes for exact entity matching
+        if search_terms:
+            query = f'"{search_terms[0]}"'
+        else:
+            query = "pharmaceutical"
 
         start = 0
 
         while len(records) < max_records:
             try:
                 params = {
-                    "q": "pharmaceutical",
+                    "q": query,
                     "forms": filing_type,
                     "dateRange": "custom",
                     "startdt": date_from,
@@ -227,7 +244,7 @@ class SECEdgarFetcher(BaseFetcher):
 
                 for hit in hits:
                     record = self._normalize_filing(hit, filing_type)
-                    if record and self._is_pharma_company(record, sic_codes):
+                    if record and (skip_sic_filter or self._is_pharma_company(record, sic_codes)):
                         records.append(record)
 
                 if len(hits) < self.PAGE_SIZE:

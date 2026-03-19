@@ -552,6 +552,92 @@ async def run_raw_ingestion(
                 result = await service.fetch_works(query, per_page=50)
                 results[source] = 1 if result else 0
 
+            elif source == 'sec_edgar':
+                from datetime import date as date_type
+                from ...ingestion.fetchers.sec_edgar import SECEdgarFetcher
+
+                # Step 1: Fetch filing metadata from EDGAR search index
+                fetcher = SECEdgarFetcher()
+                search_terms = [drug_name] if drug_name else None
+                fetch_result = fetcher.fetch(
+                    search_terms=search_terms,
+                    days_back=365,
+                )
+                count = 0
+                target_cik = None
+                if fetch_result.get("status") == "success" and fetch_result.get("records"):
+                    async with pool.acquire() as conn:
+                        for rec in fetch_result["records"]:
+                            try:
+                                fd = rec.get("filing_date")
+                                filing_date = None
+                                if fd:
+                                    try:
+                                        filing_date = date_type.fromisoformat(str(fd)[:10])
+                                    except (ValueError, TypeError):
+                                        filing_date = None
+                                await conn.execute("""
+                                    INSERT INTO raw.sec_edgar
+                                        (accession_number, company_name, cik, filing_type, filing_date, document_url, description)
+                                    VALUES ($1, $2, $3, $4, $5, $6, $7)
+                                    ON CONFLICT (accession_number) DO UPDATE SET
+                                        company_name = EXCLUDED.company_name,
+                                        filing_date = EXCLUDED.filing_date,
+                                        document_url = EXCLUDED.document_url
+                                """,
+                                    rec.get("accession_number"),
+                                    rec.get("company_name"),
+                                    rec.get("cik"),
+                                    rec.get("filing_type"),
+                                    filing_date,
+                                    rec.get("document_url"),
+                                    rec.get("description"),
+                                )
+                                count += 1
+                                # Track the target company's CIK for revenue extraction
+                                # Handle formatted names like "ASTRAZENECA PLC  (AZN)  (CIK 0000901832)"
+                                cn = (rec.get("company_name") or "").lower()
+                                if drug_name and cn and drug_name.lower().split()[0] in cn:
+                                    target_cik = rec.get("cik")
+                                    logger.info(f"SEC EDGAR: matched CIK {target_cik} for company '{rec.get('company_name')}'")
+
+                            except Exception as e:
+                                logger.debug(f"SEC EDGAR insert failed: {e}")
+                    logger.info(f"SEC EDGAR: loaded {count} filings for '{drug_name}' (CIK: {target_cik})")
+
+                # Step 2: Extract product-level revenue from the filing content
+                # Uses the SECEdgarClient which parses FilingSummary.xml and XBRL data
+                if target_cik and drug_name:
+                    try:
+                        from ...services.external_apis.sec_edgar_client import SECEdgarClient
+                        client = SECEdgarClient()
+                        current_year = date_type.today().year
+                        revenues = await client.extract_product_revenues(
+                            target_cik, years=[current_year, current_year - 1, current_year - 2]
+                        )
+                        if revenues:
+                            async with pool.acquire() as conn:
+                                for rev in revenues:
+                                    try:
+                                        await conn.execute("""
+                                            INSERT INTO silver.financial_filings
+                                                (id, company_name, filing_type, period, revenue, product_name, source, created_at)
+                                            VALUES (gen_random_uuid(), $1, $2, $3, $4, $5, 'sec_edgar', NOW())
+                                        """,
+                                            drug_name,
+                                            rev.source_filing or '20-F',
+                                            f"{rev.period}_{rev.year}" if rev.year else rev.period,
+                                            rev.revenue_usd,
+                                            rev.product_name,
+                                        )
+                                    except Exception as e:
+                                        logger.debug(f"SEC EDGAR revenue insert failed: {e}")
+                            logger.info(f"SEC EDGAR: extracted {len(revenues)} product revenues for '{drug_name}'")
+                    except Exception as e:
+                        logger.warning(f"SEC EDGAR revenue extraction failed: {e}")
+
+                results[source] = count
+
             # New sources for research codes and biologics
             elif source == 'who_inn':
                 service = WHOINNIngestion(pool)

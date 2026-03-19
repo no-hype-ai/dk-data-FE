@@ -54,7 +54,8 @@ INSERT INTO raw.sync_schedules (source, tier, cron_expression, priority) VALUES
     ('chembl', 'weekly', '0 3 * * 0', 'normal'),
     ('openalex', 'weekly', '30 3 * * 0', 'low'),
     ('uniprot', 'monthly', '0 4 1 * *', 'low'),
-    ('pubchem', 'monthly', '0 4 1 * *', 'low')
+    ('pubchem', 'monthly', '0 4 1 * *', 'low'),
+    ('sec_edgar', 'daily', '0 16 * * *', 'normal')
 ON CONFLICT (source) DO NOTHING;
 
 -- ==========================================

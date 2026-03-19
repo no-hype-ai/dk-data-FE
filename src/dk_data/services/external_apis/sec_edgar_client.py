@@ -631,7 +631,17 @@ class SECEdgarClient(BaseAPIClient):
             'stelara', 'imbruvica', 'xarelto', 'paxlovid', 'comirnaty',
             'prevnar', 'ibrance', 'skyrizi', 'rinvoq', 'dupixent', 'jardiance',
             'ozempic', 'trulicity', 'mounjaro', 'wegovy', 'kisqali', 'kisunla',
-            'aduhelm', 'leqembi', 'repatha', 'praluent', 'cosentyx', 'entresto'
+            'aduhelm', 'leqembi', 'repatha', 'praluent', 'cosentyx', 'entresto',
+            # AstraZeneca
+            'tagrisso', 'imfinzi', 'lynparza', 'calquence', 'enhertu', 'farxiga',
+            'brilinta', 'lokelma', 'zoladex', 'faslodex', 'breztri', 'saphnelo',
+            'tezspire', 'soliris', 'ultomiris', 'symbicort', 'nexium', 'pulmicort',
+            # Roche
+            'tecentriq', 'avastin', 'herceptin', 'rituxan', 'ocrevus', 'perjeta',
+            # Merck
+            'januvia', 'gardasil', 'lagevrio', 'vaxneuvance', 'welireg',
+            # Novartis
+            'kisqali', 'pluvicto', 'kesimpta', 'leqvio', 'jakavi', 'tasigna'
         ]
 
         # Keywords that indicate revenue tables
@@ -688,21 +698,27 @@ class SECEdgarClient(BaseAPIClient):
                 if len(cells) < 2:
                     continue
 
-                # First cell is usually product name
+                # First cell is usually product name — strip zero-width spaces and clean
                 product_name = cells[0].get_text().strip()
+                product_name = product_name.replace('\u200b', '').replace('\xa0', ' ').strip()
 
                 # Clean up product name
                 product_name = ' '.join(product_name.split())  # Normalize whitespace
+                # Remove footnote markers like "1", "2" etc. at end of drug names
+                product_name = re.sub(r'\d+$', '', product_name).strip()
 
                 # Skip rows that are clearly not products
                 skip_keywords = ['total', 'subtotal', 'other', 'revenue', 'net sales',
-                               'year ended', 'three months', 'nine months', 'note']
+                               'year ended', 'three months', 'nine months', 'note',
+                               'product sales', 'collaboration', 'alliance']
                 if any(kw in product_name.lower() for kw in skip_keywords) and len(product_name) < 30:
                     continue
 
-                # Look for numeric values in subsequent cells
-                for cell in cells[1:4]:  # Check cells 2-4 for revenue
-                    revenue_text = cell.get_text().strip()
+                # Look for numeric values in subsequent cells (skip separator cells)
+                for cell in cells[1:8]:  # Check more cells — AZ 20-F has separator columns
+                    revenue_text = cell.get_text().replace('\u200b', '').replace('\xa0', '').strip()
+                    if not revenue_text or revenue_text in ('—', '-', 'n/m', 'n/a'):
+                        continue
                     revenue_value = self._parse_revenue_value(revenue_text)
 
                     if revenue_value and revenue_value > 10:  # Filter out tiny values
@@ -820,35 +836,40 @@ class SECEdgarClient(BaseAPIClient):
     def _parse_revenue_value(self, revenue_text: str) -> Optional[float]:
         """
         Parse revenue value from text string.
-        
+
         Handles formats like:
         - "$1,234.5 million"
         - "$1.2 billion"
         - "1,234.5"
         """
         import re
-        
+
         # Remove commas and $ signs
-        text = revenue_text.replace(',', '').replace('$', '').strip().lower()
-        
-        # Extract number
-        match = re.search(r'([\d.]+)', text)
+        text = revenue_text.replace(',', '').replace('$', '').replace('€', '').strip().lower()
+
+        # Skip empty or placeholder values (".", "—", "-", "n/a")
+        if not text or text in ('.', '—', '-', 'n/a', 'nil', '–'):
+            return None
+
+        # Extract number (must contain at least one digit)
+        match = re.search(r'(\d[\d.]*)', text)
         if not match:
             return None
+
+        try:
+            value = float(match.group(1))
+        except ValueError:
+            return None
         
-        value = float(match.group(1))
-        
-        # Handle units (millions, billions)
+        # Handle explicit units (millions, billions)
+        # SEC filings typically report values in millions USD unless stated otherwise
         if 'billion' in text:
-            value *= 1000  # Convert to millions
-        elif 'million' in text or 'm' in text:
+            value *= 1000  # Convert billions to millions
+        elif 'million' in text:
             pass  # Already in millions
-        elif value > 1000:
-            # Assume millions if > 1000
-            pass
-        else:
-            # Assume billions if < 1000 and no unit specified
-            value *= 1000
+        # No implicit scaling — SEC table values are in the unit stated in the
+        # table header (usually "$m" or "in millions"). Guessing units causes
+        # 100x errors (e.g., $261M → $261,000M).
         
         return value
     

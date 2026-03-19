@@ -479,7 +479,7 @@ class SECEdgarRecord(BaseModel):
 
     model_config = ConfigDict(str_strip_whitespace=True)
 
-    VALID_FILING_TYPES: ClassVar[Set[str]] = {'10-K', '10-Q', '8-K'}
+    VALID_FILING_TYPES: ClassVar[Set[str]] = {'10-K', '10-Q', '8-K', '20-F'}
 
     accession_number: str = Field(..., min_length=1)
     company_name: Optional[str] = None
