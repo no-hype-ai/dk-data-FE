@@ -240,10 +240,17 @@ class ClinicalTrialsLoader:
             if not nct_id:
                 return None
 
-            # Parse dates
+            # Parse dates — CT.gov v2 returns YYYY-MM-DD, YYYY-MM, or YYYY
             def parse_date(date_struct):
                 if date_struct and isinstance(date_struct, dict):
-                    return date_struct.get("date")
+                    d = date_struct.get("date")
+                    if d:
+                        # Normalize partial dates to full YYYY-MM-DD
+                        if len(d) == 7:  # "2028-01" → "2028-01-01"
+                            d = d + "-01"
+                        elif len(d) == 4:  # "2028" → "2028-01-01"
+                            d = d + "-01-01"
+                        return d
                 return None
 
             # Parse interventions
@@ -274,6 +281,20 @@ class ClinicalTrialsLoader:
             # Parse enrollment
             enrollment_info = design_module.get("enrollmentInfo", {})
 
+            # Tuple must match INSERT column order exactly:
+            # nct_id, org_study_id, brief_title, official_title, acronym,
+            # overall_status, phases, study_type, enrollment_count, enrollment_type,
+            # start_date, completion_date, primary_outcomes,
+            # last_update_post_date, lead_sponsor_name,
+            # lead_sponsor_class, collaborators, conditions,
+            # interventions, locations,
+            # keywords, mesh_terms,
+            # eligibility_criteria, sex, minimum_age, maximum_age,
+            # healthy_volunteers, secondary_outcomes,
+            # arms_groups,
+            # fda_regulated_drug, fda_regulated_device, references,
+            # ipd_sharing, has_results, results_section,
+            # condition_browse, intervention_browse
             return (
                 nct_id,
                 id_module.get("orgStudyIdInfo", {}).get("id"),
@@ -281,50 +302,38 @@ class ClinicalTrialsLoader:
                 id_module.get("officialTitle"),
                 id_module.get("acronym"),
                 status_module.get("overallStatus"),
-                ",".join(design_module.get("phases", [])) or None,
+                Json(design_module.get("phases", [])) if design_module.get("phases") else None,
                 design_module.get("studyType"),
                 enrollment_info.get("count"),
                 enrollment_info.get("type"),
                 parse_date(status_module.get("startDateStruct")),
                 parse_date(status_module.get("completionDateStruct")),
-                parse_date(status_module.get("primaryCompletionDateStruct")),
-                parse_date(status_module.get("resultsFirstPostDateStruct")),
+                Json(primary_outcomes) if primary_outcomes else None,
                 parse_date(status_module.get("lastUpdatePostDateStruct")),
                 lead_sponsor.get("name"),
                 lead_sponsor.get("class"),
-                collaborators or None,
-                conditions or None,
+                Json(collaborators) if collaborators else None,
+                Json(conditions) if conditions else None,
                 Json(interventions) if interventions else None,
-                intervention_names or None,
-                intervention_types or None,
                 Json(locations) if locations else None,
-                location_countries or None,
-                keywords or None,
-                None,  # mesh_terms - would need additional parsing
+                Json(keywords) if keywords else None,
+                None,  # mesh_terms
                 eligibility_module.get("eligibilityCriteria"),
                 eligibility_module.get("sex"),
                 eligibility_module.get("minimumAge"),
                 eligibility_module.get("maximumAge"),
                 eligibility_module.get("healthyVolunteers") == "Yes",
-                Json(primary_outcomes) if primary_outcomes else None,
                 Json(secondary_outcomes) if secondary_outcomes else None,
                 Json(arms) if arms else None,
-                desc_module.get("briefSummary"),
-                desc_module.get("detailedDescription"),
-                # Oversight
+                # New fields
                 oversight_module.get("isFdaRegulatedDrug") == "Yes" if oversight_module.get("isFdaRegulatedDrug") else None,
                 oversight_module.get("isFdaRegulatedDevice") == "Yes" if oversight_module.get("isFdaRegulatedDevice") else None,
-                # References (PMIDs, citations)
                 Json(references_module.get("references", [])) if references_module.get("references") else None,
-                # IPD sharing
                 ipd_module.get("ipdSharing"),
-                # Results section (full)
                 study.get("hasResults", False),
                 Json(study.get("resultsSection", {})) if study.get("resultsSection") else None,
-                # Derived section
                 Json(study.get("derivedSection", {}).get("conditionBrowseModule", {})) if study.get("derivedSection", {}).get("conditionBrowseModule") else None,
                 Json(study.get("derivedSection", {}).get("interventionBrowseModule", {})) if study.get("derivedSection", {}).get("interventionBrowseModule") else None,
-                Json(study),  # raw_json
             )
 
         except Exception as e:
@@ -338,47 +347,41 @@ class ClinicalTrialsLoader:
             """
             INSERT INTO bronze.clinicaltrials (
                 nct_id, org_study_id, brief_title, official_title, acronym,
-                overall_status, phase, study_type, enrollment, enrollment_type,
-                start_date, completion_date, primary_completion_date,
-                results_first_posted_date, last_update_posted_date,
-                sponsor, lead_sponsor_class, collaborators, conditions,
-                interventions, intervention_names, intervention_types,
-                locations, location_countries, keywords, mesh_terms,
-                eligibility_criteria, gender, minimum_age, maximum_age,
-                healthy_volunteers, primary_outcomes, secondary_outcomes,
-                arms, brief_summary, detailed_description,
-                fda_regulated_drug, fda_regulated_device, references,
+                overall_status, phases, study_type, enrollment_count, enrollment_type,
+                start_date, completion_date, primary_outcomes,
+                last_update_post_date, lead_sponsor_name,
+                lead_sponsor_class, collaborators, conditions,
+                interventions, locations,
+                keywords, mesh_terms,
+                eligibility_criteria, sex, minimum_age, maximum_age,
+                healthy_volunteers, secondary_outcomes,
+                arms_groups,
+                fda_regulated_drug, fda_regulated_device, "references",
                 ipd_sharing, has_results, results_section,
-                condition_browse, intervention_browse, raw_json
+                condition_browse, intervention_browse
             ) VALUES %s
             ON CONFLICT (nct_id) DO UPDATE SET
                 overall_status = EXCLUDED.overall_status,
-                phase = COALESCE(EXCLUDED.phase, bronze.clinicaltrials.phase),
-                enrollment = COALESCE(EXCLUDED.enrollment, bronze.clinicaltrials.enrollment),
+                phases = COALESCE(EXCLUDED.phases, bronze.clinicaltrials.phases),
+                enrollment_count = COALESCE(EXCLUDED.enrollment_count, bronze.clinicaltrials.enrollment_count),
                 start_date = COALESCE(EXCLUDED.start_date, bronze.clinicaltrials.start_date),
                 completion_date = COALESCE(EXCLUDED.completion_date, bronze.clinicaltrials.completion_date),
-                primary_completion_date = COALESCE(EXCLUDED.primary_completion_date, bronze.clinicaltrials.primary_completion_date),
-                last_update_posted_date = EXCLUDED.last_update_posted_date,
+                last_update_post_date = EXCLUDED.last_update_post_date,
                 conditions = COALESCE(EXCLUDED.conditions, bronze.clinicaltrials.conditions),
                 interventions = COALESCE(EXCLUDED.interventions, bronze.clinicaltrials.interventions),
-                intervention_names = COALESCE(EXCLUDED.intervention_names, bronze.clinicaltrials.intervention_names),
                 locations = COALESCE(EXCLUDED.locations, bronze.clinicaltrials.locations),
-                location_countries = COALESCE(EXCLUDED.location_countries, bronze.clinicaltrials.location_countries),
                 primary_outcomes = COALESCE(EXCLUDED.primary_outcomes, bronze.clinicaltrials.primary_outcomes),
                 secondary_outcomes = COALESCE(EXCLUDED.secondary_outcomes, bronze.clinicaltrials.secondary_outcomes),
-                arms = COALESCE(EXCLUDED.arms, bronze.clinicaltrials.arms),
-                brief_summary = COALESCE(EXCLUDED.brief_summary, bronze.clinicaltrials.brief_summary),
+                arms_groups = COALESCE(EXCLUDED.arms_groups, bronze.clinicaltrials.arms_groups),
                 eligibility_criteria = COALESCE(EXCLUDED.eligibility_criteria, bronze.clinicaltrials.eligibility_criteria),
                 fda_regulated_drug = COALESCE(EXCLUDED.fda_regulated_drug, bronze.clinicaltrials.fda_regulated_drug),
                 fda_regulated_device = COALESCE(EXCLUDED.fda_regulated_device, bronze.clinicaltrials.fda_regulated_device),
-                references = COALESCE(EXCLUDED.references, bronze.clinicaltrials.references),
+                "references" = COALESCE(EXCLUDED."references", bronze.clinicaltrials."references"),
                 ipd_sharing = COALESCE(EXCLUDED.ipd_sharing, bronze.clinicaltrials.ipd_sharing),
                 has_results = COALESCE(EXCLUDED.has_results, bronze.clinicaltrials.has_results),
                 results_section = COALESCE(EXCLUDED.results_section, bronze.clinicaltrials.results_section),
                 condition_browse = COALESCE(EXCLUDED.condition_browse, bronze.clinicaltrials.condition_browse),
-                intervention_browse = COALESCE(EXCLUDED.intervention_browse, bronze.clinicaltrials.intervention_browse),
-                raw_json = EXCLUDED.raw_json,
-                source_updated_at = NOW()
+                intervention_browse = COALESCE(EXCLUDED.intervention_browse, bronze.clinicaltrials.intervention_browse)
             """,
             records
         )
