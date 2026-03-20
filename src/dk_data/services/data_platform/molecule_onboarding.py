@@ -152,25 +152,9 @@ class MoleculeOnboardingService:
             # Step 1: Resolve identifiers
             resolution = await self._resolve_identifiers(request.identifiers)
 
-            if not resolution.resolved:
-                # Check if we have potential matches for review
-                if resolution.potential_matches:
-                    await self._log_audit(
-                        request_id=request_id,
-                        user_id=user_id,
-                        action='needs_review',
-                        status=OnboardingStatus.NEEDS_REVIEW,
-                        details={'potential_matches': resolution.potential_matches}
-                    )
-                    return OnboardingResponse(
-                        request_id=request_id,
-                        status=OnboardingStatus.NEEDS_REVIEW,
-                        resolution_result=resolution,
-                        created_at=created_at,
-                    )
-                else:
-                    # No matches found - create new molecule
-                    resolution = await self._create_new_molecule(request.identifiers)
+            if resolution.molecule_id is None:
+                # No matches found - create new molecule in mol_silver
+                resolution = await self._create_new_molecule(request.identifiers)
 
             molecule_id = resolution.molecule_id
 
@@ -290,31 +274,35 @@ class MoleculeOnboardingService:
         best_confidence = 0.0
 
         for ident in identifiers:
+            # Convert string type to IdentifierType enum if needed
+            from .identifier_resolver import IdentifierType
+            id_type = None
+            try:
+                id_type = IdentifierType(ident.identifier_type)
+            except (ValueError, KeyError):
+                pass  # Let resolver auto-detect
             result = await self.resolver.resolve(
-                identifier_type=ident.identifier_type,
-                identifier_value=ident.identifier_value
+                identifier=ident.identifier_value,
+                identifier_type=id_type,
             )
 
-            if result.get('resolved'):
+            if result.molecule_id is not None:
                 matched[ident.identifier_type] = ident.identifier_value
-                if result.get('confidence', 0) > best_confidence:
-                    best_confidence = result['confidence']
-                    best_molecule_id = result.get('molecule_id')
-                    best_inchi_key = result.get('inchi_key')
-            elif result.get('potential_matches'):
-                potential_matches.extend(result['potential_matches'])
-                unmatched.append(f"{ident.identifier_type}:{ident.identifier_value}")
+                if result.confidence > best_confidence:
+                    best_confidence = result.confidence
+                    best_molecule_id = result.molecule_id
+                    best_inchi_key = result.inchi_key
             else:
                 unmatched.append(f"{ident.identifier_type}:{ident.identifier_value}")
 
         return ResolutionResult(
             resolved=best_molecule_id is not None,
-            molecule_id=best_molecule_id,
+            molecule_id=UUID(str(best_molecule_id)) if best_molecule_id else None,
             inchi_key=best_inchi_key,
             confidence=best_confidence,
             matched_identifiers=matched,
             unmatched_identifiers=unmatched,
-            potential_matches=potential_matches[:10],  # Limit to top 10
+            potential_matches=potential_matches[:10],
         )
 
     async def _create_new_molecule(
@@ -340,19 +328,23 @@ class MoleculeOnboardingService:
                     )
                     return ResolutionResult(
                         resolved=True,
-                        molecule_id=molecule_id,
+                        molecule_id=UUID(str(molecule_id)) if not isinstance(molecule_id, UUID) else molecule_id,
                         inchi_key=raw_data['inchi_key'],
                         confidence=0.9,
                         matched_identifiers={ident.identifier_type: ident.identifier_value},
                     )
 
-        # If no InChI Key found, create placeholder
+        # If no InChI Key found, create placeholder in mol_silver.molecules
         molecule_id = uuid4()
+        name = identifiers[0].identifier_value
+        placeholder_inchi = f"{name.upper()}-PLACEHOLDER-KEY"
         async with self.db_pool.acquire() as conn:
             await conn.execute("""
-                INSERT INTO silver.molecules (id, canonical_name, needs_review, source)
-                VALUES ($1, $2, TRUE, 'manual')
-            """, molecule_id, identifiers[0].identifier_value)
+                INSERT INTO mol_silver.molecules
+                (molecule_id, inchi_key, canonical_name, needs_review, review_reason, resolution_confidence)
+                VALUES ($1, $2, $3, TRUE, 'auto-onboarded', 0.5)
+                ON CONFLICT (molecule_id) DO NOTHING
+            """, molecule_id, placeholder_inchi, name.lower())
 
         return ResolutionResult(
             resolved=True,

@@ -6,21 +6,104 @@ BEGIN
 
   step := 'Link Trials';
   SELECT count(*) INTO total_count FROM bronze.clinicaltrials WHERE nct_id IS NOT NULL;
-  INSERT INTO mol_silver.clinical_trials (molecule_id, nct_id, title, phase, status, enrollment_target, sponsor)
+  INSERT INTO mol_silver.clinical_trials (
+    molecule_id, nct_id, title, brief_summary, detailed_description,
+    phase, status, study_type,
+    conditions, intervention_names, enrollment_target, start_date, completion_date,
+    sponsor, sponsor_type, acronym, eligibility_criteria,
+    allocation, intervention_model, masking,
+    locations, location_countries, primary_outcomes, secondary_outcomes, other_outcomes, arms,
+    has_results, results_section, results_outcome_measures, results_adverse_events,
+    fda_regulated_drug, fda_regulated_device, trial_references, ipd_sharing
+  )
   SELECT DISTINCT ON (b.nct_id) m.molecule_id, b.nct_id,
-    COALESCE(b.official_title, b.brief_title), b.phases::text, b.overall_status, b.enrollment_count, b.lead_sponsor_name
+    COALESCE(b.official_title, b.brief_title),
+    b.brief_summary,
+    b.detailed_description,
+    b.phases::text,
+    b.overall_status,
+    b.study_type,
+    CASE WHEN b.conditions IS NOT NULL AND b.conditions::text != 'null'
+      THEN ARRAY(SELECT jsonb_array_elements_text(b.conditions))
+      ELSE NULL END,
+    CASE WHEN b.interventions IS NOT NULL AND b.interventions::text != 'null'
+      THEN ARRAY(SELECT DISTINCT jsonb_array_elements(b.interventions) ->> 'name')
+      ELSE NULL END,
+    b.enrollment_count,
+    b.start_date,
+    b.completion_date,
+    b.lead_sponsor_name,
+    b.lead_sponsor_class,
+    b.acronym,
+    b.eligibility_criteria,
+    b.allocation,
+    b.intervention_model,
+    b.masking,
+    b.locations,
+    CASE WHEN b.locations IS NOT NULL AND b.locations::text != '[]' AND b.locations::text != 'null'
+      THEN ARRAY(SELECT DISTINCT elem->>'country' FROM jsonb_array_elements(b.locations) elem WHERE elem->>'country' IS NOT NULL)
+      ELSE NULL END,
+    b.primary_outcomes,
+    b.secondary_outcomes,
+    b.secondary_outcomes, -- other_outcomes: use bronze column when available
+    b.arms_groups,
+    COALESCE(b.has_results, FALSE),
+    b.results_section,
+    b.results_section->'outcomeMeasuresModule'->'outcomeMeasures',
+    b.results_section->'adverseEventsModule',
+    b.fda_regulated_drug,
+    b.fda_regulated_device,
+    b.references,
+    b.ipd_sharing
   FROM bronze.clinicaltrials b CROSS JOIN mol_silver.molecules m
   WHERE m.canonical_name IS NOT NULL AND b.nct_id IS NOT NULL
     AND LOWER(COALESCE(b.official_title, b.brief_title, '')) LIKE '%' || LOWER(m.canonical_name) || '%'
-  ON CONFLICT (nct_id) DO UPDATE SET molecule_id = EXCLUDED.molecule_id;
+  ON CONFLICT (nct_id) DO UPDATE SET
+    molecule_id = EXCLUDED.molecule_id,
+    title = COALESCE(EXCLUDED.title, mol_silver.clinical_trials.title),
+    brief_summary = COALESCE(EXCLUDED.brief_summary, mol_silver.clinical_trials.brief_summary),
+    detailed_description = COALESCE(EXCLUDED.detailed_description, mol_silver.clinical_trials.detailed_description),
+    conditions = COALESCE(EXCLUDED.conditions, mol_silver.clinical_trials.conditions),
+    intervention_names = COALESCE(EXCLUDED.intervention_names, mol_silver.clinical_trials.intervention_names),
+    enrollment_target = COALESCE(EXCLUDED.enrollment_target, mol_silver.clinical_trials.enrollment_target),
+    allocation = COALESCE(EXCLUDED.allocation, mol_silver.clinical_trials.allocation),
+    intervention_model = COALESCE(EXCLUDED.intervention_model, mol_silver.clinical_trials.intervention_model),
+    masking = COALESCE(EXCLUDED.masking, mol_silver.clinical_trials.masking),
+    locations = COALESCE(EXCLUDED.locations, mol_silver.clinical_trials.locations),
+    location_countries = COALESCE(EXCLUDED.location_countries, mol_silver.clinical_trials.location_countries),
+    primary_outcomes = COALESCE(EXCLUDED.primary_outcomes, mol_silver.clinical_trials.primary_outcomes),
+    secondary_outcomes = COALESCE(EXCLUDED.secondary_outcomes, mol_silver.clinical_trials.secondary_outcomes),
+    arms = COALESCE(EXCLUDED.arms, mol_silver.clinical_trials.arms),
+    has_results = COALESCE(EXCLUDED.has_results, mol_silver.clinical_trials.has_results),
+    results_section = COALESCE(EXCLUDED.results_section, mol_silver.clinical_trials.results_section),
+    results_outcome_measures = COALESCE(EXCLUDED.results_outcome_measures, mol_silver.clinical_trials.results_outcome_measures),
+    results_adverse_events = COALESCE(EXCLUDED.results_adverse_events, mol_silver.clinical_trials.results_adverse_events),
+    fda_regulated_drug = COALESCE(EXCLUDED.fda_regulated_drug, mol_silver.clinical_trials.fda_regulated_drug),
+    trial_references = COALESCE(EXCLUDED.trial_references, mol_silver.clinical_trials.trial_references);
   GET DIAGNOSTICS linked_count = ROW_COUNT;
   result := '+' || linked_count || '/' || total_count || ' trials'; RETURN NEXT;
 
   step := 'Link FAERS';
   BEGIN
-    INSERT INTO mol_silver.adverse_events (source, molecule_id, drug_name_reported, reaction_meddra_pt, seriousness)
-    SELECT 'openfda_faers', m.molecule_id, m.canonical_name,
-      reaction->>'reactionmeddrapt', b.serious
+    INSERT INTO mol_silver.adverse_events (
+      source, source_report_id, molecule_id, drug_name_reported,
+      reaction_meddra_pt, seriousness, outcome,
+      patient_age, patient_sex, report_date, country
+    )
+    SELECT 'openfda_faers', b.safety_report_id, m.molecule_id, m.canonical_name,
+      reaction->>'reactionmeddrapt',
+      CASE WHEN b.serious = 1 THEN
+        CASE WHEN b.serious_death = 1 THEN 'death'
+             WHEN b.serious_life_threatening = 1 THEN 'life_threatening'
+             WHEN b.serious_hospitalization = 1 THEN 'hospitalization'
+             WHEN b.serious_disabling = 1 THEN 'disabling'
+             ELSE 'other_serious' END
+        ELSE 'non_serious' END,
+      reaction->>'reactionoutcome',
+      b.patient_age::INTEGER,
+      CASE WHEN b.patient_sex = '1' THEN 'M' WHEN b.patient_sex = '2' THEN 'F' ELSE NULL END,
+      b.receive_date,
+      b.occurrence_country
     FROM bronze.openfda_faers b CROSS JOIN mol_silver.molecules m
     CROSS JOIN LATERAL jsonb_array_elements(b.patient_reaction) AS reaction
     WHERE b.patient_reaction IS NOT NULL AND m.canonical_name IS NOT NULL
@@ -39,7 +122,12 @@ BEGIN
       application_number, marketing_status, route_of_administration, dosage_forms,
       indications, contraindications, warnings, boxed_warning,
       adverse_reactions, drug_interactions, mechanism_of_action,
-      clinical_studies, effective_date, approval_date
+      clinical_studies, dosage_and_administration, how_supplied, product_type,
+      overdosage, description, storage_and_handling,
+      pregnancy, pediatric_use, geriatric_use, use_in_specific_populations,
+      pharmacodynamics, pharmacokinetics, clinical_pharmacology,
+      dosage_forms_and_strengths,
+      effective_date, approval_date
     )
     SELECT DISTINCT ON (b.set_id)
       m.molecule_id, b.set_id, b.spl_id,
@@ -57,7 +145,21 @@ BEGIN
       b.adverse_reactions,
       b.drug_interactions,
       b.mechanism_of_action,
-      NULL,
+      b.clinical_studies,
+      b.dosage_and_administration,
+      b.how_supplied,
+      b.product_type,
+      b.overdosage,
+      b.description,
+      b.storage_and_handling,
+      b.pregnancy,
+      b.pediatric_use,
+      b.geriatric_use,
+      b.use_in_specific_populations,
+      b.pharmacodynamics,
+      b.pharmacokinetics,
+      b.clinical_pharmacology,
+      b.dosage_forms_and_strengths,
       b.effective_time,
       b.effective_time
     FROM bronze.openfda_labels b
@@ -77,6 +179,17 @@ BEGIN
       adverse_reactions = COALESCE(EXCLUDED.adverse_reactions, mol_silver.drug_labels.adverse_reactions),
       mechanism_of_action = COALESCE(EXCLUDED.mechanism_of_action, mol_silver.drug_labels.mechanism_of_action),
       route_of_administration = COALESCE(EXCLUDED.route_of_administration, mol_silver.drug_labels.route_of_administration),
+      clinical_studies = COALESCE(EXCLUDED.clinical_studies, mol_silver.drug_labels.clinical_studies),
+      dosage_and_administration = COALESCE(EXCLUDED.dosage_and_administration, mol_silver.drug_labels.dosage_and_administration),
+      how_supplied = COALESCE(EXCLUDED.how_supplied, mol_silver.drug_labels.how_supplied),
+      overdosage = COALESCE(EXCLUDED.overdosage, mol_silver.drug_labels.overdosage),
+      pregnancy = COALESCE(EXCLUDED.pregnancy, mol_silver.drug_labels.pregnancy),
+      pediatric_use = COALESCE(EXCLUDED.pediatric_use, mol_silver.drug_labels.pediatric_use),
+      geriatric_use = COALESCE(EXCLUDED.geriatric_use, mol_silver.drug_labels.geriatric_use),
+      use_in_specific_populations = COALESCE(EXCLUDED.use_in_specific_populations, mol_silver.drug_labels.use_in_specific_populations),
+      pharmacodynamics = COALESCE(EXCLUDED.pharmacodynamics, mol_silver.drug_labels.pharmacodynamics),
+      pharmacokinetics = COALESCE(EXCLUDED.pharmacokinetics, mol_silver.drug_labels.pharmacokinetics),
+      clinical_pharmacology = COALESCE(EXCLUDED.clinical_pharmacology, mol_silver.drug_labels.clinical_pharmacology),
       approval_date = COALESCE(EXCLUDED.approval_date, mol_silver.drug_labels.approval_date);
     GET DIAGNOSTICS linked_count = ROW_COUNT;
     result := '+' || linked_count || ' labels';

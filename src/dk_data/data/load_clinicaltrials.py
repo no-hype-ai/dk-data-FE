@@ -83,6 +83,14 @@ def ensure_tables(conn):
             arms JSONB,
             brief_summary TEXT,
             detailed_description TEXT,
+            fda_regulated_drug BOOLEAN,
+            fda_regulated_device BOOLEAN,
+            references JSONB,
+            ipd_sharing VARCHAR(10),
+            has_results BOOLEAN DEFAULT FALSE,
+            results_section JSONB,
+            condition_browse JSONB,
+            intervention_browse JSONB,
             raw_json JSONB,
             source_updated_at TIMESTAMPTZ DEFAULT NOW(),
             created_at TIMESTAMPTZ DEFAULT NOW(),
@@ -139,17 +147,12 @@ class ClinicalTrialsLoader:
         """
         cursor = self.conn.cursor()
 
+        # No fields filter — request the FULL API response so raw layer captures 100%
+        # of available data: all protocol modules, resultsSection, derivedSection.
+        # CT.gov v2 returns all modules by default when no fields param is specified.
         params = {
             "pageSize": PAGE_SIZE,
             "format": "json",
-            "fields": "NCTId,OrgStudyId,BriefTitle,OfficialTitle,Acronym,OverallStatus,"
-                      "Phase,StudyType,EnrollmentCount,EnrollmentType,StartDate,CompletionDate,"
-                      "PrimaryCompletionDate,ResultsFirstPostDate,LastUpdatePostDate,"
-                      "LeadSponsorName,LeadSponsorClass,CollaboratorName,Condition,InterventionName,"
-                      "InterventionType,LocationCountry,Keyword,ConditionMesh,InterventionMesh,"
-                      "EligibilityCriteria,Gender,MinimumAge,MaximumAge,HealthyVolunteers,"
-                      "BriefSummary,DetailedDescription,ArmGroupLabel,ArmGroupDescription,"
-                      "ArmGroupType,PrimaryOutcomeMeasure,SecondaryOutcomeMeasure"
         }
 
         if query:
@@ -229,6 +232,9 @@ class ClinicalTrialsLoader:
             eligibility_module = protocol.get("eligibilityModule", {})
             desc_module = protocol.get("descriptionModule", {})
             outcomes_module = protocol.get("outcomesModule", {})
+            oversight_module = protocol.get("oversightModule", {})
+            references_module = protocol.get("referencesModule", {})
+            ipd_module = protocol.get("ipdSharingStatementModule", {})
 
             nct_id = id_module.get("nctId")
             if not nct_id:
@@ -305,6 +311,19 @@ class ClinicalTrialsLoader:
                 Json(arms) if arms else None,
                 desc_module.get("briefSummary"),
                 desc_module.get("detailedDescription"),
+                # Oversight
+                oversight_module.get("isFdaRegulatedDrug") == "Yes" if oversight_module.get("isFdaRegulatedDrug") else None,
+                oversight_module.get("isFdaRegulatedDevice") == "Yes" if oversight_module.get("isFdaRegulatedDevice") else None,
+                # References (PMIDs, citations)
+                Json(references_module.get("references", [])) if references_module.get("references") else None,
+                # IPD sharing
+                ipd_module.get("ipdSharing"),
+                # Results section (full)
+                study.get("hasResults", False),
+                Json(study.get("resultsSection", {})) if study.get("resultsSection") else None,
+                # Derived section
+                Json(study.get("derivedSection", {}).get("conditionBrowseModule", {})) if study.get("derivedSection", {}).get("conditionBrowseModule") else None,
+                Json(study.get("derivedSection", {}).get("interventionBrowseModule", {})) if study.get("derivedSection", {}).get("interventionBrowseModule") else None,
                 Json(study),  # raw_json
             )
 
@@ -327,12 +346,37 @@ class ClinicalTrialsLoader:
                 locations, location_countries, keywords, mesh_terms,
                 eligibility_criteria, gender, minimum_age, maximum_age,
                 healthy_volunteers, primary_outcomes, secondary_outcomes,
-                arms, brief_summary, detailed_description, raw_json
+                arms, brief_summary, detailed_description,
+                fda_regulated_drug, fda_regulated_device, references,
+                ipd_sharing, has_results, results_section,
+                condition_browse, intervention_browse, raw_json
             ) VALUES %s
             ON CONFLICT (nct_id) DO UPDATE SET
                 overall_status = EXCLUDED.overall_status,
-                enrollment = EXCLUDED.enrollment,
+                phase = COALESCE(EXCLUDED.phase, bronze.clinicaltrials.phase),
+                enrollment = COALESCE(EXCLUDED.enrollment, bronze.clinicaltrials.enrollment),
+                start_date = COALESCE(EXCLUDED.start_date, bronze.clinicaltrials.start_date),
+                completion_date = COALESCE(EXCLUDED.completion_date, bronze.clinicaltrials.completion_date),
+                primary_completion_date = COALESCE(EXCLUDED.primary_completion_date, bronze.clinicaltrials.primary_completion_date),
                 last_update_posted_date = EXCLUDED.last_update_posted_date,
+                conditions = COALESCE(EXCLUDED.conditions, bronze.clinicaltrials.conditions),
+                interventions = COALESCE(EXCLUDED.interventions, bronze.clinicaltrials.interventions),
+                intervention_names = COALESCE(EXCLUDED.intervention_names, bronze.clinicaltrials.intervention_names),
+                locations = COALESCE(EXCLUDED.locations, bronze.clinicaltrials.locations),
+                location_countries = COALESCE(EXCLUDED.location_countries, bronze.clinicaltrials.location_countries),
+                primary_outcomes = COALESCE(EXCLUDED.primary_outcomes, bronze.clinicaltrials.primary_outcomes),
+                secondary_outcomes = COALESCE(EXCLUDED.secondary_outcomes, bronze.clinicaltrials.secondary_outcomes),
+                arms = COALESCE(EXCLUDED.arms, bronze.clinicaltrials.arms),
+                brief_summary = COALESCE(EXCLUDED.brief_summary, bronze.clinicaltrials.brief_summary),
+                eligibility_criteria = COALESCE(EXCLUDED.eligibility_criteria, bronze.clinicaltrials.eligibility_criteria),
+                fda_regulated_drug = COALESCE(EXCLUDED.fda_regulated_drug, bronze.clinicaltrials.fda_regulated_drug),
+                fda_regulated_device = COALESCE(EXCLUDED.fda_regulated_device, bronze.clinicaltrials.fda_regulated_device),
+                references = COALESCE(EXCLUDED.references, bronze.clinicaltrials.references),
+                ipd_sharing = COALESCE(EXCLUDED.ipd_sharing, bronze.clinicaltrials.ipd_sharing),
+                has_results = COALESCE(EXCLUDED.has_results, bronze.clinicaltrials.has_results),
+                results_section = COALESCE(EXCLUDED.results_section, bronze.clinicaltrials.results_section),
+                condition_browse = COALESCE(EXCLUDED.condition_browse, bronze.clinicaltrials.condition_browse),
+                intervention_browse = COALESCE(EXCLUDED.intervention_browse, bronze.clinicaltrials.intervention_browse),
                 raw_json = EXCLUDED.raw_json,
                 source_updated_at = NOW()
             """,

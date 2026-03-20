@@ -433,9 +433,10 @@ class ClinicalTrialsClient(BaseAPIClient[Dict[str, Any]]):
         Returns:
             TrialSearchResult with trials and pagination info
         """
+        # No fields filter — return the FULL API response with all modules so
+        # raw layer captures 100% of available data (protocol, results, derived).
         params = {
             "pageSize": min(page_size, 1000),
-            "fields": ",".join(self.DEFAULT_FIELDS),
         }
 
         # Build query parts
@@ -506,11 +507,10 @@ class ClinicalTrialsClient(BaseAPIClient[Dict[str, Any]]):
             ClinicalTrial or None
         """
         try:
-            # Use RESULTS_FIELDS if we want full efficacy data
-            fields = self.RESULTS_FIELDS if include_results else self.DEFAULT_FIELDS
+            # No fields filter — always return the full response with all modules
             result = await self._get(
                 f"/studies/{nct_id}",
-                params={"fields": ",".join(fields)}
+                params={}
             )
 
             return self._parse_study(result)

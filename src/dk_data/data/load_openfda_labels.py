@@ -266,6 +266,8 @@ class OpenFDALabelsLoader:
                 get_text("pediatric_use"),
                 get_text("geriatric_use"),
                 get_text("boxed_warning"),
+                get_text("clinical_studies"),
+                get_text("how_supplied"),
                 Json(openfda) if openfda else None,
                 Json(label),
             )
@@ -289,11 +291,18 @@ class OpenFDALabelsLoader:
                 clinical_pharmacology, mechanism_of_action, pharmacodynamics,
                 pharmacokinetics, overdosage, pregnancy, nursing_mothers,
                 pediatric_use, geriatric_use, boxed_warning,
+                clinical_studies, how_supplied,
                 openfda_data, raw_json
             ) VALUES %s
             ON CONFLICT (spl_id) DO UPDATE SET
                 effective_time = EXCLUDED.effective_time,
                 version = EXCLUDED.version,
+                indications_and_usage = COALESCE(EXCLUDED.indications_and_usage, bronze.openfda_labels.indications_and_usage),
+                dosage_and_administration = COALESCE(EXCLUDED.dosage_and_administration, bronze.openfda_labels.dosage_and_administration),
+                adverse_reactions = COALESCE(EXCLUDED.adverse_reactions, bronze.openfda_labels.adverse_reactions),
+                mechanism_of_action = COALESCE(EXCLUDED.mechanism_of_action, bronze.openfda_labels.mechanism_of_action),
+                clinical_studies = COALESCE(EXCLUDED.clinical_studies, bronze.openfda_labels.clinical_studies),
+                how_supplied = COALESCE(EXCLUDED.how_supplied, bronze.openfda_labels.how_supplied),
                 raw_json = EXCLUDED.raw_json,
                 source_updated_at = NOW()
             """,

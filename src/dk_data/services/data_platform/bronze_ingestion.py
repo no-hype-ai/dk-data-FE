@@ -144,6 +144,9 @@ class BronzeIngestionService:
                 enrollment_count = EXCLUDED.enrollment_count,
                 conditions = EXCLUDED.conditions,
                 interventions = EXCLUDED.interventions,
+                primary_outcomes = COALESCE(EXCLUDED.primary_outcomes, bronze.clinicaltrials.primary_outcomes),
+                secondary_outcomes = COALESCE(EXCLUDED.secondary_outcomes, bronze.clinicaltrials.secondary_outcomes),
+                locations = COALESCE(EXCLUDED.locations, bronze.clinicaltrials.locations),
                 processed_to_silver = FALSE,
                 ingested_at = NOW()
         """,
@@ -469,16 +472,33 @@ class BronzeIngestionService:
                 indications_and_usage, dosage_and_administration, contraindications,
                 warnings, warnings_and_cautions, boxed_warning, adverse_reactions, drug_interactions,
                 mechanism_of_action, clinical_pharmacology, pharmacodynamics, pharmacokinetics,
+                clinical_studies, overdosage, description, how_supplied, storage_and_handling,
+                pregnancy, pediatric_use, geriatric_use,
+                use_in_specific_populations, dosage_forms_and_strengths,
+                openfda_rxcui, openfda_unii,
+                openfda_pharm_class_epc, openfda_pharm_class_moa,
                 effective_time, openfda
             ) VALUES (
                 $1, $2, $3, $4, $5, $6, $7, $8, $9, $10,
-                $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25
+                $11, $12, $13, $14, $15, $16, $17, $18, $19,
+                $20, $21, $22, $23, $24, $25, $26, $27, $28,
+                $29, $30, $31, $32, $33, $34, $35, $36, $37
             )
             ON CONFLICT (set_id, version) DO UPDATE SET
                 brand_name = COALESCE(EXCLUDED.brand_name, bronze.openfda_labels.brand_name),
                 generic_name = COALESCE(EXCLUDED.generic_name, bronze.openfda_labels.generic_name),
-                boxed_warning = EXCLUDED.boxed_warning,
-                adverse_reactions = EXCLUDED.adverse_reactions,
+                indications_and_usage = COALESCE(EXCLUDED.indications_and_usage, bronze.openfda_labels.indications_and_usage),
+                dosage_and_administration = COALESCE(EXCLUDED.dosage_and_administration, bronze.openfda_labels.dosage_and_administration),
+                boxed_warning = COALESCE(EXCLUDED.boxed_warning, bronze.openfda_labels.boxed_warning),
+                adverse_reactions = COALESCE(EXCLUDED.adverse_reactions, bronze.openfda_labels.adverse_reactions),
+                mechanism_of_action = COALESCE(EXCLUDED.mechanism_of_action, bronze.openfda_labels.mechanism_of_action),
+                clinical_studies = COALESCE(EXCLUDED.clinical_studies, bronze.openfda_labels.clinical_studies),
+                how_supplied = COALESCE(EXCLUDED.how_supplied, bronze.openfda_labels.how_supplied),
+                overdosage = COALESCE(EXCLUDED.overdosage, bronze.openfda_labels.overdosage),
+                pregnancy = COALESCE(EXCLUDED.pregnancy, bronze.openfda_labels.pregnancy),
+                pediatric_use = COALESCE(EXCLUDED.pediatric_use, bronze.openfda_labels.pediatric_use),
+                geriatric_use = COALESCE(EXCLUDED.geriatric_use, bronze.openfda_labels.geriatric_use),
+                use_in_specific_populations = COALESCE(EXCLUDED.use_in_specific_populations, bronze.openfda_labels.use_in_specific_populations),
                 processed_to_silver = FALSE,
                 ingested_at = NOW()
         """,
@@ -486,8 +506,8 @@ class BronzeIngestionService:
             set_id,
             label.get('id'),
             self._safe_int(label.get('version', '1')),
-            brand_name,      # Plain text, not JSON array
-            generic_name,    # Plain text, not JSON array
+            brand_name,
+            generic_name,
             self._first_or_none(openfda.get('manufacturer_name')),
             self._first_or_none(openfda.get('application_number')),
             self._first_or_none(openfda.get('product_type')),
@@ -505,6 +525,20 @@ class BronzeIngestionService:
             self._first_or_join(label.get('clinical_pharmacology')),
             self._first_or_join(label.get('pharmacodynamics')),
             self._first_or_join(label.get('pharmacokinetics')),
+            self._first_or_join(label.get('clinical_studies')),
+            self._first_or_join(label.get('overdosage')),
+            self._first_or_join(label.get('description')),
+            self._first_or_join(label.get('how_supplied')),
+            self._first_or_join(label.get('storage_and_handling')),
+            self._first_or_join(label.get('pregnancy')),
+            self._first_or_join(label.get('pediatric_use')),
+            self._first_or_join(label.get('geriatric_use')),
+            self._first_or_join(label.get('use_in_specific_populations')),
+            self._first_or_join(label.get('dosage_forms_and_strengths')),
+            json.dumps(openfda.get('rxcui', [])) if openfda.get('rxcui') else None,
+            json.dumps(openfda.get('unii', [])) if openfda.get('unii') else None,
+            json.dumps(openfda.get('pharm_class_epc', [])) if openfda.get('pharm_class_epc') else None,
+            json.dumps(openfda.get('pharm_class_moa', [])) if openfda.get('pharm_class_moa') else None,
             effective_time,
             json.dumps(openfda) if openfda else None
         )

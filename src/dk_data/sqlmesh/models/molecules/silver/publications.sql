@@ -21,8 +21,14 @@ WITH openalex_pubs AS (
         pmid,
         pmcid,
         title,
-        -- Reconstruct abstract from inverted index (simplified)
-        NULL::TEXT AS abstract,  -- Would need complex reconstruction
+        -- Reconstruct abstract from inverted index
+        (SELECT string_agg(word, ' ' ORDER BY pos)
+         FROM (
+           SELECT kv.key AS word, p.pos::INT AS pos
+           FROM jsonb_each(abstract_inverted_index) AS kv,
+                LATERAL jsonb_array_elements_text(kv.value) AS p(pos)
+         ) sub
+        ) AS abstract,
         work_type AS publication_type,
         language,
         publication_year,
@@ -227,6 +233,10 @@ SELECT DISTINCT ON (doi)
     is_open_access,
     pdf_url,
     is_retracted,
+    grants,
+    citation_counts_by_year,
+    authorships,
+    keywords,
     source,
     source_updated_at,
     NOW() AS created_at,

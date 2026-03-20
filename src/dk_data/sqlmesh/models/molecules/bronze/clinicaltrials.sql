@@ -83,9 +83,39 @@ SELECT
     response_body->'protocolSection'->'outcomesModule'->'primaryOutcomes' AS primary_outcomes,
     response_body->'protocolSection'->'outcomesModule'->'secondaryOutcomes' AS secondary_outcomes,
 
+    -- Oversight (FDA regulatory status)
+    (response_body->'protocolSection'->'oversightModule'->>'isFdaRegulatedDrug')::BOOLEAN AS fda_regulated_drug,
+    (response_body->'protocolSection'->'oversightModule'->>'isFdaRegulatedDevice')::BOOLEAN AS fda_regulated_device,
+    (response_body->'protocolSection'->'oversightModule'->>'isUnapprovedDevice')::BOOLEAN AS is_unapproved_device,
+    response_body->'protocolSection'->'oversightModule'->'oversightHasDmc' AS has_dmc,
+
+    -- References (PMIDs, citations)
+    response_body->'protocolSection'->'referencesModule'->'references' AS references,
+    response_body->'protocolSection'->'referencesModule'->'seeAlsoLinks' AS see_also_links,
+
+    -- IPD Sharing
+    response_body->'protocolSection'->'ipdSharingStatementModule'->>'ipdSharing' AS ipd_sharing,
+    response_body->'protocolSection'->'ipdSharingStatementModule'->>'description' AS ipd_sharing_description,
+    response_body->'protocolSection'->'ipdSharingStatementModule'->'infoTypes' AS ipd_sharing_info_types,
+    response_body->'protocolSection'->'ipdSharingStatementModule'->>'timeFrame' AS ipd_sharing_time_frame,
+    response_body->'protocolSection'->'ipdSharingStatementModule'->>'accessCriteria' AS ipd_sharing_access_criteria,
+
+    -- Other Outcomes
+    response_body->'protocolSection'->'outcomesModule'->'otherOutcomes' AS other_outcomes,
+
     -- Results
     (response_body->>'hasResults')::BOOLEAN AS has_results,
     response_body->'resultsSection' AS results_section,
+    response_body->'resultsSection'->'participantFlowModule' AS results_participant_flow,
+    response_body->'resultsSection'->'baselineCharacteristicsModule' AS results_baseline,
+    response_body->'resultsSection'->'outcomeMeasuresModule'->'outcomeMeasures' AS results_outcome_measures,
+    response_body->'resultsSection'->'adverseEventsModule' AS results_adverse_events,
+    response_body->'resultsSection'->'moreInfoModule' AS results_more_info,
+
+    -- Derived Section (MeSH browse hierarchies)
+    response_body->'derivedSection'->'conditionBrowseModule' AS condition_browse,
+    response_body->'derivedSection'->'interventionBrowseModule' AS intervention_browse,
+    response_body->'derivedSection'->'miscInfoModule' AS misc_info,
 
     -- Raw source tracking
     response_body AS raw_json,
