@@ -413,13 +413,16 @@ class MoleculeOnboardingService:
         error_message: Optional[str] = None
     ):
         """Log audit entry for onboarding action."""
+        import json
+        # asyncpg requires jsonb values as JSON strings, not Python dicts
+        details_json = json.dumps(details) if details is not None else None
         async with self.db_pool.acquire() as conn:
             await conn.execute("""
                 INSERT INTO application.onboarding_audit_log
                 (id, request_id, user_id, action, status, details, error_message)
-                VALUES ($1, $2, $3, $4, $5, $6, $7)
+                VALUES ($1, $2, $3, $4, $5, $6::jsonb, $7)
             """, uuid4(), request_id, user_id, action, status.value,
-            details, error_message)
+            details_json, error_message)
 
     async def get_onboarding_status(
         self,
