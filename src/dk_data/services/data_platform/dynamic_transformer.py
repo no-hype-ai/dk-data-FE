@@ -1079,7 +1079,7 @@ class DynamicSourceTransformer:
 
                 rows = await conn.fetch("""
                     SELECT identifier_value, molecule_id::text
-                    FROM silver.identifier_mappings
+                    FROM mol_silver.identifier_mappings
                     WHERE identifier_type = $1
                     AND identifier_value = ANY($2)
                 """, lookup_type, list(values))
@@ -1096,7 +1096,7 @@ class DynamicSourceTransformer:
                 try:
                     rows = await conn.fetch("""
                         SELECT drug_name_lower, molecule_id::text
-                        FROM silver.drug_name_lookup
+                        FROM mol_silver.drug_name_lookup
                         WHERE drug_name_lower = ANY($1)
                     """, [v.lower() for v in values])
 
@@ -1204,7 +1204,7 @@ class DynamicSourceTransformer:
         try:
             rows = await conn.fetch("""
                 SELECT identifier_value, molecule_id::text
-                FROM silver.identifier_mappings
+                FROM mol_silver.identifier_mappings
                 WHERE identifier_type = $1
                 AND identifier_value = ANY($2)
             """, db_identifier_type, list(identifiers))
@@ -1222,7 +1222,7 @@ class DynamicSourceTransformer:
                 remaining = [i for i in identifiers if i not in cache]
                 rows = await conn.fetch(f"""
                     SELECT {lookup_column} as identifier, id::text as molecule_id
-                    FROM silver.molecules
+                    FROM mol_silver.molecules
                     WHERE {lookup_column} = ANY($1)
                 """, remaining)
 
@@ -1241,7 +1241,7 @@ class DynamicSourceTransformer:
                 if remaining:
                     rows = await conn.fetch("""
                         SELECT LOWER(name) as name, molecule_id::text
-                        FROM silver.drug_name_lookup
+                        FROM mol_silver.drug_name_lookup
                         WHERE LOWER(name) = ANY($1)
                     """, [n.lower() for n in remaining])
 
@@ -1349,7 +1349,7 @@ class DynamicSourceTransformer:
                 # Use COPY for efficiency or batch insert
                 for val, mol_id in new_mappings:
                     await conn.execute("""
-                        INSERT INTO silver.identifier_mappings
+                        INSERT INTO mol_silver.identifier_mappings
                         (id, molecule_id, identifier_type, identifier_value, source, confidence, is_primary, created_at, updated_at)
                         VALUES (gen_random_uuid(), $1::uuid, $2, $3, $4, 0.8, false, NOW(), NOW())
                         ON CONFLICT (molecule_id, identifier_type, identifier_value) DO NOTHING
@@ -1370,7 +1370,7 @@ class DynamicSourceTransformer:
                     name = record.get(field_name)
                     if molecule_id and name and isinstance(name, str):
                         await conn.execute("""
-                            INSERT INTO silver.drug_name_lookup (drug_name_lower, molecule_id)
+                            INSERT INTO mol_silver.drug_name_lookup (drug_name_lower, molecule_id)
                             VALUES ($1, $2::uuid)
                             ON CONFLICT DO NOTHING
                         """, name.lower().strip(), molecule_id)

@@ -191,13 +191,13 @@ def get_or_create_compound(cursor, smiles: str, descriptors: dict) -> str | None
 
     inchi_key = descriptors.get("inchi_key")
 
-    cursor.execute("SELECT id FROM bronze.compounds WHERE inchi_key = %s", (inchi_key,))
+    cursor.execute("SELECT id FROM mol_bronze.compounds WHERE inchi_key = %s", (inchi_key,))
     result = cursor.fetchone()
     if result:
         return str(result[0])
 
     cursor.execute("""
-        INSERT INTO bronze.compounds (
+        INSERT INTO mol_bronze.compounds (
             smiles, smiles_canonical, inchi_key,
             molecular_weight, logp, tpsa, hbd, hba,
             rotatable_bonds, num_rings, qed, morgan_fp, maccs_fp
@@ -219,7 +219,7 @@ def load_tdc_dataset(conn, category: str, dataset_name: str, task_type: str):
 
     cursor = conn.cursor()
 
-    cursor.execute("SELECT id FROM bronze.tdc_datasets WHERE dataset_name = %s", (dataset_name,))
+    cursor.execute("SELECT id FROM mol_bronze.tdc_datasets WHERE dataset_name = %s", (dataset_name,))
     existing = cursor.fetchone()
     if existing:
         logger.info(f"  Dataset {dataset_name} already loaded, skipping")
@@ -234,7 +234,7 @@ def load_tdc_dataset(conn, category: str, dataset_name: str, task_type: str):
         split = data.get_split(method="scaffold")
 
         cursor.execute("""
-            INSERT INTO bronze.tdc_datasets (
+            INSERT INTO mol_bronze.tdc_datasets (
                 dataset_name, category, task_type,
                 n_compounds, n_train, n_valid, n_test, split_method
             ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
@@ -265,7 +265,7 @@ def load_tdc_dataset(conn, category: str, dataset_name: str, task_type: str):
                     compound_id = get_or_create_compound(cursor, smiles, descriptors)
 
                     cursor.execute("""
-                        INSERT INTO bronze.tdc_compounds (
+                        INSERT INTO mol_bronze.tdc_compounds (
                             dataset_id, compound_id, smiles, label, split
                         ) VALUES (%s, %s, %s, %s, %s)
                     """, (dataset_id, compound_id, smiles, float(label), split_name))
@@ -316,9 +316,9 @@ def main():
             load_tdc_dataset(conn, category, dataset_name, task_type)
 
     cursor = conn.cursor()
-    cursor.execute("SELECT COUNT(*) FROM bronze.compounds")
+    cursor.execute("SELECT COUNT(*) FROM mol_bronze.compounds")
     n_compounds = cursor.fetchone()[0]
-    cursor.execute("SELECT COUNT(*) FROM bronze.tdc_datasets")
+    cursor.execute("SELECT COUNT(*) FROM mol_bronze.tdc_datasets")
     n_datasets = cursor.fetchone()[0]
 
     logger.info("\n=== SUMMARY ===")

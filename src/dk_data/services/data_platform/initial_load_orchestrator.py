@@ -737,7 +737,7 @@ class InitialLoadOrchestrator:
             if upsert:
                 # Use INSERT ... ON CONFLICT for upsert
                 await conn.executemany(f"""
-                    INSERT INTO raw.{table_name} (_source_id, _raw_payload)
+                    INSERT INTO mol_raw.{table_name} (_source_id, _raw_payload)
                     VALUES ($1, $2)
                     ON CONFLICT (_source_id) DO UPDATE SET
                         _raw_payload = EXCLUDED._raw_payload,
@@ -745,7 +745,7 @@ class InitialLoadOrchestrator:
                 """, records)
             else:
                 await conn.executemany(f"""
-                    INSERT INTO raw.{table_name} (_source_id, _raw_payload)
+                    INSERT INTO mol_raw.{table_name} (_source_id, _raw_payload)
                     VALUES ($1, $2)
                 """, records)
 

@@ -157,7 +157,7 @@ def load_tdc_dataset(dataset_name: str, conn, split_method: str = "scaffold") ->
 
     cursor = conn.cursor()
     cursor.execute("""
-        INSERT INTO bronze.tdc_admet_datasets (dataset_name, tdc_name, task_type, description)
+        INSERT INTO mol_bronze.tdc_admet_datasets (dataset_name, tdc_name, task_type, description)
         VALUES (%s, %s, %s, %s)
         ON CONFLICT (dataset_name) DO UPDATE SET
             tdc_name = EXCLUDED.tdc_name,
@@ -196,7 +196,7 @@ def load_tdc_dataset(dataset_name: str, conn, split_method: str = "scaffold") ->
                 execute_values(
                     cursor,
                     """
-                    INSERT INTO bronze.tdc_admet_values (dataset_id, inchi_key, smiles, y_value, split, drug_id)
+                    INSERT INTO mol_bronze.tdc_admet_values (dataset_id, inchi_key, smiles, y_value, split, drug_id)
                     VALUES %s
                     ON CONFLICT (dataset_id, inchi_key) DO UPDATE SET
                         y_value = EXCLUDED.y_value,
@@ -212,7 +212,7 @@ def load_tdc_dataset(dataset_name: str, conn, split_method: str = "scaffold") ->
                 raise
 
     cursor.execute("""
-        UPDATE bronze.tdc_admet_datasets SET
+        UPDATE mol_bronze.tdc_admet_datasets SET
             num_compounds = %s,
             num_train = %s,
             num_valid = %s,
@@ -281,9 +281,9 @@ def main():
             logger.error(f"Failed to load {dataset_name}: {e}")
 
     cursor = conn.cursor()
-    cursor.execute("SELECT COUNT(*) FROM bronze.tdc_admet_datasets")
+    cursor.execute("SELECT COUNT(*) FROM mol_bronze.tdc_admet_datasets")
     dataset_count = cursor.fetchone()[0]
-    cursor.execute("SELECT COUNT(*) FROM bronze.tdc_admet_values")
+    cursor.execute("SELECT COUNT(*) FROM mol_bronze.tdc_admet_values")
     value_count = cursor.fetchone()[0]
 
     logger.info("\n=== Summary ===")

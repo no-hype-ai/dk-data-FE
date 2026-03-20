@@ -281,7 +281,7 @@ class OpenFDALabelsLoader:
         execute_values(
             cursor,
             """
-            INSERT INTO bronze.openfda_labels (
+            INSERT INTO mol_bronze.openfda_labels (
                 spl_id, spl_set_id, effective_time, version,
                 product_type, brand_name, generic_name, manufacturer_name,
                 substance_name, route, dosage_form, ndc, unii, rxcui,
@@ -297,12 +297,12 @@ class OpenFDALabelsLoader:
             ON CONFLICT (spl_id) DO UPDATE SET
                 effective_time = EXCLUDED.effective_time,
                 version = EXCLUDED.version,
-                indications_and_usage = COALESCE(EXCLUDED.indications_and_usage, bronze.openfda_labels.indications_and_usage),
-                dosage_and_administration = COALESCE(EXCLUDED.dosage_and_administration, bronze.openfda_labels.dosage_and_administration),
-                adverse_reactions = COALESCE(EXCLUDED.adverse_reactions, bronze.openfda_labels.adverse_reactions),
-                mechanism_of_action = COALESCE(EXCLUDED.mechanism_of_action, bronze.openfda_labels.mechanism_of_action),
-                clinical_studies = COALESCE(EXCLUDED.clinical_studies, bronze.openfda_labels.clinical_studies),
-                how_supplied = COALESCE(EXCLUDED.how_supplied, bronze.openfda_labels.how_supplied),
+                indications_and_usage = COALESCE(EXCLUDED.indications_and_usage, mol_bronze.openfda_labels.indications_and_usage),
+                dosage_and_administration = COALESCE(EXCLUDED.dosage_and_administration, mol_bronze.openfda_labels.dosage_and_administration),
+                adverse_reactions = COALESCE(EXCLUDED.adverse_reactions, mol_bronze.openfda_labels.adverse_reactions),
+                mechanism_of_action = COALESCE(EXCLUDED.mechanism_of_action, mol_bronze.openfda_labels.mechanism_of_action),
+                clinical_studies = COALESCE(EXCLUDED.clinical_studies, mol_bronze.openfda_labels.clinical_studies),
+                how_supplied = COALESCE(EXCLUDED.how_supplied, mol_bronze.openfda_labels.how_supplied),
                 raw_json = EXCLUDED.raw_json,
                 source_updated_at = NOW()
             """,
@@ -339,7 +339,7 @@ def main():
         )
 
         cursor = conn.cursor()
-        cursor.execute("SELECT COUNT(*) FROM bronze.openfda_labels")
+        cursor.execute("SELECT COUNT(*) FROM mol_bronze.openfda_labels")
         count = cursor.fetchone()[0]
 
         logger.info("\n=== Summary ===")

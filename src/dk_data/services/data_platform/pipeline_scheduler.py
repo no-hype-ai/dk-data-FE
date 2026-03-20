@@ -445,7 +445,7 @@ class PipelineScheduler:
             # Check if bronze layer is empty
             async with pool.acquire() as conn:
                 bronze_count = await conn.fetchval("""
-                    SELECT COUNT(*) FROM bronze.clinicaltrials
+                    SELECT COUNT(*) FROM mol_bronze.clinicaltrials
                 """)
 
             if bronze_count == 0:

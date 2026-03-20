@@ -226,7 +226,7 @@ def insert_pdb_entry(conn, entry: Dict[str, Any]) -> bool:
     try:
         with conn.cursor() as cur:
             cur.execute("""
-                INSERT INTO bronze.pdb (
+                INSERT INTO mol_bronze.pdb (
                     pdb_id, title, description, experimental_method, resolution,
                     release_date, polymer_count, entity_count, deposited_model_count,
                     organism, organism_id, authors, citation_title, citation_doi,

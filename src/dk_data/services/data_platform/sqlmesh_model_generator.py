@@ -114,7 +114,7 @@ class SQLMeshModelGenerator:
                        column_mappings, computed_columns, identifier_mappings, name_mappings,
                        dedup_strategy, dedup_columns, dedup_confidence_threshold,
                        source_precedence, incremental_column, batch_size, where_clause, enabled
-                FROM raw.silver_transformation_rules
+                FROM mol_raw.silver_transformation_rules
                 WHERE enabled = true
             """
             params = []
@@ -274,7 +274,7 @@ SELECT
     TRUE AS is_primary,
     s.source_updated_at AS source_date,
     NOW() AS created_at
-FROM silver.molecules m
+FROM mol_silver.molecules m
 JOIN {rule.source_table} s ON m.inchi_key = s.inchi_key
 WHERE s.{source_column} IS NOT NULL
   AND m.needs_review = FALSE'''
@@ -328,7 +328,7 @@ SELECT
     LOWER(TRIM(name_val)) AS name_normalized,
     '{rule.source_name}' AS source,
     NOW() AS created_at
-FROM silver.molecules m
+FROM mol_silver.molecules m
 JOIN {rule.source_table} s ON m.inchi_key = s.inchi_key
 CROSS JOIN LATERAL jsonb_array_elements_text(s.{source_column}) AS name_val
 WHERE s.{source_column} IS NOT NULL
@@ -347,7 +347,7 @@ SELECT
     LOWER(TRIM(s.{source_column})) AS name_normalized,
     '{rule.source_name}' AS source,
     NOW() AS created_at
-FROM silver.molecules m
+FROM mol_silver.molecules m
 JOIN {rule.source_table} s ON m.inchi_key = s.inchi_key
 WHERE s.{source_column} IS NOT NULL
   AND m.needs_review = FALSE'''
@@ -395,7 +395,7 @@ MODEL (
         for rule in sorted_rules:
             cte = f'''
     {rule.source_name}_molecules AS (
-        SELECT * FROM silver.{rule.source_name}_molecules
+        SELECT * FROM mol_silver.{rule.source_name}_molecules
     )'''
             source_ctes.append(cte)
 
@@ -588,7 +588,7 @@ SELECT * FROM deduplicated;
             # Find rules updated after their models were generated
             rows = await conn.fetch("""
                 SELECT DISTINCT r.source_name
-                FROM raw.silver_transformation_rules r
+                FROM mol_raw.silver_transformation_rules r
                 LEFT JOIN raw.generated_sqlmesh_models m
                     ON m.source_rule_id = r.id
                 WHERE r.enabled = true

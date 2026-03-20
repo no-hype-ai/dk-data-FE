@@ -236,7 +236,7 @@ def insert_work(conn, work: Dict[str, Any]) -> bool:
     try:
         with conn.cursor() as cur:
             cur.execute("""
-                INSERT INTO bronze.openalex (
+                INSERT INTO mol_bronze.openalex (
                     openalex_id, doi, title, publication_date, publication_year,
                     type, open_access, cited_by_count, authors, institutions,
                     concepts, topics, journal_name, journal_issn, volume, issue,
@@ -281,7 +281,7 @@ async def load_for_drugs(conn, limit: int = None) -> int:
         with conn.cursor() as cur:
             cur.execute("""
                 SELECT DISTINCT canonical_name
-                FROM silver.molecules
+                FROM mol_silver.molecules
                 WHERE canonical_name IS NOT NULL
                 ORDER BY canonical_name
                 LIMIT 100

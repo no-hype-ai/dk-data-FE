@@ -112,7 +112,7 @@ class BronzeTransformer:
 
         async with self.db_pool.acquire() as conn:
             await conn.executemany("""
-                INSERT INTO bronze.clinicaltrials
+                INSERT INTO mol_bronze.clinicaltrials
                 (id, raw_id, nct_id, title, phase, enrollment, sponsor,
                  status, conditions, interventions, start_date, completion_date)
                 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9::jsonb, $10::jsonb, $11, $12)
@@ -179,7 +179,7 @@ class BronzeTransformer:
         async with self.db_pool.acquire() as conn:
             # Use existing bronze.openfda_labels column names (47 columns already exist)
             await conn.executemany("""
-                INSERT INTO bronze.openfda_labels
+                INSERT INTO mol_bronze.openfda_labels
                 (id, raw_id, set_id, spl_id, version,
                  brand_name, generic_name, manufacturer_name, application_number,
                  product_type, route, indications_and_usage,
@@ -236,7 +236,7 @@ class BronzeTransformer:
 
         async with self.db_pool.acquire() as conn:
             await conn.executemany("""
-                INSERT INTO bronze.openfda_faers
+                INSERT INTO mol_bronze.openfda_faers
                 (id, raw_id, safety_report_id, reactions, outcomes, seriousness, drugs)
                 VALUES ($1, $2, $3, $4::jsonb, $5::jsonb, $6, $7::jsonb)
                 ON CONFLICT (safety_report_id) DO UPDATE SET
@@ -274,7 +274,7 @@ class BronzeTransformer:
 
         async with self.db_pool.acquire() as conn:
             await conn.executemany("""
-                INSERT INTO bronze.chembl
+                INSERT INTO mol_bronze.chembl
                 (id, raw_id, molecule_chembl_id, pref_name, max_phase,
                  molecular_weight, canonical_smiles, molecule_type)
                 VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
@@ -316,7 +316,7 @@ class BronzeTransformer:
 
         async with self.db_pool.acquire() as conn:
             await conn.executemany("""
-                INSERT INTO bronze.pubmed
+                INSERT INTO mol_bronze.pubmed
                 (id, raw_id, pmid, title, abstract, authors, journal, pub_date)
                 VALUES ($1, $2, $3, $4, $5, $6::jsonb, $7, $8)
                 ON CONFLICT (pmid) DO UPDATE SET
@@ -362,7 +362,7 @@ class BronzeTransformer:
 
         async with self.db_pool.acquire() as conn:
             await conn.executemany("""
-                INSERT INTO bronze.openalex
+                INSERT INTO mol_bronze.openalex
                 (id, raw_id, work_id, title, doi, authors, cited_by_count, publication_year)
                 VALUES ($1, $2, $3, $4, $5, $6::jsonb, $7, $8)
                 ON CONFLICT (work_id) DO UPDATE SET
@@ -400,7 +400,7 @@ class BronzeTransformer:
 
         async with self.db_pool.acquire() as conn:
             await conn.executemany("""
-                INSERT INTO bronze.orange_book
+                INSERT INTO mol_bronze.orange_book
                 (id, raw_id, application_number, product_name, active_ingredient,
                  approval_date, applicant)
                 VALUES ($1, $2, $3, $4, $5, $6, $7)
@@ -432,7 +432,7 @@ class BronzeTransformer:
 
         async with self.db_pool.acquire() as conn:
             await conn.executemany("""
-                INSERT INTO bronze.drugbank
+                INSERT INTO mol_bronze.drugbank
                 (id, raw_id, drugbank_id, name, description, indication, pharmacodynamics)
                 VALUES ($1, $2, $3, $4, $5, $6, $7)
                 ON CONFLICT (drugbank_id) DO UPDATE SET
@@ -470,7 +470,7 @@ class BronzeTransformer:
 
         async with self.db_pool.acquire() as conn:
             await conn.executemany("""
-                INSERT INTO bronze.pubchem
+                INSERT INTO mol_bronze.pubchem
                 (id, raw_id, cid, iupac_name, canonical_smiles,
                  molecular_formula, molecular_weight)
                 VALUES ($1, $2, $3, $4, $5, $6, $7)

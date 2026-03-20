@@ -104,7 +104,7 @@ class DatabaseMetricsService:
             # DrugBank - using medallion architecture
             try:
                 drugbank_count = await conn.fetchval(
-                    "SELECT COUNT(*) FROM bronze.drugbank"
+                    "SELECT COUNT(*) FROM mol_bronze.drugbank"
                 )
                 stats['drugbank'] = {
                     'record_count': drugbank_count or 0,
@@ -117,7 +117,7 @@ class DatabaseMetricsService:
             # ClinicalTrials.gov - using medallion architecture
             try:
                 ct_count = await conn.fetchval(
-                    "SELECT COUNT(*) FROM silver.clinical_trials"
+                    "SELECT COUNT(*) FROM mol_silver.clinical_trials"
                 )
                 stats['clinicaltrials_gov'] = {
                     'record_count': ct_count or 0,
@@ -130,7 +130,7 @@ class DatabaseMetricsService:
             # OpenFDA FAERS - using medallion architecture
             try:
                 faers_count = await conn.fetchval(
-                    "SELECT COUNT(*) FROM bronze.openfda_faers"
+                    "SELECT COUNT(*) FROM mol_bronze.openfda_faers"
                 )
                 stats['openfda_faers'] = {
                     'record_count': faers_count or 0,
@@ -143,7 +143,7 @@ class DatabaseMetricsService:
             # FDA Labels - using medallion architecture
             try:
                 labels_count = await conn.fetchval(
-                    "SELECT COUNT(*) FROM silver.drug_labels"
+                    "SELECT COUNT(*) FROM mol_silver.drug_labels"
                 )
                 stats['openfda_labels'] = {
                     'record_count': labels_count or 0,
@@ -182,7 +182,7 @@ class DatabaseMetricsService:
             # SIDER - using medallion architecture
             try:
                 sider_count = await conn.fetchval(
-                    "SELECT COUNT(*) FROM bronze.sider_adverse_reactions"
+                    "SELECT COUNT(*) FROM mol_bronze.sider_adverse_reactions"
                 )
                 stats['sider'] = {
                     'record_count': sider_count or 0,
@@ -215,7 +215,7 @@ class DatabaseMetricsService:
                             ELSE 'Other'
                         END as phase_group,
                         COUNT(*) as count
-                    FROM silver.clinical_trials
+                    FROM mol_silver.clinical_trials
                     WHERE phase IS NOT NULL
                     GROUP BY phase_group
                     ORDER BY phase_group
@@ -242,7 +242,7 @@ class DatabaseMetricsService:
                     SELECT
                         COALESCE(status, 'Unknown') as status,
                         COUNT(*) as count
-                    FROM silver.clinical_trials
+                    FROM mol_silver.clinical_trials
                     GROUP BY status
                     ORDER BY count DESC
                     LIMIT 10
@@ -267,22 +267,22 @@ class DatabaseMetricsService:
             try:
                 # Total compounds - using medallion architecture
                 summary['total_compounds'] = await conn.fetchval(
-                    "SELECT COUNT(*) FROM silver.molecules"
+                    "SELECT COUNT(*) FROM mol_silver.molecules"
                 ) or 0
 
                 # Compounds with SMILES
                 summary['with_smiles'] = await conn.fetchval(
-                    "SELECT COUNT(*) FROM silver.molecules WHERE canonical_smiles IS NOT NULL"
+                    "SELECT COUNT(*) FROM mol_silver.molecules WHERE canonical_smiles IS NOT NULL"
                 ) or 0
 
                 # Compounds with InChI
                 summary['with_inchi'] = await conn.fetchval(
-                    "SELECT COUNT(*) FROM silver.molecules WHERE inchi IS NOT NULL"
+                    "SELECT COUNT(*) FROM mol_silver.molecules WHERE inchi IS NOT NULL"
                 ) or 0
 
                 # Cross-references
                 summary['cross_references'] = await conn.fetchval(
-                    "SELECT COUNT(*) FROM silver.compound_cross_reference"
+                    "SELECT COUNT(*) FROM mol_silver.compound_cross_reference"
                 ) or 0
 
             except Exception as e:
@@ -303,12 +303,12 @@ class DatabaseMetricsService:
             try:
                 # Total FAERS events - using medallion architecture
                 summary['faers_total'] = await conn.fetchval(
-                    "SELECT COUNT(*) FROM bronze.openfda_faers"
+                    "SELECT COUNT(*) FROM mol_bronze.openfda_faers"
                 ) or 0
 
                 # SIDER reactions - using medallion architecture
                 summary['sider_total'] = await conn.fetchval(
-                    "SELECT COUNT(*) FROM bronze.sider_adverse_reactions"
+                    "SELECT COUNT(*) FROM mol_bronze.sider_adverse_reactions"
                 ) or 0
 
                 # Top reactions by count - using silver.adverse_events
@@ -316,7 +316,7 @@ class DatabaseMetricsService:
                     SELECT
                         meddra_pt as reaction,
                         SUM(report_count) as count
-                    FROM silver.adverse_events
+                    FROM mol_silver.adverse_events
                     WHERE meddra_pt IS NOT NULL
                     GROUP BY meddra_pt
                     ORDER BY count DESC

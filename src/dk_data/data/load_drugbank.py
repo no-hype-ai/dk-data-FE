@@ -354,7 +354,7 @@ def load_drugbank(
         if load_drugs:
             try:
                 cursor.execute("""
-                    INSERT INTO bronze.drugbank_data (
+                    INSERT INTO mol_bronze.drugbank_data (
                         drugbank_id, drug_name, drug_type, drug_groups,
                         smiles, inchi_key, cas_number, unii,
                         indication, mechanism_of_action, half_life,
@@ -362,7 +362,7 @@ def load_drugbank(
                     ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                     ON CONFLICT (drugbank_id) DO UPDATE SET
                         drug_name = EXCLUDED.drug_name,
-                        smiles = COALESCE(EXCLUDED.smiles, bronze.drugbank_data.smiles),
+                        smiles = COALESCE(EXCLUDED.smiles, mol_bronze.drugbank_data.smiles),
                         source_updated_at = NOW()
                 """, (
                     drug.drugbank_id, drug.name, drug.drug_type, drug.groups or None,
@@ -385,7 +385,7 @@ def load_drugbank(
 
             if len(interaction_batch) >= batch_size:
                 execute_values(cursor, """
-                    INSERT INTO bronze.drugbank_interactions (
+                    INSERT INTO mol_bronze.drugbank_interactions (
                         drugbank_id_1, drugbank_id_2, drug_name_1, drug_name_2, interaction_description
                     ) VALUES %s
                     ON CONFLICT (drugbank_id_1, drugbank_id_2) DO UPDATE SET
@@ -413,7 +413,7 @@ def load_drugbank(
                         seen_keys.add(key)
                         deduped.append(t)
                 execute_values(cursor, """
-                    INSERT INTO bronze.drugbank_targets (
+                    INSERT INTO mol_bronze.drugbank_targets (
                         drugbank_id, target_id, target_name, organism,
                         uniprot_id, gene_name, actions, known_action
                     ) VALUES %s
@@ -430,7 +430,7 @@ def load_drugbank(
     # Insert remaining batches
     if interaction_batch:
         execute_values(cursor, """
-            INSERT INTO bronze.drugbank_interactions (
+            INSERT INTO mol_bronze.drugbank_interactions (
                 drugbank_id_1, drugbank_id_2, drug_name_1, drug_name_2, interaction_description
             ) VALUES %s
             ON CONFLICT (drugbank_id_1, drugbank_id_2) DO UPDATE SET
@@ -447,7 +447,7 @@ def load_drugbank(
                 seen_keys.add(key)
                 deduped.append(t)
         execute_values(cursor, """
-            INSERT INTO bronze.drugbank_targets (
+            INSERT INTO mol_bronze.drugbank_targets (
                 drugbank_id, target_id, target_name, organism,
                 uniprot_id, gene_name, actions, known_action
             ) VALUES %s

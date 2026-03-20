@@ -269,7 +269,7 @@ def load_drug_mechanism(pg_conn, sqlite_path: Path, batch_size: int = 5000) -> i
         execute_values(
             pg_cursor,
             """
-            INSERT INTO bronze.chembl_drug_mechanism (
+            INSERT INTO mol_bronze.chembl_drug_mechanism (
                 molregno, chembl_id, mechanism_of_action, target_chembl_id,
                 target_name, target_type, action_type, direct_interaction,
                 molecular_mechanism, disease_efficacy, mechanism_comment,
@@ -314,7 +314,7 @@ def load_drug_indication(pg_conn, sqlite_path: Path, batch_size: int = 5000) -> 
         execute_values(
             pg_cursor,
             """
-            INSERT INTO bronze.chembl_drug_indication (
+            INSERT INTO mol_bronze.chembl_drug_indication (
                 molregno, chembl_id, mesh_id, mesh_heading,
                 efo_id, efo_term, max_phase_for_ind, indication_refs
             ) VALUES %s
@@ -358,7 +358,7 @@ def load_drug_warning(pg_conn, sqlite_path: Path, batch_size: int = 5000) -> int
         execute_values(
             pg_cursor,
             """
-            INSERT INTO bronze.chembl_drug_warning (
+            INSERT INTO mol_bronze.chembl_drug_warning (
                 molregno, chembl_id, warning_type, warning_class,
                 warning_description, warning_country, warning_year,
                 efo_term, efo_id
@@ -401,7 +401,7 @@ def load_component_sequences(pg_conn, sqlite_path: Path, batch_size: int = 5000)
         execute_values(
             pg_cursor,
             """
-            INSERT INTO bronze.chembl_component_sequences (
+            INSERT INTO mol_bronze.chembl_component_sequences (
                 component_id, component_type, accession, sequence,
                 sequence_md5sum, description, tax_id, organism
             ) VALUES %s

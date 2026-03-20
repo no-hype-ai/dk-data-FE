@@ -170,7 +170,7 @@ class LifecycleDetectionService:
             labels = await conn.fetch("""
                 SELECT set_id, brand_name, generic_name, effective_date,
                        product_type, source
-                FROM silver.drug_labels
+                FROM mol_silver.drug_labels
                 WHERE molecule_id = $1::uuid
                 ORDER BY effective_date DESC
             """, molecule_id)
@@ -191,7 +191,7 @@ class LifecycleDetectionService:
             # Check for clinical trials
             trials = await conn.fetch("""
                 SELECT nct_id, title, phase, status, start_date, source
-                FROM silver.clinical_trials
+                FROM mol_silver.clinical_trials
                 WHERE molecule_id = $1::uuid
                 ORDER BY start_date DESC
             """, molecule_id)
@@ -215,7 +215,7 @@ class LifecycleDetectionService:
 
             # Check for bioactivity data (preclinical evidence)
             bioactivity_count = await conn.fetchval("""
-                SELECT COUNT(*) FROM silver.bioactivity
+                SELECT COUNT(*) FROM mol_silver.bioactivity
                 WHERE molecule_id = $1::uuid
             """, molecule_id)
 
@@ -234,7 +234,7 @@ class LifecycleDetectionService:
 
             # Check for publications
             pub_count = await conn.fetchval("""
-                SELECT COUNT(*) FROM silver.molecule_publications
+                SELECT COUNT(*) FROM mol_silver.molecule_publications
                 WHERE molecule_id = $1::uuid
             """, molecule_id)
 
@@ -254,7 +254,7 @@ class LifecycleDetectionService:
             # Check for patents
             patents = await conn.fetch("""
                 SELECT patent_number, title, grant_date, expiry_date, status
-                FROM silver.patents
+                FROM mol_silver.patents
                 WHERE molecule_id = $1::uuid
                 ORDER BY grant_date DESC
                 LIMIT 5
@@ -279,7 +279,7 @@ class LifecycleDetectionService:
         """Get current lifecycle stage from database."""
         async with self.db_pool.acquire() as conn:
             row = await conn.fetchrow("""
-                SELECT development_status FROM silver.molecules
+                SELECT development_status FROM mol_silver.molecules
                 WHERE id = $1::uuid
             """, molecule_id)
 
@@ -399,13 +399,13 @@ class LifecycleDetectionService:
         async with self.db_pool.acquire() as conn:
             # Get previous stage before update
             prev_row = await conn.fetchrow("""
-                SELECT development_status FROM silver.molecules
+                SELECT development_status FROM mol_silver.molecules
                 WHERE id = $1::uuid
             """, molecule_id)
             previous_status = prev_row['development_status'] if prev_row else None
 
             await conn.execute("""
-                UPDATE silver.molecules
+                UPDATE mol_silver.molecules
                 SET development_status = $2,
                     max_phase = GREATEST(max_phase, $3),
                     resolution_confidence = $4,
@@ -416,7 +416,7 @@ class LifecycleDetectionService:
             # Record transition in audit table
             try:
                 await conn.execute("""
-                    INSERT INTO silver.molecule_stage_history
+                    INSERT INTO mol_silver.molecule_stage_history
                         (molecule_id, previous_stage, new_stage, confidence, evidence_summary, detected_at)
                     VALUES ($1::uuid, $2, $3, $4, $5, NOW())
                 """, molecule_id, previous_status, status, confidence,
@@ -438,7 +438,7 @@ class LifecycleDetectionService:
 
         async with self.db_pool.acquire() as conn:
             molecules = await conn.fetch("""
-                SELECT id::text FROM silver.molecules
+                SELECT id::text FROM mol_silver.molecules
                 WHERE needs_review = FALSE
                 ORDER BY updated_at ASC
                 LIMIT $1
@@ -472,7 +472,7 @@ class LifecycleDetectionService:
             rows = await conn.fetch("""
                 SELECT previous_stage, new_stage, confidence,
                        evidence_summary, detected_at
-                FROM silver.molecule_stage_history
+                FROM mol_silver.molecule_stage_history
                 WHERE molecule_id = $1::uuid
                   AND detected_at >= NOW() - make_interval(days => $2)
                 ORDER BY detected_at DESC

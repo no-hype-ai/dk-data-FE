@@ -200,7 +200,7 @@ class SIDERLoader:
             execute_values(
                 cursor,
                 """
-                INSERT INTO bronze.sider_drugs (stitch_id_flat, stitch_id_stereo, drug_name, atc_codes)
+                INSERT INTO mol_bronze.sider_drugs (stitch_id_flat, stitch_id_stereo, drug_name, atc_codes)
                 VALUES %s
                 ON CONFLICT (stitch_id_flat) DO UPDATE SET
                     drug_name = EXCLUDED.drug_name
@@ -244,7 +244,7 @@ class SIDERLoader:
                     execute_values(
                         cursor,
                         """
-                        INSERT INTO bronze.sider_side_effects (
+                        INSERT INTO mol_bronze.sider_side_effects (
                             stitch_id_flat, stitch_id_stereo, umls_cui_label,
                             meddra_type, umls_cui_meddra, side_effect_name
                         ) VALUES %s
@@ -260,7 +260,7 @@ class SIDERLoader:
             execute_values(
                 cursor,
                 """
-                INSERT INTO bronze.sider_side_effects (
+                INSERT INTO mol_bronze.sider_side_effects (
                     stitch_id_flat, stitch_id_stereo, umls_cui_label,
                     meddra_type, umls_cui_meddra, side_effect_name
                 ) VALUES %s
@@ -307,7 +307,7 @@ class SIDERLoader:
                     execute_values(
                         cursor,
                         """
-                        INSERT INTO bronze.sider_indications (
+                        INSERT INTO mol_bronze.sider_indications (
                             stitch_id_flat, umls_cui_label, detection_method,
                             concept_name, meddra_type, umls_cui_meddra, meddra_name
                         ) VALUES %s
@@ -323,7 +323,7 @@ class SIDERLoader:
             execute_values(
                 cursor,
                 """
-                INSERT INTO bronze.sider_indications (
+                INSERT INTO mol_bronze.sider_indications (
                     stitch_id_flat, umls_cui_label, detection_method,
                     concept_name, meddra_type, umls_cui_meddra, meddra_name
                 ) VALUES %s
@@ -381,7 +381,7 @@ class SIDERLoader:
                     execute_values(
                         cursor,
                         """
-                        INSERT INTO bronze.sider_frequencies (
+                        INSERT INTO mol_bronze.sider_frequencies (
                             stitch_id_flat, stitch_id_stereo, umls_cui_label,
                             placebo, frequency_type, frequency_lower, frequency_upper,
                             meddra_type, umls_cui_meddra, side_effect_name
@@ -398,7 +398,7 @@ class SIDERLoader:
             execute_values(
                 cursor,
                 """
-                INSERT INTO bronze.sider_frequencies (
+                INSERT INTO mol_bronze.sider_frequencies (
                     stitch_id_flat, stitch_id_stereo, umls_cui_label,
                     placebo, frequency_type, frequency_lower, frequency_upper,
                     meddra_type, umls_cui_meddra, side_effect_name
@@ -458,7 +458,7 @@ def main():
         logger.info("\n=== Summary ===")
         from psycopg2 import sql as psql
         for table in ['sider_drugs', 'sider_side_effects', 'sider_indications', 'sider_frequencies']:
-            cursor.execute(psql.SQL("SELECT COUNT(*) FROM bronze.{}").format(psql.Identifier(table)))
+            cursor.execute(psql.SQL("SELECT COUNT(*) FROM mol_bronze.{}").format(psql.Identifier(table)))
             count = cursor.fetchone()[0]
             logger.info(f"bronze.{table}: {count:,}")
 

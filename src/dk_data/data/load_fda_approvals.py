@@ -172,7 +172,7 @@ class FDAApprovalsLoader:
 
                 try:
                     cursor.execute("""
-                        INSERT INTO bronze.fda_approvals (
+                        INSERT INTO mol_bronze.fda_approvals (
                             application_number, sponsor_name, brand_name, generic_name,
                             product_type, dosage_form, route, active_ingredients,
                             submission_type, submission_number, submission_status,

@@ -54,7 +54,7 @@ class BronzeIngestionService:
             # Get unprocessed raw records
             raw_records = await conn.fetch("""
                 SELECT id, response_body, request_timestamp
-                FROM raw.clinicaltrials
+                FROM mol_raw.clinicaltrials
                 WHERE processed_to_bronze = FALSE
                   AND response_status = 200
                 ORDER BY request_timestamp ASC
@@ -81,7 +81,7 @@ class BronzeIngestionService:
 
                     # Mark as processed
                     await conn.execute("""
-                        UPDATE raw.clinicaltrials
+                        UPDATE mol_raw.clinicaltrials
                         SET processed_to_bronze = TRUE, processed_at = NOW()
                         WHERE id = $1
                     """, raw_record['id'])
@@ -122,7 +122,7 @@ class BronzeIngestionService:
         phases = design_module.get('phases', [])
 
         await conn.execute("""
-            INSERT INTO bronze.clinicaltrials (
+            INSERT INTO mol_bronze.clinicaltrials (
                 raw_id, nct_id, org_study_id, brief_title, official_title,
                 overall_status, start_date, completion_date,
                 lead_sponsor_name, lead_sponsor_class, collaborators,
@@ -144,9 +144,9 @@ class BronzeIngestionService:
                 enrollment_count = EXCLUDED.enrollment_count,
                 conditions = EXCLUDED.conditions,
                 interventions = EXCLUDED.interventions,
-                primary_outcomes = COALESCE(EXCLUDED.primary_outcomes, bronze.clinicaltrials.primary_outcomes),
-                secondary_outcomes = COALESCE(EXCLUDED.secondary_outcomes, bronze.clinicaltrials.secondary_outcomes),
-                locations = COALESCE(EXCLUDED.locations, bronze.clinicaltrials.locations),
+                primary_outcomes = COALESCE(EXCLUDED.primary_outcomes, mol_bronze.clinicaltrials.primary_outcomes),
+                secondary_outcomes = COALESCE(EXCLUDED.secondary_outcomes, mol_bronze.clinicaltrials.secondary_outcomes),
+                locations = COALESCE(EXCLUDED.locations, mol_bronze.clinicaltrials.locations),
                 processed_to_silver = FALSE,
                 ingested_at = NOW()
         """,
@@ -186,7 +186,7 @@ class BronzeIngestionService:
         async with self.db_pool.acquire() as conn:
             raw_records = await conn.fetch("""
                 SELECT id, response_body, request_timestamp
-                FROM raw.openfda_faers
+                FROM mol_raw.openfda_faers
                 WHERE processed_to_bronze = FALSE
                   AND response_status = 200
                 ORDER BY request_timestamp ASC
@@ -206,7 +206,7 @@ class BronzeIngestionService:
                         result.records_inserted += 1
 
                     await conn.execute("""
-                        UPDATE raw.openfda_faers
+                        UPDATE mol_raw.openfda_faers
                         SET processed_to_bronze = TRUE, processed_at = NOW()
                         WHERE id = $1
                     """, raw_record['id'])
@@ -240,7 +240,7 @@ class BronzeIngestionService:
         serious_other = 1 if event.get('seriousnessother') == '1' else 0
 
         await conn.execute("""
-            INSERT INTO bronze.openfda_faers (
+            INSERT INTO mol_bronze.openfda_faers (
                 raw_id, safety_report_id, safety_report_version, receive_date, receipt_date,
                 serious, serious_death, serious_hospitalization, serious_life_threatening,
                 serious_disabling, serious_other,
@@ -286,7 +286,7 @@ class BronzeIngestionService:
         async with self.db_pool.acquire() as conn:
             raw_records = await conn.fetch("""
                 SELECT id, response_body, request_timestamp
-                FROM raw.openfda_labels
+                FROM mol_raw.openfda_labels
                 WHERE processed_to_bronze = FALSE
                   AND response_status = 200
                 ORDER BY request_timestamp ASC
@@ -306,7 +306,7 @@ class BronzeIngestionService:
                         result.records_inserted += 1
 
                     await conn.execute("""
-                        UPDATE raw.openfda_labels
+                        UPDATE mol_raw.openfda_labels
                         SET processed_to_bronze = TRUE, processed_at = NOW()
                         WHERE id = $1
                     """, raw_record['id'])
@@ -465,7 +465,7 @@ class BronzeIngestionService:
                 logger.info(f"Extracted drug names from alternative fields for set_id {set_id}: generic={generic_name}, brand={brand_name}")
 
         await conn.execute("""
-            INSERT INTO bronze.openfda_labels (
+            INSERT INTO mol_bronze.openfda_labels (
                 raw_id, set_id, spl_id, version,
                 brand_name, generic_name, manufacturer_name, application_number, product_type,
                 route, substance_name,
@@ -480,26 +480,31 @@ class BronzeIngestionService:
                 effective_time, openfda
             ) VALUES (
                 $1, $2, $3, $4, $5, $6, $7, $8, $9, $10,
-                $11, $12, $13, $14, $15, $16, $17, $18, $19,
-                $20, $21, $22, $23, $24, $25, $26, $27, $28,
-                $29, $30, $31, $32, $33, $34, $35, $36, $37,
-                $38, $39
+                $11,
+                $12::jsonb, $13::jsonb, $14::jsonb,
+                $15::jsonb, $16::jsonb, $17::jsonb, $18::jsonb, $19::jsonb,
+                $20::jsonb, $21::jsonb, $22::jsonb, $23::jsonb,
+                $24::jsonb, $25::jsonb, $26::jsonb, $27::jsonb, $28::jsonb,
+                $29::jsonb, $30::jsonb, $31::jsonb,
+                $32::jsonb, $33::jsonb,
+                $34::jsonb, $35::jsonb, $36::jsonb, $37::jsonb,
+                $38, $39::jsonb
             )
             ON CONFLICT (set_id, version) DO UPDATE SET
-                brand_name = COALESCE(EXCLUDED.brand_name, bronze.openfda_labels.brand_name),
-                generic_name = COALESCE(EXCLUDED.generic_name, bronze.openfda_labels.generic_name),
-                indications_and_usage = COALESCE(EXCLUDED.indications_and_usage, bronze.openfda_labels.indications_and_usage),
-                dosage_and_administration = COALESCE(EXCLUDED.dosage_and_administration, bronze.openfda_labels.dosage_and_administration),
-                boxed_warning = COALESCE(EXCLUDED.boxed_warning, bronze.openfda_labels.boxed_warning),
-                adverse_reactions = COALESCE(EXCLUDED.adverse_reactions, bronze.openfda_labels.adverse_reactions),
-                mechanism_of_action = COALESCE(EXCLUDED.mechanism_of_action, bronze.openfda_labels.mechanism_of_action),
-                clinical_studies = COALESCE(EXCLUDED.clinical_studies, bronze.openfda_labels.clinical_studies),
-                how_supplied = COALESCE(EXCLUDED.how_supplied, bronze.openfda_labels.how_supplied),
-                overdosage = COALESCE(EXCLUDED.overdosage, bronze.openfda_labels.overdosage),
-                pregnancy = COALESCE(EXCLUDED.pregnancy, bronze.openfda_labels.pregnancy),
-                pediatric_use = COALESCE(EXCLUDED.pediatric_use, bronze.openfda_labels.pediatric_use),
-                geriatric_use = COALESCE(EXCLUDED.geriatric_use, bronze.openfda_labels.geriatric_use),
-                use_in_specific_populations = COALESCE(EXCLUDED.use_in_specific_populations, bronze.openfda_labels.use_in_specific_populations),
+                brand_name = COALESCE(EXCLUDED.brand_name, mol_bronze.openfda_labels.brand_name),
+                generic_name = COALESCE(EXCLUDED.generic_name, mol_bronze.openfda_labels.generic_name),
+                indications_and_usage = COALESCE(EXCLUDED.indications_and_usage, mol_bronze.openfda_labels.indications_and_usage),
+                dosage_and_administration = COALESCE(EXCLUDED.dosage_and_administration, mol_bronze.openfda_labels.dosage_and_administration),
+                boxed_warning = COALESCE(EXCLUDED.boxed_warning, mol_bronze.openfda_labels.boxed_warning),
+                adverse_reactions = COALESCE(EXCLUDED.adverse_reactions, mol_bronze.openfda_labels.adverse_reactions),
+                mechanism_of_action = COALESCE(EXCLUDED.mechanism_of_action, mol_bronze.openfda_labels.mechanism_of_action),
+                clinical_studies = COALESCE(EXCLUDED.clinical_studies, mol_bronze.openfda_labels.clinical_studies),
+                how_supplied = COALESCE(EXCLUDED.how_supplied, mol_bronze.openfda_labels.how_supplied),
+                overdosage = COALESCE(EXCLUDED.overdosage, mol_bronze.openfda_labels.overdosage),
+                pregnancy = COALESCE(EXCLUDED.pregnancy, mol_bronze.openfda_labels.pregnancy),
+                pediatric_use = COALESCE(EXCLUDED.pediatric_use, mol_bronze.openfda_labels.pediatric_use),
+                geriatric_use = COALESCE(EXCLUDED.geriatric_use, mol_bronze.openfda_labels.geriatric_use),
+                use_in_specific_populations = COALESCE(EXCLUDED.use_in_specific_populations, mol_bronze.openfda_labels.use_in_specific_populations),
                 processed_to_silver = FALSE,
                 ingested_at = NOW()
         """,
@@ -512,30 +517,30 @@ class BronzeIngestionService:
             self._first_or_none(openfda.get('manufacturer_name')),
             self._first_or_none(openfda.get('application_number')),
             self._first_or_none(openfda.get('product_type')),
-            json.dumps(openfda.get('route', [])) if openfda.get('route') else None,
-            json.dumps(openfda.get('substance_name', [])) if openfda.get('substance_name') else None,
-            self._first_or_join(label.get('indications_and_usage')),
-            self._first_or_join(label.get('dosage_and_administration')),
-            self._first_or_join(label.get('contraindications')),
-            self._first_or_join(label.get('warnings')),
-            self._first_or_join(label.get('warnings_and_cautions')),
-            self._first_or_join(label.get('boxed_warning')),
-            self._first_or_join(label.get('adverse_reactions')),
-            self._first_or_join(label.get('drug_interactions')),
-            self._first_or_join(label.get('mechanism_of_action')),
-            self._first_or_join(label.get('clinical_pharmacology')),
-            self._first_or_join(label.get('pharmacodynamics')),
-            self._first_or_join(label.get('pharmacokinetics')),
-            self._first_or_join(label.get('clinical_studies')),
-            self._first_or_join(label.get('overdosage')),
-            self._first_or_join(label.get('description')),
-            self._first_or_join(label.get('how_supplied')),
-            self._first_or_join(label.get('storage_and_handling')),
-            self._first_or_join(label.get('pregnancy')),
-            self._first_or_join(label.get('pediatric_use')),
-            self._first_or_join(label.get('geriatric_use')),
-            self._first_or_join(label.get('use_in_specific_populations')),
-            self._first_or_join(label.get('dosage_forms_and_strengths')),
+            openfda.get('route') if openfda.get('route') else None,  # ARRAY column — pass list, not json string
+            openfda.get('substance_name') if openfda.get('substance_name') else None,  # ARRAY column
+            self._to_jsonb(label.get('indications_and_usage')),
+            self._to_jsonb(label.get('dosage_and_administration')),
+            self._to_jsonb(label.get('contraindications')),
+            self._to_jsonb(label.get('warnings')),
+            self._to_jsonb(label.get('warnings_and_cautions')),
+            self._to_jsonb(label.get('boxed_warning')),
+            self._to_jsonb(label.get('adverse_reactions')),
+            self._to_jsonb(label.get('drug_interactions')),
+            self._to_jsonb(label.get('mechanism_of_action')),
+            self._to_jsonb(label.get('clinical_pharmacology')),
+            self._to_jsonb(label.get('pharmacodynamics')),
+            self._to_jsonb(label.get('pharmacokinetics')),
+            self._to_jsonb(label.get('clinical_studies')),
+            self._to_jsonb(label.get('overdosage')),
+            self._to_jsonb(label.get('description')),
+            self._to_jsonb(label.get('how_supplied')),
+            self._to_jsonb(label.get('storage_and_handling')),
+            self._to_jsonb(label.get('pregnancy')),
+            self._to_jsonb(label.get('pediatric_use')),
+            self._to_jsonb(label.get('geriatric_use')),
+            self._to_jsonb(label.get('use_in_specific_populations')),
+            self._to_jsonb(label.get('dosage_forms_and_strengths')),
             json.dumps(openfda.get('rxcui', [])) if openfda.get('rxcui') else None,
             json.dumps(openfda.get('unii', [])) if openfda.get('unii') else None,
             json.dumps(openfda.get('pharm_class_epc', [])) if openfda.get('pharm_class_epc') else None,
@@ -551,7 +556,7 @@ class BronzeIngestionService:
         async with self.db_pool.acquire() as conn:
             raw_records = await conn.fetch("""
                 SELECT id, response_body, request_timestamp, api_endpoint
-                FROM raw.chembl
+                FROM mol_raw.chembl
                 WHERE processed_to_bronze = FALSE
                   AND response_status = 200
                 ORDER BY request_timestamp ASC
@@ -580,7 +585,7 @@ class BronzeIngestionService:
                             result.records_inserted += 1
 
                     await conn.execute("""
-                        UPDATE raw.chembl
+                        UPDATE mol_raw.chembl
                         SET processed_to_bronze = TRUE, processed_at = NOW()
                         WHERE id = $1
                     """, raw_record['id'])
@@ -603,7 +608,7 @@ class BronzeIngestionService:
 
         # Insert into existing bronze.chembl table with correct column names
         await conn.execute("""
-            INSERT INTO bronze.chembl (
+            INSERT INTO mol_bronze.chembl (
                 molecule_chembl_id, pref_name, molecule_type, max_phase,
                 molecular_formula, molecular_weight, canonical_smiles,
                 standard_inchi, standard_inchi_key,
@@ -614,8 +619,8 @@ class BronzeIngestionService:
                 $11, $12, $13, $14, $15, $16, $17
             )
             ON CONFLICT (molecule_chembl_id) DO UPDATE SET
-                pref_name = COALESCE(EXCLUDED.pref_name, bronze.chembl.pref_name),
-                max_phase = COALESCE(EXCLUDED.max_phase, bronze.chembl.max_phase),
+                pref_name = COALESCE(EXCLUDED.pref_name, mol_bronze.chembl.pref_name),
+                max_phase = COALESCE(EXCLUDED.max_phase, mol_bronze.chembl.max_phase),
                 processed_to_silver = FALSE,
                 ingested_at = NOW()
         """,
@@ -646,7 +651,7 @@ class BronzeIngestionService:
             return
 
         await conn.execute("""
-            INSERT INTO bronze.chembl_activities (
+            INSERT INTO mol_bronze.chembl_activities (
                 raw_id, activity_id, molecule_chembl_id,
                 target_chembl_id, target_name, target_organism,
                 activity_type, activity_value, activity_units,
@@ -657,8 +662,8 @@ class BronzeIngestionService:
                 $10, $11, $12, $13, $14, $15
             )
             ON CONFLICT (molecule_chembl_id, activity_id) DO UPDATE SET
-                activity_value = COALESCE(EXCLUDED.activity_value, bronze.chembl_activities.activity_value),
-                pchembl_value = COALESCE(EXCLUDED.pchembl_value, bronze.chembl_activities.pchembl_value),
+                activity_value = COALESCE(EXCLUDED.activity_value, mol_bronze.chembl_activities.activity_value),
+                pchembl_value = COALESCE(EXCLUDED.pchembl_value, mol_bronze.chembl_activities.pchembl_value),
                 processed_to_silver = FALSE,
                 ingested_at = NOW()
         """,
@@ -686,7 +691,7 @@ class BronzeIngestionService:
         async with self.db_pool.acquire() as conn:
             raw_records = await conn.fetch("""
                 SELECT id, response_body, request_timestamp
-                FROM raw.bindingdb
+                FROM mol_raw.bindingdb
                 WHERE processed_to_bronze = FALSE
                   AND response_status = 200
                 ORDER BY request_timestamp ASC
@@ -710,7 +715,7 @@ class BronzeIngestionService:
                         result.records_inserted += 1
 
                     await conn.execute("""
-                        UPDATE raw.bindingdb
+                        UPDATE mol_raw.bindingdb
                         SET processed_to_bronze = TRUE, processed_at = NOW()
                         WHERE id = $1
                     """, raw_record['id'])
@@ -729,7 +734,7 @@ class BronzeIngestionService:
             return
 
         await conn.execute("""
-            INSERT INTO bronze.bindingdb (
+            INSERT INTO mol_bronze.bindingdb (
                 raw_id, bindingdb_id, ligand_name, smiles, inchi, inchi_key,
                 target_name, target_source, target_source_id, target_organism,
                 ki_nm, kd_nm, ic50_nm, ec50_nm,
@@ -740,9 +745,9 @@ class BronzeIngestionService:
                 $11, $12, $13, $14, $15, $16, $17, $18, $19, $20
             )
             ON CONFLICT (bindingdb_id) DO UPDATE SET
-                ki_nm = COALESCE(EXCLUDED.ki_nm, bronze.bindingdb.ki_nm),
-                kd_nm = COALESCE(EXCLUDED.kd_nm, bronze.bindingdb.kd_nm),
-                ic50_nm = COALESCE(EXCLUDED.ic50_nm, bronze.bindingdb.ic50_nm),
+                ki_nm = COALESCE(EXCLUDED.ki_nm, mol_bronze.bindingdb.ki_nm),
+                kd_nm = COALESCE(EXCLUDED.kd_nm, mol_bronze.bindingdb.kd_nm),
+                ic50_nm = COALESCE(EXCLUDED.ic50_nm, mol_bronze.bindingdb.ic50_nm),
                 processed_to_silver = FALSE,
                 ingested_at = NOW()
         """,
@@ -775,7 +780,7 @@ class BronzeIngestionService:
         async with self.db_pool.acquire() as conn:
             raw_records = await conn.fetch("""
                 SELECT id, response_body, request_timestamp
-                FROM raw.ema
+                FROM mol_raw.ema
                 WHERE processed_to_bronze = FALSE
                   AND response_status = 200
                 ORDER BY request_timestamp ASC
@@ -798,7 +803,7 @@ class BronzeIngestionService:
                         result.records_inserted += 1
 
                     await conn.execute("""
-                        UPDATE raw.ema
+                        UPDATE mol_raw.ema
                         SET processed_to_bronze = TRUE, processed_at = NOW()
                         WHERE id = $1
                     """, raw_record['id'])
@@ -820,7 +825,7 @@ class BronzeIngestionService:
         revision_date = self._parse_date(medicine.get('revisionDate') or medicine.get('revision_date'))
 
         await conn.execute("""
-            INSERT INTO bronze.ema (
+            INSERT INTO mol_bronze.ema (
                 raw_id, product_number, product_name, active_substance, inn, atc_code,
                 marketing_authorization_holder, authorization_status, authorization_date, revision_date,
                 medicine_type, therapeutic_area, pharmacotherapeutic_group,
@@ -858,7 +863,7 @@ class BronzeIngestionService:
         async with self.db_pool.acquire() as conn:
             raw_records = await conn.fetch("""
                 SELECT id, response_body, request_timestamp, request_id
-                FROM raw.orange_book
+                FROM mol_raw.orange_book
                 WHERE processed_to_bronze = FALSE
                   AND response_status = 200
                 ORDER BY request_timestamp ASC
@@ -883,7 +888,7 @@ class BronzeIngestionService:
                         result.records_inserted += 1
 
                     await conn.execute("""
-                        UPDATE raw.orange_book
+                        UPDATE mol_raw.orange_book
                         SET processed_to_bronze = TRUE, processed_at = NOW()
                         WHERE id = $1
                     """, raw_record['id'])
@@ -909,7 +914,7 @@ class BronzeIngestionService:
         exclusivity_date = self._parse_date(product.get('Exclusivity_Date') or product.get('exclusivity_date'))
 
         await conn.execute("""
-            INSERT INTO bronze.orange_book (
+            INSERT INTO mol_bronze.orange_book (
                 raw_id, application_number, product_number, ingredient, trade_name, applicant,
                 strength, dosage_form, route, approval_date, te_code, rld,
                 patent_number, patent_expiration, drug_substance_patent, drug_product_patent, patent_use_code,
@@ -951,7 +956,7 @@ class BronzeIngestionService:
         async with self.db_pool.acquire() as conn:
             raw_records = await conn.fetch("""
                 SELECT id, response_body, request_timestamp
-                FROM raw.uspto_patents
+                FROM mol_raw.uspto_patents
                 WHERE processed_to_bronze = FALSE
                   AND response_status = 200
                 ORDER BY request_timestamp ASC
@@ -971,7 +976,7 @@ class BronzeIngestionService:
                         result.records_inserted += 1
 
                     await conn.execute("""
-                        UPDATE raw.uspto_patents
+                        UPDATE mol_raw.uspto_patents
                         SET processed_to_bronze = TRUE, processed_at = NOW()
                         WHERE id = $1
                     """, raw_record['id'])
@@ -1016,7 +1021,7 @@ class BronzeIngestionService:
             ]
 
         await conn.execute("""
-            INSERT INTO bronze.uspto_patents (
+            INSERT INTO mol_bronze.uspto_patents (
                 raw_id, patent_number, patent_title, patent_abstract, patent_date,
                 patent_type, patent_kind, cpc_codes,
                 assignee_organization, assignee_type,
@@ -1051,7 +1056,7 @@ class BronzeIngestionService:
         async with self.db_pool.acquire() as conn:
             raw_records = await conn.fetch("""
                 SELECT id, response_body, request_timestamp
-                FROM raw.pubchem
+                FROM mol_raw.pubchem
                 WHERE processed_to_bronze = FALSE
                   AND response_status = 200
                 ORDER BY request_timestamp ASC
@@ -1079,7 +1084,7 @@ class BronzeIngestionService:
                             result.records_inserted += 1
 
                     await conn.execute("""
-                        UPDATE raw.pubchem
+                        UPDATE mol_raw.pubchem
                         SET processed_to_bronze = TRUE, processed_at = NOW()
                         WHERE id = $1
                     """, raw_record['id'])
@@ -1109,7 +1114,7 @@ class BronzeIngestionService:
                 props[f"{label}_{name}".strip('_')] = val
 
         await conn.execute("""
-            INSERT INTO bronze.pubchem (
+            INSERT INTO mol_bronze.pubchem (
                 raw_id, cid, iupac_name, title,
                 canonical_smiles, isomeric_smiles, inchi, inchikey,
                 molecular_formula, molecular_weight, exact_mass,
@@ -1120,8 +1125,8 @@ class BronzeIngestionService:
                 $11, $12, $13, $14, $15, $16, $17, $18, $19
             )
             ON CONFLICT (cid) DO UPDATE SET
-                canonical_smiles = COALESCE(EXCLUDED.canonical_smiles, bronze.pubchem.canonical_smiles),
-                inchikey = COALESCE(EXCLUDED.inchikey, bronze.pubchem.inchikey),
+                canonical_smiles = COALESCE(EXCLUDED.canonical_smiles, mol_bronze.pubchem.canonical_smiles),
+                inchikey = COALESCE(EXCLUDED.inchikey, mol_bronze.pubchem.inchikey),
                 processed_to_silver = FALSE,
                 ingested_at = NOW()
         """,
@@ -1153,7 +1158,7 @@ class BronzeIngestionService:
             return
 
         await conn.execute("""
-            INSERT INTO bronze.pubchem (
+            INSERT INTO mol_bronze.pubchem (
                 raw_id, cid, canonical_smiles, isomeric_smiles,
                 inchi, inchikey, molecular_formula, molecular_weight,
                 xlogp, hbond_acceptor, hbond_donor, tpsa,
@@ -1162,7 +1167,7 @@ class BronzeIngestionService:
                 $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15
             )
             ON CONFLICT (cid) DO UPDATE SET
-                canonical_smiles = COALESCE(EXCLUDED.canonical_smiles, bronze.pubchem.canonical_smiles),
+                canonical_smiles = COALESCE(EXCLUDED.canonical_smiles, mol_bronze.pubchem.canonical_smiles),
                 processed_to_silver = FALSE,
                 ingested_at = NOW()
         """,
@@ -1190,7 +1195,7 @@ class BronzeIngestionService:
         async with self.db_pool.acquire() as conn:
             raw_records = await conn.fetch("""
                 SELECT id, response_body, request_timestamp, request_id
-                FROM raw.sider
+                FROM mol_raw.sider
                 WHERE processed_to_bronze = FALSE
                   AND response_status = 200
                 ORDER BY request_timestamp ASC
@@ -1214,7 +1219,7 @@ class BronzeIngestionService:
                         result.records_inserted += 1
 
                     await conn.execute("""
-                        UPDATE raw.sider
+                        UPDATE mol_raw.sider
                         SET processed_to_bronze = TRUE, processed_at = NOW()
                         WHERE id = $1
                     """, raw_record['id'])
@@ -1233,7 +1238,7 @@ class BronzeIngestionService:
             return
 
         await conn.execute("""
-            INSERT INTO bronze.sider (
+            INSERT INTO mol_bronze.sider (
                 raw_id, stitch_id, drug_name,
                 meddra_concept_type, meddra_umls_id, meddra_concept_name,
                 side_effect_name, frequency, frequency_lower, frequency_upper
@@ -1258,7 +1263,7 @@ class BronzeIngestionService:
         async with self.db_pool.acquire() as conn:
             raw_records = await conn.fetch("""
                 SELECT id, response_body, request_timestamp
-                FROM raw.who_inn
+                FROM mol_raw.who_inn
                 WHERE processed_to_bronze = FALSE
                   AND response_status = 200
                 ORDER BY request_timestamp ASC
@@ -1286,7 +1291,7 @@ class BronzeIngestionService:
                             result.records_inserted += 1
 
                     await conn.execute("""
-                        UPDATE raw.who_inn
+                        UPDATE mol_raw.who_inn
                         SET processed_to_bronze = TRUE, processed_at = NOW()
                         WHERE id = $1
                     """, raw_record['id'])
@@ -1309,13 +1314,13 @@ class BronzeIngestionService:
             research_codes = [research_codes]
 
         await conn.execute("""
-            INSERT INTO bronze.who_inn (
+            INSERT INTO mol_bronze.who_inn (
                 raw_id, inn_name, inn_latin, inn_list_number, inn_year,
                 cas_number, molecular_formula, smiles, inchi_key,
                 inn_stem, stem_definition, research_codes, synonyms, status
             ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
             ON CONFLICT (inn_name) DO UPDATE SET
-                research_codes = COALESCE(EXCLUDED.research_codes, bronze.who_inn.research_codes),
+                research_codes = COALESCE(EXCLUDED.research_codes, mol_bronze.who_inn.research_codes),
                 processed_to_silver = FALSE,
                 ingested_at = NOW()
         """,
@@ -1359,12 +1364,12 @@ class BronzeIngestionService:
 
         if inn_name:
             await conn.execute("""
-                INSERT INTO bronze.who_inn (
+                INSERT INTO mol_bronze.who_inn (
                     raw_id, inn_name, research_codes, synonyms
                 ) VALUES ($1, $2, $3, $4)
                 ON CONFLICT (inn_name) DO UPDATE SET
-                    research_codes = COALESCE(EXCLUDED.research_codes, bronze.who_inn.research_codes),
-                    synonyms = COALESCE(EXCLUDED.synonyms, bronze.who_inn.synonyms),
+                    research_codes = COALESCE(EXCLUDED.research_codes, mol_bronze.who_inn.research_codes),
+                    synonyms = COALESCE(EXCLUDED.synonyms, mol_bronze.who_inn.synonyms),
                     processed_to_silver = FALSE,
                     ingested_at = NOW()
             """,
@@ -1381,7 +1386,7 @@ class BronzeIngestionService:
         async with self.db_pool.acquire() as conn:
             raw_records = await conn.fetch("""
                 SELECT id, response_body, request_timestamp
-                FROM raw.uniprot
+                FROM mol_raw.uniprot
                 WHERE processed_to_bronze = FALSE
                   AND response_status = 200
                 ORDER BY request_timestamp ASC
@@ -1406,7 +1411,7 @@ class BronzeIngestionService:
                         result.records_inserted += 1
 
                     await conn.execute("""
-                        UPDATE raw.uniprot
+                        UPDATE mol_raw.uniprot
                         SET processed_to_bronze = TRUE, processed_at = NOW()
                         WHERE id = $1
                     """, raw_record['id'])
@@ -1453,7 +1458,7 @@ class BronzeIngestionService:
         sequence = protein.get('sequence', {})
 
         await conn.execute("""
-            INSERT INTO bronze.uniprot (
+            INSERT INTO mol_bronze.uniprot (
                 raw_id, accession, entry_name, protein_name,
                 gene_names, organism, organism_id,
                 sequence, sequence_length, sequence_mass,
@@ -1463,8 +1468,8 @@ class BronzeIngestionService:
                 $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15
             )
             ON CONFLICT (accession) DO UPDATE SET
-                protein_name = COALESCE(EXCLUDED.protein_name, bronze.uniprot.protein_name),
-                gene_names = COALESCE(EXCLUDED.gene_names, bronze.uniprot.gene_names),
+                protein_name = COALESCE(EXCLUDED.protein_name, mol_bronze.uniprot.protein_name),
+                gene_names = COALESCE(EXCLUDED.gene_names, mol_bronze.uniprot.gene_names),
                 processed_to_silver = FALSE,
                 ingested_at = NOW()
         """,
@@ -1492,7 +1497,7 @@ class BronzeIngestionService:
         async with self.db_pool.acquire() as conn:
             raw_records = await conn.fetch("""
                 SELECT id, response_body, request_timestamp
-                FROM raw.kegg_drug
+                FROM mol_raw.kegg_drug
                 WHERE processed_to_bronze = FALSE
                   AND response_status = 200
                 ORDER BY request_timestamp ASC
@@ -1513,7 +1518,7 @@ class BronzeIngestionService:
                         result.records_inserted += 1
 
                     await conn.execute("""
-                        UPDATE raw.kegg_drug
+                        UPDATE mol_raw.kegg_drug
                         SET processed_to_bronze = TRUE, processed_at = NOW()
                         WHERE id = $1
                     """, raw_record['id'])
@@ -1532,7 +1537,7 @@ class BronzeIngestionService:
             return
 
         await conn.execute("""
-            INSERT INTO bronze.kegg_drug (
+            INSERT INTO mol_bronze.kegg_drug (
                 raw_id, kegg_id, name, formula, exact_mass,
                 smiles, inchi, inchi_key,
                 drug_class, atc_codes, therapeutic_target,
@@ -1544,7 +1549,7 @@ class BronzeIngestionService:
                 $11, $12, $13, $14, $15, $16, $17, $18, $19, $20
             )
             ON CONFLICT (kegg_id) DO UPDATE SET
-                name = COALESCE(EXCLUDED.name, bronze.kegg_drug.name),
+                name = COALESCE(EXCLUDED.name, mol_bronze.kegg_drug.name),
                 processed_to_silver = FALSE,
                 ingested_at = NOW()
         """,
@@ -1577,7 +1582,7 @@ class BronzeIngestionService:
         async with self.db_pool.acquire() as conn:
             raw_records = await conn.fetch("""
                 SELECT id, response_body, request_timestamp, api_endpoint
-                FROM raw.rxnorm
+                FROM mol_raw.rxnorm
                 WHERE processed_to_bronze = FALSE
                   AND response_status = 200
                 ORDER BY request_timestamp ASC
@@ -1608,7 +1613,7 @@ class BronzeIngestionService:
                                 result.records_inserted += 1
 
                     await conn.execute("""
-                        UPDATE raw.rxnorm
+                        UPDATE mol_raw.rxnorm
                         SET processed_to_bronze = TRUE, processed_at = NOW()
                         WHERE id = $1
                     """, raw_record['id'])
@@ -1628,7 +1633,7 @@ class BronzeIngestionService:
             return
 
         await conn.execute("""
-            INSERT INTO bronze.rxnorm_concepts (
+            INSERT INTO mol_bronze.rxnorm_concepts (
                 raw_id, rxcui, name, tty
             ) VALUES ($1, $2, $3, $4)
             ON CONFLICT (rxcui) DO UPDATE SET
@@ -1649,12 +1654,12 @@ class BronzeIngestionService:
             return
 
         await conn.execute("""
-            INSERT INTO bronze.rxnorm_concepts (
+            INSERT INTO mol_bronze.rxnorm_concepts (
                 raw_id, rxcui, name, tty, synonym, suppress
             ) VALUES ($1, $2, $3, $4, $5, $6)
             ON CONFLICT (rxcui) DO UPDATE SET
-                name = COALESCE(EXCLUDED.name, bronze.rxnorm_concepts.name),
-                tty = COALESCE(EXCLUDED.tty, bronze.rxnorm_concepts.tty),
+                name = COALESCE(EXCLUDED.name, mol_bronze.rxnorm_concepts.name),
+                tty = COALESCE(EXCLUDED.tty, mol_bronze.rxnorm_concepts.tty),
                 processed_to_silver = FALSE,
                 ingested_at = NOW()
         """,
@@ -1673,11 +1678,11 @@ class BronzeIngestionService:
             return
 
         await conn.execute("""
-            INSERT INTO bronze.rxnorm_concepts (
+            INSERT INTO mol_bronze.rxnorm_concepts (
                 raw_id, rxcui, name, tty, synonym
             ) VALUES ($1, $2, $3, $4, $5)
             ON CONFLICT (rxcui) DO UPDATE SET
-                name = COALESCE(EXCLUDED.name, bronze.rxnorm_concepts.name),
+                name = COALESCE(EXCLUDED.name, mol_bronze.rxnorm_concepts.name),
                 processed_to_silver = FALSE,
                 ingested_at = NOW()
         """,
@@ -1695,7 +1700,7 @@ class BronzeIngestionService:
         async with self.db_pool.acquire() as conn:
             raw_records = await conn.fetch("""
                 SELECT id, response_body, request_timestamp, request_id
-                FROM raw.tdc_admet
+                FROM mol_raw.tdc_admet
                 WHERE processed_to_bronze = FALSE
                   AND response_status = 200
                 ORDER BY request_timestamp ASC
@@ -1718,7 +1723,7 @@ class BronzeIngestionService:
                         result.records_inserted += 1
 
                     await conn.execute("""
-                        UPDATE raw.tdc_admet
+                        UPDATE mol_raw.tdc_admet
                         SET processed_to_bronze = TRUE, processed_at = NOW()
                         WHERE id = $1
                     """, raw_record['id'])
@@ -1750,7 +1755,7 @@ class BronzeIngestionService:
         category = next((v for k, v in category_map.items() if k in dataset_name), 'other')
 
         await conn.execute("""
-            INSERT INTO bronze.tdc_admet (
+            INSERT INTO mol_bronze.tdc_admet (
                 raw_id, compound_id, smiles, inchi_key,
                 dataset_name, dataset_type, property_name,
                 property_value, property_category
@@ -1774,7 +1779,7 @@ class BronzeIngestionService:
         async with self.db_pool.acquire() as conn:
             raw_records = await conn.fetch("""
                 SELECT id, response_body, request_timestamp, api_endpoint
-                FROM raw.pharmgkb
+                FROM mol_raw.pharmgkb
                 WHERE processed_to_bronze = FALSE
                   AND response_status = 200
                 ORDER BY request_timestamp ASC
@@ -1798,7 +1803,7 @@ class BronzeIngestionService:
                         result.records_inserted += 1
 
                     await conn.execute("""
-                        UPDATE raw.pharmgkb
+                        UPDATE mol_raw.pharmgkb
                         SET processed_to_bronze = TRUE, processed_at = NOW()
                         WHERE id = $1
                     """, raw_record['id'])
@@ -1820,7 +1825,7 @@ class BronzeIngestionService:
         xrefs = item.get('crossReferences', {})
 
         await conn.execute("""
-            INSERT INTO bronze.pharmgkb (
+            INSERT INTO mol_bronze.pharmgkb (
                 raw_id, pharmgkb_id, name, entity_type,
                 drugbank_id, chembl_id, rxnorm_id, pubchem_cid, cas_number,
                 drug_type, smiles, inchi_key,
@@ -1830,8 +1835,8 @@ class BronzeIngestionService:
                 $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17
             )
             ON CONFLICT (pharmgkb_id) DO UPDATE SET
-                name = COALESCE(EXCLUDED.name, bronze.pharmgkb.name),
-                clinical_annotations = COALESCE(EXCLUDED.clinical_annotations, bronze.pharmgkb.clinical_annotations),
+                name = COALESCE(EXCLUDED.name, mol_bronze.pharmgkb.name),
+                clinical_annotations = COALESCE(EXCLUDED.clinical_annotations, mol_bronze.pharmgkb.clinical_annotations),
                 processed_to_silver = FALSE,
                 ingested_at = NOW()
         """,
@@ -1861,7 +1866,7 @@ class BronzeIngestionService:
         async with self.db_pool.acquire() as conn:
             raw_records = await conn.fetch("""
                 SELECT id, response_body, request_timestamp, request_params
-                FROM raw.websearch
+                FROM mol_raw.websearch
                 WHERE processed_to_bronze = FALSE
                   AND response_status = 200
                 ORDER BY request_timestamp ASC
@@ -1889,7 +1894,7 @@ class BronzeIngestionService:
                         result.records_inserted += 1
 
                     await conn.execute("""
-                        UPDATE raw.websearch
+                        UPDATE mol_raw.websearch
                         SET processed_to_bronze = TRUE, processed_at = NOW()
                         WHERE id = $1
                     """, raw_record['id'])
@@ -1914,7 +1919,7 @@ class BronzeIngestionService:
             pub_date = self._parse_date(date_str[:10])
 
         await conn.execute("""
-            INSERT INTO bronze.websearch_results (
+            INSERT INTO mol_bronze.websearch_results (
                 raw_id, search_query, search_engine, search_type,
                 result_url, result_title, result_snippet, result_rank, result_domain,
                 publication_date, authors, source_name, relevance_score
@@ -1999,13 +2004,20 @@ class BronzeIngestionService:
             return None
 
     @staticmethod
-    def _parse_label_date(date_str: Optional[str]) -> Optional[datetime]:
-        """Parse FDA label date format (YYYYMMDD)."""
+    def _parse_label_date(date_str):
+        """Parse FDA label date format (YYYYMMDD or YYYY-MM-DD) to date object for asyncpg."""
+        from datetime import date as date_cls
         if not date_str:
             return None
+        s = str(date_str).strip()
         try:
-            return datetime.strptime(date_str[:8], '%Y%m%d')
-        except ValueError:
+            if len(s) >= 8 and s[:8].isdigit():
+                return date_cls(int(s[:4]), int(s[4:6]), int(s[6:8]))
+            if '-' in s:
+                parts = s.split('-')
+                return date_cls(int(parts[0]), int(parts[1]), int(parts[2][:2]))
+            return None
+        except (ValueError, IndexError):
             return None
 
     @staticmethod
@@ -2045,6 +2057,25 @@ class BronzeIngestionService:
         if len(lst) == 1:
             return lst[0]
         return sep.join(lst)
+
+    @staticmethod
+    def _to_jsonb(val) -> Optional[str]:
+        """Convert a value to JSON string for asyncpg JSONB columns.
+
+        Handles: lists of strings (openFDA text sections), dicts, strings, None.
+        asyncpg requires JSONB values as JSON-encoded strings.
+        """
+        if val is None:
+            return None
+        if isinstance(val, list):
+            # openFDA text sections are arrays of strings — join them
+            text = '\n\n'.join(str(v) for v in val if v)
+            return json.dumps(text) if text else None
+        if isinstance(val, dict):
+            return json.dumps(val)
+        if isinstance(val, str):
+            return json.dumps(val)
+        return json.dumps(str(val))
 
     @staticmethod
     def _safe_float(val) -> Optional[float]:

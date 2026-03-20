@@ -155,7 +155,7 @@ def insert_products(conn, products: List[OrangeBookProduct], limit: int = None) 
             try:
                 data = product.to_dict()
                 cur.execute("""
-                    INSERT INTO bronze.orange_book_products (
+                    INSERT INTO mol_bronze.orange_book_products (
                         appl_no, product_no, trade_name, ingredient, applicant,
                         strength, dosage_form, route, te_code, approval_date,
                         rld, rs, type, applicant_full_name, raw_data
@@ -207,7 +207,7 @@ def insert_patents(conn, patents: List[OrangeBookPatent], limit: int = None) -> 
             try:
                 data = patent.to_dict()
                 cur.execute("""
-                    INSERT INTO bronze.orange_book_patents (
+                    INSERT INTO mol_bronze.orange_book_patents (
                         appl_no, product_no, patent_no, patent_expire_date,
                         drug_substance_flag, drug_product_flag, patent_use_code,
                         delist_flag, raw_data
@@ -253,7 +253,7 @@ def insert_exclusivities(conn, exclusivities: List[OrangeBookExclusivity], limit
             try:
                 data = excl.to_dict()
                 cur.execute("""
-                    INSERT INTO bronze.orange_book_exclusivities (
+                    INSERT INTO mol_bronze.orange_book_exclusivities (
                         appl_no, product_no, exclusivity_code, exclusivity_date, raw_data
                     ) VALUES (
                         %(appl_no)s, %(product_no)s, %(exclusivity_code)s, %(exclusivity_date)s, %(raw_data)s

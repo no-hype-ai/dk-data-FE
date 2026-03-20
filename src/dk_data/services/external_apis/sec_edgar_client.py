@@ -180,6 +180,119 @@ class SECEdgarClient(BaseAPIClient):
             logger.error(f"Error fetching filings for CIK {cik}: {e}")
             return []
     
+    def extract_mda_sections(self, filing_html: str) -> Dict[str, str]:
+        """
+        Extract MD&A and Risk Factors sections from 10-K/20-F filing HTML.
+
+        Searches for section headers matching:
+        - "Item 7" or "Management's Discussion and Analysis" (MD&A)
+        - "Item 1A" or "Risk Factors"
+
+        Extracts text between the section header and the next section,
+        truncated to 5000 chars max for LLM context injection.
+
+        Args:
+            filing_html: Raw HTML content of the filing
+
+        Returns:
+            Dict with 'mda_text' and 'risk_factors_text' keys
+        """
+        result = {'mda_text': '', 'risk_factors_text': ''}
+
+        if not filing_html:
+            return result
+
+        # Parse HTML to plain text
+        full_text = BeautifulSoup(filing_html, 'html.parser').get_text()
+
+        # Normalize whitespace runs (but preserve paragraph breaks)
+        full_text = re.sub(r'[ \t]+', ' ', full_text)
+        full_text = re.sub(r'\n{3,}', '\n\n', full_text)
+
+        # --- MD&A extraction ---
+        # Item 7 (10-K) or "Management's Discussion and Analysis" (20-F uses Item 5)
+        mda_start_patterns = [
+            r'(?i)item\s*7[\.\s:]*\s*management.s\s+discussion\s+and\s+analysis',
+            r'(?i)item\s*7[\.\s]*\s*management.s\s+discussion',
+            r'(?i)item\s*7[\.\s:]+\s*md\s*&\s*a',
+            r"(?i)management.s\s+discussion\s+and\s+analysis\s+of\s+financial\s+condition",
+            r"(?i)management.s\s+discussion\s+and\s+analysis",
+            r'(?i)item\s*5[\.\s:]*\s*operating\s+and\s+financial\s+review',  # 20-F
+        ]
+        # MD&A ends at Item 7A (Quantitative Disclosures) or Item 8 (Financial Statements)
+        mda_end_patterns = [
+            r'(?i)item\s*7a[\.\s:]*\s*quantitative\s+and\s+qualitative',
+            r'(?i)item\s*8[\.\s:]*\s*financial\s+statements',
+            r'(?i)item\s*6[\.\s:]*\s*directors',  # 20-F: Item 6 after Item 5
+        ]
+
+        mda_text = self._extract_section(full_text, mda_start_patterns, mda_end_patterns)
+        if mda_text:
+            result['mda_text'] = mda_text[:5000]
+
+        # --- Risk Factors extraction ---
+        risk_start_patterns = [
+            r'(?i)item\s*1a[\.\s:]*\s*risk\s+factors',
+            r'(?i)item\s*3[\.\s:]*\s*(?:key\s+information.*)?risk\s+factors',  # 20-F Item 3D
+            r'(?i)risk\s+factors',
+        ]
+        risk_end_patterns = [
+            r'(?i)item\s*1b[\.\s:]*\s*unresolved\s+staff\s+comments',
+            r'(?i)item\s*2[\.\s:]*\s*(?:properties|description\s+of\s+property)',
+            r'(?i)item\s*4[\.\s:]*\s*(?:information\s+on\s+the\s+company|mine\s+safety)',  # 20-F
+        ]
+
+        risk_text = self._extract_section(full_text, risk_start_patterns, risk_end_patterns)
+        if risk_text:
+            result['risk_factors_text'] = risk_text[:5000]
+
+        return result
+
+    def _extract_section(
+        self,
+        full_text: str,
+        start_patterns: List[str],
+        end_patterns: List[str]
+    ) -> Optional[str]:
+        """
+        Extract a section of text between start and end patterns.
+
+        Finds the first matching start pattern, then the first matching end pattern
+        after it, and returns the text between them.
+        """
+        start_idx = None
+        for pattern in start_patterns:
+            match = re.search(pattern, full_text)
+            if match:
+                start_idx = match.start()
+                break
+
+        if start_idx is None:
+            return None
+
+        # Search for end marker after the start (skip ahead to avoid matching
+        # a table-of-contents reference right at the start)
+        search_from = start_idx + 100
+        end_idx = None
+        for pattern in end_patterns:
+            match = re.search(pattern, full_text[search_from:])
+            if match:
+                candidate = search_from + match.start()
+                if end_idx is None or candidate < end_idx:
+                    end_idx = candidate
+
+        if end_idx is None:
+            # No end marker found; take up to 10000 chars from start
+            end_idx = min(start_idx + 10000, len(full_text))
+
+        section = full_text[start_idx:end_idx].strip()
+
+        # Only return if we got meaningful content (not just a header reference)
+        if len(section) > 200:
+            return section
+
+        return None
+
     async def extract_product_revenues(
         self,
         cik: str,
@@ -194,6 +307,8 @@ class SECEdgarClient(BaseAPIClient):
         3. Fetch and parse the specific report HTML (e.g., R138.htm)
         4. Extract product names from [Member] tags and associated values
         5. Fall back to main document HTML parsing if needed
+
+        Also extracts MD&A and Risk Factors sections from the filing HTML.
 
         Args:
             cik: SEC Central Index Key
@@ -221,16 +336,32 @@ class SECEdgarClient(BaseAPIClient):
                 if product_revenues:
                     revenues.extend(product_revenues)
                     logger.info(f"Extracted {len(product_revenues)} products from FilingSummary for {filing.accession}")
+
+                    # Also extract MD&A sections from the main filing HTML
+                    html_content = await self._fetch_10k_html(filing)
+                    if html_content:
+                        mda_sections = self.extract_mda_sections(html_content)
+                        # Attach MD&A text to each revenue record from this filing
+                        for rev in product_revenues:
+                            rev.mda_text = mda_sections.get('mda_text', '')
+                            rev.risk_factors_text = mda_sections.get('risk_factors_text', '')
                     continue
 
                 # Strategy 2: Fall back to main document HTML parsing
                 html_content = await self._fetch_10k_html(filing)
                 if html_content:
+                    # Extract MD&A sections
+                    mda_sections = self.extract_mda_sections(html_content)
+
                     product_revenues = self._parse_html_revenue_tables(
                         html_content,
                         filing.accession,
                         filing.filing_date.year
                     )
+                    # Attach MD&A text to each revenue record
+                    for rev in product_revenues:
+                        rev.mda_text = mda_sections.get('mda_text', '')
+                        rev.risk_factors_text = mda_sections.get('risk_factors_text', '')
                     revenues.extend(product_revenues)
             except Exception as e:
                 logger.warning(f"Error extracting revenues from filing {filing.accession}: {e}")

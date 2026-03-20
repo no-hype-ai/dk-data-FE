@@ -357,8 +357,8 @@ class IdentifierResolver:
                     m.inchi_key,
                     m.canonical_name,
                     im.confidence
-                FROM silver.identifier_mappings im
-                JOIN silver.molecules m ON im.molecule_id = m.id
+                FROM mol_silver.identifier_mappings im
+                JOIN mol_silver.molecules m ON im.molecule_id = m.id
                 WHERE im.identifier_value = $1
                   AND im.identifier_type = $2
                   AND m.needs_review = FALSE
@@ -378,7 +378,7 @@ class IdentifierResolver:
                     id AS molecule_id,
                     inchi_key,
                     canonical_name
-                FROM silver.molecules
+                FROM mol_silver.molecules
                 WHERE inchi_key = $1
                   AND needs_review = FALSE
                 LIMIT 1

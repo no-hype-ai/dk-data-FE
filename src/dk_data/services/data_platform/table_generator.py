@@ -373,7 +373,7 @@ class TableGenerator:
                 return None
 
             # Get row count
-            count = await conn.fetchval(f"SELECT COUNT(*) FROM bronze.{table_name}")
+            count = await conn.fetchval(f"SELECT COUNT(*) FROM mol_bronze.{table_name}")
 
             # Get registration info
             reg = await conn.fetchrow("""

@@ -199,7 +199,7 @@ def insert_medicines(conn, medicines: List[Dict[str, Any]], limit: int = None) -
                         pass
 
                 cur.execute("""
-                    INSERT INTO bronze.ema (
+                    INSERT INTO mol_bronze.ema (
                         product_name, active_substance, inn, authorization_number,
                         authorization_date, status, therapeutic_area, atc_code,
                         marketing_auth_holder, orphan_medicine, biosimilar, generic,

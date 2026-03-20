@@ -470,6 +470,14 @@ async def run_raw_ingestion(
         FDADrugsIngestion,
         IMGTIngestion,
         CDCVaccinesIngestion,
+        ReactomeIngestion,
+        NICEHTAIngestion,
+        CMSOpenPaymentsIngestion,
+        CMSMedicareIngestion,
+        NIHReporterIngestion,
+        NPIRegistryIngestion,
+        EuropePMCIngestion,
+        FDADrugsfdaIngestion,
     )
 
     results = {}
@@ -577,7 +585,7 @@ async def run_raw_ingestion(
                                     except (ValueError, TypeError):
                                         filing_date = None
                                 await conn.execute("""
-                                    INSERT INTO raw.sec_edgar
+                                    INSERT INTO mol_raw.sec_edgar
                                         (accession_number, company_name, cik, filing_type, filing_date, document_url, description)
                                     VALUES ($1, $2, $3, $4, $5, $6, $7)
                                     ON CONFLICT (accession_number) DO UPDATE SET
@@ -620,7 +628,7 @@ async def run_raw_ingestion(
                                 for rev in revenues:
                                     try:
                                         await conn.execute("""
-                                            INSERT INTO silver.financial_filings
+                                            INSERT INTO mol_silver.financial_filings
                                                 (id, company_name, filing_type, period, revenue, product_name, source, created_at)
                                             VALUES (gen_random_uuid(), $1, $2, $3, $4, $5, 'sec_edgar', NOW())
                                         """,
@@ -684,6 +692,69 @@ async def run_raw_ingestion(
                 result = await service.fetch_vaccine_products()
                 results[source] = 1 if result else 0
 
+            elif source == 'reactome':
+                service = ReactomeIngestion(pool)
+                count = 0
+                queries = [drug_name] if drug_name else ['PD-L1', 'immune checkpoint']
+                for q in queries:
+                    result = await service.search_pathways(q)
+                    if result:
+                        count += 1
+                results[source] = count
+
+            elif source == 'nice_hta':
+                service = NICEHTAIngestion(pool)
+                if drug_name:
+                    result = await service.search_guidance(drug_name)
+                    results[source] = 1 if result else 0
+                else:
+                    results[source] = 0
+
+            elif source == 'cms_open_payments':
+                service = CMSOpenPaymentsIngestion(pool)
+                if drug_name:
+                    result = await service.fetch_payments(drug_name, year=2024)
+                    results[source] = 1 if result else 0
+                else:
+                    results[source] = 0
+
+            elif source == 'cms_medicare':
+                service = CMSMedicareIngestion(pool)
+                if drug_name:
+                    result = await service.fetch_part_b_spending(drug_name)
+                    results[source] = 1 if result else 0
+                else:
+                    results[source] = 0
+
+            elif source == 'nih_reporter':
+                service = NIHReporterIngestion(pool)
+                if drug_name:
+                    result = await service.search_grants(drug_name)
+                    results[source] = 1 if result else 0
+                else:
+                    results[source] = 0
+
+            elif source == 'npi_registry':
+                service = NPIRegistryIngestion(pool)
+                result = await service.search_providers('Medical Oncology')
+                results[source] = 1 if result else 0
+
+            elif source == 'europepmc':
+                service = EuropePMCIngestion(pool)
+                query = drug_name if drug_name else 'clinical trial oncology'
+                result = await service.search_publications(query)
+                results[source] = 1 if result else 0
+
+            elif source == 'fda_drugsfda':
+                service = FDADrugsfdaIngestion(pool)
+                if drug_name:
+                    result = await service.fetch_approvals(brand_name=drug_name)
+                    if not result:
+                        result = await service.fetch_approvals(generic_name=drug_name)
+                    results[source] = 1 if result else 0
+                else:
+                    results[source] = 0
+
             else:
                 # Try to handle as dynamically onboarded source
                 results[source] = await run_dynamic_source_ingestion(pool, source, metrics)
@@ -719,14 +790,14 @@ async def run_bronze_transformation(pool, metrics: PipelineMetrics) -> Dict[str,
         logger.warning("BulletproofTransformer not available, using DynamicSourceTransformer")
 
     # Get all raw tables and transform them
-    # Raw tables are named directly (e.g., raw.clinicaltrials, raw.openfda_faers)
+    # Process BOTH raw.* and mol_raw.* schemas
     # Exclude system/config tables
     SYSTEM_TABLES = {'sync_schedules', 'initial_load_state', 'transformation_state',
                      'transformation_config', 'data_sources', 'refresh_log'}
     async with pool.acquire() as conn:
         raw_tables = await conn.fetch("""
-            SELECT table_name FROM information_schema.tables
-            WHERE table_schema = 'raw'
+            SELECT table_schema, table_name FROM information_schema.tables
+            WHERE table_schema IN ('raw', 'mol_raw')
             AND table_type = 'BASE TABLE'
             AND table_name NOT IN ('sync_schedules', 'initial_load_state',
                 'transformation_state', 'transformation_config',
@@ -735,15 +806,27 @@ async def run_bronze_transformation(pool, metrics: PipelineMetrics) -> Dict[str,
 
     for row in raw_tables:
         source = row['table_name']
+        schema = row['table_schema']
         try:
-            result = await transformer.transform_raw_to_bronze(source)
+            # BulletproofTransformer handles schema routing internally
+            result = await transformer.transform_raw_to_bronze(source, raw_schema=schema)
             results[source] = result.records_inserted
             metrics.records_bronze += result.records_inserted
             if result.errors:
                 metrics.errors.extend(result.errors[:3])
-            logger.info(f"Bronze transform {source}: {result.records_inserted} records")
+            logger.info(f"Bronze transform {schema}.{source}: {result.records_inserted} records")
+        except TypeError:
+            # Fallback if transformer doesn't accept raw_schema kwarg
+            try:
+                result = await transformer.transform_raw_to_bronze(source)
+                results[source] = result.records_inserted
+                metrics.records_bronze += result.records_inserted
+                logger.info(f"Bronze transform {source}: {result.records_inserted} records")
+            except Exception as e:
+                logger.error(f"Bronze transform failed for {source}: {e}")
+                metrics.errors.append(f"bronze_{source}: {str(e)[:100]}")
         except Exception as e:
-            logger.error(f"Bronze transform failed for {source}: {e}")
+            logger.error(f"Bronze transform failed for {schema}.{source}: {e}")
             metrics.errors.append(f"bronze_{source}: {str(e)[:100]}")
 
     logger.info(f"Bronze transformation complete: {metrics.records_bronze} total records")

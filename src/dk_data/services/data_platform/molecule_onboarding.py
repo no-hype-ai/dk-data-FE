@@ -390,7 +390,7 @@ class MoleculeOnboardingService:
         """Get canonical name for molecule."""
         async with self.db_pool.acquire() as conn:
             row = await conn.fetchrow("""
-                SELECT canonical_name FROM silver.molecules
+                SELECT canonical_name FROM mol_silver.molecules
                 WHERE id = $1
             """, molecule_id)
             return row['canonical_name'] if row else None

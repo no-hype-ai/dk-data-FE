@@ -49,6 +49,15 @@ class DataSource(Enum):
     PHARMGKB = "pharmgkb"            # PharmGKB pharmacogenomics
     WEBSEARCH = "websearch"          # Web search for news/publications
     DAILYMED = "dailymed"            # DailyMed drug labels
+    # Assessment-enrichment sources (xenon integration)
+    REACTOME = "reactome"              # Reactome biological pathways
+    NICE_HTA = "nice_hta"              # NICE Technology Appraisals (UK HTA)
+    CMS_OPEN_PAYMENTS = "cms_open_payments"  # CMS Open Payments (physician KOL data)
+    CMS_MEDICARE = "cms_medicare"      # CMS Medicare Part B/D drug spending
+    NIH_REPORTER = "nih_reporter"      # NIH RePORTER research grants
+    NPI_REGISTRY = "npi_registry"      # NPI Registry physician directory
+    EUROPEPMC = "europepmc"            # EuropePMC full-text literature
+    FDA_DRUGSFDA = "fda_drugsfda"      # FDA Drugs@FDA approval history
 
 
 # Tiered refresh schedule (in hours)
@@ -81,6 +90,15 @@ REFRESH_SCHEDULE = {
     DataSource.PHARMGKB: 720,           # Monthly (pharmacogenomics)
     DataSource.WEBSEARCH: 24,           # On-demand (web search)
     DataSource.DAILYMED: 168,           # Weekly (label updates)
+    # Assessment-enrichment sources
+    DataSource.REACTOME: 720,           # Monthly (pathway database)
+    DataSource.NICE_HTA: 168,           # Weekly (HTA decisions)
+    DataSource.CMS_OPEN_PAYMENTS: 720,  # Monthly (annual data release)
+    DataSource.CMS_MEDICARE: 720,       # Monthly (annual data release)
+    DataSource.NIH_REPORTER: 168,       # Weekly (grant data)
+    DataSource.NPI_REGISTRY: 720,       # Monthly (provider updates)
+    DataSource.EUROPEPMC: 168,          # Weekly (literature)
+    DataSource.FDA_DRUGSFDA: 168,       # Weekly (approval data)
 }
 
 
@@ -164,7 +182,21 @@ class RawIngestionService:
         session = await self._get_session()
 
         try:
-            async with session.get(endpoint, params=params, headers=headers) as response:
+            # Build URL manually for APIs with complex search syntax (openFDA uses quotes in params)
+            # aiohttp's params= auto-encodes which double-encodes quote characters
+            if params:
+                from urllib.parse import urlencode, quote
+                # Use quote_via=quote to avoid double-encoding of special chars like "
+                query_string = "&".join(
+                    f"{k}={v}" if isinstance(v, str) and ('"' in v or '+' in v or '(' in v)
+                    else f"{k}={quote(str(v))}"
+                    for k, v in params.items()
+                )
+                full_url = f"{endpoint}?{query_string}"
+            else:
+                full_url = endpoint
+
+            async with session.get(full_url, headers=headers) as response:
                 response_body = await response.json()
                 response_headers = dict(response.headers)
 
@@ -187,9 +219,34 @@ class RawIngestionService:
             logger.error(f"JSON decode error for {endpoint}: {e}")
             return None
 
+    # ALL sources use mol_raw.* schema — no exceptions.
+    # The mol_ prefix is the canonical medallion architecture namespace.
+    MOL_RAW_SOURCES = {
+        # Core molecule sources
+        DataSource.OPENFDA_LABELS, DataSource.OPENFDA_FAERS,
+        DataSource.CLINICALTRIALS, DataSource.CHEMBL,
+        DataSource.PUBCHEM, DataSource.OPENALEX,
+        DataSource.DRUGBANK, DataSource.UNIPROT,
+        DataSource.SIDER, DataSource.PDB,
+        # Assessment-enrichment sources
+        DataSource.REACTOME, DataSource.NICE_HTA,
+        DataSource.CMS_OPEN_PAYMENTS, DataSource.CMS_MEDICARE,
+        DataSource.NIH_REPORTER, DataSource.NPI_REGISTRY,
+        DataSource.EUROPEPMC, DataSource.FDA_DRUGSFDA,
+        DataSource.KEGG_DRUG, DataSource.FDA_DRUGS,
+        # Reference/regulatory sources
+        DataSource.BINDINGDB, DataSource.EMA,
+        DataSource.ORANGE_BOOK, DataSource.USPTO_PATENTS,
+        DataSource.WHO_INN, DataSource.RXNORM,
+        DataSource.TDC_ADMET, DataSource.PHARMGKB,
+        DataSource.WEBSEARCH, DataSource.DAILYMED,
+        DataSource.IMGT, DataSource.CDC_VACCINES,
+    }
+
     async def _store_raw_record(self, source: DataSource, record: RawRecord) -> Optional[str]:
-        """Store raw record in appropriate table."""
-        table_name = f"raw.{source.value}"
+        """Store raw record in mol_raw.* for molecule sources, raw.* for others."""
+        schema = "mol_raw" if source in self.MOL_RAW_SOURCES else "raw"
+        table_name = f"{schema}.{source.value}"
 
         async with self.db_pool.acquire() as conn:
             # Check for duplicate based on hash
@@ -363,9 +420,14 @@ class OpenFDAIngestion(RawIngestionService):
         """Fetch FDA drug labels. Searches both brand_name and generic_name."""
         search_parts = []
         if drug_name:
-            # Search both brand and generic name — the input could be either
+            # openFDA exact phrase search is case-sensitive — search both cases
+            # Also search substance_name which has the INN name
+            name_upper = drug_name.upper()
+            name_title = drug_name.title()
             search_parts.append(
-                f'(openfda.brand_name:"{drug_name}"+openfda.generic_name:"{drug_name}")'
+                f'(openfda.brand_name:"{name_upper}"+openfda.brand_name:"{name_title}"'
+                f'+openfda.generic_name:"{name_upper}"+openfda.generic_name:"{drug_name}"'
+                f'+openfda.substance_name:"{name_upper}")'
             )
         if application_number:
             search_parts.append(f'openfda.application_number:"{application_number}"')
@@ -1525,4 +1587,168 @@ class DailyMedIngestion(RawIngestionService):
             endpoint,
             params=params,
             request_id=f"dailymed_changes_{page}"
+        )
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# Assessment-enrichment ingestion classes (xenon integration)
+# ═══════════════════════════════════════════════════════════════════════════
+
+class ReactomeIngestion(RawIngestionService):
+    """Ingestion for Reactome pathway database."""
+
+    BASE_URL = "https://reactome.org/ContentService"
+
+    async def search_pathways(self, query: str, species: str = "Homo sapiens") -> Optional[str]:
+        endpoint = f"{self.BASE_URL}/search/query"
+        params = {"query": query, "types": "Pathway", "species": species, "cluster": "true"}
+        return await self.fetch_and_store(
+            DataSource.REACTOME, endpoint, params=params,
+            request_id=f"reactome_search_{query[:40]}"
+        )
+
+    async def fetch_pathway(self, stable_id: str) -> Optional[str]:
+        endpoint = f"{self.BASE_URL}/data/query/{stable_id}"
+        return await self.fetch_and_store(
+            DataSource.REACTOME, endpoint,
+            request_id=f"reactome_pathway_{stable_id}"
+        )
+
+
+class NICEHTAIngestion(RawIngestionService):
+    """Ingestion for NICE Technology Appraisals."""
+
+    BASE_URL = "https://www.nice.org.uk"
+
+    async def search_guidance(self, drug_name: str, limit: int = 20) -> Optional[str]:
+        endpoint = f"{self.BASE_URL}/search"
+        params = {"q": drug_name, "ps": limit, "sp": "on"}
+        return await self.fetch_and_store(
+            DataSource.NICE_HTA, endpoint, params=params,
+            request_id=f"nice_search_{drug_name[:30]}"
+        )
+
+
+class CMSOpenPaymentsIngestion(RawIngestionService):
+    """Ingestion for CMS Open Payments physician payment data."""
+
+    BASE_URL = "https://openpaymentsdata.cms.gov/api/1/datastore/query"
+
+    async def fetch_payments(self, manufacturer_name: str, year: int = 2024, limit: int = 1000) -> Optional[str]:
+        dataset_ids = {2024: "e6b17c6a-2534-4207-a4a1-6746a14911ff", 2023: "fb3a65aa-c901-4a38-a813-b04b00dfa2a9"}
+        dataset_id = dataset_ids.get(year)
+        if not dataset_id:
+            return None
+        endpoint = f"{self.BASE_URL}/{dataset_id}/0"
+        params = {
+            "conditions[0][property]": "applicable_manufacturer_or_applicable_gpo_making_payment_name",
+            "conditions[0][value]": manufacturer_name,
+            "limit": limit,
+            "sort": "total_amount_of_payment_usdollars",
+            "sort_order": "desc",
+        }
+        return await self.fetch_and_store(
+            DataSource.CMS_OPEN_PAYMENTS, endpoint, params=params,
+            request_id=f"cms_openpay_{manufacturer_name[:20]}_{year}"
+        )
+
+
+class CMSMedicareIngestion(RawIngestionService):
+    """Ingestion for CMS Medicare Part B drug spending.
+
+    Dataset ID (updated 2026-03): 76a714ad-3a2c-43ac-b76d-9dadf8f7d890
+    This dataset contains ALL Part B drugs (~734 rows) with spending data 2019-2023.
+    Note: CMS periodically changes dataset UUIDs. If 404, check data.cms.gov/data.json.
+    """
+
+    PART_B_DATASET = "76a714ad-3a2c-43ac-b76d-9dadf8f7d890"
+    BASE = "https://data.cms.gov/data-api/v1/dataset"
+
+    async def fetch_part_b_spending(self, drug_name: str) -> Optional[str]:
+        # Dataset returns ALL drugs in one response (~734 rows). Store full response,
+        # bronze transformation will filter by drug name.
+        endpoint = f"{self.BASE}/{self.PART_B_DATASET}/data"
+        params = {"size": 5000}
+        return await self.fetch_and_store(
+            DataSource.CMS_MEDICARE, endpoint, params=params,
+            request_id=f"cms_partb_all_{drug_name[:20]}"
+        )
+
+
+class NIHReporterIngestion(RawIngestionService):
+    """Ingestion for NIH RePORTER research grants."""
+
+    BASE_URL = "https://api.reporter.nih.gov/v2/projects/search"
+
+    async def search_grants(self, drug_name: str, limit: int = 50) -> Optional[str]:
+        endpoint = self.BASE_URL
+        # NIH Reporter uses POST with JSON body
+        body = {
+            "criteria": {
+                "advanced_text_search": {
+                    "search_field": "terms",
+                    "search_text": drug_name,
+                }
+            },
+            "limit": limit,
+            "offset": 0,
+        }
+        return await self.fetch_and_store(
+            DataSource.NIH_REPORTER, endpoint, params=body,
+            request_id=f"nih_grants_{drug_name[:30]}"
+        )
+
+
+class NPIRegistryIngestion(RawIngestionService):
+    """Ingestion for NPI Registry physician directory."""
+
+    BASE_URL = "https://npiregistry.cms.hhs.gov/api"
+
+    async def search_providers(self, specialty: str, state: str = None, limit: int = 200) -> Optional[str]:
+        endpoint = self.BASE_URL
+        params = {
+            "version": "2.1",
+            "enumeration_type": "NPI-1",
+            "taxonomy_description": specialty,
+            "limit": limit,
+        }
+        if state:
+            params["state"] = state
+        return await self.fetch_and_store(
+            DataSource.NPI_REGISTRY, endpoint, params=params,
+            request_id=f"npi_{specialty[:20]}_{state or 'all'}"
+        )
+
+
+class EuropePMCIngestion(RawIngestionService):
+    """Ingestion for EuropePMC full-text literature."""
+
+    BASE_URL = "https://www.ebi.ac.uk/europepmc/webservices/rest"
+
+    async def search_publications(self, query: str, page_size: int = 100) -> Optional[str]:
+        endpoint = f"{self.BASE_URL}/search"
+        params = {"query": query, "resultType": "core", "pageSize": page_size, "format": "json"}
+        return await self.fetch_and_store(
+            DataSource.EUROPEPMC, endpoint, params=params,
+            request_id=f"europepmc_{query[:40]}"
+        )
+
+
+class FDADrugsfdaIngestion(RawIngestionService):
+    """Ingestion for FDA Drugs@FDA approval history."""
+
+    BASE_URL = "https://api.fda.gov/drug/drugsfda.json"
+
+    async def fetch_approvals(self, brand_name: str = None, generic_name: str = None) -> Optional[str]:
+        if brand_name:
+            search = f'products.brand_name:"{brand_name}"'
+        elif generic_name:
+            search = f'openfda.generic_name:"{generic_name}"'
+        else:
+            return None
+        endpoint = self.BASE_URL
+        params = {"search": search, "limit": 100}
+        return await self.fetch_and_store(
+            DataSource.FDA_DRUGSFDA, endpoint, params=params,
+            request_id=f"fda_drugsfda_{(brand_name or generic_name)[:30]}"
         )

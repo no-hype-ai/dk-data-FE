@@ -447,7 +447,7 @@ class SchemaDetector:
             "    FALSE AS processed_to_silver,",
             "    NOW() AS created_at",
             "",
-            f"FROM raw.{raw_table}",
+            f"FROM mol_raw.{raw_table}",
             "WHERE",
             "    response_status = 200",
             "    AND processed_to_bronze = FALSE",

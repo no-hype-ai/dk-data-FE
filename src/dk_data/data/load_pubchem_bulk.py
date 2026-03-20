@@ -188,10 +188,10 @@ class PubChemBulkLoader:
         logger.info("Finding compounds to enrich...")
         cursor.execute("""
             SELECT DISTINCT b.inchi_key
-            FROM bronze.bindingdb_affinities b
+            FROM mol_bronze.bindingdb_affinities b
             WHERE b.inchi_key IS NOT NULL
               AND NOT EXISTS (
-                  SELECT 1 FROM bronze.pubchem_compounds p
+                  SELECT 1 FROM mol_bronze.pubchem_compounds p
                   WHERE p.inchi_key = b.inchi_key
               )
             ORDER BY b.inchi_key
@@ -262,7 +262,7 @@ class PubChemBulkLoader:
         execute_values(
             cursor,
             """
-            INSERT INTO bronze.pubchem_compounds (
+            INSERT INTO mol_bronze.pubchem_compounds (
                 cid, inchi_key, smiles_canonical, molecular_formula,
                 molecular_weight, exact_mass, monoisotopic_mass,
                 xlogp, tpsa, complexity, hbond_donor, hbond_acceptor,
@@ -270,8 +270,8 @@ class PubChemBulkLoader:
             ) VALUES %s
             ON CONFLICT (inchi_key) DO UPDATE SET
                 cid = EXCLUDED.cid,
-                smiles_canonical = COALESCE(EXCLUDED.smiles_canonical, bronze.pubchem_compounds.smiles_canonical),
-                molecular_weight = COALESCE(EXCLUDED.molecular_weight, bronze.pubchem_compounds.molecular_weight),
+                smiles_canonical = COALESCE(EXCLUDED.smiles_canonical, mol_bronze.pubchem_compounds.smiles_canonical),
+                molecular_weight = COALESCE(EXCLUDED.molecular_weight, mol_bronze.pubchem_compounds.molecular_weight),
                 fetched_at = CURRENT_TIMESTAMP
             """,
             records

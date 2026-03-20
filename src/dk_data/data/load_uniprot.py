@@ -98,7 +98,7 @@ def insert_protein(conn, protein: UniProtProtein, search_type: str) -> bool:
         data = protein.to_dict()
         with conn.cursor() as cur:
             cur.execute("""
-                INSERT INTO bronze.uniprot (
+                INSERT INTO mol_bronze.uniprot (
                     accession, entry_name, protein_name, gene_names, organism,
                     organism_id, sequence_length, mass, function_description,
                     pathway, subcellular_location, disease_involvement,
@@ -154,7 +154,7 @@ async def load_drug_targets(conn, client: UniProtClient, limit: int = None) -> i
             # Try to get target accessions from DrugBank first
             cur.execute("""
                 SELECT DISTINCT uniprot_id
-                FROM bronze.drugbank_targets
+                FROM mol_bronze.drugbank_targets
                 WHERE uniprot_id IS NOT NULL AND uniprot_id != ''
                 LIMIT 1000
             """)

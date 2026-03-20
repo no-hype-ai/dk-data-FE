@@ -345,7 +345,7 @@ class ClinicalTrialsLoader:
         execute_values(
             cursor,
             """
-            INSERT INTO bronze.clinicaltrials (
+            INSERT INTO mol_bronze.clinicaltrials (
                 nct_id, org_study_id, brief_title, official_title, acronym,
                 overall_status, phases, study_type, enrollment_count, enrollment_type,
                 start_date, completion_date, primary_outcomes,
@@ -362,26 +362,26 @@ class ClinicalTrialsLoader:
             ) VALUES %s
             ON CONFLICT (nct_id) DO UPDATE SET
                 overall_status = EXCLUDED.overall_status,
-                phases = COALESCE(EXCLUDED.phases, bronze.clinicaltrials.phases),
-                enrollment_count = COALESCE(EXCLUDED.enrollment_count, bronze.clinicaltrials.enrollment_count),
-                start_date = COALESCE(EXCLUDED.start_date, bronze.clinicaltrials.start_date),
-                completion_date = COALESCE(EXCLUDED.completion_date, bronze.clinicaltrials.completion_date),
+                phases = COALESCE(EXCLUDED.phases, mol_bronze.clinicaltrials.phases),
+                enrollment_count = COALESCE(EXCLUDED.enrollment_count, mol_bronze.clinicaltrials.enrollment_count),
+                start_date = COALESCE(EXCLUDED.start_date, mol_bronze.clinicaltrials.start_date),
+                completion_date = COALESCE(EXCLUDED.completion_date, mol_bronze.clinicaltrials.completion_date),
                 last_update_post_date = EXCLUDED.last_update_post_date,
-                conditions = COALESCE(EXCLUDED.conditions, bronze.clinicaltrials.conditions),
-                interventions = COALESCE(EXCLUDED.interventions, bronze.clinicaltrials.interventions),
-                locations = COALESCE(EXCLUDED.locations, bronze.clinicaltrials.locations),
-                primary_outcomes = COALESCE(EXCLUDED.primary_outcomes, bronze.clinicaltrials.primary_outcomes),
-                secondary_outcomes = COALESCE(EXCLUDED.secondary_outcomes, bronze.clinicaltrials.secondary_outcomes),
-                arms_groups = COALESCE(EXCLUDED.arms_groups, bronze.clinicaltrials.arms_groups),
-                eligibility_criteria = COALESCE(EXCLUDED.eligibility_criteria, bronze.clinicaltrials.eligibility_criteria),
-                fda_regulated_drug = COALESCE(EXCLUDED.fda_regulated_drug, bronze.clinicaltrials.fda_regulated_drug),
-                fda_regulated_device = COALESCE(EXCLUDED.fda_regulated_device, bronze.clinicaltrials.fda_regulated_device),
-                "references" = COALESCE(EXCLUDED."references", bronze.clinicaltrials."references"),
-                ipd_sharing = COALESCE(EXCLUDED.ipd_sharing, bronze.clinicaltrials.ipd_sharing),
-                has_results = COALESCE(EXCLUDED.has_results, bronze.clinicaltrials.has_results),
-                results_section = COALESCE(EXCLUDED.results_section, bronze.clinicaltrials.results_section),
-                condition_browse = COALESCE(EXCLUDED.condition_browse, bronze.clinicaltrials.condition_browse),
-                intervention_browse = COALESCE(EXCLUDED.intervention_browse, bronze.clinicaltrials.intervention_browse)
+                conditions = COALESCE(EXCLUDED.conditions, mol_bronze.clinicaltrials.conditions),
+                interventions = COALESCE(EXCLUDED.interventions, mol_bronze.clinicaltrials.interventions),
+                locations = COALESCE(EXCLUDED.locations, mol_bronze.clinicaltrials.locations),
+                primary_outcomes = COALESCE(EXCLUDED.primary_outcomes, mol_bronze.clinicaltrials.primary_outcomes),
+                secondary_outcomes = COALESCE(EXCLUDED.secondary_outcomes, mol_bronze.clinicaltrials.secondary_outcomes),
+                arms_groups = COALESCE(EXCLUDED.arms_groups, mol_bronze.clinicaltrials.arms_groups),
+                eligibility_criteria = COALESCE(EXCLUDED.eligibility_criteria, mol_bronze.clinicaltrials.eligibility_criteria),
+                fda_regulated_drug = COALESCE(EXCLUDED.fda_regulated_drug, mol_bronze.clinicaltrials.fda_regulated_drug),
+                fda_regulated_device = COALESCE(EXCLUDED.fda_regulated_device, mol_bronze.clinicaltrials.fda_regulated_device),
+                "references" = COALESCE(EXCLUDED."references", mol_bronze.clinicaltrials."references"),
+                ipd_sharing = COALESCE(EXCLUDED.ipd_sharing, mol_bronze.clinicaltrials.ipd_sharing),
+                has_results = COALESCE(EXCLUDED.has_results, mol_bronze.clinicaltrials.has_results),
+                results_section = COALESCE(EXCLUDED.results_section, mol_bronze.clinicaltrials.results_section),
+                condition_browse = COALESCE(EXCLUDED.condition_browse, mol_bronze.clinicaltrials.condition_browse),
+                intervention_browse = COALESCE(EXCLUDED.intervention_browse, mol_bronze.clinicaltrials.intervention_browse)
             """,
             records
         )
@@ -420,7 +420,7 @@ def main():
         )
 
         cursor = conn.cursor()
-        cursor.execute("SELECT COUNT(*) FROM bronze.clinicaltrials")
+        cursor.execute("SELECT COUNT(*) FROM mol_bronze.clinicaltrials")
         count = cursor.fetchone()[0]
 
         logger.info("\n=== Summary ===")

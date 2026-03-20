@@ -208,7 +208,7 @@ def insert_patent(conn, patent: Dict[str, Any]) -> bool:
     try:
         with conn.cursor() as cur:
             cur.execute("""
-                INSERT INTO bronze.uspto_patents (
+                INSERT INTO mol_bronze.uspto_patents (
                     patent_number, title, abstract, grant_date, expiry_date,
                     patent_type, assignees, inventors, claims_count,
                     cpc_codes, uspc_codes, cited_by_count, citations_count,
@@ -248,7 +248,7 @@ async def load_for_drugs(conn, limit: int = None) -> int:
         with conn.cursor() as cur:
             cur.execute("""
                 SELECT DISTINCT canonical_name
-                FROM silver.molecules
+                FROM mol_silver.molecules
                 WHERE canonical_name IS NOT NULL
                 ORDER BY canonical_name
                 LIMIT 200

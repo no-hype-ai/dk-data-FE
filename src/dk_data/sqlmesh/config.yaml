@@ -21,21 +21,22 @@ model_defaults:
 # Physical schema mapping
 # Maps logical schema names to actual PostgreSQL schemas
 physical_schema_mapping:
-  # TAVR schemas
-  raw: raw
-  staging: staging
-  mart: mart
-  scoring: scoring
-  # Molecule platform schemas
+  # ALL data schemas map to mol_ prefixed physical schemas
+  # SQLMesh model logical names (raw, bronze, silver, gold) → mol_ physical schemas
+  raw: mol_raw
+  bronze: mol_bronze
+  silver: mol_silver
+  gold: mol_gold
+  # Explicit mol_ prefix mappings (same target, for models that already use mol_ prefix)
   mol_raw: mol_raw
   mol_bronze: mol_bronze
   mol_silver: mol_silver
   mol_gold: mol_gold
   mol_app: mol_app
-  # IP/patent/trademark schemas (014-uspto-euipo-model-datasource)
-  bronze: bronze
-  silver: silver
-  gold: gold
+  # Application/infrastructure schemas (not molecule data)
+  staging: staging
+  mart: mart
+  scoring: scoring
   # Xenon application schema (015-assessment-dashboard-integration)
   xenon: xenon
   meta: meta

@@ -112,7 +112,7 @@ def load_bindingdb(
     ensure_tables(conn)
     cursor = conn.cursor()
 
-    cursor.execute("SELECT COUNT(*) FROM bronze.bindingdb_affinities")
+    cursor.execute("SELECT COUNT(*) FROM mol_bronze.bindingdb_affinities")
     existing_count = cursor.fetchone()[0]
     logger.info(f"Existing BindingDB records: {existing_count}")
 
@@ -180,7 +180,7 @@ def load_bindingdb(
                 if len(batch) >= batch_size:
                     try:
                         execute_values(cursor, """
-                            INSERT INTO bronze.bindingdb_affinities
+                            INSERT INTO mol_bronze.bindingdb_affinities
                             (smiles, inchi_key, bindingdb_ligand_id, target_name, uniprot_id,
                              ki_nm, ic50_nm, kd_nm, ec50_nm, kon, koff, ph, temperature_c, article_doi, pmid)
                             VALUES %s
@@ -202,7 +202,7 @@ def load_bindingdb(
         if batch:
             try:
                 execute_values(cursor, """
-                    INSERT INTO bronze.bindingdb_affinities
+                    INSERT INTO mol_bronze.bindingdb_affinities
                     (smiles, inchi_key, bindingdb_ligand_id, target_name, uniprot_id,
                      ki_nm, ic50_nm, kd_nm, ec50_nm, kon, koff, ph, temperature_c, article_doi, pmid)
                     VALUES %s
@@ -215,7 +215,7 @@ def load_bindingdb(
 
         pbar.close()
 
-    cursor.execute("SELECT COUNT(*) FROM bronze.bindingdb_affinities")
+    cursor.execute("SELECT COUNT(*) FROM mol_bronze.bindingdb_affinities")
     final_count = cursor.fetchone()[0]
 
     logger.info("\n=== Load Complete ===")

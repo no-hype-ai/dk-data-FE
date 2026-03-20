@@ -286,7 +286,7 @@ class OpenFDAFaersLoader:
         execute_values(
             cursor,
             """
-            INSERT INTO bronze.openfda_faers (
+            INSERT INTO mol_bronze.openfda_faers (
                 safety_report_id, report_type, receive_date, receipt_date,
                 serious, serious_death, serious_hospitalization,
                 serious_life_threatening, serious_disability,
@@ -336,7 +336,7 @@ def main():
         )
 
         cursor = conn.cursor()
-        cursor.execute("SELECT COUNT(*) FROM bronze.openfda_faers")
+        cursor.execute("SELECT COUNT(*) FROM mol_bronze.openfda_faers")
         count = cursor.fetchone()[0]
 
         logger.info("\n=== Summary ===")

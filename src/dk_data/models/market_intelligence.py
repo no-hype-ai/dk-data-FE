@@ -44,9 +44,11 @@ class ProductRevenue:
     year: Optional[int] = None
     source_filing: Optional[str] = None
     yoy_growth: Optional[float] = None
+    mda_text: Optional[str] = None  # MD&A excerpt (max 5000 chars)
+    risk_factors_text: Optional[str] = None  # Risk Factors excerpt (max 5000 chars)
 
     def to_dict(self) -> Dict[str, Any]:
-        return {
+        result = {
             "product_name": self.product_name,
             "revenue_usd": self.revenue_usd,
             "period": self.period,
@@ -54,6 +56,11 @@ class ProductRevenue:
             "source_filing": self.source_filing,
             "yoy_growth": self.yoy_growth,
         }
+        if self.mda_text:
+            result["mda_text"] = self.mda_text
+        if self.risk_factors_text:
+            result["risk_factors_text"] = self.risk_factors_text
+        return result
 
 
 @dataclass

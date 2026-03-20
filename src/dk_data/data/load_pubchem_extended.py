@@ -135,7 +135,7 @@ class PubChemExtendedEnricher:
         cursor = self.conn.cursor()
         cursor.execute("""
             SELECT DISTINCT pc.inchi_key, pc.cid
-            FROM bronze.pubchem_compounds pc
+            FROM mol_bronze.pubchem_compounds pc
             WHERE pc.cid IS NOT NULL
             ORDER BY pc.inchi_key
             LIMIT %s
@@ -154,7 +154,7 @@ class PubChemExtendedEnricher:
 
         for inchi_key, cid in tqdm(compounds, desc="Loading bioassays"):
             try:
-                cursor.execute("SELECT COUNT(*) FROM bronze.pubchem_bioassays WHERE cid = %s", (cid,))
+                cursor.execute("SELECT COUNT(*) FROM mol_bronze.pubchem_bioassays WHERE cid = %s", (cid,))
                 if cursor.fetchone()[0] > 0:
                     continue
 
@@ -224,7 +224,7 @@ class PubChemExtendedEnricher:
         execute_values(
             cursor,
             """
-            INSERT INTO bronze.pubchem_bioassays (
+            INSERT INTO mol_bronze.pubchem_bioassays (
                 inchi_key, cid, aid, assay_name, assay_type, assay_source,
                 activity_outcome, activity_score, target_name, target_gi, gene_symbol
             ) VALUES %s
@@ -251,7 +251,7 @@ class PubChemExtendedEnricher:
 
         for inchi_key, cid in tqdm(compounds, desc="Loading xrefs"):
             try:
-                cursor.execute("SELECT COUNT(*) FROM bronze.pubchem_xrefs WHERE cid = %s", (cid,))
+                cursor.execute("SELECT COUNT(*) FROM mol_bronze.pubchem_xrefs WHERE cid = %s", (cid,))
                 if cursor.fetchone()[0] > 0:
                     continue
 
@@ -316,7 +316,7 @@ class PubChemExtendedEnricher:
         execute_values(
             cursor,
             """
-            INSERT INTO bronze.pubchem_xrefs (inchi_key, cid, xref_type, xref_id, xref_name)
+            INSERT INTO mol_bronze.pubchem_xrefs (inchi_key, cid, xref_type, xref_id, xref_name)
             VALUES %s
             ON CONFLICT (cid, xref_type, xref_id) DO NOTHING
             """,
@@ -336,7 +336,7 @@ class PubChemExtendedEnricher:
 
         for inchi_key, cid in tqdm(compounds, desc="Loading safety data"):
             try:
-                cursor.execute("SELECT COUNT(*) FROM bronze.pubchem_safety WHERE cid = %s", (cid,))
+                cursor.execute("SELECT COUNT(*) FROM mol_bronze.pubchem_safety WHERE cid = %s", (cid,))
                 if cursor.fetchone()[0] > 0:
                     continue
 
@@ -411,7 +411,7 @@ class PubChemExtendedEnricher:
         execute_values(
             cursor,
             """
-            INSERT INTO bronze.pubchem_safety (
+            INSERT INTO mol_bronze.pubchem_safety (
                 inchi_key, cid, ghs_code, ghs_statement, signal_word, hazard_class
             ) VALUES %s
             ON CONFLICT (cid, ghs_code) DO NOTHING
@@ -468,7 +468,7 @@ def main():
         logger.info("\n=== SUMMARY ===")
         from psycopg2 import sql as psql
         for table in ['pubchem_bioassays', 'pubchem_xrefs', 'pubchem_safety', 'pubchem_pharmacology']:
-            cursor.execute(psql.SQL("SELECT COUNT(*) FROM bronze.{}").format(psql.Identifier(table)))
+            cursor.execute(psql.SQL("SELECT COUNT(*) FROM mol_bronze.{}").format(psql.Identifier(table)))
             count = cursor.fetchone()[0]
             logger.info(f"bronze.{table}: {count:,} records")
 

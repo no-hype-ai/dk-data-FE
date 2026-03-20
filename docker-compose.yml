@@ -64,7 +64,7 @@ services:
       # Database connection - connects to postgres service within docker network
       # SECURITY: No default password - must be set via environment or .env file
       PGRST_DB_URI: "postgres://authenticator:${POSTGREST_PASSWORD:?POSTGREST_PASSWORD must be set}@postgres:5432/${POSTGRES_DB:-dk_data}"
-      PGRST_DB_SCHEMAS: "api,gold,silver,bronze,mol_raw,mol_gold,mol_silver,raw,xenon,meta"
+      PGRST_DB_SCHEMAS: "api,mol_gold,mol_silver,mol_bronze,mol_raw,xenon,meta"
       PGRST_DB_ANON_ROLE: "web_anon"
       PGRST_DB_POOL: "10"
       PGRST_DB_POOL_ACQUISITION_TIMEOUT: "10"

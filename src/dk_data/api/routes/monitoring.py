@@ -295,7 +295,7 @@ async def pipeline_health():
             ))
 
         # Get Silver layer health
-        cur.execute("SELECT COUNT(*), MAX(updated_at) FROM silver.molecules")
+        cur.execute("SELECT COUNT(*), MAX(updated_at) FROM mol_silver.molecules")
         result = cur.fetchone()
         silver_count = result[0] or 0
         silver_update = result[1]
@@ -309,7 +309,7 @@ async def pipeline_health():
         # Get Gold layer health (check if gold schema exists)
         try:
             cur.execute("""
-                SELECT COUNT(*) FROM silver.molecules WHERE needs_review = FALSE
+                SELECT COUNT(*) FROM mol_silver.molecules WHERE needs_review = FALSE
             """)
             gold_count = cur.fetchone()[0] or 0
             gold_health = LayerHealth(

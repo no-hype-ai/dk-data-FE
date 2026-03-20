@@ -192,7 +192,7 @@ class TransformationConfigManager:
     async def _seed_defaults(self, conn):
         """Seed default configuration values."""
         # Check if already seeded
-        count = await conn.fetchval("SELECT COUNT(*) FROM raw.identifier_types")
+        count = await conn.fetchval("SELECT COUNT(*) FROM mol_raw.identifier_types")
         if count > 0:
             return
 
@@ -262,7 +262,7 @@ class TransformationConfigManager:
 
         for type_id, name, pattern, priority, source, is_structural, examples in identifier_types:
             await conn.execute("""
-                INSERT INTO raw.identifier_types
+                INSERT INTO mol_raw.identifier_types
                 (type_id, name, regex_pattern, priority, preferred_source, is_structural, examples)
                 VALUES ($1, $2, $3, $4, $5, $6, $7)
                 ON CONFLICT (type_id) DO NOTHING
@@ -336,7 +336,7 @@ class TransformationConfigManager:
 
         for source_id, name, precedence, tier, api_type, id_fields, name_fields, date_fields, primary_id in source_configs:
             await conn.execute("""
-                INSERT INTO raw.source_config
+                INSERT INTO mol_raw.source_config
                 (source_id, name, precedence, tier, api_type, identifier_fields, name_fields, date_fields, primary_identifier)
                 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
                 ON CONFLICT (source_id) DO NOTHING
@@ -381,7 +381,7 @@ class TransformationConfigManager:
             self._identifier_types = {}
             rows = await conn.fetch("""
                 SELECT type_id, name, regex_pattern, priority, preferred_source, is_structural, validation_func
-                FROM raw.identifier_types
+                FROM mol_raw.identifier_types
                 ORDER BY priority
             """)
             for row in rows:
@@ -401,7 +401,7 @@ class TransformationConfigManager:
                 SELECT source_id, name, precedence, tier, api_type, identifier_fields,
                        name_fields, date_fields, flatten_depth, batch_size,
                        primary_identifier, secondary_identifiers
-                FROM raw.source_config
+                FROM mol_raw.source_config
                 ORDER BY precedence
             """)
             for row in rows:
@@ -429,7 +429,7 @@ class TransformationConfigManager:
             rows = await conn.fetch("""
                 SELECT source_id, source_field, target_field, target_type, transformation,
                        is_identifier, identifier_type
-                FROM raw.field_mappings
+                FROM mol_raw.field_mappings
             """)
             for row in rows:
                 source_id = row['source_id']
@@ -498,7 +498,7 @@ class TransformationConfigManager:
         """Add or update a source configuration."""
         async with self.db_pool.acquire() as conn:
             await conn.execute("""
-                INSERT INTO raw.source_config
+                INSERT INTO mol_raw.source_config
                 (source_id, name, precedence, tier, api_type, identifier_fields,
                  name_fields, date_fields, flatten_depth, batch_size,
                  primary_identifier, secondary_identifiers)
