@@ -25,10 +25,10 @@ SELECT
 
     -- Phase distribution as JSONB
     jsonb_build_object(
-        'phase_1', COUNT(DISTINCT ct.nct_id) FILTER (WHERE ct.phase LIKE '%Phase 1%'),
-        'phase_2', COUNT(DISTINCT ct.nct_id) FILTER (WHERE ct.phase LIKE '%Phase 2%'),
-        'phase_3', COUNT(DISTINCT ct.nct_id) FILTER (WHERE ct.phase LIKE '%Phase 3%'),
-        'phase_4', COUNT(DISTINCT ct.nct_id) FILTER (WHERE ct.phase LIKE '%Phase 4%')
+        'phase_1', COUNT(DISTINCT ct.nct_id) FILTER (WHERE ct.phase_normalized LIKE '%Phase 1%'),
+        'phase_2', COUNT(DISTINCT ct.nct_id) FILTER (WHERE ct.phase_normalized LIKE '%Phase 2%'),
+        'phase_3', COUNT(DISTINCT ct.nct_id) FILTER (WHERE ct.phase_normalized LIKE '%Phase 3%'),
+        'phase_4', COUNT(DISTINCT ct.nct_id) FILTER (WHERE ct.phase_normalized LIKE '%Phase 4%')
     ) AS phase_distribution,
 
     -- Unique indications

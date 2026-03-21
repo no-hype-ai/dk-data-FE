@@ -3,7 +3,7 @@
 -- Part of: 015-assessment-dashboard-integration
 
 MODEL (
-    name mol_silver.icd_codes,
+    name ind_silver.icd_codes,
     kind INCREMENTAL_BY_UNIQUE_KEY (
         unique_key icd_code
     ),
@@ -33,12 +33,15 @@ SELECT
         WHEN icd_code LIKE '%.%' THEN TRUE
         ELSE FALSE
     END AS is_leaf,
+    includes,
+    excludes,
     includes::TEXT AS includes_text,
     excludes::TEXT AS excludes_text,
+    id AS bronze_id,
     source,
     source_updated_at,
     NOW() AS created_at,
     NOW() AS updated_at
-FROM bronze.who_icd
+FROM mol_bronze.who_icd
 WHERE processed_to_silver = FALSE
   AND icd_code IS NOT NULL;

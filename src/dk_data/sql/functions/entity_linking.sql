@@ -36,12 +36,12 @@ BEGIN
       THEN ARRAY(SELECT DISTINCT elem->>'country' FROM jsonb_array_elements(b.locations) elem WHERE elem->>'country' IS NOT NULL)
       ELSE NULL END
   FROM mol_bronze.clinicaltrials b CROSS JOIN mol_silver.molecules m
-  WHERE m.canonical_name IS NOT NULL AND b.nct_id IS NOT NULL
+  WHERE m.pref_name IS NOT NULL AND b.nct_id IS NOT NULL
     AND (
       -- Match by title (original logic)
-      LOWER(COALESCE(b.official_title, b.brief_title, '')) LIKE '%' || LOWER(m.canonical_name) || '%'
+      LOWER(COALESCE(b.official_title, b.brief_title, '')) LIKE '%' || LOWER(m.pref_name) || '%'
       -- Match by intervention/drug name in the interventions JSON
-      OR (b.interventions IS NOT NULL AND b.interventions::text ILIKE '%' || m.canonical_name || '%')
+      OR (b.interventions IS NOT NULL AND b.interventions::text ILIKE '%' || m.pref_name || '%')
       -- Match by brand name in title or interventions
       OR EXISTS (
         SELECT 1 FROM unnest(m.brand_names) bn
@@ -49,7 +49,7 @@ BEGIN
         OR (b.interventions IS NOT NULL AND b.interventions::text ILIKE '%' || bn || '%')
       )
       -- Match by brief_summary/description
-      OR LOWER(COALESCE(b.brief_summary, '')) LIKE '%' || LOWER(m.canonical_name) || '%'
+      OR LOWER(COALESCE(b.brief_summary, '')) LIKE '%' || LOWER(m.pref_name) || '%'
       -- Match by FDA label: NCT IDs mentioned in the drug label are authoritative
       OR b.nct_id IN (
         SELECT DISTINCT (regexp_matches(l.clinical_studies, 'NCT\d{7,8}', 'g'))[1]
@@ -99,7 +99,7 @@ BEGIN
       reaction_meddra_pt, seriousness, outcome,
       patient_age, patient_sex, report_date, country
     )
-    SELECT 'openfda_faers', b.safety_report_id, m.molecule_id, m.canonical_name,
+    SELECT 'openfda_faers', b.safety_report_id, m.molecule_id, m.pref_name,
       reaction->>'reactionmeddrapt',
       CASE WHEN b.serious = 1 THEN
         CASE WHEN b.serious_death = 1 THEN 'death'
@@ -115,7 +115,7 @@ BEGIN
       b.occurrence_country
     FROM mol_bronze.openfda_faers b CROSS JOIN mol_silver.molecules m
     CROSS JOIN LATERAL jsonb_array_elements(b.patient_reaction) AS reaction
-    WHERE b.patient_reaction IS NOT NULL AND m.canonical_name IS NOT NULL
+    WHERE b.patient_reaction IS NOT NULL AND m.pref_name IS NOT NULL
     ON CONFLICT DO NOTHING;
     GET DIAGNOSTICS linked_count = ROW_COUNT;
     result := '+' || linked_count || ' AEs';
@@ -128,15 +128,15 @@ BEGIN
   BEGIN
     INSERT INTO mol_silver.drug_labels (
       molecule_id, set_id, spl_id, brand_name, generic_name, manufacturer,
-      application_number, marketing_status, route_of_administration, dosage_forms,
-      indications, contraindications, warnings, boxed_warning,
+      application_number, product_type, route, dosage_forms,
+      indications_and_usage, contraindications_and_usage, warnings, boxed_warning,
       adverse_reactions, drug_interactions, mechanism_of_action,
       clinical_studies, dosage_and_administration, how_supplied, product_type,
       overdosage, description, storage_and_handling,
       pregnancy, pediatric_use, geriatric_use, use_in_specific_populations,
       pharmacodynamics, pharmacokinetics, clinical_pharmacology,
       dosage_forms_and_strengths,
-      effective_date, approval_date
+      effective_date, effective_time
     )
     SELECT DISTINCT ON (b.set_id)
       m.molecule_id, b.set_id, b.spl_id,
@@ -146,7 +146,7 @@ BEGIN
       b.route,
       NULL,
       b.indications_and_usage,
-      b.contraindications,
+      b.contraindications_and_usage,
       COALESCE(b.warnings_and_cautions, b.warnings),
       b.boxed_warning,
       b.adverse_reactions,
@@ -175,21 +175,21 @@ BEGIN
       AND b.set_id IS NOT NULL
       AND (
         -- Handle both plain text and JSON array ["NAME"] formats
-        LOWER(b.generic_name::text) = LOWER(m.canonical_name)
-        OR LOWER(trim(both '"[]' from b.generic_name::text)) = LOWER(m.canonical_name)
+        LOWER(b.generic_name::text) = LOWER(m.pref_name)
+        OR LOWER(trim(both '"[]' from b.generic_name::text)) = LOWER(m.pref_name)
         -- Match when bronze generic contains canonical name (handles FDA suffixes like -RMBW, -ADAZ)
-        OR LOWER(trim(both '"[]' from b.generic_name::text)) LIKE LOWER(m.canonical_name) || '%'
+        OR LOWER(trim(both '"[]' from b.generic_name::text)) LIKE LOWER(m.pref_name) || '%'
         -- Match by brand name
         OR LOWER(trim(both '"[]' from b.brand_name::text)) = ANY(SELECT LOWER(unnest(m.brand_names)))
       )
     ON CONFLICT (set_id) DO UPDATE SET
       molecule_id = EXCLUDED.molecule_id,
       brand_name = COALESCE(EXCLUDED.brand_name, mol_silver.drug_labels.brand_name),
-      manufacturer = COALESCE(EXCLUDED.manufacturer, mol_silver.drug_labels.manufacturer),
-      indications = COALESCE(EXCLUDED.indications, mol_silver.drug_labels.indications),
+      manufacturer_name = COALESCE(EXCLUDED.manufacturer_name, mol_silver.drug_labels.manufacturer_name_name),
+      indications = COALESCE(EXCLUDED.indications_and_usage, mol_silver.drug_labels.indications_and_usage),
       adverse_reactions = COALESCE(EXCLUDED.adverse_reactions, mol_silver.drug_labels.adverse_reactions),
       mechanism_of_action = COALESCE(EXCLUDED.mechanism_of_action, mol_silver.drug_labels.mechanism_of_action),
-      route_of_administration = COALESCE(EXCLUDED.route_of_administration, mol_silver.drug_labels.route_of_administration),
+      route = COALESCE(EXCLUDED.route, mol_silver.drug_labels.route),
       clinical_studies = COALESCE(EXCLUDED.clinical_studies, mol_silver.drug_labels.clinical_studies),
       dosage_and_administration = COALESCE(EXCLUDED.dosage_and_administration, mol_silver.drug_labels.dosage_and_administration),
       how_supplied = COALESCE(EXCLUDED.how_supplied, mol_silver.drug_labels.how_supplied),
@@ -201,7 +201,7 @@ BEGIN
       pharmacodynamics = COALESCE(EXCLUDED.pharmacodynamics, mol_silver.drug_labels.pharmacodynamics),
       pharmacokinetics = COALESCE(EXCLUDED.pharmacokinetics, mol_silver.drug_labels.pharmacokinetics),
       clinical_pharmacology = COALESCE(EXCLUDED.clinical_pharmacology, mol_silver.drug_labels.clinical_pharmacology),
-      approval_date = COALESCE(EXCLUDED.approval_date, mol_silver.drug_labels.approval_date);
+      effective_time = COALESCE(EXCLUDED.effective_time, mol_silver.drug_labels.effective_time);
     GET DIAGNOSTICS linked_count = ROW_COUNT;
     result := '+' || linked_count || ' labels';
   EXCEPTION WHEN OTHERS THEN result := 'Labels: ' || SQLERRM; END;
@@ -211,15 +211,15 @@ BEGIN
   step := 'Link DrugBank Targets';
   BEGIN
     INSERT INTO mol_silver.targets (
-      molecule_id, molecule_name, target_name, target_type, action_type,
-      gene_symbol, uniprot_accession, source
+      molecule_id, molecule_name, protein_name, target_type, action_type,
+      gene_names, primaryaccession, source
     )
-    SELECT m.molecule_id, m.canonical_name,
-      t.target_name, 'protein', array_to_string(t.actions, ', '),
+    SELECT m.molecule_id, m.pref_name,
+      t.protein_name, 'protein', array_to_string(t.actions, ', '),
       t.gene_name, t.uniprot_id, 'drugbank'
     FROM mol_bronze.drugbank_targets t
     JOIN mol_bronze.drugbank_data d ON t.drugbank_id = d.drugbank_id
-    JOIN mol_silver.molecules m ON LOWER(d.drug_name) = LOWER(m.canonical_name)
+    JOIN mol_silver.molecules m ON LOWER(d.drug_name) = LOWER(m.pref_name)
     ON CONFLICT DO NOTHING;
     GET DIAGNOSTICS linked_count = ROW_COUNT;
     result := '+' || linked_count || ' targets';
@@ -234,7 +234,7 @@ BEGIN
     FROM mol_silver.molecules m
     WHERE f.molecule_id IS NULL
       AND (
-        LOWER(f.product_name) = LOWER(m.canonical_name)
+        LOWER(f.product_name) = LOWER(m.pref_name)
         OR LOWER(f.product_name) = ANY(SELECT LOWER(unnest(m.brand_names)))
       );
     GET DIAGNOSTICS linked_count = ROW_COUNT;
@@ -243,26 +243,26 @@ BEGIN
   RETURN NEXT;
 
   -- Link UniProt protein targets → mol_silver.protein_targets
-  -- Sources: (1) mol_silver.targets has uniprot_accession from DrugBank/ChEMBL,
+  -- Sources: (1) mol_silver.targets has primaryaccession from DrugBank/ChEMBL,
   --          (2) bronze.uniprot has full protein records from UniProt API
   step := 'Link UniProt Targets';
   BEGIN
     -- Method 1: From existing mol_silver.targets (DrugBank-sourced)
     INSERT INTO mol_silver.protein_targets (
-      molecule_id, uniprot_accession, protein_name, gene_name, source
+      molecule_id, primaryaccession, protein_name, gene_name, source
     )
-    SELECT DISTINCT m.molecule_id, t.uniprot_accession, t.target_name, t.gene_symbol, 'uniprot'
+    SELECT DISTINCT m.molecule_id, t.primaryaccession, t.protein_name, t.gene_names, 'uniprot'
     FROM mol_silver.targets t
     JOIN mol_silver.molecules m ON t.molecule_id = m.molecule_id
-    WHERE t.uniprot_accession IS NOT NULL
-    ON CONFLICT (molecule_id, uniprot_accession) DO NOTHING;
+    WHERE t.primaryaccession IS NOT NULL
+    ON CONFLICT (molecule_id, primaryaccession) DO NOTHING;
 
     -- Method 2: Enrich with bronze.uniprot data (function, subcellular location)
     UPDATE mol_silver.protein_targets pt SET
       protein_function = COALESCE(bu.function_description::TEXT, pt.protein_function),
       subcellular_location = COALESCE(bu.subcellular_location::TEXT, pt.subcellular_location)
     FROM mol_bronze.uniprot bu
-    WHERE bu.accession = pt.uniprot_accession
+    WHERE bu.accession = pt.primaryaccession
       AND pt.protein_function IS NULL;
 
     GET DIAGNOSTICS linked_count = ROW_COUNT;
@@ -270,10 +270,10 @@ BEGIN
   EXCEPTION WHEN OTHERS THEN result := 'UniProt: ' || SQLERRM; END;
   RETURN NEXT;
 
-  -- Link FDA Drugs@FDA approvals → mol_silver.regulatory_milestones
+  -- Link FDA Drugs@FDA approvals → mol_silver.regulatory_timeline
   step := 'Link FDA Approvals';
   BEGIN
-    INSERT INTO mol_silver.regulatory_milestones (
+    INSERT INTO mol_silver.regulatory_timeline (
       molecule_id, milestone_type, event_name, event_date, event_date_precision,
       region, review_priority, source, source_detail, confidence
     )
@@ -290,8 +290,8 @@ BEGIN
       1.0
     FROM mol_bronze.fda_drugsfda fa
     JOIN mol_silver.molecules m ON (
-      LOWER(fa.generic_name) = LOWER(m.canonical_name)
-      OR LOWER(fa.generic_name) LIKE LOWER(m.canonical_name) || '%'
+      LOWER(fa.generic_name) = LOWER(m.pref_name)
+      OR LOWER(fa.generic_name) LIKE LOWER(m.pref_name) || '%'
       OR LOWER(fa.brand_name) = ANY(SELECT LOWER(unnest(m.brand_names)))
     )
     WHERE fa.submission_status = 'AP'
@@ -310,7 +310,7 @@ BEGIN
     SELECT m.molecule_id, n.guidance_type, n.guidance_id, n.title, n.indication,
            n.decision, n.decision_date, n.icer_value, 'nice', n.url
     FROM mol_bronze.nice_hta n
-    JOIN mol_silver.molecules m ON LOWER(n.drug_name) = LOWER(m.canonical_name)
+    JOIN mol_silver.molecules m ON LOWER(n.drug_name) = LOWER(m.pref_name)
     WHERE n.guidance_id IS NOT NULL
     ON CONFLICT (molecule_id, agency, guidance_id) DO UPDATE SET
       indication = COALESCE(EXCLUDED.indication, mol_silver.hta_decisions.indication),
@@ -369,7 +369,7 @@ BEGIN
     FROM mol_bronze.kegg_drugs k
     CROSS JOIN LATERAL jsonb_each_text(k.pathways) AS kp
     JOIN mol_silver.molecules m ON (
-      LOWER(k.drug_name) = LOWER(m.canonical_name)
+      LOWER(k.drug_name) = LOWER(m.pref_name)
       OR LOWER(k.drug_name) = ANY(SELECT LOWER(unnest(m.brand_names)))
     )
     ON CONFLICT (molecule_id, pathway_source, pathway_external_id) DO NOTHING;
@@ -389,8 +389,8 @@ BEGIN
       g.pi_institution, g.award_amount, g.fiscal_year, 'nih_reporter'
     FROM mol_bronze.nih_grants g
     JOIN mol_silver.molecules m ON (
-      LOWER(g.project_title) LIKE '%' || LOWER(m.canonical_name) || '%'
-      OR LOWER(g.terms) LIKE '%' || LOWER(m.canonical_name) || '%'
+      LOWER(g.project_title) LIKE '%' || LOWER(m.pref_name) || '%'
+      OR LOWER(g.terms) LIKE '%' || LOWER(m.pref_name) || '%'
     )
     ON CONFLICT (molecule_id, project_number, fiscal_year) DO NOTHING;
     GET DIAGNOSTICS linked_count = ROW_COUNT;
@@ -410,7 +410,7 @@ BEGIN
     FROM mol_bronze.cms_medicare_spending s
     JOIN mol_silver.molecules m ON (
       LOWER(s.brand_name) = ANY(SELECT LOWER(unnest(m.brand_names)))
-      OR LOWER(s.generic_name) = LOWER(m.canonical_name)
+      OR LOWER(s.generic_name) = LOWER(m.pref_name)
     )
     ON CONFLICT (molecule_id, program, year) DO NOTHING;
     GET DIAGNOSTICS linked_count = ROW_COUNT;
@@ -433,7 +433,7 @@ BEGIN
     FROM mol_bronze.cms_open_payments p
     CROSS JOIN mol_silver.molecules m
     JOIN mol_silver.drug_labels dl ON dl.molecule_id = m.molecule_id
-    WHERE LOWER(p.manufacturer_name) LIKE '%' || LOWER(SPLIT_PART(dl.manufacturer, ' ', 1)) || '%'
+    WHERE LOWER(p.manufacturer_name) LIKE '%' || LOWER(SPLIT_PART(dl.manufacturer_name, ' ', 1)) || '%'
       AND p.payment_amount >= 1000
     ON CONFLICT DO NOTHING;
     GET DIAGNOSTICS linked_count = ROW_COUNT;
@@ -480,7 +480,7 @@ BEGIN
       ob.application_number,
       ob.trade_name
     FROM mol_bronze.orange_book ob
-    JOIN mol_silver.molecules m ON LOWER(ob.ingredient) = LOWER(m.canonical_name)
+    JOIN mol_silver.molecules m ON LOWER(ob.ingredient) = LOWER(m.pref_name)
     WHERE ob.patent_number IS NOT NULL
       AND ob.patent_number != ''
     ON CONFLICT (molecule_id, patent_number) DO UPDATE SET
@@ -504,27 +504,27 @@ BEGIN
     GROUP BY ae.molecule_id, ae.reaction_meddra_pt HAVING count(*) > 1
     ON CONFLICT DO NOTHING;
 
-    -- Ensure molecule_profiles entries exist for all molecules (INSERT missing ones)
-    INSERT INTO mol_gold.molecule_profiles (molecule_id, inchi_key, canonical_name)
-    SELECT m.molecule_id, m.inchi_key, m.canonical_name
+    -- Ensure molecule_profile entries exist for all molecules (INSERT missing ones)
+    INSERT INTO mol_gold.molecule_profile (molecule_id, inchi_key, canonical_name)
+    SELECT m.molecule_id, m.inchi_key, m.pref_name
     FROM mol_silver.molecules m
-    WHERE NOT EXISTS (SELECT 1 FROM mol_gold.molecule_profiles mp WHERE mp.molecule_id = m.molecule_id)
+    WHERE NOT EXISTS (SELECT 1 FROM mol_gold.molecule_profile mp WHERE mp.molecule_id = m.molecule_id)
     ON CONFLICT (molecule_id) DO NOTHING;
 
     -- Molecule profiles — aggregate ALL silver counts
-    UPDATE mol_gold.molecule_profiles mp SET
+    UPDATE mol_gold.molecule_profile mp SET
       trial_count = (SELECT count(*) FROM mol_silver.clinical_trials ct WHERE ct.molecule_id = mp.molecule_id),
       active_trial_count = (SELECT count(*) FROM mol_silver.clinical_trials ct WHERE ct.molecule_id = mp.molecule_id AND ct.status IN ('RECRUITING','ACTIVE_NOT_RECRUITING','NOT_YET_RECRUITING')),
       label_count = (SELECT count(*) FROM mol_silver.drug_labels dl WHERE dl.molecule_id = mp.molecule_id),
       adverse_event_count = (SELECT count(*) FROM mol_silver.adverse_events ae WHERE ae.molecule_id = mp.molecule_id),
       serious_ae_count = (SELECT count(*) FROM mol_silver.adverse_events ae WHERE ae.molecule_id = mp.molecule_id AND ae.seriousness IS NOT NULL AND ae.seriousness != 'non_serious'),
       publication_count = (SELECT count(*) FROM mol_silver.molecule_publications pub WHERE pub.molecule_id = mp.molecule_id),
-      indication_count = (SELECT count(DISTINCT rm.indication) FROM mol_silver.regulatory_milestones rm WHERE rm.molecule_id = mp.molecule_id AND rm.milestone_type = 'approval' AND rm.indication IS NOT NULL),
-      first_approval_date = (SELECT MIN(rm.event_date) FROM mol_silver.regulatory_milestones rm WHERE rm.molecule_id = mp.molecule_id AND rm.milestone_type = 'approval' AND rm.source = 'fda_drugsfda'),
+      indication_count = (SELECT count(DISTINCT rm.indication) FROM mol_silver.regulatory_timeline rm WHERE rm.molecule_id = mp.molecule_id AND rm.milestone_type = 'approval' AND rm.indication IS NOT NULL),
+      first_effective_time = (SELECT MIN(rm.event_date) FROM mol_silver.regulatory_timeline rm WHERE rm.molecule_id = mp.molecule_id AND rm.milestone_type = 'approval' AND rm.source = 'fda_drugsfda'),
       last_updated = now();
 
     -- Regulatory summary
-    INSERT INTO mol_gold.regulatory_summary (molecule_id, first_approval_date, latest_approval_date, total_approvals, total_indications, priority_review_count, pipeline_milestone_count, next_pipeline_date, next_pipeline_event)
+    INSERT INTO mol_gold.regulatory_timeline (molecule_id, first_effective_time, latest_effective_time, total_approvals, total_indications_and_usage, priority_review_count, pipeline_milestone_count, next_pipeline_date, next_pipeline_event)
     SELECT m.molecule_id,
       MIN(rm.event_date) FILTER (WHERE rm.milestone_type = 'approval'),
       MAX(rm.event_date) FILTER (WHERE rm.milestone_type = 'approval'),
@@ -533,15 +533,15 @@ BEGIN
       count(*) FILTER (WHERE rm.review_priority = 'PRIORITY'),
       count(*) FILTER (WHERE rm.milestone_type = 'pipeline'),
       MIN(rm.event_date) FILTER (WHERE rm.milestone_type = 'pipeline' AND rm.event_date > CURRENT_DATE),
-      (SELECT rm2.event_name FROM mol_silver.regulatory_milestones rm2 WHERE rm2.molecule_id = m.molecule_id AND rm2.milestone_type = 'pipeline' AND rm2.event_date > CURRENT_DATE ORDER BY rm2.event_date LIMIT 1)
+      (SELECT rm2.event_name FROM mol_silver.regulatory_timeline rm2 WHERE rm2.molecule_id = m.molecule_id AND rm2.milestone_type = 'pipeline' AND rm2.event_date > CURRENT_DATE ORDER BY rm2.event_date LIMIT 1)
     FROM mol_silver.molecules m
-    LEFT JOIN mol_silver.regulatory_milestones rm ON rm.molecule_id = m.molecule_id
+    LEFT JOIN mol_silver.regulatory_timeline rm ON rm.molecule_id = m.molecule_id
     GROUP BY m.molecule_id
     ON CONFLICT (molecule_id) DO UPDATE SET
-      first_approval_date = EXCLUDED.first_approval_date,
-      latest_approval_date = EXCLUDED.latest_approval_date,
+      first_effective_time = EXCLUDED.first_effective_time,
+      latest_effective_time = EXCLUDED.latest_effective_time,
       total_approvals = EXCLUDED.total_approvals,
-      total_indications = EXCLUDED.total_indications,
+      total_indications = EXCLUDED.total_indications_and_usage,
       priority_review_count = EXCLUDED.priority_review_count,
       pipeline_milestone_count = EXCLUDED.pipeline_milestone_count,
       next_pipeline_date = EXCLUDED.next_pipeline_date,
@@ -549,12 +549,12 @@ BEGIN
       last_updated = now();
 
     -- Target summary
-    INSERT INTO mol_gold.target_summary (molecule_id, target_count, primary_target_gene, primary_target_name, primary_target_uniprot, pdb_structure_count, pathway_count, reactome_pathway_count, kegg_pathway_count)
+    INSERT INTO mol_gold.target_summary_deprecated (molecule_id, target_count, primary_target_gene, primary_protein_name, primary_target_uniprot, pdb_structure_count, pathway_count, reactome_pathway_count, kegg_pathway_count)
     SELECT m.molecule_id,
       (SELECT count(*) FROM mol_silver.protein_targets pt WHERE pt.molecule_id = m.molecule_id),
       (SELECT pt.gene_name FROM mol_silver.protein_targets pt WHERE pt.molecule_id = m.molecule_id LIMIT 1),
       (SELECT pt.protein_name FROM mol_silver.protein_targets pt WHERE pt.molecule_id = m.molecule_id LIMIT 1),
-      (SELECT pt.uniprot_accession FROM mol_silver.protein_targets pt WHERE pt.molecule_id = m.molecule_id LIMIT 1),
+      (SELECT pt.primaryaccession FROM mol_silver.protein_targets pt WHERE pt.molecule_id = m.molecule_id LIMIT 1),
       (SELECT COALESCE(SUM(array_length(pt.pdb_ids, 1)), 0) FROM mol_silver.protein_targets pt WHERE pt.molecule_id = m.molecule_id),
       (SELECT count(*) FROM mol_silver.pathways pw WHERE pw.molecule_id = m.molecule_id),
       (SELECT count(*) FROM mol_silver.pathways pw WHERE pw.molecule_id = m.molecule_id AND pw.pathway_source = 'reactome'),
@@ -563,7 +563,7 @@ BEGIN
     ON CONFLICT (molecule_id) DO UPDATE SET
       target_count = EXCLUDED.target_count,
       primary_target_gene = EXCLUDED.primary_target_gene,
-      primary_target_name = EXCLUDED.primary_target_name,
+      primary_protein_name = EXCLUDED.primary_protein_name,
       primary_target_uniprot = EXCLUDED.primary_target_uniprot,
       pdb_structure_count = EXCLUDED.pdb_structure_count,
       pathway_count = EXCLUDED.pathway_count,

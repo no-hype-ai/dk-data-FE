@@ -1,9 +1,9 @@
 -- SQLMesh Model: Silver Healthcare Facilities
--- Consolidated healthcare facility data from CMS, ACC/TVC, and HRSA sources
--- Part of: 015-assessment-dashboard-integration
+-- Zero data loss from Bronze. All source-specific columns carried forward.
+-- Consolidated from CMS, ACC/TVC, and HRSA sources.
 
 MODEL (
-    name mol_silver.healthcare_facilities,
+    name hcp_silver.facilities,
     kind INCREMENTAL_BY_UNIQUE_KEY (
         unique_key (provider_id, source)
     ),
@@ -20,15 +20,27 @@ WITH cms_inpatient AS (
         NULL::TEXT AS facility_name,
         NULL::TEXT AS city,
         NULL::TEXT AS state,
+        NULL::TEXT AS county,
         NULL::TEXT AS facility_type,
+        NULL::TEXT AS ownership,
+        NULL::INTEGER AS rating,
         NULL::INTEGER AS bed_count,
         total_discharges,
         avg_charges,
+        avg_payments,
+        drg_code,
+        fiscal_year,
+        NULL::NUMERIC AS total_costs,
+        NULL::NUMERIC AS net_revenue,
+        NULL::NUMERIC AS operating_margin,
         NULL::JSONB AS certifications,
+        NULL::DATE AS cert_date,
+        NULL::TEXT AS discipline,
         NULL::INTEGER AS shortage_score,
+        NULL::TEXT AS shortage_status,
         'cms_inpatient' AS source,
         source_updated_at
-    FROM bronze.cms_inpatient
+    FROM mol_bronze.cms_inpatient
     WHERE processed_to_silver = FALSE
       AND provider_id IS NOT NULL
 ),
@@ -39,15 +51,27 @@ cms_hospital AS (
         hospital_name AS facility_name,
         city,
         state,
+        NULL::TEXT AS county,
         hospital_type AS facility_type,
+        ownership,
+        rating,
         NULL::INTEGER AS bed_count,
         NULL::INTEGER AS total_discharges,
         NULL::NUMERIC AS avg_charges,
+        NULL::NUMERIC AS avg_payments,
+        NULL::TEXT AS drg_code,
+        NULL::INTEGER AS fiscal_year,
+        NULL::NUMERIC AS total_costs,
+        NULL::NUMERIC AS net_revenue,
+        NULL::NUMERIC AS operating_margin,
         NULL::JSONB AS certifications,
+        NULL::DATE AS cert_date,
+        NULL::TEXT AS discipline,
         NULL::INTEGER AS shortage_score,
+        NULL::TEXT AS shortage_status,
         'cms_hospital_info' AS source,
         source_updated_at
-    FROM bronze.cms_hospital_info
+    FROM mol_bronze.cms_hospital_info
     WHERE processed_to_silver = FALSE
       AND provider_id IS NOT NULL
 ),
@@ -58,15 +82,27 @@ cms_costs AS (
         NULL::TEXT AS facility_name,
         NULL::TEXT AS city,
         NULL::TEXT AS state,
+        NULL::TEXT AS county,
         NULL::TEXT AS facility_type,
+        NULL::TEXT AS ownership,
+        NULL::INTEGER AS rating,
         bed_count,
         NULL::INTEGER AS total_discharges,
         NULL::NUMERIC AS avg_charges,
+        NULL::NUMERIC AS avg_payments,
+        NULL::TEXT AS drg_code,
+        fiscal_year,
+        total_costs,
+        net_revenue,
+        operating_margin,
         NULL::JSONB AS certifications,
+        NULL::DATE AS cert_date,
+        NULL::TEXT AS discipline,
         NULL::INTEGER AS shortage_score,
+        NULL::TEXT AS shortage_status,
         'cms_cost_reports' AS source,
         source_updated_at
-    FROM bronze.cms_cost_reports
+    FROM mol_bronze.cms_cost_reports
     WHERE processed_to_silver = FALSE
       AND provider_id IS NOT NULL
 ),
@@ -77,15 +113,27 @@ acc_tvc AS (
         facility_name,
         city,
         state,
+        NULL::TEXT AS county,
         certification_type AS facility_type,
+        NULL::TEXT AS ownership,
+        NULL::INTEGER AS rating,
         NULL::INTEGER AS bed_count,
         NULL::INTEGER AS total_discharges,
         NULL::NUMERIC AS avg_charges,
+        NULL::NUMERIC AS avg_payments,
+        NULL::TEXT AS drg_code,
+        NULL::INTEGER AS fiscal_year,
+        NULL::NUMERIC AS total_costs,
+        NULL::NUMERIC AS net_revenue,
+        NULL::NUMERIC AS operating_margin,
         volumes AS certifications,
+        cert_date,
+        NULL::TEXT AS discipline,
         NULL::INTEGER AS shortage_score,
+        NULL::TEXT AS shortage_status,
         'acc_tvc' AS source,
         source_updated_at
-    FROM bronze.acc_tvc
+    FROM mol_bronze.acc_tvc
     WHERE processed_to_silver = FALSE
       AND facility_id IS NOT NULL
 ),
@@ -96,15 +144,27 @@ hrsa AS (
         NULL::TEXT AS facility_name,
         NULL::TEXT AS city,
         state,
+        county,
         designation_type AS facility_type,
+        NULL::TEXT AS ownership,
+        NULL::INTEGER AS rating,
         NULL::INTEGER AS bed_count,
         NULL::INTEGER AS total_discharges,
         NULL::NUMERIC AS avg_charges,
+        NULL::NUMERIC AS avg_payments,
+        NULL::TEXT AS drg_code,
+        NULL::INTEGER AS fiscal_year,
+        NULL::NUMERIC AS total_costs,
+        NULL::NUMERIC AS net_revenue,
+        NULL::NUMERIC AS operating_margin,
         NULL::JSONB AS certifications,
+        NULL::DATE AS cert_date,
+        discipline,
         score AS shortage_score,
+        status AS shortage_status,
         'hrsa' AS source,
         source_updated_at
-    FROM bronze.hrsa
+    FROM mol_bronze.hrsa
     WHERE processed_to_silver = FALSE
       AND hpsa_id IS NOT NULL
 ),
@@ -127,12 +187,24 @@ SELECT DISTINCT ON (provider_id, source)
     facility_name,
     city,
     state,
+    county,
     facility_type,
+    ownership,
+    rating,
     bed_count,
     total_discharges,
     avg_charges,
+    avg_payments,
+    drg_code,
+    fiscal_year,
+    total_costs,
+    net_revenue,
+    operating_margin,
     certifications,
+    cert_date,
+    discipline,
     shortage_score,
+    shortage_status,
     source,
     source_updated_at,
     NOW() AS created_at,

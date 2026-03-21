@@ -30,7 +30,7 @@ SELECT
     c.source_updated_at AS source_date,
     NOW() AS created_at
 FROM mol_silver.molecules m
-JOIN bronze.chembl_molecules c ON m.inchi_key = c.inchi_key
+JOIN mol_bronze.chembl_molecules c ON m.inchi_key = c.inchi_key
 WHERE c.chembl_id IS NOT NULL
   AND m.needs_review = FALSE
 
@@ -47,7 +47,7 @@ SELECT
     d.source_updated_at AS source_date,
     NOW() AS created_at
 FROM mol_silver.molecules m
-JOIN bronze.drugbank d ON m.inchi_key = d.inchi_key
+JOIN mol_bronze.drugbank d ON m.inchi_key = d.inchi_key
 WHERE d.drugbank_id IS NOT NULL
   AND m.needs_review = FALSE
 
@@ -64,7 +64,7 @@ SELECT
     p.source_updated_at AS source_date,
     NOW() AS created_at
 FROM mol_silver.molecules m
-JOIN bronze.pubchem p ON m.inchi_key = p.inchi_key
+JOIN mol_bronze.pubchem p ON m.inchi_key = p.inchi_key
 WHERE p.cid IS NOT NULL
   AND m.needs_review = FALSE
 
@@ -81,7 +81,7 @@ SELECT
     d.source_updated_at AS source_date,
     NOW() AS created_at
 FROM mol_silver.molecules m
-JOIN bronze.drugbank d ON m.inchi_key = d.inchi_key
+JOIN mol_bronze.drugbank d ON m.inchi_key = d.inchi_key
 WHERE d.cas_number IS NOT NULL
   AND m.needs_review = FALSE
 
@@ -98,7 +98,7 @@ SELECT
     d.source_updated_at AS source_date,
     NOW() AS created_at
 FROM mol_silver.molecules m
-JOIN bronze.drugbank d ON m.inchi_key = d.inchi_key
+JOIN mol_bronze.drugbank d ON m.inchi_key = d.inchi_key
 WHERE d.unii IS NOT NULL
   AND m.needs_review = FALSE
 

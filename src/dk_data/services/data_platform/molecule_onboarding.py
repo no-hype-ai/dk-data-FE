@@ -169,7 +169,7 @@ class MoleculeOnboardingService:
                 sources_fetched = []
 
             # Step 3: Get canonical name
-            canonical_name = await self._get_canonical_name(molecule_id)
+            pref_name = await self._get_pref_name(molecule_id)
 
             await self._log_audit(
                 request_id=request_id,
@@ -187,7 +187,7 @@ class MoleculeOnboardingService:
                 status=OnboardingStatus.COMPLETED,
                 resolution_result=resolution,
                 molecule_id=molecule_id,
-                canonical_name=canonical_name,
+                pref_name=pref_name,
                 data_sources_fetched=sources_fetched,
                 enrichment_complete=not request.skip_enrichment,
                 created_at=created_at,
@@ -323,7 +323,7 @@ class MoleculeOnboardingService:
                     # Create molecule in Silver layer
                     molecule_id = await self.silver_service.create_molecule(
                         inchi_key=raw_data['inchi_key'],
-                        canonical_name=raw_data.get('name', 'Unknown'),
+                        pref_name=raw_data.get('name', 'Unknown'),
                         source=source
                     )
                     return ResolutionResult(
@@ -341,7 +341,7 @@ class MoleculeOnboardingService:
         async with self.db_pool.acquire() as conn:
             await conn.execute("""
                 INSERT INTO mol_silver.molecules
-                (molecule_id, inchi_key, canonical_name, needs_review, review_reason, resolution_confidence)
+                (molecule_id, inchi_key, pref_name, needs_review, review_reason, resolution_confidence)
                 VALUES ($1, $2, $3, TRUE, 'auto-onboarded', 0.5)
                 ON CONFLICT (molecule_id) DO NOTHING
             """, molecule_id, placeholder_inchi, name.lower())
@@ -386,14 +386,14 @@ class MoleculeOnboardingService:
 
         return fetched
 
-    async def _get_canonical_name(self, molecule_id: UUID) -> Optional[str]:
+    async def _get_pref_name(self, molecule_id: UUID) -> Optional[str]:
         """Get canonical name for molecule."""
         async with self.db_pool.acquire() as conn:
             row = await conn.fetchrow("""
-                SELECT canonical_name FROM mol_silver.molecules
+                SELECT pref_name FROM mol_silver.molecules
                 WHERE id = $1
             """, molecule_id)
-            return row['canonical_name'] if row else None
+            return row['pref_name'] if row else None
 
     async def _log_audit(
         self,

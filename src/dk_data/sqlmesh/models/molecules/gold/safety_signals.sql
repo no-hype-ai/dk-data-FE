@@ -1,6 +1,6 @@
 -- SQLMesh Model: Gold Safety Signals
--- Aggregated safety data from FAERS and drug labels
--- Part of: 012-dk-data-platform
+-- Aggregated safety data from report-level Silver adverse_events + drug labels
+-- Silver is now report-level (zero data loss); aggregation happens HERE in Gold.
 
 MODEL (
     name mol_gold.safety_signals,
@@ -23,74 +23,66 @@ WITH molecule_base AS (
     WHERE m.needs_review = FALSE
 ),
 
--- Aggregate FAERS counts
+-- Expand report-level MedDRA PTs and aggregate by molecule
+expanded_reports AS (
+    SELECT
+        ae.molecule_id,
+        meddra_pt,
+        ae.serious,
+        ae.serious_death,
+        ae.serious_hospitalization,
+        ae.receive_date
+    FROM mol_silver.adverse_events ae,
+         jsonb_array_elements_text(ae.meddra_pts) AS meddra_pt
+    WHERE ae.molecule_id IS NOT NULL
+      AND ae.meddra_pts IS NOT NULL
+),
+
+-- Aggregate FAERS counts per molecule
 faers_summary AS (
     SELECT
         molecule_id,
-        COALESCE(SUM(report_count), 0) AS total_reports,
-        COALESCE(SUM(serious_count), 0) AS serious_reports,
-        COALESCE(SUM(death_count), 0) AS death_reports,
-        COALESCE(SUM(hospitalization_count), 0) AS hospitalization_reports,
-        MIN(first_report_date) AS first_report_date,
-        MAX(last_report_date) AS last_report_date
+        COUNT(*) AS total_reports,
+        SUM(CASE WHEN serious THEN 1 ELSE 0 END) AS serious_reports,
+        SUM(CASE WHEN serious_death THEN 1 ELSE 0 END) AS death_reports,
+        SUM(CASE WHEN serious_hospitalization THEN 1 ELSE 0 END) AS hospitalization_reports,
+        MIN(receive_date) AS first_report_date,
+        MAX(receive_date) AS last_report_date
     FROM mol_silver.adverse_events
     WHERE molecule_id IS NOT NULL
     GROUP BY molecule_id
 ),
 
--- Top adverse events with PRR/ROR
+-- Aggregate by molecule + MedDRA PT for top events
+pt_counts AS (
+    SELECT
+        molecule_id,
+        meddra_pt,
+        COUNT(*) AS report_count,
+        SUM(CASE WHEN serious THEN 1 ELSE 0 END) AS serious_count,
+        SUM(CASE WHEN serious_death THEN 1 ELSE 0 END) AS death_count
+    FROM expanded_reports
+    GROUP BY molecule_id, meddra_pt
+),
+
+-- Top 20 adverse events per molecule
 top_adverse_events AS (
     SELECT
         molecule_id,
         jsonb_agg(
             jsonb_build_object(
                 'term', meddra_pt,
-                'soc', meddra_soc,
                 'count', report_count,
                 'serious_count', serious_count,
-                'death_count', death_count,
-                'reporting_rate', reporting_rate,
-                'prr', prr,
-                'ror', ror
+                'death_count', death_count
             ) ORDER BY report_count DESC
         ) FILTER (WHERE rn <= 20) AS top_events
     FROM (
         SELECT
-            molecule_id,
-            meddra_pt,
-            meddra_soc,
-            report_count,
-            serious_count,
-            death_count,
-            reporting_rate,
-            prr,
-            ror,
+            *,
             ROW_NUMBER() OVER (PARTITION BY molecule_id ORDER BY report_count DESC) AS rn
-        FROM mol_silver.adverse_events
+        FROM pt_counts
     ) ranked
-    GROUP BY molecule_id
-),
-
--- Adverse events by System Organ Class
-soc_breakdown AS (
-    SELECT
-        molecule_id,
-        jsonb_object_agg(
-            COALESCE(meddra_soc, 'Unknown'),
-            jsonb_build_object(
-                'count', soc_count,
-                'serious_count', soc_serious
-            )
-        ) AS soc_distribution
-    FROM (
-        SELECT
-            molecule_id,
-            meddra_soc,
-            SUM(report_count) AS soc_count,
-            SUM(serious_count) AS soc_serious
-        FROM mol_silver.adverse_events
-        GROUP BY molecule_id, meddra_soc
-    ) soc_agg
     GROUP BY molecule_id
 ),
 
@@ -134,11 +126,8 @@ SELECT
     fs.first_report_date,
     fs.last_report_date,
 
-    -- Top adverse events (with signal metrics)
+    -- Top adverse events
     tae.top_events AS top_adverse_events,
-
-    -- SOC breakdown
-    sb.soc_distribution,
 
     -- Boxed warning
     bw.boxed_warning,
@@ -159,6 +148,5 @@ SELECT
 FROM molecule_base mb
 LEFT JOIN faers_summary fs ON mb.molecule_id = fs.molecule_id
 LEFT JOIN top_adverse_events tae ON mb.molecule_id = tae.molecule_id
-LEFT JOIN soc_breakdown sb ON mb.molecule_id = sb.molecule_id
 LEFT JOIN boxed_warnings bw ON mb.molecule_id = bw.molecule_id
-WHERE fs.total_reports > 0 OR bw.boxed_warning IS NOT NULL;  -- Only include molecules with safety data
+WHERE fs.total_reports > 0 OR bw.boxed_warning IS NOT NULL;

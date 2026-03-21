@@ -293,7 +293,7 @@ class DynamicSilverTransformation:
                     updated_at = NOW()
                 FROM {rule.source_table} s
                 WHERE s.{name_col} IS NOT NULL
-                  AND similarity(LOWER(s.{name_col}), LOWER(m.canonical_name)) > {rule.dedup_confidence_threshold}
+                  AND similarity(LOWER(s.{name_col}), LOWER(m.pref_name)) > {rule.dedup_confidence_threshold}
                   AND NOT (m.data_sources ? '{rule.source_name}')
             """
             result = await conn.execute(link_sql)
@@ -544,7 +544,7 @@ async def register_source(
             source_table='bronze.new_pharma_db',
             column_mappings={
                 'inchi_key': 'inchi_key',
-                'drug_name': 'canonical_name',
+                'drug_name': 'pref_name',
                 'smiles': 'canonical_smiles'
             },
             identifier_mappings={

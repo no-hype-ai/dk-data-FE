@@ -42,8 +42,8 @@ WITH uspto AS (
         is_pharma_related,
         'uspto_trademarks' AS source,
         ingested_at AS source_updated_at
-    FROM bronze.uspto_trademarks
-    WHERE processed_to_silver = FALSE
+    FROM mol_raw.uspto_trademarks
+    WHERE TRUE
 ),
 
 -- EUIPO trademarks
@@ -73,8 +73,8 @@ euipo AS (
         is_pharma_related,
         'euipo_trademarks' AS source,
         ingested_at AS source_updated_at
-    FROM bronze.euipo_trademarks
-    WHERE processed_to_silver = FALSE
+    FROM mol_raw.euipo_trademarks
+    WHERE TRUE
 ),
 
 -- Combine both registries

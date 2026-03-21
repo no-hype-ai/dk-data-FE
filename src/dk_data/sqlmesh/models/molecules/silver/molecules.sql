@@ -1,5 +1,6 @@
 -- SQLMesh Model: Silver Molecules
 -- Master molecule table with entity resolution using InChI Key
+-- Silver columns use the SAME names as bronze. No renames.
 -- Part of: 012-dk-data-platform
 
 MODEL (
@@ -9,7 +10,7 @@ MODEL (
     ),
     cron '@daily',
     audits (
-        not_null(columns := (inchi_key, canonical_name)),
+        not_null(columns := (inchi_key, pref_name)),
         unique_values(columns := (inchi_key))
     ),
     grain inchi_key
@@ -21,22 +22,39 @@ WITH source_molecules AS (
     -- ChEMBL as primary source (precedence 2)
     SELECT
         inchi_key,
-        pref_name AS canonical_name,
-        'chembl' AS name_source,
-        canonical_smiles,
-        inchi,
+        chembl_id,
+        pref_name,
+        molecule_type,
+        max_phase,
+
+        -- Structure (bronze names preserved)
         molecular_formula,
         molecular_weight,
-        molecule_type,
-        CASE
-            WHEN max_phase = 4 THEN 'approved'
-            WHEN max_phase = 3 THEN 'phase_3'
-            WHEN max_phase = 2 THEN 'phase_2'
-            WHEN max_phase = 1 THEN 'phase_1'
-            ELSE 'preclinical'
-        END AS development_status,
-        max_phase,
-        first_approval::INTEGER AS first_approval_year,
+        canonical_smiles,
+        inchi,
+
+        -- Chemical properties (bronze names preserved)
+        alogp,
+        hba,
+        hbd,
+        psa,
+        num_ro5_violations,
+        aromatic_rings,
+        heavy_atoms,
+
+        -- Classification (bronze names preserved)
+        first_approval,
+        indication_class,
+        usan_stem,
+        therapeutic_flag,
+        prodrug,
+        natural_product,
+
+        -- Cross-references (bronze names preserved)
+        synonyms,
+        cross_references,
+
+        -- Source tracking
         1.0 AS resolution_confidence,
         FALSE AS needs_review,
         jsonb_build_array('chembl') AS data_sources,
@@ -44,7 +62,7 @@ WITH source_molecules AS (
         2 AS source_precedence,
         source_updated_at,
         created_at
-    FROM bronze.chembl_molecules
+    FROM mol_bronze.chembl_molecules
     WHERE
         inchi_key IS NOT NULL
         AND processed_to_silver = FALSE
@@ -53,21 +71,41 @@ WITH source_molecules AS (
 -- Deduplicate by InChI Key, keeping highest precedence source
 deduplicated AS (
     SELECT DISTINCT ON (inchi_key)
-        gen_random_uuid() AS id,
+        gen_random_uuid() AS molecule_id,
         inchi_key,
-        canonical_name,
-        name_source,
-        canonical_smiles,
-        inchi,
+        chembl_id,
+        pref_name,
+        molecule_type,
+        max_phase,
+
+        -- Structure
         molecular_formula,
         molecular_weight,
-        molecule_type,
-        NULL::JSONB AS therapeutic_areas,
-        NULL::TEXT AS mechanism_of_action,
-        development_status,
-        max_phase,
-        first_approval_year,
-        NULL::DATE AS approval_date,
+        canonical_smiles,
+        inchi,
+
+        -- Chemical properties
+        alogp,
+        hba,
+        hbd,
+        psa,
+        num_ro5_violations,
+        aromatic_rings,
+        heavy_atoms,
+
+        -- Classification
+        first_approval,
+        indication_class,
+        usan_stem,
+        therapeutic_flag,
+        prodrug,
+        natural_product,
+
+        -- Cross-references
+        synonyms,
+        cross_references,
+
+        -- Derived / enriched columns
         resolution_confidence,
         needs_review,
         NULL::TEXT AS review_reason,
@@ -83,5 +121,5 @@ SELECT * FROM deduplicated;
 
 
 -- NOTE: Bronze processed_to_silver flag updates are handled outside SQLMesh.
--- Silver models use INCREMENTAL_BY_UNIQUE_KEY with INCREMENTAL_BY_UNIQUE_KEY (default: update all columns on match),
+-- Silver models use INCREMENTAL_BY_UNIQUE_KEY (default: update all columns on match),
 -- so reprocessing is idempotent.

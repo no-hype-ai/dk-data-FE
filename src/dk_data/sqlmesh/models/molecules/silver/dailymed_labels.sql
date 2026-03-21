@@ -25,15 +25,19 @@ SELECT
     setid AS setid,              -- = drug_labels.spl_set_id
     NULL::UUID AS molecule_id,   -- filled by entity linking service
 
-    -- DailyMed metadata
+    -- DailyMed metadata (all bronze columns)
     spl_version,
     published_date,
     title,
     brand_name,
     generic_name,
     manufacturer,
+    entity_link_key,
+    entity_link_type,
+    query_name,
 
     -- Source tracking
+    id AS bronze_id,
     source,
     source_updated_at,
     NOW() AS created_at,

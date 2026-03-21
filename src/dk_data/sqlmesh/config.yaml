@@ -33,6 +33,15 @@ physical_schema_mapping:
   mol_silver: mol_silver
   mol_gold: mol_gold
   mol_app: mol_app
+  # Indication data schemas
+  ind_silver: ind_silver
+  ind_gold: ind_gold
+  # HCP/researcher data schemas
+  hcp_silver: hcp_silver
+  hcp_gold: hcp_gold
+  # Healthcare system (CMS) schemas
+  hcs_silver: hcs_silver
+  hcs_gold: hcs_gold
   # Application/infrastructure schemas (not molecule data)
   staging: staging
   mart: mart

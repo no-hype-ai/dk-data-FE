@@ -263,15 +263,15 @@ class SilverTransformationService:
             # Use correct column names from bronze.clinicaltrials table
             bronze_records = await conn.fetch("""
                 SELECT id, nct_id, org_study_id,
-                       COALESCE(official_title, brief_title) as title,
-                       NULL as brief_summary,
-                       phases as phase, study_type, overall_status as status,
-                       start_date, completion_date, completion_date as primary_completion_date,
-                       lead_sponsor_name as sponsor, lead_sponsor_class as sponsor_type, collaborators,
-                       allocation, intervention_model, masking, enrollment_count as enrollment,
+                       brief_title,
+                       brief_summary,
+                       phase, study_type, overall_status,
+                       start_date, completion_date, primary_completion_date,
+                       lead_sponsor_name, lead_sponsor_class, collaborators,
+                       allocation, intervention_model, masking, enrollment_count,
                        eligibility_criteria, minimum_age, maximum_age, sex,
-                       NULL as conditions, interventions, primary_outcomes, secondary_outcomes,
-                       NULL as locations, NULL as countries
+                       conditions, interventions, primary_outcomes, secondary_outcomes,
+                       locations, NULL as countries
                 FROM mol_bronze.clinicaltrials
                 WHERE processed_to_silver = FALSE OR processed_to_silver IS NULL
                 ORDER BY ingested_at ASC
@@ -353,11 +353,11 @@ class SilverTransformationService:
 
         await conn.execute("""
             INSERT INTO mol_silver.clinical_trials (
-                molecule_id, nct_id, org_study_id, title, brief_summary,
-                phase, study_type, status,
+                molecule_id, nct_id, org_study_id, brief_title, brief_summary,
+                phase, study_type, overall_status,
                 start_date, completion_date, primary_completion_date,
-                sponsor, sponsor_type, collaborators,
-                allocation, intervention_model, masking, enrollment,
+                lead_sponsor_name, lead_sponsor_class, collaborators,
+                allocation, intervention_model, masking, enrollment_count,
                 eligibility_criteria, minimum_age, maximum_age, sex,
                 conditions, interventions, primary_outcomes, secondary_outcomes,
                 locations, countries, source
@@ -368,31 +368,31 @@ class SilverTransformationService:
             )
             ON CONFLICT (nct_id) DO UPDATE SET
                 molecule_id = EXCLUDED.molecule_id,
-                title = EXCLUDED.title,
-                status = EXCLUDED.status,
+                brief_title = EXCLUDED.brief_title,
+                overall_status = EXCLUDED.overall_status,
                 phase = EXCLUDED.phase,
-                enrollment = EXCLUDED.enrollment,
+                enrollment_count = EXCLUDED.enrollment_count,
                 completion_date = EXCLUDED.completion_date,
                 updated_at = NOW()
         """,
             molecule_id,
             record['nct_id'],
             record['org_study_id'],
-            record['title'],
+            record['brief_title'],
             record['brief_summary'],
             record['phase'],
             record['study_type'],
-            record['status'],
+            record['overall_status'],
             record['start_date'],
             record['completion_date'],
             record['primary_completion_date'],
-            record['sponsor'],
-            record['sponsor_type'],
+            record['lead_sponsor_name'],
+            record['lead_sponsor_class'],
             json.dumps(collaborators),
             record['allocation'],
             record['intervention_model'],
             record['masking'],
-            record['enrollment'],
+            record['enrollment_count'],
             record['eligibility_criteria'],
             record['minimum_age'],
             record['maximum_age'],
@@ -531,11 +531,11 @@ class SilverTransformationService:
             # Use correct column names from bronze.openfda_labels table
             bronze_records = await conn.fetch("""
                 SELECT id, set_id, spl_id, version,
-                       brand_name, generic_name, manufacturer_name as manufacturer,
+                       brand_name, generic_name, manufacturer_name,
                        application_number, product_type,
                        indications_and_usage, dosage_and_administration,
                        contraindications, warnings, boxed_warning, adverse_reactions,
-                       drug_interactions, mechanism_of_action, effective_time as effective_date
+                       drug_interactions, mechanism_of_action, effective_time
                 FROM mol_bronze.openfda_labels
                 WHERE processed_to_silver = FALSE OR processed_to_silver IS NULL
                 ORDER BY ingested_at ASC
@@ -591,10 +591,10 @@ class SilverTransformationService:
         await conn.execute("""
             INSERT INTO mol_silver.drug_labels (
                 molecule_id, set_id, spl_id, version,
-                brand_name, generic_name, manufacturer, application_number,
+                brand_name, generic_name, manufacturer_name, application_number,
                 product_type, indications_and_usage, dosage_and_administration,
                 contraindications, warnings, boxed_warning, adverse_reactions,
-                drug_interactions, mechanism_of_action, effective_date, source
+                drug_interactions, mechanism_of_action, effective_time, source
             ) VALUES (
                 $1::uuid, $2, $3, $4, $5, $6, $7, $8, $9, $10,
                 $11, $12, $13, $14, $15, $16, $17, $18, 'openfda_labels'
@@ -612,7 +612,7 @@ class SilverTransformationService:
             record['version'],
             record['brand_name'],
             record['generic_name'],
-            record['manufacturer'],
+            record['manufacturer_name'],
             record['application_number'],
             record['product_type'],
             record['indications_and_usage'],
@@ -623,7 +623,7 @@ class SilverTransformationService:
             record['adverse_reactions'],
             record['drug_interactions'],
             record['mechanism_of_action'],
-            record['effective_date']
+            record['effective_time']
         )
 
         # Update molecule approval info if this is an approved drug

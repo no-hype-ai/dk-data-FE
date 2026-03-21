@@ -49,7 +49,7 @@ SELECT
     'chembl' AS source,
     NOW() AS created_at
 FROM mol_silver.molecules m
-JOIN bronze.chembl_molecules c ON m.inchi_key = c.inchi_key
+JOIN mol_bronze.chembl_molecules c ON m.inchi_key = c.inchi_key
 CROSS JOIN LATERAL jsonb_array_elements_text(COALESCE(c.synonyms, '[]'::jsonb)) AS syn
 WHERE syn IS NOT NULL
   AND syn != ''
@@ -66,7 +66,7 @@ SELECT
     'drugbank' AS source,
     NOW() AS created_at
 FROM mol_silver.molecules m
-JOIN bronze.drugbank d ON m.inchi_key = d.inchi_key
+JOIN mol_bronze.drugbank d ON m.inchi_key = d.inchi_key
 CROSS JOIN LATERAL jsonb_array_elements_text(COALESCE(d.synonyms, '[]'::jsonb)) AS syn
 WHERE syn IS NOT NULL
   AND syn != ''
@@ -83,7 +83,7 @@ SELECT
     'drugbank' AS source,
     NOW() AS created_at
 FROM mol_silver.molecules m
-JOIN bronze.drugbank d ON m.inchi_key = d.inchi_key
+JOIN mol_bronze.drugbank d ON m.inchi_key = d.inchi_key
 CROSS JOIN LATERAL jsonb_array_elements(COALESCE(d.international_brands, '[]'::jsonb)) AS brand
 WHERE brand->>'name' IS NOT NULL
   AND brand->>'name' != ''
@@ -100,7 +100,7 @@ SELECT
     'drugbank' AS source,
     NOW() AS created_at
 FROM mol_silver.molecules m
-JOIN bronze.drugbank d ON m.inchi_key = d.inchi_key
+JOIN mol_bronze.drugbank d ON m.inchi_key = d.inchi_key
 CROSS JOIN LATERAL jsonb_array_elements(COALESCE(d.products, '[]'::jsonb)) AS prod
 WHERE prod->>'name' IS NOT NULL
   AND prod->>'name' != ''
@@ -149,7 +149,7 @@ SELECT
     'pubchem' AS source,
     NOW() AS created_at
 FROM mol_silver.molecules m
-JOIN bronze.pubchem p ON m.inchi_key = p.inchi_key
+JOIN mol_bronze.pubchem p ON m.inchi_key = p.inchi_key
 CROSS JOIN LATERAL jsonb_array_elements_text(COALESCE(p.synonyms, '[]'::jsonb)) AS syn
 WHERE syn IS NOT NULL
   AND syn != ''
@@ -183,7 +183,7 @@ SELECT DISTINCT
     NOW() AS created_at
 FROM mol_silver.molecules m
 JOIN mol_silver.molecule_aliases ma ON m.id = ma.molecule_id
-JOIN bronze.orange_book ob ON LOWER(ma.alias_name) = LOWER(ob.ingredient)
+JOIN mol_bronze.orange_book ob ON LOWER(ma.alias_name) = LOWER(ob.ingredient)
 WHERE ob.trade_name IS NOT NULL
   AND ob.trade_name != ''
   AND m.needs_review = FALSE

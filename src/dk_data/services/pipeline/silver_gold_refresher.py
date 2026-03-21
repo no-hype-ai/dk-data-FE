@@ -58,13 +58,13 @@ class SilverGoldRefresher:
         normalized = drug_name.lower().strip()
 
         async with self.db_pool.acquire() as conn:
-            # Try exact match on canonical_name
+            # Try exact match on pref_name
             row = await conn.fetchrow(
-                "SELECT id FROM mol_silver.molecules WHERE LOWER(canonical_name) = $1",
+                "SELECT molecule_id FROM mol_silver.molecules WHERE LOWER(pref_name) = $1",
                 normalized,
             )
             if row:
-                return str(row["id"])
+                return str(row["molecule_id"])
 
             # Try alias match
             row = await conn.fetchrow(
@@ -77,9 +77,9 @@ class SilverGoldRefresher:
             # Create new molecule
             mol_id = str(uuid.uuid4())
             await conn.execute("""
-                INSERT INTO mol_silver.molecules (id, canonical_name, name_source, primary_source, data_sources)
-                VALUES ($1, $2, $3, $3, $4::jsonb)
-            """, mol_id, drug_name, source_name, json.dumps([source_name]))
+                INSERT INTO mol_silver.molecules (molecule_id, pref_name, source_count)
+                VALUES ($1, $2, 1)
+            """, mol_id, drug_name)
 
             # Add alias
             await conn.execute("""
@@ -164,10 +164,10 @@ class SilverGoldRefresher:
 
                 await conn.execute("""
                     INSERT INTO mol_silver.clinical_trials
-                    (id, molecule_id, nct_id, title, brief_summary, phase,
-                     study_type, status, start_date, completion_date,
-                     primary_completion_date, sponsor, sponsor_type,
-                     collaborators, enrollment, conditions, interventions,
+                    (id, molecule_id, nct_id, brief_title, brief_summary, phase,
+                     study_type, overall_status, start_date, completion_date,
+                     primary_completion_date, lead_sponsor_name, lead_sponsor_class,
+                     collaborators, enrollment_count, conditions, interventions,
                      primary_outcomes, secondary_outcomes, locations, countries,
                      eligibility_criteria, minimum_age, maximum_age, sex, source,
                      has_results, results_outcome_measures, results_adverse_events)
@@ -178,10 +178,10 @@ class SilverGoldRefresher:
                             $26, $27::jsonb, $28::jsonb)
                     ON CONFLICT (nct_id) DO UPDATE SET
                         molecule_id = EXCLUDED.molecule_id,
-                        title = EXCLUDED.title,
+                        brief_title = EXCLUDED.brief_title,
                         phase = EXCLUDED.phase,
-                        status = EXCLUDED.status,
-                        enrollment = EXCLUDED.enrollment,
+                        overall_status = EXCLUDED.overall_status,
+                        enrollment_count = EXCLUDED.enrollment_count,
                         conditions = EXCLUDED.conditions,
                         interventions = EXCLUDED.interventions,
                         start_date = EXCLUDED.start_date,
@@ -236,7 +236,7 @@ class SilverGoldRefresher:
                 await conn.execute("""
                     INSERT INTO mol_silver.drug_labels
                     (id, molecule_id, set_id, brand_name, generic_name,
-                     manufacturer, application_number, product_type,
+                     manufacturer_name, application_number, product_type,
                      indications_and_usage, dosage_and_administration,
                      contraindications, warnings, boxed_warning,
                      adverse_reactions, drug_interactions, mechanism_of_action,
@@ -339,7 +339,7 @@ class SilverGoldRefresher:
                 await conn.execute("""
                     INSERT INTO mol_silver.publications
                     (id, openalex_id, doi, pmid, title, abstract,
-                     publication_year, journal, authors, first_author,
+                     publication_year, journal_name, author_names, first_author_name,
                      cited_by_count, is_open_access, keywords, source)
                     VALUES ($1, $2, $3, $4, $5, $6, $7, $8,
                             $9::jsonb, $10, $11, $12, $13::jsonb, 'openalex')
@@ -613,7 +613,7 @@ class SilverGoldRefresher:
                     updated_at = NOW()
             """,
                 molecule_id,
-                mol.get("canonical_name") or drug_name,
+                mol.get("pref_name") or drug_name,
                 mol.get("molecule_type"),
                 mol.get("inchi_key"),
                 stage,

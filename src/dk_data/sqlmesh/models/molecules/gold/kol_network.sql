@@ -3,7 +3,7 @@
 -- Part of: 015-assessment-dashboard-integration
 
 MODEL (
-    name mol_gold.kol_network,
+    name hcp_gold.kol_network,
     kind FULL,
     cron '@weekly',
     audits (
@@ -20,7 +20,7 @@ WITH author_publications AS (
     SELECT DISTINCT
         r.id AS researcher_id,
         p.doi
-    FROM mol_silver.researchers r
+    FROM hcp_silver.researchers r
     JOIN mol_silver.publications p
         ON p.first_author_name ILIKE '%' || r.family_name || '%'
     WHERE p.doi IS NOT NULL

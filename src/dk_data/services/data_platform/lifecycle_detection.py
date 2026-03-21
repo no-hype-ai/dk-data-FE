@@ -183,30 +183,30 @@ class LifecycleDetectionService:
                     detail=label['product_type'],
                     status='Approved',
                     source=label['source'],
-                    date=label['effective_date'],
+                    date=label['effective_time'],
                     url=f"https://dailymed.nlm.nih.gov/dailymed/drugInfo.cfm?setid={label['set_id']}",
                     weight=self.SOURCE_WEIGHTS.get(label['source'], 0.5)
                 ))
 
             # Check for clinical trials
             trials = await conn.fetch("""
-                SELECT nct_id, title, phase, status, start_date, source
+                SELECT nct_id, brief_title, phase, overall_status, start_date, source
                 FROM mol_silver.clinical_trials
                 WHERE molecule_id = $1::uuid
                 ORDER BY start_date DESC
             """, molecule_id)
 
             for trial in trials:
-                is_active = trial['status'] in [
+                is_active = trial['overall_status'] in [
                     'Recruiting', 'Active, not recruiting',
                     'Enrolling by invitation', 'Not yet recruiting'
                 ]
                 evidence.append(EvidenceItem(
                     evidence_type='clinical_trial',
                     evidence_id=trial['nct_id'],
-                    title=trial['title'],
+                    title=trial['brief_title'],
                     detail=trial['phase'],
-                    status=trial['status'],
+                    status=trial['overall_status'],
                     source=trial['source'],
                     date=trial['start_date'],
                     url=f"https://clinicaltrials.gov/study/{trial['nct_id']}",

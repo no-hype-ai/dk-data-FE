@@ -3,24 +3,24 @@
 -- Part of: 003-molecule-assessment-dashboard
 
 MODEL (
-    name mol_silver.indication_epidemiology,
+    name ind_silver.epidemiology,
     kind INCREMENTAL_BY_UNIQUE_KEY (
-        unique_key (icd10_code, country_code, data_year, source)
+        unique_key (icd10_code, spatial_dim, time_dim, source)
     ),
     cron '@monthly',
     audits (
-        not_null(columns := (icd10_code, data_year, source))
+        not_null(columns := (icd10_code, time_dim, source))
     ),
-    grain (icd10_code, country_code, data_year, source)
+    grain (icd10_code, spatial_dim, time_dim, source)
 );
 
 -- WHO GHO epidemiology data joined via indicator mapping
 SELECT
     gen_random_uuid() AS id,
     m.icd10_code,
-    g.indication_query AS indication_name,
-    g.spatial_dim AS country_code,
-    g.time_dim AS data_year,
+    g.indication_query,
+    g.spatial_dim,
+    g.time_dim,
 
     -- Map metric_type to appropriate columns
     CASE WHEN m.metric_type = 'incidence_rate' THEN g.numeric_value END AS incidence_rate,
@@ -34,6 +34,15 @@ SELECT
     NULL::INTEGER AS trial_count,
     NULL::INTEGER AS trial_enrollment_total,
 
+    -- Bronze columns carried forward (zero data loss)
+    g.indicator_code,
+    g.numeric_value,
+    g.dim1,
+    g.low,
+    g.high,
+    m.metric_type,
+
+    g.id AS bronze_id,
     'who_gho' AS source,
     g.source_updated_at,
     NOW() AS created_at,

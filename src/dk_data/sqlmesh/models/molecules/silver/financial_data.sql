@@ -16,23 +16,25 @@ MODEL (
 
 SELECT
     gen_random_uuid() AS id,
-    cik,
-    company_name,
-    filing_type,
-    filing_date,
-    revenue,
-    net_income,
-    total_assets,
+    b.filing_id,
+    b.cik,
+    b.company_name,
+    b.filing_type,
+    b.filing_date,
+    b.revenue,
+    b.net_income,
+    b.total_assets,
     NULL::NUMERIC AS market_cap,
     NULL::NUMERIC AS drug_revenue_pct,
-    mda_excerpt,
-    risk_factors_excerpt,
-    product_name,
-    source,
-    source_updated_at,
+    b.mda_excerpt,
+    b.risk_factors_excerpt,
+    b.product_name,
+    b.id AS bronze_id,
+    b.source,
+    b.source_updated_at,
     NOW() AS created_at,
     NOW() AS updated_at
-FROM bronze.sec_edgar
-WHERE processed_to_silver = FALSE
-  AND cik IS NOT NULL
-  AND filing_type IS NOT NULL;
+FROM mol_bronze.sec_edgar b
+WHERE b.processed_to_silver = FALSE
+  AND b.cik IS NOT NULL
+  AND b.filing_type IS NOT NULL;

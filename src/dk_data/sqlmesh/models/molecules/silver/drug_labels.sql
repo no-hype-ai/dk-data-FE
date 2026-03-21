@@ -1,6 +1,6 @@
 -- SQLMesh Model: Silver Drug Labels
--- Normalized FDA drug label data from Bronze OpenFDA Labels
--- Part of: 012-dk-data-platform
+-- Zero data loss from Bronze. Column names match bronze (API-derived snake_case).
+-- Picks latest SPL version per set_id. Adds: molecule_id linkage.
 
 MODEL (
     name mol_silver.drug_labels,
@@ -15,114 +15,106 @@ MODEL (
     grain set_id
 );
 
-WITH source_labels AS (
-    SELECT
-        set_id,
-        spl_version,
-        spl_id,
-        -- Extract first value from arrays
-        COALESCE(
-            brand_name->0,
-            brand_name::TEXT
-        ) AS brand_name,
-        COALESCE(
-            generic_name->0,
-            generic_name::TEXT
-        ) AS generic_name,
-        COALESCE(
-            manufacturer_name->0,
-            manufacturer_name::TEXT
-        ) AS manufacturer_name,
-        product_type,
-        routes,
-        dosage_forms,
-        pharm_class_epc,
-        pharm_class_moa,
-        rxcui,
-        unii,
-        application_numbers,
-        effective_date,
-        -- Label sections (extract text from arrays)
-        indications_and_usage->0 AS indications_and_usage,
-        dosage_and_administration->0 AS dosage_and_administration,
-        contraindications->0 AS contraindications,
-        warnings->0 AS warnings,
-        warnings_and_cautions->0 AS warnings_and_cautions,
-        boxed_warning->0 AS boxed_warning,
-        adverse_reactions->0 AS adverse_reactions,
-        drug_interactions->0 AS drug_interactions,
-        clinical_pharmacology->0 AS clinical_pharmacology,
-        mechanism_of_action->0 AS mechanism_of_action,
-        pharmacokinetics->0 AS pharmacokinetics,
-        overdosage->0 AS overdosage,
-        description->0 AS description,
-        clinical_studies->0 AS clinical_studies,
-        how_supplied->0 AS how_supplied,
-        pregnancy->0 AS pregnancy,
-        pediatric_use->0 AS pediatric_use,
-        geriatric_use->0 AS geriatric_use,
-        has_boxed_warning,
-        source,
-        source_updated_at,
-        created_at
-    FROM bronze.openfda_labels
-    WHERE
-        processed_to_silver = FALSE
-        AND set_id IS NOT NULL
-),
-
--- Get latest version per set_id
-latest_version AS (
+WITH latest_version AS (
     SELECT DISTINCT ON (set_id)
         *
-    FROM source_labels
-    ORDER BY set_id, spl_version DESC NULLS LAST, source_updated_at DESC
+    FROM mol_bronze.openfda_labels
+    WHERE processed_to_silver = FALSE
+      AND set_id IS NOT NULL
+    ORDER BY set_id, version DESC NULLS LAST, ingested_at DESC
 )
 
 SELECT
-    gen_random_uuid() AS id,
+    gen_random_uuid() AS label_id,
+    NULL::UUID AS molecule_id,
+
+    -- All bronze columns carried forward with SAME NAMES (API-derived)
     set_id,
-    spl_version,
     spl_id,
+    version,
+    effective_time,
     brand_name,
     generic_name,
     manufacturer_name,
     product_type,
-    routes,
-    dosage_forms,
-    pharm_class_epc,
-    pharm_class_moa,
-    rxcui,
-    unii,
-    application_numbers,
-    effective_date,
+    route,
+    substance_name,
+
+    -- openFDA enrichment fields (prefixed in bronze as openfda_*)
+    openfda_application_number,
+    openfda_brand_name,
+    openfda_generic_name,
+    openfda_manufacturer_name,
+    openfda_product_type,
+    openfda_route,
+    openfda_substance_name,
+    openfda_rxcui,
+    openfda_spl_id,
+    openfda_spl_set_id,
+    openfda_unii,
+    openfda_nui,
+    openfda_pharm_class_cs,
+    openfda_pharm_class_epc,
+    openfda_pharm_class_moa,
+    openfda_pharm_class_pe,
+    openfda_is_original_packager,
+    openfda_product_ndc,
+    openfda_package_ndc,
+    openfda_upc,
+
+    -- Label sections (all carried forward)
     indications_and_usage,
     dosage_and_administration,
+    dosage_forms_and_strengths,
     contraindications,
     warnings,
     warnings_and_cautions,
     boxed_warning,
     adverse_reactions,
     drug_interactions,
+    use_in_specific_populations,
     clinical_pharmacology,
     mechanism_of_action,
+    pharmacodynamics,
     pharmacokinetics,
     overdosage,
     description,
     clinical_studies,
     how_supplied,
+    storage_and_handling,
+    package_label_principal_display_panel,
     pregnancy,
+    nursing_mothers,
     pediatric_use,
     geriatric_use,
-    has_boxed_warning,
-    NULL::UUID AS molecule_id,  -- To be linked by entity resolution
-    source,
-    source_updated_at,
+    information_for_patients,
+    spl_medguide,
+    spl_patient_package_insert,
+    spl_product_data_elements,
+    spl_unclassified_section,
+    nonclinical_toxicology,
+    recent_major_changes,
+    active_ingredient,
+    inactive_ingredient,
+    purpose,
+    keep_out_of_reach_of_children,
+    ask_doctor,
+    ask_doctor_or_pharmacist,
+    do_not_use,
+    stop_use,
+    questions,
+    risks,
+    instructions_for_use,
+    animal_pharmacology_and_or_toxicology,
+    references,
+    carcinogenesis_and_mutagenesis_and_impairment_of_fertility,
+    laboratory_tests,
+    pregnancy_or_breast_feeding,
+    pharmacogenomics,
+
+    -- Source tracking
+    id AS bronze_id,
+    ingested_at,
     NOW() AS created_at,
     NOW() AS updated_at
 FROM latest_version;
-
-
--- NOTE: Bronze processed_to_silver flag updates are handled outside SQLMesh.
--- Silver models use INCREMENTAL_BY_UNIQUE_KEY with INCREMENTAL_BY_UNIQUE_KEY (default: update all columns on match),
--- so reprocessing is idempotent.

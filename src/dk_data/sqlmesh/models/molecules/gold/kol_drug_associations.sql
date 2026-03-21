@@ -3,7 +3,7 @@
 -- Part of: 015-assessment-dashboard-integration
 
 MODEL (
-    name mol_gold.kol_drug_associations,
+    name hcp_gold.kol_drug_associations,
     kind INCREMENTAL_BY_UNIQUE_KEY (
         unique_key (researcher_id, molecule_id)
     ),
@@ -22,7 +22,7 @@ WITH trial_associations AS (
         m.canonical_name AS drug_name,
         'trial_investigator' AS association_type,
         COUNT(DISTINCT ct.nct_id) AS evidence_count
-    FROM mol_silver.researchers r
+    FROM hcp_silver.researchers r
     JOIN mol_silver.clinical_trials ct
         ON ct.lead_sponsor ILIKE '%' || r.family_name || '%'
     JOIN mol_silver.molecules m
@@ -39,7 +39,7 @@ publication_associations AS (
         m.canonical_name AS drug_name,
         'publication_author' AS association_type,
         COUNT(DISTINCT p.doi) AS evidence_count
-    FROM mol_silver.researchers r
+    FROM hcp_silver.researchers r
     JOIN mol_silver.publications p
         ON p.first_author_name ILIKE '%' || r.family_name || '%'
     JOIN mol_silver.molecule_publications mp

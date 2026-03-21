@@ -55,8 +55,8 @@ SELECT DISTINCT
     'drugbank' AS source,
     NOW() AS created_at
 FROM mol_silver.molecules m
-JOIN bronze.drugbank d ON m.inchi_key = d.inchi_key
+JOIN mol_bronze.drugbank d ON m.inchi_key = d.inchi_key
 CROSS JOIN LATERAL jsonb_array_elements(COALESCE(d.targets, '[]'::jsonb)) AS tgt
-JOIN mol_silver.targets t ON t.target_name ILIKE '%' || (tgt->>'name') || '%'
+JOIN mol_silver.targets t ON t.protein_name ILIKE '%' || (tgt->>'name') || '%'
 WHERE m.needs_review = FALSE
   AND tgt->>'name' IS NOT NULL

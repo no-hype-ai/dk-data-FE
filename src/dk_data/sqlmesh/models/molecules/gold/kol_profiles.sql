@@ -3,7 +3,7 @@
 -- Part of: 015-assessment-dashboard-integration
 
 MODEL (
-    name mol_gold.kol_profiles,
+    name hcp_gold.kol_profiles,
     kind INCREMENTAL_BY_UNIQUE_KEY (
         unique_key researcher_id
     ),
@@ -28,7 +28,7 @@ WITH researcher_base AS (
         r.research_areas,
         r.therapeutic_areas,
         COALESCE(r.grant_count, 0) AS grant_count
-    FROM mol_silver.researchers r
+    FROM hcp_silver.researchers r
 ),
 
 -- Publication counts per researcher
@@ -47,7 +47,7 @@ trial_counts AS (
     SELECT
         r.id AS researcher_id,
         COUNT(DISTINCT ct.nct_id) AS trial_count
-    FROM mol_silver.researchers r
+    FROM hcp_silver.researchers r
     JOIN mol_silver.clinical_trials ct
         ON ct.lead_sponsor ILIKE '%' || r.family_name || '%'
     GROUP BY r.id

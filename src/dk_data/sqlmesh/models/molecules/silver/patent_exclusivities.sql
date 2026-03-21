@@ -26,10 +26,21 @@ MODEL (
 WITH orange_book_data AS (
     SELECT
         application_number,
+        product_number,
         trade_name,
         ingredient AS generic_name,
+        applicant,
+        strength,
+        dosage_form,
+        route,
+        approval_date,
+        te_code,
+        rld,
         patent_number,
         patent_expiration AS patent_expiry_date,
+        drug_substance_patent,
+        drug_product_patent,
+        patent_use_code,
         CASE
             WHEN drug_substance_patent THEN 'substance'
             WHEN drug_product_patent THEN 'product'
@@ -47,6 +58,16 @@ WITH orange_book_data AS (
         NULL::DATE AS bpcia_biosimilar_filing_date,
         NULL::DATE AS orphan_exclusivity_end,
         NULL::DATE AS interchangeable_exclusivity_end,
+        -- Purple Book specific (NULL for Orange Book)
+        NULL::TEXT AS license_type,
+        NULL::TEXT AS presentation,
+        NULL::TEXT AS status,
+        NULL::TEXT AS center,
+        NULL::DATE AS first_licensure_date,
+        NULL::DATE AS exclusivity_expiry_date,
+        NULL::DATE AS ref_product_exclusivity_end,
+        NULL::DATE AS interchangeable_approval_date,
+        NULL::BOOLEAN AS has_patent_list,
         NOW() AS source_updated_at
     FROM mol_bronze.orange_book
     WHERE processed_to_silver = FALSE
@@ -57,10 +78,21 @@ WITH orange_book_data AS (
 purple_book_data AS (
     SELECT
         'BLA' || bla_number AS application_number,
+        product_number,
         brand_name AS trade_name,
         generic_name,
+        applicant,
+        strength,
+        dosage_form,
+        route,
+        approval_date::TEXT AS approval_date,
+        NULL::TEXT AS te_code,
+        NULL::BOOLEAN AS rld,
         NULL::TEXT AS patent_number,
         NULL::DATE AS patent_expiry_date,
+        NULL::BOOLEAN AS drug_substance_patent,
+        NULL::BOOLEAN AS drug_product_patent,
+        NULL::TEXT AS patent_use_code,
         'biologic' AS patent_type,
         CASE
             WHEN is_biosimilar AND is_interchangeable THEN 'BIO-IC'
@@ -111,6 +143,36 @@ purple_book_data AS (
             THEN TO_DATE(interchangeable_exclusivity_end, 'Month DD, YYYY')
             ELSE NULL
         END::DATE AS interchangeable_exclusivity_end,
+        -- Purple Book specific columns
+        license_type,
+        presentation,
+        status,
+        center,
+        CASE
+            WHEN first_licensure_date IS NOT NULL
+                AND first_licensure_date ~ '\w+ \d{2}, \d{4}'
+            THEN TO_DATE(first_licensure_date, 'Month DD, YYYY')
+            ELSE NULL
+        END::DATE AS first_licensure_date,
+        CASE
+            WHEN exclusivity_expiry_date IS NOT NULL
+                AND exclusivity_expiry_date ~ '\w+ \d{2}, \d{4}'
+            THEN TO_DATE(exclusivity_expiry_date, 'Month DD, YYYY')
+            ELSE NULL
+        END::DATE AS exclusivity_expiry_date,
+        CASE
+            WHEN ref_product_exclusivity_end IS NOT NULL
+                AND ref_product_exclusivity_end ~ '\w+ \d{2}, \d{4}'
+            THEN TO_DATE(ref_product_exclusivity_end, 'Month DD, YYYY')
+            ELSE NULL
+        END::DATE AS ref_product_exclusivity_end,
+        CASE
+            WHEN interchangeable_approval_date IS NOT NULL
+                AND interchangeable_approval_date ~ '\w+ \d{2}, \d{4}'
+            THEN TO_DATE(interchangeable_approval_date, 'Month DD, YYYY')
+            ELSE NULL
+        END::DATE AS interchangeable_approval_date,
+        has_patent_list,
         source_updated_at
     FROM mol_bronze.purple_book
     WHERE processed_to_silver = FALSE
@@ -123,9 +185,21 @@ SELECT
     gen_random_uuid() AS id,
     NULL::UUID AS molecule_id,  -- entity linking fills this
     application_number,
+    product_number,
     trade_name,
+    generic_name,
+    applicant,
+    strength,
+    dosage_form,
+    route,
+    approval_date,
+    te_code,
+    rld,
     patent_number,
     patent_expiry_date,
+    drug_substance_patent,
+    drug_product_patent,
+    patent_use_code,
     patent_type,
     exclusivity_code,
     exclusivity_date,
@@ -139,6 +213,15 @@ SELECT
     bpcia_biosimilar_filing_date,
     orphan_exclusivity_end,
     interchangeable_exclusivity_end,
+    license_type,
+    presentation,
+    status,
+    center,
+    first_licensure_date,
+    exclusivity_expiry_date,
+    ref_product_exclusivity_end,
+    interchangeable_approval_date,
+    has_patent_list,
     source_updated_at,
     NOW() AS created_at
 FROM orange_book_data
@@ -149,9 +232,21 @@ SELECT
     gen_random_uuid() AS id,
     NULL::UUID AS molecule_id,
     application_number,
+    product_number,
     trade_name,
+    generic_name,
+    applicant,
+    strength,
+    dosage_form,
+    route,
+    approval_date,
+    te_code,
+    rld,
     patent_number,
     patent_expiry_date,
+    drug_substance_patent,
+    drug_product_patent,
+    patent_use_code,
     patent_type,
     exclusivity_code,
     exclusivity_date,
@@ -165,5 +260,14 @@ SELECT
     bpcia_biosimilar_filing_date,
     orphan_exclusivity_end,
     interchangeable_exclusivity_end,
+    license_type,
+    presentation,
+    status,
+    center,
+    first_licensure_date,
+    exclusivity_expiry_date,
+    ref_product_exclusivity_end,
+    interchangeable_approval_date,
+    has_patent_list,
     source_updated_at
 FROM purple_book_data;

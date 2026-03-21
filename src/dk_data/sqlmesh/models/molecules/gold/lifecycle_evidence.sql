@@ -17,7 +17,7 @@ SELECT
     'clinical_trial' AS evidence_type,
     ct.nct_id AS evidence_id,
     ct.title AS evidence_title,
-    ct.phase AS evidence_detail,
+    ct.phase_normalized AS evidence_detail,
     ct.status AS evidence_status,
     'ClinicalTrials.gov' AS evidence_source,
     ct.start_date AS evidence_date,

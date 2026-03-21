@@ -44,7 +44,7 @@ SELECT DISTINCT
     NOW() AS created_at
 
 FROM mol_silver.molecules m
-JOIN bronze.chembl_molecules c ON m.inchi_key = c.inchi_key
+JOIN mol_bronze.chembl_molecules c ON m.inchi_key = c.inchi_key
 CROSS JOIN LATERAL jsonb_array_elements(COALESCE(c.documents, '[]'::jsonb)) AS doc
 JOIN mol_silver.publications p ON
     p.doi = doc->>'document_doi'

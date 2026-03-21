@@ -19,11 +19,11 @@ SELECT
     -- Highest phase from trials
     MAX(
         CASE
-            WHEN ct.phase LIKE '%Phase 4%' THEN 'Phase 4'
-            WHEN ct.phase LIKE '%Phase 3%' THEN 'Phase 3'
-            WHEN ct.phase LIKE '%Phase 2%' THEN 'Phase 2'
-            WHEN ct.phase LIKE '%Phase 1%' THEN 'Phase 1'
-            ELSE ct.phase
+            WHEN ct.phase_normalized LIKE '%Phase 4%' THEN 'Phase 4'
+            WHEN ct.phase_normalized LIKE '%Phase 3%' THEN 'Phase 3'
+            WHEN ct.phase_normalized LIKE '%Phase 2%' THEN 'Phase 2'
+            WHEN ct.phase_normalized LIKE '%Phase 1%' THEN 'Phase 1'
+            ELSE ct.phase_normalized
         END
     ) AS phase,
 

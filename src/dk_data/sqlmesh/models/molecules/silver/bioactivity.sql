@@ -57,7 +57,7 @@ WITH activity_data AS (
         source_updated_at,
         NOW() AS created_at
 
-    FROM bronze.chembl_molecules
+    FROM mol_bronze.chembl_molecules
     WHERE
         processed_to_silver = FALSE
         AND chembl_id IS NOT NULL
