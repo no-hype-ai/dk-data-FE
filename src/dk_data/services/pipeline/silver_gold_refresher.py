@@ -1,8 +1,15 @@
-"""On-demand Silver + Gold refresher.
+"""DEPRECATED: On-demand Silver + Gold refresher.
 
-After bronze transform, this module immediately updates silver and gold
-tables for the affected molecule. Each source type populates specific
-silver tables, and gold aggregates are rebuilt from silver.
+THIS MODULE IS DEPRECATED. Silver transformation now flows through the proper
+medallion pipeline: raw → BronzeTransformer → SilverTransformation (which uses
+IdentifierResolver for entity linking).
+
+The base_tool.py data tools gateway was updated to call SilverTransformation
+instead of this refresher. This file is kept only for backward compatibility
+with any remaining callers. New code should use SilverTransformation directly.
+
+The gold refresh methods (_refresh_gold_*) may still be useful and could be
+extracted into a standalone GoldRefresher if needed.
 """
 
 import json
@@ -162,59 +169,116 @@ class SilverGoldRefresher:
                     ae_module = results_section.get("adverseEventsModule", {})
                     results_ae = ae_module if ae_module else None
 
+                # Extract ALL API fields (zero data loss)
+                oversight = proto.get("oversightModule", {})
+                refs_mod = proto.get("referencesModule", {})
+                ipd_mod = proto.get("ipdSharingStatementModule", {})
+                derived = study.get("derivedSection", {})
+
                 await conn.execute("""
                     INSERT INTO mol_silver.clinical_trials
-                    (id, molecule_id, nct_id, brief_title, brief_summary, phase,
-                     study_type, overall_status, start_date, completion_date,
-                     primary_completion_date, lead_sponsor_name, lead_sponsor_class,
-                     collaborators, enrollment_count, conditions, interventions,
-                     primary_outcomes, secondary_outcomes, locations, countries,
-                     eligibility_criteria, minimum_age, maximum_age, sex, source,
-                     has_results, results_outcome_measures, results_adverse_events)
-                    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11,
-                            $12, $13, $14::jsonb, $15, $16::jsonb, $17::jsonb,
-                            $18::jsonb, $19::jsonb, $20::jsonb, $21::jsonb,
-                            $22, $23, $24, $25, 'clinicaltrials_gov',
-                            $26, $27::jsonb, $28::jsonb)
+                    (id, molecule_id, nct_id, org_study_id, brief_title, official_title, acronym,
+                     brief_summary, detailed_description,
+                     overall_status, last_known_status, why_stopped,
+                     phase, phases, study_type,
+                     start_date, start_date_type, completion_date, completion_date_type,
+                     primary_completion_date,
+                     study_first_submit_date, study_first_post_date, last_update_post_date,
+                     allocation, intervention_model, primary_purpose, masking,
+                     enrollment_count, enrollment_type,
+                     conditions, keywords, mesh_terms,
+                     interventions, arms_groups,
+                     eligibility_criteria, sex, minimum_age, maximum_age, healthy_volunteers,
+                     lead_sponsor_name, lead_sponsor_class, collaborators, central_contacts,
+                     locations,
+                     primary_outcomes, secondary_outcomes,
+                     fda_regulated_drug, fda_regulated_device, ipd_sharing,
+                     has_results, results_section,
+                     results_outcome_measures, results_adverse_events,
+                     results_participant_flow, results_baseline,
+                     condition_browse, intervention_browse, "references",
+                     source)
+                    VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14::jsonb,$15,
+                            $16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26,$27,$28,$29,
+                            $30::jsonb,$31::jsonb,$32::jsonb,$33::jsonb,$34::jsonb,
+                            $35,$36,$37,$38,$39,$40,$41,$42::jsonb,$43::jsonb,$44::jsonb,
+                            $45::jsonb,$46::jsonb,$47,$48,$49,$50,$51::jsonb,
+                            $52::jsonb,$53::jsonb,$54::jsonb,$55::jsonb,
+                            $56::jsonb,$57::jsonb,$58::jsonb,
+                            'clinicaltrials_gov')
                     ON CONFLICT (nct_id) DO UPDATE SET
                         molecule_id = EXCLUDED.molecule_id,
                         brief_title = EXCLUDED.brief_title,
-                        phase = EXCLUDED.phase,
+                        official_title = EXCLUDED.official_title,
                         overall_status = EXCLUDED.overall_status,
+                        phase = EXCLUDED.phase,
                         enrollment_count = EXCLUDED.enrollment_count,
                         conditions = EXCLUDED.conditions,
                         interventions = EXCLUDED.interventions,
                         start_date = EXCLUDED.start_date,
                         completion_date = EXCLUDED.completion_date,
                         has_results = COALESCE(EXCLUDED.has_results, mol_silver.clinical_trials.has_results),
+                        results_section = COALESCE(EXCLUDED.results_section, mol_silver.clinical_trials.results_section),
                         results_outcome_measures = COALESCE(EXCLUDED.results_outcome_measures, mol_silver.clinical_trials.results_outcome_measures),
                         results_adverse_events = COALESCE(EXCLUDED.results_adverse_events, mol_silver.clinical_trials.results_adverse_events),
                         updated_at = NOW()
                 """,
                     str(uuid.uuid4()), molecule_id, nct_id,
-                    ident.get("officialTitle") or ident.get("briefTitle"),
+                    ident.get("orgStudyIdInfo", {}).get("id"),
+                    ident.get("briefTitle"),
+                    ident.get("officialTitle"),
+                    ident.get("acronym"),
                     proto.get("descriptionModule", {}).get("briefSummary"),
-                    phase,
-                    design.get("studyType"),
+                    proto.get("descriptionModule", {}).get("detailedDescription"),
                     status_mod.get("overallStatus"),
-                    start_date, completion_date, primary_completion,
+                    status_mod.get("lastKnownStatus"),
+                    status_mod.get("whyStopped"),
+                    phase,
+                    json.dumps(phases),
+                    design.get("studyType"),
+                    start_date,
+                    status_mod.get("startDateStruct", {}).get("type"),
+                    completion_date,
+                    status_mod.get("completionDateStruct", {}).get("type"),
+                    primary_completion,
+                    status_mod.get("studyFirstSubmitDate"),
+                    status_mod.get("studyFirstPostDateStruct", {}).get("date") if status_mod.get("studyFirstPostDateStruct") else None,
+                    status_mod.get("lastUpdatePostDateStruct", {}).get("date") if status_mod.get("lastUpdatePostDateStruct") else None,
+                    design.get("designInfo", {}).get("allocation"),
+                    design.get("designInfo", {}).get("interventionModel"),
+                    design.get("designInfo", {}).get("primaryPurpose"),
+                    design.get("designInfo", {}).get("maskingInfo", {}).get("masking") if design.get("designInfo", {}).get("maskingInfo") else None,
+                    enrollment_info.get("count"),
+                    enrollment_info.get("type"),
+                    json.dumps(conditions),
+                    json.dumps(conditions_mod.get("keywords", [])),
+                    json.dumps(conditions_mod.get("meshes", [])),
+                    json.dumps(interventions),
+                    json.dumps(interventions_mod.get("armGroups", [])),
+                    eligibility_mod.get("eligibilityCriteria"),
+                    eligibility_mod.get("sex"),
+                    eligibility_mod.get("minimumAge"),
+                    eligibility_mod.get("maximumAge"),
+                    eligibility_mod.get("healthyVolunteers"),
                     lead_sponsor.get("name"),
                     lead_sponsor.get("class"),
                     json.dumps(collaborators),
-                    enrollment_info.get("count"),
-                    json.dumps(conditions),
-                    json.dumps(interventions),
+                    json.dumps(contacts_mod.get("centralContacts", [])),
+                    json.dumps(locations[:50]),
                     json.dumps(primary_outcomes),
                     json.dumps(secondary_outcomes),
-                    json.dumps(locations[:20]),  # limit location data
-                    json.dumps(countries),
-                    eligibility_mod.get("eligibilityCriteria"),
-                    eligibility_mod.get("minimumAge"),
-                    eligibility_mod.get("maximumAge"),
-                    eligibility_mod.get("sex"),
+                    oversight.get("isFdaRegulatedDrug"),
+                    oversight.get("isFdaRegulatedDevice"),
+                    ipd_mod.get("ipdSharing"),
                     has_results,
+                    json.dumps(results_section) if results_section else None,
                     json.dumps(results_om) if results_om else None,
                     json.dumps(results_ae) if results_ae else None,
+                    json.dumps(results_section.get("participantFlowModule")) if results_section and results_section.get("participantFlowModule") else None,
+                    json.dumps(results_section.get("baselineCharacteristicsModule")) if results_section and results_section.get("baselineCharacteristicsModule") else None,
+                    json.dumps(derived.get("conditionBrowseModule")) if derived.get("conditionBrowseModule") else None,
+                    json.dumps(derived.get("interventionBrowseModule")) if derived.get("interventionBrowseModule") else None,
+                    json.dumps(refs_mod.get("references", refs_mod.get("seeAlsoLinks", []))),
                 )
 
     async def _silver_openfda_labels(self, molecule_id: str, response: dict) -> None:
@@ -235,77 +299,177 @@ class SilverGoldRefresher:
 
                 await conn.execute("""
                     INSERT INTO mol_silver.drug_labels
-                    (id, molecule_id, set_id, brand_name, generic_name,
-                     manufacturer_name, application_number, product_type,
+                    (id, molecule_id, set_id, spl_id, version, effective_time,
+                     brand_name, generic_name, manufacturer_name,
+                     product_type, route, substance_name, active_ingredient,
                      indications_and_usage, dosage_and_administration,
-                     contraindications, warnings, boxed_warning,
-                     adverse_reactions, drug_interactions, mechanism_of_action,
+                     dosage_forms_and_strengths,
+                     contraindications, warnings, warnings_and_cautions,
+                     boxed_warning, adverse_reactions, drug_interactions,
+                     use_in_specific_populations,
+                     clinical_pharmacology, mechanism_of_action,
+                     pharmacodynamics, pharmacokinetics,
+                     overdosage, description, clinical_studies,
+                     how_supplied, storage_and_handling,
+                     package_label_principal_display_panel,
+                     pregnancy, nursing_mothers, pediatric_use, geriatric_use,
+                     information_for_patients, spl_medguide,
+                     spl_product_data_elements, nonclinical_toxicology,
+                     laboratory_tests, pharmacogenomics,
+                     "references",
+                     openfda::jsonb,
+                     openfda_application_number::jsonb,
+                     openfda_brand_name, openfda_generic_name,
+                     openfda_manufacturer_name, openfda_product_type,
+                     openfda_route::jsonb, openfda_rxcui::jsonb,
+                     openfda_spl_id, openfda_spl_set_id::jsonb,
+                     openfda_unii::jsonb, openfda_nui::jsonb,
+                     openfda_pharm_class_cs::jsonb,
+                     openfda_pharm_class_epc::jsonb,
+                     openfda_pharm_class_moa::jsonb,
+                     openfda_pharm_class_pe::jsonb,
+                     openfda_substance_name,
+                     openfda_is_original_packager,
                      source)
-                    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10,
-                            $11, $12, $13, $14, $15, $16, 'openfda_labels')
-                    ON CONFLICT (set_id, version) DO UPDATE SET
+                    VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,
+                            $16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26,$27,$28,
+                            $29,$30,$31,$32,$33,$34,$35,$36,$37,$38,$39,$40,$41,
+                            $42,$43,$44::jsonb,$45::jsonb,$46,$47,$48,$49,
+                            $50::jsonb,$51::jsonb,$52,$53::jsonb,$54::jsonb,
+                            $55::jsonb,$56::jsonb,$57::jsonb,$58::jsonb,
+                            $59::jsonb,$60,$61,
+                            'openfda_labels')
+                    ON CONFLICT (set_id) DO UPDATE SET
                         molecule_id = EXCLUDED.molecule_id,
                         brand_name = EXCLUDED.brand_name,
-                        indications_and_usage = EXCLUDED.indications_and_usage,
-                        adverse_reactions = EXCLUDED.adverse_reactions,
+                        indications_and_usage = COALESCE(EXCLUDED.indications_and_usage, mol_silver.drug_labels.indications_and_usage),
+                        adverse_reactions = COALESCE(EXCLUDED.adverse_reactions, mol_silver.drug_labels.adverse_reactions),
+                        mechanism_of_action = COALESCE(EXCLUDED.mechanism_of_action, mol_silver.drug_labels.mechanism_of_action),
+                        clinical_studies = COALESCE(EXCLUDED.clinical_studies, mol_silver.drug_labels.clinical_studies),
                         updated_at = NOW()
                 """,
                     str(uuid.uuid4()), molecule_id, set_id,
-                    brand_names[0] if brand_names else None,
-                    generic_names[0] if generic_names else None,
+                    r.get("id"),
+                    r.get("version"),
+                    r.get("effective_time"),
+                    brand_names[0] if brand_names else r.get("brand_name"),
+                    generic_names[0] if generic_names else r.get("generic_name"),
                     (openfda.get("manufacturer_name", [None]) or [None])[0],
-                    (openfda.get("application_number", [None]) or [None])[0],
                     (openfda.get("product_type", [None]) or [None])[0],
+                    (openfda.get("route", [None]) or [None])[0],
+                    (openfda.get("substance_name", [None]) or [None])[0],
+                    _join_text(r.get("active_ingredient")),
                     _join_text(r.get("indications_and_usage")),
                     _join_text(r.get("dosage_and_administration")),
+                    _join_text(r.get("dosage_forms_and_strengths")),
                     _join_text(r.get("contraindications")),
                     _join_text(r.get("warnings")),
+                    _join_text(r.get("warnings_and_cautions")),
                     _join_text(r.get("boxed_warning")),
                     _join_text(r.get("adverse_reactions")),
                     _join_text(r.get("drug_interactions")),
+                    _join_text(r.get("use_in_specific_populations")),
+                    _join_text(r.get("clinical_pharmacology")),
                     _join_text(r.get("mechanism_of_action")),
+                    _join_text(r.get("pharmacodynamics")),
+                    _join_text(r.get("pharmacokinetics")),
+                    _join_text(r.get("overdosage")),
+                    _join_text(r.get("description")),
+                    _join_text(r.get("clinical_studies")),
+                    _join_text(r.get("how_supplied")),
+                    _join_text(r.get("storage_and_handling")),
+                    _join_text(r.get("package_label_principal_display_panel")),
+                    _join_text(r.get("pregnancy")),
+                    _join_text(r.get("nursing_mothers")),
+                    _join_text(r.get("pediatric_use")),
+                    _join_text(r.get("geriatric_use")),
+                    _join_text(r.get("information_for_patients")),
+                    _join_text(r.get("spl_medguide")),
+                    _join_text(r.get("spl_product_data_elements")),
+                    _join_text(r.get("nonclinical_toxicology")),
+                    _join_text(r.get("laboratory_tests")),
+                    _join_text(r.get("pharmacogenomics")),
+                    _join_text(r.get("references")),
+                    json.dumps(openfda) if openfda else None,
+                    json.dumps(openfda.get("application_number")) if openfda.get("application_number") else None,
+                    (openfda.get("brand_name", [None]) or [None])[0],
+                    (openfda.get("generic_name", [None]) or [None])[0],
+                    (openfda.get("manufacturer_name", [None]) or [None])[0],
+                    (openfda.get("product_type", [None]) or [None])[0],
+                    json.dumps(openfda.get("route")) if openfda.get("route") else None,
+                    json.dumps(openfda.get("rxcui")) if openfda.get("rxcui") else None,
+                    (openfda.get("spl_id", [None]) or [None])[0],
+                    json.dumps(openfda.get("spl_set_id")) if openfda.get("spl_set_id") else None,
+                    json.dumps(openfda.get("unii")) if openfda.get("unii") else None,
+                    json.dumps(openfda.get("nui")) if openfda.get("nui") else None,
+                    json.dumps(openfda.get("pharm_class_cs")) if openfda.get("pharm_class_cs") else None,
+                    json.dumps(openfda.get("pharm_class_epc")) if openfda.get("pharm_class_epc") else None,
+                    json.dumps(openfda.get("pharm_class_moa")) if openfda.get("pharm_class_moa") else None,
+                    json.dumps(openfda.get("pharm_class_pe")) if openfda.get("pharm_class_pe") else None,
+                    (openfda.get("substance_name", [None]) or [None])[0],
+                    openfda.get("is_original_packager"),
                 )
 
     async def _silver_openfda_faers(self, molecule_id: str, response: dict) -> None:
-        """Aggregate FAERS adverse events into silver.adverse_events."""
+        """Insert report-level FAERS data into silver.adverse_events (zero data loss)."""
         results = response.get("results", [])
         if not results:
             return
 
-        # Aggregate reactions across reports
-        reaction_counts: dict = {}
-        for r in results:
-            patient = r.get("patient", {})
-            is_serious = r.get("serious") == 1
-
-            for rx in patient.get("reaction", []):
-                pt = rx.get("reactionmeddrapt")
-                if not pt:
-                    continue
-                if pt not in reaction_counts:
-                    reaction_counts[pt] = {"total": 0, "serious": 0, "death": 0}
-                reaction_counts[pt]["total"] += 1
-                if is_serious:
-                    reaction_counts[pt]["serious"] += 1
-                outcome = rx.get("reactionoutcome")
-                if outcome == "5":  # death
-                    reaction_counts[pt]["death"] += 1
-
         async with self.db_pool.acquire() as conn:
-            for pt, counts in reaction_counts.items():
+            for r in results:
+                safety_report_id = r.get("safetyreportid")
+                if not safety_report_id:
+                    continue
+
+                patient = r.get("patient", {})
+
+                # Extract primary suspect drug name
+                drug_name = None
+                for drug in patient.get("drug", []):
+                    if drug.get("drugcharacterization") == "1":
+                        drug_name = drug.get("medicinalproduct")
+                        break
+
                 await conn.execute("""
                     INSERT INTO mol_silver.adverse_events
-                    (id, molecule_id, meddra_pt, report_count,
-                     serious_count, death_count, source)
-                    VALUES ($1, $2, $3, $4, $5, $6, 'openfda_faers')
-                    ON CONFLICT (molecule_id, meddra_pt_code) DO UPDATE SET
-                        report_count = mol_silver.adverse_events.report_count + EXCLUDED.report_count,
-                        serious_count = mol_silver.adverse_events.serious_count + EXCLUDED.serious_count,
-                        death_count = mol_silver.adverse_events.death_count + EXCLUDED.death_count,
+                    (event_id, molecule_id, safety_report_id, safety_report_version,
+                     receive_date, receipt_date,
+                     serious, serious_death, serious_hospitalization,
+                     serious_lifethreatening, serious_disabling, serious_other,
+                     patient_age, patient_age_unit, patient_sex, patient_weight,
+                     drug_name_reported, reporter_country, occurrence_country, companynumb,
+                     drugs, reactions, outcomes,
+                     source)
+                    VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,
+                            $17,$18,$19,$20,$21::jsonb,$22::jsonb,$23::jsonb,
+                            'openfda_faers')
+                    ON CONFLICT (safety_report_id, safety_report_version) DO UPDATE SET
+                        molecule_id = EXCLUDED.molecule_id,
                         updated_at = NOW()
                 """,
-                    str(uuid.uuid4()), molecule_id, pt,
-                    counts["total"], counts["serious"], counts["death"],
+                    str(uuid.uuid4()), molecule_id,
+                    safety_report_id,
+                    r.get("safetyreportversion"),
+                    r.get("receivedate"),
+                    r.get("receiptdate"),
+                    r.get("serious") == 1 if r.get("serious") is not None else None,
+                    r.get("seriousnessdeath") == 1 if r.get("seriousnessdeath") is not None else None,
+                    r.get("seriousnesshospitalization") == 1 if r.get("seriousnesshospitalization") is not None else None,
+                    r.get("seriousnesslifethreatening") == 1 if r.get("seriousnesslifethreatening") is not None else None,
+                    r.get("seriousnessdisabling") == 1 if r.get("seriousnessdisabling") is not None else None,
+                    r.get("seriousnessother") == 1 if r.get("seriousnessother") is not None else None,
+                    float(patient.get("patientonsetage")) if patient.get("patientonsetage") else None,
+                    patient.get("patientonsetageunit"),
+                    patient.get("patientsex"),
+                    float(patient.get("patientweight")) if patient.get("patientweight") else None,
+                    drug_name,
+                    r.get("primarysource", {}).get("reportercountry") if r.get("primarysource") else r.get("occurcountry"),
+                    r.get("occurcountry"),
+                    r.get("companynumb"),
+                    json.dumps(patient.get("drug", [])),
+                    json.dumps(patient.get("reaction", [])),
+                    json.dumps([rx.get("reactionoutcome") for rx in patient.get("reaction", []) if rx.get("reactionoutcome")]),
                 )
 
     async def _silver_openalex(self, molecule_id: str, response: dict) -> None:

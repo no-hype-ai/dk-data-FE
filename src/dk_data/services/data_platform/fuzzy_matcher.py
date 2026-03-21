@@ -20,10 +20,10 @@ class FuzzyMatch:
     """Result of fuzzy matching."""
     molecule_id: str
     inchi_key: Optional[str]
-    canonical_name: str
+    pref_name: str
     matched_alias: Optional[str]
     similarity: float
-    match_type: str  # canonical_name, alias
+    match_type: str  # pref_name, alias
 
 
 class FuzzyMatcher:
@@ -109,35 +109,35 @@ class FuzzyMatcher:
                 WITH name_matches AS (
                     -- Match against canonical names
                     SELECT
-                        m.id AS molecule_id,
+                        m.molecule_id,
                         m.inchi_key,
-                        m.canonical_name,
+                        m.pref_name,
                         NULL::VARCHAR AS matched_alias,
-                        similarity(lower(m.canonical_name), $1) AS sim,
-                        'canonical_name' AS match_type
+                        similarity(lower(m.pref_name), $1) AS sim,
+                        'pref_name' AS match_type
                     FROM mol_silver.molecules m
                     WHERE m.needs_review = FALSE
-                      AND similarity(lower(m.canonical_name), $1) > $2
+                      AND similarity(lower(m.pref_name), $1) > $2
 
                     UNION ALL
 
                     -- Match against aliases
                     SELECT
-                        m.id AS molecule_id,
+                        m.molecule_id,
                         m.inchi_key,
-                        m.canonical_name,
+                        m.pref_name,
                         ma.alias_name AS matched_alias,
                         similarity(ma.alias_name_normalized, $1) AS sim,
                         'alias' AS match_type
                     FROM mol_silver.molecules m
-                    JOIN mol_silver.molecule_aliases ma ON m.id = ma.molecule_id
+                    JOIN mol_silver.molecule_aliases ma ON m.molecule_id = ma.molecule_id
                     WHERE m.needs_review = FALSE
                       AND similarity(ma.alias_name_normalized, $1) > $2
                 )
                 SELECT DISTINCT ON (molecule_id)
                     molecule_id,
                     inchi_key,
-                    canonical_name,
+                    pref_name,
                     matched_alias,
                     sim AS similarity,
                     match_type
@@ -151,7 +151,7 @@ class FuzzyMatcher:
                 results.append({
                     'molecule_id': str(row['molecule_id']),
                     'inchi_key': row['inchi_key'],
-                    'canonical_name': row['canonical_name'],
+                    'pref_name': row['pref_name'],
                     'matched_alias': row['matched_alias'],
                     'similarity': float(row['similarity']),
                     'match_type': row['match_type'],
@@ -180,21 +180,21 @@ class FuzzyMatcher:
         async with self.db_pool.acquire() as conn:
             row = await conn.fetchrow("""
                 SELECT
-                    m.id AS molecule_id,
+                    m.molecule_id,
                     m.inchi_key,
-                    m.canonical_name
+                    m.pref_name
                 FROM mol_silver.molecules m
                 WHERE m.needs_review = FALSE
-                  AND lower(m.canonical_name) = $1
+                  AND lower(m.pref_name) = $1
 
                 UNION ALL
 
                 SELECT
-                    m.id AS molecule_id,
+                    m.molecule_id,
                     m.inchi_key,
-                    m.canonical_name
+                    m.pref_name
                 FROM mol_silver.molecules m
-                JOIN mol_silver.molecule_aliases ma ON m.id = ma.molecule_id
+                JOIN mol_silver.molecule_aliases ma ON m.molecule_id = ma.molecule_id
                 WHERE m.needs_review = FALSE
                   AND ma.alias_name_normalized = $1
 
@@ -205,7 +205,7 @@ class FuzzyMatcher:
                 return {
                     'molecule_id': str(row['molecule_id']),
                     'inchi_key': row['inchi_key'],
-                    'canonical_name': row['canonical_name'],
+                    'pref_name': row['pref_name'],
                     'similarity': 1.0,
                     'match_type': 'exact',
                 }
@@ -234,15 +234,15 @@ class FuzzyMatcher:
 
         async with self.db_pool.acquire() as conn:
             rows = await conn.fetch("""
-                SELECT DISTINCT canonical_name
+                SELECT DISTINCT pref_name
                 FROM mol_silver.molecules
                 WHERE needs_review = FALSE
-                  AND lower(canonical_name) LIKE $1 || '%'
-                ORDER BY length(canonical_name), canonical_name
+                  AND lower(pref_name) LIKE $1 || '%'
+                ORDER BY length(pref_name), pref_name
                 LIMIT $2
             """, normalized_prefix, limit)
 
-            return [row['canonical_name'] for row in rows]
+            return [row['pref_name'] for row in rows]
 
     async def get_similar_molecules(
         self,
@@ -264,19 +264,19 @@ class FuzzyMatcher:
         async with self.db_pool.acquire() as conn:
             rows = await conn.fetch("""
                 WITH target AS (
-                    SELECT canonical_name
+                    SELECT pref_name
                     FROM mol_silver.molecules
                     WHERE id = $1::uuid
                 )
                 SELECT
-                    m.id AS molecule_id,
+                    m.molecule_id,
                     m.inchi_key,
-                    m.canonical_name,
-                    similarity(lower(m.canonical_name), lower(t.canonical_name)) AS sim
+                    m.pref_name,
+                    similarity(lower(m.pref_name), lower(t.pref_name)) AS sim
                 FROM mol_silver.molecules m, target t
-                WHERE m.id != $1::uuid
+                WHERE m.molecule_id != $1::uuid
                   AND m.needs_review = FALSE
-                  AND similarity(lower(m.canonical_name), lower(t.canonical_name)) > $2
+                  AND similarity(lower(m.pref_name), lower(t.pref_name)) > $2
                 ORDER BY sim DESC
                 LIMIT $3
             """, molecule_id, self.threshold, limit)
@@ -285,7 +285,7 @@ class FuzzyMatcher:
                 {
                     'molecule_id': str(row['molecule_id']),
                     'inchi_key': row['inchi_key'],
-                    'canonical_name': row['canonical_name'],
+                    'pref_name': row['pref_name'],
                     'similarity': float(row['sim']),
                 }
                 for row in rows

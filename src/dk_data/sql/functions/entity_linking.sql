@@ -1,3 +1,7 @@
+-- DEPRECATED: Entity linking is now handled by SilverTransformation (Python) with
+-- IdentifierResolver (5-step: direct lookup → structure → API → fuzzy → create new).
+-- This SQL function is a legacy fallback. Do not add new linking logic here.
+-- All new linking should go through SilverTransformation.process_*() methods.
 CREATE OR REPLACE FUNCTION silver.run_entity_linking()
 RETURNS TABLE(step TEXT, result TEXT) AS $$
 DECLARE linked_count INT; total_count INT;

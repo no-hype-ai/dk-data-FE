@@ -277,15 +277,34 @@ class BaseDataTool:
             logger.error(f"Bronze transform failed for {self.tool_def.name}: {e}")
             errors.append(f"bronze: {e}")
 
+        # Silver transform reads FROM BRONZE (proper medallion flow, no bypass)
         try:
-            from ..pipeline.silver_gold_refresher import SilverGoldRefresher
-            refresher = SilverGoldRefresher(self.db_pool)
-            drug_name = params.get("drug_name", "")
-            if drug_name:
-                await refresher.refresh(drug_name, self.tool_def.raw_table, api_response)
+            from ..data_platform.silver_transformation import SilverTransformation
+            silver = SilverTransformation(self.db_pool)
+            # Map raw table name to the silver processing method
+            source_to_processor = {
+                'clinicaltrials': silver.process_clinical_trials,
+                'openfda_labels': silver.process_drug_labels,
+                'openfda_faers': silver.process_faers_events,
+                'chembl': silver.process_chembl_molecules,
+                'pubchem': silver.process_pubchem_to_silver,
+                'uniprot': silver.process_uniprot_to_silver,
+                'openalex': None,  # handled by entity linking
+                'sider': silver.process_sider_to_silver,
+                'kegg_drug': silver.process_kegg_to_silver,
+                'bindingdb': silver.process_bindingdb_to_silver,
+                'rxnorm': silver.process_rxnorm_to_silver,
+                'who_inn': silver.process_who_inn_to_silver,
+                'tdc_admet': silver.process_tdc_admet_to_silver,
+                'pharmgkb': silver.process_pharmgkb_to_silver,
+            }
+            processor = source_to_processor.get(self.tool_def.raw_table)
+            if processor:
+                result = await processor(limit=100)
+                logger.info(f"Silver transform: {result.records_processed} processed, {result.molecules_created} created")
         except Exception as e:
-            logger.error(f"Silver/Gold refresh failed for {self.tool_def.name}: {e}")
-            errors.append(f"silver_gold: {e}")
+            logger.error(f"Silver transform failed for {self.tool_def.name}: {e}")
+            errors.append(f"silver: {e}")
 
         if not errors:
             return ("completed", None)

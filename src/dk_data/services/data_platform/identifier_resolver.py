@@ -157,7 +157,7 @@ class ResolutionResult:
     """Result of identifier resolution."""
     molecule_id: Optional[str] = None
     inchi_key: Optional[str] = None
-    canonical_name: Optional[str] = None
+    pref_name: Optional[str] = None
     confidence: float = 0.0
     match_type: str = "none"  # exact, structure, fuzzy, new
     needs_review: bool = False
@@ -265,7 +265,7 @@ class IdentifierResolver:
         if direct_result:
             result.molecule_id = direct_result['molecule_id']
             result.inchi_key = direct_result['inchi_key']
-            result.canonical_name = direct_result['canonical_name']
+            result.pref_name = direct_result['pref_name']
             result.confidence = float(direct_result.get('confidence', 1.0))
             result.match_type = "exact"
             result.resolution_path.append("direct_lookup")
@@ -281,7 +281,7 @@ class IdentifierResolver:
                 if struct_result:
                     result.molecule_id = struct_result['molecule_id']
                     result.inchi_key = inchi_key
-                    result.canonical_name = struct_result['canonical_name']
+                    result.pref_name = struct_result['pref_name']
                     result.confidence = 0.95  # High confidence for structure match
                     result.match_type = "structure"
                     return result
@@ -303,7 +303,7 @@ class IdentifierResolver:
                 if struct_result:
                     result.molecule_id = struct_result['molecule_id']
                     result.inchi_key = api_result['inchi_key']
-                    result.canonical_name = struct_result['canonical_name']
+                    result.pref_name = struct_result['pref_name']
                     result.confidence = 0.9
                     result.match_type = "api_crossref"
                     result.all_identifiers = api_result.get('identifiers', {})
@@ -311,7 +311,7 @@ class IdentifierResolver:
                 else:
                     # New molecule from API
                     result.inchi_key = api_result['inchi_key']
-                    result.canonical_name = api_result.get('name')
+                    result.pref_name = api_result.get('name')
                     result.confidence = 0.9
                     result.match_type = "new"
                     result.all_identifiers = api_result.get('identifiers', {})
@@ -325,7 +325,7 @@ class IdentifierResolver:
                 best_match = matches[0]
                 result.molecule_id = best_match['molecule_id']
                 result.inchi_key = best_match['inchi_key']
-                result.canonical_name = best_match['canonical_name']
+                result.pref_name = best_match['pref_name']
                 result.confidence = best_match['similarity']
                 result.match_type = "fuzzy"
 
@@ -353,12 +353,12 @@ class IdentifierResolver:
         async with self.db_pool.acquire() as conn:
             row = await conn.fetchrow("""
                 SELECT
-                    m.id AS molecule_id,
+                    m.molecule_id,
                     m.inchi_key,
-                    m.canonical_name,
+                    m.pref_name,
                     im.confidence
                 FROM mol_silver.identifier_mappings im
-                JOIN mol_silver.molecules m ON im.molecule_id = m.id
+                JOIN mol_silver.molecules m ON im.molecule_id = m.molecule_id
                 WHERE im.identifier_value = $1
                   AND im.identifier_type = $2
                   AND m.needs_review = FALSE
@@ -377,7 +377,7 @@ class IdentifierResolver:
                 SELECT
                     id AS molecule_id,
                     inchi_key,
-                    canonical_name
+                    pref_name
                 FROM mol_silver.molecules
                 WHERE inchi_key = $1
                   AND needs_review = FALSE

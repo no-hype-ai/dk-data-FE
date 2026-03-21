@@ -262,16 +262,23 @@ class SilverTransformationService:
         async with self.db_pool.acquire() as conn:
             # Use correct column names from bronze.clinicaltrials table
             bronze_records = await conn.fetch("""
-                SELECT id, nct_id, org_study_id,
-                       brief_title,
-                       brief_summary,
-                       phase, study_type, overall_status,
-                       start_date, completion_date, primary_completion_date,
-                       lead_sponsor_name, lead_sponsor_class, collaborators,
-                       allocation, intervention_model, masking, enrollment_count,
-                       eligibility_criteria, minimum_age, maximum_age, sex,
-                       conditions, interventions, primary_outcomes, secondary_outcomes,
-                       locations, NULL as countries
+                SELECT id,
+                       nct_id, brief_title, official_title, overall_status,
+                       phase, study_type, lead_sponsor_name, lead_sponsor_class,
+                       enrollment_count, enrollment_type, start_date, start_date_type,
+                       completion_date, completion_date_type, primary_completion_date,
+                       interventions, conditions, locations, org_study_id,
+                       acronym, last_known_status, study_first_submit_date,
+                       study_first_post_date, last_update_post_date, collaborators,
+                       phases, allocation, intervention_model, primary_purpose,
+                       masking, arms_groups, primary_outcomes, secondary_outcomes,
+                       eligibility_criteria, sex, minimum_age, maximum_age,
+                       healthy_volunteers, central_contacts, keywords, mesh_terms,
+                       results_section, fda_regulated_drug, fda_regulated_device,
+                       ipd_sharing, has_results, condition_browse, intervention_browse,
+                       references, results_outcome_measures, results_adverse_events,
+                       results_participant_flow, results_baseline, brief_summary,
+                       detailed_description, why_stopped
                 FROM mol_bronze.clinicaltrials
                 WHERE processed_to_silver = FALSE OR processed_to_silver IS NULL
                 ORDER BY ingested_at ASC
@@ -323,205 +330,329 @@ class SilverTransformationService:
 
     async def _upsert_silver_trial(self, conn, record: Dict, molecule_id: str):
         """Upsert clinical trial into Silver layer."""
-        conditions = record['conditions']
-        if isinstance(conditions, str):
-            conditions = json.loads(conditions)
+        def _parse_json(val):
+            if isinstance(val, str):
+                return json.loads(val)
+            return val
 
-        interventions = record['interventions']
-        if isinstance(interventions, str):
-            interventions = json.loads(interventions)
-
-        primary_outcomes = record['primary_outcomes']
-        if isinstance(primary_outcomes, str):
-            primary_outcomes = json.loads(primary_outcomes)
-
-        secondary_outcomes = record['secondary_outcomes']
-        if isinstance(secondary_outcomes, str):
-            secondary_outcomes = json.loads(secondary_outcomes)
-
-        locations = record['locations']
-        if isinstance(locations, str):
-            locations = json.loads(locations)
-
-        countries = record['countries']
-        if isinstance(countries, str):
-            countries = json.loads(countries)
-
-        collaborators = record['collaborators']
-        if isinstance(collaborators, str):
-            collaborators = json.loads(collaborators)
+        conditions = _parse_json(record['conditions'])
+        interventions = _parse_json(record['interventions'])
+        primary_outcomes = _parse_json(record['primary_outcomes'])
+        secondary_outcomes = _parse_json(record['secondary_outcomes'])
+        locations = _parse_json(record['locations'])
+        collaborators = _parse_json(record['collaborators'])
+        arms_groups = _parse_json(record['arms_groups'])
+        central_contacts = _parse_json(record['central_contacts'])
+        keywords = _parse_json(record['keywords'])
+        mesh_terms = _parse_json(record['mesh_terms'])
+        results_section = _parse_json(record['results_section'])
+        condition_browse = _parse_json(record['condition_browse'])
+        intervention_browse = _parse_json(record['intervention_browse'])
+        references = _parse_json(record['references'])
+        results_outcome_measures = _parse_json(record['results_outcome_measures'])
+        results_adverse_events = _parse_json(record['results_adverse_events'])
+        results_participant_flow = _parse_json(record['results_participant_flow'])
+        results_baseline = _parse_json(record['results_baseline'])
+        phases = _parse_json(record['phases'])
 
         await conn.execute("""
             INSERT INTO mol_silver.clinical_trials (
-                molecule_id, nct_id, org_study_id, brief_title, brief_summary,
-                phase, study_type, overall_status,
-                start_date, completion_date, primary_completion_date,
-                lead_sponsor_name, lead_sponsor_class, collaborators,
-                allocation, intervention_model, masking, enrollment_count,
-                eligibility_criteria, minimum_age, maximum_age, sex,
-                conditions, interventions, primary_outcomes, secondary_outcomes,
-                locations, countries, source
+                molecule_id, nct_id, brief_title, official_title, overall_status,
+                phase, study_type, lead_sponsor_name, lead_sponsor_class,
+                enrollment_count, enrollment_type, start_date, start_date_type,
+                completion_date, completion_date_type, primary_completion_date,
+                interventions, conditions, locations, org_study_id,
+                acronym, last_known_status, study_first_submit_date,
+                study_first_post_date, last_update_post_date, collaborators,
+                phases, allocation, intervention_model, primary_purpose,
+                masking, arms_groups, primary_outcomes, secondary_outcomes,
+                eligibility_criteria, sex, minimum_age, maximum_age,
+                healthy_volunteers, central_contacts, keywords, mesh_terms,
+                results_section, fda_regulated_drug, fda_regulated_device,
+                ipd_sharing, has_results, condition_browse, intervention_browse,
+                references, results_outcome_measures, results_adverse_events,
+                results_participant_flow, results_baseline, brief_summary,
+                detailed_description, why_stopped, source
             ) VALUES (
                 $1::uuid, $2, $3, $4, $5, $6, $7, $8, $9, $10,
                 $11, $12, $13, $14, $15, $16, $17, $18, $19, $20,
-                $21, $22, $23, $24, $25, $26, $27, $28, 'clinicaltrials_gov'
+                $21, $22, $23, $24, $25, $26, $27, $28, $29, $30,
+                $31, $32, $33, $34, $35, $36, $37, $38, $39, $40,
+                $41, $42, $43, $44, $45, $46, $47, $48, $49, $50,
+                $51, $52, $53, $54, $55, $56, $57,
+                'clinicaltrials_gov'
             )
             ON CONFLICT (nct_id) DO UPDATE SET
                 molecule_id = EXCLUDED.molecule_id,
                 brief_title = EXCLUDED.brief_title,
+                official_title = EXCLUDED.official_title,
                 overall_status = EXCLUDED.overall_status,
                 phase = EXCLUDED.phase,
+                study_type = EXCLUDED.study_type,
+                lead_sponsor_name = EXCLUDED.lead_sponsor_name,
+                lead_sponsor_class = EXCLUDED.lead_sponsor_class,
                 enrollment_count = EXCLUDED.enrollment_count,
+                enrollment_type = EXCLUDED.enrollment_type,
+                start_date = EXCLUDED.start_date,
                 completion_date = EXCLUDED.completion_date,
+                completion_date_type = EXCLUDED.completion_date_type,
+                primary_completion_date = EXCLUDED.primary_completion_date,
+                interventions = EXCLUDED.interventions,
+                conditions = EXCLUDED.conditions,
+                locations = EXCLUDED.locations,
+                last_known_status = EXCLUDED.last_known_status,
+                last_update_post_date = EXCLUDED.last_update_post_date,
+                collaborators = EXCLUDED.collaborators,
+                phases = EXCLUDED.phases,
+                allocation = EXCLUDED.allocation,
+                intervention_model = EXCLUDED.intervention_model,
+                primary_purpose = EXCLUDED.primary_purpose,
+                masking = EXCLUDED.masking,
+                arms_groups = EXCLUDED.arms_groups,
+                primary_outcomes = EXCLUDED.primary_outcomes,
+                secondary_outcomes = EXCLUDED.secondary_outcomes,
+                eligibility_criteria = EXCLUDED.eligibility_criteria,
+                sex = EXCLUDED.sex,
+                minimum_age = EXCLUDED.minimum_age,
+                maximum_age = EXCLUDED.maximum_age,
+                healthy_volunteers = EXCLUDED.healthy_volunteers,
+                central_contacts = EXCLUDED.central_contacts,
+                keywords = EXCLUDED.keywords,
+                mesh_terms = EXCLUDED.mesh_terms,
+                results_section = EXCLUDED.results_section,
+                fda_regulated_drug = EXCLUDED.fda_regulated_drug,
+                fda_regulated_device = EXCLUDED.fda_regulated_device,
+                ipd_sharing = EXCLUDED.ipd_sharing,
+                has_results = EXCLUDED.has_results,
+                condition_browse = EXCLUDED.condition_browse,
+                intervention_browse = EXCLUDED.intervention_browse,
+                references = EXCLUDED.references,
+                results_outcome_measures = EXCLUDED.results_outcome_measures,
+                results_adverse_events = EXCLUDED.results_adverse_events,
+                results_participant_flow = EXCLUDED.results_participant_flow,
+                results_baseline = EXCLUDED.results_baseline,
+                brief_summary = EXCLUDED.brief_summary,
+                detailed_description = EXCLUDED.detailed_description,
+                why_stopped = EXCLUDED.why_stopped,
                 updated_at = NOW()
         """,
             molecule_id,
             record['nct_id'],
-            record['org_study_id'],
             record['brief_title'],
-            record['brief_summary'],
+            record['official_title'],
+            record['overall_status'],
             record['phase'],
             record['study_type'],
-            record['overall_status'],
-            record['start_date'],
-            record['completion_date'],
-            record['primary_completion_date'],
             record['lead_sponsor_name'],
             record['lead_sponsor_class'],
+            record['enrollment_count'],
+            record['enrollment_type'],
+            record['start_date'],
+            record['start_date_type'],
+            record['completion_date'],
+            record['completion_date_type'],
+            record['primary_completion_date'],
+            json.dumps(interventions),
+            json.dumps(conditions),
+            json.dumps(locations),
+            record['org_study_id'],
+            record['acronym'],
+            record['last_known_status'],
+            record['study_first_submit_date'],
+            record['study_first_post_date'],
+            record['last_update_post_date'],
             json.dumps(collaborators),
+            json.dumps(phases),
             record['allocation'],
             record['intervention_model'],
+            record['primary_purpose'],
             record['masking'],
-            record['enrollment_count'],
-            record['eligibility_criteria'],
-            record['minimum_age'],
-            record['maximum_age'],
-            record['sex'],
-            json.dumps(conditions),
-            json.dumps(interventions),
+            json.dumps(arms_groups),
             json.dumps(primary_outcomes),
             json.dumps(secondary_outcomes),
-            json.dumps(locations),
-            json.dumps(countries)
+            record['eligibility_criteria'],
+            record['sex'],
+            record['minimum_age'],
+            record['maximum_age'],
+            record['healthy_volunteers'],
+            json.dumps(central_contacts),
+            json.dumps(keywords),
+            json.dumps(mesh_terms),
+            json.dumps(results_section),
+            record['fda_regulated_drug'],
+            record['fda_regulated_device'],
+            record['ipd_sharing'],
+            record['has_results'],
+            json.dumps(condition_browse),
+            json.dumps(intervention_browse),
+            json.dumps(references),
+            json.dumps(results_outcome_measures),
+            json.dumps(results_adverse_events),
+            json.dumps(results_participant_flow),
+            json.dumps(results_baseline),
+            record['brief_summary'],
+            record['detailed_description'],
+            record['why_stopped']
         )
 
     async def process_faers_events(self, limit: int = 100) -> TransformationResult:
-        """Transform Bronze FAERS events to Silver aggregated adverse events."""
+        """Transform Bronze FAERS events to Silver adverse events (report-level rows)."""
         result = TransformationResult(0, 0, 0, 0, [])
 
         async with self.db_pool.acquire() as conn:
-            # Get drug names extracted from patient_drug JSONB array
-            # Each event has patient_drug array with medicinalproduct field
-            drug_groups = await conn.fetch("""
-                SELECT
-                    UPPER(drug->>'medicinalproduct') as drug_name,
-                    COUNT(DISTINCT f.id) as event_count
-                FROM mol_bronze.openfda_faers f,
-                     jsonb_array_elements(COALESCE(f.patient_drug, '[]'::jsonb)) AS drug
-                WHERE (f.processed_to_silver = FALSE OR f.processed_to_silver IS NULL)
-                  AND drug->>'medicinalproduct' IS NOT NULL
-                GROUP BY UPPER(drug->>'medicinalproduct')
-                ORDER BY event_count DESC
+            # Fetch full report-level rows from bronze
+            bronze_records = await conn.fetch("""
+                SELECT id, safety_report_id, receive_date, receipt_date,
+                       serious, serious_death, serious_hospitalization,
+                       serious_lifethreatening, serious_disabling,
+                       serious_life_threatening, serious_other,
+                       patient_age, patient_age_unit, patient_sex, patient_weight,
+                       drugs, reactions, outcomes,
+                       reporter_country, occurrence_country, companynumb,
+                       safety_report_version, patient_drug, patient_reaction,
+                       sender_organization, receiver_organization
+                FROM mol_bronze.openfda_faers
+                WHERE (processed_to_silver = FALSE OR processed_to_silver IS NULL)
+                ORDER BY ingested_at ASC
                 LIMIT $1
             """, limit)
 
-            for drug_group in drug_groups:
+            for record in bronze_records:
                 result.records_processed += 1
-                drug_name = drug_group['drug_name']
 
-                if not drug_name:
-                    continue
+                # Extract drug names from patient_drug JSONB array
+                patient_drug = record['patient_drug']
+                if isinstance(patient_drug, str):
+                    patient_drug = json.loads(patient_drug)
+                if not patient_drug:
+                    patient_drug = []
 
-                try:
-                    # Resolve drug name to molecule
-                    resolution = await self.resolver.resolve(
-                        drug_name,
-                        IdentifierType.NAME,
-                        source='openfda_faers'
-                    )
+                drug_names = set()
+                for drug_entry in patient_drug:
+                    if isinstance(drug_entry, dict):
+                        name = drug_entry.get('medicinalproduct')
+                        if name:
+                            drug_names.add(name.upper())
 
-                    if resolution.molecule_id:
-                        # Aggregate events for this molecule
-                        await self._aggregate_faers_for_molecule(
-                            conn, drug_name, resolution.molecule_id
-                        )
-                        result.molecules_updated += 1
-
-                        if resolution.needs_review:
-                            result.records_quarantined += 1
-                    else:
-                        # Queue for review
-                        await self._queue_for_resolution(
-                            conn, drug_name, 'name', 'openfda_faers'
-                        )
-                        result.records_quarantined += 1
-
-                    # Mark events containing this drug as processed
+                if not drug_names:
+                    # No resolvable drug name — mark processed to avoid re-fetching
                     await conn.execute("""
                         UPDATE mol_bronze.openfda_faers
                         SET processed_to_silver = TRUE, processed_at = NOW()
-                        WHERE id IN (
-                            SELECT f.id FROM mol_bronze.openfda_faers f,
-                                   jsonb_array_elements(COALESCE(f.patient_drug, '[]'::jsonb)) AS drug
-                            WHERE UPPER(drug->>'medicinalproduct') = $1
+                        WHERE id = $1
+                    """, record['id'])
+                    continue
+
+                for drug_name in drug_names:
+                    try:
+                        resolution = await self.resolver.resolve(
+                            drug_name,
+                            IdentifierType.NAME,
+                            source='openfda_faers'
                         )
-                    """, drug_name)
 
-                except Exception as e:
-                    result.errors.append(f"FAERS drug {drug_name}: {str(e)}")
-                    logger.error(f"Failed to process FAERS for {drug_name}: {e}")
+                        if resolution.molecule_id:
+                            # Insert the full report row into silver with molecule_id
+                            await conn.execute("""
+                                INSERT INTO mol_silver.adverse_events (
+                                    molecule_id,
+                                    safety_report_id, receive_date, receipt_date,
+                                    serious, serious_death, serious_hospitalization,
+                                    serious_lifethreatening, serious_disabling,
+                                    serious_life_threatening, serious_other,
+                                    patient_age, patient_age_unit, patient_sex, patient_weight,
+                                    drugs, reactions, outcomes,
+                                    reporter_country, occurrence_country, companynumb,
+                                    safety_report_version, patient_drug, patient_reaction,
+                                    sender_organization, receiver_organization,
+                                    source
+                                ) VALUES (
+                                    $1::uuid,
+                                    $2, $3, $4,
+                                    $5, $6, $7,
+                                    $8, $9,
+                                    $10, $11,
+                                    $12, $13, $14, $15,
+                                    $16, $17, $18,
+                                    $19, $20, $21,
+                                    $22, $23, $24,
+                                    $25, $26,
+                                    'openfda_faers'
+                                )
+                                ON CONFLICT (molecule_id, safety_report_id) DO UPDATE SET
+                                    receive_date = EXCLUDED.receive_date,
+                                    receipt_date = EXCLUDED.receipt_date,
+                                    serious = EXCLUDED.serious,
+                                    serious_death = EXCLUDED.serious_death,
+                                    serious_hospitalization = EXCLUDED.serious_hospitalization,
+                                    serious_lifethreatening = EXCLUDED.serious_lifethreatening,
+                                    serious_disabling = EXCLUDED.serious_disabling,
+                                    serious_life_threatening = EXCLUDED.serious_life_threatening,
+                                    serious_other = EXCLUDED.serious_other,
+                                    patient_age = EXCLUDED.patient_age,
+                                    patient_age_unit = EXCLUDED.patient_age_unit,
+                                    patient_sex = EXCLUDED.patient_sex,
+                                    patient_weight = EXCLUDED.patient_weight,
+                                    drugs = EXCLUDED.drugs,
+                                    reactions = EXCLUDED.reactions,
+                                    outcomes = EXCLUDED.outcomes,
+                                    reporter_country = EXCLUDED.reporter_country,
+                                    occurrence_country = EXCLUDED.occurrence_country,
+                                    companynumb = EXCLUDED.companynumb,
+                                    safety_report_version = EXCLUDED.safety_report_version,
+                                    patient_drug = EXCLUDED.patient_drug,
+                                    patient_reaction = EXCLUDED.patient_reaction,
+                                    sender_organization = EXCLUDED.sender_organization,
+                                    receiver_organization = EXCLUDED.receiver_organization,
+                                    updated_at = NOW()
+                            """,
+                                resolution.molecule_id,
+                                record['safety_report_id'],
+                                record['receive_date'],
+                                record['receipt_date'],
+                                record['serious'],
+                                record['serious_death'],
+                                record['serious_hospitalization'],
+                                record['serious_lifethreatening'],
+                                record['serious_disabling'],
+                                record['serious_life_threatening'],
+                                record['serious_other'],
+                                record['patient_age'],
+                                record['patient_age_unit'],
+                                record['patient_sex'],
+                                record['patient_weight'],
+                                json.dumps(record['drugs']) if record['drugs'] is not None else None,
+                                json.dumps(record['reactions']) if record['reactions'] is not None else None,
+                                json.dumps(record['outcomes']) if record['outcomes'] is not None else None,
+                                record['reporter_country'],
+                                record['occurrence_country'],
+                                record['companynumb'],
+                                record['safety_report_version'],
+                                json.dumps(record['patient_drug']) if record['patient_drug'] is not None else None,
+                                json.dumps(record['patient_reaction']) if record['patient_reaction'] is not None else None,
+                                record['sender_organization'],
+                                record['receiver_organization']
+                            )
+                            result.molecules_updated += 1
 
-        return result
+                            if resolution.needs_review:
+                                result.records_quarantined += 1
+                        else:
+                            await self._queue_for_resolution(
+                                conn, drug_name, 'name', 'openfda_faers'
+                            )
+                            result.records_quarantined += 1
 
-    async def _aggregate_faers_for_molecule(self, conn, drug_name: str, molecule_id: str):
-        """Aggregate FAERS events into Silver adverse_events."""
-        # Aggregate by MedDRA preferred term using correct column names
-        # patient_reaction contains the reaction array, serious flags are integers
-        aggregates = await conn.fetch("""
-            SELECT
-                reaction->>'reactionmeddrapt' AS meddra_pt,
-                COUNT(DISTINCT f.id) AS report_count,
-                SUM(CASE WHEN f.serious = 1 THEN 1 ELSE 0 END) AS serious_count,
-                SUM(CASE WHEN f.serious_death = 1 THEN 1 ELSE 0 END) AS death_count,
-                SUM(CASE WHEN f.serious_hospitalization = 1 THEN 1 ELSE 0 END) AS hospitalization_count,
-                MIN(f.receive_date) AS first_report_date,
-                MAX(f.receive_date) AS last_report_date
-            FROM mol_bronze.openfda_faers f,
-                 jsonb_array_elements(COALESCE(f.patient_drug, '[]'::jsonb)) AS drug,
-                 jsonb_array_elements(COALESCE(f.patient_reaction, '[]'::jsonb)) AS reaction
-            WHERE UPPER(drug->>'medicinalproduct') = $1
-            GROUP BY reaction->>'reactionmeddrapt'
-        """, drug_name)
+                    except Exception as e:
+                        result.errors.append(f"FAERS report {record['safety_report_id']} drug {drug_name}: {str(e)}")
+                        logger.error(f"Failed to process FAERS report {record['safety_report_id']} drug {drug_name}: {e}")
 
-        for agg in aggregates:
-            if not agg['meddra_pt']:
-                continue
-
-            await conn.execute("""
-                INSERT INTO mol_silver.adverse_events (
-                    molecule_id, meddra_pt,
-                    report_count, serious_count, death_count, hospitalization_count,
-                    first_report_date, last_report_date, source
-                ) VALUES (
-                    $1::uuid, $2, $3, $4, $5, $6, $7, $8, 'openfda_faers'
-                )
-                ON CONFLICT (molecule_id, meddra_pt_code) DO UPDATE SET
-                    report_count = EXCLUDED.report_count,
-                    serious_count = EXCLUDED.serious_count,
-                    death_count = EXCLUDED.death_count,
-                    hospitalization_count = EXCLUDED.hospitalization_count,
-                    last_report_date = EXCLUDED.last_report_date,
-                    updated_at = NOW()
-            """,
-                molecule_id,
-                agg['meddra_pt'],
-                agg['report_count'],
-                agg['serious_count'],
-                agg['death_count'],
-                agg['hospitalization_count'],
-                agg['first_report_date'],
-                agg['last_report_date']
-            )
+                # Mark bronze row as processed
+                await conn.execute("""
+                    UPDATE mol_bronze.openfda_faers
+                    SET processed_to_silver = TRUE, processed_at = NOW()
+                    WHERE id = $1
+                """, record['id'])
 
     async def process_drug_labels(self, limit: int = 100) -> TransformationResult:
         """Transform Bronze drug labels to Silver."""
@@ -530,12 +661,37 @@ class SilverTransformationService:
         async with self.db_pool.acquire() as conn:
             # Use correct column names from bronze.openfda_labels table
             bronze_records = await conn.fetch("""
-                SELECT id, set_id, spl_id, version,
-                       brand_name, generic_name, manufacturer_name,
-                       application_number, product_type,
-                       indications_and_usage, dosage_and_administration,
+                SELECT id, set_id, spl_id, application_number, brand_name,
+                       generic_name, manufacturer_name, product_type, route,
+                       substance_name, active_ingredient, indications_and_usage,
                        contraindications, warnings, boxed_warning, adverse_reactions,
-                       drug_interactions, mechanism_of_action, effective_time
+                       drug_interactions, effective_time, dosage_and_administration,
+                       warnings_and_cautions, clinical_pharmacology,
+                       mechanism_of_action, pharmacodynamics, pharmacokinetics,
+                       clinical_studies, overdosage, description, how_supplied,
+                       geriatric_use, pediatric_use, pregnancy,
+                       storage_and_handling, use_in_specific_populations,
+                       dosage_forms_and_strengths, openfda_rxcui, openfda_unii,
+                       openfda_pharm_class_epc, openfda_pharm_class_moa,
+                       openfda_application_number, version, openfda, references,
+                       nonclinical_toxicology, information_for_patients,
+                       spl_medguide, laboratory_tests, pharmacogenomics,
+                       nursing_mothers, openfda_upc, openfda_route,
+                       openfda_spl_id, openfda_brand_name, openfda_spl_set_id,
+                       openfda_package_ndc, openfda_product_ndc,
+                       openfda_generic_name, openfda_product_type,
+                       openfda_substance_name, openfda_manufacturer_name,
+                       openfda_is_original_packager, purpose, stop_use,
+                       questions, do_not_use, inactive_ingredient,
+                       spl_product_data_elements, pregnancy_or_breast_feeding,
+                       keep_out_of_reach_of_children,
+                       package_label_principal_display_panel, risks,
+                       carcinogenesis_and_mutagenesis_and_impairment_of_fertility,
+                       openfda_nui, openfda_pharm_class_cs,
+                       spl_unclassified_section,
+                       animal_pharmacology_and_or_toxicology,
+                       instructions_for_use, openfda_pharm_class_pe,
+                       ask_doctor, ask_doctor_or_pharmacist
                 FROM mol_bronze.openfda_labels
                 WHERE processed_to_silver = FALSE OR processed_to_silver IS NULL
                 ORDER BY ingested_at ASC
@@ -590,44 +746,208 @@ class SilverTransformationService:
         """Upsert drug label into Silver layer."""
         await conn.execute("""
             INSERT INTO mol_silver.drug_labels (
-                molecule_id, set_id, spl_id, version,
-                brand_name, generic_name, manufacturer_name, application_number,
-                product_type, indications_and_usage, dosage_and_administration,
+                molecule_id, set_id, spl_id, application_number, brand_name,
+                generic_name, manufacturer_name, product_type, route,
+                substance_name, active_ingredient, indications_and_usage,
                 contraindications, warnings, boxed_warning, adverse_reactions,
-                drug_interactions, mechanism_of_action, effective_time, source
+                drug_interactions, effective_time, dosage_and_administration,
+                warnings_and_cautions, clinical_pharmacology,
+                mechanism_of_action, pharmacodynamics, pharmacokinetics,
+                clinical_studies, overdosage, description, how_supplied,
+                geriatric_use, pediatric_use, pregnancy,
+                storage_and_handling, use_in_specific_populations,
+                dosage_forms_and_strengths, openfda_rxcui, openfda_unii,
+                openfda_pharm_class_epc, openfda_pharm_class_moa,
+                openfda_application_number, version, openfda, references,
+                nonclinical_toxicology, information_for_patients,
+                spl_medguide, laboratory_tests, pharmacogenomics,
+                nursing_mothers, openfda_upc, openfda_route,
+                openfda_spl_id, openfda_brand_name, openfda_spl_set_id,
+                openfda_package_ndc, openfda_product_ndc,
+                openfda_generic_name, openfda_product_type,
+                openfda_substance_name, openfda_manufacturer_name,
+                openfda_is_original_packager, purpose, stop_use,
+                questions, do_not_use, inactive_ingredient,
+                spl_product_data_elements, pregnancy_or_breast_feeding,
+                keep_out_of_reach_of_children,
+                package_label_principal_display_panel, risks,
+                carcinogenesis_and_mutagenesis_and_impairment_of_fertility,
+                openfda_nui, openfda_pharm_class_cs,
+                spl_unclassified_section,
+                animal_pharmacology_and_or_toxicology,
+                instructions_for_use, openfda_pharm_class_pe,
+                ask_doctor, ask_doctor_or_pharmacist, source
             ) VALUES (
                 $1::uuid, $2, $3, $4, $5, $6, $7, $8, $9, $10,
-                $11, $12, $13, $14, $15, $16, $17, $18, 'openfda_labels'
+                $11, $12, $13, $14, $15, $16, $17, $18, $19, $20,
+                $21, $22, $23, $24, $25, $26, $27, $28, $29, $30,
+                $31, $32, $33, $34, $35, $36, $37, $38, $39, $40,
+                $41, $42, $43, $44, $45, $46, $47, $48, $49, $50,
+                $51, $52, $53, $54, $55, $56, $57, $58, $59, $60,
+                $61, $62, $63, $64, $65, $66, $67, $68, $69, $70,
+                $71, $72, $73, $74, $75, $76, $77, $78, $79, 'openfda_labels'
             )
             ON CONFLICT (set_id, version) DO UPDATE SET
                 molecule_id = EXCLUDED.molecule_id,
                 brand_name = EXCLUDED.brand_name,
+                generic_name = EXCLUDED.generic_name,
+                manufacturer_name = EXCLUDED.manufacturer_name,
+                product_type = EXCLUDED.product_type,
+                route = EXCLUDED.route,
+                substance_name = EXCLUDED.substance_name,
+                active_ingredient = EXCLUDED.active_ingredient,
+                indications_and_usage = EXCLUDED.indications_and_usage,
+                contraindications = EXCLUDED.contraindications,
+                warnings = EXCLUDED.warnings,
                 boxed_warning = EXCLUDED.boxed_warning,
                 adverse_reactions = EXCLUDED.adverse_reactions,
+                drug_interactions = EXCLUDED.drug_interactions,
+                effective_time = EXCLUDED.effective_time,
+                dosage_and_administration = EXCLUDED.dosage_and_administration,
+                warnings_and_cautions = EXCLUDED.warnings_and_cautions,
+                clinical_pharmacology = EXCLUDED.clinical_pharmacology,
+                mechanism_of_action = EXCLUDED.mechanism_of_action,
+                pharmacodynamics = EXCLUDED.pharmacodynamics,
+                pharmacokinetics = EXCLUDED.pharmacokinetics,
+                clinical_studies = EXCLUDED.clinical_studies,
+                overdosage = EXCLUDED.overdosage,
+                description = EXCLUDED.description,
+                how_supplied = EXCLUDED.how_supplied,
+                geriatric_use = EXCLUDED.geriatric_use,
+                pediatric_use = EXCLUDED.pediatric_use,
+                pregnancy = EXCLUDED.pregnancy,
+                storage_and_handling = EXCLUDED.storage_and_handling,
+                use_in_specific_populations = EXCLUDED.use_in_specific_populations,
+                dosage_forms_and_strengths = EXCLUDED.dosage_forms_and_strengths,
+                openfda_rxcui = EXCLUDED.openfda_rxcui,
+                openfda_unii = EXCLUDED.openfda_unii,
+                openfda_pharm_class_epc = EXCLUDED.openfda_pharm_class_epc,
+                openfda_pharm_class_moa = EXCLUDED.openfda_pharm_class_moa,
+                openfda_application_number = EXCLUDED.openfda_application_number,
+                openfda = EXCLUDED.openfda,
+                references = EXCLUDED.references,
+                nonclinical_toxicology = EXCLUDED.nonclinical_toxicology,
+                information_for_patients = EXCLUDED.information_for_patients,
+                spl_medguide = EXCLUDED.spl_medguide,
+                laboratory_tests = EXCLUDED.laboratory_tests,
+                pharmacogenomics = EXCLUDED.pharmacogenomics,
+                nursing_mothers = EXCLUDED.nursing_mothers,
+                openfda_upc = EXCLUDED.openfda_upc,
+                openfda_route = EXCLUDED.openfda_route,
+                openfda_spl_id = EXCLUDED.openfda_spl_id,
+                openfda_brand_name = EXCLUDED.openfda_brand_name,
+                openfda_spl_set_id = EXCLUDED.openfda_spl_set_id,
+                openfda_package_ndc = EXCLUDED.openfda_package_ndc,
+                openfda_product_ndc = EXCLUDED.openfda_product_ndc,
+                openfda_generic_name = EXCLUDED.openfda_generic_name,
+                openfda_product_type = EXCLUDED.openfda_product_type,
+                openfda_substance_name = EXCLUDED.openfda_substance_name,
+                openfda_manufacturer_name = EXCLUDED.openfda_manufacturer_name,
+                openfda_is_original_packager = EXCLUDED.openfda_is_original_packager,
+                purpose = EXCLUDED.purpose,
+                stop_use = EXCLUDED.stop_use,
+                questions = EXCLUDED.questions,
+                do_not_use = EXCLUDED.do_not_use,
+                inactive_ingredient = EXCLUDED.inactive_ingredient,
+                spl_product_data_elements = EXCLUDED.spl_product_data_elements,
+                pregnancy_or_breast_feeding = EXCLUDED.pregnancy_or_breast_feeding,
+                keep_out_of_reach_of_children = EXCLUDED.keep_out_of_reach_of_children,
+                package_label_principal_display_panel = EXCLUDED.package_label_principal_display_panel,
+                risks = EXCLUDED.risks,
+                carcinogenesis_and_mutagenesis_and_impairment_of_fertility = EXCLUDED.carcinogenesis_and_mutagenesis_and_impairment_of_fertility,
+                openfda_nui = EXCLUDED.openfda_nui,
+                openfda_pharm_class_cs = EXCLUDED.openfda_pharm_class_cs,
+                spl_unclassified_section = EXCLUDED.spl_unclassified_section,
+                animal_pharmacology_and_or_toxicology = EXCLUDED.animal_pharmacology_and_or_toxicology,
+                instructions_for_use = EXCLUDED.instructions_for_use,
+                openfda_pharm_class_pe = EXCLUDED.openfda_pharm_class_pe,
+                ask_doctor = EXCLUDED.ask_doctor,
+                ask_doctor_or_pharmacist = EXCLUDED.ask_doctor_or_pharmacist,
                 updated_at = NOW()
         """,
             molecule_id,
             record['set_id'],
             record['spl_id'],
-            record['version'],
+            record['application_number'],
             record['brand_name'],
             record['generic_name'],
             record['manufacturer_name'],
-            record['application_number'],
             record['product_type'],
+            record['route'],
+            record['substance_name'],
+            record['active_ingredient'],
             record['indications_and_usage'],
-            record['dosage_and_administration'],
             record['contraindications'],
             record['warnings'],
             record['boxed_warning'],
             record['adverse_reactions'],
             record['drug_interactions'],
+            record['effective_time'],
+            record['dosage_and_administration'],
+            record['warnings_and_cautions'],
+            record['clinical_pharmacology'],
             record['mechanism_of_action'],
-            record['effective_time']
+            record['pharmacodynamics'],
+            record['pharmacokinetics'],
+            record['clinical_studies'],
+            record['overdosage'],
+            record['description'],
+            record['how_supplied'],
+            record['geriatric_use'],
+            record['pediatric_use'],
+            record['pregnancy'],
+            record['storage_and_handling'],
+            record['use_in_specific_populations'],
+            record['dosage_forms_and_strengths'],
+            record['openfda_rxcui'],
+            record['openfda_unii'],
+            record['openfda_pharm_class_epc'],
+            record['openfda_pharm_class_moa'],
+            record['openfda_application_number'],
+            record['version'],
+            record['openfda'],
+            record['references'],
+            record['nonclinical_toxicology'],
+            record['information_for_patients'],
+            record['spl_medguide'],
+            record['laboratory_tests'],
+            record['pharmacogenomics'],
+            record['nursing_mothers'],
+            record['openfda_upc'],
+            record['openfda_route'],
+            record['openfda_spl_id'],
+            record['openfda_brand_name'],
+            record['openfda_spl_set_id'],
+            record['openfda_package_ndc'],
+            record['openfda_product_ndc'],
+            record['openfda_generic_name'],
+            record['openfda_product_type'],
+            record['openfda_substance_name'],
+            record['openfda_manufacturer_name'],
+            record['openfda_is_original_packager'],
+            record['purpose'],
+            record['stop_use'],
+            record['questions'],
+            record['do_not_use'],
+            record['inactive_ingredient'],
+            record['spl_product_data_elements'],
+            record['pregnancy_or_breast_feeding'],
+            record['keep_out_of_reach_of_children'],
+            record['package_label_principal_display_panel'],
+            record['risks'],
+            record['carcinogenesis_and_mutagenesis_and_impairment_of_fertility'],
+            record['openfda_nui'],
+            record['openfda_pharm_class_cs'],
+            record['spl_unclassified_section'],
+            record['animal_pharmacology_and_or_toxicology'],
+            record['instructions_for_use'],
+            record['openfda_pharm_class_pe'],
+            record['ask_doctor'],
+            record['ask_doctor_or_pharmacist']
         )
 
         # Update molecule approval info if this is an approved drug
-        if record['effective_date']:
+        if record['effective_time']:
             await conn.execute("""
                 UPDATE mol_silver.molecules
                 SET development_status = 'approved',
@@ -636,7 +956,7 @@ class SilverTransformationService:
                     updated_at = NOW()
                 WHERE id = $1::uuid
                   AND (development_status IS NULL OR development_status != 'approved')
-            """, molecule_id, record['effective_date'])
+            """, molecule_id, record['effective_time'])
 
     async def _add_identifier_mapping(
         self, conn, molecule_id: str, id_type: str, id_value: str, source: str
@@ -1085,8 +1405,26 @@ class SilverTransformationService:
             bronze_records = await conn.fetch("""
                 SELECT id, accession, entry_name, protein_name,
                        gene_names, organism, organism_id,
-                       sequence, sequence_length, function_description,
-                       drugbank_ids, chembl_ids
+                       sequence, sequence_length, sequence_mass,
+                       function_description, subcellular_location,
+                       tissue_specificity, features, pdb_ids,
+                       drugbank_ids, chembl_ids, genes, comments,
+                       keywords, organism_lineage, organism_taxonid,
+                       organism_commonname, organism_scientificname,
+                       entrytype, uniprotkbid, primaryaccession,
+                       proteindescription_flag,
+                       proteindescription_recommendedname_fullname,
+                       proteindescription_alternativenames,
+                       proteindescription_recommendedname_shortnames,
+                       proteindescription_recommendedname_ecnumbers,
+                       proteindescription_cdantigennames,
+                       proteindescription_contains,
+                       proteindescription_includes,
+                       organism_evidences,
+                       sequence_md5, sequence_crc64, sequence_value,
+                       sequence_molweight, references, annotationscore,
+                       secondaryaccessions, uniprotkbcrossreferences,
+                       proteinexistence
                 FROM mol_bronze.uniprot
                 WHERE (processed_to_silver = FALSE OR processed_to_silver IS NULL)
                 ORDER BY ingested_at ASC
@@ -1096,17 +1434,85 @@ class SilverTransformationService:
             for record in bronze_records:
                 result.records_processed += 1
                 try:
-                    # Insert or update target in silver.targets
+                    # Insert or update target in silver.targets with ALL bronze columns
                     await conn.execute("""
                         INSERT INTO mol_silver.targets (
-                            uniprot_id, entry_name, protein_name,
+                            accession, entry_name, protein_name,
                             gene_names, organism, organism_id,
-                            sequence, sequence_length, function_description,
+                            sequence, sequence_length, sequence_mass,
+                            function_description, subcellular_location,
+                            tissue_specificity, features, pdb_ids,
+                            drugbank_ids, chembl_ids, genes, comments,
+                            keywords, organism_lineage, organism_taxonid,
+                            organism_commonname, organism_scientificname,
+                            entrytype, uniprotkbid, primaryaccession,
+                            proteindescription_flag,
+                            proteindescription_recommendedname_fullname,
+                            proteindescription_alternativenames,
+                            proteindescription_recommendedname_shortnames,
+                            proteindescription_recommendedname_ecnumbers,
+                            proteindescription_cdantigennames,
+                            proteindescription_contains,
+                            proteindescription_includes,
+                            organism_evidences,
+                            sequence_md5, sequence_crc64, sequence_value,
+                            sequence_molweight, references, annotationscore,
+                            secondaryaccessions, uniprotkbcrossreferences,
+                            proteinexistence,
                             source
-                        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, 'uniprot')
-                        ON CONFLICT (uniprot_id) DO UPDATE SET
+                        ) VALUES (
+                            $1, $2, $3, $4, $5, $6, $7, $8, $9,
+                            $10, $11, $12, $13, $14, $15, $16, $17, $18,
+                            $19, $20, $21, $22, $23, $24, $25, $26,
+                            $27, $28, $29, $30, $31, $32, $33, $34,
+                            $35, $36, $37, $38, $39, $40, $41, $42,
+                            $43,
+                            'uniprot'
+                        )
+                        ON CONFLICT (accession) DO UPDATE SET
+                            entry_name = EXCLUDED.entry_name,
                             protein_name = COALESCE(EXCLUDED.protein_name, mol_silver.targets.protein_name),
+                            gene_names = EXCLUDED.gene_names,
+                            organism = EXCLUDED.organism,
+                            organism_id = EXCLUDED.organism_id,
+                            sequence = EXCLUDED.sequence,
+                            sequence_length = EXCLUDED.sequence_length,
+                            sequence_mass = EXCLUDED.sequence_mass,
                             function_description = COALESCE(EXCLUDED.function_description, mol_silver.targets.function_description),
+                            subcellular_location = EXCLUDED.subcellular_location,
+                            tissue_specificity = EXCLUDED.tissue_specificity,
+                            features = EXCLUDED.features,
+                            pdb_ids = EXCLUDED.pdb_ids,
+                            drugbank_ids = EXCLUDED.drugbank_ids,
+                            chembl_ids = EXCLUDED.chembl_ids,
+                            genes = EXCLUDED.genes,
+                            comments = EXCLUDED.comments,
+                            keywords = EXCLUDED.keywords,
+                            organism_lineage = EXCLUDED.organism_lineage,
+                            organism_taxonid = EXCLUDED.organism_taxonid,
+                            organism_commonname = EXCLUDED.organism_commonname,
+                            organism_scientificname = EXCLUDED.organism_scientificname,
+                            entrytype = EXCLUDED.entrytype,
+                            uniprotkbid = EXCLUDED.uniprotkbid,
+                            primaryaccession = EXCLUDED.primaryaccession,
+                            proteindescription_flag = EXCLUDED.proteindescription_flag,
+                            proteindescription_recommendedname_fullname = EXCLUDED.proteindescription_recommendedname_fullname,
+                            proteindescription_alternativenames = EXCLUDED.proteindescription_alternativenames,
+                            proteindescription_recommendedname_shortnames = EXCLUDED.proteindescription_recommendedname_shortnames,
+                            proteindescription_recommendedname_ecnumbers = EXCLUDED.proteindescription_recommendedname_ecnumbers,
+                            proteindescription_cdantigennames = EXCLUDED.proteindescription_cdantigennames,
+                            proteindescription_contains = EXCLUDED.proteindescription_contains,
+                            proteindescription_includes = EXCLUDED.proteindescription_includes,
+                            organism_evidences = EXCLUDED.organism_evidences,
+                            sequence_md5 = EXCLUDED.sequence_md5,
+                            sequence_crc64 = EXCLUDED.sequence_crc64,
+                            sequence_value = EXCLUDED.sequence_value,
+                            sequence_molweight = EXCLUDED.sequence_molweight,
+                            references = EXCLUDED.references,
+                            annotationscore = EXCLUDED.annotationscore,
+                            secondaryaccessions = EXCLUDED.secondaryaccessions,
+                            uniprotkbcrossreferences = EXCLUDED.uniprotkbcrossreferences,
+                            proteinexistence = EXCLUDED.proteinexistence,
                             updated_at = NOW()
                     """,
                         record['accession'],
@@ -1117,7 +1523,42 @@ class SilverTransformationService:
                         record['organism_id'],
                         record['sequence'],
                         record['sequence_length'],
-                        record['function_description']
+                        record['sequence_mass'],
+                        record['function_description'],
+                        record['subcellular_location'],
+                        record['tissue_specificity'],
+                        json.dumps(record['features']) if record['features'] is not None else None,
+                        json.dumps(record['pdb_ids']) if record['pdb_ids'] is not None else None,
+                        json.dumps(record['drugbank_ids']) if record['drugbank_ids'] is not None else None,
+                        json.dumps(record['chembl_ids']) if record['chembl_ids'] is not None else None,
+                        json.dumps(record['genes']) if record['genes'] is not None else None,
+                        json.dumps(record['comments']) if record['comments'] is not None else None,
+                        json.dumps(record['keywords']) if record['keywords'] is not None else None,
+                        json.dumps(record['organism_lineage']) if record['organism_lineage'] is not None else None,
+                        record['organism_taxonid'],
+                        record['organism_commonname'],
+                        record['organism_scientificname'],
+                        record['entrytype'],
+                        record['uniprotkbid'],
+                        record['primaryaccession'],
+                        record['proteindescription_flag'],
+                        record['proteindescription_recommendedname_fullname'],
+                        json.dumps(record['proteindescription_alternativenames']) if record['proteindescription_alternativenames'] is not None else None,
+                        json.dumps(record['proteindescription_recommendedname_shortnames']) if record['proteindescription_recommendedname_shortnames'] is not None else None,
+                        json.dumps(record['proteindescription_recommendedname_ecnumbers']) if record['proteindescription_recommendedname_ecnumbers'] is not None else None,
+                        json.dumps(record['proteindescription_cdantigennames']) if record['proteindescription_cdantigennames'] is not None else None,
+                        json.dumps(record['proteindescription_contains']) if record['proteindescription_contains'] is not None else None,
+                        json.dumps(record['proteindescription_includes']) if record['proteindescription_includes'] is not None else None,
+                        json.dumps(record['organism_evidences']) if record['organism_evidences'] is not None else None,
+                        record['sequence_md5'],
+                        record['sequence_crc64'],
+                        record['sequence_value'],
+                        record['sequence_molweight'],
+                        json.dumps(record['references']) if record['references'] is not None else None,
+                        record['annotationscore'],
+                        json.dumps(record['secondaryaccessions']) if record['secondaryaccessions'] is not None else None,
+                        json.dumps(record['uniprotkbcrossreferences']) if record['uniprotkbcrossreferences'] is not None else None,
+                        record['proteinexistence']
                     )
 
                     result.molecules_created += 1  # Using molecules_created for targets
