@@ -3,7 +3,7 @@
 -- Part of: 012-dk-data-platform (extended by 015-assessment-dashboard-integration)
 
 MODEL (
-    name silver.publications,
+    name mol_silver.publications,
     kind INCREMENTAL_BY_UNIQUE_KEY (
         unique_key doi
     ),

@@ -3,7 +3,7 @@
 -- Part of: 012-dk-data-platform
 
 MODEL (
-    name silver.bioactivity,
+    name mol_silver.bioactivity,
     kind INCREMENTAL_BY_UNIQUE_KEY (
         unique_key activity_id
     ),

@@ -505,6 +505,7 @@ class SilverGoldRefresher:
             await self._refresh_gold_lifecycle_stages(conn, molecule_id)
             await self._refresh_gold_trial_outcomes_direct(conn, molecule_id)
             await self._refresh_gold_competitive_landscape(conn, molecule_id)
+            await self._parse_mda_and_refresh_indication_revenue(conn, molecule_id)
 
     async def _refresh_gold_molecule_profile(self, conn, molecule_id: str, drug_name: str) -> None:
         """Refresh gold_molecule_profile from silver tables."""
@@ -821,6 +822,188 @@ class SilverGoldRefresher:
                 )
         except Exception as e:
             logger.warning(f"gold.trial_outcomes refresh skipped: {e}")
+
+    async def _parse_mda_and_refresh_indication_revenue(self, conn, molecule_id: str) -> None:
+        """Parse MD&A excerpts from financial_filings → silver.indication_revenue → gold summary."""
+        try:
+            from ..data_platform.mda_revenue_parser import parse_mda_for_indication_revenue
+
+            # Step 1: Parse MD&A text from financial_filings into silver.indication_revenue
+            filings = await conn.fetch("""
+                SELECT product_name, mda_excerpt, revenue, period, accession_number
+                FROM mol_silver.financial_filings
+                WHERE molecule_id = $1::uuid
+                  AND mda_excerpt IS NOT NULL AND LENGTH(mda_excerpt) > 100
+                ORDER BY period DESC
+            """, molecule_id)
+
+            parsed_count = 0
+            for f in filings:
+                # Extract year from period like "annual_2026"
+                data_year = None
+                if f['period']:
+                    import re
+                    m = re.search(r'(\d{4})', f['period'])
+                    if m:
+                        data_year = int(m.group(1))
+                if not data_year:
+                    continue
+
+                results = parse_mda_for_indication_revenue(
+                    mda_text=f['mda_excerpt'],
+                    product_name=f['product_name'] or 'Unknown',
+                    data_year=data_year,
+                    source_filing=f['accession_number'] or f['period'],
+                    molecule_id=molecule_id,
+                    total_product_revenue=float(f['revenue']) if f['revenue'] else None,
+                )
+
+                for r in results:
+                    await conn.execute("""
+                        INSERT INTO mol_silver.indication_revenue
+                            (id, icd10_code, molecule_id, product_name,
+                             indication_revenue_usd, total_product_revenue_usd,
+                             indication_revenue_share, data_year, source_filing, source)
+                        VALUES (gen_random_uuid(), $1, $2::uuid, $3, $4, $5, $6, $7, $8, 'sec_edgar')
+                        ON CONFLICT (molecule_id, icd10_code, product_name, data_year) DO UPDATE SET
+                            indication_revenue_usd = EXCLUDED.indication_revenue_usd,
+                            total_product_revenue_usd = EXCLUDED.total_product_revenue_usd,
+                            indication_revenue_share = EXCLUDED.indication_revenue_share,
+                            source_filing = EXCLUDED.source_filing,
+                            updated_at = NOW()
+                    """,
+                        r['icd10_code'], molecule_id, r['product_name'],
+                        r['indication_revenue_usd'], r['total_product_revenue_usd'],
+                        r['indication_revenue_share'], r['data_year'], r['source_filing'],
+                    )
+                    parsed_count += 1
+
+            if parsed_count:
+                logger.info(f"Parsed {parsed_count} indication-revenue entries from {len(filings)} filings")
+
+            # Fallback: if no indication-level data found, create product-level summary
+            # directly from financial_filings (icd10='ALL' = total product)
+            silver_count = await conn.fetchval(
+                "SELECT COUNT(*) FROM mol_silver.indication_revenue WHERE molecule_id = $1::uuid",
+                molecule_id,
+            )
+            if silver_count == 0 and filings:
+                logger.info("No indication-level revenue found; creating product-level gold summary from financial_filings")
+                for f in filings:
+                    data_year = None
+                    if f['period']:
+                        import re
+                        m = re.search(r'(\d{4})', f['period'])
+                        if m:
+                            data_year = int(m.group(1))
+                    if not data_year or not f['revenue']:
+                        continue
+                    # Insert product-level entry with icd10='ALL'
+                    await conn.execute("""
+                        INSERT INTO mol_silver.indication_revenue
+                            (id, icd10_code, molecule_id, product_name,
+                             indication_revenue_usd, total_product_revenue_usd,
+                             indication_revenue_share, data_year, source_filing, source)
+                        VALUES (gen_random_uuid(), 'ALL', $1::uuid, $2, $3, $3, 100.0, $4, $5, 'sec_edgar')
+                        ON CONFLICT (molecule_id, icd10_code, product_name, data_year) DO UPDATE SET
+                            indication_revenue_usd = EXCLUDED.indication_revenue_usd,
+                            updated_at = NOW()
+                    """,
+                        molecule_id, f['product_name'] or 'Unknown',
+                        float(f['revenue']), data_year,
+                        f['accession_number'] or f['period'],
+                    )
+
+            # Step 2: Aggregate silver.indication_revenue → gold.indication_revenue_summary
+            # Get indication names from ontology for display
+            rows = await conn.fetch("""
+                SELECT
+                    ir.icd10_code,
+                    ir.product_name,
+                    MAX(CASE WHEN ir.data_year = latest.max_year THEN ir.indication_revenue_usd END) AS latest_revenue_usd,
+                    MAX(ir.indication_revenue_usd) AS peak_revenue_usd,
+                    MAX(CASE WHEN ir.data_year = latest.max_year THEN ir.total_product_revenue_usd END) AS latest_total_product_usd,
+                    MAX(CASE WHEN ir.data_year = latest.max_year THEN ir.indication_revenue_share END) AS revenue_share_pct,
+                    (SELECT x.data_year FROM mol_silver.indication_revenue x
+                     WHERE x.molecule_id = ir.molecule_id AND x.icd10_code = ir.icd10_code
+                     ORDER BY x.indication_revenue_usd DESC NULLS LAST LIMIT 1) AS year_of_peak,
+                    latest.max_year AS latest_year,
+                    COUNT(DISTINCT ir.source_filing) AS filing_count
+                FROM mol_silver.indication_revenue ir
+                JOIN (
+                    SELECT molecule_id, icd10_code, MAX(data_year) AS max_year
+                    FROM mol_silver.indication_revenue
+                    WHERE molecule_id = $1::uuid
+                    GROUP BY molecule_id, icd10_code
+                ) latest ON ir.molecule_id = latest.molecule_id
+                    AND ir.icd10_code = latest.icd10_code
+                WHERE ir.molecule_id = $1::uuid
+                GROUP BY ir.molecule_id, ir.icd10_code, ir.product_name,
+                         latest.max_year
+            """, molecule_id)
+
+            for r in rows:
+                # Compute trend from multi-year data
+                year_data = await conn.fetch("""
+                    SELECT data_year, indication_revenue_usd
+                    FROM mol_silver.indication_revenue
+                    WHERE molecule_id = $1::uuid AND icd10_code = $2
+                    ORDER BY data_year
+                """, molecule_id, r['icd10_code'])
+
+                trend = 'stable'
+                cagr = None
+                if len(year_data) >= 2:
+                    first_val = float(year_data[0]['indication_revenue_usd'] or 0)
+                    last_val = float(year_data[-1]['indication_revenue_usd'] or 0)
+                    years_span = year_data[-1]['data_year'] - year_data[0]['data_year']
+                    if first_val > 0 and years_span > 0:
+                        cagr = ((last_val / first_val) ** (1.0 / years_span) - 1) * 100
+                        if cagr > 5:
+                            trend = 'increasing'
+                        elif cagr < -5:
+                            trend = 'declining'
+
+                # Confidence: 0.3 base + 0.2 per filing (max 3) + 0.1 if multi-year
+                confidence = min(1.0, 0.3 + 0.2 * min(r['filing_count'], 3) + (0.1 if len(year_data) >= 2 else 0))
+
+                await conn.execute("""
+                    INSERT INTO mol_gold.indication_revenue_summary
+                        (molecule_id, icd10_code, indication_name, product_name,
+                         latest_revenue_usd, peak_revenue_usd, latest_total_product_usd,
+                         revenue_share_pct, year_of_peak, latest_year, trend, cagr_pct,
+                         filing_count, confidence_score, snapshot_date)
+                    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, CURRENT_DATE)
+                    ON CONFLICT (molecule_id, icd10_code) DO UPDATE SET
+                        indication_name = COALESCE(EXCLUDED.indication_name, mol_gold.indication_revenue_summary.indication_name),
+                        product_name = EXCLUDED.product_name,
+                        latest_revenue_usd = EXCLUDED.latest_revenue_usd,
+                        peak_revenue_usd = EXCLUDED.peak_revenue_usd,
+                        latest_total_product_usd = EXCLUDED.latest_total_product_usd,
+                        revenue_share_pct = EXCLUDED.revenue_share_pct,
+                        year_of_peak = EXCLUDED.year_of_peak,
+                        latest_year = EXCLUDED.latest_year,
+                        trend = EXCLUDED.trend,
+                        cagr_pct = EXCLUDED.cagr_pct,
+                        filing_count = EXCLUDED.filing_count,
+                        confidence_score = EXCLUDED.confidence_score,
+                        snapshot_date = CURRENT_DATE,
+                        updated_at = NOW()
+                """,
+                    molecule_id, r['icd10_code'],
+                    None, r['product_name'],  # indication_name filled by ICD-10 lookup if available
+                    r['latest_revenue_usd'], r['peak_revenue_usd'],
+                    r['latest_total_product_usd'], r['revenue_share_pct'],
+                    r['year_of_peak'], r['latest_year'],
+                    trend, cagr,
+                    r['filing_count'], confidence,
+                )
+
+            if rows:
+                logger.info(f"Refreshed gold.indication_revenue_summary: {len(rows)} indications")
+
+        except Exception as e:
+            logger.warning(f"gold.indication_revenue_summary refresh skipped: {e}")
 
 
 # -------------------------------------------------------------------------

@@ -3,7 +3,7 @@
 -- Part of DK Molecule Data Platform (012-dk-data-platform)
 
 MODEL (
-    name silver.molecule_targets,
+    name mol_silver.molecule_targets,
     kind INCREMENTAL_BY_UNIQUE_KEY (
         unique_key (molecule_id, target_id)
     ),
@@ -34,9 +34,9 @@ SELECT DISTINCT
     b.source,
     b.created_at
 
-FROM silver.bioactivity b
-JOIN silver.targets t ON b.target_id = t.id
-JOIN silver.molecules m ON b.molecule_id = m.id
+FROM mol_silver.bioactivity b
+JOIN mol_silver.targets t ON b.target_id = t.id
+JOIN mol_silver.molecules m ON b.molecule_id = m.id
 WHERE m.needs_review = FALSE
   AND b.molecule_id IS NOT NULL
   AND b.target_id IS NOT NULL
@@ -54,9 +54,9 @@ SELECT DISTINCT
     'unknown' AS potency_class,
     'drugbank' AS source,
     NOW() AS created_at
-FROM silver.molecules m
+FROM mol_silver.molecules m
 JOIN bronze.drugbank d ON m.inchi_key = d.inchi_key
 CROSS JOIN LATERAL jsonb_array_elements(COALESCE(d.targets, '[]'::jsonb)) AS tgt
-JOIN silver.targets t ON t.target_name ILIKE '%' || (tgt->>'name') || '%'
+JOIN mol_silver.targets t ON t.target_name ILIKE '%' || (tgt->>'name') || '%'
 WHERE m.needs_review = FALSE
   AND tgt->>'name' IS NOT NULL

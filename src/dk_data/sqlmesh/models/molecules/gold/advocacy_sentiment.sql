@@ -24,9 +24,9 @@ WITH molecule_signals AS (
         ns.title,
         ns.pub_date,
         ns.source_url
-    FROM silver.news_signals ns
+    FROM mol_silver.news_signals ns
     CROSS JOIN LATERAL jsonb_array_elements_text(COALESCE(ns.drug_mentions, '[]'::JSONB)) AS dm
-    JOIN silver.molecules m
+    JOIN mol_silver.molecules m
         ON LOWER(dm) = LOWER(m.canonical_name)
     WHERE ns.drug_mentions IS NOT NULL
 ),

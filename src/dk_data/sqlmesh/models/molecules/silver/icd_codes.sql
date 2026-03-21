@@ -3,7 +3,7 @@
 -- Part of: 015-assessment-dashboard-integration
 
 MODEL (
-    name silver.icd_codes,
+    name mol_silver.icd_codes,
     kind INCREMENTAL_BY_UNIQUE_KEY (
         unique_key icd_code
     ),

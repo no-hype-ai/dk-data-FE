@@ -3,7 +3,7 @@
 -- Part of: 012-dk-data-platform
 
 MODEL (
-    name silver.clinical_trials,
+    name mol_silver.clinical_trials,
     kind INCREMENTAL_BY_UNIQUE_KEY (
         unique_key nct_id
     ),

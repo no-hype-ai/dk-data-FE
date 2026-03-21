@@ -3,7 +3,7 @@
 -- Part of: 015-assessment-dashboard-integration
 
 MODEL (
-    name silver.news_signals,
+    name mol_silver.news_signals,
     kind INCREMENTAL_BY_UNIQUE_KEY (
         unique_key (source_url, pub_date)
     ),

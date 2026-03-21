@@ -4,7 +4,7 @@
 -- Part of DK Molecule Data Platform (012-dk-data-platform)
 
 MODEL (
-    name silver.molecule_aliases,
+    name mol_silver.molecule_aliases,
     kind INCREMENTAL_BY_UNIQUE_KEY (
         unique_key (molecule_id, alias_name_normalized)
     ),
@@ -34,7 +34,7 @@ SELECT
     'canonical' AS alias_type,
     m.primary_source AS source,
     NOW() AS created_at
-FROM silver.molecules m
+FROM mol_silver.molecules m
 WHERE m.canonical_name IS NOT NULL
   AND m.needs_review = FALSE
 
@@ -48,7 +48,7 @@ SELECT
     'synonym' AS alias_type,
     'chembl' AS source,
     NOW() AS created_at
-FROM silver.molecules m
+FROM mol_silver.molecules m
 JOIN bronze.chembl_molecules c ON m.inchi_key = c.inchi_key
 CROSS JOIN LATERAL jsonb_array_elements_text(COALESCE(c.synonyms, '[]'::jsonb)) AS syn
 WHERE syn IS NOT NULL
@@ -65,7 +65,7 @@ SELECT
     'synonym' AS alias_type,
     'drugbank' AS source,
     NOW() AS created_at
-FROM silver.molecules m
+FROM mol_silver.molecules m
 JOIN bronze.drugbank d ON m.inchi_key = d.inchi_key
 CROSS JOIN LATERAL jsonb_array_elements_text(COALESCE(d.synonyms, '[]'::jsonb)) AS syn
 WHERE syn IS NOT NULL
@@ -82,7 +82,7 @@ SELECT
     'brand' AS alias_type,
     'drugbank' AS source,
     NOW() AS created_at
-FROM silver.molecules m
+FROM mol_silver.molecules m
 JOIN bronze.drugbank d ON m.inchi_key = d.inchi_key
 CROSS JOIN LATERAL jsonb_array_elements(COALESCE(d.international_brands, '[]'::jsonb)) AS brand
 WHERE brand->>'name' IS NOT NULL
@@ -99,7 +99,7 @@ SELECT
     'product' AS alias_type,
     'drugbank' AS source,
     NOW() AS created_at
-FROM silver.molecules m
+FROM mol_silver.molecules m
 JOIN bronze.drugbank d ON m.inchi_key = d.inchi_key
 CROSS JOIN LATERAL jsonb_array_elements(COALESCE(d.products, '[]'::jsonb)) AS prod
 WHERE prod->>'name' IS NOT NULL
@@ -116,8 +116,8 @@ SELECT
     'brand' AS alias_type,
     'openfda' AS source,
     NOW() AS created_at
-FROM silver.molecules m
-JOIN silver.drug_labels dl ON m.id = dl.molecule_id
+FROM mol_silver.molecules m
+JOIN mol_silver.drug_labels dl ON m.id = dl.molecule_id
 WHERE dl.brand_name IS NOT NULL
   AND dl.brand_name != ''
   AND m.needs_review = FALSE
@@ -132,8 +132,8 @@ SELECT
     'generic' AS alias_type,
     'openfda' AS source,
     NOW() AS created_at
-FROM silver.molecules m
-JOIN silver.drug_labels dl ON m.id = dl.molecule_id
+FROM mol_silver.molecules m
+JOIN mol_silver.drug_labels dl ON m.id = dl.molecule_id
 WHERE dl.generic_name IS NOT NULL
   AND dl.generic_name != ''
   AND m.needs_review = FALSE
@@ -148,7 +148,7 @@ SELECT
     'synonym' AS alias_type,
     'pubchem' AS source,
     NOW() AS created_at
-FROM silver.molecules m
+FROM mol_silver.molecules m
 JOIN bronze.pubchem p ON m.inchi_key = p.inchi_key
 CROSS JOIN LATERAL jsonb_array_elements_text(COALESCE(p.synonyms, '[]'::jsonb)) AS syn
 WHERE syn IS NOT NULL
@@ -165,8 +165,8 @@ SELECT DISTINCT
     'trial_intervention' AS alias_type,
     'clinicaltrials' AS source,
     NOW() AS created_at
-FROM silver.molecules m
-JOIN silver.clinical_trials ct ON m.id = ct.molecule_id
+FROM mol_silver.molecules m
+JOIN mol_silver.clinical_trials ct ON m.id = ct.molecule_id
 WHERE ct.intervention_name IS NOT NULL
   AND ct.intervention_name != ''
   AND m.needs_review = FALSE
@@ -181,8 +181,8 @@ SELECT DISTINCT
     'trade' AS alias_type,
     'orangebook' AS source,
     NOW() AS created_at
-FROM silver.molecules m
-JOIN silver.molecule_aliases ma ON m.id = ma.molecule_id
+FROM mol_silver.molecules m
+JOIN mol_silver.molecule_aliases ma ON m.id = ma.molecule_id
 JOIN bronze.orange_book ob ON LOWER(ma.alias_name) = LOWER(ob.ingredient)
 WHERE ob.trade_name IS NOT NULL
   AND ob.trade_name != ''

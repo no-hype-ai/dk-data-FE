@@ -3,7 +3,7 @@
 -- Part of: 012-dk-data-platform
 
 MODEL (
-    name silver.molecules,
+    name mol_silver.molecules,
     kind INCREMENTAL_BY_UNIQUE_KEY (
         unique_key inchi_key
     ),

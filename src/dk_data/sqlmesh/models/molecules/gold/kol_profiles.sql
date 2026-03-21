@@ -28,7 +28,7 @@ WITH researcher_base AS (
         r.research_areas,
         r.therapeutic_areas,
         COALESCE(r.grant_count, 0) AS grant_count
-    FROM silver.researchers r
+    FROM mol_silver.researchers r
 ),
 
 -- Publication counts per researcher
@@ -37,7 +37,7 @@ pub_counts AS (
         p.first_author_id AS researcher_id,
         COUNT(*) AS publication_count,
         COALESCE(SUM(p.cited_by_count), 0) AS total_citations
-    FROM silver.publications p
+    FROM mol_silver.publications p
     WHERE p.first_author_id IS NOT NULL
     GROUP BY p.first_author_id
 ),
@@ -47,8 +47,8 @@ trial_counts AS (
     SELECT
         r.id AS researcher_id,
         COUNT(DISTINCT ct.nct_id) AS trial_count
-    FROM silver.researchers r
-    JOIN silver.clinical_trials ct
+    FROM mol_silver.researchers r
+    JOIN mol_silver.clinical_trials ct
         ON ct.lead_sponsor ILIKE '%' || r.family_name || '%'
     GROUP BY r.id
 ),

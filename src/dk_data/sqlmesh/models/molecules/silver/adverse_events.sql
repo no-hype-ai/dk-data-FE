@@ -3,7 +3,7 @@
 -- Part of: 012-dk-data-platform
 
 MODEL (
-    name silver.adverse_events,
+    name mol_silver.adverse_events,
     kind INCREMENTAL_BY_UNIQUE_KEY (
         unique_key (molecule_id, meddra_pt)
     ),
@@ -27,7 +27,7 @@ WITH linked_events AS (
         f.serious_hospitalization,
         f.receive_date
     FROM bronze.faers_events f
-    JOIN silver.molecules m ON (
+    JOIN mol_silver.molecules m ON (
         -- Exact match on canonical name
         LOWER(f.drug_name) = LOWER(m.canonical_name)
         -- Or fuzzy match with high similarity

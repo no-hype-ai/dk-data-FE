@@ -3,7 +3,7 @@
 -- Part of DK Molecule Data Platform (012-dk-data-platform)
 
 MODEL (
-    name silver.molecule_publications,
+    name mol_silver.molecule_publications,
     kind INCREMENTAL_BY_UNIQUE_KEY (
         unique_key (molecule_id, publication_id)
     ),
@@ -24,9 +24,9 @@ SELECT DISTINCT
     p.source,
     NOW() AS created_at
 
-FROM silver.molecules m
-JOIN silver.molecule_aliases ma ON m.id = ma.molecule_id
-JOIN silver.publications p ON
+FROM mol_silver.molecules m
+JOIN mol_silver.molecule_aliases ma ON m.id = ma.molecule_id
+JOIN mol_silver.publications p ON
     p.title ILIKE '%' || ma.alias_name || '%'
     OR p.abstract ILIKE '%' || ma.alias_name || '%'
 WHERE m.needs_review = FALSE
@@ -43,10 +43,10 @@ SELECT DISTINCT
     'chembl' AS source,
     NOW() AS created_at
 
-FROM silver.molecules m
+FROM mol_silver.molecules m
 JOIN bronze.chembl_molecules c ON m.inchi_key = c.inchi_key
 CROSS JOIN LATERAL jsonb_array_elements(COALESCE(c.documents, '[]'::jsonb)) AS doc
-JOIN silver.publications p ON
+JOIN mol_silver.publications p ON
     p.doi = doc->>'document_doi'
     OR p.pubmed_id = doc->>'document_pubmed_id'
 WHERE m.needs_review = FALSE
@@ -63,8 +63,8 @@ SELECT DISTINCT
     'openalex' AS source,
     NOW() AS created_at
 
-FROM silver.molecules m
-JOIN silver.publications p ON
+FROM mol_silver.molecules m
+JOIN mol_silver.publications p ON
     p.title ILIKE '%' || m.canonical_name || '%'
 WHERE m.needs_review = FALSE
   AND LENGTH(m.canonical_name) > 5

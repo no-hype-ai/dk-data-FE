@@ -4,7 +4,7 @@
 -- Part of: 012-dk-data-platform
 
 MODEL (
-    name gold.molecule_profile,
+    name mol_gold.molecule_profile,
     kind INCREMENTAL_BY_UNIQUE_KEY (
         unique_key molecule_id
     ),
@@ -37,7 +37,7 @@ WITH molecule_base AS (
         m.primary_source,
         m.created_at,
         m.updated_at
-    FROM silver.molecules m
+    FROM mol_silver.molecules m
     WHERE m.needs_review = FALSE  -- Exclude quarantined records
 ),
 
@@ -51,7 +51,7 @@ cross_refs AS (
         MAX(CASE WHEN identifier_type = 'unii' AND is_primary THEN identifier_value END) AS unii,
         MAX(CASE WHEN identifier_type = 'cas_number' AND is_primary THEN identifier_value END) AS cas_number,
         MAX(CASE WHEN identifier_type = 'rxcui' AND is_primary THEN identifier_value END) AS rxcui
-    FROM silver.identifier_mappings
+    FROM mol_silver.identifier_mappings
     GROUP BY molecule_id
 ),
 
@@ -60,7 +60,7 @@ aliases AS (
     SELECT
         molecule_id,
         jsonb_agg(DISTINCT alias_name) AS alias_list
-    FROM silver.molecule_aliases
+    FROM mol_silver.molecule_aliases
     GROUP BY molecule_id
 ),
 
@@ -73,7 +73,7 @@ trial_counts AS (
         COUNT(*) FILTER (WHERE phase LIKE '%3%') AS phase_3_trials,
         COUNT(*) FILTER (WHERE phase LIKE '%2%') AS phase_2_trials,
         COUNT(*) FILTER (WHERE phase LIKE '%1%') AS phase_1_trials
-    FROM silver.clinical_trials
+    FROM mol_silver.clinical_trials
     WHERE molecule_id IS NOT NULL
     GROUP BY molecule_id
 ),
@@ -87,7 +87,7 @@ safety_summary AS (
         COALESCE(SUM(death_count), 0) AS death_reports,
         MIN(first_report_date) AS first_adverse_report,
         MAX(last_report_date) AS last_adverse_report
-    FROM silver.adverse_events
+    FROM mol_silver.adverse_events
     WHERE molecule_id IS NOT NULL
     GROUP BY molecule_id
 ),
@@ -112,7 +112,7 @@ top_adverse_events AS (
             serious_count,
             reporting_rate,
             ROW_NUMBER() OVER (PARTITION BY molecule_id ORDER BY report_count DESC) AS rn
-        FROM silver.adverse_events
+        FROM mol_silver.adverse_events
     ) ranked
     GROUP BY molecule_id
 ),
@@ -125,7 +125,7 @@ label_info AS (
         brand_name,
         indications_and_usage,
         effective_date
-    FROM silver.drug_labels
+    FROM mol_silver.drug_labels
     WHERE molecule_id IS NOT NULL
     ORDER BY molecule_id, effective_date DESC
 ),
@@ -135,7 +135,7 @@ target_counts AS (
     SELECT
         molecule_id,
         COUNT(DISTINCT target_id) AS target_count
-    FROM silver.molecule_targets
+    FROM mol_silver.molecule_targets
     GROUP BY molecule_id
 ),
 
@@ -144,7 +144,7 @@ publication_counts AS (
     SELECT
         molecule_id,
         COUNT(*) AS publication_count
-    FROM silver.molecule_publications
+    FROM mol_silver.molecule_publications
     GROUP BY molecule_id
 ),
 
@@ -154,7 +154,7 @@ patent_info AS (
         molecule_id,
         COUNT(*) AS patent_count,
         MIN(expiry_date) FILTER (WHERE expiry_date > CURRENT_DATE) AS earliest_patent_expiry
-    FROM silver.patents
+    FROM mol_silver.patents
     WHERE molecule_id IS NOT NULL
     GROUP BY molecule_id
 ),
@@ -179,8 +179,8 @@ trademark_info AS (
         ) AS eu_trademark_count,
         (
             SELECT t2.status
-            FROM silver.trademarks t2
-            JOIN silver.molecule_aliases ma2
+            FROM mol_silver.trademarks t2
+            JOIN mol_silver.molecule_aliases ma2
                 ON LOWER(t2.mark_name) = LOWER(ma2.alias_name)
             WHERE ma2.molecule_id = ma.molecule_id
               AND t2.source = 'uspto_trademarks'
@@ -190,8 +190,8 @@ trademark_info AS (
         ) AS latest_us_trademark_status,
         (
             SELECT t3.status
-            FROM silver.trademarks t3
-            JOIN silver.molecule_aliases ma3
+            FROM mol_silver.trademarks t3
+            JOIN mol_silver.molecule_aliases ma3
                 ON LOWER(t3.mark_name) = LOWER(ma3.alias_name)
             WHERE ma3.molecule_id = ma.molecule_id
               AND t3.source = 'euipo_trademarks'
@@ -199,8 +199,8 @@ trademark_info AS (
             ORDER BY t3.filing_date DESC NULLS LAST
             LIMIT 1
         ) AS latest_eu_trademark_status
-    FROM silver.molecule_aliases ma
-    JOIN silver.trademarks t
+    FROM mol_silver.molecule_aliases ma
+    JOIN mol_silver.trademarks t
         ON LOWER(t.mark_name) = LOWER(ma.alias_name)
     WHERE ma.alias_type IN ('brand', 'trade', 'product')
     GROUP BY ma.molecule_id

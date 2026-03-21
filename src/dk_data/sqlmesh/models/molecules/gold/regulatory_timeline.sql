@@ -24,7 +24,7 @@ WITH regulatory AS (
         rd.decision_date,
         rd.therapeutic_area,
         rd.recommendation_details
-    FROM silver.regulatory_decisions rd
+    FROM mol_silver.regulatory_decisions rd
 ),
 
 -- Join with molecules to get molecule_id via drug_name/active_substance matching

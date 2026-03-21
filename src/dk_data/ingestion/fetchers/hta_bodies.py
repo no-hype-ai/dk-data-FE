@@ -4,7 +4,7 @@ Feature: 011-datasource-integration
 Task: T058-T060 — HTA Bodies CI source integration
 
 Fetches technology appraisal decisions from Health Technology Assessment
-(HTA) bodies.  Implements NICE (UK) via API, G-BA (Germany), HAS (France),
+(HTA) bodies.  Implements NICE (UK), G-BA (Germany), HAS (France),
 and PBAC (Australia) via web scraping.
 
 Query-scoped from meta.ops_ci_search_terms WHERE term_type = 'drug_name'.
@@ -19,6 +19,7 @@ Sources:
 
 import hashlib
 import logging
+import re
 import time
 from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional
@@ -30,10 +31,9 @@ from .base import BaseFetcher
 
 logger = logging.getLogger(__name__)
 
-# NICE search API for technology appraisals
-# The old /api/guidance/published endpoint no longer exists (404).
-# NICE uses a Next.js app with an internal search API.
-NICE_API_BASE = "https://search-api.nice.org.uk/api/guidance/published"
+# NICE search and guidance URLs (structured API is deprecated, use HTML scraping)
+NICE_SEARCH_URL = "https://www.nice.org.uk/Search"
+NICE_GUIDANCE_BASE = "https://www.nice.org.uk/guidance"
 
 # Agency identifiers
 AGENCIES = ["nice", "gba", "has", "pbac"]
@@ -46,8 +46,8 @@ class HTABodiesFetcher(BaseFetcher):
     BASE_URL = "https://www.nice.org.uk"
 
     def get_latest_url(self) -> str:
-        """Return the NICE guidance API URL."""
-        return NICE_API_BASE
+        """Return the NICE guidance search URL."""
+        return NICE_SEARCH_URL
 
     def fetch(self, **kwargs) -> Dict[str, Any]:
         """Fetch HTA decisions from all configured agencies.
@@ -204,124 +204,196 @@ class HTABodiesFetcher(BaseFetcher):
     # NICE (UK) — primary implementation
     # ------------------------------------------------------------------
 
+    # Decision classification patterns for NICE recommendation text
+    NICE_DECISION_PATTERNS = [
+        ("Not recommended", ["is not recommended", "are not recommended"]),
+        ("Recommended (CDF)", ["cancer drugs fund", "cdf"]),
+        ("Recommended (managed access)", ["managed access"]),
+        ("Recommended", [
+            "is recommended", "are recommended", "recommended as an option",
+            "recommended, within", "recommended for use",
+        ]),
+        ("Recommended (conditional)", ["can be used", "should be used"]),
+        ("Terminated", ["terminated"]),
+    ]
+
     def _fetch_nice(
         self,
         *,
         drug_names: List[str],
         days_back: int = 7,
     ) -> List[Dict[str, Any]]:
-        """Fetch NICE technology appraisal decisions.
+        """Fetch NICE technology appraisal decisions by scraping HTML pages.
 
-        Queries the NICE published guidance API for technology appraisals
-        updated within the look-back window.
+        For each drug name, searches the NICE website for technology appraisals,
+        then scrapes individual TA recommendation pages for structured data.
 
         Args:
-            drug_names: Drug names to filter (post-fetch text match).
+            drug_names: Drug names to search for.
             days_back: Look-back window in days.
 
         Returns:
             List of normalized HTA decision dicts.
         """
-        since_date = (
-            datetime.now(timezone.utc) - timedelta(days=days_back)
-        ).strftime("%Y-%m-%d")
-
-        params = {
-            "type": "ta",  # Technology Appraisals
-            "from": since_date,
-        }
-
-        # Try the search API first, then fall back to the guidance page
-        nice_endpoints = [
-            NICE_API_BASE,
-            "https://www.nice.org.uk/guidance/published",
-        ]
-
-        items: List[Dict] = []
-        for endpoint in nice_endpoints:
-            try:
-                data = self.fetch_json(endpoint, params=params)
-                items = self._extract_items(data)
-                if items:
-                    break
-            except Exception as e:
-                logger.debug("NICE endpoint %s failed: %s", endpoint, e)
-                continue
-
-        if not items:
-            logger.info("No NICE guidance items returned from any endpoint")
-            return []
-
+        since_date = datetime.now(timezone.utc) - timedelta(days=days_back)
         records: List[Dict[str, Any]] = []
-        drug_names_lower = [d.lower() for d in drug_names] if drug_names else []
+        seen_ta_ids: set = set()
 
-        for item in items:
-            record = self._normalize_nice_item(item)
-            if not record:
+        for drug_name in drug_names:
+            # Step 1: Search NICE for this drug to find TA guidance IDs
+            try:
+                resp = requests.get(
+                    NICE_SEARCH_URL,
+                    params={"q": drug_name, "ps": "20", "sp": "on"},
+                    headers={"User-Agent": "DK-Data-Platform/1.0 (Research)"},
+                    timeout=30,
+                )
+                resp.raise_for_status()
+                time.sleep(1)  # respectful crawling
+            except Exception as e:
+                logger.debug("NICE search for '%s' failed: %s", drug_name, e)
                 continue
 
-            # If drug_names are specified, filter by name match
-            if drug_names_lower:
-                item_drug = (record.get("drug_name") or "").lower()
-                item_title = (record.get("summary") or "").lower()
-                if not any(
-                    dn in item_drug or dn in item_title
-                    for dn in drug_names_lower
-                ):
-                    continue
+            # Extract TA guidance IDs from search results
+            ta_ids = re.findall(r'/guidance/(ta\d+)', resp.text, re.IGNORECASE)
+            ta_ids = list(dict.fromkeys(ta_ids))  # deduplicate, preserve order
 
-            records.append(record)
+            if not ta_ids:
+                logger.debug("No NICE TAs found for '%s'", drug_name)
+                continue
+
+            # Step 2: Scrape each TA recommendation page
+            for ta_id in ta_ids:
+                if ta_id.lower() in seen_ta_ids:
+                    continue
+                seen_ta_ids.add(ta_id.lower())
+
+                record = self._scrape_nice_ta(ta_id, drug_name, since_date)
+                if record:
+                    records.append(record)
+                time.sleep(1)  # respectful crawling
 
         logger.info("Fetched %d NICE TA decisions", len(records))
         return records
 
-    @staticmethod
-    def _extract_items(data: Any) -> List[Dict]:
-        """Extract list of items from a NICE API response."""
-        if isinstance(data, list):
-            return data
-        if isinstance(data, dict):
-            for key in ("results", "data", "items", "guidance"):
-                if key in data and isinstance(data[key], list):
-                    return data[key]
-        return []
+    def _scrape_nice_ta(
+        self,
+        ta_id: str,
+        drug_name: str,
+        since_date: datetime,
+    ) -> Optional[Dict[str, Any]]:
+        """Scrape an individual NICE TA recommendation page.
 
-    @staticmethod
-    def _normalize_nice_item(item: Dict[str, Any]) -> Optional[Dict[str, Any]]:
-        """Normalize a NICE guidance item to the raw.hta_decisions schema.
+        Args:
+            ta_id: Guidance ID (e.g., 'ta798').
+            drug_name: Drug name for context.
+            since_date: Only return if published after this date.
 
-        Returns None if no usable decision ID can be extracted.
+        Returns:
+            Normalized decision dict, or None if not relevant.
         """
-        decision_id = (
-            item.get("id")
-            or item.get("guidance_id")
-            or item.get("reference")
-        )
-        if not decision_id:
+        url = f"{NICE_GUIDANCE_BASE}/{ta_id}/chapter/1-Recommendations"
+
+        try:
+            resp = requests.get(
+                url,
+                headers={"User-Agent": "DK-Data-Platform/1.0 (Research)"},
+                timeout=30,
+                allow_redirects=True,
+            )
+            if resp.status_code != 200:
+                logger.debug("NICE %s: HTTP %d", ta_id, resp.status_code)
+                return None
+
+            html = resp.text
+            soup = BeautifulSoup(html, "html.parser")
+
+            # Extract title
+            h1 = soup.find("h1")
+            title = h1.get_text(strip=True) if h1 else ta_id
+
+            # Extract publication date from <time datetime="...">
+            decision_date = None
+            time_tag = soup.find("time", attrs={"datetime": True})
+            if time_tag:
+                decision_date = time_tag["datetime"][:10]
+
+            # Filter by date if available
+            if decision_date and since_date:
+                try:
+                    pub_dt = datetime.strptime(decision_date, "%Y-%m-%d").replace(
+                        tzinfo=timezone.utc
+                    )
+                    if pub_dt < since_date:
+                        return None
+                except ValueError:
+                    pass
+
+            # Extract recommendation text from the page body
+            # Strip tags and normalize whitespace for text extraction
+            body_text = re.sub(r'<[^>]+>', ' ', html)
+            body_text = re.sub(r'\s+', ' ', body_text).strip()
+
+            # Find section 1.1 recommendation text
+            rec_text = ""
+            rec_match = re.search(
+                r'1\.1\s+(.{50,}?)(?:1\.2\s|\b2\s+[A-Z]|The committee|Evidence|Why the committee|$)',
+                body_text,
+                re.DOTALL,
+            )
+            if rec_match:
+                rec_text = rec_match.group(1).strip()
+            else:
+                idx = body_text.find('1.1 ')
+                if idx >= 0:
+                    rec_text = body_text[idx + 4:idx + 504].strip()
+
+            # Classify the decision
+            decision_type = self._classify_nice_decision(rec_text)
+
+            # Extract indication from recommendation text
+            indication = self._extract_nice_indication(rec_text)
+
+            return {
+                "decision_id": f"nice-{ta_id.upper()}",
+                "agency": "nice",
+                "drug_name": drug_name,
+                "indication": indication,
+                "decision_type": decision_type,
+                "decision_date": decision_date,
+                "document_url": f"{NICE_GUIDANCE_BASE}/{ta_id}",
+                "summary": (rec_text[:300] if rec_text else title),
+            }
+
+        except Exception as e:
+            logger.debug("NICE %s scrape failed: %s", ta_id, e)
             return None
 
-        decision_id = f"nice-{decision_id}"
+    def _classify_nice_decision(self, recommendation_text: str) -> Optional[str]:
+        """Classify NICE decision from recommendation text."""
+        lower = recommendation_text.lower()
+        for label, patterns in self.NICE_DECISION_PATTERNS:
+            if any(p in lower for p in patterns):
+                return label
+        return "Unknown" if recommendation_text else None
 
-        # Decision date
-        decision_date = (
-            item.get("decision_date")
-            or item.get("last_modified")
-            or item.get("published_date")
-            or item.get("date")
-        )
-        if decision_date:
-            decision_date = str(decision_date)[:10]
-
-        return {
-            "decision_id": decision_id,
-            "agency": "nice",
-            "drug_name": item.get("drug_name") or item.get("title"),
-            "indication": item.get("indication") or item.get("therapeutic_area"),
-            "decision_type": item.get("decision_type") or item.get("type"),
-            "decision_date": decision_date,
-            "document_url": item.get("url") or item.get("document_url"),
-            "summary": item.get("summary") or item.get("description"),
-        }
+    @staticmethod
+    def _extract_nice_indication(recommendation_text: str) -> Optional[str]:
+        """Extract indication from NICE recommendation sentence."""
+        patterns = [
+            r'(?:for treating|for the treatment of|as an option for|for use in)\s+(.+?)(?:\s+in adults|\s+if|\s+only|\s+when|\.\s)',
+            r'(?:for|treating)\s+((?:locally |advanced |unresectable |metastatic )*\w[\w\s\-]+(?:cancer|carcinoma|lymphoma|leukaemia|leukemia|melanoma|myeloma|sarcoma|glioma|mesothelioma))',
+        ]
+        for pat in patterns:
+            m = re.search(pat, recommendation_text, re.IGNORECASE)
+            if m:
+                indication = m.group(1).strip()
+                indication = re.sub(
+                    r'\s+(in|if|only|when|that|whose|after|following)$',
+                    '', indication, flags=re.IGNORECASE,
+                )
+                return indication[:200]
+        return None
 
     # ------------------------------------------------------------------
     # G-BA (Germany) — Nutzenbewertung scraper
@@ -576,7 +648,6 @@ class HTABodiesFetcher(BaseFetcher):
     @staticmethod
     def _extract_date_from_text(text: str) -> Optional[str]:
         """Try to extract a YYYY-MM-DD date from free text."""
-        import re
         # ISO dates
         m = re.search(r'(\d{4}-\d{2}-\d{2})', text)
         if m:

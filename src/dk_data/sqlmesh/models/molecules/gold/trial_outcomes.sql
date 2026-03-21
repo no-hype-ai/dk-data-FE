@@ -25,7 +25,7 @@ WITH registry_outcomes AS (
         ct.enrollment AS sample_size,
         1.0::NUMERIC AS confidence_score,
         ct.start_date AS evidence_date
-    FROM silver.clinical_trials ct,
+    FROM mol_silver.clinical_trials ct,
         jsonb_array_elements(ct.primary_outcomes) AS po
     WHERE ct.has_results = TRUE
       AND ct.molecule_id IS NOT NULL

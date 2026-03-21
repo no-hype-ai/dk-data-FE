@@ -611,9 +611,27 @@ async def run_raw_ingestion(
                 from datetime import date as date_type
                 from ...ingestion.fetchers.sec_edgar import SECEdgarFetcher
 
+                # Step 0: Resolve manufacturer name for CIK lookup
+                # drug_name is a molecule name (e.g. "durvalumab"), but SEC needs company name
+                manufacturer_name = None
+                if drug_name:
+                    async with pool.acquire() as conn:
+                        row = await conn.fetchrow("""
+                            SELECT dl.manufacturer
+                            FROM mol_silver.drug_labels dl
+                            JOIN mol_silver.molecules m ON dl.molecule_id = m.molecule_id
+                            WHERE LOWER(m.canonical_name) = LOWER($1)
+                            AND dl.manufacturer IS NOT NULL
+                            LIMIT 1
+                        """, drug_name)
+                        if row and row['manufacturer']:
+                            # Extract short company name (e.g. "AstraZeneca Pharmaceuticals LP" -> "AstraZeneca")
+                            manufacturer_name = row['manufacturer'].split()[0]
+                            logger.info(f"SEC EDGAR: resolved '{drug_name}' -> manufacturer '{manufacturer_name}'")
+
                 # Step 1: Fetch filing metadata from EDGAR search index
                 fetcher = SECEdgarFetcher()
-                search_terms = [drug_name] if drug_name else None
+                search_terms = [manufacturer_name or drug_name] if (manufacturer_name or drug_name) else None
                 fetch_result = fetcher.fetch(
                     search_terms=search_terms,
                     days_back=365,
@@ -650,9 +668,9 @@ async def run_raw_ingestion(
                                 )
                                 count += 1
                                 # Track the target company's CIK for revenue extraction
-                                # Handle formatted names like "ASTRAZENECA PLC  (AZN)  (CIK 0000901832)"
                                 cn = (rec.get("company_name") or "").lower()
-                                if drug_name and cn and drug_name.lower().split()[0] in cn:
+                                match_term = (manufacturer_name or drug_name or "").lower().split()[0]
+                                if match_term and cn and match_term in cn:
                                     target_cik = rec.get("cik")
                                     logger.info(f"SEC EDGAR: matched CIK {target_cik} for company '{rec.get('company_name')}'")
 
@@ -674,16 +692,30 @@ async def run_raw_ingestion(
                             async with pool.acquire() as conn:
                                 for rev in revenues:
                                     try:
+                                        accession = rev.source_filing or ''
+                                        filing_type = '20-F' if '20-F' in (rev.source_filing or '') else '10-K'
                                         await conn.execute("""
                                             INSERT INTO mol_silver.financial_filings
-                                                (id, company_name, filing_type, period, revenue, product_name, source, created_at)
-                                            VALUES (gen_random_uuid(), $1, $2, $3, $4, $5, 'sec_edgar', NOW())
+                                                (id, company_name, filing_type, accession_number, period,
+                                                 revenue, product_name, source,
+                                                 mda_excerpt, risk_factors_excerpt, created_at)
+                                            VALUES (gen_random_uuid(), $1, $2, $3, $4, $5, $6, 'sec_edgar',
+                                                    $7, $8, NOW())
+                                            ON CONFLICT (accession_number, product_name)
+                                            WHERE accession_number IS NOT NULL
+                                            DO UPDATE SET
+                                                mda_excerpt = COALESCE(EXCLUDED.mda_excerpt, mol_silver.financial_filings.mda_excerpt),
+                                                risk_factors_excerpt = COALESCE(EXCLUDED.risk_factors_excerpt, mol_silver.financial_filings.risk_factors_excerpt),
+                                                revenue = COALESCE(EXCLUDED.revenue, mol_silver.financial_filings.revenue)
                                         """,
                                             drug_name,
-                                            rev.source_filing or '20-F',
+                                            filing_type,
+                                            accession if accession else None,
                                             f"{rev.period}_{rev.year}" if rev.year else rev.period,
                                             rev.revenue_usd,
                                             rev.product_name,
+                                            rev.mda_text or None,
+                                            rev.risk_factors_text or None,
                                         )
                                     except Exception as e:
                                         logger.debug(f"SEC EDGAR revenue insert failed: {e}")
@@ -756,6 +788,82 @@ async def run_raw_ingestion(
                     result = await service.search_guidance(drug_name)
                     if result:
                         count += 1
+                    # Extract structured fields from NICE API response into mol_bronze
+                    try:
+                        raw_rows = await pool.fetch(
+                            """SELECT id, response_body FROM mol_raw.nice_hta
+                               WHERE processed_to_bronze = FALSE
+                               AND response_status = 200
+                               AND response_body IS NOT NULL
+                               ORDER BY request_timestamp DESC LIMIT 20"""
+                        )
+                        for raw_row in raw_rows:
+                            try:
+                                body = raw_row['response_body']
+                                if isinstance(body, str):
+                                    import json as _json
+                                    body = _json.loads(body)
+                                # NICE API returns list of guidance items or single item
+                                items = body if isinstance(body, list) else body.get('results', body.get('data', [body]))
+                                if not isinstance(items, list):
+                                    items = [items]
+                                for item in items:
+                                    if not isinstance(item, dict):
+                                        continue
+                                    guidance_id = item.get('GuidanceNumber') or item.get('guidanceNumber') or item.get('guidance_id')
+                                    if not guidance_id:
+                                        continue
+                                    title = item.get('Title') or item.get('title') or ''
+                                    # Extract decision from GuidanceStatus or PublicationStatus
+                                    decision = (item.get('GuidanceStatus') or item.get('guidanceStatus')
+                                                or item.get('PublicationStatus') or item.get('publicationStatus'))
+                                    # Extract dates
+                                    decision_date_str = (item.get('PublishedDate') or item.get('publishedDate')
+                                                         or item.get('LastModified') or item.get('lastModified'))
+                                    decision_date = None
+                                    if decision_date_str:
+                                        try:
+                                            from datetime import datetime as _dt
+                                            # NICE dates can be ISO format or "DD Month YYYY"
+                                            for fmt in ('%Y-%m-%dT%H:%M:%S', '%Y-%m-%d', '%d %B %Y'):
+                                                try:
+                                                    decision_date = _dt.strptime(decision_date_str[:19], fmt).date()
+                                                    break
+                                                except ValueError:
+                                                    continue
+                                        except Exception:
+                                            pass
+                                    indication = item.get('Indication') or item.get('indication') or ''
+                                    guidance_type = item.get('GuidanceType') or item.get('guidanceType') or 'TA'
+                                    url = item.get('Url') or item.get('url') or item.get('GuidanceUrl') or ''
+                                    # Extract ICER if present in cost-effectiveness section
+                                    icer_value = item.get('ICERValue') or item.get('icer_value') or item.get('costEffectiveness')
+                                    await pool.execute("""
+                                        INSERT INTO mol_bronze.nice_hta
+                                            (raw_id, guidance_id, guidance_type, title, drug_name,
+                                             indication, decision, decision_date, url, icer_value)
+                                        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+                                        ON CONFLICT (guidance_id) DO UPDATE SET
+                                            decision = COALESCE(EXCLUDED.decision, mol_bronze.nice_hta.decision),
+                                            decision_date = COALESCE(EXCLUDED.decision_date, mol_bronze.nice_hta.decision_date),
+                                            indication = COALESCE(EXCLUDED.indication, mol_bronze.nice_hta.indication),
+                                            icer_value = COALESCE(EXCLUDED.icer_value, mol_bronze.nice_hta.icer_value),
+                                            title = COALESCE(EXCLUDED.title, mol_bronze.nice_hta.title)
+                                    """,
+                                        raw_row['id'], guidance_id, guidance_type, title, drug_name,
+                                        indication, decision, decision_date, url,
+                                        str(icer_value) if icer_value else None,
+                                    )
+                                    count += 1
+                                # Mark raw record as processed
+                                await pool.execute(
+                                    "UPDATE mol_raw.nice_hta SET processed_to_bronze = TRUE WHERE id = $1",
+                                    raw_row['id']
+                                )
+                            except Exception as e:
+                                logger.debug(f"NICE bronze extraction failed for raw {raw_row['id']}: {e}")
+                    except Exception as e:
+                        logger.warning(f"NICE bronze extraction failed (non-fatal): {e}")
                     # Also fetch individual guidance pages for existing HTA entries
                     # to get decision/date/ICER that search pages don't return
                     try:

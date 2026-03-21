@@ -3,7 +3,7 @@
 -- Part of: 014-uspto-euipo-model-datasource (extended from 012)
 
 MODEL (
-    name silver.patents,
+    name mol_silver.patents,
     kind INCREMENTAL_BY_UNIQUE_KEY (
         unique_key patent_number
     ),

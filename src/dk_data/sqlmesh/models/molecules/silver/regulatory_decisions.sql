@@ -3,7 +3,7 @@
 -- Part of: 015-assessment-dashboard-integration
 
 MODEL (
-    name silver.regulatory_decisions,
+    name mol_silver.regulatory_decisions,
     kind INCREMENTAL_BY_UNIQUE_KEY (
         unique_key (agency, drug_name, indication, decision_date)
     ),

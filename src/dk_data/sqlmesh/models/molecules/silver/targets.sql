@@ -3,7 +3,7 @@
 -- Part of: 012-dk-data-platform
 
 MODEL (
-    name silver.targets,
+    name mol_silver.targets,
     kind INCREMENTAL_BY_UNIQUE_KEY (
         unique_key uniprot_id
     ),

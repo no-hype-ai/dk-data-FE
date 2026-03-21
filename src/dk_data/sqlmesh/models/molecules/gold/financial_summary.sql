@@ -21,7 +21,7 @@ WITH latest_filings AS (
         -- Most recent filing values
         MAX(filing_date) AS latest_filing_date,
         COUNT(*) AS filing_count
-    FROM silver.financial_data
+    FROM mol_silver.financial_data
     GROUP BY cik, company_name
 ),
 
@@ -35,7 +35,7 @@ latest_financials AS (
         fd.drug_revenue_pct,
         lf.filing_count,
         lf.latest_filing_date
-    FROM silver.financial_data fd
+    FROM mol_silver.financial_data fd
     JOIN latest_filings lf ON fd.cik = lf.cik
     ORDER BY fd.cik, fd.filing_date DESC
 ),

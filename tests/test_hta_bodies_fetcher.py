@@ -15,35 +15,31 @@ from pydantic import ValidationError
 
 from dk_data.ingestion.fetchers.hta_bodies import (
     AGENCIES,
-    NICE_API_BASE,
+    NICE_SEARCH_URL,
     HTABodiesFetcher,
 )
 from dk_data.ingestion.utils.validators import HTADecisionRecord
 
 
 # ---------------------------------------------------------------------------
-# Sample NICE API response fixtures
+# NICE HTML fixtures for scraping tests
 # ---------------------------------------------------------------------------
 
-def _make_nice_response(items):
-    """Build a mock NICE API JSON response."""
-    return {"results": items, "total": len(items)}
+def _make_nice_search_html(ta_ids):
+    """Build mock NICE search results HTML containing guidance links."""
+    links = "\n".join(
+        f'<a href="/guidance/{ta_id}">{ta_id}</a>' for ta_id in ta_ids
+    )
+    return f"<html><body>{links}</body></html>"
 
 
-def _sample_nice_item(**overrides):
-    """Return a single NICE guidance item dict with sane defaults."""
-    base = {
-        "id": "TA900",
-        "title": "Pembrolizumab for advanced melanoma",
-        "drug_name": "Pembrolizumab",
-        "indication": "Advanced melanoma",
-        "decision_type": "Recommended",
-        "published_date": "2026-02-05",
-        "url": "https://www.nice.org.uk/guidance/ta900",
-        "summary": "Pembrolizumab is recommended for treating advanced melanoma.",
-    }
-    base.update(overrides)
-    return base
+def _make_nice_ta_page_html(ta_id, title, date_str, recommendation_text):
+    """Build mock NICE TA recommendation page HTML."""
+    return f"""<html><body>
+    <h1>{title}</h1>
+    <time datetime="{date_str}">Published</time>
+    <div>1.1 {recommendation_text} 1.2 Next section</div>
+    </body></html>"""
 
 
 # ---------------------------------------------------------------------------
@@ -68,7 +64,7 @@ class TestHTABodiesFetcherInit:
         with tempfile.TemporaryDirectory() as tmpdir:
             fetcher = HTABodiesFetcher(data_dir=tmpdir)
             url = fetcher.get_latest_url()
-            assert url == NICE_API_BASE
+            assert url == NICE_SEARCH_URL
             assert "nice.org.uk" in url
 
 
@@ -80,29 +76,44 @@ class TestHTABodiesFetch:
     """Tests for the fetch method with mocked HTTP responses."""
 
     def test_fetch_nice_success(self, tmp_path):
-        """NICE API returns guidance items."""
+        """NICE scraping returns guidance items."""
         fetcher = HTABodiesFetcher(data_dir=str(tmp_path))
 
-        items = [
-            _sample_nice_item(id="TA900"),
-            _sample_nice_item(
-                id="TA901",
-                drug_name="Nivolumab",
-                title="Nivolumab for lung cancer",
-            ),
-        ]
+        search_html = _make_nice_search_html(["ta900", "ta901"])
+        ta900_html = _make_nice_ta_page_html(
+            "TA900",
+            "Pembrolizumab for advanced melanoma",
+            "2026-02-05",
+            "Pembrolizumab is recommended for treating advanced melanoma in adults.",
+        )
+        ta901_html = _make_nice_ta_page_html(
+            "TA901",
+            "Nivolumab for lung cancer",
+            "2026-02-10",
+            "Nivolumab is recommended for treating non-small-cell lung cancer.",
+        )
 
-        mock_response = MagicMock()
-        mock_response.json.return_value = _make_nice_response(items)
-        mock_response.status_code = 200
-        mock_response.raise_for_status = MagicMock()
+        def mock_get(url, **kwargs):
+            resp = MagicMock()
+            resp.status_code = 200
+            resp.raise_for_status = MagicMock()
+            if "Search" in url:
+                resp.text = search_html
+            elif "ta900" in url:
+                resp.text = ta900_html
+            elif "ta901" in url:
+                resp.text = ta901_html
+            else:
+                resp.text = search_html
+            return resp
 
-        with patch.object(fetcher.session, "get", return_value=mock_response):
-            result = fetcher.fetch(
-                drug_names=["pembrolizumab", "nivolumab"],
-                agencies=["nice"],
-                days_back=30,
-            )
+        with patch("dk_data.ingestion.fetchers.hta_bodies.requests.get", side_effect=mock_get):
+            with patch("dk_data.ingestion.fetchers.hta_bodies.time.sleep"):
+                result = fetcher.fetch(
+                    drug_names=["pembrolizumab", "nivolumab"],
+                    agencies=["nice"],
+                    days_back=90,
+                )
 
         assert result["status"] == "success"
         assert len(result["records"]) == 2
@@ -111,33 +122,33 @@ class TestHTABodiesFetch:
         rec = result["records"][0]
         assert rec["decision_id"] == "nice-TA900"
         assert rec["agency"] == "nice"
-        assert rec["drug_name"] == "Pembrolizumab"
+        assert rec["decision_type"] == "Recommended"
 
     def test_fetch_nice_empty_response(self, tmp_path):
-        """NICE API returns no items."""
+        """NICE search returns no TA links."""
         fetcher = HTABodiesFetcher(data_dir=str(tmp_path))
 
         mock_response = MagicMock()
-        mock_response.json.return_value = _make_nice_response([])
+        mock_response.text = "<html><body>No results found</body></html>"
         mock_response.status_code = 200
         mock_response.raise_for_status = MagicMock()
 
-        with patch.object(fetcher.session, "get", return_value=mock_response):
-            result = fetcher.fetch(
-                drug_names=["nonexistent_drug"],
-                agencies=["nice"],
-            )
+        with patch("dk_data.ingestion.fetchers.hta_bodies.requests.get", return_value=mock_response):
+            with patch("dk_data.ingestion.fetchers.hta_bodies.time.sleep"):
+                result = fetcher.fetch(
+                    drug_names=["nonexistent_drug"],
+                    agencies=["nice"],
+                )
 
         assert result["status"] == "success"
         assert result["records"] == []
 
-    def test_fetch_nice_api_error_handled(self, tmp_path):
-        """NICE API error is handled gracefully."""
+    def test_fetch_nice_network_error_handled(self, tmp_path):
+        """NICE network error is handled gracefully."""
         fetcher = HTABodiesFetcher(data_dir=str(tmp_path))
 
-        with patch.object(
-            fetcher.session,
-            "get",
+        with patch(
+            "dk_data.ingestion.fetchers.hta_bodies.requests.get",
             side_effect=Exception("Connection refused"),
         ):
             result = fetcher.fetch(
@@ -161,104 +172,56 @@ class TestHTABodiesFetch:
         assert result["records"] == []
 
     def test_fetch_all_agencies(self, tmp_path):
-        """Fetch across all agencies (NICE + stubs)."""
+        """Fetch across all agencies (NICE + others)."""
         fetcher = HTABodiesFetcher(data_dir=str(tmp_path))
 
-        items = [_sample_nice_item(id="TA900")]
-        mock_response = MagicMock()
-        mock_response.json.return_value = _make_nice_response(items)
-        mock_response.status_code = 200
-        mock_response.raise_for_status = MagicMock()
+        search_html = _make_nice_search_html(["ta900"])
+        ta_html = _make_nice_ta_page_html(
+            "TA900",
+            "Pembrolizumab for melanoma",
+            "2026-02-05",
+            "Pembrolizumab is recommended for treating advanced melanoma.",
+        )
 
-        with patch.object(fetcher.session, "get", return_value=mock_response):
-            result = fetcher.fetch(
-                drug_names=["pembrolizumab"],
-                agencies=AGENCIES,
-            )
+        def mock_get(url, **kwargs):
+            resp = MagicMock()
+            resp.status_code = 200
+            resp.raise_for_status = MagicMock()
+            if "Search" in url:
+                resp.text = search_html
+            elif "ta900" in url:
+                resp.text = ta_html
+            else:
+                resp.text = "<html></html>"
+            return resp
 
-        assert result["status"] == "success"
-        # Only NICE returns data; stubs return empty
-        assert len(result["records"]) == 1
-        assert result["records"][0]["agency"] == "nice"
-
-    def test_fetch_drug_name_filtering(self, tmp_path):
-        """Drug name filtering correctly includes/excludes items."""
-        fetcher = HTABodiesFetcher(data_dir=str(tmp_path))
-
-        items = [
-            _sample_nice_item(
-                id="TA900",
-                drug_name="Pembrolizumab",
-                summary="For melanoma treatment",
-            ),
-            _sample_nice_item(
-                id="TA901",
-                drug_name="Aspirin",
-                summary="For pain relief",
-            ),
-        ]
-        mock_response = MagicMock()
-        mock_response.json.return_value = _make_nice_response(items)
-        mock_response.status_code = 200
-        mock_response.raise_for_status = MagicMock()
-
-        with patch.object(fetcher.session, "get", return_value=mock_response):
-            result = fetcher.fetch(
-                drug_names=["pembrolizumab"],
-                agencies=["nice"],
-            )
+        with patch("dk_data.ingestion.fetchers.hta_bodies.requests.get", side_effect=mock_get):
+            with patch("dk_data.ingestion.fetchers.hta_bodies.time.sleep"):
+                result = fetcher.fetch(
+                    drug_names=["pembrolizumab"],
+                    agencies=AGENCIES,
+                    days_back=90,
+                )
 
         assert result["status"] == "success"
-        # Only pembrolizumab should match
-        assert len(result["records"]) == 1
-        assert result["records"][0]["drug_name"] == "Pembrolizumab"
-
-    def test_fetch_no_drug_names_returns_all(self, tmp_path):
-        """When no drug_names are specified, all items are returned."""
-        fetcher = HTABodiesFetcher(data_dir=str(tmp_path))
-
-        items = [
-            _sample_nice_item(id="TA900"),
-            _sample_nice_item(id="TA901", drug_name="Aspirin"),
-        ]
-        mock_response = MagicMock()
-        mock_response.json.return_value = _make_nice_response(items)
-        mock_response.status_code = 200
-        mock_response.raise_for_status = MagicMock()
-
-        with patch.object(fetcher.session, "get", return_value=mock_response):
-            result = fetcher.fetch(
-                drug_names=[],
-                agencies=["nice"],
-            )
-
-        assert result["status"] == "success"
-        assert len(result["records"]) == 2
+        assert any(r["agency"] == "nice" for r in result["records"])
 
     def test_fetch_deduplication_across_agencies(self, tmp_path):
         """Decisions with the same ID are deduplicated."""
         fetcher = HTABodiesFetcher(data_dir=str(tmp_path))
 
-        items = [_sample_nice_item(id="TA900")]
-        mock_response = MagicMock()
-        mock_response.json.return_value = _make_nice_response(items)
-        mock_response.status_code = 200
-        mock_response.raise_for_status = MagicMock()
-
-        # Call nice twice to simulate overlap
-        with patch.object(fetcher.session, "get", return_value=mock_response):
-            with patch.object(
-                fetcher,
-                "_fetch_agency",
-                side_effect=[
-                    [{"decision_id": "nice-TA900", "agency": "nice", "drug_name": "Test"}],
-                    [{"decision_id": "nice-TA900", "agency": "nice", "drug_name": "Test"}],
-                ],
-            ):
-                result = fetcher.fetch(
-                    drug_names=["test"],
-                    agencies=["nice", "nice"],
-                )
+        with patch.object(
+            fetcher,
+            "_fetch_agency",
+            side_effect=[
+                [{"decision_id": "nice-TA900", "agency": "nice", "drug_name": "Test"}],
+                [{"decision_id": "nice-TA900", "agency": "nice", "drug_name": "Test"}],
+            ],
+        ):
+            result = fetcher.fetch(
+                drug_names=["test"],
+                agencies=["nice", "nice"],
+            )
 
         assert result["status"] == "success"
         assert len(result["records"]) == 1
@@ -268,44 +231,60 @@ class TestHTABodiesFetch:
 # NICE item normalisation tests
 # ---------------------------------------------------------------------------
 
-class TestNICENormalization:
-    """Tests for NICE item normalization."""
+class TestNICEDecisionClassification:
+    """Tests for NICE decision classification and indication extraction."""
 
-    def test_normalize_full_item(self):
-        item = _sample_nice_item()
-        record = HTABodiesFetcher._normalize_nice_item(item)
-        assert record is not None
-        assert record["decision_id"] == "nice-TA900"
-        assert record["agency"] == "nice"
-        assert record["drug_name"] == "Pembrolizumab"
-        assert record["decision_date"] == "2026-02-05"
-        assert record["document_url"] == "https://www.nice.org.uk/guidance/ta900"
+    def test_classify_recommended(self):
+        fetcher = HTABodiesFetcher()
+        assert fetcher._classify_nice_decision(
+            "Pembrolizumab is recommended for treating advanced melanoma"
+        ) == "Recommended"
 
-    def test_normalize_missing_id(self):
-        item = {"title": "No ID item", "drug_name": "Test"}
-        record = HTABodiesFetcher._normalize_nice_item(item)
-        assert record is None
+    def test_classify_not_recommended(self):
+        fetcher = HTABodiesFetcher()
+        assert fetcher._classify_nice_decision(
+            "Drug X is not recommended for use"
+        ) == "Not recommended"
 
-    def test_normalize_with_guidance_id(self):
-        item = _sample_nice_item()
-        del item["id"]
-        item["guidance_id"] = "TA999"
-        record = HTABodiesFetcher._normalize_nice_item(item)
-        assert record["decision_id"] == "nice-TA999"
+    def test_classify_cdf(self):
+        fetcher = HTABodiesFetcher()
+        assert fetcher._classify_nice_decision(
+            "Drug X is recommended for use within the Cancer Drugs Fund"
+        ) == "Recommended (CDF)"
 
-    def test_extract_items_from_list(self):
-        items = [{"id": "1"}, {"id": "2"}]
-        result = HTABodiesFetcher._extract_items(items)
-        assert len(result) == 2
+    def test_classify_conditional(self):
+        fetcher = HTABodiesFetcher()
+        assert fetcher._classify_nice_decision(
+            "Drug X can be used for treating condition Y"
+        ) == "Recommended (conditional)"
 
-    def test_extract_items_from_dict(self):
-        data = {"results": [{"id": "1"}]}
-        result = HTABodiesFetcher._extract_items(data)
-        assert len(result) == 1
+    def test_classify_unknown_text(self):
+        fetcher = HTABodiesFetcher()
+        assert fetcher._classify_nice_decision(
+            "Some unrelated text about a drug"
+        ) == "Unknown"
 
-    def test_extract_items_empty(self):
-        result = HTABodiesFetcher._extract_items({})
-        assert result == []
+    def test_classify_empty_text(self):
+        fetcher = HTABodiesFetcher()
+        assert fetcher._classify_nice_decision("") is None
+
+    def test_extract_indication_for_treating(self):
+        result = HTABodiesFetcher._extract_nice_indication(
+            "Pembrolizumab is recommended for treating advanced melanoma in adults."
+        )
+        assert result == "advanced melanoma"
+
+    def test_extract_indication_cancer(self):
+        result = HTABodiesFetcher._extract_nice_indication(
+            "Nivolumab for treating metastatic non-small-cell lung cancer"
+        )
+        assert "lung cancer" in result
+
+    def test_extract_indication_none(self):
+        result = HTABodiesFetcher._extract_nice_indication(
+            "Some text with no clear indication pattern"
+        )
+        assert result is None
 
 
 # ---------------------------------------------------------------------------

@@ -26,7 +26,7 @@ WITH org_signals AS (
             WHEN COUNT(*) >= 10 THEN 'Medium'
             ELSE 'Small'
         END AS size_estimate
-    FROM silver.news_signals ns
+    FROM mol_silver.news_signals ns
     WHERE ns.source_name IS NOT NULL
     GROUP BY ns.source_name, ns.therapeutic_area
 ),

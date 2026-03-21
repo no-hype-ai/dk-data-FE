@@ -3,7 +3,7 @@
 -- Part of: 014-uspto-euipo-model-datasource
 
 MODEL (
-    name silver.trademarks,
+    name mol_silver.trademarks,
     kind INCREMENTAL_BY_UNIQUE_KEY (
         unique_key (trademark_identifier, source)
     ),

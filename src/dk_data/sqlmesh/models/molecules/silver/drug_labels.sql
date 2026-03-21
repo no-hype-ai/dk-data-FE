@@ -3,7 +3,7 @@
 -- Part of: 012-dk-data-platform
 
 MODEL (
-    name silver.drug_labels,
+    name mol_silver.drug_labels,
     kind INCREMENTAL_BY_UNIQUE_KEY (
         unique_key set_id
     ),

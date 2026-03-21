@@ -3,7 +3,7 @@
 -- Part of: 015-assessment-dashboard-integration
 
 MODEL (
-    name silver.financial_data,
+    name mol_silver.financial_data,
     kind INCREMENTAL_BY_UNIQUE_KEY (
         unique_key (cik, filing_type, filing_date)
     ),

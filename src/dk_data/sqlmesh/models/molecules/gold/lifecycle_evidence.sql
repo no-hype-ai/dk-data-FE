@@ -3,7 +3,7 @@
 -- Part of DK Molecule Data Platform (012-dk-data-platform)
 
 MODEL (
-    name gold.lifecycle_evidence,
+    name mol_gold.lifecycle_evidence,
     kind FULL,
     cron '@daily',
     grain (molecule_id, evidence_type, evidence_id)
@@ -24,8 +24,8 @@ SELECT
     'https://clinicaltrials.gov/study/' || ct.nct_id AS evidence_url,
     NOW() AS computed_at
 
-FROM silver.molecules m
-JOIN silver.clinical_trials ct ON m.id = ct.molecule_id
+FROM mol_silver.molecules m
+JOIN mol_silver.clinical_trials ct ON m.id = ct.molecule_id
 WHERE m.needs_review = FALSE
 
 UNION ALL
@@ -48,8 +48,8 @@ SELECT
     'https://dailymed.nlm.nih.gov/dailymed/drugInfo.cfm?setid=' || dl.set_id AS evidence_url,
     NOW() AS computed_at
 
-FROM silver.molecules m
-JOIN silver.drug_labels dl ON m.id = dl.molecule_id
+FROM mol_silver.molecules m
+JOIN mol_silver.drug_labels dl ON m.id = dl.molecule_id
 WHERE m.needs_review = FALSE
 
 UNION ALL
@@ -64,16 +64,16 @@ SELECT DISTINCT ON (m.id)
     'FDA Adverse Event Reports' AS evidence_title,
     (
         SELECT COALESCE(SUM(report_count), 0)::text || ' total reports'
-        FROM silver.adverse_events ae
+        FROM mol_silver.adverse_events ae
         WHERE ae.molecule_id = m.id
     ) AS evidence_detail,
     CASE
         WHEN EXISTS (
-            SELECT 1 FROM silver.adverse_events ae
+            SELECT 1 FROM mol_silver.adverse_events ae
             WHERE ae.molecule_id = m.id AND ae.death_count > 0
         ) THEN 'Has Death Reports'
         WHEN EXISTS (
-            SELECT 1 FROM silver.adverse_events ae
+            SELECT 1 FROM mol_silver.adverse_events ae
             WHERE ae.molecule_id = m.id AND ae.serious_count > 0
         ) THEN 'Has Serious Reports'
         ELSE 'Active'
@@ -81,16 +81,16 @@ SELECT DISTINCT ON (m.id)
     'OpenFDA FAERS' AS evidence_source,
     (
         SELECT MAX(last_report_date)
-        FROM silver.adverse_events ae
+        FROM mol_silver.adverse_events ae
         WHERE ae.molecule_id = m.id
     ) AS evidence_date,
     'https://open.fda.gov/apis/drug/event/' AS evidence_url,
     NOW() AS computed_at
 
-FROM silver.molecules m
+FROM mol_silver.molecules m
 WHERE m.needs_review = FALSE
   AND EXISTS (
-      SELECT 1 FROM silver.adverse_events ae WHERE ae.molecule_id = m.id
+      SELECT 1 FROM mol_silver.adverse_events ae WHERE ae.molecule_id = m.id
   )
 
 UNION ALL
@@ -114,8 +114,8 @@ SELECT
     'https://www.accessdata.fda.gov/scripts/cder/ob/' AS evidence_url,
     NOW() AS computed_at
 
-FROM silver.molecules m
-JOIN silver.molecule_aliases ma ON m.id = ma.molecule_id
+FROM mol_silver.molecules m
+JOIN mol_silver.molecule_aliases ma ON m.id = ma.molecule_id
 JOIN bronze.orange_book ob ON LOWER(ma.alias_name) = LOWER(ob.ingredient)
 WHERE m.needs_review = FALSE
   AND ob.patent_number IS NOT NULL

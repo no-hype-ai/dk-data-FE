@@ -3,7 +3,7 @@
 -- Part of: 015-assessment-dashboard-integration
 
 MODEL (
-    name silver.healthcare_facilities,
+    name mol_silver.healthcare_facilities,
     kind INCREMENTAL_BY_UNIQUE_KEY (
         unique_key (provider_id, source)
     ),

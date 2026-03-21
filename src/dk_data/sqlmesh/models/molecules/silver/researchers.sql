@@ -3,7 +3,7 @@
 -- Part of: 015-assessment-dashboard-integration
 
 MODEL (
-    name silver.researchers,
+    name mol_silver.researchers,
     kind INCREMENTAL_BY_UNIQUE_KEY (
         unique_key orcid_id
     ),

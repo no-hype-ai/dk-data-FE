@@ -20,8 +20,8 @@ WITH author_publications AS (
     SELECT DISTINCT
         r.id AS researcher_id,
         p.doi
-    FROM silver.researchers r
-    JOIN silver.publications p
+    FROM mol_silver.researchers r
+    JOIN mol_silver.publications p
         ON p.first_author_name ILIKE '%' || r.family_name || '%'
     WHERE p.doi IS NOT NULL
       AND r.id IS NOT NULL
