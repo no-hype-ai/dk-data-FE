@@ -3,7 +3,7 @@
 -- Part of: 003-molecule-assessment-dashboard
 
 MODEL (
-    name bronze.who_gho,
+    name mol_bronze.who_gho,
     kind INCREMENTAL_BY_TIME_RANGE (
         time_column request_timestamp,
         batch_size 500

@@ -3,8 +3,8 @@
 Feature: 015-assessment-dashboard-integration
 Task: T062
 
-All 28 MCP tools organized by tier:
-- Tier 1 (21 tools): Direct drug-name/indication query against external APIs
+All 30 MCP tools organized by tier:
+- Tier 1 (23 tools): Direct drug-name/indication query against external APIs
 - Tier 2 (4 tools): Fetch + filter (RSS, news, trademarks)
 - Tier 3 (2 tools): Supplementary context (ACC, HRSA)
 
@@ -170,10 +170,10 @@ TOOL_REGISTRY: Dict[str, ToolDefinition] = {
     ),
     "hta-decisions-search": ToolDefinition(
         name="hta-decisions-search",
-        description="Search HTA decisions (NICE, HAS, IQWiG, CADTH)",
+        description="Search HTA decisions (NICE, HAS, IQWiG, CADTH) with decision status and recommendation",
         tier="direct_query",
         raw_table="hta_decisions",
-        raw_schema="raw",
+        raw_schema="mol_raw",
         adapter_module="dk_data.services.pipeline.adapters.hta_decisions",
         api_base_url="https://www.nice.org.uk/guidance",
     ),
@@ -188,12 +188,29 @@ TOOL_REGISTRY: Dict[str, ToolDefinition] = {
     ),
     "orange-book-search": ToolDefinition(
         name="orange-book-search",
-        description="Search FDA Orange Book for patent and exclusivity data",
+        description="Search FDA Orange Book / Drugs@FDA for small molecule patent and exclusivity data (NDA/ANDA only)",
         tier="direct_query",
         raw_table="orange_book",
-        raw_schema="raw",
+        raw_schema="mol_raw",
         adapter_module="dk_data.services.pipeline.adapters.orange_book",
         api_base_url="https://api.fda.gov/drug/drugsfda.json",
+    ),
+    "purple-book-search": ToolDefinition(
+        name="purple-book-search",
+        description="Search FDA Purple Book for biologic product data (BLA), biosimilar/interchangeable status, orphan + BPCIA exclusivity",
+        tier="direct_query",
+        raw_table="purple_book",
+        raw_schema="mol_raw",
+        adapter_module="dk_data.services.pipeline.adapters.purple_book",
+        api_base_url="https://purplebooksearch.fda.gov/api/v1",
+        input_schema={
+            "type": "object",
+            "properties": {
+                "drug_name": {"type": "string", "description": "Biologic generic name (e.g., 'durvalumab')"},
+                "bla_number": {"type": "string", "description": "Optional BLA number (e.g., '761069')"},
+            },
+            "required": ["drug_name"],
+        },
     ),
     "uspto-patents-search": ToolDefinition(
         name="uspto-patents-search",
@@ -248,6 +265,16 @@ TOOL_REGISTRY: Dict[str, ToolDefinition] = {
         raw_schema="raw",
         adapter_module="dk_data.services.pipeline.adapters.orcid",
         api_base_url="https://pub.orcid.org/v3.0/search/",
+    ),
+
+    "dailymed-search": ToolDefinition(
+        name="dailymed-search",
+        description="Search DailyMed for structured SPL drug label data (NDC codes, dosage forms, active ingredients)",
+        tier="direct_query",
+        raw_table="dailymed",
+        raw_schema="mol_raw",
+        adapter_module="dk_data.services.pipeline.adapters.dailymed",
+        api_base_url="https://dailymed.nlm.nih.gov/dailymed/services/v2",
     ),
 
     # ============================================================================

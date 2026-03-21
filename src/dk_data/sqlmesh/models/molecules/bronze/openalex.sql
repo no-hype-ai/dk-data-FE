@@ -1,9 +1,12 @@
 -- SQLMesh Model: Bronze OpenAlex
--- Transforms Raw OpenAlex Works responses to Bronze typed columns
+-- Transforms Raw OpenAlex Works search responses to Bronze typed columns
 -- Part of: 012-dk-data-platform
+--
+-- OpenAlex search returns { results: [ { id, display_name, abstract_inverted_index, ... } ] }
+-- Each result is unnested into a separate bronze row.
 
 MODEL (
-    name bronze.openalex,
+    name mol_bronze.openalex,
     kind INCREMENTAL_BY_TIME_RANGE (
         time_column request_timestamp,
         batch_size 500
@@ -19,78 +22,78 @@ SELECT
     gen_random_uuid() AS id,
 
     -- OpenAlex Identifiers
-    response_body->>'id' AS openalex_id,
-    response_body->>'doi' AS doi,
-    response_body->'ids'->>'pmid' AS pmid,
-    response_body->'ids'->>'pmcid' AS pmcid,
-    response_body->'ids'->>'mag' AS mag_id,
+    w->>'id' AS openalex_id,
+    w->>'doi' AS doi,
+    w->'ids'->>'pmid' AS pmid,
+    w->'ids'->>'pmcid' AS pmcid,
+    w->'ids'->>'mag' AS mag_id,
 
-    -- Title and Abstract
-    response_body->>'display_name' AS title,
-    response_body->'abstract_inverted_index' AS abstract_inverted_index,
+    -- Title and Abstract (keep inverted index as JSONB for silver reconstruction)
+    w->>'display_name' AS title,
+    (w->'abstract_inverted_index')::JSONB AS abstract_inverted_index,
 
     -- Publication Info
-    response_body->>'type' AS work_type,
-    response_body->>'language' AS language,
-    (response_body->>'publication_year')::INTEGER AS publication_year,
-    (response_body->>'publication_date')::DATE AS publication_date,
-    response_body->'primary_location'->'source'->>'display_name' AS journal_name,
-    response_body->'primary_location'->'source'->>'issn_l' AS journal_issn,
-    response_body->'primary_location'->>'pdf_url' AS pdf_url,
-    (response_body->'primary_location'->>'is_oa')::BOOLEAN AS is_open_access,
+    w->>'type' AS work_type,
+    w->>'language' AS language,
+    (w->>'publication_year')::INTEGER AS publication_year,
+    CASE WHEN w->>'publication_date' ~ '^\d{4}-\d{2}-\d{2}$'
+         THEN (w->>'publication_date')::DATE ELSE NULL END AS publication_date,
+    w->'primary_location'->'source'->>'display_name' AS journal_name,
+    w->'primary_location'->'source'->>'issn_l' AS journal_issn,
+    w->'primary_location'->>'pdf_url' AS pdf_url,
+    (w->'primary_location'->>'is_oa')::BOOLEAN AS is_open_access,
 
     -- Bibliographic
-    response_body->'biblio'->>'volume' AS volume,
-    response_body->'biblio'->>'issue' AS issue,
-    response_body->'biblio'->>'first_page' AS first_page,
-    response_body->'biblio'->>'last_page' AS last_page,
+    w->'biblio'->>'volume' AS volume,
+    w->'biblio'->>'issue' AS issue,
+    w->'biblio'->>'first_page' AS first_page,
+    w->'biblio'->>'last_page' AS last_page,
 
     -- Authors
-    response_body->'authorships' AS authorships,
+    w->'authorships' AS authorships,
     (SELECT jsonb_agg(a->'author'->>'display_name')
-     FROM jsonb_array_elements(response_body->'authorships') AS a) AS author_names,
+     FROM jsonb_array_elements(w->'authorships') AS a) AS author_names,
 
     -- Concepts and Topics
-    response_body->'concepts' AS concepts,
-    response_body->'topics' AS topics,
-    response_body->'keywords' AS keywords,
-    response_body->'mesh' AS mesh_terms,
+    w->'concepts' AS concepts,
+    w->'topics' AS topics,
+    w->'keywords' AS keywords,
+    w->'mesh' AS mesh_terms,
 
     -- Metrics
-    (response_body->>'cited_by_count')::INTEGER AS cited_by_count,
-    (response_body->>'cited_by_percentile_year'->>'min')::NUMERIC AS cited_by_percentile,
-    (response_body->'counts_by_year') AS citation_counts_by_year,
+    (w->>'cited_by_count')::INTEGER AS cited_by_count,
+    w->'counts_by_year' AS citation_counts_by_year,
 
     -- Grants
-    response_body->'grants' AS grants,
+    w->'grants' AS grants,
 
     -- References
-    response_body->'referenced_works' AS referenced_works,
-    response_body->'related_works' AS related_works,
-
-    -- Sustainability
-    response_body->'sustainable_development_goals' AS sustainable_development_goals,
+    w->'referenced_works' AS referenced_works,
+    w->'related_works' AS related_works,
 
     -- Access
-    response_body->'open_access' AS open_access_info,
-    response_body->'best_oa_location' AS best_oa_location,
+    w->'open_access' AS open_access_info,
+    w->'best_oa_location' AS best_oa_location,
 
     -- Indexed Status
-    (response_body->>'is_retracted')::BOOLEAN AS is_retracted,
-    (response_body->>'is_paratext')::BOOLEAN AS is_paratext,
+    (w->>'is_retracted')::BOOLEAN AS is_retracted,
+    (w->>'is_paratext')::BOOLEAN AS is_paratext,
 
     -- Raw source tracking
-    response_body AS raw_json,
-    id AS raw_source_id,
+    w AS raw_json,
+    r.id AS raw_source_id,
     'openalex' AS source,
     request_timestamp,
     request_timestamp AS source_updated_at,
     FALSE AS processed_to_silver,
     NOW() AS created_at
 
-FROM raw.openalex
+FROM mol_raw.openalex r,
+     jsonb_array_elements(response_body->'results') AS w
 WHERE
     response_status = 200
     AND processed_to_bronze = FALSE
-    AND response_body->>'id' IS NOT NULL
+    AND response_body->'results' IS NOT NULL
+    AND jsonb_array_length(response_body->'results') > 0
+    AND w->>'id' IS NOT NULL
     AND request_timestamp BETWEEN @start_dt AND @end_dt;

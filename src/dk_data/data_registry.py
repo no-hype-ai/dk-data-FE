@@ -113,6 +113,14 @@ MOL_SILVER_TABLES = {
         source='sec_edgar',
         postgrest_path='/indication_revenue',
     ),
+    'dailymed_labels': TableDef(
+        name='dailymed_labels',
+        schema='mol_silver',
+        description='DailyMed SPL label metadata (setid links to drug_labels.spl_set_id)',
+        molecule_id_type='uuid',
+        source='dailymed',
+        postgrest_path='/dailymed_labels',
+    ),
 }
 
 # ─── mol_gold (aggregated, enriched) ───────────────────────────────────────

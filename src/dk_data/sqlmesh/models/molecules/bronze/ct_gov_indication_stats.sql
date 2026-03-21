@@ -3,7 +3,7 @@
 -- Part of: 003-molecule-assessment-dashboard
 
 MODEL (
-    name bronze.ct_gov_indication_stats,
+    name mol_bronze.ct_gov_indication_stats,
     kind INCREMENTAL_BY_TIME_RANGE (
         time_column request_timestamp,
         batch_size 500

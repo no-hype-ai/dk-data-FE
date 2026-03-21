@@ -16,6 +16,16 @@ from typing import Optional, List, Dict, Any
 from datetime import datetime, timezone
 from loguru import logger
 
+from ..middleware.rbac import (
+    get_current_user,
+    require_auth,
+    require_analyst,
+    require_data_ops,
+    can_trigger_pipeline,
+    can_manage_queue,
+    AuthenticatedUser,
+)
+
 # Import services (will be injected via dependency)
 from ...services.data_platform import (
     ResolutionQueueService,
@@ -260,7 +270,10 @@ async def search_molecules(
 
 
 @router.post("/resolve", response_model=IdentifierResolutionResponse)
-async def resolve_identifier(request: IdentifierResolutionRequest):
+async def resolve_identifier(
+    request: IdentifierResolutionRequest,
+    user: AuthenticatedUser = Depends(require_analyst),
+):
     """
     Resolve any molecule identifier to a canonical molecule.
 
@@ -877,7 +890,11 @@ async def get_queue_item(item_id: str):
 
 
 @router.post("/resolution-queue/{item_id}/action", response_model=QueueActionResponse)
-async def perform_queue_action(item_id: str, request: QueueActionRequest):
+async def perform_queue_action(
+    item_id: str,
+    request: QueueActionRequest,
+    user: AuthenticatedUser = Depends(can_manage_queue),
+):
     """
     Perform an action on a resolution queue item.
 
@@ -952,7 +969,10 @@ class BulkApproveRequest(BaseModel):
 
 
 @router.post("/resolution-queue/bulk-approve", response_model=Dict[str, Any])
-async def bulk_approve_queue_items(request: BulkApproveRequest):
+async def bulk_approve_queue_items(
+    request: BulkApproveRequest,
+    user: AuthenticatedUser = Depends(can_manage_queue),
+):
     """Bulk approve multiple resolution queue items."""
     try:
         pool = await get_db_pool()
@@ -1160,7 +1180,10 @@ async def get_pipeline_status():
 
 
 @router.post("/refresh/gold", response_model=IngestionTriggerResponse)
-async def trigger_gold_refresh(background_tasks: BackgroundTasks):
+async def trigger_gold_refresh(
+    background_tasks: BackgroundTasks,
+    user: AuthenticatedUser = Depends(can_trigger_pipeline),
+):
     """
     Trigger a Gold layer refresh.
 
@@ -1204,6 +1227,7 @@ async def trigger_source_ingestion(
     source: str,
     background_tasks: BackgroundTasks,
     request: Optional[IngestionRequest] = None,
+    user: AuthenticatedUser = Depends(can_trigger_pipeline),
 ):
     """
     Trigger ingestion for a specific data source.
@@ -1273,6 +1297,7 @@ async def trigger_full_pipeline(
     background_tasks: BackgroundTasks,
     tier: str = Query("manual", description="Sync tier: daily, weekly, monthly, manual, on_demand"),
     transform_only: bool = Query(False, description="Skip API fetching, only transform existing data"),
+    user: AuthenticatedUser = Depends(can_trigger_pipeline),
 ):
     """
     Trigger a full pipeline run.

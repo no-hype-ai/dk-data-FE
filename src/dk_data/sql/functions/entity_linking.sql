@@ -59,6 +59,10 @@ BEGIN
     masking = COALESCE(bc.masking, ct.masking),
     has_results = COALESCE(bc.has_results, ct.has_results),
     results_section = COALESCE(bc.results_section, ct.results_section),
+    results_outcome_measures = COALESCE(bc.results_outcome_measures, ct.results_outcome_measures),
+    results_adverse_events = COALESCE(bc.results_adverse_events, ct.results_adverse_events),
+    brief_summary = COALESCE(bc.brief_summary, ct.brief_summary),
+    why_stopped = COALESCE(bc.why_stopped, ct.why_stopped),
     fda_regulated_drug = COALESCE(bc.fda_regulated_drug, ct.fda_regulated_drug),
     fda_regulated_device = COALESCE(bc.fda_regulated_device, ct.fda_regulated_device),
     trial_references = COALESCE(bc."references", ct.trial_references),
@@ -281,13 +285,18 @@ BEGIN
   step := 'Link NICE HTA';
   BEGIN
     INSERT INTO mol_silver.hta_decisions (
-      molecule_id, agency, guidance_id, title, source, url
+      molecule_id, agency, guidance_id, title, indication, decision, decision_date, icer_value, source, url
     )
-    SELECT m.molecule_id, n.guidance_type, n.guidance_id, n.title, 'nice', n.url
+    SELECT m.molecule_id, n.guidance_type, n.guidance_id, n.title, n.indication,
+           n.decision, n.decision_date, n.icer_value, 'nice', n.url
     FROM mol_bronze.nice_hta n
     JOIN mol_silver.molecules m ON LOWER(n.drug_name) = LOWER(m.canonical_name)
     WHERE n.guidance_id IS NOT NULL
-    ON CONFLICT (molecule_id, agency, guidance_id) DO NOTHING;
+    ON CONFLICT (molecule_id, agency, guidance_id) DO UPDATE SET
+      indication = COALESCE(EXCLUDED.indication, mol_silver.hta_decisions.indication),
+      decision = COALESCE(EXCLUDED.decision, mol_silver.hta_decisions.decision),
+      decision_date = COALESCE(EXCLUDED.decision_date, mol_silver.hta_decisions.decision_date),
+      icer_value = COALESCE(EXCLUDED.icer_value, mol_silver.hta_decisions.icer_value);
     GET DIAGNOSTICS linked_count = ROW_COUNT;
     result := '+' || linked_count || ' HTA decisions';
   EXCEPTION WHEN OTHERS THEN result := 'NICE HTA: ' || SQLERRM; END;

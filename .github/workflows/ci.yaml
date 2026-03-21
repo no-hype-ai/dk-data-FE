@@ -180,6 +180,15 @@ jobs:
           POSTGRES_DB: dk_data_test
         run: python -m dk_data.scripts.run_migrations
 
+      - name: Verify no pending migrations
+        env:
+          POSTGRES_HOST: localhost
+          POSTGRES_PORT: 5432
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: dk_data_test
+        run: bash scripts/check-pending-migrations.sh
+
       - name: Start PostgREST
         run: |
           docker run -d --name postgrest \

@@ -55,4 +55,5 @@ SELECT
 
 FROM raw.uspto_ci r
 WHERE r.patent_id IS NOT NULL
+  AND r.processed_to_bronze = FALSE
   AND _loaded_at BETWEEN @start_dt AND @end_dt

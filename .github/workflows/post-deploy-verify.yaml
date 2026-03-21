@@ -171,6 +171,39 @@ jobs:
           echo "  kubectl get cronjobs -n dk-data-${{ steps.target.outputs.env }}"
           echo "  kubectl get pods -n dk-data-${{ steps.target.outputs.env }}"
 
+  check-migrations:
+    name: Check Pending Migrations
+    runs-on: ubuntu-latest
+    needs: verify-deployment
+    if: always() && needs.verify-deployment.result == 'success'
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install Doppler CLI
+        uses: dopplerhq/cli-action@v3
+
+      - name: Check for pending migrations
+        env:
+          DOPPLER_TOKEN: ${{ secrets.DOPPLER_TOKEN }}
+        run: |
+          ENV="${{ needs.verify-deployment.outputs.env }}"
+          DOPPLER_CONFIG="${ENV}"
+          [ "$ENV" = "prod" ] && DOPPLER_CONFIG="prd"
+
+          DATABASE_URL=$(doppler secrets get DATABASE_URL --plain --project dk-data --config "$DOPPLER_CONFIG" 2>/dev/null || echo "")
+          if [ -z "$DATABASE_URL" ]; then
+            echo "::warning::Cannot fetch DATABASE_URL from Doppler — skipping migration check"
+            exit 0
+          fi
+
+          export DATABASE_URL
+          bash scripts/check-pending-migrations.sh || {
+            echo "::error::Pending migrations detected! Run: python -m dk_data.scripts.run_migrations"
+            exit 1
+          }
+
   verify-observability:
     name: Verify Observability (T033-T039)
     runs-on: ubuntu-latest

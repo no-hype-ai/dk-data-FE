@@ -3,7 +3,7 @@
 -- Part of: 003-molecule-assessment-dashboard
 
 MODEL (
-    name silver.indication_epidemiology,
+    name mol_silver.indication_epidemiology,
     kind INCREMENTAL_BY_UNIQUE_KEY (
         unique_key (icd10_code, country_code, data_year, source)
     ),
@@ -39,7 +39,7 @@ SELECT
     NOW() AS created_at,
     NOW() AS updated_at
 
-FROM bronze.who_gho g
+FROM mol_bronze.who_gho g
 JOIN mol_silver.icd10_indicator_mapping m
     ON g.indicator_code = m.who_indicator
 WHERE g.processed_to_silver = FALSE

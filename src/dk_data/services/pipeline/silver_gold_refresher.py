@@ -323,6 +323,7 @@ class SilverGoldRefresher:
                             $9::jsonb, $10, $11, $12, $13::jsonb, 'openalex')
                     ON CONFLICT (openalex_id) DO UPDATE SET
                         title = EXCLUDED.title,
+                        abstract = COALESCE(EXCLUDED.abstract, mol_silver.publications.abstract),
                         cited_by_count = EXCLUDED.cited_by_count,
                         updated_at = NOW()
                     RETURNING id
