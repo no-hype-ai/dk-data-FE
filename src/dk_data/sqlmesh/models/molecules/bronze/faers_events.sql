@@ -86,7 +86,7 @@ SELECT
     FALSE AS processed_to_silver,
     NOW() AS created_at
 
-FROM raw.openfda_faers,
+FROM mol_raw.openfda_faers,
      jsonb_array_elements(response_body->'results') AS event
 WHERE
     response_status = 200

@@ -9,19 +9,19 @@ BEGIN;
 -- ─── API Views ────────────────────────────────────────────────────────────────
 
 CREATE OR REPLACE VIEW api.cms_provider_profile AS
-SELECT * FROM gold.cms_provider_360;
+SELECT * FROM hcs_gold.cms_provider_360;
 
 CREATE OR REPLACE VIEW api.cms_facility_profile AS
-SELECT * FROM gold.cms_facility_360;
+SELECT * FROM hcs_gold.cms_facility_360;
 
 CREATE OR REPLACE VIEW api.cms_drug_market AS
-SELECT * FROM gold.cms_drug_market_profile;
+SELECT * FROM hcs_gold.cms_drug_market_profile;
 
 CREATE OR REPLACE VIEW api.cms_market_analytics AS
-SELECT * FROM gold.cms_market_analytics;
+SELECT * FROM hcs_gold.cms_market_analytics;
 
 CREATE OR REPLACE VIEW api.cms_provider_network AS
-SELECT * FROM gold.cms_provider_network;
+SELECT * FROM hcs_gold.cms_provider_network;
 
 -- ─── API View Permissions ─────────────────────────────────────────────────────
 

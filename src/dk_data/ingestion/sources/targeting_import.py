@@ -599,11 +599,11 @@ def load_targeting_csv(
 
 
 def update_targeting_data_catalog(source_file: str, source_hash: str, result: ImportResult) -> None:
-    """Update meta.data_sources with targeting import results."""
+    """Update meta.ops_data_sources with targeting import results."""
     try:
         with get_cursor() as cur:
             cur.execute("""
-                INSERT INTO meta.data_sources (
+                INSERT INTO meta.ops_data_sources (
                     source_name, source_type, source_url,
                     last_successful_refresh, last_refresh_status, record_count
                 ) VALUES (

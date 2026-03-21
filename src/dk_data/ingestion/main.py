@@ -547,17 +547,17 @@ SOURCES = {
 
 
 def _meta_name(source: str) -> str:
-    """Resolve the meta.data_sources source_name for a given SOURCES key."""
+    """Resolve the meta.ops_data_sources source_name for a given SOURCES key."""
     return SOURCES.get(source, {}).get('meta_name', source)
 
 
 def get_last_successful_refresh(source_name: str) -> datetime | None:
-    """Query meta.data_sources for the last successful refresh timestamp."""
+    """Query meta.ops_data_sources for the last successful refresh timestamp."""
     try:
         with get_cursor() as cur:
             cur.execute("""
                 SELECT last_successful_refresh
-                FROM meta.data_sources
+                FROM meta.ops_data_sources
                 WHERE source_name = %s
             """, (source_name,))
             row = cur.fetchone()
@@ -597,12 +597,12 @@ def _compute_days_back(source: str, source_info: dict) -> int | None:
 
 
 def get_last_content_hash(source_name: str) -> Optional[str]:
-    """Query meta.data_sources.last_content_hash for a source."""
+    """Query meta.ops_data_sources.last_content_hash for a source."""
     try:
         with get_cursor() as cur:
             cur.execute("""
                 SELECT last_content_hash
-                FROM meta.data_sources
+                FROM meta.ops_data_sources
                 WHERE source_name = %s
             """, (source_name,))
             row = cur.fetchone()
@@ -614,12 +614,12 @@ def get_last_content_hash(source_name: str) -> Optional[str]:
 
 
 def get_conditional_headers(source_name: str) -> Dict[str, Optional[str]]:
-    """Query meta.data_sources for last_etag + last_modified_header."""
+    """Query meta.ops_data_sources for last_etag + last_modified_header."""
     try:
         with get_cursor() as cur:
             cur.execute("""
                 SELECT last_etag, last_modified_header
-                FROM meta.data_sources
+                FROM meta.ops_data_sources
                 WHERE source_name = %s
             """, (source_name,))
             row = cur.fetchone()
@@ -631,13 +631,13 @@ def get_conditional_headers(source_name: str) -> Dict[str, Optional[str]]:
 
 
 def get_checkpoint_offset(source_name: str) -> int:
-    """Get pagination_offset from last failed/partial run in meta.refresh_log."""
+    """Get pagination_offset from last failed/partial run in meta.ops_refresh_log."""
     try:
         with get_cursor() as cur:
             cur.execute("""
                 SELECT rl.pagination_offset
-                FROM meta.refresh_log rl
-                JOIN meta.data_sources ds ON ds.source_id = rl.source_id
+                FROM meta.ops_refresh_log rl
+                JOIN meta.ops_data_sources ds ON ds.source_id = rl.source_id
                 WHERE ds.source_name = %s
                   AND rl.status IN ('failed', 'partial')
                   AND rl.pagination_offset IS NOT NULL
@@ -654,17 +654,17 @@ def get_checkpoint_offset(source_name: str) -> int:
 
 
 def log_to_meta(source_name: str, result: dict) -> None:
-    """Log ingestion result to meta.refresh_log."""
+    """Log ingestion result to meta.ops_refresh_log."""
     try:
         with get_cursor() as cur:
             # Get source_id
             cur.execute("""
-                SELECT source_id FROM meta.data_sources WHERE source_name = %s
+                SELECT source_id FROM meta.ops_data_sources WHERE source_name = %s
             """, (source_name,))
             row = cur.fetchone()
 
             if row is None:
-                logger.warning(f"Source '{source_name}' not found in meta.data_sources")
+                logger.warning(f"Source '{source_name}' not found in meta.ops_data_sources")
                 return
 
             source_id = row[0]
@@ -672,7 +672,7 @@ def log_to_meta(source_name: str, result: dict) -> None:
             # Insert log entry
             status = result.get('status', 'unknown')
             cur.execute("""
-                INSERT INTO meta.refresh_log (
+                INSERT INTO meta.ops_refresh_log (
                     source_id, refresh_started_at, refresh_completed_at,
                     status, records_fetched, records_inserted, records_updated,
                     error_message, content_hash, pagination_offset, skipped_by_hash
@@ -694,7 +694,7 @@ def log_to_meta(source_name: str, result: dict) -> None:
 
             # Update data_sources
             cur.execute("""
-                UPDATE meta.data_sources
+                UPDATE meta.ops_data_sources
                 SET last_refresh_attempt = NOW(),
                     last_refresh_status = %s,
                     last_successful_refresh = CASE
@@ -788,7 +788,7 @@ def run_ingestion(source: str, **kwargs) -> dict:
                     # Advisory lock: hashtext(source_name) → bigint, held until cursor closes
                     cur.execute("SELECT pg_advisory_lock(hashtext(%s))", (meta_source,))
                     cur.execute("""
-                        SELECT last_content_hash FROM meta.data_sources
+                        SELECT last_content_hash FROM meta.ops_data_sources
                         WHERE source_name = %s
                     """, (meta_source,))
                     row = cur.fetchone()

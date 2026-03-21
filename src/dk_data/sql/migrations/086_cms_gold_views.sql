@@ -8,7 +8,7 @@
 BEGIN;
 
 -- ─── Provider 360 ─────────────────────────────────────────────────────────────
-CREATE OR REPLACE VIEW gold.cms_provider_360 AS
+CREATE OR REPLACE VIEW hcs_gold.cms_provider_360 AS
 SELECT
     npi,
     entity_type,
@@ -27,10 +27,10 @@ SELECT
     open_payments_research_count,
     latest_data_year,
     updated_at AS last_refreshed
-FROM silver.cms_provider_profile;
+FROM hcs_silver.cms_provider_profile;
 
 -- ─── Facility 360 ─────────────────────────────────────────────────────────────
-CREATE OR REPLACE VIEW gold.cms_facility_360 AS
+CREATE OR REPLACE VIEW hcs_gold.cms_facility_360 AS
 SELECT
     ccn,
     facility_name,
@@ -47,10 +47,10 @@ SELECT
     is_magnet,
     latest_data_year,
     updated_at AS last_refreshed
-FROM silver.cms_facility_profile;
+FROM hcs_silver.cms_facility_profile;
 
 -- ─── Drug Market Profile ──────────────────────────────────────────────────────
-CREATE OR REPLACE VIEW gold.cms_drug_market_profile AS
+CREATE OR REPLACE VIEW hcs_gold.cms_drug_market_profile AS
 SELECT
     ndc,
     proprietary_name AS drug_name,
@@ -67,10 +67,10 @@ SELECT
     prior_auth_pct,
     latest_data_year,
     updated_at AS last_refreshed
-FROM silver.cms_drug_market;
+FROM hcs_silver.cms_drug_market;
 
 -- ─── Market Analytics (Geographic) ────────────────────────────────────────────
-CREATE OR REPLACE VIEW gold.cms_market_analytics AS
+CREATE OR REPLACE VIEW hcs_gold.cms_market_analytics AS
 SELECT
     state,
     county,
@@ -80,10 +80,10 @@ SELECT
     top_chronic_conditions,
     latest_data_year,
     updated_at AS last_refreshed
-FROM silver.cms_geographic;
+FROM hcs_silver.cms_geographic;
 
 -- ─── Provider Network ─────────────────────────────────────────────────────────
-CREATE OR REPLACE VIEW gold.cms_provider_network AS
+CREATE OR REPLACE VIEW hcs_gold.cms_provider_network AS
 SELECT
     source_npi,
     target_npi,
@@ -92,6 +92,6 @@ SELECT
     shared_patient_count,
     confidence_score,
     now() AS last_refreshed
-FROM silver.cms_referral_edges;
+FROM hcs_silver.cms_referral_edges;
 
 COMMIT;

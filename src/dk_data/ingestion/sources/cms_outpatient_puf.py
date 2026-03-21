@@ -36,7 +36,7 @@ def load_cms_outpatient_puf_data(
     source_file: Optional[str] = None,
     batch_size: int = 500,
 ) -> Dict[str, Any]:
-    """Load CMS Outpatient PUF records into raw.cms_outpatient_puf."""
+    """Load CMS Outpatient PUF records into hcs_raw.cms_outpatient_puf."""
     validated: List[CmsOutpatientPufRecord] = []
     errors: List[Dict[str, Any]] = []
 
@@ -101,7 +101,7 @@ def load_cms_outpatient_puf_data(
                 execute_values(
                     cur,
                     """
-                    INSERT INTO raw.cms_outpatient_puf (
+                    INSERT INTO hcs_raw.cms_outpatient_puf (
                         provider_id, apc_code, apc_description,
                         total_services, avg_submitted_charges, avg_total_payments,
                         _loaded_at, _source_file, _source_hash

@@ -7,7 +7,7 @@ Fetches technology appraisal decisions from Health Technology Assessment
 (HTA) bodies.  Implements NICE (UK) via API, G-BA (Germany), HAS (France),
 and PBAC (Australia) via web scraping.
 
-Query-scoped from meta.ci_search_terms WHERE term_type = 'drug_name'.
+Query-scoped from meta.ops_ci_search_terms WHERE term_type = 'drug_name'.
 Weekly cadence.
 
 Sources:
@@ -68,7 +68,7 @@ class HTABodiesFetcher(BaseFetcher):
             drug_names = kwargs.get("drug_names") or self._get_drug_names()
 
             if not drug_names:
-                # Default fallback terms when meta.ci_search_terms is empty
+                # Default fallback terms when meta.ops_ci_search_terms is empty
                 drug_names = [
                     "dupilumab",
                     "semaglutide",
@@ -136,7 +136,7 @@ class HTABodiesFetcher(BaseFetcher):
     # ------------------------------------------------------------------
 
     def _get_drug_names(self) -> List[str]:
-        """Read drug names from meta.ci_search_terms.
+        """Read drug names from meta.ops_ci_search_terms.
 
         Returns:
             List of drug name strings.
@@ -149,7 +149,7 @@ class HTABodiesFetcher(BaseFetcher):
                     cur.execute(
                         """
                         SELECT term_value
-                        FROM meta.ci_search_terms
+                        FROM meta.ops_ci_search_terms
                         WHERE term_type = 'drug_name'
                           AND is_active = TRUE
                         ORDER BY term_id
@@ -160,7 +160,7 @@ class HTABodiesFetcher(BaseFetcher):
             names = [row[0] for row in rows]
             if names:
                 logger.info(
-                    "Loaded %d drug names from meta.ci_search_terms",
+                    "Loaded %d drug names from meta.ops_ci_search_terms",
                     len(names),
                 )
             return names

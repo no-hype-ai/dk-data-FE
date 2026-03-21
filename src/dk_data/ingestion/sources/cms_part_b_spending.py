@@ -37,7 +37,7 @@ def load_cms_part_b_spending_data(
     source_file: Optional[str] = None,
     batch_size: int = 500,
 ) -> Dict[str, Any]:
-    """Load CMS Part B spending records into raw.cms_part_b_spending."""
+    """Load CMS Part B spending records into hcs_raw.cms_part_b_spending."""
     validated: List[CmsPartBSpendingRecord] = []
     errors: List[Dict[str, Any]] = []
 
@@ -88,7 +88,7 @@ def load_cms_part_b_spending_data(
                 execute_values(
                     cur,
                     """
-                    INSERT INTO raw.cms_part_b_spending (
+                    INSERT INTO hcs_raw.cms_part_b_spending (
                         hcpcs_code, brand_name, generic_name, total_spending,
                         total_claims, total_beneficiaries, year,
                         _loaded_at, _source_file, _source_hash

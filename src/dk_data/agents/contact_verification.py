@@ -2,7 +2,7 @@
 
 Validates and normalizes provider contact information (phone numbers and
 addresses) from the CMS NPPES registry using LLM analysis.  Results land in
-silver.cms_verified_contacts.
+hcs_silver.cms_verified_contacts.
 """
 
 import json
@@ -67,7 +67,7 @@ class ContactVerificationAgent(BaseAgent):
                     n.practice_address,
                     n.mailing_address
                 FROM bronze.cms_nppes n
-                LEFT JOIN silver.cms_verified_contacts vc ON n.npi = vc.npi
+                LEFT JOIN hcs_silver.cms_verified_contacts vc ON n.npi = vc.npi
                 WHERE vc.npi IS NULL
                 ORDER BY n.npi
                 LIMIT %s
@@ -134,7 +134,7 @@ class ContactVerificationAgent(BaseAgent):
         with self.conn.cursor() as cur:
             for r in enriched:
                 cur.execute(
-                    """INSERT INTO silver.cms_verified_contacts
+                    """INSERT INTO hcs_silver.cms_verified_contacts
                     (npi, phone_normalized, phone_valid, address_normalized,
                      address_valid, geocode_state, geocode_zip,
                      confidence_score, agent_version)

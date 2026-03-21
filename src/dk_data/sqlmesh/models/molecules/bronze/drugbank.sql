@@ -91,7 +91,7 @@ SELECT
     FALSE AS processed_to_silver,
     NOW() AS created_at
 
-FROM raw.drugbank
+FROM mol_raw.drugbank
 WHERE
     response_status = 200
     AND processed_to_bronze = FALSE

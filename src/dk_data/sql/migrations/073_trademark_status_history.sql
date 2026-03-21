@@ -2,7 +2,7 @@
 -- Feature: 014-uspto-euipo-model-datasource
 -- Purpose: Track trademark status changes over time for both USPTO and EUIPO
 
-CREATE TABLE IF NOT EXISTS raw.trademark_status_history (
+CREATE TABLE IF NOT EXISTS ops.trademark_status_history (
     id UUID NOT NULL DEFAULT gen_random_uuid(),
     trademark_identifier VARCHAR(30) NOT NULL,
     source VARCHAR(20) NOT NULL CHECK (source IN ('uspto_trademarks', 'euipo_trademarks')),
@@ -13,9 +13,9 @@ CREATE TABLE IF NOT EXISTS raw.trademark_status_history (
 );
 
 CREATE INDEX IF NOT EXISTS idx_tm_history_identifier
-    ON raw.trademark_status_history(trademark_identifier, source);
+    ON ops.trademark_status_history(trademark_identifier, source);
 CREATE INDEX IF NOT EXISTS idx_tm_history_detected
-    ON raw.trademark_status_history(change_detected_at DESC);
+    ON ops.trademark_status_history(change_detected_at DESC);
 
 DO $$
 BEGIN

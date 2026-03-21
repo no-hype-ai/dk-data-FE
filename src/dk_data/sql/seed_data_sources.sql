@@ -1,7 +1,7 @@
--- Seed data for meta.data_sources
+-- Seed data for meta.ops_data_sources
 -- Initial configuration of data sources for the TAVR platform
 
-INSERT INTO meta.data_sources (source_name, source_type, source_url, description, refresh_frequency, is_active)
+INSERT INTO meta.ops_data_sources (source_name, source_type, source_url, description, refresh_frequency, is_active)
 VALUES
     ('cms_medicare_inpatient', 'csv', 'https://data.cms.gov/provider-summary-by-type-of-service/medicare-inpatient-hospitals',
      'CMS Medicare Inpatient data with TAVR procedure volumes by DRG code', 'quarterly', TRUE),
@@ -121,7 +121,7 @@ ON CONFLICT (source_name) DO UPDATE SET
     is_active = EXCLUDED.is_active;
 
 -- Set initial expected refresh frequencies
-UPDATE meta.data_sources SET
+UPDATE meta.ops_data_sources SET
     refresh_frequency = CASE source_name
         WHEN 'cms_medicare_inpatient' THEN 'quarterly'
         WHEN 'cms_hospital_info' THEN 'monthly'

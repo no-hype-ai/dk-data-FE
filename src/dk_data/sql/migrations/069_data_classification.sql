@@ -1,16 +1,16 @@
 -- Migration 069: Data Classification Table
 -- Feature: 013-observability-governance (US5: Data Classification + Retention)
 -- Tasks: T021
--- Purpose: Create meta.data_classification table with seed data for all known tables
+-- Purpose: Create meta.ops_data_classification table with seed data for all known tables
 -- Run: psql -h localhost -p 5433 -U postgres -d dk_data -f migrations/069_data_classification.sql
 
 BEGIN;
 
 -- =============================================================================
--- meta.data_classification — Classification and retention policy per table
+-- meta.ops_data_classification — Classification and retention policy per table
 -- =============================================================================
 
-CREATE TABLE IF NOT EXISTS meta.data_classification (
+CREATE TABLE IF NOT EXISTS meta.ops_data_classification (
     id                SERIAL          PRIMARY KEY,
     schema_name       VARCHAR(50)     NOT NULL,
     table_name        VARCHAR(100)    NOT NULL,
@@ -25,14 +25,14 @@ CREATE TABLE IF NOT EXISTS meta.data_classification (
 );
 
 CREATE INDEX IF NOT EXISTS idx_data_classification_class
-    ON meta.data_classification (classification);
+    ON meta.ops_data_classification (classification);
 
 -- =============================================================================
 -- Seed Classification Data
 -- =============================================================================
 
 -- CONFIDENTIAL: scoring and mart tables (retention_days=730, rolling_window)
-INSERT INTO meta.data_classification (schema_name, table_name, classification, pii_fields, retention_days, retention_policy, notes)
+INSERT INTO meta.ops_data_classification (schema_name, table_name, classification, pii_fields, retention_days, retention_policy, notes)
 VALUES
     ('scoring', 'score_history',        'confidential', NULL, 730, 'rolling_window',       'Proprietary hospital scoring history'),
     ('scoring', 'score_latest',         'confidential', NULL, 730, 'rolling_window',       'Current proprietary hospital scores'),
@@ -46,7 +46,7 @@ VALUES
 ON CONFLICT (schema_name, table_name) DO NOTHING;
 
 -- PII: raw.orcid (retention_days=365, rolling_window)
-INSERT INTO meta.data_classification (schema_name, table_name, classification, pii_fields, retention_days, retention_policy, notes)
+INSERT INTO meta.ops_data_classification (schema_name, table_name, classification, pii_fields, retention_days, retention_policy, notes)
 VALUES
     ('raw', 'orcid', 'pii',
      ARRAY['given_names', 'family_name', 'credit_name', 'biography', 'current_affiliations', 'external_ids'],
@@ -54,7 +54,7 @@ VALUES
 ON CONFLICT (schema_name, table_name) DO NOTHING;
 
 -- INTERNAL: CI and regulatory raw tables (retention_days=730, rolling_window)
-INSERT INTO meta.data_classification (schema_name, table_name, classification, pii_fields, retention_days, retention_policy, notes)
+INSERT INTO meta.ops_data_classification (schema_name, table_name, classification, pii_fields, retention_days, retention_policy, notes)
 VALUES
     ('raw', 'pubmed',           'internal', NULL, 730, 'rolling_window', 'PubMed literature — internal CI pipeline'),
     ('raw', 'openalex_ci',      'internal', NULL, 730, 'rolling_window', 'OpenAlex CI research works'),
@@ -67,7 +67,7 @@ VALUES
 ON CONFLICT (schema_name, table_name) DO NOTHING;
 
 -- PUBLIC: open-data raw tables (retention_days=NULL, perpetual)
-INSERT INTO meta.data_classification (schema_name, table_name, classification, pii_fields, retention_days, retention_policy, notes)
+INSERT INTO meta.ops_data_classification (schema_name, table_name, classification, pii_fields, retention_days, retention_policy, notes)
 VALUES
     ('raw', 'bindingdb',        'public', NULL, NULL, 'perpetual', 'BindingDB open binding affinity data'),
     ('raw', 'orange_book',      'public', NULL, NULL, 'perpetual', 'FDA Orange Book — public domain'),
@@ -93,7 +93,7 @@ VALUES
 ON CONFLICT (schema_name, table_name) DO NOTHING;
 
 -- PUBLIC: molecule medallion schemas (retention_days=NULL, perpetual)
-INSERT INTO meta.data_classification (schema_name, table_name, classification, pii_fields, retention_days, retention_policy, notes)
+INSERT INTO meta.ops_data_classification (schema_name, table_name, classification, pii_fields, retention_days, retention_policy, notes)
 VALUES
     ('mol_raw',    '*', 'public', NULL, NULL, 'perpetual', 'Molecule raw layer — open-source compound data'),
     ('mol_bronze', '*', 'public', NULL, NULL, 'perpetual', 'Molecule bronze layer — deduplicated open data'),
@@ -109,7 +109,7 @@ COMMIT;
 DO $$
 BEGIN
     RAISE NOTICE 'Data classification migration complete (069_data_classification.sql)';
-    RAISE NOTICE 'Table: meta.data_classification';
+    RAISE NOTICE 'Table: meta.ops_data_classification';
     RAISE NOTICE 'Seed data: confidential (9), pii (1), internal (8), public (25)';
     RAISE NOTICE 'Index: idx_data_classification_class';
 END

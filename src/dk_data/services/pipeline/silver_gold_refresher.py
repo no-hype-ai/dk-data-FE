@@ -99,6 +99,9 @@ class SilverGoldRefresher:
     async def _silver_clinicaltrials(self, molecule_id: str, response: dict) -> None:
         """Upsert clinical trials into silver.clinical_trials."""
         studies = response.get("studies", [])
+        # Handle individual study responses (no 'studies' wrapper)
+        if not studies and response.get("protocolSection"):
+            studies = [response]
         if not studies:
             return
 
@@ -148,6 +151,17 @@ class SilverGoldRefresher:
                     status_mod.get("primaryCompletionDateStruct", {}).get("date")
                 )
 
+                # Extract results data if available
+                results_section = study.get("resultsSection")
+                has_results = study.get("hasResults", False) or results_section is not None
+                results_om = None
+                results_ae = None
+                if results_section:
+                    om_module = results_section.get("outcomeMeasuresModule", {})
+                    results_om = om_module.get("outcomeMeasures") if om_module else None
+                    ae_module = results_section.get("adverseEventsModule", {})
+                    results_ae = ae_module if ae_module else None
+
                 await conn.execute("""
                     INSERT INTO mol_silver.clinical_trials
                     (id, molecule_id, nct_id, title, brief_summary, phase,
@@ -155,11 +169,13 @@ class SilverGoldRefresher:
                      primary_completion_date, sponsor, sponsor_type,
                      collaborators, enrollment, conditions, interventions,
                      primary_outcomes, secondary_outcomes, locations, countries,
-                     eligibility_criteria, minimum_age, maximum_age, sex, source)
+                     eligibility_criteria, minimum_age, maximum_age, sex, source,
+                     has_results, results_outcome_measures, results_adverse_events)
                     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11,
                             $12, $13, $14::jsonb, $15, $16::jsonb, $17::jsonb,
                             $18::jsonb, $19::jsonb, $20::jsonb, $21::jsonb,
-                            $22, $23, $24, $25, 'clinicaltrials_gov')
+                            $22, $23, $24, $25, 'clinicaltrials_gov',
+                            $26, $27::jsonb, $28::jsonb)
                     ON CONFLICT (nct_id) DO UPDATE SET
                         molecule_id = EXCLUDED.molecule_id,
                         title = EXCLUDED.title,
@@ -170,6 +186,9 @@ class SilverGoldRefresher:
                         interventions = EXCLUDED.interventions,
                         start_date = EXCLUDED.start_date,
                         completion_date = EXCLUDED.completion_date,
+                        has_results = COALESCE(EXCLUDED.has_results, mol_silver.clinical_trials.has_results),
+                        results_outcome_measures = COALESCE(EXCLUDED.results_outcome_measures, mol_silver.clinical_trials.results_outcome_measures),
+                        results_adverse_events = COALESCE(EXCLUDED.results_adverse_events, mol_silver.clinical_trials.results_adverse_events),
                         updated_at = NOW()
                 """,
                     str(uuid.uuid4()), molecule_id, nct_id,
@@ -193,6 +212,9 @@ class SilverGoldRefresher:
                     eligibility_mod.get("minimumAge"),
                     eligibility_mod.get("maximumAge"),
                     eligibility_mod.get("sex"),
+                    has_results,
+                    json.dumps(results_om) if results_om else None,
+                    json.dumps(results_ae) if results_ae else None,
                 )
 
     async def _silver_openfda_labels(self, molecule_id: str, response: dict) -> None:

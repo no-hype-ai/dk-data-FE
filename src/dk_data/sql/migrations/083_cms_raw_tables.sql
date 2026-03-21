@@ -1,5 +1,5 @@
 -- Migration 083: CMS PUF Raw Tables (016-cms-puf-datasource-integration)
--- Purpose: Create 30 raw.cms_* tables for CMS Public Use File ingestion
+-- Purpose: Create 30 hcs_raw.cms_* tables for CMS Public Use File ingestion
 -- Date: 2026-03-11
 
 BEGIN;
@@ -8,8 +8,8 @@ BEGIN;
 -- PROVIDER GROUP (7 tables)
 -- =============================================================================
 
--- raw.cms_nppes — National Plan and Provider Enumeration System
-CREATE TABLE IF NOT EXISTS raw.cms_nppes (
+-- hcs_raw.cms_nppes — National Plan and Provider Enumeration System
+CREATE TABLE IF NOT EXISTS hcs_raw.cms_nppes (
     npi                 TEXT PRIMARY KEY,
     entity_type         TEXT,
     name_first          TEXT,
@@ -31,12 +31,12 @@ CREATE TABLE IF NOT EXISTS raw.cms_nppes (
     _source_hash        TEXT
 );
 
-CREATE INDEX IF NOT EXISTS idx_cms_nppes_state ON raw.cms_nppes (practice_state);
-CREATE INDEX IF NOT EXISTS idx_cms_nppes_taxonomy ON raw.cms_nppes (taxonomy_code);
-CREATE INDEX IF NOT EXISTS idx_cms_nppes_name_org ON raw.cms_nppes (name_org);
+CREATE INDEX IF NOT EXISTS idx_cms_nppes_state ON hcs_raw.cms_nppes (practice_state);
+CREATE INDEX IF NOT EXISTS idx_cms_nppes_taxonomy ON hcs_raw.cms_nppes (taxonomy_code);
+CREATE INDEX IF NOT EXISTS idx_cms_nppes_name_org ON hcs_raw.cms_nppes (name_org);
 
--- raw.cms_part_d_prescriber — Medicare Part D Prescriber PUF (partitioned by year)
-CREATE TABLE IF NOT EXISTS raw.cms_part_d_prescriber (
+-- hcs_raw.cms_part_d_prescriber — Medicare Part D Prescriber PUF (partitioned by year)
+CREATE TABLE IF NOT EXISTS hcs_raw.cms_part_d_prescriber (
     npi                     TEXT NOT NULL,
     drug_name               TEXT NOT NULL,
     generic_name            TEXT,
@@ -51,20 +51,20 @@ CREATE TABLE IF NOT EXISTS raw.cms_part_d_prescriber (
     PRIMARY KEY (npi, drug_name, year)
 ) PARTITION BY RANGE (year);
 
-CREATE TABLE IF NOT EXISTS raw.cms_part_d_prescriber_2019 PARTITION OF raw.cms_part_d_prescriber FOR VALUES FROM (2019) TO (2020);
-CREATE TABLE IF NOT EXISTS raw.cms_part_d_prescriber_2020 PARTITION OF raw.cms_part_d_prescriber FOR VALUES FROM (2020) TO (2021);
-CREATE TABLE IF NOT EXISTS raw.cms_part_d_prescriber_2021 PARTITION OF raw.cms_part_d_prescriber FOR VALUES FROM (2021) TO (2022);
-CREATE TABLE IF NOT EXISTS raw.cms_part_d_prescriber_2022 PARTITION OF raw.cms_part_d_prescriber FOR VALUES FROM (2022) TO (2023);
-CREATE TABLE IF NOT EXISTS raw.cms_part_d_prescriber_2023 PARTITION OF raw.cms_part_d_prescriber FOR VALUES FROM (2023) TO (2024);
-CREATE TABLE IF NOT EXISTS raw.cms_part_d_prescriber_2024 PARTITION OF raw.cms_part_d_prescriber FOR VALUES FROM (2024) TO (2025);
-CREATE TABLE IF NOT EXISTS raw.cms_part_d_prescriber_2025 PARTITION OF raw.cms_part_d_prescriber FOR VALUES FROM (2025) TO (2026);
-CREATE TABLE IF NOT EXISTS raw.cms_part_d_prescriber_2026 PARTITION OF raw.cms_part_d_prescriber FOR VALUES FROM (2026) TO (2027);
+CREATE TABLE IF NOT EXISTS hcs_raw.cms_part_d_prescriber_2019 PARTITION OF hcs_raw.cms_part_d_prescriber FOR VALUES FROM (2019) TO (2020);
+CREATE TABLE IF NOT EXISTS hcs_raw.cms_part_d_prescriber_2020 PARTITION OF hcs_raw.cms_part_d_prescriber FOR VALUES FROM (2020) TO (2021);
+CREATE TABLE IF NOT EXISTS hcs_raw.cms_part_d_prescriber_2021 PARTITION OF hcs_raw.cms_part_d_prescriber FOR VALUES FROM (2021) TO (2022);
+CREATE TABLE IF NOT EXISTS hcs_raw.cms_part_d_prescriber_2022 PARTITION OF hcs_raw.cms_part_d_prescriber FOR VALUES FROM (2022) TO (2023);
+CREATE TABLE IF NOT EXISTS hcs_raw.cms_part_d_prescriber_2023 PARTITION OF hcs_raw.cms_part_d_prescriber FOR VALUES FROM (2023) TO (2024);
+CREATE TABLE IF NOT EXISTS hcs_raw.cms_part_d_prescriber_2024 PARTITION OF hcs_raw.cms_part_d_prescriber FOR VALUES FROM (2024) TO (2025);
+CREATE TABLE IF NOT EXISTS hcs_raw.cms_part_d_prescriber_2025 PARTITION OF hcs_raw.cms_part_d_prescriber FOR VALUES FROM (2025) TO (2026);
+CREATE TABLE IF NOT EXISTS hcs_raw.cms_part_d_prescriber_2026 PARTITION OF hcs_raw.cms_part_d_prescriber FOR VALUES FROM (2026) TO (2027);
 
-CREATE INDEX IF NOT EXISTS idx_cms_part_d_prescriber_npi ON raw.cms_part_d_prescriber (npi);
-CREATE INDEX IF NOT EXISTS idx_cms_part_d_prescriber_drug ON raw.cms_part_d_prescriber (generic_name);
+CREATE INDEX IF NOT EXISTS idx_cms_part_d_prescriber_npi ON hcs_raw.cms_part_d_prescriber (npi);
+CREATE INDEX IF NOT EXISTS idx_cms_part_d_prescriber_drug ON hcs_raw.cms_part_d_prescriber (generic_name);
 
--- raw.cms_physician_puf — Medicare Physician & Other Supplier PUF (partitioned by year)
-CREATE TABLE IF NOT EXISTS raw.cms_physician_puf (
+-- hcs_raw.cms_physician_puf — Medicare Physician & Other Supplier PUF (partitioned by year)
+CREATE TABLE IF NOT EXISTS hcs_raw.cms_physician_puf (
     npi                         TEXT NOT NULL,
     hcpcs_code                  TEXT NOT NULL,
     hcpcs_description           TEXT,
@@ -78,20 +78,20 @@ CREATE TABLE IF NOT EXISTS raw.cms_physician_puf (
     PRIMARY KEY (npi, hcpcs_code, year)
 ) PARTITION BY RANGE (year);
 
-CREATE TABLE IF NOT EXISTS raw.cms_physician_puf_2019 PARTITION OF raw.cms_physician_puf FOR VALUES FROM (2019) TO (2020);
-CREATE TABLE IF NOT EXISTS raw.cms_physician_puf_2020 PARTITION OF raw.cms_physician_puf FOR VALUES FROM (2020) TO (2021);
-CREATE TABLE IF NOT EXISTS raw.cms_physician_puf_2021 PARTITION OF raw.cms_physician_puf FOR VALUES FROM (2021) TO (2022);
-CREATE TABLE IF NOT EXISTS raw.cms_physician_puf_2022 PARTITION OF raw.cms_physician_puf FOR VALUES FROM (2022) TO (2023);
-CREATE TABLE IF NOT EXISTS raw.cms_physician_puf_2023 PARTITION OF raw.cms_physician_puf FOR VALUES FROM (2023) TO (2024);
-CREATE TABLE IF NOT EXISTS raw.cms_physician_puf_2024 PARTITION OF raw.cms_physician_puf FOR VALUES FROM (2024) TO (2025);
-CREATE TABLE IF NOT EXISTS raw.cms_physician_puf_2025 PARTITION OF raw.cms_physician_puf FOR VALUES FROM (2025) TO (2026);
-CREATE TABLE IF NOT EXISTS raw.cms_physician_puf_2026 PARTITION OF raw.cms_physician_puf FOR VALUES FROM (2026) TO (2027);
+CREATE TABLE IF NOT EXISTS hcs_raw.cms_physician_puf_2019 PARTITION OF hcs_raw.cms_physician_puf FOR VALUES FROM (2019) TO (2020);
+CREATE TABLE IF NOT EXISTS hcs_raw.cms_physician_puf_2020 PARTITION OF hcs_raw.cms_physician_puf FOR VALUES FROM (2020) TO (2021);
+CREATE TABLE IF NOT EXISTS hcs_raw.cms_physician_puf_2021 PARTITION OF hcs_raw.cms_physician_puf FOR VALUES FROM (2021) TO (2022);
+CREATE TABLE IF NOT EXISTS hcs_raw.cms_physician_puf_2022 PARTITION OF hcs_raw.cms_physician_puf FOR VALUES FROM (2022) TO (2023);
+CREATE TABLE IF NOT EXISTS hcs_raw.cms_physician_puf_2023 PARTITION OF hcs_raw.cms_physician_puf FOR VALUES FROM (2023) TO (2024);
+CREATE TABLE IF NOT EXISTS hcs_raw.cms_physician_puf_2024 PARTITION OF hcs_raw.cms_physician_puf FOR VALUES FROM (2024) TO (2025);
+CREATE TABLE IF NOT EXISTS hcs_raw.cms_physician_puf_2025 PARTITION OF hcs_raw.cms_physician_puf FOR VALUES FROM (2025) TO (2026);
+CREATE TABLE IF NOT EXISTS hcs_raw.cms_physician_puf_2026 PARTITION OF hcs_raw.cms_physician_puf FOR VALUES FROM (2026) TO (2027);
 
-CREATE INDEX IF NOT EXISTS idx_cms_physician_puf_npi ON raw.cms_physician_puf (npi);
-CREATE INDEX IF NOT EXISTS idx_cms_physician_puf_hcpcs ON raw.cms_physician_puf (hcpcs_code);
+CREATE INDEX IF NOT EXISTS idx_cms_physician_puf_npi ON hcs_raw.cms_physician_puf (npi);
+CREATE INDEX IF NOT EXISTS idx_cms_physician_puf_hcpcs ON hcs_raw.cms_physician_puf (hcpcs_code);
 
--- raw.cms_open_payments_general — Open Payments General Payments
-CREATE TABLE IF NOT EXISTS raw.cms_open_payments_general (
+-- hcs_raw.cms_open_payments_general — Open Payments General Payments
+CREATE TABLE IF NOT EXISTS hcs_raw.cms_open_payments_general (
     record_id                   TEXT PRIMARY KEY,
     physician_npi               TEXT,
     payer_name                  TEXT,
@@ -104,12 +104,12 @@ CREATE TABLE IF NOT EXISTS raw.cms_open_payments_general (
     _source_hash                TEXT
 );
 
-CREATE INDEX IF NOT EXISTS idx_cms_open_payments_general_npi ON raw.cms_open_payments_general (physician_npi);
-CREATE INDEX IF NOT EXISTS idx_cms_open_payments_general_payer ON raw.cms_open_payments_general (payer_name);
-CREATE INDEX IF NOT EXISTS idx_cms_open_payments_general_year ON raw.cms_open_payments_general (program_year);
+CREATE INDEX IF NOT EXISTS idx_cms_open_payments_general_npi ON hcs_raw.cms_open_payments_general (physician_npi);
+CREATE INDEX IF NOT EXISTS idx_cms_open_payments_general_payer ON hcs_raw.cms_open_payments_general (payer_name);
+CREATE INDEX IF NOT EXISTS idx_cms_open_payments_general_year ON hcs_raw.cms_open_payments_general (program_year);
 
--- raw.cms_open_payments_research — Open Payments Research Payments
-CREATE TABLE IF NOT EXISTS raw.cms_open_payments_research (
+-- hcs_raw.cms_open_payments_research — Open Payments Research Payments
+CREATE TABLE IF NOT EXISTS hcs_raw.cms_open_payments_research (
     record_id                   TEXT PRIMARY KEY,
     physician_npi               TEXT,
     payer_name                  TEXT,
@@ -121,11 +121,11 @@ CREATE TABLE IF NOT EXISTS raw.cms_open_payments_research (
     _source_hash                TEXT
 );
 
-CREATE INDEX IF NOT EXISTS idx_cms_open_payments_research_npi ON raw.cms_open_payments_research (physician_npi);
-CREATE INDEX IF NOT EXISTS idx_cms_open_payments_research_year ON raw.cms_open_payments_research (program_year);
+CREATE INDEX IF NOT EXISTS idx_cms_open_payments_research_npi ON hcs_raw.cms_open_payments_research (physician_npi);
+CREATE INDEX IF NOT EXISTS idx_cms_open_payments_research_year ON hcs_raw.cms_open_payments_research (program_year);
 
--- raw.cms_open_payments_ownership — Open Payments Ownership/Investment
-CREATE TABLE IF NOT EXISTS raw.cms_open_payments_ownership (
+-- hcs_raw.cms_open_payments_ownership — Open Payments Ownership/Investment
+CREATE TABLE IF NOT EXISTS hcs_raw.cms_open_payments_ownership (
     record_id                   TEXT PRIMARY KEY,
     physician_npi               TEXT,
     submitting_manufacturer     TEXT,
@@ -137,10 +137,10 @@ CREATE TABLE IF NOT EXISTS raw.cms_open_payments_ownership (
     _source_hash                TEXT
 );
 
-CREATE INDEX IF NOT EXISTS idx_cms_open_payments_ownership_npi ON raw.cms_open_payments_ownership (physician_npi);
+CREATE INDEX IF NOT EXISTS idx_cms_open_payments_ownership_npi ON hcs_raw.cms_open_payments_ownership (physician_npi);
 
--- raw.cms_care_compare_physicians — Care Compare Physician Data
-CREATE TABLE IF NOT EXISTS raw.cms_care_compare_physicians (
+-- hcs_raw.cms_care_compare_physicians — Care Compare Physician Data
+CREATE TABLE IF NOT EXISTS hcs_raw.cms_care_compare_physicians (
     npi                         TEXT PRIMARY KEY,
     pac_id                      TEXT,
     professional_enrollment_id  TEXT,
@@ -155,14 +155,14 @@ CREATE TABLE IF NOT EXISTS raw.cms_care_compare_physicians (
     _source_hash                TEXT
 );
 
-CREATE INDEX IF NOT EXISTS idx_cms_care_compare_specialty ON raw.cms_care_compare_physicians (primary_specialty);
+CREATE INDEX IF NOT EXISTS idx_cms_care_compare_specialty ON hcs_raw.cms_care_compare_physicians (primary_specialty);
 
 -- =============================================================================
 -- FACILITY GROUP (10 tables)
 -- =============================================================================
 
--- raw.cms_pos — Provider of Services
-CREATE TABLE IF NOT EXISTS raw.cms_pos (
+-- hcs_raw.cms_pos — Provider of Services
+CREATE TABLE IF NOT EXISTS hcs_raw.cms_pos (
     ccn                     TEXT PRIMARY KEY,
     facility_name           TEXT,
     facility_type           TEXT,
@@ -176,11 +176,11 @@ CREATE TABLE IF NOT EXISTS raw.cms_pos (
     _source_hash            TEXT
 );
 
-CREATE INDEX IF NOT EXISTS idx_cms_pos_state ON raw.cms_pos (state);
-CREATE INDEX IF NOT EXISTS idx_cms_pos_type ON raw.cms_pos (facility_type);
+CREATE INDEX IF NOT EXISTS idx_cms_pos_state ON hcs_raw.cms_pos (state);
+CREATE INDEX IF NOT EXISTS idx_cms_pos_type ON hcs_raw.cms_pos (facility_type);
 
--- raw.cms_pecos — Provider Enrollment, Chain, and Ownership System
-CREATE TABLE IF NOT EXISTS raw.cms_pecos (
+-- hcs_raw.cms_pecos — Provider Enrollment, Chain, and Ownership System
+CREATE TABLE IF NOT EXISTS hcs_raw.cms_pecos (
     enrollment_id           TEXT PRIMARY KEY,
     npi                     TEXT,
     org_name                TEXT,
@@ -191,10 +191,10 @@ CREATE TABLE IF NOT EXISTS raw.cms_pecos (
     _source_hash            TEXT
 );
 
-CREATE INDEX IF NOT EXISTS idx_cms_pecos_npi ON raw.cms_pecos (npi);
+CREATE INDEX IF NOT EXISTS idx_cms_pecos_npi ON hcs_raw.cms_pecos (npi);
 
--- raw.cms_chow — Change of Ownership
-CREATE TABLE IF NOT EXISTS raw.cms_chow (
+-- hcs_raw.cms_chow — Change of Ownership
+CREATE TABLE IF NOT EXISTS hcs_raw.cms_chow (
     chow_id                 TEXT PRIMARY KEY,
     ccn                     TEXT,
     old_owner               TEXT,
@@ -205,10 +205,10 @@ CREATE TABLE IF NOT EXISTS raw.cms_chow (
     _source_hash            TEXT
 );
 
-CREATE INDEX IF NOT EXISTS idx_cms_chow_ccn ON raw.cms_chow (ccn);
+CREATE INDEX IF NOT EXISTS idx_cms_chow_ccn ON hcs_raw.cms_chow (ccn);
 
--- raw.cms_hospital_affiliation — Hospital Affiliations
-CREATE TABLE IF NOT EXISTS raw.cms_hospital_affiliation (
+-- hcs_raw.cms_hospital_affiliation — Hospital Affiliations
+CREATE TABLE IF NOT EXISTS hcs_raw.cms_hospital_affiliation (
     affiliation_id          TEXT PRIMARY KEY,
     npi                     TEXT,
     ccn                     TEXT,
@@ -218,11 +218,11 @@ CREATE TABLE IF NOT EXISTS raw.cms_hospital_affiliation (
     _source_hash            TEXT
 );
 
-CREATE INDEX IF NOT EXISTS idx_cms_hospital_affiliation_npi ON raw.cms_hospital_affiliation (npi);
-CREATE INDEX IF NOT EXISTS idx_cms_hospital_affiliation_ccn ON raw.cms_hospital_affiliation (ccn);
+CREATE INDEX IF NOT EXISTS idx_cms_hospital_affiliation_npi ON hcs_raw.cms_hospital_affiliation (npi);
+CREATE INDEX IF NOT EXISTS idx_cms_hospital_affiliation_ccn ON hcs_raw.cms_hospital_affiliation (ccn);
 
--- raw.cms_inpatient_puf — Medicare Inpatient PUF
-CREATE TABLE IF NOT EXISTS raw.cms_inpatient_puf (
+-- hcs_raw.cms_inpatient_puf — Medicare Inpatient PUF
+CREATE TABLE IF NOT EXISTS hcs_raw.cms_inpatient_puf (
     provider_id             TEXT NOT NULL,
     drg_code                TEXT NOT NULL,
     total_discharges        INTEGER,
@@ -236,11 +236,11 @@ CREATE TABLE IF NOT EXISTS raw.cms_inpatient_puf (
     PRIMARY KEY (provider_id, drg_code, year)
 );
 
-CREATE INDEX IF NOT EXISTS idx_cms_inpatient_puf_provider ON raw.cms_inpatient_puf (provider_id);
-CREATE INDEX IF NOT EXISTS idx_cms_inpatient_puf_drg ON raw.cms_inpatient_puf (drg_code);
+CREATE INDEX IF NOT EXISTS idx_cms_inpatient_puf_provider ON hcs_raw.cms_inpatient_puf (provider_id);
+CREATE INDEX IF NOT EXISTS idx_cms_inpatient_puf_drg ON hcs_raw.cms_inpatient_puf (drg_code);
 
--- raw.cms_outpatient_puf — Medicare Outpatient PUF
-CREATE TABLE IF NOT EXISTS raw.cms_outpatient_puf (
+-- hcs_raw.cms_outpatient_puf — Medicare Outpatient PUF
+CREATE TABLE IF NOT EXISTS hcs_raw.cms_outpatient_puf (
     provider_id             TEXT NOT NULL,
     apc_code                TEXT NOT NULL,
     total_services          INTEGER,
@@ -253,10 +253,10 @@ CREATE TABLE IF NOT EXISTS raw.cms_outpatient_puf (
     PRIMARY KEY (provider_id, apc_code, year)
 );
 
-CREATE INDEX IF NOT EXISTS idx_cms_outpatient_puf_provider ON raw.cms_outpatient_puf (provider_id);
+CREATE INDEX IF NOT EXISTS idx_cms_outpatient_puf_provider ON hcs_raw.cms_outpatient_puf (provider_id);
 
--- raw.cms_hospital_quality — Hospital Quality Measures
-CREATE TABLE IF NOT EXISTS raw.cms_hospital_quality (
+-- hcs_raw.cms_hospital_quality — Hospital Quality Measures
+CREATE TABLE IF NOT EXISTS hcs_raw.cms_hospital_quality (
     provider_id             TEXT NOT NULL,
     measure_id              TEXT NOT NULL,
     measure_name            TEXT,
@@ -269,10 +269,10 @@ CREATE TABLE IF NOT EXISTS raw.cms_hospital_quality (
     PRIMARY KEY (provider_id, measure_id)
 );
 
-CREATE INDEX IF NOT EXISTS idx_cms_hospital_quality_measure ON raw.cms_hospital_quality (measure_id);
+CREATE INDEX IF NOT EXISTS idx_cms_hospital_quality_measure ON hcs_raw.cms_hospital_quality (measure_id);
 
--- raw.cms_hospital_general_info — Hospital General Information
-CREATE TABLE IF NOT EXISTS raw.cms_hospital_general_info (
+-- hcs_raw.cms_hospital_general_info — Hospital General Information
+CREATE TABLE IF NOT EXISTS hcs_raw.cms_hospital_general_info (
     provider_id             TEXT PRIMARY KEY,
     hospital_name           TEXT,
     address                 TEXT,
@@ -287,10 +287,10 @@ CREATE TABLE IF NOT EXISTS raw.cms_hospital_general_info (
     _source_hash            TEXT
 );
 
-CREATE INDEX IF NOT EXISTS idx_cms_hospital_general_info_state ON raw.cms_hospital_general_info (state);
+CREATE INDEX IF NOT EXISTS idx_cms_hospital_general_info_state ON hcs_raw.cms_hospital_general_info (state);
 
--- raw.cms_hcris — Healthcare Cost Report Information System
-CREATE TABLE IF NOT EXISTS raw.cms_hcris (
+-- hcs_raw.cms_hcris — Healthcare Cost Report Information System
+CREATE TABLE IF NOT EXISTS hcs_raw.cms_hcris (
     report_id               TEXT PRIMARY KEY,
     provider_ccn            TEXT,
     fiscal_year_begin       DATE,
@@ -303,10 +303,10 @@ CREATE TABLE IF NOT EXISTS raw.cms_hcris (
     _source_hash            TEXT
 );
 
-CREATE INDEX IF NOT EXISTS idx_cms_hcris_ccn ON raw.cms_hcris (provider_ccn);
+CREATE INDEX IF NOT EXISTS idx_cms_hcris_ccn ON hcs_raw.cms_hcris (provider_ccn);
 
--- raw.cms_magnet — Magnet Hospital Designations
-CREATE TABLE IF NOT EXISTS raw.cms_magnet (
+-- hcs_raw.cms_magnet — Magnet Hospital Designations
+CREATE TABLE IF NOT EXISTS hcs_raw.cms_magnet (
     facility_id             TEXT PRIMARY KEY,
     facility_name           TEXT,
     city                    TEXT,
@@ -318,14 +318,14 @@ CREATE TABLE IF NOT EXISTS raw.cms_magnet (
     _source_hash            TEXT
 );
 
-CREATE INDEX IF NOT EXISTS idx_cms_magnet_state ON raw.cms_magnet (state);
+CREATE INDEX IF NOT EXISTS idx_cms_magnet_state ON hcs_raw.cms_magnet (state);
 
 -- =============================================================================
 -- DRUG / MARKET GROUP (13 tables)
 -- =============================================================================
 
--- raw.cms_ndc — National Drug Code Directory
-CREATE TABLE IF NOT EXISTS raw.cms_ndc (
+-- hcs_raw.cms_ndc — National Drug Code Directory
+CREATE TABLE IF NOT EXISTS hcs_raw.cms_ndc (
     ndc                     TEXT PRIMARY KEY,
     proprietary_name        TEXT,
     nonproprietary_name     TEXT,
@@ -338,11 +338,11 @@ CREATE TABLE IF NOT EXISTS raw.cms_ndc (
     _source_hash            TEXT
 );
 
-CREATE INDEX IF NOT EXISTS idx_cms_ndc_nonproprietary ON raw.cms_ndc (nonproprietary_name);
-CREATE INDEX IF NOT EXISTS idx_cms_ndc_labeler ON raw.cms_ndc (labeler_name);
+CREATE INDEX IF NOT EXISTS idx_cms_ndc_nonproprietary ON hcs_raw.cms_ndc (nonproprietary_name);
+CREATE INDEX IF NOT EXISTS idx_cms_ndc_labeler ON hcs_raw.cms_ndc (labeler_name);
 
--- raw.cms_part_d_spending — Part D Drug Spending Dashboard
-CREATE TABLE IF NOT EXISTS raw.cms_part_d_spending (
+-- hcs_raw.cms_part_d_spending — Part D Drug Spending Dashboard
+CREATE TABLE IF NOT EXISTS hcs_raw.cms_part_d_spending (
     brand_name              TEXT NOT NULL,
     generic_name            TEXT,
     total_spending           NUMERIC,
@@ -356,10 +356,10 @@ CREATE TABLE IF NOT EXISTS raw.cms_part_d_spending (
     PRIMARY KEY (brand_name, year)
 );
 
-CREATE INDEX IF NOT EXISTS idx_cms_part_d_spending_generic ON raw.cms_part_d_spending (generic_name);
+CREATE INDEX IF NOT EXISTS idx_cms_part_d_spending_generic ON hcs_raw.cms_part_d_spending (generic_name);
 
--- raw.cms_part_b_spending — Part B Drug Spending Dashboard
-CREATE TABLE IF NOT EXISTS raw.cms_part_b_spending (
+-- hcs_raw.cms_part_b_spending — Part B Drug Spending Dashboard
+CREATE TABLE IF NOT EXISTS hcs_raw.cms_part_b_spending (
     hcpcs_code              TEXT NOT NULL,
     hcpcs_description       TEXT,
     total_spending           NUMERIC,
@@ -373,8 +373,8 @@ CREATE TABLE IF NOT EXISTS raw.cms_part_b_spending (
     PRIMARY KEY (hcpcs_code, year)
 );
 
--- raw.cms_formulary — Medicare Part D Formulary Data
-CREATE TABLE IF NOT EXISTS raw.cms_formulary (
+-- hcs_raw.cms_formulary — Medicare Part D Formulary Data
+CREATE TABLE IF NOT EXISTS hcs_raw.cms_formulary (
     formulary_id            TEXT NOT NULL,
     ndc                     TEXT NOT NULL,
     tier_level              INTEGER,
@@ -387,10 +387,10 @@ CREATE TABLE IF NOT EXISTS raw.cms_formulary (
     PRIMARY KEY (formulary_id, ndc)
 );
 
-CREATE INDEX IF NOT EXISTS idx_cms_formulary_ndc ON raw.cms_formulary (ndc);
+CREATE INDEX IF NOT EXISTS idx_cms_formulary_ndc ON hcs_raw.cms_formulary (ndc);
 
--- raw.cms_rbcs — Restructured BETOS Classification System
-CREATE TABLE IF NOT EXISTS raw.cms_rbcs (
+-- hcs_raw.cms_rbcs — Restructured BETOS Classification System
+CREATE TABLE IF NOT EXISTS hcs_raw.cms_rbcs (
     hcpcs_code              TEXT PRIMARY KEY,
     rbcs_id                 TEXT,
     rbcs_category           TEXT,
@@ -401,8 +401,8 @@ CREATE TABLE IF NOT EXISTS raw.cms_rbcs (
     _source_hash            TEXT
 );
 
--- raw.cms_usp — US Pharmacopeia Drug Classifications
-CREATE TABLE IF NOT EXISTS raw.cms_usp (
+-- hcs_raw.cms_usp — US Pharmacopeia Drug Classifications
+CREATE TABLE IF NOT EXISTS hcs_raw.cms_usp (
     usp_category            TEXT NOT NULL,
     usp_class               TEXT NOT NULL,
     drug_name               TEXT,
@@ -413,8 +413,8 @@ CREATE TABLE IF NOT EXISTS raw.cms_usp (
     PRIMARY KEY (usp_category, usp_class)
 );
 
--- raw.cms_nucc — National Uniform Claim Committee Taxonomy
-CREATE TABLE IF NOT EXISTS raw.cms_nucc (
+-- hcs_raw.cms_nucc — National Uniform Claim Committee Taxonomy
+CREATE TABLE IF NOT EXISTS hcs_raw.cms_nucc (
     taxonomy_code           TEXT PRIMARY KEY,
     provider_type           TEXT,
     classification          TEXT,
@@ -425,8 +425,8 @@ CREATE TABLE IF NOT EXISTS raw.cms_nucc (
     _source_hash            TEXT
 );
 
--- raw.cms_geographic_variation — Geographic Variation PUF
-CREATE TABLE IF NOT EXISTS raw.cms_geographic_variation (
+-- hcs_raw.cms_geographic_variation — Geographic Variation PUF
+CREATE TABLE IF NOT EXISTS hcs_raw.cms_geographic_variation (
     state                   TEXT NOT NULL,
     county                  TEXT NOT NULL,
     bene_count              INTEGER,
@@ -439,10 +439,10 @@ CREATE TABLE IF NOT EXISTS raw.cms_geographic_variation (
     PRIMARY KEY (state, county, year)
 );
 
-CREATE INDEX IF NOT EXISTS idx_cms_geographic_variation_state ON raw.cms_geographic_variation (state);
+CREATE INDEX IF NOT EXISTS idx_cms_geographic_variation_state ON hcs_raw.cms_geographic_variation (state);
 
--- raw.cms_chronic_conditions — Chronic Conditions PUF
-CREATE TABLE IF NOT EXISTS raw.cms_chronic_conditions (
+-- hcs_raw.cms_chronic_conditions — Chronic Conditions PUF
+CREATE TABLE IF NOT EXISTS hcs_raw.cms_chronic_conditions (
     state                   TEXT NOT NULL,
     condition               TEXT NOT NULL,
     prevalence_rate         NUMERIC,
@@ -454,8 +454,8 @@ CREATE TABLE IF NOT EXISTS raw.cms_chronic_conditions (
     PRIMARY KEY (state, condition, year)
 );
 
--- raw.cms_post_acute — Post-Acute Care PUF
-CREATE TABLE IF NOT EXISTS raw.cms_post_acute (
+-- hcs_raw.cms_post_acute — Post-Acute Care PUF
+CREATE TABLE IF NOT EXISTS hcs_raw.cms_post_acute (
     provider_id             TEXT NOT NULL,
     provider_type           TEXT,
     total_episodes          INTEGER,
@@ -467,8 +467,8 @@ CREATE TABLE IF NOT EXISTS raw.cms_post_acute (
     PRIMARY KEY (provider_id, year)
 );
 
--- raw.cms_dmepos — Durable Medical Equipment, Prosthetics, Orthotics, and Supplies
-CREATE TABLE IF NOT EXISTS raw.cms_dmepos (
+-- hcs_raw.cms_dmepos — Durable Medical Equipment, Prosthetics, Orthotics, and Supplies
+CREATE TABLE IF NOT EXISTS hcs_raw.cms_dmepos (
     npi                     TEXT NOT NULL,
     hcpcs_code              TEXT NOT NULL,
     total_services          INTEGER,
@@ -482,10 +482,10 @@ CREATE TABLE IF NOT EXISTS raw.cms_dmepos (
     PRIMARY KEY (npi, hcpcs_code, year)
 );
 
-CREATE INDEX IF NOT EXISTS idx_cms_dmepos_hcpcs ON raw.cms_dmepos (hcpcs_code);
+CREATE INDEX IF NOT EXISTS idx_cms_dmepos_hcpcs ON hcs_raw.cms_dmepos (hcpcs_code);
 
--- raw.cms_ddinter — Drug-Drug Interactions Reference
-CREATE TABLE IF NOT EXISTS raw.cms_ddinter (
+-- hcs_raw.cms_ddinter — Drug-Drug Interactions Reference
+CREATE TABLE IF NOT EXISTS hcs_raw.cms_ddinter (
     drug_a                  TEXT NOT NULL,
     drug_b                  TEXT NOT NULL,
     interaction_level       TEXT,
@@ -496,8 +496,8 @@ CREATE TABLE IF NOT EXISTS raw.cms_ddinter (
     PRIMARY KEY (drug_a, drug_b)
 );
 
--- raw.cms_stabilis — IV Drug Stability/Compatibility Reference
-CREATE TABLE IF NOT EXISTS raw.cms_stabilis (
+-- hcs_raw.cms_stabilis — IV Drug Stability/Compatibility Reference
+CREATE TABLE IF NOT EXISTS hcs_raw.cms_stabilis (
     drug_name               TEXT NOT NULL,
     route                   TEXT NOT NULL,
     diluent                 TEXT,

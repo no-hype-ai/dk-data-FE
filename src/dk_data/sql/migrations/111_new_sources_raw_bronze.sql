@@ -62,7 +62,7 @@ CREATE TABLE IF NOT EXISTS mol_raw.nice_hta (
     ingested_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
-CREATE TABLE IF NOT EXISTS mol_raw.cms_open_payments (
+CREATE TABLE IF NOT EXISTS mol_hcs_raw.cms_open_payments (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     request_id VARCHAR(100) NOT NULL,
     request_timestamp TIMESTAMPTZ NOT NULL DEFAULT NOW(),
@@ -76,7 +76,7 @@ CREATE TABLE IF NOT EXISTS mol_raw.cms_open_payments (
     ingested_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
-CREATE TABLE IF NOT EXISTS mol_raw.cms_medicare (
+CREATE TABLE IF NOT EXISTS mol_hcs_raw.cms_medicare (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     request_id VARCHAR(100) NOT NULL,
     request_timestamp TIMESTAMPTZ NOT NULL DEFAULT NOW(),

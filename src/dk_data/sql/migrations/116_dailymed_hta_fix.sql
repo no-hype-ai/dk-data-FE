@@ -59,7 +59,7 @@ CREATE INDEX IF NOT EXISTS idx_mol_raw_hta_processed ON mol_raw.hta_decisions (p
 
 -- ─── Sync Schedules ──────────────────────────────────────────────────────────
 
-INSERT INTO raw.sync_schedules (source, tier, cron_expression, priority, enabled, options) VALUES
+INSERT INTO ops.sync_schedules (source, tier, cron_expression, priority, enabled, options) VALUES
 ('dailymed', 'monthly', '0 6 1 * *', 'normal', true, '{"source_name":"DailyMed SPL Drug Labels","api_type":"rest","base_url":"https://dailymed.nlm.nih.gov/dailymed/services/v2","auth_type":"none","rate_limit_per_second":4,"entity_linking":{"identifier_field":"setid","identifier_type":"spl_set_id"}}'::jsonb)
 ON CONFLICT (source) DO NOTHING;
 

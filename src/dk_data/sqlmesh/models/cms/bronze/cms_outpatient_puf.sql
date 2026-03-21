@@ -23,5 +23,5 @@ SELECT
     _loaded_at,
     _source_file,
     _source_hash
-FROM raw.cms_outpatient_puf
+FROM hcs_raw.cms_outpatient_puf
 WHERE _loaded_at BETWEEN @start_dt AND @end_dt;

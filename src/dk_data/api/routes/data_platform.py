@@ -1232,7 +1232,7 @@ async def trigger_source_ingestion(
     """
     Trigger ingestion for a specific data source.
 
-    Supports all registered sources from the database (raw.sync_schedules).
+    Supports all registered sources from the database (ops.sync_schedules).
     """
     pool = await get_db_pool()
     if pool is None:
@@ -1241,13 +1241,13 @@ async def trigger_source_ingestion(
     # Check database for registered sources (fully dynamic)
     async with pool.acquire() as conn:
         exists = await conn.fetchval(
-            "SELECT 1 FROM raw.sync_schedules WHERE source = $1",
+            "SELECT 1 FROM ops.sync_schedules WHERE source = $1",
             source
         )
         if not exists:
             # Get available sources for error message
             available = await conn.fetch(
-                "SELECT source FROM raw.sync_schedules WHERE enabled = true ORDER BY source"
+                "SELECT source FROM ops.sync_schedules WHERE enabled = true ORDER BY source"
             )
             available_sources = [r['source'] for r in available]
             raise HTTPException(
@@ -1304,7 +1304,7 @@ async def trigger_full_pipeline(
 
     This runs the complete Raw → Bronze → Silver → Gold pipeline.
     Use transform_only=true to process existing data without fetching from APIs.
-    Sources are loaded dynamically from raw.sync_schedules based on tier.
+    Sources are loaded dynamically from ops.sync_schedules based on tier.
     """
     try:
         from uuid import uuid4
@@ -1321,12 +1321,12 @@ async def trigger_full_pipeline(
             if tier == 'manual':
                 # For manual, get all enabled sources
                 rows = await conn.fetch(
-                    "SELECT source FROM raw.sync_schedules WHERE enabled = true ORDER BY priority DESC"
+                    "SELECT source FROM ops.sync_schedules WHERE enabled = true ORDER BY priority DESC"
                 )
             else:
                 # Get sources for specific tier
                 rows = await conn.fetch(
-                    "SELECT source FROM raw.sync_schedules WHERE tier = $1 AND enabled = true ORDER BY priority DESC",
+                    "SELECT source FROM ops.sync_schedules WHERE tier = $1 AND enabled = true ORDER BY priority DESC",
                     tier
                 )
             sources = [r['source'] for r in rows]
@@ -1334,7 +1334,7 @@ async def trigger_full_pipeline(
         if not sources:
             raise HTTPException(
                 status_code=400,
-                detail=f"No enabled sources found for tier '{tier}'. Configure sources in raw.sync_schedules."
+                detail=f"No enabled sources found for tier '{tier}'. Configure sources in ops.sync_schedules."
             )
 
         async def run_full_pipeline():
@@ -2427,7 +2427,7 @@ async def get_scheduler_status():
                     next_run,
                     options,
                     updated_at
-                FROM raw.sync_schedules
+                FROM ops.sync_schedules
                 ORDER BY
                     CASE tier
                         WHEN 'daily' THEN 1
@@ -2510,7 +2510,7 @@ async def get_job_history(
             where_clause = f"WHERE {' AND '.join(conditions)}" if conditions else ""
 
             # Get total count
-            count_query = f"SELECT COUNT(*) FROM raw.ingestion_jobs {where_clause}"
+            count_query = f"SELECT COUNT(*) FROM ops.ingestion_jobs {where_clause}"
             total_count = await conn.fetchval(count_query, *params) or 0
 
             # Get jobs
@@ -2527,7 +2527,7 @@ async def get_job_history(
                     error_message,
                     error_details,
                     created_at
-                FROM raw.ingestion_jobs
+                FROM ops.ingestion_jobs
                 {where_clause}
                 ORDER BY started_at DESC NULLS LAST, created_at DESC
                 LIMIT ${param_idx} OFFSET ${param_idx + 1}
@@ -2572,7 +2572,7 @@ async def trigger_tier_sync(
     """
     Manually trigger a tier sync.
 
-    Tiers are loaded dynamically from raw.sync_schedules.
+    Tiers are loaded dynamically from ops.sync_schedules.
     Standard tiers: daily, weekly, monthly, on_demand
     """
     pool = await get_db_pool()
@@ -2583,7 +2583,7 @@ async def trigger_tier_sync(
     async with pool.acquire() as conn:
         # Validate tier exists
         valid_tiers = await conn.fetch(
-            "SELECT DISTINCT tier FROM raw.sync_schedules WHERE tier IS NOT NULL"
+            "SELECT DISTINCT tier FROM ops.sync_schedules WHERE tier IS NOT NULL"
         )
         valid_tier_names = [r['tier'] for r in valid_tiers]
 
@@ -2595,7 +2595,7 @@ async def trigger_tier_sync(
 
         # Get sources for this tier
         rows = await conn.fetch(
-            "SELECT source FROM raw.sync_schedules WHERE tier = $1 AND enabled = true ORDER BY priority DESC",
+            "SELECT source FROM ops.sync_schedules WHERE tier = $1 AND enabled = true ORDER BY priority DESC",
             tier
         )
         sources = [r['source'] for r in rows]
@@ -2674,7 +2674,7 @@ async def update_schedule(
         async with pool.acquire() as conn:
             # Check if source exists
             exists = await conn.fetchval(
-                "SELECT 1 FROM raw.sync_schedules WHERE source = $1",
+                "SELECT 1 FROM ops.sync_schedules WHERE source = $1",
                 source
             )
 
@@ -2713,7 +2713,7 @@ async def update_schedule(
             params.append(source)
 
             query = f"""
-                UPDATE raw.sync_schedules
+                UPDATE ops.sync_schedules
                 SET {', '.join(updates)}
                 WHERE source = ${param_idx}
                 RETURNING source, tier, cron_expression, priority, enabled
@@ -3088,8 +3088,8 @@ async def list_transformation_sources(enabled_only: bool = True):
                     array_agg(m.model_name) FILTER (WHERE m.model_name IS NOT NULL),
                     ARRAY[]::text[]
                 ) AS models_generated
-            FROM mol_raw.silver_transformation_rules r
-            LEFT JOIN raw.generated_sqlmesh_models m ON m.source_rule_id = r.id
+            FROM mol_ops.silver_transformation_rules r
+            LEFT JOIN ops.generated_sqlmesh_models m ON m.source_rule_id = r.id
         """
         if enabled_only:
             query += " WHERE r.enabled = true"
@@ -3135,8 +3135,8 @@ async def get_transformation_source(source_name: str):
                     array_agg(m.model_name) FILTER (WHERE m.model_name IS NOT NULL),
                     ARRAY[]::text[]
                 ) AS models_generated
-            FROM mol_raw.silver_transformation_rules r
-            LEFT JOIN raw.generated_sqlmesh_models m ON m.source_rule_id = r.id
+            FROM mol_ops.silver_transformation_rules r
+            LEFT JOIN ops.generated_sqlmesh_models m ON m.source_rule_id = r.id
             WHERE r.source_name = $1
             GROUP BY r.id
         """, source_name)
@@ -3167,7 +3167,7 @@ async def disable_transformation_source(source_name: str):
 
     async with pool.acquire() as conn:
         result = await conn.execute("""
-            UPDATE mol_raw.silver_transformation_rules
+            UPDATE mol_ops.silver_transformation_rules
             SET enabled = false, updated_at = NOW()
             WHERE source_name = $1
         """, source_name)
@@ -3189,7 +3189,7 @@ async def enable_transformation_source(source_name: str):
 
     async with pool.acquire() as conn:
         result = await conn.execute("""
-            UPDATE mol_raw.silver_transformation_rules
+            UPDATE mol_ops.silver_transformation_rules
             SET enabled = true, updated_at = NOW()
             WHERE source_name = $1
         """, source_name)

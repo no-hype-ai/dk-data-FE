@@ -8,9 +8,9 @@ BEGIN;
 CREATE SCHEMA IF NOT EXISTS silver;
 
 -- =============================================================================
--- silver.cms_provider_profile — Composite of NPPES + prescribing + procedures + payments
+-- hcs_silver.cms_provider_profile — Composite of NPPES + prescribing + procedures + payments
 -- =============================================================================
-CREATE TABLE IF NOT EXISTS silver.cms_provider_profile (
+CREATE TABLE IF NOT EXISTS hcs_silver.cms_provider_profile (
     npi                         TEXT PRIMARY KEY,
     entity_type                 TEXT,
     name_first                  TEXT,
@@ -34,13 +34,13 @@ CREATE TABLE IF NOT EXISTS silver.cms_provider_profile (
     updated_at                  TIMESTAMPTZ DEFAULT now()
 );
 
-CREATE INDEX IF NOT EXISTS idx_silver_provider_profile_state ON silver.cms_provider_profile (practice_state);
-CREATE INDEX IF NOT EXISTS idx_silver_provider_profile_specialty ON silver.cms_provider_profile (primary_specialty);
+CREATE INDEX IF NOT EXISTS idx_silver_provider_profile_state ON hcs_silver.cms_provider_profile (practice_state);
+CREATE INDEX IF NOT EXISTS idx_silver_provider_profile_specialty ON hcs_silver.cms_provider_profile (primary_specialty);
 
 -- =============================================================================
--- silver.cms_facility_profile — Composite of POS + quality + cost
+-- hcs_silver.cms_facility_profile — Composite of POS + quality + cost
 -- =============================================================================
-CREATE TABLE IF NOT EXISTS silver.cms_facility_profile (
+CREATE TABLE IF NOT EXISTS hcs_silver.cms_facility_profile (
     ccn                         TEXT PRIMARY KEY,
     facility_name               TEXT,
     facility_type               TEXT,
@@ -58,13 +58,13 @@ CREATE TABLE IF NOT EXISTS silver.cms_facility_profile (
     updated_at                  TIMESTAMPTZ DEFAULT now()
 );
 
-CREATE INDEX IF NOT EXISTS idx_silver_facility_profile_state ON silver.cms_facility_profile (state);
-CREATE INDEX IF NOT EXISTS idx_silver_facility_profile_type ON silver.cms_facility_profile (facility_type);
+CREATE INDEX IF NOT EXISTS idx_silver_facility_profile_state ON hcs_silver.cms_facility_profile (state);
+CREATE INDEX IF NOT EXISTS idx_silver_facility_profile_type ON hcs_silver.cms_facility_profile (facility_type);
 
 -- =============================================================================
--- silver.cms_drug_market — Composite of NDC + spending + formulary
+-- hcs_silver.cms_drug_market — Composite of NDC + spending + formulary
 -- =============================================================================
-CREATE TABLE IF NOT EXISTS silver.cms_drug_market (
+CREATE TABLE IF NOT EXISTS hcs_silver.cms_drug_market (
     ndc                         TEXT PRIMARY KEY,
     proprietary_name            TEXT,
     nonproprietary_name         TEXT,
@@ -82,12 +82,12 @@ CREATE TABLE IF NOT EXISTS silver.cms_drug_market (
     updated_at                  TIMESTAMPTZ DEFAULT now()
 );
 
-CREATE INDEX IF NOT EXISTS idx_silver_drug_market_name ON silver.cms_drug_market (nonproprietary_name);
+CREATE INDEX IF NOT EXISTS idx_silver_drug_market_name ON hcs_silver.cms_drug_market (nonproprietary_name);
 
 -- =============================================================================
--- silver.cms_geographic — State/county level geographic composite
+-- hcs_silver.cms_geographic — State/county level geographic composite
 -- =============================================================================
-CREATE TABLE IF NOT EXISTS silver.cms_geographic (
+CREATE TABLE IF NOT EXISTS hcs_silver.cms_geographic (
     state                       TEXT NOT NULL,
     county                      TEXT NOT NULL,
     bene_count                  INTEGER,
@@ -99,12 +99,12 @@ CREATE TABLE IF NOT EXISTS silver.cms_geographic (
     PRIMARY KEY (state, county)
 );
 
-CREATE INDEX IF NOT EXISTS idx_silver_geographic_state ON silver.cms_geographic (state);
+CREATE INDEX IF NOT EXISTS idx_silver_geographic_state ON hcs_silver.cms_geographic (state);
 
 -- =============================================================================
--- silver.ref_drg_service_line — Agent-derived DRG to service line mapping
+-- hcs_silver.ref_drg_service_line — Agent-derived DRG to service line mapping
 -- =============================================================================
-CREATE TABLE IF NOT EXISTS silver.ref_drg_service_line (
+CREATE TABLE IF NOT EXISTS hcs_silver.ref_drg_service_line (
     drg_code                    TEXT PRIMARY KEY,
     drg_description             TEXT,
     service_line                TEXT,
@@ -113,9 +113,9 @@ CREATE TABLE IF NOT EXISTS silver.ref_drg_service_line (
 );
 
 -- =============================================================================
--- silver.ref_hcpcs_equipment — Agent-derived HCPCS to equipment mapping
+-- hcs_silver.ref_hcpcs_equipment — Agent-derived HCPCS to equipment mapping
 -- =============================================================================
-CREATE TABLE IF NOT EXISTS silver.ref_hcpcs_equipment (
+CREATE TABLE IF NOT EXISTS hcs_silver.ref_hcpcs_equipment (
     hcpcs_code                  TEXT PRIMARY KEY,
     hcpcs_description           TEXT,
     equipment_category          TEXT,
@@ -124,9 +124,9 @@ CREATE TABLE IF NOT EXISTS silver.ref_hcpcs_equipment (
 );
 
 -- =============================================================================
--- silver.ref_nucc_taxonomy — NUCC taxonomy reference
+-- hcs_silver.ref_nucc_taxonomy — NUCC taxonomy reference
 -- =============================================================================
-CREATE TABLE IF NOT EXISTS silver.ref_nucc_taxonomy (
+CREATE TABLE IF NOT EXISTS hcs_silver.ref_nucc_taxonomy (
     taxonomy_code               TEXT PRIMARY KEY,
     classification              TEXT,
     specialization              TEXT,
@@ -134,9 +134,9 @@ CREATE TABLE IF NOT EXISTS silver.ref_nucc_taxonomy (
 );
 
 -- =============================================================================
--- silver.cms_health_system_hierarchy — Agent-derived health system rollups
+-- hcs_silver.cms_health_system_hierarchy — Agent-derived health system rollups
 -- =============================================================================
-CREATE TABLE IF NOT EXISTS silver.cms_health_system_hierarchy (
+CREATE TABLE IF NOT EXISTS hcs_silver.cms_health_system_hierarchy (
     system_id                   TEXT PRIMARY KEY,
     system_name                 TEXT,
     parent_system_id            TEXT,
@@ -146,12 +146,12 @@ CREATE TABLE IF NOT EXISTS silver.cms_health_system_hierarchy (
     agent_version               TEXT
 );
 
-CREATE INDEX IF NOT EXISTS idx_silver_health_system_parent ON silver.cms_health_system_hierarchy (parent_system_id);
+CREATE INDEX IF NOT EXISTS idx_silver_health_system_parent ON hcs_silver.cms_health_system_hierarchy (parent_system_id);
 
 -- =============================================================================
--- silver.cms_referral_edges — Agent-derived referral network edges
+-- hcs_silver.cms_referral_edges — Agent-derived referral network edges
 -- =============================================================================
-CREATE TABLE IF NOT EXISTS silver.cms_referral_edges (
+CREATE TABLE IF NOT EXISTS hcs_silver.cms_referral_edges (
     source_npi                  TEXT NOT NULL,
     target_npi                  TEXT NOT NULL,
     relationship_type           TEXT,
@@ -162,13 +162,13 @@ CREATE TABLE IF NOT EXISTS silver.cms_referral_edges (
     PRIMARY KEY (source_npi, target_npi)
 );
 
-CREATE INDEX IF NOT EXISTS idx_silver_referral_edges_source ON silver.cms_referral_edges (source_npi);
-CREATE INDEX IF NOT EXISTS idx_silver_referral_edges_target ON silver.cms_referral_edges (target_npi);
+CREATE INDEX IF NOT EXISTS idx_silver_referral_edges_source ON hcs_silver.cms_referral_edges (source_npi);
+CREATE INDEX IF NOT EXISTS idx_silver_referral_edges_target ON hcs_silver.cms_referral_edges (target_npi);
 
 -- =============================================================================
--- silver.cms_verified_contacts — Agent-verified contact information
+-- hcs_silver.cms_verified_contacts — Agent-verified contact information
 -- =============================================================================
-CREATE TABLE IF NOT EXISTS silver.cms_verified_contacts (
+CREATE TABLE IF NOT EXISTS hcs_silver.cms_verified_contacts (
     npi                         TEXT PRIMARY KEY,
     phone_normalized            TEXT,
     phone_valid                 BOOLEAN,
@@ -179,9 +179,9 @@ CREATE TABLE IF NOT EXISTS silver.cms_verified_contacts (
 );
 
 -- =============================================================================
--- silver.cms_staffing_profiles — Agent-derived staffing from HCRIS
+-- hcs_silver.cms_staffing_profiles — Agent-derived staffing from HCRIS
 -- =============================================================================
-CREATE TABLE IF NOT EXISTS silver.cms_staffing_profiles (
+CREATE TABLE IF NOT EXISTS hcs_silver.cms_staffing_profiles (
     ccn                         TEXT NOT NULL,
     staffing_category           TEXT NOT NULL,
     fte_count                   NUMERIC,
@@ -193,12 +193,12 @@ CREATE TABLE IF NOT EXISTS silver.cms_staffing_profiles (
     PRIMARY KEY (ccn, staffing_category)
 );
 
-CREATE INDEX IF NOT EXISTS idx_silver_staffing_profiles_ccn ON silver.cms_staffing_profiles (ccn);
+CREATE INDEX IF NOT EXISTS idx_silver_staffing_profiles_ccn ON hcs_silver.cms_staffing_profiles (ccn);
 
 -- =============================================================================
--- silver.cms_equipment_inventory — Agent-derived equipment from DMEPOS/HCPCS
+-- hcs_silver.cms_equipment_inventory — Agent-derived equipment from DMEPOS/HCPCS
 -- =============================================================================
-CREATE TABLE IF NOT EXISTS silver.cms_equipment_inventory (
+CREATE TABLE IF NOT EXISTS hcs_silver.cms_equipment_inventory (
     ccn                         TEXT NOT NULL,
     equipment_category          TEXT NOT NULL,
     equipment_type              TEXT,
@@ -209,6 +209,6 @@ CREATE TABLE IF NOT EXISTS silver.cms_equipment_inventory (
     PRIMARY KEY (ccn, equipment_category)
 );
 
-CREATE INDEX IF NOT EXISTS idx_silver_equipment_inventory_ccn ON silver.cms_equipment_inventory (ccn);
+CREATE INDEX IF NOT EXISTS idx_silver_equipment_inventory_ccn ON hcs_silver.cms_equipment_inventory (ccn);
 
 COMMIT;

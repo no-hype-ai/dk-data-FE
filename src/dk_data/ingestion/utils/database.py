@@ -140,7 +140,7 @@ def get_connection() -> Generator[psycopg2.extensions.connection, None, None]:
     Usage:
         with get_connection() as conn:
             with conn.cursor() as cur:
-                cur.execute("SELECT * FROM raw.cms_medicare_inpatient")
+                cur.execute("SELECT * FROM hcs_raw.cms_medicare_inpatient")
                 rows = cur.fetchall()
     """
     pool = get_connection_pool()
@@ -162,7 +162,7 @@ def get_cursor(dict_cursor: bool = False) -> Generator[psycopg2.extensions.curso
 
     Usage:
         with get_cursor(dict_cursor=True) as cur:
-            cur.execute("SELECT * FROM raw.cms_medicare_inpatient WHERE provider_id = %s", ('123456',))
+            cur.execute("SELECT * FROM hcs_raw.cms_medicare_inpatient WHERE provider_id = %s", ('123456',))
             row = cur.fetchone()
             print(row['provider_name'])
     """

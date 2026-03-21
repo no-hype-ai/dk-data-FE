@@ -658,7 +658,7 @@ class InitialLoadOrchestrator:
         async with self.db_pool.acquire() as conn:
             # Ensure sync_schedules table exists
             await conn.execute("""
-                CREATE TABLE IF NOT EXISTS raw.sync_schedules (
+                CREATE TABLE IF NOT EXISTS ops.sync_schedules (
                     id SERIAL PRIMARY KEY,
                     source TEXT UNIQUE NOT NULL,
                     tier TEXT DEFAULT 'weekly',
@@ -686,7 +686,7 @@ class InitialLoadOrchestrator:
                 }
 
                 await conn.execute("""
-                    INSERT INTO raw.sync_schedules (source, tier, cron_expression, priority, enabled, options)
+                    INSERT INTO ops.sync_schedules (source, tier, cron_expression, priority, enabled, options)
                     VALUES ($1, $2, $3, $4, $5, $6)
                     ON CONFLICT (source) DO UPDATE SET
                         options = $6,

@@ -11,7 +11,7 @@
 -- 3. Latest year filter applied to all source CTEs
 
 MODEL (
-    name silver.cms_geographic,
+    name hcs_silver.cms_geographic,
     kind FULL,
     cron '@daily',
     audits (

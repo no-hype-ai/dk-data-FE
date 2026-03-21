@@ -4,4 +4,4 @@
 -- The CMS Chronic Conditions CSV does not include a year column.
 -- Make year nullable so the loader can insert without it.
 
-ALTER TABLE raw.cms_chronic_conditions ALTER COLUMN year DROP NOT NULL;
+ALTER TABLE hcs_raw.cms_chronic_conditions ALTER COLUMN year DROP NOT NULL;

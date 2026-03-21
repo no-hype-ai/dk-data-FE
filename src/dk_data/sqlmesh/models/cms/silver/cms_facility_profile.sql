@@ -11,7 +11,7 @@
 -- 3. Magnet status derived from expiration_date
 
 MODEL (
-    name silver.cms_facility_profile,
+    name hcs_silver.cms_facility_profile,
     kind FULL,
     cron '@daily',
     audits (

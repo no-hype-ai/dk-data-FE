@@ -7,10 +7,10 @@
 BEGIN;
 
 -- =============================================================================
--- meta.api_audit_log — Append-only audit trail for API requests
+-- meta.ops_api_audit_log — Append-only audit trail for API requests
 -- =============================================================================
 
-CREATE TABLE IF NOT EXISTS meta.api_audit_log (
+CREATE TABLE IF NOT EXISTS meta.ops_api_audit_log (
     id              BIGSERIAL       PRIMARY KEY,
     request_id      UUID            NOT NULL,
     timestamp       TIMESTAMPTZ     NOT NULL DEFAULT NOW(),
@@ -33,30 +33,30 @@ CREATE TABLE IF NOT EXISTS meta.api_audit_log (
 -- -----------------------------------------------------------------------------
 -- Indexes for common query patterns
 -- -----------------------------------------------------------------------------
-CREATE INDEX IF NOT EXISTS idx_api_audit_timestamp  ON meta.api_audit_log (timestamp DESC);
-CREATE INDEX IF NOT EXISTS idx_api_audit_user_role  ON meta.api_audit_log (user_role);
-CREATE INDEX IF NOT EXISTS idx_api_audit_path       ON meta.api_audit_log (path);
-CREATE INDEX IF NOT EXISTS idx_api_audit_category   ON meta.api_audit_log (category);
+CREATE INDEX IF NOT EXISTS idx_api_audit_timestamp  ON meta.ops_api_audit_log (timestamp DESC);
+CREATE INDEX IF NOT EXISTS idx_api_audit_user_role  ON meta.ops_api_audit_log (user_role);
+CREATE INDEX IF NOT EXISTS idx_api_audit_path       ON meta.ops_api_audit_log (path);
+CREATE INDEX IF NOT EXISTS idx_api_audit_category   ON meta.ops_api_audit_log (category);
 
 -- -----------------------------------------------------------------------------
 -- Append-only enforcement: revoke UPDATE and DELETE from all roles
 -- -----------------------------------------------------------------------------
-REVOKE UPDATE, DELETE ON meta.api_audit_log FROM PUBLIC;
+REVOKE UPDATE, DELETE ON meta.ops_api_audit_log FROM PUBLIC;
 
 DO $revoke$
 BEGIN
     -- Revoke destructive operations from all known roles
     IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'web_anon') THEN
-        EXECUTE 'REVOKE UPDATE, DELETE ON meta.api_audit_log FROM web_anon';
+        EXECUTE 'REVOKE UPDATE, DELETE ON meta.ops_api_audit_log FROM web_anon';
     END IF;
     IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'analyst') THEN
-        EXECUTE 'REVOKE UPDATE, DELETE ON meta.api_audit_log FROM analyst';
+        EXECUTE 'REVOKE UPDATE, DELETE ON meta.ops_api_audit_log FROM analyst';
     END IF;
     IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'api_user') THEN
-        EXECUTE 'REVOKE UPDATE, DELETE ON meta.api_audit_log FROM api_user';
+        EXECUTE 'REVOKE UPDATE, DELETE ON meta.ops_api_audit_log FROM api_user';
     END IF;
     IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'readonly') THEN
-        EXECUTE 'REVOKE UPDATE, DELETE ON meta.api_audit_log FROM readonly';
+        EXECUTE 'REVOKE UPDATE, DELETE ON meta.ops_api_audit_log FROM readonly';
     END IF;
 END $revoke$;
 
@@ -67,12 +67,12 @@ END $revoke$;
 DO $grants$
 BEGIN
     IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'api_user') THEN
-        EXECUTE 'GRANT INSERT, SELECT ON meta.api_audit_log TO api_user';
-        EXECUTE 'GRANT USAGE, SELECT ON SEQUENCE meta.api_audit_log_id_seq TO api_user';
+        EXECUTE 'GRANT INSERT, SELECT ON meta.ops_api_audit_log TO api_user';
+        EXECUTE 'GRANT USAGE, SELECT ON SEQUENCE meta.ops_api_audit_log_id_seq TO api_user';
     END IF;
     IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'analyst') THEN
-        EXECUTE 'GRANT INSERT ON meta.api_audit_log TO analyst';
-        EXECUTE 'GRANT USAGE, SELECT ON SEQUENCE meta.api_audit_log_id_seq TO analyst';
+        EXECUTE 'GRANT INSERT ON meta.ops_api_audit_log TO analyst';
+        EXECUTE 'GRANT USAGE, SELECT ON SEQUENCE meta.ops_api_audit_log_id_seq TO analyst';
     END IF;
 END $grants$;
 
@@ -118,9 +118,9 @@ END;
 $func$ LANGUAGE plpgsql SECURITY DEFINER;
 
 -- Attach trigger to api_audit_log
-DROP TRIGGER IF EXISTS trg_audit_postgrest ON meta.api_audit_log;
+DROP TRIGGER IF EXISTS trg_audit_postgrest ON meta.ops_api_audit_log;
 CREATE TRIGGER trg_audit_postgrest
-    BEFORE INSERT ON meta.api_audit_log
+    BEFORE INSERT ON meta.ops_api_audit_log
     FOR EACH ROW
     EXECUTE FUNCTION meta.audit_postgrest_access();
 
@@ -132,7 +132,7 @@ COMMIT;
 DO $$
 BEGIN
     RAISE NOTICE 'Audit log migration complete (067_audit_log_table.sql)';
-    RAISE NOTICE 'Table: meta.api_audit_log (append-only)';
+    RAISE NOTICE 'Table: meta.ops_api_audit_log (append-only)';
     RAISE NOTICE 'Indexes: timestamp, user_role, path, category';
     RAISE NOTICE 'Trigger: trg_audit_postgrest (captures JWT claims)';
     RAISE NOTICE 'Grants: INSERT to api_user+analyst, SELECT to api_user only';

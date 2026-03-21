@@ -37,7 +37,7 @@ SELECT
     FALSE AS processed_to_silver,
     NOW() AS created_at
 
-FROM raw.acc_tvc_certification
+FROM mol_raw.acc_tvc_certification
 WHERE
     response_status = 200
     AND processed_to_bronze = FALSE

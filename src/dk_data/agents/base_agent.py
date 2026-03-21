@@ -4,7 +4,7 @@ All LLM calls route through LiteLLM proxy using OpenAI-compatible Python client.
 Direct Anthropic SDK usage is forbidden per dk-canon.
 
 Execution: K8s Jobs (not BullMQ — dk-data-FE is Python-only).
-Logging: Append-only meta.agent_execution_log.
+Logging: Append-only meta.ops_agent_execution_log.
 """
 
 import os
@@ -122,7 +122,7 @@ class BaseAgent(ABC):
         ...
 
     def write_quarantine(self, quarantine: list[dict[str, Any]], execution_id: str) -> None:
-        """Write quarantine records to meta.agent_quarantine."""
+        """Write quarantine records to meta.ops_agent_quarantine."""
         if not quarantine:
             return
 
@@ -130,7 +130,7 @@ class BaseAgent(ABC):
         with self.conn.cursor() as cur:
             for record in quarantine:
                 cur.execute(
-                    """INSERT INTO meta.agent_quarantine
+                    """INSERT INTO meta.ops_agent_quarantine
                     (agent_name, execution_id, record_data, reason, confidence_score, status)
                     VALUES (%s, %s, %s, %s, %s, 'PENDING')""",
                     (
@@ -151,14 +151,14 @@ class BaseAgent(ABC):
         result: AgentResult,
         records_input: int,
     ) -> None:
-        """Log execution to meta.agent_execution_log (append-only)."""
+        """Log execution to meta.ops_agent_execution_log (append-only)."""
         completed_at = datetime.now(timezone.utc)
         status = "FAILED" if result.error else "COMPLETED"
         cost = self.estimated_cost_usd
 
         with self.conn.cursor() as cur:
             cur.execute(
-                """INSERT INTO meta.agent_execution_log
+                """INSERT INTO meta.ops_agent_execution_log
                 (id, agent_name, agent_version, started_at, completed_at, status,
                  records_input, records_enriched, records_quarantined,
                  error_message, model_used, cost_usd)
@@ -209,7 +209,7 @@ class BaseAgent(ABC):
         # Log start
         with self.conn.cursor() as cur:
             cur.execute(
-                """INSERT INTO meta.agent_execution_log
+                """INSERT INTO meta.ops_agent_execution_log
                 (id, agent_name, agent_version, started_at, status, model_used)
                 VALUES (%s, %s, %s, %s, 'RUNNING', %s)""",
                 (execution_id, self.AGENT_NAME, self.AGENT_VERSION, started_at, self.model),

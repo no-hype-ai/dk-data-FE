@@ -216,9 +216,9 @@ def validate_ingestion_capacity() -> Dict[str, Any]:
 
         # Count records in raw tables
         tables = [
-            'raw.cms_medicare_inpatient',
-            'raw.cms_hospital_info',
-            'raw.cms_cost_reports',
+            'hcs_raw.cms_medicare_inpatient',
+            'hcs_raw.cms_hospital_info',
+            'hcs_raw.cms_cost_reports',
             'raw.acc_tvc_certification',
             'raw.hrsa_shortage_areas'
         ]

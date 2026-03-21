@@ -4,7 +4,7 @@
 -- Part of: 016-cms-puf-datasource-integration (Phase 3 — Facility MVP)
 
 MODEL (
-    name gold.cms_facility_360,
+    name hcs_gold.cms_facility_360,
     kind FULL,
     cron '@daily',
     audits (
@@ -20,7 +20,7 @@ WITH state_totals AS (
         SUM(total_discharges)                   AS state_total_discharges,
         SUM(total_outpatient_services)          AS state_total_outpatient_services,
         SUM(total_beds)                         AS state_total_beds
-    FROM silver.cms_facility_profile
+    FROM hcs_silver.cms_facility_profile
     WHERE state IS NOT NULL
     GROUP BY state
 )
@@ -124,6 +124,6 @@ SELECT
     f.profile_built_at,
     NOW()                                                                       AS gold_built_at
 
-FROM silver.cms_facility_profile f
+FROM hcs_silver.cms_facility_profile f
 LEFT JOIN state_totals st ON f.state = st.state
 WHERE f.state IS NOT NULL;

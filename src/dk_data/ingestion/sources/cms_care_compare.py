@@ -49,7 +49,7 @@ def load_cms_care_compare_data(
     source_file: Optional[str] = None,
     batch_size: int = 500,
 ) -> Dict[str, Any]:
-    """Load CMS Care Compare records into raw.cms_care_compare.
+    """Load CMS Care Compare records into hcs_raw.cms_care_compare.
 
     Args:
         records: List of dicts from the fetcher.
@@ -115,7 +115,7 @@ def load_cms_care_compare_data(
                 execute_values(
                     cur,
                     """
-                    INSERT INTO raw.cms_care_compare (
+                    INSERT INTO hcs_raw.cms_care_compare (
                         facility_id, facility_name, address, city, state,
                         zip_code, county_name, phone_number,
                         hospital_type, hospital_ownership, emergency_services,

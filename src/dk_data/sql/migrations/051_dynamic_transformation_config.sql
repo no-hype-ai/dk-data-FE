@@ -10,7 +10,7 @@ BEGIN;
 -- ============================================================================
 -- Defines how each source transforms from Bronze to Silver layer
 
-CREATE TABLE IF NOT EXISTS raw.silver_transformation_rules (
+CREATE TABLE IF NOT EXISTS ops.silver_transformation_rules (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
 
     -- Source identification
@@ -66,15 +66,15 @@ CREATE TABLE IF NOT EXISTS raw.silver_transformation_rules (
     CONSTRAINT valid_target_type CHECK (target_type IN ('molecule', 'trial', 'publication', 'target', 'adverse_event', 'patent'))
 );
 
-CREATE INDEX IF NOT EXISTS idx_silver_rules_source ON raw.silver_transformation_rules(source_name);
-CREATE INDEX IF NOT EXISTS idx_silver_rules_enabled ON raw.silver_transformation_rules(enabled) WHERE enabled = true;
+CREATE INDEX IF NOT EXISTS idx_silver_rules_source ON ops.silver_transformation_rules(source_name);
+CREATE INDEX IF NOT EXISTS idx_silver_rules_enabled ON ops.silver_transformation_rules(enabled) WHERE enabled = true;
 
 -- ============================================================================
 -- SECTION 2: IDENTIFIER EXTRACTION PATTERNS
 -- ============================================================================
 -- Defines regex patterns and extraction rules for each identifier type per source
 
-CREATE TABLE IF NOT EXISTS raw.source_identifier_patterns (
+CREATE TABLE IF NOT EXISTS ops.source_identifier_patterns (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
 
     source_name TEXT NOT NULL,
@@ -98,14 +98,14 @@ CREATE TABLE IF NOT EXISTS raw.source_identifier_patterns (
     UNIQUE(source_name, identifier_type, source_column)
 );
 
-CREATE INDEX IF NOT EXISTS idx_source_id_patterns_source ON raw.source_identifier_patterns(source_name);
+CREATE INDEX IF NOT EXISTS idx_source_id_patterns_source ON ops.source_identifier_patterns(source_name);
 
 -- ============================================================================
 -- SECTION 3: TRANSFORMATION TEMPLATES
 -- ============================================================================
 -- Reusable transformation templates for common patterns
 
-CREATE TABLE IF NOT EXISTS raw.transformation_templates (
+CREATE TABLE IF NOT EXISTS ops.transformation_templates (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
 
     template_name TEXT NOT NULL UNIQUE,
@@ -131,11 +131,11 @@ CREATE TABLE IF NOT EXISTS raw.transformation_templates (
 -- ============================================================================
 -- Tracks generated SQLMesh models for audit and regeneration
 
-CREATE TABLE IF NOT EXISTS raw.generated_sqlmesh_models (
+CREATE TABLE IF NOT EXISTS ops.generated_sqlmesh_models (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
 
     model_name TEXT NOT NULL UNIQUE,        -- e.g., 'silver.new_pharma_molecules'
-    source_rule_id UUID REFERENCES raw.silver_transformation_rules(id),
+    source_rule_id UUID REFERENCES ops.silver_transformation_rules(id),
 
     -- Generated content
     model_sql TEXT NOT NULL,                -- The generated SQL
@@ -156,13 +156,13 @@ CREATE TABLE IF NOT EXISTS raw.generated_sqlmesh_models (
     updated_at TIMESTAMPTZ DEFAULT NOW()
 );
 
-CREATE INDEX IF NOT EXISTS idx_generated_models_rule ON raw.generated_sqlmesh_models(source_rule_id);
+CREATE INDEX IF NOT EXISTS idx_generated_models_rule ON ops.generated_sqlmesh_models(source_rule_id);
 
 -- ============================================================================
 -- SECTION 5: INSERT DEFAULT TEMPLATES
 -- ============================================================================
 
-INSERT INTO raw.transformation_templates (template_name, description, template_type, template_sql, required_params, example_config)
+INSERT INTO ops.transformation_templates (template_name, description, template_type, template_sql, required_params, example_config)
 VALUES
 -- Molecule transformation template
 ('molecule_transform', 'Standard molecule transformation from Bronze to Silver', 'full',
@@ -259,7 +259,7 @@ ON CONFLICT (template_name) DO NOTHING;
 -- ============================================================================
 
 -- DrugBank transformation rule
-INSERT INTO raw.silver_transformation_rules (
+INSERT INTO ops.silver_transformation_rules (
     source_name, source_table, target_table, target_type,
     column_mappings, identifier_mappings, name_mappings,
     dedup_strategy, dedup_columns, source_precedence
@@ -295,7 +295,7 @@ INSERT INTO raw.silver_transformation_rules (
 ) ON CONFLICT (source_name) DO NOTHING;
 
 -- ChEMBL transformation rule
-INSERT INTO raw.silver_transformation_rules (
+INSERT INTO ops.silver_transformation_rules (
     source_name, source_table, target_table, target_type,
     column_mappings, identifier_mappings, name_mappings,
     dedup_strategy, dedup_columns, source_precedence
@@ -328,7 +328,7 @@ INSERT INTO raw.silver_transformation_rules (
 ) ON CONFLICT (source_name) DO NOTHING;
 
 -- PubChem transformation rule
-INSERT INTO raw.silver_transformation_rules (
+INSERT INTO ops.silver_transformation_rules (
     source_name, source_table, target_table, target_type,
     column_mappings, identifier_mappings, name_mappings,
     dedup_strategy, dedup_columns, source_precedence
@@ -368,9 +368,9 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
-DROP TRIGGER IF EXISTS trigger_update_transformation_rule ON raw.silver_transformation_rules;
+DROP TRIGGER IF EXISTS trigger_update_transformation_rule ON ops.silver_transformation_rules;
 CREATE TRIGGER trigger_update_transformation_rule
-    BEFORE UPDATE ON raw.silver_transformation_rules
+    BEFORE UPDATE ON ops.silver_transformation_rules
     FOR EACH ROW
     EXECUTE FUNCTION raw.update_transformation_rule_timestamp();
 

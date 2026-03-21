@@ -9,8 +9,8 @@
 -- contract_id and plan_id are in a separate "plan information" file,
 -- not in the basic drugs formulary. PK changed to (formulary_id, rxcui).
 
-DROP TABLE IF EXISTS raw.cms_formulary CASCADE;
-CREATE TABLE raw.cms_formulary (
+DROP TABLE IF EXISTS hcs_raw.cms_formulary CASCADE;
+CREATE TABLE hcs_raw.cms_formulary (
     formulary_id         TEXT NOT NULL,
     rxcui                TEXT NOT NULL,
     ndc                  TEXT,

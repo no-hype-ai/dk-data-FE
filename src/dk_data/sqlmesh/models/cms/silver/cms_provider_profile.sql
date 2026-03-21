@@ -10,7 +10,7 @@
 -- 3. NUCC taxonomy joined for human-readable specialty names
 
 MODEL (
-    name silver.cms_provider_profile,
+    name hcs_silver.cms_provider_profile,
     kind FULL,
     cron '@daily',
     audits (

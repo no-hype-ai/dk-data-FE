@@ -104,7 +104,7 @@ async def run_dynamic_source_ingestion(
             # Get source configuration
             row = await conn.fetchrow("""
                 SELECT source, tier, options
-                FROM raw.sync_schedules
+                FROM ops.sync_schedules
                 WHERE source = $1
             """, source)
 
@@ -436,7 +436,7 @@ async def run_dynamic_source_ingestion(
             options['sync_state'] = new_sync_state
 
             await conn.execute("""
-                UPDATE raw.sync_schedules
+                UPDATE ops.sync_schedules
                 SET options = $2, last_run = NOW(), updated_at = NOW()
                 WHERE source = $1
             """, source, json.dumps(options))
@@ -490,14 +490,61 @@ async def run_raw_ingestion(
                 service = ClinicalTrialsIngestion(pool)
                 count = 0
                 if drug_name:
-                    # Fetch trials for the specific drug (intervention search)
-                    result = await service.fetch_studies(intervention=drug_name, page_size=100)
-                    if result:
-                        count += 1
-                    # Also search by query for broader coverage
-                    result = await service.fetch_studies(query=drug_name, page_size=100)
-                    if result:
-                        count += 1
+                    # Check if drug_name is a comma-separated list of NCT IDs
+                    if drug_name.startswith('NCT'):
+                        nct_ids = [n.strip() for n in drug_name.split(',') if n.strip().startswith('NCT')]
+                        for nct_id in nct_ids[:10]:  # Limit to 10 per request
+                            result = await service.fetch_study_by_nct(nct_id)
+                            if result:
+                                count += 1
+                                # Also run silver refresh for individual study (has full resultsSection)
+                                try:
+                                    raw_row = await pool.fetchrow(
+                                        "SELECT response_body FROM mol_raw.clinicaltrials WHERE api_endpoint LIKE $1 ORDER BY request_timestamp DESC LIMIT 1",
+                                        f"%{nct_id}%"
+                                    )
+                                    if raw_row and raw_row['response_body']:
+                                        from ...services.pipeline.silver_gold_refresher import SilverGoldRefresher
+                                        refresher = SilverGoldRefresher(pool)
+                                        resp = raw_row['response_body']
+                                        if isinstance(resp, str):
+                                            resp = json.loads(resp)
+                                        await refresher.refresh(nct_id, 'clinicaltrials', resp)
+                                        logger.info(f"Silver refreshed for individual study {nct_id}")
+                                except Exception as e:
+                                    logger.warning(f"Silver refresh for {nct_id} failed: {e}")
+                    else:
+                        # Fetch trials for the specific drug (intervention search)
+                        result = await service.fetch_studies(intervention=drug_name, page_size=100)
+                        if result:
+                            count += 1
+                        # Also search by query for broader coverage
+                        result = await service.fetch_studies(query=drug_name, page_size=100)
+                        if result:
+                            count += 1
+
+                    # Also fetch individual studies for trials with results
+                    # (search endpoint returns metadata but NOT resultsSection)
+                    try:
+                        trials_with_results = await pool.fetch(
+                            """SELECT DISTINCT nct_id FROM mol_silver.clinical_trials
+                               WHERE molecule_id IN (
+                                 SELECT molecule_id FROM mol_silver.molecules
+                                 WHERE LOWER(canonical_name) LIKE '%' || LOWER($1) || '%'
+                               )
+                               AND results_outcome_measures IS NULL
+                               AND has_results = false
+                               ORDER BY nct_id LIMIT 20""",
+                            drug_name.split(',')[0].strip() if not drug_name.startswith('NCT') else 'durvalumab'
+                        )
+                        if trials_with_results:
+                            logger.info(f"Fetching {len(trials_with_results)} individual trials for results enrichment")
+                            for row in trials_with_results:
+                                result = await service.fetch_study_by_nct(row['nct_id'])
+                                if result:
+                                    count += 1
+                    except Exception as e:
+                        logger.warning(f"Results enrichment failed (non-fatal): {e}")
                 else:
                     # Default: fetch by common conditions
                     for condition in ['cancer', 'diabetes', 'cardiovascular', 'immunology']:
@@ -704,11 +751,28 @@ async def run_raw_ingestion(
 
             elif source == 'nice_hta':
                 service = NICEHTAIngestion(pool)
+                count = 0
                 if drug_name:
                     result = await service.search_guidance(drug_name)
-                    results[source] = 1 if result else 0
-                else:
-                    results[source] = 0
+                    if result:
+                        count += 1
+                    # Also fetch individual guidance pages for existing HTA entries
+                    # to get decision/date/ICER that search pages don't return
+                    try:
+                        existing_hta = await pool.fetch(
+                            """SELECT DISTINCT guidance_id FROM mol_bronze.nice_hta
+                               WHERE LOWER(drug_name) LIKE '%' || LOWER($1) || '%'
+                               AND guidance_id IS NOT NULL
+                               AND (decision IS NULL OR decision = '')""",
+                            drug_name
+                        )
+                        for row in existing_hta[:10]:
+                            detail = await service.fetch_guidance_detail(row['guidance_id'])
+                            if detail:
+                                count += 1
+                    except Exception as e:
+                        logger.warning(f"NICE detail fetch failed (non-fatal): {e}")
+                results[source] = count
 
             elif source == 'cms_open_payments':
                 service = CMSOpenPaymentsIngestion(pool)
@@ -1146,7 +1210,7 @@ async def record_job_execution(
         async with pool.acquire() as conn:
             # Check if job exists
             existing = await conn.fetchval(
-                "SELECT job_id FROM raw.ingestion_jobs WHERE job_id = $1",
+                "SELECT job_id FROM ops.ingestion_jobs WHERE job_id = $1",
                 job_id
             )
 
@@ -1159,7 +1223,7 @@ async def record_job_execution(
 
                 if should_complete:
                     await conn.execute("""
-                        UPDATE raw.ingestion_jobs SET
+                        UPDATE ops.ingestion_jobs SET
                             status = $2,
                             completed_at = NOW(),
                             records_processed = $3,
@@ -1175,7 +1239,7 @@ async def record_job_execution(
                     )
                 else:
                     await conn.execute("""
-                        UPDATE raw.ingestion_jobs SET
+                        UPDATE ops.ingestion_jobs SET
                             status = $2,
                             records_processed = $3,
                             error_message = $4,
@@ -1192,7 +1256,7 @@ async def record_job_execution(
                 # Insert new job (use first source as the source field)
                 source_name = sources[0] if sources else tier
                 await conn.execute("""
-                    INSERT INTO raw.ingestion_jobs (
+                    INSERT INTO ops.ingestion_jobs (
                         job_id, source, status, priority,
                         started_at, records_processed,
                         error_message, error_details

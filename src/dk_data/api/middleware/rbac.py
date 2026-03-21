@@ -10,6 +10,7 @@ Part of DK Molecule Data Platform (012-dk-data-platform)
 from functools import wraps
 from typing import Optional, Callable
 import logging
+import os
 
 from fastapi import HTTPException, Depends
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
@@ -19,6 +20,10 @@ from ...services.auth.jwt_service import (
     UserRole,
     AuthenticatedUser,
 )
+
+# Skip auth enforcement when JWT_SECRET_KEY is not configured (local dev).
+# In production, JWT_SECRET_KEY is always set via Doppler.
+_AUTH_ENABLED = bool(os.getenv("JWT_SECRET_KEY"))
 
 logger = logging.getLogger(__name__)
 
@@ -60,12 +65,20 @@ async def get_current_user(
 
 
 async def require_auth(
-    credentials: HTTPAuthorizationCredentials = Depends(security_scheme),
+    credentials: Optional[HTTPAuthorizationCredentials] = Depends(security_scheme),
     jwt_service: JWTService = Depends(get_jwt_service)
 ) -> AuthenticatedUser:
     """
     Require authentication. Raises 401 if not authenticated.
+    In local dev (no JWT_SECRET_KEY), returns a dev user.
     """
+    if not _AUTH_ENABLED:
+        return AuthenticatedUser(
+            user_id="dev-local", email="dev@localhost",
+            role=UserRole.ADMIN, permissions=["pipeline:trigger", "gold:read", "silver:read", "resolution_queue:read", "resolution_queue:write"],
+            token_exp=None,
+        )
+
     if not credentials:
         raise HTTPException(
             status_code=401,

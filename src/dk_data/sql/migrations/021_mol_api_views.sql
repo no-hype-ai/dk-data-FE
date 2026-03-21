@@ -299,10 +299,10 @@ SELECT
     th.health_status,
     th.freshness_hours,
     ds.staleness_threshold_hours
-FROM meta.data_sources ds
+FROM meta.ops_data_sources ds
 LEFT JOIN LATERAL (
     SELECT health_status, freshness_hours
-    FROM meta.table_health
+    FROM meta.ops_table_health
     WHERE source_id = ds.source_id
     ORDER BY check_timestamp DESC
     LIMIT 1

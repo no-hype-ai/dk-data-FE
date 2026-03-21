@@ -35,10 +35,10 @@ SELECT
         WHEN th.health_status = 'stale' THEN 'yellow'
         ELSE 'red'
     END AS status_color
-FROM meta.data_sources ds
+FROM meta.ops_data_sources ds
 LEFT JOIN LATERAL (
     SELECT *
-    FROM meta.table_health
+    FROM meta.ops_table_health
     WHERE source_id = ds.source_id
     ORDER BY check_timestamp DESC
     LIMIT 1
@@ -67,11 +67,11 @@ SELECT
     bj.updated_at,
     COALESCE(
         (SELECT ARRAY_AGG(ds.source_name)
-         FROM meta.data_sources ds
+         FROM meta.ops_data_sources ds
          WHERE ds.source_id = ANY(bj.source_ids)),
         '{}'::TEXT[]
     ) AS source_names
-FROM meta.batch_jobs bj;
+FROM meta.ops_batch_jobs bj;
 
 COMMENT ON VIEW api.jobs IS 'Batch job definitions with status and associated data sources';
 
@@ -97,8 +97,8 @@ SELECT
             EXTRACT(EPOCH FROM (bjr.completed_at - bjr.started_at))::INTEGER
         ELSE NULL
     END AS duration_seconds
-FROM meta.batch_job_runs bjr
-JOIN meta.batch_jobs bj ON bjr.job_id = bj.job_id
+FROM meta.ops_batch_job_runs bjr
+JOIN meta.ops_batch_jobs bj ON bjr.job_id = bj.job_id
 ORDER BY bjr.started_at DESC;
 
 COMMENT ON VIEW api.job_runs IS 'Batch job execution history with duration and status';
@@ -126,8 +126,8 @@ SELECT
             'unhealthy_count', unhealthy_count
         ),
         'jobs', jsonb_build_object(
-            'total_jobs', (SELECT COUNT(*) FROM meta.batch_jobs WHERE is_enabled = TRUE),
-            'running_jobs', (SELECT COUNT(*) FROM meta.batch_job_runs WHERE status = 'running')
+            'total_jobs', (SELECT COUNT(*) FROM meta.ops_batch_jobs WHERE is_enabled = TRUE),
+            'running_jobs', (SELECT COUNT(*) FROM meta.ops_batch_job_runs WHERE status = 'running')
         )
     ) AS components
 FROM (
@@ -163,10 +163,10 @@ SELECT
         WHEN th.health_status = 'stale' THEN 'yellow'
         ELSE 'red'
     END AS status_color
-FROM meta.data_sources ds
+FROM meta.ops_data_sources ds
 LEFT JOIN LATERAL (
     SELECT *
-    FROM meta.table_health
+    FROM meta.ops_table_health
     WHERE source_id = ds.source_id
     ORDER BY check_timestamp DESC
     LIMIT 1

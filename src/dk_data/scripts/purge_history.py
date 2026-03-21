@@ -2,7 +2,7 @@
 """Score History Purge Script.
 
 Purges score history records older than 2 years (rolling window retention policy).
-Optionally purges all tables governed by meta.data_classification retention policies.
+Optionally purges all tables governed by meta.ops_data_classification retention policies.
 
 Usage:
     python purge_history.py [--dry-run] [--days DAYS]
@@ -102,7 +102,7 @@ def purge_old_history(retention_days: int, dry_run: bool = False) -> dict:
 
             # Log the purge
             cur.execute("""
-                INSERT INTO meta.refresh_log (
+                INSERT INTO meta.ops_refresh_log (
                     source_id,
                     refresh_started_at,
                     refresh_completed_at,
@@ -121,7 +121,7 @@ def purge_old_history(retention_days: int, dry_run: bool = False) -> dict:
                     0,
                     %s,
                     'Score history purge: removed records older than ' || %s::text
-                FROM meta.data_sources
+                FROM meta.ops_data_sources
                 WHERE source_name = 'score_history_purge'
                 LIMIT 1
             """, (records_purged, cutoff_date.date()))
@@ -157,9 +157,9 @@ def _get_timestamp_column(schema_name: str) -> str:
 
 
 def purge_by_classification(conn, dry_run: bool = False) -> dict:
-    """Purge records from all tables with retention policies defined in meta.data_classification.
+    """Purge records from all tables with retention policies defined in meta.ops_data_classification.
 
-    Reads retention_days from meta.data_classification for all non-perpetual tables.
+    Reads retention_days from meta.ops_data_classification for all non-perpetual tables.
     For each table, deletes records older than retention_days using the appropriate
     timestamp column.
 
@@ -181,7 +181,7 @@ def purge_by_classification(conn, dry_run: bool = False) -> dict:
         # Read all classification rows where retention is defined (non-perpetual)
         cur.execute("""
             SELECT schema_name, table_name, classification, retention_days, retention_policy
-            FROM meta.data_classification
+            FROM meta.ops_data_classification
             WHERE retention_days IS NOT NULL
               AND table_name != '*'
             ORDER BY schema_name, table_name
@@ -189,7 +189,7 @@ def purge_by_classification(conn, dry_run: bool = False) -> dict:
         rows = cur.fetchall()
 
     if not rows:
-        logger.info("No tables with retention policies found in meta.data_classification")
+        logger.info("No tables with retention policies found in meta.ops_data_classification")
         return summary
 
     for schema_name, table_name, classification, retention_days, retention_policy in rows:
@@ -293,10 +293,10 @@ def purge_by_classification(conn, dry_run: bool = False) -> dict:
             f"(retention={retention_days}d, cutoff={cutoff_date.date()})"
         )
 
-        # Log to meta.refresh_log
+        # Log to meta.ops_refresh_log
         with conn.cursor() as cur:
             cur.execute("""
-                INSERT INTO meta.refresh_log (
+                INSERT INTO meta.ops_refresh_log (
                     source_id,
                     refresh_started_at,
                     refresh_completed_at,
@@ -315,7 +315,7 @@ def purge_by_classification(conn, dry_run: bool = False) -> dict:
                     0,
                     %s,
                     'Classification-based purge of ' || %s || ': removed records older than ' || %s::text
-                FROM meta.data_sources
+                FROM meta.ops_data_sources
                 WHERE source_name = 'score_history_purge'
                 LIMIT 1
             """, (total_deleted, qualified_table, cutoff_date.date()))
@@ -379,7 +379,7 @@ def main():
     parser.add_argument(
         '--all-tables',
         action='store_true',
-        help='Purge all tables governed by meta.data_classification retention policies'
+        help='Purge all tables governed by meta.ops_data_classification retention policies'
     )
 
     args = parser.parse_args()

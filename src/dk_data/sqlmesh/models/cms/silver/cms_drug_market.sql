@@ -11,7 +11,7 @@
 -- 5. RBCS joins directly via Part B hcpcs_code (RBCS is HCPCS-keyed)
 
 MODEL (
-    name silver.cms_drug_market,
+    name hcs_silver.cms_drug_market,
     kind FULL,
     cron '@daily',
     audits (

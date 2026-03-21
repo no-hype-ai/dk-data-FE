@@ -7,7 +7,7 @@
 -- CI Search Terms (configurable query terms for scoped CI fetchers)
 -- =============================================================================
 
-CREATE TABLE IF NOT EXISTS meta.ci_search_terms (
+CREATE TABLE IF NOT EXISTS meta.ops_ci_search_terms (
     term_id SERIAL PRIMARY KEY,
     term_type VARCHAR(50) NOT NULL,
     term_value VARCHAR(255) NOT NULL,
@@ -16,11 +16,11 @@ CREATE TABLE IF NOT EXISTS meta.ci_search_terms (
     UNIQUE (term_type, term_value)
 );
 
-CREATE INDEX IF NOT EXISTS idx_ci_search_terms_active ON meta.ci_search_terms(is_active) WHERE is_active = TRUE;
-CREATE INDEX IF NOT EXISTS idx_ci_search_terms_type ON meta.ci_search_terms(term_type);
+CREATE INDEX IF NOT EXISTS idx_ci_search_terms_active ON meta.ops_ci_search_terms(is_active) WHERE is_active = TRUE;
+CREATE INDEX IF NOT EXISTS idx_ci_search_terms_type ON meta.ops_ci_search_terms(term_type);
 
 -- Seed initial search terms
-INSERT INTO meta.ci_search_terms (term_type, term_value) VALUES
+INSERT INTO meta.ops_ci_search_terms (term_type, term_value) VALUES
     ('therapeutic_area', 'cardiovascular'),
     ('therapeutic_area', 'oncology'),
     ('therapeutic_area', 'neurology'),
@@ -293,7 +293,7 @@ CREATE INDEX IF NOT EXISTS idx_edgar_cik ON raw.sec_edgar(cik);
 DO $$
 BEGIN
     RAISE NOTICE 'Migration 060_ci_source_tables complete.';
-    RAISE NOTICE 'Created meta.ci_search_terms with initial seed data';
+    RAISE NOTICE 'Created meta.ops_ci_search_terms with initial seed data';
     RAISE NOTICE 'Created 10 raw.* tables for CI sources';
     RAISE NOTICE 'Created indexes for all CI tables';
 END

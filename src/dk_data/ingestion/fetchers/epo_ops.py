@@ -378,7 +378,7 @@ class EPOOPSFetcher(BaseFetcher):
     # ------------------------------------------------------------------
 
     def _load_search_terms(self) -> List[str]:
-        """Load active search terms from meta.ci_search_terms."""
+        """Load active search terms from meta.ops_ci_search_terms."""
         try:
             from ..utils.database import get_connection
 
@@ -388,7 +388,7 @@ class EPOOPSFetcher(BaseFetcher):
                     cur.execute(
                         """
                         SELECT term_value
-                        FROM meta.ci_search_terms
+                        FROM meta.ops_ci_search_terms
                         WHERE term_type IN ('drug_name', 'therapeutic_area')
                           AND is_active = TRUE
                         ORDER BY term_value
@@ -397,7 +397,7 @@ class EPOOPSFetcher(BaseFetcher):
                     for row in cur.fetchall():
                         terms.append(row[0])
 
-            logger.info("Loaded %d search terms from meta.ci_search_terms", len(terms))
+            logger.info("Loaded %d search terms from meta.ops_ci_search_terms", len(terms))
             return terms
 
         except Exception as e:

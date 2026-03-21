@@ -22,5 +22,5 @@ SELECT
     _loaded_at,
     _source_file,
     _source_hash
-FROM raw.cms_nucc
+FROM hcs_raw.cms_nucc
 WHERE _loaded_at BETWEEN @start_dt AND @end_dt;

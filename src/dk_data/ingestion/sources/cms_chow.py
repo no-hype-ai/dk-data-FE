@@ -45,7 +45,7 @@ def load_cms_chow_data(
     source_file: Optional[str] = None,
     batch_size: int = 500,
 ) -> Dict[str, Any]:
-    """Load CMS CHOW records into raw.cms_chow.
+    """Load CMS CHOW records into hcs_raw.cms_chow.
 
     Args:
         records: List of dicts from the fetcher.
@@ -104,7 +104,7 @@ def load_cms_chow_data(
                 execute_values(
                     cur,
                     """
-                    INSERT INTO raw.cms_chow (
+                    INSERT INTO hcs_raw.cms_chow (
                         chow_id, ccn, old_owner, new_owner, effective_date,
                         _loaded_at, _source_file, _source_hash
                     ) VALUES %s

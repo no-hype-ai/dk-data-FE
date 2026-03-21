@@ -39,7 +39,7 @@ def load_cms_hospital_affiliation_data(
     source_file: Optional[str] = None,
     batch_size: int = 500,
 ) -> Dict[str, Any]:
-    """Load CMS Hospital Affiliation records into raw.cms_hospital_affiliation."""
+    """Load CMS Hospital Affiliation records into hcs_raw.cms_hospital_affiliation."""
     validated: List[CmsHospitalAffiliationRecord] = []
     errors: List[Dict[str, Any]] = []
 
@@ -92,7 +92,7 @@ def load_cms_hospital_affiliation_data(
                 execute_values(
                     cur,
                     """
-                    INSERT INTO raw.cms_hospital_affiliation (
+                    INSERT INTO hcs_raw.cms_hospital_affiliation (
                         npi, ind_pac_id, provider_last_name, provider_first_name,
                         provider_middle_name, suff, facility_type,
                         facility_affiliations_certification_number,

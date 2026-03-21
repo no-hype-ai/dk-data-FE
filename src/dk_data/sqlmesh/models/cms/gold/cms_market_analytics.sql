@@ -3,7 +3,7 @@
 -- Part of: 016-cms-puf-datasource-integration
 
 MODEL (
-    name gold.cms_market_analytics,
+    name hcs_gold.cms_market_analytics,
     kind FULL,
     cron '@daily',
     audits (
@@ -18,7 +18,7 @@ WITH national_avg AS (
         AVG(per_capita_costs)                   AS avg_per_capita_costs,
         AVG(avg_chronic_prevalence)             AS avg_chronic_prevalence,
         AVG(national_post_acute_utilization_rate) AS avg_post_acute_rate
-    FROM silver.cms_geographic
+    FROM hcs_silver.cms_geographic
 )
 
 SELECT
@@ -71,5 +71,5 @@ SELECT
     g.profile_built_at,
     NOW()                                                               AS gold_built_at
 
-FROM silver.cms_geographic g
+FROM hcs_silver.cms_geographic g
 CROSS JOIN national_avg n;

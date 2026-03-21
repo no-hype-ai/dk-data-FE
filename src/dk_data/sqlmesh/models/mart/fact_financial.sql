@@ -1,5 +1,5 @@
 -- mart.fact_financial_metrics - Financial metrics by hospital and year
--- Source: raw.cms_cost_reports, mart.dim_hospital
+-- Source: hcs_raw.cms_cost_reports, mart.dim_hospital
 -- Model type: FULL refresh with quartile calculation
 
 MODEL (
@@ -19,7 +19,7 @@ WITH cost_report_latest AS (
         net_patient_revenue,
         total_operating_expenses,
         operating_margin
-    FROM raw.cms_cost_reports
+    FROM hcs_raw.cms_cost_reports
     WHERE fiscal_year_end IS NOT NULL
     QUALIFY ROW_NUMBER() OVER (
         PARTITION BY provider_id, EXTRACT(YEAR FROM fiscal_year_end)

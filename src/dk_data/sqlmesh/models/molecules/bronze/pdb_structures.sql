@@ -42,7 +42,7 @@ SELECT
     FALSE AS processed_to_silver,
     NOW() AS created_at
 
-FROM raw.pdb_structures
+FROM mol_raw.pdb_structures
 WHERE
     response_status = 200
     AND processed_to_bronze = FALSE

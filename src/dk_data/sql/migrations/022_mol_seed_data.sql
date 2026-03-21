@@ -7,7 +7,7 @@
 -- DATA SOURCES - Molecule Platform Sources
 -- =============================================================================
 
-INSERT INTO meta.data_sources (
+INSERT INTO meta.ops_data_sources (
     source_name,
     source_type,
     source_url,
@@ -130,7 +130,7 @@ ON CONFLICT (source_name) DO UPDATE SET
 -- BATCH JOBS - Molecule Pipeline Jobs
 -- =============================================================================
 
-INSERT INTO meta.batch_jobs (
+INSERT INTO meta.ops_batch_jobs (
     job_name,
     description,
     cron_schedule,
@@ -204,39 +204,39 @@ ON CONFLICT (job_name) DO UPDATE SET
     cron_schedule = EXCLUDED.cron_schedule;
 
 -- Link batch jobs to data sources
-UPDATE meta.batch_jobs SET source_ids = (
+UPDATE meta.ops_batch_jobs SET source_ids = (
     SELECT ARRAY_AGG(source_id)
-    FROM meta.data_sources
+    FROM meta.ops_data_sources
     WHERE source_name = 'chembl'
 ) WHERE job_name = 'fetch-chembl';
 
-UPDATE meta.batch_jobs SET source_ids = (
+UPDATE meta.ops_batch_jobs SET source_ids = (
     SELECT ARRAY_AGG(source_id)
-    FROM meta.data_sources
+    FROM meta.ops_data_sources
     WHERE source_name = 'pubchem'
 ) WHERE job_name = 'fetch-pubchem';
 
-UPDATE meta.batch_jobs SET source_ids = (
+UPDATE meta.ops_batch_jobs SET source_ids = (
     SELECT ARRAY_AGG(source_id)
-    FROM meta.data_sources
+    FROM meta.ops_data_sources
     WHERE source_name = 'clinicaltrials'
 ) WHERE job_name = 'fetch-clinicaltrials';
 
-UPDATE meta.batch_jobs SET source_ids = (
+UPDATE meta.ops_batch_jobs SET source_ids = (
     SELECT ARRAY_AGG(source_id)
-    FROM meta.data_sources
+    FROM meta.ops_data_sources
     WHERE source_name = 'openfda_labels'
 ) WHERE job_name = 'fetch-openfda-labels';
 
-UPDATE meta.batch_jobs SET source_ids = (
+UPDATE meta.ops_batch_jobs SET source_ids = (
     SELECT ARRAY_AGG(source_id)
-    FROM meta.data_sources
+    FROM meta.ops_data_sources
     WHERE source_name = 'openfda_faers'
 ) WHERE job_name = 'fetch-openfda-faers';
 
-UPDATE meta.batch_jobs SET source_ids = (
+UPDATE meta.ops_batch_jobs SET source_ids = (
     SELECT ARRAY_AGG(source_id)
-    FROM meta.data_sources
+    FROM meta.ops_data_sources
     WHERE source_name = 'sider'
 ) WHERE job_name = 'fetch-sider';
 

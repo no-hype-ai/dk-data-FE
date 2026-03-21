@@ -46,7 +46,7 @@ def refresh_volume_history(
     dry_run: bool = False
 ) -> dict:
     """
-    Populate targeting.volume_history from raw.cms_medicare_inpatient.
+    Populate targeting.volume_history from hcs_raw.cms_medicare_inpatient.
 
     This extracts DRG 266/267 volumes by hospital and year, then calculates
     YoY growth percentages.
@@ -69,7 +69,7 @@ def refresh_volume_history(
                 fiscal_year,
                 SUM(CASE WHEN drg_code = '266' THEN total_discharges ELSE 0 END) AS drg_266_volume,
                 SUM(CASE WHEN drg_code = '267' THEN total_discharges ELSE 0 END) AS drg_267_volume
-            FROM raw.cms_medicare_inpatient
+            FROM hcs_raw.cms_medicare_inpatient
             WHERE drg_code IN ('266', '267')
             GROUP BY provider_id, fiscal_year
         ),

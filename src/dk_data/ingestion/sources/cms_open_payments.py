@@ -48,7 +48,7 @@ def load_cms_open_payments_data(
     source_file: Optional[str] = None,
     batch_size: int = 500,
 ) -> Dict[str, Any]:
-    """Load CMS Open Payments records into raw.cms_open_payments.
+    """Load CMS Open Payments records into hcs_raw.cms_open_payments.
 
     Args:
         records: List of dicts from the fetcher.
@@ -110,7 +110,7 @@ def load_cms_open_payments_data(
                 execute_values(
                     cur,
                     """
-                    INSERT INTO raw.cms_open_payments (
+                    INSERT INTO hcs_raw.cms_open_payments (
                         record_id, payment_type, covered_recipient_npi,
                         manufacturer_name, total_amount_usd, date_of_payment,
                         nature_of_payment, form_of_payment,

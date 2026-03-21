@@ -61,7 +61,7 @@ def load_cms_hcris_data(
     source_file: Optional[str] = None,
     batch_size: int = 500,
 ) -> Dict[str, Any]:
-    """Load CMS HCRIS records into raw.cms_hcris.
+    """Load CMS HCRIS records into hcs_raw.cms_hcris.
 
     Args:
         records: List of dicts from the fetcher.
@@ -122,7 +122,7 @@ def load_cms_hcris_data(
                 execute_values(
                     cur,
                     """
-                    INSERT INTO raw.cms_hcris (
+                    INSERT INTO hcs_raw.cms_hcris (
                         ccn, fiscal_year_begin, fiscal_year_end, worksheet,
                         line_number, column_number, value,
                         _loaded_at, _source_file, _source_hash

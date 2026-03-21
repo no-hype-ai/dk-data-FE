@@ -96,7 +96,7 @@ SELECT
     FALSE AS processed_to_silver,
     NOW() AS ingested_at
 
-FROM raw.sider r
+FROM mol_raw.sider r
 WHERE r.response_status = 200
   AND r.processed_to_bronze = FALSE
   AND r.response_body IS NOT NULL

@@ -8,7 +8,7 @@
 -- 3. avg_tier_level is NULL (not 0) when no formulary data exists
 
 MODEL (
-    name gold.cms_drug_market_profile,
+    name hcs_gold.cms_drug_market_profile,
     kind FULL,
     cron '@daily',
     audits (
@@ -21,7 +21,7 @@ MODEL (
 WITH total_spending AS (
     SELECT
         SUM(total_part_d_spending + total_part_b_spending) AS grand_total_spending
-    FROM silver.cms_drug_market
+    FROM hcs_silver.cms_drug_market
 )
 
 SELECT
@@ -86,5 +86,5 @@ SELECT
     d.profile_built_at,
     NOW()                                                               AS gold_built_at
 
-FROM silver.cms_drug_market d
+FROM hcs_silver.cms_drug_market d
 CROSS JOIN total_spending ts;

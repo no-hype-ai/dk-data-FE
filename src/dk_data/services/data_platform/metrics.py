@@ -349,33 +349,33 @@ def refresh_metrics_from_database_sync():
         # CMS source health (016-cms-puf-datasource-integration)
         current_time = time.time()
         cms_sources = {
-            'cms_care_compare': ('raw.cms_care_compare', True),
-            'cms_part_d_prescriber': ('raw.cms_part_d_prescriber', True),
-            'cms_physician_puf': ('raw.cms_physician_puf', True),
-            'cms_open_payments': ('raw.cms_open_payments', True),
-            'cms_pecos': ('raw.cms_pecos', True),
-            'cms_inpatient_puf': ('raw.cms_inpatient_puf', True),
-            'cms_outpatient_puf': ('raw.cms_outpatient_puf', True),
-            'cms_hospital_quality': ('raw.cms_hospital_quality', True),
-            'cms_hospital_affiliation': ('raw.cms_hospital_affiliation', True),
-            'cms_formulary': ('raw.cms_formulary', True),
-            'cms_part_d_spending': ('raw.cms_part_d_spending', True),
-            'cms_part_b_spending': ('raw.cms_part_b_spending', True),
-            'cms_ndc': ('raw.cms_ndc', True),
-            'cms_chow': ('raw.cms_chow', True),
-            'cms_geographic_variation': ('raw.cms_geographic_variation', True),
-            'cms_chronic_conditions': ('raw.cms_chronic_conditions', True),
-            'cms_dmepos': ('raw.cms_dmepos', True),
-            'cms_post_acute': ('raw.cms_post_acute', True),
-            'cms_rbcs': ('raw.cms_rbcs', True),
-            'cms_ddinter': ('raw.cms_ddinter', True),
-            'cms_nppes': ('raw.cms_nppes', True),
-            'cms_pos': ('raw.cms_pos', True),
-            'cms_hcris': ('raw.cms_hcris', True),
-            'cms_nucc': ('raw.cms_nucc', True),
-            'cms_magnet': ('raw.cms_magnet', True),
-            'cms_usp': ('raw.cms_usp', True),
-            'cms_stabilis': ('raw.cms_stabilis', True),
+            'cms_care_compare': ('hcs_raw.cms_care_compare', True),
+            'cms_part_d_prescriber': ('hcs_raw.cms_part_d_prescriber', True),
+            'cms_physician_puf': ('hcs_raw.cms_physician_puf', True),
+            'cms_open_payments': ('hcs_raw.cms_open_payments', True),
+            'cms_pecos': ('hcs_raw.cms_pecos', True),
+            'cms_inpatient_puf': ('hcs_raw.cms_inpatient_puf', True),
+            'cms_outpatient_puf': ('hcs_raw.cms_outpatient_puf', True),
+            'cms_hospital_quality': ('hcs_raw.cms_hospital_quality', True),
+            'cms_hospital_affiliation': ('hcs_raw.cms_hospital_affiliation', True),
+            'cms_formulary': ('hcs_raw.cms_formulary', True),
+            'cms_part_d_spending': ('hcs_raw.cms_part_d_spending', True),
+            'cms_part_b_spending': ('hcs_raw.cms_part_b_spending', True),
+            'cms_ndc': ('hcs_raw.cms_ndc', True),
+            'cms_chow': ('hcs_raw.cms_chow', True),
+            'cms_geographic_variation': ('hcs_raw.cms_geographic_variation', True),
+            'cms_chronic_conditions': ('hcs_raw.cms_chronic_conditions', True),
+            'cms_dmepos': ('hcs_raw.cms_dmepos', True),
+            'cms_post_acute': ('hcs_raw.cms_post_acute', True),
+            'cms_rbcs': ('hcs_raw.cms_rbcs', True),
+            'cms_ddinter': ('hcs_raw.cms_ddinter', True),
+            'cms_nppes': ('hcs_raw.cms_nppes', True),
+            'cms_pos': ('hcs_raw.cms_pos', True),
+            'cms_hcris': ('hcs_raw.cms_hcris', True),
+            'cms_nucc': ('hcs_raw.cms_nucc', True),
+            'cms_magnet': ('hcs_raw.cms_magnet', True),
+            'cms_usp': ('hcs_raw.cms_usp', True),
+            'cms_stabilis': ('hcs_raw.cms_stabilis', True),
         }
         for source_name, (table, allow_empty) in cms_sources.items():
             try:
@@ -394,12 +394,12 @@ def refresh_metrics_from_database_sync():
                 count = cur.fetchone()[0] or 0
                 if count > 0:
                     CMS_SOURCE_HEALTH_STATUS.labels(source=source_name).set(1)
-                    # Query actual last sync timestamp from meta.refresh_log
+                    # Query actual last sync timestamp from meta.ops_refresh_log
                     try:
                         cur.execute("""
                             SELECT EXTRACT(EPOCH FROM rl.refresh_completed_at)
-                            FROM meta.refresh_log rl
-                            JOIN meta.data_sources ds ON ds.source_id = rl.source_id
+                            FROM meta.ops_refresh_log rl
+                            JOIN meta.ops_data_sources ds ON ds.source_id = rl.source_id
                             WHERE ds.source_name = %s AND rl.status = 'success'
                             ORDER BY rl.refresh_completed_at DESC LIMIT 1
                         """, (source_name,))
@@ -410,7 +410,7 @@ def refresh_metrics_from_database_sync():
                             # Fallback: query last_successful_refresh from data_sources
                             cur.execute("""
                                 SELECT EXTRACT(EPOCH FROM last_successful_refresh)
-                                FROM meta.data_sources WHERE source_name = %s
+                                FROM meta.ops_data_sources WHERE source_name = %s
                             """, (source_name,))
                             ds_row = cur.fetchone()
                             if ds_row and ds_row[0]:
@@ -447,7 +447,7 @@ def refresh_metrics_from_database_sync():
                         try:
                             cur.execute("""
                                 SELECT EXTRACT(EPOCH FROM MAX(completed_at))
-                                FROM meta.batch_job_runs
+                                FROM meta.ops_batch_job_runs
                                 WHERE job_name = 'cms-gold-refresh' AND status = 'success'
                             """)
                             refresh_row = cur.fetchone()
@@ -476,7 +476,7 @@ def refresh_metrics_from_database_sync():
                 """)
                 if cur.fetchone()[0]:
                     cur.execute("""
-                        SELECT status FROM meta.agent_execution_log
+                        SELECT status FROM meta.ops_agent_execution_log
                         WHERE agent_name = %s ORDER BY completed_at DESC NULLS LAST LIMIT 1
                     """, (agent,))
                     row = cur.fetchone()
@@ -494,20 +494,20 @@ def refresh_metrics_from_database_sync():
                     """)
                     if cur.fetchone()[0]:
                         cur.execute("""
-                            SELECT COUNT(*) FROM meta.agent_quarantine
+                            SELECT COUNT(*) FROM meta.ops_agent_quarantine
                             WHERE agent_name = %s AND status = 'PENDING'
                         """, (agent,))
                         pending = cur.fetchone()[0] or 0
                         CMS_AGENT_QUARANTINE_PENDING.labels(agent_name=agent).set(pending)
                         # Lifetime enriched / quarantined totals
                         cur.execute("""
-                            SELECT COUNT(*) FROM meta.agent_quarantine
+                            SELECT COUNT(*) FROM meta.ops_agent_quarantine
                             WHERE agent_name = %s AND status = 'ENRICHED'
                         """, (agent,))
                         enriched = cur.fetchone()[0] or 0
                         CMS_AGENT_RECORDS_ENRICHED_TOTAL.labels(agent_name=agent).set(enriched)
                         cur.execute("""
-                            SELECT COUNT(*) FROM meta.agent_quarantine
+                            SELECT COUNT(*) FROM meta.ops_agent_quarantine
                             WHERE agent_name = %s AND status = 'QUARANTINED'
                         """, (agent,))
                         quarantined = cur.fetchone()[0] or 0
@@ -595,22 +595,22 @@ def refresh_metrics_from_database_sync():
             'uspto_trademarks': 'raw.uspto_trademarks',
             'euipo_trademarks': 'raw.euipo_trademarks',
             # CMS raw sources (016-cms-puf-datasource-integration)
-            'cms_care_compare': 'raw.cms_care_compare',
-            'cms_part_d_prescriber': 'raw.cms_part_d_prescriber',
-            'cms_physician_puf': 'raw.cms_physician_puf',
-            'cms_open_payments': 'raw.cms_open_payments',
-            'cms_pecos': 'raw.cms_pecos',
-            'cms_inpatient_puf': 'raw.cms_inpatient_puf',
-            'cms_outpatient_puf': 'raw.cms_outpatient_puf',
-            'cms_hospital_quality': 'raw.cms_hospital_quality',
-            'cms_hospital_affiliation': 'raw.cms_hospital_affiliation',
-            'cms_formulary': 'raw.cms_formulary',
-            'cms_part_d_spending': 'raw.cms_part_d_spending',
-            'cms_part_b_spending': 'raw.cms_part_b_spending',
-            'cms_ndc': 'raw.cms_ndc',
-            'cms_nppes': 'raw.cms_nppes',
-            'cms_pos': 'raw.cms_pos',
-            'cms_hcris': 'raw.cms_hcris',
+            'cms_care_compare': 'hcs_raw.cms_care_compare',
+            'cms_part_d_prescriber': 'hcs_raw.cms_part_d_prescriber',
+            'cms_physician_puf': 'hcs_raw.cms_physician_puf',
+            'cms_open_payments': 'hcs_raw.cms_open_payments',
+            'cms_pecos': 'hcs_raw.cms_pecos',
+            'cms_inpatient_puf': 'hcs_raw.cms_inpatient_puf',
+            'cms_outpatient_puf': 'hcs_raw.cms_outpatient_puf',
+            'cms_hospital_quality': 'hcs_raw.cms_hospital_quality',
+            'cms_hospital_affiliation': 'hcs_raw.cms_hospital_affiliation',
+            'cms_formulary': 'hcs_raw.cms_formulary',
+            'cms_part_d_spending': 'hcs_raw.cms_part_d_spending',
+            'cms_part_b_spending': 'hcs_raw.cms_part_b_spending',
+            'cms_ndc': 'hcs_raw.cms_ndc',
+            'cms_nppes': 'hcs_raw.cms_nppes',
+            'cms_pos': 'hcs_raw.cms_pos',
+            'cms_hcris': 'hcs_raw.cms_hcris',
         }
         for source, table in raw_sources.items():
             try:

@@ -44,7 +44,7 @@ def load_cms_stabilis_data(
     source_file: Optional[str] = None,
     batch_size: int = 500,
 ) -> Dict[str, Any]:
-    """Load CMS Stabilis records into raw.cms_stabilis."""
+    """Load CMS Stabilis records into hcs_raw.cms_stabilis."""
     validated: List[CmsStabilisRecord] = []
     errors: List[Dict[str, Any]] = []
 
@@ -94,7 +94,7 @@ def load_cms_stabilis_data(
                 execute_values(
                     cur,
                     """
-                    INSERT INTO raw.cms_stabilis (
+                    INSERT INTO hcs_raw.cms_stabilis (
                         drug_a, drug_b, compatibility, solvent,
                         concentration, reference,
                         _loaded_at, _source_file, _source_hash

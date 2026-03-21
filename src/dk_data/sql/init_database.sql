@@ -24,7 +24,7 @@ CREATE SCHEMA IF NOT EXISTS api;
 -- =============================================================================
 
 -- CMS Medicare Inpatient Data (DRG-level procedure volumes)
-CREATE TABLE IF NOT EXISTS raw.cms_medicare_inpatient (
+CREATE TABLE IF NOT EXISTS hcs_raw.cms_medicare_inpatient (
     id SERIAL PRIMARY KEY,
     provider_id VARCHAR(10) NOT NULL,
     provider_name VARCHAR(255),
@@ -78,7 +78,7 @@ CREATE TABLE IF NOT EXISTS raw.hrsa_shortage_areas (
 );
 
 -- CMS Hospital General Information
-CREATE TABLE IF NOT EXISTS raw.cms_hospital_info (
+CREATE TABLE IF NOT EXISTS hcs_raw.cms_hospital_info (
     id SERIAL PRIMARY KEY,
     provider_id VARCHAR(10) NOT NULL,
     hospital_name VARCHAR(255) NOT NULL,
@@ -97,7 +97,7 @@ CREATE TABLE IF NOT EXISTS raw.cms_hospital_info (
 );
 
 -- CMS Cost Reports (Financial Metrics)
-CREATE TABLE IF NOT EXISTS raw.cms_cost_reports (
+CREATE TABLE IF NOT EXISTS hcs_raw.cms_cost_reports (
     id SERIAL PRIMARY KEY,
     provider_id VARCHAR(10) NOT NULL,
     fiscal_year_begin DATE,
@@ -268,7 +268,7 @@ CREATE TABLE IF NOT EXISTS scoring.score_history (
 -- Purpose: Data catalog and audit trail
 -- =============================================================================
 
-CREATE TABLE IF NOT EXISTS meta.data_sources (
+CREATE TABLE IF NOT EXISTS meta.ops_data_sources (
     source_id SERIAL PRIMARY KEY,
     source_name VARCHAR(100) NOT NULL UNIQUE,
     source_type VARCHAR(50),
@@ -290,9 +290,9 @@ CREATE TABLE IF NOT EXISTS meta.data_sources (
     target_tables TEXT[] DEFAULT '{}'
 );
 
-CREATE TABLE IF NOT EXISTS meta.refresh_log (
+CREATE TABLE IF NOT EXISTS meta.ops_refresh_log (
     log_id SERIAL PRIMARY KEY,
-    source_id INTEGER NOT NULL REFERENCES meta.data_sources(source_id),
+    source_id INTEGER NOT NULL REFERENCES meta.ops_data_sources(source_id),
     refresh_started_at TIMESTAMP,
     refresh_completed_at TIMESTAMP,
     status VARCHAR(20) NOT NULL,
@@ -303,9 +303,9 @@ CREATE TABLE IF NOT EXISTS meta.refresh_log (
     _logged_at TIMESTAMP NOT NULL DEFAULT NOW()
 );
 
-CREATE TABLE IF NOT EXISTS meta.data_quality (
+CREATE TABLE IF NOT EXISTS meta.ops_data_quality (
     quality_id SERIAL PRIMARY KEY,
-    source_id INTEGER NOT NULL REFERENCES meta.data_sources(source_id),
+    source_id INTEGER NOT NULL REFERENCES meta.ops_data_sources(source_id),
     check_date DATE NOT NULL,
     completeness_pct DECIMAL(5,2),
     validity_pct DECIMAL(5,2),
@@ -320,9 +320,9 @@ CREATE TABLE IF NOT EXISTS meta.data_quality (
 -- Purpose: Track health status based on freshness and data quality metrics
 -- =============================================================================
 
-CREATE TABLE IF NOT EXISTS meta.table_health (
+CREATE TABLE IF NOT EXISTS meta.ops_table_health (
     health_id SERIAL PRIMARY KEY,
-    source_id INTEGER NOT NULL REFERENCES meta.data_sources(source_id),
+    source_id INTEGER NOT NULL REFERENCES meta.ops_data_sources(source_id),
     check_timestamp TIMESTAMP NOT NULL DEFAULT NOW(),
     health_status VARCHAR(20) NOT NULL,
     freshness_hours INTEGER,
@@ -340,7 +340,7 @@ CREATE TABLE IF NOT EXISTS meta.table_health (
 -- Purpose: Track batch job configurations and execution status
 -- =============================================================================
 
-CREATE TABLE IF NOT EXISTS meta.batch_jobs (
+CREATE TABLE IF NOT EXISTS meta.ops_batch_jobs (
     job_id SERIAL PRIMARY KEY,
     job_name VARCHAR(100) NOT NULL UNIQUE,
     description TEXT,
@@ -360,9 +360,9 @@ CREATE TABLE IF NOT EXISTS meta.batch_jobs (
 -- Purpose: Detailed execution history for batch jobs
 -- =============================================================================
 
-CREATE TABLE IF NOT EXISTS meta.batch_job_runs (
+CREATE TABLE IF NOT EXISTS meta.ops_batch_job_runs (
     run_id SERIAL PRIMARY KEY,
-    job_id INTEGER NOT NULL REFERENCES meta.batch_jobs(job_id),
+    job_id INTEGER NOT NULL REFERENCES meta.ops_batch_jobs(job_id),
     triggered_by VARCHAR(50) NOT NULL,
     triggered_by_user VARCHAR(100),
     started_at TIMESTAMP NOT NULL,
@@ -551,9 +551,9 @@ SELECT
         WHEN dq.freshness_days <= 30 THEN 'stale'
         ELSE 'outdated'
     END AS freshness_status
-FROM meta.data_sources ds
-LEFT JOIN meta.data_quality dq ON ds.source_id = dq.source_id
-    AND dq.check_date = (SELECT MAX(check_date) FROM meta.data_quality WHERE source_id = ds.source_id)
+FROM meta.ops_data_sources ds
+LEFT JOIN meta.ops_data_quality dq ON ds.source_id = dq.source_id
+    AND dq.check_date = (SELECT MAX(check_date) FROM meta.ops_data_quality WHERE source_id = ds.source_id)
 WHERE ds.is_active = TRUE;
 
 -- View: Health Check (placeholder — overridden by db-init-job.yaml with richer data)
@@ -572,7 +572,7 @@ SELECT
     0::numeric AS score
 WHERE false;
 
--- View: Data Sources (placeholder — overridden by db-init-job.yaml with meta.data_sources)
+-- View: Data Sources (placeholder — overridden by db-init-job.yaml with meta.ops_data_sources)
 CREATE OR REPLACE VIEW api.data_sources AS
 SELECT
     '00000000-0000-0000-0000-000000000000'::uuid AS id,
@@ -610,20 +610,20 @@ WHERE h.is_current = TRUE
 -- INDEXES FOR PERFORMANCE
 -- =============================================================================
 
-CREATE INDEX IF NOT EXISTS idx_raw_cms_inpatient_provider ON raw.cms_medicare_inpatient(provider_id);
-CREATE INDEX IF NOT EXISTS idx_raw_cms_inpatient_drg ON raw.cms_medicare_inpatient(drg_code);
+CREATE INDEX IF NOT EXISTS idx_raw_cms_inpatient_provider ON hcs_raw.cms_medicare_inpatient(provider_id);
+CREATE INDEX IF NOT EXISTS idx_raw_cms_inpatient_drg ON hcs_raw.cms_medicare_inpatient(drg_code);
 CREATE INDEX IF NOT EXISTS idx_staging_tavr_volumes_hospital ON staging.tavr_volumes(hospital_id);
 CREATE INDEX IF NOT EXISTS idx_scoring_target_scores_hospital ON scoring.target_scores(hospital_key);
 CREATE INDEX IF NOT EXISTS idx_scoring_target_scores_date ON scoring.target_scores(score_date);
 CREATE INDEX IF NOT EXISTS idx_scoring_score_factors_score ON scoring.score_factors(score_id);
 
 -- T009: Indexes for catalog and health tracking performance
-CREATE INDEX IF NOT EXISTS idx_data_sources_topic_tags ON meta.data_sources USING GIN(topic_tags);
-CREATE INDEX IF NOT EXISTS idx_data_sources_active ON meta.data_sources(is_active) WHERE is_active = TRUE;
-CREATE INDEX IF NOT EXISTS idx_table_health_source_timestamp ON meta.table_health(source_id, check_timestamp DESC);
-CREATE INDEX IF NOT EXISTS idx_table_health_status ON meta.table_health(health_status);
-CREATE INDEX IF NOT EXISTS idx_batch_job_runs_job_started ON meta.batch_job_runs(job_id, started_at DESC);
-CREATE INDEX IF NOT EXISTS idx_batch_job_runs_status ON meta.batch_job_runs(status) WHERE status = 'running';
+CREATE INDEX IF NOT EXISTS idx_data_sources_topic_tags ON meta.ops_data_sources USING GIN(topic_tags);
+CREATE INDEX IF NOT EXISTS idx_data_sources_active ON meta.ops_data_sources(is_active) WHERE is_active = TRUE;
+CREATE INDEX IF NOT EXISTS idx_table_health_source_timestamp ON meta.ops_table_health(source_id, check_timestamp DESC);
+CREATE INDEX IF NOT EXISTS idx_table_health_status ON meta.ops_table_health(health_status);
+CREATE INDEX IF NOT EXISTS idx_batch_job_runs_job_started ON meta.ops_batch_job_runs(job_id, started_at DESC);
+CREATE INDEX IF NOT EXISTS idx_batch_job_runs_status ON meta.ops_batch_job_runs(status) WHERE status = 'running';
 
 -- =============================================================================
 -- COMPLETION MESSAGE
@@ -636,6 +636,6 @@ BEGIN
     RAISE NOTICE 'Roles created: web_anon, authenticator';
     RAISE NOTICE 'API views created: targets, hospitals, data_catalog, scoring_details';
     RAISE NOTICE 'New meta tables: table_health, batch_jobs, batch_job_runs';
-    RAISE NOTICE 'Enhanced meta.data_sources with: topic_tags, column_descriptions, ai_description';
+    RAISE NOTICE 'Enhanced meta.ops_data_sources with: topic_tags, column_descriptions, ai_description';
 END
 $$;

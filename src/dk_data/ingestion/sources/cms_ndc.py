@@ -38,7 +38,7 @@ def load_cms_ndc_data(
     source_file: Optional[str] = None,
     batch_size: int = 500,
 ) -> Dict[str, Any]:
-    """Load CMS NDC records into raw.cms_ndc.
+    """Load CMS NDC records into hcs_raw.cms_ndc.
 
     Args:
         records: List of dicts from the fetcher.
@@ -100,7 +100,7 @@ def load_cms_ndc_data(
                 execute_values(
                     cur,
                     """
-                    INSERT INTO raw.cms_ndc (
+                    INSERT INTO hcs_raw.cms_ndc (
                         product_ndc, brand_name, generic_name, labeler_name,
                         dosage_form, route, marketing_category, product_type,
                         _loaded_at, _source_file, _source_hash

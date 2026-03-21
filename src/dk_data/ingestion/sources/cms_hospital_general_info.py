@@ -41,7 +41,7 @@ def load_cms_hospital_general_info_data(
     source_file: Optional[str] = None,
     batch_size: int = 500,
 ) -> Dict[str, Any]:
-    """Load CMS Hospital General Info records into raw.cms_hospital_general_info.
+    """Load CMS Hospital General Info records into hcs_raw.cms_hospital_general_info.
 
     Args:
         records: List of dicts from the fetcher.
@@ -106,7 +106,7 @@ def load_cms_hospital_general_info_data(
                 execute_values(
                     cur,
                     """
-                    INSERT INTO raw.cms_hospital_general_info (
+                    INSERT INTO hcs_raw.cms_hospital_general_info (
                         facility_id, facility_name, address, city, state,
                         zip_code, county_name, phone_number, hospital_type,
                         hospital_ownership, emergency_services,

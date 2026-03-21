@@ -48,7 +48,7 @@ def load_cms_physician_puf_data(
     source_file: Optional[str] = None,
     batch_size: int = 500,
 ) -> Dict[str, Any]:
-    """Load CMS Physician PUF records into raw.cms_physician_puf.
+    """Load CMS Physician PUF records into hcs_raw.cms_physician_puf.
 
     Args:
         records: List of dicts from the fetcher.
@@ -132,7 +132,7 @@ def load_cms_physician_puf_data(
                 execute_values(
                     cur,
                     """
-                    INSERT INTO raw.cms_physician_puf (
+                    INSERT INTO hcs_raw.cms_physician_puf (
                         npi, hcpcs_code, hcpcs_description,
                         line_srvc_cnt, bene_unique_cnt,
                         avg_medicare_payment_amt, year,

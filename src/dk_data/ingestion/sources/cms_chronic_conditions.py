@@ -43,7 +43,7 @@ def load_cms_chronic_conditions_data(
     source_file: Optional[str] = None,
     batch_size: int = 500,
 ) -> Dict[str, Any]:
-    """Load CMS chronic conditions records into raw.cms_chronic_conditions."""
+    """Load CMS chronic conditions records into hcs_raw.cms_chronic_conditions."""
     validated: List[CmsChronicConditionsRecord] = []
     errors: List[Dict[str, Any]] = []
 
@@ -92,7 +92,7 @@ def load_cms_chronic_conditions_data(
                 execute_values(
                     cur,
                     """
-                    INSERT INTO raw.cms_chronic_conditions (
+                    INSERT INTO hcs_raw.cms_chronic_conditions (
                         state, condition, prevalence_rate,
                         total_beneficiaries_with_condition, per_capita_spending,
                         _loaded_at, _source_file, _source_hash

@@ -131,7 +131,7 @@ GRANT SELECT ON mol_silver.icd10_indicator_mapping TO analyst;
 
 -- ─── Sync Schedule Registration ──────────────────────────────────────────────
 
-INSERT INTO raw.sync_schedules (source, tier, cron_expression, priority, enabled, options) VALUES
+INSERT INTO ops.sync_schedules (source, tier, cron_expression, priority, enabled, options) VALUES
 ('who_gho', 'monthly', '0 3 1 * *', 'normal', true, '{"source_name":"WHO Global Health Observatory","api_type":"rest","base_url":"https://ghoapi.azureedge.net/api","auth_type":"none","rate_limit_per_second":4,"entity_linking":{"identifier_field":"indication_name","identifier_type":"icd10"}}'::jsonb),
 ('ct_gov_indication_stats', 'monthly', '0 4 1 * *', 'normal', true, '{"source_name":"ClinicalTrials.gov Indication Statistics","api_type":"rest","base_url":"https://clinicaltrials.gov/api/v2","auth_type":"none","rate_limit_per_second":3,"entity_linking":{"identifier_field":"condition","identifier_type":"icd10"}}'::jsonb)
 ON CONFLICT (source) DO NOTHING;

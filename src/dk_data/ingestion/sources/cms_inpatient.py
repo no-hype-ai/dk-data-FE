@@ -67,7 +67,7 @@ def load_cms_inpatient_file(
     # Check if file was already loaded
     with get_cursor() as cur:
         cur.execute("""
-            SELECT COUNT(*) FROM raw.cms_medicare_inpatient
+            SELECT COUNT(*) FROM hcs_raw.cms_medicare_inpatient
             WHERE _source_hash = %s
         """, (source_hash,))
         existing_count = cur.fetchone()[0]
@@ -141,7 +141,7 @@ def load_cms_inpatient_file(
 
                     # Insert record
                     cur.execute("""
-                        INSERT INTO raw.cms_medicare_inpatient (
+                        INSERT INTO hcs_raw.cms_medicare_inpatient (
                             provider_id, provider_name, provider_street_address,
                             provider_city, provider_state, provider_zip_code,
                             drg_code, drg_description, total_discharges,
@@ -212,11 +212,11 @@ def load_cms_inpatient_file(
 
 
 def update_data_source_metadata(source_id: int, result: dict) -> None:
-    """Update meta.data_sources with refresh results."""
+    """Update meta.ops_data_sources with refresh results."""
     with get_cursor() as cur:
         status = 'success' if result.get('status') == 'success' else 'failed'
         cur.execute("""
-            UPDATE meta.data_sources
+            UPDATE meta.ops_data_sources
             SET last_refresh_attempt = NOW(),
                 last_refresh_status = %s,
                 last_successful_refresh = CASE WHEN %s = 'success' THEN NOW() ELSE last_successful_refresh END,

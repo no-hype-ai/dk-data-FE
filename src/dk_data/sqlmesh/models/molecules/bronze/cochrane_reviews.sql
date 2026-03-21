@@ -37,7 +37,7 @@ SELECT
     FALSE AS processed_to_silver,
     NOW() AS created_at
 
-FROM raw.cochrane_reviews
+FROM mol_raw.cochrane_reviews
 WHERE
     response_status = 200
     AND processed_to_bronze = FALSE

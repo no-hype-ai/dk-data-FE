@@ -2,7 +2,7 @@
 
 Maps HCPCS codes from the CMS Outpatient PUF to equipment categories, building
 a facility-level equipment inventory.  Results land in
-silver.cms_equipment_inventory and silver.ref_hcpcs_equipment.
+hcs_silver.cms_equipment_inventory and hcs_silver.ref_hcpcs_equipment.
 """
 
 import json
@@ -68,7 +68,7 @@ class EquipmentInventoryAgent(BaseAgent):
                     op.hcpcs_description,
                     op.total_services
                 FROM bronze.cms_outpatient_puf op
-                LEFT JOIN silver.cms_equipment_inventory ei
+                LEFT JOIN hcs_silver.cms_equipment_inventory ei
                     ON op.ccn = ei.ccn AND op.hcpcs_code = ei.hcpcs_code
                 WHERE ei.ccn IS NULL
                 ORDER BY op.ccn, op.total_services DESC
@@ -197,7 +197,7 @@ class EquipmentInventoryAgent(BaseAgent):
 
                 if table == "ref_hcpcs_equipment":
                     cur.execute(
-                        """INSERT INTO silver.ref_hcpcs_equipment
+                        """INSERT INTO hcs_silver.ref_hcpcs_equipment
                         (hcpcs_code, hcpcs_description, equipment_category,
                          equipment_name, is_capital_equipment, typical_cost_range,
                          confidence_score, agent_version)
@@ -225,7 +225,7 @@ class EquipmentInventoryAgent(BaseAgent):
 
                 elif table == "cms_equipment_inventory":
                     cur.execute(
-                        """INSERT INTO silver.cms_equipment_inventory
+                        """INSERT INTO hcs_silver.cms_equipment_inventory
                         (ccn, hcpcs_code, equipment_category, equipment_name,
                          total_services, confidence_score, agent_version)
                         VALUES (%s, %s, %s, %s, %s, %s, %s)

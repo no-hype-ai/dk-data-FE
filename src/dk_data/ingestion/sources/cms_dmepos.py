@@ -37,7 +37,7 @@ def load_cms_dmepos_data(
     source_file: Optional[str] = None,
     batch_size: int = 500,
 ) -> Dict[str, Any]:
-    """Load CMS DMEPOS records into raw.cms_dmepos."""
+    """Load CMS DMEPOS records into hcs_raw.cms_dmepos."""
     validated: List[CmsDmeposRecord] = []
     errors: List[Dict[str, Any]] = []
 
@@ -88,7 +88,7 @@ def load_cms_dmepos_data(
                 execute_values(
                     cur,
                     """
-                    INSERT INTO raw.cms_dmepos (
+                    INSERT INTO hcs_raw.cms_dmepos (
                         npi, hcpcs_code, hcpcs_description,
                         total_services, total_beneficiaries,
                         avg_submitted_charge, avg_medicare_payment,

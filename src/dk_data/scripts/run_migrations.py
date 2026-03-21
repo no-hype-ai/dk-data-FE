@@ -85,12 +85,12 @@ def compute_checksum(filepath: str) -> str:
 
 
 def ensure_tracking_table(conn) -> None:
-    """Create meta.schema_migrations table if it does not exist."""
+    """Create meta.ops_schema_migrations table if it does not exist."""
     with conn.cursor() as cur:
         cur.execute("""
             CREATE SCHEMA IF NOT EXISTS meta;
 
-            CREATE TABLE IF NOT EXISTS meta.schema_migrations (
+            CREATE TABLE IF NOT EXISTS meta.ops_schema_migrations (
                 id              SERIAL PRIMARY KEY,
                 version         VARCHAR(10)  NOT NULL UNIQUE,
                 filename        VARCHAR(255) NOT NULL,
@@ -101,7 +101,7 @@ def ensure_tracking_table(conn) -> None:
             );
 
             CREATE INDEX IF NOT EXISTS idx_schema_migrations_applied_at
-                ON meta.schema_migrations (applied_at DESC);
+                ON meta.ops_schema_migrations (applied_at DESC);
         """)
     conn.commit()
 
@@ -109,7 +109,7 @@ def ensure_tracking_table(conn) -> None:
 def get_applied_migrations(conn) -> set[str]:
     """Return set of version strings that have already been applied."""
     with conn.cursor() as cur:
-        cur.execute("SELECT version FROM meta.schema_migrations")
+        cur.execute("SELECT version FROM meta.ops_schema_migrations")
         return {row[0] for row in cur.fetchall()}
 
 
@@ -133,7 +133,7 @@ def apply_migration(
 
         cur.execute(
             """
-            INSERT INTO meta.schema_migrations
+            INSERT INTO meta.ops_schema_migrations
                 (version, filename, checksum, applied_by, execution_time_ms)
             VALUES (%s, %s, %s, %s, %s)
             """,
@@ -212,7 +212,7 @@ def baseline(conn, migrations_dir: str) -> bool:
             checksum = compute_checksum(filepath)
             cur.execute(
                 """
-                INSERT INTO meta.schema_migrations
+                INSERT INTO meta.ops_schema_migrations
                     (version, filename, checksum, applied_by, execution_time_ms)
                 VALUES (%s, %s, %s, %s, %s)
                 ON CONFLICT (version) DO NOTHING

@@ -34,7 +34,7 @@ def load_cms_nucc_data(
     source_file: Optional[str] = None,
     batch_size: int = 500,
 ) -> Dict[str, Any]:
-    """Load CMS NUCC records into raw.cms_nucc."""
+    """Load CMS NUCC records into hcs_raw.cms_nucc."""
     validated: List[CmsNuccRecord] = []
     errors: List[Dict[str, Any]] = []
 
@@ -82,7 +82,7 @@ def load_cms_nucc_data(
                 execute_values(
                     cur,
                     """
-                    INSERT INTO raw.cms_nucc (
+                    INSERT INTO hcs_raw.cms_nucc (
                         taxonomy_code, taxonomy_type, classification, specialization,
                         _loaded_at, _source_file, _source_hash
                     ) VALUES %s

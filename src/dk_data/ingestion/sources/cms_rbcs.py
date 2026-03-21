@@ -35,7 +35,7 @@ def load_cms_rbcs_data(
     source_file: Optional[str] = None,
     batch_size: int = 500,
 ) -> Dict[str, Any]:
-    """Load CMS RBCS records into raw.cms_rbcs."""
+    """Load CMS RBCS records into hcs_raw.cms_rbcs."""
     validated: List[CmsRbcsRecord] = []
     errors: List[Dict[str, Any]] = []
 
@@ -84,7 +84,7 @@ def load_cms_rbcs_data(
                 execute_values(
                     cur,
                     """
-                    INSERT INTO raw.cms_rbcs (
+                    INSERT INTO hcs_raw.cms_rbcs (
                         hcpcs_code, rbcs_id, rbcs_category, rbcs_subcategory,
                         rbcs_family, _loaded_at, _source_file, _source_hash
                     ) VALUES %s

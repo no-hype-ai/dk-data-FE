@@ -53,7 +53,7 @@ def load_cms_usp_data(
     source_file: Optional[str] = None,
     batch_size: int = 500,
 ) -> Dict[str, Any]:
-    """Load CMS USP alignment records into raw.cms_usp."""
+    """Load CMS USP alignment records into hcs_raw.cms_usp."""
     validated: List[CmsUspRecord] = []
     errors: List[Dict[str, Any]] = []
 
@@ -114,7 +114,7 @@ def load_cms_usp_data(
                 execute_values(
                     cur,
                     """
-                    INSERT INTO raw.cms_usp (
+                    INSERT INTO hcs_raw.cms_usp (
                         rxcui, tty, branded_name, related_bn, related_df,
                         usp_category, usp_class,
                         _loaded_at, _source_file, _source_hash

@@ -2,7 +2,7 @@
 
 Classifies DRG codes into clinical service lines (Cardiology, Orthopedics,
 Neurology, Oncology, etc.) using LLM inference over bronze CMS inpatient PUF
-data.  Results land in silver.ref_drg_service_line.
+data.  Results land in hcs_silver.ref_drg_service_line.
 """
 
 import json
@@ -51,7 +51,7 @@ class ServiceLineInferenceAgent(BaseAgent):
             cur.execute("""
                 SELECT DISTINCT ip.drg_code, ip.drg_description
                 FROM bronze.cms_inpatient_puf ip
-                LEFT JOIN silver.ref_drg_service_line sl
+                LEFT JOIN hcs_silver.ref_drg_service_line sl
                     ON ip.drg_code = sl.drg_code
                 WHERE sl.drg_code IS NULL
                 ORDER BY ip.drg_code
@@ -119,7 +119,7 @@ class ServiceLineInferenceAgent(BaseAgent):
         with self.conn.cursor() as cur:
             for r in enriched:
                 cur.execute(
-                    """INSERT INTO silver.ref_drg_service_line
+                    """INSERT INTO hcs_silver.ref_drg_service_line
                     (drg_code, drg_description, service_line, confidence_score, agent_version)
                     VALUES (%s, %s, %s, %s, %s)
                     ON CONFLICT (drg_code) DO UPDATE SET

@@ -323,11 +323,11 @@ async def list_jobs(
                 bj.last_run_status,
                 COALESCE(
                     (SELECT ARRAY_AGG(ds.source_name)
-                     FROM meta.data_sources ds
+                     FROM meta.ops_data_sources ds
                      WHERE ds.source_id = ANY(bj.source_ids)),
                     '{}'::TEXT[]
                 ) AS source_names
-            FROM meta.batch_jobs bj
+            FROM meta.ops_batch_jobs bj
         """
 
         if enabled_only:
@@ -365,11 +365,11 @@ async def get_job(job_name: str):
                 bj.last_run_status,
                 COALESCE(
                     (SELECT ARRAY_AGG(ds.source_name)
-                     FROM meta.data_sources ds
+                     FROM meta.ops_data_sources ds
                      WHERE ds.source_id = ANY(bj.source_ids)),
                     '{}'::TEXT[]
                 ) AS source_names
-            FROM meta.batch_jobs bj
+            FROM meta.ops_batch_jobs bj
             WHERE bj.job_name = %s
         """, (job_name,))
 
@@ -402,7 +402,7 @@ async def trigger_job(
 
         cursor.execute("""
             SELECT job_id, is_enabled
-            FROM meta.batch_jobs
+            FROM meta.ops_batch_jobs
             WHERE job_name = %s
         """, (job_name,))
 
@@ -461,8 +461,8 @@ async def list_runs(
                 bjr.records_processed,
                 bjr.error_message,
                 bjr.k8s_job_name
-            FROM meta.batch_job_runs bjr
-            JOIN meta.batch_jobs bj ON bjr.job_id = bj.job_id
+            FROM meta.ops_batch_job_runs bjr
+            JOIN meta.ops_batch_jobs bj ON bjr.job_id = bj.job_id
             WHERE 1=1
         """
         params: list[Any] = []

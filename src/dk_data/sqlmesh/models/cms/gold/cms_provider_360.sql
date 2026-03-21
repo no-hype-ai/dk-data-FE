@@ -8,7 +8,7 @@
 -- 3. Column rename: total_beneficiaries → total_beneficiaries to reflect silver change
 
 MODEL (
-    name gold.cms_provider_360,
+    name hcs_gold.cms_provider_360,
     kind FULL,
     cron '@daily',
     audits (
@@ -99,4 +99,4 @@ SELECT
     p.profile_built_at,
     NOW()                                                               AS gold_built_at
 
-FROM silver.cms_provider_profile p;
+FROM hcs_silver.cms_provider_profile p;

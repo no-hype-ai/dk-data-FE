@@ -1,6 +1,6 @@
 -- Migration: 023_mol_dynamic_sources.sql
 -- Feature: 012-dk-data-platform
--- Description: Add dynamic fetcher configuration columns to meta.data_sources
+-- Description: Add dynamic fetcher configuration columns to meta.ops_data_sources
 -- Date: 2026-01-27
 
 -- =============================================================================
@@ -10,70 +10,70 @@
 -- Add fetcher_class column for dynamic fetcher loading
 -- This allows new sources to specify their fetcher class path in the database
 -- Format: 'ingestion.fetchers.molecules.chembl.ChEMBLFetcher'
-ALTER TABLE meta.data_sources
+ALTER TABLE meta.ops_data_sources
 ADD COLUMN IF NOT EXISTS fetcher_class VARCHAR(255);
 
-COMMENT ON COLUMN meta.data_sources.fetcher_class IS
+COMMENT ON COLUMN meta.ops_data_sources.fetcher_class IS
 'Python class path for the fetcher (e.g., ingestion.fetchers.molecules.chembl.ChEMBLFetcher). If NULL, uses FETCHER_REGISTRY lookup.';
 
 -- Add fetcher_config column for fetcher-specific configuration
 -- This allows source-specific parameters to be stored in the database
-ALTER TABLE meta.data_sources
+ALTER TABLE meta.ops_data_sources
 ADD COLUMN IF NOT EXISTS fetcher_config JSONB DEFAULT '{}';
 
-COMMENT ON COLUMN meta.data_sources.fetcher_config IS
+COMMENT ON COLUMN meta.ops_data_sources.fetcher_config IS
 'JSON configuration passed to fetcher constructor (e.g., {"api_key_env": "CHEMBL_API_KEY", "rate_limit": 1.0})';
 
 -- Add last_fetched_at column to track fetch timestamps
-ALTER TABLE meta.data_sources
+ALTER TABLE meta.ops_data_sources
 ADD COLUMN IF NOT EXISTS last_fetched_at TIMESTAMPTZ;
 
-COMMENT ON COLUMN meta.data_sources.last_fetched_at IS
+COMMENT ON COLUMN meta.ops_data_sources.last_fetched_at IS
 'Timestamp of the last successful fetch from this source';
 
 -- Add enabled_layers to specify which pipeline layers this source feeds
-ALTER TABLE meta.data_sources
+ALTER TABLE meta.ops_data_sources
 ADD COLUMN IF NOT EXISTS enabled_layers TEXT[] DEFAULT ARRAY['bronze'];
 
-COMMENT ON COLUMN meta.data_sources.enabled_layers IS
+COMMENT ON COLUMN meta.ops_data_sources.enabled_layers IS
 'Pipeline layers this source feeds (e.g., ["bronze", "silver"])';
 
 -- =============================================================================
 -- UPDATE EXISTING MOLECULE SOURCES WITH FETCHER CLASSES
 -- =============================================================================
 
-UPDATE meta.data_sources
+UPDATE meta.ops_data_sources
 SET fetcher_class = 'ingestion.fetchers.molecules.chembl.ChEMBLFetcher',
     fetcher_config = '{"rate_limit": 1.0}'::jsonb,
     enabled_layers = ARRAY['bronze', 'silver', 'gold']
 WHERE source_name = 'chembl';
 
-UPDATE meta.data_sources
+UPDATE meta.ops_data_sources
 SET fetcher_class = 'ingestion.fetchers.molecules.pubchem.PubChemFetcher',
     fetcher_config = '{"rate_limit": 5.0}'::jsonb,
     enabled_layers = ARRAY['bronze', 'silver', 'gold']
 WHERE source_name = 'pubchem';
 
-UPDATE meta.data_sources
+UPDATE meta.ops_data_sources
 SET fetcher_class = 'ingestion.fetchers.molecules.clinicaltrials.ClinicalTrialsFetcher',
     fetcher_config = '{}'::jsonb,
     enabled_layers = ARRAY['bronze', 'silver', 'gold']
 WHERE source_name = 'clinicaltrials';
 
-UPDATE meta.data_sources
+UPDATE meta.ops_data_sources
 SET fetcher_class = 'ingestion.fetchers.molecules.openfda.OpenFDALabelsFetcher',
     fetcher_config = '{"api_key_env": "OPENFDA_API_KEY"}'::jsonb,
     enabled_layers = ARRAY['bronze', 'silver', 'gold']
 WHERE source_name = 'openfda_labels';
 
-UPDATE meta.data_sources
+UPDATE meta.ops_data_sources
 SET fetcher_class = 'ingestion.fetchers.molecules.openfda.OpenFDAFAERSFetcher',
     fetcher_config = '{"api_key_env": "OPENFDA_API_KEY"}'::jsonb,
     enabled_layers = ARRAY['bronze', 'silver', 'gold']
 WHERE source_name = 'openfda_faers';
 
 -- Sources without fetchers yet (placeholder for future implementation)
-UPDATE meta.data_sources
+UPDATE meta.ops_data_sources
 SET enabled_layers = ARRAY['bronze', 'silver', 'gold']
 WHERE source_name IN ('drugbank', 'sider', 'uniprot', 'openalex')
   AND enabled_layers IS NULL;
@@ -108,7 +108,7 @@ SELECT
         WHEN source_name IN ('chembl', 'pubchem', 'clinicaltrials', 'openfda_labels', 'openfda_faers') THEN TRUE
         ELSE FALSE
     END AS has_fetcher
-FROM meta.data_sources
+FROM meta.ops_data_sources
 WHERE is_active = TRUE
   AND (
     target_tables && ARRAY['mol_raw.chembl', 'mol_raw.pubchem', 'mol_raw.drugbank',
@@ -144,7 +144,7 @@ BEGIN
     -- Default target_tables to mol_raw.{source_name}
     v_target_tables := COALESCE(p_target_tables, ARRAY['mol_raw.' || p_source_name]);
 
-    INSERT INTO meta.data_sources (
+    INSERT INTO meta.ops_data_sources (
         source_name,
         source_type,
         source_url,
@@ -194,7 +194,7 @@ COMMENT ON FUNCTION mol_api.register_source IS
 DO $$
 BEGIN
     RAISE NOTICE 'Migration 023_mol_dynamic_sources complete';
-    RAISE NOTICE 'Added dynamic fetcher configuration columns to meta.data_sources';
+    RAISE NOTICE 'Added dynamic fetcher configuration columns to meta.ops_data_sources';
     RAISE NOTICE 'Created mol_api.active_sources view for querying available sources';
     RAISE NOTICE 'Created mol_api.register_source() function for dynamic source registration';
 END

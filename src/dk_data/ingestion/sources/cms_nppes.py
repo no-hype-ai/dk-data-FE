@@ -42,7 +42,7 @@ def load_cms_nppes_data(
     source_file: Optional[str] = None,
     batch_size: int = 500,
 ) -> Dict[str, Any]:
-    """Load CMS NPPES records into raw.cms_nppes.
+    """Load CMS NPPES records into hcs_raw.cms_nppes.
 
     Args:
         records: List of dicts from the fetcher.
@@ -108,7 +108,7 @@ def load_cms_nppes_data(
                 execute_values(
                     cur,
                     """
-                    INSERT INTO raw.cms_nppes (
+                    INSERT INTO hcs_raw.cms_nppes (
                         npi, entity_type_code, provider_organization_name,
                         provider_last_name, provider_first_name, provider_credential_text,
                         provider_enumeration_date, provider_gender_code,

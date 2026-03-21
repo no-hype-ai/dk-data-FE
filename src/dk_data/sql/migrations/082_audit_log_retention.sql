@@ -13,15 +13,15 @@
 -- STRATEGY: Tier the data — keep hot data in the main table, archive old
 -- data to a partitioned cold table. NEVER hard-delete within retention.
 --
---   Hot tier  (meta.api_audit_log):      last 365 days — fast queries
---   Cold tier (meta.api_audit_log_archive): 1-7 years — compressed, queryable
+--   Hot tier  (meta.ops_api_audit_log):      last 365 days — fast queries
+--   Cold tier (meta.ops_api_audit_log_archive): 1-7 years — compressed, queryable
 --   Purge:    only records older than 7 years (2555 days) may be purged
 --             (configurable — set higher for GCP/ICH compliance)
 
 BEGIN;
 
 -- ─── Cold archive table (same schema, partitioned by year) ──────────────────
-CREATE TABLE IF NOT EXISTS meta.api_audit_log_archive (
+CREATE TABLE IF NOT EXISTS meta.ops_api_audit_log_archive (
     id              BIGINT          NOT NULL,
     request_id      UUID            NOT NULL,
     timestamp       TIMESTAMPTZ     NOT NULL,
@@ -43,9 +43,9 @@ CREATE TABLE IF NOT EXISTS meta.api_audit_log_archive (
 );
 
 CREATE INDEX IF NOT EXISTS idx_audit_archive_timestamp
-    ON meta.api_audit_log_archive USING BRIN (timestamp);
+    ON meta.ops_api_audit_log_archive USING BRIN (timestamp);
 CREATE INDEX IF NOT EXISTS idx_audit_archive_request_id
-    ON meta.api_audit_log_archive (request_id);
+    ON meta.ops_api_audit_log_archive (request_id);
 
 -- ─── Archive function (moves old hot data to cold tier) ─────────────────────
 CREATE OR REPLACE FUNCTION meta.archive_old_audit_logs(hot_retention_days INT DEFAULT 365)
@@ -55,11 +55,11 @@ DECLARE
 BEGIN
     -- Move rows older than hot_retention_days from hot → cold
     WITH moved AS (
-        DELETE FROM meta.api_audit_log
+        DELETE FROM meta.ops_api_audit_log
         WHERE timestamp < NOW() - (hot_retention_days || ' days')::INTERVAL
         RETURNING *
     )
-    INSERT INTO meta.api_audit_log_archive
+    INSERT INTO meta.ops_api_audit_log_archive
         (id, request_id, timestamp, source, method, path, query_params,
          user_role, user_sub, ip_address, user_agent, status_code,
          response_time_ms, action, category, details, created_at, archived_at)
@@ -93,7 +93,7 @@ BEGIN
         RAISE EXCEPTION 'Retention period must be >= 730 days (2 years) per 21 CFR Part 11';
     END IF;
 
-    DELETE FROM meta.api_audit_log_archive
+    DELETE FROM meta.ops_api_audit_log_archive
     WHERE timestamp < NOW() - (max_retention_days || ' days')::INTERVAL;
 
     GET DIAGNOSTICS deleted = ROW_COUNT;
@@ -117,11 +117,11 @@ BEGIN
     IF EXISTS (SELECT FROM pg_roles WHERE rolname = 'dk_app') THEN
         GRANT EXECUTE ON FUNCTION meta.archive_old_audit_logs(INT) TO dk_app;
         GRANT EXECUTE ON FUNCTION meta.purge_expired_audit_archives(INT) TO dk_app;
-        GRANT INSERT, SELECT ON meta.api_audit_log_archive TO dk_app;
+        GRANT INSERT, SELECT ON meta.ops_api_audit_log_archive TO dk_app;
     END IF;
 
     IF EXISTS (SELECT FROM pg_roles WHERE rolname = 'analyst') THEN
-        GRANT SELECT ON meta.api_audit_log_archive TO analyst;
+        GRANT SELECT ON meta.ops_api_audit_log_archive TO analyst;
     END IF;
 END $$;
 
@@ -150,6 +150,6 @@ END $cron$;
 
 -- ─── BRIN index for efficient range scans on the hot table ──────────────────
 CREATE INDEX IF NOT EXISTS idx_api_audit_timestamp_brin
-    ON meta.api_audit_log USING BRIN (timestamp);
+    ON meta.ops_api_audit_log USING BRIN (timestamp);
 
 COMMIT;

@@ -48,7 +48,7 @@ SELECT
     FALSE AS processed_to_silver,
     NOW() AS created_at
 
-FROM raw.sec_edgar
+FROM mol_raw.sec_edgar
 WHERE
     response_status = 200
     AND processed_to_bronze = FALSE

@@ -63,7 +63,7 @@ SELECT
     FALSE AS processed_to_silver,
     r._loaded_at AS ingested_at
 
-FROM raw.uspto_trademarks r
+FROM mol_raw.uspto_trademarks r
 WHERE r.serial_number IS NOT NULL
   AND r.processed_to_bronze = FALSE
   AND _loaded_at BETWEEN @start_dt AND @end_dt

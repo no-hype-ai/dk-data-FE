@@ -148,7 +148,7 @@ async def list_quarantine(
         query = """
             SELECT id, agent_name, execution_id, record_data, reason,
                    confidence_score, status, created_at, resolved_at, resolved_by
-            FROM meta.agent_quarantine
+            FROM meta.ops_agent_quarantine
             WHERE status = $1
         """
         params: list[Any] = [status]
@@ -165,7 +165,7 @@ async def list_quarantine(
         rows = await conn.fetch(query, *params)
 
         # Get total count
-        count_query = "SELECT COUNT(*) FROM meta.agent_quarantine WHERE status = $1"
+        count_query = "SELECT COUNT(*) FROM meta.ops_agent_quarantine WHERE status = $1"
         count_params: list[Any] = [status]
         if agent_name:
             count_query += " AND agent_name = $2"
@@ -197,7 +197,7 @@ async def resolve_quarantine(
     try:
         # Verify record exists and is PENDING
         row = await conn.fetchrow(
-            "SELECT id, status FROM meta.agent_quarantine WHERE id = $1",
+            "SELECT id, status FROM meta.ops_agent_quarantine WHERE id = $1",
             record_id,
         )
 
@@ -210,7 +210,7 @@ async def resolve_quarantine(
         new_status = "ACCEPTED" if body.action == "accept" else "REJECTED"
 
         await conn.execute(
-            """UPDATE meta.agent_quarantine
+            """UPDATE meta.ops_agent_quarantine
             SET status = $1, resolved_at = NOW(), resolved_by = $2
             WHERE id = $3""",
             new_status, body.resolved_by, record_id,

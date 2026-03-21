@@ -47,7 +47,7 @@ def load_cms_formulary_data(
     source_file: Optional[str] = None,
     batch_size: int = 500,
 ) -> Dict[str, Any]:
-    """Load CMS formulary records into raw.cms_formulary."""
+    """Load CMS formulary records into hcs_raw.cms_formulary."""
     validated: List[CmsFormularyRecord] = []
     errors: List[Dict[str, Any]] = []
 
@@ -100,7 +100,7 @@ def load_cms_formulary_data(
                 execute_values(
                     cur,
                     """
-                    INSERT INTO raw.cms_formulary (
+                    INSERT INTO hcs_raw.cms_formulary (
                         formulary_id, rxcui, ndc,
                         tier_level, prior_auth, step_therapy,
                         quantity_limit, quantity_limit_amount, quantity_limit_days,

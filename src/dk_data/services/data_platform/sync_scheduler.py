@@ -144,7 +144,7 @@ class TieredSyncScheduler:
             custom = await conn.fetch("""
                 SELECT source, tier, cron_expression, priority, enabled,
                        last_run, next_run, options
-                FROM raw.sync_schedules
+                FROM ops.sync_schedules
             """)
             custom_sources = {r['source'] for r in custom}
 
@@ -243,7 +243,7 @@ class TieredSyncScheduler:
 
         async with self.db_pool.acquire() as conn:
             await conn.execute("""
-                INSERT INTO raw.ingestion_jobs
+                INSERT INTO ops.ingestion_jobs
                 (job_id, source, status, started_at, priority)
                 VALUES ($1, $2, 'pending', NOW(), $3)
             """, job_id, source, priority.value)
@@ -299,7 +299,7 @@ class TieredSyncScheduler:
         """Update job status in database."""
         async with self.db_pool.acquire() as conn:
             await conn.execute("""
-                UPDATE raw.ingestion_jobs
+                UPDATE ops.ingestion_jobs
                 SET status = $2, completed_at = CASE WHEN $2 IN ('completed', 'failed') THEN NOW() ELSE NULL END,
                     records_processed = $3, error_message = $4
                 WHERE job_id = $1
@@ -313,7 +313,7 @@ class TieredSyncScheduler:
 
         async with self.db_pool.acquire() as conn:
             await conn.execute("""
-                INSERT INTO raw.sync_schedules (source, tier, cron_expression, priority, enabled, last_run, next_run)
+                INSERT INTO ops.sync_schedules (source, tier, cron_expression, priority, enabled, last_run, next_run)
                 VALUES ($1, $2, $3, $4, TRUE, NOW(), $5)
                 ON CONFLICT (source) DO UPDATE
                 SET last_run = NOW(), next_run = $5
@@ -373,7 +373,7 @@ class TieredSyncScheduler:
             row = await conn.fetchrow("""
                 SELECT job_id, source, status, started_at, completed_at,
                        records_processed, error_message
-                FROM raw.ingestion_jobs
+                FROM ops.ingestion_jobs
                 WHERE job_id = $1
             """, job_id)
 

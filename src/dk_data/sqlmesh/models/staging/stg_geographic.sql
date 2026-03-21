@@ -1,5 +1,5 @@
 -- staging.geographic_designations - HPSA and geographic designations by hospital
--- Source: raw.hrsa_shortage_areas, raw.cms_hospital_info
+-- Source: raw.hrsa_shortage_areas, hcs_raw.cms_hospital_info
 -- Model type: FULL refresh
 
 MODEL (
@@ -15,7 +15,7 @@ WITH hospital_counties AS (
         provider_id AS hospital_id,
         state,
         county_name
-    FROM raw.cms_hospital_info
+    FROM hcs_raw.cms_hospital_info
     WHERE provider_id IS NOT NULL
       AND county_name IS NOT NULL
 ),

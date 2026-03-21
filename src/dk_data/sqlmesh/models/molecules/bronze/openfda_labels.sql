@@ -85,7 +85,7 @@ SELECT
     FALSE AS processed_to_silver,
     NOW() AS created_at
 
-FROM raw.openfda_labels,
+FROM mol_raw.openfda_labels,
      jsonb_array_elements(response_body->'results') AS label
 WHERE
     response_status = 200

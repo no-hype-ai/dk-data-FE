@@ -2,7 +2,7 @@
 
 Infers health-system organizational hierarchies from CMS PECOS enrollment and
 Change of Ownership (CHOW) data using LLM analysis.  Results land in
-silver.cms_health_system_hierarchy.
+hcs_silver.cms_health_system_hierarchy.
 """
 
 import json
@@ -66,7 +66,7 @@ class IDNHierarchyAgent(BaseAgent):
                     c.change_date
                 FROM bronze.cms_pecos p
                 LEFT JOIN bronze.cms_chow c ON p.ccn = c.ccn
-                LEFT JOIN silver.cms_health_system_hierarchy h ON p.ccn = h.system_id
+                LEFT JOIN hcs_silver.cms_health_system_hierarchy h ON p.ccn = h.system_id
                 WHERE h.system_id IS NULL
                 ORDER BY p.organization_name
                 LIMIT %s
@@ -137,7 +137,7 @@ class IDNHierarchyAgent(BaseAgent):
         with self.conn.cursor() as cur:
             for r in enriched:
                 cur.execute(
-                    """INSERT INTO silver.cms_health_system_hierarchy
+                    """INSERT INTO hcs_silver.cms_health_system_hierarchy
                     (system_id, system_name, parent_system_id, member_ccns,
                      hierarchy_level, confidence_score, agent_version)
                     VALUES (%s, %s, %s, %s, %s, %s, %s)

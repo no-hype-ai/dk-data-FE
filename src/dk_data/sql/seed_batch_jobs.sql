@@ -1,4 +1,4 @@
--- Seed data for meta.batch_jobs
+-- Seed data for meta.ops_batch_jobs
 -- Feature: 001-data-layer-postgrest-gitops
 -- Task: T020
 --
@@ -42,42 +42,42 @@ DECLARE
     v_orcid_id INTEGER;
 BEGIN
     -- Get source IDs
-    SELECT source_id INTO v_cms_inpatient_id FROM meta.data_sources WHERE source_name = 'cms_medicare_inpatient';
-    SELECT source_id INTO v_cms_hospital_id FROM meta.data_sources WHERE source_name = 'cms_hospital_info';
-    SELECT source_id INTO v_cms_cost_id FROM meta.data_sources WHERE source_name = 'cms_cost_reports';
-    SELECT source_id INTO v_acc_tvc_id FROM meta.data_sources WHERE source_name = 'acc_tvc';
-    SELECT source_id INTO v_hrsa_id FROM meta.data_sources WHERE source_name = 'hrsa_shortage_areas';
-    SELECT source_id INTO v_bindingdb_id FROM meta.data_sources WHERE source_name = 'bindingdb';
-    SELECT source_id INTO v_orange_book_id FROM meta.data_sources WHERE source_name = 'orange_book';
-    SELECT source_id INTO v_sider_id FROM meta.data_sources WHERE source_name = 'sider';
-    SELECT source_id INTO v_tdc_admet_id FROM meta.data_sources WHERE source_name = 'tdc_admet';
-    SELECT source_id INTO v_ema_id FROM meta.data_sources WHERE source_name = 'ema';
-    SELECT source_id INTO v_rxnorm_id FROM meta.data_sources WHERE source_name = 'rxnorm';
-    SELECT source_id INTO v_dailymed_id FROM meta.data_sources WHERE source_name = 'dailymed';
-    SELECT source_id INTO v_fda_drugs_id FROM meta.data_sources WHERE source_name = 'fda_drugs';
-    SELECT source_id INTO v_kegg_drug_id FROM meta.data_sources WHERE source_name = 'kegg_drug';
-    SELECT source_id INTO v_ttd_id FROM meta.data_sources WHERE source_name = 'ttd';
-    SELECT source_id INTO v_pharmgkb_id FROM meta.data_sources WHERE source_name = 'pharmgkb';
-    SELECT source_id INTO v_imgt_id FROM meta.data_sources WHERE source_name = 'imgt';
-    SELECT source_id INTO v_cdc_vaccines_id FROM meta.data_sources WHERE source_name = 'cdc_vaccines';
-    SELECT source_id INTO v_pubmed_id FROM meta.data_sources WHERE source_name = 'pubmed';
-    SELECT source_id INTO v_openalex_ci_id FROM meta.data_sources WHERE source_name = 'openalex_ci';
-    SELECT source_id INTO v_ema_regulatory_id FROM meta.data_sources WHERE source_name = 'ema_regulatory';
-    SELECT source_id INTO v_drugbank_id FROM meta.data_sources WHERE source_name = 'drugbank';
-    SELECT source_id INTO v_uspto_patents_id FROM meta.data_sources WHERE source_name = 'uspto_patents';
-    SELECT source_id INTO v_journal_rss_id FROM meta.data_sources WHERE source_name = 'journal_rss';
-    SELECT source_id INTO v_uspto_ci_id FROM meta.data_sources WHERE source_name = 'uspto_ci';
-    SELECT source_id INTO v_hta_bodies_id FROM meta.data_sources WHERE source_name = 'hta_bodies';
-    SELECT source_id INTO v_epo_ops_id FROM meta.data_sources WHERE source_name = 'epo_ops';
-    SELECT source_id INTO v_cochrane_id FROM meta.data_sources WHERE source_name = 'cochrane';
-    SELECT source_id INTO v_medical_news_id FROM meta.data_sources WHERE source_name = 'medical_news';
-    SELECT source_id INTO v_sec_edgar_id FROM meta.data_sources WHERE source_name = 'sec_edgar';
-    SELECT source_id INTO v_uniprot_id FROM meta.data_sources WHERE source_name = 'uniprot';
-    SELECT source_id INTO v_pdb_id FROM meta.data_sources WHERE source_name = 'pdb';
-    SELECT source_id INTO v_orcid_id FROM meta.data_sources WHERE source_name = 'orcid';
+    SELECT source_id INTO v_cms_inpatient_id FROM meta.ops_data_sources WHERE source_name = 'cms_medicare_inpatient';
+    SELECT source_id INTO v_cms_hospital_id FROM meta.ops_data_sources WHERE source_name = 'cms_hospital_info';
+    SELECT source_id INTO v_cms_cost_id FROM meta.ops_data_sources WHERE source_name = 'cms_cost_reports';
+    SELECT source_id INTO v_acc_tvc_id FROM meta.ops_data_sources WHERE source_name = 'acc_tvc';
+    SELECT source_id INTO v_hrsa_id FROM meta.ops_data_sources WHERE source_name = 'hrsa_shortage_areas';
+    SELECT source_id INTO v_bindingdb_id FROM meta.ops_data_sources WHERE source_name = 'bindingdb';
+    SELECT source_id INTO v_orange_book_id FROM meta.ops_data_sources WHERE source_name = 'orange_book';
+    SELECT source_id INTO v_sider_id FROM meta.ops_data_sources WHERE source_name = 'sider';
+    SELECT source_id INTO v_tdc_admet_id FROM meta.ops_data_sources WHERE source_name = 'tdc_admet';
+    SELECT source_id INTO v_ema_id FROM meta.ops_data_sources WHERE source_name = 'ema';
+    SELECT source_id INTO v_rxnorm_id FROM meta.ops_data_sources WHERE source_name = 'rxnorm';
+    SELECT source_id INTO v_dailymed_id FROM meta.ops_data_sources WHERE source_name = 'dailymed';
+    SELECT source_id INTO v_fda_drugs_id FROM meta.ops_data_sources WHERE source_name = 'fda_drugs';
+    SELECT source_id INTO v_kegg_drug_id FROM meta.ops_data_sources WHERE source_name = 'kegg_drug';
+    SELECT source_id INTO v_ttd_id FROM meta.ops_data_sources WHERE source_name = 'ttd';
+    SELECT source_id INTO v_pharmgkb_id FROM meta.ops_data_sources WHERE source_name = 'pharmgkb';
+    SELECT source_id INTO v_imgt_id FROM meta.ops_data_sources WHERE source_name = 'imgt';
+    SELECT source_id INTO v_cdc_vaccines_id FROM meta.ops_data_sources WHERE source_name = 'cdc_vaccines';
+    SELECT source_id INTO v_pubmed_id FROM meta.ops_data_sources WHERE source_name = 'pubmed';
+    SELECT source_id INTO v_openalex_ci_id FROM meta.ops_data_sources WHERE source_name = 'openalex_ci';
+    SELECT source_id INTO v_ema_regulatory_id FROM meta.ops_data_sources WHERE source_name = 'ema_regulatory';
+    SELECT source_id INTO v_drugbank_id FROM meta.ops_data_sources WHERE source_name = 'drugbank';
+    SELECT source_id INTO v_uspto_patents_id FROM meta.ops_data_sources WHERE source_name = 'uspto_patents';
+    SELECT source_id INTO v_journal_rss_id FROM meta.ops_data_sources WHERE source_name = 'journal_rss';
+    SELECT source_id INTO v_uspto_ci_id FROM meta.ops_data_sources WHERE source_name = 'uspto_ci';
+    SELECT source_id INTO v_hta_bodies_id FROM meta.ops_data_sources WHERE source_name = 'hta_bodies';
+    SELECT source_id INTO v_epo_ops_id FROM meta.ops_data_sources WHERE source_name = 'epo_ops';
+    SELECT source_id INTO v_cochrane_id FROM meta.ops_data_sources WHERE source_name = 'cochrane';
+    SELECT source_id INTO v_medical_news_id FROM meta.ops_data_sources WHERE source_name = 'medical_news';
+    SELECT source_id INTO v_sec_edgar_id FROM meta.ops_data_sources WHERE source_name = 'sec_edgar';
+    SELECT source_id INTO v_uniprot_id FROM meta.ops_data_sources WHERE source_name = 'uniprot';
+    SELECT source_id INTO v_pdb_id FROM meta.ops_data_sources WHERE source_name = 'pdb';
+    SELECT source_id INTO v_orcid_id FROM meta.ops_data_sources WHERE source_name = 'orcid';
 
     -- Job 1: fetch-cms-all - Fetches all CMS data sources
-    INSERT INTO meta.batch_jobs (
+    INSERT INTO meta.ops_batch_jobs (
         job_name,
         description,
         cron_schedule,
@@ -98,7 +98,7 @@ BEGIN
         source_ids = EXCLUDED.source_ids;
 
     -- Job 2: fetch-cms-hospitals - Individual CMS Hospital Info fetch
-    INSERT INTO meta.batch_jobs (
+    INSERT INTO meta.ops_batch_jobs (
         job_name,
         description,
         cron_schedule,
@@ -119,7 +119,7 @@ BEGIN
         source_ids = EXCLUDED.source_ids;
 
     -- Job 3: fetch-cms-inpatient - Individual CMS Medicare Inpatient fetch
-    INSERT INTO meta.batch_jobs (
+    INSERT INTO meta.ops_batch_jobs (
         job_name,
         description,
         cron_schedule,
@@ -140,7 +140,7 @@ BEGIN
         source_ids = EXCLUDED.source_ids;
 
     -- Job 4: fetch-acc-tvc - ACC TVC Certification fetch
-    INSERT INTO meta.batch_jobs (
+    INSERT INTO meta.ops_batch_jobs (
         job_name,
         description,
         cron_schedule,
@@ -161,7 +161,7 @@ BEGIN
         source_ids = EXCLUDED.source_ids;
 
     -- Job 5: fetch-hrsa - HRSA Shortage Areas fetch
-    INSERT INTO meta.batch_jobs (
+    INSERT INTO meta.ops_batch_jobs (
         job_name,
         description,
         cron_schedule,
@@ -182,7 +182,7 @@ BEGIN
         source_ids = EXCLUDED.source_ids;
 
     -- Job 6: catalog-refresh - Refresh catalog metadata
-    INSERT INTO meta.batch_jobs (
+    INSERT INTO meta.ops_batch_jobs (
         job_name,
         description,
         cron_schedule,
@@ -202,7 +202,7 @@ BEGIN
         cron_schedule = EXCLUDED.cron_schedule;
 
     -- Job 7: sqlmesh-run - Run SQLMesh transformations
-    INSERT INTO meta.batch_jobs (
+    INSERT INTO meta.ops_batch_jobs (
         job_name,
         description,
         cron_schedule,
@@ -222,7 +222,7 @@ BEGIN
         cron_schedule = EXCLUDED.cron_schedule;
 
     -- Job 8: mol-fetch-weekly - Weekly molecule data fetch
-    INSERT INTO meta.batch_jobs (
+    INSERT INTO meta.ops_batch_jobs (
         job_name, description, cron_schedule, source_ids, is_enabled, next_scheduled_run
     ) VALUES (
         'mol-fetch-weekly',
@@ -237,7 +237,7 @@ BEGIN
         source_ids = EXCLUDED.source_ids;
 
     -- Job 9: mol-fetch-monthly - Monthly molecule data fetch
-    INSERT INTO meta.batch_jobs (
+    INSERT INTO meta.ops_batch_jobs (
         job_name, description, cron_schedule, source_ids, is_enabled, next_scheduled_run
     ) VALUES (
         'mol-fetch-monthly',
@@ -252,7 +252,7 @@ BEGIN
         source_ids = EXCLUDED.source_ids;
 
     -- Job 10: fetch-pubmed - Daily PubMed CI fetch
-    INSERT INTO meta.batch_jobs (
+    INSERT INTO meta.ops_batch_jobs (
         job_name, description, cron_schedule, source_ids, is_enabled, next_scheduled_run
     ) VALUES (
         'fetch-pubmed',
@@ -267,7 +267,7 @@ BEGIN
         source_ids = EXCLUDED.source_ids;
 
     -- Job 11: fetch-openalex-ci - Daily OpenAlex CI fetch
-    INSERT INTO meta.batch_jobs (
+    INSERT INTO meta.ops_batch_jobs (
         job_name, description, cron_schedule, source_ids, is_enabled, next_scheduled_run
     ) VALUES (
         'fetch-openalex-ci',
@@ -282,7 +282,7 @@ BEGIN
         source_ids = EXCLUDED.source_ids;
 
     -- Job 12: fetch-ema-regulatory - Weekly EMA regulatory CI fetch
-    INSERT INTO meta.batch_jobs (
+    INSERT INTO meta.ops_batch_jobs (
         job_name, description, cron_schedule, source_ids, is_enabled, next_scheduled_run
     ) VALUES (
         'fetch-ema-regulatory',
@@ -297,7 +297,7 @@ BEGIN
         source_ids = EXCLUDED.source_ids;
 
     -- Job 13: fetch-drugbank - Monthly DrugBank fetch (credential-gated)
-    INSERT INTO meta.batch_jobs (
+    INSERT INTO meta.ops_batch_jobs (
         job_name, description, cron_schedule, source_ids, is_enabled, next_scheduled_run
     ) VALUES (
         'fetch-drugbank',
@@ -312,7 +312,7 @@ BEGIN
         source_ids = EXCLUDED.source_ids;
 
     -- Job 14: fetch-uspto-patents - Weekly USPTO Patents fetch (credential-gated)
-    INSERT INTO meta.batch_jobs (
+    INSERT INTO meta.ops_batch_jobs (
         job_name, description, cron_schedule, source_ids, is_enabled, next_scheduled_run
     ) VALUES (
         'fetch-uspto-patents',
@@ -327,7 +327,7 @@ BEGIN
         source_ids = EXCLUDED.source_ids;
 
     -- Job 15: fetch-journal-rss - Daily Journal RSS fetch
-    INSERT INTO meta.batch_jobs (
+    INSERT INTO meta.ops_batch_jobs (
         job_name, description, cron_schedule, source_ids, is_enabled, next_scheduled_run
     ) VALUES (
         'fetch-journal-rss',
@@ -342,7 +342,7 @@ BEGIN
         source_ids = EXCLUDED.source_ids;
 
     -- Job 16: fetch-uspto-ci - Weekly USPTO CI fetch
-    INSERT INTO meta.batch_jobs (
+    INSERT INTO meta.ops_batch_jobs (
         job_name, description, cron_schedule, source_ids, is_enabled, next_scheduled_run
     ) VALUES (
         'fetch-uspto-ci',
@@ -357,7 +357,7 @@ BEGIN
         source_ids = EXCLUDED.source_ids;
 
     -- Job 17: fetch-hta - Weekly HTA Bodies fetch
-    INSERT INTO meta.batch_jobs (
+    INSERT INTO meta.ops_batch_jobs (
         job_name, description, cron_schedule, source_ids, is_enabled, next_scheduled_run
     ) VALUES (
         'fetch-hta',
@@ -372,7 +372,7 @@ BEGIN
         source_ids = EXCLUDED.source_ids;
 
     -- Job 18: fetch-epo - Weekly EPO OPS fetch (credential-gated)
-    INSERT INTO meta.batch_jobs (
+    INSERT INTO meta.ops_batch_jobs (
         job_name, description, cron_schedule, source_ids, is_enabled, next_scheduled_run
     ) VALUES (
         'fetch-epo',
@@ -387,7 +387,7 @@ BEGIN
         source_ids = EXCLUDED.source_ids;
 
     -- Job 19: fetch-cochrane - Monthly Cochrane fetch
-    INSERT INTO meta.batch_jobs (
+    INSERT INTO meta.ops_batch_jobs (
         job_name, description, cron_schedule, source_ids, is_enabled, next_scheduled_run
     ) VALUES (
         'fetch-cochrane',
@@ -402,7 +402,7 @@ BEGIN
         source_ids = EXCLUDED.source_ids;
 
     -- Job 20: fetch-news - Daily Medical News fetch
-    INSERT INTO meta.batch_jobs (
+    INSERT INTO meta.ops_batch_jobs (
         job_name, description, cron_schedule, source_ids, is_enabled, next_scheduled_run
     ) VALUES (
         'fetch-news',
@@ -417,7 +417,7 @@ BEGIN
         source_ids = EXCLUDED.source_ids;
 
     -- Job 21: fetch-sec-edgar - Daily SEC EDGAR fetch
-    INSERT INTO meta.batch_jobs (
+    INSERT INTO meta.ops_batch_jobs (
         job_name, description, cron_schedule, source_ids, is_enabled, next_scheduled_run
     ) VALUES (
         'fetch-sec-edgar',
@@ -432,7 +432,7 @@ BEGIN
         source_ids = EXCLUDED.source_ids;
 
     -- Job 22: fetch-uniprot - Weekly UniProt fetch
-    INSERT INTO meta.batch_jobs (
+    INSERT INTO meta.ops_batch_jobs (
         job_name, description, cron_schedule, source_ids, is_enabled, next_scheduled_run
     ) VALUES (
         'fetch-uniprot',
@@ -447,7 +447,7 @@ BEGIN
         source_ids = EXCLUDED.source_ids;
 
     -- Job 23: fetch-pdb - Weekly PDB fetch
-    INSERT INTO meta.batch_jobs (
+    INSERT INTO meta.ops_batch_jobs (
         job_name, description, cron_schedule, source_ids, is_enabled, next_scheduled_run
     ) VALUES (
         'fetch-pdb',
@@ -462,7 +462,7 @@ BEGIN
         source_ids = EXCLUDED.source_ids;
 
     -- Job 24: fetch-orcid - Weekly ORCID fetch
-    INSERT INTO meta.batch_jobs (
+    INSERT INTO meta.ops_batch_jobs (
         job_name, description, cron_schedule, source_ids, is_enabled, next_scheduled_run
     ) VALUES (
         'fetch-orcid',
@@ -482,5 +482,5 @@ END $$;
 -- Verify seeded jobs
 SELECT job_id, job_name, cron_schedule, is_enabled,
        array_length(source_ids, 1) as source_count
-FROM meta.batch_jobs
+FROM meta.ops_batch_jobs
 ORDER BY job_name;

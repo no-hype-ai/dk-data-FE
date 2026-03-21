@@ -45,7 +45,7 @@ def load_cms_hospital_quality_data(
     source_file: Optional[str] = None,
     batch_size: int = 500,
 ) -> Dict[str, Any]:
-    """Load CMS Hospital Quality records into raw.cms_hospital_quality.
+    """Load CMS Hospital Quality records into hcs_raw.cms_hospital_quality.
 
     Args:
         records: List of dicts from the fetcher.
@@ -107,7 +107,7 @@ def load_cms_hospital_quality_data(
                 execute_values(
                     cur,
                     """
-                    INSERT INTO raw.cms_hospital_quality (
+                    INSERT INTO hcs_raw.cms_hospital_quality (
                         facility_id, facility_name, overall_rating,
                         mortality_rating, safety_rating, readmission_rating,
                         patient_experience_rating, timeliness_rating,

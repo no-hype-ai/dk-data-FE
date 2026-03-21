@@ -129,10 +129,10 @@ class LocalJobRunner(JobRunner):
         try:
             cursor = conn.cursor()
             cursor.execute("""
-                INSERT INTO meta.batch_job_runs
+                INSERT INTO meta.ops_batch_job_runs
                 (job_id, triggered_by, triggered_by_user, started_at, status)
                 SELECT job_id, %s, %s, NOW(), 'running'
-                FROM meta.batch_jobs WHERE job_name = %s
+                FROM meta.ops_batch_jobs WHERE job_name = %s
                 RETURNING run_id
             """, (triggered_by, user, job_name))
             result = cursor.fetchone()
@@ -153,7 +153,7 @@ class LocalJobRunner(JobRunner):
         try:
             cursor = conn.cursor()
             cursor.execute("""
-                UPDATE meta.batch_job_runs
+                UPDATE meta.ops_batch_job_runs
                 SET completed_at = NOW(),
                     status = %s,
                     records_processed = %s,
@@ -163,11 +163,11 @@ class LocalJobRunner(JobRunner):
 
             # Also update batch_jobs table
             cursor.execute("""
-                UPDATE meta.batch_jobs bj
+                UPDATE meta.ops_batch_jobs bj
                 SET last_run_at = bjr.completed_at,
                     last_run_status = bjr.status,
                     last_run_duration_seconds = EXTRACT(EPOCH FROM (bjr.completed_at - bjr.started_at))::INTEGER
-                FROM meta.batch_job_runs bjr
+                FROM meta.ops_batch_job_runs bjr
                 WHERE bjr.run_id = %s AND bj.job_id = bjr.job_id
             """, (run_id,))
 
@@ -280,8 +280,8 @@ class LocalJobRunner(JobRunner):
             cursor = conn.cursor(cursor_factory=RealDictCursor)
             cursor.execute("""
                 SELECT bjr.*, bj.job_name
-                FROM meta.batch_job_runs bjr
-                JOIN meta.batch_jobs bj ON bjr.job_id = bj.job_id
+                FROM meta.ops_batch_job_runs bjr
+                JOIN meta.ops_batch_jobs bj ON bjr.job_id = bj.job_id
                 WHERE bjr.run_id = %s
             """, (run_id,))
             row = cursor.fetchone()
@@ -370,10 +370,10 @@ class K8sJobRunner(JobRunner):
             try:
                 cursor = conn.cursor()
                 cursor.execute("""
-                    INSERT INTO meta.batch_job_runs
+                    INSERT INTO meta.ops_batch_job_runs
                     (job_id, triggered_by, triggered_by_user, started_at, status, k8s_job_name)
                     SELECT job_id, %s, %s, NOW(), 'running', %s
-                    FROM meta.batch_jobs WHERE job_name = %s
+                    FROM meta.ops_batch_jobs WHERE job_name = %s
                     RETURNING run_id
                 """, (triggered_by, user, k8s_job_name, job_name))
                 result = cursor.fetchone()
@@ -412,8 +412,8 @@ class K8sJobRunner(JobRunner):
             cursor = conn.cursor(cursor_factory=RealDictCursor)
             cursor.execute("""
                 SELECT bjr.*, bj.job_name
-                FROM meta.batch_job_runs bjr
-                JOIN meta.batch_jobs bj ON bjr.job_id = bj.job_id
+                FROM meta.ops_batch_job_runs bjr
+                JOIN meta.ops_batch_jobs bj ON bjr.job_id = bj.job_id
                 WHERE bjr.run_id = %s
             """, (run_id,))
             row = cursor.fetchone()
@@ -431,7 +431,7 @@ class K8sJobRunner(JobRunner):
 
                     if k8s_job.status.succeeded:
                         cursor.execute("""
-                            UPDATE meta.batch_job_runs
+                            UPDATE meta.ops_batch_job_runs
                             SET status = 'success', completed_at = NOW()
                             WHERE run_id = %s
                         """, (run_id,))
@@ -439,7 +439,7 @@ class K8sJobRunner(JobRunner):
                         row["status"] = "success"
                     elif k8s_job.status.failed:
                         cursor.execute("""
-                            UPDATE meta.batch_job_runs
+                            UPDATE meta.ops_batch_job_runs
                             SET status = 'failure', completed_at = NOW()
                             WHERE run_id = %s
                         """, (run_id,))

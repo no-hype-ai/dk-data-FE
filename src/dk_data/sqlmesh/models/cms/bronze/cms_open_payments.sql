@@ -25,7 +25,7 @@ SELECT
     _loaded_at,
     _source_file,
     _source_hash
-FROM raw.cms_open_payments_general
+FROM hcs_raw.cms_open_payments_general
 WHERE _loaded_at BETWEEN @start_dt AND @end_dt
 
 UNION ALL
@@ -42,7 +42,7 @@ SELECT
     _loaded_at,
     _source_file,
     _source_hash
-FROM raw.cms_open_payments_research
+FROM hcs_raw.cms_open_payments_research
 WHERE _loaded_at BETWEEN @start_dt AND @end_dt
 
 UNION ALL
@@ -59,5 +59,5 @@ SELECT
     _loaded_at,
     _source_file,
     _source_hash
-FROM raw.cms_open_payments_ownership
+FROM hcs_raw.cms_open_payments_ownership
 WHERE _loaded_at BETWEEN @start_dt AND @end_dt;

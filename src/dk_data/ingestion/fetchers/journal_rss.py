@@ -5,7 +5,7 @@ Task: T051-T054 — Journal RSS CI source integration
 
 Fetches recent articles from major pharmaceutical/medical journal RSS
 feeds using the feedparser library.  Feed URLs are read from
-meta.ci_search_terms (term_type='journal_feed'); a built-in default
+meta.ops_ci_search_terms (term_type='journal_feed'); a built-in default
 list is used as a fallback when no DB rows are found.
 
 Daily cadence, deduplicates on article DOI or URL (stored as article_id).
@@ -24,7 +24,7 @@ from .base import BaseFetcher
 logger = logging.getLogger(__name__)
 
 # Default RSS feeds for major pharmaceutical/medical journals.
-# Used when meta.ci_search_terms has no 'journal_feed' rows.
+# Used when meta.ops_ci_search_terms has no 'journal_feed' rows.
 DEFAULT_FEEDS: List[Dict[str, str]] = [
     {
         "name": "NEJM",
@@ -147,7 +147,7 @@ class JournalRSSFetcher(BaseFetcher):
     # ------------------------------------------------------------------
 
     def _get_feeds(self) -> List[Dict[str, str]]:
-        """Read feed URLs from meta.ci_search_terms or fall back to defaults.
+        """Read feed URLs from meta.ops_ci_search_terms or fall back to defaults.
 
         Returns:
             List of dicts with 'name' and 'url' keys.
@@ -160,7 +160,7 @@ class JournalRSSFetcher(BaseFetcher):
                     cur.execute(
                         """
                         SELECT term_value
-                        FROM meta.ci_search_terms
+                        FROM meta.ops_ci_search_terms
                         WHERE term_type = 'journal_feed'
                           AND is_active = TRUE
                         ORDER BY term_id
@@ -177,7 +177,7 @@ class JournalRSSFetcher(BaseFetcher):
                     name = parsed.hostname or "unknown"
                     feeds.append({"name": name, "url": url})
                 logger.info(
-                    "Loaded %d journal feed URLs from meta.ci_search_terms",
+                    "Loaded %d journal feed URLs from meta.ops_ci_search_terms",
                     len(feeds),
                 )
                 return feeds

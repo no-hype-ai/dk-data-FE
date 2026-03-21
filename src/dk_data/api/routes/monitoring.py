@@ -264,7 +264,7 @@ async def pipeline_health():
         # Get Bronze source health from sync_schedules
         cur.execute("""
             SELECT source, tier, enabled, last_run, next_run
-            FROM raw.sync_schedules
+            FROM ops.sync_schedules
             WHERE enabled = TRUE
             ORDER BY last_run DESC NULLS LAST
             LIMIT 10
@@ -273,7 +273,7 @@ async def pipeline_health():
             source_name, tier, enabled, last_run, next_run = row
             # Check for recent errors
             cur.execute("""
-                SELECT COUNT(*) FROM raw.ingestion_jobs
+                SELECT COUNT(*) FROM ops.ingestion_jobs
                 WHERE source = %s AND status = 'failed'
                   AND started_at >= NOW() - INTERVAL '24 hours'
             """, (source_name,))
@@ -400,7 +400,7 @@ async def list_recent_runs(
                 records_processed,
                 error_message,
                 error_details
-            FROM raw.ingestion_jobs
+            FROM ops.ingestion_jobs
             WHERE 1=1
         """
         params = []
@@ -434,7 +434,7 @@ async def list_recent_runs(
             })
 
         # Get total count
-        cur.execute("SELECT COUNT(*) FROM raw.ingestion_jobs")
+        cur.execute("SELECT COUNT(*) FROM ops.ingestion_jobs")
         total = cur.fetchone()[0] or 0
 
         cur.close()
@@ -547,7 +547,7 @@ async def list_data_sources():
                     cur.execute("""
                         SELECT
                             EXTRACT(EPOCH FROM (completed_at - started_at)) * 1000
-                        FROM raw.ingestion_jobs
+                        FROM ops.ingestion_jobs
                         WHERE source = %s
                           AND status = 'completed'
                           AND started_at IS NOT NULL
@@ -724,7 +724,7 @@ async def list_sync_schedules():
         cur.execute("""
             SELECT source, tier, enabled, cron_expression, priority,
                    last_run, next_run
-            FROM raw.sync_schedules
+            FROM ops.sync_schedules
             ORDER BY source
         """)
         for row in cur.fetchall():
@@ -775,7 +775,7 @@ async def list_sync_jobs(
             SELECT job_id::text, source, status, priority,
                    started_at, completed_at, records_processed,
                    error_message
-            FROM raw.ingestion_jobs
+            FROM ops.ingestion_jobs
             WHERE 1=1
         """
         params = []
@@ -809,7 +809,7 @@ async def list_sync_jobs(
                 "error_message": error_msg,
             })
 
-        cur.execute("SELECT COUNT(*) FROM raw.ingestion_jobs")
+        cur.execute("SELECT COUNT(*) FROM ops.ingestion_jobs")
         total = cur.fetchone()[0] or 0
 
         cur.close()
@@ -847,7 +847,7 @@ async def list_active_sync_jobs():
         cur.execute("""
             SELECT job_id::text, source, status, priority,
                    started_at, records_processed
-            FROM raw.ingestion_jobs
+            FROM ops.ingestion_jobs
             WHERE status IN ('running', 'pending', 'in_progress')
             ORDER BY started_at DESC NULLS LAST
         """)
@@ -918,7 +918,7 @@ async def get_sync_job_status(job_id: str):
         cur.execute("""
             SELECT id, source, job_type, status, started_at, completed_at,
                    records_processed, records_failed, error_message, options
-            FROM raw.ingestion_jobs
+            FROM ops.ingestion_jobs
             WHERE id::text = %s
         """, (job_id,))
         row = cur.fetchone()

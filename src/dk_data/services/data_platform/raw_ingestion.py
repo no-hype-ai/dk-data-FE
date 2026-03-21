@@ -1616,16 +1616,40 @@ class ReactomeIngestion(RawIngestionService):
 
 
 class NICEHTAIngestion(RawIngestionService):
-    """Ingestion for NICE Technology Appraisals."""
+    """Ingestion for NICE Technology Appraisals.
+
+    Fetches both the search results AND individual guidance pages to capture
+    decision status, dates, and ICER values.
+    """
 
     BASE_URL = "https://www.nice.org.uk"
+    API_URL = "https://api.nice.org.uk/services/guidance/published"
 
     async def search_guidance(self, drug_name: str, limit: int = 20) -> Optional[str]:
+        # Primary: Use NICE published guidance API (returns structured JSON with decision data)
+        endpoint = f"{self.API_URL}"
+        params = {"GuidanceTitle": drug_name, "PageSize": limit}
+        result = await self.fetch_and_store(
+            DataSource.NICE_HTA, endpoint, params=params,
+            request_id=f"nice_api_{drug_name[:30]}"
+        )
+        if result:
+            return result
+
+        # Fallback: Search page (HTML, less structured)
         endpoint = f"{self.BASE_URL}/search"
         params = {"q": drug_name, "ps": limit, "sp": "on"}
         return await self.fetch_and_store(
             DataSource.NICE_HTA, endpoint, params=params,
             request_id=f"nice_search_{drug_name[:30]}"
+        )
+
+    async def fetch_guidance_detail(self, guidance_id: str) -> Optional[str]:
+        """Fetch individual guidance page for decision/date/ICER extraction."""
+        endpoint = f"{self.BASE_URL}/guidance/{guidance_id}"
+        return await self.fetch_and_store(
+            DataSource.NICE_HTA, endpoint,
+            request_id=f"nice_detail_{guidance_id}"
         )
 
 

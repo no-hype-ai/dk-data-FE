@@ -214,7 +214,7 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
 
 class AuditLoggingMiddleware(BaseHTTPMiddleware):
     """
-    Middleware to write API audit trail entries to meta.api_audit_log.
+    Middleware to write API audit trail entries to meta.ops_api_audit_log.
 
     Feature: 013-observability-governance (US3: Audit Trail)
     Task: T012
@@ -302,14 +302,14 @@ class AuditLoggingMiddleware(BaseHTTPMiddleware):
         return response
 
     def _write_audit_entry(self, entry: dict) -> None:
-        """Write a single audit entry to meta.api_audit_log (runs in thread pool)."""
+        """Write a single audit entry to meta.ops_api_audit_log (runs in thread pool)."""
         conn = None
         try:
             conn = psycopg2.connect(self.database_url)
             cursor = conn.cursor()
             cursor.execute(
                 """
-                INSERT INTO meta.api_audit_log
+                INSERT INTO meta.ops_api_audit_log
                     (request_id, method, path, query_params, user_role, user_sub,
                      ip_address, user_agent, status_code, response_time_ms, source)
                 VALUES

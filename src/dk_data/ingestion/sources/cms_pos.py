@@ -46,7 +46,7 @@ def load_cms_pos_data(
     source_file: Optional[str] = None,
     batch_size: int = 500,
 ) -> Dict[str, Any]:
-    """Load CMS POS records into raw.cms_pos.
+    """Load CMS POS records into hcs_raw.cms_pos.
 
     Args:
         records: List of dicts from the fetcher.
@@ -109,7 +109,7 @@ def load_cms_pos_data(
                 execute_values(
                     cur,
                     """
-                    INSERT INTO raw.cms_pos (
+                    INSERT INTO hcs_raw.cms_pos (
                         ccn, facility_name, street_address, city, state,
                         zip_code, provider_type, beds, ownership_type,
                         _loaded_at, _source_file, _source_hash

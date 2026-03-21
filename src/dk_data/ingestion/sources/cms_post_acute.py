@@ -37,7 +37,7 @@ def load_cms_post_acute_data(
     source_file: Optional[str] = None,
     batch_size: int = 500,
 ) -> Dict[str, Any]:
-    """Load CMS post-acute care records into raw.cms_post_acute."""
+    """Load CMS post-acute care records into hcs_raw.cms_post_acute."""
     validated: List[CmsPostAcuteRecord] = []
     errors: List[Dict[str, Any]] = []
 
@@ -106,7 +106,7 @@ def load_cms_post_acute_data(
                 execute_values(
                     cur,
                     """
-                    INSERT INTO raw.cms_post_acute (
+                    INSERT INTO hcs_raw.cms_post_acute (
                         provider_id, provider_type, total_episodes,
                         avg_spending_per_episode, year,
                         _loaded_at, _source_file, _source_hash

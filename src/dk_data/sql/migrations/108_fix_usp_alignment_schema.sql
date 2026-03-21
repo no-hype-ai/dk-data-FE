@@ -6,8 +6,8 @@
 -- PK is (rxcui, usp_category, usp_class) because some drugs map
 -- to multiple categories (e.g., doxepin → Antidepressants AND Anxiolytics).
 
-DROP TABLE IF EXISTS raw.cms_usp CASCADE;
-CREATE TABLE raw.cms_usp (
+DROP TABLE IF EXISTS hcs_raw.cms_usp CASCADE;
+CREATE TABLE hcs_raw.cms_usp (
     rxcui          TEXT NOT NULL,
     tty            TEXT,
     branded_name   TEXT,

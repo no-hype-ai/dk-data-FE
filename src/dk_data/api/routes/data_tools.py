@@ -45,7 +45,7 @@ class DataToolInfo(BaseModel):
     supported_query_keys: List[str]
     external_api_available: bool
     tier: str
-    postgrest_view: Optional[str] = None  # e.g. "gold.cms_provider_360"
+    postgrest_view: Optional[str] = None  # e.g. "hcs_gold.cms_provider_360"
     postgrest_key: Optional[str] = None   # e.g. "npi"
 
 

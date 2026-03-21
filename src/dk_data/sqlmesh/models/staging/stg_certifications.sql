@@ -28,7 +28,7 @@ WITH matched_hospitals AS (
                 h._loaded_at DESC
         ) AS match_rank
     FROM raw.acc_tvc_certification c
-    JOIN raw.cms_hospital_info h ON (
+    JOIN hcs_raw.cms_hospital_info h ON (
         -- Match by state (required)
         UPPER(c.state) = UPPER(h.state)
         -- And either city match or zip match

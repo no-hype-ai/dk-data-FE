@@ -2,7 +2,7 @@
 
 Identifies and classifies provider-to-provider referral relationships by
 analyzing overlapping HCPCS utilization and beneficiary patterns from the
-CMS Physician & Other Suppliers PUF.  Results land in silver.cms_referral_edges.
+CMS Physician & Other Suppliers PUF.  Results land in hcs_silver.cms_referral_edges.
 """
 
 import json
@@ -86,7 +86,7 @@ class ReferralNetworkAgent(BaseAgent):
                     op.shared_hcpcs_count,
                     op.shared_patient_estimate
                 FROM overlapping_pairs op
-                LEFT JOIN silver.cms_referral_edges re
+                LEFT JOIN hcs_silver.cms_referral_edges re
                     ON op.source_npi = re.source_npi
                     AND op.target_npi = re.target_npi
                 WHERE re.source_npi IS NULL
@@ -167,7 +167,7 @@ class ReferralNetworkAgent(BaseAgent):
         with self.conn.cursor() as cur:
             for r in enriched:
                 cur.execute(
-                    """INSERT INTO silver.cms_referral_edges
+                    """INSERT INTO hcs_silver.cms_referral_edges
                     (source_npi, target_npi, relationship_type, strength_score,
                      shared_patient_count, confidence_score, agent_version)
                     VALUES (%s, %s, %s, %s, %s, %s, %s)

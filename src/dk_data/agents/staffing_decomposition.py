@@ -2,7 +2,7 @@
 
 Parses HCRIS (Hospital Cost Report Information System) worksheet line items
 into structured staffing categories including FTE counts, salary costs, benefits,
-and contract labor.  Results land in silver.cms_staffing_profiles.
+and contract labor.  Results land in hcs_silver.cms_staffing_profiles.
 """
 
 import json
@@ -66,7 +66,7 @@ class StaffingDecompositionAgent(BaseAgent):
             cur.execute("""
                 SELECT DISTINCT h.ccn
                 FROM bronze.cms_hcris h
-                LEFT JOIN silver.cms_staffing_profiles sp ON h.ccn = sp.ccn
+                LEFT JOIN hcs_silver.cms_staffing_profiles sp ON h.ccn = sp.ccn
                 WHERE h.worksheet IN %s
                   AND sp.ccn IS NULL
                 ORDER BY h.ccn
@@ -164,7 +164,7 @@ class StaffingDecompositionAgent(BaseAgent):
         with self.conn.cursor() as cur:
             for r in enriched:
                 cur.execute(
-                    """INSERT INTO silver.cms_staffing_profiles
+                    """INSERT INTO hcs_silver.cms_staffing_profiles
                     (ccn, staffing_category, fte_count, salary_cost,
                      benefits_cost, contract_labor_cost,
                      confidence_score, agent_version)

@@ -1,13 +1,13 @@
 -- Migration 089: CMS Meta Catalog Entries (016-cms-puf-datasource-integration)
 --
--- Registers all 30 CMS sources in meta.data_sources + staleness detection config.
+-- Registers all 30 CMS sources in meta.ops_data_sources + staleness detection config.
 -- T106, T107, T108
 
 BEGIN;
 
 -- ─── CMS Source Catalog Entries ─────────────────────────────────────────────
 -- Provider sources (Phase 2)
-INSERT INTO meta.data_sources (source_name, description, source_type, refresh_frequency, is_active)
+INSERT INTO meta.ops_data_sources (source_name, description, source_type, refresh_frequency, is_active)
 VALUES
     ('cms_nppes', 'National Plan & Provider Enumeration System', 'api', 'weekly', TRUE),
     ('cms_part_d_prescriber', 'Medicare Part D prescriber drug utilization', 'api', 'annual', TRUE),
@@ -73,7 +73,7 @@ SELECT
         END THEN 'STALE'
         ELSE 'FRESH'
     END AS freshness_status
-FROM meta.data_sources ds
+FROM meta.ops_data_sources ds
 WHERE ds.source_name LIKE 'cms_%'
     AND ds.is_active = TRUE
 ORDER BY freshness_status DESC, ds.source_name;

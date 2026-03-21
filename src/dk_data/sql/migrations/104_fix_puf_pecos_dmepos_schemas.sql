@@ -9,15 +9,15 @@
 BEGIN;
 
 -- ═══════════════════════════════════════════════════════════════════════════
--- 1. raw.cms_dmepos — API returns supplier-level summary, not per-HCPCS.
+-- 1. hcs_raw.cms_dmepos — API returns supplier-level summary, not per-HCPCS.
 --    Actual fields: Suplr_NPI, Tot_Suplr_Srvcs, Tot_Suplr_Benes, etc.
 --    Drop hcpcs_code from PK, make year nullable.
 -- ═══════════════════════════════════════════════════════════════════════════
 
-DROP VIEW IF EXISTS gold.cms_dmepos CASCADE;
-DROP TABLE IF EXISTS raw.cms_dmepos CASCADE;
+DROP VIEW IF EXISTS hcs_gold.cms_dmepos CASCADE;
+DROP TABLE IF EXISTS hcs_raw.cms_dmepos CASCADE;
 
-CREATE TABLE raw.cms_dmepos (
+CREATE TABLE hcs_raw.cms_dmepos (
     npi                     TEXT NOT NULL,
     hcpcs_code              TEXT,
     hcpcs_description       TEXT,
@@ -31,33 +31,33 @@ CREATE TABLE raw.cms_dmepos (
     PRIMARY KEY (npi)
 );
 
-CREATE OR REPLACE VIEW gold.cms_dmepos AS
+CREATE OR REPLACE VIEW hcs_gold.cms_dmepos AS
 SELECT npi, total_services, total_beneficiaries,
        avg_submitted_charge, avg_medicare_payment,
        _loaded_at AS last_refreshed
-FROM raw.cms_dmepos;
+FROM hcs_raw.cms_dmepos;
 
 
 -- ═══════════════════════════════════════════════════════════════════════════
--- 2. raw.cms_inpatient_puf — API has no year column. Remove year from PK.
+-- 2. hcs_raw.cms_inpatient_puf — API has no year column. Remove year from PK.
 -- ═══════════════════════════════════════════════════════════════════════════
 
-DROP VIEW IF EXISTS gold.cms_inpatient_puf CASCADE;
-ALTER TABLE raw.cms_inpatient_puf DROP CONSTRAINT IF EXISTS cms_inpatient_puf_pkey;
-ALTER TABLE raw.cms_inpatient_puf ALTER COLUMN year DROP NOT NULL;
-ALTER TABLE raw.cms_inpatient_puf
+DROP VIEW IF EXISTS hcs_gold.cms_inpatient_puf CASCADE;
+ALTER TABLE hcs_raw.cms_inpatient_puf DROP CONSTRAINT IF EXISTS cms_inpatient_puf_pkey;
+ALTER TABLE hcs_raw.cms_inpatient_puf ALTER COLUMN year DROP NOT NULL;
+ALTER TABLE hcs_raw.cms_inpatient_puf
     ADD CONSTRAINT cms_inpatient_puf_pkey PRIMARY KEY (provider_id, drg_code);
 
 
 -- ═══════════════════════════════════════════════════════════════════════════
--- 3. raw.cms_outpatient_puf — API uses APC_Cd not HCPCS_Cd, no year.
+-- 3. hcs_raw.cms_outpatient_puf — API uses APC_Cd not HCPCS_Cd, no year.
 --    Recreate with correct column names.
 -- ═══════════════════════════════════════════════════════════════════════════
 
-DROP VIEW IF EXISTS gold.cms_outpatient_puf CASCADE;
-DROP TABLE IF EXISTS raw.cms_outpatient_puf CASCADE;
+DROP VIEW IF EXISTS hcs_gold.cms_outpatient_puf CASCADE;
+DROP TABLE IF EXISTS hcs_raw.cms_outpatient_puf CASCADE;
 
-CREATE TABLE raw.cms_outpatient_puf (
+CREATE TABLE hcs_raw.cms_outpatient_puf (
     provider_id             TEXT NOT NULL,
     apc_code                TEXT NOT NULL,
     apc_description         TEXT,
@@ -70,49 +70,49 @@ CREATE TABLE raw.cms_outpatient_puf (
     PRIMARY KEY (provider_id, apc_code)
 );
 
-CREATE OR REPLACE VIEW gold.cms_outpatient_puf AS
+CREATE OR REPLACE VIEW hcs_gold.cms_outpatient_puf AS
 SELECT provider_id, apc_code, apc_description,
        total_services, avg_submitted_charges, avg_total_payments,
        _loaded_at AS last_refreshed
-FROM raw.cms_outpatient_puf;
+FROM hcs_raw.cms_outpatient_puf;
 
 
 -- ═══════════════════════════════════════════════════════════════════════════
--- 4. raw.cms_physician_puf — range-partitioned by year.
+-- 4. hcs_raw.cms_physician_puf — range-partitioned by year.
 --    Cannot remove year from PK (Postgres requires partition key in PK).
 --    Instead, default year to 0 so fetcher output without year still inserts.
 -- ═══════════════════════════════════════════════════════════════════════════
 
-ALTER TABLE raw.cms_physician_puf ALTER COLUMN year SET DEFAULT 0;
+ALTER TABLE hcs_raw.cms_physician_puf ALTER COLUMN year SET DEFAULT 0;
 
 
 -- ═══════════════════════════════════════════════════════════════════════════
--- 5. raw.cms_geographic_variation — county can be NULL for national rows.
+-- 5. hcs_raw.cms_geographic_variation — county can be NULL for national rows.
 --    Change PK to (state, year) and allow NULL county.
 -- ═══════════════════════════════════════════════════════════════════════════
 
-DROP VIEW IF EXISTS gold.cms_geographic_variation CASCADE;
-ALTER TABLE raw.cms_geographic_variation DROP CONSTRAINT IF EXISTS cms_geographic_variation_pkey;
-ALTER TABLE raw.cms_geographic_variation ALTER COLUMN county DROP NOT NULL;
-ALTER TABLE raw.cms_geographic_variation ALTER COLUMN year DROP NOT NULL;
-ALTER TABLE raw.cms_geographic_variation
+DROP VIEW IF EXISTS hcs_gold.cms_geographic_variation CASCADE;
+ALTER TABLE hcs_raw.cms_geographic_variation DROP CONSTRAINT IF EXISTS cms_geographic_variation_pkey;
+ALTER TABLE hcs_raw.cms_geographic_variation ALTER COLUMN county DROP NOT NULL;
+ALTER TABLE hcs_raw.cms_geographic_variation ALTER COLUMN year DROP NOT NULL;
+ALTER TABLE hcs_raw.cms_geographic_variation
     ADD CONSTRAINT cms_geographic_variation_pkey PRIMARY KEY (state);
 
-CREATE OR REPLACE VIEW gold.cms_geographic_variation AS
+CREATE OR REPLACE VIEW hcs_gold.cms_geographic_variation AS
 SELECT state, county, bene_count, total_actual_costs, per_capita_costs,
        year, _loaded_at AS last_refreshed
-FROM raw.cms_geographic_variation;
+FROM hcs_raw.cms_geographic_variation;
 
 
 -- ═══════════════════════════════════════════════════════════════════════════
--- 6. raw.cms_pecos — Recreate with correct API field names.
+-- 6. hcs_raw.cms_pecos — Recreate with correct API field names.
 --    API returns: NPI, ENRLMT_ID, ORG_NAME, PROVIDER_TYPE_DESC, STATE_CD
 -- ═══════════════════════════════════════════════════════════════════════════
 
-DROP VIEW IF EXISTS gold.cms_pecos CASCADE;
-DROP TABLE IF EXISTS raw.cms_pecos CASCADE;
+DROP VIEW IF EXISTS hcs_gold.cms_pecos CASCADE;
+DROP TABLE IF EXISTS hcs_raw.cms_pecos CASCADE;
 
-CREATE TABLE raw.cms_pecos (
+CREATE TABLE hcs_raw.cms_pecos (
     npi                     TEXT NOT NULL,
     enrollment_id           TEXT,
     organization_name       TEXT,
@@ -126,9 +126,9 @@ CREATE TABLE raw.cms_pecos (
     PRIMARY KEY (npi)
 );
 
-CREATE OR REPLACE VIEW gold.cms_pecos AS
+CREATE OR REPLACE VIEW hcs_gold.cms_pecos AS
 SELECT npi, enrollment_id, organization_name, state, enrollment_type,
        first_name, last_name, _loaded_at AS last_refreshed
-FROM raw.cms_pecos;
+FROM hcs_raw.cms_pecos;
 
 COMMIT;

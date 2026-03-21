@@ -4,7 +4,7 @@ Feature: 011-datasource-integration
 Task: T055-T057 — USPTO PatentsView CI source integration
 
 Fetches pharmaceutical-relevant patents from the USPTO PatentSearch API.
-Queries are scoped by search terms read from meta.ci_search_terms
+Queries are scoped by search terms read from meta.ops_ci_search_terms
 (drug_name, therapeutic_area) and filtered by CPC codes A61K, A61P,
 C07D (pharmaceutical chemistry).
 
@@ -83,7 +83,7 @@ class USPTOCIFetcher(BaseFetcher):
             search_terms = kwargs.get("search_terms") or self._get_search_terms()
 
             if not search_terms:
-                # Default fallback terms when meta.ci_search_terms is empty
+                # Default fallback terms when meta.ops_ci_search_terms is empty
                 search_terms = [
                     "dupilumab",
                     "semaglutide",
@@ -148,7 +148,7 @@ class USPTOCIFetcher(BaseFetcher):
     # ------------------------------------------------------------------
 
     def _get_search_terms(self) -> List[str]:
-        """Read search terms from meta.ci_search_terms.
+        """Read search terms from meta.ops_ci_search_terms.
 
         Returns:
             List of search term strings.
@@ -161,7 +161,7 @@ class USPTOCIFetcher(BaseFetcher):
                     cur.execute(
                         """
                         SELECT term_value
-                        FROM meta.ci_search_terms
+                        FROM meta.ops_ci_search_terms
                         WHERE term_type IN ('drug_name', 'therapeutic_area')
                           AND is_active = TRUE
                         ORDER BY term_id
@@ -172,7 +172,7 @@ class USPTOCIFetcher(BaseFetcher):
             terms = [row[0] for row in rows]
             if terms:
                 logger.info(
-                    "Loaded %d search terms from meta.ci_search_terms",
+                    "Loaded %d search terms from meta.ops_ci_search_terms",
                     len(terms),
                 )
             return terms

@@ -425,7 +425,7 @@ SOURCE_METADATA = {
     },
     "uspto_ci": {
         "topic_tags": ["ci", "patent", "uspto", "competitive-intelligence"],
-        "ai_description": "USPTO PatentsView CI patents with query-scoped search terms from meta.ci_search_terms. Filtered by pharmaceutical CPC codes.",
+        "ai_description": "USPTO PatentsView CI patents with query-scoped search terms from meta.ops_ci_search_terms. Filtered by pharmaceutical CPC codes.",
         "column_descriptions": {
             "patent_id": {"description": "USPTO patent identifier", "type": "string"},
             "cpc_codes": {"description": "Cooperative Patent Classification codes", "type": "array"},
@@ -535,7 +535,7 @@ def get_current_sources(cursor) -> list[dict[str, Any]]:
     cursor.execute("""
         SELECT source_id, source_name, topic_tags, ai_description,
                column_descriptions, staleness_threshold_hours, target_tables
-        FROM meta.data_sources
+        FROM meta.ops_data_sources
         WHERE is_active = TRUE
         ORDER BY source_name
     """)
@@ -545,7 +545,7 @@ def get_current_sources(cursor) -> list[dict[str, Any]]:
 def update_source_metadata(cursor, source_id: int, metadata: dict) -> bool:
     """Update metadata for a data source."""
     cursor.execute("""
-        UPDATE meta.data_sources
+        UPDATE meta.ops_data_sources
         SET
             topic_tags = %(topic_tags)s,
             ai_description = %(ai_description)s,

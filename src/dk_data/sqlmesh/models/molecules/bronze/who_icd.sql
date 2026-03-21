@@ -37,7 +37,7 @@ SELECT
     FALSE AS processed_to_silver,
     NOW() AS created_at
 
-FROM raw.who_icd
+FROM mol_raw.who_icd
 WHERE
     response_status = 200
     AND processed_to_bronze = FALSE

@@ -23,7 +23,7 @@ BEGIN
         staleness_threshold_hours,
         last_successful_refresh
     INTO v_threshold, v_last_refresh
-    FROM meta.data_sources
+    FROM meta.ops_data_sources
     WHERE source_id = p_source_id;
 
     -- Calculate freshness in hours
@@ -39,7 +39,7 @@ BEGIN
     -- Get latest quality metrics
     SELECT null_rate, validation_error_count
     INTO v_null_rate, v_error_count
-    FROM meta.table_health
+    FROM meta.ops_table_health
     WHERE source_id = p_source_id
     ORDER BY check_timestamp DESC
     LIMIT 1;
@@ -90,7 +90,7 @@ BEGIN
     -- Get current source data
     SELECT last_successful_refresh, record_count
     INTO v_last_refresh, v_row_count
-    FROM meta.data_sources
+    FROM meta.ops_data_sources
     WHERE source_id = p_source_id;
 
     -- Calculate freshness
@@ -100,7 +100,7 @@ BEGIN
 
     -- Get previous row count for change calculation
     SELECT row_count INTO v_prev_row_count
-    FROM meta.table_health
+    FROM meta.ops_table_health
     WHERE source_id = p_source_id
     ORDER BY check_timestamp DESC
     LIMIT 1;
@@ -109,7 +109,7 @@ BEGIN
     v_health_status := meta.calculate_health_status(p_source_id);
 
     -- Insert health record
-    INSERT INTO meta.table_health (
+    INSERT INTO meta.ops_table_health (
         source_id,
         health_status,
         freshness_hours,
@@ -148,7 +148,7 @@ BEGIN
     -- Only process successful refreshes
     IF NEW.status = 'success' THEN
         -- Update last_successful_refresh on data_sources
-        UPDATE meta.data_sources
+        UPDATE meta.ops_data_sources
         SET
             last_successful_refresh = COALESCE(NEW.refresh_completed_at, NOW()),
             last_refresh_attempt = COALESCE(NEW.refresh_started_at, NOW()),
@@ -171,7 +171,7 @@ BEGIN
         );
     ELSE
         -- Update attempt info for failed refreshes
-        UPDATE meta.data_sources
+        UPDATE meta.ops_data_sources
         SET
             last_refresh_attempt = COALESCE(NEW.refresh_started_at, NOW()),
             last_refresh_status = NEW.status
@@ -183,13 +183,13 @@ END;
 $$ LANGUAGE plpgsql;
 
 -- Create trigger on refresh_log
-DROP TRIGGER IF EXISTS trg_update_health_on_refresh ON meta.refresh_log;
+DROP TRIGGER IF EXISTS trg_update_health_on_refresh ON meta.ops_refresh_log;
 CREATE TRIGGER trg_update_health_on_refresh
-    AFTER INSERT ON meta.refresh_log
+    AFTER INSERT ON meta.ops_refresh_log
     FOR EACH ROW
     EXECUTE FUNCTION meta.update_health_on_refresh();
 
-COMMENT ON TRIGGER trg_update_health_on_refresh ON meta.refresh_log IS
+COMMENT ON TRIGGER trg_update_health_on_refresh ON meta.ops_refresh_log IS
     'Automatically update health status when new refresh log entries are added';
 
 -- ============================================================================
@@ -201,5 +201,5 @@ BEGIN
     RAISE NOTICE 'Catalog functions created successfully:';
     RAISE NOTICE '  - meta.calculate_health_status(source_id)';
     RAISE NOTICE '  - meta.record_health_check(source_id, null_rate, error_count, details)';
-    RAISE NOTICE '  - Trigger: trg_update_health_on_refresh on meta.refresh_log';
+    RAISE NOTICE '  - Trigger: trg_update_health_on_refresh on meta.ops_refresh_log';
 END $$;

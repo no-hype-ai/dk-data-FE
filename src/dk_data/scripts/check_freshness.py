@@ -2,7 +2,7 @@
 """Data Freshness and Quality Check Script.
 
 Monitors data source freshness and calculates quality metrics.
-Updates meta.data_quality table with results.
+Updates meta.ops_data_quality table with results.
 
 Usage:
     python check_freshness.py [--source SOURCE] [--verbose]
@@ -34,23 +34,23 @@ FRESHNESS_THRESHOLDS = {
 # Quality check queries by source
 QUALITY_CHECKS = {
     'cms_medicare_inpatient': {
-        'total_records': "SELECT COUNT(*) FROM raw.cms_medicare_inpatient",
-        'null_provider_id': "SELECT COUNT(*) FROM raw.cms_medicare_inpatient WHERE provider_id IS NULL",
-        'null_drg_code': "SELECT COUNT(*) FROM raw.cms_medicare_inpatient WHERE drg_code IS NULL",
-        'invalid_discharges': "SELECT COUNT(*) FROM raw.cms_medicare_inpatient WHERE total_discharges < 0",
-        'tavr_records': "SELECT COUNT(*) FROM raw.cms_medicare_inpatient WHERE drg_code IN ('266', '267')",
+        'total_records': "SELECT COUNT(*) FROM hcs_raw.cms_medicare_inpatient",
+        'null_provider_id': "SELECT COUNT(*) FROM hcs_raw.cms_medicare_inpatient WHERE provider_id IS NULL",
+        'null_drg_code': "SELECT COUNT(*) FROM hcs_raw.cms_medicare_inpatient WHERE drg_code IS NULL",
+        'invalid_discharges': "SELECT COUNT(*) FROM hcs_raw.cms_medicare_inpatient WHERE total_discharges < 0",
+        'tavr_records': "SELECT COUNT(*) FROM hcs_raw.cms_medicare_inpatient WHERE drg_code IN ('266', '267')",
     },
     'cms_hospital_info': {
-        'total_records': "SELECT COUNT(*) FROM raw.cms_hospital_info",
-        'null_provider_id': "SELECT COUNT(*) FROM raw.cms_hospital_info WHERE provider_id IS NULL",
-        'null_state': "SELECT COUNT(*) FROM raw.cms_hospital_info WHERE state IS NULL",
-        'invalid_rating': "SELECT COUNT(*) FROM raw.cms_hospital_info WHERE hospital_overall_rating NOT BETWEEN 1 AND 5 AND hospital_overall_rating IS NOT NULL",
+        'total_records': "SELECT COUNT(*) FROM hcs_raw.cms_hospital_info",
+        'null_provider_id': "SELECT COUNT(*) FROM hcs_raw.cms_hospital_info WHERE provider_id IS NULL",
+        'null_state': "SELECT COUNT(*) FROM hcs_raw.cms_hospital_info WHERE state IS NULL",
+        'invalid_rating': "SELECT COUNT(*) FROM hcs_raw.cms_hospital_info WHERE hospital_overall_rating NOT BETWEEN 1 AND 5 AND hospital_overall_rating IS NOT NULL",
     },
     'cms_cost_reports': {
-        'total_records': "SELECT COUNT(*) FROM raw.cms_cost_reports",
-        'null_provider_id': "SELECT COUNT(*) FROM raw.cms_cost_reports WHERE provider_id IS NULL",
-        'negative_revenue': "SELECT COUNT(*) FROM raw.cms_cost_reports WHERE net_patient_revenue < 0",
-        'invalid_margin': "SELECT COUNT(*) FROM raw.cms_cost_reports WHERE operating_margin < -1 OR operating_margin > 1",
+        'total_records': "SELECT COUNT(*) FROM hcs_raw.cms_cost_reports",
+        'null_provider_id': "SELECT COUNT(*) FROM hcs_raw.cms_cost_reports WHERE provider_id IS NULL",
+        'negative_revenue': "SELECT COUNT(*) FROM hcs_raw.cms_cost_reports WHERE net_patient_revenue < 0",
+        'invalid_margin': "SELECT COUNT(*) FROM hcs_raw.cms_cost_reports WHERE operating_margin < -1 OR operating_margin > 1",
     },
     'acc_tvc': {
         'total_records': "SELECT COUNT(*) FROM raw.acc_tvc_certification",
@@ -68,12 +68,12 @@ QUALITY_CHECKS = {
 
 
 def get_source_info(source_name: str) -> Optional[Dict[str, Any]]:
-    """Get source metadata from meta.data_sources."""
+    """Get source metadata from meta.ops_data_sources."""
     with get_cursor() as cur:
         cur.execute("""
             SELECT source_id, source_name, last_successful_refresh,
                    last_refresh_status, record_count
-            FROM meta.data_sources
+            FROM meta.ops_data_sources
             WHERE source_name = %s
         """, (source_name,))
         row = cur.fetchone()
@@ -190,11 +190,11 @@ def update_data_quality(
     quality_score: float,
     issues: List[str]
 ) -> None:
-    """Insert quality metrics into meta.data_quality."""
+    """Insert quality metrics into meta.ops_data_quality."""
     with get_connection() as conn:
         with conn.cursor() as cur:
             cur.execute("""
-                INSERT INTO meta.data_quality (
+                INSERT INTO meta.ops_data_quality (
                     source_id, check_date, completeness_pct, validity_pct,
                     freshness_days, quality_score, issues_found, _checked_at
                 ) VALUES (%s, CURRENT_DATE, %s, %s, %s, %s, %s, NOW())
@@ -223,7 +223,7 @@ def check_source(source_name: str, verbose: bool = False) -> Dict[str, Any]:
     # Get source info
     source_info = get_source_info(source_name)
     if not source_info:
-        logger.warning(f"Source '{source_name}' not found in meta.data_sources")
+        logger.warning(f"Source '{source_name}' not found in meta.ops_data_sources")
         return {'status': 'error', 'message': 'Source not found'}
 
     # Calculate freshness
@@ -240,7 +240,7 @@ def check_source(source_name: str, verbose: bool = False) -> Dict[str, Any]:
         freshness_status
     )
 
-    # Update meta.data_quality
+    # Update meta.ops_data_quality
     update_data_quality(
         source_info['source_id'],
         quality_results['completeness_pct'],
@@ -275,7 +275,7 @@ def check_all_sources(verbose: bool = False) -> List[Dict[str, Any]]:
 
     with get_cursor() as cur:
         cur.execute("""
-            SELECT source_name FROM meta.data_sources WHERE is_active = TRUE
+            SELECT source_name FROM meta.ops_data_sources WHERE is_active = TRUE
         """)
         sources = [row[0] for row in cur.fetchall()]
 

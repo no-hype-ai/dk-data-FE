@@ -50,7 +50,7 @@ def load_cms_geographic_variation_data(
     source_file: Optional[str] = None,
     batch_size: int = 500,
 ) -> Dict[str, Any]:
-    """Load CMS geographic variation records into raw.cms_geographic_variation."""
+    """Load CMS geographic variation records into hcs_raw.cms_geographic_variation."""
     validated: List[CmsGeographicVariationRecord] = []
     errors: List[Dict[str, Any]] = []
 
@@ -130,7 +130,7 @@ def load_cms_geographic_variation_data(
                 execute_values(
                     cur,
                     """
-                    INSERT INTO raw.cms_geographic_variation (
+                    INSERT INTO hcs_raw.cms_geographic_variation (
                         state, county, bene_count, total_actual_costs,
                         per_capita_costs, year,
                         _loaded_at, _source_file, _source_hash

@@ -37,7 +37,7 @@ def load_cms_pecos_data(
     source_file: Optional[str] = None,
     batch_size: int = 500,
 ) -> Dict[str, Any]:
-    """Load CMS PECOS records into raw.cms_pecos."""
+    """Load CMS PECOS records into hcs_raw.cms_pecos."""
     validated: List[CmsPecosRecord] = []
     errors: List[Dict[str, Any]] = []
 
@@ -88,7 +88,7 @@ def load_cms_pecos_data(
                 execute_values(
                     cur,
                     """
-                    INSERT INTO raw.cms_pecos (
+                    INSERT INTO hcs_raw.cms_pecos (
                         npi, enrollment_id, organization_name,
                         state, enrollment_type, first_name, last_name,
                         _loaded_at, _source_file, _source_hash

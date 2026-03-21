@@ -35,7 +35,7 @@ ALTER TABLE mol_silver.patent_exclusivities ADD COLUMN IF NOT EXISTS interchange
 
 -- ─── Sync Schedule ────────────────────────────────────────────────────────────
 
-INSERT INTO raw.sync_schedules (source, tier, cron_expression, priority, enabled, options) VALUES
+INSERT INTO ops.sync_schedules (source, tier, cron_expression, priority, enabled, options) VALUES
 ('purple_book', 'monthly', '0 5 1 * *', 'normal', true, '{"source_name":"FDA Purple Book (Biologics)","api_type":"rest","base_url":"https://purplebooksearch.fda.gov/api/v1","auth_type":"token","rate_limit_per_second":4,"entity_linking":{"identifier_field":"generic_name","identifier_type":"drug_name"}}'::jsonb)
 ON CONFLICT (source) DO NOTHING;
 

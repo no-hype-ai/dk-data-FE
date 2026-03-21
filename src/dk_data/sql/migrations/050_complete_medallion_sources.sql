@@ -741,7 +741,7 @@ CREATE INDEX IF NOT EXISTS idx_silver_bioact_type ON silver.bioactivity(activity
 -- ============================================================================
 
 -- Track pipeline and linking job history for scheduling persistence
-CREATE TABLE IF NOT EXISTS raw.pipeline_jobs (
+CREATE TABLE IF NOT EXISTS ops.pipeline_jobs (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     job_type VARCHAR(50) NOT NULL,  -- daily_linking, weekly_linking, daily, weekly, monthly
     status VARCHAR(20) NOT NULL,     -- running, completed, partial, failed
@@ -768,10 +768,10 @@ CREATE TABLE IF NOT EXISTS raw.pipeline_jobs (
     job_metadata JSONB
 );
 
-CREATE INDEX IF NOT EXISTS idx_pipeline_jobs_type ON raw.pipeline_jobs(job_type);
-CREATE INDEX IF NOT EXISTS idx_pipeline_jobs_status ON raw.pipeline_jobs(status);
-CREATE INDEX IF NOT EXISTS idx_pipeline_jobs_completed ON raw.pipeline_jobs(completed_at);
-CREATE INDEX IF NOT EXISTS idx_pipeline_jobs_type_completed ON raw.pipeline_jobs(job_type, completed_at);
+CREATE INDEX IF NOT EXISTS idx_pipeline_jobs_type ON ops.pipeline_jobs(job_type);
+CREATE INDEX IF NOT EXISTS idx_pipeline_jobs_status ON ops.pipeline_jobs(status);
+CREATE INDEX IF NOT EXISTS idx_pipeline_jobs_completed ON ops.pipeline_jobs(completed_at);
+CREATE INDEX IF NOT EXISTS idx_pipeline_jobs_type_completed ON ops.pipeline_jobs(job_type, completed_at);
 
 -- ============================================================================
 -- STEP 6: LOG MIGRATION

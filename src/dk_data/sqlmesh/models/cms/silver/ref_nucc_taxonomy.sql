@@ -3,7 +3,7 @@
 -- Part of: 016-cms-puf-datasource-integration
 
 MODEL (
-    name silver.ref_nucc_taxonomy,
+    name hcs_silver.ref_nucc_taxonomy,
     kind FULL,
     cron '@daily',
     audits (

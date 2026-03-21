@@ -36,7 +36,7 @@ SELECT
     FALSE AS processed_to_silver,
     NOW() AS created_at
 
-FROM raw.orcid
+FROM mol_raw.orcid
 WHERE
     response_status = 200
     AND processed_to_bronze = FALSE

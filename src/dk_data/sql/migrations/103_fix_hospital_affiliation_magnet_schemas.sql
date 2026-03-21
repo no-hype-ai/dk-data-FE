@@ -7,16 +7,16 @@
 BEGIN;
 
 -- ═══════════════════════════════════════════════════════════════════════════
--- 1. raw.cms_hospital_affiliation — fetcher now uses CMS Provider Data API
+-- 1. hcs_raw.cms_hospital_affiliation — fetcher now uses CMS Provider Data API
 --    dataset 27ea-46a8 which returns provider-level affiliation records.
 --    Old schema: (affiliation_id PK, npi, ccn, affiliation_type)
 --    New schema: matches fetcher output from _normalise()
 -- ═══════════════════════════════════════════════════════════════════════════
 
-DROP VIEW IF EXISTS gold.cms_hospital_affiliation CASCADE;
-DROP TABLE IF EXISTS raw.cms_hospital_affiliation CASCADE;
+DROP VIEW IF EXISTS hcs_gold.cms_hospital_affiliation CASCADE;
+DROP TABLE IF EXISTS hcs_raw.cms_hospital_affiliation CASCADE;
 
-CREATE TABLE raw.cms_hospital_affiliation (
+CREATE TABLE hcs_raw.cms_hospital_affiliation (
     npi                                     TEXT NOT NULL,
     ind_pac_id                              TEXT,
     provider_last_name                      TEXT,
@@ -33,9 +33,9 @@ CREATE TABLE raw.cms_hospital_affiliation (
 );
 
 CREATE INDEX IF NOT EXISTS idx_cms_hospital_affiliation_npi
-    ON raw.cms_hospital_affiliation (npi);
+    ON hcs_raw.cms_hospital_affiliation (npi);
 
-CREATE OR REPLACE VIEW gold.cms_hospital_affiliation AS
+CREATE OR REPLACE VIEW hcs_gold.cms_hospital_affiliation AS
 SELECT
     npi,
     ind_pac_id,
@@ -45,21 +45,21 @@ SELECT
     facility_type,
     facility_affiliations_certification_number,
     _loaded_at AS last_refreshed
-FROM raw.cms_hospital_affiliation;
+FROM hcs_raw.cms_hospital_affiliation;
 
 
 -- ═══════════════════════════════════════════════════════════════════════════
--- 2. raw.cms_magnet — fetcher now downloads Excel from ANCC with fields:
+-- 2. hcs_raw.cms_magnet — fetcher now downloads Excel from ANCC with fields:
 --    facility_name, city, state, country, zip_code, designation_year,
 --    redesignation_years, web_address.
 --    Old schema: (facility_id PK, facility_name, city, state,
 --                 designation_date, expiration_date)
 -- ═══════════════════════════════════════════════════════════════════════════
 
-DROP VIEW IF EXISTS gold.cms_magnet CASCADE;
-DROP TABLE IF EXISTS raw.cms_magnet CASCADE;
+DROP VIEW IF EXISTS hcs_gold.cms_magnet CASCADE;
+DROP TABLE IF EXISTS hcs_raw.cms_magnet CASCADE;
 
-CREATE TABLE raw.cms_magnet (
+CREATE TABLE hcs_raw.cms_magnet (
     facility_name                           TEXT NOT NULL,
     city                                    TEXT,
     state                                   TEXT NOT NULL,
@@ -74,7 +74,7 @@ CREATE TABLE raw.cms_magnet (
     PRIMARY KEY (facility_name, state)
 );
 
-CREATE OR REPLACE VIEW gold.cms_magnet AS
+CREATE OR REPLACE VIEW hcs_gold.cms_magnet AS
 SELECT
     facility_name,
     city,
@@ -85,6 +85,6 @@ SELECT
     redesignation_years,
     web_address,
     _loaded_at AS last_refreshed
-FROM raw.cms_magnet;
+FROM hcs_raw.cms_magnet;
 
 COMMIT;

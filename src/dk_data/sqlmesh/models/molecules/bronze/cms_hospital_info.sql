@@ -37,7 +37,7 @@ SELECT
     FALSE AS processed_to_silver,
     NOW() AS created_at
 
-FROM raw.cms_hospital_info
+FROM hcs_raw.cms_hospital_info
 WHERE
     response_status = 200
     AND processed_to_bronze = FALSE

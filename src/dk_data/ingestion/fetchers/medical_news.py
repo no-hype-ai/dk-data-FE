@@ -309,7 +309,7 @@ class MedicalNewsFetcher(BaseFetcher):
     # ------------------------------------------------------------------
 
     def _load_drug_names(self) -> List[str]:
-        """Load active drug_name values from meta.ci_search_terms."""
+        """Load active drug_name values from meta.ops_ci_search_terms."""
         if self._drug_names is not None:
             return self._drug_names
 
@@ -322,7 +322,7 @@ class MedicalNewsFetcher(BaseFetcher):
                     cur.execute(
                         """
                         SELECT term_value
-                        FROM meta.ci_search_terms
+                        FROM meta.ops_ci_search_terms
                         WHERE term_type = 'drug_name'
                           AND is_active = TRUE
                         ORDER BY term_value
@@ -331,7 +331,7 @@ class MedicalNewsFetcher(BaseFetcher):
                     for row in cur.fetchall():
                         names.append(row[0])
 
-            logger.info("Loaded %d drug names from meta.ci_search_terms", len(names))
+            logger.info("Loaded %d drug names from meta.ops_ci_search_terms", len(names))
             self._drug_names = names
             return names
 

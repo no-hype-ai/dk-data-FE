@@ -146,7 +146,7 @@ class DataFreshnessMonitor:
                     MAX(started_at) as last_refresh,
                     MAX(error_message) FILTER (WHERE status = 'failed') as last_error,
                     bool_or(status = 'processing') as is_refreshing
-                FROM raw.ingestion_jobs
+                FROM ops.ingestion_jobs
                 WHERE source = $1
             """, source)
 
@@ -279,7 +279,7 @@ class DataFreshnessMonitor:
             # Get refresh history
             jobs = await conn.fetch("""
                 SELECT status, started_at, completed_at, records_processed, error_message
-                FROM raw.ingestion_jobs
+                FROM ops.ingestion_jobs
                 WHERE source = $1
                   AND started_at >= NOW() - ($2 || ' days')::interval
                 ORDER BY started_at DESC
@@ -319,7 +319,7 @@ class DataFreshnessMonitor:
         job_id = uuid4()
         async with self.db_pool.acquire() as conn:
             await conn.execute("""
-                INSERT INTO raw.ingestion_jobs (job_id, source, status, started_at)
+                INSERT INTO ops.ingestion_jobs (job_id, source, status, started_at)
                 VALUES ($1, $2, 'processing', NOW())
             """, job_id, source)
         return job_id
@@ -335,7 +335,7 @@ class DataFreshnessMonitor:
         status = 'completed' if success else 'failed'
         async with self.db_pool.acquire() as conn:
             await conn.execute("""
-                UPDATE raw.ingestion_jobs
+                UPDATE ops.ingestion_jobs
                 SET status = $2, completed_at = NOW(),
                     records_processed = $3, error_message = $4
                 WHERE job_id = $1

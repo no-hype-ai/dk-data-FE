@@ -1,4 +1,4 @@
--- Migration 070: Add retention_days column to meta.data_sources
+-- Migration 070: Add retention_days column to meta.ops_data_sources
 -- Feature: 013-observability-governance (US5: Data Classification + Retention)
 -- Tasks: T022
 -- Purpose: Add optional retention_days column to data_sources for per-source retention override
@@ -6,9 +6,9 @@
 
 DO $$
 BEGIN
-    ALTER TABLE meta.data_sources ADD COLUMN IF NOT EXISTS retention_days INTEGER DEFAULT NULL;
+    ALTER TABLE meta.ops_data_sources ADD COLUMN IF NOT EXISTS retention_days INTEGER DEFAULT NULL;
 EXCEPTION WHEN undefined_table THEN
-    RAISE NOTICE 'meta.data_sources does not exist yet — skipping retention_days column';
+    RAISE NOTICE 'meta.ops_data_sources does not exist yet — skipping retention_days column';
 END
 $$;
 
@@ -18,6 +18,6 @@ $$;
 DO $$
 BEGIN
     RAISE NOTICE 'Retention column migration complete (070_retention_column.sql)';
-    RAISE NOTICE 'Column: meta.data_sources.retention_days (INTEGER, NULL = perpetual)';
+    RAISE NOTICE 'Column: meta.ops_data_sources.retention_days (INTEGER, NULL = perpetual)';
 END
 $$;

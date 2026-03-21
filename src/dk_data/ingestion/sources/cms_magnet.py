@@ -46,7 +46,7 @@ def load_cms_magnet_data(
     source_file: Optional[str] = None,
     batch_size: int = 500,
 ) -> Dict[str, Any]:
-    """Load CMS Magnet records into raw.cms_magnet."""
+    """Load CMS Magnet records into hcs_raw.cms_magnet."""
     validated: List[CmsMagnetRecord] = []
     errors: List[Dict[str, Any]] = []
 
@@ -98,7 +98,7 @@ def load_cms_magnet_data(
                 execute_values(
                     cur,
                     """
-                    INSERT INTO raw.cms_magnet (
+                    INSERT INTO hcs_raw.cms_magnet (
                         facility_name, city, state, country, zip_code,
                         designation_year, redesignation_years, web_address,
                         _loaded_at, _source_file, _source_hash

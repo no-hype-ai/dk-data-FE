@@ -43,7 +43,7 @@ def load_cms_ddinter_data(
     source_file: Optional[str] = None,
     batch_size: int = 500,
 ) -> Dict[str, Any]:
-    """Load CMS DDInter records into raw.cms_ddinter."""
+    """Load CMS DDInter records into hcs_raw.cms_ddinter."""
     validated: List[CmsDdinterRecord] = []
     errors: List[Dict[str, Any]] = []
 
@@ -92,7 +92,7 @@ def load_cms_ddinter_data(
                 execute_values(
                     cur,
                     """
-                    INSERT INTO raw.cms_ddinter (
+                    INSERT INTO hcs_raw.cms_ddinter (
                         drug_a, drug_b, interaction_type, severity, description,
                         _loaded_at, _source_file, _source_hash
                     ) VALUES %s

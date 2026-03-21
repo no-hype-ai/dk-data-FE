@@ -50,7 +50,7 @@ def load_cms_part_d_prescriber_data(
     source_file: Optional[str] = None,
     batch_size: int = 500,
 ) -> Dict[str, Any]:
-    """Load CMS Part D Prescriber records into raw.cms_part_d_prescriber.
+    """Load CMS Part D Prescriber records into hcs_raw.cms_part_d_prescriber.
 
     Args:
         records: List of dicts from the fetcher.
@@ -118,7 +118,7 @@ def load_cms_part_d_prescriber_data(
                 execute_values(
                     cur,
                     """
-                    INSERT INTO raw.cms_part_d_prescriber (
+                    INSERT INTO hcs_raw.cms_part_d_prescriber (
                         npi, prescriber_last_org_name, prescriber_first_name,
                         prescriber_city, prescriber_state, prescriber_type,
                         drug_brand_name, drug_generic_name,

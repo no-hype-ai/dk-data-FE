@@ -78,12 +78,12 @@ def log_enrichment_run(
     hospitals_updated: int,
     errors: int
 ) -> None:
-    """Log the enrichment run to meta.refresh_log."""
+    """Log the enrichment run to meta.ops_refresh_log."""
     with get_connection() as conn:
         with conn.cursor() as cur:
             # Try to get or create enrichment source
             cur.execute("""
-                INSERT INTO meta.data_sources (
+                INSERT INTO meta.ops_data_sources (
                     source_name, source_type, description, is_active
                 )
                 VALUES (
@@ -101,14 +101,14 @@ def log_enrichment_run(
                 source_id = result[0]
             else:
                 cur.execute("""
-                    SELECT source_id FROM meta.data_sources
+                    SELECT source_id FROM meta.ops_data_sources
                     WHERE source_name = 'ai_enrichment'
                 """)
                 source_id = cur.fetchone()[0]
 
             # Log the run
             cur.execute("""
-                INSERT INTO meta.refresh_log (
+                INSERT INTO meta.ops_refresh_log (
                     source_id,
                     refresh_started_at,
                     refresh_completed_at,

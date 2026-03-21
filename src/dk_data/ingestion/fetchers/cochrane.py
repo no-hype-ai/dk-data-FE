@@ -304,7 +304,7 @@ class CochraneFetcher(BaseFetcher):
     # ------------------------------------------------------------------
 
     def _load_search_terms(self) -> List[str]:
-        """Load active drug_name search terms from meta.ci_search_terms."""
+        """Load active drug_name search terms from meta.ops_ci_search_terms."""
         try:
             from ..utils.database import get_connection
 
@@ -314,7 +314,7 @@ class CochraneFetcher(BaseFetcher):
                     cur.execute(
                         """
                         SELECT term_value
-                        FROM meta.ci_search_terms
+                        FROM meta.ops_ci_search_terms
                         WHERE term_type = 'drug_name'
                           AND is_active = TRUE
                         ORDER BY term_value
@@ -323,7 +323,7 @@ class CochraneFetcher(BaseFetcher):
                     for row in cur.fetchall():
                         terms.append(row[0])
 
-            logger.info("Loaded %d drug_name terms from meta.ci_search_terms", len(terms))
+            logger.info("Loaded %d drug_name terms from meta.ops_ci_search_terms", len(terms))
             return terms
 
         except Exception as e:
