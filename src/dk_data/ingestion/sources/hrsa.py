@@ -1,7 +1,9 @@
 """HRSA Shortage Area Data Ingestor.
 
-Loads Health Professional Shortage Area (HPSA) data from HRSA API.
+Loads Health Professional Shortage Area (HPSA) data from HRSA API or CSV.
 Source: https://data.hrsa.gov/api
+
+Stores full raw response as JSONB.
 """
 
 import os
@@ -11,13 +13,15 @@ import json
 from typing import Optional, Dict, Any, List
 
 import requests
-from pydantic import ValidationError
 
 from ..utils.database import get_cursor, get_connection
-from ..utils.validators import HRSAShortageAreaRecord
 from ..utils.retry import retry_with_backoff, RetryExhaustedError
 
 logger = logging.getLogger(__name__)
+
+SOURCE_NAME = 'hrsa'
+TABLE = 'mol_raw.hrsa_shortage_areas'
+API_ENDPOINT = 'hrsa_hpsa'
 
 # HRSA API endpoints
 HRSA_HPSA_API_URL = os.getenv(
@@ -111,7 +115,7 @@ def calculate_data_hash(data: List[Dict]) -> str:
 
 def load_hrsa_from_csv(filepath: str, batch_size: int = 500) -> dict:
     """
-    Load HRSA shortage area data from CSV file.
+    Load HRSA shortage area data from CSV file. Stores full raw response as JSONB.
 
     Args:
         filepath: Path to HRSA CSV file.
@@ -131,120 +135,59 @@ def load_hrsa_from_csv(filepath: str, batch_size: int = 500) -> dict:
         logger.error(f"Failed to read CSV: {e}")
         return {'status': 'failed', 'error': str(e)}
 
-    # Map CSV columns to our schema (HRSA BCD_HPSA_FCT_DET CSV format)
-    # Source: https://data.hrsa.gov/DataDownload/DD_Files/BCD_HPSA_FCT_DET_PC.csv
-    column_mapping = {
-        # HPSA ID variations
-        'HPSA_ID': 'hpsa_id',
-        'HPSA Source ID': 'hpsa_id',
-        'HPSA ID': 'hpsa_id',
-        # HPSA Name variations
-        'HPSA_Name': 'hpsa_name',
-        'HPSA Name': 'hpsa_name',
-        # HPSA Type variations (Primary Care, Mental Health, Dental)
-        'HPSA_Type': 'hpsa_type',
-        'HPSA Type Description': 'hpsa_type',
-        'HPSA Discipline Class': 'hpsa_type',
-        # Designation Type variations
-        'Designation_Type': 'designation_type',
-        'HPSA Designation Type Description': 'designation_type',
-        'Designation Type': 'designation_type',
-        # State abbreviation variations
-        'State_Abbr': 'state_abbr',
-        'State Abbreviation': 'state_abbr',
-        'Primary State Abbreviation': 'state_abbr',
-        # County name variations
-        'County_Name': 'county_name',
-        'Common County Name': 'county_name',
-        'County Equivalent Name': 'county_name',
-        # HPSA Score variations
-        'HPSA_Score': 'hpsa_score',
-        'HPSA Score': 'hpsa_score',
-        # Rural status variations
-        'Rural_Status': 'rural_status',
-        'Rural Status': 'rural_status',
-        'HPSA Metropolitan Indicator Description': 'rural_status',
-        'Metropolitan Indicator': 'rural_status',
-        # Designation date
-        'HPSA Designation Date': 'designation_date',
-    }
-
-    # Rename columns we find
-    rename_map = {}
-    for csv_col, db_col in column_mapping.items():
-        if csv_col in df.columns:
-            rename_map[csv_col] = db_col
-
-    df = df.rename(columns=rename_map)
-
-    # Keep only the columns we need (handles duplicate column names after rename)
-    target_cols = ['hpsa_id', 'hpsa_name', 'hpsa_type', 'designation_type',
-                   'state_abbr', 'county_name', 'hpsa_score', 'rural_status',
-                   'designation_date']
-    available_cols = [c for c in target_cols if c in df.columns]
-    df = df.loc[:, ~df.columns.duplicated()][available_cols]
-
-    # Calculate hash
-    source_hash = hashlib.md5(df.to_csv(index=False).encode()).hexdigest()[:32]
-
-    records_inserted = 0
-    records_failed = 0
+    inserted = 0
+    failed = 0
     errors = []
 
     with get_connection() as conn:
         with conn.cursor() as cur:
             # Clear existing data (full refresh)
-            cur.execute("TRUNCATE TABLE raw.hrsa_shortage_areas")
+            cur.execute(f"TRUNCATE TABLE {TABLE}")
 
             for idx, row in df.iterrows():
                 try:
-                    # Parse designation date if present
-                    designation_date = None
-                    if pd.notna(row.get('designation_date')):
-                        try:
-                            designation_date = pd.to_datetime(row['designation_date']).date()
-                        except Exception:
-                            pass
+                    raw_record = row.to_dict()
+                    response_body = json.dumps(raw_record, default=str)
+                    response_hash = hashlib.sha256(response_body.encode()).hexdigest()
+                    request_id = raw_record.get('HPSA_ID',
+                                    raw_record.get('HPSA Source ID',
+                                    raw_record.get('HPSA ID',
+                                    f'hrsa_{idx}')))
 
-                    cur.execute("""
-                        INSERT INTO raw.hrsa_shortage_areas (
-                            hpsa_id, hpsa_name, hpsa_type, designation_type,
-                            state_abbr, county_name, hpsa_score, designation_date,
-                            rural_status, _source_hash
-                        ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                    cur.execute(f"""
+                        INSERT INTO {TABLE} (
+                            request_id, api_endpoint,
+                            response_status, response_body, response_body_hash,
+                            source_id
+                        ) VALUES (%s, %s, %s, %s, %s, %s)
+                        ON CONFLICT (response_body_hash)
+                        WHERE response_body_hash IS NOT NULL
+                        DO NOTHING
                     """, (
-                        row.get('hpsa_id', ''),
-                        row.get('hpsa_name', ''),
-                        row.get('hpsa_type', ''),
-                        row.get('designation_type', ''),
-                        row.get('state_abbr', ''),
-                        row.get('county_name', ''),
-                        int(row['hpsa_score']) if pd.notna(row.get('hpsa_score')) else None,
-                        designation_date,
-                        row.get('rural_status', ''),
-                        source_hash
+                        str(request_id), 'hrsa_csv',
+                        200, response_body, response_hash,
+                        SOURCE_NAME,
                     ))
-                    records_inserted += 1
+                    inserted += 1
 
-                    if records_inserted % batch_size == 0:
+                    if inserted % batch_size == 0:
                         conn.commit()
-
                 except Exception as e:
-                    records_failed += 1
+                    failed += 1
                     if len(errors) < 10:
-                        errors.append({'index': idx, 'error': str(e)})
+                        errors.append({'index': idx, 'error': str(e)[:200]})
+                    logger.error(f"{SOURCE_NAME} CSV record {idx} failed: {e}")
 
             conn.commit()
 
-    logger.info(f"HRSA CSV load complete: {records_inserted} inserted, {records_failed} failed")
+    logger.info(f"{SOURCE_NAME} CSV load: {inserted} inserted, {failed} failed")
 
     return {
-        'status': 'success',
+        'status': 'success' if failed == 0 else 'partial',
         'records_fetched': len(df),
-        'records_inserted': records_inserted,
-        'records_failed': records_failed,
-        'source_hash': source_hash,
-        'errors': errors
+        'records_inserted': inserted,
+        'records_failed': failed,
+        'errors': errors[:10],
     }
 
 
@@ -255,7 +198,7 @@ def load_hrsa_shortage_areas(
     batch_size: int = 500
 ) -> dict:
     """
-    Load HRSA shortage area data from CSV file or API.
+    Load HRSA shortage area data from CSV file or API. Stores full raw response as JSONB.
 
     Args:
         filepath: Path to CSV file (if provided, loads from file).
@@ -295,81 +238,56 @@ def load_hrsa_shortage_areas(
     # Calculate hash for tracking
     source_hash = calculate_data_hash(all_records)
 
-    # Check if data has changed
-    with get_cursor() as cur:
-        cur.execute("""
-            SELECT COUNT(*) FROM raw.hrsa_shortage_areas
-            WHERE _source_hash = %s
-        """, (source_hash,))
-        if cur.fetchone()[0] > 0:
-            logger.info("HRSA data unchanged since last load. Skipping.")
-            return {'status': 'skipped', 'reason': 'unchanged'}
-
     # Process records
-    records_inserted = 0
-    records_failed = 0
+    inserted = 0
+    failed = 0
     errors = []
 
     with get_connection() as conn:
         with conn.cursor() as cur:
-            for idx, record_data in enumerate(all_records):
+            for idx, raw_record in enumerate(all_records):
                 try:
-                    # Map API fields to our schema
-                    record = HRSAShortageAreaRecord(
-                        hpsa_id=str(record_data.get('hpsaId', record_data.get('HPSA_ID', ''))),
-                        hpsa_name=record_data.get('hpsaName', record_data.get('HPSA_Name')),
-                        hpsa_type=record_data.get('hpsaType', record_data.get('HPSA_Type')),
-                        designation_type=record_data.get('designationType', record_data.get('Designation_Type')),
-                        state_abbr=record_data.get('stateAbbreviation', record_data.get('State_Abbr', '')),
-                        county_name=record_data.get('countyName', record_data.get('County_Name')),
-                        hpsa_score=record_data.get('hpsaScore', record_data.get('HPSA_Score')),
-                        designation_date=record_data.get('designationDate'),
-                        rural_status=record_data.get('ruralStatus', record_data.get('Rural_Status'))
-                    )
+                    response_body = json.dumps(raw_record, default=str)
+                    response_hash = hashlib.sha256(response_body.encode()).hexdigest()
+                    request_id = raw_record.get('hpsaId',
+                                    raw_record.get('HPSA_ID',
+                                    f'hrsa_{idx}'))
 
-                    cur.execute("""
-                        INSERT INTO raw.hrsa_shortage_areas (
-                            hpsa_id, hpsa_name, hpsa_type, designation_type,
-                            state_abbr, county_name, hpsa_score, designation_date,
-                            rural_status, _source_hash
-                        ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                    cur.execute(f"""
+                        INSERT INTO {TABLE} (
+                            request_id, api_endpoint,
+                            response_status, response_body, response_body_hash,
+                            source_id
+                        ) VALUES (%s, %s, %s, %s, %s, %s)
+                        ON CONFLICT (response_body_hash)
+                        WHERE response_body_hash IS NOT NULL
+                        DO NOTHING
                     """, (
-                        record.hpsa_id,
-                        record.hpsa_name,
-                        record.hpsa_type,
-                        record.designation_type,
-                        record.state_abbr,
-                        record.county_name,
-                        record.hpsa_score,
-                        record.designation_date,
-                        record.rural_status,
-                        source_hash
+                        str(request_id), API_ENDPOINT,
+                        200, response_body, response_hash,
+                        SOURCE_NAME,
                     ))
-                    records_inserted += 1
+                    inserted += 1
 
-                    if records_inserted % batch_size == 0:
+                    if inserted % batch_size == 0:
                         conn.commit()
-
-                except ValidationError as e:
-                    records_failed += 1
-                    errors.append({'index': idx, 'error': str(e)})
-
                 except Exception as e:
-                    records_failed += 1
-                    errors.append({'index': idx, 'error': str(e)})
-                    logger.error(f"Error at record {idx}: {e}")
+                    failed += 1
+                    if len(errors) < 10:
+                        errors.append({'index': idx, 'error': str(e)[:200]})
+                    logger.error(f"{SOURCE_NAME} API record {idx} failed: {e}")
 
             conn.commit()
 
-    logger.info(f"HRSA load complete: {records_inserted} inserted, {records_failed} failed")
+    logger.info(f"{SOURCE_NAME} API load: {inserted} inserted, {failed} failed")
 
     return {
-        'status': 'success',
+        'status': 'success' if failed == 0 else 'partial',
         'records_fetched': len(all_records),
-        'records_inserted': records_inserted,
-        'records_failed': records_failed,
+        'records_inserted': inserted,
+        'records_failed': failed,
         'source_hash': source_hash,
-        'errors': errors[:10]
+        'errors': errors[:10],
     }
 
 

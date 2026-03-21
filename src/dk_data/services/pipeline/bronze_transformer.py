@@ -1,7 +1,11 @@
-"""On-demand Raw → Bronze transformer.
+"""DEPRECATED: On-demand Raw → Bronze transformer.
 
-After each MCP invoke inserts into raw, this module immediately
-extracts typed columns into the bronze schema tables.
+THIS MODULE IS DEPRECATED. Use BronzeIngestionService from
+data_platform/bronze_ingestion.py instead. This module only extracts
+a SUBSET of columns with WRONG names (e.g., 'title' instead of
+'brief_title', 'sponsor' instead of 'lead_sponsor_name').
+
+BronzeIngestionService extracts ALL columns with correct API-derived names.
 
 Source-specific extraction logic maps raw JSONB → bronze typed columns.
 """

@@ -380,7 +380,7 @@ class DynamicSourceTransformer:
         # Add bronze metadata columns
         col_defs.extend([
             "_extra_fields JSONB",   # Catch-all for fields not in schema
-            "_raw_id INTEGER",       # Reference to raw record
+            "_raw_id TEXT",          # Reference to raw record (UUID or int as string)
             "raw_metadata JSONB",    # Links to raw record (legacy)
             "bronze_hash TEXT",      # Hash for deduplication
             "quality_score FLOAT",   # Data quality score
@@ -679,19 +679,44 @@ class DynamicSourceTransformer:
                 clean_name = col_name[7:]
                 value = find_value_deep(payload, clean_name)
 
-            # Type conversion
+            # Type conversion — coerce Python values to match PostgreSQL column types
             if value is not None:
                 try:
-                    if 'int' in col['type'].lower():
+                    col_type = col['type'].lower()
+                    if 'int' in col_type:
                         value = int(value) if value != '' else None
-                    elif 'float' in col['type'].lower() or 'double' in col['type'].lower():
+                    elif 'float' in col_type or 'double' in col_type or 'numeric' in col_type:
                         value = float(value) if value != '' else None
-                    elif 'bool' in col['type'].lower():
+                    elif 'bool' in col_type:
                         value = bool(value)
-                    elif 'json' in col['type'].lower():
+                    elif 'json' in col_type:
                         value = json.dumps(value) if not isinstance(value, str) else value
+                    elif col_type == 'date':
+                        # asyncpg needs datetime.date, not a string
+                        if isinstance(value, str):
+                            from datetime import datetime as _dt
+                            for fmt, slen in [('%Y-%m-%d', 10), ('%Y-%m-%dT%H:%M:%S', 19), ('%Y-%m', 7), ('%Y', 4)]:
+                                try:
+                                    value = _dt.strptime(value[:slen], fmt).date()
+                                    break
+                                except (ValueError, IndexError):
+                                    continue
+                            else:
+                                value = None
+                    elif 'timestamp' in col_type:
+                        if isinstance(value, str):
+                            from datetime import datetime as _dt
+                            try:
+                                value = _dt.fromisoformat(value.replace('Z', '+00:00'))
+                            except (ValueError, TypeError):
+                                value = None
                 except (ValueError, TypeError):
                     value = None
+
+            # Catch-all: serialize any remaining dict/list values to JSON strings
+            # asyncpg cannot bind raw dicts to TEXT/JSONB params without serialization
+            if isinstance(value, (dict, list)):
+                value = json.dumps(value, default=str)
 
             values[col_name] = value
 
@@ -735,7 +760,7 @@ class DynamicSourceTransformer:
 
         # Build params
         params = [values.get(c['name']) for c in columns]
-        params.extend([extra_fields_json, raw_id, raw_metadata, bronze_hash, quality_score])
+        params.extend([extra_fields_json, str(raw_id), raw_metadata, bronze_hash, quality_score])
 
         placeholders = [f'${i+1}' for i in range(len(params))]
 

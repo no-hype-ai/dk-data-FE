@@ -266,13 +266,30 @@ class BaseDataTool:
         errors: List[str] = []
         bronze_ok = False
 
+        # Bronze transform: use BronzeIngestionService (the full column version)
+        # NOT BronzeTransformer (pipeline/) which is a deprecated subset
         try:
-            from ..pipeline.bronze_transformer import BronzeTransformer
-            transformer = BronzeTransformer(self.db_pool)
-            count = await transformer.transform(
-                self.tool_def.raw_table, raw_record_id, api_response,
-            )
-            bronze_ok = count > 0
+            from ..data_platform.bronze_ingestion import BronzeIngestionService
+            bronze_svc = BronzeIngestionService(self.db_pool)
+            source_to_bronze = {
+                'clinicaltrials': bronze_svc.process_clinicaltrials,
+                'openfda_labels': bronze_svc.process_labels,
+                'openfda_faers': bronze_svc.process_faers,
+                'chembl': bronze_svc.process_chembl,
+                'pubchem': bronze_svc.process_pubchem,
+                'uniprot': None,  # processed in silver directly
+                'openalex': None,
+                'bindingdb': bronze_svc.process_bindingdb,
+                'ema': bronze_svc.process_ema,
+                'orange_book': bronze_svc.process_orange_book,
+                'uspto_patents': bronze_svc.process_uspto_patents,
+            }
+            processor = source_to_bronze.get(self.tool_def.raw_table)
+            if processor:
+                result = await processor(limit=100)
+                bronze_ok = result.records_processed > 0
+            else:
+                bronze_ok = True  # source doesn't need bronze step
         except Exception as e:
             logger.error(f"Bronze transform failed for {self.tool_def.name}: {e}")
             errors.append(f"bronze: {e}")

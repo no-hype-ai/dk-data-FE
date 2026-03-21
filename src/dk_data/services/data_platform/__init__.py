@@ -33,7 +33,7 @@ from .raw_ingestion import (
 )
 
 # Bronze Layer - JSON extraction
-from .bronze_ingestion import BronzeIngestionService, TransformResult
+from .raw_to_bronze import BronzeIngestionService, TransformResult
 
 # Silver Layer - Entity resolution and normalization
 from .silver_transformation import SilverTransformationService, TransformationResult

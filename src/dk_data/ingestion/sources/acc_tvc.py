@@ -1,7 +1,8 @@
 """ACC TVC Certification Data Ingestor.
 
 Loads Transcatheter Valve Certification data from NCDR Public Reporting
-CSV files into the ``raw.acc_tvc_certification`` table.
+CSV files into mol_raw.acc_tvc_certification.
+Stores full raw response as JSONB.
 
 Supports two CSV formats:
   1. NCDR TVTMetrics / merged CSV  (columns: FacilityBrandedName, State, ...)
@@ -9,18 +10,21 @@ Supports two CSV formats:
 """
 
 import hashlib
+import json
 import logging
 from pathlib import Path
 from datetime import datetime
 from typing import Optional
 
 import pandas as pd
-from pydantic import ValidationError
 
 from ..utils.database import get_cursor, get_connection
-from ..utils.validators import ACCTVCCertificationRecord
 
 logger = logging.getLogger(__name__)
+
+SOURCE_NAME = 'acc_tvc'
+TABLE = 'mol_raw.acc_tvc_certification'
+API_ENDPOINT = 'acc_tvc_csv'
 
 # Column mapping for NCDR TVTMetrics / Hospitals merged CSV
 NCDR_COLUMN_MAPPING = {
@@ -115,7 +119,7 @@ def load_acc_tvc_certifications(
     filepath: str,
     batch_size: int = 500
 ) -> dict:
-    """Load ACC TVC Certification data from CSV file.
+    """Load ACC TVC Certification data from CSV file. Stores full raw response as JSONB.
 
     Handles both NCDR PublicReportingApi CSVs and legacy manual-upload
     CSVs via automatic column-format detection.
@@ -131,16 +135,6 @@ def load_acc_tvc_certifications(
 
     source_hash = calculate_file_hash(filepath)
     source_file = Path(filepath).name
-
-    # Check if already loaded
-    with get_cursor() as cur:
-        cur.execute("""
-            SELECT COUNT(*) FROM raw.acc_tvc_certification
-            WHERE _source_hash = %s
-        """, (source_hash,))
-        if cur.fetchone()[0] > 0:
-            logger.warning(f"File {source_file} already loaded. Skipping.")
-            return {'status': 'skipped', 'reason': 'already_loaded'}
 
     # Read CSV with flexible column detection
     df = pd.read_csv(
@@ -160,75 +154,53 @@ def load_acc_tvc_certifications(
     logger.info(f"Found {len(df)} certification records")
 
     # Process records
-    records_inserted = 0
-    records_failed = 0
+    inserted = 0
+    failed = 0
     errors = []
 
     with get_connection() as conn:
         with conn.cursor() as cur:
             for idx, row in df.iterrows():
                 try:
-                    # Determine certification type
-                    cert_type = row.get('certification_type', 'Transcatheter Valve Certification')
-                    if pd.isna(cert_type) or not str(cert_type).strip():
-                        cert_type = 'Transcatheter Valve Certification'
+                    raw_record = row.to_dict()
+                    response_body = json.dumps(raw_record, default=str)
+                    response_hash = hashlib.sha256(response_body.encode()).hexdigest()
+                    request_id = raw_record.get('facility_name', f'acc_tvc_{idx}')
 
-                    # Validate record
-                    record = ACCTVCCertificationRecord(
-                        facility_name=row['facility_name'],
-                        facility_address=row.get('facility_address'),
-                        city=row.get('city'),
-                        state=row.get('state'),
-                        zip_code=row.get('zip_code'),
-                        certification_type=str(cert_type).strip(),
-                        certification_date=parse_date(row.get('certification_date')),
-                        expiration_date=parse_date(row.get('expiration_date'))
-                    )
-
-                    cur.execute("""
-                        INSERT INTO raw.acc_tvc_certification (
-                            facility_name, facility_address, city, state,
-                            zip_code, certification_type, certification_date,
-                            expiration_date, _source_file, _source_hash
-                        ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                    cur.execute(f"""
+                        INSERT INTO {TABLE} (
+                            request_id, api_endpoint,
+                            response_status, response_body, response_body_hash,
+                            source_id
+                        ) VALUES (%s, %s, %s, %s, %s, %s)
+                        ON CONFLICT (response_body_hash)
+                        WHERE response_body_hash IS NOT NULL
+                        DO NOTHING
                     """, (
-                        record.facility_name,
-                        record.facility_address,
-                        record.city,
-                        record.state,
-                        record.zip_code,
-                        record.certification_type,
-                        record.certification_date,
-                        record.expiration_date,
-                        source_file,
-                        source_hash
+                        str(request_id), API_ENDPOINT,
+                        200, response_body, response_hash,
+                        SOURCE_NAME,
                     ))
-                    records_inserted += 1
+                    inserted += 1
 
-                    if records_inserted % batch_size == 0:
+                    if inserted % batch_size == 0:
                         conn.commit()
-
-                except ValidationError as e:
-                    records_failed += 1
-                    errors.append({'row': idx, 'error': str(e)})
-                    if records_failed <= 5:
-                        logger.warning(f"Validation error at row {idx}: {e}")
-
                 except Exception as e:
-                    records_failed += 1
-                    errors.append({'row': idx, 'error': str(e)})
-                    logger.error(f"Error at row {idx}: {e}")
+                    failed += 1
+                    if len(errors) < 10:
+                        errors.append({'index': idx, 'error': str(e)[:200]})
+                    logger.error(f"{SOURCE_NAME} record {idx} failed: {e}")
 
             conn.commit()
 
-    logger.info(f"ACC TVC load complete: {records_inserted} inserted, {records_failed} failed")
+    logger.info(f"{SOURCE_NAME} load: {inserted} inserted, {failed} failed")
 
     return {
-        'status': 'success',
-        'records_inserted': records_inserted,
-        'records_failed': records_failed,
+        'status': 'success' if failed == 0 else 'partial',
+        'records_inserted': inserted,
+        'records_failed': failed,
         'source_file': source_file,
-        'errors': errors[:10]
+        'errors': errors[:10],
     }
 
 

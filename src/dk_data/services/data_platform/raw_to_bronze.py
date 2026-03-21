@@ -121,20 +121,50 @@ class BronzeIngestionService:
         # Extract phases as JSONB array
         phases = design_module.get('phases', [])
 
+        # Extract ALL API fields — zero data loss from raw to bronze
+        oversight = protocol.get('oversightModule', {})
+        refs_module = protocol.get('referencesModule', {})
+        ipd_module = protocol.get('ipdSharingStatementModule', {})
+        description_module = protocol.get('descriptionModule', {})
+        results_section = study.get('resultsSection')
+        derived_section = study.get('derivedSection', {})
+        design_info = design_module.get('designInfo', {})
+        masking_info = design_info.get('maskingInfo', {}) if design_info else {}
+
+        primary_completion = self._parse_date(
+            status_module.get('primaryCompletionDateStruct', {}).get('date')
+        )
+
         await conn.execute("""
             INSERT INTO mol_bronze.clinicaltrials (
-                raw_id, nct_id, org_study_id, brief_title, official_title,
-                overall_status, start_date, completion_date,
-                lead_sponsor_name, lead_sponsor_class, collaborators,
-                study_type, phases, allocation, intervention_model, masking,
+                raw_id, nct_id, org_study_id, brief_title, official_title, acronym,
+                brief_summary, detailed_description,
+                overall_status, last_known_status, why_stopped,
+                phase, phases,
+                start_date, start_date_type, completion_date, completion_date_type,
+                primary_completion_date,
+                study_first_submit_date, study_first_post_date, last_update_post_date,
+                study_type, allocation, intervention_model, primary_purpose, masking,
                 enrollment_count, enrollment_type,
-                eligibility_criteria, minimum_age, maximum_age, sex,
-                conditions, interventions, primary_outcomes, secondary_outcomes,
-                locations
+                conditions, keywords, interventions, arms_groups,
+                eligibility_criteria, sex, minimum_age, maximum_age, healthy_volunteers,
+                lead_sponsor_name, lead_sponsor_class, collaborators, central_contacts,
+                locations,
+                primary_outcomes, secondary_outcomes,
+                fda_regulated_drug, fda_regulated_device, ipd_sharing,
+                has_results, results_section,
+                results_outcome_measures, results_adverse_events,
+                results_participant_flow, results_baseline,
+                condition_browse, intervention_browse, "references"
             ) VALUES (
-                $1, $2, $3, $4, $5, $6, $7, $8, $9, $10,
-                $11, $12, $13, $14, $15, $16, $17, $18, $19, $20,
-                $21, $22, $23, $24, $25, $26, $27
+                $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13::jsonb,
+                $14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26,$27,$28,
+                $29::jsonb,$30::jsonb,$31::jsonb,$32::jsonb,
+                $33,$34,$35,$36,$37,$38,$39,$40::jsonb,$41::jsonb,$42::jsonb,
+                $43::jsonb,$44::jsonb,
+                $45,$46,$47,$48,$49::jsonb,
+                $50::jsonb,$51::jsonb,$52::jsonb,$53::jsonb,
+                $54::jsonb,$55::jsonb,$56::jsonb
             )
             ON CONFLICT (nct_id) DO UPDATE SET
                 brief_title = EXCLUDED.brief_title,
@@ -144,9 +174,10 @@ class BronzeIngestionService:
                 enrollment_count = EXCLUDED.enrollment_count,
                 conditions = EXCLUDED.conditions,
                 interventions = EXCLUDED.interventions,
-                primary_outcomes = COALESCE(EXCLUDED.primary_outcomes, mol_bronze.clinicaltrials.primary_outcomes),
-                secondary_outcomes = COALESCE(EXCLUDED.secondary_outcomes, mol_bronze.clinicaltrials.secondary_outcomes),
-                locations = COALESCE(EXCLUDED.locations, mol_bronze.clinicaltrials.locations),
+                has_results = COALESCE(EXCLUDED.has_results, mol_bronze.clinicaltrials.has_results),
+                results_section = COALESCE(EXCLUDED.results_section, mol_bronze.clinicaltrials.results_section),
+                results_outcome_measures = COALESCE(EXCLUDED.results_outcome_measures, mol_bronze.clinicaltrials.results_outcome_measures),
+                results_adverse_events = COALESCE(EXCLUDED.results_adverse_events, mol_bronze.clinicaltrials.results_adverse_events),
                 processed_to_silver = FALSE,
                 ingested_at = NOW()
         """,
@@ -155,27 +186,57 @@ class BronzeIngestionService:
             id_module.get('orgStudyIdInfo', {}).get('id'),
             id_module.get('briefTitle'),
             id_module.get('officialTitle'),
+            id_module.get('acronym'),
+            description_module.get('briefSummary'),
+            description_module.get('detailedDescription'),
             status_module.get('overallStatus'),
+            status_module.get('lastKnownStatus'),
+            status_module.get('whyStopped'),
+            phases[0] if phases else None,
+            json.dumps(phases) if phases else None,
             start_date,
+            status_module.get('startDateStruct', {}).get('type'),
             completion_date,
+            status_module.get('completionDateStruct', {}).get('type'),
+            primary_completion,
+            status_module.get('studyFirstSubmitDate'),
+            status_module.get('studyFirstPostDateStruct', {}).get('date') if status_module.get('studyFirstPostDateStruct') else None,
+            status_module.get('lastUpdatePostDateStruct', {}).get('date') if status_module.get('lastUpdatePostDateStruct') else None,
+            design_module.get('studyType'),
+            design_info.get('allocation'),
+            design_info.get('interventionModel'),
+            design_info.get('primaryPurpose'),
+            masking_info.get('masking') if masking_info else None,
+            design_module.get('enrollmentInfo', {}).get('count'),
+            design_module.get('enrollmentInfo', {}).get('type'),
+            json.dumps(conditions_module.get('conditions', [])) if conditions_module.get('conditions') else None,
+            json.dumps(conditions_module.get('keywords', [])) if conditions_module.get('keywords') else None,
+            json.dumps(arms_module.get('interventions', [])) if arms_module.get('interventions') else None,
+            json.dumps(arms_module.get('armGroups', [])) if arms_module.get('armGroups') else None,
+            eligibility_module.get('eligibilityCriteria'),
+            eligibility_module.get('sex'),
+            eligibility_module.get('minimumAge'),
+            eligibility_module.get('maximumAge'),
+            eligibility_module.get('healthyVolunteers'),
             lead_sponsor.get('name'),
             lead_sponsor.get('class'),
             json.dumps(collaborators) if collaborators else None,
-            design_module.get('studyType'),
-            json.dumps(phases) if phases else None,
-            design_module.get('designInfo', {}).get('allocation'),
-            design_module.get('designInfo', {}).get('interventionModel'),
-            design_module.get('designInfo', {}).get('maskingInfo', {}).get('masking'),
-            design_module.get('enrollmentInfo', {}).get('count'),
-            design_module.get('enrollmentInfo', {}).get('type'),
-            eligibility_module.get('eligibilityCriteria'),
-            eligibility_module.get('minimumAge'),
-            eligibility_module.get('maximumAge'),
-            eligibility_module.get('sex'),
-            json.dumps(conditions_module.get('conditions', [])) if conditions_module.get('conditions') else None,
-            json.dumps(arms_module.get('interventions', [])) if arms_module.get('interventions') else None,
+            json.dumps(contacts_module.get('centralContacts', [])) if contacts_module.get('centralContacts') else None,
+            json.dumps(contacts_module.get('locations', [])) if contacts_module.get('locations') else None,
             json.dumps(outcomes_module.get('primaryOutcomes', [])) if outcomes_module.get('primaryOutcomes') else None,
             json.dumps(outcomes_module.get('secondaryOutcomes', [])) if outcomes_module.get('secondaryOutcomes') else None,
+            oversight.get('isFdaRegulatedDrug'),
+            oversight.get('isFdaRegulatedDevice'),
+            ipd_module.get('ipdSharing'),
+            study.get('hasResults', False) or results_section is not None,
+            json.dumps(results_section) if results_section else None,
+            json.dumps(results_section.get('outcomeMeasuresModule', {}).get('outcomeMeasures')) if results_section and results_section.get('outcomeMeasuresModule') else None,
+            json.dumps(results_section.get('adverseEventsModule')) if results_section and results_section.get('adverseEventsModule') else None,
+            json.dumps(results_section.get('participantFlowModule')) if results_section and results_section.get('participantFlowModule') else None,
+            json.dumps(results_section.get('baselineCharacteristicsModule')) if results_section and results_section.get('baselineCharacteristicsModule') else None,
+            json.dumps(derived_section.get('conditionBrowseModule')) if derived_section.get('conditionBrowseModule') else None,
+            json.dumps(derived_section.get('interventionBrowseModule')) if derived_section.get('interventionBrowseModule') else None,
+            json.dumps(refs_module.get('references', refs_module.get('seeAlsoLinks', []))) if refs_module else None,
             json.dumps(contacts_module.get('locations', [])) if contacts_module.get('locations') else None
         )
 
