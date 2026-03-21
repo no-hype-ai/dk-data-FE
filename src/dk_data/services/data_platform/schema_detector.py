@@ -332,7 +332,7 @@ class SchemaDetector:
     def generate_create_table_sql(
         self,
         schema: TableSchema,
-        schema_name: str = "bronze"
+        schema_name: str = "mol_bronze"
     ) -> str:
         """
         Generate CREATE TABLE SQL from detected schema.
@@ -379,7 +379,8 @@ class SchemaDetector:
         self,
         schema: TableSchema,
         raw_table: str,
-        cron_schedule: str = "@daily"
+        cron_schedule: str = "@daily",
+        schema_name: str = "mol_bronze"
     ) -> str:
         """
         Generate SQLMesh model SQL from detected schema.
@@ -388,6 +389,7 @@ class SchemaDetector:
             schema: TableSchema from detect_schema
             raw_table: Name of the raw source table
             cron_schedule: SQLMesh cron schedule
+            schema_name: Target bronze schema (mol_bronze or hcs_bronze)
 
         Returns:
             SQLMesh model SQL
@@ -400,7 +402,7 @@ class SchemaDetector:
             f"-- Generated at: {schema.detected_at.isoformat()}",
             "",
             "MODEL (",
-            f"    name bronze.{schema.table_name},",
+            f"    name {schema_name}.{schema.table_name},",
             "    kind INCREMENTAL_BY_TIME_RANGE (",
             "        time_column request_timestamp,",
             "        batch_size 500",

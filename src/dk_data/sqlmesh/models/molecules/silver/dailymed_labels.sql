@@ -22,27 +22,41 @@ SELECT
     gen_random_uuid() AS id,
 
     -- Entity linking key to drug_labels
-    setid AS setid,              -- = drug_labels.spl_set_id
-    NULL::UUID AS molecule_id,   -- filled by entity linking service
+    dm.setid AS setid,              -- = drug_labels.spl_set_id
+    -- Resolve molecule_id via name matching: generic_name then brand_name
+    -- against mol_silver.molecule_aliases (covers pref_name, canonical_name, synonyms).
+    COALESCE(
+        ma_generic.molecule_id,
+        ma_brand.molecule_id
+    ) AS molecule_id,
 
     -- DailyMed metadata (all bronze columns)
-    spl_version,
-    published_date,
-    title,
-    brand_name,
-    generic_name,
-    manufacturer,
-    entity_link_key,
-    entity_link_type,
-    query_name,
+    dm.spl_version,
+    dm.published_date,
+    dm.title,
+    dm.brand_name,
+    dm.generic_name,
+    dm.manufacturer,
+    dm.entity_link_key,
+    dm.entity_link_type,
+    dm.query_name,
 
     -- Source tracking
-    id AS bronze_id,
-    source,
-    source_updated_at,
+    dm.id AS bronze_id,
+    dm.source,
+    dm.source_updated_at,
     NOW() AS created_at,
     NOW() AS updated_at
 
-FROM mol_bronze.dailymed
-WHERE processed_to_silver = FALSE
-  AND setid IS NOT NULL;
+FROM mol_bronze.dailymed dm
+LEFT JOIN mol_silver.molecule_aliases ma_generic
+    ON dm.generic_name IS NOT NULL
+    AND LOWER(REGEXP_REPLACE(dm.generic_name, '[^a-zA-Z0-9]', '', 'g'))
+       = ma_generic.alias_name_normalized
+LEFT JOIN mol_silver.molecule_aliases ma_brand
+    ON COALESCE(ma_generic.molecule_id, NULL) IS NULL
+    AND dm.brand_name IS NOT NULL
+    AND LOWER(REGEXP_REPLACE(dm.brand_name, '[^a-zA-Z0-9]', '', 'g'))
+       = ma_brand.alias_name_normalized
+WHERE dm.processed_to_silver = FALSE
+  AND dm.setid IS NOT NULL;

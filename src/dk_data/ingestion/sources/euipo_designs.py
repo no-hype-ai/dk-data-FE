@@ -64,7 +64,7 @@ def load_euipo_designs_data(
 
                     cur.execute(
                         """
-                        INSERT INTO raw.euipo_designs (
+                        INSERT INTO mol_raw.euipo_designs (
                             application_number, design_title,
                             applicant_name, applicant_country,
                             representative_name, designer_name,

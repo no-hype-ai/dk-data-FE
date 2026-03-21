@@ -3,7 +3,7 @@
 -- Part of: 016-cms-puf-datasource-integration
 
 MODEL (
-    name bronze.cms_chronic_conditions,
+    name hcs_bronze.cms_chronic_conditions,
     kind INCREMENTAL_BY_TIME_RANGE (
         time_column _loaded_at,
         batch_size 500

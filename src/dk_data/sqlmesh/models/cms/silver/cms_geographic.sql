@@ -29,8 +29,8 @@ WITH latest_geo AS (
         total_actual_costs,
         per_capita_costs,
         year
-    FROM bronze.cms_geographic_variation
-    WHERE year = (SELECT MAX(year) FROM bronze.cms_geographic_variation)
+    FROM hcs_bronze.cms_geographic_variation
+    WHERE year = (SELECT MAX(year) FROM hcs_bronze.cms_geographic_variation)
 ),
 
 -- Chronic conditions: state-level only (CMS does not publish county-level)
@@ -39,7 +39,7 @@ chronic_pivot AS (
         state,
         ARRAY_AGG(DISTINCT condition ORDER BY condition) AS top_chronic_conditions,
         AVG(prevalence_rate)                    AS avg_chronic_prevalence
-    FROM bronze.cms_chronic_conditions
+    FROM hcs_bronze.cms_chronic_conditions
     GROUP BY state
 ),
 
@@ -51,8 +51,8 @@ post_acute_national AS (
         SUM(CASE WHEN UPPER(TRIM(provider_type)) = 'SNF' THEN total_episodes ELSE 0 END) AS national_snf_episodes,
         SUM(CASE WHEN UPPER(TRIM(provider_type)) = 'HHA' THEN total_episodes ELSE 0 END) AS national_hha_episodes,
         AVG(avg_spending_per_episode)           AS national_avg_spending_per_episode
-    FROM bronze.cms_post_acute
-    WHERE year = (SELECT MAX(year) FROM bronze.cms_post_acute)
+    FROM hcs_bronze.cms_post_acute
+    WHERE year = (SELECT MAX(year) FROM hcs_bronze.cms_post_acute)
 ),
 
 national_bene_total AS (

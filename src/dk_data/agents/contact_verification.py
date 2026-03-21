@@ -66,7 +66,7 @@ class ContactVerificationAgent(BaseAgent):
                     n.phone,
                     n.practice_address,
                     n.mailing_address
-                FROM bronze.cms_nppes n
+                FROM hcs_bronze.cms_nppes n
                 LEFT JOIN hcs_silver.cms_verified_contacts vc ON n.npi = vc.npi
                 WHERE vc.npi IS NULL
                 ORDER BY n.npi

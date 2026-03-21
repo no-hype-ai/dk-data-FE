@@ -3,7 +3,7 @@
 -- Part of: 014-uspto-euipo-model-datasource (fixes broken JSONB extraction from 012)
 
 MODEL (
-    name bronze.uspto_patents,
+    name mol_bronze.uspto_patents,
     kind INCREMENTAL_BY_TIME_RANGE (
         time_column ingested_at,
         lookback 7

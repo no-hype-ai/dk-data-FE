@@ -67,7 +67,7 @@ def load_sec_edgar_data(
 
                     cur.execute(
                         """
-                        INSERT INTO raw.sec_edgar (
+                        INSERT INTO mol_raw.sec_edgar (
                             accession_number, company_name, cik,
                             filing_type, filing_date,
                             document_url, description,

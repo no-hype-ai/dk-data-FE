@@ -19,4 +19,4 @@ SELECT
     classification,
     specialization,
     grouping_name                               AS grouping
-FROM bronze.cms_nucc;
+FROM hcs_bronze.cms_nucc;

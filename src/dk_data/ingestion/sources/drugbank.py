@@ -84,7 +84,7 @@ def load_drugbank_data(
 
                     cur.execute(
                         """
-                        INSERT INTO raw.drugbank (
+                        INSERT INTO mol_raw.drugbank (
                             drugbank_id, name, description, cas_number,
                             categories, targets, enzymes,
                             indication, pharmacodynamics,

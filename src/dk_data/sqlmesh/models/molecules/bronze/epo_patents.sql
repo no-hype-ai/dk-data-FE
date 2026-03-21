@@ -3,7 +3,7 @@
 -- Part of: 014-uspto-euipo-model-datasource
 
 MODEL (
-    name bronze.epo_patents,
+    name mol_bronze.epo_patents,
     kind INCREMENTAL_BY_TIME_RANGE (
         time_column ingested_at,
         lookback 7

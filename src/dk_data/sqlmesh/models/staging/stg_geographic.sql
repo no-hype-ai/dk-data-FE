@@ -3,7 +3,7 @@
 -- Model type: FULL refresh
 
 MODEL (
-    name staging.geographic_designations,
+    name hcs_silver.geographic_designations,
     kind FULL,
     cron '@daily',
     description 'Geographic and shortage area designations for hospitals'
@@ -40,7 +40,7 @@ hpsa_by_county AS (
         MAX(hpsa_score) AS hpsa_score,
         -- Rural status (take most common)
         MODE() WITHIN GROUP (ORDER BY rural_status) AS rural_status
-    FROM raw.hrsa_shortage_areas
+    FROM hcs_raw.hrsa_shortage_areas
     WHERE state_abbr IS NOT NULL
       AND county_name IS NOT NULL
       AND county_name != ''

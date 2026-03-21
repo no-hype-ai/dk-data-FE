@@ -51,9 +51,13 @@ SELECT
     NOW() AS created_at
 
 FROM mol_bronze.faers_events b
-LEFT JOIN mol_silver.molecules m ON (
-    LOWER(b.drug_name) = LOWER(m.canonical_name)
+-- Use molecule_aliases for broadest name coverage: includes canonical_name,
+-- pref_name, synonyms, brand names. Normalized comparison strips punctuation/case.
+LEFT JOIN mol_silver.molecule_aliases ma ON (
+    LOWER(REGEXP_REPLACE(b.drug_name, '[^a-zA-Z0-9]', '', 'g'))
+    = ma.alias_name_normalized
 )
+LEFT JOIN mol_silver.molecules m ON m.molecule_id = ma.molecule_id
 WHERE
     b.processed_to_silver = FALSE
     AND b.safety_report_id IS NOT NULL;

@@ -36,7 +36,7 @@ class DataToolDefinition:
     # Legacy fields carried over from MCP ToolDefinition
     tier: str = "direct_query"
     raw_table: str = ""
-    raw_schema: str = "raw"            # "mol_raw" or "raw"
+    raw_schema: str = "mol_raw"         # "mol_raw", "hcs_raw", "hcp_raw", etc.
     input_schema: Dict = field(default_factory=lambda: {
         "type": "object",
         "properties": {
@@ -154,7 +154,7 @@ _MOLECULE_TOOLS: Dict[str, DataToolDefinition] = {
         api_base_url="https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esearch.fcgi",
         tier="direct_query",
         raw_table="pubmed",
-        raw_schema="raw",
+        raw_schema="mol_raw",
     ),
     "ema-search": DataToolDefinition(
         name="ema-search",
@@ -165,7 +165,7 @@ _MOLECULE_TOOLS: Dict[str, DataToolDefinition] = {
         api_base_url="https://www.ema.europa.eu/en/medicines",
         tier="direct_query",
         raw_table="ema",
-        raw_schema="raw",
+        raw_schema="mol_raw",
     ),
     "hta-decisions-search": DataToolDefinition(
         name="hta-decisions-search",
@@ -176,7 +176,7 @@ _MOLECULE_TOOLS: Dict[str, DataToolDefinition] = {
         api_base_url="https://www.nice.org.uk/guidance",
         tier="direct_query",
         raw_table="hta_decisions",
-        raw_schema="raw",
+        raw_schema="mol_raw",
     ),
     "cochrane-search": DataToolDefinition(
         name="cochrane-search",
@@ -187,7 +187,7 @@ _MOLECULE_TOOLS: Dict[str, DataToolDefinition] = {
         api_base_url="https://www.cochranelibrary.com/cdsr/reviews",
         tier="direct_query",
         raw_table="cochrane_reviews",
-        raw_schema="raw",
+        raw_schema="mol_raw",
     ),
     "orange-book-search": DataToolDefinition(
         name="orange-book-search",
@@ -198,7 +198,7 @@ _MOLECULE_TOOLS: Dict[str, DataToolDefinition] = {
         api_base_url="https://api.fda.gov/drug/drugsfda.json",
         tier="direct_query",
         raw_table="orange_book",
-        raw_schema="raw",
+        raw_schema="mol_raw",
     ),
     "uspto-patents-search": DataToolDefinition(
         name="uspto-patents-search",
@@ -209,7 +209,7 @@ _MOLECULE_TOOLS: Dict[str, DataToolDefinition] = {
         api_base_url="https://api.patentsview.org/patents/query",
         tier="direct_query",
         raw_table="uspto_patents",
-        raw_schema="raw",
+        raw_schema="mol_raw",
     ),
     "epo-patents-search": DataToolDefinition(
         name="epo-patents-search",
@@ -220,7 +220,7 @@ _MOLECULE_TOOLS: Dict[str, DataToolDefinition] = {
         api_base_url="https://ops.epo.org/3.2/rest-services/published-data/search",
         tier="direct_query",
         raw_table="epo_patents",
-        raw_schema="raw",
+        raw_schema="mol_raw",
     ),
     "sec-edgar-search": DataToolDefinition(
         name="sec-edgar-search",
@@ -231,7 +231,7 @@ _MOLECULE_TOOLS: Dict[str, DataToolDefinition] = {
         api_base_url="https://efts.sec.gov/LATEST/search-index?q=",
         tier="direct_query",
         raw_table="sec_edgar",
-        raw_schema="raw",
+        raw_schema="mol_raw",
     ),
     "who-icd-search": DataToolDefinition(
         name="who-icd-search",
@@ -242,7 +242,7 @@ _MOLECULE_TOOLS: Dict[str, DataToolDefinition] = {
         api_base_url="https://id.who.int/icd/release/11/2024-01/mms/search",
         tier="direct_query",
         raw_table="who_icd",
-        raw_schema="raw",
+        raw_schema="mol_raw",
     ),
     "pdb-search": DataToolDefinition(
         name="pdb-search",
@@ -253,7 +253,7 @@ _MOLECULE_TOOLS: Dict[str, DataToolDefinition] = {
         api_base_url="https://search.rcsb.org/rcsbsearch/v2/query",
         tier="direct_query",
         raw_table="pdb_structures",
-        raw_schema="raw",
+        raw_schema="mol_raw",
     ),
     "orcid-search": DataToolDefinition(
         name="orcid-search",
@@ -264,7 +264,7 @@ _MOLECULE_TOOLS: Dict[str, DataToolDefinition] = {
         api_base_url="https://pub.orcid.org/v3.0/search/",
         tier="direct_query",
         raw_table="orcid",
-        raw_schema="raw",
+        raw_schema="mol_raw",
     ),
     # Tier 2: Fetch + Filter
     "journal-rss-fetch": DataToolDefinition(
@@ -276,7 +276,7 @@ _MOLECULE_TOOLS: Dict[str, DataToolDefinition] = {
         api_base_url="https://feeds.feedburner.com/NatureReviewsDrugDiscovery",
         tier="fetch_filter",
         raw_table="journal_rss",
-        raw_schema="raw",
+        raw_schema="mol_raw",
     ),
     "medical-news-fetch": DataToolDefinition(
         name="medical-news-fetch",
@@ -287,7 +287,7 @@ _MOLECULE_TOOLS: Dict[str, DataToolDefinition] = {
         api_base_url="https://www.fiercepharma.com/rss/xml",
         tier="fetch_filter",
         raw_table="medical_news",
-        raw_schema="raw",
+        raw_schema="mol_raw",
     ),
     "uspto-trademarks-search": DataToolDefinition(
         name="uspto-trademarks-search",
@@ -298,7 +298,7 @@ _MOLECULE_TOOLS: Dict[str, DataToolDefinition] = {
         api_base_url="https://tsdr.uspto.gov/",
         tier="fetch_filter",
         raw_table="uspto_trademarks",
-        raw_schema="raw",
+        raw_schema="mol_raw",
     ),
     "euipo-trademarks-search": DataToolDefinition(
         name="euipo-trademarks-search",
@@ -309,7 +309,7 @@ _MOLECULE_TOOLS: Dict[str, DataToolDefinition] = {
         api_base_url="https://euipo.europa.eu/eSearch/",
         tier="fetch_filter",
         raw_table="euipo_trademarks",
-        raw_schema="raw",
+        raw_schema="mol_raw",
     ),
     "euipo-designs-search": DataToolDefinition(
         name="euipo-designs-search",
@@ -320,7 +320,7 @@ _MOLECULE_TOOLS: Dict[str, DataToolDefinition] = {
         api_base_url="https://api.euipo.europa.eu/design-search/designs",
         tier="fetch_filter",
         raw_table="euipo_designs",
-        raw_schema="raw",
+        raw_schema="mol_raw",
     ),
     # Tier 3: Supplementary
     "acc-tvc-search": DataToolDefinition(
@@ -332,7 +332,7 @@ _MOLECULE_TOOLS: Dict[str, DataToolDefinition] = {
         api_base_url="https://www.acc.org/tools-and-practice-support/accreditation",
         tier="supplementary",
         raw_table="acc_tvc_certification",
-        raw_schema="raw",
+        raw_schema="mol_raw",
     ),
     "hrsa-search": DataToolDefinition(
         name="hrsa-search",
@@ -343,7 +343,7 @@ _MOLECULE_TOOLS: Dict[str, DataToolDefinition] = {
         api_base_url="https://data.hrsa.gov/api/hpsas",
         tier="supplementary",
         raw_table="hrsa_shortage_areas",
-        raw_schema="raw",
+        raw_schema="mol_raw",
     ),
 }
 
@@ -365,7 +365,7 @@ _CMS_QUERYABLE_TOOLS: Dict[str, DataToolDefinition] = {
             silver_schema="silver", silver_table="cms_facility_profile",
             silver_key_column="ccn",
         ),
-        raw_table="cms_care_compare", raw_schema="raw",
+        raw_table="cms_care_compare", raw_schema="hcs_raw",
     ),
     "cms-part-d-prescriber": DataToolDefinition(
         name="cms-part-d-prescriber",
@@ -380,7 +380,7 @@ _CMS_QUERYABLE_TOOLS: Dict[str, DataToolDefinition] = {
             silver_schema="silver", silver_table="cms_provider_profile",
             silver_key_column="npi",
         ),
-        raw_table="cms_part_d_prescriber", raw_schema="raw",
+        raw_table="cms_part_d_prescriber", raw_schema="hcs_raw",
     ),
     "cms-physician-puf": DataToolDefinition(
         name="cms-physician-puf",
@@ -395,7 +395,7 @@ _CMS_QUERYABLE_TOOLS: Dict[str, DataToolDefinition] = {
             silver_schema="silver", silver_table="cms_provider_profile",
             silver_key_column="npi",
         ),
-        raw_table="cms_physician_puf", raw_schema="raw",
+        raw_table="cms_physician_puf", raw_schema="hcs_raw",
     ),
     "cms-open-payments": DataToolDefinition(
         name="cms-open-payments",
@@ -410,7 +410,7 @@ _CMS_QUERYABLE_TOOLS: Dict[str, DataToolDefinition] = {
             silver_schema="silver", silver_table="cms_provider_profile",
             silver_key_column="npi",
         ),
-        raw_table="cms_open_payments", raw_schema="raw",
+        raw_table="cms_open_payments", raw_schema="hcs_raw",
     ),
     "cms-pecos": DataToolDefinition(
         name="cms-pecos",
@@ -425,7 +425,7 @@ _CMS_QUERYABLE_TOOLS: Dict[str, DataToolDefinition] = {
             silver_schema="silver", silver_table="cms_provider_profile",
             silver_key_column="npi",
         ),
-        raw_table="cms_pecos", raw_schema="raw",
+        raw_table="cms_pecos", raw_schema="hcs_raw",
     ),
     "cms-inpatient-puf": DataToolDefinition(
         name="cms-inpatient-puf",
@@ -440,7 +440,7 @@ _CMS_QUERYABLE_TOOLS: Dict[str, DataToolDefinition] = {
             silver_schema="silver", silver_table="cms_facility_profile",
             silver_key_column="ccn",
         ),
-        raw_table="cms_inpatient_puf", raw_schema="raw",
+        raw_table="cms_inpatient_puf", raw_schema="hcs_raw",
     ),
     "cms-outpatient-puf": DataToolDefinition(
         name="cms-outpatient-puf",
@@ -455,7 +455,7 @@ _CMS_QUERYABLE_TOOLS: Dict[str, DataToolDefinition] = {
             silver_schema="silver", silver_table="cms_facility_profile",
             silver_key_column="ccn",
         ),
-        raw_table="cms_outpatient_puf", raw_schema="raw",
+        raw_table="cms_outpatient_puf", raw_schema="hcs_raw",
     ),
     "cms-hospital-quality": DataToolDefinition(
         name="cms-hospital-quality",
@@ -470,7 +470,7 @@ _CMS_QUERYABLE_TOOLS: Dict[str, DataToolDefinition] = {
             silver_schema="silver", silver_table="cms_facility_profile",
             silver_key_column="ccn",
         ),
-        raw_table="cms_hospital_quality", raw_schema="raw",
+        raw_table="cms_hospital_quality", raw_schema="hcs_raw",
     ),
     "cms-hospital-affiliation": DataToolDefinition(
         name="cms-hospital-affiliation",
@@ -483,7 +483,7 @@ _CMS_QUERYABLE_TOOLS: Dict[str, DataToolDefinition] = {
             gold_schema="gold", gold_table="cms_hospital_affiliation",
             gold_key_column="ccn",
         ),
-        raw_table="cms_hospital_affiliation", raw_schema="raw",
+        raw_table="cms_hospital_affiliation", raw_schema="hcs_raw",
     ),
     "cms-formulary": DataToolDefinition(
         name="cms-formulary",
@@ -496,7 +496,7 @@ _CMS_QUERYABLE_TOOLS: Dict[str, DataToolDefinition] = {
             gold_schema="gold", gold_table="cms_formulary",
             gold_key_column="ndc",
         ),
-        raw_table="cms_formulary", raw_schema="raw",
+        raw_table="cms_formulary", raw_schema="hcs_raw",
     ),
     "cms-part-d-spending": DataToolDefinition(
         name="cms-part-d-spending",
@@ -509,7 +509,7 @@ _CMS_QUERYABLE_TOOLS: Dict[str, DataToolDefinition] = {
             gold_schema="gold", gold_table="cms_part_d_spending",
             gold_key_column="drug_name",
         ),
-        raw_table="cms_part_d_spending", raw_schema="raw",
+        raw_table="cms_part_d_spending", raw_schema="hcs_raw",
     ),
     "cms-part-b-spending": DataToolDefinition(
         name="cms-part-b-spending",
@@ -522,7 +522,7 @@ _CMS_QUERYABLE_TOOLS: Dict[str, DataToolDefinition] = {
             gold_schema="gold", gold_table="cms_part_b_spending",
             gold_key_column="hcpcs_code",
         ),
-        raw_table="cms_part_b_spending", raw_schema="raw",
+        raw_table="cms_part_b_spending", raw_schema="hcs_raw",
     ),
     "cms-ndc": DataToolDefinition(
         name="cms-ndc",
@@ -535,7 +535,7 @@ _CMS_QUERYABLE_TOOLS: Dict[str, DataToolDefinition] = {
             gold_schema="gold", gold_table="cms_ndc",
             gold_key_column="ndc",
         ),
-        raw_table="cms_ndc", raw_schema="raw",
+        raw_table="cms_ndc", raw_schema="hcs_raw",
     ),
     "cms-chow": DataToolDefinition(
         name="cms-chow",
@@ -548,7 +548,7 @@ _CMS_QUERYABLE_TOOLS: Dict[str, DataToolDefinition] = {
             gold_schema="gold", gold_table="cms_chow",
             gold_key_column="ccn",
         ),
-        raw_table="cms_chow", raw_schema="raw",
+        raw_table="cms_chow", raw_schema="hcs_raw",
     ),
     "cms-geographic-variation": DataToolDefinition(
         name="cms-geographic-variation",
@@ -563,7 +563,7 @@ _CMS_QUERYABLE_TOOLS: Dict[str, DataToolDefinition] = {
             silver_schema="silver", silver_table="cms_geographic",
             silver_key_column="state",
         ),
-        raw_table="cms_geographic_variation", raw_schema="raw",
+        raw_table="cms_geographic_variation", raw_schema="hcs_raw",
     ),
     "cms-chronic-conditions": DataToolDefinition(
         name="cms-chronic-conditions",
@@ -578,7 +578,7 @@ _CMS_QUERYABLE_TOOLS: Dict[str, DataToolDefinition] = {
             silver_schema="silver", silver_table="cms_geographic",
             silver_key_column="state",
         ),
-        raw_table="cms_chronic_conditions", raw_schema="raw",
+        raw_table="cms_chronic_conditions", raw_schema="hcs_raw",
     ),
     "cms-dmepos": DataToolDefinition(
         name="cms-dmepos",
@@ -591,7 +591,7 @@ _CMS_QUERYABLE_TOOLS: Dict[str, DataToolDefinition] = {
             gold_schema="gold", gold_table="cms_dmepos",
             gold_key_column="npi",
         ),
-        raw_table="cms_dmepos", raw_schema="raw",
+        raw_table="cms_dmepos", raw_schema="hcs_raw",
     ),
     "cms-post-acute": DataToolDefinition(
         name="cms-post-acute",
@@ -604,7 +604,7 @@ _CMS_QUERYABLE_TOOLS: Dict[str, DataToolDefinition] = {
             gold_schema="gold", gold_table="cms_post_acute",
             gold_key_column="ccn",
         ),
-        raw_table="cms_post_acute", raw_schema="raw",
+        raw_table="cms_post_acute", raw_schema="hcs_raw",
     ),
     "cms-rbcs": DataToolDefinition(
         name="cms-rbcs",
@@ -617,7 +617,7 @@ _CMS_QUERYABLE_TOOLS: Dict[str, DataToolDefinition] = {
             gold_schema="gold", gold_table="cms_rbcs",
             gold_key_column="hcpcs_code",
         ),
-        raw_table="cms_rbcs", raw_schema="raw",
+        raw_table="cms_rbcs", raw_schema="hcs_raw",
     ),
     "cms-ddinter": DataToolDefinition(
         name="cms-ddinter",
@@ -630,7 +630,7 @@ _CMS_QUERYABLE_TOOLS: Dict[str, DataToolDefinition] = {
             gold_schema="gold", gold_table="cms_ddinter",
             gold_key_column="drug_name",
         ),
-        raw_table="cms_ddinter", raw_schema="raw",
+        raw_table="cms_ddinter", raw_schema="hcs_raw",
     ),
 }
 
@@ -653,7 +653,7 @@ _CMS_BULK_ONLY_TOOLS: Dict[str, DataToolDefinition] = {
             silver_schema="silver", silver_table="cms_provider_profile",
             silver_key_column="npi",
         ),
-        raw_table="cms_nppes", raw_schema="raw",
+        raw_table="cms_nppes", raw_schema="hcs_raw",
     ),
     "cms-pos": DataToolDefinition(
         name="cms-pos",
@@ -669,7 +669,7 @@ _CMS_BULK_ONLY_TOOLS: Dict[str, DataToolDefinition] = {
             silver_schema="silver", silver_table="cms_facility_profile",
             silver_key_column="ccn",
         ),
-        raw_table="cms_pos", raw_schema="raw",
+        raw_table="cms_pos", raw_schema="hcs_raw",
     ),
     "cms-hcris": DataToolDefinition(
         name="cms-hcris",
@@ -683,7 +683,7 @@ _CMS_BULK_ONLY_TOOLS: Dict[str, DataToolDefinition] = {
             gold_schema="gold", gold_table="cms_hcris",
             gold_key_column="ccn",
         ),
-        raw_table="cms_hcris", raw_schema="raw",
+        raw_table="cms_hcris", raw_schema="hcs_raw",
     ),
     "cms-nucc": DataToolDefinition(
         name="cms-nucc",
@@ -697,7 +697,7 @@ _CMS_BULK_ONLY_TOOLS: Dict[str, DataToolDefinition] = {
             gold_schema="gold", gold_table="cms_nucc",
             gold_key_column="hcpcs_code",
         ),
-        raw_table="cms_nucc", raw_schema="raw",
+        raw_table="cms_nucc", raw_schema="hcs_raw",
     ),
     "cms-magnet": DataToolDefinition(
         name="cms-magnet",
@@ -711,7 +711,7 @@ _CMS_BULK_ONLY_TOOLS: Dict[str, DataToolDefinition] = {
             gold_schema="gold", gold_table="cms_magnet",
             gold_key_column="ccn",
         ),
-        raw_table="cms_magnet", raw_schema="raw",
+        raw_table="cms_magnet", raw_schema="hcs_raw",
     ),
     "cms-usp": DataToolDefinition(
         name="cms-usp",
@@ -725,7 +725,7 @@ _CMS_BULK_ONLY_TOOLS: Dict[str, DataToolDefinition] = {
             gold_schema="gold", gold_table="cms_usp",
             gold_key_column="drug_name",
         ),
-        raw_table="cms_usp", raw_schema="raw",
+        raw_table="cms_usp", raw_schema="hcs_raw",
     ),
     "cms-stabilis": DataToolDefinition(
         name="cms-stabilis",
@@ -739,7 +739,7 @@ _CMS_BULK_ONLY_TOOLS: Dict[str, DataToolDefinition] = {
             gold_schema="gold", gold_table="cms_stabilis",
             gold_key_column="drug_name",
         ),
-        raw_table="cms_stabilis", raw_schema="raw",
+        raw_table="cms_stabilis", raw_schema="hcs_raw",
     ),
     "cms-provider-network": DataToolDefinition(
         name="cms-provider-network",

@@ -28,7 +28,7 @@ WITH inpatient_agg AS (
         SUM(total_discharges * avg_medicare_payments)
             / NULLIF(SUM(total_discharges), 0)  AS weighted_avg_medicare_payment,
         COUNT(DISTINCT drg_code)                AS distinct_drg_count
-    FROM bronze.cms_inpatient_puf
+    FROM hcs_bronze.cms_inpatient_puf
     GROUP BY provider_id
 ),
 
@@ -37,7 +37,7 @@ outpatient_agg AS (
         provider_id                             AS ccn,
         SUM(total_services)                     AS total_outpatient_services,
         COUNT(DISTINCT apc_code)                AS distinct_apc_count
-    FROM bronze.cms_outpatient_puf
+    FROM hcs_bronze.cms_outpatient_puf
     GROUP BY provider_id
 ),
 
@@ -45,7 +45,7 @@ affiliation_agg AS (
     SELECT
         ccn,
         COUNT(DISTINCT npi)                     AS affiliated_provider_count
-    FROM bronze.cms_hospital_affiliation
+    FROM hcs_bronze.cms_hospital_affiliation
     GROUP BY ccn
 ),
 
@@ -57,7 +57,7 @@ hcris_latest AS (
         net_income,
         fiscal_year_begin,
         fiscal_year_end
-    FROM bronze.cms_hcris
+    FROM hcs_bronze.cms_hcris
     WHERE provider_ccn IS NOT NULL
     ORDER BY provider_ccn, fiscal_year_end DESC
 ),
@@ -70,13 +70,13 @@ pecos_via_affiliation AS (
         ha.ccn,
         pe.enrollment_type,
         pe.enrollment_state
-    FROM bronze.cms_hospital_affiliation ha
+    FROM hcs_bronze.cms_hospital_affiliation ha
     INNER JOIN (
         SELECT DISTINCT ON (npi)
             npi,
             enrollment_type,
             enrollment_state
-        FROM bronze.cms_pecos
+        FROM hcs_bronze.cms_pecos
         ORDER BY npi, _loaded_at DESC
     ) pe ON ha.npi = pe.npi
     ORDER BY ha.ccn, pe.enrollment_type
@@ -94,7 +94,7 @@ magnet_status AS (
             THEN TRUE
             ELSE FALSE
         END                                     AS is_magnet
-    FROM bronze.cms_magnet
+    FROM hcs_bronze.cms_magnet
 )
 
 SELECT
@@ -144,8 +144,8 @@ SELECT
 
     NOW()                                                                       AS profile_built_at
 
-FROM bronze.cms_pos pos
-LEFT JOIN bronze.cms_hospital_general_info hgi ON pos.ccn = hgi.provider_id
+FROM hcs_bronze.cms_pos pos
+LEFT JOIN hcs_bronze.cms_hospital_general_info hgi ON pos.ccn = hgi.provider_id
 LEFT JOIN inpatient_agg inp ON pos.ccn = inp.ccn
 LEFT JOIN outpatient_agg outp ON pos.ccn = outp.ccn
 LEFT JOIN affiliation_agg aff ON pos.ccn = aff.ccn

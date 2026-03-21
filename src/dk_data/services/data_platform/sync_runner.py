@@ -1033,7 +1033,7 @@ async def run_silver_transformation(pool, metrics: PipelineMetrics) -> Dict[str,
     async with pool.acquire() as conn:
         bronze_tables = await conn.fetch("""
             SELECT table_name FROM information_schema.tables
-            WHERE table_schema = 'bronze' AND table_type = 'BASE TABLE'
+            WHERE table_schema IN ('mol_bronze', 'hcs_bronze') AND table_type = 'BASE TABLE'
         """)
 
     for row in bronze_tables:

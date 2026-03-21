@@ -5,7 +5,7 @@ All configuration for the medallion architecture stored in database tables.
 No hardcoded values - everything is database-driven and dynamically loaded.
 
 Tables:
-- raw.transformation_config: Global transformation settings
+- ops.transformation_config: Global transformation settings
 - raw.source_config: Per-source configuration
 - raw.identifier_types: Identifier patterns and priorities
 - raw.field_mappings: Field extraction rules per source
@@ -123,7 +123,7 @@ class TransformationConfigManager:
         async with self.db_pool.acquire() as conn:
             # Create configuration tables
             await conn.execute("""
-                CREATE TABLE IF NOT EXISTS raw.transformation_config (
+                CREATE TABLE IF NOT EXISTS ops.transformation_config (
                     key TEXT PRIMARY KEY,
                     value JSONB NOT NULL,
                     description TEXT,
@@ -215,7 +215,7 @@ class TransformationConfigManager:
 
         for key, value in default_settings.items():
             await conn.execute("""
-                INSERT INTO raw.transformation_config (key, value, description)
+                INSERT INTO ops.transformation_config (key, value, description)
                 VALUES ($1, $2, $3)
                 ON CONFLICT (key) DO NOTHING
             """, key, json.dumps(value), f"Default {key}")
@@ -356,7 +356,7 @@ class TransformationConfigManager:
         async with self.db_pool.acquire() as conn:
             # Load transformation settings
             settings_dict = {}
-            rows = await conn.fetch("SELECT key, value FROM raw.transformation_config")
+            rows = await conn.fetch("SELECT key, value FROM ops.transformation_config")
             for row in rows:
                 val = row['value']
                 if isinstance(val, str):
@@ -538,11 +538,11 @@ class TransformationConfigManager:
         """Update a transformation setting."""
         async with self.db_pool.acquire() as conn:
             await conn.execute("""
-                INSERT INTO raw.transformation_config (key, value, description, updated_at)
+                INSERT INTO ops.transformation_config (key, value, description, updated_at)
                 VALUES ($1, $2, $3, NOW())
                 ON CONFLICT (key) DO UPDATE SET
                     value = $2,
-                    description = COALESCE($3, raw.transformation_config.description),
+                    description = COALESCE($3, ops.transformation_config.description),
                     updated_at = NOW()
             """, key, json.dumps(value), description)
 

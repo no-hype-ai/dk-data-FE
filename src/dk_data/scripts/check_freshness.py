@@ -53,16 +53,16 @@ QUALITY_CHECKS = {
         'invalid_margin': "SELECT COUNT(*) FROM hcs_raw.cms_cost_reports WHERE operating_margin < -1 OR operating_margin > 1",
     },
     'acc_tvc': {
-        'total_records': "SELECT COUNT(*) FROM raw.acc_tvc_certification",
-        'null_facility_name': "SELECT COUNT(*) FROM raw.acc_tvc_certification WHERE facility_name IS NULL",
-        'expired_certs': "SELECT COUNT(*) FROM raw.acc_tvc_certification WHERE expiration_date < CURRENT_DATE",
-        'future_cert_date': "SELECT COUNT(*) FROM raw.acc_tvc_certification WHERE certification_date > CURRENT_DATE",
+        'total_records': "SELECT COUNT(*) FROM hcs_raw.acc_tvc_certification",
+        'null_facility_name': "SELECT COUNT(*) FROM hcs_raw.acc_tvc_certification WHERE facility_name IS NULL",
+        'expired_certs': "SELECT COUNT(*) FROM hcs_raw.acc_tvc_certification WHERE expiration_date < CURRENT_DATE",
+        'future_cert_date': "SELECT COUNT(*) FROM hcs_raw.acc_tvc_certification WHERE certification_date > CURRENT_DATE",
     },
     'hrsa_shortage_areas': {
-        'total_records': "SELECT COUNT(*) FROM raw.hrsa_shortage_areas",
-        'null_hpsa_id': "SELECT COUNT(*) FROM raw.hrsa_shortage_areas WHERE hpsa_id IS NULL",
-        'null_state': "SELECT COUNT(*) FROM raw.hrsa_shortage_areas WHERE state_abbr IS NULL",
-        'invalid_score': "SELECT COUNT(*) FROM raw.hrsa_shortage_areas WHERE hpsa_score < 0 OR hpsa_score > 25",
+        'total_records': "SELECT COUNT(*) FROM hcs_raw.hrsa_shortage_areas",
+        'null_hpsa_id': "SELECT COUNT(*) FROM hcs_raw.hrsa_shortage_areas WHERE hpsa_id IS NULL",
+        'null_state': "SELECT COUNT(*) FROM hcs_raw.hrsa_shortage_areas WHERE state_abbr IS NULL",
+        'invalid_score': "SELECT COUNT(*) FROM hcs_raw.hrsa_shortage_areas WHERE hpsa_score < 0 OR hpsa_score > 25",
     },
 }
 

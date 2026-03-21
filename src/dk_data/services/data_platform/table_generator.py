@@ -92,7 +92,7 @@ class TableGenerator:
         self,
         table_name: str,
         schema: TableSchema,
-        schema_name: str = "bronze",
+        schema_name: str = "mol_bronze",
         if_not_exists: bool = True
     ) -> TableGenerationResult:
         """
@@ -364,7 +364,7 @@ class TableGenerator:
             columns = await conn.fetch("""
                 SELECT column_name, data_type, is_nullable
                 FROM information_schema.columns
-                WHERE table_schema = 'bronze'
+                WHERE table_schema = 'mol_bronze'
                 AND table_name = $1
                 ORDER BY ordinal_position
             """, table_name)
@@ -392,7 +392,7 @@ class TableGenerator:
         self,
         table_name: str,
         column: ColumnSchema,
-        schema_name: str = "bronze"
+        schema_name: str = "mol_bronze"
     ) -> bool:
         """
         Add a new column to an existing table.

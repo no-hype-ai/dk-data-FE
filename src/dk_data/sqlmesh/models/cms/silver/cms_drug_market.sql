@@ -26,7 +26,7 @@ WITH ndc_per_drug AS (
     SELECT
         nonproprietary_name,
         COUNT(*)                                    AS ndc_count
-    FROM bronze.cms_ndc
+    FROM hcs_bronze.cms_ndc
     WHERE nonproprietary_name IS NOT NULL
     GROUP BY nonproprietary_name
 ),
@@ -37,8 +37,8 @@ spending_d AS (
         generic_name,
         SUM(total_spending)                         AS total_part_d_spending,
         SUM(total_claims)                           AS total_part_d_claims
-    FROM bronze.cms_part_d_spending
-    WHERE year = (SELECT MAX(year) FROM bronze.cms_part_d_spending)
+    FROM hcs_bronze.cms_part_d_spending
+    WHERE year = (SELECT MAX(year) FROM hcs_bronze.cms_part_d_spending)
     GROUP BY generic_name
 ),
 
@@ -50,9 +50,9 @@ spending_b AS (
         hcpcs_description,
         SUM(total_spending)                         AS total_part_b_spending,
         SUM(total_claims)                           AS total_part_b_claims
-    FROM bronze.cms_part_b_spending
+    FROM hcs_bronze.cms_part_b_spending
     WHERE hcpcs_code IS NOT NULL
-      AND year = (SELECT MAX(year) FROM bronze.cms_part_b_spending)
+      AND year = (SELECT MAX(year) FROM hcs_bronze.cms_part_b_spending)
     GROUP BY hcpcs_code, hcpcs_description
 ),
 
@@ -64,12 +64,12 @@ formulary_coverage AS (
         COUNT(DISTINCT f.formulary_id)              AS formulary_count,
         ROUND(
             COUNT(DISTINCT f.formulary_id)::NUMERIC /
-            NULLIF((SELECT COUNT(DISTINCT formulary_id) FROM bronze.cms_formulary), 0),
+            NULLIF((SELECT COUNT(DISTINCT formulary_id) FROM hcs_bronze.cms_formulary), 0),
             4
         )                                           AS formulary_coverage_pct,
         ROUND(AVG(NULLIF(f.tier_level, '')::NUMERIC), 1) AS avg_tier_level
-    FROM bronze.cms_ndc n
-    INNER JOIN bronze.cms_formulary f
+    FROM hcs_bronze.cms_ndc n
+    INNER JOIN hcs_bronze.cms_formulary f
         ON UPPER(TRIM(f.drug_name)) = n.nonproprietary_name
     GROUP BY n.ndc
 ),
@@ -81,8 +81,8 @@ usp_lookup AS (
         n.ndc,
         u.usp_category,
         u.usp_class
-    FROM bronze.cms_ndc n
-    INNER JOIN bronze.cms_usp u
+    FROM hcs_bronze.cms_ndc n
+    INNER JOIN hcs_bronze.cms_usp u
         ON POSITION(n.nonproprietary_name IN UPPER(u.drug_names)) > 0
     WHERE n.nonproprietary_name IS NOT NULL
     ORDER BY n.ndc, u.usp_category, u.usp_class
@@ -124,10 +124,10 @@ SELECT
 
     NOW()                                                                   AS profile_built_at
 
-FROM bronze.cms_ndc n
+FROM hcs_bronze.cms_ndc n
 LEFT JOIN ndc_per_drug ndc_ct ON n.nonproprietary_name = ndc_ct.nonproprietary_name
 LEFT JOIN spending_d sd ON n.nonproprietary_name = sd.generic_name
 LEFT JOIN spending_b sb ON n.nonproprietary_name = sb.hcpcs_description
 LEFT JOIN formulary_coverage f ON n.ndc = f.ndc
-LEFT JOIN bronze.cms_rbcs r ON sb.hcpcs_code = r.hcpcs_code
+LEFT JOIN hcs_bronze.cms_rbcs r ON sb.hcpcs_code = r.hcpcs_code
 LEFT JOIN usp_lookup u ON n.ndc = u.ndc;

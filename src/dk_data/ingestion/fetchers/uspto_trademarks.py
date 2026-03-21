@@ -89,7 +89,7 @@ class USPTOTrademarksFetcher(BaseFetcher):
                     "records": [],
                     "record_count": 0,
                     "hash": None,
-                    "message": "No serial numbers available. Populate raw.uspto_trademarks or provide serial_numbers.",
+                    "message": "No serial numbers available. Populate mol_raw.uspto_trademarks or provide serial_numbers.",
                 }
 
             logger.info(
@@ -303,7 +303,7 @@ class USPTOTrademarksFetcher(BaseFetcher):
             with get_connection() as conn:
                 with conn.cursor() as cur:
                     cur.execute(
-                        "SELECT serial_number FROM raw.uspto_trademarks ORDER BY _loaded_at ASC"
+                        "SELECT serial_number FROM mol_raw.uspto_trademarks ORDER BY _loaded_at ASC"
                     )
                     for row in cur.fetchall():
                         serial_numbers.append(row[0])

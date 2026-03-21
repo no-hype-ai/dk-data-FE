@@ -126,6 +126,8 @@ orange_book_patents AS (
 ),
 
 -- Combine all sources
+-- inchi_key is propagated from DrugBank (the only source with structure data)
+-- to enable molecule_id resolution via mol_silver.molecules.
 combined AS (
     -- DrugBank records (existing format)
     SELECT
@@ -139,6 +141,7 @@ combined AS (
         NULL::TEXT AS family_id,
         pediatric_extension, country,
         drug_name AS molecule_name,
+        inchi_key,
         'drugbank' AS source,
         source_updated_at
     FROM drugbank_patents
@@ -153,6 +156,7 @@ combined AS (
         is_pharma_related, family_id,
         NULL::BOOLEAN AS pediatric_extension, 'US' AS country,
         NULL AS molecule_name,
+        NULL::TEXT AS inchi_key,
         source,
         NOW() AS source_updated_at
     FROM uspto_patents
@@ -167,6 +171,7 @@ combined AS (
         is_pharma_related, family_id,
         NULL::BOOLEAN AS pediatric_extension, 'US' AS country,
         NULL AS molecule_name,
+        NULL::TEXT AS inchi_key,
         source,
         NOW() AS source_updated_at
     FROM uspto_ci
@@ -181,6 +186,7 @@ combined AS (
         is_pharma_related, family_id,
         NULL::BOOLEAN AS pediatric_extension, 'EP' AS country,
         NULL AS molecule_name,
+        NULL::TEXT AS inchi_key,
         source,
         NOW() AS source_updated_at
     FROM epo_patents
@@ -196,50 +202,70 @@ combined AS (
         is_pharma_related, family_id,
         NULL::BOOLEAN AS pediatric_extension, 'US' AS country,
         NULL AS molecule_name,
+        NULL::TEXT AS inchi_key,
         source,
         NOW() AS source_updated_at
     FROM orange_book_patents
+),
+
+-- Deduplicate: one row per patent_number, prefer DrugBank then USPTO
+deduped AS (
+    SELECT DISTINCT ON (patent_number) *
+    FROM combined
+    ORDER BY patent_number,
+        CASE source
+            WHEN 'drugbank' THEN 1
+            WHEN 'uspto_patents' THEN 2
+            WHEN 'uspto_ci' THEN 3
+            WHEN 'epo_ops' THEN 4
+            WHEN 'orange_book' THEN 5
+        END
 )
 
-SELECT DISTINCT ON (patent_number)
+SELECT
     gen_random_uuid() AS id,
-    patent_number,
+    d.patent_number,
     NULL::TEXT AS application_number,
-    title,
-    abstract,
-    filing_date,
-    grant_date,
-    expiry_date,
-    assignee,
-    assignee_type,
+    d.title,
+    d.abstract,
+    d.filing_date,
+    d.grant_date,
+    d.expiry_date,
+    d.assignee,
+    d.assignee_type,
     NULL::TEXT AS assignee_normalized,
-    inventors,
+    d.inventors,
     NULL::TEXT AS patent_type,
-    country,
-    cpc_codes,
-    ipc_codes,
-    num_claims,
-    family_id,
+    d.country,
+    d.cpc_codes,
+    d.ipc_codes,
+    d.num_claims,
+    d.family_id,
     CASE
-        WHEN expiry_date < CURRENT_DATE THEN 'expired'
-        WHEN grant_date IS NULL THEN 'pending'
+        WHEN d.expiry_date < CURRENT_DATE THEN 'expired'
+        WHEN d.grant_date IS NULL THEN 'pending'
         ELSE 'active'
     END AS status,
-    is_pharma_related,
-    pediatric_extension,
-    CASE WHEN pediatric_extension = TRUE THEN 180 ELSE 0 END AS extension_days,
+    d.is_pharma_related,
+    d.pediatric_extension,
+    CASE WHEN d.pediatric_extension = TRUE THEN 180 ELSE 0 END AS extension_days,
     NULL::JSONB AS related_patents,
-    NULL::UUID AS molecule_id,
-    source,
-    source_updated_at,
+    -- Resolve molecule_id: DrugBank records have inchi_key for exact match;
+    -- other sources fall back to name matching via molecule_aliases.
+    COALESCE(
+        m_ik.molecule_id,
+        m_alias.molecule_id
+    ) AS molecule_id,
+    d.source,
+    d.source_updated_at,
     NOW() AS created_at,
     NOW() AS updated_at
-FROM combined
-ORDER BY patent_number,
-    CASE source
-        WHEN 'drugbank' THEN 1
-        WHEN 'uspto_patents' THEN 2
-        WHEN 'uspto_ci' THEN 3
-        WHEN 'epo_ops' THEN 4
-        WHEN 'orange_book' THEN 5
-    END
+FROM deduped d
+LEFT JOIN mol_silver.molecules m_ik
+    ON d.inchi_key IS NOT NULL AND d.inchi_key = m_ik.inchi_key
+LEFT JOIN mol_silver.molecule_aliases ma
+    ON d.inchi_key IS NULL
+    AND d.molecule_name IS NOT NULL
+    AND LOWER(REGEXP_REPLACE(d.molecule_name, '[^a-zA-Z0-9]', '', 'g')) = ma.alias_name_normalized
+LEFT JOIN mol_silver.molecules m_alias
+    ON m_alias.molecule_id = ma.molecule_id

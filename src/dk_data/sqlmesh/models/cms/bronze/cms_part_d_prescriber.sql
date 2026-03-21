@@ -3,7 +3,7 @@
 -- Part of: 016-cms-puf-datasource-integration
 
 MODEL (
-    name bronze.cms_part_d_prescriber,
+    name hcs_bronze.cms_part_d_prescriber,
     kind INCREMENTAL_BY_TIME_RANGE (
         time_column _loaded_at,
         batch_size 500

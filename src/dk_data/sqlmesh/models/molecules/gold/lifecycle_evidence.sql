@@ -116,7 +116,7 @@ SELECT
 
 FROM mol_silver.molecules m
 JOIN mol_silver.molecule_aliases ma ON m.id = ma.molecule_id
-JOIN bronze.orange_book ob ON LOWER(ma.alias_name) = LOWER(ob.ingredient)
+JOIN mol_bronze.orange_book ob ON LOWER(ma.alias_name) = LOWER(ob.ingredient)
 WHERE m.needs_review = FALSE
   AND ob.patent_number IS NOT NULL
 

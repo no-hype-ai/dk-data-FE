@@ -3,7 +3,7 @@
 -- Model type: FULL refresh
 
 MODEL (
-    name staging.certifications,
+    name hcs_silver.certifications,
     kind FULL,
     cron '@daily',
     description 'Transcatheter Valve Certifications from ACC/NCDR'
@@ -27,7 +27,7 @@ WITH matched_hospitals AS (
                 CASE WHEN UPPER(c.city) = UPPER(h.city) THEN 0 ELSE 1 END,
                 h._loaded_at DESC
         ) AS match_rank
-    FROM raw.acc_tvc_certification c
+    FROM hcs_raw.acc_tvc_certification c
     JOIN hcs_raw.cms_hospital_info h ON (
         -- Match by state (required)
         UPPER(c.state) = UPPER(h.state)

@@ -96,7 +96,7 @@ def load_uniprot_data(
 
                     cur.execute(
                         """
-                        INSERT INTO raw.uniprot (
+                        INSERT INTO mol_raw.uniprot (
                             request_id, api_endpoint, response_status,
                             response_body, response_body_hash,
                             response_size_bytes, source_id

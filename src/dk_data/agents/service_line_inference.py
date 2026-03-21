@@ -50,7 +50,7 @@ class ServiceLineInferenceAgent(BaseAgent):
         with self.conn.cursor() as cur:
             cur.execute("""
                 SELECT DISTINCT ip.drg_code, ip.drg_description
-                FROM bronze.cms_inpatient_puf ip
+                FROM hcs_bronze.cms_inpatient_puf ip
                 LEFT JOIN hcs_silver.ref_drg_service_line sl
                     ON ip.drg_code = sl.drg_code
                 WHERE sl.drg_code IS NULL

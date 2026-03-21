@@ -3014,7 +3014,7 @@ async def detect_schema(request: SchemaDetectionRequest):
     create_sql = table_generator._generate_create_table_sql(
         request.source_name,
         schema,
-        schema_name="bronze"
+        schema_name="mol_bronze"
     )
 
     return SchemaDetectionResponse(

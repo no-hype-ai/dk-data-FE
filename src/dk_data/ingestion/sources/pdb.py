@@ -58,7 +58,7 @@ def load_pdb_data(
 
                     cur.execute(
                         """
-                        INSERT INTO raw.pdb (
+                        INSERT INTO mol_raw.pdb (
                             pdb_id, title, method, resolution,
                             deposit_date, raw_response,
                             _source_file, _source_hash

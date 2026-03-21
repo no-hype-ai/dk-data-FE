@@ -3,7 +3,7 @@
 -- Part of: 016-cms-puf-datasource-integration (Phase 3 — Facility MVP)
 
 MODEL (
-    name bronze.cms_hospital_affiliation,
+    name hcs_bronze.cms_hospital_affiliation,
     kind INCREMENTAL_BY_TIME_RANGE (
         time_column _loaded_at,
         batch_size 500

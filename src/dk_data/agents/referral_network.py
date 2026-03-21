@@ -65,7 +65,7 @@ class ReferralNetworkAgent(BaseAgent):
                         hcpcs_code,
                         total_beneficiaries,
                         total_services
-                    FROM bronze.cms_physician_puf
+                    FROM hcs_bronze.cms_physician_puf
                 ),
                 overlapping_pairs AS (
                     SELECT

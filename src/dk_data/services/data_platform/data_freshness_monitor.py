@@ -152,7 +152,7 @@ class DataFreshnessMonitor:
 
             # Get record count
             count = await conn.fetchval("""
-                SELECT COUNT(*) FROM raw.api_responses
+                SELECT COUNT(*) FROM ops.api_responses
                 WHERE source = $1
             """, source)
 

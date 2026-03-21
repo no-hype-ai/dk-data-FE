@@ -67,7 +67,7 @@ class EquipmentInventoryAgent(BaseAgent):
                     op.hcpcs_code,
                     op.hcpcs_description,
                     op.total_services
-                FROM bronze.cms_outpatient_puf op
+                FROM hcs_bronze.cms_outpatient_puf op
                 LEFT JOIN hcs_silver.cms_equipment_inventory ei
                     ON op.ccn = ei.ccn AND op.hcpcs_code = ei.hcpcs_code
                 WHERE ei.ccn IS NULL

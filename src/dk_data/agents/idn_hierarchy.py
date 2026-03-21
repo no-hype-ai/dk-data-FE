@@ -64,8 +64,8 @@ class IDNHierarchyAgent(BaseAgent):
                     c.old_owner_name,
                     c.new_owner_name,
                     c.change_date
-                FROM bronze.cms_pecos p
-                LEFT JOIN bronze.cms_chow c ON p.ccn = c.ccn
+                FROM hcs_bronze.cms_pecos p
+                LEFT JOIN hcs_bronze.cms_chow c ON p.ccn = c.ccn
                 LEFT JOIN hcs_silver.cms_health_system_hierarchy h ON p.ccn = h.system_id
                 WHERE h.system_id IS NULL
                 ORDER BY p.organization_name

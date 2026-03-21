@@ -65,7 +65,7 @@ class StaffingDecompositionAgent(BaseAgent):
             # First get CCNs that need processing
             cur.execute("""
                 SELECT DISTINCT h.ccn
-                FROM bronze.cms_hcris h
+                FROM hcs_bronze.cms_hcris h
                 LEFT JOIN hcs_silver.cms_staffing_profiles sp ON h.ccn = sp.ccn
                 WHERE h.worksheet IN %s
                   AND sp.ccn IS NULL
@@ -80,7 +80,7 @@ class StaffingDecompositionAgent(BaseAgent):
             # Load all relevant line items for those facilities
             cur.execute("""
                 SELECT ccn, worksheet, line_number, column_number, value
-                FROM bronze.cms_hcris
+                FROM hcs_bronze.cms_hcris
                 WHERE ccn = ANY(%s)
                   AND worksheet IN %s
                 ORDER BY ccn, worksheet, line_number, column_number

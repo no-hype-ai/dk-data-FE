@@ -3,7 +3,7 @@
 -- Part of: 016-cms-puf-datasource-integration
 
 MODEL (
-    name bronze.cms_open_payments,
+    name hcs_bronze.cms_open_payments,
     kind INCREMENTAL_BY_TIME_RANGE (
         time_column _loaded_at,
         batch_size 500

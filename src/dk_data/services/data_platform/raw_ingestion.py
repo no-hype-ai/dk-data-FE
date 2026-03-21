@@ -219,33 +219,60 @@ class RawIngestionService:
             logger.error(f"JSON decode error for {endpoint}: {e}")
             return None
 
-    # ALL sources use mol_raw.* schema — no exceptions.
-    # The mol_ prefix is the canonical medallion architecture namespace.
-    MOL_RAW_SOURCES = {
+    # Explicit schema mapping for every DataSource.
+    # Adding a new DataSource without an entry here raises KeyError immediately —
+    # no silent fallback to a deprecated schema is possible.
+    # Schema convention:
+    #   mol_raw.*  — molecule, clinical, regulatory, reference data
+    #   hcs_raw.*  — CMS bulk PUF / healthcare system data (ingested separately)
+    SOURCE_SCHEMA: Dict[DataSource, str] = {
         # Core molecule sources
-        DataSource.OPENFDA_LABELS, DataSource.OPENFDA_FAERS,
-        DataSource.CLINICALTRIALS, DataSource.CHEMBL,
-        DataSource.PUBCHEM, DataSource.OPENALEX,
-        DataSource.DRUGBANK, DataSource.UNIPROT,
-        DataSource.SIDER, DataSource.PDB,
+        DataSource.CLINICALTRIALS:    "mol_raw",
+        DataSource.OPENFDA_FAERS:     "mol_raw",
+        DataSource.OPENFDA_LABELS:    "mol_raw",
+        DataSource.CHEMBL:            "mol_raw",
+        DataSource.DRUGBANK:          "mol_raw",
+        DataSource.PUBCHEM:           "mol_raw",
+        DataSource.UNIPROT:           "mol_raw",
+        DataSource.PDB:               "mol_raw",
+        DataSource.SIDER:             "mol_raw",
+        DataSource.OPENALEX:          "mol_raw",
+        # Reference / regulatory sources
+        DataSource.BINDINGDB:         "mol_raw",
+        DataSource.EMA:               "mol_raw",
+        DataSource.ORANGE_BOOK:       "mol_raw",
+        DataSource.USPTO_PATENTS:     "mol_raw",
+        DataSource.WHO_INN:           "mol_raw",
+        DataSource.KEGG_DRUG:         "mol_raw",
+        DataSource.TTD:               "mol_raw",
+        DataSource.FDA_DRUGS:         "mol_raw",
+        DataSource.IMGT:              "mol_raw",
+        DataSource.CDC_VACCINES:      "mol_raw",
+        DataSource.RXNORM:            "mol_raw",
+        DataSource.TDC_ADMET:         "mol_raw",
+        DataSource.PHARMGKB:          "mol_raw",
+        DataSource.WEBSEARCH:         "mol_raw",
+        DataSource.DAILYMED:          "mol_raw",
         # Assessment-enrichment sources
-        DataSource.REACTOME, DataSource.NICE_HTA,
-        DataSource.CMS_OPEN_PAYMENTS, DataSource.CMS_MEDICARE,
-        DataSource.NIH_REPORTER, DataSource.NPI_REGISTRY,
-        DataSource.EUROPEPMC, DataSource.FDA_DRUGSFDA,
-        DataSource.KEGG_DRUG, DataSource.FDA_DRUGS,
-        # Reference/regulatory sources
-        DataSource.BINDINGDB, DataSource.EMA,
-        DataSource.ORANGE_BOOK, DataSource.USPTO_PATENTS,
-        DataSource.WHO_INN, DataSource.RXNORM,
-        DataSource.TDC_ADMET, DataSource.PHARMGKB,
-        DataSource.WEBSEARCH, DataSource.DAILYMED,
-        DataSource.IMGT, DataSource.CDC_VACCINES,
+        DataSource.REACTOME:          "mol_raw",
+        DataSource.NICE_HTA:          "mol_raw",
+        DataSource.CMS_OPEN_PAYMENTS: "mol_raw",
+        DataSource.CMS_MEDICARE:      "mol_raw",
+        DataSource.NIH_REPORTER:      "mol_raw",
+        DataSource.NPI_REGISTRY:      "mol_raw",
+        DataSource.EUROPEPMC:         "mol_raw",
+        DataSource.FDA_DRUGSFDA:      "mol_raw",
     }
 
     async def _store_raw_record(self, source: DataSource, record: RawRecord) -> Optional[str]:
-        """Store raw record in mol_raw.* for molecule sources, raw.* for others."""
-        schema = "mol_raw" if source in self.MOL_RAW_SOURCES else "raw"
+        """Store raw record in the canonical prefixed schema for this source."""
+        try:
+            schema = self.SOURCE_SCHEMA[source]
+        except KeyError:
+            raise ValueError(
+                f"DataSource '{source.value}' has no entry in SOURCE_SCHEMA. "
+                "Add it explicitly — no fallback schema exists."
+            )
         table_name = f"{schema}.{source.value}"
 
         async with self.db_pool.acquire() as conn:

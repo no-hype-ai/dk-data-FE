@@ -512,7 +512,7 @@ class InitialLoadOrchestrator:
         """Create state tracking table if it doesn't exist."""
         async with self.db_pool.acquire() as conn:
             await conn.execute("""
-                CREATE TABLE IF NOT EXISTS raw.initial_load_state (
+                CREATE TABLE IF NOT EXISTS ops.initial_load_state (
                     run_id TEXT PRIMARY KEY,
                     state JSONB NOT NULL,
                     created_at TIMESTAMPTZ DEFAULT NOW(),
@@ -521,7 +521,7 @@ class InitialLoadOrchestrator:
             """)
             await conn.execute("""
                 CREATE INDEX IF NOT EXISTS idx_initial_load_state_updated
-                ON raw.initial_load_state(updated_at DESC)
+                ON ops.initial_load_state(updated_at DESC)
             """)
 
     async def _save_state(self):
@@ -533,7 +533,7 @@ class InitialLoadOrchestrator:
 
         async with self.db_pool.acquire() as conn:
             await conn.execute("""
-                INSERT INTO raw.initial_load_state (run_id, state, updated_at)
+                INSERT INTO ops.initial_load_state (run_id, state, updated_at)
                 VALUES ($1, $2, NOW())
                 ON CONFLICT (run_id) DO UPDATE SET
                     state = $2,
@@ -547,12 +547,12 @@ class InitialLoadOrchestrator:
         async with self.db_pool.acquire() as conn:
             if run_id:
                 row = await conn.fetchrow("""
-                    SELECT state FROM raw.initial_load_state WHERE run_id = $1
+                    SELECT state FROM ops.initial_load_state WHERE run_id = $1
                 """, run_id)
             else:
                 # Get most recent incomplete run
                 row = await conn.fetchrow("""
-                    SELECT state FROM raw.initial_load_state
+                    SELECT state FROM ops.initial_load_state
                     WHERE state->>'status' IN ('running', 'paused')
                     ORDER BY updated_at DESC LIMIT 1
                 """)
@@ -2309,7 +2309,7 @@ class InitialLoadOrchestrator:
         async with self.db_pool.acquire() as conn:
             bronze_tables = await conn.fetch("""
                 SELECT table_name FROM information_schema.tables
-                WHERE table_schema = 'bronze' AND table_type = 'BASE TABLE'
+                WHERE table_schema IN ('mol_bronze', 'hcs_bronze') AND table_type = 'BASE TABLE'
             """)
 
         for row in bronze_tables:
@@ -2476,7 +2476,7 @@ class InitialLoadOrchestrator:
 
         async with self.db_pool.acquire() as conn:
             # Clear state table
-            await conn.execute("TRUNCATE raw.initial_load_state")
+            await conn.execute("TRUNCATE ops.initial_load_state")
 
             # Get and truncate all raw tables
             raw_tables = await conn.fetch("""
@@ -2494,7 +2494,7 @@ class InitialLoadOrchestrator:
             # Truncate bronze tables
             bronze_tables = await conn.fetch("""
                 SELECT table_name FROM information_schema.tables
-                WHERE table_schema = 'bronze' AND table_type = 'BASE TABLE'
+                WHERE table_schema IN ('mol_bronze', 'hcs_bronze') AND table_type = 'BASE TABLE'
             """)
             for row in bronze_tables:
                 try:

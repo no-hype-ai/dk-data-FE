@@ -79,7 +79,7 @@ def load_hta_decisions_data(
 
                     cur.execute(
                         """
-                        INSERT INTO raw.hta_decisions (
+                        INSERT INTO mol_raw.hta_decisions (
                             decision_id, agency, drug_name,
                             indication, decision_type, decision_date,
                             document_url, summary,
