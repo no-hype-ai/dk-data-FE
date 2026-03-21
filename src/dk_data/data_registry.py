@@ -97,6 +97,22 @@ MOL_SILVER_TABLES = {
         source='sec_edgar',
         postgrest_path='/financial_filings',
     ),
+    'indication_epidemiology': TableDef(
+        name='indication_epidemiology',
+        schema='mol_silver',
+        description='Indication-level epidemiology from WHO GHO + ClinicalTrials.gov',
+        molecule_id_type='none',  # Keyed by icd10_code, not molecule_id
+        source='who_gho',
+        postgrest_path='/indication_epidemiology',
+    ),
+    'indication_revenue': TableDef(
+        name='indication_revenue',
+        schema='mol_silver',
+        description='Per-indication revenue from SEC 10-K/20-F MD&A parsing',
+        molecule_id_type='uuid',
+        source='sec_edgar',
+        postgrest_path='/indication_revenue',
+    ),
 }
 
 # ─── mol_gold (aggregated, enriched) ───────────────────────────────────────

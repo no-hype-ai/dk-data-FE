@@ -34,6 +34,11 @@ SELECT
     (response_body->>'net_income')::NUMERIC AS net_income,
     (response_body->>'total_assets')::NUMERIC AS total_assets,
 
+    -- MD&A and risk factors text for downstream indication revenue parsing
+    response_body->>'mda_text' AS mda_excerpt,
+    response_body->>'risk_factors_text' AS risk_factors_excerpt,
+    response_body->>'product_name' AS product_name,
+
     -- Raw source tracking
     response_body AS raw_json,
     id AS raw_source_id,
