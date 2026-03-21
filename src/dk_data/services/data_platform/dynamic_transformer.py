@@ -19,6 +19,21 @@ import logging
 logger = logging.getLogger(__name__)
 
 
+def _derive_table(raw_table: str, layer: str) -> str:
+    """Derive a medallion layer table name from a raw table reference.
+
+    Handles both mol_raw.X (canonical) and raw.X (legacy) prefixes correctly.
+    A naive str.replace('raw.', 'silver.') would corrupt 'mol_raw.' → 'mol_silver.'
+    only accidentally correct — but also silently breaks for any other prefix pattern.
+    """
+    if raw_table.startswith('mol_raw.'):
+        return f'mol_{layer}.' + raw_table[len('mol_raw.'):]
+    if raw_table.startswith('raw.'):
+        return f'{layer}.' + raw_table[len('raw.'):]
+    # Fallback for unexpected formats
+    return raw_table.replace('raw.', f'{layer}.')
+
+
 @dataclass
 class TransformResult:
     """Result of a transformation operation."""
@@ -255,7 +270,7 @@ class DynamicSourceTransformer:
 
             options = config['options']
             raw_table = options.get('target_table', f'raw.{source}')
-            bronze_table = raw_table.replace('raw.', 'bronze.')
+            bronze_table = _derive_table(raw_table, 'bronze')
 
             # AUTO-DETECT schema from larger sample (100 records for better coverage)
             data_columns = await self._detect_schema_from_payload(raw_table, sample_size=100)
@@ -265,7 +280,8 @@ class DynamicSourceTransformer:
 
             async with self.db_pool.acquire() as conn:
                 # Ensure bronze schema exists
-                await conn.execute("CREATE SCHEMA IF NOT EXISTS bronze")
+                bronze_schema = bronze_table.split('.')[0]
+                await conn.execute(f"CREATE SCHEMA IF NOT EXISTS {bronze_schema}")
 
                 # Create bronze table if not exists (adds missing columns)
                 await self._create_bronze_table(conn, bronze_table, data_columns, source)
@@ -836,8 +852,8 @@ class DynamicSourceTransformer:
 
             options = config['options']
             raw_table = options.get('target_table', f'raw.{source}')
-            bronze_table = raw_table.replace('raw.', 'bronze.')
-            silver_table = raw_table.replace('raw.', 'silver.')
+            bronze_table = _derive_table(raw_table, 'bronze')
+            silver_table = _derive_table(raw_table, 'silver')
 
             # Get entity linking configuration from Phase 3 onboarding
             entity_linking = options.get('entity_linking', {})
@@ -1579,8 +1595,8 @@ class DynamicSourceTransformer:
 
             options = config['options']
             raw_table = options.get('target_table', f'raw.{source}')
-            silver_table = raw_table.replace('raw.', 'silver.')
-            gold_table = raw_table.replace('raw.', 'gold.')
+            silver_table = _derive_table(raw_table, 'silver')
+            gold_table = _derive_table(raw_table, 'gold')
 
             # Get columns from silver table
             columns = await self.get_table_columns(silver_table)
@@ -1590,8 +1606,20 @@ class DynamicSourceTransformer:
             ]
 
             async with self.db_pool.acquire() as conn:
+                # Skip if silver table doesn't exist yet (no bronze data ingested)
+                silver_schema, silver_tbl = silver_table.split('.', 1)
+                silver_exists = await conn.fetchval(
+                    "SELECT EXISTS(SELECT 1 FROM information_schema.tables "
+                    "WHERE table_schema=$1 AND table_name=$2)",
+                    silver_schema, silver_tbl
+                )
+                if not silver_exists:
+                    logger.info(f"Silver table {silver_table} not yet populated for {source}, skipping gold")
+                    return result
+
                 # Ensure gold schema exists
-                await conn.execute("CREATE SCHEMA IF NOT EXISTS gold")
+                gold_schema = gold_table.split('.')[0]
+                await conn.execute(f"CREATE SCHEMA IF NOT EXISTS {gold_schema}")
 
                 # Create gold summary table
                 await self._create_gold_table(conn, gold_table, data_columns, source)
@@ -1840,7 +1868,7 @@ class DynamicSourceTransformer:
                 return result
 
             raw_table = options.get('target_table', f'raw.{source}')
-            silver_table = raw_table.replace('raw.', 'silver.')
+            silver_table = _derive_table(raw_table, 'silver')
 
             # Get columns from silver table
             columns = await self.get_table_columns(silver_table)

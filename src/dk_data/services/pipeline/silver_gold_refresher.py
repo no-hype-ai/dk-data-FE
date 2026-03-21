@@ -65,9 +65,9 @@ class SilverGoldRefresher:
         normalized = drug_name.lower().strip()
 
         async with self.db_pool.acquire() as conn:
-            # Try exact match on pref_name
+            # Try exact match on canonical_name
             row = await conn.fetchrow(
-                "SELECT molecule_id FROM mol_silver.molecules WHERE LOWER(pref_name) = $1",
+                "SELECT molecule_id FROM mol_silver.molecules WHERE LOWER(canonical_name) = $1",
                 normalized,
             )
             if row:
@@ -84,17 +84,17 @@ class SilverGoldRefresher:
             # Create new molecule
             mol_id = str(uuid.uuid4())
             await conn.execute("""
-                INSERT INTO mol_silver.molecules (molecule_id, pref_name, source_count)
+                INSERT INTO mol_silver.molecules (molecule_id, canonical_name, source_count)
                 VALUES ($1, $2, 1)
             """, mol_id, drug_name)
 
             # Add alias
             await conn.execute("""
                 INSERT INTO mol_silver.molecule_aliases
-                (id, molecule_id, alias_name, alias_type, alias_name_normalized, source)
-                VALUES ($1, $2, $3, 'generic_name', $4, $5)
+                (molecule_id, alias_name, alias_type, alias_name_normalized, source)
+                VALUES ($1, $2, 'generic_name', $3, $4)
                 ON CONFLICT DO NOTHING
-            """, str(uuid.uuid4()), mol_id, drug_name, normalized, source_name)
+            """, mol_id, drug_name, normalized, source_name)
 
             logger.info(f"Created silver.molecules entry for '{drug_name}' → {mol_id}")
             return mol_id
@@ -673,41 +673,33 @@ class SilverGoldRefresher:
 
     async def _refresh_gold_molecule_profile(self, conn, molecule_id: str, drug_name: str) -> None:
         """Refresh gold_molecule_profile from silver tables."""
-        # Fetch silver molecule (id is UUID, molecule_id is passed as string)
         mol = await conn.fetchrow(
-            "SELECT * FROM mol_silver.molecules WHERE id = $1::uuid", molecule_id
+            "SELECT * FROM mol_silver.molecules WHERE molecule_id = $1::uuid", molecule_id
         )
         if not mol:
             return
 
-        # Count safety data
+        # Count safety data (adverse_events tracks individual events)
         ae_row = await conn.fetchrow("""
             SELECT COUNT(*) as total,
-                   SUM(CASE WHEN serious_count > 0 THEN 1 ELSE 0 END) as serious
+                   SUM(CASE WHEN seriousness = 'Serious' OR seriousness = '1' THEN 1 ELSE 0 END) as serious
             FROM mol_silver.adverse_events WHERE molecule_id::text = $1
         """, molecule_id)
 
-        # Top adverse events
+        # Top adverse events aggregated by reaction term
         top_aes = await conn.fetch("""
-            SELECT meddra_pt, report_count FROM mol_silver.adverse_events
-            WHERE molecule_id::text = $1
-            ORDER BY report_count DESC LIMIT 10
+            SELECT reaction_meddra_pt as term, COUNT(*) as cnt
+            FROM mol_silver.adverse_events
+            WHERE molecule_id::text = $1 AND reaction_meddra_pt IS NOT NULL
+            GROUP BY reaction_meddra_pt
+            ORDER BY cnt DESC LIMIT 10
         """, molecule_id)
-        ae_summary = [{"term": r["meddra_pt"], "count": r["report_count"]} for r in top_aes]
-
-        # Fetch identifiers
-        ids = await conn.fetch(
-            "SELECT identifier_type, identifier_value FROM mol_silver.identifier_mappings WHERE molecule_id::text = $1 AND is_primary = TRUE",
-            molecule_id,
-        )
-        id_map = {r["identifier_type"]: r["identifier_value"] for r in ids}
+        top_ae_terms = [{"term": r["term"], "count": r["cnt"]} for r in top_aes]
 
         # Pipeline indications from trials
         pipeline = await conn.fetch("""
-            SELECT phase, COUNT(*) as trial_count,
-                   jsonb_agg(DISTINCT c) as conds
-            FROM mol_silver.clinical_trials,
-                 jsonb_array_elements_text(conditions) c
+            SELECT phase, COUNT(*) as trial_count
+            FROM mol_silver.clinical_trials
             WHERE molecule_id::text = $1
             GROUP BY phase
         """, molecule_id)
@@ -722,9 +714,6 @@ class SilverGoldRefresher:
             FROM mol_silver.patents WHERE molecule_id::text = $1
         """, molecule_id)
 
-        # Determine lifecycle stage from max phase
-        stage = _phase_to_lifecycle(mol.get("max_phase"))
-
         # Count data sources
         source_counts = await conn.fetchrow("""
             SELECT
@@ -735,62 +724,61 @@ class SilverGoldRefresher:
                  WHERE mp.molecule_id::text = $1) as pubs
         """, molecule_id)
 
+        trial_count = int(source_counts["trials"]) if source_counts else 0
+        label_count = int(source_counts["labels"]) if source_counts else 0
+        ae_count = int(source_counts["aes"]) if source_counts else 0
+        pub_count = int(source_counts["pubs"]) if source_counts else 0
+
         data_sources = {}
-        if source_counts:
-            if source_counts["trials"]:
-                data_sources["clinical_trials"] = source_counts["trials"]
-            if source_counts["labels"]:
-                data_sources["drug_labels"] = source_counts["labels"]
-            if source_counts["aes"]:
-                data_sources["adverse_events"] = source_counts["aes"]
-            if source_counts["pubs"]:
-                data_sources["publications"] = source_counts["pubs"]
+        if trial_count: data_sources["clinical_trials"] = trial_count
+        if label_count: data_sources["drug_labels"] = label_count
+        if ae_count: data_sources["adverse_events"] = ae_count
+        if pub_count: data_sources["publications"] = pub_count
 
         total_sources = sum(1 for v in data_sources.values() if v > 0)
         completeness = min(1.0, total_sources / 5.0)
 
-        # Upsert gold.molecule_profile (PK = molecule_id TEXT)
+        # Upsert mol_gold.molecule_profile (actual columns)
         try:
             await conn.execute("""
                 INSERT INTO mol_gold.molecule_profile
-                (molecule_id, molecule_name, molecule_type, inchi_key,
-                 lifecycle_stage, lifecycle_stage_confidence, lifecycle_last_detected,
-                 drugbank_id, chembl_id, pubchem_cid,
-                 pipeline_indications, serious_ae_count, ae_summary,
-                 therapeutic_area, mechanism_of_action,
+                (molecule_id, canonical_name, inchi_key,
+                 pipeline_indications, serious_ae_count, top_ae_terms,
+                 trial_count, active_trial_count, label_count,
+                 adverse_event_count, publication_count,
                  earliest_patent_expiry, patent_count,
                  data_completeness_score, data_sources, last_data_update)
-                VALUES ($1, $2, $3, $4, $5, 0.8, NOW(),
-                        $6, $7, $8, $9::jsonb, $10, $11::jsonb,
-                        $12, $13, $14, $15, $16, $17::jsonb, NOW())
+                VALUES ($1, $2, $3, $4::jsonb, $5, $6::jsonb,
+                        $7, $7, $8, $9, $10, $11, $12, $13, $14::jsonb, NOW())
                 ON CONFLICT (molecule_id) DO UPDATE SET
-                    molecule_name = EXCLUDED.molecule_name,
-                    lifecycle_stage = EXCLUDED.lifecycle_stage,
-                    lifecycle_last_detected = NOW(),
+                    canonical_name = EXCLUDED.canonical_name,
                     pipeline_indications = EXCLUDED.pipeline_indications,
                     serious_ae_count = EXCLUDED.serious_ae_count,
-                    ae_summary = EXCLUDED.ae_summary,
-                    mechanism_of_action = EXCLUDED.mechanism_of_action,
+                    top_ae_terms = EXCLUDED.top_ae_terms,
+                    trial_count = EXCLUDED.trial_count,
+                    active_trial_count = EXCLUDED.active_trial_count,
+                    label_count = EXCLUDED.label_count,
+                    adverse_event_count = EXCLUDED.adverse_event_count,
+                    publication_count = EXCLUDED.publication_count,
+                    earliest_patent_expiry = EXCLUDED.earliest_patent_expiry,
+                    patent_count = EXCLUDED.patent_count,
                     data_completeness_score = EXCLUDED.data_completeness_score,
                     data_sources = EXCLUDED.data_sources,
                     last_data_update = NOW(),
                     updated_at = NOW()
             """,
                 molecule_id,
-                mol.get("pref_name") or drug_name,
-                mol.get("molecule_type"),
-                mol.get("inchi_key"),
-                stage,
-                id_map.get("drugbank_id"),
-                id_map.get("chembl_id"),
-                id_map.get("pubchem_cid"),
+                mol["canonical_name"] or drug_name,
+                mol["inchi_key"],
                 json.dumps(pipeline_indications),
-                ae_row["serious"] if ae_row else 0,
-                json.dumps(ae_summary),
-                (mol.get("therapeutic_areas") or [None])[0] if isinstance(mol.get("therapeutic_areas"), list) else None,
-                mol.get("mechanism_of_action"),
+                int(ae_row["serious"]) if ae_row and ae_row["serious"] else 0,
+                json.dumps(top_ae_terms),
+                trial_count,
+                label_count,
+                ae_count,
+                pub_count,
                 str(patent_row["earliest"]) if patent_row and patent_row["earliest"] else None,
-                patent_row["cnt"] if patent_row else 0,
+                int(patent_row["cnt"]) if patent_row else 0,
                 completeness,
                 json.dumps(data_sources),
             )
@@ -805,39 +793,44 @@ class SilverGoldRefresher:
                 "DELETE FROM mol_gold.safety_signals WHERE molecule_id::text = $1", molecule_id
             )
 
-            # Rebuild from silver
+            # Rebuild from silver — aggregate individual events by reaction term
             aes = await conn.fetch("""
-                SELECT meddra_pt, meddra_pt_code, report_count,
-                       serious_count, death_count, prr, ror
+                SELECT
+                    reaction_meddra_pt,
+                    COUNT(*) as case_count,
+                    MIN(report_date) as first_reported,
+                    MAX(report_date) as last_reported,
+                    SUM(CASE WHEN seriousness = 'Serious' OR seriousness = '1' THEN 1 ELSE 0 END) as serious_count
                 FROM mol_silver.adverse_events
-                WHERE molecule_id::text = $1 AND report_count >= 3
-                ORDER BY report_count DESC
+                WHERE molecule_id::text = $1
+                  AND reaction_meddra_pt IS NOT NULL
+                GROUP BY reaction_meddra_pt
+                HAVING COUNT(*) >= 3
+                ORDER BY COUNT(*) DESC
                 LIMIT 100
             """, molecule_id)
 
             for ae in aes:
-                is_signal = (ae.get("prr") or 0) >= 2.0 or ae["report_count"] >= 10
+                case_count = int(ae["case_count"])
+                signal_strength = 'strong' if case_count >= 10 else 'moderate' if case_count >= 5 else 'weak'
                 await conn.execute("""
                     INSERT INTO mol_gold.safety_signals
-                    (id, molecule_id, event_name, event_category,
-                     report_count, seriousness, outcome,
-                     reaction_name, reaction_meddra_pt,
-                     case_count, serious_count, fatal_count,
-                     pro_score, ror_score, is_signal)
-                    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
+                    (molecule_id, reaction_meddra_pt, case_count,
+                     signal_strength, first_reported, last_reported, last_updated)
+                    VALUES ($1, $2, $3, $4, $5, $6, NOW())
+                    ON CONFLICT (molecule_id, reaction_meddra_pt) DO UPDATE SET
+                        case_count = EXCLUDED.case_count,
+                        signal_strength = EXCLUDED.signal_strength,
+                        first_reported = EXCLUDED.first_reported,
+                        last_reported = EXCLUDED.last_reported,
+                        last_updated = NOW()
                 """,
-                    str(uuid.uuid4()), molecule_id,
-                    ae["meddra_pt"],  # event_name
-                    'adverse_reaction',  # event_category
-                    ae["report_count"],
-                    'serious' if ae["serious_count"] > 0 else 'non-serious',  # seriousness
-                    'fatal' if ae["death_count"] > 0 else None,  # outcome
-                    ae["meddra_pt"],  # reaction_name
-                    ae.get("meddra_pt_code"),  # reaction_meddra_pt
-                    ae["report_count"],  # case_count
-                    ae["serious_count"],
-                    ae["death_count"],
-                    ae.get("prr"), ae.get("ror"), is_signal,
+                    molecule_id,
+                    ae["reaction_meddra_pt"],
+                    case_count,
+                    signal_strength,
+                    ae["first_reported"],
+                    ae["last_reported"],
                 )
         except Exception as e:
             logger.warning(f"gold.safety_signals refresh skipped: {e}")
@@ -878,18 +871,17 @@ class SilverGoldRefresher:
 
                 await conn.execute("""
                     INSERT INTO mol_gold.lifecycle_stages
-                    (id, molecule_id, stage, event_type, indication,
-                     stage_confidence, evidence_count, primary_evidence_type)
-                    VALUES ($1, $2, $3, $4, $5, 0.9, $6, 'clinical_trial')
+                    (molecule_id, indication, lifecycle_stage,
+                     confidence, evidence_sources, detected_at)
+                    VALUES ($1, $2, $3, 0.9, ARRAY['clinical_trials'], NOW())
                     ON CONFLICT (molecule_id, indication) DO UPDATE SET
-                        stage = EXCLUDED.stage,
-                        evidence_count = EXCLUDED.evidence_count,
-                        updated_at = NOW()
+                        lifecycle_stage = EXCLUDED.lifecycle_stage,
+                        confidence = EXCLUDED.confidence,
+                        detected_at = NOW()
                 """,
-                    str(uuid.uuid4()), molecule_id, stage,
-                    row["status"] or 'development',
-                    indication_str,
-                    row["cnt"],
+                    molecule_id,
+                    indication_str or 'general',
+                    stage,
                 )
         except Exception as e:
             logger.warning(f"gold.lifecycle_stages refresh skipped: {e}")

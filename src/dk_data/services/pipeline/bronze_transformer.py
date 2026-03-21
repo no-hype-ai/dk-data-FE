@@ -117,15 +117,15 @@ class BronzeTransformer:
         async with self.db_pool.acquire() as conn:
             await conn.executemany("""
                 INSERT INTO mol_bronze.clinicaltrials
-                (id, raw_id, nct_id, title, phase, enrollment, sponsor,
-                 status, conditions, interventions, start_date, completion_date)
+                (id, raw_id, nct_id, brief_title, phase, enrollment_count, lead_sponsor_name,
+                 overall_status, conditions, interventions, start_date, completion_date)
                 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9::jsonb, $10::jsonb, $11, $12)
                 ON CONFLICT (nct_id) DO UPDATE SET
-                    title = EXCLUDED.title,
+                    brief_title = EXCLUDED.brief_title,
                     phase = EXCLUDED.phase,
-                    enrollment = EXCLUDED.enrollment,
-                    sponsor = EXCLUDED.sponsor,
-                    status = EXCLUDED.status,
+                    enrollment_count = EXCLUDED.enrollment_count,
+                    lead_sponsor_name = EXCLUDED.lead_sponsor_name,
+                    overall_status = EXCLUDED.overall_status,
                     conditions = EXCLUDED.conditions,
                     interventions = EXCLUDED.interventions,
                     start_date = EXCLUDED.start_date,
@@ -241,12 +241,12 @@ class BronzeTransformer:
         async with self.db_pool.acquire() as conn:
             await conn.executemany("""
                 INSERT INTO mol_bronze.openfda_faers
-                (id, raw_id, safety_report_id, reactions, outcomes, seriousness, drugs)
+                (id, raw_id, safety_report_id, reactions, outcomes, serious, drugs)
                 VALUES ($1, $2, $3, $4::jsonb, $5::jsonb, $6, $7::jsonb)
                 ON CONFLICT (safety_report_id) DO UPDATE SET
                     reactions = EXCLUDED.reactions,
                     outcomes = EXCLUDED.outcomes,
-                    seriousness = EXCLUDED.seriousness,
+                    serious = EXCLUDED.serious,
                     drugs = EXCLUDED.drugs
             """, rows)
         return len(rows)
@@ -279,10 +279,10 @@ class BronzeTransformer:
         async with self.db_pool.acquire() as conn:
             await conn.executemany("""
                 INSERT INTO mol_bronze.chembl
-                (id, raw_id, molecule_chembl_id, pref_name, max_phase,
+                (id, raw_id, chembl_id, pref_name, max_phase,
                  molecular_weight, canonical_smiles, molecule_type)
                 VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
-                ON CONFLICT (molecule_chembl_id) DO UPDATE SET
+                ON CONFLICT (chembl_id) DO UPDATE SET
                     pref_name = EXCLUDED.pref_name,
                     max_phase = EXCLUDED.max_phase,
                     molecular_weight = EXCLUDED.molecular_weight,

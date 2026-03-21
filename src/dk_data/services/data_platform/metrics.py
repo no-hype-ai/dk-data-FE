@@ -240,7 +240,7 @@ def refresh_metrics_from_database_sync():
         cur.execute("SELECT COUNT(*) FROM mol_silver.molecules")
         total_compounds = cur.fetchone()[0] or 0
 
-        cur.execute("SELECT COUNT(*) FROM mol_silver.molecules WHERE canonical_smiles IS NOT NULL AND inchi_key IS NOT NULL")
+        cur.execute("SELECT COUNT(*) FROM mol_silver.molecules WHERE smiles IS NOT NULL AND inchi_key IS NOT NULL")
         with_identifiers = cur.fetchone()[0] or 0
 
         set_molecules_count(

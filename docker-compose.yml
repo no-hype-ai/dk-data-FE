@@ -52,6 +52,29 @@ services:
       start_period: 10s
 
   # ==========================================================================
+  # DB Migrate - One-shot migration runner (runs before API and PostgREST)
+  # ==========================================================================
+  db-migrate:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: dk-data-fe-db-migrate
+    restart: "no"
+    environment:
+      POSTGRES_HOST: "postgres"
+      POSTGRES_PORT: "5432"
+      POSTGRES_USER: "${POSTGRES_USER:-postgres}"
+      POSTGRES_PASSWORD: "${POSTGRES_PASSWORD:?POSTGRES_PASSWORD must be set}"
+      POSTGRES_DB: "${POSTGRES_DB:-dk_data}"
+    entrypoint: ["python", "-m", "dk_data.scripts.run_migrations"]
+    command: []
+    networks:
+      - dk-data-fe-network
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  # ==========================================================================
   # PostgREST - REST API for PostgreSQL
   # ==========================================================================
   postgrest:
@@ -64,7 +87,7 @@ services:
       # Database connection - connects to postgres service within docker network
       # SECURITY: No default password - must be set via environment or .env file
       PGRST_DB_URI: "postgres://authenticator:${POSTGREST_PASSWORD:?POSTGREST_PASSWORD must be set}@postgres:5432/${POSTGRES_DB:-dk_data}"
-      PGRST_DB_SCHEMAS: "api,mol_silver,mol_gold,mol_bronze,mol_raw,ind_silver,ind_gold,hcp_silver,hcp_gold,hcs_silver,hcs_gold,ops,xenon,meta"
+      PGRST_DB_SCHEMAS: "api,mol_silver,mol_gold,ind_silver,ind_gold,hcp_silver,hcp_gold,hcs_silver,hcs_gold,ops,xenon,meta"
       PGRST_DB_ANON_ROLE: "web_anon"
       PGRST_DB_POOL: "10"
       PGRST_DB_POOL_ACQUISITION_TIMEOUT: "10"
@@ -88,6 +111,8 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
+      db-migrate:
+        condition: service_completed_successfully
 
   # ==========================================================================
   # Job Trigger - FastAPI service for batch job management
@@ -127,6 +152,8 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
+      db-migrate:
+        condition: service_completed_successfully
 
   # ==========================================================================
   # Metabase - BI Dashboard Tool

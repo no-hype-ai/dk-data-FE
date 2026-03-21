@@ -1069,7 +1069,18 @@ async def run_entity_linking(pool, metrics: PipelineMetrics) -> Dict[str, Any]:
 
     try:
         async with pool.acquire() as conn:
-            # Run the master entity linking function
+            # Check if the legacy silver.run_entity_linking() function still exists.
+            # It was deprecated in favour of Python-side SilverTransformation; the
+            # silver schema is dropped in migration 121.  Skip silently when absent.
+            fn_exists = await conn.fetchval(
+                "SELECT EXISTS(SELECT 1 FROM pg_proc p "
+                "JOIN pg_namespace n ON p.pronamespace = n.oid "
+                "WHERE n.nspname = 'silver' AND p.proname = 'run_entity_linking')"
+            )
+            if not fn_exists:
+                logger.info("silver.run_entity_linking() not present (schema dropped) — skipping legacy linking")
+                return results
+
             rows = await conn.fetch("SELECT * FROM silver.run_entity_linking()")
 
             for row in rows:
@@ -1079,10 +1090,9 @@ async def run_entity_linking(pool, metrics: PipelineMetrics) -> Dict[str, Any]:
                 logger.info(f"Entity Linking - {step}: {result_text}")
 
             # Parse linking stats for metrics
+            import re
             for row in rows:
                 if 'Trials' in row['step']:
-                    # Extract number from result like "+31 new, 46178 total (48.2%)"
-                    import re
                     match = re.search(r'\+(\d+)', row['result'])
                     if match:
                         metrics.records_silver += int(match.group(1))

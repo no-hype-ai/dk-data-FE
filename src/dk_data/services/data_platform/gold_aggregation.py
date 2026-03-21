@@ -59,25 +59,11 @@ class GoldAggregationService:
                 # Update molecule statistics that aren't covered by the view
                 rows = await conn.execute("""
                     UPDATE mol_silver.molecules m
-                    SET
-                        max_phase = COALESCE((
-                            SELECT MAX(
-                                CASE
-                                    WHEN ct.phase LIKE '%4%' THEN 4
-                                    WHEN ct.phase LIKE '%3%' THEN 3
-                                    WHEN ct.phase LIKE '%2%' THEN 2
-                                    WHEN ct.phase LIKE '%1%' THEN 1
-                                    ELSE 0
-                                END
-                            )
-                            FROM mol_silver.clinical_trials ct
-                            WHERE ct.molecule_id = m.id
-                        ), m.max_phase),
-                        updated_at = NOW()
+                    SET updated_at = NOW()
                     WHERE m.needs_review = FALSE
                       AND EXISTS (
                           SELECT 1 FROM mol_silver.clinical_trials ct
-                          WHERE ct.molecule_id = m.id
+                          WHERE ct.molecule_id = m.molecule_id
                       )
                 """)
 
@@ -119,32 +105,31 @@ class GoldAggregationService:
                 # d = reports of other events with other drugs
 
                 rows = await conn.execute("""
-                    WITH total_reports AS (
-                        SELECT SUM(report_count) AS total FROM mol_silver.adverse_events
-                    ),
-                    drug_totals AS (
-                        SELECT molecule_id, SUM(report_count) AS drug_total
-                        FROM mol_silver.adverse_events
-                        GROUP BY molecule_id
-                    ),
-                    event_totals AS (
-                        SELECT meddra_pt, SUM(report_count) AS event_total
-                        FROM mol_silver.adverse_events
-                        GROUP BY meddra_pt
-                    )
-                    UPDATE mol_silver.adverse_events ae
-                    SET
-                        reporting_rate = ae.report_count::NUMERIC / NULLIF(dt.drug_total, 0) * 1000,
-                        prr = CASE
-                            WHEN dt.drug_total > 0 AND et.event_total > 0 AND tr.total > 0
-                            THEN (ae.report_count::NUMERIC / dt.drug_total) /
-                                 NULLIF((et.event_total::NUMERIC / tr.total), 0)
-                            ELSE NULL
-                        END,
-                        updated_at = NOW()
-                    FROM drug_totals dt, event_totals et, total_reports tr
-                    WHERE ae.molecule_id = dt.molecule_id
-                      AND ae.meddra_pt = et.meddra_pt
+                    INSERT INTO mol_gold.safety_signals
+                        (molecule_id, reaction_meddra_pt, case_count,
+                         signal_strength, first_reported, last_reported, last_updated)
+                    SELECT
+                        ae.molecule_id,
+                        ae.reaction_meddra_pt,
+                        COUNT(*) AS case_count,
+                        CASE
+                            WHEN COUNT(*) >= 10 THEN 'strong'
+                            WHEN COUNT(*) >= 5  THEN 'moderate'
+                            ELSE 'weak'
+                        END AS signal_strength,
+                        MIN(ae.report_date) AS first_reported,
+                        MAX(ae.report_date) AS last_reported,
+                        NOW() AS last_updated
+                    FROM mol_silver.adverse_events ae
+                    WHERE ae.molecule_id IS NOT NULL
+                      AND ae.reaction_meddra_pt IS NOT NULL
+                    GROUP BY ae.molecule_id, ae.reaction_meddra_pt
+                    ON CONFLICT (molecule_id, reaction_meddra_pt) DO UPDATE SET
+                        case_count     = EXCLUDED.case_count,
+                        signal_strength = EXCLUDED.signal_strength,
+                        first_reported = EXCLUDED.first_reported,
+                        last_reported  = EXCLUDED.last_reported,
+                        last_updated   = NOW()
                 """)
 
                 execution_time = (datetime.utcnow() - start_time).total_seconds() * 1000
@@ -178,16 +163,16 @@ class GoldAggregationService:
                     UPDATE mol_silver.molecules m
                     SET
                         therapeutic_areas = COALESCE((
-                            SELECT jsonb_agg(DISTINCT condition)
+                            SELECT ARRAY_AGG(DISTINCT condition)
                             FROM mol_silver.clinical_trials ct,
                                  jsonb_array_elements_text(ct.conditions) AS condition
-                            WHERE ct.molecule_id = m.id
+                            WHERE ct.molecule_id = m.molecule_id
                         ), m.therapeutic_areas),
                         updated_at = NOW()
                     WHERE m.needs_review = FALSE
                       AND EXISTS (
                           SELECT 1 FROM mol_silver.clinical_trials ct
-                          WHERE ct.molecule_id = m.id
+                          WHERE ct.molecule_id = m.molecule_id
                       )
                 """)
 
@@ -219,6 +204,9 @@ class GoldAggregationService:
             async with self.db_pool.acquire() as conn:
                 # Recalculate development status based on latest evidence
                 rows = await conn.execute("""
+                    INSERT INTO mol_gold.lifecycle_stages
+                        (molecule_id, indication, lifecycle_stage, confidence,
+                         evidence_sources, detected_at)
                     WITH latest_phase AS (
                         SELECT
                             molecule_id,
@@ -232,28 +220,31 @@ class GoldAggregationService:
                         FROM mol_silver.clinical_trials
                         WHERE status NOT IN ('Terminated', 'Withdrawn', 'Suspended')
                         GROUP BY molecule_id
-                    ),
-                    has_approval AS (
-                        SELECT DISTINCT molecule_id, TRUE AS is_approved
-                        FROM mol_silver.drug_labels
-                        WHERE effective_date IS NOT NULL
                     )
-                    UPDATE mol_silver.molecules m
-                    SET
-                        development_status = CASE
-                            WHEN ha.is_approved THEN 'approved'
+                    SELECT
+                        m.molecule_id,
+                        'general' AS indication,
+                        CASE
+                            WHEN EXISTS(
+                                SELECT 1 FROM mol_silver.drug_labels dl
+                                WHERE dl.molecule_id = m.molecule_id
+                                  AND dl.effective_date IS NOT NULL
+                            ) THEN 'approved'
                             WHEN lp.max_trial_phase >= 3 THEN 'phase_3'
                             WHEN lp.max_trial_phase >= 2 THEN 'phase_2'
                             WHEN lp.max_trial_phase >= 1 THEN 'phase_1'
-                            WHEN lp.max_trial_phase = 0 THEN 'preclinical'
-                            ELSE m.development_status
-                        END,
-                        max_phase = GREATEST(COALESCE(lp.max_trial_phase, 0), COALESCE(m.max_phase, 0)),
-                        updated_at = NOW()
-                    FROM latest_phase lp
-                    LEFT JOIN has_approval ha ON lp.molecule_id = ha.molecule_id
-                    WHERE m.id = lp.molecule_id
-                      AND m.needs_review = FALSE
+                            ELSE 'preclinical'
+                        END AS lifecycle_stage,
+                        0.8 AS confidence,
+                        ARRAY['clinical_trials'] AS evidence_sources,
+                        NOW() AS detected_at
+                    FROM mol_silver.molecules m
+                    JOIN latest_phase lp ON m.molecule_id = lp.molecule_id
+                    WHERE m.needs_review = FALSE
+                    ON CONFLICT (molecule_id, indication) DO UPDATE SET
+                        lifecycle_stage  = EXCLUDED.lifecycle_stage,
+                        confidence       = EXCLUDED.confidence,
+                        detected_at      = NOW()
                 """)
 
                 execution_time = (datetime.utcnow() - start_time).total_seconds() * 1000

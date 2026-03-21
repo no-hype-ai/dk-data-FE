@@ -99,18 +99,28 @@ class BaseMCPTool:
             )
 
             # 5. Transform raw → bronze → silver → gold (on-demand)
+            transform_status = "skipped"
             if raw_record_id and self.db_pool:
-                await self._transform_to_bronze(raw_record_id, api_response)
-                await self._refresh_silver_gold(input_params, api_response)
+                bronze_ok = await self._transform_to_bronze(raw_record_id, api_response)
+                silver_ok = await self._refresh_silver_gold(input_params, api_response)
+                if bronze_ok and silver_ok:
+                    transform_status = "completed"
+                elif bronze_ok or silver_ok:
+                    transform_status = "partial"
+                else:
+                    transform_status = "failed"
 
             # 6. Build response
+            record_count = len(normalized) if isinstance(normalized, list) else (1 if normalized else 0)
             duration_ms = int((time.monotonic() - start_time) * 1000)
             return {
                 "status": "success",
                 "request_id": request_id,
                 "source": self.source_name,
                 "data": normalized,
+                "record_count": record_count,
                 "raw_record_id": raw_record_id,
+                "transform_status": transform_status,
                 "duration_ms": duration_ms,
                 "timestamp": datetime.now(timezone.utc).isoformat(),
             }
@@ -253,25 +263,29 @@ class BaseMCPTool:
             logger.error(f"Failed to insert raw record: {e}")
             return None
 
-    async def _transform_to_bronze(self, raw_record_id: str, api_response: dict) -> None:
-        """Transform raw record to bronze layer."""
+    async def _transform_to_bronze(self, raw_record_id: str, api_response: dict) -> bool:
+        """Transform raw record to bronze layer. Returns True on success."""
         try:
             from .bronze_transformer import BronzeTransformer
             transformer = BronzeTransformer(self.db_pool)
-            await transformer.transform(self.source_name, raw_record_id, api_response)
+            count = await transformer.transform(self.source_name, raw_record_id, api_response)
+            return count >= 0  # 0 is ok (no handler), negative would be error
         except Exception as e:
             logger.error(f"Bronze transform failed for {self.source_name}: {e}")
+            return False
 
-    async def _refresh_silver_gold(self, input_params: dict, api_response: dict) -> None:
-        """Refresh silver and gold layers for the affected molecule."""
+    async def _refresh_silver_gold(self, input_params: dict, api_response: dict) -> bool:
+        """Refresh silver and gold layers for the affected molecule. Returns True on success."""
         try:
             from .silver_gold_refresher import SilverGoldRefresher
             refresher = SilverGoldRefresher(self.db_pool)
             drug_name = input_params.get("drug_name", "")
             if drug_name:
                 await refresher.refresh(drug_name, self.source_name, api_response)
+            return True
         except Exception as e:
             logger.error(f"Silver/Gold refresh failed for {self.source_name}: {e}")
+            return False
 
     @staticmethod
     def _lookup_drugbank(params: dict) -> dict:
