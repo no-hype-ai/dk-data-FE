@@ -37,7 +37,27 @@ BEGIN
       ELSE NULL END
   FROM mol_bronze.clinicaltrials b CROSS JOIN mol_silver.molecules m
   WHERE m.canonical_name IS NOT NULL AND b.nct_id IS NOT NULL
-    AND LOWER(COALESCE(b.official_title, b.brief_title, '')) LIKE '%' || LOWER(m.canonical_name) || '%'
+    AND (
+      -- Match by title (original logic)
+      LOWER(COALESCE(b.official_title, b.brief_title, '')) LIKE '%' || LOWER(m.canonical_name) || '%'
+      -- Match by intervention/drug name in the interventions JSON
+      OR (b.interventions IS NOT NULL AND b.interventions::text ILIKE '%' || m.canonical_name || '%')
+      -- Match by brand name in title or interventions
+      OR EXISTS (
+        SELECT 1 FROM unnest(m.brand_names) bn
+        WHERE LOWER(COALESCE(b.official_title, b.brief_title, '')) LIKE '%' || LOWER(bn) || '%'
+        OR (b.interventions IS NOT NULL AND b.interventions::text ILIKE '%' || bn || '%')
+      )
+      -- Match by brief_summary/description
+      OR LOWER(COALESCE(b.brief_summary, '')) LIKE '%' || LOWER(m.canonical_name) || '%'
+      -- Match by FDA label: NCT IDs mentioned in the drug label are authoritative
+      OR b.nct_id IN (
+        SELECT DISTINCT (regexp_matches(l.clinical_studies, 'NCT\d{7,8}', 'g'))[1]
+        FROM mol_silver.drug_labels l
+        WHERE l.molecule_id = m.molecule_id
+        AND l.clinical_studies IS NOT NULL
+      )
+    )
   ON CONFLICT (nct_id) DO UPDATE SET
     molecule_id = EXCLUDED.molecule_id,
     title = COALESCE(EXCLUDED.title, mol_silver.clinical_trials.title),

@@ -8,7 +8,7 @@ metadata:
     app.kubernetes.io/component: api
     app.kubernetes.io/part-of: dk-data
 data:
-  PGRST_DB_SCHEMAS: "api,gold,silver,bronze,mol_api,mol_gold,mol_silver,xenon,meta"
+  PGRST_DB_SCHEMAS: "api,hcs_gold,hcs_silver,mol_api,mol_gold,mol_silver,mol_bronze,mol_raw,ops,xenon,meta"
   PGRST_DB_ANON_ROLE: "web_anon"
   PGRST_SERVER_PORT: "3000"
   PGRST_LOG_LEVEL: "info"
