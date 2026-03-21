@@ -3,8 +3,8 @@
 Feature: 015-assessment-dashboard-integration
 Task: T062
 
-All 25 MCP tools organized by tier:
-- Tier 1 (19 tools): Direct drug-name query against external APIs
+All 28 MCP tools organized by tier:
+- Tier 1 (21 tools): Direct drug-name/indication query against external APIs
 - Tier 2 (4 tools): Fetch + filter (RSS, news, trademarks)
 - Tier 3 (2 tools): Supplementary context (ACC, HRSA)
 
@@ -113,6 +113,41 @@ TOOL_REGISTRY: Dict[str, ToolDefinition] = {
         raw_schema="mol_raw",
         adapter_module="dk_data.services.pipeline.adapters.uniprot",
         api_base_url="https://rest.uniprot.org/uniprotkb/search",
+    ),
+    # --- mol_raw sources (indication-level) ---
+    "who-gho-search": ToolDefinition(
+        name="who-gho-search",
+        description="Search WHO Global Health Observatory for disease epidemiology (incidence, prevalence, mortality)",
+        tier="direct_query",
+        raw_table="who_gho",
+        raw_schema="mol_raw",
+        adapter_module="dk_data.services.pipeline.adapters.who_gho",
+        api_base_url="https://ghoapi.azureedge.net/api",
+        input_schema={
+            "type": "object",
+            "properties": {
+                "drug_name": {"type": "string", "description": "Indication/disease name (e.g., 'bladder cancer')"},
+                "indicator": {"type": "string", "description": "Optional WHO GHO indicator code override"},
+            },
+            "required": ["drug_name"],
+        },
+    ),
+    "ct-gov-indication-stats-search": ToolDefinition(
+        name="ct-gov-indication-stats-search",
+        description="Search ClinicalTrials.gov for indication-level trial counts and enrollment totals",
+        tier="direct_query",
+        raw_table="ct_gov_indication_stats",
+        raw_schema="mol_raw",
+        adapter_module="dk_data.services.pipeline.adapters.ct_gov_indication_stats",
+        api_base_url="https://clinicaltrials.gov/api/v2/studies",
+        input_schema={
+            "type": "object",
+            "properties": {
+                "drug_name": {"type": "string", "description": "Condition/indication name (e.g., 'NSCLC')"},
+                "phase": {"type": "string", "description": "Optional phase filter (e.g., 'PHASE3')"},
+            },
+            "required": ["drug_name"],
+        },
     ),
     # --- raw sources (regulatory/IP) ---
     "pubmed-search": ToolDefinition(

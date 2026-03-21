@@ -30,7 +30,7 @@ INDICATION_PATTERNS = {
     'C43.9': [r'melanoma'],
     'C64.9': [r'renal cell', r'RCC', r'kidney cancer'],
     'C71.9': [r'glioblastoma', r'GBM', r'brain cancer'],
-    'C34.1': [r'SCLC', r'small[- ]?cell lung cancer'],
+    'C34.1': [r'\bSCLC\b(?!.*non)', r'small[- ]?cell lung cancer'],
     'C56.9': [r'ovarian cancer'],
     'C16.9': [r'gastric cancer', r'stomach cancer', r'gastroesophageal'],
     'C73':   [r'thyroid cancer'],
@@ -57,13 +57,33 @@ def _normalize_revenue(amount_str: str, unit: str) -> float:
     return amount  # Already in $M
 
 
-def _find_indication_in_context(text_window: str) -> Optional[str]:
-    """Search a text window for an indication name, return ICD-10 code if found."""
+def _find_indication_in_context(text_window: str, revenue_offset: int) -> Optional[str]:
+    """Search a text window for the closest indication name to the revenue mention.
+
+    Prefers indications that appear *before* the revenue amount (same sentence)
+    over those after. Uses weighted distance: after-mentions get 2x penalty.
+
+    Args:
+        text_window: The surrounding text context.
+        revenue_offset: Position of the revenue mention within the window.
+
+    Returns the ICD-10 code of the nearest indication, or None.
+    """
+    best_icd10 = None
+    best_score = float('inf')
+
     for icd10, patterns in INDICATION_PATTERNS.items():
         for pattern in patterns:
-            if re.search(pattern, text_window, re.IGNORECASE):
-                return icd10
-    return None
+            for m in re.finditer(pattern, text_window, re.IGNORECASE):
+                raw_distance = abs(m.start() - revenue_offset)
+                # Penalty: indications after the revenue mention are 2x further
+                if m.start() > revenue_offset:
+                    raw_distance *= 2
+                if raw_distance < best_score:
+                    best_score = raw_distance
+                    best_icd10 = icd10
+
+    return best_icd10
 
 
 def parse_mda_for_indication_revenue(
@@ -89,12 +109,16 @@ def parse_mda_for_indication_revenue(
         unit = match.group(2)
         revenue_usd = _normalize_revenue(amount_str, unit)
 
-        # Look at surrounding context (200 chars before and after the revenue mention)
-        start = max(0, match.start() - 200)
-        end = min(len(mda_text), match.end() + 200)
-        context_window = mda_text[start:end]
+        # Use same-sentence context first, then fall back to wider window
+        # Find sentence boundaries around the revenue mention
+        sent_start = mda_text.rfind('.', max(0, match.start() - 300), match.start())
+        sent_start = (sent_start + 1) if sent_start >= 0 else max(0, match.start() - 200)
+        sent_end = mda_text.find('.', match.end())
+        sent_end = (sent_end + 1) if sent_end >= 0 else min(len(mda_text), match.end() + 200)
+        sentence = mda_text[sent_start:sent_end]
+        revenue_offset = match.start() - sent_start
 
-        icd10 = _find_indication_in_context(context_window)
+        icd10 = _find_indication_in_context(sentence, revenue_offset)
         if not icd10:
             continue
 
