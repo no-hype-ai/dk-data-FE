@@ -18,7 +18,7 @@ MODEL (
 
 WITH molecule_base AS (
     SELECT
-        m.id AS molecule_id,
+        m.molecule_id,
         m.inchi_key,
         m.canonical_name,
         m.canonical_smiles,
@@ -69,7 +69,7 @@ trial_counts AS (
     SELECT
         molecule_id,
         COUNT(*) AS total_trials,
-        COUNT(*) FILTER (WHERE status IN ('Recruiting', 'Active, not recruiting', 'Enrolling by invitation')) AS active_trials,
+        COUNT(*) FILTER (WHERE overall_status IN ('Recruiting', 'Active, not recruiting', 'Enrolling by invitation')) AS active_trials,
         COUNT(*) FILTER (WHERE phase LIKE '%3%') AS phase_3_trials,
         COUNT(*) FILTER (WHERE phase LIKE '%2%') AS phase_2_trials,
         COUNT(*) FILTER (WHERE phase LIKE '%1%') AS phase_1_trials

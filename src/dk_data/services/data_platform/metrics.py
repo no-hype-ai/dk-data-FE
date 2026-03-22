@@ -240,7 +240,7 @@ def refresh_metrics_from_database_sync():
         cur.execute("SELECT COUNT(*) FROM mol_silver.molecules")
         total_compounds = cur.fetchone()[0] or 0
 
-        cur.execute("SELECT COUNT(*) FROM mol_silver.molecules WHERE smiles IS NOT NULL AND inchi_key IS NOT NULL")
+        cur.execute("SELECT COUNT(*) FROM mol_silver.molecules WHERE canonical_smiles IS NOT NULL AND inchi_key IS NOT NULL")
         with_identifiers = cur.fetchone()[0] or 0
 
         set_molecules_count(
@@ -251,10 +251,10 @@ def refresh_metrics_from_database_sync():
 
         # Get clinical trial counts by status
         cur.execute("""
-            SELECT status, COUNT(*) as cnt
+            SELECT overall_status, COUNT(*) as cnt
             FROM mol_silver.clinical_trials
-            WHERE status IS NOT NULL
-            GROUP BY status
+            WHERE overall_status IS NOT NULL
+            GROUP BY overall_status
         """)
         status_counts = {row[0].upper() if row[0] else 'UNKNOWN': row[1] for row in cur.fetchall()}
 
@@ -271,7 +271,7 @@ def refresh_metrics_from_database_sync():
         # Get adverse events count
         cur.execute("SELECT COUNT(*) FROM mol_bronze.openfda_faers")
         faers_count = cur.fetchone()[0] or 0
-        cur.execute("SELECT COUNT(*) FROM mol_bronze.sider_adverse_reactions")
+        cur.execute("SELECT COUNT(*) FROM mol_bronze.sider")
         sider_count = cur.fetchone()[0] or 0
         set_adverse_events_count(faers_count + sider_count)
 
@@ -298,20 +298,25 @@ def refresh_metrics_from_database_sync():
             phase4=phase_counts.get('Phase 4', 0)
         )
 
-        # Resolution queue
+        # Resolution queue (table may not exist in all environments)
         try:
             cur.execute("SELECT COUNT(*) FROM mol_silver.resolution_queue WHERE status = 'pending'")
             pending = cur.fetchone()[0] or 0
             set_resolution_queue_pending(pending)
         except Exception:
+            conn.rollback()
             set_resolution_queue_pending(0)
 
         # Entity resolution success rate
-        cur.execute("SELECT COUNT(DISTINCT inchi_key) FROM mol_silver.compound_cross_reference")
-        resolved = cur.fetchone()[0] or 0
-        if total_compounds > 0:
-            set_entity_resolution_success_rate(min(resolved / total_compounds, 1.0))
-        else:
+        try:
+            cur.execute("SELECT COUNT(DISTINCT inchi_key) FROM mol_silver.identifier_mappings")
+            resolved = cur.fetchone()[0] or 0
+            if total_compounds > 0:
+                set_entity_resolution_success_rate(min(resolved / total_compounds, 1.0))
+            else:
+                set_entity_resolution_success_rate(0.0)
+        except Exception:
+            conn.rollback()
             set_entity_resolution_success_rate(0.0)
 
         # Quarantine count (013-dk-data-observability)
@@ -320,6 +325,7 @@ def refresh_metrics_from_database_sync():
             quarantine = cur.fetchone()[0] or 0
             set_quarantine_count(quarantine)
         except Exception:
+            conn.rollback()
             set_quarantine_count(0)
 
         # Data source health
@@ -333,7 +339,7 @@ def refresh_metrics_from_database_sync():
             'chembl': ('bronze.chembl', False),
             'drugbank': ('bronze.drugbank', False),
             'pubchem': ('bronze.pubchem', True),
-            'sider': ('bronze.sider_adverse_reactions', True),
+            'sider': ('bronze.sider', True),
             'bindingdb': ('bronze.bindingdb_affinities', True),
             'faers': ('bronze.openfda_faers', False),
             'fda_labels_raw': ('bronze.openfda_labels', False),

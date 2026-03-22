@@ -10,7 +10,7 @@ MODEL (
 );
 
 SELECT
-    m.id AS molecule_id,
+    m.molecule_id,
     m.inchi_key,
     m.canonical_name,
     m.therapeutic_areas,
@@ -20,15 +20,15 @@ SELECT
 
     -- Active trial count
     COUNT(DISTINCT ct.nct_id) FILTER (
-        WHERE ct.status IN ('Recruiting', 'Active, not recruiting', 'Enrolling by invitation')
+        WHERE ct.overall_status IN ('Recruiting', 'Active, not recruiting', 'Enrolling by invitation')
     ) AS active_trials,
 
     -- Phase distribution as JSONB
     jsonb_build_object(
-        'phase_1', COUNT(DISTINCT ct.nct_id) FILTER (WHERE ct.phase_normalized LIKE '%Phase 1%'),
-        'phase_2', COUNT(DISTINCT ct.nct_id) FILTER (WHERE ct.phase_normalized LIKE '%Phase 2%'),
-        'phase_3', COUNT(DISTINCT ct.nct_id) FILTER (WHERE ct.phase_normalized LIKE '%Phase 3%'),
-        'phase_4', COUNT(DISTINCT ct.nct_id) FILTER (WHERE ct.phase_normalized LIKE '%Phase 4%')
+        'phase_1', COUNT(DISTINCT ct.nct_id) FILTER (WHERE ct.phase LIKE '%Phase 1%'),
+        'phase_2', COUNT(DISTINCT ct.nct_id) FILTER (WHERE ct.phase LIKE '%Phase 2%'),
+        'phase_3', COUNT(DISTINCT ct.nct_id) FILTER (WHERE ct.phase LIKE '%Phase 3%'),
+        'phase_4', COUNT(DISTINCT ct.nct_id) FILTER (WHERE ct.phase LIKE '%Phase 4%')
     ) AS phase_distribution,
 
     -- Unique indications
@@ -46,7 +46,7 @@ SELECT
         FROM (
             SELECT ct2.sponsor
             FROM mol_silver.clinical_trials ct2
-            WHERE ct2.molecule_id = m.id
+            WHERE ct2.molecule_id = m.molecule_id
               AND ct2.sponsor IS NOT NULL
         ) s
     ) AS sponsors,
@@ -56,7 +56,7 @@ SELECT
 
     -- Competitive metrics
     COUNT(DISTINCT ct.nct_id) AS total_trials,
-    COUNT(DISTINCT ct.sponsor) AS sponsor_count,
+    COUNT(DISTINCT ct.lead_sponsor_name) AS sponsor_count,
 
     -- Safety signal summary
     (
@@ -66,16 +66,16 @@ SELECT
             'death_reports', COALESCE(SUM(ae.death_count), 0)
         )
         FROM mol_silver.adverse_events ae
-        WHERE ae.molecule_id = m.id
+        WHERE ae.molecule_id = m.molecule_id
     ) AS safety_summary,
 
     NOW() AS computed_at
 
 FROM mol_silver.molecules m
-LEFT JOIN mol_silver.clinical_trials ct ON m.id = ct.molecule_id
+LEFT JOIN mol_silver.clinical_trials ct ON m.molecule_id = ct.molecule_id
 WHERE m.needs_review = FALSE
   AND m.development_status IN ('phase_1', 'phase_2', 'phase_3', 'approved')
-GROUP BY m.id, m.inchi_key, m.canonical_name, m.therapeutic_areas,
+GROUP BY m.molecule_id, m.inchi_key, m.canonical_name, m.therapeutic_areas,
          m.mechanism_of_action, m.development_status, m.max_phase
 HAVING COUNT(DISTINCT ct.nct_id) > 0
    OR m.development_status = 'approved'

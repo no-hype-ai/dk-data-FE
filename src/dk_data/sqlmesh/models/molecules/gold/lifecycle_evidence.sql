@@ -18,7 +18,7 @@ SELECT
     ct.nct_id AS evidence_id,
     ct.title AS evidence_title,
     ct.phase_normalized AS evidence_detail,
-    ct.status AS evidence_status,
+    ct.overall_status AS evidence_status,
     'ClinicalTrials.gov' AS evidence_source,
     ct.start_date AS evidence_date,
     'https://clinicaltrials.gov/study/' || ct.nct_id AS evidence_url,

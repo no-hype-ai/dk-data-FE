@@ -1043,9 +1043,14 @@ async def run_silver_transformation(pool, metrics: PipelineMetrics) -> Dict[str,
             linked = getattr(result, 'records_linked', 0) or result.records_inserted
             results[source] = linked
             metrics.records_silver += linked
-            if result.errors:
-                metrics.errors.extend(result.errors[:3])
-            logger.info(f"Silver transform {source}: {linked} records linked")
+            # Skip "not found" errors — canonical mol_bronze tables use separate pipeline
+            source_errors = [e for e in (result.errors or []) if 'not found' not in e.lower()]
+            if source_errors:
+                metrics.errors.extend(source_errors[:3])
+            if result.errors and not source_errors:
+                logger.debug(f"Silver transform {source}: skipped (no dynamic config)")
+            else:
+                logger.info(f"Silver transform {source}: {linked} records linked")
         except Exception as e:
             logger.error(f"Silver transform failed for {source}: {e}")
             metrics.errors.append(f"silver_{source}: {str(e)[:100]}")

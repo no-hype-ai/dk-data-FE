@@ -29,9 +29,9 @@ def _derive_table(raw_table: str, layer: str) -> str:
     if raw_table.startswith('mol_raw.'):
         return f'mol_{layer}.' + raw_table[len('mol_raw.'):]
     if raw_table.startswith('raw.'):
-        return f'{layer}.' + raw_table[len('raw.'):]
+        return f'mol_{layer}.' + raw_table[len('raw.'):]
     # Fallback for unexpected formats
-    return raw_table.replace('raw.', f'{layer}.')
+    return raw_table.replace('raw.', f'mol_{layer}.')
 
 
 @dataclass
@@ -891,14 +891,9 @@ class DynamicSourceTransformer:
 
                 # Get unprocessed bronze records (deduplicated)
                 bronze_records = await conn.fetch(f"""
-                    SELECT DISTINCT ON (bronze_hash) *
+                    SELECT *
                     FROM {bronze_table}
-                    WHERE quality_score >= 0.3  -- Minimum quality threshold
-                    AND bronze_hash NOT IN (
-                        SELECT COALESCE(silver_metadata->>'bronze_hash', '')
-                        FROM {silver_table}
-                    )
-                    ORDER BY bronze_hash, quality_score DESC, processed_at DESC
+                    ORDER BY id DESC
                     LIMIT $1
                 """, batch_size)
 

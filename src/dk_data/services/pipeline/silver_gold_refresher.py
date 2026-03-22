@@ -177,7 +177,7 @@ class SilverGoldRefresher:
 
                 await conn.execute("""
                     INSERT INTO mol_silver.clinical_trials
-                    (id, molecule_id, nct_id, org_study_id, brief_title, official_title, acronym,
+                    (trial_id, molecule_id, nct_id, org_study_id, brief_title, official_title, acronym,
                      brief_summary, detailed_description,
                      overall_status, last_known_status, why_stopped,
                      phase, phases, study_type,
@@ -299,7 +299,7 @@ class SilverGoldRefresher:
 
                 await conn.execute("""
                     INSERT INTO mol_silver.drug_labels
-                    (id, molecule_id, set_id, spl_id, version, effective_time,
+                    (label_id, molecule_id, set_id, spl_id, version, effective_time,
                      brand_name, generic_name, manufacturer_name,
                      product_type, route, substance_name, active_ingredient,
                      indications_and_usage, dosage_and_administration,
@@ -561,7 +561,7 @@ class SilverGoldRefresher:
                     max_phase = GREATEST(COALESCE(max_phase, 0), $6),
                     mechanism_of_action = COALESCE(mechanism_of_action, $7),
                     updated_at = NOW()
-                WHERE id = $1::uuid
+                WHERE molecule_id = $1::uuid
             """,
                 molecule_id,
                 structures.get("canonical_smiles"),
@@ -575,7 +575,7 @@ class SilverGoldRefresher:
             # Add ChEMBL ID mapping
             await conn.execute("""
                 INSERT INTO mol_silver.identifier_mappings
-                (id, molecule_id, identifier_type, identifier_value, source, is_primary)
+                (mapping_id, molecule_id, identifier_type, identifier_value, source, is_primary)
                 VALUES ($1, $2, 'chembl_id', $3, 'chembl', TRUE)
                 ON CONFLICT (molecule_id, identifier_type, identifier_value) DO NOTHING
             """, str(uuid.uuid4()), molecule_id, chembl_id)
@@ -596,12 +596,12 @@ class SilverGoldRefresher:
                 UPDATE mol_silver.molecules SET
                     mechanism_of_action = COALESCE(mechanism_of_action, $2),
                     updated_at = NOW()
-                WHERE id = $1::uuid
+                WHERE molecule_id = $1::uuid
             """, molecule_id, drug.get("mechanism-of-action") or drug.get("mechanism_of_action"))
 
             await conn.execute("""
                 INSERT INTO mol_silver.identifier_mappings
-                (id, molecule_id, identifier_type, identifier_value, source, is_primary)
+                (mapping_id, molecule_id, identifier_type, identifier_value, source, is_primary)
                 VALUES ($1, $2, 'drugbank_id', $3, 'drugbank', TRUE)
                 ON CONFLICT (molecule_id, identifier_type, identifier_value) DO NOTHING
             """, str(uuid.uuid4()), molecule_id, db_id)
@@ -627,7 +627,7 @@ class SilverGoldRefresher:
                     inchi = COALESCE(inchi, $5),
                     inchi_key = COALESCE(inchi_key, $6),
                     updated_at = NOW()
-                WHERE id = $1::uuid
+                WHERE molecule_id = $1::uuid
             """,
                 molecule_id,
                 c.get("CanonicalSMILES") or c.get("canonical_smiles"),
@@ -641,7 +641,7 @@ class SilverGoldRefresher:
 
             await conn.execute("""
                 INSERT INTO mol_silver.identifier_mappings
-                (id, molecule_id, identifier_type, identifier_value, source, is_primary)
+                (mapping_id, molecule_id, identifier_type, identifier_value, source, is_primary)
                 VALUES ($1, $2, 'pubchem_cid', $3, 'pubchem', TRUE)
                 ON CONFLICT (molecule_id, identifier_type, identifier_value) DO NOTHING
             """, str(uuid.uuid4()), molecule_id, cid)
@@ -682,7 +682,8 @@ class SilverGoldRefresher:
         # Count safety data (adverse_events tracks individual events)
         ae_row = await conn.fetchrow("""
             SELECT COUNT(*) as total,
-                   SUM(CASE WHEN seriousness = 'Serious' OR seriousness = '1' THEN 1 ELSE 0 END) as serious
+                   SUM(CASE WHEN serious = TRUE
+                             OR seriousness_text IN ('Serious', '1') THEN 1 ELSE 0 END) as serious
             FROM mol_silver.adverse_events WHERE molecule_id::text = $1
         """, molecule_id)
 
@@ -708,11 +709,8 @@ class SilverGoldRefresher:
             for r in pipeline
         ]
 
-        # Patent info
-        patent_row = await conn.fetchrow("""
-            SELECT MIN(expiry_date) as earliest, COUNT(*) as cnt
-            FROM mol_silver.patents WHERE molecule_id::text = $1
-        """, molecule_id)
+        # No patent table currently populated
+        patent_row = None
 
         # Count data sources
         source_counts = await conn.fetchrow("""
@@ -800,7 +798,8 @@ class SilverGoldRefresher:
                     COUNT(*) as case_count,
                     MIN(report_date) as first_reported,
                     MAX(report_date) as last_reported,
-                    SUM(CASE WHEN seriousness = 'Serious' OR seriousness = '1' THEN 1 ELSE 0 END) as serious_count
+                    SUM(CASE WHEN serious = TRUE
+                             OR seriousness_text IN ('Serious', '1') THEN 1 ELSE 0 END) as serious_count
                 FROM mol_silver.adverse_events
                 WHERE molecule_id::text = $1
                   AND reaction_meddra_pt IS NOT NULL
@@ -840,12 +839,12 @@ class SilverGoldRefresher:
         try:
             # Group trials by phase to build lifecycle stages
             phases = await conn.fetch("""
-                SELECT phase, status, COUNT(*) as cnt,
+                SELECT phase, overall_status, COUNT(*) as cnt,
                        jsonb_agg(DISTINCT c) as indications
                 FROM mol_silver.clinical_trials,
                      jsonb_array_elements_text(conditions) c
                 WHERE molecule_id::text = $1
-                GROUP BY phase, status
+                GROUP BY phase, overall_status
             """, molecule_id)
 
             if not phases:
@@ -942,7 +941,8 @@ class SilverGoldRefresher:
         """Populate gold.trial_outcomes directly from silver.clinical_trials."""
         try:
             trials = await conn.fetch("""
-                SELECT nct_id, title, phase, status, enrollment, sponsor, conditions
+                SELECT nct_id, brief_title, phase, overall_status,
+                       enrollment_count, lead_sponsor_name, conditions
                 FROM mol_silver.clinical_trials
                 WHERE molecule_id::text = $1
             """, molecule_id)
@@ -958,26 +958,26 @@ class SilverGoldRefresher:
                 await conn.execute("""
                     INSERT INTO mol_gold.trial_outcomes
                     (id, molecule_id, nct_id, endpoint_name, result,
-                     phase, status, enrollment, sponsor, conditions)
+                     phase, overall_status, enrollment_count, lead_sponsor_name, conditions)
                     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10::jsonb)
                     ON CONFLICT (nct_id) DO UPDATE SET
                         phase = EXCLUDED.phase,
-                        status = EXCLUDED.status,
-                        enrollment = EXCLUDED.enrollment,
+                        overall_status = EXCLUDED.overall_status,
+                        enrollment_count = EXCLUDED.enrollment_count,
                         conditions = EXCLUDED.conditions,
                         updated_at = NOW()
                 """,
                     str(uuid.uuid4()), molecule_id, nct_id,
-                    t.get("title"),  # endpoint_name (using title as summary)
-                    t.get("status"),  # result (using status as outcome indicator)
+                    t.get("brief_title"),
+                    t.get("overall_status"),
                     t.get("phase"),
-                    t.get("status"),
-                    t.get("enrollment"),
-                    t.get("sponsor"),
+                    t.get("overall_status"),
+                    t.get("enrollment_count"),
+                    t.get("lead_sponsor_name"),
                     json.dumps(t["conditions"]) if t.get("conditions") else None,
                 )
         except Exception as e:
-            logger.warning(f"gold.trial_outcomes refresh skipped: {e}")
+            logger.error(f"gold.trial_outcomes refresh failed: {e}")
 
     async def _parse_mda_and_refresh_indication_revenue(self, conn, molecule_id: str) -> None:
         """Parse MD&A excerpts from financial_filings → silver.indication_revenue → gold summary."""

@@ -60,10 +60,7 @@ class DatabaseMetricsService:
             ('bronze', 'drugbank'),
             ('bronze', 'chembl'),
             ('bronze', 'pubchem'),
-            ('bronze', 'sider_adverse_reactions'),
-            ('bronze', 'bindingdb_affinities'),
-            ('bronze', 'tdc_admet_data'),
-            ('bronze', 'drugbank_targets'),
+            ('bronze', 'sider'),
             # Silver layer (normalized entity-resolved data)
             ('silver', 'molecules'),
             ('silver', 'clinical_trials'),
@@ -182,7 +179,7 @@ class DatabaseMetricsService:
             # SIDER - using medallion architecture
             try:
                 sider_count = await conn.fetchval(
-                    "SELECT COUNT(*) FROM mol_bronze.sider_adverse_reactions"
+                    "SELECT COUNT(*) FROM mol_bronze.sider"
                 )
                 stats['sider'] = {
                     'record_count': sider_count or 0,
@@ -240,10 +237,10 @@ class DatabaseMetricsService:
             try:
                 rows = await conn.fetch("""
                     SELECT
-                        COALESCE(status, 'Unknown') as status,
+                        COALESCE(overall_status, 'Unknown') as status,
                         COUNT(*) as count
                     FROM mol_silver.clinical_trials
-                    GROUP BY status
+                    GROUP BY overall_status
                     ORDER BY count DESC
                     LIMIT 10
                 """)
@@ -308,7 +305,7 @@ class DatabaseMetricsService:
 
                 # SIDER reactions - using medallion architecture
                 summary['sider_total'] = await conn.fetchval(
-                    "SELECT COUNT(*) FROM mol_bronze.sider_adverse_reactions"
+                    "SELECT COUNT(*) FROM mol_bronze.sider"
                 ) or 0
 
                 # Top reactions by count - using silver.adverse_events

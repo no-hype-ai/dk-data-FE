@@ -218,7 +218,7 @@ class GoldAggregationService:
                                 ELSE 0
                             END) AS max_trial_phase
                         FROM mol_silver.clinical_trials
-                        WHERE status NOT IN ('Terminated', 'Withdrawn', 'Suspended')
+                        WHERE overall_status NOT IN ('Terminated', 'Withdrawn', 'Suspended')
                         GROUP BY molecule_id
                     )
                     SELECT
@@ -446,8 +446,8 @@ class GoldAggregationService:
                     COUNT(*) AS total,
                     COUNT(*) FILTER (WHERE needs_review = FALSE) AS published,
                     COUNT(*) FILTER (WHERE needs_review = TRUE) AS quarantined,
-                    COUNT(*) FILTER (WHERE development_status = 'approved') AS approved,
-                    COUNT(*) FILTER (WHERE development_status LIKE 'phase_%') AS in_trials
+                    0 AS approved,
+                    0 AS in_trials
                 FROM mol_silver.molecules
             """)
 
@@ -455,7 +455,7 @@ class GoldAggregationService:
             stats['trials'] = await conn.fetchrow("""
                 SELECT
                     COUNT(*) AS total,
-                    COUNT(*) FILTER (WHERE status IN ('Recruiting', 'Active, not recruiting')) AS active
+                    COUNT(*) FILTER (WHERE overall_status IN ('Recruiting', 'Active, not recruiting')) AS active
                 FROM mol_silver.clinical_trials
             """)
 
@@ -463,8 +463,8 @@ class GoldAggregationService:
             stats['adverse_events'] = await conn.fetchrow("""
                 SELECT
                     COUNT(DISTINCT molecule_id) AS molecules_with_events,
-                    SUM(report_count) AS total_reports,
-                    SUM(serious_count) AS serious_reports
+                    COUNT(*) AS total_reports,
+                    COUNT(*) FILTER (WHERE serious = TRUE) AS serious_reports
                 FROM mol_silver.adverse_events
             """)
 

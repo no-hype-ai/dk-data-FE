@@ -452,7 +452,7 @@ async def get_molecule_profile(molecule_id: str):
                 SELECT
                     m.molecule_id::text as molecule_id,
                     m.canonical_name,
-                    m.smiles as canonical_smiles,
+                    m.canonical_smiles,
                     m.inchi_key,
                     m.molecular_formula,
                     m.molecular_weight,
@@ -472,7 +472,7 @@ async def get_molecule_profile(molecule_id: str):
             trial_counts = await conn.fetchrow("""
                 SELECT
                     COUNT(*) as total,
-                    COUNT(*) FILTER (WHERE UPPER(status) IN ('RECRUITING', 'ACTIVE, NOT RECRUITING')) as active
+                    COUNT(*) FILTER (WHERE UPPER(overall_status) IN ('RECRUITING', 'ACTIVE, NOT RECRUITING')) as active
                 FROM mol_silver.clinical_trials
                 WHERE molecule_id = $1::uuid OR LOWER(interventions::text) LIKE LOWER($2)
             """, mol["molecule_id"], f'%{mol["canonical_name"]}%') if mol["canonical_name"] else {"total": 0, "active": 0}
@@ -1139,14 +1139,14 @@ async def get_pipeline_status():
             # Get molecule counts - using medallion architecture
             mol_total = await conn.fetchval("SELECT COUNT(*) FROM mol_silver.molecules") or 0
             mol_with_ids = await conn.fetchval(
-                "SELECT COUNT(*) FROM mol_silver.molecules WHERE smiles IS NOT NULL AND inchi_key IS NOT NULL"
+                "SELECT COUNT(*) FROM mol_silver.molecules WHERE canonical_smiles IS NOT NULL AND inchi_key IS NOT NULL"
             ) or 0
 
             # Get trial counts - using medallion architecture
             trials_total = await conn.fetchval("SELECT COUNT(*) FROM mol_silver.clinical_trials") or 0
             trials_active = await conn.fetchval("""
                 SELECT COUNT(*) FROM mol_silver.clinical_trials
-                WHERE UPPER(status) IN ('RECRUITING', 'ACTIVE, NOT RECRUITING', 'ENROLLING BY INVITATION')
+                WHERE UPPER(overall_status) IN ('RECRUITING', 'ACTIVE, NOT RECRUITING', 'ENROLLING BY INVITATION')
             """) or 0
 
             # Get adverse event counts - dynamically from silver layer
@@ -1459,7 +1459,7 @@ async def get_competitive_landscape(
                         NULL::text as development_status,
                         NULL::int as max_phase,
                         COUNT(DISTINCT ct.nct_id) FILTER (
-                            WHERE ct.status IN ('Recruiting', 'Active, not recruiting')
+                            WHERE ct.overall_status IN ('Recruiting', 'Active, not recruiting')
                         ) as active_trials,
                         NULL::jsonb as phase_distribution,
                         NULL::text[] as indications,
@@ -1563,21 +1563,21 @@ async def get_company_pipeline(
                 # Fallback to silver layer
                 rows = await conn.fetch("""
                     SELECT
-                        ct.sponsor as company,
+                        ct.lead_sponsor_name as company,
                         m.molecule_id::text as molecule_id,
                         m.inchi_key,
                         m.canonical_name,
                         NULL::text as development_status,
                         ct.phase,
-                        ct.status as trial_status,
+                        ct.overall_status as trial_status,
                         ct.conditions as indications,
                         COUNT(DISTINCT ct.nct_id) as trial_count,
                         MAX(ct.start_date) as latest_trial_start
                     FROM mol_silver.clinical_trials ct
                     JOIN mol_silver.molecules m ON ct.molecule_id = m.molecule_id
                     WHERE m.needs_review = FALSE
-                      AND LOWER(ct.sponsor) LIKE LOWER($1)
-                    GROUP BY ct.sponsor, m.molecule_id, m.inchi_key, m.canonical_name, ct.phase, ct.status, ct.conditions
+                      AND LOWER(ct.lead_sponsor_name) LIKE LOWER($1)
+                    GROUP BY ct.lead_sponsor_name, m.molecule_id, m.inchi_key, m.canonical_name, ct.phase, ct.overall_status, ct.conditions
                     ORDER BY trial_count DESC
                     LIMIT $2
                 """, f'%{company}%', limit)
@@ -1899,7 +1899,7 @@ async def list_gold_molecule_profiles(
                     m.molecule_id::text as molecule_id,
                     m.inchi_key,
                     m.canonical_name,
-                    m.smiles as canonical_smiles,
+                    m.canonical_smiles,
                     m.molecular_weight,
                     NULL::text as development_status,
                     NULL::int as max_phase,
@@ -1912,7 +1912,7 @@ async def list_gold_molecule_profiles(
                 FROM mol_silver.molecules m
                 LEFT JOIN LATERAL (
                     SELECT COUNT(*) FILTER (
-                        WHERE status IN ('Recruiting', 'Active, not recruiting', 'Enrolling by invitation')
+                        WHERE overall_status IN ('Recruiting', 'Active, not recruiting', 'Enrolling by invitation')
                     ) as active_trials
                     FROM mol_silver.clinical_trials
                     WHERE molecule_id = m.molecule_id
@@ -1956,7 +1956,7 @@ async def list_gold_molecule_profiles(
                         m.molecule_id::text as molecule_id,
                         m.inchi_key,
                         m.canonical_name,
-                        m.smiles as canonical_smiles,
+                        m.canonical_smiles,
                         m.molecular_weight,
                         NULL::text as development_status,
                         NULL::int as max_phase,
@@ -2060,7 +2060,7 @@ async def list_gold_safety_signals(
                         m.canonical_name,
                         m.inchi_key,
                         COUNT(ae.event_id) as total_reports,
-                        COUNT(ae.event_id) FILTER (WHERE ae.seriousness IS NOT NULL AND ae.seriousness NOT ILIKE 'non-serious') as serious_reports,
+                        COUNT(ae.event_id) FILTER (WHERE ae.seriousness_text IS NOT NULL AND ae.seriousness_text NOT ILIKE 'non-serious') as serious_reports,
                         COUNT(ae.event_id) FILTER (WHERE ae.outcome ILIKE '%fatal%' OR ae.outcome ILIKE '%death%') as death_reports,
                         EXISTS(
                             SELECT 1 FROM mol_silver.drug_labels dl
@@ -2078,7 +2078,7 @@ async def list_gold_safety_signals(
                     WHERE m.needs_review = FALSE
                     GROUP BY m.molecule_id, m.canonical_name, m.inchi_key
                     HAVING COUNT(ae.event_id) >= $1
-                       AND ($2 = FALSE OR COUNT(ae.event_id) FILTER (WHERE ae.seriousness IS NOT NULL AND ae.seriousness NOT ILIKE 'non-serious') > 0)
+                       AND ($2 = FALSE OR COUNT(ae.event_id) FILTER (WHERE ae.seriousness_text IS NOT NULL AND ae.seriousness_text NOT ILIKE 'non-serious') > 0)
                        AND ($3 = FALSE OR EXISTS(
                            SELECT 1 FROM mol_silver.drug_labels dl
                            WHERE dl.molecule_id = m.molecule_id AND dl.boxed_warning IS NOT NULL
