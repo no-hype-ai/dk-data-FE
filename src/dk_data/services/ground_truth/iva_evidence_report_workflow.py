@@ -49,7 +49,7 @@ try:
     AGNO_AVAILABLE = True
 except ImportError:
     AGNO_AVAILABLE = False
-    logger.warning("Agno framework not installed. Using fallback implementation.")
+    logger.debug("Agno framework not installed. Using fallback implementation.")
 
 # Local imports
 from .db_utils import get_db_connection

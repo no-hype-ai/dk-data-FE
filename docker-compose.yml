@@ -135,6 +135,7 @@ services:
       # For local dev, use subprocess runner instead of K8s
       JOB_RUNNER_MODE: "local"
       LOG_LEVEL: "info"
+      OTEL_SDK_DISABLED: "true"
     volumes:
       # Mount scripts from canonical location
       - ./src/dk_data/scripts:/app/scripts:ro

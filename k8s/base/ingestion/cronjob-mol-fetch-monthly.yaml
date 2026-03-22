@@ -31,7 +31,7 @@ spec:
             - name: mol-fetch-monthly
               image: ghcr.io/data-kinetic/dk-data-fe/job-trigger:main-5f46ed1
               command: ["python", "-m", "dk_data.ingestion.fetch_molecules"]
-              args: ["--source", "bindingdb,sider,tdc_admet,rxnorm,dailymed,fda_drugs,kegg_drug,ttd,pharmgkb,imgt,cdc_vaccines"]
+              args: ["--source", "pubchem,uniprot,dailymed,ema_regulatory,cochrane_reviews,hta_decisions,purple_book,epo_patents,euipo_trademarks,hrsa_shortage_areas,acc_tvc_certification,ct_gov_indication_stats,who_gho,uspto_patents,uspto_trademarks,uspto_ci"]
               env:
                 - name: POSTGRES_HOST
                   valueFrom:

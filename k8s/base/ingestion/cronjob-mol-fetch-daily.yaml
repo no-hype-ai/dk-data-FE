@@ -31,7 +31,7 @@ spec:
             - name: mol-fetch-daily
               image: ghcr.io/data-kinetic/dk-data-fe/job-trigger:main-5f46ed1
               command: ["python", "-m", "dk_data.ingestion.fetch_molecules"]
-              args: ["--source", "clinicaltrials,openfda"]
+              args: ["--source", "clinicaltrials_gov,openfda_labels,openfda_faers,sec_edgar,journal_rss,medical_news"]
               env:
                 - name: POSTGRES_HOST
                   valueFrom:

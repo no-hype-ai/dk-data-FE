@@ -12,30 +12,29 @@ MODEL (
 
 WITH molecule_base AS (
     SELECT
-        m.id AS molecule_id,
+        m.molecule_id,
         m.inchi_key,
         m.canonical_name,
-        m.development_status,
-        m.max_phase,
-        m.first_approval_year,
-        m.approval_date
+        m.max_phase
     FROM mol_silver.molecules m
     WHERE m.needs_review = FALSE
 ),
 
 -- Clinical trial evidence
+-- phases is JSONB in silver (e.g. ["Phase 3"]) — cast to TEXT for LIKE matching
+-- overall_status is the correct column name (not status)
 trial_evidence AS (
     SELECT
         molecule_id,
-        MAX(CASE WHEN phase LIKE '%4%' THEN 4
-                 WHEN phase LIKE '%3%' THEN 3
-                 WHEN phase LIKE '%2%' THEN 2
-                 WHEN phase LIKE '%1%' THEN 1
+        MAX(CASE WHEN phases::TEXT LIKE '%4%' THEN 4
+                 WHEN phases::TEXT LIKE '%3%' THEN 3
+                 WHEN phases::TEXT LIKE '%2%' THEN 2
+                 WHEN phases::TEXT LIKE '%1%' THEN 1
                  ELSE 0 END) AS max_trial_phase,
         COUNT(*) AS total_trials,
-        COUNT(*) FILTER (WHERE status IN ('Recruiting', 'Active, not recruiting', 'Enrolling by invitation')) AS active_trials,
-        COUNT(*) FILTER (WHERE status = 'Completed') AS completed_trials,
-        bool_or(status = 'Terminated' OR status = 'Suspended') AS has_terminated_trials,
+        COUNT(*) FILTER (WHERE overall_status IN ('Recruiting', 'Active, not recruiting', 'Enrolling by invitation')) AS active_trials,
+        COUNT(*) FILTER (WHERE overall_status = 'Completed') AS completed_trials,
+        bool_or(overall_status = 'Terminated' OR overall_status = 'Suspended') AS has_terminated_trials,
         MAX(start_date) AS latest_trial_start,
         MAX(completion_date) AS latest_trial_completion
     FROM mol_silver.clinical_trials
@@ -44,69 +43,61 @@ trial_evidence AS (
 ),
 
 -- Drug label evidence (FDA approval)
+-- marketing_status doesn't exist in silver; use product_type instead
 label_evidence AS (
     SELECT DISTINCT ON (molecule_id)
         molecule_id,
         TRUE AS has_fda_label,
         effective_date AS approval_date,
-        marketing_status,
-        boxed_warning IS NOT NULL AS has_boxed_warning
+        product_type AS marketing_status,
+        has_boxed_warning
     FROM mol_silver.drug_labels
     WHERE molecule_id IS NOT NULL
     ORDER BY molecule_id, effective_date DESC
 ),
 
 -- Adverse event evidence (post-market surveillance)
+-- adverse_events has individual report rows with boolean seriousness flags
 adverse_evidence AS (
     SELECT
         molecule_id,
-        COALESCE(SUM(report_count), 0) AS total_adverse_reports,
-        MIN(first_report_date) AS first_adverse_date,
-        MAX(last_report_date) AS last_adverse_date,
-        -- Safety signals indicating marketed status
-        CASE
-            WHEN SUM(report_count) > 100 THEN TRUE
-            ELSE FALSE
-        END AS has_significant_adverse_data
+        COUNT(*) AS total_adverse_reports,
+        MIN(receive_date) AS first_adverse_date,
+        MAX(receipt_date) AS last_adverse_date,
+        CASE WHEN COUNT(*) > 100 THEN TRUE ELSE FALSE END AS has_significant_adverse_data
     FROM mol_silver.adverse_events
     WHERE molecule_id IS NOT NULL
     GROUP BY molecule_id
 ),
 
--- Patent evidence
+-- Patent evidence (ip_silver not yet populated — empty stub)
 patent_evidence AS (
     SELECT
-        molecule_id,
-        COUNT(*) AS patent_count,
-        MIN(expiry_date) FILTER (WHERE expiry_date > CURRENT_DATE) AS earliest_active_expiry,
-        MAX(expiry_date) AS latest_expiry,
-        bool_or(expiry_date < CURRENT_DATE) AS has_expired_patents
-    FROM mol_silver.patents
-    WHERE molecule_id IS NOT NULL
-    GROUP BY molecule_id
+        NULL::UUID AS molecule_id,
+        0 AS patent_count,
+        NULL::DATE AS earliest_active_expiry,
+        NULL::DATE AS latest_expiry,
+        FALSE AS has_expired_patents
+    WHERE FALSE
 ),
 
--- Publication evidence (research activity)
+-- Publication evidence (ip_silver not yet populated — empty stub)
 publication_evidence AS (
     SELECT
-        molecule_id,
-        COUNT(*) AS publication_count,
-        MIN(publication_date) AS first_publication,
-        MAX(publication_date) AS latest_publication
-    FROM mol_silver.molecule_publications
-    WHERE molecule_id IS NOT NULL
-    GROUP BY molecule_id
+        NULL::UUID AS molecule_id,
+        0 AS publication_count,
+        NULL::DATE AS first_publication,
+        NULL::DATE AS latest_publication
+    WHERE FALSE
 ),
 
--- Bioactivity evidence (preclinical)
+-- Bioactivity evidence (placeholder model — no molecule_id/target_id columns yet)
 bioactivity_evidence AS (
     SELECT
-        molecule_id,
-        COUNT(*) AS bioactivity_count,
-        COUNT(DISTINCT target_id) AS targets_tested
-    FROM mol_silver.bioactivity
-    WHERE molecule_id IS NOT NULL
-    GROUP BY molecule_id
+        NULL::UUID AS molecule_id,
+        0 AS bioactivity_count,
+        0 AS targets_tested
+    WHERE FALSE
 ),
 
 -- Compute lifecycle stage
@@ -115,7 +106,6 @@ stage_detection AS (
         mb.molecule_id,
         mb.inchi_key,
         mb.canonical_name,
-        mb.development_status,
         mb.max_phase,
 
         -- Detect stage based on evidence hierarchy
@@ -231,7 +221,6 @@ SELECT
     molecule_id,
     inchi_key,
     canonical_name,
-    development_status AS source_status,
     max_phase AS source_max_phase,
     detected_stage,
     stage_confidence,
@@ -266,12 +255,8 @@ SELECT
     -- Detailed evidence summary
     evidence_summary,
 
-    -- Stage change detection (compared to source data)
-    CASE
-        WHEN development_status IS NULL THEN 'new'
-        WHEN development_status != detected_stage THEN 'changed'
-        ELSE 'confirmed'
-    END AS stage_status,
+    -- Stage status (confirmed for all; will add change detection when development_status is available)
+    'confirmed' AS stage_status,
 
     NOW() AS computed_at
 

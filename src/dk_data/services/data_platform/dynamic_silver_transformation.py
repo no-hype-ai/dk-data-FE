@@ -132,7 +132,7 @@ class DynamicSilverTransformation:
 
                 # Update last run stats
                 await conn.execute("""
-                    UPDATE mol_ops.silver_transformation_rules
+                    UPDATE ops.silver_transformation_rules
                     SET last_run_at = NOW(),
                         last_run_records = $1
                     WHERE source_name = $2
@@ -487,7 +487,7 @@ class DynamicSilverTransformation:
             async with self.db_pool.acquire() as conn:
                 # Insert transformation rule
                 await conn.execute("""
-                    INSERT INTO mol_ops.silver_transformation_rules (
+                    INSERT INTO ops.silver_transformation_rules (
                         source_name, source_table, target_table, target_type,
                         column_mappings, identifier_mappings, name_mappings,
                         dedup_strategy, source_precedence, enabled

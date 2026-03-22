@@ -74,7 +74,11 @@ SELECT
 
     -- Flags
     (label->'boxed_warning' IS NOT NULL AND label->'boxed_warning' != 'null'::JSONB) AS has_boxed_warning,
-    (label->'openfda'->'is_original_packager')::BOOLEAN AS is_original_packager,
+    CASE jsonb_typeof(label->'openfda'->'is_original_packager')
+        WHEN 'array'   THEN (label->'openfda'->'is_original_packager'->0)::TEXT::BOOLEAN
+        WHEN 'boolean' THEN (label->'openfda'->'is_original_packager')::TEXT::BOOLEAN
+        ELSE NULL
+    END AS is_original_packager,
 
     -- Raw source tracking
     label AS raw_json,

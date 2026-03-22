@@ -28,11 +28,11 @@ MODEL (
 
 -- Canonical names from silver.molecules
 SELECT
-    m.id AS molecule_id,
+    m.molecule_id,
     m.canonical_name AS alias_name,
     LOWER(REGEXP_REPLACE(m.canonical_name, '[^a-zA-Z0-9]', '', 'g')) AS alias_name_normalized,
     'canonical' AS alias_type,
-    m.primary_source AS source,
+    'xenon' AS source,
     NOW() AS created_at
 FROM mol_silver.molecules m
 WHERE m.canonical_name IS NOT NULL
@@ -42,7 +42,7 @@ UNION ALL
 
 -- ChEMBL synonyms
 SELECT
-    m.id AS molecule_id,
+    m.molecule_id,
     syn AS alias_name,
     LOWER(REGEXP_REPLACE(syn, '[^a-zA-Z0-9]', '', 'g')) AS alias_name_normalized,
     'synonym' AS alias_type,
@@ -59,7 +59,7 @@ UNION ALL
 
 -- DrugBank synonyms
 SELECT
-    m.id AS molecule_id,
+    m.molecule_id,
     syn AS alias_name,
     LOWER(REGEXP_REPLACE(syn, '[^a-zA-Z0-9]', '', 'g')) AS alias_name_normalized,
     'synonym' AS alias_type,
@@ -76,7 +76,7 @@ UNION ALL
 
 -- DrugBank brand names
 SELECT
-    m.id AS molecule_id,
+    m.molecule_id,
     brand->>'name' AS alias_name,
     LOWER(REGEXP_REPLACE(brand->>'name', '[^a-zA-Z0-9]', '', 'g')) AS alias_name_normalized,
     'brand' AS alias_type,
@@ -93,7 +93,7 @@ UNION ALL
 
 -- DrugBank product names
 SELECT
-    m.id AS molecule_id,
+    m.molecule_id,
     prod->>'name' AS alias_name,
     LOWER(REGEXP_REPLACE(prod->>'name', '[^a-zA-Z0-9]', '', 'g')) AS alias_name_normalized,
     'product' AS alias_type,
@@ -110,14 +110,14 @@ UNION ALL
 
 -- FDA drug label brand names
 SELECT
-    m.id AS molecule_id,
+    m.molecule_id,
     dl.brand_name AS alias_name,
     LOWER(REGEXP_REPLACE(dl.brand_name, '[^a-zA-Z0-9]', '', 'g')) AS alias_name_normalized,
     'brand' AS alias_type,
     'openfda' AS source,
     NOW() AS created_at
 FROM mol_silver.molecules m
-JOIN mol_silver.drug_labels dl ON m.id = dl.molecule_id
+JOIN mol_silver.drug_labels dl ON m.molecule_id = dl.molecule_id
 WHERE dl.brand_name IS NOT NULL
   AND dl.brand_name != ''
   AND m.needs_review = FALSE
@@ -126,14 +126,14 @@ UNION ALL
 
 -- FDA drug label generic names
 SELECT
-    m.id AS molecule_id,
+    m.molecule_id,
     dl.generic_name AS alias_name,
     LOWER(REGEXP_REPLACE(dl.generic_name, '[^a-zA-Z0-9]', '', 'g')) AS alias_name_normalized,
     'generic' AS alias_type,
     'openfda' AS source,
     NOW() AS created_at
 FROM mol_silver.molecules m
-JOIN mol_silver.drug_labels dl ON m.id = dl.molecule_id
+JOIN mol_silver.drug_labels dl ON m.molecule_id = dl.molecule_id
 WHERE dl.generic_name IS NOT NULL
   AND dl.generic_name != ''
   AND m.needs_review = FALSE
@@ -142,7 +142,7 @@ UNION ALL
 
 -- PubChem synonyms
 SELECT
-    m.id AS molecule_id,
+    m.molecule_id,
     syn AS alias_name,
     LOWER(REGEXP_REPLACE(syn, '[^a-zA-Z0-9]', '', 'g')) AS alias_name_normalized,
     'synonym' AS alias_type,
@@ -153,37 +153,4 @@ JOIN mol_bronze.pubchem p ON m.inchi_key = p.inchi_key
 CROSS JOIN LATERAL jsonb_array_elements_text(COALESCE(p.synonyms, '[]'::jsonb)) AS syn
 WHERE syn IS NOT NULL
   AND syn != ''
-  AND m.needs_review = FALSE
-
-UNION ALL
-
--- Clinical trial intervention names
-SELECT DISTINCT
-    m.id AS molecule_id,
-    ct.intervention_name AS alias_name,
-    LOWER(REGEXP_REPLACE(ct.intervention_name, '[^a-zA-Z0-9]', '', 'g')) AS alias_name_normalized,
-    'trial_intervention' AS alias_type,
-    'clinicaltrials' AS source,
-    NOW() AS created_at
-FROM mol_silver.molecules m
-JOIN mol_silver.clinical_trials ct ON m.id = ct.molecule_id
-WHERE ct.intervention_name IS NOT NULL
-  AND ct.intervention_name != ''
-  AND m.needs_review = FALSE
-
-UNION ALL
-
--- Orange Book trade names
-SELECT DISTINCT
-    m.id AS molecule_id,
-    ob.trade_name AS alias_name,
-    LOWER(REGEXP_REPLACE(ob.trade_name, '[^a-zA-Z0-9]', '', 'g')) AS alias_name_normalized,
-    'trade' AS alias_type,
-    'orangebook' AS source,
-    NOW() AS created_at
-FROM mol_silver.molecules m
-JOIN mol_silver.molecule_aliases ma ON m.id = ma.molecule_id
-JOIN mol_bronze.orange_book ob ON LOWER(ma.alias_name) = LOWER(ob.ingredient)
-WHERE ob.trade_name IS NOT NULL
-  AND ob.trade_name != ''
   AND m.needs_review = FALSE

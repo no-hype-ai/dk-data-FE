@@ -21,51 +21,38 @@ WITH latest_version AS (
     FROM mol_bronze.openfda_labels
     WHERE processed_to_silver = FALSE
       AND set_id IS NOT NULL
-    ORDER BY set_id, version DESC NULLS LAST, ingested_at DESC
+    ORDER BY set_id, spl_version DESC NULLS LAST, created_at DESC
 )
 
 SELECT
     gen_random_uuid() AS label_id,
     NULL::UUID AS molecule_id,
 
-    -- All bronze columns carried forward with SAME NAMES (API-derived)
+    -- Identifiers (bronze names preserved)
     set_id,
     spl_id,
-    version,
-    effective_time,
+    spl_version,
+    effective_date,
     brand_name,
     generic_name,
     manufacturer_name,
     product_type,
-    route,
-    substance_name,
+    routes,
+    dosage_forms,
 
-    -- openFDA enrichment fields (prefixed in bronze as openfda_*)
-    openfda_application_number,
-    openfda_brand_name,
-    openfda_generic_name,
-    openfda_manufacturer_name,
-    openfda_product_type,
-    openfda_route,
-    openfda_substance_name,
-    openfda_rxcui,
-    openfda_spl_id,
-    openfda_spl_set_id,
-    openfda_unii,
-    openfda_nui,
-    openfda_pharm_class_cs,
-    openfda_pharm_class_epc,
-    openfda_pharm_class_moa,
-    openfda_pharm_class_pe,
-    openfda_is_original_packager,
-    openfda_product_ndc,
-    openfda_package_ndc,
-    openfda_upc,
+    -- openFDA cross-reference fields (extracted in bronze, no openfda_ prefix)
+    application_numbers,
+    rxcui,
+    spl_set_ids,
+    unii,
+    nui,
+    pharm_class_epc,
+    pharm_class_moa,
+    is_original_packager,
 
-    -- Label sections (all carried forward)
+    -- Label sections (carried forward from bronze)
     indications_and_usage,
     dosage_and_administration,
-    dosage_forms_and_strengths,
     contraindications,
     warnings,
     warnings_and_cautions,
@@ -82,39 +69,16 @@ SELECT
     clinical_studies,
     how_supplied,
     storage_and_handling,
-    package_label_principal_display_panel,
+    principal_display_panel,
     pregnancy,
     nursing_mothers,
     pediatric_use,
     geriatric_use,
-    information_for_patients,
-    spl_medguide,
-    spl_patient_package_insert,
-    spl_product_data_elements,
-    spl_unclassified_section,
-    nonclinical_toxicology,
-    recent_major_changes,
-    active_ingredient,
-    inactive_ingredient,
-    purpose,
-    keep_out_of_reach_of_children,
-    ask_doctor,
-    ask_doctor_or_pharmacist,
-    do_not_use,
-    stop_use,
-    questions,
-    risks,
-    instructions_for_use,
-    animal_pharmacology_and_or_toxicology,
-    references,
-    carcinogenesis_and_mutagenesis_and_impairment_of_fertility,
-    laboratory_tests,
-    pregnancy_or_breast_feeding,
-    pharmacogenomics,
+    has_boxed_warning,
 
     -- Source tracking
     id AS bronze_id,
-    ingested_at,
+    created_at AS ingested_at,
     NOW() AS created_at,
     NOW() AS updated_at
 FROM latest_version;

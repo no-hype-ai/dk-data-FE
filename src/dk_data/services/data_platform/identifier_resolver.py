@@ -355,7 +355,7 @@ class IdentifierResolver:
                 SELECT
                     m.molecule_id,
                     m.inchi_key,
-                    m.pref_name,
+                    m.canonical_name AS pref_name,
                     im.confidence
                 FROM mol_silver.identifier_mappings im
                 JOIN mol_silver.molecules m ON im.molecule_id = m.molecule_id
@@ -375,9 +375,9 @@ class IdentifierResolver:
         async with self.db_pool.acquire() as conn:
             row = await conn.fetchrow("""
                 SELECT
-                    id AS molecule_id,
+                    molecule_id,
                     inchi_key,
-                    pref_name
+                    canonical_name AS pref_name
                 FROM mol_silver.molecules
                 WHERE inchi_key = $1
                   AND needs_review = FALSE

@@ -3060,7 +3060,7 @@ async def list_transformation_sources(enabled_only: bool = True):
                     array_agg(m.model_name) FILTER (WHERE m.model_name IS NOT NULL),
                     ARRAY[]::text[]
                 ) AS models_generated
-            FROM mol_ops.silver_transformation_rules r
+            FROM ops.silver_transformation_rules r
             LEFT JOIN ops.generated_sqlmesh_models m ON m.source_rule_id = r.id
         """
         if enabled_only:
@@ -3107,7 +3107,7 @@ async def get_transformation_source(source_name: str):
                     array_agg(m.model_name) FILTER (WHERE m.model_name IS NOT NULL),
                     ARRAY[]::text[]
                 ) AS models_generated
-            FROM mol_ops.silver_transformation_rules r
+            FROM ops.silver_transformation_rules r
             LEFT JOIN ops.generated_sqlmesh_models m ON m.source_rule_id = r.id
             WHERE r.source_name = $1
             GROUP BY r.id
@@ -3139,7 +3139,7 @@ async def disable_transformation_source(source_name: str):
 
     async with pool.acquire() as conn:
         result = await conn.execute("""
-            UPDATE mol_ops.silver_transformation_rules
+            UPDATE ops.silver_transformation_rules
             SET enabled = false, updated_at = NOW()
             WHERE source_name = $1
         """, source_name)
@@ -3161,7 +3161,7 @@ async def enable_transformation_source(source_name: str):
 
     async with pool.acquire() as conn:
         result = await conn.execute("""
-            UPDATE mol_ops.silver_transformation_rules
+            UPDATE ops.silver_transformation_rules
             SET enabled = true, updated_at = NOW()
             WHERE source_name = $1
         """, source_name)
@@ -3254,14 +3254,14 @@ _SOURCE_MODEL_MAP: Dict[str, Dict[str, str]] = {
         "schema_path": "mol_raw→mol_bronze→mol_silver→mol_gold",
     },
     "openalex": {
-        "bronze": "bronze.openalex",
-        "silver": "silver.publications",
-        "schema_path": "raw→bronze→silver→gold",
+        "bronze": "mol_bronze.openalex",
+        "silver": "mol_silver.publications",
+        "schema_path": "mol_raw→mol_bronze→mol_silver→mol_gold",
     },
     "uniprot": {
-        "bronze": "bronze.uniprot",
-        "silver": "silver.targets",
-        "schema_path": "raw→bronze→silver→gold",
+        "bronze": "mol_bronze.uniprot",
+        "silver": "mol_silver.protein_targets",
+        "schema_path": "mol_raw→mol_bronze→mol_silver→mol_gold",
     },
     # raw (IP) sources
     "pubmed": {
@@ -3517,3 +3517,76 @@ async def trigger_on_demand_transform(
         total_duration_ms=total_duration,
         timestamp=datetime.now(timezone.utc).isoformat(),
     )
+
+
+@router.post("/entity-linking", tags=["on-demand-transform"])
+async def trigger_entity_linking(
+    background_tasks: BackgroundTasks,
+):
+    """
+    Run entity linking to connect mol_silver records (clinical_trials, drug_labels,
+    adverse_events) to molecules via name matching.
+
+    Called by Xenon after on-demand ingestion to promote raw data into the silver layer.
+    """
+    pool = await get_db_pool()
+    if pool is None:
+        raise HTTPException(status_code=503, detail="Database unavailable")
+
+    async def _run_linking():
+        try:
+            async with pool.acquire() as conn:
+                ct_result = await conn.execute("""
+                    UPDATE mol_silver.clinical_trials ct
+                    SET molecule_id = m.molecule_id
+                    FROM mol_silver.molecules m
+                    WHERE ct.molecule_id IS NULL
+                      AND m.needs_review = false
+                      AND (
+                        ct.brief_title ILIKE '%' || m.canonical_name || '%'
+                        OR ct.official_title ILIKE '%' || m.canonical_name || '%'
+                        OR ct.brief_summary ILIKE '%' || m.canonical_name || '%'
+                        OR EXISTS (
+                            SELECT 1 FROM jsonb_array_elements_text(ct.interventions) elem
+                            WHERE elem ILIKE '%' || m.canonical_name || '%'
+                        )
+                      )
+                """)
+                ct_linked = int(ct_result.split()[-1]) if ct_result else 0
+
+                dl_result = await conn.execute("""
+                    UPDATE mol_silver.drug_labels dl
+                    SET molecule_id = m.molecule_id
+                    FROM mol_silver.molecules m
+                    WHERE dl.molecule_id IS NULL
+                      AND m.needs_review = false
+                      AND (
+                        dl.brand_name ILIKE '%' || m.canonical_name || '%'
+                        OR dl.generic_name ILIKE '%' || m.canonical_name || '%'
+                      )
+                """)
+                dl_linked = int(dl_result.split()[-1]) if dl_result else 0
+
+                ae_result = await conn.execute("""
+                    UPDATE mol_silver.adverse_events ae
+                    SET molecule_id = m.molecule_id
+                    FROM mol_silver.molecules m
+                    WHERE ae.molecule_id IS NULL
+                      AND m.needs_review = false
+                      AND ae.drug_name ILIKE '%' || m.canonical_name || '%'
+                """)
+                ae_linked = int(ae_result.split()[-1]) if ae_result else 0
+
+                logger.info(
+                    f"Entity linking complete: {ct_linked} trials, "
+                    f"{dl_linked} labels, {ae_linked} adverse events linked"
+                )
+        except Exception as e:
+            logger.error(f"Entity linking failed: {e}")
+
+    background_tasks.add_task(_run_linking)
+    return {
+        "status": "triggered",
+        "message": "Entity linking running in background",
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+    }

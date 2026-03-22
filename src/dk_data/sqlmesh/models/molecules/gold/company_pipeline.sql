@@ -14,16 +14,16 @@ SELECT
     m.molecule_id,
     m.inchi_key,
     m.canonical_name,
-    m.development_status,
 
     -- Highest phase from trials
+    -- phases is JSONB in silver — cast to TEXT for LIKE matching
     MAX(
         CASE
-            WHEN ct.phase LIKE '%Phase 4%' THEN 'Phase 4'
-            WHEN ct.phase LIKE '%Phase 3%' THEN 'Phase 3'
-            WHEN ct.phase LIKE '%Phase 2%' THEN 'Phase 2'
-            WHEN ct.phase LIKE '%Phase 1%' THEN 'Phase 1'
-            ELSE ct.phase
+            WHEN ct.phases::TEXT LIKE '%Phase 4%' THEN 'Phase 4'
+            WHEN ct.phases::TEXT LIKE '%Phase 3%' THEN 'Phase 3'
+            WHEN ct.phases::TEXT LIKE '%Phase 2%' THEN 'Phase 2'
+            WHEN ct.phases::TEXT LIKE '%Phase 1%' THEN 'Phase 1'
+            ELSE ct.phases::TEXT
         END
     ) AS phase,
 
@@ -58,7 +58,7 @@ SELECT
             SELECT jsonb_array_elements_text(COALESCE(ct2.conditions, '[]'::jsonb)) AS indication
             FROM mol_silver.clinical_trials ct2
             WHERE ct2.molecule_id = m.molecule_id
-              AND ct2.sponsor = ct.lead_sponsor_name
+              AND ct2.lead_sponsor_name = ct.lead_sponsor_name
         ) i
         WHERE indication IS NOT NULL
     ) AS indications,
@@ -77,7 +77,7 @@ SELECT
         FROM mol_silver.clinical_trials ct2,
              jsonb_array_elements(ct2.interventions) AS intervention
         WHERE ct2.molecule_id = m.molecule_id
-          AND ct2.sponsor = ct.lead_sponsor_name
+          AND ct2.lead_sponsor_name = ct.lead_sponsor_name
           AND intervention->>'interventionType' IS NOT NULL
     ) AS mechanism_of_action,
 
@@ -91,5 +91,5 @@ JOIN mol_silver.molecules m ON ct.molecule_id = m.molecule_id
 WHERE m.needs_review = FALSE
   AND ct.lead_sponsor_name IS NOT NULL
   AND ct.lead_sponsor_name != ''
-GROUP BY ct.lead_sponsor_name, m.molecule_id, m.inchi_key, m.canonical_name, m.development_status
+GROUP BY ct.lead_sponsor_name, m.molecule_id, m.inchi_key, m.canonical_name
 ORDER BY ct.lead_sponsor_name, trial_count DESC

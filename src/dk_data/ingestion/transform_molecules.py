@@ -38,70 +38,80 @@ logger = logging.getLogger(__name__)
 LAYER_MODELS = {
     'bronze': [
         'mol_bronze.chembl_molecules',
-        'mol_bronze.pubchem_compounds',
-        'mol_bronze.clinical_trials',
+        'mol_bronze.pubchem',
+        'mol_bronze.clinicaltrials',
         'mol_bronze.openfda_labels',
-        'mol_bronze.openfda_faers',
+        'mol_bronze.faers_events',
+        'mol_bronze.drugbank',
     ],
     'silver': [
-        'mol_silver.molecules_from_bronze',
-        'mol_silver.clinical_trials',
+        # mol_silver.molecules is managed by Xenon onboarding (not SQLMesh) —
+        # it has FK references and manual data that can't be replaced by a VIEW
+        'mol_silver.bioactivity',
+        'mol_silver.molecule_aliases',   # must run before adverse_events (adverse_events JOINs it)
         'mol_silver.drug_labels',
-        'mol_silver.adverse_events',
+        'mol_silver.adverse_events',     # depends on molecule_aliases
+        'mol_silver.clinical_trials',
+        'mol_silver.identifier_mappings',
     ],
     'gold': [
-        'mol_gold.molecule_profiles_agg',
-        'mol_gold.safety_signals_agg',
-        'mol_gold.trial_analytics_agg',
-        # 015-assessment-dashboard-integration
-        'mol_gold.kol_profiles',
-        'mol_gold.kol_network',
+        'mol_gold.molecule_profile',
+        'mol_gold.safety_signals',
+        'mol_gold.lifecycle_stages',
+        'mol_gold.lifecycle_evidence',
         'mol_gold.advocacy_sentiment',
-        'mol_gold.trial_outcomes',
+        'mol_gold.advocacy_groups',
         'mol_gold.regulatory_timeline',
         'mol_gold.financial_summary',
+        'mol_gold.competitive_landscape',
+        'mol_gold.company_pipeline',
     ],
-    # IP / Patent / Trademark models (014-uspto-euipo-model-datasource)
+    # IP / Patent / Trademark + supplemental bronze models
     'ip_bronze': [
-        'bronze.uspto_patents',
-        'bronze.uspto_ci',
-        'bronze.epo_patents',
-        'bronze.uspto_trademarks',
-        'bronze.euipo_trademarks',
-        # 015-assessment-dashboard-integration
-        'bronze.pubmed',
-        'bronze.ema',
-        'bronze.hta_decisions',
-        'bronze.cochrane_reviews',
-        'bronze.sec_edgar',
-        'bronze.orcid',
-        'bronze.journal_rss',
-        'bronze.medical_news',
-        'bronze.cms_inpatient',
-        'bronze.cms_hospital_info',
-        'bronze.cms_cost_reports',
-        'bronze.acc_tvc',
-        'bronze.hrsa',
-        'bronze.pdb_structures',
-        'bronze.who_icd',
+        'mol_bronze.uspto_patents',
+        'mol_bronze.uspto_ci',
+        'mol_bronze.epo_patents',
+        'mol_bronze.uspto_trademarks',
+        'mol_bronze.euipo_trademarks',
+        'mol_bronze.pubmed',
+        'mol_bronze.ema',
+        'mol_bronze.hta_decisions',
+        'mol_bronze.cochrane_reviews',
+        'mol_bronze.sec_edgar',
+        'mol_bronze.orcid',
+        'mol_bronze.journal_rss',
+        'mol_bronze.medical_news',
+        'mol_bronze.cms_inpatient',
+        'mol_bronze.cms_hospital_info',
+        'mol_bronze.cms_cost_reports',
+        'mol_bronze.acc_tvc',
+        'mol_bronze.hrsa',
+        'mol_bronze.pdb_structures',
+        'mol_bronze.who_icd',
+        'mol_bronze.dailymed',
+        'mol_bronze.sider',
+        'mol_bronze.bindingdb',
+        'mol_bronze.openalex',
+        'mol_bronze.uniprot',
+        'mol_bronze.orange_book',
+        'mol_bronze.purple_book',
+        'mol_bronze.who_gho',
+        'mol_bronze.ct_gov_indication_stats',
     ],
     'ip_silver': [
-        'silver.patents',
-        'silver.trademarks',
-        # 015-assessment-dashboard-integration
-        'silver.publications',
-        'silver.targets',
-        'silver.regulatory_decisions',
-        'silver.financial_data',
-        'silver.researchers',
-        'silver.news_signals',
-        'silver.healthcare_facilities',
-        'silver.icd_codes',
+        'mol_silver.patents',
+        'mol_silver.trademarks',
+        'mol_silver.publications',
+        'mol_silver.targets',
+        'mol_silver.regulatory_decisions',
+        'mol_silver.financial_data',
+        'mol_silver.news_signals',
+        'mol_silver.dailymed_labels',
+        'mol_silver.patent_exclusivities',
+        'mol_silver.molecule_publications',
+        'mol_silver.molecule_targets',
     ],
     'ip_gold': [
-        'gold.molecule_profile',
-        # 015-assessment-dashboard-integration
-        'mol_gold.kol_drug_associations',
         'mol_gold.advocacy_groups',
     ],
 }
@@ -139,9 +149,26 @@ def run_sqlmesh_command(command: list[str], timeout: int = 3600) -> dict:
     Returns:
         Result dictionary with status, stdout, stderr
     """
+    import tempfile
+    import shutil
+
     try:
         config_path = get_sqlmesh_config_path()
-        full_command = ['sqlmesh', '--paths', str(config_path.parent)] + command
+
+        # SQLMesh writes logs to {config_dir}/logs/ which may not be writable
+        # (e.g. when config is inside site-packages). Copy to a temp dir first.
+        tmpdir = tempfile.mkdtemp(prefix='sqlmesh_run_')
+        try:
+            shutil.copytree(str(config_path.parent), tmpdir, dirs_exist_ok=True)
+            os.makedirs(os.path.join(tmpdir, 'logs'), exist_ok=True)
+            work_config = os.path.join(tmpdir, 'config.yaml')
+            full_command = ['sqlmesh', '--paths', tmpdir] + command
+        except Exception as copy_err:
+            # Fall back to original path if copy fails
+            logger.warning(f"Could not copy SQLMesh config to tmpdir: {copy_err}")
+            tmpdir = None
+            work_config = str(config_path)
+            full_command = ['sqlmesh', '--paths', str(config_path.parent)] + command
 
         logger.info(f"Running: {' '.join(full_command)}")
 
@@ -152,9 +179,13 @@ def run_sqlmesh_command(command: list[str], timeout: int = 3600) -> dict:
             timeout=timeout,
             env={
                 **os.environ,
-                'SQLMESH_CONFIG': str(config_path),
+                'SQLMESH_CONFIG': work_config,
+                'OTEL_SDK_DISABLED': 'true',  # Disable trace exporter to avoid connection errors
             }
         )
+
+        if tmpdir:
+            shutil.rmtree(tmpdir, ignore_errors=True)
 
         if result.returncode == 0:
             return {
@@ -199,7 +230,9 @@ def transform_model(model_name: str) -> dict:
     """
     logger.info(f"Transforming model: {model_name}")
 
-    result = run_sqlmesh_command(['run', '--select-model', model_name])
+    # Use plan --auto-apply to both initialize the environment (if needed) and run.
+    # 'sqlmesh run' fails if the prod environment hasn't been initialized yet.
+    result = run_sqlmesh_command(['plan', '--auto-apply', '--select-model', model_name])
 
     if result.get('status') == 'success':
         logger.info(f"Model {model_name} transformed successfully")

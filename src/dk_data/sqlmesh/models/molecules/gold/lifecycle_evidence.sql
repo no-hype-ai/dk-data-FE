@@ -11,28 +11,28 @@ MODEL (
 
 -- Clinical trial evidence
 SELECT
-    m.id AS molecule_id,
+    m.molecule_id,
     m.inchi_key,
     m.canonical_name,
     'clinical_trial' AS evidence_type,
     ct.nct_id AS evidence_id,
-    ct.title AS evidence_title,
-    ct.phase_normalized AS evidence_detail,
+    ct.brief_title AS evidence_title,
+    ct.phases::TEXT AS evidence_detail,
     ct.overall_status AS evidence_status,
     'ClinicalTrials.gov' AS evidence_source,
-    ct.start_date AS evidence_date,
+    ct.start_date::TEXT AS evidence_date,
     'https://clinicaltrials.gov/study/' || ct.nct_id AS evidence_url,
     NOW() AS computed_at
 
 FROM mol_silver.molecules m
-JOIN mol_silver.clinical_trials ct ON m.id = ct.molecule_id
+JOIN mol_silver.clinical_trials ct ON m.molecule_id = ct.molecule_id
 WHERE m.needs_review = FALSE
 
 UNION ALL
 
 -- Drug label evidence
 SELECT
-    m.id AS molecule_id,
+    m.molecule_id,
     m.inchi_key,
     m.canonical_name,
     'drug_label' AS evidence_type,
@@ -44,45 +44,46 @@ SELECT
         ELSE 'Active'
     END AS evidence_status,
     'DailyMed' AS evidence_source,
-    dl.effective_date AS evidence_date,
+    dl.effective_date::TEXT AS evidence_date,
     'https://dailymed.nlm.nih.gov/dailymed/drugInfo.cfm?setid=' || dl.set_id AS evidence_url,
     NOW() AS computed_at
 
 FROM mol_silver.molecules m
-JOIN mol_silver.drug_labels dl ON m.id = dl.molecule_id
+JOIN mol_silver.drug_labels dl ON m.molecule_id = dl.molecule_id
 WHERE m.needs_review = FALSE
 
 UNION ALL
 
 -- Adverse event evidence (aggregated as single evidence type per molecule)
-SELECT DISTINCT ON (m.id)
-    m.id AS molecule_id,
+-- adverse_events has individual report rows with boolean seriousness flags
+SELECT DISTINCT ON (m.molecule_id)
+    m.molecule_id,
     m.inchi_key,
     m.canonical_name,
     'adverse_events' AS evidence_type,
-    'FAERS_' || m.id::text AS evidence_id,
+    'FAERS_' || m.molecule_id::text AS evidence_id,
     'FDA Adverse Event Reports' AS evidence_title,
     (
-        SELECT COALESCE(SUM(report_count), 0)::text || ' total reports'
+        SELECT COUNT(*)::text || ' total reports'
         FROM mol_silver.adverse_events ae
-        WHERE ae.molecule_id = m.id
+        WHERE ae.molecule_id = m.molecule_id
     ) AS evidence_detail,
     CASE
         WHEN EXISTS (
             SELECT 1 FROM mol_silver.adverse_events ae
-            WHERE ae.molecule_id = m.id AND ae.death_count > 0
+            WHERE ae.molecule_id = m.molecule_id AND ae.serious_death = TRUE
         ) THEN 'Has Death Reports'
         WHEN EXISTS (
             SELECT 1 FROM mol_silver.adverse_events ae
-            WHERE ae.molecule_id = m.id AND ae.serious_count > 0
+            WHERE ae.molecule_id = m.molecule_id AND ae.serious = TRUE
         ) THEN 'Has Serious Reports'
         ELSE 'Active'
     END AS evidence_status,
     'OpenFDA FAERS' AS evidence_source,
     (
-        SELECT MAX(last_report_date)
+        SELECT MAX(receipt_date)::TEXT
         FROM mol_silver.adverse_events ae
-        WHERE ae.molecule_id = m.id
+        WHERE ae.molecule_id = m.molecule_id
     ) AS evidence_date,
     'https://open.fda.gov/apis/drug/event/' AS evidence_url,
     NOW() AS computed_at
@@ -90,34 +91,7 @@ SELECT DISTINCT ON (m.id)
 FROM mol_silver.molecules m
 WHERE m.needs_review = FALSE
   AND EXISTS (
-      SELECT 1 FROM mol_silver.adverse_events ae WHERE ae.molecule_id = m.id
+      SELECT 1 FROM mol_silver.adverse_events ae WHERE ae.molecule_id = m.molecule_id
   )
-
-UNION ALL
-
--- Patent evidence from Orange Book
-SELECT
-    m.id AS molecule_id,
-    m.inchi_key,
-    m.canonical_name,
-    'patent' AS evidence_type,
-    ob.patent_number AS evidence_id,
-    ob.trade_name || ' Patent' AS evidence_title,
-    'Expires: ' || COALESCE(ob.patent_expiration::text, 'Unknown') AS evidence_detail,
-    CASE
-        WHEN ob.patent_expiration < CURRENT_DATE THEN 'Expired'
-        WHEN ob.patent_expiration < CURRENT_DATE + INTERVAL '1 year' THEN 'Expiring Soon'
-        ELSE 'Active'
-    END AS evidence_status,
-    'FDA Orange Book' AS evidence_source,
-    ob.approval_date AS evidence_date,
-    'https://www.accessdata.fda.gov/scripts/cder/ob/' AS evidence_url,
-    NOW() AS computed_at
-
-FROM mol_silver.molecules m
-JOIN mol_silver.molecule_aliases ma ON m.id = ma.molecule_id
-JOIN mol_bronze.orange_book ob ON LOWER(ma.alias_name) = LOWER(ob.ingredient)
-WHERE m.needs_review = FALSE
-  AND ob.patent_number IS NOT NULL
 
 ORDER BY molecule_id, evidence_date DESC NULLS LAST

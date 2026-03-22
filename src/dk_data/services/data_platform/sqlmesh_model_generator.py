@@ -114,7 +114,7 @@ class SQLMeshModelGenerator:
                        column_mappings, computed_columns, identifier_mappings, name_mappings,
                        dedup_strategy, dedup_columns, dedup_confidence_threshold,
                        source_precedence, incremental_column, batch_size, where_clause, enabled
-                FROM mol_ops.silver_transformation_rules
+                FROM ops.silver_transformation_rules
                 WHERE enabled = true
             """
             params = []
@@ -588,7 +588,7 @@ SELECT * FROM deduplicated;
             # Find rules updated after their models were generated
             rows = await conn.fetch("""
                 SELECT DISTINCT r.source_name
-                FROM mol_ops.silver_transformation_rules r
+                FROM ops.silver_transformation_rules r
                 LEFT JOIN ops.generated_sqlmesh_models m
                     ON m.source_rule_id = r.id
                 WHERE r.enabled = true

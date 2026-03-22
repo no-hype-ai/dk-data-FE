@@ -1,12 +1,11 @@
 -- SQLMesh Model: Silver Clinical Trials
 -- Zero data loss from Bronze. Column names match bronze (API-derived snake_case).
--- Adds: molecule_id linkage.
+-- Entity linking: LEFT JOIN to mol_silver.molecules by canonical_name fuzzy match.
+-- FULL refresh ensures molecule_id is always current when new molecules are added.
 
 MODEL (
     name mol_silver.clinical_trials,
-    kind INCREMENTAL_BY_UNIQUE_KEY (
-        unique_key nct_id
-    ),
+    kind FULL,
     cron '@daily',
     audits (
         not_null(columns := (nct_id)),
@@ -18,7 +17,7 @@ MODEL (
 SELECT
     gen_random_uuid() AS trial_id,
 
-    -- All bronze columns carried forward with SAME NAMES (API-derived)
+    -- All bronze columns carried forward (names match actual bronze/API schema)
     b.nct_id,
     b.org_study_id,
     b.brief_title,
@@ -29,30 +28,25 @@ SELECT
     b.overall_status,
     b.last_known_status,
     b.why_stopped,
-    b.phase,
     b.phases,
     b.start_date,
-    b.start_date_type,
     b.completion_date,
-    b.completion_date_type,
     b.primary_completion_date,
-    b.study_first_submit_date,
-    b.study_first_post_date,
-    b.last_update_post_date,
+    b.first_submit_date,
+    b.first_post_date,
+    b.last_update_date,
     b.study_type,
     b.allocation,
     b.intervention_model,
-    b.primary_purpose,
     b.masking,
     b.enrollment_count,
     b.enrollment_type,
     b.conditions,
     b.keywords,
-    b.mesh_terms,
     b.interventions,
-    b.arms_groups,
+    b.arm_groups,
     b.eligibility_criteria,
-    b.sex,
+    b.eligibility_sex,
     b.minimum_age,
     b.maximum_age,
     b.healthy_volunteers,
@@ -76,13 +70,30 @@ SELECT
     b.intervention_browse,
     b.references,
 
+    -- Entity linking: molecule_id from name match in titles/summary/interventions
+    m.molecule_id,
+
     -- Source tracking
     b.id AS bronze_id,
-    b.ingested_at,
+    b.created_at AS ingested_at,
     NOW() AS created_at,
     NOW() AS updated_at
 
 FROM mol_bronze.clinicaltrials b
-WHERE
-    b.processed_to_silver = FALSE
-    AND b.nct_id IS NOT NULL;
+LEFT JOIN LATERAL (
+    SELECT mol.molecule_id
+    FROM mol_silver.molecules mol
+    WHERE mol.needs_review = FALSE
+      AND (
+        b.brief_title ILIKE '%' || mol.canonical_name || '%'
+        OR b.official_title ILIKE '%' || mol.canonical_name || '%'
+        OR b.brief_summary ILIKE '%' || mol.canonical_name || '%'
+        OR EXISTS (
+            SELECT 1 FROM jsonb_array_elements_text(b.interventions) elem
+            WHERE elem ILIKE '%' || mol.canonical_name || '%'
+        )
+      )
+    ORDER BY mol.resolution_confidence DESC
+    LIMIT 1
+) m ON TRUE
+WHERE b.nct_id IS NOT NULL;

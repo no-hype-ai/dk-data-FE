@@ -315,7 +315,7 @@ class RawIngestionService:
     async def should_refresh(self, source: DataSource, endpoint: str) -> bool:
         """Check if source needs refresh based on tiered schedule."""
         refresh_hours = REFRESH_SCHEDULE.get(source, 24)
-        table_name = f"raw.{source.value}"
+        table_name = f"mol_raw.{source.value}"
 
         async with self.db_pool.acquire() as conn:
             last_fetch = await conn.fetchval(f"""
@@ -337,7 +337,7 @@ class RawIngestionService:
         limit: int = 100
     ) -> List[Dict[str, Any]]:
         """Get raw records not yet processed to Bronze."""
-        table_name = f"raw.{source.value}"
+        table_name = f"mol_raw.{source.value}"
 
         async with self.db_pool.acquire() as conn:
             rows = await conn.fetch(f"""
@@ -356,7 +356,7 @@ class RawIngestionService:
         if not record_ids:
             return
 
-        table_name = f"raw.{source.value}"
+        table_name = f"mol_raw.{source.value}"
 
         async with self.db_pool.acquire() as conn:
             await conn.execute(f"""
@@ -365,6 +365,199 @@ class RawIngestionService:
                     processed_at = NOW()
                 WHERE id = ANY($1::uuid[])
             """, record_ids)
+
+    # Mapping from onboarding source strings to DataSource enum values.
+    # Some source names in SOURCE_PRECEDENCE don't match enum values exactly.
+    _SOURCE_STR_MAP: Dict[str, "DataSource"] = {}
+
+    @classmethod
+    def _str_to_datasource(cls, source: str) -> Optional["DataSource"]:
+        """Convert a source string to DataSource enum, handling name mismatches."""
+        # Build map lazily
+        if not cls._SOURCE_STR_MAP:
+            cls._SOURCE_STR_MAP = {
+                ds.value: ds for ds in DataSource
+            }
+            # Aliases for sources whose string name differs from enum value
+            cls._SOURCE_STR_MAP['clinicaltrials_gov'] = DataSource.CLINICALTRIALS
+        try:
+            return cls._SOURCE_STR_MAP.get(source) or DataSource(source)
+        except ValueError:
+            return None
+
+    async def fetch_single(
+        self,
+        source: str,
+        identifier: str,
+    ) -> Optional[Dict[str, Any]]:
+        """
+        Fetch data for a single identifier from a source for identifier resolution.
+
+        Returns a normalized dict with at least 'inchi_key' and 'name' if found.
+        Does NOT store to database — used only for resolving InChI Key during onboarding.
+        """
+        session = await self._get_session()
+        try:
+            if source in ('pubchem', 'cas_number'):
+                url = (
+                    f"https://pubchem.ncbi.nlm.nih.gov/rest/pug/compound"
+                    f"/name/{identifier}/property/InChIKey/JSON"
+                )
+                async with session.get(url) as resp:
+                    if resp.status == 200:
+                        data = await resp.json()
+                        props = (data.get('PropertyTable') or {}).get('Properties') or [{}]
+                        p = props[0]
+                        return {
+                            'inchi_key': p.get('InChIKey'),
+                            'name': identifier,  # use supplied name; IUPAC names are too long
+                        }
+
+            elif source == 'chembl':
+                url = "https://www.ebi.ac.uk/chembl/api/data/molecule/search.json"
+                async with session.get(url, params={'q': identifier, 'limit': 1}) as resp:
+                    if resp.status == 200:
+                        data = await resp.json()
+                        mols = data.get('molecules') or []
+                        if mols:
+                            mol = mols[0]
+                            structs = mol.get('molecule_structures') or {}
+                            pref = mol.get('pref_name') or identifier
+                            return {
+                                'inchi_key': structs.get('standard_inchi_key'),
+                                'name': pref[:200],  # guard against long names
+                            }
+
+            elif source in ('who_inn', 'rxnorm', 'kegg_drug', 'pharmgkb', 'uniprot'):
+                # These sources lack InChI key APIs — fall through to PubChem by name
+                url = (
+                    f"https://pubchem.ncbi.nlm.nih.gov/rest/pug/compound"
+                    f"/name/{identifier}/property/InChIKey/JSON"
+                )
+                async with session.get(url) as resp:
+                    if resp.status == 200:
+                        data = await resp.json()
+                        props = (data.get('PropertyTable') or {}).get('Properties') or [{}]
+                        p = props[0]
+                        return {
+                            'inchi_key': p.get('InChIKey'),
+                            'name': identifier,
+                        }
+
+            elif source == 'openfda_labels':
+                url = "https://api.fda.gov/drug/label.json"
+                async with session.get(url, params={
+                    'search': f'openfda.unii:"{identifier}"',
+                    'limit': 1,
+                }) as resp:
+                    if resp.status == 200:
+                        data = await resp.json()
+                        results = data.get('results') or []
+                        if results:
+                            fda = results[0].get('openfda') or {}
+                            names = fda.get('generic_name') or [identifier]
+                            name = names[0] if isinstance(names, list) else names
+                            return {'inchi_key': None, 'name': name}
+
+        except Exception as e:
+            logger.warning(f"fetch_single failed for {source}/{identifier}: {e}")
+        return None
+
+    async def fetch_for_molecule(
+        self,
+        molecule_id: Any,
+        source: str,
+        inchi_key: Optional[str] = None,
+    ) -> bool:
+        """
+        Fetch data from a source for a specific molecule and store in mol_raw.
+
+        Uses inchi_key as the primary lookup identifier.
+        Returns True if data was fetched and stored successfully.
+        """
+        if not inchi_key:
+            logger.debug(f"No inchi_key for molecule {molecule_id}, skipping {source}")
+            return False
+
+        source_enum = self._str_to_datasource(source)
+        if source_enum is None:
+            logger.warning(f"Unknown source string: {source}")
+            return False
+
+        mol_id_str = str(molecule_id)
+        try:
+            if source == 'pubchem':
+                url = (
+                    f"https://pubchem.ncbi.nlm.nih.gov/rest/pug"
+                    f"/compound/inchikey/{inchi_key}/JSON"
+                )
+                record_id = await self.fetch_and_store(
+                    source=source_enum, endpoint=url,
+                    request_id=f"pubchem_mol_{mol_id_str[:8]}",
+                )
+                return record_id is not None
+
+            elif source == 'chembl':
+                url = "https://www.ebi.ac.uk/chembl/api/data/molecule/search.json"
+                record_id = await self.fetch_and_store(
+                    source=source_enum, endpoint=url,
+                    params={'q': inchi_key, 'limit': 10},
+                    request_id=f"chembl_mol_{mol_id_str[:8]}",
+                )
+                return record_id is not None
+
+            elif source == 'openfda_labels':
+                url = "https://api.fda.gov/drug/label.json"
+                record_id = await self.fetch_and_store(
+                    source=source_enum, endpoint=url,
+                    params={'search': f'openfda.inchi_key:"{inchi_key}"', 'limit': 10},
+                    request_id=f"openfda_labels_mol_{mol_id_str[:8]}",
+                )
+                return record_id is not None
+
+            elif source == 'openfda_faers':
+                url = "https://api.fda.gov/drug/event.json"
+                record_id = await self.fetch_and_store(
+                    source=source_enum, endpoint=url,
+                    params={'search': f'patient.drug.openfda.inchi_key:"{inchi_key}"', 'limit': 10},
+                    request_id=f"openfda_faers_mol_{mol_id_str[:8]}",
+                )
+                return record_id is not None
+
+            elif source == 'clinicaltrials_gov':
+                url = "https://clinicaltrials.gov/api/v2/studies"
+                record_id = await self.fetch_and_store(
+                    source=DataSource.CLINICALTRIALS, endpoint=url,
+                    params={'query.intr': inchi_key, 'pageSize': 100},
+                    request_id=f"clinicaltrials_mol_{mol_id_str[:8]}",
+                )
+                return record_id is not None
+
+            elif source == 'openalex':
+                url = "https://api.openalex.org/works"
+                record_id = await self.fetch_and_store(
+                    source=source_enum, endpoint=url,
+                    params={'search': inchi_key, 'per-page': 25},
+                    request_id=f"openalex_mol_{mol_id_str[:8]}",
+                )
+                return record_id is not None
+
+            elif source == 'uniprot':
+                url = "https://rest.uniprot.org/uniprotkb/search"
+                record_id = await self.fetch_and_store(
+                    source=source_enum, endpoint=url,
+                    params={'query': inchi_key, 'format': 'json', 'size': 10},
+                    request_id=f"uniprot_mol_{mol_id_str[:8]}",
+                )
+                return record_id is not None
+
+            else:
+                logger.debug(f"fetch_for_molecule not implemented for source: {source}")
+                return False
+
+        except Exception as e:
+            logger.warning(f"fetch_for_molecule failed for {source}/{mol_id_str}: {e}")
+            return False
 
 
 class ClinicalTrialsIngestion(RawIngestionService):

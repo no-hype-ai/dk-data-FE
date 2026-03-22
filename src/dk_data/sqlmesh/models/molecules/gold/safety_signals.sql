@@ -16,7 +16,7 @@ MODEL (
 
 WITH molecule_base AS (
     SELECT
-        m.id AS molecule_id,
+        m.molecule_id,
         m.inchi_key,
         m.canonical_name
     FROM mol_silver.molecules m
@@ -87,15 +87,15 @@ top_adverse_events AS (
 ),
 
 -- Get boxed warning from latest label
+-- has_boxed_warning is a BOOLEAN column; boxed_warning is JSONB (can't compare with != '')
 boxed_warnings AS (
     SELECT DISTINCT ON (molecule_id)
         molecule_id,
-        boxed_warning,
+        has_boxed_warning,
         effective_date AS warning_effective_date
     FROM mol_silver.drug_labels
     WHERE molecule_id IS NOT NULL
-      AND boxed_warning IS NOT NULL
-      AND boxed_warning != ''
+      AND has_boxed_warning = TRUE
     ORDER BY molecule_id, effective_date DESC
 )
 
@@ -130,13 +130,12 @@ SELECT
     tae.top_events AS top_adverse_events,
 
     -- Boxed warning
-    bw.boxed_warning,
+    COALESCE(bw.has_boxed_warning, FALSE) AS has_boxed_warning,
     bw.warning_effective_date,
-    bw.boxed_warning IS NOT NULL AS has_boxed_warning,
 
     -- Risk score (simple heuristic)
     CASE
-        WHEN bw.boxed_warning IS NOT NULL THEN 'High'
+        WHEN bw.has_boxed_warning = TRUE THEN 'High'
         WHEN fs.death_reports > 10 THEN 'High'
         WHEN fs.serious_reports > 100 THEN 'Medium'
         WHEN fs.total_reports > 1000 THEN 'Medium'
@@ -149,4 +148,4 @@ FROM molecule_base mb
 LEFT JOIN faers_summary fs ON mb.molecule_id = fs.molecule_id
 LEFT JOIN top_adverse_events tae ON mb.molecule_id = tae.molecule_id
 LEFT JOIN boxed_warnings bw ON mb.molecule_id = bw.molecule_id
-WHERE fs.total_reports > 0 OR bw.boxed_warning IS NOT NULL;
+WHERE fs.total_reports > 0 OR bw.has_boxed_warning = TRUE;

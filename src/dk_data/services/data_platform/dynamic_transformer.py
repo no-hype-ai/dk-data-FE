@@ -269,7 +269,7 @@ class DynamicSourceTransformer:
                 return result
 
             options = config['options']
-            raw_table = options.get('target_table', f'raw.{source}')
+            raw_table = options.get('target_table', f'mol_raw.{source}')
             bronze_table = _derive_table(raw_table, 'bronze')
 
             # AUTO-DETECT schema from larger sample (100 records for better coverage)
@@ -851,7 +851,7 @@ class DynamicSourceTransformer:
                 return result
 
             options = config['options']
-            raw_table = options.get('target_table', f'raw.{source}')
+            raw_table = options.get('target_table', f'mol_raw.{source}')
             bronze_table = _derive_table(raw_table, 'bronze')
             silver_table = _derive_table(raw_table, 'silver')
 
@@ -884,7 +884,7 @@ class DynamicSourceTransformer:
 
             async with self.db_pool.acquire() as conn:
                 # Ensure silver schema exists
-                await conn.execute("CREATE SCHEMA IF NOT EXISTS silver")
+                await conn.execute("CREATE SCHEMA IF NOT EXISTS mol_silver")
 
                 # Create silver table (with molecule_id if entity linking enabled)
                 await self._create_silver_table(conn, silver_table, data_columns, source, has_entity_linking)
@@ -1589,7 +1589,7 @@ class DynamicSourceTransformer:
                 return result
 
             options = config['options']
-            raw_table = options.get('target_table', f'raw.{source}')
+            raw_table = options.get('target_table', f'mol_raw.{source}')
             silver_table = _derive_table(raw_table, 'silver')
             gold_table = _derive_table(raw_table, 'gold')
 
@@ -1862,7 +1862,7 @@ class DynamicSourceTransformer:
                 result.errors.append(f"Entity linking not configured for {source}")
                 return result
 
-            raw_table = options.get('target_table', f'raw.{source}')
+            raw_table = options.get('target_table', f'mol_raw.{source}')
             silver_table = _derive_table(raw_table, 'silver')
 
             # Get columns from silver table

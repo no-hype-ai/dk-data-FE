@@ -26,14 +26,14 @@ SELECT
     TO_DATE(event->>'receivedate', 'YYYYMMDD') AS receive_date,
     TO_DATE(event->>'receiptdate', 'YYYYMMDD') AS receipt_date,
 
-    -- Seriousness Flags
-    (event->>'serious')::BOOLEAN AS serious,
-    (event->>'seriousnessdeath')::BOOLEAN AS serious_death,
-    (event->>'seriousnesshospitalization')::BOOLEAN AS serious_hospitalization,
-    (event->>'seriousnesslifethreatening')::BOOLEAN AS serious_lifethreatening,
-    (event->>'seriousnessdisabling')::BOOLEAN AS serious_disabling,
-    (event->>'seriousnesscongenitalanomali')::BOOLEAN AS serious_congenital,
-    (event->>'seriousnessother')::BOOLEAN AS serious_other,
+    -- Seriousness Flags (OpenFDA encodes as '1'=Yes, '2'=No)
+    (event->>'serious') = '1' AS serious,
+    (event->>'seriousnessdeath') = '1' AS serious_death,
+    (event->>'seriousnesshospitalization') = '1' AS serious_hospitalization,
+    (event->>'seriousnesslifethreatening') = '1' AS serious_lifethreatening,
+    (event->>'seriousnessdisabling') = '1' AS serious_disabling,
+    (event->>'seriousnesscongenitalanomali') = '1' AS serious_congenital,
+    (event->>'seriousnessother') = '1' AS serious_other,
 
     -- Patient Demographics
     (event->'patient'->>'patientonsetage')::NUMERIC AS patient_age,

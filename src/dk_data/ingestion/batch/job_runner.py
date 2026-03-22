@@ -93,27 +93,64 @@ class LocalJobRunner(JobRunner):
 
     # Mapping of job names to commands
     # Scripts are organized under /app/scripts/{data,ops,utils}/
+    # Job name → command mapping. One entry per ops.sync_schedules source.
+    # All fetch-* jobs write to mol_raw.*; transforms run via SQLMesh.
     JOB_COMMANDS = {
-        # TAVR jobs (existing)
+        # ── TAVR / CMS (legacy) ──
         "fetch-cms-all": ["python", "-m", "ingestion.fetch_data", "--source", "all"],
         "fetch-cms-hospitals": ["python", "-m", "ingestion.fetch_data", "--source", "cms_hospital_info"],
         "fetch-cms-inpatient": ["python", "-m", "ingestion.fetch_data", "--source", "cms_inpatient"],
         "fetch-acc-tvc": ["python", "-m", "ingestion.fetch_data", "--source", "acc_tvc"],
         "fetch-hrsa": ["python", "-m", "ingestion.fetch_data", "--source", "hrsa"],
         "catalog-refresh": ["python", "scripts/data/catalog_refresh.py"],
-        "sqlmesh-run": ["bash", "scripts/data/run_sqlmesh.sh"],
         "check-freshness": ["python", "scripts/data/check_freshness.py"],
         "purge-history": ["python", "scripts/data/purge_history.py"],
-        # Molecule platform jobs (004-molecule-platform-integration)
-        "fetch-clinicaltrials": ["python", "-m", "dk_data.ingestion.fetch_molecules", "--source", "clinicaltrials"],
+
+        # ── Molecule platform: fetch (raw ingestion only) ──
+        "fetch-clinicaltrials": ["python", "-m", "dk_data.ingestion.fetch_molecules", "--source", "clinicaltrials_gov"],
         "fetch-openfda-labels": ["python", "-m", "dk_data.ingestion.fetch_molecules", "--source", "openfda_labels"],
         "fetch-openfda-faers": ["python", "-m", "dk_data.ingestion.fetch_molecules", "--source", "openfda_faers"],
         "fetch-chembl": ["python", "-m", "dk_data.ingestion.fetch_molecules", "--source", "chembl"],
         "fetch-pubchem": ["python", "-m", "dk_data.ingestion.fetch_molecules", "--source", "pubchem"],
+        "fetch-sec-edgar": ["python", "-m", "dk_data.ingestion.fetch_molecules", "--source", "sec_edgar"],
+        "fetch-uniprot": ["python", "-m", "dk_data.ingestion.fetch_molecules", "--source", "uniprot"],
+        "fetch-openalex": ["python", "-m", "dk_data.ingestion.fetch_molecules", "--source", "openalex"],
+        "fetch-openalex-ci": ["python", "-m", "dk_data.ingestion.fetch_molecules", "--source", "openalex_ci"],
+        "fetch-pubmed": ["python", "-m", "dk_data.ingestion.fetch_molecules", "--source", "pubmed"],
+        "fetch-drugbank": ["python", "-m", "dk_data.ingestion.fetch_molecules", "--source", "drugbank"],
+        "fetch-dailymed": ["python", "-m", "dk_data.ingestion.fetch_molecules", "--source", "dailymed"],
+        "fetch-cochrane": ["python", "-m", "dk_data.ingestion.fetch_molecules", "--source", "cochrane_reviews"],
+        "fetch-ema": ["python", "-m", "dk_data.ingestion.fetch_molecules", "--source", "ema_regulatory"],
+        "fetch-hta": ["python", "-m", "dk_data.ingestion.fetch_molecules", "--source", "hta_decisions"],
+        "fetch-purple-book": ["python", "-m", "dk_data.ingestion.fetch_molecules", "--source", "purple_book"],
+        "fetch-epo-patents": ["python", "-m", "dk_data.ingestion.fetch_molecules", "--source", "epo_patents"],
+        "fetch-euipo-trademarks": ["python", "-m", "dk_data.ingestion.fetch_molecules", "--source", "euipo_trademarks"],
+        "fetch-uspto-patents": ["python", "-m", "dk_data.ingestion.fetch_molecules", "--source", "uspto_patents"],
+        "fetch-uspto-trademarks": ["python", "-m", "dk_data.ingestion.fetch_molecules", "--source", "uspto_trademarks"],
+        "fetch-uspto-ci": ["python", "-m", "dk_data.ingestion.fetch_molecules", "--source", "uspto_ci"],
+        "fetch-who-gho": ["python", "-m", "dk_data.ingestion.fetch_molecules", "--source", "who_gho"],
+        "fetch-hrsa-shortage": ["python", "-m", "dk_data.ingestion.fetch_molecules", "--source", "hrsa_shortage_areas"],
+        "fetch-acc-tvc-cert": ["python", "-m", "dk_data.ingestion.fetch_molecules", "--source", "acc_tvc_certification"],
+        "fetch-journal-rss": ["python", "-m", "dk_data.ingestion.fetch_molecules", "--source", "journal_rss"],
+        "fetch-medical-news": ["python", "-m", "dk_data.ingestion.fetch_molecules", "--source", "medical_news"],
+        "fetch-ct-indication-stats": ["python", "-m", "dk_data.ingestion.fetch_molecules", "--source", "ct_gov_indication_stats"],
+
+        # ── SQLMesh transforms (Bronze → Silver → Gold) ──
+        # These are invoked after fetch jobs complete.
         "mol-bronze-transform": ["python", "-m", "dk_data.ingestion.transform_molecules", "--layer", "bronze"],
         "mol-silver-transform": ["python", "-m", "dk_data.ingestion.transform_molecules", "--layer", "silver"],
         "mol-gold-aggregate": ["python", "-m", "dk_data.ingestion.transform_molecules", "--layer", "gold"],
+        "mol-ip-bronze-transform": ["python", "-m", "dk_data.ingestion.transform_molecules", "--layer", "ip_bronze"],
+        "mol-ip-silver-transform": ["python", "-m", "dk_data.ingestion.transform_molecules", "--layer", "ip_silver"],
+        "mol-ip-gold-aggregate": ["python", "-m", "dk_data.ingestion.transform_molecules", "--layer", "ip_gold"],
         "mol-pipeline-full": ["python", "-m", "dk_data.ingestion.run_molecule_pipeline"],
+
+        # ── Per-source full pipeline (fetch + SQLMesh bronze + silver) ──
+        "pipeline-clinicaltrials": ["python", "-m", "dk_data.ingestion.fetch_molecules", "--source", "clinicaltrials_gov", "--with-transform"],
+        "pipeline-openfda-labels": ["python", "-m", "dk_data.ingestion.fetch_molecules", "--source", "openfda_labels", "--with-transform"],
+        "pipeline-openfda-faers": ["python", "-m", "dk_data.ingestion.fetch_molecules", "--source", "openfda_faers", "--with-transform"],
+        "pipeline-chembl": ["python", "-m", "dk_data.ingestion.fetch_molecules", "--source", "chembl", "--with-transform"],
+        "pipeline-sec-edgar": ["python", "-m", "dk_data.ingestion.fetch_molecules", "--source", "sec_edgar", "--with-transform"],
     }
 
     def __init__(self, db_config: dict[str, Any]):

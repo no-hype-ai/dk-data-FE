@@ -72,13 +72,13 @@ class MoleculeOnboardingService:
         'inn_name': 'who_inn',
         'uniprot_id': 'uniprot',
         'nct_id': 'clinicaltrials_gov',
-        'inchi_key': None,     # Can use any source
+        'inchi_key': 'pubchem',
         'cas_number': 'pubchem',
         'unii': 'openfda_labels',
         'ndc': 'dailymed',
         'atc_code': 'rxnorm',
         'research_code': 'who_inn',
-        'name': None,          # Fuzzy match needed
+        'name': 'pubchem',     # PubChem name search
     }
 
     def __init__(
@@ -187,7 +187,7 @@ class MoleculeOnboardingService:
                 status=OnboardingStatus.COMPLETED,
                 resolution_result=resolution,
                 molecule_id=molecule_id,
-                pref_name=pref_name,
+                canonical_name=pref_name,
                 data_sources_fetched=sources_fetched,
                 enrichment_complete=not request.skip_enrichment,
                 created_at=created_at,
@@ -320,31 +320,56 @@ class MoleculeOnboardingService:
                     identifier=ident.identifier_value
                 )
                 if raw_data and raw_data.get('inchi_key'):
-                    # Create molecule in Silver layer
-                    molecule_id = await self.silver_service.create_molecule(
-                        inchi_key=raw_data['inchi_key'],
-                        pref_name=raw_data.get('name', 'Unknown'),
-                        source=source
-                    )
+                    inchi_key = raw_data['inchi_key']
+                    name_val = raw_data.get('name', 'Unknown')
+                    # Create molecule in Silver layer (via silver_service if available)
+                    if self.silver_service and hasattr(self.silver_service, 'create_molecule'):
+                        molecule_id = await self.silver_service.create_molecule(
+                            inchi_key=inchi_key,
+                            pref_name=name_val,
+                            source=source
+                        )
+                    else:
+                        new_id = uuid4()
+                        async with self.db_pool.acquire() as conn:
+                            row = await conn.fetchrow("""
+                                INSERT INTO mol_silver.molecules
+                                (molecule_id, inchi_key, canonical_name, needs_review,
+                                 review_reason, resolution_confidence)
+                                VALUES ($1, $2, $3, FALSE, NULL, 0.9)
+                                ON CONFLICT (inchi_key) DO UPDATE
+                                  SET canonical_name = COALESCE(
+                                    mol_silver.molecules.canonical_name,
+                                    EXCLUDED.canonical_name
+                                  )
+                                RETURNING molecule_id
+                            """, new_id, inchi_key, name_val.lower())
+                            molecule_id = row['molecule_id'] if row else new_id
                     return ResolutionResult(
                         resolved=True,
                         molecule_id=UUID(str(molecule_id)) if not isinstance(molecule_id, UUID) else molecule_id,
-                        inchi_key=raw_data['inchi_key'],
+                        inchi_key=inchi_key,
                         confidence=0.9,
                         matched_identifiers={ident.identifier_type: ident.identifier_value},
                     )
 
         # If no InChI Key found, create placeholder in mol_silver.molecules
-        molecule_id = uuid4()
+        new_id = uuid4()
         name = identifiers[0].identifier_value
         placeholder_inchi = f"{name.upper()}-PLACEHOLDER-KEY"
         async with self.db_pool.acquire() as conn:
-            await conn.execute("""
+            row = await conn.fetchrow("""
                 INSERT INTO mol_silver.molecules
-                (molecule_id, inchi_key, pref_name, needs_review, review_reason, resolution_confidence)
+                (molecule_id, inchi_key, canonical_name, needs_review, review_reason, resolution_confidence)
                 VALUES ($1, $2, $3, TRUE, 'auto-onboarded', 0.5)
-                ON CONFLICT (molecule_id) DO NOTHING
-            """, molecule_id, placeholder_inchi, name.lower())
+                ON CONFLICT (inchi_key) DO UPDATE
+                  SET canonical_name = COALESCE(
+                    mol_silver.molecules.canonical_name,
+                    EXCLUDED.canonical_name
+                  )
+                RETURNING molecule_id
+            """, new_id, placeholder_inchi, name.lower())
+            molecule_id = row['molecule_id'] if row else new_id
 
         return ResolutionResult(
             resolved=True,
@@ -374,14 +399,16 @@ class MoleculeOnboardingService:
                 if success:
                     fetched.append(source)
 
-                    # Transform through layers
-                    await self.bronze_service.process_source(source, molecule_id)
-                    await self.silver_service.transform_source(source, molecule_id)
+                    # Transform through layers (services may be None)
+                    if self.bronze_service:
+                        await self.bronze_service.process_source(source, molecule_id)
+                    if self.silver_service and hasattr(self.silver_service, 'transform_source'):
+                        await self.silver_service.transform_source(source, molecule_id)
             except Exception as e:
                 logger.warning(f"Failed to fetch from {source}: {e}")
 
         # Regenerate Gold layer
-        if fetched:
+        if fetched and self.gold_service and hasattr(self.gold_service, 'aggregate_molecule'):
             await self.gold_service.aggregate_molecule(molecule_id)
 
         return fetched
@@ -390,10 +417,10 @@ class MoleculeOnboardingService:
         """Get canonical name for molecule."""
         async with self.db_pool.acquire() as conn:
             row = await conn.fetchrow("""
-                SELECT pref_name FROM mol_silver.molecules
-                WHERE id = $1
+                SELECT canonical_name FROM mol_silver.molecules
+                WHERE molecule_id = $1
             """, molecule_id)
-            return row['pref_name'] if row else None
+            return row['canonical_name'] if row else None
 
     async def _log_audit(
         self,

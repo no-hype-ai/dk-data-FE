@@ -23,7 +23,7 @@ import logging
 
 # Configure logging
 logging.basicConfig(
-    level=os.getenv('LOG_LEVEL', 'INFO'),
+    level=os.getenv('LOG_LEVEL', 'INFO').upper(),
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
 )
 logger = logging.getLogger(__name__)
@@ -639,33 +639,19 @@ async def run_raw_ingestion(
                 count = 0
                 target_cik = None
                 if fetch_result.get("status") == "success" and fetch_result.get("records"):
+                    import hashlib, json as _json
                     async with pool.acquire() as conn:
                         for rec in fetch_result["records"]:
                             try:
-                                fd = rec.get("filing_date")
-                                filing_date = None
-                                if fd:
-                                    try:
-                                        filing_date = date_type.fromisoformat(str(fd)[:10])
-                                    except (ValueError, TypeError):
-                                        filing_date = None
+                                body_json = _json.dumps(rec, default=str)
+                                body_hash = hashlib.sha256(body_json.encode()).hexdigest()[:64]
                                 await conn.execute("""
                                     INSERT INTO mol_raw.sec_edgar
-                                        (accession_number, company_name, cik, filing_type, filing_date, document_url, description)
-                                    VALUES ($1, $2, $3, $4, $5, $6, $7)
-                                    ON CONFLICT (accession_number) DO UPDATE SET
-                                        company_name = EXCLUDED.company_name,
-                                        filing_date = EXCLUDED.filing_date,
-                                        document_url = EXCLUDED.document_url
-                                """,
-                                    rec.get("accession_number"),
-                                    rec.get("company_name"),
-                                    rec.get("cik"),
-                                    rec.get("filing_type"),
-                                    filing_date,
-                                    rec.get("document_url"),
-                                    rec.get("description"),
-                                )
+                                        (response_body, response_body_hash, request_timestamp,
+                                         api_endpoint, response_status)
+                                    VALUES ($1::jsonb, $2, NOW(), 'sec_edgar_fetcher', 200)
+                                    ON CONFLICT (response_body_hash) DO NOTHING
+                                """, body_json, body_hash)
                                 count += 1
                                 # Track the target company's CIK for revenue extraction
                                 cn = (rec.get("company_name") or "").lower()
@@ -673,16 +659,16 @@ async def run_raw_ingestion(
                                 if match_term and cn and match_term in cn:
                                     target_cik = rec.get("cik")
                                     logger.info(f"SEC EDGAR: matched CIK {target_cik} for company '{rec.get('company_name')}'")
-
                             except Exception as e:
-                                logger.debug(f"SEC EDGAR insert failed: {e}")
-                    logger.info(f"SEC EDGAR: loaded {count} filings for '{drug_name}' (CIK: {target_cik})")
+                                logger.debug(f"SEC EDGAR mol_raw insert failed: {e}")
+                    logger.info(f"SEC EDGAR: loaded {count} filings to mol_raw for '{drug_name}' (CIK: {target_cik})")
 
-                # Step 2: Extract product-level revenue from the filing content
-                # Uses the SECEdgarClient which parses FilingSummary.xml and XBRL data
+                # Step 2: Extract product-level revenue and store back to mol_raw.sec_edgar
+                # so the SQLMesh bronze model (mol_bronze.sec_edgar) can process it.
                 if target_cik and drug_name:
                     try:
                         from ...services.external_apis.sec_edgar_client import SECEdgarClient
+                        import hashlib, json as _json
                         client = SECEdgarClient()
                         current_year = date_type.today().year
                         revenues = await client.extract_product_revenues(
@@ -694,32 +680,29 @@ async def run_raw_ingestion(
                                     try:
                                         accession = rev.source_filing or ''
                                         filing_type = '20-F' if '20-F' in (rev.source_filing or '') else '10-K'
+                                        body = {
+                                            'cik': target_cik,
+                                            'company_name': drug_name,
+                                            'accession_number': accession or None,
+                                            'filing_type': filing_type,
+                                            'filing_date': str(rev.year) if rev.year else None,
+                                            'revenue': float(rev.revenue_usd) if rev.revenue_usd else None,
+                                            'product_name': rev.product_name,
+                                            'mda_text': rev.mda_text or None,
+                                            'risk_factors_text': rev.risk_factors_text or None,
+                                        }
+                                        body_json = _json.dumps(body, default=str)
+                                        body_hash = hashlib.sha256(body_json.encode()).hexdigest()[:64]
                                         await conn.execute("""
-                                            INSERT INTO mol_silver.financial_filings
-                                                (id, company_name, filing_type, accession_number, period,
-                                                 revenue, product_name, source,
-                                                 mda_excerpt, risk_factors_excerpt, created_at)
-                                            VALUES (gen_random_uuid(), $1, $2, $3, $4, $5, $6, 'sec_edgar',
-                                                    $7, $8, NOW())
-                                            ON CONFLICT (accession_number, product_name)
-                                            WHERE accession_number IS NOT NULL
-                                            DO UPDATE SET
-                                                mda_excerpt = COALESCE(EXCLUDED.mda_excerpt, mol_silver.financial_filings.mda_excerpt),
-                                                risk_factors_excerpt = COALESCE(EXCLUDED.risk_factors_excerpt, mol_silver.financial_filings.risk_factors_excerpt),
-                                                revenue = COALESCE(EXCLUDED.revenue, mol_silver.financial_filings.revenue)
-                                        """,
-                                            drug_name,
-                                            filing_type,
-                                            accession if accession else None,
-                                            f"{rev.period}_{rev.year}" if rev.year else rev.period,
-                                            rev.revenue_usd,
-                                            rev.product_name,
-                                            rev.mda_text or None,
-                                            rev.risk_factors_text or None,
-                                        )
+                                            INSERT INTO mol_raw.sec_edgar
+                                                (response_body, response_body_hash, request_timestamp,
+                                                 api_endpoint, response_status)
+                                            VALUES ($1::jsonb, $2, NOW(), 'sec_edgar_client', 200)
+                                            ON CONFLICT (response_body_hash) DO NOTHING
+                                        """, body_json, body_hash)
                                     except Exception as e:
-                                        logger.debug(f"SEC EDGAR revenue insert failed: {e}")
-                            logger.info(f"SEC EDGAR: extracted {len(revenues)} product revenues for '{drug_name}'")
+                                        logger.debug(f"SEC EDGAR mol_raw insert failed: {e}")
+                            logger.info(f"SEC EDGAR: stored {len(revenues)} revenues to mol_raw for SQLMesh bronze processing")
                     except Exception as e:
                         logger.warning(f"SEC EDGAR revenue extraction failed: {e}")
 
@@ -942,117 +925,203 @@ async def run_raw_ingestion(
     return results
 
 
-async def run_bronze_transformation(pool, metrics: PipelineMetrics) -> Dict[str, int]:
-    """Transform Raw layer data to Bronze using BulletproofTransformer.
 
-    Uses dynamic schema detection - no hardcoded column mappings.
+# Mapping: ops.sync_schedules source name → SQLMesh model names for bronze & silver.
+# This is the authoritative map — each source must have a corresponding SQLMesh model.
+SOURCE_TO_SQLMESH_MODELS: Dict[str, Dict[str, str]] = {
+    'clinicaltrials_gov': {
+        'bronze': 'mol_bronze.clinicaltrials',
+        'silver': 'mol_silver.clinical_trials',
+    },
+    'openfda_labels': {
+        'bronze': 'mol_bronze.openfda_labels',
+        'silver': 'mol_silver.drug_labels',
+    },
+    'openfda_faers': {
+        'bronze': 'mol_bronze.faers_events',
+        'silver': 'mol_silver.adverse_events',
+    },
+    'chembl': {
+        'bronze': 'mol_bronze.chembl_molecules',
+        'silver': 'mol_silver.molecules',
+    },
+    'pubchem': {
+        'bronze': 'mol_bronze.pubchem',
+        'silver': 'mol_silver.molecules',
+    },
+    'sec_edgar': {
+        'bronze': 'mol_bronze.sec_edgar',
+        'silver': 'mol_silver.financial_data',
+    },
+    'uniprot': {
+        'bronze': 'mol_bronze.uniprot',
+        'silver': 'mol_silver.targets',
+    },
+    'openalex': {
+        'bronze': 'mol_bronze.openalex',
+        'silver': 'mol_silver.publications',
+    },
+    'openalex_ci': {
+        'bronze': 'mol_bronze.openalex',
+        'silver': 'mol_silver.publications',
+    },
+    'pubmed': {
+        'bronze': 'mol_bronze.pubmed',
+        'silver': 'mol_silver.publications',
+    },
+    'drugbank': {
+        'bronze': 'mol_bronze.drugbank',
+        'silver': 'mol_silver.molecules',
+    },
+    'dailymed': {
+        'bronze': 'mol_bronze.dailymed',
+        'silver': 'mol_silver.dailymed_labels',
+    },
+    'cochrane_reviews': {
+        'bronze': 'mol_bronze.cochrane_reviews',
+        'silver': 'mol_silver.publications',
+    },
+    'ema_regulatory': {
+        'bronze': 'mol_bronze.ema',
+        'silver': 'mol_silver.regulatory_decisions',
+    },
+    'hta_decisions': {
+        'bronze': 'mol_bronze.hta_decisions',
+        'silver': 'mol_silver.regulatory_decisions',
+    },
+    'purple_book': {
+        'bronze': 'mol_bronze.purple_book',
+        'silver': 'mol_silver.molecules',
+    },
+    'epo_patents': {
+        'bronze': 'mol_bronze.epo_patents',
+        'silver': 'mol_silver.patents',
+    },
+    'euipo_trademarks': {
+        'bronze': 'mol_bronze.euipo_trademarks',
+        'silver': 'mol_silver.trademarks',
+    },
+    'uspto_patents': {
+        'bronze': 'mol_bronze.uspto_patents',
+        'silver': 'mol_silver.patents',
+    },
+    'uspto_trademarks': {
+        'bronze': 'mol_bronze.uspto_trademarks',
+        'silver': 'mol_silver.trademarks',
+    },
+    'uspto_ci': {
+        'bronze': 'mol_bronze.uspto_ci',
+        'silver': 'mol_silver.patents',
+    },
+    'who_gho': {
+        'bronze': 'mol_bronze.who_gho',
+        # no silver model — bronze-only source
+    },
+    'hrsa_shortage_areas': {
+        'bronze': 'mol_bronze.hrsa',
+        # no silver model — bronze-only source
+    },
+    'acc_tvc_certification': {
+        'bronze': 'mol_bronze.acc_tvc',
+        # no silver model — bronze-only source
+    },
+    'journal_rss': {
+        'bronze': 'mol_bronze.journal_rss',
+        'silver': 'mol_silver.news_signals',
+    },
+    'medical_news': {
+        'bronze': 'mol_bronze.medical_news',
+        'silver': 'mol_silver.news_signals',
+    },
+    'ct_gov_indication_stats': {
+        'bronze': 'mol_bronze.ct_gov_indication_stats',
+        # no silver model — bronze-only source
+    },
+}
+
+# Gold models run after all silver transforms (order matters for dependencies)
+GOLD_SQLMESH_MODELS = [
+    'mol_gold.molecule_profile',
+    'mol_gold.safety_signals',
+    'mol_gold.lifecycle_stages',
+    'mol_gold.lifecycle_evidence',
+    'mol_gold.financial_summary',
+    'mol_gold.regulatory_timeline',
+    'mol_gold.advocacy_sentiment',
+    'mol_gold.advocacy_groups',
+    'mol_gold.competitive_landscape',
+    'mol_gold.company_pipeline',
+]
+
+async def run_bronze_transformation(pool, metrics: PipelineMetrics, sources: Optional[List[str]] = None) -> Dict[str, int]:
+    """Transform Raw → Bronze for the given sources using SQLMesh.
+
+    Calls `sqlmesh plan --auto-apply --select-model <model>` for each source.
+    All transformation logic lives in SQLMesh SQL models — no Python transforms.
     """
-    results = {}
+    import asyncio
+    from ...ingestion.transform_molecules import transform_model
 
-    try:
-        # Try to use BulletproofTransformer (preferred - dynamic schema detection)
-        from .bulletproof_transformer import BulletproofTransformer
-        transformer = BulletproofTransformer(pool)
-        await transformer.initialize()
-        logger.info("Using BulletproofTransformer for Bronze layer")
-    except ImportError:
-        # Fallback to DynamicSourceTransformer
-        from .dynamic_transformer import DynamicSourceTransformer
-        transformer = DynamicSourceTransformer(pool)
-        logger.warning("BulletproofTransformer not available, using DynamicSourceTransformer")
+    results: Dict[str, int] = {}
+    target_sources = sources or list(SOURCE_TO_SQLMESH_MODELS.keys())
 
-    # Get all raw tables and transform them
-    # Process BOTH raw.* and mol_raw.* schemas
-    # Exclude system/config tables
-    SYSTEM_TABLES = {'sync_schedules', 'initial_load_state', 'transformation_state',
-                     'transformation_config', 'data_sources', 'refresh_log'}
-    async with pool.acquire() as conn:
-        raw_tables = await conn.fetch("""
-            SELECT table_schema, table_name FROM information_schema.tables
-            WHERE table_schema IN ('raw', 'mol_raw')
-            AND table_type = 'BASE TABLE'
-            AND table_name NOT IN ('sync_schedules', 'initial_load_state',
-                'transformation_state', 'transformation_config',
-                'data_sources', 'refresh_log')
-        """)
-
-    for row in raw_tables:
-        source = row['table_name']
-        schema = row['table_schema']
+    for source in target_sources:
+        models = SOURCE_TO_SQLMESH_MODELS.get(source, {})
+        bronze_model = models.get('bronze')
+        if not bronze_model:
+            logger.debug(f"No SQLMesh bronze model for source '{source}', skipping")
+            continue
         try:
-            # BulletproofTransformer handles schema routing internally
-            result = await transformer.transform_raw_to_bronze(source, raw_schema=schema)
-            results[source] = result.records_inserted
-            metrics.records_bronze += result.records_inserted
-            if result.errors:
-                metrics.errors.extend(result.errors[:3])
-            logger.info(f"Bronze transform {schema}.{source}: {result.records_inserted} records")
-        except TypeError:
-            # Fallback if transformer doesn't accept raw_schema kwarg
-            try:
-                result = await transformer.transform_raw_to_bronze(source)
-                results[source] = result.records_inserted
-                metrics.records_bronze += result.records_inserted
-                logger.info(f"Bronze transform {source}: {result.records_inserted} records")
-            except Exception as e:
-                logger.error(f"Bronze transform failed for {source}: {e}")
-                metrics.errors.append(f"bronze_{source}: {str(e)[:100]}")
+            result = await asyncio.to_thread(transform_model, bronze_model)
+            count = result.get('success_count', 0)
+            results[source] = count
+            metrics.records_bronze += count
+            if result.get('status') == 'failed':
+                err = result.get('error', 'unknown')[:120]
+                metrics.errors.append(f"bronze_{source}: {err}")
+                logger.error(f"Bronze SQLMesh failed for '{source}' ({bronze_model}): {err}")
+            else:
+                logger.info(f"Bronze SQLMesh OK: '{source}' ({bronze_model}) → {count} records")
         except Exception as e:
-            logger.error(f"Bronze transform failed for {schema}.{source}: {e}")
+            logger.error(f"Bronze SQLMesh error for '{source}': {e}")
             metrics.errors.append(f"bronze_{source}: {str(e)[:100]}")
 
     logger.info(f"Bronze transformation complete: {metrics.records_bronze} total records")
     return results
 
 
-async def run_silver_transformation(pool, metrics: PipelineMetrics) -> Dict[str, int]:
-    """Transform Bronze layer data to Silver using BulletproofTransformer.
+async def run_silver_transformation(pool, metrics: PipelineMetrics, sources: Optional[List[str]] = None) -> Dict[str, int]:
+    """Transform Bronze → Silver for the given sources using SQLMesh.
 
-    Uses 5-level entity linking:
-    1. InChI Key (exact match)
-    2. Other identifiers (DrugBank, ChEMBL, etc.)
-    3. SMILES → InChI conversion (RDKit)
-    4. Fuzzy name matching
-    5. Create new molecule
+    Calls `sqlmesh plan --auto-apply --select-model <model>` for each source.
+    Entity linking (molecule_id join) is embedded in the SQLMesh silver models.
     """
-    results = {}
+    import asyncio
+    from ...ingestion.transform_molecules import transform_model
 
-    try:
-        # Try to use BulletproofTransformer (preferred - dynamic entity linking)
-        from .bulletproof_transformer import BulletproofTransformer
-        transformer = BulletproofTransformer(pool)
-        await transformer.initialize()
-        logger.info("Using BulletproofTransformer for Silver layer")
-    except ImportError:
-        # Fallback to DynamicSourceTransformer
-        from .dynamic_transformer import DynamicSourceTransformer
-        transformer = DynamicSourceTransformer(pool)
-        logger.warning("BulletproofTransformer not available, using DynamicSourceTransformer")
+    results: Dict[str, int] = {}
+    processed_models: set = set()  # deduplicate — multiple sources can share a silver model
+    target_sources = sources or list(SOURCE_TO_SQLMESH_MODELS.keys())
 
-    # Get all bronze tables and transform them to silver
-    async with pool.acquire() as conn:
-        bronze_tables = await conn.fetch("""
-            SELECT table_name FROM information_schema.tables
-            WHERE table_schema IN ('mol_bronze', 'hcs_bronze') AND table_type = 'BASE TABLE'
-        """)
-
-    for row in bronze_tables:
-        source = row['table_name']
+    for source in target_sources:
+        models = SOURCE_TO_SQLMESH_MODELS.get(source, {})
+        silver_model = models.get('silver')
+        if not silver_model or silver_model in processed_models:
+            continue
+        processed_models.add(silver_model)
         try:
-            result = await transformer.transform_bronze_to_silver(source)
-            linked = getattr(result, 'records_linked', 0) or result.records_inserted
-            results[source] = linked
-            metrics.records_silver += linked
-            # Skip "not found" errors — canonical mol_bronze tables use separate pipeline
-            source_errors = [e for e in (result.errors or []) if 'not found' not in e.lower()]
-            if source_errors:
-                metrics.errors.extend(source_errors[:3])
-            if result.errors and not source_errors:
-                logger.debug(f"Silver transform {source}: skipped (no dynamic config)")
+            result = await asyncio.to_thread(transform_model, silver_model)
+            count = result.get('success_count', 0)
+            results[silver_model] = count
+            metrics.records_silver += count
+            if result.get('status') == 'failed':
+                err = result.get('error', 'unknown')[:120]
+                metrics.errors.append(f"silver_{source}: {err}")
+                logger.error(f"Silver SQLMesh failed for '{source}' ({silver_model}): {err}")
             else:
-                logger.info(f"Silver transform {source}: {linked} records linked")
+                logger.info(f"Silver SQLMesh OK: '{source}' ({silver_model}) → {count} records")
         except Exception as e:
-            logger.error(f"Silver transform failed for {source}: {e}")
+            logger.error(f"Silver SQLMesh error for '{source}': {e}")
             metrics.errors.append(f"silver_{source}: {str(e)[:100]}")
 
     logger.info(f"Silver transformation complete: {metrics.records_silver} total records linked")
@@ -1180,54 +1249,28 @@ async def run_retroactive_linking(pool, metrics: PipelineMetrics) -> Dict[str, i
 
 
 async def run_gold_aggregation(pool, metrics: PipelineMetrics) -> Dict[str, int]:
-    """Aggregate Silver layer data to Gold views."""
-    from .gold_aggregation import GoldAggregationService
+    """Run all Gold aggregation models via SQLMesh.
 
-    service = GoldAggregationService(pool)
-    results = {}
+    All gold logic lives in SQL models — no Python aggregation code.
+    """
+    import asyncio
+    from ...ingestion.transform_molecules import transform_model
 
-    try:
-        # Refresh all Gold aggregations (built-in sources)
-        agg_results = await service.refresh_all()
+    results: Dict[str, int] = {}
+    for model_name in GOLD_SQLMESH_MODELS:
+        try:
+            result = await asyncio.to_thread(transform_model, model_name)
+            count = result.get('success_count', 0)
+            results[model_name] = count
+            metrics.records_gold += count
+            if result.get('status') == 'failed':
+                logger.warning(f"Gold SQLMesh model '{model_name}' failed: {result.get('error', '')[:100]}")
+            else:
+                logger.info(f"Gold SQLMesh OK: '{model_name}' → {count} records")
+        except Exception as e:
+            logger.warning(f"Gold SQLMesh error for '{model_name}': {e}")
 
-        for name, result in agg_results.items():
-            results[name] = result.rows_affected
-            metrics.records_gold += result.rows_affected
-            if not result.success and result.error:
-                metrics.errors.append(f"gold_{name}: {result.error}")
-
-        logger.info(f"Gold aggregation (built-in): {metrics.records_gold} records")
-
-    except Exception as e:
-        logger.error(f"Gold aggregation failed: {e}")
-        metrics.errors.append(f"gold: {str(e)}")
-
-    # Process dynamic sources
-    try:
-        from .dynamic_transformer import DynamicSourceTransformer, get_dynamic_sources
-
-        dynamic_sources = await get_dynamic_sources(pool)
-        if dynamic_sources:
-            logger.info(f"Processing {len(dynamic_sources)} dynamic sources for Gold")
-            transformer = DynamicSourceTransformer(pool)
-
-            for source in dynamic_sources:
-                try:
-                    result = await transformer.transform_silver_to_gold(source)
-                    results[f"dynamic_{source}"] = result.records_inserted
-                    metrics.records_gold += result.records_inserted
-                    if result.errors:
-                        metrics.errors.extend(result.errors[:3])
-                except Exception as e:
-                    logger.error(f"Dynamic gold transform failed for {source}: {e}")
-                    metrics.errors.append(f"gold_dynamic_{source}: {str(e)[:100]}")
-
-            logger.info(f"Gold aggregation (dynamic): processed {len(dynamic_sources)} sources")
-
-    except Exception as e:
-        logger.error(f"Dynamic gold aggregation failed: {e}")
-        metrics.errors.append(f"gold_dynamic: {str(e)}")
-
+    logger.info(f"Gold aggregation complete: {metrics.records_gold} total records")
     return results
 
 
@@ -1451,12 +1494,12 @@ async def run_pipeline(
         # Phase 2: Bronze Transformation
         if not skip_bronze:
             logger.info("Phase 2: Bronze Transformation")
-            await run_bronze_transformation(pool, metrics)
+            await run_bronze_transformation(pool, metrics, sources=sources)
 
         # Phase 3: Silver Transformation
         if not skip_silver:
             logger.info("Phase 3: Silver Transformation")
-            await run_silver_transformation(pool, metrics)
+            await run_silver_transformation(pool, metrics, sources=sources)
 
         # Phase 4: Entity Linking (connect trials/labels to molecules)
         if not skip_silver:

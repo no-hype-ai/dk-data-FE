@@ -1,0 +1,31 @@
+# SQLMesh External Model Declarations
+# Tables managed outside of SQLMesh that are referenced by SQLMesh models.
+# mol_silver.molecules is owned by Xenon's onboarding path — it has 20+ FK references
+# and manually curated placeholder molecules that can't be managed by SQLMesh FULL refresh.
+
+- name: mol_silver.molecules
+  columns:
+    molecule_id: UUID
+    inchi_key: TEXT
+    chembl_id: TEXT
+    drugbank_id: TEXT
+    pubchem_cid: BIGINT
+    rxnorm_cui: TEXT
+    unii: TEXT
+    cas_number: TEXT
+    canonical_name: TEXT
+    canonical_smiles: TEXT
+    inchi: TEXT
+    molecular_formula: TEXT
+    molecular_weight: DOUBLE
+    molecule_type: TEXT
+    needs_review: BOOLEAN
+    review_reason: TEXT
+    resolution_confidence: DOUBLE
+    reviewed_at: TIMESTAMPTZ
+    reviewed_by: TEXT
+    created_at: TIMESTAMPTZ
+    updated_at: TIMESTAMPTZ
+    source_count: INT
+    mechanism_of_action: TEXT
+    max_phase: INT
