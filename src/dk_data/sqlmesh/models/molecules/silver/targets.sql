@@ -1,63 +1,53 @@
 -- SQLMesh Model: Silver Targets
 -- Zero data loss from Bronze. Column names match bronze (API-derived snake_case).
--- Adds: molecule_id linkage via chembl_ids.
+-- Entity linking: LEFT JOIN to mol_silver.molecules via ChEMBL cross-reference IDs.
 
 MODEL (
     name mol_silver.targets,
     kind INCREMENTAL_BY_UNIQUE_KEY (
-        unique_key primaryaccession
+        unique_key uniprot_id
     ),
     cron '@monthly',
     audits (
-        not_null(columns := (primaryaccession, protein_name)),
-        unique_values(columns := (primaryaccession))
+        not_null(columns := (uniprot_id, protein_name)),
+        unique_values(columns := (uniprot_id))
     ),
-    grain primaryaccession
+    grain uniprot_id
 );
 
 SELECT
     gen_random_uuid() AS id,
+
+    -- Entity linking: match via ChEMBL cross-reference
     m.molecule_id,
 
-    -- All bronze columns with SAME NAMES (no renames)
-    b.accession,
-    b.annotationscore,
-    b.chembl_ids,
-    b.comments,
-    b.drugbank_ids,
+    -- All bronze columns with SAME NAMES as bronze model output
+    b.uniprot_id,
     b.entry_name,
-    b.entrytype,
-    b.features,
-    b.function_description,
-    b.gene_names,
-    b.genes,
-    b.keywords,
-    b.organism,
-    b.organism_commonname,
-    b.organism_id,
-    b.organism_lineage,
-    b.organism_scientificname,
-    b.organism_taxonid,
-    b.pdb_ids,
-    b.primaryaccession,
+    b.entry_type,
     b.protein_name,
-    b.proteindescription_alternativenames,
-    b.proteindescription_recommendedname_fullname,
-    b.proteindescription_recommendedname_shortnames,
-    b.proteinexistence,
-    b.references,
-    b.secondaryaccessions,
+    b.short_name,
+    b.alternative_names,
+    b.submission_names,
+    b.gene_name,
+    b.genes,
+    b.organism_scientific,
+    b.organism_common,
+    b.taxonomy_id,
+    b.lineage,
     b.sequence,
-    b.sequence_crc64,
     b.sequence_length,
-    b.sequence_mass,
-    b.sequence_md5,
-    b.sequence_molweight,
-    b.sequence_value,
-    b.subcellular_location,
-    b.tissue_specificity,
-    b.uniprotkbcrossreferences,
-    b.uniprotkbid,
+    b.molecular_weight,
+    b.sequence_checksum,
+    b.comments,
+    b.features,
+    b.cross_references,
+    b.secondary_accessions,
+    b.keywords,
+    b.go_terms,
+    b.pdb_structures,
+    b.annotation_score,
+    b.extra_attributes,
 
     -- Derived: target type from keywords
     CASE
@@ -72,17 +62,24 @@ SELECT
 
     -- Source tracking
     b.id AS bronze_id,
-    b.ingested_at,
+    b.created_at AS ingested_at,
     NOW() AS created_at,
     NOW() AS updated_at
 
 FROM mol_bronze.uniprot b
-LEFT JOIN mol_silver.molecules m ON (
-    m.chembl_id = ANY(
-        ARRAY(SELECT jsonb_array_elements_text(b.chembl_ids))
+LEFT JOIN LATERAL (
+    SELECT mol.molecule_id
+    FROM mol_silver.molecules mol
+    WHERE EXISTS (
+        SELECT 1
+        FROM jsonb_array_elements(COALESCE(b.cross_references, '[]'::jsonb)) AS ref
+        WHERE ref->>'database' = 'ChEMBL'
+          AND ref->>'id' = mol.chembl_id
     )
-)
+    ORDER BY mol.resolution_confidence DESC
+    LIMIT 1
+) m ON TRUE
 WHERE
     b.processed_to_silver = FALSE
-    AND b.primaryaccession IS NOT NULL
+    AND b.uniprot_id IS NOT NULL
     AND b.protein_name IS NOT NULL;

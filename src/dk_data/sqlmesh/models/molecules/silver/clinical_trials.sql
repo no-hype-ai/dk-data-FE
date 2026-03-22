@@ -70,8 +70,11 @@ SELECT
     b.intervention_browse,
     b.references,
 
-    -- Entity linking: molecule_id from name match in titles/summary/interventions
+    -- Entity linking: primary = queried_drug_name, fallback = fuzzy title match
     m.molecule_id,
+
+    -- Drug name from the original API query; exposed for PostgREST consumers to verify linking
+    b.queried_drug_name,
 
     -- Source tracking
     b.id AS bronze_id,
@@ -85,15 +88,23 @@ LEFT JOIN LATERAL (
     FROM mol_silver.molecules mol
     WHERE mol.needs_review = FALSE
       AND (
-        b.brief_title ILIKE '%' || mol.canonical_name || '%'
+        -- Primary: match on the drug name that was used in the original API query
+        (b.queried_drug_name IS NOT NULL AND LOWER(b.queried_drug_name) LIKE '%' || mol.canonical_name || '%')
+        -- Fallback: fuzzy match in trial titles / interventions
+        OR b.brief_title ILIKE '%' || mol.canonical_name || '%'
         OR b.official_title ILIKE '%' || mol.canonical_name || '%'
-        OR b.brief_summary ILIKE '%' || mol.canonical_name || '%'
         OR EXISTS (
             SELECT 1 FROM jsonb_array_elements_text(b.interventions) elem
             WHERE elem ILIKE '%' || mol.canonical_name || '%'
         )
       )
-    ORDER BY mol.resolution_confidence DESC
+    -- Priority: exact queried name > partial queried name > fuzzy match; then most specific (longest) drug name
+    ORDER BY
+        CASE WHEN b.queried_drug_name IS NOT NULL AND LOWER(b.queried_drug_name) = mol.canonical_name THEN 0
+             WHEN b.queried_drug_name IS NOT NULL AND LOWER(b.queried_drug_name) LIKE '%' || mol.canonical_name || '%' THEN 1
+             ELSE 2 END,
+        LENGTH(mol.canonical_name) DESC,
+        mol.resolution_confidence DESC
     LIMIT 1
 ) m ON TRUE
 WHERE b.nct_id IS NOT NULL;

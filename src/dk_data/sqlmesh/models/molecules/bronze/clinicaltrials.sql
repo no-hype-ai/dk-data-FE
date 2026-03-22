@@ -1,5 +1,6 @@
 -- SQLMesh Model: Bronze ClinicalTrials
 -- Transforms Raw ClinicalTrials.gov responses to Bronze typed columns
+-- Handles both bulk search responses ({studies: [...]}) and individual study responses ({protocolSection: ...})
 -- Part of: 012-dk-data-platform
 
 MODEL (
@@ -16,119 +17,149 @@ MODEL (
     grain nct_id
 );
 
+-- Expand bulk search responses (response_body->'studies'[]) and individual study responses
+-- DISTINCT ON nct_id deduplicates trials that appear in multiple search result pages
+WITH expanded AS (
+    SELECT
+        raw.id              AS raw_source_id,
+        raw.request_timestamp,
+        raw.request_params->>'query.intr' AS queried_drug_name,
+        study.value         AS s
+    FROM mol_raw.clinicaltrials AS raw,
+    LATERAL jsonb_array_elements(
+        CASE
+            WHEN raw.response_body ? 'studies'         THEN raw.response_body->'studies'
+            WHEN raw.response_body ? 'protocolSection' THEN jsonb_build_array(raw.response_body)
+            ELSE '[]'::jsonb
+        END
+    ) AS study(value)
+    WHERE raw.response_status = 200
+      AND raw.processed_to_bronze = FALSE
+      AND raw.request_timestamp BETWEEN @start_dt AND @end_dt
+),
+deduped AS (
+    -- Keep one row per nct_id; prefer rows from a named drug query over generic searches
+    SELECT DISTINCT ON (s->'protocolSection'->'identificationModule'->>'nctId')
+        raw_source_id, request_timestamp, queried_drug_name, s
+    FROM expanded
+    WHERE s->'protocolSection'->'identificationModule'->>'nctId' IS NOT NULL
+    ORDER BY s->'protocolSection'->'identificationModule'->>'nctId',
+             (queried_drug_name IS NOT NULL) DESC,
+             request_timestamp DESC
+)
+
 SELECT
     gen_random_uuid() AS id,
 
     -- NCT Identifier
-    response_body->'protocolSection'->'identificationModule'->>'nctId' AS nct_id,
-    response_body->'protocolSection'->'identificationModule'->>'orgStudyIdInfo' AS org_study_id,
+    s->'protocolSection'->'identificationModule'->>'nctId' AS nct_id,
+    s->'protocolSection'->'identificationModule'->>'orgStudyIdInfo' AS org_study_id,
 
     -- Titles
-    response_body->'protocolSection'->'identificationModule'->>'briefTitle' AS brief_title,
-    response_body->'protocolSection'->'identificationModule'->>'officialTitle' AS official_title,
-    response_body->'protocolSection'->'identificationModule'->>'acronym' AS acronym,
+    s->'protocolSection'->'identificationModule'->>'briefTitle' AS brief_title,
+    s->'protocolSection'->'identificationModule'->>'officialTitle' AS official_title,
+    s->'protocolSection'->'identificationModule'->>'acronym' AS acronym,
 
     -- Summary
-    response_body->'protocolSection'->'descriptionModule'->>'briefSummary' AS brief_summary,
-    response_body->'protocolSection'->'descriptionModule'->>'detailedDescription' AS detailed_description,
+    s->'protocolSection'->'descriptionModule'->>'briefSummary' AS brief_summary,
+    s->'protocolSection'->'descriptionModule'->>'detailedDescription' AS detailed_description,
 
     -- Status
-    response_body->'protocolSection'->'statusModule'->>'overallStatus' AS overall_status,
-    response_body->'protocolSection'->'statusModule'->>'lastKnownStatus' AS last_known_status,
-    response_body->'protocolSection'->'statusModule'->>'whyStopped' AS why_stopped,
+    s->'protocolSection'->'statusModule'->>'overallStatus' AS overall_status,
+    s->'protocolSection'->'statusModule'->>'lastKnownStatus' AS last_known_status,
+    s->'protocolSection'->'statusModule'->>'whyStopped' AS why_stopped,
 
     -- Dates
-    response_body->'protocolSection'->'statusModule'->'startDateStruct'->>'date' AS start_date,
-    response_body->'protocolSection'->'statusModule'->'completionDateStruct'->>'date' AS completion_date,
-    response_body->'protocolSection'->'statusModule'->'primaryCompletionDateStruct'->>'date' AS primary_completion_date,
-    response_body->'protocolSection'->'statusModule'->>'studyFirstSubmitDate' AS first_submit_date,
-    response_body->'protocolSection'->'statusModule'->>'studyFirstPostDateStruct' AS first_post_date,
-    response_body->'protocolSection'->'statusModule'->>'lastUpdatePostDateStruct' AS last_update_date,
+    s->'protocolSection'->'statusModule'->'startDateStruct'->>'date' AS start_date,
+    s->'protocolSection'->'statusModule'->'completionDateStruct'->>'date' AS completion_date,
+    s->'protocolSection'->'statusModule'->'primaryCompletionDateStruct'->>'date' AS primary_completion_date,
+    s->'protocolSection'->'statusModule'->>'studyFirstSubmitDate' AS first_submit_date,
+    s->'protocolSection'->'statusModule'->>'studyFirstPostDateStruct' AS first_post_date,
+    s->'protocolSection'->'statusModule'->>'lastUpdatePostDateStruct' AS last_update_date,
 
     -- Design
-    response_body->'protocolSection'->'designModule'->>'studyType' AS study_type,
-    response_body->'protocolSection'->'designModule'->'phases' AS phases,
-    response_body->'protocolSection'->'designModule'->'designInfo'->>'allocation' AS allocation,
-    response_body->'protocolSection'->'designModule'->'designInfo'->>'interventionModel' AS intervention_model,
-    response_body->'protocolSection'->'designModule'->'designInfo'->'maskingInfo'->>'masking' AS masking,
-    (response_body->'protocolSection'->'designModule'->'enrollmentInfo'->>'count')::INTEGER AS enrollment_count,
-    response_body->'protocolSection'->'designModule'->'enrollmentInfo'->>'type' AS enrollment_type,
+    s->'protocolSection'->'designModule'->>'studyType' AS study_type,
+    s->'protocolSection'->'designModule'->'phases' AS phases,
+    s->'protocolSection'->'designModule'->'designInfo'->>'allocation' AS allocation,
+    s->'protocolSection'->'designModule'->'designInfo'->>'interventionModel' AS intervention_model,
+    s->'protocolSection'->'designModule'->'designInfo'->'maskingInfo'->>'masking' AS masking,
+    (s->'protocolSection'->'designModule'->'enrollmentInfo'->>'count')::INTEGER AS enrollment_count,
+    s->'protocolSection'->'designModule'->'enrollmentInfo'->>'type' AS enrollment_type,
 
     -- Conditions
-    response_body->'protocolSection'->'conditionsModule'->'conditions' AS conditions,
-    response_body->'protocolSection'->'conditionsModule'->'keywords' AS keywords,
+    s->'protocolSection'->'conditionsModule'->'conditions' AS conditions,
+    s->'protocolSection'->'conditionsModule'->'keywords' AS keywords,
 
     -- Interventions
-    response_body->'protocolSection'->'armsInterventionsModule'->'interventions' AS interventions,
-    response_body->'protocolSection'->'armsInterventionsModule'->'armGroups' AS arm_groups,
+    s->'protocolSection'->'armsInterventionsModule'->'interventions' AS interventions,
+    s->'protocolSection'->'armsInterventionsModule'->'armGroups' AS arm_groups,
 
     -- Eligibility
-    response_body->'protocolSection'->'eligibilityModule'->>'sex' AS eligibility_sex,
-    response_body->'protocolSection'->'eligibilityModule'->>'minimumAge' AS minimum_age,
-    response_body->'protocolSection'->'eligibilityModule'->>'maximumAge' AS maximum_age,
-    response_body->'protocolSection'->'eligibilityModule'->>'healthyVolunteers' AS healthy_volunteers,
-    response_body->'protocolSection'->'eligibilityModule'->>'eligibilityCriteria' AS eligibility_criteria,
+    s->'protocolSection'->'eligibilityModule'->>'sex' AS eligibility_sex,
+    s->'protocolSection'->'eligibilityModule'->>'minimumAge' AS minimum_age,
+    s->'protocolSection'->'eligibilityModule'->>'maximumAge' AS maximum_age,
+    s->'protocolSection'->'eligibilityModule'->>'healthyVolunteers' AS healthy_volunteers,
+    s->'protocolSection'->'eligibilityModule'->>'eligibilityCriteria' AS eligibility_criteria,
 
     -- Sponsors
-    response_body->'protocolSection'->'sponsorCollaboratorsModule'->'leadSponsor'->>'name' AS lead_sponsor_name,
-    response_body->'protocolSection'->'sponsorCollaboratorsModule'->'leadSponsor'->>'class' AS lead_sponsor_class,
-    response_body->'protocolSection'->'sponsorCollaboratorsModule'->'collaborators' AS collaborators,
-    response_body->'protocolSection'->'sponsorCollaboratorsModule'->'responsibleParty' AS responsible_party,
+    s->'protocolSection'->'sponsorCollaboratorsModule'->'leadSponsor'->>'name' AS lead_sponsor_name,
+    s->'protocolSection'->'sponsorCollaboratorsModule'->'leadSponsor'->>'class' AS lead_sponsor_class,
+    s->'protocolSection'->'sponsorCollaboratorsModule'->'collaborators' AS collaborators,
+    s->'protocolSection'->'sponsorCollaboratorsModule'->'responsibleParty' AS responsible_party,
 
     -- Contacts
-    response_body->'protocolSection'->'contactsLocationsModule'->'centralContacts' AS central_contacts,
-    response_body->'protocolSection'->'contactsLocationsModule'->'locations' AS locations,
+    s->'protocolSection'->'contactsLocationsModule'->'centralContacts' AS central_contacts,
+    s->'protocolSection'->'contactsLocationsModule'->'locations' AS locations,
 
     -- Outcomes
-    response_body->'protocolSection'->'outcomesModule'->'primaryOutcomes' AS primary_outcomes,
-    response_body->'protocolSection'->'outcomesModule'->'secondaryOutcomes' AS secondary_outcomes,
+    s->'protocolSection'->'outcomesModule'->'primaryOutcomes' AS primary_outcomes,
+    s->'protocolSection'->'outcomesModule'->'secondaryOutcomes' AS secondary_outcomes,
 
     -- Oversight (FDA regulatory status)
-    (response_body->'protocolSection'->'oversightModule'->>'isFdaRegulatedDrug')::BOOLEAN AS fda_regulated_drug,
-    (response_body->'protocolSection'->'oversightModule'->>'isFdaRegulatedDevice')::BOOLEAN AS fda_regulated_device,
-    (response_body->'protocolSection'->'oversightModule'->>'isUnapprovedDevice')::BOOLEAN AS is_unapproved_device,
-    response_body->'protocolSection'->'oversightModule'->'oversightHasDmc' AS has_dmc,
+    (s->'protocolSection'->'oversightModule'->>'isFdaRegulatedDrug')::BOOLEAN AS fda_regulated_drug,
+    (s->'protocolSection'->'oversightModule'->>'isFdaRegulatedDevice')::BOOLEAN AS fda_regulated_device,
+    (s->'protocolSection'->'oversightModule'->>'isUnapprovedDevice')::BOOLEAN AS is_unapproved_device,
+    s->'protocolSection'->'oversightModule'->'oversightHasDmc' AS has_dmc,
 
     -- References (PMIDs, citations)
-    response_body->'protocolSection'->'referencesModule'->'references' AS references,
-    response_body->'protocolSection'->'referencesModule'->'seeAlsoLinks' AS see_also_links,
+    s->'protocolSection'->'referencesModule'->'references' AS references,
+    s->'protocolSection'->'referencesModule'->'seeAlsoLinks' AS see_also_links,
 
     -- IPD Sharing
-    response_body->'protocolSection'->'ipdSharingStatementModule'->>'ipdSharing' AS ipd_sharing,
-    response_body->'protocolSection'->'ipdSharingStatementModule'->>'description' AS ipd_sharing_description,
-    response_body->'protocolSection'->'ipdSharingStatementModule'->'infoTypes' AS ipd_sharing_info_types,
-    response_body->'protocolSection'->'ipdSharingStatementModule'->>'timeFrame' AS ipd_sharing_time_frame,
-    response_body->'protocolSection'->'ipdSharingStatementModule'->>'accessCriteria' AS ipd_sharing_access_criteria,
+    s->'protocolSection'->'ipdSharingStatementModule'->>'ipdSharing' AS ipd_sharing,
+    s->'protocolSection'->'ipdSharingStatementModule'->>'description' AS ipd_sharing_description,
+    s->'protocolSection'->'ipdSharingStatementModule'->'infoTypes' AS ipd_sharing_info_types,
+    s->'protocolSection'->'ipdSharingStatementModule'->>'timeFrame' AS ipd_sharing_time_frame,
+    s->'protocolSection'->'ipdSharingStatementModule'->>'accessCriteria' AS ipd_sharing_access_criteria,
 
     -- Other Outcomes
-    response_body->'protocolSection'->'outcomesModule'->'otherOutcomes' AS other_outcomes,
+    s->'protocolSection'->'outcomesModule'->'otherOutcomes' AS other_outcomes,
 
     -- Results
-    (response_body->>'hasResults')::BOOLEAN AS has_results,
-    response_body->'resultsSection' AS results_section,
-    response_body->'resultsSection'->'participantFlowModule' AS results_participant_flow,
-    response_body->'resultsSection'->'baselineCharacteristicsModule' AS results_baseline,
-    response_body->'resultsSection'->'outcomeMeasuresModule'->'outcomeMeasures' AS results_outcome_measures,
-    response_body->'resultsSection'->'adverseEventsModule' AS results_adverse_events,
-    response_body->'resultsSection'->'moreInfoModule' AS results_more_info,
+    (s->>'hasResults')::BOOLEAN AS has_results,
+    s->'resultsSection' AS results_section,
+    s->'resultsSection'->'participantFlowModule' AS results_participant_flow,
+    s->'resultsSection'->'baselineCharacteristicsModule' AS results_baseline,
+    s->'resultsSection'->'outcomeMeasuresModule'->'outcomeMeasures' AS results_outcome_measures,
+    s->'resultsSection'->'adverseEventsModule' AS results_adverse_events,
+    s->'resultsSection'->'moreInfoModule' AS results_more_info,
 
     -- Derived Section (MeSH browse hierarchies)
-    response_body->'derivedSection'->'conditionBrowseModule' AS condition_browse,
-    response_body->'derivedSection'->'interventionBrowseModule' AS intervention_browse,
-    response_body->'derivedSection'->'miscInfoModule' AS misc_info,
+    s->'derivedSection'->'conditionBrowseModule' AS condition_browse,
+    s->'derivedSection'->'interventionBrowseModule' AS intervention_browse,
+    s->'derivedSection'->'miscInfoModule' AS misc_info,
 
     -- Raw source tracking
-    response_body AS raw_json,
-    id AS raw_source_id,
+    s AS raw_json,
+    raw_source_id,
     'clinicaltrials_gov' AS source,
     request_timestamp,
     request_timestamp AS source_updated_at,
     FALSE AS processed_to_silver,
-    NOW() AS created_at
+    NOW() AS created_at,
 
-FROM mol_raw.clinicaltrials
-WHERE
-    response_status = 200
-    AND processed_to_bronze = FALSE
-    AND response_body->'protocolSection'->'identificationModule'->>'nctId' IS NOT NULL
-    AND request_timestamp BETWEEN @start_dt AND @end_dt;
+    -- Drug name from original API query — used for direct entity linking in silver
+    -- (avoids unreliable fuzzy title matching)
+    queried_drug_name
+
+FROM deduped;

@@ -279,15 +279,15 @@ def refresh_metrics_from_database_sync():
         cur.execute("""
             SELECT
                 CASE
-                    WHEN phase ILIKE '%1%' AND phase NOT ILIKE '%2%' THEN 'Phase 1'
-                    WHEN phase ILIKE '%2%' AND phase NOT ILIKE '%3%' THEN 'Phase 2'
-                    WHEN phase ILIKE '%3%' AND phase NOT ILIKE '%4%' THEN 'Phase 3'
-                    WHEN phase ILIKE '%4%' THEN 'Phase 4'
+                    WHEN phases::text ILIKE '%1%' AND phases::text NOT ILIKE '%2%' THEN 'Phase 1'
+                    WHEN phases::text ILIKE '%2%' AND phases::text NOT ILIKE '%3%' THEN 'Phase 2'
+                    WHEN phases::text ILIKE '%3%' AND phases::text NOT ILIKE '%4%' THEN 'Phase 3'
+                    WHEN phases::text ILIKE '%4%' THEN 'Phase 4'
                     ELSE 'Other'
                 END as phase_group,
                 COUNT(*) as count
             FROM mol_silver.clinical_trials
-            WHERE phase IS NOT NULL
+            WHERE phases IS NOT NULL
             GROUP BY phase_group
         """)
         phase_counts = {row[0]: row[1] for row in cur.fetchall()}

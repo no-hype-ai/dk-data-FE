@@ -230,14 +230,28 @@ def transform_model(model_name: str) -> dict:
     """
     logger.info(f"Transforming model: {model_name}")
 
-    # Use plan --auto-apply to both initialize the environment (if needed) and run.
-    # 'sqlmesh run' fails if the prod environment hasn't been initialized yet.
-    result = run_sqlmesh_command(['plan', '--auto-apply', '--select-model', model_name])
+    # Use 'sqlmesh run --select-model' for hot-path transforms.
+    # 'plan --auto-apply' re-applies the ENTIRE environment plan, causing cascading failures
+    # when unrelated models (e.g. epo_patents) have errors, and leaves stale plan locks.
+    # The prod environment is already initialized by the sqlmesh-scheduler; 'run' is sufficient.
+    #
+    # Pass --end as tomorrow so the current day's (or current month's) interval is always
+    # included. Without this, INCREMENTAL_BY_TIME_RANGE models with @daily or @monthly cron
+    # skip today's data because the current interval is considered incomplete until midnight
+    # (or end-of-month). Setting --end to tomorrow guarantees intra-day data is processed.
+    from datetime import date, timedelta
+    tomorrow = (date.today() + timedelta(days=1)).isoformat()
+    result = run_sqlmesh_command([
+        'run', '--select-model', model_name,
+        '--ignore-cron', '--no-auto-upstream',
+        '--end', tomorrow,
+    ])
 
     if result.get('status') == 'success':
         logger.info(f"Model {model_name} transformed successfully")
     else:
-        logger.error(f"Model {model_name} transformation failed: {result.get('error')}")
+        detail = result.get('stderr') or result.get('stdout') or result.get('error', '')
+        logger.error(f"Model {model_name} transformation failed: {result.get('error')} — {detail[:500]}")
 
     return result
 

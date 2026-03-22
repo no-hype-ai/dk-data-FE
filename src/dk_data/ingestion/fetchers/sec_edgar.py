@@ -34,6 +34,9 @@ MAX_RECORDS = 5000
 # SEC rate limit: 10 requests per second
 SEC_REQUEST_DELAY = 0.12  # ~8 req/s to stay under 10/s limit
 
+# Base URL for SEC Archives (used for FilingSummary.xml and index.json lookups)
+SEC_ARCHIVES_URL = "https://www.sec.gov"
+
 # Default User-Agent for SEC
 DEFAULT_SEC_USER_AGENT = "dk-data-platform admin@example.com"
 
@@ -373,3 +376,4 @@ class SECEdgarFetcher(BaseFetcher):
         if sic is None:
             return True
         return sic in sic_codes
+

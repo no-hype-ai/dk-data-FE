@@ -50,6 +50,9 @@ physical_schema_mapping:
   xenon: xenon
   meta: meta
 
+# Cache dir: must be writable — /app/sqlmesh is mounted :ro in Docker
+cache_dir: /tmp/sqlmesh_cache
+
 # Project metadata
 project: tavr_data_infrastructure
 

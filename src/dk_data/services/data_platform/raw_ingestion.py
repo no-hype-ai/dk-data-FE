@@ -58,6 +58,10 @@ class DataSource(Enum):
     NPI_REGISTRY = "npi_registry"      # NPI Registry physician directory
     EUROPEPMC = "europepmc"            # EuropePMC full-text literature
     FDA_DRUGSFDA = "fda_drugsfda"      # FDA Drugs@FDA approval history
+    EPO_PATENTS = "epo_patents"        # EPO Open Patent Services (European patents)
+    COCHRANE_REVIEWS = "cochrane_reviews"  # Cochrane Library systematic reviews
+    HTA_DECISIONS = "hta_decisions"    # Broad HTA decisions (NICE + G-BA + PBAC + SMC)
+    EMA_REGULATORY = "ema_regulatory"  # EMA authorized medicines + EPARs
 
 
 # Tiered refresh schedule (in hours)
@@ -98,6 +102,10 @@ REFRESH_SCHEDULE = {
     DataSource.NIH_REPORTER: 168,       # Weekly (grant data)
     DataSource.NPI_REGISTRY: 720,       # Monthly (provider updates)
     DataSource.EUROPEPMC: 168,          # Weekly (literature)
+    DataSource.EPO_PATENTS: 168,        # Weekly (patent filings)
+    DataSource.COCHRANE_REVIEWS: 168,   # Weekly (systematic reviews)
+    DataSource.HTA_DECISIONS: 168,      # Weekly (HTA body decisions)
+    DataSource.EMA_REGULATORY: 168,     # Weekly (EMA drug authorizations)
     DataSource.FDA_DRUGSFDA: 168,       # Weekly (approval data)
 }
 
@@ -262,6 +270,10 @@ class RawIngestionService:
         DataSource.NPI_REGISTRY:      "mol_raw",
         DataSource.EUROPEPMC:         "mol_raw",
         DataSource.FDA_DRUGSFDA:      "mol_raw",
+        DataSource.EPO_PATENTS:       "mol_raw",
+        DataSource.COCHRANE_REVIEWS:  "mol_raw",
+        DataSource.HTA_DECISIONS:     "mol_raw",
+        DataSource.EMA_REGULATORY:    "mol_raw",
     }
 
     async def _store_raw_record(self, source: DataSource, record: RawRecord) -> Optional[str]:
@@ -1994,4 +2006,66 @@ class FDADrugsfdaIngestion(RawIngestionService):
         return await self.fetch_and_store(
             DataSource.FDA_DRUGSFDA, endpoint, params=params,
             request_id=f"fda_drugsfda_{(brand_name or generic_name)[:30]}"
+        )
+
+
+class EPOPatentsIngestion(RawIngestionService):
+    """Ingestion for EPO Open Patent Services (OPS) — European drug patents.
+
+    Uses the EPO OPS REST API free tier (no auth required for basic searches).
+    Drug-specific: searches title+abstract for the drug name.
+    """
+
+    API_URL = "https://ops.epo.org/3.2/rest-services/published-data/search"
+
+    async def search_patents(self, drug_name: str, limit: int = 50) -> Optional[str]:
+        """Search EPO OPS for patents mentioning the drug in title or abstract."""
+        endpoint = self.API_URL
+        params = {
+            "q": f"ta=\u201c{drug_name}\u201d OR ti=\"{drug_name}\"",
+            "Range": f"1-{min(limit, 100)}",
+        }
+        return await self.fetch_and_store(
+            DataSource.EPO_PATENTS, endpoint, params=params,
+            headers={"Accept": "application/json"},
+            request_id=f"epo_{drug_name[:30]}",
+        )
+
+    async def search_patents_by_applicant(self, company_name: str, limit: int = 50) -> Optional[str]:
+        """Search EPO OPS for patents by company applicant (bulk cron path)."""
+        endpoint = self.API_URL
+        params = {
+            "q": f"pa=\"{company_name}\" AND ta=pharmaceutical",
+            "Range": f"1-{min(limit, 100)}",
+        }
+        return await self.fetch_and_store(
+            DataSource.EPO_PATENTS, endpoint, params=params,
+            headers={"Accept": "application/json"},
+            request_id=f"epo_applicant_{company_name[:30]}",
+        )
+
+
+class CochraneReviewsIngestion(RawIngestionService):
+    """Ingestion for Cochrane Library systematic reviews.
+
+    Uses the Cochrane REST API for drug-specific systematic review searches.
+    Drug-specific: returns meta-analyses and RCT evidence summaries.
+    """
+
+    API_URL = "https://www.cochranelibrary.com/api/search/results"
+
+    async def search_reviews(self, drug_name: str, limit: int = 20) -> Optional[str]:
+        """Search Cochrane Library for systematic reviews mentioning the drug."""
+        endpoint = self.API_URL
+        params = {
+            "q": drug_name,
+            "p": 1,
+            "drtype": "1",   # reviews only
+            "t": "1",        # title search
+            "searchBy": "1",
+        }
+        return await self.fetch_and_store(
+            DataSource.COCHRANE_REVIEWS, endpoint, params=params,
+            headers={"Accept": "application/json"},
+            request_id=f"cochrane_{drug_name[:30]}",
         )

@@ -140,52 +140,6 @@ europepmc_pubs AS (
         AND title IS NOT NULL
 ),
 
--- Secondary source: PubMed publications
-pubmed_pubs AS (
-    SELECT
-        'pubmed:' || pmid AS openalex_id,
-        doi,
-        pmid,
-        NULL::TEXT AS pmcid,
-        NULL::TEXT AS mag_id,
-        title,
-        abstract,
-        'journal-article' AS work_type,
-        NULL::TEXT AS language,
-        EXTRACT(YEAR FROM pub_date::DATE)::INTEGER AS publication_year,
-        pub_date AS publication_date,
-        journal AS journal_name,
-        NULL::TEXT AS journal_issn,
-        NULL::TEXT AS pdf_url,
-        NULL::BOOLEAN AS is_open_access,
-        NULL::TEXT AS volume,
-        NULL::TEXT AS issue,
-        NULL::TEXT AS first_page,
-        NULL::TEXT AS last_page,
-        authors AS authorships,
-        NULL::JSONB AS author_names,
-        NULL::JSONB AS concepts,
-        NULL::JSONB AS topics,
-        NULL::JSONB AS keywords,
-        mesh_terms,
-        NULL::INTEGER AS cited_by_count,
-        NULL::JSONB AS citation_counts_by_year,
-        NULL::JSONB AS grants,
-        NULL::JSONB AS referenced_works,
-        NULL::JSONB AS related_works,
-        NULL::JSONB AS open_access_info,
-        NULL::JSONB AS best_oa_location,
-        NULL::BOOLEAN AS is_retracted,
-        NULL::BOOLEAN AS is_paratext,
-        source,
-        source_updated_at,
-        created_at
-    FROM mol_bronze.pubmed
-    WHERE
-        processed_to_silver = FALSE
-        AND title IS NOT NULL
-),
-
 -- Secondary source: Cochrane systematic reviews
 cochrane_pubs AS (
     SELECT
@@ -232,63 +186,14 @@ cochrane_pubs AS (
         AND title IS NOT NULL
 ),
 
--- Secondary source: Journal RSS feed entries
-journal_rss_pubs AS (
-    SELECT
-        'rss:' || entry_id AS openalex_id,
-        doi,
-        NULL::TEXT AS pmid,
-        NULL::TEXT AS pmcid,
-        NULL::TEXT AS mag_id,
-        title,
-        summary AS abstract,
-        'journal-article' AS work_type,
-        NULL::TEXT AS language,
-        EXTRACT(YEAR FROM pub_date::DATE)::INTEGER AS publication_year,
-        pub_date AS publication_date,
-        journal_name,
-        NULL::TEXT AS journal_issn,
-        NULL::TEXT AS pdf_url,
-        NULL::BOOLEAN AS is_open_access,
-        NULL::TEXT AS volume,
-        NULL::TEXT AS issue,
-        NULL::TEXT AS first_page,
-        NULL::TEXT AS last_page,
-        authors AS authorships,
-        NULL::JSONB AS author_names,
-        NULL::JSONB AS concepts,
-        NULL::JSONB AS topics,
-        NULL::JSONB AS keywords,
-        NULL::JSONB AS mesh_terms,
-        NULL::INTEGER AS cited_by_count,
-        NULL::JSONB AS citation_counts_by_year,
-        NULL::JSONB AS grants,
-        NULL::JSONB AS referenced_works,
-        NULL::JSONB AS related_works,
-        NULL::JSONB AS open_access_info,
-        NULL::JSONB AS best_oa_location,
-        NULL::BOOLEAN AS is_retracted,
-        NULL::BOOLEAN AS is_paratext,
-        source,
-        source_updated_at,
-        created_at
-    FROM mol_bronze.journal_rss
-    WHERE
-        processed_to_silver = FALSE
-        AND title IS NOT NULL
-),
-
--- Combine all publication sources
+-- Combine all available publication sources
+-- (pubmed and journal_rss are added here when those sources are ingested)
 combined_pubs AS (
     SELECT * FROM openalex_pubs
     UNION ALL
     SELECT * FROM europepmc_pubs
     UNION ALL
-    SELECT * FROM pubmed_pubs
-    UNION ALL
     SELECT * FROM cochrane_pubs
-    UNION ALL
-    SELECT * FROM journal_rss_pubs
 ),
 
 -- Derive first_author fields and top concepts

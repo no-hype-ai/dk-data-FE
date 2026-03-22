@@ -1,0 +1,66 @@
+-- SQLMesh Model: Silver DrugBank
+-- Promotes mol_bronze.drugbank into mol_silver.drugbank with molecule-level linkage.
+-- molecule_id is NULL — entity linking fills it by matching inchi_key against mol_silver.molecules.
+-- Exposes DrugBank pharmacological data to xenon sections:
+--   molecule_profile, mechanism_of_action
+
+MODEL (
+    name mol_silver.drugbank,
+    kind INCREMENTAL_BY_UNIQUE_KEY (
+        unique_key (drugbank_id)
+    ),
+    cron '@monthly',
+    audits (
+        not_null(columns := (drugbank_id))
+    ),
+    grain (drugbank_id)
+);
+
+SELECT
+    gen_random_uuid()                       AS drugbank_silver_id,
+    NULL::UUID                              AS molecule_id,     -- entity linking fills this via inchi_key match
+    b.drugbank_id,
+    b.inchi_key,
+    b.cas_number,
+    b.unii,
+
+    -- Names
+    b.name,
+    b.synonyms,
+    b.international_brands,
+
+    -- Drug classification
+    b.drug_type,
+    b.state,
+    b.groups,
+    b.classification,
+    b.categories,
+    b.atc_codes,
+
+    -- Pharmacology (key fields for mechanism_of_action section)
+    b.description,
+    b.indication,
+    b.pharmacodynamics,
+    b.mechanism_of_action,
+    b.absorption,
+    b.protein_binding,
+    b.metabolism,
+    b.half_life,
+    b.route_of_elimination,
+    b.clearance,
+    b.volume_of_distribution,
+
+    -- Structure
+    b.smiles,
+    b.inchi,
+    b.molecular_formula,
+    b.average_mass,
+    b.monoisotopic_mass,
+
+    -- Source tracking
+    'drugbank'                              AS source,
+    b.created_at
+
+FROM mol_bronze.drugbank b
+WHERE b.processed_to_silver = FALSE
+  AND b.drugbank_id IS NOT NULL;

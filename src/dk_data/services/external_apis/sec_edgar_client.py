@@ -260,37 +260,209 @@ class SECEdgarClient(BaseAPIClient):
         Finds the first matching start pattern, then the first matching end pattern
         after it, and returns the text between them.
         """
-        start_idx = None
+        # Collect all start-pattern match positions across all patterns
+        candidate_starts = []
         for pattern in start_patterns:
-            match = re.search(pattern, full_text)
-            if match:
-                start_idx = match.start()
-                break
+            for match in re.finditer(pattern, full_text):
+                candidate_starts.append(match.start())
 
-        if start_idx is None:
+        if not candidate_starts:
             return None
 
-        # Search for end marker after the start (skip ahead to avoid matching
-        # a table-of-contents reference right at the start)
-        search_from = start_idx + 100
-        end_idx = None
-        for pattern in end_patterns:
-            match = re.search(pattern, full_text[search_from:])
-            if match:
-                candidate = search_from + match.start()
-                if end_idx is None or candidate < end_idx:
-                    end_idx = candidate
+        # Try each start position (sorted ascending) and pick the one that yields
+        # the longest section. This skips table-of-contents entries where "Item 7A"
+        # appears immediately after "Item 7" in the TOC, resulting in a tiny excerpt.
+        best_section = None
+        for start_idx in sorted(set(candidate_starts)):
+            search_from = start_idx + 200  # Skip past the header itself
+            end_idx = None
+            for pattern in end_patterns:
+                match = re.search(pattern, full_text[search_from:])
+                if match:
+                    candidate = search_from + match.start()
+                    if end_idx is None or candidate < end_idx:
+                        end_idx = candidate
 
-        if end_idx is None:
-            # No end marker found; take up to 10000 chars from start
-            end_idx = min(start_idx + 10000, len(full_text))
+            if end_idx is None:
+                end_idx = min(start_idx + 15000, len(full_text))
 
-        section = full_text[start_idx:end_idx].strip()
+            section = full_text[start_idx:end_idx].strip()
 
-        # Only return if we got meaningful content (not just a header reference)
-        if len(section) > 200:
-            return section
+            if len(section) > 200:
+                if best_section is None or len(section) > len(best_section):
+                    best_section = section
+                # Stop after finding a section with substantial content
+                if len(section) > 1000:
+                    break
 
+        return best_section
+
+    async def lookup_cik_by_company_name(self, company_name: str) -> Optional[str]:
+        """
+        Look up a company's SEC CIK by name.
+
+        Strategy (two-tier):
+        1. SEC company_tickers.json — authoritative CIK→name mapping for all
+           registered US SEC filers. Matches by first meaningful word in company_name.
+           Does NOT include foreign-only filers that never registered in the US
+           (e.g., Roche Holding AG — Swiss exchange only, no 20-F filed).
+        2. EDGAR browse-edgar Atom endpoint (fallback) — prefix name search.
+           Returns company entities with CIKs; validates that the CIK has at least
+           one 10-K or 20-F filing before returning it.
+
+        Both approaches handle the EFTS limitation: EFTS full-text search returns
+        filings that MENTION the company name, not filings BY that company.
+
+        Args:
+            company_name: Company name to look up (e.g., "Bristol-Myers Squibb")
+
+        Returns:
+            CIK string (no leading zeros) or None if company not found or does not
+            file annual reports with the SEC.
+        """
+        import re as _re
+        import urllib.parse
+        import xml.etree.ElementTree as ET
+
+        # Split on spaces and hyphens: "Bristol-Myers" → ["Bristol", "Myers", ...]
+        words = _re.split(r'[\s\-]+', company_name.strip())
+        # Build search tokens from the first two DISTINCTIVE words.
+        # Skip generic company-type words that appear in many names (e.g., "pharmaceuticals"
+        # would incorrectly match Vertex when searching for "Regeneron Pharmaceuticals").
+        _GENERIC = {
+            "pharmaceuticals", "pharmaceutical", "pharma", "corporation", "incorporated",
+            "inc", "ltd", "limited", "ag", "as", "plc", "co", "company", "holding",
+            "holdings", "group", "international", "and", "the", "biosciences",
+            "biopharmaceuticals", "therapeutics", "sciences",
+        }
+        search_tokens = [
+            w.lower() for w in words
+            if len(w) > 2 and w.lower() not in _GENERIC
+        ][:2]
+        client = await self._get_client()
+
+        # ── Tier 1: company_tickers.json ────────────────────────────────────────
+        # SEC maintains this mapping for all registered filers. ~10 000 entries.
+        # Much more reliable than browse-edgar prefix search for large companies.
+        try:
+            await self.rate_limiter.acquire()
+            tickers_resp = await client.get(
+                "https://www.sec.gov/files/company_tickers.json",
+                headers=self.headers,
+            )
+            if tickers_resp.status_code == 200:
+                tickers = tickers_resp.json()
+                best_cik: Optional[str] = None
+                best_title: Optional[str] = None
+                for entry in tickers.values():
+                    title_lower = entry.get("title", "").lower()
+                    # Word-boundary match — split title into words so "roche" does NOT
+                    # match "petrochemical" ("pet-ROCHE-mical" substring false positive).
+                    title_words = set(_re.split(r"[\s\-/&,\.]+", title_lower))
+                    # Require ALL search tokens to appear (prevents "pharmaceuticals" matching
+                    # unrelated companies). Single-token cases work normally with all().
+                    if search_tokens and all(tok in title_words for tok in search_tokens):
+                        cik_candidate = str(entry["cik_str"])
+                        # Verify annual filings exist for this CIK
+                        await self.rate_limiter.acquire()
+                        sub_resp = await client.get(
+                            f"https://data.sec.gov/submissions/CIK{cik_candidate.zfill(10)}.json",
+                            headers=self.headers,
+                        )
+                        if sub_resp.status_code != 200:
+                            continue
+                        sub_data = sub_resp.json()
+                        forms = sub_data.get("filings", {}).get("recent", {}).get("form", [])
+                        if any(f in ("10-K", "20-F", "10-K/A", "20-F/A") for f in forms):
+                            best_cik = cik_candidate
+                            best_title = sub_data.get("name", entry.get("title"))
+                            break  # first match with annual filings wins
+                if best_cik:
+                    logger.info(
+                        f"SEC EDGAR CIK lookup (tickers): '{company_name}'"
+                        f" → CIK {best_cik} ({best_title})"
+                    )
+                    return best_cik
+        except Exception as e:
+            logger.debug(f"CIK lookup via company_tickers.json failed: {e}")
+
+        # ── Tier 2: browse-edgar prefix search (fallback) ────────────────────────
+        # Useful for smaller companies or edge cases not in the tickers list.
+        EDGAR_CGI = "https://www.sec.gov/cgi-bin/browse-edgar"
+        ATOM_NS = "http://www.w3.org/2005/Atom"
+
+        seen: set = set()
+        variants: List[str] = []
+        for candidate in [
+            company_name,
+            ' '.join(words[:2]) if len(words) >= 2 else None,
+            words[0] if words else None,
+        ]:
+            if candidate and candidate.lower() not in seen:
+                seen.add(candidate.lower())
+                variants.append(candidate)
+
+        for variant in variants:
+            try:
+                encoded = urllib.parse.quote_plus(variant)
+                url = (
+                    f"{EDGAR_CGI}?company={encoded}"
+                    f"&action=getcompany&type="
+                    f"&owner=include&count=20&output=atom"
+                )
+                await self.rate_limiter.acquire()
+                response = await client.get(url, headers=self.headers)
+                if response.status_code != 200:
+                    continue
+
+                root = ET.fromstring(response.text)
+                for entry in root.findall(f"{{{ATOM_NS}}}entry"):
+                    cik_candidate = None
+                    content = entry.find(f"{{{ATOM_NS}}}content")
+                    if content is not None:
+                        ci = content.find(f"{{{ATOM_NS}}}company-info")
+                        if ci is not None:
+                            cik_elem = ci.find(f"{{{ATOM_NS}}}cik")
+                            if cik_elem is not None and cik_elem.text:
+                                cik_candidate = str(int(cik_elem.text.strip()))
+                    if not cik_candidate:
+                        id_elem = entry.find(f"{{{ATOM_NS}}}id")
+                        if id_elem is not None and id_elem.text:
+                            m = _re.search(r"cik=0*(\d+)", id_elem.text)
+                            if m:
+                                cik_candidate = m.group(1)
+                    if not cik_candidate:
+                        continue
+
+                    await self.rate_limiter.acquire()
+                    sub_resp = await client.get(
+                        f"https://data.sec.gov/submissions/CIK{cik_candidate.zfill(10)}.json",
+                        headers=self.headers,
+                    )
+                    if sub_resp.status_code != 200:
+                        continue
+                    sub_data = sub_resp.json()
+                    forms = sub_data.get("filings", {}).get("recent", {}).get("form", [])
+                    if not any(f in ("10-K", "20-F", "10-K/A", "20-F/A") for f in forms):
+                        logger.debug(
+                            f"CIK {cik_candidate} ({sub_data.get('name','?')}) has no annual filings — skipping"
+                        )
+                        continue
+                    entity_name = sub_data.get("name", cik_candidate)
+                    logger.info(
+                        f"SEC EDGAR CIK lookup (browse-edgar): '{variant}'"
+                        f" → CIK {cik_candidate} ({entity_name})"
+                    )
+                    return cik_candidate
+
+            except Exception as e:
+                logger.debug(f"CIK lookup (browse-edgar) error for '{variant}': {e}")
+                continue
+
+        logger.warning(
+            f"SEC EDGAR CIK lookup: no annual-filing entity found for '{company_name}' "
+            f"(company may not file with the SEC — e.g., Roche is Swiss-listed only)"
+        )
         return None
 
     async def extract_product_revenues(
@@ -507,15 +679,28 @@ class SECEdgarClient(BaseAPIClient):
         revenues = []
         rows = parser.rows
 
-        # Detect currency from header (EUR for foreign like Sanofi, USD for domestic)
+        # Detect currency and scale from header rows
+        # Supports: USD (default), EUR (Sanofi/Bayer), DKK (Novo Nordisk), CHF (Novartis)
+        # Also detects "in thousands" vs "in millions" reporting scale
         currency_multiplier = 1.0
-        for row in rows[:3]:
-            row_text = ' '.join(row).lower()
-            if 'eur' in row_text:
-                # EUR values - will need FX conversion (approximate)
-                currency_multiplier = 1.10  # Approximate EUR/USD rate
-                logger.debug("Detected EUR currency, applying conversion")
-                break
+        scale_factor = 1.0  # 1.0 = values already in millions; 0.001 = values in thousands
+        header_text = ' '.join(' '.join(str(c) for c in row) for row in rows[:5]).lower()
+        if 'dkk' in header_text:
+            # Danish Krone — Novo Nordisk reports in DKKm
+            currency_multiplier = 0.143  # Approximate DKK/USD rate
+            logger.debug("Detected DKK currency, applying 0.143 conversion")
+        elif 'chf' in header_text:
+            # Swiss Franc — Novartis
+            currency_multiplier = 1.12  # Approximate CHF/USD rate
+            logger.debug("Detected CHF currency, applying 1.12 conversion")
+        elif 'eur' in header_text:
+            # EUR values — Sanofi
+            currency_multiplier = 1.10  # Approximate EUR/USD rate
+            logger.debug("Detected EUR currency, applying 1.10 conversion")
+        if ('in thousands' in header_text or '$ in thousands' in header_text
+                or 'thousands, except' in header_text or 'thousands except' in header_text):
+            scale_factor = 0.001  # Convert thousands → millions
+            logger.debug("Detected 'in thousands' scale, applying 0.001 factor")
 
         # Common pharma drug names to help identify product rows
         pharma_keywords = [
@@ -604,7 +789,9 @@ class SECEdgarClient(BaseAPIClient):
                             revenue_2024 = revenue_values[0] if revenue_values else None
                             revenue_2023 = revenue_values[1] if len(revenue_values) > 1 else None
 
-                            if revenue_2024 and revenue_2024 > 50:  # Min $50M threshold
+                            # Min threshold: $50M after scaling (raw value depends on scale_factor)
+                            min_raw = 50 / (currency_multiplier * scale_factor) if (currency_multiplier * scale_factor) > 0 else 50
+                            if revenue_2024 and revenue_2024 > min_raw:
                                 # Calculate YoY growth
                                 yoy_growth = None
                                 if revenue_2023 and revenue_2023 > 0:
@@ -612,7 +799,7 @@ class SECEdgarClient(BaseAPIClient):
 
                                 revenues.append(ProductRevenue(
                                     product_name=product_name,
-                                    revenue_usd=revenue_2024 * currency_multiplier,
+                                    revenue_usd=revenue_2024 * currency_multiplier * scale_factor,
                                     period="annual",
                                     year=year,
                                     source_filing=source_filing,
@@ -798,8 +985,8 @@ class SECEdgarClient(BaseAPIClient):
             # Check if table contains pharma drug names
             drug_mentions = sum(1 for drug in pharma_keywords if drug in table_text)
 
-            # Check if table contains dollar amounts
-            has_dollars = '$' in table_text or 'million' in table_text or 'billion' in table_text
+            # Check if table contains dollar amounts (also matches "in thousands" tables)
+            has_dollars = '$' in table_text or 'million' in table_text or 'billion' in table_text or 'thousand' in table_text or 'dkk' in table_text or 'chf' in table_text
 
             if (has_indicator or drug_mentions >= 2) and has_dollars:
                 candidate_tables.append((table, drug_mentions))
@@ -811,6 +998,20 @@ class SECEdgarClient(BaseAPIClient):
 
         for table, _ in candidate_tables[:5]:  # Process top 5 candidate tables
             rows = table.find_all('tr')
+
+            # Detect reporting scale from table context (check surrounding text + first rows)
+            table_context = table.get_text().lower()
+            table_scale = 1.0  # Default: values in millions
+            if 'in thousands' in table_context or '$ in thousands' in table_context or 'thousands, except' in table_context or 'thousands except' in table_context:
+                table_scale = 0.001  # Values in thousands → divide by 1000 to get millions
+                logger.debug("HTML table: detected 'in thousands' scale")
+            table_currency = 1.0
+            if 'dkk' in table_context:
+                table_currency = 0.143
+            elif 'chf' in table_context:
+                table_currency = 1.12
+            elif 'eur' in table_context and 'revenue' in table_context:
+                table_currency = 1.10
 
             # Try to identify header row
             header_row = None
@@ -863,7 +1064,7 @@ class SECEdgarClient(BaseAPIClient):
                         if is_likely_drug or product_name:
                             revenues.append(ProductRevenue(
                                 product_name=product_name,
-                                revenue_usd=revenue_value,
+                                revenue_usd=revenue_value * table_scale * table_currency,
                                 period="annual",
                                 year=year,
                                 source_filing=source_filing

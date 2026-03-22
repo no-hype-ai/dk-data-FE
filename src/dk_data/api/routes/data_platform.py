@@ -2536,6 +2536,82 @@ async def get_job_history(
         raise HTTPException(status_code=500, detail=str(e))
 
 
+@router.get("/jobs/{job_id}")
+async def get_job_status(job_id: str):
+    """
+    Get status of a specific ingestion job by job_id.
+
+    Used by xenon to poll for pipeline completion (raw → bronze → silver → gold).
+    Returns job status: pending | processing | completed | failed
+    """
+    pool = await get_db_pool()
+    if pool is None:
+        raise HTTPException(status_code=503, detail="Database unavailable")
+
+    async with pool.acquire() as conn:
+        row = await conn.fetchrow(
+            """
+            SELECT job_id::text, source, status, priority,
+                   started_at, completed_at, records_processed,
+                   error_message, error_details, created_at
+            FROM ops.ingestion_jobs
+            WHERE job_id::text = $1
+            """,
+            job_id,
+        )
+
+    if not row:
+        raise HTTPException(status_code=404, detail=f"Job '{job_id}' not found")
+
+    duration = None
+    if row["started_at"] and row["completed_at"]:
+        duration = (row["completed_at"] - row["started_at"]).total_seconds()
+
+    return {
+        "job_id": row["job_id"],
+        "source": row["source"],
+        "status": row["status"],
+        "priority": row["priority"],
+        "started_at": row["started_at"].isoformat() if row["started_at"] else None,
+        "completed_at": row["completed_at"].isoformat() if row["completed_at"] else None,
+        "duration_seconds": duration,
+        "records_processed": row["records_processed"],
+        "error_message": row["error_message"],
+    }
+
+
+@router.get("/sources")
+async def list_ingest_sources(enabled_only: bool = True):
+    """
+    List all ingest sources registered in ops.sync_schedules.
+
+    Used by xenon to discover which sources are available for triggering,
+    without relying on a hardcoded source map.
+    """
+    pool = await get_db_pool()
+    if pool is None:
+        raise HTTPException(status_code=503, detail="Database unavailable")
+
+    async with pool.acquire() as conn:
+        where = "WHERE enabled = true" if enabled_only else ""
+        rows = await conn.fetch(
+            f"SELECT source, tier, priority, enabled FROM ops.sync_schedules {where} ORDER BY priority DESC, source"
+        )
+
+    return {
+        "sources": [
+            {
+                "source": r["source"],
+                "tier": r["tier"],
+                "priority": r["priority"],
+                "enabled": r["enabled"],
+            }
+            for r in rows
+        ],
+        "count": len(rows),
+    }
+
+
 @router.post("/scheduler/trigger/{tier}", response_model=IngestionTriggerResponse)
 async def trigger_tier_sync(
     tier: str,

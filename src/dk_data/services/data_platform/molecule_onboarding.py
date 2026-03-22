@@ -14,6 +14,7 @@ Part of DK Molecule Data Platform (012-dk-data-platform)
 from datetime import datetime
 from typing import Dict, Any, Optional, List
 from uuid import UUID, uuid4
+import hashlib
 import logging
 
 from ...models.application.onboarding import (
@@ -356,12 +357,15 @@ class MoleculeOnboardingService:
         # If no InChI Key found, create placeholder in mol_silver.molecules
         new_id = uuid4()
         name = identifiers[0].identifier_value
-        placeholder_inchi = f"{name.upper()}-PLACEHOLDER-KEY"
+        # Generate a deterministic 27-char placeholder in InChI Key format (XXXXXXXXXXXXXX-XXXXXXXXXX-N)
+        # varchar(27) constraint on inchi_key — name.upper() overflows for long biologic names
+        h = hashlib.sha256(name.lower().encode()).hexdigest().upper()
+        placeholder_inchi = f"{h[:14]}-{h[14:24]}-N"
         async with self.db_pool.acquire() as conn:
             row = await conn.fetchrow("""
                 INSERT INTO mol_silver.molecules
                 (molecule_id, inchi_key, canonical_name, needs_review, review_reason, resolution_confidence)
-                VALUES ($1, $2, $3, TRUE, 'auto-onboarded', 0.5)
+                VALUES ($1, $2, $3, FALSE, NULL, 0.5)
                 ON CONFLICT (inchi_key) DO UPDATE
                   SET canonical_name = COALESCE(
                     mol_silver.molecules.canonical_name,
