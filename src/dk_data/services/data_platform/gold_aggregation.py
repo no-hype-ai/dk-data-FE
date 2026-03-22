@@ -1,6 +1,16 @@
 """
-Gold Aggregation Service
+DEPRECATED: GoldAggregationService — Python silver→gold aggregator.
 
+THIS MODULE IS DEPRECATED.
+All silver→gold aggregations are now handled by SQLMesh gold models in:
+    sqlmesh/models/molecules/gold/
+
+The hot-run path (base_tool._trigger_sqlmesh_hot) triggers SQLMesh which
+handles gold refresh automatically as part of the model chain.
+
+This file is retained for reference only and will be removed in a future cleanup.
+
+Original: Gold Aggregation Service
 Builds decision-ready aggregated views for the Gold layer.
 Supports refresh of materialized views and cache invalidation.
 

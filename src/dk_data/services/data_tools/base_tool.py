@@ -238,154 +238,120 @@ class BaseDataTool:
             logger.error(f"Failed to insert raw record for {self.tool_def.name}: {e}")
             return None
 
+    # Maps raw_table name → ordered SQLMesh model chain to run hot after ingest.
+    # Bronze model is always first; downstream silver/gold follow.
+    # All molecule tools now use SQLMesh — no Python transformer classes.
+    _MOLECULE_MODEL_CHAINS: Dict[str, List[str]] = {
+        'clinicaltrials':  ['mol_bronze.clinicaltrials',    'mol_silver.clinical_trials'],
+        'openfda_labels':  ['mol_bronze.openfda_labels',    'mol_silver.drug_labels'],
+        'openfda_faers':   ['mol_bronze.faers_events',      'mol_silver.adverse_events'],
+        'chembl':          ['mol_bronze.chembl_molecules',   'mol_silver.molecules', 'mol_silver.bioactivity'],
+        'pubchem':         ['mol_bronze.pubchem',            'mol_silver.molecules'],
+        'uniprot':         ['mol_bronze.uniprot',            'mol_silver.targets'],
+        'openalex':        ['mol_bronze.openalex',           'mol_silver.publications'],
+        'europepmc':       ['mol_bronze.europepmc',          'mol_silver.publications'],
+        'pubmed':          ['mol_bronze.pubmed',             'mol_silver.publications'],
+        'bindingdb':       ['mol_bronze.bindingdb',          'mol_silver.bioactivity'],
+        'ema':             ['mol_bronze.ema',                'mol_silver.regulatory_decisions'],
+        'purple_book':     ['mol_bronze.purple_book',        'mol_silver.patent_exclusivities'],
+        'orange_book':     ['mol_bronze.orange_book',        'mol_silver.patent_exclusivities'],
+        'drugbank':        ['mol_bronze.drugbank',           'mol_silver.molecules'],
+        'dailymed':        ['mol_bronze.dailymed',           'mol_silver.dailymed_labels'],
+        'sider':           ['mol_bronze.sider',              'mol_silver.adverse_events'],
+        'who_inn':         ['mol_bronze.who_inn',            'mol_silver.molecule_aliases'],
+        'rxnorm':          ['mol_bronze.rxnorm_concepts',    'mol_silver.identifier_mappings'],
+        'kegg_drug':       ['mol_bronze.kegg_drug',          'mol_silver.molecule_targets'],
+        'tdc_admet':       ['mol_bronze.tdc_admet'],
+        'pharmgkb':        ['mol_bronze.pharmgkb'],
+        'websearch':       ['mol_bronze.websearch_results'],
+        'uspto_patents':   ['mol_bronze.uspto_patents',      'mol_silver.patents'],
+        'epo_patents':     ['mol_bronze.epo_patents',        'mol_silver.patents'],
+        'sec_edgar':       ['mol_bronze.sec_edgar',          'mol_silver.financial_data'],
+        'who_gho':         ['mol_bronze.who_gho',            'mol_silver.indication_epidemiology'],
+        'ct_gov_indication_stats': ['mol_bronze.ct_gov_indication_stats'],
+        'cochrane_reviews': ['mol_bronze.cochrane_reviews',  'mol_silver.publications'],
+    }
+
     async def _trigger_transform(
         self,
         raw_record_id: str,
         api_response: Any,
         params: Dict[str, Any],
     ) -> tuple[str, Optional[str]]:
-        """Trigger raw → bronze → silver → gold transform pipeline.
+        """Trigger raw → bronze → silver → gold transform pipeline via hot SQLMesh run.
 
-        Returns:
-            (transform_status, transform_error) — status is one of:
-            "completed", "partial" (bronze ok but silver/gold failed),
-            "failed", "pending" (CMS waiting for SQLMesh).
+        All tools (both molecule and CMS) now use the same SQLMesh hot-run path.
+        Returns (transform_status, transform_error).
         """
-        if self.tool_def.category == "molecule":
-            return await self._trigger_molecule_transform(raw_record_id, api_response, params)
-        else:
-            return await self._trigger_cms_transform(raw_record_id)
+        return await self._trigger_sqlmesh_hot()
 
-    async def _trigger_molecule_transform(
-        self,
-        raw_record_id: str,
-        api_response: Any,
-        params: Dict[str, Any],
-    ) -> tuple[str, Optional[str]]:
-        """Molecule tools: Python-managed bronze + silver/gold refresh."""
-        errors: List[str] = []
-        bronze_ok = False
+    async def _trigger_sqlmesh_hot(self) -> tuple[str, Optional[str]]:
+        """Hot SQLMesh run for the current tool's model chain.
 
-        # Bronze transform: use BronzeIngestionService (the full column version)
-        # NOT BronzeTransformer (pipeline/) which is a deprecated subset
-        try:
-            from ..data_platform.bronze_ingestion import BronzeIngestionService
-            bronze_svc = BronzeIngestionService(self.db_pool)
-            source_to_bronze = {
-                'clinicaltrials': bronze_svc.process_clinicaltrials,
-                'openfda_labels': bronze_svc.process_labels,
-                'openfda_faers': bronze_svc.process_faers,
-                'chembl': bronze_svc.process_chembl,
-                'pubchem': bronze_svc.process_pubchem,
-                'uniprot': None,  # processed in silver directly
-                'openalex': None,
-                'bindingdb': bronze_svc.process_bindingdb,
-                'ema': bronze_svc.process_ema,
-                'orange_book': bronze_svc.process_orange_book,
-                'uspto_patents': bronze_svc.process_uspto_patents,
-            }
-            processor = source_to_bronze.get(self.tool_def.raw_table)
-            if processor:
-                result = await processor(limit=100)
-                bronze_ok = result.records_processed > 0
-            else:
-                bronze_ok = True  # source doesn't need bronze step
-        except Exception as e:
-            logger.error(f"Bronze transform failed for {self.tool_def.name}: {e}")
-            errors.append(f"bronze: {e}")
+        Runs `sqlmesh run --select-model <model>` for each model in the chain
+        (bronze → silver → gold) immediately after raw ingest, so data is
+        available without waiting for the next scheduled cron run.
 
-        # Silver transform reads FROM BRONZE (proper medallion flow, no bypass)
-        try:
-            from ..data_platform.silver_transformation import SilverTransformation
-            silver = SilverTransformation(self.db_pool)
-            # Map raw table name to the silver processing method
-            source_to_processor = {
-                'clinicaltrials': silver.process_clinical_trials,
-                'openfda_labels': silver.process_drug_labels,
-                'openfda_faers': silver.process_faers_events,
-                'chembl': silver.process_chembl_molecules,
-                'pubchem': silver.process_pubchem_to_silver,
-                'uniprot': silver.process_uniprot_to_silver,
-                'openalex': None,  # handled by entity linking
-                'sider': silver.process_sider_to_silver,
-                'kegg_drug': silver.process_kegg_to_silver,
-                'bindingdb': silver.process_bindingdb_to_silver,
-                'rxnorm': silver.process_rxnorm_to_silver,
-                'who_inn': silver.process_who_inn_to_silver,
-                'tdc_admet': silver.process_tdc_admet_to_silver,
-                'pharmgkb': silver.process_pharmgkb_to_silver,
-            }
-            processor = source_to_processor.get(self.tool_def.raw_table)
-            if processor:
-                result = await processor(limit=100)
-                logger.info(f"Silver transform: {result.records_processed} processed, {result.molecules_created} created")
-        except Exception as e:
-            logger.error(f"Silver transform failed for {self.tool_def.name}: {e}")
-            errors.append(f"silver: {e}")
-
-        if not errors:
-            return ("completed", None)
-        elif bronze_ok:
-            return ("partial", "; ".join(errors))
-        else:
-            return ("failed", "; ".join(errors))
-
-    async def _trigger_cms_transform(self, raw_record_id: str) -> tuple[str, Optional[str]]:
-        """CMS tools: trigger targeted SQLMesh run for bronze/silver/gold.
-
-        SQLMesh INCREMENTAL_BY_TIME_RANGE models pick up new raw records
-        based on _loaded_at. We run `sqlmesh run` for the specific source
-        model to propagate data immediately rather than waiting for the
-        daily scheduled run.
+        Falls back to "pending" (data propagates on next scheduled run) when
+        sqlmesh binary is not available in PATH.
         """
         import shutil
+        import os
 
         sqlmesh_bin = shutil.which("sqlmesh")
         if not sqlmesh_bin:
             logger.info(
-                f"sqlmesh not found — CMS data for {self.tool_def.name} stored in raw, "
+                f"sqlmesh not in PATH — {self.tool_def.name} data stored in raw, "
                 "will propagate on next scheduled SQLMesh run"
             )
-            return ("pending", "sqlmesh not available; data propagates on next daily run")
+            return ("pending", "sqlmesh not available; data propagates on next scheduled run")
 
-        source = self.tool_def.raw_table  # e.g. "cms_pecos"
-        models = [
-            f"bronze.{source}",
-        ]
+        # Resolve SQLMesh project path: baked into image at /app/sqlmesh,
+        # or overridden via SQLMESH_PROJECT_PATH env var for local dev.
+        sqlmesh_project = os.environ.get("SQLMESH_PROJECT_PATH", "/app/sqlmesh")
 
-        # Map source → composite silver/gold models
-        lc = self.tool_def.local_check
-        if lc and lc.silver_table:
-            models.append(f"silver.{lc.silver_table}")
-        if lc and lc.gold_table:
-            models.append(f"gold.{lc.gold_table}")
+        # Resolve model chain: molecule tools use _MOLECULE_MODEL_CHAINS;
+        # CMS / other tools fall back to local_check tables.
+        source = self.tool_def.raw_table
+        models: List[str] = list(self._MOLECULE_MODEL_CHAINS.get(source, []))
 
-        model_args = []
+        if not models:
+            # CMS or dynamically registered source — derive from tool definition
+            models = [f"mol_bronze.{source}"]
+            lc = getattr(self.tool_def, 'local_check', None)
+            if lc and getattr(lc, 'silver_table', None):
+                models.append(f"mol_silver.{lc.silver_table}")
+            if lc and getattr(lc, 'gold_table', None):
+                models.append(f"mol_gold.{lc.gold_table}")
+
+        model_args: List[str] = []
         for m in models:
             model_args.extend(["--select-model", m])
 
         try:
             proc = await asyncio.create_subprocess_exec(
-                sqlmesh_bin, "run", *model_args, "--no-prompts",
+                sqlmesh_bin, "--paths", sqlmesh_project, "--gateway", "local",
+                "run", *model_args, "--no-prompts",
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
+                cwd="/tmp",  # writable CWD for SQLMesh log dir
             )
             stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=120)
             if proc.returncode == 0:
-                logger.info(f"SQLMesh refresh completed for {self.tool_def.name}: {models}")
+                logger.info(f"SQLMesh hot run completed for {self.tool_def.name}: {models}")
                 return ("completed", None)
             else:
                 msg = stderr.decode()[:500]
                 logger.warning(
-                    f"SQLMesh refresh returned {proc.returncode} for {self.tool_def.name}: {msg}"
+                    f"SQLMesh hot run returned {proc.returncode} for {self.tool_def.name}: {msg}"
                 )
                 return ("failed", f"sqlmesh exit {proc.returncode}: {msg}")
         except asyncio.TimeoutError:
-            logger.warning(f"SQLMesh refresh timed out for {self.tool_def.name}")
+            logger.warning(f"SQLMesh hot run timed out for {self.tool_def.name}")
             return ("failed", "sqlmesh timed out after 120s")
         except Exception as e:
             logger.warning(
-                f"SQLMesh refresh skipped for {self.tool_def.name}: {e}. "
+                f"SQLMesh hot run skipped for {self.tool_def.name}: {e}. "
                 "Data in raw will propagate on next scheduled run."
             )
             return ("pending", str(e))

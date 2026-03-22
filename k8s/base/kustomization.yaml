@@ -21,7 +21,9 @@ resources:
   - ingestion/cronjob-mol-fetch-daily.yaml
   - ingestion/cronjob-mol-fetch-weekly.yaml
   - ingestion/cronjob-mol-fetch-monthly.yaml
-  - ingestion/cronjob-mol-transform.yaml
+  # SQLMesh scheduler daemon — reads cron from model definitions, runs bronze/silver/gold
+  # Replaces cronjob-mol-transform.yaml (Python transforms deprecated in 003-molecule-assessment-dashboard)
+  - ingestion/sqlmesh-scheduler-deployment.yaml
   # CI source ingestion (011-datasource-integration)
   - ingestion/cronjob-fetch-pubmed.yaml
   - ingestion/cronjob-fetch-ema-reg.yaml

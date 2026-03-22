@@ -99,6 +99,11 @@ class TieredSyncScheduler:
             'cron': '30 3 * * 0',  # 03:30 UTC Sunday
             'priority': SyncPriority.LOW,
         },
+        'europepmc': {
+            'tier': 'weekly',
+            'cron': '0 4 * * 0',   # 04:00 UTC Sunday (after openalex)
+            'priority': SyncPriority.LOW,
+        },
         'uniprot': {
             'tier': 'monthly',
             'cron': '0 4 1 * *',  # 04:00 UTC 1st of month

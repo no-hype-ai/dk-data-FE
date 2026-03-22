@@ -1,9 +1,19 @@
 """
-Dynamic Source Transformer
+DEPRECATED: DynamicSourceTransformer — generic Python medallion transformer.
 
-Implements Raw → Bronze → Silver → Gold transformations for dynamically
-onboarded data sources. Uses schema information stored during onboarding
-to automatically transform data through the medallion architecture.
+THIS MODULE IS DEPRECATED for all sources that have SQLMesh models.
+SQLMesh now handles Raw→Bronze→Silver→Gold for all registered sources via:
+    sqlmesh/models/molecules/bronze/   (35 models)
+    sqlmesh/models/molecules/silver/   (22 models)
+    sqlmesh/models/molecules/gold/     (12 models)
+
+This transformer was the catch-all for dynamically onboarded sources without
+SQLMesh models. New sources should get proper SQLMesh models instead.
+
+Callers in sync_runner.py and data_sources.py have been updated to use the
+SQLMesh hot-run path (base_tool._trigger_sqlmesh_hot).
+
+This file is retained for edge cases and will be removed in a future cleanup.
 
 Part of DK Molecule Data Platform (012-dk-data-platform)
 """

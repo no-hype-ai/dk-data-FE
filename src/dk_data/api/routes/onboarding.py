@@ -417,26 +417,20 @@ async def get_molecule_onboarding_service():
             from ...services.data_platform.molecule_onboarding import MoleculeOnboardingService
             from ...services.data_platform.identifier_resolver import IdentifierResolver
             from ...services.data_platform.raw_ingestion import RawIngestionService
-            from ...services.data_platform.gold_aggregation import GoldAggregationService
 
             pool = await get_db_pool()
             if pool is None:
                 return None
 
-            # Initialize resolver
+            # Initialize resolver and raw ingestion service
             resolver = IdentifierResolver(pool)
-
-            # Initialize raw ingestion service
             raw_service = RawIngestionService(pool)
 
-            # Initialize gold service
-            gold_service = GoldAggregationService(pool)
-
+            # gold_aggregation_service is omitted — gold layer is handled by SQLMesh hot runner
             _molecule_onboarding_service = MoleculeOnboardingService(
                 db_pool=pool,
                 identifier_resolver=resolver,
                 raw_ingestion_service=raw_service,
-                gold_aggregation_service=gold_service,
             )
 
             logger.info("MoleculeOnboardingService initialized")

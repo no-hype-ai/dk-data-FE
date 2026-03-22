@@ -1,83 +1,122 @@
-# dk-data-fe Development Guidelines
+# dk-data-FE Development Guidelines
 
-Auto-generated from all feature plans. Last updated: 2026-01-30
-
-## Active Technologies
-- Python 3.11+ (Job Trigger FastAPI service), SQL (PostgreSQL 16.4), YAML (Kubernetes manifests) + PostgREST v12.2.3, FastAPI, uvicorn, psycopg2-binary, opentelemetry-*, structlog, prometheus-client, kubernetes clien (003-alchemy-cluster-deploy)
-- Shared CloudNativePG PostgreSQL 16.4 cluster (`postgresql.infra.svc.cluster.local:5432`), dedicated `dk_data` database (003-alchemy-cluster-deploy)
-- Python 3.11+ + FastAPI, psycopg2-binary, httpx (new), pyjwt (new), SQLMesh, Pydantic, structlog, OpenTelemetry, prometheus-client, kubernetes (004-molecule-platform-integration)
-- PostgreSQL 16+ via PostgREST v12.x, 12 schemas (6 existing + 6 new molecule schemas) (004-molecule-platform-integration)
-- Python 3.11+, SQL (PostgreSQL 16.4), YAML (Kubernetes manifests) + PostgREST v12.2.3, FastAPI, uvicorn, psycopg2-binary, opentelemetry-*, structlog, prometheus-clien (005-prioritized-issue-resolution)
-- SQL (PostgreSQL 16.4), YAML (Kubernetes manifests), TypeScript (Admin App components) + PostgREST v12.2.3, PostgreSQL 16.4, Next.js (Admin App) (006-006-admin-integration)
-- Python 3.11+, SQL (PostgreSQL 16.4), YAML (Kubernetes manifests), Bash (backup/setup scripts) + FastAPI, PostgREST v12.2.3, psycopg2-binary, pytest-cov (new), responses (new), Kustomize, crane (new CI tool) (010-platform-stabilization)
-- PostgreSQL 16.4 (shared infra namespace), MinIO (backup storage, infra namespace) (010-platform-stabilization)
-- Python 3.11+ (existing codebase) + psycopg2-binary, Pydantic, httpx, requests, structlog, opentelemetry-sdk, pandas, feedparser (new, for RSS) (011-datasource-integration)
-- PostgreSQL 16.4 via CloudNativePG — schemas: `mol_raw`, `mol_bronze`, `mol_silver`, `mol_gold`, `raw`, `staging`, `meta`, `api` (011-datasource-integration)
-- Python 3.11+ (existing codebase) + psycopg2-binary, Pydantic, httpx, requests, structlog, opentelemetry-sdk, feedparser, uv (new — dependency management) (012-platform-hardening)
-- PostgreSQL 16.4 via CloudNativePG — schemas: raw, staging, meta, api, mol_raw, mol_bronze, mol_silver, mol_gold (012-platform-hardening)
-- Python 3.11+, SQL (PostgreSQL 16.4), YAML (Kubernetes manifests) + FastAPI, psycopg2-binary, Pydantic, prometheus-client, structlog, PostgREST v12.2.3 (013-observability-governance)
-- PostgreSQL 16.4 via CloudNativePG (shared `postgresql.infra.svc.cluster.local:5432`) (013-observability-governance)
-- Python 3.11+ + FastAPI, SQLMesh, Pydantic, psycopg2-binary, requests, responses (test), structlog, OpenTelemetry, prometheus-client, kubernetes (014-uspto-euipo-model-datasource)
-- PostgreSQL 16.4 (CloudNativePG cluster, `postgresql.infra.svc.cluster.local:5432`, database `dk_data`) (014-uspto-euipo-model-datasource)
-- Python 3.11+, SQL (PostgreSQL 16.4) + FastAPI >=0.109.0, SQLMesh >=0.90.0, asyncpg >=0.29.0, psycopg2-binary >=2.9.9, httpx >=0.25.0, pyjwt >=2.8.0, Pydantic >=2.5.0, structlog >=24.0.0, OpenTelemetry (tracing+metrics), prometheus-client >=0.19.0, responses >=0.25.0 (test) (015-assessment-dashboard-integration)
-- PostgreSQL 16.4 via CloudNativePG (`postgresql.infra.svc.cluster.local:5432`, database `dk_data`). Schemas: 15 existing + 1 new (`xenon`). PostgREST v12.2.3 for REST API exposure. (015-assessment-dashboard-integration)
-- Python 3.11+ (existing codebase), SQL (PostgreSQL 16.4) + FastAPI >=0.109.0, SQLMesh >=0.90.0, psycopg2-binary >=2.9.9, asyncpg >=0.29.0, httpx >=0.25.0, Pydantic >=2.5.0, structlog >=24.0.0, prometheus-client >=0.19.0, anthropic SDK (Claude Haiku), PostgREST v12.2.3 (016-cms-puf-datasource-integration)
-- PostgreSQL 16.4 via CloudNativePG (`postgresql.infra.svc.cluster.local:5432`, database `dk_data`). Schemas: `raw`, `bronze`, `silver`, `gold` (new exposure), `meta`, `mol_raw`, `mol_bronze`, `mol_silver`, `mol_gold`, `xenon`, `api`, `mol_api`. Range partitioning for high-volume tables (Part D, Physician PUF). (016-cms-puf-datasource-integration)
-
-- Python 3.11+ (existing ingestion layer), SQL (PostgreSQL 16+) + PostgREST v12.x, SQLMesh, psycopg2, Pydantic, requests (001-data-layer-postgrest-gitops)
+## Tech Stack
+- **Language**: Python 3.11+
+- **API**: FastAPI >= 0.109.0, uvicorn
+- **Pipeline**: SQLMesh >= 0.90.0 (transforms raw → bronze → silver → gold)
+- **Database**: PostgreSQL 16.4 (`dk_data` database)
+- **Data Access**: PostgREST v12.2.3 (REST API over mol_silver/mol_gold schemas)
+- **Key libs**: Pydantic v2, httpx, structlog, OpenTelemetry, anthropic SDK, psycopg2-binary
+- **Package Manager**: uv (see `uv.lock`)
 
 ## Project Structure
 
 ```text
-src/
+src/dk_data/
+  api/
+    routes/         # FastAPI route handlers (onboarding, data_platform, data_tools, agents, ...)
+    middleware/     # Auth (JWT/RBAC), request middleware
+  ingestion/
+    sources/        # One file per external data source (~50 sources: CMS, FDA, patents, etc.)
+    fetchers/       # Shared fetch utilities
+    services/       # Ingestion orchestration
+  sqlmesh/
+    models/         # SQLMesh transformation models (raw → bronze → silver → gold)
+      molecules/    # mol_* schema models
+      cms/          # CMS PUF models
+      mart/         # Gold/mart models
+      staging/      # Staging transforms
+  agents/           # Claude-powered data agents
+  services/         # Business logic (ground truth, onboarding, data platform)
+  data_registry.py  # Single source of truth for ALL table definitions
+  config/           # Settings and configuration
 tests/
 ```
 
 ## Commands
 
-cd src [ONLY COMMANDS FOR ACTIVE TECHNOLOGIES][ONLY COMMANDS FOR ACTIVE TECHNOLOGIES] pytest [ONLY COMMANDS FOR ACTIVE TECHNOLOGIES][ONLY COMMANDS FOR ACTIVE TECHNOLOGIES] ruff check .
-
-## Code Style
-
-Python 3.11+ (existing ingestion layer), SQL (PostgreSQL 16+): Follow standard conventions
-
-## Recent Changes
-- 016-cms-puf-datasource-integration: Added Python 3.11+ (existing codebase), SQL (PostgreSQL 16.4) + FastAPI >=0.109.0, SQLMesh >=0.90.0, psycopg2-binary >=2.9.9, asyncpg >=0.29.0, httpx >=0.25.0, Pydantic >=2.5.0, structlog >=24.0.0, prometheus-client >=0.19.0, anthropic SDK (Claude Haiku), PostgREST v12.2.3
-- 015-assessment-dashboard-integration: Added Python 3.11+, SQL (PostgreSQL 16.4) + FastAPI >=0.109.0, SQLMesh >=0.90.0, asyncpg >=0.29.0, psycopg2-binary >=2.9.9, httpx >=0.25.0, pyjwt >=2.8.0, Pydantic >=2.5.0, structlog >=24.0.0, OpenTelemetry (tracing+metrics), prometheus-client >=0.19.0, responses >=0.25.0 (test)
-- 014-uspto-euipo-model-datasource: Added Python 3.11+ + FastAPI, SQLMesh, Pydantic, psycopg2-binary, requests, responses (test), structlog, OpenTelemetry, prometheus-client, kubernetes
-
-
-<!-- MANUAL ADDITIONS START -->
-
-## Feature 005: Prioritized Issue Resolution (Completed 2026-01-30)
-
-Security and infrastructure improvements addressing critical GitHub issues:
-
-### Key Changes
-- **Security**: JWT secret validation (min 256-bit), restricted `web_anon` role permissions
-- **Database**: API views (`api.health`, `api.data_catalog`, `api.targets`, `api.scoring`, `api.data_sources`)
-- **CI/CD**: New PR testing workflow (`.github/workflows/ci.yaml`), branch+SHA image tags
-- **Health**: HTTP readiness probe on PostgREST `/health`, job-trigger enabled (staging:1, prod:2)
-- **Observability**: ServiceMonitor and PrometheusRule ready (require Prometheus Operator CRDs)
-
-### Testing
 ```bash
-# Run security and API tests
-pytest tests/test_security.py tests/test_api.py -v
+# Services
+make up             # Start all services (postgres, postgrest, job-trigger)
+make down           # Stop all services
+make status         # Show service health
+make logs-jobs      # Tail job-trigger logs
+make shell          # Shell into job-trigger container
 
-# Validate manifests
-kubectl kustomize k8s/overlays/staging --enable-helm > /dev/null
+# Database
+make init-db        # Initialize schema and seed data
+make db-reset       # Reset database (DESTRUCTIVE)
+make psql           # Open PostgreSQL shell (port 5433)
+
+# Pipeline
+make pipeline       # Full pipeline: fetch → transform → catalog
+make fetch-all      # Fetch all external data sources
+make sqlmesh-run    # Run SQLMesh transformations only
+make catalog-refresh # Refresh data catalog metadata
+
+# Testing & linting
+make test           # Run all tests (pytest)
+make lint           # Run ruff linter
+pytest tests/       # Run tests directly
+
+# Rebuild job-trigger after code changes
+docker compose build job-trigger && docker compose up -d --force-recreate job-trigger
 ```
 
-### Verification
-```bash
-# Anonymous access test
-curl https://data.preview.behaviorlabs.ai/health  # Should succeed
-curl https://data.preview.behaviorlabs.ai/targets # Should return 401/403
+## Docker Services
 
-# Authenticated access
-export TOKEN=$(python3 -c "import jwt; print(jwt.encode({'role':'analyst','exp':...}, 'secret'))")
-curl -H "Authorization: Bearer $TOKEN" https://data.preview.behaviorlabs.ai/targets
+| Service | Container | Port |
+|---|---|---|
+| PostgreSQL 16 | `dk-data-fe-postgres` | 5433 (host) |
+| PostgREST v12.2.3 | `dk-data-fe-postgrest` | 3030 (host) |
+| FastAPI job-trigger | `dk-data-fe-job-trigger` | 8000 (host) |
+| SQLMesh scheduler | `dk-data-fe-sqlmesh-scheduler` | — |
+| Metabase v0.50.26 | `dk-data-fe-metabase` | 3000 (host) |
+
+## Database Schema Architecture
+
+Medallion pipeline — data flows left to right:
+
+```
+mol_raw → mol_bronze → mol_silver → mol_gold
 ```
 
-<!-- MANUAL ADDITIONS END -->
+| Schema | Description | molecule_id type |
+|---|---|---|
+| `mol_raw` | Raw ingested data (no transforms) | varies |
+| `mol_bronze` | Cleaned, validated, deduplicated | UUID |
+| `mol_silver` | Entity-linked, enriched (FK to `mol_silver.molecules`) | UUID |
+| `mol_gold` | Aggregated analytics views | TEXT (no FK) |
+| `ind_silver/gold` | Indication/disease data | — |
+| `hcs_silver/gold` | Healthcare system (CMS) data | — |
+| `xenon` | Xenon app data (read-only for dk-data-FE) | — |
+
+**PostgREST needs restart after any schema or config changes.**
+
+## Data Registry
+
+`src/dk_data/data_registry.py` is the single source of truth for all table definitions. Every table has a `TableDef` specifying schema, description, molecule_id type, source, and PostgREST path. When adding a new table:
+1. Create the SQLMesh model in the appropriate domain schema
+2. Add `TableDef` to the correct dict in `data_registry.py`
+3. Notify Xenon team to update their local `data-registry.ts`
+
+## Ingestion API (consumed by Xenon)
+
+The job-trigger FastAPI service (port 8000) exposes these endpoints used by Xenon's `McpClient`:
+
+```
+POST /api/v1/onboarding/molecule          # Onboard new molecule (resolves UUID, triggers all sources)
+GET  /api/v1/onboarding/molecule/{id}     # Poll onboarding status (pending → ingesting → completed)
+POST /api/v1/data-platform/ingest/{source} # Trigger ingestion for a specific source
+GET  /api/v1/data-platform/molecules/search # Search molecules by name
+```
+
+**Ingest sources** are the filenames in `src/dk_data/ingestion/sources/` (e.g. `clinicaltrials_gov`, `openfda_labels`, `sec_edgar`, `pubmed`, `drugbank`). Ingestion is async — the POST returns immediately with a `job_id`; data lands in silver/gold after the medallion pipeline runs. Xenon polls PostgREST for data arrival rather than using fixed delays.
+
+## Key Conventions
+- `data_registry.py` is authoritative — never hardcode table/schema names elsewhere
+- openFDA fields can be arrays OR strings — handle both in ingestion and transforms
+- CMS PUF tables use range partitioning for high-volume data (Part D, Physician PUF)
+- PostgREST needs restart after schema changes: `docker compose restart postgrest`
+- SQLMesh manages all raw → silver → gold promotions; do not write directly to silver/gold
+- JWT auth required for all non-health endpoints; `web_anon` role has restricted permissions

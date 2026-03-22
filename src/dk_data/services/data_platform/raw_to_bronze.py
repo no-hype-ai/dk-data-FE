@@ -1,8 +1,15 @@
 """
-Bronze Ingestion Service
+DEPRECATED: BronzeIngestionService — Python raw→bronze transformer.
 
-Transforms Raw layer JSONB responses into Bronze typed columns.
-Extracts structured data while preserving original JSON for audit.
+THIS MODULE IS DEPRECATED.
+All raw→bronze transformations are now handled by SQLMesh bronze models in:
+    sqlmesh/models/molecules/bronze/
+
+The hot-run path (base_tool._trigger_sqlmesh_hot) triggers SQLMesh immediately
+after ingest for real-time propagation. Scheduled weekly/daily SQLMesh cron
+handles batch refresh. No Python code needs to call this class directly.
+
+This file is retained for reference only and will be removed in a future cleanup.
 
 Part of DK Molecule Data Platform (012-dk-data-platform)
 """

@@ -26,59 +26,72 @@ WITH latest_version AS (
 
 SELECT
     gen_random_uuid() AS label_id,
-    NULL::UUID AS molecule_id,
+    m.molecule_id,
 
     -- Identifiers (bronze names preserved)
-    set_id,
-    spl_id,
-    spl_version,
-    effective_date,
-    brand_name,
-    generic_name,
-    manufacturer_name,
-    product_type,
-    routes,
-    dosage_forms,
+    lv.set_id,
+    lv.spl_id,
+    lv.spl_version,
+    lv.effective_date,
+    lv.brand_name,
+    lv.generic_name,
+    lv.manufacturer_name,
+    lv.product_type,
+    lv.routes,
+    lv.dosage_forms,
 
     -- openFDA cross-reference fields (extracted in bronze, no openfda_ prefix)
-    application_numbers,
-    rxcui,
-    spl_set_ids,
-    unii,
-    nui,
-    pharm_class_epc,
-    pharm_class_moa,
-    is_original_packager,
+    lv.application_numbers,
+    lv.rxcui,
+    lv.spl_set_ids,
+    lv.unii,
+    lv.nui,
+    lv.pharm_class_epc,
+    lv.pharm_class_moa,
+    lv.is_original_packager,
 
     -- Label sections (carried forward from bronze)
-    indications_and_usage,
-    dosage_and_administration,
-    contraindications,
-    warnings,
-    warnings_and_cautions,
-    boxed_warning,
-    adverse_reactions,
-    drug_interactions,
-    use_in_specific_populations,
-    clinical_pharmacology,
-    mechanism_of_action,
-    pharmacodynamics,
-    pharmacokinetics,
-    overdosage,
-    description,
-    clinical_studies,
-    how_supplied,
-    storage_and_handling,
-    principal_display_panel,
-    pregnancy,
-    nursing_mothers,
-    pediatric_use,
-    geriatric_use,
-    has_boxed_warning,
+    lv.indications_and_usage,
+    lv.dosage_and_administration,
+    lv.contraindications,
+    lv.warnings,
+    lv.warnings_and_cautions,
+    lv.boxed_warning,
+    lv.adverse_reactions,
+    lv.drug_interactions,
+    lv.use_in_specific_populations,
+    lv.clinical_pharmacology,
+    lv.mechanism_of_action,
+    lv.pharmacodynamics,
+    lv.pharmacokinetics,
+    lv.overdosage,
+    lv.description,
+    lv.clinical_studies,
+    lv.how_supplied,
+    lv.storage_and_handling,
+    lv.principal_display_panel,
+    lv.pregnancy,
+    lv.nursing_mothers,
+    lv.pediatric_use,
+    lv.geriatric_use,
+    lv.has_boxed_warning,
 
     -- Source tracking
-    id AS bronze_id,
-    created_at AS ingested_at,
+    lv.id AS bronze_id,
+    lv.created_at AS ingested_at,
     NOW() AS created_at,
     NOW() AS updated_at
-FROM latest_version;
+FROM latest_version lv
+LEFT JOIN mol_silver.molecules m ON (
+  EXISTS (
+    SELECT 1 FROM jsonb_array_elements_text(
+      CASE WHEN lv.brand_name IS NOT NULL AND lv.brand_name LIKE '[%'
+           THEN lv.brand_name::jsonb ELSE '[]'::jsonb END
+    ) bn WHERE LOWER(bn) = m.canonical_name
+  ) OR EXISTS (
+    SELECT 1 FROM jsonb_array_elements_text(
+      CASE WHEN lv.generic_name IS NOT NULL AND lv.generic_name LIKE '[%'
+           THEN lv.generic_name::jsonb ELSE '[]'::jsonb END
+    ) gn WHERE LOWER(gn) = m.canonical_name
+  )
+);

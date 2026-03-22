@@ -6,6 +6,7 @@
 #   - postgres: PostgreSQL database
 #   - postgrest: REST API layer for PostgreSQL
 #   - job-trigger: FastAPI service for triggering batch jobs
+#   - sqlmesh-scheduler: SQLMesh daemon — runs bronze/silver/gold models on cron schedule
 #   - metabase: BI dashboard tool
 #
 # Prerequisites:
@@ -136,9 +137,14 @@ services:
       JOB_RUNNER_MODE: "local"
       LOG_LEVEL: "info"
       OTEL_SDK_DISABLED: "true"
+      # Point hot SQLMesh runner at the volume-mounted project (local dev only)
+      # In K8s the image bundles /app/sqlmesh so this env var is not needed
+      SQLMESH_PROJECT_PATH: "/app/sqlmesh"
     volumes:
       # Mount scripts from canonical location
       - ./src/dk_data/scripts:/app/scripts:ro
+      # Mount SQLMesh project for hot runner (local dev)
+      - ./src/dk_data/sqlmesh:/app/sqlmesh:ro
       # Data and logs directories
       - ./data:/app/data
       - ./logs:/app/logs
@@ -150,6 +156,46 @@ services:
       timeout: 10s
       retries: 3
       start_period: 10s
+    depends_on:
+      postgres:
+        condition: service_healthy
+      db-migrate:
+        condition: service_completed_successfully
+
+  # ==========================================================================
+  # SQLMesh Scheduler - runs bronze/silver/gold models on cron schedule
+  # Reads cron expressions from model definitions and executes them natively.
+  # Hot-path transforms (per-ingest) are handled by job-trigger via subprocess.
+  # ==========================================================================
+  sqlmesh-scheduler:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: dk-data-fe-sqlmesh-scheduler
+    restart: unless-stopped
+    # `sqlmesh run` is daemon mode: reads cron from model definitions and
+    # executes each model when its schedule is due. No --select-model means
+    # ALL models are managed by the scheduler.
+    entrypoint: []
+    command: >
+      sqlmesh
+        --paths /app/sqlmesh
+        --gateway local
+        run
+    working_dir: /tmp
+    volumes:
+      # Local dev: mount source for live edits. In K8s the image bundles /app/sqlmesh.
+      - ./src/dk_data/sqlmesh:/app/sqlmesh:ro
+    environment:
+      POSTGRES_HOST: "postgres"
+      POSTGRES_PORT: "5432"
+      POSTGRES_USER: "${POSTGRES_USER:-postgres}"
+      POSTGRES_PASSWORD: "${POSTGRES_PASSWORD:?POSTGRES_PASSWORD must be set}"
+      POSTGRES_DB: "${POSTGRES_DB:-dk_data}"
+      SQLMESH_ENV: "prod"
+      LOG_LEVEL: "info"
+    networks:
+      - dk-data-fe-network
     depends_on:
       postgres:
         condition: service_healthy

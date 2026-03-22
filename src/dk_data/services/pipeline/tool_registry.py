@@ -105,6 +105,19 @@ TOOL_REGISTRY: Dict[str, ToolDefinition] = {
         adapter_module="dk_data.services.pipeline.adapters.openalex",
         api_base_url="https://api.openalex.org/works",
     ),
+    "europepmc-search": ToolDefinition(
+        name="europepmc-search",
+        description=(
+            "Search Europe PMC for biomedical publications with full-text access, "
+            "entity annotations (genes/diseases/chemicals), NCT cross-links, "
+            "and preprint coverage (bioRxiv/medRxiv). 33M+ publications."
+        ),
+        tier="direct_query",
+        raw_table="europepmc",
+        raw_schema="mol_raw",
+        adapter_module="dk_data.services.pipeline.adapters.europepmc",
+        api_base_url="https://www.ebi.ac.uk/europepmc/webservices/rest",
+    ),
     "uniprot-search": ToolDefinition(
         name="uniprot-search",
         description="Search UniProt for protein/target information",

@@ -30,6 +30,9 @@ WORKDIR /app
 COPY --chown=appuser:appuser data/drugbank/ /app/data/drugbank/
 # Bundle USP MMG v9.0 Alignment File (tracked in Git LFS, used by USP seed job)
 COPY --chown=appuser:appuser data/usp/ /app/data/usp/
+# Bundle SQLMesh project (models, config.yaml, macros, audits)
+# Required by: sqlmesh-scheduler Deployment, hot SQLMesh runs in job-trigger
+COPY --chown=appuser:appuser src/dk_data/sqlmesh/ /app/sqlmesh/
 
 USER appuser
 

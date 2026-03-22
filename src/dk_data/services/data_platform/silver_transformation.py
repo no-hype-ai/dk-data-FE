@@ -1,9 +1,15 @@
 """
-Silver Transformation Service
+DEPRECATED: SilverTransformationService — Python bronze→silver transformer.
 
-Transforms Bronze layer data into Silver normalized entities.
-Implements entity resolution using InChI Key as master identifier.
-Handles cross-source deduplication and data merging.
+THIS MODULE IS DEPRECATED.
+All bronze→silver transformations are now handled by SQLMesh silver models in:
+    sqlmesh/models/molecules/silver/
+
+Entity resolution is performed in SQL via INCREMENTAL_BY_UNIQUE_KEY on inchi_key
+in mol_silver.molecules. The hot-run path (base_tool._trigger_sqlmesh_hot) triggers
+the full bronze→silver→gold chain immediately after ingest.
+
+This file is retained for reference only and will be removed in a future cleanup.
 
 Part of DK Molecule Data Platform (012-dk-data-platform)
 """

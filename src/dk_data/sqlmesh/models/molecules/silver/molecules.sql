@@ -74,7 +74,16 @@ deduplicated AS (
         gen_random_uuid() AS molecule_id,
         inchi_key,
         chembl_id,
+        NULL::TEXT AS drugbank_id,
+        NULL::TEXT AS pubchem_cid,
+        NULL::TEXT AS rxnorm_cui,
+        NULL::TEXT AS unii,
+        NULL::TEXT AS cas_number,
         pref_name,
+        -- canonical_name: use pref_name as the canonical display name
+        pref_name AS canonical_name,
+        NULL::TEXT[] AS brand_names,
+        NULL::TEXT[] AS generic_names,
         molecule_type,
         max_phase,
 
@@ -104,13 +113,19 @@ deduplicated AS (
         -- Cross-references
         synonyms,
         cross_references,
+        NULL::TEXT[] AS therapeutic_areas,
+        NULL::TEXT[] AS atc_codes,
+        NULL::TEXT AS mechanism_of_action,
 
         -- Derived / enriched columns
         resolution_confidence,
         needs_review,
         NULL::TEXT AS review_reason,
+        1 AS source_count,
         data_sources,
         primary_source,
+        NULL::TIMESTAMPTZ AS reviewed_at,
+        NULL::TEXT AS reviewed_by,
         NOW() AS created_at,
         NOW() AS updated_at
     FROM source_molecules

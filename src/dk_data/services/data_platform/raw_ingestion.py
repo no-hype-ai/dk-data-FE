@@ -276,11 +276,10 @@ class RawIngestionService:
         table_name = f"{schema}.{source.value}"
 
         async with self.db_pool.acquire() as conn:
-            # Check for duplicate based on hash
+            # Check for duplicate based on content hash (all time — same content = skip)
             existing = await conn.fetchval(f"""
                 SELECT id FROM {table_name}
                 WHERE response_body_hash = $1
-                  AND request_timestamp > NOW() - INTERVAL '1 hour'
                 LIMIT 1
             """, record.response_body_hash)
 

@@ -1,0 +1,89 @@
+# SQLMesh Scheduler Deployment
+# Runs `sqlmesh run` as a long-lived daemon — reads cron expressions from
+# model definitions and executes each model when its schedule is due.
+# Replaces: cronjob-mol-transform.yaml (Python-based transforms, now deprecated)
+# Added: 003-molecule-assessment-dashboard (SQLMesh-only transformation layer)
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: sqlmesh-scheduler
+  labels:
+    app: sqlmesh-scheduler
+    app.kubernetes.io/name: sqlmesh-scheduler
+    app.kubernetes.io/component: ingestion
+    app.kubernetes.io/part-of: dk-data
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: sqlmesh-scheduler
+  strategy:
+    type: Recreate  # Only one scheduler instance at a time (SQLMesh state lock)
+  template:
+    metadata:
+      labels:
+        app: sqlmesh-scheduler
+        app.kubernetes.io/name: sqlmesh-scheduler
+        app.kubernetes.io/component: ingestion
+        app.kubernetes.io/part-of: dk-data
+    spec:
+      restartPolicy: Always
+      imagePullSecrets:
+        - name: ghcr-credentials
+      containers:
+        - name: sqlmesh-scheduler
+          image: ghcr.io/data-kinetic/dk-data-fe/job-trigger:main-5f46ed1
+          # Override uvicorn entrypoint — run SQLMesh daemon instead
+          command: ["sqlmesh"]
+          args:
+            - "--paths"
+            - "/app/sqlmesh"
+            - "--gateway"
+            - "local"
+            - "run"
+          workingDir: "/tmp"  # writable CWD for SQLMesh log dir
+          env:
+            - name: POSTGRES_HOST
+              valueFrom:
+                secretKeyRef:
+                  name: dk-data-secrets
+                  key: POSTGRES_HOST
+            - name: POSTGRES_PORT
+              valueFrom:
+                secretKeyRef:
+                  name: dk-data-secrets
+                  key: POSTGRES_PORT
+            - name: POSTGRES_USER
+              valueFrom:
+                secretKeyRef:
+                  name: dk-data-secrets
+                  key: POSTGRES_USER
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: dk-data-secrets
+                  key: POSTGRES_PASSWORD
+            - name: POSTGRES_DB
+              valueFrom:
+                secretKeyRef:
+                  name: dk-data-secrets
+                  key: POSTGRES_DB
+            - name: SQLMESH_ENV
+              value: "prod"
+            - name: LOG_LEVEL
+              value: "info"
+          resources:
+            requests:
+              memory: "256Mi"
+              cpu: "100m"
+            limits:
+              memory: "1Gi"
+              cpu: "500m"
+          # SQLMesh scheduler exits with non-zero when a run fails — restart to retry
+          # No HTTP port; use process liveness instead
+          livenessProbe:
+            exec:
+              command: ["pgrep", "-f", "sqlmesh"]
+            initialDelaySeconds: 30
+            periodSeconds: 60
+            failureThreshold: 3

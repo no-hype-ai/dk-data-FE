@@ -1,8 +1,9 @@
 -- SQLMesh Model: Silver Publications
 -- Zero data loss from Bronze. Column names match bronze (API-derived snake_case).
--- Primary source: openalex. Secondary: pubmed, cochrane, journal_rss (NULL-padded).
--- Adds: abstract (reconstructed from abstract_inverted_index), first_author_name,
+-- Primary source: openalex. Secondary: europepmc, pubmed, cochrane, journal_rss (NULL-padded).
+-- Adds: abstract (reconstructed from abstract_inverted_index for openalex), first_author_name,
 --        first_author_institution, author_count, top_concepts, molecule_id linkage.
+-- EuropePMC adds: full-text abstracts, entity annotations, NCT cross-links, preprints.
 
 MODEL (
     name mol_silver.publications,
@@ -63,6 +64,77 @@ WITH openalex_pubs AS (
         source_updated_at,
         created_at
     FROM mol_bronze.openalex
+    WHERE
+        processed_to_silver = FALSE
+        AND title IS NOT NULL
+),
+
+-- Secondary source: Europe PMC publications (full-text, entity annotations, preprints)
+europepmc_pubs AS (
+    SELECT
+        'europepmc:' || europepmc_id AS openalex_id,
+        doi,
+        pmid,
+        pmcid,
+        NULL::TEXT AS mag_id,
+        title,
+        abstract,
+        COALESCE(pub_types->>0, 'journal-article') AS work_type,
+        language,
+        publication_year,
+        publication_date,
+        journal_name,
+        NULL::TEXT AS journal_issn,
+        -- Use first full-text PDF URL if available
+        (SELECT url->>'url'
+         FROM jsonb_array_elements(COALESCE(full_text_urls, '[]'::JSONB)) AS url
+         WHERE url->>'documentStyle' = 'pdf'
+         LIMIT 1) AS pdf_url,
+        is_open_access,
+        NULL::TEXT AS volume,
+        NULL::TEXT AS issue,
+        NULL::TEXT AS first_page,
+        NULL::TEXT AS last_page,
+        -- Normalise author list to openalex-compatible shape:
+        -- [{"author": {"display_name": "..."}, "institutions": []}]
+        COALESCE(
+            (SELECT jsonb_agg(
+                jsonb_build_object(
+                    'author', jsonb_build_object('display_name', a->>'fullName'),
+                    'institutions', '[]'::JSONB
+                )
+             )
+             FROM jsonb_array_elements(COALESCE(authorships, '[]'::JSONB)) AS a
+             WHERE a->>'fullName' IS NOT NULL
+            ),
+            '[]'::JSONB
+        ) AS authorships,
+        NULL::JSONB AS author_names,
+        NULL::JSONB AS concepts,
+        NULL::JSONB AS topics,
+        -- Keywords from keywordList
+        keywords,
+        -- MeSH headings → normalise to text array JSONB
+        COALESCE(
+            (SELECT jsonb_agg(mh->>'descriptorName')
+             FROM jsonb_array_elements(COALESCE(mesh_headings, '[]'::JSONB)) AS mh
+             WHERE mh->>'descriptorName' IS NOT NULL
+            ),
+            '[]'::JSONB
+        ) AS mesh_terms,
+        cited_by_count,
+        NULL::JSONB AS citation_counts_by_year,
+        NULL::JSONB AS grants,
+        NULL::JSONB AS referenced_works,
+        NULL::JSONB AS related_works,
+        NULL::JSONB AS open_access_info,
+        NULL::JSONB AS best_oa_location,
+        NULL::BOOLEAN AS is_retracted,
+        NULL::BOOLEAN AS is_paratext,
+        source,
+        source_updated_at,
+        created_at
+    FROM mol_bronze.europepmc
     WHERE
         processed_to_silver = FALSE
         AND title IS NOT NULL
@@ -210,6 +282,8 @@ journal_rss_pubs AS (
 combined_pubs AS (
     SELECT * FROM openalex_pubs
     UNION ALL
+    SELECT * FROM europepmc_pubs
+    UNION ALL
     SELECT * FROM pubmed_pubs
     UNION ALL
     SELECT * FROM cochrane_pubs
@@ -313,7 +387,8 @@ LEFT JOIN mol_silver.molecules m ON (
 ORDER BY e.doi,
     CASE e.source
         WHEN 'openalex' THEN 1
-        WHEN 'pubmed' THEN 2
-        WHEN 'cochrane_reviews' THEN 3
-        WHEN 'journal_rss' THEN 4
+        WHEN 'europepmc' THEN 2
+        WHEN 'pubmed' THEN 3
+        WHEN 'cochrane_reviews' THEN 4
+        WHEN 'journal_rss' THEN 5
     END;
