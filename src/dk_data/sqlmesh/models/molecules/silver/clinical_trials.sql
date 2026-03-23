@@ -55,6 +55,8 @@ SELECT
     b.collaborators,
     b.central_contacts,
     b.locations,
+    b.overall_official,
+    b.overall_official_affiliation,
     b.primary_outcomes,
     b.secondary_outcomes,
     b.fda_regulated_drug,

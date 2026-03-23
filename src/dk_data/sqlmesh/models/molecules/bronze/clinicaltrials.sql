@@ -112,6 +112,10 @@ SELECT
     s->'protocolSection'->'contactsLocationsModule'->'centralContacts' AS central_contacts,
     s->'protocolSection'->'contactsLocationsModule'->'locations' AS locations,
 
+    -- Principal Investigator (overall official from contacts/locations module)
+    s->'protocolSection'->'contactsLocationsModule'->'overallOfficials'->0->>'name' AS overall_official,
+    s->'protocolSection'->'contactsLocationsModule'->'overallOfficials'->0->>'affiliation' AS overall_official_affiliation,
+
     -- Outcomes
     s->'protocolSection'->'outcomesModule'->'primaryOutcomes' AS primary_outcomes,
     s->'protocolSection'->'outcomesModule'->'secondaryOutcomes' AS secondary_outcomes,
