@@ -14,7 +14,7 @@ CREATE TABLE IF NOT EXISTS mol_raw.europepmc (
     request_params       JSONB,
     response_status      INTEGER NOT NULL,
     response_body        JSONB,                   -- full EuropePMC search response
-    response_hash        TEXT,                    -- MD5 of resultList for change detection
+    response_body_hash   TEXT,                    -- SHA-256 of response body (matches raw_ingestion.py convention)
     processed_to_bronze  BOOLEAN DEFAULT FALSE,
     request_timestamp    TIMESTAMPTZ DEFAULT NOW(),
     created_at           TIMESTAMPTZ DEFAULT NOW()
