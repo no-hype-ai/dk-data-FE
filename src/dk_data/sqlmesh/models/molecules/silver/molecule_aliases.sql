@@ -43,18 +43,20 @@ UNION ALL
 -- ChEMBL synonyms
 -- Join via chembl_id (stable unique key) — works for both small molecules and biologics
 -- since biologics have NULL inchi_key but always have a chembl_id.
+-- synonyms is a JSONB array of objects: {syn_type, synonyms, molecule_synonym}.
+-- Extract the 'synonyms' field (the actual name string) from each element.
 SELECT
     m.molecule_id,
-    syn AS alias_name,
-    LOWER(REGEXP_REPLACE(syn, '[^a-zA-Z0-9]', '', 'g')) AS alias_name_normalized,
+    syn_obj->>'synonyms' AS alias_name,
+    LOWER(REGEXP_REPLACE(syn_obj->>'synonyms', '[^a-zA-Z0-9]', '', 'g')) AS alias_name_normalized,
     'synonym' AS alias_type,
     'chembl' AS source,
     NOW() AS created_at
 FROM mol_silver.molecules m
-JOIN mol_bronze.chembl c ON m.chembl_id = c.chembl_id
-CROSS JOIN LATERAL jsonb_array_elements_text(COALESCE(c.synonyms, '[]'::jsonb)) AS syn
-WHERE syn IS NOT NULL
-  AND syn != ''
+JOIN mol_bronze.chembl_molecules c ON m.chembl_id = c.chembl_id
+CROSS JOIN LATERAL jsonb_array_elements(COALESCE(c.synonyms, '[]'::jsonb)) AS syn_obj
+WHERE syn_obj->>'synonyms' IS NOT NULL
+  AND syn_obj->>'synonyms' != ''
   AND m.needs_review = FALSE
 
 UNION ALL

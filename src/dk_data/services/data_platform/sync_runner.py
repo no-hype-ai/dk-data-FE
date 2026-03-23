@@ -1236,7 +1236,7 @@ SOURCE_TO_SQLMESH_MODELS: Dict[str, Dict[str, str]] = {
     },
     'who_gho': {
         'bronze': 'mol_bronze.who_gho',
-        # no silver model — bronze-only source
+        'silver': 'ind_silver.epidemiology',  # indication-domain; xenon reads from ind_silver.epidemiology
     },
     'hrsa_shortage_areas': {
         'bronze': 'mol_bronze.hrsa',
