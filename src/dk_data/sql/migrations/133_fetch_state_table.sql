@@ -24,3 +24,6 @@ COMMENT ON COLUMN raw.fetch_state.source_name IS
 COMMENT ON COLUMN raw.fetch_state.manifest IS
     'JSON object with fields: last_run_at, last_run_status, total_records_fetched, '
     'last_content_hash, etag, last_modified, last_cursor, last_offset, saved_at.';
+
+-- Grant ingestion CronJobs (api_user) read/write access
+GRANT SELECT, INSERT, UPDATE ON raw.fetch_state TO api_user;

@@ -108,3 +108,4 @@ resources:
   - alert-rules.yaml
   # Grafana dashboards (auto-provisioned via sidecar)
   - grafana-cms-dashboard.yaml
+  - grafana-ingestion-health-dashboard.yaml

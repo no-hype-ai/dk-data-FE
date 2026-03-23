@@ -1,0 +1,480 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: grafana-ingestion-health-dashboard
+  labels:
+    app.kubernetes.io/name: dk-data
+    app.kubernetes.io/component: observability
+    grafana_dashboard: "1"
+  annotations:
+    k8s-sidecar-target-directory: /tmp/dashboards/dk-data
+data:
+  ingestion-health.json: |
+    {
+      "description": "dk-data-FE Ingestion Health — All CI/Mol Fetchers, Fetch State, CronJob Status",
+      "editable": true,
+      "fiscalYearStartMonth": 0,
+      "graphTooltip": 0,
+      "id": null,
+      "links": [
+        {"title": "CMS Pipeline", "url": "/d/dk-cms-pipeline", "type": "link"},
+        {"title": "Platform Overview", "url": "/d/dk-platform-overview", "type": "link"}
+      ],
+      "panels": [
+
+        {
+          "collapsed": false,
+          "gridPos": {"h": 1, "w": 24, "x": 0, "y": 0},
+          "id": 1,
+          "title": "Ingestion Overview",
+          "type": "row"
+        },
+
+        {
+          "datasource": {"type": "prometheus", "uid": "prometheus"},
+          "fieldConfig": {
+            "defaults": {
+              "color": {"mode": "thresholds"},
+              "thresholds": {"mode": "absolute", "steps": [
+                {"color": "red", "value": null},
+                {"color": "yellow", "value": 1},
+                {"color": "green", "value": 5}
+              ]},
+              "unit": "short"
+            },
+            "overrides": []
+          },
+          "gridPos": {"h": 3, "w": 4, "x": 0, "y": 1},
+          "id": 10,
+          "options": {"colorMode": "value", "graphMode": "none", "reduceOptions": {"calcs": ["lastNotNull"]}},
+          "targets": [{"expr": "count(increase(kube_job_status_succeeded{namespace=~\"dk-data-.*\", job_name=~\"fetch-.*\"}[24h]) > 0)", "legendFormat": "Succeeded (24h)", "refId": "A"}],
+          "title": "Fetchers OK (24h)",
+          "type": "stat"
+        },
+
+        {
+          "datasource": {"type": "prometheus", "uid": "prometheus"},
+          "fieldConfig": {
+            "defaults": {
+              "color": {"mode": "thresholds"},
+              "thresholds": {"mode": "absolute", "steps": [
+                {"color": "green", "value": null},
+                {"color": "yellow", "value": 1},
+                {"color": "red", "value": 3}
+              ]},
+              "unit": "short"
+            },
+            "overrides": []
+          },
+          "gridPos": {"h": 3, "w": 4, "x": 4, "y": 1},
+          "id": 11,
+          "options": {"colorMode": "value", "graphMode": "none", "reduceOptions": {"calcs": ["lastNotNull"]}},
+          "targets": [{"expr": "count(increase(kube_job_status_failed{namespace=~\"dk-data-.*\", job_name=~\"fetch-.*\"}[24h]) > 0)", "legendFormat": "Failed (24h)", "refId": "A"}],
+          "title": "Fetchers Failed (24h)",
+          "type": "stat"
+        },
+
+        {
+          "datasource": {"type": "prometheus", "uid": "prometheus"},
+          "fieldConfig": {
+            "defaults": {
+              "color": {"mode": "thresholds"},
+              "thresholds": {"mode": "absolute", "steps": [
+                {"color": "green", "value": null},
+                {"color": "yellow", "value": 1},
+                {"color": "red", "value": 3}
+              ]},
+              "unit": "short"
+            },
+            "overrides": []
+          },
+          "gridPos": {"h": 3, "w": 4, "x": 8, "y": 1},
+          "id": 12,
+          "options": {"colorMode": "value", "graphMode": "none", "reduceOptions": {"calcs": ["lastNotNull"]}},
+          "targets": [{"expr": "count(kube_cronjob_next_schedule_time{namespace=~\"dk-data-.*\", cronjob=~\"fetch-.*\"} - time() < -7200)", "legendFormat": "Missed (>2h)", "refId": "A"}],
+          "title": "CronJobs Missed Schedule",
+          "type": "stat"
+        },
+
+        {
+          "datasource": {"type": "prometheus", "uid": "prometheus"},
+          "fieldConfig": {
+            "defaults": {
+              "color": {"mode": "thresholds"},
+              "thresholds": {"mode": "absolute", "steps": [
+                {"color": "red", "value": null},
+                {"color": "green", "value": 1}
+              ]},
+              "unit": "short"
+            },
+            "overrides": []
+          },
+          "gridPos": {"h": 3, "w": 4, "x": 12, "y": 1},
+          "id": 13,
+          "options": {"colorMode": "value", "graphMode": "none", "reduceOptions": {"calcs": ["lastNotNull"]}},
+          "targets": [{"expr": "kube_deployment_status_replicas_ready{namespace=~\"dk-data-.*\", deployment=\"job-trigger\"}", "legendFormat": "Ready", "refId": "A"}],
+          "title": "Job Trigger Replicas Ready",
+          "type": "stat"
+        },
+
+        {
+          "datasource": {"type": "prometheus", "uid": "prometheus"},
+          "fieldConfig": {
+            "defaults": {
+              "color": {"mode": "thresholds"},
+              "thresholds": {"mode": "absolute", "steps": [
+                {"color": "red", "value": null},
+                {"color": "green", "value": 1}
+              ]},
+              "unit": "short"
+            },
+            "overrides": []
+          },
+          "gridPos": {"h": 3, "w": 4, "x": 16, "y": 1},
+          "id": 14,
+          "options": {"colorMode": "value", "graphMode": "none", "reduceOptions": {"calcs": ["lastNotNull"]}},
+          "targets": [{"expr": "probe_success{job=\"dk-data-postgrest\"}", "legendFormat": "PostgREST", "refId": "A"}],
+          "title": "PostgREST Health",
+          "type": "stat"
+        },
+
+        {
+          "collapsed": false,
+          "gridPos": {"h": 1, "w": 24, "x": 0, "y": 4},
+          "id": 20,
+          "title": "CronJob Success / Failure — Last 7 Days",
+          "type": "row"
+        },
+
+        {
+          "datasource": {"type": "prometheus", "uid": "prometheus"},
+          "fieldConfig": {
+            "defaults": {
+              "color": {"mode": "palette-classic"},
+              "custom": {
+                "axisCenteredZero": false,
+                "axisColorMode": "text",
+                "axisPlacement": "auto",
+                "barAlignment": 0,
+                "drawStyle": "bars",
+                "fillOpacity": 80,
+                "gradientMode": "none",
+                "lineWidth": 1,
+                "stacking": {"group": "A", "mode": "normal"}
+              },
+              "unit": "short"
+            },
+            "overrides": [
+              {
+                "matcher": {"id": "byName", "options": "failed"},
+                "properties": [{"id": "color", "value": {"fixedColor": "red", "mode": "fixed"}}]
+              },
+              {
+                "matcher": {"id": "byName", "options": "succeeded"},
+                "properties": [{"id": "color", "value": {"fixedColor": "green", "mode": "fixed"}}]
+              }
+            ]
+          },
+          "gridPos": {"h": 8, "w": 24, "x": 0, "y": 5},
+          "id": 21,
+          "options": {"tooltip": {"mode": "multi", "sort": "none"}},
+          "targets": [
+            {
+              "expr": "sum by (job_name) (increase(kube_job_status_succeeded{namespace=~\"dk-data-.*\", job_name=~\"fetch-.*\"}[1h]))",
+              "legendFormat": "{{job_name}} succeeded",
+              "refId": "A"
+            },
+            {
+              "expr": "sum by (job_name) (increase(kube_job_status_failed{namespace=~\"dk-data-.*\", job_name=~\"fetch-.*\"}[1h]))",
+              "legendFormat": "{{job_name}} failed",
+              "refId": "B"
+            }
+          ],
+          "title": "Fetcher Job Outcomes (hourly)",
+          "type": "timeseries"
+        },
+
+        {
+          "collapsed": false,
+          "gridPos": {"h": 1, "w": 24, "x": 0, "y": 13},
+          "id": 30,
+          "title": "Fetch State — Last Run Status per Source",
+          "type": "row"
+        },
+
+        {
+          "datasource": {"type": "postgres", "uid": "postgres"},
+          "fieldConfig": {
+            "defaults": {
+              "color": {"mode": "thresholds"},
+              "custom": {
+                "align": "auto",
+                "displayMode": "color-background",
+                "filterable": true
+              },
+              "thresholds": {"mode": "absolute", "steps": [
+                {"color": "transparent", "value": null}
+              ]}
+            },
+            "overrides": [
+              {
+                "matcher": {"id": "byName", "options": "last_run_status"},
+                "properties": [
+                  {
+                    "id": "mappings",
+                    "value": [
+                      {"options": {"completed": {"color": "green", "index": 0, "text": "completed"}}, "type": "value"},
+                      {"options": {"interrupted": {"color": "yellow", "index": 1, "text": "interrupted"}}, "type": "value"},
+                      {"options": {"failed": {"color": "red", "index": 2, "text": "failed"}}, "type": "value"},
+                      {"options": {"in_progress": {"color": "blue", "index": 3, "text": "in_progress"}}, "type": "value"}
+                    ]
+                  }
+                ]
+              },
+              {
+                "matcher": {"id": "byName", "options": "hours_since_run"},
+                "properties": [
+                  {
+                    "id": "thresholds",
+                    "value": {"mode": "absolute", "steps": [
+                      {"color": "green", "value": null},
+                      {"color": "yellow", "value": 48},
+                      {"color": "red", "value": 168}
+                    ]}
+                  },
+                  {"id": "custom.displayMode", "value": "color-background"},
+                  {"id": "unit", "value": "h"}
+                ]
+              }
+            ]
+          },
+          "gridPos": {"h": 12, "w": 24, "x": 0, "y": 14},
+          "id": 31,
+          "options": {"sortBy": [{"desc": true, "displayName": "hours_since_run"}]},
+          "targets": [
+            {
+              "rawSql": "SELECT\n  source_name,\n  manifest->>'last_run_status' AS last_run_status,\n  manifest->>'last_run_at' AS last_run_at,\n  ROUND(EXTRACT(EPOCH FROM (NOW() - (manifest->>'last_run_at')::TIMESTAMPTZ)) / 3600, 1) AS hours_since_run,\n  (manifest->>'total_records_fetched')::INT AS records_fetched,\n  CASE WHEN manifest->>'last_cursor' IS NOT NULL THEN 'cursor' WHEN manifest->>'last_offset' IS NOT NULL THEN 'offset' ELSE 'none' END AS resume_type,\n  manifest->>'etag' AS etag,\n  updated_at\nFROM raw.fetch_state\nORDER BY hours_since_run DESC NULLS LAST",
+              "refId": "A",
+              "format": "table"
+            }
+          ],
+          "title": "Fetch State — All Sources",
+          "type": "table"
+        },
+
+        {
+          "collapsed": false,
+          "gridPos": {"h": 1, "w": 24, "x": 0, "y": 26},
+          "id": 40,
+          "title": "Loki — Fetcher Logs by Source",
+          "type": "row"
+        },
+
+        {
+          "datasource": {"type": "loki", "uid": "loki"},
+          "fieldConfig": {"defaults": {}, "overrides": []},
+          "gridPos": {"h": 10, "w": 12, "x": 0, "y": 27},
+          "id": 41,
+          "options": {
+            "dedupStrategy": "none",
+            "enableLogDetails": true,
+            "prettifyLogMessage": false,
+            "showCommonLabels": false,
+            "showLabels": false,
+            "showTime": true,
+            "sortOrder": "Descending",
+            "wrapLogMessage": false
+          },
+          "targets": [
+            {
+              "expr": "{service_name=~\"dk-data-fetch-.*\"} |= \"ERROR\" or |= \"WARNING\" or |= \"failed\" or |= \"exception\"",
+              "refId": "A"
+            }
+          ],
+          "title": "Fetcher Errors & Warnings (All Sources)",
+          "type": "logs"
+        },
+
+        {
+          "datasource": {"type": "loki", "uid": "loki"},
+          "fieldConfig": {"defaults": {}, "overrides": []},
+          "gridPos": {"h": 10, "w": 12, "x": 12, "y": 27},
+          "id": 42,
+          "options": {
+            "dedupStrategy": "none",
+            "enableLogDetails": true,
+            "prettifyLogMessage": false,
+            "showCommonLabels": false,
+            "showLabels": true,
+            "showTime": true,
+            "sortOrder": "Descending",
+            "wrapLogMessage": false
+          },
+          "targets": [
+            {
+              "expr": "{service_name=~\"dk-data-fetch-.*\"} |= \"Fetch successful\" or |= \"completed\" or |= \"Downloaded\"",
+              "refId": "A"
+            }
+          ],
+          "title": "Fetcher Success Messages",
+          "type": "logs"
+        },
+
+        {
+          "collapsed": false,
+          "gridPos": {"h": 1, "w": 24, "x": 0, "y": 37},
+          "id": 50,
+          "title": "Molecule Pipeline",
+          "type": "row"
+        },
+
+        {
+          "datasource": {"type": "prometheus", "uid": "prometheus"},
+          "fieldConfig": {
+            "defaults": {
+              "color": {"mode": "palette-classic"},
+              "custom": {
+                "drawStyle": "line",
+                "fillOpacity": 10,
+                "lineWidth": 2,
+                "spanNulls": false
+              },
+              "unit": "short"
+            },
+            "overrides": []
+          },
+          "gridPos": {"h": 8, "w": 12, "x": 0, "y": 38},
+          "id": 51,
+          "targets": [
+            {
+              "expr": "sum by (job_name) (increase(kube_job_status_succeeded{namespace=~\"dk-data-.*\", job_name=~\"mol-.*\"}[1h]))",
+              "legendFormat": "{{job_name}}",
+              "refId": "A"
+            }
+          ],
+          "title": "Mol Pipeline Jobs — Succeeded (hourly)",
+          "type": "timeseries"
+        },
+
+        {
+          "datasource": {"type": "prometheus", "uid": "prometheus"},
+          "fieldConfig": {
+            "defaults": {
+              "color": {"mode": "palette-classic"},
+              "custom": {
+                "drawStyle": "line",
+                "fillOpacity": 10,
+                "lineWidth": 2,
+                "spanNulls": false
+              },
+              "unit": "short"
+            },
+            "overrides": []
+          },
+          "gridPos": {"h": 8, "w": 12, "x": 12, "y": 38},
+          "id": 52,
+          "targets": [
+            {
+              "expr": "sum by (job_name) (increase(kube_job_status_failed{namespace=~\"dk-data-.*\", job_name=~\"mol-.*\"}[1h]))",
+              "legendFormat": "{{job_name}}",
+              "refId": "A"
+            }
+          ],
+          "title": "Mol Pipeline Jobs — Failed (hourly)",
+          "type": "timeseries"
+        },
+
+        {
+          "collapsed": false,
+          "gridPos": {"h": 1, "w": 24, "x": 0, "y": 46},
+          "id": 60,
+          "title": "Resource Usage",
+          "type": "row"
+        },
+
+        {
+          "datasource": {"type": "prometheus", "uid": "prometheus"},
+          "fieldConfig": {
+            "defaults": {
+              "color": {"mode": "palette-classic"},
+              "custom": {
+                "drawStyle": "line",
+                "fillOpacity": 10,
+                "lineWidth": 1,
+                "spanNulls": false
+              },
+              "unit": "bytes"
+            },
+            "overrides": []
+          },
+          "gridPos": {"h": 8, "w": 12, "x": 0, "y": 47},
+          "id": 61,
+          "targets": [
+            {
+              "expr": "sum by (pod) (container_memory_usage_bytes{namespace=~\"dk-data-.*\", container!=\"\"})",
+              "legendFormat": "{{pod}}",
+              "refId": "A"
+            }
+          ],
+          "title": "Pod Memory Usage",
+          "type": "timeseries"
+        },
+
+        {
+          "datasource": {"type": "prometheus", "uid": "prometheus"},
+          "fieldConfig": {
+            "defaults": {
+              "color": {"mode": "palette-classic"},
+              "custom": {
+                "drawStyle": "line",
+                "fillOpacity": 10,
+                "lineWidth": 1,
+                "spanNulls": false
+              },
+              "unit": "percentunit"
+            },
+            "overrides": []
+          },
+          "gridPos": {"h": 8, "w": 12, "x": 12, "y": 47},
+          "id": 62,
+          "targets": [
+            {
+              "expr": "sum by (pod) (rate(container_cpu_usage_seconds_total{namespace=~\"dk-data-.*\", container!=\"\"}[5m]))",
+              "legendFormat": "{{pod}}",
+              "refId": "A"
+            }
+          ],
+          "title": "Pod CPU Usage",
+          "type": "timeseries"
+        }
+
+      ],
+      "refresh": "5m",
+      "schemaVersion": 38,
+      "tags": ["dk-data", "ingestion", "health"],
+      "templating": {
+        "list": [
+          {
+            "current": {},
+            "datasource": {"type": "prometheus", "uid": "prometheus"},
+            "definition": "label_values(kube_job_status_succeeded{namespace=~\"dk-data-.*\", job_name=~\"fetch-.*\"}, job_name)",
+            "hide": 0,
+            "includeAll": true,
+            "label": "Fetcher",
+            "multi": true,
+            "name": "fetcher",
+            "options": [],
+            "query": "label_values(kube_job_status_succeeded{namespace=~\"dk-data-.*\", job_name=~\"fetch-.*\"}, job_name)",
+            "refresh": 2,
+            "sort": 1,
+            "type": "query"
+          }
+        ]
+      },
+      "time": {"from": "now-7d", "to": "now"},
+      "timepicker": {},
+      "timezone": "browser",
+      "title": "dk-data-FE — Ingestion Health",
+      "uid": "dk-ingestion-health",
+      "version": 1
+    }

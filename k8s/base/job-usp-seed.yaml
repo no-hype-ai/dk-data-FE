@@ -134,6 +134,12 @@ spec:
                 secretKeyRef:
                   name: dk-data-secrets
                   key: POSTGRES_DB
+            - name: OTEL_EXPORTER_OTLP_ENDPOINT
+              value: "http://alloy.infra.svc.cluster.local:4317"
+            - name: OTEL_ENABLED
+              value: "true"
+            - name: OTEL_SERVICE_NAME
+              value: "dk-data-seed-usp"
           resources:
             requests:
               memory: "128Mi"

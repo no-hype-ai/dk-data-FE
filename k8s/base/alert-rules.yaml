@@ -270,6 +270,75 @@ spec:
               {{ $value }} rate limit rejections in the last hour for {{ $labels.source }}.
               May indicate API throttling or misconfigured fetch frequency.
 
+    # CI Fetcher Source Alerts (011-datasource-integration)
+    - name: ci-fetcher-sources
+      interval: 5m
+      rules:
+        - alert: CIFetcherJobFailed
+          expr: |
+            increase(kube_job_status_failed{namespace=~"dk-data-.*",
+              job_name=~"fetch-(pubmed|europepmc|uniprot|pdb|openalex|sec-edgar|epo|hta|cochrane|orcid|uspto-ci|uspto-patents|uspto-trademarks|journal-rss|news).*"}[1h]) > 0
+          for: 0m
+          labels:
+            severity: warning
+            team: data-platform
+          annotations:
+            summary: "CI fetcher job {{ $labels.job_name }} failed"
+            description: |
+              CI data fetcher {{ $labels.job_name }} failed in the last hour.
+              Check Loki logs: {service_name="{{ $labels.job_name }}"}.
+
+        - alert: CIFetcherSourceStale
+          expr: |
+            (
+              time() - (
+                max by (source_name) (
+                  label_replace(
+                    kube_job_status_completion_time{namespace=~"dk-data-.*",
+                      job_name=~"fetch-(pubmed|europepmc|uniprot|pdb|openalex|sec-edgar|epo|hta|cochrane|orcid|uspto-ci|uspto-patents|uspto-trademarks|journal-rss|news).*"},
+                    "source_name", "$1", "job_name", "fetch-(.+)-[0-9]+"
+                  )
+                )
+              )
+            ) > 172800
+          for: 30m
+          labels:
+            severity: warning
+            team: data-platform
+          annotations:
+            summary: "CI fetcher {{ $labels.source_name }} stale (>48h since last success)"
+            description: |
+              CI fetcher source {{ $labels.source_name }} has had no successful job completion
+              in over 48 hours. Verify CronJob schedule and check for repeated failures.
+
+        - alert: CIFetcherInterrupted
+          expr: |
+            increase(kube_job_status_failed{namespace=~"dk-data-.*",
+              job_name=~"fetch-(pubmed|europepmc|uniprot|pdb|openalex|sec-edgar|epo|hta|cochrane|orcid|uspto-ci|uspto-patents|uspto-trademarks|journal-rss|news).*"}[6h]) > 3
+          for: 0m
+          labels:
+            severity: critical
+            team: data-platform
+          annotations:
+            summary: "CI fetcher {{ $labels.job_name }} failing repeatedly (>3 in 6h)"
+            description: |
+              {{ $labels.job_name }} has failed {{ $value }} times in the last 6 hours.
+              Manifest cursor/offset may be corrupted. Check raw.fetch_state for source state.
+
+        - alert: CIFetcherCronJobMissed
+          expr: |
+            (time() - kube_cronjob_next_schedule_time{namespace=~"dk-data-.*",
+              cronjob=~"fetch-(pubmed|europepmc|uniprot|pdb|openalex|sec-edgar|epo|hta|cochrane|orcid|uspto-ci|uspto-patents|uspto-trademarks|journal-rss|news)"}) > 7200
+          for: 15m
+          labels:
+            severity: warning
+            team: data-platform
+          annotations:
+            summary: "CI fetcher CronJob {{ $labels.cronjob }} missed schedule by >2h"
+            description: |
+              CronJob {{ $labels.cronjob }} has missed its scheduled run by more than 2 hours.
+              Check for cluster resource pressure or ConcurrencyPolicy=Forbid backlog.
+
     - name: dk-data.resources
       interval: 1m
       rules:
