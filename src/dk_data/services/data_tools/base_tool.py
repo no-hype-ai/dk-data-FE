@@ -124,10 +124,18 @@ class BaseDataTool:
         record_count = len(normalized) if isinstance(normalized, list) else 1
         record_cms_fetch(self.tool_def.name, fetch_duration, record_count)
 
-        # Insert into raw table
-        raw_record_id = await self._insert_raw_record(
-            request_id, params, api_response,
-        )
+        # Insert into raw table — use adapter-specific insert if provided
+        # (e.g. hcs_raw tables have structured schemas, not the generic mol_raw schema)
+        if hasattr(adapter, "insert_records") and self.db_pool:
+            try:
+                raw_record_id = await adapter.insert_records(self.db_pool, api_response)
+            except Exception as e:
+                logger.error(f"Adapter insert_records failed for {self.tool_def.name}: {e}")
+                raw_record_id = None
+        else:
+            raw_record_id = await self._insert_raw_record(
+                request_id, params, api_response,
+            )
 
         # Trigger transform pipeline — track success/failure
         transform_status = "skipped"
