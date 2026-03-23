@@ -17,45 +17,7 @@ MODEL (
     )
 );
 
-WITH raw_records AS (
-    SELECT
-        r.id AS raw_id,
-        r.request_timestamp,
-        -- Dataset name from request params or response
-        COALESCE(
-            r.request_params->>'dataset',
-            r.request_params->>'dataset_name',
-            'unknown'
-        ) AS dataset_name
-    FROM mol_raw.tdc_admet r
-    WHERE r.response_status = 200
-      AND r.response_body IS NOT NULL
-),
-
--- Unnest data array (TDC returns array of records)
-unnested AS (
-    SELECT
-        rr.raw_id,
-        rr.request_timestamp,
-        rr.dataset_name,
-        rec
-    FROM raw_records rr,
-         jsonb_array_elements(
-             COALESCE(
-                 rr.request_timestamp::TEXT::JSONB,  -- never used, just for type
-                 (SELECT r2.response_body
-                  FROM mol_raw.tdc_admet r2
-                  WHERE r2.id = rr.raw_id)->'data',
-                 (SELECT r2.response_body
-                  FROM mol_raw.tdc_admet r2
-                  WHERE r2.id = rr.raw_id)->'records',
-                 '[]'::JSONB
-             )
-         ) AS rec
-),
-
--- Simpler: unnest directly from the source table
-unnested_direct AS (
+WITH unnested_direct AS (
     SELECT
         r.id AS raw_id,
         r.request_timestamp,
@@ -64,7 +26,8 @@ unnested_direct AS (
             r.request_params->>'dataset_name',
             'unknown'
         ) AS dataset_name,
-        rec
+        rec,
+        rec AS raw_json
     FROM mol_raw.tdc_admet r,
          jsonb_array_elements(
              COALESCE(
@@ -75,6 +38,8 @@ unnested_direct AS (
          ) AS rec
     WHERE r.response_status = 200
       AND r.response_body IS NOT NULL
+      AND r.processed_to_bronze = FALSE
+      AND r.request_timestamp BETWEEN @start_dt AND @end_dt
 )
 
 SELECT
@@ -118,6 +83,7 @@ SELECT
             THEN 'toxicity'
         ELSE 'other'
     END AS property_category,
+    raw_json,
     FALSE               AS processed_to_silver,
     request_timestamp,
     request_timestamp   AS ingested_at,

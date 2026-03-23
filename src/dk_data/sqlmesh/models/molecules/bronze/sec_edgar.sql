@@ -23,7 +23,7 @@ SELECT
     -- Filing identifiers
     COALESCE(
         response_body->>'accession_number',
-        response_body->>'cik' || '_' || response_body->>'filing_type' || '_' || response_body->>'filing_date'
+        (response_body->>'cik') || '_' || (response_body->>'filing_type') || '_' || (response_body->>'filing_date')
     ) AS filing_id,
 
     response_body->>'cik'              AS cik,
@@ -34,7 +34,10 @@ SELECT
     (response_body->>'filing_date')::DATE AS filing_date,
     response_body->>'accession_number' AS accession_number,
 
-    -- MD&A text — passed through as-is; xenon LLM extracts revenue from this
+    -- Document URL — xenon fetches HTML from this to extract MD&A text
+    response_body->>'document_url'     AS document_url,
+
+    -- MD&A text — NULL when fetcher stores metadata-only; xenon LLM fetches from document_url instead
     response_body->>'mda_text'         AS mda_text,
     response_body->>'risk_factors_text' AS risk_factors_text,
 

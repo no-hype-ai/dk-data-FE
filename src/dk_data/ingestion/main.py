@@ -29,7 +29,6 @@ from .sources.medical_news import load_medical_news_data
 from .sources.sec_edgar import load_sec_edgar_data
 from .sources.uniprot import load_uniprot_data
 from .sources.pdb import load_pdb_data
-from .sources.orcid import load_orcid_data
 from .sources.uspto_trademarks import load_uspto_trademarks_data
 from .sources.euipo_trademarks import load_euipo_trademarks_data
 from .sources.euipo_designs import load_euipo_designs_data
@@ -80,7 +79,6 @@ from .fetchers import (
     SECEdgarFetcher,
     UniProtFetcher,
     PDBFetcher,
-    ORCIDFetcher,
     USPTOTrademarksFetcher,
     EUIPOTrademarksFetcher,
     EUIPODesignsFetcher,
@@ -281,14 +279,6 @@ SOURCES = {
         'description': 'RCSB PDB protein structures',
         'fetcher': PDBFetcher,
         'loader': load_pdb_data,
-        'requires_file': False,
-        'default_days_back': None,  # static query, no date filter
-    },
-    'orcid': {
-        'name': 'ORCID',
-        'description': 'ORCID researcher profiles (KOL identification)',
-        'fetcher': ORCIDFetcher,
-        'loader': load_orcid_data,
         'requires_file': False,
         'default_days_back': None,  # static query, no date filter
     },

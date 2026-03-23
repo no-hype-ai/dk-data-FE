@@ -70,15 +70,6 @@ from .clinicaltrials_client import (
     get_clinicaltrials_client,
 )
 
-from .orcid_client import (
-    ORCIDClient,
-    ResearcherProfile,
-    ResearcherSearchResult,
-    Affiliation,
-    Work,
-    get_orcid_client,
-)
-
 from .nih_reporter_client import (
     NIHReporterClient,
     NIHProject,
@@ -226,12 +217,6 @@ __all__ = [
     "TrialSearchResult",
     "get_clinicaltrials_client",
     # ORCID
-    "ORCIDClient",
-    "ResearcherProfile",
-    "ResearcherSearchResult",
-    "Affiliation",
-    "Work",
-    "get_orcid_client",
     # NIH Reporter
     "NIHReporterClient",
     "NIHProject",

@@ -16,9 +16,9 @@ MODEL (
 SELECT
     TRIM(enrollment_id)::TEXT                   AS enrollment_id,
     TRIM(npi)::TEXT                             AS npi,
-    UPPER(TRIM(org_name))                       AS org_name,
+    UPPER(TRIM(organization_name))              AS org_name,
     UPPER(TRIM(enrollment_type))                AS enrollment_type,
-    UPPER(TRIM(enrollment_state))               AS enrollment_state,
+    UPPER(TRIM(state))                          AS enrollment_state,
     _loaded_at,
     _source_file,
     _source_hash

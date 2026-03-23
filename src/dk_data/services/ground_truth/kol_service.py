@@ -42,7 +42,6 @@ class KOL:
     """Key Opinion Leader profile."""
     kol_id: str
     name: str
-    orcid: Optional[str] = None
     tier: KOLTier = KOLTier.REGIONAL
     affiliations: List[str] = field(default_factory=list)
     therapeutic_areas: List[str] = field(default_factory=list)
@@ -62,7 +61,6 @@ class KOL:
         return {
             "kol_id": self.kol_id,
             "name": self.name,
-            "orcid": self.orcid,
             "tier": self.tier.value,
             "affiliations": self.affiliations[:5],
             "therapeutic_areas": self.therapeutic_areas,
@@ -311,12 +309,12 @@ class KOLIntelligenceService:
         author_counts: Dict[str, Dict] = {}
         for pub in publications:
             for author in pub.authors:
-                author_id = author.get("orcid") or author.get("name", "")
+                author_id = author.get("author_id") or author.get("name", "")
                 if author_id:
                     if author_id not in author_counts:
                         author_counts[author_id] = {
                             "name": author.get("name", ""),
-                            "orcid": author.get("orcid"),
+                            "author_id": author.get("author_id"),
                             "count": 0,
                         }
                     author_counts[author_id]["count"] += 1
@@ -346,7 +344,6 @@ class KOLIntelligenceService:
         return KOL(
             kol_id=author.openalex_id,
             name=author.display_name,
-            orcid=author.orcid,
             affiliations=[a.get("name", "") for a in author.affiliations],
             therapeutic_areas=[therapeutic_area] if therapeutic_area else [],
             expertise_areas=[ExpertiseArea.RESEARCH],

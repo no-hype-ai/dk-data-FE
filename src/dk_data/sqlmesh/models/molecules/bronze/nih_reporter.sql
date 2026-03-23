@@ -96,6 +96,9 @@ SELECT
     grant_json->>'terms'                                            AS terms,
     grant_json->>'phrText'                                          AS phr_text,
 
+    -- Raw passthrough: individual grant record for column autodiscovery
+    grant_json                                                      AS raw_json,
+
     -- Tracking
     'nih_reporter'                                                  AS source,
     request_timestamp,

@@ -69,16 +69,16 @@ MOL_SILVER_TABLES = {
         postgrest_path='/publications',
     ),
     'financial_data': TableDef(
-        name='financial_data', schema='mol_silver',
+        name='financial_filings', schema='mol_silver',
         description='SEC EDGAR financial filings (10-K, 20-F)',
         molecule_id_type='uuid', source='sec_edgar',
-        postgrest_path='/financial_data',
+        postgrest_path='/financial_filings',
     ),
     'regulatory_decisions': TableDef(
-        name='regulatory_decisions', schema='mol_silver',
+        name='hta_decisions', schema='mol_silver',
         description='Regulatory decisions from EMA, NICE HTA, PMDA',
         molecule_id_type='uuid', source='hta_decisions',
-        postgrest_path='/regulatory_decisions',
+        postgrest_path='/hta_decisions',
     ),
     'patents': TableDef(
         name='patents', schema='mol_silver',
@@ -235,8 +235,8 @@ IND_SILVER_TABLES = {
 HCP_SILVER_TABLES = {
     'researchers': TableDef(
         name='researchers', schema='hcp_silver',
-        description='Researcher profiles from ORCID',
-        molecule_id_type='none', source='orcid',
+        description='Researcher profiles from OpenAlex/EuropePMC publication authorships',
+        molecule_id_type='none', source='openalex',
         postgrest_path='/researchers',
     ),
     'facilities': TableDef(

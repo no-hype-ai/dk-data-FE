@@ -17,7 +17,7 @@ MODEL (
 
 -- Link molecules to publications via name matching
 SELECT DISTINCT
-    m.id AS molecule_id,
+    m.molecule_id AS molecule_id,
     p.id AS publication_id,
     'title_mention' AS link_type,
     1.0 AS confidence,
@@ -25,7 +25,7 @@ SELECT DISTINCT
     NOW() AS created_at
 
 FROM mol_silver.molecules m
-JOIN mol_silver.molecule_aliases ma ON m.id = ma.molecule_id
+JOIN mol_silver.molecule_aliases ma ON m.molecule_id = ma.molecule_id
 JOIN mol_silver.publications p ON
     p.title ILIKE '%' || ma.alias_name || '%'
     OR p.abstract ILIKE '%' || ma.alias_name || '%'
@@ -34,29 +34,9 @@ WHERE m.needs_review = FALSE
 
 UNION ALL
 
--- Link from ChEMBL document references
-SELECT DISTINCT
-    m.id AS molecule_id,
-    p.id AS publication_id,
-    'chembl_reference' AS link_type,
-    1.0 AS confidence,
-    'chembl' AS source,
-    NOW() AS created_at
-
-FROM mol_silver.molecules m
-JOIN mol_bronze.chembl_molecules c ON m.inchi_key = c.inchi_key
-CROSS JOIN LATERAL jsonb_array_elements(COALESCE(c.documents, '[]'::jsonb)) AS doc
-JOIN mol_silver.publications p ON
-    p.doi = doc->>'document_doi'
-    OR p.pubmed_id = doc->>'document_pubmed_id'
-WHERE m.needs_review = FALSE
-  AND (doc->>'document_doi' IS NOT NULL OR doc->>'document_pubmed_id' IS NOT NULL)
-
-UNION ALL
-
 -- Link from OpenAlex works mentioning drug names
 SELECT DISTINCT
-    m.id AS molecule_id,
+    m.molecule_id AS molecule_id,
     p.id AS publication_id,
     'openalex_match' AS link_type,
     0.8 AS confidence,

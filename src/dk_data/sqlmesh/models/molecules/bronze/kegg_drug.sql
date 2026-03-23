@@ -21,7 +21,8 @@ WITH unnested AS (
     SELECT
         r.id AS raw_id,
         r.request_timestamp,
-        entry
+        entry,
+        entry AS raw_json
     FROM mol_raw.kegg_drug r,
          jsonb_array_elements(
              CASE
@@ -32,6 +33,8 @@ WITH unnested AS (
          ) AS entry
     WHERE r.response_status = 200
       AND r.response_body IS NOT NULL
+      AND r.processed_to_bronze = FALSE
+      AND r.request_timestamp BETWEEN @start_dt AND @end_dt
 )
 
 SELECT DISTINCT ON (kegg_id)
@@ -64,6 +67,7 @@ SELECT DISTINCT ON (kegg_id)
     entry->'research_codes' AS research_codes,
     entry->'synonyms'     AS synonyms,
 
+    raw_json,
     FALSE               AS processed_to_silver,
     request_timestamp,
     request_timestamp   AS ingested_at,

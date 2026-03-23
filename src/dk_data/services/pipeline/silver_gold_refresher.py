@@ -488,7 +488,7 @@ class SilverGoldRefresher:
                 authors = [
                     {
                         "name": a.get("author", {}).get("display_name"),
-                        "orcid": a.get("author", {}).get("orcid"),
+                        "author_id": a.get("author", {}).get("id"),
                         "institution": (a.get("institutions", [{}]) or [{}])[0].get("display_name"),
                     }
                     for a in authorships

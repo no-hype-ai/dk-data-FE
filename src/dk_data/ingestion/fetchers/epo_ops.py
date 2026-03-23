@@ -14,7 +14,7 @@ import hashlib
 import logging
 import os
 import time
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional
 from xml.etree import ElementTree as ET
 
@@ -132,6 +132,13 @@ class EPOOPSFetcher(BaseFetcher):
                 str(sorted(seen_ids)).encode()
             ).hexdigest()
 
+            self.save_manifest(
+                last_run_at=datetime.now(timezone.utc).isoformat(),
+                last_run_status="completed",
+                total_records_fetched=len(all_records),
+                last_content_hash=content_hash,
+            )
+
             result = {
                 "status": "success",
                 "records": all_records,
@@ -143,6 +150,7 @@ class EPOOPSFetcher(BaseFetcher):
 
         except Exception as e:
             logger.exception("Failed to fetch EPO OPS data: %s", e)
+            self.save_manifest(last_run_status="interrupted")
             result = {
                 "status": "failed",
                 "records": [],

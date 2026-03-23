@@ -15,7 +15,7 @@ import hashlib
 import logging
 import os
 import time
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional
 
 from .base import BaseFetcher
@@ -144,6 +144,13 @@ class SECEdgarFetcher(BaseFetcher):
                 str(sorted(seen_ids)).encode()
             ).hexdigest()
 
+            self.save_manifest(
+                last_run_at=datetime.now(timezone.utc).isoformat(),
+                last_run_status="completed",
+                total_records_fetched=len(all_records),
+                last_content_hash=content_hash,
+            )
+
             result = {
                 "status": "success",
                 "records": all_records,
@@ -155,6 +162,7 @@ class SECEdgarFetcher(BaseFetcher):
 
         except Exception as e:
             logger.exception("Failed to fetch SEC EDGAR data: %s", e)
+            self.save_manifest(last_run_status="interrupted")
             result = {
                 "status": "failed",
                 "records": [],
@@ -353,7 +361,7 @@ class SECEdgarFetcher(BaseFetcher):
         else:
             sic = source.get("sic") or source.get("assigned_sic")
 
-        return {
+        record = {
             "accession_number": accession_number,
             "company_name": company_name,
             "cik": cik,
@@ -363,6 +371,70 @@ class SECEdgarFetcher(BaseFetcher):
             "description": description,
             "_sic": str(sic) if sic else None,
         }
+
+        # Fetch MD&A text from the actual filing HTML
+        if document_url and filing_type in ("10-K", "20-F", "10-K/A", "20-F/A"):
+            mda_sections = self._fetch_mda_text(document_url, accession_number, cik)
+            record.update(mda_sections)
+
+        return record
+
+    def _fetch_mda_text(
+        self, document_url: str, accession_number: str, cik: str
+    ) -> dict:
+        """Fetch and extract MD&A and Risk Factors text from a SEC filing.
+
+        Finds the main HTML document in the filing index, fetches it,
+        and extracts the Item 7 (MD&A) and Item 1A (Risk Factors) sections.
+        Returns a dict with mda_text and risk_factors_text keys (empty strings on failure).
+        """
+        empty = {"mda_text": "", "risk_factors_text": ""}
+        try:
+            from dk_data.services.external_apis.sec_edgar_client import SECEdgarClient
+
+            # Try FilingSummary.xml first to find the primary document
+            acc_clean = accession_number.replace("-", "")
+            index_url = (
+                f"{SEC_ARCHIVES_URL}/Archives/edgar/data/{cik}/{acc_clean}/{accession_number}-index.htm"
+            )
+            time.sleep(SEC_REQUEST_DELAY)
+            index_resp = self.session.get(index_url, timeout=15)
+            doc_html_url = None
+
+            if index_resp.status_code == 200:
+                # Find the main 10-K/20-F HTML document link
+                import re
+                matches = re.findall(
+                    r'href="([^"]+\.htm)"[^>]*>(?:10-K|20-F|Annual Report)',
+                    index_resp.text, re.IGNORECASE
+                )
+                if not matches:
+                    # Fallback: first .htm link that's not the index itself
+                    matches = re.findall(r'href="(/Archives/edgar/data/[^"]+\.htm)"', index_resp.text)
+                if matches:
+                    href = matches[0]
+                    doc_html_url = (
+                        href if href.startswith("http") else f"{SEC_ARCHIVES_URL}{href}"
+                    )
+
+            if not doc_html_url:
+                # Fallback: try the accession folder directly for a .htm file
+                doc_html_url = f"{SEC_ARCHIVES_URL}/Archives/edgar/data/{cik}/{acc_clean}/{acc_clean}.htm"
+
+            time.sleep(SEC_REQUEST_DELAY)
+            doc_resp = self.session.get(doc_html_url, timeout=30)
+            if doc_resp.status_code != 200:
+                logger.debug(
+                    "SEC HTML fetch failed for %s: HTTP %s", accession_number, doc_resp.status_code
+                )
+                return empty
+
+            client = SECEdgarClient.__new__(SECEdgarClient)
+            return client.extract_mda_sections(doc_resp.text)
+
+        except Exception as e:
+            logger.debug("MD&A extraction failed for %s: %s", accession_number, e)
+            return empty
 
     @staticmethod
     def _is_pharma_company(

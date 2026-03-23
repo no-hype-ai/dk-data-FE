@@ -1,24 +1,22 @@
 -- SQLMesh Model: Silver PubChem
 -- Promotes mol_bronze.pubchem into mol_silver.pubchem with molecule-level linkage.
--- molecule_id is NULL — entity linking fills it by matching inchi_key against mol_silver.molecules.
+-- Entity linking: LEFT JOIN mol_silver.molecules on inchi_key — most stable structural identifier.
+-- FULL refresh ensures molecule_id is always current when new molecules are added.
 -- Exposes PubChem compound data (CID, structure, physicochemical properties) to xenon sections:
 --   molecule_profile, mechanism_of_action
 
 MODEL (
     name mol_silver.pubchem,
-    kind INCREMENTAL_BY_UNIQUE_KEY (
-        unique_key (cid)
-    ),
+    kind FULL,
     cron '@weekly',
     audits (
         not_null(columns := (cid, inchi_key))
-    ),
-    grain (cid)
+    )
 );
 
 SELECT
     gen_random_uuid()                       AS pubchem_id,
-    NULL::UUID                              AS molecule_id,     -- entity linking fills this via inchi_key match
+    m.molecule_id,
     b.cid,
     b.inchi_key,
 
@@ -59,6 +57,6 @@ SELECT
     b.created_at
 
 FROM mol_bronze.pubchem b
-WHERE b.processed_to_silver = FALSE
-  AND b.cid IS NOT NULL
+LEFT JOIN mol_silver.molecules m ON LOWER(m.inchi_key) = LOWER(b.inchi_key)
+WHERE b.cid IS NOT NULL
   AND b.inchi_key IS NOT NULL;

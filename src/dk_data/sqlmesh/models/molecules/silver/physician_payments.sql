@@ -1,24 +1,22 @@
 -- SQLMesh Model: Silver Physician Payments
 -- Promotes CMS Open Payments from mol_bronze.cms_open_payments
 -- into mol_silver.physician_payments with molecule-level linkage.
--- molecule_id is NULL here — entity linking fills it via product_name matching.
+-- Entity linking: LEFT JOIN mol_silver.molecules on product_name → canonical_name.
+-- FULL refresh ensures molecule_id is always current when new molecules are added.
 -- Part of: Tier 4 gap fix — was blocked by enabled=false cron + missing silver model
 
 MODEL (
     name mol_silver.physician_payments,
-    kind INCREMENTAL_BY_UNIQUE_KEY (
-        unique_key (source_record_id)
-    ),
+    kind FULL,
     cron '@monthly',
     audits (
         not_null(columns := (source_record_id, physician_npi))
-    ),
-    grain (source_record_id)
+    )
 );
 
 SELECT
     gen_random_uuid()                                           AS payment_id,
-    NULL::UUID                                                  AS molecule_id,  -- entity linking fills this
+    m.molecule_id,
     b.physician_npi,
     TRIM(b.physician_first_name || ' ' || b.physician_last_name) AS physician_name,
     b.physician_specialty,
@@ -35,6 +33,8 @@ SELECT
     b.ingested_at                                               AS created_at
 
 FROM mol_bronze.cms_open_payments b
-WHERE b.processed_to_silver = FALSE
-  AND b.physician_npi IS NOT NULL
+LEFT JOIN mol_silver.molecules m
+       ON b.product_name IS NOT NULL
+      AND LOWER(m.canonical_name) = LOWER(b.product_name)
+WHERE b.physician_npi IS NOT NULL
   AND b.record_id IS NOT NULL;

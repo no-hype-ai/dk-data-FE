@@ -34,7 +34,7 @@ SELECT
     END AS has_tavr_certification,
     NOW() AS _updated_at
 FROM staging.hospitals h
-LEFT JOIN staging.certifications c ON h.hospital_id = c.hospital_id
+LEFT JOIN hcs_silver.certifications c ON h.hospital_id = c.hospital_id
     AND c.certification_type LIKE '%Transcatheter%'
     AND c.is_active = TRUE
 -- Deduplicate in case of multiple certifications

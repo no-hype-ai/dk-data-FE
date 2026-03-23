@@ -13,7 +13,7 @@ Daily cadence, deduplicates on article DOI or URL (stored as article_id).
 
 import hashlib
 import logging
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 from urllib.parse import urlparse
 
@@ -123,6 +123,13 @@ class JournalRSSFetcher(BaseFetcher):
                 ",".join(sorted(seen_ids)).encode()
             ).hexdigest() if seen_ids else None
 
+            self.save_manifest(
+                last_run_at=datetime.now(timezone.utc).isoformat(),
+                last_run_status="completed",
+                total_records_fetched=len(all_records),
+                last_content_hash=content_hash,
+            )
+
             result = {
                 "status": "success",
                 "records": all_records,
@@ -133,6 +140,7 @@ class JournalRSSFetcher(BaseFetcher):
 
         except Exception as e:
             logger.exception("Journal RSS fetch failed: %s", e)
+            self.save_manifest(last_run_status="interrupted")
             result = {
                 "status": "failed",
                 "records": [],

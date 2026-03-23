@@ -27,7 +27,7 @@ WITH drugbank_patents AS (
         (patent->>'expires')::DATE AS expiry_date,
         (patent->>'pediatric_extension')::BOOLEAN AS pediatric_extension,
         'drugbank' AS source,
-        ingested_at AS source_updated_at
+        source_updated_at AS source_updated_at
     FROM mol_bronze.drugbank,
          jsonb_array_elements(patents) AS patent
     WHERE
@@ -104,20 +104,22 @@ epo_patents AS (
 ),
 
 -- Feature 015: Orange Book patents
+-- Orange Book columns: patent_number, patent_expiration, trade_name, applicant, approval_date
+-- (no patent_title, filing_date, assignee_organization, or is_pharma_related)
 orange_book_patents AS (
     SELECT
         patent_number,
-        patent_title AS title,
+        trade_name AS title,
         NULL::TEXT AS abstract,
         NULL::DATE AS grant_date,
-        filing_date,
-        assignee_organization AS assignee,
+        approval_date AS filing_date,
+        applicant AS assignee,
         NULL::TEXT AS assignee_type,
         NULL::JSONB AS inventors,
         NULL::JSONB AS cpc_codes,
         NULL::JSONB AS ipc_codes,
         NULL::INTEGER AS num_claims,
-        is_pharma_related,
+        TRUE AS is_pharma_related,
         NULL::TEXT AS family_id,
         'orange_book' AS source
     FROM mol_bronze.orange_book

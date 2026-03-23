@@ -13,7 +13,7 @@ SELECT
     m.molecule_id,
     m.inchi_key,
     m.canonical_name,
-    m.therapeutic_areas,
+    NULL::TEXT[] AS therapeutic_areas,
     m.mechanism_of_action,
     m.max_phase,
 
@@ -71,7 +71,7 @@ SELECT
 FROM mol_silver.molecules m
 LEFT JOIN mol_silver.clinical_trials ct ON m.molecule_id = ct.molecule_id
 WHERE m.needs_review = FALSE
-GROUP BY m.molecule_id, m.inchi_key, m.canonical_name, m.therapeutic_areas,
+GROUP BY m.molecule_id, m.inchi_key, m.canonical_name,
          m.mechanism_of_action, m.max_phase
 HAVING COUNT(DISTINCT ct.nct_id) > 0
     OR m.max_phase >= 4

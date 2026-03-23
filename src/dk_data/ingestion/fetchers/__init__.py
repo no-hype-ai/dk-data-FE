@@ -20,7 +20,6 @@ from .medical_news import MedicalNewsFetcher
 from .sec_edgar import SECEdgarFetcher
 from .uniprot import UniProtFetcher
 from .pdb import PDBFetcher
-from .orcid import ORCIDFetcher
 from .uspto_trademarks import USPTOTrademarksFetcher
 from .euipo_trademarks import EUIPOTrademarksFetcher
 from .euipo_designs import EUIPODesignsFetcher
@@ -77,7 +76,6 @@ __all__ = [
     'SECEdgarFetcher',
     'UniProtFetcher',
     'PDBFetcher',
-    'ORCIDFetcher',
     'USPTOTrademarksFetcher',
     'EUIPOTrademarksFetcher',
     'EUIPODesignsFetcher',

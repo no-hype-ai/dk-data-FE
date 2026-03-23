@@ -9,17 +9,17 @@ MODEL (
         batch_size 500
     ),
     cron '@daily',
-    audits (not_null(columns := (facility_id))),
-    grain (facility_id)
+    audits (not_null(columns := (facility_name))),
+    grain (facility_name, city, state)
 );
 
 SELECT
-    TRIM(facility_id)::TEXT                     AS facility_id,
+    md5(TRIM(facility_name) || TRIM(city) || TRIM(state))::TEXT AS facility_id,
     UPPER(TRIM(facility_name))                  AS facility_name,
     UPPER(TRIM(city))                           AS city,
     UPPER(TRIM(state))                          AS state,
-    designation_date::DATE                      AS designation_date,
-    expiration_date::DATE                       AS expiration_date,
+    CASE WHEN designation_year ~ '^\d{4}$' THEN (designation_year || '-01-01')::DATE ELSE NULL END AS designation_date,
+    NULL::DATE                                  AS expiration_date,
     _loaded_at,
     _source_file,
     _source_hash

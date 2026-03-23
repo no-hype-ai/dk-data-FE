@@ -21,6 +21,7 @@ WITH unnested AS (
         r.request_timestamp,
         COALESCE(r.request_params->>'q', r.request_params->>'query', '') AS search_query,
         result,
+        result AS raw_json,
         row_number() OVER (PARTITION BY r.id ORDER BY ordinality) AS result_rank
     FROM mol_raw.websearch r,
          jsonb_array_elements(
@@ -33,6 +34,8 @@ WITH unnested AS (
          ) WITH ORDINALITY AS t(result, ordinality)
     WHERE r.response_status = 200
       AND r.response_body IS NOT NULL
+      AND r.processed_to_bronze = FALSE
+      AND r.request_timestamp BETWEEN @start_dt AND @end_dt
 )
 
 SELECT
@@ -92,6 +95,7 @@ SELECT
 
     (COALESCE(result->>'score', result->>'relevance'))::NUMERIC AS relevance_score,
 
+    raw_json,
     FALSE               AS processed_to_silver,
     request_timestamp,
     request_timestamp   AS ingested_at,

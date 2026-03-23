@@ -21,6 +21,7 @@ Rate limit: 10 requests/second (no auth required).
 import hashlib
 import logging
 import time
+from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
 from .base import BaseFetcher
@@ -91,12 +92,26 @@ class EuropePMCFetcher(BaseFetcher):
             if days_back:
                 query += f" AND FIRST_PDATE:[{self._days_ago(days_back)} TO *]"
 
+        manifest = self.load_manifest()
+        resume_cursor: Optional[str] = (
+            manifest.get("last_cursor") if kwargs.get("resume", True) else None
+        )
+
         try:
-            records = self._search_paginated(query, max_results=max_results)
+            records = self._search_paginated(query, max_results=max_results,
+                                             resume_cursor=resume_cursor)
 
             content_hash = hashlib.md5(
                 ",".join(r.get("id", r.get("pmid", "")) for r in records).encode()
             ).hexdigest()
+
+            self.save_manifest(
+                last_run_at=datetime.now(timezone.utc).isoformat(),
+                last_run_status="completed",
+                total_records_fetched=len(records),
+                last_content_hash=content_hash,
+                last_cursor=None,
+            )
 
             result: Dict[str, Any] = {
                 "status": "success",
@@ -108,6 +123,7 @@ class EuropePMCFetcher(BaseFetcher):
 
         except Exception as e:
             logger.exception(f"[europepmc] Fetch failed: {e}")
+            self.save_manifest(last_run_status="interrupted")
             result = {
                 "status": "failed",
                 "records": [],
@@ -140,13 +156,14 @@ class EuropePMCFetcher(BaseFetcher):
         self,
         query: str,
         max_results: int = 1000,
+        resume_cursor: Optional[str] = None,
     ) -> List[Dict[str, Any]]:
         """Search EuropePMC with cursor-based pagination.
 
         Returns raw API result dicts (normalized by bronze SQLMesh model).
         """
         all_records: List[Dict[str, Any]] = []
-        cursor_mark = "*"
+        cursor_mark = resume_cursor or "*"
         fetched = 0
 
         while fetched < max_results:
@@ -186,6 +203,8 @@ class EuropePMCFetcher(BaseFetcher):
                 break
 
             cursor_mark = next_cursor
+            # Persist cursor so an interrupted run can resume
+            self.save_manifest(last_cursor=cursor_mark, last_run_status="in_progress")
             time.sleep(self._request_delay)
 
         logger.info(f"[europepmc] Fetched {len(all_records)} publications")

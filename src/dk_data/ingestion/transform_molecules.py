@@ -45,8 +45,9 @@ LAYER_MODELS = {
         'mol_bronze.drugbank',
     ],
     'silver': [
-        # mol_silver.molecules is managed by Xenon onboarding (not SQLMesh) —
-        # it has FK references and manual data that can't be replaced by a VIEW
+        # mol_silver.molecules is the master entity table — populated from ChEMBL bronze.
+        # Must run FIRST so entity linking in all downstream models can resolve molecule_id.
+        'mol_silver.molecules',
         'mol_silver.bioactivity',
         'mol_silver.molecule_aliases',   # must run before adverse_events (adverse_events JOINs it)
         'mol_silver.drug_labels',
@@ -78,7 +79,6 @@ LAYER_MODELS = {
         'mol_bronze.hta_decisions',
         'mol_bronze.cochrane_reviews',
         'mol_bronze.sec_edgar',
-        'mol_bronze.orcid',
         'mol_bronze.journal_rss',
         'mol_bronze.medical_news',
         'mol_bronze.cms_inpatient',

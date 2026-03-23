@@ -26,7 +26,7 @@ WITH molecule_base AS (
         m.molecular_formula,
         m.molecular_weight,
         m.molecule_type,
-        m.therapeutic_areas,
+        NULL::TEXT[] AS therapeutic_areas,
         m.mechanism_of_action,
         m.max_phase,
         m.resolution_confidence,

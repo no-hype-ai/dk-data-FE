@@ -10,16 +10,16 @@
 --   - First interchangeable exclusivity
 --   - Reference product exclusivity
 
+-- Entity linking: LEFT JOIN mol_silver.molecules on generic_name, trade_name as fallback.
+-- FULL refresh ensures molecule_id is always current when new molecules are added.
+
 MODEL (
     name mol_silver.patent_exclusivities,
-    kind INCREMENTAL_BY_UNIQUE_KEY (
-        unique_key (application_number, patent_number, exclusivity_code)
-    ),
+    kind FULL,
     cron '@weekly',
     audits (
         not_null(columns := (application_number, source))
-    ),
-    grain (application_number, patent_number, exclusivity_code)
+    )
 );
 
 -- Orange Book: explicit patents and exclusivities for NDA/ANDA small molecules
@@ -33,7 +33,7 @@ WITH orange_book_data AS (
         strength,
         dosage_form,
         route,
-        approval_date,
+        approval_date::TEXT AS approval_date,
         te_code,
         rld,
         patent_number,
@@ -87,7 +87,7 @@ purple_book_data AS (
         route,
         approval_date::TEXT AS approval_date,
         NULL::TEXT AS te_code,
-        NULL::BOOLEAN AS rld,
+        NULL::TEXT AS rld,
         NULL::TEXT AS patent_number,
         NULL::DATE AS patent_expiry_date,
         NULL::BOOLEAN AS drug_substance_patent,
@@ -179,95 +179,57 @@ purple_book_data AS (
       AND bla_number IS NOT NULL
       -- Deduplicate: take first product_number per BLA
       AND product_number = '001'
+),
+
+all_data AS (
+    SELECT
+        gen_random_uuid() AS id,
+        application_number, product_number, trade_name, generic_name, applicant,
+        strength, dosage_form, route, approval_date, te_code, rld, patent_number,
+        patent_expiry_date, drug_substance_patent, drug_product_patent, patent_use_code,
+        patent_type, exclusivity_code, exclusivity_date, source, source_book,
+        is_biosimilar, is_interchangeable, reference_product_bla, reference_product_name,
+        bpcia_data_exclusivity_end, bpcia_biosimilar_filing_date, orphan_exclusivity_end,
+        interchangeable_exclusivity_end, license_type, presentation, status, center,
+        first_licensure_date, exclusivity_expiry_date, ref_product_exclusivity_end,
+        interchangeable_approval_date, has_patent_list, source_updated_at,
+        NOW() AS created_at
+    FROM orange_book_data
+
+    UNION ALL
+
+    SELECT
+        gen_random_uuid() AS id,
+        application_number, product_number, trade_name, generic_name, applicant,
+        strength, dosage_form, route, approval_date, te_code, rld, patent_number,
+        patent_expiry_date, drug_substance_patent, drug_product_patent, patent_use_code,
+        patent_type, exclusivity_code, exclusivity_date, source, source_book,
+        is_biosimilar, is_interchangeable, reference_product_bla, reference_product_name,
+        bpcia_data_exclusivity_end, bpcia_biosimilar_filing_date, orphan_exclusivity_end,
+        interchangeable_exclusivity_end, license_type, presentation, status, center,
+        first_licensure_date, exclusivity_expiry_date, ref_product_exclusivity_end,
+        interchangeable_approval_date, has_patent_list, source_updated_at,
+        NOW() AS created_at
+    FROM purple_book_data
 )
 
 SELECT
-    gen_random_uuid() AS id,
-    NULL::UUID AS molecule_id,  -- entity linking fills this
-    application_number,
-    product_number,
-    trade_name,
-    generic_name,
-    applicant,
-    strength,
-    dosage_form,
-    route,
-    approval_date,
-    te_code,
-    rld,
-    patent_number,
-    patent_expiry_date,
-    drug_substance_patent,
-    drug_product_patent,
-    patent_use_code,
-    patent_type,
-    exclusivity_code,
-    exclusivity_date,
-    source,
-    source_book,
-    is_biosimilar,
-    is_interchangeable,
-    reference_product_bla,
-    reference_product_name,
-    bpcia_data_exclusivity_end,
-    bpcia_biosimilar_filing_date,
-    orphan_exclusivity_end,
-    interchangeable_exclusivity_end,
-    license_type,
-    presentation,
-    status,
-    center,
-    first_licensure_date,
-    exclusivity_expiry_date,
-    ref_product_exclusivity_end,
-    interchangeable_approval_date,
-    has_patent_list,
-    source_updated_at,
-    NOW() AS created_at
-FROM orange_book_data
-
-UNION ALL
-
-SELECT
-    gen_random_uuid() AS id,
-    NULL::UUID AS molecule_id,
-    application_number,
-    product_number,
-    trade_name,
-    generic_name,
-    applicant,
-    strength,
-    dosage_form,
-    route,
-    approval_date,
-    te_code,
-    rld,
-    patent_number,
-    patent_expiry_date,
-    drug_substance_patent,
-    drug_product_patent,
-    patent_use_code,
-    patent_type,
-    exclusivity_code,
-    exclusivity_date,
-    source,
-    source_book,
-    is_biosimilar,
-    is_interchangeable,
-    reference_product_bla,
-    reference_product_name,
-    bpcia_data_exclusivity_end,
-    bpcia_biosimilar_filing_date,
-    orphan_exclusivity_end,
-    interchangeable_exclusivity_end,
-    license_type,
-    presentation,
-    status,
-    center,
-    first_licensure_date,
-    exclusivity_expiry_date,
-    ref_product_exclusivity_end,
-    interchangeable_approval_date,
-    has_patent_list,
-    source_updated_at
-FROM purple_book_data;
+    d.id,
+    COALESCE(m_gen.molecule_id, m_trade.molecule_id) AS molecule_id,
+    d.application_number, d.product_number, d.trade_name, d.generic_name, d.applicant,
+    d.strength, d.dosage_form, d.route, d.approval_date, d.te_code, d.rld,
+    d.patent_number, d.patent_expiry_date, d.drug_substance_patent, d.drug_product_patent,
+    d.patent_use_code, d.patent_type, d.exclusivity_code, d.exclusivity_date,
+    d.source, d.source_book, d.is_biosimilar, d.is_interchangeable,
+    d.reference_product_bla, d.reference_product_name, d.bpcia_data_exclusivity_end,
+    d.bpcia_biosimilar_filing_date, d.orphan_exclusivity_end, d.interchangeable_exclusivity_end,
+    d.license_type, d.presentation, d.status, d.center, d.first_licensure_date,
+    d.exclusivity_expiry_date, d.ref_product_exclusivity_end, d.interchangeable_approval_date,
+    d.has_patent_list, d.source_updated_at, d.created_at
+FROM all_data d
+LEFT JOIN mol_silver.molecules m_gen
+       ON LOWER(m_gen.canonical_name) = LOWER(d.generic_name)
+LEFT JOIN mol_silver.molecules m_trade
+       ON m_gen.molecule_id IS NULL
+      AND d.trade_name IS NOT NULL
+      AND LOWER(m_trade.canonical_name) = LOWER(d.trade_name);

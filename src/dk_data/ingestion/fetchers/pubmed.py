@@ -15,6 +15,7 @@ import logging
 import os
 import time
 import xml.etree.ElementTree as ET
+from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
 from .base import BaseFetcher
@@ -74,10 +75,15 @@ class PubMedFetcher(BaseFetcher):
         days_back: int = kwargs.get("days_back", 1)
         retmax: int = min(kwargs.get("retmax", 500), self.MAX_BATCH_SIZE)
         max_results: int = kwargs.get("max_results", self.MAX_BATCH_SIZE)
+        resume: bool = kwargs.get("resume", True)
+
+        manifest = self.load_manifest()
+        resume_offset: int = manifest.get("last_offset", 0) if resume else 0
 
         try:
-            # Step 1: esearch to get PMIDs
-            pmids = self._esearch(query, days_back=days_back, retmax=retmax, max_results=max_results, resume_offset=kwargs.get('resume_offset', 0))
+            # Step 1: esearch to get PMIDs (with offset resume support)
+            pmids = self._esearch(query, days_back=days_back, retmax=retmax,
+                                  max_results=max_results, resume_offset=resume_offset)
 
             if not pmids:
                 result: Dict[str, Any] = {
@@ -94,10 +100,17 @@ class PubMedFetcher(BaseFetcher):
             # Step 2: efetch to retrieve article details in batches
             records = self._efetch_batched(pmids, batch_size=200)
 
-            # Compute a deterministic hash over sorted PMIDs for change detection
             content_hash = hashlib.md5(
                 ",".join(sorted(pmids)).encode()
             ).hexdigest()
+
+            self.save_manifest(
+                last_run_at=datetime.now(timezone.utc).isoformat(),
+                last_run_status="completed",
+                total_records_fetched=len(records),
+                last_content_hash=content_hash,
+                last_offset=0,  # Reset — run completed cleanly
+            )
 
             result = {
                 "status": "success",
@@ -109,6 +122,10 @@ class PubMedFetcher(BaseFetcher):
 
         except Exception as e:
             logger.exception(f"PubMed fetch failed: {e}")
+            self.save_manifest(
+                last_run_status="interrupted",
+                last_offset=getattr(self, '_last_offset', 0),
+            )
             result = {
                 "status": "failed",
                 "records": [],
@@ -190,13 +207,14 @@ class PubMedFetcher(BaseFetcher):
 
             all_pmids.extend(batch_ids)
 
-            # Check total count
             count_elem = root.find("Count")
             total_count = int(count_elem.text) if count_elem is not None and count_elem.text else 0
 
             retstart += retmax
+            self._last_offset = retstart
+            # Persist offset so an interrupted run can resume from here
+            self.save_manifest(last_offset=retstart, last_run_status="in_progress")
 
-            # Stop conditions
             if retstart >= total_count:
                 break
             if len(all_pmids) >= max_results:

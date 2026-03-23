@@ -22,7 +22,8 @@ WITH unnested AS (
     SELECT
         r.id AS raw_id,
         r.request_timestamp,
-        item
+        item,
+        item AS raw_json
     FROM mol_raw.pharmgkb r,
          jsonb_array_elements(
              CASE
@@ -33,6 +34,8 @@ WITH unnested AS (
          ) AS item
     WHERE r.response_status = 200
       AND r.response_body IS NOT NULL
+      AND r.processed_to_bronze = FALSE
+      AND r.request_timestamp BETWEEN @start_dt AND @end_dt
 )
 
 SELECT DISTINCT ON (pharmgkb_id)
@@ -60,6 +63,7 @@ SELECT DISTINCT ON (pharmgkb_id)
     item->'variantAnnotations'   AS variant_annotations,
     item->'pathways'             AS pathways,
 
+    raw_json,
     FALSE               AS processed_to_silver,
     request_timestamp,
     request_timestamp   AS ingested_at,

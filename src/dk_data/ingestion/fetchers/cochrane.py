@@ -15,7 +15,7 @@ API: https://eutils.ncbi.nlm.nih.gov/entrez/eutils/
 import hashlib
 import logging
 import time
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 from xml.etree import ElementTree
 
@@ -116,6 +116,13 @@ class CochraneFetcher(BaseFetcher):
                 str(sorted(seen_ids)).encode()
             ).hexdigest()
 
+            self.save_manifest(
+                last_run_at=datetime.now(timezone.utc).isoformat(),
+                last_run_status="completed",
+                total_records_fetched=len(all_records),
+                last_content_hash=content_hash,
+            )
+
             result = {
                 "status": "success",
                 "records": all_records,
@@ -127,6 +134,7 @@ class CochraneFetcher(BaseFetcher):
 
         except Exception as e:
             logger.exception("Failed to fetch Cochrane data: %s", e)
+            self.save_manifest(last_run_status="interrupted")
             result = {
                 "status": "failed",
                 "records": [],

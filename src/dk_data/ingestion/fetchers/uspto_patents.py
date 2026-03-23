@@ -15,7 +15,7 @@ import hashlib
 import logging
 import os
 import time
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional
 
 from .base import BaseFetcher
@@ -92,6 +92,10 @@ class USPTOPatentsFetcher(BaseFetcher):
         days_back = kwargs.get("days_back", 7)
         cpc_codes = kwargs.get("cpc_codes", PHARMA_CPC_CODES)
         max_records = kwargs.get("max_records", MAX_RECORDS)
+        resume = kwargs.get("resume", True)
+
+        manifest = self.load_manifest()
+        after_cursor: Optional[str] = manifest.get("last_cursor") if resume else None
 
         try:
             logger.info(
@@ -101,7 +105,6 @@ class USPTOPatentsFetcher(BaseFetcher):
             )
 
             all_records: List[Dict[str, Any]] = []
-            after_cursor: Optional[str] = None
 
             while len(all_records) < max_records:
                 data = self._fetch_page(
@@ -124,23 +127,34 @@ class USPTOPatentsFetcher(BaseFetcher):
                 if len(patents) < PAGE_SIZE:
                     break
 
-                # Rate limit: 45 req/min for PatentsView API
-                time.sleep(REQUEST_DELAY)
-
                 # Cursor-based pagination: use last patent_id as cursor
                 last_patent = patents[-1]
                 after_cursor = str(last_patent.get("patent_id", ""))
                 if not after_cursor:
                     break
 
+                # Persist cursor so an interrupted run can resume
+                self.save_manifest(last_cursor=after_cursor, last_run_status="in_progress")
+
                 if len(all_records) >= max_records:
                     all_records = all_records[:max_records]
                     break
+
+                # Rate limit: 45 req/min for PatentsView API
+                time.sleep(REQUEST_DELAY)
 
             # Compute content hash
             content_hash = hashlib.sha256(
                 str(sorted(r["patent_number"] for r in all_records)).encode()
             ).hexdigest()
+
+            self.save_manifest(
+                last_run_at=datetime.now(timezone.utc).isoformat(),
+                last_run_status="completed",
+                total_records_fetched=len(all_records),
+                last_content_hash=content_hash,
+                last_cursor=None,  # Reset — run completed cleanly
+            )
 
             result = {
                 "status": "success",
@@ -155,6 +169,10 @@ class USPTOPatentsFetcher(BaseFetcher):
 
         except Exception as e:
             logger.exception("Failed to fetch USPTO Patents data: %s", e)
+            self.save_manifest(
+                last_run_status="interrupted",
+                last_cursor=after_cursor,
+            )
             result = {
                 "status": "failed",
                 "records": [],

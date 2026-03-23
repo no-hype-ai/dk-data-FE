@@ -53,6 +53,9 @@ SELECT
            OR code LIKE 'C07D%' OR code LIKE 'C07K%'
     ) AS is_pharma_related,
 
+    -- Raw passthrough: preserve full source row for column autodiscovery
+    to_jsonb(r.*) AS raw_json,
+
     -- Processing metadata
     FALSE AS processed_to_silver,
     r._loaded_at AS ingested_at

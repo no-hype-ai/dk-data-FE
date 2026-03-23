@@ -17,7 +17,8 @@ Docs: https://docs.openalex.org
 import hashlib
 import logging
 import os
-from datetime import datetime, timedelta
+import time
+from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional
 
 from .base import BaseFetcher
@@ -100,6 +101,10 @@ class OpenAlexCIFetcher(BaseFetcher):
         days_back = kwargs.get("days_back", 7)
         concept_filter = kwargs.get("concept_filter", DEFAULT_CONCEPT_FILTER)
         max_records = kwargs.get("max_records", MAX_RECORDS)
+        resume = kwargs.get("resume", True)
+
+        manifest = self.load_manifest()
+        resume_cursor: Optional[str] = manifest.get("last_cursor") if resume else None
 
         try:
             logger.info(
@@ -113,7 +118,7 @@ class OpenAlexCIFetcher(BaseFetcher):
             filter_str = f"from_publication_date:{from_date},{concept_filter}"
 
             all_records: List[Dict[str, Any]] = []
-            cursor = "*"  # initial cursor for first page
+            cursor = resume_cursor or "*"  # resume from saved cursor or start fresh
 
             while cursor and len(all_records) < max_records:
                 params = {
@@ -149,14 +154,26 @@ class OpenAlexCIFetcher(BaseFetcher):
                     break
                 cursor = next_cursor
 
+                # Persist cursor so an interrupted run can resume
+                self.save_manifest(last_cursor=cursor, last_run_status="in_progress")
+
                 logger.debug(
                     f"Fetched page: {len(results)} works, total so far: {len(all_records)}"
                 )
+                time.sleep(0.11)  # ~9 req/s to stay under rate limits
 
             # Compute hash of the result set
             content_hash = hashlib.md5(
                 str(sorted(r["work_id"] for r in all_records)).encode()
             ).hexdigest()
+
+            self.save_manifest(
+                last_run_at=datetime.now(timezone.utc).isoformat(),
+                last_run_status="completed",
+                total_records_fetched=len(all_records),
+                last_content_hash=content_hash,
+                last_cursor=None,  # Reset — run completed cleanly
+            )
 
             result = {
                 "status": "success",
@@ -171,6 +188,7 @@ class OpenAlexCIFetcher(BaseFetcher):
 
         except Exception as e:
             logger.exception(f"Failed to fetch OpenAlex data: {e}")
+            self.save_manifest(last_run_status="interrupted")
             result = {
                 "status": "failed",
                 "records": [],

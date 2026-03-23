@@ -1,105 +1,236 @@
-# TAVR Data Infrastructure - Cron Schedule Configuration
+# DK Molecule Data Platform — Pipeline Schedule Reference
 # =====================================================
 #
-# This file contains the recommended cron schedule for automated data refresh.
-# To install, edit your crontab with: crontab -e
-# Then add the relevant lines below.
+# NOTE: The production scheduler runs as a long-lived Docker service
+# (pipeline_scheduler.py), NOT as a cron daemon. This file documents
+# the equivalent cron expressions for reference and for manual/CI runs.
 #
-# Environment Setup:
-#   Ensure the following environment variables are set in /etc/environment
-#   or exported in your shell profile:
-#   - POSTGRES_HOST
-#   - POSTGRES_PORT
-#   - POSTGRES_USER
-#   - POSTGRES_PASSWORD
-#   - POSTGRES_DB
-#   - HRSA_API_URL (optional)
+# To run manually:
+#   python -m dk_data.services.data_platform.sync_runner \
+#       --sources clinicaltrials,openfda_labels --tier daily
 #
-# Log files are written to: edwards/logs/
+# Environment variables (set via Doppler / .env):
+#   DATABASE_URL          PostgreSQL connection string
+#   NCBI_API_KEY          PubMed / NCBI E-utilities (10 req/s authenticated)
+#   OPENALEX_API_KEY      OpenAlex (required since Feb 2026)
+#   EPO_CONSUMER_KEY      EPO Open Patent Services OAuth2
+#   EPO_CONSUMER_SECRET
+#   ORCID_CLIENT_ID       ORCID public API OAuth2
+#   ORCID_CLIENT_SECRET
+#   SEC_USER_AGENT        SEC EDGAR fair-access user-agent string
+#   OPENFDA_API_KEY       openFDA (optional, raises rate limit)
+#
+# Log files: /var/log/dk-data/cron_<tier>.log
+# Manifests: data/raw/.manifests/<source>.json (ETag + cursor state)
 #
 # =====================================================
 
-# Set PATH to include Python and PostgreSQL tools
 PATH=/usr/local/bin:/usr/bin:/bin
-
-# Set working directory (update this path)
-EDWARDS_HOME=/path/to/edwards
+DK_HOME=/app
 
 # =====================================================
-# WEEKLY: CMS Data Refresh (Sunday at 2:00 AM)
+# DAILY SOURCES — 02:00 UTC
+# High-change-frequency sources updated every day
 # =====================================================
-# CMS Medicare Inpatient, Hospital Info, and Cost Reports
-# Updated weekly as CMS publishes new data
+# ClinicalTrials.gov — trial registry (new trials + status updates)
+0 2 * * * cd $DK_HOME && python -m dk_data.services.data_platform.sync_runner --sources clinicaltrials --tier daily >> /var/log/dk-data/cron_daily.log 2>&1
 
-0 2 * * 0 cd $EDWARDS_HOME && ./scripts/refresh_data.sh --source cms_inpatient >> logs/cron_cms.log 2>&1
-15 2 * * 0 cd $EDWARDS_HOME && ./scripts/refresh_data.sh --source cms_hospital_info >> logs/cron_cms.log 2>&1
-30 2 * * 0 cd $EDWARDS_HOME && ./scripts/refresh_data.sh --source cms_cost_reports >> logs/cron_cms.log 2>&1
+# OpenFDA drug labels (FDA label updates)
+5 2 * * * cd $DK_HOME && python -m dk_data.services.data_platform.sync_runner --sources openfda_labels --tier daily >> /var/log/dk-data/cron_daily.log 2>&1
 
-# =====================================================
-# MONTHLY: Full Data Pipeline (1st of month at 3:00 AM)
-# =====================================================
-# Run complete ingestion and transformation pipeline
+# DailyMed structured drug labels
+10 2 * * * cd $DK_HOME && python -m dk_data.services.data_platform.sync_runner --sources dailymed --tier daily >> /var/log/dk-data/cron_daily.log 2>&1
 
-0 3 1 * * cd $EDWARDS_HOME && ./scripts/refresh_data.sh >> logs/cron_monthly.log 2>&1
+# Web/news search cache refresh (on-demand enrichment preload)
+15 2 * * * cd $DK_HOME && python -m dk_data.services.data_platform.sync_runner --sources websearch --tier daily >> /var/log/dk-data/cron_daily.log 2>&1
 
-# =====================================================
-# MONTHLY: Score Recalculation (1st of month at 5:00 AM)
-# =====================================================
-# Recalculate TRS scores after monthly data refresh
+# Journal RSS feeds (BMJ, NEJM, Lancet, JAMA, etc.)
+20 2 * * * cd $DK_HOME && python -m dk_data.services.data_platform.sync_runner --sources journal_rss --tier daily >> /var/log/dk-data/cron_daily.log 2>&1
 
-0 5 1 * * cd $EDWARDS_HOME && ./scripts/run_sqlmesh.sh run >> logs/cron_scoring.log 2>&1
+# Medical/pharma news aggregator
+25 2 * * * cd $DK_HOME && python -m dk_data.services.data_platform.sync_runner --sources medical_news --tier daily >> /var/log/dk-data/cron_daily.log 2>&1
 
 # =====================================================
-# MONTHLY: History Purge (1st of month at 6:00 AM)
+# WEEKLY SOURCES — Sunday 03:00 UTC
+# Moderate-change sources refreshed every week
 # =====================================================
-# Purge score history older than 2 years
 
-0 6 1 * * cd $EDWARDS_HOME && python scripts/purge_history.py --force >> logs/cron_purge.log 2>&1
+# OpenFDA FAERS — adverse event reports (quarterly bulk + weekly deltas)
+0 3 * * 0 cd $DK_HOME && python -m dk_data.services.data_platform.sync_runner --sources openfda_faers --tier weekly >> /var/log/dk-data/cron_weekly.log 2>&1
+
+# ChEMBL bioactivity database
+5 3 * * 0 cd $DK_HOME && python -m dk_data.services.data_platform.sync_runner --sources chembl --tier weekly >> /var/log/dk-data/cron_weekly.log 2>&1
+
+# OpenAlex publications (CI scope — pharma/clinical)
+10 3 * * 0 cd $DK_HOME && python -m dk_data.services.data_platform.sync_runner --sources openalex --tier weekly >> /var/log/dk-data/cron_weekly.log 2>&1
+
+# Europe PMC full-text literature
+15 3 * * 0 cd $DK_HOME && python -m dk_data.services.data_platform.sync_runner --sources europepmc --tier weekly >> /var/log/dk-data/cron_weekly.log 2>&1
+
+# PubMed/NCBI literature
+20 3 * * 0 cd $DK_HOME && python -m dk_data.services.data_platform.sync_runner --sources pubmed --tier weekly >> /var/log/dk-data/cron_weekly.log 2>&1
+
+# RxNorm drug nomenclature (weekly NLM updates)
+25 3 * * 0 cd $DK_HOME && python -m dk_data.services.data_platform.sync_runner --sources rxnorm --tier weekly >> /var/log/dk-data/cron_weekly.log 2>&1
+
+# SIDER side-effect data
+30 3 * * 0 cd $DK_HOME && python -m dk_data.services.data_platform.sync_runner --sources sider --tier weekly >> /var/log/dk-data/cron_weekly.log 2>&1
+
+# WHO INN international nonproprietary names
+35 3 * * 0 cd $DK_HOME && python -m dk_data.services.data_platform.sync_runner --sources who_inn --tier weekly >> /var/log/dk-data/cron_weekly.log 2>&1
+
+# WHO GHO global health observatory
+40 3 * * 0 cd $DK_HOME && python -m dk_data.services.data_platform.sync_runner --sources who_gho --tier weekly >> /var/log/dk-data/cron_weekly.log 2>&1
+
+# WHO ICD disease classification
+45 3 * * 0 cd $DK_HOME && python -m dk_data.services.data_platform.sync_runner --sources who_icd --tier weekly >> /var/log/dk-data/cron_weekly.log 2>&1
+
+# EMA authorized medicines + EPARs
+50 3 * * 0 cd $DK_HOME && python -m dk_data.services.data_platform.sync_runner --sources ema --tier weekly >> /var/log/dk-data/cron_weekly.log 2>&1
+
+# FDA Orange Book (patent + exclusivity)
+55 3 * * 0 cd $DK_HOME && python -m dk_data.services.data_platform.sync_runner --sources orange_book --tier weekly >> /var/log/dk-data/cron_weekly.log 2>&1
+
+# FDA Purple Book (biologics)
+0 4 * * 0 cd $DK_HOME && python -m dk_data.services.data_platform.sync_runner --sources purple_book --tier weekly >> /var/log/dk-data/cron_weekly.log 2>&1
+
+# EPO Open Patent Services (European patents)
+5 4 * * 0 cd $DK_HOME && python -m dk_data.services.data_platform.sync_runner --sources epo_patents --tier weekly >> /var/log/dk-data/cron_weekly.log 2>&1
+
+# USPTO patents
+10 4 * * 0 cd $DK_HOME && python -m dk_data.services.data_platform.sync_runner --sources uspto_patents --tier weekly >> /var/log/dk-data/cron_weekly.log 2>&1
+
+# USPTO trademarks
+15 4 * * 0 cd $DK_HOME && python -m dk_data.services.data_platform.sync_runner --sources uspto_trademarks --tier weekly >> /var/log/dk-data/cron_weekly.log 2>&1
+
+# USPTO citation intelligence
+20 4 * * 0 cd $DK_HOME && python -m dk_data.services.data_platform.sync_runner --sources uspto_ci --tier weekly >> /var/log/dk-data/cron_weekly.log 2>&1
+
+# EUIPO trademarks
+25 4 * * 0 cd $DK_HOME && python -m dk_data.services.data_platform.sync_runner --sources euipo_trademarks --tier weekly >> /var/log/dk-data/cron_weekly.log 2>&1
+
+# HTA decisions (NICE, G-BA, PBAC, SMC)
+30 4 * * 0 cd $DK_HOME && python -m dk_data.services.data_platform.sync_runner --sources hta_decisions --tier weekly >> /var/log/dk-data/cron_weekly.log 2>&1
+
+# Cochrane Library systematic reviews
+35 4 * * 0 cd $DK_HOME && python -m dk_data.services.data_platform.sync_runner --sources cochrane_reviews --tier weekly >> /var/log/dk-data/cron_weekly.log 2>&1
+
+# SEC EDGAR pharmaceutical filings (10-K, 20-F, 8-K)
+40 4 * * 0 cd $DK_HOME && python -m dk_data.services.data_platform.sync_runner --sources sec_edgar --tier weekly >> /var/log/dk-data/cron_weekly.log 2>&1
+
+# NIH RePORTER research grants
+45 4 * * 0 cd $DK_HOME && python -m dk_data.services.data_platform.sync_runner --sources nih_reporter --tier weekly >> /var/log/dk-data/cron_weekly.log 2>&1
+
+# HRSA HPSA / provider data
+50 4 * * 0 cd $DK_HOME && python -m dk_data.services.data_platform.sync_runner --sources hrsa --tier weekly >> /var/log/dk-data/cron_weekly.log 2>&1
+
+# ORCID researcher profiles (for KOL enrichment)
+55 4 * * 0 cd $DK_HOME && python -m dk_data.services.data_platform.sync_runner --sources orcid --tier weekly >> /var/log/dk-data/cron_weekly.log 2>&1
+
+# ClinicalTrials.gov indication statistics
+0 5 * * 0 cd $DK_HOME && python -m dk_data.services.data_platform.sync_runner --sources ct_gov_indication_stats --tier weekly >> /var/log/dk-data/cron_weekly.log 2>&1
 
 # =====================================================
-# DAILY: Data Quality Checks (6:00 AM)
+# MONTHLY SOURCES — 1st of month 04:00 UTC
+# Large bulk databases with infrequent updates
 # =====================================================
-# Run freshness and quality monitoring
 
-0 6 * * * cd $EDWARDS_HOME && python scripts/check_freshness.py >> logs/cron_quality.log 2>&1
+# PubChem compound data
+0 4 1 * * cd $DK_HOME && python -m dk_data.services.data_platform.sync_runner --sources pubchem --tier monthly >> /var/log/dk-data/cron_monthly.log 2>&1
+
+# UniProt protein/target database
+10 4 1 * * cd $DK_HOME && python -m dk_data.services.data_platform.sync_runner --sources uniprot --tier monthly >> /var/log/dk-data/cron_monthly.log 2>&1
+
+# DrugBank comprehensive drug database
+20 4 1 * * cd $DK_HOME && python -m dk_data.services.data_platform.sync_runner --sources drugbank --tier monthly >> /var/log/dk-data/cron_monthly.log 2>&1
+
+# KEGG Drug database (pathways + drug entries)
+30 4 1 * * cd $DK_HOME && python -m dk_data.services.data_platform.sync_runner --sources kegg_drug --tier monthly >> /var/log/dk-data/cron_monthly.log 2>&1
+
+# PharmGKB pharmacogenomics
+40 4 1 * * cd $DK_HOME && python -m dk_data.services.data_platform.sync_runner --sources pharmgkb --tier monthly >> /var/log/dk-data/cron_monthly.log 2>&1
+
+# BindingDB binding affinity data (large bulk)
+50 4 1 * * cd $DK_HOME && python -m dk_data.services.data_platform.sync_runner --sources bindingdb --tier monthly >> /var/log/dk-data/cron_monthly.log 2>&1
+
+# TDC ADMET predictions
+0 5 1 * * cd $DK_HOME && python -m dk_data.services.data_platform.sync_runner --sources tdc_admet --tier monthly >> /var/log/dk-data/cron_monthly.log 2>&1
+
+# RCSB PDB protein structures
+10 5 1 * * cd $DK_HOME && python -m dk_data.services.data_platform.sync_runner --sources pdb --tier monthly >> /var/log/dk-data/cron_monthly.log 2>&1
 
 # =====================================================
-# WEEKLY: HRSA API Refresh (Monday at 1:00 AM)
+# QUARTERLY SOURCES — 1st of Jan, Apr, Jul, Oct 04:00 UTC
+# Very infrequent bulk dumps
 # =====================================================
-# HRSA HPSA data from API
 
-0 1 * * 1 cd $EDWARDS_HOME && ./scripts/refresh_data.sh --source hrsa >> logs/cron_hrsa.log 2>&1
+# ACC TVC transcatheter valve certification data
+0 4 1 1,4,7,10 * cd $DK_HOME && python -m dk_data.services.data_platform.sync_runner --sources acc_tvc --tier quarterly >> /var/log/dk-data/cron_quarterly.log 2>&1
+
+# CMS Hospital Cost Reports (annual release)
+15 4 1 1,4,7,10 * cd $DK_HOME && python -m dk_data.services.data_platform.sync_runner --sources cms_cost_reports --tier quarterly >> /var/log/dk-data/cron_quarterly.log 2>&1
+
+# CMS Hospital Compare (general info)
+30 4 1 1,4,7,10 * cd $DK_HOME && python -m dk_data.services.data_platform.sync_runner --sources cms_hospital_info --tier quarterly >> /var/log/dk-data/cron_quarterly.log 2>&1
+
+# CMS Medicare Inpatient PUF
+45 4 1 1,4,7,10 * cd $DK_HOME && python -m dk_data.services.data_platform.sync_runner --sources cms_inpatient --tier quarterly >> /var/log/dk-data/cron_quarterly.log 2>&1
 
 # =====================================================
-# QUARTERLY: ACC TVC Refresh (1st of Jan, Apr, Jul, Oct)
+# IDENTIFIER LINKING — after daily + weekly syncs
 # =====================================================
-# ACC Transcatheter Valve Certification data
 
-0 4 1 1,4,7,10 * cd $EDWARDS_HOME && ./scripts/refresh_data.sh --source acc_tvc >> logs/cron_acc.log 2>&1
+# Daily linking: resolve molecule IDs for new raw records
+0 5 * * * cd $DK_HOME && python -m dk_data.services.data_platform.sync_runner --job-type daily_linking >> /var/log/dk-data/cron_linking.log 2>&1
+
+# Weekly linking: broader cross-source identifier reconciliation
+0 6 * * 0 cd $DK_HOME && python -m dk_data.services.data_platform.sync_runner --job-type weekly_linking >> /var/log/dk-data/cron_linking.log 2>&1
+
+# =====================================================
+# SQLMESH TRANSFORMATIONS — after ingestion tiers
+# =====================================================
+
+# Run bronze → silver → gold transforms after daily ingestion
+0 7 * * * cd $DK_HOME && python -m sqlmesh run --select-model "mol_bronze.*" --select-model "mol_silver.*" >> /var/log/dk-data/cron_sqlmesh_daily.log 2>&1
+
+# Full SQLMesh run on Sundays after weekly ingestion
+0 8 * * 0 cd $DK_HOME && python -m sqlmesh run >> /var/log/dk-data/cron_sqlmesh_weekly.log 2>&1
+
+# =====================================================
+# DATA QUALITY CHECKS — 09:00 UTC daily
+# =====================================================
+
+0 9 * * * cd $DK_HOME && python -m dk_data.monitoring.freshness_checker >> /var/log/dk-data/cron_quality.log 2>&1
 
 # =====================================================
 # LOG ROTATION (Weekly on Sunday at midnight)
 # =====================================================
-# Rotate and compress old log files
 
-0 0 * * 0 find $EDWARDS_HOME/logs -name "*.log" -mtime +30 -exec gzip {} \;
-0 0 * * 0 find $EDWARDS_HOME/logs -name "*.gz" -mtime +90 -delete
+0 0 * * 0 find /var/log/dk-data -name "*.log" -mtime +30 -exec gzip {} \;
+0 0 * * 0 find /var/log/dk-data -name "*.gz" -mtime +90 -delete
 
 # =====================================================
-# NOTES
+# SCHEDULE SUMMARY
 # =====================================================
 #
-# Schedule Summary:
-# - Daily: Quality checks (6 AM)
-# - Weekly: CMS data + HRSA (Sunday 2 AM, Monday 1 AM)
-# - Monthly: Full pipeline + scoring + purge (1st, 3-6 AM)
-# - Quarterly: ACC TVC (1st of quarter months, 4 AM)
+# Daily  (02:00-02:25 UTC):  clinicaltrials, openfda_labels, dailymed,
+#                            websearch, journal_rss, medical_news
+# Weekly (Sun 03:00-05:00):  openfda_faers, chembl, openalex, europepmc,
+#                            pubmed, rxnorm, sider, who_inn, who_gho, who_icd,
+#                            ema, orange_book, purple_book, epo_patents,
+#                            uspto_patents, uspto_trademarks, uspto_ci,
+#                            euipo_trademarks, hta_decisions, cochrane_reviews,
+#                            sec_edgar, nih_reporter, hrsa, orcid,
+#                            ct_gov_indication_stats
+# Monthly (1st 04:00-05:10): pubchem, uniprot, drugbank, kegg_drug, pharmgkb,
+#                            bindingdb, tdc_admet, pdb
+# Quarterly (1st Q 04:00):   acc_tvc, cms_cost_reports, cms_hospital_info,
+#                            cms_inpatient
 #
-# Monitoring:
-# - Check logs/cron_*.log for execution status
-# - Query api.data_catalog for freshness status
-# - Review meta.refresh_log for refresh history
+# Manifests (ETag + cursor state) are saved per-source to:
+#   data/raw/.manifests/<source>.json
+# This prevents re-fetching unchanged data on subsequent runs.
 #
-# Manual Refresh:
-# - Run: ./scripts/refresh_data.sh
-# - Or specific source: ./scripts/refresh_data.sh --source hrsa
+# Manual trigger (single source):
+#   python -m dk_data.services.data_platform.sync_runner \
+#       --sources sec_edgar --tier weekly

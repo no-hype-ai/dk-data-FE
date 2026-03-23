@@ -21,15 +21,18 @@ WITH from_id_group AS (
     SELECT
         r.id AS raw_id,
         r.request_timestamp,
-        r.response_body->'idGroup'->>'rxnormId'->>0   AS rxcui,
+        r.response_body->'idGroup'->'rxnormId'->>0    AS rxcui,
         r.response_body->'idGroup'->>'name'           AS name,
         r.response_body->'idGroup'->>'tty'            AS tty,
         NULL::TEXT                                    AS synonym,
-        NULL::TEXT                                    AS suppress
+        NULL::TEXT                                    AS suppress,
+        r.response_body                               AS raw_json
     FROM mol_raw.rxnorm r
     WHERE r.response_status = 200
+      AND r.processed_to_bronze = FALSE
       AND r.response_body->'idGroup' IS NOT NULL
       AND r.response_body->'idGroup'->>'rxnormId' IS NOT NULL
+      AND r.request_timestamp BETWEEN @start_dt AND @end_dt
 ),
 
 -- properties format: {"properties": {"rxcui": "...", "name": "...", "tty": "...", "synonym": "..."}}
@@ -41,11 +44,14 @@ from_properties AS (
         r.response_body->'properties'->>'name'     AS name,
         r.response_body->'properties'->>'tty'      AS tty,
         r.response_body->'properties'->>'synonym'  AS synonym,
-        r.response_body->'properties'->>'suppress' AS suppress
+        r.response_body->'properties'->>'suppress' AS suppress,
+        r.response_body                            AS raw_json
     FROM mol_raw.rxnorm r
     WHERE r.response_status = 200
+      AND r.processed_to_bronze = FALSE
       AND r.response_body->'properties' IS NOT NULL
       AND r.response_body->'properties'->>'rxcui' IS NOT NULL
+      AND r.request_timestamp BETWEEN @start_dt AND @end_dt
 ),
 
 -- relatedGroup format: {"relatedGroup": {"conceptGroup": [{"conceptProperties": [{...}]}]}}
@@ -57,13 +63,16 @@ from_related AS (
         prop->>'name'     AS name,
         prop->>'tty'      AS tty,
         prop->>'synonym'  AS synonym,
-        NULL::TEXT        AS suppress
+        NULL::TEXT        AS suppress,
+        r.response_body   AS raw_json
     FROM mol_raw.rxnorm r,
          jsonb_array_elements(r.response_body->'relatedGroup'->'conceptGroup') AS cg,
          jsonb_array_elements(cg->'conceptProperties') AS prop
     WHERE r.response_status = 200
+      AND r.processed_to_bronze = FALSE
       AND r.response_body->'relatedGroup' IS NOT NULL
       AND prop->>'rxcui' IS NOT NULL
+      AND r.request_timestamp BETWEEN @start_dt AND @end_dt
 ),
 
 combined AS (
@@ -87,6 +96,7 @@ SELECT DISTINCT ON (rxcui)
     NULL::JSONB AS ndc_codes,
     NULL::JSONB AS atc_codes,
     NULL::JSONB AS drug_classes,
+    raw_json,
     FALSE       AS processed_to_silver,
     request_timestamp,
     request_timestamp AS ingested_at,

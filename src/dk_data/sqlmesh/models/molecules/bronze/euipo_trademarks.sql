@@ -1,5 +1,6 @@
 -- SQLMesh Model: Bronze EUIPO Trademarks
--- Transforms raw EUIPO TMview/IBM Gateway trademark data into typed bronze layer
+-- Extracts fields from response_body JSONB (authoritative raw API payload).
+-- All fields come from response_body so new API fields are auto-available.
 -- Part of: 014-uspto-euipo-model-datasource
 
 MODEL (
@@ -19,49 +20,58 @@ MODEL (
 SELECT
     gen_random_uuid() AS id,
 
-    -- Trademark identification
-    r.application_number,
-    r.mark_name,
+    -- Trademark identification (extracted from response_body JSONB)
+    r.response_body->>'application_number'   AS application_number,
+    r.response_body->>'mark_name'            AS mark_name,
 
     -- EUIPO-specific classification fields
-    r.mark_kind,
-    r.mark_feature,
-    r.mark_basis,
+    r.response_body->>'mark_kind'            AS mark_kind,
+    r.response_body->>'mark_feature'         AS mark_feature,
+    r.response_body->>'mark_basis'           AS mark_basis,
 
     -- Applicant info
-    r.applicant_name,
-    r.applicant_country,
-    r.representative_name,
+    r.response_body->>'applicant_name'       AS applicant_name,
+    r.response_body->>'applicant_country'    AS applicant_country,
+    r.response_body->>'representative_name'  AS representative_name,
 
     -- Status
-    r.status,
+    r.response_body->>'status'               AS status,
 
-    -- Dates
-    r.filing_date,
-    r.registration_date,
-    r.expiry_date,
+    -- Dates (cast from text; API returns ISO strings)
+    CASE WHEN r.response_body->>'filing_date' ~ '^\d{4}-\d{2}-\d{2}'
+         THEN (r.response_body->>'filing_date')::DATE ELSE NULL END AS filing_date,
+    CASE WHEN r.response_body->>'registration_date' ~ '^\d{4}-\d{2}-\d{2}'
+         THEN (r.response_body->>'registration_date')::DATE ELSE NULL END AS registration_date,
+    CASE WHEN r.response_body->>'expiry_date' ~ '^\d{4}-\d{2}-\d{2}'
+         THEN (r.response_body->>'expiry_date')::DATE ELSE NULL END AS expiry_date,
 
-    -- Classification (Nice classes as JSONB for silver compatibility)
-    CASE
-        WHEN r.nice_classes IS NOT NULL
-        THEN to_jsonb(r.nice_classes)
-        ELSE NULL
-    END AS nice_classes,
+    -- Nice class classification (JSONB array — zero-copy, all raw values preserved)
+    r.response_body->'nice_classes'          AS nice_classes,
 
-    -- Description
-    r.goods_and_services,
+    -- Goods and services description
+    r.response_body->>'goods_and_services'   AS goods_and_services,
 
-    -- Trademark image
-    r.image_url,
+    -- Trademark image URL
+    r.response_body->>'image_url'            AS image_url,
+
+    -- Full raw response preserved for any additional fields
+    r.response_body                          AS raw_json,
 
     -- Pharma relevance: Nice Class 5 = Pharmaceuticals
-    5 = ANY(COALESCE(r.nice_classes, '{}')) AS is_pharma_related,
+    EXISTS (
+        SELECT 1
+        FROM jsonb_array_elements_text(
+            COALESCE(r.response_body->'nice_classes', '[]'::jsonb)
+        ) AS c
+        WHERE c::INTEGER = 5
+    ) AS is_pharma_related,
 
     -- Processing metadata
-    FALSE AS processed_to_silver,
-    r._loaded_at AS ingested_at
+    FALSE                                    AS processed_to_silver,
+    r.ingested_at
 
 FROM mol_raw.euipo_trademarks r
-WHERE r.application_number IS NOT NULL
+WHERE r.response_status = 200
   AND r.processed_to_bronze = FALSE
-  AND _loaded_at BETWEEN @start_dt AND @end_dt
+  AND (r.response_body->>'application_number') IS NOT NULL
+  AND r.ingested_at BETWEEN @start_dt AND @end_dt

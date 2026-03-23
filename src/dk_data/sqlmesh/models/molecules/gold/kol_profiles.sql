@@ -4,21 +4,18 @@
 
 MODEL (
     name hcp_gold.kol_profiles,
-    kind INCREMENTAL_BY_UNIQUE_KEY (
-        unique_key researcher_id
-    ),
+    kind FULL,
     cron '@weekly',
     audits (
-        not_null(columns := (researcher_id, family_name)),
-        unique_values(columns := (researcher_id))
-    ),
-    grain researcher_id
+        not_null(columns := (author_id, family_name)),
+        unique_values(columns := (author_id))
+    )
 );
 
 WITH researcher_base AS (
     SELECT
-        r.id AS researcher_id,
-        r.orcid_id,
+        r.id          AS researcher_id,
+        r.author_id,
         r.given_name,
         r.family_name,
         r.affiliation,
@@ -31,10 +28,10 @@ WITH researcher_base AS (
     FROM hcp_silver.researchers r
 ),
 
--- Publication counts per researcher
+-- Publication counts per researcher (join on OpenAlex author_id)
 pub_counts AS (
     SELECT
-        p.first_author_id AS researcher_id,
+        p.first_author_id AS author_id,
         COUNT(*) AS publication_count,
         COALESCE(SUM(p.cited_by_count), 0) AS total_citations
     FROM mol_silver.publications p
@@ -49,7 +46,7 @@ trial_counts AS (
         COUNT(DISTINCT ct.nct_id) AS trial_count
     FROM hcp_silver.researchers r
     JOIN mol_silver.clinical_trials ct
-        ON ct.lead_sponsor ILIKE '%' || r.family_name || '%'
+        ON ct.lead_sponsor_name ILIKE '%' || r.family_name || '%'
     GROUP BY r.id
 ),
 
@@ -58,7 +55,7 @@ trial_counts AS (
 scored AS (
     SELECT
         rb.researcher_id,
-        rb.orcid_id,
+        rb.author_id,
         rb.given_name,
         rb.family_name,
         rb.affiliation,
@@ -79,7 +76,7 @@ scored AS (
          + rb.grant_count * 0.1
         )::NUMERIC AS influence_score
     FROM researcher_base rb
-    LEFT JOIN pub_counts pc ON rb.researcher_id = pc.researcher_id
+    LEFT JOIN pub_counts pc ON rb.author_id = pc.author_id
     LEFT JOIN trial_counts tc ON rb.researcher_id = tc.researcher_id
 ),
 
@@ -100,7 +97,7 @@ tiered AS (
 SELECT
     gen_random_uuid() AS id,
     researcher_id,
-    orcid_id,
+    author_id,
     given_name,
     family_name,
     affiliation,

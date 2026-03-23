@@ -1,25 +1,22 @@
 -- SQLMesh Model: Silver Cochrane Reviews
 -- Promotes mol_bronze.cochrane_reviews into mol_silver.cochrane_reviews
--- with molecule-level linkage. molecule_id is NULL — entity linking fills it
--- by matching review title/abstract against mol_silver.molecules drug names.
+-- Entity linking: LEFT JOIN mol_silver.molecules by canonical_name match in review title.
+-- FULL refresh ensures molecule_id is always current when new molecules are added.
 -- Exposes Cochrane systematic review meta-analyses to xenon section:
 --   pivotal_trial_analysis (highest clinical evidence tier)
 
 MODEL (
     name mol_silver.cochrane_reviews,
-    kind INCREMENTAL_BY_UNIQUE_KEY (
-        unique_key (review_id)
-    ),
+    kind FULL,
     cron '@monthly',
     audits (
         not_null(columns := (review_id, title))
-    ),
-    grain (review_id)
+    )
 );
 
 SELECT
     gen_random_uuid()                       AS cochrane_silver_id,
-    NULL::UUID                              AS molecule_id,     -- entity linking fills this via title/abstract matching
+    m.molecule_id,
     b.review_id,
     b.title,
     b.abstract,
@@ -32,6 +29,8 @@ SELECT
     b.created_at
 
 FROM mol_bronze.cochrane_reviews b
-WHERE b.processed_to_silver = FALSE
-  AND b.review_id IS NOT NULL
+LEFT JOIN mol_silver.molecules m
+       ON LOWER(b.title) LIKE '%' || LOWER(m.canonical_name) || '%'
+      AND LENGTH(m.canonical_name) > 4
+WHERE b.review_id IS NOT NULL
   AND b.title IS NOT NULL;

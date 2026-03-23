@@ -41,11 +41,14 @@ WITH direct_entries AS (
         r.response_body->'research_codes'                     AS research_codes,
         r.response_body->'synonyms'                           AS synonyms,
         COALESCE(r.response_body->>'status', 'published')     AS status,
-        r.request_timestamp                                   AS source_updated_at
+        r.request_timestamp                                   AS source_updated_at,
+        r.response_body                                       AS raw_json
 
     FROM mol_raw.who_inn r
     WHERE r.response_status = 200
       AND r.response_body IS NOT NULL
+      AND r.processed_to_bronze = FALSE
+      AND r.request_timestamp BETWEEN @start_dt AND @end_dt
       -- Direct format: has inn_name or name at top level
       AND (r.response_body->>'inn_name' IS NOT NULL
            OR r.response_body->>'name' IS NOT NULL)
@@ -60,12 +63,15 @@ pubchem_synonyms AS (
         r.id AS raw_id,
         r.request_timestamp,
         info_item,
+        info_item AS raw_json,
         r.request_timestamp AS source_updated_at
 
     FROM mol_raw.who_inn r,
          jsonb_array_elements(r.response_body->'InformationList'->'Information') AS info_item
     WHERE r.response_status = 200
       AND r.response_body->'InformationList' IS NOT NULL
+      AND r.processed_to_bronze = FALSE
+      AND r.request_timestamp BETWEEN @start_dt AND @end_dt
 ),
 
 pubchem_extracted AS (
@@ -88,7 +94,8 @@ pubchem_extracted AS (
          FROM jsonb_array_elements_text(info_item->'Synonym') AS s
          LIMIT 20
         ) AS synonyms,
-        source_updated_at
+        source_updated_at,
+        raw_json
     FROM pubchem_synonyms
 ),
 
@@ -109,7 +116,8 @@ combined AS (
         research_codes,
         synonyms,
         'published' AS status,
-        source_updated_at
+        source_updated_at,
+        raw_json
     FROM pubchem_extracted
     WHERE inn_name IS NOT NULL
 
@@ -131,7 +139,8 @@ combined AS (
         research_codes,
         synonyms,
         status,
-        source_updated_at
+        source_updated_at,
+        raw_json
     FROM direct_entries
     WHERE inn_name IS NOT NULL
 )
@@ -152,6 +161,7 @@ SELECT DISTINCT ON (inn_name)
     research_codes,
     synonyms,
     status,
+    raw_json,
     FALSE               AS processed_to_silver,
     request_timestamp,
     request_timestamp   AS ingested_at,

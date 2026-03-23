@@ -17,7 +17,7 @@ import hashlib
 import logging
 import os
 import time
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional
 
 import requests as req_lib
@@ -34,7 +34,10 @@ class ORCIDFetcher(BaseFetcher):
     BASE_URL = "https://pub.orcid.org/v3.0"
     TOKEN_URL = "https://orcid.org/oauth/token"
 
-    MAX_RESULTS = 200
+    MAX_RESULTS = 1000
+
+    # ORCID API page size cap
+    PAGE_SIZE = 200
 
     def __init__(self, data_dir: Optional[str] = None):
         super().__init__(data_dir)
@@ -104,9 +107,14 @@ class ORCIDFetcher(BaseFetcher):
         """
         query = kwargs.get("query", "keyword:pharmaceutical OR keyword:drug discovery")
         max_results = kwargs.get("max_results", self.MAX_RESULTS)
+        resume = kwargs.get("resume", True)
+
+        manifest = self.load_manifest()
+        resume_offset: int = manifest.get("last_offset", 0) if resume else 0
 
         try:
-            orcid_ids = self._search(query, max_results=max_results)
+            orcid_ids = self._search(query, max_results=max_results,
+                                     resume_offset=resume_offset)
 
             if not orcid_ids:
                 result = {
@@ -126,25 +134,68 @@ class ORCIDFetcher(BaseFetcher):
                 ",".join(sorted(orcid_ids)).encode()
             ).hexdigest()
 
+            self.save_manifest(
+                last_run_at=datetime.now(timezone.utc).isoformat(),
+                last_run_status="completed",
+                total_records_fetched=len(records),
+                last_content_hash=content_hash,
+                last_offset=0,  # Reset — run completed cleanly
+            )
+
             result = {"status": "success", "records": records, "hash": content_hash}
             self.log_fetch_result({**result, "records": len(records)})
             return result
 
         except Exception as e:
             logger.exception(f"ORCID fetch failed: {e}")
+            self.save_manifest(
+                last_run_status="interrupted",
+                last_offset=getattr(self, "_last_offset", 0),
+            )
             result = {"status": "failed", "records": [], "hash": None, "error": str(e)}
             self.log_fetch_result(result)
             return result
 
-    def _search(self, query: str, max_results: int = 200) -> List[str]:
-        """Search ORCID and return ORCID iDs."""
+    def _search(
+        self,
+        query: str,
+        max_results: int = 1000,
+        resume_offset: int = 0,
+    ) -> List[str]:
+        """Search ORCID and return ORCID iDs with offset pagination."""
         self._ensure_token()
         url = f"{self.BASE_URL}/search"
-        params = {"q": query, "rows": str(min(max_results, 200))}
+        all_ids: List[str] = []
+        start = resume_offset
 
-        data = self.fetch_json(url, params=params)
-        results = data.get("result", [])
-        return [r["orcid-identifier"]["path"] for r in results if r.get("orcid-identifier")]
+        while len(all_ids) < max_results:
+            rows = min(self.PAGE_SIZE, max_results - len(all_ids))
+            params = {"q": query, "start": str(start), "rows": str(rows)}
+
+            data = self.fetch_json(url, params=params)
+            results = data.get("result", [])
+            if not results:
+                break
+
+            batch_ids = [
+                r["orcid-identifier"]["path"]
+                for r in results
+                if r.get("orcid-identifier")
+            ]
+            all_ids.extend(batch_ids)
+
+            total = data.get("num-found", 0)
+            start += len(results)
+            self._last_offset = start
+            self.save_manifest(last_offset=start, last_run_status="in_progress")
+
+            if start >= total or len(results) < rows:
+                break
+
+            time.sleep(0.09)  # ~12 req/s — stay under authenticated rate limit
+
+        logger.info(f"[orcid] Collected {len(all_ids)} ORCID iDs")
+        return all_ids[:max_results]
 
     def _fetch_profiles(self, orcid_ids: List[str]) -> List[Dict[str, Any]]:
         """Fetch full profile for each ORCID iD."""

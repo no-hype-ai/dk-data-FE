@@ -6,7 +6,7 @@ API: https://data.hrsa.gov/data/api
 """
 
 import logging
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Dict, Any, List, Optional
 import json
 
@@ -63,22 +63,36 @@ class HRSAFetcher(BaseFetcher):
                 with open(filepath, 'w') as f:
                     json.dump(all_records, f, indent=2)
 
+                content_hash = self.calculate_hash(filepath)
+                self.save_manifest(
+                    last_run_at=datetime.now(timezone.utc).isoformat(),
+                    last_run_status="completed",
+                    total_records_fetched=len(all_records),
+                    last_content_hash=content_hash,
+                )
                 result = {
                     'status': 'success',
                     'filepath': str(filepath),
                     'records': len(all_records),
-                    'hash': self.calculate_hash(filepath),
+                    'hash': content_hash,
                     'hpsa_types': types,
                 }
             else:
                 # Try bulk download
                 result = self._fetch_bulk_download()
+                if result.get('status') == 'success':
+                    self.save_manifest(
+                        last_run_at=datetime.now(timezone.utc).isoformat(),
+                        last_run_status="completed",
+                        total_records_fetched=result.get('records', 0),
+                    )
 
             self.log_fetch_result(result)
             return result
 
         except Exception as e:
             logger.exception(f"Failed to fetch HRSA data: {e}")
+            self.save_manifest(last_run_status="interrupted")
             result = {
                 'status': 'failed',
                 'error': str(e),

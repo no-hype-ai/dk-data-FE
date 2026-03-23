@@ -9,15 +9,15 @@ MODEL (
         batch_size 500
     ),
     cron '@daily',
-    audits (not_null(columns := (ccn, affiliation_type))),
-    grain (ccn, affiliation_type)
+    audits (not_null(columns := (npi, ccn))),
+    grain (npi, ccn)
 );
 
 SELECT
-    TRIM(affiliation_id)::TEXT                  AS affiliation_id,
+    md5(TRIM(npi) || TRIM(COALESCE(facility_affiliations_certification_number, '')))::TEXT AS affiliation_id,
     TRIM(npi)::TEXT                             AS npi,
-    TRIM(ccn)::TEXT                             AS ccn,
-    UPPER(TRIM(affiliation_type))               AS affiliation_type,
+    TRIM(facility_affiliations_certification_number)::TEXT AS ccn,
+    UPPER(TRIM(facility_type))                  AS affiliation_type,
     _loaded_at,
     _source_file,
     _source_hash

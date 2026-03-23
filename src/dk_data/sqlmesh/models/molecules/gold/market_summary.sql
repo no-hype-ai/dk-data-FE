@@ -56,7 +56,7 @@ SELECT
     m.molecule_id,
     m.inchi_key,
     m.canonical_name,
-    m.therapeutic_areas,
+    NULL::TEXT[] AS therapeutic_areas,
     m.max_phase,
 
     -- SEC revenue data

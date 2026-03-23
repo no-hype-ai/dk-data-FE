@@ -6,7 +6,7 @@ MODEL (
     name mol_bronze.ema,
     kind INCREMENTAL_BY_TIME_RANGE (
         time_column ingested_at,
-        lookback 7
+        batch_size 500
     ),
     cron '@weekly',
     grain (product_number),
@@ -84,14 +84,18 @@ SELECT
         r.response_body->>'summary_url'
     ) AS summary_url,
 
+    -- Raw passthrough: full API response for column autodiscovery
+    r.response_body AS raw_json,
+
     -- Processing metadata
     FALSE AS processed_to_silver,
-    NOW() AS ingested_at
+    r.request_timestamp AS ingested_at
 
 FROM mol_raw.ema r
 WHERE r.response_status = 200
   AND r.processed_to_bronze = FALSE
   AND r.response_body IS NOT NULL
+  AND r.request_timestamp BETWEEN @start_dt AND @end_dt
   AND COALESCE(
       r.response_body->>'productNumber',
       r.response_body->>'product_number'

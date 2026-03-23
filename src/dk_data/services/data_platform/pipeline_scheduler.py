@@ -35,14 +35,17 @@ class PipelineScheduler:
     # Schedules: (hour, minute, day_of_week or day_of_month)
     # day_of_week: 0=Monday, 6=Sunday, None=any
     # day_of_month: 1-31, None=any
-    # All 16+ data sources organized by refresh frequency
+    # All data sources organized by refresh frequency.
+    # Sources must match the raw table names in mol_raw.* / hcs_raw.*.
     SCHEDULES = {
         'daily': {
             'sources': [
-                'clinicaltrials',      # ClinicalTrials.gov - high update frequency
+                'clinicaltrials',      # ClinicalTrials.gov — high update frequency
                 'openfda_labels',      # FDA drug labels
-                'dailymed',            # DailyMed labels
+                'dailymed',            # DailyMed structured labels
                 'websearch',           # News/search results (on-demand cache refresh)
+                'journal_rss',         # Journal RSS feeds (NEJM, Lancet, BMJ, JAMA)
+                'medical_news',        # Pharma/medical news aggregator
             ],
             'hour': 2,
             'minute': 0,
@@ -51,12 +54,30 @@ class PipelineScheduler:
         },
         'weekly': {
             'sources': [
-                'openfda_faers',       # Adverse event reports
+                'openfda_faers',       # Adverse event reports (FAERS)
                 'chembl',              # ChEMBL bioactivity
                 'openalex',            # OpenAlex publications
+                'europepmc',           # Europe PMC full-text literature
+                'pubmed',              # PubMed/NCBI E-utilities
                 'rxnorm',              # RxNorm drug nomenclature
                 'sider',               # Side effect data
                 'who_inn',             # WHO INN names
+                'who_gho',             # WHO Global Health Observatory
+                'who_icd',             # WHO ICD disease classification
+                'ema',                 # EMA authorized medicines + EPARs
+                'orange_book',         # FDA Orange Book (patent + exclusivity)
+                'purple_book',         # FDA Purple Book (biologics)
+                'epo_patents',         # EPO Open Patent Services
+                'uspto_patents',       # USPTO granted patents
+                'uspto_trademarks',    # USPTO trademark registrations
+                'uspto_ci',            # USPTO citation intelligence
+                'euipo_trademarks',    # EUIPO trademarks
+                'hta_decisions',       # HTA decisions (NICE, G-BA, PBAC, SMC)
+                'cochrane_reviews',    # Cochrane Library systematic reviews
+                'sec_edgar',           # SEC EDGAR pharmaceutical filings
+                'nih_reporter',        # NIH RePORTER research grants
+                'hrsa',                # HRSA HPSA / provider data
+                'ct_gov_indication_stats',  # ClinicalTrials indication statistics
             ],
             'hour': 3,
             'minute': 0,
@@ -70,13 +91,27 @@ class PipelineScheduler:
                 'drugbank',            # DrugBank comprehensive
                 'kegg_drug',           # KEGG drug database
                 'pharmgkb',            # PharmGKB pharmacogenomics
-                'bindingdb',           # BindingDB binding affinity
+                'bindingdb',           # BindingDB binding affinity (large bulk)
                 'tdc_admet',           # TDC ADMET predictions
+                'pdb',                 # RCSB PDB protein structures
             ],
             'hour': 4,
             'minute': 0,
             'day_of_week': None,
             'day_of_month': 1,  # First of month
+        },
+        'quarterly': {
+            'sources': [
+                'acc_tvc',             # ACC Transcatheter Valve Certification
+                'cms_cost_reports',    # CMS Hospital Cost Reports (annual release)
+                'cms_hospital_info',   # CMS Hospital Compare
+                'cms_inpatient',       # CMS Medicare Inpatient PUF
+            ],
+            'hour': 4,
+            'minute': 0,
+            'day_of_week': None,
+            'day_of_month': 1,  # First of quarter month
+            'quarter_months': [1, 4, 7, 10],  # Jan, Apr, Jul, Oct
         },
     }
 
@@ -157,7 +192,6 @@ class PipelineScheduler:
         now = datetime.utcnow()
 
         if tier == 'daily':
-            # Next day at scheduled time
             next_run = now.replace(
                 hour=schedule.get('hour', 2),
                 minute=schedule.get('minute', 0),
@@ -169,10 +203,9 @@ class PipelineScheduler:
             return next_run
 
         elif tier == 'weekly':
-            # Next occurrence of scheduled day
             target_dow = schedule.get('day_of_week', 6)  # Default Sunday
             days_ahead = target_dow - now.weekday()
-            if days_ahead <= 0:  # Already past or is today
+            if days_ahead <= 0:
                 days_ahead += 7
             next_run = now + timedelta(days=days_ahead)
             return next_run.replace(
@@ -183,7 +216,6 @@ class PipelineScheduler:
             )
 
         elif tier == 'monthly':
-            # First of next month
             if now.month == 12:
                 next_run = now.replace(year=now.year + 1, month=1, day=1)
             else:
@@ -194,6 +226,22 @@ class PipelineScheduler:
                 second=0,
                 microsecond=0
             )
+
+        elif tier == 'quarterly':
+            quarter_months = schedule.get('quarter_months', [1, 4, 7, 10])
+            # Find the next quarter month after now
+            for month in quarter_months:
+                candidate = now.replace(month=month, day=1,
+                                        hour=schedule.get('hour', 4),
+                                        minute=schedule.get('minute', 0),
+                                        second=0, microsecond=0)
+                if candidate > now:
+                    return candidate
+            # Wrap to next year's first quarter month
+            return now.replace(year=now.year + 1, month=quarter_months[0], day=1,
+                                hour=schedule.get('hour', 4),
+                                minute=schedule.get('minute', 0),
+                                second=0, microsecond=0)
 
         # Default: tomorrow
         return now + timedelta(days=1)
@@ -245,17 +293,31 @@ class PipelineScheduler:
         """Check if a tier should run now."""
         now = datetime.utcnow()
 
-        # Check if already ran today/this week/this month
+        # Check if already ran within the expected window
         last_run = self.last_runs.get(tier)
         if last_run:
             if tier == 'daily' and last_run.date() == now.date():
                 return False
-            if tier == 'weekly' and (now - last_run) < timedelta(days=1):
+            if tier == 'weekly' and (now - last_run) < timedelta(days=6):
                 return False
             if tier == 'monthly' and last_run.month == now.month and last_run.year == now.year:
                 return False
+            if tier == 'quarterly':
+                quarter_months = schedule.get('quarter_months', [1, 4, 7, 10])
+                # Only run on quarter-start months
+                if now.month not in quarter_months:
+                    return False
+                # Don't re-run in the same quarter month
+                if last_run.month == now.month and last_run.year == now.year:
+                    return False
 
-        # Check schedule
+        # For quarterly: ensure we're in a quarter month
+        if tier == 'quarterly':
+            quarter_months = schedule.get('quarter_months', [1, 4, 7, 10])
+            if now.month not in quarter_months:
+                return False
+
+        # Check schedule constraints
         if schedule.get('day_of_month') and now.day != schedule['day_of_month']:
             return False
         if schedule.get('day_of_week') is not None and now.weekday() != schedule['day_of_week']:

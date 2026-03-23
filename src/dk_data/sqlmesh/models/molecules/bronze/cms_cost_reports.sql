@@ -5,7 +5,7 @@
 MODEL (
     name mol_bronze.cms_cost_reports,
     kind INCREMENTAL_BY_TIME_RANGE (
-        time_column request_timestamp,
+        time_column _loaded_at,
         batch_size 500
     ),
     cron '@daily',
@@ -20,29 +20,24 @@ SELECT
     gen_random_uuid() AS id,
 
     -- Record identifiers
-    COALESCE(
-        response_body->>'provider_id' || '_' || response_body->>'fiscal_year',
-        gen_random_uuid()::TEXT
-    ) AS record_id,
-    response_body->>'provider_id' AS provider_id,
-    response_body->>'fiscal_year' AS fiscal_year,
-    (response_body->>'total_costs')::NUMERIC AS total_costs,
-    (response_body->>'net_revenue')::NUMERIC AS net_revenue,
-    (response_body->>'operating_margin')::NUMERIC AS operating_margin,
-    (response_body->>'bed_count')::INTEGER AS bed_count,
+    provider_id || '_' || fiscal_year_end::TEXT AS record_id,
+    provider_id,
+    fiscal_year_end::TEXT                       AS fiscal_year,
+    total_operating_expenses                    AS total_costs,
+    net_patient_revenue                         AS net_revenue,
+    operating_margin,
+    total_beds                                  AS bed_count,
 
     -- Raw source tracking
-    response_body AS raw_json,
-    id AS raw_source_id,
-    'cms_cost_reports' AS source,
-    request_timestamp,
-    request_timestamp AS source_updated_at,
-    FALSE AS processed_to_silver,
-    NOW() AS created_at
+    NULL::JSONB                                 AS raw_json,
+    id::TEXT                                    AS raw_source_id,
+    'cms_cost_reports'                          AS source,
+    _loaded_at,
+    _loaded_at                                  AS source_updated_at,
+    FALSE                                       AS processed_to_silver,
+    NOW()                                       AS created_at
 
 FROM hcs_raw.cms_cost_reports
 WHERE
-    response_status = 200
-    AND processed_to_bronze = FALSE
-    AND response_body->>'provider_id' IS NOT NULL
-    AND request_timestamp BETWEEN @start_dt AND @end_dt;
+    provider_id IS NOT NULL
+    AND _loaded_at BETWEEN @start_dt AND @end_dt;

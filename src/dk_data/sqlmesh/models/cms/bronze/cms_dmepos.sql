@@ -16,11 +16,11 @@ MODEL (
 SELECT
     TRIM(npi)::TEXT                             AS npi,
     TRIM(hcpcs_code)::TEXT                      AS hcpcs_code,
-    COALESCE(total_services, 0)::INTEGER        AS total_services,
-    COALESCE(total_beneficiaries, 0)::INTEGER   AS total_beneficiaries,
-    COALESCE(avg_submitted_charge, 0)::NUMERIC(10,2) AS avg_submitted_charge,
-    COALESCE(avg_medicare_payment, 0)::NUMERIC(10,2) AS avg_medicare_payment,
-    year::INTEGER                               AS year,
+    COALESCE(NULLIF(TRIM(total_services), ''), '0')::INTEGER AS total_services,
+    COALESCE(NULLIF(TRIM(total_beneficiaries), ''), '0')::INTEGER AS total_beneficiaries,
+    COALESCE(NULLIF(TRIM(avg_submitted_charge), ''), '0')::NUMERIC(10,2) AS avg_submitted_charge,
+    COALESCE(NULLIF(TRIM(avg_medicare_payment), ''), '0')::NUMERIC(10,2) AS avg_medicare_payment,
+    EXTRACT(YEAR FROM _loaded_at)::INTEGER      AS year,
     _loaded_at,
     _source_file,
     _source_hash

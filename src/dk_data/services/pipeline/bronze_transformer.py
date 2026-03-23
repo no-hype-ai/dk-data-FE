@@ -520,7 +520,6 @@ _RAW_SCHEMA_MAP = {
     "orange_book": "raw",
     "ema": "raw",
     "sec_edgar": "raw",
-    "orcid": "raw",
     "who_icd": "raw",
     "hta_decisions": "raw",
     "cochrane": "raw",

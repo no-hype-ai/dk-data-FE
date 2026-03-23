@@ -1,10 +1,11 @@
 """Base fetcher class with common functionality."""
 
+import json
 import os
 import logging
 import hashlib
 from abc import ABC, abstractmethod
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional, Dict, Any
 
@@ -34,6 +35,10 @@ class BaseFetcher(ABC):
         self.data_dir = Path(data_dir or os.environ.get('DATA_DIR', './data/raw'))
         self.params = params or {}
         self.data_dir.mkdir(parents=True, exist_ok=True)
+
+        # Manifest directory: data/raw/.manifests/<source_name>.json
+        self._manifest_dir = self.data_dir / '.manifests'
+        self._manifest_dir.mkdir(parents=True, exist_ok=True)
 
         # Set up session with retry logic
         self.session = requests.Session()
@@ -125,19 +130,30 @@ class BaseFetcher(ABC):
         filename: str,
         etag: Optional[str] = None,
         last_modified: Optional[str] = None,
+        use_manifest: bool = True,
     ) -> Dict[str, Any]:
         """Download a file, skipping if upstream hasn't changed (304 Not Modified).
+
+        If use_manifest=True (default) the ETag and Last-Modified values are
+        automatically loaded from the manifest before the request and saved
+        back after a successful download.
 
         Args:
             url: URL to download from.
             filename: Local filename to save as.
-            etag: ETag from previous download (sent as If-None-Match).
-            last_modified: Last-Modified from previous download (sent as If-Modified-Since).
+            etag: ETag override (overrides manifest value when provided).
+            last_modified: Last-Modified override (overrides manifest value).
+            use_manifest: If True, auto-load/save ETag + Last-Modified to manifest.
 
         Returns:
             Dict with 'status' ('downloaded' or 'not_modified'), 'filepath',
             'etag', and 'last_modified'.
         """
+        if use_manifest:
+            manifest = self.load_manifest()
+            etag = etag or manifest.get('etag')
+            last_modified = last_modified or manifest.get('last_modified')
+
         headers: Dict[str, str] = {}
         if etag:
             headers['If-None-Match'] = etag
@@ -164,12 +180,24 @@ class BaseFetcher(ABC):
             for chunk in response.iter_content(chunk_size=8192):
                 f.write(chunk)
 
+        new_etag = response.headers.get('ETag', etag)
+        new_last_modified = response.headers.get('Last-Modified', last_modified)
+
         logger.info(f"Downloaded {filepath.stat().st_size / 1024 / 1024:.2f} MB")
+
+        if use_manifest:
+            self.save_manifest(
+                last_run_at=datetime.now(timezone.utc).isoformat(),
+                last_run_status="completed",
+                etag=new_etag,
+                last_modified=new_last_modified,
+            )
+
         return {
             "status": "downloaded",
             "filepath": filepath,
-            "etag": response.headers.get('ETag', etag),
-            "last_modified": response.headers.get('Last-Modified', last_modified),
+            "etag": new_etag,
+            "last_modified": new_last_modified,
         }
 
     def fetch_json_conditional(
@@ -178,19 +206,30 @@ class BaseFetcher(ABC):
         params: Optional[Dict] = None,
         etag: Optional[str] = None,
         last_modified: Optional[str] = None,
+        use_manifest: bool = True,
     ) -> Dict[str, Any]:
         """Fetch JSON, returning early on 304 Not Modified.
+
+        If use_manifest=True (default) the ETag and Last-Modified values are
+        automatically loaded from the manifest before the request and saved
+        back after a successful fetch.
 
         Args:
             url: API URL.
             params: Query parameters.
-            etag: ETag from previous request (sent as If-None-Match).
-            last_modified: Last-Modified from previous request (sent as If-Modified-Since).
+            etag: ETag override (overrides manifest value when provided).
+            last_modified: Last-Modified override (overrides manifest value).
+            use_manifest: If True, auto-load/save ETag + Last-Modified to manifest.
 
         Returns:
             Dict with 'status' ('ok' or 'not_modified'), 'data', 'etag',
             and 'last_modified'.
         """
+        if use_manifest:
+            manifest = self.load_manifest()
+            etag = etag or manifest.get('etag')
+            last_modified = last_modified or manifest.get('last_modified')
+
         headers: Dict[str, str] = {}
         if etag:
             headers['If-None-Match'] = etag
@@ -210,11 +249,17 @@ class BaseFetcher(ABC):
             }
 
         response.raise_for_status()
+        new_etag = response.headers.get('ETag', etag)
+        new_last_modified = response.headers.get('Last-Modified', last_modified)
+
+        if use_manifest:
+            self.save_manifest(etag=new_etag, last_modified=new_last_modified)
+
         return {
             "status": "ok",
             "data": response.json(),
-            "etag": response.headers.get('ETag', etag),
-            "last_modified": response.headers.get('Last-Modified', last_modified),
+            "etag": new_etag,
+            "last_modified": new_last_modified,
         }
 
     def close(self) -> None:
@@ -228,6 +273,67 @@ class BaseFetcher(ABC):
             self.close()
         except Exception:
             pass
+
+    # ------------------------------------------------------------------
+    # Manifest: persist fetch state across runs (ETag, cursor, offsets)
+    # ------------------------------------------------------------------
+
+    @property
+    def _manifest_path(self) -> Path:
+        """Path to this source's manifest JSON file."""
+        return self._manifest_dir / f"{self.SOURCE_NAME}.json"
+
+    def load_manifest(self) -> Dict[str, Any]:
+        """Load the persisted fetch state for this source.
+
+        Returns an empty dict if no manifest exists yet.
+
+        Manifest fields (all optional):
+            last_run_at (str):        ISO timestamp of last completed run.
+            last_run_status (str):    'completed' | 'interrupted' | 'failed'.
+            total_records_fetched (int): Records fetched in last completed run.
+            last_content_hash (str):  MD5 of last result set (change detection).
+            etag (str):               HTTP ETag from last response (conditional requests).
+            last_modified (str):      HTTP Last-Modified from last response.
+            last_cursor (str|None):   Cursor marker to resume pagination.
+            last_offset (int):        Numeric offset to resume pagination.
+        """
+        if not self._manifest_path.exists():
+            return {}
+        try:
+            with open(self._manifest_path, 'r') as f:
+                return json.load(f)
+        except (json.JSONDecodeError, OSError) as e:
+            logger.warning(f"[{self.SOURCE_NAME}] Could not read manifest: {e}")
+            return {}
+
+    def save_manifest(self, **kwargs: Any) -> None:
+        """Persist fetch state to the manifest file.
+
+        Merges kwargs into any existing manifest (preserves fields not overwritten).
+        Always updates `saved_at` to the current UTC timestamp.
+        """
+        manifest = self.load_manifest()
+        manifest.update(kwargs)
+        manifest['saved_at'] = datetime.now(timezone.utc).isoformat()
+        try:
+            with open(self._manifest_path, 'w') as f:
+                json.dump(manifest, f, indent=2)
+        except OSError as e:
+            logger.warning(f"[{self.SOURCE_NAME}] Could not write manifest: {e}")
+
+    def data_unchanged(self, new_hash: Optional[str]) -> bool:
+        """Return True if new_hash matches the last saved content hash.
+
+        Lets callers skip expensive processing when upstream hasn't changed.
+        """
+        if not new_hash:
+            return False
+        return self.load_manifest().get('last_content_hash') == new_hash
+
+    # ------------------------------------------------------------------
+    # Log
+    # ------------------------------------------------------------------
 
     def log_fetch_result(self, result: Dict[str, Any]) -> None:
         """Log fetch result for monitoring."""

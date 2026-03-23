@@ -2,17 +2,17 @@
 -- Unified trademark data from USPTO TSDR and EUIPO TMview/IBM Gateway
 -- Part of: 014-uspto-euipo-model-datasource
 
+-- Entity linking: LEFT JOIN mol_silver.molecules by canonical_name match in mark_name.
+-- FULL refresh ensures molecule_id is always current when new molecules are added.
+
 MODEL (
     name mol_silver.trademarks,
-    kind INCREMENTAL_BY_UNIQUE_KEY (
-        unique_key (trademark_identifier, source)
-    ),
+    kind FULL,
     cron '@weekly',
     audits (
         not_null(columns := (trademark_identifier)),
         not_null(columns := (source))
-    ),
-    grain (trademark_identifier, source)
+    )
 );
 
 -- USPTO trademarks
@@ -42,7 +42,7 @@ WITH uspto AS (
         is_pharma_related,
         'uspto_trademarks' AS source,
         ingested_at AS source_updated_at
-    FROM mol_raw.uspto_trademarks
+    FROM mol_bronze.uspto_trademarks
     WHERE TRUE
 ),
 
@@ -73,7 +73,7 @@ euipo AS (
         is_pharma_related,
         'euipo_trademarks' AS source,
         ingested_at AS source_updated_at
-    FROM mol_raw.euipo_trademarks
+    FROM mol_bronze.euipo_trademarks
     WHERE TRUE
 ),
 
@@ -85,34 +85,38 @@ combined AS (
 )
 
 -- Within-registry dedup only (no cross-registry dedup)
-SELECT DISTINCT ON (trademark_identifier, source)
+SELECT DISTINCT ON (c.trademark_identifier, c.source)
     gen_random_uuid() AS id,
-    trademark_identifier,
-    mark_name,
-    mark_type,
-    mark_feature,
-    status,
-    status_code,
-    status_date,
-    filing_date,
-    registration_number,
-    registration_date,
-    expiry_date,
-    owner_name,
-    owner_entity_type,
-    nice_classes,
-    us_classes,
-    goods_and_services,
-    description_of_mark,
-    representative_name,
-    applicant_country,
-    mark_basis,
-    image_url,
-    is_pharma_related,
-    NULL::UUID AS molecule_id,
-    source,
-    source_updated_at,
+    c.trademark_identifier,
+    c.mark_name,
+    c.mark_type,
+    c.mark_feature,
+    c.status,
+    c.status_code,
+    c.status_date,
+    c.filing_date,
+    c.registration_number,
+    c.registration_date,
+    c.expiry_date,
+    c.owner_name,
+    c.owner_entity_type,
+    c.nice_classes,
+    c.us_classes,
+    c.goods_and_services,
+    c.description_of_mark,
+    c.representative_name,
+    c.applicant_country,
+    c.mark_basis,
+    c.image_url,
+    c.is_pharma_related,
+    m.molecule_id,
+    c.source,
+    c.source_updated_at,
     NOW() AS created_at,
     NOW() AS updated_at
-FROM combined
-ORDER BY trademark_identifier, source, source_updated_at DESC
+FROM combined c
+LEFT JOIN mol_silver.molecules m
+       ON c.mark_name IS NOT NULL
+      AND LOWER(c.mark_name) LIKE '%' || LOWER(m.canonical_name) || '%'
+      AND LENGTH(m.canonical_name) > 4
+ORDER BY c.trademark_identifier, c.source, c.source_updated_at DESC

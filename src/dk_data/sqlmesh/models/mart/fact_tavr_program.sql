@@ -62,5 +62,5 @@ SELECT
     NOW() AS _updated_at
 FROM volume_with_yoy v
 JOIN mart.dim_hospital h ON v.hospital_id = h.hospital_id
-LEFT JOIN staging.certifications c ON v.hospital_id = c.hospital_id
+LEFT JOIN hcs_silver.certifications c ON v.hospital_id = c.hospital_id
     AND c.certification_type LIKE '%Transcatheter%';

@@ -270,16 +270,6 @@ TOOL_REGISTRY: Dict[str, ToolDefinition] = {
         adapter_module="dk_data.services.pipeline.adapters.pdb_structures",
         api_base_url="https://search.rcsb.org/rcsbsearch/v2/query",
     ),
-    "orcid-search": ToolDefinition(
-        name="orcid-search",
-        description="Search ORCID for researcher profiles",
-        tier="direct_query",
-        raw_table="orcid",
-        raw_schema="mol_raw",
-        adapter_module="dk_data.services.pipeline.adapters.orcid",
-        api_base_url="https://pub.orcid.org/v3.0/search/",
-    ),
-
     "dailymed-search": ToolDefinition(
         name="dailymed-search",
         description="Search DailyMed for structured SPL drug label data (NDC codes, dosage forms, active ingredients)",

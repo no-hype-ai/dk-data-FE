@@ -20,7 +20,6 @@ __all__ = [
     'sec_edgar',
     'uniprot',
     'pdb',
-    'orcid',
     'uspto_trademarks',
     'euipo_trademarks',
 ]

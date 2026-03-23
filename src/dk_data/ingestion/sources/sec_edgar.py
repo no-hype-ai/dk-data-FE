@@ -65,40 +65,46 @@ def load_sec_edgar_data(
                     # Validate with Pydantic
                     record = SECEdgarRecord(**raw_record)
 
+                    import json as _json
+                    # Store in standard mol_raw schema: response_body JSONB per filing
+                    # ON CONFLICT on response_body_hash to deduplicate by accession_number
+                    body = {
+                        "accession_number": record.accession_number,
+                        "company_name": record.company_name,
+                        "cik": record.cik,
+                        "filing_type": record.filing_type,
+                        "filing_date": record.filing_date,
+                        "document_url": record.document_url,
+                        "description": record.description,
+                        "mda_text": getattr(record, "mda_text", None) or "",
+                        "risk_factors_text": getattr(record, "risk_factors_text", None) or "",
+                    }
+                    body_json = _json.dumps(body)
+                    import hashlib as _hashlib
+                    body_hash = _hashlib.md5(body_json.encode()).hexdigest()
+
                     cur.execute(
                         """
                         INSERT INTO mol_raw.sec_edgar (
-                            accession_number, company_name, cik,
-                            filing_type, filing_date,
-                            document_url, description,
-                            _source_file, _source_hash
+                            request_id, request_timestamp,
+                            api_endpoint, request_params,
+                            response_status, response_body, response_body_hash,
+                            processed_to_bronze
                         ) VALUES (
-                            %s, %s, %s,
-                            %s, %s,
-                            %s, %s,
-                            %s, %s
+                            %s, NOW(),
+                            'sec_edgar_fetcher', %s::jsonb,
+                            200, %s::jsonb, %s,
+                            FALSE
                         )
-                        ON CONFLICT (accession_number) DO UPDATE SET
-                            company_name = EXCLUDED.company_name,
-                            cik = EXCLUDED.cik,
-                            filing_type = EXCLUDED.filing_type,
-                            filing_date = EXCLUDED.filing_date,
-                            document_url = EXCLUDED.document_url,
-                            description = EXCLUDED.description,
-                            _source_file = EXCLUDED._source_file,
-                            _source_hash = EXCLUDED._source_hash,
-                            _loaded_at = NOW()
+                        ON CONFLICT (response_body_hash) DO UPDATE SET
+                            response_body = EXCLUDED.response_body,
+                            request_timestamp = NOW()
                         """,
                         (
-                            record.accession_number,
-                            record.company_name,
-                            record.cik,
-                            record.filing_type,
-                            record.filing_date,
-                            record.document_url,
-                            record.description,
-                            source_file or "sec_edgar_api",
-                            source_hash,
+                            source_hash or record.accession_number,
+                            _json.dumps({"source": source_file or "sec_edgar_api"}),
+                            body_json,
+                            body_hash,
                         ),
                     )
                     records_inserted += 1

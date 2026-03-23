@@ -29,7 +29,7 @@ WITH openalex_pubs AS (
         (SELECT string_agg(word, ' ' ORDER BY pos)
          FROM (
            SELECT kv.key AS word, p.pos::INT AS pos
-           FROM jsonb_each(abstract_inverted_index) AS kv,
+           FROM jsonb_each(CASE WHEN jsonb_typeof(abstract_inverted_index) = 'object' THEN abstract_inverted_index ELSE '{}'::jsonb END) AS kv,
                 LATERAL jsonb_array_elements_text(kv.value) AS p(pos)
          ) sub
         ) AS abstract,
@@ -152,8 +152,8 @@ cochrane_pubs AS (
         abstract,
         review_type AS work_type,
         NULL::TEXT AS language,
-        EXTRACT(YEAR FROM pub_date::DATE)::INTEGER AS publication_year,
-        pub_date AS publication_date,
+        CASE WHEN pub_date ~ '^\d{4}-\d{2}-\d{2}' THEN EXTRACT(YEAR FROM pub_date::DATE)::INTEGER ELSE NULL END AS publication_year,
+        CASE WHEN pub_date ~ '^\d{4}-\d{2}-\d{2}' THEN pub_date::DATE ELSE NULL END AS publication_date,
         'Cochrane Database of Systematic Reviews' AS journal_name,
         NULL::TEXT AS journal_issn,
         NULL::TEXT AS pdf_url,

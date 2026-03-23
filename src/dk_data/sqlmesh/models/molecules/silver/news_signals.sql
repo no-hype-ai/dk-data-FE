@@ -1,21 +1,23 @@
 -- SQLMesh Model: Silver News Signals
 -- Normalized medical news and media signal data
+-- Entity linking: LEFT JOIN mol_silver.molecules by canonical_name match in title.
+-- FULL refresh ensures molecule_id is always current when new molecules are added.
 -- Part of: 015-assessment-dashboard-integration
 
 MODEL (
     name mol_silver.news_signals,
-    kind INCREMENTAL_BY_UNIQUE_KEY (
-        unique_key (article_id)
-    ),
+    kind FULL,
     cron '@daily',
     audits (
         not_null(columns := (title, pub_date))
-    ),
-    grain (article_id)
+    )
 );
 
 SELECT
     gen_random_uuid() AS id,
+    -- Entity link: resolve molecule_id by matching canonical_name in article title.
+    -- NULL for articles with no known molecule mention. Length guard prevents false matches.
+    m.molecule_id,
     b.article_id,
     b.title,
     b.source_name,
@@ -44,5 +46,8 @@ SELECT
     NOW() AS created_at,
     NOW() AS updated_at
 FROM mol_bronze.medical_news b
+LEFT JOIN mol_silver.molecules m
+       ON LOWER(b.title) LIKE '%' || LOWER(m.canonical_name) || '%'
+      AND LENGTH(m.canonical_name) > 4
 WHERE processed_to_silver = FALSE
   AND title IS NOT NULL;

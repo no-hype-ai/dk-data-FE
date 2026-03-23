@@ -59,6 +59,9 @@ SELECT
     -- Pharma relevance: Nice Class 5 = Pharmaceuticals
     5 = ANY(COALESCE(r.nice_classes, '{}')) AS is_pharma_related,
 
+    -- Raw passthrough: preserve full source row for column autodiscovery
+    to_jsonb(r.*) AS raw_json,
+
     -- Processing metadata
     FALSE AS processed_to_silver,
     r._loaded_at AS ingested_at

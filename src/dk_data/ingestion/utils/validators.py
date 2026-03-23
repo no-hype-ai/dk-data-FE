@@ -488,6 +488,8 @@ class SECEdgarRecord(BaseModel):
     filing_date: Optional[date] = None
     document_url: Optional[str] = None
     description: Optional[str] = None
+    mda_text: Optional[str] = None
+    risk_factors_text: Optional[str] = None
 
     @field_validator('filing_type')
     @classmethod

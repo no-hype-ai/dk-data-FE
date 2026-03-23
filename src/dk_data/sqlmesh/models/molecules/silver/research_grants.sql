@@ -1,24 +1,21 @@
 -- SQLMesh Model: Silver Research Grants
 -- Promotes mol_bronze.nih_reporter into mol_silver.research_grants
--- with molecule-level linkage. molecule_id is NULL — entity linking fills it
--- by matching grant terms/title against mol_silver.molecules drug names.
+-- Entity linking: LEFT JOIN mol_silver.molecules by canonical_name match in project title.
+-- FULL refresh ensures molecule_id is always current when new molecules are added.
 -- Part of: Tier 4 gap fix — nih_reporter had no bronze→silver transform
 
 MODEL (
     name mol_silver.research_grants,
-    kind INCREMENTAL_BY_UNIQUE_KEY (
-        unique_key (project_number)
-    ),
+    kind FULL,
     cron '@weekly',
     audits (
         not_null(columns := (project_number, funding_agency))
-    ),
-    grain (project_number)
+    )
 );
 
 SELECT
     gen_random_uuid()       AS grant_id,
-    NULL::UUID              AS molecule_id,     -- entity linking fills this via terms/title matching
+    m.molecule_id,
     b.project_number,
     b.project_title,
     b.pi_name,
@@ -33,6 +30,8 @@ SELECT
     b.ingested_at           AS created_at
 
 FROM mol_bronze.nih_reporter b
-WHERE b.processed_to_silver = FALSE
-  AND b.project_number IS NOT NULL
+LEFT JOIN mol_silver.molecules m
+       ON LOWER(b.project_title) LIKE '%' || LOWER(m.canonical_name) || '%'
+      AND LENGTH(m.canonical_name) > 4
+WHERE b.project_number IS NOT NULL
   AND b.funding_agency IS NOT NULL;

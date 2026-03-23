@@ -255,17 +255,6 @@ _MOLECULE_TOOLS: Dict[str, DataToolDefinition] = {
         raw_table="pdb_structures",
         raw_schema="mol_raw",
     ),
-    "orcid-search": DataToolDefinition(
-        name="orcid-search",
-        description="Search ORCID for researcher profiles",
-        category="molecule",
-        supported_query_keys=["drug_name"],
-        adapter_module="dk_data.services.pipeline.adapters.orcid",
-        api_base_url="https://pub.orcid.org/v3.0/search/",
-        tier="direct_query",
-        raw_table="orcid",
-        raw_schema="mol_raw",
-    ),
     # Tier 2: Fetch + Filter
     "journal-rss-fetch": DataToolDefinition(
         name="journal-rss-fetch",

@@ -27,6 +27,7 @@ SELECT
     b.filing_type,
     b.filing_date,
     b.accession_number,
+    b.document_url,
     b.mda_text                              AS mda_excerpt,
     b.risk_factors_text                     AS risk_factors_excerpt,
     -- Entity link: resolve molecule_id from drug_name (canonical or pref name).
@@ -39,7 +40,6 @@ SELECT
 FROM mol_bronze.sec_edgar b
 LEFT JOIN mol_silver.molecules m
        ON LOWER(m.canonical_name) = LOWER(b.drug_name)
-       OR LOWER(m.pref_name)      = LOWER(b.drug_name)
 WHERE b.processed_to_silver = FALSE
   AND b.cik IS NOT NULL
   AND b.filing_type IS NOT NULL;

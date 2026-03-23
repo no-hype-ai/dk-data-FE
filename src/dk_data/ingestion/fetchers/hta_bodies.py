@@ -112,6 +112,13 @@ class HTABodiesFetcher(BaseFetcher):
                 ",".join(sorted(seen_ids)).encode()
             ).hexdigest() if seen_ids else None
 
+            self.save_manifest(
+                last_run_at=datetime.now(timezone.utc).isoformat(),
+                last_run_status="completed",
+                total_records_fetched=len(all_records),
+                last_content_hash=content_hash,
+            )
+
             result: Dict[str, Any] = {
                 "status": "success",
                 "records": all_records,
@@ -122,6 +129,7 @@ class HTABodiesFetcher(BaseFetcher):
 
         except Exception as e:
             logger.exception("HTA bodies fetch failed: %s", e)
+            self.save_manifest(last_run_status="interrupted")
             result = {
                 "status": "failed",
                 "records": [],

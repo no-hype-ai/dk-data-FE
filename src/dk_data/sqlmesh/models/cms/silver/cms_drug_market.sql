@@ -56,22 +56,16 @@ spending_b AS (
     GROUP BY hcpcs_code, hcpcs_description
 ),
 
--- Formulary coverage: join to NDC via drug_name ≈ nonproprietary_name
--- (CMS formulary is keyed by rxcui, not NDC; drug_name provides the crosswalk)
+-- Formulary coverage: cms_formulary is keyed by rxcui; cms_ndc has no rxcui column,
+-- so no direct crosswalk is available without an NDC→rxcui mapping table.
+-- Return zero formulary coverage until a crosswalk is loaded.
 formulary_coverage AS (
     SELECT
         n.ndc,
-        COUNT(DISTINCT f.formulary_id)              AS formulary_count,
-        ROUND(
-            COUNT(DISTINCT f.formulary_id)::NUMERIC /
-            NULLIF((SELECT COUNT(DISTINCT formulary_id) FROM hcs_bronze.cms_formulary), 0),
-            4
-        )                                           AS formulary_coverage_pct,
-        ROUND(AVG(NULLIF(f.tier_level, '')::NUMERIC), 1) AS avg_tier_level
+        0::BIGINT                   AS formulary_count,
+        0::NUMERIC                  AS formulary_coverage_pct,
+        NULL::NUMERIC               AS avg_tier_level
     FROM hcs_bronze.cms_ndc n
-    INNER JOIN hcs_bronze.cms_formulary f
-        ON UPPER(TRIM(f.drug_name)) = n.nonproprietary_name
-    GROUP BY n.ndc
 ),
 
 -- USP classification: join via drug_names (comma-separated list) matching nonproprietary_name

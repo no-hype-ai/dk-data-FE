@@ -16,10 +16,9 @@ MODEL (
 SELECT
     TRIM(provider_id)::TEXT                     AS provider_id,
     TRIM(apc_code)::TEXT                        AS apc_code,
-    total_services::INTEGER                     AS total_services,
-    avg_estimated_payment::NUMERIC              AS avg_estimated_payment,
-    avg_total_payments::NUMERIC                 AS avg_total_payments,
-    year::INTEGER                               AS year,
+    NULLIF(TRIM(total_services), '')::INTEGER   AS total_services,
+    NULLIF(TRIM(avg_total_payments), '')::NUMERIC AS avg_total_payments,
+    EXTRACT(YEAR FROM _loaded_at)::INTEGER      AS year,
     _loaded_at,
     _source_file,
     _source_hash
