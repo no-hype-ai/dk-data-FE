@@ -704,7 +704,7 @@ async def run_raw_ingestion(
                         if extraction:
                             body = {
                                 'cik': target_cik,
-                                'company_name': manufacturer_name or drug_name,
+                                'company_name': manufacturer_name,  # actual filing company; never the drug name
                                 'drug_name': drug_name,
                                 'filing_type': extraction.filing_type,
                                 'filing_date': extraction.filing_date,

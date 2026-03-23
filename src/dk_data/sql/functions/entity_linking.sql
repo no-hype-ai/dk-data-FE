@@ -226,7 +226,9 @@ BEGIN
   EXCEPTION WHEN OTHERS THEN result := 'DrugBank: ' || SQLERRM; END;
   RETURN NEXT;
 
-  -- Link Financial Filings: silver.financial_filings molecule_id via brand name
+  -- Link Financial Filings: silver.financial_filings molecule_id via drug_name.
+  -- Falls back to company_name for legacy rows where drug_name was not stored
+  -- (old sec_edgar_client path incorrectly stored the drug name in company_name).
   step := 'Link Financial Filings';
   BEGIN
     UPDATE mol_silver.financial_filings f
@@ -234,8 +236,16 @@ BEGIN
     FROM mol_silver.molecules m
     WHERE f.molecule_id IS NULL
       AND (
-        LOWER(f.product_name) = LOWER(m.canonical_name)
-        OR LOWER(f.product_name) = ANY(SELECT LOWER(unnest(m.brand_names)))
+        LOWER(NULLIF(f.drug_name, '')) = LOWER(m.canonical_name)
+        OR LOWER(NULLIF(f.drug_name, '')) = ANY(SELECT LOWER(unnest(m.brand_names)))
+        -- Legacy fallback: old rows had drug name stored in company_name
+        OR (
+          (f.drug_name IS NULL OR f.drug_name = '')
+          AND (
+            LOWER(f.company_name) = LOWER(m.canonical_name)
+            OR LOWER(f.company_name) = ANY(SELECT LOWER(unnest(m.brand_names)))
+          )
+        )
       );
     GET DIAGNOSTICS linked_count = ROW_COUNT;
     result := '+' || linked_count || ' financial filings';
