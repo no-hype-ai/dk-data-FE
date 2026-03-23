@@ -2135,6 +2135,10 @@ class WHOGHOIngestion(RawIngestionService):
                 if not body.get("value"):
                     continue
 
+                import json as _json
+                body_str = _json.dumps(body)
+                like_pattern = f'%/{indicator}%'
+
                 # Store directly into mol_raw.who_gho (non-standard schema, no response_body_hash column)
                 # Skip if we already have unprocessed data for this indicator+country from the last 30 days.
                 async with self.db_pool.acquire() as conn:
@@ -2142,13 +2146,13 @@ class WHOGHOIngestion(RawIngestionService):
                         """
                         SELECT id FROM mol_raw.who_gho
                         WHERE drug_name = $1
-                          AND request_url LIKE '%/' || $2 || '%'
+                          AND request_url LIKE $2
                           AND processed_to_bronze = FALSE
                           AND request_timestamp > NOW() - INTERVAL '30 days'
                         LIMIT 1
                         """,
                         icd10_code,
-                        indicator,
+                        like_pattern,
                     )
                     if existing:
                         logger.debug(f"WHO GHO: skipping {indicator}/{icd10_code} — recent unprocessed row exists")
@@ -2158,10 +2162,10 @@ class WHOGHOIngestion(RawIngestionService):
                     await conn.execute(
                         """
                         INSERT INTO mol_raw.who_gho (drug_name, response_body, response_status, request_url)
-                        VALUES ($1, $2, $3, $4)
+                        VALUES ($1, $2::jsonb, $3, $4)
                         """,
                         icd10_code,
-                        body,
+                        body_str,
                         200,
                         url,
                     )
