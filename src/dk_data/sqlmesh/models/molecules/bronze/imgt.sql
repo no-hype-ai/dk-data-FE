@@ -21,14 +21,19 @@ WITH normalised AS (
     SELECT
         r.id              AS raw_source_id,
         r.request_timestamp,
+        rec.value         AS rec
+    FROM mol_raw.imgt r
+    -- PostgreSQL forbids set-returning functions inside CASE.
+    -- Select the right JSON array first, then unnest via LATERAL.
+    CROSS JOIN LATERAL jsonb_array_elements(
         CASE
             WHEN r.response_body ? 'data' AND jsonb_typeof(r.response_body->'data') = 'array'
-            THEN jsonb_array_elements(r.response_body->'data')
+                THEN r.response_body->'data'
             WHEN r.response_body ? 'structures'
-            THEN jsonb_array_elements(r.response_body->'structures')
-            ELSE r.response_body
-        END AS rec
-    FROM mol_raw.imgt r
+                THEN r.response_body->'structures'
+            ELSE jsonb_build_array(r.response_body)
+        END
+    ) AS rec(value)
     WHERE r.response_status = 200
       AND r.processed_to_bronze = FALSE
       AND r.response_body IS NOT NULL

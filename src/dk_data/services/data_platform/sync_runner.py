@@ -1254,10 +1254,10 @@ SOURCE_TO_SQLMESH_MODELS: Dict[str, Dict[str, str]] = {
         'bronze': 'mol_bronze.medical_news',
         'silver': 'mol_silver.news_signals',
     },
-    # CMS drug spending — fetcher writes to mol_bronze.cms_medicare_spending;
+    # CMS drug spending — fetcher writes to mol_bronze.cms_medicare;
     # silver model joins to mol_silver.drug_spending (molecule-linked rows)
     'cms_medicare': {
-        'bronze': 'mol_bronze.cms_medicare_spending',
+        'bronze': 'mol_bronze.cms_medicare',
         'silver': 'mol_silver.drug_spending',
     },
     # CMS Open Payments — fetcher writes to mol_bronze.cms_open_payments;

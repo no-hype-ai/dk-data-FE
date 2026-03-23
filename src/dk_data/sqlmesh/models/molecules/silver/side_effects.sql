@@ -1,6 +1,6 @@
 -- SQLMesh Model: Silver Side Effects
 -- Promotes mol_bronze.sider into mol_silver.side_effects with molecule_id linkage.
--- Entity linking: stitch_id (STITCH/PubChem CID) → mol_silver.pubchem.pubchem_cid → molecule_id.
+-- Entity linking: stitch_id (STITCH/PubChem CID) → mol_silver.pubchem.cid → molecule_id.
 -- Fallback: drug_name → mol_silver.molecules.canonical_name.
 
 MODEL (
@@ -36,7 +36,7 @@ FROM mol_bronze.sider b
 -- Link via PubChem CID → pubchem silver → molecule
 LEFT JOIN mol_silver.pubchem pc
        ON b.pubchem_cid IS NOT NULL
-      AND b.pubchem_cid = pc.pubchem_cid::TEXT
+      AND b.pubchem_cid = pc.cid::TEXT
 LEFT JOIN mol_silver.molecules p
        ON pc.molecule_id IS NOT NULL
       AND p.molecule_id = pc.molecule_id

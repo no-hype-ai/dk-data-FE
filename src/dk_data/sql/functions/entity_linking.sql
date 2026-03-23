@@ -417,7 +417,7 @@ BEGIN
     )
     SELECT m.molecule_id, s.brand_name, s.generic_name, s.program, s.year,
       s.total_claims, s.total_beneficiaries, s.total_spending, s.avg_cost_per_claim, 'cms_medicare'
-    FROM mol_bronze.cms_medicare_spending s
+    FROM mol_bronze.cms_medicare s
     JOIN mol_silver.molecules m ON (
       LOWER(s.brand_name) = ANY(SELECT LOWER(unnest(m.brand_names)))
       OR LOWER(s.generic_name) = LOWER(m.canonical_name)

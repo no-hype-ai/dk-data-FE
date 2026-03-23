@@ -26,7 +26,7 @@ WITH pdb_linked AS (
         t.id                                AS target_id,
         t.protein_name,
         t.gene_name,
-        t.target_class,
+        t.target_type,
         t.molecule_id,
         'pdb'                               AS source,
         b.source_updated_at
@@ -41,7 +41,7 @@ SELECT
     target_id,
     protein_name,
     gene_name,
-    target_class,
+    target_type,
     uniprot_id,
     structure_id,
     title                       AS structure_title,
