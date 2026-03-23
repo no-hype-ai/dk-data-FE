@@ -6,7 +6,7 @@ from .cms_base import CMSBaseAdapter
 
 class Adapter(CMSBaseAdapter):
     # Medicare Part D Spending by Drug
-    DATASET_ID = "rczc-pvce"
+    DATASET_ID = "7e0b4365-fd63-4a29-8f5e-e0ac9f66a81b"
 
     @property
     def source_name(self) -> str:
