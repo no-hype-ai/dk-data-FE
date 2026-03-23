@@ -2106,11 +2106,13 @@ class WHOGHOIngestion(RawIngestionService):
         Returns:
             Number of raw records stored (one per indicator with data)
         """
-        # 1. Look up indicator codes for this ICD-10 from the mapping table
+        # 1. Look up indicator codes for this ICD-10 from the mapping table.
+        # The mapping uses 3-char ICD-10 prefixes (e.g. "C22") while xenon may pass
+        # a more-specific code (e.g. "C22.0"). Match on prefix OR exact code so both work.
         async with self.db_pool.acquire() as conn:
             rows = await conn.fetch(
                 "SELECT DISTINCT who_indicator FROM mol_silver.icd10_indicator_mapping "
-                "WHERE icd10_code = $1",
+                "WHERE icd10_code = $1 OR $1 LIKE icd10_code || '.%'",
                 icd10_code,
             )
         indicator_codes = [r["who_indicator"] for r in rows]

@@ -218,6 +218,96 @@ def run_sqlmesh_command(command: list[str], timeout: int = 3600) -> dict:
         }
 
 
+def _direct_sql_transform(model_name: str, start: str, end: str) -> dict:
+    """
+    Direct SQL fallback for INCREMENTAL_BY_TIME_RANGE models when SQLMesh cannot
+    process the current interval.
+
+    Root cause: for @monthly models, the current-month interval ends in the future
+    (e.g. end = 2026-04-01). SQLMesh refuses to run intervals whose end time has
+    not yet been reached, even with --ignore-cron. Restate also cannot target a
+    future interval.  This fallback bypasses the scheduler entirely:
+      1. Resolves the active snapshot table from pg_views
+      2. Reads the model SQL, strips MODEL() block, substitutes @start_dt / @end_dt
+      3. Inserts directly into the snapshot table (ON CONFLICT DO NOTHING for idempotency)
+
+    Args:
+        model_name: Fully qualified model name (e.g., mol_bronze.who_gho)
+        start: Start date ISO string passed to @start_dt
+        end:   End date ISO string passed to @end_dt (must include today + 1 day to capture
+               records inserted today, since BETWEEN is inclusive and records have timestamps
+               throughout the day)
+
+    Returns:
+        Result dictionary with status, rows_inserted, and stdout/error keys.
+    """
+    import re as _re
+    from datetime import date as _date, timedelta as _td
+
+    schema, table = model_name.split('.')
+    pg_host = os.environ.get('POSTGRES_HOST', 'postgres')
+    pg_user = os.environ.get('POSTGRES_USER', 'postgres')
+    pg_db   = os.environ.get('POSTGRES_DB', 'dk_data')
+    pg_pw   = os.environ.get('POSTGRES_PASSWORD', 'postgres')
+    pg_env  = {**os.environ, 'PGPASSWORD': pg_pw}
+
+    # ── 1. Resolve active snapshot table ──────────────────────────────────────
+    view_cmd = [
+        'psql', '-h', pg_host, '-U', pg_user, '-d', pg_db,
+        '-t', '-A', '-c',
+        f"SELECT definition FROM pg_views WHERE schemaname='{schema}' AND viewname='{table}'",
+    ]
+    vr = subprocess.run(view_cmd, capture_output=True, text=True, timeout=15, env=pg_env)
+    if vr.returncode != 0:
+        return {'status': 'failed', 'error': f'Could not query pg_views: {vr.stderr[:200]}'}
+
+    m = _re.search(rf'FROM {schema}\.({schema}__{table}__\d+)', vr.stdout)
+    if not m:
+        return {'status': 'failed', 'error': f'Cannot parse snapshot table from view: {vr.stdout[:200]}'}
+    snapshot_table = f'{schema}."{m.group(1)}"'
+    logger.info(f'Direct SQL transform: {model_name} → snapshot {snapshot_table}')
+
+    # ── 2. Find model SQL file ─────────────────────────────────────────────────
+    try:
+        config_path = get_sqlmesh_config_path()
+    except FileNotFoundError as exc:
+        return {'status': 'failed', 'error': str(exc)}
+
+    sql_files = list(config_path.parent.rglob(f'{table}.sql'))
+    if not sql_files:
+        return {'status': 'failed', 'error': f'No SQL file found for {model_name}'}
+
+    sql_raw = sql_files[0].read_text()
+
+    # Strip MODEL(...) block (handles multiline, including nested parens in audits)
+    sql_body = _re.sub(r'MODEL\s*\(.*?\)\s*;', '', sql_raw, flags=_re.DOTALL).strip()
+
+    # Substitute SQLMesh macro parameters
+    sql_body = sql_body.replace('@start_dt', f"'{start}'")
+    sql_body = sql_body.replace('@end_dt',   f"'{end}'")
+    sql_body = sql_body.rstrip(';').strip()
+
+    # ── 3. Execute INSERT INTO snapshot_table SELECT ... ──────────────────────
+    insert_sql = (
+        f"INSERT INTO {snapshot_table}\n"
+        f"{sql_body}\n"
+        f"ON CONFLICT DO NOTHING"
+        f";"
+    )
+
+    exec_cmd = [
+        'psql', '-h', pg_host, '-U', pg_user, '-d', pg_db, '-c', insert_sql,
+    ]
+    er = subprocess.run(exec_cmd, capture_output=True, text=True, timeout=300, env=pg_env)
+    if er.returncode == 0:
+        row_match = _re.search(r'INSERT 0 (\d+)', er.stdout)
+        rows = int(row_match.group(1)) if row_match else 0
+        logger.info(f'Direct SQL transform {model_name}: {rows} rows inserted into {snapshot_table}')
+        return {'status': 'success', 'stdout': er.stdout, 'rows_inserted': rows}
+    else:
+        return {'status': 'failed', 'error': er.stderr[:500], 'stdout': er.stdout[:200]}
+
+
 def transform_model(model_name: str, start_days_back: int = 30) -> dict:
     """
     Run transformation for a specific model.
@@ -253,6 +343,61 @@ def transform_model(model_name: str, start_days_back: int = 30) -> dict:
         '--start', start,
         '--end', tomorrow,
     ], timeout=420)  # 7-minute max; large models (publications, clinicaltrials) can take 3-4 min with 1000+ records
+
+    def _no_models_ready(r: dict) -> bool:
+        s = (r.get('stdout') or '').lower()
+        return r.get('status') == 'success' and (
+            'no models are ready' in s or ('no models' in s and 'run' in s)
+        )
+
+    # Detect "no models are ready to run": this happens for INCREMENTAL_BY_TIME_RANGE
+    # models when:
+    #   a) the cron interval was already processed (even with 0 rows) before new data arrived
+    #   b) the interval end time is in the future (current month not yet over) —
+    #      SQLMesh refuses to run even with --ignore-cron
+    #
+    # Fallback chain:
+    #   1. Try plan --restate-model (marks intervals as pending; works for past intervals)
+    #   2. If still no rows, use _direct_sql_transform to bypass the scheduler entirely
+    #      (required for the current month's interval whose end date is in the future)
+    if _no_models_ready(result):
+        logger.warning(
+            f"Model {model_name}: no interval ready — trying plan --restate-model "
+            f"({start}–{date.today().isoformat()}) then direct SQL fallback."
+        )
+        restate = run_sqlmesh_command([
+            'plan',
+            '--restate-model', model_name,
+            '--start', start,
+            '--end', date.today().isoformat(),  # plan restate cannot use a future end date
+            '--auto-apply', '--no-prompts',
+        ], timeout=600)
+
+        if restate.get('status') == 'success':
+            logger.info(f"Model {model_name} restate plan applied; running now")
+            result = run_sqlmesh_command([
+                'run', '--select-model', model_name,
+                '--ignore-cron', '--no-auto-upstream',
+                '--start', start,
+                '--end', tomorrow,
+            ], timeout=420)
+        else:
+            restate_detail = restate.get('stderr') or restate.get('stdout') or restate.get('error', '')
+            logger.warning(
+                f"Model {model_name} restate plan failed: {restate_detail[:200]} — "
+                f"falling through to direct SQL transform."
+            )
+
+        # If still no rows after restate (current-month interval end is in the future),
+        # execute the model SQL directly against the active snapshot table.
+        if _no_models_ready(result):
+            logger.warning(
+                f"Model {model_name}: SQLMesh cannot process current-period interval "
+                f"(end date is in the future). Using direct SQL fallback."
+            )
+            # Use first-of-current-month as start to capture all unprocessed raw records.
+            month_start = date.today().replace(day=1).isoformat()
+            result = _direct_sql_transform(model_name, month_start, tomorrow)
 
     if result.get('status') == 'success':
         logger.info(f"Model {model_name} transformed successfully")

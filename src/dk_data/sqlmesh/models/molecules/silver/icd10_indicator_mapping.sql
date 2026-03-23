@@ -43,8 +43,11 @@ WITH indicator_registry AS (
         ('SA_0000001683', 'C15', 'mortality_rate',   'Oesophageal cancer mortality'),
         ('SA_0000001684', 'C16', 'incidence_rate',   'Stomach cancer'),
         ('SA_0000001685', 'C16', 'mortality_rate',   'Stomach cancer mortality'),
-        ('SA_0000001692', 'C22', 'incidence_rate',   'Liver cancer'),
-        ('SA_0000001693', 'C22', 'mortality_rate',   'Liver cancer mortality'),
+        -- SA_0000001692 / SA_0000001693 are WHO ATLAS policy-survey codes, not GHO OData indicators.
+        -- They return 404 from the GHO API. Using NCDMORT3070 as a proxy:
+        -- "Probability (%) of premature NCD death (cardiovascular, cancer, diabetes, respiratory) 30-70"
+        -- which includes cancer mortality and has numeric USA data (66 rows, 2000-2021).
+        ('NCDMORT3070',   'C22', 'mortality_rate',   'NCD premature mortality (liver cancer proxy)'),
         ('SA_0000001694', 'C25', 'incidence_rate',   'Pancreatic cancer'),
         ('SA_0000001695', 'C25', 'mortality_rate',   'Pancreatic cancer mortality'),
         ('SA_0000001702', 'C64', 'incidence_rate',   'Kidney cancer'),
