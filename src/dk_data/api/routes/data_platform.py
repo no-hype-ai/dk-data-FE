@@ -1287,7 +1287,7 @@ async def trigger_source_ingestion(
                     skip_raw=False,
                     skip_bronze=False,
                     skip_silver=False,
-                    skip_gold=False,
+                    skip_gold=True,  # Gold refresh is triggered separately (fire-and-forget) by xenon after all ingest jobs complete
                     drug_name=drug_name,
                     job_id=job_id,
                 )
