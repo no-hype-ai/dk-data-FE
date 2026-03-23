@@ -249,7 +249,7 @@ def transform_model(model_name: str) -> dict:
         '--ignore-cron', '--no-auto-upstream',
         '--start', start_30d,
         '--end', tomorrow,
-    ], timeout=180)  # 3-minute max; stale plan lock retries every 30s, fail fast
+    ], timeout=420)  # 7-minute max; large models (publications, clinicaltrials) can take 3-4 min with 1000+ records
 
     if result.get('status') == 'success':
         logger.info(f"Model {model_name} transformed successfully")
