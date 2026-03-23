@@ -523,11 +523,13 @@ async def run_raw_ingestion(
                                     logger.warning(f"Silver refresh for {nct_id} failed: {e}")
                     else:
                         # Fetch trials for the specific drug (intervention search)
-                        result = await service.fetch_studies(intervention=drug_name, page_size=100)
+                        # Use page_size=1000 (CT.gov v2 max) to capture all trials in one request
+                        # — avoids missing trials like NIAGARA that appear beyond page 1 at page_size=100
+                        result = await service.fetch_studies(intervention=drug_name, page_size=1000)
                         if result:
                             count += 1
                         # Also search by query for broader coverage
-                        result = await service.fetch_studies(query=drug_name, page_size=100)
+                        result = await service.fetch_studies(query=drug_name, page_size=1000)
                         if result:
                             count += 1
 
