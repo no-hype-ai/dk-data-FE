@@ -1626,6 +1626,7 @@ async def run_pipeline(
     skip_silver: bool = False,
     skip_gold: bool = False,
     drug_name: Optional[str] = None,
+    job_id: Optional[str] = None,
 ) -> Dict[str, Any]:
     """
     Run the full data pipeline.
@@ -1639,12 +1640,18 @@ async def run_pipeline(
         skip_silver: Skip silver transformation
         skip_gold: Skip gold aggregation
         drug_name: Optional drug name to fetch data for (instead of hardcoded defaults)
+        job_id: Optional pre-assigned job UUID string (e.g. from trigger endpoint so
+                xenon can poll the same ID via GET /jobs/{job_id})
 
     Returns:
         Pipeline execution results
     """
-    # Use UUID object for PostgreSQL UUID column
-    job_id = uuid4()
+    # Use caller-supplied job_id so xenon can poll it, or generate a new one
+    if job_id is not None:
+        from uuid import UUID as _UUID
+        job_id = _UUID(job_id)
+    else:
+        job_id = uuid4()
     job_id_str = str(job_id)  # For logging
     metrics = PipelineMetrics()
 

@@ -1257,12 +1257,26 @@ async def trigger_source_ingestion(
             )
 
     try:
-        from uuid import uuid4
+        from uuid import uuid4, UUID as _UUID
         from ...services.data_platform.sync_runner import run_pipeline
 
         job_id = str(uuid4())
 
         drug_name = request.drug_name if request else None
+
+        # Insert a 'pending' row immediately so xenon can poll GET /jobs/{job_id}
+        # before the background task starts writing its own record.
+        pool = await get_db_pool()
+        if pool is not None:
+            async with pool.acquire() as conn:
+                await conn.execute(
+                    """
+                    INSERT INTO ops.ingestion_jobs (job_id, source, status, priority)
+                    VALUES ($1::uuid, $2, 'pending', 'normal')
+                    ON CONFLICT (job_id) DO NOTHING
+                    """,
+                    job_id, source,
+                )
 
         async def run_ingestion():
             try:
@@ -1275,6 +1289,7 @@ async def trigger_source_ingestion(
                     skip_silver=False,
                     skip_gold=False,
                     drug_name=drug_name,
+                    job_id=job_id,
                 )
                 logger.info(f"Ingestion job {job_id} completed: {result['status']}")
             except Exception as e:
