@@ -1,6 +1,7 @@
 -- SQLMesh Model: Bronze SEC EDGAR Filings
--- Transforms raw SEC EDGAR API responses to Bronze typed columns
--- Part of: 015-assessment-dashboard-integration
+-- Normalises raw SEC EDGAR MD&A extractions to typed Bronze columns.
+-- Revenue extraction is intentionally absent — that is handled by xenon's LLM
+-- (processFinancialFilingsWithLLM in assessment-orchestrator.service.ts).
 
 MODEL (
     name mol_bronze.sec_edgar,
@@ -19,34 +20,32 @@ MODEL (
 SELECT
     gen_random_uuid() AS id,
 
-    -- Filing identifiers (keys match sec_edgar fetcher snake_case normalization)
+    -- Filing identifiers
     COALESCE(
         response_body->>'accession_number',
         response_body->>'cik' || '_' || response_body->>'filing_type' || '_' || response_body->>'filing_date'
     ) AS filing_id,
-    response_body->>'cik' AS cik,
-    response_body->>'company_name' AS company_name,
-    response_body->>'filing_type' AS filing_type,
-    response_body->>'filing_date' AS filing_date,
 
-    -- Financial data (requires separate XBRL processing; will be NULL from the basic fetcher)
-    (response_body->>'revenue')::NUMERIC AS revenue,
-    (response_body->>'net_income')::NUMERIC AS net_income,
-    (response_body->>'total_assets')::NUMERIC AS total_assets,
+    response_body->>'cik'              AS cik,
+    response_body->>'company_name'     AS company_name,
+    -- drug_name: the molecule that triggered this ingestion (used for entity linking in silver)
+    response_body->>'drug_name'        AS drug_name,
+    response_body->>'filing_type'      AS filing_type,
+    (response_body->>'filing_date')::DATE AS filing_date,
+    response_body->>'accession_number' AS accession_number,
 
-    -- MD&A and risk factors text for downstream indication revenue parsing
-    response_body->>'mda_text' AS mda_excerpt,
-    response_body->>'risk_factors_text' AS risk_factors_excerpt,
-    response_body->>'product_name' AS product_name,
+    -- MD&A text — passed through as-is; xenon LLM extracts revenue from this
+    response_body->>'mda_text'         AS mda_text,
+    response_body->>'risk_factors_text' AS risk_factors_text,
 
     -- Raw source tracking
-    response_body AS raw_json,
-    id AS raw_source_id,
-    'sec_edgar' AS source,
+    response_body   AS raw_json,
+    id              AS raw_source_id,
+    'sec_edgar'     AS source,
     request_timestamp,
     request_timestamp AS source_updated_at,
-    FALSE AS processed_to_silver,
-    NOW() AS created_at
+    FALSE           AS processed_to_silver,
+    NOW()           AS created_at
 
 FROM mol_raw.sec_edgar
 WHERE

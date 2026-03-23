@@ -1,0 +1,52 @@
+# Monitoring overlay — run alongside the main compose file:
+#   docker compose -f docker-compose.yml -f docker-compose.monitoring.yml up -d
+#
+# Adds: Prometheus (9090) + Grafana (9091)
+# Prometheus scrapes: job-trigger /api/v1/monitoring/metrics + xenon API /metrics
+# Grafana datasources: Prometheus + PostgreSQL (live DB queries)
+
+services:
+  prometheus:
+    image: prom/prometheus:v2.51.0
+    container_name: dk-data-fe-prometheus
+    restart: unless-stopped
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./docker/monitoring/prometheus:/etc/prometheus:ro
+      - prometheus-data:/prometheus
+    command:
+      - "--config.file=/etc/prometheus/prometheus.yml"
+      - "--storage.tsdb.path=/prometheus"
+      - "--storage.tsdb.retention.time=30d"
+      - "--web.enable-lifecycle"
+    networks:
+      - dk-data-fe-network
+
+  grafana:
+    image: grafana/grafana:10.4.0
+    container_name: dk-data-fe-grafana
+    restart: unless-stopped
+    ports:
+      - "9091:3000"
+    environment:
+      GF_SECURITY_ADMIN_USER: admin
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_PASSWORD:-admin}
+      GF_USERS_ALLOW_SIGN_UP: "false"
+      GF_INSTALL_PLUGINS: grafana-clock-panel
+      # Allow loading unsigned plugins (not needed for postgres/prometheus builtins)
+      GF_PATHS_PROVISIONING: /etc/grafana/provisioning
+    volumes:
+      - ./docker/monitoring/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./src/dk_data/monitoring/grafana/dashboards:/var/lib/grafana/dashboards:ro
+      - grafana-data:/var/lib/grafana
+    depends_on:
+      - prometheus
+    networks:
+      - dk-data-fe-network
+
+volumes:
+  prometheus-data:
+    driver: local
+  grafana-data:
+    driver: local

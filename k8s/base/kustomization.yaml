@@ -90,6 +90,8 @@ resources:
   - backup/pg-backup-verify.yaml
   # Database initialization and seeding
   - db-init-job.yaml
+  # SQL migration runner (wave 2: runs after db-init) — applies pending migrations from sql/migrations/
+  - db-migration-job.yaml
   # DrugBank seed (wave 2): unzips bundled XML and loads into bronze.drugbank_*
   - job-drugbank-seed.yaml
   # USP MMG v9.0 seed (wave 2): loads alignment file into raw.cms_usp

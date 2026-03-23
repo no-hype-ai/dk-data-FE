@@ -1,13 +1,17 @@
--- SQLMesh Model: Silver Financial Data
--- Normalized SEC EDGAR financial filing data
--- Part of: 015-assessment-dashboard-integration
+-- SQLMesh Model: Silver SEC EDGAR Financial Filings
+-- Normalised MD&A filing data with molecule entity link.
+-- Revenue extraction from mda_excerpt is handled by xenon's LLM pipeline —
+-- this model intentionally carries NO revenue or product_name columns.
+--
+-- Entity linking: joins drug_name → mol_silver.molecules.canonical_name to
+-- produce a stable molecule_id for PostgREST filtering by xenon.
 
 MODEL (
-    name mol_silver.financial_data,
+    name mol_silver.financial_filings,
     kind INCREMENTAL_BY_UNIQUE_KEY (
         unique_key (cik, filing_type, filing_date)
     ),
-    cron '@weekly',
+    cron '@daily',
     audits (
         not_null(columns := (cik, filing_type, filing_date))
     ),
@@ -15,26 +19,27 @@ MODEL (
 );
 
 SELECT
-    gen_random_uuid() AS id,
+    gen_random_uuid()                       AS id,
     b.filing_id,
     b.cik,
     b.company_name,
+    b.drug_name,
     b.filing_type,
     b.filing_date,
-    b.revenue,
-    b.net_income,
-    b.total_assets,
-    NULL::NUMERIC AS market_cap,
-    NULL::NUMERIC AS drug_revenue_pct,
-    b.mda_excerpt,
-    b.risk_factors_excerpt,
-    b.product_name,
-    b.id AS bronze_id,
+    b.accession_number,
+    b.mda_text                              AS mda_excerpt,
+    b.risk_factors_text                     AS risk_factors_excerpt,
+    -- Entity link: resolve molecule_id from drug_name (canonical or pref name).
+    -- NULL when the drug name is not yet in mol_silver.molecules.
+    m.molecule_id                           AS molecule_id,
     b.source,
     b.source_updated_at,
-    NOW() AS created_at,
-    NOW() AS updated_at
+    NOW()                                   AS created_at,
+    NOW()                                   AS updated_at
 FROM mol_bronze.sec_edgar b
+LEFT JOIN mol_silver.molecules m
+       ON LOWER(m.canonical_name) = LOWER(b.drug_name)
+       OR LOWER(m.pref_name)      = LOWER(b.drug_name)
 WHERE b.processed_to_silver = FALSE
   AND b.cik IS NOT NULL
   AND b.filing_type IS NOT NULL;

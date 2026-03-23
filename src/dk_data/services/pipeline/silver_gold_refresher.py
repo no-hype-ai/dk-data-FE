@@ -669,7 +669,10 @@ class SilverGoldRefresher:
             await self._refresh_gold_lifecycle_stages(conn, molecule_id)
             await self._refresh_gold_trial_outcomes_direct(conn, molecule_id)
             await self._refresh_gold_competitive_landscape(conn, molecule_id)
-            await self._parse_mda_and_refresh_indication_revenue(conn, molecule_id)
+            # _parse_mda_and_refresh_indication_revenue removed: revenue extraction
+            # from MD&A text is handled by xenon's LLM (processFinancialFilingsWithLLM),
+            # not by dk-data-FE regex patterns. mol_silver.indication_revenue and
+            # mol_gold.indication_revenue_summary are no longer populated here.
 
     async def _refresh_gold_molecule_profile(self, conn, molecule_id: str, drug_name: str) -> None:
         """Refresh gold_molecule_profile from silver tables."""

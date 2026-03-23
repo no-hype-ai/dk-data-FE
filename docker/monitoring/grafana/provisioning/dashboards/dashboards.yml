@@ -1,0 +1,14 @@
+apiVersion: 1
+
+providers:
+  - name: dk-data-platform
+    orgId: 1
+    folder: "DK Data Platform"
+    folderUid: dk-data-platform
+    type: file
+    disableDeletion: false
+    updateIntervalSeconds: 60
+    allowUiUpdates: true
+    options:
+      path: /var/lib/grafana/dashboards
+      foldersFromFilesStructure: false

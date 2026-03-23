@@ -1,0 +1,3 @@
+setup:
+  project: dk-data-fe
+  config: dev

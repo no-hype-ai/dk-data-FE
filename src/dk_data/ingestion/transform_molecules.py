@@ -245,7 +245,7 @@ def transform_model(model_name: str) -> dict:
         'run', '--select-model', model_name,
         '--ignore-cron', '--no-auto-upstream',
         '--end', tomorrow,
-    ])
+    ], timeout=180)  # 3-minute max; stale plan lock retries every 30s, fail fast
 
     if result.get('status') == 'success':
         logger.info(f"Model {model_name} transformed successfully")

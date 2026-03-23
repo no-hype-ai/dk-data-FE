@@ -40,6 +40,30 @@ JOB_TRIGGER_URL := http://localhost:8000
 POSTGRES_PORT := 5433
 
 # ============================================================================
+# DOPPLER — Secret management
+# ============================================================================
+
+.PHONY: env env-stg env-prod deploy deploy-stg deploy-prod
+env: ## Pull dk-data-fe/dev secrets from Doppler into .env
+	doppler secrets download --no-file --format env --project dk-data-fe --config dev > .env
+	@echo "Wrote dk-data-fe/dev secrets to .env"
+
+env-stg: ## Pull dk-data-fe/stg secrets into .env (review only)
+	doppler secrets download --no-file --format env --project dk-data-fe --config stg > .env
+	@echo "Wrote dk-data-fe/stg secrets to .env (do not commit)"
+
+env-prod: ## Pull dk-data-fe/prd secrets into .env (review only)
+	doppler secrets download --no-file --format env --project dk-data-fe --config prd > .env
+	@echo "Wrote dk-data-fe/prd secrets to .env (do not commit)"
+
+deploy-stg: ## Deploy all services using dk-data-fe/stg secrets (Doppler injected)
+	doppler run --project dk-data-fe --config stg -- $(DC) up -d --build
+
+deploy-prod: ## Deploy all services using dk-data-fe/prd secrets (Doppler injected)
+	doppler run --project dk-data-fe --config prd -- $(DC) up -d --build
+
+# ============================================================================
+# ============================================================================
 # HELP
 # ============================================================================
 

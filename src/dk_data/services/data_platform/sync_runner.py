@@ -68,7 +68,12 @@ async def get_db_pool():
         db_pass = os.getenv('POSTGRES_PASSWORD', 'postgres')
         db_url = f'postgresql://{db_user}:{db_pass}@{db_host}:{db_port}/{db_name}'
 
-    return await asyncpg.create_pool(db_url, min_size=2, max_size=10)
+    return await asyncpg.create_pool(
+        db_url,
+        min_size=1,
+        max_size=5,
+        command_timeout=30,
+    )
 
 
 async def run_dynamic_source_ingestion(
@@ -611,17 +616,16 @@ async def run_raw_ingestion(
                 results[source] = 1 if result else 0
 
             elif source == 'sec_edgar':
-                from datetime import date as date_type
-                from ...ingestion.fetchers.sec_edgar import SECEdgarFetcher
+                import hashlib
+                import json as _json
+                from ...services.external_apis.sec_edgar_client import SECEdgarClient
+                from ...services.pipeline.sec_mda_extractor import extract_mda_from_filing
 
-                # Step 0: Resolve originator company name for CIK lookup.
+                # Step 1: Resolve originator company name for CIK lookup.
                 # Use mol_silver.clinical_trials lead_sponsor_name (INDUSTRY class, top by trial count).
-                # Clinical trial sponsors use the same names SEC filers use, making EDGAR matching reliable.
                 manufacturer_name = None
                 if drug_name:
                     async with pool.acquire() as conn:
-                        # Primary: clinical trial top industry sponsor (reliable SEC name match).
-                        # Requires ≥2 industry-sponsored trials to avoid picking a niche/biosimilar sponsor.
                         row = await conn.fetchrow("""
                             SELECT ct.lead_sponsor_name AS manufacturer, COUNT(*) AS trial_count
                             FROM mol_silver.clinical_trials ct
@@ -636,10 +640,8 @@ async def run_raw_ingestion(
                         """, drug_name)
                         if row and row['manufacturer']:
                             manufacturer_name = row['manufacturer']
-                            logger.info(f"SEC EDGAR: resolved '{drug_name}' -> sponsor '{manufacturer_name}' ({row['trial_count']} trials)")
+                            logger.info(f"SEC EDGAR: resolved '{drug_name}' → sponsor '{manufacturer_name}' ({row['trial_count']} trials)")
                         else:
-                            # Fallback: drug_labels manufacturer_name (jsonb array → first element).
-                            # Covers drugs with sparse trial data (e.g. ibrutinib, biosimilars).
                             fb_row = await conn.fetchrow("""
                                 SELECT (dl.manufacturer_name::jsonb->>0) AS manufacturer
                                 FROM mol_silver.drug_labels dl
@@ -650,228 +652,70 @@ async def run_raw_ingestion(
                             """, drug_name)
                             if fb_row and fb_row['manufacturer']:
                                 manufacturer_name = fb_row['manufacturer']
-                                logger.info(f"SEC EDGAR: resolved '{drug_name}' -> drug_labels manufacturer '{manufacturer_name}' (fallback)")
+                                logger.info(f"SEC EDGAR: resolved '{drug_name}' → drug_labels manufacturer '{manufacturer_name}' (fallback)")
 
-                # Step 1: Fetch filing metadata from EDGAR search index
-                fetcher = SECEdgarFetcher()
-                search_terms = [manufacturer_name or drug_name] if (manufacturer_name or drug_name) else None
-                fetch_result = fetcher.fetch(
-                    search_terms=search_terms,
-                    days_back=365,
-                )
+                # Step 2: Look up CIK via the authoritative company name search.
                 count = 0
                 target_cik = None
-                if fetch_result.get("status") == "success" and fetch_result.get("records"):
-                    import hashlib, json as _json
-                    async with pool.acquire() as conn:
-                        for rec in fetch_result["records"]:
-                            try:
-                                body_json = _json.dumps(rec, default=str)
-                                body_hash = hashlib.sha256(body_json.encode()).hexdigest()[:64]
+                lookup_name = manufacturer_name or drug_name
+                if lookup_name:
+                    try:
+                        cik_client = SECEdgarClient()
+                        target_cik = await cik_client.lookup_cik_by_company_name(lookup_name)
+                        if target_cik:
+                            logger.info(f"SEC EDGAR: CIK {target_cik} resolved for '{lookup_name}'")
+                        else:
+                            logger.warning(f"SEC EDGAR: no CIK found for '{lookup_name}'")
+                    except Exception as e:
+                        logger.warning(f"SEC EDGAR CIK lookup failed: {e}")
+
+                # Step 3: Fetch the latest annual filing and extract the MD&A section.
+                # The raw MDA text is stored to mol_raw; SQLMesh transforms it to
+                # mol_silver.financial_filings (with molecule entity link). Revenue
+                # extraction from the MDA text is handled by xenon's LLM pipeline
+                # (processFinancialFilingsWithLLM in assessment-orchestrator.service.ts).
+                if target_cik and drug_name:
+                    try:
+                        extraction = None
+                        for filing_type in ('10-K', '20-F'):
+                            extraction = await extract_mda_from_filing(
+                                target_cik, drug_name, filing_type
+                            )
+                            if extraction:
+                                logger.info(
+                                    f"SEC EDGAR: extracted MD&A from {filing_type} "
+                                    f"accession={extraction.accession_number} "
+                                    f"({len(extraction.mda_text)} chars)"
+                                )
+                                break
+
+                        if extraction:
+                            body = {
+                                'cik': target_cik,
+                                'company_name': manufacturer_name or drug_name,
+                                'drug_name': drug_name,
+                                'filing_type': extraction.filing_type,
+                                'filing_date': extraction.filing_date,
+                                'accession_number': extraction.accession_number,
+                                'mda_text': extraction.mda_text or None,
+                                'risk_factors_text': extraction.risk_factors_text or None,
+                            }
+                            body_json = _json.dumps(body, default=str)
+                            body_hash = hashlib.sha256(body_json.encode()).hexdigest()[:64]
+                            async with pool.acquire() as conn:
                                 await conn.execute("""
                                     INSERT INTO mol_raw.sec_edgar
                                         (response_body, response_body_hash, request_timestamp,
                                          api_endpoint, response_status)
-                                    VALUES ($1::jsonb, $2, NOW(), 'sec_edgar_fetcher', 200)
+                                    VALUES ($1::jsonb, $2, NOW(), 'sec_edgar_mda', 200)
                                     ON CONFLICT (response_body_hash) DO NOTHING
                                 """, body_json, body_hash)
-                                count += 1
-                                # Track the target company's CIK for revenue extraction.
-                                # Split on both spaces and hyphens so "Bristol-Myers" → "bristol"
-                                # matches EDGAR's "BRISTOL MYERS SQUIBB CO".
-                                import re as _re
-                                cn = (rec.get("company_name") or "").lower()
-                                match_src = (manufacturer_name or drug_name or "")
-                                match_term = _re.split(r'[\s\-]', match_src.lower())[0].rstrip(".,") if match_src else ""
-                                if match_term and cn and match_term in cn:
-                                    target_cik = rec.get("cik")
-                                    logger.info(f"SEC EDGAR: matched CIK {target_cik} for company '{rec.get('company_name')}'")
-                            except Exception as e:
-                                logger.debug(f"SEC EDGAR mol_raw insert failed: {e}")
-                    logger.info(f"SEC EDGAR: loaded {count} filings to mol_raw for '{drug_name}' (CIK: {target_cik})")
-
-                # Fallback CIK lookup: if EFTS full-text search didn't yield a match,
-                # use EDGAR's authoritative company-entity search (browse-edgar).
-                # EFTS returns filings that MENTION the company name (e.g., competitors
-                # mentioning "Hoffmann-La Roche"), not filings BY that company.
-                # browse-edgar matches against registered company names, so it correctly
-                # resolves subsidiaries like "Hoffmann-La Roche" → "F HOFFMANN-LA ROCHE LTD".
-                if not target_cik and (manufacturer_name or drug_name):
-                    try:
-                        from ...services.external_apis.sec_edgar_client import SECEdgarClient as _CIKClient
-                        _cik_client = _CIKClient()
-                        target_cik = await _cik_client.lookup_cik_by_company_name(
-                            manufacturer_name or drug_name
-                        )
-                        if target_cik:
-                            logger.info(
-                                f"SEC EDGAR: CIK {target_cik} resolved via company name "
-                                f"search for '{manufacturer_name or drug_name}'"
-                            )
-                    except Exception as _e:
-                        logger.warning(f"SEC EDGAR company CIK lookup failed: {_e}")
-
-                # Step 2: Extract product-level revenue and store to:
-                #   a) mol_raw.sec_edgar (for SQLMesh bronze→silver pipeline)
-                #   b) mol_silver.financial_filings directly (so PostgREST serves it immediately,
-                #      without waiting for the @weekly SQLMesh cron)
-                if target_cik and drug_name:
-                    try:
-                        from ...services.external_apis.sec_edgar_client import SECEdgarClient
-                        import hashlib, json as _json
-                        client = SECEdgarClient()
-                        current_year = date_type.today().year
-                        revenues = await client.extract_product_revenues(
-                            target_cik, years=[current_year, current_year - 1, current_year - 2]
-                        )
-                        if revenues:
-                            # Resolve molecule_id + known brand names once for this drug_name
-                            molecule_id = None
-                            brand_names: set = {drug_name.lower()}
-                            async with pool.acquire() as conn:
-                                mol_row = await conn.fetchrow(
-                                    "SELECT molecule_id FROM mol_silver.molecules WHERE LOWER(canonical_name) = LOWER($1) LIMIT 1",
-                                    drug_name,
-                                )
-                                if mol_row:
-                                    molecule_id = str(mol_row['molecule_id'])
-                                # Load brand names from drug_labels (stored as JSON arrays like ["Humira"])
-                                # + ChEMBL TRADE_NAME synonyms for originator brands
-                                import json as _json_lib
-                                bn_rows = await conn.fetch("""
-                                    SELECT DISTINCT
-                                        jsonb_array_elements_text(
-                                            CASE WHEN brand_name LIKE '[%' THEN brand_name::jsonb
-                                                 ELSE jsonb_build_array(brand_name)
-                                            END
-                                        ) AS bn
-                                    FROM mol_silver.drug_labels dl
-                                    JOIN mol_silver.molecules m ON dl.molecule_id = m.molecule_id
-                                    WHERE LOWER(m.canonical_name) = LOWER($1)
-                                      AND dl.brand_name IS NOT NULL AND dl.brand_name != ''
-                                    UNION
-                                    SELECT DISTINCT LOWER(syn->>'synonyms') AS bn
-                                    FROM mol_bronze.chembl_molecules cb,
-                                         jsonb_array_elements(COALESCE(cb.synonyms, '[]'::jsonb)) AS syn
-                                    WHERE LOWER(cb.pref_name) = LOWER($1)
-                                      AND syn->>'syn_type' = 'TRADE_NAME'
-                                      AND syn->>'synonyms' IS NOT NULL
-                                    UNION
-                                    -- Fallback: molecule_aliases may have brand name aliases
-                                    SELECT DISTINCT LOWER(alias_name) AS bn
-                                    FROM mol_silver.molecule_aliases ma
-                                    JOIN mol_silver.molecules m ON ma.molecule_id = m.molecule_id
-                                    WHERE LOWER(m.canonical_name) = LOWER($1)
-                                      AND alias_type IN ('brand_name', 'trade_name', 'BRAND_NAME', 'TRADE_NAME')
-                                      AND alias_name IS NOT NULL
-                                """, drug_name)
-                                for bn_row in bn_rows:
-                                    if bn_row['bn']:
-                                        brand_names.add(bn_row['bn'].lower())
-
-                            # Filter revenues to the product(s) matching this drug.
-                            # The financial_filings table stores ONE row per (molecule_id,
-                            # filing_type, filing_date, accession_number). We must pick the
-                            # product entry whose name matches drug_name or a known brand name.
-                            def _product_score(product_name: str) -> int:
-                                pn = (product_name or '').lower()
-                                for bn in brand_names:
-                                    if bn in pn or pn in bn:
-                                        # Exact/substring match: longer overlap = higher score
-                                        return max(len(bn), len(pn))
-                                return 0
-
-                            # Pick best matching revenue per filing year.
-                            # Among products that match the drug/brand name, prefer
-                            # the one with highest revenue (primary product has highest sales).
-                            # This correctly picks "Opdivo" over "Opdivo Qvantig" for nivolumab.
-                            best_by_year: dict = {}
-                            for rev in revenues:
-                                score = _product_score(rev.product_name or '')
-                                if score > 0:
-                                    key = rev.year
-                                    rev_val = float(rev.revenue_usd or 0)
-                                    if key not in best_by_year:
-                                        best_by_year[key] = (rev_val, rev)
-                                    else:
-                                        existing_val, _ = best_by_year[key]
-                                        if rev_val > existing_val:
-                                            best_by_year[key] = (rev_val, rev)
-
-                            matching_revenues = [r for _, r in best_by_year.values()]
-                            del best_by_year  # free reference
-
-                            if not matching_revenues:
-                                logger.warning(
-                                    f"SEC EDGAR: no product matching '{drug_name}' "
-                                    f"(brand_names={brand_names}) found in {len(revenues)} revenues "
-                                    f"from CIK {target_cik}. Products: "
-                                    f"{[r.product_name for r in revenues[:10]]}"
-                                )
-                            else:
-                                logger.info(
-                                    f"SEC EDGAR: matched {len(matching_revenues)} product entries "
-                                    f"for '{drug_name}' from {len(revenues)} total revenues"
-                                )
-
-                            async with pool.acquire() as conn:
-                                stored = 0
-                                for rev in matching_revenues:
-                                    try:
-                                        accession = rev.source_filing or ''
-                                        filing_type = '20-F' if '20-F' in (rev.source_filing or '') else '10-K'
-                                        body = {
-                                            'cik': target_cik,
-                                            'company_name': drug_name,
-                                            'accession_number': accession or None,
-                                            'filing_type': filing_type,
-                                            'filing_date': str(rev.year) if rev.year else None,
-                                            'revenue': float(rev.revenue_usd) if rev.revenue_usd else None,
-                                            'product_name': rev.product_name,
-                                            'mda_text': rev.mda_text or None,
-                                            'risk_factors_text': rev.risk_factors_text or None,
-                                        }
-                                        body_json = _json.dumps(body, default=str)
-                                        body_hash = hashlib.sha256(body_json.encode()).hexdigest()[:64]
-                                        # a) Store to mol_raw for SQLMesh bronze pipeline
-                                        await conn.execute("""
-                                            INSERT INTO mol_raw.sec_edgar
-                                                (response_body, response_body_hash, request_timestamp,
-                                                 api_endpoint, response_status)
-                                            VALUES ($1::jsonb, $2, NOW(), 'sec_edgar_client', 200)
-                                            ON CONFLICT (response_body_hash) DO NOTHING
-                                        """, body_json, body_hash)
-                                        # b) Write directly to mol_silver.financial_filings so
-                                        #    PostgREST can serve the data without waiting for SQLMesh cron.
-                                        from datetime import date as _date
-                                        filing_date_val = _date(rev.year, 12, 31) if rev.year else None
-                                        await conn.execute("""
-                                            INSERT INTO mol_silver.financial_filings
-                                                (molecule_id, company_name, filing_type, filing_date,
-                                                 accession_number, source, revenue, product_name,
-                                                 mda_excerpt, risk_factors_excerpt)
-                                            VALUES ($1::uuid, $2, $3, $4, $5, 'sec_edgar',
-                                                    $6, $7, $8, $9)
-                                            ON CONFLICT (molecule_id, filing_type, filing_date,
-                                                         COALESCE(accession_number, ''))
-                                            DO UPDATE SET
-                                                revenue = COALESCE(EXCLUDED.revenue, mol_silver.financial_filings.revenue),
-                                                product_name = COALESCE(EXCLUDED.product_name, mol_silver.financial_filings.product_name),
-                                                mda_excerpt = COALESCE(EXCLUDED.mda_excerpt, mol_silver.financial_filings.mda_excerpt),
-                                                risk_factors_excerpt = COALESCE(EXCLUDED.risk_factors_excerpt, mol_silver.financial_filings.risk_factors_excerpt)
-                                        """,
-                                        molecule_id, drug_name, filing_type, filing_date_val,
-                                        accession or None,
-                                        float(rev.revenue_usd) if rev.revenue_usd else None,
-                                        rev.product_name,
-                                        (rev.mda_text or '')[:5000] or None,
-                                        (rev.risk_factors_text or '')[:5000] or None)
-                                        stored += 1
-                                    except Exception as e:
-                                        logger.warning(f"SEC EDGAR insert failed: {e}")
-                            logger.info(f"SEC EDGAR: stored {stored} revenues to mol_raw + mol_silver.financial_filings for '{drug_name}'")
+                            count = 1
+                            logger.info(f"SEC EDGAR: stored MD&A to mol_raw for '{drug_name}'")
+                        else:
+                            logger.warning(f"SEC EDGAR: no 10-K or 20-F found for CIK {target_cik} ('{drug_name}')")
                     except Exception as e:
-                        logger.warning(f"SEC EDGAR revenue extraction failed: {e}")
+                        logger.warning(f"SEC EDGAR MDA extraction failed: {e}")
 
                 results[source] = count
 
@@ -1215,8 +1059,9 @@ async def run_raw_ingestion(
             logger.info(f"Raw ingestion for {source}: {results.get(source, 0)} records")
 
         except Exception as e:
-            logger.error(f"Raw ingestion failed for {source}: {e}")
-            metrics.errors.append(f"raw_{source}: {str(e)}")
+            err_msg = str(e) or type(e).__name__
+            logger.error(f"Raw ingestion failed for {source} [{type(e).__name__}]: {err_msg}")
+            metrics.errors.append(f"raw_{source}: {err_msg}")
             results[source] = 0
 
     return results
@@ -1248,7 +1093,7 @@ SOURCE_TO_SQLMESH_MODELS: Dict[str, Dict[str, str]] = {
     },
     'sec_edgar': {
         'bronze': 'mol_bronze.sec_edgar',
-        'silver': 'mol_silver.financial_data',
+        'silver': 'mol_silver.financial_filings',
     },
     'uniprot': {
         'bronze': 'mol_bronze.uniprot',
@@ -1855,8 +1700,9 @@ async def run_pipeline(
             status = 'completed_with_errors'
 
     except Exception as e:
-        logger.error(f"Pipeline failed: {e}")
-        metrics.errors.append(f"pipeline: {str(e)}")
+        err_msg = str(e) or type(e).__name__
+        logger.error(f"Pipeline failed [{type(e).__name__}]: {err_msg}")
+        metrics.errors.append(f"pipeline: {err_msg}")
         status = 'failed'
 
     finally:

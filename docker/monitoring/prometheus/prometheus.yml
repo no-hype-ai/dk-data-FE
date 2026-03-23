@@ -1,0 +1,24 @@
+global:
+  scrape_interval: 30s
+  evaluation_interval: 30s
+
+scrape_configs:
+  # dk-data-FE job-trigger — FastAPI Prometheus metrics
+  - job_name: "dk-data-platform"
+    static_configs:
+      - targets: ["job-trigger:8000"]
+    metrics_path: /api/v1/monitoring/metrics
+    scrape_interval: 30s
+
+  # Xenon API — NestJS Prometheus metrics
+  # Uses host.docker.internal since xenon runs in a separate compose project
+  - job_name: "xenon-api"
+    static_configs:
+      - targets: ["host.docker.internal:3002"]
+    metrics_path: /metrics
+    scrape_interval: 30s
+
+  # Prometheus self-monitoring
+  - job_name: "prometheus"
+    static_configs:
+      - targets: ["localhost:9090"]
