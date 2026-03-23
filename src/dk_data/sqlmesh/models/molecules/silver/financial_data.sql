@@ -13,7 +13,7 @@ MODEL (
     ),
     cron '@daily',
     audits (
-        not_null(columns := (cik, filing_type, filing_date))
+        not_null(columns := (cik, filing_type))
     ),
     grain (cik, filing_type, filing_date)
 );

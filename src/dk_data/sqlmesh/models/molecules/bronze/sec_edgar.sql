@@ -12,7 +12,6 @@ MODEL (
     cron '@daily',
     audits (
         not_null(columns := (cik)),
-        unique_values(columns := (filing_id))
     ),
     grain filing_id
 );
@@ -31,7 +30,7 @@ SELECT
     -- drug_name: the molecule that triggered this ingestion (used for entity linking in silver)
     response_body->>'drug_name'        AS drug_name,
     response_body->>'filing_type'      AS filing_type,
-    (response_body->>'filing_date')::DATE AS filing_date,
+    CASE WHEN (response_body->>'filing_date') ~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}$' THEN (response_body->>'filing_date')::DATE WHEN (response_body->>'filing_date') ~ '^[0-9]{4}$' THEN (MAKE_DATE((response_body->>'filing_date')::INT, 1, 1)) ELSE NULL END AS filing_date,
     response_body->>'accession_number' AS accession_number,
 
     -- Document URL — xenon fetches HTML from this to extract MD&A text

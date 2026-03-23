@@ -12,23 +12,17 @@ MODEL (
 );
 
 WITH sec_revenue AS (
-    -- Latest annual revenue from SEC filings per molecule
-    -- Column names match mol_silver.financial_filings DDL (migration 114):
-    --   revenue (not revenue_usd), filing_date (not fiscal_year)
+    -- Latest SEC filing metadata per molecule.
+    -- mol_silver.financial_filings stores filing metadata only (MD&A text, etc.);
+    -- actual revenue is extracted by xenon's LLM and stored separately.
+    -- Revenue columns are NULL here until a revenue-bearing source is available.
     SELECT
         ff.molecule_id,
-        MAX(ff.revenue)                                          AS latest_revenue_usd,
+        NULL::NUMERIC                                            AS latest_revenue_usd,
         MAX(EXTRACT(YEAR FROM ff.filing_date)::INT)              AS latest_revenue_year,
         COUNT(DISTINCT EXTRACT(YEAR FROM ff.filing_date)::INT)   AS filing_years,
         MAX(ff.company_name)                                     AS company_name,
-        jsonb_agg(
-            jsonb_build_object(
-                'year',    EXTRACT(YEAR FROM ff.filing_date)::INT,
-                'revenue', ff.revenue,
-                'company', ff.company_name
-            )
-            ORDER BY ff.filing_date DESC
-        ) FILTER (WHERE ff.revenue IS NOT NULL)                  AS revenue_history
+        NULL::JSONB                                              AS revenue_history
     FROM mol_silver.financial_filings ff
     WHERE ff.molecule_id IS NOT NULL
     GROUP BY ff.molecule_id

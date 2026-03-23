@@ -276,28 +276,84 @@ class BaseFetcher(ABC):
 
     # ------------------------------------------------------------------
     # Manifest: persist fetch state across runs (ETag, cursor, offsets)
+    #
+    # Primary store: raw.fetch_state table in PostgreSQL (survives k8s pod
+    # restarts between CronJob runs).
+    # Fallback: local JSON file (used when DB is unavailable, e.g. local dev).
     # ------------------------------------------------------------------
 
     @property
     def _manifest_path(self) -> Path:
-        """Path to this source's manifest JSON file."""
+        """Path to the local fallback manifest JSON file."""
         return self._manifest_dir / f"{self.SOURCE_NAME}.json"
+
+    def _load_manifest_from_db(self) -> Optional[Dict[str, Any]]:
+        """Load manifest from raw.fetch_state. Returns None on any DB error."""
+        try:
+            from ..utils.database import get_connection
+            with get_connection() as conn:
+                with conn.cursor() as cur:
+                    cur.execute(
+                        "SELECT manifest FROM raw.fetch_state WHERE source_name = %s",
+                        (self.SOURCE_NAME,),
+                    )
+                    row = cur.fetchone()
+            return dict(row[0]) if row else {}
+        except Exception as e:
+            logger.debug(
+                "[%s] DB manifest load unavailable (%s); using file fallback",
+                self.SOURCE_NAME, e,
+            )
+            return None
+
+    def _save_manifest_to_db(self, manifest: Dict[str, Any]) -> bool:
+        """Upsert manifest into raw.fetch_state. Returns True on success."""
+        try:
+            from ..utils.database import get_connection
+            with get_connection() as conn:
+                with conn.cursor() as cur:
+                    cur.execute(
+                        """
+                        INSERT INTO raw.fetch_state (source_name, manifest, updated_at)
+                        VALUES (%s, %s, NOW())
+                        ON CONFLICT (source_name)
+                        DO UPDATE SET manifest = EXCLUDED.manifest,
+                                      updated_at = NOW()
+                        """,
+                        (self.SOURCE_NAME, json.dumps(manifest)),
+                    )
+                conn.commit()
+            return True
+        except Exception as e:
+            logger.debug(
+                "[%s] DB manifest save unavailable (%s); using file fallback",
+                self.SOURCE_NAME, e,
+            )
+            return False
 
     def load_manifest(self) -> Dict[str, Any]:
         """Load the persisted fetch state for this source.
 
+        Tries raw.fetch_state (PostgreSQL) first so state survives Kubernetes
+        pod restarts. Falls back to a local JSON file for local dev.
+
         Returns an empty dict if no manifest exists yet.
 
         Manifest fields (all optional):
-            last_run_at (str):        ISO timestamp of last completed run.
-            last_run_status (str):    'completed' | 'interrupted' | 'failed'.
+            last_run_at (str):           ISO timestamp of last completed run.
+            last_run_status (str):       'completed' | 'interrupted' | 'failed'.
             total_records_fetched (int): Records fetched in last completed run.
-            last_content_hash (str):  MD5 of last result set (change detection).
-            etag (str):               HTTP ETag from last response (conditional requests).
-            last_modified (str):      HTTP Last-Modified from last response.
-            last_cursor (str|None):   Cursor marker to resume pagination.
-            last_offset (int):        Numeric offset to resume pagination.
+            last_content_hash (str):     MD5 of last result set (change detection).
+            etag (str):                  HTTP ETag from last response.
+            last_modified (str):         HTTP Last-Modified from last response.
+            last_cursor (str|None):      Cursor marker to resume pagination.
+            last_offset (int):           Numeric offset to resume pagination.
         """
+        db_manifest = self._load_manifest_from_db()
+        if db_manifest is not None:
+            return db_manifest
+
+        # File fallback (local dev / no DB)
         if not self._manifest_path.exists():
             return {}
         try:
@@ -308,14 +364,22 @@ class BaseFetcher(ABC):
             return {}
 
     def save_manifest(self, **kwargs: Any) -> None:
-        """Persist fetch state to the manifest file.
+        """Persist fetch state.
 
         Merges kwargs into any existing manifest (preserves fields not overwritten).
         Always updates `saved_at` to the current UTC timestamp.
+
+        Writes to raw.fetch_state (PostgreSQL) first; falls back to a local
+        JSON file when the DB is unavailable.
         """
         manifest = self.load_manifest()
         manifest.update(kwargs)
         manifest['saved_at'] = datetime.now(timezone.utc).isoformat()
+
+        if self._save_manifest_to_db(manifest):
+            return
+
+        # File fallback
         try:
             with open(self._manifest_path, 'w') as f:
                 json.dump(manifest, f, indent=2)

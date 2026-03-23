@@ -45,7 +45,7 @@ SELECT
         WHEN ts.grand_total_spending > 0
         THEN ROUND(
             (d.total_part_d_spending + d.total_part_b_spending)::NUMERIC /
-            ts.grand_total_spending,
+            ts.grand_total_spending::NUMERIC,
             6
         )
         ELSE NULL
@@ -60,7 +60,7 @@ SELECT
         WHEN (d.total_part_d_claims + d.total_part_b_claims) > 0
         THEN ROUND(
             (d.total_part_d_spending + d.total_part_b_spending)::NUMERIC /
-            (d.total_part_d_claims + d.total_part_b_claims),
+            (d.total_part_d_claims + d.total_part_b_claims)::NUMERIC,
             2
         )
         ELSE NULL

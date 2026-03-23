@@ -70,6 +70,8 @@ spec:
                   value: "http://alloy.infra.svc.cluster.local:4317"
                 - name: OTEL_ENABLED
                   value: "true"
+                - name: OTEL_SERVICE_NAME
+                  value: "dk-data-fetch-openalex-ci"
               resources:
                 requests:
                   memory: "512Mi"

@@ -32,7 +32,7 @@ WITH hospital_data AS (
         fm.margin_quartile
     FROM mart.dim_hospital h
     LEFT JOIN staging.hospitals sh ON h.hospital_id = sh.hospital_id
-    LEFT JOIN staging.geographic_designations g ON h.hospital_id = g.hospital_id
+    LEFT JOIN hcs_silver.geographic_designations g ON h.hospital_id = g.hospital_id
     LEFT JOIN mart.fact_tavr_program tp ON h.hospital_key = tp.hospital_key
         AND tp.fiscal_year = (SELECT MAX(fiscal_year) FROM mart.fact_tavr_program WHERE hospital_key = h.hospital_key)
     LEFT JOIN mart.fact_financial_metrics fm ON h.hospital_key = fm.hospital_key

@@ -34,7 +34,6 @@ from dk_data.ingestion.fetchers import (
     SECEdgarFetcher,
     UniProtFetcher,
     PDBFetcher,
-    # ORCIDFetcher,  # Disabled — no ORCID membership
     USPTOTrademarksFetcher,
     EUIPOTrademarksFetcher,
 )
@@ -148,11 +147,6 @@ FETCHERS = {
         'description': 'RCSB PDB protein structures',
         'priority': 3,
     },
-    # 'orcid': {  # Disabled — no ORCID membership; OpenAlex covers author/ORCID data
-    #     'class': ORCIDFetcher,
-    #     'description': 'ORCID researcher profiles (KOL identification)',
-    #     'priority': 3,
-    # },
     # Trademark data sources (014-uspto-euipo-model-datasource)
     'uspto_trademarks': {
         'class': USPTOTrademarksFetcher,

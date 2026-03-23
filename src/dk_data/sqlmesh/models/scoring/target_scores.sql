@@ -1,6 +1,6 @@
 -- scoring.target_scores - Target Readiness Score calculations
 -- Source: mart.dim_hospital, mart.fact_tavr_program, mart.fact_financial_metrics,
---         staging.geographic_designations, staging.hospitals
+--         hcs_silver.geographic_designations, staging.hospitals
 -- Model type: FULL refresh
 
 MODEL (
@@ -38,7 +38,7 @@ WITH hospital_data AS (
         fm.margin_quartile
     FROM mart.dim_hospital h
     LEFT JOIN staging.hospitals sh ON h.hospital_id = sh.hospital_id
-    LEFT JOIN staging.geographic_designations g ON h.hospital_id = g.hospital_id
+    LEFT JOIN hcs_silver.geographic_designations g ON h.hospital_id = g.hospital_id
     LEFT JOIN mart.fact_tavr_program tp ON h.hospital_key = tp.hospital_key
         AND tp.fiscal_year = (
             SELECT MAX(fiscal_year)

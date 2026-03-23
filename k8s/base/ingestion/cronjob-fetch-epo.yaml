@@ -76,6 +76,8 @@ spec:
                   value: "http://alloy.infra.svc.cluster.local:4317"
                 - name: OTEL_ENABLED
                   value: "true"
+                - name: OTEL_SERVICE_NAME
+                  value: "dk-data-fetch-epo"
               resources:
                 requests:
                   memory: "256Mi"
