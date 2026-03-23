@@ -65,6 +65,7 @@ WITH source_molecules AS (
     FROM mol_bronze.chembl_molecules
     WHERE
         inchi_key IS NOT NULL
+        AND pref_name IS NOT NULL
         AND processed_to_silver = FALSE
 ),
 

@@ -43,7 +43,7 @@ POSTGRES_PORT := 5433
 # DOPPLER — Secret management
 # ============================================================================
 
-.PHONY: env env-stg env-prod deploy deploy-stg deploy-prod
+.PHONY: env env-stg env-prod deploy deploy-stg deploy-prod db-backup
 env: ## Pull dk-data-fe/dev secrets from Doppler into .env
 	doppler secrets download --no-file --format env --project dk-data-fe --config dev > .env
 	@echo "Wrote dk-data-fe/dev secrets to .env"
@@ -56,10 +56,22 @@ env-prod: ## Pull dk-data-fe/prd secrets into .env (review only)
 	doppler secrets download --no-file --format env --project dk-data-fe --config prd > .env
 	@echo "Wrote dk-data-fe/prd secrets to .env (do not commit)"
 
-deploy-stg: ## Deploy all services using dk-data-fe/stg secrets (Doppler injected)
+db-backup: ## Backup dk_data database to ./backups/ before deploying
+	@mkdir -p backups
+	@if $(DC) ps postgres 2>/dev/null | grep -q "running\|Up"; then \
+		BACKUP_FILE="backups/dk_data_$$(date +%Y%m%d_%H%M%S).dump"; \
+		echo "Backing up dk_data → $$BACKUP_FILE"; \
+		$(DC) exec -T postgres pg_dump -U postgres -Fc dk_data > "$$BACKUP_FILE" && \
+		echo "  Backup complete (size: $$(du -h $$BACKUP_FILE | cut -f1))" && \
+		ls -t backups/dk_data_*.dump | tail -n +8 | xargs rm -f 2>/dev/null || true; \
+	else \
+		echo "  No running postgres container — skipping backup (fresh deploy)"; \
+	fi
+
+deploy-stg: db-backup ## Backup DB then deploy using dk-data-fe/stg secrets (Doppler injected)
 	doppler run --project dk-data-fe --config stg -- $(DC) up -d --build
 
-deploy-prod: ## Deploy all services using dk-data-fe/prd secrets (Doppler injected)
+deploy-prod: db-backup ## Backup DB then deploy using dk-data-fe/prd secrets (Doppler injected)
 	doppler run --project dk-data-fe --config prd -- $(DC) up -d --build
 
 # ============================================================================
