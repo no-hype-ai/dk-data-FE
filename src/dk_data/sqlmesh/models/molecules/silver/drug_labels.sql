@@ -3,6 +3,7 @@
 -- Picks latest SPL version per set_id. Adds: molecule_id linkage.
 -- FULL refresh ensures molecule_id is always current when new molecules are added,
 -- and that late-arriving bronze rows are always included without interval-state issues.
+-- DISTINCT ON (set_id) in final SELECT prevents fan-out when a label matches multiple molecules.
 
 MODEL (
     name mol_silver.drug_labels,
@@ -23,7 +24,7 @@ WITH latest_version AS (
     ORDER BY set_id, spl_version DESC NULLS LAST, created_at DESC
 )
 
-SELECT
+SELECT DISTINCT ON (lv.set_id)
     gen_random_uuid() AS label_id,
     m.molecule_id,
 
@@ -93,4 +94,5 @@ LEFT JOIN mol_silver.molecules m ON (
            THEN lv.generic_name::jsonb ELSE '[]'::jsonb END
     ) gn WHERE LOWER(gn) = m.canonical_name
   )
-);
+)
+ORDER BY lv.set_id, m.molecule_id NULLS LAST;
