@@ -242,28 +242,41 @@ def _direct_sql_transform(model_name: str, start: str, end: str) -> dict:
         Result dictionary with status, rows_inserted, and stdout/error keys.
     """
     import re as _re
-    from datetime import date as _date, timedelta as _td
+    import psycopg2 as _pg
 
     schema, table = model_name.split('.')
     pg_host = os.environ.get('POSTGRES_HOST', 'postgres')
+    pg_port = int(os.environ.get('POSTGRES_PORT', '5432'))
     pg_user = os.environ.get('POSTGRES_USER', 'postgres')
     pg_db   = os.environ.get('POSTGRES_DB', 'dk_data')
     pg_pw   = os.environ.get('POSTGRES_PASSWORD', 'postgres')
-    pg_env  = {**os.environ, 'PGPASSWORD': pg_pw}
+
+    try:
+        conn = _pg.connect(host=pg_host, port=pg_port, user=pg_user, password=pg_pw, dbname=pg_db)
+        conn.autocommit = True
+    except Exception as exc:
+        return {'status': 'failed', 'error': f'DB connect failed: {exc}'}
 
     # ── 1. Resolve active snapshot table ──────────────────────────────────────
-    view_cmd = [
-        'psql', '-h', pg_host, '-U', pg_user, '-d', pg_db,
-        '-t', '-A', '-c',
-        f"SELECT definition FROM pg_views WHERE schemaname='{schema}' AND viewname='{table}'",
-    ]
-    vr = subprocess.run(view_cmd, capture_output=True, text=True, timeout=15, env=pg_env)
-    if vr.returncode != 0:
-        return {'status': 'failed', 'error': f'Could not query pg_views: {vr.stderr[:200]}'}
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                "SELECT definition FROM pg_views WHERE schemaname=%s AND viewname=%s",
+                (schema, table),
+            )
+            row = cur.fetchone()
+    except Exception as exc:
+        conn.close()
+        return {'status': 'failed', 'error': f'Could not query pg_views: {exc}'}
 
-    m = _re.search(rf'FROM {schema}\.({schema}__{table}__\d+)', vr.stdout)
+    if not row:
+        conn.close()
+        return {'status': 'failed', 'error': f'View {schema}.{table} not found in pg_views'}
+
+    m = _re.search(rf'FROM {schema}\.({schema}__{table}__\d+)', row[0])
     if not m:
-        return {'status': 'failed', 'error': f'Cannot parse snapshot table from view: {vr.stdout[:200]}'}
+        conn.close()
+        return {'status': 'failed', 'error': f'Cannot parse snapshot table from view: {row[0][:200]}'}
     snapshot_table = f'{schema}."{m.group(1)}"'
     logger.info(f'Direct SQL transform: {model_name} → snapshot {snapshot_table}')
 
@@ -271,10 +284,17 @@ def _direct_sql_transform(model_name: str, start: str, end: str) -> dict:
     try:
         config_path = get_sqlmesh_config_path()
     except FileNotFoundError as exc:
+        conn.close()
         return {'status': 'failed', 'error': str(exc)}
 
-    sql_files = list(config_path.parent.rglob(f'{table}.sql'))
+    # Search by model name inside file content (handles filenames that differ from table name,
+    # e.g. indication_epidemiology.sql defines model 'ind_silver.epidemiology')
+    sql_files = [
+        f for f in config_path.parent.rglob('*.sql')
+        if _re.search(rf'\bname\s+{_re.escape(model_name)}\b', f.read_text())
+    ]
     if not sql_files:
+        conn.close()
         return {'status': 'failed', 'error': f'No SQL file found for {model_name}'}
 
     sql_raw = sql_files[0].read_text()
@@ -282,7 +302,7 @@ def _direct_sql_transform(model_name: str, start: str, end: str) -> dict:
     # Strip MODEL(...) block (handles multiline, including nested parens in audits)
     sql_body = _re.sub(r'MODEL\s*\(.*?\)\s*;', '', sql_raw, flags=_re.DOTALL).strip()
 
-    # Substitute SQLMesh macro parameters
+    # Substitute SQLMesh macro parameters only when present
     sql_body = sql_body.replace('@start_dt', f"'{start}'")
     sql_body = sql_body.replace('@end_dt',   f"'{end}'")
     sql_body = sql_body.rstrip(';').strip()
@@ -292,20 +312,18 @@ def _direct_sql_transform(model_name: str, start: str, end: str) -> dict:
         f"INSERT INTO {snapshot_table}\n"
         f"{sql_body}\n"
         f"ON CONFLICT DO NOTHING"
-        f";"
     )
 
-    exec_cmd = [
-        'psql', '-h', pg_host, '-U', pg_user, '-d', pg_db, '-c', insert_sql,
-    ]
-    er = subprocess.run(exec_cmd, capture_output=True, text=True, timeout=300, env=pg_env)
-    if er.returncode == 0:
-        row_match = _re.search(r'INSERT 0 (\d+)', er.stdout)
-        rows = int(row_match.group(1)) if row_match else 0
+    try:
+        with conn.cursor() as cur:
+            cur.execute(insert_sql)
+            rows = cur.rowcount if cur.rowcount >= 0 else 0
+        conn.close()
         logger.info(f'Direct SQL transform {model_name}: {rows} rows inserted into {snapshot_table}')
-        return {'status': 'success', 'stdout': er.stdout, 'rows_inserted': rows}
-    else:
-        return {'status': 'failed', 'error': er.stderr[:500], 'stdout': er.stdout[:200]}
+        return {'status': 'success', 'stdout': f'INSERT 0 {rows}', 'rows_inserted': rows}
+    except Exception as exc:
+        conn.close()
+        return {'status': 'failed', 'error': str(exc)[:500]}
 
 
 def transform_model(model_name: str, start_days_back: int = 30) -> dict:
