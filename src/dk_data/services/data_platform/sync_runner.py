@@ -523,8 +523,10 @@ async def run_raw_ingestion(
                                     logger.warning(f"Silver refresh for {nct_id} failed: {e}")
                     else:
                         # Fetch trials for the specific drug (intervention search)
-                        # Use page_size=1000 (CT.gov v2 max) to capture all trials in one request
-                        # — avoids missing trials like NIAGARA that appear beyond page 1 at page_size=100
+                        # Use page_size=1000 (CT.gov v2 max) to capture all trials in one request.
+                        # CT.gov relevance ranking may still exclude some approved-indication trials
+                        # (e.g., NIAGARA/bladder is not in the top-1000 for query.intr=durvalumab alone).
+                        # We therefore run additional condition-scoped searches for common cancer types.
                         result = await service.fetch_studies(intervention=drug_name, page_size=1000)
                         if result:
                             count += 1
@@ -532,6 +534,12 @@ async def run_raw_ingestion(
                         result = await service.fetch_studies(query=drug_name, page_size=1000)
                         if result:
                             count += 1
+                        # Condition-scoped searches for major approved oncology indications
+                        # — ensures all pivotal trials are captured regardless of CT.gov ranking
+                        for condition in ['bladder cancer', 'lung cancer', 'biliary tract', 'hepatocellular', 'endometrial']:
+                            result = await service.fetch_studies(intervention=drug_name, condition=condition, page_size=200)
+                            if result:
+                                count += 1
 
                     # Also fetch individual studies for trials with results
                     # (search endpoint returns metadata but NOT resultsSection)
