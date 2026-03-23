@@ -85,7 +85,7 @@ class SilverTransformationService:
             db_pool, fuzzy_matcher=self.fuzzy_matcher
         )
 
-    async def process_chembl_molecules(self, limit: int = 100) -> TransformationResult:
+    async def process_chembl(self, limit: int = 100) -> TransformationResult:
         """Transform Bronze ChEMBL molecules to Silver."""
         result = TransformationResult(0, 0, 0, 0, [])
 
@@ -1813,7 +1813,7 @@ class SilverTransformationService:
 
         # Complete list of all processors for 16 data sources
         processors = [
-            ('chembl_molecules', self.process_chembl_molecules),
+            ('chembl', self.process_chembl),
             ('clinical_trials', self.process_clinical_trials),
             ('faers_events', self.process_faers_events),
             ('drug_labels', self.process_drug_labels),

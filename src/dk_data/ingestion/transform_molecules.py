@@ -9,7 +9,7 @@ Usage:
     python -m ingestion.transform_molecules --layer silver
     python -m ingestion.transform_molecules --layer gold
     python -m ingestion.transform_molecules --layer all
-    python -m ingestion.transform_molecules --model mol_bronze.chembl_molecules
+    python -m ingestion.transform_molecules --model mol_bronze.chembl
 """
 
 import argparse
@@ -37,7 +37,7 @@ logger = logging.getLogger(__name__)
 # SQLMesh model definitions by layer
 LAYER_MODELS = {
     'bronze': [
-        'mol_bronze.chembl_molecules',
+        'mol_bronze.chembl',
         'mol_bronze.pubchem',
         'mol_bronze.clinicaltrials',
         'mol_bronze.openfda_labels',
@@ -223,7 +223,7 @@ def transform_model(model_name: str) -> dict:
     Run transformation for a specific model.
 
     Args:
-        model_name: Fully qualified model name (e.g., mol_bronze.chembl_molecules)
+        model_name: Fully qualified model name (e.g., mol_bronze.chembl)
 
     Returns:
         Result dictionary

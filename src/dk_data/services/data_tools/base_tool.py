@@ -245,7 +245,7 @@ class BaseDataTool:
         'clinicaltrials':  ['mol_bronze.clinicaltrials',    'mol_silver.clinical_trials'],
         'openfda_labels':  ['mol_bronze.openfda_labels',    'mol_silver.drug_labels'],
         'openfda_faers':   ['mol_bronze.faers_events',      'mol_silver.adverse_events'],
-        'chembl':          ['mol_bronze.chembl_molecules',   'mol_silver.molecules', 'mol_silver.bioactivity'],
+        'chembl':          ['mol_bronze.chembl',   'mol_silver.molecules', 'mol_silver.bioactivity'],
         'pubchem':         ['mol_bronze.pubchem',            'mol_silver.molecules'],
         'uniprot':         ['mol_bronze.uniprot',            'mol_silver.targets'],
         'openalex':        ['mol_bronze.openalex',           'mol_silver.publications'],

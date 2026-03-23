@@ -468,7 +468,7 @@ async def list_data_sources():
         "clinical_trials_local": {"name": "Clinical Trials (Local)", "type": "local_db", "table": "clinical_trials"},
         "fda_labels_local": {"name": "FDA Labels (Local)", "type": "local_db", "table": "fda_labels"},
         "drugbank": {"name": "DrugBank", "type": "local_db", "table": "drugbank_data"},
-        "chembl": {"name": "ChEMBL", "type": "local_db", "table": "chembl_molecules"},  # Fixed: was chembl_compounds
+        "chembl": {"name": "ChEMBL", "type": "local_db", "table": "chembl"},  # Fixed: was chembl_compounds
         "pubchem": {"name": "PubChem", "type": "local_db", "table": "pubchem_compounds"},
         "sider": {"name": "SIDER", "type": "local_db", "table": "sider_adverse_reactions"},
         "bindingdb": {"name": "BindingDB", "type": "local_db", "table": "bindingdb_affinities"},

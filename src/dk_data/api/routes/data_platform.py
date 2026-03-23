@@ -3315,7 +3315,7 @@ _SOURCE_MODEL_MAP: Dict[str, Dict[str, str]] = {
         "schema_path": "mol_raw→mol_bronze→mol_silver→mol_gold",
     },
     "chembl": {
-        "bronze": "mol_bronze.chembl_molecules",
+        "bronze": "mol_bronze.chembl",
         "silver": "mol_silver.molecules",
         "gold": "mol_gold.molecule_profiles_agg",
         "schema_path": "mol_raw→mol_bronze→mol_silver→mol_gold",

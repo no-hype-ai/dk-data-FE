@@ -647,7 +647,7 @@ def refresh_metrics_from_database_sync():
             ('bronze', 'clinicaltrials', 'clinical_trials'),
             ('bronze', 'openfda_labels', 'fda_labels'),
             ('bronze', 'drugbank', 'drugbank_data'),
-            ('bronze', 'chembl', 'chembl_molecules'),
+            ('bronze', 'chembl', 'chembl'),
             ('silver', 'molecules', 'compounds'),
         ]
         for layer, source, table in pipeline_sources:
@@ -708,7 +708,7 @@ def refresh_metrics_from_database_sync():
             'public': [
                 'compounds', 'clinical_trials', 'drugbank_data', 'fda_labels',
                 'faers_events', 'sider_adverse_reactions', 'pubchem_compounds',
-                'bindingdb_affinities', 'chembl_molecules', 'who_inn_data',
+                'bindingdb_affinities', 'chembl', 'who_inn_data',
                 'drugbank_patents', 'drug_interactions', 'chembl_activities',
                 'tdc_admet_data', 'uniprot_proteins', 'pdb_structures'
             ]

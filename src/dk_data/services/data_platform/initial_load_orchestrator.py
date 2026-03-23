@@ -158,7 +158,7 @@ DATA_SOURCES = {
             'identifier_type': 'drug_name',
         },
     },
-    'chembl_molecules': {
+    'chembl': {
         'name': 'ChEMBL Molecules',
         'api_type': 'rest',
         'base_url': 'https://www.ebi.ac.uk/chembl/api/data/molecule.json',
@@ -954,9 +954,9 @@ class InitialLoadOrchestrator:
 
     async def load_raw_chembl(self, max_records: Optional[int] = None) -> int:
         """Load ChEMBL molecules with checkpointing."""
-        source = 'chembl_molecules'
+        source = 'chembl'
         config = DATA_SOURCES[source]
-        table_name = 'chembl_molecules_data'
+        table_name = 'chembl_data'
 
         await self._create_raw_table(table_name, unique_source_id=True)
 
@@ -2646,7 +2646,7 @@ class InitialLoadOrchestrator:
                 # Clinical trials
                 'clinicaltrials': self.load_raw_clinicaltrials,
                 # Chemical/molecular databases
-                'chembl_molecules': self.load_raw_chembl,
+                'chembl': self.load_raw_chembl,
                 'pubchem_bioassay': self.load_raw_pubchem,
                 'drugbank': self.load_raw_drugbank,  # Requires DRUGBANK_FILE env var
                 'bindingdb': self.load_raw_bindingdb,  # Requires BINDINGDB_FILE env var

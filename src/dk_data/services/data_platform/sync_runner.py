@@ -1084,7 +1084,7 @@ SOURCE_TO_SQLMESH_MODELS: Dict[str, Dict[str, str]] = {
         'silver': 'mol_silver.adverse_events',
     },
     'chembl': {
-        'bronze': 'mol_bronze.chembl_molecules',
+        'bronze': 'mol_bronze.chembl',
         'silver': 'mol_silver.molecules',
     },
     'pubchem': {
