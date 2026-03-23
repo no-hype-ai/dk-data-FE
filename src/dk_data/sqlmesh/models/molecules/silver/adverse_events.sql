@@ -1,10 +1,18 @@
 -- SQLMesh Model: Silver Adverse Events
 -- Zero data loss from Bronze. Column names match bronze (API-derived snake_case).
 -- Report-level rows (no aggregation). Adds: molecule_id linkage.
+-- INCREMENTAL_BY_UNIQUE_KEY on (safety_report_id, case_version): upserts rows instead
+-- of full-table rebuild. molecule_id stays current because the SELECT reads ALL of
+-- mol_bronze.openfda_faers on every run (no time filter) and re-evaluates the alias
+-- JOIN each time.
+-- event_id is deterministic (md5 of safety_report_id + case_version) — stable across runs.
+-- case_version may be NULL for initial reports; COALESCE maps NULL → '' for the hash.
 
 MODEL (
     name mol_silver.adverse_events,
-    kind FULL,
+    kind INCREMENTAL_BY_UNIQUE_KEY (
+        unique_key (safety_report_id, case_version)
+    ),
     cron '@daily',
     audits (
         not_null(columns := (safety_report_id))
@@ -13,7 +21,7 @@ MODEL (
 );
 
 SELECT
-    gen_random_uuid() AS event_id,
+    md5(b.safety_report_id || ':' || COALESCE(b.case_version::text, ''))::uuid AS event_id,
     m.molecule_id,
 
     -- All bronze columns with SAME NAMES (no renames)

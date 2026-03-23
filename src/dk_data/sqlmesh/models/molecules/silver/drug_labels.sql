@@ -1,13 +1,17 @@
 -- SQLMesh Model: Silver Drug Labels
 -- Zero data loss from Bronze. Column names match bronze (API-derived snake_case).
 -- Picks latest SPL version per set_id. Adds: molecule_id linkage.
--- FULL refresh ensures molecule_id is always current when new molecules are added,
--- and that late-arriving bronze rows are always included without interval-state issues.
+-- INCREMENTAL_BY_UNIQUE_KEY on set_id: upserts rows instead of full-table rebuild.
+-- molecule_id stays current because the SELECT reads ALL of mol_bronze.openfda_labels
+-- on every run (no time filter) and re-evaluates the molecule JOIN each time.
+-- label_id is deterministic (md5 of set_id) so it is stable across runs.
 -- DISTINCT ON (set_id) in final SELECT prevents fan-out when a label matches multiple molecules.
 
 MODEL (
     name mol_silver.drug_labels,
-    kind FULL,
+    kind INCREMENTAL_BY_UNIQUE_KEY (
+        unique_key set_id
+    ),
     cron '@daily',
     audits (
         not_null(columns := (set_id)),
@@ -25,7 +29,7 @@ WITH latest_version AS (
 )
 
 SELECT DISTINCT ON (lv.set_id)
-    gen_random_uuid() AS label_id,
+    md5(lv.set_id)::uuid AS label_id,
     m.molecule_id,
 
     -- Identifiers (bronze names preserved)

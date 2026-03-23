@@ -62,6 +62,7 @@ class DataSource(Enum):
     COCHRANE_REVIEWS = "cochrane_reviews"  # Cochrane Library systematic reviews
     HTA_DECISIONS = "hta_decisions"    # Broad HTA decisions (NICE + G-BA + PBAC + SMC)
     EMA_REGULATORY = "ema_regulatory"  # EMA authorized medicines + EPARs
+    WHO_GHO = "who_gho"                # WHO Global Health Observatory (epidemiology by ICD-10)
 
 
 # Tiered refresh schedule (in hours)
@@ -107,6 +108,7 @@ REFRESH_SCHEDULE = {
     DataSource.HTA_DECISIONS: 168,      # Weekly (HTA body decisions)
     DataSource.EMA_REGULATORY: 168,     # Weekly (EMA drug authorizations)
     DataSource.FDA_DRUGSFDA: 168,       # Weekly (approval data)
+    DataSource.WHO_GHO: 720,            # Monthly (epidemiology refresh)
 }
 
 
@@ -274,6 +276,7 @@ class RawIngestionService:
         DataSource.COCHRANE_REVIEWS:  "mol_raw",
         DataSource.HTA_DECISIONS:     "mol_raw",
         DataSource.EMA_REGULATORY:    "mol_raw",
+        DataSource.WHO_GHO:           "mol_raw",
     }
 
     async def _store_raw_record(self, source: DataSource, record: RawRecord) -> Optional[str]:
@@ -2069,3 +2072,103 @@ class CochraneReviewsIngestion(RawIngestionService):
             headers={"Accept": "application/json"},
             request_id=f"cochrane_{drug_name[:30]}",
         )
+
+
+class WHOGHOIngestion(RawIngestionService):
+    """
+    Ingestion for WHO Global Health Observatory (GHO) epidemiology data.
+
+    Fetches incidence, prevalence, and mortality indicators for a specific
+    ICD-10 code using the WHO GHO OData v2 API.  mol_raw.who_gho uses a
+    non-standard schema (drug_name, request_url, etc.) so this class
+    bypasses the generic _store_raw_record path and writes directly.
+
+    API: https://ghoapi.azureedge.net/api/{INDICATOR_CODE}?$filter=SpatialDim eq '{COUNTRY}'
+    """
+
+    BASE_URL = "https://ghoapi.azureedge.net/api"
+
+    async def fetch_indicators_for_icd10(
+        self,
+        icd10_code: str,
+        country_code: str = "USA",
+    ) -> int:
+        """
+        Fetch all WHO GHO indicators mapped to the given ICD-10 code.
+
+        Looks up mol_silver.icd10_indicator_mapping for the ICD-10 code,
+        then fetches each indicator from the WHO GHO API.
+
+        Args:
+            icd10_code: ICD-10 code (e.g. "C34.9")
+            country_code: WHO spatial dim country code (default "USA")
+
+        Returns:
+            Number of raw records stored (one per indicator with data)
+        """
+        # 1. Look up indicator codes for this ICD-10 from the mapping table
+        async with self.db_pool.acquire() as conn:
+            rows = await conn.fetch(
+                "SELECT DISTINCT who_indicator FROM mol_silver.icd10_indicator_mapping "
+                "WHERE icd10_code = $1",
+                icd10_code,
+            )
+        indicator_codes = [r["who_indicator"] for r in rows]
+
+        if not indicator_codes:
+            logger.warning(f"No WHO GHO indicators mapped for ICD-10 {icd10_code}")
+            return 0
+
+        session = await self._get_session()
+        count = 0
+
+        for indicator in indicator_codes:
+            url = f"{self.BASE_URL}/{indicator}?$filter=SpatialDim eq '{country_code}'"
+            try:
+                async with session.get(url, headers={"Accept": "application/json"}) as resp:
+                    if resp.status != 200:
+                        logger.warning(f"WHO GHO {indicator} returned HTTP {resp.status}")
+                        continue
+                    body = await resp.json()
+
+                # Skip empty responses
+                if not body.get("value"):
+                    continue
+
+                # Store directly into mol_raw.who_gho (non-standard schema, no response_body_hash column)
+                # Skip if we already have unprocessed data for this indicator+country from the last 30 days.
+                async with self.db_pool.acquire() as conn:
+                    existing = await conn.fetchval(
+                        """
+                        SELECT id FROM mol_raw.who_gho
+                        WHERE drug_name = $1
+                          AND request_url LIKE '%/' || $2 || '%'
+                          AND processed_to_bronze = FALSE
+                          AND request_timestamp > NOW() - INTERVAL '30 days'
+                        LIMIT 1
+                        """,
+                        icd10_code,
+                        indicator,
+                    )
+                    if existing:
+                        logger.debug(f"WHO GHO: skipping {indicator}/{icd10_code} — recent unprocessed row exists")
+                        count += 1  # count as available even if not re-fetched
+                        continue
+
+                    await conn.execute(
+                        """
+                        INSERT INTO mol_raw.who_gho (drug_name, response_body, response_status, request_url)
+                        VALUES ($1, $2, $3, $4)
+                        """,
+                        icd10_code,
+                        body,
+                        200,
+                        url,
+                    )
+                count += 1
+                logger.info(f"WHO GHO: stored {len(body['value'])} rows for indicator {indicator} / {icd10_code}")
+
+            except Exception as e:
+                logger.warning(f"WHO GHO fetch failed for {indicator}: {e}")
+
+        return count

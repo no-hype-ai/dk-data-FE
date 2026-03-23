@@ -218,36 +218,39 @@ def run_sqlmesh_command(command: list[str], timeout: int = 3600) -> dict:
         }
 
 
-def transform_model(model_name: str) -> dict:
+def transform_model(model_name: str, start_days_back: int = 30) -> dict:
     """
     Run transformation for a specific model.
 
     Args:
         model_name: Fully qualified model name (e.g., mol_bronze.chembl)
+        start_days_back: How many days back to set --start for SQLMesh. Use 2 for
+            hot-path single-molecule ingestion (xenon-triggered); keep 30 for
+            scheduled cron runs to pick up any late-arriving raw records.
 
     Returns:
         Result dictionary
     """
-    logger.info(f"Transforming model: {model_name}")
+    logger.info(f"Transforming model: {model_name} (lookback={start_days_back}d)")
 
     # Use 'sqlmesh run --select-model' for hot-path transforms.
     # 'plan --auto-apply' re-applies the ENTIRE environment plan, causing cascading failures
     # when unrelated models (e.g. epo_patents) have errors, and leaves stale plan locks.
     # The prod environment is already initialized by the sqlmesh-scheduler; 'run' is sufficient.
     #
-    # Pass --start 30 days ago and --end tomorrow to guarantee late-arriving raw records
+    # Pass --start N days ago and --end tomorrow to guarantee late-arriving raw records
     # are processed. INCREMENTAL_BY_TIME_RANGE models mark intervals as "complete" in SQLMesh
     # state; without --start, newly inserted raw records in a previously-completed interval
     # (e.g. March 22 records when state tracks "processed through March 23") are silently
     # skipped. The models also have `lookback` set (4 for @weekly, 7 for @daily), which
     # tells SQLMesh to reprocess recent intervals even when they appear complete in state.
     from datetime import date, timedelta
-    start_30d = (date.today() - timedelta(days=30)).isoformat()
+    start = (date.today() - timedelta(days=start_days_back)).isoformat()
     tomorrow = (date.today() + timedelta(days=1)).isoformat()
     result = run_sqlmesh_command([
         'run', '--select-model', model_name,
         '--ignore-cron', '--no-auto-upstream',
-        '--start', start_30d,
+        '--start', start,
         '--end', tomorrow,
     ], timeout=420)  # 7-minute max; large models (publications, clinicaltrials) can take 3-4 min with 1000+ records
 

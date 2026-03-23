@@ -1,11 +1,16 @@
 -- SQLMesh Model: Silver Clinical Trials
 -- Zero data loss from Bronze. Column names match bronze (API-derived snake_case).
 -- Entity linking: LEFT JOIN to mol_silver.molecules by canonical_name fuzzy match.
--- FULL refresh ensures molecule_id is always current when new molecules are added.
+-- INCREMENTAL_BY_UNIQUE_KEY on nct_id: upserts rows instead of full-table rebuild.
+-- molecule_id stays current because the SELECT reads ALL of mol_bronze.clinicaltrials
+-- on every run (no time filter) and re-evaluates the LATERAL molecule JOIN each time.
+-- trial_id is deterministic (md5 of nct_id) so it is stable across runs.
 
 MODEL (
     name mol_silver.clinical_trials,
-    kind FULL,
+    kind INCREMENTAL_BY_UNIQUE_KEY (
+        unique_key nct_id
+    ),
     cron '@daily',
     audits (
         not_null(columns := (nct_id)),
@@ -15,7 +20,7 @@ MODEL (
 );
 
 SELECT
-    gen_random_uuid() AS trial_id,
+    md5(b.nct_id)::uuid AS trial_id,
 
     -- All bronze columns carried forward (names match actual bronze/API schema)
     b.nct_id,

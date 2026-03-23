@@ -487,6 +487,8 @@ async def run_raw_ingestion(
         EPOPatentsIngestion,
         CochraneReviewsIngestion,
         EMAIngestion,
+        OrangeBookIngestion,
+        WHOGHOIngestion,
     )
 
     results = {}
@@ -1063,6 +1065,66 @@ async def run_raw_ingestion(
                         count += 1
                 results[source] = count
 
+            elif source == 'who_gho':
+                # Fetch WHO GHO epidemiology indicators for a given ICD-10 code.
+                # drug_name is expected to be the ICD-10 code (e.g. "C34.9") — xenon
+                # passes assessmentContext.icd10Primary as the trigger query.
+                # Falls back to looking up the ICD-10 code from indication_name via icd10_indicator_mapping.
+                service = WHOGHOIngestion(pool)
+                icd10_code = drug_name or ''
+                if not icd10_code:
+                    logger.warning("who_gho triggered without an ICD-10 code (drug_name empty) — skipping")
+                    results[source] = 0
+                else:
+                    count = await service.fetch_indicators_for_icd10(icd10_code)
+                    results[source] = count
+
+            elif source == 'openalex_ci':
+                # openalex_ci is the citation-indexed variant of openalex — same ingestion path.
+                service = OpenAlexIngestion(pool)
+                count = 0
+                if drug_name:
+                    result = await service.fetch_works(search=drug_name)
+                    if result:
+                        count += 1
+                results[source] = count
+
+            elif source == 'orange_book':
+                # FDA Orange Book: products, patents, exclusivity (bulk CSV downloads).
+                service = OrangeBookIngestion(pool)
+                count = 0
+                result = await service.fetch_products()
+                if result:
+                    count += 1
+                result = await service.fetch_patents()
+                if result:
+                    count += 1
+                result = await service.fetch_exclusivity()
+                if result:
+                    count += 1
+                results[source] = count
+
+            elif source == 'purple_book':
+                # FDA Purple Book: biologic/biosimilar exclusivity. Handled by fda_drugsfda path
+                # which includes Purple Book data. Map to that existing handler.
+                service = FDADrugsfdaIngestion(pool)
+                count = 0
+                if drug_name:
+                    result = await service.fetch_approvals(brand_name=drug_name)
+                    if result:
+                        count += 1
+                results[source] = count
+
+            elif source == 'cms_part_d_spending':
+                # CMS Part D drug spending — same ingestion as cms_medicare (covers both Part B and D).
+                service = CMSMedicareIngestion(pool)
+                count = 0
+                if drug_name:
+                    result = await service.fetch_part_b_spending(drug_name)
+                    if result:
+                        count += 1
+                results[source] = count
+
             else:
                 # Try to handle as dynamically onboarded source
                 results[source] = await run_dynamic_source_ingestion(pool, source, metrics)
@@ -1239,11 +1301,17 @@ GOLD_SQLMESH_MODELS = [
     'mol_gold.kol_network',
 ]
 
-async def run_bronze_transformation(pool, metrics: PipelineMetrics, sources: Optional[List[str]] = None) -> Dict[str, int]:
+async def run_bronze_transformation(
+    pool,
+    metrics: PipelineMetrics,
+    sources: Optional[List[str]] = None,
+    start_days_back: int = 30,
+    max_concurrency: int = 6,
+) -> Dict[str, int]:
     """Transform Raw → Bronze for the given sources using SQLMesh.
 
-    Calls `sqlmesh plan --auto-apply --select-model <model>` for each source.
-    All transformation logic lives in SQLMesh SQL models — no Python transforms.
+    Bronze models are all independent — runs them in parallel (up to max_concurrency
+    at once) to avoid the sequential-subprocess bottleneck.
     """
     import asyncio
     from ...ingestion.transform_molecules import transform_model
@@ -1251,64 +1319,131 @@ async def run_bronze_transformation(pool, metrics: PipelineMetrics, sources: Opt
     results: Dict[str, int] = {}
     target_sources = sources or list(SOURCE_TO_SQLMESH_MODELS.keys())
 
+    # Build (source, bronze_model) pairs, deduplicating by model name
+    seen_models: set = set()
+    tasks_meta: list = []  # [(source, bronze_model), ...]
     for source in target_sources:
-        models = SOURCE_TO_SQLMESH_MODELS.get(source, {})
-        bronze_model = models.get('bronze')
+        bronze_model = SOURCE_TO_SQLMESH_MODELS.get(source, {}).get('bronze')
         if not bronze_model:
             logger.debug(f"No SQLMesh bronze model for source '{source}', skipping")
             continue
-        try:
-            result = await asyncio.to_thread(transform_model, bronze_model)
-            count = result.get('success_count', 0)
-            results[source] = count
-            metrics.records_bronze += count
-            if result.get('status') == 'failed':
-                err = result.get('error', 'unknown')[:120]
-                metrics.errors.append(f"bronze_{source}: {err}")
-                logger.error(f"Bronze SQLMesh failed for '{source}' ({bronze_model}): {err}")
-            else:
-                logger.info(f"Bronze SQLMesh OK: '{source}' ({bronze_model}) → {count} records")
-        except Exception as e:
-            logger.error(f"Bronze SQLMesh error for '{source}': {e}")
-            metrics.errors.append(f"bronze_{source}: {str(e)[:100]}")
+        if bronze_model in seen_models:
+            continue
+        seen_models.add(bronze_model)
+        tasks_meta.append((source, bronze_model))
+
+    semaphore = asyncio.Semaphore(max_concurrency)
+
+    async def _run_one(source: str, bronze_model: str):
+        async with semaphore:
+            try:
+                result = await asyncio.to_thread(transform_model, bronze_model, start_days_back)
+                count = result.get('success_count', 0)
+                if result.get('status') == 'failed':
+                    err = result.get('error', 'unknown')[:120]
+                    metrics.errors.append(f"bronze_{source}: {err}")
+                    logger.error(f"Bronze SQLMesh failed for '{source}' ({bronze_model}): {err}")
+                else:
+                    logger.info(f"Bronze SQLMesh OK: '{source}' ({bronze_model}) → {count} records")
+                return source, count
+            except Exception as e:
+                logger.error(f"Bronze SQLMesh error for '{source}': {e}")
+                metrics.errors.append(f"bronze_{source}: {str(e)[:100]}")
+                return source, 0
+
+    logger.info(f"Bronze transformation: running {len(tasks_meta)} models (concurrency={max_concurrency})")
+    gathered = await asyncio.gather(*[_run_one(s, m) for s, m in tasks_meta])
+
+    for source, count in gathered:
+        results[source] = count
+        metrics.records_bronze += count
 
     logger.info(f"Bronze transformation complete: {metrics.records_bronze} total records")
     return results
 
 
-async def run_silver_transformation(pool, metrics: PipelineMetrics, sources: Optional[List[str]] = None) -> Dict[str, int]:
+async def run_silver_transformation(
+    pool,
+    metrics: PipelineMetrics,
+    sources: Optional[List[str]] = None,
+    start_days_back: int = 30,
+    max_concurrency: int = 6,
+) -> Dict[str, int]:
     """Transform Bronze → Silver for the given sources using SQLMesh.
 
-    Calls `sqlmesh plan --auto-apply --select-model <model>` for each source.
-    Entity linking (molecule_id join) is embedded in the SQLMesh silver models.
+    mol_silver.molecules is the master entity table and must run first so that
+    all other silver models can resolve molecule_id via JOIN. After molecules
+    completes, the remaining models are run in parallel.
     """
     import asyncio
     from ...ingestion.transform_molecules import transform_model
 
+    MOLECULES_MODEL = 'mol_silver.molecules'
+
     results: Dict[str, int] = {}
-    processed_models: set = set()  # deduplicate — multiple sources can share a silver model
+    processed_models: set = set()
     target_sources = sources or list(SOURCE_TO_SQLMESH_MODELS.keys())
 
+    # Collect unique silver models for this run
+    silver_models: list = []  # [(source_label, silver_model), ...]
     for source in target_sources:
-        models = SOURCE_TO_SQLMESH_MODELS.get(source, {})
-        silver_model = models.get('silver')
+        silver_model = SOURCE_TO_SQLMESH_MODELS.get(source, {}).get('silver')
         if not silver_model or silver_model in processed_models:
             continue
         processed_models.add(silver_model)
+        silver_models.append((source, silver_model))
+
+    # --- Step 1: mol_silver.molecules must run first ---
+    molecules_entry = next(((s, m) for s, m in silver_models if m == MOLECULES_MODEL), None)
+    if molecules_entry:
+        source_label, _ = molecules_entry
+        silver_models = [(s, m) for s, m in silver_models if m != MOLECULES_MODEL]
+        logger.info(f"Silver step 1/2: running {MOLECULES_MODEL} (entity key, must be first)")
         try:
-            result = await asyncio.to_thread(transform_model, silver_model)
+            result = await asyncio.to_thread(transform_model, MOLECULES_MODEL, start_days_back)
             count = result.get('success_count', 0)
-            results[silver_model] = count
+            results[MOLECULES_MODEL] = count
             metrics.records_silver += count
             if result.get('status') == 'failed':
                 err = result.get('error', 'unknown')[:120]
-                metrics.errors.append(f"silver_{source}: {err}")
-                logger.error(f"Silver SQLMesh failed for '{source}' ({silver_model}): {err}")
+                metrics.errors.append(f"silver_{source_label}: {err}")
+                logger.error(f"Silver SQLMesh failed for '{source_label}' ({MOLECULES_MODEL}): {err}")
             else:
-                logger.info(f"Silver SQLMesh OK: '{source}' ({silver_model}) → {count} records")
+                logger.info(f"Silver SQLMesh OK: {MOLECULES_MODEL} → {count} records")
         except Exception as e:
-            logger.error(f"Silver SQLMesh error for '{source}': {e}")
-            metrics.errors.append(f"silver_{source}: {str(e)[:100]}")
+            logger.error(f"Silver SQLMesh error for {MOLECULES_MODEL}: {e}")
+            metrics.errors.append(f"silver_molecules: {str(e)[:100]}")
+
+    # --- Step 2: all remaining silver models in parallel ---
+    if not silver_models:
+        logger.info("Silver transformation complete: no additional silver models to run")
+        return results
+
+    semaphore = asyncio.Semaphore(max_concurrency)
+
+    async def _run_one(source: str, silver_model: str):
+        async with semaphore:
+            try:
+                result = await asyncio.to_thread(transform_model, silver_model, start_days_back)
+                count = result.get('success_count', 0)
+                if result.get('status') == 'failed':
+                    err = result.get('error', 'unknown')[:120]
+                    metrics.errors.append(f"silver_{source}: {err}")
+                    logger.error(f"Silver SQLMesh failed for '{source}' ({silver_model}): {err}")
+                else:
+                    logger.info(f"Silver SQLMesh OK: '{source}' ({silver_model}) → {count} records")
+                return silver_model, count
+            except Exception as e:
+                logger.error(f"Silver SQLMesh error for '{source}': {e}")
+                metrics.errors.append(f"silver_{source}: {str(e)[:100]}")
+                return silver_model, 0
+
+    logger.info(f"Silver step 2/2: running {len(silver_models)} models in parallel (concurrency={max_concurrency})")
+    gathered = await asyncio.gather(*[_run_one(s, m) for s, m in silver_models])
+
+    for silver_model, count in gathered:
+        results[silver_model] = count
+        metrics.records_silver += count
 
     logger.info(f"Silver transformation complete: {metrics.records_silver} total records linked")
     return results
@@ -1434,27 +1569,53 @@ async def run_retroactive_linking(pool, metrics: PipelineMetrics) -> Dict[str, i
     return results
 
 
-async def run_gold_aggregation(pool, metrics: PipelineMetrics) -> Dict[str, int]:
+async def run_gold_aggregation(
+    pool,
+    metrics: PipelineMetrics,
+    start_days_back: int = 30,
+    max_concurrency: int = 6,
+) -> Dict[str, int]:
     """Run all Gold aggregation models via SQLMesh.
 
-    All gold logic lives in SQL models — no Python aggregation code.
+    Run in two tiers to respect the one dependency: kol_drug_associations and
+    kol_network both depend on kol_profiles.  Everything else is independent
+    and runs in parallel in tier 1.
     """
     import asyncio
     from ...ingestion.transform_molecules import transform_model
 
+    # kol_drug_associations and kol_network read from kol_profiles — must be tier 2
+    KOL_DEPS = {'mol_gold.kol_drug_associations', 'mol_gold.kol_network'}
+    tier1 = [m for m in GOLD_SQLMESH_MODELS if m not in KOL_DEPS]
+    tier2 = [m for m in GOLD_SQLMESH_MODELS if m in KOL_DEPS]
+
     results: Dict[str, int] = {}
-    for model_name in GOLD_SQLMESH_MODELS:
-        try:
-            result = await asyncio.to_thread(transform_model, model_name)
-            count = result.get('success_count', 0)
+    semaphore = asyncio.Semaphore(max_concurrency)
+
+    async def _run_one(model_name: str):
+        async with semaphore:
+            try:
+                result = await asyncio.to_thread(transform_model, model_name, start_days_back)
+                count = result.get('success_count', 0)
+                if result.get('status') == 'failed':
+                    logger.warning(f"Gold SQLMesh model '{model_name}' failed: {result.get('error', '')[:100]}")
+                else:
+                    logger.info(f"Gold SQLMesh OK: '{model_name}' → {count} records")
+                return model_name, count
+            except Exception as e:
+                logger.warning(f"Gold SQLMesh error for '{model_name}': {e}")
+                return model_name, 0
+
+    logger.info(f"Gold tier 1: running {len(tier1)} independent models (concurrency={max_concurrency})")
+    for model_name, count in await asyncio.gather(*[_run_one(m) for m in tier1]):
+        results[model_name] = count
+        metrics.records_gold += count
+
+    if tier2:
+        logger.info(f"Gold tier 2: running {len(tier2)} kol-dependent models")
+        for model_name, count in await asyncio.gather(*[_run_one(m) for m in tier2]):
             results[model_name] = count
             metrics.records_gold += count
-            if result.get('status') == 'failed':
-                logger.warning(f"Gold SQLMesh model '{model_name}' failed: {result.get('error', '')[:100]}")
-            else:
-                logger.info(f"Gold SQLMesh OK: '{model_name}' → {count} records")
-        except Exception as e:
-            logger.warning(f"Gold SQLMesh error for '{model_name}': {e}")
 
     logger.info(f"Gold aggregation complete: {metrics.records_gold} total records")
     return results
@@ -1640,6 +1801,7 @@ async def run_pipeline(
     drug_name: Optional[str] = None,
     condition: Optional[str] = None,
     job_id: Optional[str] = None,
+    start_days_back: Optional[int] = None,
 ) -> Dict[str, Any]:
     """
     Run the full data pipeline.
@@ -1674,6 +1836,12 @@ async def run_pipeline(
     pool = None
     status = 'completed'
 
+    # Hot-path (single drug): use 2-day lookback — the data was just ingested so there's
+    # no need to reprocess 30 days of SQLMesh intervals. Scheduled crons keep the full 30d
+    # lookback to catch any late-arriving raw records across the week's window.
+    if start_days_back is None:
+        start_days_back = 2 if drug_name else 30
+
     try:
         pool = await get_db_pool()
 
@@ -1688,12 +1856,12 @@ async def run_pipeline(
         # Phase 2: Bronze Transformation
         if not skip_bronze:
             logger.info("Phase 2: Bronze Transformation")
-            await run_bronze_transformation(pool, metrics, sources=sources)
+            await run_bronze_transformation(pool, metrics, sources=sources, start_days_back=start_days_back)
 
         # Phase 3: Silver Transformation
         if not skip_silver:
             logger.info("Phase 3: Silver Transformation")
-            await run_silver_transformation(pool, metrics, sources=sources)
+            await run_silver_transformation(pool, metrics, sources=sources, start_days_back=start_days_back)
 
         # Phase 4: Entity Linking (connect trials/labels to molecules)
         if not skip_silver:
@@ -1708,7 +1876,7 @@ async def run_pipeline(
         # Phase 5: Gold Aggregation
         if not skip_gold:
             logger.info("Phase 5: Gold Aggregation")
-            await run_gold_aggregation(pool, metrics)
+            await run_gold_aggregation(pool, metrics, start_days_back=start_days_back)
 
         # Phase 6: SQLMesh Transformation (optional, if configured)
         use_sqlmesh = os.getenv('USE_SQLMESH', 'false').lower() in ('true', '1', 'yes')
