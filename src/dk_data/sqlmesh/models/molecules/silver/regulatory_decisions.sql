@@ -85,10 +85,49 @@ hta_decisions AS (
       AND drug_name IS NOT NULL
 ),
 
+-- NICE Technology Appraisals (dedicated NICE API)
+nice_hta_decisions AS (
+    SELECT
+        'NICE' AS agency,
+        NULL::TEXT AS product_name,
+        drug_name AS active_substance,
+        NULL::TEXT AS indication,
+        NULL::TEXT AS authorization_status,
+        NULL::DATE AS authorization_date,
+        NULL::TEXT AS therapeutic_area,
+        recommendation,
+        'nice_hta' AS source,
+        source_updated_at,
+        -- EMA-only columns (NULL for NICE)
+        NULL::TEXT AS product_number,
+        NULL::TEXT AS inn,
+        NULL::TEXT AS atc_code,
+        NULL::TEXT AS marketing_authorization_holder,
+        NULL::DATE AS revision_date,
+        NULL::TEXT AS medicine_type,
+        NULL::TEXT AS pharmacotherapeutic_group,
+        NULL::TEXT AS epar_url,
+        NULL::TEXT AS summary_url,
+        -- HTA-specific columns
+        guidance_id,
+        title,
+        NULL::TEXT AS url,
+        icer_value,
+        guidance_id AS decision_id,
+        drug_name,
+        decision,
+        published_date AS decision_date
+    FROM mol_bronze.nice_hta
+    WHERE processed_to_silver = FALSE
+      AND drug_name IS NOT NULL
+),
+
 combined AS (
     SELECT * FROM ema_decisions
     UNION ALL
     SELECT * FROM hta_decisions
+    UNION ALL
+    SELECT * FROM nice_hta_decisions
 )
 
 SELECT DISTINCT ON (agency, COALESCE(drug_name, product_name), indication, COALESCE(decision_date, authorization_date))
@@ -138,4 +177,5 @@ ORDER BY agency, COALESCE(drug_name, product_name), indication, COALESCE(decisio
     CASE source
         WHEN 'ema' THEN 1
         WHEN 'hta_decisions' THEN 2
+        WHEN 'nice_hta' THEN 3
     END;
