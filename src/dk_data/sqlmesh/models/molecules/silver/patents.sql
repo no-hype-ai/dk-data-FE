@@ -133,9 +133,9 @@ orange_book_patents AS (
 combined AS (
     -- DrugBank records (existing format)
     SELECT
-        patent_number, NULL AS title, NULL AS abstract,
+        patent_number, NULL::TEXT AS title, NULL::TEXT AS abstract,
         NULL::DATE AS filing_date, grant_date, expiry_date,
-        NULL AS assignee, NULL::TEXT AS assignee_type,
+        NULL::TEXT AS assignee, NULL::TEXT AS assignee_type,
         NULL::JSONB AS inventors,
         NULL::JSONB AS cpc_codes, NULL::JSONB AS ipc_codes,
         NULL::INTEGER AS num_claims,
@@ -157,7 +157,7 @@ combined AS (
         cpc_codes, ipc_codes, num_claims,
         is_pharma_related, family_id,
         NULL::BOOLEAN AS pediatric_extension, 'US' AS country,
-        NULL AS molecule_name,
+        NULL::TEXT AS molecule_name,
         NULL::TEXT AS inchi_key,
         source,
         NOW() AS source_updated_at
@@ -172,7 +172,7 @@ combined AS (
         cpc_codes, ipc_codes, num_claims,
         is_pharma_related, family_id,
         NULL::BOOLEAN AS pediatric_extension, 'US' AS country,
-        NULL AS molecule_name,
+        NULL::TEXT AS molecule_name,
         NULL::TEXT AS inchi_key,
         source,
         NOW() AS source_updated_at
@@ -187,7 +187,7 @@ combined AS (
         cpc_codes, ipc_codes, num_claims,
         is_pharma_related, family_id,
         NULL::BOOLEAN AS pediatric_extension, 'EP' AS country,
-        NULL AS molecule_name,
+        NULL::TEXT AS molecule_name,
         NULL::TEXT AS inchi_key,
         source,
         NOW() AS source_updated_at
@@ -203,7 +203,7 @@ combined AS (
         cpc_codes, ipc_codes, num_claims,
         is_pharma_related, family_id,
         NULL::BOOLEAN AS pediatric_extension, 'US' AS country,
-        NULL AS molecule_name,
+        NULL::TEXT AS molecule_name,
         NULL::TEXT AS inchi_key,
         source,
         NOW() AS source_updated_at

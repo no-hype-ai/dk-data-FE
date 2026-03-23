@@ -4,7 +4,7 @@
 -- Part of DK Molecule Data Platform (012-dk-data-platform)
 
 MODEL (
-    name mol_bronze.websearch_results,
+    name mol_bronze.websearch,
     kind INCREMENTAL_BY_TIME_RANGE (
         time_column request_timestamp,
         batch_size 1000

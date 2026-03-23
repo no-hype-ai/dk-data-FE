@@ -48,7 +48,7 @@ SELECT
     b.source,
     NOW() AS created_at
 
-FROM mol_bronze.faers_events b
+FROM mol_bronze.openfda_faers b
 -- Use molecule_aliases for broadest name coverage: includes canonical_name,
 -- pref_name, synonyms, brand names. Normalized comparison strips punctuation/case.
 LEFT JOIN mol_silver.molecule_aliases ma ON (

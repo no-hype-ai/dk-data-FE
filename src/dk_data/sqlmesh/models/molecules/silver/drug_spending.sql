@@ -1,5 +1,5 @@
 -- SQLMesh Model: Silver Drug Spending
--- Promotes CMS Medicare Part B/D spending from mol_bronze.cms_medicare_spending
+-- Promotes CMS Medicare Part B/D spending from mol_bronze.cms_medicare
 -- into mol_silver.drug_spending with molecule-level linkage.
 -- Entity linking: LEFT JOIN mol_silver.molecules on generic_name, brand_name as fallback.
 -- FULL refresh ensures molecule_id is always current when new molecules are added.
@@ -31,7 +31,7 @@ SELECT
     'cms_medicare'                      AS source,
     b.ingested_at                       AS created_at
 
-FROM mol_bronze.cms_medicare_spending b
+FROM mol_bronze.cms_medicare b
 LEFT JOIN mol_silver.molecules m_gen
        ON LOWER(m_gen.canonical_name) = LOWER(b.generic_name)
 LEFT JOIN mol_silver.molecules m_brand

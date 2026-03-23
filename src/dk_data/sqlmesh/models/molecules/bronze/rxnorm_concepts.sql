@@ -4,7 +4,7 @@
 -- Part of DK Molecule Data Platform (012-dk-data-platform)
 
 MODEL (
-    name mol_bronze.rxnorm_concepts,
+    name mol_bronze.rxnorm,
     kind INCREMENTAL_BY_TIME_RANGE (
         time_column request_timestamp,
         batch_size 500

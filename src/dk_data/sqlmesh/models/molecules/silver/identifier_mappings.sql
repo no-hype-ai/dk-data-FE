@@ -20,6 +20,7 @@ MODEL (
 -- Collect identifiers from all bronze sources
 
 -- ChEMBL identifiers
+-- Join via chembl_id — works for both small molecules and biologics (NULL inchi_key).
 SELECT
     m.molecule_id,
     'chembl_id' AS identifier_type,
@@ -30,13 +31,14 @@ SELECT
     c.source_updated_at AS source_date,
     NOW() AS created_at
 FROM mol_silver.molecules m
-JOIN mol_bronze.chembl_molecules c ON m.inchi_key = c.inchi_key
+JOIN mol_bronze.chembl c ON m.chembl_id = c.chembl_id
 WHERE c.chembl_id IS NOT NULL
   AND m.needs_review = FALSE
 
 UNION ALL
 
 -- DrugBank identifiers
+-- Biologic fallback: match via canonical_name when inchi_key is NULL
 SELECT
     m.molecule_id,
     'drugbank_id' AS identifier_type,
@@ -47,13 +49,16 @@ SELECT
     d.source_updated_at AS source_date,
     NOW() AS created_at
 FROM mol_silver.molecules m
-JOIN mol_bronze.drugbank d ON m.inchi_key = d.inchi_key
+JOIN mol_bronze.drugbank d ON (
+    (m.inchi_key IS NOT NULL AND m.inchi_key = d.inchi_key)
+    OR (m.inchi_key IS NULL AND LOWER(m.canonical_name) = LOWER(d.name))
+)
 WHERE d.drugbank_id IS NOT NULL
   AND m.needs_review = FALSE
 
 UNION ALL
 
--- PubChem CIDs
+-- PubChem CIDs (small molecules only — biologics have no InChI-keyed PubChem entry)
 SELECT
     m.molecule_id,
     'pubchem_cid' AS identifier_type,
@@ -81,7 +86,10 @@ SELECT
     d.source_updated_at AS source_date,
     NOW() AS created_at
 FROM mol_silver.molecules m
-JOIN mol_bronze.drugbank d ON m.inchi_key = d.inchi_key
+JOIN mol_bronze.drugbank d ON (
+    (m.inchi_key IS NOT NULL AND m.inchi_key = d.inchi_key)
+    OR (m.inchi_key IS NULL AND LOWER(m.canonical_name) = LOWER(d.name))
+)
 WHERE d.cas_number IS NOT NULL
   AND m.needs_review = FALSE
 
@@ -98,7 +106,10 @@ SELECT
     d.source_updated_at AS source_date,
     NOW() AS created_at
 FROM mol_silver.molecules m
-JOIN mol_bronze.drugbank d ON m.inchi_key = d.inchi_key
+JOIN mol_bronze.drugbank d ON (
+    (m.inchi_key IS NOT NULL AND m.inchi_key = d.inchi_key)
+    OR (m.inchi_key IS NULL AND LOWER(m.canonical_name) = LOWER(d.name))
+)
 WHERE d.unii IS NOT NULL
   AND m.needs_review = FALSE
 

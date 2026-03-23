@@ -41,6 +41,8 @@ WHERE m.canonical_name IS NOT NULL
 UNION ALL
 
 -- ChEMBL synonyms
+-- Join via chembl_id (stable unique key) — works for both small molecules and biologics
+-- since biologics have NULL inchi_key but always have a chembl_id.
 SELECT
     m.molecule_id,
     syn AS alias_name,
@@ -49,7 +51,7 @@ SELECT
     'chembl' AS source,
     NOW() AS created_at
 FROM mol_silver.molecules m
-JOIN mol_bronze.chembl_molecules c ON m.inchi_key = c.inchi_key
+JOIN mol_bronze.chembl c ON m.chembl_id = c.chembl_id
 CROSS JOIN LATERAL jsonb_array_elements_text(COALESCE(c.synonyms, '[]'::jsonb)) AS syn
 WHERE syn IS NOT NULL
   AND syn != ''
@@ -58,6 +60,7 @@ WHERE syn IS NOT NULL
 UNION ALL
 
 -- DrugBank synonyms
+-- Biologic fallback: match via canonical_name when inchi_key is NULL
 SELECT
     m.molecule_id,
     syn AS alias_name,
@@ -66,7 +69,10 @@ SELECT
     'drugbank' AS source,
     NOW() AS created_at
 FROM mol_silver.molecules m
-JOIN mol_bronze.drugbank d ON m.inchi_key = d.inchi_key
+JOIN mol_bronze.drugbank d ON (
+    (m.inchi_key IS NOT NULL AND m.inchi_key = d.inchi_key)
+    OR (m.inchi_key IS NULL AND LOWER(m.canonical_name) = LOWER(d.name))
+)
 CROSS JOIN LATERAL jsonb_array_elements_text(COALESCE(d.synonyms, '[]'::jsonb)) AS syn
 WHERE syn IS NOT NULL
   AND syn != ''
@@ -83,7 +89,10 @@ SELECT
     'drugbank' AS source,
     NOW() AS created_at
 FROM mol_silver.molecules m
-JOIN mol_bronze.drugbank d ON m.inchi_key = d.inchi_key
+JOIN mol_bronze.drugbank d ON (
+    (m.inchi_key IS NOT NULL AND m.inchi_key = d.inchi_key)
+    OR (m.inchi_key IS NULL AND LOWER(m.canonical_name) = LOWER(d.name))
+)
 CROSS JOIN LATERAL jsonb_array_elements(COALESCE(d.international_brands, '[]'::jsonb)) AS brand
 WHERE brand->>'name' IS NOT NULL
   AND brand->>'name' != ''
@@ -100,7 +109,10 @@ SELECT
     'drugbank' AS source,
     NOW() AS created_at
 FROM mol_silver.molecules m
-JOIN mol_bronze.drugbank d ON m.inchi_key = d.inchi_key
+JOIN mol_bronze.drugbank d ON (
+    (m.inchi_key IS NOT NULL AND m.inchi_key = d.inchi_key)
+    OR (m.inchi_key IS NULL AND LOWER(m.canonical_name) = LOWER(d.name))
+)
 CROSS JOIN LATERAL jsonb_array_elements(COALESCE(d.products, '[]'::jsonb)) AS prod
 WHERE prod->>'name' IS NOT NULL
   AND prod->>'name' != ''

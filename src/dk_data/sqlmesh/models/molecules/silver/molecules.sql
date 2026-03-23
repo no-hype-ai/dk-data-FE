@@ -1,27 +1,35 @@
 -- SQLMesh Model: Silver Molecules
 -- Single source of truth for molecule identity. Populated by SQLMesh from
--- mol_bronze.chembl_molecules (primary) enriched with DrugBank and PubChem.
+-- mol_bronze.chembl (primary) enriched with DrugBank and PubChem.
 -- Xenon reads molecule_id via PostgREST — never writes to this table.
 --
--- INCREMENTAL_BY_UNIQUE_KEY on inchi_key ensures molecule_id UUIDs are
--- generated once and remain stable across runs (existing rows are UPDATEd,
--- not replaced). New molecules appear here after their ChEMBL bronze row lands.
+-- unique_key = chembl_id (always present, covers both small molecules and biologics).
+-- molecule_id is a deterministic UUID derived from chembl_id via md5 — stable
+-- across every run. Biologics (Antibody type) have no inchi_key in ChEMBL,
+-- so inchi_key is no longer the unique key or the WHERE filter.
 
 MODEL (
     name mol_silver.molecules,
     kind INCREMENTAL_BY_UNIQUE_KEY (
-        unique_key inchi_key
+        unique_key chembl_id
     ),
     cron '@daily',
     audits (
-        not_null(columns := (inchi_key, canonical_name)),
-        unique_values(columns := (inchi_key))
+        not_null(columns := (chembl_id, canonical_name)),
+        unique_values(columns := (chembl_id))
     ),
-    grain inchi_key
+    grain chembl_id
 );
 
 SELECT
-    gen_random_uuid()                                  AS molecule_id,
+    -- Deterministic UUID from chembl_id: stable across every SQLMesh run.
+    -- md5() returns 32 hex chars; format into UUID 8-4-4-4-12.
+    (   SUBSTRING(md5(c.chembl_id), 1,  8) || '-' ||
+        SUBSTRING(md5(c.chembl_id), 9,  4) || '-' ||
+        SUBSTRING(md5(c.chembl_id), 13, 4) || '-' ||
+        SUBSTRING(md5(c.chembl_id), 17, 4) || '-' ||
+        SUBSTRING(md5(c.chembl_id), 21, 12)
+    )::UUID                                            AS molecule_id,
     c.inchi_key,
     c.chembl_id,
     d.drugbank_id,
@@ -56,10 +64,10 @@ SELECT
     d.mechanism_of_action,
     c.max_phase::INT                                   AS max_phase
 
-FROM mol_bronze.chembl_molecules c
+FROM mol_bronze.chembl c
 LEFT JOIN mol_bronze.drugbank d
        ON LOWER(d.inchi_key) = LOWER(c.inchi_key)
 LEFT JOIN mol_bronze.pubchem p
        ON LOWER(p.inchi_key) = LOWER(c.inchi_key)
-WHERE c.inchi_key IS NOT NULL
+WHERE c.chembl_id IS NOT NULL
   AND c.pref_name IS NOT NULL

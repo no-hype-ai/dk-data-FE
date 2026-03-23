@@ -135,7 +135,7 @@ acc_tvc AS (
         NULL::TEXT AS shortage_status,
         'acc_tvc' AS source,
         source_updated_at
-    FROM mol_bronze.acc_tvc
+    FROM mol_bronze.acc_tvc_certification
     WHERE processed_to_silver = FALSE
       AND facility_id IS NOT NULL
 ),
@@ -166,7 +166,7 @@ hrsa AS (
         status AS shortage_status,
         'hrsa' AS source,
         source_updated_at
-    FROM mol_bronze.hrsa
+    FROM mol_bronze.hrsa_shortage_areas
     WHERE processed_to_silver = FALSE
       AND hpsa_id IS NOT NULL
 ),
