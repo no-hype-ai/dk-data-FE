@@ -4,10 +4,8 @@
 
 MODEL (
     name mol_silver.adverse_events,
-    kind INCREMENTAL_BY_UNIQUE_KEY (
-        unique_key (safety_report_id, case_version)
-    ),
-    cron '@weekly',
+    kind FULL,
+    cron '@daily',
     audits (
         not_null(columns := (safety_report_id))
     ),
@@ -58,6 +56,4 @@ LEFT JOIN mol_silver.molecule_aliases ma ON (
     = ma.alias_name_normalized
 )
 LEFT JOIN mol_silver.molecules m ON m.molecule_id = ma.molecule_id
-WHERE
-    b.processed_to_silver = FALSE
-    AND b.safety_report_id IS NOT NULL;
+WHERE b.safety_report_id IS NOT NULL;

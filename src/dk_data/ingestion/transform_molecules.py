@@ -235,15 +235,19 @@ def transform_model(model_name: str) -> dict:
     # when unrelated models (e.g. epo_patents) have errors, and leaves stale plan locks.
     # The prod environment is already initialized by the sqlmesh-scheduler; 'run' is sufficient.
     #
-    # Pass --end as tomorrow so the current day's (or current month's) interval is always
-    # included. Without this, INCREMENTAL_BY_TIME_RANGE models with @daily or @monthly cron
-    # skip today's data because the current interval is considered incomplete until midnight
-    # (or end-of-month). Setting --end to tomorrow guarantees intra-day data is processed.
+    # Pass --start 30 days ago and --end tomorrow to guarantee late-arriving raw records
+    # are processed. INCREMENTAL_BY_TIME_RANGE models mark intervals as "complete" in SQLMesh
+    # state; without --start, newly inserted raw records in a previously-completed interval
+    # (e.g. March 22 records when state tracks "processed through March 23") are silently
+    # skipped. The models also have `lookback` set (4 for @weekly, 7 for @daily), which
+    # tells SQLMesh to reprocess recent intervals even when they appear complete in state.
     from datetime import date, timedelta
+    start_30d = (date.today() - timedelta(days=30)).isoformat()
     tomorrow = (date.today() + timedelta(days=1)).isoformat()
     result = run_sqlmesh_command([
         'run', '--select-model', model_name,
         '--ignore-cron', '--no-auto-upstream',
+        '--start', start_30d,
         '--end', tomorrow,
     ], timeout=180)  # 3-minute max; stale plan lock retries every 30s, fail fast
 
