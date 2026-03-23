@@ -460,6 +460,7 @@ async def run_raw_ingestion(
     sources: List[str],
     metrics: PipelineMetrics,
     drug_name: Optional[str] = None,
+    condition: Optional[str] = None,
 ) -> Dict[str, int]:
     """Run raw layer ingestion for specified sources."""
     from .raw_ingestion import (
@@ -523,10 +524,8 @@ async def run_raw_ingestion(
                                     logger.warning(f"Silver refresh for {nct_id} failed: {e}")
                     else:
                         # Fetch trials for the specific drug (intervention search)
-                        # Use page_size=1000 (CT.gov v2 max) to capture all trials in one request.
-                        # CT.gov relevance ranking may still exclude some approved-indication trials
-                        # (e.g., NIAGARA/bladder is not in the top-1000 for query.intr=durvalumab alone).
-                        # We therefore run additional condition-scoped searches for common cancer types.
+                        # Use page_size=1000 (CT.gov v2 max) to capture all trials in one request
+                        # — avoids missing trials like NIAGARA that appear beyond page 1 at page_size=100
                         result = await service.fetch_studies(intervention=drug_name, page_size=1000)
                         if result:
                             count += 1
@@ -534,12 +533,15 @@ async def run_raw_ingestion(
                         result = await service.fetch_studies(query=drug_name, page_size=1000)
                         if result:
                             count += 1
-                        # Condition-scoped searches for major approved oncology indications
-                        # — ensures all pivotal trials are captured regardless of CT.gov ranking
-                        for condition in ['bladder cancer', 'lung cancer', 'biliary tract', 'hepatocellular', 'endometrial']:
-                            result = await service.fetch_studies(intervention=drug_name, condition=condition, page_size=200)
+                        # Indication-scoped search: query.intr=drug_name&query.cond=condition
+                        # Captures pivotal trials that don't appear in the top-1000 general search.
+                        # Example: NIAGARA (NCT03732677, MIBC) is only found with query.cond=bladder.
+                        # This search is narrower (filters by indication), so results stay relevant.
+                        if condition:
+                            result = await service.fetch_studies(intervention=drug_name, condition=condition, page_size=1000)
                             if result:
                                 count += 1
+                            logger.info(f"CT.gov indication-scoped search: intervention={drug_name}, condition={condition}")
 
                     # Also fetch individual studies for trials with results
                     # (search endpoint returns metadata but NOT resultsSection)
@@ -1636,6 +1638,7 @@ async def run_pipeline(
     skip_silver: bool = False,
     skip_gold: bool = False,
     drug_name: Optional[str] = None,
+    condition: Optional[str] = None,
     job_id: Optional[str] = None,
 ) -> Dict[str, Any]:
     """
@@ -1680,7 +1683,7 @@ async def run_pipeline(
         # Phase 1: Raw Ingestion
         if not skip_raw:
             logger.info("Phase 1: Raw Ingestion")
-            await run_raw_ingestion(pool, sources, metrics, drug_name=drug_name)
+            await run_raw_ingestion(pool, sources, metrics, drug_name=drug_name, condition=condition)
 
         # Phase 2: Bronze Transformation
         if not skip_bronze:

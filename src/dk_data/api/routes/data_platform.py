@@ -1221,6 +1221,7 @@ async def trigger_gold_refresh(
 class IngestionRequest(BaseModel):
     drug_name: Optional[str] = None
     molecule_id: Optional[str] = None
+    condition: Optional[str] = None  # For CT.gov: also search query.cond=condition (e.g. indication name)
     limit: int = 100
 
 @router.post("/ingest/{source}", response_model=IngestionTriggerResponse)
@@ -1263,6 +1264,7 @@ async def trigger_source_ingestion(
         job_id = str(uuid4())
 
         drug_name = request.drug_name if request else None
+        condition = request.condition if request else None
 
         # Insert a 'pending' row immediately so xenon can poll GET /jobs/{job_id}
         # before the background task starts writing its own record.
@@ -1289,6 +1291,7 @@ async def trigger_source_ingestion(
                     skip_silver=False,
                     skip_gold=True,  # Gold refresh is triggered separately (fire-and-forget) by xenon after all ingest jobs complete
                     drug_name=drug_name,
+                    condition=condition,
                     job_id=job_id,
                 )
                 logger.info(f"Ingestion job {job_id} completed: {result['status']}")
