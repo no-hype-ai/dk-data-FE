@@ -6,8 +6,7 @@ MODEL (
     name mol_bronze.who_gho,
     kind INCREMENTAL_BY_TIME_RANGE (
         time_column request_timestamp,
-        batch_size 500,
-        lookback 1
+        batch_size 500
     ),
     cron '@monthly',
     audits (

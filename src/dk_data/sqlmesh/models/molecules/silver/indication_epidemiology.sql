@@ -8,8 +8,7 @@
 MODEL (
     name ind_silver.epidemiology,
     kind INCREMENTAL_BY_UNIQUE_KEY (
-        unique_key (icd10_code, spatial_dim, time_dim, source),
-        lookback 1
+        unique_key (icd10_code, spatial_dim, time_dim, source)
     ),
     cron '@monthly',
     audits (
