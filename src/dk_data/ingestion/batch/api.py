@@ -144,6 +144,47 @@ except ImportError as e:
     logger.warning(f"Audit logging middleware not available: {e}")
 
 
+# ─── File-based source ingestion on startup ───────────────────────────────────
+# DrugBank and CMS USP ship as bundled files (data/drugbank/ and data/usp/).
+# If their raw tables are empty, trigger ingestion in a background thread so the
+# data is available without a manual API call after container start.
+@app.on_event("startup")
+async def _ingest_bundled_sources():
+    """Ingest file-based sources (DrugBank, CMS USP) if their tables are empty."""
+    import asyncio
+
+    async def _run_bundled_ingestion():
+        await asyncio.sleep(15)  # wait for DB pool and migrations to settle
+        loop = asyncio.get_event_loop()
+
+        # Map of (source_key, check_query) for each file-based source
+        file_sources = [
+            ("drugbank", "SELECT COUNT(*) FROM mol_raw.drugbank"),
+            ("cms_usp",  "SELECT COUNT(*) FROM hcs_raw.cms_usp"),
+        ]
+
+        for source, check_sql in file_sources:
+            try:
+                conn = get_connection()
+                cursor = conn.cursor()
+                cursor.execute(check_sql)
+                count = cursor.fetchone()[0]
+                cursor.close()
+                conn.close()
+
+                if count == 0:
+                    logger.info(f"[startup] {source} table is empty — triggering file-based ingestion")
+                    from dk_data.ingestion.main import run_ingestion
+                    await loop.run_in_executor(None, run_ingestion, source)
+                    logger.info(f"[startup] {source} ingestion complete")
+                else:
+                    logger.info(f"[startup] {source} already has {count} rows — skipping startup ingest")
+            except Exception as exc:
+                logger.warning(f"[startup] {source} startup ingest failed: {exc}")
+
+    asyncio.create_task(_run_bundled_ingestion())
+
+
 # ─── Audit log archival (weekly: move hot→cold after 365 days) ────────────────
 # Per FDA 21 CFR Part 11 & ICH E6(R3): audit data is NEVER deleted within the
 # regulatory retention period (min 2 years, up to 7-25 years).

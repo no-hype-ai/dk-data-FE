@@ -48,6 +48,8 @@ dependencies = [
     "email-validator>=2.0.0,<3.0",
     # MCP server (016-cms-puf)
     "mcp>=1.0.0,<2.0",
+    # PDF text extraction for SEC exhibit 15.1 parsing (20-F Annual Report exhibits)
+    "pypdf>=4.0.0,<6.0",
 ]
 
 [project.optional-dependencies]

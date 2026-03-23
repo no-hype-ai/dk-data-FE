@@ -1,10 +1,8 @@
 """
 SEC EDGAR API Client.
 
-Fetch SEC annual filings and extract MD&A section text for the xenon
-assessment pipeline. Revenue extraction from MD&A text is handled
-downstream by xenon's LLM pre-aggregation step
-(processFinancialFilingsWithLLM in assessment-orchestrator.service.ts).
+Fetch SEC annual filings and extract financial data for the xenon
+assessment pipeline.
 
 FREE - US Government public data.
 API Documentation: https://www.sec.gov/edgar/sec-api-documentation
@@ -14,12 +12,15 @@ Responsibilities:
 1. Look up a company's CIK by name (tickers.json + browse-edgar fallback)
 2. Enumerate recent annual filings (10-K / 20-F)
 3. Extract the MD&A text section from a filing's HTML
+4. Fetch structured XBRL company facts (revenue, gross profit, net income)
+   — preferred over MD&A parsing; covers all XBRL filers including foreign
+   private issuers (IFRS) that use "incorporated by reference" in 20-F text
 """
 
 import os
 import re
 from datetime import datetime
-from typing import Dict, List, Optional
+from typing import Any, Dict, List, Optional
 
 from bs4 import BeautifulSoup
 from loguru import logger
@@ -365,3 +366,122 @@ class SECEdgarClient(BaseAPIClient):
             f"SEC EDGAR CIK lookup: no annual-filing entity found for '{company_name}'"
         )
         return None
+
+    async def fetch_xbrl_facts(self, cik: str, years: int = 5) -> Dict[str, Any]:
+        """
+        Fetch structured financial data from SEC EDGAR XBRL Company Facts API.
+
+        Returns annual revenue, gross profit, R&D expense, and net income for
+        the last `years` fiscal years. Works for both US GAAP (10-K) and IFRS
+        (20-F) filers. This is the preferred source for revenue figures — it
+        bypasses MD&A text entirely and gives structured, already-labeled data.
+
+        For foreign private issuers (e.g. AstraZeneca, Roche, Novartis) whose
+        20-F MD&A sections use "incorporated by reference" boilerplate, this is
+        the only reliable way to get actual revenue numbers from SEC filings.
+
+        Args:
+            cik: SEC CIK (with or without leading zeros)
+            years: Number of fiscal years to return (most recent first)
+
+        Returns:
+            {
+              "revenue_series": [{"year": 2024, "value_usd": 54070000000}, ...],
+              "gross_profit_series": [...],
+              "rd_expense_series": [...],
+              "net_income_series": [...],
+              "currency": "USD",
+              "taxonomy": "ifrs-full" | "us-gaap",
+              "entity_name": "ASTRAZENECA PLC",
+            }
+            Returns empty dict on failure.
+        """
+        await self.rate_limiter.acquire()
+        cik_padded = str(cik).lstrip("0").zfill(10)
+
+        try:
+            client = await self._get_client()
+            resp = await client.get(
+                f"https://data.sec.gov/api/xbrl/companyfacts/CIK{cik_padded}.json",
+                headers=self.headers,
+                timeout=30.0,
+            )
+            if resp.status_code != 200:
+                logger.debug(f"XBRL facts not available for CIK {cik}: HTTP {resp.status_code}")
+                return {}
+
+            data = resp.json()
+            entity_name = data.get("entityName", "")
+            facts = data.get("facts", {})
+
+            # Detect taxonomy: IFRS filers use 'ifrs-full', US GAAP use 'us-gaap'
+            taxonomy = "ifrs-full" if "ifrs-full" in facts else "us-gaap"
+            tax_facts = facts.get(taxonomy, {})
+
+            # Tag priority lists — first matching tag with data wins
+            _REVENUE_TAGS = (
+                # IFRS
+                "Revenue", "RevenueFromContractsWithCustomers", "RevenueFromSaleOfGoods",
+                # US GAAP
+                "Revenues", "RevenueFromContractWithCustomerExcludingAssessedTax",
+                "SalesRevenueNet", "SalesRevenueGoodsNet",
+            )
+            _GROSS_PROFIT_TAGS = ("GrossProfit",)
+            _RD_TAGS = (
+                "ResearchAndDevelopmentExpense",           # US GAAP
+                "ResearchAndDevelopmentExpenseRecognisedInProfitOrLoss",  # IFRS
+            )
+            _NET_INCOME_TAGS = (
+                "ProfitLossAttributableToOwnersOfParent",  # IFRS
+                "ProfitLossAttributableToOrdinaryEquityHoldersOfParentEntity",  # IFRS alt
+                "ProfitLoss",                              # IFRS fallback
+                "NetIncomeLoss",                           # US GAAP
+            )
+
+            def _extract_series(tag_names: tuple) -> List[Dict[str, Any]]:
+                for tag in tag_names:
+                    if tag not in tax_facts:
+                        continue
+                    usd_data = tax_facts[tag].get("units", {}).get("USD", [])
+                    # Keep only full-year filings (FY) from annual forms
+                    annual = [
+                        r for r in usd_data
+                        if r.get("fp") == "FY"
+                        and r.get("form") in ("10-K", "20-F", "10-K/A", "20-F/A")
+                    ]
+                    if not annual:
+                        continue
+                    # Deduplicate by fiscal year end date — keep the most recently filed
+                    by_end: Dict[str, Dict] = {}
+                    for r in annual:
+                        end = r["end"]
+                        if end not in by_end or r["filed"] > by_end[end]["filed"]:
+                            by_end[end] = r
+                    series = sorted(by_end.values(), key=lambda x: x["end"], reverse=True)
+                    return [
+                        {"year": int(r["end"][:4]), "value_usd": r["val"]}
+                        for r in series[:years]
+                    ]
+                return []
+
+            result: Dict[str, Any] = {
+                "entity_name": entity_name,
+                "taxonomy": taxonomy,
+                "currency": "USD",
+                "revenue_series": _extract_series(_REVENUE_TAGS),
+                "gross_profit_series": _extract_series(_GROSS_PROFIT_TAGS),
+                "rd_expense_series": _extract_series(_RD_TAGS),
+                "net_income_series": _extract_series(_NET_INCOME_TAGS),
+            }
+
+            rev = result["revenue_series"]
+            logger.info(
+                f"XBRL facts fetched for CIK {cik} ({entity_name}): "
+                f"{len(rev)} revenue years"
+                + (f", latest ${rev[0]['value_usd']/1e9:.1f}B ({rev[0]['year']})" if rev else "")
+            )
+            return result
+
+        except Exception as e:
+            logger.warning(f"XBRL facts fetch failed for CIK {cik}: {e}")
+            return {}

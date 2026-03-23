@@ -14,6 +14,7 @@ Rate limit: 10 requests per second (SEC fair-access policy)
 import hashlib
 import logging
 import os
+import re
 import time
 from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional
@@ -377,7 +378,95 @@ class SECEdgarFetcher(BaseFetcher):
             mda_sections = self._fetch_mda_text(document_url, accession_number, cik)
             record.update(mda_sections)
 
+        # Fetch structured XBRL financial facts (revenue, gross profit, R&D, net income).
+        # Runs once per unique CIK — the fetcher deduplicates via _seen_xbrl_ciks so we
+        # don't hammer the XBRL API for every filing from the same company.
+        if cik and filing_type in ("10-K", "20-F", "10-K/A", "20-F/A"):
+            if not hasattr(self, "_seen_xbrl_ciks"):
+                self._seen_xbrl_ciks: set = set()
+            if cik not in self._seen_xbrl_ciks:
+                self._seen_xbrl_ciks.add(cik)
+                xbrl = self._fetch_xbrl_facts_sync(cik)
+                if xbrl:
+                    record["xbrl_facts"] = xbrl
+
         return record
+
+    def _fetch_xbrl_facts_sync(self, cik: str) -> dict:
+        """Synchronous wrapper: fetch XBRL company facts via requests (no asyncio needed)."""
+        try:
+            cik_padded = str(cik).lstrip("0").zfill(10)
+            url = f"https://data.sec.gov/api/xbrl/companyfacts/CIK{cik_padded}.json"
+            time.sleep(SEC_REQUEST_DELAY)
+            resp = self.session.get(url, timeout=30)
+            if resp.status_code != 200:
+                return {}
+
+            data = resp.json()
+            entity_name = data.get("entityName", "")
+            facts = data.get("facts", {})
+
+            taxonomy = "ifrs-full" if "ifrs-full" in facts else "us-gaap"
+            tax_facts = facts.get(taxonomy, {})
+
+            _REVENUE_TAGS = (
+                "Revenue", "RevenueFromContractsWithCustomers", "RevenueFromSaleOfGoods",
+                "Revenues", "RevenueFromContractWithCustomerExcludingAssessedTax",
+                "SalesRevenueNet",
+            )
+            _GROSS_PROFIT_TAGS = ("GrossProfit",)
+            _RD_TAGS = (
+                "ResearchAndDevelopmentExpense",
+                "ResearchAndDevelopmentExpenseRecognisedInProfitOrLoss",
+            )
+            _NET_INCOME_TAGS = (
+                "ProfitLossAttributableToOwnersOfParent",
+                "ProfitLossAttributableToOrdinaryEquityHoldersOfParentEntity",
+                "ProfitLoss",
+                "NetIncomeLoss",
+            )
+
+            def _series(tag_names):
+                for tag in tag_names:
+                    if tag not in tax_facts:
+                        continue
+                    usd_data = tax_facts[tag].get("units", {}).get("USD", [])
+                    annual = [
+                        r for r in usd_data
+                        if r.get("fp") == "FY"
+                        and r.get("form") in ("10-K", "20-F", "10-K/A", "20-F/A")
+                    ]
+                    if not annual:
+                        continue
+                    by_end: dict = {}
+                    for r in annual:
+                        end = r["end"]
+                        if end not in by_end or r["filed"] > by_end[end]["filed"]:
+                            by_end[end] = r
+                    top = sorted(by_end.values(), key=lambda x: x["end"], reverse=True)[:5]
+                    return [{"year": int(r["end"][:4]), "value_usd": r["val"]} for r in top]
+                return []
+
+            result = {
+                "entity_name": entity_name,
+                "taxonomy": taxonomy,
+                "currency": "USD",
+                "revenue_series": _series(_REVENUE_TAGS),
+                "gross_profit_series": _series(_GROSS_PROFIT_TAGS),
+                "rd_expense_series": _series(_RD_TAGS),
+                "net_income_series": _series(_NET_INCOME_TAGS),
+            }
+            rev = result["revenue_series"]
+            logger.info(
+                "XBRL facts fetched for CIK %s (%s): %d revenue years%s",
+                cik, entity_name, len(rev),
+                f", latest ${rev[0]['value_usd']/1e9:.1f}B ({rev[0]['year']})" if rev else "",
+            )
+            return result
+
+        except Exception as e:
+            logger.debug("XBRL facts fetch failed for CIK %s: %s", cik, e)
+            return {}
 
     def _fetch_mda_text(
         self, document_url: str, accession_number: str, cik: str
@@ -386,13 +475,18 @@ class SECEdgarFetcher(BaseFetcher):
 
         Finds the main HTML document in the filing index, fetches it,
         and extracts the Item 7 (MD&A) and Item 1A (Risk Factors) sections.
+
+        For 20-F filers (foreign private issuers like AstraZeneca), the main filing
+        often contains only "incorporated by reference" boilerplate pointing to the
+        Annual Report (Exhibit 15.1). In that case, we fetch Exhibit 15.1 directly —
+        which may be HTML or PDF — and extract from it instead.
+
         Returns a dict with mda_text and risk_factors_text keys (empty strings on failure).
         """
         empty = {"mda_text": "", "risk_factors_text": ""}
         try:
             from dk_data.services.external_apis.sec_edgar_client import SECEdgarClient
 
-            # Try FilingSummary.xml first to find the primary document
             acc_clean = accession_number.replace("-", "")
             index_url = (
                 f"{SEC_ARCHIVES_URL}/Archives/edgar/data/{cik}/{acc_clean}/{accession_number}-index.htm"
@@ -400,25 +494,30 @@ class SECEdgarFetcher(BaseFetcher):
             time.sleep(SEC_REQUEST_DELAY)
             index_resp = self.session.get(index_url, timeout=15)
             doc_html_url = None
+            filing_documents: list = []
 
             if index_resp.status_code == 200:
-                # Find the main 10-K/20-F HTML document link
-                import re
-                matches = re.findall(
-                    r'href="([^"]+\.htm)"[^>]*>(?:10-K|20-F|Annual Report)',
-                    index_resp.text, re.IGNORECASE
-                )
-                if not matches:
-                    # Fallback: first .htm link that's not the index itself
-                    matches = re.findall(r'href="(/Archives/edgar/data/[^"]+\.htm)"', index_resp.text)
-                if matches:
-                    href = matches[0]
-                    doc_html_url = (
-                        href if href.startswith("http") else f"{SEC_ARCHIVES_URL}{href}"
+                filing_documents = self._parse_filing_index(index_resp.text, cik, acc_clean)
+
+                # Find main filing document (20-F or 10-K)
+                main_types = {"20-F", "10-K", "20-F/A", "10-K/A"}
+                main_docs = [d for d in filing_documents if d.get("type", "").upper() in main_types]
+                if main_docs:
+                    doc_html_url = main_docs[0]["url"]
+                else:
+                    matches = re.findall(
+                        r'href="([^"]+\.htm)"[^>]*>(?:10-K|20-F|Annual Report)',
+                        index_resp.text, re.IGNORECASE
                     )
+                    if not matches:
+                        matches = re.findall(r'href="(/Archives/edgar/data/[^"]+\.htm)"', index_resp.text)
+                    if matches:
+                        href = matches[0]
+                        doc_html_url = (
+                            href if href.startswith("http") else f"{SEC_ARCHIVES_URL}{href}"
+                        )
 
             if not doc_html_url:
-                # Fallback: try the accession folder directly for a .htm file
                 doc_html_url = f"{SEC_ARCHIVES_URL}/Archives/edgar/data/{cik}/{acc_clean}/{acc_clean}.htm"
 
             time.sleep(SEC_REQUEST_DELAY)
@@ -430,10 +529,126 @@ class SECEdgarFetcher(BaseFetcher):
                 return empty
 
             client = SECEdgarClient.__new__(SECEdgarClient)
-            return client.extract_mda_sections(doc_resp.text)
+            result = client.extract_mda_sections(doc_resp.text)
+
+            # 20-F filers (e.g. AstraZeneca, Roche, Novartis) often use
+            # "incorporated by reference" in the main filing, with the actual
+            # financial data living in Exhibit 15.1 (the Annual Report PDF/HTML).
+            # Detect this pattern and fall back to fetching the exhibit directly.
+            if self._is_incorporated_by_reference(result.get("mda_text", "")):
+                exhibit_result = self._fetch_exhibit_15_1(filing_documents, client)
+                if exhibit_result.get("mda_text"):
+                    logger.info(
+                        "SEC %s: replaced boilerplate MD&A with Exhibit 15.1 text (%d chars)",
+                        accession_number, len(exhibit_result["mda_text"]),
+                    )
+                    result = exhibit_result
+
+            return result
 
         except Exception as e:
             logger.debug("MD&A extraction failed for %s: %s", accession_number, e)
+            return empty
+
+    @staticmethod
+    def _is_incorporated_by_reference(mda_text: str) -> bool:
+        """Return True when MD&A text is boilerplate 'incorporated by reference' with no financials."""
+        if not mda_text:
+            return True
+        has_ibr = bool(re.search(
+            r"incorporated\s+(?:herein\s+)?by\s+reference", mda_text, re.IGNORECASE
+        ))
+        has_financials = bool(re.search(
+            r"\$\s*\d+(?:\.\d+)?\s*(?:billion|million|bn|m\b|\d)|"
+            r"\b\d+(?:\.\d+)?\s*(?:billion|million)\b",
+            mda_text, re.IGNORECASE
+        ))
+        return has_ibr and not has_financials
+
+    def _parse_filing_index(self, index_html: str, cik: str, acc_clean: str) -> list:
+        """Parse filing index HTML into a list of {url, type, description} dicts."""
+        docs = []
+        rows = re.findall(r"<tr[^>]*>.*?</tr>", index_html, re.DOTALL | re.IGNORECASE)
+        for row in rows:
+            href_match = re.search(
+                r'href="(/Archives/edgar/data/[^"]+)"', row, re.IGNORECASE
+            )
+            if not href_match:
+                continue
+            url = f"{SEC_ARCHIVES_URL}{href_match.group(1)}"
+            cells = re.findall(r"<td[^>]*>(.*?)</td>", row, re.DOTALL | re.IGNORECASE)
+            doc_type = re.sub(r"<[^>]+>", "", cells[1]).strip() if len(cells) > 1 else ""
+            description = re.sub(r"<[^>]+>", "", cells[2]).strip() if len(cells) > 2 else ""
+            docs.append({"url": url, "type": doc_type, "description": description})
+        return docs
+
+    def _fetch_exhibit_15_1(self, filing_documents: list, client) -> dict:
+        """Fetch Exhibit 15.1 (Annual Report) and extract MD&A text from it.
+
+        Handles both HTML and PDF exhibits. PDF is common for foreign private issuers
+        (e.g. AstraZeneca, Roche) that attach their full Annual Report as exhibit 15.1.
+        """
+        empty = {"mda_text": "", "risk_factors_text": ""}
+
+        exhibit_url = None
+        for doc in filing_documents:
+            doc_type = doc.get("type", "").upper()
+            if doc_type in ("EX-15.1", "EX-15", "EX-15.01", "EX-13"):
+                exhibit_url = doc["url"]
+                break
+
+        if not exhibit_url:
+            return empty
+
+        try:
+            time.sleep(SEC_REQUEST_DELAY)
+            resp = self.session.get(exhibit_url, timeout=90)
+            if resp.status_code != 200:
+                return empty
+
+            content_type = resp.headers.get("content-type", "").lower()
+            is_pdf = "pdf" in content_type or exhibit_url.lower().endswith(".pdf")
+
+            if is_pdf:
+                return self._extract_mda_from_pdf(resp.content, client)
+            else:
+                return client.extract_mda_sections(resp.text)
+
+        except Exception as e:
+            logger.debug("Exhibit 15.1 fetch/parse failed (%s): %s", exhibit_url, e)
+            return empty
+
+    @staticmethod
+    def _extract_mda_from_pdf(pdf_bytes: bytes, client) -> dict:
+        """Extract MD&A text from a PDF Annual Report using pypdf."""
+        empty = {"mda_text": "", "risk_factors_text": ""}
+        try:
+            import io
+            import pypdf
+
+            reader = pypdf.PdfReader(io.BytesIO(pdf_bytes))
+            pages_text = []
+            for page in reader.pages:
+                text = page.extract_text() or ""
+                if text.strip():
+                    pages_text.append(text)
+
+            if not pages_text:
+                return empty
+
+            full_text = "\n".join(pages_text)
+            # BeautifulSoup on plain text is a no-op (no tags to strip), so we can
+            # pass the extracted text straight into the existing section extractor.
+            return client.extract_mda_sections(full_text)
+
+        except ImportError:
+            logger.warning(
+                "pypdf not installed — cannot extract text from PDF exhibit; "
+                "add pypdf>=4.0.0 to pyproject.toml dependencies"
+            )
+            return empty
+        except Exception as e:
+            logger.debug("PDF MD&A extraction failed: %s", e)
             return empty
 
     @staticmethod

@@ -165,7 +165,14 @@ class DrugBankFetcher(BaseFetcher):
                     return p
                 logger.warning("Specified file_path does not exist: %s", candidate)
 
-        # Check default location relative to project root
+        # Check /app/data/drugbank/ first — the canonical path inside the Docker container.
+        # _project_root resolution via parents[4] breaks when the package is installed in
+        # site-packages (parents[4] resolves to /usr/local/lib/python3.11, not /app).
+        container_path = Path("/app") / self.DEFAULT_LOCAL_ZIP
+        if container_path.is_file():
+            return container_path
+
+        # Fallback: try relative to the inferred project root (works in local dev)
         default_path = self._project_root / self.DEFAULT_LOCAL_ZIP
         if default_path.is_file():
             return default_path

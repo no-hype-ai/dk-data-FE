@@ -40,6 +40,12 @@ SELECT
     response_body->>'mda_text'         AS mda_text,
     response_body->>'risk_factors_text' AS risk_factors_text,
 
+    -- XBRL structured financial facts (revenue, gross profit, R&D, net income series)
+    -- Populated for annual filings (10-K / 20-F); NULL for 10-Q / 8-K
+    response_body->'xbrl_facts'                          AS xbrl_facts,
+    response_body->'xbrl_facts'->'revenue_series'        AS xbrl_revenue_series,
+    response_body->'xbrl_facts'->>'taxonomy'             AS xbrl_taxonomy,
+
     -- Raw source tracking
     response_body   AS raw_json,
     id              AS raw_source_id,

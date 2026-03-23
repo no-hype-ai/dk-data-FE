@@ -31,6 +31,9 @@ SELECT
     b.document_url,
     b.mda_text                              AS mda_excerpt,
     b.risk_factors_text                     AS risk_factors_excerpt,
+    b.xbrl_facts                            AS xbrl_facts,
+    b.xbrl_revenue_series                   AS xbrl_revenue_series,
+    b.xbrl_taxonomy                         AS xbrl_taxonomy,
     -- Entity link: prefer drug_name; fall back to company_name for legacy rows
     -- where drug_name was empty (old sec_edgar_client path stored drug name in
     -- company_name instead). NULL only when neither field matches a known molecule.
