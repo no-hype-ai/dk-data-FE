@@ -11,29 +11,8 @@
 --    Populated from raw.epo_patents via SQLMesh (or direct INSERT by dk-data-FE ingestion).
 
 -- ─── 1. mol_gold.molecule_profile VIEW ───────────────────────────────────────
--- Wraps mol_gold.molecule_profiles (plural) so Xenon's PostgREST path /molecule_profile works.
--- Xenon reads: molecule_id, canonical_name, lifecycle_stage, trial_count, label_count, etc.
-
-CREATE OR REPLACE VIEW mol_gold.molecule_profile AS
-SELECT
-    profile_id,
-    molecule_id,
-    inchi_key,
-    canonical_name,
-    lifecycle_stage,
-    stage_confidence,
-    data_completeness,
-    trial_count,
-    active_trial_count,
-    label_count,
-    indication_count,
-    adverse_event_count,
-    serious_ae_count,
-    publication_count,
-    patent_expiry_date,
-    first_approval_date,
-    last_updated
-FROM mol_gold.molecule_profiles;
+-- mol_gold.molecule_profile is a SQLMesh-managed VIEW — already exists.
+-- mol_gold.molecule_profiles (plural) never existed; skip this section.
 
 GRANT SELECT ON mol_gold.molecule_profile TO analyst;
 GRANT SELECT ON mol_gold.molecule_profile TO authenticator;
@@ -83,10 +62,16 @@ CREATE TABLE IF NOT EXISTS mol_silver.patents (
     UNIQUE(patent_number, patent_country)
 );
 
-CREATE INDEX IF NOT EXISTS idx_mol_silver_patents_molecule_id ON mol_silver.patents(molecule_id);
-CREATE INDEX IF NOT EXISTS idx_mol_silver_patents_number      ON mol_silver.patents(patent_number);
-CREATE INDEX IF NOT EXISTS idx_mol_silver_patents_expiry      ON mol_silver.patents(expiry_date);
-CREATE INDEX IF NOT EXISTS idx_mol_silver_patents_family      ON mol_silver.patents(family_id);
+DO $$
+BEGIN
+  IF (SELECT relkind FROM pg_class c JOIN pg_namespace n ON c.relnamespace=n.oid
+      WHERE n.nspname='mol_silver' AND c.relname='patents') = 'r' THEN
+    CREATE INDEX IF NOT EXISTS idx_mol_silver_patents_molecule_id ON mol_silver.patents(molecule_id);
+    CREATE INDEX IF NOT EXISTS idx_mol_silver_patents_number      ON mol_silver.patents(patent_number);
+    CREATE INDEX IF NOT EXISTS idx_mol_silver_patents_expiry      ON mol_silver.patents(expiry_date);
+    CREATE INDEX IF NOT EXISTS idx_mol_silver_patents_family      ON mol_silver.patents(family_id);
+  END IF;
+END $$;
 
 GRANT SELECT ON mol_silver.patents TO analyst;
 GRANT SELECT ON mol_silver.patents TO authenticator;

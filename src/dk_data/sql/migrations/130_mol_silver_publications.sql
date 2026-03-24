@@ -97,7 +97,8 @@ END $$;
 -- A molecule-scoped window onto mol_silver.publications.
 -- Queried by xenon agents as /molecule_publications?molecule_id=eq.<uuid>.
 
-CREATE OR REPLACE VIEW mol_silver.molecule_publications AS
+DROP VIEW IF EXISTS mol_silver.molecule_publications CASCADE;
+CREATE VIEW mol_silver.molecule_publications AS
 SELECT
     id              AS publication_id,
     molecule_id,

@@ -21,17 +21,7 @@ CREATE INDEX IF NOT EXISTS idx_purple_book_processed ON mol_raw.purple_book (pro
     WHERE processed_to_bronze = FALSE;
 CREATE INDEX IF NOT EXISTS idx_purple_book_timestamp ON mol_raw.purple_book (request_timestamp);
 
--- ─── Update patent_exclusivities to support both Orange + Purple Book ─────────
-
-ALTER TABLE mol_silver.patent_exclusivities ADD COLUMN IF NOT EXISTS source_book VARCHAR(20);
-ALTER TABLE mol_silver.patent_exclusivities ADD COLUMN IF NOT EXISTS bpcia_data_exclusivity_end DATE;
-ALTER TABLE mol_silver.patent_exclusivities ADD COLUMN IF NOT EXISTS bpcia_biosimilar_filing_date DATE;
-ALTER TABLE mol_silver.patent_exclusivities ADD COLUMN IF NOT EXISTS is_biosimilar BOOLEAN;
-ALTER TABLE mol_silver.patent_exclusivities ADD COLUMN IF NOT EXISTS is_interchangeable BOOLEAN;
-ALTER TABLE mol_silver.patent_exclusivities ADD COLUMN IF NOT EXISTS reference_product_bla VARCHAR(100);
-ALTER TABLE mol_silver.patent_exclusivities ADD COLUMN IF NOT EXISTS reference_product_name VARCHAR(500);
-ALTER TABLE mol_silver.patent_exclusivities ADD COLUMN IF NOT EXISTS orphan_exclusivity_end DATE;
-ALTER TABLE mol_silver.patent_exclusivities ADD COLUMN IF NOT EXISTS interchangeable_exclusivity_end DATE;
+-- mol_silver.patent_exclusivities is a SQLMesh-managed VIEW — ALTER TABLE skipped.
 
 -- ─── Sync Schedule ────────────────────────────────────────────────────────────
 
