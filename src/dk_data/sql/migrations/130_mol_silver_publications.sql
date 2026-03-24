@@ -81,11 +81,17 @@ CREATE TABLE IF NOT EXISTS mol_silver.publications (
     UNIQUE(doi)
 );
 
-CREATE INDEX IF NOT EXISTS idx_mol_silver_pub_molecule_id   ON mol_silver.publications(molecule_id);
-CREATE INDEX IF NOT EXISTS idx_mol_silver_pub_doi           ON mol_silver.publications(doi);
-CREATE INDEX IF NOT EXISTS idx_mol_silver_pub_pmid          ON mol_silver.publications(pmid);
-CREATE INDEX IF NOT EXISTS idx_mol_silver_pub_year          ON mol_silver.publications(publication_year);
-CREATE INDEX IF NOT EXISTS idx_mol_silver_pub_source        ON mol_silver.publications(source);
+-- Indexes only if publications is a plain table (SQLMesh may have created it as a view)
+DO $$ BEGIN
+    IF (SELECT relkind FROM pg_class c JOIN pg_namespace n ON c.relnamespace=n.oid
+        WHERE n.nspname='mol_silver' AND c.relname='publications') = 'r' THEN
+        CREATE INDEX IF NOT EXISTS idx_mol_silver_pub_molecule_id ON mol_silver.publications(molecule_id);
+        CREATE INDEX IF NOT EXISTS idx_mol_silver_pub_doi         ON mol_silver.publications(doi);
+        CREATE INDEX IF NOT EXISTS idx_mol_silver_pub_pmid        ON mol_silver.publications(pmid);
+        CREATE INDEX IF NOT EXISTS idx_mol_silver_pub_year        ON mol_silver.publications(publication_year);
+        CREATE INDEX IF NOT EXISTS idx_mol_silver_pub_source      ON mol_silver.publications(source);
+    END IF;
+END $$;
 
 -- ─── 2. mol_silver.molecule_publications (view) ──────────────────────────────
 -- A molecule-scoped window onto mol_silver.publications.
