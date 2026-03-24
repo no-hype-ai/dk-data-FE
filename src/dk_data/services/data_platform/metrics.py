@@ -330,26 +330,26 @@ def refresh_metrics_from_database_sync():
 
         # Data source health
         local_sources = {
-            'clinical_trials': ('silver.clinical_trials', False),
-            'drug_labels': ('silver.drug_labels', False),
-            'molecules': ('silver.molecules', False),
-            'adverse_events': ('silver.adverse_events', True),
-            'drug_interactions': ('silver.drug_interactions', True),
-            'publications': ('silver.publications', True),
-            'chembl': ('bronze.chembl', False),
-            'drugbank': ('bronze.drugbank', False),
-            'pubchem': ('bronze.pubchem', True),
-            'sider': ('bronze.sider', True),
-            'bindingdb': ('bronze.bindingdb_affinities', True),
-            'faers': ('bronze.openfda_faers', False),
-            'fda_labels_raw': ('bronze.openfda_labels', False),
-            'who_inn': ('bronze.who_inn_data', True),
-            'drugbank_patents': ('bronze.drugbank_patents', True),
-            'uspto_patents': ('bronze.uspto_patents', True),
-            'uspto_ci': ('bronze.uspto_ci', True),
-            'epo_patents': ('bronze.epo_patents', True),
-            'uspto_trademarks': ('bronze.uspto_trademarks', True),
-            'euipo_trademarks': ('bronze.euipo_trademarks', True),
+            'clinical_trials': ('mol_silver.clinical_trials', False),
+            'drug_labels': ('mol_silver.drug_labels', False),
+            'molecules': ('mol_silver.molecules', False),
+            'adverse_events': ('mol_silver.adverse_events', True),
+            'drug_interactions': ('mol_silver.drug_interactions', True),
+            'publications': ('mol_silver.publications', True),
+            'chembl': ('mol_bronze.chembl', False),
+            'drugbank': ('mol_bronze.drugbank', False),
+            'pubchem': ('mol_bronze.pubchem', True),
+            'sider': ('mol_bronze.sider', True),
+            'bindingdb': ('mol_bronze.bindingdb_affinities', True),
+            'faers': ('mol_bronze.openfda_faers', False),
+            'fda_labels_raw': ('mol_bronze.openfda_labels', False),
+            'who_inn': ('mol_bronze.who_inn_data', True),
+            'drugbank_patents': ('mol_bronze.drugbank_patents', True),
+            'uspto_patents': ('mol_bronze.uspto_patents', True),
+            'uspto_ci': ('mol_bronze.uspto_ci', True),
+            'epo_patents': ('mol_bronze.epo_patents', True),
+            'uspto_trademarks': ('mol_bronze.uspto_trademarks', True),
+            'euipo_trademarks': ('mol_bronze.euipo_trademarks', True),
         }
 
         # CMS source health (016-cms-puf-datasource-integration)
@@ -422,13 +422,14 @@ def refresh_metrics_from_database_sync():
                             if ds_row and ds_row[0]:
                                 CMS_SOURCE_LAST_SYNC_TIMESTAMP.labels(source=source_name).set(ds_row[0])
                     except Exception:
-                        pass  # Table may not exist in local dev
+                        conn.rollback()  # Reset aborted transaction so subsequent queries proceed
                 elif allow_empty:
                     CMS_SOURCE_HEALTH_STATUS.labels(source=source_name).set(0.5)
                 else:
                     CMS_SOURCE_HEALTH_STATUS.labels(source=source_name).set(0)
             except Exception as e:
                 CMS_SOURCE_HEALTH_STATUS.labels(source=source_name).set(0)
+                conn.rollback()  # Reset aborted transaction so next CMS source check can run
                 logger.debug(f"Error checking CMS source {source_name}: {e}")
 
         # CMS gold view record counts and freshness
@@ -460,11 +461,12 @@ def refresh_metrics_from_database_sync():
                             if refresh_row and refresh_row[0]:
                                 CMS_GOLD_VIEW_LAST_REFRESH_TIMESTAMP.labels(view=view).set(refresh_row[0])
                         except Exception:
-                            pass
+                            conn.rollback()
                 else:
                     CMS_GOLD_VIEW_RECORD_COUNT.labels(view=view).set(0)
             except Exception as e:
                 CMS_GOLD_VIEW_RECORD_COUNT.labels(view=view).set(0)
+                conn.rollback()
                 logger.debug(f"Error checking CMS gold view {view}: {e}")
 
         # CMS agent execution status and quarantine
@@ -519,6 +521,7 @@ def refresh_metrics_from_database_sync():
                         quarantined = cur.fetchone()[0] or 0
                         CMS_AGENT_RECORDS_QUARANTINED_TOTAL.labels(agent_name=agent).set(quarantined)
             except Exception as e:
+                conn.rollback()
                 logger.debug(f"Error checking CMS agent {agent}: {e}")
 
         current_time = time.time()
@@ -557,6 +560,7 @@ def refresh_metrics_from_database_sync():
                     set_source_last_sync(source_name, current_time - (3600 * 24))
             except Exception as e:
                 set_source_health(source_name, 'error')
+                conn.rollback()
                 logger.debug(f"Error checking {source_name}: {e}")
 
         external_sources = [
@@ -573,9 +577,9 @@ def refresh_metrics_from_database_sync():
 
         # Layer record counts
         layer_tables = {
-            'raw': ['raw.clinicaltrials', 'raw.openfda_faers', 'raw.openfda_labels', 'raw.chembl'],
-            'bronze': ['bronze.clinicaltrials', 'bronze.openfda_faers', 'bronze.openfda_labels', 'bronze.chembl'],
-            'silver': ['silver.molecules', 'silver.clinical_trials', 'silver.adverse_events', 'silver.drug_labels'],
+            'raw': ['mol_raw.clinicaltrials', 'mol_raw.openfda_faers', 'mol_raw.openfda_labels', 'mol_raw.chembl'],
+            'bronze': ['mol_bronze.clinicaltrials', 'mol_bronze.openfda_faers', 'mol_bronze.openfda_labels', 'mol_bronze.chembl'],
+            'silver': ['mol_silver.molecules', 'mol_silver.clinical_trials', 'mol_silver.adverse_events', 'mol_silver.drug_labels'],
         }
 
         for layer, tables in layer_tables.items():
@@ -591,15 +595,15 @@ def refresh_metrics_from_database_sync():
 
         # Unprocessed counts in raw layer
         raw_sources = {
-            'clinicaltrials': 'raw.clinicaltrials',
-            'openfda_faers': 'raw.openfda_faers',
-            'openfda_labels': 'raw.openfda_labels',
-            'chembl': 'raw.chembl',
-            'uspto_patents': 'raw.uspto_patents',
-            'uspto_ci': 'raw.uspto_ci',
-            'epo_patents': 'raw.epo_patents',
-            'uspto_trademarks': 'raw.uspto_trademarks',
-            'euipo_trademarks': 'raw.euipo_trademarks',
+            'clinicaltrials': 'mol_raw.clinicaltrials',
+            'openfda_faers': 'mol_raw.openfda_faers',
+            'openfda_labels': 'mol_raw.openfda_labels',
+            'chembl': 'mol_raw.chembl',
+            'uspto_patents': 'mol_raw.uspto_patents',
+            'uspto_ci': 'mol_raw.uspto_ci',
+            'epo_patents': 'mol_raw.epo_patents',
+            'uspto_trademarks': 'mol_raw.uspto_trademarks',
+            'euipo_trademarks': 'mol_raw.euipo_trademarks',
             # CMS raw sources (016-cms-puf-datasource-integration)
             'cms_care_compare': 'hcs_raw.cms_care_compare',
             'cms_part_d_prescriber': 'hcs_raw.cms_part_d_prescriber',
@@ -663,10 +667,12 @@ def refresh_metrics_from_database_sync():
 
         # Table record counts by layer
         layer_tables = {
-            'raw': [
+            'mol_raw': [
                 'chembl', 'clinicaltrials', 'drugbank', 'openalex',
                 'openfda_faers', 'openfda_labels', 'pdb', 'pubchem', 'sider', 'uniprot',
                 'uspto_patents', 'uspto_ci', 'epo_patents', 'uspto_trademarks', 'euipo_trademarks',
+            ],
+            'hcs_raw': [
                 # CMS sources (016-cms-puf-datasource-integration)
                 'cms_care_compare', 'cms_part_d_prescriber', 'cms_physician_puf',
                 'cms_open_payments', 'cms_pecos', 'cms_inpatient_puf', 'cms_outpatient_puf',
@@ -676,31 +682,27 @@ def refresh_metrics_from_database_sync():
                 'cms_post_acute', 'cms_rbcs', 'cms_ddinter', 'cms_nppes', 'cms_pos',
                 'cms_hcris', 'cms_nucc', 'cms_magnet', 'cms_usp', 'cms_stabilis',
             ],
-            'bronze': [
+            'mol_bronze': [
                 'chembl', 'clinicaltrials', 'drugbank', 'openalex',
                 'openfda_faers', 'openfda_labels', 'pdb', 'pubchem', 'sider', 'uniprot',
                 'uspto_patents', 'uspto_ci', 'epo_patents', 'uspto_trademarks', 'euipo_trademarks',
-                # CMS bronze (SQLMesh-managed)
-                'cms_care_compare', 'cms_part_d_prescriber', 'cms_physician_puf',
-                'cms_open_payments', 'cms_pecos', 'cms_inpatient_puf', 'cms_outpatient_puf',
-                'cms_hospital_quality', 'cms_hospital_affiliation', 'cms_formulary',
-                'cms_part_d_spending', 'cms_part_b_spending', 'cms_ndc', 'cms_chow',
-                'cms_geographic_variation', 'cms_chronic_conditions', 'cms_dmepos',
-                'cms_post_acute', 'cms_rbcs', 'cms_ddinter', 'cms_nppes', 'cms_pos',
-                'cms_hcris', 'cms_nucc', 'cms_magnet', 'cms_usp', 'cms_stabilis',
             ],
-            'silver': [
+            'mol_silver': [
                 'adverse_events', 'bioactivity', 'clinical_trials', 'drug_labels',
                 'identifier_mappings', 'molecule_aliases', 'molecule_publications',
                 'molecule_targets', 'molecules', 'patents', 'publications',
                 'resolution_queue', 'targets', 'trademarks',
+            ],
+            'hcs_silver': [
                 # CMS silver composites
                 'cms_provider_360', 'cms_facility_360', 'cms_drug_market',
                 'cms_geographic_access', 'cms_quality_composite',
             ],
-            'gold': [
+            'mol_gold': [
                 'company_pipeline', 'lifecycle_evidence', 'lifecycle_stages',
                 'molecule_profile', 'safety_signals',
+            ],
+            'hcs_gold': [
                 # CMS gold views
                 'cms_provider_360', 'cms_facility_360', 'cms_drug_market',
                 'cms_geographic_access', 'cms_quality_composite',

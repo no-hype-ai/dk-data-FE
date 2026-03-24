@@ -42,13 +42,19 @@ SELECT
     b.source_updated_at,
     NOW()                                   AS created_at,
     NOW()                                   AS updated_at
-FROM mol_bronze.sec_edgar b
+FROM (
+    -- Deduplicate bronze: multiple ingest runs can produce duplicate (cik, filing_type, filing_date)
+    -- rows. Pick the most recently inserted record per key so MERGE has a 1:1 source.
+    SELECT DISTINCT ON (cik, filing_type, filing_date) *
+    FROM mol_bronze.sec_edgar
+    WHERE processed_to_silver = FALSE
+      AND cik IS NOT NULL
+      AND filing_type IS NOT NULL
+    ORDER BY cik, filing_type, filing_date, id DESC
+) b
 LEFT JOIN mol_silver.molecules m
        ON LOWER(m.canonical_name) = LOWER(NULLIF(b.drug_name, ''))
        OR (
            (b.drug_name IS NULL OR b.drug_name = '')
            AND LOWER(m.canonical_name) = LOWER(b.company_name)
-       )
-WHERE b.processed_to_silver = FALSE
-  AND b.cik IS NOT NULL
-  AND b.filing_type IS NOT NULL;
+       );
