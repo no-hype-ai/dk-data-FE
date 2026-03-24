@@ -55,9 +55,20 @@ SELECT
     FALSE           AS processed_to_silver,
     NOW()           AS created_at
 
-FROM mol_raw.sec_edgar
-WHERE
-    response_status = 200
-    AND processed_to_bronze = FALSE
-    AND response_body->>'cik' IS NOT NULL
-    AND request_timestamp BETWEEN @start_dt AND @end_dt;
+FROM (
+    -- Deduplicate raw: the SEC fetcher re-fetches the same filings across multiple drug
+    -- queries (same CIK). Pick the latest ingestion per accession_number / filing key.
+    SELECT DISTINCT ON (
+        COALESCE(response_body->>'accession_number',
+                 (response_body->>'cik') || '_' || (response_body->>'filing_type') || '_' || (response_body->>'filing_date'))
+    ) *
+    FROM mol_raw.sec_edgar
+    WHERE response_status = 200
+      AND processed_to_bronze = FALSE
+      AND response_body->>'cik' IS NOT NULL
+      AND request_timestamp BETWEEN @start_dt AND @end_dt
+    ORDER BY
+        COALESCE(response_body->>'accession_number',
+                 (response_body->>'cik') || '_' || (response_body->>'filing_type') || '_' || (response_body->>'filing_date')),
+        request_timestamp DESC
+) deduped
