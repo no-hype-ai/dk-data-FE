@@ -1,11 +1,11 @@
 -- SQLMesh Model: Bronze CMS DMEPOS Utilization
--- Normalizes raw Durable Medical Equipment utilization to typed Bronze columns
+-- Extracts typed columns from JSONB response_body
 -- Part of: 016-cms-puf-datasource-integration
 
 MODEL (
     name hcs_bronze.cms_dmepos,
     kind INCREMENTAL_BY_TIME_RANGE (
-        time_column _loaded_at,
+        time_column ingested_at,
         batch_size 500
     ),
     cron '@daily',
@@ -14,15 +14,16 @@ MODEL (
 );
 
 SELECT
-    TRIM(npi)::TEXT                             AS npi,
-    TRIM(hcpcs_code)::TEXT                      AS hcpcs_code,
-    COALESCE(NULLIF(TRIM(total_services), ''), '0')::INTEGER AS total_services,
-    COALESCE(NULLIF(TRIM(total_beneficiaries), ''), '0')::INTEGER AS total_beneficiaries,
-    COALESCE(NULLIF(TRIM(avg_submitted_charge), ''), '0')::NUMERIC(10,2) AS avg_submitted_charge,
-    COALESCE(NULLIF(TRIM(avg_medicare_payment), ''), '0')::NUMERIC(10,2) AS avg_medicare_payment,
-    EXTRACT(YEAR FROM _loaded_at)::INTEGER      AS year,
-    _loaded_at,
-    _source_file,
-    _source_hash
+    response_body->>'npi'                                       AS npi,
+    response_body->>'hcpcs_code'                                AS hcpcs_code,
+    (response_body->>'total_services')::INTEGER                 AS total_services,
+    (response_body->>'total_beneficiaries')::INTEGER            AS total_beneficiaries,
+    (response_body->>'avg_submitted_charge')::NUMERIC(10,2)     AS avg_submitted_charge,
+    (response_body->>'avg_medicare_payment')::NUMERIC(10,2)     AS avg_medicare_payment,
+    response_body                                               AS raw_json,
+    id                                                          AS raw_source_id,
+    'cms_dmepos'                                                AS source,
+    ingested_at
 FROM hcs_raw.cms_dmepos
-WHERE _loaded_at BETWEEN @start_dt AND @end_dt;
+WHERE response_status = 200
+  AND ingested_at BETWEEN @start_dt AND @end_dt;

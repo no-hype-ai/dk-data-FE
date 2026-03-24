@@ -1,46 +1,21 @@
-"""CMS Cost Reports Ingestor.
-
-Loads hospital financial metrics from CMS Cost Reports (HCRIS).
-Source: https://data.cms.gov/provider-compliance/cost-report
-"""
-
+"""Source loader for CMS Cost Reports (HCRIS)."""
+import csv
 import hashlib
+import json
 import logging
 from pathlib import Path
-from decimal import Decimal
-from typing import Optional
+from typing import Any, Dict, Optional
 
-import pandas as pd
-from pydantic import ValidationError
-
-from ..utils.database import get_cursor, get_connection
-from ..utils.validators import CMSCostReportRecord
+from ..utils.database import get_connection
 
 logger = logging.getLogger(__name__)
 
-# Column mapping for cost report data - supports multiple column name formats
-COLUMN_MAPPING = {
-    # Provider ID
-    'Provider CCN': 'provider_id',
-    # Fiscal year dates
-    'Fiscal Year Begin Date': 'fiscal_year_begin',
-    'Fiscal Year End Date': 'fiscal_year_end',
-    # Bed count variations
-    'Total Beds': 'total_beds',
-    'Number of Beds': 'total_beds',
-    # Discharge count variations
-    'Total Discharges': 'total_discharges',
-    'Total Discharges (V + XVIII + XIX + Unknown)': 'total_discharges',
-    # Revenue variations
-    'Net Patient Revenue': 'net_patient_revenue',
-    # Operating expenses variations
-    'Total Operating Expenses': 'total_operating_expenses',
-    'Less Total Operating Expense': 'total_operating_expenses',
-}
+SOURCE_NAME = 'cms_cost_reports'
+TABLE = 'hcs_raw.cms_cost_reports'
+API_ENDPOINT = 'cms_cost_reports'
 
 
 def calculate_file_hash(filepath: str) -> str:
-    """Calculate MD5 hash of a file."""
     hash_md5 = hashlib.md5()
     with open(filepath, 'rb') as f:
         for chunk in iter(lambda: f.read(4096), b''):
@@ -48,151 +23,85 @@ def calculate_file_hash(filepath: str) -> str:
     return hash_md5.hexdigest()
 
 
-def calculate_operating_margin(revenue: Optional[Decimal], expenses: Optional[Decimal]) -> Optional[Decimal]:
-    """Calculate operating margin as (revenue - expenses) / revenue."""
-    if revenue is None or expenses is None or revenue == 0:
-        return None
-    try:
-        margin = (revenue - expenses) / revenue
-        return round(margin, 4)
-    except (ZeroDivisionError, TypeError):
-        return None
-
-
 def load_cms_cost_reports(
     filepath: str,
-    batch_size: int = 1000
-) -> dict:
+    batch_size: int = 1000,
+) -> Dict[str, Any]:
+    """Load CMS Cost Reports CSV into hcs_raw.cms_cost_reports as JSONB.
+
+    Stores raw CSV rows verbatim; column names are discovered dynamically
+    from the CSV header rather than being hard-coded.
     """
-    Load CMS Cost Report data from CSV file.
-
-    Args:
-        filepath: Path to the CMS CSV file.
-        batch_size: Number of records to commit at once.
-
-    Returns:
-        Dictionary with ingestion statistics.
-    """
-    logger.info(f"Loading CMS Cost Reports from {filepath}")
-
     source_hash = calculate_file_hash(filepath)
     source_file = Path(filepath).name
+    logger.info("Loading CMS Cost Reports from %s (hash=%s)", source_file, source_hash)
 
-    # Check if already loaded
-    with get_cursor() as cur:
-        cur.execute("""
-            SELECT COUNT(*) FROM hcs_raw.cms_cost_reports
-            WHERE _source_hash = %s
-        """, (source_hash,))
-        if cur.fetchone()[0] > 0:
-            logger.warning(f"File {source_file} already loaded. Skipping.")
-            return {'status': 'skipped', 'reason': 'already_loaded'}
-
-    # Read CSV
-    df = pd.read_csv(
-        filepath,
-        dtype={'Provider CCN': str},
-        parse_dates=['Fiscal Year Begin Date', 'Fiscal Year End Date'],
-        low_memory=False
-    )
-
-    # Rename columns
-    df = df.rename(columns=COLUMN_MAPPING)
-
-    logger.info(f"Found {len(df)} cost report records")
-
-    # Process records
-    records_inserted = 0
-    records_failed = 0
+    inserted = 0
+    failed = 0
     errors = []
 
     with get_connection() as conn:
         with conn.cursor() as cur:
-            for idx, row in df.iterrows():
-                try:
-                    # Calculate operating margin
-                    net_revenue = row.get('net_patient_revenue')
-                    total_expenses = row.get('total_operating_expenses')
+            with open(filepath, 'r', encoding='utf-8', errors='replace') as fh:
+                reader = csv.DictReader(fh)
+                for idx, row in enumerate(reader):
+                    try:
+                        raw_record = dict(row)
+                        raw_record['_source_file'] = source_file
+                        raw_record['_source_hash'] = source_hash
 
-                    if pd.notna(net_revenue):
-                        net_revenue = Decimal(str(net_revenue))
-                    else:
-                        net_revenue = None
+                        response_body = json.dumps(raw_record, default=str)
+                        response_hash = hashlib.sha256(response_body.encode()).hexdigest()
+                        request_id = (
+                            raw_record.get('Provider CCN')
+                            or raw_record.get('provider_id')
+                            or f'{SOURCE_NAME}_{idx}'
+                        )
 
-                    if pd.notna(total_expenses):
-                        total_expenses = Decimal(str(total_expenses))
-                    else:
-                        total_expenses = None
+                        cur.execute("""
+                            INSERT INTO hcs_raw.cms_cost_reports (
+                                request_id, api_endpoint,
+                                response_status, response_body, response_body_hash,
+                                source_id
+                            ) VALUES (%s, %s, %s, %s, %s, %s)
+                            ON CONFLICT (response_body_hash)
+                            WHERE response_body_hash IS NOT NULL
+                            DO NOTHING
+                        """, (
+                            str(request_id), API_ENDPOINT,
+                            200, response_body, response_hash,
+                            SOURCE_NAME,
+                        ))
+                        inserted += 1
 
-                    operating_margin = calculate_operating_margin(net_revenue, total_expenses)
-
-                    # Validate record
-                    record = CMSCostReportRecord(
-                        provider_id=row['provider_id'],
-                        fiscal_year_begin=row.get('fiscal_year_begin'),
-                        fiscal_year_end=row.get('fiscal_year_end'),
-                        total_beds=int(row['total_beds']) if pd.notna(row.get('total_beds')) else None,
-                        total_discharges=int(row['total_discharges']) if pd.notna(row.get('total_discharges')) else None,
-                        net_patient_revenue=net_revenue,
-                        total_operating_expenses=total_expenses,
-                        operating_margin=operating_margin
-                    )
-
-                    cur.execute("""
-                        INSERT INTO hcs_raw.cms_cost_reports (
-                            provider_id, fiscal_year_begin, fiscal_year_end,
-                            total_beds, total_discharges, net_patient_revenue,
-                            total_operating_expenses, operating_margin, _source_hash
-                        ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
-                    """, (
-                        record.provider_id,
-                        record.fiscal_year_begin,
-                        record.fiscal_year_end,
-                        record.total_beds,
-                        record.total_discharges,
-                        record.net_patient_revenue,
-                        record.total_operating_expenses,
-                        record.operating_margin,
-                        source_hash
-                    ))
-                    records_inserted += 1
-
-                    if records_inserted % batch_size == 0:
-                        conn.commit()
-
-                except ValidationError as e:
-                    records_failed += 1
-                    errors.append({'row': idx, 'error': str(e)})
-
-                except Exception as e:
-                    records_failed += 1
-                    errors.append({'row': idx, 'error': str(e)})
-                    logger.error(f"Error at row {idx}: {e}")
+                        if inserted % batch_size == 0:
+                            conn.commit()
+                    except Exception as e:
+                        failed += 1
+                        if len(errors) < 10:
+                            errors.append({'index': idx, 'error': str(e)[:200]})
+                        logger.error("%s record %d failed: %s", SOURCE_NAME, idx, e)
 
             conn.commit()
 
-    logger.info(f"CMS Cost Reports load complete: {records_inserted} inserted, {records_failed} failed")
-
+    logger.info("%s load: %d inserted, %d failed", SOURCE_NAME, inserted, failed)
     return {
-        'status': 'success',
-        'records_inserted': records_inserted,
-        'records_failed': records_failed,
+        'status': 'success' if failed == 0 else 'partial',
+        'records_inserted': inserted,
+        'records_failed': failed,
         'source_file': source_file,
-        'errors': errors[:10]
+        'errors': errors[:10],
     }
 
 
 def main():
-    """CLI entry point."""
     import argparse
-
     parser = argparse.ArgumentParser(description='Load CMS Cost Reports')
     parser.add_argument('filepath', help='Path to CMS CSV file')
     parser.add_argument('--batch-size', type=int, default=1000)
-
     args = parser.parse_args()
-    logging.basicConfig(level=logging.INFO)
-
+    import logging as _logging
+    _logging.basicConfig(level=_logging.INFO)
     result = load_cms_cost_reports(args.filepath, args.batch_size)
     print(f"Result: {result}")
 

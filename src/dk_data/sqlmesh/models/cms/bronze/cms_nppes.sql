@@ -1,11 +1,11 @@
--- SQLMesh Model: Bronze CMS NPPES
--- Normalizes raw NPPES provider identity data to typed Bronze columns
+-- SQLMesh Model: Bronze CMS NPPES Provider Registry
+-- Extracts typed columns from JSONB response_body
 -- Part of: 016-cms-puf-datasource-integration
 
 MODEL (
     name hcs_bronze.cms_nppes,
     kind INCREMENTAL_BY_TIME_RANGE (
-        time_column _loaded_at,
+        time_column ingested_at,
         batch_size 500
     ),
     cron '@daily',
@@ -14,24 +14,22 @@ MODEL (
 );
 
 SELECT
-    TRIM(npi)::TEXT                         AS npi,
-    UPPER(TRIM(entity_type))                AS entity_type,
-    UPPER(TRIM(name_first))                 AS name_first,
-    UPPER(TRIM(name_last))                  AS name_last,
-    UPPER(TRIM(name_org))                   AS name_org,
-    UPPER(TRIM(credential))                 AS credential,
-    TRIM(taxonomy_code)::TEXT               AS taxonomy_code,
-    UPPER(TRIM(practice_address_1))         AS practice_address_1,
-    UPPER(TRIM(practice_city))              AS practice_city,
-    UPPER(TRIM(practice_state))             AS practice_state,
-    TRIM(practice_zip)::TEXT                AS practice_zip,
-    TRIM(practice_phone)::TEXT              AS practice_phone,
-    enumeration_date::DATE                  AS enumeration_date,
-    last_updated::DATE                      AS last_updated,
-    deactivation_date::DATE                 AS deactivation_date,
-    UPPER(TRIM(gender))                     AS gender,
-    _loaded_at,
-    _source_file,
-    _source_hash
+    response_body->>'npi'                   AS npi,
+    response_body->>'entity_type_code'      AS entity_type_code,
+    response_body->>'provider_organization_name' AS provider_organization_name,
+    response_body->>'provider_last_name'    AS provider_last_name,
+    response_body->>'provider_first_name'   AS provider_first_name,
+    response_body->>'provider_credential_text' AS provider_credential_text,
+    response_body->>'provider_enumeration_date' AS provider_enumeration_date,
+    response_body->>'provider_gender_code'  AS provider_gender_code,
+    response_body->>'provider_business_practice_location_address_state_name' AS practice_state,
+    response_body->>'provider_business_practice_location_address_postal_code' AS practice_zip,
+    response_body->>'provider_business_practice_location_address_telephone_number' AS practice_phone,
+    response_body->>'healthcare_provider_taxonomy_code_1' AS taxonomy_code_1,
+    response_body                           AS raw_json,
+    id                                      AS raw_source_id,
+    'cms_nppes'                             AS source,
+    ingested_at
 FROM hcs_raw.cms_nppes
-WHERE _loaded_at BETWEEN @start_dt AND @end_dt;
+WHERE response_status = 200
+  AND ingested_at BETWEEN @start_dt AND @end_dt;

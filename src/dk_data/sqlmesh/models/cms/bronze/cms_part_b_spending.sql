@@ -1,11 +1,11 @@
--- SQLMesh Model: Bronze CMS Part B Spending by Drug
--- Normalizes raw Part B Drug Spending Dashboard to typed Bronze columns
+-- SQLMesh Model: Bronze CMS Part B Drug Spending
+-- Extracts typed columns from JSONB response_body
 -- Part of: 016-cms-puf-datasource-integration
 
 MODEL (
     name hcs_bronze.cms_part_b_spending,
     kind INCREMENTAL_BY_TIME_RANGE (
-        time_column _loaded_at,
+        time_column ingested_at,
         batch_size 500
     ),
     cron '@daily',
@@ -14,15 +14,17 @@ MODEL (
 );
 
 SELECT
-    TRIM(hcpcs_code)::TEXT                      AS hcpcs_code,
-    UPPER(TRIM(hcpcs_description))              AS hcpcs_description,
-    COALESCE(total_spending, 0)::NUMERIC(14,2)  AS total_spending,
-    COALESCE(total_claims, 0)::INTEGER          AS total_claims,
-    COALESCE(total_beneficiaries, 0)::INTEGER   AS total_beneficiaries,
-    COALESCE(avg_cost_per_claim, 0)::NUMERIC(10,2) AS avg_cost_per_claim,
-    year::INTEGER                               AS year,
-    _loaded_at,
-    _source_file,
-    _source_hash
+    response_body->>'hcpcs_code'                            AS hcpcs_code,
+    response_body->>'hcpcs_description'                     AS hcpcs_description,
+    (response_body->>'total_spending')::NUMERIC(14,2)       AS total_spending,
+    (response_body->>'total_claims')::INTEGER               AS total_claims,
+    (response_body->>'total_beneficiaries')::INTEGER        AS total_beneficiaries,
+    (response_body->>'avg_cost_per_claim')::NUMERIC(10,2)   AS avg_cost_per_claim,
+    (response_body->>'year')::INTEGER                       AS year,
+    response_body                                           AS raw_json,
+    id                                                      AS raw_source_id,
+    'cms_part_b_spending'                                   AS source,
+    ingested_at
 FROM hcs_raw.cms_part_b_spending
-WHERE _loaded_at BETWEEN @start_dt AND @end_dt;
+WHERE response_status = 200
+  AND ingested_at BETWEEN @start_dt AND @end_dt;

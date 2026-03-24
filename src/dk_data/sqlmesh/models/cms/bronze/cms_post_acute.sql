@@ -1,26 +1,30 @@
 -- SQLMesh Model: Bronze CMS Post-Acute Care
--- Normalizes raw Post-Acute Care PUF to typed Bronze columns
+-- Extracts typed columns from JSONB response_body
 -- Part of: 016-cms-puf-datasource-integration
 
 MODEL (
     name hcs_bronze.cms_post_acute,
     kind INCREMENTAL_BY_TIME_RANGE (
-        time_column _loaded_at,
+        time_column ingested_at,
         batch_size 500
     ),
     cron '@daily',
-    audits (not_null(columns := (provider_id))),
-    grain (provider_id)
+    audits (not_null(columns := (ccn))),
+    grain (ccn, year)
 );
 
 SELECT
-    TRIM(provider_id)::TEXT                     AS provider_id,
-    UPPER(TRIM(provider_type))                  AS provider_type,
-    COALESCE(total_episodes, 0)::INTEGER        AS total_episodes,
-    COALESCE(avg_spending_per_episode, 0)::NUMERIC(10,2) AS avg_spending_per_episode,
-    year::INTEGER                               AS year,
-    _loaded_at,
-    _source_file,
-    _source_hash
+    response_body->>'ccn'                                   AS ccn,
+    response_body->>'provider_name'                         AS provider_name,
+    response_body->>'provider_type'                         AS provider_type,
+    (response_body->>'total_episodes')::INTEGER             AS total_episodes,
+    (response_body->>'avg_episode_payment')::NUMERIC(12,2)  AS avg_episode_payment,
+    (response_body->>'readmission_rate')::NUMERIC(6,4)      AS readmission_rate,
+    (response_body->>'year')::INTEGER                       AS year,
+    response_body                                           AS raw_json,
+    id                                                      AS raw_source_id,
+    'cms_post_acute'                                        AS source,
+    ingested_at
 FROM hcs_raw.cms_post_acute
-WHERE _loaded_at BETWEEN @start_dt AND @end_dt;
+WHERE response_status = 200
+  AND ingested_at BETWEEN @start_dt AND @end_dt;

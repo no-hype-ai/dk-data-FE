@@ -28,9 +28,15 @@ CREATE TABLE IF NOT EXISTS mol_raw.ema (
     ingested_at         TIMESTAMPTZ DEFAULT NOW(),
     created_at          TIMESTAMPTZ DEFAULT NOW()
 );
-CREATE INDEX IF NOT EXISTS idx_ema_raw_drug  ON mol_raw.ema(drug_name);
-CREATE INDEX IF NOT EXISTS idx_ema_raw_ts    ON mol_raw.ema(ingested_at);
-CREATE INDEX IF NOT EXISTS idx_ema_raw_flag  ON mol_raw.ema(processed_to_bronze) WHERE processed_to_bronze = FALSE;
+-- Only create drug_name index if the column exists (table may have a different schema)
+DO $$ BEGIN
+    IF EXISTS (SELECT 1 FROM information_schema.columns
+               WHERE table_schema='mol_raw' AND table_name='ema' AND column_name='drug_name') THEN
+        CREATE INDEX IF NOT EXISTS idx_ema_raw_drug ON mol_raw.ema(drug_name);
+    END IF;
+    CREATE INDEX IF NOT EXISTS idx_ema_raw_ts   ON mol_raw.ema(ingested_at);
+    CREATE INDEX IF NOT EXISTS idx_ema_raw_flag ON mol_raw.ema(processed_to_bronze) WHERE processed_to_bronze = FALSE;
+END $$;
 
 -- Register ema_regulatory in ops.sync_schedules if not already there
 INSERT INTO ops.sync_schedules (source, tier, cron_expression, priority, enabled, options)

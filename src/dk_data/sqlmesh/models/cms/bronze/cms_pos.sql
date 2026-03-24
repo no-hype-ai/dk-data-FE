@@ -1,11 +1,11 @@
 -- SQLMesh Model: Bronze CMS Provider of Services (POS)
--- Normalizes raw POS facility data to typed Bronze columns
--- Part of: 016-cms-puf-datasource-integration (Phase 3 — Facility MVP)
+-- Extracts typed columns from JSONB response_body
+-- Part of: 016-cms-puf-datasource-integration
 
 MODEL (
     name hcs_bronze.cms_pos,
     kind INCREMENTAL_BY_TIME_RANGE (
-        time_column _loaded_at,
+        time_column ingested_at,
         batch_size 500
     ),
     cron '@daily',
@@ -14,16 +14,19 @@ MODEL (
 );
 
 SELECT
-    TRIM(ccn)::TEXT                             AS ccn,
-    UPPER(TRIM(facility_name))                  AS facility_name,
-    UPPER(TRIM(facility_type))                  AS facility_type,
-    TRIM(address)                               AS address,
-    UPPER(TRIM(city))                           AS city,
-    UPPER(TRIM(state))                          AS state,
-    TRIM(zip_code)::TEXT                        AS zip_code,
-    bed_count::INTEGER                          AS bed_count,
-    _loaded_at,
-    _source_file,
-    _source_hash
+    response_body->>'ccn'               AS ccn,
+    response_body->>'facility_name'     AS facility_name,
+    response_body->>'street_address'    AS street_address,
+    response_body->>'city'              AS city,
+    response_body->>'state'             AS state,
+    response_body->>'zip_code'          AS zip_code,
+    response_body->>'provider_type'     AS provider_type,
+    (response_body->>'beds')::INTEGER   AS beds,
+    response_body->>'ownership_type'    AS ownership_type,
+    response_body                       AS raw_json,
+    id                                  AS raw_source_id,
+    'cms_pos'                           AS source,
+    ingested_at
 FROM hcs_raw.cms_pos
-WHERE _loaded_at BETWEEN @start_dt AND @end_dt;
+WHERE response_status = 200
+  AND ingested_at BETWEEN @start_dt AND @end_dt;

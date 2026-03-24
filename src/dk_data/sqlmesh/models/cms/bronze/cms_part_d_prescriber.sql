@@ -1,29 +1,35 @@
--- SQLMesh Model: Bronze CMS Part D Prescriber
--- Normalizes raw Part D Prescriber PUF data to typed Bronze columns
+-- SQLMesh Model: Bronze CMS Part D Prescriber PUF
+-- Extracts typed columns from JSONB response_body
 -- Part of: 016-cms-puf-datasource-integration
 
 MODEL (
     name hcs_bronze.cms_part_d_prescriber,
     kind INCREMENTAL_BY_TIME_RANGE (
-        time_column _loaded_at,
+        time_column ingested_at,
         batch_size 500
     ),
     cron '@daily',
-    audits (not_null(columns := (npi, drug_name, year))),
-    grain (npi, drug_name, year)
+    audits (not_null(columns := (npi, drug_brand_name, year))),
+    grain (npi, drug_brand_name, year)
 );
 
 SELECT
-    TRIM(npi)::TEXT                                     AS npi,
-    UPPER(TRIM(drug_name))                              AS drug_name,
-    UPPER(TRIM(generic_name))                           AS generic_name,
-    COALESCE(total_claim_count, 0)::INTEGER             AS total_claims,
-    COALESCE(total_30_day_fill_count, 0)::NUMERIC       AS total_30_day_fills,
-    COALESCE(total_drug_cost, 0)::NUMERIC(12,2)         AS total_drug_cost,
-    COALESCE(total_beneficiary_count, 0)::INTEGER       AS total_beneficiaries,
-    year::INTEGER                                       AS year,
-    _loaded_at,
-    _source_file,
-    _source_hash
+    response_body->>'npi'                                   AS npi,
+    response_body->>'drug_brand_name'                       AS drug_brand_name,
+    response_body->>'drug_generic_name'                     AS drug_generic_name,
+    response_body->>'prescriber_last_org_name'              AS prescriber_last_org_name,
+    response_body->>'prescriber_first_name'                 AS prescriber_first_name,
+    response_body->>'prescriber_state'                      AS prescriber_state,
+    response_body->>'prescriber_type'                       AS prescriber_type,
+    (response_body->>'total_claims')::INTEGER               AS total_claims,
+    (response_body->>'total_30day_fills')::NUMERIC          AS total_30day_fills,
+    (response_body->>'total_drug_cost')::NUMERIC(12,2)      AS total_drug_cost,
+    (response_body->>'total_beneficiaries')::INTEGER        AS total_beneficiaries,
+    (response_body->>'year')::INTEGER                       AS year,
+    response_body                                           AS raw_json,
+    id                                                      AS raw_source_id,
+    'cms_part_d_prescriber'                                 AS source,
+    ingested_at
 FROM hcs_raw.cms_part_d_prescriber
-WHERE _loaded_at BETWEEN @start_dt AND @end_dt;
+WHERE response_status = 200
+  AND ingested_at BETWEEN @start_dt AND @end_dt;

@@ -1,11 +1,11 @@
--- SQLMesh Model: Bronze CMS PECOS
--- Normalizes raw PECOS provider enrollment data to typed Bronze columns
--- Part of: 016-cms-puf-datasource-integration (Phase 3 — Facility MVP)
+-- SQLMesh Model: Bronze CMS PECOS Provider Enrollment
+-- Extracts typed columns from JSONB response_body
+-- Part of: 016-cms-puf-datasource-integration
 
 MODEL (
     name hcs_bronze.cms_pecos,
     kind INCREMENTAL_BY_TIME_RANGE (
-        time_column _loaded_at,
+        time_column ingested_at,
         batch_size 500
     ),
     cron '@daily',
@@ -14,13 +14,17 @@ MODEL (
 );
 
 SELECT
-    TRIM(enrollment_id)::TEXT                   AS enrollment_id,
-    TRIM(npi)::TEXT                             AS npi,
-    UPPER(TRIM(organization_name))              AS org_name,
-    UPPER(TRIM(enrollment_type))                AS enrollment_type,
-    UPPER(TRIM(state))                          AS enrollment_state,
-    _loaded_at,
-    _source_file,
-    _source_hash
+    response_body->>'enrollment_id'     AS enrollment_id,
+    response_body->>'npi'               AS npi,
+    response_body->>'organization_name' AS organization_name,
+    response_body->>'enrollment_type'   AS enrollment_type,
+    response_body->>'state'             AS enrollment_state,
+    response_body->>'first_name'        AS first_name,
+    response_body->>'last_name'         AS last_name,
+    response_body                       AS raw_json,
+    id                                  AS raw_source_id,
+    'cms_pecos'                         AS source,
+    ingested_at
 FROM hcs_raw.cms_pecos
-WHERE _loaded_at BETWEEN @start_dt AND @end_dt;
+WHERE response_status = 200
+  AND ingested_at BETWEEN @start_dt AND @end_dt;
