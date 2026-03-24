@@ -20,8 +20,14 @@ class Adapter(BaseAdapter):
         return "mol_raw"
 
     def build_url(self, base_url: str, drug_name: str, params: dict) -> str:
-        """ClinicalTrials.gov v2 API uses query.term parameter."""
-        return f"{base_url}?query.term={quote(drug_name)}&pageSize=50"
+        """ClinicalTrials.gov v2 API — query.intr targets the drug intervention field.
+
+        query.term is broad text search (titles, descriptions) and returns too many
+        off-target results. query.intr searches the intervention/drug fields specifically,
+        matching only trials where the drug is an actual intervention.
+        countTotal=true returns the totalCount so consumers know how many trials exist.
+        """
+        return f"{base_url}?query.intr={quote(drug_name)}&countTotal=true&pageSize=50"
 
     def normalize(self, api_response: dict) -> dict:
         """Normalize ClinicalTrials.gov v2 search response."""

@@ -4,9 +4,7 @@
 
 MODEL (
     name mol_gold.safety_signals,
-    kind INCREMENTAL_BY_UNIQUE_KEY (
-        unique_key molecule_id
-    ),
+    kind FULL,
     cron '@weekly',
     audits (
         not_null(columns := (molecule_id, canonical_name))

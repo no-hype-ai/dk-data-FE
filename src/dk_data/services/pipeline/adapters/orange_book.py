@@ -44,7 +44,7 @@ class Adapter(BaseAdapter):
         This fetches product/submission data. Patent data must be enriched
         separately from the Orange Book CSV bulk download.
         """
-        return f'{base_url}?search=openfda.generic_name:"{quote(drug_name)}"&limit=5'
+        return f'{base_url}?search=openfda.generic_name:"{quote(drug_name)}"&limit=20'
 
     def normalize(self, api_response: dict) -> dict:
         """Normalize Drugs@FDA response and flatten products with submissions.

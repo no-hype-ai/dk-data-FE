@@ -21,7 +21,7 @@ class Adapter(BaseAdapter):
 
     def build_url(self, base_url: str, drug_name: str, params: dict) -> str:
         """OpenFDA drug/label uses search parameter with openfda field queries."""
-        return f'{base_url}?search=openfda.generic_name:"{quote(drug_name)}"&limit=5'
+        return f'{base_url}?search=openfda.generic_name:"{quote(drug_name)}"&limit=20'
 
     def normalize(self, api_response: dict) -> dict:
         """Normalize OpenFDA drug/label response."""

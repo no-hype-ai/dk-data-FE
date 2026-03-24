@@ -20,17 +20,20 @@ class Adapter(BaseAdapter):
         return "mol_raw"
 
     def build_url(self, base_url: str, drug_name: str, params: dict) -> str:
-        """OpenFDA drug/event (FAERS) — fetch 1000 most recent reports for the drug.
+        """OpenFDA drug/event (FAERS) — fetch most recent reports for the drug.
 
-        Searches openfda.generic_name OR openfda.brand_name to maximise coverage
-        (both fields resolve to the same reports for most drugs, but OR catches
-        cases where only one is populated). Results sorted newest-first.
-        openFDA hard cap: skip+limit ≤ 25,000; limit=1000 is the per-request max.
+        Uses openfda.generic_name which covers all FDA-linked reports (17K+ for
+        durvalumab). Results sorted newest-first so the most recent safety signals
+        are always captured.
+
+        Limits:
+          - Without API key (OPENFDA_API_KEY): openFDA caps at 100 per request.
+          - With API key: 1000 per request (key is appended by _fetch_external).
+        100 is used here as the safe default; if the key is present _fetch_external
+        appends it and openFDA silently upgrades the effective limit to 1000.
         """
-        q_generic = f'patient.drug.openfda.generic_name:"{quote(drug_name)}"'
-        q_brand   = f'patient.drug.openfda.brand_name:"{quote(drug_name)}"'
-        search    = f"({q_generic}+{q_brand})"
-        return f"{base_url}?search={search}&sort=receivedate:desc&limit=1000"
+        search = f'patient.drug.openfda.generic_name:"{quote(drug_name)}"'
+        return f"{base_url}?search={search}&sort=receivedate:desc&limit=100"
 
     def normalize(self, api_response: dict) -> dict:
         """Normalize OpenFDA drug/event (FAERS) response."""
