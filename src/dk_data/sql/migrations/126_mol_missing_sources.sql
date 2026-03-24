@@ -163,10 +163,16 @@ CREATE TABLE IF NOT EXISTS mol_bronze.bindingdb (
     source_updated_at   TIMESTAMPTZ,
     UNIQUE(bindingdb_id)
 );
-CREATE INDEX IF NOT EXISTS idx_bindingdb_bro_id       ON mol_bronze.bindingdb(bindingdb_id);
-CREATE INDEX IF NOT EXISTS idx_bindingdb_bro_inchi    ON mol_bronze.bindingdb(inchi_key);
-CREATE INDEX IF NOT EXISTS idx_bindingdb_bro_target   ON mol_bronze.bindingdb(target_name);
-CREATE INDEX IF NOT EXISTS idx_bindingdb_bro_flag     ON mol_bronze.bindingdb(processed_to_silver) WHERE processed_to_silver = FALSE;
+-- Indexes only if SQLMesh has not already created mol_bronze.bindingdb as a view
+DO $$ BEGIN
+    IF (SELECT relkind FROM pg_class c JOIN pg_namespace n ON c.relnamespace=n.oid
+        WHERE n.nspname='mol_bronze' AND c.relname='bindingdb') = 'r' THEN
+        CREATE INDEX IF NOT EXISTS idx_bindingdb_bro_id     ON mol_bronze.bindingdb(bindingdb_id);
+        CREATE INDEX IF NOT EXISTS idx_bindingdb_bro_inchi  ON mol_bronze.bindingdb(inchi_key);
+        CREATE INDEX IF NOT EXISTS idx_bindingdb_bro_target ON mol_bronze.bindingdb(target_name);
+        CREATE INDEX IF NOT EXISTS idx_bindingdb_bro_flag   ON mol_bronze.bindingdb(processed_to_silver) WHERE processed_to_silver = FALSE;
+    END IF;
+END $$;
 
 -- WHO INN Bronze — international nonproprietary names
 CREATE TABLE IF NOT EXISTS mol_bronze.who_inn (
@@ -191,11 +197,16 @@ CREATE TABLE IF NOT EXISTS mol_bronze.who_inn (
     source_updated_at   TIMESTAMPTZ,
     UNIQUE(inn_name)
 );
-CREATE INDEX IF NOT EXISTS idx_who_inn_bro_name    ON mol_bronze.who_inn(inn_name);
-CREATE INDEX IF NOT EXISTS idx_who_inn_bro_inchi   ON mol_bronze.who_inn(inchi_key);
-CREATE INDEX IF NOT EXISTS idx_who_inn_bro_stem    ON mol_bronze.who_inn(inn_stem);
-CREATE INDEX IF NOT EXISTS idx_who_inn_bro_codes   ON mol_bronze.who_inn USING GIN(research_codes);
-CREATE INDEX IF NOT EXISTS idx_who_inn_bro_flag    ON mol_bronze.who_inn(processed_to_silver) WHERE processed_to_silver = FALSE;
+DO $$ BEGIN
+    IF (SELECT relkind FROM pg_class c JOIN pg_namespace n ON c.relnamespace=n.oid
+        WHERE n.nspname='mol_bronze' AND c.relname='who_inn') = 'r' THEN
+        CREATE INDEX IF NOT EXISTS idx_who_inn_bro_name  ON mol_bronze.who_inn(inn_name);
+        CREATE INDEX IF NOT EXISTS idx_who_inn_bro_inchi ON mol_bronze.who_inn(inchi_key);
+        CREATE INDEX IF NOT EXISTS idx_who_inn_bro_stem  ON mol_bronze.who_inn(inn_stem);
+        CREATE INDEX IF NOT EXISTS idx_who_inn_bro_codes ON mol_bronze.who_inn USING GIN(research_codes);
+        CREATE INDEX IF NOT EXISTS idx_who_inn_bro_flag  ON mol_bronze.who_inn(processed_to_silver) WHERE processed_to_silver = FALSE;
+    END IF;
+END $$;
 
 -- RxNorm Bronze — FDA drug nomenclature concepts
 CREATE TABLE IF NOT EXISTS mol_bronze.rxnorm_concepts (
@@ -217,9 +228,14 @@ CREATE TABLE IF NOT EXISTS mol_bronze.rxnorm_concepts (
     source_updated_at   TIMESTAMPTZ,
     UNIQUE(rxcui)
 );
-CREATE INDEX IF NOT EXISTS idx_rxnorm_bro_rxcui  ON mol_bronze.rxnorm_concepts(rxcui);
-CREATE INDEX IF NOT EXISTS idx_rxnorm_bro_name   ON mol_bronze.rxnorm_concepts(name);
-CREATE INDEX IF NOT EXISTS idx_rxnorm_bro_flag   ON mol_bronze.rxnorm_concepts(processed_to_silver) WHERE processed_to_silver = FALSE;
+DO $$ BEGIN
+    IF (SELECT relkind FROM pg_class c JOIN pg_namespace n ON c.relnamespace=n.oid
+        WHERE n.nspname='mol_bronze' AND c.relname='rxnorm_concepts') = 'r' THEN
+        CREATE INDEX IF NOT EXISTS idx_rxnorm_bro_rxcui ON mol_bronze.rxnorm_concepts(rxcui);
+        CREATE INDEX IF NOT EXISTS idx_rxnorm_bro_name  ON mol_bronze.rxnorm_concepts(name);
+        CREATE INDEX IF NOT EXISTS idx_rxnorm_bro_flag  ON mol_bronze.rxnorm_concepts(processed_to_silver) WHERE processed_to_silver = FALSE;
+    END IF;
+END $$;
 
 -- TDC ADMET Bronze — ADMET property predictions
 CREATE TABLE IF NOT EXISTS mol_bronze.tdc_admet (
@@ -238,10 +254,15 @@ CREATE TABLE IF NOT EXISTS mol_bronze.tdc_admet (
     source                TEXT DEFAULT 'tdc_admet',
     source_updated_at     TIMESTAMPTZ
 );
-CREATE INDEX IF NOT EXISTS idx_tdc_bro_compound  ON mol_bronze.tdc_admet(compound_id);
-CREATE INDEX IF NOT EXISTS idx_tdc_bro_inchi     ON mol_bronze.tdc_admet(inchi_key);
-CREATE INDEX IF NOT EXISTS idx_tdc_bro_dataset   ON mol_bronze.tdc_admet(dataset_name);
-CREATE INDEX IF NOT EXISTS idx_tdc_bro_flag      ON mol_bronze.tdc_admet(processed_to_silver) WHERE processed_to_silver = FALSE;
+DO $$ BEGIN
+    IF (SELECT relkind FROM pg_class c JOIN pg_namespace n ON c.relnamespace=n.oid
+        WHERE n.nspname='mol_bronze' AND c.relname='tdc_admet') = 'r' THEN
+        CREATE INDEX IF NOT EXISTS idx_tdc_bro_compound ON mol_bronze.tdc_admet(compound_id);
+        CREATE INDEX IF NOT EXISTS idx_tdc_bro_inchi    ON mol_bronze.tdc_admet(inchi_key);
+        CREATE INDEX IF NOT EXISTS idx_tdc_bro_dataset  ON mol_bronze.tdc_admet(dataset_name);
+        CREATE INDEX IF NOT EXISTS idx_tdc_bro_flag     ON mol_bronze.tdc_admet(processed_to_silver) WHERE processed_to_silver = FALSE;
+    END IF;
+END $$;
 
 -- PharmGKB Bronze — pharmacogenomics annotations
 CREATE TABLE IF NOT EXISTS mol_bronze.pharmgkb (
@@ -269,11 +290,16 @@ CREATE TABLE IF NOT EXISTS mol_bronze.pharmgkb (
     source_updated_at       TIMESTAMPTZ,
     UNIQUE(pharmgkb_id)
 );
-CREATE INDEX IF NOT EXISTS idx_pharmgkb_bro_id      ON mol_bronze.pharmgkb(pharmgkb_id);
-CREATE INDEX IF NOT EXISTS idx_pharmgkb_bro_name    ON mol_bronze.pharmgkb(name);
-CREATE INDEX IF NOT EXISTS idx_pharmgkb_bro_chembl  ON mol_bronze.pharmgkb(chembl_id);
-CREATE INDEX IF NOT EXISTS idx_pharmgkb_bro_inchi   ON mol_bronze.pharmgkb(inchi_key);
-CREATE INDEX IF NOT EXISTS idx_pharmgkb_bro_flag    ON mol_bronze.pharmgkb(processed_to_silver) WHERE processed_to_silver = FALSE;
+DO $$ BEGIN
+    IF (SELECT relkind FROM pg_class c JOIN pg_namespace n ON c.relnamespace=n.oid
+        WHERE n.nspname='mol_bronze' AND c.relname='pharmgkb') = 'r' THEN
+        CREATE INDEX IF NOT EXISTS idx_pharmgkb_bro_id     ON mol_bronze.pharmgkb(pharmgkb_id);
+        CREATE INDEX IF NOT EXISTS idx_pharmgkb_bro_name   ON mol_bronze.pharmgkb(name);
+        CREATE INDEX IF NOT EXISTS idx_pharmgkb_bro_chembl ON mol_bronze.pharmgkb(chembl_id);
+        CREATE INDEX IF NOT EXISTS idx_pharmgkb_bro_inchi  ON mol_bronze.pharmgkb(inchi_key);
+        CREATE INDEX IF NOT EXISTS idx_pharmgkb_bro_flag   ON mol_bronze.pharmgkb(processed_to_silver) WHERE processed_to_silver = FALSE;
+    END IF;
+END $$;
 
 -- KEGG Drug Bronze — KEGG drug entries with targets and pathways
 CREATE TABLE IF NOT EXISTS mol_bronze.kegg_drug (
@@ -304,11 +330,16 @@ CREATE TABLE IF NOT EXISTS mol_bronze.kegg_drug (
     source_updated_at   TIMESTAMPTZ,
     UNIQUE(kegg_id)
 );
-CREATE INDEX IF NOT EXISTS idx_kegg_bro_id       ON mol_bronze.kegg_drug(kegg_id);
-CREATE INDEX IF NOT EXISTS idx_kegg_bro_name     ON mol_bronze.kegg_drug(name);
-CREATE INDEX IF NOT EXISTS idx_kegg_bro_inchi    ON mol_bronze.kegg_drug(inchi_key);
-CREATE INDEX IF NOT EXISTS idx_kegg_bro_drugbank ON mol_bronze.kegg_drug(drugbank_id);
-CREATE INDEX IF NOT EXISTS idx_kegg_bro_flag     ON mol_bronze.kegg_drug(processed_to_silver) WHERE processed_to_silver = FALSE;
+DO $$ BEGIN
+    IF (SELECT relkind FROM pg_class c JOIN pg_namespace n ON c.relnamespace=n.oid
+        WHERE n.nspname='mol_bronze' AND c.relname='kegg_drug') = 'r' THEN
+        CREATE INDEX IF NOT EXISTS idx_kegg_bro_id      ON mol_bronze.kegg_drug(kegg_id);
+        CREATE INDEX IF NOT EXISTS idx_kegg_bro_name    ON mol_bronze.kegg_drug(name);
+        CREATE INDEX IF NOT EXISTS idx_kegg_bro_inchi   ON mol_bronze.kegg_drug(inchi_key);
+        CREATE INDEX IF NOT EXISTS idx_kegg_bro_drugbank ON mol_bronze.kegg_drug(drugbank_id);
+        CREATE INDEX IF NOT EXISTS idx_kegg_bro_flag    ON mol_bronze.kegg_drug(processed_to_silver) WHERE processed_to_silver = FALSE;
+    END IF;
+END $$;
 
 -- WebSearch Bronze — web/news search results
 CREATE TABLE IF NOT EXISTS mol_bronze.websearch_results (
@@ -331,10 +362,15 @@ CREATE TABLE IF NOT EXISTS mol_bronze.websearch_results (
     source              TEXT DEFAULT 'websearch',
     source_updated_at   TIMESTAMPTZ
 );
-CREATE INDEX IF NOT EXISTS idx_websearch_bro_query  ON mol_bronze.websearch_results(search_query);
-CREATE INDEX IF NOT EXISTS idx_websearch_bro_url    ON mol_bronze.websearch_results(result_url);
-CREATE INDEX IF NOT EXISTS idx_websearch_bro_date   ON mol_bronze.websearch_results(publication_date);
-CREATE INDEX IF NOT EXISTS idx_websearch_bro_flag   ON mol_bronze.websearch_results(processed_to_silver) WHERE processed_to_silver = FALSE;
+DO $$ BEGIN
+    IF (SELECT relkind FROM pg_class c JOIN pg_namespace n ON c.relnamespace=n.oid
+        WHERE n.nspname='mol_bronze' AND c.relname='websearch_results') = 'r' THEN
+        CREATE INDEX IF NOT EXISTS idx_websearch_bro_query ON mol_bronze.websearch_results(search_query);
+        CREATE INDEX IF NOT EXISTS idx_websearch_bro_url   ON mol_bronze.websearch_results(result_url);
+        CREATE INDEX IF NOT EXISTS idx_websearch_bro_date  ON mol_bronze.websearch_results(publication_date);
+        CREATE INDEX IF NOT EXISTS idx_websearch_bro_flag  ON mol_bronze.websearch_results(processed_to_silver) WHERE processed_to_silver = FALSE;
+    END IF;
+END $$;
 
 -- ══════════════════════════════════════════════════════════════════════════════
 -- Register in ops.sync_schedules
