@@ -38,9 +38,6 @@ from .raw_to_bronze import BronzeIngestionService, TransformResult
 # Silver Layer - Entity resolution and normalization
 from .silver_transformation import SilverTransformationService, TransformationResult
 
-# Gold Layer - Aggregation and views
-from .gold_aggregation import GoldAggregationService, AggregationResult
-
 # Resolution Queue - Quarantine workflow
 from .resolution_queue import (
     ResolutionQueueService,
@@ -162,10 +159,6 @@ __all__ = [
     # Silver Layer
     'SilverTransformationService',
     'TransformationResult',
-
-    # Gold Layer
-    'GoldAggregationService',
-    'AggregationResult',
 
     # Resolution Queue
     'ResolutionQueueService',

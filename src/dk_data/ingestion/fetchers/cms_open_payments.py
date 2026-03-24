@@ -97,60 +97,66 @@ class CMSOpenPaymentsFetcher(BaseFetcher):
         return f"{self.BASE_URL}/{dataset_id}/0"
 
     def fetch(self, **kwargs) -> Dict[str, Any]:
-        """Fetch Open Payments records for the configured payment type.
+        """Fetch Open Payments records for one or all payment types.
 
-        The payment type is determined by ``self.params["payment_type"]``
-        and defaults to ``"general"``.
+        When no ``payment_type`` is specified, fetches general, research, and
+        ownership in sequence and returns all records combined.
 
         Keyword Args:
-            payment_type: Override the payment variant.
-            year: Optional year filter applied as a WHERE clause.
+            payment_type: One of general/research/ownership. Omit for all three.
+            year: Optional year filter.
             max_records: Optional cap on returned records.
 
         Returns:
             Fetch result dict with status, records list, and hash.
         """
-        payment_type = kwargs.get("payment_type") or self.params.get("payment_type", "general")
+        payment_type = kwargs.get("payment_type") or self.params.get("payment_type")
         year = kwargs.get("year") or self.params.get("year")
         max_records: Optional[int] = kwargs.get("max_records") or self.params.get("max_records")
 
-        if payment_type not in PAYMENT_TYPE_DATASETS:
-            error_msg = (
-                f"Unknown payment_type '{payment_type}'. "
-                f"Valid options: {list(PAYMENT_TYPE_DATASETS.keys())}"
-            )
-            result: Dict[str, Any] = {
-                "status": "failed",
-                "records": [],
-                "hash": None,
-                "error": error_msg,
-            }
-            self.log_fetch_result(result)
-            return result
+        # When no specific type requested, loop through all three
+        types_to_fetch = [payment_type] if payment_type else list(PAYMENT_TYPE_DATASETS.keys())
+
+        for pt in types_to_fetch:
+            if pt not in PAYMENT_TYPE_DATASETS:
+                result: Dict[str, Any] = {
+                    "status": "failed",
+                    "records": [],
+                    "hash": None,
+                    "error": f"Unknown payment_type '{pt}'. Valid: {list(PAYMENT_TYPE_DATASETS.keys())}",
+                }
+                self.log_fetch_result(result)
+                return result
 
         try:
+            all_records: List[Dict[str, Any]] = []
             year_str = str(year) if year else DEFAULT_PAYMENT_YEAR
-            years_map = PAYMENT_TYPE_DATASETS_BY_YEAR.get(payment_type, PAYMENT_TYPE_DATASETS_BY_YEAR["general"])
-            dataset_id = years_map.get(year_str, years_map[DEFAULT_PAYMENT_YEAR])
-            records = self._fetch_paginated(
-                dataset_id=dataset_id,
-                payment_type=payment_type,
-                year=year,
-                max_records=max_records,
-                resume_offset=kwargs.get('resume_offset', 0),
-            )
-            file_hash = self._save_and_hash(records, payment_type, year)
+
+            for pt in types_to_fetch:
+                years_map = PAYMENT_TYPE_DATASETS_BY_YEAR.get(pt, PAYMENT_TYPE_DATASETS_BY_YEAR["general"])
+                dataset_id = years_map.get(year_str, years_map[DEFAULT_PAYMENT_YEAR])
+                records = self._fetch_paginated(
+                    dataset_id=dataset_id,
+                    payment_type=pt,
+                    year=year,
+                    max_records=max_records,
+                    resume_offset=kwargs.get('resume_offset', 0),
+                )
+                all_records.extend(records)
+                logger.info("Fetched %d records for payment_type=%s", len(records), pt)
+
+            file_hash = self._save_and_hash(all_records, "_".join(types_to_fetch), year)
 
             result = {
                 "status": "success",
-                "records": records,
+                "records": all_records,
                 "hash": file_hash,
             }
             self.log_fetch_result(result)
             return result
 
         except Exception as exc:
-            logger.exception("Open Payments fetch failed (%s): %s", payment_type, exc)
+            logger.exception("Open Payments fetch failed: %s", exc)
             result = {
                 "status": "failed",
                 "records": [],

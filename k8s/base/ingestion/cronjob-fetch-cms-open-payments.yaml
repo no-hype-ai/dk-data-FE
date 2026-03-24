@@ -35,7 +35,6 @@ spec:
             - name: fetch-cms-open-payments
               image: ghcr.io/data-kinetic/dk-data-fe/job-trigger:main-5f46ed1
               command: ["python", "-m", "dk_data.ingestion.main", "cms_open_payments"]
-              args: ["--payment-types", "general,research,ownership"]
               env:
                 - name: POSTGRES_HOST
                   valueFrom:

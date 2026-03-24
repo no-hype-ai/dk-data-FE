@@ -1,40 +1,16 @@
 """Source loader for CMS Chronic Conditions Prevalence."""
+import hashlib
+import json
 import logging
-import os
-from datetime import datetime
 from typing import Any, Dict, List, Optional
 
-import psycopg2
-from psycopg2.extras import execute_values
-from pydantic import BaseModel, field_validator
+from ..utils.database import get_connection
 
 logger = logging.getLogger(__name__)
 
-
-class CmsChronicConditionsRecord(BaseModel):
-    """Validated record for CMS chronic conditions data."""
-
-    state: str
-    condition: str
-    prevalence_rate: Optional[float] = None
-    total_beneficiaries_with_condition: Optional[int] = None
-    per_capita_spending: Optional[float] = None
-
-    @field_validator("state")
-    @classmethod
-    def state_must_not_be_empty(cls, v: str) -> str:
-        v = v.strip()
-        if not v:
-            raise ValueError("state must not be empty")
-        return v
-
-    @field_validator("condition")
-    @classmethod
-    def condition_must_not_be_empty(cls, v: str) -> str:
-        v = v.strip()
-        if not v:
-            raise ValueError("condition must not be empty")
-        return v
+SOURCE_NAME = 'cms_chronic_conditions'
+TABLE = 'hcs_raw.cms_chronic_conditions'
+API_ENDPOINT = 'cms_chronic_conditions'
 
 
 def load_cms_chronic_conditions_data(
@@ -43,87 +19,53 @@ def load_cms_chronic_conditions_data(
     source_file: Optional[str] = None,
     batch_size: int = 500,
 ) -> Dict[str, Any]:
-    """Load CMS chronic conditions records into hcs_raw.cms_chronic_conditions."""
-    validated: List[CmsChronicConditionsRecord] = []
-    errors: List[Dict[str, Any]] = []
+    """Load CMS Chronic Conditions records into hcs_raw.cms_chronic_conditions as JSONB."""
+    if not records:
+        return {"status": "success", "records_inserted": 0, "records_failed": 0}
 
-    for idx, rec in enumerate(records):
-        try:
-            validated.append(CmsChronicConditionsRecord(**rec))
-        except Exception as exc:
-            errors.append({"row": idx, "error": str(exc)})
+    logger.info("Loading %d %s records", len(records), SOURCE_NAME)
+    inserted = 0
+    failed = 0
+    errors = []
 
-    if not validated:
-        return {
-            "status": "partial" if errors else "success",
-            "records_inserted": 0,
-            "records_failed": len(errors),
-            "errors": errors[:50],
-        }
-
-    loaded_at = datetime.utcnow()
-
-    conn = psycopg2.connect(
-        host=os.getenv("POSTGRES_HOST", "localhost"),
-        port=int(os.getenv("POSTGRES_PORT", "5432")),
-        user=os.getenv("POSTGRES_USER", "postgres"),
-        password=os.getenv("POSTGRES_PASSWORD", ""),
-        database=os.getenv("POSTGRES_DB", "dk_data"),
-    )
-
-    records_inserted = 0
-    try:
+    with get_connection() as conn:
         with conn.cursor() as cur:
-            for start in range(0, len(validated), batch_size):
-                batch = validated[start : start + batch_size]
-                values = [
-                    (
-                        r.state,
-                        r.condition,
-                        r.prevalence_rate,
-                        r.total_beneficiaries_with_condition,
-                        r.per_capita_spending,
-                        loaded_at,
-                        source_file,
-                        source_hash,
-                    )
-                    for r in batch
-                ]
-                execute_values(
-                    cur,
-                    """
-                    INSERT INTO hcs_raw.cms_chronic_conditions (
-                        state, condition, prevalence_rate,
-                        total_beneficiaries_with_condition, per_capita_spending,
-                        _loaded_at, _source_file, _source_hash
-                    ) VALUES %s
-                    ON CONFLICT (state, condition) DO UPDATE SET
-                        prevalence_rate = EXCLUDED.prevalence_rate,
-                        total_beneficiaries_with_condition = EXCLUDED.total_beneficiaries_with_condition,
-                        per_capita_spending = EXCLUDED.per_capita_spending,
-                        _loaded_at = EXCLUDED._loaded_at,
-                        _source_file = EXCLUDED._source_file,
-                        _source_hash = EXCLUDED._source_hash
-                    """,
-                    values,
-                )
-                records_inserted += len(batch)
-                logger.info(
-                    "cms_chronic_conditions: inserted batch %d–%d of %d",
-                    start, start + len(batch), len(validated),
-                )
-            conn.commit()
-    except Exception as exc:
-        conn.rollback()
-        logger.exception("cms_chronic_conditions: batch insert failed")
-        errors.append({"row": "batch", "error": str(exc)})
-    finally:
-        conn.close()
+            for idx, raw_record in enumerate(records):
+                try:
+                    response_body = json.dumps(raw_record, default=str)
+                    response_hash = hashlib.sha256(response_body.encode()).hexdigest()
+                    request_id = str(raw_record.get('state', f'{SOURCE_NAME}_{idx}'))
 
-    status = "success" if not errors else "partial"
+                    cur.execute("""
+                        INSERT INTO hcs_raw.cms_chronic_conditions (
+                            request_id, api_endpoint,
+                            response_status, response_body, response_body_hash,
+                            source_id
+                        ) VALUES (%s, %s, %s, %s, %s, %s)
+                        ON CONFLICT (response_body_hash)
+                        WHERE response_body_hash IS NOT NULL
+                        DO NOTHING
+                    """, (
+                        request_id, API_ENDPOINT,
+                        200, response_body, response_hash,
+                        SOURCE_NAME,
+                    ))
+                    inserted += 1
+
+                    if inserted % batch_size == 0:
+                        conn.commit()
+                except Exception as e:
+                    failed += 1
+                    if len(errors) < 10:
+                        errors.append({"index": idx, "error": str(e)[:200]})
+                    logger.error("%s record %d failed: %s", SOURCE_NAME, idx, e)
+
+            conn.commit()
+
+    logger.info("%s load: %d inserted, %d failed", SOURCE_NAME, inserted, failed)
     return {
-        "status": status,
-        "records_inserted": records_inserted,
-        "records_failed": len(errors),
-        "errors": errors[:50],
+        "status": "success" if failed == 0 else "partial",
+        "records_inserted": inserted,
+        "records_failed": failed,
+        "errors": errors[:10],
     }

@@ -30,7 +30,7 @@ from ..middleware.rbac import (
 from ...services.data_platform import (
     ResolutionQueueService,
 )
-from ..dependencies import get_db_pool, get_gold_service, get_resolver_service
+from ..dependencies import get_db_pool, get_resolver_service
 
 router = APIRouter(prefix="/data-platform", tags=["data-platform"])
 
@@ -1198,9 +1198,11 @@ async def trigger_gold_refresh(
 
         async def run_gold_refresh():
             try:
-                gold_service = await get_gold_service()
-                if gold_service:
-                    await gold_service.refresh_all()
+                from ...services.data_platform.sync_runner import run_gold_aggregation, PipelineMetrics
+                pool = await get_db_pool()
+                if pool:
+                    metrics = PipelineMetrics()
+                    await run_gold_aggregation(pool, metrics)
                     logger.info(f"Gold refresh job {job_id} completed")
             except Exception as e:
                 logger.error(f"Gold refresh job {job_id} failed: {e}")

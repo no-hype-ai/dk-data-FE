@@ -89,7 +89,6 @@ class MoleculeOnboardingService:
         raw_ingestion_service,
         bronze_ingestion_service=None,
         silver_transformation_service=None,
-        gold_aggregation_service=None,
         bulletproof_transformer=None,
     ):
         """
@@ -101,13 +100,11 @@ class MoleculeOnboardingService:
             raw_ingestion_service: RawIngestionService
             bronze_ingestion_service: BronzeIngestionService (optional if using transformer)
             silver_transformation_service: SilverTransformationService (optional if using transformer)
-            gold_aggregation_service: GoldAggregationService (optional)
             bulletproof_transformer: BulletproofTransformer for dynamic transformations (preferred)
         """
         self.db_pool = db_pool
         self.resolver = identifier_resolver
         self.raw_service = raw_ingestion_service
-        self.gold_service = gold_aggregation_service
 
         # Use BulletproofTransformer if provided (preferred - dynamic schema detection)
         self._transformer = bulletproof_transformer
@@ -410,10 +407,6 @@ class MoleculeOnboardingService:
                         await self.silver_service.transform_source(source, molecule_id)
             except Exception as e:
                 logger.warning(f"Failed to fetch from {source}: {e}")
-
-        # Regenerate Gold layer
-        if fetched and self.gold_service and hasattr(self.gold_service, 'aggregate_molecule'):
-            await self.gold_service.aggregate_molecule(molecule_id)
 
         return fetched
 

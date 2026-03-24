@@ -1,34 +1,16 @@
 """Source loader for CMS Post-Acute Care."""
+import hashlib
+import json
 import logging
-import os
-from datetime import datetime
 from typing import Any, Dict, List, Optional
 
-import psycopg2
-from psycopg2.extras import execute_values
-from pydantic import BaseModel, field_validator
+from ..utils.database import get_connection
 
 logger = logging.getLogger(__name__)
 
-
-class CmsPostAcuteRecord(BaseModel):
-    """Validated record for CMS post-acute care data."""
-
-    ccn: str  # mapped to DB column provider_id
-    provider_name: Optional[str] = None  # accepted from fetcher, not in DB
-    provider_type: Optional[str] = None
-    total_episodes: Optional[int] = None
-    avg_episode_payment: Optional[float] = None  # mapped to DB column avg_spending_per_episode
-    readmission_rate: Optional[float] = None  # accepted from fetcher, not in DB
-    year: Optional[int] = None
-
-    @field_validator("ccn")
-    @classmethod
-    def ccn_must_not_be_empty(cls, v: str) -> str:
-        v = v.strip()
-        if not v:
-            raise ValueError("ccn must not be empty")
-        return v
+SOURCE_NAME = 'cms_post_acute'
+TABLE = 'hcs_raw.cms_post_acute'
+API_ENDPOINT = 'cms_post_acute'
 
 
 def load_cms_post_acute_data(
@@ -37,107 +19,53 @@ def load_cms_post_acute_data(
     source_file: Optional[str] = None,
     batch_size: int = 500,
 ) -> Dict[str, Any]:
-    """Load CMS post-acute care records into hcs_raw.cms_post_acute."""
-    validated: List[CmsPostAcuteRecord] = []
-    errors: List[Dict[str, Any]] = []
+    """Load CMS Post-Acute Care records into hcs_raw.cms_post_acute as JSONB."""
+    if not records:
+        return {"status": "success", "records_inserted": 0, "records_failed": 0}
 
-    for idx, rec in enumerate(records):
-        try:
-            validated.append(CmsPostAcuteRecord(**rec))
-        except Exception as exc:
-            errors.append({"row": idx, "error": str(exc)})
+    logger.info("Loading %d %s records", len(records), SOURCE_NAME)
+    inserted = 0
+    failed = 0
+    errors = []
 
-    if not validated:
-        return {
-            "status": "partial" if errors else "success",
-            "records_inserted": 0,
-            "records_failed": len(errors),
-            "errors": errors[:50],
-        }
-
-    # Filter out records with null PK fields — the DB requires (provider_id, year)
-    # but the API legitimately returns records without year
-    before_count = len(validated)
-    validated = [r for r in validated if r.year is not None]
-    skipped_null_pk = before_count - len(validated)
-    if skipped_null_pk:
-        logger.info(
-            "cms_post_acute: skipped %d records with null PK field (year)",
-            skipped_null_pk,
-        )
-
-    if not validated:
-        return {
-            "status": "success",
-            "records_inserted": 0,
-            "records_failed": len(errors),
-            "records_skipped_null_pk": skipped_null_pk,
-            "errors": errors[:50],
-        }
-
-    loaded_at = datetime.utcnow()
-
-    conn = psycopg2.connect(
-        host=os.getenv("POSTGRES_HOST", "localhost"),
-        port=int(os.getenv("POSTGRES_PORT", "5432")),
-        user=os.getenv("POSTGRES_USER", "postgres"),
-        password=os.getenv("POSTGRES_PASSWORD", ""),
-        database=os.getenv("POSTGRES_DB", "dk_data"),
-    )
-
-    records_inserted = 0
-    try:
+    with get_connection() as conn:
         with conn.cursor() as cur:
-            for start in range(0, len(validated), batch_size):
-                batch = validated[start : start + batch_size]
-                values = [
-                    (
-                        r.ccn,
-                        r.provider_type,
-                        r.total_episodes,
-                        r.avg_episode_payment,
-                        r.year,
-                        loaded_at,
-                        source_file,
-                        source_hash,
-                    )
-                    for r in batch
-                ]
-                execute_values(
-                    cur,
-                    """
-                    INSERT INTO hcs_raw.cms_post_acute (
-                        provider_id, provider_type, total_episodes,
-                        avg_spending_per_episode, year,
-                        _loaded_at, _source_file, _source_hash
-                    ) VALUES %s
-                    ON CONFLICT (provider_id, year) DO UPDATE SET
-                        provider_type = EXCLUDED.provider_type,
-                        total_episodes = EXCLUDED.total_episodes,
-                        avg_spending_per_episode = EXCLUDED.avg_spending_per_episode,
-                        _loaded_at = EXCLUDED._loaded_at,
-                        _source_file = EXCLUDED._source_file,
-                        _source_hash = EXCLUDED._source_hash
-                    """,
-                    values,
-                )
-                records_inserted += len(batch)
-                logger.info(
-                    "cms_post_acute: inserted batch %d–%d of %d",
-                    start, start + len(batch), len(validated),
-                )
-            conn.commit()
-    except Exception as exc:
-        conn.rollback()
-        logger.exception("cms_post_acute: batch insert failed")
-        errors.append({"row": "batch", "error": str(exc)})
-    finally:
-        conn.close()
+            for idx, raw_record in enumerate(records):
+                try:
+                    response_body = json.dumps(raw_record, default=str)
+                    response_hash = hashlib.sha256(response_body.encode()).hexdigest()
+                    request_id = str(raw_record.get('ccn', f'{SOURCE_NAME}_{idx}'))
 
-    status = "success" if not errors else "partial"
+                    cur.execute("""
+                        INSERT INTO hcs_raw.cms_post_acute (
+                            request_id, api_endpoint,
+                            response_status, response_body, response_body_hash,
+                            source_id
+                        ) VALUES (%s, %s, %s, %s, %s, %s)
+                        ON CONFLICT (response_body_hash)
+                        WHERE response_body_hash IS NOT NULL
+                        DO NOTHING
+                    """, (
+                        request_id, API_ENDPOINT,
+                        200, response_body, response_hash,
+                        SOURCE_NAME,
+                    ))
+                    inserted += 1
+
+                    if inserted % batch_size == 0:
+                        conn.commit()
+                except Exception as e:
+                    failed += 1
+                    if len(errors) < 10:
+                        errors.append({"index": idx, "error": str(e)[:200]})
+                    logger.error("%s record %d failed: %s", SOURCE_NAME, idx, e)
+
+            conn.commit()
+
+    logger.info("%s load: %d inserted, %d failed", SOURCE_NAME, inserted, failed)
     return {
-        "status": status,
-        "records_inserted": records_inserted,
-        "records_failed": len(errors),
-        "errors": errors[:50],
+        "status": "success" if failed == 0 else "partial",
+        "records_inserted": inserted,
+        "records_failed": failed,
+        "errors": errors[:10],
     }

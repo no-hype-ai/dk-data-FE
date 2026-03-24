@@ -112,17 +112,6 @@ async def get_db_connection() -> AsyncGenerator:
         yield conn
 
 
-# Service factories
-async def get_gold_service():
-    """Get GoldAggregationService instance."""
-    from ..services.data_platform import GoldAggregationService
-
-    pool = await get_db_pool()
-    if pool is None:
-        return None
-    return GoldAggregationService(pool)
-
-
 async def get_resolver_service():
     """Get IdentifierResolver instance."""
     from ..services.data_platform import IdentifierResolver, FuzzyMatcher

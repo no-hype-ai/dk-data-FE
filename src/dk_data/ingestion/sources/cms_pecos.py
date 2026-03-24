@@ -1,34 +1,16 @@
 """Source loader for CMS PECOS (Provider Enrollment, Chain, and Ownership System) data."""
+import hashlib
+import json
 import logging
-import os
-from datetime import datetime
 from typing import Any, Dict, List, Optional
 
-import psycopg2
-from psycopg2.extras import execute_values
-from pydantic import BaseModel, field_validator
+from ..utils.database import get_connection
 
 logger = logging.getLogger(__name__)
 
-
-class CmsPecosRecord(BaseModel):
-    """Validated record for CMS PECOS enrollment data."""
-
-    npi: str
-    enrollment_id: Optional[str] = None
-    organization_name: Optional[str] = None
-    state: Optional[str] = None
-    enrollment_type: Optional[str] = None
-    first_name: Optional[str] = None
-    last_name: Optional[str] = None
-
-    @field_validator("npi")
-    @classmethod
-    def npi_not_empty(cls, v: str) -> str:
-        v = v.strip()
-        if not v:
-            raise ValueError("npi must not be empty")
-        return v
+SOURCE_NAME = 'cms_pecos'
+TABLE = 'hcs_raw.cms_pecos'
+API_ENDPOINT = 'cms_pecos'
 
 
 def load_cms_pecos_data(
@@ -37,94 +19,53 @@ def load_cms_pecos_data(
     source_file: Optional[str] = None,
     batch_size: int = 500,
 ) -> Dict[str, Any]:
-    """Load CMS PECOS records into hcs_raw.cms_pecos."""
-    validated: List[CmsPecosRecord] = []
-    errors: List[Dict[str, Any]] = []
+    """Load CMS PECOS records into hcs_raw.cms_pecos as JSONB."""
+    if not records:
+        return {"status": "success", "records_inserted": 0, "records_failed": 0}
 
-    for idx, rec in enumerate(records):
-        try:
-            validated.append(CmsPecosRecord(**rec))
-        except Exception as exc:
-            errors.append({"row": idx, "error": str(exc)})
+    logger.info("Loading %d %s records", len(records), SOURCE_NAME)
+    inserted = 0
+    failed = 0
+    errors = []
 
-    if not validated:
-        return {
-            "status": "partial" if errors else "success",
-            "records_inserted": 0,
-            "records_failed": len(errors),
-            "errors": errors[:50],
-        }
-
-    loaded_at = datetime.utcnow()
-
-    conn = psycopg2.connect(
-        host=os.getenv("POSTGRES_HOST", "localhost"),
-        port=int(os.getenv("POSTGRES_PORT", "5432")),
-        user=os.getenv("POSTGRES_USER", "postgres"),
-        password=os.getenv("POSTGRES_PASSWORD", ""),
-        database=os.getenv("POSTGRES_DB", "dk_data"),
-    )
-
-    records_inserted = 0
-    try:
+    with get_connection() as conn:
         with conn.cursor() as cur:
-            for start in range(0, len(validated), batch_size):
-                batch = validated[start : start + batch_size]
-                values = [
-                    (
-                        r.npi,
-                        r.enrollment_id,
-                        r.organization_name,
-                        r.state,
-                        r.enrollment_type,
-                        r.first_name,
-                        r.last_name,
-                        loaded_at,
-                        source_file,
-                        source_hash,
-                    )
-                    for r in batch
-                ]
-                execute_values(
-                    cur,
-                    """
-                    INSERT INTO hcs_raw.cms_pecos (
-                        npi, enrollment_id, organization_name,
-                        state, enrollment_type, first_name, last_name,
-                        _loaded_at, _source_file, _source_hash
-                    ) VALUES %s
-                    ON CONFLICT (npi) DO UPDATE SET
-                        enrollment_id = EXCLUDED.enrollment_id,
-                        organization_name = EXCLUDED.organization_name,
-                        state = EXCLUDED.state,
-                        enrollment_type = EXCLUDED.enrollment_type,
-                        first_name = EXCLUDED.first_name,
-                        last_name = EXCLUDED.last_name,
-                        _loaded_at = EXCLUDED._loaded_at,
-                        _source_file = EXCLUDED._source_file,
-                        _source_hash = EXCLUDED._source_hash
-                    """,
-                    values,
-                )
-                records_inserted += len(batch)
-                logger.info(
-                    "cms_pecos: inserted batch %d–%d of %d",
-                    start,
-                    start + len(batch),
-                    len(validated),
-                )
-            conn.commit()
-    except Exception as exc:
-        conn.rollback()
-        logger.exception("cms_pecos: batch insert failed")
-        errors.append({"row": "batch", "error": str(exc)})
-    finally:
-        conn.close()
+            for idx, raw_record in enumerate(records):
+                try:
+                    response_body = json.dumps(raw_record, default=str)
+                    response_hash = hashlib.sha256(response_body.encode()).hexdigest()
+                    request_id = str(raw_record.get('npi', f'{SOURCE_NAME}_{idx}'))
 
-    status = "success" if not errors else "partial"
+                    cur.execute("""
+                        INSERT INTO hcs_raw.cms_pecos (
+                            request_id, api_endpoint,
+                            response_status, response_body, response_body_hash,
+                            source_id
+                        ) VALUES (%s, %s, %s, %s, %s, %s)
+                        ON CONFLICT (response_body_hash)
+                        WHERE response_body_hash IS NOT NULL
+                        DO NOTHING
+                    """, (
+                        request_id, API_ENDPOINT,
+                        200, response_body, response_hash,
+                        SOURCE_NAME,
+                    ))
+                    inserted += 1
+
+                    if inserted % batch_size == 0:
+                        conn.commit()
+                except Exception as e:
+                    failed += 1
+                    if len(errors) < 10:
+                        errors.append({"index": idx, "error": str(e)[:200]})
+                    logger.error("%s record %d failed: %s", SOURCE_NAME, idx, e)
+
+            conn.commit()
+
+    logger.info("%s load: %d inserted, %d failed", SOURCE_NAME, inserted, failed)
     return {
-        "status": status,
-        "records_inserted": records_inserted,
-        "records_failed": len(errors),
-        "errors": errors[:50],
+        "status": "success" if failed == 0 else "partial",
+        "records_inserted": inserted,
+        "records_failed": failed,
+        "errors": errors[:10],
     }

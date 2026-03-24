@@ -30,11 +30,8 @@ spec:
               command:
                 - python
                 - -m
-                - dk_data.ingestion.fetch_data
-                - --source
-                - all
-                - --data-dir
-                - /data/raw
+                - dk_data.ingestion.main
+                - --list
               env:
                 - name: POSTGRES_HOST
                   valueFrom:
