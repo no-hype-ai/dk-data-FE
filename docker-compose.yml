@@ -177,15 +177,11 @@ services:
       dockerfile: Dockerfile
     container_name: dk-data-fe-sqlmesh-scheduler
     restart: unless-stopped
-    # `sqlmesh run` is daemon mode: reads cron from model definitions and
-    # executes each model when its schedule is due. No --select-model means
-    # ALL models are managed by the scheduler.
+    # Controlled scheduler loop: runs sqlmesh every 15 min with an advisory lock
+    # (key 42424242) shared with the job-trigger pipeline. If the job-trigger is
+    # mid-run the scheduler skips that cycle instead of deadlocking.
     entrypoint: []
-    command: >
-      sqlmesh
-        --paths /app/sqlmesh
-        --gateway local
-        run
+    command: python /app/sqlmesh/scheduler_loop.py
     working_dir: /tmp
     volumes:
       # Local dev: mount source for live edits. In K8s the image bundles /app/sqlmesh.

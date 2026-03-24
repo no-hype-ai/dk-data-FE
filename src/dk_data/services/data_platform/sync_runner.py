@@ -1842,45 +1842,78 @@ async def run_pipeline(
     if start_days_back is None:
         start_days_back = 2 if drug_name else 30
 
+    # Advisory lock key — shared with the SQLMesh scheduler entrypoint script so
+    # the scheduler and job-triggered runs never execute SQLMesh concurrently.
+    _PIPELINE_LOCK_KEY = 42424242
+
+    lock_conn = None
     try:
         pool = await get_db_pool()
 
         # Record job start
         await record_job_execution(pool, job_id, tier, sources, metrics, 'running')
 
-        # Phase 1: Raw Ingestion
+        # Phase 1: Raw Ingestion (no SQLMesh — no lock needed)
         if not skip_raw:
             logger.info("Phase 1: Raw Ingestion")
             await run_raw_ingestion(pool, sources, metrics, drug_name=drug_name, condition=condition)
 
+        # Acquire session-level advisory lock before any SQLMesh transforms.
+        # pg_try_advisory_lock is non-blocking: returns FALSE if another session
+        # already holds it (scheduler or another pipeline run), so we skip transforms
+        # rather than pile up and deadlock.
+        needs_transforms = not (skip_bronze and skip_silver and skip_gold)
+        lock_acquired = False
+        if needs_transforms:
+            import asyncpg as _asyncpg
+            db_host = os.getenv('POSTGRES_HOST', 'postgres')
+            db_port = os.getenv('POSTGRES_PORT', '5432')
+            db_name = os.getenv('POSTGRES_DB', 'dk_data')
+            db_user = os.getenv('POSTGRES_USER', 'postgres')
+            db_pass = os.getenv('POSTGRES_PASSWORD', 'postgres')
+            lock_dsn = f'postgresql://{db_user}:{db_pass}@{db_host}:{db_port}/{db_name}'
+            lock_conn = await _asyncpg.connect(lock_dsn)
+            lock_acquired = await lock_conn.fetchval(
+                'SELECT pg_try_advisory_lock($1)', _PIPELINE_LOCK_KEY
+            )
+            if not lock_acquired:
+                logger.warning(
+                    f"Pipeline {job_id_str}: SQLMesh advisory lock held by another process — "
+                    "skipping bronze/silver/gold transforms to avoid deadlock. "
+                    "Raw ingestion completed; transforms will run in the next scheduled cycle."
+                )
+                metrics.errors.append("transforms_skipped: advisory lock held by concurrent pipeline run")
+                status = 'completed_with_errors'
+                needs_transforms = False
+
         # Phase 2: Bronze Transformation
-        if not skip_bronze:
+        if not skip_bronze and needs_transforms:
             logger.info("Phase 2: Bronze Transformation")
             await run_bronze_transformation(pool, metrics, sources=sources, start_days_back=start_days_back)
 
         # Phase 3: Silver Transformation
-        if not skip_silver:
+        if not skip_silver and needs_transforms:
             logger.info("Phase 3: Silver Transformation")
             await run_silver_transformation(pool, metrics, sources=sources, start_days_back=start_days_back)
 
         # Phase 4: Entity Linking (connect trials/labels to molecules)
-        if not skip_silver:
+        if not skip_silver and needs_transforms:
             logger.info("Phase 4: Entity Linking")
             await run_entity_linking(pool, metrics)
 
         # Phase 4b: Retroactive Linking (re-link previously unlinked records)
-        if not skip_silver:
+        if not skip_silver and needs_transforms:
             logger.info("Phase 4b: Retroactive Entity Linking")
             await run_retroactive_linking(pool, metrics)
 
         # Phase 5: Gold Aggregation
-        if not skip_gold:
+        if not skip_gold and needs_transforms:
             logger.info("Phase 5: Gold Aggregation")
             await run_gold_aggregation(pool, metrics, start_days_back=start_days_back)
 
         # Phase 6: SQLMesh Transformation (optional, if configured)
         use_sqlmesh = os.getenv('USE_SQLMESH', 'false').lower() in ('true', '1', 'yes')
-        if use_sqlmesh and not skip_bronze:
+        if use_sqlmesh and not skip_bronze and needs_transforms:
             logger.info("Phase 5: SQLMesh Transformation")
             await run_sqlmesh_transformation(metrics)
 
@@ -1894,6 +1927,12 @@ async def run_pipeline(
         status = 'failed'
 
     finally:
+        if lock_conn is not None:
+            try:
+                await lock_conn.execute('SELECT pg_advisory_unlock($1)', _PIPELINE_LOCK_KEY)
+            except Exception:
+                pass
+            await lock_conn.close()
         if pool:
             # Record job completion
             await record_job_execution(pool, job_id, tier, sources, metrics, status)
