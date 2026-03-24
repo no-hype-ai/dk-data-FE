@@ -89,14 +89,7 @@ SELECT
     NOW() AS created_at,
     NOW() AS updated_at
 
-FROM (
-    -- Deduplicate bronze: multiple ingest runs produce duplicate nct_id rows.
-    -- Pick the most recently created record per nct_id so MERGE has a 1:1 source.
-    SELECT DISTINCT ON (nct_id) *
-    FROM mol_bronze.clinicaltrials
-    WHERE nct_id IS NOT NULL
-    ORDER BY nct_id, created_at DESC
-) b
+FROM mol_bronze.clinicaltrials b
 LEFT JOIN LATERAL (
     SELECT mol.molecule_id
     FROM mol_silver.molecules mol
@@ -121,4 +114,5 @@ LEFT JOIN LATERAL (
         mol.resolution_confidence DESC
     LIMIT 1
 ) m ON TRUE
+WHERE b.nct_id IS NOT NULL
 ;
