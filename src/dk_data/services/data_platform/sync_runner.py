@@ -579,12 +579,12 @@ async def run_raw_ingestion(
                 service = OpenFDAIngestion(pool)
                 count = 0
                 if drug_name:
-                    result = await service.fetch_faers_events(drug_name=drug_name, limit=100)
+                    result = await service.fetch_faers_events(drug_name=drug_name, limit=1000)
                     if result:
                         count += 1
                 else:
                     for drug in ['aspirin', 'ibuprofen', 'metformin', 'atorvastatin']:
-                        result = await service.fetch_faers_events(drug_name=drug, limit=100)
+                        result = await service.fetch_faers_events(drug_name=drug, limit=1000)
                         if result:
                             count += 1
                 results[source] = count
@@ -1154,7 +1154,7 @@ SOURCE_TO_SQLMESH_MODELS: Dict[str, Dict[str, str]] = {
         'silver': 'mol_silver.drug_labels',
     },
     'openfda_faers': {
-        'bronze': 'mol_bronze.faers_events',
+        'bronze': 'mol_bronze.openfda_faers',
         'silver': 'mol_silver.adverse_events',
     },
     'chembl': {

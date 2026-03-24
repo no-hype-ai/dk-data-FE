@@ -41,7 +41,7 @@ LAYER_MODELS = {
         'mol_bronze.pubchem',
         'mol_bronze.clinicaltrials',
         'mol_bronze.openfda_labels',
-        'mol_bronze.faers_events',
+        'mol_bronze.openfda_faers',
         'mol_bronze.drugbank',
     ],
     'silver': [

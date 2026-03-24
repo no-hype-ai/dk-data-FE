@@ -31,6 +31,10 @@ _SOURCE_AUTH_MAP: Dict[str, tuple] = {
     "pubmed": ("NCBI_API_KEY", "query", "api_key"),
 }
 
+# SEC EDGAR is public/free but requires a User-Agent in "CompanyName email" format.
+# Without it their CDN returns 403. Env var mirrors sec_edgar_client.py convention.
+_SEC_DEFAULT_USER_AGENT = "dk-data-platform admin@datakinetic.io"
+
 # WHO ICD-11 OAuth2 token cache
 _WHO_ICD_TOKEN: Optional[str] = None
 _WHO_ICD_TOKEN_EXPIRY: float = 0
@@ -165,6 +169,15 @@ class BaseMCPTool:
                     query_params[param_name] = api_key
                 elif auth_type == "header":
                     headers["Authorization"] = f"Bearer {api_key}"
+
+        # SEC EDGAR requires User-Agent "CompanyName email@domain.com" — public API,
+        # no key needed, but CDN returns 403 for requests with no/default User-Agent.
+        if self.source_name == "sec_edgar":
+            headers["User-Agent"] = os.environ.get(
+                "SEC_EDGAR_USER_AGENT",
+                os.environ.get("SEC_USER_AGENT", _SEC_DEFAULT_USER_AGENT),
+            )
+            headers["Accept"] = "application/json"
 
         # WHO ICD-11 requires OAuth2 client credentials
         if self.source_name == "who_icd":
