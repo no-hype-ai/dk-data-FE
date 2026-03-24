@@ -722,6 +722,10 @@ def refresh_metrics_from_database_sync():
                     count = cur.fetchone()[0] or 0
                     set_table_record_count(layer, table, count)
                 except Exception:
+                    # Must rollback after any query failure — psycopg2 leaves the
+                    # connection in an aborted state until rollback is called, causing
+                    # all subsequent queries in the same transaction to also fail.
+                    conn.rollback()
                     set_table_record_count(layer, table, 0)
 
         cur.close()

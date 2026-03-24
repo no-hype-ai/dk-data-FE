@@ -489,7 +489,10 @@ class RawIngestionService:
         Uses inchi_key as the primary lookup identifier.
         Returns True if data was fetched and stored successfully.
         """
-        if not inchi_key:
+        # Only skip if inchi_key is absent AND the source requires it.
+        # FAERS can be fetched by canonical_name for biologics that have NULL inchi_key.
+        SOURCES_REQUIRING_INCHI_KEY = {'pubchem', 'chembl', 'openfda_labels', 'uniprot', 'openalex'}
+        if not inchi_key and source in SOURCES_REQUIRING_INCHI_KEY:
             logger.debug(f"No inchi_key for molecule {molecule_id}, skipping {source}")
             return False
 
@@ -531,9 +534,29 @@ class RawIngestionService:
 
             elif source == 'openfda_faers':
                 url = "https://api.fda.gov/drug/event.json"
+                # Biologics (durvalumab, pembrolizumab, etc.) have NULL inchi_key —
+                # searching by inchi_key returns 0 results for them. Use canonical_name
+                # with openfda.generic_name which is FDA-normalized and case-insensitive.
+                if inchi_key:
+                    faers_search = f'patient.drug.openfda.inchi_key:"{inchi_key}"'
+                else:
+                    # Fallback for biologics: look up canonical_name from the DB
+                    async with self.db_pool.acquire() as name_conn:
+                        mol_name = await name_conn.fetchval(
+                            "SELECT canonical_name FROM mol_silver.molecules WHERE molecule_id = $1",
+                            mol_id_str
+                        )
+                    if not mol_name:
+                        return False
+                    name_upper = mol_name.upper()
+                    faers_search = (
+                        f'(patient.drug.openfda.generic_name:"{mol_name}"'
+                        f'+patient.drug.openfda.substance_name:"{name_upper}"'
+                        f'+patient.drug.openfda.brand_name:"{name_upper}")'
+                    )
                 record_id = await self.fetch_and_store(
                     source=source_enum, endpoint=url,
-                    params={'search': f'patient.drug.openfda.inchi_key:"{inchi_key}"', 'limit': 10},
+                    params={'search': faers_search, 'limit': 1000},
                     request_id=f"openfda_faers_mol_{mol_id_str[:8]}",
                 )
                 return record_id is not None
@@ -627,12 +650,27 @@ class OpenFDAIngestion(RawIngestionService):
     async def fetch_faers_events(
         self,
         drug_name: str,
-        limit: int = 100,
+        limit: int = 1000,
         skip: int = 0
     ) -> Optional[str]:
-        """Fetch FAERS adverse event reports."""
+        """Fetch FAERS adverse event reports.
+
+        Searches openfda.generic_name (FDA-normalized, case-insensitive) which reliably
+        matches biologics like durvalumab regardless of how the reporter wrote the name.
+        Falls back to brand name search for higher recall: a durvalumab report filed as
+        "IMFINZI" would be missed by generic_name alone.
+        """
+        # openfda.generic_name is case-insensitive and FDA-normalized — this is the
+        # correct field for reliable biologic matching (NOT medicinalproduct which is
+        # verbatim and case-sensitive, returning 0 results for most biologics)
+        name_upper = drug_name.upper()
+        search = (
+            f'(patient.drug.openfda.generic_name:"{drug_name}"'
+            f'+patient.drug.openfda.substance_name:"{name_upper}"'
+            f'+patient.drug.openfda.brand_name:"{name_upper}")'
+        )
         params = {
-            "search": f'patient.drug.medicinalproduct:"{drug_name}"',
+            "search": search,
             "limit": limit,
             "skip": skip,
         }

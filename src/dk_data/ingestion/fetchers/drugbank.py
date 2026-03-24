@@ -271,22 +271,41 @@ class DrugBankFetcher(BaseFetcher):
 
         logger.info("Parsing DrugBank XML from %s", filepath)
 
+        # Track nesting depth to process ONLY top-level <drug> elements.
+        # Nested <drug> stubs inside targets, metabolites, and interaction
+        # references have only drugbank-id + name — no pharmacological fields.
+        # Without depth tracking, iterparse matches ~46k empty nested stubs
+        # in addition to the ~14k real top-level drug entries.
+        drug_depth = 0
+
         try:
-            for event, elem in ET.iterparse(filepath, events=("end",)):
-                if elem.tag == f"{DRUGBANK_NS}drug" or elem.tag == "drug":
-                    record = self._parse_drug_entry(elem)
-                    if record:
-                        records.append(record)
+            for event, elem in ET.iterparse(filepath, events=("start", "end")):
+                is_drug_tag = (
+                    elem.tag == f"{DRUGBANK_NS}drug" or elem.tag == "drug"
+                )
 
-                    # Free memory
-                    elem.clear()
+                if event == "start" and is_drug_tag:
+                    drug_depth += 1
 
-                    if len(records) >= max_entries:
-                        logger.info(
-                            "Reached max_entries limit (%d), stopping parse",
-                            max_entries,
-                        )
-                        break
+                elif event == "end" and is_drug_tag:
+                    if drug_depth == 1:
+                        # Only parse top-level <drug> entries
+                        record = self._parse_drug_entry(elem)
+                        if record:
+                            records.append(record)
+
+                        # Free memory only at top level (nested elements are
+                        # still needed until their parent's "end" fires)
+                        elem.clear()
+
+                        if len(records) >= max_entries:
+                            logger.info(
+                                "Reached max_entries limit (%d), stopping parse",
+                                max_entries,
+                            )
+                            break
+
+                    drug_depth -= 1
 
         except ET.ParseError as e:
             logger.error("XML parse error: %s", e)

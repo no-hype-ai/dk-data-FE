@@ -76,5 +76,4 @@ SELECT
 FROM mol_silver.molecules m
 LEFT JOIN sec_revenue r ON m.molecule_id = r.molecule_id
 LEFT JOIN cms_spending c ON m.molecule_id = c.molecule_id
-WHERE m.needs_review = FALSE
-  AND (r.latest_revenue_usd IS NOT NULL OR c.cms_total_spending IS NOT NULL);
+WHERE m.needs_review = FALSE;
