@@ -18,6 +18,8 @@ spec:
           labels:
             severity: warning
             team: data-platform
+            product: dk-data
+            service: dk-data
           annotations:
             summary: "Data source {{ $labels.source_name }} is stale"
             description: |
@@ -31,6 +33,8 @@ spec:
           labels:
             severity: critical
             team: data-platform
+            product: dk-data
+            service: dk-data
           annotations:
             summary: "Data source {{ $labels.source_name }} critically stale (>7 days)"
             description: |
@@ -50,6 +54,8 @@ spec:
           labels:
             severity: critical
             team: data-platform
+            product: dk-data
+            service: dk-data
           annotations:
             summary: "High API error rate (>5%)"
             description: |
@@ -63,6 +69,8 @@ spec:
           labels:
             severity: critical
             team: data-platform
+            product: dk-data
+            service: dk-data
           annotations:
             summary: "PostgREST API is unavailable"
             description: "PostgREST /health probe is failing. Service may be down or unreachable."
@@ -77,6 +85,8 @@ spec:
           labels:
             severity: warning
             team: data-platform
+            product: dk-data
+            service: dk-data
           annotations:
             summary: "Batch job {{ $labels.job_name }} failed >2 times in 1h"
             description: |
@@ -89,6 +99,8 @@ spec:
           labels:
             severity: warning
             team: data-platform
+            product: dk-data
+            service: dk-data
           annotations:
             summary: "CronJob {{ $labels.cronjob }} missed schedule"
             description: |
@@ -105,6 +117,8 @@ spec:
           labels:
             severity: warning
             team: data-platform
+            product: dk-data
+            service: dk-data
           annotations:
             summary: "Molecule fetch job {{ $labels.job_name }} failed"
             description: |
@@ -118,6 +132,8 @@ spec:
           labels:
             severity: warning
             team: data-platform
+            product: dk-data
+            service: dk-data
           annotations:
             summary: "No successful molecule transform in 48h"
             description: |
@@ -131,6 +147,8 @@ spec:
           labels:
             severity: warning
             team: data-platform
+            product: dk-data
+            service: dk-data
           annotations:
             summary: "Large bronze-to-silver backlog (>10k records)"
             description: |
@@ -144,6 +162,8 @@ spec:
           labels:
             severity: warning
             team: data-platform
+            product: dk-data
+            service: dk-data
           annotations:
             summary: "Entity resolution queue backlog >1000"
             description: |
@@ -157,6 +177,8 @@ spec:
           labels:
             severity: warning
             team: data-platform
+            product: dk-data
+            service: dk-data
           annotations:
             summary: "High quarantine count (>500 molecules)"
             description: |
@@ -177,6 +199,8 @@ spec:
           labels:
             severity: warning
             team: data-platform
+            product: dk-data
+            service: dk-data
           annotations:
             summary: "Pod {{ $labels.pod }} memory usage >80%"
             description: |
@@ -189,6 +213,8 @@ spec:
           labels:
             severity: critical
             team: data-platform
+            product: dk-data
+            service: dk-data
           annotations:
             summary: "Job Trigger pod not ready for 5m"
             description: "No Job Trigger replicas are ready in namespace {{ $labels.namespace }}."

@@ -65,4 +65,4 @@ resources:
   - ghcr-secret.yaml
   # Observability (requires Prometheus Operator CRDs)
   - service-monitor.yaml
-  - alert-rules.yaml
+  - ../../monitoring/alerts/dk-data.yaml
