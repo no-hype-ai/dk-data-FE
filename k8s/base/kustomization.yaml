@@ -63,6 +63,17 @@ resources:
   # Secrets
   - doppler-secret.yaml
   - ghcr-secret.yaml
+  # Metering proxy (epic/15 — API integration & metering)
+  - metering-proxy/configmap.yaml
+  - metering-proxy/service.yaml
+  - metering-proxy/servicemonitor.yaml
   # Observability (requires Prometheus Operator CRDs)
   - service-monitor.yaml
   - alert-rules.yaml
+
+patches:
+  # Add metering proxy sidecar to PostgREST deployment
+  - path: metering-proxy/deployment-patch.yaml
+    target:
+      kind: Deployment
+      name: postgrest

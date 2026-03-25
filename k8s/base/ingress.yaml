@@ -23,6 +23,6 @@ spec:
             pathType: Prefix
             backend:
               service:
-                name: postgrest
+                name: dk-data-metering-proxy
                 port:
-                  number: 3000
+                  number: 3001
