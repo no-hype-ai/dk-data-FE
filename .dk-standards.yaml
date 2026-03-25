@@ -1,0 +1,18 @@
+# dk-data-fe standards compliance configuration
+# See: dk-planning/plans/dk-data-fe/02-standards-and-governance.md
+version: "1.0"
+tier: 2
+product: dk-data
+team: data-platform
+grace_period_until: "2026-06-30"  # Warn-only during initial alignment
+
+checks:
+  claude_md: true
+  architecture_md: true
+  github_topics: true
+  issue_labels: true
+  ci_workflows: true
+  observability: true
+  security_context: deferred  # Plan 03 — production hardening
+  pdb: deferred               # Plan 03 — production hardening
+  arc_v2_runners: deferred    # G14 — awaiting ARC v2 service container support
