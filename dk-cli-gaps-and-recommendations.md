@@ -176,15 +176,30 @@ Both `dk adopt --verify` and `dk onboard --status` expect `k8s/apps/<service>/` 
 | Done | Monitoring dashboards + alerts | ✓ |
 | Done | `_dk-alchemy-pr/README.md` | ✓ |
 | Done | Archive specs to docs/archive | ✓ |
+| Done | Rename `build-push.yaml` -> `build-deploy.yaml` | ✓ (fixed dk onboard CI check) |
+| Done | Add `dk-managed` GitHub topic | ✓ |
+| Done | Create `.dk/labels-synced` marker file | ✓ (but dk onboard still fails — see G8) |
 | Phase 4 | Restructure `k8s/` to per-service layout | Needed to pass `dk adopt --verify` |
 | Phase 5 | Rename Doppler project to `dk-data-applications` | Maintenance window needed |
-| Phase 7 | Add shared standards workflow or rename `build-push.yaml` | Needed to pass `dk onboard` |
-| Blocked | `dk labels sync` for GitHub label taxonomy | Command not shipped (G6) |
+| Blocked | Labels onboarding check | Binary uses different check than source code (G8) |
 
 ### dk onboard Score After This Session
 
 **Before:** Not runnable (role blocked)
-**After:** 4/7 (57%)
-**Achievable without CLI fixes:** 5/7 (rename workflow to `build-deploy.yaml`)
-**Achievable with Phase 4 k8s restructure:** 6/7 (85%)
-**Full 7/7 requires:** `dk labels sync` command to be shipped
+**After role fix:** 4/7 (57%)
+**After workflow rename + topic:** 5/7 (71%)
+**After Phase 4 k8s restructure:** 6/7 (85%)
+**Full 7/7 requires:** Labels check fix in dk CLI binary (G8) or `dk labels sync` to be shipped
+
+### G8. Labels Onboard Check — Binary Differs from Source
+
+**Severity:** LOW
+
+Source code at `onboard.ts:60` checks `existsSync(join(cwd, ".dk/labels-synced"))`. The marker file exists but the shipped v0.1.0 binary still fails the check. The binary likely uses an API call instead of local file check, or was built from an older version of the source.
+
+**Impact:** Cannot reach 7/7 without either a CLI update or the `dk labels sync` command.
+
+### dk adopt --verify Score After This Session
+
+**Before:** "Missing 2 platform files: `k8s/apps`, `.github/workflows/build-deploy.yaml`"
+**After:** "Missing 1 platform files: `k8s/apps`" — only k8s restructure (Phase 4) remains
