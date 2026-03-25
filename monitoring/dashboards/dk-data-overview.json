@@ -1,0 +1,599 @@
+{
+  "__metadata": {
+    "name": "dk-data-overview",
+    "folder": "Applications",
+    "description": "dk-data Platform Overview — API health, job trigger, data freshness, molecule pipeline, resources",
+    "tags": ["dk-data", "data-platform", "auto-provisioned"],
+    "version": "1.0.0",
+    "maintainer": "data-platform-team",
+    "status": "active"
+  },
+  "dashboard": {
+    "annotations": {
+      "list": [
+        {
+          "builtIn": 1,
+          "datasource": { "type": "grafana", "uid": "-- Grafana --" },
+          "enable": true,
+          "hide": true,
+          "iconColor": "rgba(0, 211, 255, 1)",
+          "name": "Annotations & Alerts",
+          "type": "dashboard"
+        }
+      ]
+    },
+    "description": "dk-data Platform Overview — API health, job trigger, data freshness, molecule pipeline, resources",
+    "editable": true,
+    "fiscalYearStartMonth": 0,
+    "graphTooltip": 1,
+    "id": null,
+    "links": [],
+    "liveNow": false,
+    "panels": [
+      {
+        "collapsed": false,
+        "gridPos": { "h": 1, "w": 24, "x": 0, "y": 0 },
+        "id": 100,
+        "title": "API Health",
+        "type": "row"
+      },
+      {
+        "datasource": { "type": "prometheus", "uid": "${datasource}" },
+        "description": "PostgREST API request rate",
+        "fieldConfig": {
+          "defaults": {
+            "unit": "reqps",
+            "color": { "mode": "thresholds" },
+            "thresholds": {
+              "mode": "absolute",
+              "steps": [
+                { "color": "green", "value": null }
+              ]
+            }
+          }
+        },
+        "gridPos": { "h": 4, "w": 6, "x": 0, "y": 1 },
+        "id": 1,
+        "options": { "colorMode": "value", "graphMode": "area", "justifyMode": "auto", "reduceOptions": { "calcs": ["lastNotNull"] } },
+        "targets": [
+          {
+            "expr": "sum(rate(http_requests_total{namespace=~\"dk-data-.*\"}[5m])) or vector(0)",
+            "legendFormat": "RPS",
+            "refId": "A"
+          }
+        ],
+        "title": "Request Rate",
+        "type": "stat"
+      },
+      {
+        "datasource": { "type": "prometheus", "uid": "${datasource}" },
+        "description": "PostgREST 5xx error rate percentage",
+        "fieldConfig": {
+          "defaults": {
+            "unit": "percentunit",
+            "color": { "mode": "thresholds" },
+            "thresholds": {
+              "mode": "absolute",
+              "steps": [
+                { "color": "green", "value": null },
+                { "color": "yellow", "value": 0.01 },
+                { "color": "red", "value": 0.05 }
+              ]
+            }
+          }
+        },
+        "gridPos": { "h": 4, "w": 6, "x": 6, "y": 1 },
+        "id": 2,
+        "options": { "colorMode": "value", "graphMode": "area", "justifyMode": "auto", "reduceOptions": { "calcs": ["lastNotNull"] } },
+        "targets": [
+          {
+            "expr": "sum(rate(http_requests_total{namespace=~\"dk-data-.*\", status=~\"5..\"}[5m])) / sum(rate(http_requests_total{namespace=~\"dk-data-.*\"}[5m])) or vector(0)",
+            "legendFormat": "Error Rate",
+            "refId": "A"
+          }
+        ],
+        "title": "Error Rate (5xx)",
+        "type": "stat"
+      },
+      {
+        "datasource": { "type": "prometheus", "uid": "${datasource}" },
+        "description": "PostgREST probe status (1=up, 0=down)",
+        "fieldConfig": {
+          "defaults": {
+            "color": { "mode": "thresholds" },
+            "mappings": [
+              { "options": { "0": { "color": "red", "text": "DOWN" }, "1": { "color": "green", "text": "UP" } }, "type": "value" }
+            ],
+            "thresholds": {
+              "mode": "absolute",
+              "steps": [
+                { "color": "red", "value": null },
+                { "color": "green", "value": 1 }
+              ]
+            }
+          }
+        },
+        "gridPos": { "h": 4, "w": 6, "x": 12, "y": 1 },
+        "id": 3,
+        "options": { "colorMode": "background", "graphMode": "none", "justifyMode": "auto", "reduceOptions": { "calcs": ["lastNotNull"] } },
+        "targets": [
+          {
+            "expr": "probe_success{job=\"dk-data-postgrest\"} or vector(0)",
+            "legendFormat": "PostgREST",
+            "refId": "A"
+          }
+        ],
+        "title": "PostgREST Status",
+        "type": "stat"
+      },
+      {
+        "datasource": { "type": "prometheus", "uid": "${datasource}" },
+        "description": "P95 API latency",
+        "fieldConfig": {
+          "defaults": {
+            "unit": "ms",
+            "color": { "mode": "thresholds" },
+            "thresholds": {
+              "mode": "absolute",
+              "steps": [
+                { "color": "green", "value": null },
+                { "color": "yellow", "value": 200 },
+                { "color": "red", "value": 1000 }
+              ]
+            }
+          }
+        },
+        "gridPos": { "h": 4, "w": 6, "x": 18, "y": 1 },
+        "id": 4,
+        "options": { "colorMode": "value", "graphMode": "area", "justifyMode": "auto", "reduceOptions": { "calcs": ["lastNotNull"] } },
+        "targets": [
+          {
+            "expr": "histogram_quantile(0.95, sum by (le) (rate(http_request_duration_seconds_bucket{namespace=~\"dk-data-.*\"}[5m]))) * 1000 or vector(0)",
+            "legendFormat": "P95",
+            "refId": "A"
+          }
+        ],
+        "title": "P95 Latency",
+        "type": "stat"
+      },
+      {
+        "datasource": { "type": "prometheus", "uid": "${datasource}" },
+        "description": "Request rate and error rate over time",
+        "fieldConfig": {
+          "defaults": {
+            "unit": "reqps",
+            "custom": { "drawStyle": "line", "fillOpacity": 10, "lineWidth": 2, "showPoints": "never" }
+          },
+          "overrides": [
+            {
+              "matcher": { "id": "byName", "options": "5xx Errors" },
+              "properties": [{ "id": "color", "value": { "fixedColor": "red", "mode": "fixed" } }]
+            }
+          ]
+        },
+        "gridPos": { "h": 8, "w": 24, "x": 0, "y": 5 },
+        "id": 5,
+        "options": { "legend": { "displayMode": "list", "placement": "bottom" }, "tooltip": { "mode": "multi" } },
+        "targets": [
+          {
+            "expr": "sum(rate(http_requests_total{namespace=~\"dk-data-.*\"}[5m]))",
+            "legendFormat": "Total Requests",
+            "refId": "A"
+          },
+          {
+            "expr": "sum(rate(http_requests_total{namespace=~\"dk-data-.*\", status=~\"5..\"}[5m]))",
+            "legendFormat": "5xx Errors",
+            "refId": "B"
+          }
+        ],
+        "title": "API Traffic",
+        "type": "timeseries"
+      },
+      {
+        "collapsed": false,
+        "gridPos": { "h": 1, "w": 24, "x": 0, "y": 13 },
+        "id": 200,
+        "title": "Job Trigger",
+        "type": "row"
+      },
+      {
+        "datasource": { "type": "prometheus", "uid": "${datasource}" },
+        "description": "Job Trigger service request rate",
+        "fieldConfig": {
+          "defaults": {
+            "unit": "reqps",
+            "color": { "mode": "thresholds" },
+            "thresholds": {
+              "mode": "absolute",
+              "steps": [
+                { "color": "green", "value": null }
+              ]
+            }
+          }
+        },
+        "gridPos": { "h": 4, "w": 6, "x": 0, "y": 14 },
+        "id": 6,
+        "options": { "colorMode": "value", "graphMode": "area", "justifyMode": "auto", "reduceOptions": { "calcs": ["lastNotNull"] } },
+        "targets": [
+          {
+            "expr": "sum(rate(http_requests_total{namespace=~\"dk-data-.*\", app=\"job-trigger\"}[5m])) or vector(0)",
+            "legendFormat": "RPS",
+            "refId": "A"
+          }
+        ],
+        "title": "Job Trigger RPS",
+        "type": "stat"
+      },
+      {
+        "datasource": { "type": "prometheus", "uid": "${datasource}" },
+        "description": "Job Trigger deployment readiness",
+        "fieldConfig": {
+          "defaults": {
+            "color": { "mode": "thresholds" },
+            "mappings": [
+              { "options": { "0": { "color": "red", "text": "NOT READY" }, "1": { "color": "green", "text": "READY" } }, "type": "value" }
+            ],
+            "thresholds": {
+              "mode": "absolute",
+              "steps": [
+                { "color": "red", "value": null },
+                { "color": "green", "value": 1 }
+              ]
+            }
+          }
+        },
+        "gridPos": { "h": 4, "w": 6, "x": 6, "y": 14 },
+        "id": 7,
+        "options": { "colorMode": "background", "graphMode": "none", "justifyMode": "auto", "reduceOptions": { "calcs": ["lastNotNull"] } },
+        "targets": [
+          {
+            "expr": "kube_deployment_status_replicas_ready{namespace=~\"dk-data-.*\", deployment=\"job-trigger\"} or vector(0)",
+            "legendFormat": "Ready",
+            "refId": "A"
+          }
+        ],
+        "title": "Job Trigger Status",
+        "type": "stat"
+      },
+      {
+        "datasource": { "type": "prometheus", "uid": "${datasource}" },
+        "description": "Job Trigger HTTP traffic over time by status code",
+        "fieldConfig": {
+          "defaults": {
+            "unit": "reqps",
+            "custom": { "drawStyle": "line", "fillOpacity": 10, "lineWidth": 2, "showPoints": "never" }
+          }
+        },
+        "gridPos": { "h": 8, "w": 12, "x": 12, "y": 14 },
+        "id": 8,
+        "options": { "legend": { "displayMode": "list", "placement": "bottom" }, "tooltip": { "mode": "multi" } },
+        "targets": [
+          {
+            "expr": "sum by (status) (rate(http_requests_total{namespace=~\"dk-data-.*\", app=\"job-trigger\"}[5m]))",
+            "legendFormat": "{{status}}",
+            "refId": "A"
+          }
+        ],
+        "title": "Job Trigger Traffic by Status",
+        "type": "timeseries"
+      },
+      {
+        "collapsed": false,
+        "gridPos": { "h": 1, "w": 24, "x": 0, "y": 22 },
+        "id": 300,
+        "title": "Data Freshness",
+        "type": "row"
+      },
+      {
+        "datasource": { "type": "prometheus", "uid": "${datasource}" },
+        "description": "Number of data sources that are stale (>48h since refresh)",
+        "fieldConfig": {
+          "defaults": {
+            "color": { "mode": "thresholds" },
+            "thresholds": {
+              "mode": "absolute",
+              "steps": [
+                { "color": "green", "value": null },
+                { "color": "yellow", "value": 1 },
+                { "color": "red", "value": 3 }
+              ]
+            }
+          }
+        },
+        "gridPos": { "h": 4, "w": 6, "x": 0, "y": 23 },
+        "id": 9,
+        "options": { "colorMode": "value", "graphMode": "none", "justifyMode": "auto", "reduceOptions": { "calcs": ["lastNotNull"] } },
+        "targets": [
+          {
+            "expr": "count((time() - dk_data_source_last_refresh_timestamp) > 172800) or vector(0)",
+            "legendFormat": "Stale Sources",
+            "refId": "A"
+          }
+        ],
+        "title": "Stale Data Sources",
+        "type": "stat"
+      },
+      {
+        "datasource": { "type": "prometheus", "uid": "${datasource}" },
+        "description": "Time since last refresh per data source",
+        "fieldConfig": {
+          "defaults": {
+            "unit": "s",
+            "color": { "mode": "thresholds" },
+            "thresholds": {
+              "mode": "absolute",
+              "steps": [
+                { "color": "green", "value": null },
+                { "color": "yellow", "value": 172800 },
+                { "color": "red", "value": 604800 }
+              ]
+            },
+            "custom": { "align": "auto", "displayMode": "color-background-solid" }
+          }
+        },
+        "gridPos": { "h": 8, "w": 18, "x": 6, "y": 23 },
+        "id": 10,
+        "options": { "showHeader": true, "sortBy": [{ "desc": true, "displayName": "Age" }] },
+        "targets": [
+          {
+            "expr": "time() - dk_data_source_last_refresh_timestamp",
+            "format": "table",
+            "instant": true,
+            "legendFormat": "",
+            "refId": "A"
+          }
+        ],
+        "title": "Data Source Freshness",
+        "transformations": [
+          { "id": "organize", "options": { "excludeByName": { "Time": true, "__name__": true }, "renameByName": { "Value": "Age", "source_name": "Source" } } }
+        ],
+        "type": "table"
+      },
+      {
+        "collapsed": false,
+        "gridPos": { "h": 1, "w": 24, "x": 0, "y": 31 },
+        "id": 400,
+        "title": "Molecule Pipeline",
+        "type": "row"
+      },
+      {
+        "datasource": { "type": "prometheus", "uid": "${datasource}" },
+        "description": "Unprocessed bronze records awaiting silver transformation",
+        "fieldConfig": {
+          "defaults": {
+            "color": { "mode": "thresholds" },
+            "thresholds": {
+              "mode": "absolute",
+              "steps": [
+                { "color": "green", "value": null },
+                { "color": "yellow", "value": 5000 },
+                { "color": "red", "value": 10000 }
+              ]
+            }
+          }
+        },
+        "gridPos": { "h": 4, "w": 6, "x": 0, "y": 32 },
+        "id": 11,
+        "options": { "colorMode": "value", "graphMode": "area", "justifyMode": "auto", "reduceOptions": { "calcs": ["lastNotNull"] } },
+        "targets": [
+          {
+            "expr": "dk_bronze_unprocessed_total{namespace=~\"dk-data-.*\"} or vector(0)",
+            "legendFormat": "Unprocessed",
+            "refId": "A"
+          }
+        ],
+        "title": "Bronze Unprocessed",
+        "type": "stat"
+      },
+      {
+        "datasource": { "type": "prometheus", "uid": "${datasource}" },
+        "description": "Entity resolution queue size",
+        "fieldConfig": {
+          "defaults": {
+            "color": { "mode": "thresholds" },
+            "thresholds": {
+              "mode": "absolute",
+              "steps": [
+                { "color": "green", "value": null },
+                { "color": "yellow", "value": 500 },
+                { "color": "red", "value": 1000 }
+              ]
+            }
+          }
+        },
+        "gridPos": { "h": 4, "w": 6, "x": 6, "y": 32 },
+        "id": 12,
+        "options": { "colorMode": "value", "graphMode": "area", "justifyMode": "auto", "reduceOptions": { "calcs": ["lastNotNull"] } },
+        "targets": [
+          {
+            "expr": "dk_resolution_queue_size{namespace=~\"dk-data-.*\"} or vector(0)",
+            "legendFormat": "Queue Size",
+            "refId": "A"
+          }
+        ],
+        "title": "Resolution Queue",
+        "type": "stat"
+      },
+      {
+        "datasource": { "type": "prometheus", "uid": "${datasource}" },
+        "description": "Molecules in quarantine",
+        "fieldConfig": {
+          "defaults": {
+            "color": { "mode": "thresholds" },
+            "thresholds": {
+              "mode": "absolute",
+              "steps": [
+                { "color": "green", "value": null },
+                { "color": "yellow", "value": 200 },
+                { "color": "red", "value": 500 }
+              ]
+            }
+          }
+        },
+        "gridPos": { "h": 4, "w": 6, "x": 12, "y": 32 },
+        "id": 13,
+        "options": { "colorMode": "value", "graphMode": "area", "justifyMode": "auto", "reduceOptions": { "calcs": ["lastNotNull"] } },
+        "targets": [
+          {
+            "expr": "dk_quarantine_count{namespace=~\"dk-data-.*\"} or vector(0)",
+            "legendFormat": "Quarantined",
+            "refId": "A"
+          }
+        ],
+        "title": "Quarantine Count",
+        "type": "stat"
+      },
+      {
+        "datasource": { "type": "prometheus", "uid": "${datasource}" },
+        "description": "Bronze unprocessed and resolution queue over time",
+        "fieldConfig": {
+          "defaults": {
+            "custom": { "drawStyle": "line", "fillOpacity": 10, "lineWidth": 2, "showPoints": "never" }
+          }
+        },
+        "gridPos": { "h": 8, "w": 24, "x": 0, "y": 36 },
+        "id": 14,
+        "options": { "legend": { "displayMode": "list", "placement": "bottom" }, "tooltip": { "mode": "multi" } },
+        "targets": [
+          {
+            "expr": "dk_bronze_unprocessed_total{namespace=~\"dk-data-.*\"}",
+            "legendFormat": "Bronze Unprocessed",
+            "refId": "A"
+          },
+          {
+            "expr": "dk_resolution_queue_size{namespace=~\"dk-data-.*\"}",
+            "legendFormat": "Resolution Queue",
+            "refId": "B"
+          },
+          {
+            "expr": "dk_quarantine_count{namespace=~\"dk-data-.*\"}",
+            "legendFormat": "Quarantine Count",
+            "refId": "C"
+          }
+        ],
+        "title": "Molecule Pipeline Trends",
+        "type": "timeseries"
+      },
+      {
+        "collapsed": false,
+        "gridPos": { "h": 1, "w": 24, "x": 0, "y": 44 },
+        "id": 500,
+        "title": "Resources",
+        "type": "row"
+      },
+      {
+        "datasource": { "type": "prometheus", "uid": "${datasource}" },
+        "description": "CPU usage per deployment",
+        "fieldConfig": {
+          "defaults": {
+            "unit": "short",
+            "custom": { "drawStyle": "line", "fillOpacity": 20, "lineWidth": 1, "showPoints": "never", "stacking": { "mode": "normal" } }
+          }
+        },
+        "gridPos": { "h": 8, "w": 12, "x": 0, "y": 45 },
+        "id": 15,
+        "options": { "legend": { "displayMode": "list", "placement": "bottom" }, "tooltip": { "mode": "multi" } },
+        "targets": [
+          {
+            "expr": "sum by (pod) (rate(container_cpu_usage_seconds_total{namespace=~\"dk-data-.*\", container!=\"\", container!=\"POD\"}[5m]))",
+            "legendFormat": "{{pod}}",
+            "refId": "A"
+          }
+        ],
+        "title": "CPU Usage by Pod",
+        "type": "timeseries"
+      },
+      {
+        "datasource": { "type": "prometheus", "uid": "${datasource}" },
+        "description": "Memory usage per deployment",
+        "fieldConfig": {
+          "defaults": {
+            "unit": "bytes",
+            "custom": { "drawStyle": "line", "fillOpacity": 20, "lineWidth": 1, "showPoints": "never", "stacking": { "mode": "normal" } }
+          }
+        },
+        "gridPos": { "h": 8, "w": 12, "x": 12, "y": 45 },
+        "id": 16,
+        "options": { "legend": { "displayMode": "list", "placement": "bottom" }, "tooltip": { "mode": "multi" } },
+        "targets": [
+          {
+            "expr": "sum by (pod) (container_memory_usage_bytes{namespace=~\"dk-data-.*\", container!=\"\", container!=\"POD\"})",
+            "legendFormat": "{{pod}}",
+            "refId": "A"
+          }
+        ],
+        "title": "Memory Usage by Pod",
+        "type": "timeseries"
+      },
+      {
+        "datasource": { "type": "prometheus", "uid": "${datasource}" },
+        "description": "Container restarts in the last 24h",
+        "fieldConfig": {
+          "defaults": {
+            "color": { "mode": "thresholds" },
+            "thresholds": {
+              "mode": "absolute",
+              "steps": [
+                { "color": "green", "value": null },
+                { "color": "yellow", "value": 1 },
+                { "color": "red", "value": 5 }
+              ]
+            },
+            "custom": { "align": "auto", "displayMode": "color-background-solid" }
+          }
+        },
+        "gridPos": { "h": 8, "w": 24, "x": 0, "y": 53 },
+        "id": 17,
+        "options": { "showHeader": true, "sortBy": [{ "desc": true, "displayName": "Restarts" }] },
+        "targets": [
+          {
+            "expr": "increase(kube_pod_container_status_restarts_total{namespace=~\"dk-data-.*\"}[24h]) > 0",
+            "format": "table",
+            "instant": true,
+            "refId": "A"
+          }
+        ],
+        "title": "Pod Restarts (24h)",
+        "transformations": [
+          { "id": "organize", "options": { "excludeByName": { "Time": true, "__name__": true, "endpoint": true, "instance": true, "job": true, "uid": true }, "renameByName": { "Value": "Restarts", "container": "Container", "namespace": "Namespace", "pod": "Pod" } } }
+        ],
+        "type": "table"
+      }
+    ],
+    "refresh": "30s",
+    "schemaVersion": 39,
+    "tags": ["dk-data", "data-platform", "auto-provisioned"],
+    "templating": {
+      "list": [
+        {
+          "current": { "selected": false, "text": "Mimir", "value": "mimir" },
+          "hide": 0,
+          "includeAll": false,
+          "label": "Datasource",
+          "multi": false,
+          "name": "datasource",
+          "options": [],
+          "query": "prometheus",
+          "refresh": 1,
+          "type": "datasource"
+        },
+        {
+          "current": { "selected": false, "text": "dk-data-prod", "value": "dk-data-prod" },
+          "datasource": { "type": "prometheus", "uid": "${datasource}" },
+          "definition": "label_values(kube_namespace_labels{namespace=~\"dk-data-.*\"}, namespace)",
+          "hide": 0,
+          "includeAll": true,
+          "label": "Namespace",
+          "multi": false,
+          "name": "namespace",
+          "query": "label_values(kube_namespace_labels{namespace=~\"dk-data-.*\"}, namespace)",
+          "refresh": 2,
+          "type": "query"
+        }
+      ]
+    },
+    "time": { "from": "now-6h", "to": "now" },
+    "title": "dk-data Platform Overview",
+    "uid": "dk-data-overview"
+  }
+}
