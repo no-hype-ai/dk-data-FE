@@ -63,6 +63,7 @@ src/dk_data/data/raw/
 *.json
 !tests/fixtures/*.json
 !.specify/**/*.json
+!monitoring/dashboards/*.json
 
 # SQLMesh cache and state
 .sqlmesh/
