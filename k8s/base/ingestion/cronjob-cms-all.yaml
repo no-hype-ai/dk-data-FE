@@ -22,8 +22,16 @@ spec:
             app: fetch-cms-all
             app.kubernetes.io/component: batch-job
             app.kubernetes.io/part-of: dk-data
+            team: data-platform
+            service: dk-data
+            product: dk-data
         spec:
           restartPolicy: OnFailure
+          securityContext:
+            runAsNonRoot: true
+            fsGroup: 1000
+            seccompProfile:
+              type: RuntimeDefault
           containers:
             - name: fetch-cms
               image: ghcr.io/data-kinetic/dk-data-fe/job-trigger:main-5f46ed1
@@ -72,6 +80,8 @@ spec:
               volumeMounts:
                 - name: data-volume
                   mountPath: /data
+                - name: tmp
+                  mountPath: /tmp
               resources:
                 requests:
                   memory: "256Mi"
@@ -79,8 +89,15 @@ spec:
                 limits:
                   memory: "1Gi"
                   cpu: "500m"
+              securityContext:
+                allowPrivilegeEscalation: false
+                readOnlyRootFilesystem: true
+                capabilities:
+                  drop: ["ALL"]
           imagePullSecrets:
             - name: ghcr-credentials
           volumes:
             - name: data-volume
+              emptyDir: {}
+            - name: tmp
               emptyDir: {}

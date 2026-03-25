@@ -53,6 +53,9 @@ resources:
   - db-init-job.yaml
   # DrugBank seed (wave 2): unzips bundled XML and loads into bronze.drugbank_*
   - job-drugbank-seed.yaml
+  # Pod disruption budgets
+  - pdb-postgrest.yaml
+  - pdb-job-trigger.yaml
   # Networking
   - ingress.yaml
   - middleware-rate-limit.yaml

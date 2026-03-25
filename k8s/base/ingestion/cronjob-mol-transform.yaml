@@ -23,8 +23,16 @@ spec:
         metadata:
           labels:
             app: mol-transform
+            team: data-platform
+            service: dk-data
+            product: dk-data
         spec:
           restartPolicy: Never
+          securityContext:
+            runAsNonRoot: true
+            fsGroup: 1000
+            seccompProfile:
+              type: RuntimeDefault
           imagePullSecrets:
             - name: ghcr-credentials
           containers:
@@ -76,3 +84,14 @@ spec:
                 limits:
                   memory: "1Gi"
                   cpu: "500m"
+              securityContext:
+                allowPrivilegeEscalation: false
+                readOnlyRootFilesystem: true
+                capabilities:
+                  drop: ["ALL"]
+              volumeMounts:
+                - name: tmp
+                  mountPath: /tmp
+          volumes:
+            - name: tmp
+              emptyDir: {}
