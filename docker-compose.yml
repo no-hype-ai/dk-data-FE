@@ -63,7 +63,8 @@ services:
     environment:
       # Database connection - connects to postgres service within docker network
       # SECURITY: No default password - must be set via environment or .env file
-      PGRST_DB_URI: "postgres://authenticator:${POSTGREST_PASSWORD:?POSTGREST_PASSWORD must be set}@postgres:5432/${POSTGRES_DB:-dk_data}"
+      # Accepts POSTGREST_PASSWORD or falls back to POSTGRES_PASSWORD (Doppler compat)
+      PGRST_DB_URI: "postgres://authenticator:${POSTGREST_PASSWORD:-${POSTGRES_PASSWORD:?POSTGRES_PASSWORD must be set}}@postgres:5432/${POSTGRES_DB:-dk_data}"
       PGRST_DB_SCHEMAS: "api,gold,silver,bronze,mol_raw,raw,xenon,meta"
       PGRST_DB_ANON_ROLE: "web_anon"
       PGRST_DB_POOL: "10"
@@ -75,7 +76,8 @@ services:
       PGRST_DB_PREPARED_STATEMENTS: "true"
       PGRST_OPENAPI_MODE: "follow-privileges"
       # JWT configuration for role-based access
-      PGRST_JWT_SECRET: "${PGRST_JWT_SECRET:-}"
+      # Accepts PGRST_JWT_SECRET or falls back to JWT_SECRET (Doppler compat)
+      PGRST_JWT_SECRET: "${PGRST_JWT_SECRET:-${JWT_SECRET:-}}"
       PGRST_JWT_ROLE_CLAIM_KEY: ".role"
     networks:
       - dk-data-fe-network

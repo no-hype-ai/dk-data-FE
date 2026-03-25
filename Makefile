@@ -32,7 +32,19 @@ ARROW   := →
 # Docker Compose configuration
 # Feature: 002-production-readiness - docker-compose.yml now at root
 COMPOSE_FILE := docker-compose.yml
-DC := docker compose -f $(COMPOSE_FILE)
+
+# Doppler integration: auto-detect and use for secret injection
+# Override with DOPPLER=0 to disable: make up DOPPLER=0
+HAVE_DOPPLER := $(shell [ -f doppler.yaml ] && command -v doppler >/dev/null 2>&1 && echo 1 || echo 0)
+DOPPLER ?= $(HAVE_DOPPLER)
+
+ifeq ($(DOPPLER),1)
+  DC := doppler run -- docker compose -f $(COMPOSE_FILE)
+  SECRET_SOURCE := Doppler ($(shell doppler configs get --no-check-version --json 2>/dev/null | jq -r '"\(.project)/\(.name)"' || echo "unknown"))
+else
+  DC := docker compose -f $(COMPOSE_FILE)
+  SECRET_SOURCE := .env file
+endif
 
 # API endpoints
 POSTGREST_URL := http://localhost:3030
@@ -65,6 +77,10 @@ help: ## Show this help message
 	@echo ""
 	@echo "$(BOLD)$(GREEN)Monitoring:$(NC)"
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | grep -E 'health|api-' | awk 'BEGIN {FS = ":.*?## "}; {printf "  $(CYAN)%-20s$(NC) %s\n", $$1, $$2}'
+	@echo ""
+	@echo "$(BOLD)$(GREEN)Secrets:$(NC)"
+	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | grep -E 'doppler' | awk 'BEGIN {FS = ":.*?## "}; {printf "  $(CYAN)%-20s$(NC) %s\n", $$1, $$2}'
+	@echo "  $(YELLOW)Current: $(SECRET_SOURCE)$(NC)"
 	@echo ""
 
 # ============================================================================
@@ -136,7 +152,10 @@ logs-jobs: ## Tail job-trigger logs
 init-db: ## Initialize database schema and seed data
 	@echo "$(BOLD)$(BLUE)$(ARROW) Initializing database...$(NC)"
 	@echo "  $(YELLOW)Running init_database.sql...$(NC)"
-	@$(DC) exec -T postgres psql -U postgres -d dk_data -f /docker-entrypoint-initdb.d/init_database.sql > /dev/null 2>&1
+	@$(DC) exec -e POSTGREST_PASSWORD -e POSTGRES_PASSWORD -T postgres \
+		bash -c 'psql -U postgres -d dk_data \
+		-v AUTHENTICATOR_PASSWORD="$${POSTGREST_PASSWORD:-$${POSTGRES_PASSWORD}}" \
+		-f /docker-entrypoint-initdb.d/init_database.sql' > /dev/null 2>&1
 	@echo "  $(GREEN)$(CHECK) Schema created$(NC)"
 	@echo "  $(YELLOW)Running catalog_functions.sql...$(NC)"
 	@$(DC) exec -T postgres psql -U postgres -d dk_data -f /docker-entrypoint-initdb.d/catalog_functions.sql > /dev/null 2>&1
@@ -292,7 +311,7 @@ api-openapi: ## Show available API endpoints
 .PHONY: _check-services
 _check-services:
 	@for svc in postgres postgrest job-trigger; do \
-		if $(DC) ps $$svc 2>/dev/null | grep -q "running\|healthy"; then \
+		if $(DC) ps $$svc 2>/dev/null | grep -qE "running|healthy|Up"; then \
 			echo "  $(GREEN)$(CHECK) $$svc$(NC)"; \
 		else \
 			echo "  $(RED)$(CROSS) $$svc$(NC)"; \
@@ -331,6 +350,8 @@ _show-urls:
 	@echo "  $(CYAN)PostgREST:$(NC)   $(POSTGREST_URL)"
 	@echo "  $(CYAN)Job Trigger:$(NC) $(JOB_TRIGGER_URL)"
 	@echo "  $(CYAN)Metabase:$(NC)    http://localhost:3000 (if enabled)"
+	@echo ""
+	@echo "$(BOLD)Secrets:$(NC) $(SECRET_SOURCE)"
 
 # ============================================================================
 # DEVELOPMENT
@@ -371,6 +392,54 @@ shell: ## Open shell in job-trigger container
 	@$(DC) exec job-trigger /bin/bash
 
 # ============================================================================
+# DOPPLER
+# ============================================================================
+
+.PHONY: doppler-check
+doppler-check: ## Check Doppler configuration and secret availability
+	@echo ""
+	@echo "$(BOLD)$(CYAN)Doppler Configuration$(NC)"
+	@echo "$(CYAN)══════════════════════════════════════════════════════════════$(NC)"
+	@echo ""
+ifeq ($(HAVE_DOPPLER),1)
+	@echo "  $(GREEN)$(CHECK) Doppler CLI$(NC) - installed"
+	@echo "  $(GREEN)$(CHECK) doppler.yaml$(NC) - found"
+	@project=$$(doppler configs get --no-check-version --json 2>/dev/null | jq -r '.project // "unknown"'); \
+	config=$$(doppler configs get --no-check-version --json 2>/dev/null | jq -r '.name // "unknown"'); \
+	echo "  $(CYAN)Project:$(NC) $$project"; \
+	echo "  $(CYAN)Config:$(NC)  $$config"
+	@echo ""
+	@echo "$(BOLD)Required secrets for docker-compose:$(NC)"
+	@for secret in POSTGRES_PASSWORD POSTGRES_USER POSTGRES_DB JWT_SECRET; do \
+		val=$$(doppler secrets get $$secret --no-check-version --plain 2>/dev/null); \
+		if [ -n "$$val" ]; then \
+			echo "  $(GREEN)$(CHECK) $$secret$(NC)"; \
+		else \
+			echo "  $(RED)$(CROSS) $$secret$(NC) - not set"; \
+		fi; \
+	done
+	@echo ""
+	@echo "$(BOLD)Usage:$(NC) make up  (Doppler auto-detected)"
+	@echo "       make up DOPPLER=0  (force .env file)"
+else
+	@echo "  $(YELLOW)Doppler not available$(NC)"
+	@if ! command -v doppler >/dev/null 2>&1; then \
+		echo "  $(RED)$(CROSS) Doppler CLI not installed$(NC)"; \
+	fi
+	@if [ ! -f doppler.yaml ]; then \
+		echo "  $(RED)$(CROSS) doppler.yaml not found$(NC)"; \
+	fi
+	@echo ""
+	@echo "$(BOLD)Using .env file for secrets$(NC)"
+	@if [ -f .env ]; then \
+		echo "  $(GREEN)$(CHECK) .env file found$(NC)"; \
+	else \
+		echo "  $(RED)$(CROSS) .env file not found - copy .env.example to .env$(NC)"; \
+	fi
+endif
+	@echo ""
+
+# ============================================================================
 # FULL PIPELINE
 # ============================================================================
 
@@ -395,7 +464,11 @@ pipeline: ## Run full data pipeline (fetch -> transform -> catalog)
 	@echo "$(GREEN)$(CHECK) Pipeline complete$(NC)"
 
 .PHONY: quick-start
-quick-start: up init-db catalog-refresh ## Quick start: up + init-db + catalog-refresh
+quick-start: up init-db ## Quick start: up + init-db + restart dependent services
+	@echo "$(BOLD)$(BLUE)$(ARROW) Restarting services after DB init...$(NC)"
+	@$(DC) up -d --force-recreate postgrest job-trigger > /dev/null 2>&1
+	@sleep 10
+	@$(MAKE) --no-print-directory _check-services
 	@echo ""
 	@echo "$(GREEN)$(CHECK) Quick start complete!$(NC)"
 	@echo ""
