@@ -13,6 +13,7 @@ from typing import Any
 
 import psycopg2
 from fastapi import FastAPI, HTTPException, Query, Response
+from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from psycopg2.extras import RealDictCursor
@@ -227,6 +228,21 @@ async def health_check():
         database=db_status,
         version="1.0.0",
     )
+
+
+@app.get("/ready")
+async def readiness_check():
+    """Readiness probe endpoint. Returns 200 if the database is reachable, 503 otherwise."""
+    try:
+        conn = get_connection()
+        cursor = conn.cursor()
+        cursor.execute("SELECT 1")
+        cursor.close()
+        conn.close()
+        return {"status": "ready"}
+    except Exception as e:
+        logger.error(f"Readiness check failed: {e}")
+        return JSONResponse(status_code=503, content={"status": "not_ready"})
 
 
 @app.get("/metrics")

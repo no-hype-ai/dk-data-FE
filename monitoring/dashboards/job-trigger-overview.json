@@ -1,0 +1,83 @@
+{
+  "uid": "dk-data-job-trigger-overview",
+  "title": "dk-data / job-trigger Overview",
+  "tags": ["dk-data", "job-trigger", "data-platform"],
+  "timezone": "browser",
+  "editable": true,
+  "panels": [
+    {
+      "title": "Request Rate",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 0 },
+      "targets": [
+        {
+          "expr": "sum(rate(http_server_request_duration_seconds_count{service=\"job-trigger\", product=\"dk-data\"}[5m]))",
+          "legendFormat": "req/s"
+        }
+      ]
+    },
+    {
+      "title": "Error Rate",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 0 },
+      "targets": [
+        {
+          "expr": "sum(rate(http_server_request_duration_seconds_count{service=\"job-trigger\", product=\"dk-data\", http_status_code=~\"5..\"}[5m])) / sum(rate(http_server_request_duration_seconds_count{service=\"job-trigger\", product=\"dk-data\"}[5m]))",
+          "legendFormat": "error %"
+        }
+      ]
+    },
+    {
+      "title": "P95 Latency",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 8 },
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.95, sum(rate(http_server_request_duration_seconds_bucket{service=\"job-trigger\", product=\"dk-data\"}[5m])) by (le))",
+          "legendFormat": "p95"
+        }
+      ]
+    },
+    {
+      "title": "Memory Usage",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 8 },
+      "targets": [
+        {
+          "expr": "container_memory_working_set_bytes{container=\"job-trigger\", namespace=~\"dk-data-(prod|staging)\"}",
+          "legendFormat": "{{namespace}}"
+        }
+      ]
+    },
+    {
+      "title": "CPU Usage",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 16 },
+      "targets": [
+        {
+          "expr": "rate(container_cpu_usage_seconds_total{container=\"job-trigger\", namespace=~\"dk-data-(prod|staging)\"}[5m])",
+          "legendFormat": "{{namespace}}"
+        }
+      ]
+    },
+    {
+      "title": "Pod Restarts",
+      "type": "stat",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 16 },
+      "targets": [
+        {
+          "expr": "sum(increase(kube_pod_container_status_restarts_total{container=\"job-trigger\", namespace=~\"dk-data-(prod|staging)\"}[24h]))",
+          "legendFormat": "restarts (24h)"
+        }
+      ]
+    }
+  ],
+  "templating": {
+    "list": []
+  },
+  "time": {
+    "from": "now-6h",
+    "to": "now"
+  },
+  "schemaVersion": 39
+}
