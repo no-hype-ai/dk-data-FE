@@ -1,0 +1,27 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  - cronjob-cms-all.yaml
+  - cronjob-refresh.yaml
+  - cronjob-mol-fetch-daily.yaml
+  - cronjob-mol-fetch-weekly.yaml
+  - cronjob-mol-fetch-monthly.yaml
+  - cronjob-mol-transform.yaml
+  - cronjob-fetch-pubmed.yaml
+  - cronjob-fetch-ema-reg.yaml
+  - cronjob-fetch-openalex-ci.yaml
+  - cronjob-fetch-drugbank.yaml
+  - cronjob-fetch-uspto-patents.yaml
+  - cronjob-fetch-journal-rss.yaml
+  - cronjob-fetch-uspto-ci.yaml
+  - cronjob-fetch-hta.yaml
+  - cronjob-fetch-epo.yaml
+  - cronjob-fetch-cochrane.yaml
+  - cronjob-fetch-news.yaml
+  - cronjob-fetch-sec-edgar.yaml
+  - cronjob-fetch-uniprot.yaml
+  - cronjob-fetch-pdb.yaml
+  # - cronjob-fetch-orcid.yaml  # Disabled — no ORCID membership; OpenAlex covers author data
+  - cronjob-fetch-uspto-trademarks.yaml
+  - cronjob-fetch-euipo.yaml
+  - molecule-pipeline-config.yaml

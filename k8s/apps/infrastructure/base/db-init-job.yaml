@@ -122,7 +122,7 @@ spec:
                 echo "✓ authenticator password set from POSTGREST_PASSWORD secret"
               else
                 echo "✗ WARNING: POSTGREST_PASSWORD not set — authenticator role will have no password"
-                echo "  PostgREST will fail to connect. Add POSTGREST_PASSWORD to Doppler dk-data-fe project."
+                echo "  PostgREST will fail to connect. Add POSTGREST_PASSWORD to Doppler dk-data-applications project."
               fi
 
               # --- Step 6: Grant role hierarchy ---
