@@ -20,8 +20,16 @@ spec:
         metadata:
           labels:
             app: pg-backup
+            team: data-platform
+            service: dk-data
+            product: dk-data
         spec:
           restartPolicy: Never
+          securityContext:
+            runAsNonRoot: true
+            fsGroup: 1000
+            seccompProfile:
+              type: RuntimeDefault
           containers:
             - name: pg-backup-verify
               image: postgres:16-alpine
@@ -52,12 +60,21 @@ spec:
                 limits:
                   memory: "1Gi"
                   cpu: "500m"
+              securityContext:
+                allowPrivilegeEscalation: false
+                readOnlyRootFilesystem: true
+                capabilities:
+                  drop: ["ALL"]
               volumeMounts:
                 - name: backup-script
                   mountPath: /scripts
                   readOnly: true
+                - name: tmp
+                  mountPath: /tmp
           volumes:
             - name: backup-script
               configMap:
                 name: pg-backup-script
                 defaultMode: 0755
+            - name: tmp
+              emptyDir: {}

@@ -9,6 +9,11 @@ metadata:
     app.kubernetes.io/part-of: dk-data
 spec:
   replicas: 1
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
   selector:
     matchLabels:
       app: postgrest
@@ -18,7 +23,25 @@ spec:
         app: postgrest
         app.kubernetes.io/name: postgrest
         app.kubernetes.io/part-of: dk-data
+        team: data-platform
+        service: dk-data
+        product: dk-data
     spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        fsGroup: 1000
+        seccompProfile:
+          type: RuntimeDefault
+      affinity:
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+            - weight: 100
+              podAffinityTerm:
+                labelSelector:
+                  matchLabels:
+                    app: postgrest
+                topologyKey: kubernetes.io/hostname
       initContainers:
         # T009: Validate JWT secret meets minimum security requirements
         - name: jwt-secret-validator
@@ -41,6 +64,11 @@ spec:
                 secretKeyRef:
                   name: dk-data-secrets
                   key: JWT_SECRET
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
       containers:
         - name: postgrest
           image: postgrest/postgrest:v12.2.3
@@ -91,6 +119,11 @@ spec:
             limits:
               memory: "512Mi"
               cpu: "500m"
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
           # T038: Health probes - TCP for startup reliability, HTTP for application health
           # NOTE: HTTP probes require api.health view to exist (created by db-init job)
           #       and web_anon role to have USAGE on schema api + SELECT on api.health

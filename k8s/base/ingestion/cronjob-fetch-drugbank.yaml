@@ -25,8 +25,16 @@ spec:
             app: fetch-drugbank
             app.kubernetes.io/component: batch-job
             app.kubernetes.io/part-of: dk-data
+            team: data-platform
+            service: dk-data
+            product: dk-data
         spec:
           restartPolicy: Never
+          securityContext:
+            runAsNonRoot: true
+            fsGroup: 1000
+            seccompProfile:
+              type: RuntimeDefault
           imagePullSecrets:
             - name: ghcr-credentials
           containers:
@@ -77,3 +85,14 @@ spec:
                 limits:
                   memory: "512Mi"
                   cpu: "300m"
+              securityContext:
+                allowPrivilegeEscalation: false
+                readOnlyRootFilesystem: true
+                capabilities:
+                  drop: ["ALL"]
+              volumeMounts:
+                - name: tmp
+                  mountPath: /tmp
+          volumes:
+            - name: tmp
+              emptyDir: {}

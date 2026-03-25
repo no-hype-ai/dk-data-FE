@@ -22,8 +22,16 @@ spec:
             app: catalog-refresh
             app.kubernetes.io/component: batch-job
             app.kubernetes.io/part-of: dk-data
+            team: data-platform
+            service: dk-data
+            product: dk-data
         spec:
           restartPolicy: OnFailure
+          securityContext:
+            runAsNonRoot: true
+            fsGroup: 1000
+            seccompProfile:
+              type: RuntimeDefault
           containers:
             - name: catalog-refresh
               image: ghcr.io/data-kinetic/dk-data-fe/job-trigger:main-5f46ed1
@@ -72,5 +80,16 @@ spec:
                 limits:
                   memory: "256Mi"
                   cpu: "200m"
+              securityContext:
+                allowPrivilegeEscalation: false
+                readOnlyRootFilesystem: true
+                capabilities:
+                  drop: ["ALL"]
+              volumeMounts:
+                - name: tmp
+                  mountPath: /tmp
           imagePullSecrets:
             - name: ghcr-credentials
+          volumes:
+            - name: tmp
+              emptyDir: {}
