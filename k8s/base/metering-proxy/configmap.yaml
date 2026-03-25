@@ -1,0 +1,53 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: dk-data-consumers
+  labels:
+    app.kubernetes.io/name: dk-data
+    app.kubernetes.io/component: metering-proxy
+    app.kubernetes.io/part-of: dk-data
+data:
+  consumers.yaml: |
+    # Consumer key store for the metering proxy.
+    # API keys are provisioned via the Platform API and synced here.
+    # Format: dk_data_{alias}_{random_suffix}
+    #
+    # rpm_limit: 0 means unlimited (internal/platform tier)
+    # allowed_schemas: ["*"] means all schemas
+    consumers:
+      behavior-labs-ai:
+        alias: blai
+        allowed_schemas:
+          - mart
+          - api
+          - mol_api
+          - scoring
+        rpm_limit: 500
+        tier: high
+        api_keys: []
+      carbon-5:
+        alias: c5
+        allowed_schemas:
+          - mart
+          - api
+          - bronze
+          - silver
+          - gold
+        rpm_limit: 500
+        tier: high
+        api_keys: []
+      dk-os:
+        alias: dkos
+        allowed_schemas:
+          - api
+          - meta
+        rpm_limit: 200
+        tier: standard
+        api_keys: []
+      internal:
+        alias: internal
+        allowed_schemas:
+          - "*"
+        rpm_limit: 0
+        tier: unlimited
+        api_keys: []

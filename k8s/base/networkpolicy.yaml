@@ -69,6 +69,68 @@ spec:
           port: 3000
 
 ---
+# Allow ingress to metering proxy from approved sources
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: dk-data-metering-proxy-ingress
+spec:
+  podSelector:
+    matchLabels:
+      app: postgrest
+  policyTypes:
+    - Ingress
+  ingress:
+    # Traefik ingress controller (public traffic via metering proxy)
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+      ports:
+        - protocol: TCP
+          port: 3001
+    # BehaviorLabs apps
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: behaviorlabs-prod
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: behaviorlabs-staging
+      ports:
+        - protocol: TCP
+          port: 3001
+    # Agent Mesh apps
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: agentmesh-prod
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: agentmesh-staging
+      ports:
+        - protocol: TCP
+          port: 3001
+    # Monitoring scrape (Prometheus on metrics port)
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: infra
+      ports:
+        - protocol: TCP
+          port: 3001
+        - protocol: TCP
+          port: 9090
+    # Platform API health checks
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: infra
+      ports:
+        - protocol: TCP
+          port: 3001
+
+---
 # Allow ingress to Job Trigger from internal sources only
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy

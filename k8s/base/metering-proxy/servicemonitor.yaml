@@ -1,0 +1,17 @@
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: dk-data-metering-proxy
+  labels:
+    app.kubernetes.io/name: dk-data
+    app.kubernetes.io/component: metering-proxy
+    release: mimir
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/component: metering-proxy
+  endpoints:
+    - port: metrics
+      path: /metrics
+      interval: 30s
+      scrapeTimeout: 10s
