@@ -1,0 +1,79 @@
+name: Standards Check
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main, staging]
+
+jobs:
+  standards:
+    name: Validate standards compliance
+    runs-on: ubuntu-latest  # G14: ARC v2 migration deferred
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Validate .dk-standards.yaml exists
+        run: |
+          if [ ! -f .dk-standards.yaml ]; then
+            echo "::error::.dk-standards.yaml not found at repo root"
+            exit 1
+          fi
+          echo "Found .dk-standards.yaml"
+
+      - name: Validate .dk-standards.yaml is valid YAML
+        run: |
+          # Use python to validate YAML since it's available on all runners
+          python3 -c "
+          import yaml, sys
+          try:
+              with open('.dk-standards.yaml') as f:
+                  data = yaml.safe_load(f)
+              print('Valid YAML')
+              print(f'Product: {data.get(\"product\", \"unknown\")}')
+              print(f'Tier: {data.get(\"tier\", \"unknown\")}')
+              print(f'Team: {data.get(\"team\", \"unknown\")}')
+          except yaml.YAMLError as e:
+              print(f'::error::Invalid YAML: {e}', file=sys.stderr)
+              sys.exit(1)
+          "
+
+      - name: Check required files exist
+        run: |
+          errors=0
+          for file in CLAUDE.md ARCHITECTURE.md; do
+            if [ ! -f "$file" ]; then
+              echo "::error::Required file missing: $file"
+              errors=$((errors + 1))
+            else
+              echo "Found $file"
+            fi
+          done
+          if [ $errors -gt 0 ]; then
+            exit 1
+          fi
+
+      - name: Check GitHub topics include dk-managed
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          topics=$(gh repo view --json repositoryTopics --jq '.repositoryTopics[].name' 2>/dev/null || echo "")
+          if echo "$topics" | grep -q "dk-managed"; then
+            echo "Found dk-managed topic"
+          else
+            echo "::warning::Repository is missing the 'dk-managed' topic. Add it via repo settings or: gh repo edit --add-topic dk-managed"
+          fi
+
+      - name: Validate Kustomize overlays
+        run: |
+          for overlay in k8s/overlays/prod k8s/overlays/staging; do
+            if [ -d "$overlay" ]; then
+              echo "Checking $overlay..."
+              if [ ! -f "$overlay/kustomization.yaml" ]; then
+                echo "::warning::Missing kustomization.yaml in $overlay"
+              else
+                echo "Found $overlay/kustomization.yaml"
+              fi
+            fi
+          done
