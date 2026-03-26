@@ -277,7 +277,11 @@
         },
         "gridPos": { "h": 10, "w": 24, "x": 0, "y": 46 },
         "id": 6,
-        "options": {},
+        "options": {
+          "srcField": "from",
+          "dstField": "to",
+          "sizeField": "value"
+        },
         "transformations": [
           {
             "id": "merge",
@@ -287,9 +291,9 @@
             "id": "organize",
             "options": {
               "renameByName": {
-                "Value #Raw": "value_raw",
-                "Value #Bronze": "value_bronze",
-                "Value #Silver": "value_silver"
+                "from": "from",
+                "to": "to",
+                "Value": "value"
               }
             }
           }
@@ -297,24 +301,27 @@
         "targets": [
           {
             "datasource": { "type": "prometheus", "uid": "${datasource}" },
-            "expr": "sum(dk_raw_unprocessed_total{source=~\"$source\"})",
+            "expr": "label_replace(label_replace(sum(dk_raw_unprocessed_total{source=~\"$source\"}), \"from\", \"raw\", \"\", \"\"), \"to\", \"bronze\", \"\", \"\")",
             "instant": true,
-            "legendFormat": "raw → bronze",
-            "refId": "Raw"
+            "format": "table",
+            "legendFormat": "",
+            "refId": "A"
           },
           {
             "datasource": { "type": "prometheus", "uid": "${datasource}" },
-            "expr": "sum(dk_bronze_unprocessed_total{source=~\"$source\"}) or sum(dk_bronze_unprocessed_records{source=~\"$source\"})",
+            "expr": "label_replace(label_replace(sum(dk_bronze_unprocessed_total{source=~\"$source\"}) or sum(dk_bronze_unprocessed_records{source=~\"$source\"}), \"from\", \"bronze\", \"\", \"\"), \"to\", \"silver\", \"\", \"\")",
             "instant": true,
-            "legendFormat": "bronze → silver",
-            "refId": "Bronze"
+            "format": "table",
+            "legendFormat": "",
+            "refId": "B"
           },
           {
             "datasource": { "type": "prometheus", "uid": "${datasource}" },
-            "expr": "sum(dk_silver_unprocessed_total{source=~\"$source\"}) or sum(dk_layer_record_count{layer=\"silver\"})",
+            "expr": "label_replace(label_replace(sum(dk_silver_unprocessed_total{source=~\"$source\"}) or sum(dk_layer_record_count{layer=\"silver\"}), \"from\", \"silver\", \"\", \"\"), \"to\", \"gold\", \"\", \"\")",
             "instant": true,
-            "legendFormat": "silver → gold",
-            "refId": "Silver"
+            "format": "table",
+            "legendFormat": "",
+            "refId": "C"
           }
         ],
         "title": "Medallion Pipeline Flow (raw → bronze → silver → gold)",
