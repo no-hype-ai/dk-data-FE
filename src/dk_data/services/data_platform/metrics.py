@@ -527,26 +527,6 @@ def refresh_metrics_from_database_sync():
         except Exception:
             conn.rollback()
 
-        # Pipeline processing simulation
-        import random
-        pipeline_sources = [
-            ('bronze', 'clinicaltrials', 'clinical_trials'),
-            ('bronze', 'openfda_labels', 'fda_labels'),
-            ('bronze', 'drugbank', 'drugbank_data'),
-            ('bronze', 'chembl', 'chembl_molecules'),
-            ('silver', 'molecules', 'compounds'),
-        ]
-        for layer, source, table in pipeline_sources:
-            try:
-                cur.execute(f"SELECT COUNT(*) FROM {table}")
-                count = cur.fetchone()[0] or 0
-                if count > 0:
-                    increment = random.randint(1, min(10, max(1, count // 1000)))
-                    if PROMETHEUS_AVAILABLE:
-                        DK_PIPELINE_RECORDS_PROCESSED.labels(layer=layer, source=source).inc(increment)
-            except Exception:
-                pass
-
         # Table record counts by layer
         layer_tables = {
             'raw': [
