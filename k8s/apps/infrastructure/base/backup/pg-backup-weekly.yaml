@@ -26,7 +26,6 @@ spec:
         spec:
           restartPolicy: Never
           securityContext:
-            runAsNonRoot: true
             fsGroup: 1000
             seccompProfile:
               type: RuntimeDefault
