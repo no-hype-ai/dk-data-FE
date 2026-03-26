@@ -280,7 +280,7 @@
         "options": {
           "srcField": "from",
           "dstField": "to",
-          "sizeField": "value"
+          "sizeField": "Value"
         },
         "transformations": [
           {

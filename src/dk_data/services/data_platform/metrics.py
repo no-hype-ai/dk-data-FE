@@ -47,6 +47,7 @@ if PROMETHEUS_AVAILABLE:
         DK_TABLE_RECORD_COUNT,
         DK_QUARANTINE_COUNT,
         DATA_SOURCE_STALENESS_HOURS,
+        DATA_SOURCE_TABLE_SIZE_BYTES,
     )
 
 
@@ -500,15 +501,16 @@ def refresh_metrics_from_database_sync():
         except Exception:
             pass
 
-        # Staleness hours per active data source
+        # Staleness hours and table size per active data source
         now = time.time()
         try:
             cur.execute(
-                "SELECT source_id, source_name, last_successful_refresh "
+                "SELECT source_id, source_name, last_successful_refresh, table_size_bytes "
                 "FROM meta.data_sources WHERE is_active = TRUE"
             )
             for row in cur.fetchall():
-                src_id, src_name, last_refresh = row[0], row[1], row[2]
+                src_id, src_name, last_refresh, tsize = row[0], row[1], row[2], row[3]
+                src_id_str = str(src_id)
                 if last_refresh is not None:
                     if hasattr(last_refresh, 'timestamp'):
                         last_ts = last_refresh.timestamp()
@@ -516,8 +518,12 @@ def refresh_metrics_from_database_sync():
                         last_ts = float(last_refresh)
                     staleness = max((now - last_ts) / 3600, 0.0)
                     DATA_SOURCE_STALENESS_HOURS.labels(
-                        source_id=str(src_id), source_name=src_name
+                        source_id=src_id_str, source_name=src_name
                     ).set(staleness)
+                if tsize is not None:
+                    DATA_SOURCE_TABLE_SIZE_BYTES.labels(
+                        source_id=src_id_str, source_name=src_name
+                    ).set(tsize)
         except Exception:
             conn.rollback()
 
