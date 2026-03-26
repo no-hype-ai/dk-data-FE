@@ -123,6 +123,12 @@ DATA_SOURCE_ROW_COUNT = Gauge(
     ["source_id", "source_name"],
 )
 
+DATA_SOURCE_TABLE_SIZE_BYTES = Gauge(
+    "dk_data_source_table_size_bytes",
+    "Storage size of data source table in bytes",
+    ["source_id", "source_name"],
+)
+
 DATA_SOURCE_STALENESS_HOURS = Gauge(
     "dk_data_source_staleness_hours",
     "Hours since last data source refresh",
@@ -264,6 +270,18 @@ DK_BRONZE_UNPROCESSED = Gauge(
     ["source"],
 )
 
+DK_SILVER_UNPROCESSED = Gauge(
+    "dk_silver_unprocessed_total",
+    "Unprocessed records in silver layer (bronze records pending silver transformation)",
+    ["source"],
+)
+
+DK_GOLD_UNPROCESSED = Gauge(
+    "dk_gold_unprocessed_total",
+    "Unprocessed records in gold layer (silver molecules pending gold aggregation)",
+    ["source"],
+)
+
 DK_TABLE_RECORD_COUNT = Gauge(
     "dk_table_record_count",
     "Record count per table",
@@ -327,6 +345,12 @@ DK_BRONZE_INGESTION_ERRORS = Counter(
     "dk_bronze_ingestion_errors_total",
     "Total ingestion errors by source",
     ["source", "error_type"],
+)
+
+DK_PIPELINE_DUPLICATE_FETCHES = Counter(
+    "dk_pipeline_duplicate_fetches_total",
+    "Total duplicate fetches detected via response_body_hash match (insert skipped)",
+    ["source"],
 )
 
 DK_BRONZE_INGESTION_DURATION = Histogram(
@@ -480,6 +504,7 @@ def record_data_source_refresh(
     source_name: str,
     row_count: int,
     refresh_timestamp: Optional[float] = None,
+    table_size_bytes: Optional[int] = None,
 ) -> None:
     """Record data source refresh metrics."""
     ts = refresh_timestamp or time.time()
@@ -489,6 +514,10 @@ def record_data_source_refresh(
     DATA_SOURCE_ROW_COUNT.labels(
         source_id=source_id, source_name=source_name
     ).set(row_count)
+    if table_size_bytes is not None:
+        DATA_SOURCE_TABLE_SIZE_BYTES.labels(
+            source_id=source_id, source_name=source_name
+        ).set(table_size_bytes)
 
 
 def get_metrics() -> bytes:

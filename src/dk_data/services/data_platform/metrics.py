@@ -42,8 +42,11 @@ if PROMETHEUS_AVAILABLE:
         DK_LAYER_RECORD_COUNT,
         DK_RAW_UNPROCESSED,
         DK_BRONZE_UNPROCESSED,
+        DK_SILVER_UNPROCESSED,
+        DK_GOLD_UNPROCESSED,
         DK_TABLE_RECORD_COUNT,
         DK_QUARANTINE_COUNT,
+        DATA_SOURCE_STALENESS_HOURS,
     )
 
 
@@ -180,6 +183,18 @@ def set_bronze_unprocessed(source: str, count: int):
     """Set unprocessed record count in bronze layer."""
     if PROMETHEUS_AVAILABLE:
         DK_BRONZE_UNPROCESSED.labels(source=source).set(count)
+
+
+def set_silver_unprocessed(source: str, count: int):
+    """Set unprocessed record count in silver layer (bronze records pending silver transformation)."""
+    if PROMETHEUS_AVAILABLE:
+        DK_SILVER_UNPROCESSED.labels(source=source).set(count)
+
+
+def set_gold_unprocessed(source: str, count: int):
+    """Set unprocessed record count in gold layer (silver molecules pending gold aggregation)."""
+    if PROMETHEUS_AVAILABLE:
+        DK_GOLD_UNPROCESSED.labels(source=source).set(count)
 
 
 def set_table_record_count(layer: str, table_name: str, count: int):
@@ -449,6 +464,62 @@ def refresh_metrics_from_database_sync():
                 set_bronze_unprocessed(source, count)
             except Exception:
                 set_bronze_unprocessed(source, 0)
+
+        # Unprocessed counts in silver layer (bronze records not yet transformed to silver)
+        silver_sources = {
+            'clinicaltrials': 'bronze.clinicaltrials',
+            'openfda_faers': 'bronze.openfda_faers',
+            'openfda_labels': 'bronze.openfda_labels',
+            'chembl': 'bronze.chembl',
+        }
+        for source, table in silver_sources.items():
+            try:
+                cur.execute(f"SELECT COUNT(*) FROM {table} WHERE processed_to_silver = FALSE")
+                count = cur.fetchone()[0] or 0
+                set_silver_unprocessed(source, count)
+            except Exception:
+                set_silver_unprocessed(source, 0)
+
+        # Unprocessed counts in gold layer (silver molecules pending gold aggregation)
+        try:
+            try:
+                cur.execute(
+                    "SELECT COUNT(*) FROM silver.molecules "
+                    "WHERE needs_gold_aggregation = TRUE OR last_gold_sync IS NULL"
+                )
+            except Exception:
+                conn.rollback()
+                # Fallback: total silver minus gold profile count
+                cur.execute(
+                    "SELECT "
+                    "  (SELECT COUNT(*) FROM silver.molecules) - "
+                    "  (SELECT COUNT(*) FROM gold.molecule_profile)"
+                )
+            gold_unprocessed = max(cur.fetchone()[0] or 0, 0)
+            set_gold_unprocessed('molecules', gold_unprocessed)
+        except Exception:
+            pass
+
+        # Staleness hours per active data source
+        now = time.time()
+        try:
+            cur.execute(
+                "SELECT source_id, source_name, last_successful_refresh "
+                "FROM meta.data_sources WHERE is_active = TRUE"
+            )
+            for row in cur.fetchall():
+                src_id, src_name, last_refresh = row[0], row[1], row[2]
+                if last_refresh is not None:
+                    if hasattr(last_refresh, 'timestamp'):
+                        last_ts = last_refresh.timestamp()
+                    else:
+                        last_ts = float(last_refresh)
+                    staleness = max((now - last_ts) / 3600, 0.0)
+                    DATA_SOURCE_STALENESS_HOURS.labels(
+                        source_id=str(src_id), source_name=src_name
+                    ).set(staleness)
+        except Exception:
+            conn.rollback()
 
         # Pipeline processing simulation
         import random
