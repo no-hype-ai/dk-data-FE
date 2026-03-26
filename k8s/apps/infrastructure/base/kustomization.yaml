@@ -3,6 +3,7 @@ kind: Kustomization
 resources:
   # Database initialization and seeding
   - db-init-job.yaml
+  - db-migrate-job.yaml
   - job-drugbank-seed.yaml
   # Pod disruption budgets
   - pdb-postgrest.yaml

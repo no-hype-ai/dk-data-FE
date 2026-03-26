@@ -10,13 +10,15 @@ spec:
       labels:
         app: postgrest
     spec:
+      imagePullSecrets:
+        - name: ghcr-credentials
       volumes:
         - name: consumers-config
           configMap:
             name: dk-data-consumers
       containers:
         - name: metering-proxy
-          image: ghcr.io/data-kinetic/dk-data-fe:latest
+          image: ghcr.io/data-kinetic/dk-data-fe/job-trigger:latest
           command:
             - uvicorn
             - dk_data.metering_proxy.app:app
@@ -56,6 +58,8 @@ spec:
           securityContext:
             allowPrivilegeEscalation: false
             readOnlyRootFilesystem: true
+            runAsNonRoot: true
+            runAsUser: 1000
             capabilities:
               drop: ["ALL"]
           startupProbe:

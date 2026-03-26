@@ -201,6 +201,14 @@ def parse_drug(drug_elem, ns: str = NS) -> DrugBankDrug:
 def iter_drugs(xml_path: str, limit: Optional[int] = None) -> Iterator[DrugBankDrug]:
     """Stream parse DrugBank XML file."""
     if xml_path.endswith('.zip'):
+        # Check for Git LFS pointer file (not actual zip data)
+        with open(xml_path, 'rb') as check:
+            header = check.read(40)
+            if header.startswith(b'version https://git-lfs'):
+                raise ValueError(
+                    f"File is a Git LFS pointer, not actual data: {xml_path}. "
+                    "Run 'git lfs pull' to fetch the actual file."
+                )
         with zipfile.ZipFile(xml_path, 'r') as zf:
             xml_files = [f for f in zf.namelist() if f.endswith('.xml')]
             if not xml_files:

@@ -259,11 +259,19 @@ def refresh_metrics_from_database_sync():
 
         set_clinical_trials_count(active=active, completed=completed, terminated=terminated)
 
-        # Get adverse events count
-        cur.execute("SELECT COUNT(*) FROM bronze.openfda_faers")
-        faers_count = cur.fetchone()[0] or 0
-        cur.execute("SELECT COUNT(*) FROM bronze.sider_adverse_reactions")
-        sider_count = cur.fetchone()[0] or 0
+        # Get adverse events count (tables may not exist yet)
+        faers_count = 0
+        sider_count = 0
+        try:
+            cur.execute("SELECT COUNT(*) FROM bronze.openfda_faers")
+            faers_count = cur.fetchone()[0] or 0
+        except Exception:
+            conn.rollback()
+        try:
+            cur.execute("SELECT COUNT(*) FROM bronze.sider_adverse_reactions")
+            sider_count = cur.fetchone()[0] or 0
+        except Exception:
+            conn.rollback()
         set_adverse_events_count(faers_count + sider_count)
 
         # Get clinical trials by phase
@@ -295,6 +303,7 @@ def refresh_metrics_from_database_sync():
             pending = cur.fetchone()[0] or 0
             set_resolution_queue_pending(pending)
         except Exception:
+            conn.rollback()
             set_resolution_queue_pending(0)
 
         # Entity resolution success rate
@@ -311,6 +320,7 @@ def refresh_metrics_from_database_sync():
             quarantine = cur.fetchone()[0] or 0
             set_quarantine_count(quarantine)
         except Exception:
+            conn.rollback()
             set_quarantine_count(0)
 
         # Data source health
@@ -499,6 +509,7 @@ def refresh_metrics_from_database_sync():
                     count = cur.fetchone()[0] or 0
                     set_table_record_count(layer, table, count)
                 except Exception:
+                    conn.rollback()
                     set_table_record_count(layer, table, 0)
 
         cur.close()

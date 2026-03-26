@@ -235,6 +235,14 @@ spec:
       ports:
         - protocol: TCP
           port: 4317
+    # Alloy via hostNetwork — node IPs (Alloy DaemonSet uses hostNetwork: true,
+    # so OTLP traffic routes to node IPs not pod IPs)
+    - to:
+        - ipBlock:
+            cidr: 10.0.0.0/24
+      ports:
+        - protocol: TCP
+          port: 4317
     # External HTTPS (CMS APIs, HRSA, ACC) — for CronJob pods
     - to:
         - ipBlock:
