@@ -1,7 +1,7 @@
 {
   "__metadata": {
     "name": "datasource-health",
-    "folder": "Data Platform",
+    "folder": "Applications",
     "description": "Data Source Health — per-source freshness, ingestion volume, fetch duration, error rate, duplicate detection, medallion flow, storage growth, API consumer usage",
     "tags": ["dk-data", "data-platform", "datasource-health", "auto-provisioned"],
     "version": "1.0.0",
