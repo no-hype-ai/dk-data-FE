@@ -18,6 +18,7 @@ from datetime import date
 
 import pytest
 import responses
+import time_machine
 
 from dk_data.ingestion.fetchers.medical_news import (
     MedicalNewsFetcher,
@@ -106,6 +107,7 @@ class TestMedicalNewsFetcherURL:
 class TestMedicalNewsFetcherFetch:
     """Tests for the fetch method with mocked HTTP responses."""
 
+    @time_machine.travel("2026-02-15")
     @responses.activate
     def test_fetch_success(self, tmp_path):
         """Test complete fetch with mocked RSS feeds."""
@@ -184,6 +186,7 @@ class TestMedicalNewsFetcherFetch:
         assert result["status"] == "success"
         assert result["record_count"] == 0
 
+    @time_machine.travel("2026-02-15")
     @responses.activate
     def test_fetch_multiple_feeds(self, tmp_path):
         """Test fetch from multiple RSS feeds."""

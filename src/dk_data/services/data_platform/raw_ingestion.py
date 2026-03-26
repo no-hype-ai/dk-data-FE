@@ -16,6 +16,8 @@ from enum import Enum
 import logging
 import aiohttp
 
+from dk_data.observability.metrics import DK_PIPELINE_DUPLICATE_FETCHES
+
 logger = logging.getLogger(__name__)
 
 
@@ -202,6 +204,7 @@ class RawIngestionService:
 
             if existing:
                 logger.debug(f"Duplicate response detected for {source.value}, skipping")
+                DK_PIPELINE_DUPLICATE_FETCHES.labels(source=source.value).inc()
                 return None
 
             # Insert new record

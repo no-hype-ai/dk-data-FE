@@ -17,7 +17,7 @@ from pathlib import Path
 import pytest
 
 REPO_ROOT = Path(__file__).parent.parent
-DB_INIT_JOB = REPO_ROOT / "k8s" / "base" / "db-init-job.yaml"
+DB_INIT_JOB = REPO_ROOT / "k8s" / "apps" / "infrastructure" / "base" / "db-init-job.yaml"
 MIGRATION_FILE = REPO_ROOT / "src" / "dk_data" / "sql" / "migrations" / "067_audit_log_table.sql"
 
 
