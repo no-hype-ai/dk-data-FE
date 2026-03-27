@@ -66,7 +66,40 @@ An operations engineer monitoring the data platform needs to inspect the history
 
 ---
 
-### User Story 4 — SEC EDGAR 10-K/20-F Filing Intelligence (Priority: P4)
+### User Story 4 — LLM-Enriched Provider Intelligence via Agent System (Priority: P4)
+
+Raw CMS ingestion gives you facts — provider names, NPI codes, DRG claims. But a clinical sales analyst needs richer intelligence: which clinical service lines does a hospital run, who owns which IDN, which facilities are likely referring patients to whom. This inference cannot be read directly from the data — it requires reasoning over partial information.
+
+**Why this priority**: The agent system is the highest-value differentiation of the CMS data layer. Without it the platform is a data warehouse. With it, it is an intelligence platform. Lower than CMS and regulatory sourcing because those are prerequisites.
+
+**Independent Test**: Trigger the service line inference agent for a single hospital (by NPI), verify a service line record is written to the silver layer with a confidence score, and confirm that records below the confidence threshold appear in the quarantine table rather than in the live silver view.
+
+**Acceptance Scenarios**:
+
+1. **Given** a hospital's DRG claims data is ingested, **When** the service line inference agent runs, **Then** clinical service line assignments are written to the silver layer with a confidence score per record
+2. **Given** an agent produces a result with confidence below 0.5, **When** the result is processed, **Then** the record is written to the quarantine table for manual review and does NOT appear in the live silver view
+3. **Given** an agent produces a result with confidence between 0.5 and 0.79, **When** the result is written, **Then** the record appears in the silver layer with a `needs_review` flag, visible to analysts but marked for validation
+4. **Given** agents run on their monthly schedule, **When** a run completes, **Then** the refresh log contains an entry for each agent with record counts, confidence distribution, and quarantine count
+
+---
+
+### User Story 5 — On-Demand Data Backfill via Data Tools Gateway (Priority: P5)
+
+An analyst queries a gold-layer drug view and gets no results because a source has not been ingested for that compound yet. Today there is no self-service way to trigger a targeted refresh — the analyst must wait for the next scheduled run. The data tools gateway gives agents and analysts a way to request a backfill for a specific source on demand.
+
+**Why this priority**: Unblocks analysts and agents from waiting for scheduled cycles. Depends on CMS and regulatory ingestion working first.
+
+**Independent Test**: Call the backfill endpoint for a single CMS source, verify records appear in the corresponding gold view shortly after, and confirm `meta.refresh_log` has an entry for the triggered run.
+
+**Acceptance Scenarios**:
+
+1. **Given** a gold-layer view returns empty results for a source, **When** a backfill is requested for that source, **Then** the platform fetches fresh upstream data, runs the silver/gold transformation, and the view returns records within the current session
+2. **Given** local data for a source already exists and is sufficiently fresh, **When** a backfill is requested, **Then** the gateway checks the local DB first and skips the external fetch
+3. **Given** the tool registry is queried, **When** all available tools are listed, **Then** all sources are returned with their category, supported query parameters, and last-refresh metadata
+
+---
+
+### User Story 6 — SEC EDGAR 10-K/20-F Filing Intelligence (Priority: P6)
 
 A competitive intelligence analyst needs to extract structured data from pharmaceutical company 10-K annual reports and 20-F foreign filings — specifically revenue by drug, pipeline stage disclosures, and risk factor language — to track competitive positioning over time.
 
@@ -128,6 +161,25 @@ A competitive intelligence analyst needs to extract structured data from pharmac
 - **FR-018**: EDGAR filing records MUST store: CIK, company name, ticker, filing type, fiscal year end date, filing date, accession number, and full document text
 - **FR-019**: A silver-layer transformation MUST flag filings that contain drug-specific revenue disclosures (detected via keyword presence) to support downstream prioritization
 
+**Agent System**
+
+- **FR-024**: The platform MUST include 6 domain-specific enrichment agents (service line inference, IDN hierarchy, referral network, contact verification, staffing decomposition, equipment inventory) that operate on ingested CMS data and write enriched records to the silver layer
+- **FR-025**: Every agent MUST route all LLM calls through the shared LiteLLM proxy — no direct API calls to any LLM provider
+- **FR-026**: Records produced with confidence below 0.5 MUST be written to a quarantine table and excluded from live silver views until manually reviewed and resolved
+- **FR-027**: Records produced with confidence between 0.5 and 0.79 MUST be written to the silver layer with a `needs_review` flag set to TRUE
+- **FR-028**: Agents MUST be triggerable both on a monthly scheduled basis and on demand via API — a single agent run MUST NOT require a full pipeline restart
+
+**Data Tools Gateway**
+
+- **FR-029**: The platform MUST expose a tool registry listing all available data sources (CMS and molecule) with metadata: category, supported query keys, and last-refresh timestamp
+- **FR-030**: For any registered source, the platform MUST provide a backfill endpoint that fetches fresh upstream data and runs the silver/gold transformation without manual intervention
+- **FR-031**: Before triggering an external fetch, the gateway MUST check local data freshness and skip the external call if sufficiently recent data exists
+
+**Xenon Schema**
+
+- **FR-032**: The platform MUST expose the `xenon` schema as a read-only PostgREST endpoint, accessible to authenticated consumers via pre-signed JWT
+- **FR-033**: The `xenon` schema MUST be writable only by the Xenon application role — dk-data-FE does not own or write to this data
+
 **Data Integrity and Migration**
 
 - **FR-020**: All schema changes MUST be delivered as a single consolidated migration script that can be reviewed, tested, and rolled back as a unit — no split migrations across the PR
@@ -143,6 +195,10 @@ A competitive intelligence analyst needs to extract structured data from pharmac
 - **SilverRecord**: A normalized business entity (drug, provider, decision, filing) derived from raw records via SQLMesh incremental transformation, updated on each transform run
 - **DrugIdentifier**: A cross-source canonical drug record linking brand name, INN generic name, PubChem CID, and internal platform drug ID — the join key for multi-source queries in the silver layer
 - **MarketSummary**: A gold-layer aggregate view per drug combining pricing trend, regulatory status, evidence volume, and funding activity — built from silver records, degrades gracefully when sources are absent
+- **AgentRecord**: An enriched inference result produced by an LLM agent from raw CMS data, stored in the silver layer with a confidence score and `needs_review` flag
+- **QuarantineRecord**: An agent result with confidence below 0.5, stored separately from live silver data pending manual review and resolution
+- **DataTool**: A registered backfill-capable data source in the tool registry, with metadata describing what it can fetch and how fresh the local data is
+- **XenonRecord**: Data written by the Xenon application to the `xenon` schema, readable by dk-data-FE via PostgREST but not owned or modified by this platform
 
 ---
 
@@ -158,6 +214,9 @@ A competitive intelligence analyst needs to extract structured data from pharmac
 - **SC-006**: All existing tests continue to pass after the migration is applied — zero regressions
 - **SC-007**: After initial deployment, `meta.data_sources.last_successful_refresh` is populated for every new source within its first successful run, and subsequent runs use the computed incremental window rather than the default backfill window
 - **SC-008**: EDGAR filing content for a configured pharmaceutical company list is available within the next scheduled refresh cycle after initial deployment — no manual seeding required
+- **SC-009**: Agent runs produce zero direct LLM API calls — all calls route through the LiteLLM proxy, confirmed by absence of external provider credentials in agent code
+- **SC-010**: After an agent monthly run, the quarantine table contains only records with confidence < 0.5, and the silver layer contains no unscored records — every agent result has a confidence value
+- **SC-011**: A backfill request for any registered source completes and produces queryable gold-layer data within 10 minutes of the API call, with a corresponding entry in `meta.refresh_log`
 
 ---
 
@@ -173,15 +232,20 @@ A competitive intelligence analyst needs to extract structured data from pharmac
 
 ## Out of Scope for This PR
 
-- Full-text extraction and structuring of SEC filing content (drug revenue segmentation, pipeline parsing) — this PR stores the document; extraction is a downstream feature
+- Structured revenue/pipeline extraction from SEC filings beyond keyword flagging — full NLP parsing is a downstream feature
+- Expansion of EDGAR coverage beyond the initial curated list of pharmaceutical companies
 - Uplift/sync of monitoring config to dk-alchemy — tracked separately in dk-data-FE#145
 
 ## Implementation Order
 
 Each piece can be independently tested and merged if needed:
 
-1. **Consolidated migration** — establish all schema changes from current main-branch state in a single reviewed script; apply to staging first; verify existing tests pass
-2. **CMS PUF fetchers and loaders** (P1) — 31 sources using the existing file-based hash-skip pattern; register all in `meta.data_sources` and `SOURCES` dict
-3. **Regulatory and clinical sources** (P2) — EMA first (most structured), then Cochrane, EuropePMC, DrugBank, NIH Reporter, PubChem; each registered and logged via `log_to_meta()`
-4. **Market summary silver view** — depends on CMS + at least one regulatory source; implement after at least CMS and EMA are verified
-5. **SEC EDGAR** (P4) — independent of other sources; can ship in this PR or a follow-on
+1. **Consolidated migration** — audit all 57 016 migrations against current main schema; write the delta-only consolidated script; apply to staging; verify existing tests pass
+2. **CMS PUF fetchers and loaders** (P1) — 28 sources using existing file-based hash-skip pattern; register all in `meta.data_sources` and `SOURCES` dict
+3. **Regulatory and clinical sources** (P2) — EMA first, then Cochrane, EuropePMC, DrugBank, NIH Reporter, PubChem; each logged via `log_to_meta()`
+4. **Market summary silver view** — after CMS and EMA are verified
+5. **Agent system** (P4) — port 8 agent files + quarantine table + agents API router + CronJob + K8s Job template
+6. **Data tools gateway** (P5) — port 27 service files + data_tools API router + data_registry.py
+7. **Xenon schema** — migration + PostgREST config + role grants
+8. **SQLMesh scheduler with advisory lock** — deadlock prevention deployment
+9. **SEC EDGAR** (P6) — independent of other sources; can ship in this PR or a follow-on
