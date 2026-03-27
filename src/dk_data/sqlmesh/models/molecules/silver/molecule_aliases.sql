@@ -58,6 +58,9 @@ WHERE syn IS NOT NULL
 UNION ALL
 
 -- DrugBank synonyms
+-- NOTE: bronze.drugbank.inchi_key is NULL (XML fetcher does not extract structure).
+-- Join via canonical name. bronze.drugbank.synonyms is also NULL (XML fetcher
+-- does not parse synonyms); this section produces no rows until the fetcher is extended.
 SELECT
     m.id AS molecule_id,
     syn AS alias_name,
@@ -66,15 +69,18 @@ SELECT
     'drugbank' AS source,
     NOW() AS created_at
 FROM silver.molecules m
-JOIN bronze.drugbank d ON m.inchi_key = d.inchi_key
-CROSS JOIN LATERAL jsonb_array_elements_text(COALESCE(d.synonyms, '[]'::jsonb)) AS syn
+JOIN bronze.drugbank d ON LOWER(m.canonical_name) = LOWER(d.name)
+CROSS JOIN LATERAL jsonb_array_elements_text(COALESCE(d.synonyms, '[]'::JSONB)) AS syn
 WHERE syn IS NOT NULL
   AND syn != ''
+  AND d.name IS NOT NULL
   AND m.needs_review = FALSE
 
 UNION ALL
 
--- DrugBank brand names
+-- DrugBank brand names (international_brands)
+-- NOTE: bronze.drugbank.international_brands is NULL (XML fetcher does not parse
+-- international brand names); this section produces no rows until the fetcher is extended.
 SELECT
     m.id AS molecule_id,
     brand->>'name' AS alias_name,
@@ -83,15 +89,18 @@ SELECT
     'drugbank' AS source,
     NOW() AS created_at
 FROM silver.molecules m
-JOIN bronze.drugbank d ON m.inchi_key = d.inchi_key
-CROSS JOIN LATERAL jsonb_array_elements(COALESCE(d.international_brands, '[]'::jsonb)) AS brand
+JOIN bronze.drugbank d ON LOWER(m.canonical_name) = LOWER(d.name)
+CROSS JOIN LATERAL jsonb_array_elements(COALESCE(d.international_brands, '[]'::JSONB)) AS brand
 WHERE brand->>'name' IS NOT NULL
   AND brand->>'name' != ''
+  AND d.name IS NOT NULL
   AND m.needs_review = FALSE
 
 UNION ALL
 
 -- DrugBank product names
+-- NOTE: bronze.drugbank.products is NULL (XML fetcher does not parse product names);
+-- this section produces no rows until the fetcher is extended.
 SELECT
     m.id AS molecule_id,
     prod->>'name' AS alias_name,
@@ -100,10 +109,11 @@ SELECT
     'drugbank' AS source,
     NOW() AS created_at
 FROM silver.molecules m
-JOIN bronze.drugbank d ON m.inchi_key = d.inchi_key
-CROSS JOIN LATERAL jsonb_array_elements(COALESCE(d.products, '[]'::jsonb)) AS prod
+JOIN bronze.drugbank d ON LOWER(m.canonical_name) = LOWER(d.name)
+CROSS JOIN LATERAL jsonb_array_elements(COALESCE(d.products, '[]'::JSONB)) AS prod
 WHERE prod->>'name' IS NOT NULL
   AND prod->>'name' != ''
+  AND d.name IS NOT NULL
   AND m.needs_review = FALSE
 
 UNION ALL

@@ -1,10 +1,7 @@
 -- SQLMesh Model: Silver Publications
--- Normalized publication data from OpenAlex, PubMed, Cochrane, Journal RSS, and EuropePMC
+-- Normalized publication data from OpenAlex, PubMed, Cochrane, and Journal RSS
+-- Reads from bronze.* models which themselves read from flat raw.* typed tables.
 -- Part of: 012-dk-data-platform (extended by 015-assessment-dashboard-integration)
--- Updated: 019-cms-puf-platform-reconciliation — added EuropePMC as 5th CTE source.
---          EuropePMC records land in mol_raw.europepmc_raw -> mol_bronze.europepmc;
---          they are merged here via the 'europepmc' CTE.
---          No standalone mol_silver.europepmc table is created.
 
 MODEL (
     name silver.publications,
@@ -25,8 +22,7 @@ WITH openalex_pubs AS (
         pmid,
         pmcid,
         title,
-        -- Reconstruct abstract from inverted index (simplified)
-        NULL::TEXT AS abstract,  -- Would need complex reconstruction
+        abstract,
         work_type AS publication_type,
         language,
         publication_year,
@@ -57,36 +53,39 @@ WITH openalex_pubs AS (
         AND title IS NOT NULL
 ),
 
--- Feature 015: PubMed publications
+-- PubMed publications
+-- bronze.pubmed now exposes flat columns: pmid, doi, title, abstract, journal,
+-- publication_date, mesh_terms (TEXT[]), authors (JSONB), publication_types (TEXT[])
 pubmed_pubs AS (
     SELECT
-        'pubmed:' || pmid AS openalex_id,
+        'pubmed:' || pmid                                        AS openalex_id,
         doi,
         pmid,
-        NULL::TEXT AS pmcid,
+        NULL::TEXT                                               AS pmcid,
         title,
         abstract,
-        'journal-article' AS publication_type,
-        NULL::TEXT AS language,
-        EXTRACT(YEAR FROM pub_date::DATE)::INTEGER AS publication_year,
-        pub_date AS publication_date,
-        journal AS journal_name,
-        NULL::TEXT AS journal_issn,
-        NULL::TEXT AS volume,
-        NULL::TEXT AS issue,
-        NULL::TEXT AS first_page,
-        NULL::TEXT AS last_page,
-        NULL::JSONB AS author_names,
-        authors AS authorships,
-        NULL::JSONB AS concepts,
-        NULL::JSONB AS keywords,
-        mesh_terms,
-        NULL::INTEGER AS cited_by_count,
-        NULL::JSONB AS citation_counts_by_year,
-        NULL::BOOLEAN AS is_open_access,
-        NULL::TEXT AS pdf_url,
-        NULL::BOOLEAN AS is_retracted,
-        NULL::JSONB AS grants,
+        'journal-article'                                        AS publication_type,
+        NULL::TEXT                                               AS language,
+        EXTRACT(YEAR FROM publication_date)::INTEGER            AS publication_year,
+        publication_date,
+        journal                                                  AS journal_name,
+        NULL::TEXT                                               AS journal_issn,
+        NULL::TEXT                                               AS volume,
+        NULL::TEXT                                               AS issue,
+        NULL::TEXT                                               AS first_page,
+        NULL::TEXT                                               AS last_page,
+        NULL::JSONB                                              AS author_names,
+        authors                                                  AS authorships,
+        NULL::JSONB                                              AS concepts,
+        NULL::JSONB                                              AS keywords,
+        -- mesh_terms stored as TEXT[] in raw; cast to JSONB for uniform schema
+        to_jsonb(mesh_terms)                                     AS mesh_terms,
+        NULL::INTEGER                                            AS cited_by_count,
+        NULL::JSONB                                              AS citation_counts_by_year,
+        NULL::BOOLEAN                                            AS is_open_access,
+        NULL::TEXT                                               AS pdf_url,
+        NULL::BOOLEAN                                            AS is_retracted,
+        NULL::JSONB                                              AS grants,
         source,
         source_updated_at,
         created_at
@@ -96,36 +95,39 @@ pubmed_pubs AS (
         AND title IS NOT NULL
 ),
 
--- Feature 015: Cochrane systematic reviews
+-- Cochrane systematic reviews
+-- bronze.cochrane_reviews exposes: review_id, doi, title, abstract, publication_date,
+-- review_type, authors (TEXT), interventions (TEXT[]), conditions (TEXT[]), conclusions
 cochrane_pubs AS (
     SELECT
-        'cochrane:' || review_id AS openalex_id,
+        'cochrane:' || review_id                                 AS openalex_id,
         doi,
-        NULL::TEXT AS pmid,
-        NULL::TEXT AS pmcid,
+        NULL::TEXT                                               AS pmid,
+        NULL::TEXT                                               AS pmcid,
         title,
         abstract,
-        review_type AS publication_type,
-        NULL::TEXT AS language,
-        EXTRACT(YEAR FROM pub_date::DATE)::INTEGER AS publication_year,
-        pub_date AS publication_date,
-        'Cochrane Database of Systematic Reviews' AS journal_name,
-        NULL::TEXT AS journal_issn,
-        NULL::TEXT AS volume,
-        NULL::TEXT AS issue,
-        NULL::TEXT AS first_page,
-        NULL::TEXT AS last_page,
-        NULL::JSONB AS author_names,
-        authors AS authorships,
-        NULL::JSONB AS concepts,
-        NULL::JSONB AS keywords,
-        NULL::JSONB AS mesh_terms,
-        NULL::INTEGER AS cited_by_count,
-        NULL::JSONB AS citation_counts_by_year,
-        NULL::BOOLEAN AS is_open_access,
-        NULL::TEXT AS pdf_url,
-        NULL::BOOLEAN AS is_retracted,
-        NULL::JSONB AS grants,
+        review_type                                              AS publication_type,
+        NULL::TEXT                                               AS language,
+        EXTRACT(YEAR FROM publication_date)::INTEGER            AS publication_year,
+        publication_date,
+        'Cochrane Database of Systematic Reviews'                AS journal_name,
+        NULL::TEXT                                               AS journal_issn,
+        NULL::TEXT                                               AS volume,
+        NULL::TEXT                                               AS issue,
+        NULL::TEXT                                               AS first_page,
+        NULL::TEXT                                               AS last_page,
+        NULL::JSONB                                              AS author_names,
+        -- authors stored as TEXT (semicolon-separated) in raw.cochrane_reviews
+        to_jsonb(ARRAY[authors])                                 AS authorships,
+        NULL::JSONB                                              AS concepts,
+        NULL::JSONB                                              AS keywords,
+        NULL::JSONB                                              AS mesh_terms,
+        NULL::INTEGER                                            AS cited_by_count,
+        NULL::JSONB                                              AS citation_counts_by_year,
+        NULL::BOOLEAN                                            AS is_open_access,
+        NULL::TEXT                                               AS pdf_url,
+        NULL::BOOLEAN                                            AS is_retracted,
+        NULL::JSONB                                              AS grants,
         source,
         source_updated_at,
         created_at
@@ -135,36 +137,38 @@ cochrane_pubs AS (
         AND title IS NOT NULL
 ),
 
--- Feature 015: Journal RSS feed entries
+-- Journal RSS feed entries
+-- bronze.journal_rss now exposes flat columns: entry_id, doi, title, pub_date,
+-- journal_name, summary (abstract), authors (TEXT)
 journal_rss_pubs AS (
     SELECT
-        'rss:' || entry_id AS openalex_id,
+        'rss:' || entry_id                                       AS openalex_id,
         doi,
-        NULL::TEXT AS pmid,
-        NULL::TEXT AS pmcid,
+        NULL::TEXT                                               AS pmid,
+        NULL::TEXT                                               AS pmcid,
         title,
-        summary AS abstract,
-        'journal-article' AS publication_type,
-        NULL::TEXT AS language,
-        EXTRACT(YEAR FROM pub_date::DATE)::INTEGER AS publication_year,
-        pub_date AS publication_date,
+        summary                                                  AS abstract,
+        'journal-article'                                        AS publication_type,
+        NULL::TEXT                                               AS language,
+        EXTRACT(YEAR FROM pub_date)::INTEGER                    AS publication_year,
+        pub_date                                                 AS publication_date,
         journal_name,
-        NULL::TEXT AS journal_issn,
-        NULL::TEXT AS volume,
-        NULL::TEXT AS issue,
-        NULL::TEXT AS first_page,
-        NULL::TEXT AS last_page,
-        NULL::JSONB AS author_names,
-        authors AS authorships,
-        NULL::JSONB AS concepts,
-        NULL::JSONB AS keywords,
-        NULL::JSONB AS mesh_terms,
-        NULL::INTEGER AS cited_by_count,
-        NULL::JSONB AS citation_counts_by_year,
-        NULL::BOOLEAN AS is_open_access,
-        NULL::TEXT AS pdf_url,
-        NULL::BOOLEAN AS is_retracted,
-        NULL::JSONB AS grants,
+        NULL::TEXT                                               AS journal_issn,
+        NULL::TEXT                                               AS volume,
+        NULL::TEXT                                               AS issue,
+        NULL::TEXT                                               AS first_page,
+        NULL::TEXT                                               AS last_page,
+        NULL::JSONB                                              AS author_names,
+        to_jsonb(ARRAY[authors])                                 AS authorships,
+        NULL::JSONB                                              AS concepts,
+        NULL::JSONB                                              AS keywords,
+        NULL::JSONB                                              AS mesh_terms,
+        NULL::INTEGER                                            AS cited_by_count,
+        NULL::JSONB                                              AS citation_counts_by_year,
+        NULL::BOOLEAN                                            AS is_open_access,
+        NULL::TEXT                                               AS pdf_url,
+        NULL::BOOLEAN                                            AS is_retracted,
+        NULL::JSONB                                              AS grants,
         source,
         source_updated_at,
         created_at
@@ -174,43 +178,48 @@ journal_rss_pubs AS (
         AND title IS NOT NULL
 ),
 
--- Feature 019: EuropePMC publications (5th source)
--- Reads from mol_bronze.europepmc which is populated by T022 (mol_bronze.europepmc model).
--- Field mapping: abstractText -> abstract, journalInfo -> journal_name, firstPublicationDate -> publication_date
+-- EuropePMC publications
+-- bronze.europepmc exposes typed columns derived from mol_raw.europepmc_raw JSONB:
+-- europepmc_pmid (TEXT), pmcid, doi, title, abstract, author_string, author_list (JSONB),
+-- journal_title, publication_date (DATE), publication_year (INTEGER),
+-- cited_by_count (INTEGER), is_open_access (BOOLEAN), mesh_terms (JSONB), keywords (JSONB)
 europepmc_pubs AS (
     SELECT
-        'europepmc:' || pmid AS openalex_id,
+        'europepmc:' || europepmc_pmid                           AS openalex_id,
         doi,
-        pmid::TEXT AS pmid,
-        NULL::TEXT AS pmcid,
+        europepmc_pmid                                           AS pmid,
+        pmcid,
         title,
-        abstract_text AS abstract,
-        'journal-article' AS publication_type,
-        NULL::TEXT AS language,
-        publication_year::INTEGER AS publication_year,
+        abstract,
+        publication_type,
+        NULL::TEXT                                               AS language,
+        publication_year,
         publication_date,
-        journal_title AS journal_name,
-        NULL::TEXT AS journal_issn,
-        NULL::TEXT AS volume,
-        NULL::TEXT AS issue,
-        NULL::TEXT AS first_page,
-        NULL::TEXT AS last_page,
-        NULL::JSONB AS author_names,
-        author_list AS authorships,
-        NULL::JSONB AS concepts,
-        NULL::JSONB AS keywords,
-        NULL::JSONB AS mesh_terms,
-        NULL::INTEGER AS cited_by_count,
-        NULL::JSONB AS citation_counts_by_year,
-        NULL::BOOLEAN AS is_open_access,
-        NULL::TEXT AS pdf_url,
-        NULL::BOOLEAN AS is_retracted,
-        NULL::JSONB AS grants,
-        'europepmc' AS source,
-        created_at AS source_updated_at,
+        journal_title                                            AS journal_name,
+        journal_issn,
+        NULL::TEXT                                               AS volume,
+        NULL::TEXT                                               AS issue,
+        NULL::TEXT                                               AS first_page,
+        NULL::TEXT                                               AS last_page,
+        NULL::JSONB                                              AS author_names,
+        -- author_list from EuropePMC is an array of {fullName, ...} objects
+        author_list                                              AS authorships,
+        NULL::JSONB                                              AS concepts,
+        keywords,
+        mesh_terms,
+        cited_by_count,
+        NULL::JSONB                                              AS citation_counts_by_year,
+        is_open_access,
+        NULL::TEXT                                               AS pdf_url,
+        NULL::BOOLEAN                                            AS is_retracted,
+        NULL::JSONB                                              AS grants,
+        source,
+        source_updated_at,
         created_at
-    FROM mol_bronze.europepmc
-    WHERE title IS NOT NULL
+    FROM bronze.europepmc
+    WHERE
+        processed_to_silver = FALSE
+        AND title IS NOT NULL
 ),
 
 -- Combine all publication sources
@@ -219,24 +228,49 @@ combined_pubs AS (
     UNION ALL
     SELECT * FROM pubmed_pubs
     UNION ALL
+    SELECT * FROM europepmc_pubs
+    UNION ALL
     SELECT * FROM cochrane_pubs
     UNION ALL
     SELECT * FROM journal_rss_pubs
-    UNION ALL
-    SELECT * FROM europepmc_pubs
 ),
 
--- Extract first author
+-- Extract first author and compute derived fields
 enriched AS (
     SELECT
         *,
-        -- First author info
-        authorships->0->'author'->>'display_name' AS first_author_name,
-        authorships->0->'author'->>'id' AS first_author_id,
-        authorships->0->'institutions'->0->>'display_name' AS first_author_institution,
+        -- First author info from JSONB authorships array
+        -- OpenAlex:   authorships[0].author.display_name
+        -- EuropePMC: authorships[0].fullName  (author_list field)
+        -- PubMed/Cochrane/RSS: authorships is to_jsonb(ARRAY[text]) — single-element array
+        CASE
+            WHEN jsonb_typeof(authorships) = 'array'
+                 AND authorships->0->'author' IS NOT NULL
+            THEN authorships->0->'author'->>'display_name'
+            WHEN jsonb_typeof(authorships) = 'array'
+                 AND authorships->0->>'fullName' IS NOT NULL
+            THEN authorships->0->>'fullName'
+            WHEN jsonb_typeof(authorships) = 'array'
+            THEN authorships->>0
+            ELSE NULL
+        END AS first_author_name,
+        -- OpenAlex-sourced author ID (URL like https://openalex.org/A...)
+        -- EuropePMC authorIds use different format; use authorId if available
+        CASE
+            WHEN authorships->0->'author' IS NOT NULL
+            THEN authorships->0->'author'->>'id'
+            WHEN authorships->0->>'authorId' IS NOT NULL
+            THEN authorships->0->>'authorId'
+            ELSE NULL
+        END AS first_author_id,
+        CASE
+            WHEN authorships->0->'institutions' IS NOT NULL
+            THEN authorships->0->'institutions'->0->>'display_name'
+            ELSE NULL
+        END AS first_author_institution,
         -- Author count
         COALESCE(jsonb_array_length(authorships), 0) AS author_count,
-        -- Top concepts
+        -- Top concepts (only meaningful for OpenAlex)
         (SELECT jsonb_agg(c->>'display_name')
          FROM jsonb_array_elements(COALESCE(concepts, '[]'::JSONB)) AS c
          WHERE (c->>'score')::NUMERIC > 0.5
@@ -245,10 +279,10 @@ enriched AS (
 )
 
 SELECT DISTINCT ON (doi)
-    gen_random_uuid() AS id,
+    gen_random_uuid()       AS id,
     openalex_id,
     doi,
-    pmid::BIGINT AS pmid,
+    pmid::BIGINT            AS pmid,
     pmcid,
     title,
     abstract,
@@ -263,10 +297,11 @@ SELECT DISTINCT ON (doi)
     first_page,
     last_page,
     first_author_name,
+    first_author_id,
     first_author_institution,
     author_count,
     author_names,
-    top_concepts AS concepts,
+    top_concepts            AS concepts,
     mesh_terms,
     cited_by_count,
     is_open_access,
@@ -274,14 +309,15 @@ SELECT DISTINCT ON (doi)
     is_retracted,
     source,
     source_updated_at,
-    NOW() AS created_at,
-    NOW() AS updated_at
+    NOW()                   AS created_at,
+    NOW()                   AS updated_at
 FROM enriched
 ORDER BY doi,
     CASE source
-        WHEN 'openalex' THEN 1
-        WHEN 'pubmed' THEN 2
-        WHEN 'cochrane_reviews' THEN 3
-        WHEN 'journal_rss' THEN 4
-        WHEN 'europepmc' THEN 5
+        WHEN 'openalex'       THEN 1
+        WHEN 'pubmed'         THEN 2
+        WHEN 'europepmc'      THEN 3
+        WHEN 'cochrane_reviews' THEN 4
+        WHEN 'journal_rss'    THEN 5
+        ELSE 6
     END;

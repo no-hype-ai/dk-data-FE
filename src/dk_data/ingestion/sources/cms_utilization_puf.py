@@ -1,4 +1,19 @@
-"""CMS Medicare Utilization PUF loader. Loads to hcs_raw.cms_utilization_puf."""
+"""CMS Medicare Utilization PUF loader. Loads to hcs_raw.cms_utilization_puf.
+
+Raw CMS field names (snake_case mapping):
+  Bene_Geo_Lvl → bene_geo_lvl
+  Bene_Geo_Desc → bene_geo_desc
+  Bene_Geo_Cd → bene_geo_cd
+  Bene_Age_Lvl → bene_age_lvl
+  Bene_Demo_Lvl → bene_demo_lvl
+  Bene_Demo_Desc → bene_demo_desc
+  Srvcs_Per_Bene → srvcs_per_bene
+  IP_Cvrd_Stays_Per_1000_Benes → ip_cvrd_stays_per_1000_benes
+  Avg_IP_LOS → avg_ip_los
+  ER_Visits_Per_1000_Benes → er_visits_per_1000_benes
+  Phy_Visits_Per_Bene → phy_visits_per_bene
+  Tot_Mdcr_Pymt_PC → tot_mdcr_pymt_pc
+"""
 
 import hashlib
 import logging
@@ -14,19 +29,18 @@ from ..utils.validators import CMSUtilizationRecord
 logger = logging.getLogger(__name__)
 
 COLUMN_MAPPING = {
-    'Rndrng_NPI': 'npi',
-    'Rndrng_Prvdr_Last_Org_Name': 'provider_last_org_name',
-    'Rndrng_Prvdr_First_Name': 'provider_first_name',
-    'Rndrng_Prvdr_Type': 'provider_type',
-    'Rndrng_Prvdr_State_Abrvtn': 'provider_state',
-    'HCPCS_Cd': 'hcpcs_cd',
-    'HCPCS_Desc': 'hcpcs_desc',
-    'HCPCS_Drug_Ind': 'hcpcs_drug_ind',
-    'Place_Of_Srvc': 'place_of_service',
-    'Tot_Benes': 'tot_benes',
-    'Tot_Srvcs': 'tot_srvcs',
-    'Tot_Mdcr_Alowd_Amt': 'tot_mdcr_alowd_amt',
-    'Tot_Mdcr_Pymt_Amt': 'tot_mdcr_pymt_amt',
+    'Bene_Geo_Lvl': 'bene_geo_lvl',
+    'Bene_Geo_Desc': 'bene_geo_desc',
+    'Bene_Geo_Cd': 'bene_geo_cd',
+    'Bene_Age_Lvl': 'bene_age_lvl',
+    'Bene_Demo_Lvl': 'bene_demo_lvl',
+    'Bene_Demo_Desc': 'bene_demo_desc',
+    'Srvcs_Per_Bene': 'srvcs_per_bene',
+    'IP_Cvrd_Stays_Per_1000_Benes': 'ip_cvrd_stays_per_1000_benes',
+    'Avg_IP_LOS': 'avg_ip_los',
+    'ER_Visits_Per_1000_Benes': 'er_visits_per_1000_benes',
+    'Phy_Visits_Per_Bene': 'phy_visits_per_bene',
+    'Tot_Mdcr_Pymt_PC': 'tot_mdcr_pymt_pc',
 }
 
 TABLE = 'cms_utilization_puf'
@@ -64,19 +78,18 @@ def load_cms_utilization_puf(filepath: str, source_year: int = 2023) -> dict:
     for idx, row in df.iterrows():
         try:
             rec = CMSUtilizationRecord(
-                npi=row.get('npi'),
-                provider_last_org_name=row.get('provider_last_org_name'),
-                provider_first_name=row.get('provider_first_name'),
-                provider_type=row.get('provider_type'),
-                provider_state=row.get('provider_state'),
-                hcpcs_cd=row.get('hcpcs_cd'),
-                hcpcs_desc=row.get('hcpcs_desc'),
-                hcpcs_drug_ind=row.get('hcpcs_drug_ind'),
-                place_of_service=row.get('place_of_service'),
-                tot_benes=int(row['tot_benes']) if row.get('tot_benes') else None,
-                tot_srvcs=row.get('tot_srvcs') or None,
-                tot_mdcr_alowd_amt=row.get('tot_mdcr_alowd_amt') or None,
-                tot_mdcr_pymt_amt=row.get('tot_mdcr_pymt_amt') or None,
+                bene_geo_lvl=row.get('bene_geo_lvl'),
+                bene_geo_desc=row.get('bene_geo_desc'),
+                bene_geo_cd=row.get('bene_geo_cd'),
+                bene_age_lvl=row.get('bene_age_lvl'),
+                bene_demo_lvl=row.get('bene_demo_lvl'),
+                bene_demo_desc=row.get('bene_demo_desc'),
+                srvcs_per_bene=row.get('srvcs_per_bene') or None,
+                ip_cvrd_stays_per_1000_benes=row.get('ip_cvrd_stays_per_1000_benes') or None,
+                avg_ip_los=row.get('avg_ip_los') or None,
+                er_visits_per_1000_benes=row.get('er_visits_per_1000_benes') or None,
+                phy_visits_per_bene=row.get('phy_visits_per_bene') or None,
+                tot_mdcr_pymt_pc=row.get('tot_mdcr_pymt_pc') or None,
                 _source_year=source_year,
             )
             d = rec.model_dump(by_alias=True)
@@ -89,8 +102,10 @@ def load_cms_utilization_puf(filepath: str, source_year: int = 2023) -> dict:
 
     inserted = upsert_records(
         SCHEMA, TABLE, records,
-        conflict_columns=['_source_hash', 'npi', 'hcpcs_cd', 'place_of_service', '_source_year'],
-        update_columns=['tot_benes', 'tot_srvcs', 'tot_mdcr_alowd_amt', 'tot_mdcr_pymt_amt', '_loaded_at'],
+        conflict_columns=['bene_geo_cd', 'bene_age_lvl', 'bene_demo_lvl', '_source_year'],
+        update_columns=['srvcs_per_bene', 'ip_cvrd_stays_per_1000_benes', 'avg_ip_los',
+                        'er_visits_per_1000_benes', 'phy_visits_per_bene', 'tot_mdcr_pymt_pc',
+                        '_loaded_at'],
     )
 
     logger.info(f"Utilization PUF load complete: {inserted} records processed, {len(errors)} errors")

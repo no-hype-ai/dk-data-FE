@@ -20,9 +20,13 @@ def _get_cursor_ctx(count: int):
 
 
 CSV_CONTENT = (
-    "CMS Certification Number (CCN),Facility Name,Street Address,City,State,Zip Code,"
-    "Tot_SNF_Stays,Tot_Mdcr_Pymt_Amt,Avg_Mdcr_Pymt_Per_Stay,Tot_Benes\n"
-    "015001,Skilled Nursing Home,300 Cedar Rd,Tuscaloosa,AL,35401,120,600000.00,5000.00,100\n"
+    "Rndrng_Prvdr_Id,Rndrng_Prvdr_Name,Rndrng_Prvdr_City,"
+    "Rndrng_Prvdr_State_Abrvtn,Rndrng_Prvdr_Zip5,"
+    "RUG_CD,RUG_DESC,Tot_Benes,Tot_Cvrd_Days,Avg_Cvrd_Days,"
+    "Tot_Mdcr_Alowd_Amt,Avg_Mdcr_Alowd_Amt,Tot_Mdcr_Pymt_Amt,Avg_Mdcr_Pymt_Amt\n"
+    "015001,Skilled Nursing Home,Tuscaloosa,AL,35401,"
+    "RUX,ULTRA HIGH REHAB,100,2400,24.0,"
+    "750000.00,7500.00,600000.00,6000.00\n"
 )
 
 MODULE = "dk_data.ingestion.sources.cms_snf_puf"

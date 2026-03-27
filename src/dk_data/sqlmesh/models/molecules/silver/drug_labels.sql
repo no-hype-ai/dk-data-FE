@@ -20,20 +20,13 @@ WITH source_labels AS (
         set_id,
         spl_version,
         spl_id,
-        -- Extract first value from arrays
-        COALESCE(
-            brand_name->0,
-            brand_name::TEXT
-        ) AS brand_name,
-        COALESCE(
-            generic_name->0,
-            generic_name::TEXT
-        ) AS generic_name,
-        COALESCE(
-            manufacturer_name->0,
-            manufacturer_name::TEXT
-        ) AS manufacturer_name,
+        -- brand_name, generic_name, manufacturer_name are TEXT in bronze
+        -- (already extracted from the first array element in the bronze model)
+        brand_name,
+        generic_name,
+        manufacturer_name,
         product_type,
+        -- routes, dosage_forms, pharm_class_epc, pharm_class_moa are JSONB arrays in bronze
         routes,
         dosage_forms,
         pharm_class_epc,
@@ -42,25 +35,25 @@ WITH source_labels AS (
         unii,
         application_numbers,
         effective_date,
-        -- Label sections (extract text from arrays)
-        indications_and_usage->0 AS indications_and_usage,
-        dosage_and_administration->0 AS dosage_and_administration,
-        contraindications->0 AS contraindications,
-        warnings->0 AS warnings,
-        warnings_and_cautions->0 AS warnings_and_cautions,
-        boxed_warning->0 AS boxed_warning,
-        adverse_reactions->0 AS adverse_reactions,
-        drug_interactions->0 AS drug_interactions,
-        clinical_pharmacology->0 AS clinical_pharmacology,
-        mechanism_of_action->0 AS mechanism_of_action,
-        pharmacokinetics->0 AS pharmacokinetics,
-        overdosage->0 AS overdosage,
-        description->0 AS description,
-        clinical_studies->0 AS clinical_studies,
-        how_supplied->0 AS how_supplied,
-        pregnancy->0 AS pregnancy,
-        pediatric_use->0 AS pediatric_use,
-        geriatric_use->0 AS geriatric_use,
+        -- Label sections are TEXT in bronze (already extracted from first array element)
+        indications_and_usage,
+        dosage_and_administration,
+        contraindications,
+        warnings,
+        warnings_and_cautions,
+        boxed_warning,
+        adverse_reactions,
+        drug_interactions,
+        clinical_pharmacology,
+        mechanism_of_action,
+        pharmacokinetics,
+        overdosage,
+        description,
+        clinical_studies,
+        how_supplied,
+        pregnancy,
+        pediatric_use,
+        geriatric_use,
         has_boxed_warning,
         source,
         source_updated_at,

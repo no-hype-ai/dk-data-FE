@@ -10,8 +10,8 @@ MODEL (
 );
 
 SELECT
-    ct.sponsor AS company,
-    m.id AS molecule_id,
+    ct.lead_sponsor_name AS company,
+    m.molecule_id AS molecule_id,
     m.inchi_key,
     m.canonical_name,
     m.development_status,
@@ -29,7 +29,7 @@ SELECT
 
     -- Trial status (most advanced)
     MAX(
-        CASE ct.status
+        CASE ct.overall_status
             WHEN 'Completed' THEN 5
             WHEN 'Active, not recruiting' THEN 4
             WHEN 'Recruiting' THEN 3
@@ -39,8 +39,8 @@ SELECT
         END
     ) AS status_rank,
     (
-        ARRAY_AGG(ct.status ORDER BY
-            CASE ct.status
+        ARRAY_AGG(ct.overall_status ORDER BY
+            CASE ct.overall_status
                 WHEN 'Completed' THEN 5
                 WHEN 'Active, not recruiting' THEN 4
                 WHEN 'Recruiting' THEN 3
@@ -57,8 +57,8 @@ SELECT
         FROM (
             SELECT jsonb_array_elements_text(COALESCE(ct2.conditions, '[]'::jsonb)) AS indication
             FROM silver.clinical_trials ct2
-            WHERE ct2.molecule_id = m.id
-              AND ct2.sponsor = ct.sponsor
+            WHERE ct2.molecule_id = m.molecule_id
+              AND ct2.lead_sponsor_name = ct.lead_sponsor_name
         ) i
         WHERE indication IS NOT NULL
     ) AS indications,
@@ -69,15 +69,15 @@ SELECT
     MIN(ct.start_date) AS earliest_trial_start,
 
     -- Enrollment totals
-    SUM(ct.enrollment) AS total_enrollment,
+    SUM(ct.enrollment_count) AS total_enrollment,
 
     -- Mechanism of action (from interventions data)
     (
         SELECT string_agg(DISTINCT intervention->>'interventionType', ', ')
         FROM silver.clinical_trials ct2,
              jsonb_array_elements(ct2.interventions) AS intervention
-        WHERE ct2.molecule_id = m.id
-          AND ct2.sponsor = ct.sponsor
+        WHERE ct2.molecule_id = m.molecule_id
+          AND ct2.lead_sponsor_name = ct.lead_sponsor_name
           AND intervention->>'interventionType' IS NOT NULL
     ) AS mechanism_of_action,
 
@@ -87,9 +87,9 @@ SELECT
     NOW() AS computed_at
 
 FROM silver.clinical_trials ct
-JOIN silver.molecules m ON ct.molecule_id = m.id
+JOIN silver.molecules m ON ct.molecule_id = m.molecule_id
 WHERE m.needs_review = FALSE
-  AND ct.sponsor IS NOT NULL
-  AND ct.sponsor != ''
-GROUP BY ct.sponsor, m.id, m.inchi_key, m.canonical_name, m.development_status
-ORDER BY ct.sponsor, trial_count DESC
+  AND ct.lead_sponsor_name IS NOT NULL
+  AND ct.lead_sponsor_name != ''
+GROUP BY ct.lead_sponsor_name, m.molecule_id, m.inchi_key, m.canonical_name, m.development_status
+ORDER BY ct.lead_sponsor_name, trial_count DESC

@@ -25,8 +25,10 @@ SELECT
     response_body->>'entryType' AS entry_type,
 
     -- Protein Names
-    response_body->'proteinDescription'->'recommendedName'->>'fullName' AS protein_name,
-    response_body->'proteinDescription'->'recommendedName'->>'shortName' AS short_name,
+    -- fullName is an object: {"evidences": [...], "value": "..."}
+    response_body->'proteinDescription'->'recommendedName'->'fullName'->>'value' AS protein_name,
+    -- shortNames is an array of {value, evidences} objects
+    response_body->'proteinDescription'->'recommendedName'->'shortNames'->0->>'value' AS short_name,
     response_body->'proteinDescription'->'alternativeNames' AS alternative_names,
     response_body->'proteinDescription'->'submissionNames' AS submission_names,
 
@@ -59,18 +61,19 @@ SELECT
     -- Keywords
     response_body->'keywords' AS keywords,
 
-    -- GO Terms
+    -- GO Terms (all GO cross-references; ontology determined by GoTerm property prefix)
+    -- P: = Biological Process, C: = Cellular Component, F: = Molecular Function
     (SELECT jsonb_agg(ref)
      FROM jsonb_array_elements(response_body->'uniProtKBCrossReferences') AS ref
      WHERE ref->>'database' = 'GO') AS go_terms,
 
-    -- PDB structures
+    -- PDB structures (cross-references to RCSB PDB)
     (SELECT jsonb_agg(ref)
      FROM jsonb_array_elements(response_body->'uniProtKBCrossReferences') AS ref
      WHERE ref->>'database' = 'PDB') AS pdb_structures,
 
-    -- Evidence and Annotation
-    response_body->>'annotationScore' AS annotation_score,
+    -- Evidence and Annotation (float 0.0–5.0)
+    (response_body->>'annotationScore')::NUMERIC AS annotation_score,
     response_body->'extraAttributes' AS extra_attributes,
 
     -- Raw source tracking

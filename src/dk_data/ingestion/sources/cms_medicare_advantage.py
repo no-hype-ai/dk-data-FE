@@ -13,25 +13,57 @@ from ..utils.validators import CMSMedicareAdvantageRecord
 
 logger = logging.getLogger(__name__)
 
+# Canonical CMS column names → internal snake_case names.
+# Spec fields: Cntrct_ID, Org_Name, Org_Type, Plan_ID, Plan_Name,
+# Enrlmt_Data_Prd, Enrlmt_FIPS_Cd, Enrlmt_State_FIPS_Cd, Enrlmt_Cnty_FIPS_Cd,
+# Enrlmt, Avg_Age, Pct_Female, Avg_Risk_Scr, MA_Participation_Rate, Star_Rating.
 COLUMN_MAPPING = {
-    'Contract ID': 'contract_id',
-    'Plan ID': 'plan_id',
-    'Segment ID': 'segment_id',
-    'Organization Name': 'organization_name',
-    'Organization Type': 'organization_type',
-    'Plan Name': 'plan_name',
-    'Plan Type': 'plan_type',
-    'State': 'state',
-    'County Name': 'county_name',
-    'County Code': 'county_code',
-    'Enrollment': 'enrollment',
-    # snake_case variants
-    'contract_id': 'contract_id',
-    'plan_id': 'plan_id',
+    'Cntrct_ID':              'contract_id',
+    'Org_Name':               'organization_name',
+    'Org_Type':               'organization_type',
+    'Plan_ID':                'plan_id',
+    'Plan_Name':              'plan_name',
+    'Enrlmt_Data_Prd':        'enrollment_data_period',
+    'Enrlmt_FIPS_Cd':         'fips_cd',
+    'Enrlmt_State_FIPS_Cd':   'state_fips',
+    'Enrlmt_Cnty_FIPS_Cd':    'county_fips',
+    'Enrlmt':                 'enrollment',
+    'Avg_Age':                'avg_age',
+    'Pct_Female':             'pct_female',
+    'Avg_Risk_Scr':           'avg_risk_score',
+    'MA_Participation_Rate':  'ma_participation_rate',
+    'Star_Rating':            'star_rating',
+    # Supplemental column present in some file variants
+    'Segment_ID':             'segment_id',
+    # Legacy/alternate header variants (lowercase from older CMS exports)
+    'contract_id':            'contract_id',
+    'plan_id':                'plan_id',
 }
 
 TABLE = 'cms_medicare_advantage'
 SCHEMA = 'hcs_raw'
+
+
+def _safe_int(val) -> int | None:
+    """Suppress '*' or blank enrollment values → None."""
+    if val is None:
+        return None
+    s = str(val).strip()
+    if s in ('', '*'):
+        return None
+    try:
+        return int(float(s))
+    except (ValueError, TypeError):
+        return None
+
+
+def _safe_decimal(val) -> str | None:
+    if val is None:
+        return None
+    s = str(val).strip()
+    if s in ('', '*'):
+        return None
+    return s
 
 
 def load_cms_medicare_advantage(filepath: str, source_year: int = 2023) -> dict:
@@ -66,16 +98,21 @@ def load_cms_medicare_advantage(filepath: str, source_year: int = 2023) -> dict:
         try:
             rec = CMSMedicareAdvantageRecord(
                 contract_id=row.get('contract_id'),
-                plan_id=row.get('plan_id'),
-                segment_id=row.get('segment_id'),
                 organization_name=row.get('organization_name'),
                 organization_type=row.get('organization_type'),
+                plan_id=row.get('plan_id'),
                 plan_name=row.get('plan_name'),
-                plan_type=row.get('plan_type'),
-                state=row.get('state'),
-                county_name=row.get('county_name'),
-                county_code=row.get('county_code'),
-                enrollment=int(row['enrollment']) if row.get('enrollment') and str(row['enrollment']).strip() not in ('', '*') else None,
+                segment_id=row.get('segment_id'),
+                enrollment_data_period=row.get('enrollment_data_period'),
+                fips_cd=row.get('fips_cd'),
+                state_fips=row.get('state_fips'),
+                county_fips=row.get('county_fips'),
+                enrollment=_safe_int(row.get('enrollment')),
+                avg_age=_safe_decimal(row.get('avg_age')),
+                pct_female=_safe_decimal(row.get('pct_female')),
+                avg_risk_score=_safe_decimal(row.get('avg_risk_score')),
+                ma_participation_rate=_safe_decimal(row.get('ma_participation_rate')),
+                star_rating=_safe_decimal(row.get('star_rating')),
                 _source_year=source_year,
             )
             d = rec.model_dump(by_alias=True)
@@ -88,8 +125,11 @@ def load_cms_medicare_advantage(filepath: str, source_year: int = 2023) -> dict:
 
     inserted = upsert_records(
         SCHEMA, TABLE, records,
-        conflict_columns=['_source_hash', 'contract_id', 'plan_id', 'county_code', '_source_year'],
-        update_columns=['enrollment', 'plan_name', 'plan_type', '_loaded_at'],
+        conflict_columns=['_source_hash', 'contract_id', 'plan_id', 'fips_cd', '_source_year'],
+        update_columns=[
+            'enrollment', 'avg_age', 'pct_female', 'avg_risk_score',
+            'ma_participation_rate', 'star_rating', 'plan_name', '_loaded_at',
+        ],
     )
 
     logger.info(f"Medicare Advantage load complete: {inserted} records processed, {len(errors)} errors")

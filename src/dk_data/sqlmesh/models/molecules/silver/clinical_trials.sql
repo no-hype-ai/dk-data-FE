@@ -19,76 +19,73 @@ MODEL (
 SELECT
     gen_random_uuid() AS trial_id,
 
-    -- External Identifiers
-    raw_data->>'nctId' AS nct_id,
-    raw_data->'protocolSection'->'identificationModule'->>'orgStudyIdInfo' AS org_study_id,
+    -- External Identifiers (read typed columns directly from bronze — not raw JSON)
+    b.nct_id,
+    b.org_study_id,
 
     -- Title
-    raw_data->'protocolSection'->'identificationModule'->>'briefTitle' AS title,
-    raw_data->'protocolSection'->'identificationModule'->>'officialTitle' AS official_title,
+    b.brief_title AS title,
+    b.official_title,
 
-    -- Summary
-    raw_data->'protocolSection'->'descriptionModule'->>'briefSummary' AS brief_summary,
-    raw_data->'protocolSection'->'descriptionModule'->>'detailedDescription' AS detailed_description,
+    -- Summary (typed TEXT columns in bronze)
+    b.brief_summary,
+    b.detailed_description,
 
-    -- Phase & Status
+    -- Phase (derived from the typed phases JSONB array using ::TEXT for LIKE matching)
     CASE
-        WHEN raw_data->'protocolSection'->'designModule'->>'phases' LIKE '%Phase 1%' AND
-             raw_data->'protocolSection'->'designModule'->>'phases' LIKE '%Phase 2%'
-        THEN 'Phase 1/2'
-        WHEN raw_data->'protocolSection'->'designModule'->>'phases' LIKE '%Phase 2%' AND
-             raw_data->'protocolSection'->'designModule'->>'phases' LIKE '%Phase 3%'
-        THEN 'Phase 2/3'
-        WHEN raw_data->'protocolSection'->'designModule'->>'phases' LIKE '%Phase 1%' THEN 'Phase 1'
-        WHEN raw_data->'protocolSection'->'designModule'->>'phases' LIKE '%Phase 2%' THEN 'Phase 2'
-        WHEN raw_data->'protocolSection'->'designModule'->>'phases' LIKE '%Phase 3%' THEN 'Phase 3'
-        WHEN raw_data->'protocolSection'->'designModule'->>'phases' LIKE '%Phase 4%' THEN 'Phase 4'
-        WHEN raw_data->'protocolSection'->'designModule'->>'phases' LIKE '%Early%' THEN 'Early Phase 1'
+        WHEN b.phases::TEXT LIKE '%PHASE1%' AND b.phases::TEXT LIKE '%PHASE2%' THEN 'Phase 1/2'
+        WHEN b.phases::TEXT LIKE '%PHASE2%' AND b.phases::TEXT LIKE '%PHASE3%' THEN 'Phase 2/3'
+        WHEN b.phases::TEXT LIKE '%PHASE1%' THEN 'Phase 1'
+        WHEN b.phases::TEXT LIKE '%PHASE2%' THEN 'Phase 2'
+        WHEN b.phases::TEXT LIKE '%PHASE3%' THEN 'Phase 3'
+        WHEN b.phases::TEXT LIKE '%PHASE4%' THEN 'Phase 4'
+        WHEN b.phases::TEXT LIKE '%EARLY%' THEN 'Early Phase 1'
         ELSE 'Not Applicable'
     END AS phase,
 
-    raw_data->'protocolSection'->'statusModule'->>'overallStatus' AS overall_status,
+    b.overall_status,
 
-    -- Dates
-    (raw_data->'protocolSection'->'statusModule'->'startDateStruct'->>'date')::DATE AS start_date,
-    (raw_data->'protocolSection'->'statusModule'->'completionDateStruct'->>'date')::DATE AS completion_date,
-    (raw_data->'protocolSection'->'statusModule'->'primaryCompletionDateStruct'->>'date')::DATE AS primary_completion_date,
-    (raw_data->'protocolSection'->'statusModule'->'completionDateStruct'->>'date')::DATE AS end_date,
+    -- Dates (already typed DATE in bronze)
+    b.start_date,
+    b.completion_date,
+    b.completion_date AS end_date,
+    -- primary_completion_date is a separate column in the bronze model
+    b.primary_completion_date,
 
-    -- Conditions (as JSONB array)
-    raw_data->'protocolSection'->'conditionsModule'->'conditions' AS conditions,
+    -- Conditions (already typed JSONB in bronze)
+    b.conditions,
 
-    -- Interventions
-    raw_data->'protocolSection'->'armsInterventionsModule'->'interventions' AS interventions,
+    -- Interventions (already typed JSONB in bronze)
+    b.interventions,
 
-    -- Study Design
-    raw_data->'protocolSection'->'designModule'->>'studyType' AS study_type,
-    raw_data->'protocolSection'->'designModule'->'designInfo'->>'allocation' AS allocation,
-    raw_data->'protocolSection'->'designModule'->'designInfo'->>'interventionModel' AS intervention_model,
-    raw_data->'protocolSection'->'designModule'->'designInfo'->'maskingInfo'->>'masking' AS masking,
-    (raw_data->'protocolSection'->'designModule'->'enrollmentInfo'->>'count')::INTEGER AS enrollment,
+    -- Study Design (already typed in bronze)
+    b.study_type,
+    b.allocation,
+    b.intervention_model,
+    b.masking,
+    b.enrollment_count AS enrollment,
 
-    -- Sponsors
-    raw_data->'protocolSection'->'sponsorCollaboratorsModule'->'leadSponsor'->>'name' AS lead_sponsor,
-    raw_data->'protocolSection'->'sponsorCollaboratorsModule'->'collaborators' AS collaborators,
+    -- Sponsors (already typed in bronze)
+    b.lead_sponsor_name AS lead_sponsor,
+    b.collaborators,
 
-    -- Outcomes
-    raw_data->'protocolSection'->'outcomesModule'->'primaryOutcomes' AS primary_outcomes,
-    raw_data->'protocolSection'->'outcomesModule'->'secondaryOutcomes' AS secondary_outcomes,
+    -- Outcomes (already typed JSONB in bronze)
+    b.primary_outcomes,
+    b.secondary_outcomes,
 
-    -- Results
-    (raw_data->'hasResults')::BOOLEAN AS has_results,
+    -- Results (has_results is a typed BOOLEAN column in the bronze model)
+    b.has_results,
 
     -- Source Tracking
-    id AS bronze_id,
+    b.id AS bronze_id,
     'clinicaltrials_gov' AS source,
-    ingested_at,
-    ingested_at AS source_updated_at,
+    b.ingested_at,
+    b.ingested_at AS source_updated_at,
     NOW() AS created_at,
     NOW() AS updated_at
 
-FROM bronze_clinicaltrials
+FROM bronze.clinicaltrials b
 WHERE
-    processed_to_silver = FALSE
-    AND raw_data->>'nctId' IS NOT NULL
-    AND ingested_at BETWEEN @start_dt AND @end_dt;
+    b.processed_to_silver = FALSE
+    AND b.nct_id IS NOT NULL
+    AND b.ingested_at BETWEEN @start_dt AND @end_dt;

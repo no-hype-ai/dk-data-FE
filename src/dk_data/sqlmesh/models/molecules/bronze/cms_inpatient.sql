@@ -32,7 +32,6 @@ SELECT
     response_body->>'fiscal_year' AS fiscal_year,
 
     -- Raw source tracking
-    response_body AS raw_json,
     id AS raw_source_id,
     'cms_inpatient' AS source,
     request_timestamp,

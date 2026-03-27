@@ -27,18 +27,26 @@ SCHEMA = "hcs_raw"
 
 # CMS column mapping — handles both old and new file formats
 COLUMN_MAPPING = {
-    # New format (post-2020)
+    # Current format (post-2020) — matches CMS canonical column names
     "Rndrng_NPI": "npi",
+    "Rndrng_Prvdr_Last_Org_Name": "provider_last_org_name",
+    "Rndrng_Prvdr_First_Name": "provider_first_name",
+    "Rndrng_Prvdr_Type": "provider_type",
+    "Rndrng_Prvdr_State_Abrvtn": "provider_state",
+    "Rndrng_Prvdr_State_FIPS": "provider_state_fips",
+    "Rndrng_Prvdr_RUCA": "provider_ruca",
     "HCPCS_Cd": "hcpcs_code",
     "HCPCS_Desc": "hcpcs_description",
-    "Tot_Srvcs": "line_srvc_cnt",
+    "HCPCS_Drug_Ind": "hcpcs_drug_ind",
+    "Place_Of_Srvc": "place_of_service",
     "Tot_Benes": "bene_unique_cnt",
+    "Tot_Srvcs": "line_srvc_cnt",
     "Tot_Bene_Day_Srvcs": "bene_day_srvc_cnt",
     "Avg_Sbmtd_Chrg": "average_submitted_chrg_amt",
     "Avg_Mdcr_Alowd_Amt": "average_medicare_allowed_amt",
     "Avg_Mdcr_Pymt_Amt": "average_medicare_payment_amt",
-    "Place_Of_Srvc": "place_of_service",
-    # Old format (pre-2020)
+    "Avg_Mdcr_Stdzd_Amt": "average_medicare_stnd_amt",
+    # Legacy format (pre-2020)
     "National Provider Identifier": "npi",
     "HCPCS Code": "hcpcs_code",
     "HCPCS Description": "hcpcs_description",
@@ -53,16 +61,25 @@ COLUMN_MAPPING = {
 
 
 class CMSPhysicianPUFServicesRecord(BaseModel):
+    """CMS Physician PUF by Provider and Service (NPI × HCPCS grain).
+
+    CMS columns: Rndrng_NPI, HCPCS_Cd, HCPCS_Desc, HCPCS_Drug_Ind,
+    Place_Of_Srvc, Tot_Benes, Tot_Srvcs, Tot_Bene_Day_Srvcs,
+    Avg_Sbmtd_Chrg, Avg_Mdcr_Alowd_Amt, Avg_Mdcr_Pymt_Amt, Avg_Mdcr_Stdzd_Amt.
+    """
+
     npi: str
     hcpcs_code: str
     hcpcs_description: Optional[str] = None
+    hcpcs_drug_ind: Optional[str] = None
+    place_of_service: Optional[str] = None
     line_srvc_cnt: Optional[float] = None
     bene_unique_cnt: Optional[int] = None
-    bene_day_srvc_cnt: Optional[float] = None
+    bene_day_srvc_cnt: Optional[int] = None
     average_submitted_chrg_amt: Optional[float] = None
     average_medicare_allowed_amt: Optional[float] = None
     average_medicare_payment_amt: Optional[float] = None
-    place_of_service: Optional[str] = None
+    average_medicare_stnd_amt: Optional[float] = None
     _source_year: int
 
     @field_validator("npi", "hcpcs_code", mode="before")
@@ -72,6 +89,7 @@ class CMSPhysicianPUFServicesRecord(BaseModel):
 
     @field_validator("line_srvc_cnt", "average_submitted_chrg_amt",
                      "average_medicare_allowed_amt", "average_medicare_payment_amt",
+                     "average_medicare_stnd_amt",
                      mode="before")
     @classmethod
     def clean_numeric(cls, v):
@@ -132,13 +150,15 @@ def load_cms_physician_puf_services(filepath: str, source_year: int = 2023) -> d
                 npi=row["npi"],
                 hcpcs_code=row["hcpcs_code"],
                 hcpcs_description=row.get("hcpcs_description"),
+                hcpcs_drug_ind=row.get("hcpcs_drug_ind"),
+                place_of_service=row.get("place_of_service"),
                 line_srvc_cnt=row.get("line_srvc_cnt"),
                 bene_unique_cnt=row.get("bene_unique_cnt"),
                 bene_day_srvc_cnt=row.get("bene_day_srvc_cnt"),
                 average_submitted_chrg_amt=row.get("average_submitted_chrg_amt"),
                 average_medicare_allowed_amt=row.get("average_medicare_allowed_amt"),
                 average_medicare_payment_amt=row.get("average_medicare_payment_amt"),
-                place_of_service=row.get("place_of_service"),
+                average_medicare_stnd_amt=row.get("average_medicare_stnd_amt"),
                 _source_year=source_year,
             )
             d = rec.model_dump()
@@ -156,9 +176,10 @@ def load_cms_physician_puf_services(filepath: str, source_year: int = 2023) -> d
         records,
         conflict_columns=["npi", "hcpcs_code", "place_of_service", "_source_year"],
         update_columns=[
-            "hcpcs_description", "line_srvc_cnt", "bene_unique_cnt",
-            "bene_day_srvc_cnt", "average_submitted_chrg_amt",
-            "average_medicare_allowed_amt", "average_medicare_payment_amt",
+            "hcpcs_description", "hcpcs_drug_ind",
+            "line_srvc_cnt", "bene_unique_cnt", "bene_day_srvc_cnt",
+            "average_submitted_chrg_amt", "average_medicare_allowed_amt",
+            "average_medicare_payment_amt", "average_medicare_stnd_amt",
             "_loaded_at",
         ],
     )

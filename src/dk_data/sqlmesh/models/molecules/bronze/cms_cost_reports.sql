@@ -1,48 +1,47 @@
 -- SQLMesh Model: Bronze CMS Cost Reports
--- Transforms raw CMS Hospital Cost Report data to Bronze typed columns
+-- Transforms raw CMS Hospital Cost Report (HCRIS) data to Bronze typed columns
+-- Source: raw.cms_cost_reports (flat typed table, loaded by cms_cost_reports.py)
 -- Part of: 015-assessment-dashboard-integration
 
 MODEL (
     name bronze.cms_cost_reports,
-    kind INCREMENTAL_BY_TIME_RANGE (
-        time_column request_timestamp,
-        batch_size 500
+    kind INCREMENTAL_BY_UNIQUE_KEY (
+        unique_key (provider_id, fiscal_year_end)
     ),
-    cron '@daily',
+    cron '@monthly',
     audits (
-        not_null(columns := (provider_id)),
-        unique_values(columns := (record_id))
+        not_null(columns := (provider_id))
     ),
-    grain record_id
+    grain (provider_id, fiscal_year_end)
 );
 
 SELECT
     gen_random_uuid() AS id,
 
-    -- Record identifiers
-    COALESCE(
-        response_body->>'provider_id' || '_' || response_body->>'fiscal_year',
-        gen_random_uuid()::TEXT
-    ) AS record_id,
-    response_body->>'provider_id' AS provider_id,
-    response_body->>'fiscal_year' AS fiscal_year,
-    (response_body->>'total_costs')::NUMERIC AS total_costs,
-    (response_body->>'net_revenue')::NUMERIC AS net_revenue,
-    (response_body->>'operating_margin')::NUMERIC AS operating_margin,
-    (response_body->>'bed_count')::INTEGER AS bed_count,
+    -- Record identifier: provider_id + fiscal year end (TEXT, always)
+    r.provider_id::TEXT AS provider_id,
 
-    -- Raw source tracking
-    response_body AS raw_json,
-    id AS raw_source_id,
+    -- Fiscal period (DATE columns in raw table)
+    r.fiscal_year_begin::DATE AS fiscal_year_begin,
+    r.fiscal_year_end::DATE AS fiscal_year_end,
+
+    -- Capacity metrics (INTEGER)
+    r.total_beds::INTEGER AS bed_count,
+    r.total_discharges::INTEGER AS total_discharges,
+
+    -- Financial metrics (NUMERIC — raw table uses DECIMAL(15,2))
+    r.net_patient_revenue::NUMERIC AS net_patient_revenue,
+    r.total_operating_expenses::NUMERIC AS total_operating_expenses,
+    r.operating_margin::NUMERIC AS operating_margin,
+
+    -- Source tracking
+    r._source_hash AS source_hash,
+    r._loaded_at AS source_updated_at,
     'cms_cost_reports' AS source,
-    request_timestamp,
-    request_timestamp AS source_updated_at,
     FALSE AS processed_to_silver,
     NOW() AS created_at
 
-FROM raw.cms_cost_reports
+FROM raw.cms_cost_reports r
 WHERE
-    response_status = 200
-    AND processed_to_bronze = FALSE
-    AND response_body->>'provider_id' IS NOT NULL
-    AND request_timestamp BETWEEN @start_dt AND @end_dt;
+    r.provider_id IS NOT NULL
+    AND r._loaded_at BETWEEN @start_dt AND @end_dt;

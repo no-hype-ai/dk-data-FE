@@ -1,6 +1,24 @@
 -- SQLMesh Model: Bronze EMA (European Medicines Agency)
--- Transforms raw EMA API responses into typed bronze layer
+-- Transforms raw EMA JSONB API responses into typed bronze layer
 -- Part of DK Molecule Data Platform (012-dk-data-platform)
+--
+-- Source table: raw.ema (JSONB response_body, see migration 062_mol_source_raw_tables.sql)
+-- Loaded by: src/dk_data/ingestion/sources/ema_regulatory.py
+--
+-- EMA API field mapping (camelCase and snake_case variants both covered):
+--   productNumber / product_number -> product_number
+--   name / product_name           -> product_name
+--   activeSubstance / active_substance / inn -> active_substance
+--   atcCode / atc_code            -> atc_code
+--   marketingAuthorisationHolder / holder -> marketing_authorization_holder
+--   authorizationStatus / status  -> authorization_status
+--   authorizationDate / authorization_date -> authorization_date (DATE)
+--   revisionDate / revision_date  -> revision_date (DATE)
+--   medicineType / type           -> medicine_type
+--   therapeuticArea / therapeutic_area -> therapeutic_area
+--   pharmacotherapeuticGroup      -> pharmacotherapeutic_group
+--   eparUrl / epar_url            -> epar_url
+--   summaryUrl / summary_url      -> summary_url
 
 MODEL (
     name bronze.ema,
@@ -24,30 +42,31 @@ SELECT
     COALESCE(
         r.response_body->>'productNumber',
         r.response_body->>'product_number'
-    ) AS product_number,
+    )::TEXT AS product_number,
     COALESCE(
         r.response_body->>'name',
         r.response_body->>'product_name'
-    ) AS product_name,
+    )::TEXT AS product_name,
     COALESCE(
         r.response_body->>'activeSubstance',
-        r.response_body->>'active_substance'
-    ) AS active_substance,
-    r.response_body->>'inn' AS inn,
+        r.response_body->>'active_substance',
+        r.response_body->>'inn'
+    )::TEXT AS active_substance,
+    (r.response_body->>'inn')::TEXT AS inn,
     COALESCE(
         r.response_body->>'atcCode',
         r.response_body->>'atc_code'
-    ) AS atc_code,
+    )::TEXT AS atc_code,
 
     -- Authorization info
     COALESCE(
         r.response_body->>'marketingAuthorisationHolder',
         r.response_body->>'holder'
-    ) AS marketing_authorization_holder,
+    )::TEXT AS marketing_authorization_holder,
     COALESCE(
         r.response_body->>'authorizationStatus',
         r.response_body->>'status'
-    ) AS authorization_status,
+    )::TEXT AS authorization_status,
     CASE
         WHEN r.response_body->>'authorizationDate' ~ '^\d{4}-\d{2}-\d{2}'
         THEN (r.response_body->>'authorizationDate')::DATE
@@ -67,26 +86,30 @@ SELECT
     COALESCE(
         r.response_body->>'medicineType',
         r.response_body->>'type'
-    ) AS medicine_type,
+    )::TEXT AS medicine_type,
     COALESCE(
         r.response_body->>'therapeuticArea',
         r.response_body->>'therapeutic_area'
-    ) AS therapeutic_area,
-    r.response_body->>'pharmacotherapeuticGroup' AS pharmacotherapeutic_group,
+    )::TEXT AS therapeutic_area,
+    (r.response_body->>'pharmacotherapeuticGroup')::TEXT AS pharmacotherapeutic_group,
 
     -- Regulatory docs
     COALESCE(
         r.response_body->>'eparUrl',
         r.response_body->>'epar_url'
-    ) AS epar_url,
+    )::TEXT AS epar_url,
     COALESCE(
         r.response_body->>'summaryUrl',
         r.response_body->>'summary_url'
-    ) AS summary_url,
+    )::TEXT AS summary_url,
+
+    -- Source tracking
+    'ema'                       AS source,
+    r.ingested_at               AS source_updated_at,
 
     -- Processing metadata
-    FALSE AS processed_to_silver,
-    NOW() AS ingested_at
+    FALSE                       AS processed_to_silver,
+    r.ingested_at               AS ingested_at
 
 FROM raw.ema r
 WHERE r.response_status = 200
@@ -96,3 +119,4 @@ WHERE r.response_status = 200
       r.response_body->>'productNumber',
       r.response_body->>'product_number'
   ) IS NOT NULL
+  AND r.ingested_at BETWEEN @start_dt AND @end_dt

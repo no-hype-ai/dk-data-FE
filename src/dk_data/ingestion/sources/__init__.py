@@ -23,4 +23,5 @@ __all__ = [
     'orcid',
     'uspto_trademarks',
     'euipo_trademarks',
+    'who_icd',
 ]

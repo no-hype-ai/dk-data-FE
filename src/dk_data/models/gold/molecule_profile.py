@@ -40,7 +40,7 @@ class MoleculeProfile(MoleculeProfileBase):
 
     # Cross-references
     drugbank_id: Optional[str] = None
-    chembl_id: Optional[str] = None
+    molecule_chembl_id: Optional[str] = None
     pubchem_cid: Optional[int] = None
     unii: Optional[str] = None
     cas_number: Optional[str] = None

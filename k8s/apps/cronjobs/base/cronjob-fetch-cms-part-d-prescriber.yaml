@@ -1,0 +1,106 @@
+# CMS Part D Prescribers by Provider and Drug — Ingest CronJob
+# 020-entity-linking-gaps
+#
+# Source: CMS Medicare Part D Prescribers by Provider and Drug (~25M rows, ~1GB CSV)
+# URL: https://data.cms.gov/provider-summary-by-type-of-service/
+#      medicare-part-d-prescribers/medicare-part-d-prescribers-by-provider-and-drug
+#
+# Resource sizing: larger than standard CMS PUF jobs due to file size:
+#   memory: 2Gi/4Gi (vs 256Mi/512Mi for smaller PUFs)
+#   cpu: 500m/1000m (row-by-row Pydantic validation is CPU-bound)
+#   timeout: 7200s (2 hours — 25M rows at ~3k rows/s with validation)
+#
+# File is downloaded by cms_downloader before this job runs.
+# --skip-if-no-file: exits 0 if the annual file hasn't been staged yet.
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: fetch-cms-part-d-prescriber
+  labels:
+    app: fetch-cms-part-d-prescriber
+    app.kubernetes.io/name: fetch-cms-part-d-prescriber
+    app.kubernetes.io/component: ingestion
+    app.kubernetes.io/part-of: dk-data
+spec:
+  # Annual CMS release: run first Sunday of January at 4:00 AM UTC
+  # (re-runs monthly are safe due to _source_hash idempotency — will skip if loaded)
+  schedule: "0 4 1-7 1 0"
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      backoffLimit: 1
+      activeDeadlineSeconds: 7200  # 2 hour timeout (large file)
+      template:
+        metadata:
+          labels:
+            app: fetch-cms-part-d-prescriber
+            app.kubernetes.io/component: batch-job
+            app.kubernetes.io/part-of: dk-data
+            team: data-platform
+            service: dk-data
+            product: dk-data
+        spec:
+          restartPolicy: Never
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 1000
+            fsGroup: 1000
+            seccompProfile:
+              type: RuntimeDefault
+          imagePullSecrets:
+            - name: ghcr-credentials
+          containers:
+            - name: fetch-cms-part-d-prescriber
+              image: ghcr.io/data-kinetic/dk-data-fe/job-trigger:019-cms-puf-platform-reconciliation-abc1234
+              command: ["python", "-m", "dk_data.ingestion.main"]
+              args: ["cms_part_d_prescriber", "--skip-if-no-file"]
+              env:
+                - name: POSTGRES_HOST
+                  valueFrom:
+                    secretKeyRef:
+                      name: dk-data-secrets
+                      key: POSTGRES_HOST
+                - name: POSTGRES_PORT
+                  valueFrom:
+                    secretKeyRef:
+                      name: dk-data-secrets
+                      key: POSTGRES_PORT
+                - name: POSTGRES_USER
+                  valueFrom:
+                    secretKeyRef:
+                      name: dk-data-secrets
+                      key: POSTGRES_USER
+                - name: POSTGRES_PASSWORD
+                  valueFrom:
+                    secretKeyRef:
+                      name: dk-data-secrets
+                      key: POSTGRES_PASSWORD
+                - name: POSTGRES_DB
+                  valueFrom:
+                    secretKeyRef:
+                      name: dk-data-secrets
+                      key: POSTGRES_DB
+                - name: OTEL_EXPORTER_OTLP_ENDPOINT
+                  value: "http://alloy.infra.svc.cluster.local:4317"
+                - name: OTEL_ENABLED
+                  value: "true"
+              resources:
+                requests:
+                  memory: "2Gi"
+                  cpu: "500m"
+                limits:
+                  memory: "4Gi"
+                  cpu: "1000m"
+              securityContext:
+                allowPrivilegeEscalation: false
+                readOnlyRootFilesystem: true
+                capabilities:
+                  drop: ["ALL"]
+              volumeMounts:
+                - name: tmp
+                  mountPath: /tmp
+          volumes:
+            - name: tmp
+              emptyDir: {}

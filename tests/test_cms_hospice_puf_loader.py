@@ -20,9 +20,13 @@ def _get_cursor_ctx(count: int):
 
 
 CSV_CONTENT = (
-    "CMS Certification Number (CCN),Facility Name,Street Address,City,State,Zip Code,"
-    "Tot_Benes,Tot_Mdcr_Pymt_Amt,Avg_Mdcr_Pymt_Per_Bene\n"
-    "010001,Hospice Care Inc,200 Elm St,Huntsville,AL,35801,80,320000.00,4000.00\n"
+    "Rndrng_Prvdr_Id,Rndrng_Prvdr_Name,Rndrng_Prvdr_City,"
+    "Rndrng_Prvdr_State_Abrvtn,Rndrng_Prvdr_Zip5,"
+    "HSPCE_CD,HSPCE_DESC,Tot_Benes,"
+    "Tot_Mdcr_Alowd_Amt,Tot_Mdcr_Pymt_Amt,Avg_Mdcr_Pymt_Amt,Avg_Age\n"
+    "010001,Hospice Care Inc,Huntsville,AL,35801,"
+    "10,ROUTINE HOME CARE,80,"
+    "400000.00,320000.00,4000.00,74.2\n"
 )
 
 MODULE = "dk_data.ingestion.sources.cms_hospice_puf"

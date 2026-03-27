@@ -1,30 +1,30 @@
-"""NIH Reporter loader — inserts to mol_raw.nih_reporter_raw."""
+"""NIH Reporter loader — inserts to mol_raw.nih_reporter_raw.
+
+Feature: 019-cms-puf-platform-reconciliation
+
+Table schema (085_cms_puf_platform_reconciliation.sql):
+    id                  BIGSERIAL PRIMARY KEY
+    request_timestamp   TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    response_status     INTEGER NOT NULL DEFAULT 200
+    response_body       JSONB NOT NULL
+    processed_to_bronze BOOLEAN NOT NULL DEFAULT FALSE
+    _loaded_at          TIMESTAMPTZ NOT NULL DEFAULT NOW()
+
+Unique index: ON (response_body->>'project_num') WHERE project_num IS NOT NULL
+ON CONFLICT: DO NOTHING (idempotent re-ingestion of same project_num)
+
+The loader writes the full raw API response dict as JSONB. The bronze SQLMesh model
+(mol_bronze.nih_reporter) extracts typed columns from response_body.
+"""
+import json
 import logging
-from datetime import datetime
 from typing import List, Optional
 
-from ..utils.database import get_cursor, upsert_records
+from ..utils.database import get_connection
 
 logger = logging.getLogger(__name__)
 
-
-def _extract_pi_names(project: dict) -> Optional[str]:
-    """Extract PI names list as a string for storage."""
-    pi_list = project.get("principal_investigators")
-    if not pi_list:
-        return None
-    return str(pi_list)
-
-
-def _extract_award_amount(project: dict) -> Optional[float]:
-    """Extract award amount, handling None and non-numeric values."""
-    raw = project.get("award_amount")
-    if raw is None:
-        return None
-    try:
-        return float(raw)
-    except (TypeError, ValueError):
-        return None
+BATCH_SIZE = 500  # commit every N records to bound transaction size
 
 
 def load_nih_reporter_data(records: list, source_hash: Optional[str] = None) -> dict:
@@ -33,10 +33,16 @@ def load_nih_reporter_data(records: list, source_hash: Optional[str] = None) -> 
 
     Args:
         records: List of raw API response dicts from NIHReporterFetcher.
-        source_hash: Optional content hash string (unused for this source).
+                 Each dict must contain 'project_num' or 'project_number'.
+        source_hash: Unused; kept for interface consistency.
 
     Returns:
-        Standard result dict with status, records_fetched, records_inserted, records_updated, errors.
+        Standard result dict:
+            status: "success" | "partial"
+            records_fetched: int
+            records_inserted: int
+            records_updated: int  (always 0 — DO NOTHING on conflict)
+            errors: list of error strings (capped at 10)
     """
     if not records:
         return {
@@ -47,73 +53,44 @@ def load_nih_reporter_data(records: list, source_hash: Optional[str] = None) -> 
             "errors": [],
         }
 
-    rows = []
     errors: List[str] = []
+    inserted = 0
 
-    for r in records:
-        project_number = r.get("project_num") or r.get("project_number")
-        if not project_number:
-            continue
-        try:
-            org = r.get("organization") or {}
-            org_name = org.get("org_name") if isinstance(org, dict) else None
+    sql = """
+        INSERT INTO mol_raw.nih_reporter_raw (response_body, response_status)
+        VALUES (%s::jsonb, 200)
+        ON CONFLICT ((response_body->>'project_num')) DO NOTHING
+    """
 
-            fiscal_year_raw = r.get("fiscal_year")
-            try:
-                fiscal_year = int(fiscal_year_raw) if fiscal_year_raw is not None else None
-            except (TypeError, ValueError):
-                fiscal_year = None
-
-            rows.append({
-                "project_number": str(project_number),
-                "project_title": r.get("project_title"),
-                "fiscal_year": fiscal_year,
-                "award_amount": _extract_award_amount(r),
-                "pi_names": _extract_pi_names(r),
-                "organization_name": org_name,
-                "abstract_text": r.get("abstract_text"),
-                "project_start_date": r.get("project_start_date"),
-                "project_end_date": r.get("project_end_date"),
-                "response_body": str(r),
-                "_loaded_at": datetime.utcnow(),
-            })
-        except Exception as e:
-            errors.append(f"project_number={project_number}: {e}")
-            logger.warning(f"NIH Reporter row error for project_number={project_number}: {e}")
-
-    if not rows:
-        return {
-            "status": "success",
-            "records_fetched": len(records),
-            "records_inserted": 0,
-            "records_updated": 0,
-            "errors": errors[:10],
-        }
-
-    inserted = upsert_records(
-        "mol_raw",
-        "nih_reporter_raw",
-        rows,
-        conflict_columns=["project_number"],
-        update_columns=[
-            "project_title",
-            "fiscal_year",
-            "award_amount",
-            "pi_names",
-            "organization_name",
-            "abstract_text",
-            "project_start_date",
-            "project_end_date",
-            "_loaded_at",
-        ],
-    )
+    with get_connection() as conn:
+        with conn.cursor() as cur:
+            for batch_start in range(0, len(records), BATCH_SIZE):
+                batch = records[batch_start:batch_start + BATCH_SIZE]
+                for r in batch:
+                    project_num = r.get("project_num") or r.get("project_number")
+                    if not project_num:
+                        continue
+                    try:
+                        cur.execute(sql, (json.dumps(r),))
+                        inserted += 1
+                    except Exception as e:
+                        error_msg = f"project_num={project_num}: {e}"
+                        errors.append(error_msg)
+                        if len(errors) <= 10:
+                            logger.warning(f"NIH Reporter insert error: {error_msg}")
+                        # Rollback this cursor state and re-open
+                        conn.rollback()
+                        cur = conn.cursor()
+                conn.commit()
 
     logger.info(
-        f"NIH Reporter load complete: {inserted} upserted from {len(records)} fetched records"
+        "NIH Reporter load complete: %d inserted from %d fetched records"
+        " (%d errors)",
+        inserted, len(records), len(errors),
     )
 
     return {
-        "status": "success",
+        "status": "success" if not errors else "partial",
         "records_fetched": len(records),
         "records_inserted": inserted,
         "records_updated": 0,

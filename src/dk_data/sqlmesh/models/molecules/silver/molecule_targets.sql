@@ -44,19 +44,25 @@ WHERE m.needs_review = FALSE
 UNION ALL
 
 -- Add target relationships from DrugBank
+-- NOTE: bronze.drugbank.inchi_key is NULL (the DrugBank XML fetcher does not
+-- extract structural identifiers). Join via identifier_mappings on drugbank_id,
+-- which is always populated by the fetcher.
 SELECT DISTINCT
     m.id AS molecule_id,
     t.id AS target_id,
     'pharmacology' AS assay_type,
     'target' AS activity_type,
     NULL::NUMERIC AS activity_value,
-    NULL AS activity_unit,
+    NULL::TEXT AS activity_unit,
     'unknown' AS potency_class,
     'drugbank' AS source,
     NOW() AS created_at
 FROM silver.molecules m
-JOIN bronze.drugbank d ON m.inchi_key = d.inchi_key
-CROSS JOIN LATERAL jsonb_array_elements(COALESCE(d.targets, '[]'::jsonb)) AS tgt
+JOIN silver.identifier_mappings im
+    ON im.molecule_id = m.id
+    AND im.identifier_type = 'drugbank_id'
+JOIN bronze.drugbank d ON d.drugbank_id = im.identifier_value
+CROSS JOIN LATERAL jsonb_array_elements(COALESCE(d.targets, '[]'::JSONB)) AS tgt
 JOIN silver.targets t ON t.target_name ILIKE '%' || (tgt->>'name') || '%'
 WHERE m.needs_review = FALSE
   AND tgt->>'name' IS NOT NULL

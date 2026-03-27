@@ -4,6 +4,10 @@
 --
 -- Consolidates: geographic variation, chronic conditions, opioid, dual-eligible, enrollment
 -- Feature: 019-cms-puf-platform-reconciliation
+--
+-- Column name policy: raw CMS field names preserved throughout.
+--   cms_chronic_conditions: bene_cond (was chronic_condition), prvlnc (was prevalence)
+--   cms_enrollment_puf: state_cd/county_cd/tot_benes/dsbl_benes (was fips/total_beneficiaries)
 
 MODEL (
     name hcs_silver.geographic_health,
@@ -34,58 +38,69 @@ WITH geo_variation AS (
 ),
 
 -- Chronic condition prevalence (aggregated across age groups to geography level)
+-- Uses raw CMS field names: bene_cond (Bene_Cond), prvlnc (Prvlnc)
 chronic_agg AS (
     SELECT
         bene_geo_cd                         AS geo_code,
         _source_year,
-        COUNT(DISTINCT chronic_condition)   AS distinct_conditions_tracked,
-        -- Top chronic conditions by prevalence
-        MAX(CASE WHEN LOWER(chronic_condition) LIKE '%diabetes%' THEN prevalence END) AS diabetes_prevalence,
-        MAX(CASE WHEN LOWER(chronic_condition) LIKE '%heart failure%' THEN prevalence END) AS heart_failure_prevalence,
-        MAX(CASE WHEN LOWER(chronic_condition) LIKE '%hypertension%' THEN prevalence END) AS hypertension_prevalence,
-        MAX(CASE WHEN LOWER(chronic_condition) LIKE '%copd%' THEN prevalence END) AS copd_prevalence,
-        MAX(CASE WHEN LOWER(chronic_condition) LIKE '%depression%' THEN prevalence END) AS depression_prevalence,
-        MAX(CASE WHEN LOWER(chronic_condition) LIKE '%cancer%' THEN prevalence END) AS cancer_prevalence,
-        AVG(prevalence)                     AS avg_condition_prevalence,
-        SUM(total_medicare_payment)         AS chronic_total_medicare_payment
+        COUNT(DISTINCT bene_cond)           AS distinct_conditions_tracked,
+        -- Top chronic conditions by prevalence (prvlnc = Prvlnc in raw CMS data)
+        MAX(CASE WHEN LOWER(bene_cond) LIKE '%diabetes%' THEN prvlnc END)       AS diabetes_prevalence,
+        MAX(CASE WHEN LOWER(bene_cond) LIKE '%heart failure%' THEN prvlnc END)  AS heart_failure_prevalence,
+        MAX(CASE WHEN LOWER(bene_cond) LIKE '%hypertension%' THEN prvlnc END)   AS hypertension_prevalence,
+        MAX(CASE WHEN LOWER(bene_cond) LIKE '%copd%' THEN prvlnc END)           AS copd_prevalence,
+        MAX(CASE WHEN LOWER(bene_cond) LIKE '%depression%' THEN prvlnc END)     AS depression_prevalence,
+        MAX(CASE WHEN LOWER(bene_cond) LIKE '%cancer%' THEN prvlnc END)         AS cancer_prevalence,
+        AVG(prvlnc)                         AS avg_condition_prevalence,
+        -- tot_mdcr_pymt_pc is per-capita payment; use as proxy for condition payment burden
+        AVG(tot_mdcr_pymt_pc)              AS chronic_avg_mdcr_pymt_pc
     FROM hcs_bronze.cms_chronic_conditions
     WHERE bene_geo_cd IS NOT NULL
     GROUP BY bene_geo_cd, _source_year
 ),
 
--- Opioid prescribing (county-level FIPS)
+-- Opioid prescribing (state-level via prescriber FIPS — aggregated to state grain)
+-- cms_opioid_puf is prescriber-drug level; aggregate to state FIPS for geo join.
 opioid AS (
     SELECT
-        fips                                AS geo_code,
+        prscrbr_state_fips                          AS geo_code,
         _source_year,
-        opioid_prescribing_rate,
-        opioid_prescriptions,
-        total_prescriptions,
-        population
+        -- Opioid rate proxy: opioid claims as share of total claims
+        CASE
+            WHEN SUM(tot_clms) > 0
+            THEN SUM(opioid_clms)::NUMERIC / SUM(tot_clms)
+            ELSE NULL
+        END                                         AS opioid_prescribing_rate,
+        SUM(opioid_clms)                            AS opioid_prescriptions,
+        SUM(tot_clms)                               AS total_prescriptions,
+        NULL::INTEGER                               AS population  -- not available at prescriber-drug level
     FROM hcs_bronze.cms_opioid_puf
-    WHERE fips IS NOT NULL
+    WHERE prscrbr_state_fips IS NOT NULL
+    GROUP BY prscrbr_state_fips, _source_year
 ),
 
--- Enrollment (county-level FIPS)
+-- Enrollment (state/county-level using state_cd and county_cd)
+-- Uses raw CMS field names: state_cd, county_cd, tot_benes, dsbl_benes, esrd_benes
 enrollment AS (
     SELECT
-        fips                                AS geo_code,
+        COALESCE(county_cd, state_cd)       AS geo_code,
         _source_year,
-        total_beneficiaries,
-        aged_esrd_benes,
-        disabled_benes,
-        esrd_benes,
-        aged_benes
+        SUM(tot_benes)                      AS tot_benes,
+        SUM(orgnl_mdcr_benes)               AS orgnl_mdcr_benes,
+        SUM(ma_benes)                       AS ma_benes,
+        SUM(esrd_benes)                     AS esrd_benes,
+        SUM(dsbl_benes)                     AS dsbl_benes
     FROM hcs_bronze.cms_enrollment_puf
-    WHERE fips IS NOT NULL
+    WHERE state_cd IS NOT NULL
+    GROUP BY COALESCE(county_cd, state_cd), _source_year
 ),
 
 -- All geo codes
 all_geos AS (
     SELECT geo_code, geo_level, _source_year FROM geo_variation
     UNION
-    -- Opioid and enrollment are FIPS (county-level); treat as county
-    SELECT geo_code, 'County' AS geo_level, _source_year FROM opioid
+    -- Opioid data is aggregated to state FIPS (2-digit); treat as state
+    SELECT geo_code, 'State' AS geo_level, _source_year FROM opioid
     UNION
     SELECT geo_code, 'County' AS geo_level, _source_year FROM enrollment
 )
@@ -111,18 +126,18 @@ SELECT
     c.depression_prevalence,
     c.cancer_prevalence,
     c.avg_condition_prevalence,
-    c.chronic_total_medicare_payment,
+    c.chronic_avg_mdcr_pymt_pc,
     -- Opioid burden
     o.opioid_prescribing_rate,
     o.opioid_prescriptions,
     o.total_prescriptions,
     o.population,
-    -- Enrollment
-    e.total_beneficiaries,
-    e.aged_esrd_benes,
-    e.disabled_benes,
+    -- Enrollment (raw CMS field names: tot_benes, dsbl_benes, esrd_benes)
+    e.tot_benes,
+    e.orgnl_mdcr_benes,
+    e.ma_benes,
     e.esrd_benes,
-    e.aged_benes,
+    e.dsbl_benes,
     -- Derived composite health burden score (higher = more burden)
     CASE
         WHEN gv.hosp_readmsn_rate IS NOT NULL

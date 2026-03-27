@@ -87,3 +87,8 @@ coverage.xml
 *.temp
 tmp/
 temp/
+
+# Data samples (generated — not committed)
+data-samples/**/*.csv
+data-samples/manifest.json
+!data-samples/**/.gitkeep

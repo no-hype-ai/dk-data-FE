@@ -21,7 +21,8 @@ SELECT
 
     -- NCT Identifier
     response_body->'protocolSection'->'identificationModule'->>'nctId' AS nct_id,
-    response_body->'protocolSection'->'identificationModule'->>'orgStudyIdInfo' AS org_study_id,
+    -- orgStudyIdInfo is an object {textId, type}; extract the textId string
+    response_body->'protocolSection'->'identificationModule'->'orgStudyIdInfo'->>'textId' AS org_study_id,
 
     -- Titles
     response_body->'protocolSection'->'identificationModule'->>'briefTitle' AS brief_title,
@@ -37,30 +38,32 @@ SELECT
     response_body->'protocolSection'->'statusModule'->>'lastKnownStatus' AS last_known_status,
     response_body->'protocolSection'->'statusModule'->>'whyStopped' AS why_stopped,
 
-    -- Dates
-    response_body->'protocolSection'->'statusModule'->'startDateStruct'->>'date' AS start_date,
-    response_body->'protocolSection'->'statusModule'->'completionDateStruct'->>'date' AS completion_date,
-    response_body->'protocolSection'->'statusModule'->'primaryCompletionDateStruct'->>'date' AS primary_completion_date,
-    response_body->'protocolSection'->'statusModule'->>'studyFirstSubmitDate' AS first_submit_date,
-    response_body->'protocolSection'->'statusModule'->>'studyFirstPostDateStruct' AS first_post_date,
-    response_body->'protocolSection'->'statusModule'->>'lastUpdatePostDateStruct' AS last_update_date,
+    -- Dates (startDateStruct / completionDateStruct / primaryCompletionDateStruct are objects with {date, type})
+    (response_body->'protocolSection'->'statusModule'->'startDateStruct'->>'date')::DATE AS start_date,
+    (response_body->'protocolSection'->'statusModule'->'completionDateStruct'->>'date')::DATE AS completion_date,
+    (response_body->'protocolSection'->'statusModule'->'primaryCompletionDateStruct'->>'date')::DATE AS primary_completion_date,
+    (response_body->'protocolSection'->'statusModule'->>'studyFirstSubmitDate')::DATE AS first_submit_date,
+    -- studyFirstPostDateStruct and lastUpdatePostDateStruct are objects with {date, type}
+    (response_body->'protocolSection'->'statusModule'->'studyFirstPostDateStruct'->>'date')::DATE AS first_post_date,
+    (response_body->'protocolSection'->'statusModule'->'lastUpdatePostDateStruct'->>'date')::DATE AS last_update_date,
 
     -- Design
     response_body->'protocolSection'->'designModule'->>'studyType' AS study_type,
-    response_body->'protocolSection'->'designModule'->'phases' AS phases,
+    -- phases is a JSON array (e.g. ["PHASE1", "PHASE2"])
+    response_body->'protocolSection'->'designModule'->'phases'::JSONB AS phases,
     response_body->'protocolSection'->'designModule'->'designInfo'->>'allocation' AS allocation,
     response_body->'protocolSection'->'designModule'->'designInfo'->>'interventionModel' AS intervention_model,
     response_body->'protocolSection'->'designModule'->'designInfo'->'maskingInfo'->>'masking' AS masking,
     (response_body->'protocolSection'->'designModule'->'enrollmentInfo'->>'count')::INTEGER AS enrollment_count,
     response_body->'protocolSection'->'designModule'->'enrollmentInfo'->>'type' AS enrollment_type,
 
-    -- Conditions
-    response_body->'protocolSection'->'conditionsModule'->'conditions' AS conditions,
-    response_body->'protocolSection'->'conditionsModule'->'keywords' AS keywords,
+    -- Conditions (JSON arrays)
+    response_body->'protocolSection'->'conditionsModule'->'conditions'::JSONB AS conditions,
+    response_body->'protocolSection'->'conditionsModule'->'keywords'::JSONB AS keywords,
 
-    -- Interventions
-    response_body->'protocolSection'->'armsInterventionsModule'->'interventions' AS interventions,
-    response_body->'protocolSection'->'armsInterventionsModule'->'armGroups' AS arm_groups,
+    -- Interventions (JSON arrays)
+    response_body->'protocolSection'->'armsInterventionsModule'->'interventions'::JSONB AS interventions,
+    response_body->'protocolSection'->'armsInterventionsModule'->'armGroups'::JSONB AS arm_groups,
 
     -- Eligibility
     response_body->'protocolSection'->'eligibilityModule'->>'sex' AS eligibility_sex,
@@ -72,24 +75,25 @@ SELECT
     -- Sponsors
     response_body->'protocolSection'->'sponsorCollaboratorsModule'->'leadSponsor'->>'name' AS lead_sponsor_name,
     response_body->'protocolSection'->'sponsorCollaboratorsModule'->'leadSponsor'->>'class' AS lead_sponsor_class,
-    response_body->'protocolSection'->'sponsorCollaboratorsModule'->'collaborators' AS collaborators,
-    response_body->'protocolSection'->'sponsorCollaboratorsModule'->'responsibleParty' AS responsible_party,
+    response_body->'protocolSection'->'sponsorCollaboratorsModule'->'collaborators'::JSONB AS collaborators,
+    response_body->'protocolSection'->'sponsorCollaboratorsModule'->'responsibleParty'::JSONB AS responsible_party,
 
     -- Contacts
-    response_body->'protocolSection'->'contactsLocationsModule'->'centralContacts' AS central_contacts,
-    response_body->'protocolSection'->'contactsLocationsModule'->'locations' AS locations,
+    response_body->'protocolSection'->'contactsLocationsModule'->'centralContacts'::JSONB AS central_contacts,
+    response_body->'protocolSection'->'contactsLocationsModule'->'locations'::JSONB AS locations,
 
     -- Outcomes
-    response_body->'protocolSection'->'outcomesModule'->'primaryOutcomes' AS primary_outcomes,
-    response_body->'protocolSection'->'outcomesModule'->'secondaryOutcomes' AS secondary_outcomes,
+    response_body->'protocolSection'->'outcomesModule'->'primaryOutcomes'::JSONB AS primary_outcomes,
+    response_body->'protocolSection'->'outcomesModule'->'secondaryOutcomes'::JSONB AS secondary_outcomes,
 
-    -- Results
+    -- Results (hasResults is a top-level field in the v2 API response)
     (response_body->>'hasResults')::BOOLEAN AS has_results,
-    response_body->'resultsSection' AS results_section,
+    response_body->'resultsSection'::JSONB AS results_section,
 
     -- Raw source tracking
     response_body AS raw_json,
-    id AS raw_source_id,
+    -- raw_source_id references the raw table PK, not the generated bronze id
+    raw.clinicaltrials.id AS raw_source_id,
     'clinicaltrials_gov' AS source,
     request_timestamp,
     request_timestamp AS source_updated_at,

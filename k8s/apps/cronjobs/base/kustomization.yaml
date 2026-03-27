@@ -49,6 +49,7 @@ resources:
   - cronjob-fetch-cms-ordering-providers.yaml
   - cronjob-fetch-cms-outpatient-puf.yaml
   - cronjob-fetch-cms-part-b-spending.yaml
+  - cronjob-fetch-cms-part-d-prescriber.yaml
   - cronjob-fetch-cms-part-d-spending.yaml
   - cronjob-fetch-cms-physician-puf.yaml
   - cronjob-fetch-cms-referring-providers.yaml

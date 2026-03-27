@@ -24,9 +24,9 @@ WITH trial_associations AS (
         COUNT(DISTINCT ct.nct_id) AS evidence_count
     FROM silver.researchers r
     JOIN silver.clinical_trials ct
-        ON ct.lead_sponsor ILIKE '%' || r.family_name || '%'
+        ON ct.lead_sponsor_name ILIKE '%' || r.family_name || '%'
     JOIN silver.molecules m
-        ON ct.molecule_id = m.id
+        ON ct.molecule_id = m.molecule_id
     WHERE ct.molecule_id IS NOT NULL
     GROUP BY r.id, ct.molecule_id, m.canonical_name
 ),
@@ -45,7 +45,7 @@ publication_associations AS (
     JOIN silver.molecule_publications mp
         ON mp.publication_id = p.id
     JOIN silver.molecules m
-        ON mp.molecule_id = m.id
+        ON mp.molecule_id = m.molecule_id
     WHERE mp.molecule_id IS NOT NULL
     GROUP BY r.id, mp.molecule_id, m.canonical_name
 ),

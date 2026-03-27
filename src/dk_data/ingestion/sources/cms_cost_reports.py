@@ -19,10 +19,18 @@ from ..utils.validators import CMSCostReportRecord
 logger = logging.getLogger(__name__)
 
 # Column mapping for cost report data - supports multiple column name formats
+# HCRIS raw files (RPT file): PRVDR_NUM, FY_BGN_DT, FY_END_DT
+# data.cms.gov Hospital Provider Cost Report API: Provider CCN, Fiscal Year Begin Date, etc.
 COLUMN_MAPPING = {
-    # Provider ID
+    # Provider ID — HCRIS raw format
+    'PRVDR_NUM': 'provider_id',
+    # Provider ID — data.cms.gov API / processed format
     'Provider CCN': 'provider_id',
-    # Fiscal year dates
+    'Provider Number': 'provider_id',
+    # Fiscal year dates — HCRIS raw format
+    'FY_BGN_DT': 'fiscal_year_begin',
+    'FY_END_DT': 'fiscal_year_end',
+    # Fiscal year dates — data.cms.gov API / processed format
     'Fiscal Year Begin Date': 'fiscal_year_begin',
     'Fiscal Year End Date': 'fiscal_year_end',
     # Bed count variations
@@ -88,16 +96,28 @@ def load_cms_cost_reports(
             logger.warning(f"File {source_file} already loaded. Skipping.")
             return {'status': 'skipped', 'reason': 'already_loaded'}
 
-    # Read CSV
+    # Read CSV — provider number columns must be read as TEXT to preserve
+    # leading zeros (e.g., "010001"). Date parsing is deferred to avoid
+    # parse_dates errors when HCRIS raw files use FY_BGN_DT / FY_END_DT
+    # column names instead of the API column names.
     df = pd.read_csv(
         filepath,
-        dtype={'Provider CCN': str},
-        parse_dates=['Fiscal Year Begin Date', 'Fiscal Year End Date'],
+        dtype={
+            # HCRIS raw RPT file format
+            'PRVDR_NUM': str,
+            # data.cms.gov API / processed format
+            'Provider CCN': str,
+            'Provider Number': str,
+        },
         low_memory=False
     )
 
-    # Rename columns
+    # Normalize date columns after rename (handles both name formats)
     df = df.rename(columns=COLUMN_MAPPING)
+
+    for date_col in ('fiscal_year_begin', 'fiscal_year_end'):
+        if date_col in df.columns:
+            df[date_col] = pd.to_datetime(df[date_col], errors='coerce').dt.date
 
     logger.info(f"Found {len(df)} cost report records")
 

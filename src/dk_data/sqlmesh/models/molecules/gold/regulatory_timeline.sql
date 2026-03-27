@@ -1,6 +1,9 @@
 -- SQLMesh Model: Gold Regulatory Timeline
 -- Cross-source regulatory decision history per molecule
 -- Part of: 015-assessment-dashboard-integration
+--
+-- Sources: silver.regulatory_decisions, silver.molecules
+-- Links drug_name / active_substance to molecules via canonical_name.
 
 MODEL (
     name mol_gold.regulatory_timeline,
@@ -27,10 +30,10 @@ WITH regulatory AS (
     FROM silver.regulatory_decisions rd
 ),
 
--- Join with molecules to get molecule_id via drug_name/active_substance matching
+-- Join with silver.molecules to get molecule id via drug_name / active_substance
 molecule_linked AS (
     SELECT
-        m.molecule_id,
+        m.id                        AS molecule_id,
         r.drug_name,
         r.agency,
         r.active_substance,
@@ -40,21 +43,24 @@ molecule_linked AS (
         r.therapeutic_area,
         r.recommendation_details
     FROM regulatory r
-    LEFT JOIN mol_silver.molecules_from_bronze m
-        ON LOWER(r.drug_name) = LOWER(m.pref_name)
-        OR LOWER(r.active_substance) = LOWER(m.pref_name)
+    LEFT JOIN silver.molecules m
+        ON LOWER(r.drug_name)       = LOWER(m.canonical_name)
+        OR LOWER(r.active_substance) = LOWER(m.canonical_name)
 )
 
 SELECT DISTINCT ON (molecule_id, agency, decision_date)
-    gen_random_uuid() AS id,
+    gen_random_uuid()           AS id,
     molecule_id,
     drug_name,
     agency,
     decision,
-    decision_date,
+    decision_date::DATE,
     indication,
     recommendation_details,
-    NOW() AS created_at,
-    NOW() AS updated_at
+    NOW()                       AS created_at,
+    NOW()                       AS updated_at
 FROM molecule_linked
-ORDER BY molecule_id, agency, decision_date DESC;
+ORDER BY
+    molecule_id,
+    agency,
+    decision_date DESC;

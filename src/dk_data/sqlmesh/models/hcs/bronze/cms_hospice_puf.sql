@@ -5,30 +5,32 @@
 MODEL (
     name hcs_bronze.cms_hospice_puf,
     kind INCREMENTAL_BY_UNIQUE_KEY (
-        unique_key (npi, _source_year)
+        unique_key (provider_id, hspce_cd, _source_year)
     ),
     cron '@monthly',
     audits (
-        not_null(columns := (npi, _source_year))
+        not_null(columns := (provider_id, _source_year))
     ),
-    grain (npi, _source_year)
+    grain (provider_id, hspce_cd, _source_year)
 );
 
 SELECT
-    id,
-    npi,
-    organization_name,
-    address,
-    city,
-    state,
-    zip_code,
-    total_medicare_beneficiaries,
-    average_length_of_service,
-    total_charges,
-    total_medicare_allowed_amt,
-    _source_year,
-    _source_hash,
-    _source_file,
-    _loaded_at,
+    id::BIGINT,
+    provider_id::TEXT,
+    provider_name::TEXT,
+    provider_city::TEXT,
+    provider_state::TEXT,
+    provider_zip5::TEXT,
+    hspce_cd::TEXT,
+    hspce_desc::TEXT,
+    tot_benes::INTEGER,
+    tot_mdcr_alowd_amt::NUMERIC,
+    tot_mdcr_pymt_amt::NUMERIC,
+    avg_mdcr_pymt_amt::NUMERIC,
+    avg_age::NUMERIC,
+    _source_year::INTEGER,
+    _source_hash::TEXT,
+    _source_file::TEXT,
+    _loaded_at::TIMESTAMPTZ,
     NOW() AS _bronze_loaded_at
 FROM hcs_raw.cms_hospice_puf;

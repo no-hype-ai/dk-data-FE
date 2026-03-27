@@ -24,8 +24,8 @@ WITH molecules AS (
         molecule_id,
         canonical_name,
         molecule_type,
-        development_stage,
-        therapeutic_area
+        development_status,
+        therapeutic_areas
     FROM mol_silver.molecules
 ),
 
@@ -118,8 +118,8 @@ SELECT
     m.molecule_id,
     m.canonical_name,
     m.molecule_type,
-    m.development_stage,
-    m.therapeutic_area,
+    m.development_status,
+    m.therapeutic_areas,
 
     -- Drug spending
     ds.part_d_total_spending,

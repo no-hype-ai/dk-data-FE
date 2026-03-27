@@ -17,7 +17,7 @@ MODEL (
 -- Link news signals to molecules via drug_mentions
 WITH molecule_signals AS (
     SELECT
-        m.id AS molecule_id,
+        m.molecule_id,
         ns.source_name AS source,
         ns.sentiment_polarity,
         ns.signal_type,

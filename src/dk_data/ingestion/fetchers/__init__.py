@@ -23,6 +23,7 @@ from .pdb import PDBFetcher
 from .orcid import ORCIDFetcher
 from .uspto_trademarks import USPTOTrademarksFetcher
 from .euipo_trademarks import EUIPOTrademarksFetcher
+from .who_icd import WHOICDFetcher
 
 __all__ = [
     'BaseFetcher',
@@ -48,4 +49,5 @@ __all__ = [
     'ORCIDFetcher',
     'USPTOTrademarksFetcher',
     'EUIPOTrademarksFetcher',
+    'WHOICDFetcher',
 ]

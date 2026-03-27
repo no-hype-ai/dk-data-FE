@@ -18,7 +18,7 @@ MODEL (
 
 WITH molecule_base AS (
     SELECT
-        m.id AS molecule_id,
+        m.molecule_id,
         m.inchi_key,
         m.canonical_name,
         m.canonical_smiles,
@@ -31,14 +31,14 @@ WITH molecule_base AS (
         m.development_status,
         m.max_phase,
         m.first_approval_year,
-        m.approval_date,
+        NULL::DATE                              AS approval_date,
         m.resolution_confidence,
-        m.data_sources,
-        m.primary_source,
+        NULL::TEXT[]                            AS data_sources,
+        m.name_source                           AS primary_source,
         m.created_at,
         m.updated_at
     FROM silver.molecules m
-    WHERE m.needs_review = FALSE  -- Exclude quarantined records
+    WHERE m.needs_review = FALSE
 ),
 
 -- Get cross-reference identifiers
@@ -46,7 +46,7 @@ cross_refs AS (
     SELECT
         molecule_id,
         MAX(CASE WHEN identifier_type = 'drugbank_id' AND is_primary THEN identifier_value END) AS drugbank_id,
-        MAX(CASE WHEN identifier_type = 'chembl_id' AND is_primary THEN identifier_value END) AS chembl_id,
+        MAX(CASE WHEN identifier_type = 'chembl_id' AND is_primary THEN identifier_value END) AS molecule_chembl_id,
         MAX(CASE WHEN identifier_type = 'pubchem_cid' AND is_primary THEN identifier_value::BIGINT END) AS pubchem_cid,
         MAX(CASE WHEN identifier_type = 'unii' AND is_primary THEN identifier_value END) AS unii,
         MAX(CASE WHEN identifier_type = 'cas_number' AND is_primary THEN identifier_value END) AS cas_number,
@@ -69,7 +69,7 @@ trial_counts AS (
     SELECT
         molecule_id,
         COUNT(*) AS total_trials,
-        COUNT(*) FILTER (WHERE status IN ('Recruiting', 'Active, not recruiting', 'Enrolling by invitation')) AS active_trials,
+        COUNT(*) FILTER (WHERE overall_status IN ('Recruiting', 'Active, not recruiting', 'Enrolling by invitation')) AS active_trials,
         COUNT(*) FILTER (WHERE phase LIKE '%3%') AS phase_3_trials,
         COUNT(*) FILTER (WHERE phase LIKE '%2%') AS phase_2_trials,
         COUNT(*) FILTER (WHERE phase LIKE '%1%') AS phase_1_trials
@@ -227,7 +227,7 @@ SELECT
 
     -- Cross-references
     cr.drugbank_id,
-    cr.chembl_id,
+    cr.molecule_chembl_id,
     cr.pubchem_cid,
     cr.unii,
     cr.cas_number,

@@ -86,7 +86,7 @@ class SilverTransformationService:
         async with self.db_pool.acquire() as conn:
             # Get unprocessed Bronze records (use bronze.chembl table with correct column names)
             bronze_records = await conn.fetch("""
-                SELECT id, molecule_chembl_id as chembl_id, pref_name, molecule_type, max_phase,
+                SELECT id, molecule_chembl_id, pref_name, molecule_type, max_phase,
                        molecular_formula, molecular_weight, canonical_smiles,
                        standard_inchi as inchi, standard_inchi_key as inchi_key,
                        first_approval, indication_class
@@ -113,15 +113,15 @@ class SilverTransformationService:
                     """, record['id'])
 
                 except Exception as e:
-                    result.errors.append(f"ChEMBL {record['chembl_id']}: {str(e)}")
-                    logger.error(f"Failed to process ChEMBL molecule {record['chembl_id']}: {e}")
+                    result.errors.append(f"ChEMBL {record['molecule_chembl_id']}: {str(e)}")
+                    logger.error(f"Failed to process ChEMBL molecule {record['molecule_chembl_id']}: {e}")
 
         return result
 
     async def _process_chembl_molecule(self, conn, record: Dict) -> Optional[str]:
         """Process a single ChEMBL molecule into Silver."""
         inchi_key = record['inchi_key']
-        chembl_id = record['chembl_id']
+        chembl_id = record['molecule_chembl_id']
 
         # Step 1: Try to find existing molecule by InChI Key
         existing = None
@@ -186,7 +186,7 @@ class SilverTransformationService:
 
         # Add identifier mapping for ChEMBL ID
         await self._add_identifier_mapping(
-            conn, molecule_id, 'chembl_id', record['chembl_id'], 'chembl'
+            conn, molecule_id, 'chembl_id', record['molecule_chembl_id'], 'chembl'
         )
 
         # Add InChI Key mapping if available
@@ -252,7 +252,7 @@ class SilverTransformationService:
 
         # Add ChEMBL ID mapping if not exists
         await self._add_identifier_mapping(
-            conn, molecule_id, 'chembl_id', record['chembl_id'], 'chembl'
+            conn, molecule_id, 'chembl_id', record['molecule_chembl_id'], 'chembl'
         )
 
     async def process_clinical_trials(self, limit: int = 100) -> TransformationResult:

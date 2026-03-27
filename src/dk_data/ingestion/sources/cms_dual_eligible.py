@@ -1,4 +1,18 @@
-"""CMS Dual Eligible Beneficiary loader. Loads to hcs_raw.cms_dual_eligible."""
+"""CMS Dual Eligible Beneficiary loader. Loads to hcs_raw.cms_dual_eligible.
+
+Raw CMS field names (snake_case mapping):
+  State_Cd → state_cd
+  State_Name → state_name
+  Dual_Elgbl_Lvl → dual_elgbl_lvl
+  Dual_Elgbl_Desc → dual_elgbl_desc
+  Tot_Benes → tot_benes
+  FFS_Benes → ffs_benes
+  MA_Benes → ma_benes
+  Dual_Elgbl_Full_Benes → dual_elgbl_full_benes
+  Dual_Elgbl_Prtl_Benes → dual_elgbl_prtl_benes
+  Non_Dual_Benes → non_dual_benes
+  LIS_Benes → lis_benes
+"""
 
 import hashlib
 import logging
@@ -14,16 +28,17 @@ from ..utils.validators import CMSDualEligibleRecord
 logger = logging.getLogger(__name__)
 
 COLUMN_MAPPING = {
-    'State': 'state',
-    'State Name': 'state_name',
-    'Bene Count': 'bene_count',
-    'Full Dual Count': 'full_dual_count',
-    'Partial Dual Count': 'partial_dual_count',
-    'Medicaid Managed Care Count': 'medicaid_managed_care_count',
-    # snake_case variants
-    'state': 'state',
-    'state_name': 'state_name',
-    'bene_count': 'bene_count',
+    'State_Cd': 'state_cd',
+    'State_Name': 'state_name',
+    'Dual_Elgbl_Lvl': 'dual_elgbl_lvl',
+    'Dual_Elgbl_Desc': 'dual_elgbl_desc',
+    'Tot_Benes': 'tot_benes',
+    'FFS_Benes': 'ffs_benes',
+    'MA_Benes': 'ma_benes',
+    'Dual_Elgbl_Full_Benes': 'dual_elgbl_full_benes',
+    'Dual_Elgbl_Prtl_Benes': 'dual_elgbl_prtl_benes',
+    'Non_Dual_Benes': 'non_dual_benes',
+    'LIS_Benes': 'lis_benes',
 }
 
 TABLE = 'cms_dual_eligible'
@@ -61,12 +76,17 @@ def load_cms_dual_eligible(filepath: str, source_year: int = 2023) -> dict:
     for idx, row in df.iterrows():
         try:
             rec = CMSDualEligibleRecord(
-                state=row.get('state'),
+                state_cd=row.get('state_cd'),
                 state_name=row.get('state_name'),
-                bene_count=int(row['bene_count']) if row.get('bene_count') else None,
-                full_dual_count=int(row['full_dual_count']) if row.get('full_dual_count') else None,
-                partial_dual_count=int(row['partial_dual_count']) if row.get('partial_dual_count') else None,
-                medicaid_managed_care_count=int(row['medicaid_managed_care_count']) if row.get('medicaid_managed_care_count') else None,
+                dual_elgbl_lvl=row.get('dual_elgbl_lvl'),
+                dual_elgbl_desc=row.get('dual_elgbl_desc'),
+                tot_benes=int(row['tot_benes']) if row.get('tot_benes') else None,
+                ffs_benes=int(row['ffs_benes']) if row.get('ffs_benes') else None,
+                ma_benes=int(row['ma_benes']) if row.get('ma_benes') else None,
+                dual_elgbl_full_benes=int(row['dual_elgbl_full_benes']) if row.get('dual_elgbl_full_benes') else None,
+                dual_elgbl_prtl_benes=int(row['dual_elgbl_prtl_benes']) if row.get('dual_elgbl_prtl_benes') else None,
+                non_dual_benes=int(row['non_dual_benes']) if row.get('non_dual_benes') else None,
+                lis_benes=int(row['lis_benes']) if row.get('lis_benes') else None,
                 _source_year=source_year,
             )
             d = rec.model_dump(by_alias=True)
@@ -79,9 +99,9 @@ def load_cms_dual_eligible(filepath: str, source_year: int = 2023) -> dict:
 
     inserted = upsert_records(
         SCHEMA, TABLE, records,
-        conflict_columns=['state', '_source_year'],
-        update_columns=['bene_count', 'full_dual_count', 'partial_dual_count',
-                        'medicaid_managed_care_count', '_loaded_at'],
+        conflict_columns=['state_cd', 'dual_elgbl_lvl', '_source_year'],
+        update_columns=['tot_benes', 'ffs_benes', 'ma_benes', 'dual_elgbl_full_benes',
+                        'dual_elgbl_prtl_benes', 'non_dual_benes', 'lis_benes', '_loaded_at'],
     )
 
     logger.info(f"Dual Eligible load complete: {inserted} records processed, {len(errors)} errors")

@@ -18,33 +18,45 @@ from ..utils.validators import CMSHospitalInfoRecord
 logger = logging.getLogger(__name__)
 
 # CMS column mapping - supports multiple column name formats
+# CMS provider-data portal uses underscore-separated names (e.g., Facility_ID)
+# Older exports may use space-separated names (e.g., Facility ID)
 COLUMN_MAPPING = {
     # Provider ID variations
+    'Facility_ID': 'provider_id',
     'Facility ID': 'provider_id',
     # Hospital name variations
+    'Facility_Name': 'hospital_name',
     'Facility Name': 'hospital_name',
     # Address variations
     'Address': 'address',
     # City variations
-    'City': 'city',
+    'City_Town': 'city',
     'City/Town': 'city',
+    'City': 'city',
     # State variations
     'State': 'state',
     # ZIP Code variations
+    'ZIP_Code': 'zip_code',
     'ZIP Code': 'zip_code',
     # County variations
-    'County Name': 'county_name',
+    'County_Parish': 'county_name',
     'County/Parish': 'county_name',
+    'County Name': 'county_name',
     # Phone variations
+    'Phone_Number': 'phone_number',
     'Phone Number': 'phone_number',
     'Telephone Number': 'phone_number',
     # Hospital Type variations
+    'Hospital_Type': 'hospital_type',
     'Hospital Type': 'hospital_type',
     # Ownership variations
+    'Hospital_Ownership': 'hospital_ownership',
     'Hospital Ownership': 'hospital_ownership',
     # Emergency Services variations
+    'Emergency_Services': 'emergency_services',
     'Emergency Services': 'emergency_services',
     # Rating variations
+    'Hospital_overall_rating': 'hospital_overall_rating',
     'Hospital overall rating': 'hospital_overall_rating',
 }
 
@@ -110,13 +122,20 @@ def load_cms_hospital_info(
             logger.warning(f"File {source_file} already loaded. Skipping.")
             return {'status': 'skipped', 'reason': 'already_loaded'}
 
-    # Read CSV - handle both CMS format and direct column names
+    # Read CSV - handle both CMS underscore format (Facility_ID) and
+    # legacy space format (Facility ID) by specifying dtype for both variants
     df = pd.read_csv(
         filepath,
         dtype={
+            # Underscore format (current CMS provider-data portal)
+            'Facility_ID': str,
+            'ZIP_Code': str,
+            'Phone_Number': str,
+            # Space format (older exports)
             'Facility ID': str,
             'ZIP Code': str,
             'Phone Number': str,
+            # Post-rename names (in case file was pre-normalized)
             'provider_id': str,
             'zip_code': str,
             'phone_number': str,
@@ -161,7 +180,6 @@ def load_cms_hospital_info(
                             hospital_ownership, emergency_services, hospital_overall_rating,
                             _source_hash
                         ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
-                        ON CONFLICT (id) DO NOTHING
                     """, (
                         record.provider_id,
                         record.hospital_name,

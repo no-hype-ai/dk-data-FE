@@ -15,22 +15,28 @@ MODEL (
 );
 
 SELECT
-    id,
-    drg_definition,
-    provider_id,
-    provider_name,
-    provider_street_address,
-    provider_city,
-    provider_state,
-    provider_zip_code,
-    hospital_referral_region_desc,
-    total_discharges,
-    average_covered_charges,
-    average_total_payments,
-    average_medicare_payments,
-    _source_year,
-    _source_hash,
-    _source_file,
-    _loaded_at,
+    id::BIGINT,
+    -- DRG identifiers (newer format has both code and description separately)
+    drg_cd::TEXT,
+    drg_definition::TEXT,
+    -- Provider identifiers (TEXT — CMS provider IDs are CCNs with leading zeros)
+    provider_id::TEXT,
+    provider_name::TEXT,
+    provider_street_address::TEXT,
+    provider_city::TEXT,
+    provider_state::TEXT,
+    provider_state_fips::TEXT,
+    provider_zip_code::TEXT,
+    provider_ruca::TEXT,
+    hospital_referral_region_desc::TEXT,
+    -- Metrics
+    total_discharges::INTEGER,
+    average_covered_charges::NUMERIC,
+    average_total_payments::NUMERIC,
+    average_medicare_payments::NUMERIC,
+    _source_year::INTEGER,
+    _source_hash::TEXT,
+    _source_file::TEXT,
+    _loaded_at::TIMESTAMPTZ,
     NOW() AS _bronze_loaded_at
 FROM hcs_raw.cms_inpatient_puf;

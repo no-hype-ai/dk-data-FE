@@ -1,4 +1,18 @@
-"""CMS Medicare Enrollment PUF loader. Loads to hcs_raw.cms_enrollment_puf."""
+"""CMS Medicare Enrollment PUF loader. Loads to hcs_raw.cms_enrollment_puf.
+
+Raw CMS field names (snake_case mapping):
+  State_Cd → state_cd
+  County_Cd → county_cd
+  County_Desc → county_desc
+  Bene_Demo_Lvl → bene_demo_lvl
+  Bene_Demo_Desc → bene_demo_desc
+  Bene_Age_Lvl → bene_age_lvl
+  Tot_Benes → tot_benes
+  Orgnl_Mdcr_Benes → orgnl_mdcr_benes
+  MA_Benes → ma_benes
+  ESRD_Benes → esrd_benes
+  Dsbl_Benes → dsbl_benes
+"""
 
 import hashlib
 import logging
@@ -14,17 +28,17 @@ from ..utils.validators import CMSEnrollmentRecord
 logger = logging.getLogger(__name__)
 
 COLUMN_MAPPING = {
-    'State': 'state',
-    'State Name': 'state_name',
-    'County Name': 'county_name',
-    'FIPS Code': 'fips_cd',
+    'State_Cd': 'state_cd',
+    'County_Cd': 'county_cd',
+    'County_Desc': 'county_desc',
+    'Bene_Demo_Lvl': 'bene_demo_lvl',
+    'Bene_Demo_Desc': 'bene_demo_desc',
+    'Bene_Age_Lvl': 'bene_age_lvl',
     'Tot_Benes': 'tot_benes',
     'Orgnl_Mdcr_Benes': 'orgnl_mdcr_benes',
-    'MA_and_Oth_Benes': 'ma_and_oth_benes',
-    # snake_case variants
-    'state': 'state',
-    'county_name': 'county_name',
-    'fips_cd': 'fips_cd',
+    'MA_Benes': 'ma_benes',
+    'ESRD_Benes': 'esrd_benes',
+    'Dsbl_Benes': 'dsbl_benes',
 }
 
 TABLE = 'cms_enrollment_puf'
@@ -62,13 +76,17 @@ def load_cms_enrollment_puf(filepath: str, source_year: int = 2023) -> dict:
     for idx, row in df.iterrows():
         try:
             rec = CMSEnrollmentRecord(
-                state=row.get('state'),
-                state_name=row.get('state_name'),
-                county_name=row.get('county_name'),
-                fips_cd=row.get('fips_cd'),
+                state_cd=row.get('state_cd'),
+                county_cd=row.get('county_cd'),
+                county_desc=row.get('county_desc'),
+                bene_demo_lvl=row.get('bene_demo_lvl'),
+                bene_demo_desc=row.get('bene_demo_desc'),
+                bene_age_lvl=row.get('bene_age_lvl'),
                 tot_benes=int(row['tot_benes']) if row.get('tot_benes') else None,
                 orgnl_mdcr_benes=int(row['orgnl_mdcr_benes']) if row.get('orgnl_mdcr_benes') else None,
-                ma_and_oth_benes=int(row['ma_and_oth_benes']) if row.get('ma_and_oth_benes') else None,
+                ma_benes=int(row['ma_benes']) if row.get('ma_benes') else None,
+                esrd_benes=int(row['esrd_benes']) if row.get('esrd_benes') else None,
+                dsbl_benes=int(row['dsbl_benes']) if row.get('dsbl_benes') else None,
                 _source_year=source_year,
             )
             d = rec.model_dump(by_alias=True)
@@ -81,8 +99,9 @@ def load_cms_enrollment_puf(filepath: str, source_year: int = 2023) -> dict:
 
     inserted = upsert_records(
         SCHEMA, TABLE, records,
-        conflict_columns=['fips_cd', '_source_year'],
-        update_columns=['tot_benes', 'orgnl_mdcr_benes', 'ma_and_oth_benes', '_loaded_at'],
+        conflict_columns=['state_cd', 'county_cd', 'bene_demo_lvl', 'bene_age_lvl', '_source_year'],
+        update_columns=['tot_benes', 'orgnl_mdcr_benes', 'ma_benes', 'esrd_benes',
+                        'dsbl_benes', '_loaded_at'],
     )
 
     logger.info(f"Enrollment PUF load complete: {inserted} records processed, {len(errors)} errors")

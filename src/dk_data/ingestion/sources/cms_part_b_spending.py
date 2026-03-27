@@ -16,13 +16,16 @@ logger = logging.getLogger(__name__)
 COLUMN_MAPPING = {
     'HCPCS_Cd': 'hcpcs_cd',
     'HCPCS_Desc': 'hcpcs_desc',
-    'HCPCS_Drug_Ind': 'hcpcs_drug_indicator',
     'Tot_Mftr': 'tot_mftr',
+    'Mftr_Name': 'mftr_name',
+    'Tot_Spndng': 'tot_spndng',
+    'Tot_Dsg_Unts': 'tot_dsg_unts',
+    'Tot_Benes': 'tot_benes',
     'Tot_Clms': 'tot_clms',
-    'Tot_Allowed_Amt': 'tot_allowed_amt',
-    'Tot_Mdcr_Pymt_Amt': 'tot_mdcr_pymt_amt',
-    'Avg_Mdcr_Pymt_Amt': 'avg_mdcr_pymt_amt',
-    'Avg_Mdcr_Allowed_Amt': 'avg_mdcr_allowed_amt',
+    'Avg_Spnd_Per_Dsg_Unt': 'avg_spnd_per_dsg_unt',
+    'Avg_Spnd_Per_Clm': 'avg_spnd_per_clm',
+    'Avg_Spnd_Per_Bene': 'avg_spnd_per_bene',
+    'Outlier_Flag': 'outlier_flag',
     # also handle lower-case variants that CMS sometimes ships
     'hcpcs_cd': 'hcpcs_cd',
     'hcpcs_desc': 'hcpcs_desc',
@@ -65,13 +68,16 @@ def load_cms_part_b_spending(filepath: str, source_year: int = 2023) -> dict:
             rec = CMSPartBSpendingRecord(
                 hcpcs_cd=row.get('hcpcs_cd'),
                 hcpcs_desc=row.get('hcpcs_desc'),
-                hcpcs_drug_indicator=row.get('hcpcs_drug_indicator'),
                 tot_mftr=row.get('tot_mftr'),
+                mftr_name=row.get('mftr_name'),
+                tot_spndng=row.get('tot_spndng') or None,
+                tot_dsg_unts=row.get('tot_dsg_unts') or None,
+                tot_benes=row.get('tot_benes') or None,
                 tot_clms=row.get('tot_clms') or None,
-                tot_allowed_amt=row.get('tot_allowed_amt') or None,
-                tot_mdcr_pymt_amt=row.get('tot_mdcr_pymt_amt') or None,
-                avg_mdcr_pymt_amt=row.get('avg_mdcr_pymt_amt') or None,
-                avg_mdcr_allowed_amt=row.get('avg_mdcr_allowed_amt') or None,
+                avg_spnd_per_dsg_unt=row.get('avg_spnd_per_dsg_unt') or None,
+                avg_spnd_per_clm=row.get('avg_spnd_per_clm') or None,
+                avg_spnd_per_bene=row.get('avg_spnd_per_bene') or None,
+                outlier_flag=row.get('outlier_flag'),
                 _source_year=source_year,
             )
             d = rec.model_dump(by_alias=True)
@@ -85,7 +91,7 @@ def load_cms_part_b_spending(filepath: str, source_year: int = 2023) -> dict:
     inserted = upsert_records(
         SCHEMA, TABLE, records,
         conflict_columns=['_source_hash', 'hcpcs_cd', '_source_year'],
-        update_columns=['tot_allowed_amt', 'tot_mdcr_pymt_amt', '_loaded_at'],
+        update_columns=['tot_spndng', 'tot_clms', '_loaded_at'],
     )
 
     logger.info(f"Part B Spending load complete: {inserted} records processed, {len(errors)} errors")

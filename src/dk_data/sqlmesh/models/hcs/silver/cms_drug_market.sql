@@ -4,6 +4,12 @@
 --
 -- Grain: (generic_name, _source_year)
 -- Sources: hcs_bronze.cms_part_d_spending, hcs_bronze.cms_part_b_spending
+--
+-- Column names match CMS API (snake_case):
+--   Part D: gnrc_name, brnd_name, tot_spndng, tot_clms, tot_benes,
+--           avg_spnd_per_clm, avg_spnd_per_bene
+--   Part B: hcpcs_cd, hcpcs_desc, mftr_name, tot_spndng, tot_clms,
+--           tot_benes, avg_spnd_per_clm, avg_spnd_per_bene
 
 MODEL (
     name hcs_silver.cms_drug_market,
@@ -17,52 +23,57 @@ MODEL (
 
 WITH part_d AS (
     SELECT
-        gnrc_name                           AS generic_name,
-        brnd_name                           AS brand_name,
-        mftr_name                           AS manufacturer_name,
+        gnrc_name                               AS generic_name,
+        brnd_name                               AS brand_name,
+        NULL::TEXT                              AS manufacturer_name,
         _source_year,
-        SUM(tot_drug_cst)                   AS part_d_spending,
-        SUM(tot_clms)                       AS part_d_claims,
-        SUM(tot_benes)                      AS part_d_beneficiaries,
-        SUM(tot_30day_fills)                AS part_d_30day_fills,
-        AVG(avg_spnd_per_clm)               AS part_d_avg_cost_per_claim,
-        AVG(avg_spnd_per_bene)              AS part_d_avg_cost_per_bene
+        SUM(tot_spndng)                         AS part_d_spending,
+        SUM(tot_clms)                           AS part_d_claims,
+        SUM(tot_benes)                          AS part_d_beneficiaries,
+        SUM(tot_dsg_unts)                       AS part_d_dosage_units,
+        AVG(avg_spnd_per_clm)                   AS part_d_avg_cost_per_claim,
+        AVG(avg_spnd_per_bene)                  AS part_d_avg_cost_per_bene
     FROM hcs_bronze.cms_part_d_spending
-    WHERE generic_name IS NOT NULL
-    GROUP BY gnrc_name, brnd_name, mftr_name, _source_year
+    WHERE gnrc_name IS NOT NULL
+    GROUP BY gnrc_name, brnd_name, _source_year
 ),
 
 part_b AS (
     SELECT
-        hcpcs_desc                          AS generic_name,
-        hcpcs_cd                            AS hcpcs_code,
+        hcpcs_desc                              AS generic_name,
+        hcpcs_cd                                AS hcpcs_code,
+        mftr_name                               AS manufacturer_name,
         _source_year,
-        SUM(tot_mdcr_pymt_amt)              AS part_b_spending,
-        SUM(tot_srvcs)                      AS part_b_services,
-        SUM(tot_benes)                      AS part_b_beneficiaries,
-        AVG(avg_mdcr_pymt_amt)              AS part_b_avg_payment
+        SUM(tot_spndng)                         AS part_b_spending,
+        SUM(tot_clms)                           AS part_b_claims,
+        SUM(tot_benes)                          AS part_b_beneficiaries,
+        SUM(tot_dsg_unts)                       AS part_b_dosage_units,
+        AVG(avg_spnd_per_clm)                   AS part_b_avg_cost_per_claim,
+        AVG(avg_spnd_per_bene)                  AS part_b_avg_cost_per_bene
     FROM hcs_bronze.cms_part_b_spending
     WHERE hcpcs_desc IS NOT NULL
-    GROUP BY hcpcs_desc, hcpcs_cd, _source_year
+    GROUP BY hcpcs_desc, hcpcs_cd, mftr_name, _source_year
 ),
 
 combined AS (
     SELECT
         COALESCE(d.generic_name, b.generic_name)    AS generic_name,
         d.brand_name,
-        d.manufacturer_name,
+        COALESCE(d.manufacturer_name, b.manufacturer_name) AS manufacturer_name,
         b.hcpcs_code,
         COALESCE(d._source_year, b._source_year)    AS _source_year,
         COALESCE(d.part_d_spending, 0)              AS part_d_spending,
         COALESCE(d.part_d_claims, 0)                AS part_d_claims,
         COALESCE(d.part_d_beneficiaries, 0)         AS part_d_beneficiaries,
-        COALESCE(d.part_d_30day_fills, 0)           AS part_d_30day_fills,
+        COALESCE(d.part_d_dosage_units, 0)          AS part_d_dosage_units,
         d.part_d_avg_cost_per_claim,
         d.part_d_avg_cost_per_bene,
         COALESCE(b.part_b_spending, 0)              AS part_b_spending,
-        COALESCE(b.part_b_services, 0)              AS part_b_services,
+        COALESCE(b.part_b_claims, 0)                AS part_b_claims,
         COALESCE(b.part_b_beneficiaries, 0)         AS part_b_beneficiaries,
-        b.part_b_avg_payment,
+        COALESCE(b.part_b_dosage_units, 0)          AS part_b_dosage_units,
+        b.part_b_avg_cost_per_claim,
+        b.part_b_avg_cost_per_bene,
         COALESCE(d.part_d_spending, 0) + COALESCE(b.part_b_spending, 0) AS total_spending,
         COALESCE(d.part_d_beneficiaries, 0) + COALESCE(b.part_b_beneficiaries, 0) AS total_beneficiaries
     FROM part_d d
@@ -72,30 +83,41 @@ combined AS (
 )
 
 SELECT
-    gen_random_uuid()                       AS id,
-    generic_name,
-    brand_name,
-    manufacturer_name,
-    hcpcs_code,
-    _source_year,
-    part_d_spending,
-    part_d_claims,
-    part_d_beneficiaries,
-    part_d_30day_fills,
-    part_d_avg_cost_per_claim,
-    part_d_avg_cost_per_bene,
-    part_b_spending,
-    part_b_services,
-    part_b_beneficiaries,
-    part_b_avg_payment,
-    total_spending,
-    total_beneficiaries,
+    gen_random_uuid()                           AS id,
+    c.generic_name,
+    c.brand_name,
+    c.manufacturer_name,
+    c.hcpcs_code,
+    c._source_year,
+    c.part_d_spending,
+    c.part_d_claims,
+    c.part_d_beneficiaries,
+    c.part_d_dosage_units,
+    c.part_d_avg_cost_per_claim,
+    c.part_d_avg_cost_per_bene,
+    c.part_b_spending,
+    c.part_b_claims,
+    c.part_b_beneficiaries,
+    c.part_b_dosage_units,
+    c.part_b_avg_cost_per_claim,
+    c.part_b_avg_cost_per_bene,
+    c.total_spending,
+    c.total_beneficiaries,
     CASE
-        WHEN total_spending > 0 AND total_beneficiaries > 0
-        THEN total_spending / total_beneficiaries
+        WHEN c.total_spending > 0 AND c.total_beneficiaries > 0
+        THEN c.total_spending / c.total_beneficiaries
         ELSE NULL
-    END                                     AS avg_spending_per_beneficiary,
-    NOW()                                   AS created_at,
-    NOW()                                   AS updated_at
-FROM combined
-WHERE generic_name IS NOT NULL;
+    END                                         AS avg_spending_per_beneficiary,
+    -- molecule_id: generic_name (Part D INN) → alias bridge → molecule_id
+    -- Cross-domain reference: hcs_silver → mol_silver (correct per domain strategy)
+    (
+        SELECT ma.molecule_id
+        FROM mol_silver.molecule_aliases ma
+        WHERE LOWER(REGEXP_REPLACE(c.generic_name, '[^a-zA-Z0-9]', '', 'g'))
+            = ma.alias_name_normalized
+        LIMIT 1
+    )                                           AS molecule_id,
+    NOW()                                       AS created_at,
+    NOW()                                       AS updated_at
+FROM combined c
+WHERE c.generic_name IS NOT NULL;

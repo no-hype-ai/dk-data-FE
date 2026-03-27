@@ -9,7 +9,7 @@ logger = logging.getLogger(__name__)
 
 class CMSPartDSpendingFetcher(BaseFetcher):
     SOURCE_NAME = "cms_part_d_spending"
-    BASE_URL = "https://data.cms.gov/provider-summary-by-type-of-service/medicare-part-d-prescribers"
+    BASE_URL = "https://data.cms.gov/summary-statistics-on-use-and-payments/medicare-medicaid-spending-by-drug/medicare-part-d-spending-by-drug"
 
     def fetch(self, **kwargs) -> Dict[str, Any]:
         """CMS PUF file-based source — download handled externally by CronJob."""

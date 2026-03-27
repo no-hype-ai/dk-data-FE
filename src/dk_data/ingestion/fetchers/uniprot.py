@@ -71,7 +71,26 @@ class UniProtFetcher(BaseFetcher):
             "query": query,
             "format": "json",
             "size": str(min(size, 500)),
-            "fields": "accession,id,gene_names,organism_name,protein_name,length,keyword,ft_binding,cc_function",
+            # UniProt REST API v2 field names for JSON format.
+            # These return the full nested objects needed by the bronze SQL model:
+            #   accession         → primaryAccession
+            #   id                → uniProtkbId (entry name)
+            #   protein_name      → proteinDescription (recommendedName, alternativeNames)
+            #   gene_names        → genes array
+            #   organism_name     → organism (scientificName, commonName, taxonId, lineage)
+            #   length            → sequence.length (also sequence.value, molWeight, checksum)
+            #   keyword           → keywords
+            #   cc_function       → comments (FUNCTION type)
+            #   ft_binding        → features (BINDING type)
+            #   xref_pdb          → uniProtKBCrossReferences filtered to PDB
+            #   xref_go           → uniProtKBCrossReferences filtered to GO
+            #   annotation_score  → annotationScore
+            "fields": (
+                "accession,id,protein_name,gene_names,organism_name,"
+                "length,keyword,cc_function,ft_binding,"
+                "xref_pdb,xref_go,xref_chembl,xref_drugbank,"
+                "annotation_score,entry_type,sequence"
+            ),
         }
 
         data = self.fetch_json(url, params=params)

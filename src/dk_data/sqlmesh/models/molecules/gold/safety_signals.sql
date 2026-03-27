@@ -16,7 +16,7 @@ MODEL (
 
 WITH molecule_base AS (
     SELECT
-        m.id AS molecule_id,
+        m.molecule_id,
         m.inchi_key,
         m.canonical_name
     FROM silver.molecules m

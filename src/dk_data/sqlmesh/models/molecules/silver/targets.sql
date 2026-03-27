@@ -65,16 +65,24 @@ SELECT
     taxonomy_id,
     sequence_length,
     molecular_weight,
-    -- Extract GO terms as separate fields
+    -- Extract GO terms by ontology namespace
+    -- UniProt encodes ontology in the GoTerm property prefix:
+    --   P: = Biological Process, C: = Cellular Component, F: = Molecular Function
     (SELECT jsonb_agg(g->>'id')
-     FROM jsonb_array_elements(go_terms) AS g
-     WHERE g->>'id' LIKE 'GO:0008150%') AS go_biological_process,
+     FROM jsonb_array_elements(go_terms) AS g,
+          jsonb_array_elements(COALESCE(g->'properties', '[]'::jsonb)) AS prop
+     WHERE prop->>'key' = 'GoTerm'
+       AND prop->>'value' LIKE 'P:%') AS go_biological_process,
     (SELECT jsonb_agg(g->>'id')
-     FROM jsonb_array_elements(go_terms) AS g
-     WHERE g->>'id' LIKE 'GO:0005575%') AS go_cellular_component,
+     FROM jsonb_array_elements(go_terms) AS g,
+          jsonb_array_elements(COALESCE(g->'properties', '[]'::jsonb)) AS prop
+     WHERE prop->>'key' = 'GoTerm'
+       AND prop->>'value' LIKE 'C:%') AS go_cellular_component,
     (SELECT jsonb_agg(g->>'id')
-     FROM jsonb_array_elements(go_terms) AS g
-     WHERE g->>'id' LIKE 'GO:0003674%') AS go_molecular_function,
+     FROM jsonb_array_elements(go_terms) AS g,
+          jsonb_array_elements(COALESCE(g->'properties', '[]'::jsonb)) AS prop
+     WHERE prop->>'key' = 'GoTerm'
+       AND prop->>'value' LIKE 'F:%') AS go_molecular_function,
     -- PDB count
     COALESCE(jsonb_array_length(pdb_structures), 0) AS pdb_structure_count,
     pdb_structures,

@@ -1,4 +1,19 @@
-"""CMS Chronic Conditions PUF loader. Loads to hcs_raw.cms_chronic_conditions."""
+"""CMS Chronic Conditions PUF loader. Loads to hcs_raw.cms_chronic_conditions.
+
+Raw CMS field names (snake_case mapping):
+  Bene_Geo_Lvl → bene_geo_lvl
+  Bene_Geo_Desc → bene_geo_desc
+  Bene_Geo_Cd → bene_geo_cd
+  Bene_Age_Lvl → bene_age_lvl
+  Bene_Demo_Lvl → bene_demo_lvl
+  Bene_Demo_Desc → bene_demo_desc
+  Bene_Cond → bene_cond
+  Prvlnc → prvlnc
+  Tot_Mdcr_Stdzd_Pymt_PC → tot_mdcr_stdzd_pymt_pc
+  Tot_Mdcr_Pymt_PC → tot_mdcr_pymt_pc
+  Hosp_Readmsn_Rate → hosp_readmsn_rate
+  ED_Visits_Per_1000_Benes → ed_visits_per_1000_benes
+"""
 
 import hashlib
 import logging
@@ -15,16 +30,17 @@ logger = logging.getLogger(__name__)
 
 COLUMN_MAPPING = {
     'Bene_Geo_Lvl': 'bene_geo_lvl',
-    'Bene_State_Abrvtn': 'bene_state_abrvtn',
-    'Bene_State_Desc': 'bene_state_desc',
-    'Bene_County_Desc': 'bene_county_desc',
-    'Bene_FIPS_Cd': 'bene_fips_cd',
+    'Bene_Geo_Desc': 'bene_geo_desc',
+    'Bene_Geo_Cd': 'bene_geo_cd',
     'Bene_Age_Lvl': 'bene_age_lvl',
-    'Bene_Sex_Cd': 'bene_sex_cd',
-    'Bene_Race_Cd': 'bene_race_cd',
-    'Bene_Dual_Stus_Cd': 'bene_dual_stus_cd',
-    'Chronic_Condition': 'chronic_condition',
-    'Prevalence': 'prevalence',
+    'Bene_Demo_Lvl': 'bene_demo_lvl',
+    'Bene_Demo_Desc': 'bene_demo_desc',
+    'Bene_Cond': 'bene_cond',
+    'Prvlnc': 'prvlnc',
+    'Tot_Mdcr_Stdzd_Pymt_PC': 'tot_mdcr_stdzd_pymt_pc',
+    'Tot_Mdcr_Pymt_PC': 'tot_mdcr_pymt_pc',
+    'Hosp_Readmsn_Rate': 'hosp_readmsn_rate',
+    'ED_Visits_Per_1000_Benes': 'ed_visits_per_1000_benes',
 }
 
 TABLE = 'cms_chronic_conditions'
@@ -63,16 +79,17 @@ def load_cms_chronic_conditions(filepath: str, source_year: int = 2023) -> dict:
         try:
             rec = CMSChronicConditionsRecord(
                 bene_geo_lvl=row.get('bene_geo_lvl'),
-                bene_state_abrvtn=row.get('bene_state_abrvtn'),
-                bene_state_desc=row.get('bene_state_desc'),
-                bene_county_desc=row.get('bene_county_desc'),
-                bene_fips_cd=row.get('bene_fips_cd'),
+                bene_geo_desc=row.get('bene_geo_desc'),
+                bene_geo_cd=row.get('bene_geo_cd'),
                 bene_age_lvl=row.get('bene_age_lvl'),
-                bene_sex_cd=row.get('bene_sex_cd'),
-                bene_race_cd=row.get('bene_race_cd'),
-                bene_dual_stus_cd=row.get('bene_dual_stus_cd'),
-                chronic_condition=row.get('chronic_condition'),
-                prevalence=row.get('prevalence') or None,
+                bene_demo_lvl=row.get('bene_demo_lvl'),
+                bene_demo_desc=row.get('bene_demo_desc'),
+                bene_cond=row.get('bene_cond'),
+                prvlnc=row.get('prvlnc') or None,
+                tot_mdcr_stdzd_pymt_pc=row.get('tot_mdcr_stdzd_pymt_pc') or None,
+                tot_mdcr_pymt_pc=row.get('tot_mdcr_pymt_pc') or None,
+                hosp_readmsn_rate=row.get('hosp_readmsn_rate') or None,
+                ed_visits_per_1000_benes=row.get('ed_visits_per_1000_benes') or None,
                 _source_year=source_year,
             )
             d = rec.model_dump(by_alias=True)
@@ -85,9 +102,9 @@ def load_cms_chronic_conditions(filepath: str, source_year: int = 2023) -> dict:
 
     inserted = upsert_records(
         SCHEMA, TABLE, records,
-        conflict_columns=['_source_hash', 'bene_fips_cd', 'chronic_condition',
-                          'bene_age_lvl', 'bene_sex_cd', '_source_year'],
-        update_columns=['prevalence', '_loaded_at'],
+        conflict_columns=['bene_geo_cd', 'bene_age_lvl', 'bene_cond', '_source_year'],
+        update_columns=['prvlnc', 'tot_mdcr_stdzd_pymt_pc', 'tot_mdcr_pymt_pc',
+                        'hosp_readmsn_rate', 'ed_visits_per_1000_benes', '_loaded_at'],
     )
 
     logger.info(f"Chronic Conditions load complete: {inserted} records processed, {len(errors)} errors")

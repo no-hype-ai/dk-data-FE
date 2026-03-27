@@ -13,19 +13,20 @@ from ..utils.validators import CMSHospiceRecord
 
 logger = logging.getLogger(__name__)
 
+# Exact CMS Hospice PUF column names -> internal snake_case names
 COLUMN_MAPPING = {
-    'CMS Certification Number (CCN)': 'provider_id',
-    'Facility Name': 'facility_name',
-    'Street Address': 'street_address',
-    'City': 'city',
-    'State': 'state',
-    'Zip Code': 'zip_code',
-    'Tot_Benes': 'tot_benes',
-    'Tot_Mdcr_Pymt_Amt': 'tot_mdcr_pymt_amt',
-    'Avg_Mdcr_Pymt_Per_Bene': 'avg_mdcr_pymt_per_bene',
-    # snake_case variants
-    'provider_id': 'provider_id',
-    'facility_name': 'facility_name',
+    'Rndrng_Prvdr_Id':          'provider_id',
+    'Rndrng_Prvdr_Name':        'provider_name',
+    'Rndrng_Prvdr_City':        'provider_city',
+    'Rndrng_Prvdr_State_Abrvtn':'provider_state',
+    'Rndrng_Prvdr_Zip5':        'provider_zip5',
+    'HSPCE_CD':                 'hspce_cd',
+    'HSPCE_DESC':               'hspce_desc',
+    'Tot_Benes':                'tot_benes',
+    'Tot_Mdcr_Alowd_Amt':       'tot_mdcr_alowd_amt',
+    'Tot_Mdcr_Pymt_Amt':        'tot_mdcr_pymt_amt',
+    'Avg_Mdcr_Pymt_Amt':        'avg_mdcr_pymt_amt',
+    'Avg_Age':                  'avg_age',
 }
 
 TABLE = 'cms_hospice_puf'
@@ -64,14 +65,17 @@ def load_cms_hospice_puf(filepath: str, source_year: int = 2023) -> dict:
         try:
             rec = CMSHospiceRecord(
                 provider_id=row.get('provider_id'),
-                facility_name=row.get('facility_name'),
-                street_address=row.get('street_address'),
-                city=row.get('city'),
-                state=row.get('state'),
-                zip_code=row.get('zip_code'),
+                provider_name=row.get('provider_name'),
+                provider_city=row.get('provider_city'),
+                provider_state=row.get('provider_state'),
+                provider_zip5=row.get('provider_zip5'),
+                hspce_cd=row.get('hspce_cd'),
+                hspce_desc=row.get('hspce_desc'),
                 tot_benes=int(row['tot_benes']) if row.get('tot_benes') else None,
+                tot_mdcr_alowd_amt=row.get('tot_mdcr_alowd_amt') or None,
                 tot_mdcr_pymt_amt=row.get('tot_mdcr_pymt_amt') or None,
-                avg_mdcr_pymt_per_bene=row.get('avg_mdcr_pymt_per_bene') or None,
+                avg_mdcr_pymt_amt=row.get('avg_mdcr_pymt_amt') or None,
+                avg_age=row.get('avg_age') or None,
                 _source_year=source_year,
             )
             d = rec.model_dump(by_alias=True)
@@ -84,8 +88,11 @@ def load_cms_hospice_puf(filepath: str, source_year: int = 2023) -> dict:
 
     inserted = upsert_records(
         SCHEMA, TABLE, records,
-        conflict_columns=['provider_id', '_source_year'],
-        update_columns=['tot_benes', 'tot_mdcr_pymt_amt', 'avg_mdcr_pymt_per_bene', '_loaded_at'],
+        conflict_columns=['provider_id', 'hspce_cd', '_source_year'],
+        update_columns=[
+            'tot_benes', 'tot_mdcr_alowd_amt', 'tot_mdcr_pymt_amt',
+            'avg_mdcr_pymt_amt', 'avg_age', '_loaded_at',
+        ],
     )
 
     logger.info(f"Hospice PUF load complete: {inserted} records processed, {len(errors)} errors")

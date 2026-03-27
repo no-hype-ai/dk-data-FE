@@ -20,11 +20,15 @@ def _get_cursor_ctx(count: int):
 
 
 CSV_CONTENT = (
-    "Rndrng_NPI,Rndrng_Prvdr_Last_Org_Name,Rndrng_Prvdr_First_Name,"
-    "Rndrng_Prvdr_Type,Rndrng_Prvdr_State_Abrvtn,HCPCS_Cd,HCPCS_Desc,"
-    "Tot_Benes,Tot_Srvcs,Tot_Mdcr_Alowd_Amt,Tot_Mdcr_Pymt_Amt\n"
-    "5555555555,Lab Corp,Patricia,Clinical Lab,OH,80053,Metabolic Panel,"
-    "300,600,12000.00,9600.00\n"
+    "Rndrng_NPI,Rndrng_Prvdr_Last_Org_Name,Rndrng_Prvdr_City,"
+    "Rndrng_Prvdr_State_Abrvtn,Rndrng_Prvdr_Zip5,Rndrng_Prvdr_Type,"
+    "HCPCS_Cd,HCPCS_Desc,"
+    "Tot_Benes,Tot_Srvcs,Tot_Mdcr_Alowd_Amt,"
+    "Avg_Mdcr_Alowd_Amt,Avg_Mdcr_Pymt_Amt,Avg_Mdcr_Stdzd_Amt\n"
+    "5555555555,Lab Corp,Columbus,OH,43215,Clinical Lab,"
+    "80053,Metabolic Panel,"
+    "300,600,12000.00,"
+    "20.00,16.00,15.50\n"
 )
 
 MODULE = "dk_data.ingestion.sources.cms_lab_services"

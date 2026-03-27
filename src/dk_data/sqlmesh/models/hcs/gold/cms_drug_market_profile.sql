@@ -26,12 +26,19 @@ WITH base AS (
         part_d_spending,
         part_d_claims,
         part_d_beneficiaries,
+        part_d_dosage_units,
+        part_d_avg_cost_per_claim,
+        part_d_avg_cost_per_bene,
         part_b_spending,
-        part_b_services,
+        part_b_claims,
         part_b_beneficiaries,
+        part_b_dosage_units,
+        part_b_avg_cost_per_claim,
+        part_b_avg_cost_per_bene,
         total_spending,
         total_beneficiaries,
         avg_spending_per_beneficiary,
+        molecule_id,
         created_at,
         updated_at
     FROM hcs_silver.cms_drug_market
@@ -92,13 +99,21 @@ SELECT
     manufacturer_name,
     hcpcs_code,
     _source_year,
-    -- Spending components
+    -- Part D spending components
     part_d_spending,
     part_d_claims,
     part_d_beneficiaries,
+    part_d_dosage_units,
+    part_d_avg_cost_per_claim,
+    part_d_avg_cost_per_bene,
+    -- Part B spending components
     part_b_spending,
-    part_b_services,
+    part_b_claims,
     part_b_beneficiaries,
+    part_b_dosage_units,
+    part_b_avg_cost_per_claim,
+    part_b_avg_cost_per_bene,
+    -- Combined
     total_spending,
     total_beneficiaries,
     avg_spending_per_beneficiary,
@@ -110,11 +125,12 @@ SELECT
     part_d_claims_percentile,
     -- Tier classification based on spending rank
     CASE
-        WHEN spending_rank_in_year <= 50  THEN 'tier_1_top50'
-        WHEN spending_rank_in_year <= 250 THEN 'tier_2_top250'
+        WHEN spending_rank_in_year <= 50   THEN 'tier_1_top50'
+        WHEN spending_rank_in_year <= 250  THEN 'tier_2_top250'
         WHEN spending_rank_in_year <= 1000 THEN 'tier_3_top1000'
         ELSE 'tier_4_long_tail'
     END                                     AS market_tier,
+    molecule_id,
     created_at,
     updated_at
 FROM ranked;

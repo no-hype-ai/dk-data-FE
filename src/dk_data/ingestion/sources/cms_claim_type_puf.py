@@ -1,4 +1,15 @@
-"""CMS Claim Type Utilization PUF loader. Loads to hcs_raw.cms_claim_type_puf."""
+"""CMS Claim Type Utilization PUF loader. Loads to hcs_raw.cms_claim_type_puf.
+
+Raw CMS field names (snake_case mapping):
+  Bene_Geo_Lvl → bene_geo_lvl
+  Bene_Geo_Desc → bene_geo_desc
+  Clm_Type → clm_type
+  Clm_Type_Desc → clm_type_desc
+  Tot_Clms → tot_clms
+  Tot_Benes → tot_benes
+  Tot_Mdcr_Pymt_Amt → tot_mdcr_pymt_amt
+  Avg_Mdcr_Pymt_Amt → avg_mdcr_pymt_amt
+"""
 
 import hashlib
 import logging
@@ -14,15 +25,14 @@ from ..utils.validators import CMSClaimTypeRecord
 logger = logging.getLogger(__name__)
 
 COLUMN_MAPPING = {
-    'Rndrng_NPI': 'npi',
-    'Rndrng_Prvdr_Type': 'provider_type',
-    'Rndrng_Prvdr_State_Abrvtn': 'provider_state',
-    'Claim_Type': 'claim_type',
-    'Tot_Benes': 'tot_benes',
+    'Bene_Geo_Lvl': 'bene_geo_lvl',
+    'Bene_Geo_Desc': 'bene_geo_desc',
+    'Clm_Type': 'clm_type',
+    'Clm_Type_Desc': 'clm_type_desc',
     'Tot_Clms': 'tot_clms',
-    'Tot_Srvcs': 'tot_srvcs',
-    'Tot_Mdcr_Alowd_Amt': 'tot_mdcr_alowd_amt',
+    'Tot_Benes': 'tot_benes',
     'Tot_Mdcr_Pymt_Amt': 'tot_mdcr_pymt_amt',
+    'Avg_Mdcr_Pymt_Amt': 'avg_mdcr_pymt_amt',
 }
 
 TABLE = 'cms_claim_type_puf'
@@ -60,15 +70,14 @@ def load_cms_claim_type_puf(filepath: str, source_year: int = 2023) -> dict:
     for idx, row in df.iterrows():
         try:
             rec = CMSClaimTypeRecord(
-                npi=row.get('npi'),
-                provider_type=row.get('provider_type'),
-                provider_state=row.get('provider_state'),
-                claim_type=row.get('claim_type'),
-                tot_benes=int(row['tot_benes']) if row.get('tot_benes') else None,
+                bene_geo_lvl=row.get('bene_geo_lvl'),
+                bene_geo_desc=row.get('bene_geo_desc'),
+                clm_type=row.get('clm_type'),
+                clm_type_desc=row.get('clm_type_desc'),
                 tot_clms=int(row['tot_clms']) if row.get('tot_clms') else None,
-                tot_srvcs=row.get('tot_srvcs') or None,
-                tot_mdcr_alowd_amt=row.get('tot_mdcr_alowd_amt') or None,
+                tot_benes=int(row['tot_benes']) if row.get('tot_benes') else None,
                 tot_mdcr_pymt_amt=row.get('tot_mdcr_pymt_amt') or None,
+                avg_mdcr_pymt_amt=row.get('avg_mdcr_pymt_amt') or None,
                 _source_year=source_year,
             )
             d = rec.model_dump(by_alias=True)
@@ -81,9 +90,9 @@ def load_cms_claim_type_puf(filepath: str, source_year: int = 2023) -> dict:
 
     inserted = upsert_records(
         SCHEMA, TABLE, records,
-        conflict_columns=['_source_hash', 'npi', 'claim_type', '_source_year'],
-        update_columns=['tot_benes', 'tot_clms', 'tot_srvcs', 'tot_mdcr_alowd_amt',
-                        'tot_mdcr_pymt_amt', '_loaded_at'],
+        conflict_columns=['bene_geo_lvl', 'clm_type', '_source_year'],
+        update_columns=['tot_clms', 'tot_benes', 'tot_mdcr_pymt_amt',
+                        'avg_mdcr_pymt_amt', '_loaded_at'],
     )
 
     logger.info(f"Claim Type PUF load complete: {inserted} records processed, {len(errors)} errors")

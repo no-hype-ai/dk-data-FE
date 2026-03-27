@@ -22,18 +22,19 @@ SELECT
     event->>'safetyreportid' AS safety_report_id,
     (event->>'safetyreportversion')::INTEGER AS case_version,
 
-    -- Dates (YYYYMMDD format)
-    TO_DATE(event->>'receivedate', 'YYYYMMDD') AS receive_date,
-    TO_DATE(event->>'receiptdate', 'YYYYMMDD') AS receipt_date,
+    -- Dates (OpenFDA stores as YYYYMMDD strings)
+    TO_DATE(NULLIF(event->>'receivedate', ''), 'YYYYMMDD') AS receive_date,
+    TO_DATE(NULLIF(event->>'receiptdate', ''), 'YYYYMMDD') AS receipt_date,
 
-    -- Seriousness Flags
-    (event->>'serious')::BOOLEAN AS serious,
-    (event->>'seriousnessdeath')::BOOLEAN AS serious_death,
-    (event->>'seriousnesshospitalization')::BOOLEAN AS serious_hospitalization,
-    (event->>'seriousnesslifethreatening')::BOOLEAN AS serious_lifethreatening,
-    (event->>'seriousnessdisabling')::BOOLEAN AS serious_disabling,
-    (event->>'seriousnesscongenitalanomali')::BOOLEAN AS serious_congenital,
-    (event->>'seriousnessother')::BOOLEAN AS serious_other,
+    -- Seriousness Flags (OpenFDA encodes as '1'/'2' strings, NOT true/false booleans)
+    -- '1' = Yes, '2' = No, absent = unknown
+    (event->>'serious' = '1') AS serious,
+    (event->>'seriousnessdeath' = '1') AS serious_death,
+    (event->>'seriousnesshospitalization' = '1') AS serious_hospitalization,
+    (event->>'seriousnesslifethreatening' = '1') AS serious_lifethreatening,
+    (event->>'seriousnessdisabling' = '1') AS serious_disabling,
+    (event->>'seriousnesscongenitalanomali' = '1') AS serious_congenital,
+    (event->>'seriousnessother' = '1') AS serious_other,
 
     -- Patient Demographics
     (event->'patient'->>'patientonsetage')::NUMERIC AS patient_age,
@@ -41,7 +42,7 @@ SELECT
     event->'patient'->>'patientsex' AS patient_sex,
     (event->'patient'->>'patientweight')::NUMERIC AS patient_weight,
 
-    -- Primary Suspect Drug (first drug with characterization=1)
+    -- Primary Suspect Drug (drugcharacterization='1' means primary suspect)
     (SELECT drug->>'medicinalproduct'
      FROM jsonb_array_elements(event->'patient'->'drug') AS drug
      WHERE drug->>'drugcharacterization' = '1'
@@ -63,11 +64,12 @@ SELECT
      LIMIT 1) AS drug_route,
 
     -- Reactions (as JSONB array)
-    event->'patient'->'reaction' AS reactions,
+    event->'patient'->'reaction'::JSONB AS reactions,
 
-    -- MedDRA PTs extracted
+    -- MedDRA PTs extracted (reactionmeddrapt is the MedDRA preferred term field)
     (SELECT jsonb_agg(r->>'reactionmeddrapt')
-     FROM jsonb_array_elements(event->'patient'->'reaction') AS r) AS meddra_pts,
+     FROM jsonb_array_elements(event->'patient'->'reaction') AS r
+     WHERE r->>'reactionmeddrapt' IS NOT NULL) AS meddra_pts,
 
     -- Reporter Info
     event->'primarysource'->>'qualification' AS reporter_qualification,
@@ -75,11 +77,12 @@ SELECT
     event->>'companynumb' AS manufacturer_control_number,
 
     -- All drugs in report
-    event->'patient'->'drug' AS all_drugs,
+    event->'patient'->'drug'::JSONB AS all_drugs,
 
     -- Raw source tracking
     event AS raw_json,
-    id AS raw_source_id,
+    -- raw_source_id references the raw table PK, not the generated bronze id
+    raw.openfda_faers.id AS raw_source_id,
     'openfda_faers' AS source,
     request_timestamp,
     request_timestamp AS source_updated_at,

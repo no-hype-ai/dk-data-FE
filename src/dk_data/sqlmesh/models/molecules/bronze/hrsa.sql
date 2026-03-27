@@ -29,7 +29,6 @@ SELECT
     response_body->>'status' AS status,
 
     -- Raw source tracking
-    response_body AS raw_json,
     id AS raw_source_id,
     'hrsa' AS source,
     request_timestamp,

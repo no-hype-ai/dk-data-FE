@@ -10,7 +10,7 @@ MODEL (
 );
 
 SELECT
-    m.id AS molecule_id,
+    m.molecule_id AS molecule_id,
     m.inchi_key,
     m.canonical_name,
     m.therapeutic_areas,
@@ -20,7 +20,7 @@ SELECT
 
     -- Active trial count
     COUNT(DISTINCT ct.nct_id) FILTER (
-        WHERE ct.status IN ('Recruiting', 'Active, not recruiting', 'Enrolling by invitation')
+        WHERE ct.overall_status IN ('Recruiting', 'Active, not recruiting', 'Enrolling by invitation')
     ) AS active_trials,
 
     -- Phase distribution as JSONB
@@ -42,12 +42,12 @@ SELECT
 
     -- Unique sponsors
     (
-        SELECT jsonb_agg(DISTINCT sponsor)
+        SELECT jsonb_agg(DISTINCT lead_sponsor_name)
         FROM (
-            SELECT ct2.sponsor
+            SELECT ct2.lead_sponsor_name
             FROM silver.clinical_trials ct2
-            WHERE ct2.molecule_id = m.id
-              AND ct2.sponsor IS NOT NULL
+            WHERE ct2.molecule_id = m.molecule_id
+              AND ct2.lead_sponsor_name IS NOT NULL
         ) s
     ) AS sponsors,
 
@@ -56,7 +56,7 @@ SELECT
 
     -- Competitive metrics
     COUNT(DISTINCT ct.nct_id) AS total_trials,
-    COUNT(DISTINCT ct.sponsor) AS sponsor_count,
+    COUNT(DISTINCT ct.lead_sponsor_name) AS sponsor_count,
 
     -- Safety signal summary
     (
@@ -66,16 +66,16 @@ SELECT
             'death_reports', COALESCE(SUM(ae.death_count), 0)
         )
         FROM silver.adverse_events ae
-        WHERE ae.molecule_id = m.id
+        WHERE ae.molecule_id = m.molecule_id
     ) AS safety_summary,
 
     NOW() AS computed_at
 
 FROM silver.molecules m
-LEFT JOIN silver.clinical_trials ct ON m.id = ct.molecule_id
+LEFT JOIN silver.clinical_trials ct ON m.molecule_id = ct.molecule_id
 WHERE m.needs_review = FALSE
   AND m.development_status IN ('phase_1', 'phase_2', 'phase_3', 'approved')
-GROUP BY m.id, m.inchi_key, m.canonical_name, m.therapeutic_areas,
+GROUP BY m.molecule_id, m.inchi_key, m.canonical_name, m.therapeutic_areas,
          m.mechanism_of_action, m.development_status, m.max_phase
 HAVING COUNT(DISTINCT ct.nct_id) > 0
    OR m.development_status = 'approved'

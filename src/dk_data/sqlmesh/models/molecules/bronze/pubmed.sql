@@ -1,12 +1,13 @@
 -- SQLMesh Model: Bronze PubMed Publications
--- Transforms raw PubMed eutils API responses to Bronze typed columns
+-- Transforms flat raw.pubmed typed columns to Bronze canonical schema
+-- raw.pubmed is populated by the PubMedFetcher + load_pubmed_data() loader
+-- (not a generic API response table — columns are already typed)
 -- Part of: 015-assessment-dashboard-integration
 
 MODEL (
     name bronze.pubmed,
-    kind INCREMENTAL_BY_TIME_RANGE (
-        time_column request_timestamp,
-        batch_size 500
+    kind INCREMENTAL_BY_UNIQUE_KEY (
+        unique_key pmid
     ),
     cron '@daily',
     audits (
@@ -19,34 +20,31 @@ MODEL (
 SELECT
     gen_random_uuid() AS id,
 
-    -- Publication identifiers
-    response_body->>'uid' AS pmid,
-    response_body->>'title' AS title,
-    response_body->>'abstract' AS abstract,
+    -- Publication identifiers (flat typed columns from raw.pubmed)
+    r.pmid::TEXT                         AS pmid,
+    r.doi::TEXT                          AS doi,
+    r.title::TEXT                        AS title,
+    r.abstract::TEXT                     AS abstract,
 
-    -- Authors
-    response_body->'authors' AS authors,
+    -- Authors stored as JSONB by the loader (list of dicts with last_name, fore_name, etc.)
+    r.authors::JSONB                     AS authors,
 
     -- Journal info
-    response_body->>'fulljournalname' AS journal,
-    response_body->>'sortpubdate' AS pub_date,
+    r.journal::TEXT                      AS journal,
+    r.publication_date::DATE             AS publication_date,
 
     -- Classification
-    response_body->'meshterms' AS mesh_terms,
-    response_body->>'elocationid' AS doi,
+    r.mesh_terms::TEXT[]                 AS mesh_terms,
+    r.publication_types::TEXT[]          AS publication_types,
+    r.keywords::TEXT[]                   AS keywords,
 
-    -- Raw source tracking
-    response_body AS raw_json,
-    id AS raw_source_id,
-    'pubmed' AS source,
-    request_timestamp,
-    request_timestamp AS source_updated_at,
-    FALSE AS processed_to_silver,
-    NOW() AS created_at
+    -- Source tracking
+    'pubmed'                             AS source,
+    r._loaded_at                         AS source_updated_at,
+    FALSE                                AS processed_to_silver,
+    NOW()                                AS created_at
 
-FROM raw.pubmed
+FROM raw.pubmed r
 WHERE
-    response_status = 200
-    AND processed_to_bronze = FALSE
-    AND response_body->>'uid' IS NOT NULL
-    AND request_timestamp BETWEEN @start_dt AND @end_dt;
+    r.pmid IS NOT NULL
+    AND r._loaded_at BETWEEN @start_dt AND @end_dt;

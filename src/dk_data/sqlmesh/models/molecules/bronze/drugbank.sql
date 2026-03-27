@@ -1,11 +1,20 @@
 -- SQLMesh Model: Bronze DrugBank
--- Transforms Raw DrugBank responses to Bronze typed columns
+-- Transforms Raw DrugBank flat-column records to Bronze typed columns
 -- Part of: 012-dk-data-platform
+--
+-- NOTE: raw.drugbank uses flat columns (not response_body JSONB) because
+-- DrugBank is a credential-gated XML download parsed by DrugBankFetcher.
+-- The loader (sources/drugbank.py) inserts directly into flat columns:
+--   drugbank_id, name, description, cas_number, categories (TEXT[]),
+--   targets (JSONB), enzymes (JSONB), indication, pharmacodynamics,
+--   _source_file, _source_hash, _loaded_at.
+-- There is no response_status / processed_to_bronze / request_timestamp
+-- on this table — use _loaded_at for time-range incremental partitioning.
 
 MODEL (
     name bronze.drugbank,
     kind INCREMENTAL_BY_TIME_RANGE (
-        time_column request_timestamp,
+        time_column loaded_at,
         batch_size 200
     ),
     cron '@monthly',
@@ -20,80 +29,76 @@ SELECT
     gen_random_uuid() AS id,
 
     -- DrugBank Identifiers
-    response_body->>'drugbank_id' AS drugbank_id,
-    response_body->>'cas_number' AS cas_number,
-    response_body->>'unii' AS unii,
+    drugbank_id::TEXT                       AS drugbank_id,
+    cas_number::TEXT                        AS cas_number,
 
     -- Names
-    response_body->>'name' AS name,
-    response_body->'synonyms' AS synonyms,
-    response_body->'international_brands' AS international_brands,
-    response_body->'products' AS products,
+    name::TEXT                              AS name,
 
     -- Drug Properties
-    response_body->>'drug_type' AS drug_type,
-    response_body->>'state' AS state,
-    response_body->'groups' AS groups,
-    response_body->>'description' AS description,
+    description::TEXT                       AS description,
+    indication::TEXT                        AS indication,
+    pharmacodynamics::TEXT                  AS pharmacodynamics,
 
-    -- Structure
-    response_body->>'smiles' AS smiles,
-    response_body->>'inchi' AS inchi,
-    response_body->>'inchikey' AS inchi_key,
-    response_body->>'molecular_formula' AS molecular_formula,
-    (response_body->>'average_mass')::NUMERIC AS average_mass,
-    (response_body->>'monoisotopic_mass')::NUMERIC AS monoisotopic_mass,
+    -- Structured arrays / JSONB from XML parser
+    -- categories: TEXT[] from raw — cast to JSONB array for downstream uniformity
+    CASE
+        WHEN categories IS NOT NULL
+        THEN to_jsonb(categories)
+        ELSE '[]'::JSONB
+    END                                     AS categories,
 
-    -- Classification
-    response_body->'classification' AS classification,
-    response_body->'categories' AS categories,
-    response_body->'atc_codes' AS atc_codes,
-    response_body->>'indication' AS indication,
-    response_body->>'pharmacodynamics' AS pharmacodynamics,
-    response_body->>'mechanism_of_action' AS mechanism_of_action,
-    response_body->>'absorption' AS absorption,
-    response_body->>'protein_binding' AS protein_binding,
-    response_body->>'metabolism' AS metabolism,
-    response_body->>'half_life' AS half_life,
-    response_body->>'route_of_elimination' AS route_of_elimination,
-    response_body->>'clearance' AS clearance,
-    response_body->>'volume_of_distribution' AS volume_of_distribution,
-    response_body->>'toxicity' AS toxicity,
+    -- targets / enzymes: already JSONB from loader
+    COALESCE(targets, '[]'::JSONB)          AS targets,
+    COALESCE(enzymes, '[]'::JSONB)          AS enzymes,
 
-    -- Interactions
-    response_body->'drug_interactions' AS drug_interactions,
-    response_body->'food_interactions' AS food_interactions,
-
-    -- Targets and Pathways
-    response_body->'targets' AS targets,
-    response_body->'enzymes' AS enzymes,
-    response_body->'carriers' AS carriers,
-    response_body->'transporters' AS transporters,
-    response_body->'pathways' AS pathways,
-
-    -- External Links
-    response_body->'external_links' AS external_links,
-    response_body->'external_identifiers' AS external_identifiers,
-
-    -- Calculated Properties
-    response_body->'calculated_properties' AS calculated_properties,
-
-    -- Regulatory
-    response_body->'fda_label' AS fda_label,
-    response_body->'patents' AS patents,
+    -- Fields NOT available from the DrugBank XML fetcher
+    -- (these would require a different API endpoint or extended parsing)
+    NULL::TEXT                              AS unii,
+    NULL::TEXT                              AS drug_type,
+    NULL::TEXT                              AS state,
+    NULL::JSONB                             AS groups,
+    NULL::TEXT                              AS smiles,
+    NULL::TEXT                              AS inchi,
+    NULL::TEXT                              AS inchi_key,
+    NULL::TEXT                              AS molecular_formula,
+    NULL::NUMERIC                           AS average_mass,
+    NULL::NUMERIC                           AS monoisotopic_mass,
+    NULL::JSONB                             AS classification,
+    NULL::JSONB                             AS atc_codes,
+    NULL::TEXT                              AS mechanism_of_action,
+    NULL::TEXT                              AS absorption,
+    NULL::TEXT                              AS protein_binding,
+    NULL::TEXT                              AS metabolism,
+    NULL::TEXT                              AS half_life,
+    NULL::TEXT                              AS route_of_elimination,
+    NULL::TEXT                              AS clearance,
+    NULL::TEXT                              AS volume_of_distribution,
+    NULL::TEXT                              AS toxicity,
+    NULL::JSONB                             AS drug_interactions,
+    NULL::JSONB                             AS food_interactions,
+    NULL::JSONB                             AS carriers,
+    NULL::JSONB                             AS transporters,
+    NULL::JSONB                             AS pathways,
+    NULL::JSONB                             AS external_links,
+    NULL::JSONB                             AS external_identifiers,
+    NULL::JSONB                             AS calculated_properties,
+    NULL::JSONB                             AS fda_label,
+    NULL::JSONB                             AS patents,
+    NULL::JSONB                             AS synonyms,
+    NULL::JSONB                             AS international_brands,
+    NULL::JSONB                             AS products,
 
     -- Raw source tracking
-    response_body AS raw_json,
-    id AS raw_source_id,
-    'drugbank' AS source,
-    request_timestamp,
-    request_timestamp AS source_updated_at,
-    FALSE AS processed_to_silver,
-    NOW() AS created_at
+    NULL::JSONB                             AS raw_json,
+    NULL::UUID                              AS raw_source_id,
+    'drugbank'                              AS source,
+    _loaded_at                              AS loaded_at,
+    _loaded_at                              AS source_updated_at,
+    FALSE                                   AS processed_to_silver,
+    NOW()                                   AS created_at
 
 FROM raw.drugbank
 WHERE
-    response_status = 200
-    AND processed_to_bronze = FALSE
-    AND response_body->>'drugbank_id' IS NOT NULL
-    AND request_timestamp BETWEEN @start_dt AND @end_dt;
+    drugbank_id IS NOT NULL
+    AND _loaded_at BETWEEN @start_dt AND @end_dt;

@@ -1,4 +1,17 @@
-"""NIH RePORTER grants API fetcher — incremental by date_added."""
+"""NIH RePORTER grants API fetcher — incremental by project_start_date.
+
+Feature: 019-cms-puf-platform-reconciliation
+
+API: POST https://api.reporter.nih.gov/v2/projects/search
+No authentication required. Rate limit: ~1 req/s recommended.
+
+Incremental strategy: filter by project_start_date (last N days) on each run.
+The ON CONFLICT DO NOTHING in the loader makes repeated runs idempotent.
+
+Fixed (019): date_added_filter is not a valid NIH Reporter v2 criteria key.
+  Replaced with project_dates filter (start_date range) which is the correct
+  incremental filter for recently funded/modified projects.
+"""
 import logging
 from datetime import datetime, timedelta
 from typing import Any, Dict, List
@@ -25,12 +38,22 @@ class NIHReporterFetcher(BaseFetcher):
     BASE_URL = NIH_REPORTER_API
 
     def fetch(self, days_back: int = 30, **kwargs) -> Dict[str, Any]:
+        """Fetch NIH Reporter projects with a start-date filter.
+
+        Args:
+            days_back: Look back this many days from today for project start dates.
+                       Defaults to 30. Use a larger value (e.g. 365) for backfills.
+
+        Returns:
+            Dict with keys: status, records (list of raw API result dicts), hash.
+        """
         since_date = (datetime.utcnow() - timedelta(days=days_back)).strftime("%Y-%m-%d")
         today = datetime.utcnow().strftime("%Y-%m-%d")
 
         payload = {
             "criteria": {
-                "date_added_filter": {
+                # project_dates is the correct NIH Reporter v2 incremental filter
+                "project_start_date": {
                     "from_date": since_date,
                     "to_date": today,
                 }
@@ -58,7 +81,10 @@ class NIHReporterFetcher(BaseFetcher):
                     record_api_request(self.SOURCE_NAME, "rate_limited")
                 else:
                     record_api_request(self.SOURCE_NAME, "error")
-                logger.error(f"NIH Reporter fetch error at offset {payload['offset']}: {e}")
+                logger.error(
+                    "NIH Reporter fetch error at offset %d: %s",
+                    payload["offset"], e,
+                )
                 return {"status": "failed", "records": [], "hash": None, "error": err_str}
 
             results = data.get("results", [])
@@ -75,8 +101,8 @@ class NIHReporterFetcher(BaseFetcher):
             payload["offset"] = next_offset
 
         logger.info(
-            f"NIH Reporter fetched {len(all_projects)} projects "
-            f"(days_back={days_back}, since={since_date})"
+            "NIH Reporter fetched %d projects (days_back=%d, since=%s)",
+            len(all_projects), days_back, since_date,
         )
         return {"status": "success", "records": all_projects, "hash": None}
 

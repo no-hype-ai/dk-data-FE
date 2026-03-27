@@ -13,18 +13,23 @@ from ..utils.validators import CMSImagingRecord
 
 logger = logging.getLogger(__name__)
 
+# Exact CMS Medicare Imaging Services PUF column names -> internal snake_case names
+# Provider-level PUF: NPI × HCPCS × year
 COLUMN_MAPPING = {
-    'Rndrng_NPI': 'npi',
-    'Rndrng_Prvdr_Last_Org_Name': 'provider_last_org_name',
-    'Rndrng_Prvdr_First_Name': 'provider_first_name',
-    'Rndrng_Prvdr_Type': 'provider_type',
-    'Rndrng_Prvdr_State_Abrvtn': 'provider_state',
-    'HCPCS_Cd': 'hcpcs_cd',
-    'HCPCS_Desc': 'hcpcs_desc',
-    'Tot_Benes': 'tot_benes',
-    'Tot_Srvcs': 'tot_srvcs',
-    'Tot_Mdcr_Alowd_Amt': 'tot_mdcr_alowd_amt',
-    'Tot_Mdcr_Pymt_Amt': 'tot_mdcr_pymt_amt',
+    'Rndrng_NPI':               'npi',
+    'Rndrng_Prvdr_Last_Org_Name':'provider_last_org_name',
+    'Rndrng_Prvdr_City':        'provider_city',
+    'Rndrng_Prvdr_State_Abrvtn':'provider_state',
+    'Rndrng_Prvdr_Zip5':        'provider_zip5',
+    'Rndrng_Prvdr_Type':        'provider_type',
+    'HCPCS_Cd':                 'hcpcs_cd',
+    'HCPCS_Desc':               'hcpcs_desc',
+    'Tot_Benes':                'tot_benes',
+    'Tot_Srvcs':                'tot_srvcs',
+    'Tot_Mdcr_Alowd_Amt':       'tot_mdcr_alowd_amt',
+    'Avg_Mdcr_Alowd_Amt':       'avg_mdcr_alowd_amt',
+    'Avg_Mdcr_Pymt_Amt':        'avg_mdcr_pymt_amt',
+    'Avg_Mdcr_Stdzd_Amt':       'avg_mdcr_stdzd_amt',
 }
 
 TABLE = 'cms_imaging_puf'
@@ -64,15 +69,18 @@ def load_cms_imaging_puf(filepath: str, source_year: int = 2023) -> dict:
             rec = CMSImagingRecord(
                 npi=row.get('npi'),
                 provider_last_org_name=row.get('provider_last_org_name'),
-                provider_first_name=row.get('provider_first_name'),
-                provider_type=row.get('provider_type'),
+                provider_city=row.get('provider_city'),
                 provider_state=row.get('provider_state'),
+                provider_zip5=row.get('provider_zip5'),
+                provider_type=row.get('provider_type'),
                 hcpcs_cd=row.get('hcpcs_cd'),
                 hcpcs_desc=row.get('hcpcs_desc'),
                 tot_benes=int(row['tot_benes']) if row.get('tot_benes') else None,
-                tot_srvcs=row.get('tot_srvcs') or None,
+                tot_srvcs=int(row['tot_srvcs']) if row.get('tot_srvcs') else None,
                 tot_mdcr_alowd_amt=row.get('tot_mdcr_alowd_amt') or None,
-                tot_mdcr_pymt_amt=row.get('tot_mdcr_pymt_amt') or None,
+                avg_mdcr_alowd_amt=row.get('avg_mdcr_alowd_amt') or None,
+                avg_mdcr_pymt_amt=row.get('avg_mdcr_pymt_amt') or None,
+                avg_mdcr_stdzd_amt=row.get('avg_mdcr_stdzd_amt') or None,
                 _source_year=source_year,
             )
             d = rec.model_dump(by_alias=True)
@@ -85,8 +93,11 @@ def load_cms_imaging_puf(filepath: str, source_year: int = 2023) -> dict:
 
     inserted = upsert_records(
         SCHEMA, TABLE, records,
-        conflict_columns=['_source_hash', 'npi', 'hcpcs_cd', '_source_year'],
-        update_columns=['tot_benes', 'tot_srvcs', 'tot_mdcr_alowd_amt', 'tot_mdcr_pymt_amt', '_loaded_at'],
+        conflict_columns=['npi', 'hcpcs_cd', '_source_year'],
+        update_columns=[
+            'tot_benes', 'tot_srvcs', 'tot_mdcr_alowd_amt',
+            'avg_mdcr_alowd_amt', 'avg_mdcr_pymt_amt', 'avg_mdcr_stdzd_amt', '_loaded_at',
+        ],
     )
 
     logger.info(f"Imaging PUF load complete: {inserted} records processed, {len(errors)} errors")

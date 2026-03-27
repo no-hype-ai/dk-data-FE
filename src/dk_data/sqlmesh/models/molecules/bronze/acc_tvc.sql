@@ -29,7 +29,6 @@ SELECT
     response_body->'volumes' AS volumes,
 
     -- Raw source tracking
-    response_body AS raw_json,
     id AS raw_source_id,
     'acc_tvc' AS source,
     request_timestamp,

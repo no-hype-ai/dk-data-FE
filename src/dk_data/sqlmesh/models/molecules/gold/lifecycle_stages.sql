@@ -12,13 +12,13 @@ MODEL (
 
 WITH molecule_base AS (
     SELECT
-        m.id AS molecule_id,
+        m.molecule_id,
         m.inchi_key,
         m.canonical_name,
         m.development_status,
         m.max_phase,
         m.first_approval_year,
-        m.approval_date
+        NULL::DATE AS approval_date
     FROM silver.molecules m
     WHERE m.needs_review = FALSE
 ),
@@ -33,9 +33,9 @@ trial_evidence AS (
                  WHEN phase LIKE '%1%' THEN 1
                  ELSE 0 END) AS max_trial_phase,
         COUNT(*) AS total_trials,
-        COUNT(*) FILTER (WHERE status IN ('Recruiting', 'Active, not recruiting', 'Enrolling by invitation')) AS active_trials,
-        COUNT(*) FILTER (WHERE status = 'Completed') AS completed_trials,
-        bool_or(status = 'Terminated' OR status = 'Suspended') AS has_terminated_trials,
+        COUNT(*) FILTER (WHERE overall_status IN ('Recruiting', 'Active, not recruiting', 'Enrolling by invitation')) AS active_trials,
+        COUNT(*) FILTER (WHERE overall_status = 'Completed') AS completed_trials,
+        bool_or(overall_status = 'Terminated' OR overall_status = 'Suspended') AS has_terminated_trials,
         MAX(start_date) AS latest_trial_start,
         MAX(completion_date) AS latest_trial_completion
     FROM silver.clinical_trials

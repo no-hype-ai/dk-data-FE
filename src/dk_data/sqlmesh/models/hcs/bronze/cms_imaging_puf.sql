@@ -5,28 +5,34 @@
 MODEL (
     name hcs_bronze.cms_imaging_puf,
     kind INCREMENTAL_BY_UNIQUE_KEY (
-        unique_key (hcpcs_cd, modality, _source_year)
+        unique_key (npi, hcpcs_cd, _source_year)
     ),
     cron '@monthly',
     audits (
-        not_null(columns := (hcpcs_cd, _source_year))
+        not_null(columns := (npi, hcpcs_cd, _source_year))
     ),
-    grain (hcpcs_cd, modality, _source_year)
+    grain (npi, hcpcs_cd, _source_year)
 );
 
 SELECT
-    id,
-    hcpcs_cd,
-    hcpcs_desc,
-    modality,
-    total_providers,
-    total_unique_benes,
-    total_services,
-    average_medicare_allowed_amt,
-    average_medicare_payment_amt,
-    _source_year,
-    _source_hash,
-    _source_file,
-    _loaded_at,
+    id::BIGINT,
+    npi::TEXT,
+    provider_last_org_name::TEXT,
+    provider_city::TEXT,
+    provider_state::TEXT,
+    provider_zip5::TEXT,
+    provider_type::TEXT,
+    hcpcs_cd::TEXT,
+    hcpcs_desc::TEXT,
+    tot_benes::INTEGER,
+    tot_srvcs::INTEGER,
+    tot_mdcr_alowd_amt::NUMERIC,
+    avg_mdcr_alowd_amt::NUMERIC,
+    avg_mdcr_pymt_amt::NUMERIC,
+    avg_mdcr_stdzd_amt::NUMERIC,
+    _source_year::INTEGER,
+    _source_hash::TEXT,
+    _source_file::TEXT,
+    _loaded_at::TIMESTAMPTZ,
     NOW() AS _bronze_loaded_at
 FROM hcs_raw.cms_imaging_puf;

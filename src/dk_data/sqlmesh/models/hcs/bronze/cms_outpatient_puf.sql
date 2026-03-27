@@ -15,17 +15,30 @@ MODEL (
 );
 
 SELECT
-    id,
-    provider_id,
-    apc,
-    apc_desc,
-    total_services,
-    average_submitted_charges,
-    average_total_payments,
-    average_medicare_payments,
-    _source_year,
-    _source_hash,
-    _source_file,
-    _loaded_at,
+    id::BIGINT,
+    -- Provider identifiers (TEXT — CMS provider IDs are CCNs with leading zeros)
+    provider_id::TEXT,
+    provider_name::TEXT,
+    provider_city::TEXT,
+    provider_state::TEXT,
+    provider_state_fips::TEXT,
+    provider_zip_code::TEXT,
+    provider_ruca::TEXT,
+    -- APC identifiers
+    apc::TEXT,
+    apc_desc::TEXT,
+    -- Metrics
+    total_services::INTEGER,
+    bene_cnt::INTEGER,
+    comp_asgn_pymt_cnt::INTEGER,
+    average_estimated_submitted_charges::NUMERIC,
+    average_medicare_allowed_amt::NUMERIC,
+    average_total_payments::NUMERIC,
+    average_medicare_payments::NUMERIC,
+    average_medicare_stnd_amt::NUMERIC,
+    _source_year::INTEGER,
+    _source_hash::TEXT,
+    _source_file::TEXT,
+    _loaded_at::TIMESTAMPTZ,
     NOW() AS _bronze_loaded_at
 FROM hcs_raw.cms_outpatient_puf;

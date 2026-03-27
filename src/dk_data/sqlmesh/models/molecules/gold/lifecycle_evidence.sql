@@ -11,28 +11,28 @@ MODEL (
 
 -- Clinical trial evidence
 SELECT
-    m.id AS molecule_id,
+    m.molecule_id AS molecule_id,
     m.inchi_key,
     m.canonical_name,
     'clinical_trial' AS evidence_type,
     ct.nct_id AS evidence_id,
-    ct.title AS evidence_title,
+    ct.brief_title AS evidence_title,
     ct.phase AS evidence_detail,
-    ct.status AS evidence_status,
+    ct.overall_status AS evidence_status,
     'ClinicalTrials.gov' AS evidence_source,
     ct.start_date AS evidence_date,
     'https://clinicaltrials.gov/study/' || ct.nct_id AS evidence_url,
     NOW() AS computed_at
 
 FROM silver.molecules m
-JOIN silver.clinical_trials ct ON m.id = ct.molecule_id
+JOIN silver.clinical_trials ct ON m.molecule_id = ct.molecule_id
 WHERE m.needs_review = FALSE
 
 UNION ALL
 
 -- Drug label evidence
 SELECT
-    m.id AS molecule_id,
+    m.molecule_id AS molecule_id,
     m.inchi_key,
     m.canonical_name,
     'drug_label' AS evidence_type,
@@ -49,32 +49,32 @@ SELECT
     NOW() AS computed_at
 
 FROM silver.molecules m
-JOIN silver.drug_labels dl ON m.id = dl.molecule_id
+JOIN silver.drug_labels dl ON m.molecule_id = dl.molecule_id
 WHERE m.needs_review = FALSE
 
 UNION ALL
 
 -- Adverse event evidence (aggregated as single evidence type per molecule)
-SELECT DISTINCT ON (m.id)
-    m.id AS molecule_id,
+SELECT DISTINCT ON (m.molecule_id)
+    m.molecule_id AS molecule_id,
     m.inchi_key,
     m.canonical_name,
     'adverse_events' AS evidence_type,
-    'FAERS_' || m.id::text AS evidence_id,
+    'FAERS_' || m.molecule_id::text AS evidence_id,
     'FDA Adverse Event Reports' AS evidence_title,
     (
         SELECT COALESCE(SUM(report_count), 0)::text || ' total reports'
         FROM silver.adverse_events ae
-        WHERE ae.molecule_id = m.id
+        WHERE ae.molecule_id = m.molecule_id
     ) AS evidence_detail,
     CASE
         WHEN EXISTS (
             SELECT 1 FROM silver.adverse_events ae
-            WHERE ae.molecule_id = m.id AND ae.death_count > 0
+            WHERE ae.molecule_id = m.molecule_id AND ae.death_count > 0
         ) THEN 'Has Death Reports'
         WHEN EXISTS (
             SELECT 1 FROM silver.adverse_events ae
-            WHERE ae.molecule_id = m.id AND ae.serious_count > 0
+            WHERE ae.molecule_id = m.molecule_id AND ae.serious_count > 0
         ) THEN 'Has Serious Reports'
         ELSE 'Active'
     END AS evidence_status,
@@ -82,7 +82,7 @@ SELECT DISTINCT ON (m.id)
     (
         SELECT MAX(last_report_date)
         FROM silver.adverse_events ae
-        WHERE ae.molecule_id = m.id
+        WHERE ae.molecule_id = m.molecule_id
     ) AS evidence_date,
     'https://open.fda.gov/apis/drug/event/' AS evidence_url,
     NOW() AS computed_at
@@ -90,14 +90,14 @@ SELECT DISTINCT ON (m.id)
 FROM silver.molecules m
 WHERE m.needs_review = FALSE
   AND EXISTS (
-      SELECT 1 FROM silver.adverse_events ae WHERE ae.molecule_id = m.id
+      SELECT 1 FROM silver.adverse_events ae WHERE ae.molecule_id = m.molecule_id
   )
 
 UNION ALL
 
 -- Patent evidence from Orange Book
 SELECT
-    m.id AS molecule_id,
+    m.molecule_id AS molecule_id,
     m.inchi_key,
     m.canonical_name,
     'patent' AS evidence_type,
@@ -115,7 +115,7 @@ SELECT
     NOW() AS computed_at
 
 FROM silver.molecules m
-JOIN silver.molecule_aliases ma ON m.id = ma.molecule_id
+JOIN silver.molecule_aliases ma ON m.molecule_id = ma.molecule_id
 JOIN bronze.orange_book ob ON LOWER(ma.alias_name) = LOWER(ob.ingredient)
 WHERE m.needs_review = FALSE
   AND ob.patent_number IS NOT NULL

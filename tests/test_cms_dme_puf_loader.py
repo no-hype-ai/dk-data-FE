@@ -21,11 +21,16 @@ def _get_cursor_ctx(count: int):
 
 CSV_CONTENT = (
     "Rndrng_NPI,Rndrng_Prvdr_Last_Org_Name,Rndrng_Prvdr_First_Name,"
-    "Rndrng_Prvdr_Type,Rndrng_Prvdr_State_Abrvtn,HCPCS_Cd,HCPCS_Desc,"
-    "Bene_Unique_Cnt,Tot_Suplrs,Suplr_Rental_Ind,"
-    "Tot_Suplr_Sbmtd_Chrg,Tot_Suplr_Mdcr_Alowd_Amt,Tot_Suplr_Mdcr_Pymt_Amt\n"
-    "1111111111,Jones,Mary,DME Supplier,TX,E0601,CPAP Device,"
-    "50,3,N,15000.00,9000.00,7200.00\n"
+    "Rndrng_Prvdr_City,Rndrng_Prvdr_State_Abrvtn,Rndrng_Prvdr_State_FIPS,"
+    "Rndrng_Prvdr_Zip5,Rndrng_Prvdr_RUCA,Rndrng_Prvdr_Type,"
+    "HCPCS_Cd,HCPCS_Desc,Suplr_Rentl_Ind,"
+    "Tot_Suplrs,Tot_Suplr_Benes,Tot_Suplr_Clms,Tot_Suplr_Srvcs,"
+    "Avg_Suplr_Sbmtd_Chrg,Avg_Suplr_Mdcr_Alowd_Amt,"
+    "Avg_Suplr_Mdcr_Pymt_Amt,Avg_Suplr_Mdcr_Stdzd_Amt\n"
+    "1111111111,Jones,Mary,Dallas,TX,48,75201,1.0,DME Supplier,"
+    "E0601,CPAP Device,N,"
+    "3,50,120,180,"
+    "300.00,180.00,144.00,140.00\n"
 )
 
 MODULE = "dk_data.ingestion.sources.cms_dme_puf"

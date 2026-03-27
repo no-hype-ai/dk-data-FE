@@ -89,18 +89,21 @@ outpatient_agg AS (
     GROUP BY provider_id, _source_year
 ),
 
--- Source 5: SNF PUF — Skilled Nursing Facility episodes
+-- Source 5: SNF PUF — Skilled Nursing Facility RUG-level utilization (aggregated per facility)
 snf AS (
     SELECT
         provider_id,
         _source_year,
-        snf_type,
-        ownership_type,
-        total_episodes                  AS snf_episodes,
-        total_medicare_payment          AS snf_medicare_payment,
-        average_payment_per_episode     AS snf_avg_payment
+        SUM(tot_benes)                  AS snf_total_benes,
+        SUM(tot_cvrd_days)              AS snf_total_cvrd_days,
+        AVG(avg_cvrd_days)              AS snf_avg_cvrd_days,
+        SUM(tot_mdcr_alowd_amt)         AS snf_total_alowd_amt,
+        SUM(tot_mdcr_pymt_amt)          AS snf_medicare_payment,
+        AVG(avg_mdcr_pymt_amt)          AS snf_avg_payment,
+        COUNT(DISTINCT rug_cd)          AS snf_rug_count
     FROM hcs_bronze.cms_snf_puf
     WHERE provider_id IS NOT NULL
+    GROUP BY provider_id, _source_year
 ),
 
 -- Canonical provider_id set
@@ -149,11 +152,13 @@ SELECT
     op.op_avg_medicare_payments,
     op.op_apc_count,
     -- SNF
-    snf.snf_type,
-    snf.ownership_type                              AS snf_ownership_type,
-    snf.snf_episodes,
+    snf.snf_total_benes,
+    snf.snf_total_cvrd_days,
+    snf.snf_avg_cvrd_days,
+    snf.snf_total_alowd_amt,
     snf.snf_medicare_payment,
     snf.snf_avg_payment,
+    snf.snf_rug_count,
     -- Facility classification
     CASE
         WHEN hi.hospital_type IS NOT NULL THEN 'hospital'
@@ -163,12 +168,12 @@ SELECT
     END AS facility_type,
     -- Data completeness
     CASE
-        WHEN hi.facility_id IS NOT NULL AND cr.provider_id IS NOT NULL THEN 1.0
-        WHEN hi.facility_id IS NOT NULL OR cr.provider_id IS NOT NULL  THEN 0.8
+        WHEN hi.provider_id IS NOT NULL AND cr.provider_id IS NOT NULL THEN 1.0
+        WHEN hi.provider_id IS NOT NULL OR cr.provider_id IS NOT NULL  THEN 0.8
         ELSE 0.5
     END AS data_completeness_score,
     ARRAY_REMOVE(ARRAY[
-        CASE WHEN hi.facility_id IS NOT NULL   THEN 'hospital_general_info' END,
+        CASE WHEN hi.provider_id IS NOT NULL   THEN 'hospital_general_info' END,
         CASE WHEN cr.provider_id IS NOT NULL   THEN 'cost_reports_puf' END,
         CASE WHEN ip.provider_id IS NOT NULL   THEN 'inpatient_puf' END,
         CASE WHEN op.provider_id IS NOT NULL   THEN 'outpatient_puf' END,

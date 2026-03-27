@@ -37,23 +37,28 @@ WHERE c.chembl_id IS NOT NULL
 UNION ALL
 
 -- DrugBank identifiers
+-- NOTE: bronze.drugbank.inchi_key is NULL (the XML fetcher does not extract
+-- structural identifiers). Link via canonical name match using LOWER() normalization.
+-- Confidence = 0.85 (name match is less certain than structure match).
 SELECT
     m.id AS molecule_id,
     'drugbank_id' AS identifier_type,
     d.drugbank_id AS identifier_value,
     'drugbank' AS source,
-    1.0 AS confidence,
+    0.85 AS confidence,
     TRUE AS is_primary,
     d.source_updated_at AS source_date,
     NOW() AS created_at
 FROM silver.molecules m
-JOIN bronze.drugbank d ON m.inchi_key = d.inchi_key
+JOIN bronze.drugbank d ON LOWER(m.canonical_name) = LOWER(d.name)
 WHERE d.drugbank_id IS NOT NULL
+  AND d.name IS NOT NULL
   AND m.needs_review = FALSE
 
 UNION ALL
 
 -- PubChem CIDs
+-- bronze.pubchem.inchi_key is populated from the PUG REST API (inchikey field)
 SELECT
     m.id AS molecule_id,
     'pubchem_cid' AS identifier_type,
@@ -66,49 +71,56 @@ SELECT
 FROM silver.molecules m
 JOIN bronze.pubchem p ON m.inchi_key = p.inchi_key
 WHERE p.cid IS NOT NULL
+  AND p.inchi_key IS NOT NULL
   AND m.needs_review = FALSE
 
 UNION ALL
 
--- CAS numbers from DrugBank
+-- CAS numbers from DrugBank (name-based join, same as drugbank_id above)
 SELECT
     m.id AS molecule_id,
     'cas_number' AS identifier_type,
     d.cas_number AS identifier_value,
     'drugbank' AS source,
-    1.0 AS confidence,
+    0.85 AS confidence,
     TRUE AS is_primary,
     d.source_updated_at AS source_date,
     NOW() AS created_at
 FROM silver.molecules m
-JOIN bronze.drugbank d ON m.inchi_key = d.inchi_key
+JOIN bronze.drugbank d ON LOWER(m.canonical_name) = LOWER(d.name)
 WHERE d.cas_number IS NOT NULL
+  AND d.name IS NOT NULL
   AND m.needs_review = FALSE
 
 UNION ALL
 
 -- UNII from DrugBank
+-- NOTE: bronze.drugbank.unii is NULL (the XML fetcher does not extract UNII).
+-- This section is intentionally a no-op; kept as a placeholder for when
+-- the fetcher is extended to parse UNII from the XML.
 SELECT
     m.id AS molecule_id,
     'unii' AS identifier_type,
     d.unii AS identifier_value,
     'drugbank' AS source,
-    1.0 AS confidence,
+    0.85 AS confidence,
     TRUE AS is_primary,
     d.source_updated_at AS source_date,
     NOW() AS created_at
 FROM silver.molecules m
-JOIN bronze.drugbank d ON m.inchi_key = d.inchi_key
+JOIN bronze.drugbank d ON LOWER(m.canonical_name) = LOWER(d.name)
 WHERE d.unii IS NOT NULL
+  AND d.name IS NOT NULL
   AND m.needs_review = FALSE
 
 UNION ALL
 
 -- UniProt IDs from targets
+-- NOTE: silver.targets uses 'uniprot_id' as the accession column (not 'target_accession')
 SELECT DISTINCT
     m.id AS molecule_id,
     'uniprot_id' AS identifier_type,
-    t.target_accession AS identifier_value,
+    t.uniprot_id AS identifier_value,
     'chembl' AS source,
     0.9 AS confidence,
     FALSE AS is_primary,
@@ -117,17 +129,18 @@ SELECT DISTINCT
 FROM silver.molecules m
 JOIN silver.molecule_targets mt ON m.id = mt.molecule_id
 JOIN silver.targets t ON mt.target_id = t.id
-WHERE t.target_accession IS NOT NULL
-  AND t.target_accession LIKE '%UniProt%'
+WHERE t.uniprot_id IS NOT NULL
   AND m.needs_review = FALSE
 
 UNION ALL
 
 -- RxNorm CUI from drug labels
+-- NOTE: silver.drug_labels.rxcui is JSONB (array from OpenFDA openfda.rxcui field).
+-- Unnest the JSONB array and cast each element to TEXT.
 SELECT DISTINCT
     m.id AS molecule_id,
     'rxcui' AS identifier_type,
-    dl.rxcui AS identifier_value,
+    rxcui_val::TEXT AS identifier_value,
     'openfda' AS source,
     0.95 AS confidence,
     TRUE AS is_primary,
@@ -135,16 +148,22 @@ SELECT DISTINCT
     NOW() AS created_at
 FROM silver.molecules m
 JOIN silver.drug_labels dl ON m.id = dl.molecule_id
+CROSS JOIN LATERAL jsonb_array_elements_text(COALESCE(dl.rxcui, '[]'::JSONB)) AS rxcui_val
 WHERE dl.rxcui IS NOT NULL
+  AND jsonb_array_length(dl.rxcui) > 0
   AND m.needs_review = FALSE
 
 UNION ALL
 
 -- NDC codes from drug labels
+-- NOTE: silver.drug_labels does not have an ndc_codes column (OpenFDA labels
+-- do not include NDC codes in the /drug/label endpoint; NDC data comes from
+-- the /drug/ndc endpoint which is not currently ingested).
+-- This section is intentionally empty — kept as a placeholder.
 SELECT DISTINCT
     m.id AS molecule_id,
     'ndc' AS identifier_type,
-    ndc_code AS identifier_value,
+    ndc_code::TEXT AS identifier_value,
     'openfda' AS source,
     0.9 AS confidence,
     FALSE AS is_primary,
@@ -152,7 +171,10 @@ SELECT DISTINCT
     NOW() AS created_at
 FROM silver.drug_labels dl
 JOIN silver.molecules m ON m.id = dl.molecule_id
-CROSS JOIN LATERAL jsonb_array_elements_text(dl.ndc_codes) AS ndc_code
-WHERE dl.ndc_codes IS NOT NULL
-  AND jsonb_array_length(dl.ndc_codes) > 0
-  AND m.needs_review = FALSE
+CROSS JOIN LATERAL jsonb_array_elements_text(
+    -- application_numbers is the closest available field in silver.drug_labels;
+    -- actual NDC codes are not available without a separate NDC ingest pipeline.
+    -- Return empty array so this branch produces no rows until NDC is ingested.
+    '[]'::JSONB
+) AS ndc_code
+WHERE FALSE  -- Disabled: ndc_codes column does not exist in silver.drug_labels

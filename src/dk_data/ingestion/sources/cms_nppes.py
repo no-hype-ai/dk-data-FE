@@ -17,25 +17,51 @@ logger = logging.getLogger(__name__)
 COLUMN_MAPPING = {
     'NPI': 'npi',
     'Entity Type Code': 'entity_type_code',
+    'Replacement NPI': 'replacement_npi',
+    'Employer Identification Number (EIN)': 'employer_identification_number',
+    # Individual provider names
     'Provider Last Name (Legal Name)': 'provider_last_name',
     'Provider First Name': 'provider_first_name',
-    'Provider Organization Name (Legal Business Name)': 'provider_organization_name',
+    'Provider Middle Name': 'provider_middle_name',
+    'Provider Name Prefix Text': 'provider_name_prefix_text',
+    'Provider Name Suffix Text': 'provider_name_suffix_text',
     'Provider Credential Text': 'provider_credential_text',
-    'Provider Business Practice Location Address State Name': 'provider_business_practice_location_address_state_name',
-    'Healthcare Provider Taxonomy Code_1': 'healthcare_provider_taxonomy_code_1',
-    'Provider License Number State Code_1': 'provider_taxonomy_code_1',
+    # Organization name
+    'Provider Organization Name (Legal Business Name)': 'provider_organization_name',
     # Mailing address fields (used by idn_hierarchy agent)
+    'Provider First Line Business Mailing Address': 'provider_first_line_business_mailing_address',
+    'Provider Second Line Business Mailing Address': 'provider_second_line_business_mailing_address',
     'Provider Business Mailing Address City Name': 'provider_business_mailing_address_city_name',
     'Provider Business Mailing Address State Name': 'provider_business_mailing_address_state_name',
     'Provider Business Mailing Address Postal Code': 'provider_business_mailing_address_postal_code',
+    'Provider Business Mailing Address Country Code (If outside U.S.)': 'provider_business_mailing_address_country_code',
+    'Provider Business Mailing Address Telephone Number': 'provider_business_mailing_address_telephone_number',
+    'Provider Business Mailing Address Fax Number': 'provider_business_mailing_address_fax_number',
     # Practice location fields (used by contact_verification agent)
-    'Provider Business Practice Location Address Telephone Number': 'provider_business_practice_location_address_telephone_number',
-    'Provider Business Practice Location Address Fax Number': 'provider_business_practice_location_address_fax_number',
     'Provider First Line Business Practice Location Address': 'provider_first_line_business_practice_location_address',
     'Provider Second Line Business Practice Location Address': 'provider_second_line_business_practice_location_address',
     'Provider Business Practice Location Address City Name': 'provider_business_practice_location_address_city_name',
+    'Provider Business Practice Location Address State Name': 'provider_business_practice_location_address_state_name',
     'Provider Business Practice Location Address Postal Code': 'provider_business_practice_location_address_postal_code',
     'Provider Business Practice Location Address Country Code (If outside U.S.)': 'provider_business_practice_location_address_country_code',
+    'Provider Business Practice Location Address Telephone Number': 'provider_business_practice_location_address_telephone_number',
+    'Provider Business Practice Location Address Fax Number': 'provider_business_practice_location_address_fax_number',
+    # Taxonomy codes 1-15
+    'Healthcare Provider Taxonomy Code_1': 'healthcare_provider_taxonomy_code_1',
+    'Healthcare Provider Taxonomy Code_2': 'healthcare_provider_taxonomy_code_2',
+    'Healthcare Provider Taxonomy Code_3': 'healthcare_provider_taxonomy_code_3',
+    'Healthcare Provider Taxonomy Code_4': 'healthcare_provider_taxonomy_code_4',
+    'Healthcare Provider Taxonomy Code_5': 'healthcare_provider_taxonomy_code_5',
+    'Healthcare Provider Taxonomy Code_6': 'healthcare_provider_taxonomy_code_6',
+    'Healthcare Provider Taxonomy Code_7': 'healthcare_provider_taxonomy_code_7',
+    'Healthcare Provider Taxonomy Code_8': 'healthcare_provider_taxonomy_code_8',
+    'Healthcare Provider Taxonomy Code_9': 'healthcare_provider_taxonomy_code_9',
+    'Healthcare Provider Taxonomy Code_10': 'healthcare_provider_taxonomy_code_10',
+    'Healthcare Provider Taxonomy Code_11': 'healthcare_provider_taxonomy_code_11',
+    'Healthcare Provider Taxonomy Code_12': 'healthcare_provider_taxonomy_code_12',
+    'Healthcare Provider Taxonomy Code_13': 'healthcare_provider_taxonomy_code_13',
+    'Healthcare Provider Taxonomy Code_14': 'healthcare_provider_taxonomy_code_14',
+    'Healthcare Provider Taxonomy Code_15': 'healthcare_provider_taxonomy_code_15',
 }
 
 TABLE = 'cms_nppes'
@@ -79,12 +105,13 @@ def load_cms_nppes(filepath: str, source_year: int = 2023) -> dict:
                 provider_first_name=row.get('provider_first_name'),
                 provider_organization_name=row.get('provider_organization_name'),
                 provider_credential_text=row.get('provider_credential_text'),
-                provider_business_practice_location_address_state_name=row.get(
-                    'provider_business_practice_location_address_state_name'
-                ),
-                provider_taxonomy_code_1=row.get('provider_taxonomy_code_1'),
-                healthcare_provider_taxonomy_code_1=row.get('healthcare_provider_taxonomy_code_1'),
                 # Mailing address fields
+                provider_first_line_business_mailing_address=row.get(
+                    'provider_first_line_business_mailing_address'
+                ),
+                provider_second_line_business_mailing_address=row.get(
+                    'provider_second_line_business_mailing_address'
+                ),
                 provider_business_mailing_address_city_name=row.get(
                     'provider_business_mailing_address_city_name'
                 ),
@@ -94,7 +121,13 @@ def load_cms_nppes(filepath: str, source_year: int = 2023) -> dict:
                 provider_business_mailing_address_postal_code=row.get(
                     'provider_business_mailing_address_postal_code'
                 ),
+                provider_business_mailing_address_telephone_number=row.get(
+                    'provider_business_mailing_address_telephone_number'
+                ),
                 # Practice location fields
+                provider_business_practice_location_address_state_name=row.get(
+                    'provider_business_practice_location_address_state_name'
+                ),
                 provider_business_practice_location_address_telephone_number=row.get(
                     'provider_business_practice_location_address_telephone_number'
                 ),
@@ -116,6 +149,9 @@ def load_cms_nppes(filepath: str, source_year: int = 2023) -> dict:
                 provider_business_practice_location_address_country_code=row.get(
                     'provider_business_practice_location_address_country_code'
                 ),
+                # Taxonomy codes
+                healthcare_provider_taxonomy_code_1=row.get('healthcare_provider_taxonomy_code_1'),
+                healthcare_provider_taxonomy_code_2=row.get('healthcare_provider_taxonomy_code_2'),
                 _source_year=source_year,
             )
             d = rec.model_dump(by_alias=True)

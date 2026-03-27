@@ -370,13 +370,23 @@ class CMSCostReportsFetcher(BaseFetcher):
                 return None
 
             # Read report file for provider info
-            rpt_df = pd.read_csv(rpt_files[0], dtype={'PRVDR_NUM': str})
+            # RPT file columns: RPT_REC_NUM, PRVDR_NUM, FY_BGN_DT, FY_END_DT, etc.
+            rpt_df = pd.read_csv(rpt_files[0], dtype={'PRVDR_NUM': str, 'RPT_REC_NUM': str})
 
             if nmrc_files:
-                nmrc_df = pd.read_csv(nmrc_files[0], dtype={'PRVDR_NUM': str})
+                # NMRC file columns: RPT_REC_NUM, WKSHT_CD, LINE_NUM, CLMN_NUM, ITM_VAL_NUM
+                # NOTE: NMRC does NOT have PRVDR_NUM — join is via RPT_REC_NUM
+                nmrc_df = pd.read_csv(nmrc_files[0], dtype={'RPT_REC_NUM': str})
                 processed = self._extract_key_metrics(rpt_df, nmrc_df)
             else:
-                processed = rpt_df[['PRVDR_NUM', 'PRVDR_CTRL_TYPE_CD', 'FY_BGN_DT', 'FY_END_DT']].copy()
+                # No NMRC file — return basic provider info with renamed columns
+                cols_available = [c for c in ['PRVDR_NUM', 'PRVDR_CTRL_TYPE_CD', 'FY_BGN_DT', 'FY_END_DT']
+                                  if c in rpt_df.columns]
+                processed = rpt_df[cols_available].copy().rename(columns={
+                    'PRVDR_NUM': 'provider_id',
+                    'FY_BGN_DT': 'fiscal_year_begin',
+                    'FY_END_DT': 'fiscal_year_end',
+                })
 
             # Save processed file
             output_file = self.data_dir / f"cost_reports_processed_{year}.csv"
@@ -401,8 +411,9 @@ class CMSCostReportsFetcher(BaseFetcher):
         """
 
         try:
-            # Get unique providers from report file
-            providers = rpt_df[['PRVDR_NUM', 'FY_BGN_DT', 'FY_END_DT', 'RPT_REC_NUM']].drop_duplicates()
+            # Get unique report records from the RPT file.
+            # Join key is RPT_REC_NUM — NMRC does not carry PRVDR_NUM.
+            providers = rpt_df[['RPT_REC_NUM', 'PRVDR_NUM', 'FY_BGN_DT', 'FY_END_DT']].drop_duplicates()
 
             # Key worksheet/line/column positions for HCRIS 2552-10
             metrics = {
@@ -415,14 +426,22 @@ class CMSCostReportsFetcher(BaseFetcher):
             results = providers.copy()
 
             for (wksht, line, col), metric_name in metrics.items():
+                # NMRC columns: RPT_REC_NUM, WKSHT_CD, LINE_NUM, CLMN_NUM, ITM_VAL_NUM
                 metric_data = nmrc_df[
                     (nmrc_df['WKSHT_CD'] == wksht) &
                     (nmrc_df['LINE_NUM'] == line) &
                     (nmrc_df['CLMN_NUM'] == col)
-                ][['PRVDR_NUM', 'ITM_VAL_NUM']].copy()
+                ][['RPT_REC_NUM', 'ITM_VAL_NUM']].copy()
 
                 metric_data = metric_data.rename(columns={'ITM_VAL_NUM': metric_name})
-                results = results.merge(metric_data, on='PRVDR_NUM', how='left')
+                results = results.merge(metric_data, on='RPT_REC_NUM', how='left')
+
+            # Rename to output column names expected by loader / raw table
+            results = results.rename(columns={
+                'PRVDR_NUM': 'provider_id',
+                'FY_BGN_DT': 'fiscal_year_begin',
+                'FY_END_DT': 'fiscal_year_end',
+            })
 
             # Calculate derived metrics
             if 'net_patient_revenue' in results.columns and 'total_operating_expenses' in results.columns:
@@ -431,11 +450,18 @@ class CMSCostReportsFetcher(BaseFetcher):
                     results['net_patient_revenue']
                 ).round(4)
 
+            # Drop the join key — not needed in output
+            results = results.drop(columns=['RPT_REC_NUM'], errors='ignore')
+
             return results
 
         except Exception as e:
             logger.warning(f"Metric extraction failed: {e}")
-            return rpt_df[['PRVDR_NUM', 'FY_BGN_DT', 'FY_END_DT']].drop_duplicates()
+            return rpt_df[['PRVDR_NUM', 'FY_BGN_DT', 'FY_END_DT']].rename(columns={
+                'PRVDR_NUM': 'provider_id',
+                'FY_BGN_DT': 'fiscal_year_begin',
+                'FY_END_DT': 'fiscal_year_end',
+            }).drop_duplicates()
 
     def fetch_all_years(self) -> dict[str, Any]:
         """

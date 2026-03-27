@@ -16,15 +16,15 @@ logger = logging.getLogger(__name__)
 COLUMN_MAPPING = {
     'Brnd_Name': 'brnd_name',
     'Gnrc_Name': 'gnrc_name',
-    'Mftr_Name': 'mftr_name',
     'Tot_Mftr': 'tot_mftr',
+    'Tot_Spndng': 'tot_spndng',
+    'Tot_Dsg_Unts': 'tot_dsg_unts',
     'Tot_Clms': 'tot_clms',
-    'Tot_30day_Fills': 'tot_30day_fills',
-    'Tot_Drug_Cst': 'tot_drug_cst',
     'Tot_Benes': 'tot_benes',
+    'Avg_Spnd_Per_Dsg_Unt_Wghtd': 'avg_spnd_per_dsg_unt_wghtd',
     'Avg_Spnd_Per_Clm': 'avg_spnd_per_clm',
-    'Avg_Spnd_Per_30day_Fills': 'avg_spnd_per_30day_fills',
     'Avg_Spnd_Per_Bene': 'avg_spnd_per_bene',
+    'Outlier_Flag': 'outlier_flag',
 }
 
 TABLE = 'cms_part_d_spending'
@@ -64,15 +64,15 @@ def load_cms_part_d_spending(filepath: str, source_year: int = 2023) -> dict:
             rec = CMSPartDSpendingRecord(
                 brnd_name=row.get('brnd_name'),
                 gnrc_name=row.get('gnrc_name'),
-                mftr_name=row.get('mftr_name'),
                 tot_mftr=row.get('tot_mftr'),
+                tot_spndng=row.get('tot_spndng') or None,
+                tot_dsg_unts=row.get('tot_dsg_unts') or None,
                 tot_clms=row.get('tot_clms') or None,
-                tot_30day_fills=row.get('tot_30day_fills') or None,
-                tot_drug_cst=row.get('tot_drug_cst') or None,
                 tot_benes=row.get('tot_benes') or None,
+                avg_spnd_per_dsg_unt_wghtd=row.get('avg_spnd_per_dsg_unt_wghtd') or None,
                 avg_spnd_per_clm=row.get('avg_spnd_per_clm') or None,
-                avg_spnd_per_30day_fills=row.get('avg_spnd_per_30day_fills') or None,
                 avg_spnd_per_bene=row.get('avg_spnd_per_bene') or None,
+                outlier_flag=row.get('outlier_flag'),
                 _source_year=source_year,
             )
             d = rec.model_dump(by_alias=True)
@@ -86,7 +86,7 @@ def load_cms_part_d_spending(filepath: str, source_year: int = 2023) -> dict:
     inserted = upsert_records(
         SCHEMA, TABLE, records,
         conflict_columns=['_source_hash', 'gnrc_name', '_source_year'],
-        update_columns=['tot_clms', 'tot_drug_cst', 'avg_spnd_per_clm', '_loaded_at'],
+        update_columns=['tot_clms', 'tot_spndng', 'avg_spnd_per_clm', '_loaded_at'],
     )
 
     logger.info(f"Part D Spending load complete: {inserted} records processed, {len(errors)} errors")

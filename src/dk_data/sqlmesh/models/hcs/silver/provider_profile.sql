@@ -67,14 +67,14 @@ physician_puf AS (
     WHERE npi IS NOT NULL
 ),
 
--- Source 3: DME PUF — Durable Medical Equipment billing
+-- Source 3: DME PUF — Durable Medical Equipment billing (avg per-claim amounts × claim counts)
 dme_agg AS (
     SELECT
         npi,
         _source_year,
-        SUM(total_submitted_chrg_amt)   AS dme_total_chrg_amt,
-        SUM(total_medicare_payment_amt) AS dme_total_payment_amt,
-        COUNT(DISTINCT hcpcs_cd)        AS dme_hcpcs_count
+        SUM(tot_suplr_clms * avg_suplr_sbmtd_chrg)     AS dme_total_chrg_amt,
+        SUM(tot_suplr_clms * avg_suplr_mdcr_pymt_amt)  AS dme_total_payment_amt,
+        COUNT(DISTINCT hcpcs_cd)                        AS dme_hcpcs_count
     FROM hcs_bronze.cms_dme_puf
     WHERE npi IS NOT NULL
     GROUP BY npi, _source_year
@@ -85,42 +85,30 @@ mh_agg AS (
     SELECT
         npi,
         _source_year,
-        SUM(total_services)             AS mh_total_services,
-        SUM(total_benes)                AS mh_total_benes,
-        SUM(total_medicare_payment_amt) AS mh_total_payment_amt,
+        SUM(tot_srvcs)                  AS mh_total_services,
+        SUM(tot_benes)                  AS mh_total_benes,
+        SUM(avg_mdcr_pymt_amt)          AS mh_total_payment_amt,
         COUNT(DISTINCT hcpcs_cd)        AS mh_hcpcs_count
     FROM hcs_bronze.cms_mental_health_puf
     WHERE npi IS NOT NULL
     GROUP BY npi, _source_year
 ),
 
--- Source 5: Telehealth PUF — Telehealth service delivery
+-- Source 5: Telehealth PUF — Telehealth service delivery (NPI × HCPCS grain → aggregate per NPI)
 telehealth AS (
     SELECT
         npi,
         _source_year,
-        telehealth_services,
-        total_unique_benes              AS telehealth_benes,
-        total_telehealth_payment
+        SUM(tot_srvcs)                  AS telehealth_services,
+        SUM(tot_benes)                  AS telehealth_benes,
+        SUM(avg_mdcr_pymt_amt)          AS total_telehealth_payment
     FROM hcs_bronze.cms_telehealth_puf
     WHERE npi IS NOT NULL
-),
-
--- Source 6: Hospice PUF — Hospice provider profile
-hospice AS (
-    SELECT
-        npi,
-        _source_year,
-        organization_name               AS hospice_name,
-        city                            AS hospice_city,
-        state                           AS hospice_state,
-        total_medicare_beneficiaries    AS hospice_benes,
-        total_medicare_allowed_amt      AS hospice_allowed_amt
-    FROM hcs_bronze.cms_hospice_puf
-    WHERE npi IS NOT NULL
+    GROUP BY npi, _source_year
 ),
 
 -- Canonical NPI set from all sources
+-- Note: Hospice PUF uses CCN (provider_id), not NPI — hospice joins via facility_profile
 all_npis AS (
     SELECT npi, _source_year FROM nppes
     UNION
@@ -131,8 +119,6 @@ all_npis AS (
     SELECT npi, _source_year FROM mh_agg
     UNION
     SELECT npi, _source_year FROM telehealth
-    UNION
-    SELECT npi, _source_year FROM hospice
 ),
 
 -- Determine provider type: individual vs. organization
@@ -143,24 +129,22 @@ provider_type_resolved AS (
         CASE
             WHEN n.entity_type_code = '1' THEN 'individual'
             WHEN n.entity_type_code = '2' THEN 'organization'
-            WHEN h.npi IS NOT NULL THEN 'organization'
             ELSE 'individual'
         END AS provider_entity_type,
         -- Canonical name: NPPES org name for orgs, last+first for individuals
         CASE
-            WHEN n.entity_type_code = '2' THEN COALESCE(n.provider_organization_name, h.hospice_name)
+            WHEN n.entity_type_code = '2' THEN n.provider_organization_name
             WHEN n.entity_type_code = '1' THEN
                 TRIM(COALESCE(n.provider_last_name, '') || ' ' || COALESCE(n.provider_first_name, ''))
             ELSE COALESCE(
                 n.provider_organization_name,
-                p.nppes_provider_last_org_name,
-                h.hospice_name
+                p.nppes_provider_last_org_name
             )
         END AS canonical_name,
         -- Location: prefer practice address, fall back to mailing
-        COALESCE(n.practice_city, n.mailing_city, p.nppes_provider_city, h.hospice_city)    AS city,
-        COALESCE(n.practice_state, n.mailing_state, p.nppes_provider_state, h.hospice_state) AS state,
-        COALESCE(n.practice_zip, n.mailing_zip, p.nppes_provider_zip)                        AS zip_code,
+        COALESCE(n.practice_city, n.mailing_city, p.nppes_provider_city)    AS city,
+        COALESCE(n.practice_state, n.mailing_state, p.nppes_provider_state) AS state,
+        COALESCE(n.practice_zip, n.mailing_zip, p.nppes_provider_zip)       AS zip_code,
         n.phone,
         -- Taxonomy
         n.taxonomy_code_1,
@@ -177,7 +161,6 @@ provider_type_resolved AS (
     FROM all_npis a
     LEFT JOIN nppes n         ON a.npi = n.npi AND a._source_year = n._source_year
     LEFT JOIN physician_puf p ON a.npi = p.npi AND a._source_year = p._source_year
-    LEFT JOIN hospice h       ON a.npi = h.npi AND a._source_year = h._source_year
 )
 
 SELECT
@@ -218,9 +201,6 @@ SELECT
     t.telehealth_services,
     t.telehealth_benes,
     t.total_telehealth_payment,
-    -- Hospice
-    h.hospice_benes,
-    h.hospice_allowed_amt,
     -- Data quality
     CASE
         WHEN p.npi IS NOT NULL AND pt.taxonomy_code_1 IS NOT NULL THEN 1.0
@@ -233,8 +213,7 @@ SELECT
         CASE WHEN p.npi IS NOT NULL THEN 'physician_puf' END,
         CASE WHEN d.npi IS NOT NULL THEN 'dme_puf' END,
         CASE WHEN mh.npi IS NOT NULL THEN 'mental_health_puf' END,
-        CASE WHEN t.npi IS NOT NULL THEN 'telehealth_puf' END,
-        CASE WHEN h.npi IS NOT NULL THEN 'hospice_puf' END
+        CASE WHEN t.npi IS NOT NULL THEN 'telehealth_puf' END
     ], NULL)                            AS data_sources,
     NOW()                               AS created_at,
     NOW()                               AS updated_at
@@ -243,6 +222,5 @@ LEFT JOIN physician_puf p ON pt.npi = p.npi AND pt._source_year = p._source_year
 LEFT JOIN dme_agg d       ON pt.npi = d.npi AND pt._source_year = d._source_year
 LEFT JOIN mh_agg mh       ON pt.npi = mh.npi AND pt._source_year = mh._source_year
 LEFT JOIN telehealth t    ON pt.npi = t.npi AND pt._source_year = t._source_year
-LEFT JOIN hospice h       ON pt.npi = h.npi AND pt._source_year = h._source_year
 WHERE pt.canonical_name IS NOT NULL
   AND LENGTH(TRIM(pt.canonical_name)) > 0;

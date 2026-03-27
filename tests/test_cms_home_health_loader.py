@@ -20,9 +20,13 @@ def _get_cursor_ctx(count: int):
 
 
 CSV_CONTENT = (
-    "CMS Certification Number (CCN),Agency Name,Street Address,City,State,Zip Code,"
-    "Tot_Epis,Tot_HHA_Mdcr_Pymt_Amt,Avg_HHA_Mdcr_Pymt_Amt,Tot_Benes\n"
-    "010001,Home Care Agency,500 Pine St,Mobile,AL,36601,200,180000.00,900.00,150\n"
+    "Rndrng_Prvdr_Id,Rndrng_Prvdr_Name,Rndrng_Prvdr_City,"
+    "Rndrng_Prvdr_State_Abrvtn,Rndrng_Prvdr_Zip5,"
+    "HH_Srvc_Cd,HH_Srvc_Desc,Tot_Epsd_Stay,Tot_Benes,"
+    "Avg_HH_Mdcr_Pymt_Amt,Avg_HH_Outlier_Pymt,Avg_Age,Female_Pct,Dual_Pct\n"
+    "010001,Home Care Agency,Mobile,AL,36601,"
+    "1,SKILLED NURSING CARE,200,150,"
+    "900.00,25.00,72.5,58.0,22.0\n"
 )
 
 MODULE = "dk_data.ingestion.sources.cms_home_health"

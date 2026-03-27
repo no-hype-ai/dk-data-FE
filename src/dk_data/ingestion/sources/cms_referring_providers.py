@@ -1,4 +1,21 @@
-"""CMS Referring Providers PUF loader. Loads to hcs_raw.cms_referring_providers."""
+"""CMS Referring Providers PUF loader. Loads to hcs_raw.cms_referring_providers.
+
+Raw CMS field names (snake_case mapping):
+  Rndrng_NPI → rndrng_npi
+  Rndrng_Prvdr_Last_Org_Name → rndrng_prvdr_last_org_name
+  Rndrng_Prvdr_First_Name → rndrng_prvdr_first_name
+  Rndrng_Prvdr_City → rndrng_prvdr_city
+  Rndrng_Prvdr_State_Abrvtn → rndrng_prvdr_state_abrvtn
+  Rndrng_Prvdr_Zip5 → rndrng_prvdr_zip5
+  Rndrng_Prvdr_Type → rndrng_prvdr_type
+  Rfrd_NPI → rfrd_npi
+  Rfrd_Prvdr_Last_Org_Name → rfrd_prvdr_last_org_name
+  Rfrd_Prvdr_Type → rfrd_prvdr_type
+  Tot_Srvcs → tot_srvcs
+  Tot_Benes → tot_benes
+  Tot_Mdcr_Alowd_Amt → tot_mdcr_alowd_amt
+  Tot_Mdcr_Pymt_Amt → tot_mdcr_pymt_amt
+"""
 
 import hashlib
 import logging
@@ -15,13 +32,17 @@ logger = logging.getLogger(__name__)
 
 COLUMN_MAPPING = {
     'Rndrng_NPI': 'rndrng_npi',
-    'Rfr_NPI': 'rfr_npi',
-    'Rfr_Prvdr_Last_Org_Name': 'rfr_prvdr_last_org_name',
-    'Rfr_Prvdr_First_Name': 'rfr_prvdr_first_name',
-    'Rfr_Prvdr_Type': 'rfr_prvdr_type',
-    'Rfr_Prvdr_State_Abrvtn': 'rfr_prvdr_state_abrvtn',
-    'Tot_Rndrng_Prvdrs': 'tot_rndrng_prvdrs',
+    'Rndrng_Prvdr_Last_Org_Name': 'rndrng_prvdr_last_org_name',
+    'Rndrng_Prvdr_First_Name': 'rndrng_prvdr_first_name',
+    'Rndrng_Prvdr_City': 'rndrng_prvdr_city',
+    'Rndrng_Prvdr_State_Abrvtn': 'rndrng_prvdr_state_abrvtn',
+    'Rndrng_Prvdr_Zip5': 'rndrng_prvdr_zip5',
+    'Rndrng_Prvdr_Type': 'rndrng_prvdr_type',
+    'Rfrd_NPI': 'rfrd_npi',
+    'Rfrd_Prvdr_Last_Org_Name': 'rfrd_prvdr_last_org_name',
+    'Rfrd_Prvdr_Type': 'rfrd_prvdr_type',
     'Tot_Srvcs': 'tot_srvcs',
+    'Tot_Benes': 'tot_benes',
     'Tot_Mdcr_Alowd_Amt': 'tot_mdcr_alowd_amt',
     'Tot_Mdcr_Pymt_Amt': 'tot_mdcr_pymt_amt',
 }
@@ -50,7 +71,8 @@ def load_cms_referring_providers(filepath: str, source_year: int = 2023) -> dict
             logger.info(f"File {source_file} already loaded. Skipping.")
             return {"status": "skipped", "records_fetched": 0, "records_inserted": 0, "records_updated": 0, "errors": []}
 
-    df = pd.read_csv(filepath, dtype=str, low_memory=False)
+    df = pd.read_csv(filepath, dtype={'Rndrng_NPI': str, 'Rfrd_NPI': str,
+                                      'Rndrng_Prvdr_Zip5': str}, low_memory=False)
     df = df.rename(columns=COLUMN_MAPPING)
     records_fetched = len(df)
 
@@ -62,13 +84,17 @@ def load_cms_referring_providers(filepath: str, source_year: int = 2023) -> dict
         try:
             rec = CMSReferringProviderRecord(
                 rndrng_npi=row.get('rndrng_npi'),
-                rfr_npi=row.get('rfr_npi'),
-                rfr_prvdr_last_org_name=row.get('rfr_prvdr_last_org_name'),
-                rfr_prvdr_first_name=row.get('rfr_prvdr_first_name'),
-                rfr_prvdr_type=row.get('rfr_prvdr_type'),
-                rfr_prvdr_state_abrvtn=row.get('rfr_prvdr_state_abrvtn'),
-                tot_rndrng_prvdrs=int(row['tot_rndrng_prvdrs']) if row.get('tot_rndrng_prvdrs') else None,
+                rndrng_prvdr_last_org_name=row.get('rndrng_prvdr_last_org_name'),
+                rndrng_prvdr_first_name=row.get('rndrng_prvdr_first_name'),
+                rndrng_prvdr_city=row.get('rndrng_prvdr_city'),
+                rndrng_prvdr_state_abrvtn=row.get('rndrng_prvdr_state_abrvtn'),
+                rndrng_prvdr_zip5=row.get('rndrng_prvdr_zip5'),
+                rndrng_prvdr_type=row.get('rndrng_prvdr_type'),
+                rfrd_npi=row.get('rfrd_npi'),
+                rfrd_prvdr_last_org_name=row.get('rfrd_prvdr_last_org_name'),
+                rfrd_prvdr_type=row.get('rfrd_prvdr_type'),
                 tot_srvcs=row.get('tot_srvcs') or None,
+                tot_benes=int(row['tot_benes']) if row.get('tot_benes') else None,
                 tot_mdcr_alowd_amt=row.get('tot_mdcr_alowd_amt') or None,
                 tot_mdcr_pymt_amt=row.get('tot_mdcr_pymt_amt') or None,
                 _source_year=source_year,
@@ -83,8 +109,9 @@ def load_cms_referring_providers(filepath: str, source_year: int = 2023) -> dict
 
     inserted = upsert_records(
         SCHEMA, TABLE, records,
-        conflict_columns=['_source_hash', 'rndrng_npi', 'rfr_npi', '_source_year'],
-        update_columns=['tot_srvcs', 'tot_mdcr_alowd_amt', 'tot_mdcr_pymt_amt', '_loaded_at'],
+        conflict_columns=['rndrng_npi', 'rfrd_npi', '_source_year'],
+        update_columns=['tot_srvcs', 'tot_benes', 'tot_mdcr_alowd_amt',
+                        'tot_mdcr_pymt_amt', '_loaded_at'],
     )
 
     logger.info(f"Referring Providers load complete: {inserted} records processed, {len(errors)} errors")

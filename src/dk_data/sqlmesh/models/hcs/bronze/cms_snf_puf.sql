@@ -5,31 +5,34 @@
 MODEL (
     name hcs_bronze.cms_snf_puf,
     kind INCREMENTAL_BY_UNIQUE_KEY (
-        unique_key (provider_id, _source_year)
+        unique_key (provider_id, rug_cd, _source_year)
     ),
     cron '@monthly',
     audits (
         not_null(columns := (provider_id, _source_year))
     ),
-    grain (provider_id, _source_year)
+    grain (provider_id, rug_cd, _source_year)
 );
 
 SELECT
-    id,
-    provider_id,
-    provider_name,
-    address,
-    city,
-    state,
-    zip_code,
-    snf_type,
-    ownership_type,
-    total_episodes,
-    total_medicare_payment,
-    average_payment_per_episode,
-    _source_year,
-    _source_hash,
-    _source_file,
-    _loaded_at,
+    id::BIGINT,
+    provider_id::TEXT,
+    provider_name::TEXT,
+    provider_city::TEXT,
+    provider_state::TEXT,
+    provider_zip5::TEXT,
+    rug_cd::TEXT,
+    rug_desc::TEXT,
+    tot_benes::INTEGER,
+    tot_cvrd_days::INTEGER,
+    avg_cvrd_days::NUMERIC,
+    tot_mdcr_alowd_amt::NUMERIC,
+    avg_mdcr_alowd_amt::NUMERIC,
+    tot_mdcr_pymt_amt::NUMERIC,
+    avg_mdcr_pymt_amt::NUMERIC,
+    _source_year::INTEGER,
+    _source_hash::TEXT,
+    _source_file::TEXT,
+    _loaded_at::TIMESTAMPTZ,
     NOW() AS _bronze_loaded_at
 FROM hcs_raw.cms_snf_puf;

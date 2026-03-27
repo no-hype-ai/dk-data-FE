@@ -15,10 +15,16 @@ MODEL (
     grain inchi_key
 );
 
--- Source precedence: DrugBank (1) > ChEMBL (2) > PubChem (3) > Others
+-- Source precedence for structural identity resolution:
+--   ChEMBL (1) — provides inchi_key + full structural data from REST API
+--   PubChem (2) — provides inchi_key + full structural data from PUG REST API
+-- NOTE: DrugBank is NOT used as a structural identity source here because the
+-- DrugBank XML fetcher (fetchers/drugbank.py) does not extract structural
+-- identifiers (SMILES, InChI, InChIKey). DrugBank data contributes to
+-- identifier_mappings and molecule_targets via name-based joins.
 
 WITH source_molecules AS (
-    -- ChEMBL as primary source (precedence 2)
+    -- ChEMBL as primary structural source (precedence 1)
     SELECT
         inchi_key,
         pref_name AS canonical_name,
@@ -36,12 +42,13 @@ WITH source_molecules AS (
             ELSE 'preclinical'
         END AS development_status,
         max_phase,
+        -- first_approval is already INTEGER in bronze (cast is a safety guard)
         first_approval::INTEGER AS first_approval_year,
         1.0 AS resolution_confidence,
         FALSE AS needs_review,
         jsonb_build_array('chembl') AS data_sources,
         'chembl' AS primary_source,
-        2 AS source_precedence,
+        1 AS source_precedence,
         source_updated_at,
         created_at
     FROM bronze.chembl_molecules

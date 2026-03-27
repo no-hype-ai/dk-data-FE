@@ -13,19 +13,23 @@ from ..utils.validators import CMSSNFRecord
 
 logger = logging.getLogger(__name__)
 
+# Exact CMS SNF PUF column names -> internal snake_case names
+# CMS SNF PUF grain: provider × RUG code × year
 COLUMN_MAPPING = {
-    'CMS Certification Number (CCN)': 'provider_id',
-    'Facility Name': 'facility_name',
-    'Street Address': 'street_address',
-    'City': 'city',
-    'State': 'state',
-    'Zip Code': 'zip_code',
-    'Tot_SNF_Stays': 'tot_snf_stays',
-    'Tot_Mdcr_Pymt_Amt': 'tot_mdcr_pymt_amt',
-    'Avg_Mdcr_Pymt_Per_Stay': 'avg_mdcr_pymt_per_stay',
-    'Tot_Benes': 'tot_benes',
-    # snake_case variants
-    'provider_id': 'provider_id',
+    'Rndrng_Prvdr_Id':          'provider_id',
+    'Rndrng_Prvdr_Name':        'provider_name',
+    'Rndrng_Prvdr_City':        'provider_city',
+    'Rndrng_Prvdr_State_Abrvtn':'provider_state',
+    'Rndrng_Prvdr_Zip5':        'provider_zip5',
+    'RUG_CD':                   'rug_cd',
+    'RUG_DESC':                 'rug_desc',
+    'Tot_Benes':                'tot_benes',
+    'Tot_Cvrd_Days':            'tot_cvrd_days',
+    'Avg_Cvrd_Days':            'avg_cvrd_days',
+    'Tot_Mdcr_Alowd_Amt':       'tot_mdcr_alowd_amt',
+    'Avg_Mdcr_Alowd_Amt':       'avg_mdcr_alowd_amt',
+    'Tot_Mdcr_Pymt_Amt':        'tot_mdcr_pymt_amt',
+    'Avg_Mdcr_Pymt_Amt':        'avg_mdcr_pymt_amt',
 }
 
 TABLE = 'cms_snf_puf'
@@ -64,15 +68,19 @@ def load_cms_snf_puf(filepath: str, source_year: int = 2023) -> dict:
         try:
             rec = CMSSNFRecord(
                 provider_id=row.get('provider_id'),
-                facility_name=row.get('facility_name'),
-                street_address=row.get('street_address'),
-                city=row.get('city'),
-                state=row.get('state'),
-                zip_code=row.get('zip_code'),
-                tot_snf_stays=int(row['tot_snf_stays']) if row.get('tot_snf_stays') else None,
-                tot_mdcr_pymt_amt=row.get('tot_mdcr_pymt_amt') or None,
-                avg_mdcr_pymt_per_stay=row.get('avg_mdcr_pymt_per_stay') or None,
+                provider_name=row.get('provider_name'),
+                provider_city=row.get('provider_city'),
+                provider_state=row.get('provider_state'),
+                provider_zip5=row.get('provider_zip5'),
+                rug_cd=row.get('rug_cd'),
+                rug_desc=row.get('rug_desc'),
                 tot_benes=int(row['tot_benes']) if row.get('tot_benes') else None,
+                tot_cvrd_days=int(row['tot_cvrd_days']) if row.get('tot_cvrd_days') else None,
+                avg_cvrd_days=row.get('avg_cvrd_days') or None,
+                tot_mdcr_alowd_amt=row.get('tot_mdcr_alowd_amt') or None,
+                avg_mdcr_alowd_amt=row.get('avg_mdcr_alowd_amt') or None,
+                tot_mdcr_pymt_amt=row.get('tot_mdcr_pymt_amt') or None,
+                avg_mdcr_pymt_amt=row.get('avg_mdcr_pymt_amt') or None,
                 _source_year=source_year,
             )
             d = rec.model_dump(by_alias=True)
@@ -85,8 +93,12 @@ def load_cms_snf_puf(filepath: str, source_year: int = 2023) -> dict:
 
     inserted = upsert_records(
         SCHEMA, TABLE, records,
-        conflict_columns=['provider_id', '_source_year'],
-        update_columns=['tot_snf_stays', 'tot_mdcr_pymt_amt', 'avg_mdcr_pymt_per_stay', 'tot_benes', '_loaded_at'],
+        conflict_columns=['provider_id', 'rug_cd', '_source_year'],
+        update_columns=[
+            'tot_benes', 'tot_cvrd_days', 'avg_cvrd_days',
+            'tot_mdcr_alowd_amt', 'avg_mdcr_alowd_amt',
+            'tot_mdcr_pymt_amt', 'avg_mdcr_pymt_amt', '_loaded_at',
+        ],
     )
 
     logger.info(f"SNF PUF load complete: {inserted} records processed, {len(errors)} errors")

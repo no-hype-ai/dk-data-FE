@@ -1,12 +1,15 @@
 -- SQLMesh Model: Bronze OpenAlex
--- Transforms Raw OpenAlex Works responses to Bronze typed columns
+-- Transforms flat raw.openalex_ci typed columns to Bronze canonical schema
+-- raw.openalex_ci is populated by OpenAlexCIFetcher + load_openalex_ci_data()
+-- Columns are typed at load time; JSONB fields (concepts, authorships, etc.)
+-- are stored as JSONB blobs. The loader normalises the OpenAlex API response
+-- into this flat schema — no JSON path drilling needed here.
 -- Part of: 012-dk-data-platform
 
 MODEL (
     name bronze.openalex,
-    kind INCREMENTAL_BY_TIME_RANGE (
-        time_column request_timestamp,
-        batch_size 500
+    kind INCREMENTAL_BY_UNIQUE_KEY (
+        unique_key openalex_id
     ),
     cron '@weekly',
     audits (
@@ -16,81 +19,80 @@ MODEL (
 );
 
 SELECT
-    gen_random_uuid() AS id,
+    gen_random_uuid()                                                      AS id,
 
     -- OpenAlex Identifiers
-    response_body->>'id' AS openalex_id,
-    response_body->>'doi' AS doi,
-    response_body->'ids'->>'pmid' AS pmid,
-    response_body->'ids'->>'pmcid' AS pmcid,
-    response_body->'ids'->>'mag' AS mag_id,
+    r.work_id::TEXT                                                        AS openalex_id,
+    r.doi::TEXT                                                            AS doi,
 
-    -- Title and Abstract
-    response_body->>'display_name' AS title,
-    response_body->'abstract_inverted_index' AS abstract_inverted_index,
+    -- PMID is not stored directly in raw.openalex_ci; derive from authorships
+    -- if available, otherwise NULL (PMID linkage done at silver layer via doi)
+    NULL::TEXT                                                             AS pmid,
+    NULL::TEXT                                                             AS pmcid,
+    NULL::TEXT                                                             AS mag_id,
 
-    -- Publication Info
-    response_body->>'type' AS work_type,
-    response_body->>'language' AS language,
-    (response_body->>'publication_year')::INTEGER AS publication_year,
-    (response_body->>'publication_date')::DATE AS publication_date,
-    response_body->'primary_location'->'source'->>'display_name' AS journal_name,
-    response_body->'primary_location'->'source'->>'issn_l' AS journal_issn,
-    response_body->'primary_location'->>'pdf_url' AS pdf_url,
-    (response_body->'primary_location'->>'is_oa')::BOOLEAN AS is_open_access,
+    -- Title and Abstract (abstract reconstructed by fetcher from inverted index)
+    r.title::TEXT                                                          AS title,
+    r.abstract::TEXT                                                       AS abstract,
+    NULL::JSONB                                                            AS abstract_inverted_index,
 
-    -- Bibliographic
-    response_body->'biblio'->>'volume' AS volume,
-    response_body->'biblio'->>'issue' AS issue,
-    response_body->'biblio'->>'first_page' AS first_page,
-    response_body->'biblio'->>'last_page' AS last_page,
+    -- Publication Info (publication_year derived from publication_date)
+    NULL::TEXT                                                             AS work_type,
+    NULL::TEXT                                                             AS language,
+    EXTRACT(YEAR FROM r.publication_date)::INTEGER                        AS publication_year,
+    r.publication_date::DATE                                               AS publication_date,
+
+    -- Journal info from primary_location JSONB
+    -- OpenAlex primary_location structure: {source: {display_name, issn_l, ...}, pdf_url, is_oa, ...}
+    (r.primary_location->'source'->>'display_name')::TEXT                AS journal_name,
+    (r.primary_location->'source'->>'issn_l')::TEXT                     AS journal_issn,
+    (r.primary_location->>'pdf_url')::TEXT                               AS pdf_url,
+    -- open_access structure: {is_oa: bool, oa_status: ..., oa_url: ...}
+    (r.open_access->>'is_oa')::BOOLEAN                                   AS is_open_access,
+
+    -- Bibliographic (not stored at raw layer)
+    NULL::TEXT                                                             AS volume,
+    NULL::TEXT                                                             AS issue,
+    NULL::TEXT                                                             AS first_page,
+    NULL::TEXT                                                             AS last_page,
 
     -- Authors
-    response_body->'authorships' AS authorships,
+    r.authorships::JSONB                                                   AS authorships,
     (SELECT jsonb_agg(a->'author'->>'display_name')
-     FROM jsonb_array_elements(response_body->'authorships') AS a) AS author_names,
+     FROM jsonb_array_elements(COALESCE(r.authorships, '[]'::JSONB)) AS a) AS author_names,
 
     -- Concepts and Topics
-    response_body->'concepts' AS concepts,
-    response_body->'topics' AS topics,
-    response_body->'keywords' AS keywords,
-    response_body->'mesh' AS mesh_terms,
+    r.concepts::JSONB                                                      AS concepts,
+    NULL::JSONB                                                            AS topics,
+    NULL::JSONB                                                            AS keywords,
+    NULL::JSONB                                                            AS mesh_terms,
 
     -- Metrics
-    (response_body->>'cited_by_count')::INTEGER AS cited_by_count,
-    (response_body->>'cited_by_percentile_year'->>'min')::NUMERIC AS cited_by_percentile,
-    (response_body->'counts_by_year') AS citation_counts_by_year,
+    r.cited_by_count::INTEGER                                              AS cited_by_count,
+    NULL::NUMERIC                                                          AS cited_by_percentile,
+    NULL::JSONB                                                            AS citation_counts_by_year,
 
-    -- Grants
-    response_body->'grants' AS grants,
-
-    -- References
-    response_body->'referenced_works' AS referenced_works,
-    response_body->'related_works' AS related_works,
-
-    -- Sustainability
-    response_body->'sustainable_development_goals' AS sustainable_development_goals,
+    -- Grants (not stored at raw layer)
+    NULL::JSONB                                                            AS grants,
+    NULL::JSONB                                                            AS referenced_works,
+    NULL::JSONB                                                            AS related_works,
+    NULL::JSONB                                                            AS sustainable_development_goals,
 
     -- Access
-    response_body->'open_access' AS open_access_info,
-    response_body->'best_oa_location' AS best_oa_location,
+    r.open_access::JSONB                                                   AS open_access_info,
+    NULL::JSONB                                                            AS best_oa_location,
 
-    -- Indexed Status
-    (response_body->>'is_retracted')::BOOLEAN AS is_retracted,
-    (response_body->>'is_paratext')::BOOLEAN AS is_paratext,
+    -- Indexed Status (not stored at raw layer)
+    NULL::BOOLEAN                                                          AS is_retracted,
+    NULL::BOOLEAN                                                          AS is_paratext,
 
-    -- Raw source tracking
-    response_body AS raw_json,
-    id AS raw_source_id,
-    'openalex' AS source,
-    request_timestamp,
-    request_timestamp AS source_updated_at,
-    FALSE AS processed_to_silver,
-    NOW() AS created_at
+    -- Source tracking
+    'openalex'                                                             AS source,
+    r._loaded_at                                                           AS source_updated_at,
+    FALSE                                                                  AS processed_to_silver,
+    NOW()                                                                  AS created_at
 
-FROM raw.openalex
+FROM raw.openalex_ci r
 WHERE
-    response_status = 200
-    AND processed_to_bronze = FALSE
-    AND response_body->>'id' IS NOT NULL
-    AND request_timestamp BETWEEN @start_dt AND @end_dt;
+    r.work_id IS NOT NULL
+    AND r._loaded_at BETWEEN @start_dt AND @end_dt;

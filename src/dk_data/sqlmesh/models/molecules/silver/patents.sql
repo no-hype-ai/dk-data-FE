@@ -108,17 +108,17 @@ epo_patents AS (
 orange_book_patents AS (
     SELECT
         patent_number,
-        patent_title AS title,
+        trade_name AS title,
         NULL::TEXT AS abstract,
         NULL::DATE AS grant_date,
-        filing_date,
-        assignee_organization AS assignee,
+        NULL::DATE AS filing_date,
+        applicant AS assignee,
         NULL::TEXT AS assignee_type,
         NULL::JSONB AS inventors,
         NULL::JSONB AS cpc_codes,
         NULL::JSONB AS ipc_codes,
         NULL::INTEGER AS num_claims,
-        is_pharma_related,
+        TRUE AS is_pharma_related,
         NULL::TEXT AS family_id,
         'orange_book' AS source
     FROM bronze.orange_book

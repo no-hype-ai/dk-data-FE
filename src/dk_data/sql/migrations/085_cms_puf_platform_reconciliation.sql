@@ -224,50 +224,117 @@ CREATE TABLE IF NOT EXISTS hcs_raw.cms_medicaid_drug_spending (
 );
 
 CREATE TABLE IF NOT EXISTS hcs_raw.cms_dme_puf (
-    id BIGSERIAL PRIMARY KEY,
-    npi TEXT, hcpcs_cd TEXT, hcpcs_desc TEXT,
-    provider_type TEXT, supplier_type TEXT,
-    total_suppliers INTEGER, total_unique_benes INTEGER,
-    total_submitted_chrg_amt NUMERIC(18,2),
-    total_medicare_allowed_amt NUMERIC(18,2),
-    total_medicare_payment_amt NUMERIC(18,2),
-    _source_year INTEGER NOT NULL, _source_hash TEXT NOT NULL,
-    _source_file TEXT, _loaded_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    id                          BIGSERIAL PRIMARY KEY,
+    -- Provider identifiers (TEXT per CMS PUF spec)
+    npi                         TEXT,
+    provider_last_org_name      TEXT,
+    provider_first_name         TEXT,
+    provider_city               TEXT,
+    provider_state              TEXT,
+    provider_state_fips         TEXT,
+    provider_zip5               TEXT,
+    provider_ruca               TEXT,
+    provider_type               TEXT,
+    -- HCPCS / service
+    hcpcs_cd                    TEXT,
+    hcpcs_desc                  TEXT,
+    suplr_rentl_ind             TEXT,
+    -- Supplier counts
+    tot_suplrs                  INTEGER,
+    tot_suplr_benes             INTEGER,
+    tot_suplr_clms              INTEGER,
+    tot_suplr_srvcs             INTEGER,
+    -- Averages (per-claim averages from CMS PUF)
+    avg_suplr_sbmtd_chrg        NUMERIC(18,2),
+    avg_suplr_mdcr_alowd_amt    NUMERIC(18,2),
+    avg_suplr_mdcr_pymt_amt     NUMERIC(18,2),
+    avg_suplr_mdcr_stdzd_amt    NUMERIC(18,2),
+    -- Metadata
+    _source_year                INTEGER NOT NULL,
+    _source_hash                TEXT NOT NULL,
+    _source_file                TEXT,
+    _loaded_at                  TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
 CREATE TABLE IF NOT EXISTS hcs_raw.cms_home_health (
-    id BIGSERIAL PRIMARY KEY,
-    cms_certification_number TEXT, provider_name TEXT,
-    address TEXT, city TEXT, state TEXT, zip_code TEXT,
-    type_of_ownership TEXT, offers_nursing_care_services TEXT,
-    offers_physical_therapy TEXT, offers_occupational_therapy TEXT,
-    overall_quality_star_rating INTEGER,
-    _source_year INTEGER NOT NULL, _source_hash TEXT NOT NULL,
-    _source_file TEXT, _loaded_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    UNIQUE (cms_certification_number, _source_year)
+    id                          BIGSERIAL PRIMARY KEY,
+    -- Provider identifiers (TEXT per CMS PUF spec)
+    provider_id                 TEXT,
+    provider_name               TEXT,
+    provider_city               TEXT,
+    provider_state              TEXT,
+    provider_zip5               TEXT,
+    -- Home health episode service
+    hh_srvc_cd                  TEXT,
+    hh_srvc_desc                TEXT,
+    -- Utilization metrics
+    tot_epsd_stay               INTEGER,
+    tot_benes                   INTEGER,
+    -- Payment averages
+    avg_hh_mdcr_pymt_amt        NUMERIC(18,2),
+    avg_hh_outlier_pymt         NUMERIC(18,2),
+    -- Demographics
+    avg_age                     NUMERIC(5,2),
+    female_pct                  NUMERIC(5,2),
+    dual_pct                    NUMERIC(5,2),
+    -- Metadata
+    _source_year                INTEGER NOT NULL,
+    _source_hash                TEXT NOT NULL,
+    _source_file                TEXT,
+    _loaded_at                  TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
 CREATE TABLE IF NOT EXISTS hcs_raw.cms_hospice_puf (
-    id BIGSERIAL PRIMARY KEY,
-    npi TEXT, organization_name TEXT,
-    address TEXT, city TEXT, state TEXT, zip_code TEXT,
-    total_medicare_beneficiaries INTEGER,
-    average_length_of_service NUMERIC(10,2),
-    total_charges NUMERIC(18,2), total_medicare_allowed_amt NUMERIC(18,2),
-    _source_year INTEGER NOT NULL, _source_hash TEXT NOT NULL,
-    _source_file TEXT, _loaded_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    id                          BIGSERIAL PRIMARY KEY,
+    -- Provider identifiers (TEXT per CMS PUF spec)
+    provider_id                 TEXT,
+    provider_name               TEXT,
+    provider_city               TEXT,
+    provider_state              TEXT,
+    provider_zip5               TEXT,
+    -- Hospice service code
+    hspce_cd                    TEXT,
+    hspce_desc                  TEXT,
+    -- Utilization metrics
+    tot_benes                   INTEGER,
+    -- Payment amounts
+    tot_mdcr_alowd_amt          NUMERIC(18,2),
+    tot_mdcr_pymt_amt           NUMERIC(18,2),
+    avg_mdcr_pymt_amt           NUMERIC(18,2),
+    -- Demographics
+    avg_age                     NUMERIC(5,2),
+    -- Metadata
+    _source_year                INTEGER NOT NULL,
+    _source_hash                TEXT NOT NULL,
+    _source_file                TEXT,
+    _loaded_at                  TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
 CREATE TABLE IF NOT EXISTS hcs_raw.cms_snf_puf (
-    id BIGSERIAL PRIMARY KEY,
-    provider_id TEXT, provider_name TEXT,
-    address TEXT, city TEXT, state TEXT, zip_code TEXT,
-    snf_type TEXT, ownership_type TEXT,
-    total_episodes INTEGER, total_medicare_payment NUMERIC(18,2),
-    average_payment_per_episode NUMERIC(18,2),
-    _source_year INTEGER NOT NULL, _source_hash TEXT NOT NULL,
-    _source_file TEXT, _loaded_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    UNIQUE (provider_id, _source_year)
+    id                          BIGSERIAL PRIMARY KEY,
+    -- Provider identifiers (TEXT per CMS PUF spec)
+    provider_id                 TEXT,
+    provider_name               TEXT,
+    provider_city               TEXT,
+    provider_state              TEXT,
+    provider_zip5               TEXT,
+    -- RUG (Resource Utilization Group) code — grain of the PUF
+    rug_cd                      TEXT,
+    rug_desc                    TEXT,
+    -- Utilization metrics
+    tot_benes                   INTEGER,
+    tot_cvrd_days               INTEGER,
+    avg_cvrd_days               NUMERIC(10,2),
+    -- Payment amounts
+    tot_mdcr_alowd_amt          NUMERIC(18,2),
+    avg_mdcr_alowd_amt          NUMERIC(18,2),
+    tot_mdcr_pymt_amt           NUMERIC(18,2),
+    avg_mdcr_pymt_amt           NUMERIC(18,2),
+    -- Metadata
+    _source_year                INTEGER NOT NULL,
+    _source_hash                TEXT NOT NULL,
+    _source_file                TEXT,
+    _loaded_at                  TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
 CREATE TABLE IF NOT EXISTS hcs_raw.cms_outpatient_puf (
@@ -304,24 +371,57 @@ CREATE TABLE IF NOT EXISTS hcs_raw.cms_ordering_providers (
 );
 
 CREATE TABLE IF NOT EXISTS hcs_raw.cms_lab_services (
-    id BIGSERIAL PRIMARY KEY,
-    hcpcs_cd TEXT, hcpcs_desc TEXT,
-    total_labs INTEGER, total_unique_benes INTEGER,
-    total_services INTEGER,
-    average_medicare_allowed_amt NUMERIC(18,2),
-    average_medicare_payment_amt NUMERIC(18,2),
-    _source_year INTEGER NOT NULL, _source_hash TEXT NOT NULL,
-    _source_file TEXT, _loaded_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    id                          BIGSERIAL PRIMARY KEY,
+    -- Provider identifiers (TEXT per CMS PUF spec)
+    npi                         TEXT,
+    provider_last_org_name      TEXT,
+    provider_city               TEXT,
+    provider_state              TEXT,
+    provider_zip5               TEXT,
+    provider_type               TEXT,
+    -- HCPCS / service
+    hcpcs_cd                    TEXT,
+    hcpcs_desc                  TEXT,
+    -- Utilization metrics
+    tot_benes                   INTEGER,
+    tot_srvcs                   INTEGER,
+    -- Payment totals and averages
+    tot_mdcr_alowd_amt          NUMERIC(18,2),
+    avg_mdcr_alowd_amt          NUMERIC(18,2),
+    avg_mdcr_pymt_amt           NUMERIC(18,2),
+    avg_mdcr_stdzd_amt          NUMERIC(18,2),
+    -- Metadata
+    _source_year                INTEGER NOT NULL,
+    _source_hash                TEXT NOT NULL,
+    _source_file                TEXT,
+    _loaded_at                  TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
 CREATE TABLE IF NOT EXISTS hcs_raw.cms_imaging_puf (
-    id BIGSERIAL PRIMARY KEY,
-    hcpcs_cd TEXT, hcpcs_desc TEXT, modality TEXT,
-    total_providers INTEGER, total_unique_benes INTEGER, total_services INTEGER,
-    average_medicare_allowed_amt NUMERIC(18,2),
-    average_medicare_payment_amt NUMERIC(18,2),
-    _source_year INTEGER NOT NULL, _source_hash TEXT NOT NULL,
-    _source_file TEXT, _loaded_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    id                          BIGSERIAL PRIMARY KEY,
+    -- Provider identifiers (TEXT per CMS PUF spec)
+    npi                         TEXT,
+    provider_last_org_name      TEXT,
+    provider_city               TEXT,
+    provider_state              TEXT,
+    provider_zip5               TEXT,
+    provider_type               TEXT,
+    -- HCPCS / service
+    hcpcs_cd                    TEXT,
+    hcpcs_desc                  TEXT,
+    -- Utilization metrics
+    tot_benes                   INTEGER,
+    tot_srvcs                   INTEGER,
+    -- Payment totals and averages
+    tot_mdcr_alowd_amt          NUMERIC(18,2),
+    avg_mdcr_alowd_amt          NUMERIC(18,2),
+    avg_mdcr_pymt_amt           NUMERIC(18,2),
+    avg_mdcr_stdzd_amt          NUMERIC(18,2),
+    -- Metadata
+    _source_year                INTEGER NOT NULL,
+    _source_hash                TEXT NOT NULL,
+    _source_file                TEXT,
+    _loaded_at                  TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
 CREATE TABLE IF NOT EXISTS hcs_raw.cms_mental_health_puf (

@@ -13,20 +13,22 @@ from ..utils.validators import CMSHomeHealthRecord
 
 logger = logging.getLogger(__name__)
 
+# Exact CMS Home Health PUF column names -> internal snake_case names
 COLUMN_MAPPING = {
-    'CMS Certification Number (CCN)': 'provider_id',
-    'Agency Name': 'agency_name',
-    'Street Address': 'street_address',
-    'City': 'city',
-    'State': 'state',
-    'Zip Code': 'zip_code',
-    'Tot_Epis': 'tot_epis',
-    'Tot_HHA_Mdcr_Pymt_Amt': 'tot_hha_mdcr_pymt_amt',
-    'Avg_HHA_Mdcr_Pymt_Amt': 'avg_hha_mdcr_pymt_amt',
-    'Tot_Benes': 'tot_benes',
-    # snake_case variants
-    'provider_id': 'provider_id',
-    'agency_name': 'agency_name',
+    'Rndrng_Prvdr_Id':          'provider_id',
+    'Rndrng_Prvdr_Name':        'provider_name',
+    'Rndrng_Prvdr_City':        'provider_city',
+    'Rndrng_Prvdr_State_Abrvtn':'provider_state',
+    'Rndrng_Prvdr_Zip5':        'provider_zip5',
+    'HH_Srvc_Cd':               'hh_srvc_cd',
+    'HH_Srvc_Desc':             'hh_srvc_desc',
+    'Tot_Epsd_Stay':            'tot_epsd_stay',
+    'Tot_Benes':                'tot_benes',
+    'Avg_HH_Mdcr_Pymt_Amt':    'avg_hh_mdcr_pymt_amt',
+    'Avg_HH_Outlier_Pymt':     'avg_hh_outlier_pymt',
+    'Avg_Age':                  'avg_age',
+    'Female_Pct':               'female_pct',
+    'Dual_Pct':                 'dual_pct',
 }
 
 TABLE = 'cms_home_health'
@@ -65,15 +67,19 @@ def load_cms_home_health(filepath: str, source_year: int = 2023) -> dict:
         try:
             rec = CMSHomeHealthRecord(
                 provider_id=row.get('provider_id'),
-                agency_name=row.get('agency_name'),
-                street_address=row.get('street_address'),
-                city=row.get('city'),
-                state=row.get('state'),
-                zip_code=row.get('zip_code'),
-                tot_epis=int(row['tot_epis']) if row.get('tot_epis') else None,
-                tot_hha_mdcr_pymt_amt=row.get('tot_hha_mdcr_pymt_amt') or None,
-                avg_hha_mdcr_pymt_amt=row.get('avg_hha_mdcr_pymt_amt') or None,
+                provider_name=row.get('provider_name'),
+                provider_city=row.get('provider_city'),
+                provider_state=row.get('provider_state'),
+                provider_zip5=row.get('provider_zip5'),
+                hh_srvc_cd=row.get('hh_srvc_cd'),
+                hh_srvc_desc=row.get('hh_srvc_desc'),
+                tot_epsd_stay=int(row['tot_epsd_stay']) if row.get('tot_epsd_stay') else None,
                 tot_benes=int(row['tot_benes']) if row.get('tot_benes') else None,
+                avg_hh_mdcr_pymt_amt=row.get('avg_hh_mdcr_pymt_amt') or None,
+                avg_hh_outlier_pymt=row.get('avg_hh_outlier_pymt') or None,
+                avg_age=row.get('avg_age') or None,
+                female_pct=row.get('female_pct') or None,
+                dual_pct=row.get('dual_pct') or None,
                 _source_year=source_year,
             )
             d = rec.model_dump(by_alias=True)
@@ -86,8 +92,11 @@ def load_cms_home_health(filepath: str, source_year: int = 2023) -> dict:
 
     inserted = upsert_records(
         SCHEMA, TABLE, records,
-        conflict_columns=['provider_id', '_source_year'],
-        update_columns=['tot_epis', 'tot_hha_mdcr_pymt_amt', 'avg_hha_mdcr_pymt_amt', 'tot_benes', '_loaded_at'],
+        conflict_columns=['provider_id', 'hh_srvc_cd', '_source_year'],
+        update_columns=[
+            'tot_epsd_stay', 'tot_benes', 'avg_hh_mdcr_pymt_amt',
+            'avg_hh_outlier_pymt', 'avg_age', 'female_pct', 'dual_pct', '_loaded_at',
+        ],
     )
 
     logger.info(f"Home Health load complete: {inserted} records processed, {len(errors)} errors")

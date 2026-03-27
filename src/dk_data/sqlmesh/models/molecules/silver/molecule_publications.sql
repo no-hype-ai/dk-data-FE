@@ -34,7 +34,11 @@ WHERE m.needs_review = FALSE
 
 UNION ALL
 
--- Link from ChEMBL document references
+-- Link from ChEMBL cross-references (cross_references JSONB array in bronze)
+-- NOTE: bronze.chembl_molecules does not have a 'documents' column.
+-- Cross-references are stored in the cross_references JSONB array.
+-- Document-level DOI/PMID linkage requires a separate ChEMBL activities ingest.
+-- silver.publications uses 'pmid' (not 'pubmed_id') as the column name.
 SELECT DISTINCT
     m.id AS molecule_id,
     p.id AS publication_id,
@@ -45,12 +49,13 @@ SELECT DISTINCT
 
 FROM silver.molecules m
 JOIN bronze.chembl_molecules c ON m.inchi_key = c.inchi_key
-CROSS JOIN LATERAL jsonb_array_elements(COALESCE(c.documents, '[]'::jsonb)) AS doc
+CROSS JOIN LATERAL jsonb_array_elements(COALESCE(c.cross_references, '[]'::JSONB)) AS xref
 JOIN silver.publications p ON
-    p.doi = doc->>'document_doi'
-    OR p.pubmed_id = doc->>'document_pubmed_id'
+    p.doi = xref->>'xref_id'
+    OR p.pmid::TEXT = xref->>'xref_id'
 WHERE m.needs_review = FALSE
-  AND (doc->>'document_doi' IS NOT NULL OR doc->>'document_pubmed_id' IS NOT NULL)
+  AND xref->>'xref_src' IN ('DOI', 'PubMed')
+  AND xref->>'xref_id' IS NOT NULL
 
 UNION ALL
 

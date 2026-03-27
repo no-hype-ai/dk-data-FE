@@ -87,7 +87,7 @@ class SchemaDetector:
         r'^.*Id$',
         r'^nct_id$',
         r'^drugbank_id$',
-        r'^chembl_id$',
+        r'^molecule_chembl_id$',
         r'^set_id$',
         r'^safety_report_id$',
     ]

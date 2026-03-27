@@ -14,6 +14,7 @@ from ..utils.validators import CMSInpatientPUFRecord
 logger = logging.getLogger(__name__)
 
 COLUMN_MAPPING = {
+    # Legacy CMS format (pre-2021)
     'DRG Definition': 'drg_definition',
     'Provider Id': 'provider_id',
     'Provider Name': 'provider_name',
@@ -26,12 +27,19 @@ COLUMN_MAPPING = {
     'Average Covered Charges': 'average_covered_charges',
     'Average Total Payments': 'average_total_payments',
     'Average Medicare Payments': 'average_medicare_payments',
-    # Newer format column names
-    'DRG_Cd': 'drg_definition',
+    # Current CMS format (post-2021) — matches canonical API column names
+    'DRG_Cd': 'drg_cd',
+    'DRG_Desc': 'drg_definition',
+    'Rndrng_Prvdr_Id': 'provider_id',
     'Rndrng_Prvdr_CCN': 'provider_id',
     'Rndrng_Prvdr_Org_Name': 'provider_name',
+    'Rndrng_Prvdr_Name': 'provider_name',
+    'Rndrng_Prvdr_St': 'provider_street_address',
+    'Rndrng_Prvdr_City': 'provider_city',
     'Rndrng_Prvdr_State_Abrvtn': 'provider_state',
+    'Rndrng_Prvdr_State_FIPS': 'provider_state_fips',
     'Rndrng_Prvdr_Zip5': 'provider_zip_code',
+    'Rndrng_Prvdr_RUCA': 'provider_ruca',
     'Tot_Dschrgs': 'total_discharges',
     'Avg_Submtd_Cvrd_Chrg': 'average_covered_charges',
     'Avg_Tot_Pymt_Amt': 'average_total_payments',
@@ -73,15 +81,18 @@ def load_cms_inpatient_puf(filepath: str, source_year: int = 2023) -> dict:
     for idx, row in df.iterrows():
         try:
             rec = CMSInpatientPUFRecord(
+                drg_cd=row.get('drg_cd'),
                 drg_definition=row.get('drg_definition'),
                 provider_id=row.get('provider_id'),
                 provider_name=row.get('provider_name'),
                 provider_street_address=row.get('provider_street_address'),
                 provider_city=row.get('provider_city'),
                 provider_state=row.get('provider_state'),
+                provider_state_fips=row.get('provider_state_fips'),
                 provider_zip_code=row.get('provider_zip_code'),
-                hospital_referral_region_description=row.get('hospital_referral_region_description'),
-                total_discharges=int(row['total_discharges']) if row.get('total_discharges') else None,
+                provider_ruca=row.get('provider_ruca'),
+                hospital_referral_region_desc=row.get('hospital_referral_region_description'),
+                total_discharges=int(float(row['total_discharges'])) if row.get('total_discharges') else None,
                 average_covered_charges=row.get('average_covered_charges') or None,
                 average_total_payments=row.get('average_total_payments') or None,
                 average_medicare_payments=row.get('average_medicare_payments') or None,
@@ -98,8 +109,8 @@ def load_cms_inpatient_puf(filepath: str, source_year: int = 2023) -> dict:
     inserted = upsert_records(
         SCHEMA, TABLE, records,
         conflict_columns=['_source_hash', 'provider_id', 'drg_definition', '_source_year'],
-        update_columns=['total_discharges', 'average_covered_charges', 'average_total_payments',
-                        'average_medicare_payments', '_loaded_at'],
+        update_columns=['drg_cd', 'total_discharges', 'average_covered_charges',
+                        'average_total_payments', 'average_medicare_payments', '_loaded_at'],
     )
 
     logger.info(f"Inpatient PUF load complete: {inserted} records processed, {len(errors)} errors")
