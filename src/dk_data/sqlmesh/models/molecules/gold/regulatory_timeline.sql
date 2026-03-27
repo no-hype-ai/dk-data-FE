@@ -33,7 +33,7 @@ WITH regulatory AS (
 -- Join with mol_silver.molecules to get molecule id via drug_name / active_substance
 molecule_linked AS (
     SELECT
-        m.id                        AS molecule_id,
+        m.molecule_id,
         r.drug_name,
         r.agency,
         r.active_substance,

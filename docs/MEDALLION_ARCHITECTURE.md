@@ -1,217 +1,190 @@
 # Medallion Architecture
 
-This document describes the medallion data architecture implemented in the DK Data Platform.
+Last Updated: 2026-03-28
 
 ## Overview
 
-The platform implements a **four-layer medallion architecture** for data management:
+The platform implements a **four-layer medallion architecture** with domain-prefixed schemas. All schema names carry a domain prefix — there are no bare `raw`, `bronze`, `silver`, or `gold` schemas in production.
 
 ```
-┌─────────────────────────────────────────────────────────────────────────┐
-│                        MEDALLION ARCHITECTURE                            │
-├─────────────────────────────────────────────────────────────────────────┤
-│                                                                         │
-│  ┌──────────┐      ┌──────────┐      ┌──────────┐      ┌──────────┐   │
-│  │   RAW    │ ────▶│  BRONZE  │ ────▶│  SILVER  │ ────▶│   GOLD   │   │
-│  │          │      │          │      │          │      │          │   │
-│  │ Unmodified│      │ Source-  │      │ Entity-  │      │ Business │   │
-│  │ API       │      │ native   │      │ resolved │      │ ready    │   │
-│  │ responses │      │ typed    │      │ normalized│      │ views    │   │
-│  └──────────┘      └──────────┘      └──────────┘      └──────────┘   │
-│                                                                         │
-│  ┌───────────────────────────────────────────────────────────────────┐ │
-│  │                    APPLICATION LAYER                               │ │
-│  │  User preferences, tracked molecules, onboarding status            │ │
-│  └───────────────────────────────────────────────────────────────────┘ │
-└─────────────────────────────────────────────────────────────────────────┘
+External APIs / Files
+        │
+        ▼
+┌───────────────┐     ┌──────────────┐     ┌──────────────┐     ┌──────────────┐
+│  *_raw        │────▶│  *_bronze    │────▶│  *_silver    │────▶│  *_gold      │
+│               │     │              │     │              │     │              │
+│ Unmodified    │     │ Source-native│     │ Entity-      │     │ Analytics-   │
+│ JSONB envelope│     │ typed cols   │     │ resolved,    │     │ ready views  │
+│ (audit trail) │     │ deduplicated │     │ normalized   │     │ & aggregates │
+└───────────────┘     └──────────────┘     └──────────────┘     └──────────────┘
 ```
 
-## Layers
+## Domain Prefixes
 
-### Raw Layer (`raw` schema)
+| Prefix | Domain | Physical schemas |
+|--------|--------|-----------------|
+| `mol_` | Drug / molecule / compound data | `mol_raw`, `mol_bronze`, `mol_silver`, `mol_gold` |
+| `hcs_` | Healthcare system / CMS / provider data | `hcs_raw`, `hcs_bronze`, `hcs_silver`, `hcs_gold` |
+| `ind_` | Indication / disease / epidemiology | `ind_silver`, `ind_gold` |
+| `hcp_` | Healthcare professional / KOL / researcher | `hcp_silver`, `hcp_gold` |
 
-**Purpose**: Store unmodified API responses for audit and reprocessing.
+Infrastructure schemas (no prefix): `meta`, `staging`, `mart`, `scoring`, `xenon`.
 
-**Characteristics**:
-- Complete API response bodies stored as JSONB
-- Request metadata (endpoint, params, timestamp)
-- Response hash for deduplication
-- `processed_to_bronze` flag for pipeline tracking
+## Schema Redirect (SQLMesh config.yaml)
 
-**Tables**:
-- `raw.api_responses` - Generic API response storage
-- `raw.sync_schedules` - Data source sync configuration
-- `raw.silver_transformation_rules` - Bronze→Silver transformation rules
+SQLMesh model files use bare logical names (`silver.molecules`, `bronze.chembl_molecules`). The `config.yaml` `physical_schema_mapping` redirects them to domain-prefixed physical schemas at deploy time. **Model files do not need renaming.**
 
-### Bronze Layer (`bronze` schema)
+| Model declares | Lands in (physical) |
+|---------------|---------------------|
+| `raw.*` | `mol_raw.*` |
+| `bronze.*` | `mol_bronze.*` |
+| `silver.*` | `mol_silver.*` |
+| `gold.*` | `mol_gold.*` |
+| `hcs_raw.*` | `hcs_raw.*` |
+| `hcs_bronze.*` | `hcs_bronze.*` |
+| `hcs_silver.*` | `hcs_silver.*` |
+| `hcs_gold.*` | `hcs_gold.*` |
 
-**Purpose**: Source-native typed data, parsed from raw responses.
+## Raw Layer
 
-**Characteristics**:
-- One table per data source
-- Typed columns matching source schema
-- Preserves original field names where possible
+**Purpose**: Immutable audit trail. Every API response or file row is stored verbatim as JSONB.
+
+**Schema pattern** (all raw tables share this envelope):
+
+```sql
+CREATE TABLE mol_raw.<source> (
+    request_id          VARCHAR(512) PRIMARY KEY,  -- stable, deterministic per record
+    request_timestamp   TIMESTAMPTZ NOT NULL,
+    api_endpoint        TEXT NOT NULL,
+    api_version         VARCHAR(50),
+    request_params      JSONB,
+    response_status     INTEGER NOT NULL DEFAULT 200,
+    response_body       JSONB NOT NULL,            -- full API response verbatim
+    response_body_hash  VARCHAR(64),               -- SHA-256 for change detection
+    response_size_bytes INTEGER,
+    processed_to_bronze BOOLEAN NOT NULL DEFAULT FALSE,
+    ingested_at         TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    source_id           VARCHAR(100) NOT NULL
+);
+```
+
+**Upsert strategy**: `ON CONFLICT (request_id) DO UPDATE ... WHERE response_body_hash IS DISTINCT FROM EXCLUDED.response_body_hash` — only overwrites when content changes, preserving the original record otherwise.
+
+**Mol raw tables** (26): `bindingdb`, `chembl`, `clinicaltrials`, `cochrane_reviews`, `drugbank`, `ema`, `epo_patents`, `euipo_trademarks`, `hta_decisions`, `journal_rss`, `medical_news`, `openalex_ci`, `openfda_faers`, `openfda_labels`, `orange_book`, `orcid`, `pdb`, `pubchem`, `pubmed`, `sec_edgar`, `sider`, `uniprot`, `uspto_ci`, `uspto_patents`, `uspto_trademarks`, `who_icd`
+
+**HCS raw tables** (6): `acc_tvc_certification`, `cms_cost_reports`, `cms_hospital_info`, `cms_medicare_inpatient`, `cms_geographic_variation`, `hrsa_shortage_areas`
+
+## Bronze Layer
+
+**Purpose**: Source-native typed columns parsed from raw JSONB. One table per data source.
+
+**Key characteristics**:
+- Typed columns matching the source's schema
+- Preserves original field names
 - `processed_to_silver` flag for pipeline tracking
-- `raw_json` column for fallback access
+- `raw_json` fallback column for full source access
+- Managed by SQLMesh (`mol_bronze.*`, `hcs_bronze.*`)
 
-**Tables** (examples):
-- `bronze.chembl_molecules`
-- `bronze.clinicaltrials`
-- `bronze.drugbank_data`
-- `bronze.openfda_faers`
-- `bronze.pubchem_compounds`
-- `bronze.uniprot`
-- `bronze.orange_book_products`
+**Example tables**: `mol_bronze.chembl_molecules`, `mol_bronze.clinicaltrials`, `mol_bronze.bindingdb`, `mol_bronze.sider`, `hcs_bronze.cms_inpatient`, `hcs_bronze.acc_tvc`
 
-### Silver Layer (`silver` schema)
+## Silver Layer
 
-**Purpose**: Entity-resolved, normalized, deduplicated data.
+**Purpose**: Entity-resolved, normalized, deduplicated data. Cross-source identifiers linked.
 
-**Characteristics**:
-- Entity-centric tables (molecules, targets, trials)
-- Cross-source identifier linking
-- Standardized naming conventions
-- Deduplication via identifier resolution
+**Key characteristics**:
+- Entity-centric (molecules, trials, providers, publications)
+- molecule_id is the master FK across all mol_silver tables
+- npi is the master FK across hcs_silver tables
+- SQLMesh models define all transformations declaratively
 
-**Tables**:
-- `silver.molecules` - Unified molecule records
-- `silver.targets` - Protein targets
-- `silver.clinical_trials` - Normalized trial data
-- `silver.adverse_events` - Safety signals
-- `silver.publications` - Scientific literature
-- `silver.patents` - Patent information
+**Mol silver tables** (key ones): `molecules`, `molecule_aliases`, `identifier_mappings`, `clinical_trials`, `adverse_events`, `publications`, `patents`, `trademarks`, `drug_labels`, `bioactivity`, `binding_affinities`, `side_effects`, `regulatory_decisions`, `hcpcs_molecule_bridge`, `ndc_molecule_bridge`
 
-### Gold Layer (`gold` schema)
+**HCS silver tables**: `provider_profile`, `drug_utilization`, `part_d_prescribing`, `open_payments_drug_linkage`
 
-**Purpose**: Pre-aggregated analytics and decision-ready views.
+## Gold Layer
 
-**Characteristics**:
-- Aggregated metrics and scores
-- Business-ready views
-- Optimized for dashboards/reports
-- May include computed fields and rankings
+**Purpose**: Pre-aggregated analytics-ready models. Denormalized for dashboard consumption.
 
-**Tables/Views**:
-- `gold.molecule_profile` - Comprehensive molecule view
-- `gold.safety_signals` - Aggregated safety metrics
-- `gold.competitive_landscape` - Market analysis
-- `gold.company_pipeline` - Company drug pipelines
-
-### Application Layer (`application` schema)
-
-**Purpose**: User-specific data and platform metadata.
-
-**Tables**:
-- `application.tracked_molecules` - User watchlists
-- `application.alert_configs` - Alert configurations
-- `application.annotations` - User annotations
-- `application.onboarding_status` - Data ingestion tracking
+**Mol gold tables**: `molecule_profile`, `competitive_landscape`, `company_pipeline`, `kol_profiles`, `kol_drug_associations`, `lifecycle_evidence`, `trial_outcomes`
 
 ## Data Flow
 
-### Ingestion Pipeline
+```
+Fetcher (Python)
+    │  HTTP/file download → normalize → list[dict]
+    ▼
+Loader (Python)
+    │  INSERT INTO mol_raw.<source> ... ON CONFLICT DO UPDATE WHERE hash changed
+    ▼
+mol_raw.<source>                (JSONB envelope — immutable)
+    │  SQLMesh INCREMENTAL_BY_TIME_RANGE or INCREMENTAL_BY_UNIQUE_KEY
+    ▼
+mol_bronze.<source>             (typed columns, source-native schema)
+    │  SQLMesh FULL or INCREMENTAL_BY_UNIQUE_KEY
+    ▼
+mol_silver.<entity>             (entity-resolved, molecule_id FK)
+    │  SQLMesh FULL (monthly) or INCREMENTAL (daily)
+    ▼
+mol_gold.<view>                 (aggregated, analytics-ready)
+```
+
+## Transformations (SQLMesh)
+
+All Bronze → Silver → Gold transformations are declared as SQLMesh models under `src/dk_data/sqlmesh/models/`.
 
 ```
-External API → Raw Layer → Bronze Layer → Silver Layer → Gold Layer
-     │              │            │              │            │
-     │              │            │              │            └── Dashboards/Reports
-     │              │            │              └── API Endpoints
-     │              │            └── Entity Resolution
-     │              └── Type Parsing
-     └── API Call & Storage
+src/dk_data/sqlmesh/models/
+├── molecules/
+│   ├── bronze/    # mol_bronze.* models
+│   ├── silver/    # mol_silver.* models
+│   └── gold/      # mol_gold.* models
+└── hcs/
+    ├── bronze/    # hcs_bronze.* models
+    └── silver/    # hcs_silver.* models
 ```
 
-### Transformation Services
-
-1. **Raw → Bronze**: `bronze_ingestion.py`
-   - Parse JSON responses into typed columns
-   - Handle source-specific data formats
-
-2. **Bronze → Silver**: `silver_transformation.py` / `dynamic_silver_transformation.py`
-   - Entity resolution and linking
-   - Deduplication
-   - Standardization
-
-3. **Silver → Gold**: `gold_aggregation.py`
-   - Aggregation and metrics calculation
-   - View generation
-
-## Dynamic Source Onboarding
-
-New data sources can be added without code changes:
-
-1. **Register Source**: Add entry to `raw.sync_schedules`
-2. **Configure Credentials**: Store in `raw.data_source_credentials`
-3. **Define Schema**: Auto-detect or manually configure
-4. **Generate Bronze Table**: System creates table automatically
-5. **Add Transformation Rules**: Configure in `raw.silver_transformation_rules`
-6. **SQLMesh Model**: Auto-generated for transformations
-
-### API Endpoints
+**Running transformations:**
 
 ```bash
-# Register new source
-POST /api/v1/data-sources/register
+# Plan and apply all pending transforms
+uv run sqlmesh -p src/dk_data/sqlmesh plan --auto-apply
 
-# Store credentials
-POST /api/v1/data-sources/{source}/credentials
-
-# Detect schema
-POST /api/v1/data-sources/{source}/detect-schema
-
-# Generate bronze table
-POST /api/v1/data-sources/{source}/generate-table
-
-# Trigger sync
-POST /api/v1/data-sources/{source}/sync
+# Dry run (no apply)
+uv run sqlmesh -p src/dk_data/sqlmesh plan
 ```
 
-## SQLMesh Integration
+Transformations are also run automatically by the `cronjob-mol-transform` CronJob (daily 6 AM UTC).
 
-The platform uses SQLMesh for declarative transformations:
+## Data Quality (SQLMesh Audits)
 
-```
-sqlmesh/
-├── config.yaml              # Project config
-├── audits/                  # Data quality audits
-├── macros/                  # Reusable SQL functions
-└── molecules/
-    ├── bronze/              # Bronze layer models
-    ├── silver/              # Silver layer models
-    └── gold/                # Gold layer models
-```
+Every silver model declares audits inline:
 
-### Running Transformations
-
-```bash
-# Run all transformations
-make sqlmesh-run
-
-# Or via API
-curl -X POST http://localhost:8000/api/v1/pipeline/sqlmesh
+```sql
+MODEL (
+    name mol_silver.binding_affinities,
+    kind INCREMENTAL_BY_UNIQUE_KEY (unique_key bindingdb_id),
+    audits (
+        not_null(columns := (bindingdb_id, activity_value_nm))
+    )
+);
 ```
 
-## Data Quality
+Standard audits used: `not_null`, `unique`, `accepted_values`.
 
-### Audits
+## Pipeline Scheduling
 
-Data quality is enforced via SQLMesh audits:
+| CronJob | Schedule | Scope |
+|---------|----------|-------|
+| `cronjob-mol-fetch-daily` | 2 AM UTC daily | PubMed, EuropePMC, OpenAlex, Journal RSS, Medical News, SEC EDGAR, NIH Reporter |
+| `cronjob-mol-fetch-weekly` | 3 AM UTC Sunday | EMA, USPTO Patents/CI/Trademarks, EPO, EUIPO, UniProt, PDB, ORCID, EUIPO Designs, HTA Bodies |
+| `cronjob-mol-fetch-monthly` | 2–11 AM UTC 1st | BindingDB, SIDER, WHO ICD, RxNorm, WHO INN, PharmGKB, KEGG Drug, TDC ADMET, DrugBank, Cochrane |
+| `cronjob-mol-transform` | 6 AM UTC daily | SQLMesh bronze → silver → gold |
+| `cronjob-cms-all` | Weekly | All CMS file-based PUF sources |
 
-- **not_null**: Required fields present
-- **unique**: Primary key uniqueness
-- **accepted_values**: Enumeration validation
-- **referential_integrity**: Foreign key validation
+## Key Invariants
 
-### Monitoring
-
-- `meta.data_catalog` - Data source health
-- `meta.job_runs` - Pipeline execution history
-- Data freshness checks via scheduled jobs
-
-## Best Practices
-
-1. **Never modify raw data** - Raw layer is immutable
-2. **Document transformations** - Use SQLMesh for traceable changes
-3. **Version schema changes** - Use migrations for DDL
-4. **Monitor data freshness** - Set up alerts for stale data
-5. **Test transformations** - Use staging environment first
+1. **Raw is immutable** — never modify raw rows; only upsert when content hash changes
+2. **Stable request_id** — format `{source}_{natural_key}` so ON CONFLICT correctly deduplicates across re-runs
+3. **molecule_id is deterministic** — `md5(chembl_id::text)::uuid` — stable across full rebuilds, no FK cascade failures
+4. **Schema redirect, not rename** — model files declare `silver.molecules`; config.yaml maps that to `mol_silver`
+5. **Column zero-loss policy** — all bronze columns must reach silver or be documented as dropped (see COLUMN_LINEAGE.md)

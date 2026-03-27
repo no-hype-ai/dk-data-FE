@@ -76,6 +76,18 @@ SELECT
     -- Results (has_results is a typed BOOLEAN column in the bronze model)
     b.has_results,
 
+    -- Entity resolution: derive molecule_id by matching drug intervention names to mol_silver.molecules.
+    -- interventions is JSONB [{type, name, description}]; join on DRUG-type intervention name.
+    -- Uses a lateral subquery to avoid a full cross-join when no match exists.
+    (
+        SELECT m.molecule_id
+        FROM jsonb_array_elements(COALESCE(b.interventions, '[]'::jsonb)) AS interv
+        JOIN mol_silver.molecules m
+            ON interv->>'type' = 'DRUG'
+           AND LOWER(m.canonical_name) = LOWER(interv->>'name')
+        LIMIT 1
+    ) AS molecule_id,
+
     -- Source Tracking
     b.id AS bronze_id,
     'clinicaltrials_gov' AS source,

@@ -47,7 +47,7 @@ latest_financials AS (
 -- Link companies to molecules via mol_silver.molecules canonical_name
 molecule_linked AS (
     SELECT
-        m.id                    AS molecule_id,
+        m.molecule_id,
         f.company_name,
         f.cik,
         f.latest_revenue,

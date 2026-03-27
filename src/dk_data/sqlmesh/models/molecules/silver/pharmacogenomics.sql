@@ -15,8 +15,8 @@ MODEL (
 
 SELECT
     gen_random_uuid()                                       AS id,
-    COALESCE(m_ik.id, m_cid.id,
-             m_db.id, m_name.id)                            AS molecule_id,
+    COALESCE(m_ik.molecule_id, m_cid.molecule_id,
+             m_db.molecule_id, m_name.molecule_id)                            AS molecule_id,
     b.pharmgkb_id,
     b.name,
     b.entity_type,
@@ -43,23 +43,23 @@ LEFT JOIN mol_silver.molecules m_ik
        ON b.inchi_key IS NOT NULL AND m_ik.inchi_key = b.inchi_key
 -- Fallback: chembl_id via identifier_mappings
 LEFT JOIN mol_silver.identifier_mappings im_cid
-       ON m_ik.id IS NULL
+       ON m_ik.molecule_id IS NULL
       AND b.chembl_id IS NOT NULL
       AND im_cid.identifier_type = 'chembl_id'
       AND im_cid.identifier_value = b.chembl_id
 LEFT JOIN mol_silver.molecules m_cid
-       ON m_cid.id = im_cid.molecule_id
+       ON m_cid.molecule_id = im_cid.molecule_id
 -- Fallback: drugbank_id via identifier_mappings
 LEFT JOIN mol_silver.identifier_mappings im_db
-       ON m_ik.id IS NULL AND m_cid.id IS NULL
+       ON m_ik.molecule_id IS NULL AND m_cid.molecule_id IS NULL
       AND b.drugbank_id IS NOT NULL
       AND im_db.identifier_type = 'drugbank_id'
       AND im_db.identifier_value = b.drugbank_id
 LEFT JOIN mol_silver.molecules m_db
-       ON m_db.id = im_db.molecule_id
+       ON m_db.molecule_id = im_db.molecule_id
 -- Fallback: name matching
 LEFT JOIN mol_silver.molecules m_name
-       ON m_ik.id IS NULL AND m_cid.id IS NULL AND m_db.id IS NULL
+       ON m_ik.molecule_id IS NULL AND m_cid.molecule_id IS NULL AND m_db.molecule_id IS NULL
       AND b.name IS NOT NULL
       AND LOWER(m_name.canonical_name) = LOWER(b.name)
 WHERE b.pharmgkb_id IS NOT NULL;

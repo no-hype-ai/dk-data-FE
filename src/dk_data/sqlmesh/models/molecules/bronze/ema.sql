@@ -2,7 +2,9 @@
 -- Transforms raw EMA JSONB API responses into typed bronze layer
 -- Part of DK Molecule Data Platform (012-dk-data-platform)
 --
--- Source table: mol_raw.ema (JSONB response_body, see migration 062_mol_source_raw_tables.sql)
+-- Source table: mol_raw.ema (JSONB response_body, moved from raw.ema by migration 099)
+-- NOTE: mol_raw.ema_regulatory (flat table, sources/ema_regulatory.py) is a separate source
+--       feeding mol_silver.regulatory_decisions, not this bronze model.
 -- Loaded by: src/dk_data/ingestion/sources/ema_regulatory.py
 --
 -- EMA API field mapping (camelCase and snake_case variants both covered):

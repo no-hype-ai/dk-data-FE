@@ -20,8 +20,9 @@ MODEL (
 -- Collect identifiers from all bronze sources
 
 -- ChEMBL identifiers
+-- Join handles both structural (inchi_key match) and biologic (name match, inchi_key IS NULL)
 SELECT
-    m.id AS molecule_id,
+    m.molecule_id,
     'chembl_id' AS identifier_type,
     c.chembl_id AS identifier_value,
     'chembl' AS source,
@@ -30,9 +31,11 @@ SELECT
     c.source_updated_at AS source_date,
     NOW() AS created_at
 FROM mol_silver.molecules m
-JOIN mol_bronze.chembl_molecules c ON m.inchi_key = c.inchi_key
+JOIN mol_bronze.chembl_molecules c ON (
+    (m.inchi_key IS NOT NULL AND m.inchi_key = c.inchi_key)
+    OR (m.inchi_key IS NULL AND LOWER(m.canonical_name) = LOWER(c.pref_name))
+)
 WHERE c.chembl_id IS NOT NULL
-  AND m.needs_review = FALSE
 
 UNION ALL
 
@@ -40,8 +43,10 @@ UNION ALL
 -- NOTE: mol_bronze.drugbank.inchi_key is NULL (the XML fetcher does not extract
 -- structural identifiers). Link via canonical name match using LOWER() normalization.
 -- Confidence = 0.85 (name match is less certain than structure match).
+-- needs_review filter intentionally omitted: a DrugBank entry's own drugbank_id is
+-- authoritative regardless of molecule entity review status.
 SELECT
-    m.id AS molecule_id,
+    m.molecule_id,
     'drugbank_id' AS identifier_type,
     d.drugbank_id AS identifier_value,
     'drugbank' AS source,
@@ -53,14 +58,13 @@ FROM mol_silver.molecules m
 JOIN mol_bronze.drugbank d ON LOWER(m.canonical_name) = LOWER(d.name)
 WHERE d.drugbank_id IS NOT NULL
   AND d.name IS NOT NULL
-  AND m.needs_review = FALSE
 
 UNION ALL
 
 -- PubChem CIDs
 -- mol_bronze.pubchem.inchi_key is populated from the PUG REST API (inchikey field)
 SELECT
-    m.id AS molecule_id,
+    m.molecule_id,
     'pubchem_cid' AS identifier_type,
     p.cid::TEXT AS identifier_value,
     'pubchem' AS source,
@@ -72,13 +76,12 @@ FROM mol_silver.molecules m
 JOIN mol_bronze.pubchem p ON m.inchi_key = p.inchi_key
 WHERE p.cid IS NOT NULL
   AND p.inchi_key IS NOT NULL
-  AND m.needs_review = FALSE
 
 UNION ALL
 
 -- CAS numbers from DrugBank (name-based join, same as drugbank_id above)
 SELECT
-    m.id AS molecule_id,
+    m.molecule_id,
     'cas_number' AS identifier_type,
     d.cas_number AS identifier_value,
     'drugbank' AS source,
@@ -90,7 +93,6 @@ FROM mol_silver.molecules m
 JOIN mol_bronze.drugbank d ON LOWER(m.canonical_name) = LOWER(d.name)
 WHERE d.cas_number IS NOT NULL
   AND d.name IS NOT NULL
-  AND m.needs_review = FALSE
 
 UNION ALL
 
@@ -99,7 +101,7 @@ UNION ALL
 -- This section is intentionally a no-op; kept as a placeholder for when
 -- the fetcher is extended to parse UNII from the XML.
 SELECT
-    m.id AS molecule_id,
+    m.molecule_id,
     'unii' AS identifier_type,
     d.unii AS identifier_value,
     'drugbank' AS source,
@@ -111,14 +113,13 @@ FROM mol_silver.molecules m
 JOIN mol_bronze.drugbank d ON LOWER(m.canonical_name) = LOWER(d.name)
 WHERE d.unii IS NOT NULL
   AND d.name IS NOT NULL
-  AND m.needs_review = FALSE
 
 UNION ALL
 
 -- UniProt IDs from targets
 -- NOTE: mol_silver.targets uses 'uniprot_id' as the accession column (not 'target_accession')
 SELECT DISTINCT
-    m.id AS molecule_id,
+    m.molecule_id,
     'uniprot_id' AS identifier_type,
     t.uniprot_id AS identifier_value,
     'chembl' AS source,
@@ -127,10 +128,9 @@ SELECT DISTINCT
     t.source_updated_at AS source_date,
     NOW() AS created_at
 FROM mol_silver.molecules m
-JOIN mol_silver.molecule_targets mt ON m.id = mt.molecule_id
+JOIN mol_silver.molecule_targets mt ON m.molecule_id = mt.molecule_id
 JOIN mol_silver.targets t ON mt.target_id = t.id
 WHERE t.uniprot_id IS NOT NULL
-  AND m.needs_review = FALSE
 
 UNION ALL
 
@@ -138,7 +138,7 @@ UNION ALL
 -- NOTE: mol_silver.drug_labels.rxcui is JSONB (array from OpenFDA openfda.rxcui field).
 -- Unnest the JSONB array and cast each element to TEXT.
 SELECT DISTINCT
-    m.id AS molecule_id,
+    m.molecule_id,
     'rxcui' AS identifier_type,
     rxcui_val::TEXT AS identifier_value,
     'openfda' AS source,
@@ -147,11 +147,10 @@ SELECT DISTINCT
     dl.effective_date AS source_date,
     NOW() AS created_at
 FROM mol_silver.molecules m
-JOIN mol_silver.drug_labels dl ON m.id = dl.molecule_id
+JOIN mol_silver.drug_labels dl ON m.molecule_id = dl.molecule_id
 CROSS JOIN LATERAL jsonb_array_elements_text(COALESCE(dl.rxcui, '[]'::JSONB)) AS rxcui_val
 WHERE dl.rxcui IS NOT NULL
   AND jsonb_array_length(dl.rxcui) > 0
-  AND m.needs_review = FALSE
 
 UNION ALL
 
@@ -161,7 +160,7 @@ UNION ALL
 -- the /drug/ndc endpoint which is not currently ingested).
 -- This section is intentionally empty — kept as a placeholder.
 SELECT DISTINCT
-    m.id AS molecule_id,
+    m.molecule_id,
     'ndc' AS identifier_type,
     ndc_code::TEXT AS identifier_value,
     'openfda' AS source,
@@ -170,7 +169,7 @@ SELECT DISTINCT
     dl.effective_date AS source_date,
     NOW() AS created_at
 FROM mol_silver.drug_labels dl
-JOIN mol_silver.molecules m ON m.id = dl.molecule_id
+JOIN mol_silver.molecules m ON m.molecule_id = dl.molecule_id
 CROSS JOIN LATERAL jsonb_array_elements_text(
     -- application_numbers is the closest available field in mol_silver.drug_labels;
     -- actual NDC codes are not available without a separate NDC ingest pipeline.

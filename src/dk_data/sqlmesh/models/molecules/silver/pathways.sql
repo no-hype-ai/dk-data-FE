@@ -24,17 +24,17 @@ WITH reactome_linked AS (
         b.source,
         b.source_updated_at,
         -- Molecule linkage: request_params carries the drug name that triggered the search
-        COALESCE(m_name.id, m_alias.id) AS molecule_id
+        COALESCE(m_name.molecule_id, m_alias.molecule_id) AS molecule_id
     FROM mol_bronze.reactome b
     LEFT JOIN mol_silver.molecules m_name
            ON b.raw_json->>'query' IS NOT NULL
           AND LOWER(m_name.canonical_name) = LOWER(b.raw_json->>'query')
     LEFT JOIN mol_silver.molecule_aliases ma
-           ON m_name.id IS NULL
+           ON m_name.molecule_id IS NULL
           AND b.raw_json->>'query' IS NOT NULL
           AND LOWER(REGEXP_REPLACE(b.raw_json->>'query', '[^a-zA-Z0-9]', '', 'g'))
               = ma.alias_name_normalized
-    LEFT JOIN mol_silver.molecules m_alias ON m_alias.id = ma.molecule_id
+    LEFT JOIN mol_silver.molecules m_alias ON m_alias.molecule_id = ma.molecule_id
     WHERE b.stable_id IS NOT NULL
 ),
 
@@ -49,7 +49,7 @@ kegg_pathways AS (
         NULL::TEXT                                      AS class_name,
         'kegg'                                          AS source,
         b.source_updated_at,
-        m.id AS molecule_id
+        m.molecule_id
     FROM mol_bronze.kegg_drug b
     CROSS JOIN LATERAL jsonb_array_elements(COALESCE(b.pathways, '[]'::jsonb)) AS kp(value)
     LEFT JOIN mol_silver.molecules m ON b.inchi_key IS NOT NULL AND m.inchi_key = b.inchi_key

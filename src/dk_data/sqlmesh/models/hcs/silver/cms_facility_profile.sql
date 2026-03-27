@@ -51,18 +51,32 @@ affiliation_agg AS (
     GROUP BY facility_affiliations_certification_number
 ),
 
+hcris_by_year AS (
+    -- Sum all worksheet line values per CCN per fiscal year.
+    -- HCRIS G-worksheet totals: line_number '1' = total costs, '5' = net income (approximate).
+    -- Aggregate all non-zero values as proxy total_reported_value; exact G-3 lines require
+    -- worksheet-specific filters which vary by report type. The CCN + fiscal_year grain is stable.
+    SELECT
+        ccn,
+        fiscal_year_begin,
+        fiscal_year_end,
+        SUM(CASE WHEN worksheet LIKE 'G%' AND value > 0 THEN value ELSE 0 END)  AS total_costs_proxy,
+        SUM(CASE WHEN worksheet LIKE 'G%' AND value < 0 THEN ABS(value) ELSE 0 END) AS net_deficit_proxy,
+        COUNT(*) AS line_count
+    FROM hcs_bronze.cms_hcris
+    WHERE ccn IS NOT NULL
+    GROUP BY ccn, fiscal_year_begin, fiscal_year_end
+),
+
 hcris_latest AS (
     SELECT DISTINCT ON (ccn)
         ccn,
         fiscal_year_begin,
         fiscal_year_end,
-        -- Aggregate totals across worksheet lines for the most recent fiscal year
-        -- (G3 worksheet contains total costs, revenue, and net income summary lines)
-        NULL::NUMERIC AS total_costs,
-        NULL::NUMERIC AS total_revenue,
-        NULL::NUMERIC AS net_income
-    FROM hcs_bronze.cms_hcris
-    WHERE ccn IS NOT NULL
+        total_costs_proxy   AS total_costs,
+        NULL::NUMERIC       AS total_revenue,   -- G-3 revenue lines require worksheet-specific logic
+        NULL::NUMERIC       AS net_income       -- net income requires G-3 line 5 specifically
+    FROM hcris_by_year
     ORDER BY ccn, fiscal_year_end DESC
 ),
 
@@ -114,8 +128,14 @@ SELECT
     COALESCE(hgi.hospital_ownership, pos.ownership_type)                        AS ownership_type,
     hgi.hospital_type,
 
-    -- Quality ratings
-    hgi.hospital_overall_rating                                                 AS overall_quality_rating,
+    -- Quality ratings (CMS Hospital Compare 5-star ratings via cms_hospital_quality)
+    -- COALESCE: prefer dedicated quality bronze; fall back to hospital_general_info
+    COALESCE(hq.overall_rating, hgi.hospital_overall_rating)                    AS overall_quality_rating,
+    hq.mortality_rating,
+    hq.safety_rating,
+    hq.readmission_rating,
+    hq.patient_experience_rating,
+    hq.timeliness_rating,
 
     -- Inpatient metrics
     COALESCE(inp.total_discharges, 0)                                           AS total_discharges,
@@ -147,6 +167,7 @@ SELECT
 
 FROM hcs_bronze.cms_pos pos
 LEFT JOIN hcs_bronze.cms_hospital_general_info hgi ON pos.ccn = hgi.facility_id
+LEFT JOIN hcs_bronze.cms_hospital_quality hq ON pos.ccn = hq.facility_id
 LEFT JOIN inpatient_agg inp ON pos.ccn = inp.ccn
 LEFT JOIN outpatient_agg outp ON pos.ccn = outp.ccn
 LEFT JOIN affiliation_agg aff ON pos.ccn = aff.ccn

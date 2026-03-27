@@ -14,7 +14,7 @@ MODEL (
 
 SELECT
     gen_random_uuid()           AS id,
-    m.id AS molecule_id,
+    m.molecule_id,
     b.compound_id,
     b.smiles,
     b.inchi_key,

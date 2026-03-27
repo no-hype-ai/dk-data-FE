@@ -27,8 +27,10 @@ MODEL (
 -- Collect aliases from all sources
 
 -- Canonical names from mol_silver.molecules
+-- Includes all molecules (small molecules, biologics, DrugBank-source) so that
+-- downstream name-based lookups (clinical_trials, drug_labels, etc.) can find any entry.
 SELECT
-    m.id AS molecule_id,
+    m.molecule_id,
     m.canonical_name AS alias_name,
     LOWER(REGEXP_REPLACE(m.canonical_name, '[^a-zA-Z0-9]', '', 'g')) AS alias_name_normalized,
     'canonical' AS alias_type,
@@ -36,24 +38,26 @@ SELECT
     NOW() AS created_at
 FROM mol_silver.molecules m
 WHERE m.canonical_name IS NOT NULL
-  AND m.needs_review = FALSE
 
 UNION ALL
 
 -- ChEMBL synonyms
+-- Join handles both structural (inchi_key match) and biologic (name match, inchi_key IS NULL)
 SELECT
-    m.id AS molecule_id,
+    m.molecule_id,
     syn AS alias_name,
     LOWER(REGEXP_REPLACE(syn, '[^a-zA-Z0-9]', '', 'g')) AS alias_name_normalized,
     'synonym' AS alias_type,
     'chembl' AS source,
     NOW() AS created_at
 FROM mol_silver.molecules m
-JOIN mol_bronze.chembl_molecules c ON m.inchi_key = c.inchi_key
+JOIN mol_bronze.chembl_molecules c ON (
+    (m.inchi_key IS NOT NULL AND m.inchi_key = c.inchi_key)
+    OR (m.inchi_key IS NULL AND LOWER(m.canonical_name) = LOWER(c.pref_name))
+)
 CROSS JOIN LATERAL jsonb_array_elements_text(COALESCE(c.synonyms, '[]'::jsonb)) AS syn
 WHERE syn IS NOT NULL
   AND syn != ''
-  AND m.needs_review = FALSE
 
 UNION ALL
 
@@ -62,7 +66,7 @@ UNION ALL
 -- Join via canonical name. mol_bronze.drugbank.synonyms is also NULL (XML fetcher
 -- does not parse synonyms); this section produces no rows until the fetcher is extended.
 SELECT
-    m.id AS molecule_id,
+    m.molecule_id,
     syn AS alias_name,
     LOWER(REGEXP_REPLACE(syn, '[^a-zA-Z0-9]', '', 'g')) AS alias_name_normalized,
     'synonym' AS alias_type,
@@ -74,7 +78,6 @@ CROSS JOIN LATERAL jsonb_array_elements_text(COALESCE(d.synonyms, '[]'::JSONB)) 
 WHERE syn IS NOT NULL
   AND syn != ''
   AND d.name IS NOT NULL
-  AND m.needs_review = FALSE
 
 UNION ALL
 
@@ -82,7 +85,7 @@ UNION ALL
 -- NOTE: mol_bronze.drugbank.international_brands is NULL (XML fetcher does not parse
 -- international brand names); this section produces no rows until the fetcher is extended.
 SELECT
-    m.id AS molecule_id,
+    m.molecule_id,
     brand->>'name' AS alias_name,
     LOWER(REGEXP_REPLACE(brand->>'name', '[^a-zA-Z0-9]', '', 'g')) AS alias_name_normalized,
     'brand' AS alias_type,
@@ -94,7 +97,6 @@ CROSS JOIN LATERAL jsonb_array_elements(COALESCE(d.international_brands, '[]'::J
 WHERE brand->>'name' IS NOT NULL
   AND brand->>'name' != ''
   AND d.name IS NOT NULL
-  AND m.needs_review = FALSE
 
 UNION ALL
 
@@ -102,7 +104,7 @@ UNION ALL
 -- NOTE: mol_bronze.drugbank.products is NULL (XML fetcher does not parse product names);
 -- this section produces no rows until the fetcher is extended.
 SELECT
-    m.id AS molecule_id,
+    m.molecule_id,
     prod->>'name' AS alias_name,
     LOWER(REGEXP_REPLACE(prod->>'name', '[^a-zA-Z0-9]', '', 'g')) AS alias_name_normalized,
     'product' AS alias_type,
@@ -114,45 +116,42 @@ CROSS JOIN LATERAL jsonb_array_elements(COALESCE(d.products, '[]'::JSONB)) AS pr
 WHERE prod->>'name' IS NOT NULL
   AND prod->>'name' != ''
   AND d.name IS NOT NULL
-  AND m.needs_review = FALSE
 
 UNION ALL
 
 -- FDA drug label brand names
 SELECT
-    m.id AS molecule_id,
+    m.molecule_id,
     dl.brand_name AS alias_name,
     LOWER(REGEXP_REPLACE(dl.brand_name, '[^a-zA-Z0-9]', '', 'g')) AS alias_name_normalized,
     'brand' AS alias_type,
     'openfda' AS source,
     NOW() AS created_at
 FROM mol_silver.molecules m
-JOIN mol_silver.drug_labels dl ON m.id = dl.molecule_id
+JOIN mol_silver.drug_labels dl ON m.molecule_id = dl.molecule_id
 WHERE dl.brand_name IS NOT NULL
   AND dl.brand_name != ''
-  AND m.needs_review = FALSE
 
 UNION ALL
 
 -- FDA drug label generic names
 SELECT
-    m.id AS molecule_id,
+    m.molecule_id,
     dl.generic_name AS alias_name,
     LOWER(REGEXP_REPLACE(dl.generic_name, '[^a-zA-Z0-9]', '', 'g')) AS alias_name_normalized,
     'generic' AS alias_type,
     'openfda' AS source,
     NOW() AS created_at
 FROM mol_silver.molecules m
-JOIN mol_silver.drug_labels dl ON m.id = dl.molecule_id
+JOIN mol_silver.drug_labels dl ON m.molecule_id = dl.molecule_id
 WHERE dl.generic_name IS NOT NULL
   AND dl.generic_name != ''
-  AND m.needs_review = FALSE
 
 UNION ALL
 
 -- PubChem synonyms
 SELECT
-    m.id AS molecule_id,
+    m.molecule_id,
     syn AS alias_name,
     LOWER(REGEXP_REPLACE(syn, '[^a-zA-Z0-9]', '', 'g')) AS alias_name_normalized,
     'synonym' AS alias_type,
@@ -163,37 +162,36 @@ JOIN mol_bronze.pubchem p ON m.inchi_key = p.inchi_key
 CROSS JOIN LATERAL jsonb_array_elements_text(COALESCE(p.synonyms, '[]'::jsonb)) AS syn
 WHERE syn IS NOT NULL
   AND syn != ''
-  AND m.needs_review = FALSE
 
 UNION ALL
 
--- Clinical trial intervention names
+-- Clinical trial intervention names (unnest JSONB array; match DRUG-type interventions by name)
 SELECT DISTINCT
-    m.id AS molecule_id,
-    ct.intervention_name AS alias_name,
-    LOWER(REGEXP_REPLACE(ct.intervention_name, '[^a-zA-Z0-9]', '', 'g')) AS alias_name_normalized,
+    m.molecule_id,
+    interv->>'name' AS alias_name,
+    LOWER(REGEXP_REPLACE(interv->>'name', '[^a-zA-Z0-9]', '', 'g')) AS alias_name_normalized,
     'trial_intervention' AS alias_type,
     'clinicaltrials' AS source,
     NOW() AS created_at
-FROM mol_silver.molecules m
-JOIN mol_silver.clinical_trials ct ON m.id = ct.molecule_id
-WHERE ct.intervention_name IS NOT NULL
-  AND ct.intervention_name != ''
-  AND m.needs_review = FALSE
+FROM mol_silver.clinical_trials ct
+CROSS JOIN LATERAL jsonb_array_elements(COALESCE(ct.interventions, '[]'::jsonb)) AS interv
+JOIN mol_silver.molecules m
+    ON interv->>'type' = 'DRUG'
+   AND LOWER(m.canonical_name) = LOWER(interv->>'name')
+WHERE interv->>'name' IS NOT NULL
+  AND interv->>'name' != ''
 
 UNION ALL
 
--- Orange Book trade names
+-- Orange Book trade names (join directly on canonical_name = ingredient, no self-reference)
 SELECT DISTINCT
-    m.id AS molecule_id,
+    m.molecule_id,
     ob.trade_name AS alias_name,
     LOWER(REGEXP_REPLACE(ob.trade_name, '[^a-zA-Z0-9]', '', 'g')) AS alias_name_normalized,
     'trade' AS alias_type,
     'orangebook' AS source,
     NOW() AS created_at
 FROM mol_silver.molecules m
-JOIN mol_silver.molecule_aliases ma ON m.id = ma.molecule_id
-JOIN mol_bronze.orange_book ob ON LOWER(ma.alias_name) = LOWER(ob.ingredient)
+JOIN mol_bronze.orange_book ob ON LOWER(m.canonical_name) = LOWER(ob.ingredient)
 WHERE ob.trade_name IS NOT NULL
   AND ob.trade_name != ''
-  AND m.needs_review = FALSE

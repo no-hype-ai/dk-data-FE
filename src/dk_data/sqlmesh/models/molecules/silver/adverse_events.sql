@@ -23,7 +23,7 @@ MODEL (
 -- ============================================================================
 WITH faers_linked AS (
     SELECT
-        m.id AS molecule_id,
+        m.molecule_id,
         m.inchi_key,
         m.canonical_name,
         f.meddra_pts,
@@ -37,7 +37,6 @@ WITH faers_linked AS (
         OR similarity(LOWER(f.drug_name), LOWER(m.canonical_name)) > 0.8
     )
     WHERE f.processed_to_silver = FALSE
-      AND m.needs_review = FALSE
       AND f.meddra_pts IS NOT NULL
 ),
 
@@ -93,8 +92,8 @@ faers_aggregated AS (
 sider_linked AS (
     -- Link via PubChem CID: identifier_mappings is an EAV table
     -- (identifier_type = 'pubchem_cid', identifier_value = CID as text)
-    SELECT DISTINCT ON (s.stitch_id_flat, s.umls_cui_side_effect, m.id)
-        m.id AS molecule_id,
+    SELECT DISTINCT ON (s.stitch_id_flat, s.umls_cui_side_effect, m.molecule_id)
+        m.molecule_id,
         s.side_effect_name AS meddra_pt,
         s.umls_cui_side_effect AS umls_cui,
         s.meddra_concept_type,
@@ -107,12 +106,11 @@ sider_linked AS (
     JOIN mol_silver.identifier_mappings im
         ON im.identifier_type = 'pubchem_cid'
         AND im.identifier_value = s.pubchem_cid::TEXT
-    JOIN mol_silver.molecules m ON m.id = im.molecule_id
+    JOIN mol_silver.molecules m ON m.molecule_id = im.molecule_id
     WHERE s.processed_to_silver = FALSE
       AND s.pubchem_cid IS NOT NULL
-      AND m.needs_review = FALSE
       AND s.side_effect_name IS NOT NULL
-    ORDER BY s.stitch_id_flat, s.umls_cui_side_effect, m.id
+    ORDER BY s.stitch_id_flat, s.umls_cui_side_effect, m.molecule_id
 ),
 
 sider_aggregated AS (

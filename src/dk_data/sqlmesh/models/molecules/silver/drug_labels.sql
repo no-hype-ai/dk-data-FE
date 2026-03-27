@@ -15,7 +15,15 @@ MODEL (
     grain set_id
 );
 
-WITH source_labels AS (
+WITH molecule_name_lookup AS (
+    -- Stable molecule IDs indexed by lowercase canonical name for name-based entity resolution
+    SELECT
+        id AS molecule_id,
+        LOWER(canonical_name) AS name_key
+    FROM mol_silver.molecules
+),
+
+source_labels AS (
     SELECT
         set_id,
         spl_version,
@@ -74,46 +82,49 @@ latest_version AS (
 
 SELECT
     gen_random_uuid() AS id,
-    set_id,
-    spl_version,
-    spl_id,
-    brand_name,
-    generic_name,
-    manufacturer_name,
-    product_type,
-    routes,
-    dosage_forms,
-    pharm_class_epc,
-    pharm_class_moa,
-    rxcui,
-    unii,
-    application_numbers,
-    effective_date,
-    indications_and_usage,
-    dosage_and_administration,
-    contraindications,
-    warnings,
-    warnings_and_cautions,
-    boxed_warning,
-    adverse_reactions,
-    drug_interactions,
-    clinical_pharmacology,
-    mechanism_of_action,
-    pharmacokinetics,
-    overdosage,
-    description,
-    clinical_studies,
-    how_supplied,
-    pregnancy,
-    pediatric_use,
-    geriatric_use,
-    has_boxed_warning,
-    NULL::UUID AS molecule_id,  -- To be linked by entity resolution
-    source,
-    source_updated_at,
+    lv.set_id,
+    lv.spl_version,
+    lv.spl_id,
+    lv.brand_name,
+    lv.generic_name,
+    lv.manufacturer_name,
+    lv.product_type,
+    lv.routes,
+    lv.dosage_forms,
+    lv.pharm_class_epc,
+    lv.pharm_class_moa,
+    lv.rxcui,
+    lv.unii,
+    lv.application_numbers,
+    lv.effective_date,
+    lv.indications_and_usage,
+    lv.dosage_and_administration,
+    lv.contraindications,
+    lv.warnings,
+    lv.warnings_and_cautions,
+    lv.boxed_warning,
+    lv.adverse_reactions,
+    lv.drug_interactions,
+    lv.clinical_pharmacology,
+    lv.mechanism_of_action,
+    lv.pharmacokinetics,
+    lv.overdosage,
+    lv.description,
+    lv.clinical_studies,
+    lv.how_supplied,
+    lv.pregnancy,
+    lv.pediatric_use,
+    lv.geriatric_use,
+    lv.has_boxed_warning,
+    -- Entity resolution: match generic_name first, fall back to brand_name
+    COALESCE(m_generic.molecule_id, m_brand.molecule_id) AS molecule_id,
+    lv.source,
+    lv.source_updated_at,
     NOW() AS created_at,
     NOW() AS updated_at
-FROM latest_version;
+FROM latest_version lv
+LEFT JOIN molecule_name_lookup m_generic ON LOWER(lv.generic_name) = m_generic.name_key
+LEFT JOIN molecule_name_lookup m_brand   ON LOWER(lv.brand_name)   = m_brand.name_key;
 
 
 -- NOTE: Bronze processed_to_silver flag updates are handled outside SQLMesh.

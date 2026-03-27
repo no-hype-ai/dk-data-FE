@@ -72,28 +72,62 @@ REPO_ROOT = Path(__file__).parent.parent
 
 # API sources — fetched live from external services
 API_SOURCES: list[dict] = [
+    # Literature / publications
     {"key": "pubmed",          "days_back": 30},
     {"key": "europepmc",       "days_back": 30},
     {"key": "nih_reporter",    "days_back": 90},
     {"key": "openalex_ci",     "days_back": 90},
-    {"key": "ema_regulatory",  "days_back": 90},
     {"key": "journal_rss",     "days_back": None},
     {"key": "medical_news",    "days_back": 30},
-    {"key": "hta_bodies",      "days_back": 90},
     {"key": "cochrane",        "days_back": 180},
+    # Regulatory / HTA
+    {"key": "ema_regulatory",  "days_back": 90},
+    {"key": "hta_bodies",      "days_back": 90},
+    # Financial / IP
     {"key": "sec_edgar",       "days_back": 90},
     {"key": "uspto_patents",   "days_back": 90},
     {"key": "uspto_ci",        "days_back": 90},
+    {"key": "uspto_trademarks","days_back": None},
     {"key": "euipo_trademarks","days_back": 90},
+    {"key": "euipo_designs",   "days_back": 90},
     {"key": "epo_ops",         "days_back": 90,  "credential_gated": True},
+    # Drug / molecule data
     {"key": "drugbank",        "days_back": None, "credential_gated": True},
     {"key": "uniprot",         "days_back": None},
     {"key": "pdb",             "days_back": None},
     {"key": "orcid",           "days_back": None},
-    {"key": "uspto_trademarks","days_back": None},
+    {"key": "who_icd",         "days_back": None},
+    {"key": "bindingdb",       "days_back": None},
+    {"key": "sider",           "days_back": None},
+    # Drug vocabulary / pharmacology
+    {"key": "rxnorm",          "days_back": None},
+    {"key": "who_inn",         "days_back": None},
+    {"key": "pharmgkb",        "days_back": None, "credential_gated": True},
+    {"key": "kegg_drug",       "days_back": None},
+    {"key": "tdc_admet",       "days_back": None},
+    # CMS API-based sources (no file download needed)
+    {"key": "cms_geographic_variation",  "days_back": None},
+    {"key": "cms_part_d_prescriber",     "days_back": None},
+    {"key": "cms_care_compare",          "days_back": None},
+    {"key": "cms_chow",                  "days_back": None},
+    {"key": "cms_ddinter",               "days_back": None},
+    {"key": "cms_dmepos",                "days_back": None},
+    {"key": "cms_formulary",             "days_back": None},
+    {"key": "cms_hcris",                 "days_back": None},
+    {"key": "cms_hospital_affiliation",  "days_back": None},
+    {"key": "cms_hospital_quality",      "days_back": None},
+    {"key": "cms_magnet",                "days_back": None},
+    {"key": "cms_ndc",                   "days_back": None},
+    {"key": "cms_nucc",                  "days_back": None},
+    {"key": "cms_pecos",                 "days_back": None},
+    {"key": "cms_pos",                   "days_back": None},
+    {"key": "cms_post_acute",            "days_back": None},
+    {"key": "cms_rbcs",                  "days_back": None},
+    {"key": "cms_stabilis",              "days_back": None},
+    {"key": "cms_usp",                   "days_back": None},
 ]
 
-# CMS PUF file sources — downloaded from data.cms.gov, then loaded with --limit
+# CMS PUF file sources — downloaded from data.cms.gov, then loaded with --batch-size
 CMS_SOURCES: list[dict] = [
     {"key": "cms_nppes",                 "cms_key": "cms_nppes"},
     {"key": "cms_physician_puf",         "cms_key": "cms_physician_puf"},
@@ -117,7 +151,6 @@ CMS_SOURCES: list[dict] = [
     {"key": "cms_mental_health_puf",     "cms_key": "cms_mental_health_puf"},
     {"key": "cms_opioid_puf",            "cms_key": "cms_opioid_puf"},
     {"key": "cms_telehealth_puf",        "cms_key": "cms_telehealth_puf"},
-    {"key": "cms_geographic_variation",  "cms_key": "cms_geographic_variation"},
     {"key": "cms_chronic_conditions",    "cms_key": "cms_chronic_conditions"},
     {"key": "cms_dual_eligible",         "cms_key": "cms_dual_eligible"},
     {"key": "cms_enrollment_puf",        "cms_key": "cms_enrollment_puf"},
@@ -251,7 +284,7 @@ def load_api_sources(
                 )
                 return {"source": key, "status": "skipped", "reason": f"no {env_key}"}
 
-        extra = ["--limit", str(limit)]
+        extra = ["--batch-size", str(limit)]
         _, success, tail = _run_ingestion(key, extra)
         return {"source": key, "status": "success" if success else "failed", "output": tail}
 
@@ -287,8 +320,8 @@ def load_cms_sources(
             })
             continue
 
-        # 2. Load with limit
-        extra = ["--file", filepath, "--limit", str(limit)]
+        # 2. Load with batch-size
+        extra = ["--file", filepath, "--batch-size", str(limit)]
         _, success, tail = _run_ingestion(key, extra)
         results.append({
             "source": key,
@@ -308,7 +341,7 @@ def load_legacy_sources(sources: list[dict], limit: int) -> list[dict]:
         if s.get("requires_file"):
             logger.info(
                 "Skipping legacy source %s — requires manual --file path. "
-                "Run: python -m dk_data.ingestion.main %s --file <path> --limit %d",
+                "Run: python -m dk_data.ingestion.main %s --file <path> --batch-size %d",
                 key, key, limit,
             )
             results.append({
@@ -316,7 +349,7 @@ def load_legacy_sources(sources: list[dict], limit: int) -> list[dict]:
                 "reason": "requires manual --file path",
             })
         else:
-            extra = ["--limit", str(limit)]
+            extra = ["--batch-size", str(limit)]
             _, success, tail = _run_ingestion(key, extra)
             results.append({"source": key, "status": "success" if success else "failed"})
     return results
@@ -394,14 +427,14 @@ def main() -> int:
         if cms_entry:
             filepath = _download_cms_file(cms_entry["cms_key"], args.year, args.force)
             if filepath:
-                extra = ["--file", filepath, "--limit", str(args.limit)]
+                extra = ["--file", filepath, "--batch-size", str(args.limit)]
                 _, ok, tail = _run_ingestion(source_key, extra)
                 all_results.append({"source": source_key, "status": "success" if ok else "failed"})
             else:
                 logger.error("Could not download file for %s", source_key)
                 return 1
         else:
-            extra = ["--limit", str(args.limit)]
+            extra = ["--batch-size", str(args.limit)]
             _, ok, tail = _run_ingestion(source_key, extra)
             all_results.append({"source": source_key, "status": "success" if ok else "failed"})
 

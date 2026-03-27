@@ -22,7 +22,7 @@ MODEL (
 SELECT
     gen_random_uuid()                                           AS id,
     -- Molecule linkage: name → mol_silver.molecules, fallback to alias table
-    COALESCE(m_name.id, m_alias.id)                            AS molecule_id,
+    COALESCE(m_name.molecule_id, m_alias.molecule_id)                            AS molecule_id,
     b.rxcui,
     b.name,
     b.tty,
@@ -44,9 +44,9 @@ LEFT JOIN mol_silver.molecules m_name
       AND LOWER(m_name.canonical_name) = LOWER(b.name)
 -- Fallback: alias table (covers synonyms, brand names, INNs)
 LEFT JOIN mol_silver.molecule_aliases ma
-       ON m_name.id IS NULL
+       ON m_name.molecule_id IS NULL
       AND b.name IS NOT NULL
       AND LOWER(REGEXP_REPLACE(b.name, '[^a-zA-Z0-9]', '', 'g')) = ma.alias_name_normalized
-LEFT JOIN mol_silver.molecules m_alias ON m_alias.id = ma.molecule_id
+LEFT JOIN mol_silver.molecules m_alias ON m_alias.molecule_id = ma.molecule_id
 
 WHERE b.rxcui IS NOT NULL;

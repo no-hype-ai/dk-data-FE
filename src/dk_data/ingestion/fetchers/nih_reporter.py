@@ -13,6 +13,7 @@ Fixed (019): date_added_filter is not a valid NIH Reporter v2 criteria key.
   incremental filter for recently funded/modified projects.
 """
 import logging
+import time
 from datetime import datetime, timedelta
 from typing import Any, Dict, List
 
@@ -31,6 +32,9 @@ except ImportError:
 NIH_REPORTER_API = "https://api.reporter.nih.gov/v2/projects/search"
 PAGE_SIZE = 500
 MAX_RECORDS = 50000  # safety cap
+
+# NIH Reporter docs recommend ~1 req/s to avoid throttling.
+REQUEST_DELAY = 1.1  # seconds between paginated POST requests
 
 
 class NIHReporterFetcher(BaseFetcher):
@@ -99,6 +103,7 @@ class NIHReporterFetcher(BaseFetcher):
                 break
 
             payload["offset"] = next_offset
+            time.sleep(REQUEST_DELAY)
 
         logger.info(
             "NIH Reporter fetched %d projects (days_back=%d, since=%s)",

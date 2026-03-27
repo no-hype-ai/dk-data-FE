@@ -85,7 +85,7 @@ SELECT
     -- Raw source tracking
     response_body                                                   AS raw_json,
     -- raw_source_id references the UUID primary key of mol_raw.pubchem (not the generated id above)
-    mol_raw.id                                                          AS raw_source_id,
+    raw.id                                                              AS raw_source_id,
     'pubchem'                                                       AS source,
     request_timestamp,
     request_timestamp                                               AS source_updated_at,

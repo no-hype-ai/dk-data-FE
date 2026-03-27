@@ -17,6 +17,7 @@ Docs: https://docs.openalex.org
 import hashlib
 import logging
 import os
+import time
 from datetime import datetime, timedelta
 from typing import Any, Dict, List, Optional
 
@@ -36,6 +37,11 @@ PAGE_SIZE = 200
 
 # Safety limit: max records per single fetch run
 MAX_RECORDS = 10_000
+
+# OpenAlex rate limit: 10 req/s authenticated (API key), stricter for unauthenticated.
+# 0.1s gives ~10 req/s with key; 0.5s is used without key to avoid IP throttling.
+REQUEST_DELAY_WITH_KEY = 0.1   # seconds between cursor pages (authenticated)
+REQUEST_DELAY_NO_KEY   = 0.5   # seconds between cursor pages (unauthenticated)
 
 
 class OpenAlexCIFetcher(BaseFetcher):
@@ -152,6 +158,7 @@ class OpenAlexCIFetcher(BaseFetcher):
                 logger.debug(
                     f"Fetched page: {len(results)} works, total so far: {len(all_records)}"
                 )
+                time.sleep(REQUEST_DELAY_WITH_KEY if self.api_key else REQUEST_DELAY_NO_KEY)
 
             # Compute hash of the result set
             content_hash = hashlib.md5(

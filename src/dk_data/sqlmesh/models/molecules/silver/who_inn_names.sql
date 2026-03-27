@@ -21,7 +21,7 @@ MODEL (
 
 SELECT
     gen_random_uuid()                                           AS id,
-    COALESCE(m_ik.id, m_name.id, m_alias.id)                  AS molecule_id,
+    COALESCE(m_ik.molecule_id, m_name.molecule_id, m_alias.molecule_id)                  AS molecule_id,
     b.inn_name,
     b.inn_latin,
     b.inn_list_number,
@@ -46,14 +46,14 @@ LEFT JOIN mol_silver.molecules m_ik
       AND m_ik.inchi_key = b.inchi_key
 -- Fallback: canonical name match
 LEFT JOIN mol_silver.molecules m_name
-       ON m_ik.id IS NULL
+       ON m_ik.molecule_id IS NULL
       AND b.inn_name IS NOT NULL
       AND LOWER(m_name.canonical_name) = LOWER(b.inn_name)
 -- Fallback: alias table
 LEFT JOIN mol_silver.molecule_aliases ma
-       ON m_ik.id IS NULL AND m_name.id IS NULL
+       ON m_ik.molecule_id IS NULL AND m_name.molecule_id IS NULL
       AND b.inn_name IS NOT NULL
       AND LOWER(REGEXP_REPLACE(b.inn_name, '[^a-zA-Z0-9]', '', 'g')) = ma.alias_name_normalized
-LEFT JOIN mol_silver.molecules m_alias ON m_alias.id = ma.molecule_id
+LEFT JOIN mol_silver.molecules m_alias ON m_alias.molecule_id = ma.molecule_id
 
 WHERE b.inn_name IS NOT NULL;

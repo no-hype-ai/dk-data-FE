@@ -36,9 +36,8 @@ SELECT DISTINCT
 
 FROM mol_silver.bioactivity b
 JOIN mol_silver.targets t ON b.target_id = t.id
-JOIN mol_silver.molecules m ON b.molecule_id = m.id
-WHERE m.needs_review = FALSE
-  AND b.molecule_id IS NOT NULL
+JOIN mol_silver.molecules m ON b.molecule_id = m.molecule_id
+WHERE b.molecule_id IS NOT NULL
   AND b.target_id IS NOT NULL
 
 UNION ALL
@@ -48,7 +47,7 @@ UNION ALL
 -- extract structural identifiers). Join via identifier_mappings on drugbank_id,
 -- which is always populated by the fetcher.
 SELECT DISTINCT
-    m.id AS molecule_id,
+    m.molecule_id,
     t.id AS target_id,
     'pharmacology' AS assay_type,
     'target' AS activity_type,
@@ -59,10 +58,9 @@ SELECT DISTINCT
     NOW() AS created_at
 FROM mol_silver.molecules m
 JOIN mol_silver.identifier_mappings im
-    ON im.molecule_id = m.id
+    ON im.molecule_id = m.molecule_id
     AND im.identifier_type = 'drugbank_id'
 JOIN mol_bronze.drugbank d ON d.drugbank_id = im.identifier_value
 CROSS JOIN LATERAL jsonb_array_elements(COALESCE(d.targets, '[]'::JSONB)) AS tgt
 JOIN mol_silver.targets t ON t.target_name ILIKE '%' || (tgt->>'name') || '%'
-WHERE m.needs_review = FALSE
-  AND tgt->>'name' IS NOT NULL
+WHERE tgt->>'name' IS NOT NULL

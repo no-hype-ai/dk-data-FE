@@ -23,6 +23,7 @@ import hashlib
 import json
 import logging
 import os
+import time
 from typing import Any, Dict, List, Optional
 
 from .base import BaseFetcher
@@ -68,6 +69,10 @@ ICD11_TOP_CHAPTERS = [
 ]
 
 MAX_RECORDS_PER_RUN = 5000
+
+# WHO ICD-11 API enforces ~1 req/s for registered users.
+# ICD-10 public API has no stated limit but is equally sensitive to bursts.
+REQUEST_DELAY = 1.1  # seconds between requests — stays safely under the 1 req/s cap
 
 
 class WHOICDFetcher(BaseFetcher):
@@ -214,6 +219,8 @@ class WHOICDFetcher(BaseFetcher):
         except Exception as e:
             logger.warning("Failed to fetch ICD-11 entity %s: %s", entity_id, e)
             return []
+        finally:
+            time.sleep(REQUEST_DELAY)
 
         # Add a 'code' field extracted from the response for consistency
         if "code" not in data and "@id" in data:
@@ -221,6 +228,7 @@ class WHOICDFetcher(BaseFetcher):
             try:
                 code_url = f"{ICD11_BASE_URL}/codeInfo/{entity_id}"
                 code_resp = self.session.get(code_url, timeout=20)
+                time.sleep(REQUEST_DELAY)
                 if code_resp.ok:
                     code_data = code_resp.json()
                     data["code"] = code_data.get("stemCode") or code_data.get("code")
@@ -282,5 +290,7 @@ class WHOICDFetcher(BaseFetcher):
 
             except Exception as e:
                 logger.warning("Failed to fetch ICD-10 chapter %s: %s", chapter_code, e)
+            finally:
+                time.sleep(REQUEST_DELAY)
 
         return records

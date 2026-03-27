@@ -22,44 +22,47 @@ retention purge system.
 
 | Schema       | Tables                | Notes                                     |
 |--------------|-----------------------|-------------------------------------------|
-| `raw`        | bindingdb, orange_book, sider, tdc_admet, ema, rxnorm, dailymed, fda_drugs, kegg_drug, ttd, pharmgkb, imgt, cdc_vaccines, drugbank, chembl, pubchem, uniprot, pdb, uspto_patents, epo_patents, uspto_ci | Open regulatory and molecular databases |
-| `mol_raw`    | * (all tables)        | Raw molecule compound data                |
-| `mol_bronze` | * (all tables)        | Deduplicated molecule data                |
-| `mol_silver` | * (all tables)        | Conformed molecule data                   |
+| `mol_raw`    | bindingdb, chembl, clinicaltrials, cochrane_reviews, drugbank, ema, epo_patents, euipo_trademarks, hta_decisions, journal_rss, medical_news, openalex_ci, openfda_faers, openfda_labels, orange_book, pdb, pubchem, pubmed, sec_edgar, sider, uniprot, uspto_ci, uspto_patents, uspto_trademarks, who_icd | Open regulatory and molecular databases |
+| `mol_raw`    | kegg_drug, pharmgkb, rxnorm, tdc_admet, who_inn, euipo_designs | Drug vocabulary and pharmacology |
+| `mol_bronze` | * (all tables)        | Deduplicated, typed molecule data         |
+| `mol_silver` | molecules, clinical_trials, adverse_events, publications, patents, trademarks, drug_labels, bioactivity, binding_affinities, side_effects, regulatory_decisions, molecule_aliases, identifier_mappings, hcpcs_molecule_bridge, ndc_molecule_bridge | Conformed molecule data |
 | `mol_gold`   | * (all tables)        | Curated molecule analytics                |
+| `hcs_raw`    | acc_tvc_certification, cms_cost_reports, cms_hospital_info, cms_medicare_inpatient, cms_geographic_variation, hrsa_shortage_areas | Open CMS / HRSA facility data |
+| `hcs_bronze` | * (all tables)        | Deduplicated CMS facility data            |
+| `hcs_silver` | drug_utilization, part_d_prescribing, open_payments_drug_linkage | Drug spend and prescribing (aggregated, no patient PII) |
 
 ### Internal
 
 | Schema | Tables                | Notes                                     |
 |--------|-----------------------|-------------------------------------------|
-| `raw`  | pubmed, openalex_ci, journal_rss, cochrane_reviews, medical_news, sec_edgar, hta_decisions, ema_regulatory | CI pipeline sources -- aggregated research |
+| `mol_raw` | nih_reporter, europepmc | CI pipeline sources — aggregated research |
+| `hcs_raw` | cms_care_compare, cms_chow, cms_formulary, cms_hospital_quality, cms_magnet, cms_pecos | Provider intelligence — internal use only |
 
 ### PII
 
 | Schema | Tables | Notes                                          |
 |--------|--------|------------------------------------------------|
-| `raw`  | orcid  | Researcher profiles with names and affiliations |
+| `mol_raw` | orcid | Researcher profiles with names and affiliations |
 
 ### Confidential
 
-| Schema    | Tables                                  | Notes                             |
-|-----------|-----------------------------------------|-----------------------------------|
-| `scoring` | score_history, score_latest             | Proprietary hospital scoring      |
-| `mart`    | dim_hospital, fact_tavr_program, fact_financial_metrics | Analytical dimensions and facts |
-| `staging` | hospitals, certifications, tavr_volumes, geographic_designations | Pre-aggregation staging data |
+| Schema    | Tables                | Notes                             |
+|-----------|-----------------------|------------------------------------|
+| `hcs_silver` | provider_profile   | Aggregated NPI-level provider data |
+| `xenon`   | * (all tables)        | Proprietary scoring / enrichment   |
 
 ## PII Field Inventory
 
-The following columns in `raw.orcid` contain personally identifiable information:
+The following columns in `mol_raw.orcid` contain personally identifiable information:
 
-| Table      | Column                | Data Type    | Example                    |
-|------------|-----------------------|--------------|----------------------------|
-| raw.orcid  | given_names           | VARCHAR(255) | "Jane"                     |
-| raw.orcid  | family_name           | VARCHAR(255) | "Smith"                    |
-| raw.orcid  | credit_name           | VARCHAR(500) | "J. Smith, PhD"            |
-| raw.orcid  | biography             | TEXT         | "Professor of Chemistry..."  |
-| raw.orcid  | current_affiliations  | JSONB        | [{"name": "MIT", ...}]    |
-| raw.orcid  | external_ids          | JSONB        | [{"type": "Scopus", ...}] |
+| Table           | Column                | Data Type    | Example                    |
+|-----------------|-----------------------|--------------|----------------------------|
+| mol_raw.orcid   | given_names           | VARCHAR(255) | "Jane"                     |
+| mol_raw.orcid   | family_name           | VARCHAR(255) | "Smith"                    |
+| mol_raw.orcid   | credit_name           | VARCHAR(500) | "J. Smith, PhD"            |
+| mol_raw.orcid   | biography             | TEXT         | "Professor of Chemistry..."  |
+| mol_raw.orcid   | current_affiliations  | JSONB        | [{"name": "MIT", ...}]    |
+| mol_raw.orcid   | external_ids          | JSONB        | [{"type": "Scopus", ...}] |
 
 ## Retention Periods
 
