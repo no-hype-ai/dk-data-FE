@@ -92,3 +92,4 @@ temp/
 data-samples/**/*.csv
 data-samples/manifest.json
 !data-samples/**/.gitkeep
+.claude/
