@@ -13,6 +13,18 @@ The outcome: a significantly broader data platform that analysts can query for d
 
 ---
 
+## Clarifications
+
+### Session 2026-03-27
+
+- Q: Is the CMS PUF source count 31 (FR-001, SC-001) or 28 (blueprint, issue #144)? → A: 28 — the correct count from the 016 branch audit; FR-001 and SC-001 updated to match
+- Q: Which new schemas should be exposed via PostgREST? → A: Bronze, silver, and gold across all domain namespaces (mol_, hcs_, ind_, etc.) — raw schemas are never exposed
+- Q: Where should API rate-limit retry logic live — BaseFetcher or per-fetcher? → A: Retry-with-backoff in BaseFetcher, configurable max retries and base delay per source; all API fetchers inherit it automatically
+- Q: Should the pipeline emit proactive alerts when sources fail? → A: Yes — Grafana alert rule firing when any source has ≥ 3 consecutive failed runs in meta.refresh_log; no new tooling required
+- Q: How should SEC EDGAR full filing text be stored — inline column, separate table, or object storage? → A: Inline TEXT column in the raw table; PostgreSQL TOAST handles compression automatically — no separate overflow table or external storage
+
+---
+
 ## User Scenarios & Testing *(mandatory)*
 
 ### User Story 1 — CMS Public Use File Data Available for Drug Market Analysis (Priority: P1)
@@ -133,7 +145,7 @@ A competitive intelligence analyst needs to extract structured data from pharmac
 
 **Data Ingestion — CMS Public Use Files**
 
-- **FR-001**: The platform MUST ingest data from the complete set of CMS PUF programs: Medicare Part B drug spending, Part D drug spending, hospital cost reports, physician and other supplier data, and related HCS sub-programs (31 sources total)
+- **FR-001**: The platform MUST ingest data from the complete set of CMS PUF programs: Medicare Part B drug spending, Part D drug spending, hospital cost reports, physician and other supplier data, and related HCS sub-programs (28 sources total)
 - **FR-002**: Each new CMS source MUST be registered in `meta.data_sources` with: source name, source type, description, refresh frequency, and default lookback period — registration is required before any CronJob is deployed
 - **FR-003**: For CMS file-based sources, the pipeline MUST compute a content hash of the downloaded file and check whether that hash already exists in the raw table before inserting — if the file has not changed, ingestion is skipped and the skip is logged
 - **FR-004**: CMS raw records MUST follow the existing direct-normalized raw table pattern used by other CMS sources on main: a stable document identifier, ingestion timestamp (`_loaded_at`), content hash (`_source_hash`), and source file provenance — NOT the JSONB medallion pattern
@@ -155,17 +167,19 @@ A competitive intelligence analyst needs to extract structured data from pharmac
 - **FR-014**: Every new source with a date-windowed fetch (API sources) MUST use `_compute_days_back(source, source_info)` to determine its lookback window — the lookback is derived from `last_successful_refresh` in `meta.data_sources`, not hardcoded
 - **FR-015**: Every new source MUST be present in the central `SOURCES` registry dict with: `fetcher` class, `loader` callable, `requires_file` flag, and `default_days_back` (or `None` for non-incremental sources)
 - **FR-016**: Every new fetcher MUST return a dict matching the canonical shape: `{status: 'success'|'failed', records: List[Dict], hash: str|None}` — loaders MUST return `{status, records_inserted, records_updated, errors: List[str]}`
+- **FR-016a**: `BaseFetcher` MUST implement retry-with-exponential-backoff for HTTP API calls. Each source entry in `SOURCES` MAY specify `max_retries` (default: 3) and `retry_base_delay_seconds` (default: 2). A `429 Too Many Requests` or transient network error triggers a retry; a final exhausted retry logs the error and returns `status: 'failed'`
 
 **SEC EDGAR**
 
 - **FR-017**: The platform MUST fetch the most recent 10-K and 20-F annual filings from SEC EDGAR for a configured list of pharmaceutical companies, identified by CIK
-- **FR-018**: EDGAR filing records MUST store: CIK, company name, ticker, filing type, fiscal year end date, filing date, accession number, and full document text
+- **FR-018**: EDGAR filing records MUST store: CIK, company name, ticker, filing type, fiscal year end date, filing date, accession number, and full document text in an inline `TEXT` column — PostgreSQL TOAST handles compression automatically; no separate overflow table or object storage is required
 - **FR-019**: A silver-layer transformation MUST flag filings that contain drug-specific revenue disclosures (detected via keyword presence) to support downstream prioritization
 
 **Agent System**
 
 - **FR-024**: The platform MUST include 7 enrichment agents: 6 domain-specific CMS agents (service line inference, IDN hierarchy, referral network, contact verification, staffing decomposition, equipment inventory) plus a publication evidence extraction agent that reads publication abstracts from the silver layer and writes structured clinical endpoints to `mol_silver.publication_evidence`
 - **FR-024a**: The publication evidence extraction agent MUST eliminate the dependency on the `xenon` schema — `mol_gold.trial_outcomes` MUST read from `mol_silver.publication_evidence` (not `xenon.publication_evidence`). The `xenon` schema is retained for the Xenon application's own use but removed from dk-data-FE's PostgREST exposure
+- **FR-024b**: The PostgREST configuration MUST expose bronze, silver, and gold schemas for all domain namespaces (`mol_bronze`, `mol_silver`, `mol_gold`, `hcs_bronze`, `hcs_silver`, `hcs_gold`, and any future domain prefixes such as `ind_`). Raw schemas (`mol_raw`, `hcs_raw`) MUST never be added to the PostgREST exposure list — they are internal pipeline state only
 - **FR-025**: Every agent MUST route all LLM calls through the shared LiteLLM proxy — no direct API calls to any LLM provider
 - **FR-026**: Records produced with confidence below 0.5 MUST be written to a quarantine table and excluded from live silver views until manually reviewed and resolved
 - **FR-027**: Records produced with confidence between 0.5 and 0.79 MUST be written to the silver layer with a `needs_review` flag set to TRUE
@@ -188,6 +202,7 @@ A competitive intelligence analyst needs to extract structured data from pharmac
 - **FR-021**: The migration MUST reflect only the delta from the current main-branch schema — not a replay of 016 branch migrations, which reference dropped schemas and renamed columns that no longer apply
 - **FR-022**: Any migration step that drops or renames columns or schemas MUST be preceded by a documented pre-flight check confirming: production backup taken, no active queries on affected schema, rollback script available
 - **FR-023**: All existing tests MUST pass after the migration is applied — zero regressions in previously working data sources
+- **FR-034**: A Grafana alert rule MUST be added that fires when any registered source accumulates ≥ 3 consecutive failed run entries in `meta.refresh_log` — the alert MUST identify the source name and timestamp of the first failure in the sequence
 
 ### Key Entities
 
@@ -208,7 +223,7 @@ A competitive intelligence analyst needs to extract structured data from pharmac
 
 ### Measurable Outcomes
 
-- **SC-001**: All 31 CMS PUF sources are registered in `meta.data_sources` and produce entries in `meta.refresh_log` after their first scheduled run — zero sources run silently without a log entry
+- **SC-001**: All 28 CMS PUF sources are registered in `meta.data_sources` and produce entries in `meta.refresh_log` after their first scheduled run — zero sources run silently without a log entry
 - **SC-002**: For file-based CMS sources, a second consecutive run with no upstream file change produces zero new inserts and completes without error — confirming hash-skip works end to end
 - **SC-003**: Silver-layer drug records are joinable across at least 4 distinct source categories (pricing, regulatory, clinical, compound) for 90% of drugs tracked by the platform
 - **SC-004**: The consolidated migration applies cleanly to a staging database from the current main-branch schema state with zero manual intervention required
@@ -220,6 +235,7 @@ A competitive intelligence analyst needs to extract structured data from pharmac
 - **SC-010**: After an agent monthly run, the quarantine table contains only records with confidence < 0.5, and the silver layer contains no unscored records — every agent result has a confidence value
 - **SC-011**: A backfill request for any registered source completes and produces queryable gold-layer data within 10 minutes of the API call, with a corresponding entry in `meta.refresh_log`
 - **SC-012**: After the publication evidence extraction agent runs, clinical endpoints are queryable in `mol_gold.trial_outcomes` with `evidence_source = 'publication'` — with no `xenon` schema reference in the query path
+- **SC-013**: When a source is manually forced to fail 3 consecutive times in a staging environment, the Grafana alert fires within one alert evaluation cycle and names the affected source
 
 ---
 
@@ -238,6 +254,7 @@ A competitive intelligence analyst needs to extract structured data from pharmac
 - Structured revenue/pipeline extraction from SEC filings beyond keyword flagging — full NLP parsing is a downstream feature
 - Expansion of EDGAR coverage beyond the initial curated list of pharmaceutical companies
 - Reading from the `xenon` schema in dk-data-FE — publication evidence is owned and extracted by the platform's own agent
+- PostgREST exposure of raw schemas (`mol_raw`, `hcs_raw`, or any `*_raw` namespace) — raw layer is internal pipeline state, never queryable via API
 - Uplift/sync of monitoring config to dk-alchemy — tracked separately in dk-data-FE#145
 
 ## Implementation Order
@@ -316,6 +333,8 @@ SOURCES = {
         "loader": load_europepmc,
         "requires_file": False,
         "default_days_back": 30,              # int = incremental API source
+        "max_retries": 3,                     # optional; default 3
+        "retry_base_delay_seconds": 2,        # optional; default 2 (exponential backoff)
     },
     # ... all other sources follow same shape
 }
