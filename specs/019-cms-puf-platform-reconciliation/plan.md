@@ -25,6 +25,8 @@ Reconcile 28 CMS PUF file-based sources and 6 API-based regulatory/clinical sour
 **Performance Goals**: SC-011 — backfill completes within 10 minutes per source; SC-002 — duplicate file run completes with zero inserts
 **Constraints**: BaseFetcher constructor is `__init__(self, data_dir=None)` — no `params`, no manifest; all LLM calls via LiteLLM proxy (openai SDK or httpx); no `import anthropic` in new code; PostgREST raw/bronze schemas never exposed; evidence cap: max 50 records per LLM batch in agents (ARCHITECTURE-BEST-PRACTICES.md mandate)
 **Scale/Scope**: 28 CMS bulk file sources (annual CSV, up to ~2GB each), 6 API sources (incremental daily/weekly), 7 agents (monthly + on-demand), 21 SQLMesh models
+**Two-tracking-system reality**: The codebase has two parallel freshness/audit systems that MUST NOT be conflated. (1) `meta.data_sources` + `meta.refresh_log` — managed by `log_to_meta()` called from `run_ingestion()`; covers all sources in the `SOURCES` dict; this feature adds 30 new rows. (2) `raw.ingestion_jobs` + `raw.api_responses` — managed by `DataFreshnessMonitor` (reads from these legacy tables); covers legacy MCP-managed sources only. `DataFreshnessMonitor.is_fresh()` (T045) reads from `meta.data_sources` (system 1) for new CMS PUF and API sources ONLY. The Data Tools Gateway (T047) must return 404 for any source_name not present in `meta.data_sources` — it cannot proxy freshness for system 2 sources.
+**FastAPI app entry point**: `src/dk_data/ingestion/batch/api.py` (module path: `dk_data.ingestion.batch.api:app`) — `src/dk_data/api/main.py` does NOT exist; all router registrations (T041, T048) and the quickstart uvicorn command target `ingestion/batch/api.py`.
 
 ---
 

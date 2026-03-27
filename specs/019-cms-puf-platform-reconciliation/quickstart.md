@@ -109,7 +109,7 @@ doppler run -- psql $DATABASE_URL -c "SELECT COUNT(*) FROM mol_silver.agent_quar
 
 ```bash
 # Start the API server
-doppler run -- uvicorn dk_data.api.main:app --reload --port 8000
+doppler run -- uvicorn dk_data.ingestion.batch.api:app --reload --port 8000
 
 # List all registered tools
 curl http://localhost:8000/api/v1/data-tools/registry | jq '.total'
