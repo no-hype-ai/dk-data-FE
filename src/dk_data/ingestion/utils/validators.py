@@ -1398,3 +1398,135 @@ class CMSUtilizationRecord(BaseModel):
     phy_visits_per_bene: Optional[Decimal] = None
     tot_mdcr_pymt_pc: Optional[Decimal] = None
     _source_year: Optional[int] = None
+
+
+class EUIPODesignRecord(BaseModel):
+    """Validation model for EUIPO registered community design records."""
+
+    model_config = ConfigDict(str_strip_whitespace=True)
+
+    application_number: str = Field(..., min_length=1)
+    design_title: Optional[str] = None
+    applicant_name: Optional[str] = None
+    applicant_country: Optional[str] = Field(None, max_length=10)
+    representative_name: Optional[str] = None
+    designer_name: Optional[str] = None
+    status: Optional[str] = Field(None, max_length=100)
+    filing_date: Optional[date] = None
+    registration_date: Optional[date] = None
+    expiry_date: Optional[date] = None
+    publication_date: Optional[date] = None
+    locarno_classes: Optional[List[str]] = None
+    product_indication: Optional[str] = None
+    image_url: Optional[str] = None
+    number_of_designs: Optional[int] = None
+
+
+# ---------------------------------------------------------------------------
+# Legacy source validators (019-cms-puf-platform-reconciliation)
+# ---------------------------------------------------------------------------
+
+class RxNormRecord(BaseModel):
+    """Validation model for NLM RxNorm concept records."""
+
+    model_config = ConfigDict(str_strip_whitespace=True)
+
+    rxcui: str = Field(..., min_length=1, description="RxNorm Concept Unique Identifier")
+    name: Optional[str] = None
+    tty: Optional[str] = Field(None, max_length=10, description="Term type (IN, BN, SCDC, etc.)")
+    synonym: Optional[str] = None
+    suppress: Optional[str] = None
+
+    @field_validator('rxcui')
+    @classmethod
+    def validate_rxcui(cls, v: str) -> str:
+        if not v.isdigit():
+            raise ValueError(f"RxCUI must be numeric, got: {v!r}")
+        return v
+
+
+class WHOINNRecord(BaseModel):
+    """Validation model for WHO International Nonproprietary Name records."""
+
+    model_config = ConfigDict(str_strip_whitespace=True)
+
+    inn_name: str = Field(..., min_length=1, description="WHO International Nonproprietary Name")
+    inn_latin: Optional[str] = None
+    inn_list_number: Optional[int] = Field(None, ge=1)
+    inn_year: Optional[int] = Field(None, ge=1950, le=2100)
+    cas_number: Optional[str] = None
+    molecular_formula: Optional[str] = None
+    smiles: Optional[str] = None
+    inchi_key: Optional[str] = Field(None, min_length=27, max_length=27)
+    inn_stem: Optional[str] = None
+    stem_definition: Optional[str] = None
+    status: Optional[str] = Field(None, max_length=50)
+
+    @field_validator('inn_name')
+    @classmethod
+    def validate_inn_name(cls, v: str) -> str:
+        if not v or v.strip() == '':
+            raise ValueError("INN name cannot be empty")
+        return v.lower()
+
+
+class PharmGKBRecord(BaseModel):
+    """Validation model for PharmGKB pharmacogenomics chemical/drug records."""
+
+    model_config = ConfigDict(str_strip_whitespace=True)
+
+    pharmgkb_id: str = Field(..., min_length=1, description="PharmGKB accession ID (PA...)")
+    name: Optional[str] = None
+    entity_type: Optional[str] = None
+    drugbank_id: Optional[str] = None
+    chembl_id: Optional[str] = None
+    rxnorm_id: Optional[str] = None
+    pubchem_cid: Optional[int] = Field(None, ge=1)
+    cas_number: Optional[str] = None
+    drug_type: Optional[str] = None
+    smiles: Optional[str] = None
+    inchi_key: Optional[str] = Field(None, min_length=27, max_length=27)
+
+
+class KEGGDrugRecord(BaseModel):
+    """Validation model for KEGG Drug compound records."""
+
+    model_config = ConfigDict(str_strip_whitespace=True)
+
+    kegg_id: str = Field(..., min_length=1, description="KEGG Drug ID (D#####)")
+    name: Optional[str] = None
+    formula: Optional[str] = None
+    exact_mass: Optional[float] = Field(None, ge=0)
+    smiles: Optional[str] = None
+    inchi: Optional[str] = None
+    inchi_key: Optional[str] = Field(None, min_length=27, max_length=27)
+    drugbank_id: Optional[str] = None
+    pubchem_sid: Optional[int] = Field(None, ge=1)
+    chembl_id: Optional[str] = None
+    cas_number: Optional[str] = None
+
+    @field_validator('kegg_id')
+    @classmethod
+    def validate_kegg_id(cls, v: str) -> str:
+        if not (v.startswith('D') and v[1:].isdigit()):
+            raise ValueError(f"KEGG Drug ID must be D#####, got: {v!r}")
+        return v
+
+
+class TDCAdmetRecord(BaseModel):
+    """Validation model for TDC ADMET prediction records."""
+
+    model_config = ConfigDict(str_strip_whitespace=True)
+
+    compound_id: str = Field(..., min_length=1, description="Compound identifier (Drug_ID field)")
+    smiles: Optional[str] = None
+    inchi_key: Optional[str] = None
+    dataset_name: str = Field(..., min_length=1, description="TDC ADMET dataset name")
+    property_name: str = Field(..., min_length=1)
+    property_value: Optional[float] = None
+    dataset_type: Optional[str] = Field(
+        None,
+        description="ADMET category: absorption|distribution|metabolism|excretion|toxicity|other"
+    )
+    property_category: Optional[str] = None
+

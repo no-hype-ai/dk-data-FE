@@ -38,6 +38,29 @@ from .sources.europepmc import load_europepmc_data
 from .sources.nih_reporter import load_nih_reporter_data
 from .sources.cms_geographic_variation import load_cms_geographic_variation
 from .sources.cms_part_d_prescriber import load_cms_part_d_prescriber
+from .sources.cms_care_compare import load_cms_care_compare_data
+from .sources.cms_chow import load_cms_chow_data
+from .sources.cms_ddinter import load_cms_ddinter_data
+from .sources.cms_dmepos import load_cms_dmepos_data
+from .sources.cms_formulary import load_cms_formulary_data
+from .sources.cms_hcris import load_cms_hcris_data
+from .sources.cms_hospital_affiliation import load_cms_hospital_affiliation_data
+from .sources.cms_hospital_quality import load_cms_hospital_quality_data
+from .sources.cms_magnet import load_cms_magnet_data
+from .sources.cms_ndc import load_cms_ndc_data
+from .sources.cms_nucc import load_cms_nucc_data
+from .sources.cms_pecos import load_cms_pecos_data
+from .sources.cms_pos import load_cms_pos_data
+from .sources.cms_post_acute import load_cms_post_acute_data
+from .sources.cms_rbcs import load_cms_rbcs_data
+from .sources.cms_stabilis import load_cms_stabilis_data
+from .sources.cms_usp import load_cms_usp_data
+from .sources.euipo_designs import load_euipo_designs_data
+from .sources.rxnorm import load_rxnorm_data
+from .sources.who_inn import load_who_inn_data
+from .sources.pharmgkb import load_pharmgkb_data
+from .sources.kegg_drug import load_kegg_drug_data
+from .sources.tdc_admet import load_tdc_admet_data
 
 from .fetchers import (
     PubMedFetcher,
@@ -64,6 +87,29 @@ from .fetchers import (
     NIHReporterFetcher,
     CMSGeographicVariationFetcher,
     CMSPartDPrescriberFetcher,
+    CMSCareCompareFetcher,
+    CMSCHOWFetcher,
+    CMSDDInterFetcher,
+    CMSDMEPOSFetcher,
+    CMSFormularyFetcher,
+    CMSHCRISFetcher,
+    CMSHospitalAffiliationFetcher,
+    CMSHospitalQualityFetcher,
+    CMSMagnetFetcher,
+    CMSNDCFetcher,
+    CMSNUCCFetcher,
+    CMSPECOSFetcher,
+    CMSPOSFetcher,
+    CMSPostAcuteFetcher,
+    CMSRBCSFetcher,
+    CMSStabilisFetcher,
+    CMSUSPFetcher,
+    EUIPODesignsFetcher,
+    RxNormFetcher,
+    WHOINNFetcher,
+    PharmGKBFetcher,
+    KEGGDrugFetcher,
+    TDCAdmetFetcher,
 )
 
 from .utils.database import init_connection_pool, close_connection_pool, get_cursor
@@ -310,6 +356,192 @@ SOURCES = {
         'loader': load_cms_part_d_prescriber,
         'requires_file': False,
         'default_days_back': None,
+    },
+    # --- CMS facility/provider/reference sources (ported from 016) ---
+    'cms_care_compare': {
+        'name': 'CMS Care Compare',
+        'description': 'Hospital Compare star ratings and quality data',
+        'fetcher': CMSCareCompareFetcher,
+        'loader': load_cms_care_compare_data,
+        'requires_file': False,
+        'default_days_back': None,
+    },
+    'cms_chow': {
+        'name': 'CMS Change of Ownership',
+        'description': 'CMS CHOW facility ownership change records',
+        'fetcher': CMSCHOWFetcher,
+        'loader': load_cms_chow_data,
+        'requires_file': False,
+        'default_days_back': None,
+    },
+    'cms_ddinter': {
+        'name': 'CMS DDInter',
+        'description': 'CMS drug-drug interaction data',
+        'fetcher': CMSDDInterFetcher,
+        'loader': load_cms_ddinter_data,
+        'requires_file': False,
+        'default_days_back': None,
+    },
+    'cms_dmepos': {
+        'name': 'CMS DMEPOS',
+        'description': 'CMS Durable Medical Equipment supplier utilization',
+        'fetcher': CMSDMEPOSFetcher,
+        'loader': load_cms_dmepos_data,
+        'requires_file': False,
+        'default_days_back': None,
+    },
+    'cms_formulary': {
+        'name': 'CMS Medicare Formulary',
+        'description': 'CMS Medicare Part D plan formulary data',
+        'fetcher': CMSFormularyFetcher,
+        'loader': load_cms_formulary_data,
+        'requires_file': False,
+        'default_days_back': None,
+    },
+    'cms_hcris': {
+        'name': 'CMS HCRIS',
+        'description': 'CMS Hospital Cost Report Information System',
+        'fetcher': CMSHCRISFetcher,
+        'loader': load_cms_hcris_data,
+        'requires_file': False,
+        'default_days_back': None,
+    },
+    'cms_hospital_affiliation': {
+        'name': 'CMS Hospital Affiliation',
+        'description': 'CMS hospital system affiliation data',
+        'fetcher': CMSHospitalAffiliationFetcher,
+        'loader': load_cms_hospital_affiliation_data,
+        'requires_file': False,
+        'default_days_back': None,
+    },
+    'cms_hospital_quality': {
+        'name': 'CMS Hospital Quality',
+        'description': 'CMS HCAHPS and hospital quality measures',
+        'fetcher': CMSHospitalQualityFetcher,
+        'loader': load_cms_hospital_quality_data,
+        'requires_file': False,
+        'default_days_back': None,
+    },
+    'cms_magnet': {
+        'name': 'CMS Magnet',
+        'description': 'CMS Magnet hospital designation data',
+        'fetcher': CMSMagnetFetcher,
+        'loader': load_cms_magnet_data,
+        'requires_file': False,
+        'default_days_back': None,
+    },
+    'cms_ndc': {
+        'name': 'CMS NDC Directory',
+        'description': 'CMS National Drug Code directory',
+        'fetcher': CMSNDCFetcher,
+        'loader': load_cms_ndc_data,
+        'requires_file': False,
+        'default_days_back': None,
+    },
+    'cms_nucc': {
+        'name': 'CMS NUCC Taxonomy',
+        'description': 'NUCC National Uniform Claim Committee provider taxonomy codes',
+        'fetcher': CMSNUCCFetcher,
+        'loader': load_cms_nucc_data,
+        'requires_file': False,
+        'default_days_back': None,
+    },
+    'cms_pecos': {
+        'name': 'CMS PECOS',
+        'description': 'CMS Provider Enrollment, Chain, and Ownership System',
+        'fetcher': CMSPECOSFetcher,
+        'loader': load_cms_pecos_data,
+        'requires_file': False,
+        'default_days_back': None,
+    },
+    'cms_pos': {
+        'name': 'CMS Place of Service',
+        'description': 'CMS Place of Service codes',
+        'fetcher': CMSPOSFetcher,
+        'loader': load_cms_pos_data,
+        'requires_file': False,
+        'default_days_back': None,
+    },
+    'cms_post_acute': {
+        'name': 'CMS Post-Acute Care',
+        'description': 'CMS SNF/IRF/LTACH post-acute care data',
+        'fetcher': CMSPostAcuteFetcher,
+        'loader': load_cms_post_acute_data,
+        'requires_file': False,
+        'default_days_back': None,
+    },
+    'cms_rbcs': {
+        'name': 'CMS RBCS',
+        'description': 'CMS Restructured BETOS Classification System',
+        'fetcher': CMSRBCSFetcher,
+        'loader': load_cms_rbcs_data,
+        'requires_file': False,
+        'default_days_back': None,
+    },
+    'cms_stabilis': {
+        'name': 'CMS Stabilis',
+        'description': 'IV drug compatibility and stability data',
+        'fetcher': CMSStabilisFetcher,
+        'loader': load_cms_stabilis_data,
+        'requires_file': False,
+        'default_days_back': None,
+    },
+    'cms_usp': {
+        'name': 'CMS USP Classifications',
+        'description': 'USP drug classification system',
+        'fetcher': CMSUSPFetcher,
+        'loader': load_cms_usp_data,
+        'requires_file': False,
+        'default_days_back': None,
+    },
+    'euipo_designs': {
+        'name': 'EUIPO Designs',
+        'description': 'EUIPO registered design data',
+        'fetcher': EUIPODesignsFetcher,
+        'loader': load_euipo_designs_data,
+        'requires_file': False,
+        'default_days_back': 90,
+    },
+    # --- Legacy molecule sources (promoted from raw.* to mol_raw.* in migration 095) ---
+    'rxnorm': {
+        'name': 'NLM RxNorm',
+        'description': 'NLM RxNorm drug identifier vocabulary (ingredients and brand names)',
+        'fetcher': RxNormFetcher,
+        'loader': load_rxnorm_data,
+        'requires_file': False,
+        'default_days_back': None,  # full-refresh vocabulary, no date filter
+    },
+    'who_inn': {
+        'name': 'WHO INN',
+        'description': 'WHO International Nonproprietary Names (via PubChem synonyms)',
+        'fetcher': WHOINNFetcher,
+        'loader': load_who_inn_data,
+        'requires_file': False,
+        'default_days_back': None,
+    },
+    'pharmgkb': {
+        'name': 'PharmGKB',
+        'description': 'PharmGKB pharmacogenomics knowledge base',
+        'fetcher': PharmGKBFetcher,
+        'loader': load_pharmgkb_data,
+        'requires_file': False,
+        'default_days_back': None,
+    },
+    'kegg_drug': {
+        'name': 'KEGG Drug',
+        'description': 'KEGG Drug compound and pathway database',
+        'fetcher': KEGGDrugFetcher,
+        'loader': load_kegg_drug_data,
+        'requires_file': False,
+        'default_days_back': None,
+    },
+    'tdc_admet': {
+        'name': 'TDC ADMET',
+        'description': 'Therapeutics Data Commons ADMET prediction benchmarks',
+        'fetcher': TDCAdmetFetcher,
+        'loader': load_tdc_admet_data,
+        'requires_file': False,
+        'default_days_back': None,  # static benchmark datasets, monthly refresh
     },
 }
 

@@ -30,4 +30,9 @@ __all__ = [
     'nih_reporter',
     'cms_geographic_variation',
     'cms_part_d_prescriber',
+    'rxnorm',
+    'who_inn',
+    'pharmgkb',
+    'kegg_drug',
+    'tdc_admet',
 ]
