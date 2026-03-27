@@ -24,4 +24,10 @@ __all__ = [
     'uspto_trademarks',
     'euipo_trademarks',
     'who_icd',
+    'bindingdb',
+    'sider',
+    'europepmc',
+    'nih_reporter',
+    'cms_geographic_variation',
+    'cms_part_d_prescriber',
 ]

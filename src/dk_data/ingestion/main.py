@@ -32,6 +32,12 @@ from .sources.orcid import load_orcid_data
 from .sources.uspto_trademarks import load_uspto_trademarks_data
 from .sources.euipo_trademarks import load_euipo_trademarks_data
 from .sources.who_icd import load_who_icd_data
+from .sources.bindingdb import load_bindingdb_data
+from .sources.sider import load_sider_data
+from .sources.europepmc import load_europepmc_data
+from .sources.nih_reporter import load_nih_reporter_data
+from .sources.cms_geographic_variation import load_cms_geographic_variation
+from .sources.cms_part_d_prescriber import load_cms_part_d_prescriber
 
 from .fetchers import (
     PubMedFetcher,
@@ -52,6 +58,12 @@ from .fetchers import (
     USPTOTrademarksFetcher,
     EUIPOTrademarksFetcher,
     WHOICDFetcher,
+    BindingDBFetcher,
+    SIDERFetcher,
+    EuropePMCFetcher,
+    NIHReporterFetcher,
+    CMSGeographicVariationFetcher,
+    CMSPartDPrescriberFetcher,
 )
 
 from .utils.database import init_connection_pool, close_connection_pool, get_cursor
@@ -249,7 +261,55 @@ SOURCES = {
         'fetcher': WHOICDFetcher,
         'loader': load_who_icd_data,
         'requires_file': False,
-        'default_days_back': None,  # classification codes; full refresh monthly
+        'default_days_back': None,
+    },
+    'bindingdb': {
+        'name': 'BindingDB',
+        'description': 'BindingDB protein-ligand binding affinities',
+        'fetcher': BindingDBFetcher,
+        'loader': load_bindingdb_data,
+        'requires_file': False,
+        'default_days_back': None,
+    },
+    'sider': {
+        'name': 'SIDER',
+        'description': 'SIDER drug side effects (STITCH/MedDRA)',
+        'fetcher': SIDERFetcher,
+        'loader': load_sider_data,
+        'requires_file': False,
+        'default_days_back': None,
+    },
+    'europepmc': {
+        'name': 'Europe PMC',
+        'description': 'Europe PMC biomedical literature',
+        'fetcher': EuropePMCFetcher,
+        'loader': load_europepmc_data,
+        'requires_file': False,
+        'default_days_back': 30,
+    },
+    'nih_reporter': {
+        'name': 'NIH Reporter',
+        'description': 'NIH Reporter grant and project data',
+        'fetcher': NIHReporterFetcher,
+        'loader': load_nih_reporter_data,
+        'requires_file': False,
+        'default_days_back': 90,
+    },
+    'cms_geographic_variation': {
+        'name': 'CMS Geographic Variation',
+        'description': 'CMS Medicare Geographic Variation PUF',
+        'fetcher': CMSGeographicVariationFetcher,
+        'loader': load_cms_geographic_variation,
+        'requires_file': False,
+        'default_days_back': None,
+    },
+    'cms_part_d_prescriber': {
+        'name': 'CMS Part D by Prescriber',
+        'description': 'CMS Medicare Part D Prescriber PUF',
+        'fetcher': CMSPartDPrescriberFetcher,
+        'loader': load_cms_part_d_prescriber,
+        'requires_file': False,
+        'default_days_back': None,
     },
 }
 

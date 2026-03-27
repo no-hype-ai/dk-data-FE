@@ -739,3 +739,662 @@ def calculate_tier(total_trs: int) -> str:
         return 'D'
     else:
         return 'E'
+
+
+# =============================================================================
+# CMS PUF Platform Validators (019-cms-puf-platform-reconciliation)
+# =============================================================================
+
+
+class CMSChronicConditionsRecord(BaseModel):
+    """Validation model for CMS Chronic Conditions PUF data."""
+
+    model_config = ConfigDict(str_strip_whitespace=True)
+
+    bene_geo_lvl: Optional[str] = None
+    bene_geo_desc: Optional[str] = None
+    bene_geo_cd: Optional[str] = None
+    bene_age_lvl: Optional[str] = None
+    bene_demo_lvl: Optional[str] = None
+    bene_demo_desc: Optional[str] = None
+    bene_cond: Optional[str] = None
+    prvlnc: Optional[Decimal] = None
+    tot_mdcr_stdzd_pymt_pc: Optional[Decimal] = None
+    tot_mdcr_pymt_pc: Optional[Decimal] = None
+    hosp_readmsn_rate: Optional[Decimal] = None
+    ed_visits_per_1000_benes: Optional[Decimal] = None
+    _source_year: Optional[int] = None
+
+
+class CMSClaimTypeRecord(BaseModel):
+    """Validation model for CMS Claim Type Utilization PUF data."""
+
+    model_config = ConfigDict(str_strip_whitespace=True)
+
+    bene_geo_lvl: Optional[str] = None
+    bene_geo_desc: Optional[str] = None
+    clm_type: Optional[str] = None
+    clm_type_desc: Optional[str] = None
+    tot_clms: Optional[int] = None
+    tot_benes: Optional[int] = None
+    tot_mdcr_pymt_amt: Optional[Decimal] = None
+    avg_mdcr_pymt_amt: Optional[Decimal] = None
+    _source_year: Optional[int] = None
+
+
+class CMSCostReportsPUFRecord(BaseModel):
+    """Validation model for CMS Cost Reports PUF data."""
+
+    model_config = ConfigDict(str_strip_whitespace=True)
+
+    rpt_rec_num: Optional[str] = None
+    prvdr_ctrl_type_cd: Optional[str] = None
+    prvdr_num: Optional[str] = None
+    rpt_stus_cd: Optional[str] = None
+    initl_rpt_sw: Optional[str] = None
+    last_rpt_sw: Optional[str] = None
+    trnsmtl_num: Optional[str] = None
+    fi_num: Optional[str] = None
+    adr_vndr_cd: Optional[str] = None
+    fi_creat_dt: Optional[str] = None
+    util_cd: Optional[str] = None
+    npr_dt: Optional[str] = None
+    spec_ind: Optional[str] = None
+    fi_rcpt_dt: Optional[str] = None
+    total_beds: Optional[int] = None
+    total_discharges: Optional[int] = None
+    net_patient_revenue: Optional[Decimal] = None
+    total_operating_expenses: Optional[Decimal] = None
+    _source_year: Optional[int] = None
+
+
+class CMSDMERecord(BaseModel):
+    """Validation model for CMS Durable Medical Equipment (DME) PUF data."""
+
+    model_config = ConfigDict(str_strip_whitespace=True)
+
+    npi: Optional[str] = None
+    provider_last_org_name: Optional[str] = None
+    provider_first_name: Optional[str] = None
+    provider_city: Optional[str] = None
+    provider_state: Optional[str] = None
+    provider_state_fips: Optional[str] = None
+    provider_zip5: Optional[str] = None
+    provider_ruca: Optional[str] = None
+    provider_type: Optional[str] = None
+    hcpcs_cd: Optional[str] = None
+    hcpcs_desc: Optional[str] = None
+    suplr_rentl_ind: Optional[str] = None
+    tot_suplrs: Optional[int] = None
+    tot_suplr_benes: Optional[int] = None
+    tot_suplr_clms: Optional[int] = None
+    tot_suplr_srvcs: Optional[int] = None
+    avg_suplr_sbmtd_chrg: Optional[Decimal] = None
+    avg_suplr_mdcr_alowd_amt: Optional[Decimal] = None
+    avg_suplr_mdcr_pymt_amt: Optional[Decimal] = None
+    avg_suplr_mdcr_stdzd_amt: Optional[Decimal] = None
+    _source_year: Optional[int] = None
+
+
+class CMSDualEligibleRecord(BaseModel):
+    """Validation model for CMS Dual Eligible Beneficiary data."""
+
+    model_config = ConfigDict(str_strip_whitespace=True)
+
+    state_cd: Optional[str] = None
+    state_name: Optional[str] = None
+    dual_elgbl_lvl: Optional[str] = None
+    dual_elgbl_desc: Optional[str] = None
+    tot_benes: Optional[int] = None
+    ffs_benes: Optional[int] = None
+    ma_benes: Optional[int] = None
+    dual_elgbl_full_benes: Optional[int] = None
+    dual_elgbl_prtl_benes: Optional[int] = None
+    non_dual_benes: Optional[int] = None
+    lis_benes: Optional[int] = None
+    _source_year: Optional[int] = None
+
+
+class CMSEnrollmentRecord(BaseModel):
+    """Validation model for CMS Medicare Enrollment PUF data."""
+
+    model_config = ConfigDict(str_strip_whitespace=True)
+
+    state_cd: Optional[str] = None
+    county_cd: Optional[str] = None
+    county_desc: Optional[str] = None
+    bene_demo_lvl: Optional[str] = None
+    bene_demo_desc: Optional[str] = None
+    bene_age_lvl: Optional[str] = None
+    tot_benes: Optional[int] = None
+    orgnl_mdcr_benes: Optional[int] = None
+    ma_benes: Optional[int] = None
+    esrd_benes: Optional[int] = None
+    dsbl_benes: Optional[int] = None
+    _source_year: Optional[int] = None
+
+
+class CMSHomeHealthRecord(BaseModel):
+    """Validation model for CMS Home Health Agency PUF data."""
+
+    model_config = ConfigDict(str_strip_whitespace=True)
+
+    provider_id: Optional[str] = None
+    provider_name: Optional[str] = None
+    provider_city: Optional[str] = None
+    provider_state: Optional[str] = None
+    provider_zip5: Optional[str] = None
+    hh_srvc_cd: Optional[str] = None
+    hh_srvc_desc: Optional[str] = None
+    tot_epsd_stay: Optional[int] = None
+    tot_benes: Optional[int] = None
+    avg_hh_mdcr_pymt_amt: Optional[Decimal] = None
+    avg_hh_outlier_pymt: Optional[Decimal] = None
+    avg_age: Optional[Decimal] = None
+    female_pct: Optional[Decimal] = None
+    dual_pct: Optional[Decimal] = None
+    _source_year: Optional[int] = None
+
+
+class CMSHospiceRecord(BaseModel):
+    """Validation model for CMS Hospice Provider PUF data."""
+
+    model_config = ConfigDict(str_strip_whitespace=True)
+
+    provider_id: Optional[str] = None
+    provider_name: Optional[str] = None
+    provider_city: Optional[str] = None
+    provider_state: Optional[str] = None
+    provider_zip5: Optional[str] = None
+    hspce_cd: Optional[str] = None
+    hspce_desc: Optional[str] = None
+    tot_benes: Optional[int] = None
+    tot_mdcr_alowd_amt: Optional[Decimal] = None
+    tot_mdcr_pymt_amt: Optional[Decimal] = None
+    avg_mdcr_pymt_amt: Optional[Decimal] = None
+    avg_age: Optional[Decimal] = None
+    _source_year: Optional[int] = None
+
+
+class CMSHospitalGeneralInfoRecord(BaseModel):
+    """Validation model for CMS Hospital General Information PUF data."""
+
+    model_config = ConfigDict(str_strip_whitespace=True)
+
+    facility_id: Optional[str] = None
+    facility_name: Optional[str] = None
+    address: Optional[str] = None
+    city: Optional[str] = None
+    state: Optional[str] = None
+    zip_code: Optional[str] = None
+    county_name: Optional[str] = None
+    phone_number: Optional[str] = None
+    hospital_type: Optional[str] = None
+    hospital_ownership: Optional[str] = None
+    emergency_services: Optional[str] = None
+    hospital_overall_rating: Optional[str] = None
+    hospital_overall_rating_footnote: Optional[str] = None
+    _source_year: Optional[int] = None
+
+
+class CMSImagingRecord(BaseModel):
+    """Validation model for CMS Imaging Services PUF data."""
+
+    model_config = ConfigDict(str_strip_whitespace=True)
+
+    npi: Optional[str] = None
+    provider_last_org_name: Optional[str] = None
+    provider_city: Optional[str] = None
+    provider_state: Optional[str] = None
+    provider_zip5: Optional[str] = None
+    provider_type: Optional[str] = None
+    hcpcs_cd: Optional[str] = None
+    hcpcs_desc: Optional[str] = None
+    tot_benes: Optional[int] = None
+    tot_srvcs: Optional[int] = None
+    tot_mdcr_alowd_amt: Optional[Decimal] = None
+    avg_mdcr_alowd_amt: Optional[Decimal] = None
+    avg_mdcr_pymt_amt: Optional[Decimal] = None
+    avg_mdcr_stdzd_amt: Optional[Decimal] = None
+    _source_year: Optional[int] = None
+
+
+class CMSInpatientPUFRecord(BaseModel):
+    """Validation model for CMS Inpatient PUF provider-level charge data."""
+
+    model_config = ConfigDict(str_strip_whitespace=True)
+
+    drg_cd: Optional[str] = None
+    drg_definition: Optional[str] = None
+    provider_id: Optional[str] = None
+    provider_name: Optional[str] = None
+    provider_street_address: Optional[str] = None
+    provider_city: Optional[str] = None
+    provider_state: Optional[str] = None
+    provider_state_fips: Optional[str] = None
+    provider_zip_code: Optional[str] = None
+    provider_ruca: Optional[str] = None
+    hospital_referral_region_desc: Optional[str] = None
+    total_discharges: Optional[int] = None
+    average_covered_charges: Optional[Decimal] = None
+    average_total_payments: Optional[Decimal] = None
+    average_medicare_payments: Optional[Decimal] = None
+    _source_year: Optional[int] = None
+
+
+class CMSLabServicesRecord(BaseModel):
+    """Validation model for CMS Lab Services PUF data."""
+
+    model_config = ConfigDict(str_strip_whitespace=True)
+
+    npi: Optional[str] = None
+    provider_last_org_name: Optional[str] = None
+    provider_city: Optional[str] = None
+    provider_state: Optional[str] = None
+    provider_zip5: Optional[str] = None
+    provider_type: Optional[str] = None
+    hcpcs_cd: Optional[str] = None
+    hcpcs_desc: Optional[str] = None
+    tot_benes: Optional[int] = None
+    tot_srvcs: Optional[int] = None
+    tot_mdcr_alowd_amt: Optional[Decimal] = None
+    avg_mdcr_alowd_amt: Optional[Decimal] = None
+    avg_mdcr_pymt_amt: Optional[Decimal] = None
+    avg_mdcr_stdzd_amt: Optional[Decimal] = None
+    _source_year: Optional[int] = None
+
+
+class CMSMedicaidDrugSpendingRecord(BaseModel):
+    """Validation model for CMS Medicaid Drug Spending data."""
+
+    model_config = ConfigDict(str_strip_whitespace=True)
+
+    brnd_name: Optional[str] = None
+    gnrc_name: Optional[str] = None
+    tot_mftr: Optional[str] = None
+    util_type: Optional[str] = None
+    tot_spndng: Optional[Decimal] = None
+    medicaid_spndng_per_dosage_unit: Optional[Decimal] = None
+    medicaid_spndng_per_prescription: Optional[Decimal] = None
+    unit_type: Optional[str] = None
+    tot_dosage_units: Optional[Decimal] = None
+    tot_prescriptions: Optional[Decimal] = None
+    tot_benes: Optional[Decimal] = None
+    _source_year: Optional[int] = None
+
+
+class CMSMedicareAdvantageRecord(BaseModel):
+    """Validation model for CMS Medicare Advantage enrollment data."""
+
+    model_config = ConfigDict(str_strip_whitespace=True)
+
+    contract_id: Optional[str] = None
+    organization_name: Optional[str] = None
+    organization_type: Optional[str] = None
+    plan_id: Optional[str] = None
+    plan_name: Optional[str] = None
+    segment_id: Optional[str] = None
+    enrollment_data_period: Optional[str] = None
+    fips_cd: Optional[str] = None
+    state_fips: Optional[str] = None
+    county_fips: Optional[str] = None
+    enrollment: Optional[int] = None
+    avg_age: Optional[str] = None
+    pct_female: Optional[str] = None
+    avg_risk_score: Optional[str] = None
+    ma_participation_rate: Optional[str] = None
+    star_rating: Optional[str] = None
+    _source_year: Optional[int] = None
+
+
+class CMSMentalHealthRecord(BaseModel):
+    """Validation model for CMS Mental Health PUF data."""
+
+    model_config = ConfigDict(str_strip_whitespace=True)
+
+    npi: Optional[str] = None
+    provider_last_org_name: Optional[str] = None
+    provider_first_name: Optional[str] = None
+    provider_city: Optional[str] = None
+    provider_state: Optional[str] = None
+    provider_zip5: Optional[str] = None
+    provider_type: Optional[str] = None
+    hcpcs_cd: Optional[str] = None
+    hcpcs_desc: Optional[str] = None
+    mh_srvc_ind: Optional[str] = None
+    tot_benes: Optional[int] = None
+    tot_srvcs: Optional[str] = None
+    tot_mdcr_alowd_amt: Optional[Decimal] = None
+    avg_mdcr_alowd_amt: Optional[Decimal] = None
+    avg_mdcr_pymt_amt: Optional[Decimal] = None
+    avg_mdcr_stdzd_amt: Optional[Decimal] = None
+    _source_year: Optional[int] = None
+
+
+class CMSNPPESRecord(BaseModel):
+    """Validation model for CMS NPPES National Provider Identifier data."""
+
+    model_config = ConfigDict(str_strip_whitespace=True)
+
+    npi: Optional[str] = None
+    entity_type_code: Optional[str] = None
+    provider_last_name: Optional[str] = None
+    provider_first_name: Optional[str] = None
+    provider_organization_name: Optional[str] = None
+    provider_credential_text: Optional[str] = None
+    provider_first_line_business_mailing_address: Optional[str] = None
+    provider_second_line_business_mailing_address: Optional[str] = None
+    provider_business_mailing_address_city_name: Optional[str] = None
+    provider_business_mailing_address_state_name: Optional[str] = None
+    provider_business_mailing_address_postal_code: Optional[str] = None
+    provider_business_mailing_address_telephone_number: Optional[str] = None
+    provider_first_line_business_practice_location_address: Optional[str] = None
+    provider_second_line_business_practice_location_address: Optional[str] = None
+    provider_business_practice_location_address_city_name: Optional[str] = None
+    provider_business_practice_location_address_state_name: Optional[str] = None
+    provider_business_practice_location_address_postal_code: Optional[str] = None
+    provider_business_practice_location_address_country_code: Optional[str] = None
+    provider_business_practice_location_address_telephone_number: Optional[str] = None
+    provider_business_practice_location_address_fax_number: Optional[str] = None
+    healthcare_provider_taxonomy_code_1: Optional[str] = None
+    healthcare_provider_taxonomy_code_2: Optional[str] = None
+    _source_year: Optional[int] = None
+
+
+class CMSOpenPaymentsRecord(BaseModel):
+    """Validation model for CMS Open Payments (Sunshine Act) data."""
+
+    model_config = ConfigDict(str_strip_whitespace=True)
+
+    covered_recipient_type: Optional[str] = None
+    physician_profile_id: Optional[str] = None
+    physician_first_name: Optional[str] = None
+    physician_last_name: Optional[str] = None
+    physician_specialty: Optional[str] = None
+    applicable_manufacturer_or_gpo_name: Optional[str] = None
+    total_amount_of_payment_usdollars: Optional[Decimal] = None
+    date_of_payment: Optional[str] = None
+    nature_of_payment_or_transfer_of_value: Optional[str] = None
+    recipient_city: Optional[str] = None
+    recipient_state: Optional[str] = None
+    recipient_zip_code: Optional[str] = None
+    payment_publication_date: Optional[str] = None
+    record_id: Optional[str] = None
+    program_year: Optional[str] = None
+    name_of_drug_or_biological_or_device_or_medical_supply_1: Optional[str] = None
+    name_of_drug_or_biological_or_device_or_medical_supply_2: Optional[str] = None
+    name_of_drug_or_biological_or_device_or_medical_supply_3: Optional[str] = None
+    name_of_drug_or_biological_or_device_or_medical_supply_4: Optional[str] = None
+    name_of_drug_or_biological_or_device_or_medical_supply_5: Optional[str] = None
+    associated_drug_or_biological_ndc_1: Optional[str] = None
+    associated_drug_or_biological_ndc_2: Optional[str] = None
+    associated_drug_or_biological_ndc_3: Optional[str] = None
+    associated_drug_or_biological_ndc_4: Optional[str] = None
+    associated_drug_or_biological_ndc_5: Optional[str] = None
+    _source_year: Optional[int] = None
+
+
+class CMSOpioidRecord(BaseModel):
+    """Validation model for CMS Opioid Prescribing Geographic Variation PUF data."""
+
+    model_config = ConfigDict(str_strip_whitespace=True)
+
+    prscrbr_npi: Optional[str] = None
+    prscrbr_last_org_name: Optional[str] = None
+    prscrbr_first_name: Optional[str] = None
+    prscrbr_city: Optional[str] = None
+    prscrbr_state_abrvtn: Optional[str] = None
+    prscrbr_state_fips: Optional[str] = None
+    prscrbr_type: Optional[str] = None
+    prscrbr_type_src: Optional[str] = None
+    brnd_name: Optional[str] = None
+    gnrc_name: Optional[str] = None
+    opioid_drug_flag: Optional[str] = None
+    la_opioid_drug_flag: Optional[str] = None
+    tot_clms: Optional[int] = None
+    tot_30day_fills: Optional[Decimal] = None
+    tot_day_suply: Optional[int] = None
+    tot_drug_cst: Optional[Decimal] = None
+    tot_benes: Optional[int] = None
+    opioid_clms: Optional[int] = None
+    opioid_benes: Optional[int] = None
+    la_opioid_clms: Optional[int] = None
+    la_opioid_benes: Optional[int] = None
+    _source_year: Optional[int] = None
+
+
+class CMSOrderingProviderRecord(BaseModel):
+    """Validation model for CMS Ordering Providers PUF data."""
+
+    model_config = ConfigDict(str_strip_whitespace=True)
+
+    rndrng_npi: Optional[str] = None
+    rndrng_prvdr_last_org_name: Optional[str] = None
+    rndrng_prvdr_first_name: Optional[str] = None
+    rndrng_prvdr_city: Optional[str] = None
+    rndrng_prvdr_state_abrvtn: Optional[str] = None
+    rndrng_prvdr_zip5: Optional[str] = None
+    rndrng_prvdr_type: Optional[str] = None
+    rfrd_npi: Optional[str] = None
+    rfrd_prvdr_last_org_name: Optional[str] = None
+    rfrd_prvdr_type: Optional[str] = None
+    tot_srvcs: Optional[str] = None
+    tot_benes: Optional[int] = None
+    tot_mdcr_alowd_amt: Optional[Decimal] = None
+    tot_mdcr_pymt_amt: Optional[Decimal] = None
+    _source_year: Optional[int] = None
+
+
+class CMSOutpatientRecord(BaseModel):
+    """Validation model for CMS Outpatient PUF hospital APC-level charge data."""
+
+    model_config = ConfigDict(str_strip_whitespace=True)
+
+    provider_id: Optional[str] = None
+    provider_name: Optional[str] = None
+    provider_street_address: Optional[str] = None
+    provider_city: Optional[str] = None
+    provider_state: Optional[str] = None
+    provider_state_fips: Optional[str] = None
+    provider_zip_code: Optional[str] = None
+    provider_ruca: Optional[str] = None
+    apc: Optional[str] = None
+    apc_desc: Optional[str] = None
+    total_services: Optional[int] = None
+    bene_cnt: Optional[int] = None
+    comp_asgn_pymt_cnt: Optional[int] = None
+    average_estimated_submitted_charges: Optional[Decimal] = None
+    average_medicare_allowed_amt: Optional[Decimal] = None
+    average_total_payments: Optional[Decimal] = None
+    average_medicare_payments: Optional[Decimal] = None
+    average_medicare_stnd_amt: Optional[Decimal] = None
+    _source_year: Optional[int] = None
+
+
+class CMSPartBSpendingRecord(BaseModel):
+    """Validation model for CMS Part B Drug Spending data."""
+
+    model_config = ConfigDict(str_strip_whitespace=True)
+
+    hcpcs_cd: Optional[str] = None
+    hcpcs_desc: Optional[str] = None
+    tot_mftr: Optional[str] = None
+    mftr_name: Optional[str] = None
+    tot_spndng: Optional[Decimal] = None
+    tot_dsg_unts: Optional[Decimal] = None
+    tot_benes: Optional[Decimal] = None
+    tot_clms: Optional[Decimal] = None
+    avg_spnd_per_dsg_unt: Optional[Decimal] = None
+    avg_spnd_per_clm: Optional[Decimal] = None
+    avg_spnd_per_bene: Optional[Decimal] = None
+    outlier_flag: Optional[str] = None
+    _source_year: Optional[int] = None
+
+
+class CMSPartDPrescriberRecord(BaseModel):
+    """Validation model for CMS Part D Prescribers by Provider and Drug data."""
+
+    model_config = ConfigDict(str_strip_whitespace=True)
+
+    prscrbr_npi: str = Field(..., min_length=1)
+    prscrbr_last_org_name: Optional[str] = None
+    prscrbr_first_name: Optional[str] = None
+    prscrbr_city: Optional[str] = None
+    prscrbr_state_abrvtn: Optional[str] = None
+    prscrbr_state_fips: Optional[str] = None
+    prscrbr_type: Optional[str] = None
+    prscrbr_type_src: Optional[str] = None
+    brnd_name: Optional[str] = None
+    gnrc_name: str = Field(..., min_length=1)
+    tot_clms: Optional[int] = None
+    tot_30day_fills: Optional[str] = None
+    tot_day_suply: Optional[int] = None
+    tot_drug_cst: Optional[str] = None
+    tot_benes: Optional[int] = None
+    ge65_sprsn_flag: Optional[str] = None
+    ge65_tot_clms: Optional[int] = None
+    ge65_tot_30day_fills: Optional[str] = None
+    ge65_tot_drug_cst: Optional[str] = None
+    ge65_tot_day_suply: Optional[int] = None
+    ge65_bene_sprsn_flag: Optional[str] = None
+    ge65_tot_benes: Optional[int] = None
+    _source_year: Optional[int] = None
+
+
+class CMSPartDSpendingRecord(BaseModel):
+    """Validation model for CMS Part D Drug Spending data."""
+
+    model_config = ConfigDict(str_strip_whitespace=True)
+
+    brnd_name: Optional[str] = None
+    gnrc_name: Optional[str] = None
+    tot_mftr: Optional[str] = None
+    tot_spndng: Optional[Decimal] = None
+    tot_dsg_unts: Optional[Decimal] = None
+    tot_clms: Optional[Decimal] = None
+    tot_benes: Optional[Decimal] = None
+    avg_spnd_per_dsg_unt_wghtd: Optional[Decimal] = None
+    avg_spnd_per_clm: Optional[Decimal] = None
+    avg_spnd_per_bene: Optional[Decimal] = None
+    outlier_flag: Optional[str] = None
+    _source_year: Optional[int] = None
+
+
+class CMSPhysicianPUFRecord(BaseModel):
+    """Validation model for CMS Physician and Other Practitioners PUF data."""
+
+    model_config = ConfigDict(str_strip_whitespace=True)
+
+    npi: Optional[str] = None
+    nppes_provider_last_org_name: Optional[str] = None
+    nppes_provider_first_name: Optional[str] = None
+    nppes_provider_mi: Optional[str] = None
+    nppes_credentials: Optional[str] = None
+    nppes_provider_gender: Optional[str] = None
+    nppes_entity_code: Optional[str] = None
+    nppes_provider_street1: Optional[str] = None
+    nppes_provider_street2: Optional[str] = None
+    nppes_provider_city: Optional[str] = None
+    nppes_provider_state: Optional[str] = None
+    nppes_provider_state_fips: Optional[str] = None
+    nppes_provider_zip: Optional[str] = None
+    nppes_provider_ruca: Optional[str] = None
+    nppes_provider_country: Optional[str] = None
+    provider_type: Optional[str] = None
+    medicare_participation_indicator: Optional[str] = None
+    number_of_hcpcs: Optional[int] = None
+    total_services: Optional[str] = None
+    total_unique_benes: Optional[int] = None
+    total_submitted_chrg_amt: Optional[Decimal] = None
+    total_medicare_allowed_amt: Optional[Decimal] = None
+    total_medicare_payment_amt: Optional[Decimal] = None
+    total_medicare_stnd_amt: Optional[Decimal] = None
+    _source_year: Optional[int] = None
+
+
+class CMSReferringProviderRecord(BaseModel):
+    """Validation model for CMS Referring Providers PUF data."""
+
+    model_config = ConfigDict(str_strip_whitespace=True)
+
+    rndrng_npi: Optional[str] = None
+    rndrng_prvdr_last_org_name: Optional[str] = None
+    rndrng_prvdr_first_name: Optional[str] = None
+    rndrng_prvdr_city: Optional[str] = None
+    rndrng_prvdr_state_abrvtn: Optional[str] = None
+    rndrng_prvdr_zip5: Optional[str] = None
+    rndrng_prvdr_type: Optional[str] = None
+    rfrd_npi: Optional[str] = None
+    rfrd_prvdr_last_org_name: Optional[str] = None
+    rfrd_prvdr_type: Optional[str] = None
+    tot_srvcs: Optional[str] = None
+    tot_benes: Optional[int] = None
+    tot_mdcr_alowd_amt: Optional[Decimal] = None
+    tot_mdcr_pymt_amt: Optional[Decimal] = None
+    _source_year: Optional[int] = None
+
+
+class CMSSNFRecord(BaseModel):
+    """Validation model for CMS Skilled Nursing Facility (SNF) PUF data."""
+
+    model_config = ConfigDict(str_strip_whitespace=True)
+
+    provider_id: Optional[str] = None
+    provider_name: Optional[str] = None
+    provider_city: Optional[str] = None
+    provider_state: Optional[str] = None
+    provider_zip5: Optional[str] = None
+    rug_cd: Optional[str] = None
+    rug_desc: Optional[str] = None
+    tot_benes: Optional[int] = None
+    tot_cvrd_days: Optional[int] = None
+    avg_cvrd_days: Optional[Decimal] = None
+    tot_mdcr_alowd_amt: Optional[Decimal] = None
+    avg_mdcr_alowd_amt: Optional[Decimal] = None
+    tot_mdcr_pymt_amt: Optional[Decimal] = None
+    avg_mdcr_pymt_amt: Optional[Decimal] = None
+    _source_year: Optional[int] = None
+
+
+class CMSTelehealthRecord(BaseModel):
+    """Validation model for CMS Telehealth Utilization PUF data."""
+
+    model_config = ConfigDict(str_strip_whitespace=True)
+
+    npi: Optional[str] = None
+    provider_last_org_name: Optional[str] = None
+    provider_first_name: Optional[str] = None
+    provider_city: Optional[str] = None
+    provider_state: Optional[str] = None
+    provider_zip5: Optional[str] = None
+    provider_type: Optional[str] = None
+    hcpcs_cd: Optional[str] = None
+    hcpcs_desc: Optional[str] = None
+    th_srvc_ind: Optional[str] = None
+    tot_benes: Optional[int] = None
+    tot_srvcs: Optional[str] = None
+    tot_mdcr_alowd_amt: Optional[Decimal] = None
+    avg_mdcr_alowd_amt: Optional[Decimal] = None
+    avg_mdcr_pymt_amt: Optional[Decimal] = None
+    avg_mdcr_stdzd_amt: Optional[Decimal] = None
+    _source_year: Optional[int] = None
+
+
+class CMSUtilizationRecord(BaseModel):
+    """Validation model for CMS Medicare Utilization PUF data."""
+
+    model_config = ConfigDict(str_strip_whitespace=True)
+
+    bene_geo_lvl: Optional[str] = None
+    bene_geo_desc: Optional[str] = None
+    bene_geo_cd: Optional[str] = None
+    bene_age_lvl: Optional[str] = None
+    bene_demo_lvl: Optional[str] = None
+    bene_demo_desc: Optional[str] = None
+    srvcs_per_bene: Optional[Decimal] = None
+    ip_cvrd_stays_per_1000_benes: Optional[Decimal] = None
+    avg_ip_los: Optional[Decimal] = None
+    er_visits_per_1000_benes: Optional[Decimal] = None
+    phy_visits_per_bene: Optional[Decimal] = None
+    tot_mdcr_pymt_pc: Optional[Decimal] = None
+    _source_year: Optional[int] = None

@@ -24,6 +24,12 @@ from .orcid import ORCIDFetcher
 from .uspto_trademarks import USPTOTrademarksFetcher
 from .euipo_trademarks import EUIPOTrademarksFetcher
 from .who_icd import WHOICDFetcher
+from .bindingdb import BindingDBFetcher
+from .sider import SIDERFetcher
+from .europepmc import EuropePMCFetcher
+from .nih_reporter import NIHReporterFetcher
+from .cms_geographic_variation import CMSGeographicVariationFetcher
+from .cms_part_d_prescriber import CMSPartDPrescriberFetcher
 
 __all__ = [
     'BaseFetcher',
@@ -50,4 +56,10 @@ __all__ = [
     'USPTOTrademarksFetcher',
     'EUIPOTrademarksFetcher',
     'WHOICDFetcher',
+    'BindingDBFetcher',
+    'SIDERFetcher',
+    'EuropePMCFetcher',
+    'NIHReporterFetcher',
+    'CMSGeographicVariationFetcher',
+    'CMSPartDPrescriberFetcher',
 ]
