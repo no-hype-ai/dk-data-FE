@@ -12,11 +12,11 @@ Tests verify:
 """
 
 class TestToolRegistry:
-    """Verify tool registry has all 28 tools."""
+    """Verify tool registry has all tools (28 original + 28 CMS PUF = 56)."""
 
     def test_registry_has_28_tools(self):
         from dk_data.services.mcp.tool_registry import TOOL_REGISTRY
-        assert len(TOOL_REGISTRY) == 28
+        assert len(TOOL_REGISTRY) == 56
 
     def test_tier_1_has_19_tools(self):
         from dk_data.services.mcp.tool_registry import get_tools_by_tier
@@ -28,7 +28,7 @@ class TestToolRegistry:
 
     def test_tier_3_has_5_tools(self):
         from dk_data.services.mcp.tool_registry import get_tools_by_tier
-        assert len(get_tools_by_tier("supplementary")) == 5
+        assert len(get_tools_by_tier("supplementary")) == 33
 
     def test_all_tools_have_required_fields(self):
         from dk_data.services.mcp.tool_registry import TOOL_REGISTRY
@@ -37,7 +37,7 @@ class TestToolRegistry:
             assert defn.description, f"Missing description: {name}"
             assert defn.tier in ("direct_query", "fetch_filter", "supplementary"), f"Invalid tier: {name}"
             assert defn.raw_table, f"Missing raw_table: {name}"
-            assert defn.raw_schema in ("mol_raw", "raw"), f"Invalid raw_schema: {name}"
+            assert defn.raw_schema in ("mol_raw", "raw", "hcs_raw"), f"Invalid raw_schema: {name}"
             assert defn.adapter_module, f"Missing adapter_module: {name}"
             assert defn.api_base_url, f"Missing api_base_url: {name}"
             assert defn.input_schema, f"Missing input_schema: {name}"

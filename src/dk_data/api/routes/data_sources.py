@@ -257,7 +257,7 @@ class CredentialListResponse(BaseModel):
 
 class SchemaDetectionRequest(BaseModel):
     """Request for schema detection."""
-    sample_responses: List[Dict[str, Any]] = Field(..., min_items=1, max_items=100, description="Sample API responses")
+    sample_responses: List[Dict[str, Any]] = Field(..., min_length=1, max_length=100, description="Sample API responses")
     table_name: Optional[str] = Field(None, description="Custom table name")
 
 

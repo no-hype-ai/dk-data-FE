@@ -24,4 +24,45 @@ resources:
   # - cronjob-fetch-orcid.yaml  # Disabled — no ORCID membership; OpenAlex covers author data
   - cronjob-fetch-uspto-trademarks.yaml
   - cronjob-fetch-euipo.yaml
+  - cronjob-fetch-europepmc.yaml
+  - cronjob-fetch-nih-reporter.yaml
+  # CMS PUF sources (28 files)
+  - cronjob-fetch-cms-chronic-conditions.yaml
+  - cronjob-fetch-cms-claim-type-puf.yaml
+  - cronjob-fetch-cms-cost-reports-puf.yaml
+  - cronjob-fetch-cms-dme-puf.yaml
+  - cronjob-fetch-cms-dual-eligible.yaml
+  - cronjob-fetch-cms-enrollment-puf.yaml
+  - cronjob-fetch-cms-geographic-variation.yaml
+  - cronjob-fetch-cms-home-health.yaml
+  - cronjob-fetch-cms-hospice-puf.yaml
+  - cronjob-fetch-cms-hospital-general-info.yaml
+  - cronjob-fetch-cms-imaging-puf.yaml
+  - cronjob-fetch-cms-inpatient-puf.yaml
+  - cronjob-fetch-cms-lab-services.yaml
+  - cronjob-fetch-cms-medicaid-drug-spending.yaml
+  - cronjob-fetch-cms-medicare-advantage.yaml
+  - cronjob-fetch-cms-mental-health-puf.yaml
+  - cronjob-fetch-cms-nppes.yaml
+  - cronjob-fetch-cms-open-payments.yaml
+  - cronjob-fetch-cms-opioid-puf.yaml
+  - cronjob-fetch-cms-ordering-providers.yaml
+  - cronjob-fetch-cms-outpatient-puf.yaml
+  - cronjob-fetch-cms-part-b-spending.yaml
+  - cronjob-fetch-cms-part-d-spending.yaml
+  - cronjob-fetch-cms-physician-puf.yaml
+  - cronjob-fetch-cms-referring-providers.yaml
+  - cronjob-fetch-cms-snf-puf.yaml
+  - cronjob-fetch-cms-telehealth-puf.yaml
+  - cronjob-fetch-cms-utilization-puf.yaml
+  - cronjob-fetch-cms-physician-puf-services.yaml
+  - cronjob-fetch-cms-cost-reports-puf-lines.yaml
+  # Silver enrichment agents (7 files)
+  - cronjob-agent-contact-verification.yaml
+  - cronjob-agent-equipment-inventory.yaml
+  - cronjob-agent-idn-hierarchy.yaml
+  - cronjob-agent-publication-evidence.yaml
+  - cronjob-agent-referral-network.yaml
+  - cronjob-agent-service-line-inference.yaml
+  - cronjob-agent-staffing-decomposition.yaml
   - molecule-pipeline-config.yaml

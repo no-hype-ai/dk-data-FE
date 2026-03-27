@@ -52,8 +52,9 @@ def load_drugbank_data(
         logger.warning("No DrugBank records to load")
         return {
             "status": "success",
+            "records_fetched": 0,
             "records_inserted": 0,
-            "records_failed": 0,
+            "records_updated": 0,
             "errors": [],
         }
 
@@ -162,7 +163,8 @@ def load_drugbank_data(
 
     return {
         "status": "success" if records_inserted > 0 or records_failed == 0 else "failed",
+        "records_fetched": len(records),
         "records_inserted": records_inserted,
-        "records_failed": records_failed,
+        "records_updated": 0,
         "errors": errors[:10],
     }

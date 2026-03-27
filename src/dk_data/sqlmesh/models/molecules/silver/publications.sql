@@ -1,6 +1,10 @@
 -- SQLMesh Model: Silver Publications
--- Normalized publication data from OpenAlex, PubMed, Cochrane, and Journal RSS
+-- Normalized publication data from OpenAlex, PubMed, Cochrane, Journal RSS, and EuropePMC
 -- Part of: 012-dk-data-platform (extended by 015-assessment-dashboard-integration)
+-- Updated: 019-cms-puf-platform-reconciliation — added EuropePMC as 5th CTE source.
+--          EuropePMC records land in mol_raw.europepmc_raw -> mol_bronze.europepmc;
+--          they are merged here via the 'europepmc' CTE.
+--          No standalone mol_silver.europepmc table is created.
 
 MODEL (
     name silver.publications,
@@ -170,6 +174,45 @@ journal_rss_pubs AS (
         AND title IS NOT NULL
 ),
 
+-- Feature 019: EuropePMC publications (5th source)
+-- Reads from mol_bronze.europepmc which is populated by T022 (mol_bronze.europepmc model).
+-- Field mapping: abstractText -> abstract, journalInfo -> journal_name, firstPublicationDate -> publication_date
+europepmc_pubs AS (
+    SELECT
+        'europepmc:' || pmid AS openalex_id,
+        doi,
+        pmid::TEXT AS pmid,
+        NULL::TEXT AS pmcid,
+        title,
+        abstract_text AS abstract,
+        'journal-article' AS publication_type,
+        NULL::TEXT AS language,
+        publication_year::INTEGER AS publication_year,
+        publication_date,
+        journal_title AS journal_name,
+        NULL::TEXT AS journal_issn,
+        NULL::TEXT AS volume,
+        NULL::TEXT AS issue,
+        NULL::TEXT AS first_page,
+        NULL::TEXT AS last_page,
+        NULL::JSONB AS author_names,
+        author_list AS authorships,
+        NULL::JSONB AS concepts,
+        NULL::JSONB AS keywords,
+        NULL::JSONB AS mesh_terms,
+        NULL::INTEGER AS cited_by_count,
+        NULL::JSONB AS citation_counts_by_year,
+        NULL::BOOLEAN AS is_open_access,
+        NULL::TEXT AS pdf_url,
+        NULL::BOOLEAN AS is_retracted,
+        NULL::JSONB AS grants,
+        'europepmc' AS source,
+        created_at AS source_updated_at,
+        created_at
+    FROM mol_bronze.europepmc
+    WHERE title IS NOT NULL
+),
+
 -- Combine all publication sources
 combined_pubs AS (
     SELECT * FROM openalex_pubs
@@ -179,6 +222,8 @@ combined_pubs AS (
     SELECT * FROM cochrane_pubs
     UNION ALL
     SELECT * FROM journal_rss_pubs
+    UNION ALL
+    SELECT * FROM europepmc_pubs
 ),
 
 -- Extract first author
@@ -238,4 +283,5 @@ ORDER BY doi,
         WHEN 'pubmed' THEN 2
         WHEN 'cochrane_reviews' THEN 3
         WHEN 'journal_rss' THEN 4
+        WHEN 'europepmc' THEN 5
     END;

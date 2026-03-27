@@ -48,6 +48,8 @@ if PROMETHEUS_AVAILABLE:
         DK_QUARANTINE_COUNT,
         DATA_SOURCE_STALENESS_HOURS,
         DATA_SOURCE_TABLE_SIZE_BYTES,
+        record_gold_view_refresh,
+        record_cms_source_sync,
     )
 
 
@@ -568,6 +570,140 @@ def refresh_metrics_from_database_sync():
                 except Exception:
                     conn.rollback()
                     set_table_record_count(layer, table, 0)
+
+        # HCS Gold view metrics (019-cms-puf-platform-reconciliation)
+        hcs_gold_views = [
+            "cms_drug_market_profile",
+        ]
+        for view in hcs_gold_views:
+            try:
+                cur.execute(f"SELECT COUNT(*) FROM hcs_gold.{view}")
+                count = cur.fetchone()[0] or 0
+                record_gold_view_refresh(view, count)
+            except Exception:
+                conn.rollback()
+
+        # CMS source health from meta.data_sources (set staleness=0.5 for sources
+        # that have synced but are now past their freshness threshold)
+        try:
+            cur.execute("""
+                SELECT source_name, last_successful_refresh, source_type
+                FROM meta.data_sources
+                WHERE source_name LIKE 'cms_%' AND is_active = TRUE
+            """)
+            for row in cur.fetchall():
+                src_name, last_refresh, src_type = row
+                if last_refresh is None:
+                    continue
+                last_ts = last_refresh.timestamp() if hasattr(last_refresh, 'timestamp') else float(last_refresh)
+                hours_since = (time.time() - last_ts) / 3600
+                threshold = 720 if src_type == "cms_bulk_file" else 24
+                # Stale but not error: use 0.5; set via record_cms_source_sync with synthetic status
+                if hours_since > threshold:
+                    from dk_data.observability.metrics import CMS_SOURCE_HEALTH_STATUS
+                    CMS_SOURCE_HEALTH_STATUS.labels(source=src_name).set(0.5)
+        except Exception:
+            conn.rollback()
+
+        # HCS raw table record counts (019-cms-puf-platform-reconciliation)
+        hcs_raw_tables = [
+            'cms_part_d_spending', 'cms_part_b_spending', 'cms_open_payments',
+            'cms_nppes', 'cms_inpatient_puf', 'cms_physician_puf',
+            'cms_hospital_general_info', 'cms_medicare_advantage',
+            'cms_medicaid_drug_spending', 'cms_dme_puf', 'cms_home_health',
+            'cms_hospice_puf', 'cms_snf_puf', 'cms_outpatient_puf',
+            'cms_referring_providers', 'cms_ordering_providers', 'cms_lab_services',
+            'cms_imaging_puf', 'cms_mental_health_puf', 'cms_opioid_puf',
+            'cms_telehealth_puf', 'cms_geographic_variation', 'cms_chronic_conditions',
+            'cms_dual_eligible', 'cms_enrollment_puf', 'cms_claim_type_puf',
+            'cms_utilization_puf', 'cms_cost_reports_puf',
+            'cms_physician_puf_services', 'cms_cost_reports_puf_lines',
+        ]
+        for table in hcs_raw_tables:
+            try:
+                cur.execute(f"SELECT COUNT(*) FROM hcs_raw.{table}")
+                count = cur.fetchone()[0] or 0
+                set_table_record_count('hcs_raw', table, count)
+            except Exception:
+                conn.rollback()
+                set_table_record_count('hcs_raw', table, 0)
+
+        # HCS bronze table record counts
+        hcs_bronze_tables = [
+            'cms_part_d_spending', 'cms_part_b_spending', 'cms_open_payments',
+            'cms_nppes', 'cms_inpatient_puf', 'cms_physician_puf',
+            'cms_hospital_general_info', 'cms_medicare_advantage',
+            'cms_medicaid_drug_spending', 'cms_dme_puf', 'cms_home_health',
+            'cms_hospice_puf', 'cms_snf_puf', 'cms_outpatient_puf',
+            'cms_referring_providers', 'cms_ordering_providers', 'cms_lab_services',
+            'cms_imaging_puf', 'cms_mental_health_puf', 'cms_opioid_puf',
+            'cms_telehealth_puf', 'cms_geographic_variation', 'cms_chronic_conditions',
+            'cms_dual_eligible', 'cms_enrollment_puf', 'cms_claim_type_puf',
+            'cms_utilization_puf', 'cms_cost_reports_puf',
+            'cms_physician_puf_services', 'cms_cost_reports_puf_lines',
+        ]
+        for table in hcs_bronze_tables:
+            try:
+                cur.execute(f"SELECT COUNT(*) FROM hcs_bronze.{table}")
+                count = cur.fetchone()[0] or 0
+                set_table_record_count('hcs_bronze', table, count)
+            except Exception:
+                conn.rollback()
+                set_table_record_count('hcs_bronze', table, 0)
+
+        # HCS silver table record counts (SQLMesh models + agent tables)
+        hcs_silver_tables = [
+            'cms_drug_market', 'provider_profile', 'facility_profile',
+            'geographic_health', 'drug_utilization',
+            'service_lines', 'idn_hierarchy', 'referral_network',
+            'verified_contacts', 'staffing_decomposition', 'equipment_inventory',
+        ]
+        for table in hcs_silver_tables:
+            try:
+                cur.execute(f"SELECT COUNT(*) FROM hcs_silver.{table}")
+                count = cur.fetchone()[0] or 0
+                set_table_record_count('hcs_silver', table, count)
+            except Exception:
+                conn.rollback()
+                set_table_record_count('hcs_silver', table, 0)
+
+        # HCS agent quality metrics
+        hcs_agent_tables = {
+            'service_lines': 'npi',
+            'idn_hierarchy': 'child_npi',
+            'referral_network': 'referring_npi',
+            'verified_contacts': 'npi',
+            'staffing_decomposition': 'provider_id',
+            'equipment_inventory': 'npi',
+        }
+        for table, key_col in hcs_agent_tables.items():
+            try:
+                cur.execute(f"""
+                    SELECT
+                        COUNT(*) FILTER (WHERE needs_review = FALSE) AS direct_write,
+                        COUNT(*) FILTER (WHERE needs_review = TRUE)  AS needs_review,
+                        AVG(confidence_score)                        AS avg_confidence
+                    FROM hcs_silver.{table}
+                """)
+                row = cur.fetchone()
+                if row:
+                    set_table_record_count('hcs_silver_direct', table, row[0] or 0)
+                    set_table_record_count('hcs_silver_review', table, row[1] or 0)
+            except Exception:
+                conn.rollback()
+
+        # HCS gold view record counts
+        hcs_gold_views_extended = [
+            'cms_drug_market_profile',
+        ]
+        for view in hcs_gold_views_extended:
+            try:
+                cur.execute(f"SELECT COUNT(*) FROM hcs_gold.{view}")
+                count = cur.fetchone()[0] or 0
+                set_table_record_count('hcs_gold', view, count)
+            except Exception:
+                conn.rollback()
+                set_table_record_count('hcs_gold', view, 0)
 
         cur.close()
         conn.close()

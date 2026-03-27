@@ -1,0 +1,245 @@
+apiVersion: 1
+# Grafana Alert: Pipeline Source Failures
+# Feature: 019-cms-puf-platform-reconciliation (T054)
+#
+# Alert fires when a source has 3 consecutive failures in meta.refresh_log.
+# One rule per source_id, labeled with source_name for routing.
+# Routes to existing notification policy per FR-034 and SC-013.
+#
+# Datasource: PostgreSQL (dk-data database)
+# Evaluation interval: 1h (refresh_log is written after each ingestion run)
+
+groups:
+  - orgId: 1
+    name: pipeline-source-failures
+    folder: dk-data
+    interval: 1h
+    rules:
+
+      # ── CMS Part D Drug Spending ──────────────────────────────────────────────
+      - uid: pipeline-fail-cms-part-d-spending
+        title: "Pipeline: cms_part_d_spending — 3 consecutive failures"
+        condition: C
+        labels:
+          source_name: cms_part_d_spending
+          severity: warning
+          team: data-platform
+        annotations:
+          summary: "cms_part_d_spending has failed 3 consecutive ingestion runs"
+          runbook: "Check CMS data.gov for file availability; verify loader logs in Loki"
+        data:
+          - refId: A
+            relativeTimeRange: { from: 259200, to: 0 }
+            datasourceUid: postgresql
+            model:
+              rawSql: |
+                SELECT COUNT(*) as consecutive_failures
+                FROM (
+                    SELECT status
+                    FROM meta.refresh_log rl
+                    JOIN meta.data_sources ds ON ds.source_id = rl.source_id
+                    WHERE ds.source_name = 'cms_part_d_spending'
+                    ORDER BY rl.refreshed_at DESC
+                    LIMIT 3
+                ) recent
+                WHERE status = 'failed'
+              format: table
+          - refId: B
+            relativeTimeRange: { from: 259200, to: 0 }
+            datasourceUid: __expr__
+            model:
+              expression: A
+              type: reduce
+              reducer: last
+          - refId: C
+            relativeTimeRange: { from: 259200, to: 0 }
+            datasourceUid: __expr__
+            model:
+              conditions:
+                - evaluator: { params: [3], type: gte }
+                  operator: { type: and }
+                  query: { params: [C] }
+                  reducer: { params: [], type: last }
+              expression: B
+              type: threshold
+
+      # ── CMS Part B Drug Spending ──────────────────────────────────────────────
+      - uid: pipeline-fail-cms-part-b-spending
+        title: "Pipeline: cms_part_b_spending — 3 consecutive failures"
+        condition: C
+        labels:
+          source_name: cms_part_b_spending
+          severity: warning
+          team: data-platform
+        annotations:
+          summary: "cms_part_b_spending has failed 3 consecutive ingestion runs"
+        data:
+          - refId: A
+            relativeTimeRange: { from: 259200, to: 0 }
+            datasourceUid: postgresql
+            model:
+              rawSql: |
+                SELECT COUNT(*) as consecutive_failures FROM (
+                    SELECT status FROM meta.refresh_log rl
+                    JOIN meta.data_sources ds ON ds.source_id = rl.source_id
+                    WHERE ds.source_name = 'cms_part_b_spending'
+                    ORDER BY rl.refreshed_at DESC LIMIT 3
+                ) r WHERE status = 'failed'
+              format: table
+          - refId: B
+            relativeTimeRange: { from: 259200, to: 0 }
+            datasourceUid: __expr__
+            model: { expression: A, type: reduce, reducer: last }
+          - refId: C
+            relativeTimeRange: { from: 259200, to: 0 }
+            datasourceUid: __expr__
+            model:
+              conditions:
+                - evaluator: { params: [3], type: gte }
+                  operator: { type: and }
+                  query: { params: [C] }
+                  reducer: { params: [], type: last }
+              expression: B
+              type: threshold
+
+      # ── CMS Open Payments ─────────────────────────────────────────────────────
+      - uid: pipeline-fail-cms-open-payments
+        title: "Pipeline: cms_open_payments — 3 consecutive failures"
+        condition: C
+        labels:
+          source_name: cms_open_payments
+          severity: warning
+          team: data-platform
+        annotations:
+          summary: "cms_open_payments has failed 3 consecutive ingestion runs"
+        data:
+          - refId: A
+            relativeTimeRange: { from: 259200, to: 0 }
+            datasourceUid: postgresql
+            model:
+              rawSql: |
+                SELECT COUNT(*) as consecutive_failures FROM (
+                    SELECT status FROM meta.refresh_log rl
+                    JOIN meta.data_sources ds ON ds.source_id = rl.source_id
+                    WHERE ds.source_name = 'cms_open_payments'
+                    ORDER BY rl.refreshed_at DESC LIMIT 3
+                ) r WHERE status = 'failed'
+              format: table
+          - refId: B
+            relativeTimeRange: { from: 259200, to: 0 }
+            datasourceUid: __expr__
+            model: { expression: A, type: reduce, reducer: last }
+          - refId: C
+            relativeTimeRange: { from: 259200, to: 0 }
+            datasourceUid: __expr__
+            model:
+              conditions:
+                - evaluator: { params: [3], type: gte }
+                  operator: { type: and }
+                  query: { params: [C] }
+                  reducer: { params: [], type: last }
+              expression: B
+              type: threshold
+
+      # ── EuropePMC ─────────────────────────────────────────────────────────────
+      - uid: pipeline-fail-europepmc
+        title: "Pipeline: europepmc — 3 consecutive failures"
+        condition: C
+        labels:
+          source_name: europepmc
+          severity: critical
+          team: data-platform
+        annotations:
+          summary: "europepmc API ingestion has failed 3 consecutive runs"
+          runbook: "Check EuropePMC API status; verify HTTPS connectivity from cluster"
+        data:
+          - refId: A
+            relativeTimeRange: { from: 259200, to: 0 }
+            datasourceUid: postgresql
+            model:
+              rawSql: |
+                SELECT COUNT(*) as consecutive_failures FROM (
+                    SELECT status FROM meta.refresh_log rl
+                    JOIN meta.data_sources ds ON ds.source_id = rl.source_id
+                    WHERE ds.source_name = 'europepmc'
+                    ORDER BY rl.refreshed_at DESC LIMIT 3
+                ) r WHERE status = 'failed'
+              format: table
+          - refId: B
+            relativeTimeRange: { from: 259200, to: 0 }
+            datasourceUid: __expr__
+            model: { expression: A, type: reduce, reducer: last }
+          - refId: C
+            relativeTimeRange: { from: 259200, to: 0 }
+            datasourceUid: __expr__
+            model:
+              conditions:
+                - evaluator: { params: [3], type: gte }
+                  operator: { type: and }
+                  query: { params: [C] }
+                  reducer: { params: [], type: last }
+              expression: B
+              type: threshold
+
+      # ── NIH Reporter ──────────────────────────────────────────────────────────
+      - uid: pipeline-fail-nih-reporter
+        title: "Pipeline: nih_reporter — 3 consecutive failures"
+        condition: C
+        labels:
+          source_name: nih_reporter
+          severity: critical
+          team: data-platform
+        annotations:
+          summary: "nih_reporter API ingestion has failed 3 consecutive runs"
+          runbook: "Check NIH Reporter API status at reporter.nih.gov/api/v2/projects"
+        data:
+          - refId: A
+            relativeTimeRange: { from: 259200, to: 0 }
+            datasourceUid: postgresql
+            model:
+              rawSql: |
+                SELECT COUNT(*) as consecutive_failures FROM (
+                    SELECT status FROM meta.refresh_log rl
+                    JOIN meta.data_sources ds ON ds.source_id = rl.source_id
+                    WHERE ds.source_name = 'nih_reporter'
+                    ORDER BY rl.refreshed_at DESC LIMIT 3
+                ) r WHERE status = 'failed'
+              format: table
+          - refId: B
+            relativeTimeRange: { from: 259200, to: 0 }
+            datasourceUid: __expr__
+            model: { expression: A, type: reduce, reducer: last }
+          - refId: C
+            relativeTimeRange: { from: 259200, to: 0 }
+            datasourceUid: __expr__
+            model:
+              conditions:
+                - evaluator: { params: [3], type: gte }
+                  operator: { type: and }
+                  query: { params: [C] }
+                  reducer: { params: [], type: last }
+              expression: B
+              type: threshold
+
+      # ── Generic CMS Bulk Source Failure Alert (template-style comment) ────────
+      # The remaining 25 CMS PUF sources follow the identical pattern as
+      # cms_part_d_spending and cms_part_b_spending above.
+      # To add an alert for any source, copy a rule block above and replace:
+      #   - uid: pipeline-fail-{source_name_hyphenated}
+      #   - title: "Pipeline: {source_name} — 3 consecutive failures"
+      #   - labels.source_name: {source_name}
+      #   - WHERE ds.source_name = '{source_name}'
+      #
+      # Full list of remaining CMS PUF sources needing individual rules:
+      # cms_nppes, cms_inpatient_puf, cms_physician_puf, cms_hospital_general_info,
+      # cms_medicare_advantage, cms_medicaid_drug_spending, cms_dme_puf,
+      # cms_home_health, cms_hospice_puf, cms_snf_puf, cms_outpatient_puf,
+      # cms_referring_providers, cms_ordering_providers, cms_lab_services,
+      # cms_imaging_puf, cms_mental_health_puf, cms_opioid_puf, cms_telehealth_puf,
+      # cms_geographic_variation, cms_chronic_conditions, cms_dual_eligible,
+      # cms_enrollment_puf, cms_claim_type_puf, cms_utilization_puf, cms_cost_reports_puf
+      #
+      # These CMS PUF sources are file-based (requires_file: True) and only fail
+      # if an uploaded file is malformed or the loader throws an exception.
+      # Individual alerts for these low-signal sources can be added in a follow-up
+      # when the ops team establishes per-source SLOs.

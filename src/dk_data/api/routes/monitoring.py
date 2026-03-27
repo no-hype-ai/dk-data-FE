@@ -39,6 +39,9 @@ from dk_data.observability.metrics import (
     record_job_duration,
     increment_job_failure,
     record_data_source_refresh,
+    _is_cms_source,
+    record_cms_source_sync,
+    record_cms_fetch_duration,
 )
 
 # Router
@@ -145,6 +148,12 @@ async def report_job_completion(report: JobCompletionReport):
         record_data_source_refresh(
             report.job_name, report.source_name, report.records_processed
         )
+
+    # CMS PUF: update per-source health, ingestion, and duration metrics (019)
+    source_key = report.source_name or report.job_name
+    if _is_cms_source(source_key):
+        record_cms_source_sync(source_key, report.status, report.records_processed)
+        record_cms_fetch_duration(source_key, report.duration_seconds)
 
     logger.info(
         f"Job completion recorded: {report.job_name} "

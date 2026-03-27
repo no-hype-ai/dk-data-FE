@@ -14,6 +14,39 @@ from datetime import datetime
 from pathlib import Path
 
 from .sources import cms_inpatient, cms_hospital_info, cms_cost_reports, acc_tvc, hrsa
+# 019-cms-puf-platform-reconciliation: 28 CMS PUF loaders + 2 API loaders
+from .sources.cms_part_d_spending import load_cms_part_d_spending
+from .sources.cms_part_b_spending import load_cms_part_b_spending
+from .sources.cms_open_payments import load_cms_open_payments
+from .sources.cms_nppes import load_cms_nppes
+from .sources.cms_inpatient_puf import load_cms_inpatient_puf
+from .sources.cms_physician_puf import load_cms_physician_puf
+from .sources.cms_hospital_general_info import load_cms_hospital_general_info
+from .sources.cms_medicare_advantage import load_cms_medicare_advantage
+from .sources.cms_medicaid_drug_spending import load_cms_medicaid_drug_spending
+from .sources.cms_dme_puf import load_cms_dme_puf
+from .sources.cms_home_health import load_cms_home_health
+from .sources.cms_hospice_puf import load_cms_hospice_puf
+from .sources.cms_snf_puf import load_cms_snf_puf
+from .sources.cms_outpatient_puf import load_cms_outpatient_puf
+from .sources.cms_referring_providers import load_cms_referring_providers
+from .sources.cms_ordering_providers import load_cms_ordering_providers
+from .sources.cms_lab_services import load_cms_lab_services
+from .sources.cms_imaging_puf import load_cms_imaging_puf
+from .sources.cms_mental_health_puf import load_cms_mental_health_puf
+from .sources.cms_opioid_puf import load_cms_opioid_puf
+from .sources.cms_telehealth_puf import load_cms_telehealth_puf
+from .sources.cms_geographic_variation import load_cms_geographic_variation
+from .sources.cms_chronic_conditions import load_cms_chronic_conditions
+from .sources.cms_dual_eligible import load_cms_dual_eligible
+from .sources.cms_enrollment_puf import load_cms_enrollment_puf
+from .sources.cms_claim_type_puf import load_cms_claim_type_puf
+from .sources.cms_utilization_puf import load_cms_utilization_puf
+from .sources.cms_cost_reports_puf import load_cms_cost_reports_puf
+from .sources.cms_physician_puf_services import load_cms_physician_puf_services
+from .sources.cms_cost_reports_puf_lines import load_cms_cost_reports_puf_lines
+from .sources.europepmc import load_europepmc_data
+from .sources.nih_reporter import load_nih_reporter_data
 from .sources.pubmed import load_pubmed_data
 from .sources.ema_regulatory import load_ema_regulatory_data
 from .sources.openalex_ci import load_openalex_ci_data
@@ -32,6 +65,8 @@ from .sources.orcid import load_orcid_data
 from .sources.uspto_trademarks import load_uspto_trademarks_data
 from .sources.euipo_trademarks import load_euipo_trademarks_data
 
+from .fetchers.europepmc import EuropePMCFetcher
+from .fetchers.nih_reporter import NIHReporterFetcher
 from .fetchers import (
     PubMedFetcher,
     EMARegulatoryCIFetcher,
@@ -241,6 +276,277 @@ SOURCES = {
         'requires_file': False,
         'default_days_back': 90,
     },
+
+    # =========================================================================
+    # 019-cms-puf-platform-reconciliation: 28 CMS PUF file-based sources
+    # source_name keys MUST match meta.data_sources.source_name exactly
+    # (no meta_name override needed — keys match DB rows in migration 085)
+    # =========================================================================
+
+    # 7 core CMS PUF sources
+    'cms_part_d_spending': {
+        'name': 'CMS Part D Drug Spending',
+        'description': 'CMS Medicare Part D Drug Spending by Drug',
+        'loader': load_cms_part_d_spending,
+        'requires_file': True,
+        'accepts_file': True,
+        'default_days_back': None,
+    },
+    'cms_part_b_spending': {
+        'name': 'CMS Part B Drug Spending',
+        'description': 'CMS Medicare Part B Drug Spending by Manufacturer',
+        'loader': load_cms_part_b_spending,
+        'requires_file': True,
+        'accepts_file': True,
+        'default_days_back': None,
+    },
+    'cms_open_payments': {
+        'name': 'CMS Open Payments',
+        'description': 'CMS Open Payments (Sunshine Act) physician payments',
+        'loader': load_cms_open_payments,
+        'requires_file': True,
+        'accepts_file': True,
+        'default_days_back': None,
+    },
+    'cms_nppes': {
+        'name': 'CMS NPPES NPI Registry',
+        'description': 'CMS NPPES National Provider Identifier registry',
+        'loader': load_cms_nppes,
+        'requires_file': True,
+        'accepts_file': True,
+        'default_days_back': None,
+    },
+    'cms_inpatient_puf': {
+        'name': 'CMS Inpatient PUF',
+        'description': 'CMS Inpatient Public Use File (all DRGs)',
+        'loader': load_cms_inpatient_puf,
+        'requires_file': True,
+        'accepts_file': True,
+        'default_days_back': None,
+    },
+    'cms_physician_puf': {
+        'name': 'CMS Physician PUF',
+        'description': 'CMS Medicare Physician and Other Practitioners PUF',
+        'loader': load_cms_physician_puf,
+        'requires_file': True,
+        'accepts_file': True,
+        'default_days_back': None,
+    },
+    'cms_hospital_general_info': {
+        'name': 'CMS Hospital General Information',
+        'description': 'CMS Hospital General Information',
+        'loader': load_cms_hospital_general_info,
+        'requires_file': True,
+        'accepts_file': True,
+        'default_days_back': None,
+    },
+
+    # 21 additional CMS PUF sources
+    'cms_medicare_advantage': {
+        'name': 'CMS Medicare Advantage',
+        'description': 'CMS Medicare Advantage enrollment data',
+        'loader': load_cms_medicare_advantage,
+        'requires_file': True,
+        'accepts_file': True,
+        'default_days_back': None,
+    },
+    'cms_medicaid_drug_spending': {
+        'name': 'CMS Medicaid Drug Spending',
+        'description': 'CMS Medicaid drug spending by drug and state',
+        'loader': load_cms_medicaid_drug_spending,
+        'requires_file': True,
+        'accepts_file': True,
+        'default_days_back': None,
+    },
+    'cms_dme_puf': {
+        'name': 'CMS DME PUF',
+        'description': 'CMS Durable Medical Equipment PUF',
+        'loader': load_cms_dme_puf,
+        'requires_file': True,
+        'accepts_file': True,
+        'default_days_back': None,
+    },
+    'cms_home_health': {
+        'name': 'CMS Home Health',
+        'description': 'CMS Home Health Agency compare data',
+        'loader': load_cms_home_health,
+        'requires_file': True,
+        'accepts_file': True,
+        'default_days_back': None,
+    },
+    'cms_hospice_puf': {
+        'name': 'CMS Hospice PUF',
+        'description': 'CMS Hospice provider utilization PUF',
+        'loader': load_cms_hospice_puf,
+        'requires_file': True,
+        'accepts_file': True,
+        'default_days_back': None,
+    },
+    'cms_snf_puf': {
+        'name': 'CMS SNF PUF',
+        'description': 'CMS Skilled Nursing Facility PUF',
+        'loader': load_cms_snf_puf,
+        'requires_file': True,
+        'accepts_file': True,
+        'default_days_back': None,
+    },
+    'cms_outpatient_puf': {
+        'name': 'CMS Outpatient PUF',
+        'description': 'CMS Hospital Outpatient PUF',
+        'loader': load_cms_outpatient_puf,
+        'requires_file': True,
+        'accepts_file': True,
+        'default_days_back': None,
+    },
+    'cms_referring_providers': {
+        'name': 'CMS Referring Providers',
+        'description': 'CMS Medicare referring provider patterns',
+        'loader': load_cms_referring_providers,
+        'requires_file': True,
+        'accepts_file': True,
+        'default_days_back': None,
+    },
+    'cms_ordering_providers': {
+        'name': 'CMS Ordering Providers',
+        'description': 'CMS Medicare ordering/referring/prescribing PUF',
+        'loader': load_cms_ordering_providers,
+        'requires_file': True,
+        'accepts_file': True,
+        'default_days_back': None,
+    },
+    'cms_lab_services': {
+        'name': 'CMS Lab Services',
+        'description': 'CMS Medicare lab services utilization PUF',
+        'loader': load_cms_lab_services,
+        'requires_file': True,
+        'accepts_file': True,
+        'default_days_back': None,
+    },
+    'cms_imaging_puf': {
+        'name': 'CMS Imaging PUF',
+        'description': 'CMS Medicare imaging services PUF',
+        'loader': load_cms_imaging_puf,
+        'requires_file': True,
+        'accepts_file': True,
+        'default_days_back': None,
+    },
+    'cms_mental_health_puf': {
+        'name': 'CMS Mental Health PUF',
+        'description': 'CMS Medicare mental health services PUF',
+        'loader': load_cms_mental_health_puf,
+        'requires_file': True,
+        'accepts_file': True,
+        'default_days_back': None,
+    },
+    'cms_opioid_puf': {
+        'name': 'CMS Opioid PUF',
+        'description': 'CMS Medicare opioid prescribing rates by geography',
+        'loader': load_cms_opioid_puf,
+        'requires_file': True,
+        'accepts_file': True,
+        'default_days_back': None,
+    },
+    'cms_telehealth_puf': {
+        'name': 'CMS Telehealth PUF',
+        'description': 'CMS Medicare telehealth utilization PUF',
+        'loader': load_cms_telehealth_puf,
+        'requires_file': True,
+        'accepts_file': True,
+        'default_days_back': None,
+    },
+    'cms_geographic_variation': {
+        'name': 'CMS Geographic Variation',
+        'description': 'CMS Medicare geographic variation public use file',
+        'loader': load_cms_geographic_variation,
+        'requires_file': True,
+        'accepts_file': True,
+        'default_days_back': None,
+    },
+    'cms_chronic_conditions': {
+        'name': 'CMS Chronic Conditions',
+        'description': 'CMS Medicare chronic conditions prevalence data',
+        'loader': load_cms_chronic_conditions,
+        'requires_file': True,
+        'accepts_file': True,
+        'default_days_back': None,
+    },
+    'cms_dual_eligible': {
+        'name': 'CMS Dual Eligible',
+        'description': 'CMS Medicare-Medicaid dual eligible beneficiaries',
+        'loader': load_cms_dual_eligible,
+        'requires_file': True,
+        'accepts_file': True,
+        'default_days_back': None,
+    },
+    'cms_enrollment_puf': {
+        'name': 'CMS Enrollment PUF',
+        'description': 'CMS Medicare enrollment by geography and demographics',
+        'loader': load_cms_enrollment_puf,
+        'requires_file': True,
+        'accepts_file': True,
+        'default_days_back': None,
+    },
+    'cms_claim_type_puf': {
+        'name': 'CMS Claim Type PUF',
+        'description': 'CMS Medicare claims by type and service category',
+        'loader': load_cms_claim_type_puf,
+        'requires_file': True,
+        'accepts_file': True,
+        'default_days_back': None,
+    },
+    'cms_utilization_puf': {
+        'name': 'CMS Utilization PUF',
+        'description': 'CMS Medicare utilization by service category',
+        'loader': load_cms_utilization_puf,
+        'requires_file': True,
+        'accepts_file': True,
+        'default_days_back': None,
+    },
+    'cms_cost_reports_puf': {
+        'name': 'CMS Cost Reports PUF',
+        'description': 'CMS Hospital Cost Reports PUF (all providers)',
+        'loader': load_cms_cost_reports_puf,
+        'requires_file': True,
+        'accepts_file': True,
+        'default_days_back': None,
+    },
+    'cms_physician_puf_services': {
+        'loader': load_cms_physician_puf_services,
+        'requires_file': True,
+        'requires_fiscal_year': False,
+        'default_days_back': None,
+        'meta_name': 'cms_physician_puf_services',
+        'description': 'CMS Physician PUF by Provider and Service (HCPCS grain)',
+    },
+    'cms_cost_reports_puf_lines': {
+        'loader': load_cms_cost_reports_puf_lines,
+        'requires_file': True,
+        'requires_fiscal_year': False,
+        'default_days_back': None,
+        'meta_name': 'cms_cost_reports_puf_lines',
+        'description': 'CMS Cost Reports PUF worksheet-level staffing lines',
+    },
+
+    # =========================================================================
+    # 019-cms-puf-platform-reconciliation: 2 new API sources
+    # =========================================================================
+
+    'europepmc': {
+        'name': 'EuropePMC',
+        'description': 'EuropePMC publication search API (incremental by update date)',
+        'fetcher': EuropePMCFetcher,
+        'loader': load_europepmc_data,
+        'requires_file': False,
+        'default_days_back': 30,
+    },
+    'nih_reporter': {
+        'name': 'NIH Reporter',
+        'description': 'NIH RePORTER research grants API (incremental by start date)',
+        'fetcher': NIHReporterFetcher,
+        'loader': load_nih_reporter_data,
+        'requires_file': False,
+        'default_days_back': 90,
+    },
 }
 
 
@@ -367,7 +673,14 @@ def run_ingestion(source: str, **kwargs) -> dict:
         data_dir = kwargs.get('data_dir', '/tmp/data/raw')
         Path(data_dir).mkdir(parents=True, exist_ok=True)
 
-        fetcher = source_info['fetcher'](data_dir=data_dir)
+        # Per-source retry overrides (optional keys in SOURCES entry)
+        fetcher_kwargs: dict = {'data_dir': data_dir}
+        if 'max_retries' in source_info:
+            fetcher_kwargs['max_retries'] = source_info['max_retries']
+        if 'retry_base_delay_seconds' in source_info:
+            fetcher_kwargs['retry_base_delay_seconds'] = source_info['retry_base_delay_seconds']
+
+        fetcher = source_info['fetcher'](**fetcher_kwargs)
 
         # Compute incremental days_back from last successful refresh
         fetch_kwargs = {}
@@ -398,6 +711,9 @@ def run_ingestion(source: str, **kwargs) -> dict:
 
     if source_info.get('requires_file'):
         if 'filepath' not in kwargs or not kwargs['filepath']:
+            if kwargs.get('skip_if_no_file'):
+                logger.info("Skipping file-required source '%s' — no file provided (scheduled run)", source)
+                return {"status": "skipped", "records_inserted": 0, "source": source}
             raise ValueError(f"Source '{source}' requires a file path")
         loader_kwargs['filepath'] = kwargs['filepath']
     elif source_info.get('accepts_file') and kwargs.get('filepath'):
@@ -466,6 +782,11 @@ Examples:
     parser.add_argument('--data-dir', '-d', default='/tmp/data/raw', help='Directory for fetcher temp storage')
     parser.add_argument('--list', '-l', action='store_true', help='List available sources')
     parser.add_argument('--verbose', '-v', action='store_true', help='Verbose output')
+    parser.add_argument(
+        '--skip-if-no-file', action='store_true', dest='skip_if_no_file',
+        help='For file-required sources: exit 0 with status=skipped when no --file is given '
+             '(used by scheduled CronJobs that run before the file has been deposited)',
+    )
 
     args = parser.parse_args()
 
@@ -514,6 +835,7 @@ Examples:
                     fiscal_year=args.fiscal_year,
                     batch_size=args.batch_size,
                     data_dir=args.data_dir,
+                    skip_if_no_file=args.skip_if_no_file,
                 )
                 records = result.get('records_inserted', result.get('records_fetched', 0))
                 span.set_attribute("records_fetched", records)
@@ -524,6 +846,7 @@ Examples:
                 fiscal_year=args.fiscal_year,
                 batch_size=args.batch_size,
                 data_dir=args.data_dir,
+                skip_if_no_file=args.skip_if_no_file,
             )
             records = result.get('records_inserted', result.get('records_fetched', 0))
 

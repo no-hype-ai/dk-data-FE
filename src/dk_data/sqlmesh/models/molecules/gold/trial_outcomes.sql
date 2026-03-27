@@ -1,6 +1,12 @@
 -- SQLMesh Model: Gold Trial Outcomes
 -- Combined trial outcomes from clinical trials registry and publication evidence
 -- Part of: 015-assessment-dashboard-integration
+-- Updated: 019-cms-puf-platform-reconciliation — removed xenon.publication_evidence reference,
+--          replaced with mol_silver.publication_evidence; extended grain with endpoint_name.
+--
+-- GRAIN CHANGE NOTE: adding endpoint_name produces more rows per (molecule_id, trial_nct_id)
+-- than the prior grain. api/routes/data_platform.py callers that aggregate per-trial must
+-- GROUP BY endpoint_name or use aggregation functions if they expect one row per trial.
 
 MODEL (
     name mol_gold.trial_outcomes,
@@ -9,7 +15,7 @@ MODEL (
     audits (
         not_null(columns := (evidence_source, confidence_score))
     ),
-    grain (molecule_id, trial_nct_id, evidence_source)
+    grain (molecule_id, trial_nct_id, endpoint_name, evidence_source)
 );
 
 -- Source 1: ClinicalTrials.gov structured results data
@@ -31,7 +37,9 @@ WITH registry_outcomes AS (
       AND ct.molecule_id IS NOT NULL
 ),
 
--- Source 2: Publication-extracted evidence (LLM-extracted, confidence >= 0.40)
+-- Source 2: Publication-extracted evidence (LLM-extracted from mol_silver.publication_evidence)
+-- Replaces prior reference to xenon.publication_evidence (feature 019-cms-puf-platform-reconciliation)
+-- Filters: confidence >= 0.40 AND needs_review = FALSE (only reviewed/promoted records)
 publication_outcomes AS (
     SELECT
         pe.molecule_id,
@@ -44,8 +52,9 @@ publication_outcomes AS (
         pe.sample_size,
         pe.confidence_score,
         pe.created_at::DATE AS evidence_date
-    FROM xenon.publication_evidence pe
+    FROM mol_silver.publication_evidence pe
     WHERE pe.confidence_score >= 0.40
+      AND pe.needs_review = FALSE
       AND pe.molecule_id IS NOT NULL
 )
 

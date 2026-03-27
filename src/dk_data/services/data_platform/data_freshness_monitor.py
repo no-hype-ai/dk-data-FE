@@ -340,3 +340,54 @@ class DataFreshnessMonitor:
                     records_processed = $3, error_message = $4
                 WHERE job_id = $1
             """, job_id, status, records_processed, error_message)
+
+    async def is_fresh(self, source_name: str, max_age_hours: int = 720) -> bool:
+        """
+        Check whether a source has been successfully refreshed within max_age_hours.
+
+        Feature: 019-cms-puf-platform-reconciliation (T045)
+
+        IMPORTANT: This method covers ONLY sources tracked in meta.data_sources
+        (new CMS PUF + API sources added by this feature, plus existing
+        EMA/Cochrane/DrugBank/PubChem/PubMed).
+
+        Legacy MCP-managed sources tracked in raw.ingestion_jobs are NOT
+        covered and MUST NOT be queried through this method.
+
+        Default thresholds:
+          - CMS bulk file sources: 720h (30 days)
+          - API incremental sources: 24h (pass max_age_hours=24)
+
+        Args:
+            source_name: Source name matching meta.data_sources.source_name.
+                         Must be byte-for-byte identical to the SOURCES dict key.
+            max_age_hours: Maximum age of last successful refresh in hours.
+                           Default 720 (30 days) for CMS bulk sources.
+
+        Returns:
+            True if last_successful_refresh is not NULL and within max_age_hours.
+            False if source not found in meta.data_sources, never refreshed, or stale.
+        """
+        async with self.db_pool.acquire() as conn:
+            row = await conn.fetchrow(
+                """
+                SELECT last_successful_refresh
+                FROM meta.data_sources
+                WHERE source_name = $1
+                  AND is_active = TRUE
+                """,
+                source_name,
+            )
+
+        if row is None:
+            # Source not tracked in meta.data_sources — cannot determine freshness
+            logger.warning("is_fresh: source not found in meta.data_sources: %s", source_name)
+            return False
+
+        last_refresh = row["last_successful_refresh"]
+        if last_refresh is None:
+            # Never successfully refreshed
+            return False
+
+        age = datetime.utcnow() - last_refresh.replace(tzinfo=None)
+        return age.total_seconds() / 3600 <= max_age_hours

@@ -115,6 +115,22 @@ try:
 except ImportError as e:
     logger.warning(f"MCP tools router not available: {e}")
 
+# Agents router (019-cms-puf-platform-reconciliation T041)
+try:
+    from dk_data.api.routes.agents import router as agents_router
+    app.include_router(agents_router, prefix="/api/v1", tags=["agents"])
+    logger.info("Loaded agents router")
+except ImportError as e:
+    logger.warning(f"Agents router not available: {e}")
+
+# Data tools gateway router (019-cms-puf-platform-reconciliation T048)
+try:
+    from dk_data.api.routes.data_tools import router as data_tools_router
+    app.include_router(data_tools_router, prefix="/api/v1", tags=["data-tools"])
+    logger.info("Loaded data-tools gateway router")
+except ImportError as e:
+    logger.warning(f"Data tools gateway router not available: {e}")
+
 # CORS middleware
 app.add_middleware(
     CORSMiddleware,

@@ -45,8 +45,9 @@ def load_ema_regulatory_data(
         logger.warning("No EMA regulatory records to load")
         return {
             "status": "success",
+            "records_fetched": 0,
             "records_inserted": 0,
-            "records_failed": 0,
+            "records_updated": 0,
             "errors": [],
         }
 
@@ -142,7 +143,8 @@ def load_ema_regulatory_data(
 
     return {
         "status": "success",
+        "records_fetched": len(records),
         "records_inserted": records_inserted,
-        "records_failed": records_failed,
+        "records_updated": 0,
         "errors": errors[:10],
     }

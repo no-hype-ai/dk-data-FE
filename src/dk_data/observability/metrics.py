@@ -471,6 +471,108 @@ DK_QUARANTINE_COUNT = Gauge(
 
 
 # =============================================================================
+# CMS PUF Platform Metrics (019-cms-puf-platform-reconciliation)
+# =============================================================================
+
+CMS_SOURCE_HEALTH_STATUS = Gauge(
+    "cms_source_health_status",
+    "CMS data source health: 1=healthy (refreshed within threshold), 0=error",
+    ["source"],
+)
+
+CMS_SOURCE_LAST_SYNC_TIMESTAMP = Gauge(
+    "cms_source_last_sync_timestamp",
+    "Unix timestamp of last successful CMS source sync",
+    ["source"],
+)
+
+CMS_RECORDS_INGESTED_TOTAL = Counter(
+    "cms_records_ingested_total",
+    "Total records ingested per CMS data source",
+    ["source"],
+)
+
+CMS_BACKFILL_REQUESTS_TOTAL = Counter(
+    "cms_backfill_requests_total",
+    "Total backfill requests triggered via data-tools API",
+    ["source_name", "status"],
+)
+
+CMS_AGENT_COST_USD = Gauge(
+    "cms_agent_cost_usd",
+    "Estimated LLM cost (USD) for last agent run",
+    ["agent_name"],
+)
+
+CMS_AGENT_QUARANTINE_PENDING = Gauge(
+    "cms_agent_quarantine_pending",
+    "Records quarantined in the most recent agent run",
+    ["agent_name"],
+)
+
+CMS_AGENT_RECORDS_ENRICHED_TOTAL = Counter(
+    "cms_agent_records_enriched_total",
+    "Cumulative records successfully written to silver by agent",
+    ["agent_name"],
+)
+
+CMS_AGENT_RECORDS_QUARANTINED_TOTAL = Counter(
+    "cms_agent_records_quarantined_total",
+    "Cumulative records quarantined by agent (low-confidence or error)",
+    ["agent_name"],
+)
+
+CMS_AGENT_LAST_RUN_STATUS = Gauge(
+    "cms_agent_last_run_status",
+    "Status of last agent run: 1=success, 0=error",
+    ["agent_name"],
+)
+
+CMS_AGENT_EXECUTIONS_TOTAL = Counter(
+    "cms_agent_executions_total",
+    "Total agent run invocations",
+    ["agent_name"],
+)
+
+CMS_FETCH_DURATION_SECONDS = Histogram(
+    "cms_fetch_duration_seconds",
+    "Duration of CMS source fetch/ingestion jobs in seconds",
+    ["source"],
+    buckets=[30, 60, 120, 300, 600, 1200, 1800, 3600],
+)
+
+CMS_EXTERNAL_API_REQUESTS_TOTAL = Counter(
+    "cms_external_api_requests_total",
+    "Total HTTP requests made to external APIs (EuropePMC, NIH Reporter)",
+    ["source", "status"],
+)
+
+CMS_RATE_LIMIT_REJECTIONS_TOTAL = Counter(
+    "cms_rate_limit_rejections_total",
+    "Total rate-limit (429) responses from external APIs",
+    ["source"],
+)
+
+CMS_GOLD_VIEW_LAST_REFRESH_TIMESTAMP = Gauge(
+    "cms_gold_view_last_refresh_timestamp",
+    "Unix timestamp of last hcs_gold view refresh",
+    ["view"],
+)
+
+CMS_GOLD_VIEW_RECORD_COUNT = Gauge(
+    "cms_gold_view_record_count",
+    "Current record count in hcs_gold views",
+    ["view"],
+)
+
+CMS_GOLD_REFRESH_DURATION_SECONDS = Gauge(
+    "cms_gold_refresh_duration_seconds",
+    "Duration in seconds of last hcs_gold materialized view refresh",
+    ["view"],
+)
+
+
+# =============================================================================
 # Helper Functions
 # =============================================================================
 
@@ -528,6 +630,76 @@ def get_metrics() -> bytes:
 def get_metrics_content_type() -> str:
     """Get content type for metrics endpoint."""
     return CONTENT_TYPE_LATEST
+
+
+_CMS_SOURCE_PREFIXES = (
+    "cms_", "fetch-cms-", "fetch_cms_",
+)
+
+
+def _is_cms_source(name: str) -> bool:
+    """Return True if the job/source name belongs to a CMS PUF source."""
+    return any(name.startswith(p) for p in _CMS_SOURCE_PREFIXES)
+
+
+def record_cms_source_sync(source_name: str, status: str, records: int = 0) -> None:
+    """Record a CMS source sync event (health + timestamp + ingested counter)."""
+    label = source_name.replace("-", "_").removeprefix("fetch_")
+    if status == "success":
+        CMS_SOURCE_HEALTH_STATUS.labels(source=label).set(1)
+        CMS_SOURCE_LAST_SYNC_TIMESTAMP.labels(source=label).set(time.time())
+        if records:
+            CMS_RECORDS_INGESTED_TOTAL.labels(source=label).inc(records)
+    else:
+        CMS_SOURCE_HEALTH_STATUS.labels(source=label).set(0)
+
+
+def record_cms_backfill(source_name: str, status: str) -> None:
+    """Increment the backfill request counter for a CMS source."""
+    CMS_BACKFILL_REQUESTS_TOTAL.labels(source_name=source_name, status=status).inc()
+
+
+def record_agent_run(
+    agent_name: str,
+    records_written: int = 0,
+    records_quarantined: int = 0,
+    cost_usd: float = 0.0,
+    status: str = "success",
+) -> None:
+    """Record agent run results: all CMS agent metrics."""
+    CMS_AGENT_EXECUTIONS_TOTAL.labels(agent_name=agent_name).inc()
+    CMS_AGENT_LAST_RUN_STATUS.labels(agent_name=agent_name).set(1 if status == "success" else 0)
+    CMS_AGENT_QUARANTINE_PENDING.labels(agent_name=agent_name).set(records_quarantined)
+    if records_written > 0:
+        CMS_AGENT_RECORDS_ENRICHED_TOTAL.labels(agent_name=agent_name).inc(records_written)
+    if records_quarantined > 0:
+        CMS_AGENT_RECORDS_QUARANTINED_TOTAL.labels(agent_name=agent_name).inc(records_quarantined)
+    if cost_usd > 0:
+        CMS_AGENT_COST_USD.labels(agent_name=agent_name).set(cost_usd)
+
+
+def record_cms_fetch_duration(source_name: str, duration_seconds: float) -> None:
+    """Record fetch/ingestion job duration for a CMS source."""
+    label = source_name.replace("-", "_").removeprefix("fetch_")
+    CMS_FETCH_DURATION_SECONDS.labels(source=label).observe(duration_seconds)
+
+
+def record_api_request(source: str, status: str = "success") -> None:
+    """Record an external API request (EuropePMC, NIH Reporter)."""
+    CMS_EXTERNAL_API_REQUESTS_TOTAL.labels(source=source, status=status).inc()
+
+
+def record_rate_limit_rejection(source: str) -> None:
+    """Record a 429 rate-limit rejection from an external API."""
+    CMS_RATE_LIMIT_REJECTIONS_TOTAL.labels(source=source).inc()
+
+
+def record_gold_view_refresh(view: str, record_count: int, duration_seconds: float = 0.0) -> None:
+    """Record an hcs_gold view refresh event."""
+    CMS_GOLD_VIEW_LAST_REFRESH_TIMESTAMP.labels(view=view).set(time.time())
+    CMS_GOLD_VIEW_RECORD_COUNT.labels(view=view).set(record_count)
+    if duration_seconds > 0:
+        CMS_GOLD_REFRESH_DURATION_SECONDS.labels(view=view).set(duration_seconds)
 
 
 def timed_job(job_name: str):

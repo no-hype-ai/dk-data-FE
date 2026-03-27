@@ -72,17 +72,17 @@ phase1() {
 
   # 1b. Verify main.py SOURCES count inside the container
   echo ""
-  echo "1b. SOURCES dict has 22 entries"
+  echo "1b. SOURCES dict has 52+ entries (22 original + 30 new: 28 CMS PUF + europepmc + nih_reporter)"
   if [ -z "$pod" ]; then
     fail "Cannot check SOURCES — no pod"
   else
     local count
     count=$(kubectl -n "$NS" exec "$pod" -- \
       python3 -c "from dk_data.ingestion.main import SOURCES; print(len(SOURCES))" 2>/dev/null)
-    if [ "$count" = "22" ]; then
+    if [ "$count" -ge 52 ] 2>/dev/null; then
       pass "SOURCES count = $count"
     else
-      fail "SOURCES count = ${count:-ERROR} (expected 22)"
+      fail "SOURCES count = ${count:-ERROR} (expected >= 52)"
     fi
   fi
 
@@ -102,16 +102,16 @@ phase1() {
     fi
   fi
 
-  # 1d. Check meta.data_sources has all 22 sources
+  # 1d. Check meta.data_sources has all 52+ sources
   echo ""
-  echo "1d. meta.data_sources populated"
+  echo "1d. meta.data_sources populated (52+ sources including 30 new CMS PUF + API)"
   local src_count
   src_count=$(run_sql "SELECT count(*) FROM meta.data_sources WHERE is_active = true")
   src_count=$(echo "$src_count" | tr -d '[:space:]')
-  if [ "$src_count" -ge 22 ] 2>/dev/null; then
+  if [ "$src_count" -ge 52 ] 2>/dev/null; then
     pass "Active sources in meta: $src_count"
   else
-    fail "Active sources in meta: ${src_count:-ERROR} (expected >= 22)"
+    fail "Active sources in meta: ${src_count:-ERROR} (expected >= 52)"
   fi
 
   # 1e. Verify key source_name values exist
@@ -125,6 +125,15 @@ phase1() {
     uspto_trademarks euipo_trademarks
     cms_medicare_inpatient cms_hospital_info
     cms_cost_reports acc_tvc hrsa_shortage_areas
+    cms_part_d_spending cms_part_b_spending cms_open_payments
+    cms_nppes cms_inpatient_puf cms_physician_puf cms_hospital_general_info
+    cms_medicare_advantage cms_medicaid_drug_spending cms_dme_puf
+    cms_home_health cms_hospice_puf cms_snf_puf cms_outpatient_puf
+    cms_referring_providers cms_ordering_providers cms_lab_services
+    cms_imaging_puf cms_mental_health_puf cms_opioid_puf cms_telehealth_puf
+    cms_geographic_variation cms_chronic_conditions cms_dual_eligible
+    cms_enrollment_puf cms_claim_type_puf cms_utilization_puf cms_cost_reports_puf
+    europepmc nih_reporter
   )
   for name in "${EXPECTED_NAMES[@]}"; do
     local found
@@ -142,10 +151,10 @@ phase1() {
   echo "1f. Ingestion CronJobs deployed"
   local total_ingestion
   total_ingestion=$(kubectl -n "$NS" get cronjobs -l app.kubernetes.io/component=ingestion --no-headers 2>/dev/null | wc -l | tr -d ' ')
-  if [ "$total_ingestion" -ge 17 ] 2>/dev/null; then
+  if [ "$total_ingestion" -ge 52 ] 2>/dev/null; then
     pass "Ingestion CronJobs deployed: $total_ingestion"
   else
-    fail "Ingestion CronJobs: ${total_ingestion:-0} (expected >= 17)"
+    fail "Ingestion CronJobs: ${total_ingestion:-0} (expected >= 52)"
   fi
 
   echo ""

@@ -22,21 +22,30 @@ class BaseFetcher(ABC):
     SOURCE_NAME: str = "base"
     BASE_URL: str = ""
 
-    def __init__(self, data_dir: Optional[str] = None):
+    def __init__(
+        self,
+        data_dir: Optional[str] = None,
+        max_retries: int = 3,
+        retry_base_delay_seconds: float = 1.0,
+    ):
         """
         Initialize fetcher.
 
         Args:
             data_dir: Directory to store downloaded files. Defaults to ./data/raw
+            max_retries: Total retry attempts on transient errors (default 3).
+                         Can be overridden per-source via SOURCES dict key ``max_retries``.
+            retry_base_delay_seconds: urllib3 backoff_factor (delay = backoff_factor * 2^(n-1)).
+                         Can be overridden per-source via SOURCES dict key ``retry_base_delay_seconds``.
         """
         self.data_dir = Path(data_dir or os.environ.get('DATA_DIR', './data/raw'))
         self.data_dir.mkdir(parents=True, exist_ok=True)
 
-        # Set up session with retry logic
+        # Set up session with retry logic (per-source overridable via SOURCES dict)
         self.session = requests.Session()
         retry_strategy = Retry(
-            total=3,
-            backoff_factor=1,
+            total=max_retries,
+            backoff_factor=retry_base_delay_seconds,
             status_forcelist=[429, 500, 502, 503, 504],
         )
         adapter = HTTPAdapter(max_retries=retry_strategy)

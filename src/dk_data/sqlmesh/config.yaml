@@ -36,6 +36,11 @@ physical_schema_mapping:
   bronze: bronze
   silver: silver
   gold: gold
+  # HCS (Healthcare System) schemas (019-cms-puf-platform-reconciliation)
+  hcs_raw: hcs_raw
+  hcs_bronze: hcs_bronze
+  hcs_silver: hcs_silver
+  hcs_gold: hcs_gold
   # Xenon application schema (015-assessment-dashboard-integration)
   xenon: xenon
   meta: meta
