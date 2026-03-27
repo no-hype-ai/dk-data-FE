@@ -19,7 +19,7 @@
 **Checkpoint**: `085_cms_puf_platform_reconciliation.sql` applied cleanly to staging; all existing tests pass.
 
 - [ ] T001 Audit all 57 016-branch migration files against current main-branch schema — document in `specs/019-cms-puf-platform-reconciliation/research.md` which objects already exist and which are genuinely new
-- [ ] T002 Write `src/dk_data/sql/migrations/085_cms_puf_platform_reconciliation.sql` — delta-only: new `hcs_raw` tables (7 core + 21 additional), `mol_silver.publication_evidence`, `mol_silver.physician_payments`, `mol_silver.research_grants`, `mol_silver.agent_quarantine`, `hcs_bronze/hcs_silver/hcs_gold` schema creation, and `INSERT INTO meta.data_sources` rows for all 28 new CMS sources + 6 new API sources
+- [ ] T002 Write `src/dk_data/sql/migrations/085_cms_puf_platform_reconciliation.sql` — delta-only: new `hcs_raw` tables (7 core + 21 additional), `mol_silver.publication_evidence`, `mol_silver.publication_evidence_staging` (same schema as live table; `content_hash` is merge key), `mol_silver.physician_payments`, `mol_silver.research_grants`, `mol_silver.agent_quarantine`, `mol_silver.europepmc` (silver normalization table per data-model.md), skeleton DDL for 6 CMS agent silver tables (`hcs_silver.service_lines`, `hcs_silver.idn_hierarchy`, `hcs_silver.referral_network`, `hcs_silver.verified_contacts`, `hcs_silver.staffing_decomposition`, `hcs_silver.equipment_inventory`), `hcs_bronze/hcs_silver/hcs_gold` schema creation, and `INSERT INTO meta.data_sources` rows for all 28 new CMS sources + 6 new API sources
 - [ ] T003 Apply migration 085 to staging database and run `pytest tests/test_migration_runner.py tests/test_imports.py tests/test_api.py -v` — confirm zero regressions
 
 ---
@@ -54,7 +54,7 @@
 - [ ] T014 [US1] Write `sqlmesh/models/hcs/gold/cms_drug_market_profile.sql` — kind `FULL`; grain `ndc`; extends silver with `market_share_pct` (spending / SUM OVER generic_name group), `spending_rank_in_category` using `RANK() OVER (PARTITION BY usp_category ORDER BY total_spending DESC NULLS LAST)` per `data-model.md` Gold section
 - [ ] T015 [US1] Write 28 K8s CronJob manifests in `k8s/apps/cronjobs/base/` — one per CMS source; follow `cronjob-fetch-ema-reg.yaml` template: `restartPolicy: Never`, `backoffLimit: 2`, `securityContext.runAsNonRoot: true`, `runAsUser: 1000`, `seccompProfile.RuntimeDefault`, `concurrencyPolicy: Forbid`; schedule monthly (first Sunday of month, staggered by 15 min per source to avoid thundering herd)
 - [ ] T016 [US1] Update PostgREST exposure: add `hcs_bronze`, `hcs_silver`, `hcs_gold` to `PGRST_DB_SCHEMAS` in the PostgREST K8s manifest or Doppler config — confirm `mol_raw` and `hcs_raw` are absent
-- [ ] T017 [US1] Write `tests/test_cms_part_d_fetcher.py` and `tests/test_cms_loaders.py` — cover: (1) happy-path file ingestion with mock CSV, (2) hash-skip on second identical run returns `records_inserted: 0`, (3) `log_to_meta` called once per run, (4) `meta.refresh_log` entry exists after run, (5) `BaseFetcher` session retry adapter present
+- [ ] T017 [US1] Write 28 individual fetcher/loader test files — one per CMS source (e.g., `tests/test_cms_part_d_fetcher.py`, `tests/test_cms_part_b_fetcher.py`, …, `tests/test_cms_cost_reports_fetcher.py`); each test file covers: (1) happy-path file ingestion with source-specific mock CSV (correct column names), (2) hash-skip on second identical run returns `records_inserted: 0`, (3) `log_to_meta` called once per run, (4) `meta.refresh_log` entry exists after run, (5) `BaseFetcher` session retry adapter present — 28 test files total, not a shared file, so failures isolate to the specific source
 
 ---
 
@@ -91,22 +91,22 @@
 
 ## Phase 6: User Story 4 — Agent System (Priority: P4)
 
-**Goal**: 7 agents operational; publication evidence agent writes to `mol_silver.publication_evidence`; `mol_gold.trial_outcomes` no longer references `xenon`; quarantine captures sub-0.5 confidence records.
+**Goal**: 7 agents operational; publication evidence agent writes to `mol_silver.publication_evidence_staging`; SQLMesh merges staging → live; `mol_gold.trial_outcomes` no longer references `xenon`; quarantine captures sub-0.5 confidence records.
 
-**Independent Test**: Run `python -m dk_data.agents.publication_evidence_extractor --limit 10`; verify rows appear in `mol_silver.publication_evidence` with `content_hash` and `confidence_score`; query `mol_gold.trial_outcomes WHERE evidence_source = 'publication'` — must return rows with no `xenon` schema in query path.
+**Independent Test**: Run `python -m dk_data.agents.publication_evidence_extractor --limit 10`; verify rows appear in `mol_silver.publication_evidence_staging` with `content_hash` and `confidence_score`; run SQLMesh for `mol_silver.publication_evidence` and verify records merge into the live table; query `mol_gold.trial_outcomes WHERE evidence_source = 'publication'` — must return rows with no `xenon` schema in query path.
 
-- [ ] T031 [US4] Write `agents/service_line_inference.py` — extends `BaseAgent`; reads `hcs_bronze.cms_inpatient_puf` DRG claims per NPI; calls LiteLLM to infer clinical service lines; writes to `hcs_silver` service line table (created in migration 085) with `confidence_score`; records < 0.5 written via `_write_quarantine()`; records 0.5–0.79 written with `needs_review = TRUE`
-- [ ] T032 [P] [US4] Write `agents/idn_hierarchy.py` — extends `BaseAgent`; groups facilities by organization name similarity + geographic proximity; infers IDN parent-child relationships; writes to silver IDN table with confidence score
-- [ ] T033 [P] [US4] Write `agents/referral_network.py` — extends `BaseAgent`; analyzes `hcs_bronze.cms_referring_providers` + `cms_ordering_providers`; infers referring patterns; writes referral graph edges to silver
-- [ ] T034 [P] [US4] Write `agents/contact_verification.py` — extends `BaseAgent`; validates NPI contact data from `hcs_raw.cms_nppes`; writes verified/flagged records to silver
-- [ ] T035 [P] [US4] Write `agents/staffing_decomposition.py` — extends `BaseAgent`; reads cost report staffing data; decomposes into clinical role categories; writes to silver
-- [ ] T036 [P] [US4] Write `agents/equipment_inventory.py` — extends `BaseAgent`; infers equipment inventory from HCPCS procedure codes in physician PUF; writes to silver
-- [ ] T037 [US4] Write `agents/publication_evidence_extractor.py` — extends `BaseAgent`; reads `mol_silver.europepmc` or `mol_silver.publications` abstracts not yet in `mol_silver.publication_evidence`; calls LiteLLM to extract: `endpoint_name`, `endpoint_type`, `hazard_ratio`, `p_value`, `response_rate`, `median_survival_months`, `sample_size`; computes `content_hash = md5(pmid + endpoint_name)`; writes to `mol_silver.publication_evidence` (skips if content_hash already exists); quarantines confidence < 0.5
-- [ ] T038 [US4] Write `sqlmesh/models/molecules/silver/publication_evidence.sql` — kind `INCREMENTAL_BY_UNIQUE_KEY` with unique key `content_hash`; grain `content_hash`; reads from `mol_silver.publication_evidence` table (managed by agent writes, not by SQLMesh transform); this model is a pass-through validator that enforces the schema contract and adds `_loaded_at`
+- [ ] T031 [US4] Write `agents/service_line_inference.py` — **first**: confirm `hcs_silver.service_lines` DDL in migration 085 matches columns the agent will write (`npi`, `service_line`, `confidence_score`, `needs_review`, `agent_output JSONB`, `_loaded_at`); extend DDL in migration if columns differ; then implement: extends `BaseAgent`; reads `hcs_bronze.cms_inpatient_puf` DRG claims per NPI; calls LiteLLM to infer clinical service lines; writes to `hcs_silver.service_lines` with `confidence_score`; records < 0.5 written via `_write_quarantine()`; records 0.5–0.79 written with `needs_review = TRUE`
+- [ ] T032 [P] [US4] Write `agents/idn_hierarchy.py` — **first**: confirm `hcs_silver.idn_hierarchy` DDL matches columns this agent writes (`child_npi`, `parent_organization`, `confidence_score`, `needs_review`, `agent_output`, `_loaded_at`); extend DDL if needed; then implement: extends `BaseAgent`; groups facilities by organization name similarity + geographic proximity; infers IDN parent-child relationships; writes to `hcs_silver.idn_hierarchy` with confidence score
+- [ ] T033 [P] [US4] Write `agents/referral_network.py` — **first**: confirm `hcs_silver.referral_network` DDL matches columns this agent writes (`referring_npi`, `receiving_npi`, `referral_volume`, `confidence_score`, `needs_review`, `agent_output`, `_loaded_at`); extend DDL if needed; then implement: extends `BaseAgent`; analyzes `hcs_bronze.cms_referring_providers` + `cms_ordering_providers`; infers referring patterns; writes referral graph edges to `hcs_silver.referral_network`
+- [ ] T034 [P] [US4] Write `agents/contact_verification.py` — **first**: confirm `hcs_silver.verified_contacts` DDL matches columns this agent writes (`npi`, `verified_phone`, `verified_email`, `verification_status`, `confidence_score`, `needs_review`, `agent_output`, `_loaded_at`); extend DDL if needed; then implement: extends `BaseAgent`; validates NPI contact data from `hcs_raw.cms_nppes`; writes verified/flagged records to `hcs_silver.verified_contacts`
+- [ ] T035 [P] [US4] Write `agents/staffing_decomposition.py` — **first**: confirm `hcs_silver.staffing_decomposition` DDL matches columns this agent writes (`provider_id`, `role_category`, `fte_estimate`, `confidence_score`, `needs_review`, `agent_output`, `_loaded_at`); extend DDL if needed; then implement: extends `BaseAgent`; reads cost report staffing data; decomposes into clinical role categories; writes to `hcs_silver.staffing_decomposition`
+- [ ] T036 [P] [US4] Write `agents/equipment_inventory.py` — **first**: confirm `hcs_silver.equipment_inventory` DDL matches columns this agent writes (`npi`, `equipment_category`, `hcpcs_evidence JSONB`, `confidence_score`, `needs_review`, `agent_output`, `_loaded_at`); extend DDL if needed; then implement: extends `BaseAgent`; infers equipment inventory from HCPCS procedure codes in physician PUF; writes to `hcs_silver.equipment_inventory`
+- [ ] T037 [US4] Write `agents/publication_evidence_extractor.py` — extends `BaseAgent`; reads `mol_silver.europepmc` abstracts not yet in `mol_silver.publication_evidence_staging` (check by pmid+endpoint_name hash); calls LiteLLM to extract: `endpoint_name`, `endpoint_type`, `hazard_ratio`, `p_value`, `response_rate`, `median_survival_months`, `sample_size`; computes `content_hash = md5(pmid + endpoint_name)`; writes to `mol_silver.publication_evidence_staging` (skips if content_hash already exists); quarantines confidence < 0.5; does NOT write to `mol_silver.publication_evidence` directly — the SQLMesh model handles promotion from staging
+- [ ] T038 [US4] Write `sqlmesh/models/molecules/silver/publication_evidence.sql` — kind `INCREMENTAL_BY_UNIQUE_KEY` with unique key `content_hash`; reads from `mol_silver.publication_evidence_staging`; merges new/updated staging rows into `mol_silver.publication_evidence` (INSERT new content_hash; UPDATE if confidence_score changed); ensures agent writes cannot be silently overwritten by a full SQLMesh re-run; this model owns the staging→live promotion and schema contract enforcement
 - [ ] T039 [US4] Update `sqlmesh/models/molecules/gold/trial_outcomes.sql` — replace `FROM xenon.publication_evidence pe` CTE with `FROM mol_silver.publication_evidence pe WHERE pe.confidence_score >= 0.40 AND pe.needs_review = FALSE`; extend grain from `(molecule_id, trial_nct_id, evidence_source)` to `(molecule_id, trial_nct_id, endpoint_name, evidence_source)` per spec FR-033
 - [ ] T040 [US4] Write `api/routes/agents.py` — FastAPI router at `/api/v1/agents`; implement all 4 endpoints per `contracts/api.md`: `GET /agents`, `POST /agents/{agent_id}/run`, `GET /agents/{agent_id}/runs`, `GET /agents/quarantine`; on-demand run triggers agent in background task; reads run history from `meta.refresh_log`
 - [ ] T041 [US4] Register `agents.py` router in the main FastAPI app entry point
-- [ ] T042 [P] [US4] Write `tests/test_publication_evidence_agent.py` — cover: (1) endpoint extraction writes to `mol_silver.publication_evidence`, (2) duplicate content_hash is skipped (no duplicate insert), (3) confidence < 0.5 goes to quarantine not silver, (4) confidence 0.5–0.79 sets `needs_review = TRUE`, (5) all LLM calls go through mocked LiteLLM URL (no direct provider calls)
+- [ ] T042 [P] [US4] Write `tests/test_publication_evidence_agent.py` — cover: (1) endpoint extraction writes to `mol_silver.publication_evidence_staging` (not the live table directly), (2) duplicate content_hash in staging is skipped (no duplicate insert), (3) confidence < 0.5 goes to quarantine not staging, (4) confidence 0.5–0.79 sets `needs_review = TRUE` in staging, (5) all LLM calls go through mocked LiteLLM URL (no direct provider calls), (6) SQLMesh model correctly promotes from staging to live on merge
 - [ ] T043 [P] [US4] Write `tests/test_agents_router.py` — cover: `GET /agents` returns all 7 agents, `POST /agents/publication_evidence_extractor/run` returns 202, `GET /agents/quarantine` returns paginated results
 
 ---
@@ -119,7 +119,7 @@
 
 - [ ] T044 [US5] Write `services/data_tools/registry.py` — `DataToolRegistry` class: reads all sources from `meta.data_sources`, enriches with `SOURCES` dict metadata (category, supported_query_keys, requires_file), caches result for 5 minutes; method `get_all() -> List[DataTool]`, `get(source_name) -> DataTool | None`
 - [ ] T045 [US5] Write `services/data_tools/data_registry.py` — `DataFreshnessChecker` class: `is_fresh(source_name, max_age_hours) -> bool` reads `last_successful_refresh` from `meta.data_sources`; returns False if NULL or older than `max_age_hours`; default threshold per source category (CMS bulk: 720h, API: 24h)
-- [ ] T046 [P] [US5] Write 27 source adapter files in `services/data_tools/adapters/` — one per CMS source + API source; each adapter wraps the source's `loader` callable and provides metadata: `category` (cms_bulk / mol_api), `supported_query_keys` list, `description`; follow the pattern from existing `services/data_tools/adapters/` if any exist
+- [ ] T046 [P] [US5] Write 54 source adapter files in `services/data_tools/adapters/` — 28 CMS bulk adapters (one per source, e.g., `cms_part_d.py`) + 6 API source adapters (europepmc, nih_reporter, ema_regulatory, cochrane, drugbank, pubchem) + ~20 CMS sub-query adapters (one per meaningful query facet such as cms_part_d_by_drug, cms_open_payments_by_physician, etc.); each adapter wraps the source's `loader` callable and provides metadata: `category` (cms_bulk / mol_api / cms_subquery), `supported_query_keys` list, `description`; sub-query adapters are thin wrappers over the base CMS loader with a pre-applied filter; follow the pattern from existing `services/data_tools/adapters/` if any exist
 - [ ] T047 [US5] Write `api/routes/data_tools.py` — FastAPI router at `/api/v1/data-tools`; implement 3 endpoints per `contracts/api.md`: `GET /registry`, `POST /backfill`, `GET /{source_name}/status`; backfill calls `DataFreshnessChecker.is_fresh()` before triggering fetch; returns 202 if fetch queued, 200 if skipped
 - [ ] T048 [US5] Register `data_tools.py` router in the main FastAPI app entry point
 - [ ] T049 [P] [US5] Write `tests/test_data_tools_gateway.py` — cover: (1) registry lists all 54+ tools, (2) backfill skips when data is fresh, (3) backfill triggers fetch when data is stale, (4) `POST /backfill` with unknown source_name returns 404, (5) concurrent backfill returns 409
@@ -146,6 +146,9 @@
 - [ ] T054 Write `monitoring/provisioning/alerts/pipeline-source-failures.yaml` — Grafana alert group: one rule per `source_id` firing when `COUNT(*) FILTER (WHERE status = 'failed')` in the 3 most-recent `meta.refresh_log` rows for that source equals 3; alert labels include `source_name`; routed to existing notification policy per FR-034 and SC-013
 - [ ] T055 [P] Run full test suite and verify all SC-001 through SC-013 acceptance criteria are met: `pytest tests/ -v --cov=src/dk_data`; confirm SC-002 (hash-skip zero-insert), SC-007 (incremental window used after first run), SC-009 (no direct LLM API calls in agents), SC-012 (trial_outcomes queryable without xenon reference)
 - [ ] T056 [P] Verify all 34 new sources appear in the Data Tools Gateway registry (`GET /api/v1/data-tools/registry`) with correct `last_refresh` metadata after integration run; confirm `test_postgrest_schema_access.py` covers `hcs_bronze`, `hcs_silver`, `hcs_gold` and excludes `mol_raw`, `hcs_raw`
+- [ ] T057 [P] Write `src/dk_data/sql/migrations/085_rollback.sql` — DROP-reverses every object created by migration 085 in reverse dependency order: DROP the 6 agent silver tables (`hcs_silver.service_lines`, etc.), DROP `mol_silver.publication_evidence_staging`, DROP `mol_silver.publication_evidence`, DROP `mol_silver.europepmc`, DROP `mol_silver.physician_payments`, DROP `mol_silver.research_grants`, DROP `mol_silver.agent_quarantine`, DROP all 28 `hcs_raw` tables, DELETE `meta.data_sources` rows for all 34 new sources, DROP `hcs_bronze/hcs_silver/hcs_gold` schemas (CASCADE); include a header comment warning that rollback is destructive and irreversible
+- [ ] T058 [P] Write `sqlmesh/models/molecules/silver/europepmc.sql` — kind `INCREMENTAL_BY_TIME_RANGE` on `publication_date`; grain `pmid`; reads from `mol_bronze.europepmc`; outputs typed normalized fields: `molecule_id` (FK via `mol_silver.molecules` name match), `pmid`, `title`, `abstract_text`, `journal_title`, `publication_date`, `author_list` JSONB, `doi`, `link_strategy`, `_loaded_at`; this table is the source for T037 (publication evidence extractor reads abstracts from here); column names and types must match `data-model.md` `mol_silver.europepmc` definition exactly
+- [ ] T059 Write K8s CronJob manifests for all 7 agents in `k8s/apps/cronjobs/base/` — `cronjob-agent-service-line-inference.yaml`, `cronjob-agent-idn-hierarchy.yaml`, `cronjob-agent-referral-network.yaml`, `cronjob-agent-contact-verification.yaml`, `cronjob-agent-staffing-decomposition.yaml`, `cronjob-agent-equipment-inventory.yaml`, `cronjob-agent-publication-evidence.yaml`; monthly schedule (first Monday of month); command: `python -m dk_data.agents.{agent_module} --limit 10000`; same security context template as CMS CronJobs (runAsNonRoot, seccompProfile.RuntimeDefault, concurrencyPolicy: Forbid)
 
 ---
 
@@ -170,12 +173,18 @@ Phase 1 (Migration 085)
         ├── Phase 8 (US6 — EDGAR) — independent                   │
         │     └── T050–T053                                        │
         └── Phase 9 (Polish) — depends on all phases complete ────┘
+            ├── T057 (085_rollback.sql) — parallel, no code dependencies
+            ├── T058 (mol_silver.europepmc SQLMesh) — depends on T022 (mol_bronze.europepmc) in Phase 4
+            └── T059 (agent CronJob manifests) — depends on Phase 6 agents complete
 ```
 
 US3 (Refresh History) is a verification phase, not a blocker — it runs once US1 and US2 are done.
-US4 (Agents) depends on US2 being complete (needs abstracts in europepmc/mol_silver.publications).
+US4 (Agents) depends on US2 being complete (needs abstracts in `mol_silver.europepmc` via T058).
 US5 (Data Tools) depends on US1 being complete (registry needs CMS sources registered in `meta.data_sources`).
 US6 (EDGAR) is independent of all other user stories.
+T057 (rollback SQL) can be written in parallel with any phase.
+T058 (mol_silver.europepmc) must follow T022 (mol_bronze.europepmc) — move to Phase 4 execution order after T022.
+T059 (agent CronJobs) must follow all 7 agents in Phase 6.
 
 ---
 
@@ -189,7 +198,8 @@ Within Phase 4 (US2):
 - T019 (NIH Reporter fetcher), T020 (EMA verify), T021 (Cochrane/DrugBank/PubChem verify), T023 (NIH bronze SQLMesh), T025 (drug_spending silver), T027 (CronJobs), T028 (tests) all independently parallelizable
 
 Within Phase 6 (US4):
-- T032, T033, T034, T035, T036 (the 5 CMS domain agents) can all run in parallel after T031 demonstrates the agent base pattern; T037 (publication evidence extractor) should come last as it has the most complex output contract
+- T032, T033, T034, T035, T036 (the 5 CMS domain agents) can all run in parallel after T031 demonstrates the agent base pattern; T037 (publication evidence extractor) should come last as it depends on T058 (mol_silver.europepmc)
+- T059 (agent CronJob manifests) can run in parallel with T040–T043 once all 7 agent modules are written
 
 ---
 
@@ -207,5 +217,5 @@ All phases are in scope for this PR. Implement in phase order:
 8. Phase 8: SEC EDGAR
 9. Phase 9: Grafana alert + full regression
 
-**Total tasks**: 56
-**Parallelizable tasks**: 26 (marked [P])
+**Total tasks**: 59
+**Parallelizable tasks**: 29 (marked [P])

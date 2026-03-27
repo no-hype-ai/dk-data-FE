@@ -318,25 +318,29 @@ If `last_successful_refresh` is NULL (first run), the function returns `default_
 
 #### SOURCES registry (central dispatch)
 
-Every source must have an entry in the top-level `SOURCES` dict in the ingestion module. All four keys are required:
+Every source must have an entry in the top-level `SOURCES` dict in the ingestion module. Required keys differ by source type:
+
+- **File-based sources** (`requires_file: True`): `name`, `description`, `loader`, `requires_file`, `default_days_back`. Do **not** include a `fetcher` key — file acquisition is handled externally (CronJob downloads to a mounted volume).
+- **API sources** (`requires_file: False`): all of the above **plus** `fetcher` (the fetcher class). May optionally include `max_retries` and `retry_base_delay_seconds`.
 
 ```python
 SOURCES = {
+    # File-based source — NO fetcher key
     "cms_part_d_spending": {
-        "fetcher": CMSPartDSpendingFetcher,   # Class, not instance
         "loader": load_cms_part_d_spending,   # Callable
-        "requires_file": True,                # True = file-based; False = API
+        "requires_file": True,                # True = file acquisition is external
         "default_days_back": None,            # None = non-incremental (full file replacement)
     },
+    # API source — fetcher key required
     "europepmc": {
-        "fetcher": EuropePMCFetcher,
+        "fetcher": EuropePMCFetcher,          # Class, not instance (API sources only)
         "loader": load_europepmc,
         "requires_file": False,
         "default_days_back": 30,              # int = incremental API source
         "max_retries": 3,                     # optional; default 3
         "retry_base_delay_seconds": 2,        # optional; default 2 (exponential backoff)
     },
-    # ... all other sources follow same shape
+    # ... all other sources follow same shape per their type
 }
 ```
 

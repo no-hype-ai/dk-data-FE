@@ -248,6 +248,21 @@ Bronze for CMS sources mirrors raw with light normalisation (trim whitespace, st
 
 ### mol_silver (entity-linked)
 
+**`mol_silver.europepmc`** — EuropePMC citations normalized and entity-linked (source for publication evidence extractor)
+| Column | Type | Notes |
+|---|---|---|
+| `id` | UUID PK | |
+| `molecule_id` | UUID FK | nullable — linked via title substring match on `canonical_name` (LENGTH > 4 guard) |
+| `pmid` | VARCHAR(20) | |
+| `title` | TEXT | |
+| `abstract_text` | TEXT | input for publication evidence extractor |
+| `journal_title` | VARCHAR(300) | |
+| `publication_date` | DATE | |
+| `author_list` | JSONB | kept as array from bronze |
+| `doi` | VARCHAR(100) | |
+| `link_strategy` | VARCHAR(50) | 'title_substring', 'unlinked' |
+| `_loaded_at` | TIMESTAMP | |
+
 **`mol_silver.ema_regulatory`** — EMA decisions linked to platform molecules
 | Column | Type | Notes |
 |---|---|---|
@@ -339,7 +354,112 @@ Bronze for CMS sources mirrors raw with light normalisation (trim whitespace, st
 | `reviewed_at` | TIMESTAMP | nullable |
 | `resolution` | VARCHAR(50) | nullable: 'accepted', 'rejected' |
 
-### hcs_silver
+**`mol_silver.publication_evidence_staging`** — Agent writes here; SQLMesh merges into `mol_silver.publication_evidence`
+
+Same column schema as `mol_silver.publication_evidence`. Agent writes to this table on every extraction run. SQLMesh `INCREMENTAL_BY_UNIQUE_KEY` model reads from this staging table and merges into the live `mol_silver.publication_evidence` table on `content_hash`. This decouples the agent write lifecycle from SQLMesh's table management.
+
+| Column | Type | Notes |
+|---|---|---|
+| `id` | UUID PK | `gen_random_uuid()` |
+| `molecule_id` | UUID FK | nullable |
+| `trial_nct_id` | VARCHAR(20) | nullable |
+| `endpoint_name` | VARCHAR(200) | NOT NULL |
+| `endpoint_type` | VARCHAR(50) | CHECK IN ('primary','secondary','exploratory') |
+| `hazard_ratio` | NUMERIC(8,4) | |
+| `p_value` | NUMERIC(10,8) | |
+| `response_rate` | NUMERIC(5,2) | |
+| `median_survival_months` | NUMERIC(6,1) | |
+| `sample_size` | INTEGER | |
+| `confidence_score` | NUMERIC(3,2) | NOT NULL; CHECK 0.0–1.0 |
+| `doi` | VARCHAR(100) | |
+| `pmid` | VARCHAR(20) | |
+| `extraction_metadata` | JSONB | |
+| `content_hash` | VARCHAR(64) | NOT NULL — merge key |
+| `needs_review` | BOOLEAN | NOT NULL DEFAULT FALSE |
+| `_loaded_at` | TIMESTAMP | NOT NULL DEFAULT NOW() |
+
+### hcs_silver — CMS Agent Output Tables
+
+> **Schema-per-agent pattern**: Each agent defines its own output table's columns before implementation (Decision 2B). The columns below for the 6 CMS agents are the minimum structural skeleton. Full column definitions are added to this data-model.md and migration 085 when each agent is implemented (T031–T036).
+
+**`hcs_silver.service_lines`** — Clinical service line assignments (written by T031)
+| Column | Type | Notes |
+|---|---|---|
+| `id` | UUID PK | |
+| `npi` | VARCHAR(10) | provider NPI |
+| `service_line` | VARCHAR(100) | inferred clinical service line |
+| `confidence_score` | NUMERIC(3,2) | NOT NULL |
+| `needs_review` | BOOLEAN | NOT NULL DEFAULT FALSE |
+| `agent_output` | JSONB | full LLM response for audit |
+| `_loaded_at` | TIMESTAMP | NOT NULL DEFAULT NOW() |
+*Full column definition to be completed when T031 is implemented.*
+
+**`hcs_silver.idn_hierarchy`** — IDN parent-child relationships (written by T032)
+| Column | Type | Notes |
+|---|---|---|
+| `id` | UUID PK | |
+| `child_npi` | VARCHAR(10) | |
+| `parent_organization` | VARCHAR(200) | inferred IDN parent name |
+| `confidence_score` | NUMERIC(3,2) | NOT NULL |
+| `needs_review` | BOOLEAN | NOT NULL DEFAULT FALSE |
+| `agent_output` | JSONB | |
+| `_loaded_at` | TIMESTAMP | |
+*Full column definition to be completed when T032 is implemented.*
+
+**`hcs_silver.referral_network`** — Provider referral graph edges (written by T033)
+| Column | Type | Notes |
+|---|---|---|
+| `id` | UUID PK | |
+| `referring_npi` | VARCHAR(10) | |
+| `receiving_npi` | VARCHAR(10) | |
+| `referral_volume` | INTEGER | inferred from claims patterns |
+| `confidence_score` | NUMERIC(3,2) | NOT NULL |
+| `needs_review` | BOOLEAN | NOT NULL DEFAULT FALSE |
+| `agent_output` | JSONB | |
+| `_loaded_at` | TIMESTAMP | |
+*Full column definition to be completed when T033 is implemented.*
+
+**`hcs_silver.verified_contacts`** — NPI contact verification results (written by T034)
+| Column | Type | Notes |
+|---|---|---|
+| `id` | UUID PK | |
+| `npi` | VARCHAR(10) | |
+| `verified_phone` | VARCHAR(20) | |
+| `verified_email` | VARCHAR(200) | |
+| `verification_status` | VARCHAR(20) | 'verified', 'flagged', 'unverifiable' |
+| `confidence_score` | NUMERIC(3,2) | NOT NULL |
+| `needs_review` | BOOLEAN | NOT NULL DEFAULT FALSE |
+| `agent_output` | JSONB | |
+| `_loaded_at` | TIMESTAMP | |
+*Full column definition to be completed when T034 is implemented.*
+
+**`hcs_silver.staffing_decomposition`** — Clinical role decomposition (written by T035)
+| Column | Type | Notes |
+|---|---|---|
+| `id` | UUID PK | |
+| `provider_id` | VARCHAR(10) | CMS facility identifier |
+| `role_category` | VARCHAR(100) | inferred clinical role category |
+| `fte_estimate` | NUMERIC(8,2) | estimated FTE for this role |
+| `confidence_score` | NUMERIC(3,2) | NOT NULL |
+| `needs_review` | BOOLEAN | NOT NULL DEFAULT FALSE |
+| `agent_output` | JSONB | |
+| `_loaded_at` | TIMESTAMP | |
+*Full column definition to be completed when T035 is implemented.*
+
+**`hcs_silver.equipment_inventory`** — Implied equipment inventory (written by T036)
+| Column | Type | Notes |
+|---|---|---|
+| `id` | UUID PK | |
+| `npi` | VARCHAR(10) | |
+| `equipment_category` | VARCHAR(100) | inferred from HCPCS procedure codes |
+| `hcpcs_evidence` | JSONB | supporting HCPCS codes array |
+| `confidence_score` | NUMERIC(3,2) | NOT NULL |
+| `needs_review` | BOOLEAN | NOT NULL DEFAULT FALSE |
+| `agent_output` | JSONB | |
+| `_loaded_at` | TIMESTAMP | |
+*Full column definition to be completed when T036 is implemented.*
+
+### hcs_silver — Drug Market
 
 **`hcs_silver.cms_drug_market`** — NDC-grain drug market profile
 | Column | Type | Notes |
