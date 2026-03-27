@@ -9,7 +9,7 @@
 
 - Python 3.11+, `uv` for dependency management
 - PostgreSQL accessible (via `docker compose up db` or SSH tunnel to staging)
-- Doppler CLI configured: `doppler setup --project dk-infrastructure --config prd`
+- Doppler CLI configured: `doppler setup --project dk-data-fe --config prd`
 - `kubectl` context set to target cluster
 
 ---
@@ -49,6 +49,10 @@ doppler run -- pytest tests/test_data_tools_gateway.py -v
 
 # Coverage check
 doppler run -- pytest --cov=src/dk_data --cov-report=term-missing tests/
+
+# Linting and type-check (must pass before PR — CANON requirement)
+ruff check src/dk_data/agents/ src/dk_data/ingestion/fetchers/ src/dk_data/api/routes/
+mypy src/dk_data/agents/ src/dk_data/api/routes/
 ```
 
 ---
@@ -88,8 +92,10 @@ doppler run -- psql $DATABASE_URL -c "SELECT source_name, status, records_insert
 
 ## Running an Agent Locally
 
+Agents require the LiteLLM proxy. Set `LITELLM_PROXY_URL` and `LITELLM_API_KEY` via Doppler (project `dk-data-fe`). For local dev pointing at bare-metal: `LITELLM_PROXY_URL=http://192.168.10.50:4000/v1`.
+
 ```bash
-# Publication evidence extraction (requires LiteLLM proxy)
+# Publication evidence extraction (requires LiteLLM proxy — routes via openai SDK, not anthropic SDK)
 doppler run -- python -m dk_data.agents.publication_evidence_extractor --limit 100
 
 # Check output
@@ -154,12 +160,12 @@ ArgoCD auto-syncs from the feature branch if configured, or trigger manually:
 # Apply new CronJob manifests
 kubectl apply -k k8s/apps/cronjobs/base/
 
-# Verify CronJobs created
-kubectl get cronjobs -n dk-data | grep cms
+# Verify CronJobs created (use NAMESPACE env var — canonical namespaces: dk-data-staging, dk-data-prod)
+kubectl get cronjobs -n ${NAMESPACE:-dk-data-staging} | grep cms
 
 # Trigger a manual test job
-kubectl create job --from=cronjob/fetch-cms-part-d test-cms-part-d -n dk-data
-kubectl logs job/test-cms-part-d -n dk-data -f
+kubectl create job --from=cronjob/fetch-cms-part-d test-cms-part-d -n ${NAMESPACE:-dk-data-staging}
+kubectl logs job/test-cms-part-d -n ${NAMESPACE:-dk-data-staging} -f
 ```
 
 ---
@@ -180,3 +186,4 @@ kubectl logs job/test-cms-part-d -n dk-data -f
 | Consolidated migration | `src/dk_data/sql/migrations/085_cms_puf_platform_reconciliation.sql` |
 | CronJob manifests | `k8s/apps/cronjobs/base/` |
 | Grafana alert | `monitoring/provisioning/alerts/pipeline-source-failures.yaml` |
+| Validation script | `scripts/validate-staging-ingestion.sh` |

@@ -14,12 +14,16 @@ Reconcile 28 CMS PUF file-based sources and 6 API-based regulatory/clinical sour
 ## Technical Context
 
 **Language/Version**: Python 3.11+ (`requires-python = ">=3.11"` in `pyproject.toml`)
-**Primary Dependencies**: FastAPI 0.109+, SQLMesh >=0.90, psycopg2-binary, pandas, requests + urllib3 (retry), tenacity, loguru, anthropic SDK (LiteLLM proxy routing), kubernetes client
+**Primary Dependencies**: FastAPI 0.109+, SQLMesh >=0.90, psycopg2-binary (ingestion/sync paths), asyncpg (async API paths), pandas, requests + urllib3 (retry in BaseFetcher for data source HTTP calls), tenacity (LLM call retry in agents — separate concern from urllib3.Retry), openai SDK (pointed at LiteLLM proxy — NOT `anthropic` SDK), structlog (new files only — existing codebase uses loguru; new agents/loaders/routes introduced by this feature MUST use structlog), kubernetes client
 **Storage**: PostgreSQL 16 (CloudNativePG in K3s). Schemas: `mol_raw`, `hcs_raw`, `mol_bronze`, `hcs_bronze`, `mol_silver`, `hcs_silver`, `mol_gold`, `hcs_gold`, `meta`
+**Secrets**: Doppler project `dk-data-fe` (NOT `dk-infrastructure`) — `LITELLM_PROXY_URL`, `LITELLM_API_KEY`, `DATABASE_URL` sourced from this project
+**LiteLLM Proxy**: K8s address `http://litellm.infra.svc.cluster.local:8000/v1`; bare-metal `http://192.168.10.50:4000/v1`. Shared 500 RPM limit across all DataKinetic services — agents cap at 5 concurrent LLM calls per run. `import anthropic` is FORBIDDEN in all new files. Model aliases: `pharma-llm` (first attempt), `claude-sonnet-4-20250514` (escalation), `gpt-4o-mini` (classification)
+**Retry strategy split**: `urllib3.Retry` (total=3) for BaseFetcher HTTP sessions (downstream data sources); `tenacity` for LiteLLM agent calls (handles RateLimitError, 429, with exponential backoff). No overlap — these are separate retry layers.
+**Logging**: New files (agents, new routes, new loaders) MUST use `structlog` — do NOT add `from loguru import logger` to new files; the codebase has both (structlog is CANON, loguru is legacy). Ruff + mypy must pass on all new Python files.
 **Testing**: pytest + `responses` library for mocked HTTP fetcher tests; `tests/test_agents/` for agent tests
-**Target Platform**: K3s cluster (penguin/krang), CronJobs via ArgoCD GitOps; local dev via docker compose
+**Target Platform**: K3s cluster (penguin/krang), CronJobs via ArgoCD GitOps; local dev via docker compose. K8s namespaces: `dk-data-staging`, `dk-data-prod` (NOT `dk-data`). Image tags: `<branch>-<short-sha>` (NEVER `:latest`)
 **Performance Goals**: SC-011 — backfill completes within 10 minutes per source; SC-002 — duplicate file run completes with zero inserts
-**Constraints**: BaseFetcher constructor is `__init__(self, data_dir=None)` — no `params`, no manifest; all LLM calls via LiteLLM proxy; no direct provider API calls; PostgREST raw schemas never exposed
+**Constraints**: BaseFetcher constructor is `__init__(self, data_dir=None)` — no `params`, no manifest; all LLM calls via LiteLLM proxy (openai SDK or httpx); no `import anthropic` in new code; PostgREST raw/bronze schemas never exposed; evidence cap: max 50 records per LLM batch in agents (ARCHITECTURE-BEST-PRACTICES.md mandate)
 **Scale/Scope**: 28 CMS bulk file sources (annual CSV, up to ~2GB each), 6 API sources (incremental daily/weekly), 7 agents (monthly + on-demand), 21 SQLMesh models
 
 ---
@@ -33,12 +37,19 @@ Reconcile 28 CMS PUF file-based sources and 6 API-based regulatory/clinical sour
 | All new fetchers extend `BaseFetcher` | REQUIRED | Verified pattern across all existing fetchers |
 | All new sources in `SOURCES` dict | REQUIRED | FR-015; existing dispatch requires it |
 | `log_to_meta()` called after every run | REQUIRED | FR-013; existing infra enforces no silent runs |
-| No direct LLM provider calls in agents | REQUIRED | FR-025; LiteLLM proxy only |
+| No direct LLM provider calls in agents | REQUIRED | FR-025; LiteLLM proxy via openai SDK only; `import anthropic` forbidden |
 | Raw schemas never in PostgREST exposure | REQUIRED | FR-024b; clarification Q2 |
 | `trial_outcomes.sql` removes xenon reference | REQUIRED | FR-024a, FR-033 |
 | Single consolidated migration (085) | REQUIRED | FR-020 |
 | All existing tests pass | REQUIRED | FR-023, SC-006 |
 | New fetcher tests cover happy path + hash-skip | REQUIRED | SC-005 |
+| New Python files use structlog (not loguru) | REQUIRED | CANON Python stack; structlog is canonical for new code |
+| Ruff + mypy clean on all new Python files | REQUIRED | CANON Python stack; validated by T063 |
+| validate-staging-ingestion.sh updated | REQUIRED | Script hardcodes 22 sources; will break after adding 30 new ones (T061) |
+| db-init creates API views for hcs_silver/hcs_gold | REQUIRED | CANON: db-init MUST create API views + grant web_anon SELECT (T062) |
+| CronJob image tags use `<branch>-<short-sha>` | REQUIRED | CANON: image `:latest` is forbidden |
+| LiteLLM rate limit: ≤5 concurrent calls/agent run | REQUIRED | Shared 500 RPM limit; FR-025 |
+| Agent evidence cap: max 50 records/batch | REQUIRED | ARCHITECTURE-BEST-PRACTICES.md: MAX_EVIDENCE_PER_PILLAR = 50 |
 
 All gates passable — no violations.
 

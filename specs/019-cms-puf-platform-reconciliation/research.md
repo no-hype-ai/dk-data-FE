@@ -150,6 +150,45 @@ SQLMesh discovers models by scanning `models/` recursively, so subdirectory stru
 
 ---
 
+## 10. LiteLLM Integration — Agent Call Pattern
+
+**Decision**: All LLM calls in new agents MUST use the LiteLLM proxy via the OpenAI-compatible endpoint. The `anthropic` Python SDK MUST NOT be imported in any new agent or loader file introduced by this feature.
+
+**Finding**: Three existing files (`claude_sdk/enrichment.py`, `claude_sdk/scoring_agent.py`, `iva_evidence_report_workflow.py`) import `anthropic` directly — this is a pre-existing CANON violation in `claude_sdk/`. New agents introduced by this feature must not extend this pattern.
+
+**LiteLLM proxy address**:
+- K8s (prod/staging): `http://litellm.infra.svc.cluster.local:8000/v1`
+- Bare-metal / local dev: `http://192.168.10.50:4000/v1`
+- Env var: `LITELLM_PROXY_URL` (Doppler-sourced, project `dk-data-fe`)
+
+**Model aliases** (use these strings only — never hardcode provider model IDs):
+- `pharma-llm` — local/cheap model (first attempt)
+- `claude-sonnet-4-20250514` — frontier model (escalation)
+- `gpt-4o-mini` — lightweight classification
+
+**Shared rate limit**: 500 RPM across all DataKinetic services. Agents MUST implement exponential backoff on `429` responses. With 7 agents potentially running simultaneously, each agent should pace its LLM calls (max 5 concurrent per agent run) and use `tenacity` for retry logic on the LiteLLM call layer.
+
+**Call pattern** (using `openai` SDK pointed at LiteLLM):
+```python
+from openai import OpenAI
+import os
+
+client = OpenAI(
+    base_url=os.environ["LITELLM_PROXY_URL"],
+    api_key=os.environ["LITELLM_API_KEY"],   # LiteLLM virtual key from Doppler
+)
+```
+
+**Quality escalation** (ARCHITECTURE-BEST-PRACTICES.md mandate): Call `pharma-llm` first; if confidence score < 0.6, re-call with `claude-sonnet-4-20250514`. One escalation maximum per record.
+
+**Tenacity vs urllib3.Retry**: `urllib3.Retry` is for HTTP fetchers (BaseFetcher already uses it for downstream data source calls). `tenacity` is for LLM call retry in agents (handles `RateLimitError`, `APIStatusError` 429 from LiteLLM). These are separate retry layers with no overlap.
+
+**Rationale**: CANON mandates "Never call OpenAI/Anthropic directly; use LiteLLM virtual key via Doppler." All 7 new agents must comply. The openai SDK pointing at LiteLLM is the canonical Python pattern for dk-data-FE.
+
+**Alternatives considered**: Anthropic SDK with proxy URL — rejected (CANON violation, wrong client library); direct httpx calls — acceptable but openai SDK provides better error types for 429 handling.
+
+---
+
 ## Summary of Research Decisions
 
 | Topic | Decision | Action Required |
@@ -158,8 +197,12 @@ SQLMesh discovers models by scanning `models/` recursively, so subdirectory stru
 | trial_outcomes.sql | Exists on main, references xenon — update required | Edit SQL file, fix grain |
 | SOURCES file-based | No `fetcher` key for file-based sources | Correct — no spec change needed |
 | Migration number | Next migration is 085 | Write 085_cms_puf_platform_reconciliation.sql |
-| PostgREST config | Doppler env var — add hcs_* schemas | Update Doppler + manifest |
+| PostgREST config | Doppler env var — add hcs_silver/hcs_gold only | Update configmap.yaml (hcs_bronze excluded) |
 | Grafana alert | Provisioning file at monitoring/provisioning/alerts/ | New YAML file |
 | Agents directory | Empty on main — all 7 agents must be written | 7 new Python files |
 | HCS SQLMesh path | New hcs/ subdirectory needed | Create directory tree |
 | Existing bronze | EMA/Cochrane/DrugBank/EDGAR already exist | Verify namespace alignment |
+| Schema naming split | bronze (legacy), mol_bronze (mol-CI), hcs_bronze (new) | All three via config.yaml mappings |
+| silver.publications | Existing model — EuropePMC extends as 5th CTE | No new mol_silver.europepmc table |
+| MCP duplication | TOOL_REGISTRY + adapters/ already exist | Extend existing files, no new services/data_tools/ |
+| LiteLLM agents | openai SDK → LiteLLM proxy; tenacity for retry | No import anthropic in new code; 500 RPM shared limit |
