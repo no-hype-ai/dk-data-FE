@@ -77,9 +77,10 @@ Raw CMS ingestion gives you facts — provider names, NPI codes, DRG claims. But
 **Acceptance Scenarios**:
 
 1. **Given** a hospital's DRG claims data is ingested, **When** the service line inference agent runs, **Then** clinical service line assignments are written to the silver layer with a confidence score per record
-2. **Given** an agent produces a result with confidence below 0.5, **When** the result is processed, **Then** the record is written to the quarantine table for manual review and does NOT appear in the live silver view
-3. **Given** an agent produces a result with confidence between 0.5 and 0.79, **When** the result is written, **Then** the record appears in the silver layer with a `needs_review` flag, visible to analysts but marked for validation
-4. **Given** agents run on their monthly schedule, **When** a run completes, **Then** the refresh log contains an entry for each agent with record counts, confidence distribution, and quarantine count
+2. **Given** a publication abstract is available in the platform, **When** the publication evidence extraction agent runs, **Then** structured clinical endpoints (hazard ratio, p-value, response rate, median survival, sample size) are extracted and written to `mol_silver.publication_evidence` — making them available in `mol_gold.trial_outcomes` without any dependency on the Xenon system
+3. **Given** an agent produces a result with confidence below 0.5, **When** the result is processed, **Then** the record is written to the quarantine table for manual review and does NOT appear in the live silver view
+4. **Given** an agent produces a result with confidence between 0.5 and 0.79, **When** the result is written, **Then** the record appears in the silver layer with a `needs_review` flag, visible to analysts but marked for validation
+5. **Given** agents run on their monthly schedule, **When** a run completes, **Then** the refresh log contains an entry for each agent with record counts, confidence distribution, and quarantine count
 
 ---
 
@@ -163,7 +164,8 @@ A competitive intelligence analyst needs to extract structured data from pharmac
 
 **Agent System**
 
-- **FR-024**: The platform MUST include 6 domain-specific enrichment agents (service line inference, IDN hierarchy, referral network, contact verification, staffing decomposition, equipment inventory) that operate on ingested CMS data and write enriched records to the silver layer
+- **FR-024**: The platform MUST include 7 enrichment agents: 6 domain-specific CMS agents (service line inference, IDN hierarchy, referral network, contact verification, staffing decomposition, equipment inventory) plus a publication evidence extraction agent that reads publication abstracts from the silver layer and writes structured clinical endpoints to `mol_silver.publication_evidence`
+- **FR-024a**: The publication evidence extraction agent MUST eliminate the dependency on the `xenon` schema — `mol_gold.trial_outcomes` MUST read from `mol_silver.publication_evidence` (not `xenon.publication_evidence`). The `xenon` schema is retained for the Xenon application's own use but removed from dk-data-FE's PostgREST exposure
 - **FR-025**: Every agent MUST route all LLM calls through the shared LiteLLM proxy — no direct API calls to any LLM provider
 - **FR-026**: Records produced with confidence below 0.5 MUST be written to a quarantine table and excluded from live silver views until manually reviewed and resolved
 - **FR-027**: Records produced with confidence between 0.5 and 0.79 MUST be written to the silver layer with a `needs_review` flag set to TRUE
@@ -175,10 +177,10 @@ A competitive intelligence analyst needs to extract structured data from pharmac
 - **FR-030**: For any registered source, the platform MUST provide a backfill endpoint that fetches fresh upstream data and runs the silver/gold transformation without manual intervention
 - **FR-031**: Before triggering an external fetch, the gateway MUST check local data freshness and skip the external call if sufficiently recent data exists
 
-**Xenon Schema**
+**Clinical Evidence Silver Layer**
 
-- **FR-032**: The platform MUST expose the `xenon` schema as a read-only PostgREST endpoint, accessible to authenticated consumers via pre-signed JWT
-- **FR-033**: The `xenon` schema MUST be writable only by the Xenon application role — dk-data-FE does not own or write to this data
+- **FR-032**: The platform MUST maintain a `mol_silver.publication_evidence` table storing LLM-extracted clinical endpoints (hazard ratio, p-value, response rate, median survival, sample size) deduplicated by content hash, with `confidence_score` and `needs_review` columns
+- **FR-033**: `mol_gold.trial_outcomes` MUST UNION `mol_silver.clinical_trials` (registry-sourced, confidence = 1.0) with `mol_silver.publication_evidence` (LLM-extracted, confidence ≥ 0.40) — no reference to the `xenon` schema
 
 **Data Integrity and Migration**
 
@@ -198,7 +200,7 @@ A competitive intelligence analyst needs to extract structured data from pharmac
 - **AgentRecord**: An enriched inference result produced by an LLM agent from raw CMS data, stored in the silver layer with a confidence score and `needs_review` flag
 - **QuarantineRecord**: An agent result with confidence below 0.5, stored separately from live silver data pending manual review and resolution
 - **DataTool**: A registered backfill-capable data source in the tool registry, with metadata describing what it can fetch and how fresh the local data is
-- **XenonRecord**: Data written by the Xenon application to the `xenon` schema, readable by dk-data-FE via PostgREST but not owned or modified by this platform
+- **PublicationEvidence**: A structured clinical endpoint record extracted from a publication abstract by the platform's own agent. Stored in `mol_silver.publication_evidence`, deduplicated by content hash, included in `mol_gold.trial_outcomes` when confidence ≥ 0.40
 
 ---
 
@@ -217,6 +219,7 @@ A competitive intelligence analyst needs to extract structured data from pharmac
 - **SC-009**: Agent runs produce zero direct LLM API calls — all calls route through the LiteLLM proxy, confirmed by absence of external provider credentials in agent code
 - **SC-010**: After an agent monthly run, the quarantine table contains only records with confidence < 0.5, and the silver layer contains no unscored records — every agent result has a confidence value
 - **SC-011**: A backfill request for any registered source completes and produces queryable gold-layer data within 10 minutes of the API call, with a corresponding entry in `meta.refresh_log`
+- **SC-012**: After the publication evidence extraction agent runs, clinical endpoints are queryable in `mol_gold.trial_outcomes` with `evidence_source = 'publication'` — with no `xenon` schema reference in the query path
 
 ---
 
@@ -234,6 +237,7 @@ A competitive intelligence analyst needs to extract structured data from pharmac
 
 - Structured revenue/pipeline extraction from SEC filings beyond keyword flagging — full NLP parsing is a downstream feature
 - Expansion of EDGAR coverage beyond the initial curated list of pharmaceutical companies
+- Reading from the `xenon` schema in dk-data-FE — publication evidence is owned and extracted by the platform's own agent
 - Uplift/sync of monitoring config to dk-alchemy — tracked separately in dk-data-FE#145
 
 ## Implementation Order
@@ -244,8 +248,8 @@ Each piece can be independently tested and merged if needed:
 2. **CMS PUF fetchers and loaders** (P1) — 28 sources using existing file-based hash-skip pattern; register all in `meta.data_sources` and `SOURCES` dict
 3. **Regulatory and clinical sources** (P2) — EMA first, then Cochrane, EuropePMC, DrugBank, NIH Reporter, PubChem; each logged via `log_to_meta()`
 4. **Market summary silver view** — after CMS and EMA are verified
-5. **Agent system** (P4) — port 8 agent files + quarantine table + agents API router + CronJob + K8s Job template
+5. **Agent system** (P4) — port 7 agent files (6 CMS domain agents + publication evidence extractor) + quarantine table + agents API router + CronJob + K8s Job template
 6. **Data tools gateway** (P5) — port 27 service files + data_tools API router + data_registry.py
-7. **Xenon schema** — migration + PostgREST config + role grants
+7. **`mol_silver.publication_evidence`** — new silver table + SQLMesh INCREMENTAL model; restore `mol_gold.trial_outcomes` reading from silver; remove `xenon` from PostgREST schema list
 8. **SQLMesh scheduler with advisory lock** — deadlock prevention deployment
 9. **SEC EDGAR** (P6) — independent of other sources; can ship in this PR or a follow-on
