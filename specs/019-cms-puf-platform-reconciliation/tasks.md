@@ -38,7 +38,7 @@
 
 ---
 
-## Phase 3: User Story 1 — CMS PUF Data for Drug Market Analysis (Priority: P1) 🎯 MVP
+## Phase 3: User Story 1 — CMS PUF Data for Drug Market Analysis (Priority: P1)
 
 **Goal**: 28 CMS PUF file-based sources ingested to `hcs_raw`, normalized through `hcs_bronze`/`hcs_silver`/`hcs_gold`, queryable via PostgREST.
 
@@ -195,16 +195,17 @@ Within Phase 6 (US4):
 
 ## Implementation Strategy
 
-**MVP scope**: Phase 1 + Phase 2 + Phase 3 (US1) — gets CMS PUF data flowing end-to-end with hash-skip, meta logging, HCS medallion models, and PostgREST exposure. This is independently deployable and delivers the primary feature value.
+All phases are in scope for this PR. Implement in phase order:
 
-**Incremental delivery order**:
-1. Phases 1–3: CMS PUF complete (testable end-to-end)
-2. Phase 4: Regulatory/clinical sources + market_summary (adds mol_ domain depth)
-3. Phase 5: Refresh history audit (verification, minimal code)
-4. Phase 6: Agent system + xenon removal (highest-value differentiation)
-5. Phase 7: Data Tools Gateway (self-service backfill)
-6. Phase 8: SEC EDGAR (independent, can ship last or in follow-on PR)
-7. Phase 9: Grafana alert + final regression
+1. Phase 1: Migration 085 (unblocks everything)
+2. Phase 2: Foundational infrastructure (BaseFetcher retry, HCS dirs, agent base)
+3. Phase 3: CMS PUF — 28 sources end-to-end (raw → hcs_gold, PostgREST exposed)
+4. Phase 4: Regulatory/clinical sources + market_summary
+5. Phase 5: Refresh history audit (verification pass over Phase 3 + 4 work)
+6. Phase 6: Agent system + xenon removal from trial_outcomes
+7. Phase 7: Data Tools Gateway
+8. Phase 8: SEC EDGAR
+9. Phase 9: Grafana alert + full regression
 
 **Total tasks**: 56
 **Parallelizable tasks**: 26 (marked [P])
