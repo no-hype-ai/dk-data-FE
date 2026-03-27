@@ -173,8 +173,6 @@ A competitive intelligence analyst needs to extract structured data from pharmac
 
 ## Out of Scope for This PR
 
-- Persistent cross-run pagination checkpoints (main branch currently checkpoints in-memory only; adding DB-backed checkpoint state is new infrastructure deferred to a follow-on)
-- Conditional HTTP (ETag/If-Modified-Since) for API sources — `response_body_hash` columns exist but the code to populate and check them does not; this is deferred
 - Full-text extraction and structuring of SEC filing content (drug revenue segmentation, pipeline parsing) — this PR stores the document; extraction is a downstream feature
 - Uplift/sync of monitoring config to dk-alchemy — tracked separately in dk-data-FE#145
 
