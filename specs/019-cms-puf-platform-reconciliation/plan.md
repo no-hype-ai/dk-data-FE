@@ -115,15 +115,16 @@ src/dk_data/
 │   └── publication_evidence_extractor.py   # NEW — writes to mol_silver.publication_evidence
 │
 ├── api/routes/
-│   ├── data_tools.py                        # NEW — /api/v1/data-tools router
+│   ├── data_tools.py                        # NEW — /api/v1/data-tools router; backed by existing TOOL_REGISTRY in services/mcp/tool_registry.py
 │   └── agents.py                            # NEW — /api/v1/agents router
 │
-├── services/data_tools/
-│   ├── registry.py                          # NEW — tool registry service
-│   ├── data_registry.py                     # NEW — source freshness checks
-│   └── adapters/                            # NEW — 27 source adapter files
-│       ├── cms_part_d.py
-│       └── ... (26 more)
+├── services/mcp/
+│   ├── tool_registry.py                     # EXISTING — add 28 new CMS ToolDefinition entries
+│   └── adapters/                            # EXISTING — add 28 new cms_puf_*.py adapter files
+│       ├── cms_part_d_spending.py           # NEW ×28
+│       └── ... (27 more)
+├── services/data_platform/
+│   └── data_freshness_monitor.py            # EXISTING — add is_fresh(source_name, max_age_hours) method
 │
 ├── sqlmesh/models/
 │   ├── hcs/                                 # NEW directory tree
@@ -146,11 +147,15 @@ src/dk_data/
 │       ├── silver/
 │       │   ├── ema_regulatory.sql           # NEW — entity-linked from mol_bronze.ema_regulatory
 │       │   ├── drug_spending.sql            # NEW — Part D + Part B UNION
-│       │   └── publication_evidence.sql     # NEW — INCREMENTAL_BY_UNIQUE_KEY
+│       │   └── publication_evidence.sql     # NEW — INCREMENTAL_BY_UNIQUE_KEY (staging→live merge)
+│       ├── silver/ (existing)
+│       │   └── publications.sql             # EXISTING — extend with EuropePMC 5th CTE (T058)
 │       └── gold/
 │           ├── trial_outcomes.sql           # EXISTING — update to remove xenon reference + fix grain
 │           └── market_summary.sql           # NEW
 │
+├── sqlmesh/
+│   └── config.yaml                          # EXISTING — add hcs_raw, hcs_bronze, hcs_silver, hcs_gold to physical_schema_mapping (T060)
 └── sql/migrations/
     └── 085_cms_puf_platform_reconciliation.sql  # NEW — single consolidated delta migration
 
@@ -199,7 +204,7 @@ Full findings in [research.md](./research.md). Key decisions:
 
 4. **Migration number**: 085 (next after 084 on main).
 
-5. **PostgREST**: `PGRST_DB_SCHEMAS` env var; add `hcs_bronze`, `hcs_silver`, `hcs_gold`.
+5. **PostgREST**: `PGRST_DB_SCHEMAS` env var; add `hcs_silver` and `hcs_gold` only — `hcs_bronze` is NOT exposed (follows existing pattern where `mol_bronze` is not in the list).
 
 6. **Grafana alert**: Provisioning file at `monitoring/provisioning/alerts/`.
 
@@ -208,6 +213,9 @@ Full findings in [research.md](./research.md). Key decisions:
 8. **HCS SQLMesh path**: New `src/dk_data/sqlmesh/models/hcs/` directory.
 
 9. **Existing bronze**: `ema.sql`, `cochrane_reviews.sql`, `drugbank.sql`, `sec_edgar.sql` exist — verify namespace alignment before writing new models.
+10. **Schema naming split**: Two bronze physical schemas exist — `bronze` (legacy, patent/trademark models from 014-spec) and `mol_bronze` (new molecule CI models). New EuropePMC and NIH Reporter bronze models go to `mol_bronze.*`. New HCS models go to `hcs_bronze.*`. The config maps all three. Do NOT use unprefixed `bronze.*` for any new models.
+11. **silver.publications**: existing `MODEL(name silver.publications, ...)` consolidates PubMed+OpenAlex+Cochrane+RSS. EuropePMC extends this model as a 5th CTE. No new `mol_silver.europepmc` table is created. The `silver` schema is legacy-named; do not rename or move this model.
+12. **services/mcp duplication prevention**: `services/mcp/tool_registry.py` (28 tools) and `services/mcp/adapters/` (30 adapters) already exist. Data Tools Gateway extends these. New `services/data_tools/` directory is forbidden — it would duplicate existing MCP architecture.
 
 ---
 
@@ -251,12 +259,12 @@ Follows spec Implementation Order section:
 4. **Market summary silver view** — after CMS and EMA verified end-to-end
 5. **BaseFetcher per-source retry config** — extend `main.py` to read `max_retries`/`retry_base_delay_seconds` from SOURCES
 6. **Agent system** — `base_agent.py` first; then all 7 agents; quarantine table; `agents.py` router
-7. **Data Tools Gateway** — `registry.py`, `data_registry.py`, 27 adapters, `data_tools.py` router
+7. **Data Tools Gateway** — extend `services/mcp/tool_registry.py` (28 new ToolDefinitions) + add adapters to `services/mcp/adapters/`; extend `data_freshness_monitor.py` (add `is_fresh()`); add `data_tools.py` router backed by existing TOOL_REGISTRY
 8. **`mol_silver.publication_evidence`** — migration creates table; publication evidence extractor writes to it; update `trial_outcomes.sql` to remove xenon; run SQLMesh to verify
 9. **SQLMesh HCS models** — bronze (7) → silver (1) → gold (1); SQLMesh run validates
 10. **SQLMesh mol additions** — `ema_regulatory.sql`, `drug_spending.sql` silver; `market_summary.sql` gold
 11. **CronJob manifests** — 28 CMS + 2 API source CronJobs; follow existing manifest template
-12. **PostgREST schema exposure** — update `PGRST_DB_SCHEMAS` to add `hcs_bronze`, `hcs_silver`, `hcs_gold`
+12. **PostgREST schema exposure** — update `PGRST_DB_SCHEMAS` to add `hcs_silver` and `hcs_gold` only; `hcs_bronze` is NOT added (follows existing pattern)
 13. **Grafana alert** — `monitoring/provisioning/alerts/pipeline-source-failures.yaml`
 14. **SEC EDGAR** — verify/extend existing fetcher; add silver keyword-flag transformation
 

@@ -18,7 +18,7 @@ The outcome: a significantly broader data platform that analysts can query for d
 ### Session 2026-03-27
 
 - Q: Is the CMS PUF source count 31 (FR-001, SC-001) or 28 (blueprint, issue #144)? → A: 28 — the correct count from the 016 branch audit; FR-001 and SC-001 updated to match
-- Q: Which new schemas should be exposed via PostgREST? → A: Bronze, silver, and gold across all domain namespaces (mol_, hcs_, ind_, etc.) — raw schemas are never exposed
+- Q: Which new schemas should be exposed via PostgREST? → A: Silver and gold only for all domain namespaces — bronze is excluded (existing pattern: `mol_bronze` is not exposed, only `mol_silver` and `mol_gold`). This feature adds `hcs_silver` and `hcs_gold` to the exposure list. Raw schemas are never exposed.
 - Q: Where should API rate-limit retry logic live — BaseFetcher or per-fetcher? → A: Retry-with-backoff in BaseFetcher, configurable max retries and base delay per source; all API fetchers inherit it automatically
 - Q: Should the pipeline emit proactive alerts when sources fail? → A: Yes — Grafana alert rule firing when any source has ≥ 3 consecutive failed runs in meta.refresh_log; no new tooling required
 - Q: How should SEC EDGAR full filing text be stored — inline column, separate table, or object storage? → A: Inline TEXT column in the raw table; PostgreSQL TOAST handles compression automatically — no separate overflow table or external storage
@@ -155,7 +155,7 @@ A competitive intelligence analyst needs to extract structured data from pharmac
 
 - **FR-006**: The platform MUST ingest EMA regulatory decisions (drug approvals, refusals, and withdrawals) with European-specific fields: CHMP opinion date, indication, therapeutic area, and orphan designation status
 - **FR-007**: The platform MUST ingest Cochrane systematic review metadata (title, PICO population/intervention, review date, conclusion summary) for drugs tracked by the platform
-- **FR-008**: The platform MUST ingest EuropePMC literature citations with drug mention extraction linked to known drug identifiers
+- **FR-008**: The platform MUST ingest EuropePMC literature citations with drug mention extraction linked to known drug identifiers. EuropePMC records are normalized in `mol_bronze.europepmc` and then consolidated into the existing `silver.publications` model as a new CTE — they do NOT create a separate `mol_silver.europepmc` table
 - **FR-009**: The platform MUST ingest DrugBank pharmacological profiles including drug classification, mechanism of action, indication, and cross-referencing to PubChem compound IDs
 - **FR-010**: The platform MUST ingest NIH Reporter funded research grants with principal investigator, institution, project title, and associated drug/disease terms
 - **FR-011**: The platform MUST ingest PubChem compound records to maintain a canonical compound identifier map linking brand names, generic names, and chemical identifiers used by other sources
@@ -179,7 +179,7 @@ A competitive intelligence analyst needs to extract structured data from pharmac
 
 - **FR-024**: The platform MUST include 7 enrichment agents: 6 domain-specific CMS agents (service line inference, IDN hierarchy, referral network, contact verification, staffing decomposition, equipment inventory) plus a publication evidence extraction agent that reads publication abstracts from the silver layer and writes structured clinical endpoints to `mol_silver.publication_evidence`
 - **FR-024a**: The publication evidence extraction agent MUST eliminate the dependency on the `xenon` schema — `mol_gold.trial_outcomes` MUST read from `mol_silver.publication_evidence` (not `xenon.publication_evidence`). The `xenon` schema is retained for the Xenon application's own use but removed from dk-data-FE's PostgREST exposure
-- **FR-024b**: The PostgREST configuration MUST expose bronze, silver, and gold schemas for all domain namespaces (`mol_bronze`, `mol_silver`, `mol_gold`, `hcs_bronze`, `hcs_silver`, `hcs_gold`, and any future domain prefixes such as `ind_`). Raw schemas (`mol_raw`, `hcs_raw`) MUST never be added to the PostgREST exposure list — they are internal pipeline state only
+- **FR-024b**: The PostgREST configuration MUST expose **silver and gold only** for all domain namespaces — following the established pattern where `mol_silver` and `mol_gold` are exposed but `mol_bronze` and `mol_raw` are not. This feature adds `hcs_silver` and `hcs_gold` to the `PGRST_DB_SCHEMAS` list in `k8s/apps/postgrest/base/configmap.yaml`. Bronze schemas (`mol_bronze`, `hcs_bronze`) and raw schemas (`mol_raw`, `hcs_raw`) MUST never be added to the exposure list
 - **FR-025**: Every agent MUST route all LLM calls through the shared LiteLLM proxy — no direct API calls to any LLM provider
 - **FR-026**: Records produced with confidence below 0.5 MUST be written to a quarantine table and excluded from live silver views until manually reviewed and resolved
 - **FR-027**: Records produced with confidence between 0.5 and 0.79 MUST be written to the silver layer with a `needs_review` flag set to TRUE
@@ -187,8 +187,8 @@ A competitive intelligence analyst needs to extract structured data from pharmac
 
 **Data Tools Gateway**
 
-- **FR-029**: The platform MUST expose a tool registry listing all available data sources (CMS and molecule) with metadata: category, supported query keys, and last-refresh timestamp
-- **FR-030**: For any registered source, the platform MUST provide a backfill endpoint that fetches fresh upstream data and runs the silver/gold transformation without manual intervention
+- **FR-029**: The platform MUST expose a tool registry listing all available data sources (CMS and molecule) with metadata: category, supported query keys, and last-refresh timestamp. The registry MUST be implemented by extending the existing `services/mcp/tool_registry.py` `TOOL_REGISTRY` dict — not by creating a parallel `services/data_tools/` directory
+- **FR-030**: For any registered source, the platform MUST provide a backfill endpoint that fetches fresh upstream data and runs the silver/gold transformation without manual intervention. Freshness checking MUST extend `services/data_platform/data_freshness_monitor.py` — not duplicate it in a new module
 - **FR-031**: Before triggering an external fetch, the gateway MUST check local data freshness and skip the external call if sufficiently recent data exists
 
 **Clinical Evidence Silver Layer**
@@ -266,7 +266,7 @@ Each piece can be independently tested and merged if needed:
 3. **Regulatory and clinical sources** (P2) — EMA first, then Cochrane, EuropePMC, DrugBank, NIH Reporter, PubChem; each logged via `log_to_meta()`
 4. **Market summary silver view** — after CMS and EMA are verified
 5. **Agent system** (P4) — port 7 agent files (6 CMS domain agents + publication evidence extractor) + quarantine table + agents API router + CronJob + K8s Job template
-6. **Data tools gateway** (P5) — port 27 service files + data_tools API router + data_registry.py
+6. **Data tools gateway** (P5) — extend `services/mcp/tool_registry.py` with 28 new CMS `ToolDefinition` entries; add adapters to `services/mcp/adapters/`; add `is_fresh()` to `services/data_platform/data_freshness_monitor.py`; add `api/routes/data_tools.py` router backed by existing `TOOL_REGISTRY`; no new `services/data_tools/` directory
 7. **`mol_silver.publication_evidence`** — new silver table + SQLMesh INCREMENTAL model; restore `mol_gold.trial_outcomes` reading from silver; remove `xenon` from PostgREST schema list
 8. **SQLMesh scheduler with advisory lock** — deadlock prevention deployment
 9. **SEC EDGAR** (P6) — independent of other sources; can ship in this PR or a follow-on
@@ -293,6 +293,7 @@ The platform tracks fetch state through two tables and two utility functions. Ne
 | `meta.refresh_log` | Append-only run log. One row per run. Stores `source_name`, `run_started_at`, `run_ended_at`, `records_fetched`, `records_inserted`, `records_updated`, `status`, `errors` |
 | `log_to_meta(source_name, result)` | Writes one row to `meta.refresh_log` AND updates `meta.data_sources`. Called after every run, success or failure |
 | `_compute_days_back(source, source_info)` | Reads `last_successful_refresh` from `meta.data_sources`, returns `elapsed_days + 1` as the lookback window. Returns `None` for non-incremental (bulk/file) sources — caller skips date windowing when `None` |
+| `silver.publications` | Canonical publication consolidation (PubMed + OpenAlex + Cochrane + RSS + EuropePMC). Existing model — extend with CTEs, do not replace |
 
 **`log_to_meta` contract** — the `result` dict passed to `log_to_meta` must contain exactly these keys:
 
@@ -410,6 +411,8 @@ Never mix patterns. A CMS source must never use JSONB. An API source must never 
 | `hcs_silver` | Healthcare / CMS domain | Silver (normalized) |
 | `mol_gold` | Molecule domain | Gold (aggregated, decision-ready) |
 | `hcs_gold` | Healthcare / CMS domain | Gold (aggregated) |
+
+> **config.yaml prerequisite**: Before any HCS SQLMesh model can run, `src/dk_data/sqlmesh/config.yaml` must have `hcs_raw`, `hcs_bronze`, `hcs_silver`, and `hcs_gold` added to its `physical_schema_mapping` section. See T060.
 
 ---
 
@@ -721,8 +724,8 @@ Silver normalizes bronze records and links them to the canonical molecule entity
 | Physician Payments | `LOWER(product_name) = LOWER(m.canonical_name)` | — | — |
 | Research Grants (NIH) | `LOWER(project_title) LIKE '%' \|\| LOWER(m.canonical_name) \|\| '%'` | — | `LENGTH(canonical_name) > 4` |
 | PubChem | `LOWER(inchi_key) = LOWER(m.inchi_key)` | — | — |
-| EuropePMC | `LOWER(title) LIKE '%' \|\| LOWER(m.canonical_name) \|\| '%'` | — | `LENGTH(canonical_name) > 4` |
-| Publication Evidence | `pmid = p.pmid` (join to mol_silver.publications) | — | — |
+| EuropePMC | `LOWER(title) LIKE '%' \|\| LOWER(m.canonical_name) \|\| '%'` | — | `LENGTH(canonical_name) > 4` — Consolidated into `silver.publications` (5th CTE) — linking happens within `silver.publications` via `LOWER(title) LIKE` |
+| Publication Evidence | `pmid = p.pmid` (join to `silver.publications`) | — | — |
 
 #### `mol_silver.ema_regulatory`
 
@@ -1090,7 +1093,7 @@ FROM hcs_silver.cms_drug_market s;
 | `mol_silver.physician_payments` | FULL | source_record_id | @monthly |
 | `mol_silver.research_grants` | FULL | project_number | @weekly |
 | `mol_silver.pubchem` | FULL | cid | @weekly |
-| `mol_silver.europepmc` | FULL | pmid | @weekly |
+| `silver.publications` (extended) | INCREMENTAL_BY_UNIQUE_KEY (doi) | doi | @weekly |
 | `mol_silver.publication_evidence` | INCREMENTAL_BY_UNIQUE_KEY (content_hash) | content_hash | @weekly |
 | `hcs_silver.cms_drug_market` | FULL | ndc | @monthly |
 | `mol_gold.trial_outcomes` | FULL | (molecule_id, trial_nct_id, endpoint_name, evidence_source) | @weekly |

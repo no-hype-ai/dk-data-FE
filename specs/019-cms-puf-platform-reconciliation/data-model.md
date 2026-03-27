@@ -8,7 +8,7 @@
 
 ## Schema Overview
 
-Eight schema namespaces. Two domain prefixes (`mol_` = molecule/regulatory/clinical, `hcs_` = healthcare/CMS). Four layers per domain.
+Eight schema namespaces. Two domain prefixes (`mol_` = molecule/regulatory/clinical, `hcs_` = healthcare/CMS). Four layers per domain. Domain prefixes are **mandatory** on all data schemas — no unprefixed data schemas (`bronze`, `silver`, `gold`, `raw`) may be introduced by this feature; legacy unprefixed schemas that predate this convention are referenced by their existing name only.
 
 | Schema | Layer | Contents |
 |---|---|---|
@@ -20,6 +20,7 @@ Eight schema namespaces. Two domain prefixes (`mol_` = molecule/regulatory/clini
 | `hcs_silver` | Silver | Normalized CMS records (NDC grain, USP classification) |
 | `mol_gold` | Gold | Aggregated, decision-ready molecule views |
 | `hcs_gold` | Gold | Aggregated CMS market profiles |
+| `silver` | Silver | **Legacy** — existing canonical publication consolidation model (`silver.publications`). Predates domain-prefix convention. Referenced by name only; do not rename. |
 
 ---
 
@@ -209,6 +210,8 @@ All CMS PUF file-based sources. Columns mirror the CSV schema exactly. Only univ
 | `_source_pmid` | VARCHAR(20) | dedup key |
 | `_processed_at` | TIMESTAMP | extraction timestamp |
 
+> **Pipeline**: `mol_raw.europepmc_raw` → `mol_bronze.europepmc` → extended `silver.publications` (5th CTE in T058) → `mol_silver.publication_evidence_staging` (via agent T037)
+
 **`mol_bronze.ema_regulatory`**
 | Column | Type | Source field (EMA JSON uses spaces in keys) |
 |---|---|---|
@@ -248,20 +251,11 @@ Bronze for CMS sources mirrors raw with light normalisation (trim whitespace, st
 
 ### mol_silver (entity-linked)
 
-**`mol_silver.europepmc`** — EuropePMC citations normalized and entity-linked (source for publication evidence extractor)
-| Column | Type | Notes |
-|---|---|---|
-| `id` | UUID PK | |
-| `molecule_id` | UUID FK | nullable — linked via title substring match on `canonical_name` (LENGTH > 4 guard) |
-| `pmid` | VARCHAR(20) | |
-| `title` | TEXT | |
-| `abstract_text` | TEXT | input for publication evidence extractor |
-| `journal_title` | VARCHAR(300) | |
-| `publication_date` | DATE | |
-| `author_list` | JSONB | kept as array from bronze |
-| `doi` | VARCHAR(100) | |
-| `link_strategy` | VARCHAR(50) | 'title_substring', 'unlinked' |
-| `_loaded_at` | TIMESTAMP | |
+**`silver.publications` (existing — extended by this feature)** — Canonical publication consolidation model. Already exists on main with PubMed, OpenAlex, Cochrane, and RSS sources. EuropePMC is added as a fifth CTE in this feature (T058). The publication evidence extractor (T037) reads abstracts from this table, not from a new standalone europepmc silver table.
+
+> **DO NOT create `mol_silver.europepmc`**. There is no separate europepmc silver table. EuropePMC bronze records feed into `silver.publications` alongside the four existing sources. This enforces the single-publication-consolidation-point principle.
+
+Key columns relevant to this feature (EuropePMC additions): `pmid`, `title`, `abstract`, `pub_date`, `journal_name`, `authorships` (JSONB), `doi`, `source` = 'europepmc', `is_open_access`.
 
 **`mol_silver.ema_regulatory`** — EMA decisions linked to platform molecules
 | Column | Type | Notes |
@@ -550,12 +544,18 @@ Same column schema as `mol_silver.publication_evidence`. Agent writes to this ta
 |---|---|
 | `source_id` | SERIAL PK |
 | `source_name` | VARCHAR(100) UNIQUE |
-| `source_type` | VARCHAR(50) |
+| `source_type` | VARCHAR(50) DEFAULT 'api' |
+| `source_url` | VARCHAR(500) |
 | `description` | TEXT |
-| `default_days_back` | INTEGER |
+| `refresh_frequency` | VARCHAR(20) |
 | `last_successful_refresh` | TIMESTAMP |
-| `last_refresh_status` | VARCHAR(20) |
 | `last_refresh_attempt` | TIMESTAMP |
+| `last_refresh_status` | VARCHAR(20) |
+| `record_count` | INTEGER |
+| `is_active` | BOOLEAN DEFAULT TRUE |
+| `created_at` | TIMESTAMP DEFAULT NOW() |
+
+`default_days_back` is NOT a database column — it is stored in the Python `SOURCES` dict and passed to `_compute_days_back()` at runtime.
 
 **`meta.refresh_log`**
 | Column | Type |
@@ -580,10 +580,12 @@ mol_silver.molecules (1) ──< (0..N) mol_silver.drug_spending
 mol_silver.molecules (1) ──< (0..N) mol_silver.physician_payments
 mol_silver.molecules (1) ──< (0..N) mol_silver.research_grants
 mol_silver.molecules (1) ──< (0..N) mol_silver.publication_evidence
+silver.publications ──> mol_silver.publication_evidence_staging (via agent T037 extraction)
 mol_silver.publication_evidence ──> mol_gold.trial_outcomes (via UNION)
 mol_silver.clinical_trials ──> mol_gold.trial_outcomes (via UNION)
 mol_silver.drug_spending ──> mol_gold.market_summary
 mol_silver.ema_regulatory ──> mol_gold.market_summary
+silver.publications ──> mol_gold.market_summary
 hcs_silver.cms_drug_market ──> hcs_gold.cms_drug_market_profile
 meta.data_sources (1) ──< (0..N) meta.refresh_log
 ```
