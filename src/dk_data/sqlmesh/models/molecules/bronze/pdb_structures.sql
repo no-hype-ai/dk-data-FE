@@ -2,7 +2,7 @@
 -- Transforms raw PDB API responses (RCSB REST v1) to Bronze typed columns
 -- Part of: 015-assessment-dashboard-integration
 --
--- Source: raw.pdb (envelope schema, migration 028)
+-- Source: mol_raw.pdb (envelope schema, migration 028)
 -- RCSB JSON structure: rcsb_id, struct.title, exptl[].method,
 --   rcsb_entry_info.resolution_combined[],
 --   rcsb_accession_info.deposit_date,
@@ -10,7 +10,7 @@
 --   polymer_entities[], nonpolymer_entities[]
 
 MODEL (
-    name bronze.pdb_structures,
+    name mol_bronze.pdb_structures,
     kind INCREMENTAL_BY_TIME_RANGE (
         time_column request_timestamp,
         batch_size 500
@@ -73,7 +73,7 @@ SELECT
     FALSE AS processed_to_silver,
     NOW() AS created_at
 
-FROM raw.pdb
+FROM mol_raw.pdb
 WHERE
     response_status = 200
     AND processed_to_bronze = FALSE

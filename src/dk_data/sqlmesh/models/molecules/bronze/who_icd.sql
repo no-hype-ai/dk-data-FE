@@ -1,5 +1,5 @@
 -- SQLMesh Model: Bronze WHO ICD Codes
--- Transforms raw.who_icd JSONB envelope (migration 075_pdb_who_raw_tables.sql)
+-- Transforms mol_raw.who_icd JSONB envelope (migration 075_pdb_who_raw_tables.sql)
 -- to Bronze typed columns.
 --
 -- WHO ICD-11 API field reference:
@@ -23,7 +23,7 @@
 -- Part of: 015-assessment-dashboard-integration
 
 MODEL (
-    name bronze.who_icd,
+    name mol_bronze.who_icd,
     kind INCREMENTAL_BY_TIME_RANGE (
         time_column request_timestamp,
         batch_size 500
@@ -89,7 +89,7 @@ SELECT
     FALSE                                                 AS processed_to_silver,
     NOW()                                                 AS created_at
 
-FROM raw.who_icd
+FROM mol_raw.who_icd
 WHERE
     response_status = 200
     AND processed_to_bronze = FALSE

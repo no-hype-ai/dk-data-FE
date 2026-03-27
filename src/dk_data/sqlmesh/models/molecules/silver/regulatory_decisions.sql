@@ -3,14 +3,14 @@
 -- Part of: 015-assessment-dashboard-integration
 --
 -- Sources:
---   bronze.ema          : EMA marketing authorizations (product_name, active_substance,
+--   mol_bronze.ema          : EMA marketing authorizations (product_name, active_substance,
 --                         authorization_status, authorization_date, therapeutic_area)
---   bronze.hta_decisions: NICE/G-BA/HAS/PBAC decisions (drug_name, indication,
+--   mol_bronze.hta_decisions: NICE/G-BA/HAS/PBAC decisions (drug_name, indication,
 --                         decision_type, decision_date, summary)
---   bronze.orange_book  : FDA NDA/ANDA approvals (ingredient, trade_name, approval_date)
+--   mol_bronze.orange_book  : FDA NDA/ANDA approvals (ingredient, trade_name, approval_date)
 
 MODEL (
-    name silver.regulatory_decisions,
+    name mol_silver.regulatory_decisions,
     kind INCREMENTAL_BY_UNIQUE_KEY (
         unique_key (agency, drug_name, indication, decision_date)
     ),
@@ -34,7 +34,7 @@ WITH ema_decisions AS (
         NULL::TEXT                                          AS recommendation_details,
         e.source,
         e.source_updated_at
-    FROM bronze.ema e
+    FROM mol_bronze.ema e
     WHERE e.processed_to_silver = FALSE
       AND COALESCE(e.active_substance, e.product_name) IS NOT NULL
       AND e.authorization_date IS NOT NULL
@@ -54,7 +54,7 @@ hta_decisions AS (
         h.summary::TEXT                                     AS recommendation_details,
         h.source,
         h.source_updated_at
-    FROM bronze.hta_decisions h
+    FROM mol_bronze.hta_decisions h
     WHERE h.processed_to_silver = FALSE
       AND h.drug_name IS NOT NULL
       AND h.decision_date IS NOT NULL
@@ -73,7 +73,7 @@ orange_book_decisions AS (
         ob.te_code::TEXT                                    AS recommendation_details,
         ob.source,
         ob.source_updated_at
-    FROM bronze.orange_book ob
+    FROM mol_bronze.orange_book ob
     WHERE ob.processed_to_silver = FALSE
       AND ob.ingredient IS NOT NULL
       AND ob.approval_date IS NOT NULL

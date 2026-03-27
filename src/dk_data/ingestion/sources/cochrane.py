@@ -3,10 +3,10 @@
 Feature: 011-datasource-integration
 Task: T064-T066 — Cochrane systematic reviews
 
-Loads normalised Cochrane review records into raw.cochrane_reviews
+Loads normalised Cochrane review records into mol_raw.cochrane_reviews
 with upsert semantics (ON CONFLICT DO UPDATE on review_id).
 
-Target table: raw.cochrane_reviews (see migration 060_ci_source_tables.sql)
+Target table: mol_raw.cochrane_reviews (see migration 060_ci_source_tables.sql)
 """
 
 import logging
@@ -29,7 +29,7 @@ def load_cochrane_data(
     source_file: Optional[str] = None,
     batch_size: int = BATCH_SIZE,
 ) -> Dict[str, Any]:
-    """Load Cochrane review records into raw.cochrane_reviews.
+    """Load Cochrane review records into mol_raw.cochrane_reviews.
 
     Validates each record using Pydantic and performs an upsert:
     INSERT ... ON CONFLICT (review_id) DO UPDATE.
@@ -53,7 +53,7 @@ def load_cochrane_data(
             "errors": [],
         }
 
-    logger.info("Loading %d Cochrane review records into raw.cochrane_reviews", len(records))
+    logger.info("Loading %d Cochrane review records into mol_raw.cochrane_reviews", len(records))
 
     records_inserted = 0
     records_failed = 0
@@ -68,7 +68,7 @@ def load_cochrane_data(
 
                     cur.execute(
                         """
-                        INSERT INTO raw.cochrane_reviews (
+                        INSERT INTO mol_raw.cochrane_reviews (
                             review_id, title, authors, abstract,
                             publication_date, review_type,
                             interventions, conditions,

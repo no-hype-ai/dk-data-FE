@@ -3,7 +3,7 @@
 -- Part of DK Molecule Data Platform (012-dk-data-platform)
 
 MODEL (
-    name silver.molecule_targets,
+    name mol_silver.molecule_targets,
     kind INCREMENTAL_BY_UNIQUE_KEY (
         unique_key (molecule_id, target_id)
     ),
@@ -34,9 +34,9 @@ SELECT DISTINCT
     b.source,
     b.created_at
 
-FROM silver.bioactivity b
-JOIN silver.targets t ON b.target_id = t.id
-JOIN silver.molecules m ON b.molecule_id = m.id
+FROM mol_silver.bioactivity b
+JOIN mol_silver.targets t ON b.target_id = t.id
+JOIN mol_silver.molecules m ON b.molecule_id = m.id
 WHERE m.needs_review = FALSE
   AND b.molecule_id IS NOT NULL
   AND b.target_id IS NOT NULL
@@ -44,7 +44,7 @@ WHERE m.needs_review = FALSE
 UNION ALL
 
 -- Add target relationships from DrugBank
--- NOTE: bronze.drugbank.inchi_key is NULL (the DrugBank XML fetcher does not
+-- NOTE: mol_bronze.drugbank.inchi_key is NULL (the DrugBank XML fetcher does not
 -- extract structural identifiers). Join via identifier_mappings on drugbank_id,
 -- which is always populated by the fetcher.
 SELECT DISTINCT
@@ -57,12 +57,12 @@ SELECT DISTINCT
     'unknown' AS potency_class,
     'drugbank' AS source,
     NOW() AS created_at
-FROM silver.molecules m
-JOIN silver.identifier_mappings im
+FROM mol_silver.molecules m
+JOIN mol_silver.identifier_mappings im
     ON im.molecule_id = m.id
     AND im.identifier_type = 'drugbank_id'
-JOIN bronze.drugbank d ON d.drugbank_id = im.identifier_value
+JOIN mol_bronze.drugbank d ON d.drugbank_id = im.identifier_value
 CROSS JOIN LATERAL jsonb_array_elements(COALESCE(d.targets, '[]'::JSONB)) AS tgt
-JOIN silver.targets t ON t.target_name ILIKE '%' || (tgt->>'name') || '%'
+JOIN mol_silver.targets t ON t.target_name ILIKE '%' || (tgt->>'name') || '%'
 WHERE m.needs_review = FALSE
   AND tgt->>'name' IS NOT NULL

@@ -1,20 +1,20 @@
 -- SQLMesh Model: Silver News Signals
 -- Normalized medical news and journal RSS signal data.
--- UNIONs bronze.medical_news and bronze.journal_rss into a single
+-- UNIONs mol_bronze.medical_news and mol_bronze.journal_rss into a single
 -- signal table with molecule linkage via drug_mentions.
 --
 -- Field provenance:
---   bronze.medical_news : article_id, source_name, title, summary, pub_date,
+--   mol_bronze.medical_news : article_id, source_name, title, summary, pub_date,
 --                         url (source_url), drug_mentions TEXT[],
 --                         therapeutic_areas TEXT[], source_updated_at
---   bronze.journal_rss  : article_id, feed_source (->source_name), title,
+--   mol_bronze.journal_rss  : article_id, feed_source (->source_name), title,
 --                         abstract (->summary), pub_date, link (->source_url),
 --                         doi, categories TEXT[], source_updated_at
 --
 -- Part of: 011-datasource-integration / 015-assessment-dashboard-integration
 
 MODEL (
-    name silver.news_signals,
+    name mol_silver.news_signals,
     kind INCREMENTAL_BY_UNIQUE_KEY (
         unique_key (source_url, pub_date)
     ),
@@ -59,7 +59,7 @@ SELECT
     NOW()                                                     AS created_at,
     NOW()                                                     AS updated_at
 
-FROM bronze.medical_news
+FROM mol_bronze.medical_news
 WHERE
     processed_to_silver = FALSE
     AND title IS NOT NULL
@@ -95,7 +95,7 @@ SELECT
     NOW()                                                     AS created_at,
     NOW()                                                     AS updated_at
 
-FROM bronze.journal_rss
+FROM mol_bronze.journal_rss
 WHERE
     processed_to_silver = FALSE
     AND title IS NOT NULL;

@@ -1,6 +1,6 @@
 """CMS Geographic Variation PUF Ingestor.
 
-Loads CMS Medicare Geographic Variation data into raw.cms_geographic_variation.
+Loads CMS Medicare Geographic Variation data into hcs_raw.cms_geographic_variation.
 Source: https://www.cms.gov/Research-Statistics-Data-and-Systems/Statistics-Trends-and-Reports/Medicare-Geographic-Variation
 
 Column names follow the exact CMS GV PUF field names (mixed case with underscores).
@@ -21,7 +21,7 @@ logger = logging.getLogger(__name__)
 
 # CMS GV PUF column → internal column mapping
 # CMS publishes columns with mixed case (e.g., Bene_Geo_Lvl).
-# We map to snake_case names that match raw.cms_geographic_variation.
+# We map to snake_case names that match hcs_raw.cms_geographic_variation.
 COLUMN_MAPPING = {
     # Geographic level / location
     'Bene_Geo_Lvl':                 'bene_geo_lvl',
@@ -104,7 +104,7 @@ def load_cms_geographic_variation(
     # Idempotency check — skip if this exact file was already loaded
     with get_cursor() as cur:
         cur.execute("""
-            SELECT COUNT(*) FROM raw.cms_geographic_variation
+            SELECT COUNT(*) FROM hcs_raw.cms_geographic_variation
             WHERE _source_hash = %s
         """, (source_hash,))
         if cur.fetchone()[0] > 0:
@@ -162,7 +162,7 @@ def load_cms_geographic_variation(
                     )
 
                     cur.execute("""
-                        INSERT INTO raw.cms_geographic_variation (
+                        INSERT INTO hcs_raw.cms_geographic_variation (
                             year, bene_geo_lvl, bene_geo_desc, bene_geo_cd,
                             bene_age_lvl, bene_demo_lvl, bene_demo_desc, bene_mcc_lvl,
                             tot_benes,

@@ -1,5 +1,5 @@
 -- staging.tavr_volumes - TAVR procedure volumes by hospital
--- Source: raw.cms_medicare_inpatient filtered to TAVR DRGs
+-- Source: hcs_raw.cms_medicare_inpatient filtered to TAVR DRGs
 -- Model type: FULL refresh
 
 MODEL (
@@ -19,7 +19,7 @@ SELECT
     average_covered_charges AS average_charges,
     average_medicare_payments AS average_medicare_payment,
     NOW() AS _updated_at
-FROM raw.cms_medicare_inpatient
+FROM hcs_raw.cms_medicare_inpatient
 WHERE drg_code IN ('266', '267')  -- TAVR DRG codes
   AND provider_id IS NOT NULL
   AND total_discharges > 0

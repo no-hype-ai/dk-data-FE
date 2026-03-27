@@ -3,7 +3,7 @@
 -- Part of: 015-assessment-dashboard-integration
 
 MODEL (
-    name bronze.hrsa,
+    name hcs_bronze.hrsa,
     kind INCREMENTAL_BY_TIME_RANGE (
         time_column request_timestamp,
         batch_size 500
@@ -36,7 +36,7 @@ SELECT
     FALSE AS processed_to_silver,
     NOW() AS created_at
 
-FROM raw.hrsa_shortage_areas
+FROM hcs_raw.hrsa_shortage_areas
 WHERE
     response_status = 200
     AND processed_to_bronze = FALSE

@@ -3,7 +3,7 @@
 -- Part of: 012-dk-data-platform
 
 MODEL (
-    name bronze.clinicaltrials,
+    name mol_bronze.clinicaltrials,
     kind INCREMENTAL_BY_TIME_RANGE (
         time_column request_timestamp,
         batch_size 500
@@ -93,14 +93,14 @@ SELECT
     -- Raw source tracking
     response_body AS raw_json,
     -- raw_source_id references the raw table PK, not the generated bronze id
-    raw.clinicaltrials.id AS raw_source_id,
+    mol_raw.clinicaltrials.id AS raw_source_id,
     'clinicaltrials_gov' AS source,
     request_timestamp,
     request_timestamp AS source_updated_at,
     FALSE AS processed_to_silver,
     NOW() AS created_at
 
-FROM raw.clinicaltrials
+FROM mol_raw.clinicaltrials
 WHERE
     response_status = 200
     AND processed_to_bronze = FALSE

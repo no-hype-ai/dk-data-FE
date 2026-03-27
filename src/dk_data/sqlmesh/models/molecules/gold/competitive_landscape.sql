@@ -3,7 +3,7 @@
 -- Part of DK Molecule Data Platform (012-dk-data-platform)
 
 MODEL (
-    name gold.competitive_landscape,
+    name mol_gold.competitive_landscape,
     kind FULL,
     cron '@daily',
     grain (molecule_id)
@@ -45,7 +45,7 @@ SELECT
         SELECT jsonb_agg(DISTINCT lead_sponsor_name)
         FROM (
             SELECT ct2.lead_sponsor_name
-            FROM silver.clinical_trials ct2
+            FROM mol_silver.clinical_trials ct2
             WHERE ct2.molecule_id = m.molecule_id
               AND ct2.lead_sponsor_name IS NOT NULL
         ) s
@@ -65,14 +65,14 @@ SELECT
             'serious_reports', COALESCE(SUM(ae.serious_count), 0),
             'death_reports', COALESCE(SUM(ae.death_count), 0)
         )
-        FROM silver.adverse_events ae
+        FROM mol_silver.adverse_events ae
         WHERE ae.molecule_id = m.molecule_id
     ) AS safety_summary,
 
     NOW() AS computed_at
 
-FROM silver.molecules m
-LEFT JOIN silver.clinical_trials ct ON m.molecule_id = ct.molecule_id
+FROM mol_silver.molecules m
+LEFT JOIN mol_silver.clinical_trials ct ON m.molecule_id = ct.molecule_id
 WHERE m.needs_review = FALSE
   AND m.development_status IN ('phase_1', 'phase_2', 'phase_3', 'approved')
 GROUP BY m.molecule_id, m.inchi_key, m.canonical_name, m.therapeutic_areas,

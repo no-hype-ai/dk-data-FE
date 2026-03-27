@@ -2,7 +2,7 @@
 -- Transforms Raw DrugBank flat-column records to Bronze typed columns
 -- Part of: 012-dk-data-platform
 --
--- NOTE: raw.drugbank uses flat columns (not response_body JSONB) because
+-- NOTE: mol_raw.drugbank uses flat columns (not response_body JSONB) because
 -- DrugBank is a credential-gated XML download parsed by DrugBankFetcher.
 -- The loader (sources/drugbank.py) inserts directly into flat columns:
 --   drugbank_id, name, description, cas_number, categories (TEXT[]),
@@ -12,7 +12,7 @@
 -- on this table — use _loaded_at for time-range incremental partitioning.
 
 MODEL (
-    name bronze.drugbank,
+    name mol_bronze.drugbank,
     kind INCREMENTAL_BY_TIME_RANGE (
         time_column loaded_at,
         batch_size 200
@@ -98,7 +98,7 @@ SELECT
     FALSE                                   AS processed_to_silver,
     NOW()                                   AS created_at
 
-FROM raw.drugbank
+FROM mol_raw.drugbank
 WHERE
     drugbank_id IS NOT NULL
     AND _loaded_at BETWEEN @start_dt AND @end_dt;

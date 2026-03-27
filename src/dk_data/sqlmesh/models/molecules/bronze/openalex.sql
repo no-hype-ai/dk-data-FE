@@ -1,13 +1,13 @@
 -- SQLMesh Model: Bronze OpenAlex
--- Transforms flat raw.openalex_ci typed columns to Bronze canonical schema
--- raw.openalex_ci is populated by OpenAlexCIFetcher + load_openalex_ci_data()
+-- Transforms flat mol_raw.openalex_ci typed columns to Bronze canonical schema
+-- mol_raw.openalex_ci is populated by OpenAlexCIFetcher + load_openalex_ci_data()
 -- Columns are typed at load time; JSONB fields (concepts, authorships, etc.)
 -- are stored as JSONB blobs. The loader normalises the OpenAlex API response
 -- into this flat schema — no JSON path drilling needed here.
 -- Part of: 012-dk-data-platform
 
 MODEL (
-    name bronze.openalex,
+    name mol_bronze.openalex,
     kind INCREMENTAL_BY_UNIQUE_KEY (
         unique_key openalex_id
     ),
@@ -25,7 +25,7 @@ SELECT
     r.work_id::TEXT                                                        AS openalex_id,
     r.doi::TEXT                                                            AS doi,
 
-    -- PMID is not stored directly in raw.openalex_ci; derive from authorships
+    -- PMID is not stored directly in mol_raw.openalex_ci; derive from authorships
     -- if available, otherwise NULL (PMID linkage done at silver layer via doi)
     NULL::TEXT                                                             AS pmid,
     NULL::TEXT                                                             AS pmcid,
@@ -92,7 +92,7 @@ SELECT
     FALSE                                                                  AS processed_to_silver,
     NOW()                                                                  AS created_at
 
-FROM raw.openalex_ci r
+FROM mol_raw.openalex_ci r
 WHERE
     r.work_id IS NOT NULL
     AND r._loaded_at BETWEEN @start_dt AND @end_dt;

@@ -1,10 +1,10 @@
 -- SQLMesh Model: Bronze CMS Hospital Info
 -- Transforms raw CMS Hospital General Information CSV data to Bronze typed columns
--- Source: raw.cms_hospital_info (flat typed table, loaded by cms_hospital_info.py)
+-- Source: hcs_raw.cms_hospital_info (flat typed table, loaded by cms_hospital_info.py)
 -- Part of: 015-assessment-dashboard-integration
 
 MODEL (
-    name bronze.cms_hospital_info,
+    name hcs_bronze.cms_hospital_info,
     kind INCREMENTAL_BY_UNIQUE_KEY (
         unique_key provider_id
     ),
@@ -47,7 +47,7 @@ SELECT
     FALSE AS processed_to_silver,
     NOW() AS created_at
 
-FROM raw.cms_hospital_info r
+FROM hcs_raw.cms_hospital_info r
 WHERE
     r.provider_id IS NOT NULL
     AND r._loaded_at BETWEEN @start_dt AND @end_dt;

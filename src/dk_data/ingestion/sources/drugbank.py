@@ -3,10 +3,10 @@
 Feature: 011-datasource-integration
 Task: Phase 6 / US4 — credential-gated source (DrugBank)
 
-Loads validated DrugBank drug records into raw.drugbank with
+Loads validated DrugBank drug records into mol_raw.drugbank with
 upsert semantics (ON CONFLICT DO UPDATE on drugbank_id).
 
-Target table: raw.drugbank (see migration 063_drugbank_raw_table.sql)
+Target table: mol_raw.drugbank (see migration 063_drugbank_raw_table.sql)
 """
 
 import json
@@ -30,7 +30,7 @@ def load_drugbank_data(
     source_file: Optional[str] = None,
     batch_size: int = BATCH_SIZE,
 ) -> Dict[str, Any]:
-    """Load DrugBank records into raw.drugbank.
+    """Load DrugBank records into mol_raw.drugbank.
 
     Validates each record using Pydantic and performs an upsert:
     INSERT ... ON CONFLICT (drugbank_id) DO UPDATE.
@@ -58,7 +58,7 @@ def load_drugbank_data(
             "errors": [],
         }
 
-    logger.info("Loading %d DrugBank records into raw.drugbank", len(records))
+    logger.info("Loading %d DrugBank records into mol_raw.drugbank", len(records))
 
     records_inserted = 0
     records_failed = 0
@@ -85,7 +85,7 @@ def load_drugbank_data(
 
                     cur.execute(
                         """
-                        INSERT INTO raw.drugbank (
+                        INSERT INTO mol_raw.drugbank (
                             drugbank_id, name, description, cas_number,
                             categories, targets, enzymes,
                             indication, pharmacodynamics,

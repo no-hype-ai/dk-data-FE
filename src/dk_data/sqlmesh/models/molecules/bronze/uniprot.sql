@@ -3,7 +3,7 @@
 -- Part of: 012-dk-data-platform
 
 MODEL (
-    name bronze.uniprot,
+    name mol_bronze.uniprot,
     kind INCREMENTAL_BY_TIME_RANGE (
         time_column request_timestamp,
         batch_size 500
@@ -85,7 +85,7 @@ SELECT
     FALSE AS processed_to_silver,
     NOW() AS created_at
 
-FROM raw.uniprot
+FROM mol_raw.uniprot
 WHERE
     response_status = 200
     AND processed_to_bronze = FALSE

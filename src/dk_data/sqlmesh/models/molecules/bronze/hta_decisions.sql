@@ -2,7 +2,7 @@
 -- Transforms raw HTA agency decision flat-column records to Bronze typed columns
 -- Part of: 015-assessment-dashboard-integration
 --
--- Source table: raw.hta_decisions (flat columns, not JSONB response_body)
+-- Source table: mol_raw.hta_decisions (flat columns, not JSONB response_body)
 -- Loaded by: src/dk_data/ingestion/sources/hta_bodies.py
 --
 -- Field mapping from HTABodiesFetcher._normalize_nice_item:
@@ -16,7 +16,7 @@
 --   summary       -> summary
 
 MODEL (
-    name bronze.hta_decisions,
+    name mol_bronze.hta_decisions,
     kind INCREMENTAL_BY_UNIQUE_KEY (
         unique_key decision_id
     ),
@@ -47,7 +47,7 @@ SELECT
     FALSE                       AS processed_to_silver,
     NOW()                       AS created_at
 
-FROM raw.hta_decisions r
+FROM mol_raw.hta_decisions r
 WHERE
     r.drug_name IS NOT NULL
     AND r._loaded_at BETWEEN @start_dt AND @end_dt;

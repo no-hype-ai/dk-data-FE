@@ -1,9 +1,9 @@
 -- SQLMesh Model: Silver RxNorm Concepts
--- Promotes mol_bronze.rxnorm into silver.identifier_mappings (rxcui entries)
+-- Promotes mol_bronze.rxnorm into mol_silver.identifier_mappings (rxcui entries)
 -- and also provides a standalone mol_silver.rxnorm_concepts table for
 -- downstream use (drug utilization joins, HCS bridge tables).
 --
--- Entity linking: name match → silver.molecules, then alias fallback.
+-- Entity linking: name match → mol_silver.molecules, then alias fallback.
 -- RxNorm CUIs are the definitive US drug identifiers for prescriptions.
 
 MODEL (
@@ -21,7 +21,7 @@ MODEL (
 
 SELECT
     gen_random_uuid()                                           AS id,
-    -- Molecule linkage: name → silver.molecules, fallback to alias table
+    -- Molecule linkage: name → mol_silver.molecules, fallback to alias table
     COALESCE(m_name.id, m_alias.id)                            AS molecule_id,
     b.rxcui,
     b.name,
@@ -39,14 +39,14 @@ SELECT
 
 FROM mol_bronze.rxnorm b
 -- Link via canonical name (case-insensitive)
-LEFT JOIN silver.molecules m_name
+LEFT JOIN mol_silver.molecules m_name
        ON b.name IS NOT NULL
       AND LOWER(m_name.canonical_name) = LOWER(b.name)
 -- Fallback: alias table (covers synonyms, brand names, INNs)
-LEFT JOIN silver.molecule_aliases ma
+LEFT JOIN mol_silver.molecule_aliases ma
        ON m_name.id IS NULL
       AND b.name IS NOT NULL
       AND LOWER(REGEXP_REPLACE(b.name, '[^a-zA-Z0-9]', '', 'g')) = ma.alias_name_normalized
-LEFT JOIN silver.molecules m_alias ON m_alias.id = ma.molecule_id
+LEFT JOIN mol_silver.molecules m_alias ON m_alias.id = ma.molecule_id
 
 WHERE b.rxcui IS NOT NULL;

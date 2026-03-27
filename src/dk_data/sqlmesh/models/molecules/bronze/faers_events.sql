@@ -3,7 +3,7 @@
 -- Part of: 012-dk-data-platform
 
 MODEL (
-    name bronze.faers_events,
+    name mol_bronze.faers_events,
     kind INCREMENTAL_BY_TIME_RANGE (
         time_column request_timestamp,
         batch_size 1000
@@ -82,14 +82,14 @@ SELECT
     -- Raw source tracking
     event AS raw_json,
     -- raw_source_id references the raw table PK, not the generated bronze id
-    raw.openfda_faers.id AS raw_source_id,
+    mol_raw.openfda_faers.id AS raw_source_id,
     'openfda_faers' AS source,
     request_timestamp,
     request_timestamp AS source_updated_at,
     FALSE AS processed_to_silver,
     NOW() AS created_at
 
-FROM raw.openfda_faers,
+FROM mol_raw.openfda_faers,
      jsonb_array_elements(response_body->'results') AS event
 WHERE
     response_status = 200

@@ -1,6 +1,6 @@
 -- SQLMesh Model: Silver ADMET Properties
 -- Promotes mol_bronze.tdc_admet into mol_silver.admet_properties with molecule_id linkage.
--- Entity linking: inchi_key (from TDC ADMET data) → silver.molecules.
+-- Entity linking: inchi_key (from TDC ADMET data) → mol_silver.molecules.
 -- ADMET = Absorption, Distribution, Metabolism, Excretion, Toxicity predictions.
 
 MODEL (
@@ -29,7 +29,7 @@ SELECT
 
 FROM mol_bronze.tdc_admet b
 -- Link via inchi_key
-LEFT JOIN silver.molecules m
+LEFT JOIN mol_silver.molecules m
        ON b.inchi_key IS NOT NULL AND m.inchi_key = b.inchi_key
 WHERE b.compound_id IS NOT NULL
   AND b.dataset_name IS NOT NULL;

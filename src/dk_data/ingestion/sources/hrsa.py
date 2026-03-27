@@ -194,7 +194,7 @@ def load_hrsa_from_csv(filepath: str, batch_size: int = 500) -> dict:
     with get_connection() as conn:
         with conn.cursor() as cur:
             # Clear existing data (full refresh)
-            cur.execute("TRUNCATE TABLE raw.hrsa_shortage_areas")
+            cur.execute("TRUNCATE TABLE hcs_raw.hrsa_shortage_areas")
 
             for idx, row in df.iterrows():
                 try:
@@ -207,7 +207,7 @@ def load_hrsa_from_csv(filepath: str, batch_size: int = 500) -> dict:
                             pass
 
                     cur.execute("""
-                        INSERT INTO raw.hrsa_shortage_areas (
+                        INSERT INTO hcs_raw.hrsa_shortage_areas (
                             hpsa_id, hpsa_name, hpsa_type, designation_type,
                             state_abbr, county_name, hpsa_score, designation_date,
                             rural_status, _source_hash
@@ -298,7 +298,7 @@ def load_hrsa_shortage_areas(
     # Check if data has changed
     with get_cursor() as cur:
         cur.execute("""
-            SELECT COUNT(*) FROM raw.hrsa_shortage_areas
+            SELECT COUNT(*) FROM hcs_raw.hrsa_shortage_areas
             WHERE _source_hash = %s
         """, (source_hash,))
         if cur.fetchone()[0] > 0:
@@ -328,7 +328,7 @@ def load_hrsa_shortage_areas(
                     )
 
                     cur.execute("""
-                        INSERT INTO raw.hrsa_shortage_areas (
+                        INSERT INTO hcs_raw.hrsa_shortage_areas (
                             hpsa_id, hpsa_name, hpsa_type, designation_type,
                             state_abbr, county_name, hpsa_score, designation_date,
                             rural_status, _source_hash

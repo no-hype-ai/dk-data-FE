@@ -3,7 +3,7 @@
 -- Part of DK Molecule Data Platform (012-dk-data-platform)
 
 MODEL (
-    name gold.company_pipeline,
+    name mol_gold.company_pipeline,
     kind FULL,
     cron '@daily',
     grain (company, molecule_id)
@@ -56,7 +56,7 @@ SELECT
         SELECT jsonb_agg(DISTINCT indication)
         FROM (
             SELECT jsonb_array_elements_text(COALESCE(ct2.conditions, '[]'::jsonb)) AS indication
-            FROM silver.clinical_trials ct2
+            FROM mol_silver.clinical_trials ct2
             WHERE ct2.molecule_id = m.molecule_id
               AND ct2.lead_sponsor_name = ct.lead_sponsor_name
         ) i
@@ -69,12 +69,12 @@ SELECT
     MIN(ct.start_date) AS earliest_trial_start,
 
     -- Enrollment totals
-    SUM(ct.enrollment_count) AS total_enrollment,
+    SUM(ct.enrollment) AS total_enrollment,
 
     -- Mechanism of action (from interventions data)
     (
         SELECT string_agg(DISTINCT intervention->>'interventionType', ', ')
-        FROM silver.clinical_trials ct2,
+        FROM mol_silver.clinical_trials ct2,
              jsonb_array_elements(ct2.interventions) AS intervention
         WHERE ct2.molecule_id = m.molecule_id
           AND ct2.lead_sponsor_name = ct.lead_sponsor_name
@@ -86,8 +86,8 @@ SELECT
 
     NOW() AS computed_at
 
-FROM silver.clinical_trials ct
-JOIN silver.molecules m ON ct.molecule_id = m.molecule_id
+FROM mol_silver.clinical_trials ct
+JOIN mol_silver.molecules m ON ct.molecule_id = m.molecule_id
 WHERE m.needs_review = FALSE
   AND ct.lead_sponsor_name IS NOT NULL
   AND ct.lead_sponsor_name != ''

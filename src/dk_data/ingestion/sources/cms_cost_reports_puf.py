@@ -1,7 +1,7 @@
-"""CMS Cost Reports PUF loader. Loads to hcs_raw.cms_cost_reports_puf.
+"""CMS Cost Reports PUF loader. Loads to hcs_hcs_raw.cms_cost_reports_puf.
 
-NOTE: This is distinct from the existing cms_cost_reports.py which targets raw.cms_cost_reports.
-This loader targets hcs_raw.cms_cost_reports_puf as part of the PUF ingestion pipeline.
+NOTE: This is distinct from the existing cms_cost_reports.py which targets hcs_raw.cms_cost_reports.
+This loader targets hcs_hcs_raw.cms_cost_reports_puf as part of the PUF ingestion pipeline.
 """
 
 import hashlib

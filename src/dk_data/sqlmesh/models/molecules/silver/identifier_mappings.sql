@@ -4,7 +4,7 @@
 -- Part of DK Molecule Data Platform (012-dk-data-platform)
 
 MODEL (
-    name silver.identifier_mappings,
+    name mol_silver.identifier_mappings,
     kind INCREMENTAL_BY_UNIQUE_KEY (
         unique_key (molecule_id, identifier_type, identifier_value)
     ),
@@ -29,15 +29,15 @@ SELECT
     TRUE AS is_primary,
     c.source_updated_at AS source_date,
     NOW() AS created_at
-FROM silver.molecules m
-JOIN bronze.chembl_molecules c ON m.inchi_key = c.inchi_key
+FROM mol_silver.molecules m
+JOIN mol_bronze.chembl_molecules c ON m.inchi_key = c.inchi_key
 WHERE c.chembl_id IS NOT NULL
   AND m.needs_review = FALSE
 
 UNION ALL
 
 -- DrugBank identifiers
--- NOTE: bronze.drugbank.inchi_key is NULL (the XML fetcher does not extract
+-- NOTE: mol_bronze.drugbank.inchi_key is NULL (the XML fetcher does not extract
 -- structural identifiers). Link via canonical name match using LOWER() normalization.
 -- Confidence = 0.85 (name match is less certain than structure match).
 SELECT
@@ -49,8 +49,8 @@ SELECT
     TRUE AS is_primary,
     d.source_updated_at AS source_date,
     NOW() AS created_at
-FROM silver.molecules m
-JOIN bronze.drugbank d ON LOWER(m.canonical_name) = LOWER(d.name)
+FROM mol_silver.molecules m
+JOIN mol_bronze.drugbank d ON LOWER(m.canonical_name) = LOWER(d.name)
 WHERE d.drugbank_id IS NOT NULL
   AND d.name IS NOT NULL
   AND m.needs_review = FALSE
@@ -58,7 +58,7 @@ WHERE d.drugbank_id IS NOT NULL
 UNION ALL
 
 -- PubChem CIDs
--- bronze.pubchem.inchi_key is populated from the PUG REST API (inchikey field)
+-- mol_bronze.pubchem.inchi_key is populated from the PUG REST API (inchikey field)
 SELECT
     m.id AS molecule_id,
     'pubchem_cid' AS identifier_type,
@@ -68,8 +68,8 @@ SELECT
     TRUE AS is_primary,
     p.source_updated_at AS source_date,
     NOW() AS created_at
-FROM silver.molecules m
-JOIN bronze.pubchem p ON m.inchi_key = p.inchi_key
+FROM mol_silver.molecules m
+JOIN mol_bronze.pubchem p ON m.inchi_key = p.inchi_key
 WHERE p.cid IS NOT NULL
   AND p.inchi_key IS NOT NULL
   AND m.needs_review = FALSE
@@ -86,8 +86,8 @@ SELECT
     TRUE AS is_primary,
     d.source_updated_at AS source_date,
     NOW() AS created_at
-FROM silver.molecules m
-JOIN bronze.drugbank d ON LOWER(m.canonical_name) = LOWER(d.name)
+FROM mol_silver.molecules m
+JOIN mol_bronze.drugbank d ON LOWER(m.canonical_name) = LOWER(d.name)
 WHERE d.cas_number IS NOT NULL
   AND d.name IS NOT NULL
   AND m.needs_review = FALSE
@@ -95,7 +95,7 @@ WHERE d.cas_number IS NOT NULL
 UNION ALL
 
 -- UNII from DrugBank
--- NOTE: bronze.drugbank.unii is NULL (the XML fetcher does not extract UNII).
+-- NOTE: mol_bronze.drugbank.unii is NULL (the XML fetcher does not extract UNII).
 -- This section is intentionally a no-op; kept as a placeholder for when
 -- the fetcher is extended to parse UNII from the XML.
 SELECT
@@ -107,8 +107,8 @@ SELECT
     TRUE AS is_primary,
     d.source_updated_at AS source_date,
     NOW() AS created_at
-FROM silver.molecules m
-JOIN bronze.drugbank d ON LOWER(m.canonical_name) = LOWER(d.name)
+FROM mol_silver.molecules m
+JOIN mol_bronze.drugbank d ON LOWER(m.canonical_name) = LOWER(d.name)
 WHERE d.unii IS NOT NULL
   AND d.name IS NOT NULL
   AND m.needs_review = FALSE
@@ -116,7 +116,7 @@ WHERE d.unii IS NOT NULL
 UNION ALL
 
 -- UniProt IDs from targets
--- NOTE: silver.targets uses 'uniprot_id' as the accession column (not 'target_accession')
+-- NOTE: mol_silver.targets uses 'uniprot_id' as the accession column (not 'target_accession')
 SELECT DISTINCT
     m.id AS molecule_id,
     'uniprot_id' AS identifier_type,
@@ -126,16 +126,16 @@ SELECT DISTINCT
     FALSE AS is_primary,
     t.source_updated_at AS source_date,
     NOW() AS created_at
-FROM silver.molecules m
-JOIN silver.molecule_targets mt ON m.id = mt.molecule_id
-JOIN silver.targets t ON mt.target_id = t.id
+FROM mol_silver.molecules m
+JOIN mol_silver.molecule_targets mt ON m.id = mt.molecule_id
+JOIN mol_silver.targets t ON mt.target_id = t.id
 WHERE t.uniprot_id IS NOT NULL
   AND m.needs_review = FALSE
 
 UNION ALL
 
 -- RxNorm CUI from drug labels
--- NOTE: silver.drug_labels.rxcui is JSONB (array from OpenFDA openfda.rxcui field).
+-- NOTE: mol_silver.drug_labels.rxcui is JSONB (array from OpenFDA openfda.rxcui field).
 -- Unnest the JSONB array and cast each element to TEXT.
 SELECT DISTINCT
     m.id AS molecule_id,
@@ -146,8 +146,8 @@ SELECT DISTINCT
     TRUE AS is_primary,
     dl.effective_date AS source_date,
     NOW() AS created_at
-FROM silver.molecules m
-JOIN silver.drug_labels dl ON m.id = dl.molecule_id
+FROM mol_silver.molecules m
+JOIN mol_silver.drug_labels dl ON m.id = dl.molecule_id
 CROSS JOIN LATERAL jsonb_array_elements_text(COALESCE(dl.rxcui, '[]'::JSONB)) AS rxcui_val
 WHERE dl.rxcui IS NOT NULL
   AND jsonb_array_length(dl.rxcui) > 0
@@ -156,7 +156,7 @@ WHERE dl.rxcui IS NOT NULL
 UNION ALL
 
 -- NDC codes from drug labels
--- NOTE: silver.drug_labels does not have an ndc_codes column (OpenFDA labels
+-- NOTE: mol_silver.drug_labels does not have an ndc_codes column (OpenFDA labels
 -- do not include NDC codes in the /drug/label endpoint; NDC data comes from
 -- the /drug/ndc endpoint which is not currently ingested).
 -- This section is intentionally empty — kept as a placeholder.
@@ -169,12 +169,12 @@ SELECT DISTINCT
     FALSE AS is_primary,
     dl.effective_date AS source_date,
     NOW() AS created_at
-FROM silver.drug_labels dl
-JOIN silver.molecules m ON m.id = dl.molecule_id
+FROM mol_silver.drug_labels dl
+JOIN mol_silver.molecules m ON m.id = dl.molecule_id
 CROSS JOIN LATERAL jsonb_array_elements_text(
-    -- application_numbers is the closest available field in silver.drug_labels;
+    -- application_numbers is the closest available field in mol_silver.drug_labels;
     -- actual NDC codes are not available without a separate NDC ingest pipeline.
     -- Return empty array so this branch produces no rows until NDC is ingested.
     '[]'::JSONB
 ) AS ndc_code
-WHERE FALSE  -- Disabled: ndc_codes column does not exist in silver.drug_labels
+WHERE FALSE  -- Disabled: ndc_codes column does not exist in mol_silver.drug_labels

@@ -2,7 +2,7 @@
 -- Transforms Raw PubChem Compound responses to Bronze typed columns
 -- Part of: 012-dk-data-platform
 --
--- raw.pubchem schema (migration 028_raw_layer_tables.sql):
+-- mol_raw.pubchem schema (migration 028_raw_layer_tables.sql):
 --   id UUID, request_id, request_timestamp TIMESTAMPTZ,
 --   response_status INTEGER, response_body JSONB,
 --   processed_to_bronze BOOLEAN, ...
@@ -21,7 +21,7 @@
 -- in the response_body by the ingestion layer.
 
 MODEL (
-    name bronze.pubchem,
+    name mol_bronze.pubchem,
     kind INCREMENTAL_BY_TIME_RANGE (
         time_column request_timestamp,
         batch_size 500
@@ -84,15 +84,15 @@ SELECT
 
     -- Raw source tracking
     response_body                                                   AS raw_json,
-    -- raw_source_id references the UUID primary key of raw.pubchem (not the generated id above)
-    raw.id                                                          AS raw_source_id,
+    -- raw_source_id references the UUID primary key of mol_raw.pubchem (not the generated id above)
+    mol_raw.id                                                          AS raw_source_id,
     'pubchem'                                                       AS source,
     request_timestamp,
     request_timestamp                                               AS source_updated_at,
     FALSE                                                           AS processed_to_silver,
     NOW()                                                           AS created_at
 
-FROM raw.pubchem AS raw
+FROM mol_raw.pubchem AS raw
 WHERE
     response_status = 200
     AND processed_to_bronze = FALSE

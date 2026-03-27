@@ -89,7 +89,7 @@ def load_cms_cost_reports(
     # Check if already loaded
     with get_cursor() as cur:
         cur.execute("""
-            SELECT COUNT(*) FROM raw.cms_cost_reports
+            SELECT COUNT(*) FROM hcs_raw.cms_cost_reports
             WHERE _source_hash = %s
         """, (source_hash,))
         if cur.fetchone()[0] > 0:
@@ -159,7 +159,7 @@ def load_cms_cost_reports(
                     )
 
                     cur.execute("""
-                        INSERT INTO raw.cms_cost_reports (
+                        INSERT INTO hcs_raw.cms_cost_reports (
                             provider_id, fiscal_year_begin, fiscal_year_end,
                             total_beds, total_discharges, net_patient_revenue,
                             total_operating_expenses, operating_margin, _source_hash

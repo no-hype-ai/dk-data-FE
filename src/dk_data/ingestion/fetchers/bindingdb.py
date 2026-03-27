@@ -33,10 +33,6 @@ class BindingDBFetcher(BaseFetcher):
     # Full dataset download URL (updated annually by BindingDB)
     DOWNLOAD_URL = "https://www.bindingdb.org/bind/BindingDB_All.tsv.zip"
 
-    # Maximum records to load per run (prevents memory exhaustion)
-    # BindingDB has ~2.8M rows; load in manageable batches
-    MAX_RECORDS = 50_000
-
     # Key columns to include in the JSONB record
     # These are the exact TSV header names BindingDB uses
     REQUIRED_COLUMNS = {
@@ -69,17 +65,15 @@ class BindingDBFetcher(BaseFetcher):
         """Fetch BindingDB binding affinity data.
 
         Keyword Args:
-            max_records: Maximum rows to load. Defaults to MAX_RECORDS.
             require_affinity: If True, skip rows with no Ki/IC50/Kd/EC50 value.
 
         Returns:
             Dict with keys: status, records, hash, error (on failure).
         """
-        max_records = kwargs.get("max_records", self.MAX_RECORDS)
         require_affinity = kwargs.get("require_affinity", True)
 
         try:
-            records = self._download_and_parse(max_records, require_affinity)
+            records = self._download_and_parse(require_affinity)
 
             content_hash = hashlib.md5(
                 str(len(records)).encode()
@@ -101,21 +95,34 @@ class BindingDBFetcher(BaseFetcher):
 
     def _download_and_parse(
         self,
-        max_records: int,
         require_affinity: bool,
     ) -> List[Dict[str, Any]]:
-        """Download the BindingDB TSV zip and parse rows into dicts."""
-        logger.info(f"Downloading BindingDB dataset from {self.DOWNLOAD_URL}")
-        response = self.session.get(self.DOWNLOAD_URL, stream=True, timeout=600)
-        response.raise_for_status()
+        """Download the BindingDB TSV zip and parse rows into dicts.
 
-        raw_bytes = response.content
-        logger.info(f"Downloaded {len(raw_bytes) / 1024 / 1024:.1f} MB")
+        Streams the zip into a temp buffer to avoid holding the entire
+        compressed + uncompressed content in memory simultaneously.
+        """
+        logger.info(f"Downloading BindingDB dataset from {self.DOWNLOAD_URL}")
+
+        # Stream the zip into a BytesIO buffer chunk-by-chunk to avoid a
+        # single large allocation from response.content
+        buf = io.BytesIO()
+        with self.session.get(self.DOWNLOAD_URL, stream=True, timeout=600) as response:
+            response.raise_for_status()
+            downloaded = 0
+            for chunk in response.iter_content(chunk_size=8 * 1024 * 1024):  # 8 MB chunks
+                buf.write(chunk)
+                downloaded += len(chunk)
+                if downloaded % (100 * 1024 * 1024) == 0:
+                    logger.info(f"BindingDB download progress: {downloaded / 1024 / 1024:.0f} MB")
+
+        logger.info(f"Downloaded {downloaded / 1024 / 1024:.1f} MB")
+        buf.seek(0)
 
         records: List[Dict[str, Any]] = []
+        affinity_cols = {"Ki (nM)", "IC50 (nM)", "Kd (nM)", "EC50 (nM)"}
 
-        with zipfile.ZipFile(io.BytesIO(raw_bytes)) as zf:
-            # The zip contains a single TSV file
+        with zipfile.ZipFile(buf) as zf:
             tsv_names = [n for n in zf.namelist() if n.endswith(".tsv")]
             if not tsv_names:
                 raise ValueError("No TSV file found in BindingDB zip archive")
@@ -127,13 +134,11 @@ class BindingDBFetcher(BaseFetcher):
                 text = io.TextIOWrapper(tsv_bytes, encoding="utf-8", errors="replace")
                 reader = csv.DictReader(text, delimiter="\t")
 
-                affinity_cols = {"Ki (nM)", "IC50 (nM)", "Kd (nM)", "EC50 (nM)"}
-
                 for row in reader:
-                    if len(records) >= max_records:
-                        break
+                    reactant_id = row.get("BindingDB Reactant_set_id", "").strip()
+                    if not reactant_id:
+                        continue
 
-                    # Skip rows with no usable affinity measurement
                     if require_affinity:
                         has_affinity = any(
                             row.get(col, "").strip() not in ("", "N/A", "NA", "None")
@@ -142,11 +147,6 @@ class BindingDBFetcher(BaseFetcher):
                         if not has_affinity:
                             continue
 
-                    # Skip rows without a BindingDB record ID
-                    if not row.get("BindingDB Reactant_set_id", "").strip():
-                        continue
-
-                    # Build record with only the required columns (to keep JSONB manageable)
                     record: Dict[str, Any] = {}
                     for col in self.REQUIRED_COLUMNS:
                         val = row.get(col, "").strip()
@@ -154,5 +154,8 @@ class BindingDBFetcher(BaseFetcher):
 
                     records.append(record)
 
-        logger.info(f"Parsed {len(records)} BindingDB records")
+                    if len(records) % 100_000 == 0:
+                        logger.info(f"BindingDB parse progress: {len(records):,} records")
+
+        logger.info(f"Parsed {len(records):,} BindingDB records")
         return records

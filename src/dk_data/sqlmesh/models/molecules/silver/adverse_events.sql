@@ -7,7 +7,7 @@
 --   SIDER → molecules via PubChem CID (through identifier_mappings) or name
 
 MODEL (
-    name silver.adverse_events,
+    name mol_silver.adverse_events,
     kind INCREMENTAL_BY_UNIQUE_KEY (
         unique_key (molecule_id, meddra_pt, source)
     ),
@@ -31,8 +31,8 @@ WITH faers_linked AS (
         f.serious_death,
         f.serious_hospitalization,
         f.receive_date
-    FROM bronze.faers_events f
-    JOIN silver.molecules m ON (
+    FROM mol_bronze.faers_events f
+    JOIN mol_silver.molecules m ON (
         LOWER(f.drug_name) = LOWER(m.canonical_name)
         OR similarity(LOWER(f.drug_name), LOWER(m.canonical_name)) > 0.8
     )
@@ -103,11 +103,11 @@ sider_linked AS (
         s.frequency_raw,
         s.placebo,
         s.ingested_at
-    FROM bronze.sider s
-    JOIN silver.identifier_mappings im
+    FROM mol_bronze.sider s
+    JOIN mol_silver.identifier_mappings im
         ON im.identifier_type = 'pubchem_cid'
         AND im.identifier_value = s.pubchem_cid::TEXT
-    JOIN silver.molecules m ON m.id = im.molecule_id
+    JOIN mol_silver.molecules m ON m.id = im.molecule_id
     WHERE s.processed_to_silver = FALSE
       AND s.pubchem_cid IS NOT NULL
       AND m.needs_review = FALSE

@@ -1,6 +1,6 @@
 -- SQLMesh Model: Silver HCS Provider Profile
 -- NPI-centric consolidated provider view — entity linking equivalent for providers.
--- Analogous to silver.molecules: one canonical row per provider per year.
+-- Analogous to mol_silver.molecules: one canonical row per provider per year.
 --
 -- Entity linking key: NPI (National Provider Identifier)
 -- Source precedence: NPPES (1) > Physician PUF (2) > specialty-specific tables (3)

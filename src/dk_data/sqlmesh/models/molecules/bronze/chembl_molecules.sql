@@ -2,7 +2,7 @@
 -- Transforms Raw ChEMBL API responses to Bronze typed columns
 -- Part of: 012-dk-data-platform
 --
--- raw.chembl schema (migration 028_raw_layer_tables.sql):
+-- mol_raw.chembl schema (migration 028_raw_layer_tables.sql):
 --   id UUID, request_id, request_timestamp TIMESTAMPTZ, api_endpoint,
 --   api_version, request_params JSONB, request_headers JSONB,
 --   response_status INTEGER, response_headers JSONB,
@@ -23,7 +23,7 @@
 --   molecule_synonyms (array), cross_references (array)
 
 MODEL (
-    name bronze.chembl_molecules,
+    name mol_bronze.chembl_molecules,
     kind INCREMENTAL_BY_TIME_RANGE (
         time_column request_timestamp,
         batch_size 500
@@ -80,15 +80,15 @@ SELECT
 
     -- Raw source tracking
     response_body                                                   AS raw_json,
-    -- raw_source_id references the UUID primary key of raw.chembl (not the generated id above)
-    raw.id                                                          AS raw_source_id,
+    -- raw_source_id references the UUID primary key of mol_raw.chembl (not the generated id above)
+    mol_raw.id                                                          AS raw_source_id,
     'chembl'                                                        AS source,
     request_timestamp,
     request_timestamp                                               AS source_updated_at,
     FALSE                                                           AS processed_to_silver,
     NOW()                                                           AS created_at
 
-FROM raw.chembl AS raw
+FROM mol_raw.chembl AS raw
 WHERE
     response_status = 200
     AND processed_to_bronze = FALSE

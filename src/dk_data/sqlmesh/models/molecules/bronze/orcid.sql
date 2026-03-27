@@ -1,7 +1,7 @@
 -- SQLMesh Model: Bronze ORCID Researchers
--- Transforms raw.orcid structured rows into Bronze typed columns.
+-- Transforms mol_raw.orcid structured rows into Bronze typed columns.
 --
--- raw.orcid is populated by ORCIDFetcher + load_orcid_data() with explicit columns:
+-- mol_raw.orcid is populated by ORCIDFetcher + load_orcid_data() with explicit columns:
 --   orcid_id VARCHAR(30) NOT NULL UNIQUE
 --   given_names VARCHAR(255)
 --   family_name VARCHAR(255)
@@ -24,7 +24,7 @@
 --   - Fixed research_areas: keywords column (not research-resources JSON path)
 
 MODEL (
-    name bronze.orcid,
+    name mol_bronze.orcid,
     kind INCREMENTAL_BY_TIME_RANGE (
         time_column fetched_at,
         batch_size 500
@@ -40,7 +40,7 @@ MODEL (
 SELECT
     gen_random_uuid()               AS id,
 
-    -- Researcher identifiers (structured columns from raw.orcid)
+    -- Researcher identifiers (structured columns from mol_raw.orcid)
     orcid_id,
     given_names                     AS given_name,
     family_name,
@@ -65,7 +65,7 @@ SELECT
     FALSE                           AS processed_to_silver,
     NOW()                           AS created_at
 
-FROM raw.orcid
+FROM mol_raw.orcid
 WHERE
     orcid_id IS NOT NULL
     AND fetched_at BETWEEN @start_dt AND @end_dt;

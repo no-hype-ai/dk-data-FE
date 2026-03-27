@@ -3,7 +3,7 @@
 -- Part of: 014-uspto-euipo-model-datasource
 
 MODEL (
-    name silver.trademarks,
+    name mol_silver.trademarks,
     kind INCREMENTAL_BY_UNIQUE_KEY (
         unique_key (trademark_identifier, source)
     ),
@@ -42,7 +42,7 @@ WITH uspto AS (
         is_pharma_related,
         'uspto_trademarks' AS source,
         ingested_at AS source_updated_at
-    FROM bronze.uspto_trademarks
+    FROM mol_bronze.uspto_trademarks
     WHERE processed_to_silver = FALSE
 ),
 
@@ -73,7 +73,7 @@ euipo AS (
         is_pharma_related,
         'euipo_trademarks' AS source,
         ingested_at AS source_updated_at
-    FROM bronze.euipo_trademarks
+    FROM mol_bronze.euipo_trademarks
     WHERE processed_to_silver = FALSE
 ),
 
@@ -114,7 +114,7 @@ SELECT DISTINCT ON (trademark_identifier, source)
     CASE WHEN c.is_pharma_related
         THEN (
             SELECT ma.molecule_id
-            FROM silver.molecule_aliases ma
+            FROM mol_silver.molecule_aliases ma
             WHERE LOWER(REGEXP_REPLACE(c.mark_name, '[^a-zA-Z0-9]', '', 'g'))
                 = ma.alias_name_normalized
             LIMIT 1

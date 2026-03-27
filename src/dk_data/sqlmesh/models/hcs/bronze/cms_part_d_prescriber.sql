@@ -3,7 +3,7 @@
 -- Feature: 020-entity-linking-gaps
 --
 -- Grain: (prscrbr_npi, gnrc_name, _source_year)
--- No transformations — bronze is a schema-typed projection of raw.
+-- No transformations — bronze is a schema-typed projection of mol_raw.
 -- Molecule linking happens in silver (hcs_silver.part_d_prescribing).
 --
 -- Column names match exact CMS PUF headers (snake_cased):

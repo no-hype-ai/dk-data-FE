@@ -2,7 +2,7 @@
 -- Cross-source regulatory decision history per molecule
 -- Part of: 015-assessment-dashboard-integration
 --
--- Sources: silver.regulatory_decisions, silver.molecules
+-- Sources: mol_silver.regulatory_decisions, mol_silver.molecules
 -- Links drug_name / active_substance to molecules via canonical_name.
 
 MODEL (
@@ -27,10 +27,10 @@ WITH regulatory AS (
         rd.decision_date,
         rd.therapeutic_area,
         rd.recommendation_details
-    FROM silver.regulatory_decisions rd
+    FROM mol_silver.regulatory_decisions rd
 ),
 
--- Join with silver.molecules to get molecule id via drug_name / active_substance
+-- Join with mol_silver.molecules to get molecule id via drug_name / active_substance
 molecule_linked AS (
     SELECT
         m.id                        AS molecule_id,
@@ -43,7 +43,7 @@ molecule_linked AS (
         r.therapeutic_area,
         r.recommendation_details
     FROM regulatory r
-    LEFT JOIN silver.molecules m
+    LEFT JOIN mol_silver.molecules m
         ON LOWER(r.drug_name)       = LOWER(m.canonical_name)
         OR LOWER(r.active_substance) = LOWER(m.canonical_name)
 )

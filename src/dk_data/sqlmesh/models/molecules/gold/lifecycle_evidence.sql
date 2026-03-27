@@ -3,7 +3,7 @@
 -- Part of DK Molecule Data Platform (012-dk-data-platform)
 
 MODEL (
-    name gold.lifecycle_evidence,
+    name mol_gold.lifecycle_evidence,
     kind FULL,
     cron '@daily',
     grain (molecule_id, evidence_type, evidence_id)
@@ -24,8 +24,8 @@ SELECT
     'https://clinicaltrials.gov/study/' || ct.nct_id AS evidence_url,
     NOW() AS computed_at
 
-FROM silver.molecules m
-JOIN silver.clinical_trials ct ON m.molecule_id = ct.molecule_id
+FROM mol_silver.molecules m
+JOIN mol_silver.clinical_trials ct ON m.molecule_id = ct.molecule_id
 WHERE m.needs_review = FALSE
 
 UNION ALL
@@ -48,8 +48,8 @@ SELECT
     'https://dailymed.nlm.nih.gov/dailymed/drugInfo.cfm?setid=' || dl.set_id AS evidence_url,
     NOW() AS computed_at
 
-FROM silver.molecules m
-JOIN silver.drug_labels dl ON m.molecule_id = dl.molecule_id
+FROM mol_silver.molecules m
+JOIN mol_silver.drug_labels dl ON m.molecule_id = dl.molecule_id
 WHERE m.needs_review = FALSE
 
 UNION ALL
@@ -64,16 +64,16 @@ SELECT DISTINCT ON (m.molecule_id)
     'FDA Adverse Event Reports' AS evidence_title,
     (
         SELECT COALESCE(SUM(report_count), 0)::text || ' total reports'
-        FROM silver.adverse_events ae
+        FROM mol_silver.adverse_events ae
         WHERE ae.molecule_id = m.molecule_id
     ) AS evidence_detail,
     CASE
         WHEN EXISTS (
-            SELECT 1 FROM silver.adverse_events ae
+            SELECT 1 FROM mol_silver.adverse_events ae
             WHERE ae.molecule_id = m.molecule_id AND ae.death_count > 0
         ) THEN 'Has Death Reports'
         WHEN EXISTS (
-            SELECT 1 FROM silver.adverse_events ae
+            SELECT 1 FROM mol_silver.adverse_events ae
             WHERE ae.molecule_id = m.molecule_id AND ae.serious_count > 0
         ) THEN 'Has Serious Reports'
         ELSE 'Active'
@@ -81,43 +81,42 @@ SELECT DISTINCT ON (m.molecule_id)
     'OpenFDA FAERS' AS evidence_source,
     (
         SELECT MAX(last_report_date)
-        FROM silver.adverse_events ae
+        FROM mol_silver.adverse_events ae
         WHERE ae.molecule_id = m.molecule_id
     ) AS evidence_date,
     'https://open.fda.gov/apis/drug/event/' AS evidence_url,
     NOW() AS computed_at
 
-FROM silver.molecules m
+FROM mol_silver.molecules m
 WHERE m.needs_review = FALSE
   AND EXISTS (
-      SELECT 1 FROM silver.adverse_events ae WHERE ae.molecule_id = m.molecule_id
+      SELECT 1 FROM mol_silver.adverse_events ae WHERE ae.molecule_id = m.molecule_id
   )
 
 UNION ALL
 
--- Patent evidence from Orange Book
+-- Patent evidence from patent_exclusivities (Orange Book + Purple Book silver)
 SELECT
     m.molecule_id AS molecule_id,
     m.inchi_key,
     m.canonical_name,
     'patent' AS evidence_type,
-    ob.patent_number AS evidence_id,
-    ob.trade_name || ' Patent' AS evidence_title,
-    'Expires: ' || COALESCE(ob.patent_expiration::text, 'Unknown') AS evidence_detail,
+    pe.patent_number AS evidence_id,
+    COALESCE(pe.trade_name, pe.generic_name) || ' Patent' AS evidence_title,
+    'Expires: ' || COALESCE(pe.patent_expiry_date::text, 'Unknown') AS evidence_detail,
     CASE
-        WHEN ob.patent_expiration < CURRENT_DATE THEN 'Expired'
-        WHEN ob.patent_expiration < CURRENT_DATE + INTERVAL '1 year' THEN 'Expiring Soon'
+        WHEN pe.patent_expiry_date < CURRENT_DATE THEN 'Expired'
+        WHEN pe.patent_expiry_date < CURRENT_DATE + INTERVAL '1 year' THEN 'Expiring Soon'
         ELSE 'Active'
     END AS evidence_status,
     'FDA Orange Book' AS evidence_source,
-    ob.approval_date AS evidence_date,
+    pe.approval_date::DATE AS evidence_date,
     'https://www.accessdata.fda.gov/scripts/cder/ob/' AS evidence_url,
     NOW() AS computed_at
 
-FROM silver.molecules m
-JOIN silver.molecule_aliases ma ON m.molecule_id = ma.molecule_id
-JOIN bronze.orange_book ob ON LOWER(ma.alias_name) = LOWER(ob.ingredient)
+FROM mol_silver.molecules m
+JOIN mol_silver.patent_exclusivities pe ON pe.molecule_id = m.molecule_id
 WHERE m.needs_review = FALSE
-  AND ob.patent_number IS NOT NULL
+  AND pe.patent_number IS NOT NULL
 
 ORDER BY molecule_id, evidence_date DESC NULLS LAST

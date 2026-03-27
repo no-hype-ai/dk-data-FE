@@ -1,11 +1,11 @@
 -- SQLMesh Model: Bronze PubMed Publications
--- Transforms flat raw.pubmed typed columns to Bronze canonical schema
--- raw.pubmed is populated by the PubMedFetcher + load_pubmed_data() loader
+-- Transforms flat mol_raw.pubmed typed columns to Bronze canonical schema
+-- mol_raw.pubmed is populated by the PubMedFetcher + load_pubmed_data() loader
 -- (not a generic API response table — columns are already typed)
 -- Part of: 015-assessment-dashboard-integration
 
 MODEL (
-    name bronze.pubmed,
+    name mol_bronze.pubmed,
     kind INCREMENTAL_BY_UNIQUE_KEY (
         unique_key pmid
     ),
@@ -20,7 +20,7 @@ MODEL (
 SELECT
     gen_random_uuid() AS id,
 
-    -- Publication identifiers (flat typed columns from raw.pubmed)
+    -- Publication identifiers (flat typed columns from mol_raw.pubmed)
     r.pmid::TEXT                         AS pmid,
     r.doi::TEXT                          AS doi,
     r.title::TEXT                        AS title,
@@ -44,7 +44,7 @@ SELECT
     FALSE                                AS processed_to_silver,
     NOW()                                AS created_at
 
-FROM raw.pubmed r
+FROM mol_raw.pubmed r
 WHERE
     r.pmid IS NOT NULL
     AND r._loaded_at BETWEEN @start_dt AND @end_dt;

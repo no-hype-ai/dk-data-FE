@@ -3,7 +3,7 @@
 -- Part of: 012-dk-data-platform
 
 MODEL (
-    name silver.molecules,
+    name mol_silver.molecules,
     kind INCREMENTAL_BY_UNIQUE_KEY (
         unique_key inchi_key
     ),
@@ -51,7 +51,7 @@ WITH source_molecules AS (
         1 AS source_precedence,
         source_updated_at,
         created_at
-    FROM bronze.chembl_molecules
+    FROM mol_bronze.chembl_molecules
     WHERE
         inchi_key IS NOT NULL
         AND processed_to_silver = FALSE

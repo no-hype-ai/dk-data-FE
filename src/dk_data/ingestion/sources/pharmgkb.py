@@ -6,7 +6,7 @@ Each record in data["records"] is a full page response dict from
 PharmGKBFetcher (one page = one row in mol_raw.pharmgkb).
 
 Target table: mol_raw.pharmgkb
-Schema (matches raw.pharmgkb defined in migration 062, promoted to mol_raw):
+Schema (matches mol_raw.pharmgkb defined in migration 062, promoted to mol_raw):
     id                  UUID PRIMARY KEY DEFAULT uuid_generate_v4()
     request_id          VARCHAR(100) NOT NULL
     request_timestamp   TIMESTAMPTZ NOT NULL DEFAULT NOW()

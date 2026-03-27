@@ -3,10 +3,10 @@
 Feature: 011-datasource-integration
 Task: Phase 6 / US4 — credential-gated source (USPTO PatentsView)
 
-Loads validated USPTO patent records into raw.uspto_patents with
+Loads validated USPTO patent records into mol_raw.uspto_patents with
 upsert semantics (ON CONFLICT DO UPDATE on patent_number).
 
-Target table: raw.uspto_patents (see migration 064_uspto_patents_raw_table.sql)
+Target table: mol_raw.uspto_patents (see migration 064_uspto_patents_raw_table.sql)
 """
 
 import json
@@ -31,7 +31,7 @@ def load_uspto_patents_data(
     source_file: Optional[str] = None,
     batch_size: int = BATCH_SIZE,
 ) -> Dict[str, Any]:
-    """Load USPTO patent records into raw.uspto_patents.
+    """Load USPTO patent records into mol_raw.uspto_patents.
 
     Validates each record using Pydantic and performs an upsert:
     INSERT ... ON CONFLICT (patent_number) DO UPDATE.
@@ -59,7 +59,7 @@ def load_uspto_patents_data(
         }
 
     logger.info(
-        "Loading %d USPTO Patents records into raw.uspto_patents", len(records)
+        "Loading %d USPTO Patents records into mol_raw.uspto_patents", len(records)
     )
 
     records_inserted = 0
@@ -97,7 +97,7 @@ def load_uspto_patents_data(
 
                     cur.execute(
                         """
-                        INSERT INTO raw.uspto_patents (
+                        INSERT INTO mol_raw.uspto_patents (
                             patent_number, title, abstract,
                             inventors, assignees,
                             filing_date, grant_date,

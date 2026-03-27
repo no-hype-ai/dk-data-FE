@@ -6,7 +6,7 @@ Loads PubChem synonyms API responses (InformationList format) for WHO
 International Nonproprietary Names into mol_raw.who_inn.
 
 Target table: mol_raw.who_inn
-  (migration 095 moves raw.who_inn → mol_raw.who_inn)
+  (migration 095 moves mol_raw.who_inn → mol_raw.who_inn)
 
 request_id format: who_inn_pubchem_{cid_or_name}_{YYYYMMDDHHMMSS}
 """

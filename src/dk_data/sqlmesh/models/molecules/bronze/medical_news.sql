@@ -1,13 +1,13 @@
 -- SQLMesh Model: Bronze Medical News
--- Transforms raw.medical_news flat typed table to Bronze typed columns.
--- raw.medical_news is a flat table (migration 060_ci_source_tables.sql),
+-- Transforms mol_raw.medical_news flat typed table to Bronze typed columns.
+-- mol_raw.medical_news is a flat table (migration 060_ci_source_tables.sql),
 -- NOT a JSONB envelope. Columns: article_id, source_name, title, summary,
 -- publication_date, url, drug_mentions, therapeutic_areas, _loaded_at,
 -- _source_file, _source_hash.
 -- Part of: 011-datasource-integration / 015-assessment-dashboard-integration
 
 MODEL (
-    name bronze.medical_news,
+    name mol_bronze.medical_news,
     kind INCREMENTAL_BY_TIME_RANGE (
         time_column _loaded_at,
         batch_size 500
@@ -41,7 +41,7 @@ SELECT
     FALSE                                 AS processed_to_silver,
     NOW()                                 AS created_at
 
-FROM raw.medical_news
+FROM mol_raw.medical_news
 WHERE
     title IS NOT NULL
     AND _loaded_at BETWEEN @start_dt AND @end_dt;

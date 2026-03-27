@@ -1,5 +1,5 @@
 -- staging.certifications - ACC TVC Certifications with active status
--- Source: raw.acc_tvc_certification
+-- Source: hcs_raw.acc_tvc_certification
 -- Model type: FULL refresh
 
 MODEL (
@@ -27,8 +27,8 @@ WITH matched_hospitals AS (
                 CASE WHEN UPPER(c.city) = UPPER(h.city) THEN 0 ELSE 1 END,
                 h._loaded_at DESC
         ) AS match_rank
-    FROM raw.acc_tvc_certification c
-    JOIN raw.cms_hospital_info h ON (
+    FROM hcs_raw.acc_tvc_certification c
+    JOIN hcs_raw.cms_hospital_info h ON (
         -- Match by state (required)
         UPPER(c.state) = UPPER(h.state)
         -- And either city match or zip match

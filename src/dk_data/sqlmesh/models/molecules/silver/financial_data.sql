@@ -2,12 +2,12 @@
 -- Normalized SEC EDGAR financial filing data
 -- Part of: 015-assessment-dashboard-integration
 --
--- Source: bronze.sec_edgar
+-- Source: mol_bronze.sec_edgar
 -- Revenue/net_income/total_assets are NULL until a future XBRL enrichment step
 -- populates them from EDGAR XBRL submissions API.
 
 MODEL (
-    name silver.financial_data,
+    name mol_silver.financial_data,
     kind INCREMENTAL_BY_UNIQUE_KEY (
         unique_key (cik, filing_type, filing_date)
     ),
@@ -34,7 +34,7 @@ SELECT
     b.source_updated_at,
     NOW()                           AS created_at,
     NOW()                           AS updated_at
-FROM bronze.sec_edgar b
+FROM mol_bronze.sec_edgar b
 WHERE b.processed_to_silver = FALSE
   AND b.cik IS NOT NULL
   AND b.filing_type IS NOT NULL

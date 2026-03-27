@@ -1,7 +1,7 @@
 """ACC TVC Certification Data Ingestor.
 
 Loads Transcatheter Valve Certification data from NCDR Public Reporting
-CSV files into the ``raw.acc_tvc_certification`` table.
+CSV files into the ``hcs_raw.acc_tvc_certification`` table.
 
 Supports two CSV formats:
   1. NCDR TVTMetrics / merged CSV  (columns: FacilityBrandedName, State, ...)
@@ -135,7 +135,7 @@ def load_acc_tvc_certifications(
     # Check if already loaded
     with get_cursor() as cur:
         cur.execute("""
-            SELECT COUNT(*) FROM raw.acc_tvc_certification
+            SELECT COUNT(*) FROM hcs_raw.acc_tvc_certification
             WHERE _source_hash = %s
         """, (source_hash,))
         if cur.fetchone()[0] > 0:
@@ -186,7 +186,7 @@ def load_acc_tvc_certifications(
                     )
 
                     cur.execute("""
-                        INSERT INTO raw.acc_tvc_certification (
+                        INSERT INTO hcs_raw.acc_tvc_certification (
                             facility_name, facility_address, city, state,
                             zip_code, certification_type, certification_date,
                             expiration_date, _source_file, _source_hash

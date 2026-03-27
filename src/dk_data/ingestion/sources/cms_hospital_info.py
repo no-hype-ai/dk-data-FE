@@ -115,7 +115,7 @@ def load_cms_hospital_info(
     # Check if already loaded
     with get_cursor() as cur:
         cur.execute("""
-            SELECT COUNT(*) FROM raw.cms_hospital_info
+            SELECT COUNT(*) FROM hcs_raw.cms_hospital_info
             WHERE _source_hash = %s
         """, (source_hash,))
         if cur.fetchone()[0] > 0:
@@ -174,7 +174,7 @@ def load_cms_hospital_info(
                     )
 
                     cur.execute("""
-                        INSERT INTO raw.cms_hospital_info (
+                        INSERT INTO hcs_raw.cms_hospital_info (
                             provider_id, hospital_name, address, city, state,
                             zip_code, county_name, phone_number, hospital_type,
                             hospital_ownership, emergency_services, hospital_overall_rating,

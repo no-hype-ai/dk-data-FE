@@ -1,13 +1,13 @@
 -- SQLMesh Model: Bronze Journal RSS Feeds
--- Transforms raw.journal_rss flat typed table to Bronze typed columns.
--- raw.journal_rss is a flat table (migration 060_ci_source_tables.sql),
+-- Transforms mol_raw.journal_rss flat typed table to Bronze typed columns.
+-- mol_raw.journal_rss is a flat table (migration 060_ci_source_tables.sql),
 -- NOT a JSONB envelope. Columns: article_id, feed_source, title, authors,
 -- abstract, publication_date, link, doi, categories, _loaded_at,
 -- _source_file, _source_hash.
 -- Part of: 011-datasource-integration / 015-assessment-dashboard-integration
 
 MODEL (
-    name bronze.journal_rss,
+    name mol_bronze.journal_rss,
     kind INCREMENTAL_BY_TIME_RANGE (
         time_column _loaded_at,
         batch_size 500
@@ -42,7 +42,7 @@ SELECT
     FALSE                                 AS processed_to_silver,
     NOW()                                 AS created_at
 
-FROM raw.journal_rss
+FROM mol_raw.journal_rss
 WHERE
     title IS NOT NULL
     AND _loaded_at BETWEEN @start_dt AND @end_dt;

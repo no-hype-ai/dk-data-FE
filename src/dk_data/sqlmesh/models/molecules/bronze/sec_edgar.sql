@@ -2,11 +2,11 @@
 -- Transforms raw SEC EDGAR flat-column records to Bronze typed columns
 -- Part of: 015-assessment-dashboard-integration
 --
--- Source table: raw.sec_edgar (flat columns, not JSONB response_body)
+-- Source table: mol_raw.sec_edgar (flat columns, not JSONB response_body)
 -- Loaded by: src/dk_data/ingestion/sources/sec_edgar.py
 
 MODEL (
-    name bronze.sec_edgar,
+    name mol_bronze.sec_edgar,
     kind INCREMENTAL_BY_UNIQUE_KEY (
         unique_key filing_id
     ),
@@ -45,7 +45,7 @@ SELECT
     FALSE                            AS processed_to_silver,
     NOW()                            AS created_at
 
-FROM raw.sec_edgar r
+FROM mol_raw.sec_edgar r
 WHERE
     r.cik IS NOT NULL
     AND r._loaded_at BETWEEN @start_dt AND @end_dt;

@@ -40,9 +40,6 @@ class SIDERFetcher(BaseFetcher):
     ALL_SE_URL = f"{BASE_URL}/meddra_all_se.tsv.gz"
     FREQ_URL = f"{BASE_URL}/meddra_freq.tsv.gz"
 
-    # Maximum records per run
-    MAX_RECORDS = 100_000
-
     # Column definitions matching exact SIDER TSV headers
     ALL_SE_COLUMNS = [
         "stitch_id_flat",
@@ -71,14 +68,12 @@ class SIDERFetcher(BaseFetcher):
         """Fetch SIDER side effect data.
 
         Keyword Args:
-            max_records: Maximum rows to load. Defaults to MAX_RECORDS.
-            source: Which file to load: 'freq' (default) or 'all_se' or 'both'.
+            source: Which file(s) to load: 'both' (default), 'freq', or 'all_se'.
 
         Returns:
             Dict with keys: status, records, hash, error (on failure).
         """
-        max_records = kwargs.get("max_records", self.MAX_RECORDS)
-        source = kwargs.get("source", "freq")
+        source = kwargs.get("source", "both")
 
         try:
             records: List[Dict[str, Any]] = []
@@ -87,21 +82,17 @@ class SIDERFetcher(BaseFetcher):
                 freq_records = self._fetch_file(
                     self.FREQ_URL,
                     self.FREQ_COLUMNS,
-                    max_records,
                     source_file="meddra_freq.tsv",
                 )
                 records.extend(freq_records)
 
             if source in ("all_se", "both"):
-                remaining = max_records - len(records)
-                if remaining > 0:
-                    all_se_records = self._fetch_file(
-                        self.ALL_SE_URL,
-                        self.ALL_SE_COLUMNS,
-                        remaining,
-                        source_file="meddra_all_se.tsv",
-                    )
-                    records.extend(all_se_records)
+                all_se_records = self._fetch_file(
+                    self.ALL_SE_URL,
+                    self.ALL_SE_COLUMNS,
+                    source_file="meddra_all_se.tsv",
+                )
+                records.extend(all_se_records)
 
             content_hash = hashlib.md5(
                 str(len(records)).encode()
@@ -125,10 +116,9 @@ class SIDERFetcher(BaseFetcher):
         self,
         url: str,
         columns: List[str],
-        max_records: int,
         source_file: str,
     ) -> List[Dict[str, Any]]:
-        """Download and parse one SIDER TSV.gz file."""
+        """Download and parse one SIDER TSV.gz file (no row cap)."""
         logger.info(f"Downloading SIDER file: {url}")
         response = self.session.get(url, stream=True, timeout=300)
         response.raise_for_status()
@@ -142,26 +132,20 @@ class SIDERFetcher(BaseFetcher):
             reader = csv.reader(f, delimiter="\t")
 
             for row in reader:
-                if len(records) >= max_records:
-                    break
-
                 # SIDER TSV files have no header row — use positional columns
                 if len(row) < len(columns):
-                    continue  # skip malformed rows
+                    continue
 
                 record: Dict[str, Any] = {}
                 for col, val in zip(columns, row):
                     stripped = val.strip()
                     record[col] = stripped if stripped else None
 
-                # stitch_id_flat is the primary key — skip if missing
                 if not record.get("stitch_id_flat"):
                     continue
 
-                # Tag which source file this came from for bronze traceability
                 record["source_file"] = source_file
-
                 records.append(record)
 
-        logger.info(f"Parsed {len(records)} records from {source_file}")
+        logger.info(f"Parsed {len(records):,} records from {source_file}")
         return records

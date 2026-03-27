@@ -1,7 +1,7 @@
 -- SQLMesh Model: Silver ICD Codes
 -- Normalized WHO ICD-10 / ICD-11 classification codes.
 --
--- Reads from bronze.who_icd which provides:
+-- Reads from mol_bronze.who_icd which provides:
 --   icd_code TEXT            -- ICD code (e.g. "C34.1" or "1C83.0")
 --   title TEXT               -- human-readable title (extracted from @value or description)
 --   class_kind TEXT          -- 'category' | 'block' | 'chapter' (ICD-11 only)
@@ -16,7 +16,7 @@
 -- Part of: 015-assessment-dashboard-integration
 
 MODEL (
-    name silver.icd_codes,
+    name mol_silver.icd_codes,
     kind INCREMENTAL_BY_UNIQUE_KEY (
         unique_key icd_code
     ),
@@ -80,7 +80,7 @@ SELECT
     NOW()                                                AS created_at,
     NOW()                                                AS updated_at
 
-FROM bronze.who_icd
+FROM mol_bronze.who_icd
 WHERE
     processed_to_silver = FALSE
     AND icd_code IS NOT NULL

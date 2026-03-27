@@ -1,6 +1,6 @@
 """CMS Hospital General Information PUF loader. Loads to hcs_raw.cms_hospital_general_info.
 
-NOTE: This is a distinct table from raw.cms_hospital_info (old schema).
+NOTE: This is a distinct table from hcs_raw.cms_hospital_info (old schema).
 This loader targets hcs_raw.cms_hospital_general_info as part of the PUF ingestion pipeline.
 """
 

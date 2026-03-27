@@ -2,7 +2,7 @@
 
 Feature: 012-platform-hardening (US3)
 
-Loads PDB structure records into raw.pdb using the standard JSONB
+Loads PDB structure records into mol_raw.pdb using the standard JSONB
 envelope schema (response_body, response_status, api_endpoint, etc.)
 matching migration 028_raw_layer_tables.sql.
 
@@ -37,7 +37,7 @@ def load_pdb_data(
     source_file: Optional[str] = None,
     batch_size: int = 500,
 ) -> Dict[str, Any]:
-    """Load PDB structure records into raw.pdb (envelope schema).
+    """Load PDB structure records into mol_raw.pdb (envelope schema).
 
     Each fetcher record's raw_response (full RCSB JSON) is stored as
     response_body, matching the envelope pattern from migration 028.
@@ -57,7 +57,7 @@ def load_pdb_data(
         logger.info("No PDB records to load")
         return {"status": "success", "records_inserted": 0, "records_failed": 0}
 
-    logger.info(f"Loading {len(records)} PDB records into raw.pdb")
+    logger.info(f"Loading {len(records)} PDB records into mol_raw.pdb")
 
     records_inserted = 0
     records_failed = 0
@@ -82,7 +82,7 @@ def load_pdb_data(
 
                     cur.execute(
                         """
-                        INSERT INTO raw.pdb (
+                        INSERT INTO mol_raw.pdb (
                             request_id,
                             request_timestamp,
                             api_endpoint,

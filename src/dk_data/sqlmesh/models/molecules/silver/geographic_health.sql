@@ -1,11 +1,11 @@
 -- SQLMesh Model: Silver Geographic Health Metrics
 -- Aggregates CMS Medicare Geographic Variation PUF data into a state-level
 -- and county-level health metrics layer for facility scoring and market analysis.
--- Source: bronze.cms_geographic_variation
+-- Source: hcs_bronze.cms_geographic_variation
 -- Feature: 019-cms-puf-platform-reconciliation
 
 MODEL (
-    name silver.geographic_health,
+    name hcs_silver.geographic_health,
     kind INCREMENTAL_BY_UNIQUE_KEY (
         unique_key (year, bene_geo_lvl, bene_geo_cd)
     ),
@@ -34,7 +34,7 @@ WITH all_benes AS (
         tot_mdcr_alowd_amt_pc,
         ma_prtcptn_rate,
         source_updated_at
-    FROM bronze.cms_geographic_variation
+    FROM hcs_bronze.cms_geographic_variation
     WHERE
         -- "All beneficiaries" summary rows only
         (bene_age_lvl IS NULL OR bene_age_lvl = 'All')

@@ -5,7 +5,7 @@
 -- Part of: 011-datasource-integration
 
 MODEL (
-    name bronze.europepmc,
+    name mol_bronze.europepmc,
     kind INCREMENTAL_BY_UNIQUE_KEY (
         unique_key europepmc_pmid
     ),

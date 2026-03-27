@@ -3,10 +3,10 @@
 Feature: 011-datasource-integration
 Task: T061-T063 — EPO OPS patent data
 
-Loads normalised EPO patent records into raw.epo_patents with
+Loads normalised EPO patent records into mol_raw.epo_patents with
 upsert semantics (ON CONFLICT DO UPDATE on publication_id).
 
-Target table: raw.epo_patents (see migration 060_ci_source_tables.sql)
+Target table: mol_raw.epo_patents (see migration 060_ci_source_tables.sql)
 """
 
 import json
@@ -30,7 +30,7 @@ def load_epo_ops_data(
     source_file: Optional[str] = None,
     batch_size: int = BATCH_SIZE,
 ) -> Dict[str, Any]:
-    """Load EPO patent records into raw.epo_patents.
+    """Load EPO patent records into mol_raw.epo_patents.
 
     Validates each record using Pydantic and performs an upsert:
     INSERT ... ON CONFLICT (publication_id) DO UPDATE.
@@ -53,7 +53,7 @@ def load_epo_ops_data(
             "errors": [],
         }
 
-    logger.info("Loading %d EPO patent records into raw.epo_patents", len(records))
+    logger.info("Loading %d EPO patent records into mol_raw.epo_patents", len(records))
 
     records_inserted = 0
     records_failed = 0
@@ -80,7 +80,7 @@ def load_epo_ops_data(
 
                     cur.execute(
                         """
-                        INSERT INTO raw.epo_patents (
+                        INSERT INTO mol_raw.epo_patents (
                             publication_id, title, abstract,
                             applicants, inventors,
                             filing_date, publication_date,

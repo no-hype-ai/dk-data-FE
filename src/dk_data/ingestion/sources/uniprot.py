@@ -2,7 +2,7 @@
 
 Feature: 012-platform-hardening (US3)
 
-Loads UniProt protein records into raw.uniprot using the standard JSONB
+Loads UniProt protein records into mol_raw.uniprot using the standard JSONB
 envelope schema (response_body, response_status, api_endpoint, etc.)
 matching migration 028_raw_layer_tables.sql.
 """
@@ -28,7 +28,7 @@ def load_uniprot_data(
     source_file: Optional[str] = None,
     batch_size: int = 500,
 ) -> Dict[str, Any]:
-    """Load UniProt protein records into raw.uniprot (envelope schema).
+    """Load UniProt protein records into mol_raw.uniprot (envelope schema).
 
     Each API record is stored as a full JSONB blob in response_body,
     matching the envelope pattern defined in migration 028_raw_layer_tables.
@@ -47,7 +47,7 @@ def load_uniprot_data(
         logger.info("No UniProt records to load")
         return {"status": "success", "records_inserted": 0, "records_failed": 0}
 
-    logger.info(f"Loading {len(records)} UniProt records into raw.uniprot")
+    logger.info(f"Loading {len(records)} UniProt records into mol_raw.uniprot")
 
     records_inserted = 0
     records_failed = 0
@@ -70,7 +70,7 @@ def load_uniprot_data(
 
                     cur.execute(
                         """
-                        INSERT INTO raw.uniprot (
+                        INSERT INTO mol_raw.uniprot (
                             request_id,
                             request_timestamp,
                             api_endpoint,

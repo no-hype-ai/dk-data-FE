@@ -3,7 +3,7 @@
 -- Part of: 015-assessment-dashboard-integration
 
 MODEL (
-    name bronze.cms_inpatient,
+    name hcs_bronze.cms_inpatient,
     kind INCREMENTAL_BY_TIME_RANGE (
         time_column request_timestamp,
         batch_size 500
@@ -39,7 +39,7 @@ SELECT
     FALSE AS processed_to_silver,
     NOW() AS created_at
 
-FROM raw.cms_medicare_inpatient
+FROM hcs_raw.cms_medicare_inpatient
 WHERE
     response_status = 200
     AND processed_to_bronze = FALSE

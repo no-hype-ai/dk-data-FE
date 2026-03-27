@@ -3,10 +3,10 @@
 Feature: 011-datasource-integration
 Task: Tier 4 CI source — OpenAlex publications
 
-Loads normalized OpenAlex work records into raw.openalex_ci with
+Loads normalized OpenAlex work records into mol_raw.openalex_ci with
 upsert semantics (ON CONFLICT DO UPDATE on work_id).
 
-Table: raw.openalex_ci (see migration 060_ci_source_tables.sql)
+Table: mol_raw.openalex_ci (see migration 060_ci_source_tables.sql)
 """
 
 import json
@@ -28,7 +28,7 @@ def load_openalex_ci_data(
     records: List[Dict[str, Any]],
     source_hash: Optional[str] = None,
 ) -> Dict[str, Any]:
-    """Load OpenAlex CI records into raw.openalex_ci.
+    """Load OpenAlex CI records into mol_raw.openalex_ci.
 
     Validates each record using Pydantic and performs an upsert:
     INSERT ... ON CONFLICT (work_id) DO UPDATE.
@@ -53,7 +53,7 @@ def load_openalex_ci_data(
             "errors": [],
         }
 
-    logger.info(f"Loading {len(records)} OpenAlex CI records into raw.openalex_ci")
+    logger.info(f"Loading {len(records)} OpenAlex CI records into mol_raw.openalex_ci")
 
     records_inserted = 0
     records_failed = 0
@@ -84,7 +84,7 @@ def load_openalex_ci_data(
 
                     cur.execute(
                         """
-                        INSERT INTO raw.openalex_ci (
+                        INSERT INTO mol_raw.openalex_ci (
                             work_id, doi, title, abstract, publication_date,
                             cited_by_count, concepts, authorships,
                             primary_location, open_access,

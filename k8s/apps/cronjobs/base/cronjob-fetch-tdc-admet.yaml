@@ -1,0 +1,94 @@
+# TDC ADMET Fetch CronJob
+# 019-cms-puf-platform-reconciliation
+# Fetches ADMET benchmark datasets from Therapeutics Data Commons (GitHub TSV files)
+# Datasets are stable research benchmarks; monthly refresh is sufficient
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: fetch-tdc-admet
+  labels:
+    app: fetch-tdc-admet
+    app.kubernetes.io/name: fetch-tdc-admet
+    app.kubernetes.io/component: ingestion
+    app.kubernetes.io/part-of: dk-data
+spec:
+  schedule: "0 9 1 * *"  # 1st of month, 9 AM UTC (staggered 1h after pharmgkb)
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      backoffLimit: 2
+      activeDeadlineSeconds: 1800  # 30 min timeout (small GitHub TSV files)
+      template:
+        metadata:
+          labels:
+            app: fetch-tdc-admet
+            app.kubernetes.io/component: batch-job
+            app.kubernetes.io/part-of: dk-data
+            team: data-platform
+            service: dk-data
+            product: dk-data
+        spec:
+          restartPolicy: Never
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 1000
+            fsGroup: 1000
+            seccompProfile:
+              type: RuntimeDefault
+          imagePullSecrets:
+            - name: ghcr-credentials
+          containers:
+            - name: fetch-tdc-admet
+              image: ghcr.io/data-kinetic/dk-data-fe/job-trigger:main-5f46ed1
+              command: ["python", "-m", "dk_data.ingestion.main"]
+              args: ["tdc_admet"]
+              env:
+                - name: POSTGRES_HOST
+                  valueFrom:
+                    secretKeyRef:
+                      name: dk-data-secrets
+                      key: POSTGRES_HOST
+                - name: POSTGRES_PORT
+                  valueFrom:
+                    secretKeyRef:
+                      name: dk-data-secrets
+                      key: POSTGRES_PORT
+                - name: POSTGRES_USER
+                  valueFrom:
+                    secretKeyRef:
+                      name: dk-data-secrets
+                      key: POSTGRES_USER
+                - name: POSTGRES_PASSWORD
+                  valueFrom:
+                    secretKeyRef:
+                      name: dk-data-secrets
+                      key: POSTGRES_PASSWORD
+                - name: POSTGRES_DB
+                  valueFrom:
+                    secretKeyRef:
+                      name: dk-data-secrets
+                      key: POSTGRES_DB
+                - name: OTEL_EXPORTER_OTLP_ENDPOINT
+                  value: "http://alloy.infra.svc.cluster.local:4317"
+                - name: OTEL_ENABLED
+                  value: "true"
+              resources:
+                requests:
+                  memory: "128Mi"
+                  cpu: "100m"
+                limits:
+                  memory: "256Mi"
+                  cpu: "200m"
+              securityContext:
+                allowPrivilegeEscalation: false
+                readOnlyRootFilesystem: true
+                capabilities:
+                  drop: ["ALL"]
+              volumeMounts:
+                - name: tmp
+                  mountPath: /tmp
+          volumes:
+            - name: tmp
+              emptyDir: {}

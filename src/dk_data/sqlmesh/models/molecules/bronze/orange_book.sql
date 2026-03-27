@@ -2,7 +2,7 @@
 -- Transforms raw FDA Orange Book JSONB API responses into typed bronze layer
 -- Part of DK Molecule Data Platform (012-dk-data-platform)
 --
--- Source table: raw.orange_book (JSONB response_body, see migration 062_mol_source_raw_tables.sql)
+-- Source table: mol_raw.orange_book (JSONB response_body, see migration 062_mol_source_raw_tables.sql)
 --
 -- FDA Orange Book API field names (products section):
 --   appl_no          -> application_number
@@ -33,7 +33,7 @@
 --   exclusivity_date -> exclusivity_date (DATE)
 
 MODEL (
-    name bronze.orange_book,
+    name mol_bronze.orange_book,
     kind INCREMENTAL_BY_TIME_RANGE (
         time_column ingested_at,
         lookback 7
@@ -170,7 +170,7 @@ SELECT
     FALSE                       AS processed_to_silver,
     r.ingested_at               AS ingested_at
 
-FROM raw.orange_book r
+FROM mol_raw.orange_book r
 WHERE r.response_status = 200
   AND r.processed_to_bronze = FALSE
   AND r.response_body IS NOT NULL

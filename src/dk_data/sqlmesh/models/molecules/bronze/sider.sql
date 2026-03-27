@@ -3,7 +3,7 @@
 -- SIDER contains drug-side effect associations extracted from package inserts
 -- Part of DK Molecule Data Platform (012-dk-data-platform)
 --
--- SIDER data is sourced from two TSV files stored as JSONB in raw.sider:
+-- SIDER data is sourced from two TSV files stored as JSONB in mol_raw.sider:
 --
 -- meddra_all_se.tsv fields:
 --   stitch_id_flat       — flat STITCH compound ID (CIDmNNNNNNNN)
@@ -21,7 +21,7 @@
 --   side_effect_name     — plain-text side effect name
 
 MODEL (
-    name bronze.sider,
+    name mol_bronze.sider,
     kind INCREMENTAL_BY_TIME_RANGE (
         time_column ingested_at,
         lookback 7
@@ -93,7 +93,7 @@ SELECT
     FALSE AS processed_to_silver,
     r.ingested_at
 
-FROM raw.sider r
+FROM mol_raw.sider r
 WHERE r.response_status = 200
   AND r.processed_to_bronze = FALSE
   AND r.response_body IS NOT NULL

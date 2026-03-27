@@ -1,10 +1,10 @@
 -- SQLMesh Model: Silver Publications
 -- Normalized publication data from OpenAlex, PubMed, Cochrane, and Journal RSS
--- Reads from bronze.* models which themselves read from flat raw.* typed tables.
+-- Reads from mol_bronze.* models which themselves read from flat mol_raw.* typed tables.
 -- Part of: 012-dk-data-platform (extended by 015-assessment-dashboard-integration)
 
 MODEL (
-    name silver.publications,
+    name mol_silver.publications,
     kind INCREMENTAL_BY_UNIQUE_KEY (
         unique_key doi
     ),
@@ -47,14 +47,14 @@ WITH openalex_pubs AS (
         source,
         source_updated_at,
         created_at
-    FROM bronze.openalex
+    FROM mol_bronze.openalex
     WHERE
         processed_to_silver = FALSE
         AND title IS NOT NULL
 ),
 
 -- PubMed publications
--- bronze.pubmed now exposes flat columns: pmid, doi, title, abstract, journal,
+-- mol_bronze.pubmed now exposes flat columns: pmid, doi, title, abstract, journal,
 -- publication_date, mesh_terms (TEXT[]), authors (JSONB), publication_types (TEXT[])
 pubmed_pubs AS (
     SELECT
@@ -89,14 +89,14 @@ pubmed_pubs AS (
         source,
         source_updated_at,
         created_at
-    FROM bronze.pubmed
+    FROM mol_bronze.pubmed
     WHERE
         processed_to_silver = FALSE
         AND title IS NOT NULL
 ),
 
 -- Cochrane systematic reviews
--- bronze.cochrane_reviews exposes: review_id, doi, title, abstract, publication_date,
+-- mol_bronze.cochrane_reviews exposes: review_id, doi, title, abstract, publication_date,
 -- review_type, authors (TEXT), interventions (TEXT[]), conditions (TEXT[]), conclusions
 cochrane_pubs AS (
     SELECT
@@ -117,7 +117,7 @@ cochrane_pubs AS (
         NULL::TEXT                                               AS first_page,
         NULL::TEXT                                               AS last_page,
         NULL::JSONB                                              AS author_names,
-        -- authors stored as TEXT (semicolon-separated) in raw.cochrane_reviews
+        -- authors stored as TEXT (semicolon-separated) in mol_raw.cochrane_reviews
         to_jsonb(ARRAY[authors])                                 AS authorships,
         NULL::JSONB                                              AS concepts,
         NULL::JSONB                                              AS keywords,
@@ -131,14 +131,14 @@ cochrane_pubs AS (
         source,
         source_updated_at,
         created_at
-    FROM bronze.cochrane_reviews
+    FROM mol_bronze.cochrane_reviews
     WHERE
         processed_to_silver = FALSE
         AND title IS NOT NULL
 ),
 
 -- Journal RSS feed entries
--- bronze.journal_rss now exposes flat columns: entry_id, doi, title, pub_date,
+-- mol_bronze.journal_rss now exposes flat columns: entry_id, doi, title, pub_date,
 -- journal_name, summary (abstract), authors (TEXT)
 journal_rss_pubs AS (
     SELECT
@@ -172,14 +172,14 @@ journal_rss_pubs AS (
         source,
         source_updated_at,
         created_at
-    FROM bronze.journal_rss
+    FROM mol_bronze.journal_rss
     WHERE
         processed_to_silver = FALSE
         AND title IS NOT NULL
 ),
 
 -- EuropePMC publications
--- bronze.europepmc exposes typed columns derived from mol_raw.europepmc_raw JSONB:
+-- mol_bronze.europepmc exposes typed columns derived from mol_raw.europepmc_raw JSONB:
 -- europepmc_pmid (TEXT), pmcid, doi, title, abstract, author_string, author_list (JSONB),
 -- journal_title, publication_date (DATE), publication_year (INTEGER),
 -- cited_by_count (INTEGER), is_open_access (BOOLEAN), mesh_terms (JSONB), keywords (JSONB)
@@ -216,7 +216,7 @@ europepmc_pubs AS (
         source,
         source_updated_at,
         created_at
-    FROM bronze.europepmc
+    FROM mol_bronze.europepmc
     WHERE
         processed_to_silver = FALSE
         AND title IS NOT NULL

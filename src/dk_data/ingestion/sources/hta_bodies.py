@@ -3,10 +3,10 @@
 Feature: 011-datasource-integration
 Task: T058-T060 — HTA Bodies CI source integration
 
-Loads normalized HTA decision records into raw.hta_decisions with
+Loads normalized HTA decision records into mol_raw.hta_decisions with
 upsert semantics (ON CONFLICT DO UPDATE on decision_id).
 
-Target table: raw.hta_decisions (see migration 060_ci_source_tables.sql)
+Target table: mol_raw.hta_decisions (see migration 060_ci_source_tables.sql)
 """
 
 import logging
@@ -30,7 +30,7 @@ def load_hta_decisions_data(
     source_file: Optional[str] = None,
     batch_size: int = BATCH_SIZE,
 ) -> Dict[str, Any]:
-    """Load HTA decision records into raw.hta_decisions.
+    """Load HTA decision records into mol_raw.hta_decisions.
 
     Validates each record via the HTADecisionRecord Pydantic model and
     performs an upsert: INSERT ... ON CONFLICT (decision_id) DO UPDATE.
@@ -53,7 +53,7 @@ def load_hta_decisions_data(
             "errors": [],
         }
 
-    logger.info("Loading %d HTA decision records into raw.hta_decisions", len(records))
+    logger.info("Loading %d HTA decision records into mol_raw.hta_decisions", len(records))
 
     records_inserted = 0
     records_failed = 0
@@ -79,7 +79,7 @@ def load_hta_decisions_data(
 
                     cur.execute(
                         """
-                        INSERT INTO raw.hta_decisions (
+                        INSERT INTO mol_raw.hta_decisions (
                             decision_id, agency, drug_name,
                             indication, decision_type, decision_date,
                             document_url, summary,

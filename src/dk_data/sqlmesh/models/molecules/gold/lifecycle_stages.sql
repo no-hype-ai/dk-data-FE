@@ -4,7 +4,7 @@
 -- Part of DK Molecule Data Platform (012-dk-data-platform)
 
 MODEL (
-    name gold.lifecycle_stages,
+    name mol_gold.lifecycle_stages,
     kind FULL,
     cron '@daily',
     grain (molecule_id)
@@ -19,7 +19,7 @@ WITH molecule_base AS (
         m.max_phase,
         m.first_approval_year,
         NULL::DATE AS approval_date
-    FROM silver.molecules m
+    FROM mol_silver.molecules m
     WHERE m.needs_review = FALSE
 ),
 
@@ -38,7 +38,7 @@ trial_evidence AS (
         bool_or(overall_status = 'Terminated' OR overall_status = 'Suspended') AS has_terminated_trials,
         MAX(start_date) AS latest_trial_start,
         MAX(completion_date) AS latest_trial_completion
-    FROM silver.clinical_trials
+    FROM mol_silver.clinical_trials
     WHERE molecule_id IS NOT NULL
     GROUP BY molecule_id
 ),
@@ -51,7 +51,7 @@ label_evidence AS (
         effective_date AS approval_date,
         marketing_status,
         boxed_warning IS NOT NULL AS has_boxed_warning
-    FROM silver.drug_labels
+    FROM mol_silver.drug_labels
     WHERE molecule_id IS NOT NULL
     ORDER BY molecule_id, effective_date DESC
 ),
@@ -68,7 +68,7 @@ adverse_evidence AS (
             WHEN SUM(report_count) > 100 THEN TRUE
             ELSE FALSE
         END AS has_significant_adverse_data
-    FROM silver.adverse_events
+    FROM mol_silver.adverse_events
     WHERE molecule_id IS NOT NULL
     GROUP BY molecule_id
 ),
@@ -81,7 +81,7 @@ patent_evidence AS (
         MIN(expiry_date) FILTER (WHERE expiry_date > CURRENT_DATE) AS earliest_active_expiry,
         MAX(expiry_date) AS latest_expiry,
         bool_or(expiry_date < CURRENT_DATE) AS has_expired_patents
-    FROM silver.patents
+    FROM mol_silver.patents
     WHERE molecule_id IS NOT NULL
     GROUP BY molecule_id
 ),
@@ -93,7 +93,7 @@ publication_evidence AS (
         COUNT(*) AS publication_count,
         MIN(publication_date) AS first_publication,
         MAX(publication_date) AS latest_publication
-    FROM silver.molecule_publications
+    FROM mol_silver.molecule_publications
     WHERE molecule_id IS NOT NULL
     GROUP BY molecule_id
 ),
@@ -104,7 +104,7 @@ bioactivity_evidence AS (
         molecule_id,
         COUNT(*) AS bioactivity_count,
         COUNT(DISTINCT target_id) AS targets_tested
-    FROM silver.bioactivity
+    FROM mol_silver.bioactivity
     WHERE molecule_id IS NOT NULL
     GROUP BY molecule_id
 ),

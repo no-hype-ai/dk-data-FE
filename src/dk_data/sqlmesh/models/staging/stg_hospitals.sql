@@ -1,5 +1,5 @@
 -- staging.hospitals - Cleaned and standardized hospital data
--- Source: raw.cms_hospital_info with deduplication, enriched with cost report bed counts
+-- Source: hcs_raw.cms_hospital_info with deduplication, enriched with cost report bed counts
 -- Model type: FULL refresh
 
 MODEL (
@@ -53,7 +53,7 @@ WITH hospital_base AS (
             PARTITION BY provider_id
             ORDER BY _loaded_at DESC
         ) AS cms_overall_rating
-    FROM raw.cms_hospital_info
+    FROM hcs_raw.cms_hospital_info
     WHERE provider_id IS NOT NULL
       AND state IS NOT NULL
       AND LENGTH(provider_id) = 6
@@ -67,7 +67,7 @@ cost_report_beds AS (
     SELECT
         provider_id,
         total_beds
-    FROM raw.cms_cost_reports
+    FROM hcs_raw.cms_cost_reports
     WHERE total_beds IS NOT NULL
     QUALIFY ROW_NUMBER() OVER (
         PARTITION BY provider_id

@@ -3,7 +3,7 @@
 -- Part of: 012-dk-data-platform
 
 MODEL (
-    name bronze.openfda_labels,
+    name mol_bronze.openfda_labels,
     kind INCREMENTAL_BY_TIME_RANGE (
         time_column request_timestamp,
         batch_size 500
@@ -81,14 +81,14 @@ SELECT
     -- Raw source tracking
     label AS raw_json,
     -- raw_source_id references the raw table PK, not the generated bronze id
-    raw.openfda_labels.id AS raw_source_id,
+    mol_raw.openfda_labels.id AS raw_source_id,
     'openfda_labels' AS source,
     request_timestamp,
     request_timestamp AS source_updated_at,
     FALSE AS processed_to_silver,
     NOW() AS created_at
 
-FROM raw.openfda_labels,
+FROM mol_raw.openfda_labels,
      jsonb_array_elements(response_body->'results') AS label
 WHERE
     response_status = 200

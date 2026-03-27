@@ -4,9 +4,9 @@
 -- Feature: 019-cms-puf-platform-reconciliation
 -- Task: T024
 --
--- Joins bronze.ema decisions to mol_silver.molecules via canonical_name →
+-- Joins mol_bronze.ema decisions to mol_silver.molecules via canonical_name →
 -- active_substance matching, producing a molecule-centric regulatory view.
--- Distinct from silver.regulatory_decisions (which merges EMA + HTA generically);
+-- Distinct from mol_silver.regulatory_decisions (which merges EMA + HTA generically);
 -- this model provides EMA-specific regulatory status per molecule_id.
 
 MODEL (
@@ -46,7 +46,7 @@ SELECT
 
     e.ingested_at
 
-FROM bronze.ema AS e
+FROM mol_bronze.ema AS e
 LEFT JOIN mol_silver.molecules AS m
     ON LOWER(m.canonical_name) = LOWER(e.active_substance)
     OR LOWER(m.canonical_name) = LOWER(e.inn)

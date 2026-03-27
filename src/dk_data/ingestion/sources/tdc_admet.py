@@ -43,7 +43,7 @@ from ..utils.database import get_connection
 logger = logging.getLogger(__name__)
 
 SOURCE_ID = "tdc_admet"
-API_ENDPOINT = "https://raw.githubusercontent.com/mims-harvard/TDC/main/tdc/resource/"
+API_ENDPOINT = "https://mol_raw.githubusercontent.com/mims-harvard/TDC/main/tdc/resource/"
 BATCH_SIZE = 50  # datasets per commit; typical runs have ~20 datasets
 
 

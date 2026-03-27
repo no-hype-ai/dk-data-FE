@@ -1,7 +1,7 @@
 """CMS Cost Reports PUF — Worksheet-Level Staffing Lines loader.
 
 Loads worksheet A staffing line items from the HCRIS cost report files
-into hcs_raw.cms_cost_reports_puf_lines.
+into hcs_hcs_raw.cms_cost_reports_puf_lines.
 
 This is the worksheet-grain companion to cms_cost_reports_puf.py.
 Used by staffing_decomposition_agent to infer FTE by clinical role.

@@ -2,7 +2,7 @@
 -- Normalized researcher profile data from ORCID, enriched with NIH Reporter grant counts.
 --
 -- Sources:
---   bronze.orcid (mol_bronze.orcid) — ORCID researcher profiles
+--   mol_bronze.orcid (mol_bronze.orcid) — ORCID researcher profiles
 --   mol_bronze.nih_reporter — NIH grant records with principal_investigators JSONB
 --
 -- Linkage strategy:
@@ -17,13 +17,13 @@
 --   - affiliations->0->>'country' removed — country is not stored in current_affiliations JSONB
 --     by the fetcher; replaced with NULL until fetcher is updated to include country
 --   - Added NIH Reporter grant_count via LEFT JOIN on PI name match
---   - Model name left as silver.researchers (maps to mol_silver via config.yaml)
+--   - Model name left as mol_silver.researchers (maps to mol_silver via config.yaml)
 --
 -- Part of: 015-assessment-dashboard-integration
 -- Updated: 019-cms-puf-platform-reconciliation
 
 MODEL (
-    name silver.researchers,
+    name mol_silver.researchers,
     kind INCREMENTAL_BY_UNIQUE_KEY (
         unique_key orcid_id
     ),
@@ -55,7 +55,7 @@ WITH orcid_base AS (
         source,
         source_updated_at,
         created_at
-    FROM bronze.orcid
+    FROM mol_bronze.orcid
     WHERE
         processed_to_silver = FALSE
         AND orcid_id IS NOT NULL

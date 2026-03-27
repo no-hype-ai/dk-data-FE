@@ -3,8 +3,8 @@
 -- WHO INNs are the authoritative international nonproprietary names for active
 -- pharmaceutical ingredients — the global equivalent of USAN (US Adopted Names).
 --
--- Entity linking: inchi_key → silver.molecules (when available), then name match.
--- Feeds downstream: silver.molecule_aliases (inn alias type), silver.identifier_mappings (inn_name).
+-- Entity linking: inchi_key → mol_silver.molecules (when available), then name match.
+-- Feeds downstream: mol_silver.molecule_aliases (inn alias type), mol_silver.identifier_mappings (inn_name).
 
 MODEL (
     name mol_silver.who_inn_names,
@@ -41,19 +41,19 @@ SELECT
 
 FROM mol_bronze.who_inn b
 -- Link via inchi_key (most reliable when available)
-LEFT JOIN silver.molecules m_ik
+LEFT JOIN mol_silver.molecules m_ik
        ON b.inchi_key IS NOT NULL
       AND m_ik.inchi_key = b.inchi_key
 -- Fallback: canonical name match
-LEFT JOIN silver.molecules m_name
+LEFT JOIN mol_silver.molecules m_name
        ON m_ik.id IS NULL
       AND b.inn_name IS NOT NULL
       AND LOWER(m_name.canonical_name) = LOWER(b.inn_name)
 -- Fallback: alias table
-LEFT JOIN silver.molecule_aliases ma
+LEFT JOIN mol_silver.molecule_aliases ma
        ON m_ik.id IS NULL AND m_name.id IS NULL
       AND b.inn_name IS NOT NULL
       AND LOWER(REGEXP_REPLACE(b.inn_name, '[^a-zA-Z0-9]', '', 'g')) = ma.alias_name_normalized
-LEFT JOIN silver.molecules m_alias ON m_alias.id = ma.molecule_id
+LEFT JOIN mol_silver.molecules m_alias ON m_alias.id = ma.molecule_id
 
 WHERE b.inn_name IS NOT NULL;

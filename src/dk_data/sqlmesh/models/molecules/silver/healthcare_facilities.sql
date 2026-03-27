@@ -3,7 +3,7 @@
 -- Part of: 015-assessment-dashboard-integration
 
 MODEL (
-    name silver.healthcare_facilities,
+    name hcs_silver.healthcare_facilities,
     kind INCREMENTAL_BY_UNIQUE_KEY (
         unique_key (provider_id, source)
     ),
@@ -28,7 +28,7 @@ WITH cms_inpatient AS (
         NULL::INTEGER AS shortage_score,
         'cms_inpatient' AS source,
         source_updated_at
-    FROM bronze.cms_inpatient
+    FROM hcs_bronze.cms_inpatient
     WHERE processed_to_silver = FALSE
       AND provider_id IS NOT NULL
 ),
@@ -47,7 +47,7 @@ cms_hospital AS (
         NULL::INTEGER AS shortage_score,
         'cms_hospital_info' AS source,
         source_updated_at
-    FROM bronze.cms_hospital_info
+    FROM hcs_bronze.cms_hospital_info
     WHERE processed_to_silver = FALSE
       AND provider_id IS NOT NULL
 ),
@@ -66,7 +66,7 @@ cms_costs AS (
         NULL::INTEGER AS shortage_score,
         'cms_cost_reports' AS source,
         source_updated_at
-    FROM bronze.cms_cost_reports
+    FROM hcs_bronze.cms_cost_reports
     WHERE processed_to_silver = FALSE
       AND provider_id IS NOT NULL
 ),
@@ -85,7 +85,7 @@ acc_tvc AS (
         NULL::INTEGER AS shortage_score,
         'acc_tvc' AS source,
         source_updated_at
-    FROM bronze.acc_tvc
+    FROM hcs_bronze.acc_tvc
     WHERE processed_to_silver = FALSE
       AND facility_id IS NOT NULL
 ),
@@ -104,7 +104,7 @@ hrsa AS (
         score AS shortage_score,
         'hrsa' AS source,
         source_updated_at
-    FROM bronze.hrsa
+    FROM hcs_bronze.hrsa
     WHERE processed_to_silver = FALSE
       AND hpsa_id IS NOT NULL
 ),

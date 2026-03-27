@@ -58,6 +58,34 @@ resources:
   - cronjob-fetch-cms-utilization-puf.yaml
   - cronjob-fetch-cms-physician-puf-services.yaml
   - cronjob-fetch-cms-cost-reports-puf-lines.yaml
+  # CMS facility/provider/reference sources (ported from 016)
+  - cronjob-fetch-cms-care-compare.yaml
+  - cronjob-fetch-cms-chow.yaml
+  - cronjob-fetch-cms-ddinter.yaml
+  - cronjob-fetch-cms-dmepos.yaml
+  - cronjob-fetch-cms-formulary.yaml
+  - cronjob-fetch-cms-hcris.yaml
+  - cronjob-fetch-cms-hospital-affiliation.yaml
+  - cronjob-fetch-cms-hospital-quality.yaml
+  - cronjob-fetch-cms-magnet.yaml
+  - cronjob-fetch-cms-ndc.yaml
+  - cronjob-fetch-cms-nucc.yaml
+  - cronjob-fetch-cms-pecos.yaml
+  - cronjob-fetch-cms-pos.yaml
+  - cronjob-fetch-cms-post-acute.yaml
+  - cronjob-fetch-cms-rbcs.yaml
+  - cronjob-fetch-cms-stabilis.yaml
+  - cronjob-fetch-cms-usp.yaml
+  - cronjob-fetch-euipo-designs.yaml
+  # Molecule vocabulary sources (8 files — monthly/weekly refresh)
+  - cronjob-fetch-bindingdb.yaml
+  - cronjob-fetch-sider.yaml
+  - cronjob-fetch-who-icd.yaml
+  - cronjob-fetch-rxnorm.yaml
+  - cronjob-fetch-who-inn.yaml
+  - cronjob-fetch-pharmgkb.yaml
+  - cronjob-fetch-kegg-drug.yaml
+  - cronjob-fetch-tdc-admet.yaml
   # Silver enrichment agents (7 files)
   - cronjob-agent-contact-verification.yaml
   - cronjob-agent-equipment-inventory.yaml
@@ -66,4 +94,6 @@ resources:
   - cronjob-agent-referral-network.yaml
   - cronjob-agent-service-line-inference.yaml
   - cronjob-agent-staffing-decomposition.yaml
+  # Gold view refresh (runs after nightly data loads)
+  - cronjob-cms-gold-refresh.yaml
   - molecule-pipeline-config.yaml

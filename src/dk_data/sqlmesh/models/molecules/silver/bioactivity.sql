@@ -3,7 +3,7 @@
 -- Part of: 012-dk-data-platform
 
 MODEL (
-    name silver.bioactivity,
+    name mol_silver.bioactivity,
     kind INCREMENTAL_BY_TIME_RANGE (
         time_column source_updated_at,
         batch_size 1000
@@ -17,7 +17,7 @@ MODEL (
 
 -- ChEMBL activity data comes from a separate API endpoint
 -- For now, extract from cross_references in chembl_molecules
--- In production, there would be a raw.chembl_activities table
+-- In production, there would be a mol_raw.chembl_activities table
 
 -- NOTE: bioactivity data requires a separate ChEMBL Activities API endpoint
 -- (/chembl/api/data/activity) which is not yet ingested. This model provides
@@ -30,7 +30,7 @@ WITH activity_data AS (
         chembl_id,
         inchi_key,
 
-        -- molecule_id and target_id: linked via silver.molecules and silver.targets
+        -- molecule_id and target_id: linked via mol_silver.molecules and mol_silver.targets
         -- Will be populated once ChEMBL activities are ingested
         NULL::UUID              AS molecule_id,
         NULL::UUID              AS target_id,
@@ -60,14 +60,14 @@ WITH activity_data AS (
 
         -- Document reference
         NULL::TEXT              AS document_chembl_id,
-        NULL::BIGINT            AS pubmed_id,           -- pmid as BIGINT (matches silver.publications)
+        NULL::BIGINT            AS pubmed_id,           -- pmid as BIGINT (matches mol_silver.publications)
         NULL::INTEGER           AS publication_year,
 
         'chembl'                AS source,
         source_updated_at,
         NOW()                   AS created_at
 
-    FROM bronze.chembl_molecules
+    FROM mol_bronze.chembl_molecules
     WHERE
         processed_to_silver = FALSE
         AND chembl_id IS NOT NULL
@@ -80,5 +80,5 @@ SELECT * FROM activity_data WHERE 1=0;  -- Placeholder - no ChEMBL activity data
 --     gen_random_uuid() AS id,
 --     response_body->>'activity_id' AS activity_id,
 --     ...
--- FROM raw.chembl_activities
+-- FROM mol_raw.chembl_activities
 -- WHERE ...

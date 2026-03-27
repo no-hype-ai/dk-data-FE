@@ -2,7 +2,7 @@
 -- Cross-source financial data per molecule/company
 -- Part of: 015-assessment-dashboard-integration
 --
--- Source: silver.financial_data, silver.molecules
+-- Source: mol_silver.financial_data, mol_silver.molecules
 -- Joins company names from SEC filings to molecule canonical names.
 -- Revenue/net_income/total_assets are NULL until XBRL enrichment completes.
 
@@ -25,7 +25,7 @@ WITH latest_filings AS (
         -- Most recent filing values
         MAX(filing_date) AS latest_filing_date,
         COUNT(*)         AS filing_count
-    FROM silver.financial_data
+    FROM mol_silver.financial_data
     GROUP BY cik, company_name
 ),
 
@@ -39,12 +39,12 @@ latest_financials AS (
         fd.drug_revenue_pct,
         lf.filing_count,
         lf.latest_filing_date
-    FROM silver.financial_data fd
+    FROM mol_silver.financial_data fd
     JOIN latest_filings lf ON fd.cik = lf.cik
     ORDER BY fd.cik, fd.filing_date DESC
 ),
 
--- Link companies to molecules via silver.molecules canonical_name
+-- Link companies to molecules via mol_silver.molecules canonical_name
 molecule_linked AS (
     SELECT
         m.id                    AS molecule_id,
@@ -57,7 +57,7 @@ molecule_linked AS (
         f.filing_count,
         f.latest_filing_date
     FROM latest_financials f
-    LEFT JOIN silver.molecules m
+    LEFT JOIN mol_silver.molecules m
         ON LOWER(f.company_name) = LOWER(m.canonical_name)
 )
 

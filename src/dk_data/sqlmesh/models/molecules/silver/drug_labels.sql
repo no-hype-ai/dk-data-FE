@@ -3,7 +3,7 @@
 -- Part of: 012-dk-data-platform
 
 MODEL (
-    name silver.drug_labels,
+    name mol_silver.drug_labels,
     kind INCREMENTAL_BY_UNIQUE_KEY (
         unique_key set_id
     ),
@@ -58,7 +58,7 @@ WITH source_labels AS (
         source,
         source_updated_at,
         created_at
-    FROM bronze.openfda_labels
+    FROM mol_bronze.openfda_labels
     WHERE
         processed_to_silver = FALSE
         AND set_id IS NOT NULL

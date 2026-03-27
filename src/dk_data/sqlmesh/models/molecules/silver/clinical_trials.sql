@@ -3,7 +3,7 @@
 -- Part of: 012-dk-data-platform
 
 MODEL (
-    name silver.clinical_trials,
+    name mol_silver.clinical_trials,
     kind INCREMENTAL_BY_TIME_RANGE (
         time_column ingested_at,
         batch_size 1000
@@ -84,7 +84,7 @@ SELECT
     NOW() AS created_at,
     NOW() AS updated_at
 
-FROM bronze.clinicaltrials b
+FROM mol_bronze.clinicaltrials b
 WHERE
     b.processed_to_silver = FALSE
     AND b.nct_id IS NOT NULL

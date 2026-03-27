@@ -3,7 +3,7 @@
 -- Part of: 012-dk-data-platform
 
 MODEL (
-    name silver.targets,
+    name mol_silver.targets,
     kind INCREMENTAL_BY_UNIQUE_KEY (
         unique_key uniprot_id
     ),
@@ -45,7 +45,7 @@ WITH uniprot_targets AS (
         source,
         source_updated_at,
         created_at
-    FROM bronze.uniprot
+    FROM mol_bronze.uniprot
     WHERE
         processed_to_silver = FALSE
         AND uniprot_id IS NOT NULL
@@ -106,7 +106,7 @@ FROM uniprot_targets;
 -- to target records that have PDB cross-references.
 --
 -- Integration note: PDB data enriches existing target records rather than
--- adding new rows. The bronze.pdb_structures model provides pdb_id,
+-- adding new rows. The mol_bronze.pdb_structures model provides pdb_id,
 -- resolution, method, ligand_id, ligand_name mapped via uniprot_id.
 -- A future iteration should LEFT JOIN pdb data into the main target query
 -- to populate pdb_structure_count with actual experimental counts.

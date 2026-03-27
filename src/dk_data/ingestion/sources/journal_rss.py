@@ -3,10 +3,10 @@
 Feature: 011-datasource-integration
 Task: T051-T054 — Journal RSS CI source integration
 
-Loads normalized journal RSS article records into raw.journal_rss
+Loads normalized journal RSS article records into mol_raw.journal_rss
 with upsert semantics (ON CONFLICT DO UPDATE on article_id).
 
-Target table: raw.journal_rss (see migration 060_ci_source_tables.sql)
+Target table: mol_raw.journal_rss (see migration 060_ci_source_tables.sql)
 """
 
 import logging
@@ -30,7 +30,7 @@ def load_journal_rss_data(
     source_file: Optional[str] = None,
     batch_size: int = BATCH_SIZE,
 ) -> Dict[str, Any]:
-    """Load journal RSS article records into raw.journal_rss.
+    """Load journal RSS article records into mol_raw.journal_rss.
 
     Validates each record via the JournalRSSRecord Pydantic model and
     performs an upsert: INSERT ... ON CONFLICT (article_id) DO UPDATE.
@@ -53,7 +53,7 @@ def load_journal_rss_data(
             "errors": [],
         }
 
-    logger.info("Loading %d journal RSS records into raw.journal_rss", len(records))
+    logger.info("Loading %d journal RSS records into mol_raw.journal_rss", len(records))
 
     records_inserted = 0
     records_failed = 0
@@ -80,7 +80,7 @@ def load_journal_rss_data(
 
                     cur.execute(
                         """
-                        INSERT INTO raw.journal_rss (
+                        INSERT INTO mol_raw.journal_rss (
                             article_id, feed_source, title, authors,
                             abstract, publication_date, link, doi,
                             categories,

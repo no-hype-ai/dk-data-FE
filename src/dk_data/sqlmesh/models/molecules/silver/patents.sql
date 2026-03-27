@@ -3,7 +3,7 @@
 -- Part of: 014-uspto-euipo-model-datasource (extended from 012)
 
 MODEL (
-    name silver.patents,
+    name mol_silver.patents,
     kind INCREMENTAL_BY_UNIQUE_KEY (
         unique_key patent_number
     ),
@@ -29,7 +29,7 @@ WITH drugbank_patents AS (
         source,
         source_updated_at,
         created_at
-    FROM bronze.drugbank,
+    FROM mol_bronze.drugbank,
          jsonb_array_elements(patents) AS patent
     WHERE
         processed_to_silver = FALSE
@@ -55,7 +55,7 @@ uspto_patents AS (
         is_pharma_related,
         NULL::TEXT AS family_id,
         'uspto_patents' AS source
-    FROM bronze.uspto_patents
+    FROM mol_bronze.uspto_patents
     WHERE processed_to_silver = FALSE
       AND patent_number IS NOT NULL
 ),
@@ -77,7 +77,7 @@ uspto_ci AS (
         is_pharma_related,
         NULL::TEXT AS family_id,
         'uspto_ci' AS source
-    FROM bronze.uspto_ci
+    FROM mol_bronze.uspto_ci
     WHERE processed_to_silver = FALSE
       AND patent_number IS NOT NULL
 ),
@@ -99,7 +99,7 @@ epo_patents AS (
         is_pharma_related,
         family_id,
         'epo_ops' AS source
-    FROM bronze.epo_patents
+    FROM mol_bronze.epo_patents
     WHERE processed_to_silver = FALSE
       AND patent_number IS NOT NULL
 ),
@@ -121,7 +121,7 @@ orange_book_patents AS (
         TRUE AS is_pharma_related,
         NULL::TEXT AS family_id,
         'orange_book' AS source
-    FROM bronze.orange_book
+    FROM mol_bronze.orange_book
     WHERE processed_to_silver = FALSE
       AND patent_number IS NOT NULL
 ),

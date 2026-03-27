@@ -67,7 +67,7 @@ def load_cms_inpatient_file(
     # Check if file was already loaded
     with get_cursor() as cur:
         cur.execute("""
-            SELECT COUNT(*) FROM raw.cms_medicare_inpatient
+            SELECT COUNT(*) FROM hcs_raw.cms_medicare_inpatient
             WHERE _source_hash = %s
         """, (source_hash,))
         existing_count = cur.fetchone()[0]
@@ -141,7 +141,7 @@ def load_cms_inpatient_file(
 
                     # Insert record
                     cur.execute("""
-                        INSERT INTO raw.cms_medicare_inpatient (
+                        INSERT INTO hcs_raw.cms_medicare_inpatient (
                             provider_id, provider_name, provider_street_address,
                             provider_city, provider_state, provider_zip_code,
                             drg_code, drg_description, total_discharges,

@@ -2,13 +2,13 @@
 
 Feature: 015-assessment-dashboard-integration
 
-Loads WHO ICD API responses into raw.who_icd using the standard
+Loads WHO ICD API responses into mol_raw.who_icd using the standard
 JSONB envelope schema (migration 075_pdb_who_raw_tables.sql).
 
 Each record from WHOICDFetcher is one API response object for a single
 ICD code. The entire response dict is stored as response_body JSONB.
 
-Target table: raw.who_icd (JSONB envelope — see migration 075)
+Target table: mol_raw.who_icd (JSONB envelope — see migration 075)
 """
 
 import hashlib
@@ -29,7 +29,7 @@ def load_who_icd_data(
     source_file: Optional[str] = None,
     batch_size: int = BATCH_SIZE,
 ) -> Dict[str, Any]:
-    """Load WHO ICD API response records into raw.who_icd.
+    """Load WHO ICD API response records into mol_raw.who_icd.
 
     Uses the JSONB envelope pattern: each record is stored verbatim as
     response_body. The icd_code is extracted from the record for the
@@ -54,7 +54,7 @@ def load_who_icd_data(
             "errors": [],
         }
 
-    logger.info("Loading %d WHO ICD records into raw.who_icd", len(records))
+    logger.info("Loading %d WHO ICD records into mol_raw.who_icd", len(records))
 
     records_inserted = 0
     records_failed = 0
@@ -79,7 +79,7 @@ def load_who_icd_data(
 
                     cur.execute(
                         """
-                        INSERT INTO raw.who_icd (
+                        INSERT INTO mol_raw.who_icd (
                             request_id,
                             request_timestamp,
                             api_endpoint,
