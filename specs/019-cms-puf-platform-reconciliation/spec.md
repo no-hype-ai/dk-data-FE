@@ -262,6 +262,119 @@ This section defines the exact medallion architecture, table schemas, column nam
 
 ---
 
+### Canonical Ingestion Patterns
+
+Every new source introduced in this feature **must** follow the patterns established on the main branch. This section documents those patterns as implementation constraints — not suggestions.
+
+#### State tracking infrastructure (already exists on main)
+
+The platform tracks fetch state through two tables and two utility functions. New sources register in these tables and call these functions — they do not invent alternative state mechanisms.
+
+| Asset | Purpose |
+|---|---|
+| `meta.data_sources` | One row per registered source. Stores `source_name`, `last_successful_refresh`, `last_refresh_status`, `default_days_back` |
+| `meta.refresh_log` | Append-only run log. One row per run. Stores `source_name`, `run_started_at`, `run_ended_at`, `records_fetched`, `records_inserted`, `records_updated`, `status`, `errors` |
+| `log_to_meta(source_name, result)` | Writes one row to `meta.refresh_log` AND updates `meta.data_sources`. Called after every run, success or failure |
+| `_compute_days_back(source, source_info)` | Reads `last_successful_refresh` from `meta.data_sources`, returns `elapsed_days + 1` as the lookback window. Returns `None` for non-incremental (bulk/file) sources — caller skips date windowing when `None` |
+
+**`log_to_meta` contract** — the `result` dict passed to `log_to_meta` must contain exactly these keys:
+
+```python
+result = {
+    "status": "success" | "failed" | "partial",
+    "records_fetched": int,
+    "records_inserted": int,
+    "records_updated": int,
+    "errors": List[str],   # empty list on success
+}
+```
+
+**`_compute_days_back` contract** — always pass the source name and its `meta.data_sources` row:
+
+```python
+days_back = _compute_days_back(source_name, source_info)
+# days_back is None  → non-incremental source; do not apply a date filter
+# days_back is int   → use as lookback window for API date parameter
+```
+
+If `last_successful_refresh` is NULL (first run), the function returns `default_days_back` from the source registration.
+
+#### SOURCES registry (central dispatch)
+
+Every source must have an entry in the top-level `SOURCES` dict in the ingestion module. All four keys are required:
+
+```python
+SOURCES = {
+    "cms_part_d_spending": {
+        "fetcher": CMSPartDSpendingFetcher,   # Class, not instance
+        "loader": load_cms_part_d_spending,   # Callable
+        "requires_file": True,                # True = file-based; False = API
+        "default_days_back": None,            # None = non-incremental (full file replacement)
+    },
+    "europepmc": {
+        "fetcher": EuropePMCFetcher,
+        "loader": load_europepmc,
+        "requires_file": False,
+        "default_days_back": 30,              # int = incremental API source
+    },
+    # ... all other sources follow same shape
+}
+```
+
+#### BaseFetcher contract
+
+Every fetcher class must extend `BaseFetcher`. The constructor signature is fixed:
+
+```python
+class MySourceFetcher(BaseFetcher):
+    def __init__(self, data_dir=None):
+        super().__init__(data_dir=data_dir)
+        # No `params` kwarg. No manifest system. No other constructor args.
+```
+
+Every fetcher's `fetch()` method must return a dict with exactly these keys:
+
+```python
+return {
+    "status": "success" | "failed",
+    "records": List[Dict],   # raw records as dicts; empty list on failure
+    "hash": str | None,      # MD5 of source file for file-based; None for API sources
+}
+```
+
+#### File-based hash-skip (file-based sources only)
+
+For sources where `requires_file: True`, the loader must check whether the file content has already been ingested before inserting any records:
+
+```python
+# 1. Compute MD5 of the downloaded file
+file_hash = md5(file_bytes)
+
+# 2. Check raw table for existing records with this hash
+existing = conn.execute(
+    "SELECT COUNT(*) FROM hcs_raw.{table} WHERE _source_hash = %s",
+    [file_hash]
+).scalar()
+
+# 3. Skip insert if file has not changed; log the skip via log_to_meta
+if existing > 0:
+    return {"status": "success", "records_inserted": 0, "records_updated": 0,
+            "records_fetched": existing, "errors": []}
+```
+
+This logic is already implemented for existing CMS sources on main. New CMS PUF fetchers must replicate this pattern — they must not introduce a different deduplication mechanism.
+
+#### Raw table pattern selection rule
+
+| Source type | Pattern | Raw table characteristics |
+|---|---|---|
+| HTTP API (EuropePMC, EMA, NIH Reporter, PubChem) | Pattern A: JSONB archive | `response_body JSONB`, `processed_to_bronze BOOLEAN DEFAULT FALSE` |
+| File download (all 28 CMS PUF sources) | Pattern B: Direct-normalized | Typed columns matching file schema, `_source_hash VARCHAR(64)`, `_loaded_at TIMESTAMP` |
+
+Never mix patterns. A CMS source must never use JSONB. An API source must never use `_source_hash` file-skip logic (API responses are deduplicated by record ID in bronze instead).
+
+---
+
 ### Schema Namespace Layout
 
 | Schema | Domain | Layer |
