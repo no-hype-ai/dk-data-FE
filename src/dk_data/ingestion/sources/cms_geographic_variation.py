@@ -9,8 +9,6 @@ Column names follow the exact CMS GV PUF field names (mixed case with underscore
 import hashlib
 import logging
 from pathlib import Path
-from typing import Optional
-
 import pandas as pd
 from pydantic import ValidationError
 

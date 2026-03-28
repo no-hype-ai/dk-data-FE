@@ -49,7 +49,6 @@ if PROMETHEUS_AVAILABLE:
         DATA_SOURCE_STALENESS_HOURS,
         DATA_SOURCE_TABLE_SIZE_BYTES,
         record_gold_view_refresh,
-        record_cms_source_sync,
     )
 
 

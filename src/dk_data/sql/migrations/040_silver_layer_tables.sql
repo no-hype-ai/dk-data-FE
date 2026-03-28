@@ -53,6 +53,19 @@ CREATE TABLE IF NOT EXISTS mol_silver.molecules (
     UNIQUE(inchi_key)
 );
 
+-- Idempotent backfill: 020_mol_schemas.sql created mol_silver.molecules with a
+-- narrower schema. The CREATE TABLE above is a no-op on those DBs, so we
+-- explicitly add any columns this migration introduced that may be missing.
+ALTER TABLE mol_silver.molecules ADD COLUMN IF NOT EXISTS name_source VARCHAR(50);
+ALTER TABLE mol_silver.molecules ADD COLUMN IF NOT EXISTS canonical_smiles TEXT;
+ALTER TABLE mol_silver.molecules ADD COLUMN IF NOT EXISTS mechanism_of_action TEXT;
+ALTER TABLE mol_silver.molecules ADD COLUMN IF NOT EXISTS development_status VARCHAR(50);
+ALTER TABLE mol_silver.molecules ADD COLUMN IF NOT EXISTS max_phase INTEGER;
+ALTER TABLE mol_silver.molecules ADD COLUMN IF NOT EXISTS first_approval_year INTEGER;
+ALTER TABLE mol_silver.molecules ADD COLUMN IF NOT EXISTS approval_date DATE;
+ALTER TABLE mol_silver.molecules ADD COLUMN IF NOT EXISTS data_sources JSONB;
+ALTER TABLE mol_silver.molecules ADD COLUMN IF NOT EXISTS primary_source VARCHAR(50);
+
 CREATE INDEX IF NOT EXISTS idx_silver_mol_inchi ON mol_silver.molecules(inchi_key);
 CREATE INDEX IF NOT EXISTS idx_silver_mol_name ON mol_silver.molecules(canonical_name);
 CREATE INDEX IF NOT EXISTS idx_silver_mol_status ON mol_silver.molecules(development_status);

@@ -10,7 +10,6 @@ Source:
 """
 
 import logging
-from datetime import datetime
 from typing import Any, Optional
 
 from .base import BaseFetcher
@@ -43,6 +42,11 @@ class CMSGeographicVariationFetcher(BaseFetcher):
 
     def __init__(self, data_dir: Optional[str] = None):
         super().__init__(data_dir)
+
+    def get_latest_url(self) -> str:
+        """Return the ZIP URL for the most recent available year."""
+        latest_year = max(self.AVAILABLE_YEARS)
+        return self.KNOWN_ZIP_URLS[latest_year]
 
     def fetch(self, year: Optional[int] = None) -> dict[str, Any]:
         """

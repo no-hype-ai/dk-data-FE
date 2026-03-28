@@ -16,7 +16,6 @@ Stores raw dataset records in mol_raw.tdc_admet (migration 089_entity_linking_ga
 """
 
 import hashlib
-import io
 import json
 import logging
 from typing import Any, Dict, List, Optional

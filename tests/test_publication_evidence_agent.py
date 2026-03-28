@@ -120,10 +120,10 @@ class TestLLMRouting:
             lines = f.readlines()
         # Filter out comment/docstring lines; only check actual import statements
         import_lines = [
-            l for l in lines
-            if l.strip().startswith("import ") or l.strip().startswith("from ")
+            line for line in lines
+            if line.strip().startswith("import ") or line.strip().startswith("from ")
         ]
-        assert not any("anthropic" in l for l in import_lines)
+        assert not any("anthropic" in line for line in import_lines)
 
 
 # ---------------------------------------------------------------------------
