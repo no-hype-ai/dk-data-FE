@@ -61,11 +61,20 @@ class CMSUSPFetcher(BaseFetcher):
             filepath = self._get_alignment_path()
 
             if not filepath.exists():
-                raise FileNotFoundError(
+                msg = (
                     f"USP alignment file not found at {filepath}. "
                     "Download from https://go.usp.org/MMG_v9.0 and place in "
                     f"{_DATA_DIR}/usp_mmg_v9_alignment.xlsx"
                 )
+                logger.warning(msg)
+                result = {
+                    "status": "source_unavailable",
+                    "records": [],
+                    "hash": None,
+                    "error": msg,
+                }
+                self.log_fetch_result(result)
+                return result
 
             logger.info("Parsing USP alignment file: %s", filepath)
 

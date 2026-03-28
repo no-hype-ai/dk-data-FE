@@ -248,6 +248,124 @@ def load_hrsa_from_csv(filepath: str, batch_size: int = 500) -> dict:
     }
 
 
+def load_hrsa_shortage_areas_from_records(
+    records: list,
+    source_hash: str = None,
+    batch_size: int = 500,
+) -> dict:
+    """
+    Load HRSA shortage area records returned by HRSAFetcher.
+
+    The fetcher returns raw CSV DictReader rows. We map CSV column names
+    (which vary across HRSA file revisions) to DB column names using the
+    same column_mapping defined in load_hrsa_from_csv.
+
+    Args:
+        records: List of dicts from HRSAFetcher.fetch().
+        source_hash: Hash from the fetcher for idempotency.
+        batch_size: Commit interval.
+
+    Returns:
+        Dictionary with ingestion statistics.
+    """
+    logger.info(f"Loading {len(records)} HRSA shortage area records from fetcher")
+
+    if not records:
+        return {'status': 'skipped', 'reason': 'no_records'}
+
+    # Build lookup: CSV column name (any case variation) -> DB column name.
+    # Multiple CSV columns can map to the same DB column; first match wins per row.
+    col_map = {
+        'HPSA_ID': 'hpsa_id', 'HPSA Source ID': 'hpsa_id', 'HPSA ID': 'hpsa_id',
+        'HPSA_Name': 'hpsa_name', 'HPSA Name': 'hpsa_name',
+        'HPSA_Type': 'hpsa_type', 'HPSA Type Description': 'hpsa_type',
+        'HPSA Discipline Class': 'hpsa_type',
+        'Designation_Type': 'designation_type',
+        'HPSA Designation Type Description': 'designation_type',
+        'Designation Type': 'designation_type',
+        'State_Abbr': 'state_abbr', 'State Abbreviation': 'state_abbr',
+        'Primary State Abbreviation': 'state_abbr',
+        'County_Name': 'county_name', 'Common County Name': 'county_name',
+        'County Equivalent Name': 'county_name',
+        'HPSA_Score': 'hpsa_score', 'HPSA Score': 'hpsa_score',
+        'Rural_Status': 'rural_status', 'Rural Status': 'rural_status',
+        'HPSA Metropolitan Indicator Description': 'rural_status',
+        'Metropolitan Indicator': 'rural_status',
+        'HPSA Designation Date': 'designation_date',
+    }
+
+    records_inserted = 0
+    records_failed = 0
+    errors = []
+
+    with get_connection() as conn:
+        with conn.cursor() as cur:
+            for idx, raw in enumerate(records):
+                try:
+                    # Map raw CSV keys to DB column names (first match wins)
+                    row: dict = {}
+                    for csv_col, val in raw.items():
+                        db_col = col_map.get(csv_col)
+                        if db_col and db_col not in row:
+                            row[db_col] = val if val else None
+
+                    # Parse designation_date
+                    designation_date = None
+                    if row.get('designation_date'):
+                        try:
+                            import pandas as _pd
+                            designation_date = _pd.to_datetime(row['designation_date']).date()
+                        except Exception:
+                            pass
+
+                    # Parse hpsa_score
+                    hpsa_score = None
+                    if row.get('hpsa_score'):
+                        try:
+                            hpsa_score = int(float(row['hpsa_score']))
+                        except (TypeError, ValueError):
+                            pass
+
+                    cur.execute("""
+                        INSERT INTO hcs_raw.hrsa_shortage_areas (
+                            hpsa_id, hpsa_name, hpsa_type, designation_type,
+                            state_abbr, county_name, hpsa_score, designation_date,
+                            rural_status, _source_hash
+                        ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                    """, (
+                        row.get('hpsa_id', ''),
+                        row.get('hpsa_name', ''),
+                        row.get('hpsa_type', ''),
+                        row.get('designation_type', ''),
+                        row.get('state_abbr', ''),
+                        row.get('county_name', ''),
+                        hpsa_score,
+                        designation_date,
+                        row.get('rural_status', ''),
+                        source_hash,
+                    ))
+                    records_inserted += 1
+
+                    if records_inserted % batch_size == 0:
+                        conn.commit()
+
+                except Exception as e:
+                    records_failed += 1
+                    if len(errors) < 10:
+                        errors.append({'index': idx, 'error': str(e)})
+
+            conn.commit()
+
+    logger.info(f"HRSA records-based load complete: {records_inserted} inserted, {records_failed} failed")
+    return {
+        'status': 'success',
+        'records_inserted': records_inserted,
+        'records_failed': records_failed,
+        'source_hash': source_hash,
+        'errors': errors,
+    }
+
+
 def load_hrsa_shortage_areas(
     filepath: str = None,
     hpsa_types: List[str] = None,
@@ -270,25 +388,26 @@ def load_hrsa_shortage_areas(
     if filepath:
         return load_hrsa_from_csv(filepath, batch_size)
 
-    # Otherwise try API
-    if hpsa_types is None:
-        hpsa_types = ['Primary Care']
-
-    logger.info(f"Loading HRSA shortage areas for types: {hpsa_types}")
-
-    all_records = []
-    for hpsa_type in hpsa_types:
-        if states:
-            for state in states:
-                records = fetch_all_hrsa_data(hpsa_type=hpsa_type, state=state)
-                all_records.extend(records)
-        else:
-            records = fetch_all_hrsa_data(hpsa_type=hpsa_type)
-            all_records.extend(records)
-
-    if not all_records:
-        logger.warning("No HRSA records fetched")
-        return {'status': 'empty', 'records_fetched': 0}
+    # Download the HRSA bulk CSV and load from it.
+    # The HRSA JSON API (https://data.hrsa.gov/api/hpsas) returns HTML and is unavailable.
+    # Use the official HRSA Data Download bulk CSV instead.
+    import tempfile
+    _BULK_URL = "https://data.hrsa.gov/DataDownload/DD_Files/BCD_HPSA_FCT_DET_PC.csv"
+    logger.info("Downloading HRSA bulk CSV from %s", _BULK_URL)
+    try:
+        resp = requests.get(_BULK_URL, timeout=300, stream=True)
+        resp.raise_for_status()
+        with tempfile.NamedTemporaryFile(
+            mode="wb", suffix=".csv", delete=False, prefix="hrsa_hpsa_"
+        ) as tmp:
+            for chunk in resp.iter_content(chunk_size=1024 * 1024):
+                tmp.write(chunk)
+            tmp_path = tmp.name
+        logger.info("Downloaded HRSA bulk CSV to %s", tmp_path)
+        return load_hrsa_from_csv(tmp_path, batch_size)
+    except Exception as e:
+        logger.error("Failed to download HRSA bulk CSV from %s: %s", _BULK_URL, e)
+        return {'status': 'failed', 'error': f"Bulk CSV download failed: {e}"}
 
     logger.info(f"Total HRSA records fetched: {len(all_records)}")
 

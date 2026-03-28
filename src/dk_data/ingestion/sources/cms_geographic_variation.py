@@ -237,6 +237,142 @@ def load_cms_geographic_variation(
     }
 
 
+def load_cms_geographic_variation_from_records(
+    records: list,
+    source_hash: str = None,
+    batch_size: int = 1000,
+) -> dict:
+    """
+    Load CMS Geographic Variation records returned by the API fetcher.
+
+    The API returns uppercase keys (e.g. YEAR, BENE_GEO_CD). We map them
+    case-insensitively to the DB column names via COLUMN_MAPPING.
+
+    Args:
+        records: List of dicts from CMSGeographicVariationFetcher.fetch().
+        source_hash: Hash of the fetched data for idempotency.
+        batch_size: Number of records to commit at once.
+
+    Returns:
+        Dictionary with ingestion statistics.
+    """
+    logger.info(f"Loading {len(records)} CMS Geographic Variation records from API")
+
+    if not records:
+        return {'status': 'skipped', 'reason': 'no_records'}
+
+    # Build a case-insensitive lookup from API field name -> DB column name
+    # API returns uppercase keys; COLUMN_MAPPING keys are mixed-case
+    col_lookup = {k.upper(): v for k, v in COLUMN_MAPPING.items()}
+    # Also add direct lowercase pass-through for any already-lowercase keys
+    col_lookup.update({v.upper(): v for v in COLUMN_MAPPING.values()})
+
+    def _to_float(val):
+        if val is None or val == '' or val == '*':
+            return None
+        try:
+            return float(val)
+        except (TypeError, ValueError):
+            return None
+
+    def _to_int(val):
+        f = _to_float(val)
+        return int(f) if f is not None else None
+
+    records_inserted = 0
+    records_failed = 0
+    errors = []
+
+    with get_connection() as conn:
+        with conn.cursor() as cur:
+            for idx, raw in enumerate(records):
+                try:
+                    # Normalise keys to DB column names
+                    row = {}
+                    for k, v in raw.items():
+                        mapped = col_lookup.get(k.upper())
+                        if mapped and mapped not in row:
+                            row[mapped] = v
+                        # Also store raw uppercase key for year/direct access
+                        row[k.upper()] = v
+
+                    year_val = row.get('year') or row.get('YEAR')
+                    year_int = _to_int(year_val) if year_val is not None else None
+
+                    # _source_year must not be null; fall back to 0 if year absent
+                    source_year = year_int if year_int is not None else 0
+
+                    cur.execute("""
+                        INSERT INTO hcs_raw.cms_geographic_variation (
+                            year, bene_geo_lvl, bene_geo_desc, bene_geo_cd,
+                            bene_age_lvl, bene_demo_lvl, bene_demo_desc, bene_mcc_lvl,
+                            tot_benes,
+                            ip_cvrd_stays_per_1000_benes, er_visits_per_1000_benes,
+                            hosp_readmsn_rate, acute_hosp_readmsn_rate,
+                            tot_mdcr_stdzd_pymt_pc, tot_mdcr_stdzd_pymt_pct_chg,
+                            tot_mdcr_pymt_pc, tot_mdcr_alowd_amt_pc,
+                            ma_prtcptn_rate,
+                            _source_year, _source_file, _source_hash
+                        ) VALUES (
+                            %s, %s, %s, %s,
+                            %s, %s, %s, %s,
+                            %s,
+                            %s, %s,
+                            %s, %s,
+                            %s, %s,
+                            %s, %s,
+                            %s,
+                            %s, %s, %s
+                        )
+                    """, (
+                        year_int,
+                        row.get('bene_geo_lvl'),
+                        row.get('bene_geo_desc'),
+                        row.get('bene_geo_cd'),
+                        row.get('bene_age_lvl'),
+                        row.get('bene_demo_lvl'),
+                        row.get('bene_demo_desc'),
+                        row.get('bene_mcc_lvl'),
+                        _to_int(row.get('tot_benes')),
+                        _to_float(row.get('ip_cvrd_stays_per_1000_benes')),
+                        _to_float(row.get('er_visits_per_1000_benes')),
+                        _to_float(row.get('hosp_readmsn_rate')),
+                        _to_float(row.get('acute_hosp_readmsn_rate')),
+                        _to_float(row.get('tot_mdcr_stdzd_pymt_pc')),
+                        _to_float(row.get('tot_mdcr_stdzd_pymt_pct_chg')),
+                        _to_float(row.get('tot_mdcr_pymt_pc')),
+                        _to_float(row.get('tot_mdcr_alowd_amt_pc')),
+                        _to_float(row.get('ma_prtcptn_rate')),
+                        source_year,
+                        'cms_geographic_variation_api',
+                        source_hash,
+                    ))
+                    records_inserted += 1
+
+                    if records_inserted % batch_size == 0:
+                        conn.commit()
+
+                except Exception as e:
+                    records_failed += 1
+                    if len(errors) < 10:
+                        errors.append({'row': idx, 'error': str(e)})
+                    logger.error(f"Error at record {idx}: {e}")
+
+            conn.commit()
+
+    logger.info(
+        f"CMS Geographic Variation (API) load complete: "
+        f"{records_inserted} inserted, {records_failed} failed"
+    )
+
+    return {
+        'status': 'success',
+        'records_inserted': records_inserted,
+        'records_failed': records_failed,
+        'errors': errors,
+    }
+
+
 def main():
     """CLI entry point."""
     import argparse

@@ -122,6 +122,8 @@ API_SOURCES: list[dict] = [
     {"key": "cms_rbcs",                  "days_back": None},
     {"key": "cms_stabilis",              "days_back": None},
     {"key": "cms_usp",                   "days_back": None},
+    # Healthcare system / shortage areas
+    {"key": "hrsa",                      "days_back": None},
 ]
 
 # CMS PUF file sources — downloaded from data.cms.gov, then loaded with --batch-size
@@ -161,13 +163,12 @@ CMS_SOURCES: list[dict] = [
     {"key": "cms_part_d_prescriber",     "cms_key": "cms_part_d_prescriber"},
 ]
 
-# Legacy file sources (original TAVR/HRSA files — need manual file paths)
+# Legacy file sources — require a manually-provided --file path, no auto-fetch
 LEGACY_FILE_SOURCES: list[dict] = [
-    {"key": "cms_inpatient",   "requires_file": True, "requires_fiscal_year": True},
+    {"key": "cms_inpatient",    "requires_file": True, "requires_fiscal_year": True},
     {"key": "cms_hospital_info","requires_file": True},
-    {"key": "cms_cost_reports","requires_file": True},
-    {"key": "acc_tvc",         "requires_file": True},
-    {"key": "hrsa",            "requires_file": False},
+    {"key": "cms_cost_reports", "requires_file": True},
+    {"key": "acc_tvc",          "requires_file": True},
 ]
 
 

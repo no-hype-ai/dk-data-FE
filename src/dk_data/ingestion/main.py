@@ -14,6 +14,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from .sources import cms_inpatient, cms_hospital_info, cms_cost_reports, acc_tvc, hrsa
+from .sources.hrsa import load_hrsa_shortage_areas_from_records
 from .sources.pubmed import load_pubmed_data
 from .sources.ema_regulatory import load_ema_regulatory_data
 from .sources.openalex_ci import load_openalex_ci_data
@@ -36,7 +37,10 @@ from .sources.bindingdb import load_bindingdb_data
 from .sources.sider import load_sider_data
 from .sources.europepmc import load_europepmc_data
 from .sources.nih_reporter import load_nih_reporter_data
-from .sources.cms_geographic_variation import load_cms_geographic_variation
+from .sources.cms_geographic_variation import (
+    load_cms_geographic_variation,
+    load_cms_geographic_variation_from_records,
+)
 from .sources.cms_part_d_prescriber import load_cms_part_d_prescriber
 from .sources.cms_care_compare import load_cms_care_compare_data
 from .sources.cms_chow import load_cms_chow_data
@@ -167,6 +171,7 @@ from .fetchers import (
     CMSClaimTypePUFFetcher,
     CMSUtilizationPUFFetcher,
     CMSCostReportsPUFFetcher,
+    HRSAFetcher,
 )
 
 from .utils.database import init_connection_pool, close_connection_pool, get_cursor
@@ -214,9 +219,10 @@ SOURCES = {
     'hrsa': {
         'name': 'HRSA Shortage Areas',
         'description': 'Health Professional Shortage Areas',
-        'loader': hrsa.load_hrsa_shortage_areas,
-        'requires_file': False,  # Can use API or file
-        'accepts_file': True,  # File is optional
+        'fetcher': HRSAFetcher,
+        'loader': load_hrsa_shortage_areas_from_records,
+        'requires_file': False,
+        'default_days_back': None,
         'meta_name': 'hrsa_shortage_areas',
     },
     # --- API-based sources (fetch + load) ---
@@ -402,7 +408,7 @@ SOURCES = {
         'name': 'CMS Geographic Variation',
         'description': 'CMS Medicare Geographic Variation PUF',
         'fetcher': CMSGeographicVariationFetcher,
-        'loader': load_cms_geographic_variation,
+        'loader': load_cms_geographic_variation_from_records,
         'requires_file': False,
         'default_days_back': None,
     },
