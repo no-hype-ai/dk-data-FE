@@ -283,6 +283,9 @@ class DrugBankFetcher(BaseFetcher):
         # Parse categories
         categories = self._parse_categories(elem)
 
+        # Parse classification (kingdom/superclass/class/subclass hierarchy)
+        classification = self._parse_classification(elem)
+
         # Parse targets
         targets = self._parse_bio_entities(elem, "targets", "target")
 
@@ -410,6 +413,7 @@ class DrugBankFetcher(BaseFetcher):
             "molecular_weight": calc_props.get("molecular_weight") or exp_props.get("molecular_weight"),
             "calculated_properties": calc_props if calc_props else None,
             "experimental_properties": exp_props if exp_props else None,
+            "classification": classification,
         }
 
     def _get_drugbank_id(self, elem: ET.Element) -> Optional[str]:
@@ -436,6 +440,43 @@ class DrugBankFetcher(BaseFetcher):
             return id_elem.text.strip()
 
         return None
+
+    def _parse_classification(self, elem: ET.Element) -> Optional[Dict[str, Any]]:
+        """Extract drug classification from a drug element.
+
+        DrugBank <classification> has: description, direct-parent, kingdom,
+        superclass, class, subclass, alternative-parent (multiple),
+        substituent (multiple).
+        """
+        cls_elem = elem.find(f"{DRUGBANK_NS}classification") or elem.find("classification")
+        if cls_elem is None:
+            return None
+
+        result: Dict[str, Any] = {}
+        for tag in ("description", "direct-parent", "kingdom", "superclass", "class", "subclass"):
+            val = self._safe_text(cls_elem, f"{DRUGBANK_NS}{tag}") or self._safe_text(cls_elem, tag)
+            if val:
+                result[tag.replace("-", "_")] = val
+
+        alt_parents = [
+            e.text.strip()
+            for e in list(cls_elem.findall(f"{DRUGBANK_NS}alternative-parent"))
+            + list(cls_elem.findall("alternative-parent"))
+            if e.text and e.text.strip()
+        ]
+        if alt_parents:
+            result["alternative_parents"] = alt_parents
+
+        substituents = [
+            e.text.strip()
+            for e in list(cls_elem.findall(f"{DRUGBANK_NS}substituent"))
+            + list(cls_elem.findall("substituent"))
+            if e.text and e.text.strip()
+        ]
+        if substituents:
+            result["substituents"] = substituents
+
+        return result if result else None
 
     def _parse_categories(self, elem: ET.Element) -> List[str]:
         """Extract drug categories from a drug element."""

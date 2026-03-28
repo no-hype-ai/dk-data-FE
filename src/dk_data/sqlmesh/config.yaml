@@ -61,8 +61,6 @@ physical_schema_mapping:
   agents: agents
   # Application / infrastructure schemas
   staging: staging
-  mart: mart
-  scoring: scoring
   xenon: xenon
   meta: meta
 

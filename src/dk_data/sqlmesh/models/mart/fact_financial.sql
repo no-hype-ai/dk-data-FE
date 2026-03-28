@@ -1,9 +1,9 @@
--- mart.fact_financial_metrics - Financial metrics by hospital and year
--- Source: hcs_raw.cms_cost_reports, mart.dim_hospital
+-- hcs_gold.fact_financial_metrics - Financial metrics by hospital and year
+-- Source: hcs_bronze.cms_cost_reports_puf, hcs_gold.dim_hospital
 -- Model type: FULL refresh with quartile calculation
 
 MODEL (
-    name mart.fact_financial_metrics,
+    name hcs_gold.fact_financial_metrics,
     kind FULL,
     cron '@daily',
     description 'Hospital financial metrics with operating margin quartiles'
@@ -19,7 +19,7 @@ WITH cost_report_latest AS (
         net_patient_revenue,
         total_operating_expenses,
         operating_margin
-    FROM hcs_raw.cms_cost_reports_puf
+    FROM hcs_bronze.cms_cost_reports_puf
     WHERE fiscal_year_end IS NOT NULL
     QUALIFY ROW_NUMBER() OVER (
         PARTITION BY provider_id, EXTRACT(YEAR FROM fiscal_year_end)
@@ -46,4 +46,4 @@ SELECT
     q.margin_quartile,
     NOW() AS _updated_at
 FROM with_quartiles q
-JOIN mart.dim_hospital h ON q.provider_id = h.hospital_id;
+JOIN hcs_gold.dim_hospital h ON q.provider_id = h.hospital_id;

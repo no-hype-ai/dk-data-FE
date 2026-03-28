@@ -3,7 +3,7 @@
 -- Tasks: T036-T042, T019, T025
 
 MODEL (
-    name targeting.targeting_scores,
+    name hcs_gold.targeting_scores,
     kind VIEW,
     cron '@daily',
     description 'Main targeting view combining all factors with computed scores'
@@ -256,7 +256,7 @@ SELECT
     ac.champion_name AS admin_champion,
     ac.engagement_level AS admin_engagement
 
-FROM mart.dim_hospital h
+FROM hcs_gold.dim_hospital h
 LEFT JOIN biome_rel br ON h.hospital_id = br.hospital_id
 LEFT JOIN sales_cov sc ON h.hospital_id = sc.hospital_id
 LEFT JOIN vol_hist vh ON h.hospital_id = vh.hospital_id

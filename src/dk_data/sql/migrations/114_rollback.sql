@@ -1,4 +1,4 @@
--- ROLLBACK: Migration 085 — CMS PUF & Platform Data Reconciliation
+-- ROLLBACK: Migration 114 — CMS PUF & Platform Data Reconciliation
 -- Feature: 019-cms-puf-platform-reconciliation
 -- Date: 2026-03-27
 --
@@ -15,7 +15,7 @@
 --   - Stop all CMS PUF CronJobs and agent CronJobs before running this
 --   - Ensure no active SQLMesh runs are in progress
 --
--- Run: doppler run -- psql $DATABASE_URL -f src/dk_data/sql/migrations/085_rollback.sql
+-- Run: doppler run -- psql $DATABASE_URL -f src/dk_data/sql/migrations/114_rollback.sql
 
 BEGIN;
 
@@ -162,7 +162,7 @@ COMMIT;
 
 DO $$
 BEGIN
-    RAISE NOTICE 'Migration 085 rollback complete.';
+    RAISE NOTICE 'Migration 114 rollback complete.';
     RAISE NOTICE 'Dropped: hcs_raw, hcs_bronze, hcs_silver, hcs_gold schemas';
     RAISE NOTICE 'Dropped: mol_silver.publication_evidence, publication_evidence_staging';
     RAISE NOTICE 'Dropped: mol_silver.physician_payments, research_grants, agent_quarantine';

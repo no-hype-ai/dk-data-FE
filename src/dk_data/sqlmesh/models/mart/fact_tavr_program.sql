@@ -1,9 +1,9 @@
--- mart.fact_tavr_program - TAVR program metrics by hospital and year
--- Source: staging.tavr_volumes, staging.certifications, mart.dim_hospital
+-- hcs_gold.fact_tavr_program - TAVR program metrics by hospital and year
+-- Source: staging.tavr_volumes, staging.certifications, hcs_gold.dim_hospital
 -- Model type: INCREMENTAL by fiscal_year
 
 MODEL (
-    name mart.fact_tavr_program,
+    name hcs_gold.fact_tavr_program,
     kind FULL,
     cron '@daily',
     description 'TAVR program metrics including volumes and YoY changes'
@@ -61,6 +61,6 @@ SELECT
     END AS has_active_certification,
     NOW() AS _updated_at
 FROM volume_with_yoy v
-JOIN mart.dim_hospital h ON v.hospital_id = h.hospital_id
+JOIN hcs_gold.dim_hospital h ON v.hospital_id = h.hospital_id
 LEFT JOIN staging.certifications c ON v.hospital_id = c.hospital_id
     AND c.certification_type LIKE '%Transcatheter%';

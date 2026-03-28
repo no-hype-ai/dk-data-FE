@@ -1,10 +1,10 @@
--- scoring.target_scores - Target Readiness Score calculations
--- Source: mart.dim_hospital, mart.fact_tavr_program, mart.fact_financial_metrics,
+-- hcs_gold.target_scores - Target Readiness Score calculations
+-- Source: hcs_gold.dim_hospital, hcs_gold.fact_tavr_program, hcs_gold.fact_financial_metrics,
 --         staging.geographic_designations, staging.hospitals
 -- Model type: FULL refresh
 
 MODEL (
-    name scoring.target_scores,
+    name hcs_gold.target_scores,
     kind FULL,
     cron '@daily',
     description 'Target Readiness Scores across five domains with tier classification'
@@ -36,19 +36,19 @@ WITH hospital_data AS (
         -- Financial metrics
         fm.operating_margin,
         fm.margin_quartile
-    FROM mart.dim_hospital h
+    FROM hcs_gold.dim_hospital h
     LEFT JOIN staging.hospitals sh ON h.hospital_id = sh.hospital_id
     LEFT JOIN staging.geographic_designations g ON h.hospital_id = g.hospital_id
-    LEFT JOIN mart.fact_tavr_program tp ON h.hospital_key = tp.hospital_key
+    LEFT JOIN hcs_gold.fact_tavr_program tp ON h.hospital_key = tp.hospital_key
         AND tp.fiscal_year = (
             SELECT MAX(fiscal_year)
-            FROM mart.fact_tavr_program
+            FROM hcs_gold.fact_tavr_program
             WHERE hospital_key = h.hospital_key
         )
-    LEFT JOIN mart.fact_financial_metrics fm ON h.hospital_key = fm.hospital_key
+    LEFT JOIN hcs_gold.fact_financial_metrics fm ON h.hospital_key = fm.hospital_key
         AND fm.fiscal_year = (
             SELECT MAX(fiscal_year)
-            FROM mart.fact_financial_metrics
+            FROM hcs_gold.fact_financial_metrics
             WHERE hospital_key = h.hospital_key
         )
 ),

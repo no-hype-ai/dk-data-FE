@@ -91,6 +91,7 @@ def load_drugbank_data(
                             monoisotopic_mass, unii,
                             smiles, inchi, inchi_key, molecular_formula, molecular_weight,
                             calculated_properties, experimental_properties,
+                            classification,
                             _source_file, _source_hash
                         ) VALUES (
                             %s, %s, %s, %s,
@@ -106,6 +107,7 @@ def load_drugbank_data(
                             %s, %s,
                             %s, %s, %s, %s, %s,
                             %s, %s,
+                            %s,
                             %s, %s
                         )
                         ON CONFLICT (drugbank_id) DO UPDATE SET
@@ -148,6 +150,7 @@ def load_drugbank_data(
                             molecular_weight = EXCLUDED.molecular_weight,
                             calculated_properties = EXCLUDED.calculated_properties,
                             experimental_properties = EXCLUDED.experimental_properties,
+                            classification = EXCLUDED.classification,
                             _source_file = EXCLUDED._source_file,
                             _source_hash = EXCLUDED._source_hash,
                             _loaded_at = NOW()
@@ -193,6 +196,7 @@ def load_drugbank_data(
                             str(getattr(record, "molecular_weight", None)) if getattr(record, "molecular_weight", None) is not None else None,
                             _to_json(getattr(record, "calculated_properties", None)),
                             _to_json(getattr(record, "experimental_properties", None)),
+                            _to_json(getattr(record, "classification", None)),
                             source_file or "drugbank_xml",
                             source_hash,
                         ),

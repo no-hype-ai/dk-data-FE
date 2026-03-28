@@ -524,6 +524,7 @@ class DrugBankRecord(BaseModel):
     molecular_weight: Optional[Any] = None  # TEXT — may be "180.16 g/mol"
     calculated_properties: Optional[Any] = None  # JSONB
     experimental_properties: Optional[Any] = None  # JSONB
+    classification: Optional[Any] = None  # JSONB — kingdom/superclass/class/subclass hierarchy
 
     @field_validator('drugbank_id')
     @classmethod
