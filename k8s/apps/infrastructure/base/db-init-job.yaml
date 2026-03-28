@@ -84,6 +84,19 @@ spec:
               CREATE SCHEMA IF NOT EXISTS mol_gold;
               CREATE SCHEMA IF NOT EXISTS mol_app;
               CREATE SCHEMA IF NOT EXISTS mol_api;
+              -- HCS (healthcare/CMS) domain schemas (019-cms-puf-platform-reconciliation)
+              CREATE SCHEMA IF NOT EXISTS hcs_raw;
+              CREATE SCHEMA IF NOT EXISTS hcs_bronze;
+              CREATE SCHEMA IF NOT EXISTS hcs_silver;
+              CREATE SCHEMA IF NOT EXISTS hcs_gold;
+              -- Indication domain schemas
+              CREATE SCHEMA IF NOT EXISTS ind_silver;
+              CREATE SCHEMA IF NOT EXISTS ind_gold;
+              -- HCP (KOL/researcher) domain schemas
+              CREATE SCHEMA IF NOT EXISTS hcp_silver;
+              CREATE SCHEMA IF NOT EXISTS hcp_gold;
+              -- Application schema
+              CREATE SCHEMA IF NOT EXISTS application;
               -- IP/patent/trademark SQLMesh schemas (014-uspto-euipo-model-datasource)
               CREATE SCHEMA IF NOT EXISTS bronze;
               CREATE SCHEMA IF NOT EXISTS silver;
@@ -243,6 +256,56 @@ spec:
               ALTER DEFAULT PRIVILEGES IN SCHEMA mol_silver GRANT SELECT ON TABLES TO analyst;
               ALTER DEFAULT PRIVILEGES IN SCHEMA xenon GRANT SELECT, INSERT, UPDATE ON TABLES TO analyst;
               ALTER DEFAULT PRIVILEGES IN SCHEMA meta GRANT SELECT ON TABLES TO analyst;
+
+              -- 019-cms-puf-platform-reconciliation: HCS/domain schema permissions
+              -- api_user (ingestion service): full access to all domain raw/bronze/silver/gold
+              GRANT USAGE ON SCHEMA hcs_raw TO api_user;
+              GRANT USAGE ON SCHEMA hcs_bronze TO api_user;
+              GRANT USAGE ON SCHEMA hcs_silver TO api_user;
+              GRANT USAGE ON SCHEMA hcs_gold TO api_user;
+              GRANT USAGE ON SCHEMA ind_silver TO api_user;
+              GRANT USAGE ON SCHEMA ind_gold TO api_user;
+              GRANT USAGE ON SCHEMA hcp_silver TO api_user;
+              GRANT USAGE ON SCHEMA hcp_gold TO api_user;
+              GRANT USAGE ON SCHEMA application TO api_user;
+              GRANT ALL PRIVILEGES ON ALL TABLES IN SCHEMA hcs_raw TO api_user;
+              GRANT ALL PRIVILEGES ON ALL TABLES IN SCHEMA hcs_bronze TO api_user;
+              GRANT ALL PRIVILEGES ON ALL TABLES IN SCHEMA hcs_silver TO api_user;
+              GRANT ALL PRIVILEGES ON ALL TABLES IN SCHEMA hcs_gold TO api_user;
+              GRANT ALL PRIVILEGES ON ALL TABLES IN SCHEMA ind_silver TO api_user;
+              GRANT ALL PRIVILEGES ON ALL TABLES IN SCHEMA ind_gold TO api_user;
+              GRANT ALL PRIVILEGES ON ALL TABLES IN SCHEMA hcp_silver TO api_user;
+              GRANT ALL PRIVILEGES ON ALL TABLES IN SCHEMA hcp_gold TO api_user;
+              GRANT ALL PRIVILEGES ON ALL TABLES IN SCHEMA application TO api_user;
+              ALTER DEFAULT PRIVILEGES IN SCHEMA hcs_raw GRANT ALL ON TABLES TO api_user;
+              ALTER DEFAULT PRIVILEGES IN SCHEMA hcs_bronze GRANT ALL ON TABLES TO api_user;
+              ALTER DEFAULT PRIVILEGES IN SCHEMA hcs_silver GRANT ALL ON TABLES TO api_user;
+              ALTER DEFAULT PRIVILEGES IN SCHEMA hcs_gold GRANT ALL ON TABLES TO api_user;
+              ALTER DEFAULT PRIVILEGES IN SCHEMA ind_silver GRANT ALL ON TABLES TO api_user;
+              ALTER DEFAULT PRIVILEGES IN SCHEMA ind_gold GRANT ALL ON TABLES TO api_user;
+              ALTER DEFAULT PRIVILEGES IN SCHEMA hcp_silver GRANT ALL ON TABLES TO api_user;
+              ALTER DEFAULT PRIVILEGES IN SCHEMA hcp_gold GRANT ALL ON TABLES TO api_user;
+              ALTER DEFAULT PRIVILEGES IN SCHEMA application GRANT ALL ON TABLES TO api_user;
+
+              -- analyst: read access to silver/gold domain schemas
+              GRANT USAGE ON SCHEMA hcs_silver TO analyst;
+              GRANT USAGE ON SCHEMA hcs_gold TO analyst;
+              GRANT USAGE ON SCHEMA ind_silver TO analyst;
+              GRANT USAGE ON SCHEMA ind_gold TO analyst;
+              GRANT USAGE ON SCHEMA hcp_silver TO analyst;
+              GRANT USAGE ON SCHEMA hcp_gold TO analyst;
+              GRANT SELECT ON ALL TABLES IN SCHEMA hcs_silver TO analyst;
+              GRANT SELECT ON ALL TABLES IN SCHEMA hcs_gold TO analyst;
+              GRANT SELECT ON ALL TABLES IN SCHEMA ind_silver TO analyst;
+              GRANT SELECT ON ALL TABLES IN SCHEMA ind_gold TO analyst;
+              GRANT SELECT ON ALL TABLES IN SCHEMA hcp_silver TO analyst;
+              GRANT SELECT ON ALL TABLES IN SCHEMA hcp_gold TO analyst;
+              ALTER DEFAULT PRIVILEGES IN SCHEMA hcs_silver GRANT SELECT ON TABLES TO analyst;
+              ALTER DEFAULT PRIVILEGES IN SCHEMA hcs_gold GRANT SELECT ON TABLES TO analyst;
+              ALTER DEFAULT PRIVILEGES IN SCHEMA ind_silver GRANT SELECT ON TABLES TO analyst;
+              ALTER DEFAULT PRIVILEGES IN SCHEMA ind_gold GRANT SELECT ON TABLES TO analyst;
+              ALTER DEFAULT PRIVILEGES IN SCHEMA hcp_silver GRANT SELECT ON TABLES TO analyst;
+              ALTER DEFAULT PRIVILEGES IN SCHEMA hcp_gold GRANT SELECT ON TABLES TO analyst;
               SQL
 
               # --- Step 9: Create API views ---
@@ -566,11 +629,11 @@ spec:
               fi
 
               echo "Checking schemas..."
-              SCHEMA_COUNT=$(psql -d dk_data -Atc "SELECT COUNT(*) FROM pg_namespace WHERE nspname IN ('raw', 'staging', 'mart', 'scoring', 'meta', 'api', 'mol_raw', 'mol_bronze', 'mol_silver', 'mol_gold', 'mol_app', 'mol_api', 'bronze', 'silver', 'gold', 'xenon')")
-              if [ "$SCHEMA_COUNT" -eq 16 ]; then
-                echo "✓ All 16 schemas created successfully"
+              SCHEMA_COUNT=$(psql -d dk_data -Atc "SELECT COUNT(*) FROM pg_namespace WHERE nspname IN ('raw', 'staging', 'mart', 'scoring', 'meta', 'api', 'mol_raw', 'mol_bronze', 'mol_silver', 'mol_gold', 'mol_app', 'mol_api', 'hcs_raw', 'hcs_bronze', 'hcs_silver', 'hcs_gold', 'ind_silver', 'ind_gold', 'hcp_silver', 'hcp_gold', 'application', 'bronze', 'silver', 'gold', 'xenon')")
+              if [ "$SCHEMA_COUNT" -eq 25 ]; then
+                echo "✓ All 25 schemas created successfully"
               else
-                echo "✗ ERROR: Expected 16 schemas, found $SCHEMA_COUNT"
+                echo "✗ ERROR: Expected 25 schemas, found $SCHEMA_COUNT"
                 exit 1
               fi
 
