@@ -69,7 +69,7 @@ CREATE INDEX IF NOT EXISTS idx_cms_geo_var_year_lvl_cd
 -- Register source in meta.data_sources (idempotent)
 DO $$
 BEGIN
-    INSERT INTO meta.data_sources (source_name, source_type, description, refresh_cadence, is_active)
+    INSERT INTO meta.data_sources (source_name, source_type, description, refresh_frequency, is_active)
     VALUES ('cms_geographic_variation', 'file', 'CMS Medicare Geographic Variation Public Use File', 'yearly', true)
     ON CONFLICT (source_name) DO NOTHING;
 EXCEPTION WHEN undefined_table THEN
