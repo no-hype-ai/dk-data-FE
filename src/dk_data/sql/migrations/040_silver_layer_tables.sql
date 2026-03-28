@@ -2,8 +2,8 @@
 -- Purpose: Normalized, deduplicated entities with cross-source resolution
 -- Part of DK Molecule Data Platform (012-dk-data-platform)
 
--- Create schema for silver layer
-CREATE SCHEMA IF NOT EXISTS silver;
+-- Create schema for silver layer (mol_silver already created by 020_mol_schemas.sql; this is a no-op)
+CREATE SCHEMA IF NOT EXISTS mol_silver;
 
 -- ============================================================================
 -- SILVER LAYER: Entity Resolution & Normalized Data
@@ -549,7 +549,7 @@ CREATE INDEX IF NOT EXISTS idx_silver_queue_status ON mol_silver.resolution_queu
 CREATE INDEX IF NOT EXISTS idx_silver_queue_confidence ON mol_silver.resolution_queue(confidence_score);
 
 -- Add comments
-COMMENT ON SCHEMA silver IS 'Silver layer: Normalized, deduplicated entities with cross-source resolution';
+COMMENT ON SCHEMA mol_silver IS 'Silver layer: Normalized, deduplicated entities with cross-source resolution';
 COMMENT ON TABLE mol_silver.molecules IS 'Master molecule table with InChI Key as canonical identifier';
 COMMENT ON TABLE mol_silver.identifier_mappings IS 'Cross-reference mappings between molecule IDs and source identifiers';
 COMMENT ON TABLE mol_silver.resolution_queue IS 'Queue for manual review of low-confidence entity resolution';
