@@ -26,38 +26,39 @@ creates new rows while a true duplicate (same request_id) is skipped.
 
 import json
 import logging
+from contextlib import contextmanager
 from datetime import datetime, timezone
-from typing import Any, Dict
+from typing import Any, Dict, List, Optional
+
+from ..utils.database import get_connection
 
 logger = logging.getLogger(__name__)
 
 SOURCE_ID = "kegg_drug"
 
 
-def load_kegg_drug_data(conn: Any, data: Dict[str, Any]) -> Dict[str, Any]:
+def load_kegg_drug_data(
+    records_or_conn: Any,
+    data: Any = None,
+    source_hash: Optional[str] = None,
+) -> Dict[str, Any]:
     """Load KEGG Drug batch responses into mol_raw.kegg_drug.
 
-    Each element in ``data["records"]`` is a batch response dict produced by
-    KEGGDrugFetcher.  It contains an ``entries`` key with a list of parsed
-    KEGG drug dicts.  The full batch dict is stored verbatim as response_body.
-
-    Deduplication is via ON CONFLICT (request_id) DO NOTHING: the request_id
-    encodes the batch index and a run timestamp so that re-ingestion of new
-    data always inserts, while exact re-delivery of an already-loaded batch
-    is silently skipped.
-
-    Args:
-        conn: Active psycopg2 connection (caller-managed; this function does
-              not open or close the connection).
-        data: Output dict from KEGGDrugFetcher.fetch().  Must contain a
-              ``"records"`` key with a list of batch response dicts.
+    Supports both calling conventions:
+      New (orchestrator): load_kegg_drug_data(records_list, source_hash=hash)
+      Old: load_kegg_drug_data(conn, data_dict)
 
     Returns:
-        Dict with:
-            records_inserted (int): Number of batch rows inserted.
-            records_skipped  (int): Number of batch rows skipped (conflict).
+        Dict with records_inserted (int) and records_skipped (int).
     """
-    records = data.get("records", [])
+    # Detect calling convention
+    if isinstance(records_or_conn, list):
+        records: List[Any] = records_or_conn
+        _own_conn = True
+    else:
+        # Old convention: records_or_conn is an open psycopg2 connection
+        records = (data or {}).get("records", []) if data else []
+        _own_conn = False
 
     if not records:
         logger.info("[kegg_drug] No records to load")
@@ -91,28 +92,31 @@ def load_kegg_drug_data(conn: Any, data: Dict[str, Any]) -> Dict[str, Any]:
     inserted = 0
     skipped = 0
 
-    with conn.cursor() as cur:
+    def _run(cur: Any) -> None:
+        nonlocal inserted, skipped
         for batch_num, batch_record in enumerate(records):
             request_id = f"kegg_drug_batch_{batch_num}_{run_ts}"
             response_body_str = json.dumps(batch_record, ensure_ascii=False)
-
             try:
                 cur.execute(sql, (request_id, response_body_str))
-                # rowcount == 0 means the ON CONFLICT DO NOTHING path was taken
                 if cur.rowcount == 0:
                     skipped += 1
-                    logger.debug(
-                        "[kegg_drug] Skipped (conflict): request_id=%s", request_id
-                    )
+                    logger.debug("[kegg_drug] Skipped (conflict): request_id=%s", request_id)
                 else:
                     inserted += 1
             except Exception as exc:
-                logger.error(
-                    "[kegg_drug] Insert error for request_id=%s: %s", request_id, exc
-                )
+                logger.error("[kegg_drug] Insert error for request_id=%s: %s", request_id, exc)
                 skipped += 1
 
-        conn.commit()
+    if _own_conn:
+        with get_connection() as conn_obj:
+            with conn_obj.cursor() as cur:
+                _run(cur)
+            conn_obj.commit()
+    else:
+        with records_or_conn.cursor() as cur:
+            _run(cur)
+        records_or_conn.commit()
 
     logger.info(
         "[kegg_drug] Load complete: %d inserted, %d skipped",

@@ -62,19 +62,25 @@ def _extract_cid_or_name(record: Dict[str, Any]) -> Optional[str]:
 
 
 def load_who_inn_data(
-    conn: Any,
-    data: Dict[str, Any],
+    records_or_conn: Any,
+    data: Any = None,
+    source_hash: Optional[str] = None,
 ) -> Dict[str, Any]:
     """Load WHO INN PubChem synonym records into mol_raw.who_inn.
 
-    Args:
-        conn: Unused — loader opens its own cursor via get_cursor().
-        data: Result from WHOINNFetcher.fetch().
+    Supports both calling conventions:
+      New (orchestrator): load_who_inn_data(records_list, source_hash=hash)
+      Old: load_who_inn_data(conn, data_dict)
 
     Returns:
         {"records_inserted": int, "records_skipped": int}
     """
-    records: List[Dict[str, Any]] = data.get("records", [])
+    # Detect calling convention
+    if isinstance(records_or_conn, list):
+        records: List[Dict[str, Any]] = records_or_conn
+    else:
+        # Old convention: records_or_conn is conn (unused), data is full fetch result
+        records = (data or {}).get("records", []) if data else []
     if not records:
         logger.info("No WHO INN records to load")
         return {"records_inserted": 0, "records_skipped": 0}

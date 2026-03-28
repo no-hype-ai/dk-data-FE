@@ -41,6 +41,9 @@ class BaseFetcher(ABC):
         self.data_dir = Path(data_dir or os.environ.get('DATA_DIR', './data/raw'))
         self.data_dir.mkdir(parents=True, exist_ok=True)
 
+        # Per-source runtime params (e.g. max_records); populated by orchestrator or __init__ override.
+        self.params: Dict[str, Any] = {}
+
         # Set up session with retry logic (per-source overridable via SOURCES dict)
         self.session = requests.Session()
         retry_strategy = Retry(
