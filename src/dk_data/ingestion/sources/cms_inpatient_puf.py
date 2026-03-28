@@ -50,7 +50,7 @@ TABLE = 'cms_inpatient_puf'
 SCHEMA = 'hcs_raw'
 
 
-def load_cms_inpatient_puf(filepath: str, source_year: int = 2023) -> dict:
+def load_cms_inpatient_puf(filepath: str, source_year: int = 2023, max_records: int = 0) -> dict:
     """Load CMS Inpatient PUF charge data from CSV file."""
     logger.info(f"Loading CMS Inpatient PUF from {filepath} (year={source_year})")
 
@@ -70,7 +70,7 @@ def load_cms_inpatient_puf(filepath: str, source_year: int = 2023) -> dict:
             logger.info(f"File {source_file} already loaded. Skipping.")
             return {"status": "skipped", "records_fetched": 0, "records_inserted": 0, "records_updated": 0, "errors": []}
 
-    df = pd.read_csv(filepath, dtype=str, low_memory=False)
+    df = pd.read_csv(filepath, dtype=str, low_memory=False, nrows=max_records if max_records > 0 else None)
     df = apply_column_mapping(df, COLUMN_MAPPING)
     records_fetched = len(df)
 

@@ -91,7 +91,7 @@ class CMSCostReportsPUFLinesRecord(BaseModel):
             return None
 
 
-def load_cms_cost_reports_puf_lines(filepath: str, source_year: int = 2023) -> dict:
+def load_cms_cost_reports_puf_lines(filepath: str, source_year: int = 2023, max_records: int = 0) -> dict:
     """Load CMS Cost Reports PUF worksheet-level staffing lines."""
     logger.info(
         f"Loading CMS Cost Reports PUF Lines from {filepath} (year={source_year})"
@@ -119,7 +119,7 @@ def load_cms_cost_reports_puf_lines(filepath: str, source_year: int = 2023) -> d
                 "errors": [],
             }
 
-    df = pd.read_csv(filepath, dtype=str, low_memory=False)
+    df = pd.read_csv(filepath, dtype=str, low_memory=False, nrows=max_records if max_records > 0 else None)
     df = apply_column_mapping(df, COLUMN_MAPPING)
     records_fetched = len(df)
 

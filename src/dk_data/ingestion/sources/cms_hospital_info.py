@@ -96,7 +96,7 @@ def parse_rating(value) -> Optional[int]:
 def load_cms_hospital_info(
     filepath: str,
     batch_size: int = 1000
-) -> dict:
+, max_records: int = 0) -> dict:
     """
     Load CMS Hospital General Information from CSV file.
 

@@ -63,7 +63,7 @@ TABLE  = 'cms_part_d_prescriber'
 SCHEMA = 'hcs_raw'
 
 
-def load_cms_part_d_prescriber(filepath: str, source_year: int = 2023) -> dict:
+def load_cms_part_d_prescriber(filepath: str, source_year: int = 2023, max_records: int = 0) -> dict:
     """Load CMS Part D Prescribers by Provider and Drug from CSV file.
 
     The CSV typically has ~25M rows (one per NPI × drug × year).
@@ -102,7 +102,7 @@ def load_cms_part_d_prescriber(filepath: str, source_year: int = 2023) -> dict:
             }
 
     # Full load — pandas handles chunking internally for dtype=str
-    df = pd.read_csv(filepath, dtype=str, low_memory=False)
+    df = pd.read_csv(filepath, dtype=str, low_memory=False, nrows=max_records if max_records > 0 else None)
     df = apply_column_mapping(df, COLUMN_MAPPING)
 
     # Keep only columns we mapped (ignore CMS columns we don't capture)

@@ -70,7 +70,7 @@ def calculate_operating_margin(revenue: Optional[Decimal], expenses: Optional[De
 def load_cms_cost_reports(
     filepath: str,
     batch_size: int = 1000
-) -> dict:
+, max_records: int = 0) -> dict:
     """
     Load CMS Cost Report data from CSV file.
 

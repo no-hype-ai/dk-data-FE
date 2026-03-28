@@ -46,7 +46,7 @@ def load_cms_inpatient_file(
     filepath: str,
     fiscal_year: int,
     batch_size: int = 1000
-) -> dict:
+, max_records: int = 0) -> dict:
     """
     Load CMS Medicare Inpatient data from CSV file.
 

@@ -199,6 +199,10 @@ def _get_download_url(source_name: str, year: int) -> Optional[str]:
         return None
 
     # Query CKAN API
+    # NOTE: data.cms.gov previously served a CKAN API at /api/3/action/. As of
+    # 2025-2026 the portal was migrated to a React SPA; the /api/3/ endpoints now
+    # return HTML instead of JSON.  We detect this and log a clear error so
+    # operators know the root cause rather than seeing a cryptic JSONDecodeError.
     try:
         resp = requests.get(
             f"{CKAN_BASE}/package_show",
@@ -206,6 +210,17 @@ def _get_download_url(source_name: str, year: int) -> Optional[str]:
             timeout=REQUEST_TIMEOUT,
         )
         resp.raise_for_status()
+
+        content_type = resp.headers.get("Content-Type", "")
+        if "html" in content_type or resp.text.lstrip().startswith("<!"):
+            logger.error(
+                f"CMS CKAN API returned HTML instead of JSON for {package_id}. "
+                "The data.cms.gov CKAN API appears to be deprecated. "
+                "Add a 'url_override' entry in CMS_DATASET_REGISTRY to bypass. "
+                "See GitHub issue data-kinetic/dk-data-FE#152 for tracking."
+            )
+            return None
+
         data = resp.json()
 
         if not data.get("success"):
@@ -243,7 +258,7 @@ def _get_download_url(source_name: str, year: int) -> Optional[str]:
         )
         return candidates[0]["url"]
 
-    except requests.RequestException as e:
+    except (requests.RequestException, ValueError) as e:
         logger.error(f"Failed to query CKAN API for {source_name}: {e}")
         return None
 

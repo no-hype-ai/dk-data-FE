@@ -961,8 +961,15 @@ def run_ingestion(source: str, **kwargs) -> dict:
 
     logger.info(f"Starting ingestion for {source_info['name']}")
 
+    # File-based source with explicit --file: skip fetcher, go straight to loader.
+    # Many CMS PUF fetchers are stubs (the file is pre-downloaded by the CronJob or
+    # seed_samples.py). When a filepath is provided and the source requires a file,
+    # bypass the fetcher entirely so the loader actually runs.
+    if kwargs.get('filepath') and source_info.get('requires_file'):
+        pass  # fall through to the file-loader path below
+
     # API source: fetch then load
-    if 'fetcher' in source_info:
+    elif 'fetcher' in source_info:
         data_dir = kwargs.get('data_dir', '/tmp/data/raw')
         Path(data_dir).mkdir(parents=True, exist_ok=True)
 
@@ -1035,8 +1042,12 @@ def run_ingestion(source: str, **kwargs) -> dict:
             raise ValueError(f"Source '{source}' requires fiscal_year")
         loader_kwargs['fiscal_year'] = kwargs['fiscal_year']
 
-    if 'batch_size' in kwargs:
+    if 'batch_size' in kwargs and source_info.get('accepts_batch_size'):
         loader_kwargs['batch_size'] = kwargs['batch_size']
+
+    # Pass max_records to file loaders that support it (limits rows read from CSV)
+    if kwargs.get('max_records') and source_info.get('requires_file'):
+        loader_kwargs['max_records'] = kwargs['max_records']
 
     # Run loader
     result = loader(**loader_kwargs)

@@ -342,8 +342,8 @@ def load_cms_sources(
             })
             continue
 
-        # 2. Load with batch-size
-        extra = ["--file", filepath, "--batch-size", str(limit)]
+        # 2. Load with row limit (--max-records caps pd.read_csv nrows for file loaders)
+        extra = ["--file", filepath, "--max-records", str(limit)]
         _, success, tail = _run_ingestion(key, extra)
         results.append({
             "source": key,

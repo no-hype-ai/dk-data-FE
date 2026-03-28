@@ -84,6 +84,7 @@ def load_cms_geographic_variation(
     filepath: str,
     year: int,
     batch_size: int = 1000,
+    max_records: int = 0,
 ) -> dict:
     """
     Load CMS Geographic Variation PUF from a CSV file.

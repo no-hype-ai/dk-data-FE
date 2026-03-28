@@ -62,7 +62,7 @@ TABLE = 'cms_ordering_providers'
 SCHEMA = 'hcs_raw'
 
 
-def load_cms_ordering_providers(filepath: str, source_year: int = 2023) -> dict:
+def load_cms_ordering_providers(filepath: str, source_year: int = 2023, max_records: int = 0) -> dict:
     """Load CMS Ordering/Referring Providers PUF data from CSV file."""
     logger.info(f"Loading CMS Ordering Providers from {filepath} (year={source_year})")
 
