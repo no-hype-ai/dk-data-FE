@@ -39,6 +39,21 @@ CREATE INDEX IF NOT EXISTS idx_trial_pub_nct ON mol_gold.trial_publication_featu
 CREATE INDEX IF NOT EXISTS idx_trial_pub_doi ON mol_gold.trial_publication_features(publication_doi);
 
 -- Table: mol_silver.targets
+-- NOTE: migration 040 already created this table with a different schema
+-- (uniprot_id, gene_symbol, protein_name, ...). The CREATE TABLE IF NOT EXISTS
+-- below is a no-op on existing DBs; the ALTER TABLE guards add any columns
+-- that 040 omitted but this migration and the silver models require.
+ALTER TABLE mol_silver.targets ADD COLUMN IF NOT EXISTS target_name VARCHAR(255);
+ALTER TABLE mol_silver.targets ADD COLUMN IF NOT EXISTS target_type VARCHAR(50);
+ALTER TABLE mol_silver.targets ADD COLUMN IF NOT EXISTS molecule_id UUID;
+ALTER TABLE mol_silver.targets ADD COLUMN IF NOT EXISTS molecule_name VARCHAR(255);
+ALTER TABLE mol_silver.targets ADD COLUMN IF NOT EXISTS action_type VARCHAR(50);
+ALTER TABLE mol_silver.targets ADD COLUMN IF NOT EXISTS binding_affinity NUMERIC(12,4);
+ALTER TABLE mol_silver.targets ADD COLUMN IF NOT EXISTS ingested_at TIMESTAMPTZ DEFAULT NOW();
+-- gene_name: authoritative name from UniProt API (raw: genes[0].geneName.value);
+-- 040 used gene_symbol — add gene_name for silver model compatibility
+ALTER TABLE mol_silver.targets ADD COLUMN IF NOT EXISTS gene_name VARCHAR(50);
+
 CREATE TABLE IF NOT EXISTS mol_silver.targets (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     target_name VARCHAR(255) NOT NULL,
@@ -46,7 +61,7 @@ CREATE TABLE IF NOT EXISTS mol_silver.targets (
     uniprot_accession VARCHAR(20),
     gene_symbol VARCHAR(50),
     organism VARCHAR(100) DEFAULT 'Homo sapiens',
-    molecule_id UUID REFERENCES mol_gold.molecule_profiles(molecule_id),
+    molecule_id UUID,
     molecule_name VARCHAR(255),
     action_type VARCHAR(50),
     binding_affinity NUMERIC(12,4),
@@ -55,6 +70,8 @@ CREATE TABLE IF NOT EXISTS mol_silver.targets (
     UNIQUE(target_name, molecule_name, source)
 );
 
-CREATE INDEX IF NOT EXISTS idx_targets_uniprot ON mol_silver.targets(uniprot_accession);
+-- uniprot_id is the authoritative column name (040 + UniProt API → snake: primaryAccession)
+-- 065 originally referenced uniprot_accession which does not exist
+CREATE INDEX IF NOT EXISTS idx_targets_uniprot ON mol_silver.targets(uniprot_id);
 CREATE INDEX IF NOT EXISTS idx_targets_gene ON mol_silver.targets(gene_symbol);
 CREATE INDEX IF NOT EXISTS idx_targets_molecule ON mol_silver.targets(molecule_id);
