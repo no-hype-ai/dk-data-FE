@@ -72,7 +72,7 @@ CREATE TABLE mol_raw.<source> (
 
 **Mol raw tables** (26): `bindingdb`, `chembl`, `clinicaltrials`, `cochrane_reviews`, `drugbank`, `ema`, `epo_patents`, `euipo_trademarks`, `hta_decisions`, `journal_rss`, `medical_news`, `openalex_ci`, `openfda_faers`, `openfda_labels`, `orange_book`, `orcid`, `pdb`, `pubchem`, `pubmed`, `sec_edgar`, `sider`, `uniprot`, `uspto_ci`, `uspto_patents`, `uspto_trademarks`, `who_icd`
 
-**HCS raw tables** (6): `acc_tvc_certification`, `cms_cost_reports`, `cms_hospital_info`, `cms_medicare_inpatient`, `cms_geographic_variation`, `hrsa_shortage_areas`
+**HCS raw tables** (48+): One raw table per CMS bronze source. Legacy file-based tables: `acc_tvc_certification`, `cms_cost_reports`, `cms_hospital_info`, `cms_medicare_inpatient`, `cms_geographic_variation`, `hrsa_shortage_areas`. API/PUF tables include: `cms_open_payments`, `cms_nppes`, `cms_part_d_prescriber`, `cms_physician_puf`, `cms_inpatient_puf`, `cms_part_d_spending`, `cms_part_b_spending`, and 40+ others. See DATA_LOADERS.md for the full inventory.
 
 ## Bronze Layer
 
@@ -85,7 +85,7 @@ CREATE TABLE mol_raw.<source> (
 - `raw_json` fallback column for full source access
 - Managed by SQLMesh (`mol_bronze.*`, `hcs_bronze.*`)
 
-**Example tables**: `mol_bronze.chembl_molecules`, `mol_bronze.clinicaltrials`, `mol_bronze.bindingdb`, `mol_bronze.sider`, `hcs_bronze.cms_inpatient`, `hcs_bronze.acc_tvc`
+**Example tables**: `mol_bronze.chembl_molecules`, `mol_bronze.clinicaltrials`, `mol_bronze.bindingdb`, `mol_bronze.sider`, `hcs_bronze.cms_inpatient_puf`, `hcs_bronze.cms_open_payments`, `hcs_bronze.cms_part_d_prescriber`
 
 ## Silver Layer
 
@@ -97,15 +97,17 @@ CREATE TABLE mol_raw.<source> (
 - npi is the master FK across hcs_silver tables
 - SQLMesh models define all transformations declaratively
 
-**Mol silver tables** (key ones): `molecules`, `molecule_aliases`, `identifier_mappings`, `clinical_trials`, `adverse_events`, `publications`, `patents`, `trademarks`, `drug_labels`, `bioactivity`, `binding_affinities`, `side_effects`, `regulatory_decisions`, `hcpcs_molecule_bridge`, `ndc_molecule_bridge`
+**Mol silver tables** (key ones): `molecules`, `molecule_aliases`, `identifier_mappings`, `clinical_trials`, `adverse_events`, `publications`, `patents`, `trademarks`, `drug_labels`, `bioactivity`, `binding_affinities`, `side_effects`, `regulatory_decisions`, `hcpcs_molecule_bridge`, `ndc_molecule_bridge`, `drug_pharmacology`, `proteins`, `research_grants`, `protein_structures`, `company_financials`
 
-**HCS silver tables**: `provider_profile`, `drug_utilization`, `part_d_prescribing`, `open_payments_drug_linkage`
+**HCS silver tables**: `provider_profile`, `drug_utilization`, `cms_drug_market`, `part_d_prescribing`, `open_payments_drug_linkage`, `facility_profile`, `cms_facility_profile`, `geographic_health`, `ref_nucc_taxonomy`
 
 ## Gold Layer
 
 **Purpose**: Pre-aggregated analytics-ready models. Denormalized for dashboard consumption.
 
 **Mol gold tables**: `molecule_profile`, `competitive_landscape`, `company_pipeline`, `kol_profiles`, `kol_drug_associations`, `lifecycle_evidence`, `trial_outcomes`
+
+**HCS gold tables**: `cms_provider_360`, `cms_facility_360`, `cms_drug_market_profile`, `cms_market_analytics`
 
 ## Data Flow
 

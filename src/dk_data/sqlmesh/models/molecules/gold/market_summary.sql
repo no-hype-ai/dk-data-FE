@@ -4,8 +4,11 @@
 --
 -- Grain: molecule_id
 -- Sources: mol_silver.molecules, mol_silver.drug_spending, mol_silver.ema_regulatory,
---          mol_bronze.cochrane_reviews, mol_bronze.europepmc, mol_bronze.nih_reporter,
---          mol_gold.trial_outcomes, mol_silver.publication_evidence
+--          mol_silver.cochrane_reviews, mol_silver.molecule_publications (europepmc),
+--          mol_silver.research_grants, mol_gold.trial_outcomes, mol_silver.publication_evidence
+--
+-- All evidence sources are read from SILVER only — no direct bronze reads.
+-- Entity linking is done at the silver layer; gold aggregates counts only.
 --
 -- NOTE: All joins are LEFT — model degrades gracefully when any source is absent.
 
@@ -56,40 +59,37 @@ ema AS (
 ),
 
 -- Cochrane: count of systematic reviews
+-- mol_silver.cochrane_reviews already has molecule_id via entity linking in silver layer
 cochrane AS (
     SELECT
-        -- Join via mol_silver.molecules canonical name match in bronze
-        m.molecule_id,
-        COUNT(cr.id)                        AS cochrane_review_count
-    FROM mol_silver.molecules m
-    JOIN mol_bronze.cochrane_reviews cr
-        ON LOWER(cr.title) LIKE '%' || LOWER(m.canonical_name) || '%'
-    GROUP BY m.molecule_id
+        molecule_id,
+        COUNT(*)                            AS cochrane_review_count
+    FROM mol_silver.cochrane_reviews
+    WHERE molecule_id IS NOT NULL
+    GROUP BY molecule_id
 ),
 
--- EuropePMC: publication count
+-- EuropePMC: publication count via mol_silver.molecule_publications junction table
+-- Entity linking (name matching) is done in silver; gold reads the pre-linked result
 europepmc AS (
     SELECT
-        m.molecule_id,
-        COUNT(ep.id)                        AS europepmc_pub_count
-    FROM mol_silver.molecules m
-    JOIN mol_bronze.europepmc ep
-        ON LOWER(ep.title) LIKE '%' || LOWER(m.canonical_name) || '%'
-        OR LOWER(ep.abstract_text) LIKE '%' || LOWER(m.canonical_name) || '%'
-    GROUP BY m.molecule_id
+        molecule_id,
+        COUNT(DISTINCT publication_id)      AS europepmc_pub_count
+    FROM mol_silver.molecule_publications
+    WHERE source = 'europepmc'
+    GROUP BY molecule_id
 ),
 
 -- NIH Reporter: grant count and total funding
+-- mol_silver.research_grants already has molecule_id via entity linking in silver layer
 nih AS (
     SELECT
-        m.molecule_id,
-        COUNT(nr.id)                        AS nih_grant_count,
-        SUM(nr.award_amount)                AS nih_total_funding
-    FROM mol_silver.molecules m
-    JOIN mol_bronze.nih_reporter nr
-        ON LOWER(nr.abstract_text) LIKE '%' || LOWER(m.canonical_name) || '%'
-        OR LOWER(nr.terms) LIKE '%' || LOWER(m.canonical_name) || '%'
-    GROUP BY m.molecule_id
+        molecule_id,
+        COUNT(*)                            AS nih_grant_count,
+        SUM(award_amount)                   AS nih_total_funding
+    FROM mol_silver.research_grants
+    WHERE molecule_id IS NOT NULL
+    GROUP BY molecule_id
 ),
 
 -- Trial outcomes: count of endpoint extractions

@@ -21,7 +21,7 @@ WITH part_d AS (
         brnd_name                           AS brand_name,
         'part_d'                            AS program,
         _source_year,
-        SUM(tot_drug_cst)                   AS total_spending,
+        SUM(tot_spndng)                     AS total_spending,
         SUM(tot_clms)                       AS total_claims,
         SUM(tot_benes)                      AS total_beneficiaries,
         AVG(avg_spnd_per_clm)               AS avg_spending_per_claim,
@@ -37,11 +37,11 @@ part_b AS (
         NULL::TEXT                          AS brand_name,
         'part_b'                            AS program,
         _source_year,
-        SUM(tot_mdcr_pymt_amt)              AS total_spending,
-        SUM(tot_srvcs)                      AS total_claims,
+        SUM(tot_spndng)                     AS total_spending,
+        SUM(tot_clms)                       AS total_claims,
         SUM(tot_benes)                      AS total_beneficiaries,
-        AVG(avg_mdcr_pymt_amt)              AS avg_spending_per_claim,
-        NULL::NUMERIC                       AS avg_spending_per_beneficiary
+        AVG(avg_spnd_per_clm)               AS avg_spending_per_claim,
+        AVG(avg_spnd_per_bene)              AS avg_spending_per_beneficiary
     FROM hcs_bronze.cms_part_b_spending
     WHERE hcpcs_desc IS NOT NULL
     GROUP BY hcpcs_desc, _source_year
@@ -53,7 +53,10 @@ combined AS (
     SELECT * FROM part_b
 ),
 
--- Link to molecules via name match
+-- Link to molecules via identifier hierarchy:
+--   1. RxNorm name → rxnorm_concepts.molecule_id (normalised drug ontology name)
+--   2. Exact canonical name match on mol_silver.molecules
+--   3. Brand name fallback on mol_silver.molecules
 linked AS (
     SELECT
         c.generic_name,
@@ -65,19 +68,26 @@ linked AS (
         c.total_beneficiaries,
         c.avg_spending_per_claim,
         c.avg_spending_per_beneficiary,
-        -- Try exact canonical name match first, then brand name fallback
         COALESCE(
+            rx.molecule_id,
             m_exact.molecule_id,
             m_brand.molecule_id
         )                                   AS molecule_id,
         CASE
+            WHEN rx.molecule_id    IS NOT NULL THEN 'rxnorm_name'
             WHEN m_exact.molecule_id IS NOT NULL THEN 'exact_canonical'
             WHEN m_brand.molecule_id IS NOT NULL THEN 'brand_name'
             ELSE 'unlinked'
         END                                 AS link_strategy
     FROM combined c
+    -- Path 1: RxNorm normalised drug name (most reliable structured path)
+    LEFT JOIN mol_silver.rxnorm_concepts rx
+        ON LOWER(c.generic_name) = LOWER(rx.name)
+        AND rx.molecule_id IS NOT NULL
+    -- Path 2: Direct canonical name match
     LEFT JOIN mol_silver.molecules m_exact
         ON LOWER(c.generic_name) = LOWER(m_exact.canonical_name)
+    -- Path 3: Brand name fallback
     LEFT JOIN mol_silver.molecules m_brand
         ON LOWER(c.brand_name) = LOWER(m_brand.canonical_name)
         AND c.brand_name IS NOT NULL

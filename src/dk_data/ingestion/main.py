@@ -969,12 +969,37 @@ def run_ingestion(source: str, **kwargs) -> dict:
 
         fetch_result = fetcher.fetch(**fetch_kwargs)
 
-        if fetch_result.get('status') == 'failed' or not fetch_result.get('records'):
-            logger.warning(f"Fetch returned no records for {source}")
+        if fetch_result.get('status') == 'failed':
+            logger.warning(f"Fetch failed for {source}: {fetch_result.get('error')}")
             log_to_meta(meta_source, fetch_result)
             return fetch_result
 
         loader = source_info['loader']
+
+        # File-path fetchers (e.g. GV PUF) return extracted_files + int records count.
+        # Call the loader once per extracted file using filepath + year kwargs.
+        if fetch_result.get('extracted_files'):
+            agg = {'status': 'success', 'records_inserted': 0, 'records_failed': 0, 'errors': []}
+            for fpath in fetch_result['extracted_files']:
+                loader_kw: dict = {'filepath': fpath}
+                if fetch_result.get('year') is not None:
+                    loader_kw['year'] = fetch_result['year']
+                if 'batch_size' in kwargs:
+                    loader_kw['batch_size'] = kwargs['batch_size']
+                r = loader(**loader_kw)
+                agg['records_inserted'] += r.get('records_inserted', 0)
+                agg['records_failed'] += r.get('records_failed', 0)
+                agg['errors'].extend(r.get('errors', []))
+            agg['records_fetched'] = fetch_result.get('records', 0)
+            log_to_meta(meta_source, agg)
+            return agg
+
+        # Standard API fetchers return records as a list of dicts.
+        if not fetch_result.get('records'):
+            logger.warning(f"Fetch returned no records for {source}")
+            log_to_meta(meta_source, fetch_result)
+            return fetch_result
+
         result = loader(fetch_result['records'], source_hash=fetch_result.get('hash'))
         result['records_fetched'] = fetch_result.get(
             'record_count', len(fetch_result.get('records', []))

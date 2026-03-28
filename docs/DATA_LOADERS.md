@@ -69,7 +69,6 @@ python -m dk_data.ingestion.main --all
 | Source Key | Description | Raw Table | Schedule |
 |------------|-------------|-----------|----------|
 | `cms_geographic_variation` | CMS Geographic Variation PUF | `hcs_raw.cms_geographic_variation` | Monthly |
-| `cms_part_d_prescriber` | Part D by Prescriber PUF | `hcs_raw.cms_part_d_prescriber` | Monthly |
 | `cms_care_compare` | Hospital Compare star ratings | `hcs_raw.cms_care_compare` | Monthly |
 | `cms_chow` | Change of Ownership records | `hcs_raw.cms_chow` | Monthly |
 | `cms_ddinter` | Drug-drug interaction data | `hcs_raw.cms_ddinter` | Monthly |
@@ -123,6 +122,7 @@ These are large file downloads managed by `seed_samples.py` or the `cronjob-cms-
 | `cms_utilization_puf` | General utilization PUF |
 | `cms_cost_reports_puf` | Cost Reports PUF |
 | `cms_cost_reports_puf_lines` | Cost Reports PUF (line-level) |
+| `cms_part_d_prescriber` | Part D Prescribers by Provider and Drug (~25M rows, annual CSV) — loads to `hcs_raw.cms_part_d_prescriber`. Annual release (January); CronJob runs first Sunday of January. Use `--skip-if-no-file` flag. |
 
 ### Legacy File Sources (manual file path required)
 

@@ -232,6 +232,64 @@ No columns are dropped. Non-matching NPIs produce NULLs in source-specific colum
 
 ---
 
+### CMS Part D Prescriber PUF → hcs_silver.part_d_prescribing (NEW in feature 020)
+
+**Source**: `hcs_raw.cms_part_d_prescriber` → `hcs_bronze.cms_part_d_prescriber` → `hcs_silver.part_d_prescribing`
+
+Grain: `(prscrbr_npi, gnrc_name, _source_year)` — one row per prescriber × drug × year.
+
+| Bronze Column | Silver Column | Notes |
+|---|---|---|
+| `prscrbr_npi` | `prscrbr_npi` | Direct — FK to `hcs_silver.provider_profile.npi` |
+| `prscrbr_last_org_name` | `prscrbr_last_org_name` | Direct |
+| `prscrbr_first_name` | `prscrbr_first_name` | Direct |
+| `prscrbr_city` | `prscrbr_city` | Direct |
+| `prscrbr_state_abrvtn` | `prscrbr_state_abrvtn` | Direct |
+| `prscrbr_type` | `prscrbr_type` | Specialty description |
+| `gnrc_name` | `gnrc_name` | Direct — CMS controlled vocabulary |
+| `brnd_name` | `brnd_name` | Direct |
+| `tot_clms` | `tot_clms` | Direct |
+| `tot_30day_fills` | `tot_30day_fills` | Direct |
+| `tot_day_suply` | `tot_day_suply` | Direct |
+| `tot_drug_cst` | `tot_drug_cst` | Direct |
+| `tot_benes` | `tot_benes` | Direct |
+| `ge65_sprsn_flag` | `ge65_sprsn_flag` | CMS privacy suppression flag ('Y' = <11 benes) |
+| `ge65_tot_clms`, `ge65_tot_30day_fills`, `ge65_tot_drug_cst`, `ge65_tot_day_suply`, `ge65_tot_benes` | same | Direct (NULL when suppressed) |
+| `ge65_bene_sprsn_flag` | `ge65_bene_sprsn_flag` | Secondary suppression flag |
+| `_source_year` | `_source_year` | Direct |
+| `prscrbr_state_fips`, `prscrbr_type_src` | — | **LOW_QUERY_VALUE** — in bronze, not promoted to silver |
+
+**Added in silver** (not in bronze):
+- `molecule_id` — linked via `gnrc_name → mol_silver.molecule_aliases.alias_name_normalized` (confidence 0.85; CMS generic names are a controlled vocabulary)
+- `link_confidence`, `matched_alias_type`, `molecule_resolved` — resolution audit columns
+
+---
+
+### CMS Open Payments drug slots → hcs_silver.open_payments_drug_linkage (NEW in feature 020)
+
+**Source**: `hcs_raw.cms_open_payments` → `hcs_bronze.cms_open_payments` → `hcs_silver.open_payments_drug_linkage`
+
+Grain: `(record_id, drug_slot, _source_year)` — one row per drug per payment.
+
+Migration 089 added 5 drug name slots and 5 NDC slots to `hcs_raw.cms_open_payments`:
+
+| Bronze Column (from migration 089) | Silver Column | Notes |
+|---|---|---|
+| `name_of_drug_or_biological_or_device_or_medical_supply_1..5` | `drug_name` (unnested per slot) | CMS verbatim drug name; UNNEST across 5 slots |
+| `drug_name_1_normalized..5_normalized` | `drug_name_normalized` | GENERATED ALWAYS column on raw table |
+| `associated_drug_or_biological_ndc_1..5` | `ndc` (per slot) | NDC for structural bridge |
+| `covered_recipient_type`, `physician_profile_id`, `physician_first_name`, `physician_last_name`, `physician_specialty` | same | Direct |
+| `applicable_manufacturer_or_gpo_name` | same | Direct |
+| `total_amount_of_payment_usdollars`, `date_of_payment`, `nature_of_payment_or_transfer_of_value` | same | Direct |
+| `recipient_state`, `_source_year`, `record_id` | same | Direct |
+
+**Added in silver** (entity linking):
+- `molecule_id` — Path A: NDC → `mol_silver.ndc_molecule_bridge` (confidence 0.95); Path B: `drug_name_normalized → mol_silver.molecule_aliases` (confidence 0.75, fallback when NDC absent)
+- `link_confidence`, `link_strategy`, `molecule_resolved` — resolution audit columns
+- `drug_slot` — which of the 5 CMS drug slots this row came from
+
+---
+
 ## Schema Redirect Reference
 
 SQLMesh `physical_schema_mapping` (in `src/dk_data/sqlmesh/config.yaml`) redirects bare logical schema names to domain-prefixed physical schemas. **Model files do not need renaming** — the redirect handles physical placement.
