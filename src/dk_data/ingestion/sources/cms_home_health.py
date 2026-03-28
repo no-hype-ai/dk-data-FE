@@ -8,7 +8,7 @@ from pathlib import Path
 import pandas as pd
 from pydantic import ValidationError
 
-from ..utils.database import get_cursor, upsert_records
+from ..utils.database import apply_column_mapping, get_cursor, upsert_records
 from ..utils.validators import CMSHomeHealthRecord
 
 logger = logging.getLogger(__name__)
@@ -56,7 +56,7 @@ def load_cms_home_health(filepath: str, source_year: int = 2023) -> dict:
             return {"status": "skipped", "records_fetched": 0, "records_inserted": 0, "records_updated": 0, "errors": []}
 
     df = pd.read_csv(filepath, dtype=str, low_memory=False)
-    df = df.rename(columns=COLUMN_MAPPING)
+    df = apply_column_mapping(df, COLUMN_MAPPING)
     records_fetched = len(df)
 
     records = []

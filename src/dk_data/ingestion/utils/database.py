@@ -211,6 +211,21 @@ def truncate_table(schema: str, table: str) -> None:
         logger.info(f"Truncated table: {schema}.{table}")
 
 
+def apply_column_mapping(df, mapping: dict):
+    """Case-insensitive column rename against COLUMN_MAPPING.
+
+    CMS CSV files vary in column capitalization across years and dataset variants
+    (e.g. 'Prscrbr_NPI' vs 'PRSCRBR_NPI' vs 'prscrbr_npi').  A plain
+    ``df.rename(columns=mapping)`` silently misses any case-variant, leaving
+    every data column NULL in the DB.  This function normalises actual CSV
+    column names against mapping keys case-insensitively so the rename always
+    succeeds regardless of CMS casing changes.
+    """
+    lower_map = {k.lower(): v for k, v in mapping.items()}
+    df.columns = [lower_map.get(c.lower(), c) for c in df.columns]
+    return df
+
+
 def upsert_records(
     schema: str,
     table: str,

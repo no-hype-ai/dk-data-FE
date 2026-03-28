@@ -1,4 +1,4 @@
-"""CMS Medicare Opioid Prescribing Geographic Variation PUF fetcher stub. File is downloaded by CronJob."""
+"""CMS Medicare Part D Opioid Prescriber Summary File fetcher stub. File is downloaded by CronJob."""
 import logging
 from typing import Any, Dict
 
@@ -9,7 +9,7 @@ logger = logging.getLogger(__name__)
 
 class CMSOpioidPUFFetcher(BaseFetcher):
     SOURCE_NAME = "cms_opioid_puf"
-    BASE_URL = "https://data.cms.gov/special-programs-initiatives-opioids-public-use-file/opioid-prescribing-geographic-variation"
+    BASE_URL = "https://data.cms.gov/medicare-part-d/medicare-part-d-opioid-prescriber-summary-file"
 
     def fetch(self, **kwargs) -> Dict[str, Any]:
         """CMS PUF file-based source — download handled externally by CronJob."""

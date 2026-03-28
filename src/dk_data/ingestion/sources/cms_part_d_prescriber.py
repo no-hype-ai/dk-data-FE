@@ -25,7 +25,7 @@ from pathlib import Path
 import pandas as pd
 from pydantic import ValidationError
 
-from ..utils.database import get_cursor, upsert_records
+from ..utils.database import apply_column_mapping, get_cursor, upsert_records
 from ..utils.validators import CMSPartDPrescriberRecord
 
 logger = logging.getLogger(__name__)
@@ -103,7 +103,7 @@ def load_cms_part_d_prescriber(filepath: str, source_year: int = 2023) -> dict:
 
     # Full load — pandas handles chunking internally for dtype=str
     df = pd.read_csv(filepath, dtype=str, low_memory=False)
-    df = df.rename(columns=COLUMN_MAPPING)
+    df = apply_column_mapping(df, COLUMN_MAPPING)
 
     # Keep only columns we mapped (ignore CMS columns we don't capture)
     known_cols = [c for c in COLUMN_MAPPING.values() if c in df.columns]

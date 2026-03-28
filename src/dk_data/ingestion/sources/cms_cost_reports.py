@@ -113,7 +113,7 @@ def load_cms_cost_reports(
     )
 
     # Normalize date columns after rename (handles both name formats)
-    df = df.rename(columns=COLUMN_MAPPING)
+    df = apply_column_mapping(df, COLUMN_MAPPING)
 
     for date_col in ('fiscal_year_begin', 'fiscal_year_end'):
         if date_col in df.columns:

@@ -95,7 +95,7 @@ def load_cms_inpatient_file(
     )
 
     # Rename columns
-    df = df.rename(columns=COLUMN_MAPPING)
+    df = apply_column_mapping(df, COLUMN_MAPPING)
 
     # Filter for TAVR DRG codes only
     df = df[df['drg_code'].isin(TAVR_DRG_CODES)]

@@ -120,7 +120,7 @@ def load_cms_geographic_variation(
     )
 
     # Rename to internal column names
-    df = df.rename(columns=COLUMN_MAPPING)
+    df = apply_column_mapping(df, COLUMN_MAPPING)
 
     # Coerce numeric columns (CMS uses '*' for suppressed; already NaN after na_values)
     for col in NUMERIC_COLUMNS:

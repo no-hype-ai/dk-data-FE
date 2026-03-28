@@ -144,7 +144,7 @@ def load_cms_hospital_info(
     )
 
     # Rename columns
-    df = df.rename(columns=COLUMN_MAPPING)
+    df = apply_column_mapping(df, COLUMN_MAPPING)
 
     logger.info(f"Found {len(df)} hospital records")
 

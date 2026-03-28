@@ -124,9 +124,9 @@ CMS_DATASET_REGISTRY: dict[str, dict] = {
         "description": "Medicare Telehealth Utilization PUF",
     },
     "cms_opioid_puf": {
-        "package_id": "opioid-prescribing-by-geography",
+        "package_id": "medicare-part-d-opioid-prescriber-summary-file",
         "resource_format": "CSV",
-        "description": "Medicare Opioid Prescribing by Geography",
+        "description": "Medicare Part D Opioid Prescribing by Provider (prescriber-level)",
     },
     "cms_geographic_variation": {
         "package_id": "geographic-variation-in-service-use",

@@ -17,7 +17,7 @@ from typing import Optional
 import pandas as pd
 from pydantic import BaseModel, ValidationError, field_validator
 
-from ..utils.database import get_cursor, upsert_records
+from ..utils.database import apply_column_mapping, get_cursor, upsert_records
 
 logger = logging.getLogger(__name__)
 
@@ -120,7 +120,7 @@ def load_cms_cost_reports_puf_lines(filepath: str, source_year: int = 2023) -> d
             }
 
     df = pd.read_csv(filepath, dtype=str, low_memory=False)
-    df = df.rename(columns=COLUMN_MAPPING)
+    df = apply_column_mapping(df, COLUMN_MAPPING)
     records_fetched = len(df)
 
     # Filter to staffing-relevant worksheet A lines
