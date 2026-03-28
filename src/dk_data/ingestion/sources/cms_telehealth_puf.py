@@ -101,7 +101,7 @@ def load_cms_telehealth_puf(filepath: str, source_year: int = 2023) -> dict:
 
     inserted = upsert_records(
         SCHEMA, TABLE, records,
-        conflict_columns=['_source_hash', 'npi', 'hcpcs_cd', '_source_year'],
+        conflict_columns=['npi', 'hcpcs_cd', '_source_year'],
         update_columns=[
             'tot_benes', 'tot_srvcs', 'tot_mdcr_alowd_amt',
             'avg_mdcr_alowd_amt', 'avg_mdcr_pymt_amt', 'avg_mdcr_stdzd_amt',

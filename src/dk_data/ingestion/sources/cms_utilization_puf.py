@@ -103,7 +103,7 @@ def load_cms_utilization_puf(filepath: str, source_year: int = 2023) -> dict:
 
     inserted = upsert_records(
         SCHEMA, TABLE, records,
-        conflict_columns=['bene_geo_cd', 'bene_age_lvl', 'bene_demo_lvl', '_source_year'],
+        conflict_columns=['bene_geo_cd', 'bene_demo_lvl', '_source_year'],
         update_columns=['srvcs_per_bene', 'ip_cvrd_stays_per_1000_benes', 'avg_ip_los',
                         'er_visits_per_1000_benes', 'phy_visits_per_bene', 'tot_mdcr_pymt_pc',
                         '_loaded_at'],

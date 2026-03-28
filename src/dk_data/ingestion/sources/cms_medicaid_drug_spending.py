@@ -89,7 +89,7 @@ def load_cms_medicaid_drug_spending(filepath: str, source_year: int = 2023) -> d
 
     inserted = upsert_records(
         SCHEMA, TABLE, records,
-        conflict_columns=['_source_hash', 'gnrc_name', 'util_type', '_source_year'],
+        conflict_columns=['gnrc_name', 'util_type', '_source_year'],
         update_columns=['tot_prescriptions', 'tot_spndng', '_loaded_at'],
     )
 
