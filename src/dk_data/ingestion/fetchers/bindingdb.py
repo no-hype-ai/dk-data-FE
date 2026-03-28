@@ -3,8 +3,14 @@
 BindingDB provides drug-target binding affinity measurements.
 Data is distributed as tab-separated value (TSV) files.
 
-Source: https://www.bindingdb.org/bind/downloads.jsp
-Download: BindingDB_All.tsv.zip (full dataset)
+Source: https://www.bindingdb.org/rwd/bind/chemsearch/marvin/Download.jsp
+Download: BindingDB_All_{YYYYMM}_tsv.zip — date-stamped monthly archive
+
+URL pattern (as of 2026-03):
+  https://www.bindingdb.org/rwd/bind/downloads/BindingDB_All_{YYYYMM}_tsv.zip
+
+The fetcher tries the current month and falls back up to 3 prior months to
+handle the window between a new release and the previous one aging out.
 
 The fetcher downloads and parses the TSV, yielding one dict per row
 with keys matching the TSV column headers verbatim (e.g., "Ki (nM)").
@@ -17,7 +23,8 @@ import hashlib
 import io
 import logging
 import zipfile
-from typing import Any, Dict, List
+from datetime import datetime, timedelta, timezone
+from typing import Any, Dict, List, Optional
 
 from .base import BaseFetcher
 
@@ -28,13 +35,16 @@ class BindingDBFetcher(BaseFetcher):
     """Fetcher for BindingDB binding affinity data."""
 
     SOURCE_NAME = "bindingdb"
-    BASE_URL = "https://www.bindingdb.org/bind/downloads.jsp"
+    BASE_URL = "https://www.bindingdb.org/rwd/bind/chemsearch/marvin/Download.jsp"
 
-    # Full dataset download URL (updated annually by BindingDB)
-    DOWNLOAD_URL = "https://www.bindingdb.org/bind/BindingDB_All.tsv.zip"
+    # URL pattern for the monthly full-dataset archive.
+    # BindingDB switched from a static URL to date-stamped monthly releases.
+    _DOWNLOAD_URL_PATTERN = (
+        "https://www.bindingdb.org/rwd/bind/downloads/BindingDB_All_{yyyymm}_tsv.zip"
+    )
 
-    # Key columns to include in the JSONB record
-    # These are the exact TSV header names BindingDB uses
+    # Key columns to include in the JSONB record.
+    # These are the exact TSV header names BindingDB uses.
     REQUIRED_COLUMNS = {
         "BindingDB Reactant_set_id",
         "Ligand InChIKey",
@@ -58,8 +68,32 @@ class BindingDBFetcher(BaseFetcher):
         "PDB ID(s) for Ligand-Target Complex",
     }
 
+    @classmethod
+    def _candidate_urls(cls) -> List[str]:
+        """Return download URL candidates from most-recent to 3 months back.
+
+        BindingDB publishes a new archive monthly.  We try the current month
+        first and fall back up to 3 prior months so we don't depend on the
+        exact release date.
+        """
+        now = datetime.now(timezone.utc)
+        candidates = []
+        for months_back in range(4):
+            # Step back ~one month at a time (28-day offset)
+            target = now - timedelta(days=28 * months_back)
+            yyyymm = target.strftime("%Y%m")
+            candidates.append(cls._DOWNLOAD_URL_PATTERN.format(yyyymm=yyyymm))
+        # Deduplicate while preserving order (two offsets could land in same month)
+        seen = set()
+        deduped = []
+        for url in candidates:
+            if url not in seen:
+                seen.add(url)
+                deduped.append(url)
+        return deduped
+
     def get_latest_url(self) -> str:
-        return self.DOWNLOAD_URL
+        return self._candidate_urls()[0]
 
     def fetch(self, **kwargs) -> Dict[str, Any]:
         """Fetch BindingDB binding affinity data.
@@ -93,32 +127,47 @@ class BindingDBFetcher(BaseFetcher):
             self.log_fetch_result(result)
             return result
 
-    def _download_and_parse(
-        self,
-        require_affinity: bool,
-    ) -> List[Dict[str, Any]]:
-        """Download the BindingDB TSV zip and parse rows into dicts.
+    def _download_and_parse(self, require_affinity: bool) -> List[Dict[str, Any]]:
+        """Try candidate monthly URLs, download the zip, and parse rows.
 
         Streams the zip into a temp buffer to avoid holding the entire
         compressed + uncompressed content in memory simultaneously.
         """
-        logger.info(f"Downloading BindingDB dataset from {self.DOWNLOAD_URL}")
+        candidates = self._candidate_urls()
+        last_error: Optional[Exception] = None
 
-        # Stream the zip into a BytesIO buffer chunk-by-chunk to avoid a
-        # single large allocation from response.content
-        buf = io.BytesIO()
-        with self.session.get(self.DOWNLOAD_URL, stream=True, timeout=600) as response:
-            response.raise_for_status()
-            downloaded = 0
-            for chunk in response.iter_content(chunk_size=8 * 1024 * 1024):  # 8 MB chunks
-                buf.write(chunk)
-                downloaded += len(chunk)
-                if downloaded % (100 * 1024 * 1024) == 0:
-                    logger.info(f"BindingDB download progress: {downloaded / 1024 / 1024:.0f} MB")
+        for url in candidates:
+            logger.info(f"Trying BindingDB URL: {url}")
+            try:
+                buf = io.BytesIO()
+                downloaded = 0
+                with self.session.get(url, stream=True, timeout=600) as response:
+                    if response.status_code == 404:
+                        logger.debug(f"BindingDB 404 at {url}, trying next candidate")
+                        continue
+                    response.raise_for_status()
+                    for chunk in response.iter_content(chunk_size=8 * 1024 * 1024):
+                        buf.write(chunk)
+                        downloaded += len(chunk)
+                        if downloaded % (100 * 1024 * 1024) == 0:
+                            logger.info(
+                                f"BindingDB download progress: {downloaded / 1024 / 1024:.0f} MB"
+                            )
+                logger.info(f"Downloaded {downloaded / 1024 / 1024:.1f} MB from {url}")
+                buf.seek(0)
+                return self._parse_zip(buf, require_affinity)
+            except Exception as exc:
+                last_error = exc
+                logger.warning(f"BindingDB download failed for {url}: {exc}")
+                continue
 
-        logger.info(f"Downloaded {downloaded / 1024 / 1024:.1f} MB")
-        buf.seek(0)
+        raise RuntimeError(
+            f"BindingDB: all candidate URLs failed. Last error: {last_error}. "
+            f"Tried: {candidates}"
+        )
 
+    def _parse_zip(self, buf: io.BytesIO, require_affinity: bool) -> List[Dict[str, Any]]:
+        """Parse a BindingDB TSV zip from an in-memory buffer."""
         records: List[Dict[str, Any]] = []
         affinity_cols = {"Ki (nM)", "IC50 (nM)", "Kd (nM)", "EC50 (nM)"}
 

@@ -4,7 +4,7 @@ Feature: 019-cms-puf-platform-reconciliation
 
 Fetches ADMET (Absorption, Distribution, Metabolism, Excretion, Toxicity)
 benchmark datasets from the Therapeutics Data Commons project hosted on
-GitHub (mims-harvard/TDC).
+Harvard Dataverse (https://dataverse.harvard.edu/dataverse/tdc).
 
 Each dataset is a TSV file with columns:
     Drug_ID   — compound identifier
@@ -13,6 +13,9 @@ Each dataset is a TSV file with columns:
     InChIKey  — (present in some datasets)
 
 Stores raw dataset records in mol_raw.tdc_admet (migration 089_entity_linking_gaps.sql).
+
+Note: TDC moved data hosting from GitHub raw files to Harvard Dataverse.
+      File IDs were extracted from TDC metadata (tdcommons.ai/benchmark/admet_group/overview/).
 """
 
 import hashlib
@@ -25,36 +28,46 @@ from .base import BaseFetcher
 logger = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
-# Known TDC ADMET dataset URLs
+# Harvard Dataverse base URL for TDC ADMET datasets
 # ---------------------------------------------------------------------------
-# TDC hosts benchmark datasets as tab-separated files on GitHub.
-# Each file has columns: Drug_ID, Drug (SMILES), Y [, InChIKey].
+_DATAVERSE_BASE = "https://dataverse.harvard.edu/api/access/datafile"
+
 # ---------------------------------------------------------------------------
+# Known TDC ADMET dataset → Harvard Dataverse file IDs
+# ---------------------------------------------------------------------------
+# File IDs sourced from TDC metadata (https://tdcommons.ai/benchmark/admet_group/overview/)
+# Each ID maps to a TSV file with columns: Drug_ID, Drug (SMILES), Y [, InChIKey].
+# ---------------------------------------------------------------------------
+ADMET_DATASET_IDS: Dict[str, int] = {
+    "Caco2_Wang": 4259569,
+    "HIA_Hou": 4259591,
+    "Pgp_Broccatelli": 4259597,
+    "Bioavailability_Ma": 4259567,
+    "Lipophilicity_AstraZeneca": 4259595,
+    "Aqueous_Solubility_Delaney": 4259610,
+    "BBB_Martini": 4259566,
+    "PPBR_AZ": 6413140,
+    "VDss_Lombardo": 4267387,
+    "CYP2C19_Veith": 4259576,
+    "CYP2D6_Veith": 4259580,
+    "CYP3A4_Veith": 4259582,
+    "Half_Life_Obach": 4266799,
+    "Clearance_Hepatocyte_AZ": 4266187,
+    "hERG": 4259588,
+    "hERG_Karim": 6822246,
+    "AMES": 4259564,
+    "DILI": 4259585,
+    "LD50_Zhu": 4267146,
+    "ClinTox": 4259572,
+}
+
 ADMET_DATASETS: Dict[str, str] = {
-    "Caco2_Wang": "https://raw.githubusercontent.com/mims-harvard/TDC/main/tdc/resource/Caco2_Wang.tab",
-    "HIA_Hou": "https://raw.githubusercontent.com/mims-harvard/TDC/main/tdc/resource/HIA_Hou.tab",
-    "Pgp_Broccatelli": "https://raw.githubusercontent.com/mims-harvard/TDC/main/tdc/resource/Pgp_Broccatelli.tab",
-    "Bioavailability_Ma": "https://raw.githubusercontent.com/mims-harvard/TDC/main/tdc/resource/Bioavailability_Ma.tab",
-    "Lipophilicity_AstraZeneca": "https://raw.githubusercontent.com/mims-harvard/TDC/main/tdc/resource/Lipophilicity_AstraZeneca.tab",
-    "Aqueous_Solubility_Delaney": "https://raw.githubusercontent.com/mims-harvard/TDC/main/tdc/resource/Aqueous_Solubility_Delaney.tab",
-    "BBB_Martini": "https://raw.githubusercontent.com/mims-harvard/TDC/main/tdc/resource/BBB_Martini.tab",
-    "PPBR_AZ": "https://raw.githubusercontent.com/mims-harvard/TDC/main/tdc/resource/PPBR_AZ.tab",
-    "VDss_Lombardo": "https://raw.githubusercontent.com/mims-harvard/TDC/main/tdc/resource/VDss_Lombardo.tab",
-    "CYP2C19_Veith": "https://raw.githubusercontent.com/mims-harvard/TDC/main/tdc/resource/CYP2C19_Veith.tab",
-    "CYP2D6_Veith": "https://raw.githubusercontent.com/mims-harvard/TDC/main/tdc/resource/CYP2D6_Veith.tab",
-    "CYP3A4_Veith": "https://raw.githubusercontent.com/mims-harvard/TDC/main/tdc/resource/CYP3A4_Veith.tab",
-    "Half_Life_Obach": "https://raw.githubusercontent.com/mims-harvard/TDC/main/tdc/resource/Half_Life_Obach.tab",
-    "Clearance_Hepatocyte_AZ": "https://raw.githubusercontent.com/mims-harvard/TDC/main/tdc/resource/Clearance_Hepatocyte_AZ.tab",
-    "hERG": "https://raw.githubusercontent.com/mims-harvard/TDC/main/tdc/resource/hERG.tab",
-    "hERG_Karim": "https://raw.githubusercontent.com/mims-harvard/TDC/main/tdc/resource/hERG_Karim.tab",
-    "AMES": "https://raw.githubusercontent.com/mims-harvard/TDC/main/tdc/resource/AMES.tab",
-    "DILI": "https://raw.githubusercontent.com/mims-harvard/TDC/main/tdc/resource/DILI.tab",
-    "LD50_Zhu": "https://raw.githubusercontent.com/mims-harvard/TDC/main/tdc/resource/LD50_Zhu.tab",
-    "ClinTox": "https://raw.githubusercontent.com/mims-harvard/TDC/main/tdc/resource/ClinTox.tab",
+    name: f"{_DATAVERSE_BASE}/{file_id}"
+    for name, file_id in ADMET_DATASET_IDS.items()
 }
 
 SOURCE_NAME = "tdc_admet"
-BASE_RESOURCE_URL = "https://raw.githubusercontent.com/mims-harvard/TDC/main/tdc/resource/"
+BASE_RESOURCE_URL = _DATAVERSE_BASE
 
 DEFAULT_MAX_ROWS_PER_DATASET = 5000
 
@@ -79,7 +92,7 @@ class TDCAdmetFetcher(BaseFetcher):
     BASE_URL = BASE_RESOURCE_URL
 
     def get_latest_url(self) -> str:
-        return BASE_RESOURCE_URL
+        return _DATAVERSE_BASE
 
     def fetch(self, **kwargs) -> Dict[str, Any]:
         """Download and parse TDC ADMET datasets.

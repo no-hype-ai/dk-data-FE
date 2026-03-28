@@ -68,7 +68,7 @@ _SQL = """
     DO UPDATE SET
         response_body      = EXCLUDED.response_body,
         response_body_hash = EXCLUDED.response_body_hash,
-        _loaded_at         = NOW()
+        ingested_at        = NOW()
     WHERE mol_raw.rxnorm.response_body IS DISTINCT FROM EXCLUDED.response_body
 """
 

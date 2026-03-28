@@ -84,7 +84,7 @@ class CMSHospitalInfoFetcher(BaseFetcher):
         logger.warning("Dataset not found in catalog, using legacy URL")
         return f"https://data.cms.gov/provider-data/api/1/datastore/query/{self.HOSPITAL_INFO_DATASET}/0"
 
-    def fetch(self) -> dict[str, Any]:
+    def fetch(self, **kwargs) -> dict[str, Any]:
         """
         Fetch CMS Hospital General Information.
 

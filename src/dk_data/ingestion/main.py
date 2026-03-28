@@ -10,7 +10,7 @@ import asyncio
 import json
 import sys
 import time
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 
 from .sources import cms_inpatient, cms_hospital_info, cms_cost_reports, acc_tvc, hrsa
@@ -876,7 +876,7 @@ def _compute_days_back(source: str, source_info: dict) -> int | None:
         )
         return default
 
-    elapsed = (datetime.now() - last_refresh).total_seconds() / 86400
+    elapsed = (datetime.now(timezone.utc) - last_refresh).total_seconds() / 86400
     # +1 day safety overlap to avoid gaps from timezone/clock skew
     days_back = max(int(elapsed) + 1, 1)
     logger.info(
@@ -906,14 +906,15 @@ def log_to_meta(source_name: str, result: dict) -> None:
             status = result.get('status', 'unknown')
             cur.execute("""
                 INSERT INTO meta.refresh_log (
-                    source_id, refresh_started_at, refresh_completed_at,
+                    source_id, source_name, started_at, completed_at,
                     status, records_fetched, records_inserted, records_updated,
                     error_message
                 ) VALUES (
-                    %s, %s, NOW(), %s, %s, %s, %s, %s
+                    %s, %s, %s, NOW(), %s, %s, %s, %s, %s
                 )
             """, (
                 source_id,
+                source_name,
                 datetime.now(),
                 status,
                 result.get('records_fetched', result.get('records_inserted', 0)),
@@ -971,7 +972,7 @@ def run_ingestion(source: str, **kwargs) -> dict:
 
         fetch_result = fetcher.fetch(**fetch_kwargs)
 
-        if fetch_result.get('status') == 'failed':
+        if fetch_result.get('status') in ('failed', 'source_unavailable'):
             logger.warning(f"Fetch failed for {source}: {fetch_result.get('error')}")
             log_to_meta(meta_source, fetch_result)
             return fetch_result

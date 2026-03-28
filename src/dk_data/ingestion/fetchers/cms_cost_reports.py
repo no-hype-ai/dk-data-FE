@@ -96,7 +96,7 @@ class CMSCostReportsFetcher(BaseFetcher):
         year = max(self.AVAILABLE_YEARS)
         return f"{self.HCRIS_BASE}/hosp10-{year}-HCRIS.zip"
 
-    def fetch(self, fiscal_year: Optional[int] = None) -> dict[str, Any]:
+    def fetch(self, fiscal_year: Optional[int] = None, **kwargs) -> dict[str, Any]:
         """
         Fetch CMS Hospital Cost Reports.
 

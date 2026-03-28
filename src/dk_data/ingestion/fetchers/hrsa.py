@@ -35,7 +35,7 @@ class HRSAFetcher(BaseFetcher):
         """Get URL for HPSA data."""
         return f"{self.HPSA_API}/designations"
 
-    def fetch(self, hpsa_types: Optional[List[str]] = None, states: Optional[List[str]] = None) -> Dict[str, Any]:
+    def fetch(self, hpsa_types: Optional[List[str]] = None, states: Optional[List[str]] = None, **kwargs) -> Dict[str, Any]:
         """
         Fetch HRSA HPSA designation data.
 

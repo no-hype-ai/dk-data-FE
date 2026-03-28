@@ -27,7 +27,7 @@ Schema (migration 089_entity_linking_gaps.sql):
     response_body_hash  TEXT
     processed_to_bronze BOOLEAN NOT NULL DEFAULT FALSE
     source_id           TEXT NOT NULL DEFAULT 'tdc_admet'
-    _loaded_at          TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    ingested_at         TIMESTAMPTZ NOT NULL DEFAULT NOW()
 
 Unique index: ON (request_id) — one row per dataset per fetch run.
 """
@@ -43,7 +43,7 @@ from ..utils.database import get_connection
 logger = logging.getLogger(__name__)
 
 SOURCE_ID = "tdc_admet"
-API_ENDPOINT = "https://raw.githubusercontent.com/mims-harvard/TDC/main/tdc/resource/"
+API_ENDPOINT = "https://dataverse.harvard.edu/api/access/datafile/"
 BATCH_SIZE = 50  # datasets per commit; typical runs have ~20 datasets
 
 
@@ -104,7 +104,7 @@ def load_tdc_admet_data(
         DO UPDATE SET
             response_body       = EXCLUDED.response_body,
             response_body_hash  = EXCLUDED.response_body_hash,
-            _loaded_at          = NOW()
+            ingested_at         = NOW()
         WHERE mol_raw.tdc_admet.response_body IS DISTINCT FROM EXCLUDED.response_body
     """
 

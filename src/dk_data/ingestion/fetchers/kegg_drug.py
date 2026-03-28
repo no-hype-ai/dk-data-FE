@@ -274,7 +274,9 @@ class KEGGDrugFetcher(BaseFetcher):
     def _fetch_batch(self, drug_ids: List[str]) -> List[Dict[str, Any]]:
         """Fetch and parse a batch of up to 10 KEGG drug entries.
 
-        KEGG batch syntax: ``/get/dr:D00001+dr:D00002+...``
+        Tries the batch endpoint first (/get/id1+id2+...).  If that returns
+        403 (KEGG now restricts multi-ID batch access), falls back to
+        individual single-ID requests with a short inter-request delay.
 
         Args:
             drug_ids: List of KEGG drug IDs (with ``dr:`` prefix).
@@ -287,6 +289,12 @@ class KEGGDrugFetcher(BaseFetcher):
 
         try:
             response = self.session.get(url, timeout=60)
+            if response.status_code == 403 and len(drug_ids) > 1:
+                logger.debug(
+                    "[kegg_drug] Batch 403 for %d IDs — falling back to single requests",
+                    len(drug_ids),
+                )
+                return self._fetch_individually(drug_ids)
             response.raise_for_status()
             return _parse_kegg_flat_file(response.text)
         except Exception as exc:
@@ -294,3 +302,25 @@ class KEGGDrugFetcher(BaseFetcher):
                 "[kegg_drug] Batch fetch failed for %s: %s", batch_param, exc
             )
             return []
+
+    def _fetch_individually(self, drug_ids: List[str]) -> List[Dict[str, Any]]:
+        """Fetch KEGG entries one at a time (fallback when batch returns 403).
+
+        Args:
+            drug_ids: List of KEGG drug IDs (with ``dr:`` prefix).
+
+        Returns:
+            List of parsed drug dicts; silently skips IDs that fail.
+        """
+        entries: List[Dict[str, Any]] = []
+        for drug_id in drug_ids:
+            url = f"{BASE_URL}/get/{drug_id}"
+            try:
+                response = self.session.get(url, timeout=60)
+                response.raise_for_status()
+                parsed = _parse_kegg_flat_file(response.text)
+                entries.extend(parsed)
+            except Exception as exc:
+                logger.debug("[kegg_drug] Single fetch failed for %s: %s", drug_id, exc)
+            time.sleep(_BATCH_DELAY)
+        return entries

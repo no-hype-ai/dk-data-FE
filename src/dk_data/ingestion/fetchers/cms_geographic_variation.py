@@ -48,7 +48,7 @@ class CMSGeographicVariationFetcher(BaseFetcher):
         latest_year = max(self.AVAILABLE_YEARS)
         return self.KNOWN_ZIP_URLS[latest_year]
 
-    def fetch(self, year: Optional[int] = None) -> dict[str, Any]:
+    def fetch(self, year: Optional[int] = None, **kwargs) -> dict[str, Any]:
         """
         Fetch CMS Geographic Variation PUF for the specified year.
 

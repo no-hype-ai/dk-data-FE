@@ -3,9 +3,11 @@
 SIDER (Side Effect Resource) contains drug side effect information extracted
 from public drug package inserts (drug labels).
 
-Source: http://sideeffects.embl.de/
-Data files (all TSV, no authentication required):
+Original source: http://sideeffects.embl.de/
+Status: EMBL server permanently offline as of 2026 (connection refused).
+        denbi.de service page links back to the dead EMBL server.
 
+Data files (TSV, no authentication required when server was live):
   meddra_all_se.tsv — all side effects per drug (4 columns):
     stitch_id_flat | stitch_id_stereo | umls_cui_side_effect | side_effect_name
 
@@ -14,8 +16,9 @@ Data files (all TSV, no authentication required):
     frequency | lower_bound_freq | upper_bound_freq | meddra_concept_type |
     umls_cui_from_label | side_effect_name
 
-The fetcher downloads both files and merges rows by STITCH ID + UMLS CUI,
-preserving exact column header names for the bronze SQL model.
+The fetcher tries the EMBL URLs and any known mirrors.  If all are
+unreachable it returns status='source_unavailable' rather than raising,
+so the pipeline can continue without this optional source.
 """
 
 import csv
@@ -29,18 +32,29 @@ from .base import BaseFetcher
 
 logger = logging.getLogger(__name__)
 
+# ---------------------------------------------------------------------------
+# Known URL candidates — EMBL first (original), then mirrors.
+# EMBL has been offline since at least early 2026; add mirror URLs below
+# when a confirmed working mirror is identified.
+# ---------------------------------------------------------------------------
+_EMBL_BASE = "http://sideeffects.embl.de/media/files"
+
+_FREQ_URLS = [
+    f"{_EMBL_BASE}/meddra_freq.tsv.gz",
+]
+
+_ALL_SE_URLS = [
+    f"{_EMBL_BASE}/meddra_all_se.tsv.gz",
+]
+
 
 class SIDERFetcher(BaseFetcher):
     """Fetcher for SIDER drug side effect data."""
 
     SOURCE_NAME = "sider"
-    BASE_URL = "http://sideeffects.embl.de/media/files"
+    BASE_URL = _EMBL_BASE
 
-    # SIDER data file URLs
-    ALL_SE_URL = f"{BASE_URL}/meddra_all_se.tsv.gz"
-    FREQ_URL = f"{BASE_URL}/meddra_freq.tsv.gz"
-
-    # Column definitions matching exact SIDER TSV headers
+    # Column definitions matching exact SIDER TSV headers (no header row in file)
     ALL_SE_COLUMNS = [
         "stitch_id_flat",
         "stitch_id_stereo",
@@ -62,7 +76,7 @@ class SIDERFetcher(BaseFetcher):
     ]
 
     def get_latest_url(self) -> str:
-        return self.FREQ_URL
+        return _FREQ_URLS[0]
 
     def fetch(self, **kwargs) -> Dict[str, Any]:
         """Fetch SIDER side effect data.
@@ -72,6 +86,7 @@ class SIDERFetcher(BaseFetcher):
 
         Returns:
             Dict with keys: status, records, hash, error (on failure).
+            status='source_unavailable' when the SIDER server cannot be reached.
         """
         source = kwargs.get("source", "both")
 
@@ -79,16 +94,16 @@ class SIDERFetcher(BaseFetcher):
             records: List[Dict[str, Any]] = []
 
             if source in ("freq", "both"):
-                freq_records = self._fetch_file(
-                    self.FREQ_URL,
+                freq_records = self._fetch_file_with_fallback(
+                    _FREQ_URLS,
                     self.FREQ_COLUMNS,
                     source_file="meddra_freq.tsv",
                 )
                 records.extend(freq_records)
 
             if source in ("all_se", "both"):
-                all_se_records = self._fetch_file(
-                    self.ALL_SE_URL,
+                all_se_records = self._fetch_file_with_fallback(
+                    _ALL_SE_URLS,
                     self.ALL_SE_COLUMNS,
                     source_file="meddra_all_se.tsv",
                 )
@@ -106,11 +121,48 @@ class SIDERFetcher(BaseFetcher):
             self.log_fetch_result({**result, "records": len(records)})
             return result
 
+        except _SourceUnavailableError as e:
+            msg = (
+                f"SIDER source unavailable: {e}. "
+                "The EMBL server (sideeffects.embl.de) has been offline since 2026. "
+                "Add a working mirror URL to _FREQ_URLS / _ALL_SE_URLS in sider.py."
+            )
+            logger.warning(msg)
+            result = {"status": "source_unavailable", "records": [], "hash": None, "error": msg}
+            self.log_fetch_result(result)
+            return result
+
         except Exception as e:
             logger.exception(f"SIDER fetch failed: {e}")
             result = {"status": "failed", "records": [], "hash": None, "error": str(e)}
             self.log_fetch_result(result)
             return result
+
+    def _fetch_file_with_fallback(
+        self,
+        urls: List[str],
+        columns: List[str],
+        source_file: str,
+    ) -> List[Dict[str, Any]]:
+        """Try each URL in order; raise _SourceUnavailableError if all fail."""
+        last_error: Exception | None = None
+
+        for url in urls:
+            try:
+                return self._fetch_file(url, columns, source_file)
+            except (ConnectionError, OSError) as exc:
+                logger.debug(f"SIDER connection error for {url}: {exc}")
+                last_error = exc
+                continue
+            except Exception as exc:
+                logger.debug(f"SIDER fetch error for {url}: {exc}")
+                last_error = exc
+                continue
+
+        raise _SourceUnavailableError(
+            f"All SIDER URLs failed for {source_file}. "
+            f"Last error: {last_error}. Tried: {urls}"
+        )
 
     def _fetch_file(
         self,
@@ -149,3 +201,7 @@ class SIDERFetcher(BaseFetcher):
 
         logger.info(f"Parsed {len(records):,} records from {source_file}")
         return records
+
+
+class _SourceUnavailableError(RuntimeError):
+    """Raised when all known URLs for a SIDER file are unreachable."""

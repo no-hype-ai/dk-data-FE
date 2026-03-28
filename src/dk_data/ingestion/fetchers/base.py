@@ -57,7 +57,7 @@ class BaseFetcher(ABC):
 
         # Common headers
         self.session.headers.update({
-            'User-Agent': 'TAVR-Data-Platform/1.0 (Edwards Medical; Data Integration)',
+            'User-Agent': 'DataKinetic-Research/1.0 (academic-research-data-integration; +https://datakinetic.io)',
             'Accept': 'application/json, text/csv, */*',
         })
 

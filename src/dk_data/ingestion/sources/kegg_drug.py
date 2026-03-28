@@ -17,7 +17,7 @@ Expected schema (JSONB envelope):
     response_status     INTEGER NOT NULL DEFAULT 200
     response_body       JSONB NOT NULL
     processed_to_bronze BOOLEAN NOT NULL DEFAULT FALSE
-    _loaded_at          TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    ingested_at         TIMESTAMPTZ NOT NULL DEFAULT NOW()
 
 Deduplication: ON CONFLICT (request_id) DO NOTHING — batch request IDs
 encode source + batch index + timestamp, so re-ingestion of a new run
@@ -75,15 +75,13 @@ def load_kegg_drug_data(
             request_timestamp,
             response_status,
             response_body,
-            processed_to_bronze,
-            _loaded_at
+            processed_to_bronze
         ) VALUES (
             %s,
             NOW(),
             200,
             %s::JSONB,
-            FALSE,
-            NOW()
+            FALSE
         )
         ON CONFLICT (request_id) DO NOTHING
     """

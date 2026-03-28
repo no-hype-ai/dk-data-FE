@@ -83,11 +83,11 @@ API_SOURCES: list[dict] = [
     {"key": "hta_bodies",      "days_back": 90},
     # Financial / IP
     {"key": "sec_edgar",       "days_back": 90},
-    {"key": "uspto_patents",   "days_back": 90},
+    {"key": "uspto_patents",   "days_back": 90,  "credential_gated": True},
     {"key": "uspto_ci",        "days_back": 90},
     {"key": "uspto_trademarks","days_back": None},
-    {"key": "euipo_trademarks","days_back": 90},
-    {"key": "euipo_designs",   "days_back": 90},
+    {"key": "euipo_trademarks","days_back": 90,  "credential_gated": True},
+    {"key": "euipo_designs",   "days_back": 90,  "credential_gated": True},
     {"key": "epo_ops",         "days_back": 90,  "credential_gated": True},
     # Drug / molecule data
     {"key": "drugbank",        "days_back": None, "credential_gated": True},
@@ -361,17 +361,24 @@ def load_legacy_sources(sources: list[dict], limit: int) -> list[dict]:
 # ---------------------------------------------------------------------------
 
 def _print_summary(all_results: list[dict], elapsed: float) -> None:
-    ok  = [r for r in all_results if r["status"] == "success"]
-    sk  = [r for r in all_results if r["status"] == "skipped"]
-    err = [r for r in all_results if r["status"] == "failed"]
+    ok   = [r for r in all_results if r["status"] == "success"]
+    sk   = [r for r in all_results if r["status"] == "skipped"]
+    unav = [r for r in all_results if r["status"] == "source_unavailable"]
+    err  = [r for r in all_results if r["status"] == "failed"]
 
     print(f"\n{'═' * 64}")
     print(f"  SEED SAMPLES COMPLETE — {round(elapsed, 1)}s")
     print(f"{'═' * 64}")
-    print(f"  Loaded   : {len(ok):3d} sources")
-    print(f"  Skipped  : {len(sk):3d} sources")
-    print(f"  Failed   : {len(err):3d} sources")
+    print(f"  Loaded     : {len(ok):3d} sources")
+    print(f"  Skipped    : {len(sk):3d} sources (credential-gated)")
+    print(f"  Unavailable: {len(unav):3d} sources (external service offline)")
+    print(f"  Failed     : {len(err):3d} sources")
     print(f"{'─' * 64}")
+
+    if unav:
+        print("\n  UNAVAILABLE (external service offline):")
+        for r in unav:
+            print(f"    ~ {r['source']}")
 
     if err:
         print("\n  FAILED:")
@@ -467,7 +474,7 @@ def main() -> int:
             logger.error("Export step failed")
 
     _print_summary(all_results, time.monotonic() - t_start)
-    return 0 if all(r["status"] in ("success", "skipped") for r in all_results) else 1
+    return 0 if all(r["status"] in ("success", "skipped", "source_unavailable") for r in all_results) else 1
 
 
 if __name__ == "__main__":
