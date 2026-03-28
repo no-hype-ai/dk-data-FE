@@ -88,8 +88,8 @@ class UniProtFetcher(BaseFetcher):
             "fields": (
                 "accession,id,protein_name,gene_names,organism_name,"
                 "length,keyword,cc_function,ft_binding,"
-                "xref_pdb,xref_go,xref_chembl,xref_drugbank,"
-                "annotation_score,entry_type,sequence"
+                "xref_pdb,xref_chembl,xref_drugbank,"
+                "annotation_score,sequence"
             ),
         }
 

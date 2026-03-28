@@ -101,6 +101,7 @@ class EUIPOTrademarksFetcher(BaseFetcher):
             )
 
             self._api_errors = 0
+            self._last_api_error: Optional[str] = None
 
             if self.backend == "ibm_gateway":
                 raw_records = self._fetch_ibm_gateway(nice_classes, date_from, max_records)
@@ -131,13 +132,15 @@ class EUIPOTrademarksFetcher(BaseFetcher):
             else:
                 status = "success"
 
-            result = {
+            result: Dict[str, Any] = {
                 "status": status,
                 "records": all_records,
                 "record_count": len(all_records),
                 "hash": content_hash,
             }
-            self.log_fetch_result({"status": status, "records": len(all_records)})
+            if status in ("failed", "partial") and self._last_api_error:
+                result["error"] = self._last_api_error
+            self.log_fetch_result({"status": status, "records": len(all_records), **( {"error": result["error"]} if "error" in result else {})})
             return result
 
         except Exception as e:
@@ -207,6 +210,7 @@ class EUIPOTrademarksFetcher(BaseFetcher):
             except Exception as e:
                 logger.warning("TMview request failed at page %d: %s", page_index, e)
                 self._api_errors += 1
+                self._last_api_error = str(e)
                 break
 
         return records
@@ -273,6 +277,7 @@ class EUIPOTrademarksFetcher(BaseFetcher):
             except Exception as e:
                 logger.warning("IBM Gateway request failed at page %d: %s", page_number, e)
                 self._api_errors += 1
+                self._last_api_error = str(e)
                 break
 
         return records

@@ -179,6 +179,18 @@ def _python() -> str:
     return sys.executable
 
 
+# Sources that download large files or make many paginated requests.
+_LARGE_FILE_TIMEOUT: dict[str, int] = {
+    "bindingdb": 2400,   # ~4 GB zip; 40 min
+    "pdb":       1200,   # large PDB mirror; 20 min
+    "orcid":     1200,   # large ORCID dump; 20 min
+    "who_icd":     1200,   # ICD tree traversal; many requests; 20 min
+    "kegg_drug":   1200,   # 6000+ individual API calls; 20 min
+    "cms_formulary": 1800, # Large CMS Part D ZIP; 30 min
+}
+_DEFAULT_TIMEOUT = 600  # 10 minutes for all other sources
+
+
 def _run_ingestion(source_key: str, extra_args: list[str]) -> tuple[str, bool, str]:
     """Run `python -m dk_data.ingestion.main <source> <extra_args>` as subprocess.
 
@@ -187,13 +199,14 @@ def _run_ingestion(source_key: str, extra_args: list[str]) -> tuple[str, bool, s
     cmd = [_python(), "-m", "dk_data.ingestion.main", source_key] + extra_args
     logger.info("Running: %s", " ".join(cmd))
     t0 = time.monotonic()
+    timeout = _LARGE_FILE_TIMEOUT.get(source_key, _DEFAULT_TIMEOUT)
     try:
         proc = subprocess.run(
             cmd,
             capture_output=True,
             text=True,
             cwd=str(REPO_ROOT),
-            timeout=600,  # 10 minutes max per source
+            timeout=timeout,
         )
         elapsed = round(time.monotonic() - t0, 1)
         tail = (proc.stdout + proc.stderr)[-800:]
@@ -208,7 +221,7 @@ def _run_ingestion(source_key: str, extra_args: list[str]) -> tuple[str, bool, s
             logger.warning("Output:\n%s", tail)
         return source_key, success, tail
     except subprocess.TimeoutExpired:
-        logger.error("%s timed out after 600s", source_key)
+        logger.error("%s timed out after %ds", source_key, timeout)
         return source_key, False, "TIMEOUT"
     except Exception as exc:
         logger.error("%s error: %s", source_key, exc)
@@ -287,7 +300,11 @@ def load_api_sources(
 
         extra = ["--batch-size", str(limit), "--max-records", str(limit)]
         _, success, tail = _run_ingestion(key, extra)
-        return {"source": key, "status": "success" if success else "failed", "output": tail}
+        if not success and "status: source_unavailable" in tail:
+            status_val = "source_unavailable"
+        else:
+            status_val = "success" if success else "failed"
+        return {"source": key, "status": status_val, "output": tail}
 
     with concurrent.futures.ThreadPoolExecutor(max_workers=workers) as pool:
         futs = {pool.submit(_run, s): s["key"] for s in sources}
@@ -422,6 +439,8 @@ def main() -> int:
                         help="Skip export step")
     parser.add_argument("--export-only", action="store_true",
                         help="Skip all loading — just export from what's in the DB")
+    parser.add_argument("--skip-puf", action="store_true",
+                        help="Skip CMS PUF file-download sources (large files; use for quick local seeds)")
     args = parser.parse_args()
 
     t_start = time.monotonic()
@@ -460,9 +479,13 @@ def main() -> int:
             all_results += load_api_sources(API_SOURCES, args.limit, args.workers)
 
         if args.category in ("cms", "all"):
-            logger.info("─── Loading CMS PUF sources (%d sources, year=%d) ───",
-                        len(CMS_SOURCES), args.year)
-            all_results += load_cms_sources(CMS_SOURCES, args.limit, args.year, args.force)
+            if args.skip_puf:
+                logger.info("─── Skipping CMS PUF sources (--skip-puf) ───")
+                all_results += [{"source": s["key"], "status": "skipped", "reason": "--skip-puf"} for s in CMS_SOURCES]
+            else:
+                logger.info("─── Loading CMS PUF sources (%d sources, year=%d) ───",
+                            len(CMS_SOURCES), args.year)
+                all_results += load_cms_sources(CMS_SOURCES, args.limit, args.year, args.force)
 
         if args.category in ("legacy", "all"):
             logger.info("─── Loading legacy file sources ───")

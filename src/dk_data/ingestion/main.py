@@ -1161,7 +1161,10 @@ Examples:
             for err in result['errors'][:5]:
                 print(f"  - {err}")
 
-        if result.get('status') in ('success', 'skipped', 'partial'):
+        result_status = result.get('status')
+        # Loaders that succeed often return {records_inserted, records_skipped} with no 'status' key.
+        loader_succeeded = result_status is None and 'records_inserted' in result
+        if result_status in ('success', 'skipped', 'partial', 'source_unavailable') or loader_succeeded:
             status = "success"
             return 0
         else:

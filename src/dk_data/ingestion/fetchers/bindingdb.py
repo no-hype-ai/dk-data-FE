@@ -100,14 +100,16 @@ class BindingDBFetcher(BaseFetcher):
 
         Keyword Args:
             require_affinity: If True, skip rows with no Ki/IC50/Kd/EC50 value.
+            max_records: Stop parsing after this many records (default: all).
 
         Returns:
             Dict with keys: status, records, hash, error (on failure).
         """
         require_affinity = kwargs.get("require_affinity", True)
+        max_records: Optional[int] = kwargs.get("max_records")
 
         try:
-            records = self._download_and_parse(require_affinity)
+            records = self._download_and_parse(require_affinity, max_records=max_records)
 
             content_hash = hashlib.md5(
                 str(len(records)).encode()
@@ -127,7 +129,9 @@ class BindingDBFetcher(BaseFetcher):
             self.log_fetch_result(result)
             return result
 
-    def _download_and_parse(self, require_affinity: bool) -> List[Dict[str, Any]]:
+    def _download_and_parse(
+        self, require_affinity: bool, max_records: Optional[int] = None
+    ) -> List[Dict[str, Any]]:
         """Try candidate monthly URLs, download the zip, and parse rows.
 
         Streams the zip into a temp buffer to avoid holding the entire
@@ -155,7 +159,7 @@ class BindingDBFetcher(BaseFetcher):
                             )
                 logger.info(f"Downloaded {downloaded / 1024 / 1024:.1f} MB from {url}")
                 buf.seek(0)
-                return self._parse_zip(buf, require_affinity)
+                return self._parse_zip(buf, require_affinity, max_records=max_records)
             except Exception as exc:
                 last_error = exc
                 logger.warning(f"BindingDB download failed for {url}: {exc}")
@@ -166,8 +170,19 @@ class BindingDBFetcher(BaseFetcher):
             f"Tried: {candidates}"
         )
 
-    def _parse_zip(self, buf: io.BytesIO, require_affinity: bool) -> List[Dict[str, Any]]:
-        """Parse a BindingDB TSV zip from an in-memory buffer."""
+    def _parse_zip(
+        self,
+        buf: io.BytesIO,
+        require_affinity: bool,
+        max_records: Optional[int] = None,
+    ) -> List[Dict[str, Any]]:
+        """Parse a BindingDB TSV zip from an in-memory buffer.
+
+        Args:
+            buf: In-memory zip buffer.
+            require_affinity: Skip rows with no affinity measurement.
+            max_records: Stop after this many records (None = parse all).
+        """
         records: List[Dict[str, Any]] = []
         affinity_cols = {"Ki (nM)", "IC50 (nM)", "Kd (nM)", "EC50 (nM)"}
 
@@ -177,13 +192,17 @@ class BindingDBFetcher(BaseFetcher):
                 raise ValueError("No TSV file found in BindingDB zip archive")
 
             tsv_name = tsv_names[0]
-            logger.info(f"Parsing {tsv_name}")
+            logger.info(f"Parsing {tsv_name} (max_records={max_records})")
 
             with zf.open(tsv_name) as tsv_bytes:
                 text = io.TextIOWrapper(tsv_bytes, encoding="utf-8", errors="replace")
                 reader = csv.DictReader(text, delimiter="\t")
 
                 for row in reader:
+                    if max_records is not None and len(records) >= max_records:
+                        logger.info(f"BindingDB: reached max_records={max_records}, stopping")
+                        break
+
                     reactant_id = row.get("BindingDB Reactant_set_id", "").strip()
                     if not reactant_id:
                         continue
