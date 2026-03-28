@@ -262,7 +262,7 @@ TABLE_REGISTRY: dict[str, dict] = {
         "layer": "silver",
         "domain": "hcs",
         "tables": [
-            # SQLMesh entity-resolved profiles
+            # SQLMesh entity-resolved profiles (deterministic SQL)
             "provider_profile",
             "facility_profile",
             "cms_facility_profile",
@@ -273,13 +273,38 @@ TABLE_REGISTRY: dict[str, dict] = {
             "open_payments_drug_linkage",
             "part_d_prescribing",
             "ref_nucc_taxonomy",
-            # Agent output tables
+        ],
+    },
+
+    # ── Agent layer: Healthcare System (LLM-written tables) ────────────────
+    "hcs_agents": {
+        "layer": "silver",
+        "domain": "hcs",
+        "tables": [
             "service_lines",
             "idn_hierarchy",
             "referral_network",
             "verified_contacts",
             "staffing_decomposition",
             "equipment_inventory",
+        ],
+    },
+
+    # ── Agent layer: Molecules (LLM-written staging) ────────────────────────
+    "mol_agents": {
+        "layer": "silver",
+        "domain": "mol",
+        "tables": [
+            "publication_evidence_staging",
+        ],
+    },
+
+    # ── Agent shared: cross-domain quarantine ──────────────────────────────
+    "agents": {
+        "layer": "silver",
+        "domain": "agents",
+        "tables": [
+            "agent_quarantine",
         ],
     },
 

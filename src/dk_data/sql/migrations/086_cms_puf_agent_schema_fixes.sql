@@ -518,4 +518,45 @@ CREATE TABLE hcs_raw.cms_cost_reports_puf (
     _source_file TEXT, _loaded_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
+-- ============================================================================
+-- SECTION 10: Agent schema separation (hcs_agents / mol_agents / agents)
+-- Moves all LLM-written tables out of deterministic silver schemas into
+-- dedicated epistemologically distinct schemas.
+-- ============================================================================
+
+-- Create the three new agent schemas
+CREATE SCHEMA IF NOT EXISTS hcs_agents;
+CREATE SCHEMA IF NOT EXISTS mol_agents;
+CREATE SCHEMA IF NOT EXISTS agents;
+
+-- HCS agent output tables: hcs_silver → hcs_agents
+ALTER TABLE hcs_silver.service_lines          SET SCHEMA hcs_agents;
+ALTER TABLE hcs_silver.idn_hierarchy          SET SCHEMA hcs_agents;
+ALTER TABLE hcs_silver.referral_network       SET SCHEMA hcs_agents;
+ALTER TABLE hcs_silver.verified_contacts      SET SCHEMA hcs_agents;
+ALTER TABLE hcs_silver.staffing_decomposition SET SCHEMA hcs_agents;
+ALTER TABLE hcs_silver.equipment_inventory    SET SCHEMA hcs_agents;
+
+-- Mol agent staging table: mol_silver → mol_agents
+ALTER TABLE mol_silver.publication_evidence_staging SET SCHEMA mol_agents;
+
+-- Quarantine table: mol_silver → agents (cross-domain shared)
+ALTER TABLE mol_silver.agent_quarantine SET SCHEMA agents;
+
+-- Grant access to existing application role on new schemas
+GRANT USAGE ON SCHEMA hcs_agents TO dk_data_app;
+GRANT USAGE ON SCHEMA mol_agents  TO dk_data_app;
+GRANT USAGE ON SCHEMA agents      TO dk_data_app;
+GRANT SELECT, INSERT, UPDATE ON ALL TABLES IN SCHEMA hcs_agents TO dk_data_app;
+GRANT SELECT, INSERT, UPDATE ON ALL TABLES IN SCHEMA mol_agents  TO dk_data_app;
+GRANT SELECT, INSERT, UPDATE ON ALL TABLES IN SCHEMA agents      TO dk_data_app;
+
+-- Grant read access to read-only role (web_anon / PostgREST)
+GRANT USAGE ON SCHEMA hcs_agents TO web_anon;
+GRANT USAGE ON SCHEMA mol_agents  TO web_anon;
+GRANT USAGE ON SCHEMA agents      TO web_anon;
+GRANT SELECT ON ALL TABLES IN SCHEMA hcs_agents TO web_anon;
+GRANT SELECT ON ALL TABLES IN SCHEMA mol_agents  TO web_anon;
+GRANT SELECT ON ALL TABLES IN SCHEMA agents      TO web_anon;
+
 COMMIT;

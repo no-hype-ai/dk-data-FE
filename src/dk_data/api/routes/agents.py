@@ -36,7 +36,7 @@ AGENT_REGISTRY: Dict[str, Dict[str, Any]] = {
         "display_name": "Service Line Inference",
         "description": "Infers clinical service lines per NPI from inpatient DRG mix",
         "module": "dk_data.agents.service_line_inference",
-        "silver_table": "hcs_silver.service_lines",
+        "silver_table": "hcs_agents.service_lines",
         "default_limit": 50,
     },
     "idn_hierarchy": {
@@ -44,7 +44,7 @@ AGENT_REGISTRY: Dict[str, Dict[str, Any]] = {
         "display_name": "IDN Hierarchy",
         "description": "Infers Integrated Delivery Network parent-child relationships from NPPES",
         "module": "dk_data.agents.idn_hierarchy",
-        "silver_table": "hcs_silver.idn_hierarchy",
+        "silver_table": "hcs_agents.idn_hierarchy",
         "default_limit": 50,
     },
     "referral_network": {
@@ -52,7 +52,7 @@ AGENT_REGISTRY: Dict[str, Dict[str, Any]] = {
         "display_name": "Referral Network",
         "description": "Maps physician referral patterns from CMS referring/ordering providers",
         "module": "dk_data.agents.referral_network",
-        "silver_table": "hcs_silver.referral_network",
+        "silver_table": "hcs_agents.referral_network",
         "default_limit": 50,
     },
     "contact_verification": {
@@ -60,7 +60,7 @@ AGENT_REGISTRY: Dict[str, Dict[str, Any]] = {
         "display_name": "Contact Verification",
         "description": "Validates NPI contact information from NPPES",
         "module": "dk_data.agents.contact_verification",
-        "silver_table": "hcs_silver.verified_contacts",
+        "silver_table": "hcs_agents.verified_contacts",
         "default_limit": 50,
     },
     "staffing_decomposition": {
@@ -68,7 +68,7 @@ AGENT_REGISTRY: Dict[str, Dict[str, Any]] = {
         "display_name": "Staffing Decomposition",
         "description": "Decomposes cost report staffing data into clinical role categories",
         "module": "dk_data.agents.staffing_decomposition",
-        "silver_table": "hcs_silver.staffing_decomposition",
+        "silver_table": "hcs_agents.staffing_decomposition",
         "default_limit": 50,
     },
     "equipment_inventory": {
@@ -76,7 +76,7 @@ AGENT_REGISTRY: Dict[str, Dict[str, Any]] = {
         "display_name": "Equipment Inventory",
         "description": "Infers medical equipment inventory from physician HCPCS procedure codes",
         "module": "dk_data.agents.equipment_inventory",
-        "silver_table": "hcs_silver.equipment_inventory",
+        "silver_table": "hcs_agents.equipment_inventory",
         "default_limit": 50,
     },
     "publication_evidence_extractor": {
@@ -84,7 +84,7 @@ AGENT_REGISTRY: Dict[str, Dict[str, Any]] = {
         "display_name": "Publication Evidence Extractor",
         "description": "Extracts clinical trial endpoints from publication abstracts via LLM",
         "module": "dk_data.agents.publication_evidence_extractor",
-        "silver_table": "mol_silver.publication_evidence_staging",
+        "silver_table": "mol_agents.publication_evidence_staging",
         "default_limit": 50,
     },
 }
@@ -319,7 +319,7 @@ async def get_quarantine(
     db_pool=Depends(get_db_pool),
 ) -> QuarantineResponse:
     """
-    Return paginated quarantine records from mol_silver.agent_quarantine.
+    Return paginated quarantine records from agents.agent_quarantine.
 
     Quarantine records are written by agents for records with confidence_score < 0.5
     or other processing failures.
@@ -344,7 +344,7 @@ async def get_quarantine(
                 SELECT
                     id, agent_name, record_id, source_table,
                     confidence_score, failure_reason, created_at::TEXT
-                FROM mol_silver.agent_quarantine
+                FROM agents.agent_quarantine
                 {where_clause}
                 ORDER BY created_at DESC
                 LIMIT $1 OFFSET $2
@@ -355,7 +355,7 @@ async def get_quarantine(
             count_row = await conn.fetchrow(
                 f"""
                 SELECT COUNT(*) AS total
-                FROM mol_silver.agent_quarantine
+                FROM agents.agent_quarantine
                 {"WHERE agent_name = $1" if agent_name else ""}
                 """,
                 *count_params,

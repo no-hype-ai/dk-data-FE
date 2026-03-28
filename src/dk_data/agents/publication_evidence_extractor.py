@@ -3,7 +3,7 @@
 Feature: 019-cms-puf-platform-reconciliation
 
 Reads abstracts from mol_silver.publications that are not yet staged in
-mol_silver.publication_evidence_staging, extracts structured clinical endpoint
+mol_agents.publication_evidence_staging, extracts structured clinical endpoint
 data via LLM, and writes to staging. A SQLMesh model promotes staging -> live.
 
 Confidence routing:
@@ -30,7 +30,7 @@ from dk_data.agents.base_agent import BaseAgent, AgentResult, RunResult, MAX_EVI
 
 logger = structlog.get_logger(__name__)
 
-SILVER_TABLE = "mol_silver.publication_evidence_staging"
+SILVER_TABLE = "mol_agents.publication_evidence_staging"
 
 NCT_RE = re.compile(r'\bNCT\d{8}\b', re.IGNORECASE)
 
@@ -119,7 +119,7 @@ class PublicationEvidenceExtractorAgent(BaseAgent):
               AND p.pmid IS NOT NULL
               AND p.pmid NOT IN (
                   SELECT DISTINCT pmid
-                  FROM mol_silver.publication_evidence_staging
+                  FROM mol_agents.publication_evidence_staging
               )
             ORDER BY p.publication_date DESC NULLS LAST
             LIMIT $1
@@ -204,7 +204,7 @@ class PublicationEvidenceExtractorAgent(BaseAgent):
         self, results: list[AgentResult], db_pool: asyncpg.Pool
     ) -> int:
         """
-        Write to mol_silver.publication_evidence_staging.
+        Write to mol_agents.publication_evidence_staging.
         ON CONFLICT DO NOTHING — content_hash is the dedup key.
         """
         written = 0
@@ -215,7 +215,7 @@ class PublicationEvidenceExtractorAgent(BaseAgent):
                 o = result.output
                 await conn.execute(
                     """
-                    INSERT INTO mol_silver.publication_evidence_staging (
+                    INSERT INTO mol_agents.publication_evidence_staging (
                         content_hash,
                         molecule_id,
                         trial_nct_id,

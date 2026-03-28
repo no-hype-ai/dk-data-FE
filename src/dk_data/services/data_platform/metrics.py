@@ -650,12 +650,10 @@ def refresh_metrics_from_database_sync():
                 conn.rollback()
                 set_table_record_count('hcs_bronze', table, 0)
 
-        # HCS silver table record counts (SQLMesh models + agent tables)
+        # HCS silver table record counts (SQLMesh models only — agent tables tracked separately)
         hcs_silver_tables = [
             'cms_drug_market', 'provider_profile', 'facility_profile',
             'geographic_health', 'drug_utilization',
-            'service_lines', 'idn_hierarchy', 'referral_network',
-            'verified_contacts', 'staffing_decomposition', 'equipment_inventory',
             'cms_facility_profile', 'open_payments_drug_linkage',
             'part_d_prescribing', 'ref_nucc_taxonomy',
         ]
@@ -668,7 +666,7 @@ def refresh_metrics_from_database_sync():
                 conn.rollback()
                 set_table_record_count('hcs_silver', table, 0)
 
-        # HCS agent quality metrics
+        # HCS agent quality metrics (hcs_agents schema — LLM-written tables)
         hcs_agent_tables = {
             'service_lines': 'npi',
             'idn_hierarchy': 'child_npi',
@@ -684,12 +682,12 @@ def refresh_metrics_from_database_sync():
                         COUNT(*) FILTER (WHERE needs_review = FALSE) AS direct_write,
                         COUNT(*) FILTER (WHERE needs_review = TRUE)  AS needs_review,
                         AVG(confidence_score)                        AS avg_confidence
-                    FROM hcs_silver.{table}
+                    FROM hcs_agents.{table}
                 """)
                 row = cur.fetchone()
                 if row:
-                    set_table_record_count('hcs_silver_direct', table, row[0] or 0)
-                    set_table_record_count('hcs_silver_review', table, row[1] or 0)
+                    set_table_record_count('hcs_agents_direct', table, row[0] or 0)
+                    set_table_record_count('hcs_agents_review', table, row[1] or 0)
             except Exception:
                 conn.rollback()
 

@@ -4,7 +4,7 @@ Feature: 019-cms-puf-platform-reconciliation
 
 Reads staffing-related cost report fields from hcs_raw.cms_cost_reports_puf,
 decomposes reported staffing into clinical role categories via LLM, and writes
-to hcs_silver.staffing_decomposition.
+to hcs_agents.staffing_decomposition.
 
 Confidence routing:
     < 0.5  → quarantine
@@ -25,7 +25,7 @@ from dk_data.agents.base_agent import BaseAgent, AgentResult, RunResult, MAX_EVI
 
 logger = structlog.get_logger(__name__)
 
-SILVER_TABLE = "hcs_silver.staffing_decomposition"
+SILVER_TABLE = "hcs_agents.staffing_decomposition"
 
 STAFFING_DECOMPOSITION_PROMPT = """\
 You are a healthcare cost report analyst with expertise in CMS cost reports (Form CMS-2552).
@@ -105,7 +105,7 @@ class StaffingDecompositionAgent(BaseAgent):
               AND (cr.reported_hours_fte IS NOT NULL OR cr.total_salaries IS NOT NULL)
               AND cr.line_item_code LIKE 'A-%'
               AND cr.provider_id NOT IN (
-                  SELECT DISTINCT provider_id FROM hcs_silver.staffing_decomposition
+                  SELECT DISTINCT provider_id FROM hcs_agents.staffing_decomposition
               )
               {year_clause}
             GROUP BY cr.provider_id
@@ -195,7 +195,7 @@ class StaffingDecompositionAgent(BaseAgent):
                     role_confidence = float(decomp.get("confidence_score", o["confidence_score"]))
                     await conn.execute(
                         """
-                        INSERT INTO hcs_silver.staffing_decomposition
+                        INSERT INTO hcs_agents.staffing_decomposition
                             (provider_id, role_category, fte_estimate,
                              confidence_score, needs_review, agent_output, _source_year)
                         VALUES ($1, $2, $3, $4, $5, $6, $7)

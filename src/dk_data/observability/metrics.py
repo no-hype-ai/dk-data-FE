@@ -466,7 +466,7 @@ DK_ALERTS_DELIVERED = Counter(
 
 DK_QUARANTINE_COUNT = Gauge(
     "dk_quarantine_count",
-    "Number of molecules in quarantine status",
+    "Number of molecules in quarantine status (agents.agent_quarantine)",
 )
 
 

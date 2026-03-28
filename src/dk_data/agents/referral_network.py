@@ -4,7 +4,7 @@ Feature: 019-cms-puf-platform-reconciliation
 
 Reads from hcs_raw.cms_referring_providers and hcs_raw.cms_ordering_providers,
 infers referral strength and relationship type between provider pairs via LLM,
-and writes to hcs_silver.referral_network.
+and writes to hcs_agents.referral_network.
 
 Confidence routing:
     < 0.5  → quarantine
@@ -25,7 +25,7 @@ from dk_data.agents.base_agent import BaseAgent, AgentResult, RunResult, MAX_EVI
 
 logger = structlog.get_logger(__name__)
 
-SILVER_TABLE = "hcs_silver.referral_network"
+SILVER_TABLE = "hcs_agents.referral_network"
 
 REFERRAL_NETWORK_PROMPT = """\
 You are a healthcare referral network analyst. Below is a summary of claim-level
@@ -90,7 +90,7 @@ class ReferralNetworkAgent(BaseAgent):
               AND r.referred_to_npi IS NOT NULL
               AND r.referral_count >= 5
               AND NOT EXISTS (
-                  SELECT 1 FROM hcs_silver.referral_network rn
+                  SELECT 1 FROM hcs_agents.referral_network rn
                   WHERE rn.referring_npi = r.referring_npi
                     AND rn.receiving_npi = r.referred_to_npi
                     AND rn._source_year = r._source_year
@@ -170,7 +170,7 @@ class ReferralNetworkAgent(BaseAgent):
                 o = result.output
                 await conn.execute(
                     """
-                    INSERT INTO hcs_silver.referral_network
+                    INSERT INTO hcs_agents.referral_network
                         (referring_npi, receiving_npi, referral_volume,
                          relationship_strength, confidence_score, needs_review,
                          agent_output, _source_year)

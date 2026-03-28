@@ -4,7 +4,7 @@ Feature: 019-cms-puf-platform-reconciliation
 
 Reads organization names and addresses from hcs_raw.cms_nppes, groups
 geographically similar names, and infers Integrated Delivery Network (IDN)
-parent-child relationships via LLM. Writes to hcs_silver.idn_hierarchy.
+parent-child relationships via LLM. Writes to hcs_agents.idn_hierarchy.
 
 Confidence routing:
     < 0.5  → quarantine
@@ -25,7 +25,7 @@ from dk_data.agents.base_agent import BaseAgent, AgentResult, RunResult, MAX_EVI
 
 logger = structlog.get_logger(__name__)
 
-SILVER_TABLE = "hcs_silver.idn_hierarchy"
+SILVER_TABLE = "hcs_agents.idn_hierarchy"
 
 IDN_HIERARCHY_PROMPT = """\
 You are a healthcare network analyst specializing in Integrated Delivery Networks (IDNs).
@@ -103,7 +103,7 @@ class IDNHierarchyAgent(BaseAgent):
             FROM hcs_raw.cms_nppes
             WHERE provider_organization_name IS NOT NULL
               AND entity_type_code = '2'
-              AND npi NOT IN (SELECT child_npi FROM hcs_silver.idn_hierarchy)
+              AND npi NOT IN (SELECT child_npi FROM hcs_agents.idn_hierarchy)
               {state_clause}
             GROUP BY 1, 2, 3
             HAVING COUNT(*) BETWEEN 2 AND 30
@@ -191,7 +191,7 @@ class IDNHierarchyAgent(BaseAgent):
                     row_confidence = float(inf.get("confidence_score", overall_confidence))
                     await conn.execute(
                         """
-                        INSERT INTO hcs_silver.idn_hierarchy
+                        INSERT INTO hcs_agents.idn_hierarchy
                             (child_npi, parent_organization, relationship_type,
                              confidence_score, needs_review, agent_output)
                         VALUES ($1, $2, $3, $4, $5, $6)

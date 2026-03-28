@@ -1,5 +1,5 @@
 -- SQLMesh Model: mol_silver.publication_evidence
--- Promotes records from mol_silver.publication_evidence_staging to the live table.
+-- Promotes records from mol_agents.publication_evidence_staging to the live table.
 -- Agent writes to staging; this model merges staging -> live.
 -- Feature: 019-cms-puf-platform-reconciliation
 
@@ -32,6 +32,6 @@ SELECT
     source_model,
     staged_at AS created_at,
     NOW() AS updated_at
-FROM mol_silver.publication_evidence_staging
+FROM mol_agents.publication_evidence_staging
 WHERE promoted_at IS NULL
   AND confidence_score >= 0.40;

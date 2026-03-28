@@ -10,7 +10,7 @@ All agents extend BaseAgent. Key guarantees:
 - Max 5 concurrent LLM calls per agent run (semaphore-guarded)
 - DB writes to silver tables use asyncpg (agents are async; cannot use psycopg2 get_cursor())
 - Batch size cap: limit defaults to MAX_EVIDENCE_PER_PILLAR (50) per ARCHITECTURE-BEST-PRACTICES.md
-- Failed records go to mol_silver.agent_quarantine — never abort the batch
+- Failed records go to agents.agent_quarantine — never abort the batch
 """
 
 import asyncio
@@ -245,12 +245,12 @@ class BaseAgent(ABC):
         ...
 
     async def _write_quarantine(self, record: dict, result: AgentResult) -> None:
-        """Write a failed/low-confidence record to mol_silver.agent_quarantine."""
+        """Write a failed/low-confidence record to agents.agent_quarantine."""
         db_pool = await self._get_db_pool()
         async with db_pool.acquire() as conn:
             await conn.execute(
                 """
-                INSERT INTO mol_silver.agent_quarantine
+                INSERT INTO agents.agent_quarantine
                     (agent_name, record_id, source_table, raw_input, agent_output,
                      confidence_score, failure_reason)
                 VALUES ($1, $2, $3, $4, $5, $6, $7)

@@ -41,9 +41,16 @@ END
 $$;
 
 -- ============================================================================
--- 2. DROP HCS AGENT SILVER TABLES (leaf nodes first)
+-- 2. DROP HCS AGENT TABLES (if 086 ran → hcs_agents; if only 085 → hcs_silver)
 -- ============================================================================
 
+DROP TABLE IF EXISTS hcs_agents.service_lines CASCADE;
+DROP TABLE IF EXISTS hcs_agents.idn_hierarchy CASCADE;
+DROP TABLE IF EXISTS hcs_agents.referral_network CASCADE;
+DROP TABLE IF EXISTS hcs_agents.verified_contacts CASCADE;
+DROP TABLE IF EXISTS hcs_agents.staffing_decomposition CASCADE;
+DROP TABLE IF EXISTS hcs_agents.equipment_inventory CASCADE;
+-- Fallback: if 086 has not run yet, tables are still in hcs_silver
 DROP TABLE IF EXISTS hcs_silver.service_lines CASCADE;
 DROP TABLE IF EXISTS hcs_silver.idn_hierarchy CASCADE;
 DROP TABLE IF EXISTS hcs_silver.referral_network CASCADE;
@@ -52,14 +59,18 @@ DROP TABLE IF EXISTS hcs_silver.staffing_decomposition CASCADE;
 DROP TABLE IF EXISTS hcs_silver.equipment_inventory CASCADE;
 
 -- ============================================================================
--- 3. DROP MOL_SILVER NEW TABLES
+-- 3. DROP MOL/AGENT NEW TABLES
 -- ============================================================================
 
 -- publication_evidence staging first (staging → live dependency)
+-- If 086 ran → mol_agents; if only 085 → mol_silver
+DROP TABLE IF EXISTS mol_agents.publication_evidence_staging CASCADE;
 DROP TABLE IF EXISTS mol_silver.publication_evidence_staging CASCADE;
 DROP TABLE IF EXISTS mol_silver.publication_evidence CASCADE;
 DROP TABLE IF EXISTS mol_silver.physician_payments CASCADE;
 DROP TABLE IF EXISTS mol_silver.research_grants CASCADE;
+-- quarantine: if 086 ran → agents; if only 085 → mol_silver
+DROP TABLE IF EXISTS agents.agent_quarantine CASCADE;
 DROP TABLE IF EXISTS mol_silver.agent_quarantine CASCADE;
 DROP TABLE IF EXISTS mol_silver.drug_spending CASCADE;
 

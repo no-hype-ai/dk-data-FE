@@ -3,7 +3,7 @@
 Feature: 019-cms-puf-platform-reconciliation
 
 Reads phone and address fields from hcs_raw.cms_nppes, validates and normalizes
-contact information via LLM, and writes to hcs_silver.verified_contacts.
+contact information via LLM, and writes to hcs_agents.verified_contacts.
 
 Confidence routing:
     < 0.5  → quarantine
@@ -24,7 +24,7 @@ from dk_data.agents.base_agent import BaseAgent, AgentResult, RunResult, MAX_EVI
 
 logger = structlog.get_logger(__name__)
 
-SILVER_TABLE = "hcs_silver.verified_contacts"
+SILVER_TABLE = "hcs_agents.verified_contacts"
 
 CONTACT_VERIFICATION_PROMPT = """\
 You are a contact data quality specialist. Review the following raw contact information
@@ -102,7 +102,7 @@ class ContactVerificationAgent(BaseAgent):
                 entity_type_code AS entity_type
             FROM hcs_raw.cms_nppes
             WHERE npi IS NOT NULL
-              AND npi NOT IN (SELECT npi FROM hcs_silver.verified_contacts)
+              AND npi NOT IN (SELECT npi FROM hcs_agents.verified_contacts)
               AND (
                   provider_business_practice_location_address_telephone_number IS NOT NULL
                   OR provider_first_line_business_practice_location_address IS NOT NULL
@@ -188,7 +188,7 @@ class ContactVerificationAgent(BaseAgent):
                 o = result.output
                 await conn.execute(
                     """
-                    INSERT INTO hcs_silver.verified_contacts
+                    INSERT INTO hcs_agents.verified_contacts
                         (npi, verified_phone, verified_email, verification_status,
                          confidence_score, needs_review, agent_output)
                     VALUES ($1, $2, $3, $4, $5, $6, $7)

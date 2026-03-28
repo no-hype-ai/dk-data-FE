@@ -3,7 +3,7 @@
 Feature: 019-cms-puf-platform-reconciliation
 
 Reads DRG claim mix per NPI from hcs_bronze.cms_inpatient_puf and uses an LLM
-to classify each provider's primary service line. Writes to hcs_silver.service_lines.
+to classify each provider's primary service line. Writes to hcs_agents.service_lines.
 
 Confidence routing:
     < 0.5  → quarantine
@@ -24,7 +24,7 @@ from dk_data.agents.base_agent import BaseAgent, AgentResult, RunResult, MAX_EVI
 
 logger = structlog.get_logger(__name__)
 
-SILVER_TABLE = "hcs_silver.service_lines"
+SILVER_TABLE = "hcs_agents.service_lines"
 
 SERVICE_LINE_PROMPT = """\
 You are a healthcare analytics expert. Given the DRG (Diagnosis Related Group) claim mix
@@ -76,7 +76,7 @@ class ServiceLineInferenceAgent(BaseAgent):
         """Fetch provider_ids + their DRG mix from hcs_bronze.cms_inpatient_puf.
 
         NOTE: cms_inpatient_puf uses CCN provider IDs (not NPIs). We store
-        provider_id in the npi column of hcs_silver.service_lines as a pragmatic
+        provider_id in the npi column of hcs_agents.service_lines as a pragmatic
         mapping — the silver table schema uses 'npi' as the key column.
         """
         db_pool = await self._get_db_pool()
@@ -101,7 +101,7 @@ class ServiceLineInferenceAgent(BaseAgent):
             FROM hcs_bronze.cms_inpatient_puf
             WHERE provider_id IS NOT NULL
               AND provider_id NOT IN (
-                  SELECT npi FROM hcs_silver.service_lines
+                  SELECT npi FROM hcs_agents.service_lines
               )
               {year_clause}
             GROUP BY provider_id
@@ -178,7 +178,7 @@ class ServiceLineInferenceAgent(BaseAgent):
                 o = result.output
                 await conn.execute(
                     """
-                    INSERT INTO hcs_silver.service_lines
+                    INSERT INTO hcs_agents.service_lines
                         (npi, service_line, confidence_score, needs_review,
                          agent_output, _source_year)
                     VALUES ($1, $2, $3, $4, $5, $6)

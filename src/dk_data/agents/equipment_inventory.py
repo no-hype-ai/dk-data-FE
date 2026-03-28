@@ -4,7 +4,7 @@ Feature: 019-cms-puf-platform-reconciliation
 
 Reads HCPCS procedure codes from hcs_raw.cms_physician_puf, infers equipment
 categories from observed HCPCS patterns via LLM, and writes to
-hcs_silver.equipment_inventory.
+hcs_agents.equipment_inventory.
 
 Confidence routing:
     < 0.5  → quarantine
@@ -25,7 +25,7 @@ from dk_data.agents.base_agent import BaseAgent, AgentResult, RunResult, MAX_EVI
 
 logger = structlog.get_logger(__name__)
 
-SILVER_TABLE = "hcs_silver.equipment_inventory"
+SILVER_TABLE = "hcs_agents.equipment_inventory"
 
 EQUIPMENT_INVENTORY_PROMPT = """\
 You are a healthcare equipment and technology specialist. Based on a provider's
@@ -103,7 +103,7 @@ class EquipmentInventoryAgent(BaseAgent):
             WHERE npi IS NOT NULL
               AND hcpcs_code IS NOT NULL
               AND npi NOT IN (
-                  SELECT DISTINCT npi FROM hcs_silver.equipment_inventory
+                  SELECT DISTINCT npi FROM hcs_agents.equipment_inventory
               )
               {year_clause}
             GROUP BY npi
@@ -192,7 +192,7 @@ class EquipmentInventoryAgent(BaseAgent):
                     hcpcs_evidence = json.dumps(item.get("hcpcs_evidence", []))
                     await conn.execute(
                         """
-                        INSERT INTO hcs_silver.equipment_inventory
+                        INSERT INTO hcs_agents.equipment_inventory
                             (npi, equipment_category, hcpcs_evidence, inferred_equipment,
                              confidence_score, needs_review, agent_output, _source_year)
                         VALUES ($1, $2, $3::jsonb, $4, $5, $6, $7, $8)
