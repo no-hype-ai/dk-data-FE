@@ -1,7 +1,7 @@
-"""CMS Cost Reports PUF loader. Loads to hcs_hcs_raw.cms_cost_reports_puf.
+"""CMS Cost Reports PUF loader. Loads to hcs_raw.cms_cost_reports_puf.
 
 NOTE: This is distinct from the existing cms_cost_reports.py which targets hcs_raw.cms_cost_reports.
-This loader targets hcs_hcs_raw.cms_cost_reports_puf as part of the PUF ingestion pipeline.
+This loader targets hcs_raw.cms_cost_reports_puf as part of the PUF ingestion pipeline.
 """
 
 import hashlib
@@ -18,27 +18,21 @@ from ..utils.validators import CMSCostReportsPUFRecord
 logger = logging.getLogger(__name__)
 
 COLUMN_MAPPING = {
-    'RPT_REC_NUM': 'rpt_rec_num',
-    'PRVDR_CTRL_TYPE_CD': 'prvdr_ctrl_type_cd',
-    'PRVDR_NUM': 'prvdr_num',
-    'RPT_STUS_CD': 'rpt_stus_cd',
-    'INITL_RPT_SW': 'initl_rpt_sw',
-    'LAST_RPT_SW': 'last_rpt_sw',
-    'TRNSMTL_NUM': 'trnsmtl_num',
-    'FI_NUM': 'fi_num',
-    'ADR_VNDR_CD': 'adr_vndr_cd',
-    'FI_CREAT_DT': 'fi_creat_dt',
-    'UTIL_CD': 'util_cd',
-    'NPR_DT': 'npr_dt',
-    'SPEC_IND': 'spec_ind',
-    'FI_RCPT_DT': 'fi_rcpt_dt',
-    'TOTAL_BEDS': 'total_beds',
-    'TOTAL_DISCHARGES': 'total_discharges',
-    'NET_PATIENT_REVENUE': 'net_patient_revenue',
-    'TOTAL_OPERATING_EXPENSES': 'total_operating_expenses',
-    # lower-case variants
-    'rpt_rec_num': 'rpt_rec_num',
-    'prvdr_num': 'prvdr_num',
+    'Provider ID': 'provider_id',
+    'Hospital Name': 'hospital_name',
+    'City': 'city',
+    'State': 'state',
+    'Zip Code': 'zip_code',
+    'Fiscal Year Begin': 'fiscal_year_begin',
+    'Fiscal Year End': 'fiscal_year_end',
+    'Number of Beds': 'total_beds',
+    'Total Discharges': 'total_discharges',
+    'Net Patient Revenue': 'net_patient_revenue',
+    'Total Operating Expense': 'total_operating_expenses',
+    'Operating Margin Percentage': 'operating_margin',
+    # lower-case passthrough variants
+    'provider_id': 'provider_id',
+    'hospital_name': 'hospital_name',
 }
 
 TABLE = 'cms_cost_reports_puf'
@@ -76,24 +70,18 @@ def load_cms_cost_reports_puf(filepath: str, source_year: int = 2023) -> dict:
     for idx, row in df.iterrows():
         try:
             rec = CMSCostReportsPUFRecord(
-                rpt_rec_num=row.get('rpt_rec_num'),
-                prvdr_ctrl_type_cd=row.get('prvdr_ctrl_type_cd'),
-                prvdr_num=row.get('prvdr_num'),
-                rpt_stus_cd=row.get('rpt_stus_cd'),
-                initl_rpt_sw=row.get('initl_rpt_sw'),
-                last_rpt_sw=row.get('last_rpt_sw'),
-                trnsmtl_num=row.get('trnsmtl_num'),
-                fi_num=row.get('fi_num'),
-                adr_vndr_cd=row.get('adr_vndr_cd'),
-                fi_creat_dt=row.get('fi_creat_dt'),
-                util_cd=row.get('util_cd'),
-                npr_dt=row.get('npr_dt'),
-                spec_ind=row.get('spec_ind'),
-                fi_rcpt_dt=row.get('fi_rcpt_dt'),
+                provider_id=row.get('provider_id'),
+                hospital_name=row.get('hospital_name'),
+                city=row.get('city'),
+                state=row.get('state'),
+                zip_code=row.get('zip_code'),
+                fiscal_year_begin=row.get('fiscal_year_begin') or None,
+                fiscal_year_end=row.get('fiscal_year_end') or None,
                 total_beds=int(row['total_beds']) if row.get('total_beds') else None,
                 total_discharges=int(row['total_discharges']) if row.get('total_discharges') else None,
                 net_patient_revenue=row.get('net_patient_revenue') or None,
                 total_operating_expenses=row.get('total_operating_expenses') or None,
+                operating_margin=row.get('operating_margin') or None,
                 _source_year=source_year,
             )
             d = rec.model_dump(by_alias=True)
@@ -106,9 +94,10 @@ def load_cms_cost_reports_puf(filepath: str, source_year: int = 2023) -> dict:
 
     inserted = upsert_records(
         SCHEMA, TABLE, records,
-        conflict_columns=['rpt_rec_num', '_source_year'],
-        update_columns=['rpt_stus_cd', 'total_beds', 'total_discharges',
-                        'net_patient_revenue', 'total_operating_expenses', '_loaded_at'],
+        conflict_columns=['provider_id', 'fiscal_year_begin', '_source_year'],
+        update_columns=['hospital_name', 'total_beds', 'total_discharges',
+                        'net_patient_revenue', 'total_operating_expenses',
+                        'operating_margin', '_loaded_at'],
     )
 
     logger.info(f"Cost Reports PUF load complete: {inserted} records processed, {len(errors)} errors")

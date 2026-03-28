@@ -62,6 +62,9 @@ COLUMN_MAPPING = {
     'Healthcare Provider Taxonomy Code_13': 'healthcare_provider_taxonomy_code_13',
     'Healthcare Provider Taxonomy Code_14': 'healthcare_provider_taxonomy_code_14',
     'Healthcare Provider Taxonomy Code_15': 'healthcare_provider_taxonomy_code_15',
+    # Deactivation status
+    'NPI Deactivation Date': 'npi_deactivation_date',
+    'NPI Reactivation Date': 'npi_reactivation_date',
 }
 
 TABLE = 'cms_nppes'
@@ -152,6 +155,9 @@ def load_cms_nppes(filepath: str, source_year: int = 2023) -> dict:
                 # Taxonomy codes
                 healthcare_provider_taxonomy_code_1=row.get('healthcare_provider_taxonomy_code_1'),
                 healthcare_provider_taxonomy_code_2=row.get('healthcare_provider_taxonomy_code_2'),
+                # Deactivation status
+                npi_deactivation_date=row.get('npi_deactivation_date') or None,
+                npi_reactivation_date=row.get('npi_reactivation_date') or None,
                 _source_year=source_year,
             )
             d = rec.model_dump(by_alias=True)

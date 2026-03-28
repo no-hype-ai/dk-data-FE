@@ -38,11 +38,12 @@ COLUMN_MAPPING = {
     # Utilization
     'IP_Cvrd_Stays_Per_1000_Benes': 'ip_cvrd_stays_per_1000_benes',
     'ER_Visits_Per_1000_Benes':     'er_visits_per_1000_benes',
-    'Readmsn_Rate':                 'readmsn_rate',
+    'Readmsn_Rate':                 'hosp_readmsn_rate',
     'Acute_Hosp_Readmsn_Rate':      'acute_hosp_readmsn_rate',
 
     # Spending
     'Tot_Mdcr_Stdzd_Pymt_PC':       'tot_mdcr_stdzd_pymt_pc',
+    'Tot_Mdcr_Stdzd_Pymt_Pct_Chg':  'tot_mdcr_stdzd_pymt_pct_chg',
     'Tot_Mdcr_Pymt_PC':             'tot_mdcr_pymt_pc',
     'Tot_Mdcr_Alowd_Amt_PC':        'tot_mdcr_alowd_amt_pc',
 
@@ -60,9 +61,10 @@ NUMERIC_COLUMNS = [
     'tot_benes',
     'ip_cvrd_stays_per_1000_benes',
     'er_visits_per_1000_benes',
-    'readmsn_rate',
+    'hosp_readmsn_rate',
     'acute_hosp_readmsn_rate',
     'tot_mdcr_stdzd_pymt_pc',
+    'tot_mdcr_stdzd_pymt_pct_chg',
     'tot_mdcr_pymt_pc',
     'tot_mdcr_alowd_amt_pc',
     'ma_prtcptn_rate',
@@ -151,9 +153,10 @@ def load_cms_geographic_variation(
                         tot_benes=int(row['tot_benes']) if pd.notna(row.get('tot_benes')) else None,
                         ip_cvrd_stays_per_1000_benes=row.get('ip_cvrd_stays_per_1000_benes') if pd.notna(row.get('ip_cvrd_stays_per_1000_benes')) else None,
                         er_visits_per_1000_benes=row.get('er_visits_per_1000_benes') if pd.notna(row.get('er_visits_per_1000_benes')) else None,
-                        readmsn_rate=row.get('readmsn_rate') if pd.notna(row.get('readmsn_rate')) else None,
+                        hosp_readmsn_rate=row.get('hosp_readmsn_rate') if pd.notna(row.get('hosp_readmsn_rate')) else None,
                         acute_hosp_readmsn_rate=row.get('acute_hosp_readmsn_rate') if pd.notna(row.get('acute_hosp_readmsn_rate')) else None,
                         tot_mdcr_stdzd_pymt_pc=row.get('tot_mdcr_stdzd_pymt_pc') if pd.notna(row.get('tot_mdcr_stdzd_pymt_pc')) else None,
+                        tot_mdcr_stdzd_pymt_pct_chg=row.get('tot_mdcr_stdzd_pymt_pct_chg') if pd.notna(row.get('tot_mdcr_stdzd_pymt_pct_chg')) else None,
                         tot_mdcr_pymt_pc=row.get('tot_mdcr_pymt_pc') if pd.notna(row.get('tot_mdcr_pymt_pc')) else None,
                         tot_mdcr_alowd_amt_pc=row.get('tot_mdcr_alowd_amt_pc') if pd.notna(row.get('tot_mdcr_alowd_amt_pc')) else None,
                         ma_prtcptn_rate=row.get('ma_prtcptn_rate') if pd.notna(row.get('ma_prtcptn_rate')) else None,
@@ -165,8 +168,9 @@ def load_cms_geographic_variation(
                             bene_age_lvl, bene_demo_lvl, bene_demo_desc, bene_mcc_lvl,
                             tot_benes,
                             ip_cvrd_stays_per_1000_benes, er_visits_per_1000_benes,
-                            readmsn_rate, acute_hosp_readmsn_rate,
-                            tot_mdcr_stdzd_pymt_pc, tot_mdcr_pymt_pc, tot_mdcr_alowd_amt_pc,
+                            hosp_readmsn_rate, acute_hosp_readmsn_rate,
+                            tot_mdcr_stdzd_pymt_pc, tot_mdcr_stdzd_pymt_pct_chg,
+                            tot_mdcr_pymt_pc, tot_mdcr_alowd_amt_pc,
                             ma_prtcptn_rate,
                             _source_file, _source_hash
                         ) VALUES (
@@ -175,7 +179,8 @@ def load_cms_geographic_variation(
                             %s,
                             %s, %s,
                             %s, %s,
-                            %s, %s, %s,
+                            %s, %s,
+                            %s, %s,
                             %s,
                             %s, %s
                         )
@@ -191,9 +196,10 @@ def load_cms_geographic_variation(
                         record.tot_benes,
                         record.ip_cvrd_stays_per_1000_benes,
                         record.er_visits_per_1000_benes,
-                        record.readmsn_rate,
+                        record.hosp_readmsn_rate,
                         record.acute_hosp_readmsn_rate,
                         record.tot_mdcr_stdzd_pymt_pc,
+                        record.tot_mdcr_stdzd_pymt_pct_chg,
                         record.tot_mdcr_pymt_pc,
                         record.tot_mdcr_alowd_amt_pc,
                         record.ma_prtcptn_rate,

@@ -89,6 +89,8 @@ CREATE TABLE IF NOT EXISTS hcs_raw.cms_open_payments (
     -- Payment details
     total_amount_of_payment_usdollars   NUMERIC(18,2),
     date_of_payment                     DATE,
+    number_of_payments_included_in_total_amount INTEGER,
+    form_of_payment_or_transfer_of_value TEXT,
     nature_of_payment_or_transfer_of_value TEXT,
     -- Location
     recipient_city                      TEXT,
@@ -109,6 +111,12 @@ CREATE TABLE IF NOT EXISTS hcs_raw.cms_open_payments (
     associated_drug_or_biological_ndc_3 TEXT,
     associated_drug_or_biological_ndc_4 TEXT,
     associated_drug_or_biological_ndc_5 TEXT,
+    -- Pre-normalized drug names (GENERATED ALWAYS — enables molecule linkage)
+    drug_name_1_normalized TEXT GENERATED ALWAYS AS (lower(regexp_replace(coalesce(name_of_drug_or_biological_or_device_or_medical_supply_1,''), '[^a-z0-9 ]', '', 'g'))) STORED,
+    drug_name_2_normalized TEXT GENERATED ALWAYS AS (lower(regexp_replace(coalesce(name_of_drug_or_biological_or_device_or_medical_supply_2,''), '[^a-z0-9 ]', '', 'g'))) STORED,
+    drug_name_3_normalized TEXT GENERATED ALWAYS AS (lower(regexp_replace(coalesce(name_of_drug_or_biological_or_device_or_medical_supply_3,''), '[^a-z0-9 ]', '', 'g'))) STORED,
+    drug_name_4_normalized TEXT GENERATED ALWAYS AS (lower(regexp_replace(coalesce(name_of_drug_or_biological_or_device_or_medical_supply_4,''), '[^a-z0-9 ]', '', 'g'))) STORED,
+    drug_name_5_normalized TEXT GENERATED ALWAYS AS (lower(regexp_replace(coalesce(name_of_drug_or_biological_or_device_or_medical_supply_5,''), '[^a-z0-9 ]', '', 'g'))) STORED,
     -- Metadata
     _source_year                        INTEGER NOT NULL,
     _source_hash                        TEXT NOT NULL,
@@ -144,6 +152,9 @@ CREATE TABLE IF NOT EXISTS hcs_raw.cms_nppes (
     -- Taxonomy/specialty
     healthcare_provider_taxonomy_code_1             TEXT,
     healthcare_provider_taxonomy_code_2             TEXT,
+    -- Deactivation status
+    npi_deactivation_date                           DATE,
+    npi_reactivation_date                           DATE,
     -- Metadata
     _source_year                INTEGER NOT NULL,
     _source_hash                TEXT NOT NULL,
@@ -214,14 +225,15 @@ CREATE TABLE IF NOT EXISTS hcs_raw.cms_hospital_general_info (
     facility_id                 TEXT,
     facility_name               TEXT,
     address                     TEXT,
-    city                        TEXT,
+    city_town                   TEXT,
     state                       TEXT,
     zip_code                    TEXT,
-    county_name                 TEXT,
-    phone_number                TEXT,
+    county_parish               TEXT,
+    telephone_number            TEXT,
     hospital_type               TEXT,
     hospital_ownership          TEXT,
     emergency_services          TEXT,
+    meets_criteria_for_birthing_friendly_designation TEXT,
     hospital_overall_rating     INTEGER,
     hospital_overall_rating_footnote TEXT,
     _source_year                INTEGER NOT NULL,
@@ -524,12 +536,14 @@ CREATE TABLE IF NOT EXISTS hcs_raw.cms_geographic_variation (
     bene_geo_lvl TEXT, bene_geo_desc TEXT, bene_geo_cd TEXT,
     bene_age_lvl TEXT, bene_demo_lvl TEXT, bene_demo_desc TEXT,
     bene_mcc_lvl TEXT,
+    year INTEGER,
     tot_benes INTEGER,
     ip_cvrd_stays_per_1000_benes NUMERIC(10,4),
     er_visits_per_1000_benes NUMERIC(10,4),
-    readmsn_rate NUMERIC(10,4),
+    hosp_readmsn_rate NUMERIC(10,4),
     acute_hosp_readmsn_rate NUMERIC(10,4),
     tot_mdcr_stdzd_pymt_pc NUMERIC(18,2),
+    tot_mdcr_stdzd_pymt_pct_chg NUMERIC(10,4),
     tot_mdcr_pymt_pc NUMERIC(18,2),
     tot_mdcr_alowd_amt_pc NUMERIC(18,2),
     ma_prtcptn_rate NUMERIC(10,4),
@@ -598,17 +612,24 @@ CREATE TABLE IF NOT EXISTS hcs_raw.cms_utilization_puf (
 );
 
 CREATE TABLE IF NOT EXISTS hcs_raw.cms_cost_reports_puf (
-    id BIGSERIAL PRIMARY KEY,
-    rpt_rec_num TEXT, prvdr_ctrl_type_cd TEXT, prvdr_num TEXT,
-    rpt_stus_cd TEXT, initl_rpt_sw TEXT, last_rpt_sw TEXT,
-    trnsmtl_num TEXT, fi_num TEXT, adr_vndr_cd TEXT,
-    fi_creat_dt DATE, util_cd TEXT, npr_dt DATE,
-    spec_ind TEXT, fi_rcpt_dt DATE,
-    total_beds INTEGER, total_discharges INTEGER,
-    net_patient_revenue NUMERIC(18,2),
+    id                      BIGSERIAL PRIMARY KEY,
+    provider_id             TEXT NOT NULL,
+    hospital_name           TEXT,
+    city                    TEXT,
+    state                   TEXT,
+    zip_code                TEXT,
+    fiscal_year_begin       DATE,
+    fiscal_year_end         DATE,
+    total_beds              INTEGER,
+    total_discharges        INTEGER,
+    net_patient_revenue     NUMERIC(18,2),
     total_operating_expenses NUMERIC(18,2),
-    _source_year INTEGER NOT NULL, _source_hash TEXT NOT NULL,
-    _source_file TEXT, _loaded_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    operating_margin        NUMERIC(10,4),
+    _source_year            INTEGER NOT NULL,
+    _source_hash            TEXT NOT NULL,
+    _source_file            TEXT,
+    _loaded_at              TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    UNIQUE (provider_id, fiscal_year_begin, _source_year)
 );
 
 -- ============================================================================

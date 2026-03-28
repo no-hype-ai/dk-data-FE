@@ -161,6 +161,7 @@ CREATE TABLE IF NOT EXISTS hcs_raw.cms_physician_puf_services (
     npi                         TEXT NOT NULL,
     hcpcs_code                  TEXT NOT NULL,
     hcpcs_description           TEXT,
+    hcpcs_drug_ind              TEXT,
     place_of_service            TEXT,
     line_srvc_cnt               NUMERIC(18,2),
     bene_unique_cnt             INTEGER,
@@ -234,8 +235,11 @@ CREATE TABLE hcs_raw.cms_part_b_spending (
     UNIQUE (_source_hash, hcpcs_cd, _source_year)
 );
 
--- cms_open_payments: add drug/NDC slots and publication metadata
+-- cms_open_payments: add payment count, form_of_payment, drug/NDC slots and publication metadata
+-- For envs where migration 085 was applied before these columns were added to the CREATE TABLE.
 ALTER TABLE hcs_raw.cms_open_payments
+    ADD COLUMN IF NOT EXISTS number_of_payments_included_in_total_amount INTEGER,
+    ADD COLUMN IF NOT EXISTS form_of_payment_or_transfer_of_value TEXT,
     ADD COLUMN IF NOT EXISTS payment_publication_date DATE,
     ADD COLUMN IF NOT EXISTS record_id TEXT,
     ADD COLUMN IF NOT EXISTS program_year INTEGER,
@@ -249,6 +253,33 @@ ALTER TABLE hcs_raw.cms_open_payments
     ADD COLUMN IF NOT EXISTS associated_drug_or_biological_ndc_3 TEXT,
     ADD COLUMN IF NOT EXISTS associated_drug_or_biological_ndc_4 TEXT,
     ADD COLUMN IF NOT EXISTS associated_drug_or_biological_ndc_5 TEXT;
+
+-- Add normalized drug name GENERATED columns (idempotent: only if base column exists but generated col does not)
+DO $$
+BEGIN
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns
+                   WHERE table_schema='hcs_raw' AND table_name='cms_open_payments'
+                   AND column_name='drug_name_1_normalized') THEN
+        ALTER TABLE hcs_raw.cms_open_payments
+            ADD COLUMN drug_name_1_normalized TEXT GENERATED ALWAYS AS (lower(regexp_replace(coalesce(name_of_drug_or_biological_or_device_or_medical_supply_1,''), '[^a-z0-9 ]', '', 'g'))) STORED,
+            ADD COLUMN drug_name_2_normalized TEXT GENERATED ALWAYS AS (lower(regexp_replace(coalesce(name_of_drug_or_biological_or_device_or_medical_supply_2,''), '[^a-z0-9 ]', '', 'g'))) STORED,
+            ADD COLUMN drug_name_3_normalized TEXT GENERATED ALWAYS AS (lower(regexp_replace(coalesce(name_of_drug_or_biological_or_device_or_medical_supply_3,''), '[^a-z0-9 ]', '', 'g'))) STORED,
+            ADD COLUMN drug_name_4_normalized TEXT GENERATED ALWAYS AS (lower(regexp_replace(coalesce(name_of_drug_or_biological_or_device_or_medical_supply_4,''), '[^a-z0-9 ]', '', 'g'))) STORED,
+            ADD COLUMN drug_name_5_normalized TEXT GENERATED ALWAYS AS (lower(regexp_replace(coalesce(name_of_drug_or_biological_or_device_or_medical_supply_5,''), '[^a-z0-9 ]', '', 'g'))) STORED;
+    END IF;
+END;
+$$;
+
+-- Add npi_deactivation_date / npi_reactivation_date to cms_nppes
+-- (for envs where migration 085 was applied before these columns were added)
+ALTER TABLE hcs_raw.cms_nppes
+    ADD COLUMN IF NOT EXISTS npi_deactivation_date DATE,
+    ADD COLUMN IF NOT EXISTS npi_reactivation_date DATE;
+
+-- Add hcpcs_drug_ind to cms_physician_puf_services
+-- (for envs where migration 086 section 7 was applied before this column was added)
+ALTER TABLE hcs_raw.cms_physician_puf_services
+    ADD COLUMN IF NOT EXISTS hcpcs_drug_ind TEXT;
 
 -- cms_nppes: add full address columns not covered by prior ALTER in this migration
 ALTER TABLE hcs_raw.cms_nppes
@@ -271,31 +302,36 @@ ALTER TABLE hcs_raw.cms_physician_puf
     ADD COLUMN IF NOT EXISTS nppes_provider_ruca TEXT,
     ADD COLUMN IF NOT EXISTS nppes_provider_country TEXT;
 
--- cms_hospital_general_info: rename city_town→city, county_parish→county_name,
---   telephone_number→phone_number, add footnote, drop birthing column
+-- cms_hospital_general_info: ensure correct column names (city_town, county_parish,
+--   telephone_number, meets_criteria_for_birthing_friendly_designation).
+--   Handles envs where migration 085 was applied with old wrong names.
 DO $$
 BEGIN
+    -- If old wrong name 'city' exists (from pre-fix 085), rename to correct name
     IF EXISTS (SELECT 1 FROM information_schema.columns
                WHERE table_schema='hcs_raw' AND table_name='cms_hospital_general_info'
-               AND column_name='city_town') THEN
+               AND column_name='city') THEN
         ALTER TABLE hcs_raw.cms_hospital_general_info
-            RENAME COLUMN city_town TO city;
+            RENAME COLUMN city TO city_town;
     END IF;
+    -- If old wrong name 'county_name' exists, rename to correct name
     IF EXISTS (SELECT 1 FROM information_schema.columns
                WHERE table_schema='hcs_raw' AND table_name='cms_hospital_general_info'
-               AND column_name='county_parish') THEN
+               AND column_name='county_name') THEN
         ALTER TABLE hcs_raw.cms_hospital_general_info
-            RENAME COLUMN county_parish TO county_name;
+            RENAME COLUMN county_name TO county_parish;
     END IF;
+    -- If old wrong name 'phone_number' exists, rename to correct name
     IF EXISTS (SELECT 1 FROM information_schema.columns
                WHERE table_schema='hcs_raw' AND table_name='cms_hospital_general_info'
-               AND column_name='telephone_number') THEN
+               AND column_name='phone_number') THEN
         ALTER TABLE hcs_raw.cms_hospital_general_info
-            RENAME COLUMN telephone_number TO phone_number;
+            RENAME COLUMN phone_number TO telephone_number;
     END IF;
 END;
 $$;
 ALTER TABLE hcs_raw.cms_hospital_general_info
+    ADD COLUMN IF NOT EXISTS meets_criteria_for_birthing_friendly_designation TEXT,
     ADD COLUMN IF NOT EXISTS hospital_overall_rating_footnote TEXT;
 
 -- cms_medicare_advantage: recreate with correct enrollment/demographic columns
@@ -437,12 +473,14 @@ CREATE TABLE hcs_raw.cms_geographic_variation (
     bene_geo_lvl TEXT, bene_geo_desc TEXT, bene_geo_cd TEXT,
     bene_age_lvl TEXT, bene_demo_lvl TEXT, bene_demo_desc TEXT,
     bene_mcc_lvl TEXT,
+    year INTEGER,
     tot_benes INTEGER,
     ip_cvrd_stays_per_1000_benes NUMERIC(10,4),
     er_visits_per_1000_benes NUMERIC(10,4),
-    readmsn_rate NUMERIC(10,4),
+    hosp_readmsn_rate NUMERIC(10,4),
     acute_hosp_readmsn_rate NUMERIC(10,4),
     tot_mdcr_stdzd_pymt_pc NUMERIC(18,2),
+    tot_mdcr_stdzd_pymt_pct_chg NUMERIC(10,4),
     tot_mdcr_pymt_pc NUMERIC(18,2),
     tot_mdcr_alowd_amt_pc NUMERIC(18,2),
     ma_prtcptn_rate NUMERIC(10,4),
@@ -520,20 +558,27 @@ CREATE TABLE hcs_raw.cms_utilization_puf (
     _source_file TEXT, _loaded_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
--- cms_cost_reports_puf: replace hospital summary with HCRIS report record format
+-- cms_cost_reports_puf: replace HCRIS format with CMS PUF hospital summary format
 DROP TABLE IF EXISTS hcs_raw.cms_cost_reports_puf CASCADE;
 CREATE TABLE hcs_raw.cms_cost_reports_puf (
-    id BIGSERIAL PRIMARY KEY,
-    rpt_rec_num TEXT, prvdr_ctrl_type_cd TEXT, prvdr_num TEXT,
-    rpt_stus_cd TEXT, initl_rpt_sw TEXT, last_rpt_sw TEXT,
-    trnsmtl_num TEXT, fi_num TEXT, adr_vndr_cd TEXT,
-    fi_creat_dt DATE, util_cd TEXT, npr_dt DATE,
-    spec_ind TEXT, fi_rcpt_dt DATE,
-    total_beds INTEGER, total_discharges INTEGER,
-    net_patient_revenue NUMERIC(18,2),
+    id                      BIGSERIAL PRIMARY KEY,
+    provider_id             TEXT NOT NULL,
+    hospital_name           TEXT,
+    city                    TEXT,
+    state                   TEXT,
+    zip_code                TEXT,
+    fiscal_year_begin       DATE,
+    fiscal_year_end         DATE,
+    total_beds              INTEGER,
+    total_discharges        INTEGER,
+    net_patient_revenue     NUMERIC(18,2),
     total_operating_expenses NUMERIC(18,2),
-    _source_year INTEGER NOT NULL, _source_hash TEXT NOT NULL,
-    _source_file TEXT, _loaded_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    operating_margin        NUMERIC(10,4),
+    _source_year            INTEGER NOT NULL,
+    _source_hash            TEXT NOT NULL,
+    _source_file            TEXT,
+    _loaded_at              TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    UNIQUE (provider_id, fiscal_year_begin, _source_year)
 );
 
 -- ============================================================================

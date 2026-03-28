@@ -157,11 +157,12 @@ class CMSGeographicVariationRecord(BaseModel):
     # Utilization rates
     ip_cvrd_stays_per_1000_benes: Optional[Decimal] = None
     er_visits_per_1000_benes: Optional[Decimal] = None
-    readmsn_rate: Optional[Decimal] = None
+    hosp_readmsn_rate: Optional[Decimal] = None
     acute_hosp_readmsn_rate: Optional[Decimal] = None
 
     # Spending per capita
     tot_mdcr_stdzd_pymt_pc: Optional[Decimal] = None
+    tot_mdcr_stdzd_pymt_pct_chg: Optional[Decimal] = None
     tot_mdcr_pymt_pc: Optional[Decimal] = None
     tot_mdcr_alowd_amt_pc: Optional[Decimal] = None
 
@@ -787,24 +788,18 @@ class CMSCostReportsPUFRecord(BaseModel):
 
     model_config = ConfigDict(str_strip_whitespace=True)
 
-    rpt_rec_num: Optional[str] = None
-    prvdr_ctrl_type_cd: Optional[str] = None
-    prvdr_num: Optional[str] = None
-    rpt_stus_cd: Optional[str] = None
-    initl_rpt_sw: Optional[str] = None
-    last_rpt_sw: Optional[str] = None
-    trnsmtl_num: Optional[str] = None
-    fi_num: Optional[str] = None
-    adr_vndr_cd: Optional[str] = None
-    fi_creat_dt: Optional[str] = None
-    util_cd: Optional[str] = None
-    npr_dt: Optional[str] = None
-    spec_ind: Optional[str] = None
-    fi_rcpt_dt: Optional[str] = None
-    total_beds: Optional[int] = None
-    total_discharges: Optional[int] = None
+    provider_id: str = Field(..., min_length=1)
+    hospital_name: Optional[str] = None
+    city: Optional[str] = None
+    state: Optional[str] = None
+    zip_code: Optional[str] = None
+    fiscal_year_begin: Optional[date] = None
+    fiscal_year_end: Optional[date] = None
+    total_beds: Optional[int] = Field(None, ge=0)
+    total_discharges: Optional[int] = Field(None, ge=0)
     net_patient_revenue: Optional[Decimal] = None
     total_operating_expenses: Optional[Decimal] = None
+    operating_margin: Optional[Decimal] = None
     _source_year: Optional[int] = None
 
 
@@ -924,14 +919,15 @@ class CMSHospitalGeneralInfoRecord(BaseModel):
     facility_id: Optional[str] = None
     facility_name: Optional[str] = None
     address: Optional[str] = None
-    city: Optional[str] = None
+    city_town: Optional[str] = None
     state: Optional[str] = None
     zip_code: Optional[str] = None
-    county_name: Optional[str] = None
-    phone_number: Optional[str] = None
+    county_parish: Optional[str] = None
+    telephone_number: Optional[str] = None
     hospital_type: Optional[str] = None
     hospital_ownership: Optional[str] = None
     emergency_services: Optional[str] = None
+    meets_criteria_for_birthing_friendly_designation: Optional[str] = None
     hospital_overall_rating: Optional[str] = None
     hospital_overall_rating_footnote: Optional[str] = None
     _source_year: Optional[int] = None
@@ -1098,6 +1094,8 @@ class CMSNPPESRecord(BaseModel):
     provider_business_practice_location_address_fax_number: Optional[str] = None
     healthcare_provider_taxonomy_code_1: Optional[str] = None
     healthcare_provider_taxonomy_code_2: Optional[str] = None
+    npi_deactivation_date: Optional[date] = None
+    npi_reactivation_date: Optional[date] = None
     _source_year: Optional[int] = None
 
 
@@ -1114,6 +1112,8 @@ class CMSOpenPaymentsRecord(BaseModel):
     applicable_manufacturer_or_gpo_name: Optional[str] = None
     total_amount_of_payment_usdollars: Optional[Decimal] = None
     date_of_payment: Optional[str] = None
+    number_of_payments_included_in_total_amount: Optional[int] = None
+    form_of_payment_or_transfer_of_value: Optional[str] = None
     nature_of_payment_or_transfer_of_value: Optional[str] = None
     recipient_city: Optional[str] = None
     recipient_state: Optional[str] = None
