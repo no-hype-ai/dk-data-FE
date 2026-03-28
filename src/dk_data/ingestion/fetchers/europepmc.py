@@ -144,7 +144,6 @@ class EuropePMCFetcher(BaseFetcher):
                 "query": query,
                 "format": "json",
                 "pageSize": page_size,
-                "sort": "P_PDATE_D",  # newest first
                 "cursorMark": cursor_mark,
                 "resultType": "core",  # full record including abstractText
             }

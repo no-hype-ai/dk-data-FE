@@ -28,7 +28,7 @@ import hashlib
 import json
 import logging
 from datetime import datetime, timezone
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
 
 from ..utils.database import get_cursor
 
@@ -73,28 +73,26 @@ _SQL = """
 """
 
 
-def load_rxnorm_data(conn: Any, data: Dict[str, Any]) -> Dict[str, Any]:
+def load_rxnorm_data(
+    records_or_conn: Any,
+    data: Optional[Dict[str, Any]] = None,
+    source_hash: Optional[str] = None,
+) -> Dict[str, Any]:
     """Load RxNorm API response records into mol_raw.rxnorm.
 
-    Each entry in ``data["records"]`` is a raw API response dict produced by
-    RxNormFetcher.  The function builds a deterministic ``request_id`` for
-    each record, then upserts it — skipping silently when the body is
-    unchanged.
-
-    Args:
-        conn: A psycopg2 connection.  Passed for interface consistency; the
-              function uses the shared ``get_cursor()`` pool context manager
-              rather than the supplied connection so that it integrates
-              cleanly with the rest of the ingestion layer.
-        data: Dict as returned by ``RxNormFetcher.fetch()``, expected to
-              contain a ``"records"`` key with a list of API response dicts.
+    Supports both calling conventions:
+      New (orchestrator): load_rxnorm_data(records_list, source_hash=hash)
+      Old: load_rxnorm_data(conn, data_dict)
 
     Returns:
         Dict with keys:
             records_inserted — number of rows inserted or updated
             records_skipped  — number of rows skipped (no change / empty)
     """
-    records: List[Dict[str, Any]] = data.get("records", [])
+    if isinstance(records_or_conn, list):
+        records: List[Dict[str, Any]] = records_or_conn
+    else:
+        records = (data or {}).get("records", []) if data else []
 
     if not records:
         logger.info("No RxNorm records to load")

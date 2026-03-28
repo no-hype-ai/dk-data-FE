@@ -36,42 +36,37 @@ import hashlib
 import json
 import logging
 from datetime import datetime, timezone
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
 
 from ..utils.database import get_connection
 
 logger = logging.getLogger(__name__)
 
 SOURCE_ID = "tdc_admet"
-API_ENDPOINT = "https://mol_raw.githubusercontent.com/mims-harvard/TDC/main/tdc/resource/"
+API_ENDPOINT = "https://raw.githubusercontent.com/mims-harvard/TDC/main/tdc/resource/"
 BATCH_SIZE = 50  # datasets per commit; typical runs have ~20 datasets
 
 
-def load_tdc_admet_data(conn: Any, data: Dict[str, Any]) -> Dict[str, Any]:
+def load_tdc_admet_data(
+    records_or_conn: Any,
+    data: Optional[Dict[str, Any]] = None,
+    source_hash: Optional[str] = None,
+) -> Dict[str, Any]:
     """Load TDC ADMET dataset records into mol_raw.tdc_admet.
 
-    Each entry in data["records"] represents one complete TDC ADMET dataset
-    (e.g. Caco2_Wang, hERG) and is stored as a single JSONB row.  The bronze
-    SQLMesh model extracts individual compound rows from response_body->'data'.
-
-    Deduplication uses ON CONFLICT on request_id.  If the same dataset is
-    re-fetched the existing row is updated only when response_body has changed.
-
-    Args:
-        conn: Active psycopg2 connection.  If None, a new connection is
-              obtained via get_connection().  Passing an explicit connection
-              allows callers to control transaction scope.
-        data: Dict returned by TDCADMETFetcher.fetch().  Expected keys:
-                records      — list of {"dataset_name": str, "data": list}
-                hash         — optional content hash from the fetcher
-                record_count — total individual compound rows (informational)
+    Supports both calling conventions:
+      New (orchestrator): load_tdc_admet_data(records_list, source_hash=hash)
+      Old: load_tdc_admet_data(conn, data_dict)
 
     Returns:
         Dict with:
             records_inserted: number of dataset rows inserted or updated
             records_skipped:  number of dataset rows skipped (no change)
     """
-    records: List[Dict[str, Any]] = data.get("records", [])
+    if isinstance(records_or_conn, list):
+        records: List[Dict[str, Any]] = records_or_conn
+    else:
+        records = (data or {}).get("records", []) if data else []
 
     if not records:
         logger.info("TDC ADMET: no records to load")
@@ -171,11 +166,11 @@ def load_tdc_admet_data(conn: Any, data: Dict[str, Any]) -> Dict[str, Any]:
 
             connection.commit()
 
-    if conn is not None:
-        _run(conn)
-    else:
+    if isinstance(records_or_conn, list):
         with get_connection() as new_conn:
             _run(new_conn)
+    else:
+        _run(records_or_conn)
 
     logger.info(
         "TDC ADMET load complete: %d inserted/updated, %d skipped",

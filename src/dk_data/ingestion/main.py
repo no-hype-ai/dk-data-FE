@@ -966,6 +966,8 @@ def run_ingestion(source: str, **kwargs) -> dict:
         days_back = _compute_days_back(source, source_info)
         if days_back is not None:
             fetch_kwargs['days_back'] = days_back
+        if kwargs.get('max_records') is not None:
+            fetch_kwargs['max_records'] = kwargs['max_records']
 
         fetch_result = fetcher.fetch(**fetch_kwargs)
 
@@ -1080,6 +1082,7 @@ Examples:
     parser.add_argument('--file', '-f', dest='filepath', help='Path to data file')
     parser.add_argument('--fiscal-year', '-y', type=int, help='Fiscal year of data')
     parser.add_argument('--batch-size', '-b', type=int, default=1000, help='Batch size for commits')
+    parser.add_argument('--max-records', '-m', type=int, default=None, help='Cap on records fetched (for seeding/testing)')
     parser.add_argument('--data-dir', '-d', default='/tmp/data/raw', help='Directory for fetcher temp storage')
     parser.add_argument('--list', '-l', action='store_true', help='List available sources')
     parser.add_argument('--verbose', '-v', action='store_true', help='Verbose output')
@@ -1130,6 +1133,7 @@ Examples:
                     filepath=args.filepath,
                     fiscal_year=args.fiscal_year,
                     batch_size=args.batch_size,
+                    max_records=args.max_records,
                     data_dir=args.data_dir,
                 )
                 records = result.get('records_inserted', result.get('records_fetched', 0))
@@ -1140,6 +1144,7 @@ Examples:
                 filepath=args.filepath,
                 fiscal_year=args.fiscal_year,
                 batch_size=args.batch_size,
+                max_records=args.max_records,
                 data_dir=args.data_dir,
             )
             records = result.get('records_inserted', result.get('records_fetched', 0))

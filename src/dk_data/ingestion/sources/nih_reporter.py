@@ -59,7 +59,9 @@ def load_nih_reporter_data(records: list, source_hash: Optional[str] = None) -> 
     sql = """
         INSERT INTO mol_raw.nih_reporter_raw (response_body, response_status)
         VALUES (%s::jsonb, 200)
-        ON CONFLICT ((response_body->>'project_num')) DO NOTHING
+        ON CONFLICT ((response_body->>'project_num'))
+        WHERE (response_body->>'project_num') IS NOT NULL
+        DO NOTHING
     """
 
     with get_connection() as conn:

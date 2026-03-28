@@ -285,7 +285,7 @@ def load_api_sources(
                 )
                 return {"source": key, "status": "skipped", "reason": f"no {env_key}"}
 
-        extra = ["--batch-size", str(limit)]
+        extra = ["--batch-size", str(limit), "--max-records", str(limit)]
         _, success, tail = _run_ingestion(key, extra)
         return {"source": key, "status": "success" if success else "failed", "output": tail}
 

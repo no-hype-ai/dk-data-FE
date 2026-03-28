@@ -69,6 +69,7 @@ def load_europepmc_data(
         INSERT INTO mol_raw.europepmc_raw (response_body, response_status)
         VALUES (%s::JSONB, 200)
         ON CONFLICT ((response_body->>'pmid'))
+        WHERE (response_body->>'pmid') IS NOT NULL
         DO UPDATE SET
             response_body = EXCLUDED.response_body,
             _loaded_at    = NOW()
