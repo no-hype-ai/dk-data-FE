@@ -65,6 +65,14 @@ ALTER TABLE mol_silver.molecules ADD COLUMN IF NOT EXISTS first_approval_year IN
 ALTER TABLE mol_silver.molecules ADD COLUMN IF NOT EXISTS approval_date DATE;
 ALTER TABLE mol_silver.molecules ADD COLUMN IF NOT EXISTS data_sources JSONB;
 ALTER TABLE mol_silver.molecules ADD COLUMN IF NOT EXISTS primary_source VARCHAR(50);
+-- id column: required for FK references from new tables (molecule_targets, patents,
+-- molecule_publications, resolution_queue) that reference mol_silver.molecules(id).
+-- 020 used molecule_id as PK; we add id as a unique secondary key.
+ALTER TABLE mol_silver.molecules ADD COLUMN IF NOT EXISTS id UUID DEFAULT gen_random_uuid();
+DO $$ BEGIN
+  ALTER TABLE mol_silver.molecules ADD CONSTRAINT mol_silver_molecules_id_unique UNIQUE (id);
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
 
 CREATE INDEX IF NOT EXISTS idx_silver_mol_inchi ON mol_silver.molecules(inchi_key);
 CREATE INDEX IF NOT EXISTS idx_silver_mol_name ON mol_silver.molecules(canonical_name);
@@ -233,6 +241,24 @@ CREATE TABLE IF NOT EXISTS mol_silver.adverse_events (
     UNIQUE(molecule_id, meddra_pt_code)
 );
 
+-- Idempotent backfill: 020 created adverse_events as an event-level table with
+-- different columns (reaction_meddra_pt etc.). Add aggregate-level columns this
+-- migration expects before creating indexes that reference them.
+ALTER TABLE mol_silver.adverse_events ADD COLUMN IF NOT EXISTS meddra_pt VARCHAR(200);
+ALTER TABLE mol_silver.adverse_events ADD COLUMN IF NOT EXISTS meddra_pt_code VARCHAR(20);
+ALTER TABLE mol_silver.adverse_events ADD COLUMN IF NOT EXISTS meddra_soc VARCHAR(200);
+ALTER TABLE mol_silver.adverse_events ADD COLUMN IF NOT EXISTS meddra_soc_code VARCHAR(20);
+ALTER TABLE mol_silver.adverse_events ADD COLUMN IF NOT EXISTS report_count INTEGER DEFAULT 0;
+ALTER TABLE mol_silver.adverse_events ADD COLUMN IF NOT EXISTS serious_count INTEGER DEFAULT 0;
+ALTER TABLE mol_silver.adverse_events ADD COLUMN IF NOT EXISTS death_count INTEGER DEFAULT 0;
+ALTER TABLE mol_silver.adverse_events ADD COLUMN IF NOT EXISTS hospitalization_count INTEGER DEFAULT 0;
+ALTER TABLE mol_silver.adverse_events ADD COLUMN IF NOT EXISTS reporting_rate NUMERIC(10,4);
+ALTER TABLE mol_silver.adverse_events ADD COLUMN IF NOT EXISTS prr NUMERIC(10,4);
+ALTER TABLE mol_silver.adverse_events ADD COLUMN IF NOT EXISTS ror NUMERIC(10,4);
+ALTER TABLE mol_silver.adverse_events ADD COLUMN IF NOT EXISTS first_report_date DATE;
+ALTER TABLE mol_silver.adverse_events ADD COLUMN IF NOT EXISTS last_report_date DATE;
+ALTER TABLE mol_silver.adverse_events ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ DEFAULT NOW();
+
 CREATE INDEX IF NOT EXISTS idx_silver_ae_molecule ON mol_silver.adverse_events(molecule_id);
 CREATE INDEX IF NOT EXISTS idx_silver_ae_meddra ON mol_silver.adverse_events(meddra_pt);
 CREATE INDEX IF NOT EXISTS idx_silver_ae_soc ON mol_silver.adverse_events(meddra_soc);
@@ -315,6 +341,16 @@ CREATE TABLE IF NOT EXISTS mol_silver.bioactivity (
 
     UNIQUE(molecule_id, target_chembl_id, assay_chembl_id, activity_type)
 );
+
+-- Idempotent backfill: 020 created bioactivity with target_id instead of target_chembl_id.
+ALTER TABLE mol_silver.bioactivity ADD COLUMN IF NOT EXISTS target_chembl_id VARCHAR(20);
+ALTER TABLE mol_silver.bioactivity ADD COLUMN IF NOT EXISTS target_organism VARCHAR(200);
+ALTER TABLE mol_silver.bioactivity ADD COLUMN IF NOT EXISTS assay_chembl_id VARCHAR(20);
+ALTER TABLE mol_silver.bioactivity ADD COLUMN IF NOT EXISTS assay_type VARCHAR(50);
+ALTER TABLE mol_silver.bioactivity ADD COLUMN IF NOT EXISTS activity_units VARCHAR(50);
+ALTER TABLE mol_silver.bioactivity ADD COLUMN IF NOT EXISTS activity_relation VARCHAR(5);
+ALTER TABLE mol_silver.bioactivity ADD COLUMN IF NOT EXISTS pchembl_value NUMERIC(5,2);
+ALTER TABLE mol_silver.bioactivity ADD COLUMN IF NOT EXISTS source_updated_at TIMESTAMPTZ;
 
 CREATE INDEX IF NOT EXISTS idx_silver_bio_molecule ON mol_silver.bioactivity(molecule_id);
 CREATE INDEX IF NOT EXISTS idx_silver_bio_target ON mol_silver.bioactivity(target_chembl_id);

@@ -26,7 +26,6 @@ creates new rows while a true duplicate (same request_id) is skipped.
 
 import json
 import logging
-from contextlib import contextmanager
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
