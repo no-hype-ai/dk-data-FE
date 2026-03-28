@@ -15,6 +15,13 @@ BEGIN;
 
 DO $$
 BEGIN
+    -- Guard: table may not exist if migration 075 was not run (e.g., partial setups)
+    IF NOT EXISTS (
+        SELECT 1 FROM information_schema.tables
+        WHERE table_schema = 'raw' AND table_name = 'who_icd'
+    ) THEN
+        RETURN;
+    END IF;
     IF NOT EXISTS (
         SELECT 1
         FROM information_schema.table_constraints
@@ -30,6 +37,13 @@ $$;
 
 DO $$
 BEGIN
+    -- Guard: table may not exist if migration 075 was not run
+    IF NOT EXISTS (
+        SELECT 1 FROM information_schema.tables
+        WHERE table_schema = 'raw' AND table_name = 'who_icd'
+    ) THEN
+        RETURN;
+    END IF;
     IF NOT EXISTS (
         SELECT 1
         FROM pg_indexes

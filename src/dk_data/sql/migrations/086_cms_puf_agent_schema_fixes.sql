@@ -593,18 +593,59 @@ CREATE SCHEMA IF NOT EXISTS mol_agents;
 CREATE SCHEMA IF NOT EXISTS agents;
 
 -- HCS agent output tables: hcs_silver → hcs_agents
-ALTER TABLE hcs_silver.service_lines          SET SCHEMA hcs_agents;
-ALTER TABLE hcs_silver.idn_hierarchy          SET SCHEMA hcs_agents;
-ALTER TABLE hcs_silver.referral_network       SET SCHEMA hcs_agents;
-ALTER TABLE hcs_silver.verified_contacts      SET SCHEMA hcs_agents;
-ALTER TABLE hcs_silver.staffing_decomposition SET SCHEMA hcs_agents;
-ALTER TABLE hcs_silver.equipment_inventory    SET SCHEMA hcs_agents;
+-- Guards: tables may have already been moved on DBs that applied this migration
+-- via a prior state (e.g., dev-init.sql from a later snapshot).
+-- If the table already exists in hcs_agents, drop the hcs_silver copy.
+-- If it only exists in hcs_silver, move it.
+DO $$
+DECLARE t TEXT;
+BEGIN
+    FOREACH t IN ARRAY ARRAY['service_lines','idn_hierarchy','referral_network',
+                              'verified_contacts','staffing_decomposition','equipment_inventory']
+    LOOP
+        IF EXISTS (SELECT 1 FROM information_schema.tables
+                   WHERE table_schema='hcs_silver' AND table_name=t) THEN
+            IF EXISTS (SELECT 1 FROM information_schema.tables
+                       WHERE table_schema='hcs_agents' AND table_name=t) THEN
+                -- Target already exists — drop the hcs_silver copy
+                EXECUTE format('DROP TABLE hcs_silver.%I CASCADE', t);
+            ELSE
+                EXECUTE format('ALTER TABLE hcs_silver.%I SET SCHEMA hcs_agents', t);
+            END IF;
+        END IF;
+    END LOOP;
+END;
+$$;
 
 -- Mol agent staging table: mol_silver → mol_agents
-ALTER TABLE mol_silver.publication_evidence_staging SET SCHEMA mol_agents;
+DO $$
+BEGIN
+    IF EXISTS (SELECT 1 FROM information_schema.tables
+               WHERE table_schema='mol_silver' AND table_name='publication_evidence_staging') THEN
+        IF EXISTS (SELECT 1 FROM information_schema.tables
+                   WHERE table_schema='mol_agents' AND table_name='publication_evidence_staging') THEN
+            DROP TABLE mol_silver.publication_evidence_staging CASCADE;
+        ELSE
+            ALTER TABLE mol_silver.publication_evidence_staging SET SCHEMA mol_agents;
+        END IF;
+    END IF;
+END;
+$$;
 
 -- Quarantine table: mol_silver → agents (cross-domain shared)
-ALTER TABLE mol_silver.agent_quarantine SET SCHEMA agents;
+DO $$
+BEGIN
+    IF EXISTS (SELECT 1 FROM information_schema.tables
+               WHERE table_schema='mol_silver' AND table_name='agent_quarantine') THEN
+        IF EXISTS (SELECT 1 FROM information_schema.tables
+                   WHERE table_schema='agents' AND table_name='agent_quarantine') THEN
+            DROP TABLE mol_silver.agent_quarantine CASCADE;
+        ELSE
+            ALTER TABLE mol_silver.agent_quarantine SET SCHEMA agents;
+        END IF;
+    END IF;
+END;
+$$;
 
 -- Grant access to existing application role on new schemas (skip if role absent, e.g. local dev)
 DO $$
