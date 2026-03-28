@@ -27,7 +27,7 @@ SELECT
     r.grant_date AS patent_date,
 
     -- Classification
-    NULL::TEXT AS patent_type,
+    r.patent_type,
     NULL::TEXT AS patent_kind,
     CASE
         WHEN r.cpc_codes IS NOT NULL

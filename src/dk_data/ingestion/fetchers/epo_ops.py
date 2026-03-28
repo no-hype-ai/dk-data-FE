@@ -348,6 +348,12 @@ class EPOOPSFetcher(BaseFetcher):
             if ipc.text:
                 ipc_codes.append(ipc.text.strip())
 
+        # CPC codes
+        cpc_codes = []
+        for cpc in doc.findall(".//epo:classification-cpc/epo:text", ns):
+            if cpc.text:
+                cpc_codes.append(cpc.text.strip())
+
         # Family ID
         family_id = doc.get("family-id")
 
@@ -360,6 +366,7 @@ class EPOOPSFetcher(BaseFetcher):
             "filing_date": filing_date,
             "publication_date": publication_date,
             "ipc_codes": ipc_codes if ipc_codes else None,
+            "cpc_codes": cpc_codes if cpc_codes else None,
             "family_id": family_id,
         }
 

@@ -27,7 +27,7 @@ SELECT
     county_name::TEXT AS county,
     hpsa_type::TEXT AS discipline,
     hpsa_score::INTEGER AS score,
-    NULL::TEXT AS status,
+    hpsa_status::TEXT AS status,
 
     -- Raw source tracking
     id::BIGINT AS raw_source_id,

@@ -79,6 +79,8 @@ SELECT DISTINCT ON (
         (row->>'avg_cost_per_claim')::NUMERIC
     )                                                                           AS avg_cost_per_claim,
 
+    -- avg_cost_per_day: not available in CMS Part B/D API fields;
+    -- would require total_spending / total_supply_days but supply days is Part D only
     NULL::NUMERIC                                                               AS avg_cost_per_day,
 
     COALESCE(

@@ -67,20 +67,8 @@ def load_openalex_ci_data(
                     record = OpenAlexCIRecord(**raw_record)
 
                     # Serialize JSONB fields
-                    concepts_json = (
-                        json.dumps(record.concepts) if record.concepts is not None else None
-                    )
-                    authorships_json = (
-                        json.dumps(record.authorships) if record.authorships is not None else None
-                    )
-                    primary_location_json = (
-                        json.dumps(record.primary_location)
-                        if record.primary_location is not None
-                        else None
-                    )
-                    open_access_json = (
-                        json.dumps(record.open_access) if record.open_access is not None else None
-                    )
+                    def _j(v: Any) -> Optional[str]:
+                        return json.dumps(v) if v is not None else None
 
                     cur.execute(
                         """
@@ -88,10 +76,24 @@ def load_openalex_ci_data(
                             work_id, doi, title, abstract, publication_date,
                             cited_by_count, concepts, authorships,
                             primary_location, open_access,
+                            pmid, pmcid, mag_id, work_type, language,
+                            volume, issue, first_page, last_page,
+                            topics, keywords, mesh_terms,
+                            cited_by_percentile, citation_counts_by_year,
+                            grants, referenced_works, related_works,
+                            sustainable_development_goals, best_oa_location,
+                            is_retracted, is_paratext,
                             _source_file, _source_hash
                         ) VALUES (
                             %s, %s, %s, %s, %s,
                             %s, %s, %s,
+                            %s, %s,
+                            %s, %s, %s, %s, %s,
+                            %s, %s, %s, %s,
+                            %s, %s, %s,
+                            %s, %s,
+                            %s, %s, %s,
+                            %s, %s,
                             %s, %s,
                             %s, %s
                         )
@@ -105,6 +107,27 @@ def load_openalex_ci_data(
                             authorships = EXCLUDED.authorships,
                             primary_location = EXCLUDED.primary_location,
                             open_access = EXCLUDED.open_access,
+                            pmid = EXCLUDED.pmid,
+                            pmcid = EXCLUDED.pmcid,
+                            mag_id = EXCLUDED.mag_id,
+                            work_type = EXCLUDED.work_type,
+                            language = EXCLUDED.language,
+                            volume = EXCLUDED.volume,
+                            issue = EXCLUDED.issue,
+                            first_page = EXCLUDED.first_page,
+                            last_page = EXCLUDED.last_page,
+                            topics = EXCLUDED.topics,
+                            keywords = EXCLUDED.keywords,
+                            mesh_terms = EXCLUDED.mesh_terms,
+                            cited_by_percentile = EXCLUDED.cited_by_percentile,
+                            citation_counts_by_year = EXCLUDED.citation_counts_by_year,
+                            grants = EXCLUDED.grants,
+                            referenced_works = EXCLUDED.referenced_works,
+                            related_works = EXCLUDED.related_works,
+                            sustainable_development_goals = EXCLUDED.sustainable_development_goals,
+                            best_oa_location = EXCLUDED.best_oa_location,
+                            is_retracted = EXCLUDED.is_retracted,
+                            is_paratext = EXCLUDED.is_paratext,
                             _source_hash = EXCLUDED._source_hash,
                             _loaded_at = NOW()
                         """,
@@ -115,10 +138,31 @@ def load_openalex_ci_data(
                             record.abstract,
                             record.publication_date,
                             record.cited_by_count,
-                            concepts_json,
-                            authorships_json,
-                            primary_location_json,
-                            open_access_json,
+                            _j(record.concepts),
+                            _j(record.authorships),
+                            _j(record.primary_location),
+                            _j(record.open_access),
+                            record.pmid,
+                            record.pmcid,
+                            record.mag_id,
+                            record.work_type,
+                            record.language,
+                            record.volume,
+                            record.issue,
+                            record.first_page,
+                            record.last_page,
+                            _j(record.topics),
+                            _j(record.keywords),
+                            _j(record.mesh_terms),
+                            record.cited_by_percentile,
+                            _j(record.citation_counts_by_year),
+                            _j(record.grants),
+                            _j(record.referenced_works),
+                            _j(record.related_works),
+                            _j(record.sustainable_development_goals),
+                            _j(record.best_oa_location),
+                            record.is_retracted,
+                            record.is_paratext,
                             "openalex_ci_api",
                             source_hash,
                         ),

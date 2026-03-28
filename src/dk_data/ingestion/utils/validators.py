@@ -328,6 +328,28 @@ class OpenAlexCIRecord(BaseModel):
     authorships: Optional[Any] = None  # JSONB
     primary_location: Optional[Any] = None  # JSONB
     open_access: Optional[Any] = None  # JSONB
+    # Extended fields (migration 112)
+    pmid: Optional[str] = None
+    pmcid: Optional[str] = None
+    mag_id: Optional[str] = None
+    work_type: Optional[str] = None
+    language: Optional[str] = None
+    volume: Optional[str] = None
+    issue: Optional[str] = None
+    first_page: Optional[str] = None
+    last_page: Optional[str] = None
+    topics: Optional[Any] = None  # JSONB
+    keywords: Optional[Any] = None  # JSONB
+    mesh_terms: Optional[Any] = None  # JSONB
+    cited_by_percentile: Optional[float] = None
+    citation_counts_by_year: Optional[Any] = None  # JSONB
+    grants: Optional[Any] = None  # JSONB
+    referenced_works: Optional[Any] = None  # JSONB
+    related_works: Optional[Any] = None  # JSONB
+    sustainable_development_goals: Optional[Any] = None  # JSONB
+    best_oa_location: Optional[Any] = None  # JSONB
+    is_retracted: Optional[bool] = None
+    is_paratext: Optional[bool] = None
 
     @field_validator('work_id')
     @classmethod
@@ -466,11 +488,42 @@ class DrugBankRecord(BaseModel):
     name: Optional[str] = None
     description: Optional[str] = None
     cas_number: Optional[str] = None
+    drug_type: Optional[str] = None
+    state: Optional[str] = None  # solid, liquid, gas
+    groups: Optional[Any] = None  # JSONB list of group strings (approved, investigational, etc.)
     categories: Optional[list[str]] = None
     targets: Optional[Any] = None  # JSONB
     enzymes: Optional[Any] = None  # JSONB
+    carriers: Optional[Any] = None  # JSONB
+    transporters: Optional[Any] = None  # JSONB
     indication: Optional[str] = None
     pharmacodynamics: Optional[str] = None
+    mechanism_of_action: Optional[str] = None
+    absorption: Optional[str] = None
+    protein_binding: Optional[str] = None
+    metabolism: Optional[str] = None
+    half_life: Optional[str] = None
+    route_of_elimination: Optional[str] = None
+    clearance: Optional[str] = None
+    volume_of_distribution: Optional[str] = None
+    toxicity: Optional[str] = None
+    atc_codes: Optional[Any] = None  # JSONB list of ATC code strings
+    pathways: Optional[Any] = None  # JSONB
+    drug_interactions: Optional[Any] = None  # JSONB
+    food_interactions: Optional[Any] = None  # JSONB list of food interaction strings
+    synonyms: Optional[Any] = None  # JSONB
+    external_identifiers: Optional[Any] = None  # JSONB
+    patents: Optional[Any] = None  # JSONB list of patent dicts
+    international_brands: Optional[Any] = None  # JSONB list of {name, company}
+    monoisotopic_mass: Optional[str] = None  # TEXT from experimental_properties
+    unii: Optional[str] = None  # FDA UNII code from external_identifiers
+    smiles: Optional[str] = None
+    inchi: Optional[str] = None
+    inchi_key: Optional[str] = None
+    molecular_formula: Optional[str] = None
+    molecular_weight: Optional[Any] = None  # TEXT — may be "180.16 g/mol"
+    calculated_properties: Optional[Any] = None  # JSONB
+    experimental_properties: Optional[Any] = None  # JSONB
 
     @field_validator('drugbank_id')
     @classmethod

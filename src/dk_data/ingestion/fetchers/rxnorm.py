@@ -56,9 +56,9 @@ class RxNormFetcher(BaseFetcher):
         """Fetch RxNorm data from the NLM REST API.
 
         Keyword Args:
-            strategy: ``"bulk"`` (default) or ``"properties"``.
+            strategy: ``"bulk"`` (default), ``"properties"``, or ``"related"``.
             rxcui_list: List of RxCUI strings to enrich (used when
-                        strategy="properties").
+                        strategy="properties" or strategy="related").
 
         Returns:
             Dict with keys:
@@ -74,6 +74,8 @@ class RxNormFetcher(BaseFetcher):
         try:
             if strategy == "properties" and rxcui_list:
                 records = self._fetch_properties(rxcui_list)
+            elif strategy == "related" and rxcui_list:
+                records = self._fetch_related(rxcui_list)
             else:
                 records = self._fetch_bulk()
 
@@ -125,6 +127,51 @@ class RxNormFetcher(BaseFetcher):
             # Annotate so the loader can identify the tty without parsing deep
             data["_tty"] = tty
             records.append(data)
+
+        return records
+
+    # ------------------------------------------------------------------
+    # Related concepts enrichment strategy
+    # ------------------------------------------------------------------
+
+    def _fetch_related(self, rxcui_list: List[str]) -> List[Dict[str, Any]]:
+        """Fetch /rxcui/{rxcui}/related.json for each RxCUI.
+
+        Captures ingredient (IN/MIN), brand-name (BN/SBD), NDC, ATC, and
+        drug-class relationships.  Each response stores a ``relatedGroup``
+        structure that the bronze SQL model joins to populate ``ingredients``,
+        ``brand_names``, ``atc_codes``, and ``drug_classes``.
+
+        A 0.1 s delay is applied between requests.
+
+        Args:
+            rxcui_list: RxCUI identifiers to enrich.
+
+        Returns:
+            List of raw related response dicts (one per RxCUI).
+        """
+        records: List[Dict[str, Any]] = []
+        total = len(rxcui_list)
+
+        for idx, rxcui in enumerate(rxcui_list, start=1):
+            url = f"{BASE_URL}/rxcui/{rxcui}/related.json"
+            logger.info(
+                "RxNorm related fetch [%d/%d]: rxcui=%s", idx, total, rxcui
+            )
+            try:
+                response = self.session.get(url, timeout=30)
+                response.raise_for_status()
+                data = response.json()
+                data["_rxcui"] = rxcui
+                data["_strategy"] = "related"
+                records.append(data)
+            except Exception as exc:
+                logger.warning(
+                    "RxNorm related fetch failed for rxcui=%s: %s", rxcui, exc
+                )
+
+            if idx < total:
+                time.sleep(_PER_ID_DELAY)
 
         return records
 

@@ -98,6 +98,9 @@ pubchem_extracted AS (
 ),
 
 combined AS (
+    -- PubChem synonyms format provides only inn_name, research_codes, synonyms.
+    -- Structural fields (inn_latin, inn_list_number, inn_year, cas_number, etc.)
+    -- are genuinely unavailable in this format — UNION alignment NULLs are correct.
     SELECT
         raw_id,
         request_timestamp,

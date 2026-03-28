@@ -149,6 +149,10 @@ def load_hrsa_from_csv(filepath: str, batch_size: int = 500) -> dict:
         'Designation_Type': 'designation_type',
         'HPSA Designation Type Description': 'designation_type',
         'Designation Type': 'designation_type',
+        # HPSA Status variations (Designated, Proposed Withdrawal, etc.)
+        'HPSA Status': 'hpsa_status',
+        'HPSA_Status': 'hpsa_status',
+        'Designation Status': 'hpsa_status',
         # State abbreviation variations
         'State_Abbr': 'state_abbr',
         'State Abbreviation': 'state_abbr',
@@ -179,8 +183,8 @@ def load_hrsa_from_csv(filepath: str, batch_size: int = 500) -> dict:
 
     # Keep only the columns we need (handles duplicate column names after rename)
     target_cols = ['hpsa_id', 'hpsa_name', 'hpsa_type', 'designation_type',
-                   'state_abbr', 'county_name', 'hpsa_score', 'rural_status',
-                   'designation_date']
+                   'hpsa_status', 'state_abbr', 'county_name', 'hpsa_score',
+                   'rural_status', 'designation_date']
     available_cols = [c for c in target_cols if c in df.columns]
     df = df.loc[:, ~df.columns.duplicated()][available_cols]
 
@@ -209,14 +213,15 @@ def load_hrsa_from_csv(filepath: str, batch_size: int = 500) -> dict:
                     cur.execute("""
                         INSERT INTO hcs_raw.hrsa_shortage_areas (
                             hpsa_id, hpsa_name, hpsa_type, designation_type,
-                            state_abbr, county_name, hpsa_score, designation_date,
-                            rural_status, _source_hash
-                        ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                            hpsa_status, state_abbr, county_name, hpsa_score,
+                            designation_date, rural_status, _source_hash
+                        ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                     """, (
                         row.get('hpsa_id', ''),
                         row.get('hpsa_name', ''),
                         row.get('hpsa_type', ''),
                         row.get('designation_type', ''),
+                        row.get('hpsa_status'),
                         row.get('state_abbr', ''),
                         row.get('county_name', ''),
                         int(row['hpsa_score']) if pd.notna(row.get('hpsa_score')) else None,
@@ -283,6 +288,8 @@ def load_hrsa_shortage_areas_from_records(
         'Designation_Type': 'designation_type',
         'HPSA Designation Type Description': 'designation_type',
         'Designation Type': 'designation_type',
+        'HPSA Status': 'hpsa_status', 'HPSA_Status': 'hpsa_status',
+        'Designation Status': 'hpsa_status',
         'State_Abbr': 'state_abbr', 'State Abbreviation': 'state_abbr',
         'Primary State Abbreviation': 'state_abbr',
         'County_Name': 'county_name', 'Common County Name': 'county_name',
@@ -329,14 +336,15 @@ def load_hrsa_shortage_areas_from_records(
                     cur.execute("""
                         INSERT INTO hcs_raw.hrsa_shortage_areas (
                             hpsa_id, hpsa_name, hpsa_type, designation_type,
-                            state_abbr, county_name, hpsa_score, designation_date,
-                            rural_status, _source_hash
-                        ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                            hpsa_status, state_abbr, county_name, hpsa_score,
+                            designation_date, rural_status, _source_hash
+                        ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                     """, (
                         row.get('hpsa_id', ''),
                         row.get('hpsa_name', ''),
                         row.get('hpsa_type', ''),
                         row.get('designation_type', ''),
+                        row.get('hpsa_status'),
                         row.get('state_abbr', ''),
                         row.get('county_name', ''),
                         hpsa_score,

@@ -24,6 +24,7 @@ SELECT
     b.publication_date AS pub_date,
     b.review_type,
     b.authors,
+    -- raw_data: mol_raw.cochrane_reviews uses flat columns (no response_body JSONB stored)
     NULL::JSONB                             AS raw_data,
     'cochrane_reviews'                      AS source,
     b.created_at

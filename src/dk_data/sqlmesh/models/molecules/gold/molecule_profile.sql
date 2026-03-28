@@ -31,9 +31,11 @@ WITH molecule_base AS (
         m.development_status,
         m.max_phase,
         m.first_approval_year,
+        -- approval_date: not stored in any current source; genuinely unavailable
         NULL::DATE                              AS approval_date,
         m.resolution_confidence,
-        NULL::TEXT[]                            AS data_sources,
+        -- data_sources: silver stores as JSONB array; cast to TEXT[] for gold
+        ARRAY(SELECT jsonb_array_elements_text(COALESCE(m.data_sources, '[]'::JSONB))) AS data_sources,
         m.name_source                           AS primary_source,
         m.created_at,
         m.updated_at

@@ -49,6 +49,9 @@ label_evidence AS (
         molecule_id,
         TRUE AS has_fda_label,
         effective_date AS approval_date,
+        -- marketing_status: not in mol_silver.drug_labels; available in
+        -- mol_silver.regulatory_milestones — but that model joins back to
+        -- fda_drugs/fda_drugsfda bronze, not drug_labels. Leave NULL here.
         NULL::TEXT AS marketing_status,
         boxed_warning IS NOT NULL AS has_boxed_warning
     FROM mol_silver.drug_labels

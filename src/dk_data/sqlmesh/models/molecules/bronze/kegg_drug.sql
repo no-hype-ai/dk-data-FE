@@ -49,14 +49,16 @@ SELECT DISTINCT ON (kegg_id)
     entry->>'formula'   AS formula,
     (entry->>'exact_mass')::NUMERIC AS exact_mass,
     entry->>'smiles'    AS smiles,
-    entry->>'inchi'     AS inchi,
-    COALESCE(entry->>'inchi_key', entry->>'inchikey') AS inchi_key,
+    -- KEGG flat-file STDINCHI/STDINCHIKEY are parsed as arrays by the fetcher
+    COALESCE(entry->'stdinchi'->>0, entry->>'inchi')                          AS inchi,
+    COALESCE(entry->'stdinchikey'->>0, entry->>'inchi_key', entry->>'inchikey') AS inchi_key,
 
     entry->'drug_class' AS drug_class,
     entry->'atc_codes'  AS atc_codes,
     COALESCE(entry->>'target', entry->>'therapeutic_target') AS therapeutic_target,
     entry->'targets'    AS targets,
-    entry->'pathways'   AS pathways,
+    -- KEGG flat-file PATHWAY is parsed as list under key "pathway" (singular) by the fetcher
+    COALESCE(entry->'pathway', entry->'pathways')   AS pathways,
     entry->'enzymes'    AS enzymes,
 
     entry->>'drugbank_id' AS drugbank_id,

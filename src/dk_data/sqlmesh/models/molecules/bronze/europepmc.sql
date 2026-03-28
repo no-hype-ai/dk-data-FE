@@ -39,6 +39,22 @@ SELECT
     r.response_body->>'journalTitle'                                              AS journal_title,
     r.response_body->>'journalIssn'                                               AS journal_issn,
 
+    -- Bibliographic details from journalInfo object
+    -- EuropePMC API: journalInfo.volume, journalInfo.issue, pageInfo (e.g. "123-134")
+    (r.response_body->'journalInfo'->>'volume')::TEXT                            AS volume,
+    (r.response_body->'journalInfo'->>'issue')::TEXT                             AS issue,
+    -- pageInfo format: "first-last" or just "first"
+    CASE
+        WHEN r.response_body->>'pageInfo' LIKE '%-%'
+        THEN SPLIT_PART(r.response_body->>'pageInfo', '-', 1)
+        ELSE r.response_body->>'pageInfo'
+    END                                                                           AS first_page,
+    CASE
+        WHEN r.response_body->>'pageInfo' LIKE '%-%'
+        THEN SPLIT_PART(r.response_body->>'pageInfo', '-', 2)
+        ELSE NULL
+    END                                                                           AS last_page,
+
     -- Dates
     -- firstPublicationDate: ISO date string "YYYY-MM-DD"
     (r.response_body->>'firstPublicationDate')::DATE                             AS publication_date,

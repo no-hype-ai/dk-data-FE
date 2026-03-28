@@ -4,6 +4,9 @@
 -- Columns are typed at load time; JSONB fields (concepts, authorships, etc.)
 -- are stored as JSONB blobs. The loader normalises the OpenAlex API response
 -- into this flat schema — no JSON path drilling needed here.
+-- Extended columns (pmid, pmcid, mag_id, work_type, language, biblio fields,
+-- topics, keywords, mesh_terms, metrics, grants, related works, SDGs, etc.)
+-- were added in migration 112 and are now populated by the updated fetcher.
 -- Part of: 012-dk-data-platform
 
 MODEL (
@@ -25,20 +28,21 @@ SELECT
     r.work_id::TEXT                                                        AS openalex_id,
     r.doi::TEXT                                                            AS doi,
 
-    -- PMID is not stored directly in mol_raw.openalex_ci; derive from authorships
-    -- if available, otherwise NULL (PMID linkage done at silver layer via doi)
-    NULL::TEXT                                                             AS pmid,
-    NULL::TEXT                                                             AS pmcid,
-    NULL::TEXT                                                             AS mag_id,
+    -- Cross-reference IDs (stored in mol_raw.openalex_ci since migration 112)
+    r.pmid::TEXT                                                           AS pmid,
+    r.pmcid::TEXT                                                          AS pmcid,
+    r.mag_id::TEXT                                                         AS mag_id,
 
     -- Title and Abstract (abstract reconstructed by fetcher from inverted index)
     r.title::TEXT                                                          AS title,
     r.abstract::TEXT                                                       AS abstract,
+    -- abstract_inverted_index: OpenAlex API returns this only on dedicated /works/{id} calls,
+    -- not in the search/filter endpoint — genuinely unavailable at bulk ingest
     NULL::JSONB                                                            AS abstract_inverted_index,
 
-    -- Publication Info (publication_year derived from publication_date)
-    NULL::TEXT                                                             AS work_type,
-    NULL::TEXT                                                             AS language,
+    -- Publication Info (stored in mol_raw.openalex_ci since migration 112)
+    r.work_type::TEXT                                                      AS work_type,
+    r.language::TEXT                                                       AS language,
     EXTRACT(YEAR FROM r.publication_date)::INTEGER                        AS publication_year,
     r.publication_date::DATE                                               AS publication_date,
 
@@ -50,41 +54,41 @@ SELECT
     -- open_access structure: {is_oa: bool, oa_status: ..., oa_url: ...}
     (r.open_access->>'is_oa')::BOOLEAN                                   AS is_open_access,
 
-    -- Bibliographic (not stored at raw layer)
-    NULL::TEXT                                                             AS volume,
-    NULL::TEXT                                                             AS issue,
-    NULL::TEXT                                                             AS first_page,
-    NULL::TEXT                                                             AS last_page,
+    -- Bibliographic fields (stored in mol_raw.openalex_ci since migration 112)
+    r.volume::TEXT                                                         AS volume,
+    r.issue::TEXT                                                          AS issue,
+    r.first_page::TEXT                                                     AS first_page,
+    r.last_page::TEXT                                                      AS last_page,
 
     -- Authors
     r.authorships::JSONB                                                   AS authorships,
     (SELECT jsonb_agg(a->'author'->>'display_name')
      FROM jsonb_array_elements(COALESCE(r.authorships, '[]'::JSONB)) AS a) AS author_names,
 
-    -- Concepts and Topics
+    -- Concepts and Topics (stored in mol_raw.openalex_ci since migration 112)
     r.concepts::JSONB                                                      AS concepts,
-    NULL::JSONB                                                            AS topics,
-    NULL::JSONB                                                            AS keywords,
-    NULL::JSONB                                                            AS mesh_terms,
+    r.topics::JSONB                                                        AS topics,
+    r.keywords::JSONB                                                      AS keywords,
+    r.mesh_terms::JSONB                                                    AS mesh_terms,
 
-    -- Metrics
+    -- Metrics (stored in mol_raw.openalex_ci since migration 112)
     r.cited_by_count::INTEGER                                              AS cited_by_count,
-    NULL::NUMERIC                                                          AS cited_by_percentile,
-    NULL::JSONB                                                            AS citation_counts_by_year,
+    r.cited_by_percentile::NUMERIC                                         AS cited_by_percentile,
+    r.citation_counts_by_year::JSONB                                       AS citation_counts_by_year,
 
-    -- Grants (not stored at raw layer)
-    NULL::JSONB                                                            AS grants,
-    NULL::JSONB                                                            AS referenced_works,
-    NULL::JSONB                                                            AS related_works,
-    NULL::JSONB                                                            AS sustainable_development_goals,
+    -- Grants and related works (stored in mol_raw.openalex_ci since migration 112)
+    r.grants::JSONB                                                        AS grants,
+    r.referenced_works::JSONB                                              AS referenced_works,
+    r.related_works::JSONB                                                 AS related_works,
+    r.sustainable_development_goals::JSONB                                 AS sustainable_development_goals,
 
-    -- Access
+    -- Access (stored in mol_raw.openalex_ci since migration 112)
     r.open_access::JSONB                                                   AS open_access_info,
-    NULL::JSONB                                                            AS best_oa_location,
+    r.best_oa_location::JSONB                                              AS best_oa_location,
 
-    -- Indexed Status (not stored at raw layer)
-    NULL::BOOLEAN                                                          AS is_retracted,
-    NULL::BOOLEAN                                                          AS is_paratext,
+    -- Indexed Status (stored in mol_raw.openalex_ci since migration 112)
+    r.is_retracted::BOOLEAN                                                AS is_retracted,
+    r.is_paratext::BOOLEAN                                                 AS is_paratext,
 
     -- Source tracking
     'openalex'                                                             AS source,

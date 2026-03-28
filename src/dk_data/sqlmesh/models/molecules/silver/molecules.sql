@@ -21,8 +21,9 @@ MODEL (
 --   2. PubChem with inchi_key  — compounds not yet in ChEMBL, structural (confidence 0.8)
 --   3. ChEMBL without inchi_key — biologics (mAbs, proteins, oligonucleotides, gene therapies)
 --      that ChEMBL tracks but assigns no structural identifier (confidence 0.9)
---   4. DrugBank without inchi_key — approved drugs where XML fetcher has no structural data;
---      name-based identity only (confidence 0.6)
+--   4. DrugBank — approved drugs with structural identifiers from calculated-properties
+--      (migration 110). Small molecules use inchi_key; biologics fall back to name-based
+--      identity (confidence 0.6)
 --
 -- Identity key:
 --   Structural molecules: COALESCE(inchi_key, ...) → inchi_key value
@@ -31,9 +32,11 @@ MODEL (
 -- molecule_id is a deterministic UUID: md5(identity_key)::uuid
 -- This ensures FK references in downstream tables remain stable across reprocessing.
 --
--- NOTE: DrugBank inchi_key is always NULL — the XML fetcher does not extract structural
--- identifiers. DrugBank contributes name-based identity here (precedence 4) and also
--- populates identifier_mappings and molecule_aliases via name-based joins.
+-- NOTE: DrugBank inchi_key is now populated by the XML fetcher (migration 110 adds the
+-- column; calculated-properties extraction provides InChIKey for small molecules).
+-- Biologics that have no structural identifier still fall back to 'biologic:' || lower(name).
+-- DrugBank contributes structural identity here (precedence 4) and also populates
+-- identifier_mappings and molecule_aliases.
 
 WITH source_molecules AS (
     -- -------------------------------------------------------------------------
@@ -198,37 +201,49 @@ WITH source_molecules AS (
     UNION ALL
 
     -- -------------------------------------------------------------------------
-    -- Source 4: DrugBank (inchi_key always NULL — XML fetcher limitation)
+    -- Source 4: DrugBank (structural identifiers now extracted by fetcher via migration 110)
     -- Covers approved/investigational drugs in DrugBank not present in ChEMBL/PubChem.
-    -- Name-based identity only. Lower resolution_confidence (0.6) reflects name-match uncertainty.
+    -- When inchi_key is available use structural identity; otherwise name-based identity.
+    -- Lower resolution_confidence (0.6) for name-based records; structural records
+    -- are still tagged precedence 4 so ChEMBL/PubChem records take priority when present.
     -- -------------------------------------------------------------------------
     SELECT
-        NULL::TEXT                                              AS inchi_key,
-        'biologic:' || LOWER(name)                             AS identity_key,
+        inchi_key,
+        CASE
+            WHEN inchi_key IS NOT NULL THEN inchi_key
+            ELSE 'biologic:' || LOWER(name)
+        END                                                     AS identity_key,
         name                                                    AS canonical_name,
         'drugbank'                                              AS name_source,
-        NULL::TEXT                                              AS canonical_smiles,
-        NULL::TEXT                                              AS inchi,
-        NULL::TEXT                                              AS molecular_formula,
-        NULL::NUMERIC                                           AS molecular_weight,
-        NULL::TEXT                                              AS molecule_type,
+        smiles                                                  AS canonical_smiles,
+        inchi,
+        molecular_formula,
+        average_mass                                            AS molecular_weight,
+        drug_type                                               AS molecule_type,
         'unknown'                                               AS development_status,
+        -- max_phase / first_approval_year: ChEMBL-specific, not in DrugBank XML
         NULL::INTEGER                                           AS max_phase,
         NULL::INTEGER                                           AS first_approval_year,
-        NULL::NUMERIC                                           AS alogp,
-        NULL::INTEGER                                           AS hba,
-        NULL::INTEGER                                           AS hbd,
-        NULL::NUMERIC                                           AS psa,
+        -- Physicochemical properties from DrugBank <calculated-properties>
+        alogp,
+        hba,
+        hbd,
+        psa,
+        -- num_ro5_violations: computed from Lipinski rule violations; not directly stored
         NULL::INTEGER                                           AS num_ro5_violations,
-        NULL::INTEGER                                           AS aromatic_rings,
-        NULL::INTEGER                                           AS heavy_atoms,
-        NULL::NUMERIC                                           AS exact_mass,
-        NULL::TEXT                                              AS isomeric_smiles,
-        NULL::INTEGER                                           AS rotatable_bond_count,
+        aromatic_rings,
+        heavy_atoms,
+        -- monoisotopic_mass stored as exact_mass for UNION compatibility
+        monoisotopic_mass                                       AS exact_mass,
+        isomeric_smiles,
+        rotatable_bond_count,
+        -- complexity / charge: not extracted from DrugBank XML
         NULL::NUMERIC                                           AS complexity,
         NULL::INTEGER                                           AS charge,
+        -- mesh_headings / pharmacological_actions: PubChem-specific
         NULL::JSONB                                             AS mesh_headings,
         NULL::JSONB                                             AS pharmacological_actions,
+        -- prodrug / natural_product / usan_stem: ChEMBL-specific flags
         NULL::BOOLEAN                                           AS prodrug,
         NULL::BOOLEAN                                           AS natural_product,
         NULL::TEXT                                              AS usan_stem,
@@ -294,12 +309,54 @@ deduplicated AS (
     ORDER BY identity_key, source_precedence ASC, source_updated_at DESC
 ),
 
--- Enrich with DrugBank pharmacology fields (description, pharmacodynamics, drug_categories).
--- Only populated where DrugBank has data; NULL for non-DrugBank molecules.
--- mechanism_of_action is NULL in current DrugBank bronze (XML fetcher doesn't extract it).
+-- Enrich with DrugBank pharmacology fields (description, pharmacodynamics, drug_categories,
+-- mechanism_of_action). Only populated where DrugBank has data; NULL for non-DrugBank molecules.
+-- mechanism_of_action is now extracted by the fetcher (migration 110) and flows through
+-- Source 4 rows via d.* from deduplicated. For non-DrugBank rows (Sources 1-3), the
+-- LEFT JOIN backfills mechanism_of_action via db.mechanism_of_action.
+-- d.* includes mechanism_of_action (NULL for Sources 1-3); the final SELECT
+-- overrides it with COALESCE(d.mechanism_of_action, db.mechanism_of_action).
 enriched AS (
     SELECT
-        d.*,
+        d.molecule_id,
+        d.inchi_key,
+        d.canonical_name,
+        d.name_source,
+        d.canonical_smiles,
+        d.inchi,
+        d.molecular_formula,
+        d.molecular_weight,
+        d.molecule_type,
+        d.therapeutic_areas,
+        COALESCE(d.mechanism_of_action, db.mechanism_of_action) AS mechanism_of_action,
+        d.development_status,
+        d.max_phase,
+        d.first_approval_year,
+        d.approval_date,
+        d.prodrug,
+        d.natural_product,
+        d.usan_stem,
+        d.alogp,
+        d.hba,
+        d.hbd,
+        d.psa,
+        d.num_ro5_violations,
+        d.aromatic_rings,
+        d.heavy_atoms,
+        d.exact_mass,
+        d.isomeric_smiles,
+        d.rotatable_bond_count,
+        d.complexity,
+        d.charge,
+        d.mesh_headings,
+        d.pharmacological_actions,
+        d.resolution_confidence,
+        d.needs_review,
+        d.review_reason,
+        d.data_sources,
+        d.primary_source,
+        d.created_at,
+        d.updated_at,
         db.description,
         db.pharmacodynamics,
         db.categories AS drug_categories

@@ -72,6 +72,37 @@ from_related AS (
       AND prop->>'rxcui' IS NOT NULL
 ),
 
+-- Enrichment from "related" strategy fetch responses:
+-- /rxcui/{rxcui}/related.json responses store _strategy="related" and _rxcui=<source>.
+-- Group by source rxcui to build ingredient/brand_name/atc/drug_class arrays.
+related_enrichment AS (
+    SELECT
+        r.response_body->>'_rxcui'                                          AS source_rxcui,
+        jsonb_agg(DISTINCT prop->>'name') FILTER (
+            WHERE cg->>'tty' IN ('IN', 'MIN', 'PIN')
+        )                                                                    AS ingredients,
+        jsonb_agg(DISTINCT prop->>'name') FILTER (
+            WHERE cg->>'tty' = 'BN'
+        )                                                                    AS brand_names,
+        jsonb_agg(DISTINCT prop->>'rxcui') FILTER (
+            WHERE cg->>'tty' IN ('ATC', 'VA')
+        )                                                                    AS atc_codes,
+        jsonb_agg(DISTINCT prop->>'name') FILTER (
+            WHERE cg->>'tty' IN ('EPC', 'MoA', 'TC', 'PK', 'PE', 'CS')
+        )                                                                    AS drug_classes,
+        -- NDC codes: tty='NDC' entries in relatedGroup; name contains the NDC string
+        jsonb_agg(DISTINCT prop->>'name') FILTER (
+            WHERE cg->>'tty' = 'NDC'
+        )                                                                    AS ndc_codes
+    FROM mol_raw.rxnorm r,
+         jsonb_array_elements(r.response_body->'relatedGroup'->'conceptGroup') AS cg,
+         jsonb_array_elements(cg->'conceptProperties') AS prop
+    WHERE r.response_status = 200
+      AND r.response_body->>'_strategy' = 'related'
+      AND r.response_body->>'_rxcui' IS NOT NULL
+    GROUP BY r.response_body->>'_rxcui'
+),
+
 combined AS (
     SELECT * FROM from_id_group
     UNION ALL
@@ -80,26 +111,27 @@ combined AS (
     SELECT * FROM from_related
 )
 
-SELECT DISTINCT ON (rxcui)
+SELECT DISTINCT ON (c.rxcui)
     gen_random_uuid() AS id,
-    raw_id,
-    rxcui,
-    name,
-    tty,
-    synonym,
-    suppress,
-    NULL::JSONB AS ingredients,
-    NULL::JSONB AS brand_names,
-    NULL::JSONB AS ndc_codes,
-    NULL::JSONB AS atc_codes,
-    NULL::JSONB AS drug_classes,
-    raw_json,
+    c.raw_id,
+    c.rxcui,
+    c.name,
+    c.tty,
+    c.synonym,
+    c.suppress,
+    e.ingredients,
+    e.brand_names,
+    e.ndc_codes,
+    e.atc_codes,
+    e.drug_classes,
+    c.raw_json,
     FALSE       AS processed_to_silver,
-    request_timestamp,
-    request_timestamp AS ingested_at,
+    c.request_timestamp,
+    c.request_timestamp AS ingested_at,
     'rxnorm'    AS source,
-    request_timestamp AS source_updated_at
+    c.request_timestamp AS source_updated_at
 
-FROM combined
-WHERE rxcui IS NOT NULL
-ORDER BY rxcui, request_timestamp DESC NULLS LAST
+FROM combined c
+LEFT JOIN related_enrichment e ON e.source_rxcui = c.rxcui
+WHERE c.rxcui IS NOT NULL
+ORDER BY c.rxcui, c.request_timestamp DESC NULLS LAST

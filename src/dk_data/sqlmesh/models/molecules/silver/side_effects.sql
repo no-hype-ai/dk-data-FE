@@ -23,8 +23,8 @@ SELECT
     pc.molecule_id                                          AS molecule_id,
     b.stitch_id_flat                                        AS stitch_id,
     b.pubchem_cid,
-    -- SIDER carries no drug name field; set to NULL for schema compatibility
-    NULL::TEXT                                              AS drug_name,
+    -- drug_name from mol_silver.molecules via molecule_id JOIN (SIDER has no name field)
+    m.canonical_name                                        AS drug_name,
     b.umls_cui_side_effect                                  AS meddra_concept_id,
     b.side_effect_name,
     b.meddra_concept_type                                   AS meddra_level,
@@ -46,6 +46,9 @@ FROM mol_bronze.sider b
 LEFT JOIN mol_silver.pubchem pc
        ON b.pubchem_cid IS NOT NULL
       AND b.pubchem_cid = pc.cid
+-- Get canonical_name as drug_name from molecules
+LEFT JOIN mol_silver.molecules m ON pc.molecule_id IS NOT NULL
+    AND pc.molecule_id = m.molecule_id
 
 WHERE b.stitch_id_flat IS NOT NULL
   AND b.side_effect_name IS NOT NULL;

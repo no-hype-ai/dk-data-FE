@@ -33,8 +33,9 @@ SELECT
     r.document_url::TEXT             AS document_url,
     r.description::TEXT              AS description,
 
-    -- Financial data from XBRL is not available in the basic fetcher;
-    -- these will be populated by a future XBRL enrichment step.
+    -- Financial data: genuinely unavailable from the EDGAR full-text search API.
+    -- Revenue/net_income/total_assets require parsing XBRL submissions
+    -- (EDGAR /submissions/{cik}.json + XBRL viewer) — a separate enrichment step.
     NULL::NUMERIC AS revenue,
     NULL::NUMERIC AS net_income,
     NULL::NUMERIC AS total_assets,

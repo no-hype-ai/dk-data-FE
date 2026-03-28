@@ -129,7 +129,11 @@ class OpenAlexCIFetcher(BaseFetcher):
                     "select": (
                         "id,doi,title,publication_date,cited_by_count,"
                         "concepts,authorships,primary_location,open_access,"
-                        "abstract_inverted_index"
+                        "abstract_inverted_index,"
+                        "ids,type,language,biblio,topics,keywords,mesh,"
+                        "counts_by_year,grants,referenced_works,related_works,"
+                        "sustainable_development_goals,best_oa_location,"
+                        "is_retracted,is_paratext,cited_by_percentile_year"
                     ),
                 }
                 if self.api_key:
@@ -223,6 +227,46 @@ class OpenAlexCIFetcher(BaseFetcher):
                 for c in raw_concepts
             ]
 
+        # Extract external IDs (ids object contains pmid, pmcid, mag, openalex, etc.)
+        ids_obj = work.get("ids") or {}
+        pmid_raw = ids_obj.get("pmid")
+        pmid = pmid_raw.split("/")[-1] if pmid_raw and "/" in pmid_raw else pmid_raw
+        pmcid_raw = ids_obj.get("pmcid")
+        pmcid = pmcid_raw.split("/")[-1] if pmcid_raw and "/" in pmcid_raw else pmcid_raw
+        mag_id = ids_obj.get("mag")
+
+        # Bibliographic info (volume, issue, pages) from biblio object
+        biblio = work.get("biblio") or {}
+
+        # Topics (newer OpenAlex field replacing concepts in some contexts)
+        topics = work.get("topics")
+
+        # Keywords
+        keywords = work.get("keywords")
+
+        # MeSH terms
+        mesh_terms = work.get("mesh")
+
+        # Citation counts by year
+        citation_counts_by_year = work.get("counts_by_year")
+
+        # Grants
+        grants = work.get("grants")
+
+        # Related work lists
+        referenced_works = work.get("referenced_works")
+        related_works = work.get("related_works")
+
+        # SDGs
+        sustainable_development_goals = work.get("sustainable_development_goals")
+
+        # Best OA location
+        best_oa_location = work.get("best_oa_location")
+
+        # Cited by percentile
+        cited_by_percentile_obj = work.get("cited_by_percentile_year") or {}
+        cited_by_percentile = cited_by_percentile_obj.get("max")  # use max percentile
+
         return {
             "work_id": work_id,
             "doi": work.get("doi"),
@@ -234,6 +278,28 @@ class OpenAlexCIFetcher(BaseFetcher):
             "authorships": work.get("authorships"),
             "primary_location": work.get("primary_location"),
             "open_access": work.get("open_access"),
+            # Extended fields
+            "pmid": pmid,
+            "pmcid": pmcid,
+            "mag_id": mag_id,
+            "work_type": work.get("type"),
+            "language": work.get("language"),
+            "volume": biblio.get("volume"),
+            "issue": biblio.get("issue"),
+            "first_page": biblio.get("first_page"),
+            "last_page": biblio.get("last_page"),
+            "topics": topics,
+            "keywords": keywords,
+            "mesh_terms": mesh_terms,
+            "cited_by_percentile": cited_by_percentile,
+            "citation_counts_by_year": citation_counts_by_year,
+            "grants": grants,
+            "referenced_works": referenced_works,
+            "related_works": related_works,
+            "sustainable_development_goals": sustainable_development_goals,
+            "best_oa_location": best_oa_location,
+            "is_retracted": work.get("is_retracted"),
+            "is_paratext": work.get("is_paratext"),
         }
 
     @staticmethod
