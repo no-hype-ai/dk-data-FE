@@ -569,8 +569,7 @@ CREATE TABLE IF NOT EXISTS hcs_raw.cms_enrollment_puf (
     tot_benes INTEGER, orgnl_mdcr_benes INTEGER,
     ma_benes INTEGER, esrd_benes INTEGER, dsbl_benes INTEGER,
     _source_year INTEGER NOT NULL, _source_hash TEXT NOT NULL,
-    _source_file TEXT, _loaded_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    UNIQUE (fips, _source_year)
+    _source_file TEXT, _loaded_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
 CREATE TABLE IF NOT EXISTS hcs_raw.cms_claim_type_puf (

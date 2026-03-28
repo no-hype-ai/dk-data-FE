@@ -34,19 +34,24 @@ DO $$ BEGIN
     ) THEN
         ALTER TABLE hcs_raw.cms_medicare_advantage
             ADD CONSTRAINT uq_cms_medicare_advantage_key
-            UNIQUE (contract_id, plan_id, segment_id, fips_county_code, _source_year);
+            UNIQUE (contract_id, plan_id, segment_id, county_fips, _source_year);
     END IF;
 END $$;
 
--- cms_medicaid_drug_spending: state × drug × year
+-- cms_medicaid_drug_spending: brand × generic × util_type × year
+-- Note: migration 086 recreated this table with new column names; 090 adds the
+-- correct constraint (cms_medicaid_drug_spending_uniq). Skip here to avoid conflict.
 DO $$ BEGIN
     IF NOT EXISTS (
         SELECT 1 FROM pg_constraint WHERE conname = 'uq_cms_medicaid_drug_spending_key'
           AND conrelid = 'hcs_raw.cms_medicaid_drug_spending'::regclass
+    ) AND EXISTS (
+        SELECT 1 FROM information_schema.columns
+        WHERE table_schema='hcs_raw' AND table_name='cms_medicaid_drug_spending' AND column_name='gnrc_name'
     ) THEN
         ALTER TABLE hcs_raw.cms_medicaid_drug_spending
             ADD CONSTRAINT uq_cms_medicaid_drug_spending_key
-            UNIQUE (state_id, drug_name, labeler_name, _source_year);
+            UNIQUE (gnrc_name, util_type, _source_year);
     END IF;
 END $$;
 
@@ -98,7 +103,7 @@ DO $$ BEGIN
     END IF;
 END $$;
 
--- cms_referring_providers: referring × referred × year (aggregate pair)
+-- cms_referring_providers: rendering × referred × year
 DO $$ BEGIN
     IF NOT EXISTS (
         SELECT 1 FROM pg_constraint WHERE conname = 'uq_cms_referring_providers_key'
@@ -106,11 +111,11 @@ DO $$ BEGIN
     ) THEN
         ALTER TABLE hcs_raw.cms_referring_providers
             ADD CONSTRAINT uq_cms_referring_providers_key
-            UNIQUE (referring_npi, referred_to_npi, _source_year);
+            UNIQUE (rndrng_npi, rfrd_npi, _source_year);
     END IF;
 END $$;
 
--- cms_ordering_providers: ordering × performing × HCPCS × year
+-- cms_ordering_providers: rendering × referred × year
 DO $$ BEGIN
     IF NOT EXISTS (
         SELECT 1 FROM pg_constraint WHERE conname = 'uq_cms_ordering_providers_key'
@@ -118,7 +123,7 @@ DO $$ BEGIN
     ) THEN
         ALTER TABLE hcs_raw.cms_ordering_providers
             ADD CONSTRAINT uq_cms_ordering_providers_key
-            UNIQUE (ordering_npi, performing_npi, hcpcs_cd, _source_year);
+            UNIQUE (rndrng_npi, rfrd_npi, _source_year);
     END IF;
 END $$;
 
@@ -178,7 +183,7 @@ DO $$ BEGIN
     ) THEN
         ALTER TABLE hcs_raw.cms_chronic_conditions
             ADD CONSTRAINT uq_cms_chronic_conditions_key
-            UNIQUE (bene_geo_cd, bene_age_lvl, chronic_condition, _source_year);
+            UNIQUE (bene_geo_cd, bene_age_lvl, bene_cond, _source_year);
     END IF;
 END $$;
 
@@ -190,7 +195,7 @@ DO $$ BEGIN
     ) THEN
         ALTER TABLE hcs_raw.cms_dual_eligible
             ADD CONSTRAINT uq_cms_dual_eligible_key
-            UNIQUE (state, bene_age_lvl, bene_race_cd, _source_year);
+            UNIQUE (state_cd, dual_elgbl_lvl, _source_year);
     END IF;
 END $$;
 
@@ -202,7 +207,7 @@ DO $$ BEGIN
     ) THEN
         ALTER TABLE hcs_raw.cms_claim_type_puf
             ADD CONSTRAINT uq_cms_claim_type_puf_key
-            UNIQUE (claim_type, service_category, _source_year);
+            UNIQUE (clm_type, bene_geo_lvl, _source_year);
     END IF;
 END $$;
 
@@ -214,7 +219,7 @@ DO $$ BEGIN
     ) THEN
         ALTER TABLE hcs_raw.cms_utilization_puf
             ADD CONSTRAINT uq_cms_utilization_puf_key
-            UNIQUE (service_category, setting_of_care, _source_year);
+            UNIQUE (bene_geo_cd, bene_demo_lvl, _source_year);
     END IF;
 END $$;
 
@@ -222,14 +227,14 @@ END $$;
 -- 2. INDEXES FOR QUERY PERFORMANCE ON HIGH-TRAFFIC COLUMNS
 -- ============================================================================
 
-CREATE INDEX IF NOT EXISTS idx_cms_referring_providers_referring_npi
-    ON hcs_raw.cms_referring_providers (referring_npi, _source_year);
+CREATE INDEX IF NOT EXISTS idx_cms_referring_providers_rndrng_npi
+    ON hcs_raw.cms_referring_providers (rndrng_npi, _source_year);
 
-CREATE INDEX IF NOT EXISTS idx_cms_referring_providers_referred_to_npi
-    ON hcs_raw.cms_referring_providers (referred_to_npi, _source_year);
+CREATE INDEX IF NOT EXISTS idx_cms_referring_providers_rfrd_npi
+    ON hcs_raw.cms_referring_providers (rfrd_npi, _source_year);
 
-CREATE INDEX IF NOT EXISTS idx_cms_ordering_providers_ordering_npi
-    ON hcs_raw.cms_ordering_providers (ordering_npi, _source_year);
+CREATE INDEX IF NOT EXISTS idx_cms_ordering_providers_rndrng_npi
+    ON hcs_raw.cms_ordering_providers (rndrng_npi, _source_year);
 
 CREATE INDEX IF NOT EXISTS idx_cms_mental_health_puf_npi
     ON hcs_raw.cms_mental_health_puf (npi, _source_year);

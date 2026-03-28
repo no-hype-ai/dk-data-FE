@@ -210,7 +210,7 @@ All CMS PUF file-based sources. Columns mirror the CSV schema exactly. Only univ
 | `_source_pmid` | VARCHAR(20) | dedup key |
 | `_processed_at` | TIMESTAMP | extraction timestamp |
 
-> **Pipeline**: `mol_raw.europepmc_raw` → `mol_bronze.europepmc` → extended `silver.publications` (5th CTE in T058) → `mol_silver.publication_evidence_staging` (via agent T037)
+> **Pipeline**: `mol_raw.europepmc_raw` → `mol_bronze.europepmc` → extended `silver.publications` (5th CTE in T058) → `mol_agents.publication_evidence_staging` (via agent T037)
 
 **`mol_bronze.ema_regulatory`**
 | Column | Type | Source field (EMA JSON uses spaces in keys) |
@@ -336,7 +336,7 @@ Key columns relevant to this feature (EuropePMC additions): `pmid`, `title`, `ab
 | `needs_review` | BOOLEAN | NOT NULL DEFAULT FALSE |
 | `_loaded_at` | TIMESTAMP | NOT NULL DEFAULT NOW() |
 
-**`mol_silver.agent_quarantine`** — Agent results below confidence threshold
+**`agents.agent_quarantine`** — Agent results below confidence threshold (cross-domain shared)
 | Column | Type | Notes |
 |---|---|---|
 | `id` | UUID PK | |
@@ -348,7 +348,7 @@ Key columns relevant to this feature (EuropePMC additions): `pmid`, `title`, `ab
 | `reviewed_at` | TIMESTAMP | nullable |
 | `resolution` | VARCHAR(50) | nullable: 'accepted', 'rejected' |
 
-**`mol_silver.publication_evidence_staging`** — Agent writes here; SQLMesh merges into `mol_silver.publication_evidence`
+**`mol_agents.publication_evidence_staging`** — Agent writes here; SQLMesh merges into `mol_silver.publication_evidence`
 
 Same column schema as `mol_silver.publication_evidence`. Agent writes to this table on every extraction run. SQLMesh `INCREMENTAL_BY_UNIQUE_KEY` model reads from this staging table and merges into the live `mol_silver.publication_evidence` table on `content_hash`. This decouples the agent write lifecycle from SQLMesh's table management.
 
@@ -372,11 +372,11 @@ Same column schema as `mol_silver.publication_evidence`. Agent writes to this ta
 | `needs_review` | BOOLEAN | NOT NULL DEFAULT FALSE |
 | `_loaded_at` | TIMESTAMP | NOT NULL DEFAULT NOW() |
 
-### hcs_silver — CMS Agent Output Tables
+### hcs_agents — CMS Agent Output Tables
 
-> **Schema-per-agent pattern**: Each agent defines its own output table's columns before implementation (Decision 2B). The columns below for the 6 CMS agents are the minimum structural skeleton. Full column definitions are added to this data-model.md and migration 085 when each agent is implemented (T031–T036).
+> **Schema-per-agent pattern**: LLM-written tables are separated into `hcs_agents` (epistemological separation from deterministic SQL silver). Tables were initially created in `hcs_silver` by migration 085, then moved to `hcs_agents` by migration 086 section 10.
 
-**`hcs_silver.service_lines`** — Clinical service line assignments (written by T031)
+**`hcs_agents.service_lines`** — Clinical service line assignments (written by T031)
 | Column | Type | Notes |
 |---|---|---|
 | `id` | UUID PK | |
@@ -388,7 +388,7 @@ Same column schema as `mol_silver.publication_evidence`. Agent writes to this ta
 | `_loaded_at` | TIMESTAMP | NOT NULL DEFAULT NOW() |
 *Full column definition to be completed when T031 is implemented.*
 
-**`hcs_silver.idn_hierarchy`** — IDN parent-child relationships (written by T032)
+**`hcs_agents.idn_hierarchy`** — IDN parent-child relationships (written by T032)
 | Column | Type | Notes |
 |---|---|---|
 | `id` | UUID PK | |
@@ -400,7 +400,7 @@ Same column schema as `mol_silver.publication_evidence`. Agent writes to this ta
 | `_loaded_at` | TIMESTAMP | |
 *Full column definition to be completed when T032 is implemented.*
 
-**`hcs_silver.referral_network`** — Provider referral graph edges (written by T033)
+**`hcs_agents.referral_network`** — Provider referral graph edges (written by T033)
 | Column | Type | Notes |
 |---|---|---|
 | `id` | UUID PK | |
@@ -413,7 +413,7 @@ Same column schema as `mol_silver.publication_evidence`. Agent writes to this ta
 | `_loaded_at` | TIMESTAMP | |
 *Full column definition to be completed when T033 is implemented.*
 
-**`hcs_silver.verified_contacts`** — NPI contact verification results (written by T034)
+**`hcs_agents.verified_contacts`** — NPI contact verification results (written by T034)
 | Column | Type | Notes |
 |---|---|---|
 | `id` | UUID PK | |
@@ -427,7 +427,7 @@ Same column schema as `mol_silver.publication_evidence`. Agent writes to this ta
 | `_loaded_at` | TIMESTAMP | |
 *Full column definition to be completed when T034 is implemented.*
 
-**`hcs_silver.staffing_decomposition`** — Clinical role decomposition (written by T035)
+**`hcs_agents.staffing_decomposition`** — Clinical role decomposition (written by T035)
 | Column | Type | Notes |
 |---|---|---|
 | `id` | UUID PK | |
@@ -440,7 +440,7 @@ Same column schema as `mol_silver.publication_evidence`. Agent writes to this ta
 | `_loaded_at` | TIMESTAMP | |
 *Full column definition to be completed when T035 is implemented.*
 
-**`hcs_silver.equipment_inventory`** — Implied equipment inventory (written by T036)
+**`hcs_agents.equipment_inventory`** — Implied equipment inventory (written by T036)
 | Column | Type | Notes |
 |---|---|---|
 | `id` | UUID PK | |
@@ -580,7 +580,7 @@ mol_silver.molecules (1) ──< (0..N) mol_silver.drug_spending
 mol_silver.molecules (1) ──< (0..N) mol_silver.physician_payments
 mol_silver.molecules (1) ──< (0..N) mol_silver.research_grants
 mol_silver.molecules (1) ──< (0..N) mol_silver.publication_evidence
-silver.publications ──> mol_silver.publication_evidence_staging (via agent T037 extraction)
+silver.publications ──> mol_agents.publication_evidence_staging (via agent T037 extraction)
 mol_silver.publication_evidence ──> mol_gold.trial_outcomes (via UNION)
 mol_silver.clinical_trials ──> mol_gold.trial_outcomes (via UNION)
 mol_silver.drug_spending ──> mol_gold.market_summary

@@ -22,7 +22,7 @@ CREATE TABLE IF NOT EXISTS hcs_raw.cms_care_compare (
     response_body_hash  TEXT,
     source_id           TEXT NOT NULL DEFAULT 'cms_care_compare',
     ingested_at         TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    UNIQUE (response_body_hash) NULLS NOT DISTINCT
+    UNIQUE NULLS NOT DISTINCT (response_body_hash)
 );
 CREATE INDEX IF NOT EXISTS idx_hcs_raw_cms_care_compare_ingested ON hcs_raw.cms_care_compare(ingested_at);
 
@@ -35,7 +35,7 @@ CREATE TABLE IF NOT EXISTS hcs_raw.cms_chow (
     response_body_hash  TEXT,
     source_id           TEXT NOT NULL DEFAULT 'cms_chow',
     ingested_at         TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    UNIQUE (response_body_hash) NULLS NOT DISTINCT
+    UNIQUE NULLS NOT DISTINCT (response_body_hash)
 );
 CREATE INDEX IF NOT EXISTS idx_hcs_raw_cms_chow_ingested ON hcs_raw.cms_chow(ingested_at);
 
@@ -48,7 +48,7 @@ CREATE TABLE IF NOT EXISTS hcs_raw.cms_ddinter (
     response_body_hash  TEXT,
     source_id           TEXT NOT NULL DEFAULT 'cms_ddinter',
     ingested_at         TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    UNIQUE (response_body_hash) NULLS NOT DISTINCT
+    UNIQUE NULLS NOT DISTINCT (response_body_hash)
 );
 CREATE INDEX IF NOT EXISTS idx_hcs_raw_cms_ddinter_ingested ON hcs_raw.cms_ddinter(ingested_at);
 
@@ -61,7 +61,7 @@ CREATE TABLE IF NOT EXISTS hcs_raw.cms_dmepos (
     response_body_hash  TEXT,
     source_id           TEXT NOT NULL DEFAULT 'cms_dmepos',
     ingested_at         TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    UNIQUE (response_body_hash) NULLS NOT DISTINCT
+    UNIQUE NULLS NOT DISTINCT (response_body_hash)
 );
 CREATE INDEX IF NOT EXISTS idx_hcs_raw_cms_dmepos_ingested ON hcs_raw.cms_dmepos(ingested_at);
 
@@ -74,7 +74,7 @@ CREATE TABLE IF NOT EXISTS hcs_raw.cms_formulary (
     response_body_hash  TEXT,
     source_id           TEXT NOT NULL DEFAULT 'cms_formulary',
     ingested_at         TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    UNIQUE (response_body_hash) NULLS NOT DISTINCT
+    UNIQUE NULLS NOT DISTINCT (response_body_hash)
 );
 CREATE INDEX IF NOT EXISTS idx_hcs_raw_cms_formulary_ingested ON hcs_raw.cms_formulary(ingested_at);
 
@@ -87,7 +87,7 @@ CREATE TABLE IF NOT EXISTS hcs_raw.cms_hcris (
     response_body_hash  TEXT,
     source_id           TEXT NOT NULL DEFAULT 'cms_hcris',
     ingested_at         TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    UNIQUE (response_body_hash) NULLS NOT DISTINCT
+    UNIQUE NULLS NOT DISTINCT (response_body_hash)
 );
 CREATE INDEX IF NOT EXISTS idx_hcs_raw_cms_hcris_ingested ON hcs_raw.cms_hcris(ingested_at);
 
@@ -100,7 +100,7 @@ CREATE TABLE IF NOT EXISTS hcs_raw.cms_hospital_affiliation (
     response_body_hash  TEXT,
     source_id           TEXT NOT NULL DEFAULT 'cms_hospital_affiliation',
     ingested_at         TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    UNIQUE (response_body_hash) NULLS NOT DISTINCT
+    UNIQUE NULLS NOT DISTINCT (response_body_hash)
 );
 CREATE INDEX IF NOT EXISTS idx_hcs_raw_cms_hospital_affil_ingested ON hcs_raw.cms_hospital_affiliation(ingested_at);
 
@@ -113,7 +113,7 @@ CREATE TABLE IF NOT EXISTS hcs_raw.cms_hospital_quality (
     response_body_hash  TEXT,
     source_id           TEXT NOT NULL DEFAULT 'cms_hospital_quality',
     ingested_at         TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    UNIQUE (response_body_hash) NULLS NOT DISTINCT
+    UNIQUE NULLS NOT DISTINCT (response_body_hash)
 );
 CREATE INDEX IF NOT EXISTS idx_hcs_raw_cms_hospital_qual_ingested ON hcs_raw.cms_hospital_quality(ingested_at);
 
@@ -126,7 +126,7 @@ CREATE TABLE IF NOT EXISTS hcs_raw.cms_magnet (
     response_body_hash  TEXT,
     source_id           TEXT NOT NULL DEFAULT 'cms_magnet',
     ingested_at         TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    UNIQUE (response_body_hash) NULLS NOT DISTINCT
+    UNIQUE NULLS NOT DISTINCT (response_body_hash)
 );
 CREATE INDEX IF NOT EXISTS idx_hcs_raw_cms_magnet_ingested ON hcs_raw.cms_magnet(ingested_at);
 
@@ -139,7 +139,7 @@ CREATE TABLE IF NOT EXISTS hcs_raw.cms_ndc (
     response_body_hash  TEXT,
     source_id           TEXT NOT NULL DEFAULT 'cms_ndc',
     ingested_at         TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    UNIQUE (response_body_hash) NULLS NOT DISTINCT
+    UNIQUE NULLS NOT DISTINCT (response_body_hash)
 );
 CREATE INDEX IF NOT EXISTS idx_hcs_raw_cms_ndc_ingested ON hcs_raw.cms_ndc(ingested_at);
 
@@ -152,7 +152,7 @@ CREATE TABLE IF NOT EXISTS hcs_raw.cms_nucc (
     response_body_hash  TEXT,
     source_id           TEXT NOT NULL DEFAULT 'cms_nucc',
     ingested_at         TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    UNIQUE (response_body_hash) NULLS NOT DISTINCT
+    UNIQUE NULLS NOT DISTINCT (response_body_hash)
 );
 CREATE INDEX IF NOT EXISTS idx_hcs_raw_cms_nucc_ingested ON hcs_raw.cms_nucc(ingested_at);
 
@@ -165,7 +165,7 @@ CREATE TABLE IF NOT EXISTS hcs_raw.cms_pecos (
     response_body_hash  TEXT,
     source_id           TEXT NOT NULL DEFAULT 'cms_pecos',
     ingested_at         TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    UNIQUE (response_body_hash) NULLS NOT DISTINCT
+    UNIQUE NULLS NOT DISTINCT (response_body_hash)
 );
 CREATE INDEX IF NOT EXISTS idx_hcs_raw_cms_pecos_ingested ON hcs_raw.cms_pecos(ingested_at);
 
@@ -178,7 +178,7 @@ CREATE TABLE IF NOT EXISTS hcs_raw.cms_pos (
     response_body_hash  TEXT,
     source_id           TEXT NOT NULL DEFAULT 'cms_pos',
     ingested_at         TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    UNIQUE (response_body_hash) NULLS NOT DISTINCT
+    UNIQUE NULLS NOT DISTINCT (response_body_hash)
 );
 CREATE INDEX IF NOT EXISTS idx_hcs_raw_cms_pos_ingested ON hcs_raw.cms_pos(ingested_at);
 
@@ -191,7 +191,7 @@ CREATE TABLE IF NOT EXISTS hcs_raw.cms_post_acute (
     response_body_hash  TEXT,
     source_id           TEXT NOT NULL DEFAULT 'cms_post_acute',
     ingested_at         TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    UNIQUE (response_body_hash) NULLS NOT DISTINCT
+    UNIQUE NULLS NOT DISTINCT (response_body_hash)
 );
 CREATE INDEX IF NOT EXISTS idx_hcs_raw_cms_post_acute_ingested ON hcs_raw.cms_post_acute(ingested_at);
 
@@ -204,7 +204,7 @@ CREATE TABLE IF NOT EXISTS hcs_raw.cms_rbcs (
     response_body_hash  TEXT,
     source_id           TEXT NOT NULL DEFAULT 'cms_rbcs',
     ingested_at         TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    UNIQUE (response_body_hash) NULLS NOT DISTINCT
+    UNIQUE NULLS NOT DISTINCT (response_body_hash)
 );
 CREATE INDEX IF NOT EXISTS idx_hcs_raw_cms_rbcs_ingested ON hcs_raw.cms_rbcs(ingested_at);
 
@@ -217,7 +217,7 @@ CREATE TABLE IF NOT EXISTS hcs_raw.cms_stabilis (
     response_body_hash  TEXT,
     source_id           TEXT NOT NULL DEFAULT 'cms_stabilis',
     ingested_at         TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    UNIQUE (response_body_hash) NULLS NOT DISTINCT
+    UNIQUE NULLS NOT DISTINCT (response_body_hash)
 );
 CREATE INDEX IF NOT EXISTS idx_hcs_raw_cms_stabilis_ingested ON hcs_raw.cms_stabilis(ingested_at);
 
@@ -230,7 +230,7 @@ CREATE TABLE IF NOT EXISTS hcs_raw.cms_usp (
     response_body_hash  TEXT,
     source_id           TEXT NOT NULL DEFAULT 'cms_usp',
     ingested_at         TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    UNIQUE (response_body_hash) NULLS NOT DISTINCT
+    UNIQUE NULLS NOT DISTINCT (response_body_hash)
 );
 CREATE INDEX IF NOT EXISTS idx_hcs_raw_cms_usp_ingested ON hcs_raw.cms_usp(ingested_at);
 

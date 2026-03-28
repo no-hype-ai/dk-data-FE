@@ -107,7 +107,6 @@ API_SOURCES: list[dict] = [
     {"key": "tdc_admet",       "days_back": None},
     # CMS API-based sources (no file download needed)
     {"key": "cms_geographic_variation",  "days_back": None},
-    {"key": "cms_part_d_prescriber",     "days_back": None},
     {"key": "cms_care_compare",          "days_back": None},
     {"key": "cms_chow",                  "days_back": None},
     {"key": "cms_ddinter",               "days_back": None},
@@ -158,6 +157,10 @@ CMS_SOURCES: list[dict] = [
     {"key": "cms_utilization_puf",       "cms_key": "cms_utilization_puf"},
     {"key": "cms_cost_reports_puf",      "cms_key": "cms_cost_reports_puf"},
     {"key": "cms_cost_reports_puf_lines","cms_key": "cms_cost_reports_puf_lines"},
+    # Annual PUF (~25M rows, January release). seed_samples already skips gracefully
+    # when the downloader returns no file (non-January runs). To run directly:
+    #   python -m dk_data.ingestion.main cms_part_d_prescriber --file <path> --skip-if-no-file
+    {"key": "cms_part_d_prescriber",     "cms_key": "cms_part_d_prescriber"},
 ]
 
 # Legacy file sources (original TAVR/HRSA files — need manual file paths)

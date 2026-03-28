@@ -55,6 +55,10 @@ physical_schema_mapping:
   # HCP / researcher / KOL domain
   hcp_silver: hcp_silver
   hcp_gold: hcp_gold
+  # Agent output schemas (019-cms-puf-platform-reconciliation)
+  hcs_agents: hcs_agents
+  mol_agents: mol_agents
+  agents: agents
   # Application / infrastructure schemas
   staging: staging
   mart: mart

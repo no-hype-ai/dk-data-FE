@@ -100,7 +100,7 @@ doppler run -- python -m dk_data.agents.publication_evidence_extractor --limit 1
 
 # Check output
 doppler run -- psql $DATABASE_URL -c "SELECT COUNT(*), AVG(confidence_score) FROM mol_silver.publication_evidence;"
-doppler run -- psql $DATABASE_URL -c "SELECT COUNT(*) FROM mol_silver.agent_quarantine WHERE agent_name = 'publication_evidence_extractor';"
+doppler run -- psql $DATABASE_URL -c "SELECT COUNT(*) FROM agents.agent_quarantine WHERE agent_name = 'publication_evidence_extractor';"
 ```
 
 ---

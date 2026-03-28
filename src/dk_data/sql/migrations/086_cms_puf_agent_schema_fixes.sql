@@ -69,8 +69,17 @@ BEGIN
 END;
 $$;
 
-ALTER TABLE hcs_silver.service_lines
-    ADD CONSTRAINT IF NOT EXISTS service_lines_npi_key UNIQUE (npi);
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM information_schema.table_constraints
+        WHERE table_schema = 'hcs_silver' AND table_name = 'service_lines'
+          AND constraint_name = 'service_lines_npi_key'
+    ) THEN
+        ALTER TABLE hcs_silver.service_lines ADD CONSTRAINT service_lines_npi_key UNIQUE (npi);
+    END IF;
+END;
+$$;
 
 -- ---------------------------------------------------------------------------
 -- 3. Fix hcs_silver.idn_hierarchy UNIQUE constraint
@@ -102,8 +111,17 @@ BEGIN
 END;
 $$;
 
-ALTER TABLE hcs_silver.idn_hierarchy
-    ADD CONSTRAINT IF NOT EXISTS idn_hierarchy_child_npi_key UNIQUE (child_npi);
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM information_schema.table_constraints
+        WHERE table_schema = 'hcs_silver' AND table_name = 'idn_hierarchy'
+          AND constraint_name = 'idn_hierarchy_child_npi_key'
+    ) THEN
+        ALTER TABLE hcs_silver.idn_hierarchy ADD CONSTRAINT idn_hierarchy_child_npi_key UNIQUE (child_npi);
+    END IF;
+END;
+$$;
 
 -- ---------------------------------------------------------------------------
 -- 4. Add relationship_strength to referral_network
@@ -543,13 +561,19 @@ ALTER TABLE mol_silver.publication_evidence_staging SET SCHEMA mol_agents;
 -- Quarantine table: mol_silver → agents (cross-domain shared)
 ALTER TABLE mol_silver.agent_quarantine SET SCHEMA agents;
 
--- Grant access to existing application role on new schemas
-GRANT USAGE ON SCHEMA hcs_agents TO dk_data_app;
-GRANT USAGE ON SCHEMA mol_agents  TO dk_data_app;
-GRANT USAGE ON SCHEMA agents      TO dk_data_app;
-GRANT SELECT, INSERT, UPDATE ON ALL TABLES IN SCHEMA hcs_agents TO dk_data_app;
-GRANT SELECT, INSERT, UPDATE ON ALL TABLES IN SCHEMA mol_agents  TO dk_data_app;
-GRANT SELECT, INSERT, UPDATE ON ALL TABLES IN SCHEMA agents      TO dk_data_app;
+-- Grant access to existing application role on new schemas (skip if role absent, e.g. local dev)
+DO $$
+BEGIN
+    IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'dk_data_app') THEN
+        EXECUTE 'GRANT USAGE ON SCHEMA hcs_agents TO dk_data_app';
+        EXECUTE 'GRANT USAGE ON SCHEMA mol_agents  TO dk_data_app';
+        EXECUTE 'GRANT USAGE ON SCHEMA agents      TO dk_data_app';
+        EXECUTE 'GRANT SELECT, INSERT, UPDATE ON ALL TABLES IN SCHEMA hcs_agents TO dk_data_app';
+        EXECUTE 'GRANT SELECT, INSERT, UPDATE ON ALL TABLES IN SCHEMA mol_agents  TO dk_data_app';
+        EXECUTE 'GRANT SELECT, INSERT, UPDATE ON ALL TABLES IN SCHEMA agents      TO dk_data_app';
+    END IF;
+END;
+$$;
 
 -- Grant read access to read-only role (web_anon / PostgREST)
 GRANT USAGE ON SCHEMA hcs_agents TO web_anon;

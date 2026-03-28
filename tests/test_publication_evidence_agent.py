@@ -5,7 +5,7 @@ Task: T042
 
 Tests use mocked LiteLLM proxy and mocked asyncpg pool — no real DB or LLM calls.
 Verifies:
-- Endpoint extraction writes to mol_silver.publication_evidence_staging (not live table)
+- Endpoint extraction writes to mol_agents.publication_evidence_staging (not live table)
 - Duplicate content_hash in staging is skipped (ON CONFLICT DO NOTHING)
 - Confidence < 0.5 goes to quarantine, not staging
 - Confidence 0.5–0.79 sets needs_review = True in staging
@@ -140,7 +140,7 @@ class TestStagingWrite:
         assert "staging" in SILVER_TABLE, (
             f"SILVER_TABLE must reference the staging table, got: {SILVER_TABLE}"
         )
-        assert SILVER_TABLE == "mol_silver.publication_evidence_staging"
+        assert SILVER_TABLE == "mol_agents.publication_evidence_staging"
 
     def test_write_results_inserts_to_staging(self):
         """write_results() must INSERT into staging table, not live publication_evidence."""

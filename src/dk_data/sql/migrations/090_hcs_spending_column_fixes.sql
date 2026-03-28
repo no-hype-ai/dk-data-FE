@@ -37,9 +37,15 @@ ALTER TABLE hcs_raw.cms_part_d_spending
     DROP COLUMN IF EXISTS tot_30day_fills,
     DROP COLUMN IF EXISTS avg_spnd_per_30day_fills;
 
--- Rename tot_drug_cst → tot_spndng (CMS field: Tot_Spndng)
-ALTER TABLE hcs_raw.cms_part_d_spending
-    RENAME COLUMN tot_drug_cst TO tot_spndng;
+-- Rename tot_drug_cst → tot_spndng (CMS field: Tot_Spndng) — skip if already renamed
+DO $$
+BEGIN
+    IF EXISTS (SELECT 1 FROM information_schema.columns
+               WHERE table_schema='hcs_raw' AND table_name='cms_part_d_spending' AND column_name='tot_drug_cst') THEN
+        ALTER TABLE hcs_raw.cms_part_d_spending RENAME COLUMN tot_drug_cst TO tot_spndng;
+    END IF;
+END;
+$$;
 
 -- Add missing correct columns
 ALTER TABLE hcs_raw.cms_part_d_spending
