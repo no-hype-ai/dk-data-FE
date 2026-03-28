@@ -6,9 +6,20 @@ Fetches CMS Medicare Geographic Variation data which provides state- and
 county-level Medicare utilization, spending, and readmission metrics.
 
 Source:
-  https://www.cms.gov/Research-Statistics-Data-and-Systems/Statistics-Trends-and-Reports/Medicare-Geographic-Variation
+  https://data.cms.gov/summary-statistics-on-use-and-payments/medicare-geographic-comparisons/medicare-geographic-variation-by-national-state-county
+
+CMS migrated from ZIP file downloads to the data.cms.gov API (as of 2026).
+Old ZIP URLs (cms.gov/files/zip/*) return 404.
+
+Dataset UUIDs discovered from https://data.cms.gov/data.json:
+  National/State/County: 6219697b-8f6c-4164-bed4-cd9317c58ebc
+  HRR:                   6d7b229d-5bfb-4666-a2d2-38cea44a112c
+
+The paginated JSON API returns list of dicts with keys like:
+  YEAR, BENE_GEO_LVL, BENE_GEO_DESC, BENE_GEO_CD, BENE_AGE_LVL, ...
 """
 
+import hashlib
 import logging
 from typing import Any, Optional
 
@@ -16,178 +27,106 @@ from .base import BaseFetcher
 
 logger = logging.getLogger(__name__)
 
+# data.cms.gov paginated data API base
+_DATA_API_BASE = "https://data.cms.gov/data-api/v1/dataset"
+
+# Dataset UUIDs from data.cms.gov/data.json (stable CMS identifiers)
+_DATASET_NATIONAL_STATE_COUNTY = "6219697b-8f6c-4164-bed4-cd9317c58ebc"
+_DATASET_HRR = "6d7b229d-5bfb-4666-a2d2-38cea44a112c"
+
+# Direct CSV download (full 2014-2023 data, ~large file — use API for seeding)
+_CSV_DOWNLOAD_URL = (
+    "https://data.cms.gov/sites/default/files/2025-03/"
+    "a40ac71d-9f80-4d99-92d2-fd149433d7d8/"
+    "2014-2023%20Medicare%20Fee-for-Service%20Geographic%20Variation%20Public%20Use%20File.csv"
+)
+
+_PAGE_SIZE = 2000  # Max rows per API call
+
 
 class CMSGeographicVariationFetcher(BaseFetcher):
     """Fetcher for CMS Medicare Geographic Variation PUF data."""
 
     SOURCE_NAME = "cms_geographic_variation"
-
-    # Available reference years (newest first; fetcher tries them in this order)
-    AVAILABLE_YEARS = [2022, 2021, 2020, 2019]
-
-    # Known direct download URL patterns for the GV PUF ZIP files.
-    # CMS publishes one ZIP per year containing state and county CSV files.
-    # Multiple URL patterns per year — CMS periodically restructures its file paths.
-    GV_PUF_DATASET_ID = "gv-puf"
-    DATA_CMS_API = "https://data.cms.gov/summary-statistics-on-use-and-payments/medicare-geographic-variation"
-
-    # Candidate ZIP URLs per year (try in order; stop at first 200).
-    KNOWN_ZIP_URLS: dict[int, list[str]] = {
-        2022: [
-            "https://www.cms.gov/files/zip/2022-geographic-variation-public-use-file.zip",
-            "https://www.cms.gov/files/zip/geographic-variation-2022.zip",
-            "https://data.cms.gov/sites/default/files/2023-09/2022-geographic-variation-public-use-file.zip",
-        ],
-        2021: [
-            "https://www.cms.gov/files/zip/2021-geographic-variation-public-use-file.zip",
-            "https://www.cms.gov/files/zip/geographic-variation-2021.zip",
-            "https://data.cms.gov/sites/default/files/2022-09/2021-geographic-variation-public-use-file.zip",
-        ],
-        2020: [
-            "https://www.cms.gov/files/zip/2020-geographic-variation-public-use-file.zip",
-            "https://www.cms.gov/files/zip/geographic-variation-2020.zip",
-        ],
-        2019: [
-            "https://www.cms.gov/files/zip/2019-geographic-variation-public-use-file.zip",
-            "https://www.cms.gov/files/zip/geographic-variation-2019.zip",
-        ],
-    }
+    BASE_URL = f"{_DATA_API_BASE}/{_DATASET_NATIONAL_STATE_COUNTY}/data"
 
     def __init__(self, data_dir: Optional[str] = None):
         super().__init__(data_dir)
 
     def get_latest_url(self) -> str:
-        """Return the first candidate ZIP URL for the most recent available year."""
-        latest_year = self.AVAILABLE_YEARS[0]
-        return self.KNOWN_ZIP_URLS[latest_year][0]
+        return self.BASE_URL
 
-    def fetch(self, year: Optional[int] = None, **kwargs) -> dict[str, Any]:
-        """
-        Fetch CMS Geographic Variation PUF for the specified year (or the most
-        recent year that has a reachable ZIP).
+    def fetch(self, **kwargs) -> dict[str, Any]:
+        """Fetch CMS Geographic Variation data from the data.cms.gov API.
 
-        Args:
-            year: Reference year. If None, tries each year in AVAILABLE_YEARS order.
+        Keyword Args:
+            max_records: Maximum rows to return (default: all).
+            dataset_uuid: Override the dataset UUID (default: national/state/county).
 
         Returns:
-            Fetch result dictionary with status, filepath, records, hash.
+            Fetch result dictionary with status, records, hash.
         """
-        years_to_try = [year] if year else self.AVAILABLE_YEARS
+        max_records: Optional[int] = kwargs.get("max_records")
+        dataset_uuid: str = kwargs.get("dataset_uuid", _DATASET_NATIONAL_STATE_COUNTY)
 
-        last_error: str = "No years attempted"
-        for target_year in years_to_try:
-            logger.info(f"Fetching CMS Geographic Variation PUF for {target_year}")
-            try:
-                result = self._fetch_zip(target_year)
-                if result.get('status') == 'success':
-                    return result
-                last_error = result.get('error', f'ZIP fetch failed for {target_year}')
-                logger.warning(f"ZIP fetch failed for {target_year}: {last_error}")
-            except Exception as e:
-                last_error = str(e)
-                logger.warning(f"Exception fetching {target_year}: {e}")
+        try:
+            records = self._fetch_paginated(dataset_uuid, max_records)
+            content_hash = hashlib.md5(str(len(records)).encode()).hexdigest() if records else None
+            result: dict[str, Any] = {
+                "status": "success",
+                "records": records,
+                "record_count": len(records),
+                "hash": content_hash,
+                "dataset_uuid": dataset_uuid,
+            }
+            self.log_fetch_result({**result, "records": len(records)})
+            return result
 
-        result = {'status': 'failed', 'error': last_error, 'year': years_to_try[-1] if years_to_try else None}
-        self.log_fetch_result(result)
-        return result
+        except Exception as e:
+            logger.exception("CMS Geographic Variation fetch failed: %s", e)
+            result = {
+                "status": "failed",
+                "error": str(e),
+                "records": [],
+                "record_count": 0,
+                "hash": None,
+            }
+            self.log_fetch_result(result)
+            return result
 
-    def _fetch_zip(self, year: int) -> dict[str, Any]:
-        """Download and extract the GV PUF ZIP for the given year.
+    def _fetch_paginated(
+        self, dataset_uuid: str, max_records: Optional[int]
+    ) -> list[dict[str, Any]]:
+        """Fetch all records from the data.cms.gov paginated JSON API."""
+        api_url = f"{_DATA_API_BASE}/{dataset_uuid}/data"
+        records: list[dict[str, Any]] = []
+        offset = 0
 
-        Tries each candidate URL in KNOWN_ZIP_URLS[year] and returns on first success.
-        """
-        import io
-        import zipfile
-        import pandas as pd
+        logger.info("Fetching geographic variation via API: %s", api_url)
 
-        candidate_urls = self.KNOWN_ZIP_URLS.get(year)
-        if not candidate_urls:
-            return {'status': 'failed', 'error': f'No known URL for year {year}'}
+        while True:
+            if max_records is not None and len(records) >= max_records:
+                break
 
-        last_error: str = "No URLs tried"
-        for zip_url in candidate_urls:
-            logger.info(f"Trying GV PUF ZIP: {zip_url}")
-            try:
-                response = self.session.get(zip_url, timeout=300, stream=True)
-                if response.status_code == 404:
-                    logger.debug(f"404 for {zip_url}, trying next")
-                    last_error = f"404 Not Found: {zip_url}"
-                    continue
-                response.raise_for_status()
+            page_size = _PAGE_SIZE
+            if max_records is not None:
+                page_size = min(_PAGE_SIZE, max_records - len(records))
 
-                content_type = response.headers.get('content-type', '')
-                if 'html' in content_type.lower():
-                    last_error = f'Got HTML instead of ZIP from {zip_url}'
-                    continue
+            params = {"size": page_size, "offset": offset}
+            resp = self.session.get(api_url, params=params, timeout=60)
+            resp.raise_for_status()
 
-                content = response.content
-                extract_dir = self.data_dir / f"geographic_variation_{year}"
-                extract_dir.mkdir(exist_ok=True)
+            page: list[dict[str, Any]] = resp.json()
+            if not page:
+                break
 
-                extracted_files = []
-                total_records = 0
+            records.extend(page)
+            logger.debug("Fetched %d records (offset=%d)", len(records), offset)
 
-                with zipfile.ZipFile(io.BytesIO(content)) as zf:
-                    for name in zf.namelist():
-                        if name.lower().endswith('.csv'):
-                            zf.extract(name, extract_dir)
-                            filepath = extract_dir / name
-                            extracted_files.append(str(filepath))
-                            try:
-                                df = pd.read_csv(filepath, dtype={'Bene_Geo_Cd': str}, low_memory=False)
-                                total_records += len(df)
-                            except Exception:
-                                pass
+            if len(page) < page_size:
+                break  # Last page — stop
 
-                if not extracted_files:
-                    last_error = 'No CSV files found in ZIP'
-                    continue
+            offset += page_size
 
-                result = {
-                    'status': 'success',
-                    'extracted_files': extracted_files,
-                    'records': total_records,
-                    'year': year,
-                    'extract_dir': str(extract_dir),
-                    'method': 'zip_download',
-                    'url': zip_url,
-                }
-                self.log_fetch_result(result)
-                return result
-
-            except Exception as exc:
-                last_error = str(exc)
-                logger.debug(f"Error fetching {zip_url}: {exc}")
-
-        return {'status': 'failed', 'error': last_error, 'year': year}
-
-    def _fetch_csv_fallback(self, year: int) -> dict[str, Any]:
-        """
-        Fallback: try to download individual CSV files from CMS if the ZIP fails.
-        Returns a failed result if nothing works.
-        """
-        logger.warning(f"No CSV fallback configured for GV PUF year {year}")
-        result = {
-            'status': 'failed',
-            'error': f'All download methods failed for year {year}',
-            'year': year,
-        }
-        self.log_fetch_result(result)
-        return result
-
-    def fetch_all_years(self) -> dict[str, Any]:
-        """Fetch GV PUF for all available years."""
-        results = {}
-        total_records = 0
-
-        for year in self.AVAILABLE_YEARS:
-            result = self.fetch(year=year)
-            results[year] = result
-            if result.get('status') == 'success':
-                total_records += result.get('records', 0)
-
-        return {
-            'status': 'success',
-            'years': results,
-            'total_records': total_records,
-        }
+        logger.info("Fetched %d total records from geographic variation API", len(records))
+        return records

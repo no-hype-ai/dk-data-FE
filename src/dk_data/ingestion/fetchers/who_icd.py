@@ -82,7 +82,8 @@ class WHOICDFetcher(BaseFetcher):
     BASE_URL = ICD11_BASE_URL
 
     def __init__(self, data_dir: Optional[str] = None):
-        super().__init__(data_dir)
+        # WHO ICD APIs are slow and rate-limited; reduce retries to avoid 3×30s storms.
+        super().__init__(data_dir, max_retries=1, retry_base_delay_seconds=2.0)
         self._access_token: Optional[str] = None
         self.session.headers.update({
             "Accept": "application/json",

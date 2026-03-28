@@ -39,12 +39,18 @@ logger = logging.getLogger(__name__)
 # ---------------------------------------------------------------------------
 _EMBL_BASE = "http://sideeffects.embl.de/media/files"
 
+# GitHub mirror of SIDER 4.1 — archived by dhimmel/SIDER4 after EMBL went offline.
+# This is the last published version of the SIDER dataset (static, no updates).
+_GITHUB_MIRROR = "https://raw.githubusercontent.com/dhimmel/SIDER4/master/download"
+
 _FREQ_URLS = [
-    f"{_EMBL_BASE}/meddra_freq.tsv.gz",
+    f"{_GITHUB_MIRROR}/meddra_freq.tsv.gz",  # GitHub mirror (SIDER 4.1 archive)
+    f"{_EMBL_BASE}/meddra_freq.tsv.gz",       # Original EMBL URL (offline since 2026)
 ]
 
 _ALL_SE_URLS = [
-    f"{_EMBL_BASE}/meddra_all_se.tsv.gz",
+    f"{_GITHUB_MIRROR}/meddra_all_se.tsv.gz",  # GitHub mirror (SIDER 4.1 archive)
+    f"{_EMBL_BASE}/meddra_all_se.tsv.gz",       # Original EMBL URL (offline since 2026)
 ]
 
 

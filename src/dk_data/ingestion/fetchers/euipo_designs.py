@@ -82,16 +82,39 @@ class EUIPODesignsFetcher(BaseFetcher):
             )
 
             if not self.api_key or not self.secret_key:
-                logger.error("EUIPO_API_KEY/EUIPO_SECRET_KEY not set")
-                return {
-                    "status": "failed",
+                msg = (
+                    "EUIPO_API_KEY/EUIPO_SECRET_KEY not set. "
+                    "Obtain from https://developers.euipo.europa.eu and set in Doppler."
+                )
+                logger.warning(msg)
+                result = {
+                    "status": "source_unavailable",
                     "records": [],
                     "record_count": 0,
                     "hash": None,
-                    "error": "Missing EUIPO credentials",
+                    "error": msg,
                 }
+                self.log_fetch_result(result)
+                return result
 
-            self._ensure_token()
+            try:
+                self._ensure_token()
+            except Exception as auth_err:
+                err_str = str(auth_err)
+                # 5xx on auth endpoint = EUIPO infrastructure outage
+                if any(code in err_str for code in ("502", "503", "504", "500")):
+                    msg = f"EUIPO auth server unavailable (5xx): {auth_err}"
+                    logger.warning(msg)
+                    result = {
+                        "status": "source_unavailable",
+                        "records": [],
+                        "record_count": 0,
+                        "hash": None,
+                        "error": msg,
+                    }
+                    self.log_fetch_result(result)
+                    return result
+                raise
 
             records: List[Dict[str, Any]] = []
             api_errors = 0

@@ -181,12 +181,13 @@ def _python() -> str:
 
 # Sources that download large files or make many paginated requests.
 _LARGE_FILE_TIMEOUT: dict[str, int] = {
-    "bindingdb": 2400,   # ~4 GB zip; 40 min
-    "pdb":       1200,   # large PDB mirror; 20 min
-    "orcid":     1200,   # large ORCID dump; 20 min
-    "who_icd":     1200,   # ICD tree traversal; many requests; 20 min
-    "kegg_drug":   1200,   # 6000+ individual API calls; 20 min
-    "cms_formulary": 1800, # Large CMS Part D ZIP; 30 min
+    "bindingdb":     2400,  # ~4 GB zip; 40 min
+    "pdb":           1200,  # large PDB mirror; 20 min
+    "orcid":         1200,  # large ORCID dump; 20 min
+    "who_icd":       1800,  # ICD tree traversal; WHO API slow; 30 min
+    "kegg_drug":     1200,  # 6000+ individual API calls; 20 min
+    "cms_formulary": 1800,  # Large CMS Part D ZIP; 30 min
+    "hrsa":           900,  # ~44 MB bulk CSV; 15 min
 }
 _DEFAULT_TIMEOUT = 600  # 10 minutes for all other sources
 
@@ -300,10 +301,12 @@ def load_api_sources(
 
         extra = ["--batch-size", str(limit), "--max-records", str(limit)]
         _, success, tail = _run_ingestion(key, extra)
-        if not success and "status: source_unavailable" in tail:
+        if "status: source_unavailable" in tail:
             status_val = "source_unavailable"
+        elif success:
+            status_val = "success"
         else:
-            status_val = "success" if success else "failed"
+            status_val = "failed"
         return {"source": key, "status": status_val, "output": tail}
 
     with concurrent.futures.ThreadPoolExecutor(max_workers=workers) as pool:
@@ -367,9 +370,15 @@ def load_legacy_sources(sources: list[dict], limit: int) -> list[dict]:
                 "reason": "requires manual --file path",
             })
         else:
-            extra = ["--batch-size", str(limit)]
+            extra = ["--batch-size", str(limit), "--max-records", str(limit)]
             _, success, tail = _run_ingestion(key, extra)
-            results.append({"source": key, "status": "success" if success else "failed"})
+            if "status: source_unavailable" in tail:
+                status_val = "source_unavailable"
+            elif success:
+                status_val = "success"
+            else:
+                status_val = "failed"
+            results.append({"source": key, "status": status_val, "output": tail})
     return results
 
 

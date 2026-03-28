@@ -125,7 +125,18 @@ class EUIPOTrademarksFetcher(BaseFetcher):
             ).hexdigest()
 
             # Determine status: failed if API errors and no records
-            if not all_records and self._api_errors > 0:
+            last_err = self._last_api_error or ""
+            _is_unavailable = (
+                any(code in last_err for code in ("502", "503", "504", "500"))
+                or "Connection reset" in last_err
+                or "ConnectionResetError" in last_err
+                or "ConnectionRefusedError" in last_err
+                or "Connection aborted" in last_err
+                or "timed out" in last_err.lower()
+            )
+            if not all_records and self._api_errors > 0 and _is_unavailable:
+                status = "source_unavailable"
+            elif not all_records and self._api_errors > 0:
                 status = "failed"
             elif self._api_errors > 0:
                 status = "partial"
@@ -144,14 +155,33 @@ class EUIPOTrademarksFetcher(BaseFetcher):
             return result
 
         except Exception as e:
-            logger.exception("Failed to fetch EUIPO trademark data: %s", e)
-            result = {
-                "status": "failed",
-                "records": [],
-                "record_count": 0,
-                "hash": None,
-                "error": str(e),
-            }
+            err_str = str(e)
+            # 5xx errors or connection-level failures = server outage, not a code bug
+            is_unavailable = (
+                any(code in err_str for code in ("502", "503", "504", "500"))
+                or "Connection reset" in err_str
+                or "ConnectionResetError" in err_str
+                or "ConnectionRefusedError" in err_str
+                or "Connection aborted" in err_str
+            )
+            if is_unavailable:
+                logger.warning("EUIPO trademark source unavailable: %s", e)
+                result = {
+                    "status": "source_unavailable",
+                    "records": [],
+                    "record_count": 0,
+                    "hash": None,
+                    "error": err_str,
+                }
+            else:
+                logger.exception("Failed to fetch EUIPO trademark data: %s", e)
+                result = {
+                    "status": "failed",
+                    "records": [],
+                    "record_count": 0,
+                    "hash": None,
+                    "error": err_str,
+                }
             self.log_fetch_result(result)
             return result
 
@@ -190,6 +220,7 @@ class EUIPOTrademarksFetcher(BaseFetcher):
                 if response.status_code >= 500:
                     logger.warning("TMview returned %d, stopping pagination", response.status_code)
                     self._api_errors += 1
+                    self._last_api_error = f"{response.status_code} Server Error from TMview"
                     break
 
                 response.raise_for_status()
