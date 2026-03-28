@@ -304,7 +304,7 @@ async def pipeline_health():
             ))
 
         # Get Silver layer health
-        cur.execute("SELECT COUNT(*), MAX(updated_at) FROM silver.molecules")
+        cur.execute("SELECT COUNT(*), MAX(updated_at) FROM mol_silver.molecules")
         result = cur.fetchone()
         silver_count = result[0] or 0
         silver_update = result[1]
@@ -318,7 +318,7 @@ async def pipeline_health():
         # Get Gold layer health (check if gold schema exists)
         try:
             cur.execute("""
-                SELECT COUNT(*) FROM silver.molecules WHERE needs_review = FALSE
+                SELECT COUNT(*) FROM mol_silver.molecules WHERE needs_review = FALSE
             """)
             gold_count = cur.fetchone()[0] or 0
             gold_health = LayerHealth(
@@ -485,7 +485,7 @@ async def list_data_sources():
         "faers": {"name": "FAERS", "type": "local_db", "table": "faers_events"},  # Fixed: was faers_adverse_events
         "regulatory_milestones": {"name": "Regulatory Milestones", "type": "local_db", "table": "regulatory_milestones"},
         "patents_local": {"name": "Patents (Local)", "type": "local_db", "table": "drugbank_patents"},  # Fixed: use drugbank_patents
-        "publications_local": {"name": "Publications (Local)", "type": "local_db", "table": "silver.publications", "schema": "silver"},
+        "publications_local": {"name": "Publications (Local)", "type": "local_db", "table": "mol_silver.publications", "schema": "silver"},
         # External API sources
         "clinicaltrials_gov": {"name": "ClinicalTrials.gov", "type": "external_api", "endpoint": "clinicaltrials.gov/api"},
         "openfda": {"name": "OpenFDA", "type": "external_api", "endpoint": "api.fda.gov"},

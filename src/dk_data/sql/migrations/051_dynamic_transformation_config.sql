@@ -18,7 +18,7 @@ CREATE TABLE IF NOT EXISTS raw.silver_transformation_rules (
     source_table TEXT NOT NULL,                 -- e.g., 'bronze.new_pharma_db'
 
     -- Target configuration
-    target_table TEXT NOT NULL DEFAULT 'silver.molecules',  -- Primary target
+    target_table TEXT NOT NULL DEFAULT 'mol_silver.molecules',  -- Primary target
     target_type TEXT NOT NULL DEFAULT 'molecule',           -- molecule, trial, publication, target
 
     -- Column mappings: Bronze column → Silver column
@@ -134,7 +134,7 @@ CREATE TABLE IF NOT EXISTS raw.transformation_templates (
 CREATE TABLE IF NOT EXISTS raw.generated_sqlmesh_models (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
 
-    model_name TEXT NOT NULL UNIQUE,        -- e.g., 'silver.new_pharma_molecules'
+    model_name TEXT NOT NULL UNIQUE,        -- e.g., 'mol_silver.new_pharma_molecules'
     source_rule_id UUID REFERENCES raw.silver_transformation_rules(id),
 
     -- Generated content
@@ -172,7 +172,7 @@ $TEMPLATE$
 -- Source: {{ source_table }}
 
 MODEL (
-    name silver.{{ source_name }}_molecules,
+    name mol_silver.{{ source_name }}_molecules,
     kind INCREMENTAL_BY_UNIQUE_KEY (
         unique_key inchi_key
     ),
@@ -209,7 +209,7 @@ $TEMPLATE$,
 ),
 
 -- Identifier extraction template
-('identifier_extraction', 'Extract identifiers from source to silver.identifier_mappings', 'identifier_extraction',
+('identifier_extraction', 'Extract identifiers from source to mol_silver.identifier_mappings', 'identifier_extraction',
 $TEMPLATE$
 -- Identifier extraction for {{ source_name }}
 SELECT
@@ -221,7 +221,7 @@ SELECT
     {{ is_primary }} AS is_primary,
     s.source_updated_at AS source_date,
     NOW() AS created_at
-FROM silver.molecules m
+FROM mol_silver.molecules m
 JOIN {{ source_table }} s ON m.inchi_key = s.inchi_key
 WHERE {{ extraction_expression }} IS NOT NULL
   AND m.needs_review = FALSE
@@ -231,7 +231,7 @@ $TEMPLATE$,
 ),
 
 -- Name lookup template
-('name_lookup', 'Extract drug names for silver.drug_name_lookup', 'name_extraction',
+('name_lookup', 'Extract drug names for mol_silver.drug_name_lookup', 'name_extraction',
 $TEMPLATE$
 -- Name extraction for {{ source_name }}
 {% for name_type, column_expr in name_mappings.items() %}
@@ -242,7 +242,7 @@ SELECT
     LOWER(TRIM({{ column_expr }})) AS name_normalized,
     '{{ source_name }}' AS source,
     NOW() AS created_at
-FROM silver.molecules m
+FROM mol_silver.molecules m
 JOIN {{ source_table }} s ON m.inchi_key = s.inchi_key
 WHERE {{ column_expr }} IS NOT NULL
   AND m.needs_review = FALSE
@@ -266,7 +266,7 @@ INSERT INTO raw.silver_transformation_rules (
 ) VALUES (
     'drugbank',
     'bronze.drugbank',
-    'silver.molecules',
+    'mol_silver.molecules',
     'molecule',
     '{
         "inchi_key": "inchi_key",
@@ -302,7 +302,7 @@ INSERT INTO raw.silver_transformation_rules (
 ) VALUES (
     'chembl',
     'bronze.chembl_molecules',
-    'silver.molecules',
+    'mol_silver.molecules',
     'molecule',
     '{
         "inchi_key": "inchi_key",
@@ -335,7 +335,7 @@ INSERT INTO raw.silver_transformation_rules (
 ) VALUES (
     'pubchem',
     'bronze.pubchem',
-    'silver.molecules',
+    'mol_silver.molecules',
     'molecule',
     '{
         "inchi_key": "inchi_key",

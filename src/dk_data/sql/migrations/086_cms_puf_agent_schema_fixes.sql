@@ -161,6 +161,8 @@ CREATE TABLE IF NOT EXISTS hcs_raw.cms_physician_puf_services (
 -- ---------------------------------------------------------------------------
 -- 8. Add cms_cost_reports_puf_lines (worksheet lines) for staffing_decomposition agent
 -- ---------------------------------------------------------------------------
+-- (Note: cms_physician_puf_services is created in section 7 above)
+
 CREATE TABLE IF NOT EXISTS hcs_raw.cms_cost_reports_puf_lines (
     id                          BIGSERIAL PRIMARY KEY,
     provider_id                 TEXT NOT NULL,
@@ -175,6 +177,345 @@ CREATE TABLE IF NOT EXISTS hcs_raw.cms_cost_reports_puf_lines (
     _source_file                TEXT,
     _loaded_at                  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     UNIQUE (provider_id, line_item_code, _source_year)
+);
+
+-- ---------------------------------------------------------------------------
+-- 9. Fix hcs_raw table column schemas to match loader output (authoritative: raw API columns)
+--    For envs where migration 085 was already applied with wrong column definitions.
+--    Tables with completely wrong schemas are dropped and recreated (raw staging tables only).
+-- ---------------------------------------------------------------------------
+
+-- cms_part_d_spending: replace spending field names
+DROP TABLE IF EXISTS hcs_raw.cms_part_d_spending CASCADE;
+CREATE TABLE hcs_raw.cms_part_d_spending (
+    id BIGSERIAL PRIMARY KEY,
+    brnd_name TEXT, gnrc_name TEXT, tot_mftr INTEGER,
+    tot_spndng NUMERIC(18,2), tot_dsg_unts NUMERIC(18,2),
+    tot_clms BIGINT, tot_benes INTEGER,
+    avg_spnd_per_dsg_unt_wghtd NUMERIC(18,2),
+    avg_spnd_per_clm NUMERIC(18,2), avg_spnd_per_bene NUMERIC(18,2),
+    outlier_flag TEXT,
+    _source_year INTEGER NOT NULL, _source_hash TEXT NOT NULL,
+    _source_file TEXT, _loaded_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    UNIQUE (_source_hash, gnrc_name, _source_year)
+);
+
+-- cms_part_b_spending: replace provider-centric columns with drug-level columns
+DROP TABLE IF EXISTS hcs_raw.cms_part_b_spending CASCADE;
+CREATE TABLE hcs_raw.cms_part_b_spending (
+    id BIGSERIAL PRIMARY KEY,
+    hcpcs_cd TEXT, hcpcs_desc TEXT,
+    tot_mftr INTEGER, mftr_name TEXT,
+    tot_spndng NUMERIC(18,2), tot_dsg_unts NUMERIC(18,2),
+    tot_benes INTEGER, tot_clms BIGINT,
+    avg_spnd_per_dsg_unt NUMERIC(18,2),
+    avg_spnd_per_clm NUMERIC(18,2), avg_spnd_per_bene NUMERIC(18,2),
+    outlier_flag TEXT,
+    _source_year INTEGER NOT NULL, _source_hash TEXT NOT NULL,
+    _source_file TEXT, _loaded_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    UNIQUE (_source_hash, hcpcs_cd, _source_year)
+);
+
+-- cms_open_payments: add drug/NDC slots and publication metadata
+ALTER TABLE hcs_raw.cms_open_payments
+    ADD COLUMN IF NOT EXISTS payment_publication_date DATE,
+    ADD COLUMN IF NOT EXISTS record_id TEXT,
+    ADD COLUMN IF NOT EXISTS program_year INTEGER,
+    ADD COLUMN IF NOT EXISTS name_of_drug_or_biological_or_device_or_medical_supply_1 TEXT,
+    ADD COLUMN IF NOT EXISTS name_of_drug_or_biological_or_device_or_medical_supply_2 TEXT,
+    ADD COLUMN IF NOT EXISTS name_of_drug_or_biological_or_device_or_medical_supply_3 TEXT,
+    ADD COLUMN IF NOT EXISTS name_of_drug_or_biological_or_device_or_medical_supply_4 TEXT,
+    ADD COLUMN IF NOT EXISTS name_of_drug_or_biological_or_device_or_medical_supply_5 TEXT,
+    ADD COLUMN IF NOT EXISTS associated_drug_or_biological_ndc_1 TEXT,
+    ADD COLUMN IF NOT EXISTS associated_drug_or_biological_ndc_2 TEXT,
+    ADD COLUMN IF NOT EXISTS associated_drug_or_biological_ndc_3 TEXT,
+    ADD COLUMN IF NOT EXISTS associated_drug_or_biological_ndc_4 TEXT,
+    ADD COLUMN IF NOT EXISTS associated_drug_or_biological_ndc_5 TEXT;
+
+-- cms_nppes: add full address columns not covered by prior ALTER in this migration
+ALTER TABLE hcs_raw.cms_nppes
+    ADD COLUMN IF NOT EXISTS provider_credential_text TEXT,
+    ADD COLUMN IF NOT EXISTS provider_first_line_business_mailing_address TEXT,
+    ADD COLUMN IF NOT EXISTS provider_second_line_business_mailing_address TEXT,
+    ADD COLUMN IF NOT EXISTS provider_business_practice_location_address_state_name TEXT;
+
+-- cms_inpatient_puf: add drg_cd, state_fips, ruca
+ALTER TABLE hcs_raw.cms_inpatient_puf
+    ADD COLUMN IF NOT EXISTS drg_cd TEXT,
+    ADD COLUMN IF NOT EXISTS provider_state_fips TEXT,
+    ADD COLUMN IF NOT EXISTS provider_ruca TEXT;
+
+-- cms_physician_puf: add extended address fields
+ALTER TABLE hcs_raw.cms_physician_puf
+    ADD COLUMN IF NOT EXISTS nppes_provider_street1 TEXT,
+    ADD COLUMN IF NOT EXISTS nppes_provider_street2 TEXT,
+    ADD COLUMN IF NOT EXISTS nppes_provider_state_fips TEXT,
+    ADD COLUMN IF NOT EXISTS nppes_provider_ruca TEXT,
+    ADD COLUMN IF NOT EXISTS nppes_provider_country TEXT;
+
+-- cms_hospital_general_info: rename city_town→city, county_parish→county_name,
+--   telephone_number→phone_number, add footnote, drop birthing column
+DO $$
+BEGIN
+    IF EXISTS (SELECT 1 FROM information_schema.columns
+               WHERE table_schema='hcs_raw' AND table_name='cms_hospital_general_info'
+               AND column_name='city_town') THEN
+        ALTER TABLE hcs_raw.cms_hospital_general_info
+            RENAME COLUMN city_town TO city;
+    END IF;
+    IF EXISTS (SELECT 1 FROM information_schema.columns
+               WHERE table_schema='hcs_raw' AND table_name='cms_hospital_general_info'
+               AND column_name='county_parish') THEN
+        ALTER TABLE hcs_raw.cms_hospital_general_info
+            RENAME COLUMN county_parish TO county_name;
+    END IF;
+    IF EXISTS (SELECT 1 FROM information_schema.columns
+               WHERE table_schema='hcs_raw' AND table_name='cms_hospital_general_info'
+               AND column_name='telephone_number') THEN
+        ALTER TABLE hcs_raw.cms_hospital_general_info
+            RENAME COLUMN telephone_number TO phone_number;
+    END IF;
+END;
+$$;
+ALTER TABLE hcs_raw.cms_hospital_general_info
+    ADD COLUMN IF NOT EXISTS hospital_overall_rating_footnote TEXT;
+
+-- cms_medicare_advantage: recreate with correct enrollment/demographic columns
+DROP TABLE IF EXISTS hcs_raw.cms_medicare_advantage CASCADE;
+CREATE TABLE hcs_raw.cms_medicare_advantage (
+    id BIGSERIAL PRIMARY KEY,
+    contract_id TEXT, organization_name TEXT, organization_type TEXT,
+    plan_id TEXT, plan_name TEXT, segment_id TEXT,
+    enrollment_data_period TEXT,
+    fips_cd TEXT, state_fips TEXT, county_fips TEXT,
+    enrollment INTEGER,
+    avg_age NUMERIC(5,2), pct_female NUMERIC(5,2),
+    avg_risk_score NUMERIC(8,4), ma_participation_rate NUMERIC(5,4),
+    star_rating NUMERIC(4,2),
+    _source_year INTEGER NOT NULL, _source_hash TEXT NOT NULL,
+    _source_file TEXT, _loaded_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+-- cms_medicaid_drug_spending: replace state-level columns with drug-level columns
+DROP TABLE IF EXISTS hcs_raw.cms_medicaid_drug_spending CASCADE;
+CREATE TABLE hcs_raw.cms_medicaid_drug_spending (
+    id BIGSERIAL PRIMARY KEY,
+    brnd_name TEXT, gnrc_name TEXT,
+    tot_mftr INTEGER, util_type TEXT,
+    tot_spndng NUMERIC(18,2),
+    medicaid_spndng_per_dosage_unit NUMERIC(18,4),
+    medicaid_spndng_per_prescription NUMERIC(18,4),
+    unit_type TEXT, tot_dosage_units NUMERIC(18,2),
+    tot_prescriptions INTEGER, tot_benes INTEGER,
+    _source_year INTEGER NOT NULL, _source_hash TEXT NOT NULL,
+    _source_file TEXT, _loaded_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+-- cms_mental_health_puf: replace simplified columns with full provider/service columns
+DROP TABLE IF EXISTS hcs_raw.cms_mental_health_puf CASCADE;
+CREATE TABLE hcs_raw.cms_mental_health_puf (
+    id BIGSERIAL PRIMARY KEY,
+    npi TEXT, provider_last_org_name TEXT, provider_first_name TEXT,
+    provider_city TEXT, provider_state TEXT, provider_zip5 TEXT,
+    provider_type TEXT, hcpcs_cd TEXT, hcpcs_desc TEXT,
+    mh_srvc_ind TEXT,
+    tot_benes INTEGER, tot_srvcs INTEGER,
+    tot_mdcr_alowd_amt NUMERIC(18,2),
+    avg_mdcr_alowd_amt NUMERIC(18,2),
+    avg_mdcr_pymt_amt NUMERIC(18,2),
+    avg_mdcr_stdzd_amt NUMERIC(18,2),
+    _source_year INTEGER NOT NULL, _source_hash TEXT NOT NULL,
+    _source_file TEXT, _loaded_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+-- cms_opioid_puf: replace geographic aggregation with provider-drug level data
+DROP TABLE IF EXISTS hcs_raw.cms_opioid_puf CASCADE;
+CREATE TABLE hcs_raw.cms_opioid_puf (
+    id BIGSERIAL PRIMARY KEY,
+    prscrbr_npi TEXT, prscrbr_last_org_name TEXT, prscrbr_first_name TEXT,
+    prscrbr_city TEXT, prscrbr_state_abrvtn TEXT, prscrbr_state_fips TEXT,
+    prscrbr_type TEXT, prscrbr_type_src TEXT,
+    brnd_name TEXT, gnrc_name TEXT,
+    opioid_drug_flag TEXT, la_opioid_drug_flag TEXT,
+    tot_clms INTEGER, tot_30day_fills NUMERIC(18,2),
+    tot_day_suply BIGINT, tot_drug_cst NUMERIC(18,2),
+    tot_benes INTEGER,
+    opioid_clms INTEGER, opioid_benes INTEGER,
+    la_opioid_clms INTEGER, la_opioid_benes INTEGER,
+    _source_year INTEGER NOT NULL, _source_hash TEXT NOT NULL,
+    _source_file TEXT, _loaded_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+-- cms_ordering_providers: replace ordering_/performing_ names with rndrng_/rfrd_
+DROP TABLE IF EXISTS hcs_raw.cms_ordering_providers CASCADE;
+CREATE TABLE hcs_raw.cms_ordering_providers (
+    id BIGSERIAL PRIMARY KEY,
+    rndrng_npi TEXT, rndrng_prvdr_last_org_name TEXT,
+    rndrng_prvdr_first_name TEXT, rndrng_prvdr_city TEXT,
+    rndrng_prvdr_state_abrvtn TEXT, rndrng_prvdr_zip5 TEXT,
+    rndrng_prvdr_type TEXT,
+    rfrd_npi TEXT, rfrd_prvdr_last_org_name TEXT, rfrd_prvdr_type TEXT,
+    tot_srvcs INTEGER, tot_benes INTEGER,
+    tot_mdcr_alowd_amt NUMERIC(18,2), tot_mdcr_pymt_amt NUMERIC(18,2),
+    _source_year INTEGER NOT NULL, _source_hash TEXT NOT NULL,
+    _source_file TEXT, _loaded_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+-- cms_outpatient_puf: add provider and extended utilization columns
+DROP TABLE IF EXISTS hcs_raw.cms_outpatient_puf CASCADE;
+CREATE TABLE hcs_raw.cms_outpatient_puf (
+    id BIGSERIAL PRIMARY KEY,
+    provider_id TEXT, provider_name TEXT, provider_street_address TEXT,
+    provider_city TEXT, provider_state TEXT, provider_state_fips TEXT,
+    provider_zip_code TEXT, provider_ruca TEXT,
+    apc TEXT, apc_desc TEXT,
+    total_services INTEGER, bene_cnt INTEGER, comp_asgn_pymt_cnt INTEGER,
+    average_estimated_submitted_charges NUMERIC(18,2),
+    average_medicare_allowed_amt NUMERIC(18,2),
+    average_total_payments NUMERIC(18,2),
+    average_medicare_payments NUMERIC(18,2),
+    average_medicare_stnd_amt NUMERIC(18,2),
+    _source_year INTEGER NOT NULL, _source_hash TEXT NOT NULL,
+    _source_file TEXT, _loaded_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    UNIQUE (_source_hash, provider_id, apc, _source_year)
+);
+
+-- cms_referring_providers: replace referring_/referred_to_ names with rndrng_/rfrd_
+DROP TABLE IF EXISTS hcs_raw.cms_referring_providers CASCADE;
+CREATE TABLE hcs_raw.cms_referring_providers (
+    id BIGSERIAL PRIMARY KEY,
+    rndrng_npi TEXT, rndrng_prvdr_last_org_name TEXT,
+    rndrng_prvdr_first_name TEXT, rndrng_prvdr_city TEXT,
+    rndrng_prvdr_state_abrvtn TEXT, rndrng_prvdr_zip5 TEXT,
+    rndrng_prvdr_type TEXT,
+    rfrd_npi TEXT, rfrd_prvdr_last_org_name TEXT, rfrd_prvdr_type TEXT,
+    tot_srvcs INTEGER, tot_benes INTEGER,
+    tot_mdcr_alowd_amt NUMERIC(18,2), tot_mdcr_pymt_amt NUMERIC(18,2),
+    _source_year INTEGER NOT NULL, _source_hash TEXT NOT NULL,
+    _source_file TEXT, _loaded_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+-- cms_telehealth_puf: replace aggregated columns with full provider/service columns
+DROP TABLE IF EXISTS hcs_raw.cms_telehealth_puf CASCADE;
+CREATE TABLE hcs_raw.cms_telehealth_puf (
+    id BIGSERIAL PRIMARY KEY,
+    npi TEXT, provider_last_org_name TEXT, provider_first_name TEXT,
+    provider_city TEXT, provider_state TEXT, provider_zip5 TEXT,
+    provider_type TEXT, hcpcs_cd TEXT, hcpcs_desc TEXT,
+    th_srvc_ind TEXT,
+    tot_benes INTEGER, tot_srvcs INTEGER,
+    tot_mdcr_alowd_amt NUMERIC(18,2),
+    avg_mdcr_alowd_amt NUMERIC(18,2),
+    avg_mdcr_pymt_amt NUMERIC(18,2),
+    avg_mdcr_stdzd_amt NUMERIC(18,2),
+    _source_year INTEGER NOT NULL, _source_hash TEXT NOT NULL,
+    _source_file TEXT, _loaded_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+-- cms_geographic_variation: replace simplified summary with full demographic breakdown
+DROP TABLE IF EXISTS hcs_raw.cms_geographic_variation CASCADE;
+CREATE TABLE hcs_raw.cms_geographic_variation (
+    id BIGSERIAL PRIMARY KEY,
+    bene_geo_lvl TEXT, bene_geo_desc TEXT, bene_geo_cd TEXT,
+    bene_age_lvl TEXT, bene_demo_lvl TEXT, bene_demo_desc TEXT,
+    bene_mcc_lvl TEXT,
+    tot_benes INTEGER,
+    ip_cvrd_stays_per_1000_benes NUMERIC(10,4),
+    er_visits_per_1000_benes NUMERIC(10,4),
+    readmsn_rate NUMERIC(10,4),
+    acute_hosp_readmsn_rate NUMERIC(10,4),
+    tot_mdcr_stdzd_pymt_pc NUMERIC(18,2),
+    tot_mdcr_pymt_pc NUMERIC(18,2),
+    tot_mdcr_alowd_amt_pc NUMERIC(18,2),
+    ma_prtcptn_rate NUMERIC(10,4),
+    _source_year INTEGER NOT NULL, _source_hash TEXT NOT NULL,
+    _source_file TEXT, _loaded_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+-- cms_chronic_conditions: replace generic condition/prevalence names with CMS PUF names
+DROP TABLE IF EXISTS hcs_raw.cms_chronic_conditions CASCADE;
+CREATE TABLE hcs_raw.cms_chronic_conditions (
+    id BIGSERIAL PRIMARY KEY,
+    bene_geo_lvl TEXT, bene_geo_desc TEXT, bene_geo_cd TEXT,
+    bene_age_lvl TEXT, bene_demo_lvl TEXT, bene_demo_desc TEXT,
+    bene_cond TEXT,
+    prvlnc NUMERIC(10,4),
+    tot_mdcr_stdzd_pymt_pc NUMERIC(18,2),
+    tot_mdcr_pymt_pc NUMERIC(18,2),
+    hosp_readmsn_rate NUMERIC(10,4),
+    ed_visits_per_1000_benes NUMERIC(10,4),
+    _source_year INTEGER NOT NULL, _source_hash TEXT NOT NULL,
+    _source_file TEXT, _loaded_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+-- cms_dual_eligible: replace state/age/race breakdown with state/eligibility breakdown
+DROP TABLE IF EXISTS hcs_raw.cms_dual_eligible CASCADE;
+CREATE TABLE hcs_raw.cms_dual_eligible (
+    id BIGSERIAL PRIMARY KEY,
+    state_cd TEXT, state_name TEXT,
+    dual_elgbl_lvl TEXT, dual_elgbl_desc TEXT,
+    tot_benes INTEGER, ffs_benes INTEGER, ma_benes INTEGER,
+    dual_elgbl_full_benes INTEGER, dual_elgbl_prtl_benes INTEGER,
+    non_dual_benes INTEGER, lis_benes INTEGER,
+    _source_year INTEGER NOT NULL, _source_hash TEXT NOT NULL,
+    _source_file TEXT, _loaded_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+-- cms_enrollment_puf: replace state/county/fips breakdown with state_cd/county_cd/demo breakdown
+DROP TABLE IF EXISTS hcs_raw.cms_enrollment_puf CASCADE;
+CREATE TABLE hcs_raw.cms_enrollment_puf (
+    id BIGSERIAL PRIMARY KEY,
+    state_cd TEXT, county_cd TEXT, county_desc TEXT,
+    bene_demo_lvl TEXT, bene_demo_desc TEXT, bene_age_lvl TEXT,
+    tot_benes INTEGER, orgnl_mdcr_benes INTEGER,
+    ma_benes INTEGER, esrd_benes INTEGER, dsbl_benes INTEGER,
+    _source_year INTEGER NOT NULL, _source_hash TEXT NOT NULL,
+    _source_file TEXT, _loaded_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+-- cms_claim_type_puf: replace generic claim_type/service_category with CMS PUF clm_type names
+DROP TABLE IF EXISTS hcs_raw.cms_claim_type_puf CASCADE;
+CREATE TABLE hcs_raw.cms_claim_type_puf (
+    id BIGSERIAL PRIMARY KEY,
+    bene_geo_lvl TEXT, bene_geo_desc TEXT,
+    clm_type TEXT, clm_type_desc TEXT,
+    tot_clms BIGINT, tot_benes INTEGER,
+    tot_mdcr_pymt_amt NUMERIC(18,2),
+    avg_mdcr_pymt_amt NUMERIC(18,2),
+    _source_year INTEGER NOT NULL, _source_hash TEXT NOT NULL,
+    _source_file TEXT, _loaded_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+-- cms_utilization_puf: replace service_category/setting with beneficiary demographic breakdown
+DROP TABLE IF EXISTS hcs_raw.cms_utilization_puf CASCADE;
+CREATE TABLE hcs_raw.cms_utilization_puf (
+    id BIGSERIAL PRIMARY KEY,
+    bene_geo_lvl TEXT, bene_geo_desc TEXT, bene_geo_cd TEXT,
+    bene_age_lvl TEXT, bene_demo_lvl TEXT, bene_demo_desc TEXT,
+    srvcs_per_bene NUMERIC(10,4),
+    ip_cvrd_stays_per_1000_benes NUMERIC(10,4),
+    avg_ip_los NUMERIC(10,2),
+    er_visits_per_1000_benes NUMERIC(10,4),
+    phy_visits_per_bene NUMERIC(10,4),
+    tot_mdcr_pymt_pc NUMERIC(18,2),
+    _source_year INTEGER NOT NULL, _source_hash TEXT NOT NULL,
+    _source_file TEXT, _loaded_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+-- cms_cost_reports_puf: replace hospital summary with HCRIS report record format
+DROP TABLE IF EXISTS hcs_raw.cms_cost_reports_puf CASCADE;
+CREATE TABLE hcs_raw.cms_cost_reports_puf (
+    id BIGSERIAL PRIMARY KEY,
+    rpt_rec_num TEXT, prvdr_ctrl_type_cd TEXT, prvdr_num TEXT,
+    rpt_stus_cd TEXT, initl_rpt_sw TEXT, last_rpt_sw TEXT,
+    trnsmtl_num TEXT, fi_num TEXT, adr_vndr_cd TEXT,
+    fi_creat_dt DATE, util_cd TEXT, npr_dt DATE,
+    spec_ind TEXT, fi_rcpt_dt DATE,
+    total_beds INTEGER, total_discharges INTEGER,
+    net_patient_revenue NUMERIC(18,2),
+    total_operating_expenses NUMERIC(18,2),
+    _source_year INTEGER NOT NULL, _source_hash TEXT NOT NULL,
+    _source_file TEXT, _loaded_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
 COMMIT;

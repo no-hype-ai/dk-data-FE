@@ -44,6 +44,9 @@ WITH openalex_pubs AS (
         pdf_url,
         is_retracted,
         grants,
+        NULL::TEXT  AS conclusions,
+        NULL::JSONB AS interventions_reviewed,
+        NULL::JSONB AS conditions_reviewed,
         source,
         source_updated_at,
         created_at
@@ -86,6 +89,9 @@ pubmed_pubs AS (
         NULL::TEXT                                               AS pdf_url,
         NULL::BOOLEAN                                            AS is_retracted,
         NULL::JSONB                                              AS grants,
+        NULL::TEXT                                               AS conclusions,
+        NULL::JSONB                                              AS interventions_reviewed,
+        NULL::JSONB                                              AS conditions_reviewed,
         source,
         source_updated_at,
         created_at
@@ -128,6 +134,10 @@ cochrane_pubs AS (
         NULL::TEXT                                               AS pdf_url,
         NULL::BOOLEAN                                            AS is_retracted,
         NULL::JSONB                                              AS grants,
+        conclusions,
+        -- interventions and conditions are TEXT[] in bronze; cast to JSONB array for uniform schema
+        to_jsonb(interventions)                                  AS interventions_reviewed,
+        to_jsonb(conditions)                                     AS conditions_reviewed,
         source,
         source_updated_at,
         created_at
@@ -169,6 +179,9 @@ journal_rss_pubs AS (
         NULL::TEXT                                               AS pdf_url,
         NULL::BOOLEAN                                            AS is_retracted,
         NULL::JSONB                                              AS grants,
+        NULL::TEXT                                               AS conclusions,
+        NULL::JSONB                                              AS interventions_reviewed,
+        NULL::JSONB                                              AS conditions_reviewed,
         source,
         source_updated_at,
         created_at
@@ -213,6 +226,9 @@ europepmc_pubs AS (
         NULL::TEXT                                               AS pdf_url,
         NULL::BOOLEAN                                            AS is_retracted,
         NULL::JSONB                                              AS grants,
+        NULL::TEXT                                               AS conclusions,
+        NULL::JSONB                                              AS interventions_reviewed,
+        NULL::JSONB                                              AS conditions_reviewed,
         source,
         source_updated_at,
         created_at
@@ -307,6 +323,9 @@ SELECT DISTINCT ON (doi)
     is_open_access,
     pdf_url,
     is_retracted,
+    conclusions,
+    interventions_reviewed,
+    conditions_reviewed,
     source,
     source_updated_at,
     NOW()                   AS created_at,

@@ -6,7 +6,7 @@ Loads protein structure data from RCSB PDB into PostgreSQL.
 Focuses on drug-target protein structures.
 
 Tables populated:
-- bronze.pdb: Protein structure data with ligand information
+- mol_bronze.pdb: Protein structure data with ligand information
 
 Usage:
     # Load structures for drug targets
@@ -56,7 +56,7 @@ def ensure_tables(conn) -> None:
     """Create PDB tables if they don't exist."""
     with conn.cursor() as cur:
         cur.execute("""
-            CREATE TABLE IF NOT EXISTS bronze.pdb (
+            CREATE TABLE IF NOT EXISTS mol_bronze.pdb (
                 id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
                 pdb_id TEXT UNIQUE NOT NULL,
                 title TEXT,
@@ -97,12 +97,12 @@ def ensure_tables(conn) -> None:
                 processed_to_silver BOOLEAN DEFAULT FALSE
             );
 
-            CREATE INDEX IF NOT EXISTS idx_pdb_organism ON bronze.pdb(organism);
-            CREATE INDEX IF NOT EXISTS idx_pdb_method ON bronze.pdb(experimental_method);
-            CREATE INDEX IF NOT EXISTS idx_pdb_resolution ON bronze.pdb(resolution);
-            CREATE INDEX IF NOT EXISTS idx_pdb_ligand ON bronze.pdb(has_ligand);
-            CREATE INDEX IF NOT EXISTS idx_pdb_uniprot ON bronze.pdb USING GIN(uniprot_ids);
-            CREATE INDEX IF NOT EXISTS idx_pdb_processed ON bronze.pdb(processed_to_silver);
+            CREATE INDEX IF NOT EXISTS idx_pdb_organism ON mol_bronze.pdb(organism);
+            CREATE INDEX IF NOT EXISTS idx_pdb_method ON mol_bronze.pdb(experimental_method);
+            CREATE INDEX IF NOT EXISTS idx_pdb_resolution ON mol_bronze.pdb(resolution);
+            CREATE INDEX IF NOT EXISTS idx_pdb_ligand ON mol_bronze.pdb(has_ligand);
+            CREATE INDEX IF NOT EXISTS idx_pdb_uniprot ON mol_bronze.pdb USING GIN(uniprot_ids);
+            CREATE INDEX IF NOT EXISTS idx_pdb_processed ON mol_bronze.pdb(processed_to_silver);
         """)
         conn.commit()
     logger.info("PDB tables ensured")
@@ -226,7 +226,7 @@ def insert_pdb_entry(conn, entry: Dict[str, Any]) -> bool:
     try:
         with conn.cursor() as cur:
             cur.execute("""
-                INSERT INTO bronze.pdb (
+                INSERT INTO mol_bronze.pdb (
                     pdb_id, title, description, experimental_method, resolution,
                     release_date, polymer_count, entity_count, deposited_model_count,
                     organism, organism_id, authors, citation_title, citation_doi,

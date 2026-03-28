@@ -30,6 +30,10 @@ WITH faers_linked AS (
         f.serious,
         f.serious_death,
         f.serious_hospitalization,
+        f.serious_lifethreatening,
+        f.serious_disabling,
+        f.serious_congenital,
+        f.serious_other,
         f.receive_date
     FROM mol_bronze.faers_events f
     JOIN mol_silver.molecules m ON (
@@ -49,6 +53,10 @@ faers_expanded AS (
         serious,
         serious_death,
         serious_hospitalization,
+        serious_lifethreatening,
+        serious_disabling,
+        serious_congenital,
+        serious_other,
         receive_date
     FROM faers_linked,
          jsonb_array_elements_text(meddra_pts) AS meddra_pt
@@ -66,6 +74,10 @@ faers_aggregated AS (
         SUM(CASE WHEN serious THEN 1 ELSE 0 END)::INTEGER AS serious_count,
         SUM(CASE WHEN serious_death THEN 1 ELSE 0 END)::INTEGER AS death_count,
         SUM(CASE WHEN serious_hospitalization THEN 1 ELSE 0 END)::INTEGER AS hospitalization_count,
+        SUM(CASE WHEN serious_lifethreatening THEN 1 ELSE 0 END)::INTEGER AS lifethreatening_count,
+        SUM(CASE WHEN serious_disabling THEN 1 ELSE 0 END)::INTEGER AS disabling_count,
+        SUM(CASE WHEN serious_congenital THEN 1 ELSE 0 END)::INTEGER AS congenital_count,
+        SUM(CASE WHEN serious_other THEN 1 ELSE 0 END)::INTEGER AS other_serious_count,
         NULL::NUMERIC(10,4) AS reporting_rate,
         NULL::NUMERIC(10,4) AS prr,
         NULL::NUMERIC(10,4) AS ror,
@@ -125,6 +137,10 @@ sider_aggregated AS (
         0::INTEGER AS serious_count,
         0::INTEGER AS death_count,
         0::INTEGER AS hospitalization_count,
+        0::INTEGER AS lifethreatening_count,
+        0::INTEGER AS disabling_count,
+        0::INTEGER AS congenital_count,
+        0::INTEGER AS other_serious_count,
         NULL::NUMERIC(10,4) AS reporting_rate,
         NULL::NUMERIC(10,4) AS prr,
         NULL::NUMERIC(10,4) AS ror,

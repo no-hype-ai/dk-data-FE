@@ -61,25 +61,8 @@ spec:
       path: /metrics
       interval: 15s
 ---
-# Molecule Pipeline PodMonitor (004-molecule-platform-integration)
-apiVersion: monitoring.coreos.com/v1
-kind: PodMonitor
-metadata:
-  name: dk-data-molecule-cronjobs
-  labels:
-    app.kubernetes.io/name: dk-data
-    app.kubernetes.io/component: molecule-ingestion
-    release: mimir
-spec:
-  selector:
-    matchExpressions:
-      - key: app
-        operator: In
-        values:
-          - mol-fetch-daily
-          - mol-fetch-weekly
-          - mol-transform
-  podMetricsEndpoints:
-    - path: /metrics
-      interval: 30s
-      scrapeTimeout: 10s
+# All ingestion CronJobs (molecule + CMS/HCS) are covered by dk-data-cronjobs above.
+# Both mol-* and fetch-cms-* pod templates use:
+#   app.kubernetes.io/component: batch-job
+#   app.kubernetes.io/part-of: dk-data
+# so no additional PodMonitor is needed per pipeline.

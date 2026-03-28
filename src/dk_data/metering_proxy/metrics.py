@@ -3,7 +3,7 @@
 Metric Naming Convention:
 - dk_data_metering_  — metering-proxy specific metrics
 
-Exposed on /metrics (port 9090) for Prometheus scraping.
+Exposed on /metrics (port 3001, the proxy port) for Prometheus scraping.
 """
 
 from prometheus_client import Counter, Gauge, Histogram

@@ -98,6 +98,12 @@ python -m dk_data.scripts.purge_history --all-tables --force
 
 Each purge operation is logged to `meta.refresh_log` for auditability.
 
+The timestamp column used for age comparison:
+
+- `mol_raw.*` / `hcs_raw.*` tables: `ingested_at`
+- `meta.*` tables: `_logged_at`
+- All other schemas: `created_at`
+
 ### Perpetual (`perpetual`)
 
 Used by: Public tables, molecule medallion schemas.

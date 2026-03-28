@@ -6,7 +6,7 @@ Loads protein target data from UniProt API into PostgreSQL.
 Focuses on drug targets and disease-relevant proteins.
 
 Tables populated:
-- bronze.uniprot: Protein data with cross-references to PDB, ChEMBL, DrugBank
+- mol_bronze.uniprot: Protein data with cross-references to PDB, ChEMBL, DrugBank
 
 Usage:
     # Load drug targets for known drugs
@@ -52,7 +52,7 @@ def ensure_tables(conn) -> None:
     """Create UniProt tables if they don't exist."""
     with conn.cursor() as cur:
         cur.execute("""
-            CREATE TABLE IF NOT EXISTS bronze.uniprot (
+            CREATE TABLE IF NOT EXISTS mol_bronze.uniprot (
                 id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
                 accession TEXT UNIQUE NOT NULL,
                 entry_name TEXT,
@@ -82,11 +82,11 @@ def ensure_tables(conn) -> None:
                 processed_to_silver BOOLEAN DEFAULT FALSE
             );
 
-            CREATE INDEX IF NOT EXISTS idx_uniprot_gene ON bronze.uniprot USING GIN(gene_names);
-            CREATE INDEX IF NOT EXISTS idx_uniprot_chembl ON bronze.uniprot(chembl_id);
-            CREATE INDEX IF NOT EXISTS idx_uniprot_organism ON bronze.uniprot(organism);
-            CREATE INDEX IF NOT EXISTS idx_uniprot_reviewed ON bronze.uniprot(reviewed);
-            CREATE INDEX IF NOT EXISTS idx_uniprot_processed ON bronze.uniprot(processed_to_silver);
+            CREATE INDEX IF NOT EXISTS idx_uniprot_gene ON mol_bronze.uniprot USING GIN(gene_names);
+            CREATE INDEX IF NOT EXISTS idx_uniprot_chembl ON mol_bronze.uniprot(chembl_id);
+            CREATE INDEX IF NOT EXISTS idx_uniprot_organism ON mol_bronze.uniprot(organism);
+            CREATE INDEX IF NOT EXISTS idx_uniprot_reviewed ON mol_bronze.uniprot(reviewed);
+            CREATE INDEX IF NOT EXISTS idx_uniprot_processed ON mol_bronze.uniprot(processed_to_silver);
         """)
         conn.commit()
     logger.info("UniProt tables ensured")
@@ -98,7 +98,7 @@ def insert_protein(conn, protein: UniProtProtein, search_type: str) -> bool:
         data = protein.to_dict()
         with conn.cursor() as cur:
             cur.execute("""
-                INSERT INTO bronze.uniprot (
+                INSERT INTO mol_bronze.uniprot (
                     accession, entry_name, protein_name, gene_names, organism,
                     organism_id, sequence_length, mass, function_description,
                     pathway, subcellular_location, disease_involvement,
@@ -147,14 +147,14 @@ async def load_drug_targets(conn, client: UniProtClient, limit: int = None) -> i
     """Load protein targets for drugs in the database."""
     total_inserted = 0
 
-    # Get drug names from silver.molecules or bronze.drugbank_targets
+    # Get drug names from mol_silver.molecules or mol_bronze.drugbank_targets
     accessions = []
     try:
         with conn.cursor() as cur:
             # Try to get target accessions from DrugBank first
             cur.execute("""
                 SELECT DISTINCT uniprot_id
-                FROM bronze.drugbank_targets
+                FROM mol_bronze.drugbank_targets
                 WHERE uniprot_id IS NOT NULL AND uniprot_id != ''
                 LIMIT 1000
             """)

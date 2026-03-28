@@ -688,7 +688,7 @@ async def run_entity_linking(pool, metrics: PipelineMetrics) -> Dict[str, Any]:
     try:
         async with pool.acquire() as conn:
             # Run the master entity linking function
-            rows = await conn.fetch("SELECT * FROM silver.run_entity_linking()")
+            rows = await conn.fetch("SELECT * FROM mol_silver.run_entity_linking()")
 
             for row in rows:
                 step = row['step']

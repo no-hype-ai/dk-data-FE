@@ -33,20 +33,19 @@ CREATE TABLE IF NOT EXISTS hcs_raw.cms_part_d_spending (
     -- Drug identifiers
     brnd_name                   TEXT,
     gnrc_name                   TEXT,
-    mftr_name                   TEXT,
-    -- Spending metrics
     tot_mftr                    INTEGER,
+    -- Spending metrics
+    tot_spndng                  NUMERIC(18,2),
+    tot_dsg_unts                NUMERIC(18,2),
     tot_clms                    BIGINT,
-    tot_30day_fills             NUMERIC(18,2),
-    tot_drug_cst                NUMERIC(18,2),
     tot_benes                   INTEGER,
-    -- Cost per unit
+    -- Cost per unit averages
+    avg_spnd_per_dsg_unt_wghtd  NUMERIC(18,2),
     avg_spnd_per_clm            NUMERIC(18,2),
-    avg_spnd_per_30day_fills    NUMERIC(18,2),
     avg_spnd_per_bene           NUMERIC(18,2),
-    -- Year dimension
-    _source_year                INTEGER NOT NULL,
+    outlier_flag                TEXT,
     -- Metadata
+    _source_year                INTEGER NOT NULL,
     _source_hash                TEXT NOT NULL,
     _source_file                TEXT,
     _loaded_at                  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
@@ -57,16 +56,19 @@ CREATE TABLE IF NOT EXISTS hcs_raw.cms_part_b_spending (
     id                          BIGSERIAL PRIMARY KEY,
     hcpcs_cd                    TEXT,
     hcpcs_desc                  TEXT,
-    provider_type               TEXT,
+    tot_mftr                    INTEGER,
+    mftr_name                   TEXT,
     -- Spending metrics
-    tot_allowed_amt             NUMERIC(18,2),
-    tot_mdcr_pymt_amt           NUMERIC(18,2),
+    tot_spndng                  NUMERIC(18,2),
+    tot_dsg_unts                NUMERIC(18,2),
     tot_benes                   INTEGER,
-    tot_srvcs                   BIGINT,
-    avg_mdcr_pymt_amt           NUMERIC(18,2),
-    avg_submitted_chrg_amt      NUMERIC(18,2),
-    avg_allowed_amt             NUMERIC(18,2),
-    -- Year dimension
+    tot_clms                    BIGINT,
+    -- Cost per unit averages
+    avg_spnd_per_dsg_unt        NUMERIC(18,2),
+    avg_spnd_per_clm            NUMERIC(18,2),
+    avg_spnd_per_bene           NUMERIC(18,2),
+    outlier_flag                TEXT,
+    -- Metadata
     _source_year                INTEGER NOT NULL,
     _source_hash                TEXT NOT NULL,
     _source_file                TEXT,
@@ -92,7 +94,22 @@ CREATE TABLE IF NOT EXISTS hcs_raw.cms_open_payments (
     recipient_city                      TEXT,
     recipient_state                     TEXT,
     recipient_zip_code                  TEXT,
-    -- Year dimension
+    -- Publication / program metadata
+    payment_publication_date            DATE,
+    record_id                           TEXT,
+    program_year                        INTEGER,
+    -- Drug/device associations (up to 5 per payment record)
+    name_of_drug_or_biological_or_device_or_medical_supply_1 TEXT,
+    name_of_drug_or_biological_or_device_or_medical_supply_2 TEXT,
+    name_of_drug_or_biological_or_device_or_medical_supply_3 TEXT,
+    name_of_drug_or_biological_or_device_or_medical_supply_4 TEXT,
+    name_of_drug_or_biological_or_device_or_medical_supply_5 TEXT,
+    associated_drug_or_biological_ndc_1 TEXT,
+    associated_drug_or_biological_ndc_2 TEXT,
+    associated_drug_or_biological_ndc_3 TEXT,
+    associated_drug_or_biological_ndc_4 TEXT,
+    associated_drug_or_biological_ndc_5 TEXT,
+    -- Metadata
     _source_year                        INTEGER NOT NULL,
     _source_hash                        TEXT NOT NULL,
     _source_file                        TEXT,
@@ -107,19 +124,27 @@ CREATE TABLE IF NOT EXISTS hcs_raw.cms_nppes (
     provider_last_name          TEXT,
     provider_first_name         TEXT,
     provider_organization_name  TEXT,
-    -- Location
+    provider_credential_text    TEXT,
+    -- Mailing address
+    provider_first_line_business_mailing_address    TEXT,
+    provider_second_line_business_mailing_address   TEXT,
     provider_business_mailing_address_city_name     TEXT,
     provider_business_mailing_address_state_name    TEXT,
     provider_business_mailing_address_postal_code   TEXT,
+    provider_business_mailing_address_telephone_number TEXT,
+    -- Practice location address
+    provider_first_line_business_practice_location_address  TEXT,
+    provider_second_line_business_practice_location_address TEXT,
+    provider_business_practice_location_address_city_name   TEXT,
+    provider_business_practice_location_address_state_name  TEXT,
+    provider_business_practice_location_address_postal_code TEXT,
+    provider_business_practice_location_address_country_code TEXT,
+    provider_business_practice_location_address_telephone_number TEXT,
+    provider_business_practice_location_address_fax_number  TEXT,
     -- Taxonomy/specialty
     healthcare_provider_taxonomy_code_1             TEXT,
     healthcare_provider_taxonomy_code_2             TEXT,
-    -- Contact
-    provider_business_mailing_address_telephone_number TEXT,
-    -- Status
-    npi_deactivation_date       DATE,
-    npi_reactivation_date       DATE,
-    -- Year dimension
+    -- Metadata
     _source_year                INTEGER NOT NULL,
     _source_hash                TEXT NOT NULL,
     _source_file                TEXT,
@@ -129,13 +154,16 @@ CREATE TABLE IF NOT EXISTS hcs_raw.cms_nppes (
 
 CREATE TABLE IF NOT EXISTS hcs_raw.cms_inpatient_puf (
     id                          BIGSERIAL PRIMARY KEY,
+    drg_cd                      TEXT,
     drg_definition              TEXT,
     provider_id                 TEXT,
     provider_name               TEXT,
     provider_street_address     TEXT,
     provider_city               TEXT,
     provider_state              TEXT,
+    provider_state_fips         TEXT,
     provider_zip_code           TEXT,
+    provider_ruca               TEXT,
     hospital_referral_region_desc TEXT,
     total_discharges            INTEGER,
     average_covered_charges     NUMERIC(18,2),
@@ -157,9 +185,14 @@ CREATE TABLE IF NOT EXISTS hcs_raw.cms_physician_puf (
     nppes_credentials           TEXT,
     nppes_provider_gender       TEXT,
     nppes_entity_code           TEXT,
+    nppes_provider_street1      TEXT,
+    nppes_provider_street2      TEXT,
     nppes_provider_city         TEXT,
     nppes_provider_state        TEXT,
+    nppes_provider_state_fips   TEXT,
     nppes_provider_zip          TEXT,
+    nppes_provider_ruca         TEXT,
+    nppes_provider_country      TEXT,
     provider_type               TEXT,
     medicare_participation_indicator TEXT,
     number_of_hcpcs             INTEGER,
@@ -181,16 +214,16 @@ CREATE TABLE IF NOT EXISTS hcs_raw.cms_hospital_general_info (
     facility_id                 TEXT,
     facility_name               TEXT,
     address                     TEXT,
-    city_town                   TEXT,
+    city                        TEXT,
     state                       TEXT,
     zip_code                    TEXT,
-    county_parish               TEXT,
-    telephone_number            TEXT,
+    county_name                 TEXT,
+    phone_number                TEXT,
     hospital_type               TEXT,
     hospital_ownership          TEXT,
     emergency_services          TEXT,
-    meets_criteria_for_birthing_friendly_designation TEXT,
     hospital_overall_rating     INTEGER,
+    hospital_overall_rating_footnote TEXT,
     _source_year                INTEGER NOT NULL,
     _source_hash                TEXT NOT NULL,
     _source_file                TEXT,
@@ -204,21 +237,27 @@ CREATE TABLE IF NOT EXISTS hcs_raw.cms_hospital_general_info (
 
 CREATE TABLE IF NOT EXISTS hcs_raw.cms_medicare_advantage (
     id BIGSERIAL PRIMARY KEY,
-    contract_id TEXT, plan_id TEXT, segment_id TEXT,
-    organization_name TEXT, plan_name TEXT, plan_type TEXT,
-    state TEXT, county TEXT, fips_county_code TEXT,
-    enrolled INTEGER,
+    contract_id TEXT, organization_name TEXT, organization_type TEXT,
+    plan_id TEXT, plan_name TEXT, segment_id TEXT,
+    enrollment_data_period TEXT,
+    fips_cd TEXT, state_fips TEXT, county_fips TEXT,
+    enrollment INTEGER,
+    avg_age NUMERIC(5,2), pct_female NUMERIC(5,2),
+    avg_risk_score NUMERIC(8,4), ma_participation_rate NUMERIC(5,4),
+    star_rating NUMERIC(4,2),
     _source_year INTEGER NOT NULL, _source_hash TEXT NOT NULL,
     _source_file TEXT, _loaded_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
 CREATE TABLE IF NOT EXISTS hcs_raw.cms_medicaid_drug_spending (
     id BIGSERIAL PRIMARY KEY,
-    state_id TEXT, state_name TEXT,
-    drug_name TEXT, labeler_name TEXT,
-    units_reimbursed NUMERIC(18,2), number_of_prescriptions INTEGER,
-    total_amount_reimbursed NUMERIC(18,2), medicaid_amount_reimbursed NUMERIC(18,2),
-    non_medicaid_amount_reimbursed NUMERIC(18,2),
+    brnd_name TEXT, gnrc_name TEXT,
+    tot_mftr INTEGER, util_type TEXT,
+    tot_spndng NUMERIC(18,2),
+    medicaid_spndng_per_dosage_unit NUMERIC(18,4),
+    medicaid_spndng_per_prescription NUMERIC(18,4),
+    unit_type TEXT, tot_dosage_units NUMERIC(18,2),
+    tot_prescriptions INTEGER, tot_benes INTEGER,
     _source_year INTEGER NOT NULL, _source_hash TEXT NOT NULL,
     _source_file TEXT, _loaded_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
@@ -339,11 +378,16 @@ CREATE TABLE IF NOT EXISTS hcs_raw.cms_snf_puf (
 
 CREATE TABLE IF NOT EXISTS hcs_raw.cms_outpatient_puf (
     id BIGSERIAL PRIMARY KEY,
-    provider_id TEXT, apc TEXT, apc_desc TEXT,
-    total_services INTEGER,
-    average_submitted_charges NUMERIC(18,2),
+    provider_id TEXT, provider_name TEXT, provider_street_address TEXT,
+    provider_city TEXT, provider_state TEXT, provider_state_fips TEXT,
+    provider_zip_code TEXT, provider_ruca TEXT,
+    apc TEXT, apc_desc TEXT,
+    total_services INTEGER, bene_cnt INTEGER, comp_asgn_pymt_cnt INTEGER,
+    average_estimated_submitted_charges NUMERIC(18,2),
+    average_medicare_allowed_amt NUMERIC(18,2),
     average_total_payments NUMERIC(18,2),
     average_medicare_payments NUMERIC(18,2),
+    average_medicare_stnd_amt NUMERIC(18,2),
     _source_year INTEGER NOT NULL, _source_hash TEXT NOT NULL,
     _source_file TEXT, _loaded_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     UNIQUE (_source_hash, provider_id, apc, _source_year)
@@ -351,21 +395,26 @@ CREATE TABLE IF NOT EXISTS hcs_raw.cms_outpatient_puf (
 
 CREATE TABLE IF NOT EXISTS hcs_raw.cms_referring_providers (
     id BIGSERIAL PRIMARY KEY,
-    referring_npi TEXT, referred_to_npi TEXT,
-    provider_last_org_name TEXT, provider_first_name TEXT,
-    provider_type TEXT, provider_city TEXT, provider_state TEXT,
-    referral_count INTEGER, unique_benes INTEGER,
+    rndrng_npi TEXT, rndrng_prvdr_last_org_name TEXT,
+    rndrng_prvdr_first_name TEXT, rndrng_prvdr_city TEXT,
+    rndrng_prvdr_state_abrvtn TEXT, rndrng_prvdr_zip5 TEXT,
+    rndrng_prvdr_type TEXT,
+    rfrd_npi TEXT, rfrd_prvdr_last_org_name TEXT, rfrd_prvdr_type TEXT,
+    tot_srvcs INTEGER, tot_benes INTEGER,
+    tot_mdcr_alowd_amt NUMERIC(18,2), tot_mdcr_pymt_amt NUMERIC(18,2),
     _source_year INTEGER NOT NULL, _source_hash TEXT NOT NULL,
     _source_file TEXT, _loaded_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
 CREATE TABLE IF NOT EXISTS hcs_raw.cms_ordering_providers (
     id BIGSERIAL PRIMARY KEY,
-    ordering_npi TEXT, performing_npi TEXT,
-    ordering_provider_last_name TEXT, ordering_provider_first_name TEXT,
-    ordering_provider_type TEXT,
-    hcpcs_cd TEXT, total_services INTEGER, total_unique_benes INTEGER,
-    total_submitted_chrg_amt NUMERIC(18,2), total_medicare_payment_amt NUMERIC(18,2),
+    rndrng_npi TEXT, rndrng_prvdr_last_org_name TEXT,
+    rndrng_prvdr_first_name TEXT, rndrng_prvdr_city TEXT,
+    rndrng_prvdr_state_abrvtn TEXT, rndrng_prvdr_zip5 TEXT,
+    rndrng_prvdr_type TEXT,
+    rfrd_npi TEXT, rfrd_prvdr_last_org_name TEXT, rfrd_prvdr_type TEXT,
+    tot_srvcs INTEGER, tot_benes INTEGER,
+    tot_mdcr_alowd_amt NUMERIC(18,2), tot_mdcr_pymt_amt NUMERIC(18,2),
     _source_year INTEGER NOT NULL, _source_hash TEXT NOT NULL,
     _source_file TEXT, _loaded_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
@@ -426,75 +475,99 @@ CREATE TABLE IF NOT EXISTS hcs_raw.cms_imaging_puf (
 
 CREATE TABLE IF NOT EXISTS hcs_raw.cms_mental_health_puf (
     id BIGSERIAL PRIMARY KEY,
-    npi TEXT, provider_type TEXT, provider_name TEXT,
-    provider_city TEXT, provider_state TEXT,
-    hcpcs_cd TEXT, hcpcs_desc TEXT,
-    total_benes INTEGER, total_services NUMERIC(18,2),
-    total_medicare_payment_amt NUMERIC(18,2),
+    npi TEXT, provider_last_org_name TEXT, provider_first_name TEXT,
+    provider_city TEXT, provider_state TEXT, provider_zip5 TEXT,
+    provider_type TEXT, hcpcs_cd TEXT, hcpcs_desc TEXT,
+    mh_srvc_ind TEXT,
+    tot_benes INTEGER, tot_srvcs INTEGER,
+    tot_mdcr_alowd_amt NUMERIC(18,2),
+    avg_mdcr_alowd_amt NUMERIC(18,2),
+    avg_mdcr_pymt_amt NUMERIC(18,2),
+    avg_mdcr_stdzd_amt NUMERIC(18,2),
     _source_year INTEGER NOT NULL, _source_hash TEXT NOT NULL,
     _source_file TEXT, _loaded_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
 CREATE TABLE IF NOT EXISTS hcs_raw.cms_opioid_puf (
     id BIGSERIAL PRIMARY KEY,
-    state TEXT, county TEXT, fips TEXT,
-    opioid_prescribing_rate NUMERIC(10,4),
-    opioid_prescriptions INTEGER, total_prescriptions INTEGER,
-    population INTEGER,
+    prscrbr_npi TEXT, prscrbr_last_org_name TEXT, prscrbr_first_name TEXT,
+    prscrbr_city TEXT, prscrbr_state_abrvtn TEXT, prscrbr_state_fips TEXT,
+    prscrbr_type TEXT, prscrbr_type_src TEXT,
+    brnd_name TEXT, gnrc_name TEXT,
+    opioid_drug_flag TEXT, la_opioid_drug_flag TEXT,
+    tot_clms INTEGER, tot_30day_fills NUMERIC(18,2),
+    tot_day_suply BIGINT, tot_drug_cst NUMERIC(18,2),
+    tot_benes INTEGER,
+    opioid_clms INTEGER, opioid_benes INTEGER,
+    la_opioid_clms INTEGER, la_opioid_benes INTEGER,
     _source_year INTEGER NOT NULL, _source_hash TEXT NOT NULL,
-    _source_file TEXT, _loaded_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    UNIQUE (fips, _source_year)
+    _source_file TEXT, _loaded_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
 CREATE TABLE IF NOT EXISTS hcs_raw.cms_telehealth_puf (
     id BIGSERIAL PRIMARY KEY,
-    npi TEXT, provider_type TEXT,
-    telehealth_services INTEGER, total_unique_benes INTEGER,
-    total_telehealth_payment NUMERIC(18,2),
+    npi TEXT, provider_last_org_name TEXT, provider_first_name TEXT,
+    provider_city TEXT, provider_state TEXT, provider_zip5 TEXT,
+    provider_type TEXT, hcpcs_cd TEXT, hcpcs_desc TEXT,
+    th_srvc_ind TEXT,
+    tot_benes INTEGER, tot_srvcs INTEGER,
+    tot_mdcr_alowd_amt NUMERIC(18,2),
+    avg_mdcr_alowd_amt NUMERIC(18,2),
+    avg_mdcr_pymt_amt NUMERIC(18,2),
+    avg_mdcr_stdzd_amt NUMERIC(18,2),
     _source_year INTEGER NOT NULL, _source_hash TEXT NOT NULL,
     _source_file TEXT, _loaded_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
 CREATE TABLE IF NOT EXISTS hcs_raw.cms_geographic_variation (
     id BIGSERIAL PRIMARY KEY,
-    bene_geo_lvl TEXT, bene_geo_cd TEXT, bene_geo_desc TEXT,
-    year INTEGER,
+    bene_geo_lvl TEXT, bene_geo_desc TEXT, bene_geo_cd TEXT,
+    bene_age_lvl TEXT, bene_demo_lvl TEXT, bene_demo_desc TEXT,
+    bene_mcc_lvl TEXT,
+    tot_benes INTEGER,
+    ip_cvrd_stays_per_1000_benes NUMERIC(10,4),
+    er_visits_per_1000_benes NUMERIC(10,4),
+    readmsn_rate NUMERIC(10,4),
+    acute_hosp_readmsn_rate NUMERIC(10,4),
     tot_mdcr_stdzd_pymt_pc NUMERIC(18,2),
     tot_mdcr_pymt_pc NUMERIC(18,2),
-    tot_mdcr_stdzd_pymt_pct_chg NUMERIC(10,4),
-    hosp_readmsn_rate NUMERIC(10,4),
-    er_visits_per_1000_benes NUMERIC(10,4),
+    tot_mdcr_alowd_amt_pc NUMERIC(18,2),
+    ma_prtcptn_rate NUMERIC(10,4),
     _source_year INTEGER NOT NULL, _source_hash TEXT NOT NULL,
-    _source_file TEXT, _loaded_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    UNIQUE (bene_geo_cd, _source_year)
+    _source_file TEXT, _loaded_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
 CREATE TABLE IF NOT EXISTS hcs_raw.cms_chronic_conditions (
     id BIGSERIAL PRIMARY KEY,
-    bene_geo_lvl TEXT, bene_geo_cd TEXT, bene_geo_desc TEXT,
-    bene_age_lvl TEXT,
-    chronic_condition TEXT, prevalence NUMERIC(10,4),
-    total_medicare_payment NUMERIC(18,2),
+    bene_geo_lvl TEXT, bene_geo_desc TEXT, bene_geo_cd TEXT,
+    bene_age_lvl TEXT, bene_demo_lvl TEXT, bene_demo_desc TEXT,
+    bene_cond TEXT,
+    prvlnc NUMERIC(10,4),
+    tot_mdcr_stdzd_pymt_pc NUMERIC(18,2),
+    tot_mdcr_pymt_pc NUMERIC(18,2),
+    hosp_readmsn_rate NUMERIC(10,4),
+    ed_visits_per_1000_benes NUMERIC(10,4),
     _source_year INTEGER NOT NULL, _source_hash TEXT NOT NULL,
     _source_file TEXT, _loaded_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
 CREATE TABLE IF NOT EXISTS hcs_raw.cms_dual_eligible (
     id BIGSERIAL PRIMARY KEY,
-    state TEXT, bene_age_lvl TEXT, bene_race_cd TEXT,
-    dual_benes INTEGER, non_dual_benes INTEGER,
-    dual_pymt_pc NUMERIC(18,2), non_dual_pymt_pc NUMERIC(18,2),
+    state_cd TEXT, state_name TEXT,
+    dual_elgbl_lvl TEXT, dual_elgbl_desc TEXT,
+    tot_benes INTEGER, ffs_benes INTEGER, ma_benes INTEGER,
+    dual_elgbl_full_benes INTEGER, dual_elgbl_prtl_benes INTEGER,
+    non_dual_benes INTEGER, lis_benes INTEGER,
     _source_year INTEGER NOT NULL, _source_hash TEXT NOT NULL,
     _source_file TEXT, _loaded_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
 CREATE TABLE IF NOT EXISTS hcs_raw.cms_enrollment_puf (
     id BIGSERIAL PRIMARY KEY,
-    state TEXT, county TEXT, fips TEXT,
-    total_beneficiaries INTEGER,
-    aged_esrd_benes INTEGER, disabled_benes INTEGER,
-    esrd_benes INTEGER, aged_benes INTEGER,
-    orig_reason_entitlement TEXT,
+    state_cd TEXT, county_cd TEXT, county_desc TEXT,
+    bene_demo_lvl TEXT, bene_demo_desc TEXT, bene_age_lvl TEXT,
+    tot_benes INTEGER, orgnl_mdcr_benes INTEGER,
+    ma_benes INTEGER, esrd_benes INTEGER, dsbl_benes INTEGER,
     _source_year INTEGER NOT NULL, _source_hash TEXT NOT NULL,
     _source_file TEXT, _loaded_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     UNIQUE (fips, _source_year)
@@ -502,38 +575,41 @@ CREATE TABLE IF NOT EXISTS hcs_raw.cms_enrollment_puf (
 
 CREATE TABLE IF NOT EXISTS hcs_raw.cms_claim_type_puf (
     id BIGSERIAL PRIMARY KEY,
-    claim_type TEXT, service_category TEXT,
-    total_claims BIGINT, total_beneficiaries INTEGER,
-    total_allowed_amount NUMERIC(18,2),
-    total_payment_amount NUMERIC(18,2),
-    avg_payment_per_claim NUMERIC(18,2),
+    bene_geo_lvl TEXT, bene_geo_desc TEXT,
+    clm_type TEXT, clm_type_desc TEXT,
+    tot_clms BIGINT, tot_benes INTEGER,
+    tot_mdcr_pymt_amt NUMERIC(18,2),
+    avg_mdcr_pymt_amt NUMERIC(18,2),
     _source_year INTEGER NOT NULL, _source_hash TEXT NOT NULL,
     _source_file TEXT, _loaded_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
 CREATE TABLE IF NOT EXISTS hcs_raw.cms_utilization_puf (
     id BIGSERIAL PRIMARY KEY,
-    service_category TEXT, setting_of_care TEXT,
-    total_services BIGINT, total_unique_benes INTEGER,
-    total_medicare_payment NUMERIC(18,2),
-    per_capita_payment NUMERIC(18,2),
-    services_per_1000_benes NUMERIC(10,4),
+    bene_geo_lvl TEXT, bene_geo_desc TEXT, bene_geo_cd TEXT,
+    bene_age_lvl TEXT, bene_demo_lvl TEXT, bene_demo_desc TEXT,
+    srvcs_per_bene NUMERIC(10,4),
+    ip_cvrd_stays_per_1000_benes NUMERIC(10,4),
+    avg_ip_los NUMERIC(10,2),
+    er_visits_per_1000_benes NUMERIC(10,4),
+    phy_visits_per_bene NUMERIC(10,4),
+    tot_mdcr_pymt_pc NUMERIC(18,2),
     _source_year INTEGER NOT NULL, _source_hash TEXT NOT NULL,
     _source_file TEXT, _loaded_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
 CREATE TABLE IF NOT EXISTS hcs_raw.cms_cost_reports_puf (
     id BIGSERIAL PRIMARY KEY,
-    provider_id TEXT, hospital_name TEXT,
-    city TEXT, state TEXT, zip_code TEXT,
-    fiscal_year_begin DATE, fiscal_year_end DATE,
+    rpt_rec_num TEXT, prvdr_ctrl_type_cd TEXT, prvdr_num TEXT,
+    rpt_stus_cd TEXT, initl_rpt_sw TEXT, last_rpt_sw TEXT,
+    trnsmtl_num TEXT, fi_num TEXT, adr_vndr_cd TEXT,
+    fi_creat_dt DATE, util_cd TEXT, npr_dt DATE,
+    spec_ind TEXT, fi_rcpt_dt DATE,
     total_beds INTEGER, total_discharges INTEGER,
     net_patient_revenue NUMERIC(18,2),
     total_operating_expenses NUMERIC(18,2),
-    operating_margin NUMERIC(10,4),
     _source_year INTEGER NOT NULL, _source_hash TEXT NOT NULL,
-    _source_file TEXT, _loaded_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    UNIQUE (provider_id, _source_year)
+    _source_file TEXT, _loaded_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
 -- ============================================================================

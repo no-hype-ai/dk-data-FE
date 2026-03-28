@@ -6,7 +6,7 @@ Comprehensive guide for developing with, accessing, and operating the dk-data pl
 
 ## 1. Platform Overview
 
-dk-data is a pharmaceutical data intelligence platform that ingests, transforms, and serves data from 25+ external sources through a REST API.
+dk-data is a pharmaceutical data intelligence platform that ingests, transforms, and serves data from 80+ external sources through a REST API.
 
 ### Architecture
 
@@ -37,15 +37,16 @@ External APIs ──> Fetchers ──> Raw Layer ──> SQLMesh Transforms ─�
 
 ### Database Schemas (Medallion Architecture)
 
-| Layer | Schemas | Purpose |
-|-------|---------|---------|
-| **Raw** | `raw`, `mol_raw` | Unmodified data from external sources |
-| **Bronze** | `bronze`, `mol_bronze` | Cleansed, typed, deduplicated |
-| **Silver** | `silver`, `mol_silver` | Business entities, relationships |
-| **Gold** | `gold`, `mol_gold` | Aggregated analytics-ready data |
-| **API** | `api`, `mol_api` | Views exposed via PostgREST |
-| **Meta** | `meta` | Data catalog, job tracking, health |
-| **Other** | `staging`, `mart`, `scoring`, `xenon` | Legacy/specialized schemas |
+All schemas carry a domain prefix. There are no bare `raw`, `bronze`, `silver`, or `gold` schemas in production — SQLMesh's `physical_schema_mapping` redirects model declarations to the appropriate domain schema.
+
+| Domain | Raw | Bronze | Silver | Gold |
+|--------|-----|--------|--------|------|
+| **Molecules / Drug** | `mol_raw` | `mol_bronze` | `mol_silver` | `mol_gold` |
+| **Healthcare / CMS** | `hcs_raw` | `hcs_bronze` | `hcs_silver` | `hcs_gold` |
+| **Indications / Disease** | — | — | `ind_silver` | `ind_gold` |
+| **HCP / Researchers** | — | — | `hcp_silver` | `hcp_gold` |
+
+Infrastructure schemas: `meta` (data catalog, job tracking), `xenon` (proprietary scoring), `staging`, `mart` (legacy TAVR).
 
 ---
 
@@ -89,7 +90,7 @@ docker compose exec job-trigger python -m dk_data.ingestion.main --all
 
 # Check data
 docker compose exec postgres psql -U postgres -d dk_data \
-  -c "SELECT COUNT(*) FROM raw.journal_rss;"
+  -c "SELECT COUNT(*) FROM mol_raw.journal_rss;"
 ```
 
 ### Running Tests
@@ -179,13 +180,23 @@ def load_my_source_data(records: List[Dict[str, Any]], source_hash: str = None, 
         with conn.cursor() as cur:
             for i, r in enumerate(records):
                 try:
+                    body_json = json.dumps(r)
+                    body_hash = hashlib.sha256(body_json.encode()).hexdigest()
                     cur.execute("""
-                        INSERT INTO raw.my_source (id, title, date, _source_hash)
-                        VALUES (%s, %s, %s, %s)
-                        ON CONFLICT (id) DO UPDATE SET
-                            title = EXCLUDED.title, date = EXCLUDED.date,
-                            _loaded_at = NOW(), _source_hash = EXCLUDED._source_hash
-                    """, (r["id"], r.get("title"), r.get("date"), source_hash))
+                        INSERT INTO mol_raw.my_source (
+                            request_id, request_timestamp, api_endpoint,
+                            response_body, response_body_hash, response_size_bytes,
+                            processed_to_bronze, ingested_at, source_id
+                        ) VALUES (%s, NOW(), %s, %s, %s, %s, FALSE, NOW(), 'my_source')
+                        ON CONFLICT (request_id)
+                        DO UPDATE SET
+                            response_body       = EXCLUDED.response_body,
+                            response_body_hash  = EXCLUDED.response_body_hash,
+                            processed_to_bronze = FALSE,
+                            ingested_at         = NOW()
+                        WHERE mol_raw.my_source.response_body_hash
+                              IS DISTINCT FROM EXCLUDED.response_body_hash
+                    """, (f"my_source_{r['id']}", endpoint, body_json, body_hash, len(body_json.encode())))
                     inserted += 1
                 except Exception as e:
                     errors.append({"index": i, "error": str(e)})
@@ -199,42 +210,43 @@ def load_my_source_data(records: List[Dict[str, Any]], source_hash: str = None, 
 **File:** `src/dk_data/sql/migrations/085_my_source_raw_table.sql`
 
 ```sql
-CREATE TABLE IF NOT EXISTS raw.my_source (
-    id VARCHAR(255) NOT NULL PRIMARY KEY,
-    title TEXT,
-    date DATE,
-    _loaded_at TIMESTAMP NOT NULL DEFAULT NOW(),
-    _source_file VARCHAR(500),
-    _source_hash VARCHAR(64),
-    response_body_hash VARCHAR(64)
+-- Use mol_raw for molecule/drug sources, hcs_raw for CMS/provider sources
+CREATE TABLE IF NOT EXISTS mol_raw.my_source (
+    request_id          VARCHAR(512) NOT NULL PRIMARY KEY,
+    request_timestamp   TIMESTAMPTZ NOT NULL,
+    api_endpoint        TEXT NOT NULL,
+    api_version         VARCHAR(50),
+    request_params      JSONB,
+    response_status     INTEGER NOT NULL DEFAULT 200,
+    response_body       JSONB NOT NULL,
+    response_body_hash  VARCHAR(64),
+    response_size_bytes INTEGER,
+    processed_to_bronze BOOLEAN NOT NULL DEFAULT FALSE,
+    ingested_at         TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    source_id           VARCHAR(100) NOT NULL DEFAULT 'my_source'
 );
 
-CREATE INDEX IF NOT EXISTS idx_my_source_date ON raw.my_source(date DESC);
-CREATE INDEX IF NOT EXISTS idx_my_source_hash ON raw.my_source(response_body_hash);
+CREATE INDEX IF NOT EXISTS idx_my_source_ingested ON mol_raw.my_source(ingested_at DESC);
+CREATE INDEX IF NOT EXISTS idx_my_source_hash ON mol_raw.my_source(response_body_hash);
 ```
 
-Use the next available number. Always include `_loaded_at`, `_source_hash`, `response_body_hash`.
+Use the next available migration number. All raw tables use the JSONB envelope schema — do not create flat column tables for raw data.
 
 ### Step 4: Register the Source
 
-**In `src/dk_data/ingestion/fetch_data.py`:**
-```python
-'my_source': {
-    'class': MySourceFetcher,
-    'description': 'MySource API data',
-    'priority': 2,
-},
-```
-
-**In `src/dk_data/ingestion/main.py`:**
+**In `src/dk_data/ingestion/main.py`** (in the `SOURCES` dict):
 ```python
 'my_source': {
     'name': 'MySource API',
+    'description': 'Brief description',
+    'fetcher': MySourceFetcher,
     'loader': load_my_source_data,
     'requires_file': False,
-    'meta_name': 'my_source',
+    'default_days_back': 30,  # or None for full-refresh sources
 },
 ```
+
+Also add the import of the fetcher and loader at the top of `main.py` alongside the existing imports.
 
 ### Step 5: Create CronJob
 
@@ -753,38 +765,52 @@ conn.close()
 
 ## 10. Data Source Inventory
 
-### Active Sources (26)
+See `DATA_LOADERS.md` for the full per-source reference including rate limits, credentials, and loader invocation.
 
-| Source | Type | Frequency | Schema |
-|--------|------|-----------|--------|
-| PubMed | API | Daily | raw.pubmed |
-| OpenAlex CI | API | Daily | raw.openalex_ci |
-| Journal RSS | Feed | Daily | raw.journal_rss |
-| Medical News | Feed | Daily | raw.medical_news |
-| SEC EDGAR | API | Daily | raw.sec_edgar |
-| ClinicalTrials.gov | API | Daily (mol) | raw.clinicaltrials |
-| OpenFDA Labels | API | Daily (mol) | raw.openfda_labels |
-| OpenFDA FAERS | API | Daily (mol) | raw.openfda_faers |
-| EMA Regulatory | API | Weekly | raw.ema_regulatory |
-| HTA Bodies | API | Weekly | raw.hta_decisions |
-| USPTO Patents | API | Weekly | raw.uspto_patents |
-| USPTO CI | API | Weekly | raw.uspto_ci |
-| USPTO Trademarks | API | Weekly | raw.uspto_trademarks |
-| EPO Patents | API | Weekly | raw.epo_patents |
-| EUIPO Trademarks | API | Weekly | raw.euipo_trademarks |
-| UniProt | API | Weekly | raw.uniprot |
-| PDB | API | Weekly | raw.pdb |
-| CMS All | File | Weekly | raw.cms_* |
-| Cochrane | API | Monthly | raw.cochrane_reviews |
-| DrugBank | File | Monthly | raw.drugbank |
-| ChEMBL | API | Weekly (mol) | raw.chembl |
-| PubChem | API | Monthly (mol) | raw.pubchem |
+### Molecule / Drug Sources (28)
 
-### Molecule Pipeline Schedule
+| Source | Frequency | Raw Table |
+|--------|-----------|-----------|
+| PubMed | Daily | `mol_raw.pubmed` |
+| Europe PMC | Daily | `mol_raw.europepmc` |
+| OpenAlex CI | Daily | `mol_raw.openalex_ci` |
+| Journal RSS | Daily | `mol_raw.journal_rss` |
+| Medical News | Daily | `mol_raw.medical_news` |
+| NIH Reporter | Daily | `mol_raw.nih_reporter` |
+| SEC EDGAR | Daily | `mol_raw.sec_edgar` |
+| EMA Regulatory | Weekly | `mol_raw.ema` |
+| HTA Bodies | Weekly | `mol_raw.hta_decisions` |
+| USPTO Patents | Weekly | `mol_raw.uspto_patents` |
+| USPTO CI | Weekly | `mol_raw.uspto_ci` |
+| USPTO Trademarks | Weekly | `mol_raw.uspto_trademarks` |
+| EUIPO Trademarks | Weekly | `mol_raw.euipo_trademarks` |
+| EUIPO Designs | Weekly | `mol_raw.euipo_designs` |
+| EPO Patents | Weekly | `mol_raw.epo_patents` |
+| UniProt | Weekly | `mol_raw.uniprot` |
+| PDB Structures | Weekly | `mol_raw.pdb` |
+| ORCID | Weekly | `mol_raw.orcid` |
+| KEGG Drug | Weekly | `mol_raw.kegg_drug` |
+| DrugBank | Monthly | `mol_raw.drugbank` |
+| BindingDB | Monthly | `mol_raw.bindingdb` |
+| SIDER | Monthly | `mol_raw.sider` |
+| WHO ICD | Monthly | `mol_raw.who_icd` |
+| RxNorm | Monthly | `mol_raw.rxnorm` |
+| WHO INN | Monthly | `mol_raw.who_inn` |
+| PharmGKB | Monthly | `mol_raw.pharmgkb` |
+| TDC ADMET | Monthly | `mol_raw.tdc_admet` |
+| Cochrane | Monthly | `mol_raw.cochrane_reviews` |
 
-| Job | Schedule | Timeout |
-|-----|----------|---------|
-| mol-fetch-daily | 2 AM UTC daily | 6h (staging: every 6h) |
-| mol-fetch-weekly | 3 AM UTC Sunday | 6h |
-| mol-fetch-monthly | 8 AM UTC 1st | 12h |
-| mol-transform | 6 AM UTC daily | 4h |
+### CMS / Healthcare Sources (50+)
+
+19 API-based CMS sources (`hcs_raw.*`) + 30 CMS PUF file downloads + 5 legacy file sources. See `DATA_LOADERS.md` for the full list.
+
+### CronJob Schedule
+
+| CronJob | Schedule | What runs |
+|---------|----------|-----------|
+| `cronjob-mol-fetch-daily` | 2 AM UTC daily | PubMed, EuropePMC, OpenAlex, Journal RSS, Medical News, NIH Reporter, SEC EDGAR |
+| `cronjob-mol-fetch-weekly` | 3 AM UTC Sunday | EMA, HTA, USPTO, EUIPO, EPO, UniProt, PDB, ORCID, KEGG Drug |
+| `cronjob-mol-fetch-monthly` | 2–11 AM UTC 1st | BindingDB, SIDER, WHO ICD, RxNorm, WHO INN, PharmGKB, TDC ADMET, DrugBank, Cochrane |
+| `cronjob-mol-transform` | 6 AM UTC daily | SQLMesh bronze → silver → gold |
+| `cronjob-cms-all` | Weekly | All CMS PUF file downloads |
+| Per-source CMS CronJobs | Monthly (1st) | 19 individual CMS API sources |

@@ -11,7 +11,10 @@ spec:
     matchLabels:
       app.kubernetes.io/component: metering-proxy
   endpoints:
-    - port: metrics
+    # /metrics is served by uvicorn on port 3001 (name: proxy).
+    # The service also declares port 9090 (name: metrics) but nothing binds to
+    # it in the container — uvicorn only listens on --port 3001.
+    - port: proxy
       path: /metrics
       interval: 30s
       scrapeTimeout: 10s

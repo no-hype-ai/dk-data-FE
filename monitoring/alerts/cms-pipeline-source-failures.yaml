@@ -1,7 +1,7 @@
 # Alert Rules: CMS PUF Pipeline Source Failures
-# Feature: 019-cms-puf-platform-reconciliation
-# Monitors all 28 CMS PUF data sources for consecutive failures
-# via meta.refresh_log table checks.
+# Features: 019-cms-puf-platform-reconciliation, 020-entity-linking-gaps
+# Monitors all 29 CMS PUF data sources for consecutive failures
+# via cms_source_health_status Prometheus metric.
 #
 # Severity guide:
 #   warning  — bulk file sources (expected to be file-provided, may legitimately skip)
@@ -15,14 +15,8 @@ groups:
       - alert: CMSPartDSpendingFailed
         expr: |
           absent_over_time(
-            (
-              SELECT 1 FROM meta.refresh_log
-              WHERE source_name = 'cms_part_d_spending'
-                AND status = 'success'
-                AND started_at > NOW() - INTERVAL '90 days'
-              LIMIT 1
-            )[3d:]
-          ) == 1
+            cms_source_health_status{source="cms_part_d_spending"}[90d]
+          ) == 1 or cms_source_health_status{source="cms_part_d_spending"} == 0
         for: 1h
         labels:
           severity: warning
@@ -357,14 +351,31 @@ groups:
           summary: "CMS Cost Reports PUF Lines (staffing grain) ingestion failed"
           description: "cms_cost_reports_puf_lines health status is error. Required by staffing_decomposition agent."
 
+      # Entity linking sources (020-entity-linking-gaps additions)
+      - alert: CMSPartDPrescriberFailed
+        # Annual file: released by CMS each January. Staleness window is 400d to
+        # accommodate CMS release timing variation (typically Jan but can slip).
+        # cms_source_health_status is set by record_cms_source_sync() in the loader.
+        expr: |
+          absent_over_time(
+            cms_source_health_status{source="cms_part_d_prescriber"}[400d]
+          ) == 1 or cms_source_health_status{source="cms_part_d_prescriber"} == 0
+        for: 2h
+        labels:
+          severity: warning
+          source: cms_part_d_prescriber
+          team: data-platform
+        annotations:
+          summary: "CMS Part D Prescribers ingestion failed or not loaded this year"
+          description: "cms_part_d_prescriber has not been successfully loaded. This is an annual file — check CMS release schedule and file staging."
+
       # HCS Silver Agent Quality Alerts
       - alert: HCSAgentHighQuarantineRate
+        # cms_agent_records_quarantined_total is a Counter incremented by record_agent_run()
+        # in observability/metrics.py for every quarantined record.
+        # Agent names follow the pattern hcs_<name> (e.g. hcs_drug_market, hcs_service_lines).
         expr: |
-          (
-            SELECT COUNT(*) FROM mol_silver.agent_quarantine
-            WHERE source_agent LIKE 'hcs_%'
-              AND created_at > NOW() - INTERVAL '7 days'
-          ) > 500
+          sum(increase(cms_agent_records_quarantined_total{agent_name=~"hcs_.*"}[7d])) > 500
         for: 30m
         labels:
           severity: warning
@@ -374,15 +385,18 @@ groups:
           description: "High quarantine rate for HCS silver agents. Check agent prompts and source data quality."
 
       - alert: HCSAgentStale
+        # cms_source_last_sync_timestamp is set by record_cms_source_sync() in
+        # observability/metrics.py on every successful HCS source sync.
+        # 720 hours = 30 days.
         expr: |
           (
-            SELECT EXTRACT(EPOCH FROM (NOW() - MAX(updated_at))) / 3600
-            FROM hcs_silver.service_lines
-          ) > 720
+            time() - max(cms_source_last_sync_timestamp{source=~"hcs_.*"})
+          ) / 3600 > 720
+          or absent(cms_source_last_sync_timestamp{source=~"hcs_.*"})
         for: 1h
         labels:
           severity: warning
           team: data-platform
         annotations:
           summary: "HCS silver tables not refreshed in 30 days"
-          description: "hcs_silver.service_lines has not been updated in 30+ days. Check agent CronJobs."
+          description: "No hcs_* source has been synced in 30+ days. Check agent CronJobs."

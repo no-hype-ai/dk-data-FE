@@ -10,7 +10,7 @@ CREATE SCHEMA IF NOT EXISTS silver;
 -- ============================================================================
 
 -- Core Molecule Table (Master Entity)
-CREATE TABLE IF NOT EXISTS silver.molecules (
+CREATE TABLE IF NOT EXISTS mol_silver.molecules (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
 
     -- Canonical identifier (InChI Key for small molecules)
@@ -53,18 +53,18 @@ CREATE TABLE IF NOT EXISTS silver.molecules (
     UNIQUE(inchi_key)
 );
 
-CREATE INDEX IF NOT EXISTS idx_silver_mol_inchi ON silver.molecules(inchi_key);
-CREATE INDEX IF NOT EXISTS idx_silver_mol_name ON silver.molecules(canonical_name);
-CREATE INDEX IF NOT EXISTS idx_silver_mol_status ON silver.molecules(development_status);
-CREATE INDEX IF NOT EXISTS idx_silver_mol_needs_review ON silver.molecules(needs_review) WHERE needs_review = TRUE;
-CREATE INDEX IF NOT EXISTS idx_silver_mol_name_trgm ON silver.molecules USING GIN(canonical_name gin_trgm_ops);
+CREATE INDEX IF NOT EXISTS idx_silver_mol_inchi ON mol_silver.molecules(inchi_key);
+CREATE INDEX IF NOT EXISTS idx_silver_mol_name ON mol_silver.molecules(canonical_name);
+CREATE INDEX IF NOT EXISTS idx_silver_mol_status ON mol_silver.molecules(development_status);
+CREATE INDEX IF NOT EXISTS idx_silver_mol_needs_review ON mol_silver.molecules(needs_review) WHERE needs_review = TRUE;
+CREATE INDEX IF NOT EXISTS idx_silver_mol_name_trgm ON mol_silver.molecules USING GIN(canonical_name gin_trgm_ops);
 
 -- Identifier Mappings (Cross-Reference Table)
-CREATE TABLE IF NOT EXISTS silver.identifier_mappings (
+CREATE TABLE IF NOT EXISTS mol_silver.identifier_mappings (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
 
     -- The canonical molecule reference
-    molecule_id UUID REFERENCES silver.molecules(id) ON DELETE CASCADE,
+    molecule_id UUID REFERENCES mol_silver.molecules(id) ON DELETE CASCADE,
 
     -- Identifier being mapped
     identifier_type VARCHAR(30) NOT NULL,  -- inchi_key, chembl_id, drugbank_id, pubchem_cid, etc.
@@ -87,15 +87,15 @@ CREATE TABLE IF NOT EXISTS silver.identifier_mappings (
     UNIQUE(molecule_id, identifier_type, identifier_value)
 );
 
-CREATE INDEX IF NOT EXISTS idx_silver_mapping_type_value ON silver.identifier_mappings(identifier_type, identifier_value);
-CREATE INDEX IF NOT EXISTS idx_silver_mapping_molecule ON silver.identifier_mappings(molecule_id);
-CREATE INDEX IF NOT EXISTS idx_silver_mapping_source ON silver.identifier_mappings(source);
+CREATE INDEX IF NOT EXISTS idx_silver_mapping_type_value ON mol_silver.identifier_mappings(identifier_type, identifier_value);
+CREATE INDEX IF NOT EXISTS idx_silver_mapping_molecule ON mol_silver.identifier_mappings(molecule_id);
+CREATE INDEX IF NOT EXISTS idx_silver_mapping_source ON mol_silver.identifier_mappings(source);
 
 -- Molecule Aliases (for fuzzy name resolution)
-CREATE TABLE IF NOT EXISTS silver.molecule_aliases (
+CREATE TABLE IF NOT EXISTS mol_silver.molecule_aliases (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
 
-    molecule_id UUID REFERENCES silver.molecules(id) ON DELETE CASCADE,
+    molecule_id UUID REFERENCES mol_silver.molecules(id) ON DELETE CASCADE,
 
     -- Alias information
     alias_name VARCHAR(500) NOT NULL,
@@ -114,16 +114,16 @@ CREATE TABLE IF NOT EXISTS silver.molecule_aliases (
     UNIQUE(molecule_id, alias_name, alias_type)
 );
 
-CREATE INDEX IF NOT EXISTS idx_silver_alias_name ON silver.molecule_aliases(alias_name_normalized);
-CREATE INDEX IF NOT EXISTS idx_silver_alias_molecule ON silver.molecule_aliases(molecule_id);
-CREATE INDEX IF NOT EXISTS idx_silver_alias_name_trgm ON silver.molecule_aliases USING GIN(alias_name_normalized gin_trgm_ops);
+CREATE INDEX IF NOT EXISTS idx_silver_alias_name ON mol_silver.molecule_aliases(alias_name_normalized);
+CREATE INDEX IF NOT EXISTS idx_silver_alias_molecule ON mol_silver.molecule_aliases(molecule_id);
+CREATE INDEX IF NOT EXISTS idx_silver_alias_name_trgm ON mol_silver.molecule_aliases USING GIN(alias_name_normalized gin_trgm_ops);
 
 -- Clinical Trials (Normalized)
-CREATE TABLE IF NOT EXISTS silver.clinical_trials (
+CREATE TABLE IF NOT EXISTS mol_silver.clinical_trials (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
 
     -- Link to molecule
-    molecule_id UUID REFERENCES silver.molecules(id),
+    molecule_id UUID REFERENCES mol_silver.molecules(id),
 
     -- Trial identifiers
     nct_id VARCHAR(15) NOT NULL,
@@ -178,17 +178,17 @@ CREATE TABLE IF NOT EXISTS silver.clinical_trials (
     UNIQUE(nct_id)
 );
 
-CREATE INDEX IF NOT EXISTS idx_silver_trial_nct ON silver.clinical_trials(nct_id);
-CREATE INDEX IF NOT EXISTS idx_silver_trial_molecule ON silver.clinical_trials(molecule_id);
-CREATE INDEX IF NOT EXISTS idx_silver_trial_phase ON silver.clinical_trials(phase);
-CREATE INDEX IF NOT EXISTS idx_silver_trial_status ON silver.clinical_trials(status);
-CREATE INDEX IF NOT EXISTS idx_silver_trial_sponsor ON silver.clinical_trials(sponsor);
+CREATE INDEX IF NOT EXISTS idx_silver_trial_nct ON mol_silver.clinical_trials(nct_id);
+CREATE INDEX IF NOT EXISTS idx_silver_trial_molecule ON mol_silver.clinical_trials(molecule_id);
+CREATE INDEX IF NOT EXISTS idx_silver_trial_phase ON mol_silver.clinical_trials(phase);
+CREATE INDEX IF NOT EXISTS idx_silver_trial_status ON mol_silver.clinical_trials(status);
+CREATE INDEX IF NOT EXISTS idx_silver_trial_sponsor ON mol_silver.clinical_trials(sponsor);
 
 -- Adverse Events (Aggregated from FAERS)
-CREATE TABLE IF NOT EXISTS silver.adverse_events (
+CREATE TABLE IF NOT EXISTS mol_silver.adverse_events (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
 
-    molecule_id UUID REFERENCES silver.molecules(id),
+    molecule_id UUID REFERENCES mol_silver.molecules(id),
 
     -- MedDRA coding
     meddra_pt VARCHAR(200),  -- Preferred term
@@ -220,15 +220,15 @@ CREATE TABLE IF NOT EXISTS silver.adverse_events (
     UNIQUE(molecule_id, meddra_pt_code)
 );
 
-CREATE INDEX IF NOT EXISTS idx_silver_ae_molecule ON silver.adverse_events(molecule_id);
-CREATE INDEX IF NOT EXISTS idx_silver_ae_meddra ON silver.adverse_events(meddra_pt);
-CREATE INDEX IF NOT EXISTS idx_silver_ae_soc ON silver.adverse_events(meddra_soc);
+CREATE INDEX IF NOT EXISTS idx_silver_ae_molecule ON mol_silver.adverse_events(molecule_id);
+CREATE INDEX IF NOT EXISTS idx_silver_ae_meddra ON mol_silver.adverse_events(meddra_pt);
+CREATE INDEX IF NOT EXISTS idx_silver_ae_soc ON mol_silver.adverse_events(meddra_soc);
 
 -- Drug Labels (FDA Labels)
-CREATE TABLE IF NOT EXISTS silver.drug_labels (
+CREATE TABLE IF NOT EXISTS mol_silver.drug_labels (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
 
-    molecule_id UUID REFERENCES silver.molecules(id),
+    molecule_id UUID REFERENCES mol_silver.molecules(id),
 
     -- Label identifiers
     set_id VARCHAR(50) NOT NULL,
@@ -265,15 +265,15 @@ CREATE TABLE IF NOT EXISTS silver.drug_labels (
     UNIQUE(set_id, version)
 );
 
-CREATE INDEX IF NOT EXISTS idx_silver_label_molecule ON silver.drug_labels(molecule_id);
-CREATE INDEX IF NOT EXISTS idx_silver_label_set_id ON silver.drug_labels(set_id);
-CREATE INDEX IF NOT EXISTS idx_silver_label_brand ON silver.drug_labels(brand_name);
+CREATE INDEX IF NOT EXISTS idx_silver_label_molecule ON mol_silver.drug_labels(molecule_id);
+CREATE INDEX IF NOT EXISTS idx_silver_label_set_id ON mol_silver.drug_labels(set_id);
+CREATE INDEX IF NOT EXISTS idx_silver_label_brand ON mol_silver.drug_labels(brand_name);
 
 -- Bioactivity (from ChEMBL)
-CREATE TABLE IF NOT EXISTS silver.bioactivity (
+CREATE TABLE IF NOT EXISTS mol_silver.bioactivity (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
 
-    molecule_id UUID REFERENCES silver.molecules(id),
+    molecule_id UUID REFERENCES mol_silver.molecules(id),
 
     -- Target info
     target_chembl_id VARCHAR(20),
@@ -303,12 +303,12 @@ CREATE TABLE IF NOT EXISTS silver.bioactivity (
     UNIQUE(molecule_id, target_chembl_id, assay_chembl_id, activity_type)
 );
 
-CREATE INDEX IF NOT EXISTS idx_silver_bio_molecule ON silver.bioactivity(molecule_id);
-CREATE INDEX IF NOT EXISTS idx_silver_bio_target ON silver.bioactivity(target_chembl_id);
-CREATE INDEX IF NOT EXISTS idx_silver_bio_type ON silver.bioactivity(activity_type);
+CREATE INDEX IF NOT EXISTS idx_silver_bio_molecule ON mol_silver.bioactivity(molecule_id);
+CREATE INDEX IF NOT EXISTS idx_silver_bio_target ON mol_silver.bioactivity(target_chembl_id);
+CREATE INDEX IF NOT EXISTS idx_silver_bio_type ON mol_silver.bioactivity(activity_type);
 
 -- Targets (from UniProt)
-CREATE TABLE IF NOT EXISTS silver.targets (
+CREATE TABLE IF NOT EXISTS mol_silver.targets (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
 
     -- Identifiers
@@ -342,15 +342,15 @@ CREATE TABLE IF NOT EXISTS silver.targets (
     UNIQUE(uniprot_id)
 );
 
-CREATE INDEX IF NOT EXISTS idx_silver_target_uniprot ON silver.targets(uniprot_id);
-CREATE INDEX IF NOT EXISTS idx_silver_target_gene ON silver.targets(gene_symbol);
+CREATE INDEX IF NOT EXISTS idx_silver_target_uniprot ON mol_silver.targets(uniprot_id);
+CREATE INDEX IF NOT EXISTS idx_silver_target_gene ON mol_silver.targets(gene_symbol);
 
 -- Molecule-Target Relationships
-CREATE TABLE IF NOT EXISTS silver.molecule_targets (
+CREATE TABLE IF NOT EXISTS mol_silver.molecule_targets (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
 
-    molecule_id UUID REFERENCES silver.molecules(id) ON DELETE CASCADE,
-    target_id UUID REFERENCES silver.targets(id) ON DELETE CASCADE,
+    molecule_id UUID REFERENCES mol_silver.molecules(id) ON DELETE CASCADE,
+    target_id UUID REFERENCES mol_silver.targets(id) ON DELETE CASCADE,
 
     -- Relationship type
     relationship_type VARCHAR(50),  -- target, enzyme, carrier, transporter
@@ -369,11 +369,11 @@ CREATE TABLE IF NOT EXISTS silver.molecule_targets (
     UNIQUE(molecule_id, target_id, relationship_type)
 );
 
-CREATE INDEX IF NOT EXISTS idx_silver_moltarget_mol ON silver.molecule_targets(molecule_id);
-CREATE INDEX IF NOT EXISTS idx_silver_moltarget_target ON silver.molecule_targets(target_id);
+CREATE INDEX IF NOT EXISTS idx_silver_moltarget_mol ON mol_silver.molecule_targets(molecule_id);
+CREATE INDEX IF NOT EXISTS idx_silver_moltarget_target ON mol_silver.molecule_targets(target_id);
 
 -- Publications (from OpenAlex)
-CREATE TABLE IF NOT EXISTS silver.publications (
+CREATE TABLE IF NOT EXISTS mol_silver.publications (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
 
     -- Identifiers
@@ -413,16 +413,16 @@ CREATE TABLE IF NOT EXISTS silver.publications (
     UNIQUE(openalex_id)
 );
 
-CREATE INDEX IF NOT EXISTS idx_silver_pub_doi ON silver.publications(doi);
-CREATE INDEX IF NOT EXISTS idx_silver_pub_pmid ON silver.publications(pmid);
-CREATE INDEX IF NOT EXISTS idx_silver_pub_year ON silver.publications(publication_year);
+CREATE INDEX IF NOT EXISTS idx_silver_pub_doi ON mol_silver.publications(doi);
+CREATE INDEX IF NOT EXISTS idx_silver_pub_pmid ON mol_silver.publications(pmid);
+CREATE INDEX IF NOT EXISTS idx_silver_pub_year ON mol_silver.publications(publication_year);
 
 -- Molecule-Publication Relationships
-CREATE TABLE IF NOT EXISTS silver.molecule_publications (
+CREATE TABLE IF NOT EXISTS mol_silver.molecule_publications (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
 
-    molecule_id UUID REFERENCES silver.molecules(id) ON DELETE CASCADE,
-    publication_id UUID REFERENCES silver.publications(id) ON DELETE CASCADE,
+    molecule_id UUID REFERENCES mol_silver.molecules(id) ON DELETE CASCADE,
+    publication_id UUID REFERENCES mol_silver.publications(id) ON DELETE CASCADE,
 
     -- Context
     mention_type VARCHAR(50),  -- primary_subject, mentioned, reference
@@ -433,14 +433,14 @@ CREATE TABLE IF NOT EXISTS silver.molecule_publications (
     UNIQUE(molecule_id, publication_id)
 );
 
-CREATE INDEX IF NOT EXISTS idx_silver_molpub_mol ON silver.molecule_publications(molecule_id);
-CREATE INDEX IF NOT EXISTS idx_silver_molpub_pub ON silver.molecule_publications(publication_id);
+CREATE INDEX IF NOT EXISTS idx_silver_molpub_mol ON mol_silver.molecule_publications(molecule_id);
+CREATE INDEX IF NOT EXISTS idx_silver_molpub_pub ON mol_silver.molecule_publications(publication_id);
 
 -- Patents
-CREATE TABLE IF NOT EXISTS silver.patents (
+CREATE TABLE IF NOT EXISTS mol_silver.patents (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
 
-    molecule_id UUID REFERENCES silver.molecules(id),
+    molecule_id UUID REFERENCES mol_silver.molecules(id),
 
     -- Patent identifiers
     patent_number VARCHAR(50) NOT NULL,
@@ -467,15 +467,15 @@ CREATE TABLE IF NOT EXISTS silver.patents (
     UNIQUE(patent_number, patent_country)
 );
 
-CREATE INDEX IF NOT EXISTS idx_silver_patent_mol ON silver.patents(molecule_id);
-CREATE INDEX IF NOT EXISTS idx_silver_patent_num ON silver.patents(patent_number);
-CREATE INDEX IF NOT EXISTS idx_silver_patent_expiry ON silver.patents(expiry_date);
+CREATE INDEX IF NOT EXISTS idx_silver_patent_mol ON mol_silver.patents(molecule_id);
+CREATE INDEX IF NOT EXISTS idx_silver_patent_num ON mol_silver.patents(patent_number);
+CREATE INDEX IF NOT EXISTS idx_silver_patent_expiry ON mol_silver.patents(expiry_date);
 
 -- Resolution Queue (for low-confidence records)
-CREATE TABLE IF NOT EXISTS silver.resolution_queue (
+CREATE TABLE IF NOT EXISTS mol_silver.resolution_queue (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
 
-    molecule_id UUID REFERENCES silver.molecules(id),
+    molecule_id UUID REFERENCES mol_silver.molecules(id),
 
     -- Resolution details
     original_identifier VARCHAR(500),
@@ -486,7 +486,7 @@ CREATE TABLE IF NOT EXISTS silver.resolution_queue (
     -- Status
     status VARCHAR(20) DEFAULT 'pending',  -- pending, approved, rejected, merged
     resolution_action VARCHAR(20),  -- approve, reject, merge
-    merge_target_id UUID REFERENCES silver.molecules(id),
+    merge_target_id UUID REFERENCES mol_silver.molecules(id),
 
     -- Review
     reviewed_by VARCHAR(100),
@@ -496,11 +496,11 @@ CREATE TABLE IF NOT EXISTS silver.resolution_queue (
     created_at TIMESTAMPTZ DEFAULT NOW()
 );
 
-CREATE INDEX IF NOT EXISTS idx_silver_queue_status ON silver.resolution_queue(status);
-CREATE INDEX IF NOT EXISTS idx_silver_queue_confidence ON silver.resolution_queue(confidence_score);
+CREATE INDEX IF NOT EXISTS idx_silver_queue_status ON mol_silver.resolution_queue(status);
+CREATE INDEX IF NOT EXISTS idx_silver_queue_confidence ON mol_silver.resolution_queue(confidence_score);
 
 -- Add comments
 COMMENT ON SCHEMA silver IS 'Silver layer: Normalized, deduplicated entities with cross-source resolution';
-COMMENT ON TABLE silver.molecules IS 'Master molecule table with InChI Key as canonical identifier';
-COMMENT ON TABLE silver.identifier_mappings IS 'Cross-reference mappings between molecule IDs and source identifiers';
-COMMENT ON TABLE silver.resolution_queue IS 'Queue for manual review of low-confidence entity resolution';
+COMMENT ON TABLE mol_silver.molecules IS 'Master molecule table with InChI Key as canonical identifier';
+COMMENT ON TABLE mol_silver.identifier_mappings IS 'Cross-reference mappings between molecule IDs and source identifiers';
+COMMENT ON TABLE mol_silver.resolution_queue IS 'Queue for manual review of low-confidence entity resolution';

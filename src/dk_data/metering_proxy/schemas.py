@@ -15,18 +15,40 @@ import structlog
 
 logger = structlog.get_logger(__name__)
 
-# Known PostgREST schemas in dk-data
+# Known PostgREST schemas in dk-data.
+# Must include ALL domain-prefixed schemas — bare names (bronze, silver, gold, raw)
+# are kept for backwards compatibility but the real schemas use domain prefixes.
 KNOWN_SCHEMAS = {
+    # Molecule domain
+    "mol_raw",
+    "mol_bronze",
+    "mol_silver",
+    "mol_gold",
+    # HCS domain
+    "hcs_raw",
+    "hcs_bronze",
+    "hcs_silver",
+    "hcs_gold",
+    # Indicator domain
+    "ind_silver",
+    "ind_gold",
+    # HCP domain
+    "hcp_silver",
+    "hcp_gold",
+    # API / application schemas
     "api",
     "mart",
     "mol_api",
     "scoring",
+    "xenon",
+    "staging",
+    "meta",
+    "application",
+    # Legacy bare names (no longer used in production; kept for compatibility)
     "bronze",
     "silver",
     "gold",
     "raw",
-    "meta",
-    "application",
 }
 
 # Paths that bypass schema checks (health, metrics, OpenAPI spec)

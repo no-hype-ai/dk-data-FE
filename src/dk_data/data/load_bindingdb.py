@@ -5,7 +5,7 @@ Load BindingDB TSV data into PostgreSQL.
 Processes the large TSV file in chunks and loads binding affinity data.
 
 Tables populated:
-- bronze.bindingdb_affinities: Binding affinity data (Ki, IC50, Kd, EC50)
+- mol_bronze.bindingdb_affinities: Binding affinity data (Ki, IC50, Kd, EC50)
 
 Usage:
     python -m dk_data.data.load_bindingdb /path/to/BindingDB_All.tsv
@@ -68,7 +68,7 @@ def ensure_tables(conn):
     """Ensure BindingDB tables exist."""
     cursor = conn.cursor()
     cursor.execute("""
-        CREATE TABLE IF NOT EXISTS bronze.bindingdb_affinities (
+        CREATE TABLE IF NOT EXISTS mol_bronze.bindingdb_affinities (
             id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
             smiles TEXT,
             inchi_key VARCHAR(27),
@@ -90,10 +90,10 @@ def ensure_tables(conn):
             processed_to_silver BOOLEAN DEFAULT FALSE
         );
 
-        CREATE INDEX IF NOT EXISTS idx_bindingdb_smiles ON bronze.bindingdb_affinities(smiles) WHERE smiles IS NOT NULL;
-        CREATE INDEX IF NOT EXISTS idx_bindingdb_inchi ON bronze.bindingdb_affinities(inchi_key) WHERE inchi_key IS NOT NULL;
-        CREATE INDEX IF NOT EXISTS idx_bindingdb_uniprot ON bronze.bindingdb_affinities(uniprot_id) WHERE uniprot_id IS NOT NULL;
-        CREATE INDEX IF NOT EXISTS idx_bindingdb_processed ON bronze.bindingdb_affinities(processed_to_silver);
+        CREATE INDEX IF NOT EXISTS idx_bindingdb_smiles ON mol_bronze.bindingdb_affinities(smiles) WHERE smiles IS NOT NULL;
+        CREATE INDEX IF NOT EXISTS idx_bindingdb_inchi ON mol_bronze.bindingdb_affinities(inchi_key) WHERE inchi_key IS NOT NULL;
+        CREATE INDEX IF NOT EXISTS idx_bindingdb_uniprot ON mol_bronze.bindingdb_affinities(uniprot_id) WHERE uniprot_id IS NOT NULL;
+        CREATE INDEX IF NOT EXISTS idx_bindingdb_processed ON mol_bronze.bindingdb_affinities(processed_to_silver);
     """)
     conn.commit()
     logger.info("BindingDB tables ensured")
@@ -112,13 +112,13 @@ def load_bindingdb(
     ensure_tables(conn)
     cursor = conn.cursor()
 
-    cursor.execute("SELECT COUNT(*) FROM bronze.bindingdb_affinities")
+    cursor.execute("SELECT COUNT(*) FROM mol_bronze.bindingdb_affinities")
     existing_count = cursor.fetchone()[0]
     logger.info(f"Existing BindingDB records: {existing_count}")
 
     if skip_existing and existing_count > 0:
         logger.info("Clearing existing data for fresh load...")
-        cursor.execute("TRUNCATE bronze.bindingdb_affinities RESTART IDENTITY")
+        cursor.execute("TRUNCATE mol_bronze.bindingdb_affinities RESTART IDENTITY")
         conn.commit()
 
     logger.info("Counting lines...")
@@ -180,7 +180,7 @@ def load_bindingdb(
                 if len(batch) >= batch_size:
                     try:
                         execute_values(cursor, """
-                            INSERT INTO bronze.bindingdb_affinities
+                            INSERT INTO mol_bronze.bindingdb_affinities
                             (smiles, inchi_key, bindingdb_ligand_id, target_name, uniprot_id,
                              ki_nm, ic50_nm, kd_nm, ec50_nm, kon, koff, ph, temperature_c, article_doi, pmid)
                             VALUES %s
@@ -202,7 +202,7 @@ def load_bindingdb(
         if batch:
             try:
                 execute_values(cursor, """
-                    INSERT INTO bronze.bindingdb_affinities
+                    INSERT INTO mol_bronze.bindingdb_affinities
                     (smiles, inchi_key, bindingdb_ligand_id, target_name, uniprot_id,
                      ki_nm, ic50_nm, kd_nm, ec50_nm, kon, koff, ph, temperature_c, article_doi, pmid)
                     VALUES %s
@@ -215,7 +215,7 @@ def load_bindingdb(
 
         pbar.close()
 
-    cursor.execute("SELECT COUNT(*) FROM bronze.bindingdb_affinities")
+    cursor.execute("SELECT COUNT(*) FROM mol_bronze.bindingdb_affinities")
     final_count = cursor.fetchone()[0]
 
     logger.info("\n=== Load Complete ===")

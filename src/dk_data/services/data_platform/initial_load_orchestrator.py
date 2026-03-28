@@ -2357,10 +2357,10 @@ class InitialLoadOrchestrator:
         - Silver → Gold: SQLMesh (declarative SQL analytics)
 
         SQLMesh creates Gold layer views on top of Python-created Silver tables:
-        - gold.molecule_profiles: Comprehensive drug profiles
-        - gold.trial_analytics: Clinical trial success rates
-        - gold.safety_signals: Adverse event signal detection
-        - gold.research_landscape: Publication analytics
+        - mol_gold.molecule_profiles: Comprehensive drug profiles
+        - mol_gold.trial_analytics: Clinical trial success rates
+        - mol_gold.safety_signals: Adverse event signal detection
+        - mol_gold.research_landscape: Publication analytics
 
         Args:
             environment: SQLMesh environment ('prod' or 'dev')
@@ -2498,10 +2498,10 @@ class InitialLoadOrchestrator:
             """)
             for row in bronze_tables:
                 try:
-                    await conn.execute(f"TRUNCATE bronze.{row['table_name']} RESTART IDENTITY CASCADE")
-                    logger.info(f"Truncated bronze.{row['table_name']}")
+                    await conn.execute(f"TRUNCATE mol_bronze.{row['table_name']} RESTART IDENTITY CASCADE")
+                    logger.info(f"Truncated mol_bronze.{row['table_name']}")
                 except Exception as e:
-                    logger.warning(f"Could not truncate bronze.{row['table_name']}: {e}")
+                    logger.warning(f"Could not truncate mol_bronze.{row['table_name']}: {e}")
 
             # Truncate silver tables
             silver_tables = await conn.fetch("""
@@ -2510,10 +2510,10 @@ class InitialLoadOrchestrator:
             """)
             for row in silver_tables:
                 try:
-                    await conn.execute(f"TRUNCATE silver.{row['table_name']} RESTART IDENTITY CASCADE")
-                    logger.info(f"Truncated silver.{row['table_name']}")
+                    await conn.execute(f"TRUNCATE mol_silver.{row['table_name']} RESTART IDENTITY CASCADE")
+                    logger.info(f"Truncated mol_silver.{row['table_name']}")
                 except Exception as e:
-                    logger.warning(f"Could not truncate silver.{row['table_name']}: {e}")
+                    logger.warning(f"Could not truncate mol_silver.{row['table_name']}: {e}")
 
         logger.info("Reset complete")
 

@@ -8,9 +8,9 @@ This script:
 3. Loads compounds and experimental data into the database
 
 Tables populated:
-- bronze.tdc_datasets: Dataset metadata
-- bronze.tdc_compounds: Compound data with labels
-- bronze.compounds: Shared compounds table with descriptors
+- mol_bronze.tdc_datasets: Dataset metadata
+- mol_bronze.tdc_compounds: Compound data with labels
+- mol_bronze.compounds: Shared compounds table with descriptors
 
 Usage:
     python -m dk_data.data.load_tdc_data
@@ -124,7 +124,7 @@ def ensure_tables(conn):
     cursor = conn.cursor()
 
     cursor.execute("""
-        CREATE TABLE IF NOT EXISTS bronze.compounds (
+        CREATE TABLE IF NOT EXISTS mol_bronze.compounds (
             id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
             smiles TEXT,
             smiles_canonical TEXT,
@@ -143,12 +143,12 @@ def ensure_tables(conn):
             created_at TIMESTAMPTZ DEFAULT NOW()
         );
 
-        CREATE INDEX IF NOT EXISTS idx_compounds_inchi ON bronze.compounds(inchi_key);
-        CREATE INDEX IF NOT EXISTS idx_compounds_smiles ON bronze.compounds(smiles_canonical);
+        CREATE INDEX IF NOT EXISTS idx_compounds_inchi ON mol_bronze.compounds(inchi_key);
+        CREATE INDEX IF NOT EXISTS idx_compounds_smiles ON mol_bronze.compounds(smiles_canonical);
     """)
 
     cursor.execute("""
-        CREATE TABLE IF NOT EXISTS bronze.tdc_datasets (
+        CREATE TABLE IF NOT EXISTS mol_bronze.tdc_datasets (
             id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
             dataset_name VARCHAR(100) UNIQUE NOT NULL,
             category VARCHAR(50),
@@ -164,10 +164,10 @@ def ensure_tables(conn):
     """)
 
     cursor.execute("""
-        CREATE TABLE IF NOT EXISTS bronze.tdc_compounds (
+        CREATE TABLE IF NOT EXISTS mol_bronze.tdc_compounds (
             id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-            dataset_id UUID REFERENCES bronze.tdc_datasets(id),
-            compound_id UUID REFERENCES bronze.compounds(id),
+            dataset_id UUID REFERENCES mol_bronze.tdc_datasets(id),
+            compound_id UUID REFERENCES mol_bronze.compounds(id),
             smiles TEXT,
             label DOUBLE PRECISION,
             split VARCHAR(10),
@@ -176,8 +176,8 @@ def ensure_tables(conn):
             processed_to_silver BOOLEAN DEFAULT FALSE
         );
 
-        CREATE INDEX IF NOT EXISTS idx_tdc_compounds_dataset ON bronze.tdc_compounds(dataset_id);
-        CREATE INDEX IF NOT EXISTS idx_tdc_compounds_compound ON bronze.tdc_compounds(compound_id);
+        CREATE INDEX IF NOT EXISTS idx_tdc_compounds_dataset ON mol_bronze.tdc_compounds(dataset_id);
+        CREATE INDEX IF NOT EXISTS idx_tdc_compounds_compound ON mol_bronze.tdc_compounds(compound_id);
     """)
 
     conn.commit()
@@ -191,13 +191,13 @@ def get_or_create_compound(cursor, smiles: str, descriptors: dict) -> str | None
 
     inchi_key = descriptors.get("inchi_key")
 
-    cursor.execute("SELECT id FROM bronze.compounds WHERE inchi_key = %s", (inchi_key,))
+    cursor.execute("SELECT id FROM mol_bronze.compounds WHERE inchi_key = %s", (inchi_key,))
     result = cursor.fetchone()
     if result:
         return str(result[0])
 
     cursor.execute("""
-        INSERT INTO bronze.compounds (
+        INSERT INTO mol_bronze.compounds (
             smiles, smiles_canonical, inchi_key,
             molecular_weight, logp, tpsa, hbd, hba,
             rotatable_bonds, num_rings, qed, morgan_fp, maccs_fp
@@ -219,7 +219,7 @@ def load_tdc_dataset(conn, category: str, dataset_name: str, task_type: str):
 
     cursor = conn.cursor()
 
-    cursor.execute("SELECT id FROM bronze.tdc_datasets WHERE dataset_name = %s", (dataset_name,))
+    cursor.execute("SELECT id FROM mol_bronze.tdc_datasets WHERE dataset_name = %s", (dataset_name,))
     existing = cursor.fetchone()
     if existing:
         logger.info(f"  Dataset {dataset_name} already loaded, skipping")
@@ -234,7 +234,7 @@ def load_tdc_dataset(conn, category: str, dataset_name: str, task_type: str):
         split = data.get_split(method="scaffold")
 
         cursor.execute("""
-            INSERT INTO bronze.tdc_datasets (
+            INSERT INTO mol_bronze.tdc_datasets (
                 dataset_name, category, task_type,
                 n_compounds, n_train, n_valid, n_test, split_method
             ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
@@ -265,7 +265,7 @@ def load_tdc_dataset(conn, category: str, dataset_name: str, task_type: str):
                     compound_id = get_or_create_compound(cursor, smiles, descriptors)
 
                     cursor.execute("""
-                        INSERT INTO bronze.tdc_compounds (
+                        INSERT INTO mol_bronze.tdc_compounds (
                             dataset_id, compound_id, smiles, label, split
                         ) VALUES (%s, %s, %s, %s, %s)
                     """, (dataset_id, compound_id, smiles, float(label), split_name))
@@ -316,9 +316,9 @@ def main():
             load_tdc_dataset(conn, category, dataset_name, task_type)
 
     cursor = conn.cursor()
-    cursor.execute("SELECT COUNT(*) FROM bronze.compounds")
+    cursor.execute("SELECT COUNT(*) FROM mol_bronze.compounds")
     n_compounds = cursor.fetchone()[0]
-    cursor.execute("SELECT COUNT(*) FROM bronze.tdc_datasets")
+    cursor.execute("SELECT COUNT(*) FROM mol_bronze.tdc_datasets")
     n_datasets = cursor.fetchone()[0]
 
     logger.info("\n=== SUMMARY ===")

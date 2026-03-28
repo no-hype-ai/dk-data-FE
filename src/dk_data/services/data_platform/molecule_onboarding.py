@@ -350,7 +350,7 @@ class MoleculeOnboardingService:
         molecule_id = uuid4()
         async with self.db_pool.acquire() as conn:
             await conn.execute("""
-                INSERT INTO silver.molecules (id, canonical_name, needs_review, source)
+                INSERT INTO mol_silver.molecules (id, canonical_name, needs_review, source)
                 VALUES ($1, $2, TRUE, 'manual')
             """, molecule_id, identifiers[0].identifier_value)
 
@@ -398,7 +398,7 @@ class MoleculeOnboardingService:
         """Get canonical name for molecule."""
         async with self.db_pool.acquire() as conn:
             row = await conn.fetchrow("""
-                SELECT canonical_name FROM silver.molecules
+                SELECT canonical_name FROM mol_silver.molecules
                 WHERE id = $1
             """, molecule_id)
             return row['canonical_name'] if row else None

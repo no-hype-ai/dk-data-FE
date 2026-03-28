@@ -1,5 +1,5 @@
 -- Migration 088: mol_silver.molecules v2 schema alignment
--- Aligns silver.molecules / mol_silver.molecules with 016-branch design:
+-- Aligns mol_silver.molecules / mol_silver.molecules with 016-branch design:
 --   • deterministic molecule_id (md5(chembl_id)::uuid replaces gen_random_uuid id)
 --   • Lipinski properties (alogp, hba, hbd, psa, num_ro5_violations, aromatic_rings, heavy_atoms)
 --   • multi-source enrichment columns (chembl_id, drugbank_id, pubchem_cid, unii, cas_number)
@@ -20,9 +20,9 @@ CREATE SCHEMA IF NOT EXISTS ind_gold;
 CREATE SCHEMA IF NOT EXISTS hcp_silver;
 CREATE SCHEMA IF NOT EXISTS hcp_gold;
 
--- ─── silver.molecules (bare schema — may still exist before SQLMesh redirect) ───
+-- ─── mol_silver.molecules (bare schema — may still exist before SQLMesh redirect) ───
 
-ALTER TABLE IF EXISTS silver.molecules
+ALTER TABLE IF EXISTS mol_silver.molecules
     ADD COLUMN IF NOT EXISTS molecule_id         UUID,
     ADD COLUMN IF NOT EXISTS chembl_id           TEXT,
     ADD COLUMN IF NOT EXISTS alogp               NUMERIC,
@@ -40,7 +40,7 @@ ALTER TABLE IF EXISTS silver.molecules
     ADD COLUMN IF NOT EXISTS source_count        INTEGER DEFAULT 1;
 
 -- Backfill molecule_id as md5(inchi_key) for existing rows (inchi_key-keyed records)
-UPDATE silver.molecules
+UPDATE mol_silver.molecules
 SET molecule_id = md5(inchi_key)::uuid
 WHERE molecule_id IS NULL
   AND inchi_key IS NOT NULL;
@@ -76,12 +76,12 @@ CREATE UNIQUE INDEX IF NOT EXISTS ux_mol_silver_molecules_molecule_id
     WHERE molecule_id IS NOT NULL;
 
 CREATE UNIQUE INDEX IF NOT EXISTS ux_silver_molecules_molecule_id
-    ON silver.molecules (molecule_id)
+    ON mol_silver.molecules (molecule_id)
     WHERE molecule_id IS NOT NULL;
 
--- ─── silver.clinical_trials — add missing columns (from 016 migration 114) ───
+-- ─── mol_silver.clinical_trials — add missing columns (from 016 migration 114) ───
 
-ALTER TABLE IF EXISTS silver.clinical_trials
+ALTER TABLE IF EXISTS mol_silver.clinical_trials
     ADD COLUMN IF NOT EXISTS molecule_id          UUID,
     ADD COLUMN IF NOT EXISTS queried_drug_name    TEXT,
     ADD COLUMN IF NOT EXISTS why_stopped          TEXT,

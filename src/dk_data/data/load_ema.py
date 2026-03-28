@@ -6,7 +6,7 @@ Loads EMA authorized medicines data into PostgreSQL.
 Uses downloadable EMA medicine data and local JSON cache.
 
 Tables populated:
-- bronze.ema: EMA authorized medicines with regulatory details
+- mol_bronze.ema: EMA authorized medicines with regulatory details
 
 Data source: https://www.ema.europa.eu/en/medicines/download-medicine-data
 
@@ -66,7 +66,7 @@ def ensure_tables(conn) -> None:
     """Create EMA tables if they don't exist."""
     with conn.cursor() as cur:
         cur.execute("""
-            CREATE TABLE IF NOT EXISTS bronze.ema (
+            CREATE TABLE IF NOT EXISTS mol_bronze.ema (
                 id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
                 product_name TEXT NOT NULL,
                 active_substance TEXT,
@@ -91,12 +91,12 @@ def ensure_tables(conn) -> None:
                 processed_to_silver BOOLEAN DEFAULT FALSE
             );
 
-            CREATE INDEX IF NOT EXISTS idx_ema_name ON bronze.ema(product_name);
-            CREATE INDEX IF NOT EXISTS idx_ema_substance ON bronze.ema(active_substance);
-            CREATE INDEX IF NOT EXISTS idx_ema_inn ON bronze.ema(inn);
-            CREATE INDEX IF NOT EXISTS idx_ema_atc ON bronze.ema(atc_code);
-            CREATE INDEX IF NOT EXISTS idx_ema_status ON bronze.ema(status);
-            CREATE INDEX IF NOT EXISTS idx_ema_processed ON bronze.ema(processed_to_silver);
+            CREATE INDEX IF NOT EXISTS idx_ema_name ON mol_bronze.ema(product_name);
+            CREATE INDEX IF NOT EXISTS idx_ema_substance ON mol_bronze.ema(active_substance);
+            CREATE INDEX IF NOT EXISTS idx_ema_inn ON mol_bronze.ema(inn);
+            CREATE INDEX IF NOT EXISTS idx_ema_atc ON mol_bronze.ema(atc_code);
+            CREATE INDEX IF NOT EXISTS idx_ema_status ON mol_bronze.ema(status);
+            CREATE INDEX IF NOT EXISTS idx_ema_processed ON mol_bronze.ema(processed_to_silver);
         """)
         conn.commit()
     logger.info("EMA tables ensured")
@@ -199,7 +199,7 @@ def insert_medicines(conn, medicines: List[Dict[str, Any]], limit: int = None) -
                         pass
 
                 cur.execute("""
-                    INSERT INTO bronze.ema (
+                    INSERT INTO mol_bronze.ema (
                         product_name, active_substance, inn, authorization_number,
                         authorization_date, status, therapeutic_area, atc_code,
                         marketing_auth_holder, orphan_medicine, biosimilar, generic,

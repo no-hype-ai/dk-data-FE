@@ -261,13 +261,13 @@ class USPTOTrademarksFetcher(BaseFetcher):
             with get_connection() as conn:
                 with conn.cursor() as cur:
                     cur.execute(
-                        "SELECT serial_number FROM raw.uspto_trademarks ORDER BY _loaded_at ASC"
+                        "SELECT serial_number FROM mol_raw.uspto_trademarks ORDER BY _loaded_at ASC"
                     )
                     for row in cur.fetchall():
                         serial_numbers.append(row[0])
 
             logger.info(
-                "Loaded %d serial numbers from raw.uspto_trademarks for refresh",
+                "Loaded %d serial numbers from mol_raw.uspto_trademarks for refresh",
                 len(serial_numbers),
             )
             return serial_numbers

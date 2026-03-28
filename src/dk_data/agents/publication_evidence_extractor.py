@@ -2,7 +2,7 @@
 
 Feature: 019-cms-puf-platform-reconciliation
 
-Reads abstracts from silver.publications that are not yet staged in
+Reads abstracts from mol_silver.publications that are not yet staged in
 mol_silver.publication_evidence_staging, extracts structured clinical endpoint
 data via LLM, and writes to staging. A SQLMesh model promotes staging -> live.
 
@@ -96,7 +96,7 @@ class PublicationEvidenceExtractorAgent(BaseAgent):
 
     async def fetch_records(self, scope: Any, limit: int) -> list[dict]:
         """
-        Fetch abstracts from silver.publications not yet in staging.
+        Fetch abstracts from mol_silver.publications not yet in staging.
 
         Uses a LEFT JOIN on (pmid + endpoint_name hash) to detect new abstracts.
         Since the hash is computed at write time, we approximate by checking
@@ -113,7 +113,7 @@ class PublicationEvidenceExtractorAgent(BaseAgent):
                 p.title,
                 p.abstract,
                 p.publication_date
-            FROM silver.publications p
+            FROM mol_silver.publications p
             WHERE p.abstract IS NOT NULL
               AND LENGTH(TRIM(p.abstract)) > 100
               AND p.pmid IS NOT NULL

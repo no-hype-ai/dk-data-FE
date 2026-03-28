@@ -3,10 +3,10 @@
 Extended PubChem data loader for bioassays, pharmacology, and safety data.
 
 Tables populated:
-- bronze.pubchem_bioassays: Bioassay results
-- bronze.pubchem_xrefs: Cross-references to other databases
-- bronze.pubchem_safety: GHS safety/hazard data
-- bronze.pubchem_pharmacology: Pharmacology data
+- mol_bronze.pubchem_bioassays: Bioassay results
+- mol_bronze.pubchem_xrefs: Cross-references to other databases
+- mol_bronze.pubchem_safety: GHS safety/hazard data
+- mol_bronze.pubchem_pharmacology: Pharmacology data
 
 Usage:
     python -m dk_data.data.load_pubchem_extended --all
@@ -45,7 +45,7 @@ def ensure_tables(conn):
     cursor = conn.cursor()
 
     cursor.execute("""
-        CREATE TABLE IF NOT EXISTS bronze.pubchem_bioassays (
+        CREATE TABLE IF NOT EXISTS mol_bronze.pubchem_bioassays (
             id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
             inchi_key VARCHAR(27),
             cid BIGINT,
@@ -63,12 +63,12 @@ def ensure_tables(conn):
             UNIQUE(cid, aid)
         );
 
-        CREATE INDEX IF NOT EXISTS idx_pubchem_bioassays_inchi ON bronze.pubchem_bioassays(inchi_key);
-        CREATE INDEX IF NOT EXISTS idx_pubchem_bioassays_cid ON bronze.pubchem_bioassays(cid);
+        CREATE INDEX IF NOT EXISTS idx_pubchem_bioassays_inchi ON mol_bronze.pubchem_bioassays(inchi_key);
+        CREATE INDEX IF NOT EXISTS idx_pubchem_bioassays_cid ON mol_bronze.pubchem_bioassays(cid);
     """)
 
     cursor.execute("""
-        CREATE TABLE IF NOT EXISTS bronze.pubchem_xrefs (
+        CREATE TABLE IF NOT EXISTS mol_bronze.pubchem_xrefs (
             id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
             inchi_key VARCHAR(27),
             cid BIGINT,
@@ -80,12 +80,12 @@ def ensure_tables(conn):
             UNIQUE(cid, xref_type, xref_id)
         );
 
-        CREATE INDEX IF NOT EXISTS idx_pubchem_xrefs_inchi ON bronze.pubchem_xrefs(inchi_key);
-        CREATE INDEX IF NOT EXISTS idx_pubchem_xrefs_cid ON bronze.pubchem_xrefs(cid);
+        CREATE INDEX IF NOT EXISTS idx_pubchem_xrefs_inchi ON mol_bronze.pubchem_xrefs(inchi_key);
+        CREATE INDEX IF NOT EXISTS idx_pubchem_xrefs_cid ON mol_bronze.pubchem_xrefs(cid);
     """)
 
     cursor.execute("""
-        CREATE TABLE IF NOT EXISTS bronze.pubchem_safety (
+        CREATE TABLE IF NOT EXISTS mol_bronze.pubchem_safety (
             id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
             inchi_key VARCHAR(27),
             cid BIGINT,
@@ -98,11 +98,11 @@ def ensure_tables(conn):
             UNIQUE(cid, ghs_code)
         );
 
-        CREATE INDEX IF NOT EXISTS idx_pubchem_safety_inchi ON bronze.pubchem_safety(inchi_key);
+        CREATE INDEX IF NOT EXISTS idx_pubchem_safety_inchi ON mol_bronze.pubchem_safety(inchi_key);
     """)
 
     cursor.execute("""
-        CREATE TABLE IF NOT EXISTS bronze.pubchem_pharmacology (
+        CREATE TABLE IF NOT EXISTS mol_bronze.pubchem_pharmacology (
             id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
             inchi_key VARCHAR(27),
             cid BIGINT,
@@ -113,7 +113,7 @@ def ensure_tables(conn):
             created_at TIMESTAMPTZ DEFAULT NOW()
         );
 
-        CREATE INDEX IF NOT EXISTS idx_pubchem_pharmacology_inchi ON bronze.pubchem_pharmacology(inchi_key);
+        CREATE INDEX IF NOT EXISTS idx_pubchem_pharmacology_inchi ON mol_bronze.pubchem_pharmacology(inchi_key);
     """)
 
     conn.commit()
@@ -135,7 +135,7 @@ class PubChemExtendedEnricher:
         cursor = self.conn.cursor()
         cursor.execute("""
             SELECT DISTINCT pc.inchi_key, pc.cid
-            FROM bronze.pubchem_compounds pc
+            FROM mol_bronze.pubchem_compounds pc
             WHERE pc.cid IS NOT NULL
             ORDER BY pc.inchi_key
             LIMIT %s
@@ -154,7 +154,7 @@ class PubChemExtendedEnricher:
 
         for inchi_key, cid in tqdm(compounds, desc="Loading bioassays"):
             try:
-                cursor.execute("SELECT COUNT(*) FROM bronze.pubchem_bioassays WHERE cid = %s", (cid,))
+                cursor.execute("SELECT COUNT(*) FROM mol_bronze.pubchem_bioassays WHERE cid = %s", (cid,))
                 if cursor.fetchone()[0] > 0:
                     continue
 
@@ -224,7 +224,7 @@ class PubChemExtendedEnricher:
         execute_values(
             cursor,
             """
-            INSERT INTO bronze.pubchem_bioassays (
+            INSERT INTO mol_bronze.pubchem_bioassays (
                 inchi_key, cid, aid, assay_name, assay_type, assay_source,
                 activity_outcome, activity_score, target_name, target_gi, gene_symbol
             ) VALUES %s
@@ -251,7 +251,7 @@ class PubChemExtendedEnricher:
 
         for inchi_key, cid in tqdm(compounds, desc="Loading xrefs"):
             try:
-                cursor.execute("SELECT COUNT(*) FROM bronze.pubchem_xrefs WHERE cid = %s", (cid,))
+                cursor.execute("SELECT COUNT(*) FROM mol_bronze.pubchem_xrefs WHERE cid = %s", (cid,))
                 if cursor.fetchone()[0] > 0:
                     continue
 
@@ -316,7 +316,7 @@ class PubChemExtendedEnricher:
         execute_values(
             cursor,
             """
-            INSERT INTO bronze.pubchem_xrefs (inchi_key, cid, xref_type, xref_id, xref_name)
+            INSERT INTO mol_bronze.pubchem_xrefs (inchi_key, cid, xref_type, xref_id, xref_name)
             VALUES %s
             ON CONFLICT (cid, xref_type, xref_id) DO NOTHING
             """,
@@ -336,7 +336,7 @@ class PubChemExtendedEnricher:
 
         for inchi_key, cid in tqdm(compounds, desc="Loading safety data"):
             try:
-                cursor.execute("SELECT COUNT(*) FROM bronze.pubchem_safety WHERE cid = %s", (cid,))
+                cursor.execute("SELECT COUNT(*) FROM mol_bronze.pubchem_safety WHERE cid = %s", (cid,))
                 if cursor.fetchone()[0] > 0:
                     continue
 
@@ -411,7 +411,7 @@ class PubChemExtendedEnricher:
         execute_values(
             cursor,
             """
-            INSERT INTO bronze.pubchem_safety (
+            INSERT INTO mol_bronze.pubchem_safety (
                 inchi_key, cid, ghs_code, ghs_statement, signal_word, hazard_class
             ) VALUES %s
             ON CONFLICT (cid, ghs_code) DO NOTHING
@@ -467,9 +467,9 @@ def main():
         cursor = conn.cursor()
         logger.info("\n=== SUMMARY ===")
         for table in ['pubchem_bioassays', 'pubchem_xrefs', 'pubchem_safety', 'pubchem_pharmacology']:
-            cursor.execute(f"SELECT COUNT(*) FROM bronze.{table}")
+            cursor.execute(f"SELECT COUNT(*) FROM mol_bronze.{table}")
             count = cursor.fetchone()[0]
-            logger.info(f"bronze.{table}: {count:,} records")
+            logger.info(f"mol_bronze.{table}: {count:,} records")
 
     finally:
         conn.close()

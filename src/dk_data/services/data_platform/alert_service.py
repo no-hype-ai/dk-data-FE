@@ -297,7 +297,7 @@ class AlertService:
             query = """
                 SELECT ah.*, sm.canonical_name as molecule_name
                 FROM alert_history ah
-                JOIN silver.molecules sm ON ah.molecule_id = sm.id
+                JOIN mol_silver.molecules sm ON ah.molecule_id = sm.id
                 WHERE ah.user_id = $1
             """
             params = [user_id]

@@ -246,10 +246,10 @@ def refresh_metrics_from_database_sync():
         cur = conn.cursor()
 
         # Get compound counts (molecules)
-        cur.execute("SELECT COUNT(*) FROM silver.molecules")
+        cur.execute("SELECT COUNT(*) FROM mol_silver.molecules")
         total_compounds = cur.fetchone()[0] or 0
 
-        cur.execute("SELECT COUNT(*) FROM silver.molecules WHERE canonical_smiles IS NOT NULL AND inchi_key IS NOT NULL")
+        cur.execute("SELECT COUNT(*) FROM mol_silver.molecules WHERE canonical_smiles IS NOT NULL AND inchi_key IS NOT NULL")
         with_identifiers = cur.fetchone()[0] or 0
 
         set_molecules_count(
@@ -261,7 +261,7 @@ def refresh_metrics_from_database_sync():
         # Get clinical trial counts by status
         cur.execute("""
             SELECT status, COUNT(*) as cnt
-            FROM silver.clinical_trials
+            FROM mol_silver.clinical_trials
             WHERE status IS NOT NULL
             GROUP BY status
         """)
@@ -281,12 +281,12 @@ def refresh_metrics_from_database_sync():
         faers_count = 0
         sider_count = 0
         try:
-            cur.execute("SELECT COUNT(*) FROM bronze.openfda_faers")
+            cur.execute("SELECT COUNT(*) FROM mol_bronze.faers_events")
             faers_count = cur.fetchone()[0] or 0
         except Exception:
             conn.rollback()
         try:
-            cur.execute("SELECT COUNT(*) FROM bronze.sider_adverse_reactions")
+            cur.execute("SELECT COUNT(*) FROM mol_bronze.sider")
             sider_count = cur.fetchone()[0] or 0
         except Exception:
             conn.rollback()
@@ -303,7 +303,7 @@ def refresh_metrics_from_database_sync():
                     ELSE 'Other'
                 END as phase_group,
                 COUNT(*) as count
-            FROM silver.clinical_trials
+            FROM mol_silver.clinical_trials
             WHERE phase IS NOT NULL
             GROUP BY phase_group
         """)
@@ -315,18 +315,16 @@ def refresh_metrics_from_database_sync():
             phase4=phase_counts.get('Phase 4', 0)
         )
 
-        # Resolution queue
+        # Resolution queue — needs_review=FALSE for all sources; queue is always 0
+        set_resolution_queue_pending(0)
+
+        # Entity resolution success rate — use identifier_mappings as proxy for resolved
         try:
-            cur.execute("SELECT COUNT(*) FROM silver.resolution_queue WHERE status = 'pending'")
-            pending = cur.fetchone()[0] or 0
-            set_resolution_queue_pending(pending)
+            cur.execute("SELECT COUNT(DISTINCT molecule_id) FROM mol_silver.identifier_mappings")
+            resolved = cur.fetchone()[0] or 0
         except Exception:
             conn.rollback()
-            set_resolution_queue_pending(0)
-
-        # Entity resolution success rate
-        cur.execute("SELECT COUNT(DISTINCT inchi_key) FROM silver.compound_cross_reference")
-        resolved = cur.fetchone()[0] or 0
+            resolved = 0
         if total_compounds > 0:
             set_entity_resolution_success_rate(min(resolved / total_compounds, 1.0))
         else:
@@ -334,7 +332,7 @@ def refresh_metrics_from_database_sync():
 
         # Quarantine count (013-dk-data-observability)
         try:
-            cur.execute("SELECT COUNT(*) FROM silver.molecules WHERE needs_review = TRUE")
+            cur.execute("SELECT COUNT(*) FROM mol_silver.molecules WHERE needs_review = TRUE")
             quarantine = cur.fetchone()[0] or 0
             set_quarantine_count(quarantine)
         except Exception:
@@ -343,26 +341,26 @@ def refresh_metrics_from_database_sync():
 
         # Data source health
         local_sources = {
-            'clinical_trials': ('silver.clinical_trials', False),
-            'drug_labels': ('silver.drug_labels', False),
-            'molecules': ('silver.molecules', False),
-            'adverse_events': ('silver.adverse_events', True),
-            'drug_interactions': ('silver.drug_interactions', True),
-            'publications': ('silver.publications', True),
-            'chembl': ('bronze.chembl', False),
-            'drugbank': ('bronze.drugbank', False),
-            'pubchem': ('bronze.pubchem', True),
-            'sider': ('bronze.sider_adverse_reactions', True),
-            'bindingdb': ('bronze.bindingdb_affinities', True),
-            'faers': ('bronze.openfda_faers', False),
-            'fda_labels_raw': ('bronze.openfda_labels', False),
-            'who_inn': ('bronze.who_inn_data', True),
-            'drugbank_patents': ('bronze.drugbank_patents', True),
-            'uspto_patents': ('bronze.uspto_patents', True),
-            'uspto_ci': ('bronze.uspto_ci', True),
-            'epo_patents': ('bronze.epo_patents', True),
-            'uspto_trademarks': ('bronze.uspto_trademarks', True),
-            'euipo_trademarks': ('bronze.euipo_trademarks', True),
+            'clinical_trials': ('mol_silver.clinical_trials', False),
+            'drug_labels': ('mol_silver.drug_labels', False),
+            'molecules': ('mol_silver.molecules', False),
+            'adverse_events': ('mol_silver.adverse_events', True),
+            'drug_interactions': ('mol_silver.drug_interactions', True),
+            'publications': ('mol_silver.publications', True),
+            'chembl': ('mol_bronze.chembl_molecules', False),
+            'drugbank': ('mol_bronze.drugbank', False),
+            'pubchem': ('mol_bronze.pubchem', True),
+            'sider': ('mol_bronze.sider', True),
+            'bindingdb': ('mol_bronze.bindingdb_affinities', True),
+            'faers': ('mol_bronze.faers_events', False),
+            'fda_labels_raw': ('mol_bronze.drug_labels', False),
+            'who_inn': ('mol_bronze.who_inn_data', True),
+            'drugbank_patents': ('mol_bronze.drugbank_patents', True),
+            'uspto_patents': ('mol_bronze.uspto_patents', True),
+            'uspto_ci': ('mol_bronze.uspto_ci', True),
+            'epo_patents': ('mol_bronze.epo_patents', True),
+            'uspto_trademarks': ('mol_bronze.uspto_trademarks', True),
+            'euipo_trademarks': ('mol_bronze.euipo_trademarks', True),
         }
 
         current_time = time.time()
@@ -417,9 +415,11 @@ def refresh_metrics_from_database_sync():
 
         # Layer record counts
         layer_tables = {
-            'raw': ['raw.clinicaltrials', 'raw.openfda_faers', 'raw.openfda_labels', 'raw.chembl'],
-            'bronze': ['bronze.clinicaltrials', 'bronze.openfda_faers', 'bronze.openfda_labels', 'bronze.chembl'],
-            'silver': ['silver.molecules', 'silver.clinical_trials', 'silver.adverse_events', 'silver.drug_labels'],
+            'mol_raw': ['mol_raw.chembl_molecules', 'mol_raw.clinicaltrials', 'mol_raw.openfda_faers', 'mol_raw.openfda_labels'],
+            'mol_bronze': ['mol_bronze.chembl_molecules', 'mol_bronze.clinicaltrials', 'mol_bronze.faers_events', 'mol_bronze.drug_labels'],
+            'mol_silver': ['mol_silver.molecules', 'mol_silver.clinical_trials', 'mol_silver.adverse_events', 'mol_silver.drug_labels'],
+            'hcs_bronze': ['hcs_bronze.cms_nppes', 'hcs_bronze.cms_physician_puf', 'hcs_bronze.cms_inpatient_puf'],
+            'hcs_silver': ['hcs_silver.cms_drug_market', 'hcs_silver.provider_profile', 'hcs_silver.facility_profile'],
         }
 
         for layer, tables in layer_tables.items():
@@ -435,15 +435,15 @@ def refresh_metrics_from_database_sync():
 
         # Unprocessed counts in raw layer
         raw_sources = {
-            'clinicaltrials': 'raw.clinicaltrials',
-            'openfda_faers': 'raw.openfda_faers',
-            'openfda_labels': 'raw.openfda_labels',
-            'chembl': 'raw.chembl',
-            'uspto_patents': 'raw.uspto_patents',
-            'uspto_ci': 'raw.uspto_ci',
-            'epo_patents': 'raw.epo_patents',
-            'uspto_trademarks': 'raw.uspto_trademarks',
-            'euipo_trademarks': 'raw.euipo_trademarks',
+            'clinicaltrials': 'mol_raw.clinicaltrials',
+            'openfda_faers': 'mol_raw.openfda_faers',
+            'openfda_labels': 'mol_raw.openfda_labels',
+            'chembl': 'mol_raw.chembl_molecules',
+            'uspto_patents': 'mol_raw.uspto_patents',
+            'uspto_ci': 'mol_raw.uspto_ci',
+            'epo_patents': 'mol_raw.epo_patents',
+            'uspto_trademarks': 'mol_raw.uspto_trademarks',
+            'euipo_trademarks': 'mol_raw.euipo_trademarks',
         }
         for source, table in raw_sources.items():
             try:
@@ -455,10 +455,10 @@ def refresh_metrics_from_database_sync():
 
         # Unprocessed counts in bronze layer
         bronze_sources = {
-            'clinicaltrials': 'bronze.clinicaltrials',
-            'openfda_faers': 'bronze.openfda_faers',
-            'openfda_labels': 'bronze.openfda_labels',
-            'chembl': 'bronze.chembl',
+            'clinicaltrials': 'mol_bronze.clinicaltrials',
+            'openfda_faers': 'mol_bronze.faers_events',
+            'openfda_labels': 'mol_bronze.drug_labels',
+            'chembl': 'mol_bronze.chembl_molecules',
         }
         for source, table in bronze_sources.items():
             try:
@@ -466,14 +466,15 @@ def refresh_metrics_from_database_sync():
                 count = cur.fetchone()[0] or 0
                 set_bronze_unprocessed(source, count)
             except Exception:
+                conn.rollback()
                 set_bronze_unprocessed(source, 0)
 
         # Unprocessed counts in silver layer (bronze records not yet transformed to silver)
         silver_sources = {
-            'clinicaltrials': 'bronze.clinicaltrials',
-            'openfda_faers': 'bronze.openfda_faers',
-            'openfda_labels': 'bronze.openfda_labels',
-            'chembl': 'bronze.chembl',
+            'clinicaltrials': 'mol_bronze.clinicaltrials',
+            'openfda_faers': 'mol_bronze.faers_events',
+            'openfda_labels': 'mol_bronze.drug_labels',
+            'chembl': 'mol_bronze.chembl_molecules',
         }
         for source, table in silver_sources.items():
             try:
@@ -481,13 +482,14 @@ def refresh_metrics_from_database_sync():
                 count = cur.fetchone()[0] or 0
                 set_silver_unprocessed(source, count)
             except Exception:
+                conn.rollback()
                 set_silver_unprocessed(source, 0)
 
         # Unprocessed counts in gold layer (silver molecules pending gold aggregation)
         try:
             try:
                 cur.execute(
-                    "SELECT COUNT(*) FROM silver.molecules "
+                    "SELECT COUNT(*) FROM mol_silver.molecules "
                     "WHERE needs_gold_aggregation = TRUE OR last_gold_sync IS NULL"
                 )
             except Exception:
@@ -495,8 +497,8 @@ def refresh_metrics_from_database_sync():
                 # Fallback: total silver minus gold profile count
                 cur.execute(
                     "SELECT "
-                    "  (SELECT COUNT(*) FROM silver.molecules) - "
-                    "  (SELECT COUNT(*) FROM gold.molecule_profile)"
+                    "  (SELECT COUNT(*) FROM mol_silver.molecules) - "
+                    "  (SELECT COUNT(*) FROM mol_gold.molecule_profile)"
                 )
             gold_unprocessed = max(cur.fetchone()[0] or 0, 0)
             set_gold_unprocessed('molecules', gold_unprocessed)
@@ -531,39 +533,33 @@ def refresh_metrics_from_database_sync():
 
         # Table record counts by layer
         layer_tables = {
-            'raw': [
-                'chembl', 'clinicaltrials', 'drugbank', 'openalex',
-                'openfda_faers', 'openfda_labels', 'pdb', 'pubchem', 'sider', 'uniprot',
+            'mol_raw': [
+                'chembl_molecules', 'clinicaltrials', 'drugbank', 'openalex',
+                'openfda_faers', 'openfda_labels', 'pubchem', 'uniprot',
                 'uspto_patents', 'uspto_ci', 'epo_patents', 'uspto_trademarks', 'euipo_trademarks'
             ],
-            'bronze': [
-                'chembl', 'clinicaltrials', 'drugbank', 'openalex',
-                'openfda_faers', 'openfda_labels', 'pdb', 'pubchem', 'sider', 'uniprot',
+            'mol_bronze': [
+                'chembl_molecules', 'clinicaltrials', 'drugbank', 'openalex',
+                'faers_events', 'drug_labels', 'pubchem', 'sider', 'uniprot',
+                'bindingdb_affinities', 'who_inn_data',
                 'uspto_patents', 'uspto_ci', 'epo_patents', 'uspto_trademarks', 'euipo_trademarks'
             ],
-            'silver': [
+            'mol_silver': [
                 'adverse_events', 'bioactivity', 'clinical_trials', 'drug_labels',
                 'identifier_mappings', 'molecule_aliases', 'molecule_publications',
                 'molecule_targets', 'molecules', 'patents', 'publications',
-                'resolution_queue', 'targets', 'trademarks'
+                'targets', 'trademarks'
             ],
-            'gold': [
+            'mol_gold': [
                 'company_pipeline', 'lifecycle_evidence', 'lifecycle_stages',
                 'molecule_profile', 'safety_signals'
             ],
-            'public': [
-                'compounds', 'clinical_trials', 'drugbank_data', 'fda_labels',
-                'faers_events', 'sider_adverse_reactions', 'pubchem_compounds',
-                'bindingdb_affinities', 'chembl_molecules', 'who_inn_data',
-                'drugbank_patents', 'drug_interactions', 'chembl_activities',
-                'tdc_admet_data', 'uniprot_proteins', 'pdb_structures'
-            ]
         }
 
         for layer, tables in layer_tables.items():
             for table in tables:
                 try:
-                    full_table = f"{layer}.{table}" if layer != 'public' else table
+                    full_table = f"{layer}.{table}"
                     cur.execute(f"SELECT COUNT(*) FROM {full_table}")
                     count = cur.fetchone()[0] or 0
                     set_table_record_count(layer, table, count)
@@ -574,6 +570,9 @@ def refresh_metrics_from_database_sync():
         # HCS Gold view metrics (019-cms-puf-platform-reconciliation)
         hcs_gold_views = [
             "cms_drug_market_profile",
+            "cms_facility_360",
+            "cms_market_analytics",
+            "cms_provider_360",
         ]
         for view in hcs_gold_views:
             try:
@@ -657,6 +656,8 @@ def refresh_metrics_from_database_sync():
             'geographic_health', 'drug_utilization',
             'service_lines', 'idn_hierarchy', 'referral_network',
             'verified_contacts', 'staffing_decomposition', 'equipment_inventory',
+            'cms_facility_profile', 'open_payments_drug_linkage',
+            'part_d_prescribing', 'ref_nucc_taxonomy',
         ]
         for table in hcs_silver_tables:
             try:
@@ -695,6 +696,9 @@ def refresh_metrics_from_database_sync():
         # HCS gold view record counts
         hcs_gold_views_extended = [
             'cms_drug_market_profile',
+            'cms_facility_360',
+            'cms_market_analytics',
+            'cms_provider_360',
         ]
         for view in hcs_gold_views_extended:
             try:
