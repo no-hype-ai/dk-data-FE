@@ -14,7 +14,7 @@ Caching:
 
 Freshness check: uses DataFreshnessMonitor.is_fresh() which reads meta.data_sources.
 Only sources tracked in meta.data_sources are available via this endpoint.
-Legacy MCP-managed sources (tracked in raw.ingestion_jobs) return 404.
+Legacy MCP-managed sources (tracked in meta.ingestion_jobs) return 404.
 """
 
 import json

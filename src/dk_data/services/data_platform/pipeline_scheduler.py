@@ -110,7 +110,7 @@ class PipelineScheduler:
             # Load last_run from sync_schedules for each tier
             rows = await conn.fetch("""
                 SELECT tier, MAX(last_run) as last_run
-                FROM raw.sync_schedules
+                FROM meta.sync_schedules
                 WHERE last_run IS NOT NULL
                 GROUP BY tier
             """)
@@ -124,7 +124,7 @@ class PipelineScheduler:
                 try:
                     last_run = await conn.fetchval("""
                         SELECT MAX(completed_at)
-                        FROM raw.pipeline_jobs
+                        FROM meta.pipeline_jobs
                         WHERE job_type = $1 AND status = 'completed'
                     """, linking_type)
                     if last_run:
@@ -146,7 +146,7 @@ class PipelineScheduler:
         async with pool.acquire() as conn:
             for source in sources:
                 await conn.execute("""
-                    UPDATE raw.sync_schedules
+                    UPDATE meta.sync_schedules
                     SET last_run = $1, next_run = $2, updated_at = NOW()
                     WHERE source = $3
                 """, now, next_run, source)
@@ -207,7 +207,7 @@ class PipelineScheduler:
                 for source in schedule['sources']:
                     # Update next_run only if it's NULL
                     await conn.execute("""
-                        UPDATE raw.sync_schedules
+                        UPDATE meta.sync_schedules
                         SET next_run = $1, updated_at = NOW()
                         WHERE source = $2 AND next_run IS NULL
                     """, next_run, source)
@@ -353,7 +353,7 @@ class PipelineScheduler:
             pool = await self.get_pool()
             async with pool.acquire() as conn:
                 await conn.execute("""
-                    INSERT INTO raw.pipeline_jobs (
+                    INSERT INTO meta.pipeline_jobs (
                         job_type, status, duration_seconds, completed_at,
                         molecules_processed, identifiers_linked, errors
                     ) VALUES ($1, $2, $3, NOW(), $4, $5, $6)

@@ -50,7 +50,7 @@ class DynamicSourceTransformer:
         async with self.db_pool.acquire() as conn:
             row = await conn.fetchrow("""
                 SELECT source, tier, options
-                FROM raw.sync_schedules
+                FROM meta.sync_schedules
                 WHERE source = $1
             """, source)
 
@@ -1923,7 +1923,7 @@ async def get_dynamic_sources(pool) -> List[str]:
 
     async with pool.acquire() as conn:
         rows = await conn.fetch("""
-            SELECT source FROM raw.sync_schedules
+            SELECT source FROM meta.sync_schedules
             WHERE options->>'target_table' IS NOT NULL
         """)
 

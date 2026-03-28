@@ -49,7 +49,7 @@ class DynamicSilverTransformation:
     Service for dynamically transforming Bronze data to Silver layer.
 
     This service:
-    1. Reads transformation rules from raw.silver_transformation_rules
+    1. Reads transformation rules from meta.silver_transformation_rules
     2. Executes transformations using SQL (no hardcoded Python logic)
     3. Links new entities to existing mol_silver.molecules
     4. Extracts identifiers to mol_silver.identifier_mappings
@@ -132,7 +132,7 @@ class DynamicSilverTransformation:
 
                 # Update last run stats
                 await conn.execute("""
-                    UPDATE raw.silver_transformation_rules
+                    UPDATE meta.silver_transformation_rules
                     SET last_run_at = NOW(),
                         last_run_records = $1
                     WHERE source_name = $2
@@ -487,7 +487,7 @@ class DynamicSilverTransformation:
             async with self.db_pool.acquire() as conn:
                 # Insert transformation rule
                 await conn.execute("""
-                    INSERT INTO raw.silver_transformation_rules (
+                    INSERT INTO meta.silver_transformation_rules (
                         source_name, source_table, target_table, target_type,
                         column_mappings, identifier_mappings, name_mappings,
                         dedup_strategy, source_precedence, enabled

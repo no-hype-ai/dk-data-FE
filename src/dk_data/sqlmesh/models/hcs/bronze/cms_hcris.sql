@@ -24,6 +24,7 @@ SELECT
     response_body                       AS raw_json,
     id                                  AS raw_source_id,
     'cms_hcris'                         AS source,
+    FALSE AS processed_to_silver,
     ingested_at
 FROM hcs_raw.cms_hcris
 WHERE response_status = 200

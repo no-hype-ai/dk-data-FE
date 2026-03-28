@@ -58,7 +58,7 @@ class SQLMeshModelGenerator:
     Service for generating SQLMesh models from transformation rules.
 
     Features:
-    - Reads rules from raw.silver_transformation_rules
+    - Reads rules from meta.silver_transformation_rules
     - Generates SQLMesh-compatible SQL models
     - Handles molecule, identifier, and name lookup transformations
     - Supports incremental processing
@@ -114,7 +114,7 @@ class SQLMeshModelGenerator:
                        column_mappings, computed_columns, identifier_mappings, name_mappings,
                        dedup_strategy, dedup_columns, dedup_confidence_threshold,
                        source_precedence, incremental_column, batch_size, where_clause, enabled
-                FROM raw.silver_transformation_rules
+                FROM meta.silver_transformation_rules
                 WHERE enabled = true
             """
             params = []
@@ -562,7 +562,7 @@ SELECT * FROM deduplicated;
         async with self.db_pool.acquire() as conn:
             for model in models:
                 await conn.execute("""
-                    INSERT INTO raw.generated_sqlmesh_models
+                    INSERT INTO meta.generated_sqlmesh_models
                     (model_name, source_rule_id, model_sql, model_hash, file_path,
                      generation_status, last_generated_at)
                     VALUES ($1, $2, $3, $4, $5, 'generated', NOW())
@@ -588,8 +588,8 @@ SELECT * FROM deduplicated;
             # Find rules updated after their models were generated
             rows = await conn.fetch("""
                 SELECT DISTINCT r.source_name
-                FROM raw.silver_transformation_rules r
-                LEFT JOIN raw.generated_sqlmesh_models m
+                FROM meta.silver_transformation_rules r
+                LEFT JOIN meta.generated_sqlmesh_models m
                     ON m.source_rule_id = r.id
                 WHERE r.enabled = true
                   AND (m.id IS NULL

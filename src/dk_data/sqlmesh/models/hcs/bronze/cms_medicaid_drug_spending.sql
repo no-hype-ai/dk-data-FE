@@ -35,5 +35,6 @@ SELECT
     _source_hash,
     _source_file,
     _loaded_at,
+    FALSE AS processed_to_silver,
     NOW() AS _bronze_loaded_at
 FROM hcs_raw.cms_medicaid_drug_spending;

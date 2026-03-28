@@ -35,5 +35,6 @@ SELECT
     _source_hash::TEXT,
     _source_file::TEXT,
     _loaded_at,
+    FALSE AS processed_to_silver,
     NOW() AS _bronze_loaded_at
 FROM hcs_raw.cms_referring_providers;

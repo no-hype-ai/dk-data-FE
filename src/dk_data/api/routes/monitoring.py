@@ -273,7 +273,7 @@ async def pipeline_health():
         # Get Bronze source health from sync_schedules
         cur.execute("""
             SELECT source, tier, enabled, last_run, next_run
-            FROM raw.sync_schedules
+            FROM meta.sync_schedules
             WHERE enabled = TRUE
             ORDER BY last_run DESC NULLS LAST
             LIMIT 10
@@ -282,7 +282,7 @@ async def pipeline_health():
             source_name, tier, enabled, last_run, next_run = row
             # Check for recent errors
             cur.execute("""
-                SELECT COUNT(*) FROM raw.ingestion_jobs
+                SELECT COUNT(*) FROM meta.ingestion_jobs
                 WHERE source = %s AND status = 'failed'
                   AND started_at >= NOW() - INTERVAL '24 hours'
             """, (source_name,))
@@ -409,7 +409,7 @@ async def list_recent_runs(
                 records_processed,
                 error_message,
                 error_details
-            FROM raw.ingestion_jobs
+            FROM meta.ingestion_jobs
             WHERE 1=1
         """
         params = []
@@ -443,7 +443,7 @@ async def list_recent_runs(
             })
 
         # Get total count
-        cur.execute("SELECT COUNT(*) FROM raw.ingestion_jobs")
+        cur.execute("SELECT COUNT(*) FROM meta.ingestion_jobs")
         total = cur.fetchone()[0] or 0
 
         cur.close()
@@ -814,7 +814,7 @@ async def get_sync_job_status(job_id: str):
         cur.execute("""
             SELECT id, source, job_type, status, started_at, completed_at,
                    records_processed, records_failed, error_message, options
-            FROM raw.ingestion_jobs
+            FROM meta.ingestion_jobs
             WHERE id::text = %s
         """, (job_id,))
         row = cur.fetchone()

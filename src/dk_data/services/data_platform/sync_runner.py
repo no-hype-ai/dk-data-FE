@@ -104,7 +104,7 @@ async def run_dynamic_source_ingestion(
             # Get source configuration
             row = await conn.fetchrow("""
                 SELECT source, tier, options
-                FROM raw.sync_schedules
+                FROM meta.sync_schedules
                 WHERE source = $1
             """, source)
 
@@ -424,7 +424,7 @@ async def run_dynamic_source_ingestion(
             options['sync_state'] = new_sync_state
 
             await conn.execute("""
-                UPDATE raw.sync_schedules
+                UPDATE meta.sync_schedules
                 SET options = $2, last_run = NOW(), updated_at = NOW()
                 WHERE source = $1
             """, source, json.dumps(options))
@@ -936,7 +936,7 @@ async def record_job_execution(
         async with pool.acquire() as conn:
             # Check if job exists
             existing = await conn.fetchval(
-                "SELECT job_id FROM raw.ingestion_jobs WHERE job_id = $1",
+                "SELECT job_id FROM meta.ingestion_jobs WHERE job_id = $1",
                 job_id
             )
 
@@ -949,7 +949,7 @@ async def record_job_execution(
 
                 if should_complete:
                     await conn.execute("""
-                        UPDATE raw.ingestion_jobs SET
+                        UPDATE meta.ingestion_jobs SET
                             status = $2,
                             completed_at = NOW(),
                             records_processed = $3,
@@ -965,7 +965,7 @@ async def record_job_execution(
                     )
                 else:
                     await conn.execute("""
-                        UPDATE raw.ingestion_jobs SET
+                        UPDATE meta.ingestion_jobs SET
                             status = $2,
                             records_processed = $3,
                             error_message = $4,
@@ -982,7 +982,7 @@ async def record_job_execution(
                 # Insert new job (use first source as the source field)
                 source_name = sources[0] if sources else tier
                 await conn.execute("""
-                    INSERT INTO raw.ingestion_jobs (
+                    INSERT INTO meta.ingestion_jobs (
                         job_id, source, status, priority,
                         started_at, records_processed,
                         error_message, error_details

@@ -25,6 +25,7 @@ SELECT
     response_body                                               AS raw_json,
     id                                                          AS raw_source_id,
     'cms_hospital_affiliation'                                  AS source,
+    FALSE AS processed_to_silver,
     ingested_at
 FROM hcs_raw.cms_hospital_affiliation
 WHERE response_status = 200

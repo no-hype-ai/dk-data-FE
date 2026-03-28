@@ -29,6 +29,7 @@ SELECT
     response_body                           AS raw_json,
     id                                      AS raw_source_id,
     'cms_care_compare'                      AS source,
+    FALSE AS processed_to_silver,
     ingested_at
 FROM hcs_raw.cms_care_compare
 WHERE response_status = 200

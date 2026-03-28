@@ -304,7 +304,7 @@ async def register_data_source(request: DataSourceRegistration):
         async with pool.acquire() as conn:
             # Check if source already exists
             exists = await conn.fetchval(
-                "SELECT 1 FROM raw.sync_schedules WHERE source = $1",
+                "SELECT 1 FROM meta.sync_schedules WHERE source = $1",
                 source_id
             )
 
@@ -382,7 +382,7 @@ async def register_data_source(request: DataSourceRegistration):
 
             # Create sync schedule entry
             await conn.execute("""
-                INSERT INTO raw.sync_schedules
+                INSERT INTO meta.sync_schedules
                 (source, tier, cron_expression, priority, enabled, options, created_at, updated_at)
                 VALUES ($1, $2, $3, 'normal', true, $4, NOW(), NOW())
             """,
@@ -605,7 +605,7 @@ async def list_data_sources(
             # Fetch all sources from sync_schedules
             rows = await conn.fetch("""
                 SELECT source, tier, enabled, options, created_at, updated_at
-                FROM raw.sync_schedules
+                FROM meta.sync_schedules
                 ORDER BY source
             """)
 
@@ -683,7 +683,7 @@ async def get_data_source(source_name: str):
                     options,
                     created_at,
                     updated_at
-                FROM raw.sync_schedules
+                FROM meta.sync_schedules
                 WHERE source = $1
             """, source_name)
 
@@ -729,7 +729,7 @@ async def update_data_source(source_name: str, request: DataSourceRegistration):
         async with pool.acquire() as conn:
             # Check if source exists
             exists = await conn.fetchval(
-                "SELECT 1 FROM raw.sync_schedules WHERE source = $1",
+                "SELECT 1 FROM meta.sync_schedules WHERE source = $1",
                 source_name
             )
             if not exists:
@@ -746,7 +746,7 @@ async def update_data_source(source_name: str, request: DataSourceRegistration):
 
             # Update the record
             row = await conn.fetchrow("""
-                UPDATE raw.sync_schedules
+                UPDATE meta.sync_schedules
                 SET tier = $2,
                     options = COALESCE(options, '{}'::jsonb) || $3::jsonb,
                     updated_at = NOW()
@@ -789,7 +789,7 @@ async def delete_data_source(source_name: str, delete_data: bool = Query(False))
         async with pool.acquire() as conn:
             # Check if source exists
             row = await conn.fetchrow(
-                "SELECT source, options FROM raw.sync_schedules WHERE source = $1",
+                "SELECT source, options FROM meta.sync_schedules WHERE source = $1",
                 source_name
             )
             if not row:
@@ -813,7 +813,7 @@ async def delete_data_source(source_name: str, delete_data: bool = Query(False))
 
             # Delete the sync schedule
             await conn.execute(
-                "DELETE FROM raw.sync_schedules WHERE source = $1",
+                "DELETE FROM meta.sync_schedules WHERE source = $1",
                 source_name
             )
 
@@ -843,7 +843,7 @@ async def activate_data_source(source_name: str):
 
         async with pool.acquire() as conn:
             result = await conn.execute("""
-                UPDATE raw.sync_schedules
+                UPDATE meta.sync_schedules
                 SET enabled = TRUE, updated_at = NOW()
                 WHERE source = $1
             """, source_name)
@@ -874,7 +874,7 @@ async def deactivate_data_source(source_name: str):
 
         async with pool.acquire() as conn:
             result = await conn.execute("""
-                UPDATE raw.sync_schedules
+                UPDATE meta.sync_schedules
                 SET enabled = FALSE, updated_at = NOW()
                 WHERE source = $1
             """, source_name)
@@ -915,7 +915,7 @@ async def store_credential(source_name: str, request: CredentialRequest):
         async with pool.acquire() as conn:
             # Verify source exists
             exists = await conn.fetchval(
-                "SELECT 1 FROM raw.sync_schedules WHERE source = $1",
+                "SELECT 1 FROM meta.sync_schedules WHERE source = $1",
                 source_name
             )
 
@@ -927,7 +927,7 @@ async def store_credential(source_name: str, request: CredentialRequest):
 
             # Update options with credential reference
             await conn.execute("""
-                UPDATE raw.sync_schedules
+                UPDATE meta.sync_schedules
                 SET options = COALESCE(options, '{}'::jsonb) || $2::jsonb,
                     updated_at = NOW()
                 WHERE source = $1
@@ -972,7 +972,7 @@ async def list_credentials(source_name: str):
 
         async with pool.acquire() as conn:
             row = await conn.fetchrow("""
-                SELECT options FROM raw.sync_schedules WHERE source = $1
+                SELECT options FROM meta.sync_schedules WHERE source = $1
             """, source_name)
 
             if not row:
@@ -1015,7 +1015,7 @@ async def delete_credential(source_name: str, key_name: str):
         async with pool.acquire() as conn:
             # Remove credential info from options
             result = await conn.execute("""
-                UPDATE raw.sync_schedules
+                UPDATE meta.sync_schedules
                 SET options = options - 'credentials',
                     updated_at = NOW()
                 WHERE source = $1
@@ -1055,7 +1055,7 @@ async def rotate_credential(source_name: str, key_name: str, new_value: str = Bo
         async with pool.acquire() as conn:
             # Update credential with rotation timestamp
             result = await conn.execute("""
-                UPDATE raw.sync_schedules
+                UPDATE meta.sync_schedules
                 SET options = COALESCE(options, '{}'::jsonb) || $2::jsonb,
                     updated_at = NOW()
                 WHERE source = $1
@@ -1230,7 +1230,7 @@ CREATE INDEX IF NOT EXISTS idx_{source_name}_payload_hash ON {table_name} ((_raw
         async with pool.acquire() as conn:
             # Verify source exists
             exists = await conn.fetchval(
-                "SELECT 1 FROM raw.sync_schedules WHERE source = $1",
+                "SELECT 1 FROM meta.sync_schedules WHERE source = $1",
                 source_name
             )
 
@@ -1269,7 +1269,7 @@ CREATE INDEX IF NOT EXISTS idx_{source_name}_payload_hash ON {table_name} ((_raw
 
             # Update sync schedule with table info
             await conn.execute("""
-                UPDATE raw.sync_schedules
+                UPDATE meta.sync_schedules
                 SET options = COALESCE(options, '{}'::jsonb) || $2::jsonb,
                     updated_at = NOW()
                 WHERE source = $1
@@ -1376,7 +1376,7 @@ async def trigger_sync(
         # Verify source exists
         async with pool.acquire() as conn:
             exists = await conn.fetchval(
-                "SELECT 1 FROM raw.sync_schedules WHERE source = $1",
+                "SELECT 1 FROM meta.sync_schedules WHERE source = $1",
                 source_name
             )
             if not exists:
@@ -1439,7 +1439,7 @@ async def get_sync_status(source_name: str):
             # Get schedule info
             schedule = await conn.fetchrow("""
                 SELECT source, tier, enabled, last_run, next_run, options
-                FROM raw.sync_schedules
+                FROM meta.sync_schedules
                 WHERE source = $1
             """, source_name)
 
@@ -1449,7 +1449,7 @@ async def get_sync_status(source_name: str):
             # Get latest job status
             latest_job = await conn.fetchrow("""
                 SELECT job_id, status, started_at, completed_at, records_processed, error_message
-                FROM raw.ingestion_jobs
+                FROM meta.ingestion_jobs
                 WHERE source = $1
                 ORDER BY started_at DESC NULLS LAST
                 LIMIT 1
@@ -1500,7 +1500,7 @@ async def get_sync_history(
         async with pool.acquire() as conn:
             # Verify source exists
             exists = await conn.fetchval(
-                "SELECT 1 FROM raw.sync_schedules WHERE source = $1",
+                "SELECT 1 FROM meta.sync_schedules WHERE source = $1",
                 source_name
             )
             if not exists:
@@ -1518,7 +1518,7 @@ async def get_sync_history(
                     records_processed,
                     error_message,
                     created_at
-                FROM raw.ingestion_jobs
+                FROM meta.ingestion_jobs
                 WHERE source = $1
                 ORDER BY started_at DESC NULLS LAST
                 LIMIT $2
@@ -1574,7 +1574,7 @@ async def get_source_health(source_name: str):
             # Get source configuration
             row = await conn.fetchrow("""
                 SELECT source, enabled, last_run, options
-                FROM raw.sync_schedules
+                FROM meta.sync_schedules
                 WHERE source = $1
             """, source_name)
 
@@ -1592,7 +1592,7 @@ async def get_source_health(source_name: str):
                     COUNT(*) FILTER (WHERE status = 'failed') as failed_jobs,
                     AVG(EXTRACT(EPOCH FROM (completed_at - started_at)) * 1000)
                         FILTER (WHERE status = 'completed') as avg_duration_ms
-                FROM raw.ingestion_jobs
+                FROM meta.ingestion_jobs
                 WHERE source = $1
                   AND started_at >= NOW() - INTERVAL '24 hours'
             """, source_name)
@@ -1655,7 +1655,7 @@ async def get_source_metrics(source_name: str):
         async with pool.acquire() as conn:
             # Get source configuration to find target table
             row = await conn.fetchrow("""
-                SELECT source, options FROM raw.sync_schedules WHERE source = $1
+                SELECT source, options FROM meta.sync_schedules WHERE source = $1
             """, source_name)
 
             if not row:
@@ -1695,7 +1695,7 @@ async def get_source_metrics(source_name: str):
                     AVG(EXTRACT(EPOCH FROM (completed_at - started_at)))
                         FILTER (WHERE status = 'completed') as avg_duration,
                     SUM(records_processed) FILTER (WHERE status = 'completed') as total_processed
-                FROM raw.ingestion_jobs
+                FROM meta.ingestion_jobs
                 WHERE source = $1
             """, source_name)
 
@@ -1864,7 +1864,7 @@ async def clear_raw_data(source_name: str):
             # Get the target table
             row = await conn.fetchrow("""
                 SELECT options->>'target_table' as target_table
-                FROM raw.sync_schedules
+                FROM meta.sync_schedules
                 WHERE source = $1
             """, source_name)
 
@@ -1879,7 +1879,7 @@ async def clear_raw_data(source_name: str):
 
             # Reset sync state
             await conn.execute("""
-                UPDATE raw.sync_schedules
+                UPDATE meta.sync_schedules
                 SET options = options - 'sync_state'
                 WHERE source = $1
             """, source_name)
@@ -1920,7 +1920,7 @@ async def trigger_full_refresh(
         async with pool.acquire() as conn:
             # Check if source exists
             exists = await conn.fetchval("""
-                SELECT 1 FROM raw.sync_schedules WHERE source = $1
+                SELECT 1 FROM meta.sync_schedules WHERE source = $1
             """, source_name)
 
             if not exists:
@@ -1930,7 +1930,7 @@ async def trigger_full_refresh(
             cleared = 0
             if clear_existing:
                 target_table = await conn.fetchval("""
-                    SELECT options->>'target_table' FROM raw.sync_schedules WHERE source = $1
+                    SELECT options->>'target_table' FROM meta.sync_schedules WHERE source = $1
                 """, source_name)
                 if target_table:
                     result = await conn.execute(f"DELETE FROM {target_table}")
@@ -1938,7 +1938,7 @@ async def trigger_full_refresh(
 
             # Reset sync state to force full refresh
             await conn.execute("""
-                UPDATE raw.sync_schedules
+                UPDATE meta.sync_schedules
                 SET options = options - 'sync_state'
                 WHERE source = $1
             """, source_name)
