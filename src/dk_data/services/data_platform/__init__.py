@@ -32,9 +32,6 @@ from .raw_ingestion import (
     OpenAlexIngestion,
 )
 
-# Bronze Layer - JSON extraction
-from .bronze_ingestion import BronzeIngestionService, TransformResult
-
 # Silver Layer - Entity resolution and normalization
 from .silver_transformation import SilverTransformationService, TransformationResult
 

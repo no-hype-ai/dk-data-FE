@@ -50,12 +50,12 @@ drug_spending AS (
 ema AS (
     SELECT DISTINCT ON (molecule_id)
         molecule_id,
-        authorisation_status,
-        authorisation_date,
+        authorization_status,
+        authorization_date,
         active_substance
     FROM mol_silver.ema_regulatory
     WHERE molecule_id IS NOT NULL
-    ORDER BY molecule_id, authorisation_date DESC NULLS LAST
+    ORDER BY molecule_id, authorization_date DESC NULLS LAST
 ),
 
 -- Cochrane: count of systematic reviews
@@ -129,8 +129,8 @@ SELECT
     ds.latest_spending_year,
 
     -- EMA regulatory
-    e.authorisation_status                  AS ema_authorisation_status,
-    e.authorisation_date                    AS ema_authorisation_date,
+    e.authorization_status                  AS ema_authorisation_status,
+    e.authorization_date                    AS ema_authorisation_date,
 
     -- Evidence counts
     COALESCE(co.cochrane_review_count, 0)   AS cochrane_review_count,

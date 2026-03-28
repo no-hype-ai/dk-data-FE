@@ -74,8 +74,8 @@ def load_cms_snf_puf(filepath: str, source_year: int = 2023) -> dict:
                 provider_zip5=row.get('provider_zip5'),
                 rug_cd=row.get('rug_cd'),
                 rug_desc=row.get('rug_desc'),
-                tot_benes=int(row['tot_benes']) if row.get('tot_benes') else None,
-                tot_cvrd_days=int(row['tot_cvrd_days']) if row.get('tot_cvrd_days') else None,
+                tot_benes=int(float(row['tot_benes'])) if pd.notna(row.get('tot_benes')) else None,
+                tot_cvrd_days=int(float(row['tot_cvrd_days'])) if pd.notna(row.get('tot_cvrd_days')) else None,
                 avg_cvrd_days=row.get('avg_cvrd_days') or None,
                 tot_mdcr_alowd_amt=row.get('tot_mdcr_alowd_amt') or None,
                 avg_mdcr_alowd_amt=row.get('avg_mdcr_alowd_amt') or None,
@@ -87,6 +87,7 @@ def load_cms_snf_puf(filepath: str, source_year: int = 2023) -> dict:
             d['_source_hash'] = source_hash
             d['_source_file'] = source_file
             d['_loaded_at'] = loaded_at
+            d['_source_year'] = source_year
             records.append(d)
         except (ValidationError, Exception) as e:
             errors.append(f"Row {idx}: {e}")

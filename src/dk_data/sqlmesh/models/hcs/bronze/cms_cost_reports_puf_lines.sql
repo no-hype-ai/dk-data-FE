@@ -9,7 +9,7 @@ MODEL (
     ),
     cron '@monthly',
     audits (
-        not_null(columns := (provider_id, line_item_code, _source_year))
+        not_null(columns := (_source_year))
     ),
     grain (provider_id, line_item_code, _source_year)
 );

@@ -45,7 +45,7 @@ FROM mol_bronze.sider b
 -- Link via PubChem CID → mol_silver.pubchem → molecule_id
 LEFT JOIN mol_silver.pubchem pc
        ON b.pubchem_cid IS NOT NULL
-      AND b.pubchem_cid = pc.cid::TEXT
+      AND b.pubchem_cid = pc.cid
 
 WHERE b.stitch_id_flat IS NOT NULL
   AND b.side_effect_name IS NOT NULL;

@@ -1,9 +1,37 @@
 """Pydantic validation models for raw data entities."""
 
+import math
 from datetime import date
 from decimal import Decimal
 from typing import Any, ClassVar, List, Optional, Set
-from pydantic import BaseModel, Field, field_validator, ConfigDict
+from pydantic import BaseModel, Field, field_validator, model_validator, ConfigDict
+
+
+class CMSPUFBaseRecord(BaseModel):
+    """Base class for CMS PUF record validators.
+
+    Converts all float NaN values (from pandas dtype=str CSV reads) to None
+    before field validation runs.
+    """
+
+    model_config = ConfigDict(str_strip_whitespace=True)
+
+    @model_validator(mode='before')
+    @classmethod
+    def coerce_nan_to_none(cls, values: Any) -> Any:
+        if isinstance(values, dict):
+            coerced = {}
+            for k, v in values.items():
+                if isinstance(v, float) and math.isnan(v):
+                    coerced[k] = None
+                elif isinstance(v, (int, float)) and not isinstance(v, bool):
+                    # Coerce numeric API values to str so Pydantic lax mode
+                    # can parse them for both Optional[str] and Optional[Decimal] fields
+                    coerced[k] = str(int(v)) if isinstance(v, float) and v == int(v) else str(v)
+                else:
+                    coerced[k] = v
+            return coerced
+        return values
 
 
 class CMSMedicareInpatientRecord(BaseModel):
@@ -747,7 +775,7 @@ def calculate_tier(total_trs: int) -> str:
 # =============================================================================
 
 
-class CMSChronicConditionsRecord(BaseModel):
+class CMSChronicConditionsRecord(CMSPUFBaseRecord):
     """Validation model for CMS Chronic Conditions PUF data."""
 
     model_config = ConfigDict(str_strip_whitespace=True)
@@ -767,7 +795,7 @@ class CMSChronicConditionsRecord(BaseModel):
     _source_year: Optional[int] = None
 
 
-class CMSClaimTypeRecord(BaseModel):
+class CMSClaimTypeRecord(CMSPUFBaseRecord):
     """Validation model for CMS Claim Type Utilization PUF data."""
 
     model_config = ConfigDict(str_strip_whitespace=True)
@@ -783,7 +811,7 @@ class CMSClaimTypeRecord(BaseModel):
     _source_year: Optional[int] = None
 
 
-class CMSCostReportsPUFRecord(BaseModel):
+class CMSCostReportsPUFRecord(CMSPUFBaseRecord):
     """Validation model for CMS Cost Reports PUF data."""
 
     model_config = ConfigDict(str_strip_whitespace=True)
@@ -803,7 +831,7 @@ class CMSCostReportsPUFRecord(BaseModel):
     _source_year: Optional[int] = None
 
 
-class CMSDMERecord(BaseModel):
+class CMSDMERecord(CMSPUFBaseRecord):
     """Validation model for CMS Durable Medical Equipment (DME) PUF data."""
 
     model_config = ConfigDict(str_strip_whitespace=True)
@@ -831,7 +859,7 @@ class CMSDMERecord(BaseModel):
     _source_year: Optional[int] = None
 
 
-class CMSDualEligibleRecord(BaseModel):
+class CMSDualEligibleRecord(CMSPUFBaseRecord):
     """Validation model for CMS Dual Eligible Beneficiary data."""
 
     model_config = ConfigDict(str_strip_whitespace=True)
@@ -850,7 +878,7 @@ class CMSDualEligibleRecord(BaseModel):
     _source_year: Optional[int] = None
 
 
-class CMSEnrollmentRecord(BaseModel):
+class CMSEnrollmentRecord(CMSPUFBaseRecord):
     """Validation model for CMS Medicare Enrollment PUF data."""
 
     model_config = ConfigDict(str_strip_whitespace=True)
@@ -869,7 +897,7 @@ class CMSEnrollmentRecord(BaseModel):
     _source_year: Optional[int] = None
 
 
-class CMSHomeHealthRecord(BaseModel):
+class CMSHomeHealthRecord(CMSPUFBaseRecord):
     """Validation model for CMS Home Health Agency PUF data."""
 
     model_config = ConfigDict(str_strip_whitespace=True)
@@ -891,7 +919,7 @@ class CMSHomeHealthRecord(BaseModel):
     _source_year: Optional[int] = None
 
 
-class CMSHospiceRecord(BaseModel):
+class CMSHospiceRecord(CMSPUFBaseRecord):
     """Validation model for CMS Hospice Provider PUF data."""
 
     model_config = ConfigDict(str_strip_whitespace=True)
@@ -911,7 +939,7 @@ class CMSHospiceRecord(BaseModel):
     _source_year: Optional[int] = None
 
 
-class CMSHospitalGeneralInfoRecord(BaseModel):
+class CMSHospitalGeneralInfoRecord(CMSPUFBaseRecord):
     """Validation model for CMS Hospital General Information PUF data."""
 
     model_config = ConfigDict(str_strip_whitespace=True)
@@ -928,12 +956,22 @@ class CMSHospitalGeneralInfoRecord(BaseModel):
     hospital_ownership: Optional[str] = None
     emergency_services: Optional[str] = None
     meets_criteria_for_birthing_friendly_designation: Optional[str] = None
-    hospital_overall_rating: Optional[str] = None
+    hospital_overall_rating: Optional[int] = None
     hospital_overall_rating_footnote: Optional[str] = None
     _source_year: Optional[int] = None
 
+    @field_validator('hospital_overall_rating', mode='before')
+    @classmethod
+    def coerce_overall_rating(cls, v: Any) -> Optional[int]:
+        if v is None or v == '' or str(v).strip().lower() in ('not available', 'n/a', 'na'):
+            return None
+        try:
+            return int(v)
+        except (ValueError, TypeError):
+            return None
 
-class CMSImagingRecord(BaseModel):
+
+class CMSImagingRecord(CMSPUFBaseRecord):
     """Validation model for CMS Imaging Services PUF data."""
 
     model_config = ConfigDict(str_strip_whitespace=True)
@@ -955,7 +993,7 @@ class CMSImagingRecord(BaseModel):
     _source_year: Optional[int] = None
 
 
-class CMSInpatientPUFRecord(BaseModel):
+class CMSInpatientPUFRecord(CMSPUFBaseRecord):
     """Validation model for CMS Inpatient PUF provider-level charge data."""
 
     model_config = ConfigDict(str_strip_whitespace=True)
@@ -978,7 +1016,7 @@ class CMSInpatientPUFRecord(BaseModel):
     _source_year: Optional[int] = None
 
 
-class CMSLabServicesRecord(BaseModel):
+class CMSLabServicesRecord(CMSPUFBaseRecord):
     """Validation model for CMS Lab Services PUF data."""
 
     model_config = ConfigDict(str_strip_whitespace=True)
@@ -1000,7 +1038,7 @@ class CMSLabServicesRecord(BaseModel):
     _source_year: Optional[int] = None
 
 
-class CMSMedicaidDrugSpendingRecord(BaseModel):
+class CMSMedicaidDrugSpendingRecord(CMSPUFBaseRecord):
     """Validation model for CMS Medicaid Drug Spending data."""
 
     model_config = ConfigDict(str_strip_whitespace=True)
@@ -1019,7 +1057,7 @@ class CMSMedicaidDrugSpendingRecord(BaseModel):
     _source_year: Optional[int] = None
 
 
-class CMSMedicareAdvantageRecord(BaseModel):
+class CMSMedicareAdvantageRecord(CMSPUFBaseRecord):
     """Validation model for CMS Medicare Advantage enrollment data."""
 
     model_config = ConfigDict(str_strip_whitespace=True)
@@ -1043,7 +1081,7 @@ class CMSMedicareAdvantageRecord(BaseModel):
     _source_year: Optional[int] = None
 
 
-class CMSMentalHealthRecord(BaseModel):
+class CMSMentalHealthRecord(CMSPUFBaseRecord):
     """Validation model for CMS Mental Health PUF data."""
 
     model_config = ConfigDict(str_strip_whitespace=True)
@@ -1067,7 +1105,7 @@ class CMSMentalHealthRecord(BaseModel):
     _source_year: Optional[int] = None
 
 
-class CMSNPPESRecord(BaseModel):
+class CMSNPPESRecord(CMSPUFBaseRecord):
     """Validation model for CMS NPPES National Provider Identifier data."""
 
     model_config = ConfigDict(str_strip_whitespace=True)
@@ -1099,7 +1137,7 @@ class CMSNPPESRecord(BaseModel):
     _source_year: Optional[int] = None
 
 
-class CMSOpenPaymentsRecord(BaseModel):
+class CMSOpenPaymentsRecord(CMSPUFBaseRecord):
     """Validation model for CMS Open Payments (Sunshine Act) data."""
 
     model_config = ConfigDict(str_strip_whitespace=True)
@@ -1134,7 +1172,7 @@ class CMSOpenPaymentsRecord(BaseModel):
     _source_year: Optional[int] = None
 
 
-class CMSOpioidRecord(BaseModel):
+class CMSOpioidRecord(CMSPUFBaseRecord):
     """Validation model for CMS Opioid Prescribing Geographic Variation PUF data."""
 
     model_config = ConfigDict(str_strip_whitespace=True)
@@ -1163,7 +1201,7 @@ class CMSOpioidRecord(BaseModel):
     _source_year: Optional[int] = None
 
 
-class CMSOrderingProviderRecord(BaseModel):
+class CMSOrderingProviderRecord(CMSPUFBaseRecord):
     """Validation model for CMS Ordering Providers PUF data."""
 
     model_config = ConfigDict(str_strip_whitespace=True)
@@ -1185,7 +1223,7 @@ class CMSOrderingProviderRecord(BaseModel):
     _source_year: Optional[int] = None
 
 
-class CMSOutpatientRecord(BaseModel):
+class CMSOutpatientRecord(CMSPUFBaseRecord):
     """Validation model for CMS Outpatient PUF hospital APC-level charge data."""
 
     model_config = ConfigDict(str_strip_whitespace=True)
@@ -1211,7 +1249,7 @@ class CMSOutpatientRecord(BaseModel):
     _source_year: Optional[int] = None
 
 
-class CMSPartBSpendingRecord(BaseModel):
+class CMSPartBSpendingRecord(CMSPUFBaseRecord):
     """Validation model for CMS Part B Drug Spending data."""
 
     model_config = ConfigDict(str_strip_whitespace=True)
@@ -1231,7 +1269,7 @@ class CMSPartBSpendingRecord(BaseModel):
     _source_year: Optional[int] = None
 
 
-class CMSPartDPrescriberRecord(BaseModel):
+class CMSPartDPrescriberRecord(CMSPUFBaseRecord):
     """Validation model for CMS Part D Prescribers by Provider and Drug data."""
 
     model_config = ConfigDict(str_strip_whitespace=True)
@@ -1261,7 +1299,7 @@ class CMSPartDPrescriberRecord(BaseModel):
     _source_year: Optional[int] = None
 
 
-class CMSPartDSpendingRecord(BaseModel):
+class CMSPartDSpendingRecord(CMSPUFBaseRecord):
     """Validation model for CMS Part D Drug Spending data."""
 
     model_config = ConfigDict(str_strip_whitespace=True)
@@ -1280,7 +1318,7 @@ class CMSPartDSpendingRecord(BaseModel):
     _source_year: Optional[int] = None
 
 
-class CMSPhysicianPUFRecord(BaseModel):
+class CMSPhysicianPUFRecord(CMSPUFBaseRecord):
     """Validation model for CMS Physician and Other Practitioners PUF data."""
 
     model_config = ConfigDict(str_strip_whitespace=True)
@@ -1312,7 +1350,7 @@ class CMSPhysicianPUFRecord(BaseModel):
     _source_year: Optional[int] = None
 
 
-class CMSReferringProviderRecord(BaseModel):
+class CMSReferringProviderRecord(CMSPUFBaseRecord):
     """Validation model for CMS Referring Providers PUF data."""
 
     model_config = ConfigDict(str_strip_whitespace=True)
@@ -1334,7 +1372,7 @@ class CMSReferringProviderRecord(BaseModel):
     _source_year: Optional[int] = None
 
 
-class CMSSNFRecord(BaseModel):
+class CMSSNFRecord(CMSPUFBaseRecord):
     """Validation model for CMS Skilled Nursing Facility (SNF) PUF data."""
 
     model_config = ConfigDict(str_strip_whitespace=True)
@@ -1356,7 +1394,7 @@ class CMSSNFRecord(BaseModel):
     _source_year: Optional[int] = None
 
 
-class CMSTelehealthRecord(BaseModel):
+class CMSTelehealthRecord(CMSPUFBaseRecord):
     """Validation model for CMS Telehealth Utilization PUF data."""
 
     model_config = ConfigDict(str_strip_whitespace=True)
@@ -1380,7 +1418,7 @@ class CMSTelehealthRecord(BaseModel):
     _source_year: Optional[int] = None
 
 
-class CMSUtilizationRecord(BaseModel):
+class CMSUtilizationRecord(CMSPUFBaseRecord):
     """Validation model for CMS Medicare Utilization PUF data."""
 
     model_config = ConfigDict(str_strip_whitespace=True)
@@ -1400,7 +1438,7 @@ class CMSUtilizationRecord(BaseModel):
     _source_year: Optional[int] = None
 
 
-class EUIPODesignRecord(BaseModel):
+class EUIPODesignRecord(CMSPUFBaseRecord):
     """Validation model for EUIPO registered community design records."""
 
     model_config = ConfigDict(str_strip_whitespace=True)
@@ -1426,7 +1464,7 @@ class EUIPODesignRecord(BaseModel):
 # Legacy source validators (019-cms-puf-platform-reconciliation)
 # ---------------------------------------------------------------------------
 
-class RxNormRecord(BaseModel):
+class RxNormRecord(CMSPUFBaseRecord):
     """Validation model for NLM RxNorm concept records."""
 
     model_config = ConfigDict(str_strip_whitespace=True)
@@ -1445,7 +1483,7 @@ class RxNormRecord(BaseModel):
         return v
 
 
-class WHOINNRecord(BaseModel):
+class WHOINNRecord(CMSPUFBaseRecord):
     """Validation model for WHO International Nonproprietary Name records."""
 
     model_config = ConfigDict(str_strip_whitespace=True)
@@ -1470,7 +1508,7 @@ class WHOINNRecord(BaseModel):
         return v.lower()
 
 
-class PharmGKBRecord(BaseModel):
+class PharmGKBRecord(CMSPUFBaseRecord):
     """Validation model for PharmGKB pharmacogenomics chemical/drug records."""
 
     model_config = ConfigDict(str_strip_whitespace=True)
@@ -1488,7 +1526,7 @@ class PharmGKBRecord(BaseModel):
     inchi_key: Optional[str] = Field(None, min_length=27, max_length=27)
 
 
-class KEGGDrugRecord(BaseModel):
+class KEGGDrugRecord(CMSPUFBaseRecord):
     """Validation model for KEGG Drug compound records."""
 
     model_config = ConfigDict(str_strip_whitespace=True)
@@ -1513,7 +1551,7 @@ class KEGGDrugRecord(BaseModel):
         return v
 
 
-class TDCAdmetRecord(BaseModel):
+class TDCAdmetRecord(CMSPUFBaseRecord):
     """Validation model for TDC ADMET prediction records."""
 
     model_config = ConfigDict(str_strip_whitespace=True)

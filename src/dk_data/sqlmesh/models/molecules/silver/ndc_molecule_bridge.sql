@@ -39,7 +39,7 @@ WITH from_labels AS (
         1.0                     AS confidence
     FROM mol_silver.drug_labels dl
     CROSS JOIN LATERAL jsonb_array_elements_text(
-        COALESCE(dl.ndc_codes, '[]'::jsonb)
+        '[]'::jsonb  -- ndc_codes not extracted in current drug_labels schema
     ) AS ndc_code
     WHERE dl.molecule_id IS NOT NULL
       AND ndc_code IS NOT NULL

@@ -21,10 +21,10 @@ SELECT
     b.title,
     b.abstract,
     b.doi,
-    CASE WHEN b.pub_date ~ '^\d{4}-\d{2}-\d{2}' THEN b.pub_date::DATE ELSE NULL END AS pub_date,
+    b.publication_date AS pub_date,
     b.review_type,
     b.authors,
-    b.raw_json                              AS raw_data,
+    NULL::JSONB                             AS raw_data,
     'cochrane_reviews'                      AS source,
     b.created_at
 

@@ -18,19 +18,19 @@ MODEL (
 SELECT
     gen_random_uuid() AS id,
 
-    -- Hospital identifiers (provider_id is always TEXT / VARCHAR)
-    r.provider_id::TEXT AS provider_id,
-    r.hospital_name::TEXT AS hospital_name,
+    -- Hospital identifiers (facility_id maps to provider_id in downstream models)
+    r.facility_id::TEXT AS provider_id,
+    r.facility_name::TEXT AS hospital_name,
 
     -- Location
     r.address::TEXT AS address,
-    r.city::TEXT AS city,
+    r.city_town::TEXT AS city,
     r.state::TEXT AS state,
     r.zip_code::TEXT AS zip_code,
-    r.county_name::TEXT AS county_name,
+    r.county_parish::TEXT AS county_name,
 
     -- Contact
-    r.phone_number::TEXT AS phone_number,
+    r.telephone_number::TEXT AS phone_number,
 
     -- Classification
     r.hospital_type::TEXT AS hospital_type,
@@ -43,11 +43,11 @@ SELECT
     -- Source tracking
     r._source_hash AS source_hash,
     r._loaded_at AS source_updated_at,
-    'cms_hospital_info' AS source,
+    'cms_hospital_general_info' AS source,
     FALSE AS processed_to_silver,
     NOW() AS created_at
 
-FROM hcs_raw.cms_hospital_info r
+FROM hcs_raw.cms_hospital_general_info r
 WHERE
-    r.provider_id IS NOT NULL
+    r.facility_id IS NOT NULL
     AND r._loaded_at BETWEEN @start_dt AND @end_dt;

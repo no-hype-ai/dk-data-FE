@@ -12,12 +12,12 @@ MODEL (
 WITH hospital_counties AS (
     -- Get unique hospital-county combinations
     SELECT DISTINCT
-        provider_id AS hospital_id,
+        facility_id AS hospital_id,
         state,
-        county_name
-    FROM hcs_raw.cms_hospital_info
-    WHERE provider_id IS NOT NULL
-      AND county_name IS NOT NULL
+        county_parish AS county_name
+    FROM hcs_raw.cms_hospital_general_info
+    WHERE facility_id IS NOT NULL
+      AND county_parish IS NOT NULL
 ),
 hpsa_by_county AS (
     -- Aggregate HPSA designations by state/county

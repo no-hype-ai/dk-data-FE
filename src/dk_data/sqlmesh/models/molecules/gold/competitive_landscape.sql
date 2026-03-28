@@ -31,23 +31,26 @@ SELECT
         'phase_4', COUNT(DISTINCT ct.nct_id) FILTER (WHERE ct.phase LIKE '%Phase 4%')
     ) AS phase_distribution,
 
-    -- Unique indications
+    -- Unique indications (correlated subquery — avoids ungrouped column error)
     (
         SELECT jsonb_agg(DISTINCT indication)
         FROM (
-            SELECT jsonb_array_elements_text(COALESCE(ct.conditions, '[]'::jsonb)) AS indication
+            SELECT jsonb_array_elements_text(COALESCE(cond.conditions, '[]'::jsonb)) AS indication
+            FROM mol_silver.clinical_trials cond
+            WHERE cond.molecule_id = m.molecule_id
+              AND cond.conditions IS NOT NULL
         ) i
         WHERE indication IS NOT NULL
     ) AS indications,
 
     -- Unique sponsors
     (
-        SELECT jsonb_agg(DISTINCT lead_sponsor_name)
+        SELECT jsonb_agg(DISTINCT lead_sponsor)
         FROM (
-            SELECT ct2.lead_sponsor_name
+            SELECT ct2.lead_sponsor
             FROM mol_silver.clinical_trials ct2
             WHERE ct2.molecule_id = m.molecule_id
-              AND ct2.lead_sponsor_name IS NOT NULL
+              AND ct2.lead_sponsor IS NOT NULL
         ) s
     ) AS sponsors,
 
@@ -56,7 +59,7 @@ SELECT
 
     -- Competitive metrics
     COUNT(DISTINCT ct.nct_id) AS total_trials,
-    COUNT(DISTINCT ct.lead_sponsor_name) AS sponsor_count,
+    COUNT(DISTINCT ct.lead_sponsor) AS sponsor_count,
 
     -- Safety signal summary
     (

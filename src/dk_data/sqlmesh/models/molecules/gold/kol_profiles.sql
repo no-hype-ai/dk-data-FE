@@ -10,7 +10,7 @@
 --   h_index*0.3 + publications*0.2 + citations*0.25 + trials*0.15 + grants*0.1
 --
 -- Fixed (019-cms-puf-platform-reconciliation):
---   - ct.lead_sponsor → ct.lead_sponsor_name
+--   - ct.lead_sponsor → ct.lead_sponsor
 --     (mol_silver.clinical_trials exposes lead_sponsor_name, not lead_sponsor)
 --   - pub_counts now joins via first_author_name ILIKE rather than first_author_id
 --     (mol_silver.publications does not expose first_author_id in its final SELECT;
@@ -70,7 +70,7 @@ trial_counts AS (
     FROM mol_silver.researchers r
     JOIN mol_silver.clinical_trials ct
         -- mol_silver.clinical_trials column is lead_sponsor_name (not lead_sponsor)
-        ON ct.lead_sponsor_name ILIKE '%' || r.family_name || '%'
+        ON ct.lead_sponsor ILIKE '%' || r.family_name || '%'
     GROUP BY r.id
 ),
 

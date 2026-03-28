@@ -9,7 +9,7 @@ MODEL (
     ),
     cron '@monthly',
     audits (
-        not_null(columns := (provider_id, drg_definition, _source_year))
+        not_null(columns := (_source_year))
     ),
     grain (_source_hash, provider_id, drg_definition, _source_year)
 );

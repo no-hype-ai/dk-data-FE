@@ -1,167 +1,121 @@
-"""PharmGKB REST API fetcher — paginated chemical and gene entity bulk download.
+"""PharmGKB bulk download fetcher — chemicals TSV.
 
 Feature: 019-cms-puf-platform-reconciliation
 
 PharmGKB provides pharmacogenomics data (drug-gene associations, clinical
-annotations, dosing guidelines, variant annotations) via a public REST API.
-Authentication is optional: unauthenticated requests work but are rate-limited.
+annotations, dosing guidelines, variant annotations).
 
-API base: https://api.pharmgkb.org/v1
-Credentials: PHARMGKB_API_KEY env var (optional).
-  If set, sent as an Authorization header on every request.
+The paginated REST API (GET /data/chemical?pageSize=...) was removed; the
+endpoint now only supports single-entity lookups.  Bulk data is available
+via the download API:
 
-Pagination strategy:
-  GET /data/chemical?view=max&pageSize=100&page=N
-  GET /data/gene?view=max&pageSize=100&page=N
-  Increment `page` (1-based) until the response `data` array is empty or the
-  safety cap (max_pages=200) is reached.
+  GET https://api.pharmgkb.org/v1/download/file/data/chemicals.zip
+    → ZIP containing chemicals.tsv (TSV, ~10 k chemicals)
 
-Each page response dict is stored as one record in the output so that the
-downstream loader can persist full raw pages to mol_raw.pharmgkb.
+Authentication is not required for the download endpoint.
+
+Each row in chemicals.tsv becomes one record dict in the output.
 """
 
+import csv
 import hashlib
-import json
+import io
 import logging
-import os
-import time
+import zipfile
 from typing import Any, Dict, List, Optional
 
 from .base import BaseFetcher
 
 logger = logging.getLogger(__name__)
 
-BASE_URL = "https://api.pharmgkb.org/v1"
-PAGE_SIZE = 100
-DEFAULT_MAX_PAGES = 200
-PAGE_DELAY_SECONDS = 0.2
+CHEMICALS_DOWNLOAD_URL = (
+    "https://api.pharmgkb.org/v1/download/file/data/chemicals.zip"
+)
+CHEMICALS_TSV_NAME = "chemicals.tsv"
 
 
 class PharmGKBFetcher(BaseFetcher):
-    """Fetcher for PharmGKB chemical and gene entity data."""
+    """Fetcher for PharmGKB chemical data via bulk TSV download."""
 
     SOURCE_NAME = "pharmgkb"
-    BASE_URL = BASE_URL
-
-    def __init__(self, data_dir: Optional[str] = None):
-        super().__init__(data_dir)
-        api_key = os.environ.get("PHARMGKB_API_KEY", "")
-        if api_key:
-            self.session.headers.update({"Authorization": api_key})
-            logger.info("PharmGKB API key loaded from PHARMGKB_API_KEY")
-        else:
-            logger.info(
-                "PHARMGKB_API_KEY not set — using public (rate-limited) access"
-            )
-        self.session.headers.update({"Accept": "application/json"})
+    BASE_URL = "https://api.pharmgkb.org"
 
     def get_latest_url(self) -> str:
-        return f"{BASE_URL}/data/chemical?view=max&pageSize={PAGE_SIZE}&page=1"
+        return CHEMICALS_DOWNLOAD_URL
 
     def fetch(self, **kwargs) -> Dict[str, Any]:
-        """Fetch PharmGKB entities by paginating through the bulk data endpoint.
-
-        Keyword Args:
-            entity_type: "chemical" (default) or "gene".
-            max_pages:   Safety cap on pages fetched (default 200).
+        """Download the PharmGKB chemicals ZIP and parse the TSV.
 
         Returns:
             Dict with keys:
-                status        — "success" or "failed"
-                records       — list of raw page response dicts (one per page)
+                status        — "success", "failed", or "source_unavailable"
+                records       — list of row dicts (one per chemical)
                 record_count  — len(records)
-                hash          — MD5 of all pharmgkb IDs seen
-                entity_type   — echoed back from kwargs
+                hash          — SHA-256 of the ZIP content
                 error         — present only on failure
         """
-        entity_type: str = kwargs.get("entity_type", "chemical")
-        max_pages: int = int(kwargs.get("max_pages", DEFAULT_MAX_PAGES))
-
-        page_records: List[Dict[str, Any]] = []
-
         try:
-            for page_num in range(1, max_pages + 1):
-                url = (
-                    f"{BASE_URL}/data/{entity_type}"
-                    f"?view=max&pageSize={PAGE_SIZE}&page={page_num}"
-                )
-                logger.debug(
-                    "PharmGKB fetching %s page %d/%d", entity_type, page_num, max_pages
-                )
+            logger.info("Downloading PharmGKB chemicals ZIP from %s", CHEMICALS_DOWNLOAD_URL)
+            resp = self.session.get(CHEMICALS_DOWNLOAD_URL, timeout=120)
+            resp.raise_for_status()
 
-                try:
-                    resp = self.session.get(url, timeout=60)
-                    resp.raise_for_status()
-                    page_data = resp.json()
-                except Exception as exc:
-                    logger.error(
-                        "PharmGKB request failed at %s page %d: %s",
-                        entity_type, page_num, exc,
+            content = resp.content
+            content_hash = hashlib.sha256(content).hexdigest()
+
+            with zipfile.ZipFile(io.BytesIO(content)) as zf:
+                tsv_name = next(
+                    (n for n in zf.namelist() if n.endswith(".tsv")),
+                    None,
+                )
+                if tsv_name is None:
+                    raise ValueError(
+                        f"No .tsv file found in PharmGKB chemicals ZIP: {zf.namelist()}"
                     )
-                    return {
-                        "status": "failed",
-                        "records": page_records,
-                        "record_count": len(page_records),
-                        "hash": None,
-                        "entity_type": entity_type,
-                        "error": str(exc),
-                    }
+                with zf.open(tsv_name) as f:
+                    records = self._parse_tsv(f)
 
-                items: List[Any] = page_data.get("data", [])
-                if not items:
-                    logger.info(
-                        "PharmGKB %s: empty data on page %d — pagination complete",
-                        entity_type, page_num,
-                    )
-                    break
-
-                # Annotate the page dict with metadata for downstream loaders
-                page_data["_page_num"] = page_num
-                page_data["_entity_type"] = entity_type
-                page_records.append(page_data)
-
-                logger.debug(
-                    "PharmGKB %s page %d: %d items", entity_type, page_num, len(items)
-                )
-
-                if page_num < max_pages:
-                    time.sleep(PAGE_DELAY_SECONDS)
-
-            total_items = sum(len(p.get("data", [])) for p in page_records)
-            logger.info(
-                "PharmGKB %s fetch complete: %d pages, %d total items",
-                entity_type, len(page_records), total_items,
-            )
-
-            # Hash over all entity IDs for change detection
-            all_ids: List[str] = [
-                str(item.get("id") or item.get("pharmgkbId", ""))
-                for page in page_records
-                for item in page.get("data", [])
-            ]
-            content_hash = hashlib.md5(
-                json.dumps(sorted(all_ids), sort_keys=True).encode()
-            ).hexdigest()
-
+            logger.info("PharmGKB: parsed %d chemicals from %s", len(records), tsv_name)
             result: Dict[str, Any] = {
                 "status": "success",
-                "records": page_records,
-                "record_count": len(page_records),
+                "records": records,
+                "record_count": len(records),
                 "hash": content_hash,
-                "entity_type": entity_type,
             }
-            self.log_fetch_result({"status": "success", "records": len(page_records)})
+            self.log_fetch_result({"status": "success", "records": len(records)})
             return result
 
         except Exception as exc:
-            logger.exception("PharmGKB fetch failed unexpectedly: %s", exc)
+            logger.exception("PharmGKB fetch failed: %s", exc)
             result = {
                 "status": "failed",
                 "records": [],
                 "record_count": 0,
                 "hash": None,
-                "entity_type": entity_type,
                 "error": str(exc),
             }
             self.log_fetch_result(result)
             return result
+
+    # ------------------------------------------------------------------
+    # Internal helpers
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def _parse_tsv(file_obj) -> List[Dict[str, Any]]:
+        """Parse the chemicals.tsv into a list of record dicts.
+
+        Column names are normalised to lowercase with underscores.
+        """
+        import sys
+        csv.field_size_limit(sys.maxsize)
+        text = file_obj.read().decode("utf-8", errors="replace")
+        reader = csv.DictReader(io.StringIO(text), delimiter="\t")
+        records: List[Dict[str, Any]] = []
+        for row in reader:
+            # Normalise keys: lowercase, spaces → underscores
+            record = {
+                k.strip().lower().replace(" ", "_"): (v.strip() if v else None)
+                for k, v in row.items()
+            }
+            records.append(record)
+        return records

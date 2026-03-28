@@ -19,19 +19,27 @@ WITH pdb_linked AS (
         b.title,
         b.resolution,
         b.method,
-        b.organism,
+        b.source_organism AS organism,
         b.ligand_id,
         b.ligand_name,
         b.uniprot_id,
         t.id                                AS target_id,
-        t.protein_name,
-        t.gene_name,
+        t.target_name                       AS protein_name,
+        t.gene_symbol                       AS gene_name,
         t.target_type,
-        t.molecule_id,
+        NULL::UUID                          AS molecule_id,
         'pdb'                               AS source,
         b.source_updated_at
     FROM mol_bronze.pdb_structures b
-    LEFT JOIN mol_silver.targets t ON b.uniprot_id IS NOT NULL AND t.uniprot_id = b.uniprot_id
+    LEFT JOIN mol_silver.targets t ON b.uniprot_id IS NOT NULL
+        AND t.uniprot_id = ANY(
+            ARRAY(SELECT jsonb_array_elements_text(
+                CASE jsonb_typeof(b.uniprot_id)
+                    WHEN 'array' THEN b.uniprot_id
+                    ELSE jsonb_build_array(b.uniprot_id)
+                END
+            ))
+        )
     WHERE b.pdb_id IS NOT NULL
 )
 

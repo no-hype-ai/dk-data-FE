@@ -10,7 +10,7 @@ MODEL (
 );
 
 SELECT
-    ct.lead_sponsor_name AS company,
+    ct.lead_sponsor AS company,
     m.molecule_id AS molecule_id,
     m.inchi_key,
     m.canonical_name,
@@ -58,7 +58,7 @@ SELECT
             SELECT jsonb_array_elements_text(COALESCE(ct2.conditions, '[]'::jsonb)) AS indication
             FROM mol_silver.clinical_trials ct2
             WHERE ct2.molecule_id = m.molecule_id
-              AND ct2.lead_sponsor_name = ct.lead_sponsor_name
+              AND ct2.lead_sponsor = ct.lead_sponsor
         ) i
         WHERE indication IS NOT NULL
     ) AS indications,
@@ -77,7 +77,7 @@ SELECT
         FROM mol_silver.clinical_trials ct2,
              jsonb_array_elements(ct2.interventions) AS intervention
         WHERE ct2.molecule_id = m.molecule_id
-          AND ct2.lead_sponsor_name = ct.lead_sponsor_name
+          AND ct2.lead_sponsor = ct.lead_sponsor
           AND intervention->>'interventionType' IS NOT NULL
     ) AS mechanism_of_action,
 
@@ -89,7 +89,7 @@ SELECT
 FROM mol_silver.clinical_trials ct
 JOIN mol_silver.molecules m ON ct.molecule_id = m.molecule_id
 WHERE m.needs_review = FALSE
-  AND ct.lead_sponsor_name IS NOT NULL
-  AND ct.lead_sponsor_name != ''
-GROUP BY ct.lead_sponsor_name, m.molecule_id, m.inchi_key, m.canonical_name, m.development_status
-ORDER BY ct.lead_sponsor_name, trial_count DESC
+  AND ct.lead_sponsor IS NOT NULL
+  AND ct.lead_sponsor != ''
+GROUP BY ct.lead_sponsor, m.molecule_id, m.inchi_key, m.canonical_name, m.development_status
+ORDER BY ct.lead_sponsor, trial_count DESC

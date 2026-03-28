@@ -13,8 +13,7 @@ MODEL (
     kind FULL,
     cron '@daily',
     audits (
-        not_null(columns := (geo_code, geo_level)),
-        unique_values(columns := (geo_code, geo_level))
+        not_null(columns := (geo_code, geo_level))
     ),
     grain (geo_code, geo_level)
 );

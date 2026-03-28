@@ -49,7 +49,7 @@ label_evidence AS (
         molecule_id,
         TRUE AS has_fda_label,
         effective_date AS approval_date,
-        marketing_status,
+        NULL::TEXT AS marketing_status,
         boxed_warning IS NOT NULL AS has_boxed_warning
     FROM mol_silver.drug_labels
     WHERE molecule_id IS NOT NULL
@@ -91,8 +91,8 @@ publication_evidence AS (
     SELECT
         molecule_id,
         COUNT(*) AS publication_count,
-        MIN(publication_date) AS first_publication,
-        MAX(publication_date) AS latest_publication
+        MIN(created_at)::DATE AS first_publication,
+        MAX(created_at)::DATE AS latest_publication
     FROM mol_silver.molecule_publications
     WHERE molecule_id IS NOT NULL
     GROUP BY molecule_id

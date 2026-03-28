@@ -41,10 +41,19 @@ SELECT
     f.source_updated_at,
     NOW()                               AS created_at
 
-FROM mol_silver.financial_filings f
--- Only rows where xenon has identified revenue data (indicated by non-null mda_excerpt)
-WHERE f.mda_excerpt IS NOT NULL
-  AND f.molecule_id IS NOT NULL
+-- financial_filings is managed by the xenon service; stub returns 0 rows until xenon writes.
+FROM (
+    SELECT
+        NULL::UUID      AS molecule_id,
+        NULL::TEXT      AS cik,
+        NULL::TEXT      AS company_name,
+        NULL::DATE      AS filing_date,
+        NULL::TEXT      AS filing_type,
+        NULL::TEXT      AS accession_number,
+        NULL::TEXT      AS mda_excerpt,
+        NOW()           AS source_updated_at
+    WHERE FALSE
+) f
 LIMIT 0;
 -- LIMIT 0: schema-only stub — xenon writes real rows via direct INSERT.
 -- SQLMesh manages the table DDL; xenon owns the data.

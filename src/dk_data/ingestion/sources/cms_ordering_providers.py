@@ -32,19 +32,30 @@ logger = logging.getLogger(__name__)
 
 COLUMN_MAPPING = {
     'Rndrng_NPI': 'rndrng_npi',
+    'Rfrg_NPI': 'rndrng_npi',  # DME-by-referring-provider dataset uses Rfrg_NPI
     'Rndrng_Prvdr_Last_Org_Name': 'rndrng_prvdr_last_org_name',
+    'Rfrg_Prvdr_Last_Name_Org': 'rndrng_prvdr_last_org_name',
     'Rndrng_Prvdr_First_Name': 'rndrng_prvdr_first_name',
+    'Rfrg_Prvdr_First_Name': 'rndrng_prvdr_first_name',
     'Rndrng_Prvdr_City': 'rndrng_prvdr_city',
+    'Rfrg_Prvdr_City': 'rndrng_prvdr_city',
     'Rndrng_Prvdr_State_Abrvtn': 'rndrng_prvdr_state_abrvtn',
+    'Rfrg_Prvdr_State_Abrvtn': 'rndrng_prvdr_state_abrvtn',
     'Rndrng_Prvdr_Zip5': 'rndrng_prvdr_zip5',
+    'Rfrg_Prvdr_Zip5': 'rndrng_prvdr_zip5',
     'Rndrng_Prvdr_Type': 'rndrng_prvdr_type',
+    'Rfrg_Prvdr_Spclty_Desc': 'rndrng_prvdr_type',
     'Rfrd_NPI': 'rfrd_npi',
     'Rfrd_Prvdr_Last_Org_Name': 'rfrd_prvdr_last_org_name',
     'Rfrd_Prvdr_Type': 'rfrd_prvdr_type',
     'Tot_Srvcs': 'tot_srvcs',
+    'Tot_Suplr_Srvcs': 'tot_srvcs',
     'Tot_Benes': 'tot_benes',
+    'Tot_Suplr_Benes': 'tot_benes',
     'Tot_Mdcr_Alowd_Amt': 'tot_mdcr_alowd_amt',
+    'Suplr_Mdcr_Alowd_Amt': 'tot_mdcr_alowd_amt',
     'Tot_Mdcr_Pymt_Amt': 'tot_mdcr_pymt_amt',
+    'Suplr_Mdcr_Pymt_Amt': 'tot_mdcr_pymt_amt',
 }
 
 TABLE = 'cms_ordering_providers'
@@ -94,7 +105,7 @@ def load_cms_ordering_providers(filepath: str, source_year: int = 2023) -> dict:
                 rfrd_prvdr_last_org_name=row.get('rfrd_prvdr_last_org_name'),
                 rfrd_prvdr_type=row.get('rfrd_prvdr_type'),
                 tot_srvcs=row.get('tot_srvcs') or None,
-                tot_benes=int(row['tot_benes']) if row.get('tot_benes') else None,
+                tot_benes=int(float(row['tot_benes'])) if pd.notna(row.get('tot_benes')) else None,
                 tot_mdcr_alowd_amt=row.get('tot_mdcr_alowd_amt') or None,
                 tot_mdcr_pymt_amt=row.get('tot_mdcr_pymt_amt') or None,
                 _source_year=source_year,
@@ -103,6 +114,7 @@ def load_cms_ordering_providers(filepath: str, source_year: int = 2023) -> dict:
             d['_source_hash'] = source_hash
             d['_source_file'] = source_file
             d['_loaded_at'] = loaded_at
+            d['_source_year'] = source_year
             records.append(d)
         except (ValidationError, Exception) as e:
             errors.append(f"Row {idx}: {e}")

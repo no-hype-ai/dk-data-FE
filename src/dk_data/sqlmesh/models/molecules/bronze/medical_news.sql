@@ -26,9 +26,11 @@ SELECT
     -- Article identifiers (flat columns — no JSON extraction needed)
     article_id::TEXT                      AS article_id,
     source_name::TEXT                     AS source_name,
-    title::TEXT                           AS title,
+    -- Strip HTML anchor tags: <a href="...">text</a> → text
+    regexp_replace(title, '<[^>]+>', '', 'g')::TEXT AS title,
     summary::TEXT                         AS summary,
-    publication_date::DATE                AS pub_date,
+    -- Fall back to _loaded_at when publication_date is missing
+    COALESCE(publication_date, _loaded_at::DATE)::DATE AS pub_date,
     url::TEXT                             AS url,
     drug_mentions::TEXT[]                 AS drug_mentions,
     therapeutic_areas::TEXT[]             AS therapeutic_areas,

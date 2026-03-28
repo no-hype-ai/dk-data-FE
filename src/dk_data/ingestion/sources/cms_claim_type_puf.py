@@ -74,8 +74,8 @@ def load_cms_claim_type_puf(filepath: str, source_year: int = 2023) -> dict:
                 bene_geo_desc=row.get('bene_geo_desc'),
                 clm_type=row.get('clm_type'),
                 clm_type_desc=row.get('clm_type_desc'),
-                tot_clms=int(row['tot_clms']) if row.get('tot_clms') else None,
-                tot_benes=int(row['tot_benes']) if row.get('tot_benes') else None,
+                tot_clms=int(float(row['tot_clms'])) if pd.notna(row.get('tot_clms')) else None,
+                tot_benes=int(float(row['tot_benes'])) if pd.notna(row.get('tot_benes')) else None,
                 tot_mdcr_pymt_amt=row.get('tot_mdcr_pymt_amt') or None,
                 avg_mdcr_pymt_amt=row.get('avg_mdcr_pymt_amt') or None,
                 _source_year=source_year,
@@ -84,6 +84,7 @@ def load_cms_claim_type_puf(filepath: str, source_year: int = 2023) -> dict:
             d['_source_hash'] = source_hash
             d['_source_file'] = source_file
             d['_loaded_at'] = loaded_at
+            d['_source_year'] = source_year
             records.append(d)
         except (ValidationError, Exception) as e:
             errors.append(f"Row {idx}: {e}")

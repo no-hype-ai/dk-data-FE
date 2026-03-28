@@ -18,7 +18,7 @@ MODEL (
 WITH molecule_name_lookup AS (
     -- Stable molecule IDs indexed by lowercase canonical name for name-based entity resolution
     SELECT
-        id AS molecule_id,
+        molecule_id,
         LOWER(canonical_name) AS name_key
     FROM mol_silver.molecules
 ),

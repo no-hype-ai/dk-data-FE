@@ -130,6 +130,7 @@ def load_sider_data(
                         )
 
                 except Exception as e:
+                    conn.rollback()
                     records_skipped += 1
                     errors.append({"index": idx, "stitch_id_flat": stitch_id, "error": str(e)})
                     if len(errors) <= 10:

@@ -16,7 +16,7 @@ SELECT
     m.canonical_name,
     'clinical_trial' AS evidence_type,
     ct.nct_id AS evidence_id,
-    ct.brief_title AS evidence_title,
+    ct.title AS evidence_title,
     ct.phase AS evidence_detail,
     ct.overall_status AS evidence_status,
     'ClinicalTrials.gov' AS evidence_source,

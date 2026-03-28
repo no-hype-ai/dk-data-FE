@@ -43,7 +43,7 @@ WITH source_molecules AS (
     SELECT
         inchi_key,
         COALESCE(inchi_key, 'biologic:' || LOWER(pref_name))   AS identity_key,
-        pref_name                                               AS canonical_name,
+        COALESCE(pref_name, chembl_id)                          AS canonical_name,
         'chembl'                                                AS name_source,
         canonical_smiles,
         inchi,

@@ -23,14 +23,7 @@ SELECT
     b.abstract,
     b.authors,
     b.journal,
-    -- Normalise pub_date to DATE (PubMed sortpubdate: "YYYY/MM/DD HH:MM")
-    CASE
-        WHEN b.pub_date ~ '^\d{4}/\d{2}/\d{2}'
-        THEN TO_DATE(LEFT(b.pub_date, 10), 'YYYY/MM/DD')
-        WHEN b.pub_date ~ '^\d{4}'
-        THEN TO_DATE(LEFT(b.pub_date, 4), 'YYYY')
-        ELSE NULL
-    END                                                 AS publication_date,
+    b.publication_date,
     b.mesh_terms,
     b.doi,
     'pubmed'                                            AS source,
@@ -40,13 +33,9 @@ SELECT
 FROM mol_bronze.pubmed b
 -- Link via drug name stored in request_params (set by ingestion query)
 LEFT JOIN mol_silver.molecules m_exact
-       ON b.raw_json->>'query_drug' IS NOT NULL
-      AND LOWER(m_exact.canonical_name) = LOWER(b.raw_json->>'query_drug')
+       ON FALSE  -- raw_json not in mol_bronze.pubmed flat schema; drug name linkage disabled
 LEFT JOIN mol_silver.molecule_aliases ma
-       ON m_exact.molecule_id IS NULL
-      AND b.raw_json->>'query_drug' IS NOT NULL
-      AND LOWER(REGEXP_REPLACE(b.raw_json->>'query_drug', '[^a-zA-Z0-9]', '', 'g'))
-          = ma.alias_name_normalized
+       ON FALSE
 LEFT JOIN mol_silver.molecules m_alias
        ON m_alias.molecule_id = ma.molecule_id
 WHERE b.pmid IS NOT NULL;

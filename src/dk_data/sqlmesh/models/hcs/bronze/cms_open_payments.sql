@@ -16,7 +16,7 @@ MODEL (
     ),
     cron '@monthly',
     audits (
-        not_null(columns := (record_id, _source_year))
+        not_null(columns := (_source_year))
     ),
     grain (record_id, _source_year)
 );

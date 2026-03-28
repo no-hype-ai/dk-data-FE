@@ -127,24 +127,25 @@ def load_cms_part_d_prescriber(filepath: str, source_year: int = 2023) -> dict:
                 prscrbr_type_src=row.get('prscrbr_type_src') or None,
                 brnd_name=row.get('brnd_name') or None,
                 gnrc_name=row.get('gnrc_name', ''),
-                tot_clms=int(row['tot_clms']) if row.get('tot_clms') not in (None, '', 'nan') else None,
+                tot_clms=int(float(row['tot_clms'])) if pd.notna(row.get('tot_clms')) else None,
                 tot_30day_fills=row.get('tot_30day_fills') or None,
-                tot_day_suply=int(row['tot_day_suply']) if row.get('tot_day_suply') not in (None, '', 'nan') else None,
+                tot_day_suply=int(float(row['tot_day_suply'])) if pd.notna(row.get('tot_day_suply')) else None,
                 tot_drug_cst=row.get('tot_drug_cst') or None,
-                tot_benes=int(row['tot_benes']) if row.get('tot_benes') not in (None, '', 'nan') else None,
+                tot_benes=int(float(row['tot_benes'])) if pd.notna(row.get('tot_benes')) else None,
                 ge65_sprsn_flag=row.get('ge65_sprsn_flag') or None,
-                ge65_tot_clms=int(row['ge65_tot_clms']) if row.get('ge65_tot_clms') not in (None, '', 'nan') else None,
+                ge65_tot_clms=int(float(row['ge65_tot_clms'])) if pd.notna(row.get('ge65_tot_clms')) else None,
                 ge65_tot_30day_fills=row.get('ge65_tot_30day_fills') or None,
                 ge65_tot_drug_cst=row.get('ge65_tot_drug_cst') or None,
-                ge65_tot_day_suply=int(row['ge65_tot_day_suply']) if row.get('ge65_tot_day_suply') not in (None, '', 'nan') else None,
+                ge65_tot_day_suply=int(float(row['ge65_tot_day_suply'])) if pd.notna(row.get('ge65_tot_day_suply')) else None,
                 ge65_bene_sprsn_flag=row.get('ge65_bene_sprsn_flag') or None,
-                ge65_tot_benes=int(row['ge65_tot_benes']) if row.get('ge65_tot_benes') not in (None, '', 'nan') else None,
+                ge65_tot_benes=int(float(row['ge65_tot_benes'])) if pd.notna(row.get('ge65_tot_benes')) else None,
                 _source_year=source_year,
             )
             d = rec.model_dump(by_alias=True)
             d['_source_hash'] = source_hash
             d['_source_file'] = source_file
             d['_loaded_at'] = loaded_at
+            d['_source_year'] = source_year
             records.append(d)
         except (ValidationError, Exception) as e:
             errors.append(f"Row {idx}: {e}")

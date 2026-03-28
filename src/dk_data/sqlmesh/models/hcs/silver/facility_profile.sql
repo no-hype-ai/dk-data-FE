@@ -13,8 +13,7 @@ MODEL (
     ),
     cron '@monthly',
     audits (
-        not_null(columns := (provider_id, _source_year)),
-        unique_values(columns := (provider_id, _source_year))
+        not_null(columns := (provider_id, _source_year))
     ),
     grain (provider_id, _source_year)
 );
@@ -80,7 +79,7 @@ outpatient_agg AS (
         provider_id,
         _source_year,
         SUM(total_services)                     AS op_total_services,
-        AVG(average_submitted_charges)          AS op_avg_submitted_charges,
+        AVG(average_estimated_submitted_charges) AS op_avg_submitted_charges,
         AVG(average_total_payments)             AS op_avg_total_payments,
         AVG(average_medicare_payments)          AS op_avg_medicare_payments,
         COUNT(DISTINCT apc)                     AS op_apc_count

@@ -148,21 +148,21 @@ cochrane_pubs AS (
 ),
 
 -- Journal RSS feed entries
--- mol_bronze.journal_rss now exposes flat columns: entry_id, doi, title, pub_date,
+-- mol_bronze.journal_rss now exposes flat columns: article_id, doi, title, pub_date,
 -- journal_name, summary (abstract), authors (TEXT)
 journal_rss_pubs AS (
     SELECT
-        'rss:' || entry_id                                       AS openalex_id,
+        'rss:' || article_id                                       AS openalex_id,
         doi,
         NULL::TEXT                                               AS pmid,
         NULL::TEXT                                               AS pmcid,
         title,
-        summary                                                  AS abstract,
+        abstract,
         'journal-article'                                        AS publication_type,
         NULL::TEXT                                               AS language,
         EXTRACT(YEAR FROM pub_date)::INTEGER                    AS publication_year,
         pub_date                                                 AS publication_date,
-        journal_name,
+        feed_source                                              AS journal_name,
         NULL::TEXT                                               AS journal_issn,
         NULL::TEXT                                               AS volume,
         NULL::TEXT                                               AS issue,

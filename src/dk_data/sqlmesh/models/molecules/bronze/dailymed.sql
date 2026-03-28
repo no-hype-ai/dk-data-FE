@@ -36,7 +36,7 @@ SELECT
     spl->>'entity_link_type' AS entity_link_type,
 
     -- Source tracking
-    drug_name AS query_name,
+    request_params->>'drug_name' AS query_name,
     response_body AS raw_json,
     r.id AS raw_source_id,
     'dailymed' AS source,

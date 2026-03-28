@@ -191,7 +191,7 @@ class RawIngestionService:
 
     async def _store_raw_record(self, source: DataSource, record: RawRecord) -> Optional[str]:
         """Store raw record in appropriate table."""
-        table_name = f"raw.{source.value}"
+        table_name = f"mol_raw.{source.value}"
 
         async with self.db_pool.acquire() as conn:
             # Check for duplicate based on hash
@@ -234,7 +234,7 @@ class RawIngestionService:
     async def should_refresh(self, source: DataSource, endpoint: str) -> bool:
         """Check if source needs refresh based on tiered schedule."""
         refresh_hours = REFRESH_SCHEDULE.get(source, 24)
-        table_name = f"raw.{source.value}"
+        table_name = f"mol_raw.{source.value}"
 
         async with self.db_pool.acquire() as conn:
             last_fetch = await conn.fetchval(f"""
@@ -256,7 +256,7 @@ class RawIngestionService:
         limit: int = 100
     ) -> List[Dict[str, Any]]:
         """Get raw records not yet processed to Bronze."""
-        table_name = f"raw.{source.value}"
+        table_name = f"mol_raw.{source.value}"
 
         async with self.db_pool.acquire() as conn:
             rows = await conn.fetch(f"""
@@ -275,7 +275,7 @@ class RawIngestionService:
         if not record_ids:
             return
 
-        table_name = f"raw.{source.value}"
+        table_name = f"mol_raw.{source.value}"
 
         async with self.db_pool.acquire() as conn:
             await conn.execute(f"""

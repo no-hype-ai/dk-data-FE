@@ -19,7 +19,7 @@ WITH cost_report_latest AS (
         net_patient_revenue,
         total_operating_expenses,
         operating_margin
-    FROM hcs_raw.cms_cost_reports
+    FROM hcs_raw.cms_cost_reports_puf
     WHERE fiscal_year_end IS NOT NULL
     QUALIFY ROW_NUMBER() OVER (
         PARTITION BY provider_id, EXTRACT(YEAR FROM fiscal_year_end)

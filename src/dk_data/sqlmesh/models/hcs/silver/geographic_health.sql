@@ -16,8 +16,7 @@ MODEL (
     ),
     cron '@monthly',
     audits (
-        not_null(columns := (geo_code, geo_level, _source_year)),
-        unique_values(columns := (geo_code, geo_level, _source_year))
+        not_null(columns := (geo_code, geo_level, _source_year))
     ),
     grain (geo_code, geo_level, _source_year)
 );
@@ -153,7 +152,7 @@ SELECT
     NOW()                               AS created_at,
     NOW()                               AS updated_at
 FROM all_geos a
-LEFT JOIN geo_variation gv ON a.geo_code = gv.geo_code AND a._source_year = gv._source_year
+LEFT JOIN geo_variation gv ON a.geo_code = gv.geo_code AND a.geo_level = gv.geo_level AND a._source_year = gv._source_year
 LEFT JOIN chronic_agg c    ON a.geo_code = c.geo_code  AND a._source_year = c._source_year
 LEFT JOIN opioid o         ON a.geo_code = o.geo_code  AND a._source_year = o._source_year
 LEFT JOIN enrollment e     ON a.geo_code = e.geo_code  AND a._source_year = e._source_year;

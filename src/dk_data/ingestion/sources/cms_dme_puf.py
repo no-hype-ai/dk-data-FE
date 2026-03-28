@@ -84,10 +84,10 @@ def load_cms_dme_puf(filepath: str, source_year: int = 2023) -> dict:
                 hcpcs_cd=row.get('hcpcs_cd'),
                 hcpcs_desc=row.get('hcpcs_desc'),
                 suplr_rentl_ind=row.get('suplr_rentl_ind'),
-                tot_suplrs=int(row['tot_suplrs']) if row.get('tot_suplrs') else None,
-                tot_suplr_benes=int(row['tot_suplr_benes']) if row.get('tot_suplr_benes') else None,
-                tot_suplr_clms=int(row['tot_suplr_clms']) if row.get('tot_suplr_clms') else None,
-                tot_suplr_srvcs=int(row['tot_suplr_srvcs']) if row.get('tot_suplr_srvcs') else None,
+                tot_suplrs=int(float(row['tot_suplrs'])) if pd.notna(row.get('tot_suplrs')) else None,
+                tot_suplr_benes=int(float(row['tot_suplr_benes'])) if pd.notna(row.get('tot_suplr_benes')) else None,
+                tot_suplr_clms=int(float(row['tot_suplr_clms'])) if pd.notna(row.get('tot_suplr_clms')) else None,
+                tot_suplr_srvcs=int(float(row['tot_suplr_srvcs'])) if pd.notna(row.get('tot_suplr_srvcs')) else None,
                 avg_suplr_sbmtd_chrg=row.get('avg_suplr_sbmtd_chrg') or None,
                 avg_suplr_mdcr_alowd_amt=row.get('avg_suplr_mdcr_alowd_amt') or None,
                 avg_suplr_mdcr_pymt_amt=row.get('avg_suplr_mdcr_pymt_amt') or None,
@@ -98,6 +98,7 @@ def load_cms_dme_puf(filepath: str, source_year: int = 2023) -> dict:
             d['_source_hash'] = source_hash
             d['_source_file'] = source_file
             d['_loaded_at'] = loaded_at
+            d['_source_year'] = source_year
             records.append(d)
         except (ValidationError, Exception) as e:
             errors.append(f"Row {idx}: {e}")

@@ -82,17 +82,18 @@ def load_cms_enrollment_puf(filepath: str, source_year: int = 2023) -> dict:
                 bene_demo_lvl=row.get('bene_demo_lvl'),
                 bene_demo_desc=row.get('bene_demo_desc'),
                 bene_age_lvl=row.get('bene_age_lvl'),
-                tot_benes=int(row['tot_benes']) if row.get('tot_benes') else None,
-                orgnl_mdcr_benes=int(row['orgnl_mdcr_benes']) if row.get('orgnl_mdcr_benes') else None,
-                ma_benes=int(row['ma_benes']) if row.get('ma_benes') else None,
-                esrd_benes=int(row['esrd_benes']) if row.get('esrd_benes') else None,
-                dsbl_benes=int(row['dsbl_benes']) if row.get('dsbl_benes') else None,
+                tot_benes=int(float(row['tot_benes'])) if pd.notna(row.get('tot_benes')) else None,
+                orgnl_mdcr_benes=int(float(row['orgnl_mdcr_benes'])) if pd.notna(row.get('orgnl_mdcr_benes')) else None,
+                ma_benes=int(float(row['ma_benes'])) if pd.notna(row.get('ma_benes')) else None,
+                esrd_benes=int(float(row['esrd_benes'])) if pd.notna(row.get('esrd_benes')) else None,
+                dsbl_benes=int(float(row['dsbl_benes'])) if pd.notna(row.get('dsbl_benes')) else None,
                 _source_year=source_year,
             )
             d = rec.model_dump(by_alias=True)
             d['_source_hash'] = source_hash
             d['_source_file'] = source_file
             d['_loaded_at'] = loaded_at
+            d['_source_year'] = source_year
             records.append(d)
         except (ValidationError, Exception) as e:
             errors.append(f"Row {idx}: {e}")

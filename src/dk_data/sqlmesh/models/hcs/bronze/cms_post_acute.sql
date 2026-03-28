@@ -18,7 +18,7 @@ SELECT
     response_body->>'provider_name'                         AS provider_name,
     response_body->>'provider_type'                         AS provider_type,
     (response_body->>'total_episodes')::INTEGER             AS total_episodes,
-    (response_body->>'avg_episode_payment')::NUMERIC(12,2)  AS avg_episode_payment,
+    (response_body->>'avg_episode_payment')::NUMERIC         AS avg_episode_payment,
     (response_body->>'readmission_rate')::NUMERIC(6,4)      AS readmission_rate,
     (response_body->>'year')::INTEGER                       AS year,
     response_body                                           AS raw_json,

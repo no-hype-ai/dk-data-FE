@@ -25,7 +25,7 @@ WITH molecule_signals AS (
         ns.pub_date,
         ns.source_url
     FROM mol_silver.news_signals ns
-    CROSS JOIN LATERAL jsonb_array_elements_text(COALESCE(ns.drug_mentions, '[]'::JSONB)) AS dm
+    CROSS JOIN LATERAL unnest(string_to_array(COALESCE(ns.drug_mentions, ''), ', ')) AS dm
     JOIN mol_silver.molecules m
         ON LOWER(dm) = LOWER(m.canonical_name)
     WHERE ns.drug_mentions IS NOT NULL

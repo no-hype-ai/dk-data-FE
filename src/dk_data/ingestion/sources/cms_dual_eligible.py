@@ -80,19 +80,20 @@ def load_cms_dual_eligible(filepath: str, source_year: int = 2023) -> dict:
                 state_name=row.get('state_name'),
                 dual_elgbl_lvl=row.get('dual_elgbl_lvl'),
                 dual_elgbl_desc=row.get('dual_elgbl_desc'),
-                tot_benes=int(row['tot_benes']) if row.get('tot_benes') else None,
-                ffs_benes=int(row['ffs_benes']) if row.get('ffs_benes') else None,
-                ma_benes=int(row['ma_benes']) if row.get('ma_benes') else None,
-                dual_elgbl_full_benes=int(row['dual_elgbl_full_benes']) if row.get('dual_elgbl_full_benes') else None,
-                dual_elgbl_prtl_benes=int(row['dual_elgbl_prtl_benes']) if row.get('dual_elgbl_prtl_benes') else None,
-                non_dual_benes=int(row['non_dual_benes']) if row.get('non_dual_benes') else None,
-                lis_benes=int(row['lis_benes']) if row.get('lis_benes') else None,
+                tot_benes=int(float(row['tot_benes'])) if pd.notna(row.get('tot_benes')) else None,
+                ffs_benes=int(float(row['ffs_benes'])) if pd.notna(row.get('ffs_benes')) else None,
+                ma_benes=int(float(row['ma_benes'])) if pd.notna(row.get('ma_benes')) else None,
+                dual_elgbl_full_benes=int(float(row['dual_elgbl_full_benes'])) if pd.notna(row.get('dual_elgbl_full_benes')) else None,
+                dual_elgbl_prtl_benes=int(float(row['dual_elgbl_prtl_benes'])) if pd.notna(row.get('dual_elgbl_prtl_benes')) else None,
+                non_dual_benes=int(float(row['non_dual_benes'])) if pd.notna(row.get('non_dual_benes')) else None,
+                lis_benes=int(float(row['lis_benes'])) if pd.notna(row.get('lis_benes')) else None,
                 _source_year=source_year,
             )
             d = rec.model_dump(by_alias=True)
             d['_source_hash'] = source_hash
             d['_source_file'] = source_file
             d['_loaded_at'] = loaded_at
+            d['_source_year'] = source_year
             records.append(d)
         except (ValidationError, Exception) as e:
             errors.append(f"Row {idx}: {e}")

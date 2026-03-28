@@ -28,7 +28,7 @@ SELECT
     (elem->>'High')::DECIMAL(12,4) AS high,
 
     -- Source tracking
-    drug_name AS indication_query,      -- the indication name used in the query
+    request_params->>'drug_name' AS indication_query,  -- the indication name used in the query
     response_body AS raw_json,
     r.id AS raw_source_id,
     'who_gho' AS source,

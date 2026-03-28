@@ -38,19 +38,12 @@ MODEL (
 
 -- Collect distinct HCPCS drug codes with descriptions from all CMS bronze sources
 WITH hcpcs_codes AS (
-    -- Part B physician (J-codes = injections, B-codes = enteral/parenteral)
+    -- Part B physician: cms_physician_puf is NPI-level summary (no per-HCPCS rows)
     SELECT DISTINCT
-        hcpcs_code,
-        hcpcs_description,
+        NULL::TEXT AS hcpcs_code,
+        NULL::TEXT AS hcpcs_description,
         'physician_puf' AS cms_source
-    FROM hcs_bronze.cms_physician_puf
-    WHERE hcpcs_code IS NOT NULL
-      AND (
-          hcpcs_code LIKE 'J%'
-          OR hcpcs_code LIKE 'Q%'
-          OR hcpcs_code LIKE 'G%'
-          OR hcpcs_code LIKE 'B%'
-      )
+    WHERE FALSE
 
     UNION
 

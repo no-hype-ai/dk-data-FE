@@ -71,7 +71,7 @@ def load_cms_hospice_puf(filepath: str, source_year: int = 2023) -> dict:
                 provider_zip5=row.get('provider_zip5'),
                 hspce_cd=row.get('hspce_cd'),
                 hspce_desc=row.get('hspce_desc'),
-                tot_benes=int(row['tot_benes']) if row.get('tot_benes') else None,
+                tot_benes=int(float(row['tot_benes'])) if pd.notna(row.get('tot_benes')) else None,
                 tot_mdcr_alowd_amt=row.get('tot_mdcr_alowd_amt') or None,
                 tot_mdcr_pymt_amt=row.get('tot_mdcr_pymt_amt') or None,
                 avg_mdcr_pymt_amt=row.get('avg_mdcr_pymt_amt') or None,
@@ -82,6 +82,7 @@ def load_cms_hospice_puf(filepath: str, source_year: int = 2023) -> dict:
             d['_source_hash'] = source_hash
             d['_source_file'] = source_file
             d['_loaded_at'] = loaded_at
+            d['_source_year'] = source_year
             records.append(d)
         except (ValidationError, Exception) as e:
             errors.append(f"Row {idx}: {e}")

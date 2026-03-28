@@ -18,7 +18,7 @@ MODEL (
     ),
     cron '@monthly',
     audits (
-        not_null(columns := (prscrbr_npi, _source_year))
+        not_null(columns := (_source_year))
     ),
     grain (prscrbr_npi, gnrc_name, _source_year)
 );

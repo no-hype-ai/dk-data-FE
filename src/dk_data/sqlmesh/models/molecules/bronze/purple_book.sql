@@ -55,7 +55,7 @@ SELECT
     (prod->>'has_patent_list')::BOOLEAN AS has_patent_list,
 
     -- Source tracking
-    drug_name AS query_name,
+    request_params->>'drug_name' AS query_name,
     response_body AS raw_json,
     r.id AS raw_source_id,
     'purple_book' AS source,

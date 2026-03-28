@@ -6,13 +6,13 @@
 MODEL (
     name mol_silver.journal_rss,
     kind INCREMENTAL_BY_UNIQUE_KEY (
-        unique_key entry_id
+        unique_key article_id
     ),
     cron '@daily',
     audits (
-        not_null(columns := (entry_id))
+        not_null(columns := (article_id))
     ),
-    grain entry_id
+    grain article_id
 );
 
 SELECT
@@ -20,21 +20,14 @@ SELECT
     -- Entity link: find molecule by name mention in article title.
     -- NULL for articles with no known molecule mention. Length guard prevents false positives.
     m.molecule_id,
-    b.entry_id,
+    b.article_id,
     b.title,
     b.link                                              AS url,
     b.doi,
-    b.journal_name,
-    b.summary                                           AS abstract,
+    b.feed_source                                       AS journal_name,
+    b.abstract,
     b.authors,
-    -- Normalise pub_date (RSS feeds use RFC 822 or ISO 8601)
-    CASE
-        WHEN b.pub_date ~ '^\d{4}-\d{2}-\d{2}'
-        THEN TO_DATE(LEFT(b.pub_date, 10), 'YYYY-MM-DD')
-        WHEN b.pub_date ~ '^\d{4}'
-        THEN TO_DATE(LEFT(b.pub_date, 4), 'YYYY')
-        ELSE NULL
-    END                                                 AS publication_date,
+    b.pub_date                                          AS publication_date,
     'journal_rss'                                       AS source,
     b.source_updated_at,
     NOW()                                               AS created_at
@@ -43,5 +36,5 @@ FROM mol_bronze.journal_rss b
 LEFT JOIN mol_silver.molecules m
        ON LOWER(b.title) LIKE '%' || LOWER(m.canonical_name) || '%'
       AND LENGTH(m.canonical_name) > 4
-WHERE b.entry_id IS NOT NULL
+WHERE b.article_id IS NOT NULL
   AND b.title IS NOT NULL;

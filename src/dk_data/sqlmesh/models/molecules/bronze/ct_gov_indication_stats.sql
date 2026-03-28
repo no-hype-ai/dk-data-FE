@@ -19,7 +19,7 @@ SELECT
     gen_random_uuid() AS id,
 
     -- CT.gov stats
-    drug_name AS condition_query,
+    request_params->>'drug_name' AS condition_query,
     (response_body->>'totalCount')::INTEGER AS total_count,
 
     -- Source tracking

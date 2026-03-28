@@ -84,14 +84,14 @@ LEFT JOIN mol_silver.molecules m_ik
 LEFT JOIN mol_silver.pubchem pc_chembl
        ON m_ik.molecule_id IS NULL
       AND b.chembl_id IS NOT NULL
-      AND b.chembl_id = ANY(pc_chembl.chembl_ids)
+      AND pc_chembl.chembl_ids @> to_jsonb(b.chembl_id)
 
 -- Strategy 3: PubChem CID via mol_silver.pubchem
 LEFT JOIN mol_silver.pubchem pc_cid
        ON m_ik.molecule_id IS NULL
       AND pc_chembl.molecule_id IS NULL
       AND b.pubchem_cid IS NOT NULL
-      AND pc_cid.cid = b.pubchem_cid
+      AND pc_cid.cid = b.pubchem_cid::BIGINT
 
 WHERE b.bindingdb_id IS NOT NULL
   AND b.activity_value IS NOT NULL;

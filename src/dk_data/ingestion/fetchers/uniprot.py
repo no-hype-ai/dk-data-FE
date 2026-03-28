@@ -23,8 +23,9 @@ class UniProtFetcher(BaseFetcher):
     SOURCE_NAME = "uniprot"
     BASE_URL = "https://rest.uniprot.org/uniprotkb"
 
-    # Default query: reviewed human proteins that are drug targets
-    DEFAULT_QUERY = "(reviewed:true) AND (organism_id:9606) AND (keyword:KW-0621)"
+    # Default query: reviewed human proteins with kinase activity (common drug targets)
+    # KW-0621 was deprecated; use GO:0004672 (protein kinase activity) instead
+    DEFAULT_QUERY = "reviewed:true AND organism_id:9606 AND go:0004672"
     MAX_RESULTS = 500
 
     def get_latest_url(self) -> str:

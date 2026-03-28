@@ -94,9 +94,9 @@ def load_cms_physician_puf(filepath: str, source_year: int = 2023) -> dict:
                 nppes_provider_country=row.get('nppes_provider_country'),
                 provider_type=row.get('provider_type'),
                 medicare_participation_indicator=row.get('medicare_participation_indicator'),
-                number_of_hcpcs=int(row['number_of_hcpcs']) if row.get('number_of_hcpcs') else None,
+                number_of_hcpcs=int(float(row['number_of_hcpcs'])) if pd.notna(row.get('number_of_hcpcs')) else None,
                 total_services=row.get('total_services') or None,
-                total_unique_benes=int(row['total_unique_benes']) if row.get('total_unique_benes') else None,
+                total_unique_benes=int(float(row['total_unique_benes'])) if pd.notna(row.get('total_unique_benes')) else None,
                 total_submitted_chrg_amt=row.get('total_submitted_chrg_amt') or None,
                 total_medicare_allowed_amt=row.get('total_medicare_allowed_amt') or None,
                 total_medicare_payment_amt=row.get('total_medicare_payment_amt') or None,
@@ -107,6 +107,7 @@ def load_cms_physician_puf(filepath: str, source_year: int = 2023) -> dict:
             d['_source_hash'] = source_hash
             d['_source_file'] = source_file
             d['_loaded_at'] = loaded_at
+            d['_source_year'] = source_year
             records.append(d)
         except (ValidationError, Exception) as e:
             errors.append(f"Row {idx}: {e}")

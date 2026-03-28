@@ -28,7 +28,7 @@ MODEL (
         time_column request_timestamp,
         batch_size 500
     ),
-    cron '@monthly',
+    cron '@daily',
     audits (
         not_null(columns := (icd_code))
     ),

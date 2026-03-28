@@ -94,9 +94,9 @@ def load_cms_outpatient_puf(filepath: str, source_year: int = 2023) -> dict:
                 provider_ruca=row.get('provider_ruca'),
                 apc=row.get('apc'),
                 apc_desc=row.get('apc_desc'),
-                total_services=int(float(row['total_services'])) if row.get('total_services') else None,
-                bene_cnt=int(float(row['bene_cnt'])) if row.get('bene_cnt') else None,
-                comp_asgn_pymt_cnt=int(float(row['comp_asgn_pymt_cnt'])) if row.get('comp_asgn_pymt_cnt') else None,
+                total_services=int(float(row['total_services'])) if pd.notna(row.get('total_services')) else None,
+                bene_cnt=int(float(row['bene_cnt'])) if pd.notna(row.get('bene_cnt')) else None,
+                comp_asgn_pymt_cnt=int(float(row['comp_asgn_pymt_cnt'])) if pd.notna(row.get('comp_asgn_pymt_cnt')) else None,
                 average_estimated_submitted_charges=row.get('average_estimated_submitted_charges') or None,
                 average_medicare_allowed_amt=row.get('average_medicare_allowed_amt') or None,
                 average_total_payments=row.get('average_total_payments') or None,
@@ -108,6 +108,7 @@ def load_cms_outpatient_puf(filepath: str, source_year: int = 2023) -> dict:
             d['_source_hash'] = source_hash
             d['_source_file'] = source_file
             d['_loaded_at'] = loaded_at
+            d['_source_year'] = source_year
             records.append(d)
         except (ValidationError, Exception) as e:
             errors.append(f"Row {idx}: {e}")

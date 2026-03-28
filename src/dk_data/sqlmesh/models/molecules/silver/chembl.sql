@@ -44,6 +44,6 @@ SELECT
     b.source_updated_at,
     NOW()                               AS created_at
 
-FROM mol_bronze.chembl b
+FROM mol_bronze.chembl_molecules b
 LEFT JOIN mol_silver.molecules m ON m.inchi_key = b.inchi_key
 WHERE b.chembl_id IS NOT NULL;

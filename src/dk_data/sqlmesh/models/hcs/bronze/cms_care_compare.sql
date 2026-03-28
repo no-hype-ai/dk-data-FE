@@ -25,7 +25,7 @@ SELECT
     response_body->>'hospital_type'         AS hospital_type,
     response_body->>'hospital_ownership'    AS hospital_ownership,
     response_body->>'emergency_services'    AS emergency_services,
-    (response_body->>'hospital_overall_rating')::INTEGER AS overall_rating,
+    NULLIF(response_body->>'hospital_overall_rating', 'Not Available')::INTEGER AS overall_rating,
     response_body                           AS raw_json,
     id                                      AS raw_source_id,
     'cms_care_compare'                      AS source,

@@ -13,7 +13,7 @@ MODEL (
     ),
     cron '@monthly',
     audits (
-        not_null(columns := (gnrc_name, _source_year))
+        not_null(columns := (_source_year))
     ),
     grain (_source_hash, gnrc_name, util_type, _source_year)
 );

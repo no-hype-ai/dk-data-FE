@@ -1,6 +1,7 @@
--- SQLMesh Model: Bronze CMS Medicare Inpatient
--- Transforms raw CMS Medicare inpatient data responses to Bronze typed columns
--- Part of: 015-assessment-dashboard-integration
+-- SQLMesh Model: Bronze CMS Inpatient PUF
+-- Transforms flat hcs_raw.cms_inpatient_puf table to Bronze typed columns.
+-- Source: hcs_raw.cms_inpatient_puf (loaded by cms_inpatient_puf.py CronJob)
+-- Part of: 015-assessment-dashboard-integration / 019-cms-puf-platform-reconciliation
 
 MODEL (
     name hcs_bronze.cms_inpatient,
@@ -10,8 +11,7 @@ MODEL (
     ),
     cron '@daily',
     audits (
-        not_null(columns := (provider_id)),
-        unique_values(columns := (record_id))
+        not_null(columns := (provider_id))
     ),
     grain record_id
 );
@@ -21,27 +21,26 @@ SELECT
 
     -- Record identifiers
     COALESCE(
-        response_body->>'provider_id' || '_' || response_body->>'drg_code' || '_' || response_body->>'fiscal_year',
+        provider_id || '_' || drg_cd || '_' || _source_year::TEXT,
         gen_random_uuid()::TEXT
     ) AS record_id,
-    response_body->>'provider_id' AS provider_id,
-    response_body->>'drg_code' AS drg_code,
-    (response_body->>'total_discharges')::INTEGER AS total_discharges,
-    (response_body->>'avg_charges')::NUMERIC AS avg_charges,
-    (response_body->>'avg_payments')::NUMERIC AS avg_payments,
-    response_body->>'fiscal_year' AS fiscal_year,
+    provider_id::TEXT AS provider_id,
+    drg_cd::TEXT AS drg_code,
+    total_discharges::INTEGER AS total_discharges,
+    average_covered_charges::NUMERIC AS avg_charges,
+    average_total_payments::NUMERIC AS avg_payments,
+    average_medicare_payments::NUMERIC AS avg_medicare_payments,
+    _source_year::TEXT AS fiscal_year,
 
     -- Raw source tracking
-    id AS raw_source_id,
-    'cms_inpatient' AS source,
-    request_timestamp,
-    request_timestamp AS source_updated_at,
+    id::BIGINT AS raw_source_id,
+    'cms_inpatient_puf' AS source,
+    _loaded_at AS request_timestamp,
+    _loaded_at AS source_updated_at,
     FALSE AS processed_to_silver,
     NOW() AS created_at
 
-FROM hcs_raw.cms_medicare_inpatient
+FROM hcs_raw.cms_inpatient_puf
 WHERE
-    response_status = 200
-    AND processed_to_bronze = FALSE
-    AND response_body->>'provider_id' IS NOT NULL
-    AND request_timestamp BETWEEN @start_dt AND @end_dt;
+    provider_id IS NOT NULL
+    AND _loaded_at BETWEEN @start_dt AND @end_dt;

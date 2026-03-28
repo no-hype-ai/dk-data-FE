@@ -82,6 +82,7 @@ def load_cms_medicaid_drug_spending(filepath: str, source_year: int = 2023) -> d
             d['_source_hash'] = source_hash
             d['_source_file'] = source_file
             d['_loaded_at'] = loaded_at
+            d['_source_year'] = source_year
             records.append(d)
         except (ValidationError, Exception) as e:
             errors.append(f"Row {idx}: {e}")

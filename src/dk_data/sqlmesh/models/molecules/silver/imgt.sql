@@ -54,5 +54,5 @@ LEFT JOIN mol_silver.targets t
       AND b.uniprot_id IS NOT NULL
       AND t.uniprot_id = b.uniprot_id
 LEFT JOIN mol_silver.molecules m_uniprot
-       ON m_uniprot.molecule_id = t.molecule_id
+       ON FALSE  -- mol_silver.targets does not expose molecule_id; uniprot path disabled
 WHERE b.pdb_code IS NOT NULL;

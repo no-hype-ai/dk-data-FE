@@ -75,8 +75,8 @@ def load_cms_imaging_puf(filepath: str, source_year: int = 2023) -> dict:
                 provider_type=row.get('provider_type'),
                 hcpcs_cd=row.get('hcpcs_cd'),
                 hcpcs_desc=row.get('hcpcs_desc'),
-                tot_benes=int(row['tot_benes']) if row.get('tot_benes') else None,
-                tot_srvcs=int(row['tot_srvcs']) if row.get('tot_srvcs') else None,
+                tot_benes=int(float(row['tot_benes'])) if pd.notna(row.get('tot_benes')) else None,
+                tot_srvcs=int(float(row['tot_srvcs'])) if pd.notna(row.get('tot_srvcs')) else None,
                 tot_mdcr_alowd_amt=row.get('tot_mdcr_alowd_amt') or None,
                 avg_mdcr_alowd_amt=row.get('avg_mdcr_alowd_amt') or None,
                 avg_mdcr_pymt_amt=row.get('avg_mdcr_pymt_amt') or None,
@@ -87,6 +87,7 @@ def load_cms_imaging_puf(filepath: str, source_year: int = 2023) -> dict:
             d['_source_hash'] = source_hash
             d['_source_file'] = source_file
             d['_loaded_at'] = loaded_at
+            d['_source_year'] = source_year
             records.append(d)
         except (ValidationError, Exception) as e:
             errors.append(f"Row {idx}: {e}")

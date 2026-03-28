@@ -41,7 +41,7 @@ SELECT
     FALSE AS processed_to_silver,
     NOW() AS created_at
 
-FROM hcs_raw.cms_cost_reports r
+FROM hcs_raw.cms_cost_reports_puf r
 WHERE
     r.provider_id IS NOT NULL
     AND r._loaded_at BETWEEN @start_dt AND @end_dt;

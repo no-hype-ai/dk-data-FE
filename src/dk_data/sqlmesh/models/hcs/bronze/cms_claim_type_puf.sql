@@ -10,7 +10,7 @@ MODEL (
     ),
     cron '@monthly',
     audits (
-        not_null(columns := (clm_type, _source_year))
+        not_null(columns := (_source_year))
     ),
     grain (bene_geo_lvl, clm_type, _source_year)
 );

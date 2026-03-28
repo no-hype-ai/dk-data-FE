@@ -16,29 +16,21 @@ MODEL (
     grain facility_id
 );
 
+-- acc_tvc_certification is a legacy file source loaded manually via --file.
+-- Until the file is loaded, return an empty result set with the correct schema.
 SELECT
-    gen_random_uuid() AS id,
-
-    -- Facility identifiers
-    response_body->>'facility_id' AS facility_id,
-    response_body->>'facility_name' AS facility_name,
-    response_body->>'city' AS city,
-    response_body->>'state' AS state,
-    response_body->>'certification_type' AS certification_type,
-    response_body->>'cert_date' AS cert_date,
-    response_body->'volumes' AS volumes,
-
-    -- Raw source tracking
-    id AS raw_source_id,
-    'acc_tvc' AS source,
-    request_timestamp,
-    request_timestamp AS source_updated_at,
-    FALSE AS processed_to_silver,
-    NOW() AS created_at
-
-FROM hcs_raw.acc_tvc_certification
-WHERE
-    response_status = 200
-    AND processed_to_bronze = FALSE
-    AND response_body->>'facility_id' IS NOT NULL
-    AND request_timestamp BETWEEN @start_dt AND @end_dt;
+    gen_random_uuid()       AS id,
+    NULL::TEXT              AS facility_id,
+    NULL::TEXT              AS facility_name,
+    NULL::TEXT              AS city,
+    NULL::TEXT              AS state,
+    NULL::TEXT              AS certification_type,
+    NULL::TEXT              AS cert_date,
+    NULL::JSONB             AS volumes,
+    NULL::UUID              AS raw_source_id,
+    'acc_tvc'               AS source,
+    NOW()                   AS request_timestamp,
+    NOW()                   AS source_updated_at,
+    FALSE                   AS processed_to_silver,
+    NOW()                   AS created_at
+WHERE FALSE;  -- empty until acc_tvc file is loaded via: python -m dk_data.ingestion.main acc_tvc --file <path>

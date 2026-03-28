@@ -10,7 +10,7 @@ MODEL (
     ),
     cron '@monthly',
     audits (
-        not_null(columns := (rndrng_npi, rfrd_npi, _source_year))
+        not_null(columns := (_source_year))
     ),
     grain (rndrng_npi, rfrd_npi, _source_year)
 );

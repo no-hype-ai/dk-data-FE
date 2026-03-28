@@ -90,7 +90,7 @@ API_SOURCES: list[dict] = [
     {"key": "euipo_designs",   "days_back": 90,  "credential_gated": True},
     {"key": "epo_ops",         "days_back": 90,  "credential_gated": True},
     # Drug / molecule data
-    {"key": "drugbank",        "days_back": None, "credential_gated": True},
+    {"key": "drugbank",        "days_back": None},  # uses local ZIP at data/drugbank/
     {"key": "uniprot",         "days_back": None},
     {"key": "pdb",             "days_back": None},
     {"key": "orcid",           "days_back": None},
@@ -100,7 +100,7 @@ API_SOURCES: list[dict] = [
     # Drug vocabulary / pharmacology
     {"key": "rxnorm",          "days_back": None},
     {"key": "who_inn",         "days_back": None},
-    {"key": "pharmgkb",        "days_back": None, "credential_gated": True},
+    {"key": "pharmgkb",        "days_back": None},  # API key optional; public access works
     {"key": "kegg_drug",       "days_back": None},
     {"key": "tdc_admet",       "days_back": None},
     # CMS API-based sources (no file download needed)

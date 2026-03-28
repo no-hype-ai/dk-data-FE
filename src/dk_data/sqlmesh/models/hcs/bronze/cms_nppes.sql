@@ -9,7 +9,7 @@ MODEL (
     ),
     cron '@monthly',
     audits (
-        not_null(columns := (npi, _source_year))
+        not_null(columns := (_source_year))
     ),
     grain (npi, _source_year)
 );
@@ -28,6 +28,11 @@ SELECT
     provider_business_mailing_address_state_name::TEXT,
     provider_business_mailing_address_postal_code::TEXT,
     provider_business_mailing_address_telephone_number::TEXT,
+    -- Practice location address (used by provider_profile silver model)
+    provider_business_practice_location_address_city_name::TEXT,
+    provider_business_practice_location_address_state_name::TEXT,
+    provider_business_practice_location_address_postal_code::TEXT,
+    provider_business_practice_location_address_telephone_number::TEXT,
     -- Taxonomy codes
     healthcare_provider_taxonomy_code_1::TEXT,
     healthcare_provider_taxonomy_code_2::TEXT,

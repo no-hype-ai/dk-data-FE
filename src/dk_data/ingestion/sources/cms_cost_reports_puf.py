@@ -19,6 +19,7 @@ logger = logging.getLogger(__name__)
 
 COLUMN_MAPPING = {
     'Provider ID': 'provider_id',
+    'Provider CCN': 'provider_id',
     'Hospital Name': 'hospital_name',
     'City': 'city',
     'State': 'state',
@@ -77,8 +78,8 @@ def load_cms_cost_reports_puf(filepath: str, source_year: int = 2023) -> dict:
                 zip_code=row.get('zip_code'),
                 fiscal_year_begin=row.get('fiscal_year_begin') or None,
                 fiscal_year_end=row.get('fiscal_year_end') or None,
-                total_beds=int(row['total_beds']) if row.get('total_beds') else None,
-                total_discharges=int(row['total_discharges']) if row.get('total_discharges') else None,
+                total_beds=int(float(row['total_beds'])) if pd.notna(row.get('total_beds')) else None,
+                total_discharges=int(float(row['total_discharges'])) if pd.notna(row.get('total_discharges')) else None,
                 net_patient_revenue=row.get('net_patient_revenue') or None,
                 total_operating_expenses=row.get('total_operating_expenses') or None,
                 operating_margin=row.get('operating_margin') or None,
@@ -88,6 +89,7 @@ def load_cms_cost_reports_puf(filepath: str, source_year: int = 2023) -> dict:
             d['_source_hash'] = source_hash
             d['_source_file'] = source_file
             d['_loaded_at'] = loaded_at
+            d['_source_year'] = source_year
             records.append(d)
         except (ValidationError, Exception) as e:
             errors.append(f"Row {idx}: {e}")

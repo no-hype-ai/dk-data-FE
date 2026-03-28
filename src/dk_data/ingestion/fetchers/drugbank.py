@@ -10,12 +10,21 @@ Source: https://go.drugbank.com/releases/latest
 """
 
 import hashlib
+import io
 import logging
 import os
+import tempfile
 import xml.etree.ElementTree as ET
+import zipfile
+from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 from .base import BaseFetcher
+
+# Default local file locations (repo-relative then container path)
+_REPO_DATA_DIR = Path(__file__).resolve().parents[4] / "data" / "drugbank"
+_CONTAINER_DATA_DIR = Path("/app/data/drugbank")
+_DEFAULT_ZIP_NAME = "drugbank_all_full_database.xml.zip"
 
 logger = logging.getLogger(__name__)
 
@@ -70,18 +79,33 @@ class DrugBankFetcher(BaseFetcher):
                 - hash: SHA-256 hash of the content
                 - error: error message (if failed)
         """
-        max_entries = kwargs.get("max_entries", self.MAX_ENTRIES)
+        max_entries = kwargs.get("max_entries") or self.params.get("max_entries") or self.MAX_ENTRIES
 
         try:
-            if not self.api_key:
-                raise ValueError(
-                    "DRUGBANK_API_KEY environment variable is required"
+            local_zip = self._find_local_zip()
+            if local_zip:
+                logger.info("Using local DrugBank ZIP: %s", local_zip)
+                filepath = self._extract_xml_from_zip(local_zip)
+            elif self.api_key:
+                logger.info("Fetching DrugBank XML database from remote")
+                filepath = self._download_drugbank_xml()
+            else:
+                msg = (
+                    f"No local DrugBank ZIP found in {_REPO_DATA_DIR} or {_CONTAINER_DATA_DIR} "
+                    "and DRUGBANK_API_KEY is not set. "
+                    f"Download from https://go.drugbank.com/releases/latest and place at "
+                    f"{_REPO_DATA_DIR / _DEFAULT_ZIP_NAME}"
                 )
-
-            logger.info("Fetching DrugBank XML database")
-
-            # Download the XML file with API key auth
-            filepath = self._download_drugbank_xml()
+                logger.warning(msg)
+                result = {
+                    "status": "source_unavailable",
+                    "records": [],
+                    "record_count": 0,
+                    "hash": None,
+                    "error": msg,
+                }
+                self.log_fetch_result(result)
+                return result
 
             # Parse the XML file
             records = self._parse_drugbank_xml(filepath, max_entries=max_entries)
@@ -147,6 +171,33 @@ class DrugBankFetcher(BaseFetcher):
         size_mb = filepath.stat().st_size / 1024 / 1024
         logger.info("Downloaded DrugBank XML: %.2f MB", size_mb)
         return str(filepath)
+
+    def _find_local_zip(self) -> Optional[Path]:
+        """Return path to a local DrugBank ZIP if one exists, else None."""
+        custom = self.params.get("local_file")
+        if custom:
+            p = Path(custom)
+            return p if p.exists() else None
+        for data_dir in (_CONTAINER_DATA_DIR, _REPO_DATA_DIR):
+            candidate = data_dir / _DEFAULT_ZIP_NAME
+            if candidate.exists():
+                return candidate
+        return None
+
+    def _extract_xml_from_zip(self, zip_path: Path) -> str:
+        """Extract the XML from a DrugBank ZIP to a temp file. Returns path."""
+        tmp = tempfile.NamedTemporaryFile(
+            mode="wb", suffix=".xml", delete=False, prefix="drugbank_"
+        )
+        with zipfile.ZipFile(zip_path) as zf:
+            # The ZIP contains exactly one file: 'full database.xml'
+            xml_name = next(n for n in zf.namelist() if n.endswith(".xml"))
+            with zf.open(xml_name) as src:
+                for chunk in iter(lambda: src.read(8192), b""):
+                    tmp.write(chunk)
+        tmp.close()
+        logger.info("Extracted DrugBank XML to %s", tmp.name)
+        return tmp.name
 
     def _parse_drugbank_xml(
         self,

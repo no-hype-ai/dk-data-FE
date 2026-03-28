@@ -1,150 +1,139 @@
-"""PharmGKB loader — inserts paged API responses to mol_raw.pharmgkb.
+"""PharmGKB loader — inserts chemical rows from bulk TSV download into mol_raw.pharmgkb.
 
 Feature: 019-cms-puf-platform-reconciliation
 
-Each record in data["records"] is a full page response dict from
-PharmGKBFetcher (one page = one row in mol_raw.pharmgkb).
+Each record in records is a flat dict row from chemicals.tsv (one chemical per row).
+The row is stored as JSONB in response_body; the pharmgkb_accession_id is used as
+the unique request_id to enable idempotent upserts.
 
 Target table: mol_raw.pharmgkb
-Schema (matches mol_raw.pharmgkb defined in migration 062, promoted to mol_raw):
     id                  UUID PRIMARY KEY DEFAULT uuid_generate_v4()
-    request_id          VARCHAR(100) NOT NULL
+    request_id          VARCHAR(100)      — pharmgkb_accession_id
     request_timestamp   TIMESTAMPTZ NOT NULL DEFAULT NOW()
-    api_endpoint        VARCHAR(500) NOT NULL
+    api_endpoint        VARCHAR(500)      — "bulk_download/chemicals.tsv"
     api_version         VARCHAR(20)
     request_params      JSONB
-    response_status     INTEGER NOT NULL
-    response_body       JSONB NOT NULL
+    response_status     INTEGER NOT NULL  — always 200 (bulk download)
+    response_body       JSONB NOT NULL    — full row as JSONB
     response_body_hash  VARCHAR(64)
     processed_to_bronze BOOLEAN DEFAULT FALSE
     ingested_at         TIMESTAMPTZ NOT NULL DEFAULT NOW()
     source_id           VARCHAR(50) NOT NULL DEFAULT 'pharmgkb'
-
-Deduplication: ON CONFLICT (request_id) DO NOTHING — idempotent for the same
-page + entity_type + timestamp combination.
 """
 
 import hashlib
 import json
 import logging
-from datetime import datetime, timezone
-from typing import Any, Dict
+from typing import Any, Dict, List, Optional
+
+from ..utils.database import get_connection
 
 logger = logging.getLogger(__name__)
 
 SOURCE_ID = "pharmgkb"
-TABLE = "mol_raw.pharmgkb"
-BASE_URL = "https://api.pharmgkb.org/v1"
-
-_INSERT_SQL = """
-    INSERT INTO mol_raw.pharmgkb (
-        request_id,
-        api_endpoint,
-        api_version,
-        request_params,
-        response_status,
-        response_body,
-        response_body_hash,
-        source_id
-    )
-    VALUES (
-        %(request_id)s,
-        %(api_endpoint)s,
-        %(api_version)s,
-        %(request_params)s::jsonb,
-        %(response_status)s,
-        %(response_body)s::jsonb,
-        %(response_body_hash)s,
-        %(source_id)s
-    )
-    ON CONFLICT (request_id) DO NOTHING
-"""
+BATCH_SIZE = 500
 
 
-def load_pharmgkb_data(conn: Any, data: Dict[str, Any]) -> Dict[str, Any]:
-    """Load PharmGKB page responses into mol_raw.pharmgkb.
+def load_pharmgkb_data(
+    records: List[Dict[str, Any]],
+    source_hash: Optional[str] = None,
+    batch_size: int = BATCH_SIZE,
+) -> Dict[str, Any]:
+    """Load PharmGKB chemical rows into mol_raw.pharmgkb.
 
-    Each element of data["records"] is a raw page response dict produced by
-    PharmGKBFetcher.  One page = one row.  The request_id encodes the entity
-    type, page number, and a UTC timestamp so that incremental re-runs are
-    idempotent (DO NOTHING on conflict).
+    Each element of records is a flat row dict from chemicals.tsv.
+    Upserts on pharmgkb_accession_id (ON CONFLICT (request_id) DO UPDATE).
 
     Args:
-        conn:  psycopg2 database connection (caller-managed lifecycle).
-        data:  Result dict from PharmGKBFetcher.fetch(), expected keys:
-                   records     — list of page response dicts
-                   entity_type — "chemical" or "gene" (optional, default "chemical")
-                   hash        — content hash (optional, unused)
+        records:     List of row dicts from PharmGKBFetcher.fetch()["records"].
+        source_hash: Content hash of the downloaded ZIP for lineage tracking.
+        batch_size:  Commit interval.
 
     Returns:
-        Dict with:
-            records_inserted: int
-            records_skipped:  int
+        Dict with status, records_inserted, records_failed, errors.
     """
-    records = data.get("records", [])
-    entity_type: str = data.get("entity_type", "chemical")
-
     if not records:
-        logger.info("PharmGKB loader: no records to insert")
-        return {"records_inserted": 0, "records_skipped": 0}
+        logger.warning("PharmGKB loader: no records to load")
+        return {
+            "status": "success",
+            "records_fetched": 0,
+            "records_inserted": 0,
+            "records_failed": 0,
+            "errors": [],
+        }
 
-    timestamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+    logger.info("Loading %d PharmGKB chemicals into mol_raw.pharmgkb", len(records))
+
     inserted = 0
-    skipped = 0
+    failed = 0
+    errors: List[Dict[str, Any]] = []
 
-    with conn.cursor() as cur:
-        for page in records:
-            page_num: int = page.get("_page_num", 0)
-            request_id = f"pharmgkb_{entity_type}_page_{page_num}_{timestamp}"
+    with get_connection() as conn:
+        with conn.cursor() as cur:
+            for idx, row in enumerate(records):
+                accession_id = row.get("pharmgkb_accession_id") or row.get("pharmgkb accession id")
+                if not accession_id:
+                    failed += 1
+                    errors.append({"index": idx, "error": "missing pharmgkb_accession_id", "type": "validation"})
+                    continue
 
-            # Serialise the full page response as the stored JSONB blob
-            body_json = json.dumps(page)
-            body_hash = hashlib.sha256(body_json.encode()).hexdigest()
+                body_json = json.dumps(row)
+                body_hash = hashlib.sha256(body_json.encode()).hexdigest()
 
-            api_endpoint = (
-                f"{BASE_URL}/data/{entity_type}"
-                f"?view=max&pageSize=100&page={page_num}"
-            )
-            request_params = json.dumps(
-                {"view": "max", "pageSize": 100, "page": page_num}
-            )
-
-            try:
-                cur.execute(
-                    _INSERT_SQL,
-                    {
-                        "request_id": request_id,
-                        "api_endpoint": api_endpoint,
-                        "api_version": "v1",
-                        "request_params": request_params,
-                        "response_status": 200,
-                        "response_body": body_json,
-                        "response_body_hash": body_hash,
-                        "source_id": SOURCE_ID,
-                    },
-                )
-                # rowcount 0 means DO NOTHING fired (duplicate request_id)
-                if cur.rowcount == 0:
-                    skipped += 1
-                    logger.debug(
-                        "PharmGKB page %d (%s) already present — skipped",
-                        page_num, entity_type,
+                try:
+                    cur.execute(
+                        """
+                        INSERT INTO mol_raw.pharmgkb (
+                            request_id,
+                            api_endpoint,
+                            api_version,
+                            request_params,
+                            response_status,
+                            response_body,
+                            response_body_hash,
+                            source_id
+                        ) VALUES (
+                            %s, %s, %s, %s::jsonb, %s, %s::jsonb, %s, %s
+                        )
+                        ON CONFLICT (request_id) DO UPDATE SET
+                            response_body       = EXCLUDED.response_body,
+                            response_body_hash  = EXCLUDED.response_body_hash,
+                            ingested_at         = NOW()
+                        """,
+                        (
+                            accession_id,
+                            "bulk_download/chemicals.tsv",
+                            "v1",
+                            json.dumps({"source_hash": source_hash}),
+                            200,
+                            body_json,
+                            body_hash,
+                            SOURCE_ID,
+                        ),
                     )
-                else:
                     inserted += 1
-            except Exception as exc:
-                logger.warning(
-                    "PharmGKB insert error for %s page %d: %s",
-                    entity_type, page_num, exc,
-                )
-                conn.rollback()
-                skipped += 1
-                continue
 
-        conn.commit()
+                    if inserted % batch_size == 0:
+                        conn.commit()
+                        logger.debug("PharmGKB: committed %d records", inserted)
 
-    logger.info(
-        "PharmGKB load complete: %d inserted, %d skipped (entity_type=%s)",
-        inserted, skipped, entity_type,
-    )
-    return {"records_inserted": inserted, "records_skipped": skipped}
+                except Exception as exc:
+                    failed += 1
+                    errors.append({
+                        "index": idx,
+                        "accession_id": accession_id,
+                        "error": str(exc),
+                        "type": "database",
+                    })
+                    logger.error("PharmGKB insert error at index %d: %s", idx, exc)
+
+            conn.commit()
+
+    logger.info("PharmGKB load complete: %d inserted, %d failed", inserted, failed)
+    return {
+        "status": "success" if inserted > 0 or failed == 0 else "failed",
+        "records_fetched": len(records),
+        "records_inserted": inserted,
+        "records_failed": failed,
+        "errors": errors[:10],
+    }

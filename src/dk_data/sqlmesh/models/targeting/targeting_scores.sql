@@ -20,6 +20,52 @@ MODEL (
 -- T042: priority classification
 -- ============================================================================
 
+-- Legacy TAVR CRM tables no longer exist; return empty relations with correct schemas
+-- so all downstream COALESCE calls yield their default values.
+WITH biome_rel AS (
+    SELECT
+        NULL::TEXT      AS hospital_id,
+        FALSE           AS is_current_client,
+        FALSE           AS echo_surveillance_active,
+        FALSE           AS workflow_active,
+        FALSE           AS analytics_active,
+        NULL::TEXT      AS pilot_phase,
+        NULL::TEXT      AS contract_type,
+        NULL::INTEGER   AS phase_2_tokens_needed
+    WHERE FALSE
+),
+sales_cov AS (
+    SELECT
+        NULL::TEXT      AS hospital_id,
+        NULL::TEXT      AS regional_director,
+        NULL::TEXT      AS area_vp,
+        FALSE           AS expressed_interest
+    WHERE FALSE
+),
+vol_hist AS (
+    SELECT
+        NULL::TEXT      AS hospital_id,
+        NULL::INTEGER   AS fiscal_year,
+        NULL::INTEGER   AS total_tavr_volume,
+        NULL::NUMERIC   AS yoy_growth_pct,
+        NULL::NUMERIC   AS market_share_pct
+    WHERE FALSE
+),
+emr_sys AS (
+    SELECT
+        NULL::TEXT      AS hospital_id,
+        NULL::TEXT      AS primary_emr
+    WHERE FALSE
+),
+champs AS (
+    SELECT
+        NULL::TEXT      AS hospital_id,
+        NULL::TEXT      AS champion_name,
+        NULL::TEXT      AS champion_type,
+        NULL::TEXT      AS engagement_level
+    WHERE FALSE
+)
+
 SELECT
     -- Hospital identifiers
     h.hospital_id,
@@ -211,14 +257,14 @@ SELECT
     ac.engagement_level AS admin_engagement
 
 FROM mart.dim_hospital h
-LEFT JOIN targeting.biome_relationships br ON h.hospital_id = br.hospital_id
-LEFT JOIN targeting.sales_coverage sc ON h.hospital_id = sc.hospital_id
-LEFT JOIN targeting.volume_history vh ON h.hospital_id = vh.hospital_id
-    AND vh.fiscal_year = (SELECT MAX(fiscal_year) FROM targeting.volume_history)
-LEFT JOIN targeting.emr_systems e ON h.hospital_id = e.hospital_id
+LEFT JOIN biome_rel br ON h.hospital_id = br.hospital_id
+LEFT JOIN sales_cov sc ON h.hospital_id = sc.hospital_id
+LEFT JOIN vol_hist vh ON h.hospital_id = vh.hospital_id
+    AND vh.fiscal_year = (SELECT MAX(fiscal_year) FROM vol_hist)
+LEFT JOIN emr_sys e ON h.hospital_id = e.hospital_id
 LEFT JOIN LATERAL (
     SELECT champion_name, engagement_level
-    FROM targeting.champions
+    FROM champs
     WHERE hospital_id = h.hospital_id AND champion_type = 'Clinical'
     ORDER BY
         CASE engagement_level
@@ -231,7 +277,7 @@ LEFT JOIN LATERAL (
 ) cc ON TRUE
 LEFT JOIN LATERAL (
     SELECT champion_name, engagement_level
-    FROM targeting.champions
+    FROM champs
     WHERE hospital_id = h.hospital_id AND champion_type = 'Administrative'
     ORDER BY
         CASE engagement_level

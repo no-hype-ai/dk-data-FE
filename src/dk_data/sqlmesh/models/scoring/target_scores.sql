@@ -107,7 +107,7 @@ scored AS (
                 ELSE 25
             END
             -- Emergency services points (0-50)
-            + CASE WHEN has_emergency_services = TRUE THEN 50 ELSE 0 END
+            + CASE WHEN has_emergency_services = 'Yes' THEN 50 ELSE 0 END
             -- Ownership type points (0-25)
             + CASE
                 WHEN ownership_type ILIKE '%Government%' THEN 25

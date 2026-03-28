@@ -73,8 +73,8 @@ def load_cms_home_health(filepath: str, source_year: int = 2023) -> dict:
                 provider_zip5=row.get('provider_zip5'),
                 hh_srvc_cd=row.get('hh_srvc_cd'),
                 hh_srvc_desc=row.get('hh_srvc_desc'),
-                tot_epsd_stay=int(row['tot_epsd_stay']) if row.get('tot_epsd_stay') else None,
-                tot_benes=int(row['tot_benes']) if row.get('tot_benes') else None,
+                tot_epsd_stay=int(float(row['tot_epsd_stay'])) if pd.notna(row.get('tot_epsd_stay')) else None,
+                tot_benes=int(float(row['tot_benes'])) if pd.notna(row.get('tot_benes')) else None,
                 avg_hh_mdcr_pymt_amt=row.get('avg_hh_mdcr_pymt_amt') or None,
                 avg_hh_outlier_pymt=row.get('avg_hh_outlier_pymt') or None,
                 avg_age=row.get('avg_age') or None,
@@ -86,6 +86,7 @@ def load_cms_home_health(filepath: str, source_year: int = 2023) -> dict:
             d['_source_hash'] = source_hash
             d['_source_file'] = source_file
             d['_loaded_at'] = loaded_at
+            d['_source_year'] = source_year
             records.append(d)
         except (ValidationError, Exception) as e:
             errors.append(f"Row {idx}: {e}")

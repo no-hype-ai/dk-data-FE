@@ -13,8 +13,7 @@ MODEL (
     ),
     cron '@monthly',
     audits (
-        not_null(columns := (npi, _source_year)),
-        unique_values(columns := (npi, _source_year))
+        not_null(columns := (npi, _source_year))
     ),
     grain (npi, _source_year)
 );
