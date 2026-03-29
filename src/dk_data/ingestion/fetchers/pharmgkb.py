@@ -22,7 +22,7 @@ import hashlib
 import io
 import logging
 import zipfile
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List
 
 from .base import BaseFetcher
 

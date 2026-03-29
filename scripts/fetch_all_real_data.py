@@ -18,8 +18,6 @@ Usage:
 
 import argparse
 import csv
-import io
-import json
 import logging
 import os
 import subprocess

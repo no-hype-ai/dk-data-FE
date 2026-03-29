@@ -15,6 +15,11 @@
 --   doppler run -- python -m dk_data.scripts.run_migration \
 --     src/dk_data/sql/migrations/089_entity_linking_gaps.sql
 
+-- Ensure hcs_raw schema exists before this migration runs.
+-- hcs_raw is fully initialized by migration 114_cms_puf_platform_reconciliation.sql;
+-- this guard makes 089 self-contained for CI environments where migrations run in order.
+CREATE SCHEMA IF NOT EXISTS hcs_raw;
+
 BEGIN;
 
 -- ============================================================================

@@ -20,7 +20,7 @@ gracefully when unreachable, so the pipeline continues without this source.
 
 import hashlib
 import logging
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List
 
 from .base import BaseFetcher
 
@@ -101,7 +101,7 @@ class IMGTFetcher(BaseFetcher):
         for group in _HUMAN_GENE_GROUPS:
             try:
                 params = {
-                    "query": f"7.1 Homo sapiens",
+                    "query": "7.1 Homo sapiens",
                     "species": "Homo sapiens",
                     "group": group,
                 }

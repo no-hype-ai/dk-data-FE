@@ -13,7 +13,7 @@ from typing import Optional
 import pandas as pd
 from pydantic import ValidationError
 
-from ..utils.database import get_cursor, get_connection
+from ..utils.database import apply_column_mapping, get_cursor, get_connection
 from ..utils.validators import CMSCostReportRecord
 
 logger = logging.getLogger(__name__)

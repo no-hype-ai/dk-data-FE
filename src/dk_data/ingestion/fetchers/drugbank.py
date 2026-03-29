@@ -10,7 +10,6 @@ Source: https://go.drugbank.com/releases/latest
 """
 
 import hashlib
-import io
 import logging
 import os
 import tempfile

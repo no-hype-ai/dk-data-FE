@@ -13,7 +13,7 @@ import time
 from datetime import datetime, timezone
 from pathlib import Path
 
-from .sources import cms_inpatient, cms_hospital_info, cms_cost_reports, acc_tvc, hrsa
+from .sources import cms_inpatient, cms_hospital_info, cms_cost_reports, acc_tvc
 from .sources.hrsa import load_hrsa_shortage_areas_from_records
 from .sources.pubmed import load_pubmed_data
 from .sources.ema_regulatory import load_ema_regulatory_data
@@ -38,7 +38,6 @@ from .sources.sider import load_sider_data
 from .sources.europepmc import load_europepmc_data
 from .sources.nih_reporter import load_nih_reporter_data
 from .sources.cms_geographic_variation import (
-    load_cms_geographic_variation,
     load_cms_geographic_variation_from_records,
 )
 from .sources.cms_part_d_prescriber import load_cms_part_d_prescriber

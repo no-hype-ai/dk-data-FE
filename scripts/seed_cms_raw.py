@@ -10,7 +10,6 @@ import os
 import sys
 import random
 import psycopg2
-from datetime import datetime, timezone, date
 
 DB_CONFIG = {
     "host": os.getenv("POSTGRES_HOST", "localhost"),
@@ -116,7 +115,7 @@ def generate_cms_chronic_conditions():
     conditions = ["Diabetes","Hypertension","COPD","CHF","CKD","Depression","Atrial_Fib","Cancer","Alzheimers","Asthma"]
     age_lvls = ["All","LT65","GTE65"]
     seen = set()
-    geo_idx = 0
+    _geo_idx = 0
     geo_count = 34  # 34 counties × 3 × 10 = 1020 unique combos
     for cond in conditions:
         for age_lvl in age_lvls:
@@ -334,7 +333,7 @@ def generate_cms_dual_eligible():
 def generate_cms_enrollment_puf():
     rows = []
     for i in range(TARGET_ROWS):
-        state = STATES[i % len(STATES)]
+        _state = STATES[i % len(STATES)]
         h = make_hash(f"enrollment_{i}_{SOURCE_YEAR}")
         rows.append({
             "state_cd": f"{i % 50 + 1:02d}",

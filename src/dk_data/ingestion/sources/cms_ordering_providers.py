@@ -28,7 +28,7 @@ from pathlib import Path
 import pandas as pd
 from pydantic import ValidationError
 
-from ..utils.database import apply_column_mapping, get_cursor, upsert_records
+from ..utils.database import apply_column_mapping, get_cursor
 from ..utils.validators import CMSOrderingProviderRecord
 
 logger = logging.getLogger(__name__)
