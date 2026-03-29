@@ -81,6 +81,13 @@ from .cms_enrollment_puf import CMSEnrollmentPUFFetcher
 from .cms_claim_type_puf import CMSClaimTypePUFFetcher
 from .cms_utilization_puf import CMSUtilizationPUFFetcher
 from .cms_cost_reports_puf import CMSCostReportsPUFFetcher
+from .ema_mol import EMAMolFetcher
+from .orange_book import OrangeBookFetcher
+from .dailymed import DailyMedFetcher
+from .fda_drugs import FDADrugsFetcher
+from .ttd import TTDFetcher
+from .imgt import IMGTFetcher
+from .cdc_vaccines import CDCVaccinesFetcher
 
 __all__ = [
     'BaseFetcher',
@@ -164,4 +171,11 @@ __all__ = [
     'CMSClaimTypePUFFetcher',
     'CMSUtilizationPUFFetcher',
     'CMSCostReportsPUFFetcher',
+    'EMAMolFetcher',
+    'OrangeBookFetcher',
+    'DailyMedFetcher',
+    'FDADrugsFetcher',
+    'TTDFetcher',
+    'IMGTFetcher',
+    'CDCVaccinesFetcher',
 ]

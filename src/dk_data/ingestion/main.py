@@ -94,6 +94,13 @@ from .sources.cms_claim_type_puf import load_cms_claim_type_puf
 from .sources.cms_utilization_puf import load_cms_utilization_puf
 from .sources.cms_cost_reports_puf import load_cms_cost_reports_puf
 from .sources.cms_cost_reports_puf_lines import load_cms_cost_reports_puf_lines
+from .sources.ema_mol import load_ema_mol_data
+from .sources.orange_book import load_orange_book_data
+from .sources.dailymed import load_dailymed_data
+from .sources.fda_drugs import load_fda_drugs_data
+from .sources.ttd import load_ttd_data
+from .sources.imgt import load_imgt_data
+from .sources.cdc_vaccines import load_cdc_vaccines_data
 
 from .fetchers import (
     PubMedFetcher,
@@ -172,6 +179,13 @@ from .fetchers import (
     CMSUtilizationPUFFetcher,
     CMSCostReportsPUFFetcher,
     HRSAFetcher,
+    EMAMolFetcher,
+    OrangeBookFetcher,
+    DailyMedFetcher,
+    FDADrugsFetcher,
+    TTDFetcher,
+    IMGTFetcher,
+    CDCVaccinesFetcher,
 )
 
 from .utils.database import init_connection_pool, close_connection_pool, get_cursor
@@ -838,6 +852,63 @@ SOURCES = {
         'loader': load_tdc_admet_data,
         'requires_file': False,
         'default_days_back': None,  # static benchmark datasets, monthly refresh
+    },
+    # --- New molecule vocabulary sources (019-cms-puf-platform-reconciliation) ---
+    'ema': {
+        'name': 'EMA EPAR',
+        'description': 'EMA European Public Assessment Reports (authorised medicines)',
+        'fetcher': EMAMolFetcher,
+        'loader': load_ema_mol_data,
+        'requires_file': False,
+        'default_days_back': None,
+    },
+    'orange_book': {
+        'name': 'FDA Orange Book',
+        'description': 'FDA Approved Drug Products with Therapeutic Equivalence Evaluations',
+        'fetcher': OrangeBookFetcher,
+        'loader': load_orange_book_data,
+        'requires_file': False,
+        'default_days_back': None,
+    },
+    'dailymed': {
+        'name': 'DailyMed',
+        'description': 'NLM DailyMed structured product labels (SPL)',
+        'fetcher': DailyMedFetcher,
+        'loader': load_dailymed_data,
+        'requires_file': False,
+        'default_days_back': None,
+    },
+    'fda_drugs': {
+        'name': 'FDA Drugs@FDA',
+        'description': 'FDA drug application approvals (NDA/ANDA/BLA)',
+        'fetcher': FDADrugsFetcher,
+        'loader': load_fda_drugs_data,
+        'requires_file': False,
+        'default_days_back': None,
+    },
+    'ttd': {
+        'name': 'TTD',
+        'description': 'Therapeutic Target Database — targets, drugs, and drug-target interactions',
+        'fetcher': TTDFetcher,
+        'loader': load_ttd_data,
+        'requires_file': False,
+        'default_days_back': None,
+    },
+    'imgt': {
+        'name': 'IMGT',
+        'description': 'IMGT immunogenetics gene database (IG/TR FASTA sequences)',
+        'fetcher': IMGTFetcher,
+        'loader': load_imgt_data,
+        'requires_file': False,
+        'default_days_back': None,
+    },
+    'cdc_vaccines': {
+        'name': 'CDC Vaccines',
+        'description': 'CDC CVX/MVX vaccine code sets',
+        'fetcher': CDCVaccinesFetcher,
+        'loader': load_cdc_vaccines_data,
+        'requires_file': False,
+        'default_days_back': None,
     },
 }
 

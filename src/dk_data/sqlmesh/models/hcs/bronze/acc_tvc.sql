@@ -1,36 +1,47 @@
 -- SQLMesh Model: Bronze ACC/TVC Certification
--- Transforms raw ACC/TVC certification data to Bronze typed columns
+-- Transforms raw hcs_raw.acc_tvc_certification data to Bronze typed columns.
+-- Source: hcs_raw.acc_tvc_certification (loaded by acc_tvc fetcher or manual CSV)
 -- Part of: 015-assessment-dashboard-integration
+--
+-- Raw table columns (init_database.sql → migrated to hcs_raw via migration 099):
+--   id SERIAL, facility_name, facility_address, city, state, zip_code,
+--   certification_type, certification_date DATE, expiration_date DATE,
+--   _loaded_at TIMESTAMP, _source_file, _source_hash
+--
+-- Grain: (facility_name, state, certification_type) — no numeric facility ID in raw
 
 MODEL (
     name hcs_bronze.acc_tvc,
     kind INCREMENTAL_BY_TIME_RANGE (
-        time_column request_timestamp,
+        time_column _loaded_at,
         batch_size 500
     ),
     cron '@daily',
     audits (
-        not_null(columns := (facility_id)),
-        unique_values(columns := (facility_id))
+        not_null(columns := (facility_name, state, certification_type))
     ),
-    grain facility_id
+    grain (facility_name, state, certification_type)
 );
 
--- acc_tvc_certification is a legacy file source loaded manually via --file.
--- Until the file is loaded, return an empty result set with the correct schema.
 SELECT
-    gen_random_uuid()       AS id,
-    NULL::TEXT              AS facility_id,
-    NULL::TEXT              AS facility_name,
-    NULL::TEXT              AS city,
-    NULL::TEXT              AS state,
-    NULL::TEXT              AS certification_type,
-    NULL::TEXT              AS cert_date,
-    NULL::JSONB             AS volumes,
-    NULL::UUID              AS raw_source_id,
-    'acc_tvc'               AS source,
-    NOW()                   AS request_timestamp,
-    NOW()                   AS source_updated_at,
-    FALSE                   AS processed_to_silver,
-    NOW()                   AS created_at
-WHERE FALSE;  -- empty until acc_tvc file is loaded via: python -m dk_data.ingestion.main acc_tvc --file <path>
+    gen_random_uuid()           AS id,
+    r.facility_name::TEXT       AS facility_name,
+    r.facility_address::TEXT    AS facility_address,
+    r.city::TEXT                AS city,
+    r.state::TEXT               AS state,
+    r.zip_code::TEXT            AS zip_code,
+    r.certification_type::TEXT  AS certification_type,
+    r.certification_date::DATE  AS certification_date,
+    r.expiration_date::DATE     AS expiration_date,
+    r._loaded_at::TIMESTAMPTZ   AS _loaded_at,
+    r._source_file::TEXT        AS _source_file,
+    r._source_hash::TEXT        AS _source_hash,
+    'acc_tvc'                   AS source,
+    r._loaded_at::TIMESTAMPTZ   AS source_updated_at,
+    FALSE                       AS processed_to_silver,
+    NOW()                       AS created_at
+
+FROM hcs_raw.acc_tvc_certification r
+WHERE
+    r.facility_name IS NOT NULL
+    AND r._loaded_at BETWEEN @start_dt AND @end_dt;

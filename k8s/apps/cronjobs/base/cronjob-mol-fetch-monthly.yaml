@@ -1,6 +1,8 @@
 # Molecule Fetch Monthly CronJob
 # 004-molecule-platform-integration
-# Fetches data from monthly-refresh sources: BindingDB, SIDER, TDC ADMET
+# SUSPENDED: All sources (bindingdb, sider, tdc_admet, rxnorm, dailymed, fda_drugs,
+# kegg_drug, ttd, pharmgkb, imgt, cdc_vaccines) now have individual main.py CronJobs.
+# fetch_molecules.py only handles Pipeline 1 sources (chembl, pubchem, openfda, etc.)
 apiVersion: batch/v1
 kind: CronJob
 metadata:
@@ -12,6 +14,7 @@ metadata:
     app.kubernetes.io/part-of: dk-data
 spec:
   schedule: "0 8 1 * *"  # 1st of month, 8 AM UTC
+  suspend: true  # All sources migrated to individual main.py CronJobs
   concurrencyPolicy: Forbid
   successfulJobsHistoryLimit: 3
   failedJobsHistoryLimit: 3

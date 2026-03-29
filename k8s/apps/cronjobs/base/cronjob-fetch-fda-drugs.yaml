@@ -1,31 +1,29 @@
-# Molecule Fetch Daily CronJob
-# 004-molecule-platform-integration
-# SUSPENDED: Pipeline 1 (fetch_molecules.py) must be triggered externally only.
-# Use POST /data-platform/source/{source}/ingest to trigger on-demand.
-# Sources: ClinicalTrials.gov, OpenFDA Labels
+# FDA Drugs@FDA (NDA/ANDA/BLA approvals) Fetch CronJob
+# 019-cms-puf-platform-reconciliation
 apiVersion: batch/v1
 kind: CronJob
 metadata:
-  name: mol-fetch-daily
+  name: fetch-fda-drugs
   labels:
-    app: mol-fetch-daily
-    app.kubernetes.io/name: mol-fetch-daily
+    app: fetch-fda-drugs
+    app.kubernetes.io/name: fetch-fda-drugs
     app.kubernetes.io/component: ingestion
     app.kubernetes.io/part-of: dk-data
 spec:
-  schedule: "0 2 * * *"  # 2 AM UTC daily
-  suspend: true  # P1 is external-trigger only — use API endpoint to invoke
+  schedule: "0 5 * * 0"  # Sunday 5:00 UTC (after dailymed, weekly updates)
   concurrencyPolicy: Forbid
   successfulJobsHistoryLimit: 3
   failedJobsHistoryLimit: 3
   jobTemplate:
     spec:
       backoffLimit: 2
-      activeDeadlineSeconds: 7200  # 2 hour timeout
+      activeDeadlineSeconds: 3600
       template:
         metadata:
           labels:
-            app: mol-fetch-daily
+            app: fetch-fda-drugs
+            app.kubernetes.io/component: batch-job
+            app.kubernetes.io/part-of: dk-data
             team: data-platform
             service: dk-data
             product: dk-data
@@ -40,10 +38,10 @@ spec:
           imagePullSecrets:
             - name: ghcr-credentials
           containers:
-            - name: mol-fetch-daily
-              image: ghcr.io/data-kinetic/dk-data-fe/job-trigger:main-5f46ed1
-              command: ["python", "-m", "dk_data.ingestion.fetch_molecules"]
-              args: ["--source", "clinicaltrials,openfda"]
+            - name: fetch-fda-drugs
+              image: ghcr.io/data-kinetic/dk-data-fe/job-trigger:019-cms-puf-platform-reconciliation-abc1234
+              command: ["python", "-m", "dk_data.ingestion.main"]
+              args: ["fda_drugs"]
               env:
                 - name: POSTGRES_HOST
                   valueFrom:
@@ -74,13 +72,6 @@ spec:
                   value: "http://alloy.infra.svc.cluster.local:4317"
                 - name: OTEL_ENABLED
                   value: "true"
-                - name: K8S_NAMESPACE
-                  valueFrom:
-                    fieldRef:
-                      fieldPath: metadata.namespace
-              envFrom:
-                - configMapRef:
-                    name: molecule-pipeline-config
               resources:
                 requests:
                   memory: "256Mi"

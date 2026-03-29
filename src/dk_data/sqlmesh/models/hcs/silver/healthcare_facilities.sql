@@ -73,21 +73,26 @@ cms_costs AS (
 
 acc_tvc AS (
     SELECT
-        facility_id AS provider_id,
+        -- facility_name + state used as provider_id; raw table has no numeric facility ID
+        (facility_name || '_' || state)  AS provider_id,
         facility_name,
         city,
         state,
-        certification_type AS facility_type,
-        NULL::INTEGER AS bed_count,
-        NULL::INTEGER AS total_discharges,
-        NULL::NUMERIC AS avg_charges,
-        volumes AS certifications,
-        NULL::INTEGER AS shortage_score,
-        'acc_tvc' AS source,
+        certification_type               AS facility_type,
+        NULL::INTEGER                    AS bed_count,
+        NULL::INTEGER                    AS total_discharges,
+        NULL::NUMERIC                    AS avg_charges,
+        -- encode cert dates as JSONB; raw table has no volumes column
+        jsonb_build_object(
+            'certification_date', certification_date,
+            'expiration_date',    expiration_date
+        )                                AS certifications,
+        NULL::INTEGER                    AS shortage_score,
+        'acc_tvc'                        AS source,
         source_updated_at
     FROM hcs_bronze.acc_tvc
     WHERE processed_to_silver = FALSE
-      AND facility_id IS NOT NULL
+      AND facility_name IS NOT NULL
 ),
 
 hrsa AS (

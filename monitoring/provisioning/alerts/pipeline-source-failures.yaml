@@ -221,6 +221,286 @@ groups:
               expression: B
               type: threshold
 
+      # ── EMA EPAR ──────────────────────────────────────────────────────────────
+      - uid: pipeline-fail-ema
+        title: "Pipeline: ema — 3 consecutive failures"
+        condition: C
+        labels:
+          source_name: ema
+          severity: critical
+          team: data-platform
+        annotations:
+          summary: "EMA EPAR ingestion has failed 3 consecutive runs"
+          runbook: "Check EMA XLSX URL and EU ODP CSV fallback; verify HTTPS egress from cluster"
+        data:
+          - refId: A
+            relativeTimeRange: { from: 259200, to: 0 }
+            datasourceUid: postgresql
+            model:
+              rawSql: |
+                SELECT COUNT(*) as consecutive_failures FROM (
+                    SELECT status FROM meta.refresh_log rl
+                    JOIN meta.data_sources ds ON ds.source_id = rl.source_id
+                    WHERE ds.source_name = 'ema'
+                    ORDER BY rl.refreshed_at DESC LIMIT 3
+                ) r WHERE status = 'failed'
+              format: table
+          - refId: B
+            relativeTimeRange: { from: 259200, to: 0 }
+            datasourceUid: __expr__
+            model: { expression: A, type: reduce, reducer: last }
+          - refId: C
+            relativeTimeRange: { from: 259200, to: 0 }
+            datasourceUid: __expr__
+            model:
+              conditions:
+                - evaluator: { params: [3], type: gte }
+                  operator: { type: and }
+                  query: { params: [C] }
+                  reducer: { params: [], type: last }
+              expression: B
+              type: threshold
+
+      # ── FDA Orange Book ────────────────────────────────────────────────────────
+      - uid: pipeline-fail-orange-book
+        title: "Pipeline: orange_book — 3 consecutive failures"
+        condition: C
+        labels:
+          source_name: orange_book
+          severity: critical
+          team: data-platform
+        annotations:
+          summary: "FDA Orange Book ingestion has failed 3 consecutive runs"
+          runbook: "Check FDA media.githubusercontent.com pipe-delimited file URLs (products/patents/exclusivity)"
+        data:
+          - refId: A
+            relativeTimeRange: { from: 259200, to: 0 }
+            datasourceUid: postgresql
+            model:
+              rawSql: |
+                SELECT COUNT(*) as consecutive_failures FROM (
+                    SELECT status FROM meta.refresh_log rl
+                    JOIN meta.data_sources ds ON ds.source_id = rl.source_id
+                    WHERE ds.source_name = 'orange_book'
+                    ORDER BY rl.refreshed_at DESC LIMIT 3
+                ) r WHERE status = 'failed'
+              format: table
+          - refId: B
+            relativeTimeRange: { from: 259200, to: 0 }
+            datasourceUid: __expr__
+            model: { expression: A, type: reduce, reducer: last }
+          - refId: C
+            relativeTimeRange: { from: 259200, to: 0 }
+            datasourceUid: __expr__
+            model:
+              conditions:
+                - evaluator: { params: [3], type: gte }
+                  operator: { type: and }
+                  query: { params: [C] }
+                  reducer: { params: [], type: last }
+              expression: B
+              type: threshold
+
+      # ── DailyMed ──────────────────────────────────────────────────────────────
+      - uid: pipeline-fail-dailymed
+        title: "Pipeline: dailymed — 3 consecutive failures"
+        condition: C
+        labels:
+          source_name: dailymed
+          severity: critical
+          team: data-platform
+        annotations:
+          summary: "NLM DailyMed SPL ingestion has failed 3 consecutive runs"
+          runbook: "Check dailymed.nlm.nih.gov/dailymed/services/v2/spls.json pagination endpoint"
+        data:
+          - refId: A
+            relativeTimeRange: { from: 259200, to: 0 }
+            datasourceUid: postgresql
+            model:
+              rawSql: |
+                SELECT COUNT(*) as consecutive_failures FROM (
+                    SELECT status FROM meta.refresh_log rl
+                    JOIN meta.data_sources ds ON ds.source_id = rl.source_id
+                    WHERE ds.source_name = 'dailymed'
+                    ORDER BY rl.refreshed_at DESC LIMIT 3
+                ) r WHERE status = 'failed'
+              format: table
+          - refId: B
+            relativeTimeRange: { from: 259200, to: 0 }
+            datasourceUid: __expr__
+            model: { expression: A, type: reduce, reducer: last }
+          - refId: C
+            relativeTimeRange: { from: 259200, to: 0 }
+            datasourceUid: __expr__
+            model:
+              conditions:
+                - evaluator: { params: [3], type: gte }
+                  operator: { type: and }
+                  query: { params: [C] }
+                  reducer: { params: [], type: last }
+              expression: B
+              type: threshold
+
+      # ── FDA Drugs@FDA ──────────────────────────────────────────────────────────
+      - uid: pipeline-fail-fda-drugs
+        title: "Pipeline: fda_drugs — 3 consecutive failures"
+        condition: C
+        labels:
+          source_name: fda_drugs
+          severity: critical
+          team: data-platform
+        annotations:
+          summary: "FDA Drugs@FDA ingestion has failed 3 consecutive runs"
+          runbook: "Check api.fda.gov/drug/drugsfda.json — FDA API may enforce skip limit at 25000"
+        data:
+          - refId: A
+            relativeTimeRange: { from: 259200, to: 0 }
+            datasourceUid: postgresql
+            model:
+              rawSql: |
+                SELECT COUNT(*) as consecutive_failures FROM (
+                    SELECT status FROM meta.refresh_log rl
+                    JOIN meta.data_sources ds ON ds.source_id = rl.source_id
+                    WHERE ds.source_name = 'fda_drugs'
+                    ORDER BY rl.refreshed_at DESC LIMIT 3
+                ) r WHERE status = 'failed'
+              format: table
+          - refId: B
+            relativeTimeRange: { from: 259200, to: 0 }
+            datasourceUid: __expr__
+            model: { expression: A, type: reduce, reducer: last }
+          - refId: C
+            relativeTimeRange: { from: 259200, to: 0 }
+            datasourceUid: __expr__
+            model:
+              conditions:
+                - evaluator: { params: [3], type: gte }
+                  operator: { type: and }
+                  query: { params: [C] }
+                  reducer: { params: [], type: last }
+              expression: B
+              type: threshold
+
+      # ── TTD ───────────────────────────────────────────────────────────────────
+      - uid: pipeline-fail-ttd
+        title: "Pipeline: ttd — 3 consecutive failures"
+        condition: C
+        labels:
+          source_name: ttd
+          severity: warning
+          team: data-platform
+        annotations:
+          summary: "Therapeutic Target Database ingestion has failed 3 consecutive runs"
+          runbook: "Check db.idrblab.net/ttd flat file URLs; TTD is academic-hosted and may have downtime"
+        data:
+          - refId: A
+            relativeTimeRange: { from: 259200, to: 0 }
+            datasourceUid: postgresql
+            model:
+              rawSql: |
+                SELECT COUNT(*) as consecutive_failures FROM (
+                    SELECT status FROM meta.refresh_log rl
+                    JOIN meta.data_sources ds ON ds.source_id = rl.source_id
+                    WHERE ds.source_name = 'ttd'
+                    ORDER BY rl.refreshed_at DESC LIMIT 3
+                ) r WHERE status = 'failed'
+              format: table
+          - refId: B
+            relativeTimeRange: { from: 259200, to: 0 }
+            datasourceUid: __expr__
+            model: { expression: A, type: reduce, reducer: last }
+          - refId: C
+            relativeTimeRange: { from: 259200, to: 0 }
+            datasourceUid: __expr__
+            model:
+              conditions:
+                - evaluator: { params: [3], type: gte }
+                  operator: { type: and }
+                  query: { params: [C] }
+                  reducer: { params: [], type: last }
+              expression: B
+              type: threshold
+
+      # ── IMGT ──────────────────────────────────────────────────────────────────
+      - uid: pipeline-fail-imgt
+        title: "Pipeline: imgt — 3 consecutive failures"
+        condition: C
+        labels:
+          source_name: imgt
+          severity: warning
+          team: data-platform
+        annotations:
+          summary: "IMGT immunogenetics ingestion has failed 3 consecutive runs"
+          runbook: "IMGT returns source_unavailable when server is unreachable — check imgt.org/genedb availability"
+        data:
+          - refId: A
+            relativeTimeRange: { from: 259200, to: 0 }
+            datasourceUid: postgresql
+            model:
+              rawSql: |
+                SELECT COUNT(*) as consecutive_failures FROM (
+                    SELECT status FROM meta.refresh_log rl
+                    JOIN meta.data_sources ds ON ds.source_id = rl.source_id
+                    WHERE ds.source_name = 'imgt'
+                    ORDER BY rl.refreshed_at DESC LIMIT 3
+                ) r WHERE status = 'failed'
+              format: table
+          - refId: B
+            relativeTimeRange: { from: 259200, to: 0 }
+            datasourceUid: __expr__
+            model: { expression: A, type: reduce, reducer: last }
+          - refId: C
+            relativeTimeRange: { from: 259200, to: 0 }
+            datasourceUid: __expr__
+            model:
+              conditions:
+                - evaluator: { params: [3], type: gte }
+                  operator: { type: and }
+                  query: { params: [C] }
+                  reducer: { params: [], type: last }
+              expression: B
+              type: threshold
+
+      # ── CDC Vaccines ──────────────────────────────────────────────────────────
+      - uid: pipeline-fail-cdc-vaccines
+        title: "Pipeline: cdc_vaccines — 3 consecutive failures"
+        condition: C
+        labels:
+          source_name: cdc_vaccines
+          severity: warning
+          team: data-platform
+        annotations:
+          summary: "CDC CVX/MVX vaccine codes ingestion has failed 3 consecutive runs"
+          runbook: "Check CDC Open Data Portal (data.cdc.gov Socrata) and NLM FHIR fallback"
+        data:
+          - refId: A
+            relativeTimeRange: { from: 259200, to: 0 }
+            datasourceUid: postgresql
+            model:
+              rawSql: |
+                SELECT COUNT(*) as consecutive_failures FROM (
+                    SELECT status FROM meta.refresh_log rl
+                    JOIN meta.data_sources ds ON ds.source_id = rl.source_id
+                    WHERE ds.source_name = 'cdc_vaccines'
+                    ORDER BY rl.refreshed_at DESC LIMIT 3
+                ) r WHERE status = 'failed'
+              format: table
+          - refId: B
+            relativeTimeRange: { from: 259200, to: 0 }
+            datasourceUid: __expr__
+            model: { expression: A, type: reduce, reducer: last }
+          - refId: C
+            relativeTimeRange: { from: 259200, to: 0 }
+            datasourceUid: __expr__
+            model:
+              conditions:
+                - evaluator: { params: [3], type: gte }
+                  operator: { type: and }
+                  query: { params: [C] }
+                  reducer: { params: [], type: last }
+              expression: B
+              type: threshold
+
       # ── Generic CMS Bulk Source Failure Alert (template-style comment) ────────
       # The remaining 25 CMS PUF sources follow the identical pattern as
       # cms_part_d_spending and cms_part_b_spending above.

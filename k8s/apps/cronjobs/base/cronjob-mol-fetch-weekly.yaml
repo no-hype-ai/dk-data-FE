@@ -1,6 +1,8 @@
 # Molecule Fetch Weekly CronJob
 # 004-molecule-platform-integration
-# Fetches data from weekly-refresh sources: OpenFDA FAERS, ChEMBL, PubChem
+# SUSPENDED: Pipeline 1 (fetch_molecules.py) must be triggered externally only.
+# Use POST /data-platform/source/{source}/ingest to trigger on-demand.
+# Sources: OpenFDA FAERS, ChEMBL, PubChem
 apiVersion: batch/v1
 kind: CronJob
 metadata:
@@ -12,6 +14,7 @@ metadata:
     app.kubernetes.io/part-of: dk-data
 spec:
   schedule: "0 3 * * 0"  # Sunday 3 AM UTC
+  suspend: true  # P1 is external-trigger only — use API endpoint to invoke
   concurrencyPolicy: Forbid
   successfulJobsHistoryLimit: 3
   failedJobsHistoryLimit: 3
@@ -40,7 +43,7 @@ spec:
             - name: mol-fetch-weekly
               image: ghcr.io/data-kinetic/dk-data-fe/job-trigger:main-5f46ed1
               command: ["python", "-m", "dk_data.ingestion.fetch_molecules"]
-              args: ["--source", "openfda,chembl,pubchem,ema,orange_book"]
+              args: ["--source", "openfda,chembl,pubchem"]
               env:
                 - name: POSTGRES_HOST
                   valueFrom:

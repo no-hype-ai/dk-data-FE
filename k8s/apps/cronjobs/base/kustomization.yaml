@@ -26,6 +26,7 @@ resources:
   - cronjob-fetch-euipo.yaml
   - cronjob-fetch-europepmc.yaml
   - cronjob-fetch-nih-reporter.yaml
+  - cronjob-fetch-hrsa.yaml
   # CMS PUF sources (28 files)
   - cronjob-fetch-cms-chronic-conditions.yaml
   - cronjob-fetch-cms-claim-type-puf.yaml
@@ -86,6 +87,14 @@ resources:
   - cronjob-fetch-pharmgkb.yaml
   - cronjob-fetch-kegg-drug.yaml
   - cronjob-fetch-tdc-admet.yaml
+  # New molecule vocabulary sources (7 files — 019-cms-puf-platform-reconciliation)
+  - cronjob-fetch-ema-mol.yaml
+  - cronjob-fetch-orange-book.yaml
+  - cronjob-fetch-dailymed.yaml
+  - cronjob-fetch-fda-drugs.yaml
+  - cronjob-fetch-ttd.yaml
+  - cronjob-fetch-imgt.yaml
+  - cronjob-fetch-cdc-vaccines.yaml
   # Silver enrichment agents (7 files)
   - cronjob-agent-contact-verification.yaml
   - cronjob-agent-equipment-inventory.yaml
