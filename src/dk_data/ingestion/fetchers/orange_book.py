@@ -18,6 +18,7 @@ import csv
 import hashlib
 import io
 import logging
+import zipfile
 from typing import Any, Dict, List, Optional
 
 from .base import BaseFetcher
@@ -93,8 +94,16 @@ class OrangeBookFetcher(BaseFetcher):
         return result
 
     def _parse_pipe_delimited(self, content: bytes, file_type: str) -> List[Dict[str, Any]]:
-        """Parse an Orange Book pipe-delimited text file."""
-        text = content.decode("utf-8", errors="replace")
+        """Parse an Orange Book pipe-delimited text file (plain or ZIP-wrapped)."""
+        # FDA switched to ZIP delivery — detect PK magic bytes and extract
+        if content[:2] == b"PK":
+            with zipfile.ZipFile(io.BytesIO(content)) as zf:
+                txt_names = [n for n in zf.namelist() if n.endswith(".txt")]
+                if not txt_names:
+                    raise ValueError(f"No .txt file found in Orange Book ZIP for {file_type}")
+                content = zf.read(txt_names[0])
+
+        text = content.decode("utf-8", errors="replace").replace("\r\n", "\n").replace("\r", "\n")
         # FDA Orange Book files use '~' as delimiter in newer releases, '|' in older
         sample = text[:500]
         delimiter = "~" if "~" in sample else "|"
