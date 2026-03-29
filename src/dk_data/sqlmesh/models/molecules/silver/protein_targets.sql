@@ -8,7 +8,9 @@ MODEL (
     kind FULL,
     cron '@daily',
     audits (
-        not_null(columns := (target_id, source))
+        -- target_id may be NULL for PDB structures whose UniProt ID is not yet in mol_silver.targets.
+        -- Audit on source only to ensure every row has a provenance label.
+        not_null(columns := (source))
     )
 );
 

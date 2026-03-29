@@ -43,12 +43,17 @@ SELECT
     -- Researcher identifiers (structured columns from mol_raw.orcid)
     orcid_id,
     given_names                     AS given_name,
+    given_names,
     family_name,
     credit_name,
+
+    -- Biography text (ORCID person.biography — no column loss)
+    biography,
 
     -- Affiliations: JSONB array of {organization, role, department}
     -- populated by ORCIDFetcher._parse_employments()
     current_affiliations            AS affiliations,
+    current_affiliations,
 
     -- Works count: integer column pre-computed by loader
     works_count,
@@ -56,6 +61,13 @@ SELECT
     -- Research keywords: JSONB array of keyword strings
     -- (ORCID person.keywords; used as research_areas proxy)
     keywords                        AS research_areas,
+    keywords,
+
+    -- External identifiers: dict of {type: value} (no column loss)
+    external_ids,
+
+    -- Full raw ORCID /record API response preserved for reprocessing
+    raw_response,
 
     -- Source tracking
     id::TEXT                        AS raw_source_id,

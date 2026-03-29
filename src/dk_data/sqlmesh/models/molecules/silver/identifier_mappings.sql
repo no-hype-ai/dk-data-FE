@@ -17,7 +17,11 @@ MODEL (
     )
 );
 
--- Collect identifiers from all bronze sources
+-- Collect identifiers from all bronze sources, then deduplicate on the unique key.
+-- INCREMENTAL_BY_UNIQUE_KEY uses MERGE; a MERGE fails (CardinalityViolation) if the source
+-- batch produces duplicate (molecule_id, identifier_type, identifier_value) rows.
+-- The WITH + DISTINCT ON below ensures exactly one row per unique key.
+WITH all_ids AS (
 
 -- ChEMBL identifiers
 -- Join handles both structural (inchi_key match) and biologic (name match, inchi_key IS NULL)
@@ -177,3 +181,20 @@ CROSS JOIN LATERAL jsonb_array_elements_text(
     '[]'::JSONB
 ) AS ndc_code
 WHERE FALSE  -- Disabled: ndc_codes column does not exist in mol_silver.drug_labels
+
+)  -- end all_ids CTE
+
+SELECT DISTINCT ON (molecule_id, identifier_type, identifier_value)
+    molecule_id,
+    identifier_type,
+    identifier_value,
+    source,
+    confidence,
+    is_primary,
+    source_date,
+    NOW() AS created_at
+FROM all_ids
+WHERE molecule_id IS NOT NULL
+  AND identifier_type IS NOT NULL
+  AND identifier_value IS NOT NULL
+ORDER BY molecule_id, identifier_type, identifier_value, confidence DESC NULLS LAST;

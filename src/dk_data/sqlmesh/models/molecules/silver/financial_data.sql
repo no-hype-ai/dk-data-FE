@@ -18,24 +18,44 @@ MODEL (
     grain (cik, filing_type, filing_date)
 );
 
+-- Deduplicate on the unique key before MERGE.
+-- SEC EDGAR bronze may contain duplicate filings ingested across multiple runs
+-- (same CIK + filing_type + filing_date from different API responses).
+-- DISTINCT ON keeps the most recently source-updated occurrence.
+WITH deduped AS (
+    SELECT DISTINCT ON (cik, filing_type, filing_date)
+        cik::TEXT               AS cik,
+        company_name::TEXT      AS company_name,
+        filing_type::TEXT       AS filing_type,
+        filing_date::DATE       AS filing_date,
+        document_url::TEXT      AS document_url,
+        revenue::NUMERIC        AS revenue,
+        net_income::NUMERIC     AS net_income,
+        total_assets::NUMERIC   AS total_assets,
+        source,
+        source_updated_at
+    FROM mol_bronze.sec_edgar
+    WHERE processed_to_silver = FALSE
+      AND cik IS NOT NULL
+      AND filing_type IS NOT NULL
+      AND filing_date IS NOT NULL
+    ORDER BY cik, filing_type, filing_date, source_updated_at DESC NULLS LAST
+)
+
 SELECT
     gen_random_uuid()               AS id,
-    b.cik::TEXT                     AS cik,
-    b.company_name::TEXT            AS company_name,
-    b.filing_type::TEXT             AS filing_type,
-    b.filing_date::DATE             AS filing_date,
-    b.document_url::TEXT            AS document_url,
-    b.revenue::NUMERIC              AS revenue,
-    b.net_income::NUMERIC           AS net_income,
-    b.total_assets::NUMERIC         AS total_assets,
+    cik,
+    company_name,
+    filing_type,
+    filing_date,
+    document_url,
+    revenue,
+    net_income,
+    total_assets,
     NULL::NUMERIC                   AS market_cap,
     NULL::NUMERIC                   AS drug_revenue_pct,
-    b.source,
-    b.source_updated_at,
+    source,
+    source_updated_at,
     NOW()                           AS created_at,
     NOW()                           AS updated_at
-FROM mol_bronze.sec_edgar b
-WHERE b.processed_to_silver = FALSE
-  AND b.cik IS NOT NULL
-  AND b.filing_type IS NOT NULL
-  AND b.filing_date IS NOT NULL;
+FROM deduped;

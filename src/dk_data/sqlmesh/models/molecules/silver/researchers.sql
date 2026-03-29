@@ -70,7 +70,12 @@ nih_grant_counts AS (
         LOWER(pi->>'last_name')     AS last_name_norm,
         COUNT(DISTINCT project_num) AS grant_count
     FROM mol_bronze.nih_reporter,
-         LATERAL jsonb_array_elements(pi_names) AS pi
+         -- COALESCE guards against JSON null literal (jsonb_typeof = 'null') which is stored
+         -- as a non-SQL-NULL jsonb value; jsonb_array_elements fails on it with
+         -- "cannot extract elements from a scalar".
+         LATERAL jsonb_array_elements(
+             CASE WHEN jsonb_typeof(pi_names) = 'array' THEN pi_names ELSE '[]'::jsonb END
+         ) AS pi
     WHERE
         pi->>'last_name' IS NOT NULL
     GROUP BY

@@ -21,6 +21,19 @@ MODEL (
     grain pdb_id
 );
 
+-- Deduplicate bronze first: PDB structures may be ingested multiple times
+-- (same pdb_id from overlapping API calls). DISTINCT ON keeps the most recent.
+WITH deduped_pdb AS (
+    SELECT DISTINCT ON (pdb_id)
+        pdb_id, title, method, resolution, molecular_weight,
+        deposit_date, release_date, polymer_entities, nonpolymer_entities,
+        ligand_id, ligand_name, uniprot_id, source_organism, taxonomy_id,
+        source, source_updated_at
+    FROM mol_bronze.pdb_structures
+    WHERE pdb_id IS NOT NULL
+    ORDER BY pdb_id, source_updated_at DESC NULLS LAST
+)
+
 SELECT
     gen_random_uuid()               AS id,
 
@@ -53,7 +66,15 @@ SELECT
     p.taxonomy_id,
 
     -- Molecule linkage via ligand → identifier_mappings (NULL when no match)
-    im.molecule_id,
+    -- Use subquery to avoid fan-out when multiple molecules map to the same ligand.
+    (
+        SELECT im.molecule_id
+        FROM mol_silver.identifier_mappings im
+        WHERE im.identifier_type = 'pdb_ligand'
+          AND im.identifier_value = p.ligand_id
+        ORDER BY im.confidence DESC NULLS LAST
+        LIMIT 1
+    )                               AS molecule_id,
 
     -- Source tracking
     p.source,
@@ -61,10 +82,4 @@ SELECT
     NOW() AS created_at,
     NOW() AS updated_at
 
-FROM mol_bronze.pdb_structures p
-LEFT JOIN mol_silver.identifier_mappings im
-    ON im.identifier_type = 'pdb_ligand'
-    AND im.identifier_value = p.ligand_id
-WHERE
-    p.processed_to_silver = FALSE
-    AND p.pdb_id IS NOT NULL;
+FROM deduped_pdb p;

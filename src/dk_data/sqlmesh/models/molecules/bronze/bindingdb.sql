@@ -58,32 +58,41 @@ SELECT
     r.response_body->>'UniProt (SwissProt) Primary ID of Target Chain' AS uniprot_id,
 
     -- Binding affinity measurements (all in nanomolar)
-    (r.response_body->>'Ki (nM)')::NUMERIC AS ki_nm,
-    (r.response_body->>'IC50 (nM)')::NUMERIC AS ic50_nm,
-    (r.response_body->>'Kd (nM)')::NUMERIC AS kd_nm,
-    (r.response_body->>'EC50 (nM)')::NUMERIC AS ec50_nm,
+    -- BindingDB uses qualitative prefixes like ">79400" for values above detection limit.
+    -- Strip any non-numeric prefix (>, <, ~, =, spaces) before casting to NUMERIC.
+    NULLIF(REGEXP_REPLACE(COALESCE(r.response_body->>'Ki (nM)', ''), '[^0-9.]', '', 'g'), '')::NUMERIC AS ki_nm,
+    NULLIF(REGEXP_REPLACE(COALESCE(r.response_body->>'IC50 (nM)', ''), '[^0-9.]', '', 'g'), '')::NUMERIC AS ic50_nm,
+    NULLIF(REGEXP_REPLACE(COALESCE(r.response_body->>'Kd (nM)', ''), '[^0-9.]', '', 'g'), '')::NUMERIC AS kd_nm,
+    NULLIF(REGEXP_REPLACE(COALESCE(r.response_body->>'EC50 (nM)', ''), '[^0-9.]', '', 'g'), '')::NUMERIC AS ec50_nm,
 
     -- Kinetics (optional)
-    (r.response_body->>'kon (M-1-s-1)')::NUMERIC AS kon,
-    (r.response_body->>'koff (s-1)')::NUMERIC AS koff,
+    NULLIF(REGEXP_REPLACE(COALESCE(r.response_body->>'kon (M-1-s-1)', ''), '[^0-9.eE+-]', '', 'g'), '')::NUMERIC AS kon,
+    NULLIF(REGEXP_REPLACE(COALESCE(r.response_body->>'koff (s-1)', ''), '[^0-9.eE+-]', '', 'g'), '')::NUMERIC AS koff,
 
     -- Assay conditions
-    (r.response_body->>'pH')::NUMERIC AS assay_ph,
-    (r.response_body->>'Temp (C)')::NUMERIC AS assay_temp_c,
+    -- pH is always a plain numeric value in BindingDB
+    NULLIF(REGEXP_REPLACE(COALESCE(r.response_body->>'pH', ''), '[^0-9.]', '', 'g'), '')::NUMERIC AS assay_ph,
+    -- Temperature may include " C" suffix (e.g. "25.00 C") — strip non-numeric suffix
+    NULLIF(REGEXP_REPLACE(COALESCE(r.response_body->>'Temp (C)', ''), '[^0-9.]', '', 'g'), '')::NUMERIC AS assay_temp_c,
 
     -- Best available affinity value (prefer Ki > Kd > IC50 > EC50)
+    -- Only classify as a type if the numeric value is usable (strip qualifier prefix check)
     CASE
-        WHEN (r.response_body->>'Ki (nM)') IS NOT NULL THEN 'Ki'
-        WHEN (r.response_body->>'Kd (nM)') IS NOT NULL THEN 'Kd'
-        WHEN (r.response_body->>'IC50 (nM)') IS NOT NULL THEN 'IC50'
-        WHEN (r.response_body->>'EC50 (nM)') IS NOT NULL THEN 'EC50'
+        WHEN r.response_body->>'Ki (nM)' IS NOT NULL
+             AND REGEXP_REPLACE(r.response_body->>'Ki (nM)', '[^0-9.]', '', 'g') != '' THEN 'Ki'
+        WHEN r.response_body->>'Kd (nM)' IS NOT NULL
+             AND REGEXP_REPLACE(r.response_body->>'Kd (nM)', '[^0-9.]', '', 'g') != '' THEN 'Kd'
+        WHEN r.response_body->>'IC50 (nM)' IS NOT NULL
+             AND REGEXP_REPLACE(r.response_body->>'IC50 (nM)', '[^0-9.]', '', 'g') != '' THEN 'IC50'
+        WHEN r.response_body->>'EC50 (nM)' IS NOT NULL
+             AND REGEXP_REPLACE(r.response_body->>'EC50 (nM)', '[^0-9.]', '', 'g') != '' THEN 'EC50'
         ELSE NULL
     END AS activity_type,
     COALESCE(
-        (r.response_body->>'Ki (nM)')::NUMERIC,
-        (r.response_body->>'Kd (nM)')::NUMERIC,
-        (r.response_body->>'IC50 (nM)')::NUMERIC,
-        (r.response_body->>'EC50 (nM)')::NUMERIC
+        NULLIF(REGEXP_REPLACE(COALESCE(r.response_body->>'Ki (nM)', ''), '[^0-9.]', '', 'g'), '')::NUMERIC,
+        NULLIF(REGEXP_REPLACE(COALESCE(r.response_body->>'Kd (nM)', ''), '[^0-9.]', '', 'g'), '')::NUMERIC,
+        NULLIF(REGEXP_REPLACE(COALESCE(r.response_body->>'IC50 (nM)', ''), '[^0-9.]', '', 'g'), '')::NUMERIC,
+        NULLIF(REGEXP_REPLACE(COALESCE(r.response_body->>'EC50 (nM)', ''), '[^0-9.]', '', 'g'), '')::NUMERIC
     ) AS activity_value,
     'nM' AS activity_unit,
 
