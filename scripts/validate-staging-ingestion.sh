@@ -72,17 +72,17 @@ phase1() {
 
   # 1b. Verify main.py SOURCES count inside the container
   echo ""
-  echo "1b. SOURCES dict has 52+ entries (22 original + 30 new: 28 CMS PUF + europepmc + nih_reporter)"
+  echo "1b. SOURCES dict has 59+ entries (22 original + 30 CMS PUF + europepmc + nih_reporter + 7 new mol sources)"
   if [ -z "$pod" ]; then
     fail "Cannot check SOURCES — no pod"
   else
     local count
     count=$(kubectl -n "$NS" exec "$pod" -- \
       python3 -c "from dk_data.ingestion.main import SOURCES; print(len(SOURCES))" 2>/dev/null)
-    if [ "$count" -ge 52 ] 2>/dev/null; then
+    if [ "$count" -ge 59 ] 2>/dev/null; then
       pass "SOURCES count = $count"
     else
-      fail "SOURCES count = ${count:-ERROR} (expected >= 52)"
+      fail "SOURCES count = ${count:-ERROR} (expected >= 59)"
     fi
   fi
 
@@ -104,14 +104,14 @@ phase1() {
 
   # 1d. Check meta.data_sources has all 52+ sources
   echo ""
-  echo "1d. meta.data_sources populated (52+ sources including 30 new CMS PUF + API)"
+  echo "1d. meta.data_sources populated (59+ sources including 30 CMS PUF + API + 7 new mol sources)"
   local src_count
   src_count=$(run_sql "SELECT count(*) FROM meta.data_sources WHERE is_active = true")
   src_count=$(echo "$src_count" | tr -d '[:space:]')
-  if [ "$src_count" -ge 52 ] 2>/dev/null; then
+  if [ "$src_count" -ge 59 ] 2>/dev/null; then
     pass "Active sources in meta: $src_count"
   else
-    fail "Active sources in meta: ${src_count:-ERROR} (expected >= 52)"
+    fail "Active sources in meta: ${src_count:-ERROR} (expected >= 59)"
   fi
 
   # 1e. Verify key source_name values exist
@@ -134,6 +134,7 @@ phase1() {
     cms_geographic_variation cms_chronic_conditions cms_dual_eligible
     cms_enrollment_puf cms_claim_type_puf cms_utilization_puf cms_cost_reports_puf
     europepmc nih_reporter
+    ema orange_book dailymed fda_drugs ttd imgt cdc_vaccines
   )
   for name in "${EXPECTED_NAMES[@]}"; do
     local found

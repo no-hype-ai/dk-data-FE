@@ -1,21 +1,21 @@
-"""MCP Adapter: ema
+"""MCP Adapter: cdc_vaccines
 
-Feature: 015-assessment-dashboard-integration
+Feature: 019-cms-puf-platform-reconciliation
 """
 
 from .base import BaseAdapter
 
 
 class Adapter(BaseAdapter):
-    """Adapter for ema API responses."""
+    """Adapter for CDC CVX/MVX vaccine code set responses."""
 
     @property
     def source_name(self) -> str:
-        return "ema"
+        return "cdc_vaccines"
 
     @property
     def raw_table(self) -> str:
-        return "ema"
+        return "cdc_vaccines"
 
     @property
     def raw_schema(self) -> str:

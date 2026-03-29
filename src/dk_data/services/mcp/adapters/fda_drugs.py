@@ -1,21 +1,21 @@
-"""MCP Adapter: ema
+"""MCP Adapter: fda_drugs
 
-Feature: 015-assessment-dashboard-integration
+Feature: 019-cms-puf-platform-reconciliation
 """
 
 from .base import BaseAdapter
 
 
 class Adapter(BaseAdapter):
-    """Adapter for ema API responses."""
+    """Adapter for FDA Drugs@FDA NDA/ANDA/BLA application API responses."""
 
     @property
     def source_name(self) -> str:
-        return "ema"
+        return "fda_drugs"
 
     @property
     def raw_table(self) -> str:
-        return "ema"
+        return "fda_drugs"
 
     @property
     def raw_schema(self) -> str:
