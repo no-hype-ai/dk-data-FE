@@ -1,16 +1,21 @@
 """Base fetcher class with common functionality."""
 
-import os
-import logging
+import csv
 import hashlib
+import logging
+import os
+import tempfile
 from abc import ABC, abstractmethod
 from datetime import datetime
 from pathlib import Path
-from typing import Optional, Dict, Any
+from typing import Optional, Dict, Any, List
 
 import requests
 from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
+
+_CMS_DATA_API = "https://data.cms.gov/data-api/v1/dataset"
+_CMS_PAGE_SIZE = 2000
 
 logger = logging.getLogger(__name__)
 
@@ -127,6 +132,68 @@ class BaseFetcher(ABC):
         response = self.session.get(url, params=params, timeout=60)
         response.raise_for_status()
         return response.json()
+
+    def _fetch_cms_api(
+        self,
+        dataset_uuid: str,
+        max_records: Optional[int] = None,
+    ) -> List[Dict[str, Any]]:
+        """Fetch records from the CMS data-api/v1 streaming endpoint.
+
+        Args:
+            dataset_uuid: CMS dataset UUID from data.cms.gov/data.json catalog.
+            max_records: Cap on total rows. None = fetch all.
+
+        Returns:
+            List of row dicts with CMS column names as returned by the API.
+        """
+        api_url = f"{_CMS_DATA_API}/{dataset_uuid}/data"
+        records: List[Dict[str, Any]] = []
+        offset = 0
+
+        logger.info("[%s] Fetching from CMS data-api: %s", self.SOURCE_NAME, api_url)
+
+        while True:
+            remaining = None if max_records is None else max_records - len(records)
+            if remaining is not None and remaining <= 0:
+                break
+            page_size = _CMS_PAGE_SIZE if remaining is None else min(_CMS_PAGE_SIZE, remaining)
+
+            resp = self.session.get(api_url, params={"size": page_size, "offset": offset}, timeout=60)
+            resp.raise_for_status()
+            page: List[Dict[str, Any]] = resp.json()
+            if not page:
+                break
+            records.extend(page)
+            logger.debug("[%s] Fetched %d records (offset=%d)", self.SOURCE_NAME, len(records), offset)
+            if len(page) < page_size:
+                break
+            offset += page_size
+
+        logger.info("[%s] %d total records fetched from CMS API", self.SOURCE_NAME, len(records))
+        return records
+
+    def _cms_records_to_csv(self, records: List[Dict[str, Any]]) -> str:
+        """Write CMS API records to a temp CSV file.
+
+        Returns:
+            Path to the temp CSV file (caller is responsible for deletion).
+        """
+        if not records:
+            raise ValueError("No records to write")
+        tmp = tempfile.NamedTemporaryFile(
+            mode="w",
+            suffix=".csv",
+            prefix=f"cms_{self.SOURCE_NAME}_",
+            delete=False,
+            newline="",
+            encoding="utf-8",
+        )
+        writer = csv.DictWriter(tmp, fieldnames=records[0].keys())
+        writer.writeheader()
+        writer.writerows(records)
+        tmp.close()
+        return tmp.name
 
     def log_fetch_result(self, result: Dict[str, Any]) -> None:
         """Log fetch result for monitoring."""

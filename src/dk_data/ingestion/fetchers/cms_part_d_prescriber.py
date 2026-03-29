@@ -1,15 +1,8 @@
-"""CMS Part D Prescriber PUF fetcher stub.
-
-This is a file-based CMS source — the actual CSV is downloaded by a CronJob
-(or manually via the CMS CKAN API). The fetcher stub satisfies the ingestion
-framework's fetcher contract without doing a live download.
+"""CMS Part D Prescriber PUF fetcher.
 
 Data source:
     CMS Medicare Part D Prescribers — by Provider and Drug
     https://data.cms.gov/provider-summary-by-type-of-service/medicare-part-d-prescribers/medicare-part-d-prescribers-by-provider-and-drug
-
-Usage:
-    python -m dk_data.ingestion.main cms_part_d_prescriber --file <path> --year 2023
 """
 
 import logging
@@ -22,21 +15,25 @@ logger = logging.getLogger(__name__)
 
 class CMSPartDPrescriberFetcher(BaseFetcher):
     SOURCE_NAME = "cms_part_d_prescriber"
-    BASE_URL = (
-        "https://data.cms.gov/provider-summary-by-type-of-service"
-        "/medicare-part-d-prescribers/medicare-part-d-prescribers-by-provider-and-drug"
-    )
-
-    def fetch(self, **kwargs) -> Dict[str, Any]:
-        """CMS PUF file-based source — download handled externally.
-
-        Use --file <path> when calling ingestion.main directly.
-        The CronJob downloads via cms_downloader before invoking this loader.
-        """
-        logger.info(
-            "cms_part_d_prescriber: file-based source; use --file flag with ingestion.main"
-        )
-        return {"status": "success", "records": [], "hash": None}
+    DATASET_UUID = "9552739e-3d05-4c1b-8eff-ecabf391e2e5"
 
     def get_latest_url(self) -> str:
-        return self.BASE_URL
+        return f"https://data.cms.gov/data-api/v1/dataset/{self.DATASET_UUID}/data"
+
+    def fetch(self, **kwargs) -> Dict[str, Any]:
+        max_records = kwargs.get("max_records")
+        try:
+            records = self._fetch_cms_api(self.DATASET_UUID, max_records)
+            if not records:
+                return {"status": "success", "records": [], "record_count": 0, "hash": None, "extracted_files": []}
+            tmp_path = self._cms_records_to_csv(records)
+            return {
+                "status": "success",
+                "records": len(records),
+                "record_count": len(records),
+                "hash": None,
+                "extracted_files": [tmp_path],
+            }
+        except Exception as e:
+            logger.exception("%s fetch failed: %s", self.SOURCE_NAME, e)
+            return {"status": "failed", "error": str(e), "records": [], "record_count": 0, "hash": None}

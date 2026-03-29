@@ -995,12 +995,14 @@ def run_ingestion(source: str, **kwargs) -> dict:
         # File-path fetchers (e.g. GV PUF) return extracted_files + int records count.
         # Call the loader once per extracted file using filepath + year kwargs.
         if fetch_result.get('extracted_files'):
+            import inspect as _inspect
             agg = {'status': 'success', 'records_inserted': 0, 'records_failed': 0, 'errors': []}
+            loader_params = set(_inspect.signature(loader).parameters.keys())
             for fpath in fetch_result['extracted_files']:
                 loader_kw: dict = {'filepath': fpath}
-                if fetch_result.get('year') is not None:
+                if fetch_result.get('year') is not None and 'year' in loader_params:
                     loader_kw['year'] = fetch_result['year']
-                if 'batch_size' in kwargs:
+                if 'batch_size' in kwargs and 'batch_size' in loader_params:
                     loader_kw['batch_size'] = kwargs['batch_size']
                 r = loader(**loader_kw)
                 agg['records_inserted'] += r.get('records_inserted', 0)

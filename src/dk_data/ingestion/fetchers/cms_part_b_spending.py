@@ -1,4 +1,4 @@
-"""CMS Part B Drug Spending fetcher stub. File is downloaded by CronJob."""
+"""CMS Part B Drug Spending fetcher."""
 import logging
 from typing import Any, Dict
 
@@ -9,12 +9,25 @@ logger = logging.getLogger(__name__)
 
 class CMSPartBSpendingFetcher(BaseFetcher):
     SOURCE_NAME = "cms_part_b_spending"
-    BASE_URL = "https://data.cms.gov/provider-summary-by-type-of-service/medicare-part-b-drug-spending"
-
-    def fetch(self, **kwargs) -> Dict[str, Any]:
-        """CMS PUF file-based source — download handled externally by CronJob."""
-        logger.info("cms_part_b_spending: file-based source; use --file flag with ingestion.main")
-        return {"status": "success", "records": [], "hash": None}
+    DATASET_UUID = "76a714ad-3a2c-43ac-b76d-9dadf8f7d890"
 
     def get_latest_url(self) -> str:
-        return self.BASE_URL
+        return f"https://data.cms.gov/data-api/v1/dataset/{self.DATASET_UUID}/data"
+
+    def fetch(self, **kwargs) -> Dict[str, Any]:
+        max_records = kwargs.get("max_records")
+        try:
+            records = self._fetch_cms_api(self.DATASET_UUID, max_records)
+            if not records:
+                return {"status": "success", "records": [], "record_count": 0, "hash": None, "extracted_files": []}
+            tmp_path = self._cms_records_to_csv(records)
+            return {
+                "status": "success",
+                "records": len(records),
+                "record_count": len(records),
+                "hash": None,
+                "extracted_files": [tmp_path],
+            }
+        except Exception as e:
+            logger.exception("%s fetch failed: %s", self.SOURCE_NAME, e)
+            return {"status": "failed", "error": str(e), "records": [], "record_count": 0, "hash": None}

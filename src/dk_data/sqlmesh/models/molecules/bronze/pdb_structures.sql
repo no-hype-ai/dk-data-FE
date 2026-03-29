@@ -73,12 +73,19 @@ SELECT
     FALSE AS processed_to_silver,
     NOW() AS created_at
 
-FROM mol_raw.pdb
-WHERE
-    response_status = 200
-    AND processed_to_bronze = FALSE
-    AND COALESCE(
-        response_body->>'rcsb_id',
-        response_body->'entry'->>'id'
-    ) IS NOT NULL
-    AND request_timestamp BETWEEN @start_dt AND @end_dt;
+FROM (
+    SELECT DISTINCT ON (UPPER(COALESCE(response_body->>'rcsb_id', response_body->'entry'->>'id')))
+        *
+    FROM mol_raw.pdb
+    WHERE
+        response_status = 200
+        AND processed_to_bronze = FALSE
+        AND COALESCE(
+            response_body->>'rcsb_id',
+            response_body->'entry'->>'id'
+        ) IS NOT NULL
+        AND request_timestamp BETWEEN @start_dt AND @end_dt
+    ORDER BY
+        UPPER(COALESCE(response_body->>'rcsb_id', response_body->'entry'->>'id')),
+        request_timestamp DESC
+) mol_raw_pdb_dedup;

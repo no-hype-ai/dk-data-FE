@@ -17,10 +17,12 @@ MODEL (
 
 WITH molecule_name_lookup AS (
     -- Stable molecule IDs indexed by lowercase canonical name for name-based entity resolution
-    SELECT
+    -- DISTINCT ON ensures one molecule_id per canonical name (prevents JOIN fan-out)
+    SELECT DISTINCT ON (LOWER(canonical_name))
         molecule_id,
         LOWER(canonical_name) AS name_key
     FROM mol_silver.molecules
+    ORDER BY LOWER(canonical_name), molecule_id
 ),
 
 source_labels AS (

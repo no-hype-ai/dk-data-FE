@@ -102,9 +102,14 @@ SELECT
     NOW() AS created_at,
     NOW() AS updated_at
 
-FROM mol_bronze.drugbank db
-LEFT JOIN mol_silver.molecules m
-    ON LOWER(db.name) = LOWER(m.canonical_name)
-WHERE
-    db.processed_to_silver = FALSE
-    AND db.drugbank_id IS NOT NULL;
+FROM (
+    SELECT DISTINCT ON (drugbank_id) *
+    FROM mol_bronze.drugbank
+    WHERE processed_to_silver = FALSE AND drugbank_id IS NOT NULL
+    ORDER BY drugbank_id, source_updated_at DESC NULLS LAST
+) db
+LEFT JOIN (
+    SELECT DISTINCT ON (LOWER(canonical_name)) molecule_id, canonical_name
+    FROM mol_silver.molecules
+    ORDER BY LOWER(canonical_name), molecule_id
+) m ON LOWER(db.name) = LOWER(m.canonical_name);
