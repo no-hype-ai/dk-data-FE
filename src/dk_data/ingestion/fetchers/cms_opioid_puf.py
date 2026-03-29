@@ -1,4 +1,12 @@
-"""CMS Medicare Part D Opioid Prescriber Summary File fetcher."""
+"""CMS Medicare Part D Opioid Prescriber Summary File fetcher.
+
+Corrected dataset: "Medicare Part D Prescribers - by Provider and Drug"
+UUID: 9552739e-3d05-4c1b-8eff-ecabf391e2e5
+
+Previous UUID (94d00f36-73ce-4520-9b3f-83cd3cded25c) was wrong — it pointed to
+"Medicare Part D Opioid Prescribing Rates - by Geography" (geographic-level
+aggregates), NOT the prescriber+drug-level data needed for NPI-level analysis.
+"""
 import logging
 from typing import Any, Dict
 
@@ -9,7 +17,7 @@ logger = logging.getLogger(__name__)
 
 class CMSOpioidPUFFetcher(BaseFetcher):
     SOURCE_NAME = "cms_opioid_puf"
-    DATASET_UUID = "94d00f36-73ce-4520-9b3f-83cd3cded25c"
+    DATASET_UUID = "9552739e-3d05-4c1b-8eff-ecabf391e2e5"
 
     def get_latest_url(self) -> str:
         return f"https://data.cms.gov/data-api/v1/dataset/{self.DATASET_UUID}/data"

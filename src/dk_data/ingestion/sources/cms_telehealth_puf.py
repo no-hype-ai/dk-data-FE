@@ -14,9 +14,19 @@ from ..utils.validators import CMSTelehealthRecord
 logger = logging.getLogger(__name__)
 
 # Canonical CMS column names → internal snake_case names.
-# Source: Medicare Physician & Other Practitioners - by Provider and Service.
+# Source: Medicare Physician & Other Practitioners - by Provider and Service
+# (UUID 92396110-2aed-4d63-a6a2-5d6207d46a29).
 # CMS has no separate telehealth-only PUF; Place_Of_Srvc='02' marks telehealth
 # services and is mapped to th_srvc_ind for downstream filtering.
+# Confirmed API columns (GET /data-api/v1/dataset/{uuid}/data?size=2, 2026-03-29):
+#   Rndrng_NPI, Rndrng_Prvdr_Last_Org_Name, Rndrng_Prvdr_First_Name,
+#   Rndrng_Prvdr_MI, Rndrng_Prvdr_Crdntls, Rndrng_Prvdr_Ent_Cd,
+#   Rndrng_Prvdr_St1, Rndrng_Prvdr_St2, Rndrng_Prvdr_City,
+#   Rndrng_Prvdr_State_Abrvtn, Rndrng_Prvdr_State_FIPS, Rndrng_Prvdr_Zip5,
+#   Rndrng_Prvdr_RUCA, Rndrng_Prvdr_RUCA_Desc, Rndrng_Prvdr_Cntry,
+#   Rndrng_Prvdr_Type, Rndrng_Prvdr_Mdcr_Prtcptg_Ind, HCPCS_Cd, HCPCS_Desc,
+#   HCPCS_Drug_Ind, Place_Of_Srvc, Tot_Benes, Tot_Srvcs, Tot_Bene_Day_Srvcs,
+#   Avg_Sbmtd_Chrg, Avg_Mdcr_Alowd_Amt, Avg_Mdcr_Pymt_Amt, Avg_Mdcr_Stdzd_Amt
 COLUMN_MAPPING = {
     'Rndrng_NPI':                    'npi',
     'Rndrng_Prvdr_Last_Org_Name':    'provider_last_org_name',
@@ -27,13 +37,11 @@ COLUMN_MAPPING = {
     'Rndrng_Prvdr_Type':             'provider_type',
     'HCPCS_Cd':                      'hcpcs_cd',
     'HCPCS_Desc':                    'hcpcs_desc',
-    # Place_Of_Srvc='02' = telehealth, 'F' = facility, 'O' = non-facility.
-    # No separate TH_Srvc_Ind column exists in the physician PUF.
+    # Place_Of_Srvc='02' = telehealth; no separate TH_Srvc_Ind column in this dataset.
     'Place_Of_Srvc':                 'th_srvc_ind',
-    'TH_Srvc_Ind':                   'th_srvc_ind',
     'Tot_Benes':                     'tot_benes',
     'Tot_Srvcs':                     'tot_srvcs',
-    'Tot_Mdcr_Alowd_Amt':            'tot_mdcr_alowd_amt',
+    # API does NOT have Tot_Mdcr_Alowd_Amt; the per-service average is Avg_Mdcr_Alowd_Amt.
     'Avg_Mdcr_Alowd_Amt':            'avg_mdcr_alowd_amt',
     'Avg_Mdcr_Pymt_Amt':             'avg_mdcr_pymt_amt',
     'Avg_Mdcr_Stdzd_Amt':            'avg_mdcr_stdzd_amt',
@@ -86,7 +94,7 @@ def load_cms_telehealth_puf(filepath: str, source_year: int = 2023, max_records:
                 th_srvc_ind=row.get('th_srvc_ind'),
                 tot_benes=int(float(row['tot_benes'])) if pd.notna(row.get('tot_benes')) else None,
                 tot_srvcs=row.get('tot_srvcs') or None,
-                tot_mdcr_alowd_amt=row.get('tot_mdcr_alowd_amt') or None,
+                tot_mdcr_alowd_amt=None,  # not present in this dataset (avg only)
                 avg_mdcr_alowd_amt=row.get('avg_mdcr_alowd_amt') or None,
                 avg_mdcr_pymt_amt=row.get('avg_mdcr_pymt_amt') or None,
                 avg_mdcr_stdzd_amt=row.get('avg_mdcr_stdzd_amt') or None,

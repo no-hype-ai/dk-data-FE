@@ -1,4 +1,23 @@
-"""CMS Opioid Prescribing Geographic Variation PUF loader. Loads to hcs_raw.cms_opioid_puf."""
+"""CMS Part D Opioid Prescriber PUF loader. Loads to hcs_raw.cms_opioid_puf.
+
+Dataset: Medicare Part D Prescribers - by Provider and Drug
+UUID: 9552739e-3d05-4c1b-8eff-ecabf391e2e5
+
+Previous UUID (94d00f36-73ce-4520-9b3f-83cd3cded25c) was wrong — it pointed to
+"Medicare Part D Opioid Prescribing Rates - by Geography" (state/county-level
+geographic variation), not the prescriber+drug-level dataset needed here.
+
+Confirmed API columns (GET /data-api/v1/dataset/{uuid}/data?size=2, 2026-03-29):
+  Prscrbr_NPI, Prscrbr_Last_Org_Name, Prscrbr_First_Name, Prscrbr_City,
+  Prscrbr_State_Abrvtn, Prscrbr_State_FIPS, Prscrbr_Type, Prscrbr_Type_Src,
+  Brnd_Name, Gnrc_Name, Tot_Clms, Tot_30day_Fills, Tot_Day_Suply, Tot_Drug_Cst,
+  Tot_Benes, GE65_Sprsn_Flag, GE65_Tot_Clms, GE65_Tot_30day_Fills,
+  GE65_Tot_Drug_Cst, GE65_Tot_Day_Suply, GE65_Bene_Sprsn_Flag, GE65_Tot_Benes
+
+NOTE: The correct prescriber+drug dataset does NOT have Opioid_Drug_Flag,
+LA_Opioid_Drug_Flag, Opioid_Clms, Opioid_Benes, LA_Opioid_Clms, LA_Opioid_Benes.
+Those fields will always be NULL when loaded from this source.
+"""
 
 import hashlib
 import logging
@@ -13,12 +32,10 @@ from ..utils.validators import CMSOpioidRecord
 
 logger = logging.getLogger(__name__)
 
-# Canonical CMS column names → internal snake_case names.
-# Spec fields: Prscrbr_NPI, Prscrbr_Last_Org_Name, Prscrbr_First_Name,
-# Prscrbr_City, Prscrbr_State_Abrvtn, Prscrbr_State_FIPS, Prscrbr_Type,
-# Prscrbr_Type_Src, Brnd_Name, Gnrc_Name, Opioid_Drug_Flag, LA_Opioid_Drug_Flag,
-# Tot_Clms, Tot_30day_Fills, Tot_Day_Suply, Tot_Drug_Cst, Tot_Benes,
-# Opioid_Clms, Opioid_Benes, LA_Opioid_Clms, LA_Opioid_Benes.
+# Confirmed API columns from "Medicare Part D Prescribers - by Provider and Drug"
+# UUID: 9552739e-3d05-4c1b-8eff-ecabf391e2e5 (corrected from wrong geographic UUID)
+# Opioid_Drug_Flag, LA_Opioid_Drug_Flag, Opioid_Clms/Benes, LA_Opioid_Clms/Benes
+# are NOT present in this dataset — those fields will be NULL.
 COLUMN_MAPPING = {
     'Prscrbr_NPI':           'prscrbr_npi',
     'Prscrbr_Last_Org_Name': 'prscrbr_last_org_name',
@@ -30,17 +47,13 @@ COLUMN_MAPPING = {
     'Prscrbr_Type_Src':      'prscrbr_type_src',
     'Brnd_Name':             'brnd_name',
     'Gnrc_Name':             'gnrc_name',
-    'Opioid_Drug_Flag':      'opioid_drug_flag',
-    'LA_Opioid_Drug_Flag':   'la_opioid_drug_flag',
     'Tot_Clms':              'tot_clms',
     'Tot_30day_Fills':       'tot_30day_fills',
     'Tot_Day_Suply':         'tot_day_suply',
     'Tot_Drug_Cst':          'tot_drug_cst',
     'Tot_Benes':             'tot_benes',
-    'Opioid_Clms':           'opioid_clms',
-    'Opioid_Benes':          'opioid_benes',
-    'LA_Opioid_Clms':        'la_opioid_clms',
-    'LA_Opioid_Benes':       'la_opioid_benes',
+    # Opioid_Drug_Flag, LA_Opioid_Drug_Flag — not in Part D Prescribers by Provider+Drug
+    # Opioid_Clms, Opioid_Benes, LA_Opioid_Clms, LA_Opioid_Benes — not in this dataset
 }
 
 TABLE = 'cms_opioid_puf'
@@ -105,17 +118,19 @@ def load_cms_opioid_puf(filepath: str, source_year: int = 2023, max_records: int
                 prscrbr_type_src=row.get('prscrbr_type_src'),
                 brnd_name=row.get('brnd_name'),
                 gnrc_name=row.get('gnrc_name'),
-                opioid_drug_flag=row.get('opioid_drug_flag'),
-                la_opioid_drug_flag=row.get('la_opioid_drug_flag'),
+                # Not present in Part D Prescribers by Provider+Drug dataset
+                opioid_drug_flag=None,
+                la_opioid_drug_flag=None,
                 tot_clms=_safe_int(row.get('tot_clms')),
                 tot_30day_fills=_safe_decimal(row.get('tot_30day_fills')),
                 tot_day_suply=_safe_int(row.get('tot_day_suply')),
                 tot_drug_cst=_safe_decimal(row.get('tot_drug_cst')),
                 tot_benes=_safe_int(row.get('tot_benes')),
-                opioid_clms=_safe_int(row.get('opioid_clms')),
-                opioid_benes=_safe_int(row.get('opioid_benes')),
-                la_opioid_clms=_safe_int(row.get('la_opioid_clms')),
-                la_opioid_benes=_safe_int(row.get('la_opioid_benes')),
+                # Opioid-specific counts not present in this dataset
+                opioid_clms=None,
+                opioid_benes=None,
+                la_opioid_clms=None,
+                la_opioid_benes=None,
                 _source_year=source_year,
             )
             d = rec.model_dump(by_alias=True)

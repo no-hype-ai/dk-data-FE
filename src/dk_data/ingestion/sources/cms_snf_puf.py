@@ -1,4 +1,19 @@
-"""CMS Skilled Nursing Facility (SNF) PUF loader. Loads to hcs_raw.cms_snf_puf."""
+"""CMS Skilled Nursing Facility (SNF) PUF loader. Loads to hcs_raw.cms_snf_puf.
+
+Dataset: Medicare Skilled Nursing Facility - by Provider
+UUID: eaed338b-847e-41b1-a4d3-a206f40dc72b
+
+Confirmed API columns (GET /data-api/v1/dataset/{uuid}/data?size=2, 2026-03-29):
+  YEAR, YEAR_TYPE, SMRY_CTGRY, SRVC_CTGRY, PRVDR_ID, PRVDR_NAME, PRVDR_CITY,
+  STATE, PRVDR_ZIP, BENE_DSTNCT_CNT, TOT_EPSD_STAY_CNT, TOT_SRVC_DAYS,
+  TOT_CHRG_AMT, TOT_ALOWD_AMT, TOT_MDCR_PYMT_AMT, TOT_MDCR_STDZD_PYMT_AMT,
+  BENE_DUAL_PCT, BENE_RRL_PCT, BENE_AVG_AGE, BENE_MALE_PCT, BENE_FEML_PCT,
+  (plus many chronic condition and diagnosis category PCT fields)
+
+NOTE: This dataset is provider-level, NOT RUG-code-level.  There are no RUG_CD
+or RUG_DESC columns in the API response.  rug_cd and rug_desc will always be NULL.
+NOTE: SMRY_CTGRY + SRVC_CTGRY are used as the grain discriminator in place of rug_cd.
+"""
 
 import hashlib
 import logging
@@ -13,23 +28,25 @@ from ..utils.validators import CMSSNFRecord
 
 logger = logging.getLogger(__name__)
 
-# Exact CMS SNF PUF column names -> internal snake_case names
-# CMS SNF PUF grain: provider × RUG code × year
+# Exact CMS SNF PUF column names -> internal snake_case names.
+# CMS SNF PUF grain: provider × summary_category × service_category × year.
+# API uses ALL-CAPS field names; there are NO RUG_CD / RUG_DESC columns.
 COLUMN_MAPPING = {
-    'Rndrng_Prvdr_Id':          'provider_id',
-    'Rndrng_Prvdr_Name':        'provider_name',
-    'Rndrng_Prvdr_City':        'provider_city',
-    'Rndrng_Prvdr_State_Abrvtn':'provider_state',
-    'Rndrng_Prvdr_Zip5':        'provider_zip5',
-    'RUG_CD':                   'rug_cd',
-    'RUG_DESC':                 'rug_desc',
-    'Tot_Benes':                'tot_benes',
-    'Tot_Cvrd_Days':            'tot_cvrd_days',
-    'Avg_Cvrd_Days':            'avg_cvrd_days',
-    'Tot_Mdcr_Alowd_Amt':       'tot_mdcr_alowd_amt',
-    'Avg_Mdcr_Alowd_Amt':       'avg_mdcr_alowd_amt',
-    'Tot_Mdcr_Pymt_Amt':        'tot_mdcr_pymt_amt',
-    'Avg_Mdcr_Pymt_Amt':        'avg_mdcr_pymt_amt',
+    'PRVDR_ID':                 'provider_id',
+    'PRVDR_NAME':               'provider_name',
+    'PRVDR_CITY':               'provider_city',
+    'STATE':                    'provider_state',
+    'PRVDR_ZIP':                'provider_zip5',
+    # rug_cd / rug_desc — no RUG columns in this dataset; NULL downstream.
+    # Re-use rug_cd to store SMRY_CTGRY so grain uniqueness is preserved.
+    'SMRY_CTGRY':               'rug_cd',
+    'SRVC_CTGRY':               'rug_desc',
+    'BENE_DSTNCT_CNT':          'tot_benes',
+    'TOT_SRVC_DAYS':            'tot_cvrd_days',
+    # No average covered days column in this dataset.
+    'TOT_ALOWD_AMT':            'tot_mdcr_alowd_amt',
+    'TOT_MDCR_PYMT_AMT':        'tot_mdcr_pymt_amt',
+    # No per-provider average columns; avg_cvrd_days and avg_mdcr_* will be NULL.
 }
 
 TABLE = 'cms_snf_puf'
@@ -72,15 +89,16 @@ def load_cms_snf_puf(filepath: str, source_year: int = 2023, max_records: int = 
                 provider_city=row.get('provider_city'),
                 provider_state=row.get('provider_state'),
                 provider_zip5=row.get('provider_zip5'),
+                # rug_cd stores SMRY_CTGRY; rug_desc stores SRVC_CTGRY
                 rug_cd=row.get('rug_cd'),
                 rug_desc=row.get('rug_desc'),
                 tot_benes=int(float(row['tot_benes'])) if pd.notna(row.get('tot_benes')) else None,
                 tot_cvrd_days=int(float(row['tot_cvrd_days'])) if pd.notna(row.get('tot_cvrd_days')) else None,
-                avg_cvrd_days=row.get('avg_cvrd_days') or None,
+                avg_cvrd_days=None,  # no average-days column in this dataset
                 tot_mdcr_alowd_amt=row.get('tot_mdcr_alowd_amt') or None,
-                avg_mdcr_alowd_amt=row.get('avg_mdcr_alowd_amt') or None,
+                avg_mdcr_alowd_amt=None,  # no per-provider average in this dataset
                 tot_mdcr_pymt_amt=row.get('tot_mdcr_pymt_amt') or None,
-                avg_mdcr_pymt_amt=row.get('avg_mdcr_pymt_amt') or None,
+                avg_mdcr_pymt_amt=None,  # no per-provider average in this dataset
                 _source_year=source_year,
             )
             d = rec.model_dump(by_alias=True)

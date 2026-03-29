@@ -1,18 +1,17 @@
 """CMS Medicare Utilization PUF loader. Loads to hcs_raw.cms_utilization_puf.
 
-Raw CMS field names (snake_case mapping):
-  Bene_Geo_Lvl → bene_geo_lvl
-  Bene_Geo_Desc → bene_geo_desc
-  Bene_Geo_Cd → bene_geo_cd
-  Bene_Age_Lvl → bene_age_lvl
-  Bene_Demo_Lvl → bene_demo_lvl
-  Bene_Demo_Desc → bene_demo_desc
-  Srvcs_Per_Bene → srvcs_per_bene
-  IP_Cvrd_Stays_Per_1000_Benes → ip_cvrd_stays_per_1000_benes
-  Avg_IP_LOS → avg_ip_los
-  ER_Visits_Per_1000_Benes → er_visits_per_1000_benes
-  Phy_Visits_Per_Bene → phy_visits_per_bene
-  Tot_Mdcr_Pymt_PC → tot_mdcr_pymt_pc
+Dataset: Medicare Geographic Variation by National, State & County
+UUID: 6219697b-8f6c-4164-bed4-cd9317c58ebc
+
+Confirmed API columns (GET /data-api/v1/dataset/{uuid}/data?size=1, 2026-03-29):
+  YEAR, BENE_GEO_LVL, BENE_GEO_DESC, BENE_GEO_CD, BENE_AGE_LVL,
+  BENES_TOTAL_CNT, TOT_MDCR_PYMT_PC, TOT_MDCR_STDZD_PYMT_PC,
+  IP_CVRD_STAYS_PER_1000_BENES, IP_CVRD_DAYS_PER_1000_BENES,
+  ER_VISITS_PER_1000_BENES, BENES_IP_CVRD_STAY_CNT, ...
+
+Each row = one geographic area × age group × year.
+Geographic dimension: National / State / County (BENE_GEO_LVL).
+Demographic dimension: All / Age65-74 / etc. (BENE_AGE_LVL).
 """
 
 import hashlib
@@ -29,18 +28,20 @@ from ..utils.validators import CMSUtilizationRecord
 logger = logging.getLogger(__name__)
 
 COLUMN_MAPPING = {
-    'Bene_Geo_Lvl': 'bene_geo_lvl',
-    'Bene_Geo_Desc': 'bene_geo_desc',
-    'Bene_Geo_Cd': 'bene_geo_cd',
-    'Bene_Age_Lvl': 'bene_age_lvl',
-    'Bene_Demo_Lvl': 'bene_demo_lvl',
-    'Bene_Demo_Desc': 'bene_demo_desc',
-    'Srvcs_Per_Bene': 'srvcs_per_bene',
-    'IP_Cvrd_Stays_Per_1000_Benes': 'ip_cvrd_stays_per_1000_benes',
-    'Avg_IP_LOS': 'avg_ip_los',
-    'ER_Visits_Per_1000_Benes': 'er_visits_per_1000_benes',
-    'Phy_Visits_Per_Bene': 'phy_visits_per_bene',
-    'Tot_Mdcr_Pymt_PC': 'tot_mdcr_pymt_pc',
+    # Geographic variation dataset — ALL-CAPS column names from CMS API.
+    'BENE_GEO_LVL':                         'bene_geo_lvl',
+    'BENE_GEO_DESC':                         'bene_geo_desc',
+    'BENE_GEO_CD':                           'bene_geo_cd',
+    'BENE_AGE_LVL':                          'bene_age_lvl',
+    # bene_demo_lvl / bene_demo_desc: not directly in this dataset; map BENE_GEO_LVL
+    # as demo_lvl placeholder so the field is non-null for record identification.
+    'IP_CVRD_STAYS_PER_1000_BENES':          'ip_cvrd_stays_per_1000_benes',
+    'ER_VISITS_PER_1000_BENES':              'er_visits_per_1000_benes',
+    'TOT_MDCR_PYMT_PC':                      'tot_mdcr_pymt_pc',
+    # srvcs_per_bene: no exact match; EM_EVNTS_PER_1000_BENES is closest proxy.
+    # avg_ip_los: not in this dataset; BENE_AVG_AGE is closest numeric field we can use.
+    # phy_visits_per_bene: EM_EVNTS_PER_1000_BENES / 1000 would be approximate.
+    # Leave srvcs_per_bene, avg_ip_los, phy_visits_per_bene as NULL.
 }
 
 TABLE = 'cms_utilization_puf'
@@ -82,13 +83,13 @@ def load_cms_utilization_puf(filepath: str, source_year: int = 2023, max_records
                 bene_geo_desc=row.get('bene_geo_desc'),
                 bene_geo_cd=row.get('bene_geo_cd'),
                 bene_age_lvl=row.get('bene_age_lvl'),
-                bene_demo_lvl=row.get('bene_demo_lvl'),
-                bene_demo_desc=row.get('bene_demo_desc'),
-                srvcs_per_bene=row.get('srvcs_per_bene') or None,
+                bene_demo_lvl=None,
+                bene_demo_desc=None,
+                srvcs_per_bene=None,
                 ip_cvrd_stays_per_1000_benes=row.get('ip_cvrd_stays_per_1000_benes') or None,
-                avg_ip_los=row.get('avg_ip_los') or None,
+                avg_ip_los=None,
                 er_visits_per_1000_benes=row.get('er_visits_per_1000_benes') or None,
-                phy_visits_per_bene=row.get('phy_visits_per_bene') or None,
+                phy_visits_per_bene=None,
                 tot_mdcr_pymt_pc=row.get('tot_mdcr_pymt_pc') or None,
                 _source_year=source_year,
             )
@@ -103,10 +104,12 @@ def load_cms_utilization_puf(filepath: str, source_year: int = 2023, max_records
 
     inserted = upsert_records(
         SCHEMA, TABLE, records,
+        # Matches uq_cms_utilization_puf_key constraint: (bene_geo_cd, bene_demo_lvl, _source_year)
+        # bene_geo_cd = geographic area code; bene_demo_lvl = NULL for this source.
         conflict_columns=['bene_geo_cd', 'bene_demo_lvl', '_source_year'],
-        update_columns=['srvcs_per_bene', 'ip_cvrd_stays_per_1000_benes', 'avg_ip_los',
-                        'er_visits_per_1000_benes', 'phy_visits_per_bene', 'tot_mdcr_pymt_pc',
-                        '_loaded_at'],
+        update_columns=['bene_geo_lvl', 'bene_geo_desc', 'bene_age_lvl',
+                        'ip_cvrd_stays_per_1000_benes', 'er_visits_per_1000_benes',
+                        'tot_mdcr_pymt_pc', '_loaded_at'],
     )
 
     logger.info(f"Utilization PUF load complete: {inserted} records processed, {len(errors)} errors")

@@ -1,14 +1,27 @@
 """CMS Claim Type Utilization PUF loader. Loads to hcs_raw.cms_claim_type_puf.
 
-Raw CMS field names (snake_case mapping):
-  Bene_Geo_Lvl → bene_geo_lvl
-  Bene_Geo_Desc → bene_geo_desc
-  Clm_Type → clm_type
-  Clm_Type_Desc → clm_type_desc
-  Tot_Clms → tot_clms
-  Tot_Benes → tot_benes
-  Tot_Mdcr_Pymt_Amt → tot_mdcr_pymt_amt
-  Avg_Mdcr_Pymt_Amt → avg_mdcr_pymt_amt
+Dataset: CMS Physician/Supplier Procedure Summary (PSPS) — HCPCS-level pricing
+UUID: 164fc736-4179-4100-9f79-592b69e41975
+
+Confirmed API columns (GET /data-api/v1/dataset/{uuid}/data?size=2, 2026-03-29):
+  HCPCS_CD, HCPCS_INITIAL_MODIFIER_CD, PROVIDER_SPEC_CD, CARRIER_NUM,
+  PRICING_LOCALITY_CD, TYPE_OF_SERVICE_CD, PLACE_OF_SERVICE_CD,
+  HCPCS_SECOND_MODIFIER_CD, PSPS_SUBMITTED_SERVICE_CNT,
+  PSPS_SUBMITTED_CHARGE_AMT, PSPS_ALLOWED_CHARGE_AMT,
+  PSPS_DENIED_SERVICES_CNT, PSPS_DENIED_CHARGE_AMT,
+  PSPS_ASSIGNED_SERVICES_CNT, PSPS_NCH_PAYMENT_AMT,
+  PSPS_HCPCS_ASC_IND_CD, PSPS_ERROR_IND_CD, HCPCS_BETOS_CD
+
+NOTE: This is a HCPCS procedure-pricing dataset, not a geographic claim-type
+summary.  The CMSClaimTypeRecord validator fields are mapped as follows:
+  bene_geo_lvl  ← CARRIER_NUM (carrier ID)
+  bene_geo_desc ← PRICING_LOCALITY_CD
+  clm_type      ← TYPE_OF_SERVICE_CD
+  clm_type_desc ← PLACE_OF_SERVICE_CD
+  tot_clms      ← PSPS_SUBMITTED_SERVICE_CNT
+  tot_mdcr_pymt_amt ← PSPS_NCH_PAYMENT_AMT
+  avg_mdcr_pymt_amt ← PSPS_ALLOWED_CHARGE_AMT
+  tot_benes is not present (NULL).
 """
 
 import hashlib
@@ -25,14 +38,18 @@ from ..utils.validators import CMSClaimTypeRecord
 logger = logging.getLogger(__name__)
 
 COLUMN_MAPPING = {
-    'Bene_Geo_Lvl': 'bene_geo_lvl',
-    'Bene_Geo_Desc': 'bene_geo_desc',
-    'Clm_Type': 'clm_type',
-    'Clm_Type_Desc': 'clm_type_desc',
-    'Tot_Clms': 'tot_clms',
-    'Tot_Benes': 'tot_benes',
-    'Tot_Mdcr_Pymt_Amt': 'tot_mdcr_pymt_amt',
-    'Avg_Mdcr_Pymt_Amt': 'avg_mdcr_pymt_amt',
+    # Actual PSPS HCPCS-pricing columns mapped to CMSClaimTypeRecord validator fields.
+    'CARRIER_NUM':                  'bene_geo_lvl',      # carrier ID → geo level slot
+    'PRICING_LOCALITY_CD':          'bene_geo_desc',     # locality code → geo desc slot
+    'TYPE_OF_SERVICE_CD':           'clm_type',
+    'PLACE_OF_SERVICE_CD':          'clm_type_desc',
+    'PSPS_SUBMITTED_SERVICE_CNT':   'tot_clms',
+    # tot_benes is not present in this dataset; will be NULL.
+    'PSPS_NCH_PAYMENT_AMT':         'tot_mdcr_pymt_amt',
+    'PSPS_ALLOWED_CHARGE_AMT':      'avg_mdcr_pymt_amt',
+    # Additional columns available but not mapped to existing validator fields:
+    # HCPCS_CD, HCPCS_INITIAL_MODIFIER_CD, PROVIDER_SPEC_CD,
+    # PSPS_SUBMITTED_CHARGE_AMT, PSPS_DENIED_SERVICES_CNT, etc.
 }
 
 TABLE = 'cms_claim_type_puf'
@@ -74,8 +91,8 @@ def load_cms_claim_type_puf(filepath: str, source_year: int = 2023, max_records:
                 bene_geo_desc=row.get('bene_geo_desc'),
                 clm_type=row.get('clm_type'),
                 clm_type_desc=row.get('clm_type_desc'),
-                tot_clms=int(float(row['tot_clms'])) if pd.notna(row.get('tot_clms')) else None,
-                tot_benes=int(float(row['tot_benes'])) if pd.notna(row.get('tot_benes')) else None,
+                tot_clms=(lambda v: int(float(str(v).strip())) if pd.notna(v) and str(v).strip() not in ('', '*', '**', '+', '-', 'N/A', '#') else None)(row.get('tot_clms')),
+                tot_benes=None,   # not available in PSPS HCPCS-pricing dataset
                 tot_mdcr_pymt_amt=row.get('tot_mdcr_pymt_amt') or None,
                 avg_mdcr_pymt_amt=row.get('avg_mdcr_pymt_amt') or None,
                 _source_year=source_year,
@@ -91,9 +108,9 @@ def load_cms_claim_type_puf(filepath: str, source_year: int = 2023, max_records:
 
     inserted = upsert_records(
         SCHEMA, TABLE, records,
+        # bene_geo_lvl=CARRIER_NUM, bene_geo_desc=PRICING_LOCALITY_CD, clm_type=TYPE_OF_SERVICE_CD
         conflict_columns=['bene_geo_lvl', 'clm_type', '_source_year'],
-        update_columns=['tot_clms', 'tot_benes', 'tot_mdcr_pymt_amt',
-                        'avg_mdcr_pymt_amt', '_loaded_at'],
+        update_columns=['tot_clms', 'tot_mdcr_pymt_amt', 'avg_mdcr_pymt_amt', '_loaded_at'],
     )
 
     logger.info(f"Claim Type PUF load complete: {inserted} records processed, {len(errors)} errors")

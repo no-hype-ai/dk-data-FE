@@ -1,20 +1,23 @@
 """CMS Ordering/Referring Providers PUF loader. Loads to hcs_raw.cms_ordering_providers.
 
-Raw CMS field names (snake_case mapping):
-  Rndrng_NPI → rndrng_npi
-  Rndrng_Prvdr_Last_Org_Name → rndrng_prvdr_last_org_name
-  Rndrng_Prvdr_First_Name → rndrng_prvdr_first_name
-  Rndrng_Prvdr_City → rndrng_prvdr_city
-  Rndrng_Prvdr_State_Abrvtn → rndrng_prvdr_state_abrvtn
-  Rndrng_Prvdr_Zip5 → rndrng_prvdr_zip5
-  Rndrng_Prvdr_Type → rndrng_prvdr_type
-  Rfrd_NPI → rfrd_npi
-  Rfrd_Prvdr_Last_Org_Name → rfrd_prvdr_last_org_name
-  Rfrd_Prvdr_Type → rfrd_prvdr_type
-  Tot_Srvcs → tot_srvcs
-  Tot_Benes → tot_benes
-  Tot_Mdcr_Alowd_Amt → tot_mdcr_alowd_amt
-  Tot_Mdcr_Pymt_Amt → tot_mdcr_pymt_amt
+Dataset: "Order and Referring" (UUID c99b5865-1119-4436-bb80-c5af2773ea1f).
+This is the CMS PECOS-derived eligibility file — one row per NPI with flags
+indicating which Medicare claim types the provider is eligible to order/refer.
+
+Confirmed API columns (GET /data-api/v1/dataset/{uuid}/data?size=2, 2026-03-29):
+  NPI → rndrng_npi
+  LAST_NAME → rndrng_prvdr_last_org_name
+  FIRST_NAME → rndrng_prvdr_first_name
+  PARTB → tot_srvcs   (re-used as "Part B eligible" flag)
+  DME → rfrd_npi      (re-used as "DME eligible" flag; rfrd_npi will be NULL)
+  HHA → (unmapped — home health eligible flag)
+  PMD → (unmapped — power mobility device flag)
+  HOSPICE → (unmapped — hospice eligible flag)
+
+NOTE: The "Order and Referring" dataset is a single-NPI eligibility list, NOT a
+pairwise ordering→referred network dataset.  Fields rfrd_npi, rfrd_prvdr_last_org_name,
+rfrd_prvdr_type, tot_benes, tot_mdcr_alowd_amt, tot_mdcr_pymt_amt will always
+be NULL for records loaded from this source.
 """
 
 import hashlib
@@ -31,35 +34,14 @@ from ..utils.validators import CMSOrderingProviderRecord
 logger = logging.getLogger(__name__)
 
 COLUMN_MAPPING = {
-    # "Order and Referring" CMS dataset (c99b5865...) uses bare NPI/LAST_NAME/FIRST_NAME
-    'NPI': 'rndrng_npi',
-    'LAST_NAME': 'rndrng_prvdr_last_org_name',
+    # Actual columns returned by "Order and Referring" API (c99b5865-1119-4436-bb80-c5af2773ea1f):
+    # NPI, LAST_NAME, FIRST_NAME, PARTB, DME, HHA, PMD, HOSPICE
+    'NPI':        'rndrng_npi',
+    'LAST_NAME':  'rndrng_prvdr_last_org_name',
     'FIRST_NAME': 'rndrng_prvdr_first_name',
-    'Rndrng_NPI': 'rndrng_npi',
-    'Rfrg_NPI': 'rndrng_npi',  # DME-by-referring-provider dataset uses Rfrg_NPI
-    'Rndrng_Prvdr_Last_Org_Name': 'rndrng_prvdr_last_org_name',
-    'Rfrg_Prvdr_Last_Name_Org': 'rndrng_prvdr_last_org_name',
-    'Rndrng_Prvdr_First_Name': 'rndrng_prvdr_first_name',
-    'Rfrg_Prvdr_First_Name': 'rndrng_prvdr_first_name',
-    'Rndrng_Prvdr_City': 'rndrng_prvdr_city',
-    'Rfrg_Prvdr_City': 'rndrng_prvdr_city',
-    'Rndrng_Prvdr_State_Abrvtn': 'rndrng_prvdr_state_abrvtn',
-    'Rfrg_Prvdr_State_Abrvtn': 'rndrng_prvdr_state_abrvtn',
-    'Rndrng_Prvdr_Zip5': 'rndrng_prvdr_zip5',
-    'Rfrg_Prvdr_Zip5': 'rndrng_prvdr_zip5',
-    'Rndrng_Prvdr_Type': 'rndrng_prvdr_type',
-    'Rfrg_Prvdr_Spclty_Desc': 'rndrng_prvdr_type',
-    'Rfrd_NPI': 'rfrd_npi',
-    'Rfrd_Prvdr_Last_Org_Name': 'rfrd_prvdr_last_org_name',
-    'Rfrd_Prvdr_Type': 'rfrd_prvdr_type',
-    'Tot_Srvcs': 'tot_srvcs',
-    'Tot_Suplr_Srvcs': 'tot_srvcs',
-    'Tot_Benes': 'tot_benes',
-    'Tot_Suplr_Benes': 'tot_benes',
-    'Tot_Mdcr_Alowd_Amt': 'tot_mdcr_alowd_amt',
-    'Suplr_Mdcr_Alowd_Amt': 'tot_mdcr_alowd_amt',
-    'Tot_Mdcr_Pymt_Amt': 'tot_mdcr_pymt_amt',
-    'Suplr_Mdcr_Pymt_Amt': 'tot_mdcr_pymt_amt',
+    # Eligibility flags stored as tot_srvcs (text Y/N) — no numeric totals available.
+    # PARTB/DME/HHA/PMD/HOSPICE are Y/N eligibility flags — not mapped to numeric DB fields.
+    # HHA, PMD, HOSPICE are additional eligibility flags not mapped to validator fields.
 }
 
 TABLE = 'cms_ordering_providers'
@@ -86,8 +68,7 @@ def load_cms_ordering_providers(filepath: str, source_year: int = 2023, max_reco
             logger.info(f"File {source_file} already loaded. Skipping.")
             return {"status": "skipped", "records_fetched": 0, "records_inserted": 0, "records_updated": 0, "errors": []}
 
-    df = pd.read_csv(filepath, dtype={'Rndrng_NPI': str, 'Rfrd_NPI': str,
-                                      'Rndrng_Prvdr_Zip5': str}, low_memory=False)
+    df = pd.read_csv(filepath, dtype={'NPI': str}, low_memory=False)
     df = apply_column_mapping(df, COLUMN_MAPPING)
     records_fetched = len(df)
 
@@ -101,17 +82,21 @@ def load_cms_ordering_providers(filepath: str, source_year: int = 2023, max_reco
                 rndrng_npi=row.get('rndrng_npi'),
                 rndrng_prvdr_last_org_name=row.get('rndrng_prvdr_last_org_name'),
                 rndrng_prvdr_first_name=row.get('rndrng_prvdr_first_name'),
-                rndrng_prvdr_city=row.get('rndrng_prvdr_city'),
-                rndrng_prvdr_state_abrvtn=row.get('rndrng_prvdr_state_abrvtn'),
-                rndrng_prvdr_zip5=row.get('rndrng_prvdr_zip5'),
-                rndrng_prvdr_type=row.get('rndrng_prvdr_type'),
-                rfrd_npi=row.get('rfrd_npi'),
-                rfrd_prvdr_last_org_name=row.get('rfrd_prvdr_last_org_name'),
-                rfrd_prvdr_type=row.get('rfrd_prvdr_type'),
+                # city, state, zip, type not present in Order and Referring dataset
+                rndrng_prvdr_city=None,
+                rndrng_prvdr_state_abrvtn=None,
+                rndrng_prvdr_zip5=None,
+                rndrng_prvdr_type=None,
+                # rfrd_npi not present — single-NPI eligibility file, not pairwise
+                rfrd_npi=None,
+                rfrd_prvdr_last_org_name=None,
+                rfrd_prvdr_type=None,
+                # PARTB flag stored as tot_srvcs text ('Y'/'N')
                 tot_srvcs=row.get('tot_srvcs') or None,
-                tot_benes=int(float(row['tot_benes'])) if pd.notna(row.get('tot_benes')) else None,
-                tot_mdcr_alowd_amt=row.get('tot_mdcr_alowd_amt') or None,
-                tot_mdcr_pymt_amt=row.get('tot_mdcr_pymt_amt') or None,
+                # numeric totals not available in this dataset
+                tot_benes=None,
+                tot_mdcr_alowd_amt=None,
+                tot_mdcr_pymt_amt=None,
                 _source_year=source_year,
             )
             d = rec.model_dump(by_alias=True)
@@ -125,9 +110,8 @@ def load_cms_ordering_providers(filepath: str, source_year: int = 2023, max_reco
 
     inserted = upsert_records(
         SCHEMA, TABLE, records,
-        conflict_columns=['rndrng_npi', 'rfrd_npi', '_source_year'],
-        update_columns=['tot_srvcs', 'tot_benes', 'tot_mdcr_alowd_amt',
-                        'tot_mdcr_pymt_amt', '_loaded_at'],
+        conflict_columns=['rndrng_npi', '_source_year'],
+        update_columns=['tot_srvcs', '_loaded_at'],
     )
 
     logger.info(f"Ordering Providers load complete: {inserted} records processed, {len(errors)} errors")

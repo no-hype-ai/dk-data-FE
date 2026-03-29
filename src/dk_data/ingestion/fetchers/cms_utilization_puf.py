@@ -9,7 +9,9 @@ logger = logging.getLogger(__name__)
 
 class CMSUtilizationPUFFetcher(BaseFetcher):
     SOURCE_NAME = "cms_utilization_puf"
-    DATASET_UUID = "8889d81e-2ee7-448f-8713-f071038289b5"
+    # Medicare Geographic Variation by National, State & County — utilization & spending rates.
+    # (UUID 8889d81e was "by Provider" — wrong dataset entirely.)
+    DATASET_UUID = "6219697b-8f6c-4164-bed4-cd9317c58ebc"
 
     def get_latest_url(self) -> str:
         return f"https://data.cms.gov/data-api/v1/dataset/{self.DATASET_UUID}/data"

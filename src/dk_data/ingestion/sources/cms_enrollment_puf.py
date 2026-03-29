@@ -1,17 +1,32 @@
 """CMS Medicare Enrollment PUF loader. Loads to hcs_raw.cms_enrollment_puf.
 
-Raw CMS field names (snake_case mapping):
-  State_Cd → state_cd
-  County_Cd → county_cd
-  County_Desc → county_desc
-  Bene_Demo_Lvl → bene_demo_lvl
-  Bene_Demo_Desc → bene_demo_desc
-  Bene_Age_Lvl → bene_age_lvl
-  Tot_Benes → tot_benes
-  Orgnl_Mdcr_Benes → orgnl_mdcr_benes
-  MA_Benes → ma_benes
-  ESRD_Benes → esrd_benes
-  Dsbl_Benes → dsbl_benes
+Dataset: Medicare Monthly Enrollment
+UUID: d7fabe1e-d19b-4333-9eff-e80e0643f2fd
+
+Confirmed API columns (GET /data-api/v1/dataset/{uuid}/data?size=2, 2026-03-29):
+  YEAR, MONTH, BENE_GEO_LVL, BENE_STATE_ABRVTN, BENE_STATE_DESC,
+  BENE_COUNTY_DESC, BENE_FIPS_CD, TOT_BENES, ORGNL_MDCR_BENES,
+  MA_AND_OTH_BENES, AGED_TOT_BENES, AGED_ESRD_BENES, AGED_NO_ESRD_BENES,
+  DSBLD_TOT_BENES, DSBLD_ESRD_AND_ESRD_ONLY_BENES, DSBLD_NO_ESRD_BENES,
+  MALE_TOT_BENES, FEMALE_TOT_BENES, WHITE_TOT_BENES, BLACK_TOT_BENES,
+  API_TOT_BENES, HSPNC_TOT_BENES, NATIND_TOT_BENES, OTHR_TOT_BENES,
+  AGE_LT_25_BENES, AGE_25_TO_44_BENES, ..., AGE_GT_94_BENES,
+  DUAL_TOT_BENES, FULL_DUAL_TOT_BENES, PART_DUAL_TOT_BENES,
+  NODUAL_TOT_BENES, QMB_ONLY_BENES, ... (Part D enrollment columns)
+
+NOTE: API uses ALL_CAPS names. Prior mapping used Sentence_Case names that
+do not match the API.  Field mapping to CMSEnrollmentRecord:
+  BENE_STATE_ABRVTN → state_cd
+  BENE_FIPS_CD      → county_cd
+  BENE_COUNTY_DESC  → county_desc
+  BENE_GEO_LVL      → bene_demo_lvl
+  BENE_STATE_DESC   → bene_demo_desc
+  MONTH             → bene_age_lvl  (re-used for month discriminator)
+  TOT_BENES         → tot_benes
+  ORGNL_MDCR_BENES  → orgnl_mdcr_benes
+  MA_AND_OTH_BENES  → ma_benes
+  DSBLD_TOT_BENES   → dsbl_benes
+  AGED_ESRD_BENES   → esrd_benes
 """
 
 import hashlib
@@ -28,17 +43,19 @@ from ..utils.validators import CMSEnrollmentRecord
 logger = logging.getLogger(__name__)
 
 COLUMN_MAPPING = {
-    'State_Cd': 'state_cd',
-    'County_Cd': 'county_cd',
-    'County_Desc': 'county_desc',
-    'Bene_Demo_Lvl': 'bene_demo_lvl',
-    'Bene_Demo_Desc': 'bene_demo_desc',
-    'Bene_Age_Lvl': 'bene_age_lvl',
-    'Tot_Benes': 'tot_benes',
-    'Orgnl_Mdcr_Benes': 'orgnl_mdcr_benes',
-    'MA_Benes': 'ma_benes',
-    'ESRD_Benes': 'esrd_benes',
-    'Dsbl_Benes': 'dsbl_benes',
+    # Actual ALL-CAPS API column names → CMSEnrollmentRecord validator fields.
+    'BENE_STATE_ABRVTN':    'state_cd',
+    'BENE_FIPS_CD':         'county_cd',
+    'BENE_COUNTY_DESC':     'county_desc',
+    'BENE_GEO_LVL':         'bene_demo_lvl',
+    'BENE_STATE_DESC':      'bene_demo_desc',
+    # MONTH re-used in bene_age_lvl to preserve monthly grain uniqueness.
+    'MONTH':                'bene_age_lvl',
+    'TOT_BENES':            'tot_benes',
+    'ORGNL_MDCR_BENES':     'orgnl_mdcr_benes',
+    'MA_AND_OTH_BENES':     'ma_benes',
+    'AGED_ESRD_BENES':      'esrd_benes',
+    'DSBLD_TOT_BENES':      'dsbl_benes',
 }
 
 TABLE = 'cms_enrollment_puf'
@@ -75,6 +92,18 @@ def load_cms_enrollment_puf(filepath: str, source_year: int = 2023, max_records:
 
     for idx, row in df.iterrows():
         try:
+            def _safe_int(val):
+                """Convert to int, treating CMS suppression codes and non-numeric as None."""
+                if not pd.notna(val):
+                    return None
+                s = str(val).strip()
+                if s in ('', '*', '**', '+', '-', 'N/A', '#'):
+                    return None
+                try:
+                    return int(float(s))
+                except (ValueError, TypeError):
+                    return None
+
             rec = CMSEnrollmentRecord(
                 state_cd=row.get('state_cd'),
                 county_cd=row.get('county_cd'),
@@ -82,11 +111,11 @@ def load_cms_enrollment_puf(filepath: str, source_year: int = 2023, max_records:
                 bene_demo_lvl=row.get('bene_demo_lvl'),
                 bene_demo_desc=row.get('bene_demo_desc'),
                 bene_age_lvl=row.get('bene_age_lvl'),
-                tot_benes=int(float(row['tot_benes'])) if pd.notna(row.get('tot_benes')) else None,
-                orgnl_mdcr_benes=int(float(row['orgnl_mdcr_benes'])) if pd.notna(row.get('orgnl_mdcr_benes')) else None,
-                ma_benes=int(float(row['ma_benes'])) if pd.notna(row.get('ma_benes')) else None,
-                esrd_benes=int(float(row['esrd_benes'])) if pd.notna(row.get('esrd_benes')) else None,
-                dsbl_benes=int(float(row['dsbl_benes'])) if pd.notna(row.get('dsbl_benes')) else None,
+                tot_benes=_safe_int(row.get('tot_benes')),
+                orgnl_mdcr_benes=_safe_int(row.get('orgnl_mdcr_benes')),
+                ma_benes=_safe_int(row.get('ma_benes')),
+                esrd_benes=_safe_int(row.get('esrd_benes')),
+                dsbl_benes=_safe_int(row.get('dsbl_benes')),
                 _source_year=source_year,
             )
             d = rec.model_dump(by_alias=True)
@@ -100,6 +129,8 @@ def load_cms_enrollment_puf(filepath: str, source_year: int = 2023, max_records:
 
     inserted = upsert_records(
         SCHEMA, TABLE, records,
+        # state_cd=BENE_STATE_ABRVTN, county_cd=BENE_FIPS_CD,
+        # bene_demo_lvl=BENE_GEO_LVL, bene_age_lvl=MONTH
         conflict_columns=['state_cd', 'county_cd', 'bene_demo_lvl', 'bene_age_lvl', '_source_year'],
         update_columns=['tot_benes', 'orgnl_mdcr_benes', 'ma_benes', 'esrd_benes',
                         'dsbl_benes', '_loaded_at'],

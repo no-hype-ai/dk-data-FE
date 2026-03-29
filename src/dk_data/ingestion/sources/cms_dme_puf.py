@@ -14,11 +14,23 @@ from ..utils.validators import CMSDMERecord
 logger = logging.getLogger(__name__)
 
 # CMS DME by Supplier and Service column names -> internal snake_case.
-# Source dataset uses Suplr_* prefix (not Rndrng_*).
+# Source dataset: Medicare DME Devices & Supplies - by Supplier and Service
+# UUID: 1746a83e-bb65-4300-8e02-21edbab77c6b
+# Confirmed API columns (GET /data-api/v1/dataset/{uuid}/data?size=2, 2026-03-29):
+#   Suplr_NPI, Suplr_Prvdr_Last_Name_Org, Suplr_Prvdr_First_Name, Suplr_Prvdr_MI,
+#   Suplr_Prvdr_Crdntls, Suplr_Prvdr_Ent_Cd, Suplr_Prvdr_St1, Suplr_Prvdr_St2,
+#   Suplr_Prvdr_City, Suplr_Prvdr_State_Abrvtn, Suplr_Prvdr_State_FIPS,
+#   Suplr_Prvdr_Zip5, Suplr_Prvdr_RUCA_Cat, Suplr_Prvdr_RUCA, Suplr_Prvdr_RUCA_Desc,
+#   Suplr_Prvdr_Cntry, Suplr_Prvdr_Spclty_Cd, Suplr_Prvdr_Spclty_Desc,
+#   Suplr_Prvdr_Spclty_Srce, RBCS_Lvl, RBCS_Id, RBCS_Desc, HCPCS_Cd, HCPCS_Desc,
+#   Suplr_Rentl_Ind, Tot_Suplr_Benes, Tot_Suplr_Clms, Tot_Suplr_Srvcs,
+#   Avg_Suplr_Sbmtd_Chrg, Avg_Suplr_Mdcr_Alowd_Amt, Avg_Suplr_Mdcr_Pymt_Amt,
+#   Avg_Suplr_Mdcr_Stdzd_Amt
+# NOTE: API uses Suplr_Prvdr_Last_Name_Org (not Suplr_Prvdr_Last_Org_Name).
+# NOTE: Tot_Suplrs does NOT exist in the API; tot_suplrs field will always be NULL.
 COLUMN_MAPPING = {
     'Suplr_NPI':                    'npi',
     'Suplr_Prvdr_Last_Name_Org':    'provider_last_org_name',
-    'Suplr_Prvdr_Last_Org_Name':    'provider_last_org_name',
     'Suplr_Prvdr_First_Name':       'provider_first_name',
     'Suplr_Prvdr_City':             'provider_city',
     'Suplr_Prvdr_State_Abrvtn':     'provider_state',
@@ -85,7 +97,7 @@ def load_cms_dme_puf(filepath: str, source_year: int = 2023, max_records: int = 
                 hcpcs_cd=row.get('hcpcs_cd'),
                 hcpcs_desc=row.get('hcpcs_desc'),
                 suplr_rentl_ind=row.get('suplr_rentl_ind'),
-                tot_suplrs=int(float(row['tot_suplrs'])) if pd.notna(row.get('tot_suplrs')) else None,
+                tot_suplrs=None,  # Tot_Suplrs not present in CMS DME API dataset
                 tot_suplr_benes=int(float(row['tot_suplr_benes'])) if pd.notna(row.get('tot_suplr_benes')) else None,
                 tot_suplr_clms=int(float(row['tot_suplr_clms'])) if pd.notna(row.get('tot_suplr_clms')) else None,
                 tot_suplr_srvcs=int(float(row['tot_suplr_srvcs'])) if pd.notna(row.get('tot_suplr_srvcs')) else None,
