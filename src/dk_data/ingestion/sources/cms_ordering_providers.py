@@ -91,8 +91,8 @@ def load_cms_ordering_providers(filepath: str, source_year: int = 2023, max_reco
                 rfrd_npi=None,
                 rfrd_prvdr_last_org_name=None,
                 rfrd_prvdr_type=None,
-                # PARTB flag stored as tot_srvcs text ('Y'/'N')
-                tot_srvcs=row.get('tot_srvcs') or None,
+                # tot_srvcs not available — PARTB/DME/HHA are Y/N flags not mapped to integer
+                tot_srvcs=None,
                 # numeric totals not available in this dataset
                 tot_benes=None,
                 tot_mdcr_alowd_amt=None,
@@ -108,11 +108,20 @@ def load_cms_ordering_providers(filepath: str, source_year: int = 2023, max_reco
         except (ValidationError, Exception) as e:
             errors.append(f"Row {idx}: {e}")
 
-    inserted = upsert_records(
-        SCHEMA, TABLE, records,
-        conflict_columns=['rndrng_npi', '_source_year'],
-        update_columns=['tot_srvcs', '_loaded_at'],
-    )
+    # The unique constraint is (rndrng_npi, rfrd_npi, _source_year).
+    # Since rfrd_npi is NULL for this dataset (no pairwise network data), the standard
+    # upsert_records approach fails because NULLs don't match in PG unique indexes.
+    # Use INSERT ... ON CONFLICT DO NOTHING with a direct cursor instead.
+    inserted = 0
+    if records:
+        columns = list(records[0].keys())
+        col_list = ', '.join(columns)
+        placeholders = ', '.join(['%s'] * len(columns))
+        sql = f"INSERT INTO {SCHEMA}.{TABLE} ({col_list}) VALUES ({placeholders}) ON CONFLICT DO NOTHING"
+        with get_cursor() as cur:
+            for record in records:
+                cur.execute(sql, [record[c] for c in columns])
+                inserted += 1
 
     logger.info(f"Ordering Providers load complete: {inserted} records processed, {len(errors)} errors")
     return {
