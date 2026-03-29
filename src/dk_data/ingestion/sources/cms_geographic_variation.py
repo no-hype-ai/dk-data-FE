@@ -12,7 +12,7 @@ from pathlib import Path
 import pandas as pd
 from pydantic import ValidationError
 
-from ..utils.database import apply_column_mapping, get_cursor, get_connection
+from ..utils.database import apply_column_mapping, get_cursor, upsert_records
 from ..utils.validators import CMSGeographicVariationRecord
 
 logger = logging.getLogger(__name__)
@@ -82,7 +82,7 @@ def calculate_file_hash(filepath: str) -> str:
 
 def load_cms_geographic_variation(
     filepath: str,
-    year: int,
+    year: int = None,
     batch_size: int = 1000,
     max_records: int = 0,
 ) -> dict:
@@ -110,7 +110,7 @@ def load_cms_geographic_variation(
         """, (source_hash,))
         if cur.fetchone()[0] > 0:
             logger.warning(f"File {source_file} already loaded. Skipping.")
-            return {'status': 'skipped', 'reason': 'already_loaded'}
+            return {'status': 'skipped', 'records_fetched': 0, 'records_inserted': 0, 'records_updated': 0, 'errors': []}
 
     # Read CSV — FIPS codes must be TEXT; suppress marker '*' becomes NaN
     df = pd.read_csv(
@@ -132,108 +132,46 @@ def load_cms_geographic_variation(
     if 'year' not in df.columns:
         df['year'] = year
 
-    logger.info(f"Found {len(df)} geographic variation records")
+    records_fetched = len(df)
+    logger.info(f"Found {records_fetched} geographic variation records")
 
-    records_inserted = 0
-    records_failed = 0
+    from datetime import datetime, timezone
+    loaded_at = datetime.now(timezone.utc).isoformat()
+    records = []
     errors = []
 
-    with get_connection() as conn:
-        with conn.cursor() as cur:
-            for idx, row in df.iterrows():
-                try:
-                    record = CMSGeographicVariationRecord(
-                        year=int(row['year']),
-                        bene_geo_lvl=row['bene_geo_lvl'],
-                        bene_geo_desc=row['bene_geo_desc'],
-                        bene_geo_cd=row.get('bene_geo_cd') if pd.notna(row.get('bene_geo_cd')) else None,
-                        bene_age_lvl=row.get('bene_age_lvl') if pd.notna(row.get('bene_age_lvl')) else None,
-                        bene_demo_lvl=row.get('bene_demo_lvl') if pd.notna(row.get('bene_demo_lvl')) else None,
-                        bene_demo_desc=row.get('bene_demo_desc') if pd.notna(row.get('bene_demo_desc')) else None,
-                        bene_mcc_lvl=row.get('bene_mcc_lvl') if pd.notna(row.get('bene_mcc_lvl')) else None,
-                        tot_benes=int(row['tot_benes']) if pd.notna(row.get('tot_benes')) else None,
-                        ip_cvrd_stays_per_1000_benes=row.get('ip_cvrd_stays_per_1000_benes') if pd.notna(row.get('ip_cvrd_stays_per_1000_benes')) else None,
-                        er_visits_per_1000_benes=row.get('er_visits_per_1000_benes') if pd.notna(row.get('er_visits_per_1000_benes')) else None,
-                        hosp_readmsn_rate=row.get('hosp_readmsn_rate') if pd.notna(row.get('hosp_readmsn_rate')) else None,
-                        acute_hosp_readmsn_rate=row.get('acute_hosp_readmsn_rate') if pd.notna(row.get('acute_hosp_readmsn_rate')) else None,
-                        tot_mdcr_stdzd_pymt_pc=row.get('tot_mdcr_stdzd_pymt_pc') if pd.notna(row.get('tot_mdcr_stdzd_pymt_pc')) else None,
-                        tot_mdcr_stdzd_pymt_pct_chg=row.get('tot_mdcr_stdzd_pymt_pct_chg') if pd.notna(row.get('tot_mdcr_stdzd_pymt_pct_chg')) else None,
-                        tot_mdcr_pymt_pc=row.get('tot_mdcr_pymt_pc') if pd.notna(row.get('tot_mdcr_pymt_pc')) else None,
-                        tot_mdcr_alowd_amt_pc=row.get('tot_mdcr_alowd_amt_pc') if pd.notna(row.get('tot_mdcr_alowd_amt_pc')) else None,
-                        ma_prtcptn_rate=row.get('ma_prtcptn_rate') if pd.notna(row.get('ma_prtcptn_rate')) else None,
-                    )
+    for idx, row in df.iterrows():
+        try:
+            record = {
+                col: (row[col] if pd.notna(row.get(col)) else None)
+                for col in df.columns
+            }
+            record['_source_file'] = source_file
+            record['_source_hash'] = source_hash
+            record['_loaded_at'] = loaded_at
+            if year is not None and 'year' not in record:
+                record['year'] = year
+            records.append(record)
+        except Exception as e:
+            errors.append({'row': idx, 'error': str(e)})
+            logger.error(f"Error at row {idx}: {e}")
 
-                    cur.execute("""
-                        INSERT INTO hcs_raw.cms_geographic_variation (
-                            year, bene_geo_lvl, bene_geo_desc, bene_geo_cd,
-                            bene_age_lvl, bene_demo_lvl, bene_demo_desc, bene_mcc_lvl,
-                            tot_benes,
-                            ip_cvrd_stays_per_1000_benes, er_visits_per_1000_benes,
-                            hosp_readmsn_rate, acute_hosp_readmsn_rate,
-                            tot_mdcr_stdzd_pymt_pc, tot_mdcr_stdzd_pymt_pct_chg,
-                            tot_mdcr_pymt_pc, tot_mdcr_alowd_amt_pc,
-                            ma_prtcptn_rate,
-                            _source_file, _source_hash
-                        ) VALUES (
-                            %s, %s, %s, %s,
-                            %s, %s, %s, %s,
-                            %s,
-                            %s, %s,
-                            %s, %s,
-                            %s, %s,
-                            %s, %s,
-                            %s,
-                            %s, %s
-                        )
-                    """, (
-                        record.year,
-                        record.bene_geo_lvl,
-                        record.bene_geo_desc,
-                        record.bene_geo_cd,
-                        record.bene_age_lvl,
-                        record.bene_demo_lvl,
-                        record.bene_demo_desc,
-                        record.bene_mcc_lvl,
-                        record.tot_benes,
-                        record.ip_cvrd_stays_per_1000_benes,
-                        record.er_visits_per_1000_benes,
-                        record.hosp_readmsn_rate,
-                        record.acute_hosp_readmsn_rate,
-                        record.tot_mdcr_stdzd_pymt_pc,
-                        record.tot_mdcr_stdzd_pymt_pct_chg,
-                        record.tot_mdcr_pymt_pc,
-                        record.tot_mdcr_alowd_amt_pc,
-                        record.ma_prtcptn_rate,
-                        source_file,
-                        source_hash,
-                    ))
-                    records_inserted += 1
-
-                    if records_inserted % batch_size == 0:
-                        conn.commit()
-
-                except ValidationError as e:
-                    records_failed += 1
-                    errors.append({'row': idx, 'error': str(e)})
-
-                except Exception as e:
-                    records_failed += 1
-                    errors.append({'row': idx, 'error': str(e)})
-                    logger.error(f"Error at row {idx}: {e}")
-
-            conn.commit()
+    inserted = upsert_records(
+        'hcs_raw', 'cms_geographic_variation', records,
+        conflict_columns=['_source_hash', 'bene_geo_lvl'],
+        update_columns=['_loaded_at'],
+    ) if records else 0
 
     logger.info(
         f"CMS Geographic Variation ({year}) load complete: "
-        f"{records_inserted} inserted, {records_failed} failed"
+        f"{inserted} inserted, {len(errors)} failed"
     )
 
     return {
         'status': 'success',
-        'records_inserted': records_inserted,
-        'records_failed': records_failed,
-        'source_file': source_file,
-        'year': year,
+        'records_fetched': records_fetched,
+        'records_inserted': inserted,
+        'records_updated': 0,
         'errors': errors[:10],
     }
 

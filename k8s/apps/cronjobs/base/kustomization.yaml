@@ -87,6 +87,9 @@ resources:
   - cronjob-fetch-pharmgkb.yaml
   - cronjob-fetch-kegg-drug.yaml
   - cronjob-fetch-tdc-admet.yaml
+  # Clinical data API sources (2 files — 019-cms-puf-platform-reconciliation)
+  - cronjob-fetch-clinicaltrials.yaml
+  - cronjob-fetch-openfda-labels.yaml
   # New molecule vocabulary sources (7 files — 019-cms-puf-platform-reconciliation)
   - cronjob-fetch-ema-mol.yaml
   - cronjob-fetch-orange-book.yaml

@@ -128,7 +128,7 @@ TOOL_REGISTRY: Dict[str, ToolDefinition] = {
         description="Search EMA for European medicine regulatory decisions",
         tier="direct_query",
         raw_table="ema",
-        raw_schema="mol_raw",
+        raw_schema="raw",
         adapter_module="dk_data.services.mcp.adapters.ema",
         api_base_url="https://www.ema.europa.eu/en/medicines",
     ),

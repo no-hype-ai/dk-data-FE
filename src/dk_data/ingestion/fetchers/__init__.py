@@ -88,6 +88,8 @@ from .fda_drugs import FDADrugsFetcher
 from .ttd import TTDFetcher
 from .imgt import IMGTFetcher
 from .cdc_vaccines import CDCVaccinesFetcher
+from .clinicaltrials import ClinicalTrialsFetcher
+from .openfda_labels import OpenFDALabelsFetcher
 
 __all__ = [
     'BaseFetcher',
@@ -178,4 +180,6 @@ __all__ = [
     'TTDFetcher',
     'IMGTFetcher',
     'CDCVaccinesFetcher',
+    'ClinicalTrialsFetcher',
+    'OpenFDALabelsFetcher',
 ]

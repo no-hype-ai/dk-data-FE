@@ -22,6 +22,7 @@ import hashlib
 import logging
 from typing import Any, Dict, List
 
+import requests
 from .base import BaseFetcher
 
 logger = logging.getLogger(__name__)

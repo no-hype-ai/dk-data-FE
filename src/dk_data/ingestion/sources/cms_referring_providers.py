@@ -21,7 +21,7 @@ from pathlib import Path
 import pandas as pd
 from pydantic import ValidationError
 
-from ..utils.database import apply_column_mapping, get_cursor
+from ..utils.database import apply_column_mapping, get_cursor, upsert_records
 from ..utils.validators import CMSReferringProviderRecord
 
 logger = logging.getLogger(__name__)
@@ -119,20 +119,12 @@ def load_cms_referring_providers(filepath: str, source_year: int = 2023, max_rec
         except (ValidationError, Exception) as e:
             errors.append(f"Row {idx}: {e}")
 
-    # The unique constraint is (rndrng_npi, rfrd_npi, _source_year).
-    # rfrd_npi is always NULL for this PECOS eligibility dataset (no pairwise network data),
-    # so ON CONFLICT (rndrng_npi, rfrd_npi, _source_year) fails because NULLs don't match
-    # in PostgreSQL unique indexes.  Use INSERT ... ON CONFLICT DO NOTHING instead.
-    inserted = 0
-    if records:
-        columns = list(records[0].keys())
-        col_list = ', '.join(columns)
-        placeholders = ', '.join(['%s'] * len(columns))
-        sql = f"INSERT INTO {SCHEMA}.{TABLE} ({col_list}) VALUES ({placeholders}) ON CONFLICT DO NOTHING"
-        with get_cursor() as cur:
-            for record in records:
-                cur.execute(sql, [record[c] for c in columns])
-                inserted += 1
+    # Use rndrng_npi + _source_year as conflict key (rfrd_npi is NULL for this PECOS dataset).
+    inserted = upsert_records(
+        SCHEMA, TABLE, records,
+        conflict_columns=['rndrng_npi', '_source_year'],
+        update_columns=['_loaded_at'],
+    ) if records else 0
 
     logger.info(f"Referring Providers load complete: {inserted} records processed, {len(errors)} errors")
     return {

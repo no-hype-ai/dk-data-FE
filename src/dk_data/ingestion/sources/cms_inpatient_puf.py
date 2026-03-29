@@ -8,7 +8,7 @@ from pathlib import Path
 import pandas as pd
 from pydantic import ValidationError
 
-from ..utils.database import apply_column_mapping, get_cursor
+from ..utils.database import apply_column_mapping, get_cursor, upsert_records
 from ..utils.validators import CMSInpatientPUFRecord
 
 logger = logging.getLogger(__name__)
@@ -115,18 +115,12 @@ def load_cms_inpatient_puf(filepath: str, source_year: int = 2023, max_records: 
             errors.append(f"Row {idx}: {e}")
 
     # drg_definition is NULL for provider-level records (UUID ee6fb1a5 has no DRG breakdown).
-    # ON CONFLICT on columns with NULL values does not match in PostgreSQL unique indexes.
-    # Use INSERT ... ON CONFLICT DO NOTHING instead.
-    inserted = 0
-    if records:
-        columns = list(records[0].keys())
-        col_list = ', '.join(columns)
-        placeholders = ', '.join(['%s'] * len(columns))
-        sql = f"INSERT INTO {SCHEMA}.{TABLE} ({col_list}) VALUES ({placeholders}) ON CONFLICT DO NOTHING"
-        with get_cursor() as cur:
-            for record in records:
-                cur.execute(sql, [record[c] for c in columns])
-                inserted += 1
+    # Use _source_hash as surrogate conflict key to avoid NULL-in-unique-index issues.
+    inserted = upsert_records(
+        SCHEMA, TABLE, records,
+        conflict_columns=['_source_hash', 'provider_id'],
+        update_columns=['_loaded_at'],
+    ) if records else 0
 
     logger.info(f"Inpatient PUF load complete: {inserted} records processed, {len(errors)} errors")
     return {

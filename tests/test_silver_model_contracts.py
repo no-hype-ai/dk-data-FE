@@ -55,7 +55,7 @@ class TestSilverPatents:
         self.model_block = _extract_model_block(self.sql)
 
     def test_model_name(self):
-        assert "name silver.patents" in self.model_block
+        assert "name mol_silver.patents" in self.model_block
 
     def test_model_kind_incremental_by_unique_key(self):
         assert "INCREMENTAL_BY_UNIQUE_KEY" in self.model_block
@@ -124,7 +124,7 @@ class TestSilverPatents:
     def test_source_priority_order(self):
         """AC-2: Source priority: drugbank > uspto_patents > uspto_ci > epo_ops."""
         priority_pattern = re.search(
-            r"CASE\s+source.*?'drugbank'.*?'uspto_patents'.*?'uspto_ci'.*?'epo_ops'",
+            r"CASE\s+\w+\.?source.*?'drugbank'.*?'uspto_patents'.*?'uspto_ci'.*?'epo_ops'",
             self.sql,
             re.DOTALL,
         )
@@ -177,7 +177,7 @@ class TestSilverTrademarks:
         self.model_block = _extract_model_block(self.sql)
 
     def test_model_name(self):
-        assert "name silver.trademarks" in self.model_block
+        assert "name mol_silver.trademarks" in self.model_block
 
     def test_model_kind_incremental_by_unique_key(self):
         assert "INCREMENTAL_BY_UNIQUE_KEY" in self.model_block
@@ -302,7 +302,7 @@ class _SilverModelTestBase:
 
 class TestSilverRegulatoryDecisions(_SilverModelTestBase):
     MODEL_FILE = "regulatory_decisions.sql"
-    MODEL_NAME = "silver.regulatory_decisions"
+    MODEL_NAME = "mol_silver.regulatory_decisions"
     UNIQUE_KEY = "agency, drug_name, indication, decision_date"
     BRONZE_SOURCES = ["bronze.ema", "bronze.hta_decisions"]
     EXPECTED_COLUMNS = [
@@ -319,7 +319,7 @@ class TestSilverRegulatoryDecisions(_SilverModelTestBase):
 
 class TestSilverFinancialData(_SilverModelTestBase):
     MODEL_FILE = "financial_data.sql"
-    MODEL_NAME = "silver.financial_data"
+    MODEL_NAME = "mol_silver.financial_data"
     UNIQUE_KEY = "cik, filing_type, filing_date"
     BRONZE_SOURCES = ["bronze.sec_edgar"]
     EXPECTED_COLUMNS = [
@@ -330,7 +330,7 @@ class TestSilverFinancialData(_SilverModelTestBase):
 
 class TestSilverResearchers(_SilverModelTestBase):
     MODEL_FILE = "researchers.sql"
-    MODEL_NAME = "silver.researchers"
+    MODEL_NAME = "mol_silver.researchers"
     UNIQUE_KEY = "orcid_id"
     BRONZE_SOURCES = ["bronze.orcid"]
     EXPECTED_COLUMNS = [
@@ -341,7 +341,7 @@ class TestSilverResearchers(_SilverModelTestBase):
 
 class TestSilverNewsSignals(_SilverModelTestBase):
     MODEL_FILE = "news_signals.sql"
-    MODEL_NAME = "silver.news_signals"
+    MODEL_NAME = "mol_silver.news_signals"
     UNIQUE_KEY = "source_url, pub_date"
     BRONZE_SOURCES = ["bronze.medical_news"]
     EXPECTED_COLUMNS = [
@@ -352,11 +352,11 @@ class TestSilverNewsSignals(_SilverModelTestBase):
 
 class TestSilverHealthcareFacilities(_SilverModelTestBase):
     MODEL_FILE = "healthcare_facilities.sql"
-    MODEL_NAME = "silver.healthcare_facilities"
+    MODEL_NAME = "mol_silver.healthcare_facilities"
     UNIQUE_KEY = "provider_id, source"
     BRONZE_SOURCES = [
-        "bronze.cms_inpatient", "bronze.cms_hospital_info",
-        "bronze.cms_cost_reports", "bronze.acc_tvc", "bronze.hrsa",
+        "hcs_bronze.cms_inpatient", "hcs_bronze.cms_hospital_info",
+        "hcs_bronze.cms_cost_reports", "hcs_bronze.acc_tvc", "hcs_bronze.hrsa",
     ]
     EXPECTED_COLUMNS = [
         "provider_id", "facility_name", "city", "state",
@@ -369,11 +369,11 @@ class TestSilverHealthcareFacilities(_SilverModelTestBase):
 
 class TestSilverIcdCodes(_SilverModelTestBase):
     MODEL_FILE = "icd_codes.sql"
-    MODEL_NAME = "silver.icd_codes"
+    MODEL_NAME = "mol_silver.icd_codes"
     UNIQUE_KEY = "icd_code"
     BRONZE_SOURCES = ["bronze.who_icd"]
     EXPECTED_COLUMNS = [
-        "icd_code", "title", "chapter", "block_id",
+        "icd_code", "title", "class_kind", "chapter",
         "category", "parent_code", "is_leaf",
     ]
 

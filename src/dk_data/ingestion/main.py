@@ -100,6 +100,8 @@ from .sources.fda_drugs import load_fda_drugs_data
 from .sources.ttd import load_ttd_data
 from .sources.imgt import load_imgt_data
 from .sources.cdc_vaccines import load_cdc_vaccines_data
+from .sources.clinicaltrials import load_clinicaltrials_data
+from .sources.openfda_labels import load_openfda_labels_data
 
 from .fetchers import (
     PubMedFetcher,
@@ -185,6 +187,8 @@ from .fetchers import (
     TTDFetcher,
     IMGTFetcher,
     CDCVaccinesFetcher,
+    ClinicalTrialsFetcher,
+    OpenFDALabelsFetcher,
 )
 
 from .utils.database import init_connection_pool, close_connection_pool, get_cursor
@@ -624,7 +628,7 @@ SOURCES = {
         'description': 'Physician-industry payment data (Sunshine Act)',
         'fetcher': CMSOpenPaymentsFetcher,
         'loader': load_cms_open_payments,
-        'requires_file': False,
+        'requires_file': True,
         'default_days_back': None,
     },
     'cms_inpatient_puf': {
@@ -908,6 +912,22 @@ SOURCES = {
         'loader': load_cdc_vaccines_data,
         'requires_file': False,
         'default_days_back': None,
+    },
+    'clinicaltrials': {
+        'name': 'ClinicalTrials.gov',
+        'description': 'ClinicalTrials.gov v2 study data',
+        'fetcher': ClinicalTrialsFetcher,
+        'loader': load_clinicaltrials_data,
+        'requires_file': False,
+        'default_days_back': 30,
+    },
+    'openfda_labels': {
+        'name': 'OpenFDA Drug Labels',
+        'description': 'FDA drug label (SPL) data via openFDA API',
+        'fetcher': OpenFDALabelsFetcher,
+        'loader': load_openfda_labels_data,
+        'requires_file': False,
+        'default_days_back': 90,
     },
 }
 

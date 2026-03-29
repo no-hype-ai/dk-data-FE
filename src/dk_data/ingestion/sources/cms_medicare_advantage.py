@@ -20,7 +20,7 @@ from pathlib import Path
 import pandas as pd
 from pydantic import ValidationError
 
-from ..utils.database import apply_column_mapping, get_cursor
+from ..utils.database import apply_column_mapping, get_cursor, upsert_records
 from ..utils.validators import CMSMedicareAdvantageRecord
 
 logger = logging.getLogger(__name__)
@@ -144,19 +144,13 @@ def load_cms_medicare_advantage(filepath: str, source_year: int = 2023, max_reco
         except (ValidationError, Exception) as e:
             errors.append(f"Row {idx}: {e}")
 
-    # The DB unique constraint is (contract_id, plan_id, segment_id, county_fips, _source_year).
-    # For the geographic dataset these key columns are NULL (no plan-level data),
-    # so ON CONFLICT fails.  Use INSERT ... ON CONFLICT DO NOTHING.
-    inserted = 0
-    if records:
-        columns = list(records[0].keys())
-        col_list = ', '.join(columns)
-        placeholders = ', '.join(['%s'] * len(columns))
-        sql = f"INSERT INTO {SCHEMA}.{TABLE} ({col_list}) VALUES ({placeholders}) ON CONFLICT DO NOTHING"
-        with get_cursor() as cur:
-            for record in records:
-                cur.execute(sql, [record[c] for c in columns])
-                inserted += 1
+    # Use _source_hash as surrogate conflict key to avoid NULL-in-unique-index issues.
+    # (contract_id/plan_id are NULL for geographic-level MA data.)
+    inserted = upsert_records(
+        SCHEMA, TABLE, records,
+        conflict_columns=['_source_hash', 'enrollment_data_period', 'fips_cd'],
+        update_columns=['_loaded_at'],
+    ) if records else 0
 
     logger.info(f"Medicare Advantage load complete: {inserted} records processed, {len(errors)} errors")
     return {
