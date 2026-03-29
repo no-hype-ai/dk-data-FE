@@ -10,10 +10,7 @@ import hashlib
 import logging
 from pathlib import Path
 import pandas as pd
-from pydantic import ValidationError
-
-from ..utils.database import apply_column_mapping, get_cursor, upsert_records
-from ..utils.validators import CMSGeographicVariationRecord
+from ..utils.database import apply_column_mapping, get_connection, get_cursor, upsert_records
 
 logger = logging.getLogger(__name__)
 

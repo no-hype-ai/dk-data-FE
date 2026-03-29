@@ -23,7 +23,6 @@ import logging
 import time
 from typing import Any, Dict, List
 
-import requests
 from .base import BaseFetcher
 
 logger = logging.getLogger(__name__)
