@@ -15,11 +15,6 @@
 --   doppler run -- python -m dk_data.scripts.run_migration \
 --     src/dk_data/sql/migrations/089_entity_linking_gaps.sql
 
--- Ensure hcs_raw schema exists before this migration runs.
--- hcs_raw is fully initialized by migration 114_cms_puf_platform_reconciliation.sql;
--- this guard makes 089 self-contained for CI environments where migrations run in order.
-CREATE SCHEMA IF NOT EXISTS hcs_raw;
-
 BEGIN;
 
 -- ============================================================================
@@ -110,76 +105,55 @@ ON CONFLICT (source_name) DO UPDATE
 -- slots per payment record. These were absent from the original raw table.
 -- ============================================================================
 
--- All ALTER TABLE statements for hcs_raw.cms_open_payments are guarded: in a fresh
--- CI/dev environment the table is created by migration 114; on an existing production
--- DB the table already exists and these column additions are applied.
+-- Drug name slots — exact CMS CSV column name:
+--   "Name_of_Drug_or_Biological_or_Device_or_Medical_Supply_N"
+--   (NOT "Covered_Drug_or_Biological_Name_N" — that column does not exist in the CMS PUF)
+ALTER TABLE hcs_raw.cms_open_payments
+    ADD COLUMN IF NOT EXISTS name_of_drug_or_biological_or_device_or_medical_supply_1  TEXT,
+    ADD COLUMN IF NOT EXISTS name_of_drug_or_biological_or_device_or_medical_supply_2  TEXT,
+    ADD COLUMN IF NOT EXISTS name_of_drug_or_biological_or_device_or_medical_supply_3  TEXT,
+    ADD COLUMN IF NOT EXISTS name_of_drug_or_biological_or_device_or_medical_supply_4  TEXT,
+    ADD COLUMN IF NOT EXISTS name_of_drug_or_biological_or_device_or_medical_supply_5  TEXT;
+
+-- NDC slots (National Drug Code — structural bridge to mol_silver.ndc_molecule_bridge)
+ALTER TABLE hcs_raw.cms_open_payments
+    ADD COLUMN IF NOT EXISTS associated_drug_or_biological_ndc_1  TEXT,
+    ADD COLUMN IF NOT EXISTS associated_drug_or_biological_ndc_2  TEXT,
+    ADD COLUMN IF NOT EXISTS associated_drug_or_biological_ndc_3  TEXT,
+    ADD COLUMN IF NOT EXISTS associated_drug_or_biological_ndc_4  TEXT,
+    ADD COLUMN IF NOT EXISTS associated_drug_or_biological_ndc_5  TEXT;
+
+-- Normalized drug names (pre-computed, avoids repeated REGEXP_REPLACE in silver)
+-- Named drug_name_N_normalized for brevity in silver/gold joins.
+ALTER TABLE hcs_raw.cms_open_payments
+    ADD COLUMN IF NOT EXISTS drug_name_1_normalized  TEXT
+        GENERATED ALWAYS AS (
+            LOWER(REGEXP_REPLACE(name_of_drug_or_biological_or_device_or_medical_supply_1, '[^a-zA-Z0-9]', '', 'g'))
+        ) STORED,
+    ADD COLUMN IF NOT EXISTS drug_name_2_normalized  TEXT
+        GENERATED ALWAYS AS (
+            LOWER(REGEXP_REPLACE(name_of_drug_or_biological_or_device_or_medical_supply_2, '[^a-zA-Z0-9]', '', 'g'))
+        ) STORED,
+    ADD COLUMN IF NOT EXISTS drug_name_3_normalized  TEXT
+        GENERATED ALWAYS AS (
+            LOWER(REGEXP_REPLACE(name_of_drug_or_biological_or_device_or_medical_supply_3, '[^a-zA-Z0-9]', '', 'g'))
+        ) STORED,
+    ADD COLUMN IF NOT EXISTS drug_name_4_normalized  TEXT
+        GENERATED ALWAYS AS (
+            LOWER(REGEXP_REPLACE(name_of_drug_or_biological_or_device_or_medical_supply_4, '[^a-zA-Z0-9]', '', 'g'))
+        ) STORED,
+    ADD COLUMN IF NOT EXISTS drug_name_5_normalized  TEXT
+        GENERATED ALWAYS AS (
+            LOWER(REGEXP_REPLACE(name_of_drug_or_biological_or_device_or_medical_supply_5, '[^a-zA-Z0-9]', '', 'g'))
+        ) STORED;
+
+-- Also add record_id if not already there (conflict key used in upsert)
+ALTER TABLE hcs_raw.cms_open_payments
+    ADD COLUMN IF NOT EXISTS record_id  TEXT;
+
+-- Add unique constraint for upsert idempotency (if not already present)
 DO $$
 BEGIN
-    IF NOT EXISTS (
-        SELECT 1 FROM information_schema.tables
-        WHERE table_schema = 'hcs_raw' AND table_name = 'cms_open_payments'
-    ) THEN
-        RETURN;  -- Table not yet created; migration 114 will include these columns.
-    END IF;
-
-    -- Drug name slots (exact CMS CSV column names)
-    ALTER TABLE hcs_raw.cms_open_payments
-        ADD COLUMN IF NOT EXISTS name_of_drug_or_biological_or_device_or_medical_supply_1  TEXT,
-        ADD COLUMN IF NOT EXISTS name_of_drug_or_biological_or_device_or_medical_supply_2  TEXT,
-        ADD COLUMN IF NOT EXISTS name_of_drug_or_biological_or_device_or_medical_supply_3  TEXT,
-        ADD COLUMN IF NOT EXISTS name_of_drug_or_biological_or_device_or_medical_supply_4  TEXT,
-        ADD COLUMN IF NOT EXISTS name_of_drug_or_biological_or_device_or_medical_supply_5  TEXT;
-
-    -- NDC slots
-    ALTER TABLE hcs_raw.cms_open_payments
-        ADD COLUMN IF NOT EXISTS associated_drug_or_biological_ndc_1  TEXT,
-        ADD COLUMN IF NOT EXISTS associated_drug_or_biological_ndc_2  TEXT,
-        ADD COLUMN IF NOT EXISTS associated_drug_or_biological_ndc_3  TEXT,
-        ADD COLUMN IF NOT EXISTS associated_drug_or_biological_ndc_4  TEXT,
-        ADD COLUMN IF NOT EXISTS associated_drug_or_biological_ndc_5  TEXT;
-
-    -- record_id for upsert conflict key
-    ALTER TABLE hcs_raw.cms_open_payments
-        ADD COLUMN IF NOT EXISTS record_id  TEXT;
-
-    -- Coverage/recipient fields and completeness columns
-    ALTER TABLE hcs_raw.cms_open_payments
-        ADD COLUMN IF NOT EXISTS covered_recipient_type              TEXT,
-        ADD COLUMN IF NOT EXISTS payment_publication_date            DATE,
-        ADD COLUMN IF NOT EXISTS program_year                        INTEGER,
-        ADD COLUMN IF NOT EXISTS number_of_payments_included_in_total_amount INTEGER,
-        ADD COLUMN IF NOT EXISTS form_of_payment_or_transfer_of_value TEXT,
-        ADD COLUMN IF NOT EXISTS physician_first_name                TEXT,
-        ADD COLUMN IF NOT EXISTS physician_last_name                 TEXT,
-        ADD COLUMN IF NOT EXISTS physician_specialty                 TEXT,
-        ADD COLUMN IF NOT EXISTS date_of_payment                     DATE,
-        ADD COLUMN IF NOT EXISTS recipient_city                      TEXT,
-        ADD COLUMN IF NOT EXISTS recipient_zip_code                  TEXT;
-
-    -- Normalized drug name columns (generated, requires drug name columns above)
-    ALTER TABLE hcs_raw.cms_open_payments
-        ADD COLUMN IF NOT EXISTS drug_name_1_normalized  TEXT
-            GENERATED ALWAYS AS (
-                LOWER(REGEXP_REPLACE(name_of_drug_or_biological_or_device_or_medical_supply_1, '[^a-zA-Z0-9]', '', 'g'))
-            ) STORED,
-        ADD COLUMN IF NOT EXISTS drug_name_2_normalized  TEXT
-            GENERATED ALWAYS AS (
-                LOWER(REGEXP_REPLACE(name_of_drug_or_biological_or_device_or_medical_supply_2, '[^a-zA-Z0-9]', '', 'g'))
-            ) STORED,
-        ADD COLUMN IF NOT EXISTS drug_name_3_normalized  TEXT
-            GENERATED ALWAYS AS (
-                LOWER(REGEXP_REPLACE(name_of_drug_or_biological_or_device_or_medical_supply_3, '[^a-zA-Z0-9]', '', 'g'))
-            ) STORED,
-        ADD COLUMN IF NOT EXISTS drug_name_4_normalized  TEXT
-            GENERATED ALWAYS AS (
-                LOWER(REGEXP_REPLACE(name_of_drug_or_biological_or_device_or_medical_supply_4, '[^a-zA-Z0-9]', '', 'g'))
-            ) STORED,
-        ADD COLUMN IF NOT EXISTS drug_name_5_normalized  TEXT
-            GENERATED ALWAYS AS (
-                LOWER(REGEXP_REPLACE(name_of_drug_or_biological_or_device_or_medical_supply_5, '[^a-zA-Z0-9]', '', 'g'))
-            ) STORED;
-
-    -- Unique constraint for upsert idempotency
     IF NOT EXISTS (
         SELECT 1 FROM pg_constraint
         WHERE conrelid = 'hcs_raw.cms_open_payments'::regclass
@@ -189,12 +163,35 @@ BEGIN
             ADD CONSTRAINT cms_open_payments_record_id_year_key
             UNIQUE (record_id, _source_year);
     END IF;
-
-    -- Index on normalized drug name for alias bridge join
-    CREATE INDEX IF NOT EXISTS idx_open_payments_drug1_norm
-        ON hcs_raw.cms_open_payments (drug_name_1_normalized)
-        WHERE drug_name_1_normalized IS NOT NULL;
-
 END $$;
+
+-- Index on normalized drug names for the alias bridge join in silver
+CREATE INDEX IF NOT EXISTS idx_open_payments_drug1_norm
+    ON hcs_raw.cms_open_payments (drug_name_1_normalized)
+    WHERE drug_name_1_normalized IS NOT NULL;
+
+-- Add columns present in CMS CSV but missing from migration 085 DDL.
+-- Columns already in 085 (physician_first_name, physician_last_name, etc.)
+-- are listed here with IF NOT EXISTS for safety — they are no-ops on an existing DB.
+ALTER TABLE hcs_raw.cms_open_payments
+    -- Coverage/recipient fields (absent from migration 085)
+    ADD COLUMN IF NOT EXISTS covered_recipient_type              TEXT,
+    ADD COLUMN IF NOT EXISTS payment_publication_date            DATE,
+    ADD COLUMN IF NOT EXISTS program_year                        INTEGER,
+    ADD COLUMN IF NOT EXISTS number_of_payments_included_in_total_amount INTEGER,
+    ADD COLUMN IF NOT EXISTS form_of_payment_or_transfer_of_value TEXT,
+    -- Columns present in migration 085 but listed here for completeness (no-ops)
+    ADD COLUMN IF NOT EXISTS physician_first_name                TEXT,
+    ADD COLUMN IF NOT EXISTS physician_last_name                 TEXT,
+    ADD COLUMN IF NOT EXISTS physician_specialty                 TEXT,
+    ADD COLUMN IF NOT EXISTS date_of_payment                     DATE,
+    ADD COLUMN IF NOT EXISTS recipient_city                      TEXT,
+    ADD COLUMN IF NOT EXISTS recipient_zip_code                  TEXT;
+
+COMMENT ON COLUMN hcs_raw.cms_open_payments.name_of_drug_or_biological_or_device_or_medical_supply_1 IS
+    'CMS Open Payments general payments: first drug/biological/device/medical supply name (verbatim). '
+    'Exact CMS column: Name_of_Drug_or_Biological_or_Device_or_Medical_Supply_1. '
+    'Up to 5 slots (1-5) per payment record. Join to mol_silver.molecule_aliases via '
+    'drug_name_N_normalized = alias_name_normalized. Feature: 020-entity-linking-gaps';
 
 COMMIT;
