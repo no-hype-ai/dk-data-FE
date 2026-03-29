@@ -553,6 +553,42 @@ def refresh_metrics_from_database_sync():
                 'company_pipeline', 'lifecycle_evidence', 'lifecycle_stages',
                 'molecule_profile', 'safety_signals'
             ],
+            'hcs_raw': [
+                'cms_care_compare', 'cms_chow', 'cms_chronic_conditions', 'cms_claim_type_puf',
+                'cms_cost_reports_puf', 'cms_cost_reports_puf_lines', 'cms_ddinter', 'cms_dme_puf',
+                'cms_dmepos', 'cms_dual_eligible', 'cms_enrollment_puf', 'cms_formulary',
+                'cms_geographic_variation', 'cms_hcris', 'cms_home_health', 'cms_hospice_puf',
+                'cms_hospital_affiliation', 'cms_hospital_general_info', 'cms_hospital_quality',
+                'cms_imaging_puf', 'cms_inpatient_puf', 'cms_lab_services', 'cms_magnet',
+                'cms_medicaid_drug_spending', 'cms_medicare_advantage', 'cms_mental_health_puf',
+                'cms_ndc', 'cms_nppes', 'cms_nucc', 'cms_open_payments', 'cms_opioid_puf',
+                'cms_ordering_providers', 'cms_outpatient_puf', 'cms_part_b_spending',
+                'cms_part_d_prescriber', 'cms_part_d_spending', 'cms_pecos', 'cms_physician_puf',
+                'cms_physician_puf_services', 'cms_pos', 'cms_post_acute', 'cms_rbcs',
+                'cms_referring_providers', 'cms_snf_puf', 'cms_stabilis', 'cms_telehealth_puf',
+                'cms_usp', 'cms_utilization_puf', 'hrsa_shortage_areas',
+            ],
+            'hcs_bronze': [
+                'acc_tvc', 'cms_care_compare', 'cms_chow', 'cms_chronic_conditions',
+                'cms_claim_type_puf', 'cms_cost_reports', 'cms_cost_reports_puf',
+                'cms_cost_reports_puf_lines', 'cms_ddinter', 'cms_dme_puf', 'cms_dmepos',
+                'cms_dual_eligible', 'cms_enrollment_puf', 'cms_formulary',
+                'cms_geographic_variation', 'cms_hcris', 'cms_home_health', 'cms_hospice_puf',
+                'cms_hospital_affiliation', 'cms_hospital_general_info', 'cms_hospital_info',
+                'cms_hospital_quality', 'cms_imaging_puf', 'cms_inpatient', 'cms_inpatient_puf',
+                'cms_lab_services', 'cms_magnet', 'cms_medicaid_drug_spending',
+                'cms_medicare_advantage', 'cms_mental_health_puf', 'cms_ndc', 'cms_nppes',
+                'cms_nucc', 'cms_open_payments', 'cms_opioid_puf', 'cms_ordering_providers',
+                'cms_outpatient_puf', 'cms_part_b_spending', 'cms_part_d_prescriber',
+                'cms_part_d_spending', 'cms_pecos', 'cms_physician_puf',
+                'cms_physician_puf_services', 'cms_pos', 'cms_post_acute', 'cms_rbcs',
+                'cms_referring_providers', 'cms_snf_puf', 'cms_stabilis', 'cms_telehealth_puf',
+                'cms_usp', 'cms_utilization_puf', 'hrsa',
+            ],
+            'hcs_silver': [
+                'equipment_inventory', 'idn_hierarchy', 'referral_network',
+                'service_lines', 'staffing_decomposition', 'verified_contacts',
+            ],
         }
 
         for layer, tables in layer_tables.items():
