@@ -1200,6 +1200,22 @@ class CMSNPPESRecord(CMSPUFBaseRecord):
     npi_reactivation_date: Optional[date] = None
     _source_year: Optional[int] = None
 
+    @field_validator('npi_deactivation_date', 'npi_reactivation_date', mode='before')
+    @classmethod
+    def parse_nppes_date(cls, v: Any) -> Any:
+        """NPPES publishes dates as MM/DD/YYYY — parse to ISO date."""
+        if not v or not isinstance(v, str):
+            return v
+        v = v.strip()
+        if '/' in v:
+            parts = v.split('/')
+            if len(parts) == 3:
+                try:
+                    return date(int(parts[2]), int(parts[0]), int(parts[1]))
+                except (ValueError, IndexError):
+                    return None
+        return v
+
 
 class CMSOpenPaymentsRecord(CMSPUFBaseRecord):
     """Validation model for CMS Open Payments (Sunshine Act) data."""

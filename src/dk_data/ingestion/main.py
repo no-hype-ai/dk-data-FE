@@ -568,10 +568,10 @@ SOURCES = {
     # --- CMS PUF file-based sources (019-cms-puf-platform-reconciliation) ---
     'cms_nppes': {
         'name': 'CMS NPPES',
-        'description': 'National Plan and Provider Enumeration System — NPI registry',
+        'description': 'National Plan and Provider Enumeration System — NPI registry (weekly incremental)',
         'fetcher': CMSNPPESFetcher,
         'loader': load_cms_nppes,
-        'requires_file': True,
+        'requires_file': False,
         'default_days_back': None,
     },
     'cms_physician_puf': {
@@ -720,10 +720,10 @@ SOURCES = {
     },
     'cms_mental_health_puf': {
         'name': 'CMS Mental Health PUF',
-        'description': 'Medicare mental health services utilization and payment (annual PUF)',
+        'description': 'Medicare mental health services utilization and payment (from Physician PUF, filtered by MH provider types)',
         'fetcher': CMSMentalHealthPUFFetcher,
         'loader': load_cms_mental_health_puf,
-        'requires_file': True,
+        'requires_file': False,
         'default_days_back': None,
     },
     'cms_opioid_puf': {
@@ -744,7 +744,7 @@ SOURCES = {
     },
     'cms_chronic_conditions': {
         'name': 'CMS Chronic Conditions PUF',
-        'description': 'Medicare chronic condition prevalence and costs by geography/demographics',
+        'description': 'Medicare chronic condition prevalence — retired from public download; requires CMS CCW research access (https://www2.ccwdata.org)',
         'fetcher': CMSChronicConditionsFetcher,
         'loader': load_cms_chronic_conditions,
         'requires_file': True,
@@ -752,7 +752,7 @@ SOURCES = {
     },
     'cms_dual_eligible': {
         'name': 'CMS Dual Eligible PUF',
-        'description': 'Medicare-Medicaid dual eligible beneficiary statistics',
+        'description': 'Medicare-Medicaid dual eligible beneficiary statistics — Excel workbook format requires custom parser',
         'fetcher': CMSDualEligibleFetcher,
         'loader': load_cms_dual_eligible,
         'requires_file': True,

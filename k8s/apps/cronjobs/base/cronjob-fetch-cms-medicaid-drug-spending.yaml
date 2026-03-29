@@ -10,7 +10,7 @@ metadata:
     app.kubernetes.io/component: ingestion
     app.kubernetes.io/part-of: dk-data
 spec:
-  schedule: "0 4 1-7 * 0"  # First Sunday of month 4:00 AM UTC
+  schedule: "0 4 1 4 *"  # Annually on April 1st 4:00 AM UTC — Medicaid Drug Spending data released annually (typically spring)
   concurrencyPolicy: Forbid
   successfulJobsHistoryLimit: 3
   failedJobsHistoryLimit: 3
@@ -41,7 +41,7 @@ spec:
             - name: fetch-cms-medicaid-drug-spending
               image: ghcr.io/data-kinetic/dk-data-fe/job-trigger:019-cms-puf-platform-reconciliation-abc1234
               command: ["python", "-m", "dk_data.ingestion.main"]
-              args: ["cms_medicaid_drug_spending", "--skip-if-no-file"]
+              args: ["cms_medicaid_drug_spending"]
               env:
                 - name: POSTGRES_HOST
                   valueFrom:

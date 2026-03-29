@@ -10,7 +10,7 @@ metadata:
     app.kubernetes.io/component: ingestion
     app.kubernetes.io/part-of: dk-data
 spec:
-  schedule: "30 6 1-7 * 0"  # First Sunday of month 6:30 AM UTC
+  schedule: "0 5 15 1,4,7,10 *"  # Quarterly on 15th of Jan/Apr/Jul/Oct 5:00 AM UTC — Physician PUF (mental health subset) released quarterly; staggered 14 days after imaging run
   concurrencyPolicy: Forbid
   successfulJobsHistoryLimit: 3
   failedJobsHistoryLimit: 3
@@ -41,7 +41,7 @@ spec:
             - name: fetch-cms-mental-health-puf
               image: ghcr.io/data-kinetic/dk-data-fe/job-trigger:019-cms-puf-platform-reconciliation-abc1234
               command: ["python", "-m", "dk_data.ingestion.main"]
-              args: ["cms_mental_health_puf", "--skip-if-no-file"]
+              args: ["cms_mental_health_puf"]
               env:
                 - name: POSTGRES_HOST
                   valueFrom:

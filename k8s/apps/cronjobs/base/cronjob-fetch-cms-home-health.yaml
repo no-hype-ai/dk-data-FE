@@ -10,7 +10,7 @@ metadata:
     app.kubernetes.io/component: ingestion
     app.kubernetes.io/part-of: dk-data
 spec:
-  schedule: "30 4 1-7 * 0"  # First Sunday of month 4:30 AM UTC
+  schedule: "30 4 1 * *"  # Monthly on 1st of month 4:30 AM UTC — CMS Home Health PUF refreshed monthly
   concurrencyPolicy: Forbid
   successfulJobsHistoryLimit: 3
   failedJobsHistoryLimit: 3
@@ -41,7 +41,7 @@ spec:
             - name: fetch-cms-home-health
               image: ghcr.io/data-kinetic/dk-data-fe/job-trigger:019-cms-puf-platform-reconciliation-abc1234
               command: ["python", "-m", "dk_data.ingestion.main"]
-              args: ["cms_home_health", "--skip-if-no-file"]
+              args: ["cms_home_health"]
               env:
                 - name: POSTGRES_HOST
                   valueFrom:

@@ -10,7 +10,7 @@ metadata:
     app.kubernetes.io/component: ingestion
     app.kubernetes.io/part-of: dk-data
 spec:
-  schedule: "0 6 1-7 * 0"  # First Sunday of month 6:00 AM UTC
+  schedule: "0 6 1 10 *"  # Annually on October 1st 6:00 AM UTC — Part B Lab Services PUF released annually (typically Q4)
   concurrencyPolicy: Forbid
   successfulJobsHistoryLimit: 3
   failedJobsHistoryLimit: 3
@@ -41,7 +41,7 @@ spec:
             - name: fetch-cms-lab-services
               image: ghcr.io/data-kinetic/dk-data-fe/job-trigger:019-cms-puf-platform-reconciliation-abc1234
               command: ["python", "-m", "dk_data.ingestion.main"]
-              args: ["cms_lab_services", "--skip-if-no-file"]
+              args: ["cms_lab_services"]
               env:
                 - name: POSTGRES_HOST
                   valueFrom:

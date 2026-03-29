@@ -10,14 +10,14 @@ metadata:
     app.kubernetes.io/component: ingestion
     app.kubernetes.io/part-of: dk-data
 spec:
-  schedule: "45 2 1-7 * 0"  # First Sunday of month 2:45 AM UTC
+  schedule: "0 3 * * 1"  # Weekly on Monday 3:00 AM UTC — matches CMS weekly incremental release cadence
   concurrencyPolicy: Forbid
   successfulJobsHistoryLimit: 3
   failedJobsHistoryLimit: 3
   jobTemplate:
     spec:
       backoffLimit: 2
-      activeDeadlineSeconds: 1800  # 30 minute timeout
+      activeDeadlineSeconds: 3600  # 60 minute timeout (weekly ZIP ~6-8 MB)
       template:
         metadata:
           labels:
@@ -41,7 +41,7 @@ spec:
             - name: fetch-cms-nppes
               image: ghcr.io/data-kinetic/dk-data-fe/job-trigger:019-cms-puf-platform-reconciliation-abc1234
               command: ["python", "-m", "dk_data.ingestion.main"]
-              args: ["cms_nppes", "--skip-if-no-file"]
+              args: ["cms_nppes"]
               env:
                 - name: POSTGRES_HOST
                   valueFrom:
