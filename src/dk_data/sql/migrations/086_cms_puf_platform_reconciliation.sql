@@ -871,6 +871,32 @@ VALUES
 ON CONFLICT (source_name) DO NOTHING;
 
 -- ============================================================================
+-- 6b. HCS_RAW — PHYSICIAN PUF SERVICES TABLE
+--     (NPI × HCPCS grain, needed by equipment_inventory agent and migration 091)
+-- ============================================================================
+
+CREATE TABLE IF NOT EXISTS hcs_raw.cms_physician_puf_services (
+    id                           BIGSERIAL PRIMARY KEY,
+    npi                          TEXT NOT NULL,
+    hcpcs_code                   TEXT NOT NULL,
+    hcpcs_description            TEXT,
+    hcpcs_drug_ind               TEXT,
+    place_of_service             TEXT,
+    line_srvc_cnt                NUMERIC(18,2),
+    bene_unique_cnt              INTEGER,
+    bene_day_srvc_cnt            INTEGER,
+    average_medicare_allowed_amt NUMERIC(18,2),
+    average_submitted_chrg_amt   NUMERIC(18,2),
+    average_medicare_payment_amt NUMERIC(18,2),
+    average_medicare_stnd_amt    NUMERIC(18,2),
+    _source_year                 INTEGER NOT NULL,
+    _source_hash                 TEXT NOT NULL,
+    _source_file                 TEXT,
+    _loaded_at                   TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    UNIQUE (npi, hcpcs_code, place_of_service, _source_year)
+);
+
+-- ============================================================================
 -- 7. MOL_RAW TABLES FOR NEW API SOURCES (EuropePMC + NIH Reporter)
 -- ============================================================================
 
