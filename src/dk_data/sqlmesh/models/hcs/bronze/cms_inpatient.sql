@@ -35,8 +35,8 @@ SELECT
     -- Raw source tracking
     id::BIGINT AS raw_source_id,
     'cms_inpatient_puf' AS source,
-    _loaded_at AS request_timestamp,
-    _loaded_at AS source_updated_at,
+    _loaded_at::TIMESTAMPTZ AS request_timestamp,
+    _loaded_at::TIMESTAMPTZ AS source_updated_at,
     FALSE AS processed_to_silver,
     NOW() AS created_at
 

@@ -1,6 +1,6 @@
 -- SQLMesh Model: Bronze CMS Cost Reports
 -- Transforms raw CMS Hospital Cost Report (HCRIS) data to Bronze typed columns
--- Source: hcs_raw.cms_cost_reports (flat typed table, loaded by cms_cost_reports.py)
+-- Source: hcs_raw.cms_cost_reports_puf (flat typed table, loaded by cms_cost_reports.py)
 -- Part of: 015-assessment-dashboard-integration
 
 MODEL (
@@ -35,8 +35,8 @@ SELECT
     r.operating_margin::NUMERIC AS operating_margin,
 
     -- Source tracking
-    r._source_hash AS source_hash,
-    r._loaded_at AS source_updated_at,
+    r._source_hash::TEXT AS source_hash,
+    r._loaded_at::TIMESTAMPTZ AS source_updated_at,
     'cms_cost_reports' AS source,
     FALSE AS processed_to_silver,
     NOW() AS created_at

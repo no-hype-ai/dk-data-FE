@@ -18,18 +18,29 @@ from ..utils.validators import CMSCostReportsPUFRecord
 logger = logging.getLogger(__name__)
 
 COLUMN_MAPPING = {
+    # Confirmed API column names (GET /data-api/v1/dataset/44060663/.../data?size=2, 2026-03-29):
+    # Provider CCN, Hospital Name, Street Address, City, State Code, Zip Code,
+    # Fiscal Year Begin Date, Fiscal Year End Date, Number of Beds,
+    # Total Discharges (V + XVIII + XIX + Unknown), Net Patient Revenue,
+    # Less Total Operating Expense, Net Income
     'Provider ID': 'provider_id',
     'Provider CCN': 'provider_id',
     'Hospital Name': 'hospital_name',
     'City': 'city',
-    'State': 'state',
+    'State': 'state',            # older variant
+    'State Code': 'state',       # confirmed API column
     'Zip Code': 'zip_code',
-    'Fiscal Year Begin': 'fiscal_year_begin',
-    'Fiscal Year End': 'fiscal_year_end',
+    'Fiscal Year Begin': 'fiscal_year_begin',           # older variant
+    'Fiscal Year Begin Date': 'fiscal_year_begin',      # confirmed API column
+    'Fiscal Year End': 'fiscal_year_end',               # older variant
+    'Fiscal Year End Date': 'fiscal_year_end',          # confirmed API column
     'Number of Beds': 'total_beds',
-    'Total Discharges': 'total_discharges',
+    'Total Discharges': 'total_discharges',                                       # older variant
+    'Total Discharges Title XVIII': 'total_discharges',                           # Medicare-only
+    'Total Discharges (V + XVIII + XIX + Unknown)': 'total_discharges',          # confirmed API column
     'Net Patient Revenue': 'net_patient_revenue',
-    'Total Operating Expense': 'total_operating_expenses',
+    'Total Operating Expense': 'total_operating_expenses',       # older variant
+    'Less Total Operating Expense': 'total_operating_expenses',  # confirmed API column
     'Operating Margin Percentage': 'operating_margin',
     # lower-case passthrough variants
     'provider_id': 'provider_id',

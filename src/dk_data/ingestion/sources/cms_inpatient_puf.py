@@ -8,7 +8,7 @@ from pathlib import Path
 import pandas as pd
 from pydantic import ValidationError
 
-from ..utils.database import apply_column_mapping, get_cursor, upsert_records
+from ..utils.database import apply_column_mapping, get_cursor
 from ..utils.validators import CMSInpatientPUFRecord
 
 logger = logging.getLogger(__name__)
@@ -28,6 +28,8 @@ COLUMN_MAPPING = {
     'Average Total Payments': 'average_total_payments',
     'Average Medicare Payments': 'average_medicare_payments',
     # Current CMS format (post-2021) — matches canonical API column names
+    # UUID ee6fb1a5 returns provider-level summaries (no DRG breakdown).
+    # drg_cd / drg_definition will be NULL for records from this UUID.
     'DRG_Cd': 'drg_cd',
     'DRG_Desc': 'drg_definition',
     'Rndrng_Prvdr_Id': 'provider_id',
@@ -41,9 +43,14 @@ COLUMN_MAPPING = {
     'Rndrng_Prvdr_Zip5': 'provider_zip_code',
     'Rndrng_Prvdr_RUCA': 'provider_ruca',
     'Tot_Dschrgs': 'total_discharges',
-    'Avg_Submtd_Cvrd_Chrg': 'average_covered_charges',
+    # Confirmed API column names (GET /data-api/v1/dataset/ee6fb1a5/.../data?size=2, 2026-03-29):
+    # API returns total-level aggregates, not per-discharge averages.
+    'Avg_Submtd_Cvrd_Chrg': 'average_covered_charges',   # DRG-level dataset variant
+    'Tot_Submtd_Cvrd_Chrg': 'average_covered_charges',   # Provider-level dataset (UUID ee6fb1a5)
     'Avg_Tot_Pymt_Amt': 'average_total_payments',
+    'Tot_Pymt_Amt': 'average_total_payments',
     'Avg_Mdcr_Pymt_Amt': 'average_medicare_payments',
+    'Tot_Mdcr_Pymt_Amt': 'average_medicare_payments',
 }
 
 TABLE = 'cms_inpatient_puf'
@@ -107,12 +114,19 @@ def load_cms_inpatient_puf(filepath: str, source_year: int = 2023, max_records: 
         except (ValidationError, Exception) as e:
             errors.append(f"Row {idx}: {e}")
 
-    inserted = upsert_records(
-        SCHEMA, TABLE, records,
-        conflict_columns=['_source_hash', 'provider_id', 'drg_definition', '_source_year'],
-        update_columns=['drg_cd', 'total_discharges', 'average_covered_charges',
-                        'average_total_payments', 'average_medicare_payments', '_loaded_at'],
-    )
+    # drg_definition is NULL for provider-level records (UUID ee6fb1a5 has no DRG breakdown).
+    # ON CONFLICT on columns with NULL values does not match in PostgreSQL unique indexes.
+    # Use INSERT ... ON CONFLICT DO NOTHING instead.
+    inserted = 0
+    if records:
+        columns = list(records[0].keys())
+        col_list = ', '.join(columns)
+        placeholders = ', '.join(['%s'] * len(columns))
+        sql = f"INSERT INTO {SCHEMA}.{TABLE} ({col_list}) VALUES ({placeholders}) ON CONFLICT DO NOTHING"
+        with get_cursor() as cur:
+            for record in records:
+                cur.execute(sql, [record[c] for c in columns])
+                inserted += 1
 
     logger.info(f"Inpatient PUF load complete: {inserted} records processed, {len(errors)} errors")
     return {

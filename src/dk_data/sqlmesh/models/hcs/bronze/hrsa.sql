@@ -41,9 +41,9 @@ SELECT
     id::BIGINT AS raw_source_id,
     'hrsa_shortage_areas' AS source,
     _source_hash::TEXT AS _source_hash,
-    _fetched_at AS _fetched_at,
-    _fetched_at AS request_timestamp,
-    _fetched_at AS source_updated_at,
+    _fetched_at::TIMESTAMPTZ AS _fetched_at,
+    _fetched_at::TIMESTAMPTZ AS request_timestamp,
+    _fetched_at::TIMESTAMPTZ AS source_updated_at,
     FALSE AS processed_to_silver,
     NOW() AS created_at
 

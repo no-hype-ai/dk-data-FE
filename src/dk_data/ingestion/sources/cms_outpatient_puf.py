@@ -27,11 +27,16 @@ COLUMN_MAPPING = {
     'Average Estimated Submitted Charges': 'average_estimated_submitted_charges',
     'Average Total Payments': 'average_total_payments',
     'Average Medicare Payments': 'average_medicare_payments',
-    # Current CMS format (post-2021) — matches canonical API column names
+    # Current CMS format — confirmed API column names (UUID ccbc9a44, 2026-03-29):
+    # Rndrng_Prvdr_CCN, Rndrng_Prvdr_Org_Name, Rndrng_Prvdr_St, Rndrng_Prvdr_City,
+    # Rndrng_Prvdr_State_Abrvtn, Rndrng_Prvdr_State_FIPS, Rndrng_Prvdr_Zip5,
+    # Rndrng_Prvdr_RUCA, APC_Cd, APC_Desc, Bene_Cnt, CAPC_Srvcs,
+    # Avg_Tot_Sbmtd_Chrgs, Avg_Mdcr_Alowd_Amt, Avg_Mdcr_Pymt_Amt
     'Rndrng_Prvdr_Id': 'provider_id',
     'Rndrng_Prvdr_CCN': 'provider_id',
     'Rndrng_Prvdr_Org_Name': 'provider_name',
     'Rndrng_Prvdr_Name': 'provider_name',
+    'Rndrng_Prvdr_St': 'provider_street_address',
     'Rndrng_Prvdr_City': 'provider_city',
     'Rndrng_Prvdr_State_Abrvtn': 'provider_state',
     'Rndrng_Prvdr_State_FIPS': 'provider_state_fips',
@@ -40,9 +45,11 @@ COLUMN_MAPPING = {
     'APC_Cd': 'apc',
     'APC_Desc': 'apc_desc',
     'Bene_Cnt': 'bene_cnt',
-    'Comp_Asgn_Pymt_Cnt': 'comp_asgn_pymt_cnt',
-    'Tot_Srvcs': 'total_services',
-    'Avg_Submtd_Cvrd_Chrg': 'average_estimated_submitted_charges',
+    'Comp_Asgn_Pymt_Cnt': 'comp_asgn_pymt_cnt',   # older dataset variant
+    'Tot_Srvcs': 'total_services',                 # older dataset variant
+    'CAPC_Srvcs': 'total_services',                # confirmed API column (UUID ccbc9a44)
+    'Avg_Submtd_Cvrd_Chrg': 'average_estimated_submitted_charges',   # older variant
+    'Avg_Tot_Sbmtd_Chrgs': 'average_estimated_submitted_charges',    # confirmed API column
     'Avg_Mdcr_Alowd_Amt': 'average_medicare_allowed_amt',
     'Avg_Mdcr_Pymt_Amt': 'average_medicare_payments',
     'Avg_Mdcr_Stdzd_Amt': 'average_medicare_stnd_amt',

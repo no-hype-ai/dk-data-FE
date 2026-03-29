@@ -19,7 +19,7 @@ MODEL (
 );
 
 SELECT
-    id,
+    id::BIGINT,
     hcpcs_cd::TEXT                          AS hcpcs_cd,
     hcpcs_desc::TEXT                        AS hcpcs_desc,
     tot_mftr::TEXT                          AS tot_mftr,
@@ -33,9 +33,9 @@ SELECT
     avg_spnd_per_bene::NUMERIC              AS avg_spnd_per_bene,
     outlier_flag::TEXT                      AS outlier_flag,
     _source_year::INTEGER                   AS _source_year,
-    _source_hash,
-    _source_file,
-    _loaded_at,
+    _source_hash::TEXT,
+    _source_file::TEXT,
+    _loaded_at::TIMESTAMPTZ,
     FALSE AS processed_to_silver,
     NOW() AS _bronze_loaded_at
 FROM hcs_raw.cms_part_b_spending;

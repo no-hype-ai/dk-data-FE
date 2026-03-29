@@ -14,8 +14,15 @@ from ..utils.validators import CMSPartDSpendingRecord
 logger = logging.getLogger(__name__)
 
 COLUMN_MAPPING = {
+    # Brand/generic name: CMS API may use Drug_Name/Generic_Name variants
     'Brnd_Name': 'brnd_name',
+    'Drug_Name': 'brnd_name',
+    'DRUG_NAME': 'brnd_name',
+    'Brand_Name': 'brnd_name',
     'Gnrc_Name': 'gnrc_name',
+    'Generic_Name': 'gnrc_name',
+    'GENERIC_NAME': 'gnrc_name',
+    'Generic_Drug_Name': 'gnrc_name',
     'Tot_Mftr': 'tot_mftr',
     # Legacy (pre-2020) non-suffixed column names
     'Tot_Spndng': 'tot_spndng',
@@ -68,6 +75,14 @@ COLUMN_MAPPING = {
     'Avg_Spnd_Per_Clm_2023': 'avg_spnd_per_clm',
     'Avg_Spnd_Per_Bene_2023': 'avg_spnd_per_bene',
     'Outlier_Flag_2023': 'outlier_flag',
+    'Tot_Spndng_2024': 'tot_spndng',
+    'Tot_Dsg_Unts_2024': 'tot_dsg_unts',
+    'Tot_Clms_2024': 'tot_clms',
+    'Tot_Benes_2024': 'tot_benes',
+    'Avg_Spnd_Per_Dsg_Unt_Wghtd_2024': 'avg_spnd_per_dsg_unt_wghtd',
+    'Avg_Spnd_Per_Clm_2024': 'avg_spnd_per_clm',
+    'Avg_Spnd_Per_Bene_2024': 'avg_spnd_per_bene',
+    'Outlier_Flag_2024': 'outlier_flag',
 }
 
 TABLE = 'cms_part_d_spending'

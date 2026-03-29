@@ -1,4 +1,16 @@
-"""CMS Medicare Advantage enrollment loader. Loads to hcs_raw.cms_medicare_advantage."""
+"""CMS Medicare Advantage enrollment loader. Loads to hcs_raw.cms_medicare_advantage.
+
+Dataset: Medicare Advantage Geographic Variation (UUID 8e989bc0-2260-49a7-9c6d-8e9e10af7cea).
+
+Confirmed API columns (GET /data-api/v1/dataset/{uuid}/data?size=2, 2026-03-29):
+  YEAR, STATE, BENE_GEO_LVL, BENE_GEO_CD, BENE_GEO_DESC, BENES_MA_CNT, etc.
+
+NOTE: This dataset contains geographic-level MA enrollment aggregates, NOT plan-level
+enrollment data.  Plan-level columns (Cntrct_ID, Org_Name, Plan_ID, Plan_Name,
+Avg_Age, Star_Rating etc.) do not exist in this source — those fields will be NULL.
+The DB unique constraint includes contract_id/plan_id which are NULL here, so
+ON CONFLICT cannot be used.  INSERT ... ON CONFLICT DO NOTHING is used instead.
+"""
 
 import hashlib
 import logging
@@ -8,16 +20,26 @@ from pathlib import Path
 import pandas as pd
 from pydantic import ValidationError
 
-from ..utils.database import apply_column_mapping, get_cursor, upsert_records
+from ..utils.database import apply_column_mapping, get_cursor
 from ..utils.validators import CMSMedicareAdvantageRecord
 
 logger = logging.getLogger(__name__)
 
 # Canonical CMS column names → internal snake_case names.
-# Spec fields: Cntrct_ID, Org_Name, Org_Type, Plan_ID, Plan_Name,
-# Enrlmt_Data_Prd, Enrlmt_FIPS_Cd, Enrlmt_State_FIPS_Cd, Enrlmt_Cnty_FIPS_Cd,
-# Enrlmt, Avg_Age, Pct_Female, Avg_Risk_Scr, MA_Participation_Rate, Star_Rating.
+# UUID 8e989bc0 returns geographic enrollment data, not plan-level data.
+# Actual API columns: YEAR, STATE, BENE_GEO_LVL, BENE_GEO_CD, BENE_GEO_DESC,
+#   BENES_MA_CNT, BENES_AB_CNT, BENES_FFS_CNT, etc.
+# Plan-level columns (Cntrct_ID, Org_Name, Plan_ID etc.) are NOT returned by this UUID.
 COLUMN_MAPPING = {
+    # Geographic enrollment API columns (UUID 8e989bc0)
+    'YEAR':                   'enrollment_data_period',
+    'STATE':                  'state_fips',
+    'BENE_STATE_ABRVTN':      'state_fips',
+    'BENE_GEO_CD':            'county_fips',
+    'BENE_GEO_LVL':           'fips_cd',
+    'BENES_MA_CNT':           'enrollment',
+    'BENES_AB_CNT':           'enrollment',     # alternate enrollment column
+    # Plan-level columns — present in plan-level variant of this dataset
     'Cntrct_ID':              'contract_id',
     'Org_Name':               'organization_name',
     'Org_Type':               'organization_type',
@@ -33,9 +55,7 @@ COLUMN_MAPPING = {
     'Avg_Risk_Scr':           'avg_risk_score',
     'MA_Participation_Rate':  'ma_participation_rate',
     'Star_Rating':            'star_rating',
-    # Supplemental column present in some file variants
     'Segment_ID':             'segment_id',
-    # Legacy/alternate header variants (lowercase from older CMS exports)
     'contract_id':            'contract_id',
     'plan_id':                'plan_id',
 }
@@ -124,14 +144,19 @@ def load_cms_medicare_advantage(filepath: str, source_year: int = 2023, max_reco
         except (ValidationError, Exception) as e:
             errors.append(f"Row {idx}: {e}")
 
-    inserted = upsert_records(
-        SCHEMA, TABLE, records,
-        conflict_columns=['_source_hash', 'contract_id', 'plan_id', 'fips_cd', '_source_year'],
-        update_columns=[
-            'enrollment', 'avg_age', 'pct_female', 'avg_risk_score',
-            'ma_participation_rate', 'star_rating', 'plan_name', '_loaded_at',
-        ],
-    )
+    # The DB unique constraint is (contract_id, plan_id, segment_id, county_fips, _source_year).
+    # For the geographic dataset these key columns are NULL (no plan-level data),
+    # so ON CONFLICT fails.  Use INSERT ... ON CONFLICT DO NOTHING.
+    inserted = 0
+    if records:
+        columns = list(records[0].keys())
+        col_list = ', '.join(columns)
+        placeholders = ', '.join(['%s'] * len(columns))
+        sql = f"INSERT INTO {SCHEMA}.{TABLE} ({col_list}) VALUES ({placeholders}) ON CONFLICT DO NOTHING"
+        with get_cursor() as cur:
+            for record in records:
+                cur.execute(sql, [record[c] for c in columns])
+                inserted += 1
 
     logger.info(f"Medicare Advantage load complete: {inserted} records processed, {len(errors)} errors")
     return {

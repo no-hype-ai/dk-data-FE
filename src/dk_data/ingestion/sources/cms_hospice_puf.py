@@ -13,20 +13,40 @@ from ..utils.validators import CMSHospiceRecord
 
 logger = logging.getLogger(__name__)
 
-# Exact CMS Hospice PUF column names -> internal snake_case names
+# CMS Hospice PUF column names -> internal snake_case names.
+# Confirmed API columns (UUID 4e73f1b5, 2026-03-29):
+#   YEAR, YEAR_TYPE, SMRY_CTGRY, PRVDR_ID, PRVDR_NAME, STATE, plus spending columns.
+# The API uses ALL-CAPS provider fields; mixed-case variants kept for file import fallback.
 COLUMN_MAPPING = {
+    # ALL-CAPS provider fields (confirmed API format for UUID 4e73f1b5)
+    'PRVDR_ID':                 'provider_id',
+    'PRVDR_NAME':               'provider_name',
+    'PRVDR_CITY':               'provider_city',
+    'STATE':                    'provider_state',
+    'PRVDR_STATE':              'provider_state',
+    'PRVDR_ZIP':                'provider_zip5',
+    'SMRY_CTGRY':               'hspce_cd',
+    'SRVC_CTGRY':               'hspce_desc',
+    # Alternate/mixed-case provider fields (some API versions or file downloads)
     'Rndrng_Prvdr_Id':          'provider_id',
     'Rndrng_Prvdr_Name':        'provider_name',
     'Rndrng_Prvdr_City':        'provider_city',
     'Rndrng_Prvdr_State_Abrvtn':'provider_state',
     'Rndrng_Prvdr_Zip5':        'provider_zip5',
+    # Hospice service category columns
     'HSPCE_CD':                 'hspce_cd',
     'HSPCE_DESC':               'hspce_desc',
+    # Utilization and spending columns (ALL-CAPS and mixed-case variants)
+    'BENE_DSTNCT_CNT':          'tot_benes',
+    'BENE_CNT':                 'tot_benes',
     'Tot_Benes':                'tot_benes',
+    'TOT_ALOWD_AMT':            'tot_mdcr_alowd_amt',
     'Tot_Mdcr_Alowd_Amt':       'tot_mdcr_alowd_amt',
     'Tot_Mdcr_Pymt_Amt':        'tot_mdcr_pymt_amt',
     'Avg_Mdcr_Pymt_Amt':        'avg_mdcr_pymt_amt',
+    'AVG_MDCR_PYMT_AMT':        'avg_mdcr_pymt_amt',
     'Avg_Age':                  'avg_age',
+    'BENE_AVG_AGE':             'avg_age',
 }
 
 TABLE = 'cms_hospice_puf'
@@ -71,7 +91,7 @@ def load_cms_hospice_puf(filepath: str, source_year: int = 2023, max_records: in
                 provider_zip5=row.get('provider_zip5'),
                 hspce_cd=row.get('hspce_cd'),
                 hspce_desc=row.get('hspce_desc'),
-                tot_benes=int(float(row['tot_benes'])) if pd.notna(row.get('tot_benes')) else None,
+                tot_benes=(lambda v: int(float(str(v).strip())) if pd.notna(v) and str(v).strip() not in ('', '*', '**', '+', '-', 'N/A', '#') else None)(row.get('tot_benes')),
                 tot_mdcr_alowd_amt=row.get('tot_mdcr_alowd_amt') or None,
                 tot_mdcr_pymt_amt=row.get('tot_mdcr_pymt_amt') or None,
                 avg_mdcr_pymt_amt=row.get('avg_mdcr_pymt_amt') or None,

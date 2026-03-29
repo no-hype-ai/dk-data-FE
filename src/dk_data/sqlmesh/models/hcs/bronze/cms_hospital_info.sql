@@ -1,6 +1,6 @@
 -- SQLMesh Model: Bronze CMS Hospital Info
 -- Transforms raw CMS Hospital General Information CSV data to Bronze typed columns
--- Source: hcs_raw.cms_hospital_info (flat typed table, loaded by cms_hospital_info.py)
+-- Source: hcs_raw.cms_hospital_general_info (flat typed table, loaded by cms_hospital_info.py)
 -- Part of: 015-assessment-dashboard-integration
 
 MODEL (
@@ -41,8 +41,8 @@ SELECT
     r.hospital_overall_rating::INTEGER AS rating,
 
     -- Source tracking
-    r._source_hash AS source_hash,
-    r._loaded_at AS source_updated_at,
+    r._source_hash::TEXT AS source_hash,
+    r._loaded_at::TIMESTAMPTZ AS source_updated_at,
     'cms_hospital_general_info' AS source,
     FALSE AS processed_to_silver,
     NOW() AS created_at

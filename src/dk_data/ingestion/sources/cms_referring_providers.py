@@ -1,20 +1,16 @@
 """CMS Referring Providers PUF loader. Loads to hcs_raw.cms_referring_providers.
 
-Raw CMS field names (snake_case mapping):
-  Rndrng_NPI → rndrng_npi
-  Rndrng_Prvdr_Last_Org_Name → rndrng_prvdr_last_org_name
-  Rndrng_Prvdr_First_Name → rndrng_prvdr_first_name
-  Rndrng_Prvdr_City → rndrng_prvdr_city
-  Rndrng_Prvdr_State_Abrvtn → rndrng_prvdr_state_abrvtn
-  Rndrng_Prvdr_Zip5 → rndrng_prvdr_zip5
-  Rndrng_Prvdr_Type → rndrng_prvdr_type
-  Rfrd_NPI → rfrd_npi
-  Rfrd_Prvdr_Last_Org_Name → rfrd_prvdr_last_org_name
-  Rfrd_Prvdr_Type → rfrd_prvdr_type
-  Tot_Srvcs → tot_srvcs
-  Tot_Benes → tot_benes
-  Tot_Mdcr_Alowd_Amt → tot_mdcr_alowd_amt
-  Tot_Mdcr_Pymt_Amt → tot_mdcr_pymt_amt
+Dataset: "Order and Referring" (UUID c99b5865-1119-4436-bb80-c5af2773ea1f).
+This is the same PECOS-derived eligibility file as cms_ordering_providers — a
+single-NPI eligibility list, NOT a pairwise ordering→referred network dataset.
+
+Confirmed API columns (GET /data-api/v1/dataset/{uuid}/data?size=2, 2026-03-29):
+  NPI, LAST_NAME, FIRST_NAME, PARTB, DME, HHA, PMD, HOSPICE
+
+NOTE: rfrd_npi is always NULL for records from this source (no pairwise data).
+The DB unique constraint (rndrng_npi, rfrd_npi, _source_year) cannot be used for
+ON CONFLICT because NULL ≠ NULL in PostgreSQL unique indexes. Use INSERT ... ON
+CONFLICT DO NOTHING instead.
 """
 
 import hashlib
@@ -25,7 +21,7 @@ from pathlib import Path
 import pandas as pd
 from pydantic import ValidationError
 
-from ..utils.database import apply_column_mapping, get_cursor, upsert_records
+from ..utils.database import apply_column_mapping, get_cursor
 from ..utils.validators import CMSReferringProviderRecord
 
 logger = logging.getLogger(__name__)
@@ -86,7 +82,7 @@ def load_cms_referring_providers(filepath: str, source_year: int = 2023, max_rec
             logger.info(f"File {source_file} already loaded. Skipping.")
             return {"status": "skipped", "records_fetched": 0, "records_inserted": 0, "records_updated": 0, "errors": []}
 
-    df = pd.read_csv(filepath, dtype={'Rndrng_NPI': str, 'Rfrd_NPI': str,
+    df = pd.read_csv(filepath, dtype={'NPI': str, 'Rndrng_NPI': str, 'Rfrd_NPI': str,
                                       'Rndrng_Prvdr_Zip5': str}, low_memory=False)
     df = apply_column_mapping(df, COLUMN_MAPPING)
     records_fetched = len(df)
@@ -109,7 +105,7 @@ def load_cms_referring_providers(filepath: str, source_year: int = 2023, max_rec
                 rfrd_prvdr_last_org_name=row.get('rfrd_prvdr_last_org_name'),
                 rfrd_prvdr_type=row.get('rfrd_prvdr_type'),
                 tot_srvcs=row.get('tot_srvcs') or None,
-                tot_benes=int(float(row['tot_benes'])) if pd.notna(row.get('tot_benes')) else None,
+                tot_benes=(lambda v: int(float(str(v).strip())) if pd.notna(v) and str(v).strip() not in ('', '*', '**', '+', '-', 'N/A', '#') else None)(row.get('tot_benes')),
                 tot_mdcr_alowd_amt=row.get('tot_mdcr_alowd_amt') or None,
                 tot_mdcr_pymt_amt=row.get('tot_mdcr_pymt_amt') or None,
                 _source_year=source_year,
@@ -123,12 +119,20 @@ def load_cms_referring_providers(filepath: str, source_year: int = 2023, max_rec
         except (ValidationError, Exception) as e:
             errors.append(f"Row {idx}: {e}")
 
-    inserted = upsert_records(
-        SCHEMA, TABLE, records,
-        conflict_columns=['rndrng_npi', 'rfrd_npi', '_source_year'],
-        update_columns=['tot_srvcs', 'tot_benes', 'tot_mdcr_alowd_amt',
-                        'tot_mdcr_pymt_amt', '_loaded_at'],
-    )
+    # The unique constraint is (rndrng_npi, rfrd_npi, _source_year).
+    # rfrd_npi is always NULL for this PECOS eligibility dataset (no pairwise network data),
+    # so ON CONFLICT (rndrng_npi, rfrd_npi, _source_year) fails because NULLs don't match
+    # in PostgreSQL unique indexes.  Use INSERT ... ON CONFLICT DO NOTHING instead.
+    inserted = 0
+    if records:
+        columns = list(records[0].keys())
+        col_list = ', '.join(columns)
+        placeholders = ', '.join(['%s'] * len(columns))
+        sql = f"INSERT INTO {SCHEMA}.{TABLE} ({col_list}) VALUES ({placeholders}) ON CONFLICT DO NOTHING"
+        with get_cursor() as cur:
+            for record in records:
+                cur.execute(sql, [record[c] for c in columns])
+                inserted += 1
 
     logger.info(f"Referring Providers load complete: {inserted} records processed, {len(errors)} errors")
     return {

@@ -14,12 +14,24 @@ from ..utils.validators import CMSPartBSpendingRecord
 logger = logging.getLogger(__name__)
 
 COLUMN_MAPPING = {
+    # Identifier columns — confirmed populated from API
     'HCPCS_Cd': 'hcpcs_cd',
     'HCPCS_Desc': 'hcpcs_desc',
+    # Brand/generic name: CMS API may use Drug_Name/Generic_Name variants
     'Brnd_Name': 'brnd_name',
+    'Drug_Name': 'brnd_name',
+    'DRUG_NAME': 'brnd_name',
+    'Brand_Name': 'brnd_name',
     'Gnrc_Name': 'gnrc_name',
+    'Generic_Name': 'gnrc_name',
+    'GENERIC_NAME': 'gnrc_name',
+    'Generic_Drug_Name': 'gnrc_name',
+    # Manufacturer columns
     'Tot_Mftr': 'tot_mftr',
     'Mftr_Name': 'mftr_name',
+    'Manufacturer': 'mftr_name',
+    # Outlier flag
+    'Outlier_Flag': 'outlier_flag',
     # Legacy (pre-2020) non-suffixed column names
     'Tot_Spndng': 'tot_spndng',
     'Tot_Dsg_Unts': 'tot_dsg_unts',
@@ -31,7 +43,6 @@ COLUMN_MAPPING = {
     'Avg_Spndng_Per_Clm': 'avg_spnd_per_clm',
     'Avg_Spnd_Per_Bene': 'avg_spnd_per_bene',
     'Avg_Spndng_Per_Bene': 'avg_spnd_per_bene',
-    'Outlier_Flag': 'outlier_flag',
     # Year-suffixed column names (CMS API format since 2020 onward).
     # Most recent year wins since apply_column_mapping processes left-to-right.
     'Tot_Spndng_2019': 'tot_spndng',
@@ -74,6 +85,14 @@ COLUMN_MAPPING = {
     'Avg_Spndng_Per_Clm_2023': 'avg_spnd_per_clm',
     'Avg_Spndng_Per_Bene_2023': 'avg_spnd_per_bene',
     'Outlier_Flag_2023': 'outlier_flag',
+    'Tot_Spndng_2024': 'tot_spndng',
+    'Tot_Dsg_Unts_2024': 'tot_dsg_unts',
+    'Tot_Benes_2024': 'tot_benes',
+    'Tot_Clms_2024': 'tot_clms',
+    'Avg_Spndng_Per_Dsg_Unt_2024': 'avg_spnd_per_dsg_unt',
+    'Avg_Spndng_Per_Clm_2024': 'avg_spnd_per_clm',
+    'Avg_Spndng_Per_Bene_2024': 'avg_spnd_per_bene',
+    'Outlier_Flag_2024': 'outlier_flag',
 }
 
 TABLE = 'cms_part_b_spending'

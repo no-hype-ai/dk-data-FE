@@ -996,14 +996,40 @@ def run_ingestion(source: str, **kwargs) -> dict:
         # Call the loader once per extracted file using filepath + year kwargs.
         if fetch_result.get('extracted_files'):
             import inspect as _inspect
+            import csv as _csv
             agg = {'status': 'success', 'records_inserted': 0, 'records_failed': 0, 'errors': []}
             loader_params = set(_inspect.signature(loader).parameters.keys())
             for fpath in fetch_result['extracted_files']:
                 loader_kw: dict = {'filepath': fpath}
-                if fetch_result.get('year') is not None and 'year' in loader_params:
+                # Pass source_year to loaders that accept it.  Precedence:
+                #   1. explicit --fiscal-year / fiscal_year kwarg
+                #   2. year returned by fetcher (fetch_result['year'])
+                #   3. YEAR column in the first row of the fetched CSV (most CMS datasets)
+                #   4. loader default (2023 — only used when none of the above apply)
+                if 'source_year' in loader_params:
+                    sy = kwargs.get('fiscal_year') or fetch_result.get('year')
+                    if sy is None:
+                        # Auto-detect year from the first data row of the CSV.
+                        try:
+                            with open(fpath, newline='', encoding='utf-8') as _f:
+                                _row = next(_csv.DictReader(_f), None)
+                            if _row:
+                                for _col in ('YEAR', 'Year', 'year'):
+                                    _yval = _row.get(_col, '')
+                                    if _yval and str(_yval).strip().isdigit():
+                                        sy = int(str(_yval).strip())
+                                        break
+                        except Exception:
+                            pass
+                    if sy is not None:
+                        loader_kw['source_year'] = int(sy)
+                # Legacy 'year' parameter name used by some older loaders
+                elif fetch_result.get('year') is not None and 'year' in loader_params:
                     loader_kw['year'] = fetch_result['year']
                 if 'batch_size' in kwargs and 'batch_size' in loader_params:
                     loader_kw['batch_size'] = kwargs['batch_size']
+                if kwargs.get('max_records') and 'max_records' in loader_params:
+                    loader_kw['max_records'] = kwargs['max_records']
                 r = loader(**loader_kw)
                 agg['records_inserted'] += r.get('records_inserted', 0)
                 agg['records_failed'] += r.get('records_failed', 0)
@@ -1043,6 +1069,12 @@ def run_ingestion(source: str, **kwargs) -> dict:
         if 'fiscal_year' not in kwargs or not kwargs['fiscal_year']:
             raise ValueError(f"Source '{source}' requires fiscal_year")
         loader_kwargs['fiscal_year'] = kwargs['fiscal_year']
+
+    # Pass source_year to any loader that accepts it (all CMS PUF loaders do).
+    import inspect as _inspect
+    _loader_params = set(_inspect.signature(loader).parameters.keys())
+    if 'source_year' in _loader_params and kwargs.get('fiscal_year'):
+        loader_kwargs['source_year'] = int(kwargs['fiscal_year'])
 
     if 'batch_size' in kwargs and source_info.get('accepts_batch_size'):
         loader_kwargs['batch_size'] = kwargs['batch_size']
