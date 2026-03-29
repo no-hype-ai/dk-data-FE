@@ -26,15 +26,25 @@ import pytest
 MODELS_DIR = Path(__file__).resolve().parent.parent / "src" / "dk_data" / "sqlmesh" / "models" / "molecules"
 BRONZE_DIR = MODELS_DIR / "bronze"
 
+HCS_MODELS_DIR = Path(__file__).resolve().parent.parent / "src" / "dk_data" / "sqlmesh" / "models" / "hcs"
+HCS_BRONZE_DIR = HCS_MODELS_DIR / "bronze"
+
 
 # ---------------------------------------------------------------------------
 # Helper: parse MODEL block from SQLMesh SQL file
 # ---------------------------------------------------------------------------
 
 def _read_model_sql(filename: str) -> str:
-    """Read a bronze model SQL file and return its contents."""
+    """Read a mol bronze model SQL file and return its contents."""
     filepath = BRONZE_DIR / filename
     assert filepath.exists(), f"Model file not found: {filepath}"
+    return filepath.read_text()
+
+
+def _read_hcs_model_sql(filename: str) -> str:
+    """Read an hcs bronze model SQL file and return its contents."""
+    filepath = HCS_BRONZE_DIR / filename
+    assert filepath.exists(), f"HCS model file not found: {filepath}"
     return filepath.read_text()
 
 
@@ -368,28 +378,97 @@ class TestBronzeWhoIcd(_BronzeJSONBModelTestBase):
 # True JSONB models (cms_inpatient, acc_tvc, hrsa) — hcs_raw / hcs_bronze
 # ---------------------------------------------------------------------------
 
-class TestBronzeCmsInpatient(_BronzeJSONBModelTestBase):
-    MODEL_FILE = "cms_inpatient.sql"
-    MODEL_NAME = "hcs_bronze.cms_inpatient"
-    GRAIN_COLUMN = "record_id"
-    RAW_TABLE = "hcs_raw.cms_medicare_inpatient"
-    EXPECTED_COLUMNS = ["provider_id", "drg_code", "total_discharges", "avg_charges", "avg_payments", "fiscal_year"]
+class TestBronzeCmsInpatient:
+    """hcs_bronze.cms_inpatient — flat typed columns from hcs_raw.cms_inpatient_puf."""
+
+    @pytest.fixture(autouse=True)
+    def setup(self):
+        self.sql = _read_hcs_model_sql("cms_inpatient.sql")
+        self.model_block = _extract_model_block(self.sql)
+
+    def test_model_name(self):
+        assert "name hcs_bronze.cms_inpatient" in self.model_block
+
+    def test_model_kind_incremental(self):
+        assert "INCREMENTAL_BY_TIME_RANGE" in self.model_block
+
+    def test_model_grain(self):
+        assert "record_id" in self.model_block
+
+    def test_reads_from_correct_raw_table(self):
+        assert "hcs_raw.cms_inpatient_puf" in self.sql
+
+    def test_processed_to_silver_output(self):
+        assert "processed_to_silver" in self.sql
+
+    def test_incremental_filter(self):
+        assert "@start_dt" in self.sql and "@end_dt" in self.sql
+
+    def test_expected_output_columns(self):
+        for col in ["provider_id", "drg_code", "total_discharges", "avg_charges", "avg_payments", "fiscal_year"]:
+            assert col in self.sql, f"Expected column '{col}' not found in cms_inpatient.sql"
 
 
-class TestBronzeAccTvc(_BronzeJSONBModelTestBase):
-    MODEL_FILE = "acc_tvc.sql"
-    MODEL_NAME = "hcs_bronze.acc_tvc"
-    GRAIN_COLUMN = "facility_id"
-    RAW_TABLE = "hcs_raw.acc_tvc_certification"
-    EXPECTED_COLUMNS = ["facility_id", "facility_name", "city", "state", "certification_type", "cert_date", "volumes"]
+class TestBronzeAccTvc:
+    """hcs_bronze.acc_tvc — flat typed columns from hcs_raw.acc_tvc_certification."""
+
+    @pytest.fixture(autouse=True)
+    def setup(self):
+        self.sql = _read_hcs_model_sql("acc_tvc.sql")
+        self.model_block = _extract_model_block(self.sql)
+
+    def test_model_name(self):
+        assert "name hcs_bronze.acc_tvc" in self.model_block
+
+    def test_model_kind_incremental(self):
+        assert "INCREMENTAL_BY_TIME_RANGE" in self.model_block
+
+    def test_model_grain(self):
+        assert "facility_name" in self.model_block
+
+    def test_reads_from_correct_raw_table(self):
+        assert "hcs_raw.acc_tvc_certification" in self.sql
+
+    def test_processed_to_silver_output(self):
+        assert "processed_to_silver" in self.sql
+
+    def test_incremental_filter(self):
+        assert "@start_dt" in self.sql and "@end_dt" in self.sql
+
+    def test_expected_output_columns(self):
+        for col in ["facility_name", "city", "state", "certification_type", "certification_date", "expiration_date"]:
+            assert col in self.sql, f"Expected column '{col}' not found in acc_tvc.sql"
 
 
-class TestBronzeHrsa(_BronzeJSONBModelTestBase):
-    MODEL_FILE = "hrsa.sql"
-    MODEL_NAME = "hcs_bronze.hrsa"
-    GRAIN_COLUMN = "hpsa_id"
-    RAW_TABLE = "hcs_raw.hrsa_shortage_areas"
-    EXPECTED_COLUMNS = ["hpsa_id", "designation_type", "state", "county", "discipline", "score", "status"]
+class TestBronzeHrsa:
+    """hcs_bronze.hrsa — flat typed columns from hcs_raw.hrsa_shortage_areas."""
+
+    @pytest.fixture(autouse=True)
+    def setup(self):
+        self.sql = _read_hcs_model_sql("hrsa.sql")
+        self.model_block = _extract_model_block(self.sql)
+
+    def test_model_name(self):
+        assert "name hcs_bronze.hrsa" in self.model_block
+
+    def test_model_kind_incremental(self):
+        assert "INCREMENTAL_BY_TIME_RANGE" in self.model_block
+
+    def test_model_grain(self):
+        assert "hpsa_id" in self.model_block
+
+    def test_reads_from_correct_raw_table(self):
+        assert "hcs_raw.hrsa_shortage_areas" in self.sql
+
+    def test_processed_to_silver_output(self):
+        assert "processed_to_silver" in self.sql
+
+    def test_incremental_filter(self):
+        assert "@start_dt" in self.sql and "@end_dt" in self.sql
+
+    def test_expected_output_columns(self):
+        for col in ["hpsa_id", "designation_type", "state", "county", "discipline", "score", "status"]:
+            assert col in self.sql, f"Expected column '{col}' not found in hrsa.sql"
 
 
 # ---------------------------------------------------------------------------
@@ -630,11 +709,11 @@ class TestBronzeMedicalNews:
 # ---------------------------------------------------------------------------
 
 class TestBronzeCmsHospitalInfo:
-    """hcs_bronze.cms_hospital_info — flat typed columns from hcs_raw.cms_hospital_info."""
+    """hcs_bronze.cms_hospital_info — flat typed columns from hcs_raw.cms_hospital_general_info."""
 
     @pytest.fixture(autouse=True)
     def setup(self):
-        self.sql = _read_model_sql("cms_hospital_info.sql")
+        self.sql = _read_hcs_model_sql("cms_hospital_info.sql")
         self.model_block = _extract_model_block(self.sql)
 
     def test_model_name(self):
@@ -647,7 +726,7 @@ class TestBronzeCmsHospitalInfo:
         assert "provider_id" in self.model_block
 
     def test_reads_from_raw_table(self):
-        assert "FROM hcs_raw.cms_hospital_info" in self.sql
+        assert "hcs_raw.cms_hospital_general_info" in self.sql
 
     def test_processed_to_silver_output(self):
         assert "processed_to_silver" in self.sql
@@ -661,11 +740,11 @@ class TestBronzeCmsHospitalInfo:
 
 
 class TestBronzeCmsCostReports:
-    """hcs_bronze.cms_cost_reports — flat typed columns from hcs_raw.cms_cost_reports."""
+    """hcs_bronze.cms_cost_reports — flat typed columns from hcs_raw.cms_cost_reports_puf."""
 
     @pytest.fixture(autouse=True)
     def setup(self):
-        self.sql = _read_model_sql("cms_cost_reports.sql")
+        self.sql = _read_hcs_model_sql("cms_cost_reports.sql")
         self.model_block = _extract_model_block(self.sql)
 
     def test_model_name(self):
@@ -678,7 +757,7 @@ class TestBronzeCmsCostReports:
         assert "provider_id" in self.model_block
 
     def test_reads_from_raw_table(self):
-        assert "FROM hcs_raw.cms_cost_reports" in self.sql
+        assert "hcs_raw.cms_cost_reports_puf" in self.sql
 
     def test_processed_to_silver_output(self):
         assert "processed_to_silver" in self.sql
