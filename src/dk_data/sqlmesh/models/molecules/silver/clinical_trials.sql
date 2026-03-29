@@ -108,13 +108,31 @@ SELECT
     (b.raw_json->'protocolSection'->'oversightModule'->>'isFdaRegulatedDevice')::BOOLEAN AS fda_regulated_device,
     (b.raw_json->'protocolSection'->'oversightModule'->>'humanSubjectReviewBoard' = 'Yes')::BOOLEAN AS has_dmc,
 
-    -- Entity resolution: derive molecule_id by matching DRUG intervention names to mol_silver.molecules
+    -- Entity resolution: derive molecule_id by matching DRUG intervention names.
+    -- Strategy 1: exact canonical name match.
+    -- Strategy 2: DrugBank synonym match — intervention name matches a known synonym
+    --   of a DrugBank drug whose canonical_name maps to a molecule.
+    -- First match wins (lowest priority value).
     (
-        SELECT m.molecule_id
-        FROM jsonb_array_elements(COALESCE(b.interventions, '[]'::jsonb)) AS interv
-        JOIN mol_silver.molecules m
-            ON interv->>'type' = 'DRUG'
-           AND LOWER(m.canonical_name) = LOWER(interv->>'name')
+        SELECT molecule_id FROM (
+            SELECT m.molecule_id, 1 AS priority
+            FROM jsonb_array_elements(COALESCE(b.interventions, '[]'::jsonb)) AS interv
+            JOIN mol_silver.molecules m
+                ON interv->>'type' = 'DRUG'
+               AND LOWER(m.canonical_name) = LOWER(interv->>'name')
+
+            UNION ALL
+
+            SELECT m.molecule_id, 2 AS priority
+            FROM jsonb_array_elements(COALESCE(b.interventions, '[]'::jsonb)) AS interv
+            JOIN mol_bronze.drugbank db
+                ON interv->>'type' = 'DRUG'
+               AND jsonb_typeof(COALESCE(db.synonyms, '[]'::jsonb)) = 'array'
+            JOIN jsonb_array_elements_text(COALESCE(db.synonyms, '[]'::jsonb)) AS syn ON TRUE
+            JOIN mol_silver.molecules m ON LOWER(m.canonical_name) = LOWER(db.name)
+            WHERE LOWER(syn) = LOWER(interv->>'name')
+        ) _matches
+        ORDER BY priority
         LIMIT 1
     ) AS molecule_id,
 

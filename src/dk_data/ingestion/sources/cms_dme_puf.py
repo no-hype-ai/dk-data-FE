@@ -13,21 +13,22 @@ from ..utils.validators import CMSDMERecord
 
 logger = logging.getLogger(__name__)
 
-# Exact CMS PUF column names -> internal snake_case names
+# CMS DME by Supplier and Service column names -> internal snake_case.
+# Source dataset uses Suplr_* prefix (not Rndrng_*).
 COLUMN_MAPPING = {
-    'Rndrng_NPI':                   'npi',
-    'Rndrng_Prvdr_Last_Org_Name':   'provider_last_org_name',
-    'Rndrng_Prvdr_First_Name':      'provider_first_name',
-    'Rndrng_Prvdr_City':            'provider_city',
-    'Rndrng_Prvdr_State_Abrvtn':    'provider_state',
-    'Rndrng_Prvdr_State_FIPS':      'provider_state_fips',
-    'Rndrng_Prvdr_Zip5':            'provider_zip5',
-    'Rndrng_Prvdr_RUCA':            'provider_ruca',
-    'Rndrng_Prvdr_Type':            'provider_type',
+    'Suplr_NPI':                    'npi',
+    'Suplr_Prvdr_Last_Name_Org':    'provider_last_org_name',
+    'Suplr_Prvdr_Last_Org_Name':    'provider_last_org_name',
+    'Suplr_Prvdr_First_Name':       'provider_first_name',
+    'Suplr_Prvdr_City':             'provider_city',
+    'Suplr_Prvdr_State_Abrvtn':     'provider_state',
+    'Suplr_Prvdr_State_FIPS':       'provider_state_fips',
+    'Suplr_Prvdr_Zip5':             'provider_zip5',
+    'Suplr_Prvdr_RUCA':             'provider_ruca',
+    'Suplr_Prvdr_Spclty_Desc':      'provider_type',
     'HCPCS_Cd':                     'hcpcs_cd',
     'HCPCS_Desc':                   'hcpcs_desc',
     'Suplr_Rentl_Ind':              'suplr_rentl_ind',
-    'Tot_Suplrs':                   'tot_suplrs',
     'Tot_Suplr_Benes':              'tot_suplr_benes',
     'Tot_Suplr_Clms':               'tot_suplr_clms',
     'Tot_Suplr_Srvcs':              'tot_suplr_srvcs',

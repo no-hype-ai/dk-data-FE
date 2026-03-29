@@ -9,7 +9,8 @@ logger = logging.getLogger(__name__)
 
 class CMSDMEPUFFetcher(BaseFetcher):
     SOURCE_NAME = "cms_dme_puf"
-    DATASET_UUID = "a2d56d3f-3531-4315-9d87-e29986516b41"
+    # Medicare DME, Devices & Supplies - by Supplier and Service (has HCPCS_Cd + Suplr_NPI)
+    DATASET_UUID = "1746a83e-bb65-4300-8e02-21edbab77c6b"
 
     def get_latest_url(self) -> str:
         return f"https://data.cms.gov/data-api/v1/dataset/{self.DATASET_UUID}/data"

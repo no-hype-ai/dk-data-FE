@@ -31,6 +31,10 @@ from ..utils.validators import CMSReferringProviderRecord
 logger = logging.getLogger(__name__)
 
 COLUMN_MAPPING = {
+    # "Order and Referring" CMS dataset (c99b5865...) uses bare NPI/LAST_NAME/FIRST_NAME
+    'NPI': 'rndrng_npi',
+    'LAST_NAME': 'rndrng_prvdr_last_org_name',
+    'FIRST_NAME': 'rndrng_prvdr_first_name',
     'Rndrng_NPI': 'rndrng_npi',
     'Rfrg_NPI': 'rndrng_npi',  # DME-by-referring-provider dataset uses Rfrg_NPI
     'Rndrng_Prvdr_Last_Org_Name': 'rndrng_prvdr_last_org_name',
