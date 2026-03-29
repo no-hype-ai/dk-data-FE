@@ -13,8 +13,27 @@ from ..utils.validators import CMSHomeHealthRecord
 
 logger = logging.getLogger(__name__)
 
-# Exact CMS Home Health PUF column names -> internal snake_case names
+# CMS Home Health column names -> internal snake_case names.
+# Two naming conventions are supported:
+#   - Uppercase: returned by the CMS data-api/v1 dataset 43ef03ce (Post-Acute Care Utilization)
+#   - CamelCase: legacy file-based download format
 COLUMN_MAPPING = {
+    # API (uppercase) column names — from dataset 43ef03ce-2b60-40a8-958e-146195b5fec7
+    'PRVDR_ID':             'provider_id',
+    'PRVDR_NAME':           'provider_name',
+    'PRVDR_CITY':           'provider_city',
+    'STATE':                'provider_state',
+    'PRVDR_ZIP':            'provider_zip5',
+    'SRVC_CTGRY':           'hh_srvc_cd',
+    'SMRY_CTGRY':           'hh_srvc_desc',
+    'TOT_EPSD_STAY_CNT':    'tot_epsd_stay',
+    'BENE_DSTNCT_CNT':      'tot_benes',
+    'TOT_MDCR_PYMT_AMT':    'avg_hh_mdcr_pymt_amt',
+    'TOT_OUTLIER_PYMT_AMT': 'avg_hh_outlier_pymt',
+    'BENE_AVG_AGE':         'avg_age',
+    'BENE_FEML_PCT':        'female_pct',
+    'BENE_DUAL_PCT':        'dual_pct',
+    # Legacy file-based (CamelCase) column names
     'Rndrng_Prvdr_Id':          'provider_id',
     'Rndrng_Prvdr_Name':        'provider_name',
     'Rndrng_Prvdr_City':        'provider_city',

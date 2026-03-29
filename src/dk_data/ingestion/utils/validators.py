@@ -6,6 +6,13 @@ from decimal import Decimal
 from typing import Any, ClassVar, List, Optional, Set
 from pydantic import BaseModel, Field, field_validator, model_validator, ConfigDict
 
+# CMS suppression codes — values published as these strings should be treated as NULL.
+# '*'/'**': count 1-10 suppressed for beneficiary privacy
+# '+': suppressed due to complementary disclosure concern
+# '-': not applicable / zero claims
+# 'N/A', '#': not applicable
+_CMS_SUPPRESSION_CODES: frozenset = frozenset({'*', '**', '+', '-', 'N/A', '#', 'na', 'n/a'})
+
 
 class CMSPUFBaseRecord(BaseModel):
     """Base class for CMS PUF record validators.
@@ -23,6 +30,9 @@ class CMSPUFBaseRecord(BaseModel):
             coerced = {}
             for k, v in values.items():
                 if isinstance(v, float) and math.isnan(v):
+                    coerced[k] = None
+                elif isinstance(v, str) and v.strip() in _CMS_SUPPRESSION_CODES:
+                    # CMS suppression codes — treat as NULL
                     coerced[k] = None
                 elif isinstance(v, (int, float)) and not isinstance(v, bool):
                     # Coerce numeric API values to str so Pydantic lax mode

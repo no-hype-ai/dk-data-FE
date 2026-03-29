@@ -83,7 +83,7 @@ def load_who_inn_data(
         records = (data or {}).get("records", []) if data else []
     if not records:
         logger.info("No WHO INN records to load")
-        return {"records_inserted": 0, "records_skipped": 0}
+        return {"status": "success", "records_inserted": 0, "records_skipped": 0, "records_fetched": 0}
 
     logger.info("Loading %d WHO INN records into mol_raw.who_inn", len(records))
 
@@ -113,4 +113,4 @@ def load_who_inn_data(
     logger.info(
         "WHO INN load complete: %d inserted, %d skipped", inserted, skipped
     )
-    return {"records_inserted": inserted, "records_skipped": skipped}
+    return {"status": "success", "records_inserted": inserted, "records_skipped": skipped, "records_fetched": inserted + skipped}

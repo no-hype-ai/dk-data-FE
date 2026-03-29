@@ -15,10 +15,13 @@ logger = logging.getLogger(__name__)
 
 COLUMN_MAPPING = {
     # Recipient identification
+    # Legacy file-based (Title_Case) AND API (snake_case) column names both supported.
+    # The API (openpaymentsdata.cms.gov) uses covered_recipient_* prefix instead of Physician_*.
     'Covered_Recipient_Type': 'covered_recipient_type',
     'Teaching_Hospital_CCN': 'teaching_hospital_ccn',
     'Teaching_Hospital_ID': 'teaching_hospital_id',
     'Teaching_Hospital_Name': 'teaching_hospital_name',
+    # Legacy CSV names
     'Physician_Profile_ID': 'physician_profile_id',
     'Physician_First_Name': 'physician_first_name',
     'Physician_Middle_Name': 'physician_middle_name',
@@ -26,6 +29,14 @@ COLUMN_MAPPING = {
     'Physician_Name_Suffix': 'physician_name_suffix',
     'Physician_Primary_Type': 'physician_primary_type',
     'Physician_Specialty': 'physician_specialty',
+    # API-specific names (openpaymentsdata.cms.gov DKAN format)
+    'covered_recipient_profile_id': 'physician_profile_id',
+    'covered_recipient_first_name': 'physician_first_name',
+    'covered_recipient_middle_name': 'physician_middle_name',
+    'covered_recipient_last_name': 'physician_last_name',
+    'covered_recipient_name_suffix': 'physician_name_suffix',
+    'covered_recipient_primary_type_1': 'physician_primary_type',
+    'covered_recipient_specialty_1': 'physician_specialty',
     # Recipient address
     'Recipient_Primary_Business_Street_Address_Line1': 'recipient_primary_business_street_address_line1',
     'Recipient_City': 'recipient_city',
@@ -166,7 +177,7 @@ def load_cms_open_payments(filepath: str, source_year: int = 2023, max_records: 
 
     inserted = upsert_records(
         SCHEMA, TABLE, records,
-        conflict_columns=['_source_hash', 'record_id', '_source_year'],
+        conflict_columns=['record_id', '_source_year'],
         update_columns=['total_amount_of_payment_usdollars', 'nature_of_payment_or_transfer_of_value', '_loaded_at'],
     )
 

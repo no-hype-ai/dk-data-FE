@@ -61,7 +61,7 @@ def load_kegg_drug_data(
 
     if not records:
         logger.info("[kegg_drug] No records to load")
-        return {"records_inserted": 0, "records_skipped": 0}
+        return {"status": "success", "records_inserted": 0, "records_skipped": 0, "records_fetched": 0}
 
     logger.info("[kegg_drug] Loading %d batch records into mol_raw.kegg_drug", len(records))
 
@@ -121,4 +121,4 @@ def load_kegg_drug_data(
         skipped,
     )
 
-    return {"records_inserted": inserted, "records_skipped": skipped}
+    return {"status": "success", "records_inserted": inserted, "records_skipped": skipped, "records_fetched": inserted + skipped}

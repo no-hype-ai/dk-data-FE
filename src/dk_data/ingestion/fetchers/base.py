@@ -137,12 +137,15 @@ class BaseFetcher(ABC):
         self,
         dataset_uuid: str,
         max_records: Optional[int] = None,
+        filter_params: Optional[Dict[str, Any]] = None,
     ) -> List[Dict[str, Any]]:
         """Fetch records from the CMS data-api/v1 streaming endpoint.
 
         Args:
             dataset_uuid: CMS dataset UUID from data.cms.gov/data.json catalog.
             max_records: Cap on total rows. None = fetch all.
+            filter_params: Optional extra query params for server-side filtering
+                (e.g. {"filter[Rndrng_Prvdr_Type][value]": "Radiology"}).
 
         Returns:
             List of row dicts with CMS column names as returned by the API.
@@ -159,7 +162,11 @@ class BaseFetcher(ABC):
                 break
             page_size = _CMS_PAGE_SIZE if remaining is None else min(_CMS_PAGE_SIZE, remaining)
 
-            resp = self.session.get(api_url, params={"size": page_size, "offset": offset}, timeout=60)
+            params: Dict[str, Any] = {"size": page_size, "offset": offset}
+            if filter_params:
+                params.update(filter_params)
+
+            resp = self.session.get(api_url, params=params, timeout=60)
             resp.raise_for_status()
             page: List[Dict[str, Any]] = resp.json()
             if not page:

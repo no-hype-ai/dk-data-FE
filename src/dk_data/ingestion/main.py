@@ -611,7 +611,7 @@ SOURCES = {
         'description': 'Physician-industry payment data (Sunshine Act)',
         'fetcher': CMSOpenPaymentsFetcher,
         'loader': load_cms_open_payments,
-        'requires_file': True,
+        'requires_file': False,
         'default_days_back': None,
     },
     'cms_inpatient_puf': {
@@ -659,7 +659,7 @@ SOURCES = {
         'description': 'Medicare home health agency utilization and payment (annual PUF)',
         'fetcher': CMSHomeHealthFetcher,
         'loader': load_cms_home_health,
-        'requires_file': True,
+        'requires_file': False,
         'default_days_back': None,
     },
     'cms_hospice_puf': {
@@ -715,7 +715,7 @@ SOURCES = {
         'description': 'Medicare imaging services utilization and payment (annual PUF)',
         'fetcher': CMSImagingPUFFetcher,
         'loader': load_cms_imaging_puf,
-        'requires_file': True,
+        'requires_file': False,
         'default_days_back': None,
     },
     'cms_mental_health_puf': {

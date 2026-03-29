@@ -96,7 +96,7 @@ def load_rxnorm_data(
 
     if not records:
         logger.info("No RxNorm records to load")
-        return {"records_inserted": 0, "records_skipped": 0}
+        return {"status": "success", "records_inserted": 0, "records_skipped": 0, "records_fetched": 0}
 
     logger.info("Loading %d RxNorm records into mol_raw.rxnorm", len(records))
 
@@ -136,4 +136,4 @@ def load_rxnorm_data(
         inserted,
         skipped,
     )
-    return {"records_inserted": inserted, "records_skipped": skipped}
+    return {"status": "success", "records_inserted": inserted, "records_skipped": skipped, "records_fetched": inserted + skipped}

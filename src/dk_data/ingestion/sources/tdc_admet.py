@@ -70,7 +70,7 @@ def load_tdc_admet_data(
 
     if not records:
         logger.info("TDC ADMET: no records to load")
-        return {"records_inserted": 0, "records_skipped": 0}
+        return {"status": "success", "records_inserted": 0, "records_skipped": 0, "records_fetched": 0}
 
     logger.info(
         "TDC ADMET: loading %d dataset(s) into mol_raw.tdc_admet", len(records)
@@ -178,4 +178,4 @@ def load_tdc_admet_data(
         skipped,
     )
 
-    return {"records_inserted": inserted, "records_skipped": skipped}
+    return {"status": "success", "records_inserted": inserted, "records_skipped": skipped, "records_fetched": inserted + skipped}
