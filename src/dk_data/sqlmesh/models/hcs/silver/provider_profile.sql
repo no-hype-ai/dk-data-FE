@@ -106,6 +106,37 @@ telehealth AS (
     GROUP BY npi, _source_year
 ),
 
+-- Source 6: Referring Providers — referral network activity (rndrng_npi = rendering provider)
+-- Aggregates: how many unique referring partners, total referred services/benes/payments
+referring AS (
+    SELECT
+        rndrng_npi                      AS npi,
+        _source_year,
+        COUNT(DISTINCT rfrd_npi)        AS referral_partner_count,
+        SUM(tot_srvcs)                  AS referral_total_srvcs,
+        SUM(tot_benes)                  AS referral_total_benes,
+        SUM(tot_mdcr_alowd_amt)         AS referral_total_alowd_amt,
+        SUM(tot_mdcr_pymt_amt)          AS referral_total_pymt_amt
+    FROM hcs_bronze.cms_referring_providers
+    WHERE rndrng_npi IS NOT NULL
+    GROUP BY rndrng_npi, _source_year
+),
+
+-- Source 7: Ordering Providers — ordering activity (rndrng_npi = ordering/rendering provider)
+ordering AS (
+    SELECT
+        rndrng_npi                      AS npi,
+        _source_year,
+        COUNT(DISTINCT rfrd_npi)        AS ordering_partner_count,
+        SUM(tot_srvcs)                  AS ordering_total_srvcs,
+        SUM(tot_benes)                  AS ordering_total_benes,
+        SUM(tot_mdcr_alowd_amt)         AS ordering_total_alowd_amt,
+        SUM(tot_mdcr_pymt_amt)          AS ordering_total_pymt_amt
+    FROM hcs_bronze.cms_ordering_providers
+    WHERE rndrng_npi IS NOT NULL
+    GROUP BY rndrng_npi, _source_year
+),
+
 -- Canonical NPI set from all sources
 -- Note: Hospice PUF uses CCN (provider_id), not NPI — hospice joins via facility_profile
 all_npis AS (
@@ -118,6 +149,10 @@ all_npis AS (
     SELECT npi, _source_year FROM mh_agg
     UNION
     SELECT npi, _source_year FROM telehealth
+    UNION
+    SELECT npi, _source_year FROM referring
+    UNION
+    SELECT npi, _source_year FROM ordering
 ),
 
 -- Determine provider type: individual vs. organization
@@ -200,6 +235,18 @@ SELECT
     t.telehealth_services,
     t.telehealth_benes,
     t.total_telehealth_payment,
+    -- Referral network
+    r.referral_partner_count,
+    r.referral_total_srvcs,
+    r.referral_total_benes,
+    r.referral_total_alowd_amt,
+    r.referral_total_pymt_amt,
+    -- Ordering activity
+    o.ordering_partner_count,
+    o.ordering_total_srvcs,
+    o.ordering_total_benes,
+    o.ordering_total_alowd_amt,
+    o.ordering_total_pymt_amt,
     -- Data quality
     CASE
         WHEN p.npi IS NOT NULL AND pt.taxonomy_code_1 IS NOT NULL THEN 1.0
@@ -209,10 +256,12 @@ SELECT
     -- Data sources present for this provider
     ARRAY_REMOVE(ARRAY[
         CASE WHEN pt.taxonomy_code_1 IS NOT NULL THEN 'nppes' END,
-        CASE WHEN p.npi IS NOT NULL THEN 'physician_puf' END,
-        CASE WHEN d.npi IS NOT NULL THEN 'dme_puf' END,
+        CASE WHEN p.npi IS NOT NULL  THEN 'physician_puf' END,
+        CASE WHEN d.npi IS NOT NULL  THEN 'dme_puf' END,
         CASE WHEN mh.npi IS NOT NULL THEN 'mental_health_puf' END,
-        CASE WHEN t.npi IS NOT NULL THEN 'telehealth_puf' END
+        CASE WHEN t.npi IS NOT NULL  THEN 'telehealth_puf' END,
+        CASE WHEN r.npi IS NOT NULL  THEN 'referring_providers' END,
+        CASE WHEN o.npi IS NOT NULL  THEN 'ordering_providers' END
     ], NULL)                            AS data_sources,
     NOW()                               AS created_at,
     NOW()                               AS updated_at
@@ -221,5 +270,7 @@ LEFT JOIN physician_puf p ON pt.npi = p.npi AND pt._source_year = p._source_year
 LEFT JOIN dme_agg d       ON pt.npi = d.npi AND pt._source_year = d._source_year
 LEFT JOIN mh_agg mh       ON pt.npi = mh.npi AND pt._source_year = mh._source_year
 LEFT JOIN telehealth t    ON pt.npi = t.npi AND pt._source_year = t._source_year
+LEFT JOIN referring r     ON pt.npi = r.npi AND pt._source_year = r._source_year
+LEFT JOIN ordering o      ON pt.npi = o.npi AND pt._source_year = o._source_year
 WHERE pt.canonical_name IS NOT NULL
   AND LENGTH(TRIM(pt.canonical_name)) > 0;

@@ -98,6 +98,33 @@ SELECT
     g.esrd_benes,
     g.dsbl_benes,
 
+    -- Dual eligible population
+    g.dual_tot_benes,
+    g.dual_full_benes,
+    g.dual_partial_benes,
+    g.dual_eligibility_rate,
+
+    -- Medicare Advantage penetration
+    g.ma_enrollment,
+    g.ma_plan_count,
+    g.ma_avg_risk_score,
+    g.ma_avg_star_rating,
+    g.ma_participation_rate,
+
+    -- FFS claim-type aggregates
+    g.claim_total_clms,
+    g.claim_tot_benes,
+    g.claim_total_mdcr_pymt,
+    g.claim_avg_mdcr_pymt,
+
+    -- Utilization intensity metrics
+    g.util_srvcs_per_bene,
+    g.util_ip_cvrd_stays_per_1000,
+    g.util_avg_ip_los,
+    g.util_er_visits_per_1000,
+    g.util_phy_visits_per_bene,
+    g.util_tot_mdcr_pymt_pc,
+
     -- State-level rankings (only meaningful within same geo_level)
     RANK() OVER (
         PARTITION BY g.geo_level

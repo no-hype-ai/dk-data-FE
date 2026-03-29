@@ -105,6 +105,44 @@ snf AS (
     GROUP BY provider_id, _source_year
 ),
 
+-- Source 6: Home Health Agencies (aggregated per provider_id)
+home_health AS (
+    SELECT
+        provider_id,
+        _source_year,
+        MAX(provider_name)              AS hh_provider_name,
+        MAX(provider_city)              AS hh_city,
+        MAX(provider_state)             AS hh_state,
+        SUM(tot_epsd_stay)              AS hh_total_episodes,
+        SUM(tot_benes)                  AS hh_total_benes,
+        AVG(avg_hh_mdcr_pymt_amt)       AS hh_avg_medicare_payment,
+        AVG(avg_hh_outlier_pymt)        AS hh_avg_outlier_payment,
+        AVG(avg_age)                    AS hh_avg_patient_age,
+        AVG(dual_pct)                   AS hh_avg_dual_pct
+    FROM hcs_bronze.cms_home_health
+    WHERE provider_id IS NOT NULL
+    GROUP BY provider_id, _source_year
+),
+
+-- Source 7: Hospice Providers (aggregated per provider_id)
+hospice AS (
+    SELECT
+        provider_id,
+        _source_year,
+        MAX(provider_name)              AS hospice_provider_name,
+        MAX(provider_city)              AS hospice_city,
+        MAX(provider_state)             AS hospice_state,
+        SUM(tot_benes)                  AS hospice_total_benes,
+        SUM(tot_mdcr_alowd_amt)         AS hospice_total_alowd_amt,
+        SUM(tot_mdcr_pymt_amt)          AS hospice_total_payment,
+        AVG(avg_mdcr_pymt_amt)          AS hospice_avg_payment,
+        AVG(avg_age)                    AS hospice_avg_patient_age,
+        COUNT(DISTINCT hspce_cd)        AS hospice_service_count
+    FROM hcs_bronze.cms_hospice_puf
+    WHERE provider_id IS NOT NULL
+    GROUP BY provider_id, _source_year
+),
+
 -- Canonical provider_id set
 all_providers AS (
     SELECT provider_id, _source_year FROM hospital_info
@@ -112,6 +150,8 @@ all_providers AS (
     UNION SELECT provider_id, _source_year FROM inpatient_agg
     UNION SELECT provider_id, _source_year FROM outpatient_agg
     UNION SELECT provider_id, _source_year FROM snf
+    UNION SELECT provider_id, _source_year FROM home_health
+    UNION SELECT provider_id, _source_year FROM hospice
 )
 
 SELECT
@@ -158,11 +198,27 @@ SELECT
     snf.snf_medicare_payment,
     snf.snf_avg_payment,
     snf.snf_rug_count,
+    -- Home health
+    hh.hh_total_episodes,
+    hh.hh_total_benes,
+    hh.hh_avg_medicare_payment,
+    hh.hh_avg_outlier_payment,
+    hh.hh_avg_patient_age,
+    hh.hh_avg_dual_pct,
+    -- Hospice
+    hos.hospice_total_benes,
+    hos.hospice_total_alowd_amt,
+    hos.hospice_total_payment,
+    hos.hospice_avg_payment,
+    hos.hospice_avg_patient_age,
+    hos.hospice_service_count,
     -- Facility classification
     CASE
-        WHEN hi.hospital_type IS NOT NULL THEN 'hospital'
-        WHEN snf.provider_id IS NOT NULL  THEN 'snf'
-        WHEN op.provider_id IS NOT NULL   THEN 'outpatient'
+        WHEN hi.hospital_type IS NOT NULL  THEN 'hospital'
+        WHEN snf.provider_id IS NOT NULL   THEN 'snf'
+        WHEN hh.provider_id IS NOT NULL    THEN 'home_health'
+        WHEN hos.provider_id IS NOT NULL   THEN 'hospice'
+        WHEN op.provider_id IS NOT NULL    THEN 'outpatient'
         ELSE 'other'
     END AS facility_type,
     -- Data completeness
@@ -172,17 +228,21 @@ SELECT
         ELSE 0.5
     END AS data_completeness_score,
     ARRAY_REMOVE(ARRAY[
-        CASE WHEN hi.provider_id IS NOT NULL   THEN 'hospital_general_info' END,
-        CASE WHEN cr.provider_id IS NOT NULL   THEN 'cost_reports_puf' END,
-        CASE WHEN ip.provider_id IS NOT NULL   THEN 'inpatient_puf' END,
-        CASE WHEN op.provider_id IS NOT NULL   THEN 'outpatient_puf' END,
-        CASE WHEN snf.provider_id IS NOT NULL  THEN 'snf_puf' END
+        CASE WHEN hi.provider_id  IS NOT NULL  THEN 'hospital_general_info' END,
+        CASE WHEN cr.provider_id  IS NOT NULL  THEN 'cost_reports_puf' END,
+        CASE WHEN ip.provider_id  IS NOT NULL  THEN 'inpatient_puf' END,
+        CASE WHEN op.provider_id  IS NOT NULL  THEN 'outpatient_puf' END,
+        CASE WHEN snf.provider_id IS NOT NULL  THEN 'snf_puf' END,
+        CASE WHEN hh.provider_id  IS NOT NULL  THEN 'home_health' END,
+        CASE WHEN hos.provider_id IS NOT NULL  THEN 'hospice_puf' END
     ], NULL)                            AS data_sources,
     NOW()                               AS created_at,
     NOW()                               AS updated_at
 FROM all_providers a
-LEFT JOIN hospital_info hi  ON a.provider_id = hi.provider_id AND a._source_year = hi._source_year
-LEFT JOIN cost_reports cr   ON a.provider_id = cr.provider_id AND a._source_year = cr._source_year
-LEFT JOIN inpatient_agg ip  ON a.provider_id = ip.provider_id AND a._source_year = ip._source_year
-LEFT JOIN outpatient_agg op ON a.provider_id = op.provider_id AND a._source_year = op._source_year
-LEFT JOIN snf               ON a.provider_id = snf.provider_id AND a._source_year = snf._source_year;
+LEFT JOIN hospital_info hi  ON a.provider_id = hi.provider_id  AND a._source_year = hi._source_year
+LEFT JOIN cost_reports cr   ON a.provider_id = cr.provider_id  AND a._source_year = cr._source_year
+LEFT JOIN inpatient_agg ip  ON a.provider_id = ip.provider_id  AND a._source_year = ip._source_year
+LEFT JOIN outpatient_agg op ON a.provider_id = op.provider_id  AND a._source_year = op._source_year
+LEFT JOIN snf               ON a.provider_id = snf.provider_id AND a._source_year = snf._source_year
+LEFT JOIN home_health hh    ON a.provider_id = hh.provider_id  AND a._source_year = hh._source_year
+LEFT JOIN hospice hos       ON a.provider_id = hos.provider_id AND a._source_year = hos._source_year;

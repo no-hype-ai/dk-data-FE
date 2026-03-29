@@ -62,6 +62,20 @@ SELECT
     p.telehealth_benes,
     p.total_telehealth_payment,
 
+    -- Referral network
+    p.referral_partner_count,
+    p.referral_total_srvcs,
+    p.referral_total_benes,
+    p.referral_total_alowd_amt,
+    p.referral_total_pymt_amt,
+
+    -- Ordering activity
+    p.ordering_partner_count,
+    p.ordering_total_srvcs,
+    p.ordering_total_benes,
+    p.ordering_total_alowd_amt,
+    p.ordering_total_pymt_amt,
+
     -- Computed intensity metrics (NULL when denominator is zero)
     CASE
         WHEN p.total_unique_benes > 0

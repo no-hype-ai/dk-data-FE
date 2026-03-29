@@ -94,6 +94,74 @@ enrollment AS (
     GROUP BY COALESCE(county_cd, state_cd), _source_year
 ),
 
+-- FFS claim type summary by geography (procedure-level aggregate → geo aggregate)
+claim_type AS (
+    SELECT
+        bene_geo_lvl                        AS geo_level,
+        bene_geo_desc                       AS geo_code,
+        _source_year,
+        SUM(tot_clms)                       AS claim_total_clms,
+        SUM(tot_benes)                      AS claim_tot_benes,
+        SUM(tot_mdcr_pymt_amt)              AS claim_total_mdcr_pymt,
+        AVG(avg_mdcr_pymt_amt)              AS claim_avg_mdcr_pymt,
+        COUNT(DISTINCT clm_type)            AS claim_type_count
+    FROM hcs_bronze.cms_claim_type_puf
+    WHERE bene_geo_desc IS NOT NULL
+    GROUP BY bene_geo_lvl, bene_geo_desc, _source_year
+),
+
+-- Utilization summary by geography (demographic-level → geo aggregate)
+utilization_geo AS (
+    SELECT
+        bene_geo_cd                         AS geo_code,
+        bene_geo_lvl                        AS geo_level,
+        _source_year,
+        AVG(srvcs_per_bene)                 AS util_srvcs_per_bene,
+        AVG(ip_cvrd_stays_per_1000_benes)   AS util_ip_cvrd_stays_per_1000,
+        AVG(avg_ip_los)                     AS util_avg_ip_los,
+        AVG(er_visits_per_1000_benes)       AS util_er_visits_per_1000,
+        AVG(phy_visits_per_bene)            AS util_phy_visits_per_bene,
+        AVG(tot_mdcr_pymt_pc)               AS util_tot_mdcr_pymt_pc
+    FROM hcs_bronze.cms_utilization_puf
+    WHERE bene_geo_cd IS NOT NULL
+    GROUP BY bene_geo_cd, bene_geo_lvl, _source_year
+),
+
+-- Dual eligible by state (state_cd maps to geo_code at state level)
+dual_eligible AS (
+    SELECT
+        state_cd                            AS geo_code,
+        _source_year,
+        SUM(tot_benes)                      AS dual_tot_benes,
+        SUM(dual_elgbl_full_benes)          AS dual_full_benes,
+        SUM(dual_elgbl_prtl_benes)          AS dual_partial_benes,
+        SUM(lis_benes)                      AS dual_lis_benes,
+        CASE
+            WHEN SUM(tot_benes) > 0
+            THEN SUM(dual_elgbl_full_benes + dual_elgbl_prtl_benes)::NUMERIC / SUM(tot_benes)
+            ELSE NULL
+        END                                 AS dual_eligibility_rate
+    FROM hcs_bronze.cms_dual_eligible
+    WHERE state_cd IS NOT NULL
+    GROUP BY state_cd, _source_year
+),
+
+-- Medicare Advantage penetration by county FIPS
+-- Aggregate enrollment and star ratings across all plans per county
+medicare_advantage AS (
+    SELECT
+        COALESCE(county_fips, fips_cd)      AS geo_code,
+        _source_year,
+        SUM(enrollment)                     AS ma_enrollment,
+        COUNT(DISTINCT contract_id)         AS ma_plan_count,
+        AVG(avg_risk_score)                 AS ma_avg_risk_score,
+        AVG(star_rating)                    AS ma_avg_star_rating,
+        AVG(ma_participation_rate)          AS ma_participation_rate
+    FROM hcs_bronze.cms_medicare_advantage
+    WHERE COALESCE(county_fips, fips_cd) IS NOT NULL
+    GROUP BY COALESCE(county_fips, fips_cd), _source_year
+),
+
 -- All geo codes
 all_geos AS (
     SELECT geo_code, geo_level, _source_year FROM geo_variation
@@ -102,6 +170,14 @@ all_geos AS (
     SELECT geo_code, 'State' AS geo_level, _source_year FROM opioid
     UNION
     SELECT geo_code, 'County' AS geo_level, _source_year FROM enrollment
+    UNION
+    SELECT geo_code, 'State' AS geo_level, _source_year FROM dual_eligible
+    UNION
+    SELECT geo_code, 'County' AS geo_level, _source_year FROM medicare_advantage
+    UNION
+    SELECT geo_code, geo_level, _source_year FROM claim_type
+    UNION
+    SELECT geo_code, geo_level, _source_year FROM utilization_geo
 )
 
 SELECT
@@ -137,6 +213,31 @@ SELECT
     e.ma_benes,
     e.esrd_benes,
     e.dsbl_benes,
+    -- Dual eligible population
+    de.dual_tot_benes,
+    de.dual_full_benes,
+    de.dual_partial_benes,
+    de.dual_lis_benes,
+    de.dual_eligibility_rate,
+    -- Medicare Advantage penetration
+    ma.ma_enrollment,
+    ma.ma_plan_count,
+    ma.ma_avg_risk_score,
+    ma.ma_avg_star_rating,
+    ma.ma_participation_rate,
+    -- FFS claim type aggregates
+    ct.claim_total_clms,
+    ct.claim_tot_benes,
+    ct.claim_total_mdcr_pymt,
+    ct.claim_avg_mdcr_pymt,
+    ct.claim_type_count,
+    -- Utilization metrics
+    ug.util_srvcs_per_bene,
+    ug.util_ip_cvrd_stays_per_1000,
+    ug.util_avg_ip_los,
+    ug.util_er_visits_per_1000,
+    ug.util_phy_visits_per_bene,
+    ug.util_tot_mdcr_pymt_pc,
     -- Derived composite health burden score (higher = more burden)
     CASE
         WHEN gv.hosp_readmsn_rate IS NOT NULL
@@ -152,7 +253,11 @@ SELECT
     NOW()                               AS created_at,
     NOW()                               AS updated_at
 FROM all_geos a
-LEFT JOIN geo_variation gv ON a.geo_code = gv.geo_code AND a.geo_level = gv.geo_level AND a._source_year = gv._source_year
-LEFT JOIN chronic_agg c    ON a.geo_code = c.geo_code  AND a._source_year = c._source_year
-LEFT JOIN opioid o         ON a.geo_code = o.geo_code  AND a._source_year = o._source_year
-LEFT JOIN enrollment e     ON a.geo_code = e.geo_code  AND a._source_year = e._source_year;
+LEFT JOIN geo_variation gv  ON a.geo_code = gv.geo_code AND a.geo_level = gv.geo_level AND a._source_year = gv._source_year
+LEFT JOIN chronic_agg c     ON a.geo_code = c.geo_code  AND a._source_year = c._source_year
+LEFT JOIN opioid o          ON a.geo_code = o.geo_code  AND a._source_year = o._source_year
+LEFT JOIN enrollment e      ON a.geo_code = e.geo_code  AND a._source_year = e._source_year
+LEFT JOIN dual_eligible de  ON a.geo_code = de.geo_code AND a._source_year = de._source_year
+LEFT JOIN medicare_advantage ma ON a.geo_code = ma.geo_code AND a._source_year = ma._source_year
+LEFT JOIN claim_type ct     ON a.geo_code = ct.geo_code AND a.geo_level = ct.geo_level AND a._source_year = ct._source_year
+LEFT JOIN utilization_geo ug ON a.geo_code = ug.geo_code AND a.geo_level = ug.geo_level AND a._source_year = ug._source_year;
