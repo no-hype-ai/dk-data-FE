@@ -36,7 +36,7 @@ PG = dict(
 SCHEMAS = [
     "hcs_raw", "hcs_bronze", "hcs_silver", "hcs_gold",
     "mol_raw", "mol_bronze", "mol_silver", "mol_gold",
-    "ind_silver", "ind_gold",
+    "ind_bronze", "ind_silver", "ind_gold",
 ]
 
 LIMIT = 1000

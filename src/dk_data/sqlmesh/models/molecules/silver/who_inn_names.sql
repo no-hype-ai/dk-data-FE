@@ -49,9 +49,13 @@ LEFT JOIN mol_silver.molecules m_name
        ON m_ik.molecule_id IS NULL
       AND b.inn_name IS NOT NULL
       AND LOWER(m_name.canonical_name) = LOWER(b.inn_name)
--- Fallback: alias table
-LEFT JOIN mol_silver.molecule_aliases ma
-       ON m_ik.molecule_id IS NULL AND m_name.molecule_id IS NULL
+-- Fallback: alias table — deduplicated to prevent fan-out from duplicate alias_name_normalized rows
+LEFT JOIN (
+    SELECT DISTINCT ON (alias_name_normalized)
+        alias_name_normalized, molecule_id
+    FROM mol_silver.molecule_aliases
+    ORDER BY alias_name_normalized, molecule_id
+) ma ON m_ik.molecule_id IS NULL AND m_name.molecule_id IS NULL
       AND b.inn_name IS NOT NULL
       AND LOWER(REGEXP_REPLACE(b.inn_name, '[^a-zA-Z0-9]', '', 'g')) = ma.alias_name_normalized
 LEFT JOIN mol_silver.molecules m_alias ON m_alias.molecule_id = ma.molecule_id

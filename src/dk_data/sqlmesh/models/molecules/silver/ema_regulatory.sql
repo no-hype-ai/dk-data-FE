@@ -47,9 +47,22 @@ SELECT
     e.ingested_at
 
 FROM mol_bronze.ema AS e
-LEFT JOIN mol_silver.molecules AS m
-    ON LOWER(m.canonical_name) = LOWER(e.active_substance)
-    OR LOWER(m.canonical_name) = LOWER(e.inn)
+-- Deduplicate: OR condition on two fields can match 2 different molecules per EMA record.
+-- Pick one molecule per product_number via a ranked subquery.
+LEFT JOIN LATERAL (
+    SELECT DISTINCT ON (1)
+        m.molecule_id,
+        CASE
+            WHEN LOWER(m.canonical_name) = LOWER(e.active_substance) THEN 1
+            ELSE 2
+        END AS match_priority
+    FROM mol_silver.molecules m
+    WHERE LOWER(m.canonical_name) = LOWER(e.active_substance)
+       OR LOWER(m.canonical_name) = LOWER(e.inn)
+    ORDER BY 1, match_priority
+    LIMIT 1
+) mol_match ON TRUE
+LEFT JOIN mol_silver.molecules m ON m.molecule_id = mol_match.molecule_id
 
 WHERE e.product_number IS NOT NULL
   AND e.authorization_status IS NOT NULL

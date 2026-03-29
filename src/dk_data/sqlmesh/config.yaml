@@ -50,6 +50,8 @@ physical_schema_mapping:
   hcs_silver: hcs_silver
   hcs_gold: hcs_gold
   # Indication / disease domain
+  ind_raw: ind_raw
+  ind_bronze: ind_bronze
   ind_silver: ind_silver
   ind_gold: ind_gold
   # HCP / researcher / KOL domain

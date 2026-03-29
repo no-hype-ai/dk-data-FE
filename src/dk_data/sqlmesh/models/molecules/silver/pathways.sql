@@ -29,8 +29,13 @@ WITH reactome_linked AS (
     LEFT JOIN mol_silver.molecules m_name
            ON b.raw_json->>'query' IS NOT NULL
           AND LOWER(m_name.canonical_name) = LOWER(b.raw_json->>'query')
-    LEFT JOIN mol_silver.molecule_aliases ma
-           ON m_name.molecule_id IS NULL
+    -- Deduplicated alias lookup — 375+ dup alias_name_normalized rows exist
+    LEFT JOIN (
+        SELECT DISTINCT ON (alias_name_normalized)
+            alias_name_normalized, molecule_id
+        FROM mol_silver.molecule_aliases
+        ORDER BY alias_name_normalized, molecule_id
+    ) ma ON m_name.molecule_id IS NULL
           AND b.raw_json->>'query' IS NOT NULL
           AND LOWER(REGEXP_REPLACE(b.raw_json->>'query', '[^a-zA-Z0-9]', '', 'g'))
               = ma.alias_name_normalized

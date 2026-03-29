@@ -38,13 +38,18 @@ SELECT
     NOW()                                                      AS created_at
 
 FROM mol_bronze.rxnorm b
--- Link via canonical name (case-insensitive)
+-- Link via canonical name (case-insensitive); molecules.canonical_name is unique
 LEFT JOIN mol_silver.molecules m_name
        ON b.name IS NOT NULL
       AND LOWER(m_name.canonical_name) = LOWER(b.name)
--- Fallback: alias table (covers synonyms, brand names, INNs)
-LEFT JOIN mol_silver.molecule_aliases ma
-       ON m_name.molecule_id IS NULL
+-- Fallback: alias table — molecule_aliases has 375+ dup alias_name_normalized rows,
+-- so pick one molecule_id per alias via DISTINCT ON to prevent fan-out.
+LEFT JOIN (
+    SELECT DISTINCT ON (alias_name_normalized)
+        alias_name_normalized, molecule_id
+    FROM mol_silver.molecule_aliases
+    ORDER BY alias_name_normalized, molecule_id
+) ma ON m_name.molecule_id IS NULL
       AND b.name IS NOT NULL
       AND LOWER(REGEXP_REPLACE(b.name, '[^a-zA-Z0-9]', '', 'g')) = ma.alias_name_normalized
 LEFT JOIN mol_silver.molecules m_alias ON m_alias.molecule_id = ma.molecule_id

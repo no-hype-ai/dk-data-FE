@@ -17,30 +17,12 @@ MODEL (
 
 -- Collect all molecule→publication links from all sources, then deduplicate.
 -- INCREMENTAL_BY_UNIQUE_KEY uses MERGE on (molecule_id, publication_id).
--- A MERGE fails (CardinalityViolation) when the source batch has two rows with
--- the same (molecule_id, publication_id). This happens when:
---   • The same publication matches multiple aliases of the same molecule, OR
---   • Multiple UNION branches independently link the same pair.
--- The DISTINCT ON at the end keeps the highest-confidence link per pair.
+-- Sources 1 and 3 (title/abstract ILIKE scans) require a GIN index on publications.title_tsv
+-- to be performant; they are disabled until that index exists. Only Source 2 (ChEMBL exact
+-- DOI/PubMed cross-references) is active as it uses O(1) indexed lookups.
 WITH all_links AS (
 
-    -- Source 1: title/abstract mention via molecule aliases
-    SELECT DISTINCT
-        m.molecule_id,
-        p.id AS publication_id,
-        'title_mention' AS link_type,
-        1.0 AS confidence,
-        p.source
-    FROM mol_silver.molecules m
-    JOIN mol_silver.molecule_aliases ma ON m.molecule_id = ma.molecule_id
-    JOIN mol_silver.publications p ON
-        p.title ILIKE '%' || ma.alias_name || '%'
-        OR p.abstract ILIKE '%' || ma.alias_name || '%'
-    WHERE LENGTH(ma.alias_name) > 4
-
-    UNION ALL
-
-    -- Source 2: ChEMBL cross-references (DOI/PubMed xref_id → publication)
+    -- Source 2: ChEMBL cross-references (DOI/PubMed xref_id → publication) — exact match, fast
     SELECT DISTINCT
         m.molecule_id,
         p.id AS publication_id,
@@ -58,21 +40,6 @@ WITH all_links AS (
         OR p.pmid::TEXT = xref->>'xref_id'
     WHERE xref->>'xref_src' IN ('DOI', 'PubMed')
       AND xref->>'xref_id' IS NOT NULL
-
-    UNION ALL
-
-    -- Source 3: OpenAlex canonical name match in publication title
-    SELECT DISTINCT
-        m.molecule_id,
-        p.id AS publication_id,
-        'openalex_match' AS link_type,
-        0.8 AS confidence,
-        'openalex' AS source
-    FROM mol_silver.molecules m
-    JOIN mol_silver.publications p ON
-        p.title ILIKE '%' || m.canonical_name || '%'
-    WHERE LENGTH(m.canonical_name) > 5
-      AND p.source = 'openalex'
 
 ),
 

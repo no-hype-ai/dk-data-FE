@@ -38,22 +38,30 @@ SELECT
     NOW()                                                  AS created_at
 
 FROM mol_bronze.pharmgkb b
--- Link via inchi_key (most reliable)
+-- Link via inchi_key (most reliable; inchi_key is unique in molecules)
 LEFT JOIN mol_silver.molecules m_ik
        ON b.inchi_key IS NOT NULL AND m_ik.inchi_key = b.inchi_key
--- Fallback: chembl_id via identifier_mappings
-LEFT JOIN mol_silver.identifier_mappings im_cid
-       ON m_ik.molecule_id IS NULL
+-- Fallback: chembl_id via identifier_mappings — deduplicated (24 dups per chembl_id)
+LEFT JOIN (
+    SELECT DISTINCT ON (identifier_value)
+        identifier_value, molecule_id
+    FROM mol_silver.identifier_mappings
+    WHERE identifier_type = 'chembl_id'
+    ORDER BY identifier_value, molecule_id
+) im_cid ON m_ik.molecule_id IS NULL
       AND b.chembl_id IS NOT NULL
-      AND im_cid.identifier_type = 'chembl_id'
       AND im_cid.identifier_value = b.chembl_id
 LEFT JOIN mol_silver.molecules m_cid
        ON m_cid.molecule_id = im_cid.molecule_id
--- Fallback: drugbank_id via identifier_mappings
-LEFT JOIN mol_silver.identifier_mappings im_db
-       ON m_ik.molecule_id IS NULL AND m_cid.molecule_id IS NULL
+-- Fallback: drugbank_id via identifier_mappings — deduplicated (24 dups per drugbank_id)
+LEFT JOIN (
+    SELECT DISTINCT ON (identifier_value)
+        identifier_value, molecule_id
+    FROM mol_silver.identifier_mappings
+    WHERE identifier_type = 'drugbank_id'
+    ORDER BY identifier_value, molecule_id
+) im_db ON m_ik.molecule_id IS NULL AND m_cid.molecule_id IS NULL
       AND b.drugbank_id IS NOT NULL
-      AND im_db.identifier_type = 'drugbank_id'
       AND im_db.identifier_value = b.drugbank_id
 LEFT JOIN mol_silver.molecules m_db
        ON m_db.molecule_id = im_db.molecule_id

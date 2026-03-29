@@ -80,10 +80,15 @@ linked AS (
             ELSE 'unlinked'
         END                                 AS link_strategy
     FROM combined c
-    -- Path 1: RxNorm normalised drug name (most reliable structured path)
-    LEFT JOIN mol_silver.rxnorm_concepts rx
-        ON LOWER(c.generic_name) = LOWER(rx.name)
-        AND rx.molecule_id IS NOT NULL
+    -- Path 1: RxNorm normalised drug name — rxnorm_concepts has unique rxcui but non-unique name;
+    -- deduplicate to one molecule_id per name to prevent fan-out.
+    LEFT JOIN (
+        SELECT DISTINCT ON (LOWER(name))
+            name, molecule_id
+        FROM mol_silver.rxnorm_concepts
+        WHERE molecule_id IS NOT NULL
+        ORDER BY LOWER(name), molecule_id
+    ) rx ON LOWER(c.generic_name) = LOWER(rx.name)
     -- Path 2: Direct canonical name match
     LEFT JOIN mol_silver.molecules m_exact
         ON LOWER(c.generic_name) = LOWER(m_exact.canonical_name)

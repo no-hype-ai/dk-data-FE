@@ -36,7 +36,14 @@ WITH faers_linked AS (
         f.serious_other,
         f.receive_date
     FROM mol_bronze.faers_events f
-    JOIN mol_silver.molecules m ON (
+    -- Deduplicate: similarity() can match multiple molecules per drug_name.
+    -- Pick highest-similarity match; fall back to exact match when no fuzzy match is better.
+    JOIN (
+        SELECT DISTINCT ON (LOWER(canonical_name))
+            molecule_id, inchi_key, canonical_name
+        FROM mol_silver.molecules
+        ORDER BY LOWER(canonical_name), molecule_id
+    ) m ON (
         LOWER(f.drug_name) = LOWER(m.canonical_name)
         OR similarity(LOWER(f.drug_name), LOWER(m.canonical_name)) > 0.8
     )

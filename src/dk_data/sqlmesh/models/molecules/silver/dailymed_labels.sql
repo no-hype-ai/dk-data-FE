@@ -49,11 +49,22 @@ SELECT
     NOW() AS updated_at
 
 FROM mol_bronze.dailymed dm
-LEFT JOIN mol_silver.molecule_aliases ma_generic
+-- Deduplicated alias lookups — molecule_aliases has 375+ dup alias_name_normalized rows
+LEFT JOIN (
+    SELECT DISTINCT ON (alias_name_normalized)
+        alias_name_normalized, molecule_id
+    FROM mol_silver.molecule_aliases
+    ORDER BY alias_name_normalized, molecule_id
+) ma_generic
     ON dm.generic_name IS NOT NULL
     AND LOWER(REGEXP_REPLACE(dm.generic_name, '[^a-zA-Z0-9]', '', 'g'))
        = ma_generic.alias_name_normalized
-LEFT JOIN mol_silver.molecule_aliases ma_brand
+LEFT JOIN (
+    SELECT DISTINCT ON (alias_name_normalized)
+        alias_name_normalized, molecule_id
+    FROM mol_silver.molecule_aliases
+    ORDER BY alias_name_normalized, molecule_id
+) ma_brand
     ON COALESCE(ma_generic.molecule_id, NULL) IS NULL
     AND dm.brand_name IS NOT NULL
     AND LOWER(REGEXP_REPLACE(dm.brand_name, '[^a-zA-Z0-9]', '', 'g'))

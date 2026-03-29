@@ -461,7 +461,7 @@ classified AS (
         NULL::TEXT[]                                                        AS excludes,
         NULL::TEXT                                                          AS includes_text,
         NULL::TEXT                                                          AS excludes_text,
-        'seed'                                                              AS source,
+        'icd10_curated_reference'                                           AS source,
         NOW()                                                               AS source_updated_at,
 
         CASE
