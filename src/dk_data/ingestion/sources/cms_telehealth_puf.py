@@ -14,10 +14,9 @@ from ..utils.validators import CMSTelehealthRecord
 logger = logging.getLogger(__name__)
 
 # Canonical CMS column names → internal snake_case names.
-# Spec fields: Rndrng_NPI, Rndrng_Prvdr_Last_Org_Name, Rndrng_Prvdr_First_Name,
-# Rndrng_Prvdr_City, Rndrng_Prvdr_State_Abrvtn, Rndrng_Prvdr_Zip5, Rndrng_Prvdr_Type,
-# HCPCS_Cd, HCPCS_Desc, TH_Srvc_Ind, Tot_Benes, Tot_Srvcs, Tot_Mdcr_Alowd_Amt,
-# Avg_Mdcr_Alowd_Amt, Avg_Mdcr_Pymt_Amt, Avg_Mdcr_Stdzd_Amt.
+# Source: Medicare Physician & Other Practitioners - by Provider and Service.
+# CMS has no separate telehealth-only PUF; Place_Of_Srvc='02' marks telehealth
+# services and is mapped to th_srvc_ind for downstream filtering.
 COLUMN_MAPPING = {
     'Rndrng_NPI':                    'npi',
     'Rndrng_Prvdr_Last_Org_Name':    'provider_last_org_name',
@@ -28,6 +27,9 @@ COLUMN_MAPPING = {
     'Rndrng_Prvdr_Type':             'provider_type',
     'HCPCS_Cd':                      'hcpcs_cd',
     'HCPCS_Desc':                    'hcpcs_desc',
+    # Place_Of_Srvc='02' = telehealth, 'F' = facility, 'O' = non-facility.
+    # No separate TH_Srvc_Ind column exists in the physician PUF.
+    'Place_Of_Srvc':                 'th_srvc_ind',
     'TH_Srvc_Ind':                   'th_srvc_ind',
     'Tot_Benes':                     'tot_benes',
     'Tot_Srvcs':                     'tot_srvcs',

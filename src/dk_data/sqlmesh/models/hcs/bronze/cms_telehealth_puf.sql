@@ -2,9 +2,13 @@
 -- Typed pass-through from hcs_raw.cms_telehealth_puf
 -- Feature: 019-cms-puf-platform-reconciliation
 --
+-- Source: Medicare Physician & Other Practitioners - by Provider and Service.
+-- th_srvc_ind stores Place_Of_Srvc ('F'=facility, 'O'=non-facility, '02'=telehealth).
+-- is_telehealth is derived as Place_Of_Srvc = '02'.
+--
 -- Raw columns: npi (TEXT), provider_last_org_name, provider_first_name,
 --   provider_city, provider_state, provider_zip5, provider_type,
---   hcpcs_cd, hcpcs_desc, th_srvc_ind (BOOLEAN),
+--   hcpcs_cd, hcpcs_desc, th_srvc_ind (TEXT, place of service code),
 --   tot_benes (INTEGER), tot_srvcs (NUMERIC),
 --   tot_mdcr_alowd_amt (NUMERIC), avg_mdcr_alowd_amt (NUMERIC),
 --   avg_mdcr_pymt_amt (NUMERIC), avg_mdcr_stdzd_amt (NUMERIC)
@@ -32,7 +36,8 @@ SELECT
     provider_type::TEXT,
     hcpcs_cd::TEXT,
     hcpcs_desc::TEXT,
-    th_srvc_ind::BOOLEAN,
+    th_srvc_ind::TEXT,
+    (th_srvc_ind = '02') AS is_telehealth,
     tot_benes::INTEGER,
     tot_srvcs::NUMERIC,
     tot_mdcr_alowd_amt::NUMERIC,

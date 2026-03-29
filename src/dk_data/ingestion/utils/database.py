@@ -223,6 +223,10 @@ def apply_column_mapping(df, mapping: dict):
     """
     lower_map = {k.lower(): v for k, v in mapping.items()}
     df.columns = [lower_map.get(c.lower(), c) for c in df.columns]
+    # Drop duplicate column names keeping last occurrence — when multiple
+    # year-suffixed CMS columns (e.g. Tot_Spndng_2019…Tot_Spndng_2023) all
+    # map to the same target name, the last (most recent) value wins.
+    df = df.loc[:, ~df.columns.duplicated(keep='last')]
     return df
 
 
