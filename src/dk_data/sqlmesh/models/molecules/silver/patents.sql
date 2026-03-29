@@ -55,7 +55,8 @@ uspto_patents AS (
         is_pharma_related,
         NULL::TEXT AS family_id,         -- family_id not tracked in PatentsView schema
         patent_type,
-        NULL::TEXT AS application_number -- not exposed in PatentsView bulk data
+        NULL::TEXT AS application_number, -- not exposed in PatentsView bulk data
+        'uspto'::TEXT AS source
     FROM mol_bronze.uspto_patents
     WHERE processed_to_silver = FALSE
       AND patent_number IS NOT NULL
@@ -78,7 +79,8 @@ uspto_ci AS (
         is_pharma_related,
         NULL::TEXT AS family_id,         -- not tracked in USPTO CI
         NULL::TEXT AS patent_type,       -- not in USPTO CI schema
-        NULL::TEXT AS application_number -- not in USPTO CI schema
+        NULL::TEXT AS application_number, -- not in USPTO CI schema
+        'uspto_ci'::TEXT AS source
     FROM mol_bronze.uspto_ci
     WHERE processed_to_silver = FALSE
       AND patent_number IS NOT NULL
@@ -101,7 +103,8 @@ epo_patents AS (
         is_pharma_related,
         family_id,
         NULL::TEXT AS patent_type,       -- EPO uses different type taxonomy
-        NULL::TEXT AS application_number -- not exposed in EPO OPS schema
+        NULL::TEXT AS application_number, -- not exposed in EPO OPS schema
+        'epo'::TEXT AS source
     FROM mol_bronze.epo_patents
     WHERE processed_to_silver = FALSE
       AND patent_number IS NOT NULL
@@ -124,7 +127,8 @@ orange_book_patents AS (
         TRUE AS is_pharma_related,
         NULL::TEXT AS family_id,         -- not in Orange Book
         NULL::TEXT AS patent_type,       -- not in Orange Book
-        application_number               -- from Orange Book appl_no column
+        application_number,              -- from Orange Book appl_no column
+        'orange_book'::TEXT AS source
     FROM mol_bronze.orange_book
     WHERE processed_to_silver = FALSE
       AND patent_number IS NOT NULL

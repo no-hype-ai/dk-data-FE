@@ -23,6 +23,7 @@ SELECT
     provider_state::TEXT,
     provider_state_fips::TEXT,
     provider_zip_code::TEXT,
+    provider_street_address::TEXT,
     provider_ruca::TEXT,
     -- APC identifiers
     apc::TEXT,

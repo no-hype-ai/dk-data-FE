@@ -18,21 +18,33 @@ SELECT
     id::BIGINT,
     npi::TEXT,
     entity_type_code::TEXT,
-    -- Individual name fields (raw table has last/first/org; no middle name or credential text)
+    -- Individual name fields
     provider_last_name::TEXT,
     provider_first_name::TEXT,
+    provider_middle_name::TEXT,
+    provider_name_prefix_text::TEXT,
+    provider_name_suffix_text::TEXT,
+    provider_credential_text::TEXT,
     -- Organization name
     provider_organization_name::TEXT,
-    -- Mailing address (used by idn_hierarchy agent)
+    -- Mailing address
+    provider_first_line_business_mailing_address::TEXT,
+    provider_second_line_business_mailing_address::TEXT,
     provider_business_mailing_address_city_name::TEXT,
     provider_business_mailing_address_state_name::TEXT,
     provider_business_mailing_address_postal_code::TEXT,
     provider_business_mailing_address_telephone_number::TEXT,
-    -- Practice location address (used by provider_profile silver model)
+    provider_business_mailing_address_fax_number::TEXT,
+    provider_business_mailing_address_country_code::TEXT,
+    -- Practice location address
+    provider_first_line_business_practice_location_address::TEXT,
+    provider_second_line_business_practice_location_address::TEXT,
     provider_business_practice_location_address_city_name::TEXT,
     provider_business_practice_location_address_state_name::TEXT,
     provider_business_practice_location_address_postal_code::TEXT,
     provider_business_practice_location_address_telephone_number::TEXT,
+    provider_business_practice_location_address_fax_number::TEXT,
+    provider_business_practice_location_address_country_code::TEXT,
     -- Taxonomy codes
     healthcare_provider_taxonomy_code_1::TEXT,
     healthcare_provider_taxonomy_code_2::TEXT,

@@ -29,6 +29,7 @@ SELECT
     emergency_services,
     meets_criteria_for_birthing_friendly_designation,
     hospital_overall_rating,
+    hospital_overall_rating_footnote,
     _source_year,
     _source_hash,
     _source_file,

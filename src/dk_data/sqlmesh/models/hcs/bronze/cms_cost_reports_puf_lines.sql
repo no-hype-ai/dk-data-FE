@@ -22,6 +22,7 @@ SELECT
     reported_hours_fte,
     total_salaries,
     facility_type,
+    source_year::INTEGER,
     _source_year,
     _source_hash,
     _source_file,

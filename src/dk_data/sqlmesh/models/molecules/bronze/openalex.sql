@@ -92,6 +92,7 @@ SELECT
     -- Source tracking
     'openalex'                                                             AS source,
     r._loaded_at                                                           AS source_updated_at,
+    r._loaded_at                                                           AS _loaded_at,
     FALSE                                                                  AS processed_to_silver,
     NOW()                                                                  AS created_at
 

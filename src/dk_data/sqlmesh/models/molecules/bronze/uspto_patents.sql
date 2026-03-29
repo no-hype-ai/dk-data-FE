@@ -26,8 +26,8 @@ SELECT
     r.filing_date,
     r.grant_date AS patent_date,
 
-    -- Classification
-    r.patent_type,
+    -- Classification (mol_raw.uspto_patents does not carry patent_type; default to 'utility')
+    'utility'::TEXT AS patent_type,
     NULL::TEXT AS patent_kind,
     CASE
         WHEN r.cpc_codes IS NOT NULL
