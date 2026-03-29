@@ -59,6 +59,14 @@ class DailyMedFetcher(BaseFetcher):
 
         try:
             records = self._fetch_paginated(max_records=max_records, label_type=label_type)
+
+            if not records:
+                msg = "DailyMed: no SPL records returned — source may be unavailable"
+                logger.warning(msg)
+                result = {"status": "source_unavailable", "records": [], "record_count": 0, "hash": None, "error": msg}
+                self.log_fetch_result(result)
+                return result
+
             content_hash = hashlib.md5(
                 json.dumps(len(records)).encode()
             ).hexdigest()

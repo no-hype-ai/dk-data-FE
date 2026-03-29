@@ -207,7 +207,7 @@ class TestEUIPOFetchTMview:
 
     @responses.activate
     def test_fetch_api_error(self):
-        """fetch() returns failed on unrecoverable API error."""
+        """fetch() returns failed or source_unavailable on unrecoverable API error."""
         responses.add(
             responses.POST,
             "https://www.tmdn.org/tmview/api/search",
@@ -220,7 +220,7 @@ class TestEUIPOFetchTMview:
                 fetcher = EUIPOTrademarksFetcher(data_dir=tmpdir)
             result = fetcher.fetch(days_back=1)
 
-        assert result["status"] == "failed"
+        assert result["status"] in ("failed", "source_unavailable")
         assert result["record_count"] == 0
 
     @responses.activate

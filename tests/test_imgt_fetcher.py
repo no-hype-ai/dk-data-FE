@@ -43,8 +43,7 @@ def _mock_response(content, status_code=200):
 
 def test_fetch_returns_success_shape():
     fetcher = _make_fetcher()
-    with patch("dk_data.ingestion.fetchers.imgt.requests.get",
-               return_value=_mock_response(_SAMPLE_FASTA)):
+    with patch.object(fetcher.session, "get", return_value=_mock_response(_SAMPLE_FASTA)):
         result = fetcher.fetch()
 
     assert result["status"] == "success"
@@ -54,8 +53,7 @@ def test_fetch_returns_success_shape():
 
 def test_server_unavailable_returns_source_unavailable():
     fetcher = _make_fetcher()
-    with patch("dk_data.ingestion.fetchers.imgt.requests.get",
-               side_effect=Exception("Connection refused")):
+    with patch.object(fetcher.session, "get", side_effect=Exception("Connection refused")):
         result = fetcher.fetch()
 
     assert result["status"] in ("failed", "source_unavailable")
@@ -64,8 +62,7 @@ def test_server_unavailable_returns_source_unavailable():
 
 def test_records_have_gene_group():
     fetcher = _make_fetcher()
-    with patch("dk_data.ingestion.fetchers.imgt.requests.get",
-               return_value=_mock_response(_SAMPLE_FASTA)):
+    with patch.object(fetcher.session, "get", return_value=_mock_response(_SAMPLE_FASTA)):
         result = fetcher.fetch()
 
     for rec in result.get("records", []):

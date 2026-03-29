@@ -50,12 +50,15 @@ def test_fetch_returns_success_shape():
     fetcher = _make_fetcher()
     apps = _sample_applications(3)
 
+    call_count = [0]
+
     def _side_effect(url, *a, **kw):
-        if "skip=0" in url or "skip" not in url:
+        call_count[0] += 1
+        if call_count[0] == 1:
             return _mock_response(apps)
         return _mock_response([], status_code=404)
 
-    with patch("dk_data.ingestion.fetchers.fda_drugs.requests.get", side_effect=_side_effect):
+    with patch.object(fetcher.session, "get", side_effect=_side_effect):
         result = fetcher.fetch()
 
     assert result["status"] == "success"
@@ -65,8 +68,7 @@ def test_fetch_returns_success_shape():
 
 def test_404_stops_pagination():
     fetcher = _make_fetcher()
-    with patch("dk_data.ingestion.fetchers.fda_drugs.requests.get",
-               return_value=_mock_response([], status_code=404)):
+    with patch.object(fetcher.session, "get", return_value=_mock_response([], status_code=404)):
         result = fetcher.fetch()
 
     # Should complete (not crash) — empty is ok if first page is 404
@@ -75,8 +77,7 @@ def test_404_stops_pagination():
 
 def test_connection_error_returns_failed():
     fetcher = _make_fetcher()
-    with patch("dk_data.ingestion.fetchers.fda_drugs.requests.get",
-               side_effect=Exception("Connection refused")):
+    with patch.object(fetcher.session, "get", side_effect=Exception("Connection refused")):
         result = fetcher.fetch()
 
     assert result["status"] in ("failed", "source_unavailable")

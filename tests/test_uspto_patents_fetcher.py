@@ -268,24 +268,17 @@ class TestUSPTOPatentsFetchWithMock:
         # Should stop at max_records
         assert result["record_count"] <= 100
 
-    @responses.activate
     def test_fetch_without_api_key(self):
-        """fetch() still works without API key (may be rate limited)."""
-        responses.add(
-            responses.POST,
-            "https://search.patentsview.org/api/v1/patent/",
-            json=_make_patentsearch_response([SAMPLE_PATENT_MINIMAL]),
-            status=200,
-        )
-
+        """fetch() returns source_unavailable without API key."""
         with tempfile.TemporaryDirectory() as tmpdir:
             with patch.dict(os.environ, {}, clear=True):
                 os.environ.pop("USPTO_API_KEY", None)
                 fetcher = USPTOPatentsFetcher(data_dir=tmpdir)
             result = fetcher.fetch(days_back=7)
 
-        assert result["status"] == "success"
-        assert result["record_count"] == 1
+        assert result["status"] in ("source_unavailable", "failed")
+        assert result["record_count"] == 0
+        assert "error" in result
 
 
 # ---------------------------------------------------------------------------

@@ -53,9 +53,8 @@ def test_fetch_returns_success_shape():
     mock_resp.raise_for_status = MagicMock()
     mock_resp.content = b"fake xlsx content"
 
-    with patch("dk_data.ingestion.fetchers.ema_mol.requests.get", return_value=mock_resp), \
-         patch("dk_data.ingestion.fetchers.ema_mol.EMAMolFetcher._parse_xlsx",
-               return_value=_sample_rows()):
+    with patch.object(fetcher.session, "get", return_value=mock_resp), \
+         patch.object(fetcher, "_parse_xlsx", return_value=_sample_rows()):
         result = fetcher.fetch()
 
     assert result["status"] == "success"
@@ -71,9 +70,8 @@ def test_fetch_records_are_dicts():
     mock_resp.raise_for_status = MagicMock()
     mock_resp.content = b"fake xlsx content"
 
-    with patch("dk_data.ingestion.fetchers.ema_mol.requests.get", return_value=mock_resp), \
-         patch("dk_data.ingestion.fetchers.ema_mol.EMAMolFetcher._parse_xlsx",
-               return_value=_sample_rows()):
+    with patch.object(fetcher.session, "get", return_value=mock_resp), \
+         patch.object(fetcher, "_parse_xlsx", return_value=_sample_rows()):
         result = fetcher.fetch()
 
     for rec in result["records"]:
@@ -83,8 +81,7 @@ def test_fetch_records_are_dicts():
 
 def test_fetch_http_error_returns_source_unavailable():
     fetcher = _make_fetcher()
-    with patch("dk_data.ingestion.fetchers.ema_mol.requests.get",
-               side_effect=Exception("Connection refused")):
+    with patch.object(fetcher.session, "get", side_effect=Exception("Connection refused")):
         result = fetcher.fetch()
 
     assert result["status"] in ("failed", "source_unavailable")
@@ -98,9 +95,8 @@ def test_fetch_empty_sheet_returns_failed():
     mock_resp.raise_for_status = MagicMock()
     mock_resp.content = b"fake xlsx content"
 
-    with patch("dk_data.ingestion.fetchers.ema_mol.requests.get", return_value=mock_resp), \
-         patch("dk_data.ingestion.fetchers.ema_mol.EMAMolFetcher._parse_xlsx",
-               return_value=[]):
+    with patch.object(fetcher.session, "get", return_value=mock_resp), \
+         patch.object(fetcher, "_parse_xlsx", return_value=[]):
         result = fetcher.fetch()
 
     assert result["status"] in ("failed", "source_unavailable")

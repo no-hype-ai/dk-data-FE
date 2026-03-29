@@ -426,7 +426,7 @@ SOURCES = {
         'description': 'CMS Medicare Geographic Variation PUF',
         'fetcher': CMSGeographicVariationFetcher,
         'loader': load_cms_geographic_variation_from_records,
-        'requires_file': False,
+        'requires_file': True,
         'default_days_back': None,
     },
     'cms_part_d_prescriber': {
@@ -588,7 +588,7 @@ SOURCES = {
         'description': 'National Plan and Provider Enumeration System — NPI registry (weekly incremental)',
         'fetcher': CMSNPPESFetcher,
         'loader': load_cms_nppes,
-        'requires_file': False,
+        'requires_file': True,
         'default_days_back': None,
     },
     'cms_physician_puf': {
@@ -676,7 +676,7 @@ SOURCES = {
         'description': 'Medicare home health agency utilization and payment (annual PUF)',
         'fetcher': CMSHomeHealthFetcher,
         'loader': load_cms_home_health,
-        'requires_file': False,
+        'requires_file': True,
         'default_days_back': None,
     },
     'cms_hospice_puf': {
@@ -732,7 +732,7 @@ SOURCES = {
         'description': 'Medicare imaging services utilization and payment (annual PUF)',
         'fetcher': CMSImagingPUFFetcher,
         'loader': load_cms_imaging_puf,
-        'requires_file': False,
+        'requires_file': True,
         'default_days_back': None,
     },
     'cms_mental_health_puf': {
@@ -740,7 +740,7 @@ SOURCES = {
         'description': 'Medicare mental health services utilization and payment (from Physician PUF, filtered by MH provider types)',
         'fetcher': CMSMentalHealthPUFFetcher,
         'loader': load_cms_mental_health_puf,
-        'requires_file': False,
+        'requires_file': True,
         'default_days_back': None,
     },
     'cms_opioid_puf': {

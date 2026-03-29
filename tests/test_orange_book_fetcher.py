@@ -44,8 +44,8 @@ def _mock_response(content, status_code=200):
 
 def test_fetch_returns_success_shape():
     fetcher = _make_fetcher()
-    with patch("dk_data.ingestion.fetchers.orange_book.requests.get",
-               return_value=_mock_response(_mock_products_content())):
+    with patch.object(fetcher.session, "get",
+                      return_value=_mock_response(_mock_products_content())):
         result = fetcher.fetch()
 
     assert result["status"] == "success"
@@ -55,8 +55,8 @@ def test_fetch_returns_success_shape():
 
 def test_records_have_file_type():
     fetcher = _make_fetcher()
-    with patch("dk_data.ingestion.fetchers.orange_book.requests.get",
-               return_value=_mock_response(_mock_products_content())):
+    with patch.object(fetcher.session, "get",
+                      return_value=_mock_response(_mock_products_content())):
         result = fetcher.fetch()
 
     for rec in result.get("records", []):
@@ -65,8 +65,7 @@ def test_records_have_file_type():
 
 def test_http_error_returns_failed():
     fetcher = _make_fetcher()
-    with patch("dk_data.ingestion.fetchers.orange_book.requests.get",
-               side_effect=Exception("Network error")):
+    with patch.object(fetcher.session, "get", side_effect=Exception("Network error")):
         result = fetcher.fetch()
 
     assert result["status"] in ("failed", "source_unavailable")

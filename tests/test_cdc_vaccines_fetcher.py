@@ -51,7 +51,7 @@ def test_fetch_returns_success_shape():
             return _mock_socrata_response(_SAMPLE_CVX)
         return _mock_socrata_response(_SAMPLE_MVX)
 
-    with patch("dk_data.ingestion.fetchers.cdc_vaccines.requests.get", side_effect=_side_effect):
+    with patch.object(fetcher.session, "get", side_effect=_side_effect):
         result = fetcher.fetch()
 
     assert result["status"] == "success"
@@ -67,7 +67,7 @@ def test_records_have_record_type():
             return _mock_socrata_response(_SAMPLE_CVX)
         return _mock_socrata_response(_SAMPLE_MVX)
 
-    with patch("dk_data.ingestion.fetchers.cdc_vaccines.requests.get", side_effect=_side_effect):
+    with patch.object(fetcher.session, "get", side_effect=_side_effect):
         result = fetcher.fetch()
 
     for rec in result.get("records", []):
@@ -77,8 +77,7 @@ def test_records_have_record_type():
 
 def test_http_error_returns_failed():
     fetcher = _make_fetcher()
-    with patch("dk_data.ingestion.fetchers.cdc_vaccines.requests.get",
-               side_effect=Exception("Connection refused")):
+    with patch.object(fetcher.session, "get", side_effect=Exception("Connection refused")):
         result = fetcher.fetch()
 
     assert result["status"] in ("failed", "source_unavailable")

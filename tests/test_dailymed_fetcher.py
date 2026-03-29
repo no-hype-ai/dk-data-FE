@@ -51,8 +51,7 @@ def _sample_spls(n=3):
 def test_fetch_returns_success_shape():
     fetcher = _make_fetcher()
     records = _sample_spls(5)
-    with patch("dk_data.ingestion.fetchers.dailymed.requests.get",
-               return_value=_mock_response(records, total=5)):
+    with patch.object(fetcher.session, "get", return_value=_mock_response(records, total=5)):
         result = fetcher.fetch()
 
     assert result["status"] == "success"
@@ -63,8 +62,7 @@ def test_fetch_returns_success_shape():
 
 def test_fetch_empty_returns_failed():
     fetcher = _make_fetcher()
-    with patch("dk_data.ingestion.fetchers.dailymed.requests.get",
-               return_value=_mock_response([], total=0)):
+    with patch.object(fetcher.session, "get", return_value=_mock_response([], total=0)):
         result = fetcher.fetch()
 
     assert result["status"] in ("failed", "source_unavailable")
@@ -72,8 +70,7 @@ def test_fetch_empty_returns_failed():
 
 def test_http_error_returns_failed():
     fetcher = _make_fetcher()
-    with patch("dk_data.ingestion.fetchers.dailymed.requests.get",
-               side_effect=Exception("Timeout")):
+    with patch.object(fetcher.session, "get", side_effect=Exception("Timeout")):
         result = fetcher.fetch()
 
     assert result["status"] in ("failed", "source_unavailable")

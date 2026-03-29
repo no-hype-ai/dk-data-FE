@@ -68,6 +68,11 @@ class EMAMolFetcher(BaseFetcher):
                     records = self._parse_csv(content, max_records)
 
                 logger.info("EMA: parsed %d product rows", len(records))
+
+                if not records:
+                    logger.warning("EMA: parsed 0 rows from %s — treating as source_unavailable", url)
+                    continue
+
                 result: Dict[str, Any] = {
                     "status": "success",
                     "records": records,

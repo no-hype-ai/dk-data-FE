@@ -36,7 +36,7 @@ BASE_URL = "https://www.ebi.ac.uk/europepmc/webservices/rest"
 PAGE_SIZE = 100
 
 # Hard cap per fetch run
-MAX_RECORDS = 5_000
+MAX_RECORDS = 10_000
 
 # Polite delay between pages (10 req/s limit)
 REQUEST_DELAY = 0.12
@@ -152,6 +152,9 @@ class EuropePMCFetcher(BaseFetcher):
                 data = self.fetch_json(url, params=params)
             except Exception as exc:
                 logger.warning("EuropePMC page fetch failed at cursor=%s: %s", cursor_mark, exc)
+                if cursor_mark == "*":
+                    # First page failure — propagate so fetch() returns 'failed'
+                    raise
                 break
 
             result_list = data.get("resultList", {})
