@@ -1,12 +1,14 @@
-"""MCP Tool Registry — maps tool names to definitions and adapters.
+"""Data Tool Registry — maps tool names to definitions and adapters.
 
 Feature: 015-assessment-dashboard-integration
 Task: T062
 
-All 28 MCP tools organized by tier:
-- Tier 1 (19 tools): Direct drug-name query against external APIs
-- Tier 2 (4 tools): Fetch + filter (RSS, news, trademarks)
-- Tier 3 (5 tools): Supplementary context (CMS, ACC, HRSA)
+All tools organized by tier:
+- Tier 1 (direct_query): Direct drug-name query against external APIs
+- Tier 2 (fetch_filter): Fetch + filter (RSS, news, trademarks)
+- Tier 3 (supplementary): Supplementary context (CMS, ACC, HRSA)
+
+Accessible via /api/v1/data-tools/ (registry, backfill, status).
 """
 
 from dataclasses import dataclass, field
@@ -15,7 +17,7 @@ from typing import Dict
 
 @dataclass
 class ToolDefinition:
-    """Definition of an MCP tool."""
+    """Definition of a data tool available via /api/v1/data-tools/."""
     name: str
     description: str
     tier: str  # "direct_query", "fetch_filter", "supplementary"

@@ -14,7 +14,7 @@ Caching:
 
 Freshness check: uses DataFreshnessMonitor.is_fresh() which reads meta.data_sources.
 Only sources tracked in meta.data_sources are available via this endpoint.
-Legacy MCP-managed sources (tracked in meta.ingestion_jobs) return 404.
+Sources tracked only in meta.ingestion_jobs return 404.
 """
 
 import json
@@ -210,7 +210,7 @@ async def trigger_backfill(
 
     Returns 202 Accepted if fetch is queued; 200 with skipped=True if data is fresh.
     Only sources tracked in meta.data_sources are available.
-    Returns 404 if source_name not found in meta.data_sources.
+    Returns 404 if source_name not in meta.data_sources.
     Returns 409 if a backfill is already running for this source.
     """
     source_name = request.source_name
@@ -229,7 +229,7 @@ async def trigger_backfill(
         raise HTTPException(
             status_code=404,
             detail=f"Source '{source_name}' not found in meta.data_sources. "
-                   "Legacy MCP-managed sources are not available via this endpoint."
+                   "Sources tracked only in meta.ingestion_jobs are not available via this endpoint."
         )
 
     # Check for in-progress backfill (409 Conflict)
