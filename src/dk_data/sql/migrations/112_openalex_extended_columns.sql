@@ -44,6 +44,6 @@ ALTER TABLE mol_raw.openalex_ci ADD COLUMN IF NOT EXISTS is_retracted           
 ALTER TABLE mol_raw.openalex_ci ADD COLUMN IF NOT EXISTS is_paratext                  BOOLEAN;
 
 -- Index on pmid for cross-reference joins
-CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_mol_raw_openalex_ci_pmid
+CREATE INDEX IF NOT EXISTS idx_mol_raw_openalex_ci_pmid
     ON mol_raw.openalex_ci (pmid)
     WHERE pmid IS NOT NULL;

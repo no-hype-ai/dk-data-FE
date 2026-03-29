@@ -27,6 +27,6 @@ ALTER TABLE mol_raw.drugbank ADD COLUMN IF NOT EXISTS monoisotopic_mass       TE
 ALTER TABLE mol_raw.drugbank ADD COLUMN IF NOT EXISTS unii                    TEXT;
 
 -- Index on unii for cross-reference joins
-CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_mol_raw_drugbank_unii
+CREATE INDEX IF NOT EXISTS idx_mol_raw_drugbank_unii
     ON mol_raw.drugbank (unii)
     WHERE unii IS NOT NULL;

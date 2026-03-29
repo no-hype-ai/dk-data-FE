@@ -41,6 +41,6 @@ ALTER TABLE mol_raw.drugbank ADD COLUMN IF NOT EXISTS calculated_properties  JSO
 ALTER TABLE mol_raw.drugbank ADD COLUMN IF NOT EXISTS experimental_properties JSONB;
 
 -- Index on inchi_key for identifier-mapping joins
-CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_mol_raw_drugbank_inchi_key
+CREATE INDEX IF NOT EXISTS idx_mol_raw_drugbank_inchi_key
     ON mol_raw.drugbank (inchi_key)
     WHERE inchi_key IS NOT NULL;
