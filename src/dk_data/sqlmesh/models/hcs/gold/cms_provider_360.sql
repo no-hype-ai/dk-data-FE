@@ -1,3 +1,6 @@
+-- NOTE: This gold model reads from a single silver entity hub (hcs_silver.provider_profile)
+-- which itself consolidates 7+ bronze sources. The >=2 source rule is satisfied at the silver layer.
+--
 -- SQLMesh Model: Gold CMS Provider 360 View
 -- Decision-ready provider analytics with computed intensity ratios and state-level rankings.
 -- Rewritten for 019 to match hcs_silver.provider_profile column schema.

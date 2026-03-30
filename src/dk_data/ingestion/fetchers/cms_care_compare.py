@@ -86,6 +86,7 @@ class CMSCareCompareFetcher(BaseFetcher):
             result: Dict[str, Any] = {
                 "status": "success",
                 "records": records,
+                "record_count": len(records),
                 "hash": file_hash,
             }
             self.log_fetch_result(result)

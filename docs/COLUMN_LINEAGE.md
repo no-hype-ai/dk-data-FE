@@ -232,7 +232,7 @@ No columns are dropped. Non-matching NPIs produce NULLs in source-specific colum
 
 ---
 
-### CMS Part D Prescriber PUF → hcs_silver.part_d_prescribing (NEW in feature 020)
+### CMS Part D Prescriber PUF → hcs_silver.part_d_prescribing (NEW in feature 019)
 
 **Source**: `hcs_raw.cms_part_d_prescriber` → `hcs_bronze.cms_part_d_prescriber` → `hcs_silver.part_d_prescribing`
 
@@ -265,7 +265,7 @@ Grain: `(prscrbr_npi, gnrc_name, _source_year)` — one row per prescriber × dr
 
 ---
 
-### CMS Open Payments drug slots → hcs_silver.open_payments_drug_linkage (NEW in feature 020)
+### CMS Open Payments drug slots → hcs_silver.open_payments_drug_linkage (NEW in feature 019)
 
 **Source**: `hcs_raw.cms_open_payments` → `hcs_bronze.cms_open_payments` → `hcs_silver.open_payments_drug_linkage`
 

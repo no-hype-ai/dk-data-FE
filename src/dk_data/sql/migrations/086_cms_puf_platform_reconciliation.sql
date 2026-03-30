@@ -1,12 +1,12 @@
--- Migration 085: CMS PUF & Platform Data Reconciliation
+-- Migration 086: CMS PUF & Platform Data Reconciliation
 -- Feature: 019-cms-puf-platform-reconciliation
 -- Date: 2026-03-27
 --
 -- Delta-only against main-branch schema as of migration 084.
 -- All object creation uses IF NOT EXISTS for idempotency.
--- Run: doppler run -- python -m dk_data.scripts.run_migration src/dk_data/sql/migrations/085_cms_puf_platform_reconciliation.sql
+-- Run: doppler run -- python -m dk_data.scripts.run_migration src/dk_data/sql/migrations/086_cms_puf_platform_reconciliation.sql
 --
--- ROLLBACK: see 085_rollback.sql
+-- ROLLBACK: see 086_rollback.sql
 
 BEGIN;
 

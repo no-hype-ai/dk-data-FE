@@ -42,7 +42,7 @@ spec:
             - name: ghcr-credentials
           containers:
             - name: fetch-tdc-admet
-              image: ghcr.io/data-kinetic/dk-data-fe/job-trigger:main-5f46ed1
+              image: ghcr.io/data-kinetic/dk-data-fe/job-trigger:main
               command: ["python", "-m", "dk_data.ingestion.main"]
               args: ["tdc_admet"]
               env:

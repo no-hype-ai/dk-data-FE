@@ -1,3 +1,8 @@
+-- ⚠️ DEPLOYMENT WARNING: This migration drops and recreates tables from migration 086.
+-- These must be applied in the same deployment batch as 086 — do NOT run 086 with
+-- data ingestion enabled before applying this migration, or data will be lost.
+-- See: PR #149 FINDINGS.md items #1 and #5
+
 -- Migration 092: HCS PUF Raw Table Schema Rebuild
 -- Feature: 019-cms-puf-platform-reconciliation
 -- Date: 2026-03-27

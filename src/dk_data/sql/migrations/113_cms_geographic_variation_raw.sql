@@ -1,4 +1,4 @@
--- Migration 085: CMS Geographic Variation raw table
+-- Migration 113: CMS Geographic Variation raw table
 -- Purpose: Store CMS Medicare Geographic Variation Public Use File (GV PUF) data
 -- Source: https://www.cms.gov/Research-Statistics-Data-and-Systems/Statistics-Trends-and-Reports/Medicare-Geographic-Variation
 -- Feature: 019-cms-puf-platform-reconciliation
@@ -78,6 +78,6 @@ END $$;
 
 DO $$
 BEGIN
-    RAISE NOTICE 'Migration 085 complete: raw.cms_geographic_variation created.';
+    RAISE NOTICE 'Migration 113 complete: raw.cms_geographic_variation created.';
 END
 $$;

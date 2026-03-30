@@ -30,6 +30,16 @@ External APIs / Files
 
 Infrastructure schemas (no prefix): `meta`, `staging`, `mart`, `scoring`, `xenon`.
 
+### Agent Schemas (AI-Generated Data Isolation)
+
+| Schema | Purpose |
+|--------|---------|
+| `mol_agents` | Staging area for AI agent outputs (molecule domain) |
+| `hcs_agents` | Staging area for AI agent outputs (healthcare domain) |
+| `agents` | Shared agent infrastructure tables |
+
+Agent schemas isolate LLM-generated data from the deterministic medallion pipeline. Agents write to staging tables (e.g., `mol_agents.publication_evidence_staging`), and SQLMesh promotes verified records to the silver layer via `INCREMENTAL_BY_UNIQUE_KEY` with a confidence threshold (≥0.40). This two-phase pattern prevents hallucination contamination of the curated silver/gold layers.
+
 ## Schema Redirect (SQLMesh config.yaml)
 
 SQLMesh model files use bare logical names (`silver.molecules`, `bronze.chembl_molecules`). The `config.yaml` `physical_schema_mapping` redirects them to domain-prefixed physical schemas at deploy time. **Model files do not need renaming.**

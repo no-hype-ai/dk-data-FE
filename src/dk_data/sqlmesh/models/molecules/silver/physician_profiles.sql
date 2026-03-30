@@ -11,6 +11,10 @@
 --
 -- Downstream: xenon assessment pipeline for KOL/HCP profiling (path: /physician_profiles).
 -- Feature: 019-cms-puf-platform-reconciliation (HCP entity consolidation)
+--
+-- CROSS-DOMAIN NOTE: Intentionally reads from hcs_silver.provider_profile to merge
+-- HCS provider data with molecule-domain NPI records. This is an approved exception
+-- to the "silver reads only from bronze" rule.
 
 MODEL (
     name mol_silver.physician_profiles,

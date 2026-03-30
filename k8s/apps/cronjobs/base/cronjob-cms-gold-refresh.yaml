@@ -6,9 +6,10 @@ kind: CronJob
 metadata:
   name: cms-gold-refresh
   labels:
-    app: dk-data-ingestion
-    component: gold-refresh
-    feature: "019-cms-puf"
+    app: cms-gold-refresh
+    app.kubernetes.io/name: cms-gold-refresh
+    app.kubernetes.io/component: gold-refresh
+    app.kubernetes.io/part-of: dk-data
 spec:
   schedule: "0 5 * * *"
   concurrencyPolicy: Forbid
@@ -33,6 +34,8 @@ spec:
             runAsNonRoot: true
             runAsUser: 1000
             fsGroup: 1000
+            seccompProfile:
+              type: RuntimeDefault
           containers:
             - name: cms-gold-refresh
               image: ghcr.io/data-kinetic/dk-data-fe/job-trigger:main
@@ -64,3 +67,9 @@ spec:
                 limits:
                   memory: "1Gi"
                   cpu: "500m"
+              volumeMounts:
+                - name: tmp
+                  mountPath: /tmp
+          volumes:
+            - name: tmp
+              emptyDir: {}

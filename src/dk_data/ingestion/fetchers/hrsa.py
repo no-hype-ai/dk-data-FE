@@ -61,6 +61,9 @@ class HRSAFetcher(BaseFetcher):
             logger.exception(f"Failed to fetch HRSA data: {e}")
             result = {
                 'status': 'failed',
+                'records': [],
+                'record_count': 0,
+                'hash': None,
                 'error': str(e),
             }
             self.log_fetch_result(result)
@@ -201,6 +204,8 @@ class HRSAFetcher(BaseFetcher):
                 "status": "failed",
                 "error": "No records fetched from HRSA bulk CSV downloads",
                 "records": [],
+                "record_count": 0,
+                "hash": None,
             }
 
     def fetch_by_address(self, address: str, city: str, state: str, zip_code: str) -> Dict[str, Any]:

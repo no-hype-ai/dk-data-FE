@@ -42,7 +42,7 @@ spec:
             - name: ghcr-credentials
           containers:
             - name: mol-fetch-monthly
-              image: ghcr.io/data-kinetic/dk-data-fe/job-trigger:main-5f46ed1
+              image: ghcr.io/data-kinetic/dk-data-fe/job-trigger:main
               command: ["python", "-m", "dk_data.ingestion.fetch_molecules"]
               args: ["--source", "bindingdb,sider,tdc_admet,rxnorm,dailymed,fda_drugs,kegg_drug,ttd,pharmgkb,imgt,cdc_vaccines"]
               env:

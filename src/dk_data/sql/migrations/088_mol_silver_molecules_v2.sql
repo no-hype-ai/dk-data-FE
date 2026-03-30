@@ -46,7 +46,8 @@ WHERE molecule_id IS NULL
   AND inchi_key IS NOT NULL;
 
 -- ─── mol_silver.molecules (post-redirect physical target) ───
--- These are applied after the config redirect takes effect; safe to run idempotently.
+-- Duplicate of above block for idempotency: handles both pre-redirect (mol_silver.molecules)
+-- and post-redirect (same table, different column state) scenarios.
 
 ALTER TABLE IF EXISTS mol_silver.molecules
     ADD COLUMN IF NOT EXISTS molecule_id         UUID,
@@ -95,6 +96,8 @@ ALTER TABLE IF EXISTS mol_silver.clinical_trials
     ADD COLUMN IF NOT EXISTS fda_regulated_drug   BOOLEAN,
     ADD COLUMN IF NOT EXISTS has_results          BOOLEAN;
 
+-- Duplicate of above block for idempotency: handles both pre-redirect (mol_silver.clinical_trials)
+-- and post-redirect (same table, different column state) scenarios.
 ALTER TABLE IF EXISTS mol_silver.clinical_trials
     ADD COLUMN IF NOT EXISTS molecule_id          UUID,
     ADD COLUMN IF NOT EXISTS queried_drug_name    TEXT,

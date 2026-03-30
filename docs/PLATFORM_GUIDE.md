@@ -48,6 +48,8 @@ All schemas carry a domain prefix. There are no bare `raw`, `bronze`, `silver`, 
 
 Infrastructure schemas: `meta` (data catalog, job tracking), `xenon` (proprietary scoring), `staging`, `mart` (legacy TAVR).
 
+Agent schemas: `mol_agents` (AI agent outputs, molecule domain), `hcs_agents` (AI agent outputs, healthcare domain), `agents` (shared agent infrastructure).
+
 ---
 
 ## 2. Quick Start (Local Development)

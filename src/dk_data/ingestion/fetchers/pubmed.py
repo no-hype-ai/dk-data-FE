@@ -65,15 +65,15 @@ class PubMedFetcher(BaseFetcher):
             query: Custom PubMed search query. Defaults to pharma terms.
             days_back: Number of days to look back. Defaults to 1.
             retmax: Maximum records per E-utilities batch. Defaults to 500.
-            max_results: Hard cap on total results. Defaults to 10000.
+            max_records: Hard cap on total results. Defaults to 10000.
 
         Returns:
-            Dict with keys: status, records, hash, error (on failure).
+            Dict with keys: status, records, record_count, hash, error (on failure).
         """
         query: str = kwargs.get("query", self.DEFAULT_SEARCH_TERMS)
         days_back: int = kwargs.get("days_back", 1)
         retmax: int = min(kwargs.get("retmax", 500), self.MAX_BATCH_SIZE)
-        max_results: int = kwargs.get("max_results", self.MAX_BATCH_SIZE)
+        max_results: int = kwargs.get("max_records", kwargs.get("max_results", self.MAX_BATCH_SIZE))
 
         try:
             # Step 1: esearch to get PMIDs
@@ -83,6 +83,7 @@ class PubMedFetcher(BaseFetcher):
                 result: Dict[str, Any] = {
                     "status": "success",
                     "records": [],
+                    "record_count": 0,
                     "hash": None,
                     "message": "No articles found for the given query/date range",
                 }
@@ -102,6 +103,7 @@ class PubMedFetcher(BaseFetcher):
             result = {
                 "status": "success",
                 "records": records,
+                "record_count": len(records),
                 "hash": content_hash,
             }
             self.log_fetch_result({**result, "records": len(records)})

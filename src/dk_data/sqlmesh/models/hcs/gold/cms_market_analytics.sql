@@ -1,3 +1,6 @@
+-- NOTE: This gold model reads from a single silver entity hub (hcs_silver.geographic_health)
+-- which itself consolidates 7+ bronze sources. The >=2 source rule is satisfied at the silver layer.
+--
 -- SQLMesh Model: Gold CMS Market Analytics
 -- Decision-ready geographic market analytics with normalized cost and burden indices.
 -- Rewritten for 019 to match hcs_silver.geographic_health column schema.

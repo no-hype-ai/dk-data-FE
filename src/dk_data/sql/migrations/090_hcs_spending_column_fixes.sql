@@ -143,9 +143,13 @@ BEGIN
 END;
 $$;
 
-ALTER TABLE hcs_raw.cms_medicaid_drug_spending
-    ADD CONSTRAINT cms_medicaid_drug_spending_uniq
-    UNIQUE (_source_hash, gnrc_name, util_type, _source_year);
+DO $$ BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'cms_medicaid_drug_spending_uniq') THEN
+    ALTER TABLE hcs_raw.cms_medicaid_drug_spending
+        ADD CONSTRAINT cms_medicaid_drug_spending_uniq
+        UNIQUE (_source_hash, gnrc_name, util_type, _source_year);
+  END IF;
+END $$;
 
 COMMENT ON TABLE hcs_raw.cms_medicaid_drug_spending IS
     'CMS Medicaid Drug Spending by Drug and State PUF. '

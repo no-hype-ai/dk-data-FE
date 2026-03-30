@@ -1,4 +1,4 @@
--- ROLLBACK: Migration 114 — CMS PUF & Platform Data Reconciliation
+-- ROLLBACK: Migration 086 — CMS PUF & Platform Data Reconciliation
 -- Feature: 019-cms-puf-platform-reconciliation
 -- Date: 2026-03-27
 --
@@ -15,7 +15,7 @@
 --   - Stop all CMS PUF CronJobs and agent CronJobs before running this
 --   - Ensure no active SQLMesh runs are in progress
 --
--- Run: doppler run -- psql $DATABASE_URL -f src/dk_data/sql/migrations/114_rollback.sql
+-- Run: doppler run -- psql $DATABASE_URL -f src/dk_data/sql/migrations/086_rollback.sql
 
 BEGIN;
 
@@ -41,36 +41,13 @@ END
 $$;
 
 -- ============================================================================
--- 2. DROP HCS AGENT TABLES (if 086 ran → hcs_agents; if only 085 → hcs_silver)
+-- 2. DROP MOL_SILVER NEW TABLES
 -- ============================================================================
 
-DROP TABLE IF EXISTS hcs_agents.service_lines CASCADE;
-DROP TABLE IF EXISTS hcs_agents.idn_hierarchy CASCADE;
-DROP TABLE IF EXISTS hcs_agents.referral_network CASCADE;
-DROP TABLE IF EXISTS hcs_agents.verified_contacts CASCADE;
-DROP TABLE IF EXISTS hcs_agents.staffing_decomposition CASCADE;
-DROP TABLE IF EXISTS hcs_agents.equipment_inventory CASCADE;
--- Fallback: if 086 has not run yet, tables are still in hcs_silver
-DROP TABLE IF EXISTS hcs_silver.service_lines CASCADE;
-DROP TABLE IF EXISTS hcs_silver.idn_hierarchy CASCADE;
-DROP TABLE IF EXISTS hcs_silver.referral_network CASCADE;
-DROP TABLE IF EXISTS hcs_silver.verified_contacts CASCADE;
-DROP TABLE IF EXISTS hcs_silver.staffing_decomposition CASCADE;
-DROP TABLE IF EXISTS hcs_silver.equipment_inventory CASCADE;
-
--- ============================================================================
--- 3. DROP MOL/AGENT NEW TABLES
--- ============================================================================
-
--- publication_evidence staging first (staging → live dependency)
--- If 086 ran → mol_agents; if only 085 → mol_silver
-DROP TABLE IF EXISTS mol_agents.publication_evidence_staging CASCADE;
 DROP TABLE IF EXISTS mol_silver.publication_evidence_staging CASCADE;
 DROP TABLE IF EXISTS mol_silver.publication_evidence CASCADE;
 DROP TABLE IF EXISTS mol_silver.physician_payments CASCADE;
 DROP TABLE IF EXISTS mol_silver.research_grants CASCADE;
--- quarantine: if 086 ran → agents; if only 085 → mol_silver
-DROP TABLE IF EXISTS agents.agent_quarantine CASCADE;
 DROP TABLE IF EXISTS mol_silver.agent_quarantine CASCADE;
 DROP TABLE IF EXISTS mol_silver.drug_spending CASCADE;
 
@@ -162,7 +139,7 @@ COMMIT;
 
 DO $$
 BEGIN
-    RAISE NOTICE 'Migration 114 rollback complete.';
+    RAISE NOTICE 'Migration 086 rollback complete.';
     RAISE NOTICE 'Dropped: hcs_raw, hcs_bronze, hcs_silver, hcs_gold schemas';
     RAISE NOTICE 'Dropped: mol_silver.publication_evidence, publication_evidence_staging';
     RAISE NOTICE 'Dropped: mol_silver.physician_payments, research_grants, agent_quarantine';
