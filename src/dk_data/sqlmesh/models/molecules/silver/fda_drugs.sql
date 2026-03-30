@@ -33,6 +33,5 @@ SELECT
     CURRENT_TIMESTAMP                   AS _silver_updated_at
 FROM mol_bronze.fda_drugs AS b
 LEFT JOIN mol_silver.molecules AS m
-    ON LOWER(TRIM(b.generic_name)) = LOWER(TRIM(m.inn_name))
-    OR LOWER(TRIM(b.generic_name)) = LOWER(TRIM(m.preferred_name))
+    ON LOWER(TRIM(b.generic_name)) = LOWER(TRIM(m.canonical_name))
 WHERE b.application_number IS NOT NULL

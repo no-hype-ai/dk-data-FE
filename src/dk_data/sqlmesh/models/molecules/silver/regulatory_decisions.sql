@@ -97,11 +97,21 @@ SELECT DISTINCT ON (agency, drug_name, indication, decision_date)
     decision_date,
     therapeutic_area,
     recommendation_details,
+    -- Tier 1: exact alias match on active_substance (INN)
+    -- Tier 2: exact alias match on drug_name (trade/generic fallback)
+    COALESCE(
+        (SELECT ma.molecule_id FROM mol_silver.molecule_aliases ma
+         WHERE LOWER(REGEXP_REPLACE(c.active_substance, '[^a-zA-Z0-9]', '', 'g')) = ma.alias_name_normalized
+         LIMIT 1),
+        (SELECT ma.molecule_id FROM mol_silver.molecule_aliases ma
+         WHERE LOWER(REGEXP_REPLACE(c.drug_name, '[^a-zA-Z0-9]', '', 'g')) = ma.alias_name_normalized
+         LIMIT 1)
+    )                           AS molecule_id,
     source,
     source_updated_at,
     NOW()                       AS created_at,
     NOW()                       AS updated_at
-FROM combined
+FROM combined c
 ORDER BY
     agency,
     drug_name,
