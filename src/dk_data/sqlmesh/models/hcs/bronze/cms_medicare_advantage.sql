@@ -8,16 +8,18 @@
 --   enrollment (INTEGER), avg_age (NUMERIC), pct_female (NUMERIC),
 --   avg_risk_score (NUMERIC), ma_participation_rate (NUMERIC), star_rating (NUMERIC)
 
+-- NOTE: UUID 8e989bc0 is geographic-level MA enrollment — contract_id/plan_id/segment_id
+-- are NULL. Grain uses the same columns as the source loader's conflict key.
 MODEL (
     name hcs_bronze.cms_medicare_advantage,
     kind INCREMENTAL_BY_UNIQUE_KEY (
-        unique_key (contract_id, plan_id, fips_cd, _source_year)
+        unique_key (_source_hash, enrollment_data_period, fips_cd)
     ),
     cron '@monthly',
     audits (
         not_null(columns := (_source_year))
     ),
-    grain (contract_id, plan_id, fips_cd, _source_year)
+    grain (_source_hash, enrollment_data_period, fips_cd)
 );
 
 SELECT

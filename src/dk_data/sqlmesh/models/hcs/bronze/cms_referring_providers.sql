@@ -3,16 +3,18 @@
 -- Raw CMS field names preserved: Rndrng_NPI → rndrng_npi, Rfrd_NPI → rfrd_npi, etc.
 -- Feature: 019-cms-puf-platform-reconciliation
 
+-- NOTE: UUID c99b5865 is PECOS eligibility — rfrd_npi is always NULL (single-NPI list).
+-- Grain uses the same columns as the source loader's conflict key.
 MODEL (
     name hcs_bronze.cms_referring_providers,
     kind INCREMENTAL_BY_UNIQUE_KEY (
-        unique_key (rndrng_npi, rfrd_npi, _source_year)
+        unique_key (rndrng_npi, _source_year)
     ),
     cron '@monthly',
     audits (
         not_null(columns := (_source_year))
     ),
-    grain (rndrng_npi, rfrd_npi, _source_year)
+    grain (rndrng_npi, _source_year)
 );
 
 SELECT
