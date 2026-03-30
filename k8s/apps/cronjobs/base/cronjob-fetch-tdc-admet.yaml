@@ -14,6 +14,7 @@ metadata:
 spec:
   schedule: "0 9 1 * *"  # 1st of month, 9 AM UTC (staggered 1h after pharmgkb)
   concurrencyPolicy: Forbid
+  startingDeadlineSeconds: 3600
   successfulJobsHistoryLimit: 3
   failedJobsHistoryLimit: 3
   jobTemplate:

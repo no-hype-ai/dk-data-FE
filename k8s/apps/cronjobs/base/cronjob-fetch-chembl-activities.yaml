@@ -9,6 +9,7 @@ metadata:
 spec:
   schedule: "0 3 * * 1"  # Weekly — Mondays at 3AM UTC
   concurrencyPolicy: Forbid
+  startingDeadlineSeconds: 3600
   successfulJobsHistoryLimit: 3
   failedJobsHistoryLimit: 3
   jobTemplate:

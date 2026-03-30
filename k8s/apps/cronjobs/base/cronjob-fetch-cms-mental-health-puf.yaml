@@ -12,6 +12,7 @@ metadata:
 spec:
   schedule: "0 5 15 1,4,7,10 *"  # Quarterly on 15th of Jan/Apr/Jul/Oct 5:00 AM UTC — Physician PUF (mental health subset) released quarterly; staggered 14 days after imaging run
   concurrencyPolicy: Forbid
+  startingDeadlineSeconds: 3600
   successfulJobsHistoryLimit: 3
   failedJobsHistoryLimit: 3
   jobTemplate:

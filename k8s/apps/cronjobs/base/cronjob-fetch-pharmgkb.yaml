@@ -13,6 +13,7 @@ metadata:
 spec:
   schedule: "0 8 1 * *"  # 1st of month, 8 AM UTC (staggered 1h after who_inn)
   concurrencyPolicy: Forbid
+  startingDeadlineSeconds: 3600
   successfulJobsHistoryLimit: 3
   failedJobsHistoryLimit: 3
   jobTemplate:

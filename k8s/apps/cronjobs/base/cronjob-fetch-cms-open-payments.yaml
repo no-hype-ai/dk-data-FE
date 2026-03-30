@@ -12,6 +12,7 @@ metadata:
 spec:
   schedule: "0 6 1 6 *"  # Annually on June 1st 6:00 AM UTC — CMS Open Payments publishes once per year (general payments released ~June)
   concurrencyPolicy: Forbid
+  startingDeadlineSeconds: 3600
   successfulJobsHistoryLimit: 3
   failedJobsHistoryLimit: 3
   jobTemplate:

@@ -12,6 +12,7 @@ metadata:
 spec:
   schedule: "0 6 1 10 *"  # Annually on October 1st 6:00 AM UTC — Part B Lab Services PUF released annually (typically Q4)
   concurrencyPolicy: Forbid
+  startingDeadlineSeconds: 3600
   successfulJobsHistoryLimit: 3
   failedJobsHistoryLimit: 3
   jobTemplate:

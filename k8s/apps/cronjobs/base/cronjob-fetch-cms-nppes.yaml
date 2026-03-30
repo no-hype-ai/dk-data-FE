@@ -12,6 +12,7 @@ metadata:
 spec:
   schedule: "0 3 * * 1"  # Weekly on Monday 3:00 AM UTC — matches CMS weekly incremental release cadence
   concurrencyPolicy: Forbid
+  startingDeadlineSeconds: 3600
   successfulJobsHistoryLimit: 3
   failedJobsHistoryLimit: 3
   jobTemplate:

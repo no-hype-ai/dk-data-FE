@@ -12,6 +12,7 @@ metadata:
 spec:
   schedule: "0 4 * * 0"  # Sunday 4:00 UTC (DailyMed updates weekly)
   concurrencyPolicy: Forbid
+  startingDeadlineSeconds: 3600
   successfulJobsHistoryLimit: 3
   failedJobsHistoryLimit: 3
   jobTemplate:

@@ -16,6 +16,7 @@ spec:
   schedule: "0 8 1 * *"  # 1st of month, 8 AM UTC
   suspend: true  # All sources migrated to individual main.py CronJobs
   concurrencyPolicy: Forbid
+  startingDeadlineSeconds: 3600
   successfulJobsHistoryLimit: 3
   failedJobsHistoryLimit: 3
   jobTemplate:

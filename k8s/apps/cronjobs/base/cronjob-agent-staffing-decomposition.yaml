@@ -12,6 +12,7 @@ metadata:
 spec:
   schedule: "0 7 1-7 * 1"  # First Monday of month 7:00 AM UTC
   concurrencyPolicy: Forbid
+  startingDeadlineSeconds: 3600
   successfulJobsHistoryLimit: 3
   failedJobsHistoryLimit: 3
   jobTemplate:

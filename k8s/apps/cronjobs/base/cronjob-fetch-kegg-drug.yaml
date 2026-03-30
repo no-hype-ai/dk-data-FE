@@ -14,6 +14,7 @@ metadata:
 spec:
   schedule: "0 20 * * 0"  # Weekly Sunday, 8 PM UTC (KEGG updates weekly)
   concurrencyPolicy: Forbid
+  startingDeadlineSeconds: 3600
   successfulJobsHistoryLimit: 3
   failedJobsHistoryLimit: 3
   jobTemplate:

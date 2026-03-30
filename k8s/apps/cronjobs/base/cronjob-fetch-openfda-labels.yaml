@@ -12,6 +12,7 @@ metadata:
 spec:
   schedule: "0 4 * * 0"  # Sunday 04:00 UTC (weekly; labels change infrequently)
   concurrencyPolicy: Forbid
+  startingDeadlineSeconds: 3600
   successfulJobsHistoryLimit: 3
   failedJobsHistoryLimit: 3
   jobTemplate:

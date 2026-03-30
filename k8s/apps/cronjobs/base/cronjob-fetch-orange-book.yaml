@@ -12,6 +12,7 @@ metadata:
 spec:
   schedule: "0 10 7 * *"  # 7th of each month at 10:00 UTC (FDA updates weekly)
   concurrencyPolicy: Forbid
+  startingDeadlineSeconds: 3600
   successfulJobsHistoryLimit: 3
   failedJobsHistoryLimit: 3
   jobTemplate:

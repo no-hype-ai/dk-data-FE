@@ -52,7 +52,7 @@ cms_cost_reports AS (
 
 acc_tvc AS (
   SELECT
-    facility_id::TEXT                          AS provider_id,
+    (facility_name || '_' || state)            AS provider_id,
     facility_name,
     city,
     state,

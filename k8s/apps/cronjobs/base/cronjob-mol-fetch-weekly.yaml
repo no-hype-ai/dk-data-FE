@@ -16,6 +16,7 @@ spec:
   schedule: "0 3 * * 0"  # Sunday 3 AM UTC
   suspend: true  # P1 is external-trigger only — use API endpoint to invoke
   concurrencyPolicy: Forbid
+  startingDeadlineSeconds: 3600
   successfulJobsHistoryLimit: 3
   failedJobsHistoryLimit: 3
   jobTemplate:
