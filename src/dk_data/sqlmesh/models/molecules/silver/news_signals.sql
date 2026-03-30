@@ -67,11 +67,10 @@ WITH combined AS (
         feed_source::TEXT                                         AS source_name,
         pub_date::DATE                                            AS pub_date,
         link::TEXT                                                AS source_url,
-        CASE
-            WHEN categories IS NOT NULL AND array_length(categories, 1) > 0
-                THEN array_to_string(categories, ', ')
-            ELSE NULL
-        END                                                       AS drug_mentions,
+        -- journal_rss `categories` are RSS topic tags (e.g. "Oncology", "Clinical Trial"),
+        -- NOT drug names. Setting to NULL prevents false matches in advocacy_sentiment
+        -- when the gold model joins drug_mentions against mol_silver.molecules.canonical_name.
+        NULL::TEXT                                                AS drug_mentions,
         CASE
             WHEN title ILIKE '%approval%' OR title ILIKE '%approved%' THEN 'regulatory'
             WHEN title ILIKE '%trial%'    OR title ILIKE '%study%'    THEN 'clinical'
