@@ -62,7 +62,7 @@ def test_get_latest_url():
     fetcher = _make_fetcher()
     url = fetcher.get_latest_url()
     assert "api.fda.gov/drug/drugsfda.json" in url
-    assert "REMS" in url
+    assert "submission_class_code" in url and "REMS" in url
 
 
 def test_fetch_returns_success_shape():

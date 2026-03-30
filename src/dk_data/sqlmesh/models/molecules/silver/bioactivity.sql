@@ -39,11 +39,11 @@ SELECT
         LIMIT 1
     )                                                               AS molecule_id,
 
-    -- target_id: resolve via mol_silver.targets (target_chembl_id lookup)
+    -- target_id: resolve via mol_silver.targets (chembl_target_id lookup)
     (
         SELECT t.id
         FROM mol_silver.targets t
-        WHERE t.chembl_id = b.target_chembl_id
+        WHERE t.chembl_target_id = b.target_chembl_id
         LIMIT 1
     )                                                               AS target_id,
 

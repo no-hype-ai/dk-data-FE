@@ -1,12 +1,12 @@
 """FDA REMS fetcher — Risk Evaluation and Mitigation Strategy programs.
 
 Queries OpenFDA drug/drugsfda endpoint for applications that have REMS
-submissions. REMS submissions have submission_type == 'REMS' in their
-submissions array.
+submissions. REMS submissions have submission_class_code == 'REMS' in their
+submissions array (not submission_type — that field uses values like ORIG/SUPPL).
 
 API: https://api.fda.gov/drug/drugsfda.json
   Public, no authentication, rate limit ~240 requests/minute.
-  Search: submissions.submission_type:"REMS"
+  Search: submissions.submission_class_code:REMS  (~989 results as of 2026-03)
   Pagination: ?limit=100&skip=N (max skip: 25000)
 
 Stores one JSONB record per NDA/ANDA/BLA application in mol_raw.fda_rems
@@ -27,7 +27,7 @@ _API_URL = "https://api.fda.gov/drug/drugsfda.json"
 _PAGE_SIZE = 100
 _REQUEST_DELAY = 0.3
 _MAX_SKIP = 25000
-_REMS_SEARCH = 'submissions.submission_type:"REMS"'
+_REMS_SEARCH = 'submissions.submission_class_code:REMS'
 
 
 class FDARemsFetcher(BaseFetcher):

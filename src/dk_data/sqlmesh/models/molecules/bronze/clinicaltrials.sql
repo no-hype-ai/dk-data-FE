@@ -124,5 +124,11 @@ SELECT
     FALSE AS processed_to_silver,
     NOW() AS created_at
 
-FROM studies
-WHERE study->'protocolSection'->'identificationModule'->>'nctId' IS NOT NULL;
+FROM (
+    SELECT DISTINCT ON (study->'protocolSection'->'identificationModule'->>'nctId')
+        *
+    FROM studies
+    WHERE study->'protocolSection'->'identificationModule'->>'nctId' IS NOT NULL
+    ORDER BY study->'protocolSection'->'identificationModule'->>'nctId',
+             request_timestamp DESC
+) deduped;
