@@ -1,9 +1,9 @@
--- mart.dim_hospital - Hospital dimension with SCD Type 2
+-- hcs_gold.dim_hospital - Hospital dimension with SCD Type 2
 -- Source: staging.hospitals, staging.certifications
 -- Model type: SCD Type 2
 
 MODEL (
-    name mart.dim_hospital,
+    name hcs_gold.dim_hospital,
     kind FULL,
     cron '@daily',
     description 'Hospital dimension table'

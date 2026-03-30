@@ -3,15 +3,15 @@
 -- Part of DK Molecule Data Platform (012-dk-data-platform)
 
 MODEL (
-    name gold.company_pipeline,
+    name mol_gold.company_pipeline,
     kind FULL,
     cron '@daily',
     grain (company, molecule_id)
 );
 
 SELECT
-    ct.sponsor AS company,
-    m.id AS molecule_id,
+    ct.lead_sponsor AS company,
+    m.molecule_id AS molecule_id,
     m.inchi_key,
     m.canonical_name,
     m.development_status,
@@ -29,7 +29,7 @@ SELECT
 
     -- Trial status (most advanced)
     MAX(
-        CASE ct.status
+        CASE ct.overall_status
             WHEN 'Completed' THEN 5
             WHEN 'Active, not recruiting' THEN 4
             WHEN 'Recruiting' THEN 3
@@ -39,8 +39,8 @@ SELECT
         END
     ) AS status_rank,
     (
-        ARRAY_AGG(ct.status ORDER BY
-            CASE ct.status
+        ARRAY_AGG(ct.overall_status ORDER BY
+            CASE ct.overall_status
                 WHEN 'Completed' THEN 5
                 WHEN 'Active, not recruiting' THEN 4
                 WHEN 'Recruiting' THEN 3
@@ -56,9 +56,9 @@ SELECT
         SELECT jsonb_agg(DISTINCT indication)
         FROM (
             SELECT jsonb_array_elements_text(COALESCE(ct2.conditions, '[]'::jsonb)) AS indication
-            FROM silver.clinical_trials ct2
-            WHERE ct2.molecule_id = m.id
-              AND ct2.sponsor = ct.sponsor
+            FROM mol_silver.clinical_trials ct2
+            WHERE ct2.molecule_id = m.molecule_id
+              AND ct2.lead_sponsor = ct.lead_sponsor
         ) i
         WHERE indication IS NOT NULL
     ) AS indications,
@@ -74,10 +74,10 @@ SELECT
     -- Mechanism of action (from interventions data)
     (
         SELECT string_agg(DISTINCT intervention->>'interventionType', ', ')
-        FROM silver.clinical_trials ct2,
+        FROM mol_silver.clinical_trials ct2,
              jsonb_array_elements(ct2.interventions) AS intervention
-        WHERE ct2.molecule_id = m.id
-          AND ct2.sponsor = ct.sponsor
+        WHERE ct2.molecule_id = m.molecule_id
+          AND ct2.lead_sponsor = ct.lead_sponsor
           AND intervention->>'interventionType' IS NOT NULL
     ) AS mechanism_of_action,
 
@@ -86,10 +86,10 @@ SELECT
 
     NOW() AS computed_at
 
-FROM silver.clinical_trials ct
-JOIN silver.molecules m ON ct.molecule_id = m.id
+FROM mol_silver.clinical_trials ct
+JOIN mol_silver.molecules m ON ct.molecule_id = m.molecule_id
 WHERE m.needs_review = FALSE
-  AND ct.sponsor IS NOT NULL
-  AND ct.sponsor != ''
-GROUP BY ct.sponsor, m.id, m.inchi_key, m.canonical_name, m.development_status
-ORDER BY ct.sponsor, trial_count DESC
+  AND ct.lead_sponsor IS NOT NULL
+  AND ct.lead_sponsor != ''
+GROUP BY ct.lead_sponsor, m.molecule_id, m.inchi_key, m.canonical_name, m.development_status
+ORDER BY ct.lead_sponsor, trial_count DESC

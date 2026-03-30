@@ -3,7 +3,7 @@
 -- Part of: 012-dk-data-platform
 
 MODEL (
-    name gold.safety_signals,
+    name mol_gold.safety_signals,
     kind INCREMENTAL_BY_UNIQUE_KEY (
         unique_key molecule_id
     ),
@@ -16,10 +16,10 @@ MODEL (
 
 WITH molecule_base AS (
     SELECT
-        m.id AS molecule_id,
+        m.molecule_id,
         m.inchi_key,
         m.canonical_name
-    FROM silver.molecules m
+    FROM mol_silver.molecules m
     WHERE m.needs_review = FALSE
 ),
 
@@ -33,7 +33,7 @@ faers_summary AS (
         COALESCE(SUM(hospitalization_count), 0) AS hospitalization_reports,
         MIN(first_report_date) AS first_report_date,
         MAX(last_report_date) AS last_report_date
-    FROM silver.adverse_events
+    FROM mol_silver.adverse_events
     WHERE molecule_id IS NOT NULL
     GROUP BY molecule_id
 ),
@@ -66,7 +66,7 @@ top_adverse_events AS (
             prr,
             ror,
             ROW_NUMBER() OVER (PARTITION BY molecule_id ORDER BY report_count DESC) AS rn
-        FROM silver.adverse_events
+        FROM mol_silver.adverse_events
     ) ranked
     GROUP BY molecule_id
 ),
@@ -88,7 +88,7 @@ soc_breakdown AS (
             meddra_soc,
             SUM(report_count) AS soc_count,
             SUM(serious_count) AS soc_serious
-        FROM silver.adverse_events
+        FROM mol_silver.adverse_events
         GROUP BY molecule_id, meddra_soc
     ) soc_agg
     GROUP BY molecule_id
@@ -100,7 +100,7 @@ boxed_warnings AS (
         molecule_id,
         boxed_warning,
         effective_date AS warning_effective_date
-    FROM silver.drug_labels
+    FROM mol_silver.drug_labels
     WHERE molecule_id IS NOT NULL
       AND boxed_warning IS NOT NULL
       AND boxed_warning != ''

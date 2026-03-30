@@ -115,7 +115,7 @@ class FuzzyMatcher:
                         NULL::VARCHAR AS matched_alias,
                         similarity(lower(m.canonical_name), $1) AS sim,
                         'canonical_name' AS match_type
-                    FROM silver.molecules m
+                    FROM mol_silver.molecules m
                     WHERE m.needs_review = FALSE
                       AND similarity(lower(m.canonical_name), $1) > $2
 
@@ -129,8 +129,8 @@ class FuzzyMatcher:
                         ma.alias_name AS matched_alias,
                         similarity(ma.alias_name_normalized, $1) AS sim,
                         'alias' AS match_type
-                    FROM silver.molecules m
-                    JOIN silver.molecule_aliases ma ON m.id = ma.molecule_id
+                    FROM mol_silver.molecules m
+                    JOIN mol_silver.molecule_aliases ma ON m.id = ma.molecule_id
                     WHERE m.needs_review = FALSE
                       AND similarity(ma.alias_name_normalized, $1) > $2
                 )
@@ -183,7 +183,7 @@ class FuzzyMatcher:
                     m.id AS molecule_id,
                     m.inchi_key,
                     m.canonical_name
-                FROM silver.molecules m
+                FROM mol_silver.molecules m
                 WHERE m.needs_review = FALSE
                   AND lower(m.canonical_name) = $1
 
@@ -193,8 +193,8 @@ class FuzzyMatcher:
                     m.id AS molecule_id,
                     m.inchi_key,
                     m.canonical_name
-                FROM silver.molecules m
-                JOIN silver.molecule_aliases ma ON m.id = ma.molecule_id
+                FROM mol_silver.molecules m
+                JOIN mol_silver.molecule_aliases ma ON m.id = ma.molecule_id
                 WHERE m.needs_review = FALSE
                   AND ma.alias_name_normalized = $1
 
@@ -235,7 +235,7 @@ class FuzzyMatcher:
         async with self.db_pool.acquire() as conn:
             rows = await conn.fetch("""
                 SELECT DISTINCT canonical_name
-                FROM silver.molecules
+                FROM mol_silver.molecules
                 WHERE needs_review = FALSE
                   AND lower(canonical_name) LIKE $1 || '%'
                 ORDER BY length(canonical_name), canonical_name
@@ -265,7 +265,7 @@ class FuzzyMatcher:
             rows = await conn.fetch("""
                 WITH target AS (
                     SELECT canonical_name
-                    FROM silver.molecules
+                    FROM mol_silver.molecules
                     WHERE id = $1::uuid
                 )
                 SELECT
@@ -273,7 +273,7 @@ class FuzzyMatcher:
                     m.inchi_key,
                     m.canonical_name,
                     similarity(lower(m.canonical_name), lower(t.canonical_name)) AS sim
-                FROM silver.molecules m, target t
+                FROM mol_silver.molecules m, target t
                 WHERE m.id != $1::uuid
                   AND m.needs_review = FALSE
                   AND similarity(lower(m.canonical_name), lower(t.canonical_name)) > $2

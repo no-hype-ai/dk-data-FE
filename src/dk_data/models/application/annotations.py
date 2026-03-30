@@ -58,7 +58,7 @@ class UserAnnotationWithMolecule(UserAnnotation):
     """Annotation with molecule info."""
     model_config = ConfigDict(from_attributes=True)
 
-    # From silver.molecules
+    # From mol_silver.molecules
     inchi_key: Optional[str] = None
     canonical_name: str
 

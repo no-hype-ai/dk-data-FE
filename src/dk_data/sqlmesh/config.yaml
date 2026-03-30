@@ -19,24 +19,50 @@ model_defaults:
   start: '2024-01-01'
 
 # Physical schema mapping
-# Maps logical schema names to actual PostgreSQL schemas
+# Maps logical schema names to actual PostgreSQL schemas.
+#
+# DOMAIN STRATEGY (019-cms-puf-platform-reconciliation):
+#   All bare logical names (raw/bronze/silver/gold) redirect to mol_* physical
+#   schemas. This means models declared as "silver.molecules" physically land in
+#   mol_silver, and "bronze.chembl_molecules" lands in mol_bronze — zero model
+#   renames required, enforced here.
+#
+#   Domain schemas:
+#     mol_*  — Molecule / drug / compound data
+#     hcs_*  — Healthcare system / CMS / provider data
+#     ind_*  — Indication / disease / epidemiology data
+#     hcp_*  — Healthcare professional / KOL / researcher data
 physical_schema_mapping:
-  # TAVR schemas
-  raw: raw
-  staging: staging
-  mart: mart
-  scoring: scoring
-  # Molecule platform schemas
+  # Bare logical names → mol_* physical schemas (redirect, not rename)
+  raw: mol_raw
+  bronze: mol_bronze
+  silver: mol_silver
+  gold: mol_gold
+  # Molecule domain (explicit aliases — same physical target)
   mol_raw: mol_raw
   mol_bronze: mol_bronze
   mol_silver: mol_silver
   mol_gold: mol_gold
   mol_app: mol_app
-  # IP/patent/trademark schemas (014-uspto-euipo-model-datasource)
-  bronze: bronze
-  silver: silver
-  gold: gold
-  # Xenon application schema (015-assessment-dashboard-integration)
+  # HCS (Healthcare System / CMS) domain
+  hcs_raw: hcs_raw
+  hcs_bronze: hcs_bronze
+  hcs_silver: hcs_silver
+  hcs_gold: hcs_gold
+  # Indication / disease domain
+  ind_raw: ind_raw
+  ind_bronze: ind_bronze
+  ind_silver: ind_silver
+  ind_gold: ind_gold
+  # HCP / researcher / KOL domain
+  hcp_silver: hcp_silver
+  hcp_gold: hcp_gold
+  # Agent output schemas (019-cms-puf-platform-reconciliation)
+  hcs_agents: hcs_agents
+  mol_agents: mol_agents
+  agents: agents
+  # Application / infrastructure schemas
+  staging: staging
   xenon: xenon
   meta: meta
 

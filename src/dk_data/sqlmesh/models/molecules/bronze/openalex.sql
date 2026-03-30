@@ -1,96 +1,102 @@
 -- SQLMesh Model: Bronze OpenAlex
--- Transforms Raw OpenAlex Works responses to Bronze typed columns
+-- Transforms flat mol_raw.openalex_ci typed columns to Bronze canonical schema
+-- mol_raw.openalex_ci is populated by OpenAlexCIFetcher + load_openalex_ci_data()
+-- Columns are typed at load time; JSONB fields (concepts, authorships, etc.)
+-- are stored as JSONB blobs. The loader normalises the OpenAlex API response
+-- into this flat schema — no JSON path drilling needed here.
+-- Extended columns (pmid, pmcid, mag_id, work_type, language, biblio fields,
+-- topics, keywords, mesh_terms, metrics, grants, related works, SDGs, etc.)
+-- were added in migration 112 and are now populated by the updated fetcher.
 -- Part of: 012-dk-data-platform
 
 MODEL (
-    name bronze.openalex,
+    name mol_bronze.openalex,
     kind INCREMENTAL_BY_TIME_RANGE (
-        time_column request_timestamp,
-        batch_size 500
+        time_column _loaded_at
     ),
     cron '@weekly',
     audits (
         not_null(columns := (openalex_id))
-    ),
-    grain openalex_id
+    )
 );
 
 SELECT
-    gen_random_uuid() AS id,
+    gen_random_uuid()                                                      AS id,
 
     -- OpenAlex Identifiers
-    response_body->>'id' AS openalex_id,
-    response_body->>'doi' AS doi,
-    response_body->'ids'->>'pmid' AS pmid,
-    response_body->'ids'->>'pmcid' AS pmcid,
-    response_body->'ids'->>'mag' AS mag_id,
+    r.work_id::TEXT                                                        AS openalex_id,
+    r.doi::TEXT                                                            AS doi,
 
-    -- Title and Abstract
-    response_body->>'display_name' AS title,
-    response_body->'abstract_inverted_index' AS abstract_inverted_index,
+    -- Cross-reference IDs (stored in mol_raw.openalex_ci since migration 112)
+    r.pmid::TEXT                                                           AS pmid,
+    r.pmcid::TEXT                                                          AS pmcid,
+    r.mag_id::TEXT                                                         AS mag_id,
 
-    -- Publication Info
-    response_body->>'type' AS work_type,
-    response_body->>'language' AS language,
-    (response_body->>'publication_year')::INTEGER AS publication_year,
-    (response_body->>'publication_date')::DATE AS publication_date,
-    response_body->'primary_location'->'source'->>'display_name' AS journal_name,
-    response_body->'primary_location'->'source'->>'issn_l' AS journal_issn,
-    response_body->'primary_location'->>'pdf_url' AS pdf_url,
-    (response_body->'primary_location'->>'is_oa')::BOOLEAN AS is_open_access,
+    -- Title and Abstract (abstract reconstructed by fetcher from inverted index)
+    r.title::TEXT                                                          AS title,
+    r.abstract::TEXT                                                       AS abstract,
+    -- abstract_inverted_index: OpenAlex API returns this only on dedicated /works/{id} calls,
+    -- not in the search/filter endpoint — genuinely unavailable at bulk ingest
+    NULL::JSONB                                                            AS abstract_inverted_index,
 
-    -- Bibliographic
-    response_body->'biblio'->>'volume' AS volume,
-    response_body->'biblio'->>'issue' AS issue,
-    response_body->'biblio'->>'first_page' AS first_page,
-    response_body->'biblio'->>'last_page' AS last_page,
+    -- Publication Info (stored in mol_raw.openalex_ci since migration 112)
+    r.work_type::TEXT                                                      AS work_type,
+    r.language::TEXT                                                       AS language,
+    EXTRACT(YEAR FROM r.publication_date)::INTEGER                        AS publication_year,
+    r.publication_date::DATE                                               AS publication_date,
+
+    -- Journal info from primary_location JSONB
+    -- OpenAlex primary_location structure: {source: {display_name, issn_l, ...}, pdf_url, is_oa, ...}
+    (r.primary_location->'source'->>'display_name')::TEXT                AS journal_name,
+    (r.primary_location->'source'->>'issn_l')::TEXT                     AS journal_issn,
+    (r.primary_location->>'pdf_url')::TEXT                               AS pdf_url,
+    -- open_access structure: {is_oa: bool, oa_status: ..., oa_url: ...}
+    (r.open_access->>'is_oa')::BOOLEAN                                   AS is_open_access,
+
+    -- Bibliographic fields (stored in mol_raw.openalex_ci since migration 112)
+    r.volume::TEXT                                                         AS volume,
+    r.issue::TEXT                                                          AS issue,
+    r.first_page::TEXT                                                     AS first_page,
+    r.last_page::TEXT                                                      AS last_page,
 
     -- Authors
-    response_body->'authorships' AS authorships,
+    r.authorships::JSONB                                                   AS authorships,
     (SELECT jsonb_agg(a->'author'->>'display_name')
-     FROM jsonb_array_elements(response_body->'authorships') AS a) AS author_names,
+     FROM jsonb_array_elements(COALESCE(r.authorships, '[]'::JSONB)) AS a) AS author_names,
 
-    -- Concepts and Topics
-    response_body->'concepts' AS concepts,
-    response_body->'topics' AS topics,
-    response_body->'keywords' AS keywords,
-    response_body->'mesh' AS mesh_terms,
+    -- Concepts and Topics (stored in mol_raw.openalex_ci since migration 112)
+    r.concepts::JSONB                                                      AS concepts,
+    r.topics::JSONB                                                        AS topics,
+    r.keywords::JSONB                                                      AS keywords,
+    r.mesh_terms::JSONB                                                    AS mesh_terms,
 
-    -- Metrics
-    (response_body->>'cited_by_count')::INTEGER AS cited_by_count,
-    (response_body->>'cited_by_percentile_year'->>'min')::NUMERIC AS cited_by_percentile,
-    (response_body->'counts_by_year') AS citation_counts_by_year,
+    -- Metrics (stored in mol_raw.openalex_ci since migration 112)
+    r.cited_by_count::INTEGER                                              AS cited_by_count,
+    r.cited_by_percentile::NUMERIC                                         AS cited_by_percentile,
+    r.citation_counts_by_year::JSONB                                       AS citation_counts_by_year,
 
-    -- Grants
-    response_body->'grants' AS grants,
+    -- Grants and related works (stored in mol_raw.openalex_ci since migration 112)
+    r.grants::JSONB                                                        AS grants,
+    r.referenced_works::JSONB                                              AS referenced_works,
+    r.related_works::JSONB                                                 AS related_works,
+    r.sustainable_development_goals::JSONB                                 AS sustainable_development_goals,
 
-    -- References
-    response_body->'referenced_works' AS referenced_works,
-    response_body->'related_works' AS related_works,
+    -- Access (stored in mol_raw.openalex_ci since migration 112)
+    r.open_access::JSONB                                                   AS open_access_info,
+    r.best_oa_location::JSONB                                              AS best_oa_location,
 
-    -- Sustainability
-    response_body->'sustainable_development_goals' AS sustainable_development_goals,
+    -- Indexed Status (stored in mol_raw.openalex_ci since migration 112)
+    r.is_retracted::BOOLEAN                                                AS is_retracted,
+    r.is_paratext::BOOLEAN                                                 AS is_paratext,
 
-    -- Access
-    response_body->'open_access' AS open_access_info,
-    response_body->'best_oa_location' AS best_oa_location,
+    -- Source tracking
+    'openalex'                                                             AS source,
+    r._loaded_at                                                           AS source_updated_at,
+    r._loaded_at                                                           AS _loaded_at,
+    FALSE                                                                  AS processed_to_silver,
+    NOW()                                                                  AS created_at
 
-    -- Indexed Status
-    (response_body->>'is_retracted')::BOOLEAN AS is_retracted,
-    (response_body->>'is_paratext')::BOOLEAN AS is_paratext,
-
-    -- Raw source tracking
-    response_body AS raw_json,
-    id AS raw_source_id,
-    'openalex' AS source,
-    request_timestamp,
-    request_timestamp AS source_updated_at,
-    FALSE AS processed_to_silver,
-    NOW() AS created_at
-
-FROM raw.openalex
+FROM mol_raw.openalex_ci r
 WHERE
-    response_status = 200
-    AND processed_to_bronze = FALSE
-    AND response_body->>'id' IS NOT NULL
-    AND request_timestamp BETWEEN @start_dt AND @end_dt;
+    r.work_id IS NOT NULL
+    AND r._loaded_at BETWEEN @start_dt AND @end_dt;

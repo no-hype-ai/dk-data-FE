@@ -6,7 +6,7 @@ Loads patent data from USPTO PatentsView API into PostgreSQL.
 Note: PatentsView API requires registration for API key.
 
 Tables populated:
-- bronze.uspto_patents: Patent data with drug/pharma focus
+- mol_bronze.uspto_patents: Patent data with drug/pharma focus
 
 Data Source: https://patentsview.org/
 API Registration: https://patentsview-support.atlassian.net/servicedesk/customer/portals
@@ -60,7 +60,7 @@ def ensure_tables(conn) -> None:
     """Create USPTO patents tables if they don't exist."""
     with conn.cursor() as cur:
         cur.execute("""
-            CREATE TABLE IF NOT EXISTS bronze.uspto_patents (
+            CREATE TABLE IF NOT EXISTS mol_bronze.uspto_patents (
                 id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
                 patent_number TEXT UNIQUE NOT NULL,
                 title TEXT,
@@ -84,11 +84,11 @@ def ensure_tables(conn) -> None:
                 processed_to_silver BOOLEAN DEFAULT FALSE
             );
 
-            CREATE INDEX IF NOT EXISTS idx_uspto_grant_date ON bronze.uspto_patents(grant_date);
-            CREATE INDEX IF NOT EXISTS idx_uspto_assignee ON bronze.uspto_patents USING GIN(assignees);
-            CREATE INDEX IF NOT EXISTS idx_uspto_cpc ON bronze.uspto_patents USING GIN(cpc_codes);
-            CREATE INDEX IF NOT EXISTS idx_uspto_drug ON bronze.uspto_patents(drug_name);
-            CREATE INDEX IF NOT EXISTS idx_uspto_processed ON bronze.uspto_patents(processed_to_silver);
+            CREATE INDEX IF NOT EXISTS idx_uspto_grant_date ON mol_bronze.uspto_patents(grant_date);
+            CREATE INDEX IF NOT EXISTS idx_uspto_assignee ON mol_bronze.uspto_patents USING GIN(assignees);
+            CREATE INDEX IF NOT EXISTS idx_uspto_cpc ON mol_bronze.uspto_patents USING GIN(cpc_codes);
+            CREATE INDEX IF NOT EXISTS idx_uspto_drug ON mol_bronze.uspto_patents(drug_name);
+            CREATE INDEX IF NOT EXISTS idx_uspto_processed ON mol_bronze.uspto_patents(processed_to_silver);
         """)
         conn.commit()
     logger.info("USPTO patents tables ensured")
@@ -208,7 +208,7 @@ def insert_patent(conn, patent: Dict[str, Any]) -> bool:
     try:
         with conn.cursor() as cur:
             cur.execute("""
-                INSERT INTO bronze.uspto_patents (
+                INSERT INTO mol_bronze.uspto_patents (
                     patent_number, title, abstract, grant_date, expiry_date,
                     patent_type, assignees, inventors, claims_count,
                     cpc_codes, uspc_codes, cited_by_count, citations_count,
@@ -242,13 +242,13 @@ async def load_for_drugs(conn, limit: int = None) -> int:
     """Load patents for drugs in the database."""
     total_inserted = 0
 
-    # Get drug names from silver.molecules
+    # Get drug names from mol_silver.molecules
     drug_names = []
     try:
         with conn.cursor() as cur:
             cur.execute("""
                 SELECT DISTINCT canonical_name
-                FROM silver.molecules
+                FROM mol_silver.molecules
                 WHERE canonical_name IS NOT NULL
                 ORDER BY canonical_name
                 LIMIT 200

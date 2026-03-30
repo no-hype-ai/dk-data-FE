@@ -1,0 +1,74 @@
+# PubChem Extended Data Loader CronJob
+# Feature: 019-cms-puf-platform-reconciliation
+#
+# Calls the PubChem synonym, xref, and safety endpoints for all compounds
+# with CIDs already in mol_bronze.pubchem. Populates:
+#   mol_bronze.pubchem_synonyms  — human-readable name aliases (used by molecule_aliases)
+#   mol_bronze.pubchem_xrefs     — cross-references to DrugBank, ChEMBL, KEGG, etc.
+#   mol_bronze.pubchem_safety    — GHS hazard classifications
+#
+# Schedule: Monthly (1st at 4AM UTC) — data is stable; full re-scan not needed often.
+# suspend: false — runs on schedule.
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: load-pubchem-extended
+  labels:
+    app: dk-data-ingestion
+    component: pubchem-extended
+    feature: "019-cms-puf"
+spec:
+  schedule: "0 4 1 * *"
+  concurrencyPolicy: Forbid
+  startingDeadlineSeconds: 3600
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      backoffLimit: 1
+      activeDeadlineSeconds: 14400  # 4 hours — full synonym scan can be slow
+      template:
+        metadata:
+          labels:
+            app: load-pubchem-extended
+            app.kubernetes.io/component: batch-job
+            app.kubernetes.io/part-of: dk-data
+        spec:
+          restartPolicy: OnFailure
+          imagePullSecrets:
+            - name: ghcr-credentials
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 1000
+            fsGroup: 1000
+          containers:
+            - name: load-pubchem-extended
+              image: ghcr.io/data-kinetic/dk-data-fe/job-trigger:main
+              securityContext:
+                allowPrivilegeEscalation: false
+                readOnlyRootFilesystem: true
+                capabilities:
+                  drop: ["ALL"]
+              command:
+                - /bin/sh
+                - -c
+                - |
+                  set -e
+                  echo "Loading PubChem extended data (synonyms, xrefs, safety)..."
+                  python -m dk_data.data.load_pubchem_extended --synonyms --xrefs --safety
+                  echo "PubChem extended load complete."
+              envFrom:
+                - secretRef:
+                    name: dk-data-secrets
+              env:
+                - name: OTEL_EXPORTER_OTLP_ENDPOINT
+                  value: "http://alloy.infra.svc.cluster.local:4317"
+                - name: OTEL_SERVICE_NAME
+                  value: "dk-data-load-pubchem-extended"
+              resources:
+                requests:
+                  memory: "256Mi"
+                  cpu: "100m"
+                limits:
+                  memory: "512Mi"
+                  cpu: "300m"

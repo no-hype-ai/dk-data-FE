@@ -476,6 +476,51 @@ BEGIN
         description = EXCLUDED.description,
         source_ids = EXCLUDED.source_ids;
 
+    -- Job 25: fetch-chembl-activities — Weekly ChEMBL bioactivity
+    INSERT INTO meta.batch_jobs (
+        job_name, description, cron_schedule, source_ids, is_enabled, next_scheduled_run
+    ) VALUES (
+        'fetch-chembl-activities',
+        'Fetch ChEMBL IC50/Ki/EC50 bioactivity measurements',
+        '0 3 * * 1',
+        ARRAY[(SELECT source_id FROM meta.data_sources WHERE source_name = 'chembl_activities')],
+        TRUE,
+        NOW() + INTERVAL '1 week'
+    )
+    ON CONFLICT (job_name) DO UPDATE SET
+        description = EXCLUDED.description,
+        source_ids = EXCLUDED.source_ids;
+
+    -- Job 26: fetch-fda-rems — Monthly FDA REMS programs
+    INSERT INTO meta.batch_jobs (
+        job_name, description, cron_schedule, source_ids, is_enabled, next_scheduled_run
+    ) VALUES (
+        'fetch-fda-rems',
+        'Fetch FDA REMS program data (Risk Evaluation and Mitigation Strategies)',
+        '0 5 1 * *',
+        ARRAY[(SELECT source_id FROM meta.data_sources WHERE source_name = 'fda_rems')],
+        TRUE,
+        NOW() + INTERVAL '1 month'
+    )
+    ON CONFLICT (job_name) DO UPDATE SET
+        description = EXCLUDED.description,
+        source_ids = EXCLUDED.source_ids;
+
+    -- Job 27: fetch-fda-ndc — Monthly FDA NDC directory
+    INSERT INTO meta.batch_jobs (
+        job_name, description, cron_schedule, source_ids, is_enabled, next_scheduled_run
+    ) VALUES (
+        'fetch-fda-ndc',
+        'Fetch FDA National Drug Code directory (product NDC → generic/brand name mapping)',
+        '0 6 1 * *',
+        ARRAY[(SELECT source_id FROM meta.data_sources WHERE source_name = 'fda_ndc')],
+        TRUE,
+        NOW() + INTERVAL '1 month'
+    )
+    ON CONFLICT (job_name) DO UPDATE SET
+        description = EXCLUDED.description,
+        source_ids = EXCLUDED.source_ids;
+
     RAISE NOTICE 'Batch jobs seeded successfully';
 END $$;
 

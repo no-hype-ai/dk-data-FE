@@ -23,6 +23,8 @@ Auto-generated from all feature plans. Last updated: 2026-01-30
 - PostgreSQL 16.4 via CloudNativePG (`postgresql.infra.svc.cluster.local:5432`, database `dk_data`). Schemas: 15 existing + 1 new (`xenon`). PostgREST v12.2.3 for REST API exposure. (015-assessment-dashboard-integration)
 - Python 3.11+ + prometheus-client (existing), psycopg2-binary (existing), Grafana (cluster-managed), Mimir (cluster-managed), netsage-sankey-panel (new Grafana plugin) (017-grafana-datasource-dashboard)
 - PostgreSQL 16.4 via CloudNativePG (`meta.data_sources`, `bronze.*`, `silver.*`, `gold.*`) (017-grafana-datasource-dashboard)
+- Python 3.11+ (`requires-python = ">=3.11"` in `pyproject.toml`) + FastAPI 0.109+, SQLMesh >=0.90, psycopg2-binary, pandas, requests + urllib3 (retry), tenacity, loguru, anthropic SDK (LiteLLM proxy routing), kubernetes clien (019-cms-puf-platform-reconciliation)
+- PostgreSQL 16 (CloudNativePG in K3s). Schemas: `mol_raw`, `hcs_raw`, `mol_bronze`, `hcs_bronze`, `mol_silver`, `hcs_silver`, `mol_gold`, `hcs_gold`, `meta` (019-cms-puf-platform-reconciliation)
 
 - Python 3.11+ (existing ingestion layer), SQL (PostgreSQL 16+) + PostgREST v12.x, SQLMesh, psycopg2, Pydantic, requests (001-data-layer-postgrest-gitops)
 
@@ -42,9 +44,9 @@ cd src [ONLY COMMANDS FOR ACTIVE TECHNOLOGIES][ONLY COMMANDS FOR ACTIVE TECHNOLO
 Python 3.11+ (existing ingestion layer), SQL (PostgreSQL 16+): Follow standard conventions
 
 ## Recent Changes
+- 019-cms-puf-platform-reconciliation: Added Python 3.11+ (`requires-python = ">=3.11"` in `pyproject.toml`) + FastAPI 0.109+, SQLMesh >=0.90, psycopg2-binary, pandas, requests + urllib3 (retry), tenacity, loguru, anthropic SDK (LiteLLM proxy routing), kubernetes clien
 - 017-grafana-datasource-dashboard: Added Python 3.11+ + prometheus-client (existing), psycopg2-binary (existing), Grafana (cluster-managed), Mimir (cluster-managed), netsage-sankey-panel (new Grafana plugin)
 - 015-assessment-dashboard-integration: Added Python 3.11+, SQL (PostgreSQL 16.4) + FastAPI >=0.109.0, SQLMesh >=0.90.0, asyncpg >=0.29.0, psycopg2-binary >=2.9.9, httpx >=0.25.0, pyjwt >=2.8.0, Pydantic >=2.5.0, structlog >=24.0.0, OpenTelemetry (tracing+metrics), prometheus-client >=0.19.0, responses >=0.25.0 (test)
-- 014-uspto-euipo-model-datasource: Added Python 3.11+ + FastAPI, SQLMesh, Pydantic, psycopg2-binary, requests, responses (test), structlog, OpenTelemetry, prometheus-client, kubernetes
 
 
 <!-- MANUAL ADDITIONS START -->

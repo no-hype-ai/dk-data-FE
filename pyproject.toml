@@ -5,9 +5,10 @@ description = "DK Data Platform - TAVR Hospital Intelligence + Molecule Data Pip
 requires-python = ">=3.11"
 dependencies = [
     # Core dependencies
-    "sqlmesh>=0.90.0,<1.0",
+    "sqlmesh==0.230.0",
     "psycopg2-binary>=2.9.9,<3.0",
     "pandas>=2.0.0,<3.0",
+    "openpyxl>=3.1.0,<4.0",
     "anthropic>=0.40.0,<1.0",
     "pydantic>=2.5.0,<3.0",
     "pydantic-settings>=2.0.0,<3.0",
@@ -43,6 +44,10 @@ dependencies = [
     "opentelemetry-instrumentation-requests>=0.41b0,<1.0",
     "structlog>=24.0.0,<25.0",
     "prometheus-client>=0.19.0,<1.0",
+    # Agent LLM client — routes via LiteLLM proxy (019-cms-puf-platform-reconciliation)
+    "openai>=1.0.0,<2.0",
+    # Pydantic email validation (required for EmailStr fields in API routers)
+    "email-validator>=2.0.0,<3.0",
 ]
 
 [project.optional-dependencies]

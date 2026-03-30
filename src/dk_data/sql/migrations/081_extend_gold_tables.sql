@@ -1,5 +1,5 @@
 -- 081: Create gold schema tables for the silver->gold refresher.
--- The refresher (silver_gold_refresher.py) writes to gold.* tables.
+-- The refresher (silver_gold_refresher.py) writes to mol_gold.* tables.
 -- These are separate from mol_gold.* (migration 020) which are SQLMesh-managed.
 -- The gold schema is used by the MCP on-demand pipeline for per-molecule aggregation.
 
@@ -7,8 +7,8 @@ BEGIN;
 
 CREATE SCHEMA IF NOT EXISTS gold;
 
--- gold.molecule_profile
-CREATE TABLE IF NOT EXISTS gold.molecule_profile (
+-- mol_gold.molecule_profile
+CREATE TABLE IF NOT EXISTS mol_gold.molecule_profile (
     molecule_id TEXT PRIMARY KEY,
     molecule_name TEXT,
     molecule_type TEXT,
@@ -32,8 +32,8 @@ CREATE TABLE IF NOT EXISTS gold.molecule_profile (
     updated_at TIMESTAMPTZ DEFAULT NOW()
 );
 
--- gold.safety_signals
-CREATE TABLE IF NOT EXISTS gold.safety_signals (
+-- mol_gold.safety_signals
+CREATE TABLE IF NOT EXISTS mol_gold.safety_signals (
     id TEXT PRIMARY KEY,
     molecule_id TEXT NOT NULL,
     event_name TEXT,
@@ -50,10 +50,10 @@ CREATE TABLE IF NOT EXISTS gold.safety_signals (
     ror_score NUMERIC,
     is_signal BOOLEAN DEFAULT FALSE
 );
-CREATE INDEX IF NOT EXISTS idx_gold_safety_mol ON gold.safety_signals(molecule_id);
+CREATE INDEX IF NOT EXISTS idx_gold_safety_mol ON mol_gold.safety_signals(molecule_id);
 
--- gold.lifecycle_stages
-CREATE TABLE IF NOT EXISTS gold.lifecycle_stages (
+-- mol_gold.lifecycle_stages
+CREATE TABLE IF NOT EXISTS mol_gold.lifecycle_stages (
     id TEXT PRIMARY KEY,
     molecule_id TEXT NOT NULL,
     stage TEXT,
@@ -66,8 +66,8 @@ CREATE TABLE IF NOT EXISTS gold.lifecycle_stages (
     UNIQUE (molecule_id, indication)
 );
 
--- gold.competitive_landscape
-CREATE TABLE IF NOT EXISTS gold.competitive_landscape (
+-- mol_gold.competitive_landscape
+CREATE TABLE IF NOT EXISTS mol_gold.competitive_landscape (
     id TEXT PRIMARY KEY,
     molecule_id TEXT,
     indication TEXT,
@@ -80,8 +80,8 @@ CREATE TABLE IF NOT EXISTS gold.competitive_landscape (
     UNIQUE (indication, snapshot_date)
 );
 
--- gold.trial_outcomes
-CREATE TABLE IF NOT EXISTS gold.trial_outcomes (
+-- mol_gold.trial_outcomes
+CREATE TABLE IF NOT EXISTS mol_gold.trial_outcomes (
     id TEXT PRIMARY KEY,
     molecule_id TEXT NOT NULL,
     nct_id TEXT,
@@ -95,7 +95,7 @@ CREATE TABLE IF NOT EXISTS gold.trial_outcomes (
     updated_at TIMESTAMPTZ DEFAULT NOW(),
     UNIQUE (nct_id)
 );
-CREATE INDEX IF NOT EXISTS idx_gold_trial_mol ON gold.trial_outcomes(molecule_id);
+CREATE INDEX IF NOT EXISTS idx_gold_trial_mol ON mol_gold.trial_outcomes(molecule_id);
 
 -- Grants (web_anon excluded per security policy — migration 077, commit 4b78e3c)
 DO $$

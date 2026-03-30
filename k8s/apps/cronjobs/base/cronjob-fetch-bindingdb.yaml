@@ -1,0 +1,97 @@
+# BindingDB Fetch CronJob
+# 019-cms-puf-platform-reconciliation
+# Downloads BindingDB_All.tsv.zip (~500MB) and loads binding affinity records.
+# Full dataset (~1.2M rows with affinity data); monthly refresh is sufficient
+# (BindingDB releases annually but accepts incremental data throughout year).
+# Memory limit raised to 2Gi to accommodate the uncompressed TSV in-process.
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: fetch-bindingdb
+  labels:
+    app: fetch-bindingdb
+    app.kubernetes.io/name: fetch-bindingdb
+    app.kubernetes.io/component: ingestion
+    app.kubernetes.io/part-of: dk-data
+spec:
+  schedule: "0 2 1 * *"  # 1st of month, 2 AM UTC (low-traffic window, large download)
+  concurrencyPolicy: Forbid
+  startingDeadlineSeconds: 3600
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      backoffLimit: 1
+      activeDeadlineSeconds: 14400  # 4 hour timeout (large file + ~1.2M DB inserts)
+      template:
+        metadata:
+          labels:
+            app: fetch-bindingdb
+            app.kubernetes.io/component: batch-job
+            app.kubernetes.io/part-of: dk-data
+            team: data-platform
+            service: dk-data
+            product: dk-data
+        spec:
+          restartPolicy: Never
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 1000
+            fsGroup: 1000
+            seccompProfile:
+              type: RuntimeDefault
+          imagePullSecrets:
+            - name: ghcr-credentials
+          containers:
+            - name: fetch-bindingdb
+              image: ghcr.io/data-kinetic/dk-data-fe/job-trigger:main
+              command: ["python", "-m", "dk_data.ingestion.main"]
+              args: ["bindingdb"]
+              env:
+                - name: POSTGRES_HOST
+                  valueFrom:
+                    secretKeyRef:
+                      name: dk-data-secrets
+                      key: POSTGRES_HOST
+                - name: POSTGRES_PORT
+                  valueFrom:
+                    secretKeyRef:
+                      name: dk-data-secrets
+                      key: POSTGRES_PORT
+                - name: POSTGRES_USER
+                  valueFrom:
+                    secretKeyRef:
+                      name: dk-data-secrets
+                      key: POSTGRES_USER
+                - name: POSTGRES_PASSWORD
+                  valueFrom:
+                    secretKeyRef:
+                      name: dk-data-secrets
+                      key: POSTGRES_PASSWORD
+                - name: POSTGRES_DB
+                  valueFrom:
+                    secretKeyRef:
+                      name: dk-data-secrets
+                      key: POSTGRES_DB
+                - name: OTEL_EXPORTER_OTLP_ENDPOINT
+                  value: "http://alloy.infra.svc.cluster.local:4317"
+                - name: OTEL_ENABLED
+                  value: "true"
+              resources:
+                requests:
+                  memory: "1Gi"
+                  cpu: "200m"
+                limits:
+                  memory: "2Gi"   # BindingDB TSV ~2GB uncompressed
+                  cpu: "500m"
+              securityContext:
+                allowPrivilegeEscalation: false
+                readOnlyRootFilesystem: true
+                capabilities:
+                  drop: ["ALL"]
+              volumeMounts:
+                - name: tmp
+                  mountPath: /tmp
+          volumes:
+            - name: tmp
+              emptyDir: {}

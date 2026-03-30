@@ -1,0 +1,402 @@
+# Alert Rules: CMS PUF Pipeline Source Failures
+# Features: 019-cms-puf-platform-reconciliation, 020-entity-linking-gaps
+# Monitors all 29 CMS PUF data sources for consecutive failures
+# via cms_source_health_status Prometheus metric.
+#
+# Severity guide:
+#   warning  — bulk file sources (expected to be file-provided, may legitimately skip)
+#   critical — API-driven or high-priority sources
+
+groups:
+  - name: cms_puf_pipeline_failures
+    rules:
+
+      # Core 7 CMS PUF sources
+      - alert: CMSPartDSpendingFailed
+        expr: |
+          absent_over_time(
+            cms_source_health_status{source="cms_part_d_spending"}[90d]
+          ) == 1 or cms_source_health_status{source="cms_part_d_spending"} == 0
+        for: 1h
+        labels:
+          severity: warning
+          source: cms_part_d_spending
+          team: data-platform
+        annotations:
+          summary: "CMS Part D Spending ingestion has not succeeded in 90 days"
+          description: "No successful refresh for cms_part_d_spending in 90 days. Check file availability and upload process."
+          runbook_url: "https://github.com/data-kinetic/dk-data-FE/blob/main/docs/runbooks/cms-puf-ingestion.md"
+
+      - alert: CMSPartBSpendingFailed
+        expr: |
+          absent_over_time(
+            cms_source_health_status{source="cms_part_b_spending"}[90d]
+          ) == 1 or cms_source_health_status{source="cms_part_b_spending"} == 0
+        for: 1h
+        labels:
+          severity: warning
+          source: cms_part_b_spending
+          team: data-platform
+        annotations:
+          summary: "CMS Part B Spending ingestion failed or stale"
+          description: "cms_part_b_spending health status is error or absent. Verify source file."
+
+      - alert: CMSOpenPaymentsFailed
+        expr: cms_source_health_status{source="cms_open_payments"} == 0
+        for: 1h
+        labels:
+          severity: warning
+          source: cms_open_payments
+          team: data-platform
+        annotations:
+          summary: "CMS Open Payments ingestion failed"
+          description: "cms_open_payments health status is error. Check file upload."
+
+      - alert: CMSNPPESFailed
+        expr: cms_source_health_status{source="cms_nppes"} == 0
+        for: 1h
+        labels:
+          severity: critical
+          source: cms_nppes
+          team: data-platform
+        annotations:
+          summary: "CMS NPPES (NPI Registry) ingestion failed"
+          description: "cms_nppes health status is error. NPPES is critical for provider identity linking."
+
+      - alert: CMSInpatientPUFFailed
+        expr: cms_source_health_status{source="cms_inpatient_puf"} == 0
+        for: 1h
+        labels:
+          severity: warning
+          source: cms_inpatient_puf
+          team: data-platform
+        annotations:
+          summary: "CMS Inpatient PUF ingestion failed"
+          description: "cms_inpatient_puf health status is error. Check file upload."
+
+      - alert: CMSPhysicianPUFFailed
+        expr: cms_source_health_status{source="cms_physician_puf"} == 0
+        for: 1h
+        labels:
+          severity: warning
+          source: cms_physician_puf
+          team: data-platform
+        annotations:
+          summary: "CMS Physician PUF ingestion failed"
+          description: "cms_physician_puf health status is error."
+
+      - alert: CMSHospitalGeneralInfoFailed
+        expr: cms_source_health_status{source="cms_hospital_general_info"} == 0
+        for: 1h
+        labels:
+          severity: warning
+          source: cms_hospital_general_info
+          team: data-platform
+        annotations:
+          summary: "CMS Hospital General Info ingestion failed"
+          description: "cms_hospital_general_info health status is error."
+
+      # 21 additional CMS PUF sources
+      - alert: CMSMedicareAdvantageFailed
+        expr: cms_source_health_status{source="cms_medicare_advantage"} == 0
+        for: 1h
+        labels:
+          severity: warning
+          source: cms_medicare_advantage
+          team: data-platform
+        annotations:
+          summary: "CMS Medicare Advantage ingestion failed"
+          description: "cms_medicare_advantage health status is error."
+
+      - alert: CMSMedicaidDrugSpendingFailed
+        expr: cms_source_health_status{source="cms_medicaid_drug_spending"} == 0
+        for: 1h
+        labels:
+          severity: warning
+          source: cms_medicaid_drug_spending
+          team: data-platform
+        annotations:
+          summary: "CMS Medicaid Drug Spending ingestion failed"
+          description: "cms_medicaid_drug_spending health status is error."
+
+      - alert: CMSDMEPUFFailed
+        expr: cms_source_health_status{source="cms_dme_puf"} == 0
+        for: 1h
+        labels:
+          severity: warning
+          source: cms_dme_puf
+          team: data-platform
+        annotations:
+          summary: "CMS DME PUF ingestion failed"
+          description: "cms_dme_puf health status is error."
+
+      - alert: CMSHomeHealthFailed
+        expr: cms_source_health_status{source="cms_home_health"} == 0
+        for: 1h
+        labels:
+          severity: warning
+          source: cms_home_health
+          team: data-platform
+        annotations:
+          summary: "CMS Home Health Agency ingestion failed"
+          description: "cms_home_health health status is error."
+
+      - alert: CMSHospicePUFFailed
+        expr: cms_source_health_status{source="cms_hospice_puf"} == 0
+        for: 1h
+        labels:
+          severity: warning
+          source: cms_hospice_puf
+          team: data-platform
+        annotations:
+          summary: "CMS Hospice PUF ingestion failed"
+          description: "cms_hospice_puf health status is error."
+
+      - alert: CMSSNFPUFFailed
+        expr: cms_source_health_status{source="cms_snf_puf"} == 0
+        for: 1h
+        labels:
+          severity: warning
+          source: cms_snf_puf
+          team: data-platform
+        annotations:
+          summary: "CMS SNF PUF ingestion failed"
+          description: "cms_snf_puf health status is error."
+
+      - alert: CMSOutpatientPUFFailed
+        expr: cms_source_health_status{source="cms_outpatient_puf"} == 0
+        for: 1h
+        labels:
+          severity: warning
+          source: cms_outpatient_puf
+          team: data-platform
+        annotations:
+          summary: "CMS Outpatient PUF ingestion failed"
+          description: "cms_outpatient_puf health status is error."
+
+      - alert: CMSReferringProvidersFailed
+        expr: cms_source_health_status{source="cms_referring_providers"} == 0
+        for: 1h
+        labels:
+          severity: warning
+          source: cms_referring_providers
+          team: data-platform
+        annotations:
+          summary: "CMS Referring Providers ingestion failed"
+          description: "cms_referring_providers health status is error."
+
+      - alert: CMSOrderingProvidersFailed
+        expr: cms_source_health_status{source="cms_ordering_providers"} == 0
+        for: 1h
+        labels:
+          severity: warning
+          source: cms_ordering_providers
+          team: data-platform
+        annotations:
+          summary: "CMS Ordering Providers ingestion failed"
+          description: "cms_ordering_providers health status is error."
+
+      - alert: CMSLabServicesFailed
+        expr: cms_source_health_status{source="cms_lab_services"} == 0
+        for: 1h
+        labels:
+          severity: warning
+          source: cms_lab_services
+          team: data-platform
+        annotations:
+          summary: "CMS Lab Services ingestion failed"
+          description: "cms_lab_services health status is error."
+
+      - alert: CMSImagingPUFFailed
+        expr: cms_source_health_status{source="cms_imaging_puf"} == 0
+        for: 1h
+        labels:
+          severity: warning
+          source: cms_imaging_puf
+          team: data-platform
+        annotations:
+          summary: "CMS Imaging PUF ingestion failed"
+          description: "cms_imaging_puf health status is error."
+
+      - alert: CMSMentalHealthPUFFailed
+        expr: cms_source_health_status{source="cms_mental_health_puf"} == 0
+        for: 1h
+        labels:
+          severity: warning
+          source: cms_mental_health_puf
+          team: data-platform
+        annotations:
+          summary: "CMS Mental Health PUF ingestion failed"
+          description: "cms_mental_health_puf health status is error."
+
+      - alert: CMSOpioidPUFFailed
+        expr: cms_source_health_status{source="cms_opioid_puf"} == 0
+        for: 1h
+        labels:
+          severity: warning
+          source: cms_opioid_puf
+          team: data-platform
+        annotations:
+          summary: "CMS Opioid PUF ingestion failed"
+          description: "cms_opioid_puf health status is error."
+
+      - alert: CMSTelehealthPUFFailed
+        expr: cms_source_health_status{source="cms_telehealth_puf"} == 0
+        for: 1h
+        labels:
+          severity: warning
+          source: cms_telehealth_puf
+          team: data-platform
+        annotations:
+          summary: "CMS Telehealth PUF ingestion failed"
+          description: "cms_telehealth_puf health status is error."
+
+      - alert: CMSGeographicVariationFailed
+        expr: cms_source_health_status{source="cms_geographic_variation"} == 0
+        for: 1h
+        labels:
+          severity: warning
+          source: cms_geographic_variation
+          team: data-platform
+        annotations:
+          summary: "CMS Geographic Variation ingestion failed"
+          description: "cms_geographic_variation health status is error."
+
+      - alert: CMSChronicConditionsFailed
+        expr: cms_source_health_status{source="cms_chronic_conditions"} == 0
+        for: 1h
+        labels:
+          severity: warning
+          source: cms_chronic_conditions
+          team: data-platform
+        annotations:
+          summary: "CMS Chronic Conditions ingestion failed"
+          description: "cms_chronic_conditions health status is error."
+
+      - alert: CMSDualEligibleFailed
+        expr: cms_source_health_status{source="cms_dual_eligible"} == 0
+        for: 1h
+        labels:
+          severity: warning
+          source: cms_dual_eligible
+          team: data-platform
+        annotations:
+          summary: "CMS Dual Eligible ingestion failed"
+          description: "cms_dual_eligible health status is error."
+
+      - alert: CMSEnrollmentPUFFailed
+        expr: cms_source_health_status{source="cms_enrollment_puf"} == 0
+        for: 1h
+        labels:
+          severity: warning
+          source: cms_enrollment_puf
+          team: data-platform
+        annotations:
+          summary: "CMS Enrollment PUF ingestion failed"
+          description: "cms_enrollment_puf health status is error."
+
+      - alert: CMSClaimTypePUFFailed
+        expr: cms_source_health_status{source="cms_claim_type_puf"} == 0
+        for: 1h
+        labels:
+          severity: warning
+          source: cms_claim_type_puf
+          team: data-platform
+        annotations:
+          summary: "CMS Claim Type PUF ingestion failed"
+          description: "cms_claim_type_puf health status is error."
+
+      - alert: CMSUtilizationPUFFailed
+        expr: cms_source_health_status{source="cms_utilization_puf"} == 0
+        for: 1h
+        labels:
+          severity: warning
+          source: cms_utilization_puf
+          team: data-platform
+        annotations:
+          summary: "CMS Utilization PUF ingestion failed"
+          description: "cms_utilization_puf health status is error."
+
+      - alert: CMSCostReportsPUFFailed
+        expr: cms_source_health_status{source="cms_cost_reports_puf"} == 0
+        for: 1h
+        labels:
+          severity: warning
+          source: cms_cost_reports_puf
+          team: data-platform
+        annotations:
+          summary: "CMS Cost Reports PUF ingestion failed"
+          description: "cms_cost_reports_puf health status is error."
+
+      # New detail-grain sources (086 additions)
+      - alert: CMSPhysicianPUFServicesFailed
+        expr: cms_source_health_status{source="cms_physician_puf_services"} == 0
+        for: 1h
+        labels:
+          severity: warning
+          source: cms_physician_puf_services
+          team: data-platform
+        annotations:
+          summary: "CMS Physician PUF Services (HCPCS grain) ingestion failed"
+          description: "cms_physician_puf_services health status is error. Required by equipment_inventory agent."
+
+      - alert: CMSCostReportsPUFLinesFailed
+        expr: cms_source_health_status{source="cms_cost_reports_puf_lines"} == 0
+        for: 1h
+        labels:
+          severity: warning
+          source: cms_cost_reports_puf_lines
+          team: data-platform
+        annotations:
+          summary: "CMS Cost Reports PUF Lines (staffing grain) ingestion failed"
+          description: "cms_cost_reports_puf_lines health status is error. Required by staffing_decomposition agent."
+
+      # Entity linking sources (020-entity-linking-gaps additions)
+      - alert: CMSPartDPrescriberFailed
+        # Annual file: released by CMS each January. Staleness window is 400d to
+        # accommodate CMS release timing variation (typically Jan but can slip).
+        # cms_source_health_status is set by record_cms_source_sync() in the loader.
+        expr: |
+          absent_over_time(
+            cms_source_health_status{source="cms_part_d_prescriber"}[400d]
+          ) == 1 or cms_source_health_status{source="cms_part_d_prescriber"} == 0
+        for: 2h
+        labels:
+          severity: warning
+          source: cms_part_d_prescriber
+          team: data-platform
+        annotations:
+          summary: "CMS Part D Prescribers ingestion failed or not loaded this year"
+          description: "cms_part_d_prescriber has not been successfully loaded. This is an annual file — check CMS release schedule and file staging."
+
+      # HCS Silver Agent Quality Alerts
+      - alert: HCSAgentHighQuarantineRate
+        # cms_agent_records_quarantined_total is a Counter incremented by record_agent_run()
+        # in observability/metrics.py for every quarantined record.
+        # Agent names follow the pattern hcs_<name> (e.g. hcs_drug_market, hcs_service_lines).
+        expr: |
+          sum(increase(cms_agent_records_quarantined_total{agent_name=~"hcs_.*"}[7d])) > 500
+        for: 30m
+        labels:
+          severity: warning
+          team: data-platform
+        annotations:
+          summary: "HCS agents quarantining >500 records in 7 days"
+          description: "High quarantine rate for HCS silver agents. Check agent prompts and source data quality."
+
+      - alert: HCSAgentStale
+        # cms_source_last_sync_timestamp is set by record_cms_source_sync() in
+        # observability/metrics.py on every successful HCS source sync.
+        # 720 hours = 30 days.
+        expr: |
+          (
+            time() - max(cms_source_last_sync_timestamp{source=~"hcs_.*"})
+          ) / 3600 > 720
+          or absent(cms_source_last_sync_timestamp{source=~"hcs_.*"})
+        for: 1h
+        labels:
+          severity: warning
+          team: data-platform
+        annotations:
+          summary: "HCS silver tables not refreshed in 30 days"
+          description: "No hcs_* source has been synced in 30+ days. Check agent CronJobs."

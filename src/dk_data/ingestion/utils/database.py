@@ -129,7 +129,7 @@ def get_connection() -> Generator[psycopg2.extensions.connection, None, None]:
     Usage:
         with get_connection() as conn:
             with conn.cursor() as cur:
-                cur.execute("SELECT * FROM raw.cms_medicare_inpatient")
+                cur.execute("SELECT * FROM hcs_raw.cms_inpatient_puf")
                 rows = cur.fetchall()
     """
     pool = get_connection_pool()
@@ -151,7 +151,7 @@ def get_cursor(dict_cursor: bool = False) -> Generator[psycopg2.extensions.curso
 
     Usage:
         with get_cursor(dict_cursor=True) as cur:
-            cur.execute("SELECT * FROM raw.cms_medicare_inpatient WHERE provider_id = %s", ('123456',))
+            cur.execute("SELECT * FROM hcs_raw.cms_inpatient_puf WHERE provider_id = %s", ('123456',))
             row = cur.fetchone()
             print(row['provider_name'])
     """
@@ -209,6 +209,25 @@ def truncate_table(schema: str, table: str) -> None:
     with get_cursor() as cur:
         cur.execute(f"TRUNCATE TABLE {schema}.{table} CASCADE")
         logger.info(f"Truncated table: {schema}.{table}")
+
+
+def apply_column_mapping(df, mapping: dict):
+    """Case-insensitive column rename against COLUMN_MAPPING.
+
+    CMS CSV files vary in column capitalization across years and dataset variants
+    (e.g. 'Prscrbr_NPI' vs 'PRSCRBR_NPI' vs 'prscrbr_npi').  A plain
+    ``df.rename(columns=mapping)`` silently misses any case-variant, leaving
+    every data column NULL in the DB.  This function normalises actual CSV
+    column names against mapping keys case-insensitively so the rename always
+    succeeds regardless of CMS casing changes.
+    """
+    lower_map = {k.lower(): v for k, v in mapping.items()}
+    df.columns = [lower_map.get(c.lower(), c) for c in df.columns]
+    # Drop duplicate column names keeping last occurrence — when multiple
+    # year-suffixed CMS columns (e.g. Tot_Spndng_2019…Tot_Spndng_2023) all
+    # map to the same target name, the last (most recent) value wins.
+    df = df.loc[:, ~df.columns.duplicated(keep='last')]
+    return df
 
 
 def upsert_records(

@@ -11,7 +11,7 @@ from pathlib import Path
 import pandas as pd
 from pydantic import ValidationError
 
-from ..utils.database import get_cursor, get_connection
+from ..utils.database import apply_column_mapping, get_cursor, get_connection
 from ..utils.validators import CMSMedicareInpatientRecord, TAVR_DRG_CODES
 
 logger = logging.getLogger(__name__)
@@ -46,7 +46,7 @@ def load_cms_inpatient_file(
     filepath: str,
     fiscal_year: int,
     batch_size: int = 1000
-) -> dict:
+, max_records: int = 0) -> dict:
     """
     Load CMS Medicare Inpatient data from CSV file.
 
@@ -67,7 +67,7 @@ def load_cms_inpatient_file(
     # Check if file was already loaded
     with get_cursor() as cur:
         cur.execute("""
-            SELECT COUNT(*) FROM raw.cms_medicare_inpatient
+            SELECT COUNT(*) FROM hcs_raw.cms_medicare_inpatient
             WHERE _source_hash = %s
         """, (source_hash,))
         existing_count = cur.fetchone()[0]
@@ -95,7 +95,7 @@ def load_cms_inpatient_file(
     )
 
     # Rename columns
-    df = df.rename(columns=COLUMN_MAPPING)
+    df = apply_column_mapping(df, COLUMN_MAPPING)
 
     # Filter for TAVR DRG codes only
     df = df[df['drg_code'].isin(TAVR_DRG_CODES)]
@@ -141,7 +141,7 @@ def load_cms_inpatient_file(
 
                     # Insert record
                     cur.execute("""
-                        INSERT INTO raw.cms_medicare_inpatient (
+                        INSERT INTO hcs_raw.cms_medicare_inpatient (
                             provider_id, provider_name, provider_street_address,
                             provider_city, provider_state, provider_zip_code,
                             drg_code, drg_description, total_discharges,

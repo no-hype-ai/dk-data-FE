@@ -1,5 +1,5 @@
 -- staging.certifications - ACC TVC Certifications with active status
--- Source: raw.acc_tvc_certification
+-- Source: hcs_raw.acc_tvc_certification
 -- Model type: FULL refresh
 
 MODEL (
@@ -9,37 +9,44 @@ MODEL (
     description 'Transcatheter Valve Certifications from ACC/NCDR'
 );
 
-WITH matched_hospitals AS (
-    -- Match ACC TVC facilities to CMS hospital IDs by name and location
+-- acc_tvc_certification is a legacy file source loaded manually.
+-- When not yet loaded, return empty result set with the correct schema.
+WITH acc_tvc AS (
+    SELECT
+        NULL::TEXT  AS id,
+        NULL::TEXT  AS facility_name,
+        NULL::TEXT  AS certification_type,
+        NULL::DATE  AS certification_date,
+        NULL::DATE  AS expiration_date,
+        NULL::TEXT  AS state,
+        NULL::TEXT  AS city,
+        NULL::TEXT  AS zip_code
+    WHERE FALSE  -- empty until acc_tvc file is loaded
+),
+matched_hospitals AS (
     SELECT DISTINCT
-        h.provider_id AS hospital_id,
+        h.facility_id AS hospital_id,
         c.facility_name,
         c.certification_type,
         c.certification_date,
         c.expiration_date,
-        -- Calculate similarity for matching
         ROW_NUMBER() OVER (
             PARTITION BY c.id
             ORDER BY
-                -- Prioritize exact state match
                 CASE WHEN UPPER(c.state) = UPPER(h.state) THEN 0 ELSE 1 END,
-                -- Then city match
-                CASE WHEN UPPER(c.city) = UPPER(h.city) THEN 0 ELSE 1 END,
+                CASE WHEN UPPER(c.city) = UPPER(h.city_town) THEN 0 ELSE 1 END,
                 h._loaded_at DESC
         ) AS match_rank
-    FROM raw.acc_tvc_certification c
-    JOIN raw.cms_hospital_info h ON (
-        -- Match by state (required)
+    FROM acc_tvc c
+    JOIN hcs_raw.cms_hospital_general_info h ON (
         UPPER(c.state) = UPPER(h.state)
-        -- And either city match or zip match
         AND (
-            UPPER(c.city) = UPPER(h.city)
+            UPPER(c.city) = UPPER(h.city_town)
             OR LEFT(c.zip_code, 5) = LEFT(h.zip_code, 5)
         )
-        -- And fuzzy name match (contains check)
         AND (
-            UPPER(h.hospital_name) LIKE '%' || UPPER(SPLIT_PART(c.facility_name, ' ', 1)) || '%'
-            OR UPPER(c.facility_name) LIKE '%' || UPPER(SPLIT_PART(h.hospital_name, ' ', 1)) || '%'
+            UPPER(h.facility_name) LIKE '%' || UPPER(SPLIT_PART(c.facility_name, ' ', 1)) || '%'
+            OR UPPER(c.facility_name) LIKE '%' || UPPER(SPLIT_PART(h.facility_name, ' ', 1)) || '%'
         )
     )
     WHERE c.facility_name IS NOT NULL

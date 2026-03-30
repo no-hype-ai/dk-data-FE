@@ -12,15 +12,15 @@ Tests verify:
 """
 
 class TestToolRegistry:
-    """Verify tool registry has all 28 tools."""
+    """Verify tool registry has all tools (28 original + 28 CMS PUF + 5 new = 61)."""
 
     def test_registry_has_28_tools(self):
         from dk_data.services.mcp.tool_registry import TOOL_REGISTRY
-        assert len(TOOL_REGISTRY) == 28
+        assert len(TOOL_REGISTRY) == 61
 
     def test_tier_1_has_19_tools(self):
         from dk_data.services.mcp.tool_registry import get_tools_by_tier
-        assert len(get_tools_by_tier("direct_query")) == 19
+        assert len(get_tools_by_tier("direct_query")) == 24
 
     def test_tier_2_has_4_tools(self):
         from dk_data.services.mcp.tool_registry import get_tools_by_tier
@@ -28,7 +28,7 @@ class TestToolRegistry:
 
     def test_tier_3_has_5_tools(self):
         from dk_data.services.mcp.tool_registry import get_tools_by_tier
-        assert len(get_tools_by_tier("supplementary")) == 5
+        assert len(get_tools_by_tier("supplementary")) == 33
 
     def test_all_tools_have_required_fields(self):
         from dk_data.services.mcp.tool_registry import TOOL_REGISTRY
@@ -37,7 +37,7 @@ class TestToolRegistry:
             assert defn.description, f"Missing description: {name}"
             assert defn.tier in ("direct_query", "fetch_filter", "supplementary"), f"Invalid tier: {name}"
             assert defn.raw_table, f"Missing raw_table: {name}"
-            assert defn.raw_schema in ("mol_raw", "raw"), f"Invalid raw_schema: {name}"
+            assert defn.raw_schema in ("mol_raw", "raw", "hcs_raw"), f"Invalid raw_schema: {name}"
             assert defn.adapter_module, f"Missing adapter_module: {name}"
             assert defn.api_base_url, f"Missing api_base_url: {name}"
             assert defn.input_schema, f"Missing input_schema: {name}"
@@ -65,51 +65,49 @@ class TestToolRegistry:
 
 
 class TestMCPRouter:
-    """Verify MCP router endpoint structure."""
+    """Verify data-tools router endpoint structure."""
 
-    def test_list_tools_endpoint_exists(self):
-        from dk_data.api.routes.mcp import router
+    def test_registry_endpoint_exists(self):
+        from dk_data.api.routes.data_tools import router
         routes = [r.path for r in router.routes]
-        assert "/mcp/tools" in routes
+        assert "/data-tools/registry" in routes
 
-    def test_invoke_endpoint_exists(self):
-        from dk_data.api.routes.mcp import router
+    def test_status_endpoint_exists(self):
+        from dk_data.api.routes.data_tools import router
         routes = [r.path for r in router.routes]
-        assert "/mcp/tools/{tool_name}/invoke" in routes
+        assert "/data-tools/{source_name}/status" in routes
 
     def test_router_prefix(self):
-        from dk_data.api.routes.mcp import router
-        assert router.prefix == "/mcp"
+        from dk_data.api.routes.data_tools import router
+        assert router.prefix == "/data-tools"
 
 
 class TestToolInvocationResponse:
-    """Verify response model matches contract."""
+    """Verify BackfillResponse model matches contract."""
 
     def test_success_response_fields(self):
-        from dk_data.api.routes.mcp import ToolInvocationResponse
-        resp = ToolInvocationResponse(
-            status="success",
-            request_id="abc-123",
-            source="clinicaltrials",
-            data={"nctId": "NCT001"},
-            raw_record_id="def-456",
-            duration_ms=250,
-            timestamp="2026-02-25T10:00:00",
+        from dk_data.api.routes.data_tools import BackfillResponse
+        resp = BackfillResponse(
+            source_name="clinicaltrials",
+            triggered=True,
+            skipped=False,
+            run_id="abc-123",
+            status="queued",
         )
-        assert resp.status == "success"
-        assert resp.data is not None
+        assert resp.status == "queued"
+        assert resp.triggered is True
 
-    def test_error_response_fields(self):
-        from dk_data.api.routes.mcp import ToolInvocationResponse
-        resp = ToolInvocationResponse(
-            status="error",
-            request_id="abc-123",
-            source="clinicaltrials",
-            error={"code": "timeout", "message": "Request timed out", "status_code": 408},
-            timestamp="2026-02-25T10:00:00",
+    def test_skipped_response_fields(self):
+        from dk_data.api.routes.data_tools import BackfillResponse
+        resp = BackfillResponse(
+            source_name="clinicaltrials",
+            triggered=False,
+            skipped=True,
+            reason="Data is fresh",
+            status="skipped",
         )
-        assert resp.status == "error"
-        assert resp.error["code"] == "timeout"
+        assert resp.status == "skipped"
+        assert resp.reason == "Data is fresh"
 
 
 class TestBaseMCPTool:

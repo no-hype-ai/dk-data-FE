@@ -1,12 +1,14 @@
 -- SQLMesh Model: Bronze SEC EDGAR Filings
--- Transforms raw SEC EDGAR API responses to Bronze typed columns
+-- Transforms raw SEC EDGAR flat-column records to Bronze typed columns
 -- Part of: 015-assessment-dashboard-integration
+--
+-- Source table: mol_raw.sec_edgar (flat columns, not JSONB response_body)
+-- Loaded by: src/dk_data/ingestion/sources/sec_edgar.py
 
 MODEL (
-    name bronze.sec_edgar,
-    kind INCREMENTAL_BY_TIME_RANGE (
-        time_column request_timestamp,
-        batch_size 500
+    name mol_bronze.sec_edgar,
+    kind INCREMENTAL_BY_UNIQUE_KEY (
+        unique_key filing_id
     ),
     cron '@daily',
     audits (
@@ -19,33 +21,32 @@ MODEL (
 SELECT
     gen_random_uuid() AS id,
 
-    -- Filing identifiers (keys match sec_edgar fetcher snake_case normalization)
+    -- Filing identifiers
     COALESCE(
-        response_body->>'accession_number',
-        response_body->>'cik' || '_' || response_body->>'filing_type' || '_' || response_body->>'filing_date'
+        r.accession_number,
+        r.cik || '_' || r.filing_type || '_' || r.filing_date::TEXT
     ) AS filing_id,
-    response_body->>'cik' AS cik,
-    response_body->>'company_name' AS company_name,
-    response_body->>'filing_type' AS filing_type,
-    response_body->>'filing_date' AS filing_date,
+    r.cik::TEXT                      AS cik,
+    r.company_name::TEXT             AS company_name,
+    r.filing_type::TEXT              AS filing_type,
+    r.filing_date::DATE              AS filing_date,
+    r.document_url::TEXT             AS document_url,
+    r.description::TEXT              AS description,
 
-    -- Financial data (requires separate XBRL processing; will be NULL from the basic fetcher)
-    (response_body->>'revenue')::NUMERIC AS revenue,
-    (response_body->>'net_income')::NUMERIC AS net_income,
-    (response_body->>'total_assets')::NUMERIC AS total_assets,
+    -- Financial data: genuinely unavailable from the EDGAR full-text search API.
+    -- Revenue/net_income/total_assets require parsing XBRL submissions
+    -- (EDGAR /submissions/{cik}.json + XBRL viewer) — a separate enrichment step.
+    NULL::NUMERIC AS revenue,
+    NULL::NUMERIC AS net_income,
+    NULL::NUMERIC AS total_assets,
 
-    -- Raw source tracking
-    response_body AS raw_json,
-    id AS raw_source_id,
-    'sec_edgar' AS source,
-    request_timestamp,
-    request_timestamp AS source_updated_at,
-    FALSE AS processed_to_silver,
-    NOW() AS created_at
+    -- Source tracking
+    'sec_edgar'                      AS source,
+    r._loaded_at                     AS source_updated_at,
+    FALSE                            AS processed_to_silver,
+    NOW()                            AS created_at
 
-FROM raw.sec_edgar
+FROM mol_raw.sec_edgar r
 WHERE
-    response_status = 200
-    AND processed_to_bronze = FALSE
-    AND response_body->>'cik' IS NOT NULL
-    AND request_timestamp BETWEEN @start_dt AND @end_dt;
+    r.cik IS NOT NULL
+    AND r._loaded_at BETWEEN @start_dt AND @end_dt;

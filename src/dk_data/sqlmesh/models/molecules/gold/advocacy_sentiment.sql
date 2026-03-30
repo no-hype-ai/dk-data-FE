@@ -17,16 +17,16 @@ MODEL (
 -- Link news signals to molecules via drug_mentions
 WITH molecule_signals AS (
     SELECT
-        m.id AS molecule_id,
+        m.molecule_id,
         ns.source_name AS source,
         ns.sentiment_polarity,
         ns.signal_type,
         ns.title,
         ns.pub_date,
         ns.source_url
-    FROM silver.news_signals ns
-    CROSS JOIN LATERAL jsonb_array_elements_text(COALESCE(ns.drug_mentions, '[]'::JSONB)) AS dm
-    JOIN silver.molecules m
+    FROM mol_silver.news_signals ns
+    CROSS JOIN LATERAL unnest(string_to_array(COALESCE(ns.drug_mentions, ''), ', ')) AS dm
+    JOIN mol_silver.molecules m
         ON LOWER(dm) = LOWER(m.canonical_name)
     WHERE ns.drug_mentions IS NOT NULL
 ),

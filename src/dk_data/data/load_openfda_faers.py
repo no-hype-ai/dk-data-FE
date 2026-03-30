@@ -5,7 +5,7 @@ Load OpenFDA FAERS (FDA Adverse Event Reporting System) data into PostgreSQL.
 Uses the OpenFDA Drug Adverse Events API.
 
 Tables populated:
-- bronze.openfda_faers: Adverse event reports
+- mol_bronze.openfda_faers: Adverse event reports
 
 Usage:
     python -m dk_data.data.load_openfda_faers
@@ -48,7 +48,7 @@ def ensure_tables(conn):
     cursor = conn.cursor()
 
     cursor.execute("""
-        CREATE TABLE IF NOT EXISTS bronze.openfda_faers (
+        CREATE TABLE IF NOT EXISTS mol_bronze.openfda_faers (
             id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
             safety_report_id VARCHAR(50) UNIQUE,
             report_type VARCHAR(10),
@@ -81,12 +81,12 @@ def ensure_tables(conn):
             processed_to_silver BOOLEAN DEFAULT FALSE
         );
 
-        CREATE INDEX IF NOT EXISTS idx_faers_report_id ON bronze.openfda_faers(safety_report_id);
-        CREATE INDEX IF NOT EXISTS idx_faers_receive_date ON bronze.openfda_faers(receive_date);
-        CREATE INDEX IF NOT EXISTS idx_faers_serious ON bronze.openfda_faers(serious);
-        CREATE INDEX IF NOT EXISTS idx_faers_drugs ON bronze.openfda_faers USING GIN(drug_names);
-        CREATE INDEX IF NOT EXISTS idx_faers_reactions ON bronze.openfda_faers USING GIN(reaction_terms);
-        CREATE INDEX IF NOT EXISTS idx_faers_processed ON bronze.openfda_faers(processed_to_silver);
+        CREATE INDEX IF NOT EXISTS idx_faers_report_id ON mol_bronze.openfda_faers(safety_report_id);
+        CREATE INDEX IF NOT EXISTS idx_faers_receive_date ON mol_bronze.openfda_faers(receive_date);
+        CREATE INDEX IF NOT EXISTS idx_faers_serious ON mol_bronze.openfda_faers(serious);
+        CREATE INDEX IF NOT EXISTS idx_faers_drugs ON mol_bronze.openfda_faers USING GIN(drug_names);
+        CREATE INDEX IF NOT EXISTS idx_faers_reactions ON mol_bronze.openfda_faers USING GIN(reaction_terms);
+        CREATE INDEX IF NOT EXISTS idx_faers_processed ON mol_bronze.openfda_faers(processed_to_silver);
     """)
 
     conn.commit()
@@ -286,7 +286,7 @@ class OpenFDAFaersLoader:
         execute_values(
             cursor,
             """
-            INSERT INTO bronze.openfda_faers (
+            INSERT INTO mol_bronze.openfda_faers (
                 safety_report_id, report_type, receive_date, receipt_date,
                 serious, serious_death, serious_hospitalization,
                 serious_life_threatening, serious_disability,
@@ -336,7 +336,7 @@ def main():
         )
 
         cursor = conn.cursor()
-        cursor.execute("SELECT COUNT(*) FROM bronze.openfda_faers")
+        cursor.execute("SELECT COUNT(*) FROM mol_bronze.openfda_faers")
         count = cursor.fetchone()[0]
 
         logger.info("\n=== Summary ===")

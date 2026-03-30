@@ -157,7 +157,7 @@ spec:
 
         - alert: EntityResolutionQueueHigh
           expr: |
-            dk_resolution_queue_size{namespace=~"dk-data-.*"} > 1000
+            dk_resolution_queue_pending_total{namespace=~"dk-data-.*"} > 1000
           for: 30m
           labels:
             severity: warning
@@ -169,6 +169,36 @@ spec:
             description: |
               The entity resolution queue has {{ $value }} items pending review.
               Manual review may be required for low-confidence matches.
+
+        - alert: CMSFetchFailed
+          expr: |
+            increase(kube_job_status_failed{namespace=~"dk-data-.*", job_name=~"fetch-cms-.*"}[1h]) > 0
+          for: 0m
+          labels:
+            severity: warning
+            team: data-platform
+            product: dk-data
+            service: dk-data
+          annotations:
+            summary: "CMS fetch job {{ $labels.job_name }} failed"
+            description: |
+              CMS data fetch CronJob {{ $labels.job_name }} failed in the last hour.
+              Check job logs for details.
+
+        - alert: HCSTransformStale
+          expr: |
+            (time() - max(kube_job_status_completion_time{namespace=~"dk-data-.*", job_name=~"hcs-transform-.*"}) by (namespace)) > 172800
+          for: 30m
+          labels:
+            severity: warning
+            team: data-platform
+            product: dk-data
+            service: dk-data
+          annotations:
+            summary: "No successful HCS transform in 48h"
+            description: |
+              The HCS transform pipeline has not completed successfully in over 48 hours.
+              Bronze → Silver → Gold transformation for healthcare data may be stalled.
 
         - alert: MoleculeQuarantineHigh
           expr: |

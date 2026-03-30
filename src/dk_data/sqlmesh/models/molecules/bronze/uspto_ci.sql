@@ -3,7 +3,7 @@
 -- Part of: 014-uspto-euipo-model-datasource
 
 MODEL (
-    name bronze.uspto_ci,
+    name mol_bronze.uspto_ci,
     kind INCREMENTAL_BY_TIME_RANGE (
         time_column ingested_at,
         lookback 7
@@ -53,6 +53,6 @@ SELECT
     FALSE AS processed_to_silver,
     r._loaded_at AS ingested_at
 
-FROM raw.uspto_ci r
+FROM mol_raw.uspto_ci r
 WHERE r.patent_id IS NOT NULL
   AND _loaded_at BETWEEN @start_dt AND @end_dt

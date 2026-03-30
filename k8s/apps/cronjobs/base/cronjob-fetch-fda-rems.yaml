@@ -1,0 +1,63 @@
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: fetch-fda-rems
+  labels:
+    app: dk-data-ingestion
+    component: fda-rems
+    feature: "019-cms-puf"
+spec:
+  schedule: "0 5 1 * *"  # Monthly — 1st at 5AM UTC
+  concurrencyPolicy: Forbid
+  startingDeadlineSeconds: 3600
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      backoffLimit: 2
+      activeDeadlineSeconds: 3600  # 1 hour
+      template:
+        metadata:
+          labels:
+            app: fetch-fda-rems
+            app.kubernetes.io/component: batch-job
+            app.kubernetes.io/part-of: dk-data
+        spec:
+          restartPolicy: OnFailure
+          imagePullSecrets:
+            - name: ghcr-credentials
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 1000
+            fsGroup: 1000
+          containers:
+            - name: fetch-fda-rems
+              image: ghcr.io/data-kinetic/dk-data-fe/job-trigger:main
+              securityContext:
+                allowPrivilegeEscalation: false
+                readOnlyRootFilesystem: true
+                capabilities:
+                  drop: ["ALL"]
+              command:
+                - /bin/sh
+                - -c
+                - |
+                  set -e
+                  echo "Fetching FDA REMS program data..."
+                  python -m dk_data.ingestion.run --source fda_rems
+                  echo "FDA REMS fetch complete."
+              envFrom:
+                - secretRef:
+                    name: dk-data-secrets
+              env:
+                - name: OTEL_EXPORTER_OTLP_ENDPOINT
+                  value: "http://alloy.infra.svc.cluster.local:4317"
+                - name: OTEL_SERVICE_NAME
+                  value: "dk-data-fetch-fda-rems"
+              resources:
+                requests:
+                  memory: "128Mi"
+                  cpu: "50m"
+                limits:
+                  memory: "256Mi"
+                  cpu: "200m"

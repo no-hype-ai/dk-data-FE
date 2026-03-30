@@ -201,7 +201,7 @@ class TestEPOOPSFetcherFetch:
         # Mock search results
         responses.add(
             responses.GET,
-            "https://ops.epo.org/3.2/rest-services/published-data/search",
+            "https://ops.epo.org/3.2/rest-services/published-data/search/biblio",
             body=SAMPLE_OPS_SEARCH_XML.encode(),
             status=200,
             content_type="application/xml",
@@ -209,7 +209,7 @@ class TestEPOOPSFetcherFetch:
         # Mock empty second page (no more results)
         responses.add(
             responses.GET,
-            "https://ops.epo.org/3.2/rest-services/published-data/search",
+            "https://ops.epo.org/3.2/rest-services/published-data/search/biblio",
             status=404,
         )
 
@@ -243,7 +243,7 @@ class TestEPOOPSFetcherFetch:
         )
         responses.add(
             responses.GET,
-            "https://ops.epo.org/3.2/rest-services/published-data/search",
+            "https://ops.epo.org/3.2/rest-services/published-data/search/biblio",
             body=SAMPLE_OPS_EMPTY_XML.encode(),
             status=200,
             content_type="application/xml",
@@ -280,7 +280,7 @@ class TestEPOOPSFetcherFetch:
         )
         responses.add(
             responses.GET,
-            "https://ops.epo.org/3.2/rest-services/published-data/search",
+            "https://ops.epo.org/3.2/rest-services/published-data/search/biblio",
             json={"error": "service unavailable"},
             status=500,
         )

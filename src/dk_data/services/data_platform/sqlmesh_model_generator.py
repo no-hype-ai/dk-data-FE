@@ -58,7 +58,7 @@ class SQLMeshModelGenerator:
     Service for generating SQLMesh models from transformation rules.
 
     Features:
-    - Reads rules from raw.silver_transformation_rules
+    - Reads rules from meta.silver_transformation_rules
     - Generates SQLMesh-compatible SQL models
     - Handles molecule, identifier, and name lookup transformations
     - Supports incremental processing
@@ -114,7 +114,7 @@ class SQLMeshModelGenerator:
                        column_mappings, computed_columns, identifier_mappings, name_mappings,
                        dedup_strategy, dedup_columns, dedup_confidence_threshold,
                        source_precedence, incremental_column, batch_size, where_clause, enabled
-                FROM raw.silver_transformation_rules
+                FROM meta.silver_transformation_rules
                 WHERE enabled = true
             """
             params = []
@@ -200,7 +200,7 @@ class SQLMeshModelGenerator:
 -- DO NOT EDIT MANUALLY - Changes will be overwritten
 
 MODEL (
-    name silver.{rule.source_name}_molecules,
+    name mol_silver.{rule.source_name}_molecules,
     kind INCREMENTAL_BY_UNIQUE_KEY (
         unique_key {primary_dedup}
     ),
@@ -274,7 +274,7 @@ SELECT
     TRUE AS is_primary,
     s.source_updated_at AS source_date,
     NOW() AS created_at
-FROM silver.molecules m
+FROM mol_silver.molecules m
 JOIN {rule.source_table} s ON m.inchi_key = s.inchi_key
 WHERE s.{source_column} IS NOT NULL
   AND m.needs_review = FALSE'''
@@ -286,7 +286,7 @@ WHERE s.{source_column} IS NOT NULL
 -- DO NOT EDIT MANUALLY - Changes will be overwritten
 
 MODEL (
-    name silver.{rule.source_name}_identifiers,
+    name mol_silver.{rule.source_name}_identifiers,
     kind INCREMENTAL_BY_UNIQUE_KEY (
         unique_key (molecule_id, identifier_type, identifier_value)
     ),
@@ -328,7 +328,7 @@ SELECT
     LOWER(TRIM(name_val)) AS name_normalized,
     '{rule.source_name}' AS source,
     NOW() AS created_at
-FROM silver.molecules m
+FROM mol_silver.molecules m
 JOIN {rule.source_table} s ON m.inchi_key = s.inchi_key
 CROSS JOIN LATERAL jsonb_array_elements_text(s.{source_column}) AS name_val
 WHERE s.{source_column} IS NOT NULL
@@ -347,7 +347,7 @@ SELECT
     LOWER(TRIM(s.{source_column})) AS name_normalized,
     '{rule.source_name}' AS source,
     NOW() AS created_at
-FROM silver.molecules m
+FROM mol_silver.molecules m
 JOIN {rule.source_table} s ON m.inchi_key = s.inchi_key
 WHERE s.{source_column} IS NOT NULL
   AND m.needs_review = FALSE'''
@@ -359,7 +359,7 @@ WHERE s.{source_column} IS NOT NULL
 -- DO NOT EDIT MANUALLY - Changes will be overwritten
 
 MODEL (
-    name silver.{rule.source_name}_names,
+    name mol_silver.{rule.source_name}_names,
     kind INCREMENTAL_BY_UNIQUE_KEY (
         unique_key (molecule_id, name_normalized, source)
     ),
@@ -376,7 +376,7 @@ MODEL (
 
     def generate_unified_silver_model(self, rules: List[TransformationRule]) -> str:
         """
-        Generate a unified silver.molecules model that merges all sources.
+        Generate a unified mol_silver.molecules model that merges all sources.
 
         This model combines molecules from all source-specific models
         using source precedence for deduplication.
@@ -395,7 +395,7 @@ MODEL (
         for rule in sorted_rules:
             cte = f'''
     {rule.source_name}_molecules AS (
-        SELECT * FROM silver.{rule.source_name}_molecules
+        SELECT * FROM mol_silver.{rule.source_name}_molecules
     )'''
             source_ctes.append(cte)
 
@@ -410,7 +410,7 @@ MODEL (
 -- DO NOT EDIT MANUALLY - Changes will be overwritten
 
 MODEL (
-    name silver.molecules_unified,
+    name mol_silver.molecules_unified,
     kind FULL,
     cron '@daily',
     audits (
@@ -512,7 +512,7 @@ SELECT * FROM deduplicated;
         write_to_disk: bool
     ) -> GeneratedModel:
         """Create a GeneratedModel object and optionally write to disk."""
-        model_name = f"silver.{rule.source_name}_{model_type}"
+        model_name = f"mol_silver.{rule.source_name}_{model_type}"
         file_name = f"{rule.source_name}_{model_type}.sql"
         file_path = f"{self.MODELS_BASE_PATH}/silver/{file_name}"
         model_hash = hashlib.sha256(sql.encode()).hexdigest()
@@ -538,7 +538,7 @@ SELECT * FROM deduplicated;
         write_to_disk: bool
     ) -> GeneratedModel:
         """Create unified model."""
-        model_name = "silver.molecules_unified"
+        model_name = "mol_silver.molecules_unified"
         file_name = "molecules_unified.sql"
         file_path = f"{self.MODELS_BASE_PATH}/silver/{file_name}"
         model_hash = hashlib.sha256(sql.encode()).hexdigest()
@@ -562,7 +562,7 @@ SELECT * FROM deduplicated;
         async with self.db_pool.acquire() as conn:
             for model in models:
                 await conn.execute("""
-                    INSERT INTO raw.generated_sqlmesh_models
+                    INSERT INTO meta.generated_sqlmesh_models
                     (model_name, source_rule_id, model_sql, model_hash, file_path,
                      generation_status, last_generated_at)
                     VALUES ($1, $2, $3, $4, $5, 'generated', NOW())
@@ -588,8 +588,8 @@ SELECT * FROM deduplicated;
             # Find rules updated after their models were generated
             rows = await conn.fetch("""
                 SELECT DISTINCT r.source_name
-                FROM raw.silver_transformation_rules r
-                LEFT JOIN raw.generated_sqlmesh_models m
+                FROM meta.silver_transformation_rules r
+                LEFT JOIN meta.generated_sqlmesh_models m
                     ON m.source_rule_id = r.id
                 WHERE r.enabled = true
                   AND (m.id IS NULL

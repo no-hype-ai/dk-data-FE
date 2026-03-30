@@ -3,10 +3,10 @@
 Feature: 011-datasource-integration
 Task: T067-T069 — Medical news aggregation
 
-Loads normalised medical news article records into raw.medical_news
+Loads normalised medical news article records into mol_raw.medical_news
 with upsert semantics (ON CONFLICT DO UPDATE on article_id).
 
-Target table: raw.medical_news (see migration 060_ci_source_tables.sql)
+Target table: mol_raw.medical_news (see migration 060_ci_source_tables.sql)
 """
 
 import logging
@@ -29,7 +29,7 @@ def load_medical_news_data(
     source_file: Optional[str] = None,
     batch_size: int = BATCH_SIZE,
 ) -> Dict[str, Any]:
-    """Load medical news records into raw.medical_news.
+    """Load medical news records into mol_raw.medical_news.
 
     Validates each record using Pydantic and performs an upsert:
     INSERT ... ON CONFLICT (article_id) DO UPDATE.
@@ -52,7 +52,7 @@ def load_medical_news_data(
             "errors": [],
         }
 
-    logger.info("Loading %d medical news records into raw.medical_news", len(records))
+    logger.info("Loading %d medical news records into mol_raw.medical_news", len(records))
 
     records_inserted = 0
     records_failed = 0
@@ -67,7 +67,7 @@ def load_medical_news_data(
 
                     cur.execute(
                         """
-                        INSERT INTO raw.medical_news (
+                        INSERT INTO mol_raw.medical_news (
                             article_id, source_name, title, summary,
                             publication_date, url,
                             drug_mentions, therapeutic_areas,

@@ -84,7 +84,7 @@ class CMSHospitalInfoFetcher(BaseFetcher):
         logger.warning("Dataset not found in catalog, using legacy URL")
         return f"https://data.cms.gov/provider-data/api/1/datastore/query/{self.HOSPITAL_INFO_DATASET}/0"
 
-    def fetch(self) -> dict[str, Any]:
+    def fetch(self, **kwargs) -> dict[str, Any]:
         """
         Fetch CMS Hospital General Information.
 
@@ -153,7 +153,10 @@ class CMSHospitalInfoFetcher(BaseFetcher):
             # Count records
             import pandas as pd
             try:
-                df = pd.read_csv(filepath, dtype={'Facility ID': str, 'ZIP Code': str})
+                df = pd.read_csv(filepath, dtype={
+                    'Facility_ID': str, 'ZIP_Code': str,   # underscore format
+                    'Facility ID': str, 'ZIP Code': str,   # space format
+                })
                 record_count = len(df)
             except Exception as e:
                 logger.warning(f"Could not count records: {e}")
@@ -290,7 +293,10 @@ class CMSHospitalInfoFetcher(BaseFetcher):
                         f.write(chunk)
 
                 # Verify and count records
-                df = pd.read_csv(filepath, dtype={'Facility ID': str, 'ZIP Code': str})
+                df = pd.read_csv(filepath, dtype={
+                    'Facility_ID': str, 'ZIP_Code': str,   # underscore format
+                    'Facility ID': str, 'ZIP Code': str,   # space format
+                })
 
                 result = {
                     'status': 'success',
@@ -399,7 +405,10 @@ class CMSHospitalInfoFetcher(BaseFetcher):
                 filepath = self.download_file(csv_url, filename)
 
                 # Verify it's actually CSV
-                df = pd.read_csv(filepath, dtype={'Facility ID': str, 'ZIP Code': str})
+                df = pd.read_csv(filepath, dtype={
+                    'Facility_ID': str, 'ZIP_Code': str,   # underscore format
+                    'Facility ID': str, 'ZIP Code': str,   # space format
+                })
 
                 return {
                     'status': 'success',

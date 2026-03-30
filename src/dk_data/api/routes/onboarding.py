@@ -445,18 +445,15 @@ async def get_molecule_onboarding_service():
                     bulletproof_transformer=transformer
                 )
             except ImportError:
-                # Fallback to legacy services
-                from ...services.data_platform.bronze_ingestion import BronzeIngestionService
+                # BulletproofTransformer not available — use raw+gold only
                 from ...services.data_platform.silver_transformation import SilverTransformationService
 
-                bronze_service = BronzeIngestionService(pool)
                 silver_service = SilverTransformationService(pool)
 
                 _molecule_onboarding_service = MoleculeOnboardingService(
                     db_pool=pool,
                     identifier_resolver=resolver,
                     raw_ingestion_service=raw_service,
-                    bronze_ingestion_service=bronze_service,
                     silver_transformation_service=silver_service,
                     gold_aggregation_service=gold_service,
                 )

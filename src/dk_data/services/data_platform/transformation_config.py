@@ -5,10 +5,10 @@ All configuration for the medallion architecture stored in database tables.
 No hardcoded values - everything is database-driven and dynamically loaded.
 
 Tables:
-- raw.transformation_config: Global transformation settings
-- raw.source_config: Per-source configuration
-- raw.identifier_types: Identifier patterns and priorities
-- raw.field_mappings: Field extraction rules per source
+- meta.transformation_config: Global transformation settings
+- meta.source_config: Per-source configuration
+- meta.identifier_types: Identifier patterns and priorities
+- meta.field_mappings: Field extraction rules per source
 - raw.linking_rules: Entity linking configuration
 
 Part of DK Molecule Data Platform (012-dk-data-platform)
@@ -123,7 +123,7 @@ class TransformationConfigManager:
         async with self.db_pool.acquire() as conn:
             # Create configuration tables
             await conn.execute("""
-                CREATE TABLE IF NOT EXISTS raw.transformation_config (
+                CREATE TABLE IF NOT EXISTS meta.transformation_config (
                     key TEXT PRIMARY KEY,
                     value JSONB NOT NULL,
                     description TEXT,
@@ -132,7 +132,7 @@ class TransformationConfigManager:
             """)
 
             await conn.execute("""
-                CREATE TABLE IF NOT EXISTS raw.identifier_types (
+                CREATE TABLE IF NOT EXISTS meta.identifier_types (
                     type_id TEXT PRIMARY KEY,
                     name TEXT NOT NULL,
                     regex_pattern TEXT NOT NULL,
@@ -147,7 +147,7 @@ class TransformationConfigManager:
             """)
 
             await conn.execute("""
-                CREATE TABLE IF NOT EXISTS raw.source_config (
+                CREATE TABLE IF NOT EXISTS meta.source_config (
                     source_id TEXT PRIMARY KEY,
                     name TEXT NOT NULL,
                     precedence INTEGER NOT NULL DEFAULT 100,
@@ -167,9 +167,9 @@ class TransformationConfigManager:
             """)
 
             await conn.execute("""
-                CREATE TABLE IF NOT EXISTS raw.field_mappings (
+                CREATE TABLE IF NOT EXISTS meta.field_mappings (
                     id SERIAL PRIMARY KEY,
-                    source_id TEXT NOT NULL REFERENCES raw.source_config(source_id),
+                    source_id TEXT NOT NULL REFERENCES meta.source_config(source_id),
                     source_field TEXT NOT NULL,
                     target_field TEXT NOT NULL,
                     target_type TEXT DEFAULT 'TEXT',
@@ -183,7 +183,7 @@ class TransformationConfigManager:
 
             await conn.execute("""
                 CREATE INDEX IF NOT EXISTS idx_field_mappings_source
-                ON raw.field_mappings(source_id)
+                ON meta.field_mappings(source_id)
             """)
 
             # Seed default configuration if empty
@@ -192,7 +192,7 @@ class TransformationConfigManager:
     async def _seed_defaults(self, conn):
         """Seed default configuration values."""
         # Check if already seeded
-        count = await conn.fetchval("SELECT COUNT(*) FROM raw.identifier_types")
+        count = await conn.fetchval("SELECT COUNT(*) FROM meta.identifier_types")
         if count > 0:
             return
 
@@ -215,7 +215,7 @@ class TransformationConfigManager:
 
         for key, value in default_settings.items():
             await conn.execute("""
-                INSERT INTO raw.transformation_config (key, value, description)
+                INSERT INTO meta.transformation_config (key, value, description)
                 VALUES ($1, $2, $3)
                 ON CONFLICT (key) DO NOTHING
             """, key, json.dumps(value), f"Default {key}")
@@ -262,7 +262,7 @@ class TransformationConfigManager:
 
         for type_id, name, pattern, priority, source, is_structural, examples in identifier_types:
             await conn.execute("""
-                INSERT INTO raw.identifier_types
+                INSERT INTO meta.identifier_types
                 (type_id, name, regex_pattern, priority, preferred_source, is_structural, examples)
                 VALUES ($1, $2, $3, $4, $5, $6, $7)
                 ON CONFLICT (type_id) DO NOTHING
@@ -336,7 +336,7 @@ class TransformationConfigManager:
 
         for source_id, name, precedence, tier, api_type, id_fields, name_fields, date_fields, primary_id in source_configs:
             await conn.execute("""
-                INSERT INTO raw.source_config
+                INSERT INTO meta.source_config
                 (source_id, name, precedence, tier, api_type, identifier_fields, name_fields, date_fields, primary_identifier)
                 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
                 ON CONFLICT (source_id) DO NOTHING
@@ -356,7 +356,7 @@ class TransformationConfigManager:
         async with self.db_pool.acquire() as conn:
             # Load transformation settings
             settings_dict = {}
-            rows = await conn.fetch("SELECT key, value FROM raw.transformation_config")
+            rows = await conn.fetch("SELECT key, value FROM meta.transformation_config")
             for row in rows:
                 val = row['value']
                 if isinstance(val, str):
@@ -381,7 +381,7 @@ class TransformationConfigManager:
             self._identifier_types = {}
             rows = await conn.fetch("""
                 SELECT type_id, name, regex_pattern, priority, preferred_source, is_structural, validation_func
-                FROM raw.identifier_types
+                FROM meta.identifier_types
                 ORDER BY priority
             """)
             for row in rows:
@@ -401,7 +401,7 @@ class TransformationConfigManager:
                 SELECT source_id, name, precedence, tier, api_type, identifier_fields,
                        name_fields, date_fields, flatten_depth, batch_size,
                        primary_identifier, secondary_identifiers
-                FROM raw.source_config
+                FROM meta.source_config
                 ORDER BY precedence
             """)
             for row in rows:
@@ -429,7 +429,7 @@ class TransformationConfigManager:
             rows = await conn.fetch("""
                 SELECT source_id, source_field, target_field, target_type, transformation,
                        is_identifier, identifier_type
-                FROM raw.field_mappings
+                FROM meta.field_mappings
             """)
             for row in rows:
                 source_id = row['source_id']
@@ -498,7 +498,7 @@ class TransformationConfigManager:
         """Add or update a source configuration."""
         async with self.db_pool.acquire() as conn:
             await conn.execute("""
-                INSERT INTO raw.source_config
+                INSERT INTO meta.source_config
                 (source_id, name, precedence, tier, api_type, identifier_fields,
                  name_fields, date_fields, flatten_depth, batch_size,
                  primary_identifier, secondary_identifiers)
@@ -538,11 +538,11 @@ class TransformationConfigManager:
         """Update a transformation setting."""
         async with self.db_pool.acquire() as conn:
             await conn.execute("""
-                INSERT INTO raw.transformation_config (key, value, description, updated_at)
+                INSERT INTO meta.transformation_config (key, value, description, updated_at)
                 VALUES ($1, $2, $3, NOW())
                 ON CONFLICT (key) DO UPDATE SET
                     value = $2,
-                    description = COALESCE($3, raw.transformation_config.description),
+                    description = COALESCE($3, meta.transformation_config.description),
                     updated_at = NOW()
             """, key, json.dumps(value), description)
 

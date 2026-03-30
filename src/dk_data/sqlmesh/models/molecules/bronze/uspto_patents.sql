@@ -3,7 +3,7 @@
 -- Part of: 014-uspto-euipo-model-datasource (fixes broken JSONB extraction from 012)
 
 MODEL (
-    name bronze.uspto_patents,
+    name mol_bronze.uspto_patents,
     kind INCREMENTAL_BY_TIME_RANGE (
         time_column ingested_at,
         lookback 7
@@ -26,8 +26,8 @@ SELECT
     r.filing_date,
     r.grant_date AS patent_date,
 
-    -- Classification
-    NULL::TEXT AS patent_type,
+    -- Classification (mol_raw.uspto_patents does not carry patent_type; default to 'utility')
+    'utility'::TEXT AS patent_type,
     NULL::TEXT AS patent_kind,
     CASE
         WHEN r.cpc_codes IS NOT NULL
@@ -56,6 +56,6 @@ SELECT
     FALSE AS processed_to_silver,
     r._loaded_at AS ingested_at
 
-FROM raw.uspto_patents r
+FROM mol_raw.uspto_patents r
 WHERE r.patent_number IS NOT NULL
   AND _loaded_at BETWEEN @start_dt AND @end_dt

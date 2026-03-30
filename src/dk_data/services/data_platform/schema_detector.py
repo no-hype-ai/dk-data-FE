@@ -87,7 +87,7 @@ class SchemaDetector:
         r'^.*Id$',
         r'^nct_id$',
         r'^drugbank_id$',
-        r'^chembl_id$',
+        r'^molecule_chembl_id$',
         r'^set_id$',
         r'^safety_report_id$',
     ]
@@ -400,7 +400,7 @@ class SchemaDetector:
             f"-- Generated at: {schema.detected_at.isoformat()}",
             "",
             "MODEL (",
-            f"    name bronze.{schema.table_name},",
+            f"    name mol_bronze.{schema.table_name},",
             "    kind INCREMENTAL_BY_TIME_RANGE (",
             "        time_column request_timestamp,",
             "        batch_size 500",

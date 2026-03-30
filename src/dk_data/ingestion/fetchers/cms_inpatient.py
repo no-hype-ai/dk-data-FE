@@ -97,7 +97,7 @@ class CMSInpatientFetcher(BaseFetcher):
         year = fiscal_year or max(self.AVAILABLE_YEARS)
         return f"https://data.cms.gov/provider-summary-by-type-of-service/medicare-inpatient-hospitals/medicare-inpatient-hospitals-by-provider-and-service/data?year={year}&_format=csv&headers=display"
 
-    def fetch(self, fiscal_year: Optional[int] = None, filter_tavr: bool = True) -> dict[str, Any]:
+    def fetch(self, fiscal_year: Optional[int] = None, filter_tavr: bool = True, **kwargs) -> dict[str, Any]:
         """
         Fetch CMS Medicare Inpatient data.
 

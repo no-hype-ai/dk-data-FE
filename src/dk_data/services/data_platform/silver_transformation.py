@@ -84,13 +84,13 @@ class SilverTransformationService:
         result = TransformationResult(0, 0, 0, 0, [])
 
         async with self.db_pool.acquire() as conn:
-            # Get unprocessed Bronze records (use bronze.chembl table with correct column names)
+            # Get unprocessed Bronze records (use mol_bronze.chembl table with correct column names)
             bronze_records = await conn.fetch("""
-                SELECT id, molecule_chembl_id as chembl_id, pref_name, molecule_type, max_phase,
+                SELECT id, molecule_chembl_id, pref_name, molecule_type, max_phase,
                        molecular_formula, molecular_weight, canonical_smiles,
                        standard_inchi as inchi, standard_inchi_key as inchi_key,
                        first_approval, indication_class
-                FROM bronze.chembl
+                FROM mol_bronze.chembl
                 WHERE processed_to_silver = FALSE OR processed_to_silver IS NULL
                 ORDER BY ingested_at ASC
                 LIMIT $1
@@ -107,27 +107,27 @@ class SilverTransformationService:
 
                     # Mark as processed
                     await conn.execute("""
-                        UPDATE bronze.chembl
+                        UPDATE mol_bronze.chembl
                         SET processed_to_silver = TRUE, processed_at = NOW()
                         WHERE id = $1
                     """, record['id'])
 
                 except Exception as e:
-                    result.errors.append(f"ChEMBL {record['chembl_id']}: {str(e)}")
-                    logger.error(f"Failed to process ChEMBL molecule {record['chembl_id']}: {e}")
+                    result.errors.append(f"ChEMBL {record['molecule_chembl_id']}: {str(e)}")
+                    logger.error(f"Failed to process ChEMBL molecule {record['molecule_chembl_id']}: {e}")
 
         return result
 
     async def _process_chembl_molecule(self, conn, record: Dict) -> Optional[str]:
         """Process a single ChEMBL molecule into Silver."""
         inchi_key = record['inchi_key']
-        chembl_id = record['chembl_id']
+        chembl_id = record['molecule_chembl_id']
 
         # Step 1: Try to find existing molecule by InChI Key
         existing = None
         if inchi_key:
             existing = await conn.fetchrow("""
-                SELECT id, data_sources FROM silver.molecules
+                SELECT id, data_sources FROM mol_silver.molecules
                 WHERE inchi_key = $1
             """, inchi_key)
 
@@ -135,8 +135,8 @@ class SilverTransformationService:
         if not existing and chembl_id:
             existing = await conn.fetchrow("""
                 SELECT m.id, m.data_sources
-                FROM silver.molecules m
-                JOIN silver.identifier_mappings im ON m.id = im.molecule_id
+                FROM mol_silver.molecules m
+                JOIN mol_silver.identifier_mappings im ON m.id = im.molecule_id
                 WHERE im.identifier_type = 'chembl_id'
                   AND im.identifier_value = $1
             """, chembl_id)
@@ -157,7 +157,7 @@ class SilverTransformationService:
         development_status = self._phase_to_status(record['max_phase'])
 
         row = await conn.fetchrow("""
-            INSERT INTO silver.molecules (
+            INSERT INTO mol_silver.molecules (
                 inchi_key, canonical_name, name_source,
                 canonical_smiles, inchi, molecular_formula, molecular_weight,
                 molecule_type, development_status, max_phase,
@@ -186,7 +186,7 @@ class SilverTransformationService:
 
         # Add identifier mapping for ChEMBL ID
         await self._add_identifier_mapping(
-            conn, molecule_id, 'chembl_id', record['chembl_id'], 'chembl'
+            conn, molecule_id, 'chembl_id', record['molecule_chembl_id'], 'chembl'
         )
 
         # Add InChI Key mapping if available
@@ -207,7 +207,7 @@ class SilverTransformationService:
         """Update existing molecule with ChEMBL data (respecting precedence)."""
         # Get current molecule data
         current = await conn.fetchrow("""
-            SELECT primary_source, data_sources FROM silver.molecules WHERE id = $1::uuid
+            SELECT primary_source, data_sources FROM mol_silver.molecules WHERE id = $1::uuid
         """, molecule_id)
 
         current_precedence = SOURCE_PRECEDENCE.get(current['primary_source'], 999)
@@ -233,7 +233,7 @@ class SilverTransformationService:
 
             if updates:
                 await conn.execute(f"""
-                    UPDATE silver.molecules
+                    UPDATE mol_silver.molecules
                     SET {', '.join(updates)}, updated_at = NOW()
                     WHERE id = $1::uuid
                 """, *params)
@@ -245,14 +245,14 @@ class SilverTransformationService:
         if 'chembl' not in data_sources:
             data_sources.append('chembl')
             await conn.execute("""
-                UPDATE silver.molecules
+                UPDATE mol_silver.molecules
                 SET data_sources = $2::jsonb, updated_at = NOW()
                 WHERE id = $1::uuid
             """, molecule_id, json.dumps(data_sources))
 
         # Add ChEMBL ID mapping if not exists
         await self._add_identifier_mapping(
-            conn, molecule_id, 'chembl_id', record['chembl_id'], 'chembl'
+            conn, molecule_id, 'chembl_id', record['molecule_chembl_id'], 'chembl'
         )
 
     async def process_clinical_trials(self, limit: int = 100) -> TransformationResult:
@@ -260,7 +260,7 @@ class SilverTransformationService:
         result = TransformationResult(0, 0, 0, 0, [])
 
         async with self.db_pool.acquire() as conn:
-            # Use correct column names from bronze.clinicaltrials table
+            # Use correct column names from mol_bronze.clinicaltrials table
             bronze_records = await conn.fetch("""
                 SELECT id, nct_id, org_study_id,
                        COALESCE(official_title, brief_title) as title,
@@ -272,7 +272,7 @@ class SilverTransformationService:
                        eligibility_criteria, minimum_age, maximum_age, sex,
                        NULL as conditions, interventions, primary_outcomes, secondary_outcomes,
                        NULL as locations, NULL as countries
-                FROM bronze.clinicaltrials
+                FROM mol_bronze.clinicaltrials
                 WHERE processed_to_silver = FALSE OR processed_to_silver IS NULL
                 ORDER BY ingested_at ASC
                 LIMIT $1
@@ -310,7 +310,7 @@ class SilverTransformationService:
 
                     # Mark as processed
                     await conn.execute("""
-                        UPDATE bronze.clinicaltrials
+                        UPDATE mol_bronze.clinicaltrials
                         SET processed_to_silver = TRUE
                         WHERE id = $1
                     """, record['id'])
@@ -352,7 +352,7 @@ class SilverTransformationService:
             collaborators = json.loads(collaborators)
 
         await conn.execute("""
-            INSERT INTO silver.clinical_trials (
+            INSERT INTO mol_silver.clinical_trials (
                 molecule_id, nct_id, org_study_id, title, brief_summary,
                 phase, study_type, status,
                 start_date, completion_date, primary_completion_date,
@@ -416,7 +416,7 @@ class SilverTransformationService:
                 SELECT
                     UPPER(drug->>'medicinalproduct') as drug_name,
                     COUNT(DISTINCT f.id) as event_count
-                FROM bronze.openfda_faers f,
+                FROM mol_bronze.openfda_faers f,
                      jsonb_array_elements(COALESCE(f.patient_drug, '[]'::jsonb)) AS drug
                 WHERE (f.processed_to_silver = FALSE OR f.processed_to_silver IS NULL)
                   AND drug->>'medicinalproduct' IS NOT NULL
@@ -458,10 +458,10 @@ class SilverTransformationService:
 
                     # Mark events containing this drug as processed
                     await conn.execute("""
-                        UPDATE bronze.openfda_faers
+                        UPDATE mol_bronze.openfda_faers
                         SET processed_to_silver = TRUE, processed_at = NOW()
                         WHERE id IN (
-                            SELECT f.id FROM bronze.openfda_faers f,
+                            SELECT f.id FROM mol_bronze.openfda_faers f,
                                    jsonb_array_elements(COALESCE(f.patient_drug, '[]'::jsonb)) AS drug
                             WHERE UPPER(drug->>'medicinalproduct') = $1
                         )
@@ -486,7 +486,7 @@ class SilverTransformationService:
                 SUM(CASE WHEN f.serious_hospitalization = 1 THEN 1 ELSE 0 END) AS hospitalization_count,
                 MIN(f.receive_date) AS first_report_date,
                 MAX(f.receive_date) AS last_report_date
-            FROM bronze.openfda_faers f,
+            FROM mol_bronze.openfda_faers f,
                  jsonb_array_elements(COALESCE(f.patient_drug, '[]'::jsonb)) AS drug,
                  jsonb_array_elements(COALESCE(f.patient_reaction, '[]'::jsonb)) AS reaction
             WHERE UPPER(drug->>'medicinalproduct') = $1
@@ -498,7 +498,7 @@ class SilverTransformationService:
                 continue
 
             await conn.execute("""
-                INSERT INTO silver.adverse_events (
+                INSERT INTO mol_silver.adverse_events (
                     molecule_id, meddra_pt,
                     report_count, serious_count, death_count, hospitalization_count,
                     first_report_date, last_report_date, source
@@ -528,7 +528,7 @@ class SilverTransformationService:
         result = TransformationResult(0, 0, 0, 0, [])
 
         async with self.db_pool.acquire() as conn:
-            # Use correct column names from bronze.openfda_labels table
+            # Use correct column names from mol_bronze.openfda_labels table
             bronze_records = await conn.fetch("""
                 SELECT id, set_id, spl_id, version,
                        brand_name, generic_name, manufacturer_name as manufacturer,
@@ -536,7 +536,7 @@ class SilverTransformationService:
                        indications_and_usage, dosage_and_administration,
                        contraindications, warnings, boxed_warning, adverse_reactions,
                        drug_interactions, mechanism_of_action, effective_time as effective_date
-                FROM bronze.openfda_labels
+                FROM mol_bronze.openfda_labels
                 WHERE processed_to_silver = FALSE OR processed_to_silver IS NULL
                 ORDER BY ingested_at ASC
                 LIMIT $1
@@ -575,7 +575,7 @@ class SilverTransformationService:
                         result.records_quarantined += 1
 
                     await conn.execute("""
-                        UPDATE bronze.openfda_labels
+                        UPDATE mol_bronze.openfda_labels
                         SET processed_to_silver = TRUE, processed_at = NOW()
                         WHERE id = $1
                     """, record['id'])
@@ -589,7 +589,7 @@ class SilverTransformationService:
     async def _upsert_silver_label(self, conn, record: Dict, molecule_id: str):
         """Upsert drug label into Silver layer."""
         await conn.execute("""
-            INSERT INTO silver.drug_labels (
+            INSERT INTO mol_silver.drug_labels (
                 molecule_id, set_id, spl_id, version,
                 brand_name, generic_name, manufacturer, application_number,
                 product_type, indications_and_usage, dosage_and_administration,
@@ -629,7 +629,7 @@ class SilverTransformationService:
         # Update molecule approval info if this is an approved drug
         if record['effective_date']:
             await conn.execute("""
-                UPDATE silver.molecules
+                UPDATE mol_silver.molecules
                 SET development_status = 'approved',
                     approval_date = COALESCE(approval_date, $2),
                     first_approval_year = COALESCE(first_approval_year, EXTRACT(YEAR FROM $2)::INTEGER),
@@ -643,7 +643,7 @@ class SilverTransformationService:
     ):
         """Add an identifier mapping."""
         await conn.execute("""
-            INSERT INTO silver.identifier_mappings (
+            INSERT INTO mol_silver.identifier_mappings (
                 molecule_id, identifier_type, identifier_value, source, is_primary
             ) VALUES ($1::uuid, $2, $3, $4, TRUE)
             ON CONFLICT (molecule_id, identifier_type, identifier_value) DO NOTHING
@@ -655,7 +655,7 @@ class SilverTransformationService:
         """Add a molecule alias."""
         normalized = FuzzyMatcher.normalize_name(alias_name)
         await conn.execute("""
-            INSERT INTO silver.molecule_aliases (
+            INSERT INTO mol_silver.molecule_aliases (
                 molecule_id, alias_name, alias_type, alias_name_normalized, source
             ) VALUES ($1::uuid, $2, $3, $4, $5)
             ON CONFLICT (molecule_id, alias_name, alias_type) DO NOTHING
@@ -666,7 +666,7 @@ class SilverTransformationService:
     ):
         """Add to resolution queue for manual review."""
         await conn.execute("""
-            INSERT INTO silver.resolution_queue (
+            INSERT INTO mol_silver.resolution_queue (
                 original_identifier, identifier_type, confidence_score, status
             ) VALUES ($1, $2, 0.0, 'pending')
             ON CONFLICT DO NOTHING
@@ -709,7 +709,7 @@ class SilverTransformationService:
             bronze_records = await conn.fetch("""
                 SELECT id, cid, iupac_name, canonical_smiles, inchi, inchikey,
                        molecular_formula, molecular_weight
-                FROM bronze.pubchem
+                FROM mol_bronze.pubchem
                 WHERE (processed_to_silver = FALSE OR processed_to_silver IS NULL)
                   AND inchikey IS NOT NULL
                 ORDER BY ingested_at ASC
@@ -723,7 +723,7 @@ class SilverTransformationService:
 
                     # Check for existing molecule by InChI Key
                     existing = await conn.fetchrow("""
-                        SELECT id, data_sources FROM silver.molecules
+                        SELECT id, data_sources FROM mol_silver.molecules
                         WHERE inchi_key = $1
                     """, inchi_key)
 
@@ -737,7 +737,7 @@ class SilverTransformationService:
                         result.molecules_created += 1
 
                     await conn.execute("""
-                        UPDATE bronze.pubchem
+                        UPDATE mol_bronze.pubchem
                         SET processed_to_silver = TRUE, processed_at = NOW()
                         WHERE id = $1
                     """, record['id'])
@@ -751,7 +751,7 @@ class SilverTransformationService:
     async def _create_molecule_from_pubchem(self, conn, record: Dict) -> str:
         """Create a Silver molecule from PubChem data."""
         row = await conn.fetchrow("""
-            INSERT INTO silver.molecules (
+            INSERT INTO mol_silver.molecules (
                 inchi_key, canonical_name, name_source,
                 canonical_smiles, inchi, molecular_formula, molecular_weight,
                 resolution_confidence, data_sources, primary_source
@@ -783,7 +783,7 @@ class SilverTransformationService:
         """Update existing molecule with PubChem data."""
         # Add PubChem to data sources
         await conn.execute("""
-            UPDATE silver.molecules
+            UPDATE mol_silver.molecules
             SET data_sources = COALESCE(data_sources, '[]'::jsonb) || '["pubchem"]'::jsonb,
                 updated_at = NOW()
             WHERE id = $1::uuid
@@ -805,7 +805,7 @@ class SilverTransformationService:
                 SELECT
                     drug_name,
                     COUNT(DISTINCT meddra_concept_name) as effect_count
-                FROM bronze.sider
+                FROM mol_bronze.sider
                 WHERE (processed_to_silver = FALSE OR processed_to_silver IS NULL)
                   AND drug_name IS NOT NULL
                 GROUP BY drug_name
@@ -833,7 +833,7 @@ class SilverTransformationService:
 
                     # Mark SIDER records as processed
                     await conn.execute("""
-                        UPDATE bronze.sider
+                        UPDATE mol_bronze.sider
                         SET processed_to_silver = TRUE, processed_at = NOW()
                         WHERE drug_name = $1
                     """, drug_name)
@@ -852,7 +852,7 @@ class SilverTransformationService:
                 meddra_umls_id,
                 AVG(COALESCE(frequency_lower, 0.01)) as avg_freq,
                 COUNT(*) as report_count
-            FROM bronze.sider
+            FROM mol_bronze.sider
             WHERE drug_name = $1
               AND meddra_concept_name IS NOT NULL
             GROUP BY meddra_concept_name, meddra_umls_id
@@ -863,7 +863,7 @@ class SilverTransformationService:
                 continue
 
             await conn.execute("""
-                INSERT INTO silver.adverse_events (
+                INSERT INTO mol_silver.adverse_events (
                     molecule_id, meddra_pt, meddra_pt_code,
                     report_count, source
                 ) VALUES ($1::uuid, $2, $3, $4, 'sider')
@@ -884,7 +884,7 @@ class SilverTransformationService:
         async with self.db_pool.acquire() as conn:
             bronze_records = await conn.fetch("""
                 SELECT id, rxcui, name, tty, ingredients, atc_codes
-                FROM bronze.rxnorm_concepts
+                FROM mol_bronze.rxnorm_concepts
                 WHERE (processed_to_silver = FALSE OR processed_to_silver IS NULL)
                   AND rxcui IS NOT NULL
                 ORDER BY ingested_at ASC
@@ -922,7 +922,7 @@ class SilverTransformationService:
                         result.records_quarantined += 1
 
                     await conn.execute("""
-                        UPDATE bronze.rxnorm_concepts
+                        UPDATE mol_bronze.rxnorm_concepts
                         SET processed_to_silver = TRUE, processed_at = NOW()
                         WHERE id = $1
                     """, record['id'])
@@ -943,7 +943,7 @@ class SilverTransformationService:
                        target_name, target_source_id, target_organism,
                        ki_nm, kd_nm, ic50_nm, ec50_nm,
                        pmid, doi
-                FROM bronze.bindingdb
+                FROM mol_bronze.bindingdb
                 WHERE (processed_to_silver = FALSE OR processed_to_silver IS NULL)
                 ORDER BY ingested_at ASC
                 LIMIT $1
@@ -956,7 +956,7 @@ class SilverTransformationService:
                     molecule_id = None
                     if record['inchi_key']:
                         existing = await conn.fetchrow("""
-                            SELECT id FROM silver.molecules WHERE inchi_key = $1
+                            SELECT id FROM mol_silver.molecules WHERE inchi_key = $1
                         """, record['inchi_key'])
                         if existing:
                             molecule_id = existing['id']
@@ -979,7 +979,7 @@ class SilverTransformationService:
                         ]:
                             if value is not None:
                                 await conn.execute("""
-                                    INSERT INTO silver.bioactivity (
+                                    INSERT INTO mol_silver.bioactivity (
                                         molecule_id, target_name, target_uniprot_id, target_organism,
                                         activity_type, activity_value, activity_unit,
                                         source, source_id, pmid, doi
@@ -1000,7 +1000,7 @@ class SilverTransformationService:
                         result.records_quarantined += 1
 
                     await conn.execute("""
-                        UPDATE bronze.bindingdb
+                        UPDATE mol_bronze.bindingdb
                         SET processed_to_silver = TRUE, processed_at = NOW()
                         WHERE id = $1
                     """, record['id'])
@@ -1019,7 +1019,7 @@ class SilverTransformationService:
             bronze_records = await conn.fetch("""
                 SELECT id, kegg_id, name, inchi_key, smiles, drugbank_id,
                        atc_codes, targets, research_codes
-                FROM bronze.kegg_drug
+                FROM mol_bronze.kegg_drug
                 WHERE (processed_to_silver = FALSE OR processed_to_silver IS NULL)
                 ORDER BY ingested_at ASC
                 LIMIT $1
@@ -1032,14 +1032,14 @@ class SilverTransformationService:
                     molecule_id = None
                     if record['inchi_key']:
                         existing = await conn.fetchrow("""
-                            SELECT id FROM silver.molecules WHERE inchi_key = $1
+                            SELECT id FROM mol_silver.molecules WHERE inchi_key = $1
                         """, record['inchi_key'])
                         if existing:
                             molecule_id = existing['id']
 
                     if not molecule_id and record['drugbank_id']:
                         existing = await conn.fetchrow("""
-                            SELECT molecule_id FROM silver.identifier_mappings
+                            SELECT molecule_id FROM mol_silver.identifier_mappings
                             WHERE identifier_type = 'drugbank_id' AND identifier_value = $1
                         """, record['drugbank_id'])
                         if existing:
@@ -1066,7 +1066,7 @@ class SilverTransformationService:
                         result.records_quarantined += 1
 
                     await conn.execute("""
-                        UPDATE bronze.kegg_drug
+                        UPDATE mol_bronze.kegg_drug
                         SET processed_to_silver = TRUE, processed_at = NOW()
                         WHERE id = $1
                     """, record['id'])
@@ -1087,7 +1087,7 @@ class SilverTransformationService:
                        gene_names, organism, organism_id,
                        sequence, sequence_length, function_description,
                        drugbank_ids, chembl_ids
-                FROM bronze.uniprot
+                FROM mol_bronze.uniprot
                 WHERE (processed_to_silver = FALSE OR processed_to_silver IS NULL)
                 ORDER BY ingested_at ASC
                 LIMIT $1
@@ -1096,17 +1096,17 @@ class SilverTransformationService:
             for record in bronze_records:
                 result.records_processed += 1
                 try:
-                    # Insert or update target in silver.targets
+                    # Insert or update target in mol_silver.targets
                     await conn.execute("""
-                        INSERT INTO silver.targets (
+                        INSERT INTO mol_silver.targets (
                             uniprot_id, entry_name, protein_name,
                             gene_names, organism, organism_id,
                             sequence, sequence_length, function_description,
                             source
                         ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, 'uniprot')
                         ON CONFLICT (uniprot_id) DO UPDATE SET
-                            protein_name = COALESCE(EXCLUDED.protein_name, silver.targets.protein_name),
-                            function_description = COALESCE(EXCLUDED.function_description, silver.targets.function_description),
+                            protein_name = COALESCE(EXCLUDED.protein_name, mol_silver.targets.protein_name),
+                            function_description = COALESCE(EXCLUDED.function_description, mol_silver.targets.function_description),
                             updated_at = NOW()
                     """,
                         record['accession'],
@@ -1123,7 +1123,7 @@ class SilverTransformationService:
                     result.molecules_created += 1  # Using molecules_created for targets
 
                     await conn.execute("""
-                        UPDATE bronze.uniprot
+                        UPDATE mol_bronze.uniprot
                         SET processed_to_silver = TRUE, processed_at = NOW()
                         WHERE id = $1
                     """, record['id'])
@@ -1141,7 +1141,7 @@ class SilverTransformationService:
         async with self.db_pool.acquire() as conn:
             bronze_records = await conn.fetch("""
                 SELECT id, inn_name, inn_latin, inchi_key, research_codes, synonyms
-                FROM bronze.who_inn
+                FROM mol_bronze.who_inn
                 WHERE (processed_to_silver = FALSE OR processed_to_silver IS NULL)
                 ORDER BY ingested_at ASC
                 LIMIT $1
@@ -1154,7 +1154,7 @@ class SilverTransformationService:
                     molecule_id = None
                     if record['inchi_key']:
                         existing = await conn.fetchrow("""
-                            SELECT id FROM silver.molecules WHERE inchi_key = $1
+                            SELECT id FROM mol_silver.molecules WHERE inchi_key = $1
                         """, record['inchi_key'])
                         if existing:
                             molecule_id = existing['id']
@@ -1194,7 +1194,7 @@ class SilverTransformationService:
                         result.records_quarantined += 1
 
                     await conn.execute("""
-                        UPDATE bronze.who_inn
+                        UPDATE mol_bronze.who_inn
                         SET processed_to_silver = TRUE, processed_at = NOW()
                         WHERE id = $1
                     """, record['id'])
@@ -1213,7 +1213,7 @@ class SilverTransformationService:
             bronze_records = await conn.fetch("""
                 SELECT id, compound_id, smiles, inchi_key,
                        dataset_name, property_name, property_value, property_category
-                FROM bronze.tdc_admet
+                FROM mol_bronze.tdc_admet
                 WHERE (processed_to_silver = FALSE OR processed_to_silver IS NULL)
                 ORDER BY ingested_at ASC
                 LIMIT $1
@@ -1226,7 +1226,7 @@ class SilverTransformationService:
                     molecule_id = None
                     if record['inchi_key']:
                         existing = await conn.fetchrow("""
-                            SELECT id FROM silver.molecules WHERE inchi_key = $1
+                            SELECT id FROM mol_silver.molecules WHERE inchi_key = $1
                         """, record['inchi_key'])
                         if existing:
                             molecule_id = existing['id']
@@ -1234,7 +1234,7 @@ class SilverTransformationService:
                     if molecule_id:
                         # Insert ADMET prediction
                         await conn.execute("""
-                            INSERT INTO silver.admet_predictions (
+                            INSERT INTO mol_silver.admet_predictions (
                                 molecule_id, inchi_key, property_name, property_category,
                                 predicted_value, source
                             ) VALUES ($1::uuid, $2, $3, $4, $5, 'tdc_admet')
@@ -1253,7 +1253,7 @@ class SilverTransformationService:
                         result.records_quarantined += 1
 
                     await conn.execute("""
-                        UPDATE bronze.tdc_admet
+                        UPDATE mol_bronze.tdc_admet
                         SET processed_to_silver = TRUE, processed_at = NOW()
                         WHERE id = $1
                     """, record['id'])
@@ -1272,7 +1272,7 @@ class SilverTransformationService:
             bronze_records = await conn.fetch("""
                 SELECT id, pharmgkb_id, name, drugbank_id, chembl_id, inchi_key,
                        clinical_annotations, dosing_guidelines
-                FROM bronze.pharmgkb
+                FROM mol_bronze.pharmgkb
                 WHERE (processed_to_silver = FALSE OR processed_to_silver IS NULL)
                   AND entity_type = 'drug'
                 ORDER BY ingested_at ASC
@@ -1288,7 +1288,7 @@ class SilverTransformationService:
                     # Try InChI key first
                     if record['inchi_key']:
                         existing = await conn.fetchrow("""
-                            SELECT id FROM silver.molecules WHERE inchi_key = $1
+                            SELECT id FROM mol_silver.molecules WHERE inchi_key = $1
                         """, record['inchi_key'])
                         if existing:
                             molecule_id = existing['id']
@@ -1296,7 +1296,7 @@ class SilverTransformationService:
                     # Try DrugBank ID
                     if not molecule_id and record['drugbank_id']:
                         existing = await conn.fetchrow("""
-                            SELECT molecule_id FROM silver.identifier_mappings
+                            SELECT molecule_id FROM mol_silver.identifier_mappings
                             WHERE identifier_type = 'drugbank_id' AND identifier_value = $1
                         """, record['drugbank_id'])
                         if existing:
@@ -1305,7 +1305,7 @@ class SilverTransformationService:
                     # Try ChEMBL ID
                     if not molecule_id and record['chembl_id']:
                         existing = await conn.fetchrow("""
-                            SELECT molecule_id FROM silver.identifier_mappings
+                            SELECT molecule_id FROM mol_silver.identifier_mappings
                             WHERE identifier_type = 'chembl_id' AND identifier_value = $1
                         """, record['chembl_id'])
                         if existing:
@@ -1326,7 +1326,7 @@ class SilverTransformationService:
                                 gene = ann.get('gene', {}).get('symbol', '')
                                 if gene:
                                     await conn.execute("""
-                                        INSERT INTO silver.pharmacogenomics (
+                                        INSERT INTO mol_silver.pharmacogenomics (
                                             molecule_id, gene_symbol, variant_id,
                                             phenotype_category, clinical_annotation,
                                             level_of_evidence, source, pharmgkb_annotation_id
@@ -1349,7 +1349,7 @@ class SilverTransformationService:
                         result.records_quarantined += 1
 
                     await conn.execute("""
-                        UPDATE bronze.pharmgkb
+                        UPDATE mol_bronze.pharmgkb
                         SET processed_to_silver = TRUE, processed_at = NOW()
                         WHERE id = $1
                     """, record['id'])

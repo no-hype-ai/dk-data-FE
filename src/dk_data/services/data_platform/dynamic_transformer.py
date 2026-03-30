@@ -50,7 +50,7 @@ class DynamicSourceTransformer:
         async with self.db_pool.acquire() as conn:
             row = await conn.fetchrow("""
                 SELECT source, tier, options
-                FROM raw.sync_schedules
+                FROM meta.sync_schedules
                 WHERE source = $1
             """, source)
 
@@ -239,7 +239,7 @@ class DynamicSourceTransformer:
 
             options = config['options']
             raw_table = options.get('target_table', f'raw.{source}_data')
-            bronze_table = raw_table.replace('raw.', 'bronze.')
+            bronze_table = raw_table.replace('raw.', 'mol_bronze.')
 
             # AUTO-DETECT schema from larger sample (100 records for better coverage)
             data_columns = await self._detect_schema_from_payload(raw_table, sample_size=100)
@@ -775,8 +775,8 @@ class DynamicSourceTransformer:
 
             options = config['options']
             raw_table = options.get('target_table', f'raw.{source}_data')
-            bronze_table = raw_table.replace('raw.', 'bronze.')
-            silver_table = raw_table.replace('raw.', 'silver.')
+            bronze_table = raw_table.replace('raw.', 'mol_bronze.')
+            silver_table = raw_table.replace('raw.', 'mol_silver.')
 
             # Get entity linking configuration from Phase 3 onboarding
             entity_linking = options.get('entity_linking', {})
@@ -1043,7 +1043,7 @@ class DynamicSourceTransformer:
 
                 rows = await conn.fetch("""
                     SELECT identifier_value, molecule_id::text
-                    FROM silver.identifier_mappings
+                    FROM mol_silver.identifier_mappings
                     WHERE identifier_type = $1
                     AND identifier_value = ANY($2)
                 """, lookup_type, list(values))
@@ -1060,7 +1060,7 @@ class DynamicSourceTransformer:
                 try:
                     rows = await conn.fetch("""
                         SELECT drug_name_lower, molecule_id::text
-                        FROM silver.drug_name_lookup
+                        FROM mol_silver.drug_name_lookup
                         WHERE drug_name_lower = ANY($1)
                     """, [v.lower() for v in values])
 
@@ -1168,7 +1168,7 @@ class DynamicSourceTransformer:
         try:
             rows = await conn.fetch("""
                 SELECT identifier_value, molecule_id::text
-                FROM silver.identifier_mappings
+                FROM mol_silver.identifier_mappings
                 WHERE identifier_type = $1
                 AND identifier_value = ANY($2)
             """, db_identifier_type, list(identifiers))
@@ -1186,7 +1186,7 @@ class DynamicSourceTransformer:
                 remaining = [i for i in identifiers if i not in cache]
                 rows = await conn.fetch(f"""
                     SELECT {lookup_column} as identifier, id::text as molecule_id
-                    FROM silver.molecules
+                    FROM mol_silver.molecules
                     WHERE {lookup_column} = ANY($1)
                 """, remaining)
 
@@ -1205,7 +1205,7 @@ class DynamicSourceTransformer:
                 if remaining:
                     rows = await conn.fetch("""
                         SELECT LOWER(name) as name, molecule_id::text
-                        FROM silver.drug_name_lookup
+                        FROM mol_silver.drug_name_lookup
                         WHERE LOWER(name) = ANY($1)
                     """, [n.lower() for n in remaining])
 
@@ -1313,7 +1313,7 @@ class DynamicSourceTransformer:
                 # Use COPY for efficiency or batch insert
                 for val, mol_id in new_mappings:
                     await conn.execute("""
-                        INSERT INTO silver.identifier_mappings
+                        INSERT INTO mol_silver.identifier_mappings
                         (id, molecule_id, identifier_type, identifier_value, source, confidence, is_primary, created_at, updated_at)
                         VALUES (gen_random_uuid(), $1::uuid, $2, $3, $4, 0.8, false, NOW(), NOW())
                         ON CONFLICT (molecule_id, identifier_type, identifier_value) DO NOTHING
@@ -1334,7 +1334,7 @@ class DynamicSourceTransformer:
                     name = record.get(field_name)
                     if molecule_id and name and isinstance(name, str):
                         await conn.execute("""
-                            INSERT INTO silver.drug_name_lookup (drug_name_lower, molecule_id)
+                            INSERT INTO mol_silver.drug_name_lookup (drug_name_lower, molecule_id)
                             VALUES ($1, $2::uuid)
                             ON CONFLICT DO NOTHING
                         """, name.lower().strip(), molecule_id)
@@ -1369,7 +1369,7 @@ class DynamicSourceTransformer:
 
         # Add molecule_id column for entity linking (UUID stored as TEXT)
         if has_entity_linking:
-            col_defs.append("molecule_id TEXT")  # Links to silver.molecules (UUID)
+            col_defs.append("molecule_id TEXT")  # Links to mol_silver.molecules (UUID)
 
         ddl = f"""
             CREATE TABLE IF NOT EXISTS {table_name} (
@@ -1518,8 +1518,8 @@ class DynamicSourceTransformer:
 
             options = config['options']
             raw_table = options.get('target_table', f'raw.{source}_data')
-            silver_table = raw_table.replace('raw.', 'silver.')
-            gold_table = raw_table.replace('raw.', 'gold.')
+            silver_table = raw_table.replace('raw.', 'mol_silver.')
+            gold_table = raw_table.replace('raw.', 'mol_gold.')
 
             # Get columns from silver table
             columns = await self.get_table_columns(silver_table)
@@ -1779,7 +1779,7 @@ class DynamicSourceTransformer:
                 return result
 
             raw_table = options.get('target_table', f'raw.{source}_data')
-            silver_table = raw_table.replace('raw.', 'silver.')
+            silver_table = raw_table.replace('raw.', 'mol_silver.')
 
             # Get columns from silver table
             columns = await self.get_table_columns(silver_table)
@@ -1923,7 +1923,7 @@ async def get_dynamic_sources(pool) -> List[str]:
 
     async with pool.acquire() as conn:
         rows = await conn.fetch("""
-            SELECT source FROM raw.sync_schedules
+            SELECT source FROM meta.sync_schedules
             WHERE options->>'target_table' IS NOT NULL
         """)
 

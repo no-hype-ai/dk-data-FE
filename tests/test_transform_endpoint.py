@@ -51,7 +51,7 @@ class TestSourceRouting:
 
         config = _SOURCE_MODEL_MAP["pubmed"]
         assert config["bronze"] == "bronze.pubmed"
-        assert config["silver"] == "silver.publications"
+        assert config["silver"] == "mol_silver.publications"
         assert "raw→bronze" in config["schema_path"]
 
     def test_sec_edgar_routes_to_financial(self):
@@ -59,7 +59,7 @@ class TestSourceRouting:
 
         config = _SOURCE_MODEL_MAP["sec_edgar"]
         assert config["bronze"] == "bronze.sec_edgar"
-        assert config["silver"] == "silver.financial_data"
+        assert config["silver"] == "mol_silver.financial_data"
         assert config["gold"] == "mol_gold.financial_summary"
 
     def test_orcid_routes_to_kol(self):
@@ -67,7 +67,7 @@ class TestSourceRouting:
 
         config = _SOURCE_MODEL_MAP["orcid"]
         assert config["bronze"] == "bronze.orcid"
-        assert config["silver"] == "silver.researchers"
+        assert config["silver"] == "mol_silver.researchers"
         assert config["gold"] == "mol_gold.kol_profiles"
 
     def test_all_contract_sources_present(self):

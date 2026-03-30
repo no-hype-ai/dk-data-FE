@@ -3,9 +3,9 @@
 DrugBank Database Loader
 
 Loads DrugBank XML database into PostgreSQL tables:
-- bronze.drugbank_data: Core drug information (SMILES, indications, PK data)
-- bronze.drugbank_interactions: Drug-drug interactions
-- bronze.drugbank_targets: Drug-target interactions with mechanisms
+- mol_bronze.drugbank_data: Core drug information (SMILES, indications, PK data)
+- mol_bronze.drugbank_interactions: Drug-drug interactions
+- mol_bronze.drugbank_targets: Drug-target interactions with mechanisms
 
 Uses streaming XML parsing (iterparse) for memory efficiency.
 
@@ -247,7 +247,7 @@ def ensure_tables(conn):
     cursor = conn.cursor()
 
     cursor.execute("""
-        CREATE TABLE IF NOT EXISTS bronze.drugbank_data (
+        CREATE TABLE IF NOT EXISTS mol_bronze.drugbank_data (
             id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
             drugbank_id VARCHAR(20) UNIQUE NOT NULL,
             drug_name TEXT,
@@ -280,14 +280,14 @@ def ensure_tables(conn):
             processed_to_silver BOOLEAN DEFAULT FALSE
         );
 
-        CREATE INDEX IF NOT EXISTS idx_drugbank_smiles ON bronze.drugbank_data(smiles) WHERE smiles IS NOT NULL;
-        CREATE INDEX IF NOT EXISTS idx_drugbank_inchi ON bronze.drugbank_data(inchi_key) WHERE inchi_key IS NOT NULL;
-        CREATE INDEX IF NOT EXISTS idx_drugbank_pubchem ON bronze.drugbank_data(pubchem_cid);
-        CREATE INDEX IF NOT EXISTS idx_drugbank_chembl ON bronze.drugbank_data(chembl_id);
+        CREATE INDEX IF NOT EXISTS idx_drugbank_smiles ON mol_bronze.drugbank_data(smiles) WHERE smiles IS NOT NULL;
+        CREATE INDEX IF NOT EXISTS idx_drugbank_inchi ON mol_bronze.drugbank_data(inchi_key) WHERE inchi_key IS NOT NULL;
+        CREATE INDEX IF NOT EXISTS idx_drugbank_pubchem ON mol_bronze.drugbank_data(pubchem_cid);
+        CREATE INDEX IF NOT EXISTS idx_drugbank_chembl ON mol_bronze.drugbank_data(chembl_id);
     """)
 
     cursor.execute("""
-        CREATE TABLE IF NOT EXISTS bronze.drugbank_interactions (
+        CREATE TABLE IF NOT EXISTS mol_bronze.drugbank_interactions (
             id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
             drugbank_id_1 VARCHAR(20) NOT NULL,
             drugbank_id_2 VARCHAR(20) NOT NULL,
@@ -301,12 +301,12 @@ def ensure_tables(conn):
             UNIQUE(drugbank_id_1, drugbank_id_2)
         );
 
-        CREATE INDEX IF NOT EXISTS idx_ddi_drug1 ON bronze.drugbank_interactions(drugbank_id_1);
-        CREATE INDEX IF NOT EXISTS idx_ddi_drug2 ON bronze.drugbank_interactions(drugbank_id_2);
+        CREATE INDEX IF NOT EXISTS idx_ddi_drug1 ON mol_bronze.drugbank_interactions(drugbank_id_1);
+        CREATE INDEX IF NOT EXISTS idx_ddi_drug2 ON mol_bronze.drugbank_interactions(drugbank_id_2);
     """)
 
     cursor.execute("""
-        CREATE TABLE IF NOT EXISTS bronze.drugbank_targets (
+        CREATE TABLE IF NOT EXISTS mol_bronze.drugbank_targets (
             id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
             drugbank_id VARCHAR(20) NOT NULL,
             target_id VARCHAR(20),
@@ -323,8 +323,8 @@ def ensure_tables(conn):
             UNIQUE(drugbank_id, uniprot_id)
         );
 
-        CREATE INDEX IF NOT EXISTS idx_drugbank_targets_uniprot ON bronze.drugbank_targets(uniprot_id);
-        CREATE INDEX IF NOT EXISTS idx_drugbank_targets_drug ON bronze.drugbank_targets(drugbank_id);
+        CREATE INDEX IF NOT EXISTS idx_drugbank_targets_uniprot ON mol_bronze.drugbank_targets(uniprot_id);
+        CREATE INDEX IF NOT EXISTS idx_drugbank_targets_drug ON mol_bronze.drugbank_targets(drugbank_id);
     """)
 
     conn.commit()
@@ -362,7 +362,7 @@ def load_drugbank(
         if load_drugs:
             try:
                 cursor.execute("""
-                    INSERT INTO bronze.drugbank_data (
+                    INSERT INTO mol_bronze.drugbank_data (
                         drugbank_id, drug_name, drug_type, drug_groups,
                         smiles, inchi_key, cas_number, unii,
                         indication, mechanism_of_action, half_life,
@@ -370,7 +370,7 @@ def load_drugbank(
                     ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                     ON CONFLICT (drugbank_id) DO UPDATE SET
                         drug_name = EXCLUDED.drug_name,
-                        smiles = COALESCE(EXCLUDED.smiles, bronze.drugbank_data.smiles),
+                        smiles = COALESCE(EXCLUDED.smiles, mol_bronze.drugbank_data.smiles),
                         source_updated_at = NOW()
                 """, (
                     drug.drugbank_id, drug.name, drug.drug_type, drug.groups or None,
@@ -393,7 +393,7 @@ def load_drugbank(
 
             if len(interaction_batch) >= batch_size:
                 execute_values(cursor, """
-                    INSERT INTO bronze.drugbank_interactions (
+                    INSERT INTO mol_bronze.drugbank_interactions (
                         drugbank_id_1, drugbank_id_2, drug_name_1, drug_name_2, interaction_description
                     ) VALUES %s
                     ON CONFLICT (drugbank_id_1, drugbank_id_2) DO UPDATE SET
@@ -421,7 +421,7 @@ def load_drugbank(
                         seen_keys.add(key)
                         deduped.append(t)
                 execute_values(cursor, """
-                    INSERT INTO bronze.drugbank_targets (
+                    INSERT INTO mol_bronze.drugbank_targets (
                         drugbank_id, target_id, target_name, organism,
                         uniprot_id, gene_name, actions, known_action
                     ) VALUES %s
@@ -438,7 +438,7 @@ def load_drugbank(
     # Insert remaining batches
     if interaction_batch:
         execute_values(cursor, """
-            INSERT INTO bronze.drugbank_interactions (
+            INSERT INTO mol_bronze.drugbank_interactions (
                 drugbank_id_1, drugbank_id_2, drug_name_1, drug_name_2, interaction_description
             ) VALUES %s
             ON CONFLICT (drugbank_id_1, drugbank_id_2) DO UPDATE SET
@@ -455,7 +455,7 @@ def load_drugbank(
                 seen_keys.add(key)
                 deduped.append(t)
         execute_values(cursor, """
-            INSERT INTO bronze.drugbank_targets (
+            INSERT INTO mol_bronze.drugbank_targets (
                 drugbank_id, target_id, target_name, organism,
                 uniprot_id, gene_name, actions, known_action
             ) VALUES %s

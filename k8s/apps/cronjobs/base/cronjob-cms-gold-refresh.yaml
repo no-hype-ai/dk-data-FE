@@ -1,0 +1,75 @@
+# Daily CMS gold view refresh via SQLMesh
+# Feature: 019-cms-puf-platform-reconciliation
+# Schedule: Daily at 5AM UTC (after nightly data loads complete)
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: cms-gold-refresh
+  labels:
+    app: cms-gold-refresh
+    app.kubernetes.io/name: cms-gold-refresh
+    app.kubernetes.io/component: gold-refresh
+    app.kubernetes.io/part-of: dk-data
+spec:
+  schedule: "0 5 * * *"
+  concurrencyPolicy: Forbid
+  startingDeadlineSeconds: 3600
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      backoffLimit: 2
+      activeDeadlineSeconds: 3600
+      template:
+        metadata:
+          labels:
+            app: cms-gold-refresh
+            app.kubernetes.io/component: batch-job
+            app.kubernetes.io/part-of: dk-data
+        spec:
+          restartPolicy: OnFailure
+          imagePullSecrets:
+            - name: ghcr-credentials
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 1000
+            fsGroup: 1000
+            seccompProfile:
+              type: RuntimeDefault
+          containers:
+            - name: cms-gold-refresh
+              image: ghcr.io/data-kinetic/dk-data-fe/job-trigger:main
+              securityContext:
+                allowPrivilegeEscalation: false
+                readOnlyRootFilesystem: true
+                capabilities:
+                  drop: ["ALL"]
+              command:
+                - /bin/sh
+                - -c
+                - |
+                  set -e
+                  echo "Running SQLMesh plan for HCS and mol gold models..."
+                  python -m sqlmesh plan --auto-apply --no-prompts
+                  echo "Gold views refreshed."
+              envFrom:
+                - secretRef:
+                    name: dk-data-secrets
+              env:
+                - name: OTEL_EXPORTER_OTLP_ENDPOINT
+                  value: "http://alloy.infra.svc.cluster.local:4317"
+                - name: OTEL_SERVICE_NAME
+                  value: "dk-data-cms-gold-refresh"
+              resources:
+                requests:
+                  memory: "512Mi"
+                  cpu: "200m"
+                limits:
+                  memory: "1Gi"
+                  cpu: "500m"
+              volumeMounts:
+                - name: tmp
+                  mountPath: /tmp
+          volumes:
+            - name: tmp
+              emptyDir: {}

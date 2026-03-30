@@ -5,9 +5,9 @@ FDA Orange Book Loader
 Loads Orange Book data (approved drug products, patents, exclusivities) into PostgreSQL.
 
 Tables populated:
-- bronze.orange_book_products: Approved drug products with therapeutic equivalence
-- bronze.orange_book_patents: Patent information (expiry dates, drug substance/product)
-- bronze.orange_book_exclusivities: Exclusivity information (NCE, orphan, pediatric)
+- mol_bronze.orange_book_products: Approved drug products with therapeutic equivalence
+- mol_bronze.orange_book_patents: Patent information (expiry dates, drug substance/product)
+- mol_bronze.orange_book_exclusivities: Exclusivity information (NCE, orphan, pediatric)
 
 Data Source: https://www.fda.gov/drugs/drug-approvals-and-databases/orange-book-data-files
 
@@ -61,7 +61,7 @@ def ensure_tables(conn) -> None:
     with conn.cursor() as cur:
         # Products table
         cur.execute("""
-            CREATE TABLE IF NOT EXISTS bronze.orange_book_products (
+            CREATE TABLE IF NOT EXISTS mol_bronze.orange_book_products (
                 id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
                 appl_no TEXT NOT NULL,
                 product_no TEXT NOT NULL,
@@ -84,18 +84,18 @@ def ensure_tables(conn) -> None:
                 UNIQUE(appl_no, product_no)
             );
 
-            CREATE INDEX IF NOT EXISTS idx_ob_products_appl ON bronze.orange_book_products(appl_no);
-            CREATE INDEX IF NOT EXISTS idx_ob_products_trade ON bronze.orange_book_products(trade_name);
-            CREATE INDEX IF NOT EXISTS idx_ob_products_ingredient ON bronze.orange_book_products(ingredient);
-            CREATE INDEX IF NOT EXISTS idx_ob_products_approval ON bronze.orange_book_products(approval_date);
-            CREATE INDEX IF NOT EXISTS idx_ob_products_te ON bronze.orange_book_products(te_code);
-            CREATE INDEX IF NOT EXISTS idx_ob_products_rld ON bronze.orange_book_products(rld);
-            CREATE INDEX IF NOT EXISTS idx_ob_products_processed ON bronze.orange_book_products(processed_to_silver);
+            CREATE INDEX IF NOT EXISTS idx_ob_products_appl ON mol_bronze.orange_book_products(appl_no);
+            CREATE INDEX IF NOT EXISTS idx_ob_products_trade ON mol_bronze.orange_book_products(trade_name);
+            CREATE INDEX IF NOT EXISTS idx_ob_products_ingredient ON mol_bronze.orange_book_products(ingredient);
+            CREATE INDEX IF NOT EXISTS idx_ob_products_approval ON mol_bronze.orange_book_products(approval_date);
+            CREATE INDEX IF NOT EXISTS idx_ob_products_te ON mol_bronze.orange_book_products(te_code);
+            CREATE INDEX IF NOT EXISTS idx_ob_products_rld ON mol_bronze.orange_book_products(rld);
+            CREATE INDEX IF NOT EXISTS idx_ob_products_processed ON mol_bronze.orange_book_products(processed_to_silver);
         """)
 
         # Patents table
         cur.execute("""
-            CREATE TABLE IF NOT EXISTS bronze.orange_book_patents (
+            CREATE TABLE IF NOT EXISTS mol_bronze.orange_book_patents (
                 id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
                 appl_no TEXT NOT NULL,
                 product_no TEXT NOT NULL,
@@ -112,16 +112,16 @@ def ensure_tables(conn) -> None:
                 UNIQUE(appl_no, product_no, patent_no)
             );
 
-            CREATE INDEX IF NOT EXISTS idx_ob_patents_appl ON bronze.orange_book_patents(appl_no);
-            CREATE INDEX IF NOT EXISTS idx_ob_patents_patent ON bronze.orange_book_patents(patent_no);
-            CREATE INDEX IF NOT EXISTS idx_ob_patents_expire ON bronze.orange_book_patents(patent_expire_date);
-            CREATE INDEX IF NOT EXISTS idx_ob_patents_substance ON bronze.orange_book_patents(drug_substance_flag);
-            CREATE INDEX IF NOT EXISTS idx_ob_patents_processed ON bronze.orange_book_patents(processed_to_silver);
+            CREATE INDEX IF NOT EXISTS idx_ob_patents_appl ON mol_bronze.orange_book_patents(appl_no);
+            CREATE INDEX IF NOT EXISTS idx_ob_patents_patent ON mol_bronze.orange_book_patents(patent_no);
+            CREATE INDEX IF NOT EXISTS idx_ob_patents_expire ON mol_bronze.orange_book_patents(patent_expire_date);
+            CREATE INDEX IF NOT EXISTS idx_ob_patents_substance ON mol_bronze.orange_book_patents(drug_substance_flag);
+            CREATE INDEX IF NOT EXISTS idx_ob_patents_processed ON mol_bronze.orange_book_patents(processed_to_silver);
         """)
 
         # Exclusivities table
         cur.execute("""
-            CREATE TABLE IF NOT EXISTS bronze.orange_book_exclusivities (
+            CREATE TABLE IF NOT EXISTS mol_bronze.orange_book_exclusivities (
                 id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
                 appl_no TEXT NOT NULL,
                 product_no TEXT NOT NULL,
@@ -134,10 +134,10 @@ def ensure_tables(conn) -> None:
                 UNIQUE(appl_no, product_no, exclusivity_code, exclusivity_date)
             );
 
-            CREATE INDEX IF NOT EXISTS idx_ob_excl_appl ON bronze.orange_book_exclusivities(appl_no);
-            CREATE INDEX IF NOT EXISTS idx_ob_excl_code ON bronze.orange_book_exclusivities(exclusivity_code);
-            CREATE INDEX IF NOT EXISTS idx_ob_excl_date ON bronze.orange_book_exclusivities(exclusivity_date);
-            CREATE INDEX IF NOT EXISTS idx_ob_excl_processed ON bronze.orange_book_exclusivities(processed_to_silver);
+            CREATE INDEX IF NOT EXISTS idx_ob_excl_appl ON mol_bronze.orange_book_exclusivities(appl_no);
+            CREATE INDEX IF NOT EXISTS idx_ob_excl_code ON mol_bronze.orange_book_exclusivities(exclusivity_code);
+            CREATE INDEX IF NOT EXISTS idx_ob_excl_date ON mol_bronze.orange_book_exclusivities(exclusivity_date);
+            CREATE INDEX IF NOT EXISTS idx_ob_excl_processed ON mol_bronze.orange_book_exclusivities(processed_to_silver);
         """)
 
         conn.commit()
@@ -155,7 +155,7 @@ def insert_products(conn, products: List[OrangeBookProduct], limit: int = None) 
             try:
                 data = product.to_dict()
                 cur.execute("""
-                    INSERT INTO bronze.orange_book_products (
+                    INSERT INTO mol_bronze.orange_book_products (
                         appl_no, product_no, trade_name, ingredient, applicant,
                         strength, dosage_form, route, te_code, approval_date,
                         rld, rs, type, applicant_full_name, raw_data
@@ -207,7 +207,7 @@ def insert_patents(conn, patents: List[OrangeBookPatent], limit: int = None) -> 
             try:
                 data = patent.to_dict()
                 cur.execute("""
-                    INSERT INTO bronze.orange_book_patents (
+                    INSERT INTO mol_bronze.orange_book_patents (
                         appl_no, product_no, patent_no, patent_expire_date,
                         drug_substance_flag, drug_product_flag, patent_use_code,
                         delist_flag, raw_data
@@ -253,7 +253,7 @@ def insert_exclusivities(conn, exclusivities: List[OrangeBookExclusivity], limit
             try:
                 data = excl.to_dict()
                 cur.execute("""
-                    INSERT INTO bronze.orange_book_exclusivities (
+                    INSERT INTO mol_bronze.orange_book_exclusivities (
                         appl_no, product_no, exclusivity_code, exclusivity_date, raw_data
                     ) VALUES (
                         %(appl_no)s, %(product_no)s, %(exclusivity_code)s, %(exclusivity_date)s, %(raw_data)s

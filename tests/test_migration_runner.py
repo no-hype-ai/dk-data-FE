@@ -92,13 +92,13 @@ class TestDiscoverMigrations:
         """Should sort migrations by numeric prefix as integers."""
         migrations = discover_migrations(migrations_dir)
         versions = [v for v, _, _ in migrations]
-        assert versions == ["001", "002", "020", "068"]
+        assert versions == ["001_create_schemas", "002_role_restrictions", "020_mol_schemas", "068_schema_migrations"]
 
     def test_returns_version_filename_filepath(self, migrations_dir):
         """Each tuple should contain (version, filename, filepath)."""
         migrations = discover_migrations(migrations_dir)
         version, filename, filepath = migrations[0]
-        assert version == "001"
+        assert version == "001_create_schemas"
         assert filename == "001_create_schemas.sql"
         assert filepath.endswith("001_create_schemas.sql")
         assert os.path.isfile(filepath)
@@ -127,7 +127,7 @@ class TestDiscoverMigrations:
 
             migrations = discover_migrations(tmpdir)
             versions = [v for v, _, _ in migrations]
-            assert versions == ["1", "2", "20", "100"]
+            assert versions == ["1_a", "2_b", "20_c", "100_d"]
 
 
 # ---------------------------------------------------------------------------
@@ -202,9 +202,10 @@ class TestEnsureTrackingTable:
         ensure_tracking_table(conn)
         # Should have executed SQL via cursor
         assert cursor.execute.called
-        sql = cursor.execute.call_args[0][0]
-        assert "CREATE SCHEMA IF NOT EXISTS meta" in sql
-        assert "CREATE TABLE IF NOT EXISTS meta.schema_migrations" in sql
+        # ensure_tracking_table calls execute twice; check the first call for CREATE SCHEMA/TABLE
+        first_sql = cursor.execute.call_args_list[0][0][0]
+        assert "CREATE SCHEMA IF NOT EXISTS meta" in first_sql
+        assert "CREATE TABLE IF NOT EXISTS meta.schema_migrations" in first_sql
         conn.commit.assert_called_once()
 
 
@@ -309,7 +310,7 @@ class TestApplyPendingSkipLogic:
     ):
         """Already-applied migrations should be skipped."""
         conn = MagicMock()
-        mock_get_applied.return_value = {"001", "002"}
+        mock_get_applied.return_value = {"001_create_schemas", "002_role_restrictions"}
         mock_apply.return_value = 10  # 10ms execution time
 
         result = apply_pending(conn, migrations_dir)
@@ -319,10 +320,10 @@ class TestApplyPendingSkipLogic:
         applied_versions = [
             c.args[2] for c in mock_apply.call_args_list
         ]
-        assert "001" not in applied_versions
-        assert "002" not in applied_versions
-        assert "020" in applied_versions
-        assert "068" in applied_versions
+        assert "001_create_schemas" not in applied_versions
+        assert "002_role_restrictions" not in applied_versions
+        assert "020_mol_schemas" in applied_versions
+        assert "068_schema_migrations" in applied_versions
 
     @patch("dk_data.scripts.run_migrations.get_applied_migrations")
     @patch("dk_data.scripts.run_migrations.ensure_tracking_table")
@@ -331,7 +332,7 @@ class TestApplyPendingSkipLogic:
     ):
         """Should report no pending migrations when all are applied."""
         conn = MagicMock()
-        mock_get_applied.return_value = {"001", "002", "020", "068"}
+        mock_get_applied.return_value = {"001_create_schemas", "002_role_restrictions", "020_mol_schemas", "068_schema_migrations"}
 
         result = apply_pending(conn, migrations_dir)
         assert result is True
@@ -444,7 +445,7 @@ class TestBaseline:
     ):
         """Baseline should not re-insert already-applied migrations."""
         conn, cursor = mock_conn
-        mock_get_applied.return_value = {"001", "002"}
+        mock_get_applied.return_value = {"001_create_schemas", "002_role_restrictions"}
 
         result = baseline(conn, migrations_dir)
         assert result is True
@@ -463,7 +464,7 @@ class TestBaseline:
     ):
         """Should report no work when all already baselined."""
         conn, cursor = mock_conn
-        mock_get_applied.return_value = {"001", "002", "020", "068"}
+        mock_get_applied.return_value = {"001_create_schemas", "002_role_restrictions", "020_mol_schemas", "068_schema_migrations"}
 
         result = baseline(conn, migrations_dir)
         assert result is True

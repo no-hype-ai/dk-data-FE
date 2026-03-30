@@ -170,7 +170,7 @@ class SECEdgarFetcher(BaseFetcher):
         while len(records) < max_records:
             try:
                 params = {
-                    "q": f'formType:"{filing_type}"',
+                    "forms": filing_type,
                     "dateRange": "custom",
                     "startdt": date_from,
                     "enddt": date_to,

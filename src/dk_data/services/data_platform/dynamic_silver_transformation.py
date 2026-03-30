@@ -49,11 +49,11 @@ class DynamicSilverTransformation:
     Service for dynamically transforming Bronze data to Silver layer.
 
     This service:
-    1. Reads transformation rules from raw.silver_transformation_rules
+    1. Reads transformation rules from meta.silver_transformation_rules
     2. Executes transformations using SQL (no hardcoded Python logic)
-    3. Links new entities to existing silver.molecules
-    4. Extracts identifiers to silver.identifier_mappings
-    5. Extracts names to silver.drug_name_lookup
+    3. Links new entities to existing mol_silver.molecules
+    4. Extracts identifiers to mol_silver.identifier_mappings
+    5. Extracts names to mol_silver.drug_name_lookup
     """
 
     def __init__(self, db_pool):
@@ -132,7 +132,7 @@ class DynamicSilverTransformation:
 
                 # Update last run stats
                 await conn.execute("""
-                    UPDATE raw.silver_transformation_rules
+                    UPDATE meta.silver_transformation_rules
                     SET last_run_at = NOW(),
                         last_run_records = $1
                     WHERE source_name = $2
@@ -220,7 +220,7 @@ class DynamicSilverTransformation:
                 WHERE {dedup_col} IS NOT NULL
                 ORDER BY {dedup_col}, source_updated_at DESC
             )
-            INSERT INTO silver.molecules (
+            INSERT INTO mol_silver.molecules (
                 id, {', '.join([c.split(' AS ')[-1] if ' AS ' in c else c for c in select_cols])},
                 resolution_confidence, needs_review, data_sources, primary_source, created_at, updated_at
             )
@@ -229,10 +229,10 @@ class DynamicSilverTransformation:
                 resolution_confidence, needs_review, data_sources, primary_source, created_at, updated_at
             FROM deduplicated d
             WHERE NOT EXISTS (
-                SELECT 1 FROM silver.molecules m WHERE m.{dedup_col} = d.{dedup_col}
+                SELECT 1 FROM mol_silver.molecules m WHERE m.{dedup_col} = d.{dedup_col}
             )
             ON CONFLICT ({dedup_col}) DO UPDATE SET
-                data_sources = silver.molecules.data_sources || EXCLUDED.data_sources,
+                data_sources = mol_silver.molecules.data_sources || EXCLUDED.data_sources,
                 updated_at = NOW()
             RETURNING id, {dedup_col}
         """
@@ -268,13 +268,13 @@ class DynamicSilverTransformation:
             # Match by identifiers
             for id_type, source_col in rule.identifier_mappings.items():
                 link_sql = f"""
-                    UPDATE silver.molecules m
+                    UPDATE mol_silver.molecules m
                     SET data_sources = m.data_sources || '"{rule.source_name}"',
                         updated_at = NOW()
                     FROM {rule.source_table} s
                     WHERE s.{source_col} IS NOT NULL
                       AND EXISTS (
-                          SELECT 1 FROM silver.identifier_mappings im
+                          SELECT 1 FROM mol_silver.identifier_mappings im
                           WHERE im.identifier_type = '{id_type}'
                             AND im.identifier_value = s.{source_col}::TEXT
                             AND im.molecule_id = m.id
@@ -288,7 +288,7 @@ class DynamicSilverTransformation:
             # Fuzzy name matching
             name_col = rule.name_mappings.get('generic') or list(rule.column_mappings.keys())[0]
             link_sql = f"""
-                UPDATE silver.molecules m
+                UPDATE mol_silver.molecules m
                 SET data_sources = m.data_sources || '"{rule.source_name}"',
                     updated_at = NOW()
                 FROM {rule.source_table} s
@@ -306,7 +306,7 @@ class DynamicSilverTransformation:
         conn,
         rule: TransformationRule
     ) -> Dict[str, Any]:
-        """Extract identifiers from source to silver.identifier_mappings."""
+        """Extract identifiers from source to mol_silver.identifier_mappings."""
         if not rule.identifier_mappings:
             return {'extracted': 0}
 
@@ -314,7 +314,7 @@ class DynamicSilverTransformation:
 
         for id_type, source_col in rule.identifier_mappings.items():
             extract_sql = f"""
-                INSERT INTO silver.identifier_mappings (
+                INSERT INTO mol_silver.identifier_mappings (
                     molecule_id, identifier_type, identifier_value, source,
                     confidence, is_primary, source_date, created_at
                 )
@@ -327,7 +327,7 @@ class DynamicSilverTransformation:
                     TRUE,
                     s.source_updated_at,
                     NOW()
-                FROM silver.molecules m
+                FROM mol_silver.molecules m
                 JOIN {rule.source_table} s ON m.inchi_key = s.inchi_key
                 WHERE s.{source_col} IS NOT NULL
                   AND m.needs_review = FALSE
@@ -347,7 +347,7 @@ class DynamicSilverTransformation:
         conn,
         rule: TransformationRule
     ) -> Dict[str, Any]:
-        """Extract drug names from source to silver.drug_name_lookup."""
+        """Extract drug names from source to mol_silver.drug_name_lookup."""
         if not rule.name_mappings:
             return {'extracted': 0}
 
@@ -359,7 +359,7 @@ class DynamicSilverTransformation:
 
             if is_array:
                 extract_sql = f"""
-                    INSERT INTO silver.drug_name_lookup (
+                    INSERT INTO mol_silver.drug_name_lookup (
                         molecule_id, name, name_type, name_normalized, source, created_at
                     )
                     SELECT
@@ -369,7 +369,7 @@ class DynamicSilverTransformation:
                         LOWER(TRIM(name_val)),
                         '{rule.source_name}',
                         NOW()
-                    FROM silver.molecules m
+                    FROM mol_silver.molecules m
                     JOIN {rule.source_table} s ON m.inchi_key = s.inchi_key
                     CROSS JOIN LATERAL jsonb_array_elements_text(s.{source_col}) AS name_val
                     WHERE s.{source_col} IS NOT NULL
@@ -381,7 +381,7 @@ class DynamicSilverTransformation:
                 """
             else:
                 extract_sql = f"""
-                    INSERT INTO silver.drug_name_lookup (
+                    INSERT INTO mol_silver.drug_name_lookup (
                         molecule_id, name, name_type, name_normalized, source, created_at
                     )
                     SELECT
@@ -391,7 +391,7 @@ class DynamicSilverTransformation:
                         LOWER(TRIM(s.{source_col})),
                         '{rule.source_name}',
                         NOW()
-                    FROM silver.molecules m
+                    FROM mol_silver.molecules m
                     JOIN {rule.source_table} s ON m.inchi_key = s.inchi_key
                     WHERE s.{source_col} IS NOT NULL
                       AND m.needs_review = FALSE
@@ -423,7 +423,7 @@ class DynamicSilverTransformation:
             UPDATE {rule.source_table}
             SET processed_to_silver = TRUE
             WHERE {dedup_col} IN (
-                SELECT {dedup_col} FROM silver.molecules WHERE id = ANY($1::uuid[])
+                SELECT {dedup_col} FROM mol_silver.molecules WHERE id = ANY($1::uuid[])
             )
         """
         await conn.execute(mark_sql, processed_ids)
@@ -472,7 +472,7 @@ class DynamicSilverTransformation:
 
         Args:
             source_name: Unique name for the source
-            source_table: Bronze table name (e.g., 'bronze.new_source')
+            source_table: Bronze table name (e.g., 'mol_bronze.new_source')
             column_mappings: Bronze -> Silver column mappings
             identifier_mappings: Identifier extraction rules
             name_mappings: Name extraction rules
@@ -487,11 +487,11 @@ class DynamicSilverTransformation:
             async with self.db_pool.acquire() as conn:
                 # Insert transformation rule
                 await conn.execute("""
-                    INSERT INTO raw.silver_transformation_rules (
+                    INSERT INTO meta.silver_transformation_rules (
                         source_name, source_table, target_table, target_type,
                         column_mappings, identifier_mappings, name_mappings,
                         dedup_strategy, source_precedence, enabled
-                    ) VALUES ($1, $2, 'silver.molecules', 'molecule', $3, $4, $5, $6, $7, true)
+                    ) VALUES ($1, $2, 'mol_silver.molecules', 'molecule', $3, $4, $5, $6, $7, true)
                     ON CONFLICT (source_name) DO UPDATE SET
                         source_table = EXCLUDED.source_table,
                         column_mappings = EXCLUDED.column_mappings,
@@ -541,7 +541,7 @@ async def register_source(
         success, msg = await register_source(
             pool,
             source_name='new_pharma_db',
-            source_table='bronze.new_pharma_db',
+            source_table='mol_bronze.new_pharma_db',
             column_mappings={
                 'inchi_key': 'inchi_key',
                 'drug_name': 'canonical_name',

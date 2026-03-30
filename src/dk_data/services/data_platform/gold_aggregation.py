@@ -58,7 +58,7 @@ class GoldAggregationService:
             async with self.db_pool.acquire() as conn:
                 # Update molecule statistics that aren't covered by the view
                 rows = await conn.execute("""
-                    UPDATE silver.molecules m
+                    UPDATE mol_silver.molecules m
                     SET
                         max_phase = COALESCE((
                             SELECT MAX(
@@ -70,13 +70,13 @@ class GoldAggregationService:
                                     ELSE 0
                                 END
                             )
-                            FROM silver.clinical_trials ct
+                            FROM mol_silver.clinical_trials ct
                             WHERE ct.molecule_id = m.id
                         ), m.max_phase),
                         updated_at = NOW()
                     WHERE m.needs_review = FALSE
                       AND EXISTS (
-                          SELECT 1 FROM silver.clinical_trials ct
+                          SELECT 1 FROM mol_silver.clinical_trials ct
                           WHERE ct.molecule_id = m.id
                       )
                 """)
@@ -120,19 +120,19 @@ class GoldAggregationService:
 
                 rows = await conn.execute("""
                     WITH total_reports AS (
-                        SELECT SUM(report_count) AS total FROM silver.adverse_events
+                        SELECT SUM(report_count) AS total FROM mol_silver.adverse_events
                     ),
                     drug_totals AS (
                         SELECT molecule_id, SUM(report_count) AS drug_total
-                        FROM silver.adverse_events
+                        FROM mol_silver.adverse_events
                         GROUP BY molecule_id
                     ),
                     event_totals AS (
                         SELECT meddra_pt, SUM(report_count) AS event_total
-                        FROM silver.adverse_events
+                        FROM mol_silver.adverse_events
                         GROUP BY meddra_pt
                     )
-                    UPDATE silver.adverse_events ae
+                    UPDATE mol_silver.adverse_events ae
                     SET
                         reporting_rate = ae.report_count::NUMERIC / NULLIF(dt.drug_total, 0) * 1000,
                         prr = CASE
@@ -175,18 +175,18 @@ class GoldAggregationService:
             async with self.db_pool.acquire() as conn:
                 # Update therapeutic areas from clinical trial conditions
                 rows = await conn.execute("""
-                    UPDATE silver.molecules m
+                    UPDATE mol_silver.molecules m
                     SET
                         therapeutic_areas = COALESCE((
                             SELECT jsonb_agg(DISTINCT condition)
-                            FROM silver.clinical_trials ct,
+                            FROM mol_silver.clinical_trials ct,
                                  jsonb_array_elements_text(ct.conditions) AS condition
                             WHERE ct.molecule_id = m.id
                         ), m.therapeutic_areas),
                         updated_at = NOW()
                     WHERE m.needs_review = FALSE
                       AND EXISTS (
-                          SELECT 1 FROM silver.clinical_trials ct
+                          SELECT 1 FROM mol_silver.clinical_trials ct
                           WHERE ct.molecule_id = m.id
                       )
                 """)
@@ -229,16 +229,16 @@ class GoldAggregationService:
                                 WHEN phase LIKE '%1%' THEN 1
                                 ELSE 0
                             END) AS max_trial_phase
-                        FROM silver.clinical_trials
+                        FROM mol_silver.clinical_trials
                         WHERE status NOT IN ('Terminated', 'Withdrawn', 'Suspended')
                         GROUP BY molecule_id
                     ),
                     has_approval AS (
                         SELECT DISTINCT molecule_id, TRUE AS is_approved
-                        FROM silver.drug_labels
+                        FROM mol_silver.drug_labels
                         WHERE effective_date IS NOT NULL
                     )
-                    UPDATE silver.molecules m
+                    UPDATE mol_silver.molecules m
                     SET
                         development_status = CASE
                             WHEN ha.is_approved THEN 'approved'
@@ -310,7 +310,7 @@ class GoldAggregationService:
         """Get complete molecule profile from Gold layer."""
         async with self.db_pool.acquire() as conn:
             row = await conn.fetchrow("""
-                SELECT * FROM gold.molecule_profile
+                SELECT * FROM mol_gold.molecule_profile
                 WHERE molecule_id = $1::uuid
             """, molecule_id)
 
@@ -327,7 +327,7 @@ class GoldAggregationService:
         """Search molecules using fuzzy matching."""
         async with self.db_pool.acquire() as conn:
             rows = await conn.fetch("""
-                SELECT * FROM gold.search_molecules($1, $2, $3)
+                SELECT * FROM mol_gold.search_molecules($1, $2, $3)
             """, query, threshold, limit)
 
             return [dict(row) for row in rows]
@@ -340,7 +340,7 @@ class GoldAggregationService:
         """Resolve identifier to molecule."""
         async with self.db_pool.acquire() as conn:
             row = await conn.fetchrow("""
-                SELECT * FROM gold.resolve_identifier($1, $2)
+                SELECT * FROM mol_gold.resolve_identifier($1, $2)
             """, identifier, identifier_type)
 
             if row:
@@ -351,7 +351,7 @@ class GoldAggregationService:
         """Get safety signals for a molecule."""
         async with self.db_pool.acquire() as conn:
             row = await conn.fetchrow("""
-                SELECT * FROM gold.safety_signals
+                SELECT * FROM mol_gold.safety_signals
                 WHERE molecule_id = $1::uuid
             """, molecule_id)
 
@@ -381,7 +381,7 @@ class GoldAggregationService:
             params.append(limit)
 
             query = f"""
-                SELECT * FROM gold.competitive_landscape
+                SELECT * FROM mol_gold.competitive_landscape
                 WHERE {' AND '.join(conditions)}
                 ORDER BY active_trials DESC
                 LIMIT ${len(params)}
@@ -412,7 +412,7 @@ class GoldAggregationService:
             params.append(limit)
 
             query = f"""
-                SELECT * FROM gold.company_pipeline
+                SELECT * FROM mol_gold.company_pipeline
                 WHERE {' AND '.join(conditions)}
                 ORDER BY company, latest_trial_start DESC
                 LIMIT ${len(params)}
@@ -430,14 +430,14 @@ class GoldAggregationService:
         async with self.db_pool.acquire() as conn:
             if evidence_type:
                 rows = await conn.fetch("""
-                    SELECT * FROM gold.lifecycle_evidence
+                    SELECT * FROM mol_gold.lifecycle_evidence
                     WHERE molecule_id = $1::uuid
                       AND evidence_type = $2
                     ORDER BY evidence_date DESC
                 """, molecule_id, evidence_type)
             else:
                 rows = await conn.fetch("""
-                    SELECT * FROM gold.lifecycle_evidence
+                    SELECT * FROM mol_gold.lifecycle_evidence
                     WHERE molecule_id = $1::uuid
                     ORDER BY evidence_date DESC
                 """, molecule_id)
@@ -457,7 +457,7 @@ class GoldAggregationService:
                     COUNT(*) FILTER (WHERE needs_review = TRUE) AS quarantined,
                     COUNT(*) FILTER (WHERE development_status = 'approved') AS approved,
                     COUNT(*) FILTER (WHERE development_status LIKE 'phase_%') AS in_trials
-                FROM silver.molecules
+                FROM mol_silver.molecules
             """)
 
             # Trial counts
@@ -465,7 +465,7 @@ class GoldAggregationService:
                 SELECT
                     COUNT(*) AS total,
                     COUNT(*) FILTER (WHERE status IN ('Recruiting', 'Active, not recruiting')) AS active
-                FROM silver.clinical_trials
+                FROM mol_silver.clinical_trials
             """)
 
             # Safety data
@@ -474,7 +474,7 @@ class GoldAggregationService:
                     COUNT(DISTINCT molecule_id) AS molecules_with_events,
                     SUM(report_count) AS total_reports,
                     SUM(serious_count) AS serious_reports
-                FROM silver.adverse_events
+                FROM mol_silver.adverse_events
             """)
 
             return {

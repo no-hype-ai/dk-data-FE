@@ -79,8 +79,8 @@ class TestGoldTrialOutcomes:
         assert "has_results" in self.sql
 
     def test_publication_source(self):
-        """Source 2: xenon.publication_evidence with confidence threshold."""
-        assert "xenon.publication_evidence" in self.sql
+        """Source 2: mol_silver.publication_evidence with confidence threshold."""
+        assert "mol_silver.publication_evidence" in self.sql
         assert "'publication'" in self.sql
 
     def test_confidence_threshold(self):
@@ -341,7 +341,7 @@ class TestGoldRegulatoryTimeline:
         assert "silver.regulatory_decisions" in self.sql
 
     def test_molecule_linkage(self):
-        assert "mol_silver.molecules_from_bronze" in self.sql
+        assert "mol_silver.molecules" in self.sql
 
     def test_output_columns(self):
         assert "molecule_id" in self.sql
@@ -379,7 +379,7 @@ class TestGoldFinancialSummary:
         assert "silver.financial_data" in self.sql
 
     def test_molecule_linkage(self):
-        assert "mol_silver.molecules_from_bronze" in self.sql
+        assert "mol_silver.molecules" in self.sql
 
     def test_output_columns(self):
         assert "molecule_id" in self.sql

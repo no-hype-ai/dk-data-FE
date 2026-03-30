@@ -3,7 +3,7 @@
 -- Part of: 014-uspto-euipo-model-datasource
 
 MODEL (
-    name bronze.epo_patents,
+    name mol_bronze.epo_patents,
     kind INCREMENTAL_BY_TIME_RANGE (
         time_column ingested_at,
         lookback 7
@@ -26,7 +26,7 @@ SELECT
     r.filing_date,
     r.publication_date AS patent_date,
 
-    -- Classification (IPC codes, not CPC)
+    -- Classification (mol_raw.epo_patents has ipc_codes but not cpc_codes)
     CASE
         WHEN r.ipc_codes IS NOT NULL
         THEN to_jsonb(r.ipc_codes)
@@ -47,16 +47,18 @@ SELECT
     r.family_id,
 
     -- Determine if pharma-related based on IPC codes
-    EXISTS (
-        SELECT 1 FROM unnest(COALESCE(r.ipc_codes, '{}')) AS code
-        WHERE code LIKE 'A61K%' OR code LIKE 'A61P%'
-           OR code LIKE 'C07D%' OR code LIKE 'C07K%'
+    (
+        EXISTS (
+            SELECT 1 FROM unnest(COALESCE(r.ipc_codes, '{}')) AS code
+            WHERE code LIKE 'A61K%' OR code LIKE 'A61P%'
+               OR code LIKE 'C07D%' OR code LIKE 'C07K%'
+        )
     ) AS is_pharma_related,
 
     -- Processing metadata
     FALSE AS processed_to_silver,
     r._loaded_at AS ingested_at
 
-FROM raw.epo_patents r
+FROM mol_raw.epo_patents r
 WHERE r.publication_id IS NOT NULL
   AND _loaded_at BETWEEN @start_dt AND @end_dt

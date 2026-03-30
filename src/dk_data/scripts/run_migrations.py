@@ -66,13 +66,25 @@ def discover_migrations(migrations_dir: str) -> list[tuple[str, str, str]]:
 
     for filepath in sorted(migrations_path.glob("*.sql")):
         filename = filepath.name
+        # Skip rollback files — they are never applied as forward migrations
+        if "_rollback" in filename.lower():
+            continue
         match = PREFIX_RE.match(filename)
         if match:
-            version = match.group(1)
+            # Use filename without .sql extension as the unique version key so
+            # that multiple files sharing the same numeric prefix (e.g.,
+            # 085_bindingdb_sider_catalog.sql and 085_cms_geographic_variation_raw.sql)
+            # are tracked as separate migrations and do not conflict.
+            version = filepath.stem  # e.g. "085_cms_geographic_variation_raw"
             migrations.append((version, filename, str(filepath)))
 
-    # Sort by numeric prefix (as integer for correct ordering)
-    migrations.sort(key=lambda m: int(m[0]))
+    # Sort by numeric prefix (as integer) then alphabetically by full filename
+    # so that 085_bindingdb_sider_catalog.sql runs before 085_cms_*.sql, etc.
+    def sort_key(m):
+        prefix_match = PREFIX_RE.match(m[1])  # m[1] is filename
+        return (int(prefix_match.group(1)) if prefix_match else 0, m[1])
+
+    migrations.sort(key=sort_key)
     return migrations
 
 
@@ -85,14 +97,19 @@ def compute_checksum(filepath: str) -> str:
 
 
 def ensure_tracking_table(conn) -> None:
-    """Create meta.schema_migrations table if it does not exist."""
+    """Create meta.schema_migrations table if it does not exist.
+
+    Version key uses the full filename (without .sql extension) so that
+    multiple files sharing the same numeric prefix (e.g., 085_foo.sql and
+    085_bar.sql) are tracked independently.
+    """
     with conn.cursor() as cur:
         cur.execute("""
             CREATE SCHEMA IF NOT EXISTS meta;
 
             CREATE TABLE IF NOT EXISTS meta.schema_migrations (
                 id              SERIAL PRIMARY KEY,
-                version         VARCHAR(10)  NOT NULL UNIQUE,
+                version         VARCHAR(255) NOT NULL UNIQUE,
                 filename        VARCHAR(255) NOT NULL,
                 checksum        VARCHAR(64)  NOT NULL,
                 applied_at      TIMESTAMPTZ  NOT NULL DEFAULT NOW(),
@@ -102,6 +119,23 @@ def ensure_tracking_table(conn) -> None:
 
             CREATE INDEX IF NOT EXISTS idx_schema_migrations_applied_at
                 ON meta.schema_migrations (applied_at DESC);
+        """)
+        # Widen version column on existing DBs that were created with VARCHAR(10)
+        cur.execute("""
+            DO $$
+            BEGIN
+                IF EXISTS (
+                    SELECT 1 FROM information_schema.columns
+                    WHERE table_schema = 'meta'
+                      AND table_name   = 'schema_migrations'
+                      AND column_name  = 'version'
+                      AND character_maximum_length IS NOT NULL
+                      AND character_maximum_length < 255
+                ) THEN
+                    ALTER TABLE meta.schema_migrations
+                        ALTER COLUMN version TYPE VARCHAR(255);
+                END IF;
+            END $$;
         """)
     conn.commit()
 

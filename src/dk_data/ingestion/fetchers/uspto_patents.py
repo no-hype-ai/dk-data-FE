@@ -49,13 +49,23 @@ class USPTOPatentsFetcher(BaseFetcher):
             data_dir: Directory to store downloaded files.
         """
         super().__init__(data_dir)
-        self.api_key: Optional[str] = os.environ.get("USPTO_API_KEY")
-        if self.api_key:
+        raw_key: Optional[str] = os.environ.get("USPTO_API_KEY")
+        # Treat placeholder / unset keys as absent
+        if raw_key and not raw_key.lower().startswith("changeme"):
+            self.api_key: Optional[str] = raw_key
             logger.info("USPTO API key detected")
         else:
-            logger.warning(
-                "No USPTO_API_KEY set; USPTO Patents fetch may fail or be rate-limited"
-            )
+            self.api_key = None
+            if raw_key:
+                logger.warning(
+                    "USPTO_API_KEY is a placeholder ('%s...'); "
+                    "set a real key from developer.uspto.gov to enable this source",
+                    raw_key[:12],
+                )
+            else:
+                logger.warning(
+                    "No USPTO_API_KEY set; USPTO Patents fetch will return source_unavailable"
+                )
 
     def get_latest_url(self) -> str:
         """Get the PatentSearch API query endpoint URL."""
@@ -80,6 +90,22 @@ class USPTOPatentsFetcher(BaseFetcher):
         days_back = kwargs.get("days_back", 7)
         cpc_codes = kwargs.get("cpc_codes", PHARMA_CPC_CODES)
         max_records = kwargs.get("max_records", MAX_RECORDS)
+
+        if not self.api_key:
+            msg = (
+                "USPTO_API_KEY not set or is a placeholder. "
+                "Obtain a key from https://developer.uspto.gov and set USPTO_API_KEY in Doppler."
+            )
+            logger.warning(msg)
+            result = {
+                "status": "source_unavailable",
+                "records": [],
+                "record_count": 0,
+                "hash": None,
+                "error": msg,
+            }
+            self.log_fetch_result(result)
+            return result
 
         try:
             logger.info(
@@ -197,6 +223,7 @@ class USPTOPatentsFetcher(BaseFetcher):
             "patent_abstract",
             "patent_date",
             "patent_num_claims",
+            "patent_type",
             "inventors",
             "assignees",
             "cpc_current",
@@ -305,6 +332,7 @@ class USPTOPatentsFetcher(BaseFetcher):
             "patent_number": patent_number,
             "title": patent.get("patent_title"),
             "abstract": patent.get("patent_abstract"),
+            "patent_type": patent.get("patent_type"),
             "inventors": inventors,
             "assignees": assignees,
             "filing_date": filing_date,

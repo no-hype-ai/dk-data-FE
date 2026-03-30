@@ -1,0 +1,34 @@
+"""CMS Durable Medical Equipment PUF fetcher."""
+import logging
+from typing import Any, Dict
+
+from .base import BaseFetcher
+
+logger = logging.getLogger(__name__)
+
+
+class CMSDMEPUFFetcher(BaseFetcher):
+    SOURCE_NAME = "cms_dme_puf"
+    # Medicare DME, Devices & Supplies - by Supplier and Service (has HCPCS_Cd + Suplr_NPI)
+    DATASET_UUID = "1746a83e-bb65-4300-8e02-21edbab77c6b"
+
+    def get_latest_url(self) -> str:
+        return f"https://data.cms.gov/data-api/v1/dataset/{self.DATASET_UUID}/data"
+
+    def fetch(self, **kwargs) -> Dict[str, Any]:
+        max_records = kwargs.get("max_records")
+        try:
+            records = self._fetch_cms_api(self.DATASET_UUID, max_records)
+            if not records:
+                return {"status": "success", "records": [], "record_count": 0, "hash": None, "extracted_files": []}
+            tmp_path = self._cms_records_to_csv(records)
+            return {
+                "status": "success",
+                "records": len(records),
+                "record_count": len(records),
+                "hash": None,
+                "extracted_files": [tmp_path],
+            }
+        except Exception as e:
+            logger.exception("%s fetch failed: %s", self.SOURCE_NAME, e)
+            return {"status": "failed", "error": str(e), "records": [], "record_count": 0, "hash": None}

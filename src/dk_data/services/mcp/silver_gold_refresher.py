@@ -2,7 +2,7 @@
 
 After bronze transform, this module immediately updates silver and gold
 tables for the affected molecule. Each source type populates specific
-silver tables, and gold aggregates are rebuilt from silver.
+silver tables, and gold aggregates are rebuilt from mol_silver.
 """
 
 import json
@@ -30,7 +30,7 @@ class SilverGoldRefresher:
         if not drug_name:
             return
 
-        # 1. Resolve or create molecule in silver.molecules
+        # 1. Resolve or create molecule in mol_silver.molecules
         molecule_id = await self._resolve_molecule(drug_name, source_name)
         if not molecule_id:
             return
@@ -54,13 +54,13 @@ class SilverGoldRefresher:
     # -------------------------------------------------------------------------
 
     async def _resolve_molecule(self, drug_name: str, source_name: str) -> Optional[str]:
-        """Find or create a silver.molecules record for the given drug name."""
+        """Find or create a mol_silver.molecules record for the given drug name."""
         normalized = drug_name.lower().strip()
 
         async with self.db_pool.acquire() as conn:
             # Try exact match on canonical_name
             row = await conn.fetchrow(
-                "SELECT id FROM silver.molecules WHERE LOWER(canonical_name) = $1",
+                "SELECT id FROM mol_silver.molecules WHERE LOWER(canonical_name) = $1",
                 normalized,
             )
             if row:
@@ -68,7 +68,7 @@ class SilverGoldRefresher:
 
             # Try alias match
             row = await conn.fetchrow(
-                "SELECT molecule_id FROM silver.molecule_aliases WHERE alias_name_normalized = $1",
+                "SELECT molecule_id FROM mol_silver.molecule_aliases WHERE alias_name_normalized = $1",
                 normalized,
             )
             if row:
@@ -77,19 +77,19 @@ class SilverGoldRefresher:
             # Create new molecule
             mol_id = str(uuid.uuid4())
             await conn.execute("""
-                INSERT INTO silver.molecules (id, canonical_name, name_source, primary_source, data_sources)
+                INSERT INTO mol_silver.molecules (id, canonical_name, name_source, primary_source, data_sources)
                 VALUES ($1, $2, $3, $3, $4::jsonb)
             """, mol_id, drug_name, source_name, json.dumps([source_name]))
 
             # Add alias
             await conn.execute("""
-                INSERT INTO silver.molecule_aliases
+                INSERT INTO mol_silver.molecule_aliases
                 (id, molecule_id, alias_name, alias_type, alias_name_normalized, source)
                 VALUES ($1, $2, $3, 'generic_name', $4, $5)
                 ON CONFLICT DO NOTHING
             """, str(uuid.uuid4()), mol_id, drug_name, normalized, source_name)
 
-            logger.info(f"Created silver.molecules entry for '{drug_name}' → {mol_id}")
+            logger.info(f"Created mol_silver.molecules entry for '{drug_name}' → {mol_id}")
             return mol_id
 
     # -------------------------------------------------------------------------
@@ -97,7 +97,7 @@ class SilverGoldRefresher:
     # -------------------------------------------------------------------------
 
     async def _silver_clinicaltrials(self, molecule_id: str, response: dict) -> None:
-        """Upsert clinical trials into silver.clinical_trials."""
+        """Upsert clinical trials into mol_silver.clinical_trials."""
         studies = response.get("studies", [])
         if not studies:
             return
@@ -149,7 +149,7 @@ class SilverGoldRefresher:
                 )
 
                 await conn.execute("""
-                    INSERT INTO silver.clinical_trials
+                    INSERT INTO mol_silver.clinical_trials
                     (id, molecule_id, nct_id, title, brief_summary, phase,
                      study_type, status, start_date, completion_date,
                      primary_completion_date, sponsor, sponsor_type,
@@ -196,7 +196,7 @@ class SilverGoldRefresher:
                 )
 
     async def _silver_openfda_labels(self, molecule_id: str, response: dict) -> None:
-        """Upsert drug labels into silver.drug_labels."""
+        """Upsert drug labels into mol_silver.drug_labels."""
         results = response.get("results", [])
         if not results:
             return
@@ -212,7 +212,7 @@ class SilverGoldRefresher:
                 generic_names = openfda.get("generic_name", [])
 
                 await conn.execute("""
-                    INSERT INTO silver.drug_labels
+                    INSERT INTO mol_silver.drug_labels
                     (id, molecule_id, set_id, brand_name, generic_name,
                      manufacturer, application_number, product_type,
                      indications_and_usage, dosage_and_administration,
@@ -245,7 +245,7 @@ class SilverGoldRefresher:
                 )
 
     async def _silver_openfda_faers(self, molecule_id: str, response: dict) -> None:
-        """Aggregate FAERS adverse events into silver.adverse_events."""
+        """Aggregate FAERS adverse events into mol_silver.adverse_events."""
         results = response.get("results", [])
         if not results:
             return
@@ -272,14 +272,14 @@ class SilverGoldRefresher:
         async with self.db_pool.acquire() as conn:
             for pt, counts in reaction_counts.items():
                 await conn.execute("""
-                    INSERT INTO silver.adverse_events
+                    INSERT INTO mol_silver.adverse_events
                     (id, molecule_id, meddra_pt, report_count,
                      serious_count, death_count, source)
                     VALUES ($1, $2, $3, $4, $5, $6, 'openfda_faers')
                     ON CONFLICT (molecule_id, meddra_pt_code) DO UPDATE SET
-                        report_count = silver.adverse_events.report_count + EXCLUDED.report_count,
-                        serious_count = silver.adverse_events.serious_count + EXCLUDED.serious_count,
-                        death_count = silver.adverse_events.death_count + EXCLUDED.death_count,
+                        report_count = mol_silver.adverse_events.report_count + EXCLUDED.report_count,
+                        serious_count = mol_silver.adverse_events.serious_count + EXCLUDED.serious_count,
+                        death_count = mol_silver.adverse_events.death_count + EXCLUDED.death_count,
                         updated_at = NOW()
                 """,
                     str(uuid.uuid4()), molecule_id, pt,
@@ -287,7 +287,7 @@ class SilverGoldRefresher:
                 )
 
     async def _silver_openalex(self, molecule_id: str, response: dict) -> None:
-        """Upsert publications from OpenAlex into silver.publications."""
+        """Upsert publications from OpenAlex into mol_silver.publications."""
         results = response.get("results", [])
         if not results:
             return
@@ -315,7 +315,7 @@ class SilverGoldRefresher:
 
                 pub_id = str(uuid.uuid4())
                 await conn.execute("""
-                    INSERT INTO silver.publications
+                    INSERT INTO mol_silver.publications
                     (id, openalex_id, doi, pmid, title, abstract,
                      publication_year, journal, authors, first_author,
                      cited_by_count, is_open_access, keywords, source)
@@ -343,14 +343,14 @@ class SilverGoldRefresher:
 
                 # Link molecule ↔ publication
                 await conn.execute("""
-                    INSERT INTO silver.molecule_publications
+                    INSERT INTO mol_silver.molecule_publications
                     (id, molecule_id, publication_id, mention_type)
                     VALUES ($1, $2, $3, 'primary_subject')
                     ON CONFLICT (molecule_id, publication_id) DO NOTHING
                 """, str(uuid.uuid4()), molecule_id, pub_id)
 
     async def _silver_chembl(self, molecule_id: str, response: dict) -> None:
-        """Update silver.molecules with ChEMBL data and create identifier mappings."""
+        """Update mol_silver.molecules with ChEMBL data and create identifier mappings."""
         molecules = response.get("molecules", [])
         if not molecules:
             return
@@ -366,7 +366,7 @@ class SilverGoldRefresher:
         async with self.db_pool.acquire() as conn:
             # Update molecule with ChEMBL data
             await conn.execute("""
-                UPDATE silver.molecules SET
+                UPDATE mol_silver.molecules SET
                     canonical_smiles = COALESCE(canonical_smiles, $2),
                     molecular_formula = COALESCE(molecular_formula, $3),
                     molecular_weight = COALESCE(molecular_weight, $4),
@@ -387,14 +387,14 @@ class SilverGoldRefresher:
 
             # Add ChEMBL ID mapping
             await conn.execute("""
-                INSERT INTO silver.identifier_mappings
+                INSERT INTO mol_silver.identifier_mappings
                 (id, molecule_id, identifier_type, identifier_value, source, is_primary)
                 VALUES ($1, $2, 'chembl_id', $3, 'chembl', TRUE)
                 ON CONFLICT (molecule_id, identifier_type, identifier_value) DO NOTHING
             """, str(uuid.uuid4()), molecule_id, chembl_id)
 
     async def _silver_drugbank(self, molecule_id: str, response: dict) -> None:
-        """Update silver.molecules with DrugBank data."""
+        """Update mol_silver.molecules with DrugBank data."""
         drugs = response.get("drugs", [])
         if not drugs:
             return
@@ -406,21 +406,21 @@ class SilverGoldRefresher:
 
         async with self.db_pool.acquire() as conn:
             await conn.execute("""
-                UPDATE silver.molecules SET
+                UPDATE mol_silver.molecules SET
                     mechanism_of_action = COALESCE(mechanism_of_action, $2),
                     updated_at = NOW()
                 WHERE id = $1::uuid
             """, molecule_id, drug.get("mechanism-of-action") or drug.get("mechanism_of_action"))
 
             await conn.execute("""
-                INSERT INTO silver.identifier_mappings
+                INSERT INTO mol_silver.identifier_mappings
                 (id, molecule_id, identifier_type, identifier_value, source, is_primary)
                 VALUES ($1, $2, 'drugbank_id', $3, 'drugbank', TRUE)
                 ON CONFLICT (molecule_id, identifier_type, identifier_value) DO NOTHING
             """, str(uuid.uuid4()), molecule_id, db_id)
 
     async def _silver_pubchem(self, molecule_id: str, response: dict) -> None:
-        """Update silver.molecules with PubChem data."""
+        """Update mol_silver.molecules with PubChem data."""
         props = response.get("PropertyTable", {}).get("Properties", [])
         compounds = response.get("PC_Compounds", props)
         if not compounds:
@@ -433,7 +433,7 @@ class SilverGoldRefresher:
 
         async with self.db_pool.acquire() as conn:
             await conn.execute("""
-                UPDATE silver.molecules SET
+                UPDATE mol_silver.molecules SET
                     canonical_smiles = COALESCE(canonical_smiles, $2),
                     molecular_formula = COALESCE(molecular_formula, $3),
                     molecular_weight = COALESCE(molecular_weight, $4),
@@ -453,7 +453,7 @@ class SilverGoldRefresher:
             )
 
             await conn.execute("""
-                INSERT INTO silver.identifier_mappings
+                INSERT INTO mol_silver.identifier_mappings
                 (id, molecule_id, identifier_type, identifier_value, source, is_primary)
                 VALUES ($1, $2, 'pubchem_cid', $3, 'pubchem', TRUE)
                 ON CONFLICT (molecule_id, identifier_type, identifier_value) DO NOTHING
@@ -487,7 +487,7 @@ class SilverGoldRefresher:
         """Refresh gold_molecule_profile from silver tables."""
         # Fetch silver molecule (id is UUID, molecule_id is passed as string)
         mol = await conn.fetchrow(
-            "SELECT * FROM silver.molecules WHERE id = $1::uuid", molecule_id
+            "SELECT * FROM mol_silver.molecules WHERE id = $1::uuid", molecule_id
         )
         if not mol:
             return
@@ -496,12 +496,12 @@ class SilverGoldRefresher:
         ae_row = await conn.fetchrow("""
             SELECT COUNT(*) as total,
                    SUM(CASE WHEN serious_count > 0 THEN 1 ELSE 0 END) as serious
-            FROM silver.adverse_events WHERE molecule_id::text = $1
+            FROM mol_silver.adverse_events WHERE molecule_id::text = $1
         """, molecule_id)
 
         # Top adverse events
         top_aes = await conn.fetch("""
-            SELECT meddra_pt, report_count FROM silver.adverse_events
+            SELECT meddra_pt, report_count FROM mol_silver.adverse_events
             WHERE molecule_id::text = $1
             ORDER BY report_count DESC LIMIT 10
         """, molecule_id)
@@ -509,7 +509,7 @@ class SilverGoldRefresher:
 
         # Fetch identifiers
         ids = await conn.fetch(
-            "SELECT identifier_type, identifier_value FROM silver.identifier_mappings WHERE molecule_id::text = $1 AND is_primary = TRUE",
+            "SELECT identifier_type, identifier_value FROM mol_silver.identifier_mappings WHERE molecule_id::text = $1 AND is_primary = TRUE",
             molecule_id,
         )
         id_map = {r["identifier_type"]: r["identifier_value"] for r in ids}
@@ -518,7 +518,7 @@ class SilverGoldRefresher:
         pipeline = await conn.fetch("""
             SELECT phase, COUNT(*) as trial_count,
                    jsonb_agg(DISTINCT c) as conds
-            FROM silver.clinical_trials,
+            FROM mol_silver.clinical_trials,
                  jsonb_array_elements_text(conditions) c
             WHERE molecule_id::text = $1
             GROUP BY phase
@@ -531,7 +531,7 @@ class SilverGoldRefresher:
         # Patent info
         patent_row = await conn.fetchrow("""
             SELECT MIN(expiry_date) as earliest, COUNT(*) as cnt
-            FROM silver.patents WHERE molecule_id::text = $1
+            FROM mol_silver.patents WHERE molecule_id::text = $1
         """, molecule_id)
 
         # Determine lifecycle stage from max phase
@@ -540,10 +540,10 @@ class SilverGoldRefresher:
         # Count data sources
         source_counts = await conn.fetchrow("""
             SELECT
-                (SELECT COUNT(*) FROM silver.clinical_trials WHERE molecule_id::text = $1) as trials,
-                (SELECT COUNT(*) FROM silver.drug_labels WHERE molecule_id::text = $1) as labels,
-                (SELECT COUNT(*) FROM silver.adverse_events WHERE molecule_id::text = $1) as aes,
-                (SELECT COUNT(*) FROM silver.molecule_publications mp
+                (SELECT COUNT(*) FROM mol_silver.clinical_trials WHERE molecule_id::text = $1) as trials,
+                (SELECT COUNT(*) FROM mol_silver.drug_labels WHERE molecule_id::text = $1) as labels,
+                (SELECT COUNT(*) FROM mol_silver.adverse_events WHERE molecule_id::text = $1) as aes,
+                (SELECT COUNT(*) FROM mol_silver.molecule_publications mp
                  WHERE mp.molecule_id::text = $1) as pubs
         """, molecule_id)
 
@@ -561,10 +561,10 @@ class SilverGoldRefresher:
         total_sources = sum(1 for v in data_sources.values() if v > 0)
         completeness = min(1.0, total_sources / 5.0)
 
-        # Upsert gold.molecule_profile (PK = molecule_id TEXT)
+        # Upsert mol_gold.molecule_profile (PK = molecule_id TEXT)
         try:
             await conn.execute("""
-                INSERT INTO gold.molecule_profile
+                INSERT INTO mol_gold.molecule_profile
                 (molecule_id, molecule_name, molecule_type, inchi_key,
                  lifecycle_stage, lifecycle_stage_confidence, lifecycle_last_detected,
                  drugbank_id, chembl_id, pubchem_cid,
@@ -607,21 +607,21 @@ class SilverGoldRefresher:
                 json.dumps(data_sources),
             )
         except Exception as e:
-            logger.warning(f"gold.molecule_profile upsert skipped: {e}")
+            logger.warning(f"mol_gold.molecule_profile upsert skipped: {e}")
 
     async def _refresh_gold_safety_signals(self, conn, molecule_id: str) -> None:
-        """Refresh gold.safety_signals from silver.adverse_events."""
+        """Refresh mol_gold.safety_signals from mol_silver.adverse_events."""
         try:
             # Clear old signals for this molecule
             await conn.execute(
-                "DELETE FROM gold.safety_signals WHERE molecule_id::text = $1", molecule_id
+                "DELETE FROM mol_gold.safety_signals WHERE molecule_id::text = $1", molecule_id
             )
 
             # Rebuild from silver
             aes = await conn.fetch("""
                 SELECT meddra_pt, meddra_pt_code, report_count,
                        serious_count, death_count, prr, ror
-                FROM silver.adverse_events
+                FROM mol_silver.adverse_events
                 WHERE molecule_id::text = $1 AND report_count >= 3
                 ORDER BY report_count DESC
                 LIMIT 100
@@ -630,7 +630,7 @@ class SilverGoldRefresher:
             for ae in aes:
                 is_signal = (ae.get("prr") or 0) >= 2.0 or ae["report_count"] >= 10
                 await conn.execute("""
-                    INSERT INTO gold.safety_signals
+                    INSERT INTO mol_gold.safety_signals
                     (id, molecule_id, event_name, event_category,
                      report_count, seriousness, outcome,
                      reaction_name, reaction_meddra_pt,
@@ -652,16 +652,16 @@ class SilverGoldRefresher:
                     ae.get("prr"), ae.get("ror"), is_signal,
                 )
         except Exception as e:
-            logger.warning(f"gold.safety_signals refresh skipped: {e}")
+            logger.warning(f"mol_gold.safety_signals refresh skipped: {e}")
 
     async def _refresh_gold_lifecycle_stages(self, conn, molecule_id: str) -> None:
-        """Refresh gold.lifecycle_stages from silver clinical trials."""
+        """Refresh mol_gold.lifecycle_stages from silver clinical trials."""
         try:
             # Group trials by phase to build lifecycle stages
             phases = await conn.fetch("""
                 SELECT phase, status, COUNT(*) as cnt,
                        jsonb_agg(DISTINCT c) as indications
-                FROM silver.clinical_trials,
+                FROM mol_silver.clinical_trials,
                      jsonb_array_elements_text(conditions) c
                 WHERE molecule_id::text = $1
                 GROUP BY phase, status
@@ -689,7 +689,7 @@ class SilverGoldRefresher:
                         pass
 
                 await conn.execute("""
-                    INSERT INTO gold.lifecycle_stages
+                    INSERT INTO mol_gold.lifecycle_stages
                     (id, molecule_id, stage, event_type, indication,
                      stage_confidence, evidence_count, primary_evidence_type)
                     VALUES ($1, $2, $3, $4, $5, 0.9, $6, 'clinical_trial')
@@ -704,15 +704,15 @@ class SilverGoldRefresher:
                     row["cnt"],
                 )
         except Exception as e:
-            logger.warning(f"gold.lifecycle_stages refresh skipped: {e}")
+            logger.warning(f"mol_gold.lifecycle_stages refresh skipped: {e}")
 
     async def _refresh_gold_competitive_landscape(self, conn, molecule_id: str) -> None:
-        """Refresh gold.competitive_landscape from indication-matched trials."""
+        """Refresh mol_gold.competitive_landscape from indication-matched trials."""
         try:
             # Get this molecule's conditions
             conditions = await conn.fetch("""
                 SELECT DISTINCT c as condition
-                FROM silver.clinical_trials,
+                FROM mol_silver.clinical_trials,
                      jsonb_array_elements_text(conditions) c
                 WHERE molecule_id::text = $1
             """, molecule_id)
@@ -730,7 +730,7 @@ class SilverGoldRefresher:
                         COUNT(DISTINCT molecule_id) FILTER (WHERE phase IN ('PHASE3', 'Phase 3')) as p3,
                         COUNT(DISTINCT molecule_id) FILTER (WHERE phase IN ('PHASE2', 'Phase 2')) as p2,
                         COUNT(DISTINCT molecule_id) FILTER (WHERE phase IN ('PHASE1', 'Phase 1')) as p1
-                    FROM silver.clinical_trials
+                    FROM mol_silver.clinical_trials
                     WHERE conditions ? $1
                 """, condition)
 
@@ -739,7 +739,7 @@ class SilverGoldRefresher:
 
                 today = date.today()
                 await conn.execute("""
-                    INSERT INTO gold.competitive_landscape
+                    INSERT INTO mol_gold.competitive_landscape
                     (id, molecule_id, indication, total_molecules,
                      phase_3_count, phase_2_count, phase_1_count, snapshot_date)
                     VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
@@ -756,14 +756,14 @@ class SilverGoldRefresher:
                     today,
                 )
         except Exception as e:
-            logger.warning(f"gold.competitive_landscape refresh skipped: {e}")
+            logger.warning(f"mol_gold.competitive_landscape refresh skipped: {e}")
 
     async def _refresh_gold_trial_outcomes_direct(self, conn, molecule_id: str) -> None:
-        """Populate gold.trial_outcomes directly from silver.clinical_trials."""
+        """Populate mol_gold.trial_outcomes directly from mol_silver.clinical_trials."""
         try:
             trials = await conn.fetch("""
                 SELECT nct_id, title, phase, status, enrollment, sponsor, conditions
-                FROM silver.clinical_trials
+                FROM mol_silver.clinical_trials
                 WHERE molecule_id::text = $1
             """, molecule_id)
 
@@ -776,7 +776,7 @@ class SilverGoldRefresher:
                     continue
 
                 await conn.execute("""
-                    INSERT INTO gold.trial_outcomes
+                    INSERT INTO mol_gold.trial_outcomes
                     (id, molecule_id, nct_id, endpoint_name, result,
                      phase, status, enrollment, sponsor, conditions)
                     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10::jsonb)
@@ -797,7 +797,7 @@ class SilverGoldRefresher:
                     json.dumps(t["conditions"]) if t.get("conditions") else None,
                 )
         except Exception as e:
-            logger.warning(f"gold.trial_outcomes refresh skipped: {e}")
+            logger.warning(f"mol_gold.trial_outcomes refresh skipped: {e}")
 
 
 # -------------------------------------------------------------------------

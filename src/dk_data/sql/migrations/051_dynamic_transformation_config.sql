@@ -2,6 +2,9 @@
 -- Purpose: Configuration tables for dynamic Bronze→Silver transformation
 -- Enables zero-code onboarding of new data sources with SQLMesh integration
 -- Date: 2026-01-28
+--
+-- NOTE: Tables created in meta.* (platform operational schema).
+-- Migration 103 handles existing databases that had these in raw.* from a prior version.
 
 BEGIN;
 
@@ -10,15 +13,15 @@ BEGIN;
 -- ============================================================================
 -- Defines how each source transforms from Bronze to Silver layer
 
-CREATE TABLE IF NOT EXISTS raw.silver_transformation_rules (
+CREATE TABLE IF NOT EXISTS meta.silver_transformation_rules (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
 
     -- Source identification
     source_name TEXT NOT NULL UNIQUE,           -- e.g., 'new_pharma_db'
-    source_table TEXT NOT NULL,                 -- e.g., 'bronze.new_pharma_db'
+    source_table TEXT NOT NULL,                 -- e.g., 'mol_bronze.new_pharma_db'
 
     -- Target configuration
-    target_table TEXT NOT NULL DEFAULT 'silver.molecules',  -- Primary target
+    target_table TEXT NOT NULL DEFAULT 'mol_silver.molecules',  -- Primary target
     target_type TEXT NOT NULL DEFAULT 'molecule',           -- molecule, trial, publication, target
 
     -- Column mappings: Bronze column → Silver column
@@ -66,19 +69,19 @@ CREATE TABLE IF NOT EXISTS raw.silver_transformation_rules (
     CONSTRAINT valid_target_type CHECK (target_type IN ('molecule', 'trial', 'publication', 'target', 'adverse_event', 'patent'))
 );
 
-CREATE INDEX IF NOT EXISTS idx_silver_rules_source ON raw.silver_transformation_rules(source_name);
-CREATE INDEX IF NOT EXISTS idx_silver_rules_enabled ON raw.silver_transformation_rules(enabled) WHERE enabled = true;
+CREATE INDEX IF NOT EXISTS idx_silver_rules_source ON meta.silver_transformation_rules(source_name);
+CREATE INDEX IF NOT EXISTS idx_silver_rules_enabled ON meta.silver_transformation_rules(enabled) WHERE enabled = true;
 
 -- ============================================================================
 -- SECTION 2: IDENTIFIER EXTRACTION PATTERNS
 -- ============================================================================
 -- Defines regex patterns and extraction rules for each identifier type per source
 
-CREATE TABLE IF NOT EXISTS raw.source_identifier_patterns (
+CREATE TABLE IF NOT EXISTS meta.source_identifier_patterns (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
 
     source_name TEXT NOT NULL,
-    identifier_type TEXT NOT NULL,  -- References raw.identifier_types.identifier_type
+    identifier_type TEXT NOT NULL,  -- References meta.identifier_types.identifier_type
 
     -- Extraction configuration
     source_column TEXT NOT NULL,           -- Column in Bronze table
@@ -98,14 +101,14 @@ CREATE TABLE IF NOT EXISTS raw.source_identifier_patterns (
     UNIQUE(source_name, identifier_type, source_column)
 );
 
-CREATE INDEX IF NOT EXISTS idx_source_id_patterns_source ON raw.source_identifier_patterns(source_name);
+CREATE INDEX IF NOT EXISTS idx_source_id_patterns_source ON meta.source_identifier_patterns(source_name);
 
 -- ============================================================================
 -- SECTION 3: TRANSFORMATION TEMPLATES
 -- ============================================================================
 -- Reusable transformation templates for common patterns
 
-CREATE TABLE IF NOT EXISTS raw.transformation_templates (
+CREATE TABLE IF NOT EXISTS meta.transformation_templates (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
 
     template_name TEXT NOT NULL UNIQUE,
@@ -131,11 +134,11 @@ CREATE TABLE IF NOT EXISTS raw.transformation_templates (
 -- ============================================================================
 -- Tracks generated SQLMesh models for audit and regeneration
 
-CREATE TABLE IF NOT EXISTS raw.generated_sqlmesh_models (
+CREATE TABLE IF NOT EXISTS meta.generated_sqlmesh_models (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
 
-    model_name TEXT NOT NULL UNIQUE,        -- e.g., 'silver.new_pharma_molecules'
-    source_rule_id UUID REFERENCES raw.silver_transformation_rules(id),
+    model_name TEXT NOT NULL UNIQUE,        -- e.g., 'mol_silver.new_pharma_molecules'
+    source_rule_id UUID REFERENCES meta.silver_transformation_rules(id),
 
     -- Generated content
     model_sql TEXT NOT NULL,                -- The generated SQL
@@ -156,13 +159,13 @@ CREATE TABLE IF NOT EXISTS raw.generated_sqlmesh_models (
     updated_at TIMESTAMPTZ DEFAULT NOW()
 );
 
-CREATE INDEX IF NOT EXISTS idx_generated_models_rule ON raw.generated_sqlmesh_models(source_rule_id);
+CREATE INDEX IF NOT EXISTS idx_generated_models_rule ON meta.generated_sqlmesh_models(source_rule_id);
 
 -- ============================================================================
 -- SECTION 5: INSERT DEFAULT TEMPLATES
 -- ============================================================================
 
-INSERT INTO raw.transformation_templates (template_name, description, template_type, template_sql, required_params, example_config)
+INSERT INTO meta.transformation_templates (template_name, description, template_type, template_sql, required_params, example_config)
 VALUES
 -- Molecule transformation template
 ('molecule_transform', 'Standard molecule transformation from Bronze to Silver', 'full',
@@ -172,7 +175,7 @@ $TEMPLATE$
 -- Source: {{ source_table }}
 
 MODEL (
-    name silver.{{ source_name }}_molecules,
+    name mol_silver.{{ source_name }}_molecules,
     kind INCREMENTAL_BY_UNIQUE_KEY (
         unique_key inchi_key
     ),
@@ -205,11 +208,11 @@ deduplicated AS (
 SELECT * FROM deduplicated;
 $TEMPLATE$,
 '["source_name", "source_table", "column_mappings", "dedup_columns"]',
-'{"source_name": "new_db", "source_table": "bronze.new_db", "column_mappings": ["inchi_key", "name AS canonical_name"], "dedup_columns": ["inchi_key"]}'
+'{"source_name": "new_db", "source_table": "mol_bronze.new_db", "column_mappings": ["inchi_key", "name AS canonical_name"], "dedup_columns": ["inchi_key"]}'
 ),
 
 -- Identifier extraction template
-('identifier_extraction', 'Extract identifiers from source to silver.identifier_mappings', 'identifier_extraction',
+('identifier_extraction', 'Extract identifiers from source to mol_silver.identifier_mappings', 'identifier_extraction',
 $TEMPLATE$
 -- Identifier extraction for {{ source_name }}
 SELECT
@@ -221,7 +224,7 @@ SELECT
     {{ is_primary }} AS is_primary,
     s.source_updated_at AS source_date,
     NOW() AS created_at
-FROM silver.molecules m
+FROM mol_silver.molecules m
 JOIN {{ source_table }} s ON m.inchi_key = s.inchi_key
 WHERE {{ extraction_expression }} IS NOT NULL
   AND m.needs_review = FALSE
@@ -231,7 +234,7 @@ $TEMPLATE$,
 ),
 
 -- Name lookup template
-('name_lookup', 'Extract drug names for silver.drug_name_lookup', 'name_extraction',
+('name_lookup', 'Extract drug names for mol_silver.drug_name_lookup', 'name_extraction',
 $TEMPLATE$
 -- Name extraction for {{ source_name }}
 {% for name_type, column_expr in name_mappings.items() %}
@@ -242,7 +245,7 @@ SELECT
     LOWER(TRIM({{ column_expr }})) AS name_normalized,
     '{{ source_name }}' AS source,
     NOW() AS created_at
-FROM silver.molecules m
+FROM mol_silver.molecules m
 JOIN {{ source_table }} s ON m.inchi_key = s.inchi_key
 WHERE {{ column_expr }} IS NOT NULL
   AND m.needs_review = FALSE
@@ -259,14 +262,14 @@ ON CONFLICT (template_name) DO NOTHING;
 -- ============================================================================
 
 -- DrugBank transformation rule
-INSERT INTO raw.silver_transformation_rules (
+INSERT INTO meta.silver_transformation_rules (
     source_name, source_table, target_table, target_type,
     column_mappings, identifier_mappings, name_mappings,
     dedup_strategy, dedup_columns, source_precedence
 ) VALUES (
     'drugbank',
-    'bronze.drugbank',
-    'silver.molecules',
+    'mol_bronze.drugbank',
+    'mol_silver.molecules',
     'molecule',
     '{
         "inchi_key": "inchi_key",
@@ -295,14 +298,14 @@ INSERT INTO raw.silver_transformation_rules (
 ) ON CONFLICT (source_name) DO NOTHING;
 
 -- ChEMBL transformation rule
-INSERT INTO raw.silver_transformation_rules (
+INSERT INTO meta.silver_transformation_rules (
     source_name, source_table, target_table, target_type,
     column_mappings, identifier_mappings, name_mappings,
     dedup_strategy, dedup_columns, source_precedence
 ) VALUES (
     'chembl',
-    'bronze.chembl_molecules',
-    'silver.molecules',
+    'mol_bronze.chembl_molecules',
+    'mol_silver.molecules',
     'molecule',
     '{
         "inchi_key": "inchi_key",
@@ -328,14 +331,14 @@ INSERT INTO raw.silver_transformation_rules (
 ) ON CONFLICT (source_name) DO NOTHING;
 
 -- PubChem transformation rule
-INSERT INTO raw.silver_transformation_rules (
+INSERT INTO meta.silver_transformation_rules (
     source_name, source_table, target_table, target_type,
     column_mappings, identifier_mappings, name_mappings,
     dedup_strategy, dedup_columns, source_precedence
 ) VALUES (
     'pubchem',
-    'bronze.pubchem',
-    'silver.molecules',
+    'mol_bronze.pubchem_compounds',
+    'mol_silver.molecules',
     'molecule',
     '{
         "inchi_key": "inchi_key",
@@ -360,7 +363,7 @@ INSERT INTO raw.silver_transformation_rules (
 -- SECTION 7: AUDIT TRIGGER
 -- ============================================================================
 
-CREATE OR REPLACE FUNCTION raw.update_transformation_rule_timestamp()
+CREATE OR REPLACE FUNCTION meta.update_transformation_rule_timestamp()
 RETURNS TRIGGER AS $$
 BEGIN
     NEW.updated_at = NOW();
@@ -368,10 +371,10 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
-DROP TRIGGER IF EXISTS trigger_update_transformation_rule ON raw.silver_transformation_rules;
+DROP TRIGGER IF EXISTS trigger_update_transformation_rule ON meta.silver_transformation_rules;
 CREATE TRIGGER trigger_update_transformation_rule
-    BEFORE UPDATE ON raw.silver_transformation_rules
+    BEFORE UPDATE ON meta.silver_transformation_rules
     FOR EACH ROW
-    EXECUTE FUNCTION raw.update_transformation_rule_timestamp();
+    EXECUTE FUNCTION meta.update_transformation_rule_timestamp();
 
 COMMIT;

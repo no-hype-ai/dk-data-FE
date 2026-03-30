@@ -39,6 +39,9 @@ from dk_data.observability.metrics import (
     record_job_duration,
     increment_job_failure,
     record_data_source_refresh,
+    _is_cms_source,
+    record_cms_source_sync,
+    record_cms_fetch_duration,
 )
 
 # Router
@@ -145,6 +148,12 @@ async def report_job_completion(report: JobCompletionReport):
         record_data_source_refresh(
             report.job_name, report.source_name, report.records_processed
         )
+
+    # CMS PUF: update per-source health, ingestion, and duration metrics (019)
+    source_key = report.source_name or report.job_name
+    if _is_cms_source(source_key):
+        record_cms_source_sync(source_key, report.status, report.records_processed)
+        record_cms_fetch_duration(source_key, report.duration_seconds)
 
     logger.info(
         f"Job completion recorded: {report.job_name} "
@@ -264,7 +273,7 @@ async def pipeline_health():
         # Get Bronze source health from sync_schedules
         cur.execute("""
             SELECT source, tier, enabled, last_run, next_run
-            FROM raw.sync_schedules
+            FROM meta.sync_schedules
             WHERE enabled = TRUE
             ORDER BY last_run DESC NULLS LAST
             LIMIT 10
@@ -273,7 +282,7 @@ async def pipeline_health():
             source_name, tier, enabled, last_run, next_run = row
             # Check for recent errors
             cur.execute("""
-                SELECT COUNT(*) FROM raw.ingestion_jobs
+                SELECT COUNT(*) FROM meta.ingestion_jobs
                 WHERE source = %s AND status = 'failed'
                   AND started_at >= NOW() - INTERVAL '24 hours'
             """, (source_name,))
@@ -295,7 +304,7 @@ async def pipeline_health():
             ))
 
         # Get Silver layer health
-        cur.execute("SELECT COUNT(*), MAX(updated_at) FROM silver.molecules")
+        cur.execute("SELECT COUNT(*), MAX(updated_at) FROM mol_silver.molecules")
         result = cur.fetchone()
         silver_count = result[0] or 0
         silver_update = result[1]
@@ -309,7 +318,7 @@ async def pipeline_health():
         # Get Gold layer health (check if gold schema exists)
         try:
             cur.execute("""
-                SELECT COUNT(*) FROM silver.molecules WHERE needs_review = FALSE
+                SELECT COUNT(*) FROM mol_silver.molecules WHERE needs_review = FALSE
             """)
             gold_count = cur.fetchone()[0] or 0
             gold_health = LayerHealth(
@@ -400,7 +409,7 @@ async def list_recent_runs(
                 records_processed,
                 error_message,
                 error_details
-            FROM raw.ingestion_jobs
+            FROM meta.ingestion_jobs
             WHERE 1=1
         """
         params = []
@@ -434,7 +443,7 @@ async def list_recent_runs(
             })
 
         # Get total count
-        cur.execute("SELECT COUNT(*) FROM raw.ingestion_jobs")
+        cur.execute("SELECT COUNT(*) FROM meta.ingestion_jobs")
         total = cur.fetchone()[0] or 0
 
         cur.close()
@@ -476,7 +485,7 @@ async def list_data_sources():
         "faers": {"name": "FAERS", "type": "local_db", "table": "faers_events"},  # Fixed: was faers_adverse_events
         "regulatory_milestones": {"name": "Regulatory Milestones", "type": "local_db", "table": "regulatory_milestones"},
         "patents_local": {"name": "Patents (Local)", "type": "local_db", "table": "drugbank_patents"},  # Fixed: use drugbank_patents
-        "publications_local": {"name": "Publications (Local)", "type": "local_db", "table": "silver.publications", "schema": "silver"},
+        "publications_local": {"name": "Publications (Local)", "type": "local_db", "table": "mol_silver.publications", "schema": "silver"},
         # External API sources
         "clinicaltrials_gov": {"name": "ClinicalTrials.gov", "type": "external_api", "endpoint": "clinicaltrials.gov/api"},
         "openfda": {"name": "OpenFDA", "type": "external_api", "endpoint": "api.fda.gov"},
@@ -805,7 +814,7 @@ async def get_sync_job_status(job_id: str):
         cur.execute("""
             SELECT id, source, job_type, status, started_at, completed_at,
                    records_processed, records_failed, error_message, options
-            FROM raw.ingestion_jobs
+            FROM meta.ingestion_jobs
             WHERE id::text = %s
         """, (job_id,))
         row = cur.fetchone()

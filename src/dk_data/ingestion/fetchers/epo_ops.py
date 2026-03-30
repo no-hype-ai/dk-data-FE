@@ -39,8 +39,8 @@ class EPOOPSFetcher(BaseFetcher):
     BASE_URL = "https://ops.epo.org/3.2/rest-services"
     TOKEN_URL = "https://ops.epo.org/3.2/auth/accesstoken"
 
-    # OPS search endpoint
-    SEARCH_ENDPOINT = "/published-data/search"
+    # OPS search endpoint — /biblio returns full exchange-document elements with titles/abstracts/IPC
+    SEARCH_ENDPOINT = "/published-data/search/biblio"
 
     # Results per page (OPS max is 100)
     PAGE_SIZE = 100
@@ -201,7 +201,7 @@ class EPOOPSFetcher(BaseFetcher):
         # Build CQL query
         ipc_filter = " OR ".join(f'ipc="{code}"' for code in ipc_codes)
         date_from = (datetime.utcnow() - timedelta(days=days_back)).strftime("%Y%m%d")
-        cql = f'ta="{term}" AND ({ipc_filter}) AND pd>={date_from}'
+        cql = f'txt="{term}" AND ({ipc_filter}) AND pd>={date_from}'
 
         start = 1
 
@@ -348,6 +348,12 @@ class EPOOPSFetcher(BaseFetcher):
             if ipc.text:
                 ipc_codes.append(ipc.text.strip())
 
+        # CPC codes
+        cpc_codes = []
+        for cpc in doc.findall(".//epo:classification-cpc/epo:text", ns):
+            if cpc.text:
+                cpc_codes.append(cpc.text.strip())
+
         # Family ID
         family_id = doc.get("family-id")
 
@@ -360,6 +366,7 @@ class EPOOPSFetcher(BaseFetcher):
             "filing_date": filing_date,
             "publication_date": publication_date,
             "ipc_codes": ipc_codes if ipc_codes else None,
+            "cpc_codes": cpc_codes if cpc_codes else None,
             "family_id": family_id,
         }
 

@@ -146,13 +146,13 @@ class DataFreshnessMonitor:
                     MAX(started_at) as last_refresh,
                     MAX(error_message) FILTER (WHERE status = 'failed') as last_error,
                     bool_or(status = 'processing') as is_refreshing
-                FROM raw.ingestion_jobs
+                FROM meta.ingestion_jobs
                 WHERE source = $1
             """, source)
 
             # Get record count
             count = await conn.fetchval("""
-                SELECT COUNT(*) FROM raw.api_responses
+                SELECT COUNT(*) FROM meta.api_responses
                 WHERE source = $1
             """, source)
 
@@ -279,7 +279,7 @@ class DataFreshnessMonitor:
             # Get refresh history
             jobs = await conn.fetch("""
                 SELECT status, started_at, completed_at, records_processed, error_message
-                FROM raw.ingestion_jobs
+                FROM meta.ingestion_jobs
                 WHERE source = $1
                   AND started_at >= NOW() - ($2 || ' days')::interval
                 ORDER BY started_at DESC
@@ -319,7 +319,7 @@ class DataFreshnessMonitor:
         job_id = uuid4()
         async with self.db_pool.acquire() as conn:
             await conn.execute("""
-                INSERT INTO raw.ingestion_jobs (job_id, source, status, started_at)
+                INSERT INTO meta.ingestion_jobs (job_id, source, status, started_at)
                 VALUES ($1, $2, 'processing', NOW())
             """, job_id, source)
         return job_id
@@ -335,8 +335,59 @@ class DataFreshnessMonitor:
         status = 'completed' if success else 'failed'
         async with self.db_pool.acquire() as conn:
             await conn.execute("""
-                UPDATE raw.ingestion_jobs
+                UPDATE meta.ingestion_jobs
                 SET status = $2, completed_at = NOW(),
                     records_processed = $3, error_message = $4
                 WHERE job_id = $1
             """, job_id, status, records_processed, error_message)
+
+    async def is_fresh(self, source_name: str, max_age_hours: int = 720) -> bool:
+        """
+        Check whether a source has been successfully refreshed within max_age_hours.
+
+        Feature: 019-cms-puf-platform-reconciliation (T045)
+
+        IMPORTANT: This method covers ONLY sources tracked in meta.data_sources
+        (new CMS PUF + API sources added by this feature, plus existing
+        EMA/Cochrane/DrugBank/PubChem/PubMed).
+
+        Legacy MCP-managed sources tracked in meta.ingestion_jobs are NOT
+        covered and MUST NOT be queried through this method.
+
+        Default thresholds:
+          - CMS bulk file sources: 720h (30 days)
+          - API incremental sources: 24h (pass max_age_hours=24)
+
+        Args:
+            source_name: Source name matching meta.data_sources.source_name.
+                         Must be byte-for-byte identical to the SOURCES dict key.
+            max_age_hours: Maximum age of last successful refresh in hours.
+                           Default 720 (30 days) for CMS bulk sources.
+
+        Returns:
+            True if last_successful_refresh is not NULL and within max_age_hours.
+            False if source not found in meta.data_sources, never refreshed, or stale.
+        """
+        async with self.db_pool.acquire() as conn:
+            row = await conn.fetchrow(
+                """
+                SELECT last_successful_refresh
+                FROM meta.data_sources
+                WHERE source_name = $1
+                  AND is_active = TRUE
+                """,
+                source_name,
+            )
+
+        if row is None:
+            # Source not tracked in meta.data_sources — cannot determine freshness
+            logger.warning("is_fresh: source not found in meta.data_sources: %s", source_name)
+            return False
+
+        last_refresh = row["last_successful_refresh"]
+        if last_refresh is None:
+            # Never successfully refreshed
+            return False
+
+        age = datetime.utcnow() - last_refresh.replace(tzinfo=None)
+        return age.total_seconds() / 3600 <= max_age_hours

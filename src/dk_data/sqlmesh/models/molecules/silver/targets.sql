@@ -3,7 +3,7 @@
 -- Part of: 012-dk-data-platform
 
 MODEL (
-    name silver.targets,
+    name mol_silver.targets,
     kind INCREMENTAL_BY_UNIQUE_KEY (
         unique_key uniprot_id
     ),
@@ -45,46 +45,65 @@ WITH uniprot_targets AS (
         source,
         source_updated_at,
         created_at
-    FROM bronze.uniprot
+    FROM mol_bronze.uniprot
     WHERE
         processed_to_silver = FALSE
         AND uniprot_id IS NOT NULL
         AND protein_name IS NOT NULL
+),
+
+-- ChEMBL target IDs from the bulk-loaded mol_bronze.chembl_targets table,
+-- which is populated by load_chembl_bulk.py via ChEMBL SQLite cross-reference
+-- (target_dictionary JOIN target_components JOIN component_sequences).
+-- Join key: uniprot_id — one-to-one with UniProt accession.
+chembl_id_enrichment AS (
+    SELECT chembl_target_id, uniprot_id
+    FROM mol_bronze.chembl_targets
+    WHERE chembl_target_id IS NOT NULL AND uniprot_id IS NOT NULL
 )
 
 SELECT
     gen_random_uuid() AS id,
-    uniprot_id,
-    target_name,
-    short_name AS target_short_name,
-    gene_name AS gene_symbol,
-    entry_name,
-    target_type,
-    organism_scientific AS organism,
-    organism_common,
-    taxonomy_id,
-    sequence_length,
-    molecular_weight,
-    -- Extract GO terms as separate fields
+    ut.uniprot_id,
+    ut.target_name,
+    ut.short_name AS target_short_name,
+    ut.gene_name AS gene_symbol,
+    ut.entry_name,
+    ut.target_type,
+    ut.organism_scientific AS organism,
+    ut.organism_common,
+    ut.taxonomy_id,
+    ut.sequence_length,
+    ut.molecular_weight,
+    -- Extract GO terms by ontology namespace
+    -- UniProt encodes ontology in the GoTerm property prefix:
+    --   P: = Biological Process, C: = Cellular Component, F: = Molecular Function
     (SELECT jsonb_agg(g->>'id')
-     FROM jsonb_array_elements(go_terms) AS g
-     WHERE g->>'id' LIKE 'GO:0008150%') AS go_biological_process,
+     FROM jsonb_array_elements(ut.go_terms) AS g,
+          jsonb_array_elements(COALESCE(g->'properties', '[]'::jsonb)) AS prop
+     WHERE prop->>'key' = 'GoTerm'
+       AND prop->>'value' LIKE 'P:%') AS go_biological_process,
     (SELECT jsonb_agg(g->>'id')
-     FROM jsonb_array_elements(go_terms) AS g
-     WHERE g->>'id' LIKE 'GO:0005575%') AS go_cellular_component,
+     FROM jsonb_array_elements(ut.go_terms) AS g,
+          jsonb_array_elements(COALESCE(g->'properties', '[]'::jsonb)) AS prop
+     WHERE prop->>'key' = 'GoTerm'
+       AND prop->>'value' LIKE 'C:%') AS go_cellular_component,
     (SELECT jsonb_agg(g->>'id')
-     FROM jsonb_array_elements(go_terms) AS g
-     WHERE g->>'id' LIKE 'GO:0003674%') AS go_molecular_function,
+     FROM jsonb_array_elements(ut.go_terms) AS g,
+          jsonb_array_elements(COALESCE(g->'properties', '[]'::jsonb)) AS prop
+     WHERE prop->>'key' = 'GoTerm'
+       AND prop->>'value' LIKE 'F:%') AS go_molecular_function,
     -- PDB count
-    COALESCE(jsonb_array_length(pdb_structures), 0) AS pdb_structure_count,
-    pdb_structures,
-    keywords,
-    NULL::TEXT AS chembl_target_id,  -- To be linked if available
-    source,
-    source_updated_at,
+    COALESCE(jsonb_array_length(ut.pdb_structures), 0) AS pdb_structure_count,
+    ut.pdb_structures,
+    ut.keywords,
+    ce.chembl_target_id,
+    ut.source,
+    ut.source_updated_at,
     NOW() AS created_at,
     NOW() AS updated_at
-FROM uniprot_targets;
+FROM uniprot_targets ut
+LEFT JOIN chembl_id_enrichment ce ON ce.uniprot_id = ut.uniprot_id;
 
 
 -- NOTE: Bronze processed_to_silver flag updates are handled outside SQLMesh.
@@ -98,7 +117,7 @@ FROM uniprot_targets;
 -- to target records that have PDB cross-references.
 --
 -- Integration note: PDB data enriches existing target records rather than
--- adding new rows. The bronze.pdb_structures model provides pdb_id,
+-- adding new rows. The mol_bronze.pdb_structures model provides pdb_id,
 -- resolution, method, ligand_id, ligand_name mapped via uniprot_id.
 -- A future iteration should LEFT JOIN pdb data into the main target query
 -- to populate pdb_structure_count with actual experimental counts.

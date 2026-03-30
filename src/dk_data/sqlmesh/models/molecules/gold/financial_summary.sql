@@ -1,6 +1,10 @@
 -- SQLMesh Model: Gold Financial Summary
 -- Cross-source financial data per molecule/company
 -- Part of: 015-assessment-dashboard-integration
+--
+-- Source: mol_silver.financial_data, mol_silver.molecules
+-- Joins company names from SEC filings to molecule canonical names.
+-- Revenue/net_income/total_assets are NULL until XBRL enrichment completes.
 
 MODEL (
     name mol_gold.financial_summary,
@@ -20,8 +24,8 @@ WITH latest_filings AS (
         company_name,
         -- Most recent filing values
         MAX(filing_date) AS latest_filing_date,
-        COUNT(*) AS filing_count
-    FROM silver.financial_data
+        COUNT(*)         AS filing_count
+    FROM mol_silver.financial_data
     GROUP BY cik, company_name
 ),
 
@@ -29,18 +33,18 @@ latest_financials AS (
     SELECT DISTINCT ON (fd.cik)
         fd.cik,
         fd.company_name,
-        fd.revenue AS latest_revenue,
-        fd.net_income AS latest_net_income,
+        fd.revenue         AS latest_revenue,
+        fd.net_income      AS latest_net_income,
         fd.total_assets,
         fd.drug_revenue_pct,
         lf.filing_count,
         lf.latest_filing_date
-    FROM silver.financial_data fd
+    FROM mol_silver.financial_data fd
     JOIN latest_filings lf ON fd.cik = lf.cik
     ORDER BY fd.cik, fd.filing_date DESC
 ),
 
--- Link companies to molecules via mol_silver molecules
+-- Link companies to molecules via mol_silver.molecules canonical_name
 molecule_linked AS (
     SELECT
         m.molecule_id,
@@ -53,21 +57,21 @@ molecule_linked AS (
         f.filing_count,
         f.latest_filing_date
     FROM latest_financials f
-    LEFT JOIN mol_silver.molecules_from_bronze m
-        ON LOWER(f.company_name) = LOWER(m.pref_name)
+    LEFT JOIN mol_silver.molecules m
+        ON LOWER(f.company_name) = LOWER(m.canonical_name)
 )
 
 SELECT
-    gen_random_uuid() AS id,
+    gen_random_uuid()           AS id,
     molecule_id,
     company_name,
     cik,
-    latest_revenue,
-    latest_net_income,
-    total_assets,
-    drug_revenue_pct,
-    filing_count,
-    latest_filing_date,
-    NOW() AS created_at,
-    NOW() AS updated_at
+    latest_revenue::NUMERIC,
+    latest_net_income::NUMERIC,
+    total_assets::NUMERIC,
+    drug_revenue_pct::NUMERIC,
+    filing_count::INTEGER,
+    latest_filing_date::DATE,
+    NOW()                       AS created_at,
+    NOW()                       AS updated_at
 FROM molecule_linked;

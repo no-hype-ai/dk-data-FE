@@ -10,8 +10,8 @@ Strategy:
 3. Extract matching activities and target info from ChEMBL
 
 Tables populated:
-- bronze.chembl_activities: Bioactivity data
-- bronze.chembl_targets: Target information with UniProt mappings
+- mol_bronze.chembl_activities: Bioactivity data
+- mol_bronze.chembl_targets: Target information with UniProt mappings
 
 Usage:
     # Download and load ChEMBL data for all our compounds
@@ -71,30 +71,30 @@ def get_all_inchi_keys(pg_conn) -> set:
 
     # Source 1: compounds table
     try:
-        pg_cursor.execute("SELECT DISTINCT inchi_key FROM bronze.compounds WHERE inchi_key IS NOT NULL")
+        pg_cursor.execute("SELECT DISTINCT inchi_key FROM mol_bronze.compounds WHERE inchi_key IS NOT NULL")
         keys = {row[0] for row in pg_cursor.fetchall()}
-        logger.info(f"  bronze.compounds: {len(keys):,} InChI keys")
+        logger.info(f"  mol_bronze.compounds: {len(keys):,} InChI keys")
         all_keys.update(keys)
     except Exception as e:
-        logger.warning(f"  bronze.compounds: skipped ({e})")
+        logger.warning(f"  mol_bronze.compounds: skipped ({e})")
 
     # Source 2: bindingdb_affinities table
     try:
-        pg_cursor.execute("SELECT DISTINCT inchi_key FROM bronze.bindingdb_affinities WHERE inchi_key IS NOT NULL")
+        pg_cursor.execute("SELECT DISTINCT inchi_key FROM mol_bronze.bindingdb_affinities WHERE inchi_key IS NOT NULL")
         keys = {row[0] for row in pg_cursor.fetchall()}
-        logger.info(f"  bronze.bindingdb_affinities: {len(keys):,} InChI keys")
+        logger.info(f"  mol_bronze.bindingdb_affinities: {len(keys):,} InChI keys")
         all_keys.update(keys)
     except Exception as e:
-        logger.warning(f"  bronze.bindingdb_affinities: skipped ({e})")
+        logger.warning(f"  mol_bronze.bindingdb_affinities: skipped ({e})")
 
     # Source 3: pubchem_compounds table
     try:
-        pg_cursor.execute("SELECT DISTINCT inchi_key FROM bronze.pubchem_compounds WHERE inchi_key IS NOT NULL")
+        pg_cursor.execute("SELECT DISTINCT inchi_key FROM mol_bronze.pubchem_compounds WHERE inchi_key IS NOT NULL")
         keys = {row[0] for row in pg_cursor.fetchall()}
-        logger.info(f"  bronze.pubchem_compounds: {len(keys):,} InChI keys")
+        logger.info(f"  mol_bronze.pubchem_compounds: {len(keys):,} InChI keys")
         all_keys.update(keys)
     except Exception as e:
-        logger.warning(f"  bronze.pubchem_compounds: skipped ({e})")
+        logger.warning(f"  mol_bronze.pubchem_compounds: skipped ({e})")
 
     return all_keys
 
@@ -104,7 +104,7 @@ def ensure_tables(conn):
     cursor = conn.cursor()
 
     cursor.execute("""
-        CREATE TABLE IF NOT EXISTS bronze.chembl_activities (
+        CREATE TABLE IF NOT EXISTS mol_bronze.chembl_activities (
             id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
             inchi_key VARCHAR(27),
             chembl_id VARCHAR(20),
@@ -121,13 +121,13 @@ def ensure_tables(conn):
             processed_to_silver BOOLEAN DEFAULT FALSE
         );
 
-        CREATE INDEX IF NOT EXISTS idx_chembl_activities_inchi ON bronze.chembl_activities(inchi_key);
-        CREATE INDEX IF NOT EXISTS idx_chembl_activities_target ON bronze.chembl_activities(target_chembl_id);
-        CREATE INDEX IF NOT EXISTS idx_chembl_activities_processed ON bronze.chembl_activities(processed_to_silver);
+        CREATE INDEX IF NOT EXISTS idx_chembl_activities_inchi ON mol_bronze.chembl_activities(inchi_key);
+        CREATE INDEX IF NOT EXISTS idx_chembl_activities_target ON mol_bronze.chembl_activities(target_chembl_id);
+        CREATE INDEX IF NOT EXISTS idx_chembl_activities_processed ON mol_bronze.chembl_activities(processed_to_silver);
     """)
 
     cursor.execute("""
-        CREATE TABLE IF NOT EXISTS bronze.chembl_targets (
+        CREATE TABLE IF NOT EXISTS mol_bronze.chembl_targets (
             id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
             chembl_target_id VARCHAR(20),
             protein_name TEXT,
@@ -139,8 +139,8 @@ def ensure_tables(conn):
             processed_to_silver BOOLEAN DEFAULT FALSE
         );
 
-        CREATE INDEX IF NOT EXISTS idx_chembl_targets_uniprot ON bronze.chembl_targets(uniprot_id);
-        CREATE INDEX IF NOT EXISTS idx_chembl_targets_chembl ON bronze.chembl_targets(chembl_target_id);
+        CREATE INDEX IF NOT EXISTS idx_chembl_targets_uniprot ON mol_bronze.chembl_targets(uniprot_id);
+        CREATE INDEX IF NOT EXISTS idx_chembl_targets_chembl ON mol_bronze.chembl_targets(chembl_target_id);
     """)
 
     conn.commit()
@@ -222,7 +222,7 @@ def load_chembl_activities(
             execute_values(
                 pg_cursor,
                 """
-                INSERT INTO bronze.chembl_activities (
+                INSERT INTO mol_bronze.chembl_activities (
                     inchi_key, chembl_id, activity_id,
                     standard_type, standard_value, standard_units,
                     pchembl_value, target_chembl_id, target_pref_name, target_organism
@@ -246,7 +246,7 @@ def load_chembl_activities(
         execute_values(
             pg_cursor,
             """
-            INSERT INTO bronze.chembl_activities (
+            INSERT INTO mol_bronze.chembl_activities (
                 inchi_key, chembl_id, activity_id,
                 standard_type, standard_value, standard_units,
                 pchembl_value, target_chembl_id, target_pref_name, target_organism
@@ -302,12 +302,12 @@ def load_target_info(pg_conn, sqlite_path: Path) -> int:
     execute_values(
         pg_cursor,
         """
-        INSERT INTO bronze.chembl_targets (
+        INSERT INTO mol_bronze.chembl_targets (
             chembl_target_id, protein_name, organism, target_type, uniprot_id
         ) VALUES %s
         ON CONFLICT (uniprot_id) DO UPDATE SET
-            chembl_target_id = COALESCE(EXCLUDED.chembl_target_id, bronze.chembl_targets.chembl_target_id),
-            protein_name = COALESCE(EXCLUDED.protein_name, bronze.chembl_targets.protein_name)
+            chembl_target_id = COALESCE(EXCLUDED.chembl_target_id, mol_bronze.chembl_targets.chembl_target_id),
+            protein_name = COALESCE(EXCLUDED.protein_name, mol_bronze.chembl_targets.protein_name)
         """,
         values
     )
@@ -350,9 +350,9 @@ def main():
             load_target_info(pg_conn, sqlite_path)
 
         cursor = pg_conn.cursor()
-        cursor.execute("SELECT COUNT(*) FROM bronze.chembl_activities")
+        cursor.execute("SELECT COUNT(*) FROM mol_bronze.chembl_activities")
         act_count = cursor.fetchone()[0]
-        cursor.execute("SELECT COUNT(*) FROM bronze.chembl_targets")
+        cursor.execute("SELECT COUNT(*) FROM mol_bronze.chembl_targets")
         target_count = cursor.fetchone()[0]
 
         logger.info("=== Summary ===")

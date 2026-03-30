@@ -3,10 +3,10 @@
 Feature: 011-datasource-integration
 Task: T070-T072 — SEC EDGAR pharmaceutical filings
 
-Loads normalised SEC EDGAR filing records into raw.sec_edgar with
+Loads normalised SEC EDGAR filing records into mol_raw.sec_edgar with
 upsert semantics (ON CONFLICT DO UPDATE on accession_number).
 
-Target table: raw.sec_edgar (see migration 060_ci_source_tables.sql)
+Target table: mol_raw.sec_edgar (see migration 060_ci_source_tables.sql)
 """
 
 import logging
@@ -29,7 +29,7 @@ def load_sec_edgar_data(
     source_file: Optional[str] = None,
     batch_size: int = BATCH_SIZE,
 ) -> Dict[str, Any]:
-    """Load SEC EDGAR filing records into raw.sec_edgar.
+    """Load SEC EDGAR filing records into mol_raw.sec_edgar.
 
     Validates each record using Pydantic and performs an upsert:
     INSERT ... ON CONFLICT (accession_number) DO UPDATE.
@@ -52,7 +52,7 @@ def load_sec_edgar_data(
             "errors": [],
         }
 
-    logger.info("Loading %d SEC EDGAR records into raw.sec_edgar", len(records))
+    logger.info("Loading %d SEC EDGAR records into mol_raw.sec_edgar", len(records))
 
     records_inserted = 0
     records_failed = 0
@@ -67,7 +67,7 @@ def load_sec_edgar_data(
 
                     cur.execute(
                         """
-                        INSERT INTO raw.sec_edgar (
+                        INSERT INTO mol_raw.sec_edgar (
                             accession_number, company_name, cik,
                             filing_type, filing_date,
                             document_url, description,

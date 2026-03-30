@@ -1,6 +1,8 @@
 # Molecule Fetch Daily CronJob
 # 004-molecule-platform-integration
-# Fetches data from daily-refresh sources: ClinicalTrials.gov, OpenFDA Labels
+# SUSPENDED: Pipeline 1 (fetch_molecules.py) must be triggered externally only.
+# Use POST /data-platform/source/{source}/ingest to trigger on-demand.
+# Sources: ClinicalTrials.gov, OpenFDA Labels
 apiVersion: batch/v1
 kind: CronJob
 metadata:
@@ -12,7 +14,9 @@ metadata:
     app.kubernetes.io/part-of: dk-data
 spec:
   schedule: "0 2 * * *"  # 2 AM UTC daily
+  suspend: true  # P1 is external-trigger only — use API endpoint to invoke
   concurrencyPolicy: Forbid
+  startingDeadlineSeconds: 3600
   successfulJobsHistoryLimit: 3
   failedJobsHistoryLimit: 3
   jobTemplate:
@@ -38,7 +42,7 @@ spec:
             - name: ghcr-credentials
           containers:
             - name: mol-fetch-daily
-              image: ghcr.io/data-kinetic/dk-data-fe/job-trigger:main-5f46ed1
+              image: ghcr.io/data-kinetic/dk-data-fe/job-trigger:main
               command: ["python", "-m", "dk_data.ingestion.fetch_molecules"]
               args: ["--source", "clinicaltrials,openfda"]
               env:

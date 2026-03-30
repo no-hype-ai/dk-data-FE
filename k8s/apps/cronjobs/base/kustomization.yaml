@@ -24,4 +24,93 @@ resources:
   # - cronjob-fetch-orcid.yaml  # Disabled — no ORCID membership; OpenAlex covers author data
   - cronjob-fetch-uspto-trademarks.yaml
   - cronjob-fetch-euipo.yaml
+  - cronjob-fetch-europepmc.yaml
+  - cronjob-fetch-nih-reporter.yaml
+  - cronjob-fetch-hrsa.yaml
+  # CMS PUF sources (28 files)
+  - cronjob-fetch-cms-chronic-conditions.yaml
+  - cronjob-fetch-cms-claim-type-puf.yaml
+  - cronjob-fetch-cms-cost-reports-puf.yaml
+  - cronjob-fetch-cms-dme-puf.yaml
+  - cronjob-fetch-cms-dual-eligible.yaml
+  - cronjob-fetch-cms-enrollment-puf.yaml
+  - cronjob-fetch-cms-geographic-variation.yaml
+  - cronjob-fetch-cms-home-health.yaml
+  - cronjob-fetch-cms-hospice-puf.yaml
+  - cronjob-fetch-cms-hospital-general-info.yaml
+  - cronjob-fetch-cms-imaging-puf.yaml
+  - cronjob-fetch-cms-inpatient-puf.yaml
+  - cronjob-fetch-cms-lab-services.yaml
+  - cronjob-fetch-cms-medicaid-drug-spending.yaml
+  - cronjob-fetch-cms-medicare-advantage.yaml
+  - cronjob-fetch-cms-mental-health-puf.yaml
+  - cronjob-fetch-cms-nppes.yaml
+  - cronjob-fetch-cms-open-payments.yaml
+  - cronjob-fetch-cms-opioid-puf.yaml
+  - cronjob-fetch-cms-ordering-providers.yaml
+  - cronjob-fetch-cms-outpatient-puf.yaml
+  - cronjob-fetch-cms-part-b-spending.yaml
+  - cronjob-fetch-cms-part-d-prescriber.yaml
+  - cronjob-fetch-cms-part-d-spending.yaml
+  - cronjob-fetch-cms-physician-puf.yaml
+  - cronjob-fetch-cms-referring-providers.yaml
+  - cronjob-fetch-cms-snf-puf.yaml
+  - cronjob-fetch-cms-telehealth-puf.yaml
+  - cronjob-fetch-cms-utilization-puf.yaml
+  - cronjob-fetch-cms-physician-puf-services.yaml
+  - cronjob-fetch-cms-cost-reports-puf-lines.yaml
+  # CMS facility/provider/reference sources (ported from 016)
+  - cronjob-fetch-cms-care-compare.yaml
+  - cronjob-fetch-cms-chow.yaml
+  - cronjob-fetch-cms-ddinter.yaml
+  - cronjob-fetch-cms-dmepos.yaml
+  - cronjob-fetch-cms-formulary.yaml
+  - cronjob-fetch-cms-hcris.yaml
+  - cronjob-fetch-cms-hospital-affiliation.yaml
+  - cronjob-fetch-cms-hospital-quality.yaml
+  - cronjob-fetch-cms-magnet.yaml
+  - cronjob-fetch-cms-ndc.yaml
+  - cronjob-fetch-cms-nucc.yaml
+  - cronjob-fetch-cms-pecos.yaml
+  - cronjob-fetch-cms-pos.yaml
+  - cronjob-fetch-cms-post-acute.yaml
+  - cronjob-fetch-cms-rbcs.yaml
+  - cronjob-fetch-cms-stabilis.yaml
+  - cronjob-fetch-cms-usp.yaml
+  - cronjob-fetch-euipo-designs.yaml
+  # Molecule vocabulary sources (8 files — monthly/weekly refresh)
+  - cronjob-fetch-bindingdb.yaml
+  - cronjob-fetch-sider.yaml
+  - cronjob-fetch-who-icd.yaml
+  - cronjob-fetch-rxnorm.yaml
+  - cronjob-fetch-who-inn.yaml
+  - cronjob-fetch-pharmgkb.yaml
+  - cronjob-fetch-kegg-drug.yaml
+  - cronjob-fetch-tdc-admet.yaml
+  # Clinical data API sources (2 files — 019-cms-puf-platform-reconciliation)
+  - cronjob-fetch-clinicaltrials.yaml
+  - cronjob-fetch-openfda-labels.yaml
+  # New molecule vocabulary sources (10 files — 019-cms-puf-platform-reconciliation)
+  - cronjob-fetch-ema-mol.yaml
+  - cronjob-fetch-orange-book.yaml
+  - cronjob-fetch-dailymed.yaml
+  - cronjob-fetch-fda-drugs.yaml
+  - cronjob-fetch-ttd.yaml
+  - cronjob-fetch-imgt.yaml
+  - cronjob-fetch-cdc-vaccines.yaml
+  - cronjob-fetch-chembl-activities.yaml
+  - cronjob-fetch-fda-rems.yaml
+  - cronjob-fetch-fda-ndc.yaml
+  # Silver enrichment agents (7 files)
+  - cronjob-agent-contact-verification.yaml
+  - cronjob-agent-equipment-inventory.yaml
+  - cronjob-agent-idn-hierarchy.yaml
+  - cronjob-agent-publication-evidence.yaml
+  - cronjob-agent-referral-network.yaml
+  - cronjob-agent-service-line-inference.yaml
+  - cronjob-agent-staffing-decomposition.yaml
+  # PubChem extended enrichment (synonyms, xrefs, safety) — monthly
+  - cronjob-load-pubchem-extended.yaml
+  # Gold view refresh (runs after nightly data loads)
+  - cronjob-cms-gold-refresh.yaml
   - molecule-pipeline-config.yaml

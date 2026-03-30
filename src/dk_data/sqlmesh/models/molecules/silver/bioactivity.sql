@@ -1,9 +1,15 @@
 -- SQLMesh Model: Silver Bioactivity
--- Normalized bioactivity data from ChEMBL
--- Part of: 012-dk-data-platform
+-- Normalized bioactivity data from ChEMBL activity assay measurements.
+-- Feature: 019-cms-puf-platform-reconciliation
+--
+-- Source: mol_bronze.chembl_activities (ChEMBL /api/data/activity endpoint)
+-- Entity linking:
+--   molecule_id: chembl_id → mol_silver.molecules via identifier_mappings (chembl_id type)
+--               OR inchi_key → mol_silver.molecules via canonical structures
+--   target_id:  target_chembl_id → mol_silver.targets (target lookup via chembl target id)
 
 MODEL (
-    name silver.bioactivity,
+    name mol_silver.bioactivity,
     kind INCREMENTAL_BY_TIME_RANGE (
         time_column source_updated_at,
         batch_size 1000
@@ -15,61 +21,65 @@ MODEL (
     grain activity_id
 );
 
--- ChEMBL activity data comes from a separate API endpoint
--- For now, extract from cross_references in chembl_molecules
--- In production, there would be a raw.chembl_activities table
+SELECT
+    gen_random_uuid()                                               AS id,
+    b.chembl_id,
 
-WITH activity_data AS (
-    SELECT
-        gen_random_uuid() AS id,
-        chembl_id,
-        inchi_key,
+    -- molecule_id: resolve directly via mol_bronze.chembl_molecules + mol_silver.molecules.
+    -- Do NOT use mol_silver.identifier_mappings here — identifier_mappings depends on
+    -- mol_silver.molecule_targets, which depends on mol_silver.bioactivity, creating a cycle.
+    (
+        SELECT m.molecule_id
+        FROM mol_bronze.chembl_molecules c
+        JOIN mol_silver.molecules m ON (
+            (m.inchi_key IS NOT NULL AND m.inchi_key = c.inchi_key)
+            OR (m.inchi_key IS NULL AND LOWER(m.canonical_name) = LOWER(c.pref_name))
+        )
+        WHERE c.chembl_id = b.chembl_id
+        LIMIT 1
+    )                                                               AS molecule_id,
 
-        -- Placeholder for actual activity data
-        -- Would come from ChEMBL Activity API
-        NULL::TEXT AS activity_id,
-        NULL::TEXT AS assay_chembl_id,
-        NULL::TEXT AS assay_type,
-        NULL::TEXT AS assay_description,
-        NULL::TEXT AS target_chembl_id,
-        NULL::TEXT AS target_name,
-        NULL::TEXT AS target_type,
-        NULL::TEXT AS target_organism,
-        NULL::TEXT AS uniprot_id,
+    -- target_id: resolve via mol_silver.targets
+    --   1st: chembl_target_id exact match (populated after ChEMBL targets ingestion)
+    --   2nd: target_name match (covers well-characterized targets with consistent names)
+    COALESCE(
+        (SELECT t.id FROM mol_silver.targets t
+         WHERE t.chembl_target_id = b.target_chembl_id LIMIT 1),
+        (SELECT t.id FROM mol_silver.targets t
+         WHERE LOWER(t.target_name) = LOWER(b.target_pref_name) LIMIT 1)
+    )                                                               AS target_id,
 
-        -- Activity measurements
-        NULL::TEXT AS standard_type,
-        NULL::NUMERIC AS standard_value,
-        NULL::TEXT AS standard_units,
-        NULL::TEXT AS standard_relation,
-        NULL::NUMERIC AS pchembl_value,
+    b.activity_id,
+    b.assay_chembl_id,
+    b.assay_type,
+    b.assay_description,
+    b.target_chembl_id,
+    b.target_pref_name                                              AS target_name,
+    b.target_type,
+    b.target_organism,
 
-        -- Activity flags
-        NULL::TEXT AS activity_comment,
-        NULL::TEXT AS data_validity_comment,
-        NULL::BOOLEAN AS potential_duplicate,
+    -- Activity measurements
+    b.activity_type,
+    b.activity_value,
+    b.activity_unit,
+    b.standard_relation,
+    b.pchembl_value,
 
-        -- Document reference
-        NULL::TEXT AS document_chembl_id,
-        NULL::TEXT AS pubmed_id,
-        NULL::INTEGER AS publication_year,
+    -- Activity flags
+    b.activity_comment,
+    b.data_validity_comment,
+    b.potential_duplicate,
 
-        'chembl' AS source,
-        source_updated_at,
-        NOW() AS created_at
+    -- Document reference
+    b.document_chembl_id,
+    NULL::BIGINT                                                    AS pubmed_id,
+    b.publication_year,
 
-    FROM bronze.chembl_molecules
-    WHERE
-        processed_to_silver = FALSE
-        AND chembl_id IS NOT NULL
-)
+    b.source,
+    b.source_updated_at,
+    NOW()                                                           AS created_at
 
-SELECT * FROM activity_data WHERE 1=0;  -- Placeholder - no actual data yet
-
--- In production, this would be:
--- SELECT
---     gen_random_uuid() AS id,
---     response_body->>'activity_id' AS activity_id,
---     ...
--- FROM raw.chembl_activities
--- WHERE ...
+FROM mol_bronze.chembl_activities b
+WHERE b.activity_id IS NOT NULL
+  AND b.chembl_id IS NOT NULL
+  AND b.source_updated_at BETWEEN @start_dt AND @end_dt;
