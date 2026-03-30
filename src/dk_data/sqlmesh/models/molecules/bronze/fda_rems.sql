@@ -42,11 +42,11 @@ rems_submissions AS (
         raw_source_id,
         ingested_at,
         app,
-        -- Find the first REMS submission
+        -- Find the most recent REMS submission (submission_class_code = 'REMS')
         (
             SELECT sub
             FROM jsonb_array_elements(COALESCE(app->'submissions', '[]'::JSONB)) AS sub
-            WHERE sub->>'submission_type' = 'REMS'
+            WHERE sub->>'submission_class_code' = 'REMS'
             ORDER BY sub->>'submission_status_date' DESC
             LIMIT 1
         ) AS rems_sub,
@@ -54,14 +54,14 @@ rems_submissions AS (
         (
             SELECT sub
             FROM jsonb_array_elements(COALESCE(app->'submissions', '[]'::JSONB)) AS sub
-            WHERE sub->>'submission_type' = 'REMS'
+            WHERE sub->>'submission_class_code' = 'REMS'
             ORDER BY sub->>'submission_status_date' ASC
             LIMIT 1
         ) AS first_rems_sub
     FROM rems_apps
     WHERE EXISTS (
         SELECT 1 FROM jsonb_array_elements(COALESCE(app->'submissions', '[]'::JSONB)) AS sub
-        WHERE sub->>'submission_type' = 'REMS'
+        WHERE sub->>'submission_class_code' = 'REMS'
     )
 ),
 
