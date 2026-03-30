@@ -30,20 +30,22 @@ MODEL (
     grain (ndc, molecule_id)
 );
 
--- Source 1: FDA drug labels (ndc_codes JSONB array, directly linked to molecule)
+-- Source 1: FDA NDC directory — product_ndc + package_ndcs, linked via generic_name alias match
 WITH from_labels AS (
     SELECT DISTINCT
-        ndc_code                AS ndc,
-        dl.molecule_id,
-        'openfda_labels'        AS source,
-        1.0                     AS confidence
-    FROM mol_silver.drug_labels dl
-    CROSS JOIN LATERAL jsonb_array_elements_text(
-        '[]'::jsonb  -- ndc_codes not extracted in current drug_labels schema
-    ) AS ndc_code
-    WHERE dl.molecule_id IS NOT NULL
-      AND ndc_code IS NOT NULL
-      AND ndc_code != ''
+        pkg_ndc                 AS ndc,
+        m.molecule_id,
+        'fda_ndc'               AS source,
+        0.9                     AS confidence
+    FROM mol_bronze.fda_ndc n
+    JOIN mol_silver.molecules m
+        ON LOWER(REGEXP_REPLACE(n.generic_name, '[^a-zA-Z0-9]', '', 'g'))
+         = LOWER(REGEXP_REPLACE(m.canonical_name, '[^a-zA-Z0-9]', '', 'g'))
+    CROSS JOIN LATERAL unnest(COALESCE(n.package_ndcs, ARRAY[n.product_ndc])) AS pkg_ndc
+    WHERE n.generic_name IS NOT NULL
+      AND m.molecule_id IS NOT NULL
+      AND pkg_ndc IS NOT NULL
+      AND pkg_ndc != ''
 ),
 
 -- Source 2: identifier_mappings NDC entries (may cover additional formulations)

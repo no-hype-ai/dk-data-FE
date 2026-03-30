@@ -100,10 +100,9 @@ WHERE d.cas_number IS NOT NULL
 
 UNION ALL
 
--- UNII from DrugBank
--- NOTE: mol_bronze.drugbank.unii is NULL (the XML fetcher does not extract UNII).
--- This section is intentionally a no-op; kept as a placeholder for when
--- the fetcher is extended to parse UNII from the XML.
+-- UNII from DrugBank bulk XML loader (mol_bronze.drugbank_data)
+-- mol_bronze.drugbank_data.unii is populated by load_drugbank.py which extracts
+-- <unii> directly from DrugBank XML. Column name is drug_name (not name).
 SELECT
     m.molecule_id,
     'unii' AS identifier_type,
@@ -114,9 +113,9 @@ SELECT
     d.source_updated_at AS source_date,
     NOW() AS created_at
 FROM mol_silver.molecules m
-JOIN mol_bronze.drugbank d ON LOWER(m.canonical_name) = LOWER(d.name)
+JOIN mol_bronze.drugbank_data d ON LOWER(m.canonical_name) = LOWER(d.drug_name)
 WHERE d.unii IS NOT NULL
-  AND d.name IS NOT NULL
+  AND d.drug_name IS NOT NULL
 
 UNION ALL
 
@@ -158,29 +157,26 @@ WHERE dl.rxcui IS NOT NULL
 
 UNION ALL
 
--- NDC codes from drug labels
--- NOTE: mol_silver.drug_labels does not have an ndc_codes column (OpenFDA labels
--- do not include NDC codes in the /drug/label endpoint; NDC data comes from
--- the /drug/ndc endpoint which is not currently ingested).
--- This section is intentionally empty — kept as a placeholder.
+-- NDC codes from FDA NDC directory (mol_bronze.fda_ndc)
+-- OpenFDA /drug/ndc endpoint: product_ndc mapped to molecule via generic_name alias match.
+-- package_ndcs (TEXT[]) contains the full set of 11-digit package-level NDCs per product.
 SELECT DISTINCT
     m.molecule_id,
     'ndc' AS identifier_type,
-    ndc_code::TEXT AS identifier_value,
-    'openfda' AS source,
+    pkg_ndc::TEXT AS identifier_value,
+    'fda_ndc' AS source,
     0.9 AS confidence,
     FALSE AS is_primary,
-    dl.effective_date AS source_date,
+    n.source_updated_at AS source_date,
     NOW() AS created_at
-FROM mol_silver.drug_labels dl
-JOIN mol_silver.molecules m ON m.molecule_id = dl.molecule_id
-CROSS JOIN LATERAL jsonb_array_elements_text(
-    -- application_numbers is the closest available field in mol_silver.drug_labels;
-    -- actual NDC codes are not available without a separate NDC ingest pipeline.
-    -- Return empty array so this branch produces no rows until NDC is ingested.
-    '[]'::JSONB
-) AS ndc_code
-WHERE FALSE  -- Disabled: ndc_codes column does not exist in mol_silver.drug_labels
+FROM mol_bronze.fda_ndc n
+JOIN mol_silver.molecules m
+    ON LOWER(REGEXP_REPLACE(n.generic_name, '[^a-zA-Z0-9]', '', 'g'))
+     = LOWER(REGEXP_REPLACE(m.canonical_name, '[^a-zA-Z0-9]', '', 'g'))
+CROSS JOIN LATERAL unnest(COALESCE(n.package_ndcs, ARRAY[n.product_ndc])) AS pkg_ndc
+WHERE n.generic_name IS NOT NULL
+  AND m.molecule_id IS NOT NULL
+  AND pkg_ndc IS NOT NULL
 
 )  -- end all_ids CTE
 

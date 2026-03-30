@@ -90,7 +90,7 @@ resources:
   # Clinical data API sources (2 files — 019-cms-puf-platform-reconciliation)
   - cronjob-fetch-clinicaltrials.yaml
   - cronjob-fetch-openfda-labels.yaml
-  # New molecule vocabulary sources (7 files — 019-cms-puf-platform-reconciliation)
+  # New molecule vocabulary sources (10 files — 019-cms-puf-platform-reconciliation)
   - cronjob-fetch-ema-mol.yaml
   - cronjob-fetch-orange-book.yaml
   - cronjob-fetch-dailymed.yaml
@@ -98,6 +98,9 @@ resources:
   - cronjob-fetch-ttd.yaml
   - cronjob-fetch-imgt.yaml
   - cronjob-fetch-cdc-vaccines.yaml
+  - cronjob-fetch-chembl-activities.yaml
+  - cronjob-fetch-fda-rems.yaml
+  - cronjob-fetch-fda-ndc.yaml
   # Silver enrichment agents (7 files)
   - cronjob-agent-contact-verification.yaml
   - cronjob-agent-equipment-inventory.yaml
