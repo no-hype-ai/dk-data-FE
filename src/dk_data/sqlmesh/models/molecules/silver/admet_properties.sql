@@ -13,8 +13,14 @@ MODEL (
 );
 
 SELECT
-    gen_random_uuid()           AS id,
-    m.molecule_id,
+    gen_random_uuid()                                                   AS id,
+
+    -- Entity linking (priority order):
+    --   1. InChIKey direct match (rarely populated in TDC ADMET source)
+    --   2. ChEMBL ID via identifier_mappings (compound_id stores ChEMBL IDs
+    --      with extra JSON quotes from raw_json extraction; strip them first)
+    COALESCE(m_ik.molecule_id, m_chembl.molecule_id)                    AS molecule_id,
+
     b.compound_id,
     b.smiles,
     b.inchi_key,
@@ -23,13 +29,25 @@ SELECT
     b.property_name,
     b.property_value,
     b.property_category,
-    'tdc_admet'                 AS source,
+    'tdc_admet'                                                         AS source,
     b.source_updated_at,
-    NOW()                       AS created_at
+    NOW()                                                               AS created_at
 
 FROM mol_bronze.tdc_admet b
--- Link via inchi_key
-LEFT JOIN mol_silver.molecules m
-       ON b.inchi_key IS NOT NULL AND m.inchi_key = b.inchi_key
+
+-- Strategy 1: InChIKey (most precise; only available for a subset of TDC compounds)
+LEFT JOIN mol_silver.molecules m_ik
+       ON b.inchi_key IS NOT NULL
+      AND m_ik.inchi_key = b.inchi_key
+
+-- Strategy 2: ChEMBL ID via identifier_mappings
+--   compound_id may be stored with surrounding quotes (e.g. '"CHEMBL472"'); strip them.
+LEFT JOIN mol_silver.identifier_mappings m_chembl
+       ON m_ik.molecule_id IS NULL
+      AND b.compound_id IS NOT NULL
+      AND b.compound_id LIKE '%CHEMBL%'
+      AND m_chembl.identifier_type = 'chembl_id'
+      AND m_chembl.identifier_value = TRIM('"' FROM b.compound_id)
+
 WHERE b.compound_id IS NOT NULL
   AND b.dataset_name IS NOT NULL;

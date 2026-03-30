@@ -80,11 +80,15 @@ LEFT JOIN mol_silver.molecules m_ik
        ON b.inchi_key IS NOT NULL
       AND LOWER(m_ik.inchi_key) = LOWER(b.inchi_key)
 
--- Strategy 2: ChEMBL ID via mol_silver.pubchem (chembl_ids is an array)
-LEFT JOIN mol_silver.pubchem pc_chembl
+-- Strategy 2: ChEMBL ID via identifier_mappings
+--   mol_silver.pubchem stores chembl_ids as [{id, type}] objects, not a plain
+--   string array, so @> to_jsonb(chembl_id) never matches.
+--   Use identifier_mappings instead — reliable flat lookup.
+LEFT JOIN mol_silver.identifier_mappings pc_chembl
        ON m_ik.molecule_id IS NULL
       AND b.chembl_id IS NOT NULL
-      AND pc_chembl.chembl_ids @> to_jsonb(b.chembl_id)
+      AND pc_chembl.identifier_type = 'chembl_id'
+      AND pc_chembl.identifier_value = b.chembl_id
 
 -- Strategy 3: PubChem CID via mol_silver.pubchem
 LEFT JOIN mol_silver.pubchem pc_cid

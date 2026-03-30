@@ -14,8 +14,8 @@ MODEL (
 );
 
 SELECT
-    gen_random_uuid()                   AS id,
-    m.molecule_id,
+    gen_random_uuid()                               AS id,
+    COALESCE(m_ik.molecule_id, m_chembl.molecule_id) AS molecule_id,
     b.chembl_id,
     b.pref_name,
     b.molecule_type,
@@ -45,5 +45,17 @@ SELECT
     NOW()                               AS created_at
 
 FROM mol_bronze.chembl_molecules b
-LEFT JOIN mol_silver.molecules m ON m.inchi_key = b.inchi_key
+
+-- Strategy 1: InChIKey (preferred; covers small molecules with structural data)
+LEFT JOIN mol_silver.molecules m_ik
+       ON b.inchi_key IS NOT NULL
+      AND m_ik.inchi_key = b.inchi_key
+
+-- Strategy 2: ChEMBL ID via identifier_mappings
+--   Fallback for biologics and compounds where inchi_key is not populated
+LEFT JOIN mol_silver.identifier_mappings m_chembl
+       ON m_ik.molecule_id IS NULL
+      AND m_chembl.identifier_type = 'chembl_id'
+      AND m_chembl.identifier_value = b.chembl_id
+
 WHERE b.chembl_id IS NOT NULL;
