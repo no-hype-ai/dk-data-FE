@@ -11,7 +11,7 @@ Verifies:
 """
 
 from contextlib import contextmanager
-from unittest.mock import MagicMock, call, patch
+from unittest.mock import MagicMock, patch
 
 MODULE = "dk_data.ingestion.sources.chembl_activities"
 
