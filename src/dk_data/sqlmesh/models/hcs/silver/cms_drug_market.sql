@@ -108,14 +108,46 @@ SELECT
         THEN c.total_spending / c.total_beneficiaries
         ELSE NULL
     END                                         AS avg_spending_per_beneficiary,
-    -- molecule_id: generic_name (Part D INN) → alias bridge → molecule_id
-    -- Cross-domain reference: hcs_silver → mol_silver (correct per domain strategy)
-    (
-        SELECT ma.molecule_id
-        FROM mol_silver.molecule_aliases ma
-        WHERE LOWER(REGEXP_REPLACE(c.generic_name, '[^a-zA-Z0-9]', '', 'g'))
-            = ma.alias_name_normalized
-        LIMIT 1
+    -- molecule_id: tiered linking strategy
+    --   Tier 1 (Part D generic names): alias → RxNorm → first-token alias
+    --   Tier 2 (Part B HCPCS codes):   hcpcs_molecule_bridge
+    COALESCE(
+        -- Tier 1a: exact alias match on full stripped generic_name (Part D / both)
+        (
+            SELECT ma.molecule_id
+            FROM mol_silver.molecule_aliases ma
+            WHERE LOWER(REGEXP_REPLACE(c.generic_name, '[^a-zA-Z0-9]', '', 'g'))
+                = ma.alias_name_normalized
+            LIMIT 1
+        ),
+        -- Tier 1b: RxNorm name match (handles CMS multi-word generics not in aliases)
+        (
+            SELECT DISTINCT rx.molecule_id
+            FROM mol_silver.rxnorm_concepts rx
+            WHERE rx.molecule_id IS NOT NULL
+              AND LOWER(rx.name) = LOWER(c.generic_name)
+            LIMIT 1
+        ),
+        -- Tier 1c: first-token alias (salt forms: "paclitaxel protein-bound" → "paclitaxel")
+        (
+            SELECT ma.molecule_id
+            FROM mol_silver.molecule_aliases ma
+            WHERE LENGTH(SPLIT_PART(c.generic_name, ' ', 1)) >= 4
+              AND LOWER(REGEXP_REPLACE(
+                      SPLIT_PART(c.generic_name, ' ', 1),
+                      '[^a-zA-Z0-9]', '', 'g'
+                  )) = ma.alias_name_normalized
+            LIMIT 1
+        ),
+        -- Tier 2: HCPCS bridge for Part B codes (c.hcpcs_code populated from part_b CTE)
+        (
+            SELECT hb.molecule_id
+            FROM mol_silver.hcpcs_molecule_bridge hb
+            WHERE c.hcpcs_code IS NOT NULL
+              AND LOWER(hb.hcpcs_code) = LOWER(c.hcpcs_code)
+            ORDER BY hb.confidence DESC
+            LIMIT 1
+        )
     )                                           AS molecule_id,
     NOW()                                       AS created_at,
     NOW()                                       AS updated_at

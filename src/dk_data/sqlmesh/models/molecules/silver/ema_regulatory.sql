@@ -20,7 +20,7 @@ MODEL (
 );
 
 SELECT
-    m.molecule_id,
+    COALESCE(m.molecule_id, m_alias.molecule_id) AS molecule_id,
     e.product_number,
     e.product_name,
     e.active_substance,
@@ -38,17 +38,17 @@ SELECT
 
     -- Link quality: how the molecule was matched
     CASE
-        WHEN LOWER(m.canonical_name) = LOWER(e.active_substance) THEN 'active_substance_exact'
-        WHEN LOWER(m.canonical_name) = LOWER(e.inn) THEN 'inn_exact'
-        WHEN LOWER(m.canonical_name) LIKE '%' || LOWER(e.active_substance) || '%' THEN 'active_substance_partial'
+        WHEN m.molecule_id IS NOT NULL AND LOWER(m.canonical_name) = LOWER(e.active_substance) THEN 'active_substance_exact'
+        WHEN m.molecule_id IS NOT NULL AND LOWER(m.canonical_name) = LOWER(e.inn)              THEN 'inn_exact'
+        WHEN m.molecule_id IS NOT NULL                                                          THEN 'active_substance_partial'
+        WHEN m_alias.molecule_id IS NOT NULL                                                    THEN 'alias_match'
         ELSE 'unlinked'
     END AS link_strategy,
 
     e.ingested_at
 
 FROM mol_bronze.ema AS e
--- Deduplicate: OR condition on two fields can match 2 different molecules per EMA record.
--- Pick one molecule per product_number via a ranked subquery.
+-- Strategy 1: canonical_name = active_substance OR inn (deduplicated via LATERAL)
 LEFT JOIN LATERAL (
     SELECT DISTINCT ON (1)
         m.molecule_id,
@@ -63,6 +63,25 @@ LEFT JOIN LATERAL (
     LIMIT 1
 ) mol_match ON TRUE
 LEFT JOIN mol_silver.molecules m ON m.molecule_id = mol_match.molecule_id
+-- Strategy 2: molecule_aliases on normalized active_substance
+--   Catches EMA variants like "bevacizumab alfa" → first token "bevacizumab" → alias match
+LEFT JOIN mol_silver.molecule_aliases ma
+       ON m.molecule_id IS NULL
+      AND e.active_substance IS NOT NULL
+      AND (
+          -- Full stripped match
+          LOWER(REGEXP_REPLACE(e.active_substance, '[^a-zA-Z0-9]', '', 'g')) = ma.alias_name_normalized
+          OR
+          -- First-token match for salt/variant forms (e.g. "bevacizumab alfa")
+          (LENGTH(SPLIT_PART(e.active_substance, ' ', 1)) >= 4
+           AND LOWER(REGEXP_REPLACE(
+                   SPLIT_PART(e.active_substance, ' ', 1),
+                   '[^a-zA-Z0-9]', '', 'g'
+               )) = ma.alias_name_normalized)
+      )
+LEFT JOIN mol_silver.molecules m_alias
+       ON m_alias.molecule_id = ma.molecule_id
+      AND m.molecule_id IS NULL
 
 WHERE e.product_number IS NOT NULL
   AND e.authorization_status IS NOT NULL

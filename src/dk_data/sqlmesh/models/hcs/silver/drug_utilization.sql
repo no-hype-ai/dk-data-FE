@@ -3,7 +3,7 @@
 -- Grain: (drug_or_hcpcs_code, code_type, _source_year)
 --
 -- molecule_id linkage (019 addition):
---   • Part D / Part B / Medicaid drug names → mol_silver.molecule_aliases (alias bridge)
+--   • Part D / Part B / Medicaid drug names → alias exact → RxNorm name → first-token alias
 --   • HCPCS codes (DME/Lab/Imaging)         → mol_silver.hcpcs_molecule_bridge
 --   NULL molecule_id = no match found; data is retained regardless.
 --
@@ -230,9 +230,15 @@ SELECT
     a.total_services,
     a.avg_medicare_allowed_amt,
     a.avg_medicare_payment_amt,
-    -- molecule_id: drug name codes → alias bridge; HCPCS codes → HCPCS bridge
+    -- molecule_id: tiered linking strategy
+    --   Drug name codes (Part D / Part B / Medicaid):
+    --     Tier 1a: exact alias on full stripped drug name
+    --     Tier 1b: RxNorm name match (handles CMS multi-word generics not in aliases)
+    --     Tier 1c: first-token alias (salt forms: "paclitaxel protein-bound" → "paclitaxel")
+    --   HCPCS codes (DME, lab, imaging):
+    --     Tier 2:  hcpcs_molecule_bridge by HCPCS code
     COALESCE(
-        -- Drug name codes (Part D, Part B, Medicaid): lookup via alias bridge
+        -- Tier 1a: exact alias match on full stripped drug name
         CASE WHEN a.code_type IN ('part_d_drug', 'part_b_drug', 'medicaid_drug')
             THEN (
                 SELECT ma.molecule_id
@@ -242,7 +248,30 @@ SELECT
                 LIMIT 1
             )
         END,
-        -- HCPCS codes (DME, lab, imaging): lookup via HCPCS bridge
+        -- Tier 1b: RxNorm name match
+        CASE WHEN a.code_type IN ('part_d_drug', 'part_b_drug', 'medicaid_drug')
+            THEN (
+                SELECT DISTINCT rx.molecule_id
+                FROM mol_silver.rxnorm_concepts rx
+                WHERE rx.molecule_id IS NOT NULL
+                  AND LOWER(rx.name) = a.drug_or_hcpcs_code
+                LIMIT 1
+            )
+        END,
+        -- Tier 1c: first-token alias (salt forms: "paclitaxel protein-bound" → "paclitaxel")
+        CASE WHEN a.code_type IN ('part_d_drug', 'part_b_drug', 'medicaid_drug')
+              AND LENGTH(SPLIT_PART(a.drug_or_hcpcs_code, ' ', 1)) >= 4
+            THEN (
+                SELECT ma.molecule_id
+                FROM mol_silver.molecule_aliases ma
+                WHERE LOWER(REGEXP_REPLACE(
+                          SPLIT_PART(a.drug_or_hcpcs_code, ' ', 1),
+                          '[^a-zA-Z0-9]', '', 'g'
+                      )) = ma.alias_name_normalized
+                LIMIT 1
+            )
+        END,
+        -- Tier 2: HCPCS bridge for DME/lab/imaging codes
         CASE WHEN a.code_type NOT IN ('part_d_drug', 'part_b_drug', 'medicaid_drug')
             THEN (
                 SELECT hb.molecule_id

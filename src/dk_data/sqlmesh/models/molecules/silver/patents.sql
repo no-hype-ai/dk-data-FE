@@ -253,14 +253,28 @@ SELECT DISTINCT ON (patent_number)
     pediatric_extension,
     CASE WHEN pediatric_extension = TRUE THEN 180 ELSE 0 END AS extension_days,
     NULL::JSONB AS related_patents,      -- requires patent citation network data (not ingested)
-    m.molecule_id,
+    -- Entity linking (priority order):
+    --   1. InChIKey exact match (DrugBank only — USPTO/EPO lack inchi_key at patent level)
+    --   2. molecule_name first-token alias match — catches salt forms like
+    --      "Imatinib Mesylate" → first token "imatinib" matches alias "imatinib"
+    COALESCE(m_ik.molecule_id, m_alias.molecule_id) AS molecule_id,
     combined.source,
     combined.source_updated_at,
     NOW() AS created_at,
     NOW() AS updated_at
 FROM combined
-LEFT JOIN mol_silver.molecules m ON combined.inchi_key IS NOT NULL
-    AND combined.inchi_key = m.inchi_key
+-- Strategy 1: InChIKey
+LEFT JOIN mol_silver.molecules m_ik
+       ON combined.inchi_key IS NOT NULL
+      AND combined.inchi_key = m_ik.inchi_key
+-- Strategy 2: molecule_name first-token → alias_name_normalized
+LEFT JOIN mol_silver.molecule_aliases m_alias
+       ON m_ik.molecule_id IS NULL
+      AND combined.molecule_name IS NOT NULL
+      AND LOWER(REGEXP_REPLACE(
+              SPLIT_PART(combined.molecule_name, ' ', 1),
+              '[^a-zA-Z0-9]', '', 'g'
+          )) = m_alias.alias_name_normalized
 ORDER BY patent_number,
     CASE combined.source
         WHEN 'drugbank' THEN 1
