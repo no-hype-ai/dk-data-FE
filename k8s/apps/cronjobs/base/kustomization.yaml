@@ -106,6 +106,8 @@ resources:
   - cronjob-agent-referral-network.yaml
   - cronjob-agent-service-line-inference.yaml
   - cronjob-agent-staffing-decomposition.yaml
+  # PubChem extended enrichment (synonyms, xrefs, safety) — monthly
+  - cronjob-load-pubchem-extended.yaml
   # Gold view refresh (runs after nightly data loads)
   - cronjob-cms-gold-refresh.yaml
   - molecule-pipeline-config.yaml
