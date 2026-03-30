@@ -47,12 +47,14 @@ LEFT JOIN mol_silver.molecule_aliases ma
           = ma.alias_name_normalized
 LEFT JOIN mol_silver.molecules m_alias
        ON m_alias.molecule_id = ma.molecule_id
--- Fallback: via uniprot_id → targets → molecules
+-- Fallback: via uniprot_id → targets → molecule_targets → molecules
 LEFT JOIN mol_silver.targets t
        ON m_exact.molecule_id IS NULL
       AND m_alias.molecule_id IS NULL
       AND b.uniprot_id IS NOT NULL
       AND t.uniprot_id = b.uniprot_id
+LEFT JOIN mol_silver.molecule_targets mt
+       ON mt.target_id = t.id
 LEFT JOIN mol_silver.molecules m_uniprot
-       ON FALSE  -- mol_silver.targets does not expose molecule_id; uniprot path disabled
+       ON m_uniprot.molecule_id = mt.molecule_id
 WHERE b.pdb_code IS NOT NULL;

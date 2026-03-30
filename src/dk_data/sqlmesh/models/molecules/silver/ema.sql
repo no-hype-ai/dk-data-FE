@@ -35,7 +35,6 @@ SELECT
     CURRENT_TIMESTAMP                   AS _silver_updated_at
 FROM mol_bronze.ema AS b
 LEFT JOIN mol_silver.molecules AS m
-    ON LOWER(TRIM(b.active_substance)) = LOWER(TRIM(m.inn_name))
-    OR LOWER(TRIM(b.active_substance)) = LOWER(TRIM(m.preferred_name))
+    ON LOWER(TRIM(b.active_substance)) = LOWER(TRIM(m.canonical_name))
 WHERE b.product_number IS NOT NULL
   AND b.product_name IS NOT NULL

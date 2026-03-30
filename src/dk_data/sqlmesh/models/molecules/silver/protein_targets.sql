@@ -29,7 +29,7 @@ WITH pdb_linked AS (
         t.target_name                       AS protein_name,
         t.gene_symbol                       AS gene_name,
         t.target_type,
-        NULL::UUID                          AS molecule_id,
+        mt.molecule_id                      AS molecule_id,
         'pdb'                               AS source,
         b.source_updated_at
     FROM mol_bronze.pdb_structures b
@@ -42,6 +42,11 @@ WITH pdb_linked AS (
                 END
             ))
         )
+    LEFT JOIN (
+        SELECT DISTINCT ON (target_id) target_id, molecule_id
+        FROM mol_silver.molecule_targets
+        ORDER BY target_id, molecule_id
+    ) mt ON mt.target_id = t.id
     WHERE b.pdb_id IS NOT NULL
 )
 
