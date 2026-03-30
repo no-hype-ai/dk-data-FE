@@ -1,7 +1,7 @@
 -- SQLMesh Model: Silver Drug Synonyms (WHO INN)
 -- Promotes mol_bronze.who_inn into mol_silver.drug_synonyms with molecule_id linkage.
 -- WHO International Nonproprietary Names (INN) are the official generic drug names.
--- Entity linking: inchi_key → mol_silver.molecules; fallback: inn_name → canonical_name.
+-- Entity linking: inchi_key → canonical_name → alias_name_normalized (stripped).
 
 MODEL (
     name mol_silver.drug_synonyms,
@@ -14,8 +14,8 @@ MODEL (
 );
 
 SELECT
-    gen_random_uuid()                               AS id,
-    COALESCE(m_ik.molecule_id, m_name.molecule_id) AS molecule_id,
+    gen_random_uuid()                                               AS id,
+    COALESCE(m_ik.molecule_id, m_name.molecule_id, m_alias.molecule_id) AS molecule_id,
     b.inn_name,
     b.inn_latin,
     b.inn_list_number,
@@ -29,9 +29,9 @@ SELECT
     b.research_codes,
     b.synonyms,
     b.status,
-    'who_inn'                                       AS source,
+    'who_inn'                                                       AS source,
     b.source_updated_at,
-    NOW()                                           AS created_at
+    NOW()                                                           AS created_at
 
 FROM mol_bronze.who_inn b
 LEFT JOIN mol_silver.molecules m_ik
@@ -40,4 +40,14 @@ LEFT JOIN mol_silver.molecules m_name
        ON m_ik.molecule_id IS NULL
       AND b.inn_name IS NOT NULL
       AND LOWER(m_name.canonical_name) = LOWER(b.inn_name)
+-- Fallback: alias table — deduplicated to prevent fan-out from duplicate alias_name_normalized rows
+LEFT JOIN (
+    SELECT DISTINCT ON (alias_name_normalized)
+        alias_name_normalized, molecule_id
+    FROM mol_silver.molecule_aliases
+    ORDER BY alias_name_normalized, molecule_id
+) ma ON m_ik.molecule_id IS NULL AND m_name.molecule_id IS NULL
+      AND b.inn_name IS NOT NULL
+      AND LOWER(REGEXP_REPLACE(b.inn_name, '[^a-zA-Z0-9]', '', 'g')) = ma.alias_name_normalized
+LEFT JOIN mol_silver.molecules m_alias ON m_alias.molecule_id = ma.molecule_id
 WHERE b.inn_name IS NOT NULL;
