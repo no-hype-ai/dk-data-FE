@@ -52,60 +52,58 @@ WITH uniprot_targets AS (
         AND protein_name IS NOT NULL
 ),
 
--- ChEMBL target IDs derived from activity data, matched by target name.
--- A full ChEMBL→UniProt cross-reference would improve coverage; name matching
--- covers well-characterized drug targets where names are consistent.
+-- ChEMBL target IDs from the bulk-loaded mol_bronze.chembl_targets table,
+-- which is populated by load_chembl_bulk.py via ChEMBL SQLite cross-reference
+-- (target_dictionary JOIN target_components JOIN component_sequences).
+-- Join key: uniprot_id — one-to-one with UniProt accession.
 chembl_id_enrichment AS (
-    SELECT DISTINCT ON (LOWER(target_pref_name))
-        chembl_target_id,
-        target_pref_name
+    SELECT chembl_target_id, uniprot_id
     FROM mol_bronze.chembl_targets
-    WHERE chembl_target_id IS NOT NULL
-    ORDER BY LOWER(target_pref_name), chembl_target_id
+    WHERE chembl_target_id IS NOT NULL AND uniprot_id IS NOT NULL
 )
 
 SELECT
     gen_random_uuid() AS id,
-    uniprot_id,
-    target_name,
-    short_name AS target_short_name,
-    gene_name AS gene_symbol,
-    entry_name,
-    target_type,
-    organism_scientific AS organism,
-    organism_common,
-    taxonomy_id,
-    sequence_length,
-    molecular_weight,
+    ut.uniprot_id,
+    ut.target_name,
+    ut.short_name AS target_short_name,
+    ut.gene_name AS gene_symbol,
+    ut.entry_name,
+    ut.target_type,
+    ut.organism_scientific AS organism,
+    ut.organism_common,
+    ut.taxonomy_id,
+    ut.sequence_length,
+    ut.molecular_weight,
     -- Extract GO terms by ontology namespace
     -- UniProt encodes ontology in the GoTerm property prefix:
     --   P: = Biological Process, C: = Cellular Component, F: = Molecular Function
     (SELECT jsonb_agg(g->>'id')
-     FROM jsonb_array_elements(go_terms) AS g,
+     FROM jsonb_array_elements(ut.go_terms) AS g,
           jsonb_array_elements(COALESCE(g->'properties', '[]'::jsonb)) AS prop
      WHERE prop->>'key' = 'GoTerm'
        AND prop->>'value' LIKE 'P:%') AS go_biological_process,
     (SELECT jsonb_agg(g->>'id')
-     FROM jsonb_array_elements(go_terms) AS g,
+     FROM jsonb_array_elements(ut.go_terms) AS g,
           jsonb_array_elements(COALESCE(g->'properties', '[]'::jsonb)) AS prop
      WHERE prop->>'key' = 'GoTerm'
        AND prop->>'value' LIKE 'C:%') AS go_cellular_component,
     (SELECT jsonb_agg(g->>'id')
-     FROM jsonb_array_elements(go_terms) AS g,
+     FROM jsonb_array_elements(ut.go_terms) AS g,
           jsonb_array_elements(COALESCE(g->'properties', '[]'::jsonb)) AS prop
      WHERE prop->>'key' = 'GoTerm'
        AND prop->>'value' LIKE 'F:%') AS go_molecular_function,
     -- PDB count
-    COALESCE(jsonb_array_length(pdb_structures), 0) AS pdb_structure_count,
-    pdb_structures,
-    keywords,
+    COALESCE(jsonb_array_length(ut.pdb_structures), 0) AS pdb_structure_count,
+    ut.pdb_structures,
+    ut.keywords,
     ce.chembl_target_id,
-    source,
-    source_updated_at,
+    ut.source,
+    ut.source_updated_at,
     NOW() AS created_at,
     NOW() AS updated_at
-FROM uniprot_targets
-LEFT JOIN chembl_id_enrichment ce ON LOWER(ce.target_pref_name) = LOWER(uniprot_targets.target_name);
+FROM uniprot_targets ut
+LEFT JOIN chembl_id_enrichment ce ON ce.uniprot_id = ut.uniprot_id;
 
 
 -- NOTE: Bronze processed_to_silver flag updates are handled outside SQLMesh.
