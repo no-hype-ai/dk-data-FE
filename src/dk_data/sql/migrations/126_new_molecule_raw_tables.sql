@@ -127,6 +127,11 @@ BEGIN
         GRANT SELECT ON mol_raw.fda_rems          TO analyst;
         GRANT SELECT ON mol_raw.fda_ndc           TO analyst;
     END IF;
+    IF EXISTS (SELECT FROM pg_roles WHERE rolname = 'web_anon') THEN
+        GRANT SELECT ON mol_raw.chembl_activities TO web_anon;
+        GRANT SELECT ON mol_raw.fda_rems          TO web_anon;
+        GRANT SELECT ON mol_raw.fda_ndc           TO web_anon;
+    END IF;
 END
 $$;
 

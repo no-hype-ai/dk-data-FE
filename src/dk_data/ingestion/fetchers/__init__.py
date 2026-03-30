@@ -90,6 +90,9 @@ from .imgt import IMGTFetcher
 from .cdc_vaccines import CDCVaccinesFetcher
 from .clinicaltrials import ClinicalTrialsFetcher
 from .openfda_labels import OpenFDALabelsFetcher
+from .chembl_activities import ChEMBLActivitiesFetcher
+from .fda_rems import FDARemsFetcher
+from .fda_ndc import FDANDCFetcher
 
 __all__ = [
     'BaseFetcher',
@@ -182,4 +185,7 @@ __all__ = [
     'CDCVaccinesFetcher',
     'ClinicalTrialsFetcher',
     'OpenFDALabelsFetcher',
+    'ChEMBLActivitiesFetcher',
+    'FDARemsFetcher',
+    'FDANDCFetcher',
 ]

@@ -102,6 +102,9 @@ from .sources.imgt import load_imgt_data
 from .sources.cdc_vaccines import load_cdc_vaccines_data
 from .sources.clinicaltrials import load_clinicaltrials_data
 from .sources.openfda_labels import load_openfda_labels_data
+from .sources.chembl_activities import load_chembl_activities_data
+from .sources.fda_rems import load_fda_rems_data
+from .sources.fda_ndc import load_fda_ndc_data
 
 from .fetchers import (
     PubMedFetcher,
@@ -189,6 +192,9 @@ from .fetchers import (
     CDCVaccinesFetcher,
     ClinicalTrialsFetcher,
     OpenFDALabelsFetcher,
+    ChEMBLActivitiesFetcher,
+    FDARemsFetcher,
+    FDANDCFetcher,
 )
 
 from .utils.database import init_connection_pool, close_connection_pool, get_cursor
@@ -928,6 +934,30 @@ SOURCES = {
         'loader': load_openfda_labels_data,
         'requires_file': False,
         'default_days_back': 90,
+    },
+    'chembl_activities': {
+        'name': 'ChEMBL Bioactivity',
+        'description': 'ChEMBL IC50/Ki/EC50 bioactivity measurements',
+        'fetcher': ChEMBLActivitiesFetcher,
+        'loader': load_chembl_activities_data,
+        'requires_file': False,
+        'default_days_back': None,
+    },
+    'fda_rems': {
+        'name': 'FDA REMS Programs',
+        'description': 'FDA Risk Evaluation and Mitigation Strategy programs',
+        'fetcher': FDARemsFetcher,
+        'loader': load_fda_rems_data,
+        'requires_file': False,
+        'default_days_back': None,
+    },
+    'fda_ndc': {
+        'name': 'FDA NDC Directory',
+        'description': 'FDA National Drug Code product directory',
+        'fetcher': FDANDCFetcher,
+        'loader': load_fda_ndc_data,
+        'requires_file': False,
+        'default_days_back': None,
     },
 }
 
