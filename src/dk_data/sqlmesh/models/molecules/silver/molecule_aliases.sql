@@ -45,11 +45,13 @@ WITH all_aliases AS (
     UNION ALL
 
     -- ChEMBL synonyms
+    -- c.synonyms is [{"molecule_synonym": "Gleevec", "syn_type": "TRADE_NAME"}, ...] (raw API format).
+    -- Must use jsonb_array_elements (not _text) and extract ->>'molecule_synonym'.
     -- Join handles both structural (inchi_key match) and biologic (name match, inchi_key IS NULL)
     SELECT
         m.molecule_id,
-        syn AS alias_name,
-        LOWER(REGEXP_REPLACE(syn, '[^a-zA-Z0-9]', '', 'g')) AS alias_name_normalized,
+        syn_obj->>'molecule_synonym' AS alias_name,
+        LOWER(REGEXP_REPLACE(syn_obj->>'molecule_synonym', '[^a-zA-Z0-9]', '', 'g')) AS alias_name_normalized,
         'synonym' AS alias_type,
         'chembl' AS source
     FROM mol_silver.molecules m
@@ -57,9 +59,9 @@ WITH all_aliases AS (
         (m.inchi_key IS NOT NULL AND m.inchi_key = c.inchi_key)
         OR (m.inchi_key IS NULL AND LOWER(m.canonical_name) = LOWER(c.pref_name))
     )
-    CROSS JOIN LATERAL jsonb_array_elements_text(COALESCE(c.synonyms, '[]'::jsonb)) AS syn
-    WHERE syn IS NOT NULL
-      AND syn != ''
+    CROSS JOIN LATERAL jsonb_array_elements(COALESCE(c.synonyms, '[]'::jsonb)) AS syn_obj
+    WHERE syn_obj->>'molecule_synonym' IS NOT NULL
+      AND syn_obj->>'molecule_synonym' != ''
 
     UNION ALL
 
@@ -141,17 +143,18 @@ WITH all_aliases AS (
     UNION ALL
 
     -- PubChem synonyms
+    -- NOTE: mol_bronze.pubchem.synonyms stores cross-references [{type, id}, ...], NOT name strings.
+    -- The PubChem synonym endpoint has not been called yet (see bronze model comment).
+    -- This branch intentionally produces 0 rows until PubChem name synonyms are ingested.
     SELECT
         m.molecule_id,
-        syn AS alias_name,
-        LOWER(REGEXP_REPLACE(syn, '[^a-zA-Z0-9]', '', 'g')) AS alias_name_normalized,
+        NULL::TEXT AS alias_name,
+        NULL::TEXT AS alias_name_normalized,
         'synonym' AS alias_type,
         'pubchem' AS source
     FROM mol_silver.molecules m
     JOIN mol_bronze.pubchem p ON m.inchi_key = p.inchi_key
-    CROSS JOIN LATERAL jsonb_array_elements_text(COALESCE(p.synonyms, '[]'::jsonb)) AS syn
-    WHERE syn IS NOT NULL
-      AND syn != ''
+    WHERE FALSE  -- placeholder until PubChem synonym names are ingested
 
     UNION ALL
 
