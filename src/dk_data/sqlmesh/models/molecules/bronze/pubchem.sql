@@ -92,6 +92,17 @@ cid_bioassays AS (
         COUNT(DISTINCT aid)::INTEGER                                   AS bioassay_count
     FROM mol_bronze.pubchem_bioassays
     GROUP BY cid
+),
+
+-- Aggregate human-readable name synonyms from mol_bronze.pubchem_synonyms
+-- Populated by load_pubchem_extended.py --synonyms
+-- Returns a JSONB string array: ["aspirin", "Aspirin", "Anacin", ...]
+cid_synonyms AS (
+    SELECT
+        cid,
+        jsonb_agg(synonym_name ORDER BY synonym_name)                  AS synonym_names
+    FROM mol_bronze.pubchem_synonyms
+    GROUP BY cid
 )
 
 SELECT
@@ -152,9 +163,10 @@ SELECT
     (cmp->'count'->>'bond_chiral')::INTEGER                        AS bond_stereo_count,
     (cmp->'count'->>'unit')::INTEGER                               AS covalent_unit_count,
 
-    -- Names and cross-references: populated from mol_bronze.pubchem_xrefs (load_pubchem_extended.py)
-    -- synonyms: all xref entries as [{type, id}, ...]; PubChem synonym endpoint not yet called
-    cx.all_xrefs                                                    AS synonyms,
+    -- Names and cross-references: populated from mol_bronze.pubchem_xrefs / pubchem_synonyms
+    -- synonyms: human-readable name array ["aspirin", "Anacin", ...] from pubchem_synonyms
+    -- Populated by: load_pubchem_extended.py --synonyms
+    COALESCE(cs.synonym_names, '[]'::JSONB)                         AS synonyms,
     -- mesh_headings: not available from PubChem PUG REST or xref endpoint; genuinely unavailable
     NULL::JSONB                                                     AS mesh_headings,
     -- pharmacological_actions: not in PubChem PUG REST; would require PUG View pharmacology section
@@ -184,4 +196,6 @@ LEFT JOIN cid_xrefs cx
     ON cx.cid = (cmp->'id'->'id'->>'cid')::BIGINT
 LEFT JOIN cid_bioassays cb
     ON cb.cid = (cmp->'id'->'id'->>'cid')::BIGINT
+LEFT JOIN cid_synonyms cs
+    ON cs.cid = (cmp->'id'->'id'->>'cid')::BIGINT
 WHERE (cmp->'id'->'id'->>'cid') IS NOT NULL;

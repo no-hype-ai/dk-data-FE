@@ -98,22 +98,6 @@ WITH all_aliases AS (
 
     UNION ALL
 
-    -- DrugBank product names
-    SELECT
-        m.molecule_id,
-        prod->>'name' AS alias_name,
-        LOWER(REGEXP_REPLACE(prod->>'name', '[^a-zA-Z0-9]', '', 'g')) AS alias_name_normalized,
-        'product' AS alias_type,
-        'drugbank' AS source
-    FROM mol_silver.molecules m
-    JOIN mol_bronze.drugbank d ON LOWER(m.canonical_name) = LOWER(d.name)
-    CROSS JOIN LATERAL jsonb_array_elements(COALESCE(d.products, '[]'::JSONB)) AS prod
-    WHERE prod->>'name' IS NOT NULL
-      AND prod->>'name' != ''
-      AND d.name IS NOT NULL
-
-    UNION ALL
-
     -- FDA drug label brand names
     SELECT
         m.molecule_id,
@@ -143,18 +127,20 @@ WITH all_aliases AS (
     UNION ALL
 
     -- PubChem synonyms
-    -- NOTE: mol_bronze.pubchem.synonyms stores cross-references [{type, id}, ...], NOT name strings.
-    -- The PubChem synonym endpoint has not been called yet (see bronze model comment).
-    -- This branch intentionally produces 0 rows until PubChem name synonyms are ingested.
+    -- p.synonyms is now a JSONB string array ["aspirin", "Anacin", ...]
+    -- populated by load_pubchem_extended.py --synonyms from the PubChem synonym endpoint.
+    -- Empty array until synonyms are loaded; produces 0 rows but does not break.
     SELECT
         m.molecule_id,
-        NULL::TEXT AS alias_name,
-        NULL::TEXT AS alias_name_normalized,
+        syn AS alias_name,
+        LOWER(REGEXP_REPLACE(syn, '[^a-zA-Z0-9]', '', 'g')) AS alias_name_normalized,
         'synonym' AS alias_type,
         'pubchem' AS source
     FROM mol_silver.molecules m
     JOIN mol_bronze.pubchem p ON m.inchi_key = p.inchi_key
-    WHERE FALSE  -- placeholder until PubChem synonym names are ingested
+    CROSS JOIN LATERAL jsonb_array_elements_text(COALESCE(p.synonyms, '[]'::jsonb)) AS syn
+    WHERE syn IS NOT NULL
+      AND syn != ''
 
     UNION ALL
 
@@ -206,9 +192,8 @@ deduped AS (
             WHEN 'generic'            THEN 3
             WHEN 'brand'              THEN 4
             WHEN 'trade'              THEN 5
-            WHEN 'product'            THEN 6
-            WHEN 'trial_intervention' THEN 7
-            ELSE 8
+            WHEN 'trial_intervention' THEN 6
+            ELSE 7
         END
 )
 

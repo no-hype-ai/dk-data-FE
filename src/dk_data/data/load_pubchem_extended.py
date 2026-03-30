@@ -116,6 +116,22 @@ def ensure_tables(conn):
         CREATE INDEX IF NOT EXISTS idx_pubchem_pharmacology_inchi ON mol_bronze.pubchem_pharmacology(inchi_key);
     """)
 
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS mol_bronze.pubchem_synonyms (
+            id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+            inchi_key VARCHAR(27),
+            cid BIGINT NOT NULL,
+            synonym_name TEXT NOT NULL,
+            source_updated_at TIMESTAMPTZ DEFAULT NOW(),
+            created_at TIMESTAMPTZ DEFAULT NOW(),
+            UNIQUE(cid, synonym_name)
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_pubchem_synonyms_inchi ON mol_bronze.pubchem_synonyms(inchi_key);
+        CREATE INDEX IF NOT EXISTS idx_pubchem_synonyms_cid ON mol_bronze.pubchem_synonyms(cid);
+        CREATE INDEX IF NOT EXISTS idx_pubchem_synonyms_name ON mol_bronze.pubchem_synonyms(synonym_name);
+    """)
+
     conn.commit()
     logger.info("Extended PubChem tables created")
 
@@ -420,6 +436,107 @@ class PubChemExtendedEnricher:
         )
         return len(values)
 
+    def load_synonyms(self, limit: int = None) -> int:
+        """Load name synonyms from PubChem synonym endpoint.
+
+        Calls /compound/cid/{cid}/synonyms/JSON which returns all registered
+        names for the compound. Filters out InChI strings, pure registry IDs,
+        and excessively long strings, keeping up to 50 human-readable names.
+        """
+        compounds = self.get_compounds_with_cids(limit)
+        logger.info(f"Loading synonyms for {len(compounds)} compounds")
+
+        cursor = self.conn.cursor()
+        total_loaded = 0
+        batch = []
+        batch_size = 500
+
+        for inchi_key, cid in tqdm(compounds, desc="Loading synonyms"):
+            try:
+                cursor.execute(
+                    "SELECT COUNT(*) FROM mol_bronze.pubchem_synonyms WHERE cid = %s", (cid,)
+                )
+                if cursor.fetchone()[0] > 0:
+                    continue
+
+                time.sleep(PUBCHEM_RATE)
+
+                response = self.session.get(
+                    f"{self.BASE_URL}/compound/cid/{cid}/synonyms/JSON",
+                    timeout=30
+                )
+
+                if response.status_code != 200:
+                    continue
+
+                data = response.json()
+                info_list = data.get("InformationList", {}).get("Information", [])
+
+                for info in info_list:
+                    if info.get("CID") != cid:
+                        continue
+
+                    raw_synonyms = info.get("Synonym", [])
+                    kept = 0
+                    for syn in raw_synonyms:
+                        if kept >= 50:
+                            break
+                        if not syn or not isinstance(syn, str):
+                            continue
+                        # Filter out InChI strings
+                        if syn.startswith("InChI="):
+                            continue
+                        # Filter out InChIKey strings (27-char uppercase with hyphens)
+                        if len(syn) == 27 and syn.count("-") == 2 and syn.replace("-", "").isupper():
+                            continue
+                        # Filter out strings that are too long (catalog IDs, URLs)
+                        if len(syn) > 120:
+                            continue
+                        # Must contain at least one letter (filter pure numeric CAS-like IDs)
+                        if not any(c.isalpha() for c in syn):
+                            continue
+
+                        batch.append({
+                            "inchi_key": inchi_key,
+                            "cid": cid,
+                            "synonym_name": syn,
+                        })
+                        kept += 1
+
+                if len(batch) >= batch_size:
+                    total_loaded += self._insert_synonym_batch(cursor, batch)
+                    batch = []
+                    self.conn.commit()
+
+            except Exception as e:
+                logger.debug(f"Synonym error for CID {cid}: {e}")
+                continue
+
+        if batch:
+            total_loaded += self._insert_synonym_batch(cursor, batch)
+            self.conn.commit()
+
+        logger.info(f"Loaded {total_loaded} synonym records")
+        return total_loaded
+
+    def _insert_synonym_batch(self, cursor, records: list) -> int:
+        """Insert batch of synonym records."""
+        if not records:
+            return 0
+
+        values = [(r["inchi_key"], r["cid"], r["synonym_name"]) for r in records]
+
+        execute_values(
+            cursor,
+            """
+            INSERT INTO mol_bronze.pubchem_synonyms (inchi_key, cid, synonym_name)
+            VALUES %s
+            ON CONFLICT (cid, synonym_name) DO NOTHING
+            """,
+            values
+        )
+        return len(values)
+
     def _safe_int(self, val) -> int | None:
         """Safely convert to int."""
         try:
@@ -438,11 +555,12 @@ def main():
     parser.add_argument("--bioassays", action="store_true", help="Load bioassay results")
     parser.add_argument("--xrefs", action="store_true", help="Load cross-references")
     parser.add_argument("--safety", action="store_true", help="Load GHS safety data")
+    parser.add_argument("--synonyms", action="store_true", help="Load name synonyms")
     parser.add_argument("--limit", type=int, help="Max compounds to process")
 
     args = parser.parse_args()
 
-    if not any([args.all, args.bioassays, args.xrefs, args.safety]):
+    if not any([args.all, args.bioassays, args.xrefs, args.safety, args.synonyms]):
         parser.print_help()
         sys.exit(1)
 
@@ -464,9 +582,12 @@ def main():
         if args.all or args.safety:
             enricher.load_safety_data(limit=args.limit)
 
+        if args.all or args.synonyms:
+            enricher.load_synonyms(limit=args.limit)
+
         cursor = conn.cursor()
         logger.info("\n=== SUMMARY ===")
-        for table in ['pubchem_bioassays', 'pubchem_xrefs', 'pubchem_safety', 'pubchem_pharmacology']:
+        for table in ['pubchem_bioassays', 'pubchem_xrefs', 'pubchem_safety', 'pubchem_pharmacology', 'pubchem_synonyms']:
             cursor.execute(f"SELECT COUNT(*) FROM mol_bronze.{table}")
             count = cursor.fetchone()[0]
             logger.info(f"mol_bronze.{table}: {count:,} records")
