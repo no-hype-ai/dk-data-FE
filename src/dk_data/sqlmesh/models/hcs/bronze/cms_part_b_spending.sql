@@ -22,7 +22,7 @@ SELECT
     id::BIGINT,
     hcpcs_cd::TEXT                          AS hcpcs_cd,
     hcpcs_desc::TEXT                        AS hcpcs_desc,
-    tot_mftr::TEXT                          AS tot_mftr,
+    tot_mftr::INTEGER                       AS tot_mftr,
     mftr_name::TEXT                         AS mftr_name,
     tot_spndng::NUMERIC                     AS tot_spndng,
     tot_dsg_unts::NUMERIC                   AS tot_dsg_unts,

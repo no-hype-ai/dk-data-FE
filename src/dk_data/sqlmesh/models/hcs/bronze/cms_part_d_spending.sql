@@ -22,7 +22,7 @@ SELECT
     id::BIGINT,
     brnd_name::TEXT                         AS brnd_name,
     gnrc_name::TEXT                         AS gnrc_name,
-    tot_mftr::TEXT                          AS tot_mftr,
+    tot_mftr::INTEGER                       AS tot_mftr,
     tot_spndng::NUMERIC                     AS tot_spndng,
     tot_dsg_unts::NUMERIC                   AS tot_dsg_unts,
     tot_clms::INTEGER                       AS tot_clms,
