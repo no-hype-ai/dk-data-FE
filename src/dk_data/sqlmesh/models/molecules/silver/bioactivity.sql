@@ -25,13 +25,17 @@ SELECT
     gen_random_uuid()                                               AS id,
     b.chembl_id,
 
-    -- molecule_id: resolve via identifier_mappings (chembl_id → molecule_id)
-    -- Falls back to NULL if no match (molecule not yet in registry)
+    -- molecule_id: resolve directly via mol_bronze.chembl_molecules + mol_silver.molecules.
+    -- Do NOT use mol_silver.identifier_mappings here — identifier_mappings depends on
+    -- mol_silver.molecule_targets, which depends on mol_silver.bioactivity, creating a cycle.
     (
-        SELECT im.molecule_id
-        FROM mol_silver.identifier_mappings im
-        WHERE im.identifier_type = 'chembl_id'
-          AND im.identifier_value = b.chembl_id
+        SELECT m.molecule_id
+        FROM mol_bronze.chembl_molecules c
+        JOIN mol_silver.molecules m ON (
+            (m.inchi_key IS NOT NULL AND m.inchi_key = c.inchi_key)
+            OR (m.inchi_key IS NULL AND LOWER(m.canonical_name) = LOWER(c.pref_name))
+        )
+        WHERE c.chembl_id = b.chembl_id
         LIMIT 1
     )                                                               AS molecule_id,
 
