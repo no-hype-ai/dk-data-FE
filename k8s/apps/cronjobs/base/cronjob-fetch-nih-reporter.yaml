@@ -39,7 +39,7 @@ spec:
             - name: ghcr-credentials
           containers:
             - name: fetch-nih-reporter
-              image: ghcr.io/data-kinetic/dk-data-fe/job-trigger:019-cms-puf-platform-reconciliation-abc1234
+              image: ghcr.io/data-kinetic/dk-data-fe/job-trigger:main
               command: ["python", "-m", "dk_data.ingestion.main"]
               args: ["nih_reporter"]
               env:

@@ -18,8 +18,10 @@ MODEL (
 -- Collect all molecule→publication links from all sources, then deduplicate.
 -- INCREMENTAL_BY_UNIQUE_KEY uses MERGE on (molecule_id, publication_id).
 -- Sources 1 and 3 (title/abstract ILIKE scans) require a GIN index on publications.title_tsv
--- to be performant; they are disabled until that index exists. Only Source 2 (ChEMBL exact
--- DOI/PubMed cross-references) is active as it uses O(1) indexed lookups.
+-- to be performant; they are disabled until that index exists.
+-- Active sources:
+--   2: ChEMBL exact DOI/PubMed cross-references (highest confidence, O(1) lookup)
+--   4: PubMed articles linked via MeSH terms / title match in mol_silver.pubmed_articles
 WITH all_links AS (
 
     -- Source 2: ChEMBL cross-references (DOI/PubMed xref_id → publication) — exact match, fast
@@ -40,6 +42,23 @@ WITH all_links AS (
         OR p.pmid::TEXT = xref->>'xref_id'
     WHERE xref->>'xref_src' IN ('DOI', 'PubMed')
       AND xref->>'xref_id' IS NOT NULL
+
+    UNION ALL
+
+    -- Source 4: PubMed articles linked via MeSH terms / title match
+    -- mol_silver.pubmed_articles has molecule_id set via MeSH term alias lookup;
+    -- join to mol_silver.publications on PMID to get the canonical publication_id
+    SELECT DISTINCT
+        pa.molecule_id,
+        p.id AS publication_id,
+        'pubmed_mesh' AS link_type,
+        0.85 AS confidence,
+        'pubmed' AS source
+    FROM mol_silver.pubmed_articles pa
+    JOIN mol_silver.publications p
+      ON p.pmid = pa.pmid::BIGINT
+    WHERE pa.molecule_id IS NOT NULL
+      AND p.id IS NOT NULL
 
 ),
 

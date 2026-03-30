@@ -39,7 +39,7 @@ spec:
             - name: ghcr-credentials
           containers:
             - name: agent-referral-network
-              image: ghcr.io/data-kinetic/dk-data-fe/job-trigger:019-cms-puf-platform-reconciliation-abc1234
+              image: ghcr.io/data-kinetic/dk-data-fe/job-trigger:main
               command: ["python", "-m", "dk_data.agents.referral_network", "--limit", "50"]
               env:
                 - name: POSTGRES_HOST
