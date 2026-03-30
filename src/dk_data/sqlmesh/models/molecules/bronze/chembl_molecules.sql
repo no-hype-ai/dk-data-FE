@@ -73,7 +73,8 @@ SELECT
 
     -- ChEMBL Identifiers
     mol->>'molecule_chembl_id'                                      AS chembl_id,
-    mol->>'pref_name'                                               AS pref_name,
+    -- Strip ChEMBL bulk-loader version suffixes (e.g. "imatinib_v38" → "imatinib")
+    REGEXP_REPLACE(mol->>'pref_name', '_v\d+$', '')                 AS pref_name,
     mol->>'molecule_type'                                           AS molecule_type,
     (mol->>'max_phase')::NUMERIC::INTEGER                           AS max_phase,
 

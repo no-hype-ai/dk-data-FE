@@ -143,8 +143,12 @@ SELECT
     NOW() AS created_at,
     NOW() AS updated_at
 
-FROM mol_bronze.clinicaltrials b
-WHERE
-    b.processed_to_silver = FALSE
-    AND b.nct_id IS NOT NULL
-    AND b.request_timestamp BETWEEN @start_dt AND @end_dt;
+FROM (
+    SELECT DISTINCT ON (nct_id)
+        *
+    FROM mol_bronze.clinicaltrials
+    WHERE processed_to_silver = FALSE
+      AND nct_id IS NOT NULL
+      AND request_timestamp BETWEEN @start_dt AND @end_dt
+    ORDER BY nct_id, request_timestamp DESC
+) b;

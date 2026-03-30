@@ -39,12 +39,14 @@ SELECT
         LIMIT 1
     )                                                               AS molecule_id,
 
-    -- target_id: resolve via mol_silver.targets (chembl_target_id lookup)
-    (
-        SELECT t.id
-        FROM mol_silver.targets t
-        WHERE t.chembl_target_id = b.target_chembl_id
-        LIMIT 1
+    -- target_id: resolve via mol_silver.targets
+    --   1st: chembl_target_id exact match (populated after ChEMBL targets ingestion)
+    --   2nd: target_name match (covers well-characterized targets with consistent names)
+    COALESCE(
+        (SELECT t.id FROM mol_silver.targets t
+         WHERE t.chembl_target_id = b.target_chembl_id LIMIT 1),
+        (SELECT t.id FROM mol_silver.targets t
+         WHERE LOWER(t.target_name) = LOWER(b.target_pref_name) LIMIT 1)
     )                                                               AS target_id,
 
     b.activity_id,

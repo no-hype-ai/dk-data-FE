@@ -50,6 +50,18 @@ WITH uniprot_targets AS (
         processed_to_silver = FALSE
         AND uniprot_id IS NOT NULL
         AND protein_name IS NOT NULL
+),
+
+-- ChEMBL target IDs derived from activity data, matched by target name.
+-- A full ChEMBL→UniProt cross-reference would improve coverage; name matching
+-- covers well-characterized drug targets where names are consistent.
+chembl_id_enrichment AS (
+    SELECT DISTINCT ON (LOWER(target_pref_name))
+        chembl_target_id,
+        target_pref_name
+    FROM mol_bronze.chembl_targets
+    WHERE chembl_target_id IS NOT NULL
+    ORDER BY LOWER(target_pref_name), chembl_target_id
 )
 
 SELECT
@@ -87,12 +99,13 @@ SELECT
     COALESCE(jsonb_array_length(pdb_structures), 0) AS pdb_structure_count,
     pdb_structures,
     keywords,
-    NULL::TEXT AS chembl_target_id,  -- To be linked if available
+    ce.chembl_target_id,
     source,
     source_updated_at,
     NOW() AS created_at,
     NOW() AS updated_at
-FROM uniprot_targets;
+FROM uniprot_targets
+LEFT JOIN chembl_id_enrichment ce ON LOWER(ce.target_pref_name) = LOWER(uniprot_targets.target_name);
 
 
 -- NOTE: Bronze processed_to_silver flag updates are handled outside SQLMesh.
