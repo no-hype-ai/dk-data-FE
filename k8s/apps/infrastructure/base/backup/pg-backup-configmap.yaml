@@ -16,8 +16,10 @@ data:
     echo "Timestamp: $(date -u +%Y-%m-%dT%H:%M:%SZ)"
 
     echo "--- Installing MinIO client ---"
-    wget -q https://dl.min.io/client/mc/release/linux-amd64/mc -O /usr/local/bin/mc
-    chmod +x /usr/local/bin/mc
+    # Write to /tmp — container runs with readOnlyRootFilesystem: true
+    MC=/tmp/mc
+    wget -q https://dl.min.io/client/mc/release/linux-amd64/mc -O "${MC}"
+    chmod +x "${MC}"
 
     # Validate required environment variables
     for var in POSTGRES_HOST POSTGRES_PORT POSTGRES_USER POSTGRES_PASSWORD POSTGRES_DB \
@@ -70,19 +72,19 @@ data:
     echo "SHA256: ${CHECKSUM}"
 
     echo "--- Step 4: Configuring MinIO client ---"
-    mc alias set backup "http://${MINIO_ENDPOINT}" "${MINIO_ACCESS_KEY}" "${MINIO_SECRET_KEY}" --api S3v4
+    ${MC} alias set backup "http://${MINIO_ENDPOINT}" "${MINIO_ACCESS_KEY}" "${MINIO_SECRET_KEY}" --api S3v4
 
     # Ensure bucket and path exist
-    mc mb --ignore-existing "backup/${MINIO_BUCKET}"
+    ${MC} mb --ignore-existing "backup/${MINIO_BUCKET}"
 
     echo "--- Step 5: Uploading to MinIO ---"
-    mc cp "${LOCAL_PATH}" "backup/${REMOTE_PATH}"
+    ${MC} cp "${LOCAL_PATH}" "backup/${REMOTE_PATH}"
 
     # Tag the object with metadata
-    mc tag set "backup/${REMOTE_PATH}" "checksum=${CHECKSUM}&objects=${OBJECT_COUNT}&pg_version=16&type=${BACKUP_TYPE}"
+    ${MC} tag set "backup/${REMOTE_PATH}" "checksum=${CHECKSUM}&objects=${OBJECT_COUNT}&pg_version=16&type=${BACKUP_TYPE}"
 
     # Verify upload size matches
-    REMOTE_SIZE=$(mc stat "backup/${REMOTE_PATH}" --json | grep -o '"size":[0-9]*' | grep -o '[0-9]*')
+    REMOTE_SIZE=$(${MC} stat "backup/${REMOTE_PATH}" --json | grep -o '"size":[0-9]*' | grep -o '[0-9]*')
     if [ "${FILE_SIZE}" != "${REMOTE_SIZE}" ]; then
       echo "ERROR: Size mismatch - local: ${FILE_SIZE}, remote: ${REMOTE_SIZE}"
       exit 1
@@ -91,7 +93,7 @@ data:
 
     echo "--- Step 6: Retention cleanup ---"
     CLEANUP_PATH="backup/${MINIO_BUCKET}/${NAMESPACE}/${BACKUP_TYPE}/"
-    DELETED=$(mc find "${CLEANUP_PATH}" --older-than "${RETENTION_DAYS}d" --exec "mc rm {}" 2>&1 | wc -l)
+    DELETED=$(${MC} find "${CLEANUP_PATH}" --older-than "${RETENTION_DAYS}d" --exec "${MC} rm {}" 2>&1 | wc -l)
     echo "Cleaned up ${DELETED} expired backups (older than ${RETENTION_DAYS} days)"
 
     echo "--- Backup complete ---"
@@ -110,14 +112,16 @@ data:
     echo "Namespace: ${NAMESPACE}"
 
     echo "--- Installing MinIO client ---"
-    wget -q https://dl.min.io/client/mc/release/linux-amd64/mc -O /usr/local/bin/mc
-    chmod +x /usr/local/bin/mc
+    # Write to /tmp — container runs with readOnlyRootFilesystem: true
+    MC=/tmp/mc
+    wget -q https://dl.min.io/client/mc/release/linux-amd64/mc -O "${MC}"
+    chmod +x "${MC}"
 
     # Configure MinIO client
-    mc alias set backup "http://${MINIO_ENDPOINT}" "${MINIO_ACCESS_KEY}" "${MINIO_SECRET_KEY}" --api S3v4
+    ${MC} alias set backup "http://${MINIO_ENDPOINT}" "${MINIO_ACCESS_KEY}" "${MINIO_SECRET_KEY}" --api S3v4
 
     # Find the latest daily backup
-    LATEST=$(mc ls "backup/${MINIO_BUCKET}/${NAMESPACE}/daily/" --json | tail -1)
+    LATEST=$(${MC} ls "backup/${MINIO_BUCKET}/${NAMESPACE}/daily/" --json | tail -1)
     if [ -z "${LATEST}" ]; then
       echo "ERROR: No daily backups found"
       exit 1
@@ -127,7 +131,7 @@ data:
     echo "Latest backup: ${LATEST_FILE}"
 
     # Download and verify
-    mc cp "backup/${MINIO_BUCKET}/${NAMESPACE}/daily/${LATEST_FILE}" "/tmp/verify.dump"
+    ${MC} cp "backup/${MINIO_BUCKET}/${NAMESPACE}/daily/${LATEST_FILE}" "/tmp/verify.dump"
 
     OBJECT_COUNT=$(pg_restore --list "/tmp/verify.dump" | wc -l)
     echo "Object count: ${OBJECT_COUNT}"
@@ -139,7 +143,7 @@ data:
 
     # Verify checksum
     COMPUTED_CHECKSUM=$(sha256sum "/tmp/verify.dump" | awk '{print $1}')
-    STORED_TAGS=$(mc tag list "backup/${MINIO_BUCKET}/${NAMESPACE}/daily/${LATEST_FILE}" --json 2>/dev/null || echo "{}")
+    STORED_TAGS=$(${MC} tag list "backup/${MINIO_BUCKET}/${NAMESPACE}/daily/${LATEST_FILE}" --json 2>/dev/null || echo "{}")
     echo "Computed checksum: ${COMPUTED_CHECKSUM}"
     echo "Stored tags: ${STORED_TAGS}"
 
