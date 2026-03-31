@@ -123,6 +123,16 @@ patches:
     apiVersion: secrets.doppler.com/v1alpha1
     kind: DopplerSecret
     metadata:
+      name: dk-data-epo-secrets
+    spec:
+      config: stg
+  target:
+    kind: DopplerSecret
+    name: dk-data-epo-secrets
+- patch: |-
+    apiVersion: secrets.doppler.com/v1alpha1
+    kind: DopplerSecret
+    metadata:
       name: minio-backup-credentials
     spec:
       config: stg

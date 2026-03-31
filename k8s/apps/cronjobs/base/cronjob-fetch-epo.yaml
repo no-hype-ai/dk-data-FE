@@ -74,15 +74,13 @@ spec:
                 - name: EPO_CONSUMER_KEY
                   valueFrom:
                     secretKeyRef:
-                      name: dk-data-secrets
+                      name: epo-api-secrets
                       key: EPO_CONSUMER_KEY
-                      optional: true
                 - name: EPO_CONSUMER_SECRET
                   valueFrom:
                     secretKeyRef:
-                      name: dk-data-secrets
+                      name: epo-api-secrets
                       key: EPO_CONSUMER_SECRET
-                      optional: true
                 - name: OTEL_EXPORTER_OTLP_ENDPOINT
                   value: "http://alloy.infra.svc.cluster.local:4317"
                 - name: OTEL_ENABLED

@@ -14,6 +14,7 @@ resources:
   - networkpolicy.yaml
   # Secrets
   - doppler-secret.yaml
+  - doppler-secret-epo.yaml
   - ghcr-secret.yaml
   # Observability
   - service-monitor.yaml
