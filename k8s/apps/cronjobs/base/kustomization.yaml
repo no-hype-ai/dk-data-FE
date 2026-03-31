@@ -1,7 +1,9 @@
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 resources:
-  - cronjob-cms-all.yaml
+  # cronjob-cms-all.yaml  # Disabled — redundant with per-source CronJobs (pubmed, ema-reg, openalex-ci, drugbank, etc.)
+  #                         # fetch_data.py --source all runs 18 legacy sources sequentially within 1h → always timeouts
+  #                         # All sources now have dedicated CronJobs with individual schedules and timeouts
   - cronjob-refresh.yaml
   - cronjob-mol-fetch-daily.yaml
   - cronjob-mol-fetch-weekly.yaml

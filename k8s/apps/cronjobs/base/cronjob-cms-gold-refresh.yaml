@@ -1,6 +1,7 @@
-# Daily CMS gold view refresh via SQLMesh
+# Daily CMS/HCS gold view refresh via SQLMesh
 # Feature: 019-cms-puf-platform-reconciliation
-# Schedule: Daily at 5AM UTC (after nightly data loads complete)
+# Schedule: Daily at 14:30 UTC — after mol-transform-ip-gold (13:00) completes
+# Runs only hcs_gold.* and mol_gold.* models; does NOT backfill (forward-only init)
 apiVersion: batch/v1
 kind: CronJob
 metadata:
@@ -11,7 +12,7 @@ metadata:
     app.kubernetes.io/component: gold-refresh
     app.kubernetes.io/part-of: dk-data
 spec:
-  schedule: "0 5 * * *"
+  schedule: "30 14 * * *"  # 14:30 UTC — 90m after ip-gold (13:00) to allow completion
   concurrencyPolicy: Forbid
   startingDeadlineSeconds: 3600
   successfulJobsHistoryLimit: 3
@@ -50,9 +51,36 @@ spec:
                 - -c
                 - |
                   set -e
-                  echo "Running SQLMesh plan for HCS and mol gold models..."
-                  python -m sqlmesh plan --auto-apply --no-prompts
-                  echo "Gold views refreshed."
+                  echo "Checking SQLMesh initialization state..."
+                  INITIALIZED=$(python -c "
+                  import psycopg2, os, sys
+                  try:
+                      conn = psycopg2.connect(
+                          host=os.environ['POSTGRES_HOST'],
+                          port=int(os.environ.get('POSTGRES_PORT', 5432)),
+                          user=os.environ['POSTGRES_USER'],
+                          password=os.environ['POSTGRES_PASSWORD'],
+                          dbname=os.environ['POSTGRES_DB'],
+                      )
+                      cur = conn.cursor()
+                      cur.execute(\"SELECT EXISTS(SELECT 1 FROM pg_tables WHERE tablename = '_snapshots')\")
+                      print('1' if cur.fetchone()[0] else '0')
+                      conn.close()
+                  except Exception as e:
+                      print('0')
+                  ")
+                  if [ "$INITIALIZED" = "0" ]; then
+                    echo "SQLMesh not initialized — running forward-only plan to bootstrap state..."
+                    python -m sqlmesh plan --auto-apply --forward-only
+                    echo "SQLMesh initialized."
+                  else
+                    echo "SQLMesh already initialized."
+                  fi
+                  echo "Running scheduled gold models..."
+                  python -m sqlmesh run \
+                    --select-model "hcs_gold.*" \
+                    --select-model "mol_gold.*"
+                  echo "Gold refresh complete."
               envFrom:
                 - secretRef:
                     name: dk-data-secrets
