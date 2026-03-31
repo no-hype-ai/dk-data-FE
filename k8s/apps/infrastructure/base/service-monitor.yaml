@@ -42,27 +42,10 @@ spec:
       path: /metrics
       interval: 30s
       scrapeTimeout: 10s
----
-apiVersion: monitoring.coreos.com/v1
-kind: PodMonitor
-metadata:
-  name: dk-data-cronjobs
-  labels:
-    app.kubernetes.io/name: dk-data
-    app.kubernetes.io/component: cronjobs
-    release: mimir
-spec:
-  selector:
-    matchLabels:
-      app.kubernetes.io/part-of: dk-data
-      app.kubernetes.io/component: batch-job
-  podMetricsEndpoints:
-    - port: metrics
-      path: /metrics
-      interval: 15s
----
-# All ingestion CronJobs (molecule + CMS/HCS) are covered by dk-data-cronjobs above.
-# Both mol-* and fetch-cms-* pod templates use:
-#   app.kubernetes.io/component: batch-job
-#   app.kubernetes.io/part-of: dk-data
-# so no additional PodMonitor is needed per pipeline.
+# NOTE: CronJob batch pod metrics flow via OTEL push to Alloy (http://alloy.infra.svc.cluster.local:4317)
+# rather than Prometheus pull. dk_data.ingestion.main calls setup_telemetry() which pushes
+# OTLP metrics to Alloy → Mimir. No HTTP /metrics endpoint is exposed by CronJob pods.
+# A PodMonitor is therefore NOT registered. To add pull-based scraping in future:
+#   1. Call start_http_server(9091) in dk_data.ingestion.main before the job loop
+#   2. Add containerPort name: metrics / containerPort: 9091 to all CronJob pod specs
+#   3. Re-add PodMonitor with port: metrics here

@@ -28,6 +28,8 @@ spec:
         metadata:
           labels:
             app: mol-fetch-weekly
+            app.kubernetes.io/component: batch-job
+            app.kubernetes.io/part-of: dk-data
             team: data-platform
             service: dk-data
             product: dk-data

@@ -25,6 +25,8 @@ spec:
         metadata:
           labels:
             app: mol-transform
+            app.kubernetes.io/component: batch-job
+            app.kubernetes.io/part-of: dk-data
             team: data-platform
             service: dk-data
             product: dk-data

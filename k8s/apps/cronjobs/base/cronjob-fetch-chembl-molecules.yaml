@@ -21,7 +21,7 @@ spec:
         metadata:
           labels:
             app: fetch-chembl-molecules
-            app.kubernetes.io/component: ingestion
+            app.kubernetes.io/component: batch-job
             app.kubernetes.io/part-of: dk-data
             team: data-platform
             service: dk-data
