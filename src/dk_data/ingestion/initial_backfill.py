@@ -201,6 +201,8 @@ BACKFILL_SOURCE_KWARGS: dict = {
     'fda_ndc': {'max_records': 150_000},
     # FDA drugs: ~30k applications
     'fda_drugs': {'max_records': 35_000},
+    # FDA REMS: ~80 active REMS programs — small static set, full fetch
+    'fda_rems': {'max_records': 200},
     # ---------------------------------------------------------------------------
     # CMS PUF multi-year backfill (service years 2021-2023).
     # Year-specific sub-UUIDs are discovered dynamically from data.cms.gov/data.json

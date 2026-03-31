@@ -11,6 +11,7 @@ metadata:
     app.kubernetes.io/part-of: dk-data
 spec:
   schedule: "0 4 1 * *"  # Monthly, 1st of month at 4:00 AM UTC
+  suspend: true  # Source disabled: ddinter.scbdd.com inaccessible (Chinese host, blocked in prod)
   concurrencyPolicy: Forbid
   startingDeadlineSeconds: 3600
   successfulJobsHistoryLimit: 3
