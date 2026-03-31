@@ -4,9 +4,8 @@ Data source:
     CMS Medicare Part D Prescribers — by Provider and Drug
     https://data.cms.gov/provider-summary-by-type-of-service/medicare-part-d-prescribers/medicare-part-d-prescribers-by-provider-and-drug
 """
-
 import logging
-from typing import Any, Dict
+from typing import Any, Dict, List, Optional
 
 from .base import BaseFetcher
 
@@ -15,6 +14,8 @@ logger = logging.getLogger(__name__)
 
 class CMSPartDPrescriberFetcher(BaseFetcher):
     SOURCE_NAME = "cms_part_d_prescriber"
+    # Canonical UUID — fetches most recent available year.
+    # Pass years=[2021, 2022, 2023] to backfill multiple years dynamically.
     DATASET_UUID = "9552739e-3d05-4c1b-8eff-ecabf391e2e5"
 
     def get_latest_url(self) -> str:
@@ -22,7 +23,21 @@ class CMSPartDPrescriberFetcher(BaseFetcher):
 
     def fetch(self, **kwargs) -> Dict[str, Any]:
         max_records = kwargs.get("max_records")
+        years: Optional[List[int]] = kwargs.get("years")
         try:
+            if years:
+                csv_paths = self._fetch_cms_api_multi_year(
+                    self.DATASET_UUID, years, max_records_per_year=max_records
+                )
+                if not csv_paths:
+                    return {"status": "success", "records": 0, "record_count": 0, "hash": None, "extracted_files": []}
+                return {
+                    "status": "success",
+                    "records": len(csv_paths),
+                    "record_count": len(csv_paths),
+                    "hash": None,
+                    "extracted_files": csv_paths,
+                }
             records = self._fetch_cms_api(self.DATASET_UUID, max_records)
             if not records:
                 return {"status": "success", "records": [], "record_count": 0, "hash": None, "extracted_files": []}

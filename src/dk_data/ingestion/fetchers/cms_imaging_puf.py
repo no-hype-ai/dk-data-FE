@@ -2,35 +2,22 @@
 
 No standalone imaging dataset exists in the CMS data-api catalog. Imaging
 services are fetched from the Medicare Physician & Other Practitioners - by
-Provider and Service PUF (same source as cms_physician_puf / cms_telehealth_puf),
-filtered server-side to provider types commonly associated with imaging
-(Radiology, Diagnostic Radiology, Interventional Radiology, Nuclear Medicine,
-Radiation Oncology, Diagnostic Imaging).
-
-Dataset UUID: 92396110-2aed-4d63-a6a2-5d6207d46a29
+Provider and Service PUF, filtered server-side to provider types commonly
+associated with imaging.
 """
 import logging
-from typing import Any, Dict
+from typing import Any, Dict, List, Optional
 
 from .base import BaseFetcher
 
 logger = logging.getLogger(__name__)
 
-# Provider types in the Physician PUF that correspond to imaging services.
-# The CMS API filter supports exact match only; we iterate over each type.
-_IMAGING_PROVIDER_TYPES = [
-    "Diagnostic Radiology",
-    "Interventional Radiology",
-    "Diagnostic Imaging",
-    "Nuclear Medicine",
-    "Radiation Oncology",
-    "Radiology",
-]
-
+_IMAGING_PROVIDER_TYPES = ['Diagnostic Radiology', 'Interventional Radiology', 'Diagnostic Imaging', 'Nuclear Medicine', 'Radiation Oncology', 'Radiology']
 
 class CMSImagingPUFFetcher(BaseFetcher):
     SOURCE_NAME = "cms_imaging_puf"
-    # Medicare Physician & Other Practitioners - by Provider and Service
+    # Medicare Physician & Other Practitioners - by Provider and Service.
+    # Canonical UUID — pass years=[2021, 2022, 2023] to backfill multiple years dynamically.
     DATASET_UUID = "92396110-2aed-4d63-a6a2-5d6207d46a29"
 
     def get_latest_url(self) -> str:
@@ -38,8 +25,29 @@ class CMSImagingPUFFetcher(BaseFetcher):
 
     def fetch(self, **kwargs) -> Dict[str, Any]:
         max_records = kwargs.get("max_records")
-        all_records = []
+        years: Optional[List[int]] = kwargs.get("years")
+        
         try:
+            if years:
+                all_paths: List[str] = []
+                for provider_type in _IMAGING_PROVIDER_TYPES:
+                    filter_params = {"filter[Rndrng_Prvdr_Type][value]": provider_type}
+                    paths = self._fetch_cms_api_multi_year(
+                        self.DATASET_UUID, years,
+                        max_records_per_year=max_records,
+                        filter_params=filter_params,
+                    )
+                    all_paths.extend(paths)
+                if not all_paths:
+                    return {"status": "success", "records": 0, "record_count": 0, "hash": None, "extracted_files": []}
+                return {
+                    "status": "success",
+                    "records": len(all_paths),
+                    "record_count": len(all_paths),
+                    "hash": None,
+                    "extracted_files": all_paths,
+                }
+            all_records = []
             for provider_type in _IMAGING_PROVIDER_TYPES:
                 filter_params = {"filter[Rndrng_Prvdr_Type][value]": provider_type}
                 records = self._fetch_cms_api(

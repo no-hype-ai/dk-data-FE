@@ -255,6 +255,80 @@ def _get_catalog(force_refresh: bool = False) -> Optional[list]:
         return None
 
 
+def discover_year_uuids(parent_uuid: str, force_refresh: bool = False) -> dict[int, str]:
+    """Discover year-specific dataset UUIDs from the CMS DCAT catalog.
+
+    CMS publishes multi-year datasets with one distribution entry per service
+    year.  Each distribution has:
+      - title: e.g. "Medicare Physician ... - 2023"
+      - accessURL: https://data.cms.gov/data-api/v1/dataset/<sub-uuid>/data
+
+    This function fetches the catalog (cached 24h), finds the entry whose
+    ``identifier`` contains ``parent_uuid``, then parses each distribution to
+    extract year → sub-UUID pairs.
+
+    Args:
+        parent_uuid: The canonical dataset UUID (e.g. "8889d81e-...").
+        force_refresh: If True, bypass the catalog cache.
+
+    Returns:
+        Dict mapping service_year (int) → sub-dataset UUID (str).
+        Empty dict if the catalog is unavailable or the UUID is not found.
+    """
+    import re
+
+    catalog = _get_catalog(force_refresh=force_refresh)
+    if not catalog:
+        logger.warning("CMS catalog unavailable — cannot discover year-specific UUIDs")
+        return {}
+
+    year_uuids: dict[int, str] = {}
+    for dataset in catalog:
+        identifier = dataset.get("identifier", "")
+        if parent_uuid not in identifier:
+            continue
+
+        for dist in dataset.get("distribution", []):
+            title = dist.get("title", "")
+            # accessURL carries the sub-dataset UUID in the path
+            access_url = dist.get("accessURL", "") or dist.get("downloadURL", "")
+
+            # Extract year from distribution title (e.g. "... - 2023" or "2023 Data")
+            year_matches = re.findall(r'\b(20\d{2})\b', title)
+            if not year_matches:
+                continue
+            year = int(year_matches[-1])
+
+            # Extract sub-UUID from access URL:
+            # https://data.cms.gov/data-api/v1/dataset/<UUID>/data
+            uuid_match = re.search(
+                r'/dataset/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})',
+                access_url,
+            )
+            if not uuid_match:
+                continue
+            uuid = uuid_match.group(1)
+
+            if year not in year_uuids:
+                year_uuids[year] = uuid
+
+        break  # Found the matching dataset; no need to scan further
+
+    if year_uuids:
+        logger.info(
+            "Discovered %d year-specific UUIDs for parent %s: %s",
+            len(year_uuids), parent_uuid,
+            {y: u[:8] + "..." for y, u in sorted(year_uuids.items())},
+        )
+    else:
+        logger.warning(
+            "No year-specific UUIDs found for parent UUID %s in CMS catalog",
+            parent_uuid,
+        )
+
+    return year_uuids
+
+
 def _discover_url_from_catalog(catalog_uuid: str, catalog_base: Optional[str] = None) -> Optional[str]:
     """Find the best CSV download URL for a dataset by UUID.
 

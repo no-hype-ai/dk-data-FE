@@ -1,35 +1,21 @@
 """CMS Medicare Lab Services PUF fetcher.
 
-No standalone lab-services provider utilization dataset exists in the CMS catalog.
-UUID 0e57f57d-0acc-4c9c-8f8c-973e3f4a3c4b is the Clinical Lab Fee Schedule (CLFS) —
-a pricing file (hcpcs_cd, PRICE_AMT, VOL_TXT), not provider-level utilization.
-
-Provider-level lab utilization is fetched from the Medicare Physician & Other
-Practitioners - by Provider and Service PUF (same source as cms_physician_puf),
-filtered by lab-related provider types: Clinical Laboratory, Pathology.
-
-Dataset UUID: 92396110-2aed-4d63-a6a2-5d6207d46a29
-Confirmed filter values (GET /data-api/v1/.../data?filter[Rndrng_Prvdr_Type][value]=..., 2026-03-29):
-  Clinical Laboratory — returns provider-level NPI × HCPCS records ✓
-  Pathology          — returns provider-level NPI × HCPCS records ✓
+Provider-level lab utilization fetched from the Medicare Physician & Other
+Practitioners - by Provider and Service PUF, filtered by lab-related provider types.
 """
 import logging
-from typing import Any, Dict
+from typing import Any, Dict, List, Optional
 
 from .base import BaseFetcher
 
 logger = logging.getLogger(__name__)
 
-_LAB_PROVIDER_TYPES = [
-    "Clinical Laboratory",
-    "Pathology",
-]
-
+_LAB_PROVIDER_TYPES = ['Clinical Laboratory', 'Pathology']
 
 class CMSLabServicesFetcher(BaseFetcher):
     SOURCE_NAME = "cms_lab_services"
-    # Medicare Physician & Other Practitioners - by Provider and Service
-    # (same source as cms_physician_puf / cms_imaging_puf / cms_mental_health_puf)
+    # Medicare Physician & Other Practitioners - by Provider and Service.
+    # Canonical UUID — pass years=[2021, 2022, 2023] to backfill multiple years dynamically.
     DATASET_UUID = "92396110-2aed-4d63-a6a2-5d6207d46a29"
 
     def get_latest_url(self) -> str:
@@ -37,8 +23,29 @@ class CMSLabServicesFetcher(BaseFetcher):
 
     def fetch(self, **kwargs) -> Dict[str, Any]:
         max_records = kwargs.get("max_records")
-        all_records = []
+        years: Optional[List[int]] = kwargs.get("years")
+        
         try:
+            if years:
+                all_paths: List[str] = []
+                for provider_type in _LAB_PROVIDER_TYPES:
+                    filter_params = {"filter[Rndrng_Prvdr_Type][value]": provider_type}
+                    paths = self._fetch_cms_api_multi_year(
+                        self.DATASET_UUID, years,
+                        max_records_per_year=max_records,
+                        filter_params=filter_params,
+                    )
+                    all_paths.extend(paths)
+                if not all_paths:
+                    return {"status": "success", "records": 0, "record_count": 0, "hash": None, "extracted_files": []}
+                return {
+                    "status": "success",
+                    "records": len(all_paths),
+                    "record_count": len(all_paths),
+                    "hash": None,
+                    "extracted_files": all_paths,
+                }
+            all_records = []
             for provider_type in _LAB_PROVIDER_TYPES:
                 filter_params = {"filter[Rndrng_Prvdr_Type][value]": provider_type}
                 records = self._fetch_cms_api(

@@ -64,26 +64,6 @@ FILE_BASED_SOURCES = {
 # If last_successful_refresh is within this many hours, skip (already fresh).
 SKIP_IF_REFRESHED_WITHIN_HOURS = 12
 
-# ---------------------------------------------------------------------------
-# CMS PUF MULTI-YEAR GAP — KNOWN LIMITATION
-# ---------------------------------------------------------------------------
-# All CMS PUF fetchers (cms_physician_puf, cms_outpatient_puf, etc.) call
-# _fetch_cms_api() against a single dataset UUID that represents the LATEST
-# published service year (~2023). They do NOT loop over historical years.
-#
-# The raw table schemas include _source_year and UNIQUE constraints that
-# support multi-year data, but the fetchers never populate prior years.
-#
-# For a complete historical backfill (2021, 2022, 2023, 2024), each PUF
-# fetcher needs:
-#   1. A YEAR_DATASET_UUIDS dict mapping year → CMS dataset UUID
-#      (discoverable via data.cms.gov/data.json catalog)
-#   2. Year-loop logic in the fetcher or orchestrator
-#
-# This is tracked as a separate task. For now, the backfill loads the
-# latest available year for each CMS PUF source.
-# ---------------------------------------------------------------------------
-
 # Per-source kwargs to pass during backfill to override conservative defaults.
 # These raise record caps for API sources whose defaults are tuned for daily incremental runs.
 BACKFILL_SOURCE_KWARGS: dict = {
@@ -101,6 +81,34 @@ BACKFILL_SOURCE_KWARGS: dict = {
     'cochrane': {'max_records': 10_000, 'days_back': None},
     # KEGG: raise to fetch all ~12,000 drug entries (default 5000)
     'kegg_drug': {'max_entries': 15_000},
+    # ---------------------------------------------------------------------------
+    # CMS PUF multi-year backfill (service years 2021-2023).
+    # Year-specific sub-UUIDs are discovered dynamically from data.cms.gov/data.json
+    # (cached 24h via cms_downloader._get_catalog). No hardcoded UUIDs needed.
+    # The most recent available service year is 2023 (12-18 month CMS lag).
+    # ---------------------------------------------------------------------------
+    # Physician & Other Practitioners — by Provider (NPI-level aggregate)
+    'cms_physician_puf': {'years': [2021, 2022, 2023]},
+    # Physician & Other Practitioners — by Provider and Service (HCPCS-level)
+    'cms_physician_puf_services': {'years': [2021, 2022, 2023]},
+    # Specialty subsets of physician_puf_services (same UUID, filtered by provider type)
+    'cms_imaging_puf': {'years': [2021, 2022, 2023]},
+    'cms_lab_services': {'years': [2021, 2022, 2023]},
+    'cms_mental_health_puf': {'years': [2021, 2022, 2023]},
+    'cms_telehealth_puf': {'years': [2021, 2022, 2023]},
+    # Outpatient / Inpatient hospitals
+    'cms_outpatient_puf': {'years': [2021, 2022, 2023]},
+    'cms_inpatient_puf': {'years': [2021, 2022, 2023]},
+    # Part D Prescribers (and opioid subset that uses same UUID)
+    'cms_part_d_prescriber': {'years': [2021, 2022, 2023]},
+    'cms_opioid_puf': {'years': [2021, 2022, 2023]},
+    # Post-acute care
+    'cms_dme_puf': {'years': [2021, 2022, 2023]},
+    'cms_hospice_puf': {'years': [2021, 2022, 2023]},
+    'cms_snf_puf': {'years': [2021, 2022, 2023]},
+    'cms_home_health': {'years': [2021, 2022, 2023]},
+    # Hospital cost reports
+    'cms_cost_reports_puf': {'years': [2021, 2022, 2023]},
 }
 
 

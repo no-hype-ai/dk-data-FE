@@ -180,6 +180,72 @@ class BaseFetcher(ABC):
         logger.info("[%s] %d total records fetched from CMS API", self.SOURCE_NAME, len(records))
         return records
 
+    def _fetch_cms_api_multi_year(
+        self,
+        parent_uuid: str,
+        years: List[int],
+        max_records_per_year: Optional[int] = None,
+        filter_params: Optional[Dict[str, Any]] = None,
+    ) -> List[str]:
+        """Fetch CMS records for multiple service years using dynamic UUID discovery.
+
+        Discovers year-specific dataset UUIDs from the CMS DCAT catalog (cached 24h),
+        then fetches each year separately.  Injects a ``year`` column into every record
+        so the orchestrator's auto-detection logic passes the correct ``source_year``
+        to the loader.
+
+        Falls back to ``parent_uuid`` for any year whose sub-UUID cannot be found
+        (with a warning — this means all such years will share the same data).
+
+        Args:
+            parent_uuid: The canonical dataset UUID from CMS_DATASET_REGISTRY.
+            years: Service years to fetch (e.g. [2021, 2022, 2023]).
+            max_records_per_year: Cap per year; None = fetch all.
+            filter_params: Optional extra query params (e.g. provider type filter).
+
+        Returns:
+            List of paths to per-year temp CSV files.
+            Each file contains records for one service year with a ``year`` column.
+        """
+        from ..downloaders.cms_downloader import discover_year_uuids
+
+        year_uuids = discover_year_uuids(parent_uuid)
+
+        csv_paths: List[str] = []
+        for year in sorted(years):
+            uuid = year_uuids.get(year)
+            if uuid is None:
+                logger.warning(
+                    "[%s] No sub-UUID found in CMS catalog for year=%d (parent=%s) — skipping year",
+                    self.SOURCE_NAME, year, parent_uuid,
+                )
+                continue
+
+            logger.info(
+                "[%s] Fetching year=%d (UUID=%s...)", self.SOURCE_NAME, year, uuid[:8]
+            )
+            try:
+                records = self._fetch_cms_api(uuid, max_records_per_year, filter_params)
+            except Exception as exc:
+                logger.warning(
+                    "[%s] Failed to fetch year=%d: %s — skipping", self.SOURCE_NAME, year, exc
+                )
+                continue
+
+            if not records:
+                logger.info("[%s] year=%d returned 0 records", self.SOURCE_NAME, year)
+                continue
+
+            # Inject year for orchestrator auto-detection (checked as 'year', 'Year', 'YEAR')
+            for r in records:
+                r["year"] = year
+
+            path = self._cms_records_to_csv(records)
+            csv_paths.append(path)
+            logger.info("[%s] year=%d: %d records → %s", self.SOURCE_NAME, year, len(records), path)
+
+        return csv_paths
+
     def _cms_records_to_csv(self, records: List[Dict[str, Any]]) -> str:
         """Write CMS API records to a temp CSV file.
 

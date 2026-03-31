@@ -1,6 +1,6 @@
 """CMS Durable Medical Equipment PUF fetcher."""
 import logging
-from typing import Any, Dict
+from typing import Any, Dict, List, Optional
 
 from .base import BaseFetcher
 
@@ -9,7 +9,8 @@ logger = logging.getLogger(__name__)
 
 class CMSDMEPUFFetcher(BaseFetcher):
     SOURCE_NAME = "cms_dme_puf"
-    # Medicare DME, Devices & Supplies - by Supplier and Service (has HCPCS_Cd + Suplr_NPI)
+    # Canonical UUID — fetches most recent available year.
+    # Pass years=[2021, 2022, 2023] to backfill multiple years dynamically.
     DATASET_UUID = "1746a83e-bb65-4300-8e02-21edbab77c6b"
 
     def get_latest_url(self) -> str:
@@ -17,7 +18,21 @@ class CMSDMEPUFFetcher(BaseFetcher):
 
     def fetch(self, **kwargs) -> Dict[str, Any]:
         max_records = kwargs.get("max_records")
+        years: Optional[List[int]] = kwargs.get("years")
         try:
+            if years:
+                csv_paths = self._fetch_cms_api_multi_year(
+                    self.DATASET_UUID, years, max_records_per_year=max_records
+                )
+                if not csv_paths:
+                    return {"status": "success", "records": 0, "record_count": 0, "hash": None, "extracted_files": []}
+                return {
+                    "status": "success",
+                    "records": len(csv_paths),
+                    "record_count": len(csv_paths),
+                    "hash": None,
+                    "extracted_files": csv_paths,
+                }
             records = self._fetch_cms_api(self.DATASET_UUID, max_records)
             if not records:
                 return {"status": "success", "records": [], "record_count": 0, "hash": None, "extracted_files": []}
