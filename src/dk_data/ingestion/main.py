@@ -978,7 +978,10 @@ def get_last_successful_refresh(source_name: str) -> datetime | None:
             """, (source_name,))
             row = cur.fetchone()
             if row and row[0]:
-                return row[0]
+                dt = row[0]
+                if dt.tzinfo is None:
+                    dt = dt.replace(tzinfo=timezone.utc)
+                return dt
     except Exception as e:
         logger.warning(f"Could not read last_successful_refresh for {source_name}: {e}")
     return None
