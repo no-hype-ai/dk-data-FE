@@ -82,6 +82,23 @@ BACKFILL_SOURCE_KWARGS: dict = {
     # KEGG: raise to fetch all ~12,000 drug entries (default 5000)
     'kegg_drug': {'max_entries': 15_000},
     # ---------------------------------------------------------------------------
+    # Incremental API sources — raise max_records for a 457-day backfill window.
+    # The orchestrator already passes days_back=compute_backfill_days()≈457 to
+    # every API source; without raised caps the fetchers hit their per-run
+    # defaults (5k-10k) and miss historical records.
+    # ---------------------------------------------------------------------------
+    # Literature
+    'pubmed': {'max_records': 50_000},          # default: 10k; 457-day drug query can exceed that
+    'europepmc': {'max_records': 50_000},        # default: 10k
+    # Regulatory / CI (full-history fetches)
+    'hta_bodies': {'days_back': None},           # default: 90 days; fetch full NICE TA archive
+    'openalex_ci': {'max_records': 100_000},     # default: 10k; OpenAlex has cursor pagination
+    'sec_edgar': {'max_records': 20_000},        # default: 5k; pharma filings 457 days
+    # Patents (full 457-day window)
+    'epo_ops': {'max_records': 20_000},          # default: 5k; EPO patent family search
+    'uspto_patents': {'max_records': 50_000},    # default: 10k; PatentsView full history
+    'uspto_ci': {'max_records': 50_000},         # default: 10k; CI patent subset
+    # ---------------------------------------------------------------------------
     # CMS PUF multi-year backfill (service years 2021-2023).
     # Year-specific sub-UUIDs are discovered dynamically from data.cms.gov/data.json
     # (cached 24h via cms_downloader._get_catalog). No hardcoded UUIDs needed.

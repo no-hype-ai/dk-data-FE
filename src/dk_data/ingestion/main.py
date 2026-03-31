@@ -1260,6 +1260,17 @@ Examples:
                              'Use for initial backfill: --days-back 730 fetches 2 years regardless of last_successful_refresh.')
     parser.add_argument('--list', '-l', action='store_true', help='List available sources')
     parser.add_argument('--verbose', '-v', action='store_true', help='Verbose output')
+    parser.add_argument(
+        '--skip-if-no-file',
+        action='store_true',
+        dest='skip_if_no_file',
+        help=(
+            'Exit 0 without error when the source requires a file (requires_file=True) '
+            'and no --file path is provided. Used by CronJobs for file-dependent sources '
+            'that must stay in the schedule for operator-triggered runs but should not fail '
+            'when the file has not been manually provided.'
+        ),
+    )
 
     args = parser.parse_args()
 
@@ -1287,6 +1298,19 @@ Examples:
     if not source:
         parser.print_help()
         return 1
+
+    # --skip-if-no-file: exit 0 when source requires a manually provided file and none was given.
+    # This keeps file-dependent CronJobs in the schedule for operator-triggered runs without
+    # generating failure alerts when no file has been uploaded.
+    if getattr(args, 'skip_if_no_file', False) and not args.filepath:
+        source_info = SOURCES.get(source, {})
+        if source_info.get('requires_file'):
+            logger.info(
+                "Source '%s' requires a file (--file) but none was provided; "
+                "--skip-if-no-file set — exiting 0.",
+                source,
+            )
+            return 0
 
     # Initialize connection pool
     init_connection_pool()
