@@ -29,6 +29,8 @@ logger = logging.getLogger(__name__)
 
 # USPTO ODP endpoint (migrated from search.patentsview.org on 2026-03-20)
 _DEFAULT_PATENTSVIEW_API = "https://api.uspto.gov/api/v1/patent/applications/search"
+# Public alias for backwards compat (tests import this name)
+PATENTSVIEW_API = _DEFAULT_PATENTSVIEW_API
 
 # CPC codes relevant to pharmaceutical chemistry
 PHARMA_CPC_CODES = ["A61K", "A61P", "C07D"]
