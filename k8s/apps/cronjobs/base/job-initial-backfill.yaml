@@ -1,0 +1,97 @@
+# Initial Backfill Job — run ONCE at platform initialization
+#
+# What it does (fully automatic):
+#   1. Computes fetch window = days since 2024-01-01 (SQLMesh start date)
+#   2. Fetches EVERY registered source with that full historical window
+#      - API sources: uses computed days_back (e.g., pubmed: all articles since 2024-01-01)
+#      - File sources (CMS PUF, NPPES, etc.): downloads latest files (loaders are idempotent)
+#      - Skips sources already refreshed within 12h (safe to re-run)
+#   3. Runs `sqlmesh plan --auto-apply` — backfills ALL bronze/silver/gold models
+#      from 2024-01-01 to today (no --forward-only; this is the full historical fill)
+#   4. Runs `sqlmesh run` for any remaining current-day intervals
+#
+# Idempotent: safe to re-run. Sources with recent last_successful_refresh are skipped.
+# Use --sqlmesh-only flag if raw tables are already populated.
+#
+# Apply:
+#   kubectl apply -f k8s/apps/cronjobs/base/job-initial-backfill.yaml -n dk-data-prod
+#   kubectl logs -f job/initial-backfill -n dk-data-prod
+#   kubectl delete job initial-backfill -n dk-data-prod   # cleanup after completion
+#
+# WARNING: This job can take 4-12 hours. Do NOT set activeDeadlineSeconds.
+# Run during off-peak hours to avoid competing with live CronJobs.
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: initial-backfill
+  labels:
+    app: initial-backfill
+    app.kubernetes.io/name: initial-backfill
+    app.kubernetes.io/component: backfill
+    app.kubernetes.io/part-of: dk-data
+spec:
+  backoffLimit: 0        # Do not auto-retry — fix the failure and re-apply
+  ttlSecondsAfterFinished: 604800   # Keep for 7 days so logs are accessible
+  template:
+    metadata:
+      labels:
+        app: initial-backfill
+        app.kubernetes.io/component: batch-job
+        app.kubernetes.io/part-of: dk-data
+        team: data-platform
+    spec:
+      restartPolicy: Never
+      imagePullSecrets:
+        - name: ghcr-credentials
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        fsGroup: 1000
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: initial-backfill
+          image: ghcr.io/data-kinetic/dk-data-fe/job-trigger:main
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+          command:
+            - python
+            - -m
+            - dk_data.ingestion.initial_backfill
+          # To run only the SQLMesh plan (raw tables already populated):
+          #   args: ["--sqlmesh-only"]
+          # To run only fetch (skip SQLMesh):
+          #   args: ["--fetch-only"]
+          # To preview without running:
+          #   args: ["--dry-run"]
+          envFrom:
+            - secretRef:
+                name: dk-data-secrets
+          env:
+            - name: OTEL_EXPORTER_OTLP_ENDPOINT
+              value: "http://alloy.infra.svc.cluster.local:4317"
+            - name: OTEL_SERVICE_NAME
+              value: "dk-data-initial-backfill"
+            - name: OTEL_ENABLED
+              value: "true"
+          resources:
+            requests:
+              memory: "2Gi"
+              cpu: "500m"
+            limits:
+              memory: "8Gi"     # Large downloads (NPPES ~1GB, PhysicianPUF, etc.)
+              cpu: "2000m"
+          volumeMounts:
+            - name: data
+              mountPath: /tmp/data
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: data
+          emptyDir:
+            sizeLimit: "20Gi"   # Large CMS file downloads (NPPES 1GB+, Physician PUF)
+        - name: tmp
+          emptyDir: {}
