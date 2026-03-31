@@ -221,12 +221,32 @@ class MedicalNewsFetcher(BaseFetcher):
 
     @staticmethod
     def _parse_pub_date(entry: Any) -> Optional[str]:
-        """Parse publication date from RSS entry."""
-        # Try published_parsed first (struct_time)
+        """Parse publication date from RSS entry.
+
+        Handles the following cases:
+        - feedparser struct_time (published_parsed / updated_parsed) — most reliable
+        - Common human-readable string formats: "Feb 18, 2026", "18 Feb 2026", etc.
+        - ISO-like strings: "2026-02-18T..."
+        - Truncated year strings like "Feb 18, 20" (rejected with None — avoids storing
+          year-0020 dates that would corrupt the data timeline)
+        """
+        # Guard: require year >= 2000 to reject truncated years like "20" parsed as AD 20
+        _MIN_YEAR = 2000
+
+        def _validate_year(dt: datetime) -> Optional[str]:
+            """Return formatted date string if year is plausible, else None."""
+            if dt.year < _MIN_YEAR:
+                logger.debug("Rejecting implausible year %d in parsed date %s", dt.year, dt)
+                return None
+            return dt.strftime("%Y-%m-%d")
+
+        # Try published_parsed first (struct_time) — most reliable path
         if hasattr(entry, "published_parsed") and entry.published_parsed:
             try:
                 dt = datetime(*entry.published_parsed[:6])
-                return dt.strftime("%Y-%m-%d")
+                result = _validate_year(dt)
+                if result:
+                    return result
             except (TypeError, ValueError):
                 pass
 
@@ -234,7 +254,9 @@ class MedicalNewsFetcher(BaseFetcher):
         if hasattr(entry, "updated_parsed") and entry.updated_parsed:
             try:
                 dt = datetime(*entry.updated_parsed[:6])
-                return dt.strftime("%Y-%m-%d")
+                result = _validate_year(dt)
+                if result:
+                    return result
             except (TypeError, ValueError):
                 pass
 
@@ -244,15 +266,26 @@ class MedicalNewsFetcher(BaseFetcher):
             if val:
                 try:
                     s = str(val).strip()
-                    # Try common date formats before falling back to truncation
+                    # Try common date formats — these require a 4-digit year so
+                    # truncated strings like "Feb 18, 20" will fail here (correct).
                     for fmt in ("%b %d, %Y", "%B %d, %Y", "%d %b %Y", "%d %B %Y"):
                         try:
-                            return datetime.strptime(s, fmt).strftime("%Y-%m-%d")
+                            dt = datetime.strptime(s, fmt)
+                            result = _validate_year(dt)
+                            if result:
+                                return result
                         except ValueError:
                             continue
-                    # ISO-like format: safe to take first 10 chars
+                    # ISO-like format: safe to take first 10 chars only if 4-digit year
                     if len(s) >= 10 and s[4] == "-":
-                        return s[:10]
+                        candidate = s[:10]
+                        try:
+                            dt = datetime.strptime(candidate, "%Y-%m-%d")
+                            result = _validate_year(dt)
+                            if result:
+                                return result
+                        except ValueError:
+                            pass
                 except (TypeError, ValueError):
                     pass
 
