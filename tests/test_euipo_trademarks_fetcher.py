@@ -78,7 +78,7 @@ class TestEUIPOFetcherInit:
     """Tests for EUIPO fetcher initialization."""
 
     def test_fetcher_init_tmview_default(self, tmp_path):
-        """Fetcher defaults to TMview backend."""
+        """Fetcher defaults to ibm_gateway backend (TMview is defunct)."""
         with patch.dict(os.environ, {}, clear=True):
             os.environ.pop("EUIPO_BACKEND", None)
             os.environ.pop("EUIPO_API_KEY", None)
@@ -86,7 +86,7 @@ class TestEUIPOFetcherInit:
             fetcher = EUIPOTrademarksFetcher(data_dir=str(tmp_path))
 
         assert fetcher.SOURCE_NAME == "euipo_trademarks"
-        assert fetcher.backend == "tmview"
+        assert fetcher.backend == "ibm_gateway"
         assert fetcher.session is not None
 
     def test_fetcher_init_tmview_explicit(self, tmp_path):
@@ -109,13 +109,13 @@ class TestEUIPOFetcherInit:
         assert fetcher.secret_key == "test_secret"
 
     def test_fetcher_ibm_fallback_without_credentials(self, tmp_path):
-        """IBM Gateway falls back to TMview without credentials."""
+        """IBM Gateway stays ibm_gateway without credentials (warns, no tmview fallback)."""
         with patch.dict(os.environ, {"EUIPO_BACKEND": "ibm_gateway"}, clear=True):
             os.environ.pop("EUIPO_API_KEY", None)
             os.environ.pop("EUIPO_SECRET_KEY", None)
             fetcher = EUIPOTrademarksFetcher(data_dir=str(tmp_path))
 
-        assert fetcher.backend == "tmview"
+        assert fetcher.backend == "ibm_gateway"
 
     def test_fetcher_init_with_backend_arg(self, tmp_path):
         """Backend argument overrides environment."""
@@ -133,13 +133,12 @@ class TestEUIPOFetcherInit:
 class TestEUIPOFetcherURL:
     """Tests for get_latest_url based on backend."""
 
-    def test_get_latest_url_tmview(self, tmp_path):
-        """TMview returns the TMview search URL."""
+    def test_get_latest_url_default(self, tmp_path):
+        """Default (ibm_gateway) returns the EUIPO IBM Gateway URL."""
         with patch.dict(os.environ, {}, clear=True):
             fetcher = EUIPOTrademarksFetcher(data_dir=str(tmp_path))
         url = fetcher.get_latest_url()
-        assert "tmdn.org" in url
-        assert "api/search" in url
+        assert "api.euipo.europa.eu" in url
 
     def test_get_latest_url_ibm_gateway(self, tmp_path):
         """IBM Gateway returns the EUIPO API URL."""
@@ -171,7 +170,7 @@ class TestEUIPOFetchTMview:
         )
 
         with tempfile.TemporaryDirectory() as tmpdir:
-            with patch.dict(os.environ, {}, clear=True):
+            with patch.dict(os.environ, {"EUIPO_BACKEND": "tmview"}, clear=True):
                 fetcher = EUIPOTrademarksFetcher(data_dir=tmpdir)
             result = fetcher.fetch(nice_classes=["05"], days_back=7)
 
@@ -197,7 +196,7 @@ class TestEUIPOFetchTMview:
         )
 
         with tempfile.TemporaryDirectory() as tmpdir:
-            with patch.dict(os.environ, {}, clear=True):
+            with patch.dict(os.environ, {"EUIPO_BACKEND": "tmview"}, clear=True):
                 fetcher = EUIPOTrademarksFetcher(data_dir=tmpdir)
             result = fetcher.fetch(days_back=1)
 
@@ -216,7 +215,7 @@ class TestEUIPOFetchTMview:
         )
 
         with tempfile.TemporaryDirectory() as tmpdir:
-            with patch.dict(os.environ, {}, clear=True):
+            with patch.dict(os.environ, {"EUIPO_BACKEND": "tmview"}, clear=True):
                 fetcher = EUIPOTrademarksFetcher(data_dir=tmpdir)
             result = fetcher.fetch(days_back=1)
 
@@ -249,7 +248,7 @@ class TestEUIPOFetchTMview:
         )
 
         with tempfile.TemporaryDirectory() as tmpdir:
-            with patch.dict(os.environ, {}, clear=True):
+            with patch.dict(os.environ, {"EUIPO_BACKEND": "tmview"}, clear=True):
                 fetcher = EUIPOTrademarksFetcher(data_dir=tmpdir)
             result = fetcher.fetch(days_back=30, max_records=10000)
 
@@ -274,7 +273,7 @@ class TestEUIPOFetchTMview:
         )
 
         with tempfile.TemporaryDirectory() as tmpdir:
-            with patch.dict(os.environ, {}, clear=True):
+            with patch.dict(os.environ, {"EUIPO_BACKEND": "tmview"}, clear=True):
                 fetcher = EUIPOTrademarksFetcher(data_dir=tmpdir)
             result = fetcher.fetch(days_back=7)
 
@@ -294,7 +293,7 @@ class TestEUIPOFetchIBMGateway:
         # OAuth token
         responses.add(
             responses.POST,
-            "https://auth.euipo.europa.eu/oidc/accessToken",
+            "https://euipo.europa.eu/cas-server-webapp/oidc/accessToken",
             json=IBM_TOKEN_RESPONSE,
             status=200,
         )
