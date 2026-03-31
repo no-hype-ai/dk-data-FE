@@ -38,7 +38,7 @@ matched_hospitals AS (
                 h._loaded_at DESC
         ) AS match_rank
     FROM acc_tvc c
-    JOIN hcs_raw.cms_hospital_general_info h ON (
+    JOIN hcs_bronze.cms_hospital_general_info h ON (
         UPPER(c.state) = UPPER(h.state)
         AND (
             UPPER(c.city) = UPPER(h.city_town)

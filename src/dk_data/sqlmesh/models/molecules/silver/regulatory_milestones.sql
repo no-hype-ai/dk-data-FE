@@ -51,10 +51,9 @@ SELECT
     d.first_approval_date,
     -- Derive application type from prefix
     CASE
-        WHEN d.application_number ILIKE 'NDA%' THEN 'NDA'
+        WHEN d.application_number ILIKE 'NDA%'  THEN 'NDA'
         WHEN d.application_number ILIKE 'ANDA%' THEN 'ANDA'
-        WHEN d.application_number ILIKE 'BLA%' THEN 'BLA'
-        WHEN d.application_number ILIKE 'NDA%' THEN 'NDA'
+        WHEN d.application_number ILIKE 'BLA%'  THEN 'BLA'
         ELSE SPLIT_PART(d.application_number, ' ', 1)
     END                                                 AS application_type,
     d.products,

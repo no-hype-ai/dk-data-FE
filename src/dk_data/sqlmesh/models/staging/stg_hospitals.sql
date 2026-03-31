@@ -53,7 +53,7 @@ WITH hospital_base AS (
             PARTITION BY facility_id
             ORDER BY _loaded_at DESC
         ) AS cms_overall_rating
-    FROM hcs_raw.cms_hospital_general_info
+    FROM hcs_bronze.cms_hospital_general_info
     WHERE facility_id IS NOT NULL
       AND state IS NOT NULL
       AND LENGTH(facility_id) = 6
@@ -67,7 +67,7 @@ cost_report_beds AS (
     SELECT
         provider_id,
         total_beds
-    FROM hcs_raw.cms_cost_reports_puf
+    FROM hcs_bronze.cms_cost_reports_puf
     WHERE total_beds IS NOT NULL
     QUALIFY ROW_NUMBER() OVER (
         PARTITION BY provider_id

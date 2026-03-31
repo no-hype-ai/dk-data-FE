@@ -974,11 +974,12 @@ SOURCES = {
     },
     'cms_ddinter': {
         'name': 'CMS DDInter Drug-Drug Interactions',
-        'description': 'CMS drug-drug interaction data from DDInter database',
+        'description': 'CMS drug-drug interaction data from DDInter database (ddinter.scbdd.com)',
         'fetcher': CMSDDInterFetcher,
         'loader': load_cms_ddinter_data,
         'requires_file': False,
         'default_days_back': None,
+        'enabled': False,   # ddinter.scbdd.com inaccessible — Chinese host, blocked in prod
     },
     'chembl_molecules': {
         'name': 'ChEMBL Molecules',
@@ -1182,6 +1183,11 @@ def run_ingestion(source: str, **kwargs) -> dict:
 
     source_info = SOURCES[source]
     meta_source = _meta_name(source)
+    _t0 = time.monotonic()
+
+    if not source_info.get('enabled', True):
+        logger.info("Skipping disabled source: %s (%s)", source, source_info.get('description', ''))
+        return {'status': 'skipped', 'source': source, 'reason': 'disabled'}
 
     logger.info(f"Starting ingestion for {source_info['name']}")
 
@@ -1201,6 +1207,10 @@ def run_ingestion(source: str, **kwargs) -> dict:
 
         # Compute incremental days_back from last successful refresh.
         # --days-back CLI override bypasses the computed window (for manual backfills).
+        # kwargs consumed by run_ingestion itself — never forwarded to fetcher.fetch()
+        _INTERNAL_KWARGS = {'data_dir', 'filepath', 'fiscal_year', 'source_override',
+                            'days_back', 'max_records'}
+
         fetch_kwargs = {}
         if kwargs.get('days_back') is not None:
             # Explicit override: use the caller-specified window regardless of state.
@@ -1212,6 +1222,11 @@ def run_ingestion(source: str, **kwargs) -> dict:
             fetch_kwargs['days_back'] = days_back
         if kwargs.get('max_records') is not None:
             fetch_kwargs['max_records'] = kwargs['max_records']
+        # Pass through any source-specific kwargs (full_backfill, query, max_results,
+        # max_entries, years, etc.) from BACKFILL_SOURCE_KWARGS or CLI overrides.
+        for _k, _v in kwargs.items():
+            if _k not in _INTERNAL_KWARGS:
+                fetch_kwargs[_k] = _v
 
         fetch_result = fetcher.fetch(**fetch_kwargs)
 
@@ -1318,6 +1333,18 @@ def run_ingestion(source: str, **kwargs) -> dict:
 
     # Log to meta
     log_to_meta(meta_source, result)
+
+    # Emit Prometheus metrics for CLI and CronJob runs (initial_backfill.py also emits
+    # per-source metrics from _fetch_one; these cover direct run_ingestion() callers).
+    _elapsed = time.monotonic() - _t0
+    _records = result.get('records_inserted', result.get('records_fetched', 0)) or 0
+    _job = f'ingestion_{source}'
+    record_job_duration(_job, _elapsed)
+    record_job_records(_job, _records)
+    if result.get('status') not in ('success', 'partial'):
+        increment_job_failure(_job)
+    else:
+        mark_job_success(_job)
 
     return result
 

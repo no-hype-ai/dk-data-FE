@@ -15,7 +15,7 @@ WITH hospital_counties AS (
         facility_id AS hospital_id,
         state,
         county_parish AS county_name
-    FROM hcs_raw.cms_hospital_general_info
+    FROM hcs_bronze.cms_hospital_general_info
     WHERE facility_id IS NOT NULL
       AND county_parish IS NOT NULL
 ),
@@ -40,7 +40,7 @@ hpsa_by_county AS (
         MAX(hpsa_score) AS hpsa_score,
         -- Rural status (take most common)
         MODE() WITHIN GROUP (ORDER BY rural_status) AS rural_status
-    FROM hcs_raw.hrsa_shortage_areas
+    FROM hcs_bronze.hrsa
     WHERE state_abbr IS NOT NULL
       AND county_name IS NOT NULL
       AND county_name != ''

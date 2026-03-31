@@ -1,0 +1,362 @@
+{
+  "id": null,
+  "uid": "dk-sqlmesh-lineage",
+  "title": "SQLMesh Model Lineage DAG",
+  "description": "Dependency graphs for all SQLMesh models by domain and subdomain. Data from meta.model_lineage, populated by build_model_lineage.py.",
+  "tags": ["dk-data", "sqlmesh", "lineage", "dag"],
+  "timezone": "browser",
+  "schemaVersion": 38,
+  "version": 1,
+  "refresh": false,
+  "time": {"from": "now-1h", "to": "now"},
+  "panels": [
+    {
+      "id": 1,
+      "title": "MOL Domain",
+      "type": "row",
+      "gridPos": {"h": 1, "w": 24, "x": 0, "y": 0},
+      "collapsed": false
+    },
+    {
+      "id": 10,
+      "title": "mol — Molecule Core (chemistry · drugbank · binding)",
+      "description": "Molecule identity, chemistry properties, binding affinities, bioactivity data. Schemas: mol_raw → mol_bronze → mol_silver → mol_gold.",
+      "type": "nodeGraph",
+      "datasource": {"type": "postgres", "uid": "postgres"},
+      "gridPos": {"h": 14, "w": 12, "x": 0, "y": 1},
+      "options": {
+        "nodes": {},
+        "edges": {}
+      },
+      "targets": [
+        {
+          "refId": "nodes",
+          "rawQuery": true,
+          "format": "table",
+          "rawSql": "WITH all_nodes AS (\n  SELECT source_model AS model_name, source_layer AS layer FROM meta.model_lineage WHERE domain = 'mol' AND subdomain = 'mol-molecule-core'\n  UNION\n  SELECT target_model, target_layer FROM meta.model_lineage WHERE domain = 'mol' AND subdomain = 'mol-molecule-core'\n)\nSELECT DISTINCT\n  model_name AS id,\n  SPLIT_PART(model_name, '.', 2) AS title,\n  SPLIT_PART(model_name, '.', 1) AS subtitle,\n  layer AS mainStat,\n  CASE WHEN layer IN ('raw','external') THEN 1.0 ELSE 0.0 END AS \"arc__raw\",\n  CASE WHEN layer = 'bronze' THEN 1.0 ELSE 0.0 END AS \"arc__bronze\",\n  CASE WHEN layer = 'silver' THEN 1.0 ELSE 0.0 END AS \"arc__silver\",\n  CASE WHEN layer = 'gold' THEN 1.0 ELSE 0.0 END AS \"arc__gold\"\nFROM all_nodes\nORDER BY layer, model_name"
+        },
+        {
+          "refId": "edges",
+          "rawQuery": true,
+          "format": "table",
+          "rawSql": "SELECT\n  source_model || '__' || target_model AS id,\n  source_model AS source,\n  target_model AS target\nFROM meta.model_lineage\nWHERE domain = 'mol' AND subdomain = 'mol-molecule-core'"
+        }
+      ]
+    },
+    {
+      "id": 11,
+      "title": "mol — Clinical & FDA (trials · approvals · labels · EMA)",
+      "description": "Clinical trials, FDA drug approvals, drug labels, EMA regulatory data, CDC vaccines, Cochrane reviews.",
+      "type": "nodeGraph",
+      "datasource": {"type": "postgres", "uid": "postgres"},
+      "gridPos": {"h": 14, "w": 12, "x": 12, "y": 1},
+      "options": {
+        "nodes": {},
+        "edges": {}
+      },
+      "targets": [
+        {
+          "refId": "nodes",
+          "rawQuery": true,
+          "format": "table",
+          "rawSql": "WITH all_nodes AS (\n  SELECT source_model AS model_name, source_layer AS layer FROM meta.model_lineage WHERE domain = 'mol' AND subdomain = 'mol-clinical-fda'\n  UNION\n  SELECT target_model, target_layer FROM meta.model_lineage WHERE domain = 'mol' AND subdomain = 'mol-clinical-fda'\n)\nSELECT DISTINCT\n  model_name AS id,\n  SPLIT_PART(model_name, '.', 2) AS title,\n  SPLIT_PART(model_name, '.', 1) AS subtitle,\n  layer AS mainStat,\n  CASE WHEN layer IN ('raw','external') THEN 1.0 ELSE 0.0 END AS \"arc__raw\",\n  CASE WHEN layer = 'bronze' THEN 1.0 ELSE 0.0 END AS \"arc__bronze\",\n  CASE WHEN layer = 'silver' THEN 1.0 ELSE 0.0 END AS \"arc__silver\",\n  CASE WHEN layer = 'gold' THEN 1.0 ELSE 0.0 END AS \"arc__gold\"\nFROM all_nodes\nORDER BY layer, model_name"
+        },
+        {
+          "refId": "edges",
+          "rawQuery": true,
+          "format": "table",
+          "rawSql": "SELECT\n  source_model || '__' || target_model AS id,\n  source_model AS source,\n  target_model AS target\nFROM meta.model_lineage\nWHERE domain = 'mol' AND subdomain = 'mol-clinical-fda'"
+        }
+      ]
+    },
+    {
+      "id": 12,
+      "title": "mol — Literature (EuropePMC · NIH Reporter · publications)",
+      "description": "Scientific literature: EuropePMC publications, NIH-funded research, publication evidence extraction.",
+      "type": "nodeGraph",
+      "datasource": {"type": "postgres", "uid": "postgres"},
+      "gridPos": {"h": 14, "w": 12, "x": 0, "y": 15},
+      "options": {
+        "nodes": {},
+        "edges": {}
+      },
+      "targets": [
+        {
+          "refId": "nodes",
+          "rawQuery": true,
+          "format": "table",
+          "rawSql": "WITH all_nodes AS (\n  SELECT source_model AS model_name, source_layer AS layer FROM meta.model_lineage WHERE domain = 'mol' AND subdomain = 'mol-literature'\n  UNION\n  SELECT target_model, target_layer FROM meta.model_lineage WHERE domain = 'mol' AND subdomain = 'mol-literature'\n)\nSELECT DISTINCT\n  model_name AS id,\n  SPLIT_PART(model_name, '.', 2) AS title,\n  SPLIT_PART(model_name, '.', 1) AS subtitle,\n  layer AS mainStat,\n  CASE WHEN layer IN ('raw','external') THEN 1.0 ELSE 0.0 END AS \"arc__raw\",\n  CASE WHEN layer = 'bronze' THEN 1.0 ELSE 0.0 END AS \"arc__bronze\",\n  CASE WHEN layer = 'silver' THEN 1.0 ELSE 0.0 END AS \"arc__silver\",\n  CASE WHEN layer = 'gold' THEN 1.0 ELSE 0.0 END AS \"arc__gold\"\nFROM all_nodes\nORDER BY layer, model_name"
+        },
+        {
+          "refId": "edges",
+          "rawQuery": true,
+          "format": "table",
+          "rawSql": "SELECT\n  source_model || '__' || target_model AS id,\n  source_model AS source,\n  target_model AS target\nFROM meta.model_lineage\nWHERE domain = 'mol' AND subdomain = 'mol-literature'"
+        }
+      ]
+    },
+    {
+      "id": 13,
+      "title": "mol — IP & Regulatory (patents · trademarks · financials · pipeline)",
+      "description": "Intellectual property: EPO patents, EUIPO trademarks & designs. Company financials, pipeline tracking.",
+      "type": "nodeGraph",
+      "datasource": {"type": "postgres", "uid": "postgres"},
+      "gridPos": {"h": 14, "w": 12, "x": 12, "y": 15},
+      "options": {
+        "nodes": {},
+        "edges": {}
+      },
+      "targets": [
+        {
+          "refId": "nodes",
+          "rawQuery": true,
+          "format": "table",
+          "rawSql": "WITH all_nodes AS (\n  SELECT source_model AS model_name, source_layer AS layer FROM meta.model_lineage WHERE domain = 'mol' AND subdomain = 'mol-ip-regulatory'\n  UNION\n  SELECT target_model, target_layer FROM meta.model_lineage WHERE domain = 'mol' AND subdomain = 'mol-ip-regulatory'\n)\nSELECT DISTINCT\n  model_name AS id,\n  SPLIT_PART(model_name, '.', 2) AS title,\n  SPLIT_PART(model_name, '.', 1) AS subtitle,\n  layer AS mainStat,\n  CASE WHEN layer IN ('raw','external') THEN 1.0 ELSE 0.0 END AS \"arc__raw\",\n  CASE WHEN layer = 'bronze' THEN 1.0 ELSE 0.0 END AS \"arc__bronze\",\n  CASE WHEN layer = 'silver' THEN 1.0 ELSE 0.0 END AS \"arc__silver\",\n  CASE WHEN layer = 'gold' THEN 1.0 ELSE 0.0 END AS \"arc__gold\"\nFROM all_nodes\nORDER BY layer, model_name"
+        },
+        {
+          "refId": "edges",
+          "rawQuery": true,
+          "format": "table",
+          "rawSql": "SELECT\n  source_model || '__' || target_model AS id,\n  source_model AS source,\n  target_model AS target\nFROM meta.model_lineage\nWHERE domain = 'mol' AND subdomain = 'mol-ip-regulatory'"
+        }
+      ]
+    },
+    {
+      "id": 14,
+      "title": "mol — Safety & Pharma Market (FAERS · signals · spending · KOLs)",
+      "description": "Drug safety signals (FAERS), adverse events, drug market spending, competitive landscape, KOL networks.",
+      "type": "nodeGraph",
+      "datasource": {"type": "postgres", "uid": "postgres"},
+      "gridPos": {"h": 14, "w": 24, "x": 0, "y": 29},
+      "options": {
+        "nodes": {},
+        "edges": {}
+      },
+      "targets": [
+        {
+          "refId": "nodes",
+          "rawQuery": true,
+          "format": "table",
+          "rawSql": "WITH all_nodes AS (\n  SELECT source_model AS model_name, source_layer AS layer FROM meta.model_lineage WHERE domain = 'mol' AND subdomain = 'mol-safety-pharma'\n  UNION\n  SELECT target_model, target_layer FROM meta.model_lineage WHERE domain = 'mol' AND subdomain = 'mol-safety-pharma'\n)\nSELECT DISTINCT\n  model_name AS id,\n  SPLIT_PART(model_name, '.', 2) AS title,\n  SPLIT_PART(model_name, '.', 1) AS subtitle,\n  layer AS mainStat,\n  CASE WHEN layer IN ('raw','external') THEN 1.0 ELSE 0.0 END AS \"arc__raw\",\n  CASE WHEN layer = 'bronze' THEN 1.0 ELSE 0.0 END AS \"arc__bronze\",\n  CASE WHEN layer = 'silver' THEN 1.0 ELSE 0.0 END AS \"arc__silver\",\n  CASE WHEN layer = 'gold' THEN 1.0 ELSE 0.0 END AS \"arc__gold\"\nFROM all_nodes\nORDER BY layer, model_name"
+        },
+        {
+          "refId": "edges",
+          "rawQuery": true,
+          "format": "table",
+          "rawSql": "SELECT\n  source_model || '__' || target_model AS id,\n  source_model AS source,\n  target_model AS target\nFROM meta.model_lineage\nWHERE domain = 'mol' AND subdomain = 'mol-safety-pharma'"
+        }
+      ]
+    },
+    {
+      "id": 2,
+      "title": "HCS Domain",
+      "type": "row",
+      "gridPos": {"h": 1, "w": 24, "x": 0, "y": 43},
+      "collapsed": false
+    },
+    {
+      "id": 20,
+      "title": "hcs — Spending & Utilization (PUF · Part B/D · cost reports · open payments)",
+      "description": "CMS spending data: Inpatient/Outpatient/Physician PUF, Part B/D drug spending, cost reports, open payments, utilization, geographic variation.",
+      "type": "nodeGraph",
+      "datasource": {"type": "postgres", "uid": "postgres"},
+      "gridPos": {"h": 16, "w": 24, "x": 0, "y": 44},
+      "options": {
+        "nodes": {},
+        "edges": {}
+      },
+      "targets": [
+        {
+          "refId": "nodes",
+          "rawQuery": true,
+          "format": "table",
+          "rawSql": "WITH all_nodes AS (\n  SELECT source_model AS model_name, source_layer AS layer FROM meta.model_lineage WHERE domain = 'hcs' AND subdomain = 'hcs-spending'\n  UNION\n  SELECT target_model, target_layer FROM meta.model_lineage WHERE domain = 'hcs' AND subdomain = 'hcs-spending'\n)\nSELECT DISTINCT\n  model_name AS id,\n  SPLIT_PART(model_name, '.', 2) AS title,\n  SPLIT_PART(model_name, '.', 1) AS subtitle,\n  layer AS mainStat,\n  CASE WHEN layer IN ('raw','external') THEN 1.0 ELSE 0.0 END AS \"arc__raw\",\n  CASE WHEN layer = 'bronze' THEN 1.0 ELSE 0.0 END AS \"arc__bronze\",\n  CASE WHEN layer = 'silver' THEN 1.0 ELSE 0.0 END AS \"arc__silver\",\n  CASE WHEN layer = 'gold' THEN 1.0 ELSE 0.0 END AS \"arc__gold\"\nFROM all_nodes\nORDER BY layer, model_name"
+        },
+        {
+          "refId": "edges",
+          "rawQuery": true,
+          "format": "table",
+          "rawSql": "SELECT\n  source_model || '__' || target_model AS id,\n  source_model AS source,\n  target_model AS target\nFROM meta.model_lineage\nWHERE domain = 'hcs' AND subdomain = 'hcs-spending'"
+        }
+      ]
+    },
+    {
+      "id": 21,
+      "title": "hcs — Provider Directory (NPPES · ordering/referring · physicians · Part D prescribing)",
+      "description": "Provider identity and credentialing: NPPES NPI registry, ordering/referring providers, physician PUF, Part D prescribing, NUCC taxonomy, geographic health.",
+      "type": "nodeGraph",
+      "datasource": {"type": "postgres", "uid": "postgres"},
+      "gridPos": {"h": 14, "w": 12, "x": 0, "y": 60},
+      "options": {
+        "nodes": {},
+        "edges": {}
+      },
+      "targets": [
+        {
+          "refId": "nodes",
+          "rawQuery": true,
+          "format": "table",
+          "rawSql": "WITH all_nodes AS (\n  SELECT source_model AS model_name, source_layer AS layer FROM meta.model_lineage WHERE domain = 'hcs' AND subdomain = 'hcs-provider'\n  UNION\n  SELECT target_model, target_layer FROM meta.model_lineage WHERE domain = 'hcs' AND subdomain = 'hcs-provider'\n)\nSELECT DISTINCT\n  model_name AS id,\n  SPLIT_PART(model_name, '.', 2) AS title,\n  SPLIT_PART(model_name, '.', 1) AS subtitle,\n  layer AS mainStat,\n  CASE WHEN layer IN ('raw','external') THEN 1.0 ELSE 0.0 END AS \"arc__raw\",\n  CASE WHEN layer = 'bronze' THEN 1.0 ELSE 0.0 END AS \"arc__bronze\",\n  CASE WHEN layer = 'silver' THEN 1.0 ELSE 0.0 END AS \"arc__silver\",\n  CASE WHEN layer = 'gold' THEN 1.0 ELSE 0.0 END AS \"arc__gold\"\nFROM all_nodes\nORDER BY layer, model_name"
+        },
+        {
+          "refId": "edges",
+          "rawQuery": true,
+          "format": "table",
+          "rawSql": "SELECT\n  source_model || '__' || target_model AS id,\n  source_model AS source,\n  target_model AS target\nFROM meta.model_lineage\nWHERE domain = 'hcs' AND subdomain = 'hcs-provider'"
+        }
+      ]
+    },
+    {
+      "id": 22,
+      "title": "hcs — Facility & Hospital (care compare · general info · cost reports · CHOW · POS)",
+      "description": "Hospital and facility data: Care Compare ratings, general hospital info, changes of ownership, Provider of Services, HCRIS, Magnet status, ACC TVC, SNF, home health, hospice.",
+      "type": "nodeGraph",
+      "datasource": {"type": "postgres", "uid": "postgres"},
+      "gridPos": {"h": 14, "w": 12, "x": 12, "y": 60},
+      "options": {
+        "nodes": {},
+        "edges": {}
+      },
+      "targets": [
+        {
+          "refId": "nodes",
+          "rawQuery": true,
+          "format": "table",
+          "rawSql": "WITH all_nodes AS (\n  SELECT source_model AS model_name, source_layer AS layer FROM meta.model_lineage WHERE domain = 'hcs' AND subdomain = 'hcs-facility'\n  UNION\n  SELECT target_model, target_layer FROM meta.model_lineage WHERE domain = 'hcs' AND subdomain = 'hcs-facility'\n)\nSELECT DISTINCT\n  model_name AS id,\n  SPLIT_PART(model_name, '.', 2) AS title,\n  SPLIT_PART(model_name, '.', 1) AS subtitle,\n  layer AS mainStat,\n  CASE WHEN layer IN ('raw','external') THEN 1.0 ELSE 0.0 END AS \"arc__raw\",\n  CASE WHEN layer = 'bronze' THEN 1.0 ELSE 0.0 END AS \"arc__bronze\",\n  CASE WHEN layer = 'silver' THEN 1.0 ELSE 0.0 END AS \"arc__silver\",\n  CASE WHEN layer = 'gold' THEN 1.0 ELSE 0.0 END AS \"arc__gold\"\nFROM all_nodes\nORDER BY layer, model_name"
+        },
+        {
+          "refId": "edges",
+          "rawQuery": true,
+          "format": "table",
+          "rawSql": "SELECT\n  source_model || '__' || target_model AS id,\n  source_model AS source,\n  target_model AS target\nFROM meta.model_lineage\nWHERE domain = 'hcs' AND subdomain = 'hcs-facility'"
+        }
+      ]
+    },
+    {
+      "id": 3,
+      "title": "IND Domain",
+      "type": "row",
+      "gridPos": {"h": 1, "w": 24, "x": 0, "y": 74},
+      "collapsed": false
+    },
+    {
+      "id": 30,
+      "title": "ind — Indication Catalog (ICD-11 · ontology · indication catalog)",
+      "description": "Disease indication ontology: ICD-11 codes, ICD-11 hierarchical ontology, indication catalog linking indications to molecules.",
+      "type": "nodeGraph",
+      "datasource": {"type": "postgres", "uid": "postgres"},
+      "gridPos": {"h": 14, "w": 24, "x": 0, "y": 75},
+      "options": {
+        "nodes": {},
+        "edges": {}
+      },
+      "targets": [
+        {
+          "refId": "nodes",
+          "rawQuery": true,
+          "format": "table",
+          "rawSql": "WITH all_nodes AS (\n  SELECT source_model AS model_name, source_layer AS layer FROM meta.model_lineage WHERE domain = 'ind'\n  UNION\n  SELECT target_model, target_layer FROM meta.model_lineage WHERE domain = 'ind'\n)\nSELECT DISTINCT\n  model_name AS id,\n  SPLIT_PART(model_name, '.', 2) AS title,\n  SPLIT_PART(model_name, '.', 1) AS subtitle,\n  layer AS mainStat,\n  CASE WHEN layer IN ('raw','external') THEN 1.0 ELSE 0.0 END AS \"arc__raw\",\n  CASE WHEN layer = 'bronze' THEN 1.0 ELSE 0.0 END AS \"arc__bronze\",\n  CASE WHEN layer = 'silver' THEN 1.0 ELSE 0.0 END AS \"arc__silver\",\n  CASE WHEN layer = 'gold' THEN 1.0 ELSE 0.0 END AS \"arc__gold\"\nFROM all_nodes\nORDER BY layer, model_name"
+        },
+        {
+          "refId": "edges",
+          "rawQuery": true,
+          "format": "table",
+          "rawSql": "SELECT\n  source_model || '__' || target_model AS id,\n  source_model AS source,\n  target_model AS target\nFROM meta.model_lineage\nWHERE domain = 'ind'"
+        }
+      ]
+    },
+    {
+      "id": 4,
+      "title": "Stats",
+      "type": "row",
+      "gridPos": {"h": 1, "w": 24, "x": 0, "y": 89},
+      "collapsed": false
+    },
+    {
+      "id": 40,
+      "title": "Total Lineage Edges",
+      "type": "stat",
+      "datasource": {"type": "postgres", "uid": "postgres"},
+      "gridPos": {"h": 3, "w": 4, "x": 0, "y": 90},
+      "options": {"colorMode": "value", "graphMode": "none", "reduceOptions": {"calcs": ["lastNotNull"]}},
+      "fieldConfig": {"defaults": {"color": {"mode": "fixed", "fixedColor": "blue"}, "unit": "short"}},
+      "targets": [{"rawSql": "SELECT COUNT(*) FROM meta.model_lineage", "format": "table", "rawQuery": true, "refId": "A"}]
+    },
+    {
+      "id": 41,
+      "title": "mol Edges",
+      "type": "stat",
+      "datasource": {"type": "postgres", "uid": "postgres"},
+      "gridPos": {"h": 3, "w": 4, "x": 4, "y": 90},
+      "options": {"colorMode": "value", "graphMode": "none", "reduceOptions": {"calcs": ["lastNotNull"]}},
+      "fieldConfig": {"defaults": {"color": {"mode": "fixed", "fixedColor": "#6e40c9"}, "unit": "short"}},
+      "targets": [{"rawSql": "SELECT COUNT(*) FROM meta.model_lineage WHERE domain = 'mol'", "format": "table", "rawQuery": true, "refId": "A"}]
+    },
+    {
+      "id": 42,
+      "title": "hcs Edges",
+      "type": "stat",
+      "datasource": {"type": "postgres", "uid": "postgres"},
+      "gridPos": {"h": 3, "w": 4, "x": 8, "y": 90},
+      "options": {"colorMode": "value", "graphMode": "none", "reduceOptions": {"calcs": ["lastNotNull"]}},
+      "fieldConfig": {"defaults": {"color": {"mode": "fixed", "fixedColor": "#c47d15"}, "unit": "short"}},
+      "targets": [{"rawSql": "SELECT COUNT(*) FROM meta.model_lineage WHERE domain = 'hcs'", "format": "table", "rawQuery": true, "refId": "A"}]
+    },
+    {
+      "id": 43,
+      "title": "ind Edges",
+      "type": "stat",
+      "datasource": {"type": "postgres", "uid": "postgres"},
+      "gridPos": {"h": 3, "w": 4, "x": 12, "y": 90},
+      "options": {"colorMode": "value", "graphMode": "none", "reduceOptions": {"calcs": ["lastNotNull"]}},
+      "fieldConfig": {"defaults": {"color": {"mode": "fixed", "fixedColor": "#299c46"}, "unit": "short"}},
+      "targets": [{"rawSql": "SELECT COUNT(*) FROM meta.model_lineage WHERE domain = 'ind'", "format": "table", "rawQuery": true, "refId": "A"}]
+    },
+    {
+      "id": 44,
+      "title": "Last Rebuilt",
+      "type": "stat",
+      "datasource": {"type": "postgres", "uid": "postgres"},
+      "gridPos": {"h": 3, "w": 8, "x": 16, "y": 90},
+      "options": {"colorMode": "value", "graphMode": "none", "reduceOptions": {"calcs": ["lastNotNull"]}},
+      "fieldConfig": {"defaults": {"color": {"mode": "fixed", "fixedColor": "text"}, "unit": "dateTimeFromNow"}},
+      "targets": [{"rawSql": "SELECT EXTRACT(EPOCH FROM MAX(updated_at)) * 1000 FROM meta.model_lineage", "format": "table", "rawQuery": true, "refId": "A"}]
+    },
+    {
+      "id": 45,
+      "title": "Edges by Subdomain",
+      "type": "bargauge",
+      "datasource": {"type": "postgres", "uid": "postgres"},
+      "gridPos": {"h": 10, "w": 24, "x": 0, "y": 93},
+      "options": {
+        "orientation": "horizontal",
+        "reduceOptions": {"calcs": ["lastNotNull"]},
+        "displayMode": "gradient"
+      },
+      "fieldConfig": {
+        "defaults": {"color": {"mode": "palette-classic"}, "unit": "short"},
+        "overrides": []
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "rawQuery": true,
+          "format": "table",
+          "rawSql": "SELECT subdomain, COUNT(*) AS edges FROM meta.model_lineage GROUP BY subdomain ORDER BY edges DESC"
+        }
+      ]
+    }
+  ],
+  "annotations": {
+    "list": []
+  },
+  "links": [
+    {
+      "title": "SQLMesh Transformations",
+      "url": "/d/dk-sqlmesh-transforms",
+      "type": "link",
+      "targetBlank": false,
+      "icon": "external link"
+    }
+  ]
+}

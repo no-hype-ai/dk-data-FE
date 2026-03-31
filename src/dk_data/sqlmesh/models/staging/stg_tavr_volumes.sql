@@ -19,7 +19,7 @@ SELECT
     average_covered_charges AS average_charges,
     average_medicare_payments AS average_medicare_payment,
     NOW() AS _updated_at
-FROM hcs_raw.cms_inpatient_puf
+FROM hcs_bronze.cms_inpatient_puf
 WHERE drg_cd IN ('266', '267')  -- TAVR DRG codes
   AND provider_id IS NOT NULL
   AND total_discharges > 0

@@ -4,7 +4,7 @@ MODEL (
     unique_key (provider_id, source)
   ),
   grain (provider_id, source),
-  audits (not_null(columns := [provider_id, source])),
+  audits (not_null(columns := (provider_id, source))),
   description 'Healthcare facility master record combining CMS inpatient, hospital info, cost reports, ACC TVC, and HRSA shortage areas'
 );
 

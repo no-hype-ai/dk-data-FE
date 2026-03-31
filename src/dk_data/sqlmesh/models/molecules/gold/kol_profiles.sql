@@ -62,14 +62,14 @@ pub_counts AS (
     GROUP BY LOWER(TRIM(p.first_author_name))
 ),
 
--- Clinical trial involvement counts, matched by lead_sponsor_name
+-- Clinical trial involvement counts, matched by lead_sponsor
+-- (mol_silver.clinical_trials aliases lead_sponsor_name → lead_sponsor)
 trial_counts AS (
     SELECT
         r.id AS researcher_id,
         COUNT(DISTINCT ct.nct_id) AS trial_count
     FROM mol_silver.researchers r
     JOIN mol_silver.clinical_trials ct
-        -- mol_silver.clinical_trials column is lead_sponsor_name (not lead_sponsor)
         ON ct.lead_sponsor ILIKE '%' || r.family_name || '%'
     GROUP BY r.id
 ),

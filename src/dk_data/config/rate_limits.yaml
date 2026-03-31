@@ -181,3 +181,383 @@ sources:
     requests_per_second: 5     # HRSA: separate registration + web token
     timeout_seconds: 30
     burst_limit: 10
+
+  # =========================================================================
+  # Previously missing sources — added to resolve issue #172 S10
+  # =========================================================================
+
+  # --- Literature & bioactivity ---
+  europepmc:
+    requests_per_second: 1     # Europe PMC REST: documented 1 req/s for unauthenticated
+    timeout_seconds: 30
+    burst_limit: 3
+
+  nih_reporter:
+    requests_per_second: 3     # NIH Reporter API: 3 req/s without key, 10 with NCBI_API_KEY
+    timeout_seconds: 30
+    burst_limit: 5
+
+  bindingdb:
+    requests_per_second: 3     # BindingDB REST: no documented limit; conservative 3/s
+    timeout_seconds: 45
+    burst_limit: 5
+
+  dailymed:
+    requests_per_second: 3     # NLM DailyMed: sister of PubMed; NCBI fair-use 3/s
+    timeout_seconds: 30
+    burst_limit: 5
+
+  rxnorm:
+    requests_per_second: 20    # NLM RxNorm REST: no strict cap; 20/s generous
+    timeout_seconds: 30
+    burst_limit: 30
+
+  sider:
+    requests_per_second: 3     # SIDER: MySQL-backed API, be polite
+    timeout_seconds: 30
+    burst_limit: 5
+
+  pharmgkb:
+    requests_per_second: 5     # PharmGKB REST: no documented cap
+    timeout_seconds: 30
+    burst_limit: 10
+
+  imgt:
+    requests_per_second: 3     # IMGT: no formal API; conservative
+    timeout_seconds: 30
+    burst_limit: 5
+
+  tdc_admet:
+    requests_per_second: 5     # TDC (therapeuticsdata.io): no documented cap
+    timeout_seconds: 30
+    burst_limit: 10
+
+  ttd:
+    requests_per_second: 3     # TTD (bidd.nus.edu.sg): small academic server; polite
+    timeout_seconds: 30
+    burst_limit: 5
+
+  kegg_drug:
+    requests_per_second: 3     # KEGG REST: documented 3 req/s
+    timeout_seconds: 30
+    burst_limit: 5
+
+  reactome:
+    requests_per_second: 5     # Reactome REST: no strict cap
+    timeout_seconds: 30
+    burst_limit: 10
+
+  # --- FDA / Regulatory ---
+  fda_drugs:
+    requests_per_second: 4     # OpenFDA shared limit (OPENFDA_API_KEY)
+    timeout_seconds: 30
+    burst_limit: 20
+
+  fda_ndc:
+    requests_per_second: 4     # OpenFDA shared limit
+    timeout_seconds: 30
+    burst_limit: 20
+
+  fda_rems:
+    requests_per_second: 4     # OpenFDA shared limit
+    timeout_seconds: 30
+    burst_limit: 20
+
+  purple_book:
+    requests_per_second: 4     # OpenFDA shared limit (FDA Purple Book endpoint)
+    timeout_seconds: 30
+    burst_limit: 20
+
+  nice_hta:
+    requests_per_second: 10    # NICE Evidence Search API: 600 req/min with API key
+    timeout_seconds: 30
+    burst_limit: 20
+
+  who_gho:
+    requests_per_second: 0.16  # WHO GHO REST: ~10 req/min documented; very slow API
+    timeout_seconds: 60
+    burst_limit: 2
+    max_retries: 5             # GHO has occasional 503s
+
+  who_inn:
+    requests_per_second: 5     # WHO INN data: no strict cap
+    timeout_seconds: 30
+    burst_limit: 10
+
+  # --- IP ---
+  euipo_designs:
+    requests_per_second: 5     # EUIPO TMview/EUIPO API: no documented cap
+    timeout_seconds: 30
+    burst_limit: 10
+
+  uspto_ci:
+    requests_per_second: 5     # USPTO PatentsView: no strict cap; 10 req/s observed safe
+    timeout_seconds: 30
+    burst_limit: 10
+
+  epo_ops:
+    requests_per_second: 3     # EPO OPS: registered users get 3 req/s; throttle header present
+    timeout_seconds: 30
+    burst_limit: 5
+
+  # --- CMS facility/provider (data.cms.gov) ---
+  # All share the same host; individual limits here for completeness.
+  # Concurrency is further capped by the 'cms' semaphore in initial_backfill.py.
+  cms_coverage:
+    requests_per_second: 5
+    timeout_seconds: 30
+    burst_limit: 10
+
+  cms_care_compare:
+    requests_per_second: 5
+    timeout_seconds: 30
+    burst_limit: 10
+
+  cms_chow:
+    requests_per_second: 5
+    timeout_seconds: 30
+    burst_limit: 10
+
+  cms_chronic_conditions:
+    requests_per_second: 5
+    timeout_seconds: 60        # Large annual PUF file
+    burst_limit: 10
+
+  cms_claim_type_puf:
+    requests_per_second: 5
+    timeout_seconds: 60
+    burst_limit: 10
+
+  cms_cost_reports_puf:
+    requests_per_second: 5
+    timeout_seconds: 60
+    burst_limit: 10
+
+  cms_cost_reports_puf_lines:
+    requests_per_second: 5
+    timeout_seconds: 60
+    burst_limit: 10
+
+  cms_dme_puf:
+    requests_per_second: 5
+    timeout_seconds: 60
+    burst_limit: 10
+
+  cms_dmepos:
+    requests_per_second: 5
+    timeout_seconds: 30
+    burst_limit: 10
+
+  cms_dual_eligible:
+    requests_per_second: 5
+    timeout_seconds: 60
+    burst_limit: 10
+
+  cms_enrollment_puf:
+    requests_per_second: 5
+    timeout_seconds: 60
+    burst_limit: 10
+
+  cms_formulary:
+    requests_per_second: 5
+    timeout_seconds: 30
+    burst_limit: 10
+
+  cms_geographic_variation:
+    requests_per_second: 5
+    timeout_seconds: 60
+    burst_limit: 10
+
+  cms_home_health:
+    requests_per_second: 5
+    timeout_seconds: 60
+    burst_limit: 10
+
+  cms_hospice_puf:
+    requests_per_second: 5
+    timeout_seconds: 60
+    burst_limit: 10
+
+  cms_hospital_affiliation:
+    requests_per_second: 5
+    timeout_seconds: 30
+    burst_limit: 10
+
+  cms_hospital_general_info:
+    requests_per_second: 5
+    timeout_seconds: 30
+    burst_limit: 10
+
+  cms_hospital_quality:
+    requests_per_second: 5
+    timeout_seconds: 30
+    burst_limit: 10
+
+  cms_imaging_puf:
+    requests_per_second: 5
+    timeout_seconds: 60
+    burst_limit: 10
+
+  cms_inpatient_puf:
+    requests_per_second: 5
+    timeout_seconds: 60
+    burst_limit: 10
+
+  cms_lab_services:
+    requests_per_second: 5
+    timeout_seconds: 60
+    burst_limit: 10
+
+  cms_magnet:
+    requests_per_second: 5
+    timeout_seconds: 30
+    burst_limit: 10
+
+  cms_medicaid_drug_spending:
+    requests_per_second: 5
+    timeout_seconds: 60
+    burst_limit: 10
+
+  cms_medicare:
+    requests_per_second: 5
+    timeout_seconds: 60
+    burst_limit: 10
+
+  cms_medicare_advantage:
+    requests_per_second: 5
+    timeout_seconds: 60
+    burst_limit: 10
+
+  cms_mental_health_puf:
+    requests_per_second: 5
+    timeout_seconds: 60
+    burst_limit: 10
+
+  cms_ndc:
+    requests_per_second: 5
+    timeout_seconds: 30
+    burst_limit: 10
+
+  cms_nppes:
+    requests_per_second: 5
+    timeout_seconds: 120       # NPPES bulk download ~1 GB
+    burst_limit: 5
+    max_retries: 5
+
+  cms_nucc:
+    requests_per_second: 5
+    timeout_seconds: 30
+    burst_limit: 10
+
+  cms_open_payments:
+    requests_per_second: 5
+    timeout_seconds: 60
+    burst_limit: 10
+
+  cms_opioid_puf:
+    requests_per_second: 5
+    timeout_seconds: 60
+    burst_limit: 10
+
+  cms_ordering_providers:
+    requests_per_second: 5
+    timeout_seconds: 60
+    burst_limit: 10
+
+  cms_outpatient_puf:
+    requests_per_second: 5
+    timeout_seconds: 60
+    burst_limit: 10
+
+  cms_part_b_spending:
+    requests_per_second: 5
+    timeout_seconds: 60
+    burst_limit: 10
+
+  cms_part_d_prescriber:
+    requests_per_second: 5
+    timeout_seconds: 60
+    burst_limit: 10
+
+  cms_part_d_spending:
+    requests_per_second: 5
+    timeout_seconds: 60
+    burst_limit: 10
+
+  cms_pecos:
+    requests_per_second: 5
+    timeout_seconds: 30
+    burst_limit: 10
+
+  cms_physician_puf:
+    requests_per_second: 5
+    timeout_seconds: 120       # Physician PUF is very large
+    burst_limit: 5
+    max_retries: 5
+
+  cms_physician_puf_services:
+    requests_per_second: 5
+    timeout_seconds: 120
+    burst_limit: 5
+    max_retries: 5
+
+  cms_pos:
+    requests_per_second: 5
+    timeout_seconds: 30
+    burst_limit: 10
+
+  cms_post_acute:
+    requests_per_second: 5
+    timeout_seconds: 30
+    burst_limit: 10
+
+  cms_rbcs:
+    requests_per_second: 5
+    timeout_seconds: 30
+    burst_limit: 10
+
+  cms_referring_providers:
+    requests_per_second: 5
+    timeout_seconds: 60
+    burst_limit: 10
+
+  cms_snf_puf:
+    requests_per_second: 5
+    timeout_seconds: 60
+    burst_limit: 10
+
+  cms_telehealth_puf:
+    requests_per_second: 5
+    timeout_seconds: 60
+    burst_limit: 10
+
+  cms_usp:
+    requests_per_second: 5
+    timeout_seconds: 30
+    burst_limit: 10
+
+  cms_utilization_puf:
+    requests_per_second: 5
+    timeout_seconds: 60
+    burst_limit: 10
+
+  # --- Other ---
+  chembl_molecules:
+    requests_per_second: 1     # ChEMBL REST: same limit as chembl; heavy source
+    timeout_seconds: 30
+    burst_limit: 3
+
+  chembl_activities:
+    requests_per_second: 1     # ChEMBL REST: same limit; very high volume
+    timeout_seconds: 30
+    burst_limit: 3
+
+  npi_registry:
+    requests_per_second: 10    # NPPES NPI Registry API: no strict cap
+    timeout_seconds: 60
+    burst_limit: 20
+
+  openalex_ci:
+    requests_per_second: 10    # OpenAlex: OPENALEX_API_KEY required since Feb 2026
+    timeout_seconds: 30
+    burst_limit: 30

@@ -104,9 +104,10 @@ SKIP_SOURCES = {
     'cms_dual_eligible',# Parser not implemented — multi-sheet Excel requires custom XLSX handler
 }
 
-# File-based sources (default_days_back=None) that support multi-year fetching
-# via their fetcher's built-in logic. No days_back override needed.
-FILE_BASED_SOURCES = {
+# Sources with no days_back window — full-corpus or file-based fetches that own
+# their own pagination/year logic. Includes API sources (uniprot, drugbank, pdb,
+# orcid) as well as file-download sources. No days_back override is applied.
+TIMELESS_SOURCES = {
     source for source, info in SOURCES.items()
     if info.get('default_days_back') is None and 'fetcher' in info
 }
@@ -136,7 +137,7 @@ HEAVY_SOURCES = {
 API_RATE_GROUPS: dict[str, tuple[int, set[str]]] = {
     # data.cms.gov throttles hard above ~3 concurrent clients.
     # Use 2 to leave headroom for other pods/CronJobs.
-    'cms': (2, {s for s in SOURCES if s.startswith('cms_')} - HEAVY_SOURCES),
+    'cms': (2, {s for s in SOURCES if s.startswith('cms_') and SOURCES[s].get('enabled', True)} - HEAVY_SOURCES),
     # openFDA (api.fda.gov) — 240 req/min authenticated, 40/min anon.
     # 1 concurrent is safest given year-partitioned loops.
     'openfda': (1, {'openfda_labels', 'fda_drugs', 'fda_ndc', 'fda_rems', 'purple_book'}),
@@ -228,6 +229,26 @@ BACKFILL_SOURCE_KWARGS: dict = {
     'cms_home_health': {'years': [2021, 2022, 2023]},
     # Hospital cost reports
     'cms_cost_reports_puf': {'years': [2021, 2022, 2023]},
+    'cms_cost_reports_puf_lines': {'years': [2021, 2022, 2023]},
+    # Geographic / enrollment / chronic conditions
+    'cms_geographic_variation': {'years': [2021, 2022, 2023]},
+    'cms_chronic_conditions': {'years': [2021, 2022, 2023]},
+    'cms_dual_eligible': {'years': [2021, 2022, 2023]},
+    'cms_enrollment_puf': {'years': [2021, 2022, 2023]},
+    'cms_claim_type_puf': {'years': [2021, 2022, 2023]},
+    'cms_utilization_puf': {'years': [2021, 2022, 2023]},
+    # Provider directory
+    'cms_nppes': {'years': [2021, 2022, 2023]},
+    'cms_referring_providers': {'years': [2021, 2022, 2023]},
+    'cms_ordering_providers': {'years': [2021, 2022, 2023]},
+    # Drug / payment
+    'cms_part_d_spending': {'years': [2021, 2022, 2023]},
+    'cms_part_b_spending': {'years': [2021, 2022, 2023]},
+    'cms_open_payments': {'years': [2021, 2022, 2023]},
+    'cms_medicaid_drug_spending': {'years': [2021, 2022, 2023]},
+    'cms_medicare_advantage': {'years': [2021, 2022, 2023]},
+    # Hospital info
+    'cms_hospital_general_info': {'years': [2021, 2022, 2023]},
     # ---------------------------------------------------------------------------
     # New high-volume sources added in 019-cms-puf-platform-reconciliation
     # ---------------------------------------------------------------------------
@@ -324,26 +345,25 @@ def _fetch_one(source: str, data_dir: str, days_back: int | None,
 def _build_semaphore_map() -> dict[str, Semaphore]:
     """Build a {source_name: Semaphore} map from API_RATE_GROUPS.
 
-    Sources in multiple groups get the most restrictive (lowest) semaphore.
+    Each named group gets its own Semaphore so groups with the same numeric limit
+    do not share slots (e.g. CMS limit=2 and EBI limit=2 stay independent).
+    Sources appearing in multiple groups get the most restrictive group's semaphore.
     Sources not in any group get None (no throttle beyond the thread pool itself).
     """
-    source_limit: dict[str, int] = {}
-    for _group, (limit, sources) in API_RATE_GROUPS.items():
-        for s in sources:
-            # take the more restrictive limit if source appears in multiple groups
-            if s not in source_limit or limit < source_limit[s]:
-                source_limit[s] = limit
+    # One Semaphore per named group — never share across groups.
+    group_sems: dict[str, Semaphore] = {
+        group: Semaphore(limit)
+        for group, (limit, _) in API_RATE_GROUPS.items()
+    }
 
-    # Deduplicate — sources sharing the same host should share the same Semaphore object
-    # so the limit applies across all of them, not per-source.
-    # Group by limit value and build one Semaphore per group.
-    limit_to_sem: dict[int, Semaphore] = {}
-    result: dict[str, Semaphore] = {}
-    for source, limit in source_limit.items():
-        if limit not in limit_to_sem:
-            limit_to_sem[limit] = Semaphore(limit)
-        result[source] = limit_to_sem[limit]
-    return result
+    # For sources in multiple groups, pick the most restrictive (lowest limit) group.
+    source_best: dict[str, tuple[int, str]] = {}  # source -> (best_limit, group_name)
+    for group, (limit, sources) in API_RATE_GROUPS.items():
+        for s in sources:
+            if s not in source_best or limit < source_best[s][0]:
+                source_best[s] = (limit, group)
+
+    return {source: group_sems[group] for source, (_, group) in source_best.items()}
 
 
 def run_sqlmesh_backfill(sqlmesh_dir: str) -> bool:
@@ -439,7 +459,7 @@ def run_fetch_backfill(data_dir: str, workers: int = 1, dry_run: bool = False) -
 
     if dry_run:
         for source in light_queue + heavy_queue:
-            is_file = source in FILE_BASED_SOURCES
+            is_file = source in TIMELESS_SOURCES
             logger.info("DRY RUN %s: days_back=%s tier=%s",
                         source,
                         None if is_file else days_back,
@@ -463,7 +483,7 @@ def run_fetch_backfill(data_dir: str, workers: int = 1, dry_run: bool = False) -
                     _fetch_one,
                     source,
                     data_dir,
-                    None if source in FILE_BASED_SOURCES else days_back,
+                    None if source in TIMELESS_SOURCES else days_back,
                     semaphore_map.get(source),
                 ): source
                 for source in light_queue
@@ -497,7 +517,7 @@ def run_fetch_backfill(data_dir: str, workers: int = 1, dry_run: bool = False) -
                 src, status, records = _fetch_one(
                     source,
                     data_dir,
-                    None if source in FILE_BASED_SOURCES else days_back,
+                    None if source in TIMELESS_SOURCES else days_back,
                     semaphore_map.get(source),
                 )
                 logger.info("[%d/%d] %s: %s (%d records)",
