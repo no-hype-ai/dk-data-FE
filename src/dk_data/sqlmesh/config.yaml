@@ -77,7 +77,8 @@ variables:
   postgres_password: "{{ env_var('POSTGRES_PASSWORD', '') }}"
   postgres_db: "{{ env_var('POSTGRES_DB', 'dk_data') }}"
 
-# Plan options
+# Plan options — auto_apply true so non-interactive environments (k8s jobs) can
+# run `sqlmesh plan --forward-only` without TTY prompts.
 plan:
-  auto_apply: false
+  auto_apply: true
   include_unmodified: false

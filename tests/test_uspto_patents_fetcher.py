@@ -89,7 +89,7 @@ class TestUSPTOPatentsFetcherInit:
             fetcher = USPTOPatentsFetcher(data_dir=str(tmp_path))
 
         assert fetcher.SOURCE_NAME == "uspto_patents"
-        assert fetcher.BASE_URL == "https://search.patentsview.org"
+        assert fetcher.BASE_URL == "https://api.uspto.gov"
         assert fetcher.data_dir == tmp_path
         assert fetcher.session is not None
         assert fetcher.api_key == "test-key-123"
@@ -121,7 +121,7 @@ class TestUSPTOPatentsGetLatestUrl:
         with patch.dict(os.environ, {"USPTO_API_KEY": "key"}):
             fetcher = USPTOPatentsFetcher(data_dir=str(tmp_path))
         url = fetcher.get_latest_url()
-        assert url == "https://search.patentsview.org/api/v1/patent/"
+        assert url == "https://api.uspto.gov/api/v1/patent/applications/search"
         assert url.startswith("https://")
 
 
@@ -137,7 +137,7 @@ class TestUSPTOPatentsFetchWithMock:
         """fetch() returns success with records when API responds."""
         responses.add(
             responses.POST,
-            "https://search.patentsview.org/api/v1/patent/",
+            "https://api.uspto.gov/api/v1/patent/applications/search",
             json=_make_patentsearch_response([SAMPLE_PATENT, SAMPLE_PATENT_MINIMAL]),
             status=200,
         )
@@ -176,7 +176,7 @@ class TestUSPTOPatentsFetchWithMock:
         """fetch() returns success with 0 records on empty API response."""
         responses.add(
             responses.POST,
-            "https://search.patentsview.org/api/v1/patent/",
+            "https://api.uspto.gov/api/v1/patent/applications/search",
             json=_make_patentsearch_response([]),
             status=200,
         )
@@ -195,7 +195,7 @@ class TestUSPTOPatentsFetchWithMock:
         """fetch() returns failed when API returns error status."""
         responses.add(
             responses.POST,
-            "https://search.patentsview.org/api/v1/patent/",
+            "https://api.uspto.gov/api/v1/patent/applications/search",
             json={"error": "Unauthorized"},
             status=401,
         )
@@ -225,13 +225,13 @@ class TestUSPTOPatentsFetchWithMock:
 
         responses.add(
             responses.POST,
-            "https://search.patentsview.org/api/v1/patent/",
+            "https://api.uspto.gov/api/v1/patent/applications/search",
             json=_make_patentsearch_response(page1_patents),
             status=200,
         )
         responses.add(
             responses.POST,
-            "https://search.patentsview.org/api/v1/patent/",
+            "https://api.uspto.gov/api/v1/patent/applications/search",
             json=_make_patentsearch_response(page2_patents),
             status=200,
         )
@@ -254,7 +254,7 @@ class TestUSPTOPatentsFetchWithMock:
         ]
         responses.add(
             responses.POST,
-            "https://search.patentsview.org/api/v1/patent/",
+            "https://api.uspto.gov/api/v1/patent/applications/search",
             json=_make_patentsearch_response(patents),
             status=200,
         )

@@ -1,12 +1,29 @@
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 resources:
-  - cronjob-cms-all.yaml
+  # cronjob-cms-all.yaml  # Disabled — redundant with per-source CronJobs (pubmed, ema-reg, openalex-ci, drugbank, etc.)
+  #                         # fetch_data.py --source all runs 18 legacy sources sequentially within 1h → always timeouts
+  #                         # All sources now have dedicated CronJobs with individual schedules and timeouts
   - cronjob-refresh.yaml
   - cronjob-mol-fetch-daily.yaml
   - cronjob-mol-fetch-weekly.yaml
   - cronjob-mol-fetch-monthly.yaml
-  - cronjob-mol-transform.yaml
+  # Molecule+HCS transformations — 6 staggered per-layer jobs (020-drugbank-seed-schema-fix)
+  # Dependency schedule (UTC):
+  #   06:00  bronze         mol_bronze.* (5 mol models)
+  #   06:30  ip_bronze      hcs_bronze.* + IP mol_bronze.* (20 models, parallel — independent)
+  #   08:00  silver         mol_silver core: molecules→targets→drug_labels→clinical_trials
+  #                         →molecule_aliases→identifier_mappings  (alias hub for HCS joins)
+  #   10:30  ip_silver      bridge tables (ndc/hcpcs/rxnorm) + IP silver
+  #                         (needs silver 08:00 + ip_bronze 06:30 both complete)
+  #   12:00  gold           mol_gold.* (needs full silver)
+  #   13:00  ip_gold        mol_gold IP aggregations (needs ip_silver)
+  - cronjob-mol-transform-bronze.yaml
+  - cronjob-mol-transform-ip-bronze.yaml
+  - cronjob-mol-transform-silver.yaml
+  - cronjob-mol-transform-ip-silver.yaml
+  - cronjob-mol-transform-gold.yaml
+  - cronjob-mol-transform-ip-gold.yaml
   - cronjob-fetch-pubmed.yaml
   - cronjob-fetch-ema-reg.yaml
   - cronjob-fetch-openalex-ci.yaml
@@ -62,7 +79,6 @@ resources:
   # CMS facility/provider/reference sources (ported from 016)
   - cronjob-fetch-cms-care-compare.yaml
   - cronjob-fetch-cms-chow.yaml
-  - cronjob-fetch-cms-ddinter.yaml
   - cronjob-fetch-cms-dmepos.yaml
   - cronjob-fetch-cms-formulary.yaml
   - cronjob-fetch-cms-hcris.yaml

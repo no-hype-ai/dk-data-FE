@@ -58,7 +58,7 @@ spec:
                   password=os.environ['POSTGRES_PASSWORD'],
                 )
                 cur = conn.cursor()
-                cur.execute(\"SELECT COUNT(*) FROM bronze.drugbank_data\")
+                cur.execute(\"SELECT COUNT(*) FROM mol_bronze.drugbank_data\")
                 print(cur.fetchone()[0])
                 conn.close()
               except Exception as e:
@@ -66,11 +66,11 @@ spec:
               " 2>/dev/null || echo "0")
 
               if [ "$ROW_COUNT" -gt 1000 ]; then
-                echo "DrugBank already loaded ($ROW_COUNT drugs in bronze.drugbank_data). Skipping."
+                echo "DrugBank already loaded ($ROW_COUNT drugs in mol_bronze.drugbank_data). Skipping."
                 exit 0
               fi
 
-              echo "bronze.drugbank_data has $ROW_COUNT rows — starting full load..."
+              echo "mol_bronze.drugbank_data has $ROW_COUNT rows — starting full load..."
               python -m dk_data.data.load_drugbank --xml "$ZIP_PATH"
 
               FINAL_COUNT=$(python3 -c "
@@ -83,7 +83,7 @@ spec:
                 password=os.environ['POSTGRES_PASSWORD'],
               )
               cur = conn.cursor()
-              cur.execute(\"SELECT COUNT(*) FROM bronze.drugbank_data\")
+              cur.execute(\"SELECT COUNT(*) FROM mol_bronze.drugbank_data\")
               print(cur.fetchone()[0])
               conn.close()
               " 2>/dev/null || echo "unknown")

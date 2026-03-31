@@ -1,30 +1,33 @@
-# EUIPO Trademark Fetch CronJob
-# 014-uspto-euipo-model-datasource
-# Fetches pharmaceutical trademarks from EUIPO TMview/IBM Gateway
+# Molecule Transform — IP/HCS Silver Layer
+# 020-drugbank-seed-schema-fix / sqlmesh-init
+# Runs ip_silver models: 10 IP + HCS silver models.
+# Scheduled 2.5h after ip_bronze (09:00) to allow ip_bronze to complete.
 apiVersion: batch/v1
 kind: CronJob
 metadata:
-  name: fetch-euipo
+  name: mol-transform-ip-silver
   labels:
-    app: fetch-euipo
-    app.kubernetes.io/name: fetch-euipo
-    app.kubernetes.io/component: ingestion
+    app: mol-transform-ip-silver
+    app.kubernetes.io/name: mol-transform-ip-silver
+    app.kubernetes.io/component: transform
     app.kubernetes.io/part-of: dk-data
 spec:
-  schedule: "0 18 * * 0"  # Sunday 6 PM UTC
+  schedule: "30 10 * * *"  # 10:30 UTC daily — after silver (08:00+2h) AND ip_bronze (06:30+2h)
+                            # hcpcs_molecule_bridge depends on BOTH mol_silver.molecule_aliases
+                            # (silver layer) AND hcs_bronze.* (ip_bronze layer)
   concurrencyPolicy: Forbid
   startingDeadlineSeconds: 3600
   successfulJobsHistoryLimit: 3
   failedJobsHistoryLimit: 3
   jobTemplate:
     spec:
-      backoffLimit: 2
+      backoffLimit: 1
       ttlSecondsAfterFinished: 86400
-      activeDeadlineSeconds: 3600  # 60 minute timeout
+      activeDeadlineSeconds: 5400  # 90 min
       template:
         metadata:
           labels:
-            app: fetch-euipo
+            app: mol-transform-ip-silver
             app.kubernetes.io/component: batch-job
             app.kubernetes.io/part-of: dk-data
             team: data-platform
@@ -41,10 +44,10 @@ spec:
           imagePullSecrets:
             - name: ghcr-credentials
           containers:
-            - name: fetch-euipo
+            - name: mol-transform-ip-silver
               image: ghcr.io/data-kinetic/dk-data-fe/job-trigger:main
-              command: ["python", "-m", "dk_data.ingestion.main"]
-              args: ["euipo_trademarks"]
+              command: ["python", "-m", "dk_data.ingestion.transform_molecules"]
+              args: ["--layer", "ip_silver"]
               env:
                 - name: POSTGRES_HOST
                   valueFrom:
@@ -71,31 +74,17 @@ spec:
                     secretKeyRef:
                       name: dk-data-secrets
                       key: POSTGRES_DB
-                - name: EUIPO_API_KEY
-                  valueFrom:
-                    secretKeyRef:
-                      name: dk-data-secrets
-                      key: EUIPO_API_KEY
-                      optional: true
-                - name: EUIPO_SECRET_KEY
-                  valueFrom:
-                    secretKeyRef:
-                      name: dk-data-secrets
-                      key: EUIPO_SECRET_KEY
-                      optional: true
-                - name: EUIPO_BACKEND
-                  value: "ibm_gateway"
                 - name: OTEL_EXPORTER_OTLP_ENDPOINT
                   value: "http://alloy.infra.svc.cluster.local:4317"
                 - name: OTEL_ENABLED
                   value: "true"
               resources:
                 requests:
-                  memory: "256Mi"
-                  cpu: "100m"
-                limits:
                   memory: "512Mi"
-                  cpu: "300m"
+                  cpu: "200m"
+                limits:
+                  memory: "1Gi"
+                  cpu: "500m"
               securityContext:
                 allowPrivilegeEscalation: false
                 readOnlyRootFilesystem: true

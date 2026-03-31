@@ -43,7 +43,6 @@ from .sources.cms_geographic_variation import (
 from .sources.cms_part_d_prescriber import load_cms_part_d_prescriber
 from .sources.cms_care_compare import load_cms_care_compare_data
 from .sources.cms_chow import load_cms_chow_data
-from .sources.cms_ddinter import load_cms_ddinter_data
 from .sources.cms_dmepos import load_cms_dmepos_data
 from .sources.cms_formulary import load_cms_formulary_data
 from .sources.cms_hcris import load_cms_hcris_data
@@ -133,7 +132,6 @@ from .fetchers import (
     CMSPartDPrescriberFetcher,
     CMSCareCompareFetcher,
     CMSCHOWFetcher,
-    CMSDDInterFetcher,
     CMSDMEPOSFetcher,
     CMSFormularyFetcher,
     CMSHCRISFetcher,
@@ -457,14 +455,6 @@ SOURCES = {
         'description': 'CMS CHOW facility ownership change records',
         'fetcher': CMSCHOWFetcher,
         'loader': load_cms_chow_data,
-        'requires_file': False,
-        'default_days_back': None,
-    },
-    'cms_ddinter': {
-        'name': 'CMS DDInter',
-        'description': 'CMS drug-drug interaction data',
-        'fetcher': CMSDDInterFetcher,
-        'loader': load_cms_ddinter_data,
         'requires_file': False,
         'default_days_back': None,
     },
@@ -978,7 +968,10 @@ def get_last_successful_refresh(source_name: str) -> datetime | None:
             """, (source_name,))
             row = cur.fetchone()
             if row and row[0]:
-                return row[0]
+                dt = row[0]
+                if dt.tzinfo is None:
+                    dt = dt.replace(tzinfo=timezone.utc)
+                return dt
     except Exception as e:
         logger.warning(f"Could not read last_successful_refresh for {source_name}: {e}")
     return None
@@ -1095,9 +1088,15 @@ def run_ingestion(source: str, **kwargs) -> dict:
 
         fetcher = source_info['fetcher'](data_dir=data_dir)
 
-        # Compute incremental days_back from last successful refresh
+        # Compute incremental days_back from last successful refresh.
+        # --days-back CLI override bypasses the computed window (for manual backfills).
         fetch_kwargs = {}
-        days_back = _compute_days_back(source, source_info)
+        if kwargs.get('days_back') is not None:
+            # Explicit override: use the caller-specified window regardless of state.
+            days_back = kwargs['days_back']
+            logger.info("Using explicit days_back=%d override for %s", days_back, source)
+        else:
+            days_back = _compute_days_back(source, source_info)
         if days_back is not None:
             fetch_kwargs['days_back'] = days_back
         if kwargs.get('max_records') is not None:
@@ -1256,6 +1255,9 @@ Examples:
     parser.add_argument('--batch-size', '-b', type=int, default=1000, help='Batch size for commits')
     parser.add_argument('--max-records', '-m', type=int, default=None, help='Cap on records fetched (for seeding/testing)')
     parser.add_argument('--data-dir', '-d', default='/tmp/data/raw', help='Directory for fetcher temp storage')
+    parser.add_argument('--days-back', type=int, default=None,
+                        help='Override incremental days_back window (bypasses meta.data_sources state). '
+                             'Use for initial backfill: --days-back 730 fetches 2 years regardless of last_successful_refresh.')
     parser.add_argument('--list', '-l', action='store_true', help='List available sources')
     parser.add_argument('--verbose', '-v', action='store_true', help='Verbose output')
 
@@ -1307,6 +1309,7 @@ Examples:
                     batch_size=args.batch_size,
                     max_records=args.max_records,
                     data_dir=args.data_dir,
+                    days_back=args.days_back,
                 )
                 records = result.get('records_inserted', result.get('records_fetched', 0))
                 span.set_attribute("records_fetched", records)
@@ -1318,6 +1321,7 @@ Examples:
                 batch_size=args.batch_size,
                 max_records=args.max_records,
                 data_dir=args.data_dir,
+                days_back=args.days_back,
             )
             records = result.get('records_inserted', result.get('records_fetched', 0))
 

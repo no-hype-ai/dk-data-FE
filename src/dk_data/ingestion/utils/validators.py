@@ -487,6 +487,7 @@ class USPTOPatentsRecord(BaseModel):
     grant_date: Optional[date] = None
     cpc_codes: Optional[list[str]] = None
     claims_count: Optional[int] = Field(None, ge=0)
+    patent_type: Optional[str] = None  # utility / design / plant (migration 107)
 
 
 class DrugBankRecord(BaseModel):

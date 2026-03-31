@@ -76,7 +76,7 @@ class TestUSPTOCIFetcherInit:
         with tempfile.TemporaryDirectory() as tmpdir:
             fetcher = USPTOCIFetcher(data_dir=tmpdir)
             assert fetcher.SOURCE_NAME == "uspto_ci"
-            assert fetcher.BASE_URL == "https://search.patentsview.org"
+            assert fetcher.BASE_URL == "https://api.uspto.gov"
             assert fetcher.session is not None
 
     def test_fetcher_init_defaults(self):
@@ -89,7 +89,7 @@ class TestUSPTOCIFetcherInit:
             fetcher = USPTOCIFetcher(data_dir=tmpdir)
             url = fetcher.get_latest_url()
             assert url == PATENTSVIEW_API
-            assert "patentsview" in url
+            assert "api.uspto.gov" in url
 
 
 # ---------------------------------------------------------------------------
@@ -254,27 +254,26 @@ class TestQueryBuilding:
         query = USPTOCIFetcher._build_query(
             ["pembrolizumab", "oncology"], "2026-01-01"
         )
-        assert "_and" in query
-        and_clauses = query["_and"]
-        assert len(and_clauses) == 3
+        assert isinstance(query, str)
 
-        # Date clause
-        assert "_gte" in and_clauses[0]
-        assert and_clauses[0]["_gte"]["patent_date"] == "2026-01-01"
+        # CPC codes present
+        assert "cpcInventionFlat" in query
+        assert "A61K*" in query
+        assert "A61P*" in query
+        assert "C07D*" in query
 
-        # CPC clause (now uses fully qualified nested field name)
-        assert "_or" in and_clauses[1]
-        cpc_clauses = and_clauses[1]["_or"]
-        assert "_begins" in cpc_clauses[0]
-        assert "cpc_current.cpc_subgroup_id" in cpc_clauses[0]["_begins"]
+        # Date range
+        assert "grantDate:[2026-01-01 TO *]" in query
 
-        # Text clause
-        assert "_or" in and_clauses[2]
+        # Text search terms
+        assert '"pembrolizumab"' in query
+        assert '"oncology"' in query
 
     def test_build_query_single_term(self):
         query = USPTOCIFetcher._build_query(["semaglutide"], "2026-02-01")
-        text_clauses = query["_and"][2]["_or"]
-        assert len(text_clauses) == 1
+        assert isinstance(query, str)
+        assert '"semaglutide"' in query
+        assert "grantDate:[2026-02-01 TO *]" in query
 
 
 # ---------------------------------------------------------------------------

@@ -1,30 +1,31 @@
-# EUIPO Trademark Fetch CronJob
-# 014-uspto-euipo-model-datasource
-# Fetches pharmaceutical trademarks from EUIPO TMview/IBM Gateway
+# Molecule Transform — IP/HCS Gold Layer
+# 020-drugbank-seed-schema-fix / sqlmesh-init
+# Runs ip_gold models: 3 IP + HCS gold aggregations.
+# Scheduled 2h after ip_silver (11:00) — lightest layer, short timeout.
 apiVersion: batch/v1
 kind: CronJob
 metadata:
-  name: fetch-euipo
+  name: mol-transform-ip-gold
   labels:
-    app: fetch-euipo
-    app.kubernetes.io/name: fetch-euipo
-    app.kubernetes.io/component: ingestion
+    app: mol-transform-ip-gold
+    app.kubernetes.io/name: mol-transform-ip-gold
+    app.kubernetes.io/component: transform
     app.kubernetes.io/part-of: dk-data
 spec:
-  schedule: "0 18 * * 0"  # Sunday 6 PM UTC
+  schedule: "0 13 * * *"  # 13:00 UTC daily — 2.5h after ip_silver (10:30+2.5h)
   concurrencyPolicy: Forbid
   startingDeadlineSeconds: 3600
   successfulJobsHistoryLimit: 3
   failedJobsHistoryLimit: 3
   jobTemplate:
     spec:
-      backoffLimit: 2
+      backoffLimit: 1
       ttlSecondsAfterFinished: 86400
-      activeDeadlineSeconds: 3600  # 60 minute timeout
+      activeDeadlineSeconds: 3600  # 1 hour — only 3 models
       template:
         metadata:
           labels:
-            app: fetch-euipo
+            app: mol-transform-ip-gold
             app.kubernetes.io/component: batch-job
             app.kubernetes.io/part-of: dk-data
             team: data-platform
@@ -41,10 +42,10 @@ spec:
           imagePullSecrets:
             - name: ghcr-credentials
           containers:
-            - name: fetch-euipo
+            - name: mol-transform-ip-gold
               image: ghcr.io/data-kinetic/dk-data-fe/job-trigger:main
-              command: ["python", "-m", "dk_data.ingestion.main"]
-              args: ["euipo_trademarks"]
+              command: ["python", "-m", "dk_data.ingestion.transform_molecules"]
+              args: ["--layer", "ip_gold"]
               env:
                 - name: POSTGRES_HOST
                   valueFrom:
@@ -71,20 +72,6 @@ spec:
                     secretKeyRef:
                       name: dk-data-secrets
                       key: POSTGRES_DB
-                - name: EUIPO_API_KEY
-                  valueFrom:
-                    secretKeyRef:
-                      name: dk-data-secrets
-                      key: EUIPO_API_KEY
-                      optional: true
-                - name: EUIPO_SECRET_KEY
-                  valueFrom:
-                    secretKeyRef:
-                      name: dk-data-secrets
-                      key: EUIPO_SECRET_KEY
-                      optional: true
-                - name: EUIPO_BACKEND
-                  value: "ibm_gateway"
                 - name: OTEL_EXPORTER_OTLP_ENDPOINT
                   value: "http://alloy.infra.svc.cluster.local:4317"
                 - name: OTEL_ENABLED
