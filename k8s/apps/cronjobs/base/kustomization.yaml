@@ -6,7 +6,22 @@ resources:
   - cronjob-mol-fetch-daily.yaml
   - cronjob-mol-fetch-weekly.yaml
   - cronjob-mol-fetch-monthly.yaml
-  - cronjob-mol-transform.yaml
+  # Molecule+HCS transformations — 6 staggered per-layer jobs (020-drugbank-seed-schema-fix)
+  # Dependency schedule (UTC):
+  #   06:00  bronze         mol_bronze.* (5 mol models)
+  #   06:30  ip_bronze      hcs_bronze.* + IP mol_bronze.* (20 models, parallel — independent)
+  #   08:00  silver         mol_silver core: molecules→targets→drug_labels→clinical_trials
+  #                         →molecule_aliases→identifier_mappings  (alias hub for HCS joins)
+  #   10:30  ip_silver      bridge tables (ndc/hcpcs/rxnorm) + IP silver
+  #                         (needs silver 08:00 + ip_bronze 06:30 both complete)
+  #   12:00  gold           mol_gold.* (needs full silver)
+  #   13:00  ip_gold        mol_gold IP aggregations (needs ip_silver)
+  - cronjob-mol-transform-bronze.yaml
+  - cronjob-mol-transform-ip-bronze.yaml
+  - cronjob-mol-transform-silver.yaml
+  - cronjob-mol-transform-ip-silver.yaml
+  - cronjob-mol-transform-gold.yaml
+  - cronjob-mol-transform-ip-gold.yaml
   - cronjob-fetch-pubmed.yaml
   - cronjob-fetch-ema-reg.yaml
   - cronjob-fetch-openalex-ci.yaml

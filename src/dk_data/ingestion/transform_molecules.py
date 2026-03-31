@@ -43,11 +43,24 @@ LAYER_MODELS = {
         'mol_bronze.openfda_labels',
         'mol_bronze.openfda_faers',
     ],
+    # Silver — molecule entity resolution hub.
+    # ORDERING: SQLMesh resolves intra-layer deps from SQL, but the declared list
+    # controls which models get selected. molecules_from_bronze must be first so
+    # the molecule entity hub exists before alias/bridge tables reference it.
+    # molecule_aliases and identifier_mappings are added here because they are
+    # foundation tables for all subsequent HCS silver cross-domain joins:
+    #   hcs_silver.part_d_prescribing, drug_utilization, open_payments_drug_linkage
+    #   all JOIN mol_silver.molecule_aliases to resolve drug names → molecule_ids.
     'silver': [
-        'mol_silver.molecules_from_bronze',
-        'mol_silver.clinical_trials',
-        'mol_silver.drug_labels',
-        'mol_silver.adverse_events',
+        'mol_silver.molecules_from_bronze',   # entity hub — must be first
+        'mol_silver.targets',                  # protein targets (no mol dep)
+        'mol_silver.drug_labels',              # needs molecules
+        'mol_silver.clinical_trials',          # needs molecules
+        'mol_silver.adverse_events',           # needs molecules + identifier_mappings
+        'mol_silver.molecule_aliases',         # needs molecules+drug_labels+clinical_trials
+                                               # critical: HCS silver joins this for drug name resolution
+        'mol_silver.identifier_mappings',      # needs molecules+targets+drug_labels
+                                               # critical: adverse_events, binding lookups join this
     ],
     'gold': [
         'mol_gold.molecule_profiles_agg',
@@ -62,6 +75,8 @@ LAYER_MODELS = {
         'mol_gold.financial_summary',
     ],
     # IP / Patent / Trademark models (014-uspto-euipo-model-datasource)
+    # These are all hcs_bronze + IP mol_bronze — fully independent of silver,
+    # so they run in a parallel job at 06:30 alongside mol_bronze at 06:00.
     'ip_bronze': [
         'mol_bronze.uspto_patents',
         'mol_bronze.uspto_ci',
@@ -85,18 +100,25 @@ LAYER_MODELS = {
         'mol_bronze.pdb_structures',
         'mol_bronze.who_icd',
     ],
+    # ip_silver runs AFTER both silver AND ip_bronze finish.
+    # hcpcs_molecule_bridge reads hcs_bronze.cms_dme_puf/lab_services/imaging_puf (ip_bronze)
+    # AND mol_silver.molecule_aliases (silver) — it bridges both domains.
+    # ndc_molecule_bridge and rxnorm_concepts also need mol_silver.molecule_aliases.
     'ip_silver': [
         'mol_silver.patents',
         'mol_silver.trademarks',
         # 015-assessment-dashboard-integration
         'mol_silver.publications',
-        'mol_silver.targets',
         'mol_silver.regulatory_decisions',
         'mol_silver.financial_data',
         'mol_silver.researchers',
         'mol_silver.news_signals',
         'mol_silver.healthcare_facilities',
         'mol_silver.icd_codes',
+        # Cross-domain bridge tables (need mol_silver.molecule_aliases from silver layer):
+        'mol_silver.ndc_molecule_bridge',      # NDC → molecule_id (used by hcs_silver.open_payments)
+        'mol_silver.rxnorm_concepts',           # RxNorm CUIs → molecule_id
+        'mol_silver.hcpcs_molecule_bridge',     # HCPCS codes → molecule_id (needs hcs_bronze + molecule_aliases)
     ],
     'ip_gold': [
         'mol_gold.molecule_profile',
@@ -163,6 +185,11 @@ def run_sqlmesh_command(command: list[str], timeout: int = 3600) -> dict:
                 'stderr': result.stderr,
             }
         else:
+            # Always surface stderr so errors are visible in pod logs
+            if result.stderr:
+                logger.error(f"SQLMesh stderr: {result.stderr[:3000]}")
+            if result.stdout:
+                logger.error(f"SQLMesh stdout: {result.stdout[:1000]}")
             return {
                 'status': 'failed',
                 'stdout': result.stdout,
@@ -185,6 +212,55 @@ def run_sqlmesh_command(command: list[str], timeout: int = 3600) -> dict:
             'status': 'failed',
             'error': str(e),
         }
+
+
+def is_sqlmesh_initialized() -> bool:
+    """Check whether SQLMesh state tables exist in the database."""
+    try:
+        import psycopg2
+        conn = psycopg2.connect(
+            host=os.getenv("POSTGRES_HOST", "localhost"),
+            port=int(os.getenv("POSTGRES_PORT", "5432")),
+            user=os.getenv("POSTGRES_USER", "postgres"),
+            password=os.getenv("POSTGRES_PASSWORD", ""),
+            dbname=os.getenv("POSTGRES_DB", "dk_data"),
+        )
+        cur = conn.cursor()
+        cur.execute("SELECT EXISTS(SELECT 1 FROM pg_tables WHERE tablename = '_snapshots')")
+        initialized = cur.fetchone()[0]
+        conn.close()
+        return initialized
+    except Exception as e:
+        logger.warning(f"Could not check SQLMesh init state: {e}")
+        return False
+
+
+def ensure_sqlmesh_initialized() -> bool:
+    """Run SQLMesh plan --auto-apply if state tables are missing.
+
+    Uses --forward-only so historical intervals are not backfilled —
+    production sources only have current data, and the config start date
+    (2024-01-01) would otherwise trigger a 15-month backfill.
+
+    Returns True if already initialized or plan succeeded, False on failure.
+    """
+    if is_sqlmesh_initialized():
+        return True
+
+    logger.info(
+        "SQLMesh environment not initialized (no _snapshots table). "
+        "Running plan --auto-apply --forward-only to bootstrap state..."
+    )
+    result = run_sqlmesh_command(
+        ['plan', '--auto-apply', '--forward-only'],
+        timeout=600,  # 10 min ceiling for plan
+    )
+    if result.get('status') == 'success':
+        logger.info("SQLMesh plan applied — environment bootstrapped")
+        return True
+
+    logger.error(f"SQLMesh plan bootstrap failed: {result.get('error')}")
+    return False
 
 
 def transform_model(model_name: str) -> dict:
@@ -211,10 +287,14 @@ def transform_model(model_name: str) -> dict:
 
 def transform_layer(layer: str) -> dict:
     """
-    Run transformations for all models in a layer.
+    Run transformations for all models in a layer as a single SQLMesh invocation.
+
+    Batching all models in one `sqlmesh run` call (via multiple --select-model
+    flags) is far more efficient than 51 separate subprocess calls: one DB
+    connection, one config load, and SQLMesh handles internal concurrency.
 
     Args:
-        layer: Layer name (bronze, silver, gold)
+        layer: Layer name (bronze, silver, gold, ip_bronze, ip_silver, ip_gold)
 
     Returns:
         Combined results dictionary
@@ -223,29 +303,27 @@ def transform_layer(layer: str) -> dict:
         return {'status': 'failed', 'error': f'Unknown layer: {layer}'}
 
     models = LAYER_MODELS[layer]
-    results = {}
-    success_count = 0
-    fail_count = 0
+    logger.info(f"Transforming {layer} layer ({len(models)} models) in single sqlmesh run")
 
-    logger.info(f"Transforming {layer} layer ({len(models)} models)")
-
+    # Build one command selecting all models in this layer
+    cmd = ['run']
     for model_name in models:
-        logger.info(f"\n{'-'*40}")
-        logger.info(f"Model: {model_name}")
-        logger.info(f"{'-'*40}")
+        cmd.extend(['--select-model', model_name])
 
-        result = transform_model(model_name)
-        results[model_name] = result
+    result = run_sqlmesh_command(cmd)
 
-        if result.get('status') == 'success':
-            success_count += 1
-        else:
-            fail_count += 1
+    success_count = len(models) if result.get('status') == 'success' else 0
+    fail_count = 0 if result.get('status') == 'success' else len(models)
+
+    if result.get('status') == 'success':
+        logger.info(f"Layer {layer}: all {len(models)} models complete")
+    else:
+        logger.error(f"Layer {layer} failed: {result.get('error')}")
 
     return {
-        'status': 'success' if fail_count == 0 else 'partial',
+        'status': result.get('status', 'failed'),
         'layer': layer,
-        'models': results,
+        'models': {m: result for m in models},
         'success_count': success_count,
         'fail_count': fail_count,
     }
@@ -425,6 +503,13 @@ Examples:
         tracer = get_tracer(__name__) if _OBS_AVAILABLE else None
 
         def _do_transform():
+            # Ensure SQLMesh state is bootstrapped before any run/transform.
+            # Runs plan --auto-apply --forward-only on first ever execution so
+            # sqlmesh run doesn't exit 2 with "no environments found".
+            if not args.plan:
+                if not ensure_sqlmesh_initialized():
+                    return {'status': 'failed', 'error': 'SQLMesh initialization failed', 'success_count': 0, 'fail_count': 1}
+
             if args.plan:
                 return run_plan()
             elif args.apply:
