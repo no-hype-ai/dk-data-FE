@@ -191,6 +191,7 @@ from .fetchers import (
     CMSClaimTypePUFFetcher,
     CMSUtilizationPUFFetcher,
     CMSCostReportsPUFFetcher,
+    CMSCostReportsPUFLinesFetcher,
     HRSAFetcher,
     EMAMolFetcher,
     OrangeBookFetcher,
@@ -828,7 +829,7 @@ SOURCES = {
     'cms_cost_reports_puf_lines': {
         'name': 'CMS Cost Reports PUF Lines',
         'description': 'Hospital cost report worksheet line items (HCRIS PUF)',
-        'fetcher': CMSCostReportsPUFFetcher,
+        'fetcher': CMSCostReportsPUFLinesFetcher,
         'loader': load_cms_cost_reports_puf_lines,
         'requires_file': True,
         'default_days_back': None,

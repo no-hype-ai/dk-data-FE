@@ -38,10 +38,7 @@ logger = logging.getLogger(__name__)
 LAYER_MODELS = {
     'bronze': [
         'mol_bronze.chembl_molecules',
-        'mol_bronze.pubchem_compounds',
-        'mol_bronze.clinical_trials',
         'mol_bronze.openfda_labels',
-        'mol_bronze.openfda_faers',
     ],
     # Silver — molecule entity resolution hub.
     # ORDERING: SQLMesh resolves intra-layer deps from SQL, but the declared list
@@ -120,6 +117,12 @@ LAYER_MODELS = {
         'mol_silver.ndc_molecule_bridge',      # NDC → molecule_id (used by hcs_silver.open_payments)
         'mol_silver.rxnorm_concepts',           # RxNorm CUIs → molecule_id
         'mol_silver.hcpcs_molecule_bridge',     # HCPCS codes → molecule_id (needs hcs_bronze + molecule_aliases)
+        'mol_silver.trademark_status_changes',  # Trademark audit trail with mol linkage (issue #171 M5)
+    ],
+    # ind_gold — IND domain gold layer (issue #171 H1).
+    # Runs after ip_silver finishes (ind_silver.icd11_ontology is an upstream dep).
+    'ind_gold': [
+        'ind_gold.indication_catalog',
     ],
     'ip_gold': [
         'mol_gold.molecule_profile',
@@ -155,7 +158,7 @@ LAYER_MODELS = {
     # fda_ndc, fda_rems), literature (europepmc, nih_reporter), and clinical (clinicaltrials).
     'mol_bronze_ext': [
         # Vocabulary / reference
-        'mol_bronze.rxnorm_concepts',
+        'mol_bronze.rxnorm',
         'mol_bronze.pharmgkb',
         'mol_bronze.bindingdb',
         'mol_bronze.sider',
@@ -173,7 +176,7 @@ LAYER_MODELS = {
         # FDA / regulatory
         'mol_bronze.orange_book',
         'mol_bronze.fda_drugs',
-        'mol_bronze.fda_drugsfda',
+        'mol_bronze.trademark_status_history',
         'mol_bronze.fda_ndc',
         'mol_bronze.fda_rems',
         'mol_bronze.nice_hta',
@@ -195,7 +198,7 @@ LAYER_MODELS = {
         # Bio / omics
         'mol_bronze.openalex',
         'mol_bronze.faers_events',
-        'mol_bronze.websearch_results',
+        'mol_bronze.websearch',
     ],
     # HCS bronze — all 53 hcs_bronze.* models (019-cms-puf-platform-reconciliation).
     # Runs at 07:00 UTC (after ip_bronze at 06:30 which covers 5 hcs_bronze models).

@@ -8,6 +8,7 @@ logger = logging.getLogger(__name__)
 
 
 class CMSCostReportsPUFFetcher(BaseFetcher):
+    """Fetches CMS Hospital Provider Cost Reports PUF (summary rows)."""
     SOURCE_NAME = "cms_cost_reports_puf"
     # Canonical UUID — fetches most recent available year.
     # Pass years=[2021, 2022, 2023] to backfill multiple years dynamically.
@@ -47,3 +48,14 @@ class CMSCostReportsPUFFetcher(BaseFetcher):
         except Exception as e:
             logger.exception("%s fetch failed: %s", self.SOURCE_NAME, e)
             return {"status": "failed", "error": str(e), "records": [], "record_count": 0, "hash": None}
+
+
+class CMSCostReportsPUFLinesFetcher(CMSCostReportsPUFFetcher):
+    """Fetches CMS Hospital Provider Cost Reports PUF (worksheet line items).
+
+    Shares the same CMS dataset as CMSCostReportsPUFFetcher — the loader
+    (load_cms_cost_reports_puf_lines) extracts the worksheet-level rows.
+    Subclass exists solely to give this source its own SOURCE_NAME so that
+    logs and metrics are correctly attributed to cms_cost_reports_puf_lines.
+    """
+    SOURCE_NAME = "cms_cost_reports_puf_lines"

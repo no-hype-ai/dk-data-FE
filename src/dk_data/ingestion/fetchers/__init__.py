@@ -80,7 +80,7 @@ from .cms_dual_eligible import CMSDualEligibleFetcher
 from .cms_enrollment_puf import CMSEnrollmentPUFFetcher
 from .cms_claim_type_puf import CMSClaimTypePUFFetcher
 from .cms_utilization_puf import CMSUtilizationPUFFetcher
-from .cms_cost_reports_puf import CMSCostReportsPUFFetcher
+from .cms_cost_reports_puf import CMSCostReportsPUFFetcher, CMSCostReportsPUFLinesFetcher
 from .ema_mol import EMAMolFetcher
 from .orange_book import OrangeBookFetcher
 from .dailymed import DailyMedFetcher
@@ -186,6 +186,7 @@ __all__ = [
     'CMSClaimTypePUFFetcher',
     'CMSUtilizationPUFFetcher',
     'CMSCostReportsPUFFetcher',
+    'CMSCostReportsPUFLinesFetcher',
     'EMAMolFetcher',
     'OrangeBookFetcher',
     'DailyMedFetcher',

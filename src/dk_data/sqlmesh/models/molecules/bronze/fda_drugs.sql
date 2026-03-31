@@ -1,9 +1,9 @@
--- SQLMesh Model: Bronze FDA Drugs (bulk approval feed)
--- Transforms raw FDA Drugs@FDA bulk API responses to Bronze typed columns.
--- Source: FDADrugsIngestion class, DataSource.FDA_DRUGS
--- API: https://api.fda.gov/drug/drugsfda.json (bulk/paginated, without drug-specific search)
+-- SQLMesh Model: Bronze FDA Drugs (NDA/ANDA/BLA approvals — merged from fda_drugs + fda_drugsfda)
+-- Transforms raw FDA Drugs@FDA API responses to Bronze typed columns.
+-- Consolidated: previously split across mol_bronze.fda_drugs and mol_bronze.fda_drugsfda;
+--   both read from mol_raw.fda_drugs (same source) so they are merged here.
+-- Source: FDADrugsFetcher, API: https://api.fda.gov/drug/drugsfda.json
 -- Response shape: {"results": [{application_number, sponsor_name, openfda:{}, products:[], submissions:[]}]}
--- Note: mol_bronze.fda_drugsfda covers drug-specific lookups; this model covers bulk/batch ingestion.
 
 MODEL (
     name mol_bronze.fda_drugs,
@@ -50,25 +50,36 @@ first_approval AS (
 SELECT DISTINCT ON (rec->>'application_number')
     gen_random_uuid()                                                   AS id,
     rec->>'application_number'                                          AS application_number,
+
+    -- Application type derived from prefix (NDA, ANDA, BLA, NDF, etc.)
+    REGEXP_REPLACE(rec->>'application_number', '[0-9]+', '')            AS application_type,
+
     rec->>'sponsor_name'                                                AS sponsor_name,
     rec->'openfda'->'generic_name'->>0                                  AS generic_name,
     rec->'openfda'->'brand_name'->>0                                    AS brand_name,
     rec->'openfda'->'substance_name'->>0                                AS substance_name,
     rec->'openfda'->'rxcui'->>0                                         AS rxcui,
+
     rec->'products'->0->>'dosage_form'                                  AS dosage_form,
     rec->'products'->0->>'route'                                        AS route,
     rec->'products'->0->>'marketing_status'                             AS marketing_status,
+    rec->'products'->0->>'te_code'                                      AS te_code,
+    rec->'products'->0->>'reference_drug'                               AS reference_drug,
+    rec->'products'->0->>'reference_standard'                           AS reference_standard,
+
     CASE
         WHEN fa.approval_date_raw ~ '^\d{8}$'
         THEN TO_DATE(fa.approval_date_raw, 'YYYYMMDD')
         ELSE NULL
     END                                                                 AS first_approval_date,
+
     rec->'products'                                                     AS products,
     rec->'submissions'                                                  AS submissions,
     rec                                                                 AS raw_json,
     e.raw_source_id,
     'fda_drugs'                                                         AS source,
     e.request_timestamp,
+    e.request_timestamp                                                 AS ingested_at,
     e.request_timestamp                                                 AS source_updated_at,
     FALSE                                                               AS processed_to_silver,
     NOW()                                                               AS created_at

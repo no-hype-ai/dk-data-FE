@@ -1,8 +1,10 @@
 # SQLMesh External Source Definitions
-# These reference existing PostgreSQL tables in the raw schema
+# These reference existing PostgreSQL tables moved to hcs_raw.* by migration 099
+# (schema_prefix_normalization). Updated from raw.* names to hcs_raw.* names.
+# Ref: issue #171 M1
 
 sources:
-  - name: raw.cms_medicare_inpatient
+  - name: hcs_raw.cms_medicare_inpatient
     description: CMS Medicare Inpatient data with TAVR procedure volumes
     columns:
       - name: id
@@ -23,7 +25,7 @@ sources:
       - name: _source_file
       - name: _source_hash
 
-  - name: raw.acc_tvc_certification
+  - name: hcs_raw.acc_tvc_certification
     description: ACC Transcatheter Valve Certification data
     columns:
       - name: id
@@ -39,7 +41,7 @@ sources:
       - name: _source_file
       - name: _source_hash
 
-  - name: raw.hrsa_shortage_areas
+  - name: hcs_raw.hrsa_shortage_areas
     description: HRSA Health Professional Shortage Area designations
     columns:
       - name: id
@@ -55,7 +57,7 @@ sources:
       - name: _loaded_at
       - name: _source_hash
 
-  - name: raw.cms_hospital_info
+  - name: hcs_raw.cms_hospital_info
     description: CMS Hospital General Information
     columns:
       - name: id
@@ -74,7 +76,7 @@ sources:
       - name: _loaded_at
       - name: _source_hash
 
-  - name: raw.cms_cost_reports
+  - name: hcs_raw.cms_cost_reports
     description: CMS Hospital Cost Reports financial data
     columns:
       - name: id

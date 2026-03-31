@@ -68,6 +68,10 @@ spec:
           #   ["--workers", "4", "--dry-run"]        — preview without running
           #   ["--workers", "1"]                     — sequential (debug/throttle)
           args: ["--workers", "4"]
+          ports:
+            - name: metrics
+              containerPort: 8000
+              protocol: TCP
           envFrom:
             - secretRef:
                 name: dk-data-secrets

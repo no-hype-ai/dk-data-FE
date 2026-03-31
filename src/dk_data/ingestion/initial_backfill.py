@@ -53,6 +53,35 @@ from threading import Semaphore
 from .main import SOURCES, _meta_name, get_last_successful_refresh, run_ingestion
 from .utils.database import init_connection_pool, close_connection_pool
 
+try:
+    from prometheus_client import start_http_server
+    from dk_data.observability.metrics import (
+        record_job_duration,
+        record_job_records,
+        increment_job_failure,
+        mark_job_success,
+    )
+    _METRICS_AVAILABLE = True
+except ImportError:
+    _METRICS_AVAILABLE = False
+    def record_job_duration(job_name, duration_seconds): pass
+    def record_job_records(job_name, count): pass
+    def increment_job_failure(job_name): pass
+    def mark_job_success(job_name): pass
+    def start_http_server(port): pass
+
+try:
+    from dk_data.observability import setup_telemetry, setup_logging
+    _OBSERVABILITY_AVAILABLE = True
+except ImportError:
+    _OBSERVABILITY_AVAILABLE = False
+    def setup_telemetry(service_name, **kwargs): pass
+    def setup_logging(service_name, **kwargs): pass
+
+METRICS_PORT = 8000  # matches job-initial-backfill.yaml containerPort
+
+# Minimal fallback logging for module-level code (before main() runs setup_logging).
+# setup_logging() in main() will reconfigure structlog for JSON + trace-context injection.
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s %(levelname)s %(name)s — %(message)s',
@@ -104,15 +133,15 @@ HEAVY_SOURCES = {
 # Sources sharing an upstream host — per-group semaphore caps concurrency.
 # Key: semaphore limit (max concurrent fetches to that host).
 # Value: set of source names hitting that host.
-API_RATE_GROUPS: dict[int, set[str]] = {
+API_RATE_GROUPS: dict[str, tuple[int, set[str]]] = {
     # data.cms.gov throttles hard above ~3 concurrent clients.
     # Use 2 to leave headroom for other pods/CronJobs.
-    2: {s for s in SOURCES if s.startswith('cms_')} - HEAVY_SOURCES,
+    'cms': (2, {s for s in SOURCES if s.startswith('cms_')} - HEAVY_SOURCES),
     # openFDA (api.fda.gov) — 240 req/min authenticated, 40/min anon.
     # 1 concurrent is safest given year-partitioned loops.
-    1: {'openfda_labels', 'fda_drugs', 'fda_ndc', 'fda_rems', 'purple_book'},
+    'openfda': (1, {'openfda_labels', 'fda_drugs', 'fda_ndc', 'fda_rems', 'purple_book'}),
     # ebi.ac.uk (ChEMBL REST, EuropePMC) — polite pool; 2 concurrent fine.
-    2: {'europepmc'},
+    'ebi': (2, {'europepmc'}),
 }
 
 # Per-source kwargs to pass during backfill to override conservative defaults.
@@ -261,9 +290,11 @@ def _fetch_one(source: str, data_dir: str, days_back: int | None,
     """Fetch a single source. Returns (source, status, records).
 
     Acquires semaphore if provided (rate-group throttle), releases on exit.
+    Emits per-source Prometheus metrics: duration, record count, failure count.
     """
     if semaphore is not None:
         semaphore.acquire()
+    t0 = time.monotonic()
     try:
         extra_kwargs = BACKFILL_SOURCE_KWARGS.get(source, {})
         result = run_ingestion(
@@ -274,7 +305,17 @@ def _fetch_one(source: str, data_dir: str, days_back: int | None,
         )
         status = result.get('status', 'unknown')
         records = result.get('records_inserted', result.get('records_fetched', 0))
+        elapsed = time.monotonic() - t0
+        record_job_duration(f'backfill_fetch_{source}', elapsed)
+        record_job_records(f'backfill_fetch_{source}', records or 0)
+        if status not in ('success', 'partial'):
+            increment_job_failure(f'backfill_fetch_{source}')
         return source, status, records
+    except Exception:
+        elapsed = time.monotonic() - t0
+        record_job_duration(f'backfill_fetch_{source}', elapsed)
+        increment_job_failure(f'backfill_fetch_{source}')
+        raise
     finally:
         if semaphore is not None:
             semaphore.release()
@@ -287,7 +328,7 @@ def _build_semaphore_map() -> dict[str, Semaphore]:
     Sources not in any group get None (no throttle beyond the thread pool itself).
     """
     source_limit: dict[str, int] = {}
-    for limit, sources in API_RATE_GROUPS.items():
+    for _group, (limit, sources) in API_RATE_GROUPS.items():
         for s in sources:
             # take the more restrictive limit if source appears in multiple groups
             if s not in source_limit or limit < source_limit[s]:
@@ -323,12 +364,17 @@ def run_sqlmesh_backfill(sqlmesh_dir: str) -> bool:
         elapsed = time.monotonic() - start
         if result.returncode == 0:
             logger.info("SQLMesh plan completed successfully in %.0fs", elapsed)
+            record_job_duration('backfill_sqlmesh_plan', elapsed)
+            mark_job_success('backfill_sqlmesh_plan')
             return True
         else:
             logger.error("SQLMesh plan failed (exit %d) after %.0fs", result.returncode, elapsed)
+            record_job_duration('backfill_sqlmesh_plan', elapsed)
+            increment_job_failure('backfill_sqlmesh_plan')
             return False
     except Exception as e:
         logger.error("SQLMesh plan raised exception: %s", e)
+        increment_job_failure('backfill_sqlmesh_plan')
         return False
 
 
@@ -516,6 +562,23 @@ Examples:
 
     Path(args.data_dir).mkdir(parents=True, exist_ok=True)
 
+    # Initialize structured logging (JSON for Loki log correlation) and OTel tracing.
+    # Must be called before any significant work so auto-instrumentation is active.
+    # setup_telemetry() reads OTEL_EXPORTER_OTLP_ENDPOINT and OTEL_ENABLED from env;
+    # it also auto-instruments requests, psycopg2, and httpx for distributed tracing.
+    service_name = os.getenv("OTEL_SERVICE_NAME", "dk-data-initial-backfill")
+    if _OBSERVABILITY_AVAILABLE:
+        setup_logging(service_name)
+        setup_telemetry(service_name)
+
+    # Start Prometheus HTTP scrape endpoint (L2 — required for PodMonitor scraping)
+    if _METRICS_AVAILABLE:
+        try:
+            start_http_server(METRICS_PORT)
+            logger.info("Prometheus metrics available on :%d/metrics", METRICS_PORT)
+        except Exception as e:
+            logger.warning("Could not start Prometheus HTTP server: %s", e)
+
     overall_start = time.monotonic()
     logger.info("=" * 60)
     logger.info("INITIAL BACKFILL — dk-data platform")
@@ -559,6 +622,11 @@ Examples:
     run_sqlmesh_run(args.sqlmesh_dir)
 
     elapsed = time.monotonic() - overall_start
+    record_job_duration('backfill_overall', elapsed)
+    if exit_code == 0:
+        mark_job_success('backfill_overall')
+    else:
+        increment_job_failure('backfill_overall')
     logger.info("=" * 60)
     logger.info("INITIAL BACKFILL COMPLETE in %.0f minutes", elapsed / 60)
     logger.info("=" * 60)
