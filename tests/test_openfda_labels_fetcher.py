@@ -20,7 +20,6 @@ from dk_data.ingestion.fetchers.openfda_labels import (
     BASE_URL,
     FDA_SKIP_LIMIT,
     OpenFDALabelsFetcher,
-    PAGE_SIZE,
 )
 
 
@@ -154,8 +153,6 @@ class TestOpenFDALabelsFetcherSkipLimitCap:
 
         # Patch _paginate to capture the max_records it receives
         captured = {}
-        original_paginate = fetcher._paginate
-
         def spy_paginate(search, max_records, date_str):
             captured["max_records"] = max_records
             return [], 0

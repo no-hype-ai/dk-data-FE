@@ -11,7 +11,6 @@ Verifies:
 - Date scoping parameter construction
 """
 
-import json
 import tempfile
 from unittest.mock import patch
 
@@ -20,7 +19,6 @@ import responses
 from dk_data.ingestion.fetchers.clinicaltrials import (
     BASE_URL,
     ClinicalTrialsFetcher,
-    PAGE_SIZE,
 )
 
 

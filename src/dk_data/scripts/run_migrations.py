@@ -120,9 +120,15 @@ def ensure_tracking_table(conn) -> None:
             CREATE INDEX IF NOT EXISTS idx_schema_migrations_applied_at
                 ON meta.schema_migrations (applied_at DESC);
         """)
-        # Widen version column on existing DBs that were created with VARCHAR(10)
+        # Widen version column on existing DBs that were created with VARCHAR(10).
+        # Must drop any views that depend on the column before altering it, then
+        # recreate them afterwards (Postgres cannot alter a column type in-place
+        # when a view depends on it — error 0A000 / "cannot alter type of a column
+        # used by a view or rule").
         cur.execute("""
             DO $$
+            DECLARE
+                v_def TEXT;
             BEGIN
                 IF EXISTS (
                     SELECT 1 FROM information_schema.columns
@@ -132,8 +138,20 @@ def ensure_tracking_table(conn) -> None:
                       AND character_maximum_length IS NOT NULL
                       AND character_maximum_length < 255
                 ) THEN
+                    -- Capture the view definition before dropping it
+                    SELECT pg_get_viewdef('api.migration_status', true)
+                      INTO v_def;
+
+                    -- Drop the dependent view so the column alter can proceed
+                    DROP VIEW IF EXISTS api.migration_status CASCADE;
+
                     ALTER TABLE meta.schema_migrations
                         ALTER COLUMN version TYPE VARCHAR(255);
+
+                    -- Recreate the view using its original definition
+                    IF v_def IS NOT NULL THEN
+                        EXECUTE 'CREATE OR REPLACE VIEW api.migration_status AS ' || v_def;
+                    END IF;
                 END IF;
             END $$;
         """)
