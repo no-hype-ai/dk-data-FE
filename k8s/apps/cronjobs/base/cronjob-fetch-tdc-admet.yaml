@@ -20,6 +20,7 @@ spec:
   jobTemplate:
     spec:
       backoffLimit: 2
+      ttlSecondsAfterFinished: 86400
       activeDeadlineSeconds: 1800  # 30 min timeout (small GitHub TSV files)
       template:
         metadata:
