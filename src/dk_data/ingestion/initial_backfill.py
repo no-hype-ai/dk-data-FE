@@ -61,6 +61,25 @@ FILE_BASED_SOURCES = {
 # If last_successful_refresh is within this many hours, skip (already fresh).
 SKIP_IF_REFRESHED_WITHIN_HOURS = 12
 
+# Per-source kwargs to pass during backfill to override conservative defaults.
+# These raise record caps for API sources whose defaults are tuned for daily incremental runs.
+BACKFILL_SOURCE_KWARGS: dict = {
+    # OpenFDA: default max_records=5000; raise to FDA hard limit for full backfill
+    'openfda_labels': {'max_records': 25_000},
+    # ClinicalTrials: default max_records=10000; raise for multi-year window
+    'clinicaltrials': {'max_records': 50_000},
+    # UniProt: increase to fetch beyond the first page (500 results default)
+    'uniprot': {'max_results': 5_000},
+    # PDB: increase from 500 default for broader drug-target coverage
+    'pdb': {'max_results': 2_000},
+    # EMA regulatory: days_back=None fetches full dataset (all ~2641 records)
+    'ema_regulatory': {'days_back': None},
+    # Cochrane: raise to get full historical review set
+    'cochrane': {'max_records': 10_000, 'days_back': None},
+    # KEGG: raise to fetch all ~12,000 drug entries (default 5000)
+    'kegg_drug': {'max_entries': 15_000},
+}
+
 
 def compute_backfill_days() -> int:
     """Compute days_back needed to cover from SQLMESH_START_DATE to today."""
@@ -178,10 +197,12 @@ def run_fetch_backfill(data_dir: str, dry_run: bool = False) -> dict:
             continue
 
         try:
+            extra_kwargs = BACKFILL_SOURCE_KWARGS.get(source, {})
             result = run_ingestion(
                 source=source,
                 data_dir=data_dir,
                 days_back=effective_days_back,  # None = file-based full refresh
+                **extra_kwargs,
             )
             status = result.get('status', 'unknown')
             records = result.get('records_inserted', result.get('records_fetched', 0))

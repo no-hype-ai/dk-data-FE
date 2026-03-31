@@ -151,7 +151,21 @@ class CochraneFetcher(BaseFetcher):
                     "publishDateFrom": date_from,
                 }
 
-                data = self.fetch_json(self.get_latest_url(), params=params)
+                response = self.session.get(
+                    self.get_latest_url(), params=params, timeout=30
+                )
+                if response.status_code in (401, 403):
+                    # cochranelibrary.com/api/search requires institutional Wiley
+                    # subscription. This endpoint is not publicly accessible.
+                    # Contact Wiley for API access: https://documentation.cochrane.org/display/API
+                    logger.warning(
+                        "Cochrane API returned %d — endpoint requires institutional "
+                        "Wiley subscription. Skipping.",
+                        response.status_code,
+                    )
+                    break
+                response.raise_for_status()
+                data = response.json()
 
                 items = self._extract_items(data)
                 if not items:

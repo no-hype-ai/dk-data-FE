@@ -10,6 +10,7 @@ Source: https://search.rcsb.org/
 
 import hashlib
 import logging
+import time
 from typing import Any, Dict, List
 
 from .base import BaseFetcher
@@ -97,9 +98,13 @@ class PDBFetcher(BaseFetcher):
         return [r["identifier"] for r in data.get("result_set", [])]
 
     def _fetch_details(self, pdb_ids: List[str]) -> List[Dict[str, Any]]:
-        """Fetch entry details for a list of PDB IDs."""
+        """Fetch entry details for a list of PDB IDs.
+
+        RCSB PDB recommends "a handful of requests per second". 0.1s delay
+        (~10 req/s) is polite for sequential per-ID calls.
+        """
         records = []
-        for pdb_id in pdb_ids:
+        for i, pdb_id in enumerate(pdb_ids):
             try:
                 url = f"{self.DATA_URL}/{pdb_id}"
                 data = self.fetch_json(url)
@@ -114,4 +119,8 @@ class PDBFetcher(BaseFetcher):
                 })
             except Exception as e:
                 logger.warning(f"Failed to fetch details for {pdb_id}: {e}")
+            # Polite inter-request delay — RCSB does not publish a hard limit
+            # but rate-limits aggressively on shared IPs; 100ms keeps us ~10 req/s.
+            if i < len(pdb_ids) - 1:
+                time.sleep(0.1)
         return records

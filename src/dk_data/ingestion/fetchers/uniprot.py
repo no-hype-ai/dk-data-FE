@@ -66,12 +66,19 @@ class UniProtFetcher(BaseFetcher):
             return result
 
     def _search(self, query: str, size: int = 500) -> List[Dict[str, Any]]:
-        """Search UniProt and return protein records."""
+        """Search UniProt and return protein records.
+
+        UniProt REST API returns up to 500 results per page. For queries that
+        exceed 500 results, the response includes a Link header with rel="next"
+        pointing to the next page URL. We follow these links until exhausted or
+        max_results reached.
+        """
         url = f"{self.BASE_URL}/search"
+        page_size = min(size, 500)
         params = {
             "query": query,
             "format": "json",
-            "size": str(min(size, 500)),
+            "size": str(page_size),
             # UniProt REST API v2 field names for JSON format.
             # These return the full nested objects needed by the bronze SQL model:
             #   accession         → primaryAccession
@@ -94,7 +101,38 @@ class UniProtFetcher(BaseFetcher):
             ),
         }
 
-        data = self.fetch_json(url, params=params)
-        results = data.get("results", [])
-        logger.info(f"UniProt search returned {len(results)} proteins")
-        return results
+        all_results: List[Dict[str, Any]] = []
+        next_url = url
+
+        while next_url and len(all_results) < size:
+            if next_url == url:
+                response = self.session.get(next_url, params=params, timeout=60)
+            else:
+                # Subsequent pages: URL already includes all params from Link header
+                response = self.session.get(next_url, timeout=60)
+            response.raise_for_status()
+            data = response.json()
+
+            page_results = data.get("results", [])
+            all_results.extend(page_results)
+
+            # Follow Link: <url>; rel="next" header for pagination beyond 500
+            link_header = response.headers.get("Link", "")
+            next_url = None
+            if link_header:
+                for part in link_header.split(","):
+                    part = part.strip()
+                    if 'rel="next"' in part:
+                        # Extract URL from <url> format
+                        start = part.find("<") + 1
+                        end = part.find(">")
+                        if start > 0 and end > start:
+                            next_url = part[start:end]
+                        break
+
+            if len(page_results) < page_size:
+                # Last page — fewer results than requested
+                break
+
+        logger.info("UniProt search returned %d proteins", len(all_results))
+        return all_results[:size]

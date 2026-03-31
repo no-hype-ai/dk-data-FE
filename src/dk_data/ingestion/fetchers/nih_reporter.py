@@ -31,7 +31,11 @@ except ImportError:
 
 NIH_REPORTER_API = "https://api.reporter.nih.gov/v2/projects/search"
 PAGE_SIZE = 500
-MAX_RECORDS = 50000  # safety cap
+# NIH Reporter Projects API hard-stops at offset 14,999 (15,000 records max per query).
+# Publications API hard-stops at offset 9,999 (10,000 records max per query).
+# The date-range filter (project_start_date) keeps result sets well under this ceiling.
+# Setting this to 50,000 would never trigger on a single unfiltered query.
+MAX_RECORDS = 15_000  # matches Projects API hard ceiling
 
 # NIH Reporter docs recommend ~1 req/s to avoid throttling.
 REQUEST_DELAY = 1.1  # seconds between paginated POST requests

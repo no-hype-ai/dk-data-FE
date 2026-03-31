@@ -4,7 +4,17 @@ Feature: 011-datasource-integration
 Task: Tier 4 CI source — EMA regulatory decisions
 
 Fetches CHMP opinions, EPAR documents, and safety signals from the
-European Medicines Agency public API.
+European Medicines Agency open data bulk JSON export.
+
+Data source:
+  EMA publishes the full authorized medicines dataset as a bulk JSON file,
+  refreshed twice daily (06:00 and 18:00 CET). ~2,641 records total.
+
+  Bulk JSON: https://www.ema.europa.eu/en/documents/report/medicines-output-medicines_json-report_en.json
+
+  The previously used paginated endpoint (ema.europa.eu/api/v1/medicines)
+  is not an officially documented EMA API. The bulk download is the
+  official data access method (ema.europa.eu/en/medicines/download-medicine-data).
 
 Source: https://www.ema.europa.eu/en/medicines
 """
@@ -25,11 +35,11 @@ class EMARegulatoryCIFetcher(BaseFetcher):
     SOURCE_NAME = "ema_regulatory"
     BASE_URL = "https://www.ema.europa.eu/en/medicines"
 
-    # EMA public medicines API
-    EMA_API_BASE = "https://www.ema.europa.eu/en/medicines/field_ema_web_categories"
-
-    # Known EMA API endpoints for structured data
-    MEDICINES_API = "https://www.ema.europa.eu/api/v1/medicines"
+    # Official EMA bulk JSON export — all authorized medicines, updated twice daily.
+    # No pagination, no rate limit, no authentication required.
+    BULK_JSON_URL = (
+        "https://www.ema.europa.eu/en/documents/report/medicines-output-medicines_json-report_en.json"
+    )
 
     # Decision types we track
     VALID_DECISION_TYPES = frozenset({
@@ -51,20 +61,20 @@ class EMARegulatoryCIFetcher(BaseFetcher):
     # Document types fetched
     DOCUMENT_TYPES = ["chmp_opinion", "epar", "safety_signal"]
 
-    # Default page size
-    PAGE_SIZE = 50
-
     def get_latest_url(self) -> str:
-        """Get URL for the EMA medicines API endpoint."""
-        return self.MEDICINES_API
+        """Get URL for the EMA bulk JSON endpoint."""
+        return self.BULK_JSON_URL
 
     def fetch(self, **kwargs) -> Dict[str, Any]:
         """
-        Fetch recent EMA regulatory decisions.
+        Fetch recent EMA regulatory decisions from the bulk JSON export.
+
+        Downloads the full EMA authorized medicines dataset (~2,641 records)
+        in a single request, then filters client-side by date window.
 
         Keyword Args:
             days_back: Number of days to look back (default: 7).
-            max_pages: Maximum number of pages to fetch (default: 20).
+                       Pass None or 0 to return all records (full backfill).
 
         Returns:
             Dictionary with:
@@ -74,44 +84,51 @@ class EMARegulatoryCIFetcher(BaseFetcher):
             - error: Error message (if failed)
         """
         days_back = kwargs.get("days_back", 7)
-        max_pages = kwargs.get("max_pages", 20)
 
         try:
-            logger.info(
-                "Fetching EMA regulatory decisions (last %d days)", days_back
-            )
+            logger.info("Fetching EMA regulatory decisions from bulk JSON (last %s days)", days_back)
+
+            raw_items = self._fetch_bulk()
+            logger.info("EMA bulk JSON: %d raw items", len(raw_items))
+
+            # Apply date filter client-side
+            since_date: Optional[str] = None
+            if days_back:
+                since_date = (
+                    datetime.now(timezone.utc) - timedelta(days=int(days_back))
+                ).strftime("%Y-%m-%d")
 
             all_records: List[Dict[str, Any]] = []
-
-            # Fetch each document type
-            for doc_type in self.DOCUMENT_TYPES:
-                records = self._fetch_document_type(
-                    doc_type, days_back=days_back, max_pages=max_pages
-                )
-                all_records.extend(records)
-
-            # Deduplicate by document_id
             seen_ids: set = set()
-            unique_records: List[Dict[str, Any]] = []
-            for record in all_records:
-                doc_id = record.get("document_id")
-                if doc_id and doc_id not in seen_ids:
-                    seen_ids.add(doc_id)
-                    unique_records.append(record)
 
-            # Compute content hash
-            content_hash = self._compute_hash(unique_records)
+            for item in raw_items:
+                # Infer doc_type from item fields
+                doc_type = self._infer_doc_type(item)
+
+                normalised = self._normalise_record(item, doc_type)
+                if not normalised:
+                    continue
+
+                # Date filter
+                if since_date and normalised.get("decision_date"):
+                    if normalised["decision_date"] < since_date:
+                        continue
+
+                doc_id = normalised["document_id"]
+                if doc_id not in seen_ids:
+                    seen_ids.add(doc_id)
+                    all_records.append(normalised)
+
+            content_hash = self._compute_hash(all_records)
 
             result: Dict[str, Any] = {
                 "status": "success",
-                "records": unique_records,
+                "records": all_records,
                 "hash": content_hash,
-                "record_count": len(unique_records),
+                "record_count": len(all_records),
                 "days_back": days_back,
             }
-            self.log_fetch_result(
-                {"status": "success", "records": len(unique_records)}
-            )
+            self.log_fetch_result({"status": "success", "records": len(all_records)})
             return result
 
         except Exception as e:
@@ -129,68 +146,21 @@ class EMARegulatoryCIFetcher(BaseFetcher):
     # Internal helpers
     # ------------------------------------------------------------------
 
-    def _fetch_document_type(
-        self,
-        doc_type: str,
-        *,
-        days_back: int = 7,
-        max_pages: int = 20,
-    ) -> List[Dict[str, Any]]:
-        """
-        Fetch paginated results for a single EMA document type.
+    def _fetch_bulk(self) -> List[Dict[str, Any]]:
+        """Download the EMA bulk JSON file and extract the medicines list."""
+        response = self.session.get(self.BULK_JSON_URL, timeout=120)
+        response.raise_for_status()
+        data = response.json()
+        return self._extract_items(data)
 
-        Args:
-            doc_type: One of DOCUMENT_TYPES.
-            days_back: Look-back window in days.
-            max_pages: Safety limit for pagination.
-
-        Returns:
-            List of normalised record dicts.
-        """
-        records: List[Dict[str, Any]] = []
-        since_date = (
-            datetime.now(timezone.utc) - timedelta(days=days_back)
-        ).strftime("%Y-%m-%d")
-        page = 0
-
-        while page < max_pages:
-            params = {
-                "type": doc_type,
-                "date_from": since_date,
-                "page": page,
-                "page_size": self.PAGE_SIZE,
-            }
-
-            try:
-                data = self.fetch_json(self.get_latest_url(), params=params)
-            except Exception as e:
-                logger.warning(
-                    "EMA API request failed for %s page %d: %s",
-                    doc_type,
-                    page,
-                    e,
-                )
-                break
-
-            items = self._extract_items(data)
-            if not items:
-                break
-
-            for item in items:
-                normalised = self._normalise_record(item, doc_type)
-                if normalised:
-                    records.append(normalised)
-
-            # Stop when we receive fewer items than the page size
-            if len(items) < self.PAGE_SIZE:
-                break
-
-            page += 1
-
-        logger.info(
-            "Fetched %d %s records from EMA", len(records), doc_type
-        )
-        return records
+    def _infer_doc_type(self, item: Dict[str, Any]) -> str:
+        """Infer document type from item fields (bulk JSON has no explicit type field)."""
+        category = str(item.get("category") or item.get("type") or "").lower()
+        if "signal" in category or "safety" in category:
+            return "safety_signal"
+        if "chmp" in category or "opinion" in category:
+            return "chmp_opinion"
+        return "epar"
 
     @staticmethod
     def _extract_items(data: Any) -> List[Dict]:

@@ -8,7 +8,7 @@ The bronze model (mol_bronze.openfda_labels) unnests the results array
 using ``jsonb_array_elements(response_body->'results')``.
 
 API Docs: https://open.fda.gov/apis/drug/label/
-Rate limit: 1000 req/min (with API key); 40 req/min (anonymous)
+Rate limit: 240 req/min (with or without API key; API key increases daily cap to 120,000 req/day vs 1,000/day anonymous)
 Max records per search: 25 000 (skip + limit ≤ 25 000)
 """
 
