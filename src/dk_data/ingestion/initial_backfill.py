@@ -316,7 +316,9 @@ def _fetch_one(source: str, data_dir: str, days_back: int | None,
     Emits per-source Prometheus metrics: duration, record count, failure count.
     """
     if semaphore is not None:
+        t_wait = time.monotonic()
         semaphore.acquire()
+        record_job_duration(f'backfill_semaphore_wait_{source}', time.monotonic() - t_wait)
     t0 = time.monotonic()
     try:
         extra_kwargs = BACKFILL_SOURCE_KWARGS.get(source, {})

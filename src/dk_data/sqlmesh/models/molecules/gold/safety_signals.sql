@@ -1,6 +1,15 @@
 -- SQLMesh Model: Gold Safety Signals
 -- Aggregated safety data from FAERS and drug labels
 -- Part of: 012-dk-data-platform
+--
+-- IMPORTANT — partial coverage by design:
+--   This table contains ONE ROW PER MOLECULE WITH SAFETY DATA only.
+--   Molecules with no FAERS reports AND no boxed warning are excluded by the final WHERE clause.
+--   Do NOT use this table to enumerate all molecules — join back to mol_silver.molecules
+--   for complete molecule coverage (e.g. LEFT JOIN mol_gold.safety_signals ON molecule_id).
+--
+-- soc_distribution is NULL — MedDRA PT→SOC hierarchy requires a license not held.
+--   See issue #174 for fix options. meddra_pt (preferred term) in top_adverse_events is populated.
 
 MODEL (
     name mol_gold.safety_signals,

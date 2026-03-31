@@ -112,9 +112,22 @@ WHERE source_name IN ('acc_tvc', 'cms_inpatient', 'cms_hospital_info', 'cms_cost
 ORDER BY source_name;
 ```
 
+## Sources that do NOT require manual upload
+
+The following sources were flagged in audit as potentially needing manual handling but are
+fully automated via API fetchers and Kubernetes CronJobs — no operator action required:
+
+| Source | CronJob | Notes |
+|--------|---------|-------|
+| `cms_usp` | `cronjob-fetch-cms-usp` | USP drug classification via CMSUSPFetcher |
+| `cms_stabilis` | `cronjob-fetch-cms-stabilis` | Drug stability reference via CMSStabilisFetcher |
+| `cms_dual_eligible` | `cronjob-fetch-cms-dual-eligible` | Dual eligible beneficiary data via CMSDualEligibleFetcher |
+
+---
+
 ## Notes
 
-- All 4 sources write to `hcs_raw.*` tables, which feed `hcs_bronze.*` via SQLMesh.
+- All 4 manual-upload sources write to `hcs_raw.*` tables, which feed `hcs_bronze.*` via SQLMesh.
 - After uploading new data, run a SQLMesh plan to propagate changes through bronze → silver → gold:
   ```bash
   sqlmesh plan --select hcs_bronze.cms_hospital_general_info+ --auto-apply
