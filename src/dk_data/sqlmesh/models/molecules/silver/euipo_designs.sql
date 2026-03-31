@@ -33,7 +33,7 @@ SELECT
     b.is_healthcare_related,
     b.image_url,
     b.number_of_designs,
-    b.source,
+    'euipo'                         AS source,
     NOW()                           AS created_at
 
 FROM mol_bronze.euipo_designs b

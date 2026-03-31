@@ -165,8 +165,8 @@ BACKFILL_SOURCE_KWARGS: dict = {
         'max_results': 25_000,
     },
     # PDB: raise to 50k — covers all drug-target-relevant crystal structures.
-    # NOTE: the fetcher _search() only fetches one page of 500 from RCSB search API.
-    # The PDB fetcher paginator is fixed in this session to loop through all pages.
+    # The fetcher paginates via RCSB paginate.start offset (500 entries/page) and
+    # loops until the final page returns fewer than 500 results.
     'pdb': {'max_results': 50_000},
     # EMA regulatory: days_back=None fetches full dataset (all ~2641 records)
     'ema_regulatory': {'days_back': None},

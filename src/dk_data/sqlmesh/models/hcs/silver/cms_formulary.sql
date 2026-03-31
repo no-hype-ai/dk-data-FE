@@ -1,9 +1,11 @@
 -- SQLMesh Model: Silver CMS Part D Formulary
 -- Typed pass-through of CMS Part D formulary data from hcs_bronze.cms_formulary.
--- Links drugs to molecules via rxcui → mol_silver.molecules (rxcui column),
--- falling back to mol_silver.molecule_aliases when direct match is unavailable.
+-- Links drugs to molecules via rxcui → mol_silver.identifier_mappings (identifier_type='rxcui'),
+-- falling back to mol_silver.molecule_aliases when no identifier_mappings entry exists.
+-- Note: mol_silver.molecules has no rxcui column; rxcui→molecule_id resolution requires
+-- the identifier_mappings table (populated from drug_labels.rxcui via OpenFDA).
 -- Consumers: drug_utilization, part_d_prescribing, market access analysis.
--- Part of: issue #172 H3
+-- Part of: issue #172 H3, #173 C4
 
 MODEL (
     name hcs_silver.cms_formulary,
@@ -25,7 +27,7 @@ SELECT
     b.quantity_limit,
 
     -- Molecule linkage via RxNorm CUI
-    COALESCE(m_rxcui.molecule_id, m_alias.molecule_id) AS molecule_id,
+    COALESCE(im.molecule_id, m_alias.molecule_id) AS molecule_id,
 
     b.source,
     b.source_updated_at,
@@ -33,14 +35,15 @@ SELECT
 
 FROM hcs_bronze.cms_formulary b
 
--- Primary: match on rxcui stored in mol_silver.molecules
-LEFT JOIN mol_silver.molecules m_rxcui
+-- Primary: rxcui → identifier_mappings (populated from drug_labels.rxcui JSONB via OpenFDA)
+LEFT JOIN mol_silver.identifier_mappings im
        ON b.rxcui IS NOT NULL
-      AND m_rxcui.rxcui = b.rxcui
+      AND im.identifier_type = 'rxcui'
+      AND im.identifier_value = b.rxcui::TEXT
 
--- Fallback: mol_silver.molecule_aliases keyed on rxcui as alias
+-- Fallback: rxcui as alias_name in molecule_aliases (edge case)
 LEFT JOIN mol_silver.molecule_aliases ma
-       ON m_rxcui.molecule_id IS NULL
+       ON im.molecule_id IS NULL
       AND b.rxcui IS NOT NULL
       AND ma.alias_name = b.rxcui::TEXT
 LEFT JOIN mol_silver.molecules m_alias

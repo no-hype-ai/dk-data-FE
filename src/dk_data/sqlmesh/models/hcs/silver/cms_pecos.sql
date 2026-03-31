@@ -25,13 +25,15 @@ SELECT
     b.last_name,
 
     -- Provider identity from NPPES
-    n.provider_name,
-    n.provider_type,
-    n.city                          AS provider_city,
-    n.zip_code                      AS provider_zip,
+    -- entity_type_code: '1' = individual, '2' = organization
+    COALESCE(n.provider_organization_name,
+             n.provider_last_name || ', ' || n.provider_first_name) AS provider_name,
+    n.entity_type_code                                              AS provider_type,
+    n.provider_business_practice_location_address_city_name        AS provider_city,
+    n.provider_business_practice_location_address_postal_code      AS provider_zip,
 
     b.source,
-    b.source_updated_at,
+    b.ingested_at                   AS source_updated_at,
     NOW()                           AS created_at
 
 FROM hcs_bronze.cms_pecos b

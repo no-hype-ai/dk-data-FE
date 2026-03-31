@@ -43,3 +43,15 @@ sources:
       - name: indication
       - name: mechanism_of_action
       - name: source_updated_at
+
+  - name: mol_raw.nice_hta
+    description: "NICE HTA decisions — populated by NiceHTAFetcher; consumed by mol_bronze.nice_hta"
+
+  - name: mol_raw.euipo_designs
+    description: "EUIPO design registrations — populated by EUIPODesignsFetcher; consumed by mol_bronze.euipo_designs"
+
+  - name: mol_raw.cms_coverage
+    description: "CMS Medicare coverage decisions — populated by CMSCoverageFetcher; consumed by mol_bronze.cms_coverage"
+
+  - name: mol_raw.cms_medicare
+    description: "CMS Medicare drug spending — populated by CMSMedicareFetcher; consumed by mol_bronze.cms_medicare"
