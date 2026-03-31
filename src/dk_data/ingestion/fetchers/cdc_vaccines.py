@@ -20,6 +20,7 @@ Stores records in mol_raw.cdc_vaccines (migration 096).
 import hashlib
 import json
 import logging
+import os
 import time
 from typing import Any, Dict, List
 
@@ -32,6 +33,10 @@ _CDC_DATA_API = "https://data.cdc.gov/resource"
 _CVX_DATASET_ID = "fhky-rtsk"          # Vaccine Administered (CVX) codes
 _MVX_DATASET_ID = "n6hk-4tzf"          # Manufacturer (MVX) codes
 _CDC_API_LIMIT = 1000
+
+# CDC Socrata app token — unauthenticated requests are throttled per IP.
+# Register free at https://data.cdc.gov/profile/app_tokens and set CDC_APP_TOKEN env var.
+_CDC_APP_TOKEN = os.environ.get("CDC_APP_TOKEN", "")
 
 # Fallback: NLM FHIR CodeSystem for CVX
 _FHIR_CVX_URL = "https://clinicaltables.nlm.nih.gov/api/cvx_codes/v3/search?terms=&maxList=500"
@@ -104,8 +109,10 @@ class CDCVaccinesFetcher(BaseFetcher):
         while True:
             url = f"{_CDC_DATA_API}/{dataset_id}.json"
             params = {"$limit": _CDC_API_LIMIT, "$offset": offset}
+            # App token removes per-IP throttling; include when configured
+            headers = {"X-App-Token": _CDC_APP_TOKEN} if _CDC_APP_TOKEN else {}
             try:
-                resp = self.session.get(url, params=params, timeout=60)
+                resp = self.session.get(url, params=params, headers=headers, timeout=60)
                 if resp.status_code == 404:
                     logger.debug("CDCVaccines: dataset %s not found (404)", dataset_id)
                     break

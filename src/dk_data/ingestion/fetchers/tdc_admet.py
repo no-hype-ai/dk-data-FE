@@ -21,6 +21,7 @@ Note: TDC moved data hosting from GitHub raw files to Harvard Dataverse.
 import hashlib
 import json
 import logging
+import os
 from typing import Any, Dict, List, Optional
 
 from .base import BaseFetcher
@@ -70,6 +71,11 @@ SOURCE_NAME = "tdc_admet"
 BASE_RESOURCE_URL = _DATAVERSE_BASE
 
 DEFAULT_MAX_ROWS_PER_DATASET = 5000
+
+# Harvard Dataverse API token — unauthenticated calls use tier-0 rate limiting.
+# Create a free account at dataverse.harvard.edu, generate API token in Account Settings,
+# and set DATAVERSE_API_TOKEN env var to remove tier-0 throttling.
+_DATAVERSE_API_TOKEN = os.environ.get("DATAVERSE_API_TOKEN", "")
 
 
 class TDCAdmetFetcher(BaseFetcher):
@@ -192,7 +198,8 @@ class TDCAdmetFetcher(BaseFetcher):
             requests.HTTPError: If the download fails (e.g. 404).
             ValueError: If the TSV cannot be parsed.
         """
-        response = self.session.get(url, timeout=60)
+        headers = {"X-Dataverse-key": _DATAVERSE_API_TOKEN} if _DATAVERSE_API_TOKEN else {}
+        response = self.session.get(url, headers=headers, timeout=60)
         response.raise_for_status()
 
         content = response.text

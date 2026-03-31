@@ -45,9 +45,12 @@ SQLMESH_START_DATE = date(2024, 1, 1)
 # Sources that should be skipped during backfill (either deprecated, disabled,
 # or handled by separate file-upload workflows).
 SKIP_SOURCES = {
-    'acc_tvc',         # Manual file upload — no automated fetcher available
-    'cms_inpatient',   # Manual file upload — no automated fetcher available
-    'cms_cost_reports',# Handled by fetch_all_years() inside fetcher; runs separately
+    'acc_tvc',          # Manual file upload — no automated fetcher available
+    'cms_inpatient',    # Manual file upload — no automated fetcher available
+    'cms_cost_reports', # Handled by fetch_all_years() inside fetcher; runs separately
+    'cms_usp',          # Requires manual USP MMG v9 registration download (go.usp.org/MMG_v9.0)
+    'cms_stabilis',     # Web scraping only — no bulk API; contact infostab@stabilis.org
+    'cms_dual_eligible',# Parser not implemented — multi-sheet Excel requires custom XLSX handler
 }
 
 # File-based sources (default_days_back=None) that support multi-year fetching
@@ -60,6 +63,26 @@ FILE_BASED_SOURCES = {
 # How stale a prior refresh must be before we re-fetch during backfill.
 # If last_successful_refresh is within this many hours, skip (already fresh).
 SKIP_IF_REFRESHED_WITHIN_HOURS = 12
+
+# ---------------------------------------------------------------------------
+# CMS PUF MULTI-YEAR GAP — KNOWN LIMITATION
+# ---------------------------------------------------------------------------
+# All CMS PUF fetchers (cms_physician_puf, cms_outpatient_puf, etc.) call
+# _fetch_cms_api() against a single dataset UUID that represents the LATEST
+# published service year (~2023). They do NOT loop over historical years.
+#
+# The raw table schemas include _source_year and UNIQUE constraints that
+# support multi-year data, but the fetchers never populate prior years.
+#
+# For a complete historical backfill (2021, 2022, 2023, 2024), each PUF
+# fetcher needs:
+#   1. A YEAR_DATASET_UUIDS dict mapping year → CMS dataset UUID
+#      (discoverable via data.cms.gov/data.json catalog)
+#   2. Year-loop logic in the fetcher or orchestrator
+#
+# This is tracked as a separate task. For now, the backfill loads the
+# latest available year for each CMS PUF source.
+# ---------------------------------------------------------------------------
 
 # Per-source kwargs to pass during backfill to override conservative defaults.
 # These raise record caps for API sources whose defaults are tuned for daily incremental runs.
