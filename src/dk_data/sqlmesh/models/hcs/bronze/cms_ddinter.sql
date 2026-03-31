@@ -1,6 +1,14 @@
 -- SQLMesh Model: Bronze CMS DDInter Drug Interactions
 -- Extracts typed columns from JSONB response_body
 -- Part of: 016-cms-puf-datasource-integration
+--
+-- ⚠️ RETIRED (020-drugbank-seed-schema-fix): The DDInter source (ddinter.scbdd.com)
+-- has been permanently unreachable since March 2026. This model has no downstream
+-- silver or gold consumers. Drug-drug interaction data is fully covered by
+-- mol_bronze.drugbank (drug_interactions column) → mol_silver.drug_pharmacology.
+-- The fetcher, CronJob, and sources/__init__.py entry have been removed.
+-- This model is retained to keep hcs_raw.cms_ddinter readable if historical
+-- raw data was ingested before the outage.
 
 MODEL (
     name hcs_bronze.cms_ddinter,

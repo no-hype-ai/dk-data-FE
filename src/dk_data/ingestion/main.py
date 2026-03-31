@@ -43,7 +43,6 @@ from .sources.cms_geographic_variation import (
 from .sources.cms_part_d_prescriber import load_cms_part_d_prescriber
 from .sources.cms_care_compare import load_cms_care_compare_data
 from .sources.cms_chow import load_cms_chow_data
-from .sources.cms_ddinter import load_cms_ddinter_data
 from .sources.cms_dmepos import load_cms_dmepos_data
 from .sources.cms_formulary import load_cms_formulary_data
 from .sources.cms_hcris import load_cms_hcris_data
@@ -133,7 +132,6 @@ from .fetchers import (
     CMSPartDPrescriberFetcher,
     CMSCareCompareFetcher,
     CMSCHOWFetcher,
-    CMSDDInterFetcher,
     CMSDMEPOSFetcher,
     CMSFormularyFetcher,
     CMSHCRISFetcher,
@@ -457,14 +455,6 @@ SOURCES = {
         'description': 'CMS CHOW facility ownership change records',
         'fetcher': CMSCHOWFetcher,
         'loader': load_cms_chow_data,
-        'requires_file': False,
-        'default_days_back': None,
-    },
-    'cms_ddinter': {
-        'name': 'CMS DDInter',
-        'description': 'CMS drug-drug interaction data',
-        'fetcher': CMSDDInterFetcher,
-        'loader': load_cms_ddinter_data,
         'requires_file': False,
         'default_days_back': None,
     },

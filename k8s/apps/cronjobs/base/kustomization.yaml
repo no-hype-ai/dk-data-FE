@@ -79,7 +79,6 @@ resources:
   # CMS facility/provider/reference sources (ported from 016)
   - cronjob-fetch-cms-care-compare.yaml
   - cronjob-fetch-cms-chow.yaml
-  - cronjob-fetch-cms-ddinter.yaml
   - cronjob-fetch-cms-dmepos.yaml
   - cronjob-fetch-cms-formulary.yaml
   - cronjob-fetch-cms-hcris.yaml

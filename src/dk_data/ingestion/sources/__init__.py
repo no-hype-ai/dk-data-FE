@@ -32,7 +32,6 @@ __all__ = [
     'cms_part_d_prescriber',
     'cms_care_compare',
     'cms_chow',
-    'cms_ddinter',
     'cms_dmepos',
     'cms_formulary',
     'cms_hcris',
