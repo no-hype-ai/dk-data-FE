@@ -227,7 +227,7 @@ class HTABodiesFetcher(BaseFetcher):
             )
             return []
 
-        headers = {"Ocp-Apim-Subscription-Key": _NICE_API_KEY}
+        headers = {"API-Key": _NICE_API_KEY}
         try:
             response = self.session.get(NICE_API_BASE, params=params, headers=headers, timeout=30)
             if response.status_code in (401, 403):
