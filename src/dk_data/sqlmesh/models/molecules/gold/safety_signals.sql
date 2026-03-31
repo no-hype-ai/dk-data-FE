@@ -72,26 +72,12 @@ top_adverse_events AS (
 ),
 
 -- Adverse events by System Organ Class
+-- NOTE: meddra_soc is always NULL in mol_silver.adverse_events — MedDRA PT→SOC hierarchy
+-- requires a MedDRA license (not available). soc_distribution is suppressed (NULL) rather
+-- than emitting a misleading {"Unknown": N} bucket. See issue #174 for fix options.
 soc_breakdown AS (
-    SELECT
-        molecule_id,
-        jsonb_object_agg(
-            COALESCE(meddra_soc, 'Unknown'),
-            jsonb_build_object(
-                'count', soc_count,
-                'serious_count', soc_serious
-            )
-        ) AS soc_distribution
-    FROM (
-        SELECT
-            molecule_id,
-            meddra_soc,
-            SUM(report_count) AS soc_count,
-            SUM(serious_count) AS soc_serious
-        FROM mol_silver.adverse_events
-        GROUP BY molecule_id, meddra_soc
-    ) soc_agg
-    GROUP BY molecule_id
+    SELECT molecule_id, NULL::JSONB AS soc_distribution
+    FROM (SELECT DISTINCT molecule_id FROM mol_silver.adverse_events) _m
 ),
 
 -- Get boxed warning from latest label
