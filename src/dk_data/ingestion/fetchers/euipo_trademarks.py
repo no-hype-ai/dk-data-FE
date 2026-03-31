@@ -35,9 +35,10 @@ class EUIPOTrademarksFetcher(BaseFetcher):
     SOURCE_NAME = "euipo_trademarks"
     BASE_URL = "https://www.tmdn.org/tmview/api/search"
 
-    # IBM Gateway endpoints (EUIPO Official API)
+    # IBM Gateway endpoints (EUIPO Official API — the only supported integration path)
+    # TMview direct API (https://www.tmdn.org/tmview/api/search) is defunct as of 2026.
     IBM_GATEWAY_URL = "https://api.euipo.europa.eu/trademark-search/trademarks"
-    IBM_TOKEN_URL = "https://auth.euipo.europa.eu/oidc/accessToken"
+    IBM_TOKEN_URL = "https://euipo.europa.eu/cas-server-webapp/oidc/accessToken"
 
     def __init__(
         self,
@@ -48,12 +49,12 @@ class EUIPOTrademarksFetcher(BaseFetcher):
 
         Args:
             data_dir: Directory to store downloaded files.
-            backend: 'tmview' or 'ibm_gateway'. Defaults to env EUIPO_BACKEND
-                    or 'tmview' if not set.
+            backend: 'ibm_gateway' (default) or legacy 'tmview' (defunct).
+                    Override via env EUIPO_BACKEND.
         """
         super().__init__(data_dir)
 
-        self.backend = backend or os.environ.get("EUIPO_BACKEND", "tmview")
+        self.backend = backend or os.environ.get("EUIPO_BACKEND", "ibm_gateway")
         self.api_key: Optional[str] = os.environ.get("EUIPO_API_KEY")
         self.secret_key: Optional[str] = os.environ.get("EUIPO_SECRET_KEY")
         self._access_token: Optional[str] = None
@@ -61,10 +62,10 @@ class EUIPOTrademarksFetcher(BaseFetcher):
 
         if self.backend == "ibm_gateway" and not (self.api_key and self.secret_key):
             logger.warning(
-                "EUIPO_API_KEY or EUIPO_SECRET_KEY not set; "
-                "IBM Gateway calls will fail. Falling back to tmview."
+                "EUIPO_API_KEY or EUIPO_SECRET_KEY not set for IBM Gateway; "
+                "EUIPO trademark fetch will fail. "
+                "TMview direct API is defunct — no fallback available."
             )
-            self.backend = "tmview"
 
     def get_latest_url(self) -> str:
         """Return the active backend URL."""
@@ -267,12 +268,19 @@ class EUIPOTrademarksFetcher(BaseFetcher):
             headers = {
                 "Authorization": f"Bearer {self._access_token}",
                 "X-IBM-Client-Id": self.api_key,
+                "Accept": "application/json",
             }
 
+            # EUIPO API uses RSQL query syntax.
+            # niceClasses=in=(5) is integer; applicationDate uses >= operator.
+            nice_class_ints = ",".join(nice_classes)
+            rsql_query = (
+                f"niceClasses=in=({nice_class_ints})"
+                f";applicationDate>={date_from}"
+            )
+
             params = {
-                "niceClasses": ",".join(nice_classes),
-                "offices": "EM",
-                "applicationDateFrom": date_from,
+                "query": rsql_query,
                 "size": min(PAGE_SIZE, max_records - len(records)),
                 "page": page_number,
             }
