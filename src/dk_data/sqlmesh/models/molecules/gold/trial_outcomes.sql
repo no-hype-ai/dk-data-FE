@@ -9,7 +9,7 @@ MODEL (
     audits (
         not_null(columns := (evidence_source, confidence_score))
     ),
-    grain (molecule_id, trial_nct_id, evidence_source)
+    grain (molecule_id, trial_nct_id, endpoint_name, evidence_source)
 );
 
 -- Source 1: ClinicalTrials.gov structured results data

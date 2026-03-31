@@ -1,6 +1,8 @@
 -- SQLMesh Model: Silver Regulatory Milestones
--- Combines FDA Drugs@FDA approval history (fda_drugsfda + fda_drugs) into
--- mol_silver.regulatory_milestones with molecule_id linkage.
+-- FDA Drugs@FDA approval history from mol_bronze.fda_drugs with molecule_id linkage.
+-- Previously sourced from both fda_drugsfda (targeted) + fda_drugs (bulk); merged into
+-- mol_bronze.fda_drugs after audit confirmed mol_raw.fda_drugsfda was never populated
+-- (no fetcher wrote to it — FDADrugsFetcher always wrote to mol_raw.fda_drugs).
 -- Used by: assessment pipeline via PostgREST (path: /regulatory_milestones, schema: mol_silver).
 
 MODEL (
@@ -13,30 +15,8 @@ MODEL (
     grain application_number
 );
 
--- FDA Drugs@FDA (drug-specific lookups via xenon assessment trigger)
-WITH from_fda_drugsfda AS (
-    SELECT
-        b.application_number,
-        b.sponsor_name,
-        b.generic_name,
-        b.brand_name,
-        b.substance_name,
-        b.rxcui,
-        b.dosage_form,
-        b.route,
-        b.marketing_status,
-        b.first_approval_date,
-        b.products,
-        b.submissions,
-        'fda_drugsfda' AS source,
-        b.source_updated_at
-    FROM mol_bronze.fda_drugsfda b
-    WHERE b.application_number IS NOT NULL
-),
-
--- FDA Drugs bulk feed (periodic batch ingestion)
-from_fda_drugs AS (
-    SELECT
+WITH deduped AS (
+    SELECT DISTINCT ON (application_number)
         b.application_number,
         b.sponsor_name,
         b.generic_name,
@@ -53,21 +33,7 @@ from_fda_drugs AS (
         b.source_updated_at
     FROM mol_bronze.fda_drugs b
     WHERE b.application_number IS NOT NULL
-),
-
-combined AS (
-    SELECT * FROM from_fda_drugsfda
-    UNION ALL
-    SELECT * FROM from_fda_drugs
-),
-
--- Prefer fda_drugsfda (targeted) over fda_drugs (bulk) for same application_number
-deduped AS (
-    SELECT DISTINCT ON (application_number) *
-    FROM combined
-    ORDER BY application_number,
-        CASE source WHEN 'fda_drugsfda' THEN 0 ELSE 1 END,
-        source_updated_at DESC NULLS LAST
+    ORDER BY application_number, b.source_updated_at DESC NULLS LAST
 )
 
 SELECT
