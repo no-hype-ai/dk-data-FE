@@ -68,6 +68,30 @@ class CochraneFetcher(BaseFetcher):
         days_back = kwargs.get("days_back", 90)
 
         try:
+            # Pre-flight check: Cochrane API requires institutional Wiley subscription.
+            # Probe the endpoint before doing any search work.
+            probe = self.session.get(
+                self.get_latest_url(),
+                params={"searchBy": "search-manager", "searchText": "test", "resultPerPage": 1},
+                timeout=15,
+            )
+            if probe.status_code in (401, 403):
+                logger.warning(
+                    "Cochrane API returned %d — institutional Wiley subscription required. "
+                    "Register at https://documentation.cochrane.org/display/API. "
+                    "Marking source as unavailable.",
+                    probe.status_code,
+                )
+                result = {
+                    "status": "source_unavailable",
+                    "records": [],
+                    "record_count": 0,
+                    "hash": None,
+                    "error": f"HTTP {probe.status_code}: institutional Wiley subscription required",
+                }
+                self.log_fetch_result(result)
+                return result
+
             if not search_terms:
                 search_terms = self._load_search_terms()
 

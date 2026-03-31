@@ -1,0 +1,80 @@
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: fetch-chembl-molecules
+  labels:
+    app: dk-data-ingestion
+    component: chembl-molecules
+    feature: "019-cms-puf"
+spec:
+  schedule: "0 2 1 * *"  # Monthly — 1st at 2AM UTC (large dataset, monthly refresh)
+  concurrencyPolicy: Forbid
+  startingDeadlineSeconds: 3600
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      backoffLimit: 2
+      ttlSecondsAfterFinished: 86400
+      activeDeadlineSeconds: 14400  # 4 hours — 2.4M records takes time
+      template:
+        metadata:
+          labels:
+            app: fetch-chembl-molecules
+            app.kubernetes.io/component: ingestion
+            app.kubernetes.io/part-of: dk-data
+            team: data-platform
+            service: dk-data
+            product: dk-data
+        spec:
+          restartPolicy: Never
+          imagePullSecrets:
+            - name: ghcr-credentials
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 1000
+            fsGroup: 1000
+            seccompProfile:
+              type: RuntimeDefault
+          containers:
+            - name: fetch-chembl-molecules
+              image: ghcr.io/data-kinetic/dk-data-fe/job-trigger:main
+              securityContext:
+                allowPrivilegeEscalation: false
+                readOnlyRootFilesystem: false
+                capabilities:
+                  drop: ["ALL"]
+              command:
+                - /bin/sh
+                - -c
+                - |
+                  set -e
+                  echo "Fetching ChEMBL molecules data..."
+                  python -m dk_data.ingestion.run --source chembl_molecules
+                  echo "ChEMBL molecules fetch complete."
+              envFrom:
+                - secretRef:
+                    name: dk-data-secrets
+              env:
+                - name: OTEL_EXPORTER_OTLP_ENDPOINT
+                  value: "http://alloy.infra.svc.cluster.local:4317"
+                - name: OTEL_SERVICE_NAME
+                  value: "dk-data-fetch-chembl-molecules"
+              resources:
+                requests:
+                  memory: "2Gi"
+                  cpu: "500m"
+                limits:
+                  memory: "8Gi"
+                  cpu: "2000m"
+              volumeMounts:
+                - name: data
+                  mountPath: /data/raw
+                - name: tmp
+                  mountPath: /tmp
+          volumes:
+            - name: data
+              emptyDir:
+                sizeLimit: 10Gi
+            - name: tmp
+              emptyDir: {}

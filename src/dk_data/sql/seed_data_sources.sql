@@ -232,7 +232,11 @@ VALUES
     ('who_icd', 'api', 'https://id.who.int/icd/release/11/2024-01/mms',
      'WHO ICD-10 and ICD-11 disease classification codes for diagnosis standardisation', 'annual', TRUE),
     ('who_inn', 'api', 'https://www.who.int/teams/health-product-and-policy-standards/inn',
-     'WHO International Nonproprietary Names (INN) for pharmaceutical substances', 'monthly', TRUE)
+     'WHO International Nonproprietary Names (INN) for pharmaceutical substances', 'monthly', TRUE),
+
+    -- CMS Coverage / US HTA (021-post-deploy-fixes)
+    ('cms_coverage', 'api', 'https://api.coverage.cms.gov/v1/data/',
+     'CMS Medicare Coverage Database: NCDs, NCAs, and Technology Assessments (US HTA equivalent)', 'weekly', TRUE)
 
 ON CONFLICT (source_name) DO UPDATE SET
     source_url = EXCLUDED.source_url,

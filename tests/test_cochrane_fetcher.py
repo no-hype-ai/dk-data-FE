@@ -136,7 +136,7 @@ class TestCochraneFetcherFetch:
         assert result["records"] == []
 
     def test_fetch_api_error(self, tmp_path):
-        """Test fetch handles API errors gracefully."""
+        """Test fetch returns failed when the API is unreachable (network error)."""
         fetcher = CochraneFetcher(data_dir=str(tmp_path))
 
         with patch.object(
@@ -146,9 +146,9 @@ class TestCochraneFetcherFetch:
         ):
             result = fetcher.fetch(search_terms=["test"])
 
-        # Per-term search catches exceptions, so overall succeeds with 0 records
-        assert result["status"] == "success"
-        assert result["record_count"] == 0
+        # Pre-flight probe raises → outer exception handler → status=failed
+        assert result["status"] == "failed"
+        assert result["records"] == []
 
     def test_fetch_returns_failed_on_unexpected_error(self, tmp_path):
         """Test fetch returns failed on unexpected errors outside search loop."""

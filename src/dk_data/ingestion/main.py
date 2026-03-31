@@ -104,6 +104,17 @@ from .sources.openfda_labels import load_openfda_labels_data
 from .sources.chembl_activities import load_chembl_activities_data
 from .sources.fda_rems import load_fda_rems_data
 from .sources.fda_ndc import load_fda_ndc_data
+from .sources.cms_ddinter import load_cms_ddinter_data
+from .sources.chembl_molecules import load_chembl_molecules_data
+from .sources.pubchem import load_pubchem_data
+from .sources.openfda_faers import load_openfda_faers_data
+from .sources.npi_registry import load_npi_registry_data
+from .sources.purple_book import load_purple_book_data
+from .sources.reactome import load_reactome_data
+from .sources.who_gho import load_who_gho_data
+from .sources.nice_hta import load_nice_hta_data
+from .sources.cms_medicare import load_cms_medicare_data
+from .sources.cms_coverage import load_cms_coverage_data
 
 from .fetchers import (
     PubMedFetcher,
@@ -193,6 +204,17 @@ from .fetchers import (
     ChEMBLActivitiesFetcher,
     FDARemsFetcher,
     FDANDCFetcher,
+    CMSDDInterFetcher,
+    ChEMBLMoleculesFetcher,
+    PubChemFetcher,
+    OpenFDAFAERSFetcher,
+    NPIRegistryFetcher,
+    PurpleBookFetcher,
+    ReactomeFetcher,
+    WHOGHOFetcher,
+    NICEHTAFetcher,
+    CMSMedicareFetcher,
+    CMSCoverageFetcher,
 )
 
 from .utils.database import init_connection_pool, close_connection_pool, get_cursor
@@ -263,7 +285,7 @@ SOURCES = {
         'fetcher': EMARegulatoryCIFetcher,
         'loader': load_ema_regulatory_data,
         'requires_file': False,
-        'default_days_back': 90,
+        'default_days_back': None,  # Bulk snapshot — always loads all ~2,641 records
     },
     'openalex_ci': {
         'name': 'OpenAlex CI',
@@ -948,6 +970,94 @@ SOURCES = {
         'loader': load_fda_ndc_data,
         'requires_file': False,
         'default_days_back': None,
+    },
+    'cms_ddinter': {
+        'name': 'CMS DDInter Drug-Drug Interactions',
+        'description': 'CMS drug-drug interaction data from DDInter database',
+        'fetcher': CMSDDInterFetcher,
+        'loader': load_cms_ddinter_data,
+        'requires_file': False,
+        'default_days_back': None,
+    },
+    'chembl_molecules': {
+        'name': 'ChEMBL Molecules',
+        'description': 'ChEMBL compound/molecule registry (~2.4M compounds)',
+        'fetcher': ChEMBLMoleculesFetcher,
+        'loader': load_chembl_molecules_data,
+        'requires_file': False,
+        'default_days_back': None,
+    },
+    'pubchem': {
+        'name': 'PubChem Compounds',
+        'description': 'PubChem drug-relevant compound records',
+        'fetcher': PubChemFetcher,
+        'loader': load_pubchem_data,
+        'requires_file': False,
+        'default_days_back': None,
+    },
+    'openfda_faers': {
+        'name': 'OpenFDA FAERS Adverse Events',
+        'description': 'FDA Adverse Event Reporting System via openFDA',
+        'fetcher': OpenFDAFAERSFetcher,
+        'loader': load_openfda_faers_data,
+        'requires_file': False,
+        'default_days_back': 90,
+    },
+    'npi_registry': {
+        'name': 'NPI Registry',
+        'description': 'CMS National Provider Identifier registry (~7M providers)',
+        'fetcher': NPIRegistryFetcher,
+        'loader': load_npi_registry_data,
+        'requires_file': False,
+        'default_days_back': None,
+    },
+    'purple_book': {
+        'name': 'FDA Purple Book',
+        'description': 'FDA licensed biological products (BLAs)',
+        'fetcher': PurpleBookFetcher,
+        'loader': load_purple_book_data,
+        'requires_file': False,
+        'default_days_back': None,
+    },
+    'reactome': {
+        'name': 'Reactome Pathways',
+        'description': 'Reactome biological pathway database',
+        'fetcher': ReactomeFetcher,
+        'loader': load_reactome_data,
+        'requires_file': False,
+        'default_days_back': None,
+    },
+    'who_gho': {
+        'name': 'WHO Global Health Observatory',
+        'description': 'WHO GHO health indicators and statistics',
+        'fetcher': WHOGHOFetcher,
+        'loader': load_who_gho_data,
+        'requires_file': False,
+        'default_days_back': None,
+    },
+    'nice_hta': {
+        'name': 'NICE HTA Guidance',
+        'description': 'NICE technology appraisals and HTA guidance (UK)',
+        'fetcher': NICEHTAFetcher,
+        'loader': load_nice_hta_data,
+        'requires_file': False,
+        'default_days_back': None,
+    },
+    'cms_medicare': {
+        'name': 'CMS Medicare Data',
+        'description': 'CMS Medicare utilization and payment data',
+        'fetcher': CMSMedicareFetcher,
+        'loader': load_cms_medicare_data,
+        'requires_file': False,
+        'default_days_back': None,
+    },
+    'cms_coverage': {
+        'name': 'CMS Medicare Coverage Database',
+        'description': 'CMS NCDs, NCAs, and Technology Assessments (US HTA equivalent)',
+        'fetcher': CMSCoverageFetcher,
+        'loader': load_cms_coverage_data,
+        'requires_file': False,
+        'default_days_back': None,  # Full snapshot — ~2,400 static coverage decisions
     },
 }
 

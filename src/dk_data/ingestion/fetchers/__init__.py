@@ -93,6 +93,16 @@ from .openfda_labels import OpenFDALabelsFetcher
 from .chembl_activities import ChEMBLActivitiesFetcher
 from .fda_rems import FDARemsFetcher
 from .fda_ndc import FDANDCFetcher
+from .chembl_molecules import ChEMBLMoleculesFetcher
+from .pubchem import PubChemFetcher
+from .openfda_faers import OpenFDAFAERSFetcher
+from .npi_registry import NPIRegistryFetcher
+from .purple_book import PurpleBookFetcher
+from .reactome import ReactomeFetcher
+from .who_gho import WHOGHOFetcher
+from .nice_hta import NICEHTAFetcher
+from .cms_medicare import CMSMedicareFetcher
+from .cms_coverage import CMSCoverageFetcher
 
 __all__ = [
     'BaseFetcher',
@@ -188,4 +198,14 @@ __all__ = [
     'ChEMBLActivitiesFetcher',
     'FDARemsFetcher',
     'FDANDCFetcher',
+    'ChEMBLMoleculesFetcher',
+    'PubChemFetcher',
+    'OpenFDAFAERSFetcher',
+    'NPIRegistryFetcher',
+    'PurpleBookFetcher',
+    'ReactomeFetcher',
+    'WHOGHOFetcher',
+    'NICEHTAFetcher',
+    'CMSMedicareFetcher',
+    'CMSCoverageFetcher',
 ]

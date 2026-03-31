@@ -83,6 +83,7 @@ LAYER_MODELS = {
         'mol_bronze.epo_patents',
         'mol_bronze.uspto_trademarks',
         'mol_bronze.euipo_trademarks',
+        'mol_bronze.euipo_designs',
         # 015-assessment-dashboard-integration
         'mol_bronze.pubmed',
         'mol_bronze.ema',
@@ -125,6 +126,218 @@ LAYER_MODELS = {
         # 015-assessment-dashboard-integration
         'mol_gold.kol_drug_associations',
         'mol_gold.advocacy_groups',
+    ],
+    # mol_gold_ext — 6 mol_gold models not in gold/ip_gold layers.
+    # Runs at 14:00 UTC (after ip_gold 13:00 + mol_silver_ext 11:00).
+    'mol_gold_ext': [
+        'mol_gold.safety_signals',
+        'mol_gold.lifecycle_stages',
+        'mol_gold.lifecycle_evidence',
+        'mol_gold.company_pipeline',
+        'mol_gold.competitive_landscape',
+        'mol_gold.market_summary',
+    ],
+    # mart — data mart + scoring + targeting (all write to hcs_gold schema).
+    # Runs at 15:30 UTC (after cms-gold-refresh 14:30 + mol_gold_ext 14:00).
+    # mart models read from staging.* (legacy TAVR) and hcs_gold.*
+    'mart': [
+        'hcs_gold.dim_hospital',
+        'hcs_gold.fact_financial_metrics',
+        'hcs_gold.fact_tavr_program',
+        'hcs_gold.score_factors',
+        'hcs_gold.target_scores',
+        'hcs_gold.targeting_scores',
+        'hcs_gold.targeting_summary',
+    ],
+    # mol_bronze_ext — 35 mol_bronze models not covered by bronze/ip_bronze layers.
+    # Runs at 07:00 UTC in parallel with hcs_bronze (both after ip_bronze 06:30).
+    # Includes vocabulary (rxnorm, pharmgkb, bindingdb), FDA (orange_book, fda_drugs,
+    # fda_ndc, fda_rems), literature (europepmc, nih_reporter), and clinical (clinicaltrials).
+    'mol_bronze_ext': [
+        # Vocabulary / reference
+        'mol_bronze.rxnorm_concepts',
+        'mol_bronze.pharmgkb',
+        'mol_bronze.bindingdb',
+        'mol_bronze.sider',
+        'mol_bronze.tdc_admet',
+        'mol_bronze.ttd',
+        'mol_bronze.uniprot',
+        'mol_bronze.pubchem',
+        'mol_bronze.cdc_vaccines',
+        'mol_bronze.imgt',
+        'mol_bronze.kegg_drug',
+        'mol_bronze.who_inn',
+        'mol_bronze.who_gho',
+        'mol_bronze.purple_book',
+        'mol_bronze.reactome',
+        # FDA / regulatory
+        'mol_bronze.orange_book',
+        'mol_bronze.fda_drugs',
+        'mol_bronze.fda_drugsfda',
+        'mol_bronze.fda_ndc',
+        'mol_bronze.fda_rems',
+        'mol_bronze.nice_hta',
+        'mol_bronze.cms_coverage',
+        'mol_bronze.ema_regulatory',
+        # Literature / clinical
+        'mol_bronze.europepmc',
+        'mol_bronze.nih_reporter',
+        'mol_bronze.clinicaltrials',
+        'mol_bronze.ct_gov_indication_stats',
+        # Drug data
+        'mol_bronze.drugbank',
+        'mol_bronze.dailymed',
+        'mol_bronze.chembl_activities',
+        # CMS cross-domain
+        'mol_bronze.cms_medicare',
+        'mol_bronze.cms_open_payments',
+        'mol_bronze.npi_registry',
+        # Bio / omics
+        'mol_bronze.openalex',
+        'mol_bronze.faers_events',
+        'mol_bronze.websearch_results',
+    ],
+    # HCS bronze — all 53 hcs_bronze.* models (019-cms-puf-platform-reconciliation).
+    # Runs at 07:00 UTC (after ip_bronze at 06:30 which covers 5 hcs_bronze models).
+    # SQLMesh is idempotent: models already current from ip_bronze are skipped.
+    'hcs_bronze': [
+        'hcs_bronze.acc_tvc',
+        'hcs_bronze.cms_care_compare',
+        'hcs_bronze.cms_chow',
+        'hcs_bronze.cms_chronic_conditions',
+        'hcs_bronze.cms_claim_type_puf',
+        'hcs_bronze.cms_cost_reports',
+        'hcs_bronze.cms_cost_reports_puf',
+        'hcs_bronze.cms_cost_reports_puf_lines',
+        'hcs_bronze.cms_ddinter',
+        'hcs_bronze.cms_dme_puf',
+        'hcs_bronze.cms_dmepos',
+        'hcs_bronze.cms_dual_eligible',
+        'hcs_bronze.cms_enrollment_puf',
+        'hcs_bronze.cms_formulary',
+        'hcs_bronze.cms_geographic_variation',
+        'hcs_bronze.cms_hcris',
+        'hcs_bronze.cms_home_health',
+        'hcs_bronze.cms_hospice_puf',
+        'hcs_bronze.cms_hospital_affiliation',
+        'hcs_bronze.cms_hospital_general_info',
+        'hcs_bronze.cms_hospital_info',
+        'hcs_bronze.cms_hospital_quality',
+        'hcs_bronze.cms_imaging_puf',
+        'hcs_bronze.cms_inpatient',
+        'hcs_bronze.cms_inpatient_puf',
+        'hcs_bronze.cms_lab_services',
+        'hcs_bronze.cms_magnet',
+        'hcs_bronze.cms_medicaid_drug_spending',
+        'hcs_bronze.cms_medicare_advantage',
+        'hcs_bronze.cms_mental_health_puf',
+        'hcs_bronze.cms_ndc',
+        'hcs_bronze.cms_nppes',
+        'hcs_bronze.cms_nucc',
+        'hcs_bronze.cms_open_payments',
+        'hcs_bronze.cms_opioid_puf',
+        'hcs_bronze.cms_ordering_providers',
+        'hcs_bronze.cms_outpatient_puf',
+        'hcs_bronze.cms_part_b_spending',
+        'hcs_bronze.cms_part_d_prescriber',
+        'hcs_bronze.cms_part_d_spending',
+        'hcs_bronze.cms_pecos',
+        'hcs_bronze.cms_physician_puf',
+        'hcs_bronze.cms_physician_puf_services',
+        'hcs_bronze.cms_pos',
+        'hcs_bronze.cms_post_acute',
+        'hcs_bronze.cms_rbcs',
+        'hcs_bronze.cms_referring_providers',
+        'hcs_bronze.cms_snf_puf',
+        'hcs_bronze.cms_stabilis',
+        'hcs_bronze.cms_telehealth_puf',
+        'hcs_bronze.cms_usp',
+        'hcs_bronze.cms_utilization_puf',
+        'hcs_bronze.hrsa',
+    ],
+    # ind_bronze — ICD-11 codes (reads mol_bronze.who_icd from ip_bronze at 06:30).
+    # Runs at 07:30 UTC (after ip_bronze 06:30).
+    'ind_bronze': [
+        'ind_bronze.icd11_codes',
+    ],
+    # ind_silver — ICD-11 ontology (reads ind_bronze.icd11_codes).
+    # Runs at 08:30 UTC (after ind_bronze 07:30).
+    'ind_silver': [
+        'ind_silver.icd11_ontology',
+    ],
+    # mol_silver_ext — 44 mol_silver models not covered by silver/ip_silver layers.
+    # Runs at 11:00 UTC — after mol_silver (08:00), mol_bronze_ext (07:00), ip_silver (10:30).
+    # Many depend on mol_silver.molecules (in this layer), mol_silver.molecule_aliases (silver),
+    # and mol_bronze_ext models (drugbank, pubchem, pharmgkb, etc.).
+    # SQLMesh resolves intra-layer deps automatically.
+    'mol_silver_ext': [
+        # Entity resolution (depends on mol_bronze.pubchem, drugbank, chembl)
+        'mol_silver.molecules',
+        'mol_silver.drug_synonyms',
+        'mol_silver.molecule_targets',
+        'mol_silver.molecule_publications',
+        # Drug pharmacology & properties
+        'mol_silver.drugbank',
+        'mol_silver.admet_properties',
+        'mol_silver.drug_pharmacology',
+        'mol_silver.binding_affinities',
+        'mol_silver.bioactivity',
+        'mol_silver.side_effects',
+        'mol_silver.chembl',
+        'mol_silver.pathways',
+        'mol_silver.proteins',
+        'mol_silver.protein_targets',
+        'mol_silver.protein_structures',
+        # Clinical data
+        'mol_silver.pubmed_articles',
+        'mol_silver.cochrane_reviews',
+        'mol_silver.research_grants',
+        'mol_silver.publication_evidence',
+        'mol_silver.ct_gov_indication_stats',
+        # FDA / regulatory
+        'mol_silver.orange_book',
+        'mol_silver.fda_drugs',
+        'mol_silver.ema',
+        'mol_silver.ema_regulatory',
+        'mol_silver.dailymed_labels',
+        'mol_silver.rems_programs',
+        'mol_silver.patent_exclusivities',
+        'mol_silver.regulatory_milestones',
+        # Indication / epidemiology
+        'mol_silver.indication_ontology',
+        'mol_silver.indication_epidemiology',
+        'mol_silver.indication_revenue',
+        'mol_silver.icd10_indicator_mapping',
+        # HCS-adjacent
+        'mol_silver.physician_payments',
+        'mol_silver.physician_profiles',
+        'mol_silver.drug_spending',
+        # Vocabulary
+        'mol_silver.pharmacogenomics',
+        'mol_silver.imgt',
+        'mol_silver.cdc_vaccines',
+        'mol_silver.who_inn_names',
+        'mol_silver.pubchem',
+        'mol_silver.ttd',
+        # Misc / enrichment
+        'mol_silver.company_financials',
+        'mol_silver.journal_rss',
+        'mol_silver.web_content',
+    ],
+    # HCS silver — all 10 hcs_silver.* models (019-cms-puf-platform-reconciliation).
+    # Runs at 09:00 UTC — after hcs_bronze (07:00) AND mol_silver (08:00) complete.
+    # Requires mol_silver.molecule_aliases for drug name resolution joins.
+    'hcs_silver': [
+        'hcs_silver.ref_nucc_taxonomy',          # reference — no upstream dep on mol_silver
+        'hcs_silver.geographic_health',           # hcs_bronze only
+        'hcs_silver.healthcare_facilities',       # hcs_bronze only
+        'hcs_silver.cms_facility_profile',        # hcs_bronze only
+        'hcs_silver.facility_profile',            # hcs_bronze only
+        'hcs_silver.provider_profile',            # hcs_bronze only
+        'hcs_silver.cms_drug_market',             # hcs_bronze (part_d/part_b)
+        'hcs_silver.drug_utilization',            # hcs_bronze + mol_silver.molecule_aliases
+        'hcs_silver.part_d_prescribing',          # hcs_bronze + mol_silver.molecule_aliases
+        'hcs_silver.open_payments_drug_linkage',  # hcs_bronze + mol_silver.ndc_molecule_bridge
     ],
 }
 
@@ -340,8 +553,15 @@ def transform_all_layers() -> dict:
     total_success = 0
     total_fail = 0
 
-    # Process layers in order: molecule pipeline then IP pipeline
-    for layer in ['bronze', 'silver', 'gold', 'ip_bronze', 'ip_silver', 'ip_gold']:
+    # Full pipeline dependency sequence (UTC schedule when run as individual CronJobs):
+    # 06:00 bronze → 06:30 ip_bronze → 07:00 hcs_bronze+mol_bronze_ext → 07:30 ind_bronze
+    # → 08:00 silver → 08:30 ind_silver → 09:00 hcs_silver → 10:30 ip_silver
+    # → 11:00 mol_silver_ext → 12:00 gold → 13:00 ip_gold → 14:00 mol_gold_ext
+    # → 14:30 cms-gold-refresh → 15:30 mart
+    for layer in ['bronze', 'ip_bronze', 'mol_bronze_ext', 'hcs_bronze',
+                  'ind_bronze', 'silver', 'ind_silver', 'hcs_silver',
+                  'ip_silver', 'mol_silver_ext', 'gold', 'ip_gold',
+                  'mol_gold_ext', 'mart']:
         logger.info(f"\n{'='*60}")
         logger.info(f"Processing {layer.upper()} layer")
         logger.info(f"{'='*60}")
@@ -453,7 +673,10 @@ Examples:
 
     parser.add_argument(
         '--layer', '-l',
-        choices=['bronze', 'silver', 'gold', 'ip_bronze', 'ip_silver', 'ip_gold', 'all'],
+        choices=['bronze', 'silver', 'gold', 'ip_bronze', 'ip_silver', 'ip_gold',
+                 'hcs_bronze', 'hcs_silver',
+                 'mol_bronze_ext', 'mol_silver_ext', 'mol_gold_ext',
+                 'ind_bronze', 'ind_silver', 'mart', 'all'],
         help='Layer to transform'
     )
     parser.add_argument(

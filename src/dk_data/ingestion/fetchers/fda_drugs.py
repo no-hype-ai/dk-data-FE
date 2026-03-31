@@ -32,9 +32,18 @@ _PAGE_SIZE = 100
 _REQUEST_DELAY = 0.3   # seconds between pages — stay under 240 req/min
 _MAX_SKIP = 25000      # FDA API hard limit on skip parameter
 
+# Partition by application type so each subset stays well under the 25k skip limit.
+# Total ~30k applications split: NDA ~10k, ANDA ~17k, BLA ~3k — each fits in one window.
+_APPLICATION_TYPE_PARTITIONS = ["NDA", "ANDA", "BLA"]
+
 
 class FDADrugsFetcher(BaseFetcher):
-    """Fetcher for FDA Drugs@FDA approval database via OpenFDA API."""
+    """Fetcher for FDA Drugs@FDA approval database via OpenFDA API.
+
+    Uses application-type partitioning (NDA/ANDA/BLA) to work around the FDA API's
+    hard skip=25000 limit. Each partition is fetched separately and deduplicated by
+    application_number before returning. Covers the full ~30k application database.
+    """
 
     SOURCE_NAME = "fda_drugs"
     BASE_URL = "https://api.fda.gov"
@@ -43,10 +52,10 @@ class FDADrugsFetcher(BaseFetcher):
         return f"{_API_URL}?limit={_PAGE_SIZE}&skip=0"
 
     def fetch(self, **kwargs) -> Dict[str, Any]:
-        """Fetch all FDA Drugs@FDA records via paginated OpenFDA API.
+        """Fetch all FDA Drugs@FDA records via partitioned + paginated OpenFDA API.
 
         Keyword Args:
-            max_records: Cap total records. Default: all (up to FDA skip limit).
+            max_records: Cap total records. Default: all.
 
         Returns:
             Dict with keys: status, records, record_count, hash, error.
@@ -54,10 +63,8 @@ class FDADrugsFetcher(BaseFetcher):
         max_records: Optional[int] = kwargs.get("max_records")
 
         try:
-            records = self._fetch_paginated(max_records=max_records)
-            content_hash = hashlib.md5(
-                json.dumps(len(records)).encode()
-            ).hexdigest()
+            records = self._fetch_all_partitions(max_records=max_records)
+            content_hash = hashlib.md5(json.dumps(len(records)).encode()).hexdigest()
 
             result: Dict[str, Any] = {
                 "status": "success",
@@ -74,20 +81,46 @@ class FDADrugsFetcher(BaseFetcher):
             self.log_fetch_result(result)
             return result
 
-    def _fetch_paginated(self, max_records: Optional[int]) -> List[Dict[str, Any]]:
-        """Page through the FDA Drugs@FDA API."""
+    def _fetch_all_partitions(self, max_records: Optional[int]) -> List[Dict[str, Any]]:
+        """Fetch all application types and deduplicate by application_number.
+
+        The FDA API caps skip at 25k. Partitioning by NDA/ANDA/BLA keeps each
+        subset well under that limit while covering the full ~30k dataset.
+        """
+        seen: set = set()
+        all_records: List[Dict[str, Any]] = []
+
+        for app_type in _APPLICATION_TYPE_PARTITIONS:
+            if max_records and len(all_records) >= max_records:
+                break
+            search = f'application_number:{app_type}*'
+            remaining = None if max_records is None else max_records - len(all_records)
+            partition_records = self._fetch_paginated(search=search, max_records=remaining)
+            for rec in partition_records:
+                app_num = rec.get("application_number", "")
+                if app_num not in seen:
+                    seen.add(app_num)
+                    all_records.append(rec)
+            logger.info("FDADrugs: partition=%s → %d records (running total %d)",
+                        app_type, len(partition_records), len(all_records))
+
+        logger.info("FDADrugs: %d total unique application records", len(all_records))
+        return all_records
+
+    def _fetch_paginated(self, search: Optional[str], max_records: Optional[int]) -> List[Dict[str, Any]]:
+        """Page through the FDA Drugs@FDA API for a single search partition."""
         all_records: List[Dict[str, Any]] = []
         skip = 0
         total: Optional[int] = None
 
         while True:
-            params = {"limit": _PAGE_SIZE, "skip": skip}
-            logger.info("FDADrugs: fetching skip=%d%s", skip, f" (total={total})" if total else "")
+            params: Dict[str, Any] = {"limit": _PAGE_SIZE, "skip": skip}
+            if search:
+                params["search"] = search
+            logger.debug("FDADrugs: skip=%d search=%s", skip, search)
             resp = self.session.get(_API_URL, params=params, timeout=60)
 
-            # 404 means no more results
             if resp.status_code == 404:
-                logger.info("FDADrugs: 404 at skip=%d — end of results", skip)
                 break
 
             resp.raise_for_status()
@@ -95,7 +128,7 @@ class FDADrugsFetcher(BaseFetcher):
 
             if total is None:
                 total = data.get("meta", {}).get("results", {}).get("total", 0)
-                logger.info("FDADrugs: total=%d", total)
+                logger.info("FDADrugs[%s]: total=%d", search, total)
 
             page_records = data.get("results", [])
             if not page_records:
@@ -109,12 +142,12 @@ class FDADrugsFetcher(BaseFetcher):
 
             skip += _PAGE_SIZE
             if skip > _MAX_SKIP:
-                logger.info("FDADrugs: reached FDA skip limit (%d), stopping", _MAX_SKIP)
+                logger.warning("FDADrugs[%s]: reached skip limit with %d records — partition may be incomplete",
+                               search, len(all_records))
                 break
             if total and skip >= total:
                 break
 
             time.sleep(_REQUEST_DELAY)
 
-        logger.info("FDADrugs: fetched %d application records", len(all_records))
         return all_records

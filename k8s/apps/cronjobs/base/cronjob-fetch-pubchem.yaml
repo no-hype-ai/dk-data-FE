@@ -1,0 +1,80 @@
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: fetch-pubchem
+  labels:
+    app: dk-data-ingestion
+    component: pubchem
+    feature: "019-cms-puf"
+spec:
+  schedule: "0 3 1 * *"  # Monthly — 1st at 3AM UTC
+  concurrencyPolicy: Forbid
+  startingDeadlineSeconds: 3600
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      backoffLimit: 2
+      ttlSecondsAfterFinished: 86400
+      activeDeadlineSeconds: 21600  # 6 hours — large dataset
+      template:
+        metadata:
+          labels:
+            app: fetch-pubchem
+            app.kubernetes.io/component: ingestion
+            app.kubernetes.io/part-of: dk-data
+            team: data-platform
+            service: dk-data
+            product: dk-data
+        spec:
+          restartPolicy: Never
+          imagePullSecrets:
+            - name: ghcr-credentials
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 1000
+            fsGroup: 1000
+            seccompProfile:
+              type: RuntimeDefault
+          containers:
+            - name: fetch-pubchem
+              image: ghcr.io/data-kinetic/dk-data-fe/job-trigger:main
+              securityContext:
+                allowPrivilegeEscalation: false
+                readOnlyRootFilesystem: false
+                capabilities:
+                  drop: ["ALL"]
+              command:
+                - /bin/sh
+                - -c
+                - |
+                  set -e
+                  echo "Fetching PubChem data..."
+                  python -m dk_data.ingestion.run --source pubchem
+                  echo "PubChem fetch complete."
+              envFrom:
+                - secretRef:
+                    name: dk-data-secrets
+              env:
+                - name: OTEL_EXPORTER_OTLP_ENDPOINT
+                  value: "http://alloy.infra.svc.cluster.local:4317"
+                - name: OTEL_SERVICE_NAME
+                  value: "dk-data-fetch-pubchem"
+              resources:
+                requests:
+                  memory: "2Gi"
+                  cpu: "500m"
+                limits:
+                  memory: "8Gi"
+                  cpu: "2000m"
+              volumeMounts:
+                - name: data
+                  mountPath: /data/raw
+                - name: tmp
+                  mountPath: /tmp
+          volumes:
+            - name: data
+              emptyDir:
+                sizeLimit: 10Gi
+            - name: tmp
+              emptyDir: {}

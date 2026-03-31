@@ -67,14 +67,17 @@ class EMARegulatoryCIFetcher(BaseFetcher):
 
     def fetch(self, **kwargs) -> Dict[str, Any]:
         """
-        Fetch recent EMA regulatory decisions from the bulk JSON export.
+        Fetch EMA regulatory decisions from the bulk JSON export.
 
         Downloads the full EMA authorized medicines dataset (~2,641 records)
-        in a single request, then filters client-side by date window.
+        in a single request. This is a snapshot source — all authorized medicines
+        are loaded on every run; ON CONFLICT DO UPDATE keeps records fresh.
 
         Keyword Args:
-            days_back: Number of days to look back (default: 7).
-                       Pass None or 0 to return all records (full backfill).
+            days_back: Ignored for this bulk snapshot source. The EMA bulk JSON
+                       contains all authorized medicines (not a change log), so
+                       date filtering would drop the vast majority of records.
+                       Accepted for API compatibility but has no effect.
 
         Returns:
             Dictionary with:
@@ -83,7 +86,7 @@ class EMARegulatoryCIFetcher(BaseFetcher):
             - hash: SHA-256 content hash
             - error: Error message (if failed)
         """
-        days_back = kwargs.get("days_back", 7)
+        days_back = None  # Bulk snapshot: always load all records
 
         try:
             logger.info("Fetching EMA regulatory decisions from bulk JSON (last %s days)", days_back)
@@ -91,12 +94,12 @@ class EMARegulatoryCIFetcher(BaseFetcher):
             raw_items = self._fetch_bulk()
             logger.info("EMA bulk JSON: %d raw items", len(raw_items))
 
-            # Apply date filter client-side
+            # No date filter: EMA bulk JSON is a snapshot of all authorized
+            # medicines (not a change log). The authorisation date for most
+            # medicines is years in the past, so any incremental window would
+            # drop nearly all records. Load all ~2,641 records every run;
+            # ON CONFLICT (document_id) DO UPDATE handles deduplication.
             since_date: Optional[str] = None
-            if days_back:
-                since_date = (
-                    datetime.now(timezone.utc) - timedelta(days=int(days_back))
-                ).strftime("%Y-%m-%d")
 
             all_records: List[Dict[str, Any]] = []
             seen_ids: set = set()
@@ -126,7 +129,6 @@ class EMARegulatoryCIFetcher(BaseFetcher):
                 "records": all_records,
                 "hash": content_hash,
                 "record_count": len(all_records),
-                "days_back": days_back,
             }
             self.log_fetch_result({"status": "success", "records": len(all_records)})
             return result
@@ -174,7 +176,7 @@ class EMARegulatoryCIFetcher(BaseFetcher):
             return data
 
         if isinstance(data, dict):
-            for key in ("results", "data", "items", "content"):
+            for key in ("results", "data", "items", "content", "medicines", "records"):
                 if key in data and isinstance(data[key], list):
                     return data[key]
 
@@ -193,17 +195,26 @@ class EMARegulatoryCIFetcher(BaseFetcher):
             or item.get("document_id")
             or item.get("medicine_id")
             or item.get("product_number")
+            or item.get("authorisationNumber")
+            or item.get("authorisation_number")
+            or item.get("EmaNumber")
+            or item.get("emaNumber")
         )
         if not document_id:
             return None
 
         document_id = str(document_id).strip()
 
-        # Parse decision date from multiple possible fields
+        # Parse decision date from multiple possible fields.
+        # EMA bulk JSON uses camelCase; older API uses snake_case.
         decision_date = (
             item.get("decision_date")
             or item.get("date")
             or item.get("revision_date")
+            or item.get("authorisationDate")
+            or item.get("dateFirstAuthorised")
+            or item.get("opinionDate")
+            or item.get("marketingAuthorisationDate")
         )
         if decision_date:
             decision_date = str(decision_date)[:10]  # YYYY-MM-DD
@@ -223,15 +234,24 @@ class EMARegulatoryCIFetcher(BaseFetcher):
         return {
             "document_id": document_id,
             "document_type": doc_type,
-            "product_name": item.get("product_name") or item.get("name"),
+            "product_name": (
+                item.get("product_name")
+                or item.get("name")
+                or item.get("medicineName")
+                or item.get("brandName")
+            ),
             "active_substance": (
                 item.get("active_substance")
                 or item.get("inn")
                 or item.get("active_ingredients")
+                or item.get("activeSubstance")
+                or item.get("internationalNonproprietaryName")
             ),
             "therapeutic_area": (
                 item.get("therapeutic_area")
                 or item.get("atc_code")
+                or item.get("therapeuticArea")
+                or item.get("atcCode")
             ),
             "decision_date": decision_date,
             "decision_type": decision_type,

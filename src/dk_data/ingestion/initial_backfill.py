@@ -17,6 +17,26 @@ Run via k8s Job (no activeDeadlineSeconds — allow as long as needed):
 Can also be re-run safely: sources with fresh last_successful_refresh are skipped.
 Force re-fetch of a specific source: DELETE FROM meta.data_sources WHERE source_name='foo'
   and last_successful_refresh=NULL will force re-fetch on next backfill run.
+
+Parallelism (--workers N):
+  Sources are split into three tiers by expected duration and API behaviour:
+
+  HEAVY   — run sequentially after all light/medium sources finish.
+            These are 2M-20M record fetches that each need several hours and
+            significant memory. Running them concurrently would exhaust the
+            pod's 8Gi memory limit.
+
+  API_RATE_GROUPS — sources sharing an upstream host get a per-group semaphore
+            capping how many can run simultaneously (default 2 for CMS, 1 for
+            OpenFDA). Prevents rate-limit 429s without sacrificing throughput
+            on other groups.
+
+  LIGHT   — everything else. Runs up to --workers concurrent fetches.
+
+  Recommended --workers values:
+    1  (default)  — sequential, backward-compatible
+    4             — safe for the 4 vCPU / 8 Gi pod spec; cuts wall-clock ~4x
+    6             — max before connection pool pressure becomes noticeable
 """
 
 import argparse
@@ -25,8 +45,10 @@ import os
 import subprocess
 import sys
 import time
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import date, datetime, timezone
 from pathlib import Path
+from threading import Semaphore
 
 from .main import SOURCES, _meta_name, get_last_successful_refresh, run_ingestion
 from .utils.database import init_connection_pool, close_connection_pool
@@ -64,17 +86,58 @@ FILE_BASED_SOURCES = {
 # If last_successful_refresh is within this many hours, skip (already fresh).
 SKIP_IF_REFRESHED_WITHIN_HOURS = 12
 
+# ---------------------------------------------------------------------------
+# Parallelism tiers
+# ---------------------------------------------------------------------------
+
+# Sources that run sequentially AFTER the parallel batch completes.
+# Each is a multi-hour, multi-GB fetch; running them concurrently would
+# exhaust pod memory and thrash the DB writer.
+HEAVY_SOURCES = {
+    'chembl_molecules',    # ~2.4M compounds, 4h+
+    'chembl_activities',   # ~17-20M bioactivity records, 5-6h
+    'pubchem',             # ~2M compounds, 6h+
+    'openfda_faers',       # full_backfill year-partitioned, 3-4h
+    'npi_registry',        # ~7M providers, 3h+
+}
+
+# Sources sharing an upstream host — per-group semaphore caps concurrency.
+# Key: semaphore limit (max concurrent fetches to that host).
+# Value: set of source names hitting that host.
+API_RATE_GROUPS: dict[int, set[str]] = {
+    # data.cms.gov throttles hard above ~3 concurrent clients.
+    # Use 2 to leave headroom for other pods/CronJobs.
+    2: {s for s in SOURCES if s.startswith('cms_')} - HEAVY_SOURCES,
+    # openFDA (api.fda.gov) — 240 req/min authenticated, 40/min anon.
+    # 1 concurrent is safest given year-partitioned loops.
+    1: {'openfda_labels', 'fda_drugs', 'fda_ndc', 'fda_rems', 'purple_book'},
+    # ebi.ac.uk (ChEMBL REST, EuropePMC) — polite pool; 2 concurrent fine.
+    2: {'europepmc'},
+}
+
 # Per-source kwargs to pass during backfill to override conservative defaults.
 # These raise record caps for API sources whose defaults are tuned for daily incremental runs.
 BACKFILL_SOURCE_KWARGS: dict = {
-    # OpenFDA: default max_records=5000; raise to FDA hard limit for full backfill
-    'openfda_labels': {'max_records': 25_000},
+    # OpenFDA Labels: full backfill via year-by-year partitioning (2000→present).
+    # The FDA API caps skip at 25k per query; ~170-200k total SPL documents.
+    # full_backfill=True iterates effective_time:[YEAR0101 TO YEAR1231] per year
+    # (<25k per year on average) to retrieve all labels. Duplicates across years
+    # (re-issued labels) are deduplicated at the bronze layer by set_id.
+    'openfda_labels': {'full_backfill': True},
     # ClinicalTrials: default max_records=10000; raise for multi-year window
     'clinicaltrials': {'max_records': 50_000},
-    # UniProt: increase to fetch beyond the first page (500 results default)
-    'uniprot': {'max_results': 5_000},
-    # PDB: increase from 500 default for broader drug-target coverage
-    'pdb': {'max_results': 2_000},
+    # UniProt: broaden query from kinases-only to all reviewed human proteins
+    # (DEFAULT_QUERY filters to GO:0004672 kinase activity only — ~500 proteins).
+    # "reviewed:true AND organism_id:9606" covers all Swiss-Prot human entries (~20k).
+    # Raise cap to match full dataset.
+    'uniprot': {
+        'query': 'reviewed:true AND organism_id:9606',
+        'max_results': 25_000,
+    },
+    # PDB: raise to 50k — covers all drug-target-relevant crystal structures.
+    # NOTE: the fetcher _search() only fetches one page of 500 from RCSB search API.
+    # The PDB fetcher paginator is fixed in this session to loop through all pages.
+    'pdb': {'max_results': 50_000},
     # EMA regulatory: days_back=None fetches full dataset (all ~2641 records)
     'ema_regulatory': {'days_back': None},
     # Cochrane: raise to get full historical review set
@@ -87,6 +150,10 @@ BACKFILL_SOURCE_KWARGS: dict = {
     # every API source; without raised caps the fetchers hit their per-run
     # defaults (5k-10k) and miss historical records.
     # ---------------------------------------------------------------------------
+    # ChEMBL activities: remove 500k safety cap — fetch all ~17-20M bioactivity records.
+    # Paginated at 1000/req with 1s delay → ~5-6 hours. One-time cost for complete coverage.
+    # Set to None: the fetcher's `if max_records and count >= max_records` check is falsy.
+    'chembl_activities': {'max_records': None},
     # Literature
     'pubmed': {'max_records': 50_000},          # default: 10k; 457-day drug query can exceed that
     'europepmc': {'max_records': 50_000},        # default: 10k
@@ -98,6 +165,12 @@ BACKFILL_SOURCE_KWARGS: dict = {
     'epo_ops': {'max_records': 20_000},          # default: 5k; EPO patent family search
     'uspto_patents': {'max_records': 50_000},    # default: 10k; PatentsView full history
     'uspto_ci': {'max_records': 50_000},         # default: 10k; CI patent subset
+    # NIH Reporter: raise for full 457-day grant window
+    'nih_reporter': {'max_records': 50_000},     # default: 10k; active pharma grants
+    # FDA NDC: 100k+ products — paginator fetches all but explicit cap avoids early exit
+    'fda_ndc': {'max_records': 150_000},
+    # FDA drugs: ~30k applications
+    'fda_drugs': {'max_records': 35_000},
     # ---------------------------------------------------------------------------
     # CMS PUF multi-year backfill (service years 2021-2023).
     # Year-specific sub-UUIDs are discovered dynamically from data.cms.gov/data.json
@@ -126,6 +199,29 @@ BACKFILL_SOURCE_KWARGS: dict = {
     'cms_home_health': {'years': [2021, 2022, 2023]},
     # Hospital cost reports
     'cms_cost_reports_puf': {'years': [2021, 2022, 2023]},
+    # ---------------------------------------------------------------------------
+    # New high-volume sources added in 019-cms-puf-platform-reconciliation
+    # ---------------------------------------------------------------------------
+    # ChEMBL molecules: ~2.4M compounds, paginated at 1000/req — full dataset needed.
+    # No days_back for bulk reference data; None removes the cap entirely.
+    'chembl_molecules': {'max_records': None},
+    # PubChem: drug-relevant compound subset; ~2M records paginated via SDQ API.
+    'pubchem': {'max_records': 2_000_000},
+    # OpenFDA FAERS: year-partitioned same as openfda_labels; ~20M total adverse events.
+    # full_backfill=True iterates receivedate:[YEAR0101 TO YEAR1231] per year.
+    'openfda_faers': {'full_backfill': True},
+    # NPI Registry: ~7M providers; fetcher paginates at 200/req with skip.
+    'npi_registry': {'max_records': 7_000_000},
+    # Purple Book (FDA BLAs): ~4k biological products — small dataset, no cap needed.
+    'purple_book': {'max_records': 10_000},
+    # Reactome: ~15k pathways; full reference dataset.
+    'reactome': {'max_records': 25_000},
+    # WHO GHO: health indicator data; moderate volume.
+    'who_gho': {'max_records': 10_000},
+    # NICE HTA: all guidance types (TA/HST/IPG/MTA); ~4k total records.
+    'nice_hta': {'max_records': 5_000},
+    # CMS Medicare: utilization/payment data; volume depends on dataset UUID.
+    'cms_medicare': {'max_records': None},
 }
 
 
@@ -158,6 +254,55 @@ def should_skip_source(source: str) -> tuple[bool, str]:
             return True, f"already refreshed {hours_ago:.1f}h ago (< {SKIP_IF_REFRESHED_WITHIN_HOURS}h threshold)"
 
     return False, ""
+
+
+def _fetch_one(source: str, data_dir: str, days_back: int | None,
+               semaphore: Semaphore | None) -> tuple[str, str, int]:
+    """Fetch a single source. Returns (source, status, records).
+
+    Acquires semaphore if provided (rate-group throttle), releases on exit.
+    """
+    if semaphore is not None:
+        semaphore.acquire()
+    try:
+        extra_kwargs = BACKFILL_SOURCE_KWARGS.get(source, {})
+        result = run_ingestion(
+            source=source,
+            data_dir=data_dir,
+            days_back=days_back,
+            **extra_kwargs,
+        )
+        status = result.get('status', 'unknown')
+        records = result.get('records_inserted', result.get('records_fetched', 0))
+        return source, status, records
+    finally:
+        if semaphore is not None:
+            semaphore.release()
+
+
+def _build_semaphore_map() -> dict[str, Semaphore]:
+    """Build a {source_name: Semaphore} map from API_RATE_GROUPS.
+
+    Sources in multiple groups get the most restrictive (lowest) semaphore.
+    Sources not in any group get None (no throttle beyond the thread pool itself).
+    """
+    source_limit: dict[str, int] = {}
+    for limit, sources in API_RATE_GROUPS.items():
+        for s in sources:
+            # take the more restrictive limit if source appears in multiple groups
+            if s not in source_limit or limit < source_limit[s]:
+                source_limit[s] = limit
+
+    # Deduplicate — sources sharing the same host should share the same Semaphore object
+    # so the limit applies across all of them, not per-source.
+    # Group by limit value and build one Semaphore per group.
+    limit_to_sem: dict[int, Semaphore] = {}
+    result: dict[str, Semaphore] = {}
+    for source, limit in source_limit.items():
+        if limit not in limit_to_sem:
+            limit_to_sem[limit] = Semaphore(limit)
+        result[source] = limit_to_sem[limit]
+    return result
 
 
 def run_sqlmesh_backfill(sqlmesh_dir: str) -> bool:
@@ -207,69 +352,124 @@ def run_sqlmesh_run(sqlmesh_dir: str) -> bool:
         return False
 
 
-def run_fetch_backfill(data_dir: str, dry_run: bool = False) -> dict:
-    """Fetch ALL sources with the full historical window.
+def run_fetch_backfill(data_dir: str, workers: int = 1, dry_run: bool = False) -> dict:
+    """Fetch ALL sources.
 
-    Returns dict of {source: status} for reporting.
+    With workers=1 (default): sequential, identical to prior behaviour.
+    With workers>1: light/medium sources run in a thread pool; heavy sources
+    run sequentially afterward (memory safety).
+
+    Returns dict of {source: status}.
     """
     days_back = compute_backfill_days()
-    logger.info("=" * 60)
-    logger.info("FETCH BACKFILL: %d sources, window = %d days (since %s)",
-                len(SOURCES), days_back, SQLMESH_START_DATE)
-    logger.info("=" * 60)
-
-    results = {}
-    skipped = []
-    success = []
-    failed = []
-
     sources_to_run = [s for s in SOURCES if s not in SKIP_SOURCES]
 
-    for i, source in enumerate(sources_to_run, 1):
-        logger.info("[%d/%d] Source: %s", i, len(sources_to_run), source)
+    # Partition into (skip, heavy, light) — check skip first
+    skip_list: list[tuple[str, str]] = []
+    heavy_queue: list[str] = []
+    light_queue: list[str] = []
 
+    for source in sources_to_run:
         skip, reason = should_skip_source(source)
         if skip:
-            logger.info("  SKIP: %s", reason)
-            skipped.append(source)
-            results[source] = f"skipped: {reason}"
-            continue
+            skip_list.append((source, reason))
+        elif source in HEAVY_SOURCES:
+            heavy_queue.append(source)
+        else:
+            light_queue.append(source)
 
-        source_info = SOURCES[source]
-        is_file_based = source in FILE_BASED_SOURCES
-        effective_days_back = None if is_file_based else days_back
+    total = len(light_queue) + len(heavy_queue)
+    logger.info("=" * 60)
+    logger.info("FETCH BACKFILL: %d sources (window=%d days since %s)",
+                total, days_back, SQLMESH_START_DATE)
+    logger.info("  Light/medium: %d  Heavy (sequential): %d  Skipped: %d  Workers: %d",
+                len(light_queue), len(heavy_queue), len(skip_list), workers)
+    logger.info("=" * 60)
 
-        if dry_run:
-            logger.info("  DRY RUN: would fetch days_back=%s", effective_days_back)
+    results: dict[str, str] = {}
+    for source, reason in skip_list:
+        logger.info("SKIP %s: %s", source, reason)
+        results[source] = f"skipped: {reason}"
+
+    if dry_run:
+        for source in light_queue + heavy_queue:
+            is_file = source in FILE_BASED_SOURCES
+            logger.info("DRY RUN %s: days_back=%s tier=%s",
+                        source,
+                        None if is_file else days_back,
+                        'heavy' if source in HEAVY_SOURCES else 'light')
             results[source] = "dry-run"
-            continue
+        return results
 
-        try:
-            extra_kwargs = BACKFILL_SOURCE_KWARGS.get(source, {})
-            result = run_ingestion(
-                source=source,
-                data_dir=data_dir,
-                days_back=effective_days_back,  # None = file-based full refresh
-                **extra_kwargs,
-            )
-            status = result.get('status', 'unknown')
-            records = result.get('records_inserted', result.get('records_fetched', 0))
-            logger.info("  %s: %s (%s records)", source, status.upper(), records)
-            results[source] = status
-            if status in ('success', 'partial'):
-                success.append(source)
-            else:
+    semaphore_map = _build_semaphore_map()
+    success: list[str] = []
+    failed: list[str] = []
+    completed = 0
+
+    # ----------------------------------------------------------------
+    # Phase 1: light/medium sources — parallel
+    # ----------------------------------------------------------------
+    if light_queue:
+        logger.info("Phase 1: parallel fetch (%d sources, %d workers)", len(light_queue), workers)
+        with ThreadPoolExecutor(max_workers=workers) as pool:
+            future_to_source = {
+                pool.submit(
+                    _fetch_one,
+                    source,
+                    data_dir,
+                    None if source in FILE_BASED_SOURCES else days_back,
+                    semaphore_map.get(source),
+                ): source
+                for source in light_queue
+            }
+            for future in as_completed(future_to_source):
+                completed += 1
+                try:
+                    src, status, records = future.result()
+                    logger.info("[%d/%d] %s: %s (%d records)",
+                                completed, total, src, status.upper(), records)
+                    results[src] = status
+                    if status in ('success', 'partial'):
+                        success.append(src)
+                    else:
+                        failed.append(src)
+                except Exception as exc:
+                    src = future_to_source[future]
+                    logger.error("[%d/%d] %s: EXCEPTION — %s", completed, total, src, exc)
+                    results[src] = f"exception: {exc}"
+                    failed.append(src)
+
+    # ----------------------------------------------------------------
+    # Phase 2: heavy sources — sequential
+    # ----------------------------------------------------------------
+    if heavy_queue:
+        logger.info("Phase 2: sequential heavy fetch (%d sources)", len(heavy_queue))
+        for source in heavy_queue:
+            completed += 1
+            logger.info("[%d/%d] %s (heavy) — starting", completed, total, source)
+            try:
+                src, status, records = _fetch_one(
+                    source,
+                    data_dir,
+                    None if source in FILE_BASED_SOURCES else days_back,
+                    semaphore_map.get(source),
+                )
+                logger.info("[%d/%d] %s: %s (%d records)",
+                            completed, total, src, status.upper(), records)
+                results[src] = status
+                if status in ('success', 'partial'):
+                    success.append(src)
+                else:
+                    failed.append(src)
+            except Exception as exc:
+                logger.error("[%d/%d] %s: EXCEPTION — %s", completed, total, source, exc)
+                results[source] = f"exception: {exc}"
                 failed.append(source)
-        except Exception as e:
-            logger.error("  EXCEPTION for %s: %s", source, e)
-            results[source] = f"exception: {e}"
-            failed.append(source)
 
     logger.info("")
     logger.info("FETCH BACKFILL COMPLETE:")
-    logger.info("  Succeeded: %d sources", len(success))
-    logger.info("  Skipped:   %d sources", len(skipped))
-    logger.info("  Failed:    %d sources", len(failed))
+    logger.info("  Succeeded: %d  Failed: %d  Skipped: %d",
+                len(success), len(failed), len(skip_list))
     if failed:
         logger.warning("  Failed sources: %s", ', '.join(failed))
 
@@ -282,19 +482,22 @@ def main():
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
-  # Full backfill (fetch + sqlmesh plan + sqlmesh run):
-  python -m dk_data.ingestion.initial_backfill
+  # Full backfill, 4 parallel workers:
+  python -m dk_data.ingestion.initial_backfill --workers 4
 
   # Fetch only (no sqlmesh):
-  python -m dk_data.ingestion.initial_backfill --fetch-only
+  python -m dk_data.ingestion.initial_backfill --workers 4 --fetch-only
 
   # SQLMesh backfill only (data already in raw tables):
   python -m dk_data.ingestion.initial_backfill --sqlmesh-only
 
   # Dry run to see what would be fetched:
-  python -m dk_data.ingestion.initial_backfill --dry-run
+  python -m dk_data.ingestion.initial_backfill --workers 4 --dry-run
         """
     )
+    parser.add_argument('--workers', type=int, default=1,
+                        help='Parallel fetch workers for light/medium sources (default 1). '
+                             'Recommended: 4 for the standard 4vCPU/8Gi pod.')
     parser.add_argument('--fetch-only', action='store_true',
                         help='Only fetch data into raw tables, skip SQLMesh')
     parser.add_argument('--sqlmesh-only', action='store_true',
@@ -308,6 +511,9 @@ Examples:
 
     args = parser.parse_args()
 
+    if args.workers < 1:
+        parser.error("--workers must be >= 1")
+
     Path(args.data_dir).mkdir(parents=True, exist_ok=True)
 
     overall_start = time.monotonic()
@@ -315,15 +521,22 @@ Examples:
     logger.info("INITIAL BACKFILL — dk-data platform")
     logger.info("SQLMesh start date: %s", SQLMESH_START_DATE)
     logger.info("Fetch window: %d days", compute_backfill_days())
+    logger.info("Workers: %d", args.workers)
     logger.info("=" * 60)
 
     exit_code = 0
 
     if not args.sqlmesh_only:
-        # Step 1: Fetch all sources
-        init_connection_pool()
+        # Connection pool sized to workers * 3:
+        # each worker can hold up to ~2 connections (fetch + loader), plus headroom.
+        pool_size = max(10, args.workers * 3)
+        init_connection_pool(minconn=2, maxconn=pool_size)
         try:
-            fetch_results = run_fetch_backfill(args.data_dir, dry_run=args.dry_run)
+            fetch_results = run_fetch_backfill(
+                args.data_dir,
+                workers=args.workers,
+                dry_run=args.dry_run,
+            )
             failed_sources = [s for s, status in fetch_results.items()
                               if str(status).startswith(('failed', 'exception'))]
             if failed_sources:

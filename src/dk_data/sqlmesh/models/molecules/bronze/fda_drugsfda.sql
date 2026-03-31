@@ -1,6 +1,7 @@
 -- SQLMesh Model: Bronze FDA Drugs@FDA
 -- Transforms raw FDA Drugs@FDA API responses (approval history) to Bronze typed columns.
 -- API: https://api.fda.gov/drug/drugsfda.json
+-- Source table: mol_raw.fda_drugs (populated by FDADrugsFetcher via fda_drugs loader)
 -- Response shape: {"results": [{application_number, sponsor_name, openfda:{}, products:[], submissions:[]}]}
 
 MODEL (
@@ -21,7 +22,7 @@ WITH expanded AS (
         r.id             AS raw_source_id,
         r.request_timestamp,
         res.value        AS rec
-    FROM mol_raw.fda_drugsfda r,
+    FROM mol_raw.fda_drugs r,
          LATERAL jsonb_array_elements(
              CASE
                  WHEN r.response_body ? 'results' THEN r.response_body->'results'

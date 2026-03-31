@@ -18,7 +18,7 @@ logger = logging.getLogger(__name__)
 class HRSAFetcher(BaseFetcher):
     """Fetcher for HRSA Health Professional Shortage Area data."""
 
-    SOURCE_NAME = "hrsa_shortage_areas"
+    SOURCE_NAME = "hrsa"
     BASE_URL = "https://data.hrsa.gov"
 
     # HRSA Data API endpoints

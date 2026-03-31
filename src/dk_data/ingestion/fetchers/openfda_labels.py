@@ -10,13 +10,22 @@ using ``jsonb_array_elements(response_body->'results')``.
 API Docs: https://open.fda.gov/apis/drug/label/
 Rate limit: 240 req/min (with or without API key; API key increases daily cap to 120,000 req/day vs 1,000/day anonymous)
 Max records per search: 25 000 (skip + limit ≤ 25 000)
+
+Full-database strategy (full_backfill=True):
+  The FDA API hard-caps skip at 25 000 per query, but the total SPL label
+  database is ~170-200k documents. Year-by-year partitioning on effective_time
+  keeps each partition well under the skip limit:
+    effective_time:[20000101 TO 20001231] → iterate from 2000 to current year
+  Each year typically has <25k new/updated labels, so no partition hits the cap.
+  Duplicates across years (re-issued labels) are handled at the bronze layer
+  via set_id deduplication in the SQLMesh model.
 """
 
 import hashlib
 import logging
 import time
 from datetime import datetime, timedelta
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 
 from .base import BaseFetcher
 
@@ -30,11 +39,14 @@ PAGE_SIZE = 100
 # FDA limits total accessible records to 25 000 per search query
 FDA_SKIP_LIMIT = 25_000
 
-# Default cap per run
+# Default cap per run (incremental/daily mode)
 DEFAULT_MAX_RECORDS = 5_000
 
 # Polite delay between pages
 REQUEST_DELAY = 0.1
+
+# First year FDA SPL labels are available in meaningful quantity
+_FULL_BACKFILL_START_YEAR = 2000
 
 
 class OpenFDALabelsFetcher(BaseFetcher):
@@ -43,6 +55,13 @@ class OpenFDALabelsFetcher(BaseFetcher):
     Pages through the /drug/label endpoint and returns one dict per page,
     each containing a ``results`` list (matching the API response shape
     expected by mol_bronze.openfda_labels).
+
+    Two modes:
+      - Incremental (default): fetch labels updated in last N days, up to
+        DEFAULT_MAX_RECORDS. Used for daily refresh CronJob.
+      - Full backfill (full_backfill=True): iterate year-by-year from 2000
+        to present, fetching all ~170-200k SPL label documents. Deduplication
+        of re-issued labels is handled at the bronze SQLMesh model layer.
     """
 
     SOURCE_NAME = "openfda_labels"
@@ -62,41 +81,52 @@ class OpenFDALabelsFetcher(BaseFetcher):
         """Fetch drug label records from openFDA.
 
         Keyword Args:
+            full_backfill: If True, fetch all SPL labels via year partitioning
+                (ignores days_back, max_records, search). Default: False.
             days_back: Restrict to labels with effective_time updated in the
-                last N days. Defaults to 90 (labels change infrequently).
-            max_records: Maximum label records to fetch. Defaults to 5000.
-                Capped at FDA_SKIP_LIMIT (25 000) per query.
+                last N days. Defaults to 90. Ignored when full_backfill=True.
+            max_records: Maximum label records to fetch in incremental mode.
+                Defaults to 5000. Ignored when full_backfill=True.
             search: Raw openFDA search query string. If provided, overrides
-                the date-based filter.
+                the date-based filter. Ignored when full_backfill=True.
+            start_year: First year to include in full backfill. Default: 2000.
+                Only used when full_backfill=True.
 
         Returns:
             Dict with keys: status, records, record_count, hash.
             ``records`` is a list of page blobs (each with a ``results`` key),
             not individual labels — the loader inserts one raw row per page.
         """
-        days_back: int = int(kwargs.get("days_back", 90))
-        max_records: int = min(
-            int(kwargs.get("max_records", DEFAULT_MAX_RECORDS)),
-            FDA_SKIP_LIMIT,
-        )
-        search: Optional[str] = kwargs.get("search")
+        full_backfill: bool = bool(kwargs.get("full_backfill", False))
 
         try:
             date_str = datetime.utcnow().strftime("%Y-%m-%d")
 
-            if not search:
-                from_date = (
-                    datetime.utcnow() - timedelta(days=days_back)
-                ).strftime("%Y%m%d")
-                # openFDA Lucene range query; requests will URL-encode the brackets
-                # Use a literal string and pass via the URL to avoid double-encoding
-                search = f"effective_time:[{from_date} TO 99991231]"
+            if full_backfill:
+                start_year: int = int(kwargs.get("start_year", _FULL_BACKFILL_START_YEAR))
+                page_blobs, total_labels = self._fetch_all_years(
+                    start_year=start_year,
+                    date_str=date_str,
+                )
+            else:
+                days_back: int = int(kwargs.get("days_back", 90))
+                max_records: int = min(
+                    int(kwargs.get("max_records", DEFAULT_MAX_RECORDS)),
+                    FDA_SKIP_LIMIT,
+                )
+                search: Optional[str] = kwargs.get("search")
 
-            page_blobs, total_labels = self._paginate(
-                search=search,
-                max_records=max_records,
-                date_str=date_str,
-            )
+                if not search:
+                    from_date = (
+                        datetime.utcnow() - timedelta(days=days_back)
+                    ).strftime("%Y%m%d")
+                    search = f"effective_time:[{from_date} TO 99991231]"
+
+                page_blobs, total_labels = self._paginate(
+                    search=search,
+                    max_records=max_records,
+                    date_str=date_str,
+                )
 
             content_hash = hashlib.md5(
                 f"{date_str}:{total_labels}".encode()
@@ -124,13 +154,60 @@ class OpenFDALabelsFetcher(BaseFetcher):
             self.log_fetch_result(result)
             return result
 
+    def _fetch_all_years(self, start_year: int, date_str: str) -> Tuple[List[Dict[str, Any]], int]:
+        """Fetch all SPL labels via year-by-year partitioning.
+
+        Each year issues its own paginated sequence with
+        ``effective_time:[YEAR0101 TO YEAR1231]``. Typical years have
+        <25k labels, so no partition hits the FDA skip cap. Labels that
+        were re-issued across multiple years may appear more than once;
+        the bronze SQLMesh model deduplicates by set_id on upsert.
+
+        Args:
+            start_year: First calendar year to fetch.
+            date_str: ISO date string used for request ID tagging.
+
+        Returns:
+            Tuple of (all_page_blobs, total_label_count).
+        """
+        current_year = datetime.utcnow().year
+        all_page_blobs: List[Dict[str, Any]] = []
+        grand_total = 0
+
+        for year in range(start_year, current_year + 1):
+            search = f"effective_time:[{year}0101 TO {year}1231]"
+            logger.info("OpenFDA Labels: fetching year %d", year)
+
+            try:
+                blobs, count = self._paginate(
+                    search=search,
+                    max_records=FDA_SKIP_LIMIT,  # fetch up to 25k per year
+                    date_str=date_str,
+                )
+            except Exception as exc:
+                logger.warning("OpenFDA Labels: year %d failed: %s — skipping", year, exc)
+                continue
+
+            all_page_blobs.extend(blobs)
+            grand_total += count
+            logger.info(
+                "OpenFDA Labels: year %d → %d labels (%d pages). Running total: %d",
+                year, count, len(blobs), grand_total,
+            )
+
+        logger.info(
+            "OpenFDA Labels full backfill complete: %d total labels across %d pages",
+            grand_total, len(all_page_blobs),
+        )
+        return all_page_blobs, grand_total
+
     def _paginate(
         self,
         search: str,
         max_records: int,
         date_str: str,
-    ) -> tuple:
-        """Page through the openFDA drug/label endpoint.
+    ) -> Tuple[List[Dict[str, Any]], int]:
+        """Page through the openFDA drug/label endpoint for a single search query.
 
         Returns:
             Tuple of (page_blobs, total_labels_fetched).
@@ -143,7 +220,8 @@ class OpenFDALabelsFetcher(BaseFetcher):
             skip = total_labels
             if skip >= FDA_SKIP_LIMIT:
                 logger.info(
-                    "OpenFDA Labels: reached FDA skip limit (%d), stopping", FDA_SKIP_LIMIT
+                    "OpenFDA Labels[%s]: reached FDA skip limit (%d), stopping",
+                    search[:40], FDA_SKIP_LIMIT,
                 )
                 break
 
