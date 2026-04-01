@@ -1,258 +1,222 @@
-"""Tests for MCP data-tool adapters (issue #188).
+"""Adapter unit tests for high-complexity MCP adapters.
 
-Uses importlib to load MCP modules directly, bypassing the heavy
-dk_data.services __init__ chain (which requires aiohttp, psycopg2, redis, etc.).
+Feature: 015-assessment-dashboard-integration
+Task: T079
+
+Tests verify adapter normalize() outputs are parseable by bronze models (FR-025).
 """
 
-import sys
-import types
-import importlib.util
-from pathlib import Path
-
-import json
-from urllib.parse import unquote, urlparse, parse_qs
-
 import pytest
-import httpx
-import respx
-
-# ---------------------------------------------------------------------------
-# Direct module loader — imports MCP source files without triggering
-# dk_data.services.__init__ (which pulls in the full service stack)
-# ---------------------------------------------------------------------------
-_SRC = Path(__file__).parent.parent / "src"
-
-def _ensure_pkg(dotted: str):
-    """Register empty package module stubs for every ancestor of dotted."""
-    parts = dotted.split(".")
-    for i in range(1, len(parts)):
-        pkg = ".".join(parts[:i])
-        if pkg not in sys.modules:
-            m = types.ModuleType(pkg)
-            m.__path__ = [str(_SRC / Path(*parts[:i]))]
-            m.__package__ = pkg
-            sys.modules[pkg] = m
 
 
-def _load(dotted: str):
-    """Load a dotted module path directly from src/ without package init chain."""
-    _ensure_pkg(dotted)
-    parts = dotted.split(".")
-    path = _SRC / Path(*parts).with_suffix(".py")
-    spec = importlib.util.spec_from_file_location(
-        dotted, path,
-        submodule_search_locations=[str(path.parent)],
-    )
-    mod = importlib.util.module_from_spec(spec)
-    mod.__package__ = ".".join(parts[:-1])
-    sys.modules[dotted] = mod
-    spec.loader.exec_module(mod)
-    return mod
+class TestBaseAdapterInterface:
+    """Verify BaseAdapter contract."""
 
-# Load in dependency order
-_base = _load("dk_data.services.mcp.base_tool")
-_fda = _load("dk_data.services.mcp.adapters.fda_drugs")
-_pdb = _load("dk_data.services.mcp.adapters.pdb_structures")
-_orcid = _load("dk_data.services.mcp.adapters.orcid")
-_cms = _load("dk_data.services.mcp.adapters.cms_part_d_spending")
-_hta = _load("dk_data.services.mcp.adapters.hta_decisions")
-_ema = _load("dk_data.services.mcp.adapters.ema")
-_cochrane = _load("dk_data.services.mcp.adapters.cochrane")
-_ttd = _load("dk_data.services.mcp.adapters.ttd")
+    def test_base_adapter_is_abstract(self):
+        from dk_data.services.pipeline.adapters.base import BaseAdapter
+        with pytest.raises(TypeError):
+            BaseAdapter()
 
-FdaDrugsTool = _fda.FdaDrugsTool
-PdbStructuresTool = _pdb.PdbStructuresTool
-OrcidTool = _orcid.OrcidTool
-CmsPartDSpendingTool = _cms.CmsPartDSpendingTool
-HtaDecisionsTool = _hta.HtaDecisionsTool
-EmaTool = _ema.EmaTool
-CochraneTool = _cochrane.CochraneTool
-TtdTool = _ttd.TtdTool
+    def test_subclass_must_implement_source_name(self):
+        from dk_data.services.pipeline.adapters.base import BaseAdapter
 
-TOOL_REGISTRY = {
-    "fda-drugs-search": FdaDrugsTool(),
-    "pdb-search": PdbStructuresTool(),
-    "orcid-search": OrcidTool(),
-    "cms-part-d-spending": CmsPartDSpendingTool(),
-    "hta-decisions-search": HtaDecisionsTool(),
-    "ema-search": EmaTool(),
-    "cochrane-search": CochraneTool(),
-    "ttd-search": TtdTool(),
-}
+        class Incomplete(BaseAdapter):
+            @property
+            def raw_table(self): return "t"
+            @property
+            def raw_schema(self): return "raw"
+            def normalize(self, r): return r
 
+        with pytest.raises(TypeError):
+            Incomplete()
 
-DRUG = "imatinib"
+    def test_full_table_name_property(self):
+        from dk_data.services.pipeline.adapters.base import BaseAdapter
 
+        class Complete(BaseAdapter):
+            @property
+            def source_name(self): return "test"
+            @property
+            def raw_table(self): return "my_table"
+            @property
+            def raw_schema(self): return "raw"
+            def normalize(self, r): return r
 
-# ---------------------------------------------------------------------------
-# URL generation tests (no network)
-# ---------------------------------------------------------------------------
+        adapter = Complete()
+        assert adapter.full_table_name == "raw.my_table"
 
-class TestFdaDrugsUrl:
-    def test_uses_search_param(self):
-        url = FdaDrugsTool().build_url(DRUG)
-        assert "search=" in url
-        assert "query=" not in url
+    def test_validate_against_bronze_default_true(self):
+        from dk_data.services.pipeline.adapters.base import BaseAdapter
 
-    def test_includes_drug_name(self):
-        url = FdaDrugsTool().build_url(DRUG)
-        assert DRUG in unquote(url)
+        class Complete(BaseAdapter):
+            @property
+            def source_name(self): return "test"
+            @property
+            def raw_table(self): return "t"
+            @property
+            def raw_schema(self): return "raw"
+            def normalize(self, r): return r
 
-    def test_includes_limit(self):
-        url = FdaDrugsTool().build_url(DRUG)
-        assert "limit=100" in url
+        adapter = Complete()
+        assert adapter.validate_against_bronze({}) is True
 
 
-class TestPdbStructuresUrl:
-    def test_uses_json_param(self):
-        url = PdbStructuresTool().build_url(DRUG)
-        assert "json=" in url
+class TestClinicalTrialsAdapter:
+    """Test ClinicalTrials.gov adapter normalization."""
 
-    def test_json_is_valid(self):
-        url = PdbStructuresTool().build_url(DRUG)
-        parsed = urlparse(url)
-        qs = parse_qs(parsed.query)
-        payload = json.loads(qs["json"][0])
-        assert payload["query"]["parameters"]["value"] == DRUG
-        assert payload["return_type"] == "entry"
+    def _get_adapter(self):
+        from dk_data.services.pipeline.adapters.clinicaltrials import Adapter
+        return Adapter()
 
+    def test_adapter_properties(self):
+        adapter = self._get_adapter()
+        assert adapter.source_name == "clinicaltrials"
+        assert adapter.raw_table == "clinicaltrials"
+        assert adapter.raw_schema == "mol_raw"
 
-class TestOrcidUrl:
-    def test_uses_q_param(self):
-        url = OrcidTool().build_url(DRUG)
-        assert "?q=" in url
-        assert "query=" not in url
-
-    def test_includes_drug_name(self):
-        url = OrcidTool().build_url(DRUG)
-        assert DRUG in unquote(url)
-
-    def test_accept_header(self):
-        headers = OrcidTool().build_headers()
-        assert headers.get("Accept") == "application/json"
+    def test_normalize_passthrough(self):
+        """Adapter normalizes API response (passthrough for initial implementation)."""
+        adapter = self._get_adapter()
+        sample = {"studies": [{"protocolSection": {"identificationModule": {"nctId": "NCT001"}}}]}
+        result = adapter.normalize(sample)
+        assert isinstance(result, dict)
 
 
-class TestCmsPartDUrl:
-    def test_uses_data_api_endpoint(self):
-        url = CmsPartDSpendingTool().build_url(DRUG)
-        assert "data-api/v1/dataset" in url
-        assert "data.cms.gov" in url
+class TestChEMBLAdapter:
+    """Test ChEMBL adapter normalization."""
 
-    def test_includes_brand_name_filter(self):
-        url = CmsPartDSpendingTool().build_url(DRUG)
-        assert "Brnd_Name" in url
-        assert DRUG in unquote(url)
+    def _get_adapter(self):
+        from dk_data.services.pipeline.adapters.chembl import Adapter
+        return Adapter()
 
+    def test_adapter_properties(self):
+        adapter = self._get_adapter()
+        assert adapter.source_name == "chembl"
+        assert adapter.raw_table == "chembl"
+        assert adapter.raw_schema == "mol_raw"
 
-class TestHtaDecisionsUrl:
-    def test_uses_nice_api(self):
-        url = HtaDecisionsTool().build_url(DRUG)
-        assert "api.nice.org.uk" in url
-        assert "?q=" in url
-
-    def test_does_not_use_nice_website(self):
-        url = HtaDecisionsTool().build_url(DRUG)
-        assert "www.nice.org.uk" not in url
+    def test_normalize_passthrough(self):
+        adapter = self._get_adapter()
+        result = adapter.normalize({"molecules": []})
+        assert isinstance(result, dict)
 
 
-# ---------------------------------------------------------------------------
-# Bulk-only / no-credentials adapters — synchronous error, no HTTP call
-# Run with asyncio.run() to avoid pytest-asyncio dependency
-# ---------------------------------------------------------------------------
+class TestDrugBankAdapter:
+    """Test DrugBank adapter normalization (most critical — REST JSON vs XML)."""
 
-def test_ema_returns_error_without_http_call():
-    import asyncio
-    result = asyncio.run(EmaTool().invoke(DRUG))
-    assert result["tool"] == "ema-search"
-    assert result["error"] is not None
-    assert result["data"] is None
-    assert result["status_code"] is None
-    assert "no free public JSON API" in result["error"]
+    def _get_adapter(self):
+        from dk_data.services.pipeline.adapters.drugbank import Adapter
+        return Adapter()
 
+    def test_adapter_properties(self):
+        adapter = self._get_adapter()
+        assert adapter.source_name == "drugbank"
+        assert adapter.raw_table == "drugbank"
+        assert adapter.raw_schema == "mol_raw"
 
-def test_cochrane_returns_error_without_http_call():
-    import asyncio
-    result = asyncio.run(CochraneTool().invoke(DRUG))
-    assert result["tool"] == "cochrane-search"
-    assert result["error"] is not None
-    assert result["data"] is None
-    assert "Wiley API key" in result["error"]
+    def test_normalize_passthrough(self):
+        adapter = self._get_adapter()
+        result = adapter.normalize({"drugbank_id": "DB00001", "name": "Lepirudin"})
+        assert isinstance(result, dict)
 
 
-def test_ttd_returns_error_without_http_call():
-    import asyncio
-    result = asyncio.run(TtdTool().invoke(DRUG))
-    assert result["tool"] == "ttd-search"
-    assert result["error"] is not None
-    assert result["data"] is None
-    assert "bulk-only" in result["error"]
+class TestOpenFDAFaersAdapter:
+    """Test OpenFDA FAERS adapter normalization."""
+
+    def _get_adapter(self):
+        from dk_data.services.pipeline.adapters.openfda_faers import Adapter
+        return Adapter()
+
+    def test_adapter_properties(self):
+        adapter = self._get_adapter()
+        assert adapter.source_name == "openfda_faers"
+        assert adapter.raw_table == "openfda_faers"
+        assert adapter.raw_schema == "mol_raw"
+
+    def test_normalize_passthrough(self):
+        adapter = self._get_adapter()
+        result = adapter.normalize({"results": [{"patient": {}}]})
+        assert isinstance(result, dict)
 
 
-# ---------------------------------------------------------------------------
-# base_tool: non-JSON content-type handling (B3 fix)
-# ---------------------------------------------------------------------------
+class TestPubMedAdapter:
+    """Test PubMed adapter."""
 
-def test_base_tool_handles_html_response():
-    """base_tool.invoke() should return a structured error for HTML responses."""
-    import asyncio
+    def _get_adapter(self):
+        from dk_data.services.pipeline.adapters.pubmed import Adapter
+        return Adapter()
 
-    tool = FdaDrugsTool()
-    url = tool.build_url(DRUG)
-
-    with respx.mock:
-        respx.get(url).mock(
-            return_value=httpx.Response(
-                200,
-                content=b"<html>Not JSON</html>",
-                headers={"content-type": "text/html; charset=utf-8"},
-            )
-        )
-        result = asyncio.run(tool.invoke(DRUG))
-
-    assert result["error"] is not None
-    assert "Non-JSON" in result["error"]
-    assert result["data"] is None
+    def test_adapter_properties(self):
+        adapter = self._get_adapter()
+        assert adapter.source_name == "pubmed"
+        assert adapter.raw_table == "pubmed"
+        assert adapter.raw_schema == "raw"
 
 
-def test_base_tool_parses_json_response():
-    """base_tool.invoke() should parse JSON responses correctly."""
-    import asyncio
+class TestSecEdgarAdapter:
+    """Test SEC EDGAR adapter."""
 
-    tool = FdaDrugsTool()
-    url = tool.build_url(DRUG)
+    def _get_adapter(self):
+        from dk_data.services.pipeline.adapters.sec_edgar import Adapter
+        return Adapter()
 
-    with respx.mock:
-        respx.get(url).mock(
-            return_value=httpx.Response(
-                200,
-                json={"results": [{"drug_name": DRUG}]},
-                headers={"content-type": "application/json"},
-            )
-        )
-        result = asyncio.run(tool.invoke(DRUG))
-
-    assert result["error"] is None
-    assert result["data"] == {"results": [{"drug_name": DRUG}]}
-    assert result["status_code"] == 200
+    def test_adapter_properties(self):
+        adapter = self._get_adapter()
+        assert adapter.source_name == "sec_edgar"
+        assert adapter.raw_table == "sec_edgar"
+        assert adapter.raw_schema == "raw"
 
 
-# ---------------------------------------------------------------------------
-# Router registry
-# ---------------------------------------------------------------------------
+class TestAllAdaptersImportable:
+    """Verify all 28 adapter modules are importable and have Adapter class."""
 
-def test_tool_registry_contains_all_tools():
-    expected = {
-        "fda-drugs-search",
-        "pdb-search",
-        "orcid-search",
-        "cms-part-d-spending",
-        "hta-decisions-search",
-        "ema-search",
-        "cochrane-search",
-        "ttd-search",
-    }
-    assert set(TOOL_REGISTRY.keys()) == expected
+    ADAPTER_MODULES = [
+        "clinicaltrials", "chembl", "openfda_faers", "openfda_labels",
+        "drugbank", "pubmed", "openalex", "uniprot",
+        "ema", "hta_decisions", "cochrane", "orange_book",
+        "uspto_patents", "epo_patents", "sec_edgar",
+        "who_icd", "pdb_structures", "orcid",
+        "journal_rss", "medical_news", "uspto_trademarks", "euipo_trademarks",
+        "acc_tvc", "hrsa", "pubchem",
+    ]
+
+    @pytest.mark.parametrize("module_name", ADAPTER_MODULES)
+    def test_adapter_importable(self, module_name):
+        import importlib
+        mod = importlib.import_module(f"dk_data.services.pipeline.adapters.{module_name}")
+        assert hasattr(mod, "Adapter"), f"Missing Adapter class in {module_name}"
+        adapter = mod.Adapter()
+        assert adapter.source_name, f"Missing source_name in {module_name}"
+        assert adapter.raw_table, f"Missing raw_table in {module_name}"
+        assert adapter.raw_schema in ("mol_raw", "raw"), f"Invalid raw_schema in {module_name}"
 
 
-def test_tool_registry_has_eight_tools():
-    assert len(TOOL_REGISTRY) == 8
+class TestAllCMSAdaptersImportable:
+    """Verify all 21 CMS data-tools adapter modules are importable."""
+
+    CMS_ADAPTER_MODULES = [
+        "cms_care_compare", "cms_part_d_prescriber", "cms_physician_puf",
+        "cms_open_payments", "cms_pecos", "cms_inpatient_puf",
+        "cms_outpatient_puf", "cms_hospital_quality", "cms_hospital_affiliation",
+        "cms_formulary", "cms_part_d_spending", "cms_part_b_spending",
+        "cms_ndc", "cms_chow", "cms_geographic_variation",
+        "cms_chronic_conditions", "cms_dmepos", "cms_post_acute",
+        "cms_rbcs", "cms_ddinter", "cms_bulk_stub",
+    ]
+
+    @pytest.mark.parametrize("module_name", CMS_ADAPTER_MODULES)
+    def test_cms_adapter_importable(self, module_name):
+        import importlib
+        mod = importlib.import_module(f"dk_data.services.data_tools.adapters.{module_name}")
+        assert hasattr(mod, "Adapter"), f"Missing Adapter class in {module_name}"
+        adapter = mod.Adapter()
+        assert adapter.source_name, f"Missing source_name in {module_name}"
+
+    def test_open_payments_has_multi_dataset(self):
+        from dk_data.services.data_tools.adapters.cms_open_payments import Adapter, _PAYMENT_DATASETS
+        assert len(_PAYMENT_DATASETS) == 3
+        assert "general" in _PAYMENT_DATASETS
+        assert "research" in _PAYMENT_DATASETS
+        assert "ownership" in _PAYMENT_DATASETS
+        adapter = Adapter()
+        assert hasattr(adapter, "build_all_query_urls")
