@@ -170,6 +170,10 @@ CREATE TABLE IF NOT EXISTS mol_raw.nice_hta (
     source_id     TEXT,
     ingested_at   TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
+-- Loader uses: ON CONFLICT ((response_body->>'Id')) WHERE response_body->>'Id' IS NOT NULL
+CREATE UNIQUE INDEX IF NOT EXISTS idx_mol_raw_nice_hta_id
+    ON mol_raw.nice_hta ((response_body->>'Id'))
+    WHERE response_body->>'Id' IS NOT NULL;
 
 CREATE TABLE IF NOT EXISTS mol_raw.npi_registry (
     id            BIGSERIAL PRIMARY KEY,
@@ -177,6 +181,10 @@ CREATE TABLE IF NOT EXISTS mol_raw.npi_registry (
     source_id     TEXT,
     ingested_at   TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
+-- Loader uses: ON CONFLICT ((response_body->>'number')) WHERE response_body->>'number' IS NOT NULL
+CREATE UNIQUE INDEX IF NOT EXISTS idx_mol_raw_npi_registry_number
+    ON mol_raw.npi_registry ((response_body->>'number'))
+    WHERE response_body->>'number' IS NOT NULL;
 
 CREATE TABLE IF NOT EXISTS mol_raw.purple_book (
     id            BIGSERIAL PRIMARY KEY,
@@ -184,6 +192,10 @@ CREATE TABLE IF NOT EXISTS mol_raw.purple_book (
     source_id     TEXT,
     ingested_at   TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
+-- Loader uses: ON CONFLICT ((response_body->>'application_number')) WHERE ... IS NOT NULL
+CREATE UNIQUE INDEX IF NOT EXISTS idx_mol_raw_purple_book_app_number
+    ON mol_raw.purple_book ((response_body->>'application_number'))
+    WHERE response_body->>'application_number' IS NOT NULL;
 
 CREATE TABLE IF NOT EXISTS mol_raw.reactome (
     id            BIGSERIAL PRIMARY KEY,
@@ -191,6 +203,10 @@ CREATE TABLE IF NOT EXISTS mol_raw.reactome (
     source_id     TEXT,
     ingested_at   TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
+-- Loader uses: ON CONFLICT ((response_body->>'stId')) WHERE response_body->>'stId' IS NOT NULL
+CREATE UNIQUE INDEX IF NOT EXISTS idx_mol_raw_reactome_stid
+    ON mol_raw.reactome ((response_body->>'stId'))
+    WHERE response_body->>'stId' IS NOT NULL;
 
 CREATE TABLE IF NOT EXISTS mol_raw.who_gho (
     id            BIGSERIAL PRIMARY KEY,
@@ -198,6 +214,10 @@ CREATE TABLE IF NOT EXISTS mol_raw.who_gho (
     source_id     TEXT,
     ingested_at   TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
+-- Loader uses: ON CONFLICT ((response_body->>'IndicatorCode')) WHERE ... IS NOT NULL
+CREATE UNIQUE INDEX IF NOT EXISTS idx_mol_raw_who_gho_indicator_code
+    ON mol_raw.who_gho ((response_body->>'IndicatorCode'))
+    WHERE response_body->>'IndicatorCode' IS NOT NULL;
 
 -- ============================================================================
 -- mol_raw: domain-column tables (specific fields, not envelope)
@@ -520,213 +540,231 @@ CREATE INDEX IF NOT EXISTS idx_mol_raw_tm_status_hist ON mol_raw.trademark_statu
 
 -- ============================================================================
 -- hcs_raw: envelope-pattern tables (17 CMS facility/provider sources)
--- All use the same pattern: request_id, api_endpoint, response_status,
--- response_body JSONB, response_body_hash, source_id
+-- DDL matches migration 097_hcs_raw_facility_tables.sql exactly.
+-- ON CONFLICT in all loaders: (response_body_hash) WHERE response_body_hash IS NOT NULL
+-- Requires: UNIQUE NULLS NOT DISTINCT (response_body_hash)  — NOT UNIQUE (request_id)
 -- ============================================================================
 
 CREATE TABLE IF NOT EXISTS hcs_raw.cms_care_compare (
-    id                 BIGSERIAL PRIMARY KEY,
-    request_id         TEXT NOT NULL,
-    api_endpoint       TEXT,
-    response_status    INTEGER,
-    response_body      JSONB NOT NULL,
-    response_body_hash TEXT,
-    source_id          TEXT,
-    ingested_at        TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    UNIQUE (request_id)
+    id                  BIGSERIAL PRIMARY KEY,
+    request_id          TEXT NOT NULL,
+    api_endpoint        TEXT NOT NULL DEFAULT 'cms_care_compare',
+    response_status     INTEGER NOT NULL DEFAULT 200,
+    response_body       JSONB NOT NULL DEFAULT '{}'::jsonb,
+    response_body_hash  TEXT,
+    source_id           TEXT NOT NULL DEFAULT 'cms_care_compare',
+    ingested_at         TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    UNIQUE NULLS NOT DISTINCT (response_body_hash)
 );
+CREATE INDEX IF NOT EXISTS idx_hcs_raw_cms_care_compare_ingested ON hcs_raw.cms_care_compare (ingested_at);
 
 CREATE TABLE IF NOT EXISTS hcs_raw.cms_chow (
-    id                 BIGSERIAL PRIMARY KEY,
-    request_id         TEXT NOT NULL,
-    api_endpoint       TEXT,
-    response_status    INTEGER,
-    response_body      JSONB NOT NULL,
-    response_body_hash TEXT,
-    source_id          TEXT,
-    ingested_at        TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    UNIQUE (request_id)
+    id                  BIGSERIAL PRIMARY KEY,
+    request_id          TEXT NOT NULL,
+    api_endpoint        TEXT NOT NULL DEFAULT 'cms_chow',
+    response_status     INTEGER NOT NULL DEFAULT 200,
+    response_body       JSONB NOT NULL DEFAULT '{}'::jsonb,
+    response_body_hash  TEXT,
+    source_id           TEXT NOT NULL DEFAULT 'cms_chow',
+    ingested_at         TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    UNIQUE NULLS NOT DISTINCT (response_body_hash)
 );
+CREATE INDEX IF NOT EXISTS idx_hcs_raw_cms_chow_ingested ON hcs_raw.cms_chow (ingested_at);
 
 CREATE TABLE IF NOT EXISTS hcs_raw.cms_ddinter (
-    id                 BIGSERIAL PRIMARY KEY,
-    request_id         TEXT NOT NULL,
-    api_endpoint       TEXT,
-    response_status    INTEGER,
-    response_body      JSONB NOT NULL,
-    response_body_hash TEXT,
-    source_id          TEXT,
-    ingested_at        TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    UNIQUE (request_id)
+    id                  BIGSERIAL PRIMARY KEY,
+    request_id          TEXT NOT NULL,
+    api_endpoint        TEXT NOT NULL DEFAULT 'cms_ddinter',
+    response_status     INTEGER NOT NULL DEFAULT 200,
+    response_body       JSONB NOT NULL DEFAULT '{}'::jsonb,
+    response_body_hash  TEXT,
+    source_id           TEXT NOT NULL DEFAULT 'cms_ddinter',
+    ingested_at         TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    UNIQUE NULLS NOT DISTINCT (response_body_hash)
 );
+CREATE INDEX IF NOT EXISTS idx_hcs_raw_cms_ddinter_ingested ON hcs_raw.cms_ddinter (ingested_at);
 
 CREATE TABLE IF NOT EXISTS hcs_raw.cms_dmepos (
-    id                 BIGSERIAL PRIMARY KEY,
-    request_id         TEXT NOT NULL,
-    api_endpoint       TEXT,
-    response_status    INTEGER,
-    response_body      JSONB NOT NULL,
-    response_body_hash TEXT,
-    source_id          TEXT,
-    ingested_at        TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    UNIQUE (request_id)
+    id                  BIGSERIAL PRIMARY KEY,
+    request_id          TEXT NOT NULL,
+    api_endpoint        TEXT NOT NULL DEFAULT 'cms_dmepos',
+    response_status     INTEGER NOT NULL DEFAULT 200,
+    response_body       JSONB NOT NULL DEFAULT '{}'::jsonb,
+    response_body_hash  TEXT,
+    source_id           TEXT NOT NULL DEFAULT 'cms_dmepos',
+    ingested_at         TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    UNIQUE NULLS NOT DISTINCT (response_body_hash)
 );
+CREATE INDEX IF NOT EXISTS idx_hcs_raw_cms_dmepos_ingested ON hcs_raw.cms_dmepos (ingested_at);
 
 CREATE TABLE IF NOT EXISTS hcs_raw.cms_formulary (
-    id                 BIGSERIAL PRIMARY KEY,
-    request_id         TEXT NOT NULL,
-    api_endpoint       TEXT,
-    response_status    INTEGER,
-    response_body      JSONB NOT NULL,
-    response_body_hash TEXT,
-    source_id          TEXT,
-    ingested_at        TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    UNIQUE (request_id)
+    id                  BIGSERIAL PRIMARY KEY,
+    request_id          TEXT NOT NULL,
+    api_endpoint        TEXT NOT NULL DEFAULT 'cms_formulary',
+    response_status     INTEGER NOT NULL DEFAULT 200,
+    response_body       JSONB NOT NULL DEFAULT '{}'::jsonb,
+    response_body_hash  TEXT,
+    source_id           TEXT NOT NULL DEFAULT 'cms_formulary',
+    ingested_at         TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    UNIQUE NULLS NOT DISTINCT (response_body_hash)
 );
+CREATE INDEX IF NOT EXISTS idx_hcs_raw_cms_formulary_ingested ON hcs_raw.cms_formulary (ingested_at);
 
 CREATE TABLE IF NOT EXISTS hcs_raw.cms_hcris (
-    id                 BIGSERIAL PRIMARY KEY,
-    request_id         TEXT NOT NULL,
-    api_endpoint       TEXT,
-    response_status    INTEGER,
-    response_body      JSONB NOT NULL,
-    response_body_hash TEXT,
-    source_id          TEXT,
-    ingested_at        TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    UNIQUE (request_id)
+    id                  BIGSERIAL PRIMARY KEY,
+    request_id          TEXT NOT NULL,
+    api_endpoint        TEXT NOT NULL DEFAULT 'cms_hcris',
+    response_status     INTEGER NOT NULL DEFAULT 200,
+    response_body       JSONB NOT NULL DEFAULT '{}'::jsonb,
+    response_body_hash  TEXT,
+    source_id           TEXT NOT NULL DEFAULT 'cms_hcris',
+    ingested_at         TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    UNIQUE NULLS NOT DISTINCT (response_body_hash)
 );
+CREATE INDEX IF NOT EXISTS idx_hcs_raw_cms_hcris_ingested ON hcs_raw.cms_hcris (ingested_at);
 
 CREATE TABLE IF NOT EXISTS hcs_raw.cms_hospital_affiliation (
-    id                 BIGSERIAL PRIMARY KEY,
-    request_id         TEXT NOT NULL,
-    api_endpoint       TEXT,
-    response_status    INTEGER,
-    response_body      JSONB NOT NULL,
-    response_body_hash TEXT,
-    source_id          TEXT,
-    ingested_at        TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    UNIQUE (request_id)
+    id                  BIGSERIAL PRIMARY KEY,
+    request_id          TEXT NOT NULL,
+    api_endpoint        TEXT NOT NULL DEFAULT 'cms_hospital_affiliation',
+    response_status     INTEGER NOT NULL DEFAULT 200,
+    response_body       JSONB NOT NULL DEFAULT '{}'::jsonb,
+    response_body_hash  TEXT,
+    source_id           TEXT NOT NULL DEFAULT 'cms_hospital_affiliation',
+    ingested_at         TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    UNIQUE NULLS NOT DISTINCT (response_body_hash)
 );
+CREATE INDEX IF NOT EXISTS idx_hcs_raw_cms_hospital_affil_ingested ON hcs_raw.cms_hospital_affiliation (ingested_at);
 
 CREATE TABLE IF NOT EXISTS hcs_raw.cms_hospital_quality (
-    id                 BIGSERIAL PRIMARY KEY,
-    request_id         TEXT NOT NULL,
-    api_endpoint       TEXT,
-    response_status    INTEGER,
-    response_body      JSONB NOT NULL,
-    response_body_hash TEXT,
-    source_id          TEXT,
-    ingested_at        TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    UNIQUE (request_id)
+    id                  BIGSERIAL PRIMARY KEY,
+    request_id          TEXT NOT NULL,
+    api_endpoint        TEXT NOT NULL DEFAULT 'cms_hospital_quality',
+    response_status     INTEGER NOT NULL DEFAULT 200,
+    response_body       JSONB NOT NULL DEFAULT '{}'::jsonb,
+    response_body_hash  TEXT,
+    source_id           TEXT NOT NULL DEFAULT 'cms_hospital_quality',
+    ingested_at         TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    UNIQUE NULLS NOT DISTINCT (response_body_hash)
 );
+CREATE INDEX IF NOT EXISTS idx_hcs_raw_cms_hospital_qual_ingested ON hcs_raw.cms_hospital_quality (ingested_at);
 
 CREATE TABLE IF NOT EXISTS hcs_raw.cms_magnet (
-    id                 BIGSERIAL PRIMARY KEY,
-    request_id         TEXT NOT NULL,
-    api_endpoint       TEXT,
-    response_status    INTEGER,
-    response_body      JSONB NOT NULL,
-    response_body_hash TEXT,
-    source_id          TEXT,
-    ingested_at        TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    UNIQUE (request_id)
+    id                  BIGSERIAL PRIMARY KEY,
+    request_id          TEXT NOT NULL,
+    api_endpoint        TEXT NOT NULL DEFAULT 'cms_magnet',
+    response_status     INTEGER NOT NULL DEFAULT 200,
+    response_body       JSONB NOT NULL DEFAULT '{}'::jsonb,
+    response_body_hash  TEXT,
+    source_id           TEXT NOT NULL DEFAULT 'cms_magnet',
+    ingested_at         TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    UNIQUE NULLS NOT DISTINCT (response_body_hash)
 );
+CREATE INDEX IF NOT EXISTS idx_hcs_raw_cms_magnet_ingested ON hcs_raw.cms_magnet (ingested_at);
 
 CREATE TABLE IF NOT EXISTS hcs_raw.cms_ndc (
-    id                 BIGSERIAL PRIMARY KEY,
-    request_id         TEXT NOT NULL,
-    api_endpoint       TEXT,
-    response_status    INTEGER,
-    response_body      JSONB NOT NULL,
-    response_body_hash TEXT,
-    source_id          TEXT,
-    ingested_at        TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    UNIQUE (request_id)
+    id                  BIGSERIAL PRIMARY KEY,
+    request_id          TEXT NOT NULL,
+    api_endpoint        TEXT NOT NULL DEFAULT 'cms_ndc',
+    response_status     INTEGER NOT NULL DEFAULT 200,
+    response_body       JSONB NOT NULL DEFAULT '{}'::jsonb,
+    response_body_hash  TEXT,
+    source_id           TEXT NOT NULL DEFAULT 'cms_ndc',
+    ingested_at         TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    UNIQUE NULLS NOT DISTINCT (response_body_hash)
 );
+CREATE INDEX IF NOT EXISTS idx_hcs_raw_cms_ndc_ingested ON hcs_raw.cms_ndc (ingested_at);
 
 CREATE TABLE IF NOT EXISTS hcs_raw.cms_nucc (
-    id                 BIGSERIAL PRIMARY KEY,
-    request_id         TEXT NOT NULL,
-    api_endpoint       TEXT,
-    response_status    INTEGER,
-    response_body      JSONB NOT NULL,
-    response_body_hash TEXT,
-    source_id          TEXT,
-    ingested_at        TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    UNIQUE (request_id)
+    id                  BIGSERIAL PRIMARY KEY,
+    request_id          TEXT NOT NULL,
+    api_endpoint        TEXT NOT NULL DEFAULT 'cms_nucc',
+    response_status     INTEGER NOT NULL DEFAULT 200,
+    response_body       JSONB NOT NULL DEFAULT '{}'::jsonb,
+    response_body_hash  TEXT,
+    source_id           TEXT NOT NULL DEFAULT 'cms_nucc',
+    ingested_at         TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    UNIQUE NULLS NOT DISTINCT (response_body_hash)
 );
+CREATE INDEX IF NOT EXISTS idx_hcs_raw_cms_nucc_ingested ON hcs_raw.cms_nucc (ingested_at);
 
 CREATE TABLE IF NOT EXISTS hcs_raw.cms_pecos (
-    id                 BIGSERIAL PRIMARY KEY,
-    request_id         TEXT NOT NULL,
-    api_endpoint       TEXT,
-    response_status    INTEGER,
-    response_body      JSONB NOT NULL,
-    response_body_hash TEXT,
-    source_id          TEXT,
-    ingested_at        TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    UNIQUE (request_id)
+    id                  BIGSERIAL PRIMARY KEY,
+    request_id          TEXT NOT NULL,
+    api_endpoint        TEXT NOT NULL DEFAULT 'cms_pecos',
+    response_status     INTEGER NOT NULL DEFAULT 200,
+    response_body       JSONB NOT NULL DEFAULT '{}'::jsonb,
+    response_body_hash  TEXT,
+    source_id           TEXT NOT NULL DEFAULT 'cms_pecos',
+    ingested_at         TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    UNIQUE NULLS NOT DISTINCT (response_body_hash)
 );
+CREATE INDEX IF NOT EXISTS idx_hcs_raw_cms_pecos_ingested ON hcs_raw.cms_pecos (ingested_at);
 
 CREATE TABLE IF NOT EXISTS hcs_raw.cms_pos (
-    id                 BIGSERIAL PRIMARY KEY,
-    request_id         TEXT NOT NULL,
-    api_endpoint       TEXT,
-    response_status    INTEGER,
-    response_body      JSONB NOT NULL,
-    response_body_hash TEXT,
-    source_id          TEXT,
-    ingested_at        TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    UNIQUE (request_id)
+    id                  BIGSERIAL PRIMARY KEY,
+    request_id          TEXT NOT NULL,
+    api_endpoint        TEXT NOT NULL DEFAULT 'cms_pos',
+    response_status     INTEGER NOT NULL DEFAULT 200,
+    response_body       JSONB NOT NULL DEFAULT '{}'::jsonb,
+    response_body_hash  TEXT,
+    source_id           TEXT NOT NULL DEFAULT 'cms_pos',
+    ingested_at         TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    UNIQUE NULLS NOT DISTINCT (response_body_hash)
 );
+CREATE INDEX IF NOT EXISTS idx_hcs_raw_cms_pos_ingested ON hcs_raw.cms_pos (ingested_at);
 
 CREATE TABLE IF NOT EXISTS hcs_raw.cms_post_acute (
-    id                 BIGSERIAL PRIMARY KEY,
-    request_id         TEXT NOT NULL,
-    api_endpoint       TEXT,
-    response_status    INTEGER,
-    response_body      JSONB NOT NULL,
-    response_body_hash TEXT,
-    source_id          TEXT,
-    ingested_at        TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    UNIQUE (request_id)
+    id                  BIGSERIAL PRIMARY KEY,
+    request_id          TEXT NOT NULL,
+    api_endpoint        TEXT NOT NULL DEFAULT 'cms_post_acute',
+    response_status     INTEGER NOT NULL DEFAULT 200,
+    response_body       JSONB NOT NULL DEFAULT '{}'::jsonb,
+    response_body_hash  TEXT,
+    source_id           TEXT NOT NULL DEFAULT 'cms_post_acute',
+    ingested_at         TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    UNIQUE NULLS NOT DISTINCT (response_body_hash)
 );
+CREATE INDEX IF NOT EXISTS idx_hcs_raw_cms_post_acute_ingested ON hcs_raw.cms_post_acute (ingested_at);
 
 CREATE TABLE IF NOT EXISTS hcs_raw.cms_rbcs (
-    id                 BIGSERIAL PRIMARY KEY,
-    request_id         TEXT NOT NULL,
-    api_endpoint       TEXT,
-    response_status    INTEGER,
-    response_body      JSONB NOT NULL,
-    response_body_hash TEXT,
-    source_id          TEXT,
-    ingested_at        TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    UNIQUE (request_id)
+    id                  BIGSERIAL PRIMARY KEY,
+    request_id          TEXT NOT NULL,
+    api_endpoint        TEXT NOT NULL DEFAULT 'cms_rbcs',
+    response_status     INTEGER NOT NULL DEFAULT 200,
+    response_body       JSONB NOT NULL DEFAULT '{}'::jsonb,
+    response_body_hash  TEXT,
+    source_id           TEXT NOT NULL DEFAULT 'cms_rbcs',
+    ingested_at         TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    UNIQUE NULLS NOT DISTINCT (response_body_hash)
 );
+CREATE INDEX IF NOT EXISTS idx_hcs_raw_cms_rbcs_ingested ON hcs_raw.cms_rbcs (ingested_at);
 
 CREATE TABLE IF NOT EXISTS hcs_raw.cms_stabilis (
-    id                 BIGSERIAL PRIMARY KEY,
-    request_id         TEXT NOT NULL,
-    api_endpoint       TEXT,
-    response_status    INTEGER,
-    response_body      JSONB NOT NULL,
-    response_body_hash TEXT,
-    source_id          TEXT,
-    ingested_at        TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    UNIQUE (request_id)
+    id                  BIGSERIAL PRIMARY KEY,
+    request_id          TEXT NOT NULL,
+    api_endpoint        TEXT NOT NULL DEFAULT 'cms_stabilis',
+    response_status     INTEGER NOT NULL DEFAULT 200,
+    response_body       JSONB NOT NULL DEFAULT '{}'::jsonb,
+    response_body_hash  TEXT,
+    source_id           TEXT NOT NULL DEFAULT 'cms_stabilis',
+    ingested_at         TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    UNIQUE NULLS NOT DISTINCT (response_body_hash)
 );
+CREATE INDEX IF NOT EXISTS idx_hcs_raw_cms_stabilis_ingested ON hcs_raw.cms_stabilis (ingested_at);
 
 CREATE TABLE IF NOT EXISTS hcs_raw.cms_usp (
-    id                 BIGSERIAL PRIMARY KEY,
-    request_id         TEXT NOT NULL,
-    api_endpoint       TEXT,
-    response_status    INTEGER,
-    response_body      JSONB NOT NULL,
-    response_body_hash TEXT,
-    source_id          TEXT,
-    ingested_at        TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    UNIQUE (request_id)
+    id                  BIGSERIAL PRIMARY KEY,
+    request_id          TEXT NOT NULL,
+    api_endpoint        TEXT NOT NULL DEFAULT 'cms_usp',
+    response_status     INTEGER NOT NULL DEFAULT 200,
+    response_body       JSONB NOT NULL DEFAULT '{}'::jsonb,
+    response_body_hash  TEXT,
+    source_id           TEXT NOT NULL DEFAULT 'cms_usp',
+    ingested_at         TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    UNIQUE NULLS NOT DISTINCT (response_body_hash)
 );
+CREATE INDEX IF NOT EXISTS idx_hcs_raw_cms_usp_ingested ON hcs_raw.cms_usp (ingested_at);
 
 DO $$
 BEGIN
