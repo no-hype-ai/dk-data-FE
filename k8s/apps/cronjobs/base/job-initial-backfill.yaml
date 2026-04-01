@@ -61,12 +61,17 @@ spec:
             - python
             - -m
             - dk_data.ingestion.initial_backfill
-          # To run only the SQLMesh plan (raw tables already populated):
-          #   args: ["--sqlmesh-only"]
-          # To run only fetch (skip SQLMesh):
-          #   args: ["--fetch-only"]
-          # To preview without running:
-          #   args: ["--dry-run"]
+          # --workers 4: parallel light/medium fetch; heavy sources run sequentially after.
+          # Override examples:
+          #   ["--workers", "4", "--sqlmesh-only"]   — SQLMesh only (raw already populated)
+          #   ["--workers", "4", "--fetch-only"]     — fetch only, skip SQLMesh
+          #   ["--workers", "4", "--dry-run"]        — preview without running
+          #   ["--workers", "1"]                     — sequential (debug/throttle)
+          args: ["--workers", "4"]
+          ports:
+            - name: metrics
+              containerPort: 8000
+              protocol: TCP
           envFrom:
             - secretRef:
                 name: dk-data-secrets

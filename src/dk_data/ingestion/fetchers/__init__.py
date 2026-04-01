@@ -80,7 +80,7 @@ from .cms_dual_eligible import CMSDualEligibleFetcher
 from .cms_enrollment_puf import CMSEnrollmentPUFFetcher
 from .cms_claim_type_puf import CMSClaimTypePUFFetcher
 from .cms_utilization_puf import CMSUtilizationPUFFetcher
-from .cms_cost_reports_puf import CMSCostReportsPUFFetcher
+from .cms_cost_reports_puf import CMSCostReportsPUFFetcher, CMSCostReportsPUFLinesFetcher
 from .ema_mol import EMAMolFetcher
 from .orange_book import OrangeBookFetcher
 from .dailymed import DailyMedFetcher
@@ -93,6 +93,16 @@ from .openfda_labels import OpenFDALabelsFetcher
 from .chembl_activities import ChEMBLActivitiesFetcher
 from .fda_rems import FDARemsFetcher
 from .fda_ndc import FDANDCFetcher
+from .chembl_molecules import ChEMBLMoleculesFetcher
+from .pubchem import PubChemFetcher
+from .openfda_faers import OpenFDAFAERSFetcher
+from .npi_registry import NPIRegistryFetcher
+from .purple_book import PurpleBookFetcher
+from .reactome import ReactomeFetcher
+from .who_gho import WHOGHOFetcher
+from .nice_hta import NICEHTAFetcher
+from .cms_medicare import CMSMedicareFetcher
+from .cms_coverage import CMSCoverageFetcher
 
 __all__ = [
     'BaseFetcher',
@@ -176,6 +186,7 @@ __all__ = [
     'CMSClaimTypePUFFetcher',
     'CMSUtilizationPUFFetcher',
     'CMSCostReportsPUFFetcher',
+    'CMSCostReportsPUFLinesFetcher',
     'EMAMolFetcher',
     'OrangeBookFetcher',
     'DailyMedFetcher',
@@ -188,4 +199,14 @@ __all__ = [
     'ChEMBLActivitiesFetcher',
     'FDARemsFetcher',
     'FDANDCFetcher',
+    'ChEMBLMoleculesFetcher',
+    'PubChemFetcher',
+    'OpenFDAFAERSFetcher',
+    'NPIRegistryFetcher',
+    'PurpleBookFetcher',
+    'ReactomeFetcher',
+    'WHOGHOFetcher',
+    'NICEHTAFetcher',
+    'CMSMedicareFetcher',
+    'CMSCoverageFetcher',
 ]

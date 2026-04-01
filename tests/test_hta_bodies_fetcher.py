@@ -97,7 +97,8 @@ class TestHTABodiesFetch:
         mock_response.status_code = 200
         mock_response.raise_for_status = MagicMock()
 
-        with patch.object(fetcher.session, "get", return_value=mock_response):
+        with patch("dk_data.ingestion.fetchers.hta_bodies._NICE_API_KEY", "test-key"), \
+             patch.object(fetcher.session, "get", return_value=mock_response):
             result = fetcher.fetch(
                 drug_names=["pembrolizumab", "nivolumab"],
                 agencies=["nice"],
@@ -170,7 +171,8 @@ class TestHTABodiesFetch:
         mock_response.status_code = 200
         mock_response.raise_for_status = MagicMock()
 
-        with patch.object(fetcher.session, "get", return_value=mock_response):
+        with patch("dk_data.ingestion.fetchers.hta_bodies._NICE_API_KEY", "test-key"), \
+             patch.object(fetcher.session, "get", return_value=mock_response):
             result = fetcher.fetch(
                 drug_names=["pembrolizumab"],
                 agencies=AGENCIES,
@@ -202,7 +204,8 @@ class TestHTABodiesFetch:
         mock_response.status_code = 200
         mock_response.raise_for_status = MagicMock()
 
-        with patch.object(fetcher.session, "get", return_value=mock_response):
+        with patch("dk_data.ingestion.fetchers.hta_bodies._NICE_API_KEY", "test-key"), \
+             patch.object(fetcher.session, "get", return_value=mock_response):
             result = fetcher.fetch(
                 drug_names=["pembrolizumab"],
                 agencies=["nice"],
@@ -226,7 +229,8 @@ class TestHTABodiesFetch:
         mock_response.status_code = 200
         mock_response.raise_for_status = MagicMock()
 
-        with patch.object(fetcher.session, "get", return_value=mock_response):
+        with patch("dk_data.ingestion.fetchers.hta_bodies._NICE_API_KEY", "test-key"), \
+             patch.object(fetcher.session, "get", return_value=mock_response):
             result = fetcher.fetch(
                 drug_names=[],
                 agencies=["nice"],

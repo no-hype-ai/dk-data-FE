@@ -1,0 +1,102 @@
+# HCS Transform — Bronze Layer
+# 019-cms-puf-platform-reconciliation
+# Runs hcs_bronze.* transformations (53 models) from hcs_raw.* staging tables.
+# Dependency schedule (UTC):
+#   06:00  mol-transform-bronze   mol_bronze.* (5 models)
+#   06:30  mol-transform-ip-bronze  IP mol_bronze.* + 5 hcs_bronze.* (20 models, parallel)
+#   07:00  hcs-transform-bronze   ALL 53 hcs_bronze.* (this job, sequential after ip_bronze)
+#   08:00  mol-transform-silver   mol_silver core 7 models
+#   09:00  hcs-transform-silver   hcs_silver.* (needs hcs_bronze + mol_silver)
+# activeDeadlineSeconds: 14400 (4h) — 53 INCREMENTAL_BY_UNIQUE_KEY models, large tables
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: hcs-transform-bronze
+  labels:
+    app: hcs-transform-bronze
+    app.kubernetes.io/name: hcs-transform-bronze
+    app.kubernetes.io/component: transform
+    app.kubernetes.io/part-of: dk-data
+spec:
+  schedule: "0 7 * * *"  # 07:00 UTC daily (after ip_bronze at 06:30)
+  concurrencyPolicy: Forbid
+  startingDeadlineSeconds: 3600
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      backoffLimit: 1
+      ttlSecondsAfterFinished: 86400
+      activeDeadlineSeconds: 14400  # 4h — 53 models, many large CMS PUF tables
+      template:
+        metadata:
+          labels:
+            app: hcs-transform-bronze
+            app.kubernetes.io/component: batch-job
+            app.kubernetes.io/part-of: dk-data
+            team: data-platform
+            service: dk-data
+            product: dk-data
+        spec:
+          restartPolicy: Never
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 1000
+            fsGroup: 1000
+            seccompProfile:
+              type: RuntimeDefault
+          imagePullSecrets:
+            - name: ghcr-credentials
+          containers:
+            - name: hcs-transform-bronze
+              image: ghcr.io/data-kinetic/dk-data-fe/job-trigger:main
+              command: ["python", "-m", "dk_data.ingestion.transform_molecules"]
+              args: ["--layer", "hcs_bronze"]
+              env:
+                - name: POSTGRES_HOST
+                  valueFrom:
+                    secretKeyRef:
+                      name: dk-data-secrets
+                      key: POSTGRES_HOST
+                - name: POSTGRES_PORT
+                  valueFrom:
+                    secretKeyRef:
+                      name: dk-data-secrets
+                      key: POSTGRES_PORT
+                - name: POSTGRES_USER
+                  valueFrom:
+                    secretKeyRef:
+                      name: dk-data-secrets
+                      key: POSTGRES_USER
+                - name: POSTGRES_PASSWORD
+                  valueFrom:
+                    secretKeyRef:
+                      name: dk-data-secrets
+                      key: POSTGRES_PASSWORD
+                - name: POSTGRES_DB
+                  valueFrom:
+                    secretKeyRef:
+                      name: dk-data-secrets
+                      key: POSTGRES_DB
+                - name: OTEL_EXPORTER_OTLP_ENDPOINT
+                  value: "http://alloy.infra.svc.cluster.local:4317"
+                - name: OTEL_ENABLED
+                  value: "true"
+              resources:
+                requests:
+                  memory: "1Gi"
+                  cpu: "500m"
+                limits:
+                  memory: "2Gi"
+                  cpu: "1000m"
+              securityContext:
+                allowPrivilegeEscalation: false
+                readOnlyRootFilesystem: true
+                capabilities:
+                  drop: ["ALL"]
+              volumeMounts:
+                - name: tmp
+                  mountPath: /tmp
+          volumes:
+            - name: tmp
+              emptyDir: {}

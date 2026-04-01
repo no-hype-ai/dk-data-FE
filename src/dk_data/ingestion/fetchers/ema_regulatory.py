@@ -4,14 +4,23 @@ Feature: 011-datasource-integration
 Task: Tier 4 CI source — EMA regulatory decisions
 
 Fetches CHMP opinions, EPAR documents, and safety signals from the
-European Medicines Agency public API.
+European Medicines Agency open data bulk JSON export.
+
+Data source:
+  EMA publishes the full authorized medicines dataset as a bulk JSON file,
+  refreshed twice daily (06:00 and 18:00 CET). ~2,641 records total.
+
+  Bulk JSON: https://www.ema.europa.eu/en/documents/report/medicines-output-medicines_json-report_en.json
+
+  The previously used paginated endpoint (ema.europa.eu/api/v1/medicines)
+  is not an officially documented EMA API. The bulk download is the
+  official data access method (ema.europa.eu/en/medicines/download-medicine-data).
 
 Source: https://www.ema.europa.eu/en/medicines
 """
 
 import hashlib
 import logging
-from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional
 
 from .base import BaseFetcher
@@ -25,11 +34,11 @@ class EMARegulatoryCIFetcher(BaseFetcher):
     SOURCE_NAME = "ema_regulatory"
     BASE_URL = "https://www.ema.europa.eu/en/medicines"
 
-    # EMA public medicines API
-    EMA_API_BASE = "https://www.ema.europa.eu/en/medicines/field_ema_web_categories"
-
-    # Known EMA API endpoints for structured data
-    MEDICINES_API = "https://www.ema.europa.eu/api/v1/medicines"
+    # Official EMA bulk JSON export — all authorized medicines, updated twice daily.
+    # No pagination, no rate limit, no authentication required.
+    BULK_JSON_URL = (
+        "https://www.ema.europa.eu/en/documents/report/medicines-output-medicines_json-report_en.json"
+    )
 
     # Decision types we track
     VALID_DECISION_TYPES = frozenset({
@@ -51,20 +60,23 @@ class EMARegulatoryCIFetcher(BaseFetcher):
     # Document types fetched
     DOCUMENT_TYPES = ["chmp_opinion", "epar", "safety_signal"]
 
-    # Default page size
-    PAGE_SIZE = 50
-
     def get_latest_url(self) -> str:
-        """Get URL for the EMA medicines API endpoint."""
-        return self.MEDICINES_API
+        """Get URL for the EMA bulk JSON endpoint."""
+        return self.BULK_JSON_URL
 
     def fetch(self, **kwargs) -> Dict[str, Any]:
         """
-        Fetch recent EMA regulatory decisions.
+        Fetch EMA regulatory decisions from the bulk JSON export.
+
+        Downloads the full EMA authorized medicines dataset (~2,641 records)
+        in a single request. This is a snapshot source — all authorized medicines
+        are loaded on every run; ON CONFLICT DO UPDATE keeps records fresh.
 
         Keyword Args:
-            days_back: Number of days to look back (default: 7).
-            max_pages: Maximum number of pages to fetch (default: 20).
+            days_back: Ignored for this bulk snapshot source. The EMA bulk JSON
+                       contains all authorized medicines (not a change log), so
+                       date filtering would drop the vast majority of records.
+                       Accepted for API compatibility but has no effect.
 
         Returns:
             Dictionary with:
@@ -73,45 +85,51 @@ class EMARegulatoryCIFetcher(BaseFetcher):
             - hash: SHA-256 content hash
             - error: Error message (if failed)
         """
-        days_back = kwargs.get("days_back", 7)
-        max_pages = kwargs.get("max_pages", 20)
+        days_back = None  # Bulk snapshot: always load all records
 
         try:
-            logger.info(
-                "Fetching EMA regulatory decisions (last %d days)", days_back
-            )
+            logger.info("Fetching EMA regulatory decisions from bulk JSON (last %s days)", days_back)
+
+            raw_items = self._fetch_bulk()
+            logger.info("EMA bulk JSON: %d raw items", len(raw_items))
+
+            # No date filter: EMA bulk JSON is a snapshot of all authorized
+            # medicines (not a change log). The authorisation date for most
+            # medicines is years in the past, so any incremental window would
+            # drop nearly all records. Load all ~2,641 records every run;
+            # ON CONFLICT (document_id) DO UPDATE handles deduplication.
+            since_date: Optional[str] = None
 
             all_records: List[Dict[str, Any]] = []
-
-            # Fetch each document type
-            for doc_type in self.DOCUMENT_TYPES:
-                records = self._fetch_document_type(
-                    doc_type, days_back=days_back, max_pages=max_pages
-                )
-                all_records.extend(records)
-
-            # Deduplicate by document_id
             seen_ids: set = set()
-            unique_records: List[Dict[str, Any]] = []
-            for record in all_records:
-                doc_id = record.get("document_id")
-                if doc_id and doc_id not in seen_ids:
-                    seen_ids.add(doc_id)
-                    unique_records.append(record)
 
-            # Compute content hash
-            content_hash = self._compute_hash(unique_records)
+            for item in raw_items:
+                # Infer doc_type from item fields
+                doc_type = self._infer_doc_type(item)
+
+                normalised = self._normalise_record(item, doc_type)
+                if not normalised:
+                    continue
+
+                # Date filter
+                if since_date and normalised.get("decision_date"):
+                    if normalised["decision_date"] < since_date:
+                        continue
+
+                doc_id = normalised["document_id"]
+                if doc_id not in seen_ids:
+                    seen_ids.add(doc_id)
+                    all_records.append(normalised)
+
+            content_hash = self._compute_hash(all_records)
 
             result: Dict[str, Any] = {
                 "status": "success",
-                "records": unique_records,
+                "records": all_records,
                 "hash": content_hash,
-                "record_count": len(unique_records),
-                "days_back": days_back,
+                "record_count": len(all_records),
             }
-            self.log_fetch_result(
-                {"status": "success", "records": len(unique_records)}
-            )
+            self.log_fetch_result({"status": "success", "records": len(all_records)})
             return result
 
         except Exception as e:
@@ -129,68 +147,21 @@ class EMARegulatoryCIFetcher(BaseFetcher):
     # Internal helpers
     # ------------------------------------------------------------------
 
-    def _fetch_document_type(
-        self,
-        doc_type: str,
-        *,
-        days_back: int = 7,
-        max_pages: int = 20,
-    ) -> List[Dict[str, Any]]:
-        """
-        Fetch paginated results for a single EMA document type.
+    def _fetch_bulk(self) -> List[Dict[str, Any]]:
+        """Download the EMA bulk JSON file and extract the medicines list."""
+        response = self.session.get(self.BULK_JSON_URL, timeout=120)
+        response.raise_for_status()
+        data = response.json()
+        return self._extract_items(data)
 
-        Args:
-            doc_type: One of DOCUMENT_TYPES.
-            days_back: Look-back window in days.
-            max_pages: Safety limit for pagination.
-
-        Returns:
-            List of normalised record dicts.
-        """
-        records: List[Dict[str, Any]] = []
-        since_date = (
-            datetime.now(timezone.utc) - timedelta(days=days_back)
-        ).strftime("%Y-%m-%d")
-        page = 0
-
-        while page < max_pages:
-            params = {
-                "type": doc_type,
-                "date_from": since_date,
-                "page": page,
-                "page_size": self.PAGE_SIZE,
-            }
-
-            try:
-                data = self.fetch_json(self.get_latest_url(), params=params)
-            except Exception as e:
-                logger.warning(
-                    "EMA API request failed for %s page %d: %s",
-                    doc_type,
-                    page,
-                    e,
-                )
-                break
-
-            items = self._extract_items(data)
-            if not items:
-                break
-
-            for item in items:
-                normalised = self._normalise_record(item, doc_type)
-                if normalised:
-                    records.append(normalised)
-
-            # Stop when we receive fewer items than the page size
-            if len(items) < self.PAGE_SIZE:
-                break
-
-            page += 1
-
-        logger.info(
-            "Fetched %d %s records from EMA", len(records), doc_type
-        )
-        return records
+    def _infer_doc_type(self, item: Dict[str, Any]) -> str:
+        """Infer document type from item fields (bulk JSON has no explicit type field)."""
+        category = str(item.get("category") or item.get("type") or "").lower()
+        if "signal" in category or "safety" in category:
+            return "safety_signal"
+        if "chmp" in category or "opinion" in category:
+            return "chmp_opinion"
+        return "epar"
 
     @staticmethod
     def _extract_items(data: Any) -> List[Dict]:
@@ -204,7 +175,7 @@ class EMARegulatoryCIFetcher(BaseFetcher):
             return data
 
         if isinstance(data, dict):
-            for key in ("results", "data", "items", "content"):
+            for key in ("results", "data", "items", "content", "medicines", "records"):
                 if key in data and isinstance(data[key], list):
                     return data[key]
 
@@ -223,17 +194,26 @@ class EMARegulatoryCIFetcher(BaseFetcher):
             or item.get("document_id")
             or item.get("medicine_id")
             or item.get("product_number")
+            or item.get("authorisationNumber")
+            or item.get("authorisation_number")
+            or item.get("EmaNumber")
+            or item.get("emaNumber")
         )
         if not document_id:
             return None
 
         document_id = str(document_id).strip()
 
-        # Parse decision date from multiple possible fields
+        # Parse decision date from multiple possible fields.
+        # EMA bulk JSON uses camelCase; older API uses snake_case.
         decision_date = (
             item.get("decision_date")
             or item.get("date")
             or item.get("revision_date")
+            or item.get("authorisationDate")
+            or item.get("dateFirstAuthorised")
+            or item.get("opinionDate")
+            or item.get("marketingAuthorisationDate")
         )
         if decision_date:
             decision_date = str(decision_date)[:10]  # YYYY-MM-DD
@@ -253,15 +233,24 @@ class EMARegulatoryCIFetcher(BaseFetcher):
         return {
             "document_id": document_id,
             "document_type": doc_type,
-            "product_name": item.get("product_name") or item.get("name"),
+            "product_name": (
+                item.get("product_name")
+                or item.get("name")
+                or item.get("medicineName")
+                or item.get("brandName")
+            ),
             "active_substance": (
                 item.get("active_substance")
                 or item.get("inn")
                 or item.get("active_ingredients")
+                or item.get("activeSubstance")
+                or item.get("internationalNonproprietaryName")
             ),
             "therapeutic_area": (
                 item.get("therapeutic_area")
                 or item.get("atc_code")
+                or item.get("therapeuticArea")
+                or item.get("atcCode")
             ),
             "decision_date": decision_date,
             "decision_type": decision_type,

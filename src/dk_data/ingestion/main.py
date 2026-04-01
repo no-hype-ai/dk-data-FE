@@ -104,6 +104,17 @@ from .sources.openfda_labels import load_openfda_labels_data
 from .sources.chembl_activities import load_chembl_activities_data
 from .sources.fda_rems import load_fda_rems_data
 from .sources.fda_ndc import load_fda_ndc_data
+from .sources.cms_ddinter import load_cms_ddinter_data
+from .sources.chembl_molecules import load_chembl_molecules_data
+from .sources.pubchem import load_pubchem_data
+from .sources.openfda_faers import load_openfda_faers_data
+from .sources.npi_registry import load_npi_registry_data
+from .sources.purple_book import load_purple_book_data
+from .sources.reactome import load_reactome_data
+from .sources.who_gho import load_who_gho_data
+from .sources.nice_hta import load_nice_hta_data
+from .sources.cms_medicare import load_cms_medicare_data
+from .sources.cms_coverage import load_cms_coverage_data
 
 from .fetchers import (
     PubMedFetcher,
@@ -180,6 +191,7 @@ from .fetchers import (
     CMSClaimTypePUFFetcher,
     CMSUtilizationPUFFetcher,
     CMSCostReportsPUFFetcher,
+    CMSCostReportsPUFLinesFetcher,
     HRSAFetcher,
     EMAMolFetcher,
     OrangeBookFetcher,
@@ -193,6 +205,17 @@ from .fetchers import (
     ChEMBLActivitiesFetcher,
     FDARemsFetcher,
     FDANDCFetcher,
+    CMSDDInterFetcher,
+    ChEMBLMoleculesFetcher,
+    PubChemFetcher,
+    OpenFDAFAERSFetcher,
+    NPIRegistryFetcher,
+    PurpleBookFetcher,
+    ReactomeFetcher,
+    WHOGHOFetcher,
+    NICEHTAFetcher,
+    CMSMedicareFetcher,
+    CMSCoverageFetcher,
 )
 
 from .utils.database import init_connection_pool, close_connection_pool, get_cursor
@@ -202,9 +225,26 @@ try:
     from dk_data.observability import setup_telemetry, get_tracer
     from dk_data.observability.logging import setup_logging, get_logger
     from dk_data.observability.reporting import report_completion
+    from dk_data.observability.metrics import (
+        record_job_duration,
+        record_job_records,
+        increment_job_failure,
+        mark_job_success,
+    )
     _OBS_AVAILABLE = True
 except ImportError:
     _OBS_AVAILABLE = False
+    def record_job_duration(job_name, duration_seconds): pass
+    def record_job_records(job_name, count): pass
+    def increment_job_failure(job_name): pass
+    def mark_job_success(job_name): pass
+
+try:
+    from prometheus_client import start_http_server as _prom_start_http_server
+    _PROM_AVAILABLE = True
+except ImportError:
+    _PROM_AVAILABLE = False
+    def _prom_start_http_server(port): pass  # no-op when prometheus_client absent
 
 import logging
 logger = logging.getLogger(__name__)
@@ -263,7 +303,7 @@ SOURCES = {
         'fetcher': EMARegulatoryCIFetcher,
         'loader': load_ema_regulatory_data,
         'requires_file': False,
-        'default_days_back': 90,
+        'default_days_back': None,  # Bulk snapshot — always loads all ~2,641 records
     },
     'openalex_ci': {
         'name': 'OpenAlex CI',
@@ -806,7 +846,7 @@ SOURCES = {
     'cms_cost_reports_puf_lines': {
         'name': 'CMS Cost Reports PUF Lines',
         'description': 'Hospital cost report worksheet line items (HCRIS PUF)',
-        'fetcher': CMSCostReportsPUFFetcher,
+        'fetcher': CMSCostReportsPUFLinesFetcher,
         'loader': load_cms_cost_reports_puf_lines,
         'requires_file': True,
         'default_days_back': None,
@@ -949,6 +989,95 @@ SOURCES = {
         'requires_file': False,
         'default_days_back': None,
     },
+    'cms_ddinter': {
+        'name': 'CMS DDInter Drug-Drug Interactions',
+        'description': 'CMS drug-drug interaction data from DDInter database (ddinter.scbdd.com)',
+        'fetcher': CMSDDInterFetcher,
+        'loader': load_cms_ddinter_data,
+        'requires_file': False,
+        'default_days_back': None,
+        'enabled': False,   # ddinter.scbdd.com inaccessible — Chinese host, blocked in prod
+    },
+    'chembl_molecules': {
+        'name': 'ChEMBL Molecules',
+        'description': 'ChEMBL compound/molecule registry (~2.4M compounds)',
+        'fetcher': ChEMBLMoleculesFetcher,
+        'loader': load_chembl_molecules_data,
+        'requires_file': False,
+        'default_days_back': None,
+    },
+    'pubchem': {
+        'name': 'PubChem Compounds',
+        'description': 'PubChem drug-relevant compound records',
+        'fetcher': PubChemFetcher,
+        'loader': load_pubchem_data,
+        'requires_file': False,
+        'default_days_back': None,
+    },
+    'openfda_faers': {
+        'name': 'OpenFDA FAERS Adverse Events',
+        'description': 'FDA Adverse Event Reporting System via openFDA',
+        'fetcher': OpenFDAFAERSFetcher,
+        'loader': load_openfda_faers_data,
+        'requires_file': False,
+        'default_days_back': 90,
+    },
+    'npi_registry': {
+        'name': 'NPI Registry',
+        'description': 'CMS National Provider Identifier registry (~7M providers)',
+        'fetcher': NPIRegistryFetcher,
+        'loader': load_npi_registry_data,
+        'requires_file': False,
+        'default_days_back': None,
+    },
+    'purple_book': {
+        'name': 'FDA Purple Book',
+        'description': 'FDA licensed biological products (BLAs)',
+        'fetcher': PurpleBookFetcher,
+        'loader': load_purple_book_data,
+        'requires_file': False,
+        'default_days_back': None,
+    },
+    'reactome': {
+        'name': 'Reactome Pathways',
+        'description': 'Reactome biological pathway database',
+        'fetcher': ReactomeFetcher,
+        'loader': load_reactome_data,
+        'requires_file': False,
+        'default_days_back': None,
+    },
+    'who_gho': {
+        'name': 'WHO Global Health Observatory',
+        'description': 'WHO GHO health indicators and statistics',
+        'fetcher': WHOGHOFetcher,
+        'loader': load_who_gho_data,
+        'requires_file': False,
+        'default_days_back': None,
+    },
+    'nice_hta': {
+        'name': 'NICE HTA Guidance',
+        'description': 'NICE technology appraisals and HTA guidance (UK)',
+        'fetcher': NICEHTAFetcher,
+        'loader': load_nice_hta_data,
+        'requires_file': False,
+        'default_days_back': None,
+    },
+    'cms_medicare': {
+        'name': 'CMS Medicare Data',
+        'description': 'CMS Medicare utilization and payment data',
+        'fetcher': CMSMedicareFetcher,
+        'loader': load_cms_medicare_data,
+        'requires_file': False,
+        'default_days_back': None,
+    },
+    'cms_coverage': {
+        'name': 'CMS Medicare Coverage Database',
+        'description': 'CMS NCDs, NCAs, and Technology Assessments (US HTA equivalent)',
+        'fetcher': CMSCoverageFetcher,
+        'loader': load_cms_coverage_data,
+        'requires_file': False,
+        'default_days_back': None,  # Full snapshot — ~2,400 static coverage decisions
+    },
 }
 
 
@@ -1034,7 +1163,7 @@ def log_to_meta(source_name: str, result: dict) -> None:
             """, (
                 source_id,
                 source_name,
-                datetime.now(),
+                datetime.now(timezone.utc),
                 status,
                 result.get('records_fetched', result.get('records_inserted', 0)),
                 result.get('records_inserted', 0),
@@ -1071,6 +1200,11 @@ def run_ingestion(source: str, **kwargs) -> dict:
 
     source_info = SOURCES[source]
     meta_source = _meta_name(source)
+    _t0 = time.monotonic()
+
+    if not source_info.get('enabled', True):
+        logger.info("Skipping disabled source: %s (%s)", source, source_info.get('description', ''))
+        return {'status': 'skipped', 'source': source, 'reason': 'disabled'}
 
     logger.info(f"Starting ingestion for {source_info['name']}")
 
@@ -1090,6 +1224,10 @@ def run_ingestion(source: str, **kwargs) -> dict:
 
         # Compute incremental days_back from last successful refresh.
         # --days-back CLI override bypasses the computed window (for manual backfills).
+        # kwargs consumed by run_ingestion itself — never forwarded to fetcher.fetch()
+        _INTERNAL_KWARGS = {'data_dir', 'filepath', 'fiscal_year', 'source_override',
+                            'days_back', 'max_records', 'batch_size'}
+
         fetch_kwargs = {}
         if kwargs.get('days_back') is not None:
             # Explicit override: use the caller-specified window regardless of state.
@@ -1101,6 +1239,11 @@ def run_ingestion(source: str, **kwargs) -> dict:
             fetch_kwargs['days_back'] = days_back
         if kwargs.get('max_records') is not None:
             fetch_kwargs['max_records'] = kwargs['max_records']
+        # Pass through any source-specific kwargs (full_backfill, query, max_results,
+        # max_entries, years, etc.) from BACKFILL_SOURCE_KWARGS or CLI overrides.
+        for _k, _v in kwargs.items():
+            if _k not in _INTERNAL_KWARGS:
+                fetch_kwargs[_k] = _v
 
         fetch_result = fetcher.fetch(**fetch_kwargs)
 
@@ -1208,6 +1351,18 @@ def run_ingestion(source: str, **kwargs) -> dict:
     # Log to meta
     log_to_meta(meta_source, result)
 
+    # Emit Prometheus metrics for CLI and CronJob runs (initial_backfill.py also emits
+    # per-source metrics from _fetch_one; these cover direct run_ingestion() callers).
+    _elapsed = time.monotonic() - _t0
+    _records = result.get('records_inserted', result.get('records_fetched', 0)) or 0
+    _job = f'ingestion_{source}'
+    record_job_duration(_job, _elapsed)
+    record_job_records(_job, _records)
+    if result.get('status') not in ('success', 'partial'):
+        increment_job_failure(_job)
+    else:
+        mark_job_success(_job)
+
     return result
 
 
@@ -1260,6 +1415,17 @@ Examples:
                              'Use for initial backfill: --days-back 730 fetches 2 years regardless of last_successful_refresh.')
     parser.add_argument('--list', '-l', action='store_true', help='List available sources')
     parser.add_argument('--verbose', '-v', action='store_true', help='Verbose output')
+    parser.add_argument(
+        '--skip-if-no-file',
+        action='store_true',
+        dest='skip_if_no_file',
+        help=(
+            'Exit 0 without error when the source requires a file (requires_file=True) '
+            'and no --file path is provided. Used by CronJobs for file-dependent sources '
+            'that must stay in the schedule for operator-triggered runs but should not fail '
+            'when the file has not been manually provided.'
+        ),
+    )
 
     args = parser.parse_args()
 
@@ -1287,6 +1453,23 @@ Examples:
     if not source:
         parser.print_help()
         return 1
+
+    # --skip-if-no-file: exit 0 when source requires a manually provided file and none was given.
+    # This keeps file-dependent CronJobs in the schedule for operator-triggered runs without
+    # generating failure alerts when no file has been uploaded.
+    if getattr(args, 'skip_if_no_file', False) and not args.filepath:
+        source_info = SOURCES.get(source, {})
+        if source_info.get('requires_file'):
+            logger.info(
+                "Source '%s' requires a file (--file) but none was provided; "
+                "--skip-if-no-file set — exiting 0.",
+                source,
+            )
+            return 0
+
+    # Expose Prometheus /metrics on :8000 so the CronJob pod can be scraped.
+    # initial_backfill.py does the same on port 8000 (METRICS_PORT).
+    _prom_start_http_server(8000)
 
     # Initialize connection pool
     init_connection_pool()

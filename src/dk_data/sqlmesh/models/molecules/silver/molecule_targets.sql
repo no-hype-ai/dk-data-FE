@@ -59,6 +59,6 @@ SELECT DISTINCT
 FROM mol_silver.molecules m
 JOIN mol_bronze.drugbank d ON LOWER(m.canonical_name) = LOWER(d.name)
 CROSS JOIN LATERAL jsonb_array_elements(COALESCE(d.targets, '[]'::JSONB)) AS tgt
-JOIN mol_silver.targets t ON strpos(LOWER(t.target_name), LOWER(tgt->>'name')) > 0
+JOIN mol_silver.targets t ON LOWER(t.target_name) = LOWER(tgt->>'name')
 WHERE tgt->>'name' IS NOT NULL
   AND d.name IS NOT NULL

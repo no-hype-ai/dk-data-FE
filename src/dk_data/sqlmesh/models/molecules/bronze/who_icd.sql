@@ -2,23 +2,27 @@
 -- Transforms mol_raw.who_icd JSONB envelope (migration 075_pdb_who_raw_tables.sql)
 -- to Bronze typed columns.
 --
--- WHO ICD-11 API field reference:
---   response_body->>'code'                   ICD-11 stem code (e.g. "1C83.0")
+-- WHO ICD-11 API field reference (verified against 2024-01 MMS linearization):
+--   response_body->>'code'                   ICD-11 stem code (e.g. "1C83.0"); empty on block nodes
 --   response_body->'title'->>'@value'        Human-readable title (multilingual object)
 --   response_body->>'classKind'              'category' | 'block' | 'chapter'
 --   response_body->>'browserUrl'             canonical WHO browser URL
---   response_body->'definition'->>'@value'   definition text
+--   response_body->'definition'->>'@value'   definition text (chapters/some categories)
 --   response_body->'parent'                  JSONB array of parent @id URIs
 --   response_body->'child'                   JSONB array of child @id URIs
---   response_body->'inclusion'               JSONB array of inclusion terms
---   response_body->'exclusion'               JSONB array of exclusion terms
+--   response_body->'inclusion'               JSONB array [{label:{@value,@language}}]
+--   response_body->'exclusion'               JSONB array [{label:{@value,@language}}]
 --
--- ICD-10 API field reference:
---   response_body->>'code'                   ICD-10 code (e.g. "C34.1")
---   response_body->>'description'            flat string title (no '@value' wrapper)
---   response_body->'includes'               JSONB array
---   response_body->'excludes1'              JSONB array
---   response_body->'excludes2'              JSONB array
+-- WHO ICD-10 API field reference (verified against 2019 linearization):
+--   response_body->>'code'                   ICD-10 code (e.g. "A00.0", "A00-A09", "I")
+--   response_body->'title'->>'@value'        SAME @value wrapper as ICD-11 (NOT a flat 'description')
+--   response_body->>'classKind'              'chapter' | 'block' | 'category'
+--   response_body->>'browserUrl'             canonical WHO browser URL
+--   response_body->'parent'                  JSONB array of parent @id URIs
+--   response_body->'child'                   JSONB array of child @id URIs
+--   response_body->'inclusion'               JSONB array [{label:{@value,@language}}]
+--   response_body->'exclusion'               JSONB array [{label:{@value,@language}}]
+--   response_body->'codingHint'              JSONB array of coding instructions (some nodes only)
 --
 -- Part of: 015-assessment-dashboard-integration
 
@@ -41,11 +45,9 @@ SELECT
     -- ICD code — present in both ICD-10 and ICD-11 responses
     response_body->>'code'                                AS icd_code,
 
-    -- Title: ICD-11 wraps in {"@value": "...", "@language": "en"};
-    -- ICD-10 uses a flat "description" string. COALESCE handles both.
+    -- Title: both ICD-11 and ICD-10 use {"@value": "...", "@language": "en"} wrapper.
     COALESCE(
         response_body->'title'->>'@value',
-        response_body->>'description',
         response_body->>'title'
     )                                                     AS title,
 
@@ -77,8 +79,12 @@ SELECT
         response_body->'excludes1'
     )                                                     AS exclusion_terms,
 
-    -- Additional ICD-10 exclusion array
+    -- Additional ICD-10 exclusion array (ICD-10 only — ICD-11 uses single 'exclusion')
     response_body->'excludes2'                            AS exclusion_terms2,
+
+    -- Coding hint: ICD-10 chapters/blocks sometimes carry mandatory coding instructions
+    -- e.g. "Use additional code (U82-U84) to identify antimicrobial resistance"
+    response_body->'codingHint'                           AS coding_hint,
 
     -- Raw source tracking (JSONB envelope columns)
     response_body                                         AS raw_json,

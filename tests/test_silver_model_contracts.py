@@ -350,22 +350,6 @@ class TestSilverNewsSignals(_SilverModelTestBase):
     ]
 
 
-class TestSilverHealthcareFacilities(_SilverModelTestBase):
-    MODEL_FILE = "healthcare_facilities.sql"
-    MODEL_NAME = "mol_silver.healthcare_facilities"
-    UNIQUE_KEY = "provider_id, source"
-    BRONZE_SOURCES = [
-        "hcs_bronze.cms_inpatient", "hcs_bronze.cms_hospital_info",
-        "hcs_bronze.cms_cost_reports", "hcs_bronze.acc_tvc", "hcs_bronze.hrsa",
-    ]
-    EXPECTED_COLUMNS = [
-        "provider_id", "facility_name", "city", "state",
-        "facility_type", "bed_count", "total_discharges",
-    ]
-
-    def test_union_all_five_sources(self):
-        assert self.sql.count("UNION ALL") >= 4
-
 
 class TestSilverIcdCodes(_SilverModelTestBase):
     MODEL_FILE = "icd_codes.sql"

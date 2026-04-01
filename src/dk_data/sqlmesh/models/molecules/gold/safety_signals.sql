@@ -1,6 +1,15 @@
 -- SQLMesh Model: Gold Safety Signals
 -- Aggregated safety data from FAERS and drug labels
 -- Part of: 012-dk-data-platform
+--
+-- IMPORTANT — partial coverage by design:
+--   This table contains ONE ROW PER MOLECULE WITH SAFETY DATA only.
+--   Molecules with no FAERS reports AND no boxed warning are excluded by the final WHERE clause.
+--   Do NOT use this table to enumerate all molecules — join back to mol_silver.molecules
+--   for complete molecule coverage (e.g. LEFT JOIN mol_gold.safety_signals ON molecule_id).
+--
+-- soc_distribution is NULL — MedDRA PT→SOC hierarchy requires a license not held.
+--   See issue #174 for fix options. meddra_pt (preferred term) in top_adverse_events is populated.
 
 MODEL (
     name mol_gold.safety_signals,
@@ -72,26 +81,12 @@ top_adverse_events AS (
 ),
 
 -- Adverse events by System Organ Class
+-- NOTE: meddra_soc is always NULL in mol_silver.adverse_events — MedDRA PT→SOC hierarchy
+-- requires a MedDRA license (not available). soc_distribution is suppressed (NULL) rather
+-- than emitting a misleading {"Unknown": N} bucket. See issue #174 for fix options.
 soc_breakdown AS (
-    SELECT
-        molecule_id,
-        jsonb_object_agg(
-            COALESCE(meddra_soc, 'Unknown'),
-            jsonb_build_object(
-                'count', soc_count,
-                'serious_count', soc_serious
-            )
-        ) AS soc_distribution
-    FROM (
-        SELECT
-            molecule_id,
-            meddra_soc,
-            SUM(report_count) AS soc_count,
-            SUM(serious_count) AS soc_serious
-        FROM mol_silver.adverse_events
-        GROUP BY molecule_id, meddra_soc
-    ) soc_agg
-    GROUP BY molecule_id
+    SELECT molecule_id, NULL::JSONB AS soc_distribution
+    FROM (SELECT DISTINCT molecule_id FROM mol_silver.adverse_events) _m
 ),
 
 -- Get boxed warning from latest label

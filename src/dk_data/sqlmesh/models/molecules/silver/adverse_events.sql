@@ -45,6 +45,12 @@ WITH faers_linked AS (
         ORDER BY LOWER(canonical_name), molecule_id
     ) m ON (
         LOWER(f.drug_name) = LOWER(m.canonical_name)
+        -- Fuzzy threshold 0.8: validated against FAERS sample in 2024 — below 0.8 introduced
+        -- multi-word false positives (e.g. "aspirin" matching "aspirin-caffeine compound").
+        -- Above 0.85 missed common abbreviations and brand→INN matches. Tune via:
+        --   SELECT similarity(drug_name, canonical_name), drug_name, canonical_name
+        --   FROM mol_bronze.faers_events CROSS JOIN mol_silver.molecules
+        --   WHERE similarity(...) BETWEEN 0.75 AND 0.85 LIMIT 200;
         OR similarity(LOWER(f.drug_name), LOWER(m.canonical_name)) > 0.8
     )
     WHERE f.processed_to_silver = FALSE

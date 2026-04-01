@@ -170,6 +170,7 @@ class SECEdgarFetcher(BaseFetcher):
         while len(records) < max_records:
             try:
                 params = {
+                    "q": "",           # Required by EDGAR EFTS even when fetching all forms
                     "forms": filing_type,
                     "dateRange": "custom",
                     "startdt": date_from,

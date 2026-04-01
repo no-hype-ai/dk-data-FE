@@ -20,6 +20,7 @@ Sources:
 
 import hashlib
 import logging
+import os
 from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional
 
@@ -29,6 +30,11 @@ logger = logging.getLogger(__name__)
 
 # NICE API base for technology appraisals
 NICE_API_BASE = "https://www.nice.org.uk/api/guidance/published"
+
+# NICE API key — required for org-authenticated access.
+# Register at https://www.nice.org.uk/corporate/ecd10 (requires org eligibility).
+# Set env var NICE_API_KEY; without it the request will likely return 401/403.
+_NICE_API_KEY = os.environ.get("NICE_API_KEY", "")
 
 # Agency identifiers
 AGENCIES = ["nice", "gba", "has", "pbac"]
@@ -212,8 +218,27 @@ class HTABodiesFetcher(BaseFetcher):
             "from": since_date,
         }
 
+        # NICE API requires org-gated API key (Ocp-Apim-Subscription-Key header).
+        # Without it, the request returns 401/403. Return empty gracefully if not configured.
+        if not _NICE_API_KEY:
+            logger.warning(
+                "NICE_API_KEY not set — NICE API requires organizational API key. "
+                "Register at https://www.nice.org.uk/corporate/ecd10. Returning empty."
+            )
+            return []
+
+        headers = {"API-Key": _NICE_API_KEY}
         try:
-            data = self.fetch_json(NICE_API_BASE, params=params)
+            response = self.session.get(NICE_API_BASE, params=params, headers=headers, timeout=30)
+            if response.status_code in (401, 403):
+                logger.warning(
+                    "NICE API returned %d — API key may be invalid or not yet approved. "
+                    "Check NICE_API_KEY env var.",
+                    response.status_code,
+                )
+                return []
+            response.raise_for_status()
+            data = response.json()
         except Exception as e:
             logger.warning("NICE API request failed: %s", e)
             return []

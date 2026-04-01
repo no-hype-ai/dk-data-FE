@@ -1,10 +1,11 @@
 -- SQLMesh Model: Silver FDA Drugs (NDA/ANDA/BLA approvals)
 -- Promotes mol_bronze.fda_drugs to silver, linking to mol_silver.molecules.
+-- Consolidated: previously split across fda_drugs and fda_drugsfda bronze models;
+--   both sources are now merged in mol_bronze.fda_drugs.
 -- Feature: 019-cms-puf-platform-reconciliation
 --
 -- Grain: application_number
 -- Source: mol_bronze.fda_drugs (from mol_raw.fda_drugs via FDADrugsFetcher)
--- Note: mol_silver.fda_drugsfda covers drug-specific lookups; this covers bulk approvals.
 
 MODEL (
     name mol_silver.fda_drugs,
@@ -18,16 +19,21 @@ MODEL (
 
 SELECT
     b.application_number,
-    b.sponsor_name,
     b.application_type,
-    b.brand_name,
+    b.sponsor_name,
     b.generic_name,
+    b.brand_name,
+    b.substance_name,
+    b.rxcui,
     b.dosage_form,
     b.route,
     b.marketing_status,
     b.te_code,
     b.reference_drug,
     b.reference_standard,
+    b.first_approval_date,
+    b.products,
+    b.submissions,
     m.molecule_id,
     b.ingested_at                       AS _ingested_at,
     CURRENT_TIMESTAMP                   AS _silver_updated_at

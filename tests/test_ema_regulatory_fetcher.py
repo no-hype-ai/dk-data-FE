@@ -76,7 +76,7 @@ class TestGetLatestUrl:
         fetcher = EMARegulatoryCIFetcher(data_dir=str(tmp_path))
         url = fetcher.get_latest_url()
 
-        assert url == "https://www.ema.europa.eu/api/v1/medicines"
+        assert url == "https://www.ema.europa.eu/en/documents/report/medicines-output-medicines_json-report_en.json"
         assert url.startswith("https://")
 
 
@@ -102,11 +102,12 @@ class TestFetchWithMock:
         mock_response.raise_for_status = MagicMock()
 
         with patch.object(fetcher.session, "get", return_value=mock_response):
+            # days_back is accepted for API compatibility but ignored (bulk snapshot source)
             result = fetcher.fetch(days_back=7)
 
         assert result["status"] == "success"
         assert isinstance(result["records"], list)
-        # 3 items x 3 doc types = 9, but deduplicated by id -> 3 unique IDs
+        # Bulk download returns all 3 items (no date filter applied)
         assert result["record_count"] == 3
         assert result["hash"] is not None
 
@@ -133,11 +134,7 @@ class TestFetchWithMock:
         assert result["records"] == []
 
     def test_fetch_handles_api_error_gracefully(self, tmp_path):
-        """fetch() returns success with 0 records when per-page requests fail.
-
-        Individual document-type fetches catch request errors and return
-        empty lists, so the overall fetch succeeds with no records.
-        """
+        """fetch() returns failed when the bulk download request fails."""
         fetcher = EMARegulatoryCIFetcher(data_dir=str(tmp_path))
 
         with patch.object(
@@ -147,18 +144,16 @@ class TestFetchWithMock:
         ):
             result = fetcher.fetch()
 
-        assert result["status"] == "success"
-        assert result["record_count"] == 0
+        assert result["status"] == "failed"
         assert result["records"] == []
 
     def test_fetch_returns_failed_on_unexpected_error(self, tmp_path):
-        """fetch() returns failed when an unexpected error bypasses per-page handling."""
+        """fetch() returns failed when _fetch_bulk raises unexpectedly."""
         fetcher = EMARegulatoryCIFetcher(data_dir=str(tmp_path))
 
-        # Patch _fetch_document_type itself to raise, simulating a bug
         with patch.object(
             fetcher,
-            "_fetch_document_type",
+            "_fetch_bulk",
             side_effect=RuntimeError("Unexpected internal error"),
         ):
             result = fetcher.fetch()
@@ -166,45 +161,36 @@ class TestFetchWithMock:
         assert result["status"] == "failed"
         assert "Unexpected internal error" in result["error"]
 
-    def test_fetch_pagination(self, tmp_path):
-        """fetch() paginates through multiple pages of results."""
+    def test_fetch_bulk_single_call(self, tmp_path):
+        """fetch() makes a single HTTP request for the bulk JSON (no pagination)."""
         fetcher = EMARegulatoryCIFetcher(data_dir=str(tmp_path))
 
-        # Page 1: full page (PAGE_SIZE items)
-        page1_items = [_sample_item(id=f"EMA-P1-{i}") for i in range(50)]
-        # Page 2: partial page (signals end of results)
-        page2_items = [_sample_item(id=f"EMA-P2-{i}") for i in range(10)]
+        items = [_sample_item(id=f"EMA-{i}") for i in range(10)]
+        mock_response = MagicMock()
+        mock_response.json.return_value = _make_api_response(items)
+        mock_response.status_code = 200
+        mock_response.raise_for_status = MagicMock()
 
         call_count = 0
 
-        def mock_get(url, params=None, timeout=None):
+        def mock_get(url, **kwargs):
             nonlocal call_count
-            resp = MagicMock()
-            resp.status_code = 200
-            resp.raise_for_status = MagicMock()
-            page = params.get("page", 0) if params else 0
-            if page == 0:
-                resp.json.return_value = _make_api_response(page1_items)
-            else:
-                resp.json.return_value = _make_api_response(page2_items)
             call_count += 1
-            return resp
+            return mock_response
 
         with patch.object(fetcher.session, "get", side_effect=mock_get):
-            result = fetcher.fetch(days_back=7)
+            result = fetcher.fetch()
 
         assert result["status"] == "success"
-        # 3 doc types, each getting 2 pages -> 6 API calls minimum
-        assert call_count >= 6
-        # 60 unique IDs per doc type, deduplicated across types
-        assert result["record_count"] == 60
+        assert call_count == 1  # Bulk source: exactly one HTTP request
+        assert result["record_count"] == 10
 
-    def test_fetch_deduplicates_across_doc_types(self, tmp_path):
-        """Records with the same document_id across doc types are deduplicated."""
+    def test_fetch_deduplicates_by_document_id(self, tmp_path):
+        """Records with duplicate document_ids in the bulk response are deduplicated."""
         fetcher = EMARegulatoryCIFetcher(data_dir=str(tmp_path))
 
-        # Same ID returned by all 3 document types
-        items = [_sample_item(id="EMA-DUPE-001")]
+        # Two items with the same id
+        items = [_sample_item(id="EMA-DUPE-001"), _sample_item(id="EMA-DUPE-001")]
 
         mock_response = MagicMock()
         mock_response.json.return_value = _make_api_response(items)

@@ -156,7 +156,7 @@ class TestHRSAFetcher:
     def test_source_name(self):
         with tempfile.TemporaryDirectory() as tmpdir:
             fetcher = HRSAFetcher(data_dir=tmpdir)
-            assert fetcher.SOURCE_NAME == "hrsa_shortage_areas"
+            assert fetcher.SOURCE_NAME == "hrsa"
 
     def test_latest_url(self):
         with tempfile.TemporaryDirectory() as tmpdir:

@@ -19,8 +19,10 @@ SELECT
     average_covered_charges AS average_charges,
     average_medicare_payments AS average_medicare_payment,
     NOW() AS _updated_at
-FROM hcs_raw.cms_inpatient_puf
-WHERE drg_cd IN ('266', '267')  -- TAVR DRG codes
+FROM hcs_bronze.cms_inpatient_puf
+WHERE drg_cd IN ('266', '267')  -- TAVR DRG codes (MS-DRG 266 = TAVR w/ MCC, 267 = TAVR w/o MCC)
+  -- NOTE: CMS revises MS-DRG definitions annually. If TAVR volumes drop unexpectedly,
+  -- verify these codes at: https://www.cms.gov/Medicare/Medicare-Fee-for-Service-Payment/AcuteInpatientPPS/MS-DRG-Classifications-and-Software
   AND provider_id IS NOT NULL
   AND total_discharges > 0
   -- Deduplicate: take most recent load for each provider/year/drg

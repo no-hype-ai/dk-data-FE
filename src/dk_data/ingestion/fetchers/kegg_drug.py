@@ -64,8 +64,10 @@ _MULTI_VALUE_FIELDS = {
     "bond",
 }
 
-# Delay between batch HTTP calls (seconds) to respect KEGG rate limits
-_BATCH_DELAY = 0.3
+# Delay between batch HTTP calls (seconds) to respect KEGG rate limits.
+# Official KEGG docs: "limit your API calls up to 3 times per second."
+# 0.3s = 3.33 req/s which marginally exceeds that — use 0.34s to stay safely under.
+_BATCH_DELAY = 0.34
 
 
 def _parse_kegg_flat_file(text: str) -> List[Dict[str, Any]]:

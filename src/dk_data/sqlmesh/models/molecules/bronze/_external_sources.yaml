@@ -1,9 +1,12 @@
-# External source declarations for DDL-managed bronze tables.
-# These are populated by bulk loaders (load_chembl_bulk.py, load_drugbank.py),
-# not by SQLMesh models. Declaring them here lets silver models reference
-# them without SQLMesh attempting to manage their snapshots.
+# External source declarations for DDL-managed bronze tables and agent staging tables.
+# These are populated by bulk loaders (load_chembl_bulk.py, load_drugbank.py)
+# or by agents, not by SQLMesh models. Declaring them here lets silver models
+# reference them without SQLMesh attempting to manage their snapshots.
 
 sources:
+  - name: mol_agents.publication_evidence_staging
+    description: "Agent-extracted publication evidence staging — populated by publication_evidence_agent, consumed by mol_silver.publication_evidence"
+
   - name: mol_bronze.chembl_targets
     description: "ChEMBL targets with UniProt mappings — populated by load_chembl_bulk.py"
     columns:
@@ -16,6 +19,15 @@ sources:
       - name: source_updated_at
       - name: created_at
       - name: processed_to_silver
+
+  - name: mol_bronze.pubchem_xrefs
+    description: "PubChem cross-references (DrugBank, ChEMBL, KEGG, UNII, CAS) — populated by load_pubchem_extended.py"
+
+  - name: mol_bronze.pubchem_bioassays
+    description: "PubChem bioassay activity records — populated by load_pubchem_extended.py"
+
+  - name: mol_bronze.pubchem_synonyms
+    description: "PubChem human-readable name synonyms — populated by load_pubchem_extended.py --synonyms"
 
   - name: mol_bronze.drugbank_data
     description: "DrugBank bulk XML data — populated by load_drugbank.py"
@@ -31,3 +43,18 @@ sources:
       - name: indication
       - name: mechanism_of_action
       - name: source_updated_at
+
+  - name: mol_raw.nice_hta
+    description: "NICE HTA decisions — populated by NiceHTAFetcher; consumed by mol_bronze.nice_hta"
+
+  - name: mol_raw.euipo_designs
+    description: "EUIPO design registrations — populated by EUIPODesignsFetcher; consumed by mol_bronze.euipo_designs"
+
+  - name: mol_raw.cms_coverage
+    description: "CMS Medicare coverage decisions — populated by CMSCoverageFetcher; consumed by mol_bronze.cms_coverage"
+
+  - name: mol_raw.cms_medicare
+    description: "CMS Medicare drug spending — populated by CMSMedicareFetcher; consumed by mol_bronze.cms_medicare"
+
+  - name: mol_raw.websearch
+    description: "Web search results — populated by agent side-channel (not standard ingestion pipeline); consumed by mol_bronze.websearch_results"

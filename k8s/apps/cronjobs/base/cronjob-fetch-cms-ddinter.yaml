@@ -1,4 +1,4 @@
-# cms-ddinter Fetch CronJob
+# CMS DDInter Drug-Drug Interaction Ingest CronJob
 # 019-cms-puf-platform-reconciliation
 apiVersion: batch/v1
 kind: CronJob
@@ -10,7 +10,8 @@ metadata:
     app.kubernetes.io/component: ingestion
     app.kubernetes.io/part-of: dk-data
 spec:
-  schedule: "30 4 15 * *"
+  schedule: "0 4 1 * *"  # Monthly, 1st of month at 4:00 AM UTC
+  suspend: true  # Source disabled: ddinter.scbdd.com inaccessible (Chinese host, blocked in prod)
   concurrencyPolicy: Forbid
   startingDeadlineSeconds: 3600
   successfulJobsHistoryLimit: 3
@@ -19,7 +20,7 @@ spec:
     spec:
       backoffLimit: 2
       ttlSecondsAfterFinished: 86400
-      activeDeadlineSeconds: 1800
+      activeDeadlineSeconds: 1800  # 30 minute timeout
       template:
         metadata:
           labels:

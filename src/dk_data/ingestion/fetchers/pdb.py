@@ -10,6 +10,7 @@ Source: https://search.rcsb.org/
 
 import hashlib
 import logging
+import time
 from typing import Any, Dict, List
 
 from .base import BaseFetcher
@@ -75,31 +76,57 @@ class PDBFetcher(BaseFetcher):
             return result
 
     def _search(self, query_text: str, max_results: int = 500) -> List[str]:
-        """Search RCSB PDB and return PDB IDs."""
+        """Search RCSB PDB and return PDB IDs.
+
+        RCSB PDB Search API v2 returns at most 500 entries per page.
+        Pages through results via the paginate.start offset until max_results
+        are collected or no more results are available.
+        """
         url = f"{self.BASE_URL}/query"
-        query = {
-            "query": {
-                "type": "terminal",
-                "service": "full_text",
-                "parameters": {"value": query_text},
-            },
-            "return_type": "entry",
-            "request_options": {
-                "paginate": {"start": 0, "rows": min(max_results, 500)},
-                "results_content_type": ["experimental"],
-            },
-        }
+        page_size = 500  # RCSB hard limit per request
+        all_ids: List[str] = []
+        start = 0
 
-        response = self.session.post(url, json=query, timeout=60)
-        response.raise_for_status()
-        data = response.json()
+        while len(all_ids) < max_results:
+            rows = min(page_size, max_results - len(all_ids))
+            query = {
+                "query": {
+                    "type": "terminal",
+                    "service": "full_text",
+                    "parameters": {"value": query_text},
+                },
+                "return_type": "entry",
+                "request_options": {
+                    "paginate": {"start": start, "rows": rows},
+                    "results_content_type": ["experimental"],
+                },
+            }
 
-        return [r["identifier"] for r in data.get("result_set", [])]
+            response = self.session.post(url, json=query, timeout=60)
+            response.raise_for_status()
+            data = response.json()
+
+            page_ids = [r["identifier"] for r in data.get("result_set", [])]
+            if not page_ids:
+                break
+            all_ids.extend(page_ids)
+            logger.debug("[pdb] fetched %d IDs (start=%d, total=%d)", len(page_ids), start, len(all_ids))
+
+            if len(page_ids) < rows:
+                break  # last page
+            start += rows
+
+        logger.info("[pdb] %d total structure IDs collected", len(all_ids))
+        return all_ids
 
     def _fetch_details(self, pdb_ids: List[str]) -> List[Dict[str, Any]]:
-        """Fetch entry details for a list of PDB IDs."""
+        """Fetch entry details for a list of PDB IDs.
+
+        RCSB PDB recommends "a handful of requests per second". 0.1s delay
+        (~10 req/s) is polite for sequential per-ID calls.
+        """
         records = []
-        for pdb_id in pdb_ids:
+        for i, pdb_id in enumerate(pdb_ids):
             try:
                 url = f"{self.DATA_URL}/{pdb_id}"
                 data = self.fetch_json(url)
@@ -114,4 +141,8 @@ class PDBFetcher(BaseFetcher):
                 })
             except Exception as e:
                 logger.warning(f"Failed to fetch details for {pdb_id}: {e}")
+            # Polite inter-request delay — RCSB does not publish a hard limit
+            # but rate-limits aggressively on shared IPs; 100ms keeps us ~10 req/s.
+            if i < len(pdb_ids) - 1:
+                time.sleep(0.1)
         return records

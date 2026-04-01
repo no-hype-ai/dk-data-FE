@@ -22,6 +22,7 @@ MODEL (
 -- Active sources:
 --   2: ChEMBL exact DOI/PubMed cross-references (highest confidence, O(1) lookup)
 --   4: PubMed articles linked via MeSH terms / title match in mol_silver.pubmed_articles
+--   5: EuropePMC articles linked via PMID/DOI from mol_silver.publications (source='europepmc')
 WITH all_links AS (
 
     -- Source 2: ChEMBL cross-references (DOI/PubMed xref_id → publication) — exact match, fast
@@ -59,6 +60,27 @@ WITH all_links AS (
       ON p.pmid = pa.pmid::BIGINT
     WHERE pa.molecule_id IS NOT NULL
       AND p.id IS NOT NULL
+
+    UNION ALL
+
+    -- Source 5: EuropePMC — mol_silver.publications already contains europepmc rows
+    -- (source='europepmc', populated via mol_bronze.europepmc by publications.sql).
+    -- Link to molecules via molecule_aliases on drug name mentions in the title/abstract.
+    -- Fix: mol_gold.market_summary.europepmc_pub_count was always 0 because this source
+    -- was missing — mol_silver.molecule_publications never assigned source='europepmc'.
+    SELECT DISTINCT
+        ma.molecule_id,
+        p.id AS publication_id,
+        'europepmc_alias' AS link_type,
+        0.75 AS confidence,
+        'europepmc' AS source
+    FROM mol_silver.publications p
+    JOIN mol_silver.molecule_aliases ma
+      ON LOWER(p.title) LIKE '%' || LOWER(ma.alias_name) || '%'
+    WHERE p.source = 'europepmc'
+      AND p.id IS NOT NULL
+      AND ma.molecule_id IS NOT NULL
+      AND LENGTH(ma.alias_name) >= 4   -- skip very short aliases to avoid spurious matches
 
 ),
 

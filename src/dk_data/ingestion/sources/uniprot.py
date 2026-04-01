@@ -88,7 +88,7 @@ def load_uniprot_data(
                             %s, %s, %s, %s,
                             FALSE, NOW(), 'uniprot'
                         )
-                        ON CONFLICT DO NOTHING
+                        ON CONFLICT (response_body_hash) DO NOTHING
                         """,
                         (
                             f"{request_id}-{idx}",

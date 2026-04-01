@@ -36,12 +36,22 @@ SELECT
     browser_url::TEXT                                    AS browser_url,
     definition::TEXT                                     AS definition,
 
-    -- Derive parent code from ICD hierarchy using string patterns.
-    -- For ICD-10: "C34.1" -> parent "C34"; "C34" -> parent "C3x" block (3-char)
-    -- For ICD-11: parent is encoded in parent_uris JSONB; fall back to string
+    -- Derive parent code from ICD hierarchy.
+    -- ICD-10 codes follow a predictable string pattern:
+    --   "A00.0" (4-char leaf)   -> parent "A00"  (split on '.')
+    --   "A00"   (3-char)        -> parent NULL    (block parent is non-code range like "A00-A09")
+    -- ICD-11 codes do NOT follow a predictable string hierarchy; their parent entity IDs
+    -- are in parent_uris as full WHO API URIs. We extract the parent code via a
+    -- self-join below where possible; otherwise NULL.
+    -- String truncation (left(code,3)) is intentionally avoided for ICD-11 — it produces
+    -- non-existent codes (e.g. "1A0" from "1A00").
     CASE
-        WHEN icd_code LIKE '%.%' THEN split_part(icd_code, '.', 1)
-        WHEN length(icd_code) > 3 THEN left(icd_code, 3)
+        WHEN icd_code LIKE '%.%'
+            -- ICD-10 leaf: "A00.0" -> "A00"
+            THEN split_part(icd_code, '.', 1)
+        WHEN icd_code ~ '^[A-Z][0-9]{2}$'
+            -- ICD-10 3-char code: no string-derivable parent (parent is a block range)
+            THEN NULL
         ELSE NULL
     END                                                  AS parent_code,
 
@@ -74,6 +84,9 @@ SELECT
                  END
         ELSE NULL
     END                                                  AS excludes_text,
+
+    -- Coding hints (ICD-10 only): mandatory additional-code instructions on some chapters/blocks
+    coding_hint                                          AS coding_hint,
 
     source::TEXT                                         AS source,
     source_updated_at::TIMESTAMPTZ                       AS source_updated_at,

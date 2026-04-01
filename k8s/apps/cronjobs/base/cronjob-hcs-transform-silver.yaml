@@ -1,0 +1,103 @@
+# HCS Transform — Silver Layer
+# 019-cms-puf-platform-reconciliation
+# Runs hcs_silver.* transformations (10 models).
+# Dependencies:
+#   - hcs_bronze.* must be current (hcs-transform-bronze runs at 07:00 UTC)
+#   - mol_silver.molecule_aliases must exist (mol-transform-silver runs at 08:00 UTC)
+#   - mol_silver.ndc_molecule_bridge must exist (mol-transform-ip-silver runs at 10:30)
+# Schedule: 09:00 UTC — safely after hcs_bronze (07:00) and mol_silver (08:00).
+# Note: open_payments_drug_linkage joins mol_silver.ndc_molecule_bridge (ip_silver at 10:30).
+#       SQLMesh will skip that model's current interval if ndc_molecule_bridge isn't ready yet;
+#       ip_silver completion at 10:30 triggers the next daily run at 09:00 the following day.
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: hcs-transform-silver
+  labels:
+    app: hcs-transform-silver
+    app.kubernetes.io/name: hcs-transform-silver
+    app.kubernetes.io/component: transform
+    app.kubernetes.io/part-of: dk-data
+spec:
+  schedule: "0 9 * * *"  # 09:00 UTC daily (after hcs_bronze 07:00 + mol_silver 08:00)
+  concurrencyPolicy: Forbid
+  startingDeadlineSeconds: 3600
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      backoffLimit: 1
+      ttlSecondsAfterFinished: 86400
+      activeDeadlineSeconds: 7200  # 2h — 10 FULL models, monthly grain
+      template:
+        metadata:
+          labels:
+            app: hcs-transform-silver
+            app.kubernetes.io/component: batch-job
+            app.kubernetes.io/part-of: dk-data
+            team: data-platform
+            service: dk-data
+            product: dk-data
+        spec:
+          restartPolicy: Never
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 1000
+            fsGroup: 1000
+            seccompProfile:
+              type: RuntimeDefault
+          imagePullSecrets:
+            - name: ghcr-credentials
+          containers:
+            - name: hcs-transform-silver
+              image: ghcr.io/data-kinetic/dk-data-fe/job-trigger:main
+              command: ["python", "-m", "dk_data.ingestion.transform_molecules"]
+              args: ["--layer", "hcs_silver"]
+              env:
+                - name: POSTGRES_HOST
+                  valueFrom:
+                    secretKeyRef:
+                      name: dk-data-secrets
+                      key: POSTGRES_HOST
+                - name: POSTGRES_PORT
+                  valueFrom:
+                    secretKeyRef:
+                      name: dk-data-secrets
+                      key: POSTGRES_PORT
+                - name: POSTGRES_USER
+                  valueFrom:
+                    secretKeyRef:
+                      name: dk-data-secrets
+                      key: POSTGRES_USER
+                - name: POSTGRES_PASSWORD
+                  valueFrom:
+                    secretKeyRef:
+                      name: dk-data-secrets
+                      key: POSTGRES_PASSWORD
+                - name: POSTGRES_DB
+                  valueFrom:
+                    secretKeyRef:
+                      name: dk-data-secrets
+                      key: POSTGRES_DB
+                - name: OTEL_EXPORTER_OTLP_ENDPOINT
+                  value: "http://alloy.infra.svc.cluster.local:4317"
+                - name: OTEL_ENABLED
+                  value: "true"
+              resources:
+                requests:
+                  memory: "512Mi"
+                  cpu: "300m"
+                limits:
+                  memory: "1Gi"
+                  cpu: "500m"
+              securityContext:
+                allowPrivilegeEscalation: false
+                readOnlyRootFilesystem: true
+                capabilities:
+                  drop: ["ALL"]
+              volumeMounts:
+                - name: tmp
+                  mountPath: /tmp
+          volumes:
+            - name: tmp
+              emptyDir: {}

@@ -26,7 +26,7 @@ logger = logging.getLogger(__name__)
 class CMSInpatientFetcher(BaseFetcher):
     """Fetcher for CMS Medicare Inpatient Hospital data."""
 
-    SOURCE_NAME = "cms_medicare_inpatient"
+    SOURCE_NAME = "cms_inpatient"
     BASE_URL = "https://data.cms.gov/provider-summary-by-type-of-service/medicare-inpatient-hospitals"
 
     # Dataset search terms for catalog lookup

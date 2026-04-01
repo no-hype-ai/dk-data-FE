@@ -70,8 +70,10 @@ WITH orange_book_data AS (
         NULL::BOOLEAN AS has_patent_list,
         NOW() AS source_updated_at
     FROM mol_bronze.orange_book
-    WHERE processed_to_silver = FALSE
-      AND application_number IS NOT NULL
+    WHERE application_number IS NOT NULL
+    -- NOTE: FULL refresh — do NOT filter on processed_to_silver here.
+    -- FULL models rebuild entirely each run; a processed_to_silver = FALSE filter
+    -- would return empty results once all rows are marked as processed.
 ),
 
 -- Purple Book: biologics with real exclusivity dates from FDA
@@ -175,8 +177,8 @@ purple_book_data AS (
         has_patent_list,
         source_updated_at
     FROM mol_bronze.purple_book
-    WHERE processed_to_silver = FALSE
-      AND bla_number IS NOT NULL
+    WHERE bla_number IS NOT NULL
+    -- NOTE: FULL refresh — do NOT filter on processed_to_silver here.
       -- Deduplicate: take first product_number per BLA
       AND product_number = '001'
 ),

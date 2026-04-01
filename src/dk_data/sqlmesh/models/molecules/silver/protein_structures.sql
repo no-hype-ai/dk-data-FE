@@ -70,7 +70,7 @@ SELECT
     (
         SELECT im.molecule_id
         FROM mol_silver.identifier_mappings im
-        WHERE im.identifier_type = 'pdb_ligand'
+        WHERE im.identifier_type = 'pubchem_cid'
           AND im.identifier_value = p.ligand_id
         ORDER BY im.confidence DESC NULLS LAST
         LIMIT 1

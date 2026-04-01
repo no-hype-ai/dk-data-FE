@@ -45,8 +45,11 @@ PUBCHEM_PROPERTIES_URL = (
     + "/compound/name/{name}/property/IUPACName,IsomericSMILES,InChIKey,MolecularFormula/JSON"
 )
 
-# Rate-limit courtesy delay between PubChem requests (seconds)
-REQUEST_DELAY_SECONDS = 0.2
+# Rate-limit courtesy delay between PubChem requests (seconds).
+# Official PubChem PUG REST limit: 5 req/s, 400 req/min, 300s server compute/min.
+# X-Throttling-Control response headers must be respected; violations result in IP bans.
+# 0.21s keeps us just under 5 req/s ceiling with a small safety margin.
+REQUEST_DELAY_SECONDS = 0.21
 
 # Representative set of ~50 common WHO INNs used as default seed list.
 # Covers small molecules, biologics, oncology, and common chronic-disease drugs.
@@ -217,6 +220,18 @@ class WHOINNFetcher(BaseFetcher):
         if response.status_code == 404:
             logger.debug("PubChem: compound %r not found (404)", name)
             return None
+
+        # Respect PubChem throttle signal — back off if throttled
+        throttle_header = response.headers.get("X-Throttling-Control", "")
+        if throttle_header:
+            # Format: "Request Count status: ..., Request Time status: ..."
+            # If any status is "Yellow" back off 1s; "Red" back off 3s
+            if "Red" in throttle_header:
+                logger.warning("PubChem throttle Red — backing off 3s")
+                time.sleep(3.0)
+            elif "Yellow" in throttle_header:
+                logger.debug("PubChem throttle Yellow — backing off 1s")
+                time.sleep(1.0)
 
         response.raise_for_status()
 

@@ -1,39 +1,42 @@
 -- SQLMesh Model: Bronze ClinicalTrials.gov Indication Statistics
--- Extracts totalCount and query condition from CT.gov v2 API responses
+-- Aggregates trial counts per condition from mol_raw.clinicaltrials raw data.
+-- Derived from: mol_raw.clinicaltrials (populated by ClinicalTrialsFetcher).
+-- No separate raw table needed — this is a derived bronze aggregation.
 -- Part of: 003-molecule-assessment-dashboard
 
 MODEL (
     name mol_bronze.ct_gov_indication_stats,
-    kind INCREMENTAL_BY_TIME_RANGE (
-        time_column request_timestamp,
-        batch_size 500
-    ),
-    cron '@monthly',
-    audits (
-        not_null(columns := (condition_query))
-    ),
-    grain (condition_query, request_timestamp)
+    kind FULL,
+    cron '@weekly'
 );
 
 SELECT
-    gen_random_uuid() AS id,
+    gen_random_uuid()::text                                            AS id,
+    NOW()                                                              AS request_timestamp,
+    lower(trim(cond_name.value #>> '{}'))                              AS condition_query,
+    COUNT(DISTINCT study.value #>> '{protocolSection,identificationModule,nctId}')
+                                                                       AS total_count,
+    COUNT(DISTINCT study.value #>> '{protocolSection,identificationModule,nctId}')
+        FILTER (
+            WHERE (study.value #>> '{protocolSection,statusModule,overallStatus}')
+              IN ('RECRUITING', 'ACTIVE_NOT_RECRUITING', 'ENROLLING_BY_INVITATION')
+        )                                                              AS active_count,
+    NOW()                                                              AS fetched_at
 
-    -- CT.gov stats
-    request_params->>'drug_name' AS condition_query,
-    (response_body->>'totalCount')::INTEGER AS total_count,
+FROM mol_raw.clinicaltrials r,
+     LATERAL jsonb_array_elements(
+         COALESCE(r.response_body -> 'studies', '[]'::jsonb)
+     ) AS study(value),
+     LATERAL jsonb_array_elements(
+         COALESCE(
+             study.value #> '{protocolSection,conditionsModule,conditions}',
+             '[]'::jsonb
+         )
+     ) AS cond_name(value)
 
-    -- Source tracking
-    response_body AS raw_json,
-    r.id AS raw_source_id,
-    'ct_gov_indication_stats' AS source,
-    request_timestamp,
-    request_timestamp AS source_updated_at,
-    FALSE AS processed_to_silver,
-    NOW() AS created_at
-
-FROM mol_raw.ct_gov_indication_stats r
 WHERE
-    response_status = 200
-    AND processed_to_bronze = FALSE
-    AND response_body->>'totalCount' IS NOT NULL
-    AND request_timestamp BETWEEN @start_dt AND @end_dt;
+    cond_name.value #>> '{}' IS NOT NULL
+    AND cond_name.value #>> '{}' != ''
+
+GROUP BY lower(trim(cond_name.value #>> '{}'))
+HAVING COUNT(DISTINCT study.value #>> '{protocolSection,identificationModule,nctId}') > 0

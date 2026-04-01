@@ -42,9 +42,12 @@ molecule_coverage AS (
         ARRAY_AGG(DISTINCT m.canonical_name ORDER BY m.canonical_name)
             FILTER (WHERE m.canonical_name IS NOT NULL)         AS covered_molecules
     FROM org_signals os
-    CROSS JOIN LATERAL unnest(os.drug_mentions_list) AS dm_entry
+    -- drug_mentions_list holds raw comma-separated strings (e.g. "ibuprofen, aspirin").
+    -- Unnest the array then split each element so we match individual drug names.
+    CROSS JOIN LATERAL unnest(os.drug_mentions_list) AS raw_entry
+    CROSS JOIN LATERAL unnest(string_to_array(TRIM(raw_entry), ', ')) AS dm_entry
     JOIN mol_silver.molecules m
-        ON LOWER(m.canonical_name) = LOWER(dm_entry)
+        ON LOWER(m.canonical_name) = LOWER(TRIM(dm_entry))
     GROUP BY os.organization_name
 ),
 
