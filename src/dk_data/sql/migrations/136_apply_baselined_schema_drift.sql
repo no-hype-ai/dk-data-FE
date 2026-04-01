@@ -23,7 +23,8 @@
 --   117  hcs_silver agent schema fixes + CMS PUF table corrections + agent schema move
 --   121  mol_raw tables for 7 new molecule sources
 
-BEGIN;
+-- Transaction managed by the migration runner (psycopg2 autobegin).
+-- Do NOT add BEGIN;/COMMIT; here — runner wraps each migration in its own transaction.
 
 -- ============================================================================
 -- PREREQUISITE: ensure HCS schemas exist (migration 086 may have been baselined)
@@ -1032,7 +1033,16 @@ CREATE TABLE IF NOT EXISTS hcs_raw.cms_cost_reports_puf_lines (
 );
 
 -- FROM 117: Recreate CMS PUF staging tables with correct schemas
--- (DROP + CREATE is safe — these are raw staging tables, no FK dependencies)
+-- OPERATIONAL NOTE: The 13 tables below are dropped and recreated to apply column-level schema
+-- corrections that cannot be done with ADD COLUMN (wrong types/constraints in the baselined DDL).
+-- These are raw staging tables with no FK dependents. Active ingestion data will be lost and
+-- must be re-ingested by the corresponding CronJobs after deployment. Re-ingest is automatic
+-- on the next CronJob run; all data is recoverable from upstream CMS sources.
+-- Tables affected: cms_part_d_spending, cms_part_b_spending, cms_medicare_advantage,
+--   cms_medicaid_drug_spending, cms_mental_health_puf, cms_opioid_puf, cms_ordering_providers,
+--   cms_outpatient_puf, cms_referring_providers, cms_telehealth_puf, cms_geographic_variation,
+--   cms_chronic_conditions, cms_dual_eligible, cms_enrollment_puf, cms_claim_type_puf,
+--   cms_utilization_puf, cms_cost_reports_puf
 
 DROP TABLE IF EXISTS hcs_raw.cms_part_d_spending CASCADE;
 CREATE TABLE hcs_raw.cms_part_d_spending (
@@ -1520,5 +1530,3 @@ DO $$
 BEGIN
     RAISE NOTICE 'Migration 136 complete: applied all schema drift from baselined migrations 100-125.';
 END $$;
-
-COMMIT;

@@ -46,7 +46,7 @@ spec:
               echo "Source: $ZIP_PATH"
               echo "Target: ${POSTGRES_HOST}:${POSTGRES_PORT}/${POSTGRES_DB} (bronze schema)"
 
-              # Skip if already loaded (more than 1000 drugs present)
+              # Skip if already loaded (more than 15,000 drugs present)
               ROW_COUNT=$(python3 -c "
               import psycopg2, os, sys
               try:
