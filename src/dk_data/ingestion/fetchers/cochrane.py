@@ -3,11 +3,14 @@
 Feature: 011-datasource-integration
 Task: T064-T066 — Cochrane systematic reviews
 
-Fetches systematic reviews from the Cochrane Library related to
-pharmaceutical interventions, scoped by drug_name terms from
-meta.ci_search_terms.
+Fetches Cochrane systematic reviews via PubMed eUtils API.
+The Cochrane Library's own search API (cochranelibrary.com/api/search)
+now returns 404/419 (Cloudflare-blocked, #189). PubMed indexes all
+Cochrane Database of Systematic Reviews (CDSR) articles with full
+metadata and is accessible without authentication.
 
-Source: https://www.cochranelibrary.com/cdsr/reviews
+Source: https://pubmed.ncbi.nlm.nih.gov (Cochrane Reviews filter)
+API: https://eutils.ncbi.nlm.nih.gov/entrez/eutils/
 """
 
 import hashlib
@@ -15,7 +18,6 @@ import logging
 import time
 from datetime import datetime, timedelta
 from typing import Any, Dict, List, Optional
-
 from .base import BaseFetcher
 
 logger = logging.getLogger(__name__)
@@ -23,37 +25,41 @@ logger = logging.getLogger(__name__)
 # Max records per fetch run
 MAX_RECORDS = 2000
 
-# Rate limit: be respectful to Cochrane servers
-REQUEST_DELAY = 2.0
+# Rate limit: NCBI allows 3 req/s without API key, 10/s with
+REQUEST_DELAY = 0.4
+
+# PubMed eUtils base URL
+ESEARCH_URL = "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esearch.fcgi"
+EFETCH_URL  = "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/efetch.fcgi"
+ESUMMARY_URL = "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esummary.fcgi"
+
+# Cochrane Database of Systematic Reviews journal NLM ID
+COCHRANE_JOURNAL = "Cochrane Database Syst Rev"
+
+# Number of PMIDs to fetch per eSummary batch
+BATCH_SIZE = 50
 
 
 class CochraneFetcher(BaseFetcher):
-    """Fetcher for Cochrane Library systematic reviews."""
+    """Fetcher for Cochrane systematic reviews via PubMed eUtils."""
 
     SOURCE_NAME = "cochrane"
-    BASE_URL = "https://www.cochranelibrary.com"
-
-    # Cochrane search API endpoint
-    SEARCH_API = "https://www.cochranelibrary.com/api/search"
-
-    # Page size for search results
-    PAGE_SIZE = 50
+    BASE_URL = ESEARCH_URL
 
     def __init__(self, data_dir: Optional[str] = None):
         """Initialize the Cochrane fetcher."""
         super().__init__(data_dir)
-
         self.session.headers.update({
             "Accept": "application/json",
-            "User-Agent": "DK-Data-Platform/1.0 (Cochrane Research Integration)",
+            "User-Agent": "DK-Data-Platform/1.0 (research; contact: ops@datakinetic.com)",
         })
 
     def get_latest_url(self) -> str:
-        """Get the Cochrane search API URL."""
-        return self.SEARCH_API
+        """Get the PubMed eSearch URL used for Cochrane queries."""
+        return ESEARCH_URL
 
     def fetch(self, **kwargs) -> Dict[str, Any]:
-        """Fetch systematic reviews from Cochrane Library.
+        """Fetch systematic reviews via PubMed for Cochrane CDSR articles.
 
         Keyword Args:
             search_terms: List of drug names to search (default: from DB).
@@ -61,7 +67,7 @@ class CochraneFetcher(BaseFetcher):
             days_back: Number of days to look back (default: 90).
 
         Returns:
-            Dict with status, records, hash, error.
+            Dict with status, records, record_count, hash, error.
         """
         search_terms = kwargs.get("search_terms")
         max_records = kwargs.get("max_records", MAX_RECORDS)
@@ -75,31 +81,37 @@ class CochraneFetcher(BaseFetcher):
                 search_terms = ["pharmaceutical intervention"]
 
             logger.info(
-                "Fetching Cochrane reviews (terms=%d, days_back=%d)",
+                "Fetching Cochrane reviews via PubMed (terms=%d, days_back=%d)",
                 len(search_terms), days_back,
             )
 
             all_records: List[Dict[str, Any]] = []
-            seen_ids: set = set()
+            seen_pmids: set = set()  # tracks raw PMID strings for dedup
 
             for term in search_terms:
                 if len(all_records) >= max_records:
                     break
 
-                records = self._search_reviews(
+                pmids = self._search_pmids(
                     term,
                     days_back=days_back,
-                    max_records=max_records - len(all_records),
+                    max_results=max_records - len(all_records),
                 )
 
+                # Filter to PMIDs not yet fetched (dedup by PMID, not review_id)
+                new_pmids = [p for p in pmids if p not in seen_pmids]
+                if not new_pmids:
+                    continue
+
+                records = self._fetch_summaries(new_pmids, term)
                 for rec in records:
-                    review_id = rec.get("review_id")
-                    if review_id and review_id not in seen_ids:
-                        seen_ids.add(review_id)
-                        all_records.append(rec)
+                    seen_pmids.add(rec["pmid"])  # track by PMID for dedup
+                    all_records.append(rec)
+
+                time.sleep(REQUEST_DELAY)
 
             content_hash = hashlib.md5(
-                str(sorted(seen_ids)).encode()
+                str(sorted(seen_pmids)).encode()
             ).hexdigest()
 
             result = {
@@ -112,7 +124,7 @@ class CochraneFetcher(BaseFetcher):
             return result
 
         except Exception as e:
-            logger.exception("Failed to fetch Cochrane data: %s", e)
+            logger.exception("Failed to fetch Cochrane data via PubMed: %s", e)
             result = {
                 "status": "failed",
                 "records": [],
@@ -124,124 +136,135 @@ class CochraneFetcher(BaseFetcher):
             return result
 
     # ------------------------------------------------------------------
-    # Search
+    # PubMed eSearch — get PMIDs for Cochrane reviews
     # ------------------------------------------------------------------
 
-    def _search_reviews(
+    def _search_pmids(
         self,
         term: str,
         *,
         days_back: int = 90,
-        max_records: int = 2000,
+        max_results: int = 500,
+    ) -> List[str]:
+        """Search PubMed for Cochrane CDSR PMIDs matching a drug term."""
+        date_from = (datetime.utcnow() - timedelta(days=days_back)).strftime("%Y/%m/%d")
+        date_to   = datetime.utcnow().strftime("%Y/%m/%d")
+
+        # Filter to Cochrane Database of Systematic Reviews
+        query = (
+            f'"{term}"[Title/Abstract] '
+            f'AND "Cochrane Database Syst Rev"[Journal]'
+        )
+
+        params = {
+            "db": "pubmed",
+            "term": query,
+            "retmax": str(min(max_results, 500)),
+            "retmode": "json",
+            "datetype": "pdat",
+            "mindate": date_from,
+            "maxdate": date_to,
+        }
+
+        try:
+            data = self.fetch_json(ESEARCH_URL, params=params)
+            ids = data.get("esearchresult", {}).get("idlist", [])
+            logger.debug("PubMed eSearch '%s' → %d PMIDs", term, len(ids))
+            return ids
+        except Exception as e:
+            logger.warning("PubMed eSearch failed for '%s': %s", term, e)
+            return []
+
+    # ------------------------------------------------------------------
+    # PubMed eSummary — fetch metadata for PMIDs
+    # ------------------------------------------------------------------
+
+    def _fetch_summaries(
+        self, pmids: List[str], search_term: str
     ) -> List[Dict[str, Any]]:
-        """Search Cochrane for systematic reviews matching a term."""
+        """Fetch eSummary records for a list of PMIDs."""
         records: List[Dict[str, Any]] = []
-        offset = 0
-        date_from = (datetime.utcnow() - timedelta(days=days_back)).strftime("%Y-%m-%d")
 
-        while len(records) < max_records:
+        for i in range(0, len(pmids), BATCH_SIZE):
+            batch = pmids[i : i + BATCH_SIZE]
+            params = {
+                "db": "pubmed",
+                "id": ",".join(batch),
+                "retmode": "json",
+                "version": "2.0",
+            }
+
             try:
-                params = {
-                    "searchBy": "search-manager",
-                    "searchText": term,
-                    "searchType": "standard",
-                    "reviewType": "cdsr",
-                    "resultPerPage": self.PAGE_SIZE,
-                    "searchFrom": offset,
-                    "publishDateFrom": date_from,
-                }
+                data = self.fetch_json(ESUMMARY_URL, params=params)
+                result_set = data.get("result", {})
 
-                data = self.fetch_json(self.get_latest_url(), params=params)
-
-                items = self._extract_items(data)
-                if not items:
-                    break
-
-                for item in items:
-                    normalized = self._normalize_review(item, term)
+                for pmid in batch:
+                    item = result_set.get(pmid)
+                    if not item or item.get("error"):
+                        continue
+                    normalized = self._normalize_summary(item, search_term)
                     if normalized:
                         records.append(normalized)
 
-                if len(items) < self.PAGE_SIZE:
-                    break
-
-                offset += self.PAGE_SIZE
                 time.sleep(REQUEST_DELAY)
 
             except Exception as e:
                 logger.warning(
-                    "Cochrane search failed for '%s' at offset %d: %s",
-                    term, offset, e,
+                    "PubMed eSummary failed for batch starting at %d: %s", i, e
                 )
-                break
 
         return records
 
-    @staticmethod
-    def _extract_items(data: Any) -> List[Dict]:
-        """Extract result items from Cochrane API response."""
-        if isinstance(data, list):
-            return data
+    # ------------------------------------------------------------------
+    # Normalization
+    # ------------------------------------------------------------------
 
-        if isinstance(data, dict):
-            for key in ("results", "data", "items", "resultList"):
-                if key in data and isinstance(data[key], list):
-                    return data[key]
-
-        return []
-
-    def _normalize_review(
+    def _normalize_summary(
         self, item: Dict[str, Any], search_term: str
     ) -> Optional[Dict[str, Any]]:
-        """Normalize a Cochrane review result into the raw schema."""
-        review_id = (
-            item.get("id")
-            or item.get("reviewId")
-            or item.get("doi")
-            or item.get("cdNumber")
-        )
-        if not review_id:
+        """Normalize a PubMed eSummary record to the Cochrane raw schema."""
+        pmid = item.get("uid")
+        if not pmid:
             return None
 
-        review_id = str(review_id).strip()
-
-        # Parse authors
-        authors = item.get("authors") or item.get("byline")
-        if isinstance(authors, list):
-            authors = "; ".join(str(a) for a in authors)
-        elif authors:
-            authors = str(authors)
+        # Authors
+        authors_raw = item.get("authors", [])
+        if isinstance(authors_raw, list):
+            authors = "; ".join(
+                a.get("name", "") for a in authors_raw if a.get("name")
+            )
+        else:
+            authors = str(authors_raw)
 
         # Publication date
-        pub_date = (
-            item.get("publishDate")
-            or item.get("publication_date")
-            or item.get("date")
-        )
+        pub_date = item.get("pubdate") or item.get("epubdate") or ""
         if pub_date:
-            pub_date = str(pub_date)[:10]
+            pub_date = pub_date[:10]
 
-        # Interventions
-        interventions = item.get("interventions") or []
-        if isinstance(interventions, str):
-            interventions = [i.strip() for i in interventions.split(",")]
+        # DOI from article IDs
+        doi = None
+        for aid in item.get("articleids", []):
+            if aid.get("idtype") == "doi":
+                doi = aid.get("value")
+                break
 
-        # Conditions
-        conditions = item.get("conditions") or item.get("healthConditions") or []
-        if isinstance(conditions, str):
-            conditions = [c.strip() for c in conditions.split(",")]
+        # Build Cochrane review ID: prefer DOI, fall back to PMID
+        review_id = doi if doi else f"pmid:{pmid}"
 
         return {
             "review_id": review_id,
-            "title": item.get("title") or item.get("name"),
-            "authors": authors,
-            "abstract": item.get("abstract") or item.get("summary"),
-            "publication_date": pub_date,
-            "review_type": item.get("reviewType") or "systematic_review",
-            "interventions": interventions if interventions else None,
-            "conditions": conditions if conditions else None,
-            "conclusions": item.get("conclusions") or item.get("authorsConclusions"),
-            "doi": item.get("doi"),
+            "title": item.get("title"),
+            "authors": authors or None,
+            "abstract": None,          # eSummary doesn't include abstract
+            "publication_date": pub_date or None,
+            "review_type": "systematic_review",
+            "interventions": None,     # Not available in eSummary
+            "conditions": None,        # Not available in eSummary
+            "conclusions": None,       # Not available in eSummary
+            "doi": doi,
+            "pmid": pmid,
+            "source": "pubmed_cochrane",
+            "search_term": search_term,
         }
 
     # ------------------------------------------------------------------
@@ -268,7 +291,9 @@ class CochraneFetcher(BaseFetcher):
                     for row in cur.fetchall():
                         terms.append(row[0])
 
-            logger.info("Loaded %d drug_name terms from meta.ci_search_terms", len(terms))
+            logger.info(
+                "Loaded %d drug_name terms from meta.ci_search_terms", len(terms)
+            )
             return terms
 
         except Exception as e:

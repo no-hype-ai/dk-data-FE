@@ -90,7 +90,8 @@ class PDBFetcher(BaseFetcher):
             },
         }
 
-        response = self.session.post(url, json=query, timeout=60)
+        # RCSB PDB search is slow under load — extended to 180s (#189 timeout fix)
+        response = self.session.post(url, json=query, timeout=180)
         response.raise_for_status()
         data = response.json()
 
