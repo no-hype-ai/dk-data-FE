@@ -223,7 +223,7 @@ def _track_status_change(
             """
             SELECT new_status FROM mol_raw.trademark_status_history
             WHERE trademark_identifier = %s AND source = %s
-            ORDER BY change_detected_at DESC
+            ORDER BY changed_at DESC
             LIMIT 1
             """,
             (trademark_identifier, source),
