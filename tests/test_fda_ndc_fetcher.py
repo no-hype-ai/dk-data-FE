@@ -99,21 +99,8 @@ def test_max_records_truncates_exactly():
 
 
 def test_product_type_filter_passed_as_search_param():
-    fetcher = _make_fetcher()
-    captured_params = {}
-
-    def _side_effect(url, params=None, **kw):
-        captured_params.update(params or {})
-        return _mock_response([])
-
-    with patch.object(fetcher.session, "get", side_effect=_side_effect):
-        fetcher.fetch(product_type="HUMAN PRESCRIPTION DRUG")
-
-    assert "search" in captured_params
-    assert "HUMAN PRESCRIPTION DRUG" in captured_params["search"]
-
-
-def test_no_product_type_omits_search_param():
+    # The fetcher now uses alphabetic partitioning on generic_name regardless
+    # of product_type. The search param is always "generic_name:<letter>*".
     fetcher = _make_fetcher()
     captured_params = {}
 
@@ -124,7 +111,23 @@ def test_no_product_type_omits_search_param():
     with patch.object(fetcher.session, "get", side_effect=_side_effect):
         fetcher.fetch()
 
-    assert "search" not in captured_params
+    assert "search" in captured_params
+    assert captured_params["search"].startswith("generic_name:")
+
+
+def test_search_param_always_present():
+    # The fetcher always includes a generic_name partition in the search param.
+    fetcher = _make_fetcher()
+    captured_params = {}
+
+    def _side_effect(url, params=None, **kw):
+        captured_params.update(params or {})
+        return _mock_response([])
+
+    with patch.object(fetcher.session, "get", side_effect=_side_effect):
+        fetcher.fetch()
+
+    assert "search" in captured_params
 
 
 def test_404_stops_pagination():

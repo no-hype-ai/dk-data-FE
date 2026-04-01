@@ -154,11 +154,17 @@ class TestCochraneFetcherFetch:
         """Test fetch returns failed on unexpected errors outside search loop."""
         fetcher = CochraneFetcher(data_dir=str(tmp_path))
 
-        with patch.object(
-            fetcher,
-            "_search_reviews",
-            side_effect=RuntimeError("Unexpected internal error"),
-        ):
+        # Mock session.get for the pre-flight probe (returns 200) so the code
+        # proceeds past the 401/403 check and reaches _search_reviews.
+        probe_response = MagicMock()
+        probe_response.status_code = 200
+
+        with patch.object(fetcher.session, "get", return_value=probe_response), \
+             patch.object(
+                 fetcher,
+                 "_search_reviews",
+                 side_effect=RuntimeError("Unexpected internal error"),
+             ):
             result = fetcher.fetch(search_terms=["test"])
 
         assert result["status"] == "failed"
