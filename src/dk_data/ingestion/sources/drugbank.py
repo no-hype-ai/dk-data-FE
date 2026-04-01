@@ -221,6 +221,7 @@ def load_drugbank_data(
                         )
 
                 except Exception as e:
+                    conn.rollback()
                     records_failed += 1
                     errors.append({
                         "index": idx,
