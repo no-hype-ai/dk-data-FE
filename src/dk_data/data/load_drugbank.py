@@ -224,22 +224,33 @@ def iter_drugs(xml_path: str, limit: Optional[int] = None) -> Iterator[DrugBankD
 
 
 def _iter_drugs_from_file(file_obj, limit: Optional[int] = None) -> Iterator[DrugBankDrug]:
-    """Internal function to iterate drugs from file object."""
-    count = 0
-    context = iterparse(file_obj, events=('end',))
+    """Internal function to iterate drugs from file object.
 
-    for event, elem in context:
-        if elem.tag.endswith('}drug') or elem.tag == 'drug':
-            if elem.get('type') in ('small molecule', 'biotech', None):
-                parent_tag = elem.tag.replace('drug', '')
-                if parent_tag.endswith('}') or parent_tag == '':
-                    drug = parse_drug(elem, NS)
-                    if drug.drugbank_id:
-                        yield drug
-                        count += 1
-                        if limit and count >= limit:
-                            return
-            elem.clear()
+    The DrugBank XML contains ~17k top-level ``<drug type="...">``
+    elements and ~56k bare ``<drug>`` stubs nested inside
+    ``<pathways>/<drugs>`` and similar containers.  We track depth
+    so that only top-level drug elements are parsed and cleared.
+    """
+    count = 0
+    drug_depth = 0
+
+    for event, elem in iterparse(file_obj, events=('start', 'end')):
+        is_drug = elem.tag == f"{NS}drug" or elem.tag == 'drug'
+
+        if event == 'start' and is_drug:
+            drug_depth += 1
+            continue
+
+        if event == 'end' and is_drug:
+            if drug_depth == 1:
+                drug = parse_drug(elem, NS)
+                if drug.drugbank_id:
+                    yield drug
+                    count += 1
+                    if limit and count >= limit:
+                        return
+                elem.clear()
+            drug_depth -= 1
 
 
 def ensure_tables(conn):

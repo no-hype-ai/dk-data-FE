@@ -207,6 +207,19 @@ class DrugBankFetcher(BaseFetcher):
 
         Uses iterparse for memory-efficient processing of large XML files.
 
+        The DrugBank XML contains ~17k top-level ``<drug type="...">``
+        elements (actual drug entries) and ~56k bare ``<drug>`` stubs
+        nested inside ``<pathways>/<drugs>``, ``<reactions>``, etc.
+        These stubs only carry a drugbank-id and name.  We distinguish
+        the two by checking for the ``type`` attribute which is always
+        present on top-level entries ("small molecule" or "biotech")
+        and never on the nested stubs.
+
+        We track element depth so that ``elem.clear()`` is only called
+        on the top-level ``<drug>`` close — this keeps nested stub
+        content intact for the parent parser (pathways, reactions, etc.)
+        that reads them before the parent element closes.
+
         Args:
             filepath: Path to the DrugBank XML file.
             max_entries: Maximum entries to process.
@@ -218,22 +231,35 @@ class DrugBankFetcher(BaseFetcher):
 
         logger.info("Parsing DrugBank XML from %s", filepath)
 
+        drug_depth = 0
+
         try:
-            for event, elem in ET.iterparse(filepath, events=("end",)):
-                if elem.tag == f"{DRUGBANK_NS}drug" or elem.tag == "drug":
-                    record = self._parse_drug_entry(elem)
-                    if record:
-                        records.append(record)
+            for event, elem in ET.iterparse(filepath, events=("start", "end")):
+                tag = elem.tag
+                is_drug = tag == f"{DRUGBANK_NS}drug" or tag == "drug"
 
-                    # Free memory
-                    elem.clear()
+                if event == "start" and is_drug:
+                    drug_depth += 1
+                    continue
 
-                    if len(records) >= max_entries:
-                        logger.info(
-                            "Reached max_entries limit (%d), stopping parse",
-                            max_entries,
-                        )
-                        break
+                if event == "end" and is_drug:
+                    if drug_depth == 1:
+                        # Top-level drug element — parse it
+                        record = self._parse_drug_entry(elem)
+                        if record:
+                            records.append(record)
+
+                        # Free memory only for top-level drugs
+                        elem.clear()
+
+                        if len(records) >= max_entries:
+                            logger.info(
+                                "Reached max_entries limit (%d), stopping parse",
+                                max_entries,
+                            )
+                            break
+
+                    drug_depth -= 1
 
         except ET.ParseError as e:
             logger.error("XML parse error: %s", e)

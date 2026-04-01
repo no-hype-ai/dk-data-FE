@@ -46,7 +46,7 @@ spec:
               echo "Source: $ZIP_PATH"
               echo "Target: ${POSTGRES_HOST}:${POSTGRES_PORT}/${POSTGRES_DB} (bronze schema)"
 
-              # Skip if already loaded (more than 1000 drugs present)
+              # Skip if already loaded (more than 15,000 drugs present)
               ROW_COUNT=$(python3 -c "
               import psycopg2, os, sys
               try:
@@ -65,7 +65,7 @@ spec:
                 print(0)
               " 2>/dev/null || echo "0")
 
-              if [ "$ROW_COUNT" -gt 1000 ]; then
+              if [ "$ROW_COUNT" -gt 15000 ]; then
                 echo "DrugBank already loaded ($ROW_COUNT drugs in mol_bronze.drugbank_data). Skipping."
                 exit 0
               fi
