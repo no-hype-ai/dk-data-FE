@@ -106,6 +106,36 @@ class SourceStatusResponse(BaseModel):
     cached: bool
 
 
+class InvokeRequest(BaseModel):
+    drug_name: str
+    molecule_id: Optional[str] = None
+
+
+class InvokeResponse(BaseModel):
+    status: str           # "success" | "error"
+    request_id: str
+    source: str
+    data: Optional[Any] = None
+    raw_record_id: Optional[str] = None
+    duration_ms: Optional[int] = None
+    error: Optional[Dict[str, Any]] = None
+    timestamp: str
+
+
+class TransformRefreshRequest(BaseModel):
+    molecule_id: Optional[str] = None
+    drug_name: Optional[str] = None
+    models: Optional[List[str]] = None  # restrict to subset of gold models
+
+
+class TransformRefreshResponse(BaseModel):
+    molecule_id: str
+    drug_name: Optional[str]
+    models_refreshed: List[str]
+    errors: List[Dict[str, Any]]
+    duration_ms: int
+
+
 # ============================================================================
 # Helper: convert TOOL_REGISTRY name → meta.data_sources source_name
 # ============================================================================
@@ -388,3 +418,183 @@ async def get_source_status(
             pass
 
     return SourceStatusResponse(**response_data)
+
+
+# ============================================================================
+# POST /transform/refresh  — Xenon-triggerable hot gold refresh
+# ============================================================================
+
+@router.post("/transform/refresh", response_model=TransformRefreshResponse)
+async def refresh_transform(
+    request: TransformRefreshRequest,
+    db_pool=Depends(get_db_pool),
+) -> TransformRefreshResponse:
+    """
+    Trigger an on-demand gold-layer refresh for a molecule.
+
+    Intended for external writers (e.g. Xenon) that write directly to
+    xenon.* tables and want mol_gold.* updated immediately — without going
+    through a full fetch cycle.
+
+    Molecule resolution:
+    - If molecule_id is provided, it is used directly (no DB lookup).
+    - If only drug_name is provided, mol_silver.molecules and
+      mol_silver.molecule_aliases are searched; 404 if not found.
+    - At least one of molecule_id or drug_name must be supplied.
+
+    Models can be restricted via the optional `models` list:
+      "mol_gold.trial_outcomes"
+      "mol_gold.molecule_profile"
+      "mol_gold.safety_signals"
+      "mol_gold.lifecycle_stages"
+      "mol_gold.competitive_landscape"
+    Omitting `models` refreshes all five.
+    """
+    import time
+    from ...services.mcp.silver_gold_refresher import SilverGoldRefresher
+
+    if not request.molecule_id and not request.drug_name:
+        raise HTTPException(status_code=422, detail="Provide molecule_id or drug_name.")
+
+    if db_pool is None:
+        raise HTTPException(status_code=503, detail="Database unavailable")
+
+    # Resolve molecule_id
+    molecule_id = request.molecule_id
+    drug_name = request.drug_name or ""
+
+    if molecule_id is None:
+        # Look up by drug name — no create (Xenon already wrote the molecule)
+        normalized = drug_name.lower().strip()
+        async with db_pool.acquire() as conn:
+            row = await conn.fetchrow(
+                "SELECT id FROM mol_silver.molecules WHERE LOWER(canonical_name) = $1",
+                normalized,
+            )
+            if row is None:
+                row = await conn.fetchrow(
+                    "SELECT molecule_id AS id FROM mol_silver.molecule_aliases WHERE alias_name_normalized = $1",
+                    normalized,
+                )
+        if row is None:
+            raise HTTPException(
+                status_code=404,
+                detail=f"Molecule '{drug_name}' not found in mol_silver. "
+                       "It must exist before a gold refresh can be triggered.",
+            )
+        molecule_id = str(row["id"])
+
+    t0 = time.monotonic()
+    refresher = SilverGoldRefresher(db_pool=db_pool)
+    result = await refresher.refresh_gold_for_molecule(
+        molecule_id=molecule_id,
+        drug_name=drug_name,
+        models=request.models,
+    )
+    duration_ms = int((time.monotonic() - t0) * 1000)
+
+    logger.info(
+        "transform_refresh_completed",
+        molecule_id=molecule_id,
+        drug_name=drug_name,
+        models_refreshed=result["models_refreshed"],
+        errors=result["errors"],
+        duration_ms=duration_ms,
+    )
+
+    return TransformRefreshResponse(
+        molecule_id=molecule_id,
+        drug_name=drug_name or None,
+        models_refreshed=result["models_refreshed"],
+        errors=result["errors"],
+        duration_ms=duration_ms,
+    )
+
+
+# ============================================================================
+# Helper: instantiate BaseMCPTool from a ToolDefinition
+# ============================================================================
+
+def _build_tool(tool_def, db_pool):
+    """Lazily import adapter and return a BaseMCPTool instance."""
+    import importlib
+    from ...services.mcp.base_tool import BaseMCPTool
+
+    adapter_module = importlib.import_module(tool_def.adapter_module)
+    # Each adapter module exposes exactly one adapter class (the only BaseAdapter subclass).
+    # Find it by scanning module attributes.
+    from ...services.mcp.adapters.base import BaseAdapter
+    adapter_cls = None
+    for attr_name in dir(adapter_module):
+        attr = getattr(adapter_module, attr_name)
+        try:
+            if (
+                isinstance(attr, type)
+                and issubclass(attr, BaseAdapter)
+                and attr is not BaseAdapter
+            ):
+                adapter_cls = attr
+                break
+        except TypeError:
+            continue
+
+    if adapter_cls is None:
+        raise RuntimeError(
+            f"No BaseAdapter subclass found in {tool_def.adapter_module}"
+        )
+
+    adapter = adapter_cls()
+    return BaseMCPTool(adapter=adapter, api_base_url=tool_def.api_base_url, db_pool=db_pool)
+
+
+# ============================================================================
+# POST /{tool_name}/invoke
+# ============================================================================
+
+@router.post("/{tool_name}/invoke", response_model=InvokeResponse)
+async def invoke_tool(
+    tool_name: str,
+    request: InvokeRequest,
+    db_pool=Depends(get_db_pool),
+) -> InvokeResponse:
+    """
+    Invoke a data tool by name for a specific drug/molecule.
+
+    Calls the full MCP invoke flow:
+    rate_limit → fetch_external_api → adapter.normalize() →
+    insert_raw_record → trigger_transform → return_results
+
+    Returns 404 if tool_name is not registered.
+    Returns 502 / 408 / 429 / 500 on external API errors (proxied from the
+    tool's error response).
+    """
+    if tool_name not in TOOL_REGISTRY:
+        raise HTTPException(
+            status_code=404,
+            detail=f"Tool '{tool_name}' not found. "
+                   "Use GET /api/v1/data-tools/registry to list available tools.",
+        )
+
+    tool_def = TOOL_REGISTRY[tool_name]
+
+    try:
+        tool = _build_tool(tool_def, db_pool)
+    except Exception as e:
+        logger.error("tool_build_failed", tool_name=tool_name, error=str(e))
+        raise HTTPException(status_code=500, detail=f"Failed to load tool '{tool_name}': {e}")
+
+    input_params: Dict[str, Any] = {"drug_name": request.drug_name}
+    if request.molecule_id is not None:
+        input_params["molecule_id"] = request.molecule_id
+
+    logger.info("tool_invoke", tool_name=tool_name, drug_name=request.drug_name)
+
+    result = await tool.invoke(input_params)
+
+    # If the tool itself returned an error, surface the embedded HTTP status code.
+    if result.get("status") == "error":
+        error_info = result.get("error", {})
+        status_code = error_info.get("status_code", 502)
+        raise HTTPException(status_code=status_code, detail=error_info.get("message", "Tool invocation failed"))
+
+    return InvokeResponse(**result)

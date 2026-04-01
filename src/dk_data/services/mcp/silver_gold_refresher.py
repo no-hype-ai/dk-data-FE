@@ -481,7 +481,86 @@ class SilverGoldRefresher:
             await self._refresh_gold_safety_signals(conn, molecule_id)
             await self._refresh_gold_lifecycle_stages(conn, molecule_id)
             await self._refresh_gold_trial_outcomes_direct(conn, molecule_id)
+            await self._refresh_gold_from_xenon_evidence(conn, molecule_id)
             await self._refresh_gold_competitive_landscape(conn, molecule_id)
+
+    async def refresh_gold_for_molecule(
+        self,
+        molecule_id: str,
+        drug_name: str = "",
+        models: list = None,
+    ) -> dict:
+        """Public entry point for on-demand gold refresh without a fetch cycle.
+
+        Called by external writers (e.g. Xenon NestJS) after they write
+        directly to xenon.* tables and want the gold layer updated immediately.
+
+        Args:
+            molecule_id: mol_silver.molecules.id (UUID string).
+            drug_name: Canonical name — used only for molecule_profile label;
+                       may be empty if molecule_id is provided.
+            models: Optional list of gold model names to restrict refresh.
+                    Supported values:
+                      "mol_gold.trial_outcomes"
+                      "mol_gold.molecule_profile"
+                      "mol_gold.safety_signals"
+                      "mol_gold.lifecycle_stages"
+                      "mol_gold.competitive_landscape"
+                    Defaults to all if omitted.
+
+        Returns:
+            dict with models_refreshed list and any per-model errors.
+        """
+        _ALL_MODELS = {
+            "mol_gold.trial_outcomes",
+            "mol_gold.molecule_profile",
+            "mol_gold.safety_signals",
+            "mol_gold.lifecycle_stages",
+            "mol_gold.competitive_landscape",
+        }
+        target = set(models) if models else _ALL_MODELS
+
+        refreshed = []
+        errors = []
+
+        async with self.db_pool.acquire() as conn:
+            if "mol_gold.molecule_profile" in target:
+                try:
+                    await self._refresh_gold_molecule_profile(conn, molecule_id, drug_name)
+                    refreshed.append("mol_gold.molecule_profile")
+                except Exception as e:
+                    errors.append({"model": "mol_gold.molecule_profile", "error": str(e)})
+
+            if "mol_gold.safety_signals" in target:
+                try:
+                    await self._refresh_gold_safety_signals(conn, molecule_id)
+                    refreshed.append("mol_gold.safety_signals")
+                except Exception as e:
+                    errors.append({"model": "mol_gold.safety_signals", "error": str(e)})
+
+            if "mol_gold.lifecycle_stages" in target:
+                try:
+                    await self._refresh_gold_lifecycle_stages(conn, molecule_id)
+                    refreshed.append("mol_gold.lifecycle_stages")
+                except Exception as e:
+                    errors.append({"model": "mol_gold.lifecycle_stages", "error": str(e)})
+
+            if "mol_gold.trial_outcomes" in target:
+                try:
+                    await self._refresh_gold_trial_outcomes_direct(conn, molecule_id)
+                    await self._refresh_gold_from_xenon_evidence(conn, molecule_id)
+                    refreshed.append("mol_gold.trial_outcomes")
+                except Exception as e:
+                    errors.append({"model": "mol_gold.trial_outcomes", "error": str(e)})
+
+            if "mol_gold.competitive_landscape" in target:
+                try:
+                    await self._refresh_gold_competitive_landscape(conn, molecule_id)
+                    refreshed.append("mol_gold.competitive_landscape")
+                except Exception as e:
+                    errors.append({"model": "mol_gold.competitive_landscape", "error": str(e)})
+
+        return {"models_refreshed": refreshed, "errors": errors}
 
     async def _refresh_gold_molecule_profile(self, conn, molecule_id: str, drug_name: str) -> None:
         """Refresh gold_molecule_profile from silver tables."""
@@ -798,6 +877,72 @@ class SilverGoldRefresher:
                 )
         except Exception as e:
             logger.warning(f"mol_gold.trial_outcomes refresh skipped: {e}")
+
+    async def _refresh_gold_from_xenon_evidence(self, conn, molecule_id: str) -> None:
+        """Upsert mol_gold.trial_outcomes from xenon.publication_evidence.
+
+        Xenon writes AI-extracted trial endpoint data directly to
+        xenon.publication_evidence (bypassing the medallion pipeline).
+        Only records with confidence_score >= 0.40 are promoted to gold.
+        """
+        try:
+            rows = await conn.fetch("""
+                SELECT
+                    trial_nct_id,
+                    endpoint_name,
+                    endpoint_type,
+                    hazard_ratio,
+                    p_value,
+                    response_rate,
+                    median_survival_months,
+                    sample_size,
+                    confidence_score,
+                    doi,
+                    pmid
+                FROM xenon.publication_evidence
+                WHERE molecule_id = $1::uuid
+                  AND confidence_score >= 0.40
+            """, molecule_id)
+
+            for row in rows:
+                nct_id = row["trial_nct_id"]
+                if not nct_id:
+                    continue
+
+                # Compose a human-readable result summary from numeric outcomes
+                result_parts = []
+                if row["hazard_ratio"] is not None:
+                    result_parts.append(f"HR={row['hazard_ratio']:.3f}")
+                if row["p_value"] is not None:
+                    result_parts.append(f"p={row['p_value']:.4f}")
+                if row["response_rate"] is not None:
+                    result_parts.append(f"RR={row['response_rate']:.1%}")
+                if row["median_survival_months"] is not None:
+                    result_parts.append(f"mOS={row['median_survival_months']:.1f}mo")
+                result_summary = "; ".join(result_parts) if result_parts else "xenon_extracted"
+
+                await conn.execute("""
+                    INSERT INTO mol_gold.trial_outcomes
+                    (id, molecule_id, nct_id, endpoint_name, result,
+                     phase, status, enrollment, sponsor, conditions)
+                    VALUES ($1, $2, $3, $4, $5, NULL, 'xenon_extracted', $6, NULL, NULL)
+                    ON CONFLICT (nct_id) DO UPDATE SET
+                        endpoint_name = CASE
+                            WHEN mol_gold.trial_outcomes.endpoint_name IS NULL
+                            THEN EXCLUDED.endpoint_name
+                            ELSE mol_gold.trial_outcomes.endpoint_name
+                        END,
+                        result = EXCLUDED.result,
+                        enrollment = COALESCE(mol_gold.trial_outcomes.enrollment, EXCLUDED.enrollment),
+                        updated_at = NOW()
+                """,
+                    str(uuid.uuid4()), molecule_id, nct_id,
+                    row["endpoint_name"],
+                    result_summary,
+                    row["sample_size"],
+                )
+        except Exception as e:
+            logger.warning(f"mol_gold.trial_outcomes xenon refresh skipped: {e}")
 
 
 # -------------------------------------------------------------------------
