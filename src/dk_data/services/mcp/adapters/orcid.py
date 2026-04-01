@@ -14,6 +14,8 @@ from ..base_tool import BaseMCPTool
 class OrcidTool(BaseMCPTool):
     tool_name = "orcid-search"
     base_url = "https://pub.orcid.org/v3.0/search/"
+    raw_schema = "mol_raw"
+    raw_table = "orcid"
 
     def build_url(self, drug_name: str) -> str:
         return f"{self.base_url}?q={quote(drug_name)}"

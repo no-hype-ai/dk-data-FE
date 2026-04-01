@@ -195,6 +195,12 @@ class EUIPODesignsFetcher(BaseFetcher):
             else:
                 status = "success"
 
+            if not all_records and status == "success":
+                logger.warning(
+                    "EUIPO designs: 0 records returned with no API errors — "
+                    "possible silent auth failure or rate-limit (check EUIPO credentials)"
+                )
+
             result = {
                 "status": status,
                 "records": all_records,

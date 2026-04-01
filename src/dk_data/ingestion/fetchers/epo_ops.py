@@ -141,15 +141,42 @@ class EPOOPSFetcher(BaseFetcher):
             self.log_fetch_result({"status": "success", "records": len(all_records)})
             return result
 
-        except Exception as e:
-            logger.exception("Failed to fetch EPO OPS data: %s", e)
+        except RuntimeError as e:
+            # Missing credentials — not a transient failure
+            logger.warning("EPO OPS: %s", e)
             result = {
-                "status": "failed",
+                "status": "source_unavailable",
                 "records": [],
                 "record_count": 0,
                 "hash": None,
                 "error": str(e),
             }
+            self.log_fetch_result(result)
+            return result
+        except Exception as e:
+            # Distinguish 401/403 (credential expiry) from generic failures
+            err_str = str(e)
+            if "401" in err_str or "403" in err_str:
+                logger.warning(
+                    "EPO OPS auth failure (401/403) — credentials may have expired. "
+                    "Rotate EPO_CONSUMER_KEY / EPO_CONSUMER_SECRET: %s", e
+                )
+                result = {
+                    "status": "source_unavailable",
+                    "records": [],
+                    "record_count": 0,
+                    "hash": None,
+                    "error": f"Auth failure (rotate EPO_CONSUMER_KEY/SECRET): {e}",
+                }
+            else:
+                logger.exception("Failed to fetch EPO OPS data: %s", e)
+                result = {
+                    "status": "failed",
+                    "records": [],
+                    "record_count": 0,
+                    "hash": None,
+                    "error": str(e),
+                }
             self.log_fetch_result(result)
             return result
 

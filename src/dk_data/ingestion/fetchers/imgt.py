@@ -106,6 +106,19 @@ class IMGTFetcher(BaseFetcher):
             self.log_fetch_result({"status": "success", "records": len(records)})
             return result
 
+        except RuntimeError as rt_exc:
+            logger.warning("IMGT: %s", rt_exc)
+            result = {
+                "status": "source_unavailable",
+                "records": [],
+                "record_count": 0,
+                "hash": None,
+                "error": str(rt_exc),
+                "attempted_url": _BULK_FASTA_URL,
+            }
+            self.log_fetch_result(result)
+            return result
+
         except Exception as exc:
             logger.exception("IMGT fetch failed: %s", exc)
             result = {"status": "failed", "records": [], "record_count": 0, "hash": None, "error": str(exc)}
@@ -117,10 +130,17 @@ class IMGTFetcher(BaseFetcher):
         logger.info("IMGT: downloading bulk FASTA from %s", _BULK_FASTA_URL)
         try:
             resp = self.session.get(_BULK_FASTA_URL, timeout=300)
-            if resp.status_code == 404:
-                logger.warning("IMGT: bulk FASTA URL returned 404 — server may have moved files")
-                return []
-            resp.raise_for_status()
+            if resp.status_code != 200:
+                logger.warning(
+                    "IMGT: bulk FASTA endpoint returned HTTP %d — source unavailable (url=%s)",
+                    resp.status_code,
+                    _BULK_FASTA_URL,
+                )
+                raise RuntimeError(
+                    f"IMGT endpoint returned HTTP {resp.status_code} (url={_BULK_FASTA_URL})"
+                )
+        except RuntimeError:
+            raise
         except Exception as exc:
             logger.warning("IMGT: bulk FASTA download failed: %s", exc)
             return []

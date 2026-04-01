@@ -15,7 +15,7 @@ import hashlib
 import logging
 import os
 import time
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional
 
 from .base import BaseFetcher
@@ -162,8 +162,8 @@ class SECEdgarFetcher(BaseFetcher):
     ) -> List[Dict[str, Any]]:
         """Search EDGAR for filings of a specific type."""
         records: List[Dict[str, Any]] = []
-        date_from = (datetime.utcnow() - timedelta(days=days_back)).strftime("%Y-%m-%d")
-        date_to = datetime.utcnow().strftime("%Y-%m-%d")
+        date_from = (datetime.now(timezone.utc) - timedelta(days=days_back)).strftime("%Y-%m-%d")
+        date_to = datetime.now(timezone.utc).strftime("%Y-%m-%d")
 
         start = 0
 

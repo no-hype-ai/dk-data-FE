@@ -143,8 +143,8 @@ CREATE TABLE IF NOT EXISTS meta.refresh_log (
     log_id               SERIAL PRIMARY KEY,
     source_id            INTEGER NOT NULL REFERENCES meta.data_sources(source_id),
     source_name          TEXT,           -- denormalised for fast alert queries
-    started_at           TIMESTAMPTZ,
-    completed_at         TIMESTAMPTZ,
+    refresh_started_at   TIMESTAMPTZ,
+    refresh_completed_at TIMESTAMPTZ,
     status               TEXT NOT NULL,
     records_fetched      INTEGER,
     records_inserted     INTEGER,
@@ -154,9 +154,9 @@ CREATE TABLE IF NOT EXISTS meta.refresh_log (
 );
 
 CREATE INDEX IF NOT EXISTS idx_refresh_log_source_status
-    ON meta.refresh_log (source_id, status, started_at DESC);
+    ON meta.refresh_log (source_id, status, refresh_started_at DESC);
 CREATE INDEX IF NOT EXISTS idx_refresh_log_source_name
-    ON meta.refresh_log (source_name, started_at DESC);
+    ON meta.refresh_log (source_name, refresh_started_at DESC);
 
 -- =============================================================================
 -- API SCHEMA — minimal health view (PostgREST requirement)

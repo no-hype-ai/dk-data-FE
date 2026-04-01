@@ -12,6 +12,8 @@ from ..base_tool import BaseMCPTool
 class FdaDrugsTool(BaseMCPTool):
     tool_name = "fda-drugs-search"
     base_url = "https://api.fda.gov/drug/drugsfda.json"
+    raw_schema = "mol_raw"
+    raw_table = "fda_drugs"
 
     def build_url(self, drug_name: str) -> str:
         encoded = quote(f'openfda.generic_name:"{drug_name}"')

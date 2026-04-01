@@ -63,89 +63,26 @@ class CochraneFetcher(BaseFetcher):
         Returns:
             Dict with status, records, hash, error.
         """
-        search_terms = kwargs.get("search_terms")
-        max_records = kwargs.get("max_records", MAX_RECORDS)
-        days_back = kwargs.get("days_back", 90)
-
-        try:
-            # Pre-flight check: Cochrane API requires institutional Wiley subscription.
-            # Probe the endpoint before doing any search work.
-            probe = self.session.get(
-                self.get_latest_url(),
-                params={"searchBy": "search-manager", "searchText": "test", "resultPerPage": 1},
-                timeout=15,
-            )
-            if probe.status_code in (401, 403):
-                logger.warning(
-                    "Cochrane API returned %d — institutional Wiley subscription required. "
-                    "Register at https://documentation.cochrane.org/display/API. "
-                    "Marking source as unavailable.",
-                    probe.status_code,
-                )
-                result = {
-                    "status": "source_unavailable",
-                    "records": [],
-                    "record_count": 0,
-                    "hash": None,
-                    "error": f"HTTP {probe.status_code}: institutional Wiley subscription required",
-                }
-                self.log_fetch_result(result)
-                return result
-
-            if not search_terms:
-                search_terms = self._load_search_terms()
-
-            if not search_terms:
-                search_terms = ["pharmaceutical intervention"]
-
-            logger.info(
-                "Fetching Cochrane reviews (terms=%d, days_back=%d)",
-                len(search_terms), days_back,
-            )
-
-            all_records: List[Dict[str, Any]] = []
-            seen_ids: set = set()
-
-            for term in search_terms:
-                if len(all_records) >= max_records:
-                    break
-
-                records = self._search_reviews(
-                    term,
-                    days_back=days_back,
-                    max_records=max_records - len(all_records),
-                )
-
-                for rec in records:
-                    review_id = rec.get("review_id")
-                    if review_id and review_id not in seen_ids:
-                        seen_ids.add(review_id)
-                        all_records.append(rec)
-
-            content_hash = hashlib.md5(
-                str(sorted(seen_ids)).encode()
-            ).hexdigest()
-
-            result = {
-                "status": "success",
-                "records": all_records,
-                "record_count": len(all_records),
-                "hash": content_hash,
-            }
-            self.log_fetch_result({"status": "success", "records": len(all_records)})
-            return result
-
-        except Exception as e:
-            logger.exception("Failed to fetch Cochrane data: %s", e)
-            result = {
-                "status": "failed",
-                "records": [],
-                "record_count": 0,
-                "hash": None,
-                "error": str(e),
-            }
-            self.log_fetch_result(result)
-            return result
+        # Cochrane Library API (/api/search?searchBy=search-manager) was
+        # permanently removed — requests return 404. A Wiley institutional
+        # API license is now required for programmatic access.
+        # No HTTP requests are made; return immediately.
+        logger.info(
+            "Cochrane Library API (/api/search) has been removed. "
+            "Requires Wiley institutional API license. Returning source_unavailable."
+        )
+        result: Dict[str, Any] = {
+            "status": "source_unavailable",
+            "records": [],
+            "record_count": 0,
+            "hash": None,
+            "error": (
+                "Cochrane Library API (/api/search) has been removed. "
+                "Requires Wiley institutional API license."
+            ),
+        }
+        self.log_fetch_result(result)
+        return result
 
     # ------------------------------------------------------------------
     # Search

@@ -144,6 +144,12 @@ class EUIPOTrademarksFetcher(BaseFetcher):
             else:
                 status = "success"
 
+            if not all_records and status == "success":
+                logger.warning(
+                    "EUIPO trademarks: 0 records returned with no API errors — "
+                    "possible silent auth failure or rate-limit (check EPO/EUIPO credentials)"
+                )
+
             result: Dict[str, Any] = {
                 "status": status,
                 "records": all_records,

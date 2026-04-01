@@ -18,7 +18,7 @@ import hashlib
 import logging
 import os
 import time
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional
 
 from .base import BaseFetcher
@@ -113,7 +113,7 @@ class OpenAlexCIFetcher(BaseFetcher):
                 f"concept_filter={concept_filter})"
             )
 
-            from_date = (datetime.utcnow() - timedelta(days=days_back)).strftime("%Y-%m-%d")
+            from_date = (datetime.now(timezone.utc) - timedelta(days=days_back)).strftime("%Y-%m-%d")
 
             # Build filter string
             filter_str = f"from_publication_date:{from_date},{concept_filter}"

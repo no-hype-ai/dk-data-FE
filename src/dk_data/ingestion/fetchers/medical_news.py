@@ -15,7 +15,7 @@ Sources:
 
 import hashlib
 import logging
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional
 
 import feedparser
@@ -83,7 +83,7 @@ class MedicalNewsFetcher(BaseFetcher):
 
             all_records: List[Dict[str, Any]] = []
             seen_ids: set = set()
-            cutoff_date = datetime.utcnow() - timedelta(days=days_back)
+            cutoff_date = datetime.now(timezone.utc) - timedelta(days=days_back)
 
             for source_name, feed_url in feeds.items():
                 if len(all_records) >= max_records:
@@ -189,7 +189,7 @@ class MedicalNewsFetcher(BaseFetcher):
         # Filter by date
         if pub_date and cutoff_date:
             try:
-                pub_dt = datetime.strptime(pub_date, "%Y-%m-%d")
+                pub_dt = datetime.strptime(pub_date, "%Y-%m-%d").replace(tzinfo=timezone.utc)
                 if pub_dt < cutoff_date:
                     return None
             except (ValueError, TypeError):

@@ -104,7 +104,8 @@ class OpenFDAFAERSFetcher(BaseFetcher):
                 from_date = (
                     datetime.utcnow() - timedelta(days=days_back)
                 ).strftime("%Y%m%d")
-                search = f"safetyreportdate:[{from_date} TO 99991231]"
+                to_date = datetime.utcnow().strftime("%Y%m%d")
+                search = f"safetyreportdate:[{from_date} TO {to_date}]"
 
                 page_blobs, total_reports = self._paginate(
                     search=search,

@@ -76,10 +76,10 @@ spec:
                   value: "true"
               resources:
                 requests:
-                  memory: "512Mi"
+                  memory: "1Gi"
                   cpu: "100m"
                 limits:
-                  memory: "2Gi"   # Formulary ZIP expands to several hundred MB; OOMKilled at 512Mi
+                  memory: "4Gi"   # Formulary ZIP expands to several hundred MB; OOMKilled at 512Mi
                   cpu: "300m"
               securityContext:
                 allowPrivilegeEscalation: false
