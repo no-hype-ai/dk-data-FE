@@ -379,7 +379,7 @@ def run_sqlmesh_command(command: list[str], timeout: int = 3600) -> dict:
     """
     try:
         config_path = get_sqlmesh_config_path()
-        full_command = ['sqlmesh', '-c', str(config_path)] + command
+        full_command = ['sqlmesh', '--paths', str(config_path)] + command
 
         logger.info(f"Running: {' '.join(full_command)}")
 

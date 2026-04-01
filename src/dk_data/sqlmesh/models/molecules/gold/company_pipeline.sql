@@ -71,7 +71,8 @@ SELECT
     -- Enrollment totals
     SUM(ct.enrollment) AS total_enrollment,
 
-    -- Mechanism of action (from interventions data)
+    -- Intervention types from ClinicalTrials.gov (e.g. "DRUG", "BIOLOGICAL", "DEVICE").
+    -- Not mechanism of action — CT.gov does not expose MoA; renamed to avoid confusion.
     (
         SELECT string_agg(DISTINCT intervention->>'type', ', ')
         FROM mol_silver.clinical_trials ct2,
@@ -79,7 +80,7 @@ SELECT
         WHERE ct2.molecule_id = m.molecule_id
           AND ct2.lead_sponsor = ct.lead_sponsor
           AND intervention->>'type' IS NOT NULL
-    ) AS mechanism_of_action,
+    ) AS intervention_types,
 
     -- Expected completion (max completion date for company-molecule)
     MAX(ct.completion_date) AS expected_completion,

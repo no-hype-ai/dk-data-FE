@@ -16,13 +16,16 @@ MODEL (
 -- Each researcher pair that has co-authored at least one publication produces an edge
 
 WITH author_publications AS (
-    -- Map researchers to their publications via name matching
+    -- Map researchers to their publications via name matching.
+    -- Word-boundary regex (\m/\M) prevents short surnames (e.g. "Lee") from matching
+    -- mid-word in author display names. Length guard ≥4 reduces false positives.
     SELECT DISTINCT
         r.id AS researcher_id,
         p.doi
     FROM mol_silver.researchers r
     JOIN mol_silver.publications p
-        ON p.first_author_name ILIKE '%' || r.family_name || '%'
+        ON LENGTH(r.family_name) >= 4
+       AND p.first_author_name ~* ('\m' || r.family_name || '\M')
     WHERE p.doi IS NOT NULL
       AND r.id IS NOT NULL
 ),

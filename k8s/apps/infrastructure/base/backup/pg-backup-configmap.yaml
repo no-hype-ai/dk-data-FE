@@ -18,6 +18,8 @@ data:
     echo "--- Installing MinIO client ---"
     # Write to /tmp — container runs with readOnlyRootFilesystem: true
     MC=/tmp/mc
+    export MC_CONFIG_DIR=/tmp/mc-config
+    mkdir -p "${MC_CONFIG_DIR}"
     wget -q https://dl.min.io/client/mc/release/linux-amd64/mc -O "${MC}"
     chmod +x "${MC}"
 
@@ -114,6 +116,8 @@ data:
     echo "--- Installing MinIO client ---"
     # Write to /tmp — container runs with readOnlyRootFilesystem: true
     MC=/tmp/mc
+    export MC_CONFIG_DIR=/tmp/mc-config
+    mkdir -p "${MC_CONFIG_DIR}"
     wget -q https://dl.min.io/client/mc/release/linux-amd64/mc -O "${MC}"
     chmod +x "${MC}"
 

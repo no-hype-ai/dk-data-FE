@@ -43,7 +43,7 @@ spec:
             - name: fetch-cms-medicare-advantage
               image: ghcr.io/data-kinetic/dk-data-fe/job-trigger:main
               command: ["python", "-m", "dk_data.ingestion.main"]
-              args: ["cms_medicare_advantage", "--skip-if-no-file"]
+              args: ["cms_medicare_advantage"]
               env:
                 - name: POSTGRES_HOST
                   valueFrom:

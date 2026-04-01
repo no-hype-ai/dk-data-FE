@@ -36,7 +36,7 @@ WITH deduped AS (
     ORDER BY application_number, b.source_updated_at DESC NULLS LAST
 )
 
-SELECT
+SELECT DISTINCT ON (d.application_number)
     gen_random_uuid()                                   AS id,
     COALESCE(m_name.molecule_id, m_alias.molecule_id)  AS molecule_id,
     d.application_number,
@@ -73,4 +73,5 @@ LEFT JOIN mol_silver.molecule_aliases ma
       AND d.generic_name IS NOT NULL
       AND LOWER(REGEXP_REPLACE(d.generic_name, '[^a-zA-Z0-9]', '', 'g')) = ma.alias_name_normalized
 LEFT JOIN mol_silver.molecules m_alias
-       ON m_alias.molecule_id = ma.molecule_id;
+       ON m_alias.molecule_id = ma.molecule_id
+ORDER BY d.application_number, COALESCE(m_name.molecule_id, m_alias.molecule_id) NULLS LAST;

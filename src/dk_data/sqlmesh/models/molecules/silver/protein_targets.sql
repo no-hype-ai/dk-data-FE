@@ -50,7 +50,11 @@ WITH pdb_linked AS (
     WHERE b.pdb_id IS NOT NULL
 )
 
-SELECT
+-- DISTINCT ON (structure_id): a PDB structure can have multiple UniProt IDs (JSONB array);
+-- each maps to a different target row after the lateral JOIN, producing one row per
+-- (structure_id, target_id) pair. We keep only the first target per structure to preserve
+-- the 1:1 structure→row grain expected by downstream consumers.
+SELECT DISTINCT ON (structure_id)
     gen_random_uuid()           AS id,
     molecule_id,
     target_id,
@@ -68,4 +72,5 @@ SELECT
     source,
     source_updated_at,
     NOW()                       AS created_at
-FROM pdb_linked;
+FROM pdb_linked
+ORDER BY structure_id, target_id NULLS LAST;

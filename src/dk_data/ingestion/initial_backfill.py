@@ -97,9 +97,10 @@ SQLMESH_START_DATE = date(2024, 1, 1)
 # Sources that should be skipped during backfill (either deprecated, disabled,
 # or handled by separate file-upload workflows).
 SKIP_SOURCES = {
-    'acc_tvc',          # Manual file upload — no automated fetcher available
-    'cms_inpatient',    # Manual file upload — no automated fetcher available
-    'cms_cost_reports', # Handled by fetch_all_years() inside fetcher; runs separately
+    'acc_tvc',             # Manual file upload — no automated fetcher available
+    'cms_inpatient',       # Manual file upload — no automated fetcher available
+    'cms_cost_reports',    # Handled by fetch_all_years() inside fetcher; runs separately
+    'cms_hospital_info',   # File-download source; requires explicit --file path, no API fetcher
 }
 
 # Sources with no days_back window — full-corpus or file-based fetches that own

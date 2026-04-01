@@ -146,12 +146,13 @@ SELECT
                   )) = ma.alias_name_normalized
             LIMIT 1
         ),
-        -- Tier 2: HCPCS bridge for Part B codes (c.hcpcs_code populated from part_b CTE)
+        -- Tier 2: HCPCS bridge for Part B codes (c.hcpcs_code is comma-separated aggregate
+        --         from part_b CTE via STRING_AGG; split and match any individual code)
         (
             SELECT hb.molecule_id
             FROM mol_silver.hcpcs_molecule_bridge hb
             WHERE c.hcpcs_code IS NOT NULL
-              AND LOWER(hb.hcpcs_code) = LOWER(c.hcpcs_code)
+              AND LOWER(hb.hcpcs_code) = ANY(string_to_array(LOWER(c.hcpcs_code), ', '))
             ORDER BY hb.confidence DESC
             LIMIT 1
         )

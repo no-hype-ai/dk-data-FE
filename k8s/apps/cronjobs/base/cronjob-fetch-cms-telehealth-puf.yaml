@@ -43,7 +43,7 @@ spec:
             - name: fetch-cms-telehealth-puf
               image: ghcr.io/data-kinetic/dk-data-fe/job-trigger:main
               command: ["python", "-m", "dk_data.ingestion.main"]
-              args: ["cms_telehealth_puf", "--skip-if-no-file"]
+              args: ["cms_telehealth_puf"]
               env:
                 - name: POSTGRES_HOST
                   valueFrom:
