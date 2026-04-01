@@ -129,7 +129,7 @@ class BaseFetcher(ABC):
             JSON response as dictionary
         """
         logger.debug(f"Fetching JSON from {url}")
-        response = self.session.get(url, params=params, timeout=60)
+        response = self.session.get(url, params=params, timeout=120)
         response.raise_for_status()
         return response.json()
 
@@ -166,7 +166,7 @@ class BaseFetcher(ABC):
             if filter_params:
                 params.update(filter_params)
 
-            resp = self.session.get(api_url, params=params, timeout=60)
+            resp = self.session.get(api_url, params=params, timeout=120)
             resp.raise_for_status()
             page: List[Dict[str, Any]] = resp.json()
             if not page:
