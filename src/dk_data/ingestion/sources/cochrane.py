@@ -69,19 +69,20 @@ def load_cochrane_data(
                     cur.execute(
                         """
                         INSERT INTO mol_raw.cochrane_reviews (
-                            review_id, title, authors, abstract,
+                            review_id, pmid, title, authors, abstract,
                             publication_date, review_type,
                             interventions, conditions,
                             conclusions, doi,
                             _source_file, _source_hash
                         ) VALUES (
-                            %s, %s, %s, %s,
+                            %s, %s, %s, %s, %s,
                             %s, %s,
                             %s, %s,
                             %s, %s,
                             %s, %s
                         )
                         ON CONFLICT (review_id) DO UPDATE SET
+                            pmid = EXCLUDED.pmid,
                             title = EXCLUDED.title,
                             authors = EXCLUDED.authors,
                             abstract = EXCLUDED.abstract,
@@ -97,6 +98,7 @@ def load_cochrane_data(
                         """,
                         (
                             record.review_id,
+                            record.pmid,
                             record.title,
                             record.authors,
                             record.abstract,

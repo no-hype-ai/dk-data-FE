@@ -223,24 +223,31 @@ CREATE UNIQUE INDEX IF NOT EXISTS idx_mol_raw_who_gho_indicator_code
 -- mol_raw: domain-column tables (specific fields, not envelope)
 -- ============================================================================
 
+-- Drop the orphaned raw.cochrane_reviews table (superseded by mol_raw.cochrane_reviews).
+-- Created in migration 060; mol_raw version is the canonical target since the
+-- codebase migrated from raw.* → mol_raw.*
+DROP TABLE IF EXISTS raw.cochrane_reviews;
+
 CREATE TABLE IF NOT EXISTS mol_raw.cochrane_reviews (
     id               BIGSERIAL PRIMARY KEY,
     review_id        TEXT NOT NULL,
+    pmid             TEXT,
     title            TEXT,
     authors          JSONB,
     abstract         TEXT,
     publication_date DATE,
     review_type      TEXT,
-    interventions    JSONB,
-    conditions       JSONB,
+    interventions    TEXT[],
+    conditions       TEXT[],
     conclusions      TEXT,
     doi              TEXT,
     _source_file     TEXT,
     _source_hash     TEXT,
-    ingested_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    _loaded_at       TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     UNIQUE (review_id)
 );
-CREATE INDEX IF NOT EXISTS idx_mol_raw_cochrane_doi ON mol_raw.cochrane_reviews (doi);
+CREATE INDEX IF NOT EXISTS idx_mol_raw_cochrane_doi  ON mol_raw.cochrane_reviews (doi);
+CREATE INDEX IF NOT EXISTS idx_mol_raw_cochrane_pmid ON mol_raw.cochrane_reviews (pmid);
 
 CREATE TABLE IF NOT EXISTS mol_raw.ema_regulatory (
     id                 BIGSERIAL PRIMARY KEY,
@@ -255,7 +262,7 @@ CREATE TABLE IF NOT EXISTS mol_raw.ema_regulatory (
     summary            TEXT,
     _source_file       TEXT,
     _source_hash       TEXT,
-    ingested_at        TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    _loaded_at         TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     UNIQUE (document_id)
 );
 CREATE INDEX IF NOT EXISTS idx_mol_raw_ema_reg_product ON mol_raw.ema_regulatory (product_name);
@@ -274,7 +281,7 @@ CREATE TABLE IF NOT EXISTS mol_raw.epo_patents (
     family_id        TEXT,
     _source_file     TEXT,
     _source_hash     TEXT,
-    ingested_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    _loaded_at       TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     UNIQUE (publication_id)
 );
 CREATE INDEX IF NOT EXISTS idx_mol_raw_epo_family ON mol_raw.epo_patents (family_id);
@@ -298,7 +305,7 @@ CREATE TABLE IF NOT EXISTS mol_raw.euipo_designs (
     number_of_designs  INTEGER,
     _source_file       TEXT,
     _source_hash       TEXT,
-    ingested_at        TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    _loaded_at         TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     UNIQUE (application_number)
 );
 
@@ -321,7 +328,7 @@ CREATE TABLE IF NOT EXISTS mol_raw.euipo_trademarks (
     image_url          TEXT,
     _source_file       TEXT,
     _source_hash       TEXT,
-    ingested_at        TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    _loaded_at         TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     UNIQUE (application_number)
 );
 
@@ -337,7 +344,7 @@ CREATE TABLE IF NOT EXISTS mol_raw.hta_decisions (
     summary       TEXT,
     _source_file  TEXT,
     _source_hash  TEXT,
-    ingested_at   TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    _loaded_at    TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     UNIQUE (decision_id)
 );
 CREATE INDEX IF NOT EXISTS idx_mol_raw_hta_drug ON mol_raw.hta_decisions (drug_name);
@@ -355,7 +362,7 @@ CREATE TABLE IF NOT EXISTS mol_raw.journal_rss (
     categories       JSONB,
     _source_file     TEXT,
     _source_hash     TEXT,
-    ingested_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    _loaded_at       TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     UNIQUE (article_id)
 );
 CREATE INDEX IF NOT EXISTS idx_mol_raw_journal_rss_doi ON mol_raw.journal_rss (doi);
@@ -372,7 +379,7 @@ CREATE TABLE IF NOT EXISTS mol_raw.medical_news (
     therapeutic_areas JSONB,
     _source_file      TEXT,
     _source_hash      TEXT,
-    ingested_at       TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    _loaded_at        TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     UNIQUE (article_id)
 );
 
@@ -411,7 +418,7 @@ CREATE TABLE IF NOT EXISTS mol_raw.openalex_ci (
     is_paratext                 BOOLEAN,
     _source_file                TEXT,
     _source_hash                TEXT,
-    ingested_at                 TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    _loaded_at                  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     UNIQUE (work_id)
 );
 CREATE INDEX IF NOT EXISTS idx_mol_raw_openalex_ci_doi  ON mol_raw.openalex_ci (doi);
@@ -429,7 +436,7 @@ CREATE TABLE IF NOT EXISTS mol_raw.orcid (
     works_count          INTEGER,
     external_ids         JSONB,
     raw_response         JSONB,
-    ingested_at          TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    fetched_at           TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     UNIQUE (orcid_id)
 );
 
@@ -447,7 +454,7 @@ CREATE TABLE IF NOT EXISTS mol_raw.pubmed (
     keywords         JSONB,
     _source_file     TEXT,
     _source_hash     TEXT,
-    ingested_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    _loaded_at       TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     UNIQUE (pmid)
 );
 CREATE INDEX IF NOT EXISTS idx_mol_raw_pubmed_doi ON mol_raw.pubmed (doi);
@@ -463,7 +470,7 @@ CREATE TABLE IF NOT EXISTS mol_raw.sec_edgar (
     description      TEXT,
     _source_file     TEXT,
     _source_hash     TEXT,
-    ingested_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    _loaded_at       TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     UNIQUE (accession_number)
 );
 CREATE INDEX IF NOT EXISTS idx_mol_raw_sec_edgar_cik ON mol_raw.sec_edgar (cik);
@@ -481,7 +488,7 @@ CREATE TABLE IF NOT EXISTS mol_raw.uspto_ci (
     claims_count  INTEGER,
     _source_file  TEXT,
     _source_hash  TEXT,
-    ingested_at   TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    _loaded_at    TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     UNIQUE (patent_id)
 );
 CREATE INDEX IF NOT EXISTS idx_mol_raw_uspto_ci_grant ON mol_raw.uspto_ci (grant_date);
@@ -500,7 +507,7 @@ CREATE TABLE IF NOT EXISTS mol_raw.uspto_patents (
     patent_type    TEXT,
     _source_file   TEXT,
     _source_hash   TEXT,
-    ingested_at    TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    _loaded_at     TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     UNIQUE (patent_number)
 );
 CREATE INDEX IF NOT EXISTS idx_mol_raw_uspto_patents_grant ON mol_raw.uspto_patents (grant_date);
@@ -524,7 +531,7 @@ CREATE TABLE IF NOT EXISTS mol_raw.uspto_trademarks (
     description_of_mark  TEXT,
     _source_file         TEXT,
     _source_hash         TEXT,
-    ingested_at          TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    _loaded_at           TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     UNIQUE (serial_number)
 );
 

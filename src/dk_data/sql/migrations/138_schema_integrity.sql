@@ -7,6 +7,11 @@
 --   (b) Add UNIQUE expression indexes for ON CONFLICT upserts
 --   (c) Ensure mol_raw.cdc_vaccines table exists
 --   (d) Ensure meta.data_sources entry for cdc_vaccines exists
+--   (e) Column name drift: ingested_at → _loaded_at / fetched_at (idempotent)
+--   (f) Type drift fixes from migration 137
+--   (g) Add mol_raw.cochrane_reviews.pmid column (idempotent)
+--   (h) Fix mol_raw.cochrane_reviews.interventions/conditions JSONB → TEXT[] (idempotent)
+--   (i) Drop orphaned raw.cochrane_reviews table
 
 -- ============================================================================
 -- (a) meta.refresh_log — rename started_at → refresh_started_at,
@@ -113,9 +118,11 @@ VALUES (
 ON CONFLICT (source_name) DO NOTHING;
 
 -- ============================================================================
--- (e) Column name drift: migration 137 domain-specific mol_raw tables used
---     "ingested_at" but loaders & bronze models expect "_loaded_at" (or
---     "fetched_at" for orcid). Rename idempotently.
+-- (e) Column name drift: migration 137 originally used "ingested_at" in
+--     domain mol_raw tables but loaders & bronze models expect "_loaded_at"
+--     (or "fetched_at" for orcid). Migration 137 has since been corrected to
+--     use the right names directly, but this block runs idempotently for any
+--     environment that already applied the original migration 137.
 -- ============================================================================
 
 DO $col_rename$
@@ -196,3 +203,54 @@ BEGIN
     END IF;
 END
 $type_fix$;
+
+-- ============================================================================
+-- (g) mol_raw.cochrane_reviews — add pmid column (idempotent)
+--     Migration 137 has been corrected to include pmid, but existing clusters
+--     need the column added.
+-- ============================================================================
+
+ALTER TABLE mol_raw.cochrane_reviews
+    ADD COLUMN IF NOT EXISTS pmid TEXT;
+
+CREATE INDEX IF NOT EXISTS idx_mol_raw_cochrane_pmid ON mol_raw.cochrane_reviews (pmid);
+
+-- ============================================================================
+-- (h) mol_raw.cochrane_reviews — fix interventions/conditions JSONB → TEXT[]
+--     Validator declares Optional[list[str]] which maps to TEXT[].
+--     The JSONB type was a mistake in the original migration 137 DDL.
+-- ============================================================================
+
+DO $cochrane_type_fix$
+BEGIN
+    IF EXISTS (
+        SELECT 1 FROM information_schema.columns
+        WHERE table_schema = 'mol_raw'
+          AND table_name   = 'cochrane_reviews'
+          AND column_name  = 'interventions'
+          AND data_type    = 'jsonb'
+    ) THEN
+        ALTER TABLE mol_raw.cochrane_reviews
+            ALTER COLUMN interventions TYPE TEXT[] USING NULL;
+    END IF;
+
+    IF EXISTS (
+        SELECT 1 FROM information_schema.columns
+        WHERE table_schema = 'mol_raw'
+          AND table_name   = 'cochrane_reviews'
+          AND column_name  = 'conditions'
+          AND data_type    = 'jsonb'
+    ) THEN
+        ALTER TABLE mol_raw.cochrane_reviews
+            ALTER COLUMN conditions TYPE TEXT[] USING NULL;
+    END IF;
+END
+$cochrane_type_fix$;
+
+-- ============================================================================
+-- (i) Drop orphaned raw.cochrane_reviews (superseded by mol_raw.cochrane_reviews)
+--     Created in migration 060; mol_raw version is canonical since the
+--     codebase migrated from raw.* → mol_raw.*.
+-- ============================================================================
+
+DROP TABLE IF EXISTS raw.cochrane_reviews;
