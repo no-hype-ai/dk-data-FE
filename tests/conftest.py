@@ -2,7 +2,42 @@
 Pytest configuration and shared fixtures for dk-data tests.
 """
 
+import sys
+import types
 import os
+
+# ---------------------------------------------------------------------------
+# Stub out heavy dependencies that are not installed in the test environment.
+# This allows MCP adapter unit tests to run without the full service stack.
+# ---------------------------------------------------------------------------
+_STUB_MODULES = [
+    "aiohttp",
+    "redis",
+    "redis.asyncio",
+    "tenacity",
+    "opentelemetry",
+    "opentelemetry.trace",
+    "opentelemetry.instrumentation",
+    "opentelemetry.instrumentation.fastapi",
+    "opentelemetry.sdk",
+    "opentelemetry.sdk.trace",
+    "opentelemetry.exporter",
+    "opentelemetry.exporter.otlp",
+    "opentelemetry.exporter.otlp.proto",
+    "opentelemetry.exporter.otlp.proto.grpc",
+    "opentelemetry.exporter.otlp.proto.grpc.trace_exporter",
+    "prometheus_client",
+    "psycopg2",
+    "psycopg2.pool",
+    "psycopg2.extras",
+    "kubernetes",
+    "kubernetes.client",
+    "kubernetes.config",
+]
+
+for _mod in _STUB_MODULES:
+    if _mod not in sys.modules:
+        sys.modules[_mod] = types.ModuleType(_mod)
 import pytest
 import httpx
 
