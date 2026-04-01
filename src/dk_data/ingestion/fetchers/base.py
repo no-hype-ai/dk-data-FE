@@ -112,7 +112,8 @@ class BaseFetcher(ABC):
             JSON response as dictionary
         """
         logger.debug(f"Fetching JSON from {url}")
-        response = self.session.get(url, params=params, timeout=60)
+        # Extended to 120s — covers slow APIs (KEGG, CDC, ORCID, HTA) (#189)
+        response = self.session.get(url, params=params, timeout=120)
         response.raise_for_status()
         return response.json()
 
