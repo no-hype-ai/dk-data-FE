@@ -13,7 +13,9 @@ Source: https://pubmed.ncbi.nlm.nih.gov (Cochrane Reviews filter)
 API: https://eutils.ncbi.nlm.nih.gov/entrez/eutils/
 """
 
+import calendar
 import hashlib
+import json
 import logging
 import time
 from datetime import datetime, timedelta
@@ -227,19 +229,24 @@ class CochraneFetcher(BaseFetcher):
         if not pmid:
             return None
 
-        # Authors
+        # Authors — stored as JSONB array in mol_raw.cochrane_reviews.
+        # Return as a JSON array string so psycopg2's text→JSONB assignment
+        # cast succeeds. Plain semicolon strings are not valid JSON and would
+        # cause "invalid input syntax for type json" at insert time.
         authors_raw = item.get("authors", [])
         if isinstance(authors_raw, list):
-            authors = "; ".join(
-                a.get("name", "") for a in authors_raw if a.get("name")
-            )
+            authors_list = [a.get("name", "") for a in authors_raw if a.get("name")]
+            authors = json.dumps(authors_list) if authors_list else None
         else:
-            authors = str(authors_raw)
+            authors = None
 
-        # Publication date
-        pub_date = item.get("pubdate") or item.get("epubdate") or ""
-        if pub_date:
-            pub_date = pub_date[:10]
+        # Publication date — PubMed pubdate is NOT ISO 8601.
+        # Formats seen: "2026 Mar 15", "2026 Mar", "2026", "2026-03-15".
+        # Pydantic Optional[date] uses date.fromisoformat() which only accepts
+        # ISO format; "2026 Mar 1" (from [:10]) raises ValidationError every time.
+        pub_date = self._parse_pubmed_date(
+            item.get("pubdate") or item.get("epubdate") or ""
+        )
 
         # DOI from article IDs
         doi = None
@@ -266,6 +273,41 @@ class CochraneFetcher(BaseFetcher):
             "source": "pubmed_cochrane",
             "search_term": search_term,
         }
+
+    # ------------------------------------------------------------------
+    # Date parsing
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def _parse_pubmed_date(pubdate: str) -> Optional[str]:
+        """Parse PubMed pubdate string to ISO YYYY-MM-DD.
+
+        PubMed returns dates as "2026 Mar 15", "2026 Mar", or "2026".
+        Pydantic Optional[date] requires ISO 8601 — anything else raises
+        ValidationError and silently drops the record in the loader.
+        """
+        if not pubdate:
+            return None
+        pubdate = pubdate.strip()
+        # Already ISO format (YYYY-MM-DD or YYYY-MM)
+        if "-" in pubdate:
+            parts = pubdate.split("-")
+            if len(parts) >= 3:
+                return f"{parts[0]}-{parts[1]}-{parts[2]}"
+            if len(parts) == 2:
+                return f"{parts[0]}-{parts[1]}-01"
+            return f"{parts[0]}-01-01"
+        # PubMed space-separated: "2026 Mar 15", "2026 Mar", "2026"
+        parts = pubdate.split()
+        try:
+            if len(parts) == 1:
+                return f"{parts[0]}-01-01"
+            month_num = list(calendar.month_abbr).index(parts[1].capitalize())
+            if len(parts) == 2:
+                return f"{parts[0]}-{month_num:02d}-01"
+            return f"{parts[0]}-{month_num:02d}-{int(parts[2]):02d}"
+        except (ValueError, IndexError):
+            return None
 
     # ------------------------------------------------------------------
     # Search terms from database
