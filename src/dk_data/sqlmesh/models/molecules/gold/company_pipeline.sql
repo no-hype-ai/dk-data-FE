@@ -73,12 +73,12 @@ SELECT
 
     -- Mechanism of action (from interventions data)
     (
-        SELECT string_agg(DISTINCT intervention->>'interventionType', ', ')
+        SELECT string_agg(DISTINCT intervention->>'type', ', ')
         FROM mol_silver.clinical_trials ct2,
              jsonb_array_elements(ct2.interventions) AS intervention
         WHERE ct2.molecule_id = m.molecule_id
           AND ct2.lead_sponsor = ct.lead_sponsor
-          AND intervention->>'interventionType' IS NOT NULL
+          AND intervention->>'type' IS NOT NULL
     ) AS mechanism_of_action,
 
     -- Expected completion (max completion date for company-molecule)

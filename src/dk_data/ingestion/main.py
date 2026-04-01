@@ -229,6 +229,13 @@ try:
 except ImportError:
     _OBS_AVAILABLE = False
 
+try:
+    from prometheus_client import start_http_server as _prom_start_http_server
+    _PROM_AVAILABLE = True
+except ImportError:
+    _PROM_AVAILABLE = False
+    def _prom_start_http_server(port): pass  # no-op when prometheus_client absent
+
 import logging
 logger = logging.getLogger(__name__)
 
@@ -1146,7 +1153,7 @@ def log_to_meta(source_name: str, result: dict) -> None:
             """, (
                 source_id,
                 source_name,
-                datetime.now(),
+                datetime.now(timezone.utc),
                 status,
                 result.get('records_fetched', result.get('records_inserted', 0)),
                 result.get('records_inserted', 0),
@@ -1209,7 +1216,7 @@ def run_ingestion(source: str, **kwargs) -> dict:
         # --days-back CLI override bypasses the computed window (for manual backfills).
         # kwargs consumed by run_ingestion itself — never forwarded to fetcher.fetch()
         _INTERNAL_KWARGS = {'data_dir', 'filepath', 'fiscal_year', 'source_override',
-                            'days_back', 'max_records'}
+                            'days_back', 'max_records', 'batch_size'}
 
         fetch_kwargs = {}
         if kwargs.get('days_back') is not None:
@@ -1449,6 +1456,10 @@ Examples:
                 source,
             )
             return 0
+
+    # Expose Prometheus /metrics on :8000 so the CronJob pod can be scraped.
+    # initial_backfill.py does the same on port 8000 (METRICS_PORT).
+    _prom_start_http_server(8000)
 
     # Initialize connection pool
     init_connection_pool()

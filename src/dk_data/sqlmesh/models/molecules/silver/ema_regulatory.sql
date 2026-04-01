@@ -65,22 +65,27 @@ LEFT JOIN LATERAL (
 LEFT JOIN mol_silver.molecules m ON m.molecule_id = mol_match.molecule_id
 -- Strategy 2: molecule_aliases on normalized active_substance
 --   Catches EMA variants like "bevacizumab alfa" → first token "bevacizumab" → alias match
-LEFT JOIN mol_silver.molecule_aliases ma
-       ON m.molecule_id IS NULL
+-- Strategy 2: alias match — use subquery with LIMIT 1 to prevent fan-out when
+-- multiple aliases (or the same alias for different molecules) match active_substance.
+LEFT JOIN LATERAL (
+    SELECT ma2.molecule_id
+    FROM mol_silver.molecule_aliases ma2
+    WHERE m.molecule_id IS NULL
       AND e.active_substance IS NOT NULL
       AND (
-          -- Full stripped match
-          LOWER(REGEXP_REPLACE(e.active_substance, '[^a-zA-Z0-9]', '', 'g')) = ma.alias_name_normalized
+          LOWER(REGEXP_REPLACE(e.active_substance, '[^a-zA-Z0-9]', '', 'g')) = ma2.alias_name_normalized
           OR
-          -- First-token match for salt/variant forms (e.g. "bevacizumab alfa")
           (LENGTH(SPLIT_PART(e.active_substance, ' ', 1)) >= 4
            AND LOWER(REGEXP_REPLACE(
                    SPLIT_PART(e.active_substance, ' ', 1),
                    '[^a-zA-Z0-9]', '', 'g'
-               )) = ma.alias_name_normalized)
+               )) = ma2.alias_name_normalized)
       )
+    ORDER BY ma2.molecule_id
+    LIMIT 1
+) alias_match ON TRUE
 LEFT JOIN mol_silver.molecules m_alias
-       ON m_alias.molecule_id = ma.molecule_id
+       ON m_alias.molecule_id = alias_match.molecule_id
       AND m.molecule_id IS NULL
 
 WHERE e.product_number IS NOT NULL

@@ -14,7 +14,7 @@ MODEL (
     grain guidance_id
 );
 
-SELECT
+SELECT DISTINCT ON (b.guidance_id)
     gen_random_uuid()               AS id,
     b.guidance_id,
     b.title,
@@ -47,3 +47,4 @@ LEFT JOIN mol_silver.molecules m_alias
        ON m_alias.molecule_id = ma.molecule_id
 
 WHERE b.guidance_id IS NOT NULL
+ORDER BY b.guidance_id, COALESCE(m_name.molecule_id, m_alias.molecule_id) NULLS LAST

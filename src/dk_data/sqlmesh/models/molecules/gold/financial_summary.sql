@@ -44,10 +44,13 @@ latest_financials AS (
     ORDER BY fd.cik, fd.filing_date DESC
 ),
 
--- Link companies to molecules via mol_silver.molecules canonical_name
+-- Link companies to molecules via clinical trial sponsorship.
+-- Company names (e.g. "Pfizer Inc") never match molecule canonical names (e.g. "imatinib"),
+-- so we bridge through mol_silver.clinical_trials.lead_sponsor instead.
+-- One company sponsors many drugs, so the grain (molecule_id, cik) is correct here.
 molecule_linked AS (
-    SELECT
-        m.molecule_id,
+    SELECT DISTINCT
+        ct.molecule_id,
         f.company_name,
         f.cik,
         f.latest_revenue,
@@ -57,8 +60,9 @@ molecule_linked AS (
         f.filing_count,
         f.latest_filing_date
     FROM latest_financials f
-    LEFT JOIN mol_silver.molecules m
-        ON LOWER(f.company_name) = LOWER(m.canonical_name)
+    LEFT JOIN mol_silver.clinical_trials ct
+        ON LOWER(ct.lead_sponsor) = LOWER(f.company_name)
+        AND ct.molecule_id IS NOT NULL
 )
 
 SELECT

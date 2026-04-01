@@ -15,7 +15,7 @@ MODEL (
     grain product_ndc
 );
 
-SELECT
+SELECT DISTINCT ON (b.product_ndc)
     gen_random_uuid()               AS id,
     b.product_ndc,
     b.proprietary_name,
@@ -48,3 +48,4 @@ LEFT JOIN mol_silver.molecules m_alias
        ON m_alias.molecule_id = ma.molecule_id
 
 WHERE b.product_ndc IS NOT NULL
+ORDER BY b.product_ndc, COALESCE(m_name.molecule_id, m_alias.molecule_id) NULLS LAST

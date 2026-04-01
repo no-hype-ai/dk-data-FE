@@ -11,10 +11,11 @@ MODEL (
     cron '@monthly',
     audits (
         not_null(columns := (review_id, title))
-    )
+    ),
+    grain review_id
 );
 
-SELECT
+SELECT DISTINCT ON (b.review_id)
     gen_random_uuid()                       AS cochrane_silver_id,
     m.molecule_id,
     b.review_id,
@@ -34,4 +35,5 @@ LEFT JOIN mol_silver.molecules m
        ON LOWER(b.title) LIKE '%' || LOWER(m.canonical_name) || '%'
       AND LENGTH(m.canonical_name) > 4
 WHERE b.review_id IS NOT NULL
-  AND b.title IS NOT NULL;
+  AND b.title IS NOT NULL
+ORDER BY b.review_id, m.molecule_id NULLS LAST;

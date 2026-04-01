@@ -13,7 +13,7 @@ MODEL (
     grain ttd_id
 );
 
-SELECT
+SELECT DISTINCT ON (b.ttd_id)
     gen_random_uuid()                                           AS id,
     COALESCE(m_ik.molecule_id, m_exact.molecule_id,
              m_alias.molecule_id, m_token.molecule_id)         AS molecule_id,
@@ -70,4 +70,7 @@ LEFT JOIN mol_silver.molecule_aliases ma_tok
           )) = ma_tok.alias_name_normalized
 LEFT JOIN mol_silver.molecules m_token
        ON m_token.molecule_id = ma_tok.molecule_id
-WHERE b.ttd_id IS NOT NULL;
+WHERE b.ttd_id IS NOT NULL
+ORDER BY b.ttd_id,
+         COALESCE(m_ik.molecule_id, m_exact.molecule_id,
+                  m_alias.molecule_id, m_token.molecule_id) NULLS LAST;

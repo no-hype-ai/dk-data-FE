@@ -76,7 +76,7 @@ SELECT
 
 FROM mol_bronze.uniprot u
 LEFT JOIN mol_silver.identifier_mappings im
-    ON im.identifier_type = 'uniprot'
+    ON im.identifier_type = 'uniprot_id'
     AND im.identifier_value = u.uniprot_id
 WHERE
     u.processed_to_silver = FALSE

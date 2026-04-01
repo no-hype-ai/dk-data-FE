@@ -19,7 +19,7 @@ WITH cms_inpatient AS (
     CAST(total_discharges AS INT)              AS total_discharges,
     'cms_inpatient'                            AS source,
     _loaded_at
-  FROM hcs_bronze.cms_inpatient
+  FROM hcs_bronze.cms_inpatient_puf
 ),
 
 cms_hospital_info AS (
@@ -33,7 +33,7 @@ cms_hospital_info AS (
     NULL::INT                                  AS total_discharges,
     'cms_hospital_info'                        AS source,
     _loaded_at
-  FROM hcs_bronze.cms_hospital_info
+  FROM hcs_bronze.cms_hospital_general_info
 ),
 
 cms_cost_reports AS (
@@ -47,7 +47,7 @@ cms_cost_reports AS (
     NULL::INT                                  AS total_discharges,
     'cms_cost_reports'                         AS source,
     _loaded_at
-  FROM hcs_bronze.cms_cost_reports
+  FROM hcs_bronze.cms_cost_reports_puf
 ),
 
 acc_tvc AS (

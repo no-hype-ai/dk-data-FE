@@ -99,9 +99,6 @@ SKIP_SOURCES = {
     'acc_tvc',          # Manual file upload — no automated fetcher available
     'cms_inpatient',    # Manual file upload — no automated fetcher available
     'cms_cost_reports', # Handled by fetch_all_years() inside fetcher; runs separately
-    'cms_usp',          # Requires manual USP MMG v9 registration download (go.usp.org/MMG_v9.0)
-    'cms_stabilis',     # Web scraping only — no bulk API; contact infostab@stabilis.org
-    'cms_dual_eligible',# Parser not implemented — multi-sheet Excel requires custom XLSX handler
 }
 
 # Sources with no days_back window — full-corpus or file-based fetches that own

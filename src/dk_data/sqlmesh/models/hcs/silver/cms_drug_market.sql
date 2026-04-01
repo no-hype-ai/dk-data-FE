@@ -22,20 +22,23 @@ MODEL (
 );
 
 WITH part_d AS (
+    -- Group by generic only (not brand) to match grain (generic_name, _source_year).
+    -- A generic can have multiple brand names; spending is aggregated across all brands.
     SELECT
-        gnrc_name                               AS generic_name,
-        brnd_name                               AS brand_name,
-        NULL::TEXT                              AS manufacturer_name,
+        gnrc_name                                           AS generic_name,
+        STRING_AGG(DISTINCT brnd_name, ', '
+            ORDER BY brnd_name)                             AS brand_name,
+        NULL::TEXT                                          AS manufacturer_name,
         _source_year,
-        SUM(tot_spndng)                         AS part_d_spending,
-        SUM(tot_clms)                           AS part_d_claims,
-        SUM(tot_benes)                          AS part_d_beneficiaries,
-        SUM(tot_dsg_unts)                       AS part_d_dosage_units,
-        AVG(avg_spnd_per_clm)                   AS part_d_avg_cost_per_claim,
-        AVG(avg_spnd_per_bene)                  AS part_d_avg_cost_per_bene
+        SUM(tot_spndng)                                     AS part_d_spending,
+        SUM(tot_clms)                                       AS part_d_claims,
+        SUM(tot_benes)                                      AS part_d_beneficiaries,
+        SUM(tot_dsg_unts)                                   AS part_d_dosage_units,
+        AVG(avg_spnd_per_clm)                               AS part_d_avg_cost_per_claim,
+        AVG(avg_spnd_per_bene)                              AS part_d_avg_cost_per_bene
     FROM hcs_bronze.cms_part_d_spending
     WHERE gnrc_name IS NOT NULL
-    GROUP BY gnrc_name, brnd_name, _source_year
+    GROUP BY gnrc_name, _source_year
 ),
 
 part_b AS (
