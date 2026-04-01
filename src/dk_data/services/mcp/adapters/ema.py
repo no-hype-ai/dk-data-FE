@@ -1,26 +1,28 @@
-"""MCP Adapter: ema
+"""EMA (European Medicines Agency) MCP adapter.
 
-Feature: 015-assessment-dashboard-integration
+Not fixable as on-demand query: EMA has no free public JSON REST API.
+Data is available via the EMA bulk fetcher pipeline (fetchers/ema_regulatory.py).
+
+Returns a clear error instead of a generic 500.
 """
 
-from .base import BaseAdapter
+from typing import Any
+
+from ..base_tool import BaseMCPTool
 
 
-class Adapter(BaseAdapter):
-    """Adapter for ema API responses."""
+class EmaTool(BaseMCPTool):
+    tool_name = "ema-search"
 
-    @property
-    def source_name(self) -> str:
-        return "ema"
-
-    @property
-    def raw_table(self) -> str:
-        return "ema"
-
-    @property
-    def raw_schema(self) -> str:
-        return "mol_raw"
-
-    def normalize(self, api_response: dict) -> dict:
-        """Normalize API response to match bronze model response_body format."""
-        return api_response
+    async def invoke(self, drug_name: str) -> dict[str, Any]:
+        return {
+            "tool": self.tool_name,
+            "error": (
+                "EMA has no free public JSON API. "
+                "Data is available via the EMA bulk fetcher pipeline "
+                "(fetchers/ema_regulatory.py). "
+                "On-demand queries are not supported."
+            ),
+            "status_code": None,
+            "data": None,
+        }

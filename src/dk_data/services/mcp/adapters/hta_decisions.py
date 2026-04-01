@@ -1,26 +1,17 @@
-"""MCP Adapter: hta_decisions
+"""NICE HTA decisions MCP adapter.
 
-Feature: 015-assessment-dashboard-integration
+Fix: Old URL hit the NICE website HTML page instead of their public search API.
+Correct endpoint: api.nice.org.uk/services/search?q={drug_name}
 """
 
-from .base import BaseAdapter
+from urllib.parse import quote
+
+from ..base_tool import BaseMCPTool
 
 
-class Adapter(BaseAdapter):
-    """Adapter for hta_decisions API responses."""
+class HtaDecisionsTool(BaseMCPTool):
+    tool_name = "hta-decisions-search"
+    base_url = "https://api.nice.org.uk/services/search"
 
-    @property
-    def source_name(self) -> str:
-        return "hta_decisions"
-
-    @property
-    def raw_table(self) -> str:
-        return "hta_decisions"
-
-    @property
-    def raw_schema(self) -> str:
-        return "raw"
-
-    def normalize(self, api_response: dict) -> dict:
-        """Normalize API response to match bronze model response_body format."""
-        return api_response
+    def build_url(self, drug_name: str) -> str:
+        return f"{self.base_url}?q={quote(drug_name)}"

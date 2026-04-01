@@ -16,6 +16,7 @@ from .visualize import router as visualize_router
 from .data_sources import router as data_sources_router
 from .agents import router as agents_router
 from .data_tools import router as data_tools_router
+from ...services.mcp.router import router as mcp_router
 
 __all__ = [
     "data_platform_router",
@@ -30,4 +31,5 @@ __all__ = [
     "data_sources_router",
     "agents_router",
     "data_tools_router",
+    "mcp_router",
 ]

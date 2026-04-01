@@ -1,26 +1,18 @@
-"""MCP Adapter: fda_drugs
+"""FDA Drugs (OpenFDA) MCP adapter.
 
-Feature: 019-cms-puf-platform-reconciliation
+Fix: FDA API uses ?search= not ?query=. The default base pattern returned HTTP 400.
+Correct URL: search=openfda.generic_name:"{drug_name}"&limit=100
 """
 
-from .base import BaseAdapter
+from urllib.parse import quote
+
+from ..base_tool import BaseMCPTool
 
 
-class Adapter(BaseAdapter):
-    """Adapter for FDA Drugs@FDA NDA/ANDA/BLA application API responses."""
+class FdaDrugsTool(BaseMCPTool):
+    tool_name = "fda-drugs-search"
+    base_url = "https://api.fda.gov/drug/drugsfda.json"
 
-    @property
-    def source_name(self) -> str:
-        return "fda_drugs"
-
-    @property
-    def raw_table(self) -> str:
-        return "fda_drugs"
-
-    @property
-    def raw_schema(self) -> str:
-        return "mol_raw"
-
-    def normalize(self, api_response: dict) -> dict:
-        """Normalize API response to match bronze model response_body format."""
-        return api_response
+    def build_url(self, drug_name: str) -> str:
+        encoded = quote(f'openfda.generic_name:"{drug_name}"')
+        return f"{self.base_url}?search={encoded}&limit=100"

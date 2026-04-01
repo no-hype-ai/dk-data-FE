@@ -1,26 +1,23 @@
-"""MCP Adapter: orcid
+"""ORCID search MCP adapter.
 
-Feature: 015-assessment-dashboard-integration
+Fixes:
+  1. ORCID API uses ?q= not ?query=
+  2. ORCID returns XML by default — requires Accept: application/json header
+     (base_tool.py now sends this by default, but explicit here for clarity)
 """
 
-from .base import BaseAdapter
+from urllib.parse import quote
+
+from ..base_tool import BaseMCPTool
 
 
-class Adapter(BaseAdapter):
-    """Adapter for orcid API responses."""
+class OrcidTool(BaseMCPTool):
+    tool_name = "orcid-search"
+    base_url = "https://pub.orcid.org/v3.0/search/"
 
-    @property
-    def source_name(self) -> str:
-        return "orcid"
+    def build_url(self, drug_name: str) -> str:
+        return f"{self.base_url}?q={quote(drug_name)}"
 
-    @property
-    def raw_table(self) -> str:
-        return "orcid"
-
-    @property
-    def raw_schema(self) -> str:
-        return "raw"
-
-    def normalize(self, api_response: dict) -> dict:
-        """Normalize API response to match bronze model response_body format."""
-        return api_response
+    def build_headers(self) -> dict[str, str]:
+        # Explicit override — ORCID defaults to XML without this
+        return {"Accept": "application/json"}
