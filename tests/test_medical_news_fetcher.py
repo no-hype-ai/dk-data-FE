@@ -14,7 +14,7 @@ Tests cover:
 - MedicalNewsRecord validation (valid and invalid)
 """
 
-from datetime import date
+from datetime import date, datetime, timedelta
 
 import pytest
 import responses
@@ -24,12 +24,16 @@ from dk_data.ingestion.fetchers.medical_news import (
 )
 from dk_data.ingestion.utils.validators import MedicalNewsRecord
 
+# Use recent dates so tests don't fail as time passes (days_back=30 filter)
+_RECENT_1 = (datetime.utcnow() - timedelta(days=5)).strftime("%a, %d %b %Y 12:00:00 GMT")
+_RECENT_2 = (datetime.utcnow() - timedelta(days=3)).strftime("%a, %d %b %Y 14:00:00 GMT")
+
 
 # ---------------------------------------------------------------------------
 # Sample RSS feed fixtures
 # ---------------------------------------------------------------------------
 
-SAMPLE_RSS_XML = """\
+SAMPLE_RSS_XML = f"""\
 <?xml version="1.0" encoding="UTF-8"?>
 <rss version="2.0">
   <channel>
@@ -39,14 +43,14 @@ SAMPLE_RSS_XML = """\
       <title>New Drug Keytruda Shows Promise in Lung Cancer Trial</title>
       <link>https://www.medscape.com/viewarticle/12345</link>
       <description>&lt;p&gt;A new clinical trial demonstrates that Keytruda significantly improves survival.&lt;/p&gt;</description>
-      <pubDate>Mon, 10 Feb 2026 12:00:00 GMT</pubDate>
+      <pubDate>{_RECENT_1}</pubDate>
       <category>Oncology</category>
     </item>
     <item>
       <title>FDA Approves Humira Biosimilar</title>
       <link>https://www.medscape.com/viewarticle/12346</link>
       <description>The FDA has approved a new biosimilar for Humira.</description>
-      <pubDate>Tue, 11 Feb 2026 14:00:00 GMT</pubDate>
+      <pubDate>{_RECENT_2}</pubDate>
       <category>Rheumatology</category>
     </item>
   </channel>

@@ -51,6 +51,7 @@ dev = [
     "pytest-cov>=6.0.0,<7.0",
     "pytest-postgresql>=6.0.0,<7.0",
     "responses>=0.25.0,<1.0",
+    "respx>=0.20.0,<1.0",
     "ruff>=0.1.0,<1.0",
 ]
 
