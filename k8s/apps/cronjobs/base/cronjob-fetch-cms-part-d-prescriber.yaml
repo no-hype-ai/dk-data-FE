@@ -11,7 +11,7 @@
 #   timeout: 7200s (2 hours — 25M rows at ~3k rows/s with validation)
 #
 # File is downloaded by cms_downloader before this job runs.
-# --skip-if-no-file: exits 0 if the annual file hasn't been staged yet.
+#: exits 0 if the annual file hasn't been staged yet.
 apiVersion: batch/v1
 kind: CronJob
 metadata:
@@ -57,7 +57,7 @@ spec:
             - name: fetch-cms-part-d-prescriber
               image: ghcr.io/data-kinetic/dk-data-fe/job-trigger:main
               command: ["python", "-m", "dk_data.ingestion.main"]
-              args: ["cms_part_d_prescriber", "--skip-if-no-file"]
+              args: ["cms_part_d_prescriber"]
               env:
                 - name: POSTGRES_HOST
                   valueFrom:

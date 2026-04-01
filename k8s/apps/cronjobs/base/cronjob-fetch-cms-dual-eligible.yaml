@@ -43,7 +43,7 @@ spec:
             - name: fetch-cms-dual-eligible
               image: ghcr.io/data-kinetic/dk-data-fe/job-trigger:main
               command: ["python", "-m", "dk_data.ingestion.main"]
-              args: ["cms_dual_eligible", "--skip-if-no-file"]
+              args: ["cms_dual_eligible"]
               env:
                 - name: POSTGRES_HOST
                   valueFrom:

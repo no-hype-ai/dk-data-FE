@@ -43,7 +43,7 @@ spec:
             - name: fetch-cms-part-b-spending
               image: ghcr.io/data-kinetic/dk-data-fe/job-trigger:main
               command: ["python", "-m", "dk_data.ingestion.main"]
-              args: ["cms_part_b_spending", "--skip-if-no-file"]
+              args: ["cms_part_b_spending"]
               env:
                 - name: POSTGRES_HOST
                   valueFrom:

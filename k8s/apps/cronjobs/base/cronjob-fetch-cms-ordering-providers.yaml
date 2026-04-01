@@ -43,7 +43,7 @@ spec:
             - name: fetch-cms-ordering-providers
               image: ghcr.io/data-kinetic/dk-data-fe/job-trigger:main
               command: ["python", "-m", "dk_data.ingestion.main"]
-              args: ["cms_ordering_providers", "--skip-if-no-file"]
+              args: ["cms_ordering_providers"]
               env:
                 - name: POSTGRES_HOST
                   valueFrom:
