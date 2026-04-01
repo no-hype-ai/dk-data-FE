@@ -110,7 +110,7 @@ resources:
   - cronjob-fetch-cms-rbcs.yaml
   - cronjob-fetch-cms-stabilis.yaml
   - cronjob-fetch-cms-usp.yaml
-  - cronjob-fetch-cms-ddinter.yaml
+  # - cronjob-fetch-cms-ddinter.yaml  # Removed: ddinter.scbdd.com inaccessible (Chinese host, blocked in prod)
   - cronjob-fetch-euipo-designs.yaml
   # Molecule vocabulary sources (8 files — monthly/weekly refresh)
   - cronjob-fetch-bindingdb.yaml
