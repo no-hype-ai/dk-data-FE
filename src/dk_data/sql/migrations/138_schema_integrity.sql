@@ -41,9 +41,10 @@ DROP INDEX IF EXISTS meta.idx_refresh_log_source_status;
 CREATE INDEX IF NOT EXISTS idx_refresh_log_source_status
     ON meta.refresh_log (source_id, status, refresh_started_at DESC);
 
+-- Note: meta.refresh_log has source_id (FK), not source_name.
+-- Drop the old mis-named index if it existed; no replacement needed since
+-- idx_refresh_log_source_status already covers (source_id, status, started_at).
 DROP INDEX IF EXISTS meta.idx_refresh_log_source_name;
-CREATE INDEX IF NOT EXISTS idx_refresh_log_source_name
-    ON meta.refresh_log (source_name, refresh_started_at DESC);
 
 -- ============================================================================
 -- (b) UNIQUE expression indexes for ON CONFLICT upserts
