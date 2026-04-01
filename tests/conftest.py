@@ -5,6 +5,8 @@ Pytest configuration and shared fixtures for dk-data tests.
 import sys
 import types
 import os
+import pytest
+import httpx
 
 # ---------------------------------------------------------------------------
 # Stub out heavy dependencies that are not installed in the test environment.
@@ -38,8 +40,6 @@ _STUB_MODULES = [
 for _mod in _STUB_MODULES:
     if _mod not in sys.modules:
         sys.modules[_mod] = types.ModuleType(_mod)
-import pytest
-import httpx
 
 
 def pytest_configure(config):

@@ -6,7 +6,6 @@ dk_data.services __init__ chain (which requires aiohttp, psycopg2, redis, etc.).
 
 import sys
 import importlib.util
-import os
 from pathlib import Path
 
 import json
