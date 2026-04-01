@@ -26,86 +26,507 @@
 BEGIN;
 
 -- ============================================================================
+-- PREREQUISITE: ensure HCS schemas exist (migration 086 may have been baselined)
+-- ============================================================================
+CREATE SCHEMA IF NOT EXISTS hcs_raw;
+CREATE SCHEMA IF NOT EXISTS hcs_bronze;
+CREATE SCHEMA IF NOT EXISTS hcs_silver;
+CREATE SCHEMA IF NOT EXISTS hcs_gold;
+
+-- ============================================================================
+-- PREREQUISITE: mol_silver tables from migration 040 (baselined — not in init_database.sql)
+-- Only created if the named relation does not already exist (table or view).
+-- FK constraints are omitted here because parent tables may only be VIEWs in
+-- SQLMesh-managed environments; FK enforcement is delegated to the application.
+-- ============================================================================
+DO $$
+BEGIN
+    IF NOT EXISTS (SELECT 1 FROM information_schema.tables
+                   WHERE table_schema='mol_silver' AND table_name='publications') THEN
+        CREATE TABLE mol_silver.publications (
+            id                  UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
+            openalex_id         VARCHAR(50),
+            doi                 VARCHAR(200),
+            pmid                VARCHAR(20),
+            pmcid               VARCHAR(20),
+            title               TEXT,
+            abstract            TEXT,
+            publication_year    INTEGER,
+            publication_date    DATE,
+            journal             VARCHAR(500),
+            publication_type    VARCHAR(50),
+            authors             JSONB,
+            first_author        VARCHAR(200),
+            cited_by_count      INTEGER,
+            is_open_access      BOOLEAN,
+            keywords            JSONB,
+            concepts            JSONB,
+            mesh_terms          JSONB,
+            source              VARCHAR(50) DEFAULT 'openalex',
+            source_updated_at   TIMESTAMPTZ,
+            created_at          TIMESTAMPTZ DEFAULT NOW(),
+            updated_at          TIMESTAMPTZ DEFAULT NOW(),
+            UNIQUE(openalex_id)
+        );
+        CREATE INDEX idx_silver_pub_doi  ON mol_silver.publications(doi);
+        CREATE INDEX idx_silver_pub_pmid ON mol_silver.publications(pmid);
+        CREATE INDEX idx_silver_pub_year ON mol_silver.publications(publication_year);
+    END IF;
+END $$;
+
+DO $$
+BEGIN
+    IF NOT EXISTS (SELECT 1 FROM information_schema.tables
+                   WHERE table_schema='mol_silver' AND table_name='molecule_targets') THEN
+        CREATE TABLE mol_silver.molecule_targets (
+            id                UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
+            molecule_id       UUID,
+            target_id         UUID,
+            relationship_type VARCHAR(50),
+            action_type       VARCHAR(50),
+            activity_value    NUMERIC,
+            activity_type     VARCHAR(50),
+            activity_units    VARCHAR(50),
+            source            VARCHAR(50),
+            created_at        TIMESTAMPTZ DEFAULT NOW(),
+            UNIQUE(molecule_id, target_id, relationship_type)
+        );
+        CREATE INDEX idx_silver_moltarget_mol    ON mol_silver.molecule_targets(molecule_id);
+        CREATE INDEX idx_silver_moltarget_target ON mol_silver.molecule_targets(target_id);
+    END IF;
+END $$;
+
+DO $$
+BEGIN
+    IF NOT EXISTS (SELECT 1 FROM information_schema.tables
+                   WHERE table_schema='mol_silver' AND table_name='molecule_publications') THEN
+        CREATE TABLE mol_silver.molecule_publications (
+            id             UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
+            molecule_id    UUID,
+            publication_id UUID,
+            mention_type   VARCHAR(50),
+            relevance_score NUMERIC(3,2),
+            created_at     TIMESTAMPTZ DEFAULT NOW(),
+            UNIQUE(molecule_id, publication_id)
+        );
+        CREATE INDEX idx_silver_molpub_mol ON mol_silver.molecule_publications(molecule_id);
+        CREATE INDEX idx_silver_molpub_pub ON mol_silver.molecule_publications(publication_id);
+    END IF;
+END $$;
+
+DO $$
+BEGIN
+    IF NOT EXISTS (SELECT 1 FROM information_schema.tables
+                   WHERE table_schema='mol_silver' AND table_name='patents') THEN
+        CREATE TABLE mol_silver.patents (
+            id             UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
+            molecule_id    UUID,
+            patent_number  VARCHAR(50) NOT NULL,
+            patent_country VARCHAR(10),
+            filing_date    DATE,
+            grant_date     DATE,
+            expiry_date    DATE,
+            title          TEXT,
+            assignee       VARCHAR(500),
+            status         VARCHAR(50),
+            source         VARCHAR(50),
+            created_at     TIMESTAMPTZ DEFAULT NOW(),
+            updated_at     TIMESTAMPTZ DEFAULT NOW(),
+            UNIQUE(patent_number, patent_country)
+        );
+        CREATE INDEX idx_silver_patent_mol    ON mol_silver.patents(molecule_id);
+        CREATE INDEX idx_silver_patent_num    ON mol_silver.patents(patent_number);
+        CREATE INDEX idx_silver_patent_expiry ON mol_silver.patents(expiry_date);
+    END IF;
+END $$;
+
+DO $$
+BEGIN
+    IF NOT EXISTS (SELECT 1 FROM information_schema.tables
+                   WHERE table_schema='mol_silver' AND table_name='resolution_queue') THEN
+        CREATE TABLE mol_silver.resolution_queue (
+            id                    UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
+            molecule_id           UUID,
+            original_identifier   VARCHAR(500),
+            identifier_type       VARCHAR(30),
+            candidate_inchi_keys  JSONB,
+            confidence_score      NUMERIC(3,2),
+            status                VARCHAR(20) DEFAULT 'pending',
+            resolution_action     VARCHAR(20),
+            merge_target_id       UUID,
+            reviewed_by           VARCHAR(100),
+            reviewed_at           TIMESTAMPTZ,
+            review_notes          TEXT,
+            created_at            TIMESTAMPTZ DEFAULT NOW()
+        );
+        CREATE INDEX idx_silver_queue_status     ON mol_silver.resolution_queue(status);
+        CREATE INDEX idx_silver_queue_confidence ON mol_silver.resolution_queue(confidence_score);
+    END IF;
+END $$;
+
+-- ============================================================================
+-- PREREQUISITE: hcs_raw CMS tables from migration 085 (may be baselined on cluster)
+-- These tables are ALTER TABLE'd below — must exist first.
+-- Tables that are DROP+CREATE'd later in this migration don't need CREATE IF NOT EXISTS here.
+-- ============================================================================
+CREATE TABLE IF NOT EXISTS hcs_raw.cms_nppes (
+    id                                                      BIGSERIAL PRIMARY KEY,
+    npi                                                     TEXT NOT NULL,
+    entity_type_code                                        TEXT,
+    provider_last_name                                      TEXT,
+    provider_first_name                                     TEXT,
+    provider_organization_name                              TEXT,
+    provider_credential_text                                TEXT,
+    provider_first_line_business_mailing_address            TEXT,
+    provider_second_line_business_mailing_address           TEXT,
+    provider_business_mailing_address_city_name             TEXT,
+    provider_business_mailing_address_state_name            TEXT,
+    provider_business_mailing_address_postal_code           TEXT,
+    provider_business_mailing_address_telephone_number      TEXT,
+    provider_first_line_business_practice_location_address  TEXT,
+    provider_second_line_business_practice_location_address TEXT,
+    provider_business_practice_location_address_city_name   TEXT,
+    provider_business_practice_location_address_state_name  TEXT,
+    provider_business_practice_location_address_postal_code TEXT,
+    provider_business_practice_location_address_country_code TEXT,
+    provider_business_practice_location_address_telephone_number TEXT,
+    provider_business_practice_location_address_fax_number  TEXT,
+    healthcare_provider_taxonomy_code_1                     TEXT,
+    healthcare_provider_taxonomy_code_2                     TEXT,
+    npi_deactivation_date                                   DATE,
+    npi_reactivation_date                                   DATE,
+    _source_year                                            INTEGER NOT NULL,
+    _source_hash                                            TEXT NOT NULL,
+    _source_file                                            TEXT,
+    _loaded_at                                              TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    UNIQUE (npi, _source_year)
+);
+
+CREATE TABLE IF NOT EXISTS hcs_raw.cms_open_payments (
+    id                                                      BIGSERIAL PRIMARY KEY,
+    covered_recipient_type                                  TEXT,
+    physician_profile_id                                    TEXT,
+    physician_first_name                                    TEXT,
+    physician_last_name                                     TEXT,
+    physician_specialty                                     TEXT,
+    applicable_manufacturer_or_gpo_name                     TEXT,
+    total_amount_of_payment_usdollars                       NUMERIC(18,2),
+    date_of_payment                                         DATE,
+    number_of_payments_included_in_total_amount             INTEGER,
+    form_of_payment_or_transfer_of_value                    TEXT,
+    nature_of_payment_or_transfer_of_value                  TEXT,
+    recipient_city                                          TEXT,
+    recipient_state                                         TEXT,
+    recipient_zip_code                                      TEXT,
+    payment_publication_date                                DATE,
+    record_id                                               TEXT,
+    program_year                                            INTEGER,
+    name_of_drug_or_biological_or_device_or_medical_supply_1 TEXT,
+    name_of_drug_or_biological_or_device_or_medical_supply_2 TEXT,
+    name_of_drug_or_biological_or_device_or_medical_supply_3 TEXT,
+    name_of_drug_or_biological_or_device_or_medical_supply_4 TEXT,
+    name_of_drug_or_biological_or_device_or_medical_supply_5 TEXT,
+    associated_drug_or_biological_ndc_1                     TEXT,
+    associated_drug_or_biological_ndc_2                     TEXT,
+    associated_drug_or_biological_ndc_3                     TEXT,
+    associated_drug_or_biological_ndc_4                     TEXT,
+    associated_drug_or_biological_ndc_5                     TEXT,
+    drug_name_1_normalized TEXT GENERATED ALWAYS AS (lower(regexp_replace(coalesce(name_of_drug_or_biological_or_device_or_medical_supply_1,''), '[^a-z0-9 ]', '', 'g'))) STORED,
+    drug_name_2_normalized TEXT GENERATED ALWAYS AS (lower(regexp_replace(coalesce(name_of_drug_or_biological_or_device_or_medical_supply_2,''), '[^a-z0-9 ]', '', 'g'))) STORED,
+    drug_name_3_normalized TEXT GENERATED ALWAYS AS (lower(regexp_replace(coalesce(name_of_drug_or_biological_or_device_or_medical_supply_3,''), '[^a-z0-9 ]', '', 'g'))) STORED,
+    drug_name_4_normalized TEXT GENERATED ALWAYS AS (lower(regexp_replace(coalesce(name_of_drug_or_biological_or_device_or_medical_supply_4,''), '[^a-z0-9 ]', '', 'g'))) STORED,
+    drug_name_5_normalized TEXT GENERATED ALWAYS AS (lower(regexp_replace(coalesce(name_of_drug_or_biological_or_device_or_medical_supply_5,''), '[^a-z0-9 ]', '', 'g'))) STORED,
+    _source_year                                            INTEGER NOT NULL,
+    _source_hash                                            TEXT NOT NULL,
+    _source_file                                            TEXT,
+    _loaded_at                                              TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS hcs_raw.cms_inpatient_puf (
+    id                          BIGSERIAL PRIMARY KEY,
+    drg_cd                      TEXT,
+    drg_definition              TEXT,
+    provider_id                 TEXT,
+    provider_name               TEXT,
+    provider_street_address     TEXT,
+    provider_city               TEXT,
+    provider_state              TEXT,
+    provider_state_fips         TEXT,
+    provider_zip_code           TEXT,
+    provider_ruca               TEXT,
+    hospital_referral_region_desc TEXT,
+    total_discharges            INTEGER,
+    average_covered_charges     NUMERIC(18,2),
+    average_total_payments      NUMERIC(18,2),
+    average_medicare_payments   NUMERIC(18,2),
+    _source_year                INTEGER NOT NULL,
+    _source_hash                TEXT NOT NULL,
+    _source_file                TEXT,
+    _loaded_at                  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    UNIQUE (_source_hash, provider_id, drg_definition, _source_year)
+);
+
+CREATE TABLE IF NOT EXISTS hcs_raw.cms_physician_puf (
+    id                               BIGSERIAL PRIMARY KEY,
+    npi                              TEXT,
+    nppes_provider_last_org_name     TEXT,
+    nppes_provider_first_name        TEXT,
+    nppes_provider_mi                TEXT,
+    nppes_credentials                TEXT,
+    nppes_provider_gender            TEXT,
+    nppes_entity_code                TEXT,
+    nppes_provider_street1           TEXT,
+    nppes_provider_street2           TEXT,
+    nppes_provider_city              TEXT,
+    nppes_provider_state             TEXT,
+    nppes_provider_state_fips        TEXT,
+    nppes_provider_zip               TEXT,
+    nppes_provider_ruca              TEXT,
+    nppes_provider_country           TEXT,
+    provider_type                    TEXT,
+    medicare_participation_indicator TEXT,
+    number_of_hcpcs                  INTEGER,
+    total_services                   NUMERIC(18,2),
+    total_unique_benes               INTEGER,
+    total_submitted_chrg_amt         NUMERIC(18,2),
+    total_medicare_allowed_amt       NUMERIC(18,2),
+    total_medicare_payment_amt       NUMERIC(18,2),
+    total_medicare_stnd_amt          NUMERIC(18,2),
+    _source_year                     INTEGER NOT NULL,
+    _source_hash                     TEXT NOT NULL,
+    _source_file                     TEXT,
+    _loaded_at                       TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    UNIQUE (npi, _source_year)
+);
+
+CREATE TABLE IF NOT EXISTS hcs_raw.cms_hospital_general_info (
+    id                          BIGSERIAL PRIMARY KEY,
+    facility_id                 TEXT,
+    facility_name               TEXT,
+    address                     TEXT,
+    city_town                   TEXT,
+    state                       TEXT,
+    zip_code                    TEXT,
+    county_parish               TEXT,
+    telephone_number            TEXT,
+    hospital_type               TEXT,
+    hospital_ownership          TEXT,
+    emergency_services          TEXT,
+    meets_criteria_for_birthing_friendly_designation TEXT,
+    hospital_overall_rating     INTEGER,
+    hospital_overall_rating_footnote TEXT,
+    _source_year                INTEGER NOT NULL,
+    _source_hash                TEXT NOT NULL,
+    _source_file                TEXT,
+    _loaded_at                  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    UNIQUE (facility_id, _source_year)
+);
+
+-- ============================================================================
+-- PREREQUISITE: hcs_silver agent output tables from migration 085 (may be baselined)
+-- ============================================================================
+CREATE TABLE IF NOT EXISTS hcs_silver.service_lines (
+    id               UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
+    npi              TEXT        NOT NULL,
+    service_line     TEXT        NOT NULL,
+    confidence_score NUMERIC(5,4) NOT NULL CHECK (confidence_score BETWEEN 0 AND 1),
+    needs_review     BOOLEAN     NOT NULL DEFAULT FALSE,
+    agent_output     JSONB,
+    _source_year     INTEGER,
+    _loaded_at       TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    UNIQUE (npi, service_line, _source_year)
+);
+CREATE TABLE IF NOT EXISTS hcs_silver.idn_hierarchy (
+    id                  UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
+    child_npi           TEXT        NOT NULL,
+    parent_organization TEXT        NOT NULL,
+    relationship_type   TEXT,
+    confidence_score    NUMERIC(5,4) NOT NULL CHECK (confidence_score BETWEEN 0 AND 1),
+    needs_review        BOOLEAN     NOT NULL DEFAULT FALSE,
+    agent_output        JSONB,
+    _loaded_at          TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    UNIQUE (child_npi, parent_organization)
+);
+CREATE TABLE IF NOT EXISTS hcs_silver.referral_network (
+    id               UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
+    referring_npi    TEXT        NOT NULL,
+    receiving_npi    TEXT        NOT NULL,
+    referral_volume  INTEGER,
+    confidence_score NUMERIC(5,4) NOT NULL CHECK (confidence_score BETWEEN 0 AND 1),
+    needs_review     BOOLEAN     NOT NULL DEFAULT FALSE,
+    agent_output     JSONB,
+    _source_year     INTEGER,
+    _loaded_at       TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    UNIQUE (referring_npi, receiving_npi, _source_year)
+);
+CREATE TABLE IF NOT EXISTS hcs_silver.verified_contacts (
+    id                  UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
+    npi                 TEXT        NOT NULL,
+    verified_phone      TEXT,
+    verified_email      TEXT,
+    verification_status TEXT        NOT NULL,
+    confidence_score    NUMERIC(5,4) NOT NULL CHECK (confidence_score BETWEEN 0 AND 1),
+    needs_review        BOOLEAN     NOT NULL DEFAULT FALSE,
+    agent_output        JSONB,
+    _loaded_at          TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    UNIQUE (npi)
+);
+CREATE TABLE IF NOT EXISTS hcs_silver.staffing_decomposition (
+    id               UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
+    provider_id      TEXT        NOT NULL,
+    role_category    TEXT        NOT NULL,
+    fte_estimate     NUMERIC(10,2),
+    confidence_score NUMERIC(5,4) NOT NULL CHECK (confidence_score BETWEEN 0 AND 1),
+    needs_review     BOOLEAN     NOT NULL DEFAULT FALSE,
+    agent_output     JSONB,
+    _source_year     INTEGER,
+    _loaded_at       TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    UNIQUE (provider_id, role_category, _source_year)
+);
+CREATE TABLE IF NOT EXISTS hcs_silver.equipment_inventory (
+    id                 UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
+    npi                TEXT        NOT NULL,
+    equipment_category TEXT        NOT NULL,
+    hcpcs_evidence     JSONB,
+    confidence_score   NUMERIC(5,4) NOT NULL CHECK (confidence_score BETWEEN 0 AND 1),
+    needs_review       BOOLEAN     NOT NULL DEFAULT FALSE,
+    agent_output       JSONB,
+    _source_year       INTEGER,
+    _loaded_at         TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    UNIQUE (npi, equipment_category, _source_year)
+);
+
+-- mol_raw.nih_reporter_raw (from migration 085, may be baselined on cluster)
+CREATE TABLE IF NOT EXISTS mol_raw.nih_reporter_raw (
+    id                  BIGSERIAL   PRIMARY KEY,
+    request_timestamp   TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    response_status     INTEGER     NOT NULL DEFAULT 200,
+    response_body       JSONB       NOT NULL,
+    processed_to_bronze BOOLEAN     NOT NULL DEFAULT FALSE,
+    _loaded_at          TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE UNIQUE INDEX IF NOT EXISTS uidx_nih_reporter_raw_project_num
+    ON mol_raw.nih_reporter_raw ((response_body->>'project_num'))
+    WHERE response_body->>'project_num' IS NOT NULL;
+
+-- ============================================================================
 -- FROM 100: mol_silver.molecules — ChEMBL flags
+-- Skipped if molecules is a VIEW (SQLMesh-managed environment).
 -- ============================================================================
 
-ALTER TABLE mol_silver.molecules
-    ADD COLUMN IF NOT EXISTS prodrug         BOOLEAN,
-    ADD COLUMN IF NOT EXISTS natural_product BOOLEAN,
-    ADD COLUMN IF NOT EXISTS usan_stem       TEXT;
+DO $$
+BEGIN
+    IF EXISTS (SELECT 1 FROM information_schema.tables
+               WHERE table_schema='mol_silver' AND table_name='molecules' AND table_type='BASE TABLE') THEN
+        ALTER TABLE mol_silver.molecules
+            ADD COLUMN IF NOT EXISTS prodrug         BOOLEAN,
+            ADD COLUMN IF NOT EXISTS natural_product BOOLEAN,
+            ADD COLUMN IF NOT EXISTS usan_stem       TEXT;
+    END IF;
+END $$;
 
 -- ============================================================================
 -- FROM 101: mol_silver.molecules — physicochemical + DrugBank enrichment
 -- ============================================================================
 
-ALTER TABLE mol_silver.molecules
-    ADD COLUMN IF NOT EXISTS alogp                    NUMERIC,
-    ADD COLUMN IF NOT EXISTS hba                      INTEGER,
-    ADD COLUMN IF NOT EXISTS hbd                      INTEGER,
-    ADD COLUMN IF NOT EXISTS psa                      NUMERIC,
-    ADD COLUMN IF NOT EXISTS num_ro5_violations       INTEGER,
-    ADD COLUMN IF NOT EXISTS aromatic_rings           INTEGER,
-    ADD COLUMN IF NOT EXISTS heavy_atoms              INTEGER,
-    ADD COLUMN IF NOT EXISTS exact_mass               NUMERIC,
-    ADD COLUMN IF NOT EXISTS isomeric_smiles          TEXT,
-    ADD COLUMN IF NOT EXISTS rotatable_bond_count     INTEGER,
-    ADD COLUMN IF NOT EXISTS complexity               NUMERIC,
-    ADD COLUMN IF NOT EXISTS charge                   INTEGER,
-    ADD COLUMN IF NOT EXISTS mesh_headings            JSONB,
-    ADD COLUMN IF NOT EXISTS pharmacological_actions  JSONB,
-    ADD COLUMN IF NOT EXISTS description              TEXT,
-    ADD COLUMN IF NOT EXISTS pharmacodynamics         TEXT,
-    ADD COLUMN IF NOT EXISTS drug_categories          JSONB;
+DO $$
+BEGIN
+    IF EXISTS (SELECT 1 FROM information_schema.tables
+               WHERE table_schema='mol_silver' AND table_name='molecules' AND table_type='BASE TABLE') THEN
+        ALTER TABLE mol_silver.molecules
+            ADD COLUMN IF NOT EXISTS alogp                    NUMERIC,
+            ADD COLUMN IF NOT EXISTS hba                      INTEGER,
+            ADD COLUMN IF NOT EXISTS hbd                      INTEGER,
+            ADD COLUMN IF NOT EXISTS psa                      NUMERIC,
+            ADD COLUMN IF NOT EXISTS num_ro5_violations       INTEGER,
+            ADD COLUMN IF NOT EXISTS aromatic_rings           INTEGER,
+            ADD COLUMN IF NOT EXISTS heavy_atoms              INTEGER,
+            ADD COLUMN IF NOT EXISTS exact_mass               NUMERIC,
+            ADD COLUMN IF NOT EXISTS isomeric_smiles          TEXT,
+            ADD COLUMN IF NOT EXISTS rotatable_bond_count     INTEGER,
+            ADD COLUMN IF NOT EXISTS complexity               NUMERIC,
+            ADD COLUMN IF NOT EXISTS charge                   INTEGER,
+            ADD COLUMN IF NOT EXISTS mesh_headings            JSONB,
+            ADD COLUMN IF NOT EXISTS pharmacological_actions  JSONB,
+            ADD COLUMN IF NOT EXISTS description              TEXT,
+            ADD COLUMN IF NOT EXISTS pharmacodynamics         TEXT,
+            ADD COLUMN IF NOT EXISTS drug_categories          JSONB;
+    END IF;
+END $$;
 
 -- FROM 101: mol_silver.clinical_trials — eligibility, dates, results, oversight
-ALTER TABLE mol_silver.clinical_trials
-    ADD COLUMN IF NOT EXISTS acronym              TEXT,
-    ADD COLUMN IF NOT EXISTS last_known_status    TEXT,
-    ADD COLUMN IF NOT EXISTS why_stopped          TEXT,
-    ADD COLUMN IF NOT EXISTS phases_raw           JSONB,
-    ADD COLUMN IF NOT EXISTS first_submit_date    DATE,
-    ADD COLUMN IF NOT EXISTS first_post_date      DATE,
-    ADD COLUMN IF NOT EXISTS last_update_date     DATE,
-    ADD COLUMN IF NOT EXISTS keywords             JSONB,
-    ADD COLUMN IF NOT EXISTS arm_groups           JSONB,
-    ADD COLUMN IF NOT EXISTS enrollment_type      TEXT,
-    ADD COLUMN IF NOT EXISTS eligibility_sex      TEXT,
-    ADD COLUMN IF NOT EXISTS minimum_age          TEXT,
-    ADD COLUMN IF NOT EXISTS maximum_age          TEXT,
-    ADD COLUMN IF NOT EXISTS healthy_volunteers   TEXT,
-    ADD COLUMN IF NOT EXISTS eligibility_criteria TEXT,
-    ADD COLUMN IF NOT EXISTS lead_sponsor_class   TEXT,
-    ADD COLUMN IF NOT EXISTS responsible_party    JSONB,
-    ADD COLUMN IF NOT EXISTS central_contacts     JSONB,
-    ADD COLUMN IF NOT EXISTS locations            JSONB,
-    ADD COLUMN IF NOT EXISTS results_section      JSONB,
-    ADD COLUMN IF NOT EXISTS fda_regulated_drug   BOOLEAN,
-    ADD COLUMN IF NOT EXISTS fda_regulated_device BOOLEAN,
-    ADD COLUMN IF NOT EXISTS has_dmc              BOOLEAN;
+DO $$
+BEGIN
+    IF EXISTS (SELECT 1 FROM information_schema.tables
+               WHERE table_schema='mol_silver' AND table_name='clinical_trials' AND table_type='BASE TABLE') THEN
+        ALTER TABLE mol_silver.clinical_trials
+            ADD COLUMN IF NOT EXISTS acronym              TEXT,
+            ADD COLUMN IF NOT EXISTS last_known_status    TEXT,
+            ADD COLUMN IF NOT EXISTS why_stopped          TEXT,
+            ADD COLUMN IF NOT EXISTS phases_raw           JSONB,
+            ADD COLUMN IF NOT EXISTS first_submit_date    DATE,
+            ADD COLUMN IF NOT EXISTS first_post_date      DATE,
+            ADD COLUMN IF NOT EXISTS last_update_date     DATE,
+            ADD COLUMN IF NOT EXISTS keywords             JSONB,
+            ADD COLUMN IF NOT EXISTS arm_groups           JSONB,
+            ADD COLUMN IF NOT EXISTS enrollment_type      TEXT,
+            ADD COLUMN IF NOT EXISTS eligibility_sex      TEXT,
+            ADD COLUMN IF NOT EXISTS minimum_age          TEXT,
+            ADD COLUMN IF NOT EXISTS maximum_age          TEXT,
+            ADD COLUMN IF NOT EXISTS healthy_volunteers   TEXT,
+            ADD COLUMN IF NOT EXISTS eligibility_criteria TEXT,
+            ADD COLUMN IF NOT EXISTS lead_sponsor_class   TEXT,
+            ADD COLUMN IF NOT EXISTS responsible_party    JSONB,
+            ADD COLUMN IF NOT EXISTS central_contacts     JSONB,
+            ADD COLUMN IF NOT EXISTS locations            JSONB,
+            ADD COLUMN IF NOT EXISTS results_section      JSONB,
+            ADD COLUMN IF NOT EXISTS fda_regulated_drug   BOOLEAN,
+            ADD COLUMN IF NOT EXISTS fda_regulated_device BOOLEAN,
+            ADD COLUMN IF NOT EXISTS has_dmc              BOOLEAN;
+    END IF;
+END $$;
 
 -- FROM 101: mol_silver.drug_labels
-ALTER TABLE mol_silver.drug_labels
-    ADD COLUMN IF NOT EXISTS use_in_specific_populations TEXT,
-    ADD COLUMN IF NOT EXISTS pharmacodynamics             TEXT,
-    ADD COLUMN IF NOT EXISTS nursing_mothers              TEXT,
-    ADD COLUMN IF NOT EXISTS storage_and_handling         TEXT,
-    ADD COLUMN IF NOT EXISTS principal_display_panel      TEXT,
-    ADD COLUMN IF NOT EXISTS is_original_packager         BOOLEAN,
-    ADD COLUMN IF NOT EXISTS spl_set_ids                  JSONB,
-    ADD COLUMN IF NOT EXISTS nui                          JSONB;
+DO $$
+BEGIN
+    IF EXISTS (SELECT 1 FROM information_schema.tables
+               WHERE table_schema='mol_silver' AND table_name='drug_labels' AND table_type='BASE TABLE') THEN
+        ALTER TABLE mol_silver.drug_labels
+            ADD COLUMN IF NOT EXISTS use_in_specific_populations TEXT,
+            ADD COLUMN IF NOT EXISTS pharmacodynamics             TEXT,
+            ADD COLUMN IF NOT EXISTS nursing_mothers              TEXT,
+            ADD COLUMN IF NOT EXISTS storage_and_handling         TEXT,
+            ADD COLUMN IF NOT EXISTS principal_display_panel      TEXT,
+            ADD COLUMN IF NOT EXISTS is_original_packager         BOOLEAN,
+            ADD COLUMN IF NOT EXISTS spl_set_ids                  JSONB,
+            ADD COLUMN IF NOT EXISTS nui                          JSONB;
+    END IF;
+END $$;
 
 -- FROM 101: mol_silver.adverse_events — FAERS seriousness sub-types
-ALTER TABLE mol_silver.adverse_events
-    ADD COLUMN IF NOT EXISTS lifethreatening_count INTEGER,
-    ADD COLUMN IF NOT EXISTS disabling_count        INTEGER,
-    ADD COLUMN IF NOT EXISTS congenital_count       INTEGER,
-    ADD COLUMN IF NOT EXISTS other_serious_count    INTEGER;
+DO $$
+BEGIN
+    IF EXISTS (SELECT 1 FROM information_schema.tables
+               WHERE table_schema='mol_silver' AND table_name='adverse_events' AND table_type='BASE TABLE') THEN
+        ALTER TABLE mol_silver.adverse_events
+            ADD COLUMN IF NOT EXISTS lifethreatening_count INTEGER,
+            ADD COLUMN IF NOT EXISTS disabling_count        INTEGER,
+            ADD COLUMN IF NOT EXISTS congenital_count       INTEGER,
+            ADD COLUMN IF NOT EXISTS other_serious_count    INTEGER;
+    END IF;
+END $$;
 
--- FROM 101: mol_silver.publications — Cochrane fields
-ALTER TABLE mol_silver.publications
-    ADD COLUMN IF NOT EXISTS conclusions            TEXT,
-    ADD COLUMN IF NOT EXISTS interventions_reviewed JSONB,
-    ADD COLUMN IF NOT EXISTS conditions_reviewed    JSONB;
+-- FROM 101: mol_silver.publications — Cochrane fields (BASE TABLE only; skip VIEWs)
+DO $$
+BEGIN
+    IF EXISTS (SELECT 1 FROM information_schema.tables
+               WHERE table_schema='mol_silver' AND table_name='publications' AND table_type='BASE TABLE') THEN
+        ALTER TABLE mol_silver.publications
+            ADD COLUMN IF NOT EXISTS conclusions            TEXT,
+            ADD COLUMN IF NOT EXISTS interventions_reviewed JSONB,
+            ADD COLUMN IF NOT EXISTS conditions_reviewed    JSONB;
+    END IF;
+END $$;
 
 -- FROM 101: NEW TABLE mol_silver.drug_pharmacology
 CREATE TABLE IF NOT EXISTS mol_silver.drug_pharmacology (
@@ -389,17 +810,26 @@ CREATE INDEX IF NOT EXISTS idx_hrsa_shortage_type  ON hcs_raw.hrsa_shortage_area
 -- FROM 107: mol_raw.uspto_patents
 -- ============================================================================
 
-ALTER TABLE mol_raw.uspto_patents
-    ADD COLUMN IF NOT EXISTS patent_type TEXT,
-    ADD COLUMN IF NOT EXISTS patent_kind TEXT;
+DO $$
+BEGIN
+    IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='mol_raw' AND table_name='uspto_patents') THEN
+        ALTER TABLE mol_raw.uspto_patents
+            ADD COLUMN IF NOT EXISTS patent_type TEXT,
+            ADD COLUMN IF NOT EXISTS patent_kind TEXT;
+    END IF;
+END $$;
 
 -- ============================================================================
 -- FROM 108: mol_raw.epo_patents
 -- ============================================================================
 
-ALTER TABLE mol_raw.epo_patents
-    ADD COLUMN IF NOT EXISTS cpc_codes TEXT[];
-CREATE INDEX IF NOT EXISTS idx_epo_cpc ON mol_raw.epo_patents USING GIN(cpc_codes);
+DO $$
+BEGIN
+    IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='mol_raw' AND table_name='epo_patents') THEN
+        ALTER TABLE mol_raw.epo_patents ADD COLUMN IF NOT EXISTS cpc_codes TEXT[];
+        CREATE INDEX IF NOT EXISTS idx_epo_cpc ON mol_raw.epo_patents USING GIN(cpc_codes);
+    END IF;
+END $$;
 
 -- ============================================================================
 -- FROM 109: hcs_raw.hrsa_shortage_areas.hpsa_status
@@ -412,29 +842,34 @@ ALTER TABLE hcs_raw.hrsa_shortage_areas
 -- FROM 112: mol_raw.openalex_ci extended columns
 -- ============================================================================
 
-ALTER TABLE mol_raw.openalex_ci ADD COLUMN IF NOT EXISTS pmid                          TEXT;
-ALTER TABLE mol_raw.openalex_ci ADD COLUMN IF NOT EXISTS pmcid                         TEXT;
-ALTER TABLE mol_raw.openalex_ci ADD COLUMN IF NOT EXISTS mag_id                        TEXT;
-ALTER TABLE mol_raw.openalex_ci ADD COLUMN IF NOT EXISTS work_type                     TEXT;
-ALTER TABLE mol_raw.openalex_ci ADD COLUMN IF NOT EXISTS language                      TEXT;
-ALTER TABLE mol_raw.openalex_ci ADD COLUMN IF NOT EXISTS volume                        TEXT;
-ALTER TABLE mol_raw.openalex_ci ADD COLUMN IF NOT EXISTS issue                         TEXT;
-ALTER TABLE mol_raw.openalex_ci ADD COLUMN IF NOT EXISTS first_page                    TEXT;
-ALTER TABLE mol_raw.openalex_ci ADD COLUMN IF NOT EXISTS last_page                     TEXT;
-ALTER TABLE mol_raw.openalex_ci ADD COLUMN IF NOT EXISTS topics                        JSONB;
-ALTER TABLE mol_raw.openalex_ci ADD COLUMN IF NOT EXISTS keywords                      JSONB;
-ALTER TABLE mol_raw.openalex_ci ADD COLUMN IF NOT EXISTS mesh_terms                    JSONB;
-ALTER TABLE mol_raw.openalex_ci ADD COLUMN IF NOT EXISTS cited_by_percentile           NUMERIC;
-ALTER TABLE mol_raw.openalex_ci ADD COLUMN IF NOT EXISTS citation_counts_by_year       JSONB;
-ALTER TABLE mol_raw.openalex_ci ADD COLUMN IF NOT EXISTS grants                        JSONB;
-ALTER TABLE mol_raw.openalex_ci ADD COLUMN IF NOT EXISTS referenced_works              JSONB;
-ALTER TABLE mol_raw.openalex_ci ADD COLUMN IF NOT EXISTS related_works                 JSONB;
-ALTER TABLE mol_raw.openalex_ci ADD COLUMN IF NOT EXISTS sustainable_development_goals JSONB;
-ALTER TABLE mol_raw.openalex_ci ADD COLUMN IF NOT EXISTS best_oa_location              JSONB;
-ALTER TABLE mol_raw.openalex_ci ADD COLUMN IF NOT EXISTS is_retracted                  BOOLEAN;
-ALTER TABLE mol_raw.openalex_ci ADD COLUMN IF NOT EXISTS is_paratext                   BOOLEAN;
-CREATE INDEX IF NOT EXISTS idx_mol_raw_openalex_ci_pmid
-    ON mol_raw.openalex_ci(pmid) WHERE pmid IS NOT NULL;
+DO $$
+BEGIN
+    IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='mol_raw' AND table_name='openalex_ci') THEN
+        ALTER TABLE mol_raw.openalex_ci ADD COLUMN IF NOT EXISTS pmid                          TEXT;
+        ALTER TABLE mol_raw.openalex_ci ADD COLUMN IF NOT EXISTS pmcid                         TEXT;
+        ALTER TABLE mol_raw.openalex_ci ADD COLUMN IF NOT EXISTS mag_id                        TEXT;
+        ALTER TABLE mol_raw.openalex_ci ADD COLUMN IF NOT EXISTS work_type                     TEXT;
+        ALTER TABLE mol_raw.openalex_ci ADD COLUMN IF NOT EXISTS language                      TEXT;
+        ALTER TABLE mol_raw.openalex_ci ADD COLUMN IF NOT EXISTS volume                        TEXT;
+        ALTER TABLE mol_raw.openalex_ci ADD COLUMN IF NOT EXISTS issue                         TEXT;
+        ALTER TABLE mol_raw.openalex_ci ADD COLUMN IF NOT EXISTS first_page                    TEXT;
+        ALTER TABLE mol_raw.openalex_ci ADD COLUMN IF NOT EXISTS last_page                     TEXT;
+        ALTER TABLE mol_raw.openalex_ci ADD COLUMN IF NOT EXISTS topics                        JSONB;
+        ALTER TABLE mol_raw.openalex_ci ADD COLUMN IF NOT EXISTS keywords                      JSONB;
+        ALTER TABLE mol_raw.openalex_ci ADD COLUMN IF NOT EXISTS mesh_terms                    JSONB;
+        ALTER TABLE mol_raw.openalex_ci ADD COLUMN IF NOT EXISTS cited_by_percentile           NUMERIC;
+        ALTER TABLE mol_raw.openalex_ci ADD COLUMN IF NOT EXISTS citation_counts_by_year       JSONB;
+        ALTER TABLE mol_raw.openalex_ci ADD COLUMN IF NOT EXISTS grants                        JSONB;
+        ALTER TABLE mol_raw.openalex_ci ADD COLUMN IF NOT EXISTS referenced_works              JSONB;
+        ALTER TABLE mol_raw.openalex_ci ADD COLUMN IF NOT EXISTS related_works                 JSONB;
+        ALTER TABLE mol_raw.openalex_ci ADD COLUMN IF NOT EXISTS sustainable_development_goals JSONB;
+        ALTER TABLE mol_raw.openalex_ci ADD COLUMN IF NOT EXISTS best_oa_location              JSONB;
+        ALTER TABLE mol_raw.openalex_ci ADD COLUMN IF NOT EXISTS is_retracted                  BOOLEAN;
+        ALTER TABLE mol_raw.openalex_ci ADD COLUMN IF NOT EXISTS is_paratext                   BOOLEAN;
+        CREATE INDEX IF NOT EXISTS idx_mol_raw_openalex_ci_pmid
+            ON mol_raw.openalex_ci(pmid) WHERE pmid IS NOT NULL;
+    END IF;
+END $$;
 
 -- ============================================================================
 -- FROM 115: mol_raw.europepmc_raw
