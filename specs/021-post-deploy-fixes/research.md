@@ -1,6 +1,6 @@
-# Research: Post-Deployment Fixes & Credential Audit
+# Research: Post-Deployment Fixes, SQL Audit & Silver Gap Closure
 
-**Branch**: `021-post-deploy-fixes` | **Date**: 2026-03-31
+**Branch**: `021-post-deploy-fixes`
 
 ---
 
@@ -8,15 +8,13 @@
 
 **Decision**: `dk-data-applications/prd` is the single source of truth for all CronJob env vars.
 
-**Rationale**: The `DopplerSecret` manifest (`k8s/apps/infrastructure/base/doppler-secret.yaml`) reads from `dk-data-applications/prd` with no `secrets` filter — it syncs all keys. The staging overlay patches `config: stg`. Any key placed in a different Doppler project (e.g., `dk-data-fe`) is invisible to the cluster.
-
-**Alternatives considered**: Adding a second `DopplerSecret` pointing to `dk-data-fe/prd` — rejected because it requires a second service token secret in the cluster and adds operational complexity. Simpler to place all CronJob keys in the correct project.
-
 **Root cause of EPO failure**: Keys were set in `dk-data-fe/prd` (wrong project) with `CHANGEME` placeholders in `dk-data-applications/prd`. Fixed by running:
 ```bash
 doppler secrets set EPO_CONSUMER_KEY="..." EPO_CONSUMER_SECRET="..." \
   --project dk-data-applications --config prd
 ```
+
+**Alternatives considered**: Adding a second `DopplerSecret` pointing to `dk-data-fe/prd` — rejected because it requires a second service token secret and adds operational complexity.
 
 ---
 
@@ -24,15 +22,7 @@ doppler secrets set EPO_CONSUMER_KEY="..." EPO_CONSUMER_SECRET="..." \
 
 **Decision**: Failing pods running old image `prod-61e05d7` require no action — they self-heal.
 
-**Rationale**: ArgoCD synced `prod-85e01aa` but CronJob pods only pull new images when they next trigger. Pods that ran between the old and new promotion window completed with the datetime offset bug (fixed in PR #159). The next scheduled run picks up the new image automatically.
-
-**Pods affected**:
-- `fetch-news` — weekly
-- `fetch-pubmed` — daily
-- `fetch-openalex-ci` — daily
-- `fetch-sec-edgar` — daily
-
-All self-heal within 24 hours of the prod promotion without intervention.
+**Pods affected**: `fetch-news` (weekly), `fetch-pubmed` (daily), `fetch-openalex-ci` (daily), `fetch-sec-edgar` (daily). All self-heal within 24 hours of prod promotion.
 
 ---
 
@@ -40,25 +30,21 @@ All self-heal within 24 hours of the prod promotion without intervention.
 
 **Decision**: Retire DDInter permanently. No recovery path.
 
-**Rationale**: `ddinter.scbdd.com` is hosted on Alibaba Cloud. TCP connection attempts timeout consistently since early March 2026. DDInter v2 (`ddinter2.scbdd.com`) is equally unreachable. The service shows no status page, no social media activity, and no announcement of downtime. This is a permanent outage.
+`ddinter.scbdd.com` (Alibaba Cloud) TCP connection attempts timeout consistently since early March 2026. DDInter v2 equally unreachable.
 
-**Drug-drug interaction data coverage post-retirement**:
-- `mol_bronze.drugbank_data.drug_interactions` column — full DDI dataset from DrugBank XML (~17k drugs)
-- `mol_bronze.bindingdb` — binding affinity data complementary to DDI
-
-**Alternatives considered**: Polling for recovery on a schedule — rejected; maintaining dead-code fetchers pollutes `meta.refresh_log` and triggers false Grafana alerts.
+**DDI coverage post-retirement**:
+- `mol_bronze.drugbank_data.drug_interactions` — full DDI dataset from DrugBank XML (~17k drugs)
+- `mol_bronze.bindingdb` — complementary binding affinity data
 
 ---
 
 ## Finding 4: USPTO API Registration Blocker
 
-**Decision**: Track in GitHub issue #170, leave fetchers in `source_unavailable` skip mode.
+**Decision**: Track in issue #170, leave fetchers in `source_unavailable` skip mode.
 
-**Rationale**: USPTO account.uspto.gov requires ID.me verification with a US government-issued ID + SSN. Registration is being done from outside the US with a non-US passport — ID.me cannot verify the identity. The USPTO legacy developer hub decommissions April 20, 2026.
+USPTO account.uspto.gov requires ID.me verification with US government-issued ID + SSN. Registration is being done from outside the US. The USPTO legacy developer hub decommissions April 20, 2026.
 
-**Resolution path**: Either (a) a US-based team member registers and shares keys, or (b) email APIhelp@uspto.gov directly for assistance with non-US registration.
-
-**Impact assessment**: USPTO patent and trademark fetchers already handle missing keys with `source_unavailable` exit 0. No data loss — these sources have never successfully ingested data.
+**Resolution path**: (a) US-based team member registers, or (b) email APIhelp@uspto.gov for non-US registration assistance.
 
 ---
 
@@ -66,17 +52,99 @@ All self-heal within 24 hours of the prod promotion without intervention.
 
 **Decision**: Document gap; track separately. Out of scope for `021`.
 
-**Rationale**: The `cms-gold-refresh` CronJob runs `sqlmesh run hcs_gold.* mol_gold.*` daily but there are no HCS bronze or silver transform CronJobs. Gold depends on bronze and silver being populated. `job-initial-backfill` (one-time job) was never manually triggered on the cluster after PR #149 merged.
+The `cms-gold-refresh` CronJob runs `sqlmesh run hcs_gold.* mol_gold.*` daily but there are no HCS bronze or silver transform CronJobs. `job-initial-backfill` was never manually triggered on the cluster after PR #149 merged. HCS gold models produce empty results until upstream silver is populated.
 
-**Impact**: HCS gold models run daily but produce empty results because upstream silver is unpopulated. This will become visible when CMS PUF fetchers start running in the first week of April 2026.
+---
 
-**Resolution**: Either (a) manually apply `job-initial-backfill` to the cluster, or (b) create `cronjob-hcs-transform-bronze` and `cronjob-hcs-transform-silver` mirroring the mol pipeline pattern.
+## Finding 6: WHO ICD API Migration
+
+**Decision**: Full fetcher rewrite. Both the ICD-10 URL and ICD-11 entity IDs were wrong.
+
+**ICD-10**: `apps.who.int/classifications/icd10/browse/2019/en/JsonGetDescendants` returns HTTP 302 → HTML. Replaced with `id.who.int/icd/release/10/2019`. Same OAuth2 token as ICD-11.
+
+**ICD-11 entity IDs**: Hardcoded IDs (e.g., `448895267`) returned 404. The root URL `id.who.int/icd/release/11/2024-01/mms` returns a JSON `child` array with all top-level chapter URLs — entity IDs can be extracted from these URLs dynamically. No hardcoded IDs needed.
+
+**ICD-10 tree depth**: Old code only walked 2 levels. ICD-10 has 4 levels (chapter → block → 3-char → 4-char leaf). A recursive walker was added that follows `child` arrays at every node.
+
+**Bronze column mismatch**: Both ICD-10 and ICD-11 return `title` as an object `{"@value": "…", "@language": "en"}`. The old bronze model tried to extract a flat `description` column that doesn't exist. Fixed to `response_body->'title'->>'@value'`.
+
+---
+
+## Finding 7: FULL Model `processed_to_silver` Anti-Pattern
+
+**Decision**: Remove all `WHERE processed_to_silver = FALSE` filters from FULL models.
+
+FULL models rebuild entirely on each run by design. A `processed_to_silver = FALSE` filter causes the model to return all rows on the first run (all rows have `FALSE`), then return zero rows on every subsequent run (all rows now have `TRUE`). This silently empties the table.
+
+**Affected model confirmed**: `mol_silver.patent_exclusivities` — both the orange_book CTE and purple_book CTE had this filter.
+
+**Rule going forward**: `processed_to_silver = FALSE` filters are only valid in INCREMENTAL models. FULL models must never use them.
+
+---
+
+## Finding 8: Grain Violation Pattern from Multi-Year Bronze Tables
+
+**Decision**: Any silver model joining a bronze table whose grain includes `_source_year` must use `DISTINCT ON (silver_grain) ORDER BY silver_grain, _source_year DESC NULLS LAST`.
+
+**Affected tables** (bronze grain includes `_source_year`):
+- `hcs_bronze.cms_nppes` — grain `(npi, _source_year)`
+- `hcs_bronze.cms_hospital_general_info` — grain `(facility_id, _source_year)`
+
+**Silver models fixed**:
+- `cms_pecos`, `cms_dmepos`, `cms_physician_puf_services` — join `cms_nppes`
+- `cms_chow`, `cms_post_acute`, `cms_cost_reports_puf_lines`, `cms_hospital_affiliation` — join `cms_hospital_general_info`
+
+**Pattern**: `ORDER BY …, _source_year DESC NULLS LAST` gives the most recent NPPES/HGI record when multiple years are present.
+
+---
+
+## Finding 9: Alias JOIN Fan-Out Pattern
+
+**Decision**: All LEFT JOINs to `mol_silver.molecule_aliases` (or any table without a unique constraint on the JOIN key) must use `LEFT JOIN LATERAL (… LIMIT 1)` or `DISTINCT ON`.
+
+**Root cause**: `molecule_aliases` grain is `(molecule_id, alias_name_normalized)`. Multiple rows can share the same `alias_name_normalized` when two molecules have the same alias (e.g., salt forms). An open LEFT JOIN fans out to one row per matching alias, multiplying rows in the calling model.
+
+**Models fixed**: `ema_regulatory`, `imgt`, `cochrane_reviews`, `nice_hta`, `ttd`, `cms_ndc`, `cms_formulary`.
+
+**New silver models designed with LATERAL from day one**: `cms_stabilis`, `cms_usp`, `ema_regulatory_docs`.
+
+---
+
+## Finding 10: `mol_silver.molecules` Column Inventory
+
+`mol_silver.molecules` has **`canonical_name`** as the primary name column. Columns `inn_name` and `preferred_name` do not exist. Any model referencing these will fail at runtime.
+
+**Models fixed**: `mol_silver.orange_book`, `mol_silver.healthcare_facilities` (hcs version).
+
+---
+
+## Finding 11: `identifier_mappings` Canonical `identifier_type` Values
+
+Valid values populated by `mol_silver.identifier_mappings`:
+`chembl_id`, `drugbank_id`, `pubchem_cid`, `cas_number`, `unii`, `uniprot_id`, `rxcui`, `ndc`
+
+**Incorrect values found and fixed**:
+- `pdb_ligand` → `pubchem_cid` (`mol_silver.protein_structures`)
+- `uniprot` → `uniprot_id` (`mol_silver.proteins`)
+
+---
+
+## Finding 12: Dead-End Bronze Sources
+
+**Decision**: All bronze sources must have at least one silver consumer. 7 sources had none.
+
+**Linkage design principle**: Every silver model must use the least-ambiguous linkage strategy available, in priority order:
+1. Exact canonical name match on `mol_silver.molecules`
+2. Normalized alias match on `mol_silver.molecule_aliases` (LATERAL LIMIT 1)
+3. First-token alias match (for multi-word INN variants like "bevacizumab alfa")
+4. Identifier bridge (`identifier_mappings`, `hcpcs_molecule_bridge`)
+5. Provider linkage: NPI → `cms_nppes`; CCN/facility_id → `cms_hospital_general_info`
+
+All LATERAL subqueries use `ORDER BY molecule_id LIMIT 1` to ensure deterministic output when multiple aliases match.
 
 ---
 
 ## Doppler Keys Audit Summary
-
-Full audit of `dk-data-applications/prd` against CronJob manifest requirements:
 
 | Key | Value State | Action Taken |
 |-----|-------------|--------------|
