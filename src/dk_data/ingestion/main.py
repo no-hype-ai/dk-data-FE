@@ -440,6 +440,8 @@ SOURCES = {
         'loader': load_bindingdb_data,
         'requires_file': False,
         'default_days_back': None,
+        'streaming': True,       # Stream to DB in 50k-record chunks — full dataset >1.5M rows
+        'chunk_size': 50_000,
     },
     'sider': {
         'name': 'SIDER',
@@ -1245,14 +1247,37 @@ def run_ingestion(source: str, **kwargs) -> dict:
             if _k not in _INTERNAL_KWARGS:
                 fetch_kwargs[_k] = _v
 
+        loader = source_info['loader']
+
+        # Streaming sources (e.g. BindingDB): fetch and load in chunks to bound
+        # peak memory usage. The fetcher calls loader_fn once per chunk.
+        if source_info.get('streaming'):
+            fetch_kwargs['loader_fn'] = loader
+            fetch_kwargs['chunk_size'] = source_info.get('chunk_size', 50_000)
+            fetch_result = fetcher.fetch(**fetch_kwargs)
+            if fetch_result.get('status') in ('failed', 'source_unavailable'):
+                logger.warning(f"Fetch failed for {source}: {fetch_result.get('error')}")
+                log_to_meta(meta_source, fetch_result)
+                return fetch_result
+            result = fetch_result
+            result['records_fetched'] = fetch_result.get('record_count', 0)
+            log_to_meta(meta_source, result)
+            _elapsed = time.monotonic() - _t0
+            _records = result.get('records_inserted', 0)
+            record_job_duration(f'ingestion_{source}', _elapsed)
+            record_job_records(f'ingestion_{source}', _records)
+            if result.get('status') not in ('success', 'partial'):
+                increment_job_failure(f'ingestion_{source}')
+            else:
+                mark_job_success(f'ingestion_{source}')
+            return result
+
         fetch_result = fetcher.fetch(**fetch_kwargs)
 
         if fetch_result.get('status') in ('failed', 'source_unavailable'):
             logger.warning(f"Fetch failed for {source}: {fetch_result.get('error')}")
             log_to_meta(meta_source, fetch_result)
             return fetch_result
-
-        loader = source_info['loader']
 
         # File-path fetchers (e.g. GV PUF) return extracted_files + int records count.
         # Call the loader once per extracted file using filepath + year kwargs.

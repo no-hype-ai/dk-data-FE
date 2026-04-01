@@ -73,7 +73,7 @@ spec:
                   valueFrom:
                     secretKeyRef:
                       name: dk-data-secrets
-                      key: LITELLM_PROXY_URL
+                      key: LITELLM_BASE_URL
                 - name: LITELLM_API_KEY
                   valueFrom:
                     secretKeyRef:

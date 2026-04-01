@@ -83,7 +83,7 @@ spec:
                   memory: "1Gi"
                   cpu: "200m"
                 limits:
-                  memory: "2Gi"   # BindingDB TSV ~2GB uncompressed
+                  memory: "2Gi"   # Streaming 50k chunks; only zip buffer (~500MB) in memory
                   cpu: "500m"
               securityContext:
                 allowPrivilegeEscalation: false
