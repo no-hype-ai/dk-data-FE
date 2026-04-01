@@ -5,6 +5,7 @@ dk_data.services __init__ chain (which requires aiohttp, psycopg2, redis, etc.).
 """
 
 import sys
+import types
 import importlib.util
 from pathlib import Path
 
@@ -21,12 +22,29 @@ import respx
 # ---------------------------------------------------------------------------
 _SRC = Path(__file__).parent.parent / "src"
 
+def _ensure_pkg(dotted: str):
+    """Register empty package module stubs for every ancestor of dotted."""
+    parts = dotted.split(".")
+    for i in range(1, len(parts)):
+        pkg = ".".join(parts[:i])
+        if pkg not in sys.modules:
+            m = types.ModuleType(pkg)
+            m.__path__ = [str(_SRC / Path(*parts[:i]))]
+            m.__package__ = pkg
+            sys.modules[pkg] = m
+
+
 def _load(dotted: str):
     """Load a dotted module path directly from src/ without package init chain."""
+    _ensure_pkg(dotted)
     parts = dotted.split(".")
     path = _SRC / Path(*parts).with_suffix(".py")
-    spec = importlib.util.spec_from_file_location(dotted, path)
+    spec = importlib.util.spec_from_file_location(
+        dotted, path,
+        submodule_search_locations=[str(path.parent)],
+    )
     mod = importlib.util.module_from_spec(spec)
+    mod.__package__ = ".".join(parts[:-1])
     sys.modules[dotted] = mod
     spec.loader.exec_module(mod)
     return mod
