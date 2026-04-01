@@ -6,7 +6,7 @@
 MODEL (
     name mol_bronze.euipo_designs,
     kind INCREMENTAL_BY_TIME_RANGE (
-        time_column ingested_at,
+        time_column _loaded_at,
         lookback 7
     ),
     cron '@weekly',
@@ -79,8 +79,8 @@ SELECT
 
     -- Processing metadata
     FALSE                                    AS processed_to_silver,
-    r.ingested_at
+    r._loaded_at
 
 FROM mol_raw.euipo_designs r
 WHERE r.response_body->>'application_number' IS NOT NULL
-  AND r.ingested_at BETWEEN @start_dt AND @end_dt
+  AND r._loaded_at BETWEEN @start_dt AND @end_dt

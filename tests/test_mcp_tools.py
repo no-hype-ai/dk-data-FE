@@ -53,15 +53,15 @@ class TestToolRegistry:
         for name in mol_raw_tools:
             assert TOOL_REGISTRY[name].raw_schema == "mol_raw", f"{name} should use mol_raw"
 
-    def test_raw_sources(self):
-        """IP/regulatory sources use raw schema."""
+    def test_mol_raw_ip_sources(self):
+        """IP/regulatory sources now use mol_raw schema (promoted from raw.* in migration 137)."""
         from dk_data.services.mcp.tool_registry import TOOL_REGISTRY
-        raw_tools = [
+        mol_raw_tools = [
             "pubmed-search", "ema-search", "hta-decisions-search",
             "sec-edgar-search", "who-icd-search", "pdb-search",
         ]
-        for name in raw_tools:
-            assert TOOL_REGISTRY[name].raw_schema == "raw", f"{name} should use raw"
+        for name in mol_raw_tools:
+            assert TOOL_REGISTRY[name].raw_schema == "mol_raw", f"{name} should use mol_raw"
 
 
 class TestMCPRouter:

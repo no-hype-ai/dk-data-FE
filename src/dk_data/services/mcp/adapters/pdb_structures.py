@@ -42,7 +42,7 @@ class Adapter(BaseAdapter):
 
     @property
     def raw_schema(self) -> str:
-        return "raw"
+        return "mol_raw"
 
     def normalize(self, api_response: dict) -> dict:
         return api_response

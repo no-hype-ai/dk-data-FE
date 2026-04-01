@@ -2,7 +2,7 @@
 -- Enriches mol_bronze.trademark_status_history with molecule linkage and
 -- full trademark context from mol_silver.trademarks.
 --
--- Grain: (trademark_identifier, source, change_detected_at)
+-- Grain: (trademark_identifier, source, changed_at)
 -- Dedup: INCREMENTAL_BY_UNIQUE_KEY on the three-column grain prevents duplicate
 --   inserts if the daily bronze job runs multiple times.
 --
@@ -15,13 +15,13 @@
 MODEL (
     name mol_silver.trademark_status_changes,
     kind INCREMENTAL_BY_UNIQUE_KEY (
-        unique_key (trademark_identifier, source, change_detected_at)
+        unique_key (trademark_identifier, source, changed_at)
     ),
     cron '@daily',
     audits (
-        not_null(columns := (trademark_identifier, source, new_status, change_detected_at))
+        not_null(columns := (trademark_identifier, source, new_status, changed_at))
     ),
-    grain (trademark_identifier, source, change_detected_at)
+    grain (trademark_identifier, source, changed_at)
 );
 
 SELECT
@@ -30,7 +30,7 @@ SELECT
     h.old_status,
     h.new_status,
     h.transition_type,
-    h.change_detected_at,
+    h.changed_at,
 
     -- Full trademark context at the time of the status snapshot
     t.mark_name,
