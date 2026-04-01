@@ -14,7 +14,7 @@ MODEL (
     grain enrollment_id
 );
 
-SELECT
+SELECT DISTINCT ON (b.enrollment_id)
     gen_random_uuid()               AS id,
     b.enrollment_id,
     b.npi,
@@ -24,7 +24,7 @@ SELECT
     b.first_name,
     b.last_name,
 
-    -- Provider identity from NPPES
+    -- Provider identity from NPPES (most recent year via ORDER BY)
     -- entity_type_code: '1' = individual, '2' = organization
     COALESCE(n.provider_organization_name,
              n.provider_last_name || ', ' || n.provider_first_name) AS provider_name,
@@ -39,3 +39,4 @@ SELECT
 FROM hcs_bronze.cms_pecos b
 LEFT JOIN hcs_bronze.cms_nppes n ON b.npi = n.npi
 WHERE b.enrollment_id IS NOT NULL
+ORDER BY b.enrollment_id, n._source_year DESC NULLS LAST

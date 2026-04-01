@@ -52,6 +52,7 @@ from threading import Semaphore
 
 from .main import SOURCES, _meta_name, get_last_successful_refresh, run_ingestion
 from .utils.database import init_connection_pool, close_connection_pool
+from .utils.retry import retry_with_backoff
 
 try:
     from prometheus_client import start_http_server
@@ -319,18 +320,31 @@ def _fetch_one(source: str, data_dir: str, days_back: int | None,
     t0 = time.monotonic()
     try:
         extra_kwargs = BACKFILL_SOURCE_KWARGS.get(source, {})
-        result = run_ingestion(
-            source=source,
-            data_dir=data_dir,
-            days_back=days_back,
-            **extra_kwargs,
-        )
+
+        # S7: retry transient failures with exponential backoff.
+        # Individual fetcher HTTP sessions already retry 429/5xx at the request level;
+        # this catches failures above that (connection reset, schema errors, etc.).
+        # Use shorter delays than the default (30s→60s→120s) since backfill is batch.
+        @retry_with_backoff(max_attempts=3, initial_delay=30, max_delay=120,
+                            exceptions=(Exception,))
+        def _run():
+            return run_ingestion(
+                source=source,
+                data_dir=data_dir,
+                days_back=days_back,
+                **extra_kwargs,
+            )
+
+        result = _run()
         status = result.get('status', 'unknown')
         records = result.get('records_inserted', result.get('records_fetched', 0))
         elapsed = time.monotonic() - t0
         record_job_duration(f'backfill_fetch_{source}', elapsed)
         record_job_records(f'backfill_fetch_{source}', records or 0)
-        if status not in ('success', 'partial'):
+        if status in ('success', 'partial'):
+            # S8: emit per-source success timestamp for Prometheus staleness alerting
+            mark_job_success(f'backfill_fetch_{source}')
+        else:
             increment_job_failure(f'backfill_fetch_{source}')
         return source, status, records
     except Exception:

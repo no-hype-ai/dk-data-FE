@@ -55,3 +55,6 @@ sources:
 
   - name: mol_raw.cms_medicare
     description: "CMS Medicare drug spending — populated by CMSMedicareFetcher; consumed by mol_bronze.cms_medicare"
+
+  - name: mol_raw.websearch
+    description: "Web search results — populated by agent side-channel (not standard ingestion pipeline); consumed by mol_bronze.websearch_results"

@@ -14,7 +14,7 @@ MODEL (
     grain pdb_code
 );
 
-SELECT
+SELECT DISTINCT ON (b.pdb_code)
     gen_random_uuid()                                           AS id,
     COALESCE(m_exact.molecule_id, m_alias.molecule_id,
              m_uniprot.molecule_id)                            AS molecule_id,
@@ -57,4 +57,8 @@ LEFT JOIN mol_silver.molecule_targets mt
        ON mt.target_id = t.id
 LEFT JOIN mol_silver.molecules m_uniprot
        ON m_uniprot.molecule_id = mt.molecule_id
-WHERE b.pdb_code IS NOT NULL;
+WHERE b.pdb_code IS NOT NULL
+ORDER BY b.pdb_code,
+         m_exact.molecule_id NULLS LAST,
+         m_alias.molecule_id NULLS LAST,
+         m_uniprot.molecule_id NULLS LAST;

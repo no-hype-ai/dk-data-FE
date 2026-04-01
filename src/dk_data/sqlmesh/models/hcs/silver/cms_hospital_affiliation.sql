@@ -15,7 +15,7 @@ MODEL (
     grain (npi, facility_affiliations_certification_number)
 );
 
-SELECT
+SELECT DISTINCT ON (b.npi, b.facility_affiliations_certification_number)
     gen_random_uuid()               AS id,
     b.npi,
     b.ind_pac_id,
@@ -25,14 +25,14 @@ SELECT
     b.facility_affiliations_certification_number,
     b.facility_type_certification_number,
 
-    -- Provider identity from NPPES
+    -- Provider identity from NPPES (most recent year via ORDER BY)
     -- entity_type_code: '1' = individual, '2' = organization
     COALESCE(n.provider_organization_name,
              n.provider_last_name || ', ' || n.provider_first_name) AS provider_name,
     n.entity_type_code                                              AS provider_type,
     n.provider_business_practice_location_address_state_name       AS provider_state,
 
-    -- Facility identity from hospital general info
+    -- Facility identity from hospital general info (most recent year via ORDER BY)
     h.facility_name,
     h.city_town                     AS facility_city,
     h.state                         AS facility_state,
@@ -47,3 +47,4 @@ LEFT JOIN hcs_bronze.cms_nppes n
 LEFT JOIN hcs_bronze.cms_hospital_general_info h
        ON b.facility_affiliations_certification_number = h.facility_id
 WHERE b.npi IS NOT NULL
+ORDER BY b.npi, b.facility_affiliations_certification_number, n._source_year DESC NULLS LAST, h._source_year DESC NULLS LAST

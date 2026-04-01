@@ -15,7 +15,7 @@ MODEL (
     grain (ccn, effective_date)
 );
 
-SELECT
+SELECT DISTINCT ON (b.ccn, b.effective_date)
     gen_random_uuid()               AS id,
     b.ccn,
     b.previous_owner,
@@ -45,3 +45,4 @@ LEFT JOIN hcs_bronze.cms_care_compare cc ON b.ccn = cc.facility_id
 LEFT JOIN hcs_bronze.cms_hospital_general_info h  ON b.ccn = h.facility_id
 WHERE b.ccn IS NOT NULL
   AND b.effective_date IS NOT NULL
+ORDER BY b.ccn, b.effective_date, h._source_year DESC NULLS LAST

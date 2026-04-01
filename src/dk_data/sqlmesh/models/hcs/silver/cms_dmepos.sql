@@ -14,7 +14,7 @@ MODEL (
     grain npi
 );
 
-SELECT
+SELECT DISTINCT ON (b.npi)
     gen_random_uuid()               AS id,
     b.npi,
     b.hcpcs_code,
@@ -23,7 +23,7 @@ SELECT
     b.avg_submitted_charge,
     b.avg_medicare_payment,
 
-    -- Provider identity from NPPES
+    -- Provider identity from NPPES (most recent year via ORDER BY)
     -- entity_type_code: '1' = individual, '2' = organization
     COALESCE(n.provider_organization_name,
              n.provider_last_name || ', ' || n.provider_first_name) AS provider_name,
@@ -39,3 +39,4 @@ SELECT
 FROM hcs_bronze.cms_dmepos b
 LEFT JOIN hcs_bronze.cms_nppes n ON b.npi = n.npi
 WHERE b.npi IS NOT NULL
+ORDER BY b.npi, n._source_year DESC NULLS LAST

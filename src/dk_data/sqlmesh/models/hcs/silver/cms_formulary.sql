@@ -17,7 +17,7 @@ MODEL (
     grain (formulary_id, rxcui)
 );
 
-SELECT
+SELECT DISTINCT ON (b.formulary_id, b.rxcui)
     gen_random_uuid()               AS id,
     b.formulary_id,
     b.rxcui,
@@ -51,3 +51,4 @@ LEFT JOIN mol_silver.molecules m_alias
 
 WHERE b.formulary_id IS NOT NULL
   AND b.rxcui IS NOT NULL
+ORDER BY b.formulary_id, b.rxcui, COALESCE(im.molecule_id, m_alias.molecule_id) NULLS LAST

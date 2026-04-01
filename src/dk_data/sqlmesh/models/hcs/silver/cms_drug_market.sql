@@ -42,20 +42,24 @@ WITH part_d AS (
 ),
 
 part_b AS (
+    -- Group by generic only (not hcpcs_cd/mftr_name) to match grain (generic_name, _source_year).
+    -- A generic_name can appear under multiple HCPCS codes or manufacturers; spending is aggregated.
     SELECT
-        hcpcs_desc                              AS generic_name,
-        hcpcs_cd                                AS hcpcs_code,
-        mftr_name                               AS manufacturer_name,
+        hcpcs_desc                                          AS generic_name,
+        STRING_AGG(DISTINCT hcpcs_cd, ', '
+            ORDER BY hcpcs_cd)                              AS hcpcs_code,
+        STRING_AGG(DISTINCT mftr_name, ', '
+            ORDER BY mftr_name)                             AS manufacturer_name,
         _source_year,
-        SUM(tot_spndng)                         AS part_b_spending,
-        SUM(tot_clms)                           AS part_b_claims,
-        SUM(tot_benes)                          AS part_b_beneficiaries,
-        SUM(tot_dsg_unts)                       AS part_b_dosage_units,
-        AVG(avg_spnd_per_clm)                   AS part_b_avg_cost_per_claim,
-        AVG(avg_spnd_per_bene)                  AS part_b_avg_cost_per_bene
+        SUM(tot_spndng)                                     AS part_b_spending,
+        SUM(tot_clms)                                       AS part_b_claims,
+        SUM(tot_benes)                                      AS part_b_beneficiaries,
+        SUM(tot_dsg_unts)                                   AS part_b_dosage_units,
+        AVG(avg_spnd_per_clm)                               AS part_b_avg_cost_per_claim,
+        AVG(avg_spnd_per_bene)                              AS part_b_avg_cost_per_bene
     FROM hcs_bronze.cms_part_b_spending
     WHERE hcpcs_desc IS NOT NULL
-    GROUP BY hcpcs_desc, hcpcs_cd, mftr_name, _source_year
+    GROUP BY hcpcs_desc, _source_year
 ),
 
 combined AS (
