@@ -1156,15 +1156,14 @@ def log_to_meta(source_name: str, result: dict) -> None:
             status = result.get('status', 'unknown')
             cur.execute("""
                 INSERT INTO meta.refresh_log (
-                    source_id, source_name, started_at, completed_at,
+                    source_id, refresh_started_at, refresh_completed_at,
                     status, records_fetched, records_inserted, records_updated,
                     error_message
                 ) VALUES (
-                    %s, %s, %s, NOW(), %s, %s, %s, %s, %s
+                    %s, %s, NOW(), %s, %s, %s, %s, %s
                 )
             """, (
                 source_id,
-                source_name,
                 datetime.now(timezone.utc),
                 status,
                 result.get('records_fetched', result.get('records_inserted', 0)),
