@@ -1,53 +1,75 @@
-"""Tests for Cochrane Fetcher and CochraneReviewRecord validator.
+"""Tests for Cochrane Fetcher (PubMed eUtils implementation).
 
 Feature: 011-datasource-integration
 Task: T064-T066 — Cochrane systematic reviews
 
-Tests cover:
-- Fetcher initialization and session configuration
-- get_latest_url endpoint
-- Full fetch with mocked Cochrane API
-- CochraneReviewRecord validation (valid and invalid)
+Cochrane's own API is Cloudflare-blocked (#189). Fetcher now uses PubMed
+eUtils (esearch + esummary) scoped to "Cochrane Database Syst Rev"[Journal].
 """
 
 from datetime import date
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 
 import pytest
 
-from dk_data.ingestion.fetchers.cochrane import CochraneFetcher
+from dk_data.ingestion.fetchers.cochrane import (
+    ESEARCH_URL,
+    CochraneFetcher,
+)
 from dk_data.ingestion.utils.validators import CochraneReviewRecord
 
 
 # ---------------------------------------------------------------------------
-# Sample Cochrane API response fixtures
+# PubMed eSummary fixture — matches what NCBI returns
 # ---------------------------------------------------------------------------
 
-SAMPLE_REVIEW_ITEM = {
-    "id": "CD013600",
-    "title": "Systemic corticosteroids for the treatment of COVID-19",
-    "authors": ["Wagner C", "Griesel M", "Mikolajewska A"],
-    "abstract": "Systemic corticosteroids are used to treat COVID-19 as they reduce inflammation.",
-    "publishDate": "2026-01-15",
-    "reviewType": "Intervention",
-    "interventions": ["corticosteroids", "dexamethasone"],
-    "conditions": ["COVID-19"],
-    "conclusions": "Moderate-certainty evidence that corticosteroids reduce mortality.",
-    "doi": "10.1002/14651858.CD013600.pub2",
-}
-
-SAMPLE_REVIEW_MINIMAL = {
-    "id": "CD012345",
-    "title": "A minimal review record",
-}
-
-
-def _make_cochrane_response(items):
-    """Build a mock Cochrane API response body."""
-    return {
-        "results": items,
-        "resultCount": len(items),
+ESEARCH_RESPONSE = {
+    "esearchresult": {
+        "idlist": ["38000001", "38000002"],
+        "count": "2",
     }
+}
+
+ESUMMARY_RESPONSE = {
+    "result": {
+        "38000001": {
+            "uid": "38000001",
+            "title": "Corticosteroids for COVID-19: a Cochrane review",
+            "authors": [
+                {"name": "Wagner C"},
+                {"name": "Griesel M"},
+            ],
+            "pubdate": "2026 Mar 15",
+            "epubdate": "",
+            "articleids": [
+                {"idtype": "doi", "value": "10.1002/14651858.CD013600.pub2"},
+                {"idtype": "pubmed", "value": "38000001"},
+            ],
+        },
+        "38000002": {
+            "uid": "38000002",
+            "title": "Antivirals for influenza: systematic review",
+            "authors": [{"name": "Jefferson T"}],
+            "pubdate": "2026 Jan",
+            "epubdate": "",
+            "articleids": [
+                {"idtype": "doi", "value": "10.1002/14651858.CD008965.pub4"},
+            ],
+        },
+    }
+}
+
+ESUMMARY_NO_DOI = {
+    "result": {
+        "38000003": {
+            "uid": "38000003",
+            "title": "No DOI review",
+            "authors": [],
+            "pubdate": "2026",
+            "articleids": [],
+        }
+    }
+}
 
 
 # ---------------------------------------------------------------------------
@@ -55,17 +77,13 @@ def _make_cochrane_response(items):
 # ---------------------------------------------------------------------------
 
 class TestCochraneFetcherInit:
-    """Tests for Cochrane fetcher initialization."""
-
     def test_fetcher_init(self, tmp_path):
-        """Verify fetcher initializes with correct source name."""
         fetcher = CochraneFetcher(data_dir=str(tmp_path))
         assert fetcher.SOURCE_NAME == "cochrane"
         assert fetcher.session is not None
         assert fetcher.data_dir == tmp_path
 
     def test_fetcher_session_accepts_json(self, tmp_path):
-        """Verify the Accept header requests JSON."""
         fetcher = CochraneFetcher(data_dir=str(tmp_path))
         assert fetcher.session.headers.get("Accept") == "application/json"
 
@@ -75,60 +93,48 @@ class TestCochraneFetcherInit:
 # ---------------------------------------------------------------------------
 
 class TestCochraneFetcherURL:
-    """Tests for get_latest_url."""
-
     def test_get_latest_url(self, tmp_path):
-        """Verify get_latest_url returns the Cochrane search API."""
         fetcher = CochraneFetcher(data_dir=str(tmp_path))
         url = fetcher.get_latest_url()
-        assert "cochranelibrary.com" in url
+        assert "eutils.ncbi.nlm.nih.gov" in url
+        assert url == ESEARCH_URL
 
 
 # ---------------------------------------------------------------------------
-# Fetcher tests: fetch with mocked HTTP
+# Fetcher tests: fetch with mocked PubMed HTTP
 # ---------------------------------------------------------------------------
 
 class TestCochraneFetcherFetch:
-    """Tests for the fetch method with mocked HTTP responses."""
+
+    def _make_fetch_json_side_effect(self, esearch_resp, esummary_resp):
+        def _side_effect(url, params=None):
+            if "esearch" in url:
+                return esearch_resp
+            return esummary_resp
+        return _side_effect
 
     def test_fetch_success(self, tmp_path):
-        """Test complete fetch with mocked Cochrane API."""
         fetcher = CochraneFetcher(data_dir=str(tmp_path))
 
-        items = [SAMPLE_REVIEW_ITEM, SAMPLE_REVIEW_MINIMAL]
-        mock_response = MagicMock()
-        mock_response.json.return_value = _make_cochrane_response(items)
-        mock_response.status_code = 200
-        mock_response.raise_for_status = MagicMock()
-
-        with patch.object(fetcher.session, "get", return_value=mock_response):
-            result = fetcher.fetch(
-                search_terms=["corticosteroids"],
-                days_back=90,
-            )
+        with patch.object(
+            fetcher, "fetch_json",
+            side_effect=self._make_fetch_json_side_effect(
+                ESEARCH_RESPONSE, ESUMMARY_RESPONSE
+            ),
+        ):
+            result = fetcher.fetch(search_terms=["corticosteroids"], days_back=90)
 
         assert result["status"] == "success"
         assert result["record_count"] == 2
         assert result["hash"] is not None
-        assert len(result["records"]) == 2
-
-        rec = result["records"][0]
-        assert rec["review_id"] == "CD013600"
-        assert rec["title"] == "Systemic corticosteroids for the treatment of COVID-19"
-        assert rec["doi"] == "10.1002/14651858.CD013600.pub2"
-        assert rec["interventions"] == ["corticosteroids", "dexamethasone"]
-        assert rec["conditions"] == ["COVID-19"]
+        titles = [r["title"] for r in result["records"]]
+        assert "Corticosteroids for COVID-19: a Cochrane review" in titles
 
     def test_fetch_empty_results(self, tmp_path):
-        """Test fetch when no reviews are returned."""
         fetcher = CochraneFetcher(data_dir=str(tmp_path))
 
-        mock_response = MagicMock()
-        mock_response.json.return_value = _make_cochrane_response([])
-        mock_response.status_code = 200
-        mock_response.raise_for_status = MagicMock()
-
-        with patch.object(fetcher.session, "get", return_value=mock_response):
+        empty_search = {"esearchresult": {"idlist": [], "count": "0"}}
+        with patch.object(fetcher, "fetch_json", return_value=empty_search):
             result = fetcher.fetch(search_terms=["nonexistent_drug_xyz"])
 
         assert result["status"] == "success"
@@ -136,147 +142,158 @@ class TestCochraneFetcherFetch:
         assert result["records"] == []
 
     def test_fetch_api_error(self, tmp_path):
-        """Test fetch returns failed when the API is unreachable (network error)."""
+        """Per-term esearch failures are caught inside _search_pmids and return [].
+        The overall fetch degrades gracefully to success with 0 records rather
+        than a hard failure — consistent with the platform's other fetchers.
+        A hard status:failed is reserved for exceptions that escape the main loop.
+        """
         fetcher = CochraneFetcher(data_dir=str(tmp_path))
 
         with patch.object(
-            fetcher.session,
-            "get",
+            fetcher, "fetch_json",
             side_effect=Exception("Connection refused"),
         ):
             result = fetcher.fetch(search_terms=["test"])
 
-        # Pre-flight probe raises → outer exception handler → status=failed
-        assert result["status"] == "failed"
+        assert result["status"] == "success"
+        assert result["record_count"] == 0
         assert result["records"] == []
 
     def test_fetch_returns_failed_on_unexpected_error(self, tmp_path):
-        """Test fetch returns failed on unexpected errors outside search loop."""
         fetcher = CochraneFetcher(data_dir=str(tmp_path))
 
-        # Mock session.get for the pre-flight probe (returns 200) so the code
-        # proceeds past the 401/403 check and reaches _search_reviews.
-        probe_response = MagicMock()
-        probe_response.status_code = 200
-
-        with patch.object(fetcher.session, "get", return_value=probe_response), \
-             patch.object(
-                 fetcher,
-                 "_search_reviews",
-                 side_effect=RuntimeError("Unexpected internal error"),
-             ):
+        with patch.object(
+            fetcher, "_search_pmids",
+            side_effect=RuntimeError("Unexpected internal error"),
+        ):
             result = fetcher.fetch(search_terms=["test"])
 
         assert result["status"] == "failed"
         assert "Unexpected internal error" in result["error"]
 
     def test_fetch_deduplicates_records(self, tmp_path):
-        """Test that duplicate review IDs are deduplicated."""
+        """Same PMID from two different search terms produces only 1 record."""
         fetcher = CochraneFetcher(data_dir=str(tmp_path))
 
-        # Same review ID from two different terms
-        items = [SAMPLE_REVIEW_ITEM]
-        mock_response = MagicMock()
-        mock_response.json.return_value = _make_cochrane_response(items)
-        mock_response.status_code = 200
-        mock_response.raise_for_status = MagicMock()
+        single_hit_search = {"esearchresult": {"idlist": ["38000001"], "count": "1"}}
+        single_hit_summary = {
+            "result": {"38000001": ESUMMARY_RESPONSE["result"]["38000001"]}
+        }
 
-        with patch.object(fetcher.session, "get", return_value=mock_response):
+        def _side_effect(url, params=None):
+            if "esearch" in url:
+                return single_hit_search
+            return single_hit_summary
+
+        with patch.object(fetcher, "fetch_json", side_effect=_side_effect):
             result = fetcher.fetch(
                 search_terms=["corticosteroids", "dexamethasone"],
             )
 
         assert result["status"] == "success"
-        # Should be deduplicated to 1 unique review
         assert result["record_count"] == 1
 
 
 # ---------------------------------------------------------------------------
-# Fetcher tests: normalization
+# Fetcher tests: _normalize_summary
 # ---------------------------------------------------------------------------
 
 class TestCochraneNormalization:
-    """Tests for review record normalization."""
 
-    def test_normalize_review_full(self, tmp_path):
-        """Test normalization of a fully populated review."""
+    def test_normalize_full_record(self, tmp_path):
+        import json
         fetcher = CochraneFetcher(data_dir=str(tmp_path))
-        result = fetcher._normalize_review(SAMPLE_REVIEW_ITEM, "test")
+        item = ESUMMARY_RESPONSE["result"]["38000001"]
+        result = fetcher._normalize_summary(item, "corticosteroids")
 
-        assert result["review_id"] == "CD013600"
-        assert result["title"] == "Systemic corticosteroids for the treatment of COVID-19"
-        assert result["authors"] == "Wagner C; Griesel M; Mikolajewska A"
-        assert result["publication_date"] == "2026-01-15"
-        assert result["interventions"] == ["corticosteroids", "dexamethasone"]
+        assert result is not None
+        assert result["pmid"] == "38000001"
+        assert result["review_id"] == "10.1002/14651858.CD013600.pub2"
+        assert result["doi"] == "10.1002/14651858.CD013600.pub2"
+        assert result["title"] == "Corticosteroids for COVID-19: a Cochrane review"
+        # authors is a JSON array string for JSONB column compatibility
+        authors = json.loads(result["authors"])
+        assert "Wagner C" in authors
+        assert result["review_type"] == "systematic_review"
+        assert result["source"] == "pubmed_cochrane"
+        assert result["search_term"] == "corticosteroids"
 
-    def test_normalize_review_minimal(self, tmp_path):
-        """Test normalization of a minimal review."""
+    def test_normalize_minimal_record_no_doi(self, tmp_path):
         fetcher = CochraneFetcher(data_dir=str(tmp_path))
-        result = fetcher._normalize_review(SAMPLE_REVIEW_MINIMAL, "test")
+        item = ESUMMARY_NO_DOI["result"]["38000003"]
+        result = fetcher._normalize_summary(item, "test")
 
-        assert result["review_id"] == "CD012345"
-        assert result["title"] == "A minimal review record"
+        assert result is not None
+        assert result["pmid"] == "38000003"
+        assert result["review_id"] == "pmid:38000003"
+        assert result["doi"] is None
         assert result["authors"] is None
-        assert result["interventions"] is None
 
-    def test_normalize_review_no_id(self, tmp_path):
-        """Test normalization returns None when no ID is available."""
+    def test_normalize_missing_uid_returns_none(self, tmp_path):
         fetcher = CochraneFetcher(data_dir=str(tmp_path))
-        result = fetcher._normalize_review({"title": "No ID"}, "test")
+        result = fetcher._normalize_summary({"title": "No UID"}, "test")
         assert result is None
 
 
 # ---------------------------------------------------------------------------
-# Validator tests: valid records
+# Date parsing
+# ---------------------------------------------------------------------------
+
+class TestParsePubmedDate:
+
+    @pytest.mark.parametrize("pubdate,expected", [
+        ("2026 Mar 15", "2026-03-15"),
+        ("2026 Mar",    "2026-03-01"),
+        ("2026",        "2026-01-01"),
+        ("2026-03-15",  "2026-03-15"),
+        ("2026-03",     "2026-03-01"),
+        ("",            None),
+        ("Spring 2026", None),
+    ])
+    def test_parse_pubmed_date(self, pubdate, expected):
+        result = CochraneFetcher._parse_pubmed_date(pubdate)
+        assert result == expected
+
+
+# ---------------------------------------------------------------------------
+# Validator tests
 # ---------------------------------------------------------------------------
 
 class TestCochraneReviewRecordValid:
-    """Tests for valid CochraneReviewRecord instances."""
 
     def test_full_record(self):
-        """Fully populated record validates successfully."""
         record = CochraneReviewRecord(
-            review_id="CD013600",
+            review_id="10.1002/14651858.CD013600.pub2",
             title="Systemic corticosteroids for COVID-19",
-            authors="Wagner C; Griesel M",
-            abstract="A systematic review of corticosteroids.",
-            publication_date=date(2026, 1, 15),
-            review_type="Intervention",
-            interventions=["corticosteroids", "dexamethasone"],
-            conditions=["COVID-19"],
-            conclusions="Moderate-certainty evidence of benefit.",
-            doi="10.1002/14651858.CD013600",
+            authors='["Wagner C", "Griesel M"]',
+            abstract=None,
+            publication_date=date(2026, 3, 15),
+            review_type="systematic_review",
+            interventions=None,
+            conditions=None,
+            conclusions=None,
+            doi="10.1002/14651858.CD013600.pub2",
         )
-        assert record.review_id == "CD013600"
-        assert record.interventions == ["corticosteroids", "dexamethasone"]
+        assert record.review_id == "10.1002/14651858.CD013600.pub2"
+        assert record.publication_date == date(2026, 3, 15)
 
     def test_minimal_record(self):
-        """Minimal record with only required fields."""
-        record = CochraneReviewRecord(review_id="CD000001")
-        assert record.review_id == "CD000001"
+        record = CochraneReviewRecord(review_id="pmid:38000001")
+        assert record.review_id == "pmid:38000001"
         assert record.title is None
         assert record.authors is None
-        assert record.interventions is None
 
-
-# ---------------------------------------------------------------------------
-# Validator tests: invalid records
-# ---------------------------------------------------------------------------
 
 class TestCochraneReviewRecordInvalid:
-    """Tests for invalid CochraneReviewRecord instances."""
 
     def test_empty_review_id(self):
-        """Empty review_id is rejected."""
         with pytest.raises(Exception):
             CochraneReviewRecord(review_id="")
 
     def test_missing_review_id(self):
-        """Missing review_id is rejected."""
         with pytest.raises(Exception):
             CochraneReviewRecord()
 
     def test_whitespace_only_review_id(self):
-        """Whitespace-only review_id is rejected."""
         with pytest.raises(Exception):
             CochraneReviewRecord(review_id="   ")
