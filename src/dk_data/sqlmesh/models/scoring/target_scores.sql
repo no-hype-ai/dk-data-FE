@@ -7,6 +7,7 @@ MODEL (
     name hcs_gold.target_scores,
     kind FULL,
     cron '@daily',
+    audits (not_null(columns := (hospital_key))),
     description 'Target Readiness Scores across five domains with tier classification'
 );
 

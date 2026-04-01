@@ -1,26 +1,26 @@
 -- SQLMesh Model: Bronze Trademark Status History
--- Promotes raw.trademark_status_history (audit trail written by USPTO/EUIPO loaders)
+-- Promotes mol_raw.trademark_status_history (audit trail written by USPTO/EUIPO loaders)
 -- to a typed bronze layer with molecule linkage hooks.
 --
--- Source: raw.trademark_status_history
+-- Source: mol_raw.trademark_status_history (canonical since migration 137)
 --   Written by: load_uspto_trademarks.py and load_euipo_trademarks.py
 --   on every ingest when a trademark status change is detected.
--- Grain: (trademark_identifier, source, change_detected_at)
+-- Grain: (trademark_identifier, source, changed_at)
 --
--- Ref: issue #171 M5
+-- Ref: issue #171 M5, #196 C3
 
 MODEL (
     name mol_bronze.trademark_status_history,
     kind INCREMENTAL_BY_TIME_RANGE (
-        time_column change_detected_at,
+        time_column changed_at,
         batch_size  1000
     ),
     cron '@daily',
     audits (
-        not_null(columns := (trademark_identifier, source, new_status, change_detected_at)),
-        unique_values(columns := (trademark_identifier, source, change_detected_at))
+        not_null(columns := (trademark_identifier, source, new_status, changed_at)),
+        unique_values(columns := (trademark_identifier, source, changed_at))
     ),
-    grain (trademark_identifier, source, change_detected_at)
+    grain (trademark_identifier, source, changed_at)
 );
 
 SELECT
@@ -29,7 +29,7 @@ SELECT
     h.source,
     h.old_status,
     h.new_status,
-    h.change_detected_at,
+    h.changed_at,
     -- Classify transition type
     CASE
         WHEN h.old_status IS NULL                              THEN 'initial_registration'
@@ -43,8 +43,8 @@ SELECT
           OR h.new_status ILIKE '%review%'                    THEN 'contested'
         ELSE 'status_update'
     END                         AS transition_type,
-    h.change_detected_at        AS source_updated_at,
+    h.changed_at                AS source_updated_at,
     NOW()                       AS created_at
 
-FROM raw.trademark_status_history h
-WHERE h.change_detected_at BETWEEN @start_dt AND @end_dt;
+FROM mol_raw.trademark_status_history h
+WHERE h.changed_at BETWEEN @start_dt AND @end_dt;

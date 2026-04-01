@@ -6,6 +6,7 @@ MODEL (
     name mol_gold.competitive_landscape,
     kind FULL,
     cron '@daily',
+    audits (not_null(columns := (molecule_id))),
     grain (molecule_id)
 );
 

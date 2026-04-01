@@ -73,6 +73,14 @@ CREATE UNIQUE INDEX IF NOT EXISTS uidx_mol_raw_who_gho_indicator_code
     WHERE (response_body->>'IndicatorCode') IS NOT NULL;
 
 -- ============================================================================
+-- (j) Drop orphaned raw.trademark_status_history
+--     Superseded by mol_raw.trademark_status_history (migration 137).
+--     Loaders write to mol_raw; raw.* version from migration 073 is orphaned.
+-- ============================================================================
+
+DROP TABLE IF EXISTS raw.trademark_status_history;
+
+-- ============================================================================
 -- (c) mol_raw.cdc_vaccines — safety net if migration 121 was not applied
 -- ============================================================================
 

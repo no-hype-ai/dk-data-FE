@@ -6,6 +6,7 @@ MODEL (
     name hcs_gold.fact_financial_metrics,
     kind FULL,
     cron '@daily',
+    audits (not_null(columns := (hospital_key))),
     description 'Hospital financial metrics with operating margin quartiles'
 );
 

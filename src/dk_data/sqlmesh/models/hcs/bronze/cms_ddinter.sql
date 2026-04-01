@@ -16,7 +16,7 @@ MODEL (
         time_column ingested_at,
         batch_size 500
     ),
-    cron '@daily',
+    cron '@yearly',  -- retired source; run at most once yearly to avoid scheduler noise
     audits (not_null(columns := (drug_a, drug_b))),
     grain (drug_a, drug_b)
 );

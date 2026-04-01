@@ -556,6 +556,20 @@ def transform_all_layers() -> dict:
     total_success = 0
     total_fail = 0
 
+    # Always run plan --auto-apply --forward-only before the first run so new
+    # models added to the codebase are registered in SQLMesh's _snapshots table.
+    # Without this, sqlmesh run silently skips models not yet in state.
+    logger.info("Running sqlmesh plan --auto-apply --forward-only to register new models...")
+    plan_result = run_sqlmesh_command(
+        ['plan', '--auto-apply', '--forward-only'],
+        timeout=600,
+    )
+    if plan_result.get('status') != 'success':
+        logger.warning(
+            "sqlmesh plan --auto-apply failed (non-fatal): %s",
+            plan_result.get('error', 'unknown error'),
+        )
+
     # Full pipeline dependency sequence (UTC schedule when run as individual CronJobs):
     # 06:00 bronze → 06:30 ip_bronze → 07:00 hcs_bronze+mol_bronze_ext → 07:30 ind_bronze
     # → 08:00 silver → 08:30 ind_silver → 09:00 hcs_silver → 10:30 ip_silver
