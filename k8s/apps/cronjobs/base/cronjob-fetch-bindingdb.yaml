@@ -3,7 +3,7 @@
 # Downloads BindingDB_All.tsv.zip (~500MB) and loads binding affinity records.
 # Full dataset (~1.2M rows with affinity data); monthly refresh is sufficient
 # (BindingDB releases annually but accepts incremental data throughout year).
-# Memory limit raised to 2Gi to accommodate the uncompressed TSV in-process.
+# Memory limit raised to 4Gi — uncompressed BindingDB_All.tsv is ~3GB; 2Gi OOMKilled.
 apiVersion: batch/v1
 kind: CronJob
 metadata:
@@ -80,10 +80,10 @@ spec:
                   value: "true"
               resources:
                 requests:
-                  memory: "1Gi"
+                  memory: "2Gi"
                   cpu: "200m"
                 limits:
-                  memory: "2Gi"   # Streaming 50k chunks; only zip buffer (~500MB) in memory
+                  memory: "4Gi"   # BindingDB_All.tsv uncompressed ~3GB; 2Gi was OOMKilled
                   cpu: "500m"
               securityContext:
                 allowPrivilegeEscalation: false
