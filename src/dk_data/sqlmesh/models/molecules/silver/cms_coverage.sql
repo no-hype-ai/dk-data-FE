@@ -28,7 +28,8 @@ SELECT DISTINCT ON (b.coverage_id)
     b.source_number,
     b.topic,
 
-    -- Attempt molecule linkage via alias match on coverage title.
+    -- Attempt molecule linkage via word-boundary regex match on coverage title.
+    -- \m/\M anchors prevent short common words (iron, zinc) from matching mid-word.
     -- NULL when no alias matches — not all coverage decisions name a specific drug.
     -- DISTINCT ON above ensures one row per coverage_id; ORDER BY prefers non-null molecule_id
     -- when multiple aliases match the same title.
@@ -41,7 +42,7 @@ SELECT DISTINCT ON (b.coverage_id)
 FROM mol_bronze.cms_coverage b
 LEFT JOIN mol_silver.molecule_aliases ma
        ON b.title IS NOT NULL
-      AND LOWER(b.title) LIKE '%' || LOWER(ma.alias_name) || '%'
+      AND b.title ~* ('\m' || ma.alias_name || '\M')
       AND LENGTH(ma.alias_name) >= 4
 WHERE b.coverage_id IS NOT NULL
 ORDER BY b.coverage_id, ma.molecule_id NULLS LAST

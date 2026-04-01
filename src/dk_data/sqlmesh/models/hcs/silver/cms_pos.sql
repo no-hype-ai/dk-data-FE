@@ -15,7 +15,7 @@ MODEL (
     grain ccn
 );
 
-SELECT
+SELECT DISTINCT ON (b.ccn)
     gen_random_uuid()               AS id,
     b.ccn,
     b.facility_name,
@@ -33,7 +33,7 @@ SELECT
     cc.hospital_type,
     cc.emergency_services,
 
-    -- Hospital general info cross-check
+    -- Hospital general info cross-check (most recent year chosen by ORDER BY below)
     h.telephone_number,
     h.county_parish,
 
@@ -45,3 +45,4 @@ FROM hcs_bronze.cms_pos b
 LEFT JOIN hcs_bronze.cms_care_compare cc ON b.ccn = cc.facility_id
 LEFT JOIN hcs_bronze.cms_hospital_general_info h  ON b.ccn = h.facility_id
 WHERE b.ccn IS NOT NULL
+ORDER BY b.ccn, h._source_year DESC NULLS LAST
