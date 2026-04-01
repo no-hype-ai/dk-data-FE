@@ -157,11 +157,12 @@ class TestHtaDecisionsUrl:
 
 # ---------------------------------------------------------------------------
 # Bulk-only / no-credentials adapters — synchronous error, no HTTP call
+# Run with asyncio.run() to avoid pytest-asyncio dependency
 # ---------------------------------------------------------------------------
 
-@pytest.mark.asyncio
-async def test_ema_returns_error_without_http_call():
-    result = await EmaTool().invoke(DRUG)
+def test_ema_returns_error_without_http_call():
+    import asyncio
+    result = asyncio.run(EmaTool().invoke(DRUG))
     assert result["tool"] == "ema-search"
     assert result["error"] is not None
     assert result["data"] is None
@@ -169,18 +170,18 @@ async def test_ema_returns_error_without_http_call():
     assert "no free public JSON API" in result["error"]
 
 
-@pytest.mark.asyncio
-async def test_cochrane_returns_error_without_http_call():
-    result = await CochraneTool().invoke(DRUG)
+def test_cochrane_returns_error_without_http_call():
+    import asyncio
+    result = asyncio.run(CochraneTool().invoke(DRUG))
     assert result["tool"] == "cochrane-search"
     assert result["error"] is not None
     assert result["data"] is None
     assert "Wiley API key" in result["error"]
 
 
-@pytest.mark.asyncio
-async def test_ttd_returns_error_without_http_call():
-    result = await TtdTool().invoke(DRUG)
+def test_ttd_returns_error_without_http_call():
+    import asyncio
+    result = asyncio.run(TtdTool().invoke(DRUG))
     assert result["tool"] == "ttd-search"
     assert result["error"] is not None
     assert result["data"] is None
@@ -191,43 +192,45 @@ async def test_ttd_returns_error_without_http_call():
 # base_tool: non-JSON content-type handling (B3 fix)
 # ---------------------------------------------------------------------------
 
-@pytest.mark.asyncio
-@respx.mock
-async def test_base_tool_handles_html_response():
+def test_base_tool_handles_html_response():
     """base_tool.invoke() should return a structured error for HTML responses."""
+    import asyncio
+
     tool = FdaDrugsTool()
     url = tool.build_url(DRUG)
 
-    respx.get(url).mock(
-        return_value=httpx.Response(
-            200,
-            content=b"<html>Not JSON</html>",
-            headers={"content-type": "text/html; charset=utf-8"},
+    with respx.mock:
+        respx.get(url).mock(
+            return_value=httpx.Response(
+                200,
+                content=b"<html>Not JSON</html>",
+                headers={"content-type": "text/html; charset=utf-8"},
+            )
         )
-    )
+        result = asyncio.run(tool.invoke(DRUG))
 
-    result = await tool.invoke(DRUG)
     assert result["error"] is not None
     assert "Non-JSON" in result["error"]
     assert result["data"] is None
 
 
-@pytest.mark.asyncio
-@respx.mock
-async def test_base_tool_parses_json_response():
+def test_base_tool_parses_json_response():
     """base_tool.invoke() should parse JSON responses correctly."""
+    import asyncio
+
     tool = FdaDrugsTool()
     url = tool.build_url(DRUG)
 
-    respx.get(url).mock(
-        return_value=httpx.Response(
-            200,
-            json={"results": [{"drug_name": DRUG}]},
-            headers={"content-type": "application/json"},
+    with respx.mock:
+        respx.get(url).mock(
+            return_value=httpx.Response(
+                200,
+                json={"results": [{"drug_name": DRUG}]},
+                headers={"content-type": "application/json"},
+            )
         )
-    )
+        result = asyncio.run(tool.invoke(DRUG))
 
-    result = await tool.invoke(DRUG)
     assert result["error"] is None
     assert result["data"] == {"results": [{"drug_name": DRUG}]}
     assert result["status_code"] == 200
