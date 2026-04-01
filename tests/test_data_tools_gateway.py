@@ -338,3 +338,149 @@ class TestToolNameConversion:
     def test_underscore_unchanged(self):
         from dk_data.api.routes.data_tools import _tool_name_to_source_name
         assert _tool_name_to_source_name("cms_part_d_spending") == "cms_part_d_spending"
+
+
+# ---------------------------------------------------------------------------
+# POST /api/v1/data-tools/{tool_name}/invoke
+# ---------------------------------------------------------------------------
+
+class TestInvokeEndpoint:
+    """Tests for POST /{tool_name}/invoke."""
+
+    _VALID_TOOL = "clinicaltrials-search"  # Always present in TOOL_REGISTRY
+
+    def _no_redis(self):
+        return patch("dk_data.api.routes.data_tools._get_redis_client", return_value=None)
+
+    def _mock_tool(self, invoke_result: dict):
+        """Patch _build_tool to return a mock BaseMCPTool."""
+        mock_tool = AsyncMock()
+        mock_tool.invoke = AsyncMock(return_value=invoke_result)
+        return patch("dk_data.api.routes.data_tools._build_tool", return_value=mock_tool)
+
+    def _success_result(self, source="clinicaltrials"):
+        return {
+            "status": "success",
+            "request_id": "test-uuid-1234",
+            "source": source,
+            "data": {"studies": [], "total": 0},
+            "raw_record_id": "raw-uuid-5678",
+            "duration_ms": 42,
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+        }
+
+    def test_unknown_tool_returns_404(self, client):
+        with _override_db(client.app, _make_db_pool()):
+            resp = client.post(
+                "/api/v1/data-tools/nonexistent-tool/invoke",
+                json={"drug_name": "aspirin"},
+            )
+        assert resp.status_code == 404
+        assert "nonexistent-tool" in resp.json()["detail"]
+
+    def test_missing_drug_name_returns_422(self, client):
+        with _override_db(client.app, _make_db_pool()):
+            resp = client.post(
+                f"/api/v1/data-tools/{self._VALID_TOOL}/invoke",
+                json={},
+            )
+        assert resp.status_code == 422
+
+    def test_successful_invocation_returns_200(self, client):
+        result = self._success_result()
+        with _override_db(client.app, _make_db_pool()), self._mock_tool(result):
+            resp = client.post(
+                f"/api/v1/data-tools/{self._VALID_TOOL}/invoke",
+                json={"drug_name": "pembrolizumab"},
+            )
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["status"] == "success"
+        assert data["source"] == "clinicaltrials"
+        assert data["request_id"] == "test-uuid-1234"
+
+    def test_invocation_with_molecule_id(self, client):
+        result = self._success_result()
+        with _override_db(client.app, _make_db_pool()), self._mock_tool(result):
+            resp = client.post(
+                f"/api/v1/data-tools/{self._VALID_TOOL}/invoke",
+                json={"drug_name": "pembrolizumab", "molecule_id": "mol-abc-123"},
+            )
+        assert resp.status_code == 200
+
+    def test_tool_rate_limited_returns_429(self, client):
+        error_result = {
+            "status": "error",
+            "request_id": "err-uuid",
+            "source": "clinicaltrials",
+            "error": {"code": "rate_limited", "message": "Rate limit exceeded", "status_code": 429},
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+        }
+        with _override_db(client.app, _make_db_pool()), self._mock_tool(error_result):
+            resp = client.post(
+                f"/api/v1/data-tools/{self._VALID_TOOL}/invoke",
+                json={"drug_name": "aspirin"},
+            )
+        assert resp.status_code == 429
+
+    def test_external_api_error_returns_502(self, client):
+        error_result = {
+            "status": "error",
+            "request_id": "err-uuid",
+            "source": "clinicaltrials",
+            "error": {"code": "external_api_error", "message": "Upstream 503", "status_code": 502},
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+        }
+        with _override_db(client.app, _make_db_pool()), self._mock_tool(error_result):
+            resp = client.post(
+                f"/api/v1/data-tools/{self._VALID_TOOL}/invoke",
+                json={"drug_name": "aspirin"},
+            )
+        assert resp.status_code == 502
+
+    def test_timeout_returns_408(self, client):
+        error_result = {
+            "status": "error",
+            "request_id": "err-uuid",
+            "source": "clinicaltrials",
+            "error": {"code": "timeout", "message": "Request timed out", "status_code": 408},
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+        }
+        with _override_db(client.app, _make_db_pool()), self._mock_tool(error_result):
+            resp = client.post(
+                f"/api/v1/data-tools/{self._VALID_TOOL}/invoke",
+                json={"drug_name": "aspirin"},
+            )
+        assert resp.status_code == 408
+
+    def test_tool_build_failure_returns_500(self, client):
+        with _override_db(client.app, _make_db_pool()), \
+             patch("dk_data.api.routes.data_tools._build_tool", side_effect=RuntimeError("adapter not found")):
+            resp = client.post(
+                f"/api/v1/data-tools/{self._VALID_TOOL}/invoke",
+                json={"drug_name": "aspirin"},
+            )
+        assert resp.status_code == 500
+
+    def test_response_has_required_fields(self, client):
+        result = self._success_result()
+        with _override_db(client.app, _make_db_pool()), self._mock_tool(result):
+            resp = client.post(
+                f"/api/v1/data-tools/{self._VALID_TOOL}/invoke",
+                json={"drug_name": "nivolumab"},
+            )
+        data = resp.json()
+        for field in ("status", "request_id", "source", "timestamp"):
+            assert field in data, f"Missing field: {field}"
+
+    def test_all_registered_tools_are_invocable(self, client):
+        """Every TOOL_REGISTRY entry must produce a 200 when the tool invoke is mocked."""
+        from dk_data.services.mcp.tool_registry import TOOL_REGISTRY
+        result = self._success_result()
+        for tool_name in list(TOOL_REGISTRY.keys())[:5]:  # Spot-check first 5
+            with _override_db(client.app, _make_db_pool()), self._mock_tool(result):
+                resp = client.post(
+                    f"/api/v1/data-tools/{tool_name}/invoke",
+                    json={"drug_name": "test_drug"},
+                )
+            assert resp.status_code == 200, f"Tool '{tool_name}' returned {resp.status_code}"

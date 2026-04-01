@@ -106,6 +106,22 @@ class SourceStatusResponse(BaseModel):
     cached: bool
 
 
+class InvokeRequest(BaseModel):
+    drug_name: str
+    molecule_id: Optional[str] = None
+
+
+class InvokeResponse(BaseModel):
+    status: str           # "success" | "error"
+    request_id: str
+    source: str
+    data: Optional[Any] = None
+    raw_record_id: Optional[str] = None
+    duration_ms: Optional[int] = None
+    error: Optional[Dict[str, Any]] = None
+    timestamp: str
+
+
 # ============================================================================
 # Helper: convert TOOL_REGISTRY name → meta.data_sources source_name
 # ============================================================================
@@ -388,3 +404,92 @@ async def get_source_status(
             pass
 
     return SourceStatusResponse(**response_data)
+
+
+# ============================================================================
+# Helper: instantiate BaseMCPTool from a ToolDefinition
+# ============================================================================
+
+def _build_tool(tool_def, db_pool):
+    """Lazily import adapter and return a BaseMCPTool instance."""
+    import importlib
+    from ...services.mcp.base_tool import BaseMCPTool
+
+    adapter_module = importlib.import_module(tool_def.adapter_module)
+    # Each adapter module exposes exactly one adapter class (the only BaseAdapter subclass).
+    # Find it by scanning module attributes.
+    from ...services.mcp.adapters.base import BaseAdapter
+    adapter_cls = None
+    for attr_name in dir(adapter_module):
+        attr = getattr(adapter_module, attr_name)
+        try:
+            if (
+                isinstance(attr, type)
+                and issubclass(attr, BaseAdapter)
+                and attr is not BaseAdapter
+            ):
+                adapter_cls = attr
+                break
+        except TypeError:
+            continue
+
+    if adapter_cls is None:
+        raise RuntimeError(
+            f"No BaseAdapter subclass found in {tool_def.adapter_module}"
+        )
+
+    adapter = adapter_cls()
+    return BaseMCPTool(adapter=adapter, api_base_url=tool_def.api_base_url, db_pool=db_pool)
+
+
+# ============================================================================
+# POST /{tool_name}/invoke
+# ============================================================================
+
+@router.post("/{tool_name}/invoke", response_model=InvokeResponse)
+async def invoke_tool(
+    tool_name: str,
+    request: InvokeRequest,
+    db_pool=Depends(get_db_pool),
+) -> InvokeResponse:
+    """
+    Invoke a data tool by name for a specific drug/molecule.
+
+    Calls the full MCP invoke flow:
+    rate_limit → fetch_external_api → adapter.normalize() →
+    insert_raw_record → trigger_transform → return_results
+
+    Returns 404 if tool_name is not registered.
+    Returns 502 / 408 / 429 / 500 on external API errors (proxied from the
+    tool's error response).
+    """
+    if tool_name not in TOOL_REGISTRY:
+        raise HTTPException(
+            status_code=404,
+            detail=f"Tool '{tool_name}' not found. "
+                   "Use GET /api/v1/data-tools/registry to list available tools.",
+        )
+
+    tool_def = TOOL_REGISTRY[tool_name]
+
+    try:
+        tool = _build_tool(tool_def, db_pool)
+    except Exception as e:
+        logger.error("tool_build_failed", tool_name=tool_name, error=str(e))
+        raise HTTPException(status_code=500, detail=f"Failed to load tool '{tool_name}': {e}")
+
+    input_params: Dict[str, Any] = {"drug_name": request.drug_name}
+    if request.molecule_id is not None:
+        input_params["molecule_id"] = request.molecule_id
+
+    logger.info("tool_invoke", tool_name=tool_name, drug_name=request.drug_name)
+
+    result = await tool.invoke(input_params)
+
+    # If the tool itself returned an error, surface the embedded HTTP status code.
+    if result.get("status") == "error":
+        error_info = result.get("error", {})
+        status_code = error_info.get("status_code", 502)
+        raise HTTPException(status_code=status_code, detail=error_info.get("message", "Tool invocation failed"))
+
+    return InvokeResponse(**result)
