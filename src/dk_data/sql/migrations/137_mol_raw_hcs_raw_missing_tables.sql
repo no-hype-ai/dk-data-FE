@@ -246,6 +246,8 @@ CREATE TABLE IF NOT EXISTS mol_raw.cochrane_reviews (
     _loaded_at       TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     UNIQUE (review_id)
 );
+-- Add pmid if table already existed from migration 060 (idempotent)
+ALTER TABLE mol_raw.cochrane_reviews ADD COLUMN IF NOT EXISTS pmid TEXT;
 CREATE INDEX IF NOT EXISTS idx_mol_raw_cochrane_doi  ON mol_raw.cochrane_reviews (doi);
 CREATE INDEX IF NOT EXISTS idx_mol_raw_cochrane_pmid ON mol_raw.cochrane_reviews (pmid);
 
