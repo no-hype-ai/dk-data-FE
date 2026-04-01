@@ -86,7 +86,7 @@ class CochraneFetcher(BaseFetcher):
             )
 
             all_records: List[Dict[str, Any]] = []
-            seen_pmids: set = set()
+            seen_pmids: set = set()  # tracks raw PMID strings for dedup
 
             for term in search_terms:
                 if len(all_records) >= max_records:
@@ -98,13 +98,14 @@ class CochraneFetcher(BaseFetcher):
                     max_results=max_records - len(all_records),
                 )
 
+                # Filter to PMIDs not yet fetched (dedup by PMID, not review_id)
                 new_pmids = [p for p in pmids if p not in seen_pmids]
                 if not new_pmids:
                     continue
 
                 records = self._fetch_summaries(new_pmids, term)
                 for rec in records:
-                    seen_pmids.add(rec["review_id"])
+                    seen_pmids.add(rec["pmid"])  # track by PMID for dedup
                     all_records.append(rec)
 
                 time.sleep(REQUEST_DELAY)
