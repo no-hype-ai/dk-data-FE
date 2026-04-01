@@ -26,13 +26,17 @@ SELECT
     r.filing_date,
     r.publication_date AS patent_date,
 
-    -- Classification (mol_raw.epo_patents has ipc_codes but not cpc_codes)
+    -- Classification (both ipc_codes TEXT[] and cpc_codes TEXT[] exist — migration 108/136)
     CASE
         WHEN r.ipc_codes IS NOT NULL
         THEN to_jsonb(r.ipc_codes)
         ELSE NULL
     END AS ipc_codes,
-    NULL::JSONB AS cpc_codes,
+    CASE
+        WHEN r.cpc_codes IS NOT NULL
+        THEN to_jsonb(r.cpc_codes)
+        ELSE NULL
+    END AS cpc_codes,
 
     -- Assignee info (->> extracts text from JSONB array)
     r.applicants->>0 AS assignee_organization,

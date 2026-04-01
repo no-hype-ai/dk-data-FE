@@ -49,18 +49,22 @@ CREATE INDEX IF NOT EXISTS idx_refresh_log_source_name
 -- (b) UNIQUE expression indexes for ON CONFLICT upserts
 -- ============================================================================
 
--- pubchem: loader uses ON CONFLICT ((response_body->>'cid'))
+-- pubchem: loader uses ON CONFLICT ((response_body->>'cid')) WHERE (response_body->>'cid') IS NOT NULL
+-- Partial index required — PostgreSQL ON CONFLICT must match index predicate exactly.
 CREATE UNIQUE INDEX IF NOT EXISTS uidx_mol_raw_pubchem_cid
-    ON mol_raw.pubchem ((response_body->>'cid'));
+    ON mol_raw.pubchem ((response_body->>'cid'))
+    WHERE (response_body->>'cid') IS NOT NULL;
 
--- chembl: loader uses ON CONFLICT ((response_body->>'molecule_chembl_id'))
+-- chembl: loader uses ON CONFLICT ((response_body->>'molecule_chembl_id')) WHERE ... IS NOT NULL
 -- Note: table is mol_raw.chembl (not chembl_molecules); loader file is chembl_molecules.py
 CREATE UNIQUE INDEX IF NOT EXISTS uidx_mol_raw_chembl_chembl_id
-    ON mol_raw.chembl ((response_body->>'molecule_chembl_id'));
+    ON mol_raw.chembl ((response_body->>'molecule_chembl_id'))
+    WHERE (response_body->>'molecule_chembl_id') IS NOT NULL;
 
--- who_gho: loader uses ON CONFLICT ((response_body->>'IndicatorCode'))
+-- who_gho: loader uses ON CONFLICT ((response_body->>'IndicatorCode')) WHERE ... IS NOT NULL
 CREATE UNIQUE INDEX IF NOT EXISTS uidx_mol_raw_who_gho_indicator_code
-    ON mol_raw.who_gho ((response_body->>'IndicatorCode'));
+    ON mol_raw.who_gho ((response_body->>'IndicatorCode'))
+    WHERE (response_body->>'IndicatorCode') IS NOT NULL;
 
 -- ============================================================================
 -- (c) mol_raw.cdc_vaccines — safety net if migration 121 was not applied
