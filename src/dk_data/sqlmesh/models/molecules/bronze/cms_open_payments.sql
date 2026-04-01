@@ -1,14 +1,19 @@
--- SQLMesh Model: Bronze CMS Open Payments
--- Transforms raw CMS Open Payments (physician payment) API responses to Bronze typed columns.
--- API: https://openpaymentsdata.cms.gov/api/1/datastore/query/{dataset_id}/0
--- Response shape: {"data": [{physician_npi, physician_first_name, ..., total_amount_of_payment_usdollars, ...}]}
+-- SQLMesh Model: Bronze CMS Open Payments (mol namespace pass-through)
+-- Reads from hcs_raw.cms_open_payments — the loader (sources/cms_open_payments.py)
+-- writes to hcs_raw, not mol_raw. This model exposes a mol_bronze view of the same
+-- data so mol-namespace downstream models can reference mol_bronze.cms_open_payments
+-- without a cross-namespace raw dependency.
+--
+-- Source of truth: hcs_bronze.cms_open_payments (INCREMENTAL_BY_UNIQUE_KEY)
+-- This FULL pass-through is intentionally simple — no JSONB expansion needed since
+-- hcs_raw.cms_open_payments stores typed columns, not JSONB envelopes.
+--
+-- Fix (issue #186 M8): previously sourced from mol_raw.cms_open_payments (always empty;
+-- the API loader never wrote to mol_raw). Changed to hcs_raw.cms_open_payments.
 
 MODEL (
     name mol_bronze.cms_open_payments,
-    kind INCREMENTAL_BY_TIME_RANGE (
-        time_column request_timestamp,
-        batch_size 1000
-    ),
+    kind FULL,
     cron '@monthly',
     audits (
         not_null(columns := (record_id))
@@ -16,94 +21,46 @@ MODEL (
     grain record_id
 );
 
-WITH expanded AS (
-    SELECT
-        r.id              AS raw_source_id,
-        r.request_timestamp,
-        rec.value         AS row
-    FROM mol_raw.cms_open_payments r,
-         LATERAL jsonb_array_elements(
-             CASE
-                 WHEN r.response_body ? 'data'    THEN r.response_body->'data'
-                 WHEN r.response_body ? 'results' THEN r.response_body->'results'
-                 WHEN jsonb_typeof(r.response_body) = 'array' THEN r.response_body
-                 ELSE '[]'::jsonb
-             END
-         ) AS rec(value)
-    WHERE r.response_status = 200
-      AND r.processed_to_bronze = FALSE
-      AND r.request_timestamp BETWEEN @start_dt AND @end_dt
-)
-
-SELECT DISTINCT ON (
-    COALESCE(
-        row->>'record_id',
-        row->>'Record_ID',
-        row->>'id'
-    )
-)
-    gen_random_uuid()                                                           AS id,
-
-    -- Unique identifier
-    COALESCE(row->>'record_id', row->>'Record_ID', row->>'id')                 AS record_id,
-
-    -- Physician identifiers
-    COALESCE(row->>'physician_npi', row->>'Physician_NPI',
-             row->>'covered_recipient_npi')                                     AS physician_npi,
-    COALESCE(row->>'physician_first_name', row->>'Physician_First_Name',
-             row->>'covered_recipient_first_name')                              AS physician_first_name,
-    COALESCE(row->>'physician_last_name', row->>'Physician_Last_Name',
-             row->>'covered_recipient_last_name')                               AS physician_last_name,
-    COALESCE(row->>'physician_specialty', row->>'Physician_Specialty',
-             row->>'covered_recipient_specialty_1')                             AS physician_specialty,
-    COALESCE(row->>'physician_state', row->>'Physician_State',
-             row->>'recipient_state')                                           AS physician_state,
-
-    -- Manufacturer / payer
-    COALESCE(
-        row->>'applicable_manufacturer_or_applicable_gpo_making_payment_name',
-        row->>'manufacturer_name',
-        row->>'Manufacturer_Name'
-    )                                                                           AS manufacturer_name,
-
-    -- Payment details
-    COALESCE(
-        (row->>'total_amount_of_payment_usdollars')::NUMERIC,
-        (row->>'payment_amount')::NUMERIC
-    )                                                                           AS payment_amount,
-
-    COALESCE(row->>'nature_of_payment_or_transfer_of_value',
-             row->>'payment_nature')                                            AS payment_nature,
-
-    COALESCE(row->>'date_of_payment', row->>'payment_date')                    AS payment_date,
-
-    COALESCE(
-        (row->>'program_year')::INTEGER,
-        (row->>'payment_year')::INTEGER
-    )                                                                           AS payment_year,
-
-    COALESCE(row->>'form_of_payment_or_transfer_of_value',
-             row->>'payment_form')                                              AS payment_form,
-
-    -- Associated drug/product (first drug slot)
-    COALESCE(
-        row->>'name_of_drug_or_biological_or_device_or_medical_supply_1',
-        row->>'product_name',
-        row->>'drug_name'
-    )                                                                           AS product_name,
-
-    -- Raw source tracking
-    row                                                                         AS raw_json,
-    raw_source_id,
-    'cms_open_payments'                                                         AS source,
-    request_timestamp                                                           AS ingested_at,
-    request_timestamp,
-    request_timestamp                                                           AS source_updated_at,
-    FALSE                                                                       AS processed_to_silver,
-    NOW()                                                                       AS created_at
-
-FROM expanded
-WHERE COALESCE(row->>'record_id', row->>'Record_ID', row->>'id') IS NOT NULL
-ORDER BY
-    COALESCE(row->>'record_id', row->>'Record_ID', row->>'id'),
-    request_timestamp DESC NULLS LAST;
+SELECT
+    id,
+    record_id,
+    covered_recipient_type,
+    physician_profile_id,
+    physician_first_name,
+    physician_last_name,
+    physician_specialty,
+    applicable_manufacturer_or_gpo_name,
+    total_amount_of_payment_usdollars::NUMERIC(18,2)    AS total_amount_of_payment_usdollars,
+    date_of_payment::DATE                               AS date_of_payment,
+    number_of_payments_included_in_total_amount::INTEGER AS number_of_payments_included_in_total_amount,
+    form_of_payment_or_transfer_of_value,
+    nature_of_payment_or_transfer_of_value,
+    recipient_city,
+    recipient_state,
+    recipient_zip_code,
+    program_year::INTEGER                               AS program_year,
+    payment_publication_date::DATE                      AS payment_publication_date,
+    name_of_drug_or_biological_or_device_or_medical_supply_1,
+    name_of_drug_or_biological_or_device_or_medical_supply_2,
+    name_of_drug_or_biological_or_device_or_medical_supply_3,
+    name_of_drug_or_biological_or_device_or_medical_supply_4,
+    name_of_drug_or_biological_or_device_or_medical_supply_5,
+    associated_drug_or_biological_ndc_1,
+    associated_drug_or_biological_ndc_2,
+    associated_drug_or_biological_ndc_3,
+    associated_drug_or_biological_ndc_4,
+    associated_drug_or_biological_ndc_5,
+    drug_name_1_normalized,
+    drug_name_2_normalized,
+    drug_name_3_normalized,
+    drug_name_4_normalized,
+    drug_name_5_normalized,
+    _source_year,
+    _source_hash,
+    _source_file,
+    _loaded_at,
+    'cms_open_payments'                                 AS source,
+    _loaded_at                                          AS source_updated_at,
+    FALSE                                               AS processed_to_silver,
+    NOW()                                               AS created_at
+FROM hcs_raw.cms_open_payments;

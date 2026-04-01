@@ -1238,7 +1238,7 @@ def run_ingestion(source: str, **kwargs) -> dict:
             days_back = _compute_days_back(source, source_info)
         if days_back is not None:
             fetch_kwargs['days_back'] = days_back
-        if kwargs.get('max_records') is not None:
+        if 'max_records' in kwargs:
             fetch_kwargs['max_records'] = kwargs['max_records']
         # Pass through any source-specific kwargs (full_backfill, query, max_results,
         # max_entries, years, etc.) from BACKFILL_SOURCE_KWARGS or CLI overrides.
@@ -1322,6 +1322,14 @@ def run_ingestion(source: str, **kwargs) -> dict:
                 agg['errors'].extend(r.get('errors', []))
             agg['records_fetched'] = fetch_result.get('records', 0)
             log_to_meta(meta_source, agg)
+            _elapsed = time.monotonic() - _t0
+            _records = agg.get('records_inserted', 0)
+            record_job_duration(f'ingestion_{source}', _elapsed)
+            record_job_records(f'ingestion_{source}', _records)
+            if agg.get('status') not in ('success', 'partial'):
+                increment_job_failure(f'ingestion_{source}')
+            else:
+                mark_job_success(f'ingestion_{source}')
             return agg
 
         # Standard API fetchers return records as a list of dicts.
@@ -1335,6 +1343,14 @@ def run_ingestion(source: str, **kwargs) -> dict:
             'record_count', len(fetch_result.get('records', []))
         )
         log_to_meta(meta_source, result)
+        _elapsed = time.monotonic() - _t0
+        _records = result.get('records_inserted', 0)
+        record_job_duration(f'ingestion_{source}', _elapsed)
+        record_job_records(f'ingestion_{source}', _records)
+        if result.get('status') not in ('success', 'partial'):
+            increment_job_failure(f'ingestion_{source}')
+        else:
+            mark_job_success(f'ingestion_{source}')
         return result
 
     # File source: existing pattern

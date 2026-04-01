@@ -323,6 +323,11 @@ sources:
     timeout_seconds: 60        # Large annual PUF file
     burst_limit: 10
 
+  cms_ddinter:
+    requests_per_second: 2     # DDInter rate-limits aggressively; 2 rps is conservative
+    timeout_seconds: 30
+    burst_limit: 5
+
   cms_claim_type_puf:
     requests_per_second: 5
     timeout_seconds: 60

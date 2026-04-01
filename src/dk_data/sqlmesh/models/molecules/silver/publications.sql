@@ -294,6 +294,10 @@ enriched AS (
     FROM combined_pubs
 )
 
+-- DISTINCT ON (doi): requires doi IS NOT NULL — NULL doi rows cannot be deduplicated
+-- and would collapse all null-doi publications into one arbitrary record.
+-- Publications without a DOI are excluded; they lack the identifier needed for
+-- INCREMENTAL_BY_UNIQUE_KEY merges and downstream citation linkage.
 SELECT DISTINCT ON (doi)
     gen_random_uuid()       AS id,
     openalex_id,
@@ -331,6 +335,7 @@ SELECT DISTINCT ON (doi)
     NOW()                   AS created_at,
     NOW()                   AS updated_at
 FROM enriched
+WHERE doi IS NOT NULL
 ORDER BY doi,
     CASE source
         WHEN 'openalex'       THEN 1

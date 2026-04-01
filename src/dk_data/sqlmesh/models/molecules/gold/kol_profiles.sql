@@ -62,15 +62,18 @@ pub_counts AS (
     GROUP BY LOWER(TRIM(p.first_author_name))
 ),
 
--- Clinical trial involvement counts, matched by lead_sponsor
--- (mol_silver.clinical_trials aliases lead_sponsor_name → lead_sponsor)
+-- Clinical trial involvement counts, matched by lead_sponsor.
+-- Word-boundary regex (\m/\M) prevents short surnames (e.g. "Lee", "Kim") from
+-- matching mid-word inside sponsor names ("GlaxoSmithKline"). Length guard ≥4
+-- further reduces false positives on very short family names.
 trial_counts AS (
     SELECT
         r.id AS researcher_id,
         COUNT(DISTINCT ct.nct_id) AS trial_count
     FROM mol_silver.researchers r
     JOIN mol_silver.clinical_trials ct
-        ON ct.lead_sponsor ILIKE '%' || r.family_name || '%'
+        ON LENGTH(r.family_name) >= 4
+       AND ct.lead_sponsor ~* ('\m' || r.family_name || '\M')
     GROUP BY r.id
 ),
 

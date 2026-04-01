@@ -29,8 +29,7 @@ WITH cms_inpatient AS (
         'cms_inpatient' AS source,
         _loaded_at                          AS source_updated_at
     FROM hcs_bronze.cms_inpatient_puf
-    WHERE processed_to_silver = FALSE
-      AND provider_id IS NOT NULL
+    WHERE provider_id IS NOT NULL
 ),
 
 cms_hospital AS (
@@ -48,8 +47,7 @@ cms_hospital AS (
         'cms_hospital_info' AS source,
         _loaded_at                          AS source_updated_at
     FROM hcs_bronze.cms_hospital_general_info
-    WHERE processed_to_silver = FALSE
-      AND facility_id IS NOT NULL
+    WHERE facility_id IS NOT NULL
 ),
 
 cms_costs AS (
@@ -67,8 +65,7 @@ cms_costs AS (
         'cms_cost_reports' AS source,
         _loaded_at                          AS source_updated_at
     FROM hcs_bronze.cms_cost_reports_puf
-    WHERE processed_to_silver = FALSE
-      AND provider_id IS NOT NULL
+    WHERE provider_id IS NOT NULL
 ),
 
 acc_tvc AS (
@@ -91,8 +88,7 @@ acc_tvc AS (
         'acc_tvc'                        AS source,
         source_updated_at
     FROM hcs_bronze.acc_tvc
-    WHERE processed_to_silver = FALSE
-      AND facility_name IS NOT NULL
+    WHERE facility_name IS NOT NULL
 ),
 
 hrsa AS (
@@ -110,8 +106,7 @@ hrsa AS (
         'hrsa' AS source,
         source_updated_at
     FROM hcs_bronze.hrsa
-    WHERE processed_to_silver = FALSE
-      AND hpsa_id IS NOT NULL
+    WHERE hpsa_id IS NOT NULL
 ),
 
 combined AS (
