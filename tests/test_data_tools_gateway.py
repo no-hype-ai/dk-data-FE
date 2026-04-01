@@ -484,3 +484,135 @@ class TestInvokeEndpoint:
                     json={"drug_name": "test_drug"},
                 )
             assert resp.status_code == 200, f"Tool '{tool_name}' returned {resp.status_code}"
+
+
+# ---------------------------------------------------------------------------
+# POST /api/v1/data-tools/transform/refresh
+# ---------------------------------------------------------------------------
+
+class TestTransformRefreshEndpoint:
+    """Tests for POST /transform/refresh (Xenon-triggerable gold refresh)."""
+
+    _MOLECULE_ID = "a1b2c3d4-e5f6-7890-abcd-ef1234567890"
+    _DRUG_NAME = "pembrolizumab"
+
+    def _mock_refresher(self, result: dict):
+        """Patch SilverGoldRefresher at the source module (local import inside endpoint)."""
+        mock_refresher = AsyncMock()
+        mock_refresher.refresh_gold_for_molecule = AsyncMock(return_value=result)
+        return patch(
+            "dk_data.services.mcp.silver_gold_refresher.SilverGoldRefresher",
+            return_value=mock_refresher,
+        )
+
+    def _success_result(self, models=None):
+        models = models or [
+            "mol_gold.trial_outcomes",
+            "mol_gold.molecule_profile",
+            "mol_gold.safety_signals",
+            "mol_gold.lifecycle_stages",
+            "mol_gold.competitive_landscape",
+        ]
+        return {"models_refreshed": models, "errors": []}
+
+    def test_missing_both_fields_returns_422(self, client):
+        with _override_db(client.app, _make_db_pool()):
+            resp = client.post("/api/v1/data-tools/transform/refresh", json={})
+        assert resp.status_code == 422
+
+    def test_with_molecule_id_skips_db_lookup(self, client):
+        result = self._success_result()
+        with _override_db(client.app, _make_db_pool()), self._mock_refresher(result):
+            resp = client.post(
+                "/api/v1/data-tools/transform/refresh",
+                json={"molecule_id": self._MOLECULE_ID},
+            )
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["molecule_id"] == self._MOLECULE_ID
+        assert len(data["models_refreshed"]) == 5
+        assert data["errors"] == []
+
+    def test_with_drug_name_resolves_molecule(self, client):
+        pool = _make_db_pool(fetchrow_result={"id": self._MOLECULE_ID})
+        result = self._success_result()
+        with _override_db(client.app, pool), self._mock_refresher(result):
+            resp = client.post(
+                "/api/v1/data-tools/transform/refresh",
+                json={"drug_name": self._DRUG_NAME},
+            )
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["molecule_id"] == self._MOLECULE_ID
+        assert data["drug_name"] == self._DRUG_NAME
+
+    def test_unknown_drug_name_returns_404(self, client):
+        pool = _make_db_pool(fetchrow_result=None)
+        with _override_db(client.app, pool):
+            resp = client.post(
+                "/api/v1/data-tools/transform/refresh",
+                json={"drug_name": "unknowndrugxyz"},
+            )
+        assert resp.status_code == 404
+        assert "unknowndrugxyz" in resp.json()["detail"]
+
+    def test_db_unavailable_returns_503(self, client):
+        with _override_db(client.app, None):
+            resp = client.post(
+                "/api/v1/data-tools/transform/refresh",
+                json={"molecule_id": self._MOLECULE_ID},
+            )
+        assert resp.status_code == 503
+
+    def test_partial_models_list(self, client):
+        result = self._success_result(models=["mol_gold.trial_outcomes"])
+        with _override_db(client.app, _make_db_pool()), self._mock_refresher(result):
+            resp = client.post(
+                "/api/v1/data-tools/transform/refresh",
+                json={
+                    "molecule_id": self._MOLECULE_ID,
+                    "models": ["mol_gold.trial_outcomes"],
+                },
+            )
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["models_refreshed"] == ["mol_gold.trial_outcomes"]
+
+    def test_partial_failure_still_returns_200(self, client):
+        result = {
+            "models_refreshed": ["mol_gold.molecule_profile", "mol_gold.safety_signals"],
+            "errors": [{"model": "mol_gold.trial_outcomes", "error": "column not found"}],
+        }
+        with _override_db(client.app, _make_db_pool()), self._mock_refresher(result):
+            resp = client.post(
+                "/api/v1/data-tools/transform/refresh",
+                json={"molecule_id": self._MOLECULE_ID},
+            )
+        assert resp.status_code == 200
+        data = resp.json()
+        assert len(data["errors"]) == 1
+        assert data["errors"][0]["model"] == "mol_gold.trial_outcomes"
+
+    def test_response_includes_duration_ms(self, client):
+        result = self._success_result()
+        with _override_db(client.app, _make_db_pool()), self._mock_refresher(result):
+            resp = client.post(
+                "/api/v1/data-tools/transform/refresh",
+                json={"molecule_id": self._MOLECULE_ID},
+            )
+        data = resp.json()
+        assert "duration_ms" in data
+        assert isinstance(data["duration_ms"], int)
+
+    def test_molecule_id_takes_precedence_over_drug_name(self, client):
+        """If both are given, molecule_id is used directly (no DB lookup)."""
+        result = self._success_result()
+        # fetchrow would only be called if drug_name resolution were attempted
+        pool = _make_db_pool(fetchrow_result=None)
+        with _override_db(client.app, pool), self._mock_refresher(result):
+            resp = client.post(
+                "/api/v1/data-tools/transform/refresh",
+                json={"molecule_id": self._MOLECULE_ID, "drug_name": self._DRUG_NAME},
+            )
+        assert resp.status_code == 200
+        assert resp.json()["molecule_id"] == self._MOLECULE_ID

@@ -122,6 +122,20 @@ class InvokeResponse(BaseModel):
     timestamp: str
 
 
+class TransformRefreshRequest(BaseModel):
+    molecule_id: Optional[str] = None
+    drug_name: Optional[str] = None
+    models: Optional[List[str]] = None  # restrict to subset of gold models
+
+
+class TransformRefreshResponse(BaseModel):
+    molecule_id: str
+    drug_name: Optional[str]
+    models_refreshed: List[str]
+    errors: List[Dict[str, Any]]
+    duration_ms: int
+
+
 # ============================================================================
 # Helper: convert TOOL_REGISTRY name → meta.data_sources source_name
 # ============================================================================
@@ -404,6 +418,97 @@ async def get_source_status(
             pass
 
     return SourceStatusResponse(**response_data)
+
+
+# ============================================================================
+# POST /transform/refresh  — Xenon-triggerable hot gold refresh
+# ============================================================================
+
+@router.post("/transform/refresh", response_model=TransformRefreshResponse)
+async def refresh_transform(
+    request: TransformRefreshRequest,
+    db_pool=Depends(get_db_pool),
+) -> TransformRefreshResponse:
+    """
+    Trigger an on-demand gold-layer refresh for a molecule.
+
+    Intended for external writers (e.g. Xenon) that write directly to
+    xenon.* tables and want mol_gold.* updated immediately — without going
+    through a full fetch cycle.
+
+    Molecule resolution:
+    - If molecule_id is provided, it is used directly (no DB lookup).
+    - If only drug_name is provided, mol_silver.molecules and
+      mol_silver.molecule_aliases are searched; 404 if not found.
+    - At least one of molecule_id or drug_name must be supplied.
+
+    Models can be restricted via the optional `models` list:
+      "mol_gold.trial_outcomes"
+      "mol_gold.molecule_profile"
+      "mol_gold.safety_signals"
+      "mol_gold.lifecycle_stages"
+      "mol_gold.competitive_landscape"
+    Omitting `models` refreshes all five.
+    """
+    import time
+    from ...services.mcp.silver_gold_refresher import SilverGoldRefresher
+
+    if not request.molecule_id and not request.drug_name:
+        raise HTTPException(status_code=422, detail="Provide molecule_id or drug_name.")
+
+    if db_pool is None:
+        raise HTTPException(status_code=503, detail="Database unavailable")
+
+    # Resolve molecule_id
+    molecule_id = request.molecule_id
+    drug_name = request.drug_name or ""
+
+    if molecule_id is None:
+        # Look up by drug name — no create (Xenon already wrote the molecule)
+        normalized = drug_name.lower().strip()
+        async with db_pool.acquire() as conn:
+            row = await conn.fetchrow(
+                "SELECT id FROM mol_silver.molecules WHERE LOWER(canonical_name) = $1",
+                normalized,
+            )
+            if row is None:
+                row = await conn.fetchrow(
+                    "SELECT molecule_id AS id FROM mol_silver.molecule_aliases WHERE alias_name_normalized = $1",
+                    normalized,
+                )
+        if row is None:
+            raise HTTPException(
+                status_code=404,
+                detail=f"Molecule '{drug_name}' not found in mol_silver. "
+                       "It must exist before a gold refresh can be triggered.",
+            )
+        molecule_id = str(row["id"])
+
+    t0 = time.monotonic()
+    refresher = SilverGoldRefresher(db_pool=db_pool)
+    result = await refresher.refresh_gold_for_molecule(
+        molecule_id=molecule_id,
+        drug_name=drug_name,
+        models=request.models,
+    )
+    duration_ms = int((time.monotonic() - t0) * 1000)
+
+    logger.info(
+        "transform_refresh_completed",
+        molecule_id=molecule_id,
+        drug_name=drug_name,
+        models_refreshed=result["models_refreshed"],
+        errors=result["errors"],
+        duration_ms=duration_ms,
+    )
+
+    return TransformRefreshResponse(
+        molecule_id=molecule_id,
+        drug_name=drug_name or None,
+        models_refreshed=result["models_refreshed"],
+        errors=result["errors"],
+        duration_ms=duration_ms,
+    )
 
 
 # ============================================================================
