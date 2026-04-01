@@ -21,7 +21,6 @@ Source: https://www.ema.europa.eu/en/medicines
 
 import hashlib
 import logging
-from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional
 
 from .base import BaseFetcher

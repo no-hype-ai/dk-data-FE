@@ -22,7 +22,7 @@ import hashlib
 import json
 import logging
 import time
-from typing import Any, Dict, List, Optional, Set
+from typing import Any, Dict, List, Set
 
 from .base import BaseFetcher
 

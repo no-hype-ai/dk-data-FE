@@ -16,7 +16,7 @@ Stores one JSONB record per drug-year row in mol_raw.cms_medicare.
 import hashlib
 import json
 import logging
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, Optional
 
 from .base import BaseFetcher
 

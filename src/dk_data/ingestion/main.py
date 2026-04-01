@@ -225,9 +225,19 @@ try:
     from dk_data.observability import setup_telemetry, get_tracer
     from dk_data.observability.logging import setup_logging, get_logger
     from dk_data.observability.reporting import report_completion
+    from dk_data.observability.metrics import (
+        record_job_duration,
+        record_job_records,
+        increment_job_failure,
+        mark_job_success,
+    )
     _OBS_AVAILABLE = True
 except ImportError:
     _OBS_AVAILABLE = False
+    def record_job_duration(job_name, duration_seconds): pass
+    def record_job_records(job_name, count): pass
+    def increment_job_failure(job_name): pass
+    def mark_job_success(job_name): pass
 
 try:
     from prometheus_client import start_http_server as _prom_start_http_server

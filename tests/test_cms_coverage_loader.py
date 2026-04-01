@@ -1,7 +1,7 @@
 """Tests for load_cms_coverage_data."""
 
 import json
-from unittest.mock import MagicMock, call, patch
+from unittest.mock import MagicMock, patch
 
 import pytest
 
