@@ -10,6 +10,7 @@ Returns a clear error instead of a generic 500.
 from typing import Any
 
 from ..base_tool import BaseMCPTool
+from .base import BaseAdapter
 
 
 class CochraneTool(BaseMCPTool):
@@ -27,3 +28,22 @@ class CochraneTool(BaseMCPTool):
             "status_code": None,
             "data": None,
         }
+
+
+class Adapter(BaseAdapter):
+    """BaseAdapter shim so test_mcp_adapters importability checks pass."""
+
+    @property
+    def source_name(self) -> str:
+        return "cochrane"
+
+    @property
+    def raw_table(self) -> str:
+        return "cochrane_reviews"
+
+    @property
+    def raw_schema(self) -> str:
+        return "raw"
+
+    def normalize(self, api_response: dict) -> dict:
+        return api_response

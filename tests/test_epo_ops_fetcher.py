@@ -261,12 +261,17 @@ class TestEPOOPSFetcherFetch:
         assert result["records"] == []
 
     def test_fetch_no_credentials(self, tmp_path):
-        """Test fetch fails gracefully without credentials."""
+        """Test fetch degrades gracefully without credentials.
+
+        EPO OPS returns source_unavailable (not failed) when credentials are
+        missing — deliberate distinction: it is not a transient error but a
+        known configuration gap that does not warrant a failure alert.
+        """
         with patch.dict("os.environ", {}, clear=True):
             fetcher = EPOOPSFetcher(data_dir=str(tmp_path))
             result = fetcher.fetch(search_terms=["test"])
 
-        assert result["status"] == "failed"
+        assert result["status"] == "source_unavailable"
         assert "error" in result
 
     @responses.activate

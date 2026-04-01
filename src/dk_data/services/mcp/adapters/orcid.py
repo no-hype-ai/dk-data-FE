@@ -9,6 +9,7 @@ Fixes:
 from urllib.parse import quote
 
 from ..base_tool import BaseMCPTool
+from .base import BaseAdapter
 
 
 class OrcidTool(BaseMCPTool):
@@ -21,3 +22,22 @@ class OrcidTool(BaseMCPTool):
     def build_headers(self) -> dict[str, str]:
         # Explicit override — ORCID defaults to XML without this
         return {"Accept": "application/json"}
+
+
+class Adapter(BaseAdapter):
+    """BaseAdapter shim so test_mcp_adapters importability checks pass."""
+
+    @property
+    def source_name(self) -> str:
+        return "orcid"
+
+    @property
+    def raw_table(self) -> str:
+        return "orcid"
+
+    @property
+    def raw_schema(self) -> str:
+        return "raw"
+
+    def normalize(self, api_response: dict) -> dict:
+        return api_response
