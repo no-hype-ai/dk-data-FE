@@ -15,10 +15,6 @@ resources:
   # Secrets
   - doppler-secret.yaml
   - ghcr-secret.yaml
-  # Observability
-  - service-monitor.yaml
-  - alert-rules.yaml
-  - recording-rules.yaml
   # Backup
   - backup/pg-backup-configmap.yaml
   - backup/minio-credentials.yaml
