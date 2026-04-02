@@ -24,7 +24,7 @@ import hashlib
 import json
 import logging
 import time
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List
 
 from .base import BaseFetcher
 from ..utils.checkpoint import clear_checkpoint, load_checkpoint, save_checkpoint
