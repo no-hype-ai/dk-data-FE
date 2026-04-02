@@ -202,6 +202,8 @@ BEGIN
     END IF;
 
     -- epo_patents.ipc_codes: JSONB → TEXT[] (matches migration 108 ALTER)
+    -- PostgreSQL does not allow subqueries in ALTER COLUMN ... USING, so we
+    -- add a staging column, populate it, swap, then drop the old column.
     IF EXISTS (
         SELECT 1 FROM information_schema.columns
         WHERE table_schema = 'mol_raw'
@@ -209,11 +211,12 @@ BEGIN
           AND column_name  = 'ipc_codes'
           AND data_type    = 'jsonb'
     ) THEN
-        ALTER TABLE mol_raw.epo_patents
-            ALTER COLUMN ipc_codes TYPE TEXT[]
-                USING CASE WHEN ipc_codes IS NOT NULL
-                           THEN ARRAY(SELECT jsonb_array_elements_text(ipc_codes))
-                           ELSE NULL END;
+        ALTER TABLE mol_raw.epo_patents ADD COLUMN IF NOT EXISTS ipc_codes_arr TEXT[];
+        UPDATE mol_raw.epo_patents
+           SET ipc_codes_arr = ARRAY(SELECT jsonb_array_elements_text(ipc_codes))
+         WHERE ipc_codes IS NOT NULL;
+        ALTER TABLE mol_raw.epo_patents DROP COLUMN ipc_codes;
+        ALTER TABLE mol_raw.epo_patents RENAME COLUMN ipc_codes_arr TO ipc_codes;
     END IF;
 END
 $type_fix$;
@@ -244,11 +247,12 @@ BEGIN
           AND column_name  = 'interventions'
           AND data_type    = 'jsonb'
     ) THEN
-        ALTER TABLE mol_raw.cochrane_reviews
-            ALTER COLUMN interventions TYPE TEXT[]
-                USING CASE WHEN interventions IS NOT NULL
-                           THEN ARRAY(SELECT jsonb_array_elements_text(interventions))
-                           ELSE NULL END;
+        ALTER TABLE mol_raw.cochrane_reviews ADD COLUMN IF NOT EXISTS interventions_arr TEXT[];
+        UPDATE mol_raw.cochrane_reviews
+           SET interventions_arr = ARRAY(SELECT jsonb_array_elements_text(interventions))
+         WHERE interventions IS NOT NULL;
+        ALTER TABLE mol_raw.cochrane_reviews DROP COLUMN interventions;
+        ALTER TABLE mol_raw.cochrane_reviews RENAME COLUMN interventions_arr TO interventions;
     END IF;
 
     IF EXISTS (
@@ -258,11 +262,12 @@ BEGIN
           AND column_name  = 'conditions'
           AND data_type    = 'jsonb'
     ) THEN
-        ALTER TABLE mol_raw.cochrane_reviews
-            ALTER COLUMN conditions TYPE TEXT[]
-                USING CASE WHEN conditions IS NOT NULL
-                           THEN ARRAY(SELECT jsonb_array_elements_text(conditions))
-                           ELSE NULL END;
+        ALTER TABLE mol_raw.cochrane_reviews ADD COLUMN IF NOT EXISTS conditions_arr TEXT[];
+        UPDATE mol_raw.cochrane_reviews
+           SET conditions_arr = ARRAY(SELECT jsonb_array_elements_text(conditions))
+         WHERE conditions IS NOT NULL;
+        ALTER TABLE mol_raw.cochrane_reviews DROP COLUMN conditions;
+        ALTER TABLE mol_raw.cochrane_reviews RENAME COLUMN conditions_arr TO conditions;
     END IF;
 END
 $cochrane_type_fix$;
