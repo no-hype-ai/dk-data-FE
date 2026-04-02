@@ -73,7 +73,7 @@
 
 ### Implementation
 
-- [ ] T018 [US2] In Grafana UI, edit PostgREST SLO dashboard: replace `service=~"dk-data-prod-postgrest.*"` with `service=~"dk-data-prod-dk-data-metering-proxy.*"` across all 10 panels
+- [X] T018 [US2] In Grafana UI, edit PostgREST SLO dashboard: replace `service=~"dk-data-prod-postgrest.*"` with `service=~"dk-data-prod-dk-data-metering-proxy.*"` across all 10 panels
 - [ ] T019 [US2] Verify all 10 panels render with live data after the query fix
 - [ ] T020 [US2] Export corrected PostgREST SLO dashboard JSON from Grafana API and save to grafana/dashboards/ (for later consolidation in Phase 8)
 
@@ -89,8 +89,8 @@
 
 ### Implementation
 
-- [ ] T021 [P] [US3] In Grafana UI, edit DK Data Platform Overview dashboard: change `namespace="dk-data-prod"` to `exported_namespace="dk-data-prod"` for all kube_* metric panels (Running Pod Counts, Pod Restarts, CronJob Execution Timeline, Job Trigger Readiness, PostgREST Readiness)
-- [ ] T022 [P] [US3] In Grafana UI, edit DK Data API dashboard: fix any kube_* panels using wrong namespace label
+- [X] T021 [P] [US3] In Grafana UI, edit DK Data Platform Overview dashboard: change `namespace="dk-data-prod"` to `exported_namespace="dk-data-prod"` for all kube_* metric panels (Running Pod Counts, Pod Restarts, CronJob Execution Timeline, Job Trigger Readiness, PostgREST Readiness)
+- [X] T022 [P] [US3] In Grafana UI, edit DK Data API dashboard: fix any kube_* panels using wrong namespace label
 - [ ] T023 [US3] Verify all Kubernetes resource panels across all dk-data dashboards display correct values by comparing with `kubectl get pods -n dk-data-prod` and `kubectl get cronjobs -n dk-data-prod`
 - [ ] T024 [US3] Export corrected dashboard JSONs from Grafana API for later consolidation
 
@@ -106,10 +106,10 @@
 
 ### Implementation
 
-- [ ] T025 [P] [US4] In Grafana UI, edit Pipeline & Sources dashboard: change `dk_resolution_queue_size` to `dk_resolution_queue_pending_total` in Entity Resolution Queue panel
-- [ ] T026 [P] [US4] In Grafana UI, edit Pipeline & Sources dashboard: change `dk_data_quarantine_queue_size` to `dk_quarantine_count` in Quarantine Count panel
-- [ ] T027 [P] [US4] In Grafana UI, edit Transformations dashboard: change `dk_clinical_trials_by_phase` to `sum by (status)(dk_clinical_trials_total)` in Clinical Trials panel
-- [ ] T028 [US4] Export corrected dashboard JSONs from Grafana API for later consolidation
+- [X] T025 [P] [US4] In Grafana UI, edit Pipeline & Sources dashboard: change `dk_resolution_queue_size` to `dk_resolution_queue_pending_total` in Entity Resolution Queue panel
+- [X] T026 [P] [US4] In Grafana UI, edit Pipeline & Sources dashboard: change `dk_data_quarantine_queue_size` to `dk_quarantine_count` in Quarantine Count panel
+- [X] T027 [P] [US4] In Grafana UI, edit Transformations dashboard: change `dk_clinical_trials_by_phase` to `sum by (status)(dk_clinical_trials_total)` in Clinical Trials panel
+- [X] T028 [US4] Export corrected dashboard JSONs from Grafana API for later consolidation
 
 **Checkpoint**: All metric name mismatches resolved. 3 additional panels showing data.
 
@@ -184,13 +184,13 @@
 
 ### Implementation
 
-- [ ] T048 [US9] Build grafana/dashboards/dk-data-platform-status.json by merging panels from exported dk-data-platform-status, dk-data-overview, dk-data-cronjobs, and data-platform-overview dashboards. Deduplicate panels that appear in multiple sources.
-- [ ] T049 [P] [US9] Build grafana/dashboards/dk-data-api-services.json by merging panels from exported dk-data-api, job-trigger-overview, postgrest-overview, and dk-data-postgrest-slo dashboards. Include SLO availability, error budget, side-by-side job-trigger + PostgREST metrics.
-- [ ] T050 [P] [US9] Build grafana/dashboards/dk-data-pipeline-sources.json by merging panels from exported dk-data-pipeline, dk-data-sources, datasource-health, and external-datasources dashboards. Include medallion Sankey, source freshness, ingestion volume, fetch duration.
-- [ ] T051 [P] [US9] Build grafana/dashboards/dk-data-transformations.json by merging panels from exported sqlmesh-transformations and pipeline-health dashboards. Include SQLMesh model row counts, transformation duration, entity resolution.
-- [ ] T052 [US9] Resolve metric name discrepancies across all 4 consolidated dashboards: standardize http_requests_total (not http_server_*), dk_quarantine_count (not dk_data_quarantine_queue_size), dk_resolution_queue_pending_total (not dk_resolution_queue_size), dk_clinical_trials_total with sum by status (not dk_clinical_trials_by_phase)
-- [ ] T053 [US9] Set __metadata.folder to "Applications" on all 4 consolidated dashboard JSONs
-- [ ] T054 [US9] Delete the original 9+ source dashboard JSON files from grafana/dashboards/ that have been consolidated (keep cms-pipeline-health.json on hold)
+- [X] T048 [US9] Build grafana/dashboards/dk-data-platform-status.json by merging panels from exported dk-data-platform-status, dk-data-overview, dk-data-cronjobs, and data-platform-overview dashboards. Deduplicate panels that appear in multiple sources.
+- [X] T049 [P] [US9] Build grafana/dashboards/dk-data-api-services.json by merging panels from exported dk-data-api, job-trigger-overview, postgrest-overview, and dk-data-postgrest-slo dashboards. Include SLO availability, error budget, side-by-side job-trigger + PostgREST metrics.
+- [X] T050 [P] [US9] Build grafana/dashboards/dk-data-pipeline-sources.json by merging panels from exported dk-data-pipeline, dk-data-sources, datasource-health, and external-datasources dashboards. Include medallion Sankey, source freshness, ingestion volume, fetch duration.
+- [X] T051 [P] [US9] Build grafana/dashboards/dk-data-transformations.json by merging panels from exported sqlmesh-transformations and pipeline-health dashboards. Include SQLMesh model row counts, transformation duration, entity resolution.
+- [X] T052 [US9] Resolve metric name discrepancies across all 4 consolidated dashboards: standardize http_requests_total (not http_server_*), dk_quarantine_count (not dk_data_quarantine_queue_size), dk_resolution_queue_pending_total (not dk_resolution_queue_size), dk_clinical_trials_total with sum by status (not dk_clinical_trials_by_phase)
+- [X] T053 [US9] Set __metadata.folder to "Applications" on all 4 consolidated dashboard JSONs
+- [X] T054 [US9] Delete the original 9+ source dashboard JSON files from grafana/dashboards/ that have been consolidated (keep cms-pipeline-health.json on hold)
 - [ ] T055 [US9] Import all 4 consolidated dashboards into Grafana via API and verify every panel renders with live data
 
 **Checkpoint**: Exactly 4 dk-data dashboards. Zero panel duplication. All panels showing data.
