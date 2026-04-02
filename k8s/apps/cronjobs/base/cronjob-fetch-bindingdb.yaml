@@ -80,10 +80,10 @@ spec:
                   value: "true"
               resources:
                 requests:
-                  memory: "2Gi"
+                  memory: "4Gi"
                   cpu: "200m"
                 limits:
-                  memory: "4Gi"   # BindingDB_All.tsv uncompressed ~3GB; 2Gi was OOMKilled
+                  memory: "8Gi"   # BindingDB_All.tsv uncompressed ~3GB; 4Gi was OOMKilled
                   cpu: "500m"
               securityContext:
                 allowPrivilegeEscalation: false
