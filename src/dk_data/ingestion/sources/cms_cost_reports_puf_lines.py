@@ -123,11 +123,31 @@ def load_cms_cost_reports_puf_lines(filepath: str, source_year: int = 2023, max_
     df = apply_column_mapping(df, COLUMN_MAPPING)
     records_fetched = len(df)
 
+    # Detect when the wrong dataset was passed (e.g. the summary PUF instead
+    # of the HCRIS worksheet file).  The summary PUF has no WKSHT_CD / line
+    # columns, so after column mapping there is no line_item_code column.
+    if "line_item_code" not in df.columns:
+        logger.warning(
+            "cms_cost_reports_puf_lines: source CSV has no worksheet columns "
+            "(columns: %s). This source requires HCRIS cost-report worksheet "
+            "files, not the summary PUF CSV. Returning source_unavailable.",
+            list(df.columns)[:10],
+        )
+        return {
+            "status": "source_unavailable",
+            "records_fetched": records_fetched,
+            "records_inserted": 0,
+            "records_updated": 0,
+            "errors": [
+                "No worksheet columns found (WKSHT_CD / LINE_NUM / CLMN_NUM). "
+                "The HCRIS worksheet CSV is required, not the summary PUF."
+            ],
+        }
+
     # Filter to staffing-relevant worksheet A lines
-    if "line_item_code" in df.columns:
-        df = df[
-            df["line_item_code"].str.strip().str.upper().str.startswith("A")
-        ]
+    df = df[
+        df["line_item_code"].str.strip().str.upper().str.startswith("A")
+    ]
 
     records = []
     errors = []

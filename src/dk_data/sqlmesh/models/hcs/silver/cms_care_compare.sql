@@ -30,7 +30,7 @@ SELECT
     b.overall_rating,
 
     b.source,
-    b.source_updated_at,
+    b.ingested_at                   AS source_updated_at,
     NOW()                           AS created_at
 
 FROM hcs_bronze.cms_care_compare b

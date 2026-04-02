@@ -36,7 +36,7 @@ SELECT DISTINCT ON (b.npi, b.hcpcs_code, b.place_of_service, b._source_year)
     -- Provider identity from NPPES (most recent year)
     COALESCE(n.provider_organization_name,
              n.provider_last_name || ', ' || n.provider_first_name) AS provider_name,
-    n.provider_type_1                                               AS provider_specialty,
+    n.healthcare_provider_taxonomy_code_1                                               AS provider_specialty,
     n.provider_business_practice_location_address_state_name        AS provider_state,
 
     -- Molecule linkage for drug HCPCS codes

@@ -37,7 +37,7 @@ SELECT DISTINCT ON (b.ccn, b.effective_date)
     h.emergency_services,
 
     b.source,
-    b.source_updated_at,
+    b.ingested_at                   AS source_updated_at,
     NOW()                           AS created_at
 
 FROM hcs_bronze.cms_chow b

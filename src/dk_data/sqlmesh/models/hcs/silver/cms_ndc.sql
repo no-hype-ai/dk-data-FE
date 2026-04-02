@@ -29,7 +29,7 @@ SELECT DISTINCT ON (b.product_ndc)
     COALESCE(m_name.molecule_id, m_alias.molecule_id) AS molecule_id,
 
     b.source,
-    b.source_updated_at,
+    b.ingested_at                   AS source_updated_at,
     NOW()                           AS created_at
 
 FROM hcs_bronze.cms_ndc b

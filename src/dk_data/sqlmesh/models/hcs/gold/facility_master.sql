@@ -47,7 +47,7 @@ WITH source_agg AS (
         -- HRSA shortage score
         MAX(CASE WHEN source = 'hrsa'               THEN shortage_score END) AS hrsa_shortage_score,
         -- Certifications from ACC/TVC
-        MAX(CASE WHEN source = 'acc_tvc'            THEN certifications END) AS acc_certifications,
+        MAX(CASE WHEN source = 'acc_tvc'            THEN certifications::TEXT END)::JSONB AS acc_certifications,
         MAX(source_updated_at)                          AS last_seen_at
     FROM hcs_silver.healthcare_facilities
     GROUP BY provider_id

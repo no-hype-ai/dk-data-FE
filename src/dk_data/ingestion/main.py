@@ -1182,7 +1182,7 @@ def log_to_meta(source_name: str, result: dict) -> None:
                         WHEN %s IN ('success', 'partial') THEN NOW()
                         ELSE last_successful_refresh
                     END,
-                    record_count = COALESCE(%s, record_count)
+                    record_count = COALESCE(NULLIF(%s::bigint, 0), record_count)
                 WHERE source_id = %s
             """, (
                 status,

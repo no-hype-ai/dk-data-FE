@@ -561,13 +561,16 @@ async def invoke_tool(
     Invoke a data tool by name for a specific drug/molecule.
 
     Calls the full MCP invoke flow:
-    rate_limit → fetch_external_api → adapter.normalize() →
+    drug_resolution → fetch_external_api → adapter.normalize() →
     insert_raw_record → trigger_transform → return_results
 
     Returns 404 if tool_name is not registered.
     Returns 502 / 408 / 429 / 500 on external API errors (proxied from the
     tool's error response).
     """
+    import time
+    import uuid
+
     if tool_name not in TOOL_REGISTRY:
         raise HTTPException(
             status_code=404,
@@ -583,13 +586,33 @@ async def invoke_tool(
         logger.error("tool_build_failed", tool_name=tool_name, error=str(e))
         raise HTTPException(status_code=500, detail=f"Failed to load tool '{tool_name}': {e}")
 
-    input_params: Dict[str, Any] = {"drug_name": request.drug_name}
+    # --- Drug resolution middleware ---
+    from ...services.mcp.drug_resolver import DrugResolver
+    resolver = DrugResolver()
+    resolution = await resolver.resolve(request.drug_name, db_pool=db_pool)
+    logger.info(
+        "drug_resolved",
+        tool_name=tool_name,
+        query=request.drug_name,
+        canonical=resolution.canonical_name,
+        source=resolution.resolution_source,
+        brands=resolution.brand_names,
+        manufacturers=resolution.manufacturers,
+    )
+
+    input_params: Dict[str, Any] = {
+        "drug_name": request.drug_name,
+        "_resolution": resolution,
+    }
     if request.molecule_id is not None:
         input_params["molecule_id"] = request.molecule_id
 
-    logger.info("tool_invoke", tool_name=tool_name, drug_name=request.drug_name)
-
+    t0 = time.monotonic()
     result = await tool.invoke(input_params)
+    duration_ms = int((time.monotonic() - t0) * 1000)
+
+    request_id = str(uuid.uuid4())
+    timestamp = datetime.now(timezone.utc).isoformat()
 
     # If the tool itself returned an error, surface the embedded HTTP status code.
     if result.get("status") == "error":
@@ -597,4 +620,13 @@ async def invoke_tool(
         status_code = error_info.get("status_code", 502)
         raise HTTPException(status_code=status_code, detail=error_info.get("message", "Tool invocation failed"))
 
-    return InvokeResponse(**result)
+    return InvokeResponse(
+        status="success",
+        request_id=request_id,
+        source=result.get("source", tool_def.raw_table),
+        data=result.get("data"),
+        raw_record_id=None,
+        duration_ms=duration_ms,
+        error=None,
+        timestamp=timestamp,
+    )
