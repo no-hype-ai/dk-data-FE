@@ -79,7 +79,6 @@ BEGIN
             RAISE NOTICE 'Dropped mol_gold.%', tbl;
         END IF;
     END LOOP;
-END $$;
 
     -- -------------------------------------------------------------------------
     -- staging: tables created by init_database.sql that conflict with SQLMesh
