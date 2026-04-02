@@ -11,6 +11,12 @@ API: https://www.ebi.ac.uk/chembl/api/data/molecule.json
   Response: {"molecules": [...], "page_meta": {"total_count": N, "limit": L, "offset": O}}
 
 Stores one JSONB record per compound in mol_raw.chembl.
+
+Checkpoint/resume:
+  Writes to meta.fetch_checkpoints after every CHECKPOINT_INTERVAL pages so
+  that a pod restart or OOMKill can resume from the last committed offset
+  instead of re-fetching all ~2.4M records from scratch.
+  Checkpoint is cleared on successful completion.
 """
 
 import hashlib
@@ -20,20 +26,23 @@ import time
 from typing import Any, Dict, List, Optional
 
 from .base import BaseFetcher
+from ..utils.checkpoint import clear_checkpoint, load_checkpoint, save_checkpoint
+from ..sources.chembl_molecules import load_chembl_molecules_data
 
 logger = logging.getLogger(__name__)
 
 _API_URL = "https://www.ebi.ac.uk/chembl/api/data/molecule.json"
 _PAGE_SIZE = 1000
 _REQUEST_DELAY = 0.2
+_CHECKPOINT_INTERVAL = 50  # save checkpoint every 50 pages (= 50k records)
 
 
 class ChEMBLMoleculesFetcher(BaseFetcher):
     """Fetcher for ChEMBL compound records via the ChEMBL REST API.
 
-    Paginates through all molecules using offset/limit. Each record is a
-    molecule dict keyed by molecule_chembl_id. Deduplication at load time
-    uses an expression index on response_body->>'molecule_chembl_id'.
+    Paginates through all molecules using offset/limit. Commits to DB and
+    saves a checkpoint every CHECKPOINT_INTERVAL pages so runs can resume
+    after pod restarts rather than re-fetching from scratch.
     """
 
     SOURCE_NAME = "chembl_molecules"
@@ -43,29 +52,31 @@ class ChEMBLMoleculesFetcher(BaseFetcher):
         return f"{_API_URL}?format=json&limit={_PAGE_SIZE}&offset=0"
 
     def fetch(self, **kwargs) -> Dict[str, Any]:
-        """Fetch ChEMBL molecule records via paginated REST API.
+        """Fetch and load ChEMBL molecule records, resuming from checkpoint if present.
 
         Keyword Args:
             max_records: Cap total records fetched. Default: None (all ~2.4M).
 
         Returns:
             Dict with keys: status, records, record_count, hash, error.
+            records is always [] — data is streamed directly to DB per page batch.
         """
         max_records: Optional[int] = kwargs.get("max_records")
 
         try:
-            records = self._fetch_paginated(max_records=max_records)
+            total_inserted = self._fetch_and_load(max_records=max_records)
             content_hash = hashlib.md5(
-                json.dumps(len(records)).encode()
+                json.dumps(total_inserted).encode()
             ).hexdigest()
+            clear_checkpoint(self.SOURCE_NAME)
 
             result: Dict[str, Any] = {
                 "status": "success",
-                "records": records,
-                "record_count": len(records),
+                "records": [],   # streamed directly to DB — not held in memory
+                "record_count": total_inserted,
                 "hash": content_hash,
             }
-            self.log_fetch_result({"status": "success", "records": len(records)})
+            self.log_fetch_result({"status": "success", "records": total_inserted})
             return result
 
         except Exception as exc:
@@ -80,13 +91,26 @@ class ChEMBLMoleculesFetcher(BaseFetcher):
             self.log_fetch_result(result)
             return result
 
-    def _fetch_paginated(
-        self, max_records: Optional[int]
-    ) -> List[Dict[str, Any]]:
-        """Page through the ChEMBL molecule API using offset pagination."""
-        all_records: List[Dict[str, Any]] = []
-        offset = 0
-        total: Optional[int] = None
+    def _fetch_and_load(self, max_records: Optional[int]) -> int:
+        """Page through ChEMBL, committing each batch to DB and checkpointing.
+
+        Returns total records inserted/updated.
+        """
+        # Resume from checkpoint if available
+        cp = load_checkpoint(self.SOURCE_NAME)
+        start_offset = cp.get("offset", 0) if cp else 0
+        total_inserted = cp.get("records_inserted", 0) if cp else 0
+
+        if start_offset > 0:
+            logger.info(
+                "ChEMBL: resuming from checkpoint offset=%d (%d already inserted)",
+                start_offset, total_inserted,
+            )
+
+        offset = start_offset
+        total: Optional[int] = cp.get("total") if cp else None
+        page_buffer: List[Dict[str, Any]] = []
+        pages_since_checkpoint = 0
 
         while True:
             params: Dict[str, Any] = {
@@ -95,7 +119,6 @@ class ChEMBLMoleculesFetcher(BaseFetcher):
                 "offset": offset,
             }
 
-            logger.debug("ChEMBL: offset=%d", offset)
             resp = self.session.get(_API_URL, params=params, timeout=60)
             resp.raise_for_status()
             data = resp.json()
@@ -109,26 +132,42 @@ class ChEMBLMoleculesFetcher(BaseFetcher):
             if not molecules:
                 break
 
-            all_records.extend(molecules)
-            logger.info(
-                "ChEMBL: fetched %d records (offset=%d, running total=%d)",
-                len(molecules), offset, len(all_records),
-            )
+            page_buffer.extend(molecules)
+            pages_since_checkpoint += 1
+            offset += _PAGE_SIZE
 
-            if max_records and len(all_records) >= max_records:
-                all_records = all_records[:max_records]
+            # Commit and checkpoint every CHECKPOINT_INTERVAL pages
+            if pages_since_checkpoint >= _CHECKPOINT_INTERVAL:
+                result = load_chembl_molecules_data(page_buffer)
+                total_inserted += result.get("records_inserted", 0)
+                page_buffer = []
+                pages_since_checkpoint = 0
+                save_checkpoint(self.SOURCE_NAME, {
+                    "offset": offset,
+                    "total": total,
+                    "records_inserted": total_inserted,
+                })
+                logger.info(
+                    "ChEMBL: checkpoint saved offset=%d/%d total_inserted=%d",
+                    offset, total or 0, total_inserted,
+                )
+
+            if max_records and (total_inserted + len(page_buffer)) >= max_records:
                 break
 
-            # ChEMBL uses 'next' URL in page_meta when more pages exist
             page_meta = data.get("page_meta", {})
             if not page_meta.get("next"):
                 break
 
-            offset += _PAGE_SIZE
             if total and offset >= total:
                 break
 
             time.sleep(_REQUEST_DELAY)
 
-        logger.info("ChEMBL: %d total molecules fetched", len(all_records))
-        return all_records
+        # Flush remaining buffer
+        if page_buffer:
+            result = load_chembl_molecules_data(page_buffer)
+            total_inserted += result.get("records_inserted", 0)
+
+        logger.info("ChEMBL: complete — %d total inserted/updated", total_inserted)
+        return total_inserted

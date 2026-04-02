@@ -76,19 +76,25 @@ def test_fetch_returns_success_shape():
         return _mock_response([])
 
     with patch.object(fetcher.session, "get", side_effect=_side_effect), \
-         patch("time.sleep"):
+         patch("time.sleep"), \
+         patch("dk_data.ingestion.fetchers.chembl_activities.load_chembl_activities_data",
+               return_value={"records_inserted": 1}) as mock_load, \
+         patch("dk_data.ingestion.fetchers.chembl_activities.load_checkpoint", return_value=None), \
+         patch("dk_data.ingestion.fetchers.chembl_activities.clear_checkpoint"):
         result = fetcher.fetch(max_records=10)
 
     assert result["status"] == "success"
-    assert result["record_count"] == 1  # one page blob
-    assert len(result["records"]) == 1
+    assert result["record_count"] == 1  # one page blob flushed to DB
+    assert result["records"] == []      # streamed directly to DB, not returned
     assert "hash" in result
+    mock_load.assert_called_once()
 
 
 def test_page_blob_structure():
     fetcher = _make_fetcher()
     activities = _sample_activities(2)
     call_count = [0]
+    captured_blobs = []
 
     def _side_effect(url, *a, **kw):
         call_count[0] += 1
@@ -96,11 +102,21 @@ def test_page_blob_structure():
             return _mock_response(activities, total=2)
         return _mock_response([])
 
+    def _capture_load(blobs):
+        captured_blobs.extend(blobs)
+        return {"records_inserted": len(blobs)}
+
     with patch.object(fetcher.session, "get", side_effect=_side_effect), \
-         patch("time.sleep"):
+         patch("time.sleep"), \
+         patch("dk_data.ingestion.fetchers.chembl_activities.load_chembl_activities_data",
+               side_effect=_capture_load), \
+         patch("dk_data.ingestion.fetchers.chembl_activities.load_checkpoint", return_value=None), \
+         patch("dk_data.ingestion.fetchers.chembl_activities.clear_checkpoint"):
         result = fetcher.fetch(max_records=10)
 
-    blob = result["records"][0]
+    assert result["status"] == "success"
+    assert len(captured_blobs) == 1
+    blob = captured_blobs[0]
     assert "_request_id" in blob
     assert "_page_number" in blob
     assert "_offset" in blob
@@ -114,7 +130,11 @@ def test_max_records_cap_stops_pagination():
     activities = _sample_activities(1000)
 
     with patch.object(fetcher.session, "get", return_value=_mock_response(activities, total=20_000_000)), \
-         patch("time.sleep"):
+         patch("time.sleep"), \
+         patch("dk_data.ingestion.fetchers.chembl_activities.load_chembl_activities_data",
+               return_value={"records_inserted": 1}), \
+         patch("dk_data.ingestion.fetchers.chembl_activities.load_checkpoint", return_value=None), \
+         patch("dk_data.ingestion.fetchers.chembl_activities.clear_checkpoint"):
         result = fetcher.fetch(max_records=500)
 
     # With 1000 activities per page and max_records=500, stops after first page

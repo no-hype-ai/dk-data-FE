@@ -40,6 +40,13 @@ try:
 except ImportError:
     FASTAPI_INSTRUMENTOR_AVAILABLE = False
 
+# HTTP request metrics via prometheus-fastapi-instrumentator (026-observability T015)
+try:
+    from prometheus_fastapi_instrumentator import Instrumentator as _PFI
+    _PFI_AVAILABLE = True
+except ImportError:
+    _PFI_AVAILABLE = False
+
 # Initialize observability
 if OBSERVABILITY_AVAILABLE:
     setup_telemetry("job-trigger")
@@ -69,6 +76,14 @@ app = FastAPI(
 if OBSERVABILITY_AVAILABLE and FASTAPI_INSTRUMENTOR_AVAILABLE:
     FastAPIInstrumentor.instrument_app(app)
     logger.info("FastAPI auto-instrumented with OpenTelemetry")
+
+# HTTP request metrics via prometheus-fastapi-instrumentator (026-observability T015)
+# .instrument(app) adds middleware that emits http_requests_total and
+# http_request_duration_seconds_bucket. We do NOT call .expose(app) because
+# we already have a custom /metrics endpoint that serves generate_latest().
+if _PFI_AVAILABLE:
+    _PFI().instrument(app)
+    logger.info("HTTP request metrics instrumented (prometheus-fastapi-instrumentator)")
 
 # Molecule platform routers (004-molecule-platform-integration)
 # Try/except pattern for graceful degradation if molecule modules unavailable

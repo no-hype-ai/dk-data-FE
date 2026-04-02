@@ -28,6 +28,8 @@ from datetime import datetime, timedelta
 from typing import Any, Dict, List, Optional, Tuple
 
 from .base import BaseFetcher
+from ..utils.checkpoint import clear_checkpoint, load_checkpoint, save_checkpoint
+from ..sources.openfda_faers import load_openfda_faers_data
 
 logger = logging.getLogger(__name__)
 
@@ -91,10 +93,22 @@ class OpenFDAFAERSFetcher(BaseFetcher):
 
             if full_backfill:
                 start_year: int = int(kwargs.get("start_year", _FULL_BACKFILL_START_YEAR))
-                page_blobs, total_reports = self._fetch_all_years(
+                total_inserted = self._fetch_all_years_streaming(
                     start_year=start_year,
                     date_str=date_str,
                 )
+                clear_checkpoint(self.SOURCE_NAME)
+                content_hash = hashlib.md5(
+                    f"{date_str}:{total_inserted}".encode()
+                ).hexdigest()
+                result: Dict[str, Any] = {
+                    "status": "success",
+                    "records": [],   # streamed directly to DB per year
+                    "record_count": total_inserted,
+                    "hash": content_hash,
+                }
+                self.log_fetch_result({"status": "success", "records": total_inserted})
+                return result
             else:
                 days_back: int = int(kwargs.get("days_back", _DEFAULT_DAYS_BACK))
                 max_records: int = min(
@@ -113,19 +127,18 @@ class OpenFDAFAERSFetcher(BaseFetcher):
                     date_str=date_str,
                 )
 
-            content_hash = hashlib.md5(
-                f"{date_str}:{total_reports}".encode()
-            ).hexdigest()
-
-            result: Dict[str, Any] = {
-                "status": "success",
-                "records": page_blobs,
-                "record_count": len(page_blobs),
-                "hash": content_hash,
-                "_total_reports": total_reports,
-            }
-            self.log_fetch_result({"status": "success", "records": len(page_blobs)})
-            return result
+                content_hash = hashlib.md5(
+                    f"{date_str}:{total_reports}".encode()
+                ).hexdigest()
+                result = {
+                    "status": "success",
+                    "records": page_blobs,
+                    "record_count": len(page_blobs),
+                    "hash": content_hash,
+                    "_total_reports": total_reports,
+                }
+                self.log_fetch_result({"status": "success", "records": len(page_blobs)})
+                return result
 
         except Exception as exc:
             logger.exception("OpenFDA FAERS fetch failed: %s", exc)
@@ -139,15 +152,28 @@ class OpenFDAFAERSFetcher(BaseFetcher):
             self.log_fetch_result(result)
             return result
 
-    def _fetch_all_years(
-        self, start_year: int, date_str: str
-    ) -> Tuple[List[Dict[str, Any]], int]:
-        """Fetch all FAERS records via year-by-year safetyreportdate partitioning."""
-        current_year = datetime.utcnow().year
-        all_page_blobs: List[Dict[str, Any]] = []
-        grand_total = 0
+    def _fetch_all_years_streaming(self, start_year: int, date_str: str) -> int:
+        """Fetch all FAERS records year-by-year, committing each year to DB immediately.
 
-        for year in range(start_year, current_year + 1):
+        Checkpoint is saved after each completed year so a pod restart resumes
+        from the next year rather than re-fetching from the beginning.
+
+        Returns total page blobs inserted across all years.
+        """
+        current_year = datetime.utcnow().year
+
+        # Resume from checkpoint if available
+        cp = load_checkpoint(self.SOURCE_NAME)
+        resume_year = cp.get("next_year", start_year) if cp else start_year
+        total_inserted = cp.get("records_inserted", 0) if cp else 0
+
+        if resume_year > start_year:
+            logger.info(
+                "OpenFDA FAERS: resuming from checkpoint year=%d (%d blobs already inserted)",
+                resume_year, total_inserted,
+            )
+
+        for year in range(resume_year, current_year + 1):
             search = f"safetyreportdate:[{year}0101 TO {year}1231]"
             logger.info("OpenFDA FAERS: fetching year %d", year)
 
@@ -163,18 +189,25 @@ class OpenFDAFAERSFetcher(BaseFetcher):
                 )
                 continue
 
-            all_page_blobs.extend(blobs)
-            grand_total += count
+            if blobs:
+                result = load_openfda_faers_data(blobs)
+                total_inserted += result.get("records_inserted", 0)
+
+            save_checkpoint(self.SOURCE_NAME, {
+                "next_year": year + 1,
+                "records_inserted": total_inserted,
+            })
             logger.info(
-                "OpenFDA FAERS: year %d → %d reports (%d pages). Running total: %d",
-                year, count, len(blobs), grand_total,
+                "OpenFDA FAERS: year %d → %d reports (%d pages). "
+                "Total inserted: %d. Checkpoint saved.",
+                year, count, len(blobs), total_inserted,
             )
 
         logger.info(
-            "OpenFDA FAERS full backfill complete: %d total reports across %d pages",
-            grand_total, len(all_page_blobs),
+            "OpenFDA FAERS full backfill complete: %d total page blobs inserted",
+            total_inserted,
         )
-        return all_page_blobs, grand_total
+        return total_inserted
 
     def _paginate(
         self,

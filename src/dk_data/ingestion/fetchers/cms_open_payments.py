@@ -8,8 +8,10 @@ API: https://openpaymentsdata.cms.gov/api/1/datastore/query/{uuid}/0
 The DKAN datastore query endpoint supports offset/limit pagination.
 Response shape: {"results": [...], "count": N, "schema": {...}}
 """
+import csv
 import logging
-from typing import Any, Dict, List
+import tempfile
+from typing import Any, Dict, List, Optional, Tuple
 
 from .base import BaseFetcher
 
@@ -29,55 +31,81 @@ class CMSOpenPaymentsFetcher(BaseFetcher):
     def get_latest_url(self) -> str:
         return f"{_OPEN_PAYMENTS_API}/{self.DATASET_UUID}/0"
 
-    def _fetch_open_payments(self, max_records: int | None = None) -> List[Dict[str, Any]]:
-        """Paginate through the DKAN datastore query endpoint."""
+    def _fetch_open_payments_to_csv(
+        self, max_records: Optional[int] = None
+    ) -> Tuple[Optional[str], int]:
+        """Stream DKAN datastore records page-by-page to a temp CSV.
+
+        Returns (csv_path, total_count) or (None, 0) if empty.
+        """
         api_url = f"{_OPEN_PAYMENTS_API}/{self.DATASET_UUID}/0"
-        records: List[Dict[str, Any]] = []
+        total_count = 0
         offset = 0
+        tmp = None
+        writer = None
 
-        logger.info("[%s] Fetching from openpaymentsdata.cms.gov: %s", self.SOURCE_NAME, api_url)
+        logger.info("[%s] Streaming from openpaymentsdata.cms.gov: %s", self.SOURCE_NAME, api_url)
 
-        while True:
-            remaining = None if max_records is None else max_records - len(records)
-            if remaining is not None and remaining <= 0:
-                break
-            page_size = _PAGE_SIZE if remaining is None else min(_PAGE_SIZE, remaining)
+        try:
+            while True:
+                remaining = None if max_records is None else max_records - total_count
+                if remaining is not None and remaining <= 0:
+                    break
+                page_size = _PAGE_SIZE if remaining is None else min(_PAGE_SIZE, remaining)
 
-            resp = self.session.get(
-                api_url,
-                params={"offset": offset, "limit": page_size, "keys": "true"},
-                timeout=60,
-            )
-            resp.raise_for_status()
-            data = resp.json()
+                resp = self.session.get(
+                    api_url,
+                    params={"offset": offset, "limit": page_size, "keys": "true"},
+                    timeout=60,
+                )
+                resp.raise_for_status()
+                data = resp.json()
 
-            page = data.get("results", [])
-            if not page:
-                break
-            records.extend(page)
-            logger.debug("[%s] Fetched %d records (offset=%d)", self.SOURCE_NAME, len(records), offset)
+                page: List[Dict[str, Any]] = data.get("results", [])
+                if not page:
+                    break
 
-            total = data.get("count", 0)
-            if len(records) >= total:
-                break
-            if len(page) < page_size:
-                break
-            offset += page_size
+                if writer is None:
+                    tmp = tempfile.NamedTemporaryFile(
+                        mode="w",
+                        suffix=".csv",
+                        prefix=f"cms_{self.SOURCE_NAME}_",
+                        delete=False,
+                        newline="",
+                        encoding="utf-8",
+                    )
+                    writer = csv.DictWriter(tmp, fieldnames=list(page[0].keys()), extrasaction="ignore")
+                    writer.writeheader()
 
-        logger.info("[%s] %d total records fetched", self.SOURCE_NAME, len(records))
-        return records
+                writer.writerows(page)
+                total_count += len(page)
+                logger.debug("[%s] Streamed %d rows (offset=%d, total=%d)",
+                             self.SOURCE_NAME, len(page), offset, total_count)
+
+                api_total = data.get("count", 0)
+                if total_count >= api_total or len(page) < page_size:
+                    break
+                offset += page_size
+        finally:
+            if tmp is not None:
+                tmp.close()
+
+        if total_count == 0:
+            return None, 0
+
+        logger.info("[%s] %d total records streamed to %s", self.SOURCE_NAME, total_count, tmp.name)
+        return tmp.name, total_count
 
     def fetch(self, **kwargs) -> Dict[str, Any]:
         max_records = kwargs.get("max_records")
         try:
-            records = self._fetch_open_payments(max_records)
-            if not records:
+            tmp_path, count = self._fetch_open_payments_to_csv(max_records)
+            if not tmp_path:
                 return {"status": "success", "records": [], "record_count": 0, "hash": None, "extracted_files": []}
-            tmp_path = self._cms_records_to_csv(records)
             return {
                 "status": "success",
-                "records": len(records),
-                "record_count": len(records),
+                "records": count,
+                "record_count": count,
                 "hash": None,
                 "extracted_files": [tmp_path],
             }

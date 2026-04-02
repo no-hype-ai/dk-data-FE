@@ -39,14 +39,13 @@ class CMSTelehealthPUFFetcher(BaseFetcher):
                     "hash": None,
                     "extracted_files": csv_paths,
                 }
-            records = self._fetch_cms_api(self.DATASET_UUID, max_records)
-            if not records:
+            tmp_path, count = self._fetch_cms_api_to_csv(self.DATASET_UUID, max_records)
+            if not tmp_path:
                 return {"status": "success", "records": [], "record_count": 0, "hash": None, "extracted_files": []}
-            tmp_path = self._cms_records_to_csv(records)
             return {
                 "status": "success",
-                "records": len(records),
-                "record_count": len(records),
+                "records": count,
+                "record_count": count,
                 "hash": None,
                 "extracted_files": [tmp_path],
             }

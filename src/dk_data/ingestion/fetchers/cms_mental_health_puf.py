@@ -46,29 +46,30 @@ class CMSMentalHealthPUFFetcher(BaseFetcher):
                     "hash": None,
                     "extracted_files": all_paths,
                 }
-            all_records = []
+            csv_paths = []
+            total_count = 0
             for provider_type in _MENTAL_HEALTH_PROVIDER_TYPES:
                 filter_params = {"filter[Rndrng_Prvdr_Type][value]": provider_type}
-                records = self._fetch_cms_api(
+                path, count = self._fetch_cms_api_to_csv(
                     self.DATASET_UUID,
                     max_records=max_records,
                     filter_params=filter_params,
                 )
-                logger.info("[%s] %d records for provider_type=%s", self.SOURCE_NAME, len(records), provider_type)
-                all_records.extend(records)
-                if max_records and len(all_records) >= max_records:
-                    all_records = all_records[:max_records]
+                if path:
+                    logger.info("[%s] %d records for provider_type=%s", self.SOURCE_NAME, count, provider_type)
+                    csv_paths.append(path)
+                    total_count += count
+                if max_records and total_count >= max_records:
                     break
 
-            if not all_records:
+            if not csv_paths:
                 return {"status": "success", "records": [], "record_count": 0, "hash": None, "extracted_files": []}
-            tmp_path = self._cms_records_to_csv(all_records)
             return {
                 "status": "success",
-                "records": len(all_records),
-                "record_count": len(all_records),
+                "records": total_count,
+                "record_count": total_count,
                 "hash": None,
-                "extracted_files": [tmp_path],
+                "extracted_files": csv_paths,
             }
         except Exception as e:
             logger.exception("%s fetch failed: %s", self.SOURCE_NAME, e)

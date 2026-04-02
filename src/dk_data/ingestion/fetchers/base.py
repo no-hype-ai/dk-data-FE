@@ -133,6 +133,95 @@ class BaseFetcher(ABC):
         response.raise_for_status()
         return response.json()
 
+    def _fetch_cms_api_to_csv(
+        self,
+        dataset_uuid: str,
+        max_records: Optional[int] = None,
+        filter_params: Optional[Dict[str, Any]] = None,
+        extra_columns: Optional[Dict[str, Any]] = None,
+    ) -> tuple:
+        """Stream CMS data-api/v1 records page-by-page directly to a temp CSV.
+
+        Each page is written to disk immediately and discarded from memory, so
+        peak RAM usage is bounded to one page (~2000 rows) regardless of total
+        dataset size.
+
+        Args:
+            dataset_uuid: CMS dataset UUID from data.cms.gov/data.json catalog.
+            max_records: Cap on total rows. None = fetch all.
+            filter_params: Optional extra query params for server-side filtering.
+            extra_columns: Optional dict of constant columns to inject into every
+                row (e.g. {"year": 2023} for multi-year fetches).
+
+        Returns:
+            Tuple of (csv_path: str | None, total_count: int).
+            csv_path is None when the API returned zero records.
+        """
+        api_url = f"{_CMS_DATA_API}/{dataset_uuid}/data"
+        offset = 0
+        total_count = 0
+        tmp = None
+        writer = None
+
+        logger.info("[%s] Streaming from CMS data-api: %s", self.SOURCE_NAME, api_url)
+
+        try:
+            while True:
+                remaining = None if max_records is None else max_records - total_count
+                if remaining is not None and remaining <= 0:
+                    break
+                page_size = _CMS_PAGE_SIZE if remaining is None else min(_CMS_PAGE_SIZE, remaining)
+
+                params: Dict[str, Any] = {"size": page_size, "offset": offset}
+                if filter_params:
+                    params.update(filter_params)
+
+                resp = self.session.get(api_url, params=params, timeout=120)
+                resp.raise_for_status()
+                page: List[Dict[str, Any]] = resp.json()
+                if not page:
+                    break
+
+                if extra_columns:
+                    for row in page:
+                        row.update(extra_columns)
+
+                # Open CSV on first page so we have column names from the API
+                if writer is None:
+                    tmp = tempfile.NamedTemporaryFile(
+                        mode="w",
+                        suffix=".csv",
+                        prefix=f"cms_{self.SOURCE_NAME}_",
+                        delete=False,
+                        newline="",
+                        encoding="utf-8",
+                    )
+                    fieldnames = list(page[0].keys())
+                    writer = csv.DictWriter(tmp, fieldnames=fieldnames, extrasaction="ignore")
+                    writer.writeheader()
+
+                writer.writerows(page)
+                total_count += len(page)
+                logger.debug(
+                    "[%s] Streamed %d rows to CSV (offset=%d, total=%d)",
+                    self.SOURCE_NAME, len(page), offset, total_count,
+                )
+
+                if len(page) < page_size:
+                    break
+                offset += page_size
+
+        finally:
+            if tmp is not None:
+                tmp.close()
+
+        if total_count == 0:
+            logger.info("[%s] CMS API returned 0 records", self.SOURCE_NAME)
+            return None, 0
+
+        logger.info("[%s] %d total records streamed to %s", self.SOURCE_NAME, total_count, tmp.name)
+        return tmp.name, total_count
+
     def _fetch_cms_api(
         self,
         dataset_uuid: str,
@@ -140,6 +229,11 @@ class BaseFetcher(ABC):
         filter_params: Optional[Dict[str, Any]] = None,
     ) -> List[Dict[str, Any]]:
         """Fetch records from the CMS data-api/v1 streaming endpoint.
+
+        .. deprecated::
+            Use _fetch_cms_api_to_csv() instead to avoid accumulating all rows
+            in memory. This method is retained for any callers that genuinely
+            need the full list (e.g. unit tests, small datasets).
 
         Args:
             dataset_uuid: CMS dataset UUID from data.cms.gov/data.json catalog.
@@ -225,24 +319,22 @@ class BaseFetcher(ABC):
                 "[%s] Fetching year=%d (UUID=%s...)", self.SOURCE_NAME, year, uuid[:8]
             )
             try:
-                records = self._fetch_cms_api(uuid, max_records_per_year, filter_params)
+                path, count = self._fetch_cms_api_to_csv(
+                    uuid, max_records_per_year, filter_params,
+                    extra_columns={"year": year},
+                )
             except Exception as exc:
                 logger.warning(
                     "[%s] Failed to fetch year=%d: %s — skipping", self.SOURCE_NAME, year, exc
                 )
                 continue
 
-            if not records:
+            if not path:
                 logger.info("[%s] year=%d returned 0 records", self.SOURCE_NAME, year)
                 continue
 
-            # Inject year for orchestrator auto-detection (checked as 'year', 'Year', 'YEAR')
-            for r in records:
-                r["year"] = year
-
-            path = self._cms_records_to_csv(records)
             csv_paths.append(path)
-            logger.info("[%s] year=%d: %d records → %s", self.SOURCE_NAME, year, len(records), path)
+            logger.info("[%s] year=%d: %d records → %s", self.SOURCE_NAME, year, count, path)
 
         return csv_paths
 

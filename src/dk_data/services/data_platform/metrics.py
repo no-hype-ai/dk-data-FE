@@ -48,6 +48,10 @@ if PROMETHEUS_AVAILABLE:
         DK_QUARANTINE_COUNT,
         DATA_SOURCE_STALENESS_HOURS,
         DATA_SOURCE_TABLE_SIZE_BYTES,
+        DK_SILVER_IDENTIFIER_MAPPINGS,
+        DK_SILVER_MOLECULES_TOTAL,
+        DK_SOURCE_RECORDS_TOTAL,
+        BATCH_JOB_LAST_SUCCESS_TIMESTAMP,
         record_gold_view_refresh,
     )
 
@@ -741,6 +745,71 @@ def refresh_metrics_from_database_sync():
             except Exception:
                 conn.rollback()
                 set_table_record_count('hcs_gold', view, 0)
+
+        # T034: dk_molecules_by_lifecycle_stage (026-observability)
+        try:
+            cur.execute("""
+                SELECT lifecycle_stage, COUNT(*)
+                FROM mol_silver.molecules
+                WHERE lifecycle_stage IS NOT NULL
+                GROUP BY lifecycle_stage
+            """)
+            for stage, count in cur.fetchall():
+                DK_MOLECULES_BY_LIFECYCLE_STAGE.labels(stage=stage).set(count or 0)
+        except Exception:
+            conn.rollback()
+
+        # T034: dk_silver_molecules_total (026-observability)
+        try:
+            cur.execute("SELECT COUNT(*) FROM mol_silver.molecules")
+            DK_SILVER_MOLECULES_TOTAL.set(cur.fetchone()[0] or 0)
+        except Exception:
+            conn.rollback()
+
+        # T035: dk_silver_identifier_mappings_total by identifier_type (026-observability)
+        try:
+            cur.execute("""
+                SELECT identifier_type, COUNT(*)
+                FROM mol_silver.identifier_mappings
+                WHERE identifier_type IS NOT NULL
+                GROUP BY identifier_type
+            """)
+            for id_type, count in cur.fetchall():
+                DK_SILVER_IDENTIFIER_MAPPINGS.labels(identifier_type=id_type).set(count or 0)
+        except Exception:
+            conn.rollback()
+
+        # T038: batch_job_last_success_timestamp from meta.batch_job_runs (026-observability)
+        # Populates gauges from DB so they survive pod restarts (covers both API and CronJob runs).
+        try:
+            cur.execute("""
+                SELECT bj.job_name, MAX(bjr.completed_at) AS last_success
+                FROM meta.batch_job_runs bjr
+                JOIN meta.batch_jobs bj ON bjr.job_id = bj.job_id
+                WHERE bjr.status = 'success'
+                GROUP BY bj.job_name
+            """)
+            for job_name, last_success in cur.fetchall():
+                if last_success is not None:
+                    ts = last_success.timestamp() if hasattr(last_success, 'timestamp') else float(last_success)
+                    BATCH_JOB_LAST_SUCCESS_TIMESTAMP.labels(job_name=job_name).set(ts)
+        except Exception:
+            conn.rollback()
+
+        # T038: dk_source_records_total from batch_job_runs — records processed per job over 30d
+        try:
+            cur.execute("""
+                SELECT bj.job_name, COALESCE(SUM(bjr.records_processed), 0) AS total_records
+                FROM meta.batch_job_runs bjr
+                JOIN meta.batch_jobs bj ON bjr.job_id = bj.job_id
+                WHERE bjr.status = 'success'
+                  AND bjr.started_at >= NOW() - INTERVAL '30 days'
+                GROUP BY bj.job_name
+            """)
+            for job_name, total_records in cur.fetchall():
+                DK_SOURCE_RECORDS_TOTAL.labels(source=job_name, layer='batch').set(total_records or 0)
+        except Exception:
+            conn.rollback()
 
         cur.close()
         conn.close()

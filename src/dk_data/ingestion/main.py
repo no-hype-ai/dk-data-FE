@@ -972,9 +972,10 @@ SOURCES = {
         'name': 'ChEMBL Bioactivity',
         'description': 'ChEMBL IC50/Ki/EC50 bioactivity measurements',
         'fetcher': ChEMBLActivitiesFetcher,
-        'loader': load_chembl_activities_data,
+        'loader': load_chembl_activities_data,  # not called by run_ingestion (self_loading)
         'requires_file': False,
         'default_days_back': None,
+        'self_loading': True,  # fetcher streams directly to DB with checkpoint/resume
     },
     'fda_rems': {
         'name': 'FDA REMS Programs',
@@ -1005,17 +1006,19 @@ SOURCES = {
         'name': 'ChEMBL Molecules',
         'description': 'ChEMBL compound/molecule registry (~2.4M compounds)',
         'fetcher': ChEMBLMoleculesFetcher,
-        'loader': load_chembl_molecules_data,
+        'loader': load_chembl_molecules_data,  # not called by run_ingestion (self_loading)
         'requires_file': False,
         'default_days_back': None,
+        'self_loading': True,  # fetcher streams directly to DB with checkpoint/resume
     },
     'pubchem': {
         'name': 'PubChem Compounds',
         'description': 'PubChem drug-relevant compound records',
         'fetcher': PubChemFetcher,
-        'loader': load_pubchem_data,
+        'loader': load_pubchem_data,  # not called by run_ingestion (self_loading)
         'requires_file': False,
         'default_days_back': None,
+        'self_loading': True,  # fetcher streams directly to DB with checkpoint/resume
     },
     'openfda_faers': {
         'name': 'OpenFDA FAERS Adverse Events',
@@ -1029,9 +1032,10 @@ SOURCES = {
         'name': 'NPI Registry',
         'description': 'CMS National Provider Identifier registry (~7M providers)',
         'fetcher': NPIRegistryFetcher,
-        'loader': load_npi_registry_data,
+        'loader': load_npi_registry_data,  # not called by run_ingestion (self_loading)
         'requires_file': False,
         'default_days_back': None,
+        'self_loading': True,  # fetcher streams directly to DB with checkpoint/resume
     },
     'purple_book': {
         'name': 'FDA Purple Book',
@@ -1250,6 +1254,29 @@ def run_ingestion(source: str, **kwargs) -> dict:
 
         loader = source_info['loader']
 
+        # Self-loading sources (e.g. ChEMBL, PubChem, NPI Registry): the fetcher
+        # commits to DB internally using stream-and-commit with checkpoint/resume.
+        # records[] is always [] — record_count holds the total inserted.
+        if source_info.get('self_loading'):
+            fetch_result = fetcher.fetch(**fetch_kwargs)
+            if fetch_result.get('status') in ('failed', 'source_unavailable'):
+                logger.warning(f"Fetch failed for {source}: {fetch_result.get('error')}")
+                log_to_meta(meta_source, fetch_result)
+                return fetch_result
+            result = fetch_result
+            result['records_inserted'] = fetch_result.get('record_count', 0)
+            result['records_fetched'] = fetch_result.get('record_count', 0)
+            log_to_meta(meta_source, result)
+            _elapsed = time.monotonic() - _t0
+            _records = result.get('records_inserted', 0)
+            record_job_duration(f'ingestion_{source}', _elapsed)
+            record_job_records(f'ingestion_{source}', _records)
+            if result.get('status') not in ('success', 'partial'):
+                increment_job_failure(f'ingestion_{source}')
+            else:
+                mark_job_success(f'ingestion_{source}')
+            return result
+
         # Streaming sources (e.g. BindingDB): fetch and load in chunks to bound
         # peak memory usage. The fetcher calls loader_fn once per chunk.
         if source_info.get('streaming'):
@@ -1335,7 +1362,23 @@ def run_ingestion(source: str, **kwargs) -> dict:
             return agg
 
         # Standard API fetchers return records as a list of dicts.
+        # Some fetchers (e.g. FAERS full_backfill) stream directly to DB and
+        # return records=[] with record_count>0 — treat those as self-loaded successes.
         if not fetch_result.get('records'):
+            if fetch_result.get('record_count', 0) > 0:
+                result = fetch_result
+                result['records_inserted'] = fetch_result['record_count']
+                result['records_fetched'] = fetch_result['record_count']
+                log_to_meta(meta_source, result)
+                _elapsed = time.monotonic() - _t0
+                _records = result.get('records_inserted', 0)
+                record_job_duration(f'ingestion_{source}', _elapsed)
+                record_job_records(f'ingestion_{source}', _records)
+                if result.get('status') not in ('success', 'partial'):
+                    increment_job_failure(f'ingestion_{source}')
+                else:
+                    mark_job_success(f'ingestion_{source}')
+                return result
             logger.warning(f"Fetch returned no records for {source}")
             log_to_meta(meta_source, fetch_result)
             return fetch_result
@@ -1406,6 +1449,70 @@ def run_ingestion(source: str, **kwargs) -> dict:
         mark_job_success(_job)
 
     return result
+
+
+def _record_cronjob_run_to_db(
+    job_name: str,
+    source: str | None,
+    status: str,
+    duration_seconds: float,
+    records_processed: int,
+) -> None:
+    """
+    Record CronJob completion directly to meta.batch_job_runs (T037, 026-observability).
+
+    This is a direct-DB fallback so scheduled CronJob executions are tracked even when
+    the job-trigger HTTP endpoint is unreachable.  Failures here are non-fatal.
+    """
+    db_url = os.getenv('DATABASE_URL')
+    if not db_url:
+        db_host = os.getenv('POSTGRES_HOST', 'postgres')
+        db_port = os.getenv('POSTGRES_PORT', '5432')
+        db_name = os.getenv('POSTGRES_DB', 'dk_data')
+        db_user = os.getenv('POSTGRES_USER', 'postgres')
+        db_pass = os.getenv('POSTGRES_PASSWORD', 'postgres')
+        db_url = f'postgresql://{db_user}:{db_pass}@{db_host}:{db_port}/{db_name}'
+
+    try:
+        import psycopg2
+        conn = psycopg2.connect(db_url)
+        cur = conn.cursor()
+
+        # Resolve job_id from meta.batch_jobs, inserting a minimal row if missing.
+        cur.execute(
+            "SELECT job_id FROM meta.batch_jobs WHERE job_name = %s",
+            (job_name,),
+        )
+        row = cur.fetchone()
+        if row:
+            job_id = row[0]
+        else:
+            cur.execute(
+                "INSERT INTO meta.batch_jobs (job_name, is_enabled) VALUES (%s, TRUE) "
+                "RETURNING job_id",
+                (job_name,),
+            )
+            job_id = cur.fetchone()[0]
+
+        k8s_job = os.getenv('JOB_NAME') or os.getenv('K8S_JOB_NAME')
+        cur.execute(
+            """
+            INSERT INTO meta.batch_job_runs
+                (job_id, triggered_by, started_at, completed_at, status,
+                 records_processed, k8s_job_name)
+            VALUES
+                (%s, 'scheduler',
+                 NOW() - (INTERVAL '1 second' * %s),
+                 NOW(),
+                 %s, %s, %s)
+            """,
+            (job_id, duration_seconds, status, records_processed, k8s_job),
+        )
+        conn.commit()
+        cur.close()
+        conn.close()
+    except Exception as e:
+        logger.debug(f"Could not record CronJob run to meta.batch_job_runs: {e}")
 
 
 def list_sources():
@@ -1581,6 +1688,10 @@ Examples:
     finally:
         close_connection_pool()
         duration = time.monotonic() - start_time
+        # T037 (026-observability): Write CronJob completion directly to meta.batch_job_runs.
+        # This ensures scheduled runs are recorded even when the job-trigger HTTP endpoint is
+        # unreachable, and feeds the DB-backed pipeline metrics in refresh_metrics_from_database_sync().
+        _record_cronjob_run_to_db(job_name, source, status, duration, records)
         if _OBS_AVAILABLE:
             try:
                 asyncio.run(report_completion(
