@@ -44,8 +44,9 @@ CREATE TABLE IF NOT EXISTS scoring.target_scores (
     score_date                  DATE NOT NULL DEFAULT CURRENT_DATE
 );
 
--- api.targets view
-CREATE OR REPLACE VIEW api.targets AS
+-- api.targets view (drop first — CREATE OR REPLACE cannot rename columns)
+DROP VIEW IF EXISTS api.targets CASCADE;
+CREATE VIEW api.targets AS
 SELECT
     h.hospital_id,
     h.hospital_name,
