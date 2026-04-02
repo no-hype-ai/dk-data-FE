@@ -154,10 +154,10 @@ class TestCrossServiceAuth:
     """Test cross-service authentication for assessment dashboard integration."""
 
     def test_analyst_can_read_mol_gold(self, postgrest_client):
-        """Analyst JWT grants SELECT on mol_gold.molecule_profiles."""
+        """Analyst JWT grants SELECT on mol_gold.molecule_profile."""
         token = create_jwt_token("analyst")
         headers = {"Authorization": f"Bearer {token}", "Accept-Profile": "mol_gold"}
-        response = postgrest_client.get("/molecule_profiles?limit=1", headers=headers)
+        response = postgrest_client.get("/molecule_profile?limit=1", headers=headers)
         assert response.status_code in (200, 204)
 
     def test_analyst_can_read_mol_silver(self, postgrest_client):
@@ -209,10 +209,10 @@ class TestCrossServiceAuth:
         assert response.status_code in (200, 204, 404)
 
     def test_web_anon_cannot_access_mol_gold(self, postgrest_client):
-        """web_anon role gets 401/403 on mol_gold.molecule_profiles."""
+        """web_anon role gets 401/403 on mol_gold.molecule_profile."""
         token = create_jwt_token("web_anon")
         headers = {"Authorization": f"Bearer {token}", "Accept-Profile": "mol_gold"}
-        response = postgrest_client.get("/molecule_profiles?limit=1", headers=headers)
+        response = postgrest_client.get("/molecule_profile?limit=1", headers=headers)
         assert response.status_code in (401, 403)
 
     def test_web_anon_cannot_access_xenon(self, postgrest_client):
@@ -230,7 +230,7 @@ class TestCrossServiceAuth:
     def test_unauthenticated_cannot_access_mol_gold(self, postgrest_client):
         """Unauthenticated request (no Authorization header) gets 401/403 on mol_gold."""
         response = postgrest_client.get(
-            "/molecule_profiles?limit=1", headers={"Accept-Profile": "mol_gold"}
+            "/molecule_profile?limit=1", headers={"Accept-Profile": "mol_gold"}
         )
         assert response.status_code in (401, 403)
 

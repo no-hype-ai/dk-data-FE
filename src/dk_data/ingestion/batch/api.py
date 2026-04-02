@@ -107,9 +107,6 @@ try:
 except ImportError as e:
     logger.warning(f"Molecule alerts router not available: {e}")
 
-# MCP route removed — external apps (xenon, etc.) use /api/v1/data-tools/ instead.
-# The MCP protocol was never the canonical interface; data-tools is.
-
 # Agents router (019-cms-puf-platform-reconciliation T041)
 try:
     from dk_data.api.routes.agents import router as agents_router
@@ -125,6 +122,14 @@ try:
     logger.info("Loaded data-tools gateway router")
 except ImportError as e:
     logger.warning(f"Data tools gateway router not available: {e}")
+
+# MCP data-tools router (PR #190 — issue #188)
+try:
+    from dk_data.services.mcp.router import router as mcp_router
+    app.include_router(mcp_router, prefix="/api/v1", tags=["mcp-data-tools"])
+    logger.info("Loaded MCP data-tools router")
+except ImportError as e:
+    logger.warning(f"MCP data-tools router not available: {e}")
 
 # CORS middleware
 app.add_middleware(

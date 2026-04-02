@@ -21,7 +21,7 @@ SELECT
     b.condition_query,
     b.total_count                                       AS trial_count,
     'ct_gov_indication_stats'                           AS source,
-    b.source_updated_at,
+    b.request_timestamp             AS source_updated_at,
     NOW()                                               AS created_at
 
 FROM mol_bronze.ct_gov_indication_stats b

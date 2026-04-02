@@ -1,9 +1,9 @@
 -- SQLMesh Model: Bronze NIH Reporter Grants
--- Extracts typed fields from mol_raw.nih_reporter_raw JSONB responses.
+-- Extracts typed fields from mol_raw.nih_reporter JSONB responses.
 -- Feature: 019-cms-puf-platform-reconciliation (T023)
 --
 -- Grain: project_num
--- Source: mol_raw.nih_reporter_raw (populated by NIHReporterFetcher via run_ingestion)
+-- Source: mol_raw.nih_reporter (populated by NIHReporterFetcher via run_ingestion)
 --
 -- NIH Reporter API v2 POST /projects/search response fields (used here):
 --   appl_id              INTEGER    — application ID (primary key in NIH system)
@@ -79,7 +79,7 @@ SELECT
     FALSE                                                           AS processed_to_silver,
     NOW()                                                           AS created_at
 
-FROM mol_raw.nih_reporter_raw
+FROM mol_raw.nih_reporter
 WHERE
     response_status = 200
     AND response_body->>'project_num' IS NOT NULL

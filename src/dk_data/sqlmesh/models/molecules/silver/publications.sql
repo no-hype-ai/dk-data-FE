@@ -192,7 +192,7 @@ journal_rss_pubs AS (
 ),
 
 -- EuropePMC publications
--- mol_bronze.europepmc exposes typed columns derived from mol_raw.europepmc_raw JSONB:
+-- mol_bronze.europepmc exposes typed columns derived from mol_raw.europepmc JSONB:
 -- europepmc_pmid (TEXT), pmcid, doi, title, abstract, author_string, author_list (JSONB),
 -- journal_title, publication_date (DATE), publication_year (INTEGER),
 -- cited_by_count (INTEGER), is_open_access (BOOLEAN), mesh_terms (JSONB), keywords (JSONB)

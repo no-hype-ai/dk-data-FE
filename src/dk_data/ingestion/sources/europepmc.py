@@ -1,12 +1,12 @@
-"""EuropePMC loader — inserts to mol_raw.europepmc_raw.
+"""EuropePMC loader — inserts to mol_raw.europepmc.
 
 Feature: 011-datasource-integration
 Task: EuropePMC literature source integration
 
 Loads EuropePMC search result records (raw JSONB from the /search API)
-into mol_raw.europepmc_raw using ON CONFLICT on the pmid expression index.
+into mol_raw.europepmc using ON CONFLICT on the pmid expression index.
 
-Target table: mol_raw.europepmc_raw (see migration 085_cms_puf_platform_reconciliation.sql)
+Target table: mol_raw.europepmc (see migration 085_cms_puf_platform_reconciliation.sql)
 Schema:
     id                  BIGSERIAL PRIMARY KEY
     request_timestamp   TIMESTAMPTZ NOT NULL DEFAULT NOW()
@@ -31,7 +31,7 @@ def load_europepmc_data(
     records: List[Dict[str, Any]],
     source_hash: Optional[str] = None,
 ) -> Dict[str, Any]:
-    """Load EuropePMC search result records into mol_raw.europepmc_raw.
+    """Load EuropePMC search result records into mol_raw.europepmc.
 
     Each record is stored as a raw JSONB blob (the search result object from
     the EuropePMC REST API).  The Bronze model (bronze.europepmc) extracts
@@ -57,7 +57,7 @@ def load_europepmc_data(
             "errors": [],
         }
 
-    logger.info("Loading %d EuropePMC records into mol_raw.europepmc_raw", len(records))
+    logger.info("Loading %d EuropePMC records into mol_raw.europepmc", len(records))
 
     errors: List[str] = []
     inserted = 0
@@ -66,14 +66,14 @@ def load_europepmc_data(
     # ON CONFLICT uses the expression index; PostgreSQL requires the exact
     # expression (response_body->>'pmid') in the conflict target.
     sql = """
-        INSERT INTO mol_raw.europepmc_raw (response_body, response_status)
+        INSERT INTO mol_raw.europepmc (response_body, response_status)
         VALUES (%s::JSONB, 200)
         ON CONFLICT ((response_body->>'pmid'))
         WHERE (response_body->>'pmid') IS NOT NULL
         DO UPDATE SET
             response_body = EXCLUDED.response_body,
             _loaded_at    = NOW()
-        WHERE mol_raw.europepmc_raw.response_body IS DISTINCT FROM EXCLUDED.response_body
+        WHERE mol_raw.europepmc.response_body IS DISTINCT FROM EXCLUDED.response_body
     """
 
     with get_cursor() as cur:

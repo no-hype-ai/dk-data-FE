@@ -100,7 +100,7 @@ def load_pdb_data(
                             %s, %s, %s, %s,
                             FALSE, NOW(), 'pdb'
                         )
-                        ON CONFLICT (response_body_hash) DO NOTHING
+                        ON CONFLICT (response_body_hash) WHERE response_body_hash IS NOT NULL DO NOTHING
                         """,
                         (
                             f"{request_id}-{idx}",

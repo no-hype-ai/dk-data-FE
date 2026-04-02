@@ -22,8 +22,13 @@ from .base import BaseFetcher
 
 logger = logging.getLogger(__name__)
 
-# IPC codes for pharmaceutical patents
-PHARMA_IPC_CODES = ["A61K", "A61P", "C07D"]
+# IPC codes for pharmaceutical patents:
+#   A61K: pharmaceutical preparations (drugs, excipients, dosage forms)
+#   A61P: therapeutic activity (by disease/mechanism — ensures clinical relevance)
+#   C07D: heterocyclic compounds (small-molecule drugs)
+#   C07K: peptides (biologics, GLP-1s, monoclonal antibodies)
+#   C07H: nucleosides/nucleotides/nucleic acids (RNA therapeutics, mRNA vaccines)
+PHARMA_IPC_CODES = ["A61K", "A61P", "C07D", "C07K", "C07H"]
 
 # Maximum records per fetch run
 MAX_RECORDS = 5000
@@ -89,7 +94,10 @@ class EPOOPSFetcher(BaseFetcher):
         search_terms = kwargs.get("search_terms")
         ipc_codes = kwargs.get("ipc_codes", PHARMA_IPC_CODES)
         max_records = kwargs.get("max_records", MAX_RECORDS)
-        days_back = kwargs.get("days_back", 30)
+        # days_back=None means no date filter (full backfill)
+        days_back = kwargs.get("days_back", 90)
+        if days_back == 0:
+            days_back = None
 
         try:
             # Load search terms from DB if not provided
@@ -100,7 +108,7 @@ class EPOOPSFetcher(BaseFetcher):
                 search_terms = ["pharmaceutical", "drug therapy"]
 
             logger.info(
-                "Fetching EPO OPS patents (terms=%d, ipc=%s, days_back=%d)",
+                "Fetching EPO OPS patents (terms=%d, ipc=%s, days_back=%s)",
                 len(search_terms), ipc_codes, days_back,
             )
 
@@ -141,15 +149,42 @@ class EPOOPSFetcher(BaseFetcher):
             self.log_fetch_result({"status": "success", "records": len(all_records)})
             return result
 
-        except Exception as e:
-            logger.exception("Failed to fetch EPO OPS data: %s", e)
+        except RuntimeError as e:
+            # Missing credentials — not a transient failure
+            logger.warning("EPO OPS: %s", e)
             result = {
-                "status": "failed",
+                "status": "source_unavailable",
                 "records": [],
                 "record_count": 0,
                 "hash": None,
                 "error": str(e),
             }
+            self.log_fetch_result(result)
+            return result
+        except Exception as e:
+            # Distinguish 401/403 (credential expiry) from generic failures
+            err_str = str(e)
+            if "401" in err_str or "403" in err_str:
+                logger.warning(
+                    "EPO OPS auth failure (401/403) — credentials may have expired. "
+                    "Rotate EPO_CONSUMER_KEY / EPO_CONSUMER_SECRET: %s", e
+                )
+                result = {
+                    "status": "source_unavailable",
+                    "records": [],
+                    "record_count": 0,
+                    "hash": None,
+                    "error": f"Auth failure (rotate EPO_CONSUMER_KEY/SECRET): {e}",
+                }
+            else:
+                logger.exception("Failed to fetch EPO OPS data: %s", e)
+                result = {
+                    "status": "failed",
+                    "records": [],
+                    "record_count": 0,
+                    "hash": None,
+                    "error": str(e),
+                }
             self.log_fetch_result(result)
             return result
 
@@ -192,16 +227,19 @@ class EPOOPSFetcher(BaseFetcher):
         term: str,
         *,
         ipc_codes: List[str],
-        days_back: int = 30,
+        days_back: Optional[int] = 30,
         max_records: int = 5000,
     ) -> List[Dict[str, Any]]:
         """Search OPS for patents matching a term and IPC codes."""
         records: List[Dict[str, Any]] = []
 
-        # Build CQL query
-        ipc_filter = " OR ".join(f'ipc="{code}"' for code in ipc_codes)
-        date_from = (datetime.utcnow() - timedelta(days=days_back)).strftime("%Y%m%d")
-        cql = f'txt="{term}" AND ({ipc_filter}) AND pd>={date_from}'
+        # Build CQL query — OPS CQL uses bare IPC codes (no quotes)
+        ipc_filter = " OR ".join(f'ipc={code}' for code in ipc_codes)
+        if days_back:
+            date_from = (datetime.utcnow() - timedelta(days=days_back)).strftime("%Y%m%d")
+            cql = f'txt="{term}" AND ({ipc_filter}) AND pd>={date_from}'
+        else:
+            cql = f'txt="{term}" AND ({ipc_filter})'
 
         start = 1
 
@@ -211,11 +249,11 @@ class EPOOPSFetcher(BaseFetcher):
             try:
                 params = {
                     "q": cql,
+                    "Range": f"{start}-{end}",
                 }
                 headers = {
                     "Authorization": f"Bearer {self._access_token}",
                     "Accept": "application/xml",
-                    "Range": f"{start}-{end}",
                 }
 
                 response = self.session.get(
@@ -225,8 +263,14 @@ class EPOOPSFetcher(BaseFetcher):
                     timeout=60,
                 )
 
-                if response.status_code == 404:
-                    # No results
+                if response.status_code in (400, 404):
+                    # OPS returns 400 for queries with no matching results
+                    # (in addition to genuine bad-request errors). Treat as
+                    # "no results" so we skip to the next search term.
+                    logger.debug(
+                        "OPS %d for term '%s' — no results or invalid range",
+                        response.status_code, term,
+                    )
                     break
 
                 response.raise_for_status()

@@ -59,6 +59,24 @@ class BaseAdapter(ABC):
         """
         return f"{base_url}?query={drug_name}"
 
+    def build_urls_with_resolution(self, base_url: str, resolution: Any, params: dict) -> list:
+        """Return an ordered list of URLs to try, using resolved drug name forms.
+
+        Default implementation returns a single URL built from the canonical name.
+        Override in adapters that benefit from trying multiple aliases or
+        resolution-derived search strategies (e.g. sec_edgar, openfda_faers).
+
+        Args:
+            base_url: The tool's configured API base URL.
+            resolution: A DrugResolution instance from DrugResolver.
+            params: Raw input_params dict from the invoke call.
+
+        Returns:
+            Ordered list of URL strings.  BaseMCPTool tries each in sequence,
+            stopping at the first that returns non-empty results.
+        """
+        return [self.build_url(base_url, resolution.canonical_name, params)]
+
     def validate_against_bronze(self, normalized: dict) -> bool:
         """Validate that normalized data has required fields for the bronze model.
 

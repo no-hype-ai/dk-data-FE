@@ -1,4 +1,4 @@
-"""NIH Reporter loader — inserts to mol_raw.nih_reporter_raw.
+"""NIH Reporter loader — inserts to mol_raw.nih_reporter.
 
 Feature: 019-cms-puf-platform-reconciliation
 
@@ -29,7 +29,7 @@ BATCH_SIZE = 500  # commit every N records to bound transaction size
 
 def load_nih_reporter_data(records: list, source_hash: Optional[str] = None) -> dict:
     """
-    Load NIH Reporter project records into mol_raw.nih_reporter_raw.
+    Load NIH Reporter project records into mol_raw.nih_reporter.
 
     Args:
         records: List of raw API response dicts from NIHReporterFetcher.
@@ -57,7 +57,7 @@ def load_nih_reporter_data(records: list, source_hash: Optional[str] = None) -> 
     inserted = 0
 
     sql = """
-        INSERT INTO mol_raw.nih_reporter_raw (response_body, response_status)
+        INSERT INTO mol_raw.nih_reporter (response_body, response_status)
         VALUES (%s::jsonb, 200)
         ON CONFLICT ((response_body->>'project_num'))
         WHERE (response_body->>'project_num') IS NOT NULL

@@ -7,8 +7,7 @@
 --   • PostgREST roles (web_anon, authenticator, analyst, api_user)
 --   • meta.data_sources and meta.refresh_log (required by ingestion layer)
 --
--- Dev note: authenticator password is hard-coded to 'postgrest_pass' to match
--- the POSTGREST_PASSWORD in .env. Do NOT use this init script in production.
+-- authenticator password is set by 01-set-passwords.sh from POSTGREST_PASSWORD env var.
 
 -- =============================================================================
 -- EXTENSIONS
@@ -72,9 +71,9 @@ BEGIN
     END IF;
     IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = 'authenticator') THEN
         -- Dev password matches POSTGREST_PASSWORD in .env / docker-compose.yml
-        CREATE ROLE authenticator NOINHERIT LOGIN PASSWORD 'postgrest_pass';
+        CREATE ROLE authenticator NOINHERIT LOGIN PASSWORD 'PLACEHOLDER_SET_BY_INIT_SCRIPT';
     ELSE
-        ALTER ROLE authenticator PASSWORD 'postgrest_pass';
+        -- password set by 01-set-passwords.sh
     END IF;
 END
 $$;
@@ -87,10 +86,22 @@ GRANT api_user  TO authenticator;
 -- SCHEMA GRANTS
 -- =============================================================================
 
--- web_anon: read-only on api schema
+-- web_anon: SELECT on api schema only; USAGE-only on all other PostgREST-exposed schemas
+-- PostgREST v12 requires the anon role to have USAGE on every schema in PGRST_DB_SCHEMAS
+-- even if it can't SELECT any tables there; table-level access is controlled per-role.
 GRANT USAGE ON SCHEMA api TO web_anon;
 GRANT SELECT ON ALL TABLES IN SCHEMA api TO web_anon;
 ALTER DEFAULT PRIVILEGES IN SCHEMA api GRANT SELECT ON TABLES TO web_anon;
+-- api.targets is auth-protected — must NOT be accessible to web_anon
+-- This REVOKE runs after migration 143 creates the view; comment kept for clarity.
+-- (The REVOKE in migration 143 handles this for migration-applied DBs.)
+GRANT USAGE ON SCHEMA
+    mol_silver, mol_gold,
+    hcs_silver, hcs_gold,
+    ind_silver, ind_gold,
+    hcp_silver, hcp_gold,
+    mart, scoring, xenon, staging, meta, application
+TO web_anon;
 
 -- analyst: api + scoring + mart + meta read
 GRANT USAGE ON SCHEMA api, scoring, mart, meta TO analyst;
@@ -107,6 +118,17 @@ GRANT USAGE ON SCHEMA
     hcp_silver, hcp_gold,
     api, mart, scoring, meta, xenon
 TO api_user;
+
+-- authenticator: direct USAGE on all PostgREST-exposed schemas
+-- PostgREST introspects schemas as the authenticator role; it needs direct USAGE
+-- (inherited role USAGE is not enough for schema introspection)
+GRANT USAGE ON SCHEMA
+    mol_silver, mol_gold,
+    hcs_silver, hcs_gold,
+    ind_silver, ind_gold,
+    hcp_silver, hcp_gold,
+    api, mart, scoring, meta, xenon, staging, application
+TO authenticator;
 GRANT SELECT ON ALL TABLES IN SCHEMA mol_silver TO api_user;
 GRANT SELECT ON ALL TABLES IN SCHEMA mol_gold   TO api_user;
 GRANT SELECT ON ALL TABLES IN SCHEMA hcs_silver TO api_user;
@@ -143,8 +165,8 @@ CREATE TABLE IF NOT EXISTS meta.refresh_log (
     log_id               SERIAL PRIMARY KEY,
     source_id            INTEGER NOT NULL REFERENCES meta.data_sources(source_id),
     source_name          TEXT,           -- denormalised for fast alert queries
-    started_at           TIMESTAMPTZ,
-    completed_at         TIMESTAMPTZ,
+    refresh_started_at   TIMESTAMPTZ,
+    refresh_completed_at TIMESTAMPTZ,
     status               TEXT NOT NULL,
     records_fetched      INTEGER,
     records_inserted     INTEGER,
@@ -154,9 +176,9 @@ CREATE TABLE IF NOT EXISTS meta.refresh_log (
 );
 
 CREATE INDEX IF NOT EXISTS idx_refresh_log_source_status
-    ON meta.refresh_log (source_id, status, started_at DESC);
+    ON meta.refresh_log (source_id, status, refresh_started_at DESC);
 CREATE INDEX IF NOT EXISTS idx_refresh_log_source_name
-    ON meta.refresh_log (source_name, started_at DESC);
+    ON meta.refresh_log (source_name, refresh_started_at DESC);
 
 -- =============================================================================
 -- API SCHEMA — minimal health view (PostgREST requirement)
@@ -178,7 +200,7 @@ BEGIN
     RAISE NOTICE '=== dk-data-fe dev database ready ===';
     RAISE NOTICE 'Domain schemas: mol_raw/bronze/silver/gold, hcs_raw/bronze/silver/gold';
     RAISE NOTICE 'Infra schemas: meta, api, mart, scoring, staging, xenon, application';
-    RAISE NOTICE 'Roles: web_anon, analyst, api_user, authenticator (password: postgrest_pass)';
+    RAISE NOTICE 'Roles: web_anon, analyst, api_user, authenticator (password: set from POSTGREST_PASSWORD env)';
     RAISE NOTICE 'Run migrations manually: psql -f src/dk_data/sql/migrations/NNN_*.sql';
 END
 $$;

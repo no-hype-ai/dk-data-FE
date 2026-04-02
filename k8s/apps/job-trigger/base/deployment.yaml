@@ -55,32 +55,14 @@ spec:
           ports:
             - containerPort: 8000
               name: http
+          envFrom:
+            # All secrets in dk-data-secrets are available as env vars.
+            # This includes DB creds, API keys, and any new secrets added to Doppler.
+            # To add a new secret: update dk-data-secrets (via Doppler K8s sync or
+            # kubectl patch secret dk-data-secrets --namespace <ns> --patch ...).
+            - secretRef:
+                name: dk-data-secrets
           env:
-            - name: POSTGRES_HOST
-              valueFrom:
-                secretKeyRef:
-                  name: dk-data-secrets
-                  key: POSTGRES_HOST
-            - name: POSTGRES_PORT
-              valueFrom:
-                secretKeyRef:
-                  name: dk-data-secrets
-                  key: POSTGRES_PORT
-            - name: POSTGRES_USER
-              valueFrom:
-                secretKeyRef:
-                  name: dk-data-secrets
-                  key: POSTGRES_USER
-            - name: POSTGRES_PASSWORD
-              valueFrom:
-                secretKeyRef:
-                  name: dk-data-secrets
-                  key: POSTGRES_PASSWORD
-            - name: POSTGRES_DB
-              valueFrom:
-                secretKeyRef:
-                  name: dk-data-secrets
-                  key: POSTGRES_DB
             - name: K8S_NAMESPACE
               valueFrom:
                 fieldRef:

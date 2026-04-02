@@ -12,8 +12,7 @@
 --   works_count INTEGER        -- pre-computed count of works groups
 --   external_ids JSONB         -- dict of {type: value} external identifiers
 --   raw_response JSONB         -- full ORCID /record API response
---   fetched_at TIMESTAMPTZ
---   ingested_at TIMESTAMPTZ
+--   fetched_at TIMESTAMPTZ     -- timestamp column (was ingested_at in migration 137, renamed)
 --
 -- Fixed (019-cms-puf-platform-reconciliation):
 --   - Replaced all response_body JSONB extraction with direct structured columns
@@ -43,7 +42,6 @@ SELECT
     -- Researcher identifiers (structured columns from mol_raw.orcid)
     orcid_id,
     given_names                     AS given_name,
-    given_names,
     family_name,
     credit_name,
 
@@ -53,7 +51,6 @@ SELECT
     -- Affiliations: JSONB array of {organization, role, department}
     -- populated by ORCIDFetcher._parse_employments()
     current_affiliations            AS affiliations,
-    current_affiliations,
 
     -- Works count: integer column pre-computed by loader
     works_count,
@@ -61,7 +58,6 @@ SELECT
     -- Research keywords: JSONB array of keyword strings
     -- (ORCID person.keywords; used as research_areas proxy)
     keywords                        AS research_areas,
-    keywords,
 
     -- External identifiers: dict of {type: value} (no column loss)
     external_ids,

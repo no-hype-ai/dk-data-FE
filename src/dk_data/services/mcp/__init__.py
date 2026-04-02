@@ -1,3 +1,5 @@
-# MCP Data Retrieval Tools Service
-# Feature: 015-assessment-dashboard-integration
-# 28 on-demand data retrieval tools with per-source adapters
+"""MCP data-tool adapter layer.
+
+Provides on-demand drug/molecule data queries via registered tool adapters.
+Each adapter wraps a third-party API and normalises the response.
+"""

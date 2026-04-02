@@ -1,5 +1,5 @@
 -- SQLMesh Model: Bronze EuropePMC Publications
--- Transforms raw mol_raw.europepmc_raw JSONB response bodies to Bronze typed columns.
+-- Transforms raw mol_raw.europepmc JSONB response bodies to Bronze typed columns.
 -- The raw table stores one row per API result object from the EuropePMC /search endpoint.
 -- Field names match the EuropePMC REST API "core" result schema.
 -- Part of: 011-datasource-integration
@@ -96,7 +96,7 @@ SELECT
     FALSE                                                                         AS processed_to_silver,
     NOW()                                                                         AS created_at
 
-FROM mol_raw.europepmc_raw r
+FROM mol_raw.europepmc r
 WHERE
     r.response_status = 200
     AND r.processed_to_bronze = FALSE

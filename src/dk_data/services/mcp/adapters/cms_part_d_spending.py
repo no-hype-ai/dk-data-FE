@@ -1,23 +1,23 @@
-"""MCP Adapter: cms_part_d_spending
+"""CMS Part D Drug Spending MCP adapter.
 
-Feature: 019-cms-puf-platform-reconciliation
+Fix: Old URL hit the CMS data catalog HTML page instead of the data API.
+CMS migrated to a new data-api endpoint (related to #152 CMS CKAN deprecation).
+Dataset UUID: 0b8e6f28-9458-4532-9b85-f39d2a4da3e9 (CMS Part D spending by drug).
 """
 
-from .base import BaseAdapter
+from urllib.parse import quote
+
+from ..base_tool import BaseMCPTool
+
+_DATASET_UUID = "0b8e6f28-9458-4532-9b85-f39d2a4da3e9"
 
 
-class Adapter(BaseAdapter):
-    @property
-    def source_name(self) -> str:
-        return "cms_part_d_spending"
+class CmsPartDSpendingTool(BaseMCPTool):
+    tool_name = "cms-part-d-spending"
 
-    @property
-    def raw_table(self) -> str:
-        return "cms_part_d_spending"
-
-    @property
-    def raw_schema(self) -> str:
-        return "hcs_raw"
-
-    def normalize(self, api_response: dict) -> dict:
-        return api_response
+    def build_url(self, drug_name: str) -> str:
+        encoded = quote(drug_name)
+        return (
+            f"https://data.cms.gov/data-api/v1/dataset/{_DATASET_UUID}/data"
+            f"?filter[Brnd_Name]={encoded}"
+        )

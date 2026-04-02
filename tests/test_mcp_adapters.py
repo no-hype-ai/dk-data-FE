@@ -150,7 +150,7 @@ class TestPubMedAdapter:
         adapter = self._get_adapter()
         assert adapter.source_name == "pubmed"
         assert adapter.raw_table == "pubmed"
-        assert adapter.raw_schema == "raw"
+        assert adapter.raw_schema == "mol_raw"
 
 
 class TestSecEdgarAdapter:
@@ -164,7 +164,7 @@ class TestSecEdgarAdapter:
         adapter = self._get_adapter()
         assert adapter.source_name == "sec_edgar"
         assert adapter.raw_table == "sec_edgar"
-        assert adapter.raw_schema == "raw"
+        assert adapter.raw_schema == "mol_raw"
 
 
 class TestAllAdaptersImportable:
@@ -189,4 +189,4 @@ class TestAllAdaptersImportable:
         adapter = mod.Adapter()
         assert adapter.source_name, f"Missing source_name in {module_name}"
         assert adapter.raw_table, f"Missing raw_table in {module_name}"
-        assert adapter.raw_schema in ("mol_raw", "raw"), f"Invalid raw_schema in {module_name}"
+        assert adapter.raw_schema in ("mol_raw", "raw", "hcs_raw"), f"Invalid raw_schema in {module_name}"

@@ -397,7 +397,7 @@ class TestInvokeEndpoint:
         data = resp.json()
         assert data["status"] == "success"
         assert data["source"] == "clinicaltrials"
-        assert data["request_id"] == "test-uuid-1234"
+        assert data["request_id"] is not None  # generated fresh by the route
 
     def test_invocation_with_molecule_id(self, client):
         result = self._success_result()

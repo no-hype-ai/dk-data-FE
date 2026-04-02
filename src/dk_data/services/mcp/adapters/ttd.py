@@ -1,26 +1,31 @@
-"""MCP Adapter: ttd
+"""TTD (Therapeutic Targets Database) MCP adapter.
 
-Feature: 019-cms-puf-platform-reconciliation
+Not fixable as on-demand query:
+  - Domain (db.idrblab.net) redirects to ttd.idrblab.cn (Chinese domain)
+  - ttd.idrblab.cn is unreachable from outside China (confirmed timeout)
+  - TTD is a flat-file database with no REST API
+
+Data is available via the bulk fetcher pipeline.
+Returns a clear error instead of a redirect timeout.
 """
 
-from .base import BaseAdapter
+from typing import Any
+
+from ..base_tool import BaseMCPTool
 
 
-class Adapter(BaseAdapter):
-    """Adapter for Therapeutic Target Database flat-file responses."""
+class TtdTool(BaseMCPTool):
+    tool_name = "ttd-search"
 
-    @property
-    def source_name(self) -> str:
-        return "ttd"
-
-    @property
-    def raw_table(self) -> str:
-        return "ttd"
-
-    @property
-    def raw_schema(self) -> str:
-        return "mol_raw"
-
-    def normalize(self, api_response: dict) -> dict:
-        """Normalize API response to match bronze model response_body format."""
-        return api_response
+    async def invoke(self, drug_name: str) -> dict[str, Any]:
+        return {
+            "tool": self.tool_name,
+            "error": (
+                "TTD (Therapeutic Targets Database) is a bulk-only source. "
+                "The domain redirects to ttd.idrblab.cn which is unreachable "
+                "from outside China. "
+                "Data is available via the bulk fetcher pipeline."
+            ),
+            "status_code": None,
+            "data": None,
+        }

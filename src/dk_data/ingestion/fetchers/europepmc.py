@@ -5,7 +5,7 @@ Task: EuropePMC literature source integration
 
 Fetches pharma-relevant publications from Europe PMC using the REST search API
 with cursor-based pagination.  Records are stored as-is (raw JSONB) in
-mol_raw.europepmc_raw by the loader, so field names here must match the
+mol_raw.europepmc by the loader, so field names here must match the
 EuropePMC search API response schema.
 
 API Docs: https://europepmc.org/RestfulWebService#!/Europe32PMC32Articles32RESTful32API
@@ -46,7 +46,7 @@ class EuropePMCFetcher(BaseFetcher):
     """Fetcher for EuropePMC publications.
 
     Uses the /search endpoint with cursor-based pagination.
-    Results are stored as raw JSONB in mol_raw.europepmc_raw.
+    Results are stored as raw JSONB in mol_raw.europepmc.
     """
 
     SOURCE_NAME = "europepmc"

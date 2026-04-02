@@ -19,7 +19,7 @@ class Adapter(BaseAdapter):
 
     @property
     def raw_schema(self) -> str:
-        return "raw"
+        return "mol_raw"
 
     def build_url(self, base_url: str, drug_name: str, params: dict) -> str:
         """FDA Drugs@FDA API uses openFDA search syntax."""

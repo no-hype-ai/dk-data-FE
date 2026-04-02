@@ -54,8 +54,11 @@ def load_who_gho_data(
     skipped = 0
 
     sql = """
-        INSERT INTO mol_raw.who_gho (response_body, source_id)
-        VALUES (%s::JSONB, 'who_gho')
+        INSERT INTO mol_raw.who_gho (
+            request_id, api_endpoint, api_version,
+            response_status, response_body, source_id
+        )
+        VALUES (%s, 'https://ghoapi.azureedge.net/api', 'v4', 200, %s::JSONB, 'who_gho')
         ON CONFLICT ((response_body->>'IndicatorCode'))
         WHERE (response_body->>'IndicatorCode') IS NOT NULL
         DO UPDATE SET
@@ -71,7 +74,7 @@ def load_who_gho_data(
                 skipped += 1
                 continue
             try:
-                cur.execute(sql, (json.dumps(record),))
+                cur.execute(sql, (f"who_gho_{indicator_code}", json.dumps(record),))
                 inserted += 1
             except Exception as exc:
                 errors.append(f"IndicatorCode={indicator_code}: {exc}")

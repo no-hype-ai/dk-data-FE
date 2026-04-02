@@ -54,8 +54,11 @@ def load_chembl_molecules_data(
     skipped = 0
 
     sql = """
-        INSERT INTO mol_raw.chembl (response_body, source_id)
-        VALUES (%s::JSONB, 'chembl_molecules')
+        INSERT INTO mol_raw.chembl (
+            request_id, api_endpoint, api_version,
+            response_status, response_body, source_id
+        )
+        VALUES (%s, 'https://www.ebi.ac.uk/chembl/api/data/molecule', 'v2', 200, %s::JSONB, 'chembl_molecules')
         ON CONFLICT ((response_body->>'molecule_chembl_id'))
         WHERE (response_body->>'molecule_chembl_id') IS NOT NULL
         DO UPDATE SET
@@ -71,7 +74,8 @@ def load_chembl_molecules_data(
                 skipped += 1
                 continue
             try:
-                cur.execute(sql, (json.dumps(record),))
+                request_id = f"chembl_mol_{chembl_id}"
+                cur.execute(sql, (request_id, json.dumps(record),))
                 inserted += 1
             except Exception as exc:
                 errors.append(f"molecule_chembl_id={chembl_id}: {exc}")

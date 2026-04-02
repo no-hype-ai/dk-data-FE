@@ -53,15 +53,15 @@ class TestToolRegistry:
         for name in mol_raw_tools:
             assert TOOL_REGISTRY[name].raw_schema == "mol_raw", f"{name} should use mol_raw"
 
-    def test_raw_sources(self):
-        """IP/regulatory sources use raw schema."""
+    def test_mol_raw_ip_sources(self):
+        """IP/regulatory sources now use mol_raw schema (promoted from raw.* in migration 137)."""
         from dk_data.services.mcp.tool_registry import TOOL_REGISTRY
-        raw_tools = [
+        mol_raw_tools = [
             "pubmed-search", "ema-search", "hta-decisions-search",
             "sec-edgar-search", "who-icd-search", "pdb-search",
         ]
-        for name in raw_tools:
-            assert TOOL_REGISTRY[name].raw_schema == "raw", f"{name} should use raw"
+        for name in mol_raw_tools:
+            assert TOOL_REGISTRY[name].raw_schema == "mol_raw", f"{name} should use mol_raw"
 
 
 class TestMCPRouter:
@@ -111,24 +111,26 @@ class TestToolInvocationResponse:
 
 
 class TestBaseMCPTool:
-    """Verify base tool error response structure."""
+    """Verify base tool interface contract."""
 
-    def test_error_response_format(self):
+    def test_base_tool_default_headers(self):
+        """BaseMCPTool subclasses send Accept: application/json by default (B2 fix)."""
         from dk_data.services.mcp.base_tool import BaseMCPTool
-        from dk_data.services.mcp.adapters.base import BaseAdapter
 
-        class DummyAdapter(BaseAdapter):
-            @property
-            def source_name(self): return "test"
-            @property
-            def raw_table(self): return "test"
-            @property
-            def raw_schema(self): return "raw"
-            def normalize(self, api_response): return api_response
+        class DummyTool(BaseMCPTool):
+            tool_name = "dummy"
+            base_url = "https://example.com"
 
-        tool = BaseMCPTool(DummyAdapter(), "http://test.example.com")
-        result = tool._error_response("req-1", "timeout", "Timed out", 408)
-        assert result["status"] == "error"
-        assert result["error"]["code"] == "timeout"
-        assert result["error"]["status_code"] == 408
-        assert result["request_id"] == "req-1"
+        tool = DummyTool()
+        assert tool.build_headers() == {"Accept": "application/json"}
+
+    def test_base_tool_default_url(self):
+        """BaseMCPTool.build_url appends ?query= by default."""
+        from dk_data.services.mcp.base_tool import BaseMCPTool
+
+        class DummyTool(BaseMCPTool):
+            tool_name = "dummy"
+            base_url = "https://example.com"
+
+        tool = DummyTool()
+        assert tool.build_url("aspirin") == "https://example.com?query=aspirin"

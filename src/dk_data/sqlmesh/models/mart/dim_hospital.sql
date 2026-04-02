@@ -6,6 +6,7 @@ MODEL (
     name hcs_gold.dim_hospital,
     kind FULL,
     cron '@daily',
+    audits (not_null(columns := (hospital_id))),
     description 'Hospital dimension table'
 );
 

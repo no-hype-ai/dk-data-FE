@@ -144,6 +144,12 @@ class EUIPOTrademarksFetcher(BaseFetcher):
             else:
                 status = "success"
 
+            if not all_records and status == "success":
+                logger.warning(
+                    "EUIPO trademarks: 0 records returned with no API errors — "
+                    "possible silent auth failure or rate-limit (check EPO/EUIPO credentials)"
+                )
+
             result: Dict[str, Any] = {
                 "status": status,
                 "records": all_records,
@@ -255,19 +261,19 @@ class EUIPOTrademarksFetcher(BaseFetcher):
     ) -> List[Dict[str, Any]]:
         """Fetch from IBM API Gateway.
 
-        Uses OAuth2 token from EUIPO CAS server.
-        Adds X-IBM-Client-Id header.
+        IBM API Connect uses direct API key authentication via headers —
+        X-IBM-Client-Id + X-IBM-Client-Secret. No OAuth2 token required.
         """
         records: List[Dict[str, Any]] = []
 
-        # Authenticate
-        self._ensure_ibm_token()
+        if not self.api_key or not self.secret_key:
+            raise RuntimeError("EUIPO_API_KEY and EUIPO_SECRET_KEY are required for IBM Gateway")
 
         page_number = 0  # EUIPO Official API uses 0-based pagination
         while len(records) < max_records:
             headers = {
-                "Authorization": f"Bearer {self._access_token}",
                 "X-IBM-Client-Id": self.api_key,
+                "X-IBM-Client-Secret": self.secret_key,
                 "Accept": "application/json",
             }
 

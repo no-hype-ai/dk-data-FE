@@ -177,6 +177,20 @@ jobs:
           POSTGRES_DB: dk_data_test
         run: python -m dk_data.scripts.run_migrations
 
+      - name: Apply SQLMesh virtual views
+        env:
+          POSTGRES_HOST: localhost
+          POSTGRES_PORT: 5432
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: dk_data_test
+        run: |
+          # Migration 144 drops legacy physical tables so SQLMesh can create
+          # virtual views. Run SQLMesh plan here so mol_bronze/silver/gold/staging
+          # views exist before PostgREST starts and integration tests run.
+          echo n | sqlmesh -p src/dk_data/sqlmesh plan --no-prompts 2>&1 | tail -5 || true
+          echo "SQLMesh virtual views applied"
+
       - name: Start PostgREST
         run: |
           docker run -d --name postgrest \

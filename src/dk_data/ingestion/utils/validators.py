@@ -593,13 +593,14 @@ class CochraneReviewRecord(BaseModel):
     model_config = ConfigDict(str_strip_whitespace=True)
 
     review_id: str = Field(..., min_length=1)
+    pmid: Optional[str] = None
     title: Optional[str] = None
-    authors: Optional[str] = None
+    authors: Optional[str] = None  # JSON array string → JSONB column via psycopg2 assignment cast
     abstract: Optional[str] = None
     publication_date: Optional[date] = None
     review_type: Optional[str] = None
-    interventions: Optional[list[str]] = None
-    conditions: Optional[list[str]] = None
+    interventions: Optional[list[str]] = None  # TEXT[] column
+    conditions: Optional[list[str]] = None     # TEXT[] column
     conclusions: Optional[str] = None
     doi: Optional[str] = None
 

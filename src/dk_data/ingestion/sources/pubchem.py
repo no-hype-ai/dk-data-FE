@@ -52,8 +52,11 @@ def load_pubchem_data(
     skipped = 0
 
     sql = """
-        INSERT INTO mol_raw.pubchem (response_body, source_id)
-        VALUES (%s::JSONB, 'pubchem')
+        INSERT INTO mol_raw.pubchem (
+            request_id, api_endpoint, api_version,
+            response_status, response_body, source_id
+        )
+        VALUES (%s, 'https://pubchem.ncbi.nlm.nih.gov/sdq/sdqagent.cgi', 'v1', 200, %s::JSONB, 'pubchem')
         ON CONFLICT ((response_body->>'cid'))
         WHERE (response_body->>'cid') IS NOT NULL
         DO UPDATE SET
@@ -73,7 +76,8 @@ def load_pubchem_data(
                 record = dict(record)
                 record["cid"] = record.pop("CID")
             try:
-                cur.execute(sql, (json.dumps(record),))
+                request_id = f"pubchem_cid_{cid}"
+                cur.execute(sql, (request_id, json.dumps(record),))
                 inserted += 1
             except Exception as exc:
                 errors.append(f"cid={cid}: {exc}")

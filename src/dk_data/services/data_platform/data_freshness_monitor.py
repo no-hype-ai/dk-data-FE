@@ -6,7 +6,7 @@ Monitors data source freshness and triggers refresh jobs based on tiered schedul
 Part of DK Molecule Data Platform (012-dk-data-platform)
 """
 
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Dict, Any, Optional, List
 from uuid import UUID, uuid4
 from enum import Enum
@@ -165,7 +165,9 @@ class DataFreshnessMonitor:
             stale_threshold = timedelta(hours=config['stale_hours'])
             is_stale = False
             if last_success:
-                is_stale = datetime.utcnow() - last_success > stale_threshold
+                _now = datetime.now(timezone.utc)
+                _ls = last_success if last_success.tzinfo else last_success.replace(tzinfo=timezone.utc)
+                is_stale = _now - _ls > stale_threshold
             else:
                 is_stale = True  # Never refreshed = stale
 
@@ -389,5 +391,6 @@ class DataFreshnessMonitor:
             # Never successfully refreshed
             return False
 
-        age = datetime.utcnow() - last_refresh.replace(tzinfo=None)
+        _lr = last_refresh if last_refresh.tzinfo else last_refresh.replace(tzinfo=timezone.utc)
+        age = datetime.now(timezone.utc) - _lr
         return age.total_seconds() / 3600 <= max_age_hours

@@ -390,11 +390,23 @@ class DrugBankFetcher(BaseFetcher):
         # Parse international brands
         international_brands = self._parse_international_brands(elem)
 
-        # Derive monoisotopic_mass from experimental properties
-        monoisotopic_mass_str = exp_props.get("monoisotopic_weight") or exp_props.get("monoisotopic_mass")
+        # Derive monoisotopic_mass — DrugBank stores it under <calculated-properties>
+        # with kind="Monoisotopic Weight" (→ key "monoisotopic_weight"), but some
+        # older exports use <experimental-properties> instead.
+        monoisotopic_mass_str = (
+            calc_props.get("monoisotopic_weight")
+            or exp_props.get("monoisotopic_weight")
+            or exp_props.get("monoisotopic_mass")
+        )
 
-        # Derive UNII from external_identifiers
-        unii = external_ids.get("fda_unii_code") or external_ids.get("unii")
+        # Derive UNII — DrugBank 5.x stores it as a direct <unii> child element;
+        # fall back to external_identifiers for older exports.
+        unii = (
+            self._safe_text(elem, f"{DRUGBANK_NS}unii")
+            or self._safe_text(elem, "unii")
+            or external_ids.get("fda_unii_code")
+            or external_ids.get("unii")
+        )
 
         return {
             "drugbank_id": drugbank_id,

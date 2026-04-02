@@ -48,6 +48,5 @@ SELECT
     NOW() AS created_at
 
 FROM hcs_raw.cms_hospital_general_info r
-WHERE
-    r.facility_id IS NOT NULL
-    AND r._loaded_at BETWEEN @start_dt AND @end_dt;
+WHERE r.facility_id IS NOT NULL
+  AND r._loaded_at BETWEEN @start_dt AND @end_dt;

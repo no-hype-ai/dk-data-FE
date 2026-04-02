@@ -58,15 +58,21 @@ def load_cms_medicare_data(
     inserted = 0
 
     sql = """
-        INSERT INTO mol_raw.cms_medicare (response_body, source_id)
-        VALUES (%s::JSONB, 'cms_medicare')
+        INSERT INTO mol_raw.cms_medicare (
+            request_id, api_endpoint, api_version,
+            response_status, response_body, source_id
+        )
+        VALUES (%s, 'https://data.cms.gov/data-api/v1/dataset', 'v1', 200, %s::JSONB, 'cms_medicare')
     """
 
     with get_cursor() as cur:
         # Batch insert in chunks for performance
         for batch_start in range(0, len(records), _BATCH_SIZE):
             batch = records[batch_start : batch_start + _BATCH_SIZE]
-            batch_values = [(json.dumps(rec),) for rec in batch]
+            batch_values = [
+                (f"cms_medicare_{batch_start + i}", json.dumps(rec))
+                for i, rec in enumerate(batch)
+            ]
             try:
                 cur.executemany(sql, batch_values)
                 inserted += len(batch)

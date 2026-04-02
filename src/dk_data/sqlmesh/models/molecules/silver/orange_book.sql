@@ -11,9 +11,9 @@ MODEL (
     kind FULL,
     cron '@monthly',
     audits (
-        not_null(columns := (application_number, _file_type))
+        not_null(columns := (application_number))
     ),
-    grain (application_number, product_number, _file_type)
+    grain (application_number, product_number)
 );
 
 SELECT
@@ -22,15 +22,15 @@ SELECT
     b.ingredient                        AS active_ingredient,
     b.trade_name,
     b.applicant,
-    b.applicant_full_name,
+    b.applicant                         AS applicant_full_name,
     b.strength,
     b.df_route,
     b.approval_date,
     b.te_code,
     b.rld,
     b.rs,
-    b.type                              AS product_type,
-    b._file_type,
+    b.drug_type                         AS product_type,
+    'products'::TEXT                    AS _file_type,
     m.molecule_id,
     b.ingested_at                       AS _ingested_at,
     CURRENT_TIMESTAMP                   AS _silver_updated_at
@@ -38,4 +38,3 @@ FROM mol_bronze.orange_book AS b
 LEFT JOIN mol_silver.molecules AS m
     ON LOWER(TRIM(b.ingredient)) = LOWER(TRIM(m.canonical_name))
 WHERE b.application_number IS NOT NULL
-  AND b._file_type IS NOT NULL

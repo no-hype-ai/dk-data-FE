@@ -100,9 +100,7 @@ WHERE d.cas_number IS NOT NULL
 
 UNION ALL
 
--- UNII from DrugBank bulk XML loader (mol_bronze.drugbank_data)
--- mol_bronze.drugbank_data.unii is populated by load_drugbank.py which extracts
--- <unii> directly from DrugBank XML. Column name is drug_name (not name).
+-- UNII from DrugBank (mol_bronze.drugbank — unii extracted directly from <unii> XML element)
 SELECT
     m.molecule_id,
     'unii' AS identifier_type,
@@ -113,9 +111,9 @@ SELECT
     d.source_updated_at AS source_date,
     NOW() AS created_at
 FROM mol_silver.molecules m
-JOIN mol_bronze.drugbank_data d ON LOWER(m.canonical_name) = LOWER(d.drug_name)
+JOIN mol_bronze.drugbank d ON LOWER(m.canonical_name) = LOWER(d.name)
 WHERE d.unii IS NOT NULL
-  AND d.drug_name IS NOT NULL
+  AND d.name IS NOT NULL
 
 UNION ALL
 

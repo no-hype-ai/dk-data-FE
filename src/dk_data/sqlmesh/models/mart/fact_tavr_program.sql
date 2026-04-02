@@ -6,6 +6,7 @@ MODEL (
     name hcs_gold.fact_tavr_program,
     kind FULL,
     cron '@daily',
+    audits (not_null(columns := (hospital_key))),
     description 'TAVR program metrics including volumes and YoY changes'
 );
 
