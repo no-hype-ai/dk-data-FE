@@ -102,7 +102,8 @@ class TestLoadCmsCoverageData:
         load_cms_coverage_data([record])
 
         args = cur.execute.call_args[0]
-        passed_json = json.loads(args[1][0])
+        # args[1] is (request_id_string, json_body_string); index 1 is the JSON body
+        passed_json = json.loads(args[1][1])
         assert passed_json["id"] == "ncd-001"
         assert passed_json["_endpoint"] == "ncd"
         assert passed_json["decision"] == "Covered"

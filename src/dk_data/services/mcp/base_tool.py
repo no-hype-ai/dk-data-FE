@@ -48,6 +48,19 @@ class BaseMCPTool:
         self.db_pool = db_pool
 
     # ------------------------------------------------------------------
+    # Convenience helpers (used by old-style subclasses and tests)
+    # ------------------------------------------------------------------
+
+    def build_headers(self) -> Dict[str, str]:
+        """Return the default Accept header for API requests."""
+        return {"Accept": "application/json"}
+
+    def build_url(self, drug_name: str) -> str:
+        """Build a URL from the class-level base_url attribute."""
+        base = getattr(self, "base_url", self.api_base_url or "")
+        return f"{base}?query={drug_name}"
+
+    # ------------------------------------------------------------------
     # Public entry point
     # ------------------------------------------------------------------
 

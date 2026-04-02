@@ -811,7 +811,7 @@ SOURCES = {
         'description': 'Medicare-Medicaid dual eligible beneficiary statistics by state (CY2023)',
         'fetcher': CMSDualEligibleFetcher,
         'loader': load_cms_dual_eligible_data,
-        'requires_file': False,
+        'requires_file': True,
         'default_days_back': None,
     },
     'cms_enrollment_puf': {

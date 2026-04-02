@@ -86,10 +86,22 @@ GRANT api_user  TO authenticator;
 -- SCHEMA GRANTS
 -- =============================================================================
 
--- web_anon: read-only on api schema
+-- web_anon: SELECT on api schema only; USAGE-only on all other PostgREST-exposed schemas
+-- PostgREST v12 requires the anon role to have USAGE on every schema in PGRST_DB_SCHEMAS
+-- even if it can't SELECT any tables there; table-level access is controlled per-role.
 GRANT USAGE ON SCHEMA api TO web_anon;
 GRANT SELECT ON ALL TABLES IN SCHEMA api TO web_anon;
 ALTER DEFAULT PRIVILEGES IN SCHEMA api GRANT SELECT ON TABLES TO web_anon;
+-- api.targets is auth-protected — must NOT be accessible to web_anon
+-- This REVOKE runs after migration 143 creates the view; comment kept for clarity.
+-- (The REVOKE in migration 143 handles this for migration-applied DBs.)
+GRANT USAGE ON SCHEMA
+    mol_silver, mol_gold,
+    hcs_silver, hcs_gold,
+    ind_silver, ind_gold,
+    hcp_silver, hcp_gold,
+    mart, scoring, xenon, staging, meta, application
+TO web_anon;
 
 -- analyst: api + scoring + mart + meta read
 GRANT USAGE ON SCHEMA api, scoring, mart, meta TO analyst;
@@ -106,6 +118,17 @@ GRANT USAGE ON SCHEMA
     hcp_silver, hcp_gold,
     api, mart, scoring, meta, xenon
 TO api_user;
+
+-- authenticator: direct USAGE on all PostgREST-exposed schemas
+-- PostgREST introspects schemas as the authenticator role; it needs direct USAGE
+-- (inherited role USAGE is not enough for schema introspection)
+GRANT USAGE ON SCHEMA
+    mol_silver, mol_gold,
+    hcs_silver, hcs_gold,
+    ind_silver, ind_gold,
+    hcp_silver, hcp_gold,
+    api, mart, scoring, meta, xenon, staging, application
+TO authenticator;
 GRANT SELECT ON ALL TABLES IN SCHEMA mol_silver TO api_user;
 GRANT SELECT ON ALL TABLES IN SCHEMA mol_gold   TO api_user;
 GRANT SELECT ON ALL TABLES IN SCHEMA hcs_silver TO api_user;

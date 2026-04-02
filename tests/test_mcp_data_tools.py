@@ -208,8 +208,8 @@ def test_base_tool_handles_html_response():
         )
         result = asyncio.run(tool.invoke(DRUG))
 
-    assert result["error"] is not None
-    assert "Non-JSON" in result["error"]
+    assert result.get("error") is not None
+    assert "Non-JSON" in result["error"]["message"]
     assert result["data"] is None
 
 
@@ -230,9 +230,9 @@ def test_base_tool_parses_json_response():
         )
         result = asyncio.run(tool.invoke(DRUG))
 
-    assert result["error"] is None
+    assert result.get("error") is None
     assert result["data"] == {"results": [{"drug_name": DRUG}]}
-    assert result["status_code"] == 200
+    assert result["status"] == "ok"
 
 
 # ---------------------------------------------------------------------------

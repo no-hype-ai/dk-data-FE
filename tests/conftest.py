@@ -6,6 +6,13 @@ import os
 import pytest
 import httpx
 
+# Load .env for local dev so JWT_SECRET and POSTGRES_PASSWORD are available
+try:
+    from dotenv import load_dotenv
+    load_dotenv()
+except ImportError:
+    pass
+
 
 def pytest_configure(config):
     """Configure pytest with custom markers."""
