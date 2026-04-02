@@ -87,8 +87,4 @@ DO $$ BEGIN
     RAISE NOTICE 'Migration 143 complete: mart/scoring stubs + api.targets view created.';
 END $$;
 
-INSERT INTO meta.schema_migrations (version, filename, checksum)
-VALUES ('143_mart_scoring_stubs_api_targets', '143_mart_scoring_stubs_api_targets.sql', 'stub')
-ON CONFLICT (version) DO NOTHING;
-
 COMMIT;
