@@ -1,0 +1,839 @@
+apiVersion: 1
+# Consolidated dk-data alert rules
+# Feature: 026-observability-dashboard-metrics-fix (T044-T047, T056-T061)
+# Merged from: job-trigger.yaml, postgrest.yaml, alert-rules.yaml (PrometheusRule CRD)
+# Dropped duplicates: DataSourceStale, DataSourceCriticallyStale, APIHighErrorRate (generic),
+#   MoleculeQuarantineHigh, JobTriggerNotReady — covered by service-specific rules below.
+# Metric names canonicalised per T052/T058:
+#   http_server_request_duration_seconds_* → http_requests_total / http_request_duration_seconds_bucket
+groups:
+  # ─── API & Services ──────────────────────────────────────────────────────────
+  - orgId: 1
+    name: dk-data-api
+    folder: Alerts
+    interval: 1m
+    rules:
+      - uid: dk-data-job-trigger-high-error-rate
+        title: "job-trigger high error rate"
+        condition: C
+        noDataState: NoData
+        execErrState: Alerting
+        data:
+          - refId: A
+            relativeTimeRange:
+              from: 300
+              to: 0
+            datasourceUid: mimir
+            model:
+              expr: >
+                sum(rate(http_requests_total{service="job-trigger",
+                product="dk-data", status=~"5.."}[5m]))
+                /
+                sum(rate(http_requests_total{service="job-trigger",
+                product="dk-data"}[5m]))
+              intervalMs: 1000
+              maxDataPoints: 43200
+          - refId: B
+            relativeTimeRange:
+              from: 300
+              to: 0
+            datasourceUid: __expr__
+            model:
+              expression: A
+              type: reduce
+              reducer: last
+          - refId: C
+            relativeTimeRange:
+              from: 300
+              to: 0
+            datasourceUid: __expr__
+            model:
+              conditions:
+                - evaluator:
+                    params: [0.05]
+                    type: gt
+              expression: B
+              type: threshold
+        for: 5m
+        labels:
+          team: data-platform
+          service: job-trigger
+          product: dk-data
+          severity: critical
+        annotations:
+          summary: "job-trigger error rate above 5%"
+          description: "The error rate for job-trigger in dk-data has been above 5% for 5 minutes."
+
+      - uid: dk-data-job-trigger-high-latency
+        title: "job-trigger high p95 latency"
+        condition: C
+        noDataState: NoData
+        execErrState: Alerting
+        data:
+          - refId: A
+            relativeTimeRange:
+              from: 300
+              to: 0
+            datasourceUid: mimir
+            model:
+              expr: >
+                histogram_quantile(0.95, sum(rate(http_request_duration_seconds_bucket{service="job-trigger",
+                product="dk-data"}[5m])) by (le))
+              intervalMs: 1000
+              maxDataPoints: 43200
+          - refId: B
+            relativeTimeRange:
+              from: 300
+              to: 0
+            datasourceUid: __expr__
+            model:
+              expression: A
+              type: reduce
+              reducer: last
+          - refId: C
+            relativeTimeRange:
+              from: 300
+              to: 0
+            datasourceUid: __expr__
+            model:
+              conditions:
+                - evaluator:
+                    params: [2]
+                    type: gt
+              expression: B
+              type: threshold
+        for: 5m
+        labels:
+          team: data-platform
+          service: job-trigger
+          product: dk-data
+          severity: warning
+        annotations:
+          summary: "job-trigger p95 latency above 2s"
+          description: "The p95 latency for job-trigger in dk-data has been above 2 seconds for 5 minutes."
+
+      - uid: dk-data-job-trigger-pod-restarts
+        title: "job-trigger excessive pod restarts"
+        condition: C
+        noDataState: NoData
+        execErrState: Alerting
+        data:
+          - refId: A
+            relativeTimeRange:
+              from: 3600
+              to: 0
+            datasourceUid: mimir
+            model:
+              expr: >
+                sum(increase(kube_pod_container_status_restarts_total{container="job-trigger",
+                namespace=~"dk-data-(prod|staging)"}[1h]))
+              intervalMs: 1000
+              maxDataPoints: 43200
+          - refId: B
+            relativeTimeRange:
+              from: 3600
+              to: 0
+            datasourceUid: __expr__
+            model:
+              expression: A
+              type: reduce
+              reducer: last
+          - refId: C
+            relativeTimeRange:
+              from: 3600
+              to: 0
+            datasourceUid: __expr__
+            model:
+              conditions:
+                - evaluator:
+                    params: [3]
+                    type: gt
+              expression: B
+              type: threshold
+        for: 0s
+        labels:
+          team: data-platform
+          service: job-trigger
+          product: dk-data
+          severity: warning
+        annotations:
+          summary: "job-trigger has restarted more than 3 times in the last hour"
+          description: "Pod restarts for job-trigger in dk-data indicate potential instability."
+
+      - uid: dk-data-postgrest-high-error-rate
+        title: "postgrest high error rate"
+        condition: C
+        noDataState: NoData
+        execErrState: Alerting
+        data:
+          - refId: A
+            relativeTimeRange:
+              from: 300
+              to: 0
+            datasourceUid: mimir
+            model:
+              expr: >
+                sum(rate(http_requests_total{service=~"dk-data-prod-dk-data-metering-proxy.*",
+                status=~"5.."}[5m]))
+                /
+                sum(rate(http_requests_total{service=~"dk-data-prod-dk-data-metering-proxy.*"}[5m]))
+              intervalMs: 1000
+              maxDataPoints: 43200
+          - refId: B
+            relativeTimeRange:
+              from: 300
+              to: 0
+            datasourceUid: __expr__
+            model:
+              expression: A
+              type: reduce
+              reducer: last
+          - refId: C
+            relativeTimeRange:
+              from: 300
+              to: 0
+            datasourceUid: __expr__
+            model:
+              conditions:
+                - evaluator:
+                    params: [0.05]
+                    type: gt
+              expression: B
+              type: threshold
+        for: 5m
+        labels:
+          team: data-platform
+          service: postgrest
+          product: dk-data
+          severity: critical
+        annotations:
+          summary: "PostgREST error rate above 5%"
+          description: "The error rate for PostgREST (via metering-proxy) in dk-data has been above 5% for 5 minutes."
+
+      - uid: dk-data-postgrest-high-latency
+        title: "postgrest high p95 latency"
+        condition: C
+        noDataState: NoData
+        execErrState: Alerting
+        data:
+          - refId: A
+            relativeTimeRange:
+              from: 300
+              to: 0
+            datasourceUid: mimir
+            model:
+              expr: >
+                histogram_quantile(0.95, sum(rate(http_request_duration_seconds_bucket{service=~"dk-data-prod-dk-data-metering-proxy.*"}[5m])) by (le))
+              intervalMs: 1000
+              maxDataPoints: 43200
+          - refId: B
+            relativeTimeRange:
+              from: 300
+              to: 0
+            datasourceUid: __expr__
+            model:
+              expression: A
+              type: reduce
+              reducer: last
+          - refId: C
+            relativeTimeRange:
+              from: 300
+              to: 0
+            datasourceUid: __expr__
+            model:
+              conditions:
+                - evaluator:
+                    params: [2]
+                    type: gt
+              expression: B
+              type: threshold
+        for: 5m
+        labels:
+          team: data-platform
+          service: postgrest
+          product: dk-data
+          severity: warning
+        annotations:
+          summary: "PostgREST p95 latency above 2s"
+          description: "The p95 latency for PostgREST in dk-data has been above 2 seconds for 5 minutes."
+
+      - uid: dk-data-postgrest-pod-restarts
+        title: "postgrest excessive pod restarts"
+        condition: C
+        noDataState: NoData
+        execErrState: Alerting
+        data:
+          - refId: A
+            relativeTimeRange:
+              from: 3600
+              to: 0
+            datasourceUid: mimir
+            model:
+              expr: >
+                sum(increase(kube_pod_container_status_restarts_total{container="postgrest",
+                namespace=~"dk-data-(prod|staging)"}[1h]))
+              intervalMs: 1000
+              maxDataPoints: 43200
+          - refId: B
+            relativeTimeRange:
+              from: 3600
+              to: 0
+            datasourceUid: __expr__
+            model:
+              expression: A
+              type: reduce
+              reducer: last
+          - refId: C
+            relativeTimeRange:
+              from: 3600
+              to: 0
+            datasourceUid: __expr__
+            model:
+              conditions:
+                - evaluator:
+                    params: [3]
+                    type: gt
+              expression: B
+              type: threshold
+        for: 0s
+        labels:
+          team: data-platform
+          service: postgrest
+          product: dk-data
+          severity: warning
+        annotations:
+          summary: "postgrest has restarted more than 3 times in the last hour"
+          description: "Pod restarts for postgrest in dk-data indicate potential instability."
+
+      - uid: dk-data-api-unavailable
+        title: "PostgREST API unavailable"
+        condition: C
+        noDataState: Alerting
+        execErrState: Alerting
+        data:
+          - refId: A
+            relativeTimeRange:
+              from: 300
+              to: 0
+            datasourceUid: mimir
+            model:
+              expr: >
+                kube_deployment_status_replicas_ready{namespace=~"dk-data-(prod|staging)",
+                deployment="dk-data-metering-proxy"} == 0
+              intervalMs: 1000
+              maxDataPoints: 43200
+          - refId: B
+            relativeTimeRange:
+              from: 300
+              to: 0
+            datasourceUid: __expr__
+            model:
+              expression: A
+              type: reduce
+              reducer: last
+          - refId: C
+            relativeTimeRange:
+              from: 300
+              to: 0
+            datasourceUid: __expr__
+            model:
+              conditions:
+                - evaluator:
+                    params: [0]
+                    type: gt
+              expression: B
+              type: threshold
+        for: 2m
+        labels:
+          team: data-platform
+          service: postgrest
+          product: dk-data
+          severity: critical
+        annotations:
+          summary: "PostgREST API is unavailable"
+          description: "No metering-proxy replicas ready in {{ $labels.namespace }}. PostgREST API may be down."
+
+  # ─── Pipeline & Batch Jobs ────────────────────────────────────────────────────
+  - orgId: 1
+    name: dk-data-pipeline
+    folder: Alerts
+    interval: 1m
+    rules:
+      - uid: dk-data-batch-job-failed
+        title: "Batch job failed"
+        condition: C
+        noDataState: NoData
+        execErrState: Alerting
+        data:
+          - refId: A
+            relativeTimeRange:
+              from: 3600
+              to: 0
+            datasourceUid: mimir
+            model:
+              expr: >
+                increase(kube_job_status_failed{namespace=~"dk-data-(prod|staging)"}[1h]) > 0
+              intervalMs: 1000
+              maxDataPoints: 43200
+          - refId: B
+            relativeTimeRange:
+              from: 3600
+              to: 0
+            datasourceUid: __expr__
+            model:
+              expression: A
+              type: reduce
+              reducer: last
+          - refId: C
+            relativeTimeRange:
+              from: 3600
+              to: 0
+            datasourceUid: __expr__
+            model:
+              conditions:
+                - evaluator:
+                    params: [0]
+                    type: gt
+              expression: B
+              type: threshold
+        for: 0m
+        labels:
+          team: data-platform
+          product: dk-data
+          severity: warning
+        annotations:
+          summary: "Batch job {{ $labels.job_name }} failed"
+          description: "A Kubernetes batch job in {{ $labels.namespace }} failed in the last hour. Check job logs."
+
+      - uid: dk-data-cronjob-missed-schedule
+        title: "CronJob missed schedule"
+        condition: C
+        noDataState: NoData
+        execErrState: Alerting
+        data:
+          - refId: A
+            relativeTimeRange:
+              from: 7200
+              to: 0
+            datasourceUid: mimir
+            model:
+              expr: >
+                kube_cronjob_status_last_schedule_time{namespace=~"dk-data-(prod|staging)"}
+                < (time() - 86400)
+              intervalMs: 1000
+              maxDataPoints: 43200
+          - refId: B
+            relativeTimeRange:
+              from: 7200
+              to: 0
+            datasourceUid: __expr__
+            model:
+              expression: A
+              type: reduce
+              reducer: last
+          - refId: C
+            relativeTimeRange:
+              from: 7200
+              to: 0
+            datasourceUid: __expr__
+            model:
+              conditions:
+                - evaluator:
+                    params: [0]
+                    type: gt
+              expression: B
+              type: threshold
+        for: 30m
+        labels:
+          team: data-platform
+          product: dk-data
+          severity: warning
+        annotations:
+          summary: "CronJob {{ $labels.cronjob }} has not run in 24h"
+          description: "CronJob {{ $labels.cronjob }} in {{ $labels.namespace }} last ran more than 24 hours ago."
+
+      - uid: dk-data-molecule-fetch-failed
+        title: "Molecule fetch job failed"
+        condition: C
+        noDataState: NoData
+        execErrState: Alerting
+        data:
+          - refId: A
+            relativeTimeRange:
+              from: 3600
+              to: 0
+            datasourceUid: mimir
+            model:
+              expr: >
+                increase(kube_job_status_failed{namespace=~"dk-data-(prod|staging)",
+                job_name=~"fetch-(pubmed|chembl|drugbank|clinicaltrials|openfda).*"}[1h]) > 0
+              intervalMs: 1000
+              maxDataPoints: 43200
+          - refId: B
+            relativeTimeRange:
+              from: 3600
+              to: 0
+            datasourceUid: __expr__
+            model:
+              expression: A
+              type: reduce
+              reducer: last
+          - refId: C
+            relativeTimeRange:
+              from: 3600
+              to: 0
+            datasourceUid: __expr__
+            model:
+              conditions:
+                - evaluator:
+                    params: [0]
+                    type: gt
+              expression: B
+              type: threshold
+        for: 0m
+        labels:
+          team: data-platform
+          product: dk-data
+          severity: warning
+        annotations:
+          summary: "Molecule fetch job {{ $labels.job_name }} failed"
+          description: "A molecule data fetch job failed in the last hour. Silver layer pipeline may stall."
+
+      - uid: dk-data-molecule-transform-stale
+        title: "Molecule transform pipeline stale"
+        condition: C
+        noDataState: NoData
+        execErrState: Alerting
+        data:
+          - refId: A
+            relativeTimeRange:
+              from: 7200
+              to: 0
+            datasourceUid: mimir
+            model:
+              expr: >
+                (time() - max(kube_job_status_completion_time{namespace=~"dk-data-(prod|staging)",
+                job_name=~"mol-transform.*"}) by (namespace)) > 172800
+              intervalMs: 1000
+              maxDataPoints: 43200
+          - refId: B
+            relativeTimeRange:
+              from: 7200
+              to: 0
+            datasourceUid: __expr__
+            model:
+              expression: A
+              type: reduce
+              reducer: last
+          - refId: C
+            relativeTimeRange:
+              from: 7200
+              to: 0
+            datasourceUid: __expr__
+            model:
+              conditions:
+                - evaluator:
+                    params: [0]
+                    type: gt
+              expression: B
+              type: threshold
+        for: 30m
+        labels:
+          team: data-platform
+          product: dk-data
+          severity: warning
+        annotations:
+          summary: "No successful molecule transform in 48h"
+          description: "Molecule bronze→silver transform has not completed in over 48 hours."
+
+      - uid: dk-data-cms-fetch-failed
+        title: "CMS fetch job failed"
+        condition: C
+        noDataState: NoData
+        execErrState: Alerting
+        data:
+          - refId: A
+            relativeTimeRange:
+              from: 3600
+              to: 0
+            datasourceUid: mimir
+            model:
+              expr: >
+                increase(kube_job_status_failed{namespace=~"dk-data-(prod|staging)",
+                job_name=~"fetch-cms-.*"}[1h]) > 0
+              intervalMs: 1000
+              maxDataPoints: 43200
+          - refId: B
+            relativeTimeRange:
+              from: 3600
+              to: 0
+            datasourceUid: __expr__
+            model:
+              expression: A
+              type: reduce
+              reducer: last
+          - refId: C
+            relativeTimeRange:
+              from: 3600
+              to: 0
+            datasourceUid: __expr__
+            model:
+              conditions:
+                - evaluator:
+                    params: [0]
+                    type: gt
+              expression: B
+              type: threshold
+        for: 0m
+        labels:
+          team: data-platform
+          product: dk-data
+          severity: warning
+        annotations:
+          summary: "CMS fetch job {{ $labels.job_name }} failed"
+          description: "CMS data fetch CronJob {{ $labels.job_name }} failed in the last hour. Check job logs."
+
+      - uid: dk-data-hcs-transform-stale
+        title: "HCS transform pipeline stale"
+        condition: C
+        noDataState: NoData
+        execErrState: Alerting
+        data:
+          - refId: A
+            relativeTimeRange:
+              from: 7200
+              to: 0
+            datasourceUid: mimir
+            model:
+              expr: >
+                (time() - max(kube_job_status_completion_time{namespace=~"dk-data-(prod|staging)",
+                job_name=~"hcs-transform-.*"}) by (namespace)) > 172800
+              intervalMs: 1000
+              maxDataPoints: 43200
+          - refId: B
+            relativeTimeRange:
+              from: 7200
+              to: 0
+            datasourceUid: __expr__
+            model:
+              expression: A
+              type: reduce
+              reducer: last
+          - refId: C
+            relativeTimeRange:
+              from: 7200
+              to: 0
+            datasourceUid: __expr__
+            model:
+              conditions:
+                - evaluator:
+                    params: [0]
+                    type: gt
+              expression: B
+              type: threshold
+        for: 30m
+        labels:
+          team: data-platform
+          product: dk-data
+          severity: warning
+        annotations:
+          summary: "No successful HCS transform in 48h"
+          description: "HCS bronze→silver→gold pipeline has not completed successfully in over 48 hours."
+
+  # ─── Data Quality ─────────────────────────────────────────────────────────────
+  - orgId: 1
+    name: dk-data-quality
+    folder: Alerts
+    interval: 5m
+    rules:
+      - uid: dk-data-bronze-to-silver-backlog
+        title: "Large bronze-to-silver backlog"
+        condition: C
+        noDataState: NoData
+        execErrState: Alerting
+        data:
+          - refId: A
+            relativeTimeRange:
+              from: 300
+              to: 0
+            datasourceUid: mimir
+            model:
+              expr: >
+                sum(dk_bronze_unprocessed_total) > 10000
+              intervalMs: 1000
+              maxDataPoints: 43200
+          - refId: B
+            relativeTimeRange:
+              from: 300
+              to: 0
+            datasourceUid: __expr__
+            model:
+              expression: A
+              type: reduce
+              reducer: last
+          - refId: C
+            relativeTimeRange:
+              from: 300
+              to: 0
+            datasourceUid: __expr__
+            model:
+              conditions:
+                - evaluator:
+                    params: [0]
+                    type: gt
+              expression: B
+              type: threshold
+        for: 30m
+        labels:
+          team: data-platform
+          product: dk-data
+          severity: warning
+        annotations:
+          summary: "Large bronze-to-silver backlog (>10k records)"
+          description: "There are {{ $value }} unprocessed bronze records waiting for silver transformation."
+
+      - uid: dk-data-entity-resolution-queue-high
+        title: "Entity resolution queue backlog"
+        condition: C
+        noDataState: NoData
+        execErrState: Alerting
+        data:
+          - refId: A
+            relativeTimeRange:
+              from: 300
+              to: 0
+            datasourceUid: mimir
+            model:
+              expr: dk_resolution_queue_pending_total > 1000
+              intervalMs: 1000
+              maxDataPoints: 43200
+          - refId: B
+            relativeTimeRange:
+              from: 300
+              to: 0
+            datasourceUid: __expr__
+            model:
+              expression: A
+              type: reduce
+              reducer: last
+          - refId: C
+            relativeTimeRange:
+              from: 300
+              to: 0
+            datasourceUid: __expr__
+            model:
+              conditions:
+                - evaluator:
+                    params: [0]
+                    type: gt
+              expression: B
+              type: threshold
+        for: 30m
+        labels:
+          team: data-platform
+          product: dk-data
+          severity: warning
+        annotations:
+          summary: "Entity resolution queue backlog >1000"
+          description: "{{ $value }} items pending in entity resolution queue. Manual review may be required."
+
+      - uid: dk-data-molecule-quarantine-high
+        title: "High molecule quarantine count"
+        condition: C
+        noDataState: NoData
+        execErrState: Alerting
+        data:
+          - refId: A
+            relativeTimeRange:
+              from: 300
+              to: 0
+            datasourceUid: mimir
+            model:
+              expr: dk_quarantine_count > 500
+              intervalMs: 1000
+              maxDataPoints: 43200
+          - refId: B
+            relativeTimeRange:
+              from: 300
+              to: 0
+            datasourceUid: __expr__
+            model:
+              expression: A
+              type: reduce
+              reducer: last
+          - refId: C
+            relativeTimeRange:
+              from: 300
+              to: 0
+            datasourceUid: __expr__
+            model:
+              conditions:
+                - evaluator:
+                    params: [0]
+                    type: gt
+              expression: B
+              type: threshold
+        for: 1h
+        labels:
+          team: data-platform
+          product: dk-data
+          severity: warning
+        annotations:
+          summary: "High quarantine count (>500 molecules)"
+          description: "{{ $value }} molecules are in quarantine status. Review and resolve quarantine reasons."
+
+  # ─── Infrastructure & Resources ──────────────────────────────────────────────
+  - orgId: 1
+    name: dk-data-infrastructure
+    folder: Alerts
+    interval: 1m
+    rules:
+      - uid: dk-data-pod-high-memory
+        title: "Pod high memory usage"
+        condition: C
+        noDataState: NoData
+        execErrState: Alerting
+        data:
+          - refId: A
+            relativeTimeRange:
+              from: 900
+              to: 0
+            datasourceUid: mimir
+            model:
+              expr: >
+                (
+                  container_memory_usage_bytes{namespace=~"dk-data-(prod|staging)"}
+                  /
+                  container_spec_memory_limit_bytes{namespace=~"dk-data-(prod|staging)"}
+                ) > 0.80
+              intervalMs: 1000
+              maxDataPoints: 43200
+          - refId: B
+            relativeTimeRange:
+              from: 900
+              to: 0
+            datasourceUid: __expr__
+            model:
+              expression: A
+              type: reduce
+              reducer: last
+          - refId: C
+            relativeTimeRange:
+              from: 900
+              to: 0
+            datasourceUid: __expr__
+            model:
+              conditions:
+                - evaluator:
+                    params: [0]
+                    type: gt
+              expression: B
+              type: threshold
+        for: 15m
+        labels:
+          team: data-platform
+          product: dk-data
+          severity: warning
+        annotations:
+          summary: "Pod {{ $labels.pod }} memory usage >80%"
+          description: "Pod {{ $labels.pod }} is using more than 80% of its memory limit."
