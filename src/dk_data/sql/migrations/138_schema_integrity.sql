@@ -278,4 +278,4 @@ $cochrane_type_fix$;
 --     codebase migrated from raw.* → mol_raw.*.
 -- ============================================================================
 
-DROP TABLE IF EXISTS raw.cochrane_reviews;
+DROP TABLE IF EXISTS raw.cochrane_reviews CASCADE;
