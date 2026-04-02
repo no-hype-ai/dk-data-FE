@@ -972,9 +972,10 @@ SOURCES = {
         'name': 'ChEMBL Bioactivity',
         'description': 'ChEMBL IC50/Ki/EC50 bioactivity measurements',
         'fetcher': ChEMBLActivitiesFetcher,
-        'loader': load_chembl_activities_data,
+        'loader': load_chembl_activities_data,  # not called by run_ingestion (self_loading)
         'requires_file': False,
         'default_days_back': None,
+        'self_loading': True,  # fetcher streams directly to DB with checkpoint/resume
     },
     'fda_rems': {
         'name': 'FDA REMS Programs',
@@ -1005,17 +1006,19 @@ SOURCES = {
         'name': 'ChEMBL Molecules',
         'description': 'ChEMBL compound/molecule registry (~2.4M compounds)',
         'fetcher': ChEMBLMoleculesFetcher,
-        'loader': load_chembl_molecules_data,
+        'loader': load_chembl_molecules_data,  # not called by run_ingestion (self_loading)
         'requires_file': False,
         'default_days_back': None,
+        'self_loading': True,  # fetcher streams directly to DB with checkpoint/resume
     },
     'pubchem': {
         'name': 'PubChem Compounds',
         'description': 'PubChem drug-relevant compound records',
         'fetcher': PubChemFetcher,
-        'loader': load_pubchem_data,
+        'loader': load_pubchem_data,  # not called by run_ingestion (self_loading)
         'requires_file': False,
         'default_days_back': None,
+        'self_loading': True,  # fetcher streams directly to DB with checkpoint/resume
     },
     'openfda_faers': {
         'name': 'OpenFDA FAERS Adverse Events',
@@ -1029,9 +1032,10 @@ SOURCES = {
         'name': 'NPI Registry',
         'description': 'CMS National Provider Identifier registry (~7M providers)',
         'fetcher': NPIRegistryFetcher,
-        'loader': load_npi_registry_data,
+        'loader': load_npi_registry_data,  # not called by run_ingestion (self_loading)
         'requires_file': False,
         'default_days_back': None,
+        'self_loading': True,  # fetcher streams directly to DB with checkpoint/resume
     },
     'purple_book': {
         'name': 'FDA Purple Book',
@@ -1249,6 +1253,29 @@ def run_ingestion(source: str, **kwargs) -> dict:
                 fetch_kwargs[_k] = _v
 
         loader = source_info['loader']
+
+        # Self-loading sources (e.g. ChEMBL, PubChem, NPI Registry): the fetcher
+        # commits to DB internally using stream-and-commit with checkpoint/resume.
+        # records[] is always [] — record_count holds the total inserted.
+        if source_info.get('self_loading'):
+            fetch_result = fetcher.fetch(**fetch_kwargs)
+            if fetch_result.get('status') in ('failed', 'source_unavailable'):
+                logger.warning(f"Fetch failed for {source}: {fetch_result.get('error')}")
+                log_to_meta(meta_source, fetch_result)
+                return fetch_result
+            result = fetch_result
+            result['records_inserted'] = fetch_result.get('record_count', 0)
+            result['records_fetched'] = fetch_result.get('record_count', 0)
+            log_to_meta(meta_source, result)
+            _elapsed = time.monotonic() - _t0
+            _records = result.get('records_inserted', 0)
+            record_job_duration(f'ingestion_{source}', _elapsed)
+            record_job_records(f'ingestion_{source}', _records)
+            if result.get('status') not in ('success', 'partial'):
+                increment_job_failure(f'ingestion_{source}')
+            else:
+                mark_job_success(f'ingestion_{source}')
+            return result
 
         # Streaming sources (e.g. BindingDB): fetch and load in chunks to bound
         # peak memory usage. The fetcher calls loader_fn once per chunk.
