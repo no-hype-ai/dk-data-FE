@@ -195,7 +195,10 @@ BEGIN
           AND data_type    = 'jsonb'
     ) THEN
         ALTER TABLE mol_raw.openalex_ci
-            ALTER COLUMN cited_by_percentile TYPE NUMERIC USING NULL;
+            ALTER COLUMN cited_by_percentile TYPE NUMERIC
+                USING CASE WHEN cited_by_percentile IS NOT NULL
+                           THEN (cited_by_percentile #>> '{}')::NUMERIC
+                           ELSE NULL END;
     END IF;
 
     -- epo_patents.ipc_codes: JSONB → TEXT[] (matches migration 108 ALTER)
@@ -207,7 +210,10 @@ BEGIN
           AND data_type    = 'jsonb'
     ) THEN
         ALTER TABLE mol_raw.epo_patents
-            ALTER COLUMN ipc_codes TYPE TEXT[] USING NULL;
+            ALTER COLUMN ipc_codes TYPE TEXT[]
+                USING CASE WHEN ipc_codes IS NOT NULL
+                           THEN ARRAY(SELECT jsonb_array_elements_text(ipc_codes))
+                           ELSE NULL END;
     END IF;
 END
 $type_fix$;
@@ -239,7 +245,10 @@ BEGIN
           AND data_type    = 'jsonb'
     ) THEN
         ALTER TABLE mol_raw.cochrane_reviews
-            ALTER COLUMN interventions TYPE TEXT[] USING NULL;
+            ALTER COLUMN interventions TYPE TEXT[]
+                USING CASE WHEN interventions IS NOT NULL
+                           THEN ARRAY(SELECT jsonb_array_elements_text(interventions))
+                           ELSE NULL END;
     END IF;
 
     IF EXISTS (
@@ -250,7 +259,10 @@ BEGIN
           AND data_type    = 'jsonb'
     ) THEN
         ALTER TABLE mol_raw.cochrane_reviews
-            ALTER COLUMN conditions TYPE TEXT[] USING NULL;
+            ALTER COLUMN conditions TYPE TEXT[]
+                USING CASE WHEN conditions IS NOT NULL
+                           THEN ARRAY(SELECT jsonb_array_elements_text(conditions))
+                           ELSE NULL END;
     END IF;
 END
 $cochrane_type_fix$;
