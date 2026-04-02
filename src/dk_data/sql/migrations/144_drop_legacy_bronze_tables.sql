@@ -1,16 +1,15 @@
 -- Migration 144: Drop legacy physical tables that conflict with SQLMesh virtual views
 --
--- Problem: Early migrations (020, 029, 050, 080, 099, and many silver/gold DDL
--- migrations) created physical TABLES in mol_bronze, mol_silver, and mol_gold.
--- SQLMesh now manages the entire medallion stack (bronze/silver/gold) as virtual
--- VIEWS over mol_raw.*. When SQLMesh tries to create/replace a VIEW, PostgreSQL
--- raises:
+-- Problem: Early migrations and init_database.sql created physical TABLES in
+-- mol_bronze, mol_silver, mol_gold, and staging schemas. SQLMesh now manages
+-- these as virtual VIEWS. When SQLMesh tries to create/replace a VIEW,
+-- PostgreSQL raises:
 --   "ERROR: <table> is not a view"
 -- because DROP VIEW IF EXISTS fails when the named object is a TABLE.
 --
 -- Fix: Drop the legacy physical tables that conflict with SQLMesh-managed views.
--- The data pipeline uses mol_raw.* as the source of truth; mol_bronze/silver/gold
--- are the SQLMesh virtual transformation layers, not storage layers.
+-- mol_raw.* and hcs_raw.* remain as the ingestion storage layer.
+-- mol_bronze/silver/gold and staging are the SQLMesh virtual transformation layers.
 --
 -- CASCADE: handles any dependent views or materialized views.
 -- IF EXISTS guard (via pg_tables check): idempotent, safe to re-run.
@@ -82,9 +81,24 @@ BEGIN
     END LOOP;
 END $$;
 
+    -- -------------------------------------------------------------------------
+    -- staging: tables created by init_database.sql that conflict with SQLMesh
+    -- staging models (staging.certifications, .hospitals, .tavr_volumes,
+    -- .geographic_designations)
+    -- -------------------------------------------------------------------------
+    FOREACH tbl IN ARRAY ARRAY[
+        'certifications', 'hospitals', 'tavr_volumes', 'geographic_designations'
+    ] LOOP
+        IF EXISTS (SELECT 1 FROM pg_tables WHERE schemaname = 'staging' AND tablename = tbl) THEN
+            EXECUTE format('DROP TABLE staging.%I CASCADE', tbl);
+            RAISE NOTICE 'Dropped staging.%', tbl;
+        END IF;
+    END LOOP;
+END $$;
+
 DO $$ BEGIN
     RAISE NOTICE 'Migration 144 complete: legacy medallion physical tables dropped.';
-    RAISE NOTICE 'SQLMesh virtual views can now be created across mol_bronze/silver/gold.';
+    RAISE NOTICE 'SQLMesh virtual views can now be created across mol_bronze/silver/gold/staging.';
 END $$;
 
 COMMIT;
