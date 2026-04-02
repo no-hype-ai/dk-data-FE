@@ -59,7 +59,8 @@ def _make_request_id(row: Dict[str, Any]) -> str:
     if appl_no and pat_no:
         return f"ob_{file_type}_{appl_no}_{str(pat_no).strip()[:20]}"
 
-    return f"ob_{file_type}_{hashlib.md5(json.dumps(row, sort_keys=True).encode()).hexdigest()[:12]}"
+    sanitised = json.dumps(row, sort_keys=True).replace("\\u0000", "").replace("\x00", "")
+    return f"ob_{file_type}_{hashlib.md5(sanitised.encode()).hexdigest()[:12]}"
 
 
 def load_orange_book_data(
@@ -92,7 +93,8 @@ def load_orange_book_data(
             for idx, row in enumerate(records):
                 file_type = row.get("_file_type", "unknown")
                 request_id = _make_request_id(row)
-                body_json = json.dumps(row)
+                # PostgreSQL rejects \u0000 in JSONB; strip null bytes before serialising.
+                body_json = json.dumps(row).replace("\\u0000", "").replace("\x00", "")
                 body_hash = hashlib.sha256(body_json.encode()).hexdigest()
 
                 try:

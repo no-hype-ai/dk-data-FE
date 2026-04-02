@@ -51,6 +51,8 @@ spec:
               envFrom:
                 - secretRef:
                     name: dk-data-secrets
+                - configMapRef:
+                    name: molecule-pipeline-config
               env:
                 - name: OTEL_EXPORTER_OTLP_ENDPOINT
                   value: "http://alloy.infra.svc.cluster.local:4317"
@@ -60,9 +62,6 @@ spec:
                   valueFrom:
                     fieldRef:
                       fieldPath: metadata.namespace
-              envFrom:
-                - configMapRef:
-                    name: molecule-pipeline-config
               resources:
                 requests:
                   memory: "256Mi"

@@ -379,7 +379,9 @@ def run_sqlmesh_command(command: list[str], timeout: int = 3600) -> dict:
     """
     try:
         config_path = get_sqlmesh_config_path()
-        full_command = ['sqlmesh', '--paths', str(config_path)] + command
+        # SQLMesh --paths expects the project directory, not the config.yaml file itself
+        project_dir = str(config_path.parent)
+        full_command = ['sqlmesh', '--paths', project_dir] + command
 
         logger.info(f"Running: {' '.join(full_command)}")
 
