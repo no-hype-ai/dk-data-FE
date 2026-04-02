@@ -38,12 +38,17 @@ services:
       # SECURITY: No default password - must be set via environment or .env file
       POSTGRES_PASSWORD: "${POSTGRES_PASSWORD:?POSTGRES_PASSWORD must be set}"
       POSTGRES_DB: "${POSTGRES_DB:-dk_data}"
+      # Passed to 01-set-passwords.sh so it can set the authenticator role password
+      # to match what PostgREST expects. Falls back to POSTGRES_PASSWORD if unset.
+      POSTGREST_PASSWORD: "${POSTGREST_PASSWORD:-${POSTGRES_PASSWORD:?POSTGRES_PASSWORD must be set}}"
     volumes:
       - postgres-data:/var/lib/postgresql/data
-      # Single clean dev init script — creates all schemas, roles, and meta tables.
-      # Does NOT require psql variables (unlike the legacy init_database.sql).
+      # Init scripts run in lexicographic order on fresh volume creation only.
+      # 00_dev_init.sql — creates all schemas, roles, and meta tables.
+      # 01_set_passwords.sh — sets authenticator password from POSTGREST_PASSWORD env var.
       # To reset: docker compose down -v && docker compose up -d postgres
       - ./scripts/dev-init.sql:/docker-entrypoint-initdb.d/00_dev_init.sql:ro
+      - ./scripts/01-set-passwords.sh:/docker-entrypoint-initdb.d/01_set_passwords.sh:ro
     networks:
       - dk-data-fe-network
     healthcheck:

@@ -7,8 +7,7 @@
 --   • PostgREST roles (web_anon, authenticator, analyst, api_user)
 --   • meta.data_sources and meta.refresh_log (required by ingestion layer)
 --
--- Dev note: authenticator password is hard-coded to 'postgrest_pass' to match
--- the POSTGREST_PASSWORD in .env. Do NOT use this init script in production.
+-- authenticator password is set by 01-set-passwords.sh from POSTGREST_PASSWORD env var.
 
 -- =============================================================================
 -- EXTENSIONS
@@ -72,9 +71,9 @@ BEGIN
     END IF;
     IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = 'authenticator') THEN
         -- Dev password matches POSTGREST_PASSWORD in .env / docker-compose.yml
-        CREATE ROLE authenticator NOINHERIT LOGIN PASSWORD 'postgrest_pass';
+        CREATE ROLE authenticator NOINHERIT LOGIN PASSWORD 'PLACEHOLDER_SET_BY_INIT_SCRIPT';
     ELSE
-        ALTER ROLE authenticator PASSWORD 'postgrest_pass';
+        -- password set by 01-set-passwords.sh
     END IF;
 END
 $$;
@@ -178,7 +177,7 @@ BEGIN
     RAISE NOTICE '=== dk-data-fe dev database ready ===';
     RAISE NOTICE 'Domain schemas: mol_raw/bronze/silver/gold, hcs_raw/bronze/silver/gold';
     RAISE NOTICE 'Infra schemas: meta, api, mart, scoring, staging, xenon, application';
-    RAISE NOTICE 'Roles: web_anon, analyst, api_user, authenticator (password: postgrest_pass)';
+    RAISE NOTICE 'Roles: web_anon, analyst, api_user, authenticator (password: set from POSTGREST_PASSWORD env)';
     RAISE NOTICE 'Run migrations manually: psql -f src/dk_data/sql/migrations/NNN_*.sql';
 END
 $$;
