@@ -54,8 +54,11 @@ def load_npi_registry_data(
     skipped = 0
 
     sql = """
-        INSERT INTO mol_raw.npi_registry (response_body, source_id)
-        VALUES (%s::JSONB, 'npi_registry')
+        INSERT INTO mol_raw.npi_registry (
+            request_id, api_endpoint, api_version,
+            response_status, response_body, source_id
+        )
+        VALUES (%s, 'https://npiregistry.cms.hhs.gov/api/', 'v2.1', 200, %s::JSONB, 'npi_registry')
         ON CONFLICT ((response_body->>'number'))
         WHERE (response_body->>'number') IS NOT NULL
         DO UPDATE SET
@@ -71,7 +74,7 @@ def load_npi_registry_data(
                 skipped += 1
                 continue
             try:
-                cur.execute(sql, (json.dumps(record),))
+                cur.execute(sql, (f"npi_{npi}", json.dumps(record),))
                 inserted += 1
             except Exception as exc:
                 errors.append(f"npi={npi}: {exc}")

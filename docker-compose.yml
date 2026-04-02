@@ -113,7 +113,25 @@ services:
       POSTGRES_DB: "${POSTGRES_DB:-dk_data}"
       # For local dev, use subprocess runner instead of K8s
       JOB_RUNNER_MODE: "local"
-      LOG_LEVEL: "info"
+      LOG_LEVEL: "${LOG_LEVEL:-info}"
+      # External API credentials (injected via Doppler)
+      WHO_ICD_CLIENT_ID: "${WHO_ICD_CLIENT_ID:-}"
+      WHO_ICD_CLIENT_SECRET: "${WHO_ICD_CLIENT_SECRET:-}"
+      EPO_CONSUMER_KEY: "${EPO_CONSUMER_KEY:-}"
+      EPO_CONSUMER_SECRET: "${EPO_CONSUMER_SECRET:-}"
+      EUIPO_API_KEY: "${EUIPO_API_KEY:-}"
+      EUIPO_SECRET_KEY: "${EUIPO_SECRET_KEY:-}"
+      USPTO_API_KEY: "${USPTO_API_KEY:-}"
+      USPTO_TSDR_API_KEY: "${USPTO_TSDR_API_KEY:-}"
+      OPENALEX_API_KEY: "${OPENALEX_API_KEY:-}"
+      OPENFDA_API_KEY: "${OPENFDA_API_KEY:-}"
+      NCBI_API_KEY: "${NCBI_API_KEY:-}"
+      DRUGBANK_API_KEY: "${DRUGBANK_API_KEY:-}"
+      SEC_USER_AGENT: "${SEC_USER_AGENT:-}"
+      ANTHROPIC_API_KEY: "${ANTHROPIC_API_KEY:-}"
+      LITELLM_API_KEY: "${LITELLM_API_KEY:-}"
+      LITELLM_BASE_URL: "${LITELLM_BASE_URL:-}"
+      LITELLM_MODEL_ALIAS: "${LITELLM_MODEL_ALIAS:-}"
     volumes:
       # Mount scripts from canonical location
       - ./src/dk_data/scripts:/app/scripts:ro

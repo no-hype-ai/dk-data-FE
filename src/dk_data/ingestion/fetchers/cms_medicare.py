@@ -5,7 +5,7 @@ This dataset provides annual spending, utilization, and pricing data for
 drugs administered in outpatient settings under Medicare Part B.
 
 API: https://data.cms.gov/data-api/v1/dataset
-  Dataset UUID: 9552b0f5-c65a-4f57-9d2a-a39d9e56e5bc
+  Dataset UUID: 76a714ad-3a2c-43ac-b76d-9dadf8f7d890 (Medicare Part B Spending by Drug)
   Uses BaseFetcher._fetch_cms_api() helper.
   Total: ~50,000 records (drug × year combinations).
   Dedup: generic_name + year combination.
@@ -22,7 +22,7 @@ from .base import BaseFetcher
 
 logger = logging.getLogger(__name__)
 
-_DATASET_UUID = "9552b0f5-c65a-4f57-9d2a-a39d9e56e5bc"
+_DATASET_UUID = "76a714ad-3a2c-43ac-b76d-9dadf8f7d890"
 
 
 class CMSMedicareFetcher(BaseFetcher):

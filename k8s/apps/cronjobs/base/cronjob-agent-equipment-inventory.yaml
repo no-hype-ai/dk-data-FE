@@ -43,47 +43,10 @@ spec:
             - name: agent-equipment-inventory
               image: ghcr.io/data-kinetic/dk-data-fe/job-trigger:main
               command: ["python", "-m", "dk_data.agents.equipment_inventory", "--limit", "50"]
+              envFrom:
+                - secretRef:
+                    name: dk-data-secrets
               env:
-                - name: POSTGRES_HOST
-                  valueFrom:
-                    secretKeyRef:
-                      name: dk-data-secrets
-                      key: POSTGRES_HOST
-                - name: POSTGRES_PORT
-                  valueFrom:
-                    secretKeyRef:
-                      name: dk-data-secrets
-                      key: POSTGRES_PORT
-                - name: POSTGRES_USER
-                  valueFrom:
-                    secretKeyRef:
-                      name: dk-data-secrets
-                      key: POSTGRES_USER
-                - name: POSTGRES_PASSWORD
-                  valueFrom:
-                    secretKeyRef:
-                      name: dk-data-secrets
-                      key: POSTGRES_PASSWORD
-                - name: POSTGRES_DB
-                  valueFrom:
-                    secretKeyRef:
-                      name: dk-data-secrets
-                      key: POSTGRES_DB
-                - name: LITELLM_PROXY_URL
-                  valueFrom:
-                    secretKeyRef:
-                      name: dk-data-secrets
-                      key: LITELLM_BASE_URL
-                - name: LITELLM_API_KEY
-                  valueFrom:
-                    secretKeyRef:
-                      name: dk-data-secrets
-                      key: LITELLM_API_KEY
-                - name: DATABASE_URL
-                  valueFrom:
-                    secretKeyRef:
-                      name: dk-data-secrets
-                      key: DATABASE_URL
                 - name: OTEL_EXPORTER_OTLP_ENDPOINT
                   value: "http://alloy.infra.svc.cluster.local:4317"
                 - name: OTEL_ENABLED

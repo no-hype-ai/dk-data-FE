@@ -25,12 +25,12 @@ from .base import BaseFetcher
 
 logger = logging.getLogger(__name__)
 
-# Default OpenAlex concept IDs for pharmaceutical sciences
-# https://docs.openalex.org/api-entities/concepts
-DEFAULT_CONCEPT_FILTER = "concepts.id:C86803240|C71924100|C126322002"
-# C86803240 = Pharmaceutical sciences
-# C71924100 = Medicine
-# C126322002 = Pharmacology
+# Default OpenAlex subfield IDs for pharmaceutical sciences
+# https://docs.openalex.org/api-entities/topics
+# concepts.id filter was deprecated by OpenAlex in 2024; use primary_topic.subfield.id instead.
+DEFAULT_CONCEPT_FILTER = "primary_topic.subfield.id:subfields/2736|subfields/3004"
+# subfields/2736 = Pharmacology (Medicine field)
+# subfields/3004 = Pharmacology (Biochemistry field)
 
 # Maximum records per page (OpenAlex caps at 200)
 PAGE_SIZE = 200
@@ -131,7 +131,7 @@ class OpenAlexCIFetcher(BaseFetcher):
                         "concepts,authorships,primary_location,open_access,"
                         "abstract_inverted_index,"
                         "ids,type,language,biblio,topics,keywords,mesh,"
-                        "counts_by_year,grants,referenced_works,related_works,"
+                        "counts_by_year,referenced_works,related_works,"
                         "sustainable_development_goals,best_oa_location,"
                         "is_retracted,is_paratext,cited_by_percentile_year"
                     ),
@@ -250,9 +250,6 @@ class OpenAlexCIFetcher(BaseFetcher):
         # Citation counts by year
         citation_counts_by_year = work.get("counts_by_year")
 
-        # Grants
-        grants = work.get("grants")
-
         # Related work lists
         referenced_works = work.get("referenced_works")
         related_works = work.get("related_works")
@@ -293,7 +290,6 @@ class OpenAlexCIFetcher(BaseFetcher):
             "mesh_terms": mesh_terms,
             "cited_by_percentile": cited_by_percentile,
             "citation_counts_by_year": citation_counts_by_year,
-            "grants": grants,
             "referenced_works": referenced_works,
             "related_works": related_works,
             "sustainable_development_goals": sustainable_development_goals,

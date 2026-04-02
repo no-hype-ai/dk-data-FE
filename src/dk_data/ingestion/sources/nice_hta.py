@@ -52,8 +52,11 @@ def load_nice_hta_data(
     skipped = 0
 
     sql = """
-        INSERT INTO mol_raw.nice_hta (response_body, source_id)
-        VALUES (%s::JSONB, 'nice_hta')
+        INSERT INTO mol_raw.nice_hta (
+            request_id, api_endpoint, api_version,
+            response_status, response_body, source_id
+        )
+        VALUES (%s, 'https://api.nice.org.uk/services/guidance', 'v1', 200, %s::JSONB, 'nice_hta')
         ON CONFLICT ((response_body->>'Id'))
         WHERE (response_body->>'Id') IS NOT NULL
         DO UPDATE SET
@@ -69,7 +72,7 @@ def load_nice_hta_data(
                 skipped += 1
                 continue
             try:
-                cur.execute(sql, (json.dumps(record),))
+                cur.execute(sql, (f"nice_hta_{doc_id}", json.dumps(record),))
                 inserted += 1
             except Exception as exc:
                 errors.append(f"Id={doc_id}: {exc}")

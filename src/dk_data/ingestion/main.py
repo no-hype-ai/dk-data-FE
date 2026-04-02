@@ -8,6 +8,7 @@ Handles both file-based TAVR sources and API-based sources (fetch + load + log).
 import argparse
 import asyncio
 import json
+import os
 import sys
 import time
 from datetime import datetime, timezone
@@ -86,7 +87,7 @@ from .sources.cms_mental_health_puf import load_cms_mental_health_puf
 from .sources.cms_opioid_puf import load_cms_opioid_puf
 from .sources.cms_telehealth_puf import load_cms_telehealth_puf
 from .sources.cms_chronic_conditions import load_cms_chronic_conditions
-from .sources.cms_dual_eligible import load_cms_dual_eligible
+from .sources.cms_dual_eligible import load_cms_dual_eligible_data
 from .sources.cms_enrollment_puf import load_cms_enrollment_puf
 from .sources.cms_claim_type_puf import load_cms_claim_type_puf
 from .sources.cms_utilization_puf import load_cms_utilization_puf
@@ -806,11 +807,11 @@ SOURCES = {
         'default_days_back': None,
     },
     'cms_dual_eligible': {
-        'name': 'CMS Dual Eligible PUF',
-        'description': 'Medicare-Medicaid dual eligible beneficiary statistics — Excel workbook format requires custom parser',
+        'name': 'CMS Dual Eligible',
+        'description': 'Medicare-Medicaid dual eligible beneficiary statistics by state (CY2023)',
         'fetcher': CMSDualEligibleFetcher,
-        'loader': load_cms_dual_eligible,
-        'requires_file': True,
+        'loader': load_cms_dual_eligible_data,
+        'requires_file': False,
         'default_days_back': None,
     },
     'cms_enrollment_puf': {
@@ -1238,7 +1239,7 @@ def run_ingestion(source: str, **kwargs) -> dict:
             days_back = _compute_days_back(source, source_info)
         if days_back is not None:
             fetch_kwargs['days_back'] = days_back
-        if 'max_records' in kwargs:
+        if kwargs.get('max_records') is not None:
             fetch_kwargs['max_records'] = kwargs['max_records']
         # Pass through any source-specific kwargs (full_backfill, query, max_results,
         # max_entries, years, etc.) from BACKFILL_SOURCE_KWARGS or CLI overrides.
@@ -1507,9 +1508,13 @@ Examples:
             )
             return 0
 
-    # Expose Prometheus /metrics on :8000 so the CronJob pod can be scraped.
-    # initial_backfill.py does the same on port 8000 (METRICS_PORT).
-    _prom_start_http_server(8000)
+    # Expose Prometheus /metrics on :8001 (fallback) so the CronJob pod can be scraped.
+    # Port 8000 is reserved for the uvicorn API server when running alongside job-trigger.
+    _metrics_port = int(os.getenv("METRICS_PORT", "8001"))
+    try:
+        _prom_start_http_server(_metrics_port)
+    except OSError:
+        pass  # Port already in use (e.g. running inside uvicorn container) — skip metrics server
 
     # Initialize connection pool
     init_connection_pool()

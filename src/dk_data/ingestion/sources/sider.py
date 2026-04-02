@@ -102,7 +102,7 @@ def load_sider_data(
                             200, %s, %s, %s,
                             FALSE, NOW(), 'sider'
                         )
-                        ON CONFLICT (request_id)
+                        ON CONFLICT (request_id) WHERE request_id IS NOT NULL
                         DO UPDATE SET
                             response_body      = EXCLUDED.response_body,
                             response_body_hash = EXCLUDED.response_body_hash,

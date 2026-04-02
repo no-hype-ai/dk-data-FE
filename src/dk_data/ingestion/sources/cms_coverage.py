@@ -54,8 +54,11 @@ def load_cms_coverage_data(
     skipped = 0
 
     sql = """
-        INSERT INTO mol_raw.cms_coverage (response_body, source_id)
-        VALUES (%s::JSONB, 'cms_coverage')
+        INSERT INTO mol_raw.cms_coverage (
+            request_id, api_endpoint, api_version,
+            response_status, response_body, source_id
+        )
+        VALUES (%s, 'https://api.coverage.cms.gov/v1', 'v1', 200, %s::JSONB, 'cms_coverage')
         ON CONFLICT ((response_body->>'id'), (response_body->>'_endpoint'))
         WHERE response_body->>'id' IS NOT NULL
           AND response_body->>'_endpoint' IS NOT NULL
@@ -75,7 +78,7 @@ def load_cms_coverage_data(
                 continue
 
             try:
-                cur.execute(sql, (json.dumps(record),))
+                cur.execute(sql, (f"cms_coverage_{coverage_id}_{endpoint}", json.dumps(record),))
                 inserted += 1
             except Exception as exc:
                 errors.append(f"id={coverage_id} endpoint={endpoint}: {exc}")

@@ -57,8 +57,11 @@ def load_purple_book_data(
     skipped = 0
 
     sql = """
-        INSERT INTO mol_raw.purple_book (response_body, source_id)
-        VALUES (%s::JSONB, 'purple_book')
+        INSERT INTO mol_raw.purple_book (
+            request_id, api_endpoint, api_version,
+            response_status, response_body, source_id
+        )
+        VALUES (%s, 'https://api.fda.gov/drug/drugsfda.json', 'v1', 200, %s::JSONB, 'purple_book')
         ON CONFLICT ((response_body->>'application_number'))
         WHERE (response_body->>'application_number') IS NOT NULL
         DO UPDATE SET
@@ -74,7 +77,7 @@ def load_purple_book_data(
                 skipped += 1
                 continue
             try:
-                cur.execute(sql, (json.dumps(record),))
+                cur.execute(sql, (f"purple_book_{app_num}", json.dumps(record),))
                 inserted += 1
             except Exception as exc:
                 errors.append(f"application_number={app_num}: {exc}")
