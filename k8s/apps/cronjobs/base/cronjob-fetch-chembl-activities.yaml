@@ -33,7 +33,7 @@ spec:
             fsGroup: 1000
           containers:
             - name: fetch-chembl-activities
-              image: ghcr.io/data-kinetic/dk-data-fe/job-trigger:main
+              image: ghcr.io/data-kinetic/dk-data-fe/job-trigger:latest
               securityContext:
                 allowPrivilegeEscalation: false
                 readOnlyRootFilesystem: true
@@ -60,5 +60,11 @@ spec:
                   memory: "256Mi"
                   cpu: "100m"
                 limits:
-                  memory: "512Mi"
-                  cpu: "300m"
+                  memory: "2Gi"
+                  cpu: "500m"
+              volumeMounts:
+                - name: tmp
+                  mountPath: /tmp
+          volumes:
+            - name: tmp
+              emptyDir: {}
