@@ -1,6 +1,6 @@
 """Tests for cms_dual_eligible loader (019-cms-puf-platform-reconciliation T017)."""
 
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 
 
 MODULE = "dk_data.ingestion.sources.cms_dual_eligible"
