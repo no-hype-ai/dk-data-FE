@@ -19,10 +19,8 @@ resources:
   - ingestion/cronjob-fetch-cms-puf-all.yaml
   - ingestion/cronjob-refresh.yaml
   # Molecule platform ingestion (004-molecule-platform-integration)
-  - ingestion/cronjob-mol-fetch-daily.yaml
-  - ingestion/cronjob-mol-fetch-weekly.yaml
-  - ingestion/cronjob-mol-fetch-monthly.yaml
   - ingestion/cronjob-mol-transform.yaml
+  - ingestion/job-postsync-backfill.yaml
   # CI source ingestion (011-datasource-integration)
   - ingestion/cronjob-fetch-pubmed.yaml
   - ingestion/cronjob-fetch-ema-reg.yaml
