@@ -51,6 +51,7 @@ from .fetchers import (
     USPTOTrademarksFetcher,
     EUIPOTrademarksFetcher,
 )
+from .downloaders.cms_downloader import CMS_DATASET_REGISTRY
 
 from .utils.database import init_connection_pool, close_connection_pool, get_cursor
 
@@ -367,6 +368,11 @@ def log_to_meta(source_name: str, result: dict) -> None:
 
 def run_ingestion(source: str, **kwargs) -> dict:
     """Run ingestion for a specific source."""
+    # CMS PUF sources are handled by the standalone DCAT downloader + generic loader.
+    if source not in SOURCES and source in CMS_DATASET_REGISTRY:
+        from .fetch_cms_puf import process_source
+        return process_source(source, year=kwargs.get('fiscal_year'))
+
     if source not in SOURCES:
         raise ValueError(f"Unknown source: {source}. Available: {list(SOURCES.keys())}")
 

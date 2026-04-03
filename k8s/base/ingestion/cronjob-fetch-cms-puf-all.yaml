@@ -1,0 +1,83 @@
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: fetch-cms-puf-all
+  labels:
+    app: fetch-cms-puf-all
+    app.kubernetes.io/name: fetch-cms-puf-all
+    app.kubernetes.io/component: ingestion
+    app.kubernetes.io/part-of: dk-data
+spec:
+  schedule: "0 2 * * 0"  # Every Sunday at 2 AM UTC
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      backoffLimit: 2
+      activeDeadlineSeconds: 7200  # 2 hour timeout (large CMS files)
+      template:
+        metadata:
+          labels:
+            app: fetch-cms-puf-all
+            app.kubernetes.io/component: batch-job
+            app.kubernetes.io/part-of: dk-data
+        spec:
+          restartPolicy: OnFailure
+          containers:
+            - name: fetch-cms-puf
+              image: ghcr.io/data-kinetic/dk-data-fe/job-trigger:main-5f46ed1
+              command:
+                - python
+                - -m
+                - dk_data.ingestion.fetch_cms_puf
+                - --all
+              env:
+                - name: POSTGRES_HOST
+                  valueFrom:
+                    secretKeyRef:
+                      name: dk-data-secrets
+                      key: POSTGRES_HOST
+                - name: POSTGRES_PORT
+                  valueFrom:
+                    secretKeyRef:
+                      name: dk-data-secrets
+                      key: POSTGRES_PORT
+                - name: POSTGRES_USER
+                  valueFrom:
+                    secretKeyRef:
+                      name: dk-data-secrets
+                      key: POSTGRES_USER
+                - name: POSTGRES_PASSWORD
+                  valueFrom:
+                    secretKeyRef:
+                      name: dk-data-secrets
+                      key: POSTGRES_PASSWORD
+                - name: POSTGRES_DB
+                  valueFrom:
+                    secretKeyRef:
+                      name: dk-data-secrets
+                      key: POSTGRES_DB
+                - name: OTEL_EXPORTER_OTLP_ENDPOINT
+                  value: "http://alloy.infra.svc.cluster.local:4317"
+                - name: OTEL_ENABLED
+                  value: "true"
+                - name: K8S_NAMESPACE
+                  valueFrom:
+                    fieldRef:
+                      fieldPath: metadata.namespace
+              volumeMounts:
+                - name: data-volume
+                  mountPath: /data
+              resources:
+                requests:
+                  memory: "1Gi"
+                  cpu: "100m"
+                limits:
+                  memory: "4Gi"
+                  cpu: "500m"
+          imagePullSecrets:
+            - name: ghcr-credentials
+          volumes:
+            - name: data-volume
+              emptyDir: {}
