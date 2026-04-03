@@ -41,7 +41,7 @@ spec:
             - name: ghcr-credentials
           containers:
             - name: fetch-cdc-vaccines
-              image: ghcr.io/data-kinetic/dk-data-fe/job-trigger:main
+              image: ghcr.io/data-kinetic/dk-data-fe/job-trigger:latest
               command: ["python", "-m", "dk_data.ingestion.main"]
               args: ["cdc_vaccines"]
               envFrom:

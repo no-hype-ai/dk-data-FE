@@ -41,7 +41,7 @@ spec:
             - name: ghcr-credentials
           containers:
             - name: fetch-cms-open-payments
-              image: ghcr.io/data-kinetic/dk-data-fe/job-trigger:main
+              image: ghcr.io/data-kinetic/dk-data-fe/job-trigger:latest
               command: ["python", "-m", "dk_data.ingestion.main"]
               args: ["cms_open_payments"]
               envFrom:
@@ -54,10 +54,10 @@ spec:
                   value: "true"
               resources:
                 requests:
-                  memory: "256Mi"
+                  memory: "512Mi"
                   cpu: "100m"
                 limits:
-                  memory: "512Mi"
+                  memory: "2Gi"
                   cpu: "300m"
               securityContext:
                 allowPrivilegeEscalation: false

@@ -38,7 +38,7 @@ spec:
               type: RuntimeDefault
           containers:
             - name: fetch-chembl-molecules
-              image: ghcr.io/data-kinetic/dk-data-fe/job-trigger:main
+              image: ghcr.io/data-kinetic/dk-data-fe/job-trigger:latest
               securityContext:
                 allowPrivilegeEscalation: false
                 readOnlyRootFilesystem: false

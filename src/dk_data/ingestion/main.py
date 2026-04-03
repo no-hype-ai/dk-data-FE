@@ -218,6 +218,7 @@ from .fetchers import (
     CMSMedicareFetcher,
     CMSCoverageFetcher,
 )
+from .downloaders.cms_downloader import CMS_DATASET_REGISTRY
 
 from .utils.database import init_connection_pool, close_connection_pool, get_cursor
 
@@ -1104,10 +1105,11 @@ def get_last_successful_refresh(source_name: str) -> datetime | None:
             """, (source_name,))
             row = cur.fetchone()
             if row and row[0]:
-                dt = row[0]
-                if dt.tzinfo is None:
-                    dt = dt.replace(tzinfo=timezone.utc)
-                return dt
+                last_refresh = row[0]
+                # PostgreSQL timestamptz should be aware; treat naive values as UTC.
+                if last_refresh.tzinfo is None:
+                    last_refresh = last_refresh.replace(tzinfo=timezone.utc)
+                return last_refresh
     except Exception as e:
         logger.warning(f"Could not read last_successful_refresh for {source_name}: {e}")
     return None
@@ -1131,7 +1133,16 @@ def _compute_days_back(source: str, source_info: dict) -> int | None:
         )
         return default
 
-    elapsed = (datetime.now(timezone.utc) - last_refresh).total_seconds() / 86400
+    try:
+        elapsed = (datetime.now(timezone.utc) - last_refresh).total_seconds() / 86400
+    except TypeError as e:
+        logger.warning(
+            "Could not compute elapsed refresh window for %s (%s) — using default %d days",
+            source,
+            e,
+            default,
+        )
+        return default
     # +1 day safety overlap to avoid gaps from timezone/clock skew
     days_back = max(int(elapsed) + 1, 1)
     logger.info(
@@ -1202,6 +1213,11 @@ def log_to_meta(source_name: str, result: dict) -> None:
 
 def run_ingestion(source: str, **kwargs) -> dict:
     """Run ingestion for a specific source."""
+    # CMS PUF sources are handled by the standalone DCAT downloader + generic loader.
+    if source not in SOURCES and source in CMS_DATASET_REGISTRY:
+        from .fetch_cms_puf import process_source
+        return process_source(source, year=kwargs.get('fiscal_year'))
+
     if source not in SOURCES:
         raise ValueError(f"Unknown source: {source}. Available: {list(SOURCES.keys())}")
 

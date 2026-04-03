@@ -93,3 +93,5 @@ data-samples/**/*.csv
 data-samples/manifest.json
 !data-samples/**/.gitkeep
 .claude/
+!grafana/dashboards/*.json
+!grafana/alerts/*.yaml
