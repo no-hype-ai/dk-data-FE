@@ -168,13 +168,24 @@ END $$;
 -- applied to hcs_raw.cms_inpatient_puf.
 DO $$
 BEGIN
-  IF to_regclass('hcs_raw.cms_inpatient_puf') IS NOT NULL THEN
+  IF to_regclass('hcs_raw.cms_inpatient_puf') IS NOT NULL
+     AND EXISTS (
+       SELECT 1 FROM information_schema.columns
+       WHERE table_schema = 'hcs_raw' AND table_name = 'cms_inpatient_puf'
+         AND column_name = 'fiscal_year'
+     )
+     AND EXISTS (
+       SELECT 1 FROM information_schema.columns
+       WHERE table_schema = 'hcs_raw' AND table_name = 'cms_inpatient_puf'
+         AND column_name = 'drg_code'
+     )
+  THEN
     EXECUTE '
       CREATE UNIQUE INDEX IF NOT EXISTS uq_hcs_raw_cms_inpatient_puf_conflict
       ON hcs_raw.cms_inpatient_puf(provider_id, fiscal_year, drg_code)
     ';
   ELSE
-    RAISE NOTICE 'Table hcs_raw.cms_inpatient_puf missing; skipped uq_hcs_raw_cms_inpatient_puf_conflict';
+    RAISE NOTICE 'Table hcs_raw.cms_inpatient_puf missing or columns fiscal_year/drg_code absent; skipped uq_hcs_raw_cms_inpatient_puf_conflict';
   END IF;
 END $$;
 
@@ -182,13 +193,19 @@ END $$;
 -- Using natural keys because no matching loader file was found in src/dk_data/ingestion/sources.
 DO $$
 BEGIN
-  IF to_regclass('hcs_raw.cms_medicaid_drug_spending') IS NOT NULL THEN
+  IF to_regclass('hcs_raw.cms_medicaid_drug_spending') IS NOT NULL
+     AND EXISTS (
+       SELECT 1 FROM information_schema.columns
+       WHERE table_schema = 'hcs_raw' AND table_name = 'cms_medicaid_drug_spending'
+         AND column_name = 'year'
+     )
+  THEN
     EXECUTE '
       CREATE UNIQUE INDEX IF NOT EXISTS uq_hcs_raw_cms_medicaid_drug_spending_conflict
       ON hcs_raw.cms_medicaid_drug_spending(drug_name, year)
     ';
   ELSE
-    RAISE NOTICE 'Table hcs_raw.cms_medicaid_drug_spending missing; skipped uq_hcs_raw_cms_medicaid_drug_spending_conflict';
+    RAISE NOTICE 'Table hcs_raw.cms_medicaid_drug_spending missing or year column absent; skipped uq_hcs_raw_cms_medicaid_drug_spending_conflict';
   END IF;
 END $$;
 
@@ -196,13 +213,19 @@ END $$;
 -- Using natural keys because no matching loader file was found in src/dk_data/ingestion/sources.
 DO $$
 BEGIN
-  IF to_regclass('hcs_raw.cms_medicare_advantage') IS NOT NULL THEN
+  IF to_regclass('hcs_raw.cms_medicare_advantage') IS NOT NULL
+     AND EXISTS (
+       SELECT 1 FROM information_schema.columns
+       WHERE table_schema = 'hcs_raw' AND table_name = 'cms_medicare_advantage'
+         AND column_name = 'year'
+     )
+  THEN
     EXECUTE '
       CREATE UNIQUE INDEX IF NOT EXISTS uq_hcs_raw_cms_medicare_advantage_conflict
       ON hcs_raw.cms_medicare_advantage(organization_name, plan_type, year)
     ';
   ELSE
-    RAISE NOTICE 'Table hcs_raw.cms_medicare_advantage missing; skipped uq_hcs_raw_cms_medicare_advantage_conflict';
+    RAISE NOTICE 'Table hcs_raw.cms_medicare_advantage missing or year column absent; skipped uq_hcs_raw_cms_medicare_advantage_conflict';
   END IF;
 END $$;
 
