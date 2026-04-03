@@ -32,9 +32,20 @@ CREATE TABLE IF NOT EXISTS hcs_raw.cms_home_health (
   updated_at TIMESTAMPTZ DEFAULT NOW()
 );
 
-CREATE UNIQUE INDEX IF NOT EXISTS uq_hcs_raw_cms_home_health_ccn
-  ON hcs_raw.cms_home_health(cms_certification_number)
-  WHERE cms_certification_number IS NOT NULL;
+DO $$
+BEGIN
+  IF EXISTS (
+    SELECT 1 FROM information_schema.columns
+    WHERE table_schema = 'hcs_raw' AND table_name = 'cms_home_health'
+      AND column_name = 'cms_certification_number'
+  ) THEN
+    EXECUTE '
+      CREATE UNIQUE INDEX IF NOT EXISTS uq_hcs_raw_cms_home_health_ccn
+      ON hcs_raw.cms_home_health(cms_certification_number)
+      WHERE cms_certification_number IS NOT NULL
+    ';
+  END IF;
+END $$;
 
 CREATE TABLE IF NOT EXISTS hcs_raw.cms_hospice_puf (
   id BIGSERIAL PRIMARY KEY,
@@ -53,9 +64,20 @@ CREATE TABLE IF NOT EXISTS hcs_raw.cms_hospice_puf (
   updated_at TIMESTAMPTZ DEFAULT NOW()
 );
 
-CREATE UNIQUE INDEX IF NOT EXISTS uq_hcs_raw_cms_hospice_puf_ccn
-  ON hcs_raw.cms_hospice_puf(cms_certification_number)
-  WHERE cms_certification_number IS NOT NULL;
+DO $$
+BEGIN
+  IF EXISTS (
+    SELECT 1 FROM information_schema.columns
+    WHERE table_schema = 'hcs_raw' AND table_name = 'cms_hospice_puf'
+      AND column_name = 'cms_certification_number'
+  ) THEN
+    EXECUTE '
+      CREATE UNIQUE INDEX IF NOT EXISTS uq_hcs_raw_cms_hospice_puf_ccn
+      ON hcs_raw.cms_hospice_puf(cms_certification_number)
+      WHERE cms_certification_number IS NOT NULL
+    ';
+  END IF;
+END $$;
 
 CREATE TABLE IF NOT EXISTS hcs_raw.cms_snf_puf (
   id BIGSERIAL PRIMARY KEY,
@@ -81,9 +103,20 @@ CREATE TABLE IF NOT EXISTS hcs_raw.cms_snf_puf (
   updated_at TIMESTAMPTZ DEFAULT NOW()
 );
 
-CREATE UNIQUE INDEX IF NOT EXISTS uq_hcs_raw_cms_snf_puf_ccn
-  ON hcs_raw.cms_snf_puf(cms_certification_number)
-  WHERE cms_certification_number IS NOT NULL;
+DO $$
+BEGIN
+  IF EXISTS (
+    SELECT 1 FROM information_schema.columns
+    WHERE table_schema = 'hcs_raw' AND table_name = 'cms_snf_puf'
+      AND column_name = 'cms_certification_number'
+  ) THEN
+    EXECUTE '
+      CREATE UNIQUE INDEX IF NOT EXISTS uq_hcs_raw_cms_snf_puf_ccn
+      ON hcs_raw.cms_snf_puf(cms_certification_number)
+      WHERE cms_certification_number IS NOT NULL
+    ';
+  END IF;
+END $$;
 
 CREATE TABLE IF NOT EXISTS hcs_raw.cms_dme_puf (
   id BIGSERIAL PRIMARY KEY,
@@ -114,9 +147,20 @@ CREATE TABLE IF NOT EXISTS hcs_raw.cms_dme_puf (
   updated_at TIMESTAMPTZ DEFAULT NOW()
 );
 
-CREATE UNIQUE INDEX IF NOT EXISTS uq_hcs_raw_cms_dme_puf_npi_hcpcs
-  ON hcs_raw.cms_dme_puf(npi, hcpcs_code)
-  WHERE npi IS NOT NULL AND hcpcs_code IS NOT NULL;
+DO $$
+BEGIN
+  IF EXISTS (
+    SELECT 1 FROM information_schema.columns
+    WHERE table_schema = 'hcs_raw' AND table_name = 'cms_dme_puf'
+      AND column_name = 'hcpcs_code'
+  ) THEN
+    EXECUTE '
+      CREATE UNIQUE INDEX IF NOT EXISTS uq_hcs_raw_cms_dme_puf_npi_hcpcs
+      ON hcs_raw.cms_dme_puf(npi, hcpcs_code)
+      WHERE npi IS NOT NULL AND hcpcs_code IS NOT NULL
+    ';
+  END IF;
+END $$;
 
 -- Missing ON CONFLICT unique indexes ----------------------------------------
 
