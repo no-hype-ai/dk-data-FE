@@ -151,16 +151,16 @@ class PubChemFetcher(BaseFetcher):
                     })
                 raise
 
-            # SDQ returns a list directly or wraps in a key
+            # SDQ response shape: {"SDQOutputSet": [{"rows": [...compounds...], ...}]}
+            # Extract the actual compound rows from the first SDQOutputSet item.
             if isinstance(data, list):
                 page_records = data
             else:
-                page_records = data.get("SDQOutputSet", [])
-                if not page_records:
-                    for key in ("rows", "results", "data"):
-                        page_records = data.get(key, [])
-                        if page_records:
-                            break
+                sdq_output = data.get("SDQOutputSet", [])
+                if sdq_output and isinstance(sdq_output, list):
+                    page_records = sdq_output[0].get("rows", [])
+                else:
+                    page_records = []
 
             if not page_records:
                 logger.info("PubChem SDQ: empty page at start=%d — done", total_fetched)
