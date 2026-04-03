@@ -9,10 +9,13 @@
 --   This migration is idempotent: it drops any existing partial variant and recreates
 --   the full unique index, and also ensures openfda_labels has the same fix.
 
+-- Drop any existing partial variant (WHERE request_id IS NOT NULL) so the
+-- full unique index below will be accepted. DROP IF EXISTS is a no-op when
+-- the index doesn't exist.
 DROP INDEX IF EXISTS uidx_mol_raw_clinicaltrials_request_id;
-CREATE UNIQUE INDEX uidx_mol_raw_clinicaltrials_request_id
+CREATE UNIQUE INDEX IF NOT EXISTS uidx_mol_raw_clinicaltrials_request_id
     ON mol_raw.clinicaltrials(request_id);
 
 DROP INDEX IF EXISTS uidx_mol_raw_openfda_labels_request_id;
-CREATE UNIQUE INDEX uidx_mol_raw_openfda_labels_request_id
+CREATE UNIQUE INDEX IF NOT EXISTS uidx_mol_raw_openfda_labels_request_id
     ON mol_raw.openfda_labels(request_id);
