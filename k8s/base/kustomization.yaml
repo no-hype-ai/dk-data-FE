@@ -27,6 +27,7 @@ resources:
   - ingestion/cronjob-fetch-ema-reg.yaml
   - ingestion/cronjob-fetch-openalex-ci.yaml
   - ingestion/cronjob-fetch-drugbank.yaml
+  - ingestion/cronjob-fetch-fda-ndc.yaml
   - ingestion/cronjob-fetch-uspto-patents.yaml
   - ingestion/cronjob-fetch-journal-rss.yaml
   - ingestion/cronjob-fetch-uspto-ci.yaml
