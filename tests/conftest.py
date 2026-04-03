@@ -57,7 +57,6 @@ def ingestion_connection_pool(monkeypatch):
     that log_to_meta() and other ingestion helpers connect to the CI test DB
     instead of the production database URL from environment.
     """
-    import psycopg2
     from psycopg2 import pool as pg_pool
     import dk_data.ingestion.utils.database as db_module
 
