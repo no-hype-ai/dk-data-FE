@@ -9,12 +9,32 @@ CREATE INDEX IF NOT EXISTS idx_refresh_log_source_name
   ON meta.refresh_log(source_name);
 
 -- Root Cause B: mol_raw.reactome missing request_id --------------------------
-ALTER TABLE mol_raw.reactome
-ADD COLUMN IF NOT EXISTS request_id TEXT;
+-- Guard: reactome is a live-only table (not created by migrations 001-075);
+-- skip gracefully if it doesn't exist in this environment.
+DO $$
+BEGIN
+  IF to_regclass('mol_raw.reactome') IS NOT NULL THEN
+    IF NOT EXISTS (
+      SELECT 1 FROM information_schema.columns
+      WHERE table_schema = 'mol_raw'
+        AND table_name = 'reactome'
+        AND column_name = 'request_id'
+    ) THEN
+      EXECUTE 'ALTER TABLE mol_raw.reactome ADD COLUMN request_id TEXT';
+      RAISE NOTICE 'Added mol_raw.reactome.request_id';
+    END IF;
 
-CREATE UNIQUE INDEX IF NOT EXISTS uq_mol_raw_reactome_request_id
-  ON mol_raw.reactome(request_id)
-  WHERE request_id IS NOT NULL;
+    EXECUTE '
+      CREATE UNIQUE INDEX IF NOT EXISTS uq_mol_raw_reactome_request_id
+      ON mol_raw.reactome(request_id)
+      WHERE request_id IS NOT NULL
+    ';
+    RAISE NOTICE 'Created uq_mol_raw_reactome_request_id';
+  ELSE
+    RAISE NOTICE 'mol_raw.reactome does not exist — skipping Root Cause B';
+  END IF;
+END
+$$;
 
 -- Root Cause D: Ensure CMS sources exist in meta.data_sources ----------------
 INSERT INTO meta.data_sources (
