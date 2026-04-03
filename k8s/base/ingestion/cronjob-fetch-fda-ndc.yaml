@@ -1,17 +1,16 @@
-# Molecule Fetch Daily CronJob
-# 004-molecule-platform-integration
-# Fetches data from daily-refresh sources: ClinicalTrials.gov, OpenFDA Labels
+# FDA NDC Fetch CronJob
+# Issue #203 phase 2 fix for fda_ndc scheduling/temp file behavior
 apiVersion: batch/v1
 kind: CronJob
 metadata:
-  name: mol-fetch-daily
+  name: fetch-fda-ndc
   labels:
-    app: mol-fetch-daily
-    app.kubernetes.io/name: mol-fetch-daily
+    app: fetch-fda-ndc
+    app.kubernetes.io/name: fetch-fda-ndc
     app.kubernetes.io/component: ingestion
     app.kubernetes.io/part-of: dk-data
 spec:
-  schedule: "0 2 * * *"  # 2 AM UTC daily
+  schedule: "0 3 * * 0"  # Weekly Sunday 3 AM UTC
   concurrencyPolicy: Forbid
   successfulJobsHistoryLimit: 3
   failedJobsHistoryLimit: 3
@@ -22,16 +21,22 @@ spec:
       template:
         metadata:
           labels:
-            app: mol-fetch-daily
+            app: fetch-fda-ndc
+            app.kubernetes.io/component: batch-job
+            app.kubernetes.io/part-of: dk-data
         spec:
           restartPolicy: Never
           imagePullSecrets:
             - name: ghcr-credentials
           containers:
-            - name: mol-fetch-daily
+            - name: fetch-fda-ndc
               image: ghcr.io/data-kinetic/dk-data-fe/job-trigger:main-5f46ed1
-              command: ["python", "-m", "dk_data.ingestion.fetch_molecules"]
-              args: ["--source", "clinicaltrials,openfda"]
+              command:
+                - python
+                - -m
+                - dk_data.ingestion.fetch_data
+                - --source
+                - fda_ndc
               env:
                 - name: POSTGRES_HOST
                   valueFrom:
@@ -62,17 +67,12 @@ spec:
                   value: "http://alloy.infra.svc.cluster.local:4317"
                 - name: OTEL_ENABLED
                   value: "true"
-                - name: K8S_NAMESPACE
-                  valueFrom:
-                    fieldRef:
-                      fieldPath: metadata.namespace
-              envFrom:
-                - configMapRef:
-                    name: molecule-pipeline-config
+              securityContext:
+                readOnlyRootFilesystem: false
               resources:
                 requests:
-                  memory: "512Mi"
+                  memory: "256Mi"
                   cpu: "100m"
                 limits:
                   memory: "1Gi"
-                  cpu: "300m"
+                  cpu: "500m"
