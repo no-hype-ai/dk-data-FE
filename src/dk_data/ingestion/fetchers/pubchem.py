@@ -94,39 +94,51 @@ class PubChemFetcher(BaseFetcher):
             return result
 
     def _fetch_and_load(self, max_records: int) -> int:
-        """Page through PubChem SDQ endpoint, committing each batch to DB and checkpointing.
+        """Page through PubChem SDQ endpoint using CID-range pagination.
+
+        Uses WHERE cid > last_cid to advance through the dataset reliably.
+        Offset-based (start=N) pagination is not used because the SDQ endpoint
+        returns empty responses for certain offset values, causing early termination.
 
         Returns total records inserted/updated.
         """
-        # Resume from checkpoint if available
+        # Resume from checkpoint if available — checkpoint stores last_cid
         cp = load_checkpoint(self.SOURCE_NAME)
-        start = cp.get("start", 0) if cp else 0
+        last_cid = cp.get("last_cid", 0) if cp else 0
         total_inserted = cp.get("records_inserted", 0) if cp else 0
 
-        if start > 0:
+        if last_cid > 0:
             logger.info(
-                "PubChem: resuming from checkpoint start=%d (%d already inserted)",
-                start, total_inserted,
+                "PubChem: resuming from checkpoint last_cid=%d (%d already inserted)",
+                last_cid, total_inserted,
             )
 
         record_buffer: List[Dict[str, Any]] = []
         pages_since_checkpoint = 0
-        total_fetched = start  # total records attempted so far
+        total_fetched = 0
 
         while total_fetched < max_records:
             remaining = max_records - total_fetched
             limit = min(_PAGE_SIZE, remaining)
 
-            query = {
-                "download": "*",
+            # CID-range filter: advance by fetching compounds with cid > last_cid
+            where_clause: Dict = {}
+            if last_cid > 0:
+                where_clause = {"ands": [{"cid": f">{last_cid}"}]}
+
+            query: Dict[str, Any] = {
+                "select": "*",
                 "collection": "compound",
                 "order": ["cid,asc"],
-                "start": total_fetched,
+                "start": 1,
                 "limit": limit,
             }
+            if where_clause:
+                query["where"] = where_clause
+
             params = {"infmt": "json", "outfmt": "json"}
 
-            logger.debug("PubChem SDQ: start=%d limit=%d", total_fetched, limit)
+            logger.debug("PubChem SDQ: last_cid=%d limit=%d", last_cid, limit)
 
             try:
                 resp = self.session.get(
@@ -138,7 +150,7 @@ class PubChemFetcher(BaseFetcher):
                 data = resp.json()
             except Exception as exc:
                 logger.error(
-                    "PubChem SDQ request failed at start=%d: %s", total_fetched, exc
+                    "PubChem SDQ request failed at last_cid=%d: %s", last_cid, exc
                 )
                 # Flush any buffered records before re-raising so partial progress is saved
                 if record_buffer:
@@ -146,33 +158,35 @@ class PubChemFetcher(BaseFetcher):
                     total_inserted += result.get("records_inserted", 0)
                     record_buffer = []
                     save_checkpoint(self.SOURCE_NAME, {
-                        "start": total_fetched,
+                        "last_cid": last_cid,
                         "records_inserted": total_inserted,
                     })
                 raise
 
             # SDQ response shape: {"SDQOutputSet": [{"rows": [...compounds...], ...}]}
-            # Extract the actual compound rows from the first SDQOutputSet item.
-            if isinstance(data, list):
+            sdq_output = data.get("SDQOutputSet", []) if isinstance(data, dict) else []
+            if sdq_output and isinstance(sdq_output, list):
+                page_records = sdq_output[0].get("rows", [])
+            elif isinstance(data, list):
                 page_records = data
             else:
-                sdq_output = data.get("SDQOutputSet", [])
-                if sdq_output and isinstance(sdq_output, list):
-                    page_records = sdq_output[0].get("rows", [])
-                else:
-                    page_records = []
+                page_records = []
 
             if not page_records:
-                logger.info("PubChem SDQ: empty page at start=%d — done", total_fetched)
+                logger.info("PubChem SDQ: empty page after cid=%d — done", last_cid)
                 break
+
+            # Advance the CID cursor to the last CID on this page
+            last_cid_raw = page_records[-1].get("cid", 0)
+            last_cid = int(last_cid_raw) if last_cid_raw else last_cid
 
             record_buffer.extend(page_records)
             total_fetched += len(page_records)
             pages_since_checkpoint += 1
 
             logger.info(
-                "PubChem SDQ: start=%d fetched %d records (running total=%d)",
-                total_fetched - len(page_records), len(page_records), total_fetched,
+                "PubChem SDQ: fetched %d records (last_cid=%d, running total=%d)",
+                len(page_records), last_cid, total_fetched,
             )
 
             # Commit and checkpoint every CHECKPOINT_INTERVAL pages
@@ -182,12 +196,12 @@ class PubChemFetcher(BaseFetcher):
                 record_buffer = []
                 pages_since_checkpoint = 0
                 save_checkpoint(self.SOURCE_NAME, {
-                    "start": total_fetched,
+                    "last_cid": last_cid,
                     "records_inserted": total_inserted,
                 })
                 logger.info(
-                    "PubChem: checkpoint saved start=%d total_inserted=%d",
-                    total_fetched, total_inserted,
+                    "PubChem: checkpoint saved last_cid=%d total_inserted=%d",
+                    last_cid, total_inserted,
                 )
 
             if len(page_records) < limit:
