@@ -30,7 +30,7 @@ VALUES
 ON CONFLICT (source_name) DO NOTHING;
 
 -- Root Cause E: raw.pubmed.mesh_terms JSONB -> TEXT[] (if needed) -----------
-DO $843969$
+DO $$
 BEGIN
   IF EXISTS (
     SELECT 1
@@ -60,4 +60,4 @@ BEGIN
     RAISE NOTICE 'raw.pubmed.mesh_terms already TEXT[] — skipping';
   END IF;
 END
-$843969$;
+$$;
