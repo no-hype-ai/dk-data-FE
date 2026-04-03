@@ -10,7 +10,7 @@ metadata:
     app.kubernetes.io/component: ingestion
     app.kubernetes.io/part-of: dk-data
 spec:
-  schedule: "45 6 1-7 * 0"  # First Sunday of month 6:45 AM UTC
+  schedule: "30 8 15 4 *"  # Annually Apr 15 8:30 AM UTC — Medicare Opioid PUF (Part D Prescribers) released each April
   concurrencyPolicy: Forbid
   startingDeadlineSeconds: 3600
   successfulJobsHistoryLimit: 3

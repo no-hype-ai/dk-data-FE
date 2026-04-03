@@ -24,7 +24,7 @@ metadata:
 spec:
   # Annual CMS release: run first Sunday of January at 4:00 AM UTC
   # (re-runs monthly are safe due to _source_hash idempotency — will skip if loaded)
-  schedule: "0 4 1-7 1 0"
+  schedule: "0 8 15 4 *"  # Annually Apr 15 8:00 AM UTC — Medicare Part D Prescribers PUF released each April
   concurrencyPolicy: Forbid
   startingDeadlineSeconds: 3600
   successfulJobsHistoryLimit: 3

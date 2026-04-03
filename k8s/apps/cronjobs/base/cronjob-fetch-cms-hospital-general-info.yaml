@@ -10,7 +10,7 @@ metadata:
     app.kubernetes.io/component: ingestion
     app.kubernetes.io/part-of: dk-data
 spec:
-  schedule: "30 3 1-7 * 0"  # First Sunday of month 3:30 AM UTC
+  schedule: "30 3 1 1,4,7,10 *"  # Quarterly Jan/Apr/Jul/Oct 1st 3:30 AM UTC — Hospital General Info (Care Compare) refreshed quarterly
   concurrencyPolicy: Forbid
   startingDeadlineSeconds: 3600
   successfulJobsHistoryLimit: 3

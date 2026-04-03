@@ -483,6 +483,7 @@ SOURCES = {
         'fetcher': CMSPartDPrescriberFetcher,
         'loader': load_cms_part_d_prescriber,
         'requires_file': False,
+        'self_loading': True,
         'default_days_back': None,
     },
     # --- CMS facility/provider/reference sources (ported from 016) ---
@@ -636,7 +637,8 @@ SOURCES = {
         'description': 'CMS Medicare Physician & Other Suppliers PUF (provider-level)',
         'fetcher': CMSPhysicianPUFFetcher,
         'loader': load_cms_physician_puf,
-        'requires_file': True,
+        'requires_file': False,
+        'self_loading': True,
         'default_days_back': None,
     },
     'cms_physician_puf_services': {
@@ -644,7 +646,8 @@ SOURCES = {
         'description': 'CMS Medicare Physician PUF at NPI × HCPCS service-line grain',
         'fetcher': CMSPhysicianPUFServicesFetcher,
         'loader': load_cms_physician_puf_services,
-        'requires_file': True,
+        'requires_file': False,
+        'self_loading': True,
         'default_days_back': None,
     },
     'cms_part_d_spending': {
@@ -652,7 +655,8 @@ SOURCES = {
         'description': 'Medicare Part D drug spending by drug (annual PUF)',
         'fetcher': CMSPartDSpendingFetcher,
         'loader': load_cms_part_d_spending,
-        'requires_file': True,
+        'requires_file': False,
+        'self_loading': True,
         'default_days_back': None,
     },
     'cms_part_b_spending': {
@@ -660,7 +664,8 @@ SOURCES = {
         'description': 'Medicare Part B drug and biological spending (annual PUF)',
         'fetcher': CMSPartBSpendingFetcher,
         'loader': load_cms_part_b_spending,
-        'requires_file': True,
+        'requires_file': False,
+        'self_loading': True,
         'default_days_back': None,
     },
     'cms_open_payments': {
@@ -668,7 +673,8 @@ SOURCES = {
         'description': 'Physician-industry payment data (Sunshine Act)',
         'fetcher': CMSOpenPaymentsFetcher,
         'loader': load_cms_open_payments,
-        'requires_file': True,
+        'requires_file': False,
+        'self_loading': True,
         'default_days_back': None,
     },
     'cms_inpatient_puf': {
@@ -676,7 +682,8 @@ SOURCES = {
         'description': 'Medicare inpatient prospective payment system PUF (DRG level)',
         'fetcher': CMSInpatientPUFFetcher,
         'loader': load_cms_inpatient_puf,
-        'requires_file': True,
+        'requires_file': False,
+        'self_loading': True,
         'default_days_back': None,
     },
     'cms_hospital_general_info': {
@@ -692,7 +699,8 @@ SOURCES = {
         'description': 'Medicare Advantage enrollment and plan data (monthly PUF)',
         'fetcher': CMSMedicareAdvantageFetcher,
         'loader': load_cms_medicare_advantage,
-        'requires_file': True,
+        'requires_file': False,
+        'self_loading': True,
         'default_days_back': None,
     },
     'cms_medicaid_drug_spending': {
@@ -700,7 +708,8 @@ SOURCES = {
         'description': 'Medicaid drug spending by drug (annual PUF)',
         'fetcher': CMSMedicaidDrugSpendingFetcher,
         'loader': load_cms_medicaid_drug_spending,
-        'requires_file': True,
+        'requires_file': False,
+        'self_loading': True,
         'default_days_back': None,
     },
     'cms_dme_puf': {
@@ -708,7 +717,8 @@ SOURCES = {
         'description': 'Medicare DME supplier utilization and payment (annual PUF)',
         'fetcher': CMSDMEPUFFetcher,
         'loader': load_cms_dme_puf,
-        'requires_file': True,
+        'requires_file': False,
+        'self_loading': True,
         'default_days_back': None,
     },
     'cms_home_health': {
@@ -716,7 +726,8 @@ SOURCES = {
         'description': 'Medicare home health agency utilization and payment (annual PUF)',
         'fetcher': CMSHomeHealthFetcher,
         'loader': load_cms_home_health,
-        'requires_file': True,
+        'requires_file': False,
+        'self_loading': True,
         'default_days_back': None,
     },
     'cms_hospice_puf': {
@@ -724,7 +735,8 @@ SOURCES = {
         'description': 'Medicare hospice provider utilization and payment (annual PUF)',
         'fetcher': CMSHospicePUFFetcher,
         'loader': load_cms_hospice_puf,
-        'requires_file': True,
+        'requires_file': False,
+        'self_loading': True,
         'default_days_back': None,
     },
     'cms_snf_puf': {
@@ -732,7 +744,8 @@ SOURCES = {
         'description': 'Medicare skilled nursing facility utilization and payment (annual PUF)',
         'fetcher': CMSSNFPUFFetcher,
         'loader': load_cms_snf_puf,
-        'requires_file': True,
+        'requires_file': False,
+        'self_loading': True,
         'default_days_back': None,
     },
     'cms_outpatient_puf': {
@@ -740,7 +753,8 @@ SOURCES = {
         'description': 'Medicare outpatient prospective payment system PUF (APC level)',
         'fetcher': CMSOutpatientPUFFetcher,
         'loader': load_cms_outpatient_puf,
-        'requires_file': True,
+        'requires_file': False,
+        'self_loading': True,
         'default_days_back': None,
     },
     'cms_referring_providers': {
@@ -748,7 +762,8 @@ SOURCES = {
         'description': 'Medicare physician referral patterns PUF',
         'fetcher': CMSReferringProvidersFetcher,
         'loader': load_cms_referring_providers,
-        'requires_file': True,
+        'requires_file': False,
+        'self_loading': True,
         'default_days_back': None,
     },
     'cms_ordering_providers': {
@@ -756,7 +771,8 @@ SOURCES = {
         'description': 'Medicare ordering and referring provider utilization PUF',
         'fetcher': CMSOrderingProvidersFetcher,
         'loader': load_cms_ordering_providers,
-        'requires_file': True,
+        'requires_file': False,
+        'self_loading': True,
         'default_days_back': None,
     },
     'cms_lab_services': {
@@ -764,7 +780,8 @@ SOURCES = {
         'description': 'Medicare clinical lab fee schedule utilization (annual PUF)',
         'fetcher': CMSLabServicesFetcher,
         'loader': load_cms_lab_services,
-        'requires_file': True,
+        'requires_file': False,
+        'self_loading': True,
         'default_days_back': None,
     },
     'cms_imaging_puf': {
@@ -772,7 +789,8 @@ SOURCES = {
         'description': 'Medicare imaging services utilization and payment (annual PUF)',
         'fetcher': CMSImagingPUFFetcher,
         'loader': load_cms_imaging_puf,
-        'requires_file': True,
+        'requires_file': False,
+        'self_loading': True,
         'default_days_back': None,
     },
     'cms_mental_health_puf': {
@@ -780,7 +798,8 @@ SOURCES = {
         'description': 'Medicare mental health services utilization and payment (from Physician PUF, filtered by MH provider types)',
         'fetcher': CMSMentalHealthPUFFetcher,
         'loader': load_cms_mental_health_puf,
-        'requires_file': True,
+        'requires_file': False,
+        'self_loading': True,
         'default_days_back': None,
     },
     'cms_opioid_puf': {
@@ -788,7 +807,8 @@ SOURCES = {
         'description': 'Medicare opioid prescribing patterns at provider-drug grain',
         'fetcher': CMSOpioidPUFFetcher,
         'loader': load_cms_opioid_puf,
-        'requires_file': True,
+        'requires_file': False,
+        'self_loading': True,
         'default_days_back': None,
     },
     'cms_telehealth_puf': {
@@ -796,7 +816,8 @@ SOURCES = {
         'description': 'Medicare telehealth services utilization and payment (annual PUF)',
         'fetcher': CMSTelehealthPUFFetcher,
         'loader': load_cms_telehealth_puf,
-        'requires_file': True,
+        'requires_file': False,
+        'self_loading': True,
         'default_days_back': None,
     },
     'cms_chronic_conditions': {
@@ -820,7 +841,8 @@ SOURCES = {
         'description': 'Medicare beneficiary enrollment statistics by geography/demographics',
         'fetcher': CMSEnrollmentPUFFetcher,
         'loader': load_cms_enrollment_puf,
-        'requires_file': True,
+        'requires_file': False,
+        'self_loading': True,
         'default_days_back': None,
     },
     'cms_claim_type_puf': {
@@ -828,7 +850,8 @@ SOURCES = {
         'description': 'Medicare claims by claim type and geography',
         'fetcher': CMSClaimTypePUFFetcher,
         'loader': load_cms_claim_type_puf,
-        'requires_file': True,
+        'requires_file': False,
+        'self_loading': True,
         'default_days_back': None,
     },
     'cms_utilization_puf': {
@@ -836,7 +859,8 @@ SOURCES = {
         'description': 'Medicare service utilization rates by beneficiary demographics/geography',
         'fetcher': CMSUtilizationPUFFetcher,
         'loader': load_cms_utilization_puf,
-        'requires_file': True,
+        'requires_file': False,
+        'self_loading': True,
         'default_days_back': None,
     },
     'cms_cost_reports_puf': {
@@ -844,7 +868,8 @@ SOURCES = {
         'description': 'Hospital cost report data (HCRIS PUF)',
         'fetcher': CMSCostReportsPUFFetcher,
         'loader': load_cms_cost_reports_puf,
-        'requires_file': True,
+        'requires_file': False,
+        'self_loading': True,
         'default_days_back': None,
     },
     'cms_cost_reports_puf_lines': {
@@ -852,7 +877,8 @@ SOURCES = {
         'description': 'Hospital cost report worksheet line items (HCRIS PUF)',
         'fetcher': CMSCostReportsPUFLinesFetcher,
         'loader': load_cms_cost_reports_puf_lines,
-        'requires_file': True,
+        'requires_file': False,
+        'self_loading': True,
         'default_days_back': None,
     },
     # --- Legacy molecule sources (promoted from raw.* to mol_raw.* in migration 095) ---

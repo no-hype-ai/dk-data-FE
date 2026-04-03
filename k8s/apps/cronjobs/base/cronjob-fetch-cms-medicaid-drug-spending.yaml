@@ -10,7 +10,7 @@ metadata:
     app.kubernetes.io/component: ingestion
     app.kubernetes.io/part-of: dk-data
 spec:
-  schedule: "0 4 1 4 *"  # Annually on April 1st 4:00 AM UTC — Medicaid Drug Spending data released annually (typically spring)
+  schedule: "0 4 1 4 *"  # Annually Apr 1 4:00 AM UTC — Medicaid Drug Spending data released each April
   concurrencyPolicy: Forbid
   startingDeadlineSeconds: 3600
   successfulJobsHistoryLimit: 3

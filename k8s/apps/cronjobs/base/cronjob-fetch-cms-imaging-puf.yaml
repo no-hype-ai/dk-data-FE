@@ -10,7 +10,7 @@ metadata:
     app.kubernetes.io/component: ingestion
     app.kubernetes.io/part-of: dk-data
 spec:
-  schedule: "0 5 1 1,4,7,10 *"  # Quarterly on 1st of Jan/Apr/Jul/Oct 5:00 AM UTC — Physician PUF (imaging subset) released quarterly
+  schedule: "30 11 15 4 *"  # Annually Apr 15 11:30 AM UTC — Imaging PUF derived from Physician PUF, released each April
   concurrencyPolicy: Forbid
   startingDeadlineSeconds: 3600
   successfulJobsHistoryLimit: 3

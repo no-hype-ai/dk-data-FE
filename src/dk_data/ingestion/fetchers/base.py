@@ -8,7 +8,7 @@ import tempfile
 from abc import ABC, abstractmethod
 from datetime import datetime
 from pathlib import Path
-from typing import Optional, Dict, Any, List
+from typing import Optional, Dict, Any, List, Callable, Tuple
 
 import requests
 from requests.adapters import HTTPAdapter
@@ -221,6 +221,261 @@ class BaseFetcher(ABC):
 
         logger.info("[%s] %d total records streamed to %s", self.SOURCE_NAME, total_count, tmp.name)
         return tmp.name, total_count
+
+    def _stream_cms_api_to_db(
+        self,
+        dataset_uuid: str,
+        loader_fn: Callable,
+        source_year: int,
+        filter_params: Optional[Dict[str, Any]] = None,
+        max_records: Optional[int] = None,
+        checkpoint_interval: int = 5,
+        **loader_kwargs: Any,
+    ) -> Tuple[int, int]:
+        """Stream CMS API pages directly to DB via loader_fn, with checkpoint/resume.
+
+        Fetches one page (2000 rows) at a time and immediately inserts it via
+        loader_fn(rows=page, source_year=source_year, ...). Peak memory usage is
+        O(page_size) regardless of total dataset size.
+
+        This replaces the _fetch_cms_api_to_csv + loader(filepath=...) pattern
+        which caused OOMKill because the full CSV was loaded into memory by
+        pd.read_csv(filepath, dtype=str, low_memory=False).
+
+        Args:
+            dataset_uuid: CMS data.cms.gov dataset UUID.
+            loader_fn: Loader function that accepts rows=List[Dict] and source_year=int.
+            source_year: Calendar/service year for _source_year column.
+            filter_params: Optional extra query params for server-side filtering.
+            max_records: Cap on total rows to fetch. None = fetch all.
+            checkpoint_interval: Save checkpoint every N pages (default 5 = 10k rows).
+            **loader_kwargs: Extra kwargs forwarded to loader_fn.
+
+        Returns:
+            Tuple of (total_fetched, total_inserted).
+        """
+        from ..utils.checkpoint import load_checkpoint, save_checkpoint
+
+        cp = load_checkpoint(self.SOURCE_NAME)
+        offset = cp.get("offset", 0) if cp else 0
+        total_inserted = cp.get("records_inserted", 0) if cp else 0
+
+        if offset > 0:
+            logger.info(
+                "[%s] resuming from checkpoint offset=%d (%d already inserted)",
+                self.SOURCE_NAME, offset, total_inserted,
+            )
+
+        api_url = f"{_CMS_DATA_API}/{dataset_uuid}/data"
+        total_fetched = 0
+        pages_since_checkpoint = 0
+
+        while True:
+            current_offset = offset + total_fetched
+            remaining = None if max_records is None else max_records - current_offset
+            if remaining is not None and remaining <= 0:
+                break
+            page_size = _CMS_PAGE_SIZE if remaining is None else min(_CMS_PAGE_SIZE, remaining)
+
+            params: Dict[str, Any] = {"size": page_size, "offset": current_offset}
+            if filter_params:
+                params.update(filter_params)
+
+            try:
+                resp = self.session.get(api_url, params=params, timeout=120)
+                resp.raise_for_status()
+            except Exception:
+                save_checkpoint(self.SOURCE_NAME, {
+                    "offset": current_offset,
+                    "records_inserted": total_inserted,
+                })
+                raise
+
+            page: List[Dict[str, Any]] = resp.json()
+            if not page:
+                break
+
+            source_hash = f"api_stream_{source_year}"
+            result = loader_fn(
+                rows=page,
+                source_year=source_year,
+                source_hash=source_hash,
+                **loader_kwargs,
+            )
+            inserted = result.get("records_inserted", 0)
+            total_inserted += inserted
+            total_fetched += len(page)
+            pages_since_checkpoint += 1
+
+            logger.info(
+                "[%s] offset=%d fetched=%d inserted=%d (total_fetched=%d total_inserted=%d)",
+                self.SOURCE_NAME, current_offset, len(page), inserted,
+                offset + total_fetched, total_inserted,
+            )
+
+            if pages_since_checkpoint >= checkpoint_interval:
+                save_checkpoint(self.SOURCE_NAME, {
+                    "offset": offset + total_fetched,
+                    "records_inserted": total_inserted,
+                })
+                pages_since_checkpoint = 0
+                logger.info(
+                    "[%s] checkpoint saved offset=%d total_inserted=%d",
+                    self.SOURCE_NAME, offset + total_fetched, total_inserted,
+                )
+
+            if len(page) < page_size:
+                break
+
+            import time as _time
+            _time.sleep(0.05)
+
+        return offset + total_fetched, total_inserted
+
+    def _stream_cms_api_multi_year_to_db(
+        self,
+        parent_uuid: str,
+        loader_fn: "Callable",
+        years: "List[int]",
+        max_records_per_year: "Optional[int]" = None,
+        filter_params: "Optional[Dict[str, Any]]" = None,
+    ) -> "Tuple[int, int]":
+        """Stream CMS data for multiple service years directly to DB.
+
+        Discovers per-year dataset UUIDs from the CMS DCAT catalog, then streams
+        each year individually via _stream_cms_api_to_db. Clears the checkpoint
+        before each year so per-year offsets don't bleed across years.
+
+        Returns:
+            Tuple of (total_fetched, total_inserted).
+        """
+        from ..downloaders.cms_downloader import discover_year_uuids
+        from ..utils.checkpoint import clear_checkpoint
+
+        year_uuids = discover_year_uuids(parent_uuid)
+        total_fetched = 0
+        total_inserted = 0
+
+        for year in sorted(years):
+            uuid = year_uuids.get(year)
+            if uuid is None:
+                logger.warning(
+                    "[%s] No sub-UUID found for year=%d (parent=%s) — skipping",
+                    self.SOURCE_NAME, year, parent_uuid,
+                )
+                continue
+            logger.info(
+                "[%s] Streaming year=%d (UUID=%s...)", self.SOURCE_NAME, year, uuid[:8]
+            )
+            clear_checkpoint(self.SOURCE_NAME)
+            try:
+                fetched, inserted = self._stream_cms_api_to_db(
+                    uuid,
+                    loader_fn,
+                    source_year=year,
+                    max_records=max_records_per_year,
+                    filter_params=filter_params,
+                )
+                total_fetched += fetched
+                total_inserted += inserted
+            except Exception as exc:
+                logger.warning(
+                    "[%s] Failed to stream year=%d: %s — skipping", self.SOURCE_NAME, year, exc
+                )
+
+        return total_fetched, total_inserted
+
+    def _stream_open_payments_to_db(
+        self,
+        loader_fn: Callable,
+        source_year: int,
+        dataset_uuid: str = "e6b17c6a-2534-4207-a4a1-6746a14911ff",
+        max_records: Optional[int] = None,
+        checkpoint_interval: int = 20,
+    ) -> Tuple[int, int]:
+        """Stream Open Payments DKAN API pages to DB with checkpoint/resume.
+
+        Uses the openpaymentsdata.cms.gov DKAN endpoint (different from data.cms.gov).
+
+        Returns:
+            Tuple of (total_fetched, total_inserted).
+        """
+        from ..utils.checkpoint import load_checkpoint, save_checkpoint
+
+        _DKAN_PAGE_SIZE = 500
+        _OPEN_PAYMENTS_API = "https://openpaymentsdata.cms.gov/api/1/datastore/query"
+
+        cp = load_checkpoint(self.SOURCE_NAME)
+        offset = cp.get("offset", 0) if cp else 0
+        total_inserted = cp.get("records_inserted", 0) if cp else 0
+
+        if offset > 0:
+            logger.info(
+                "[%s] resuming from checkpoint offset=%d (%d already inserted)",
+                self.SOURCE_NAME, offset, total_inserted,
+            )
+
+        api_url = f"{_OPEN_PAYMENTS_API}/{dataset_uuid}/0"
+        total_fetched = 0
+        pages_since_checkpoint = 0
+
+        while True:
+            current_offset = offset + total_fetched
+            remaining = None if max_records is None else max_records - current_offset
+            if remaining is not None and remaining <= 0:
+                break
+            page_size = _DKAN_PAGE_SIZE if remaining is None else min(_DKAN_PAGE_SIZE, remaining)
+
+            try:
+                resp = self.session.get(
+                    api_url,
+                    params={"offset": current_offset, "limit": page_size, "keys": "true"},
+                    timeout=60,
+                )
+                resp.raise_for_status()
+            except Exception:
+                save_checkpoint(self.SOURCE_NAME, {
+                    "offset": current_offset,
+                    "records_inserted": total_inserted,
+                })
+                raise
+
+            data = resp.json()
+            page: List[Dict[str, Any]] = data.get("results", [])
+            if not page:
+                break
+
+            source_hash = f"api_stream_{source_year}"
+            result = loader_fn(
+                rows=page,
+                source_year=source_year,
+                source_hash=source_hash,
+            )
+            inserted = result.get("records_inserted", 0)
+            total_inserted += inserted
+            total_fetched += len(page)
+            pages_since_checkpoint += 1
+
+            logger.info(
+                "[%s] offset=%d fetched=%d inserted=%d (total_fetched=%d total_inserted=%d)",
+                self.SOURCE_NAME, current_offset, len(page), inserted,
+                offset + total_fetched, total_inserted,
+            )
+
+            if pages_since_checkpoint >= checkpoint_interval:
+                save_checkpoint(self.SOURCE_NAME, {
+                    "offset": offset + total_fetched,
+                    "records_inserted": total_inserted,
+                })
+                pages_since_checkpoint = 0
+
+            if len(page) < page_size:
+                break
+
+            import time as _time
+            _time.sleep(0.05)
+
+        return offset + total_fetched, total_inserted
 
     def _fetch_cms_api(
         self,

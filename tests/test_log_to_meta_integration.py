@@ -226,12 +226,13 @@ class TestSourcesDictCoverage:
             f"Expected at least 52 sources (22 original + 30 new), got {len(SOURCES)}"
         )
 
-    def test_cms_puf_sources_have_requires_file_true(self):
+    def test_cms_puf_sources_have_requires_file_or_self_loading(self):
         from dk_data.ingestion.main import SOURCES
         cms_puf_sources = [s for s in self.EXPECTED_NEW_SOURCES if s not in ("europepmc", "nih_reporter")]
         for source in cms_puf_sources:
-            assert SOURCES[source]["requires_file"] is True, (
-                f"CMS PUF source '{source}' must have requires_file=True"
+            info = SOURCES[source]
+            assert info.get("requires_file") is True or info.get("self_loading") is True, (
+                f"CMS PUF source '{source}' must have requires_file=True or self_loading=True"
             )
 
     def test_api_sources_have_fetcher(self):

@@ -10,7 +10,7 @@ metadata:
     app.kubernetes.io/component: ingestion
     app.kubernetes.io/part-of: dk-data
 spec:
-  schedule: "45 7 1-7 * 0"  # First Sunday of month 7:45 AM UTC
+  schedule: "0 5 15 3 *"  # Annually Mar 15 5:00 AM UTC — CMS Dual Eligible annual release (typically Q1)
   concurrencyPolicy: Forbid
   startingDeadlineSeconds: 3600
   successfulJobsHistoryLimit: 3

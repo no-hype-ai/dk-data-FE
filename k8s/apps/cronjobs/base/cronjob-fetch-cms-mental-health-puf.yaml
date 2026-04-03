@@ -10,7 +10,7 @@ metadata:
     app.kubernetes.io/component: ingestion
     app.kubernetes.io/part-of: dk-data
 spec:
-  schedule: "0 5 15 1,4,7,10 *"  # Quarterly on 15th of Jan/Apr/Jul/Oct 5:00 AM UTC — Physician PUF (mental health subset) released quarterly; staggered 14 days after imaging run
+  schedule: "0 12 15 4 *"  # Annually Apr 15 12:00 UTC — Mental Health PUF derived from Physician PUF, released each April
   concurrencyPolicy: Forbid
   startingDeadlineSeconds: 3600
   successfulJobsHistoryLimit: 3

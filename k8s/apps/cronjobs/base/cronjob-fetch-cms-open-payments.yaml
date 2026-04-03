@@ -10,7 +10,7 @@ metadata:
     app.kubernetes.io/component: ingestion
     app.kubernetes.io/part-of: dk-data
 spec:
-  schedule: "0 6 1 6 *"  # Annually on June 1st 6:00 AM UTC — CMS Open Payments publishes once per year (general payments released ~June)
+  schedule: "0 6 1 6 *"  # Annually Jun 1 6:00 AM UTC — Open Payments (Sunshine Act) published each June
   concurrencyPolicy: Forbid
   startingDeadlineSeconds: 3600
   successfulJobsHistoryLimit: 3
