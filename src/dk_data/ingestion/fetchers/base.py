@@ -284,7 +284,7 @@ class BaseFetcher(ABC):
             try:
                 resp = self.session.get(api_url, params=params, timeout=120)
                 resp.raise_for_status()
-            except Exception as exc:
+            except Exception:
                 save_checkpoint(self.SOURCE_NAME, {
                     "offset": current_offset,
                     "records_inserted": total_inserted,
@@ -433,7 +433,7 @@ class BaseFetcher(ABC):
                     timeout=60,
                 )
                 resp.raise_for_status()
-            except Exception as exc:
+            except Exception:
                 save_checkpoint(self.SOURCE_NAME, {
                     "offset": current_offset,
                     "records_inserted": total_inserted,
