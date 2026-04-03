@@ -15,7 +15,7 @@ load_clinicaltrials_data so no DB connection is required.
 """
 
 import tempfile
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 
 import responses
 
