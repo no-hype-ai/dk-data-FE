@@ -10,7 +10,7 @@ metadata:
     app.kubernetes.io/component: ingestion
     app.kubernetes.io/part-of: dk-data
 spec:
-  schedule: "0 4 1-7 * 0"  # First Sunday of month 4:00 AM UTC
+  schedule: "30 6 15 10 *"  # Annually Oct 15 6:30 AM UTC — HCRIS Cost Reports PUF Lines released each fall (Oct-Nov)
   concurrencyPolicy: Forbid
   startingDeadlineSeconds: 3600
   successfulJobsHistoryLimit: 3

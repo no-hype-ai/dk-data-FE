@@ -10,7 +10,7 @@ metadata:
     app.kubernetes.io/component: ingestion
     app.kubernetes.io/part-of: dk-data
 spec:
-  schedule: "30 5 1 1,4,7,10 *"
+  schedule: "30 5 1 1,4,7,10 *"  # Quarterly Jan/Apr/Jul/Oct 1st 5:30 AM UTC — Medicare Part D Formulary refreshed quarterly
   concurrencyPolicy: Forbid
   startingDeadlineSeconds: 3600
   successfulJobsHistoryLimit: 3

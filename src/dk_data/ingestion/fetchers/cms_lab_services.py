@@ -24,52 +24,28 @@ class CMSLabServicesFetcher(BaseFetcher):
     def fetch(self, **kwargs) -> Dict[str, Any]:
         max_records = kwargs.get("max_records")
         years: Optional[List[int]] = kwargs.get("years")
-        
+        source_year = int(kwargs.get("fiscal_year") or kwargs.get("source_year") or 2023)
         try:
-            if years:
-                all_paths: List[str] = []
-                for provider_type in _LAB_PROVIDER_TYPES:
-                    filter_params = {"filter[Rndrng_Prvdr_Type][value]": provider_type}
-                    paths = self._fetch_cms_api_multi_year(
-                        self.DATASET_UUID, years,
-                        max_records_per_year=max_records,
-                        filter_params=filter_params,
-                    )
-                    all_paths.extend(paths)
-                if not all_paths:
-                    return {"status": "success", "records": 0, "record_count": 0, "hash": None, "extracted_files": []}
-                return {
-                    "status": "success",
-                    "records": len(all_paths),
-                    "record_count": len(all_paths),
-                    "hash": None,
-                    "extracted_files": all_paths,
-                }
-            csv_paths = []
-            total_count = 0
+            from ..sources.cms_lab_services import load_cms_lab_services
+            from ..utils.checkpoint import clear_checkpoint
+            total_fetched = 0
+            total_inserted = 0
             for provider_type in _LAB_PROVIDER_TYPES:
                 filter_params = {"filter[Rndrng_Prvdr_Type][value]": provider_type}
-                path, count = self._fetch_cms_api_to_csv(
-                    self.DATASET_UUID,
-                    max_records=max_records,
-                    filter_params=filter_params,
-                )
-                if path:
-                    logger.info("[%s] %d records for provider_type=%s", self.SOURCE_NAME, count, provider_type)
-                    csv_paths.append(path)
-                    total_count += count
-                if max_records and total_count >= max_records:
-                    break
-
-            if not csv_paths:
-                return {"status": "success", "records": [], "record_count": 0, "hash": None, "extracted_files": []}
-            return {
-                "status": "success",
-                "records": total_count,
-                "record_count": total_count,
-                "hash": None,
-                "extracted_files": csv_paths,
-            }
+                if years:
+                    fetched, inserted = self._stream_cms_api_multi_year_to_db(
+                        self.DATASET_UUID, load_cms_lab_services, years=years,
+                        max_records_per_year=max_records, filter_params=filter_params,
+                    )
+                else:
+                    fetched, inserted = self._stream_cms_api_to_db(
+                        self.DATASET_UUID, load_cms_lab_services, source_year=source_year,
+                        max_records=max_records, filter_params=filter_params,
+                    )
+                total_fetched += fetched
+                total_inserted += inserted
+            clear_checkpoint(self.SOURCE_NAME)
+            return {"status": "success", "records": [], "record_count": total_inserted, "hash": None}
         except Exception as e:
             logger.exception("%s fetch failed: %s", self.SOURCE_NAME, e)
             return {"status": "failed", "error": str(e), "records": [], "record_count": 0, "hash": None}

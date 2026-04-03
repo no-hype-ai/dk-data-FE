@@ -10,7 +10,7 @@ metadata:
     app.kubernetes.io/component: ingestion
     app.kubernetes.io/part-of: dk-data
 spec:
-  schedule: "0 6 1 10 *"  # Annually on October 1st 6:00 AM UTC — Part B Lab Services PUF released annually (typically Q4)
+  schedule: "0 11 15 4 *"  # Annually Apr 15 11:00 AM UTC — Lab Services derived from Physician PUF, released each April
   concurrencyPolicy: Forbid
   startingDeadlineSeconds: 3600
   successfulJobsHistoryLimit: 3

@@ -21,6 +21,7 @@ import hashlib
 import logging
 from datetime import datetime, timezone
 from pathlib import Path
+from typing import List, Optional, Dict
 
 import pandas as pd
 from pydantic import ValidationError
@@ -63,7 +64,7 @@ TABLE  = 'cms_part_d_prescriber'
 SCHEMA = 'hcs_raw'
 
 
-def load_cms_part_d_prescriber(filepath: str, source_year: int = 2023, max_records: int = 0) -> dict:
+def load_cms_part_d_prescriber(filepath: Optional[str] = None, rows: Optional[List[Dict]] = None, source_year: int = 2023, max_records: int = 0, source_hash: Optional[str] = None) -> dict:
     """Load CMS Part D Prescribers by Provider and Drug from CSV file.
 
     The CSV typically has ~25M rows (one per NPI × drug × year).
@@ -71,38 +72,49 @@ def load_cms_part_d_prescriber(filepath: str, source_year: int = 2023, max_recor
 
     Args:
         filepath:    Path to the CMS Part D Prescriber PUF CSV file.
+        rows:        Rows passed directly from API (streaming mode).
         source_year: Reporting year (default 2023).
 
     Returns:
         Standard loader result dict with status, counts, and errors.
     """
-    logger.info(f"Loading CMS Part D Prescriber from {filepath} (year={source_year})")
+    logger.info(f"Loading CMS Part D Prescriber (year={source_year})")
 
-    source_file = Path(filepath).name
-    hash_md5 = hashlib.md5()
-    with open(filepath, 'rb') as f:
-        for chunk in iter(lambda: f.read(65536), b''):
-            hash_md5.update(chunk)
-    source_hash = hash_md5.hexdigest()
+    if rows is not None:
+        # Streaming mode: rows passed directly from API, no file needed
+        normalized = [{k: ('' if v is None else str(v)) for k, v in row.items()} for row in rows]
+        df = pd.DataFrame(normalized) if normalized else pd.DataFrame()
+        _source_hash = source_hash or f"api_stream_{source_year}"
+        source_file = f"api_stream_{source_year}"
+    else:
+        if filepath is None:
+            raise ValueError("Either filepath or rows must be provided")
+        source_file = Path(filepath).name
+        hash_md5 = hashlib.md5()
+        with open(filepath, 'rb') as f:
+            for chunk in iter(lambda: f.read(65536), b''):
+                hash_md5.update(chunk)
+        _source_hash = source_hash or hash_md5.hexdigest()
 
-    # Idempotency: skip if already loaded
-    with get_cursor() as cur:
-        cur.execute(
-            f"SELECT COUNT(*) FROM {SCHEMA}.{TABLE} WHERE _source_hash = %s",
-            (source_hash,)
-        )
-        if cur.fetchone()[0] > 0:
-            logger.info(f"File {source_file} already loaded. Skipping.")
-            return {
-                "status": "skipped",
-                "records_fetched": 0,
-                "records_inserted": 0,
-                "records_updated": 0,
-                "errors": [],
-            }
+        # Idempotency: skip if already loaded
+        with get_cursor() as cur:
+            cur.execute(
+                f"SELECT COUNT(*) FROM {SCHEMA}.{TABLE} WHERE _source_hash = %s",
+                (_source_hash,)
+            )
+            if cur.fetchone()[0] > 0:
+                logger.info(f"File {source_file} already loaded. Skipping.")
+                return {
+                    "status": "skipped",
+                    "records_fetched": 0,
+                    "records_inserted": 0,
+                    "records_updated": 0,
+                    "errors": [],
+                }
 
-    # Full load — pandas handles chunking internally for dtype=str
-    df = pd.read_csv(filepath, dtype=str, low_memory=False, nrows=max_records if max_records > 0 else None)
+        # Full load — pandas handles chunking internally for dtype=str
+        df = pd.read_csv(filepath, dtype=str, low_memory=False, nrows=max_records if max_records > 0 else None)
+
     df = apply_column_mapping(df, COLUMN_MAPPING)
 
     # Keep only columns we mapped (ignore CMS columns we don't capture)
@@ -142,7 +154,7 @@ def load_cms_part_d_prescriber(filepath: str, source_year: int = 2023, max_recor
                 _source_year=source_year,
             )
             d = rec.model_dump(by_alias=True)
-            d['_source_hash'] = source_hash
+            d['_source_hash'] = _source_hash
             d['_source_file'] = source_file
             d['_loaded_at'] = loaded_at
             d['_source_year'] = source_year

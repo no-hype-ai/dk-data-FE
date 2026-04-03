@@ -10,7 +10,7 @@ metadata:
     app.kubernetes.io/component: ingestion
     app.kubernetes.io/part-of: dk-data
 spec:
-  schedule: "0 2 1-7 * 0"  # First Sunday of month 2:00 AM UTC
+  schedule: "30 10 15 4 *"  # Annually Apr 15 10:30 AM UTC — Medicare Part D Drug Spending PUF released each April
   concurrencyPolicy: Forbid
   startingDeadlineSeconds: 3600
   successfulJobsHistoryLimit: 3

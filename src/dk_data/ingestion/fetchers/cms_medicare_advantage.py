@@ -16,17 +16,15 @@ class CMSMedicareAdvantageFetcher(BaseFetcher):
 
     def fetch(self, **kwargs) -> Dict[str, Any]:
         max_records = kwargs.get("max_records")
+        source_year = int(kwargs.get("fiscal_year") or kwargs.get("source_year") or 2023)
         try:
-            tmp_path, count = self._fetch_cms_api_to_csv(self.DATASET_UUID, max_records)
-            if not tmp_path:
-                return {"status": "success", "records": [], "record_count": 0, "hash": None, "extracted_files": []}
-            return {
-                "status": "success",
-                "records": count,
-                "record_count": count,
-                "hash": None,
-                "extracted_files": [tmp_path],
-            }
+            from ..sources.cms_medicare_advantage import load_cms_medicare_advantage
+            from ..utils.checkpoint import clear_checkpoint
+            total_fetched, total_inserted = self._stream_cms_api_to_db(
+                self.DATASET_UUID, load_cms_medicare_advantage, source_year=source_year, max_records=max_records
+            )
+            clear_checkpoint(self.SOURCE_NAME)
+            return {"status": "success", "records": [], "record_count": total_inserted, "hash": None}
         except Exception as e:
             logger.exception("%s fetch failed: %s", self.SOURCE_NAME, e)
             return {"status": "failed", "error": str(e), "records": [], "record_count": 0, "hash": None}

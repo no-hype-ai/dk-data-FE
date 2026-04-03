@@ -10,7 +10,7 @@ metadata:
     app.kubernetes.io/component: ingestion
     app.kubernetes.io/part-of: dk-data
 spec:
-  schedule: "30 7 1-7 * 0"  # First Sunday of month 7:30 AM UTC
+  schedule: "0 5 15 6 *"  # Annually Jun 15 5:00 AM UTC — CMS Chronic Conditions PUF; requires CCW research access
   concurrencyPolicy: Forbid
   startingDeadlineSeconds: 3600
   successfulJobsHistoryLimit: 3

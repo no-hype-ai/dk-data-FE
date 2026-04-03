@@ -10,7 +10,7 @@ metadata:
     app.kubernetes.io/component: ingestion
     app.kubernetes.io/part-of: dk-data
 spec:
-  schedule: "0 4 1 1,4,7,10 *"
+  schedule: "0 4 1 1,4,7,10 *"  # Quarterly Jan/Apr/Jul/Oct 1st 4:00 AM UTC — Care Compare refreshed quarterly
   concurrencyPolicy: Forbid
   startingDeadlineSeconds: 3600
   successfulJobsHistoryLimit: 3

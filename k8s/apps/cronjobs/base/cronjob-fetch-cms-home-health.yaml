@@ -10,7 +10,7 @@ metadata:
     app.kubernetes.io/component: ingestion
     app.kubernetes.io/part-of: dk-data
 spec:
-  schedule: "30 4 1 * *"  # Monthly on 1st of month 4:30 AM UTC — CMS Home Health PUF refreshed monthly
+  schedule: "0 4 1 1,4,7,10 *"  # Quarterly Jan/Apr/Jul/Oct 1st 4:00 AM UTC — Home Health Compare refreshed quarterly
   concurrencyPolicy: Forbid
   startingDeadlineSeconds: 3600
   successfulJobsHistoryLimit: 3
