@@ -49,6 +49,33 @@ def db_cursor(postgres_connection):
     cursor.close()
 
 
+@pytest.fixture
+def ingestion_connection_pool(monkeypatch):
+    """Initialize the ingestion connection pool against the test database.
+
+    Patches the global _connection_pool in dk_data.ingestion.utils.database so
+    that log_to_meta() and other ingestion helpers connect to the CI test DB
+    instead of the production database URL from environment.
+    """
+    import psycopg2
+    from psycopg2 import pool as pg_pool
+    import dk_data.ingestion.utils.database as db_module
+
+    test_pool = pg_pool.ThreadedConnectionPool(
+        minconn=1,
+        maxconn=5,
+        host=os.getenv("POSTGRES_HOST", "localhost"),
+        port=int(os.getenv("POSTGRES_PORT", "5432")),
+        user=os.getenv("POSTGRES_USER", "postgres"),
+        password=os.getenv("POSTGRES_PASSWORD", "postgres"),
+        database=os.getenv("POSTGRES_DB", "dk_data_test"),
+    )
+    monkeypatch.setattr(db_module, "_connection_pool", test_pool)
+    yield test_pool
+    test_pool.closeall()
+    monkeypatch.setattr(db_module, "_connection_pool", None)
+
+
 @pytest.fixture(scope="session")
 def postgrest_client():
     """Create an httpx client for PostgREST API testing.
