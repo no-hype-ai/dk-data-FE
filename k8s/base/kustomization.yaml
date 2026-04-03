@@ -16,6 +16,7 @@ resources:
   - ingestion/job-trigger-deployment.yaml
   - ingestion/job-trigger-service.yaml
   - ingestion/cronjob-cms-all.yaml
+  - ingestion/cronjob-fetch-cms-puf-all.yaml
   - ingestion/cronjob-refresh.yaml
   # Molecule platform ingestion (004-molecule-platform-integration)
   - ingestion/cronjob-mol-fetch-daily.yaml
