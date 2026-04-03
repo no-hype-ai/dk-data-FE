@@ -199,8 +199,10 @@ def _create_table_if_needed(cur, source_key: str, csv_columns: list[str]) -> Non
     column_defs.extend(
         [
             sql.SQL("{} BIGSERIAL PRIMARY KEY").format(sql.Identifier("id")),
-            sql.SQL("{} INT").format(sql.Identifier("source_year")),
-            sql.SQL("{} TIMESTAMPTZ DEFAULT NOW()").format(sql.Identifier("created_at")),
+            sql.SQL("{} INT").format(sql.Identifier("_source_year")),
+            sql.SQL("{} TEXT").format(sql.Identifier("_source_hash")),
+            sql.SQL("{} TEXT").format(sql.Identifier("_source_file")),
+            sql.SQL("{} TIMESTAMPTZ NOT NULL DEFAULT NOW()").format(sql.Identifier("_loaded_at")),
         ]
     )
 
@@ -253,7 +255,8 @@ def _bulk_load_csv(conn, source_key: str, csv_path: Path, source_year: int | Non
         )
         conn.commit()
 
-    load_columns = csv_columns + ["source_year"]
+    file_hash = _compute_file_hash(csv_path)
+    load_columns = csv_columns + ["_source_year", "_source_hash", "_source_file"]
     copy_stmt = sql.SQL(
         "COPY {} ({}) FROM STDIN WITH (FORMAT CSV, HEADER FALSE)"
     ).format(
@@ -268,7 +271,9 @@ def _bulk_load_csv(conn, source_key: str, csv_path: Path, source_year: int | Non
         for chunk in chunks:
             chunk.columns = csv_columns
             chunk = chunk.fillna("")
-            chunk["source_year"] = source_year
+            chunk["_source_year"] = source_year
+            chunk["_source_hash"] = file_hash
+            chunk["_source_file"] = csv_path.name
 
             buf = StringIO()
             chunk[load_columns].to_csv(
