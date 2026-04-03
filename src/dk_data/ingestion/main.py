@@ -10,7 +10,7 @@ import asyncio
 import json
 import sys
 import time
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 
 from .sources import cms_inpatient, cms_hospital_info, cms_cost_reports, acc_tvc, hrsa
@@ -260,7 +260,11 @@ def get_last_successful_refresh(source_name: str) -> datetime | None:
             """, (source_name,))
             row = cur.fetchone()
             if row and row[0]:
-                return row[0]
+                last_refresh = row[0]
+                # PostgreSQL timestamptz should be aware; treat naive values as UTC.
+                if last_refresh.tzinfo is None:
+                    last_refresh = last_refresh.replace(tzinfo=timezone.utc)
+                return last_refresh
     except Exception as e:
         logger.warning(f"Could not read last_successful_refresh for {source_name}: {e}")
     return None
@@ -284,7 +288,16 @@ def _compute_days_back(source: str, source_info: dict) -> int | None:
         )
         return default
 
-    elapsed = (datetime.now() - last_refresh).total_seconds() / 86400
+    try:
+        elapsed = (datetime.now(timezone.utc) - last_refresh).total_seconds() / 86400
+    except TypeError as e:
+        logger.warning(
+            "Could not compute elapsed refresh window for %s (%s) — using default %d days",
+            source,
+            e,
+            default,
+        )
+        return default
     # +1 day safety overlap to avoid gaps from timezone/clock skew
     days_back = max(int(elapsed) + 1, 1)
     logger.info(
