@@ -27,24 +27,34 @@ def get_database_url() -> str:
     """Build database URL from environment.
 
     Required environment variables (set in .env file):
-    - DATABASE_URL: Full connection string, OR
-    - POSTGRES_HOST, POSTGRES_PORT, POSTGRES_DB, POSTGRES_USER, POSTGRES_PASSWORD
+    - POSTGRES_HOST, POSTGRES_PORT, POSTGRES_DB, POSTGRES_USER, POSTGRES_PASSWORD, OR
+    - DATABASE_URL: Full connection string (deprecated fallback when POSTGRES_HOST is unset)
     """
+    db_host = os.getenv('POSTGRES_HOST')
+    if db_host:
+        db_port = os.getenv('POSTGRES_PORT', '5432')
+        db_name = os.getenv('POSTGRES_DB', 'dk_data')
+        db_user = os.getenv('POSTGRES_USER', 'postgres')
+        db_pass = os.getenv('POSTGRES_PASSWORD')
+
+        if not db_pass:
+            logger.warning("POSTGRES_PASSWORD not set in environment. Database connection may fail.")
+            db_pass = ''
+
+        return f'postgresql://{db_user}:{db_pass}@{db_host}:{db_port}/{db_name}'
+
     db_url = os.getenv('DATABASE_URL')
     if db_url:
+        logger.warning(
+            "Using deprecated DATABASE_URL fallback because POSTGRES_HOST is not set. "
+            "Prefer POSTGRES_* environment variables."
+        )
         return db_url
 
-    db_host = os.getenv('POSTGRES_HOST', 'localhost')
-    db_port = os.getenv('POSTGRES_PORT', '5432')
-    db_name = os.getenv('POSTGRES_DB', 'dk_data')
-    db_user = os.getenv('POSTGRES_USER', 'postgres')
-    db_pass = os.getenv('POSTGRES_PASSWORD')
-
-    if not db_pass:
-        logger.warning("POSTGRES_PASSWORD not set in environment. Database connection may fail.")
-        db_pass = ''
-
-    return f'postgresql://{db_user}:{db_pass}@{db_host}:{db_port}/{db_name}'
+    logger.error(
+        "Database configuration missing: set POSTGRES_HOST (preferred) or DATABASE_URL (fallback)."
+    )
+    return ''
 
 
 def get_sync_db_url() -> str:
