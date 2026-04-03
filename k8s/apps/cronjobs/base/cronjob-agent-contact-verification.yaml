@@ -41,7 +41,7 @@ spec:
             - name: ghcr-credentials
           containers:
             - name: agent-contact-verification
-              image: ghcr.io/data-kinetic/dk-data-fe/job-trigger:main
+              image: ghcr.io/data-kinetic/dk-data-fe/job-trigger:latest
               command: ["python", "-m", "dk_data.agents.contact_verification", "--limit", "50"]
               envFrom:
                 - secretRef:

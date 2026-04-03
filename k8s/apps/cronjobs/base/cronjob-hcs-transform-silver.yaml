@@ -50,7 +50,7 @@ spec:
             - name: ghcr-credentials
           containers:
             - name: hcs-transform-silver
-              image: ghcr.io/data-kinetic/dk-data-fe/job-trigger:main
+              image: ghcr.io/data-kinetic/dk-data-fe/job-trigger:latest
               command: ["python", "-m", "dk_data.ingestion.transform_molecules"]
               args: ["--layer", "hcs_silver"]
               envFrom:
@@ -76,6 +76,10 @@ spec:
               volumeMounts:
                 - name: tmp
                   mountPath: /tmp
+                - name: sqlmesh-logs
+                  mountPath: /usr/local/lib/python3.11/site-packages/dk_data/sqlmesh/logs
           volumes:
             - name: tmp
+              emptyDir: {}
+            - name: sqlmesh-logs
               emptyDir: {}

@@ -55,7 +55,7 @@ spec:
             - name: ghcr-credentials
           containers:
             - name: fetch-cms-part-d-prescriber
-              image: ghcr.io/data-kinetic/dk-data-fe/job-trigger:main
+              image: ghcr.io/data-kinetic/dk-data-fe/job-trigger:latest
               command: ["python", "-m", "dk_data.ingestion.main"]
               args: ["cms_part_d_prescriber"]
               envFrom:
