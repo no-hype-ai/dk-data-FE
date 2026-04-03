@@ -1,20 +1,17 @@
-"""Integration tests for log_to_meta() function.
+"""Tests for log_to_meta() function.
 
-Feature: 019-cms-puf-platform-reconciliation
-Task: T030
-
-Verifies:
-- log_to_meta() is ONLY called by run_ingestion(), never by individual loaders
-- log_to_meta() correctly writes to meta.refresh_log
-- log_to_meta() correctly updates meta.data_sources (last_refresh_attempt,
-  last_refresh_status, last_successful_refresh)
-- Correct status values ('success', 'partial', 'failed') update last_successful_refresh
-  appropriately
-- log_to_meta() is a no-op (logs a warning) when source_name is not in meta.data_sources
+Covers:
+- Unit tests with mocked DB (fast, no real Postgres required)
+- Structural checks (loaders must not call log_to_meta)
+- SOURCES dict coverage
+- Integration tests against real PostgreSQL schema (marked with @pytest.mark.integration)
 """
 
 import json
+from datetime import datetime
 from unittest.mock import MagicMock, patch
+
+import pytest
 
 
 # ---------------------------------------------------------------------------
@@ -246,3 +243,157 @@ class TestSourcesDictCoverage:
             assert "loader" in SOURCES[source], (
                 f"API source '{source}' must have a loader in SOURCES dict"
             )
+
+
+# ---------------------------------------------------------------------------
+# Integration tests: real PostgreSQL schema (require --integration flag)
+# ---------------------------------------------------------------------------
+
+@pytest.mark.integration
+class TestLogToMetaIntegration:
+    """Integration tests for log_to_meta() against real PostgreSQL schema."""
+
+    TEST_SOURCE = "_test_source_ltm"
+
+    @pytest.fixture(autouse=True)
+    def _pool(self, monkeypatch, ingestion_connection_pool):
+        yield
+
+    def test_log_to_meta_success(self, postgres_connection, db_cursor):
+        """log_to_meta should write refresh_log and update source status."""
+        from dk_data.ingestion.main import log_to_meta
+
+        db_cursor.execute(
+            """
+            INSERT INTO meta.data_sources
+                (source_name, source_type, description, is_active, refresh_frequency)
+            VALUES (%s, 'api', 'Integration test source', true, 'daily')
+            ON CONFLICT (source_name) DO NOTHING
+            """,
+            (self.TEST_SOURCE,),
+        )
+        postgres_connection.commit()
+
+        try:
+            log_to_meta(
+                self.TEST_SOURCE,
+                {"status": "success", "records_fetched": 42, "records_inserted": 42},
+            )
+
+            db_cursor.execute(
+                """
+                SELECT rl.status, rl.records_fetched
+                FROM meta.refresh_log rl
+                JOIN meta.data_sources ds ON ds.source_id = rl.source_id
+                WHERE ds.source_name = %s
+                ORDER BY rl.log_id DESC
+                LIMIT 1
+                """,
+                (self.TEST_SOURCE,),
+            )
+            row = db_cursor.fetchone()
+            assert row is not None
+            assert row[0] == "success"
+            assert row[1] == 42
+
+            db_cursor.execute(
+                "SELECT last_refresh_status FROM meta.data_sources WHERE source_name = %s",
+                (self.TEST_SOURCE,),
+            )
+            source_row = db_cursor.fetchone()
+            assert source_row is not None
+            assert source_row[0] == "success"
+        finally:
+            db_cursor.execute(
+                """
+                DELETE FROM meta.refresh_log
+                WHERE source_id = (
+                    SELECT source_id FROM meta.data_sources WHERE source_name = %s
+                )
+                """,
+                (self.TEST_SOURCE,),
+            )
+            db_cursor.execute("DELETE FROM meta.data_sources WHERE source_name = %s", (self.TEST_SOURCE,))
+            postgres_connection.commit()
+
+    def test_log_to_meta_missing_source(self, postgres_connection, db_cursor):
+        """log_to_meta should return safely when source does not exist."""
+        from dk_data.ingestion.main import log_to_meta
+
+        missing_source = "_test_nonexistent_xyz"
+        log_to_meta(missing_source, {"status": "success", "records_fetched": 0})
+
+        db_cursor.execute(
+            "SELECT COUNT(*) FROM meta.refresh_log WHERE source_name = %s",
+            (missing_source,),
+        )
+        count = db_cursor.fetchone()[0]
+        assert count == 0
+        postgres_connection.rollback()
+
+    def test_log_to_meta_refresh_log_schema(self, db_cursor):
+        """Document expected refresh_log schema contract."""
+        db_cursor.execute(
+            """
+            SELECT column_name
+            FROM information_schema.columns
+            WHERE table_schema = 'meta' AND table_name = 'refresh_log'
+            """
+        )
+        columns = {row[0] for row in db_cursor.fetchall()}
+        assert "source_id" in columns
+        assert "source_name" in columns
+        assert "status" in columns
+        assert "records_fetched" in columns
+
+    def test_get_last_successful_refresh(self, postgres_connection, db_cursor):
+        """get_last_successful_refresh should return a datetime when present."""
+        from dk_data.ingestion.main import get_last_successful_refresh
+
+        db_cursor.execute(
+            """
+            INSERT INTO meta.data_sources
+                (source_name, source_type, description, is_active, refresh_frequency)
+            VALUES (%s, 'api', 'Integration test source', true, 'daily')
+            ON CONFLICT (source_name) DO NOTHING
+            """,
+            (self.TEST_SOURCE,),
+        )
+        db_cursor.execute(
+            "SELECT source_id FROM meta.data_sources WHERE source_name = %s",
+            (self.TEST_SOURCE,),
+        )
+        source_id = db_cursor.fetchone()[0]
+        db_cursor.execute(
+            """
+            INSERT INTO meta.refresh_log (
+                source_id, source_name, refresh_started_at, refresh_completed_at,
+                status, records_fetched, records_inserted, records_updated
+            ) VALUES (%s, %s, NOW(), NOW(), 'success', 1, 1, 0)
+            """,
+            (source_id, self.TEST_SOURCE),
+        )
+        db_cursor.execute(
+            """
+            UPDATE meta.data_sources
+            SET last_successful_refresh = NOW(), last_refresh_status = 'success'
+            WHERE source_id = %s
+            """,
+            (source_id,),
+        )
+        postgres_connection.commit()
+
+        try:
+            value = get_last_successful_refresh(self.TEST_SOURCE)
+            assert value is not None
+            assert isinstance(value, datetime)
+        finally:
+            db_cursor.execute("DELETE FROM meta.refresh_log WHERE source_id = %s", (source_id,))
+            db_cursor.execute("DELETE FROM meta.data_sources WHERE source_id = %s", (source_id,))
+            postgres_connection.commit()
+
+    def test_get_last_successful_refresh_missing_source(self):
+        """Missing source should return None."""
+        from dk_data.ingestion.main import get_last_successful_refresh
+
+        assert get_last_successful_refresh("_nonexistent_xyz") is None
