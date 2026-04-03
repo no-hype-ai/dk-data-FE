@@ -4,6 +4,7 @@ Feature: 012-platform-hardening (US3)
 """
 
 import tempfile
+from urllib.parse import parse_qs, urlparse
 
 import pytest
 import responses
@@ -83,6 +84,10 @@ class TestUniProtFetcher:
         assert len(result["records"]) == 2
         assert result["hash"] is not None
         assert result["records"][0]["primaryAccession"] == "P00533"
+        assert len(responses.calls) == 1
+        request_url = responses.calls[0].request.url
+        query_params = parse_qs(urlparse(request_url).query)
+        assert query_params.get("query") == [UniProtFetcher.DEFAULT_QUERY]
 
     @responses.activate
     def test_fetch_empty(self):

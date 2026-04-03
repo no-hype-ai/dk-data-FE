@@ -24,7 +24,7 @@ class UniProtFetcher(BaseFetcher):
     BASE_URL = "https://rest.uniprot.org/uniprotkb"
 
     # Default query: reviewed human proteins that are drug targets
-    DEFAULT_QUERY = "(reviewed:true) AND (organism_id:9606) AND (keyword:KW-0621)"
+    DEFAULT_QUERY = "reviewed:true AND organism_id:9606 AND keyword:Pharmaceutical"
     MAX_RESULTS = 500
 
     def get_latest_url(self) -> str:
