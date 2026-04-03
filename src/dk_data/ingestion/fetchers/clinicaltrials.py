@@ -9,6 +9,11 @@ using ``jsonb_array_elements(response_body->'studies')``.
 
 API Docs: https://clinicaltrials.gov/data-api/api
 Rate limit: 10 req/s (unauthenticated)
+
+Self-loading with checkpoint/resume:
+  Commits to DB and saves a checkpoint every CHECKPOINT_INTERVAL pages so
+  that a pod restart or OOMKill can resume from the last committed page token.
+  Checkpoint is cleared on successful completion.
 """
 
 import hashlib
@@ -18,6 +23,8 @@ from datetime import datetime, timedelta
 from typing import Any, Dict, List, Optional
 
 from .base import BaseFetcher
+from ..utils.checkpoint import clear_checkpoint, load_checkpoint, save_checkpoint
+from ..sources.clinicaltrials import load_clinicaltrials_data
 
 logger = logging.getLogger(__name__)
 
@@ -32,13 +39,16 @@ DEFAULT_MAX_RECORDS = 10_000
 # Polite delay between pages (10 req/s limit)
 REQUEST_DELAY = 0.15
 
+# Flush to DB and checkpoint every N pages (200 studies/page × 25 = 5000 studies per flush)
+CHECKPOINT_INTERVAL = 25
+
 
 class ClinicalTrialsFetcher(BaseFetcher):
     """Fetcher for ClinicalTrials.gov study data.
 
-    Pages through the v2 /studies endpoint and returns one dict per page,
-    each containing a ``studies`` list (matching the API response shape
-    expected by mol_bronze.clinicaltrials).
+    Pages through the v2 /studies endpoint and streams page blobs directly
+    to DB every CHECKPOINT_INTERVAL pages with checkpoint/resume support.
+    This keeps memory usage bounded regardless of total result set size.
     """
 
     SOURCE_NAME = "clinicaltrials"
@@ -57,6 +67,9 @@ class ClinicalTrialsFetcher(BaseFetcher):
     def fetch(self, **kwargs) -> Dict[str, Any]:
         """Fetch clinical trial studies from ClinicalTrials.gov v2.
 
+        Self-loading: streams pages directly to DB with checkpoint/resume.
+        Returns records=[] (data is not held in memory).
+
         Keyword Args:
             days_back: Restrict to studies updated in the last N days. Defaults to 30.
             max_records: Maximum study records to fetch across all pages. Defaults to 10000.
@@ -65,8 +78,7 @@ class ClinicalTrialsFetcher(BaseFetcher):
 
         Returns:
             Dict with keys: status, records, record_count, hash.
-            ``records`` is a list of page blobs (each with a ``studies`` key),
-            not individual studies — the loader inserts one raw row per page.
+            ``records`` is always [] — data is streamed directly to DB.
         """
         days_back: int = int(kwargs.get("days_back", 30))
         max_records: int = int(kwargs.get("max_records", DEFAULT_MAX_RECORDS))
@@ -77,7 +89,7 @@ class ClinicalTrialsFetcher(BaseFetcher):
             date_str = datetime.utcnow().strftime("%Y-%m-%d")
             from_date = (datetime.utcnow() - timedelta(days=days_back)).strftime("%Y-%m-%d")
 
-            page_blobs, total_studies = self._paginate(
+            total_pages, total_studies = self._fetch_and_load(
                 from_date=from_date,
                 max_records=max_records,
                 date_str=date_str,
@@ -89,14 +101,16 @@ class ClinicalTrialsFetcher(BaseFetcher):
                 f"{date_str}:{total_studies}".encode()
             ).hexdigest()
 
+            clear_checkpoint(self.SOURCE_NAME)
+
             result = {
                 "status": "success",
-                "records": page_blobs,
-                "record_count": len(page_blobs),
+                "records": [],  # streamed directly to DB — not held in memory
+                "record_count": total_pages,
                 "hash": content_hash,
                 "_total_studies": total_studies,
             }
-            self.log_fetch_result({"status": "success", "records": len(page_blobs)})
+            self.log_fetch_result({"status": "success", "records": total_pages})
             return result
 
         except Exception as exc:
@@ -111,7 +125,7 @@ class ClinicalTrialsFetcher(BaseFetcher):
             self.log_fetch_result(result)
             return result
 
-    def _paginate(
+    def _fetch_and_load(
         self,
         from_date: str,
         max_records: int,
@@ -119,17 +133,28 @@ class ClinicalTrialsFetcher(BaseFetcher):
         condition: Optional[str],
         intervention: Optional[str],
     ) -> tuple:
-        """Page through the ClinicalTrials.gov v2 API.
+        """Page through the ClinicalTrials.gov v2 API, flushing to DB every CHECKPOINT_INTERVAL pages.
+
+        Resumes from checkpoint if one exists (stores page_token + page_num).
 
         Returns:
-            Tuple of (page_blobs, total_studies_fetched).
-            page_blobs: list of dicts, each with keys:
-                _request_id, _page_number, studies
+            Tuple of (total_pages_inserted, total_studies_fetched).
         """
-        page_blobs: List[Dict[str, Any]] = []
-        total_studies = 0
-        page_token: Optional[str] = None
-        page_num = 0
+        # Resume from checkpoint if available
+        cp = load_checkpoint(self.SOURCE_NAME)
+        page_token: Optional[str] = cp.get("page_token") if cp else None
+        page_num: int = cp.get("page_num", 0) if cp else 0
+        total_studies: int = cp.get("total_studies", 0) if cp else 0
+        total_pages: int = cp.get("total_pages", 0) if cp else 0
+
+        if cp:
+            logger.info(
+                "ClinicalTrials: resuming from checkpoint page=%d total_studies=%d",
+                page_num, total_studies,
+            )
+
+        page_buffer: List[Dict[str, Any]] = []
+        pages_since_checkpoint = 0
 
         while total_studies < max_records:
             remaining = max_records - total_studies
@@ -150,10 +175,22 @@ class ClinicalTrialsFetcher(BaseFetcher):
             try:
                 data = self.fetch_json(BASE_URL, params=params)
             except Exception as exc:
-                logger.warning(
+                logger.error(
                     "ClinicalTrials page %d fetch failed: %s", page_num, exc
                 )
-                break
+                # Flush buffer and save checkpoint before giving up
+                if page_buffer:
+                    load_clinicaltrials_data(page_buffer)
+                    total_pages += len(page_buffer)
+                    page_buffer = []
+                save_checkpoint(self.SOURCE_NAME, {
+                    "page_token": page_token,
+                    "page_num": page_num,
+                    "total_studies": total_studies,
+                    "total_pages": total_pages,
+                    "from_date": from_date,
+                })
+                raise
 
             studies = data.get("studies", [])
             if not studies:
@@ -164,9 +201,10 @@ class ClinicalTrialsFetcher(BaseFetcher):
                 "_page_number": page_num,
                 "studies": studies,
             }
-            page_blobs.append(page_blob)
+            page_buffer.append(page_blob)
             total_studies += len(studies)
             page_num += 1
+            pages_since_checkpoint += 1
 
             logger.info(
                 "ClinicalTrials: page %d fetched %d studies (total: %d)",
@@ -174,13 +212,37 @@ class ClinicalTrialsFetcher(BaseFetcher):
             )
 
             page_token = data.get("nextPageToken")
+
+            # Flush to DB and checkpoint every CHECKPOINT_INTERVAL pages
+            if pages_since_checkpoint >= CHECKPOINT_INTERVAL:
+                load_clinicaltrials_data(page_buffer)
+                total_pages += len(page_buffer)
+                page_buffer = []
+                pages_since_checkpoint = 0
+                save_checkpoint(self.SOURCE_NAME, {
+                    "page_token": page_token,
+                    "page_num": page_num,
+                    "total_studies": total_studies,
+                    "total_pages": total_pages,
+                    "from_date": from_date,
+                })
+                logger.info(
+                    "ClinicalTrials: checkpoint saved page=%d total_studies=%d",
+                    page_num, total_studies,
+                )
+
             if not page_token:
                 break
 
             time.sleep(REQUEST_DELAY)
 
+        # Flush remaining buffer
+        if page_buffer:
+            load_clinicaltrials_data(page_buffer)
+            total_pages += len(page_buffer)
+
         logger.info(
             "ClinicalTrials pagination complete: %d pages, %d studies",
-            len(page_blobs), total_studies,
+            total_pages, total_studies,
         )
-        return page_blobs, total_studies
+        return total_pages, total_studies

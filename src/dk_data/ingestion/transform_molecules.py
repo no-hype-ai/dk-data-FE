@@ -390,6 +390,7 @@ def run_sqlmesh_command(command: list[str], timeout: int = 3600) -> dict:
             capture_output=True,
             text=True,
             timeout=timeout,
+            cwd=project_dir,  # run from project dir so SQLMesh creates logs/ there (writable volumeMount)
             env={
                 **os.environ,
                 'SQLMESH_CONFIG': str(config_path),

@@ -960,6 +960,7 @@ SOURCES = {
         'loader': load_clinicaltrials_data,
         'requires_file': False,
         'default_days_back': 30,
+        'self_loading': True,  # fetcher streams directly to DB with checkpoint/resume
     },
     'openfda_labels': {
         'name': 'OpenFDA Drug Labels',

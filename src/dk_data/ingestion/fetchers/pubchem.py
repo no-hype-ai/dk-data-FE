@@ -137,10 +137,19 @@ class PubChemFetcher(BaseFetcher):
                 resp.raise_for_status()
                 data = resp.json()
             except Exception as exc:
-                logger.warning(
+                logger.error(
                     "PubChem SDQ request failed at start=%d: %s", total_fetched, exc
                 )
-                break
+                # Flush any buffered records before re-raising so partial progress is saved
+                if record_buffer:
+                    result = load_pubchem_data(record_buffer)
+                    total_inserted += result.get("records_inserted", 0)
+                    record_buffer = []
+                    save_checkpoint(self.SOURCE_NAME, {
+                        "start": total_fetched,
+                        "records_inserted": total_inserted,
+                    })
+                raise
 
             # SDQ returns a list directly or wraps in a key
             if isinstance(data, list):
