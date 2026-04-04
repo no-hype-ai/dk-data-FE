@@ -163,6 +163,13 @@ class UniProtFetcher(BaseFetcher):
                 "next_url": next_url,
                 "total_fetched": total,
             })
+<<<<<<< HEAD
+=======
+            logger.debug("UniProt: page written total=%d", total)
+
+            if len(page_results) < page_size:
+                break
+>>>>>>> origin/main
 
         clear_checkpoint(self.SOURCE_NAME)
         logger.info("UniProt streamed %d proteins to DB", total)
