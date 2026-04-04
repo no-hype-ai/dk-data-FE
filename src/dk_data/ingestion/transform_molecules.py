@@ -457,9 +457,10 @@ def is_sqlmesh_initialized() -> bool:
 def ensure_sqlmesh_initialized() -> bool:
     """Run SQLMesh plan --auto-apply if state tables are missing.
 
-    Uses --forward-only so historical intervals are not backfilled —
-    production sources only have current data, and the config start date
-    (2024-01-01) would otherwise trigger a 15-month backfill.
+    Uses plain --auto-apply (no --forward-only) for initial bootstrap because
+    --forward-only requires an existing initialized environment — on a fresh
+    environment it errors with "There are no prior migrations to roll back to."
+    The initial plan is schema-only and does not trigger data backfills.
 
     Returns True if already initialized or plan succeeded, False on failure.
     """
@@ -468,10 +469,10 @@ def ensure_sqlmesh_initialized() -> bool:
 
     logger.info(
         "SQLMesh environment not initialized (no _snapshots table). "
-        "Running plan --auto-apply --forward-only to bootstrap state..."
+        "Running plan --auto-apply to bootstrap state..."
     )
     result = run_sqlmesh_command(
-        ['plan', '--auto-apply', '--forward-only'],
+        ['plan', '--auto-apply'],
         timeout=600,  # 10 min ceiling for plan
     )
     if result.get('status') == 'success':
