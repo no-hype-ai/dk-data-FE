@@ -994,7 +994,7 @@ SOURCES = {
         'fetcher': OpenFDALabelsFetcher,
         'loader': load_openfda_labels_data,
         'requires_file': False,
-        'default_days_back': 90,
+        'default_days_back': None,  # checkpoint/resume — year-by-year full backfill on first run, incremental after
     },
     'chembl_activities': {
         'name': 'ChEMBL Bioactivity',
