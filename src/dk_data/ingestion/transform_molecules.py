@@ -381,7 +381,7 @@ def run_sqlmesh_command(command: list[str], timeout: int = 3600) -> dict:
         config_path = get_sqlmesh_config_path()
         # SQLMesh --paths expects the project directory, not the config.yaml file itself
         project_dir = str(config_path.parent)
-        full_command = ['sqlmesh', '--paths', project_dir] + command
+        full_command = ['sqlmesh', '--paths', project_dir, '--log-file-dir', project_dir + '/logs'] + command
 
         logger.info(f"Running: {' '.join(full_command)}")
 
@@ -394,6 +394,9 @@ def run_sqlmesh_command(command: list[str], timeout: int = 3600) -> dict:
             env={
                 **os.environ,
                 'SQLMESH_CONFIG': str(config_path),
+                # Point HOME to /tmp so SQLMesh analytics (~/.sqlmesh) doesn't hit read-only FS.
+                # The container user home dir is read-only (readOnlyRootFilesystem: true).
+                'HOME': '/tmp',
             }
         )
 
@@ -455,32 +458,37 @@ def is_sqlmesh_initialized() -> bool:
 
 
 def ensure_sqlmesh_initialized() -> bool:
-    """Run SQLMesh plan --auto-apply --skip-backfill if state tables are missing.
+    """Run `sqlmesh migrate` if state tables are missing.
 
-    Uses --skip-backfill for initial bootstrap:
-    - --forward-only errors on fresh env: "There are no prior migrations to roll back to"
-    - plain --auto-apply also errors on fresh env in SQLMesh 0.230+
-    - --skip-backfill initializes the _snapshots/_environments state tables without
-      running any data backfill (correct for production where raw data already exists)
+    `sqlmesh migrate` is the correct bootstrap command for a fresh database:
+    - It creates the sqlmesh schema and state tables (_snapshots, _environments,
+      _intervals, _versions, etc.)
+    - It does NOT run any model SQL or backfill data
+    - It is idempotent — safe to run on an already-initialized environment
 
-    Returns True if already initialized or plan succeeded, False on failure.
+    Previous approaches that failed on SQLMesh 0.230+ on a fresh env:
+    - `plan --auto-apply --forward-only` → "There are no prior migrations to roll back to"
+    - `plan --auto-apply --skip-backfill` → same error on empty DB
+    - `plan --auto-apply` → same error (all `plan` variants require pre-existing state)
+
+    Returns True if already initialized or migrate succeeded, False on failure.
     """
     if is_sqlmesh_initialized():
         return True
 
     logger.info(
         "SQLMesh environment not initialized (no _snapshots table). "
-        "Running plan --auto-apply --skip-backfill to bootstrap state..."
+        "Running 'sqlmesh migrate' to bootstrap state tables..."
     )
     result = run_sqlmesh_command(
-        ['plan', '--auto-apply', '--skip-backfill'],
-        timeout=600,  # 10 min ceiling for plan
+        ['migrate'],
+        timeout=120,  # migrate is fast — schema only, no data
     )
     if result.get('status') == 'success':
-        logger.info("SQLMesh plan applied — environment bootstrapped")
+        logger.info("SQLMesh migrate complete — state tables created")
         return True
 
-    logger.error(f"SQLMesh plan bootstrap failed: {result.get('error')}")
+    logger.error(f"SQLMesh migrate failed: {result.get('error')}")
     return False
 
 
