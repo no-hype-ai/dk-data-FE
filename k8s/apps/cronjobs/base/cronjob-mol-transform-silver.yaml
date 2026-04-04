@@ -71,12 +71,8 @@ spec:
                   mountPath: /tmp
                 - name: sqlmesh-logs
                   mountPath: /usr/local/lib/python3.11/site-packages/dk_data/sqlmesh/logs
-                - name: sqlmesh-cache
-                  mountPath: /usr/local/lib/python3.11/site-packages/dk_data/sqlmesh/.cache
           volumes:
             - name: tmp
               emptyDir: {}
             - name: sqlmesh-logs
-              emptyDir: {}
-            - name: sqlmesh-cache
               emptyDir: {}
