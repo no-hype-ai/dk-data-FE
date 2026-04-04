@@ -455,12 +455,13 @@ def is_sqlmesh_initialized() -> bool:
 
 
 def ensure_sqlmesh_initialized() -> bool:
-    """Run SQLMesh plan --auto-apply if state tables are missing.
+    """Run SQLMesh plan --auto-apply --skip-backfill if state tables are missing.
 
-    Uses plain --auto-apply (no --forward-only) for initial bootstrap because
-    --forward-only requires an existing initialized environment — on a fresh
-    environment it errors with "There are no prior migrations to roll back to."
-    The initial plan is schema-only and does not trigger data backfills.
+    Uses --skip-backfill for initial bootstrap:
+    - --forward-only errors on fresh env: "There are no prior migrations to roll back to"
+    - plain --auto-apply also errors on fresh env in SQLMesh 0.230+
+    - --skip-backfill initializes the _snapshots/_environments state tables without
+      running any data backfill (correct for production where raw data already exists)
 
     Returns True if already initialized or plan succeeded, False on failure.
     """
@@ -469,10 +470,10 @@ def ensure_sqlmesh_initialized() -> bool:
 
     logger.info(
         "SQLMesh environment not initialized (no _snapshots table). "
-        "Running plan --auto-apply to bootstrap state..."
+        "Running plan --auto-apply --skip-backfill to bootstrap state..."
     )
     result = run_sqlmesh_command(
-        ['plan', '--auto-apply'],
+        ['plan', '--auto-apply', '--skip-backfill'],
         timeout=600,  # 10 min ceiling for plan
     )
     if result.get('status') == 'success':
@@ -560,12 +561,13 @@ def transform_all_layers() -> dict:
     total_success = 0
     total_fail = 0
 
-    # Always run plan --auto-apply --forward-only before the first run so new
+    # Always run plan --auto-apply --skip-backfill before the first run so new
     # models added to the codebase are registered in SQLMesh's _snapshots table.
     # Without this, sqlmesh run silently skips models not yet in state.
-    logger.info("Running sqlmesh plan --auto-apply --forward-only to register new models...")
+    # --skip-backfill avoids a 15-month data backfill while still registering new models.
+    logger.info("Running sqlmesh plan --auto-apply --skip-backfill to register new models...")
     plan_result = run_sqlmesh_command(
-        ['plan', '--auto-apply', '--forward-only'],
+        ['plan', '--auto-apply', '--skip-backfill'],
         timeout=600,
     )
     if plan_result.get('status') != 'success':
