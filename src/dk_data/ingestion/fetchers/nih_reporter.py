@@ -45,40 +45,68 @@ class NIHReporterFetcher(BaseFetcher):
     SOURCE_NAME = "nih_reporter"
     BASE_URL = NIH_REPORTER_API
 
-    def fetch(self, days_back: int = 30, **kwargs) -> Dict[str, Any]:
-        """Fetch NIH Reporter projects with a start-date filter.
+    def fetch(self, days_back: int = None, **kwargs) -> Dict[str, Any]:
+        """Fetch NIH Reporter projects.
 
         Args:
-            days_back: Look back this many days from today for project start dates.
-                       Defaults to 30. Use a larger value (e.g. 365) for backfills.
+            days_back: Look back this many days for project start dates.
+                       Defaults to None — full backfill mode iterates year by year
+                       from 1985 to present (bypasses the 15K per-query API ceiling).
+                       Pass an integer (e.g. 30) for incremental daily runs.
 
         Returns:
             Dict with keys: status, records (list of raw API result dicts), hash.
         """
+        if days_back is None:
+            # Full backfill: iterate year by year from 1985 to present.
+            # NIH Reporter hard-stops at offset 14,999 per query, so a single
+            # unfiltered query cannot retrieve all projects. Year-by-year keeps
+            # each window well under the 15K ceiling.
+            return self._fetch_full_backfill()
+
         since_date = (datetime.utcnow() - timedelta(days=days_back)).strftime("%Y-%m-%d")
         today = datetime.utcnow().strftime("%Y-%m-%d")
+        all_projects = self._fetch_date_range(since_date, today)
+        logger.info(
+            "NIH Reporter fetched %d projects (days_back=%d, since=%s)",
+            len(all_projects), days_back, since_date,
+        )
+        return {"status": "success", "records": all_projects, "hash": None}
 
+    def _fetch_full_backfill(self) -> Dict[str, Any]:
+        """Fetch all NIH Reporter projects by iterating year by year from 1985."""
+        all_projects: List[Dict] = []
+        current_year = datetime.utcnow().year
+
+        for year in range(1985, current_year + 1):
+            from_date = f"{year}-01-01"
+            to_date = f"{year}-12-31"
+            logger.info("NIH Reporter: fetching year %d", year)
+            year_projects = self._fetch_date_range(from_date, to_date)
+            all_projects.extend(year_projects)
+            logger.info("NIH Reporter: year %d → %d projects (running total: %d)",
+                        year, len(year_projects), len(all_projects))
+
+        logger.info("NIH Reporter full backfill complete: %d total projects", len(all_projects))
+        return {"status": "success", "records": all_projects, "hash": None}
+
+    def _fetch_date_range(self, from_date: str, to_date: str) -> List[Dict]:
+        """Fetch all projects within a date range, paginating up to the API ceiling."""
         payload = {
             "criteria": {
-                # project_dates is the correct NIH Reporter v2 incremental filter
                 "project_start_date": {
-                    "from_date": since_date,
-                    "to_date": today,
+                    "from_date": from_date,
+                    "to_date": to_date,
                 }
             },
             "limit": PAGE_SIZE,
             "offset": 0,
         }
-
         all_projects: List[Dict] = []
 
         while True:
             try:
-                resp = self.session.post(
-                    self.BASE_URL,
-                    json=payload,
-                    timeout=60,
-                )
+                resp = self.session.post(self.BASE_URL, json=payload, timeout=60)
                 resp.raise_for_status()
                 data = resp.json()
                 record_api_request(self.SOURCE_NAME, "success")
@@ -89,11 +117,8 @@ class NIHReporterFetcher(BaseFetcher):
                     record_api_request(self.SOURCE_NAME, "rate_limited")
                 else:
                     record_api_request(self.SOURCE_NAME, "error")
-                logger.error(
-                    "NIH Reporter fetch error at offset %d: %s",
-                    payload["offset"], e,
-                )
-                return {"status": "failed", "records": [], "hash": None, "error": err_str}
+                logger.error("NIH Reporter fetch error at offset %d: %s", payload["offset"], e)
+                break
 
             results = data.get("results", [])
             if not results:
@@ -109,11 +134,7 @@ class NIHReporterFetcher(BaseFetcher):
             payload["offset"] = next_offset
             time.sleep(REQUEST_DELAY)
 
-        logger.info(
-            "NIH Reporter fetched %d projects (days_back=%d, since=%s)",
-            len(all_projects), days_back, since_date,
-        )
-        return {"status": "success", "records": all_projects, "hash": None}
+        return all_projects
 
     def get_latest_url(self) -> str:
         return self.BASE_URL

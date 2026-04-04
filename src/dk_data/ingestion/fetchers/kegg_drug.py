@@ -189,7 +189,7 @@ class KEGGDrugFetcher(BaseFetcher):
                 hash (str):           MD5 hex digest of all drug IDs fetched.
                 error (str):          Present only on failure.
         """
-        max_entries: int = kwargs.get("max_entries", 5000)
+        max_entries: int = kwargs.get("max_entries", 20_000)  # KEGG Drug has ~11K entries; 20K covers all
         batch_size: int = min(kwargs.get("batch_size", 10), 10)
 
         try:

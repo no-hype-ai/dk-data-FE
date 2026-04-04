@@ -23,9 +23,10 @@ class UniProtFetcher(BaseFetcher):
     SOURCE_NAME = "uniprot"
     BASE_URL = "https://rest.uniprot.org/uniprotkb"
 
-    # Default query: reviewed human proteins that are drug targets
-    DEFAULT_QUERY = "reviewed:true AND organism_id:9606 AND keyword:Pharmaceutical"
-    MAX_RESULTS = 500
+    # Default query: all reviewed (Swiss-Prot) proteins — the curated subset of UniProt
+    # (570K entries). Previously restricted to human+pharmaceutical keyword (~51 results).
+    DEFAULT_QUERY = "reviewed:true"
+    MAX_RESULTS = None  # no cap — fetch all reviewed proteins
 
     def get_latest_url(self) -> str:
         return f"{self.BASE_URL}/search"
@@ -41,7 +42,8 @@ class UniProtFetcher(BaseFetcher):
             Dict with keys: status, records, hash, error (on failure).
         """
         query = kwargs.get("query", self.DEFAULT_QUERY)
-        max_results = kwargs.get("max_results", self.MAX_RESULTS)
+        raw_max = kwargs.get("max_results", self.MAX_RESULTS)
+        max_results = int(raw_max) if raw_max is not None else None
 
         try:
             records = self._search(query, size=max_results)
@@ -64,7 +66,7 @@ class UniProtFetcher(BaseFetcher):
             self.log_fetch_result(result)
             return result
 
-    def _search(self, query: str, size: int = 500) -> List[Dict[str, Any]]:
+    def _search(self, query: str, size=None) -> List[Dict[str, Any]]:
         """Search UniProt and return protein records.
 
         UniProt REST API returns up to 500 results per page. For queries that
@@ -73,7 +75,7 @@ class UniProtFetcher(BaseFetcher):
         max_results reached.
         """
         url = f"{self.BASE_URL}/search"
-        page_size = min(size, 500)
+        page_size = min(size, 500) if size is not None else 500
         params = {
             "query": query,
             "format": "json",
@@ -103,7 +105,7 @@ class UniProtFetcher(BaseFetcher):
         all_results: List[Dict[str, Any]] = []
         next_url = url
 
-        while next_url and len(all_results) < size:
+        while next_url and (size is None or len(all_results) < size):
             if next_url == url:
                 response = self.session.get(next_url, params=params, timeout=60)
             else:
@@ -134,4 +136,4 @@ class UniProtFetcher(BaseFetcher):
                 break
 
         logger.info("UniProt search returned %d proteins", len(all_results))
-        return all_results[:size]
+        return all_results[:size] if size is not None else all_results

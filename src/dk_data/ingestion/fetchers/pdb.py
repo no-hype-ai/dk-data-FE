@@ -25,7 +25,7 @@ class PDBFetcher(BaseFetcher):
     BASE_URL = "https://search.rcsb.org/rcsbsearch/v2"
     DATA_URL = "https://data.rcsb.org/rest/v1/core/entry"
 
-    MAX_RESULTS = 500
+    MAX_RESULTS = None  # no cap — fetch all matching structures
 
     def get_latest_url(self) -> str:
         return f"{self.BASE_URL}/query"
@@ -34,14 +34,16 @@ class PDBFetcher(BaseFetcher):
         """Fetch PDB structure records.
 
         Keyword Args:
-            query_text: Text search query. Defaults to drug-like ligands.
-            max_results: Maximum records. Defaults to 500.
+            query_text: Text search query. Defaults to fetching all experimental
+                structures (no text filter). Defaults to None (all structures).
+            max_results: Maximum records. Defaults to None (unlimited).
 
         Returns:
             Dict with keys: status, records, hash, error (on failure).
         """
-        query_text = kwargs.get("query_text", "drug target")
-        max_results = kwargs.get("max_results", self.MAX_RESULTS)
+        query_text = kwargs.get("query_text", None)  # None = all experimental structures
+        raw_max = kwargs.get("max_results", self.MAX_RESULTS)
+        max_results = int(raw_max) if raw_max is not None else None
 
         try:
             pdb_ids = self._search(query_text, max_results=max_results)
@@ -75,26 +77,40 @@ class PDBFetcher(BaseFetcher):
             self.log_fetch_result(result)
             return result
 
-    def _search(self, query_text: str, max_results: int = 500) -> List[str]:
+    def _search(self, query_text=None, max_results=None) -> List[str]:
         """Search RCSB PDB and return PDB IDs.
 
         RCSB PDB Search API v2 returns at most 500 entries per page.
         Pages through results via the paginate.start offset until max_results
         are collected or no more results are available.
+        If query_text is None, fetches all experimental structures (no text filter).
         """
         url = f"{self.BASE_URL}/query"
         page_size = 500  # RCSB hard limit per request
         all_ids: List[str] = []
         start = 0
 
-        while len(all_ids) < max_results:
-            rows = min(page_size, max_results - len(all_ids))
-            query = {
-                "query": {
+        while max_results is None or len(all_ids) < max_results:
+            rows = min(page_size, (max_results - len(all_ids)) if max_results is not None else page_size)
+            if query_text:
+                query_node = {
                     "type": "terminal",
                     "service": "full_text",
                     "parameters": {"value": query_text},
-                },
+                }
+            else:
+                # Match all experimental structures
+                query_node = {
+                    "type": "terminal",
+                    "service": "text",
+                    "parameters": {
+                        "attribute": "rcsb_entry_info.experimental_method_count",
+                        "operator": "greater",
+                        "value": 0,
+                    },
+                }
+            query = {
+                "query": query_node,
                 "return_type": "entry",
                 "request_options": {
                     "paginate": {"start": start, "rows": rows},

@@ -30,8 +30,8 @@ logger = logging.getLogger(__name__)
 #   C07H: nucleosides/nucleotides/nucleic acids (RNA therapeutics, mRNA vaccines)
 PHARMA_IPC_CODES = ["A61K", "A61P", "C07D", "C07K", "C07H"]
 
-# Maximum records per fetch run
-MAX_RECORDS = 5000
+# Maximum records per fetch run — None means unlimited
+MAX_RECORDS = None
 
 # OPS throttle: max 10 requests per minute for registered users
 OPS_REQUEST_DELAY = 6.5  # seconds between requests
@@ -93,11 +93,12 @@ class EPOOPSFetcher(BaseFetcher):
         """
         search_terms = kwargs.get("search_terms")
         ipc_codes = kwargs.get("ipc_codes", PHARMA_IPC_CODES)
-        max_records = kwargs.get("max_records", MAX_RECORDS)
-        # days_back=None means no date filter (full backfill)
-        days_back = kwargs.get("days_back", 90)
-        if days_back == 0:
-            days_back = None
+        raw_max = kwargs.get("max_records", MAX_RECORDS)
+        max_records = int(raw_max) if raw_max is not None else None
+        # days_back=None means no date filter (full backfill) — default for initial load
+        days_back = kwargs.get("days_back", None)
+        if days_back is not None:
+            days_back = int(days_back) if days_back != 0 else None
 
         try:
             # Load search terms from DB if not provided
@@ -119,14 +120,14 @@ class EPOOPSFetcher(BaseFetcher):
             seen_ids: set = set()
 
             for term in search_terms:
-                if len(all_records) >= max_records:
+                if max_records is not None and len(all_records) >= max_records:
                     break
 
                 records = self._search_patents(
                     term,
                     ipc_codes=ipc_codes,
                     days_back=days_back,
-                    max_records=max_records - len(all_records),
+                    max_records=(max_records - len(all_records)) if max_records is not None else MAX_RECORDS or 100_000,
                 )
 
                 for rec in records:

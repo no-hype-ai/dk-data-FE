@@ -35,8 +35,8 @@ BASE_URL = "https://www.ebi.ac.uk/europepmc/webservices/rest"
 # Max records per search page (API cap: 1000)
 PAGE_SIZE = 100
 
-# Hard cap per fetch run
-MAX_RECORDS = 10_000
+# Hard cap per fetch run — None means unlimited
+MAX_RECORDS = None
 
 # Polite delay between pages (10 req/s limit)
 REQUEST_DELAY = 0.12
@@ -83,15 +83,18 @@ class EuropePMCFetcher(BaseFetcher):
             Dict with keys: status, records, record_count, hash, error (on failure).
         """
         query: str = kwargs.get("query", self.DEFAULT_QUERY)
-        days_back: int = int(kwargs.get("days_back", 7))
-        max_records: int = int(kwargs.get("max_records", MAX_RECORDS))
+        raw_days_back = kwargs.get("days_back", None)
+        days_back: Optional[int] = int(raw_days_back) if raw_days_back is not None else None
+        raw_max = kwargs.get("max_records", MAX_RECORDS)
+        max_records: Optional[int] = int(raw_max) if raw_max is not None else None
         open_access_only: bool = bool(kwargs.get("open_access_only", False))
 
         try:
-            from_date = (datetime.utcnow() - timedelta(days=days_back)).strftime("%Y-%m-%d")
-
-            # Append date and open-access filters to query
-            full_query = f"{query} AND FIRST_PDATE:[{from_date} TO *]"
+            # Build date filter only when days_back is explicitly set
+            full_query = query
+            if days_back is not None:
+                from_date = (datetime.utcnow() - timedelta(days=days_back)).strftime("%Y-%m-%d")
+                full_query = f"{query} AND FIRST_PDATE:[{from_date} TO *]"
             if open_access_only:
                 full_query += " AND OPEN_ACCESS:y"
 
@@ -131,14 +134,14 @@ class EuropePMCFetcher(BaseFetcher):
     # Internal helpers
     # ------------------------------------------------------------------
 
-    def _paginate(self, query: str, max_records: int) -> List[Dict[str, Any]]:
+    def _paginate(self, query: str, max_records: Optional[int]) -> List[Dict[str, Any]]:
         """Paginate through EuropePMC search results using cursorMark."""
         all_records: List[Dict[str, Any]] = []
         cursor_mark = "*"
         url = self.get_latest_url()
 
-        while len(all_records) < max_records:
-            page_size = min(PAGE_SIZE, max_records - len(all_records))
+        while max_records is None or len(all_records) < max_records:
+            page_size = min(PAGE_SIZE, (max_records - len(all_records)) if max_records is not None else PAGE_SIZE)
 
             params = {
                 "query": query,

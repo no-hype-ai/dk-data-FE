@@ -35,8 +35,8 @@ DEFAULT_CONCEPT_FILTER = "primary_topic.subfield.id:subfields/2736|subfields/300
 # Maximum records per page (OpenAlex caps at 200)
 PAGE_SIZE = 200
 
-# Safety limit: max records per single fetch run
-MAX_RECORDS = 10_000
+# Safety limit: max records per single fetch run — None means unlimited
+MAX_RECORDS = None
 
 # OpenAlex rate limit: 10 req/s authenticated (API key), stricter for unauthenticated.
 # 0.1s gives ~10 req/s with key; 0.5s is used without key to avoid IP throttling.
@@ -91,9 +91,10 @@ class OpenAlexCIFetcher(BaseFetcher):
         filtered by pharmaceutical concepts.
 
         Keyword Args:
-            days_back: Number of days to look back (default: 7).
+            days_back: Number of days to look back (default: None — no date filter,
+                fetch all pharma publications). Pass an integer for incremental runs.
             concept_filter: OpenAlex concept filter string (default: pharma concepts).
-            max_records: Maximum records to fetch (default: 10000).
+            max_records: Maximum records to fetch (default: None — unlimited).
 
         Returns:
             Dictionary with:
@@ -103,9 +104,11 @@ class OpenAlexCIFetcher(BaseFetcher):
                 - hash: MD5 hash of the result set
                 - error: error message (if failed)
         """
-        days_back = kwargs.get("days_back", 7)
+        raw_days_back = kwargs.get("days_back", None)
+        days_back = int(raw_days_back) if raw_days_back is not None else None
         concept_filter = kwargs.get("concept_filter", DEFAULT_CONCEPT_FILTER)
-        max_records = kwargs.get("max_records", MAX_RECORDS)
+        raw_max = kwargs.get("max_records", MAX_RECORDS)
+        max_records = int(raw_max) if raw_max is not None else None
 
         try:
             logger.info(
@@ -113,15 +116,17 @@ class OpenAlexCIFetcher(BaseFetcher):
                 f"concept_filter={concept_filter})"
             )
 
-            from_date = (datetime.now(timezone.utc) - timedelta(days=days_back)).strftime("%Y-%m-%d")
-
-            # Build filter string
-            filter_str = f"from_publication_date:{from_date},{concept_filter}"
+            # Build filter string — date filter only when days_back is set
+            if days_back is not None:
+                from_date = (datetime.now(timezone.utc) - timedelta(days=days_back)).strftime("%Y-%m-%d")
+                filter_str = f"from_publication_date:{from_date},{concept_filter}"
+            else:
+                filter_str = concept_filter
 
             all_records: List[Dict[str, Any]] = []
             cursor = "*"  # initial cursor for first page
 
-            while cursor and len(all_records) < max_records:
+            while cursor and (max_records is None or len(all_records) < max_records):
                 params = {
                     "filter": filter_str,
                     "per_page": PAGE_SIZE,

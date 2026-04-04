@@ -33,8 +33,8 @@ BASE_URL = "https://clinicaltrials.gov/api/v2/studies"
 # API max is 1000; use 200 to keep responses manageable
 PAGE_SIZE = 200
 
-# Default cap per run
-DEFAULT_MAX_RECORDS = 10_000
+# Default cap per run — None means unlimited (fetch all studies)
+DEFAULT_MAX_RECORDS = None
 
 # Polite delay between pages (10 req/s limit)
 REQUEST_DELAY = 0.15
@@ -71,8 +71,10 @@ class ClinicalTrialsFetcher(BaseFetcher):
         Returns records=[] (data is not held in memory).
 
         Keyword Args:
-            days_back: Restrict to studies updated in the last N days. Defaults to 30.
-            max_records: Maximum study records to fetch across all pages. Defaults to 10000.
+            days_back: Restrict to studies updated in the last N days. Defaults to None
+                (no date filter — fetch all studies). Pass an integer to limit to recent updates.
+            max_records: Maximum study records to fetch across all pages. Defaults to None
+                (unlimited — fetch entire ClinicalTrials.gov database, ~500K studies).
             condition: Optional condition/disease filter string.
             intervention: Optional intervention/drug filter string.
 
@@ -80,14 +82,19 @@ class ClinicalTrialsFetcher(BaseFetcher):
             Dict with keys: status, records, record_count, hash.
             ``records`` is always [] — data is streamed directly to DB.
         """
-        days_back: int = int(kwargs.get("days_back", 30))
-        max_records: int = int(kwargs.get("max_records", DEFAULT_MAX_RECORDS))
+        raw_days_back = kwargs.get("days_back", None)
+        days_back: Optional[int] = int(raw_days_back) if raw_days_back is not None else None
+        raw_max = kwargs.get("max_records", DEFAULT_MAX_RECORDS)
+        max_records: Optional[int] = int(raw_max) if raw_max is not None else None
         condition: Optional[str] = kwargs.get("condition")
         intervention: Optional[str] = kwargs.get("intervention")
 
         try:
             date_str = datetime.utcnow().strftime("%Y-%m-%d")
-            from_date = (datetime.utcnow() - timedelta(days=days_back)).strftime("%Y-%m-%d")
+            from_date = (
+                (datetime.utcnow() - timedelta(days=days_back)).strftime("%Y-%m-%d")
+                if days_back is not None else None
+            )
 
             total_pages, total_studies = self._fetch_and_load(
                 from_date=from_date,
@@ -127,8 +134,8 @@ class ClinicalTrialsFetcher(BaseFetcher):
 
     def _fetch_and_load(
         self,
-        from_date: str,
-        max_records: int,
+        from_date: Optional[str],
+        max_records: Optional[int],
         date_str: str,
         condition: Optional[str],
         intervention: Optional[str],
@@ -156,15 +163,16 @@ class ClinicalTrialsFetcher(BaseFetcher):
         page_buffer: List[Dict[str, Any]] = []
         pages_since_checkpoint = 0
 
-        while total_studies < max_records:
-            remaining = max_records - total_studies
+        while max_records is None or total_studies < max_records:
+            remaining = (max_records - total_studies) if max_records is not None else PAGE_SIZE
             page_size = min(PAGE_SIZE, remaining)
 
             params: Dict[str, Any] = {
                 "pageSize": page_size,
                 "format": "json",
-                "filter.advanced": f"AREA[LastUpdatePostDate]RANGE[{from_date},MAX]",
             }
+            if from_date:
+                params["filter.advanced"] = f"AREA[LastUpdatePostDate]RANGE[{from_date},MAX]"
             if page_token:
                 params["pageToken"] = page_token
             if condition:

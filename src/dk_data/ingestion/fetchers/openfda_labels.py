@@ -97,7 +97,7 @@ class OpenFDALabelsFetcher(BaseFetcher):
             ``records`` is a list of page blobs (each with a ``results`` key),
             not individual labels — the loader inserts one raw row per page.
         """
-        full_backfill: bool = bool(kwargs.get("full_backfill", False))
+        full_backfill: bool = bool(kwargs.get("full_backfill", True))  # default: full backfill
 
         try:
             date_str = datetime.utcnow().strftime("%Y-%m-%d")
