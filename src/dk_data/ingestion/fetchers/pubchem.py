@@ -117,6 +117,8 @@ class PubChemFetcher(BaseFetcher):
         record_buffer: List[Dict[str, Any]] = []
         pages_since_checkpoint = 0
         total_fetched = 0
+        consecutive_empty = 0
+        _MAX_CONSECUTIVE_EMPTY = 3  # retry up to 3 times before declaring end of data
 
         while max_records is None or total_fetched < max_records:
             remaining = (max_records - total_fetched) if max_records is not None else _PAGE_SIZE
@@ -174,8 +176,21 @@ class PubChemFetcher(BaseFetcher):
                 page_records = []
 
             if not page_records:
-                logger.info("PubChem SDQ: empty page after cid=%d — done", last_cid)
-                break
+                consecutive_empty += 1
+                if consecutive_empty >= _MAX_CONSECUTIVE_EMPTY:
+                    logger.info(
+                        "PubChem SDQ: %d consecutive empty pages after cid=%d — done",
+                        consecutive_empty, last_cid,
+                    )
+                    break
+                logger.warning(
+                    "PubChem SDQ: empty page after cid=%d (attempt %d/%d), retrying in 5s",
+                    last_cid, consecutive_empty, _MAX_CONSECUTIVE_EMPTY,
+                )
+                time.sleep(5)
+                continue
+
+            consecutive_empty = 0
 
             # Advance the CID cursor to the last CID on this page
             last_cid_raw = page_records[-1].get("cid", 0)
