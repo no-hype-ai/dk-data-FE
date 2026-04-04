@@ -118,6 +118,8 @@ LAYER_MODELS = {
         'mol_silver.rxnorm_concepts',           # RxNorm CUIs → molecule_id
         'mol_silver.hcpcs_molecule_bridge',     # HCPCS codes → molecule_id (needs hcs_bronze + molecule_aliases)
         'mol_silver.trademark_status_changes',  # Trademark audit trail with mol linkage (issue #171 M5)
+        # Moved from hcs_silver (09:00): depends on ndc_molecule_bridge above — must run after it.
+        'hcs_silver.open_payments_drug_linkage',  # hcs_bronze + mol_silver.ndc_molecule_bridge
     ],
     # ind_gold — IND domain gold layer (issue #171 H1).
     # Runs after ip_silver finishes (ind_silver.icd11_ontology is an upstream dep).
@@ -327,9 +329,11 @@ LAYER_MODELS = {
         'mol_silver.journal_rss',
         'mol_silver.web_content',
     ],
-    # HCS silver — all 10 hcs_silver.* models (019-cms-puf-platform-reconciliation).
+    # HCS silver — 9 of 10 hcs_silver.* models (019-cms-puf-platform-reconciliation).
     # Runs at 09:00 UTC — after hcs_bronze (07:00) AND mol_silver (08:00) complete.
     # Requires mol_silver.molecule_aliases for drug name resolution joins.
+    # NOTE: open_payments_drug_linkage is in ip_silver (10:30), not here,
+    #       because it depends on mol_silver.ndc_molecule_bridge which ip_silver builds.
     'hcs_silver': [
         'hcs_silver.ref_nucc_taxonomy',          # reference — no upstream dep on mol_silver
         'hcs_silver.geographic_health',           # hcs_bronze only
@@ -340,7 +344,6 @@ LAYER_MODELS = {
         'hcs_silver.cms_drug_market',             # hcs_bronze (part_d/part_b)
         'hcs_silver.drug_utilization',            # hcs_bronze + mol_silver.molecule_aliases
         'hcs_silver.part_d_prescribing',          # hcs_bronze + mol_silver.molecule_aliases
-        'hcs_silver.open_payments_drug_linkage',  # hcs_bronze + mol_silver.ndc_molecule_bridge
     ],
 }
 

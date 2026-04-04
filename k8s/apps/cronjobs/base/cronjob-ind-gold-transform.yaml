@@ -1,0 +1,85 @@
+# Indication Domain Transform — Gold Layer
+# 022-full-model-coverage
+# Runs ind_gold.indication_catalog — decision-ready analytics view of ICD-11 classifications.
+# Source: ind_silver.icd11_ontology (built by ind-transform at 07:30 UTC).
+# Schedule: 09:00 UTC — after ind-transform (07:30) completes.
+# Model cron is '@monthly' (full rebuild monthly) but the CronJob runs daily
+# so SQLMesh will skip it when already current.
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: ind-gold-transform
+  labels:
+    app: ind-gold-transform
+    app.kubernetes.io/name: ind-gold-transform
+    app.kubernetes.io/component: transform
+    app.kubernetes.io/part-of: dk-data
+spec:
+  schedule: "0 9 * * *"  # 09:00 UTC daily (after ind-transform at 07:30)
+  concurrencyPolicy: Forbid
+  startingDeadlineSeconds: 3600
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      backoffLimit: 1
+      ttlSecondsAfterFinished: 86400
+      activeDeadlineSeconds: 1800  # 30 min — 1 FULL model, monthly rebuild
+      template:
+        metadata:
+          labels:
+            app: ind-gold-transform
+            app.kubernetes.io/component: batch-job
+            app.kubernetes.io/part-of: dk-data
+            team: data-platform
+            service: dk-data
+            product: dk-data
+        spec:
+          restartPolicy: Never
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 1000
+            fsGroup: 1000
+            seccompProfile:
+              type: RuntimeDefault
+          imagePullSecrets:
+            - name: ghcr-credentials
+          containers:
+            - name: ind-gold-transform
+              image: ghcr.io/data-kinetic/dk-data-fe/job-trigger:latest
+              command: ["python", "-m", "dk_data.ingestion.transform_molecules"]
+              args: ["--layer", "ind_gold"]
+              envFrom:
+                - secretRef:
+                    name: dk-data-secrets
+              env:
+                - name: OTEL_EXPORTER_OTLP_ENDPOINT
+                  value: "http://alloy.infra.svc.cluster.local:4317"
+                - name: OTEL_ENABLED
+                  value: "true"
+              resources:
+                requests:
+                  memory: "512Mi"
+                  cpu: "100m"
+                limits:
+                  memory: "2Gi"
+                  cpu: "300m"
+              securityContext:
+                allowPrivilegeEscalation: false
+                readOnlyRootFilesystem: true
+                capabilities:
+                  drop: ["ALL"]
+              volumeMounts:
+                - name: tmp
+                  mountPath: /tmp
+                - name: sqlmesh-logs
+                  mountPath: /usr/local/lib/python3.11/site-packages/dk_data/sqlmesh/logs
+                - name: sqlmesh-cache
+                  mountPath: /usr/local/lib/python3.11/site-packages/dk_data/sqlmesh/.cache
+          volumes:
+            - name: tmp
+              emptyDir: {}
+            - name: sqlmesh-logs
+              emptyDir: {}
+            - name: sqlmesh-cache
+              emptyDir: {}
