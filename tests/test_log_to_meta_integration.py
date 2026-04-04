@@ -48,8 +48,8 @@ class TestLogToMetaUnit:
         }
         self._call_log_to_meta("cms_part_d_spending", result, cursor)
 
-        # Should have called execute twice: SELECT source_id, INSERT refresh_log, UPDATE data_sources
-        assert cursor.execute.call_count == 3
+        # Should have called execute 4 times: INSERT upsert, SELECT source_id, INSERT refresh_log, UPDATE data_sources
+        assert cursor.execute.call_count == 4
 
     def test_failed_status_does_not_update_last_successful_refresh(self):
         cursor = self._make_cursor()
@@ -61,7 +61,7 @@ class TestLogToMetaUnit:
             "errors": ["Connection timeout"],
         }
         self._call_log_to_meta("cms_part_d_spending", result, cursor)
-        assert cursor.execute.call_count == 3
+        assert cursor.execute.call_count == 4
 
     def test_partial_status_updates_last_successful_refresh(self):
         cursor = self._make_cursor()
@@ -73,15 +73,15 @@ class TestLogToMetaUnit:
             "errors": ["5 rows skipped"],
         }
         self._call_log_to_meta("cms_part_d_spending", result, cursor)
-        assert cursor.execute.call_count == 3
+        assert cursor.execute.call_count == 4
 
     def test_unknown_source_name_is_noop(self):
         cursor = self._make_cursor(source_id=None)
-        cursor.fetchone.return_value = None  # source not found
+        cursor.fetchone.return_value = None  # source not found after upsert
         result = {"status": "success", "records_inserted": 10, "errors": []}
         self._call_log_to_meta("nonexistent_source", result, cursor)
-        # Only the SELECT was executed; INSERT and UPDATE were skipped
-        assert cursor.execute.call_count == 1
+        # INSERT upsert + SELECT were executed; INSERT log and UPDATE were skipped
+        assert cursor.execute.call_count == 2
 
     def test_errors_truncated_to_5(self):
         cursor = self._make_cursor()
@@ -94,8 +94,8 @@ class TestLogToMetaUnit:
             "errors": errors,
         }
         self._call_log_to_meta("cms_nppes", result, cursor)
-        # Extract the error_message argument from the INSERT call (3rd execute call)
-        insert_call_args = cursor.execute.call_args_list[1]
+        # Extract the error_message argument from the INSERT call (3rd execute call, index 2)
+        insert_call_args = cursor.execute.call_args_list[2]
         error_json_arg = insert_call_args[0][1][-1]  # last positional param
         error_list = json.loads(error_json_arg)
         assert len(error_list) == 5
@@ -110,7 +110,7 @@ class TestLogToMetaUnit:
             "errors": [],
         }
         self._call_log_to_meta("cms_open_payments", result, cursor)
-        insert_call_args = cursor.execute.call_args_list[1]
+        insert_call_args = cursor.execute.call_args_list[2]
         error_arg = insert_call_args[0][1][-1]
         assert error_arg is None
 
