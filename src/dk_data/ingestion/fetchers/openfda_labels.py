@@ -27,6 +27,8 @@ import time
 from datetime import datetime, timedelta
 from typing import Any, Dict, List, Optional, Tuple
 
+from ..sources.openfda_labels import load_openfda_labels_data
+from ..utils.checkpoint import clear_checkpoint, load_checkpoint, save_checkpoint
 from .base import BaseFetcher
 
 logger = logging.getLogger(__name__)
@@ -104,7 +106,7 @@ class OpenFDALabelsFetcher(BaseFetcher):
 
             if full_backfill:
                 start_year: int = int(kwargs.get("start_year", _FULL_BACKFILL_START_YEAR))
-                page_blobs, total_labels = self._fetch_all_years(
+                total_labels = self._stream_all_years(
                     start_year=start_year,
                     date_str=date_str,
                 )
@@ -122,10 +124,11 @@ class OpenFDALabelsFetcher(BaseFetcher):
                     ).strftime("%Y%m%d")
                     search = f"effective_time:[{from_date} TO 99991231]"
 
-                page_blobs, total_labels = self._paginate(
+                _, total_labels = self._paginate(
                     search=search,
                     max_records=max_records,
                     date_str=date_str,
+                    stream_to_db=True,
                 )
 
             content_hash = hashlib.md5(
@@ -134,12 +137,11 @@ class OpenFDALabelsFetcher(BaseFetcher):
 
             result = {
                 "status": "success",
-                "records": page_blobs,
-                "record_count": len(page_blobs),
+                "records": [],  # already in DB
+                "record_count": total_labels,
                 "hash": content_hash,
-                "_total_labels": total_labels,
             }
-            self.log_fetch_result({"status": "success", "records": len(page_blobs)})
+            self.log_fetch_result({"status": "success", "records": total_labels})
             return result
 
         except Exception as exc:
@@ -154,58 +156,74 @@ class OpenFDALabelsFetcher(BaseFetcher):
             self.log_fetch_result(result)
             return result
 
-    def _fetch_all_years(self, start_year: int, date_str: str) -> Tuple[List[Dict[str, Any]], int]:
-        """Fetch all SPL labels via year-by-year partitioning.
+    def _stream_all_years(self, start_year: int, date_str: str) -> int:
+        """Stream all SPL labels to DB via year-by-year partitioning with checkpoint/resume.
 
         Each year issues its own paginated sequence with
-        ``effective_time:[YEAR0101 TO YEAR1231]``. Typical years have
-        <25k labels, so no partition hits the FDA skip cap. Labels that
-        were re-issued across multiple years may appear more than once;
-        the bronze SQLMesh model deduplicates by set_id on upsert.
+        ``effective_time:[YEAR0101 TO YEAR1231]``. Pages are written directly to DB
+        as they arrive — memory is O(PAGE_SIZE) at all times.
 
         Args:
             start_year: First calendar year to fetch.
             date_str: ISO date string used for request ID tagging.
 
         Returns:
-            Tuple of (all_page_blobs, total_label_count).
+            Total label count written.
         """
         current_year = datetime.utcnow().year
-        all_page_blobs: List[Dict[str, Any]] = []
         grand_total = 0
 
-        for year in range(start_year, current_year + 1):
+        # Resume from checkpoint if available
+        cp = load_checkpoint(self.SOURCE_NAME)
+        resume_year = start_year
+        if cp:
+            resume_year = cp.get("next_year", start_year)
+            grand_total = cp.get("total_labels", 0)
+            logger.info(
+                "OpenFDA Labels: resuming from checkpoint year=%d total=%d",
+                resume_year, grand_total,
+            )
+
+        for year in range(resume_year, current_year + 1):
             search = f"effective_time:[{year}0101 TO {year}1231]"
             logger.info("OpenFDA Labels: fetching year %d", year)
 
             try:
-                blobs, count = self._paginate(
+                _, count = self._paginate(
                     search=search,
-                    max_records=FDA_SKIP_LIMIT,  # fetch up to 25k per year
+                    max_records=FDA_SKIP_LIMIT,
                     date_str=date_str,
+                    stream_to_db=True,
                 )
             except Exception as exc:
                 logger.warning("OpenFDA Labels: year %d failed: %s — skipping", year, exc)
                 continue
 
-            all_page_blobs.extend(blobs)
             grand_total += count
             logger.info(
-                "OpenFDA Labels: year %d → %d labels (%d pages). Running total: %d",
-                year, count, len(blobs), grand_total,
+                "OpenFDA Labels: year %d → %d labels. Running total: %d",
+                year, count, grand_total,
             )
 
+            # Checkpoint after each year
+            save_checkpoint(self.SOURCE_NAME, {
+                "next_year": year + 1,
+                "total_labels": grand_total,
+            })
+
+        clear_checkpoint(self.SOURCE_NAME)
         logger.info(
-            "OpenFDA Labels full backfill complete: %d total labels across %d pages",
-            grand_total, len(all_page_blobs),
+            "OpenFDA Labels full backfill complete: %d total labels",
+            grand_total,
         )
-        return all_page_blobs, grand_total
+        return grand_total
 
     def _paginate(
         self,
         search: str,
         max_records: int,
         date_str: str,
+        stream_to_db: bool = False,
     ) -> Tuple[List[Dict[str, Any]], int]:
         """Page through the openFDA drug/label endpoint for a single search query.
 
@@ -251,7 +269,10 @@ class OpenFDALabelsFetcher(BaseFetcher):
                 "_page_number": page_num,
                 "results": results,
             }
-            page_blobs.append(page_blob)
+            if stream_to_db:
+                load_openfda_labels_data([page_blob])
+            else:
+                page_blobs.append(page_blob)
             total_labels += len(results)
             page_num += 1
 

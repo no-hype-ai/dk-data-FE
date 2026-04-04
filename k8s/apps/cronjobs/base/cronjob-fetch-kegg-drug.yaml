@@ -21,7 +21,7 @@ spec:
     spec:
       backoffLimit: 2
       ttlSecondsAfterFinished: 86400
-      activeDeadlineSeconds: 7200  # 2 hour timeout (full KEGG list ~12k entries)
+      activeDeadlineSeconds: 14400  # 4 hour timeout (KEGG ~12k entries)
       template:
         metadata:
           labels:

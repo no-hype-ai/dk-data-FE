@@ -18,6 +18,8 @@ from datetime import datetime, timedelta
 from typing import Any, Dict, List, Optional
 from xml.etree import ElementTree as ET
 
+from ..sources.epo_ops import load_epo_ops_data
+from ..utils.checkpoint import clear_checkpoint, load_checkpoint, save_checkpoint
 from .base import BaseFetcher
 
 logger = logging.getLogger(__name__)
@@ -113,41 +115,55 @@ class EPOOPSFetcher(BaseFetcher):
                 len(search_terms), ipc_codes, days_back,
             )
 
+            # Resume from checkpoint if available
+            cp = load_checkpoint(self.SOURCE_NAME)
+            start_term_index = 0
+            total_fetched = 0
+            if cp:
+                start_term_index = cp.get("term_index", 0)
+                total_fetched = cp.get("total_fetched", 0)
+                logger.info(
+                    "EPO OPS: resuming from checkpoint term_index=%d total=%d",
+                    start_term_index, total_fetched,
+                )
+
             # Authenticate
             self._ensure_token()
 
-            all_records: List[Dict[str, Any]] = []
-            seen_ids: set = set()
-
-            for term in search_terms:
-                if max_records is not None and len(all_records) >= max_records:
+            for term_index, term in enumerate(search_terms):
+                if term_index < start_term_index:
+                    continue
+                if max_records is not None and total_fetched >= max_records:
                     break
 
-                records = self._search_patents(
+                term_count = self._stream_patents(
                     term,
+                    term_index=term_index,
                     ipc_codes=ipc_codes,
                     days_back=days_back,
-                    max_records=(max_records - len(all_records)) if max_records is not None else MAX_RECORDS or 100_000,
+                    max_records=(max_records - total_fetched) if max_records is not None else None,
                 )
+                total_fetched += term_count
 
-                for rec in records:
-                    pub_id = rec.get("publication_id")
-                    if pub_id and pub_id not in seen_ids:
-                        seen_ids.add(pub_id)
-                        all_records.append(rec)
+                # Checkpoint after each term
+                save_checkpoint(self.SOURCE_NAME, {
+                    "term_index": term_index + 1,
+                    "total_fetched": total_fetched,
+                })
 
-            # Compute content hash
+            clear_checkpoint(self.SOURCE_NAME)
+
             content_hash = hashlib.md5(
-                str(sorted(seen_ids)).encode()
+                f"epo_ops:{total_fetched}".encode()
             ).hexdigest()
 
             result = {
                 "status": "success",
-                "records": all_records,
-                "record_count": len(all_records),
+                "records": [],  # already in DB
+                "record_count": total_fetched,
                 "hash": content_hash,
             }
-            self.log_fetch_result({"status": "success", "records": len(all_records)})
+            self.log_fetch_result({"status": "success", "records": total_fetched})
             return result
 
         except RuntimeError as e:
@@ -223,17 +239,20 @@ class EPOOPSFetcher(BaseFetcher):
     # Search
     # ------------------------------------------------------------------
 
-    def _search_patents(
+    def _stream_patents(
         self,
         term: str,
         *,
+        term_index: int,
         ipc_codes: List[str],
-        days_back: Optional[int] = 30,
-        max_records: int = 5000,
-    ) -> List[Dict[str, Any]]:
-        """Search OPS for patents matching a term and IPC codes."""
-        records: List[Dict[str, Any]] = []
+        days_back: Optional[int] = None,
+        max_records: Optional[int] = None,
+    ) -> int:
+        """Search OPS for patents matching a term, writing each page directly to DB.
 
+        Returns:
+            Number of patent records written to DB for this term.
+        """
         # Build CQL query — OPS CQL uses bare IPC codes (no quotes)
         ipc_filter = " OR ".join(f'ipc={code}' for code in ipc_codes)
         if days_back:
@@ -243,9 +262,11 @@ class EPOOPSFetcher(BaseFetcher):
             cql = f'txt="{term}" AND ({ipc_filter})'
 
         start = 1
+        total = 0
 
-        while len(records) < max_records:
-            end = min(start + self.PAGE_SIZE - 1, start + max_records - len(records) - 1)
+        while max_records is None or total < max_records:
+            remaining = (max_records - total) if max_records is not None else self.PAGE_SIZE
+            end = start + min(self.PAGE_SIZE, remaining) - 1
 
             try:
                 params = {
@@ -265,9 +286,6 @@ class EPOOPSFetcher(BaseFetcher):
                 )
 
                 if response.status_code in (400, 404):
-                    # OPS returns 400 for queries with no matching results
-                    # (in addition to genuine bad-request errors). Treat as
-                    # "no results" so we skip to the next search term.
                     logger.debug(
                         "OPS %d for term '%s' — no results or invalid range",
                         response.status_code, term,
@@ -280,7 +298,9 @@ class EPOOPSFetcher(BaseFetcher):
                 if not batch:
                     break
 
-                records.extend(batch)
+                # Flush page directly to DB — bounded memory
+                load_epo_ops_data(batch)
+                total += len(batch)
 
                 if len(batch) < self.PAGE_SIZE:
                     break
@@ -292,7 +312,8 @@ class EPOOPSFetcher(BaseFetcher):
                 logger.warning("OPS search failed for term '%s' at range %d: %s", term, start, e)
                 break
 
-        return records
+        logger.info("EPO OPS term '%s' (index=%d): %d records", term, term_index, total)
+        return total
 
     def _parse_search_response(self, xml_content: bytes) -> List[Dict[str, Any]]:
         """Parse OPS search XML response into record dicts."""

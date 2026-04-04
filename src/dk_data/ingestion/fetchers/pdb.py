@@ -6,16 +6,27 @@ Fetches protein structure records from RCSB PDB for structural biology data.
 Uses the RCSB PDB Search API (no authentication required).
 
 Source: https://search.rcsb.org/
+
+Self-loading with checkpoint/resume:
+  Phase 1: Collect all matching PDB IDs (500/page, held in memory — ~800 KB for 200K IDs).
+  Phase 2: Fetch detail records one-by-one and flush batches of DETAIL_BATCH_SIZE to DB.
+  Checkpoint stores the full ID list + the index of the last committed detail record,
+  so a pod restart skips both the ID collection phase and already-committed details.
 """
 
 import hashlib
 import logging
 import time
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
 
+from ..sources.pdb import load_pdb_data
+from ..utils.checkpoint import clear_checkpoint, load_checkpoint, save_checkpoint
 from .base import BaseFetcher
 
 logger = logging.getLogger(__name__)
+
+# How many detail records to flush to DB at once
+DETAIL_BATCH_SIZE = 100
 
 
 class PDBFetcher(BaseFetcher):
@@ -31,49 +42,118 @@ class PDBFetcher(BaseFetcher):
         return f"{self.BASE_URL}/query"
 
     def fetch(self, **kwargs) -> Dict[str, Any]:
-        """Fetch PDB structure records.
+        """Fetch PDB structure records, streaming detail batches directly to DB.
 
         Keyword Args:
-            query_text: Text search query. Defaults to fetching all experimental
-                structures (no text filter). Defaults to None (all structures).
+            query_text: Text search query. Defaults to None (all experimental structures).
             max_results: Maximum records. Defaults to None (unlimited).
 
         Returns:
-            Dict with keys: status, records, hash, error (on failure).
+            Dict with keys: status, records (empty — flushed to DB), record_count, hash.
         """
-        query_text = kwargs.get("query_text", None)  # None = all experimental structures
+        query_text = kwargs.get("query_text", None)
         raw_max = kwargs.get("max_results", self.MAX_RESULTS)
-        max_results = int(raw_max) if raw_max is not None else None
+        max_results: Optional[int] = int(raw_max) if raw_max is not None else None
 
         try:
-            pdb_ids = self._search(query_text, max_results=max_results)
+            # Resume from checkpoint if available
+            cp = load_checkpoint(self.SOURCE_NAME)
+            pdb_ids: Optional[List[str]] = None
+            resume_idx = 0
+            prior_total = 0
 
+            if cp:
+                pdb_ids = cp.get("pdb_ids")
+                resume_idx = cp.get("detail_idx", 0)
+                prior_total = cp.get("total_fetched", 0)
+                if pdb_ids:
+                    logger.info(
+                        "PDB: resuming from checkpoint detail_idx=%d / %d total_ids=%d",
+                        resume_idx, prior_total, len(pdb_ids),
+                    )
+
+            # Phase 1: collect IDs if not already checkpointed
             if not pdb_ids:
-                result = {
-                    "status": "success",
-                    "records": [],
-                    "hash": None,
-                    "message": "No structures found",
-                }
-                self.log_fetch_result(result)
-                return result
+                pdb_ids = self._search(query_text, max_results=max_results)
+                if not pdb_ids:
+                    result = {
+                        "status": "success",
+                        "records": [],
+                        "record_count": 0,
+                        "hash": None,
+                        "message": "No structures found",
+                    }
+                    self.log_fetch_result(result)
+                    return result
 
-            logger.info(f"PDB search returned {len(pdb_ids)} structure IDs")
-
-            # Fetch details for each PDB ID
-            records = self._fetch_details(pdb_ids)
+                logger.info("PDB: collected %d structure IDs", len(pdb_ids))
+                # Save IDs immediately so Phase 2 can resume without re-collecting
+                save_checkpoint(self.SOURCE_NAME, {
+                    "pdb_ids": pdb_ids,
+                    "detail_idx": 0,
+                    "total_fetched": 0,
+                })
 
             content_hash = hashlib.md5(
                 ",".join(sorted(pdb_ids)).encode()
             ).hexdigest()
 
-            result = {"status": "success", "records": records, "hash": content_hash}
-            self.log_fetch_result({**result, "records": len(records)})
+            # Phase 2: fetch details, flushing every DETAIL_BATCH_SIZE records
+            total = prior_total
+            batch: List[Dict[str, Any]] = []
+
+            for i in range(resume_idx, len(pdb_ids)):
+                pdb_id = pdb_ids[i]
+                try:
+                    url = f"{self.DATA_URL}/{pdb_id}"
+                    data = self.fetch_json(url)
+                    batch.append({
+                        "pdb_id": pdb_id,
+                        "title": data.get("struct", {}).get("title"),
+                        "method": (
+                            data.get("exptl", [{}])[0].get("method")
+                            if data.get("exptl") else None
+                        ),
+                        "resolution": (
+                            data.get("rcsb_entry_info", {}).get("resolution_combined", [None])[0]
+                            if data.get("rcsb_entry_info") else None
+                        ),
+                        "deposit_date": data.get("rcsb_accession_info", {}).get("deposit_date"),
+                        "raw_response": data,
+                    })
+                except Exception as e:
+                    logger.warning("PDB: failed to fetch details for %s: %s", pdb_id, e)
+
+                # Flush batch and checkpoint every DETAIL_BATCH_SIZE entries
+                if len(batch) >= DETAIL_BATCH_SIZE:
+                    load_pdb_data(batch)
+                    total += len(batch)
+                    batch = []
+                    save_checkpoint(self.SOURCE_NAME, {
+                        "pdb_ids": pdb_ids,
+                        "detail_idx": i + 1,
+                        "total_fetched": total,
+                    })
+                    logger.info("PDB: checkpoint idx=%d total=%d", i + 1, total)
+
+                # Polite inter-request delay (~10 req/s)
+                if i < len(pdb_ids) - 1:
+                    time.sleep(0.1)
+
+            # Flush remaining
+            if batch:
+                load_pdb_data(batch)
+                total += len(batch)
+
+            clear_checkpoint(self.SOURCE_NAME)
+
+            result = {"status": "success", "records": [], "record_count": total, "hash": content_hash}
+            self.log_fetch_result({"status": "success", "records": total})
             return result
 
         except Exception as e:
             logger.exception(f"PDB fetch failed: {e}")
-            result = {"status": "failed", "records": [], "hash": None, "error": str(e)}
+            result = {"status": "failed", "records": [], "record_count": 0, "hash": None, "error": str(e)}
             self.log_fetch_result(result)
             return result
 
@@ -135,31 +215,3 @@ class PDBFetcher(BaseFetcher):
 
         logger.info("[pdb] %d total structure IDs collected", len(all_ids))
         return all_ids
-
-    def _fetch_details(self, pdb_ids: List[str]) -> List[Dict[str, Any]]:
-        """Fetch entry details for a list of PDB IDs.
-
-        RCSB PDB recommends "a handful of requests per second". 0.1s delay
-        (~10 req/s) is polite for sequential per-ID calls.
-        """
-        records = []
-        for i, pdb_id in enumerate(pdb_ids):
-            try:
-                url = f"{self.DATA_URL}/{pdb_id}"
-                data = self.fetch_json(url)
-                records.append({
-                    "pdb_id": pdb_id,
-                    "title": data.get("struct", {}).get("title"),
-                    "method": (data.get("exptl", [{}])[0].get("method") if data.get("exptl") else None),
-                    "resolution": (data.get("rcsb_entry_info", {}).get("resolution_combined", [None])[0]
-                                   if data.get("rcsb_entry_info") else None),
-                    "deposit_date": data.get("rcsb_accession_info", {}).get("deposit_date"),
-                    "raw_response": data,
-                })
-            except Exception as e:
-                logger.warning(f"Failed to fetch details for {pdb_id}: {e}")
-            # Polite inter-request delay — RCSB does not publish a hard limit
-            # but rate-limits aggressively on shared IPs; 100ms keeps us ~10 req/s.
-            if i < len(pdb_ids) - 1:
-                time.sleep(0.1)
-        return records
