@@ -99,7 +99,9 @@ class OpenFDALabelsFetcher(BaseFetcher):
             ``records`` is a list of page blobs (each with a ``results`` key),
             not individual labels — the loader inserts one raw row per page.
         """
-        full_backfill: bool = bool(kwargs.get("full_backfill", True))  # default: full backfill
+        # Default to full backfill only when days_back is None (first run / no date cap).
+        # CronJob runs inject days_back=N via _compute_days_back → incremental mode.
+        full_backfill: bool = bool(kwargs.get("full_backfill", kwargs.get("days_back") is None))
 
         try:
             date_str = datetime.utcnow().strftime("%Y-%m-%d")

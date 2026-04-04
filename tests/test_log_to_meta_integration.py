@@ -48,8 +48,8 @@ class TestLogToMetaUnit:
         }
         self._call_log_to_meta("cms_part_d_spending", result, cursor)
 
-        # Should have called execute twice: SELECT source_id, INSERT refresh_log, UPDATE data_sources
-        assert cursor.execute.call_count == 3
+        # Should have called execute 4 times: INSERT upsert, SELECT source_id, INSERT refresh_log, UPDATE data_sources
+        assert cursor.execute.call_count == 4
 
     def test_failed_status_does_not_update_last_successful_refresh(self):
         cursor = self._make_cursor()
@@ -61,7 +61,7 @@ class TestLogToMetaUnit:
             "errors": ["Connection timeout"],
         }
         self._call_log_to_meta("cms_part_d_spending", result, cursor)
-        assert cursor.execute.call_count == 3
+        assert cursor.execute.call_count == 4
 
     def test_partial_status_updates_last_successful_refresh(self):
         cursor = self._make_cursor()
@@ -73,15 +73,15 @@ class TestLogToMetaUnit:
             "errors": ["5 rows skipped"],
         }
         self._call_log_to_meta("cms_part_d_spending", result, cursor)
-        assert cursor.execute.call_count == 3
+        assert cursor.execute.call_count == 4
 
     def test_unknown_source_name_is_noop(self):
         cursor = self._make_cursor(source_id=None)
-        cursor.fetchone.return_value = None  # source not found
+        cursor.fetchone.return_value = None  # source not found after upsert
         result = {"status": "success", "records_inserted": 10, "errors": []}
         self._call_log_to_meta("nonexistent_source", result, cursor)
-        # Only the SELECT was executed; INSERT and UPDATE were skipped
-        assert cursor.execute.call_count == 1
+        # INSERT upsert + SELECT were executed; INSERT log and UPDATE were skipped
+        assert cursor.execute.call_count == 2
 
     def test_errors_truncated_to_5(self):
         cursor = self._make_cursor()
@@ -94,8 +94,8 @@ class TestLogToMetaUnit:
             "errors": errors,
         }
         self._call_log_to_meta("cms_nppes", result, cursor)
-        # Extract the error_message argument from the INSERT call (3rd execute call)
-        insert_call_args = cursor.execute.call_args_list[1]
+        # Extract the error_message argument from the INSERT call (3rd execute call, index 2)
+        insert_call_args = cursor.execute.call_args_list[2]
         error_json_arg = insert_call_args[0][1][-1]  # last positional param
         error_list = json.loads(error_json_arg)
         assert len(error_list) == 5
@@ -110,7 +110,7 @@ class TestLogToMetaUnit:
             "errors": [],
         }
         self._call_log_to_meta("cms_open_payments", result, cursor)
-        insert_call_args = cursor.execute.call_args_list[1]
+        insert_call_args = cursor.execute.call_args_list[2]
         error_arg = insert_call_args[0][1][-1]
         assert error_arg is None
 
@@ -318,19 +318,38 @@ class TestLogToMetaIntegration:
             postgres_connection.commit()
 
     def test_log_to_meta_missing_source(self, postgres_connection, db_cursor):
-        """log_to_meta should return safely when source does not exist."""
+        """log_to_meta auto-registers unknown sources and writes a refresh_log entry.
+
+        The upsert ensures that sources not pre-seeded in meta.data_sources still
+        get last_successful_refresh tracked (e.g. nih_reporter, europepmc).
+        """
         from dk_data.ingestion.main import log_to_meta
 
         missing_source = "_test_nonexistent_xyz"
-        log_to_meta(missing_source, {"status": "success", "records_fetched": 0})
+        try:
+            log_to_meta(missing_source, {"status": "success", "records_fetched": 0})
 
-        db_cursor.execute(
-            "SELECT COUNT(*) FROM meta.refresh_log WHERE source_name = %s",
-            (missing_source,),
-        )
-        count = db_cursor.fetchone()[0]
-        assert count == 0
-        postgres_connection.rollback()
+            db_cursor.execute(
+                "SELECT COUNT(*) FROM meta.refresh_log WHERE source_name = %s",
+                (missing_source,),
+            )
+            count = db_cursor.fetchone()[0]
+            assert count == 1  # source was auto-registered and logged
+
+            db_cursor.execute(
+                "SELECT source_name FROM meta.data_sources WHERE source_name = %s",
+                (missing_source,),
+            )
+            assert db_cursor.fetchone() is not None  # auto-registered
+            postgres_connection.commit()
+        finally:
+            db_cursor.execute(
+                "DELETE FROM meta.refresh_log WHERE source_name = %s", (missing_source,)
+            )
+            db_cursor.execute(
+                "DELETE FROM meta.data_sources WHERE source_name = %s", (missing_source,)
+            )
+            postgres_connection.commit()
 
     def test_log_to_meta_refresh_log_schema(self, db_cursor):
         """Document expected refresh_log schema contract."""

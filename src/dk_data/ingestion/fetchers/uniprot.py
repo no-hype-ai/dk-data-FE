@@ -117,6 +117,9 @@ class UniProtFetcher(BaseFetcher):
             else:
                 response = self.session.get(next_url, timeout=60)
             response.raise_for_status()
+
+            # Log total available on first page for diagnosability
+            x_total = response.headers.get("X-Total-Results", "?")
             data = response.json()
 
             page_results: List[Dict[str, Any]] = data.get("results", [])
@@ -126,8 +129,10 @@ class UniProtFetcher(BaseFetcher):
             # Flush page directly to DB
             load_uniprot_data(page_results)
             total += len(page_results)
+            logger.info("UniProt: page written total=%d / %s", total, x_total)
 
-            # Follow Link: <url>; rel="next" header
+            # Follow Link: <url>; rel="next" header.
+            # UniProt cursor pagination — next_url=None means we are on the last page.
             link_header = response.headers.get("Link", "")
             next_url = None
             if link_header:
@@ -139,16 +144,25 @@ class UniProtFetcher(BaseFetcher):
                         if start_idx > 0 and end_idx > start_idx:
                             next_url = part[start_idx:end_idx]
                         break
+            else:
+                # No Link header — either last page or API pagination issue.
+                # Log the discrepancy if we clearly haven't fetched everything.
+                try:
+                    expected = int(x_total)
+                    if total < expected:
+                        logger.warning(
+                            "UniProt: no Link header after %d records but X-Total-Results=%d "
+                            "— possible pagination failure. Will retry from checkpoint on next run.",
+                            total, expected,
+                        )
+                except (ValueError, TypeError):
+                    pass
 
             save_checkpoint(self.SOURCE_NAME, {
                 "query": query,
                 "next_url": next_url,
                 "total_fetched": total,
             })
-            logger.debug("UniProt: page written total=%d", total)
-
-            if len(page_results) < page_size:
-                break
 
         clear_checkpoint(self.SOURCE_NAME)
         logger.info("UniProt streamed %d proteins to DB", total)
