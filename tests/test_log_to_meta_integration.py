@@ -318,19 +318,38 @@ class TestLogToMetaIntegration:
             postgres_connection.commit()
 
     def test_log_to_meta_missing_source(self, postgres_connection, db_cursor):
-        """log_to_meta should return safely when source does not exist."""
+        """log_to_meta auto-registers unknown sources and writes a refresh_log entry.
+
+        The upsert ensures that sources not pre-seeded in meta.data_sources still
+        get last_successful_refresh tracked (e.g. nih_reporter, europepmc).
+        """
         from dk_data.ingestion.main import log_to_meta
 
         missing_source = "_test_nonexistent_xyz"
-        log_to_meta(missing_source, {"status": "success", "records_fetched": 0})
+        try:
+            log_to_meta(missing_source, {"status": "success", "records_fetched": 0})
 
-        db_cursor.execute(
-            "SELECT COUNT(*) FROM meta.refresh_log WHERE source_name = %s",
-            (missing_source,),
-        )
-        count = db_cursor.fetchone()[0]
-        assert count == 0
-        postgres_connection.rollback()
+            db_cursor.execute(
+                "SELECT COUNT(*) FROM meta.refresh_log WHERE source_name = %s",
+                (missing_source,),
+            )
+            count = db_cursor.fetchone()[0]
+            assert count == 1  # source was auto-registered and logged
+
+            db_cursor.execute(
+                "SELECT source_name FROM meta.data_sources WHERE source_name = %s",
+                (missing_source,),
+            )
+            assert db_cursor.fetchone() is not None  # auto-registered
+            postgres_connection.commit()
+        finally:
+            db_cursor.execute(
+                "DELETE FROM meta.refresh_log WHERE source_name = %s", (missing_source,)
+            )
+            db_cursor.execute(
+                "DELETE FROM meta.data_sources WHERE source_name = %s", (missing_source,)
+            )
+            postgres_connection.commit()
 
     def test_log_to_meta_refresh_log_schema(self, db_cursor):
         """Document expected refresh_log schema contract."""
