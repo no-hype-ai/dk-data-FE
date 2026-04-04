@@ -35,7 +35,7 @@ logger = logging.getLogger(__name__)
 _SDQ_URL = "https://pubchem.ncbi.nlm.nih.gov/sdq/sdqagent.cgi"
 _PAGE_SIZE = 10000
 _REQUEST_DELAY = 0.2
-_DEFAULT_MAX_RECORDS = 500_000
+_DEFAULT_MAX_RECORDS = None  # No cap — fetch all ~123M PubChem compounds
 _CHECKPOINT_INTERVAL = 10  # save checkpoint every 10 pages (= 100k records)
 
 
@@ -57,13 +57,14 @@ class PubChemFetcher(BaseFetcher):
         """Fetch and load PubChem compound records, resuming from checkpoint if present.
 
         Keyword Args:
-            max_records: Cap total records. Default: 500,000.
+            max_records: Cap total records. Default: None (unlimited — fetches all ~123M compounds).
 
         Returns:
             Dict with keys: status, records, record_count, hash, error.
             records is always [] — data is streamed directly to DB per page batch.
         """
-        max_records: int = int(kwargs.get("max_records", _DEFAULT_MAX_RECORDS))
+        raw_max = kwargs.get("max_records", _DEFAULT_MAX_RECORDS)
+        max_records = int(raw_max) if raw_max is not None else None
 
         try:
             total_inserted = self._fetch_and_load(max_records=max_records)
@@ -93,7 +94,7 @@ class PubChemFetcher(BaseFetcher):
             self.log_fetch_result(result)
             return result
 
-    def _fetch_and_load(self, max_records: int) -> int:
+    def _fetch_and_load(self, max_records) -> int:
         """Page through PubChem SDQ endpoint using CID-range pagination.
 
         Uses WHERE cid > last_cid to advance through the dataset reliably.
@@ -117,8 +118,8 @@ class PubChemFetcher(BaseFetcher):
         pages_since_checkpoint = 0
         total_fetched = 0
 
-        while total_fetched < max_records:
-            remaining = max_records - total_fetched
+        while max_records is None or total_fetched < max_records:
+            remaining = (max_records - total_fetched) if max_records is not None else _PAGE_SIZE
             limit = min(_PAGE_SIZE, remaining)
 
             # CID-range filter: advance by fetching compounds with cid > last_cid
