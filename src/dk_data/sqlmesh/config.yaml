@@ -77,6 +77,10 @@ variables:
   postgres_password: "{{ env_var('POSTGRES_PASSWORD', '') }}"
   postgres_db: "{{ env_var('POSTGRES_DB', 'dk_data') }}"
 
+# SQLMesh cache — write to /tmp/sqlmesh-cache (emptyDir, writable under readOnlyRootFilesystem)
+# The default cache_dir is {project_dir}/.cache which is inside the read-only image layer.
+cache_dir: /tmp/sqlmesh-cache
+
 # Plan options — auto_apply true so non-interactive environments (k8s jobs) can
 # run `sqlmesh plan --forward-only` without TTY prompts.
 plan:
