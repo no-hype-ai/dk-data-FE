@@ -439,8 +439,8 @@ def run_sqlmesh_command(command: list[str], timeout: int = 3600) -> dict:
         }
 
 
-def is_sqlmesh_initialized() -> bool:
-    """Check whether SQLMesh state tables exist in the database."""
+def _sqlmesh_has_state_tables() -> bool:
+    """Check if SQLMesh state tables exist (migrate has been run)."""
     try:
         import psycopg2
         conn = psycopg2.connect(
@@ -451,47 +451,91 @@ def is_sqlmesh_initialized() -> bool:
             dbname=os.getenv("POSTGRES_DB", "dk_data"),
         )
         cur = conn.cursor()
-        cur.execute("SELECT EXISTS(SELECT 1 FROM pg_tables WHERE tablename = '_snapshots')")
-        initialized = cur.fetchone()[0]
+        cur.execute("SELECT EXISTS(SELECT 1 FROM pg_tables WHERE schemaname='sqlmesh' AND tablename='_snapshots')")
+        result = bool(cur.fetchone()[0])
         conn.close()
-        return initialized
+        return result
+    except Exception as e:
+        logger.warning(f"Could not check SQLMesh state tables: {e}")
+        return False
+
+
+def is_sqlmesh_initialized() -> bool:
+    """Check whether SQLMesh state tables AND a 'prod' environment exist.
+
+    State tables existing (migrate ran) is not enough — sqlmesh run also
+    requires a 'prod' environment entry in sqlmesh._environments, which is
+    only created by running sqlmesh plan.
+    """
+    try:
+        import psycopg2
+        conn = psycopg2.connect(
+            host=os.getenv("POSTGRES_HOST", "localhost"),
+            port=int(os.getenv("POSTGRES_PORT", "5432")),
+            user=os.getenv("POSTGRES_USER", "postgres"),
+            password=os.getenv("POSTGRES_PASSWORD", ""),
+            dbname=os.getenv("POSTGRES_DB", "dk_data"),
+        )
+        cur = conn.cursor()
+        cur.execute("SELECT EXISTS(SELECT 1 FROM pg_tables WHERE schemaname='sqlmesh' AND tablename='_snapshots')")
+        has_tables = bool(cur.fetchone()[0])
+        if not has_tables:
+            conn.close()
+            return False
+        cur.execute("SELECT EXISTS(SELECT 1 FROM sqlmesh._environments WHERE name = 'prod')")
+        has_env = bool(cur.fetchone()[0])
+        conn.close()
+        return has_env
     except Exception as e:
         logger.warning(f"Could not check SQLMesh init state: {e}")
         return False
 
 
 def ensure_sqlmesh_initialized() -> bool:
-    """Run `sqlmesh migrate` if state tables are missing.
+    """Ensure SQLMesh state tables exist and 'prod' environment is registered.
 
-    `sqlmesh migrate` is the correct bootstrap command for a fresh database:
-    - It creates the sqlmesh schema and state tables (_snapshots, _environments,
-      _intervals, _versions, etc.)
-    - It does NOT run any model SQL or backfill data
-    - It is idempotent — safe to run on an already-initialized environment
+    Two-step bootstrap:
+    1. `sqlmesh migrate` — creates sqlmesh schema and state tables
+       (_snapshots, _environments, _intervals, _versions, etc.).
+       Idempotent; safe to run on an already-migrated DB.
+    2. `sqlmesh plan --auto-apply --skip-backfill` — registers all models
+       in _snapshots and creates the 'prod' environment entry in
+       _environments. Without this, `sqlmesh run` exits with
+       "Environment 'prod' was not found."
 
-    Previous approaches that failed on SQLMesh 0.230+ on a fresh env:
-    - `plan --auto-apply --forward-only` → "There are no prior migrations to roll back to"
-    - `plan --auto-apply --skip-backfill` → same error on empty DB
-    - `plan --auto-apply` → same error (all `plan` variants require pre-existing state)
+    Note: `plan` variants fail on a completely fresh DB (before migrate).
+    Always run migrate first, then plan.
 
-    Returns True if already initialized or migrate succeeded, False on failure.
+    Returns True if already initialized or bootstrap succeeded, False on failure.
     """
     if is_sqlmesh_initialized():
         return True
 
+    # Step 1: ensure state tables exist
+    if not _sqlmesh_has_state_tables():
+        logger.info(
+            "SQLMesh state tables missing. Running 'sqlmesh migrate' to bootstrap..."
+        )
+        result = run_sqlmesh_command(['migrate'], timeout=120)
+        if result.get('status') != 'success':
+            logger.error(f"SQLMesh migrate failed: {result.get('error')}")
+            return False
+        logger.info("SQLMesh migrate complete — state tables created")
+
+    # Step 2: register models and create the prod environment
     logger.info(
-        "SQLMesh environment not initialized (no _snapshots table). "
-        "Running 'sqlmesh migrate' to bootstrap state tables..."
+        "SQLMesh 'prod' environment not found. "
+        "Running 'sqlmesh plan --auto-apply --skip-backfill' to register models..."
     )
     result = run_sqlmesh_command(
-        ['migrate'],
-        timeout=120,  # migrate is fast — schema only, no data
+        ['plan', '--auto-apply', '--skip-backfill'],
+        timeout=600,
     )
     if result.get('status') == 'success':
-        logger.info("SQLMesh migrate complete — state tables created")
+        logger.info("SQLMesh plan complete — prod environment registered")
         return True
 
-    logger.error(f"SQLMesh migrate failed: {result.get('error')}")
+    logger.error(f"SQLMesh plan failed: {result.get('error')}")
     return False
 
 
