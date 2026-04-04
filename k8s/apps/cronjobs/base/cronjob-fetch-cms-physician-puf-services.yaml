@@ -19,7 +19,7 @@ spec:
     spec:
       backoffLimit: 2
       ttlSecondsAfterFinished: 86400
-      activeDeadlineSeconds: 3600  # 60 minute timeout (larger file)
+      activeDeadlineSeconds: 14400  # 4h — multi-year streaming with checkpoint/resume
       template:
         metadata:
           labels:
