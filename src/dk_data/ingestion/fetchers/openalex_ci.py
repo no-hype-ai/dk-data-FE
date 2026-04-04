@@ -21,6 +21,8 @@ import time
 from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional
 
+from ..sources.openalex_ci import load_openalex_ci_data
+from ..utils.checkpoint import clear_checkpoint, load_checkpoint, save_checkpoint
 from .base import BaseFetcher
 
 logger = logging.getLogger(__name__)
@@ -35,13 +37,16 @@ DEFAULT_CONCEPT_FILTER = "primary_topic.subfield.id:subfields/2736|subfields/300
 # Maximum records per page (OpenAlex caps at 200)
 PAGE_SIZE = 200
 
-# Safety limit: max records per single fetch run
-MAX_RECORDS = 10_000
+# Safety limit: max records per single fetch run — None means unlimited
+MAX_RECORDS = None
 
 # OpenAlex rate limit: 10 req/s authenticated (API key), stricter for unauthenticated.
 # 0.1s gives ~10 req/s with key; 0.5s is used without key to avoid IP throttling.
 REQUEST_DELAY_WITH_KEY = 0.1   # seconds between cursor pages (authenticated)
 REQUEST_DELAY_NO_KEY   = 0.5   # seconds between cursor pages (unauthenticated)
+
+# Flush to DB and checkpoint every N pages (200 records/page × 50 = 10 000 records per flush)
+CHECKPOINT_INTERVAL = 50
 
 
 class OpenAlexCIFetcher(BaseFetcher):
@@ -91,9 +96,10 @@ class OpenAlexCIFetcher(BaseFetcher):
         filtered by pharmaceutical concepts.
 
         Keyword Args:
-            days_back: Number of days to look back (default: 7).
+            days_back: Number of days to look back (default: None — no date filter,
+                fetch all pharma publications). Pass an integer for incremental runs.
             concept_filter: OpenAlex concept filter string (default: pharma concepts).
-            max_records: Maximum records to fetch (default: 10000).
+            max_records: Maximum records to fetch (default: None — unlimited).
 
         Returns:
             Dictionary with:
@@ -103,9 +109,11 @@ class OpenAlexCIFetcher(BaseFetcher):
                 - hash: MD5 hash of the result set
                 - error: error message (if failed)
         """
-        days_back = kwargs.get("days_back", 7)
+        raw_days_back = kwargs.get("days_back", None)
+        days_back = int(raw_days_back) if raw_days_back is not None else None
         concept_filter = kwargs.get("concept_filter", DEFAULT_CONCEPT_FILTER)
-        max_records = kwargs.get("max_records", MAX_RECORDS)
+        raw_max = kwargs.get("max_records", MAX_RECORDS)
+        max_records = int(raw_max) if raw_max is not None else None
 
         try:
             logger.info(
@@ -113,15 +121,32 @@ class OpenAlexCIFetcher(BaseFetcher):
                 f"concept_filter={concept_filter})"
             )
 
-            from_date = (datetime.now(timezone.utc) - timedelta(days=days_back)).strftime("%Y-%m-%d")
+            # Build filter string — date filter only when days_back is set
+            if days_back is not None:
+                from_date = (datetime.now(timezone.utc) - timedelta(days=days_back)).strftime("%Y-%m-%d")
+                filter_str = f"from_publication_date:{from_date},{concept_filter}"
+            else:
+                filter_str = concept_filter
 
-            # Build filter string
-            filter_str = f"from_publication_date:{from_date},{concept_filter}"
+            # Resume from checkpoint if available
+            cp = load_checkpoint(self.SOURCE_NAME)
+            resume_cursor = "*"
+            total_fetched = 0
+            if cp and cp.get("filter_str") == filter_str:
+                resume_cursor = cp.get("cursor", "*")
+                total_fetched = cp.get("total_fetched", 0)
+                logger.info(
+                    "OpenAlex: resuming from checkpoint cursor=%s total=%d",
+                    str(resume_cursor)[:30], total_fetched,
+                )
+            elif cp:
+                logger.info("OpenAlex: checkpoint filter mismatch, starting fresh")
 
-            all_records: List[Dict[str, Any]] = []
-            cursor = "*"  # initial cursor for first page
+            cursor = resume_cursor
+            page_buffer: List[Dict[str, Any]] = []
+            pages_since_checkpoint = 0
 
-            while cursor and len(all_records) < max_records:
+            while cursor and (max_records is None or total_fetched < max_records):
                 params = {
                     "filter": filter_str,
                     "per_page": PAGE_SIZE,
@@ -147,37 +172,59 @@ class OpenAlexCIFetcher(BaseFetcher):
                     break
 
                 for work in results:
-                    record = self._normalize_work(work)
-                    all_records.append(record)
+                    page_buffer.append(self._normalize_work(work))
+
+                total_fetched += len(results)
+                pages_since_checkpoint += 1
 
                 # Advance cursor
                 meta = data.get("meta", {})
                 next_cursor = meta.get("next_cursor")
 
                 if next_cursor == cursor or next_cursor is None:
-                    # No more pages
                     break
                 cursor = next_cursor
 
                 logger.debug(
-                    f"Fetched page: {len(results)} works, total so far: {len(all_records)}"
+                    f"Fetched page: {len(results)} works, total so far: {total_fetched}"
                 )
+
+                # Flush to DB and checkpoint every CHECKPOINT_INTERVAL pages
+                if pages_since_checkpoint >= CHECKPOINT_INTERVAL:
+                    load_openalex_ci_data(page_buffer)
+                    page_buffer = []
+                    pages_since_checkpoint = 0
+                    save_checkpoint(self.SOURCE_NAME, {
+                        "cursor": cursor,
+                        "total_fetched": total_fetched,
+                        "filter_str": filter_str,
+                    })
+                    logger.info(
+                        "OpenAlex: checkpoint saved cursor=%s total=%d",
+                        str(cursor)[:30], total_fetched,
+                    )
+
                 time.sleep(REQUEST_DELAY_WITH_KEY if self.api_key else REQUEST_DELAY_NO_KEY)
 
-            # Compute hash of the result set
+            # Flush remaining records
+            if page_buffer:
+                load_openalex_ci_data(page_buffer)
+
+            clear_checkpoint(self.SOURCE_NAME)
+
             content_hash = hashlib.md5(
-                str(sorted(r["work_id"] for r in all_records)).encode()
+                f"{filter_str}:{total_fetched}".encode()
             ).hexdigest()
 
             result = {
                 "status": "success",
-                "records": all_records,
-                "record_count": len(all_records),
+                "records": [],  # already in DB
+                "record_count": total_fetched,
                 "hash": content_hash,
             }
 
-            logger.info(f"OpenAlex fetch complete: {len(all_records)} records")
-            self.log_fetch_result({"status": "success", "records": len(all_records)})
+            logger.info(f"OpenAlex fetch complete: {total_fetched} records")
+            self.log_fetch_result({"status": "success", "records": total_fetched})
             return result
 
         except Exception as e:

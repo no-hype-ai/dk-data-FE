@@ -15,6 +15,8 @@ Verifies:
 import tempfile
 from unittest.mock import MagicMock, patch
 
+_NIH_LOAD = "dk_data.ingestion.fetchers.nih_reporter.load_nih_reporter_data"
+
 
 # ---------------------------------------------------------------------------
 # Fixtures
@@ -61,14 +63,14 @@ def _mock_post_response(projects, total=None, status_code=200):
 class TestNIHReporterFetcherResultShape:
     def test_returns_status_field(self):
         fetcher = _make_fetcher()
-        with patch.object(fetcher, "session") as mock_session:
+        with patch(_NIH_LOAD), patch.object(fetcher, "session") as mock_session:
             mock_session.post.return_value = _mock_post_response([_sample_project()])
             result = fetcher.fetch(days_back=7)
         assert "status" in result
 
     def test_returns_records_list(self):
         fetcher = _make_fetcher()
-        with patch.object(fetcher, "session") as mock_session:
+        with patch(_NIH_LOAD), patch.object(fetcher, "session") as mock_session:
             mock_session.post.return_value = _mock_post_response([_sample_project()])
             result = fetcher.fetch(days_back=7)
         assert "records" in result
@@ -83,7 +85,7 @@ class TestNIHReporterFetcherResultShape:
 
     def test_success_status_on_valid_response(self):
         fetcher = _make_fetcher()
-        with patch.object(fetcher, "session") as mock_session:
+        with patch(_NIH_LOAD), patch.object(fetcher, "session") as mock_session:
             mock_session.post.return_value = _mock_post_response([_sample_project()])
             result = fetcher.fetch(days_back=7)
         assert result["status"] == "success"
@@ -91,10 +93,10 @@ class TestNIHReporterFetcherResultShape:
     def test_record_count_matches(self):
         fetcher = _make_fetcher()
         projects = [_sample_project(str(i)) for i in range(3)]
-        with patch.object(fetcher, "session") as mock_session:
+        with patch(_NIH_LOAD), patch.object(fetcher, "session") as mock_session:
             mock_session.post.return_value = _mock_post_response(projects)
             result = fetcher.fetch(days_back=7)
-        assert len(result["records"]) == 3
+        assert result["record_count"] == 3
 
 
 # ---------------------------------------------------------------------------
@@ -117,12 +119,12 @@ class TestNIHReporterPagination:
                 projects = [_sample_project(f"p{i}") for i in range(2)]
                 return _mock_post_response(projects, total=PAGE_SIZE + 2)
 
-        with patch.object(fetcher, "session") as mock_session:
+        with patch(_NIH_LOAD), patch.object(fetcher, "session") as mock_session:
             mock_session.post.side_effect = _mock_post
             result = fetcher.fetch(days_back=7)
 
         assert call_count == 2
-        assert len(result["records"]) == PAGE_SIZE + 2
+        assert result["record_count"] == PAGE_SIZE + 2
 
     def test_stops_when_total_exhausted(self):
         fetcher = _make_fetcher()
@@ -133,7 +135,7 @@ class TestNIHReporterPagination:
             call_count += 1
             return _mock_post_response([_sample_project(str(call_count))], total=1)
 
-        with patch.object(fetcher, "session") as mock_session:
+        with patch(_NIH_LOAD), patch.object(fetcher, "session") as mock_session:
             mock_session.post.side_effect = _mock_post
             fetcher.fetch(days_back=7)
 
@@ -215,9 +217,9 @@ class TestNIHReporterSafetyCap:
             projects = [_sample_project(f"{call_count}_{i}") for i in range(PAGE_SIZE)]
             return _mock_post_response(projects, total=MAX_RECORDS + 1000)
 
-        with patch.object(fetcher, "session") as mock_session:
+        with patch(_NIH_LOAD), patch.object(fetcher, "session") as mock_session:
             mock_session.post.side_effect = _mock_post
             result = fetcher.fetch(days_back=90)
 
-        assert len(result["records"]) <= MAX_RECORDS
+        assert result["record_count"] <= MAX_RECORDS
         assert result["status"] == "success"

@@ -12,12 +12,16 @@ Tests cover:
 
 import tempfile
 from datetime import date
+from unittest.mock import patch
 
 import pytest
 import responses
 
 from dk_data.ingestion.fetchers.openalex_ci import OpenAlexCIFetcher
 from dk_data.ingestion.utils.validators import OpenAlexCIRecord
+
+_OALEX_LOAD = "dk_data.ingestion.fetchers.openalex_ci.load_openalex_ci_data"
+_OALEX_CP_CLEAR = "dk_data.ingestion.fetchers.openalex_ci.clear_checkpoint"
 
 
 # ---------------------------------------------------------------------------
@@ -172,30 +176,33 @@ class TestOpenAlexCIFetcherFetch:
             status=200,
         )
 
-        with tempfile.TemporaryDirectory() as tmpdir:
-            fetcher = OpenAlexCIFetcher(data_dir=tmpdir)
-            result = fetcher.fetch(days_back=7)
+        with patch(_OALEX_LOAD) as mock_load, patch(_OALEX_CP_CLEAR):
+            with tempfile.TemporaryDirectory() as tmpdir:
+                fetcher = OpenAlexCIFetcher(data_dir=tmpdir)
+                result = fetcher.fetch(days_back=7)
 
-            assert result["status"] == "success"
-            assert result["record_count"] == 2
-            assert len(result["records"]) == 2
-            assert result["hash"] is not None
+        assert result["status"] == "success"
+        assert result["record_count"] == 2
+        assert result["records"] == []  # records flushed to DB, not returned inline
+        assert result["hash"] is not None
 
-            # Verify record normalization
-            rec = result["records"][0]
-            assert rec["work_id"] == "W2741809807"
-            assert rec["doi"] == "https://doi.org/10.1038/s41586-021-03819-2"
-            assert rec["title"] == "Highly accurate protein structure prediction with AlphaFold"
-            assert rec["cited_by_count"] == 12345
-            assert rec["abstract"] is not None
-            assert "Proteins" in rec["abstract"]
-            assert rec["concepts"] is not None
-            assert len(rec["concepts"]) == 2
+        # Verify record normalization via what was passed to the loader
+        assert mock_load.called
+        flushed = mock_load.call_args[0][0]
+        rec = flushed[0]
+        assert rec["work_id"] == "W2741809807"
+        assert rec["doi"] == "https://doi.org/10.1038/s41586-021-03819-2"
+        assert rec["title"] == "Highly accurate protein structure prediction with AlphaFold"
+        assert rec["cited_by_count"] == 12345
+        assert rec["abstract"] is not None
+        assert "Proteins" in rec["abstract"]
+        assert rec["concepts"] is not None
+        assert len(rec["concepts"]) == 2
 
-            # Verify minimal record
-            rec_min = result["records"][1]
-            assert rec_min["work_id"] == "W9999999999"
-            assert rec_min["abstract"] is None
+        # Verify minimal record
+        rec_min = flushed[1]
+        assert rec_min["work_id"] == "W9999999999"
+        assert rec_min["abstract"] is None
 
     @responses.activate
     def test_fetch_cursor_pagination(self):
@@ -222,14 +229,15 @@ class TestOpenAlexCIFetcherFetch:
             status=200,
         )
 
-        with tempfile.TemporaryDirectory() as tmpdir:
-            fetcher = OpenAlexCIFetcher(data_dir=tmpdir)
-            result = fetcher.fetch(days_back=3)
+        with patch(_OALEX_LOAD), patch(_OALEX_CP_CLEAR):
+            with tempfile.TemporaryDirectory() as tmpdir:
+                fetcher = OpenAlexCIFetcher(data_dir=tmpdir)
+                result = fetcher.fetch(days_back=3)
 
-            assert result["status"] == "success"
-            assert result["record_count"] == 2
-            # Verify both pages were consumed (3 HTTP calls total)
-            assert len(responses.calls) == 3
+        assert result["status"] == "success"
+        assert result["record_count"] == 2
+        # Verify both pages were consumed (3 HTTP calls total)
+        assert len(responses.calls) == 3
 
     @responses.activate
     def test_fetch_empty_results(self):
@@ -281,15 +289,16 @@ class TestOpenAlexCIFetcherFetch:
             status=200,
         )
 
-        with tempfile.TemporaryDirectory() as tmpdir:
-            fetcher = OpenAlexCIFetcher(data_dir=tmpdir)
-            result = fetcher.fetch(days_back=7, max_records=1)
+        with patch(_OALEX_LOAD), patch(_OALEX_CP_CLEAR):
+            with tempfile.TemporaryDirectory() as tmpdir:
+                fetcher = OpenAlexCIFetcher(data_dir=tmpdir)
+                result = fetcher.fetch(days_back=7, max_records=1)
 
-            assert result["status"] == "success"
-            # Both records from the first page are added before the limit check
-            # on the next iteration, so we get 2 records from this page
-            # but pagination stops (no further pages fetched)
-            assert result["record_count"] >= 1
+        assert result["status"] == "success"
+        # Both records from the first page are added before the limit check
+        # on the next iteration, so we get 2 records from this page
+        # but pagination stops (no further pages fetched)
+        assert result["record_count"] >= 1
 
 
 class TestAbstractReconstruction:

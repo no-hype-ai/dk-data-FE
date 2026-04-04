@@ -33,6 +33,8 @@ import logging
 import time
 from typing import Any, Dict, List, Optional
 
+from ..sources.kegg_drug import load_kegg_drug_data
+from ..utils.checkpoint import clear_checkpoint, load_checkpoint, save_checkpoint
 from .base import BaseFetcher
 
 logger = logging.getLogger(__name__)
@@ -189,7 +191,7 @@ class KEGGDrugFetcher(BaseFetcher):
                 hash (str):           MD5 hex digest of all drug IDs fetched.
                 error (str):          Present only on failure.
         """
-        max_entries: int = kwargs.get("max_entries", 5000)
+        max_entries: int = kwargs.get("max_entries", 20_000)  # KEGG Drug has ~11K entries; 20K covers all
         batch_size: int = min(kwargs.get("batch_size", 10), 10)
 
         try:
@@ -198,14 +200,26 @@ class KEGGDrugFetcher(BaseFetcher):
                 "[kegg_drug] Fetched %d drug IDs from /list/drug", len(drug_ids)
             )
 
-            records: List[Dict[str, Any]] = []
+            # Resume from checkpoint if available
+            cp = load_checkpoint(self.SOURCE_NAME)
+            resume_batch_start = 0
             total_entries = 0
+            if cp:
+                resume_batch_start = cp.get("batch_start", 0)
+                total_entries = cp.get("total_fetched", 0)
+                logger.info(
+                    "[kegg_drug] Resuming from checkpoint batch_start=%d total=%d",
+                    resume_batch_start, total_entries,
+                )
 
-            for batch_start in range(0, len(drug_ids), batch_size):
+            for batch_start in range(resume_batch_start, len(drug_ids), batch_size):
                 batch_ids = drug_ids[batch_start : batch_start + batch_size]
                 batch_entries = self._fetch_batch(batch_ids)
-                records.append({"entries": batch_entries})
-                total_entries += len(batch_entries)
+
+                if batch_entries:
+                    # Flush directly to DB — bounded memory
+                    load_kegg_drug_data([{"entries": batch_entries}])
+                    total_entries += len(batch_entries)
 
                 logger.debug(
                     "[kegg_drug] Batch %d-%d: %d entries parsed",
@@ -214,8 +228,17 @@ class KEGGDrugFetcher(BaseFetcher):
                     len(batch_entries),
                 )
 
-                if batch_start + batch_size < len(drug_ids):
+                # Checkpoint after each batch
+                next_batch = batch_start + batch_size
+                save_checkpoint(self.SOURCE_NAME, {
+                    "batch_start": next_batch,
+                    "total_fetched": total_entries,
+                })
+
+                if next_batch < len(drug_ids):
                     time.sleep(_BATCH_DELAY)
+
+            clear_checkpoint(self.SOURCE_NAME)
 
             content_hash = hashlib.md5(
                 json.dumps(drug_ids, sort_keys=True).encode()
@@ -223,7 +246,7 @@ class KEGGDrugFetcher(BaseFetcher):
 
             result: Dict[str, Any] = {
                 "status": "success",
-                "records": records,
+                "records": [],  # already in DB
                 "record_count": total_entries,
                 "hash": content_hash,
             }

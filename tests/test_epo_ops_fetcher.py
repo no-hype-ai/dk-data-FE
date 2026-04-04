@@ -22,6 +22,11 @@ import responses
 from dk_data.ingestion.fetchers.epo_ops import EPOOPSFetcher
 from dk_data.ingestion.utils.validators import EPOPatentRecord
 
+_EPO_LOAD = "dk_data.ingestion.fetchers.epo_ops.load_epo_ops_data"
+_EPO_CP_LOAD = "dk_data.ingestion.fetchers.epo_ops.load_checkpoint"
+_EPO_CP_SAVE = "dk_data.ingestion.fetchers.epo_ops.save_checkpoint"
+_EPO_CP_CLEAR = "dk_data.ingestion.fetchers.epo_ops.clear_checkpoint"
+
 
 # ---------------------------------------------------------------------------
 # Sample OPS API XML response fixtures
@@ -213,10 +218,12 @@ class TestEPOOPSFetcherFetch:
             status=404,
         )
 
-        with patch.dict("os.environ", {
-            "EPO_CONSUMER_KEY": "test_key",
-            "EPO_CONSUMER_SECRET": "test_secret",
-        }):
+        with patch(_EPO_LOAD) as mock_load, patch(_EPO_CP_LOAD, return_value=None), \
+                patch(_EPO_CP_SAVE), patch(_EPO_CP_CLEAR), \
+                patch.dict("os.environ", {
+                    "EPO_CONSUMER_KEY": "test_key",
+                    "EPO_CONSUMER_SECRET": "test_secret",
+                }):
             fetcher = EPOOPSFetcher(data_dir=str(tmp_path))
             result = fetcher.fetch(
                 search_terms=["cancer treatment"],
@@ -226,9 +233,13 @@ class TestEPOOPSFetcherFetch:
         assert result["status"] == "success"
         assert result["record_count"] >= 1
         assert result["hash"] is not None
-        assert len(result["records"]) >= 1
+        assert result["records"] == []  # flushed to DB
 
-        rec = result["records"][0]
+        # Verify record content via loader call args
+        assert mock_load.called
+        flushed = mock_load.call_args[0][0]
+        assert len(flushed) >= 1
+        rec = flushed[0]
         assert "publication_id" in rec
         assert rec["publication_id"] == "EP3456789A1"
 

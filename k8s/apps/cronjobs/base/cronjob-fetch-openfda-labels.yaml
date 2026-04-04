@@ -19,7 +19,7 @@ spec:
     spec:
       backoffLimit: 2
       ttlSecondsAfterFinished: 86400
-      activeDeadlineSeconds: 3600  # 1 hour timeout
+      activeDeadlineSeconds: 86400  # 24 hour timeout (full backfill with checkpoint/resume)
       template:
         metadata:
           labels:

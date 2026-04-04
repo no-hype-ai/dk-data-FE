@@ -1,33 +1,34 @@
-# Molecule Fetch Weekly CronJob
-# 004-molecule-platform-integration
-# SUSPENDED: Pipeline 1 (fetch_molecules.py) must be triggered externally only.
-# Use POST /data-platform/source/{source}/ingest to trigger on-demand.
-# Sources: OpenFDA FAERS, ChEMBL, PubChem
+# Indication Domain Transform — Gold Layer
+# 022-full-model-coverage
+# Runs ind_gold.indication_catalog — decision-ready analytics view of ICD-11 classifications.
+# Source: ind_silver.icd11_ontology (built by ind-transform at 07:30 UTC).
+# Schedule: 09:00 UTC — after ind-transform (07:30) completes.
+# Model cron is '@monthly' (full rebuild monthly) but the CronJob runs daily
+# so SQLMesh will skip it when already current.
 apiVersion: batch/v1
 kind: CronJob
 metadata:
-  name: mol-fetch-weekly
+  name: ind-gold-transform
   labels:
-    app: mol-fetch-weekly
-    app.kubernetes.io/name: mol-fetch-weekly
-    app.kubernetes.io/component: ingestion
+    app: ind-gold-transform
+    app.kubernetes.io/name: ind-gold-transform
+    app.kubernetes.io/component: transform
     app.kubernetes.io/part-of: dk-data
 spec:
-  schedule: "0 3 * * 0"  # Sunday 3 AM UTC
-  suspend: true  # P1 is external-trigger only — use API endpoint to invoke
+  schedule: "0 9 * * *"  # 09:00 UTC daily (after ind-transform at 07:30)
   concurrencyPolicy: Forbid
   startingDeadlineSeconds: 3600
   successfulJobsHistoryLimit: 3
   failedJobsHistoryLimit: 3
   jobTemplate:
     spec:
-      backoffLimit: 2
+      backoffLimit: 1
       ttlSecondsAfterFinished: 86400
-      activeDeadlineSeconds: 14400  # 4 hour timeout
+      activeDeadlineSeconds: 1800  # 30 min — 1 FULL model, monthly rebuild
       template:
         metadata:
           labels:
-            app: mol-fetch-weekly
+            app: ind-gold-transform
             app.kubernetes.io/component: batch-job
             app.kubernetes.io/part-of: dk-data
             team: data-platform
@@ -44,30 +45,24 @@ spec:
           imagePullSecrets:
             - name: ghcr-credentials
           containers:
-            - name: mol-fetch-weekly
+            - name: ind-gold-transform
               image: ghcr.io/data-kinetic/dk-data-fe/job-trigger:latest
-              command: ["python", "-m", "dk_data.ingestion.fetch_molecules"]
-              args: ["--source", "openfda,chembl,pubchem"]
+              command: ["python", "-m", "dk_data.ingestion.transform_molecules"]
+              args: ["--layer", "ind_gold"]
               envFrom:
                 - secretRef:
                     name: dk-data-secrets
-                - configMapRef:
-                    name: molecule-pipeline-config
               env:
                 - name: OTEL_EXPORTER_OTLP_ENDPOINT
                   value: "http://alloy.infra.svc.cluster.local:4317"
                 - name: OTEL_ENABLED
                   value: "true"
-                - name: K8S_NAMESPACE
-                  valueFrom:
-                    fieldRef:
-                      fieldPath: metadata.namespace
               resources:
                 requests:
-                  memory: "256Mi"
+                  memory: "512Mi"
                   cpu: "100m"
                 limits:
-                  memory: "512Mi"
+                  memory: "2Gi"
                   cpu: "300m"
               securityContext:
                 allowPrivilegeEscalation: false
@@ -77,6 +72,14 @@ spec:
               volumeMounts:
                 - name: tmp
                   mountPath: /tmp
+                - name: sqlmesh-logs
+                  mountPath: /usr/local/lib/python3.11/site-packages/dk_data/sqlmesh/logs
+                - name: sqlmesh-cache
+                  mountPath: /usr/local/lib/python3.11/site-packages/dk_data/sqlmesh/.cache
           volumes:
             - name: tmp
+              emptyDir: {}
+            - name: sqlmesh-logs
+              emptyDir: {}
+            - name: sqlmesh-cache
               emptyDir: {}

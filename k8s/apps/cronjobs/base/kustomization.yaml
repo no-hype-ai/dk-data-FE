@@ -8,9 +8,6 @@ resources:
   # Idempotent: skips sources with last_successful_refresh < 12h old. No-op on re-deploys.
   - cronjob-platform-init.yaml
   - cronjob-refresh.yaml
-  - cronjob-mol-fetch-daily.yaml
-  - cronjob-mol-fetch-weekly.yaml
-  - cronjob-mol-fetch-monthly.yaml
   # Transform pipeline — 14 staggered per-layer jobs covering all 205 SQLMesh models
   # Full dependency schedule (UTC):
   #   06:00  bronze             mol_bronze core (5 models: chembl, pubchem, clinicaltrials, openfda, faers)
@@ -32,6 +29,7 @@ resources:
   - cronjob-hcs-transform-bronze.yaml
   - cronjob-mol-transform-bronze-ext.yaml
   - cronjob-ind-transform.yaml
+  - cronjob-ind-gold-transform.yaml
   - cronjob-mol-transform-silver.yaml
   - cronjob-hcs-transform-silver.yaml
   - cronjob-mol-transform-ip-silver.yaml

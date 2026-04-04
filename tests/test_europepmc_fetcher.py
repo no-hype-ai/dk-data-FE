@@ -15,6 +15,11 @@ Verifies:
 import tempfile
 from unittest.mock import MagicMock, patch
 
+_EPMC_LOAD = "dk_data.ingestion.fetchers.europepmc.load_europepmc_data"
+_EPMC_CP_LOAD = "dk_data.ingestion.fetchers.europepmc.load_checkpoint"
+_EPMC_CP_SAVE = "dk_data.ingestion.fetchers.europepmc.save_checkpoint"
+_EPMC_CP_CLEAR = "dk_data.ingestion.fetchers.europepmc.clear_checkpoint"
+
 
 # ---------------------------------------------------------------------------
 # Fixtures
@@ -55,6 +60,16 @@ def _mock_response(records, next_cursor=None, status_code=200):
     return resp
 
 
+def _db_mocks():
+    """Context manager that mocks all DB calls in the europepmc fetcher."""
+    return [
+        patch(_EPMC_LOAD),
+        patch(_EPMC_CP_LOAD, return_value=None),
+        patch(_EPMC_CP_SAVE),
+        patch(_EPMC_CP_CLEAR),
+    ]
+
+
 # ---------------------------------------------------------------------------
 # Tests: fetcher result shape
 # ---------------------------------------------------------------------------
@@ -62,50 +77,59 @@ def _mock_response(records, next_cursor=None, status_code=200):
 class TestEuropePMCFetcherResultShape:
     def test_returns_status_field(self):
         fetcher = _make_fetcher()
-        with patch.object(fetcher, "fetch_json", return_value={
-            "resultList": {"result": [_sample_record()]},
-            "nextCursorMark": None,
-        }):
+        with patch(_EPMC_LOAD), patch(_EPMC_CP_LOAD, return_value=None), \
+                patch(_EPMC_CP_CLEAR), \
+                patch.object(fetcher, "fetch_json", return_value={
+                    "resultList": {"result": [_sample_record()]},
+                    "nextCursorMark": None,
+                }):
             result = fetcher.fetch(days_back=7)
         assert "status" in result
 
     def test_returns_records_list(self):
         fetcher = _make_fetcher()
-        with patch.object(fetcher, "fetch_json", return_value={
-            "resultList": {"result": [_sample_record(), _sample_record("87654321")]},
-            "nextCursorMark": None,
-        }):
+        with patch(_EPMC_LOAD), patch(_EPMC_CP_LOAD, return_value=None), \
+                patch(_EPMC_CP_CLEAR), \
+                patch.object(fetcher, "fetch_json", return_value={
+                    "resultList": {"result": [_sample_record(), _sample_record("87654321")]},
+                    "nextCursorMark": None,
+                }):
             result = fetcher.fetch(days_back=7)
         assert "records" in result
         assert isinstance(result["records"], list)
 
     def test_returns_hash_field(self):
         fetcher = _make_fetcher()
-        with patch.object(fetcher, "fetch_json", return_value={
-            "resultList": {"result": []},
-            "nextCursorMark": None,
-        }):
+        with patch(_EPMC_CP_LOAD, return_value=None), patch(_EPMC_CP_CLEAR), \
+                patch.object(fetcher, "fetch_json", return_value={
+                    "resultList": {"result": []},
+                    "nextCursorMark": None,
+                }):
             result = fetcher.fetch(days_back=7)
         assert "hash" in result
 
     def test_success_status_on_valid_response(self):
         fetcher = _make_fetcher()
-        with patch.object(fetcher, "fetch_json", return_value={
-            "resultList": {"result": [_sample_record()]},
-            "nextCursorMark": None,
-        }):
+        with patch(_EPMC_LOAD), patch(_EPMC_CP_LOAD, return_value=None), \
+                patch(_EPMC_CP_CLEAR), \
+                patch.object(fetcher, "fetch_json", return_value={
+                    "resultList": {"result": [_sample_record()]},
+                    "nextCursorMark": None,
+                }):
             result = fetcher.fetch(days_back=7)
         assert result["status"] == "success"
 
     def test_record_count_matches(self):
         fetcher = _make_fetcher()
         records = [_sample_record(str(i)) for i in range(5)]
-        with patch.object(fetcher, "fetch_json", return_value={
-            "resultList": {"result": records},
-            "nextCursorMark": None,
-        }):
+        with patch(_EPMC_LOAD), patch(_EPMC_CP_LOAD, return_value=None), \
+                patch(_EPMC_CP_CLEAR), \
+                patch.object(fetcher, "fetch_json", return_value={
+                    "resultList": {"result": records},
+                    "nextCursorMark": None,
+                }):
             result = fetcher.fetch(days_back=7)
-        assert len(result["records"]) == 5
+        assert result["record_count"] == 5
 
 
 # ---------------------------------------------------------------------------
@@ -131,11 +155,13 @@ class TestEuropePMCPagination:
                     "nextCursorMark": None,
                 }
 
-        with patch.object(fetcher, "fetch_json", side_effect=_fake_fetch_json):
+        with patch(_EPMC_LOAD), patch(_EPMC_CP_LOAD, return_value=None), \
+                patch(_EPMC_CP_CLEAR), \
+                patch.object(fetcher, "fetch_json", side_effect=_fake_fetch_json):
             result = fetcher.fetch(days_back=7)
 
         assert result["status"] == "success"
-        assert len(result["records"]) == 2
+        assert result["record_count"] == 2
         assert call_count == 2
 
     def test_stops_when_cursor_unchanged(self):
@@ -151,7 +177,9 @@ class TestEuropePMCPagination:
                 "nextCursorMark": "*",  # unchanged initial cursor
             }
 
-        with patch.object(fetcher, "fetch_json", side_effect=_fake_fetch_json):
+        with patch(_EPMC_LOAD), patch(_EPMC_CP_LOAD, return_value=None), \
+                patch(_EPMC_CP_CLEAR), \
+                patch.object(fetcher, "fetch_json", side_effect=_fake_fetch_json):
             fetcher.fetch(days_back=7)
 
         assert call_count == 1  # Loop stops immediately on same cursor
@@ -168,7 +196,8 @@ class TestEuropePMCPagination:
                 "nextCursorMark": "AoE=",
             }
 
-        with patch.object(fetcher, "fetch_json", side_effect=_fake_fetch_json):
+        with patch(_EPMC_CP_LOAD, return_value=None), patch(_EPMC_CP_CLEAR), \
+                patch.object(fetcher, "fetch_json", side_effect=_fake_fetch_json):
             fetcher.fetch(days_back=7)
 
         assert call_count == 1
@@ -192,11 +221,13 @@ class TestEuropePMCSafetyCap:
                 "nextCursorMark": f"cursor_{call_count}",
             }
 
-        with patch.object(fetcher, "fetch_json", side_effect=_fake_fetch_json):
-            result = fetcher.fetch(days_back=30)
+        with patch(_EPMC_LOAD), patch(_EPMC_CP_LOAD, return_value=None), \
+                patch(_EPMC_CP_SAVE), patch(_EPMC_CP_CLEAR), \
+                patch.object(fetcher, "fetch_json", side_effect=_fake_fetch_json):
+            result = fetcher.fetch(days_back=30, max_records=10000)
 
         # After 2 batches of 5000 = 10000 records, should stop
-        assert len(result["records"]) == 10000
+        assert result["record_count"] == 10000
         assert result["status"] == "success"
 
 
@@ -207,23 +238,26 @@ class TestEuropePMCSafetyCap:
 class TestEuropePMCErrorHandling:
     def test_http_error_returns_failed_status(self):
         fetcher = _make_fetcher()
-        with patch.object(fetcher, "fetch_json", side_effect=Exception("Connection refused")):
+        with patch(_EPMC_CP_LOAD, return_value=None), \
+                patch.object(fetcher, "fetch_json", side_effect=Exception("Connection refused")):
             result = fetcher.fetch(days_back=7)
         assert result["status"] == "failed"
         assert result["records"] == []
 
     def test_error_field_present_on_failure(self):
         fetcher = _make_fetcher()
-        with patch.object(fetcher, "fetch_json", side_effect=Exception("timeout")):
+        with patch(_EPMC_CP_LOAD, return_value=None), \
+                patch.object(fetcher, "fetch_json", side_effect=Exception("timeout")):
             result = fetcher.fetch(days_back=7)
         assert "error" in result
 
     def test_empty_results_is_success(self):
         fetcher = _make_fetcher()
-        with patch.object(fetcher, "fetch_json", return_value={
-            "resultList": {"result": []},
-            "nextCursorMark": None,
-        }):
+        with patch(_EPMC_CP_LOAD, return_value=None), patch(_EPMC_CP_CLEAR), \
+                patch.object(fetcher, "fetch_json", return_value={
+                    "resultList": {"result": []},
+                    "nextCursorMark": None,
+                }):
             result = fetcher.fetch(days_back=7)
         assert result["status"] == "success"
         assert result["records"] == []
