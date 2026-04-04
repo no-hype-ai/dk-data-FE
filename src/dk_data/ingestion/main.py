@@ -361,7 +361,7 @@ SOURCES = {
         'fetcher': EPOOPSFetcher,
         'loader': load_epo_ops_data,
         'requires_file': False,
-        'default_days_back': 90,
+        'default_days_back': None,  # checkpoint/resume — term-by-term pagination, no date cap
     },
     'cochrane': {
         'name': 'Cochrane Library',
@@ -1183,14 +1183,20 @@ def log_to_meta(source_name: str, result: dict) -> None:
     """Log ingestion result to meta.refresh_log."""
     try:
         with get_cursor() as cur:
-            # Get source_id
+            # Get or auto-register source — ensures last_successful_refresh is always
+            # tracked even for sources not pre-seeded in meta.data_sources.
+            cur.execute("""
+                INSERT INTO meta.data_sources (source_name)
+                VALUES (%s)
+                ON CONFLICT (source_name) DO NOTHING
+            """, (source_name,))
             cur.execute("""
                 SELECT source_id FROM meta.data_sources WHERE source_name = %s
             """, (source_name,))
             row = cur.fetchone()
 
             if row is None:
-                logger.warning(f"Source '{source_name}' not found in meta.data_sources")
+                logger.error(f"Could not register source '{source_name}' in meta.data_sources")
                 return
 
             source_id = row[0]
@@ -1602,6 +1608,17 @@ Examples:
     parser.add_argument('--batch-size', '-b', type=int, default=1000, help='Batch size for commits')
     parser.add_argument('--max-records', '-m', type=int, default=None, help='Cap on records fetched (for seeding/testing)')
     parser.add_argument('--data-dir', '-d', default='/tmp/data/raw', help='Directory for fetcher temp storage')
+    parser.add_argument(
+        '--full-backfill',
+        action='store_true',
+        dest='full_backfill',
+        default=False,
+        help=(
+            'Pass full_backfill=True to the fetcher. Used for sources like openfda_faers '
+            'and openfda_labels that use a full_backfill kwarg to switch between '
+            'year-by-year historical mode and incremental mode.'
+        ),
+    )
     parser.add_argument('--days-back', type=int, default=None,
                         help='Override incremental days_back window (bypasses meta.data_sources state). '
                              'Use for initial backfill: --days-back 730 fetches 2 years regardless of last_successful_refresh.')
@@ -1677,6 +1694,13 @@ Examples:
     try:
         tracer = get_tracer(__name__) if _OBS_AVAILABLE else None
 
+        # Build extra kwargs that pass through to fetcher.fetch() unchanged.
+        # full_backfill is only forwarded when explicitly set (--full-backfill flag)
+        # so that regular CronJob runs without the flag use the fetcher's own default.
+        extra_kwargs = {}
+        if args.full_backfill:
+            extra_kwargs['full_backfill'] = True
+
         if tracer:
             with tracer.start_as_current_span(f"{job_name}-execution") as span:
                 span.set_attribute("source", source)
@@ -1689,6 +1713,7 @@ Examples:
                     max_records=args.max_records,
                     data_dir=args.data_dir,
                     days_back=args.days_back,
+                    **extra_kwargs,
                 )
                 records = result.get('records_inserted', result.get('records_fetched', 0))
                 span.set_attribute("records_fetched", records)
@@ -1701,6 +1726,7 @@ Examples:
                 max_records=args.max_records,
                 data_dir=args.data_dir,
                 days_back=args.days_back,
+                **extra_kwargs,
             )
             records = result.get('records_inserted', result.get('records_fetched', 0))
 
