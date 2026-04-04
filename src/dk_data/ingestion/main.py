@@ -313,7 +313,7 @@ SOURCES = {
         'fetcher': OpenAlexCIFetcher,
         'loader': load_openalex_ci_data,
         'requires_file': False,
-        'default_days_back': 90,
+        'default_days_back': None,  # checkpoint/resume — fetches all works, no date cap
     },
     'drugbank': {
         'name': 'DrugBank',
@@ -459,7 +459,7 @@ SOURCES = {
         'fetcher': EuropePMCFetcher,
         'loader': load_europepmc_data,
         'requires_file': False,
-        'default_days_back': 30,
+        'default_days_back': None,  # checkpoint/resume — fetches all literature, no date cap
     },
     'nih_reporter': {
         'name': 'NIH Reporter',
@@ -467,7 +467,7 @@ SOURCES = {
         'fetcher': NIHReporterFetcher,
         'loader': load_nih_reporter_data,
         'requires_file': False,
-        'default_days_back': 90,
+        'default_days_back': None,  # checkpoint/resume — uses _fetch_full_backfill() year-by-year
     },
     'cms_geographic_variation': {
         'name': 'CMS Geographic Variation',
@@ -985,7 +985,7 @@ SOURCES = {
         'fetcher': ClinicalTrialsFetcher,
         'loader': load_clinicaltrials_data,
         'requires_file': False,
-        'default_days_back': 30,
+        'default_days_back': None,  # checkpoint/resume — fetches all studies, no date cap
         'self_loading': True,  # fetcher streams directly to DB with checkpoint/resume
     },
     'openfda_labels': {
