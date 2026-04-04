@@ -22,6 +22,10 @@ from dk_data.ingestion.fetchers.openfda_labels import (
     OpenFDALabelsFetcher,
 )
 
+_FDA_LOAD = "dk_data.ingestion.fetchers.openfda_labels.load_openfda_labels_data"
+_FDA_CP_LOAD = "dk_data.ingestion.fetchers.openfda_labels.load_checkpoint"
+_FDA_CP_CLEAR = "dk_data.ingestion.fetchers.openfda_labels.clear_checkpoint"
+
 
 def _make_fetcher():
     tmpdir = tempfile.mkdtemp()
@@ -64,19 +68,21 @@ class TestOpenFDALabelsFetcherSuccess:
         )
 
         fetcher = _make_fetcher()
-        result = fetcher.fetch(days_back=90, max_records=5000)
+        with patch(_FDA_LOAD) as mock_load:
+            result = fetcher.fetch(full_backfill=False, days_back=90, max_records=5000)
 
         assert result["status"] == "success"
-        assert result["record_count"] == 2
-        assert len(result["records"]) == 2
-        assert result["_total_labels"] == 150
+        # record_count now tracks total individual labels (150)
+        assert result["record_count"] == 150
+        assert result["records"] == []  # flushed to DB, not returned inline
         assert result["hash"] is not None
 
-        # Each page blob has expected keys
-        for blob in result["records"]:
-            assert "results" in blob
-            assert "_request_id" in blob
-            assert "_page_number" in blob
+        # Each page blob passed to the loader has expected keys
+        assert mock_load.call_count == 2
+        first_blob = mock_load.call_args_list[0][0][0][0]
+        assert "results" in first_blob
+        assert "_request_id" in first_blob
+        assert "_page_number" in first_blob
 
     @responses.activate
     def test_page_blobs_contain_results(self):
@@ -89,9 +95,11 @@ class TestOpenFDALabelsFetcherSuccess:
         )
 
         fetcher = _make_fetcher()
-        result = fetcher.fetch(days_back=90)
+        with patch(_FDA_LOAD) as mock_load:
+            fetcher.fetch(full_backfill=False, days_back=90)
 
-        blob = result["records"][0]
+        assert mock_load.called
+        blob = mock_load.call_args[0][0][0]
         assert blob["results"] == labels
         assert blob["_page_number"] == 0
 
@@ -105,7 +113,8 @@ class TestOpenFDALabelsFetcherSuccess:
         responses.add(responses.GET, BASE_URL, json={"results": page2}, status=200)
 
         fetcher = _make_fetcher()
-        fetcher.fetch(days_back=90, max_records=5000)
+        with patch(_FDA_LOAD):
+            fetcher.fetch(full_backfill=False, days_back=90, max_records=5000)
 
         # First request: skip=0
         url0 = responses.calls[0].request.url
@@ -132,14 +141,11 @@ class TestOpenFDALabelsFetcherSkipLimitCap:
         )
 
         fetcher = _make_fetcher()
-        result = fetcher.fetch(max_records=30_000)
+        result = fetcher.fetch(full_backfill=False, max_records=30_000)
 
         assert result["status"] == "success"
-        # The fetcher should have capped max_records to FDA_SKIP_LIMIT
-        # We can verify by checking it didn't try to fetch beyond 25k
-        # (with empty results it stops immediately, but the cap is applied
-        #  before pagination starts)
-        assert result["_total_labels"] == 0
+        # record_count is 0 — empty response stopped pagination
+        assert result["record_count"] == 0
 
     def test_max_records_min_enforced_in_code(self):
         """Directly verify the min() logic caps at FDA_SKIP_LIMIT."""
@@ -153,12 +159,12 @@ class TestOpenFDALabelsFetcherSkipLimitCap:
 
         # Patch _paginate to capture the max_records it receives
         captured = {}
-        def spy_paginate(search, max_records, date_str):
+        def spy_paginate(search, max_records, date_str, stream_to_db=False):
             captured["max_records"] = max_records
             return [], 0
 
         with patch.object(fetcher, "_paginate", side_effect=spy_paginate):
-            fetcher.fetch(max_records=50_000)
+            fetcher.fetch(full_backfill=False, max_records=50_000)
 
         assert captured["max_records"] == FDA_SKIP_LIMIT
 
@@ -176,12 +182,11 @@ class TestOpenFDALabelsFetcherEmpty:
         )
 
         fetcher = _make_fetcher()
-        result = fetcher.fetch(days_back=90)
+        result = fetcher.fetch(full_backfill=False, days_back=90)
 
         assert result["status"] == "success"
         assert result["records"] == []
         assert result["record_count"] == 0
-        assert result["_total_labels"] == 0
 
 
 class TestOpenFDALabelsFetcherHTTPError:
@@ -199,13 +204,12 @@ class TestOpenFDALabelsFetcherHTTPError:
         )
 
         fetcher = _make_fetcher()
-        result = fetcher.fetch(days_back=90)
+        result = fetcher.fetch(full_backfill=False, days_back=90)
 
         # _paginate catches the page-level exception and breaks
         assert result["status"] == "success"
         assert result["records"] == []
         assert result["record_count"] == 0
-        assert result["_total_labels"] == 0
 
     def test_network_error_degrades_gracefully(self):
         """A connection error on the first page is caught inside _paginate and
@@ -214,19 +218,18 @@ class TestOpenFDALabelsFetcherHTTPError:
 
         fetcher = _make_fetcher()
         with patch.object(fetcher.session, "get", side_effect=ReqConnError("DNS failure")):
-            result = fetcher.fetch(days_back=90)
+            result = fetcher.fetch(full_backfill=False, days_back=90)
 
         # _paginate swallows per-page exceptions and breaks
         assert result["status"] == "success"
         assert result["records"] == []
-        assert result["_total_labels"] == 0
 
     def test_unexpected_error_in_fetch_returns_failed(self):
         """An error raised outside _paginate (e.g. in date computation)
         triggers the top-level exception handler and returns status='failed'."""
         fetcher = _make_fetcher()
         with patch.object(fetcher, "_paginate", side_effect=RuntimeError("boom")):
-            result = fetcher.fetch(days_back=90)
+            result = fetcher.fetch(full_backfill=False, days_back=90)
 
         assert result["status"] == "failed"
         assert "error" in result
@@ -246,7 +249,7 @@ class TestOpenFDALabelsFetcherDateScoping:
         )
 
         fetcher = _make_fetcher()
-        fetcher.fetch(days_back=90)
+        fetcher.fetch(full_backfill=False, days_back=90)
 
         assert len(responses.calls) == 1
         request_url = responses.calls[0].request.url
@@ -267,7 +270,7 @@ class TestOpenFDALabelsFetcherDateScoping:
         )
 
         fetcher = _make_fetcher()
-        fetcher.fetch(search="openfda.brand_name:aspirin")
+        fetcher.fetch(full_backfill=False, search="openfda.brand_name:aspirin")
 
         request_url = responses.calls[0].request.url
         assert "aspirin" in request_url

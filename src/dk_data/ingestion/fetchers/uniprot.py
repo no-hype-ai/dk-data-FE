@@ -119,7 +119,7 @@ class UniProtFetcher(BaseFetcher):
             response.raise_for_status()
             data = response.json()
 
-            page_results = data.get("results", [])
+            page_results: List[Dict[str, Any]] = data.get("results", [])
             if not page_results:
                 break
 

@@ -4,12 +4,18 @@ Feature: 012-platform-hardening (US3)
 """
 
 import tempfile
+from unittest.mock import patch
 
 import pytest
 import responses
 
 from dk_data.ingestion.fetchers.pdb import PDBFetcher
 from dk_data.ingestion.utils.validators import PDBRecord
+
+_PDB_LOAD = "dk_data.ingestion.fetchers.pdb.load_pdb_data"
+_PDB_CP_LOAD = "dk_data.ingestion.fetchers.pdb.load_checkpoint"
+_PDB_CP_SAVE = "dk_data.ingestion.fetchers.pdb.save_checkpoint"
+_PDB_CP_CLEAR = "dk_data.ingestion.fetchers.pdb.clear_checkpoint"
 
 
 PDB_SEARCH_RESPONSE = {
@@ -73,15 +79,22 @@ class TestPDBFetcher:
             status=200,
         )
 
-        with tempfile.TemporaryDirectory() as tmpdir:
-            fetcher = PDBFetcher(data_dir=tmpdir)
-            result = fetcher.fetch()
+        with patch(_PDB_LOAD) as mock_load, patch(_PDB_CP_LOAD, return_value=None), \
+                patch(_PDB_CP_SAVE), patch(_PDB_CP_CLEAR):
+            with tempfile.TemporaryDirectory() as tmpdir:
+                fetcher = PDBFetcher(data_dir=tmpdir)
+                result = fetcher.fetch()
 
         assert result["status"] == "success"
-        assert len(result["records"]) == 2
-        assert result["records"][0]["pdb_id"] == "1ABC"
-        assert result["records"][0]["title"] == "Crystal structure of a drug target"
-        assert result["records"][0]["method"] == "X-RAY DIFFRACTION"
+        assert result["record_count"] == 2
+        assert result["records"] == []  # flushed to DB
+
+        # Verify normalized records via loader call args
+        assert mock_load.called
+        flushed = mock_load.call_args[0][0]
+        assert flushed[0]["pdb_id"] == "1ABC"
+        assert flushed[0]["title"] == "Crystal structure of a drug target"
+        assert flushed[0]["method"] == "X-RAY DIFFRACTION"
 
     @responses.activate
     def test_fetch_empty(self):
@@ -92,12 +105,13 @@ class TestPDBFetcher:
             status=200,
         )
 
-        with tempfile.TemporaryDirectory() as tmpdir:
-            fetcher = PDBFetcher(data_dir=tmpdir)
-            result = fetcher.fetch()
+        with patch(_PDB_CP_LOAD, return_value=None):
+            with tempfile.TemporaryDirectory() as tmpdir:
+                fetcher = PDBFetcher(data_dir=tmpdir)
+                result = fetcher.fetch()
 
         assert result["status"] == "success"
-        assert len(result["records"]) == 0
+        assert result["record_count"] == 0
 
     @responses.activate
     def test_fetch_search_error(self):
@@ -108,9 +122,10 @@ class TestPDBFetcher:
             status=500,
         )
 
-        with tempfile.TemporaryDirectory() as tmpdir:
-            fetcher = PDBFetcher(data_dir=tmpdir)
-            result = fetcher.fetch()
+        with patch(_PDB_CP_LOAD, return_value=None):
+            with tempfile.TemporaryDirectory() as tmpdir:
+                fetcher = PDBFetcher(data_dir=tmpdir)
+                result = fetcher.fetch()
 
         assert result["status"] == "failed"
         assert result["error"]

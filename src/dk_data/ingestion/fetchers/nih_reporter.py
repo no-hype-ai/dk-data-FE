@@ -64,7 +64,11 @@ class NIHReporterFetcher(BaseFetcher):
 
         since_date = (datetime.utcnow() - timedelta(days=days_back)).strftime("%Y-%m-%d")
         today = datetime.utcnow().strftime("%Y-%m-%d")
-        total = self._stream_date_range(since_date, today)
+        try:
+            total = self._stream_date_range(since_date, today)
+        except Exception as e:
+            logger.error("NIH Reporter fetch failed: %s", e)
+            return {"status": "failed", "records": [], "record_count": 0, "hash": None, "error": str(e)}
         logger.info(
             "NIH Reporter fetched %d projects (days_back=%d, since=%s)",
             total, days_back, since_date,
@@ -146,9 +150,12 @@ class NIHReporterFetcher(BaseFetcher):
                 else:
                     record_api_request(self.SOURCE_NAME, "error")
                 logger.error("NIH Reporter fetch error at offset %d: %s", payload["offset"], e)
+                if payload["offset"] == 0:
+                    # First page failure — propagate so fetch() can return status='failed'
+                    raise
                 break
 
-            results = data.get("results", [])
+            results: List[Dict[str, Any]] = data.get("results", [])
             if not results:
                 break
 
