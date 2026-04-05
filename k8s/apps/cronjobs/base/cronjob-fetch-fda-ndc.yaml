@@ -51,6 +51,8 @@ spec:
                 - secretRef:
                     name: dk-data-secrets
               env:
+                - name: DATA_DIR
+                  value: "/tmp/dk-data-raw"
                 - name: OTEL_EXPORTER_OTLP_ENDPOINT
                   value: "http://alloy.infra.svc.cluster.local:4317"
                 - name: OTEL_SERVICE_NAME
