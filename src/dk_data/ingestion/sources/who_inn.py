@@ -38,7 +38,6 @@ _SQL = """
     DO UPDATE SET
         response_body      = EXCLUDED.response_body,
         response_body_hash = EXCLUDED.response_body_hash,
-        processed_to_bronze = FALSE,
         ingested_at        = NOW()
     WHERE mol_raw.who_inn.response_body IS DISTINCT FROM EXCLUDED.response_body
 """

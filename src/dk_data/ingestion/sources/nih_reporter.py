@@ -66,24 +66,22 @@ def load_nih_reporter_data(records: list, source_hash: Optional[str] = None) -> 
 
     with get_connection() as conn:
         with conn.cursor() as cur:
-            for batch_start in range(0, len(records), BATCH_SIZE):
-                batch = records[batch_start:batch_start + BATCH_SIZE]
-                for r in batch:
-                    project_num = r.get("project_num") or r.get("project_number")
-                    if not project_num:
-                        continue
-                    try:
-                        cur.execute(sql, (json.dumps(r),))
-                        inserted += 1
-                    except Exception as e:
-                        error_msg = f"project_num={project_num}: {e}"
-                        errors.append(error_msg)
-                        if len(errors) <= 10:
-                            logger.warning(f"NIH Reporter insert error: {error_msg}")
-                        # Rollback this cursor state and re-open
-                        conn.rollback()
-                        cur = conn.cursor()
-                conn.commit()
+            for r in records:
+                project_num = r.get("project_num") or r.get("project_number")
+                if not project_num:
+                    continue
+                try:
+                    cur.execute("SAVEPOINT sp_nih")
+                    cur.execute(sql, (json.dumps(r),))
+                    cur.execute("RELEASE SAVEPOINT sp_nih")
+                    inserted += 1
+                except Exception as e:
+                    cur.execute("ROLLBACK TO SAVEPOINT sp_nih")
+                    error_msg = f"project_num={project_num}: {e}"
+                    errors.append(error_msg)
+                    if len(errors) <= 10:
+                        logger.warning(f"NIH Reporter insert error: {error_msg}")
+            conn.commit()
 
     logger.info(
         "NIH Reporter load complete: %d inserted from %d fetched records"

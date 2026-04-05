@@ -55,10 +55,9 @@ def load_who_gho_data(
 
     sql = """
         INSERT INTO mol_raw.who_gho (
-            request_id, api_endpoint, api_version,
-            response_status, response_body, source_id
+            response_body, source_id
         )
-        VALUES (%s, 'https://ghoapi.azureedge.net/api', 'v4', 200, %s::JSONB, 'who_gho')
+        VALUES (%s::JSONB, 'who_gho')
         ON CONFLICT ((response_body->>'IndicatorCode'))
         WHERE (response_body->>'IndicatorCode') IS NOT NULL
         DO UPDATE SET
@@ -75,7 +74,7 @@ def load_who_gho_data(
                 continue
             try:
                 cur.execute("SAVEPOINT sp")
-                cur.execute(sql, (f"who_gho_{indicator_code}", json.dumps(record),))
+                cur.execute(sql, (json.dumps(record),))
                 cur.execute("RELEASE SAVEPOINT sp")
                 inserted += 1
             except Exception as exc:

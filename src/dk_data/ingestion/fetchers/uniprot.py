@@ -10,6 +10,7 @@ Source: https://rest.uniprot.org/
 
 import hashlib
 import logging
+import re
 from typing import Any, Dict, List, Optional
 
 from ..sources.uniprot import load_uniprot_data
@@ -133,17 +134,14 @@ class UniProtFetcher(BaseFetcher):
 
             # Follow Link: <url>; rel="next" header.
             # UniProt cursor pagination — next_url=None means we are on the last page.
+            # Use regex to extract the next URL — simple split(",") breaks when the URL
+            # itself contains commas (e.g. the ?fields=accession,id,... parameter).
             link_header = response.headers.get("Link", "")
             next_url = None
             if link_header:
-                for part in link_header.split(","):
-                    part = part.strip()
-                    if 'rel="next"' in part:
-                        start_idx = part.find("<") + 1
-                        end_idx = part.find(">")
-                        if start_idx > 0 and end_idx > start_idx:
-                            next_url = part[start_idx:end_idx]
-                        break
+                match = re.search(r'<([^>]*)>\s*;\s*rel="next"', link_header)
+                if match:
+                    next_url = match.group(1)
             else:
                 # No Link header — either last page or API pagination issue.
                 # Log the discrepancy if we clearly haven't fetched everything.
