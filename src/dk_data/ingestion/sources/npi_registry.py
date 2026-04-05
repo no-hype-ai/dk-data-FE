@@ -55,10 +55,9 @@ def load_npi_registry_data(
 
     sql = """
         INSERT INTO mol_raw.npi_registry (
-            request_id, api_endpoint, api_version,
-            response_status, response_body, source_id
+            response_body, source_id
         )
-        VALUES (%s, 'https://npiregistry.cms.hhs.gov/api/', 'v2.1', 200, %s::JSONB, 'npi_registry')
+        VALUES (%s::JSONB, 'npi_registry')
         ON CONFLICT ((response_body->>'number'))
         WHERE (response_body->>'number') IS NOT NULL
         DO UPDATE SET
@@ -74,9 +73,12 @@ def load_npi_registry_data(
                 skipped += 1
                 continue
             try:
-                cur.execute(sql, (f"npi_{npi}", json.dumps(record),))
+                cur.execute("SAVEPOINT sp")
+                cur.execute(sql, (json.dumps(record),))
+                cur.execute("RELEASE SAVEPOINT sp")
                 inserted += 1
             except Exception as exc:
+                cur.execute("ROLLBACK TO SAVEPOINT sp")
                 errors.append(f"npi={npi}: {exc}")
                 logger.warning("NPI Registry insert error for npi=%s: %s", npi, exc)
 
