@@ -7,7 +7,7 @@
 MODEL (
     name mol_bronze.cms_medicare,
     kind INCREMENTAL_BY_TIME_RANGE (
-        time_column request_timestamp,
+        time_column ingested_at,
         batch_size 500
     ),
     cron '@monthly',
@@ -17,7 +17,7 @@ MODEL (
 WITH expanded AS (
     SELECT
         r.id              AS raw_source_id,
-        r.request_timestamp,
+        r.ingested_at,
         rec.value         AS row
     FROM mol_raw.cms_medicare r,
          LATERAL jsonb_array_elements(
@@ -28,9 +28,7 @@ WITH expanded AS (
                  ELSE '[]'::jsonb
              END
          ) AS rec(value)
-    WHERE r.response_status = 200
-      AND r.processed_to_bronze = FALSE
-      AND r.request_timestamp BETWEEN @start_dt AND @end_dt
+    WHERE r.ingested_at BETWEEN @start_dt AND @end_dt
 )
 
 SELECT DISTINCT ON (
@@ -92,9 +90,8 @@ SELECT DISTINCT ON (
     row                                                                         AS raw_json,
     raw_source_id,
     'cms_medicare'                                                              AS source,
-    request_timestamp                                                           AS ingested_at,
-    request_timestamp,
-    request_timestamp                                                           AS source_updated_at,
+    ingested_at,
+    ingested_at                                                           AS source_updated_at,
     FALSE                                                                       AS processed_to_silver,
     NOW()                                                                       AS created_at
 
@@ -104,4 +101,4 @@ ORDER BY
     COALESCE(row->>'hcpcs_desc', row->>'generic_name', row->>'drug_name'),
     COALESCE(row->>'program', 'Part B'),
     COALESCE(row->>'year', row->>'cal_year', row->>'srvc_yr'),
-    request_timestamp DESC NULLS LAST;
+    ingested_at DESC NULLS LAST;

@@ -13,7 +13,7 @@
 MODEL (
     name mol_bronze.chembl_activities,
     kind INCREMENTAL_BY_TIME_RANGE (
-        time_column request_timestamp,
+        time_column ingested_at,
         batch_size 500
     ),
     cron '@weekly',
@@ -26,25 +26,24 @@ MODEL (
 WITH activities AS (
     SELECT
         raw.id              AS raw_source_id,
-        raw.request_timestamp,
+        raw.ingested_at,
         act.value           AS act
     FROM mol_raw.chembl_activities AS raw
     CROSS JOIN LATERAL jsonb_array_elements(
         COALESCE(raw.response_body->'activities', '[]'::JSONB)
     ) AS act(value)
     WHERE raw.response_status = 200
-      AND raw.processed_to_bronze = FALSE
-      AND raw.request_timestamp BETWEEN @start_dt AND @end_dt
+      AND raw.ingested_at BETWEEN @start_dt AND @end_dt
 ),
 
 deduped AS (
     SELECT DISTINCT ON (act->>'activity_id')
         raw_source_id,
-        request_timestamp,
+        ingested_at,
         act
     FROM activities
     WHERE act->>'activity_id' IS NOT NULL
-    ORDER BY act->>'activity_id', request_timestamp DESC
+    ORDER BY act->>'activity_id', ingested_at DESC
 )
 
 SELECT
@@ -92,8 +91,8 @@ SELECT
     act                                                             AS raw_json,
     raw_source_id,
     'chembl'                                                        AS source,
-    request_timestamp,
-    request_timestamp                                               AS source_updated_at,
+    ingested_at,
+    ingested_at                                                   AS source_updated_at,
     FALSE                                                           AS processed_to_silver,
     NOW()                                                           AS created_at
 

@@ -29,11 +29,7 @@ SELECT
     -- Classification (mol_raw.uspto_patents does not carry patent_type; default to 'utility')
     'utility'::TEXT AS patent_type,
     NULL::TEXT AS patent_kind,
-    CASE
-        WHEN r.cpc_codes IS NOT NULL
-        THEN to_jsonb(r.cpc_codes)
-        ELSE NULL
-    END AS cpc_codes,
+    r.cpc_codes,
 
     -- Assignee info (fetcher normalizes to {"organization": ..., "city": ..., ...})
     r.assignees->0->>'organization' AS assignee_organization,
@@ -47,7 +43,7 @@ SELECT
 
     -- Determine if pharma-related based on CPC codes
     EXISTS (
-        SELECT 1 FROM unnest(COALESCE(r.cpc_codes, '{}')) AS code
+        SELECT 1 FROM jsonb_array_elements_text(COALESCE(r.cpc_codes, '[]'::jsonb)) AS code
         WHERE code LIKE 'A61K%' OR code LIKE 'A61P%'
            OR code LIKE 'C07D%' OR code LIKE 'C07K%'
     ) AS is_pharma_related,

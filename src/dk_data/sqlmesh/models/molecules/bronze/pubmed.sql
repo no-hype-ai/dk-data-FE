@@ -34,9 +34,9 @@ SELECT
     r.publication_date::DATE             AS publication_date,
 
     -- Classification
-    r.mesh_terms::TEXT[]                 AS mesh_terms,
-    r.publication_types::TEXT[]          AS publication_types,
-    r.keywords::TEXT[]                   AS keywords,
+    r.mesh_terms::JSONB                  AS mesh_terms,
+    r.publication_types::JSONB           AS publication_types,
+    r.keywords::JSONB                    AS keywords,
 
     -- Source tracking
     'pubmed'                             AS source,

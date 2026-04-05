@@ -32,7 +32,6 @@ WITH rems_apps AS (
         raw.response_body AS app
     FROM mol_raw.fda_rems AS raw
     WHERE raw.response_status = 200
-      AND raw.processed_to_bronze = FALSE
       AND raw.ingested_at BETWEEN @start_dt AND @end_dt
 ),
 

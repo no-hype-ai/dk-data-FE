@@ -20,7 +20,7 @@ MODEL (
 WITH from_id_group AS (
     SELECT
         r.id AS raw_id,
-        r.request_timestamp,
+        r.ingested_at,
         r.response_body->'idGroup'->'rxnormId'->>0    AS rxcui,
         r.response_body->'idGroup'->>'name'           AS name,
         r.response_body->'idGroup'->>'tty'            AS tty,
@@ -29,7 +29,6 @@ WITH from_id_group AS (
         r.response_body                               AS raw_json
     FROM mol_raw.rxnorm r
     WHERE r.response_status = 200
-      AND r.processed_to_bronze = FALSE
       AND r.response_body->'idGroup' IS NOT NULL
       AND r.response_body->'idGroup'->>'rxnormId' IS NOT NULL
 ),
@@ -38,7 +37,7 @@ WITH from_id_group AS (
 from_properties AS (
     SELECT
         r.id AS raw_id,
-        r.request_timestamp,
+        r.ingested_at,
         r.response_body->'properties'->>'rxcui'    AS rxcui,
         r.response_body->'properties'->>'name'     AS name,
         r.response_body->'properties'->>'tty'      AS tty,
@@ -47,7 +46,6 @@ from_properties AS (
         r.response_body                            AS raw_json
     FROM mol_raw.rxnorm r
     WHERE r.response_status = 200
-      AND r.processed_to_bronze = FALSE
       AND r.response_body->'properties' IS NOT NULL
       AND r.response_body->'properties'->>'rxcui' IS NOT NULL
 ),
@@ -56,7 +54,7 @@ from_properties AS (
 from_related AS (
     SELECT
         r.id AS raw_id,
-        r.request_timestamp,
+        r.ingested_at,
         prop->>'rxcui'    AS rxcui,
         prop->>'name'     AS name,
         prop->>'tty'      AS tty,
@@ -67,7 +65,6 @@ from_related AS (
          jsonb_array_elements(r.response_body->'relatedGroup'->'conceptGroup') AS cg,
          jsonb_array_elements(cg->'conceptProperties') AS prop
     WHERE r.response_status = 200
-      AND r.processed_to_bronze = FALSE
       AND r.response_body->'relatedGroup' IS NOT NULL
       AND prop->>'rxcui' IS NOT NULL
 ),
@@ -126,12 +123,11 @@ SELECT DISTINCT ON (c.rxcui)
     e.drug_classes,
     c.raw_json,
     FALSE       AS processed_to_silver,
-    c.request_timestamp,
-    c.request_timestamp AS ingested_at,
+    c.ingested_at,
     'rxnorm'    AS source,
-    c.request_timestamp AS source_updated_at
+    c.ingested_at AS source_updated_at
 
 FROM combined c
 LEFT JOIN related_enrichment e ON e.source_rxcui = c.rxcui
 WHERE c.rxcui IS NOT NULL
-ORDER BY c.rxcui, c.request_timestamp DESC NULLS LAST
+ORDER BY c.rxcui, c.ingested_at DESC NULLS LAST

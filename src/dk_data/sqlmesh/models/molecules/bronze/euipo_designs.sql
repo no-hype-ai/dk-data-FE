@@ -1,6 +1,6 @@
 -- SQLMesh Model: Bronze EUIPO Registered Community Designs
--- Transforms raw EUIPO design search API responses into typed bronze layer.
--- Source table: mol_raw.euipo_designs (populated by EUIPODesignsFetcher)
+-- Transforms raw EUIPO design search flat columns into typed bronze layer.
+-- Source table: mol_raw.euipo_designs (flat typed columns, not JSONB envelope)
 -- Part of: 014-uspto-euipo-model-datasource
 
 MODEL (
@@ -20,67 +20,47 @@ MODEL (
 SELECT
     gen_random_uuid() AS id,
 
-    -- Design identification
-    r.response_body->>'application_number'   AS application_number,
-    r.response_body->>'design_title'         AS design_title,
+    -- Design identification (flat columns — no JSON extraction needed)
+    r.application_number,
+    r.design_title,
 
     -- Applicant info
-    r.response_body->>'applicant_name'       AS applicant_name,
-    r.response_body->>'applicant_country'    AS applicant_country,
-    r.response_body->>'representative_name'  AS representative_name,
-    r.response_body->>'designer_name'        AS designer_name,
+    r.applicant_name,
+    r.applicant_country,
+    r.representative_name,
+    r.designer_name,
 
     -- Status
-    r.response_body->>'status'               AS status,
+    r.status,
 
-    -- Dates (stored as text; cast to DATE where non-null)
-    CASE
-        WHEN r.response_body->>'filing_date' ~ '^\d{4}-\d{2}-\d{2}$'
-        THEN (r.response_body->>'filing_date')::DATE
-        ELSE NULL
-    END                                      AS filing_date,
-    CASE
-        WHEN r.response_body->>'registration_date' ~ '^\d{4}-\d{2}-\d{2}$'
-        THEN (r.response_body->>'registration_date')::DATE
-        ELSE NULL
-    END                                      AS registration_date,
-    CASE
-        WHEN r.response_body->>'expiry_date' ~ '^\d{4}-\d{2}-\d{2}$'
-        THEN (r.response_body->>'expiry_date')::DATE
-        ELSE NULL
-    END                                      AS expiry_date,
-    CASE
-        WHEN r.response_body->>'publication_date' ~ '^\d{4}-\d{2}-\d{2}$'
-        THEN (r.response_body->>'publication_date')::DATE
-        ELSE NULL
-    END                                      AS publication_date,
+    -- Dates (already typed as DATE in the raw table)
+    r.filing_date,
+    r.registration_date,
+    r.expiry_date,
+    r.publication_date,
 
-    -- Classification (Locarno classes as JSONB array)
-    CASE
-        WHEN r.response_body->'locarno_classes' IS NOT NULL
-        THEN r.response_body->'locarno_classes'
-        ELSE NULL
-    END                                      AS locarno_classes,
+    -- Classification (Locarno classes JSONB)
+    r.locarno_classes,
 
     -- Product description
-    r.response_body->>'product_indication'   AS product_indication,
+    r.product_indication,
 
     -- Medical/pharma relevance: Locarno class 24 = medical equipment, 09 = packaging
     (
-        r.response_body->'locarno_classes' @> '"24"'::jsonb
-        OR r.response_body->'locarno_classes' @> '"09"'::jsonb
+        COALESCE(r.locarno_classes, '[]'::jsonb) @> '"24"'::jsonb
+        OR COALESCE(r.locarno_classes, '[]'::jsonb) @> '"09"'::jsonb
     )                                        AS is_healthcare_related,
 
     -- Design image
-    r.response_body->>'image_url'            AS image_url,
+    r.image_url,
 
     -- Number of individual designs in the application
-    (r.response_body->>'number_of_designs')::INTEGER AS number_of_designs,
+    r.number_of_designs,
 
     -- Processing metadata
     FALSE                                    AS processed_to_silver,
     r._loaded_at
 
 FROM mol_raw.euipo_designs r
-WHERE r.response_body->>'application_number' IS NOT NULL
+WHERE r.application_number IS NOT NULL
   AND r._loaded_at BETWEEN @start_dt AND @end_dt

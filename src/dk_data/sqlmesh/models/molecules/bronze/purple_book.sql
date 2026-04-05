@@ -5,7 +5,7 @@
 MODEL (
     name mol_bronze.purple_book,
     kind INCREMENTAL_BY_TIME_RANGE (
-        time_column request_timestamp,
+        time_column ingested_at,
         batch_size 500
     ),
     cron '@monthly',
@@ -55,20 +55,18 @@ SELECT
     (prod->>'has_patent_list')::BOOLEAN AS has_patent_list,
 
     -- Source tracking
-    request_params->>'drug_name' AS query_name,
+    NULL::TEXT AS query_name,
     response_body AS raw_json,
     r.id AS raw_source_id,
     'purple_book' AS source,
-    request_timestamp,
-    request_timestamp AS source_updated_at,
+    ingested_at,
+    ingested_at AS source_updated_at,
     FALSE AS processed_to_silver,
     NOW() AS created_at
 
 FROM mol_raw.purple_book r,
      jsonb_array_elements(response_body->'_normalized_products') AS prod
 WHERE
-    response_status = 200
-    AND processed_to_bronze = FALSE
-    AND response_body->'_normalized_products' IS NOT NULL
+    response_body->'_normalized_products' IS NOT NULL
     AND jsonb_array_length(response_body->'_normalized_products') > 0
-    AND request_timestamp BETWEEN @start_dt AND @end_dt;
+    AND ingested_at BETWEEN @start_dt AND @end_dt;

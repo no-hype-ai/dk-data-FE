@@ -6,7 +6,7 @@
 MODEL (
     name mol_bronze.npi_registry,
     kind INCREMENTAL_BY_TIME_RANGE (
-        time_column request_timestamp,
+        time_column ingested_at,
         batch_size 500
     ),
     cron '@monthly',
@@ -19,7 +19,7 @@ MODEL (
 WITH expanded AS (
     SELECT
         r.id              AS raw_source_id,
-        r.request_timestamp,
+        r.ingested_at,
         res.value         AS rec
     FROM mol_raw.npi_registry r,
          LATERAL jsonb_array_elements(
@@ -28,10 +28,8 @@ WITH expanded AS (
                  ELSE jsonb_build_array(r.response_body)
              END
          ) AS res(value)
-    WHERE r.response_status = 200
-      AND r.processed_to_bronze = FALSE
-      AND r.response_body IS NOT NULL
-      AND r.request_timestamp BETWEEN @start_dt AND @end_dt
+    WHERE r.response_body IS NOT NULL
+      AND r.ingested_at BETWEEN @start_dt AND @end_dt
 ),
 
 -- Primary taxonomy (first with primary=true, else first entry)
@@ -92,8 +90,8 @@ SELECT DISTINCT ON (rec->>'number')
     rec                                                                         AS raw_json,
     e.raw_source_id,
     'npi_registry'                                                              AS source,
-    e.request_timestamp,
-    e.request_timestamp                                                         AS source_updated_at,
+    e.ingested_at,
+    e.ingested_at                                                           AS source_updated_at,
     FALSE                                                                       AS processed_to_silver,
     NOW()                                                                       AS created_at
 
@@ -101,4 +99,4 @@ FROM expanded e
 LEFT JOIN primary_taxonomy pt ON pt.npi_val = e.rec->>'number'
 LEFT JOIN primary_address pa  ON pa.npi_val = e.rec->>'number'
 WHERE e.rec->>'number' IS NOT NULL
-ORDER BY e.rec->>'number', e.request_timestamp DESC NULLS LAST;
+ORDER BY e.rec->>'number', e.ingested_at DESC NULLS LAST;
