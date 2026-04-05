@@ -72,7 +72,9 @@ def load_nih_reporter_data(records: list, source_hash: Optional[str] = None) -> 
                     continue
                 try:
                     cur.execute("SAVEPOINT sp_nih")
-                    cur.execute(sql, (json.dumps(r),))
+                    # Strip null bytes (\u0000) — PostgreSQL rejects them in text/jsonb
+                    body_json = json.dumps(r).replace('\\u0000', ' ').replace('\x00', ' ')
+                    cur.execute(sql, (body_json,))
                     cur.execute("RELEASE SAVEPOINT sp_nih")
                     inserted += 1
                 except Exception as e:
