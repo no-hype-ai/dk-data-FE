@@ -13,10 +13,11 @@ Max records per search: 25,000 (skip + limit ≤ 25,000).
 
 Full-database strategy (full_backfill=True):
   The FDA API hard-caps skip at 25,000 per query, but the total FAERS
-  database is ~15M reports. Year-by-year partitioning on safetyreportdate
+  database is ~20M reports. Year-by-year partitioning on receivedate
   keeps each partition well under the skip limit:
-    safetyreportdate:[YEAR0101 TO YEAR1231]
-  Reports without safetyreportdate are captured by a separate fallback query.
+    receivedate:[YEAR0101 TO YEAR1231]
+  Note: safetyreportdate is not a top-level searchable field in the API;
+  receivedate (FDA receive date) is the correct date field to use.
 
 Incremental mode (default): fetch reports from the last N days.
 """
@@ -122,7 +123,7 @@ class OpenFDAFAERSFetcher(BaseFetcher):
                     datetime.utcnow() - timedelta(days=days_back)
                 ).strftime("%Y%m%d")
                 to_date = datetime.utcnow().strftime("%Y%m%d")
-                search = f"safetyreportdate:[{from_date} TO {to_date}]"
+                search = f"receivedate:[{from_date} TO {to_date}]"
 
                 page_blobs, total_reports = self._paginate(
                     search=search,
@@ -177,7 +178,7 @@ class OpenFDAFAERSFetcher(BaseFetcher):
             )
 
         for year in range(resume_year, current_year + 1):
-            search = f"safetyreportdate:[{year}0101 TO {year}1231]"
+            search = f"receivedate:[{year}0101 TO {year}1231]"
             logger.info("OpenFDA FAERS: fetching year %d", year)
 
             try:
