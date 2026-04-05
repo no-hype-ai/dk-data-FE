@@ -23,6 +23,7 @@ Incremental mode (default): fetch reports from the last N days.
 
 import hashlib
 import logging
+import os
 import time
 from datetime import datetime, timedelta
 from typing import Any, Dict, List, Optional, Tuple
@@ -36,6 +37,8 @@ logger = logging.getLogger(__name__)
 _BASE_URL = "https://api.fda.gov/drug/event.json"
 _PAGE_SIZE = 1000
 _FDA_SKIP_LIMIT = 25_000
+# API key raises daily limit from 1,000 to 120,000 requests and prevents 403s
+_OPENFDA_API_KEY: Optional[str] = os.getenv("OPENFDA_API_KEY") or None
 _REQUEST_DELAY = 0.3
 _DEFAULT_DAYS_BACK = 90
 _FULL_BACKFILL_START_YEAR = 2004
@@ -241,6 +244,8 @@ class OpenFDAFAERSFetcher(BaseFetcher):
                 "limit": limit,
                 "skip": skip,
             }
+            if _OPENFDA_API_KEY:
+                params["api_key"] = _OPENFDA_API_KEY
 
             try:
                 data = self.fetch_json(_BASE_URL, params=params)
