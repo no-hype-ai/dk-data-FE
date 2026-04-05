@@ -412,9 +412,9 @@ def run_sqlmesh_command(command: list[str], timeout: int = 3600) -> dict:
         else:
             # Always surface stderr so errors are visible in pod logs
             if result.stderr:
-                logger.error(f"SQLMesh stderr: {result.stderr[:3000]}")
+                logger.error(f"SQLMesh stderr: {result.stderr[:10000]}")
             if result.stdout:
-                logger.error(f"SQLMesh stdout: {result.stdout[:1000]}")
+                logger.error(f"SQLMesh stdout: {result.stdout[:10000]}")
             return {
                 'status': 'failed',
                 'stdout': result.stdout,

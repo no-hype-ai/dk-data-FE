@@ -23,7 +23,7 @@ spec:
     spec:
       backoffLimit: 2
       ttlSecondsAfterFinished: 86400
-      activeDeadlineSeconds: 3600  # 1 hour timeout
+      activeDeadlineSeconds: 7200  # 2 hour timeout (WHO ICD API is slow + heavily paginated)
       template:
         metadata:
           labels:

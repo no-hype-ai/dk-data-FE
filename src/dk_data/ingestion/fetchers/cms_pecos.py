@@ -6,26 +6,19 @@ Provides NPI-to-organization linkage and enrollment status.
 Feature: 016-cms-puf-datasource-integration (Phase 3)
 
 Source: https://data.cms.gov/provider-characteristics/medicare-provider-supplier-enrollment
+
+Streams records directly to DB in batches (no full-list memory accumulation).
+Supports checkpoint/resume so pod restarts continue from the last committed offset.
 """
 
 import logging
-from datetime import datetime
 from typing import Any, Dict, List, Optional
 
 from .base import BaseFetcher
+from ..utils.checkpoint import clear_checkpoint, load_checkpoint, save_checkpoint
+from ..sources.cms_pecos import load_cms_pecos_data
 
 logger = logging.getLogger(__name__)
-
-# Key output fields
-KEY_FIELDS = [
-    "npi",
-    "enrollment_id",
-    "organization_name",
-    "state",
-    "enrollment_type",
-    "first_name",
-    "last_name",
-]
 
 # Mapping from CMS API field names to normalised output field names
 API_FIELD_MAP: Dict[str, str] = {
@@ -38,13 +31,18 @@ API_FIELD_MAP: Dict[str, str] = {
     "LAST_NAME": "last_name",
 }
 
-# Pagination defaults
+# Pagination settings
 DEFAULT_PAGE_SIZE = 500
-MAX_PAGES = 2000
+FLUSH_EVERY_PAGES = 20          # flush to DB every 20 pages (10k records)
+CHECKPOINT_EVERY_PAGES = 100    # checkpoint every 100 pages (50k records)
 
 
 class CMSPECOSFetcher(BaseFetcher):
-    """Fetcher for CMS PECOS Medicare enrollment data."""
+    """Fetcher for CMS PECOS Medicare enrollment data.
+
+    Streams records to DB per batch (no full in-memory accumulation).
+    Supports checkpoint/resume via meta.fetch_checkpoints.
+    """
 
     SOURCE_NAME = "cms_pecos"
     BASE_URL = "https://data.cms.gov/provider-characteristics/medicare-provider-supplier-enrollment"
@@ -53,30 +51,31 @@ class CMSPECOSFetcher(BaseFetcher):
     API_ENDPOINT = "https://data.cms.gov/data-api/v1/dataset/2457ea29-fc82-48b0-86ec-3b0755de7515/data"
 
     def get_latest_url(self) -> str:
-        """Return the API endpoint for PECOS data."""
         return f"{self.API_ENDPOINT}?size={DEFAULT_PAGE_SIZE}&offset=0"
 
     def fetch(self, **kwargs) -> Dict[str, Any]:
-        """Fetch PECOS enrollment records via paginated JSON API.
+        """Fetch PECOS enrollment records via paginated JSON API, streaming to DB.
 
         Keyword Args:
             max_records: Optional cap on returned records.
 
         Returns:
-            Fetch result dict with status, records list, and hash.
+            Fetch result dict with status, record_count, hash, error.
+            records is always [] — data is streamed directly to DB.
         """
         max_records: Optional[int] = kwargs.get("max_records") or self.params.get("max_records")
 
         try:
-            records = self._fetch_paginated(max_records=max_records, resume_offset=kwargs.get('resume_offset', 0))
-            file_hash = self._save_and_hash(records)
+            total_inserted = self._fetch_and_stream(max_records=max_records)
+            clear_checkpoint(self.SOURCE_NAME)
 
             result: Dict[str, Any] = {
                 "status": "success",
-                "records": records,
-                "hash": file_hash,
+                "records": [],
+                "record_count": total_inserted,
+                "hash": None,
             }
-            self.log_fetch_result(result)
+            self.log_fetch_result({"status": "success", "records": total_inserted})
             return result
 
         except Exception as exc:
@@ -84,9 +83,9 @@ class CMSPECOSFetcher(BaseFetcher):
             result = {
                 "status": "failed",
                 "records": [],
+                "record_count": 0,
                 "hash": None,
                 "error": str(exc),
-                "last_offset": getattr(self, '_last_offset', 0),
             }
             self.log_fetch_result(result)
             return result
@@ -95,28 +94,34 @@ class CMSPECOSFetcher(BaseFetcher):
     # Internal helpers
     # ------------------------------------------------------------------
 
-    def _fetch_paginated(
-        self,
-        max_records: Optional[int] = None,
-        resume_offset: int = 0,
-    ) -> List[Dict[str, Any]]:
-        """Page through the PECOS API endpoint.
+    def _fetch_and_stream(self, max_records: Optional[int]) -> int:
+        """Page through PECOS API, flushing each batch to DB and checkpointing.
 
-        Args:
-            max_records: Optional record cap.
-
-        Returns:
-            List of normalised record dicts.
+        Returns total records inserted/updated.
         """
-        records: List[Dict[str, Any]] = []
-        offset = resume_offset
+        # Resume from checkpoint if available
+        cp = load_checkpoint(self.SOURCE_NAME)
+        offset = cp.get("offset", 0) if cp else 0
+        total_inserted = cp.get("records_inserted", 0) if cp else 0
+
+        if offset > 0:
+            logger.info(
+                "PECOS: resuming from checkpoint offset=%d (%d already inserted)",
+                offset, total_inserted,
+            )
+
         page_size = DEFAULT_PAGE_SIZE
+        batch: List[Dict[str, Any]] = []
+        pages_since_flush = 0
+        pages_since_checkpoint = 0
 
         while True:
-            params = {"size": page_size, "offset": offset}
-            logger.debug("Fetching PECOS page offset=%d", offset)
+            if max_records and total_inserted >= max_records:
+                break
 
-            self._last_offset = offset
+            params = {"size": page_size, "offset": offset}
+            logger.debug("PECOS: fetching offset=%d", offset)
+
             try:
                 data = self.fetch_json(self.API_ENDPOINT, params=params)
             except Exception as exc:
@@ -126,27 +131,51 @@ class CMSPECOSFetcher(BaseFetcher):
             page_records = data if isinstance(data, list) else data.get("results", data.get("data", []))
 
             if not page_records:
+                logger.info("PECOS: empty page at offset=%d — done", offset)
                 break
 
             for row in page_records:
-                record = self._normalise(row)
-                records.append(record)
+                batch.append(self._normalise(row))
 
-            if max_records and len(records) >= max_records:
-                records = records[:max_records]
-                break
+            offset += len(page_records)
+            pages_since_flush += 1
+            pages_since_checkpoint += 1
+
+            logger.info(
+                "PECOS: offset=%d fetched %d records (batch size=%d)",
+                offset, len(page_records), len(batch),
+            )
+
+            # Flush batch to DB
+            if pages_since_flush >= FLUSH_EVERY_PAGES:
+                result = load_cms_pecos_data(batch)
+                total_inserted += result.get("records_inserted", 0)
+                batch = []
+                pages_since_flush = 0
+
+            # Save checkpoint
+            if pages_since_checkpoint >= CHECKPOINT_EVERY_PAGES:
+                save_checkpoint(self.SOURCE_NAME, {
+                    "offset": offset,
+                    "records_inserted": total_inserted,
+                })
+                logger.info(
+                    "PECOS: checkpoint saved offset=%d total_inserted=%d",
+                    offset, total_inserted,
+                )
+                pages_since_checkpoint = 0
 
             if len(page_records) < page_size:
+                logger.info("PECOS: last page reached at offset=%d", offset)
                 break
 
-            offset += page_size
+        # Flush remaining batch
+        if batch:
+            result = load_cms_pecos_data(batch)
+            total_inserted += result.get("records_inserted", 0)
 
-            if offset // page_size >= MAX_PAGES:
-                logger.warning("Reached pagination safety limit (%d pages)", MAX_PAGES)
-                break
-
-        logger.info("Fetched %d PECOS records", len(records))
-        return records
+        logger.info("PECOS: complete — %d total inserted/updated", total_inserted)
+        return total_inserted
 
     @staticmethod
     def _normalise(row: Dict[str, Any]) -> Dict[str, Any]:
@@ -156,19 +185,3 @@ class CMSPECOSFetcher(BaseFetcher):
             value = row.get(api_field) or row.get(output_field)
             record[output_field] = value
         return record
-
-    def _save_and_hash(self, records: List[Dict]) -> Optional[str]:
-        """Persist records to a JSON file and return its MD5 hash."""
-        import json
-
-        if not records:
-            return None
-
-        timestamp = datetime.now().strftime("%Y%m%d")
-        filename = f"cms_pecos_{timestamp}.json"
-        filepath = self.data_dir / filename
-
-        with open(filepath, "w") as fh:
-            json.dump(records, fh)
-
-        return self.calculate_hash(filepath)

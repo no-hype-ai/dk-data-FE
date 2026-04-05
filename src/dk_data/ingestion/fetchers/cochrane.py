@@ -79,12 +79,18 @@ class CochraneFetcher(BaseFetcher):
             if not search_terms:
                 search_terms = self._load_search_terms()
 
-            if not search_terms:
-                search_terms = ["pharmaceutical intervention"]
+            # When no molecule-specific search terms are available, fetch ALL
+            # Cochrane systematic reviews by using just the journal filter
+            # (no drug-name term restriction). This enables a full backfill
+            # without requiring silver-layer molecule data to exist first.
+            use_all_journal = not search_terms
+            if use_all_journal:
+                search_terms = [None]  # type: ignore[list-item]
 
             logger.info(
-                "Fetching Cochrane reviews via PubMed (terms=%d, days_back=%d)",
-                len(search_terms), days_back,
+                "Fetching Cochrane reviews via PubMed (%s, days_back=%d)",
+                f"terms={len(search_terms)}" if not use_all_journal else "all-journal",
+                days_back,
             )
 
             all_records: List[Dict[str, Any]] = []
@@ -143,25 +149,32 @@ class CochraneFetcher(BaseFetcher):
 
     def _search_pmids(
         self,
-        term: str,
+        term: Optional[str],
         *,
         days_back: int = 90,
         max_results: int = 500,
     ) -> List[str]:
-        """Search PubMed for Cochrane CDSR PMIDs matching a drug term."""
+        """Search PubMed for Cochrane CDSR PMIDs.
+
+        When term is None, fetches ALL Cochrane CDSR articles (journal-only
+        filter). When term is provided, restricts to Title/Abstract matches.
+        """
         date_from = (datetime.utcnow() - timedelta(days=days_back)).strftime("%Y/%m/%d")
         date_to   = datetime.utcnow().strftime("%Y/%m/%d")
 
-        # Filter to Cochrane Database of Systematic Reviews
-        query = (
-            f'"{term}"[Title/Abstract] '
-            f'AND "Cochrane Database Syst Rev"[Journal]'
-        )
+        # journal-only when no term (full backfill mode)
+        if term is None:
+            query = '"Cochrane Database Syst Rev"[Journal]'
+        else:
+            query = (
+                f'"{term}"[Title/Abstract] '
+                f'AND "Cochrane Database Syst Rev"[Journal]'
+            )
 
         params = {
             "db": "pubmed",
             "term": query,
-            "retmax": str(min(max_results, 500)),
+            "retmax": str(min(max_results, 10000)),
             "retmode": "json",
             "datetype": "pdat",
             "mindate": date_from,
