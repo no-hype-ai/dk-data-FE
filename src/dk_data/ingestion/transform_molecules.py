@@ -639,7 +639,7 @@ def transform_all_layers() -> dict:
     for layer in ['bronze', 'ip_bronze', 'mol_bronze_ext', 'hcs_bronze',
                   'ind_bronze', 'silver', 'ind_silver', 'hcs_silver',
                   'ip_silver', 'mol_silver_ext', 'gold', 'ip_gold',
-                  'mol_gold_ext', 'mart']:
+                  'ind_gold', 'mol_gold_ext', 'mart']:
         logger.info(f"\n{'='*60}")
         logger.info(f"Processing {layer.upper()} layer")
         logger.info(f"{'='*60}")
@@ -754,7 +754,7 @@ Examples:
         choices=['bronze', 'silver', 'gold', 'ip_bronze', 'ip_silver', 'ip_gold',
                  'hcs_bronze', 'hcs_silver',
                  'mol_bronze_ext', 'mol_silver_ext', 'mol_gold_ext',
-                 'ind_bronze', 'ind_silver', 'mart', 'all'],
+                 'ind_bronze', 'ind_silver', 'ind_gold', 'mart', 'all'],
         help='Layer to transform'
     )
     parser.add_argument(
