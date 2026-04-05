@@ -26,17 +26,13 @@ SELECT
     r.filing_date,
     r.publication_date AS patent_date,
 
-    -- Classification (both ipc_codes TEXT[] and cpc_codes TEXT[] exist — migration 108/136)
+    -- Classification: ipc_codes is TEXT[] in mol_raw.epo_patents; cpc_codes does not exist
     CASE
         WHEN r.ipc_codes IS NOT NULL
         THEN to_jsonb(r.ipc_codes)
         ELSE NULL
     END AS ipc_codes,
-    CASE
-        WHEN r.cpc_codes IS NOT NULL
-        THEN to_jsonb(r.cpc_codes)
-        ELSE NULL
-    END AS cpc_codes,
+    NULL::JSONB AS cpc_codes,
 
     -- Assignee info (->> extracts text from JSONB array)
     r.applicants->>0 AS assignee_organization,
@@ -50,10 +46,10 @@ SELECT
     -- EPO-specific: patent family ID
     r.family_id,
 
-    -- Determine if pharma-related based on IPC codes
+    -- Determine if pharma-related based on IPC codes (ipc_codes is TEXT[])
     (
         EXISTS (
-            SELECT 1 FROM unnest(COALESCE(r.ipc_codes, '{}')) AS code
+            SELECT 1 FROM unnest(COALESCE(r.ipc_codes, '{}'::TEXT[])) AS code
             WHERE code LIKE 'A61K%' OR code LIKE 'A61P%'
                OR code LIKE 'C07D%' OR code LIKE 'C07K%'
         )

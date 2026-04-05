@@ -9,6 +9,7 @@ with upsert semantics (ON CONFLICT DO UPDATE on article_id).
 Target table: mol_raw.medical_news (see migration 060_ci_source_tables.sql)
 """
 
+import json
 import logging
 from typing import Any, Dict, List, Optional
 
@@ -97,8 +98,8 @@ def load_medical_news_data(
                             record.summary,
                             record.publication_date,
                             record.url,
-                            record.drug_mentions,
-                            record.therapeutic_areas,
+                            json.dumps(record.drug_mentions) if record.drug_mentions else None,
+                            json.dumps(record.therapeutic_areas) if record.therapeutic_areas else None,
                             source_file or "medical_news_rss",
                             source_hash,
                         ),

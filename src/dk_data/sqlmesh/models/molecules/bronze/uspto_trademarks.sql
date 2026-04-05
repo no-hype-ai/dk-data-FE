@@ -56,8 +56,8 @@ SELECT
     r.goods_and_services,
     r.description_of_mark,
 
-    -- Pharma relevance: Nice Class 5 = Pharmaceuticals
-    5 = ANY(COALESCE(r.nice_classes, '{}')) AS is_pharma_related,
+    -- Pharma relevance: Nice Class 5 = Pharmaceuticals (nice_classes is JSONB)
+    COALESCE(r.nice_classes, '[]'::JSONB) @> '[5]'::JSONB AS is_pharma_related,
 
     -- Processing metadata
     FALSE AS processed_to_silver,
