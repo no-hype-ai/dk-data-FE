@@ -26,8 +26,8 @@ SELECT
     r.filing_date,
     r.grant_date AS patent_date,
 
-    -- Classification
-    r.cpc_codes,
+    -- Classification (mol_raw.uspto_ci.cpc_codes is TEXT[]; cast to JSONB for silver union compatibility)
+    to_jsonb(r.cpc_codes) AS cpc_codes,
 
     -- Assignee info (fetcher normalizes to {"organization": ...})
     r.assignees->0->>'organization' AS assignee_organization,

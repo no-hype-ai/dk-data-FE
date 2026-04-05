@@ -88,10 +88,10 @@ class TestBronzeUSPTOPatents:
         assert "FROM mol_raw.uspto_patents" in self.sql
 
     def test_no_jsonb_extraction(self):
-        """Core bug fix: no JSONB array extraction from response_body; cpc_codes is already typed JSONB."""
+        """Core bug fix: no JSONB array extraction from response_body; cpc_codes converted via to_jsonb."""
         assert "response_body" not in self.sql
-        # Old bad patterns removed: unnest() on JSONB and to_jsonb() on already-JSONB column
-        assert "to_jsonb(r.cpc_codes)" not in self.sql
+        # Old bad patterns removed: CASE WHEN conditional to_jsonb and unnest with COALESCE on mixed types
+        assert "CASE WHEN r.cpc_codes IS NOT NULL THEN to_jsonb" not in self.sql
         assert "unnest(COALESCE(r.cpc_codes" not in self.sql
 
     def test_output_columns(self):

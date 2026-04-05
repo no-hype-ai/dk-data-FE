@@ -29,7 +29,7 @@ SELECT
     -- Classification (mol_raw.uspto_patents does not carry patent_type; default to 'utility')
     'utility'::TEXT AS patent_type,
     NULL::TEXT AS patent_kind,
-    r.cpc_codes,
+    to_jsonb(r.cpc_codes) AS cpc_codes,
 
     -- Assignee info (fetcher normalizes to {"organization": ..., "city": ..., ...})
     r.assignees->0->>'organization' AS assignee_organization,
