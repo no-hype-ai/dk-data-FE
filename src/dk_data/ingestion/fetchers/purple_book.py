@@ -6,8 +6,8 @@ is the authoritative reference for FDA-approved biological drugs.
 
 API: https://api.fda.gov/drug/drugsfda.json
   Public, no authentication required.
-  Filtered by: products.drug_type:BLA
-  Total: ~5,000 BLA application records.
+  Filtered by: application_number:BLA* (products.drug_type field removed from API)
+  Total: ~500 BLA application records.
   Pagination: ?limit=100&skip=N (FDA skip limit: 25,000).
   Dedup by: application_number.
 
@@ -44,7 +44,7 @@ class PurpleBookFetcher(BaseFetcher):
     BASE_URL = "https://api.fda.gov"
 
     def get_latest_url(self) -> str:
-        return f"{_API_URL}?search=products.drug_type:BLA&limit={_PAGE_SIZE}&skip=0"
+        return f"{_API_URL}?search=application_number:BLA*&limit={_PAGE_SIZE}&skip=0"
 
     def fetch(self, **kwargs) -> Dict[str, Any]:
         """Fetch FDA Purple Book BLA records via openFDA Drugs@FDA API.
@@ -98,7 +98,7 @@ class PurpleBookFetcher(BaseFetcher):
             limit = min(_PAGE_SIZE, remaining)
 
             params: Dict[str, Any] = {
-                "search": "products.drug_type:BLA",
+                "search": "application_number:BLA*",
                 "limit": limit,
                 "skip": skip,
             }
