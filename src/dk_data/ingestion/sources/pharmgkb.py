@@ -81,6 +81,7 @@ def load_pharmgkb_data(
                 body_hash = hashlib.sha256(body_json.encode()).hexdigest()
 
                 try:
+                    cur.execute("SAVEPOINT sp_pgkb")
                     cur.execute(
                         """
                         INSERT INTO mol_raw.pharmgkb (
@@ -111,6 +112,7 @@ def load_pharmgkb_data(
                             SOURCE_ID,
                         ),
                     )
+                    cur.execute("RELEASE SAVEPOINT sp_pgkb")
                     inserted += 1
 
                     if inserted % batch_size == 0:
@@ -118,6 +120,7 @@ def load_pharmgkb_data(
                         logger.debug("PharmGKB: committed %d records", inserted)
 
                 except Exception as exc:
+                    cur.execute("ROLLBACK TO SAVEPOINT sp_pgkb")
                     failed += 1
                     errors.append({
                         "index": idx,

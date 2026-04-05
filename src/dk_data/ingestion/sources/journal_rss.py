@@ -9,6 +9,7 @@ with upsert semantics (ON CONFLICT DO UPDATE on article_id).
 Target table: mol_raw.journal_rss (see migration 060_ci_source_tables.sql)
 """
 
+import json
 import logging
 from datetime import date, datetime
 from typing import Any, Dict, List, Optional
@@ -79,6 +80,14 @@ def load_journal_rss_data(
                         categories=raw_record.get("categories"),
                     )
 
+                    # authors and categories are JSONB columns — serialize Python values to JSON
+                    authors_json = (
+                        json.dumps(validated.authors) if validated.authors is not None else None
+                    )
+                    categories_json = (
+                        json.dumps(validated.categories) if validated.categories else None
+                    )
+
                     cur.execute(
                         """
                         INSERT INTO mol_raw.journal_rss (
@@ -87,9 +96,9 @@ def load_journal_rss_data(
                             categories,
                             _source_file, _source_hash
                         ) VALUES (
+                            %s, %s, %s, %s::JSONB,
                             %s, %s, %s, %s,
-                            %s, %s, %s, %s,
-                            %s,
+                            %s::JSONB,
                             %s, %s
                         )
                         ON CONFLICT (article_id) DO UPDATE SET
@@ -109,12 +118,12 @@ def load_journal_rss_data(
                             validated.article_id,
                             validated.feed_source,
                             validated.title,
-                            validated.authors,
+                            authors_json,
                             validated.abstract,
                             validated.publication_date,
                             validated.link,
                             validated.doi,
-                            validated.categories if validated.categories else None,
+                            categories_json,
                             source_file or "journal_rss_feed",
                             source_hash,
                         ),

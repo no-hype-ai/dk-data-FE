@@ -59,6 +59,9 @@ def load_openalex_ci_data(
     records_failed = 0
     errors: List[Dict[str, Any]] = []
 
+    def _j(v: Any) -> Optional[str]:
+        return json.dumps(v) if v is not None else None
+
     with get_connection() as conn:
         with conn.cursor() as cur:
             for idx, raw_record in enumerate(records):
@@ -66,10 +69,7 @@ def load_openalex_ci_data(
                     # Validate with Pydantic
                     record = OpenAlexCIRecord(**raw_record)
 
-                    # Serialize JSONB fields
-                    def _j(v: Any) -> Optional[str]:
-                        return json.dumps(v) if v is not None else None
-
+                    cur.execute("SAVEPOINT sp_oa")
                     cur.execute(
                         """
                         INSERT INTO mol_raw.openalex_ci (
@@ -167,6 +167,7 @@ def load_openalex_ci_data(
                             source_hash,
                         ),
                     )
+                    cur.execute("RELEASE SAVEPOINT sp_oa")
                     records_inserted += 1
 
                     if records_inserted % BATCH_SIZE == 0:
@@ -180,6 +181,7 @@ def load_openalex_ci_data(
                         logger.warning(f"Validation error at index {idx}: {e}")
 
                 except Exception as e:
+                    cur.execute("ROLLBACK TO SAVEPOINT sp_oa")
                     records_failed += 1
                     errors.append({"index": idx, "error": str(e), "type": "database"})
                     logger.error(f"Database error at index {idx}: {e}")
