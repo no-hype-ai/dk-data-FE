@@ -88,9 +88,11 @@ class TestBronzeUSPTOPatents:
         assert "FROM mol_raw.uspto_patents" in self.sql
 
     def test_no_jsonb_extraction(self):
-        """Core bug fix: no JSONB array extraction from response_body."""
+        """Core bug fix: no JSONB array extraction from response_body; cpc_codes is already typed JSONB."""
         assert "response_body" not in self.sql
-        assert "jsonb_array_elements" not in self.sql
+        # Old bad patterns removed: unnest() on JSONB and to_jsonb() on already-JSONB column
+        assert "to_jsonb(r.cpc_codes)" not in self.sql
+        assert "unnest(COALESCE(r.cpc_codes" not in self.sql
 
     def test_output_columns(self):
         assert "r.patent_number" in self.sql
@@ -248,7 +250,11 @@ class TestBronzeUSPTOTrademarks:
 # ---------------------------------------------------------------------------
 
 class TestBronzeEUIPOTrademarks:
-    """Contract tests for mol_bronze.euipo_trademarks model."""
+    """Contract tests for mol_bronze.euipo_trademarks model.
+
+    Note: mol_raw.euipo_trademarks.nice_classes is JSONB (not TEXT[]/INT[]),
+    so pharma-class detection uses JSONB containment (@>) instead of = ANY().
+    """
 
     @pytest.fixture(autouse=True)
     def setup(self):
@@ -284,8 +290,10 @@ class TestBronzeEUIPOTrademarks:
         assert "ingested_at" in self.sql
 
     def test_pharma_class_5(self):
-        """AC-2: is_pharma_related is TRUE when Nice class 5 is present."""
-        assert "5 = ANY" in self.sql
+        """AC-2: is_pharma_related uses JSONB containment for Nice class 5 (JSONB column)."""
+        # nice_classes is JSONB in mol_raw.euipo_trademarks, so we use @> not = ANY()
+        assert "is_pharma_related" in self.sql
+        assert "[5]" in self.sql
 
     def test_incremental_filter(self):
         assert "_loaded_at BETWEEN @start_dt AND @end_dt" in self.sql
