@@ -7,9 +7,8 @@
 
 MODEL (
     name mol_bronze.reactome,
-    kind INCREMENTAL_BY_TIME_RANGE (
-        time_column request_timestamp,
-        batch_size 500
+    kind INCREMENTAL_BY_UNIQUE_KEY (
+        unique_key stable_id
     ),
     cron '@monthly',
     audits (
@@ -22,28 +21,22 @@ MODEL (
 WITH from_search AS (
     SELECT
         r.id              AS raw_source_id,
-        r.request_timestamp,
+        r.ingested_at,
         item.value        AS rec
     FROM mol_raw.reactome r,
          LATERAL jsonb_array_elements(r.response_body->'results') AS item(value)
-    WHERE r.response_status = 200
-      AND r.processed_to_bronze = FALSE
-      AND r.response_body ? 'results'
-      AND r.request_timestamp BETWEEN @start_dt AND @end_dt
+    WHERE r.response_body ? 'results'
 ),
 
 -- Individual pathway detail: flat object at root with stId
 from_detail AS (
     SELECT
         r.id              AS raw_source_id,
-        r.request_timestamp,
+        r.ingested_at,
         r.response_body   AS rec
     FROM mol_raw.reactome r
-    WHERE r.response_status = 200
-      AND r.processed_to_bronze = FALSE
-      AND NOT (r.response_body ? 'results')
+    WHERE NOT (r.response_body ? 'results')
       AND r.response_body ? 'stId'
-      AND r.request_timestamp BETWEEN @start_dt AND @end_dt
 ),
 
 combined AS (
@@ -80,11 +73,11 @@ SELECT DISTINCT ON (COALESCE(rec->>'stId', rec->>'stable_id'))
     rec                                                                AS raw_json,
     raw_source_id,
     'reactome'                                                         AS source,
-    request_timestamp,
-    request_timestamp                                                  AS source_updated_at,
+    ingested_at,
+    ingested_at                                                    AS source_updated_at,
     FALSE                                                              AS processed_to_silver,
     NOW()                                                              AS created_at
 
 FROM combined
 WHERE COALESCE(rec->>'stId', rec->>'stable_id') IS NOT NULL
-ORDER BY COALESCE(rec->>'stId', rec->>'stable_id'), request_timestamp DESC NULLS LAST;
+ORDER BY COALESCE(rec->>'stId', rec->>'stable_id'), ingested_at DESC NULLS LAST;

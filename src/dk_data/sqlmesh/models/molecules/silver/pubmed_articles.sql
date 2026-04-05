@@ -2,7 +2,7 @@
 -- Promotes mol_bronze.pubmed into mol_silver.pubmed_articles with molecule_id linkage.
 -- Entity linking:
 --   Tier 1: MeSH term exact alias match — most reliable; MeSH terms are standardized
---           drug/compound headings stored as TEXT[] in mol_bronze.pubmed.mesh_terms
+--           drug/compound headings stored as JSONB in mol_bronze.pubmed.mesh_terms (to_jsonb of TEXT[] raw)
 --   Tier 2: article title substring match via mol_silver.molecules.canonical_name
 --           (length guard ≥ 6 chars prevents false positives on short names)
 -- Complements mol_silver.publications (OpenAlex/EuropePMC) with direct PubMed data.
@@ -26,7 +26,7 @@ SELECT
     COALESCE(
         (
             SELECT ma.molecule_id
-            FROM UNNEST(b.mesh_terms) AS mt(term)
+            FROM jsonb_array_elements_text(b.mesh_terms) AS mt(term)
             JOIN mol_silver.molecule_aliases ma
               ON LOWER(REGEXP_REPLACE(mt.term, '[^a-zA-Z0-9]', '', 'g')) = ma.alias_name_normalized
             LIMIT 1

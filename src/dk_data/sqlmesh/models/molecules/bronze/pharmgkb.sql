@@ -21,7 +21,7 @@ MODEL (
 WITH unnested AS (
     SELECT
         r.id AS raw_id,
-        r.request_timestamp,
+        r.ingested_at,
         item,
         item AS raw_json
     FROM mol_raw.pharmgkb r,
@@ -34,7 +34,6 @@ WITH unnested AS (
          ) AS item
     WHERE r.response_status = 200
       AND r.response_body IS NOT NULL
-      AND r.processed_to_bronze = FALSE
 )
 
 SELECT DISTINCT ON (pharmgkb_id)
@@ -64,11 +63,10 @@ SELECT DISTINCT ON (pharmgkb_id)
 
     raw_json,
     FALSE               AS processed_to_silver,
-    request_timestamp,
-    request_timestamp   AS ingested_at,
+    ingested_at,
     'pharmgkb'          AS source,
-    request_timestamp   AS source_updated_at
+    ingested_at         AS source_updated_at
 
 FROM unnested
 WHERE COALESCE(item->>'id', item->>'pharmgkbId') IS NOT NULL
-ORDER BY pharmgkb_id, request_timestamp DESC NULLS LAST
+ORDER BY pharmgkb_id, ingested_at DESC NULLS LAST

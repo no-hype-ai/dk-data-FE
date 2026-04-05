@@ -41,12 +41,8 @@ SELECT
     r.registration_date,
     r.expiry_date,
 
-    -- Classification (Nice classes as JSONB for silver compatibility)
-    CASE
-        WHEN r.nice_classes IS NOT NULL
-        THEN to_jsonb(r.nice_classes)
-        ELSE NULL
-    END AS nice_classes,
+    -- Classification (mol_raw.euipo_trademarks.nice_classes is INTEGER[]; cast to JSONB for bronze)
+    to_jsonb(r.nice_classes) AS nice_classes,
 
     -- Description
     r.goods_and_services,
@@ -55,7 +51,7 @@ SELECT
     r.image_url,
 
     -- Pharma relevance: Nice Class 5 = Pharmaceuticals
-    5 = ANY(COALESCE(r.nice_classes, '{}')) AS is_pharma_related,
+    to_jsonb(COALESCE(r.nice_classes, '{}')) @> '[5]'::jsonb AS is_pharma_related,
 
     -- Processing metadata
     FALSE AS processed_to_silver,

@@ -20,7 +20,7 @@ MODEL (
 WITH direct_entries AS (
     SELECT
         r.id AS raw_id,
-        r.request_timestamp,
+        r.ingested_at,
 
         COALESCE(
             r.response_body->>'inn_name',
@@ -41,13 +41,12 @@ WITH direct_entries AS (
         r.response_body->'research_codes'                     AS research_codes,
         r.response_body->'synonyms'                           AS synonyms,
         COALESCE(r.response_body->>'status', 'published')     AS status,
-        r.request_timestamp                                   AS source_updated_at,
+        r.ingested_at                                   AS source_updated_at,
         r.response_body                                       AS raw_json
 
     FROM mol_raw.who_inn r
     WHERE r.response_status = 200
       AND r.response_body IS NOT NULL
-      AND r.processed_to_bronze = FALSE
       -- Direct format: has inn_name or name at top level
       AND (r.response_body->>'inn_name' IS NOT NULL
            OR r.response_body->>'name' IS NOT NULL)
@@ -60,22 +59,21 @@ WITH direct_entries AS (
 pubchem_synonyms AS (
     SELECT
         r.id AS raw_id,
-        r.request_timestamp,
+        r.ingested_at,
         info_item,
         info_item AS raw_json,
-        r.request_timestamp AS source_updated_at
+        r.ingested_at AS source_updated_at
 
     FROM mol_raw.who_inn r,
          jsonb_array_elements(r.response_body->'InformationList'->'Information') AS info_item
     WHERE r.response_status = 200
       AND r.response_body->'InformationList' IS NOT NULL
-      AND r.processed_to_bronze = FALSE
 ),
 
 pubchem_extracted AS (
     SELECT
         raw_id,
-        request_timestamp,
+        ingested_at,
         -- INN name: first lowercase synonym (INN names are lowercase by convention)
         (SELECT s
          FROM jsonb_array_elements_text(info_item->'Synonym') AS s
@@ -103,7 +101,7 @@ combined AS (
     -- are genuinely unavailable in this format — UNION alignment NULLs are correct.
     SELECT
         raw_id,
-        request_timestamp,
+        ingested_at,
         inn_name,
         NULL::TEXT AS inn_latin,
         NULL::INTEGER AS inn_list_number,
@@ -126,7 +124,7 @@ combined AS (
 
     SELECT
         raw_id,
-        request_timestamp,
+        ingested_at,
         inn_name,
         inn_latin,
         inn_list_number,
@@ -164,8 +162,7 @@ SELECT DISTINCT ON (inn_name)
     status,
     raw_json,
     FALSE               AS processed_to_silver,
-    request_timestamp,
-    request_timestamp   AS ingested_at,
+    ingested_at,
     'who_inn'           AS source,
     source_updated_at
 

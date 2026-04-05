@@ -26,12 +26,8 @@ SELECT
     r.filing_date,
     r.grant_date AS patent_date,
 
-    -- Classification
-    CASE
-        WHEN r.cpc_codes IS NOT NULL
-        THEN to_jsonb(r.cpc_codes)
-        ELSE NULL
-    END AS cpc_codes,
+    -- Classification (mol_raw.uspto_ci.cpc_codes is TEXT[]; cast to JSONB for silver union compatibility)
+    to_jsonb(r.cpc_codes) AS cpc_codes,
 
     -- Assignee info (fetcher normalizes to {"organization": ...})
     r.assignees->0->>'organization' AS assignee_organization,
@@ -42,9 +38,9 @@ SELECT
     -- Claims count
     r.claims_count AS num_claims,
 
-    -- Determine if pharma-related based on CPC codes
+    -- Determine if pharma-related based on CPC codes (mol_raw.uspto_ci.cpc_codes is TEXT[])
     EXISTS (
-        SELECT 1 FROM unnest(COALESCE(r.cpc_codes, '{}')) AS code
+        SELECT 1 FROM unnest(r.cpc_codes) AS code
         WHERE code LIKE 'A61K%' OR code LIKE 'A61P%'
            OR code LIKE 'C07D%' OR code LIKE 'C07K%'
     ) AS is_pharma_related,
