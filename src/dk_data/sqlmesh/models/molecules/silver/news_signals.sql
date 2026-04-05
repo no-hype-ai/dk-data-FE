@@ -5,11 +5,11 @@
 --
 -- Field provenance:
 --   mol_bronze.medical_news : article_id, source_name, title, summary, pub_date,
---                         url (source_url), drug_mentions TEXT[],
---                         therapeutic_areas TEXT[], source_updated_at
+--                         url (source_url), drug_mentions JSONB (to_jsonb of TEXT[] raw),
+--                         therapeutic_areas JSONB, source_updated_at
 --   mol_bronze.journal_rss  : article_id, feed_source (->source_name), title,
 --                         abstract (->summary), pub_date, link (->source_url),
---                         doi, categories TEXT[], source_updated_at
+--                         doi, categories JSONB (to_jsonb of TEXT[] raw), source_updated_at
 --
 -- Part of: 011-datasource-integration / 015-assessment-dashboard-integration
 
@@ -36,9 +36,10 @@ WITH combined AS (
         source_name::TEXT                                         AS source_name,
         pub_date::DATE                                            AS pub_date,
         url::TEXT                                                 AS source_url,
+        -- drug_mentions is JSONB array in mol_bronze.medical_news (to_jsonb of TEXT[] raw col)
         CASE
-            WHEN drug_mentions IS NOT NULL AND array_length(drug_mentions, 1) > 0
-                THEN array_to_string(drug_mentions, ', ')
+            WHEN drug_mentions IS NOT NULL AND jsonb_array_length(drug_mentions) > 0
+                THEN (SELECT string_agg(v, ', ') FROM jsonb_array_elements_text(drug_mentions) v)
             ELSE NULL
         END                                                       AS drug_mentions,
         CASE
@@ -47,9 +48,10 @@ WITH combined AS (
             WHEN title ILIKE '%acquisition%' OR title ILIKE '%merger%' THEN 'corporate'
             ELSE 'general'
         END                                                       AS signal_type,
+        -- therapeutic_areas is JSONB array in mol_bronze.medical_news
         CASE
-            WHEN therapeutic_areas IS NOT NULL AND array_length(therapeutic_areas, 1) > 0
-                THEN therapeutic_areas[1]
+            WHEN therapeutic_areas IS NOT NULL AND jsonb_array_length(therapeutic_areas) > 0
+                THEN therapeutic_areas->>0
             ELSE NULL
         END                                                       AS therapeutic_area,
         NULL::NUMERIC                                             AS sentiment_score,
