@@ -38,9 +38,9 @@ SELECT
     -- Claims count
     r.claims_count AS num_claims,
 
-    -- Determine if pharma-related based on CPC codes
+    -- Determine if pharma-related based on CPC codes (mol_raw.uspto_ci.cpc_codes is TEXT[])
     EXISTS (
-        SELECT 1 FROM jsonb_array_elements_text(COALESCE(r.cpc_codes, '[]'::jsonb)) AS code
+        SELECT 1 FROM unnest(r.cpc_codes) AS code
         WHERE code LIKE 'A61K%' OR code LIKE 'A61P%'
            OR code LIKE 'C07D%' OR code LIKE 'C07K%'
     ) AS is_pharma_related,

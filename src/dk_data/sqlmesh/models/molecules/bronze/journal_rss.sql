@@ -32,7 +32,7 @@ SELECT
     publication_date::DATE                AS pub_date,
     link::TEXT                            AS link,
     doi::TEXT                             AS doi,
-    categories::JSONB                     AS categories,
+    to_jsonb(categories)                  AS categories,
 
     -- Raw source tracking
     NULL::TEXT                            AS raw_source_id,

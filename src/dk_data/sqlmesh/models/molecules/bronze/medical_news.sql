@@ -32,8 +32,8 @@ SELECT
     -- Fall back to _loaded_at when publication_date is missing
     COALESCE(publication_date, _loaded_at::DATE)::DATE AS pub_date,
     url::TEXT                             AS url,
-    drug_mentions::JSONB                 AS drug_mentions,
-    therapeutic_areas::JSONB             AS therapeutic_areas,
+    to_jsonb(drug_mentions)              AS drug_mentions,
+    to_jsonb(therapeutic_areas)          AS therapeutic_areas,
 
     -- Raw source tracking
     NULL::TEXT                            AS raw_source_id,
