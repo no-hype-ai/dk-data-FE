@@ -57,17 +57,20 @@ def load_openfda_faers_data(
     inserted = 0
 
     sql = """
-        INSERT INTO mol_raw.openfda_faers (response_body, response_body_hash, source_id)
-        VALUES (%s::JSONB, %s, 'openfda_faers')
+        INSERT INTO mol_raw.openfda_faers
+            (request_id, api_endpoint, response_status, response_body, response_body_hash, source_id)
+        VALUES (%s, %s, %s, %s::JSONB, %s, 'openfda_faers')
         ON CONFLICT (response_body_hash) DO NOTHING
     """
+    _API_ENDPOINT = "https://api.fda.gov/drug/event.json"
 
     with get_cursor() as cur:
         for page_blob in records:
             body_json = json.dumps(page_blob)
             body_hash = hashlib.md5(body_json.encode()).hexdigest()
+            request_id = page_blob.get("_request_id") or f"faers_page_{page_blob.get('_page_number', 0)}"
             try:
-                cur.execute(sql, (body_json, body_hash))
+                cur.execute(sql, (request_id, _API_ENDPOINT, 200, body_json, body_hash))
                 inserted += 1
             except Exception as exc:
                 request_id = page_blob.get("_request_id", "unknown")
