@@ -22,26 +22,24 @@ from .base import BaseFetcher
 
 logger = logging.getLogger(__name__)
 
-# Key output fields
-KEY_FIELDS = [
-    "ccn",
-    "fiscal_year_begin",
-    "fiscal_year_end",
-    "worksheet",
-    "line_number",
-    "column_number",
-    "value",
+# HCRIS RPT file column names (in order, no header row in raw CSV).
+# Source: CMS HCRIS data dictionary for HOSP10 cost reports.
+RPT_COLUMNS = [
+    "RPT_REC_NUM", "PRVDR_CTRL_TYPE_CD", "PRVDR_NUM", "NPI",
+    "RPT_STUS_CD", "FY_BGN_DT", "FY_END_DT", "PROC_DT",
+    "INITL_RPT_SW", "LAST_RPT_SW", "TRNSMTL_NUM", "FI_NUM",
+    "ADR_VNDR_CD", "FI_CREAT_DT", "UTIL_CD", "NPR_DT",
+    "SPEC_IND", "INITL_FILING_DT",
 ]
 
-# CMS column mapping from raw HCRIS CSV headers
+# CMS column mapping from RPT file
 FIELD_MAP: Dict[str, str] = {
     "PRVDR_NUM": "ccn",
+    "NPI": "npi",
+    "RPT_STUS_CD": "report_status",
     "FY_BGN_DT": "fiscal_year_begin",
     "FY_END_DT": "fiscal_year_end",
-    "WKSHT_CD": "worksheet",
-    "LINE_NUM": "line_number",
-    "CLMN_NUM": "column_number",
-    "ITM_VAL_NUM": "value",
+    "PROC_DT": "processed_date",
 }
 
 # Available fiscal years
@@ -90,9 +88,10 @@ class CMSHCRISFetcher(BaseFetcher):
             result: Dict[str, Any] = {
                 "status": "success",
                 "records": records,
+                "record_count": len(records),
                 "hash": file_hash,
             }
-            self.log_fetch_result(result)
+            self.log_fetch_result({"status": "success", "records": len(records)})
             return result
 
         except Exception as exc:
@@ -139,7 +138,8 @@ class CMSHCRISFetcher(BaseFetcher):
 
             with zf.open(csv_name) as raw:
                 text_stream = io.TextIOWrapper(raw, encoding="utf-8", errors="replace")
-                reader = csv.DictReader(text_stream)
+                # HCRIS CSVs have no header row — supply column names explicitly
+                reader = csv.DictReader(text_stream, fieldnames=RPT_COLUMNS)
 
                 for row in reader:
                     record = self._normalise_row(row)
@@ -155,19 +155,13 @@ class CMSHCRISFetcher(BaseFetcher):
 
     @staticmethod
     def _find_data_csv(zf) -> Optional[str]:
-        """Return the name of the primary data CSV inside the ZIP.
+        """Return the name of the RPT (report-level) CSV inside the ZIP.
 
-        Prefers the NMRC (numeric) file for financial data.
+        The RPT file contains one row per cost report with PRVDR_NUM,
+        fiscal year dates, and report status — exactly the fields we need.
+        The NMRC file has 18M+ rows of worksheet numeric data but no PRVDR_NUM.
         """
-        # Look for numeric data file first
-        candidates = [
-            n for n in zf.namelist()
-            if n.lower().endswith(".csv") and "nmrc" in n.lower()
-        ]
-        if candidates:
-            return candidates[0]
-
-        # Fall back to RPT (report) file
+        # Prefer RPT (report) file — has PRVDR_NUM and fiscal year
         candidates = [
             n for n in zf.namelist()
             if n.lower().endswith(".csv") and "rpt" in n.lower()
@@ -183,14 +177,14 @@ class CMSHCRISFetcher(BaseFetcher):
 
     @staticmethod
     def _normalise_row(row: Dict[str, str]) -> Optional[Dict[str, Any]]:
-        """Extract and rename key fields from a raw CSV row."""
-        ccn = (row.get("PRVDR_NUM") or row.get("ccn", "")).strip()
+        """Extract and rename key fields from a raw RPT CSV row."""
+        ccn = (row.get("PRVDR_NUM") or "").strip()
         if not ccn:
             return None
 
         record: Dict[str, Any] = {}
         for src_field, dest_field in FIELD_MAP.items():
-            value = row.get(src_field, "").strip()
+            value = (row.get(src_field) or "").strip()
             record[dest_field] = value if value else None
 
         return record

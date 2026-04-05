@@ -1,14 +1,17 @@
 """EMA authorized medicines fetcher — full EPAR product list.
 
 Fetches European Medicines Agency (EMA) authorized medicines from their
-Open Data CSV export via the EU Open Data Portal.
+download-medicine-data page XLSX export.
 
-Primary URL (CSV, refreshed weekly by EMA):
+Primary URL (XLSX, refreshed daily by EMA, ~2,600 products):
+  https://www.ema.europa.eu/en/documents/report/medicines-output-medicines-report_en.xlsx
+
+The file has metadata rows at the top; actual column headers are at row 8
+(0-indexed). Columns include: Category, Name of medicine, EMA product number,
+Medicine status, INN, Active substance, Therapeutic area, ATC code, etc.
+
+Legacy URL (now 404 since early 2026):
   https://www.ema.europa.eu/sites/default/files/Medicines_output_european_public_assessment_reports.xlsx
-
-The XLSX contains all human and veterinary EPARs (~1600 products).
-Columns include: Medicine name, Therapeutic area, INN (common name),
-Company, Marketing authorisation date, Condition/indication, etc.
 
 Stores one JSONB record per row in mol_raw.ema (mol_raw schema, migration 096).
 """
@@ -22,14 +25,16 @@ from .base import BaseFetcher
 
 logger = logging.getLogger(__name__)
 
-# EMA EPAR list — publicly available XLSX, updated weekly
+# EMA medicines report — primary URL (updated daily)
 _EPAR_XLSX_URL = (
+    "https://www.ema.europa.eu/en/documents/report/medicines-output-medicines-report_en.xlsx"
+)
+# Legacy URL (404 as of early 2026, kept for reference)
+_LEGACY_XLSX_URL = (
     "https://www.ema.europa.eu/sites/default/files/Medicines_output_european_public_assessment_reports.xlsx"
 )
-# Fallback: EU Open Data Portal canonical CSV (ODP dataset ef-862f4adb)
-_ODP_CSV_URL = (
-    "https://data.europa.eu/api/hub/store/data/medicines-output-european-public-assessment-reports.csv"
-)
+# Row index (0-based) where actual column headers appear in the new file format
+_HEADER_ROW = 8
 
 
 class EMAMolFetcher(BaseFetcher):
@@ -42,15 +47,15 @@ class EMAMolFetcher(BaseFetcher):
         return _EPAR_XLSX_URL
 
     def fetch(self, **kwargs) -> Dict[str, Any]:
-        """Download the EMA EPAR XLSX and parse all product rows.
+        """Download the EMA medicines report XLSX and parse all product rows.
 
         Returns:
             Dict with keys: status, records, record_count, hash, error.
-            status='source_unavailable' when neither URL is reachable.
+            status='source_unavailable' when the URL is unreachable.
         """
         max_records: Optional[int] = kwargs.get("max_records")
 
-        for url, fmt in [(_EPAR_XLSX_URL, "xlsx"), (_ODP_CSV_URL, "csv")]:
+        for url, fmt in [(_EPAR_XLSX_URL, "xlsx")]:
             try:
                 logger.info("EMA: downloading product list from %s", url)
                 resp = self.session.get(url, timeout=120)
@@ -62,10 +67,7 @@ class EMAMolFetcher(BaseFetcher):
                 content = resp.content
                 content_hash = hashlib.sha256(content).hexdigest()
 
-                if fmt == "xlsx":
-                    records = self._parse_xlsx(content, max_records)
-                else:
-                    records = self._parse_csv(content, max_records)
+                records = self._parse_xlsx(content, max_records)
 
                 logger.info("EMA: parsed %d product rows", len(records))
 
@@ -93,11 +95,14 @@ class EMAMolFetcher(BaseFetcher):
         return result
 
     def _parse_xlsx(self, content: bytes, max_records: Optional[int]) -> List[Dict[str, Any]]:
-        """Parse the EMA EPAR XLSX into row dicts."""
+        """Parse the EMA medicines report XLSX into row dicts.
+
+        The file has metadata rows at the top; column headers appear at
+        row index _HEADER_ROW (8). Rows before the header are skipped.
+        """
         try:
             import openpyxl
         except ImportError:
-            # openpyxl not installed — fall back to openpyxl-free approach via pandas
             return self._parse_xlsx_pandas(content, max_records)
 
         wb = openpyxl.load_workbook(io.BytesIO(content), read_only=True, data_only=True)
@@ -106,8 +111,14 @@ class EMAMolFetcher(BaseFetcher):
         records: List[Dict[str, Any]] = []
 
         for row_idx, row in enumerate(ws.iter_rows(values_only=True)):
-            if row_idx == 0:
-                headers = [str(c).strip() if c else f"col_{i}" for i, c in enumerate(row)]
+            if row_idx < _HEADER_ROW:
+                continue
+            if row_idx == _HEADER_ROW:
+                # Use only non-None header cells; pad with positional names for extras
+                headers = [
+                    str(c).strip() if c else f"col_{i}"
+                    for i, c in enumerate(row)
+                ]
                 continue
             if max_records and len(records) >= max_records:
                 break
@@ -120,22 +131,14 @@ class EMAMolFetcher(BaseFetcher):
         return records
 
     def _parse_xlsx_pandas(self, content: bytes, max_records: Optional[int]) -> List[Dict[str, Any]]:
-        """Parse XLSX via pandas when openpyxl is directly importable through it."""
+        """Parse XLSX via pandas, skipping the EMA metadata preamble rows."""
         import pandas as pd
-        df = pd.read_excel(io.BytesIO(content), dtype=str)
+        df = pd.read_excel(io.BytesIO(content), header=_HEADER_ROW, dtype=str)
         if max_records:
             df = df.head(max_records)
         df = df.fillna("").astype(str)
+        # Drop columns that are entirely empty (the trailing None columns)
+        df = df.loc[:, ~df.columns.str.startswith("Unnamed:")]
         return df.to_dict(orient="records")
 
-    def _parse_csv(self, content: bytes, max_records: Optional[int]) -> List[Dict[str, Any]]:
-        """Parse EMA CSV fallback."""
-        import csv
-        text = content.decode("utf-8", errors="replace")
-        reader = csv.DictReader(io.StringIO(text))
-        records: List[Dict[str, Any]] = []
-        for row in reader:
-            if max_records and len(records) >= max_records:
-                break
-            records.append({k.strip(): (v.strip() or None) for k, v in row.items()})
-        return records
+
