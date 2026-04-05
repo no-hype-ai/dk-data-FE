@@ -20,7 +20,7 @@ SELECT
 
     -- Identifiers
     label->>'set_id' AS set_id,
-    (label->>'version')::INTEGER AS spl_version,
+    (label->>'version')::BIGINT AS spl_version,
     label->>'id' AS spl_id,
 
     -- Drug Names (openfda fields are JSON arrays; extract first element as text)
