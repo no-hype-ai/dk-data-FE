@@ -104,9 +104,12 @@ def load_who_inn_data(
                 body_hash = _body_hash(record)
 
                 try:
+                    cur.execute("SAVEPOINT sp")
                     cur.execute(_SQL, (request_id, json.dumps(record), body_hash, SOURCE_ID))
+                    cur.execute("RELEASE SAVEPOINT sp")
                     inserted += 1
                 except Exception as exc:
+                    cur.execute("ROLLBACK TO SAVEPOINT sp")
                     logger.warning("WHO INN insert error for %s: %s", request_id, exc)
                     skipped += 1
 
