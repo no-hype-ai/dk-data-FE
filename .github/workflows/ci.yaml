@@ -188,7 +188,8 @@ jobs:
           # Migration 144 drops legacy physical tables so SQLMesh can create
           # virtual views. Run SQLMesh plan here so mol_bronze/silver/gold/staging
           # views exist before PostgREST starts and integration tests run.
-          echo n | sqlmesh -p src/dk_data/sqlmesh plan --no-prompts 2>&1 | tail -5 || true
+          # Use --auto-apply so model-kind changes don't require interactive confirmation.
+          sqlmesh -p src/dk_data/sqlmesh plan --auto-apply --skip-backfill 2>&1 | tail -10 || true
           echo "SQLMesh virtual views applied"
 
       - name: Start PostgREST
