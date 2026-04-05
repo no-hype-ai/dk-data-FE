@@ -74,9 +74,12 @@ def load_who_gho_data(
                 skipped += 1
                 continue
             try:
+                cur.execute("SAVEPOINT sp")
                 cur.execute(sql, (f"who_gho_{indicator_code}", json.dumps(record),))
+                cur.execute("RELEASE SAVEPOINT sp")
                 inserted += 1
             except Exception as exc:
+                cur.execute("ROLLBACK TO SAVEPOINT sp")
                 errors.append(f"IndicatorCode={indicator_code}: {exc}")
                 logger.warning(
                     "WHO GHO insert error for IndicatorCode=%s: %s",

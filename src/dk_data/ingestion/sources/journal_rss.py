@@ -63,6 +63,7 @@ def load_journal_rss_data(
         with conn.cursor() as cur:
             for idx, raw_record in enumerate(records):
                 try:
+                    cur.execute("SAVEPOINT sp_record")
                     # Validate via Pydantic model
                     validated = JournalRSSRecord(
                         article_id=raw_record.get("article_id", ""),
@@ -118,6 +119,7 @@ def load_journal_rss_data(
                             source_hash,
                         ),
                     )
+                    cur.execute("RELEASE SAVEPOINT sp_record")
                     records_inserted += 1
 
                     if records_inserted % batch_size == 0:
@@ -125,6 +127,7 @@ def load_journal_rss_data(
                         logger.debug("Committed batch: %d records so far", records_inserted)
 
                 except ValidationError as e:
+                    cur.execute("ROLLBACK TO SAVEPOINT sp_record")
                     records_failed += 1
                     errors.append({
                         "index": idx,
@@ -138,6 +141,7 @@ def load_journal_rss_data(
                         )
 
                 except Exception as e:
+                    cur.execute("ROLLBACK TO SAVEPOINT sp_record")
                     records_failed += 1
                     errors.append({
                         "index": idx,

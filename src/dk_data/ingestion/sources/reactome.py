@@ -53,10 +53,9 @@ def load_reactome_data(
 
     sql = """
         INSERT INTO mol_raw.reactome (
-            request_id, api_endpoint, api_version,
-            response_status, response_body, source_id
+            request_id, response_body, source_id
         )
-        VALUES (%s, 'https://reactome.org/ContentService', 'v1', 200, %s::JSONB, 'reactome')
+        VALUES (%s, %s::JSONB, 'reactome')
         ON CONFLICT ((response_body->>'stId'))
         WHERE (response_body->>'stId') IS NOT NULL
         DO UPDATE SET
@@ -72,9 +71,12 @@ def load_reactome_data(
                 skipped += 1
                 continue
             try:
+                cur.execute("SAVEPOINT sp")
                 cur.execute(sql, (f"reactome_{st_id}", json.dumps(record),))
+                cur.execute("RELEASE SAVEPOINT sp")
                 inserted += 1
             except Exception as exc:
+                cur.execute("ROLLBACK TO SAVEPOINT sp")
                 errors.append(f"stId={st_id}: {exc}")
                 logger.warning("Reactome insert error for stId=%s: %s", st_id, exc)
 
