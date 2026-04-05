@@ -182,7 +182,7 @@ class OpenFDAFAERSFetcher(BaseFetcher):
             logger.info("OpenFDA FAERS: fetching year %d", year)
 
             try:
-                blobs, count = self._paginate(
+                year_inserted, count = self._paginate_and_load(
                     search=search,
                     max_records=_FDA_SKIP_LIMIT,
                     date_str=date_str,
@@ -193,18 +193,16 @@ class OpenFDAFAERSFetcher(BaseFetcher):
                 )
                 continue
 
-            if blobs:
-                result = load_openfda_faers_data(blobs)
-                total_inserted += result.get("records_inserted", 0)
+            total_inserted += year_inserted
 
             save_checkpoint(self.SOURCE_NAME, {
                 "next_year": year + 1,
                 "records_inserted": total_inserted,
             })
             logger.info(
-                "OpenFDA FAERS: year %d → %d reports (%d pages). "
+                "OpenFDA FAERS: year %d → %d reports (inserted %d). "
                 "Total inserted: %d. Checkpoint saved.",
-                year, count, len(blobs), total_inserted,
+                year, count, year_inserted, total_inserted,
             )
 
         logger.info(
@@ -212,6 +210,79 @@ class OpenFDAFAERSFetcher(BaseFetcher):
             total_inserted,
         )
         return total_inserted
+
+    def _paginate_and_load(
+        self,
+        search: str,
+        max_records: int,
+        date_str: str,
+    ) -> Tuple[int, int]:
+        """Page through the openFDA /drug/event endpoint and load each page blob
+        immediately to DB to bound memory usage to one page at a time.
+
+        Returns:
+            Tuple of (pages_inserted, total_reports_fetched).
+        """
+        pages_inserted = 0
+        total_reports = 0
+        page_num = 0
+
+        while total_reports < max_records:
+            skip = total_reports
+            if skip >= _FDA_SKIP_LIMIT:
+                break
+
+            remaining = max_records - total_reports
+            limit = min(_PAGE_SIZE, remaining, _FDA_SKIP_LIMIT - skip)
+
+            params: Dict[str, Any] = {
+                "search": search,
+                "limit": limit,
+                "skip": skip,
+            }
+            if _OPENFDA_API_KEY:
+                params["api_key"] = _OPENFDA_API_KEY
+
+            try:
+                data = self.fetch_json(_BASE_URL, params=params)
+            except Exception as exc:
+                logger.warning(
+                    "OpenFDA FAERS page skip=%d fetch failed: %s", skip, exc
+                )
+                break
+
+            results = data.get("results", [])
+            if not results:
+                break
+
+            page_blob = {
+                "_request_id": f"faers_{date_str}_skip{skip:07d}",
+                "_page_number": page_num,
+                "results": results,
+            }
+
+            # Load immediately — do not accumulate pages in memory.
+            load_result = load_openfda_faers_data([page_blob])
+            pages_inserted += load_result.get("records_inserted", 0)
+
+            total_reports += len(results)
+            page_num += 1
+
+            logger.info(
+                "OpenFDA FAERS: page %d (skip=%d) fetched %d reports, inserted %d (total: %d)",
+                page_num - 1, skip, len(results), pages_inserted, total_reports,
+            )
+
+            if len(results) < limit:
+                break
+
+            time.sleep(_REQUEST_DELAY)
+
+        logger.info(
+            "OpenFDA FAERS pagination complete: %d pages, %d reports, %d inserted",
+            page_num, total_reports, pages_inserted,
+        )
+        return pages_inserted, total_reports
 
     def _paginate(
         self,
