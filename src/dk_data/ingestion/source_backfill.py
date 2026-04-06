@@ -31,7 +31,7 @@ import sys
 import time
 from pathlib import Path
 
-from .main import SOURCES, get_last_successful_refresh, run_ingestion
+from .main import SOURCES, run_ingestion
 from .initial_backfill import compute_backfill_days
 
 logging.basicConfig(
