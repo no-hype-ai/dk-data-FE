@@ -18,25 +18,21 @@ from pathlib import Path
 
 # Columns excluded from silver by design (system/ETL metadata)
 EXCLUDED_COLUMNS = {
-    "raw_json",
-    "raw_source_id",
-    "processed_to_bronze",
-    "processed_to_silver",
-    "_bronze_loaded_at",
-    "_loaded_at",
-    "_source_file",
-    "request_timestamp",  # SQLMesh time_column, not a domain column
-    "processed_at",
-    "processing_error",
-    "request_headers",
-    "response_headers",
-    "response_size_bytes",
-    "response_time_ms",
-    "response_body_hash",
-    "api_endpoint",
-    "api_version",
-    "request_params",
-    "response_status",
+    # System/ETL metadata
+    "raw_json", "raw_source_id", "processed_to_bronze", "processed_to_silver",
+    "_bronze_loaded_at", "_loaded_at", "_source_file",
+    "request_timestamp", "processed_at", "processing_error",
+    "request_headers", "response_headers", "response_size_bytes",
+    "response_time_ms", "response_body_hash", "api_endpoint",
+    "api_version", "request_params", "response_status",
+    # Bronze surrogate keys
+    "raw_id",
+    # SQL data types (parser artifacts)
+    "text", "bigint", "integer", "numeric", "timestamptz", "boolean",
+    "jsonb", "date", "uuid", "varchar", "float", "double",
+    # Common CTE/table aliases (parser artifacts)
+    "rec", "mol", "act", "row", "study", "label", "r", "b", "s", "g",
+    "p", "t", "d", "e", "n", "c", "f", "m", "a",
 }
 
 # Bronze surrogate keys that silver regenerates
