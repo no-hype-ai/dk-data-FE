@@ -72,5 +72,7 @@ ALTER TABLE hcs_raw.cms_rbcs ALTER COLUMN response_body SET COMPRESSION lz4;
 ALTER TABLE hcs_raw.cms_stabilis ALTER COLUMN response_body SET COMPRESSION lz4;
 ALTER TABLE hcs_raw.cms_usp ALTER COLUMN response_body SET COMPRESSION lz4;
 
--- Also set the server default for any future tables
-ALTER SYSTEM SET default_toast_compression = 'lz4';
+-- Note: ALTER SYSTEM SET default_toast_compression = 'lz4' cannot run inside a
+-- transaction block. Set it manually on the server if desired:
+--   ALTER SYSTEM SET default_toast_compression = 'lz4';
+--   SELECT pg_reload_conf();
