@@ -238,8 +238,12 @@ class TestBronzeUSPTOTrademarks:
         assert "ingested_at" in self.sql
 
     def test_pharma_class_5(self):
-        """AC-2: is_pharma_related is TRUE when Nice class 5 is present."""
-        assert "5 = ANY" in self.sql
+        """AC-2: is_pharma_related is TRUE when Nice class 5 is present.
+        mol_raw.uspto_trademarks.nice_classes is JSONB, so detection uses
+        JSONB containment (@>) rather than = ANY(array).
+        """
+        # JSONB containment: nice_classes @> '[5]'::JSONB
+        assert "'[5]'" in self.sql or "@>" in self.sql
 
     def test_incremental_filter(self):
         assert "_loaded_at BETWEEN @start_dt AND @end_dt" in self.sql

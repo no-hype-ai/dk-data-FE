@@ -51,20 +51,22 @@ SELECT DISTINCT ON (COALESCE(rec->>'stId', rec->>'stable_id'))
     COALESCE(rec->>'stId', rec->>'stable_id')                          AS stable_id,
     (rec->>'dbId')::BIGINT                                             AS db_id,
 
-    -- Name: search gives plain string, detail gives array
+    -- Name: both search and detail responses return an array; extract first element.
+    -- Try array index first to avoid returning the raw JSON array string.
     COALESCE(
-        rec->>'name',
         rec->'name'->>0,
-        rec->>'displayName'
+        rec->>'displayName',
+        rec->>'name'
     )                                                                  AS pathway_name,
 
     rec->>'exactType'                                                  AS entity_type,
     rec->>'className'                                                  AS class_name,
 
-    -- Species: search gives plain string, detail gives array of objects
+    -- Species: detail response has an array of objects; extract displayName from first element.
+    -- Try array-of-objects form first to avoid returning the raw JSON array string.
     COALESCE(
-        rec->>'species',
-        rec->'species'->0->>'displayName'
+        rec->'species'->0->>'displayName',
+        rec->>'species'
     )                                                                  AS species,
 
     (rec->>'score')::NUMERIC                                           AS relevance_score,

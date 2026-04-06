@@ -24,9 +24,9 @@ SELECT
     r.mark_element,
     r.mark_type,
 
-    -- Status
+    -- Status (status_code is INTEGER in mol_raw.uspto_trademarks; cast to TEXT for silver UNION)
     r.status,
-    r.status_code,
+    r.status_code::TEXT AS status_code,
     r.status_date,
 
     -- Dates
@@ -56,8 +56,8 @@ SELECT
     r.goods_and_services,
     r.description_of_mark,
 
-    -- Pharma relevance: Nice Class 5 = Pharmaceuticals (nice_classes is JSONB)
-    COALESCE(r.nice_classes, '[]'::JSONB) @> '[5]'::JSONB AS is_pharma_related,
+    -- Pharma relevance: Nice Class 5 = Pharmaceuticals (nice_classes is INTEGER[]; cast first)
+    COALESCE(to_jsonb(r.nice_classes), '[]'::JSONB) @> '[5]'::JSONB AS is_pharma_related,
 
     -- Processing metadata
     FALSE AS processed_to_silver,
