@@ -40,6 +40,7 @@ SELECT
     b.heavy_atom_count,
     b.atom_stereo_count,
     b.bond_stereo_count,
+    b.covalent_unit_count,
 
     -- Pharmacological / biological annotations
     b.pharmacological_actions,
@@ -51,9 +52,17 @@ SELECT
     b.drugbank_ids,
     b.chembl_ids,
     b.unii,
+    b.taxonomy,
+    b.patents,
+
+    -- Bioassay data
+    b.assay_ids,
+    b.bioassay_count,
 
     -- Source tracking
     'pubchem'                               AS source,
+    b.source_updated_at,
+    b.request_timestamp                     AS ingested_at,
     b.created_at
 
 FROM mol_bronze.pubchem b

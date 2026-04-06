@@ -70,6 +70,9 @@ SELECT
     b.data_validity_comment,
     b.potential_duplicate,
 
+    -- Ligand structure
+    b.canonical_smiles,
+
     -- Document reference
     b.document_chembl_id,
     NULL::BIGINT                                                    AS pubmed_id,
@@ -77,6 +80,7 @@ SELECT
 
     b.source,
     b.source_updated_at,
+    b.ingested_at,
     NOW()                                                           AS created_at
 
 FROM mol_bronze.chembl_activities b

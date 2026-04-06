@@ -68,6 +68,10 @@ WITH orange_book_data AS (
         NULL::DATE AS ref_product_exclusivity_end,
         NULL::DATE AS interchangeable_approval_date,
         NULL::BOOLEAN AS has_patent_list,
+        -- Additional bronze domain columns
+        rs,
+        drug_type,
+        ingested_at,
         NOW() AS source_updated_at
     FROM mol_bronze.orange_book
     WHERE application_number IS NOT NULL
@@ -175,6 +179,10 @@ purple_book_data AS (
             ELSE NULL
         END::DATE AS interchangeable_approval_date,
         has_patent_list,
+        -- Additional bronze domain columns (Orange Book specific, NULL for Purple Book)
+        NULL::BOOLEAN AS rs,
+        NULL::TEXT AS drug_type,
+        ingested_at,
         source_updated_at
     FROM mol_bronze.purple_book
     WHERE bla_number IS NOT NULL
@@ -194,8 +202,8 @@ all_data AS (
         bpcia_data_exclusivity_end, bpcia_biosimilar_filing_date, orphan_exclusivity_end,
         interchangeable_exclusivity_end, license_type, presentation, status, center,
         first_licensure_date, exclusivity_expiry_date, ref_product_exclusivity_end,
-        interchangeable_approval_date, has_patent_list, source_updated_at,
-        NOW() AS created_at
+        interchangeable_approval_date, has_patent_list, rs, drug_type, ingested_at,
+        source_updated_at, NOW() AS created_at
     FROM orange_book_data
 
     UNION ALL
@@ -210,8 +218,8 @@ all_data AS (
         bpcia_data_exclusivity_end, bpcia_biosimilar_filing_date, orphan_exclusivity_end,
         interchangeable_exclusivity_end, license_type, presentation, status, center,
         first_licensure_date, exclusivity_expiry_date, ref_product_exclusivity_end,
-        interchangeable_approval_date, has_patent_list, source_updated_at,
-        NOW() AS created_at
+        interchangeable_approval_date, has_patent_list, rs, drug_type, ingested_at,
+        source_updated_at, NOW() AS created_at
     FROM purple_book_data
 )
 
@@ -227,7 +235,7 @@ SELECT
     d.bpcia_biosimilar_filing_date, d.orphan_exclusivity_end, d.interchangeable_exclusivity_end,
     d.license_type, d.presentation, d.status, d.center, d.first_licensure_date,
     d.exclusivity_expiry_date, d.ref_product_exclusivity_end, d.interchangeable_approval_date,
-    d.has_patent_list, d.source_updated_at, d.created_at
+    d.has_patent_list, d.rs, d.drug_type, d.ingested_at, d.source_updated_at, d.created_at
 FROM all_data d
 LEFT JOIN mol_silver.molecules m_gen
        ON LOWER(m_gen.canonical_name) = LOWER(d.generic_name)

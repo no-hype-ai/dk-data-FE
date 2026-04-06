@@ -34,6 +34,7 @@ SELECT
     b.image_url,
     b.number_of_designs,
     'euipo'                         AS source,
+    b._loaded_at                    AS source_updated_at,
     NOW()                           AS created_at
 
 FROM mol_bronze.euipo_designs b

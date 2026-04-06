@@ -41,6 +41,10 @@ SELECT DISTINCT ON (b.document_id)
         ELSE 'unlinked'
     END                                     AS link_strategy,
 
+    -- Source metadata
+    b._source_file,
+    b._source_hash,
+
     b.source,
     b.source_updated_at,
     NOW()                                   AS created_at

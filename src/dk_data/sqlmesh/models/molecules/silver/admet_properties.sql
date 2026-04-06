@@ -31,6 +31,7 @@ SELECT
     b.property_category,
     'tdc_admet'                                                         AS source,
     b.source_updated_at,
+    b.ingested_at,
     NOW()                                                               AS created_at
 
 FROM mol_bronze.tdc_admet b

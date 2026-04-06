@@ -128,6 +128,13 @@ SELECT
     COALESCE(hgi.hospital_ownership, pos.ownership_type)                        AS ownership_type,
     hgi.hospital_type,
 
+    -- Hospital general info extended fields
+    hgi.emergency_services,
+    hgi.meets_criteria_for_birthing_friendly_designation,
+    hgi.hospital_overall_rating_footnote,
+    hgi.county_parish,
+    hgi.telephone_number,
+
     -- Quality ratings (CMS Hospital Compare 5-star ratings via cms_hospital_quality)
     -- COALESCE: prefer dedicated quality bronze; fall back to hospital_general_info
     COALESCE(hq.overall_rating, hgi.hospital_overall_rating)                    AS overall_quality_rating,

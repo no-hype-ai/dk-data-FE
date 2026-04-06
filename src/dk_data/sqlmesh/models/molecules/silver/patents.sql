@@ -56,7 +56,8 @@ uspto_patents AS (
         NULL::TEXT AS family_id,         -- family_id not tracked in PatentsView schema
         patent_type,
         NULL::TEXT AS application_number, -- not exposed in PatentsView bulk data
-        'uspto'::TEXT AS source
+        'uspto'::TEXT AS source,
+        ingested_at
     FROM mol_bronze.uspto_patents
     WHERE processed_to_silver = FALSE
       AND patent_number IS NOT NULL
@@ -80,7 +81,8 @@ uspto_ci AS (
         NULL::TEXT AS family_id,         -- not tracked in USPTO CI
         NULL::TEXT AS patent_type,       -- not in USPTO CI schema
         NULL::TEXT AS application_number, -- not in USPTO CI schema
-        'uspto_ci'::TEXT AS source
+        'uspto_ci'::TEXT AS source,
+        ingested_at
     FROM mol_bronze.uspto_ci
     WHERE processed_to_silver = FALSE
       AND patent_number IS NOT NULL
@@ -104,7 +106,8 @@ epo_patents AS (
         family_id,
         NULL::TEXT AS patent_type,       -- EPO uses different type taxonomy
         NULL::TEXT AS application_number, -- not exposed in EPO OPS schema
-        'epo'::TEXT AS source
+        'epo'::TEXT AS source,
+        ingested_at
     FROM mol_bronze.epo_patents
     WHERE processed_to_silver = FALSE
       AND patent_number IS NOT NULL
@@ -128,7 +131,8 @@ orange_book_patents AS (
         NULL::TEXT AS family_id,         -- not in Orange Book
         NULL::TEXT AS patent_type,       -- not in Orange Book
         application_number,              -- from Orange Book appl_no column
-        'orange_book'::TEXT AS source
+        'orange_book'::TEXT AS source,
+        ingested_at
     FROM mol_bronze.orange_book
     WHERE processed_to_silver = FALSE
       AND patent_number IS NOT NULL
@@ -152,7 +156,8 @@ combined AS (
         NULL::TEXT AS application_number, -- not tracked in DrugBank patent records
         inchi_key,
         'drugbank' AS source,
-        source_updated_at
+        source_updated_at,
+        created_at                      AS ingested_at
     FROM drugbank_patents
 
     UNION ALL
@@ -169,7 +174,8 @@ combined AS (
         application_number,
         NULL::TEXT AS inchi_key,         -- not linked at patent level in PatentsView
         source,
-        NOW() AS source_updated_at
+        NOW() AS source_updated_at,
+        ingested_at
     FROM uspto_patents
 
     UNION ALL
@@ -186,7 +192,8 @@ combined AS (
         application_number,
         NULL::TEXT AS inchi_key,
         source,
-        NOW() AS source_updated_at
+        NOW() AS source_updated_at,
+        ingested_at
     FROM uspto_ci
 
     UNION ALL
@@ -203,7 +210,8 @@ combined AS (
         application_number,
         NULL::TEXT AS inchi_key,
         source,
-        NOW() AS source_updated_at
+        NOW() AS source_updated_at,
+        ingested_at
     FROM epo_patents
 
     UNION ALL
@@ -221,7 +229,8 @@ combined AS (
         application_number,
         NULL::TEXT AS inchi_key,
         source,
-        NOW() AS source_updated_at
+        NOW() AS source_updated_at,
+        ingested_at
     FROM orange_book_patents
 )
 
@@ -259,6 +268,7 @@ SELECT DISTINCT ON (patent_number)
     --      "Imatinib Mesylate" → first token "imatinib" matches alias "imatinib"
     COALESCE(m_ik.molecule_id, m_alias.molecule_id) AS molecule_id,
     combined.source,
+    combined.ingested_at,
     combined.source_updated_at,
     NOW() AS created_at,
     NOW() AS updated_at

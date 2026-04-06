@@ -56,8 +56,35 @@ SELECT
     b.average_mass,
     b.monoisotopic_mass,
 
+    -- Molecular properties (from calculated_properties in bronze)
+    b.alogp,
+    b.hba,
+    b.hbd,
+    b.psa,
+    b.rotatable_bond_count,
+    b.heavy_atoms,
+    b.aromatic_rings,
+    b.isomeric_smiles,
+
+    -- Pharmacology (additional fields)
+    b.toxicity,
+
+    -- Relational data
+    b.drug_interactions,
+    b.food_interactions,
+    b.pathways,
+    b.external_links,
+    b.external_identifiers,
+    b.calculated_properties,
+    b.experimental_properties,
+    b.fda_label,
+    b.patents,
+    b.products,
+
     -- Source tracking
     'drugbank'                              AS source,
+    b.source_updated_at,
+    b.loaded_at                             AS ingested_at,
     b.created_at
 
 FROM mol_bronze.drugbank b

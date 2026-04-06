@@ -35,10 +35,17 @@ SELECT
     NULL::TEXT                                              AS frequency_description,
     b.frequency_category,
     b.placebo                                               AS placebo_frequency,
+
+    -- Additional SIDER identifiers
+    b.stitch_id_stereo,
+    b.umls_cui_from_label,
+    b.source_file,
+
     -- SIDER contains side effects, not indications
     NULL::TEXT                                              AS indication,
     NULL::TEXT                                              AS indication_source,
     'sider'                                                 AS source,
+    b.ingested_at                                           AS source_updated_at,
     b.ingested_at                                           AS created_at
 
 FROM mol_bronze.sider b

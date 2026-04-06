@@ -22,6 +22,7 @@ SELECT DISTINCT ON (b.npi, b.facility_affiliations_certification_number)
     b.provider_last_name,
     b.provider_first_name,
     b.provider_middle_name,
+    b.facility_type,
     b.facility_affiliations_certification_number,
     b.facility_type_certification_number,
 

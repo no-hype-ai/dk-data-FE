@@ -32,7 +32,21 @@ WITH ema_decisions AS (
         e.authorization_date::DATE                          AS decision_date,
         e.therapeutic_area::TEXT                            AS therapeutic_area,
         NULL::TEXT                                          AS recommendation_details,
+        -- Additional bronze domain columns
+        e.product_number,
+        e.product_name,
+        e.inn,
+        e.atc_code,
+        e.marketing_authorization_holder,
+        e.revision_date,
+        e.medicine_type,
+        e.pharmacotherapeutic_group,
+        e.epar_url,
+        e.summary_url,
+        NULL::TEXT                                          AS decision_id,
+        NULL::TEXT                                          AS document_url,
         e.source,
+        e.ingested_at,
         e.source_updated_at
     FROM mol_bronze.ema e
     WHERE e.processed_to_silver = FALSE
@@ -52,7 +66,21 @@ hta_decisions AS (
         NULL::TEXT                                          AS therapeutic_area,
         -- summary holds the human-readable recommendation text
         h.summary::TEXT                                     AS recommendation_details,
+        -- Additional bronze domain columns
+        NULL::TEXT                                          AS product_number,
+        NULL::TEXT                                          AS product_name,
+        NULL::TEXT                                          AS inn,
+        NULL::TEXT                                          AS atc_code,
+        NULL::TEXT                                          AS marketing_authorization_holder,
+        NULL::DATE                                          AS revision_date,
+        NULL::TEXT                                          AS medicine_type,
+        NULL::TEXT                                          AS pharmacotherapeutic_group,
+        NULL::TEXT                                          AS epar_url,
+        NULL::TEXT                                          AS summary_url,
+        h.decision_id,
+        h.document_url,
         h.source,
+        NULL::TIMESTAMPTZ                                   AS ingested_at,
         h.source_updated_at
     FROM mol_bronze.hta_decisions h
     WHERE h.processed_to_silver = FALSE
@@ -71,7 +99,21 @@ orange_book_decisions AS (
         ob.approval_date::DATE                              AS decision_date,
         NULL::TEXT                                          AS therapeutic_area,
         ob.te_code::TEXT                                    AS recommendation_details,
+        -- Additional bronze domain columns
+        NULL::TEXT                                          AS product_number,
+        NULL::TEXT                                          AS product_name,
+        NULL::TEXT                                          AS inn,
+        NULL::TEXT                                          AS atc_code,
+        ob.applicant::TEXT                                  AS marketing_authorization_holder,
+        NULL::DATE                                          AS revision_date,
+        NULL::TEXT                                          AS medicine_type,
+        NULL::TEXT                                          AS pharmacotherapeutic_group,
+        NULL::TEXT                                          AS epar_url,
+        NULL::TEXT                                          AS summary_url,
+        NULL::TEXT                                          AS decision_id,
+        NULL::TEXT                                          AS document_url,
         ob.source,
+        ob.ingested_at,
         ob.source_updated_at
     FROM mol_bronze.orange_book ob
     WHERE ob.processed_to_silver = FALSE
@@ -97,6 +139,19 @@ SELECT DISTINCT ON (agency, drug_name, indication, decision_date)
     decision_date,
     therapeutic_area,
     recommendation_details,
+    -- Additional bronze domain columns
+    product_number,
+    product_name,
+    inn,
+    atc_code,
+    marketing_authorization_holder,
+    revision_date,
+    medicine_type,
+    pharmacotherapeutic_group,
+    epar_url,
+    summary_url,
+    decision_id,
+    document_url,
     -- Tier 1: exact alias match on active_substance (INN)
     -- Tier 2: exact alias match on drug_name (trade/generic fallback)
     COALESCE(
@@ -108,6 +163,7 @@ SELECT DISTINCT ON (agency, drug_name, indication, decision_date)
          LIMIT 1)
     )                           AS molecule_id,
     source,
+    ingested_at,
     source_updated_at,
     NOW()                       AS created_at,
     NOW()                       AS updated_at

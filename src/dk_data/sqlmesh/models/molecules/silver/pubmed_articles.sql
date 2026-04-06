@@ -47,6 +47,8 @@ SELECT
     b.journal,
     b.publication_date,
     b.mesh_terms,
+    b.publication_types,
+    b.keywords,
     b.doi,
     'pubmed'                                            AS source,
     b.source_updated_at,

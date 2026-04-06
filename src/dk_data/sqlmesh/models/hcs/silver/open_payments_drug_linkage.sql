@@ -57,9 +57,15 @@ WITH payment_drugs AS (
         physician_specialty,
         applicable_manufacturer_or_gpo_name,
         total_amount_of_payment_usdollars,
+        number_of_payments_included_in_total_amount,
+        form_of_payment_or_transfer_of_value,
         date_of_payment,
         nature_of_payment_or_transfer_of_value,
+        recipient_city,
         recipient_state,
+        recipient_zip_code,
+        program_year,
+        payment_publication_date,
         _source_year
     FROM hcs_bronze.cms_open_payments
     WHERE name_of_drug_or_biological_or_device_or_medical_supply_1 IS NOT NULL
@@ -72,8 +78,13 @@ WITH payment_drugs AS (
            drug_name_2_normalized, associated_drug_or_biological_ndc_2,
            covered_recipient_type, physician_profile_id, physician_first_name,
            physician_last_name, physician_specialty, applicable_manufacturer_or_gpo_name,
-           total_amount_of_payment_usdollars, date_of_payment,
-           nature_of_payment_or_transfer_of_value, recipient_state, _source_year
+           total_amount_of_payment_usdollars,
+           number_of_payments_included_in_total_amount,
+           form_of_payment_or_transfer_of_value,
+           date_of_payment,
+           nature_of_payment_or_transfer_of_value,
+           recipient_city, recipient_state, recipient_zip_code,
+           program_year, payment_publication_date, _source_year
     FROM hcs_bronze.cms_open_payments
     WHERE name_of_drug_or_biological_or_device_or_medical_supply_2 IS NOT NULL
 
@@ -85,8 +96,13 @@ WITH payment_drugs AS (
            drug_name_3_normalized, associated_drug_or_biological_ndc_3,
            covered_recipient_type, physician_profile_id, physician_first_name,
            physician_last_name, physician_specialty, applicable_manufacturer_or_gpo_name,
-           total_amount_of_payment_usdollars, date_of_payment,
-           nature_of_payment_or_transfer_of_value, recipient_state, _source_year
+           total_amount_of_payment_usdollars,
+           number_of_payments_included_in_total_amount,
+           form_of_payment_or_transfer_of_value,
+           date_of_payment,
+           nature_of_payment_or_transfer_of_value,
+           recipient_city, recipient_state, recipient_zip_code,
+           program_year, payment_publication_date, _source_year
     FROM hcs_bronze.cms_open_payments
     WHERE name_of_drug_or_biological_or_device_or_medical_supply_3 IS NOT NULL
 
@@ -98,8 +114,13 @@ WITH payment_drugs AS (
            drug_name_4_normalized, associated_drug_or_biological_ndc_4,
            covered_recipient_type, physician_profile_id, physician_first_name,
            physician_last_name, physician_specialty, applicable_manufacturer_or_gpo_name,
-           total_amount_of_payment_usdollars, date_of_payment,
-           nature_of_payment_or_transfer_of_value, recipient_state, _source_year
+           total_amount_of_payment_usdollars,
+           number_of_payments_included_in_total_amount,
+           form_of_payment_or_transfer_of_value,
+           date_of_payment,
+           nature_of_payment_or_transfer_of_value,
+           recipient_city, recipient_state, recipient_zip_code,
+           program_year, payment_publication_date, _source_year
     FROM hcs_bronze.cms_open_payments
     WHERE name_of_drug_or_biological_or_device_or_medical_supply_4 IS NOT NULL
 
@@ -111,8 +132,13 @@ WITH payment_drugs AS (
            drug_name_5_normalized, associated_drug_or_biological_ndc_5,
            covered_recipient_type, physician_profile_id, physician_first_name,
            physician_last_name, physician_specialty, applicable_manufacturer_or_gpo_name,
-           total_amount_of_payment_usdollars, date_of_payment,
-           nature_of_payment_or_transfer_of_value, recipient_state, _source_year
+           total_amount_of_payment_usdollars,
+           number_of_payments_included_in_total_amount,
+           form_of_payment_or_transfer_of_value,
+           date_of_payment,
+           nature_of_payment_or_transfer_of_value,
+           recipient_city, recipient_state, recipient_zip_code,
+           program_year, payment_publication_date, _source_year
     FROM hcs_bronze.cms_open_payments
     WHERE name_of_drug_or_biological_or_device_or_medical_supply_5 IS NOT NULL
 ),
@@ -207,8 +233,14 @@ SELECT
     -- Payment details
     pd.applicable_manufacturer_or_gpo_name,
     pd.total_amount_of_payment_usdollars,
+    pd.number_of_payments_included_in_total_amount,
+    pd.form_of_payment_or_transfer_of_value,
     pd.date_of_payment,
     pd.nature_of_payment_or_transfer_of_value,
+    pd.recipient_city,
+    pd.recipient_zip_code,
+    pd.program_year,
+    pd.payment_publication_date,
 
     NOW()                                       AS created_at,
     NOW()                                       AS updated_at

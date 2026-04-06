@@ -30,6 +30,7 @@ SELECT
     b.source_name,
     b.relevance_score,
     'websearch'                                         AS source,
+    b.ingested_at,
     b.source_updated_at,
     NOW()                                               AS created_at
 

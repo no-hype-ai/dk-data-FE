@@ -36,6 +36,7 @@ SELECT DISTINCT ON (b.generic_name, b.program, b.year)
     b.avg_cost_per_beneficiary,
 
     b.source,
+    b.ingested_at,
     b.source_updated_at,
     NOW()                           AS created_at
 

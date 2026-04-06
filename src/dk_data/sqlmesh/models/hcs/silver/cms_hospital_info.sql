@@ -28,6 +28,7 @@ SELECT
     b.ownership,
     b.emergency_services,
     b.rating,
+    b.source_hash,
     b.source,
     b.source_updated_at,
     NOW()                       AS created_at

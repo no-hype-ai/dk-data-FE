@@ -55,6 +55,8 @@ SELECT
     b.brand_name,
     b.generic_name,
     b.application_number,
+    b.application_type,
+    b.sponsor_name,
     b.rems_type,
     b.initial_approval_date,
     b.most_recent_modification,
@@ -62,6 +64,8 @@ SELECT
     b.elements,
     b.url,
     b.source,
+    b.source_updated_at,
+    b.ingested_at,
     NOW()                                                           AS created_at
 
 FROM mol_bronze.fda_rems b

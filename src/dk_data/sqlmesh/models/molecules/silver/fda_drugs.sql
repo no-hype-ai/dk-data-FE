@@ -35,6 +35,8 @@ SELECT
     b.products,
     b.submissions,
     m.molecule_id,
+    b.source,
+    b.source_updated_at,
     b.ingested_at                       AS _ingested_at,
     CURRENT_TIMESTAMP                   AS _silver_updated_at
 FROM mol_bronze.fda_drugs AS b

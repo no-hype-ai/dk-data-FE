@@ -32,6 +32,14 @@ SELECT
         THEN TO_DATE(LEFT(b.effective_date, 10), 'YYYY-MM-DD')
         ELSE NULL
     END                                                         AS effective_date,
+    -- Additional bronze domain columns
+    b.record_type,
+    b.full_vaccine_name,
+    b.vaccine_status,
+    b.notes,
+    b.nonvaccine,
+    b.update_date,
+    b.mvx_status,
     'cdc_vaccines'                                              AS source,
     b.source_updated_at,
     NOW()                                                       AS created_at

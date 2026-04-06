@@ -21,7 +21,9 @@ SELECT DISTINCT ON (b.provider_id, b.line_item_code, b._source_year)
     b.reported_hours_fte,
     b.total_salaries,
     b.facility_type,
+    b.source_year,
     b._source_year,
+    b._source_hash,
 
     -- Facility enrichment from hospital general info (most recent year)
     h.facility_name,

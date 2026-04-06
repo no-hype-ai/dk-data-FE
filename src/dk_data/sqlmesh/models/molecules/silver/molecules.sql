@@ -79,6 +79,11 @@ WITH source_molecules AS (
         prodrug,
         natural_product,
         usan_stem,
+        -- Additional bronze domain columns
+        indication_class,
+        therapeutic_flag,
+        synonyms                                                AS chembl_synonyms,
+        cross_references,
         1.0                                                     AS resolution_confidence,
         FALSE                                                   AS needs_review,
         jsonb_build_array('chembl')                             AS data_sources,
@@ -127,6 +132,11 @@ WITH source_molecules AS (
         NULL::BOOLEAN                                           AS prodrug,
         NULL::BOOLEAN                                           AS natural_product,
         NULL::TEXT                                              AS usan_stem,
+        -- Additional bronze domain columns (ChEMBL-specific, NULL for PubChem)
+        NULL::TEXT                                              AS indication_class,
+        NULL::BOOLEAN                                           AS therapeutic_flag,
+        NULL::JSONB                                             AS chembl_synonyms,
+        NULL::JSONB                                             AS cross_references,
         0.8                                                     AS resolution_confidence,
         FALSE                                                   AS needs_review,
         jsonb_build_array('pubchem')                            AS data_sources,
@@ -185,6 +195,11 @@ WITH source_molecules AS (
         prodrug,
         natural_product,
         usan_stem,
+        -- Additional bronze domain columns
+        indication_class,
+        therapeutic_flag,
+        synonyms                                                AS chembl_synonyms,
+        cross_references,
         0.9                                                     AS resolution_confidence,
         FALSE                                                   AS needs_review,
         jsonb_build_array('chembl')                             AS data_sources,
@@ -247,6 +262,11 @@ WITH source_molecules AS (
         NULL::BOOLEAN                                           AS prodrug,
         NULL::BOOLEAN                                           AS natural_product,
         NULL::TEXT                                              AS usan_stem,
+        -- Additional bronze domain columns (ChEMBL-specific, NULL for DrugBank)
+        NULL::TEXT                                              AS indication_class,
+        NULL::BOOLEAN                                           AS therapeutic_flag,
+        NULL::JSONB                                             AS chembl_synonyms,
+        NULL::JSONB                                             AS cross_references,
         0.6                                                     AS resolution_confidence,
         FALSE                                                   AS needs_review,
         jsonb_build_array('drugbank')                           AS data_sources,
@@ -303,6 +323,11 @@ deduplicated AS (
         NULL::TEXT                                              AS review_reason,
         data_sources,
         primary_source,
+        -- Additional bronze domain columns
+        indication_class,
+        therapeutic_flag,
+        chembl_synonyms,
+        cross_references,
         NOW()                                                   AS created_at,
         NOW()                                                   AS updated_at
     FROM source_molecules
@@ -355,6 +380,11 @@ enriched AS (
         d.review_reason,
         d.data_sources,
         d.primary_source,
+        -- Additional bronze domain columns
+        d.indication_class,
+        d.therapeutic_flag,
+        d.chembl_synonyms,
+        d.cross_references,
         d.created_at,
         d.updated_at,
         db.description,

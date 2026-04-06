@@ -35,7 +35,10 @@ WITH part_d AS (
         SUM(tot_benes)                                      AS part_d_beneficiaries,
         SUM(tot_dsg_unts)                                   AS part_d_dosage_units,
         AVG(avg_spnd_per_clm)                               AS part_d_avg_cost_per_claim,
-        AVG(avg_spnd_per_bene)                              AS part_d_avg_cost_per_bene
+        AVG(avg_spnd_per_bene)                              AS part_d_avg_cost_per_bene,
+        SUM(tot_mftr)                                       AS part_d_tot_mftr,
+        AVG(avg_spnd_per_dsg_unt_wghtd)                     AS part_d_avg_spnd_per_dsg_unt_wghtd,
+        MAX(outlier_flag)                                   AS part_d_outlier_flag
     FROM hcs_bronze.cms_part_d_spending
     WHERE gnrc_name IS NOT NULL
     GROUP BY gnrc_name, _source_year
@@ -56,7 +59,10 @@ part_b AS (
         SUM(tot_benes)                                      AS part_b_beneficiaries,
         SUM(tot_dsg_unts)                                   AS part_b_dosage_units,
         AVG(avg_spnd_per_clm)                               AS part_b_avg_cost_per_claim,
-        AVG(avg_spnd_per_bene)                              AS part_b_avg_cost_per_bene
+        AVG(avg_spnd_per_bene)                              AS part_b_avg_cost_per_bene,
+        SUM(tot_mftr)                                       AS part_b_tot_mftr,
+        AVG(avg_spnd_per_dsg_unt)                           AS part_b_avg_spnd_per_dsg_unt,
+        MAX(outlier_flag)                                   AS part_b_outlier_flag
     FROM hcs_bronze.cms_part_b_spending
     WHERE hcpcs_desc IS NOT NULL
     GROUP BY hcpcs_desc, _source_year
@@ -81,6 +87,12 @@ combined AS (
         COALESCE(b.part_b_dosage_units, 0)          AS part_b_dosage_units,
         b.part_b_avg_cost_per_claim,
         b.part_b_avg_cost_per_bene,
+        d.part_d_tot_mftr,
+        d.part_d_avg_spnd_per_dsg_unt_wghtd,
+        d.part_d_outlier_flag,
+        b.part_b_tot_mftr,
+        b.part_b_avg_spnd_per_dsg_unt,
+        b.part_b_outlier_flag,
         COALESCE(d.part_d_spending, 0) + COALESCE(b.part_b_spending, 0) AS total_spending,
         COALESCE(d.part_d_beneficiaries, 0) + COALESCE(b.part_b_beneficiaries, 0) AS total_beneficiaries
     FROM part_d d
@@ -110,6 +122,12 @@ SELECT
     c.part_b_avg_cost_per_bene,
     c.total_spending,
     c.total_beneficiaries,
+    c.part_d_tot_mftr,
+    c.part_d_avg_spnd_per_dsg_unt_wghtd,
+    c.part_d_outlier_flag,
+    c.part_b_tot_mftr,
+    c.part_b_avg_spnd_per_dsg_unt,
+    c.part_b_outlier_flag,
     CASE
         WHEN c.total_spending > 0 AND c.total_beneficiaries > 0
         THEN c.total_spending / c.total_beneficiaries

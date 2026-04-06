@@ -42,6 +42,7 @@ SELECT
     b.cross_references,
     b.source,
     b.source_updated_at,
+    b.request_timestamp                 AS ingested_at,
     NOW()                               AS created_at
 
 FROM mol_bronze.chembl_molecules b

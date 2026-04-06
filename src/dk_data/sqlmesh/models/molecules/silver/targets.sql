@@ -69,10 +69,12 @@ SELECT
     ut.short_name AS target_short_name,
     ut.gene_name AS gene_symbol,
     ut.entry_name,
+    ut.entry_type,
     ut.target_type,
     ut.organism_scientific AS organism,
     ut.organism_common,
     ut.taxonomy_id,
+    ut.sequence,
     ut.sequence_length,
     ut.molecular_weight,
     -- Extract GO terms by ontology namespace

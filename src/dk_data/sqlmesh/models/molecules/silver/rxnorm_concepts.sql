@@ -35,6 +35,7 @@ SELECT
     b.drug_classes,
     'rxnorm'                                                   AS source,
     b.source_updated_at,
+    b.ingested_at,
     NOW()                                                      AS created_at
 
 FROM mol_bronze.rxnorm b

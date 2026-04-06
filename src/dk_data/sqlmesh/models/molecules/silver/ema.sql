@@ -30,7 +30,11 @@ SELECT
     b.therapeutic_area,
     b.pharmacotherapeutic_group,
     b.epar_url,
+    b.summary_url,
+    b.inn,
     m.molecule_id,
+    b.source,
+    b.source_updated_at,
     b.ingested_at                       AS _ingested_at,
     CURRENT_TIMESTAMP                   AS _silver_updated_at
 FROM mol_bronze.ema AS b

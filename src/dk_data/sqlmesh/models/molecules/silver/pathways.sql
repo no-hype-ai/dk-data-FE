@@ -16,6 +16,7 @@ MODEL (
 WITH reactome_linked AS (
     SELECT
         b.stable_id                                     AS pathway_id,
+        b.db_id,
         b.pathway_name,
         b.entity_type,
         b.species,
@@ -23,6 +24,7 @@ WITH reactome_linked AS (
         b.class_name,
         b.source,
         b.source_updated_at,
+        b.ingested_at,
         -- Molecule linkage: request_params carries the drug name that triggered the search
         COALESCE(m_name.molecule_id, m_alias.molecule_id) AS molecule_id
     FROM mol_bronze.reactome b
@@ -47,6 +49,7 @@ WITH reactome_linked AS (
 kegg_pathways AS (
     SELECT
         kp.value->>'id'                                 AS pathway_id,
+        NULL::BIGINT                                    AS db_id,
         kp.value->>'name'                               AS pathway_name,
         'pathway'                                       AS entity_type,
         'Homo sapiens'                                  AS species,
@@ -54,6 +57,7 @@ kegg_pathways AS (
         NULL::TEXT                                      AS class_name,
         'kegg'                                          AS source,
         b.source_updated_at,
+        b.ingested_at,
         m.molecule_id
     FROM mol_bronze.kegg_drug b
     CROSS JOIN LATERAL jsonb_array_elements(COALESCE(b.pathways, '[]'::jsonb)) AS kp(value)
@@ -65,6 +69,7 @@ SELECT
     gen_random_uuid()   AS id,
     molecule_id,
     pathway_id,
+    db_id,
     pathway_name,
     entity_type,
     species,
@@ -72,6 +77,7 @@ SELECT
     class_name,
     source,
     source_updated_at,
+    ingested_at,
     NOW()               AS created_at
 FROM reactome_linked
 
@@ -81,6 +87,7 @@ SELECT
     gen_random_uuid()   AS id,
     molecule_id,
     pathway_id,
+    db_id,
     pathway_name,
     entity_type,
     species,
@@ -88,5 +95,6 @@ SELECT
     class_name,
     source,
     source_updated_at,
+    ingested_at,
     NOW()               AS created_at
 FROM kegg_pathways;

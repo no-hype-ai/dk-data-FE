@@ -35,6 +35,7 @@ SELECT
     alias_match.molecule_id,
 
     b.source,
+    b.ingested_at,
     b.source_updated_at,
     NOW()                           AS created_at
 

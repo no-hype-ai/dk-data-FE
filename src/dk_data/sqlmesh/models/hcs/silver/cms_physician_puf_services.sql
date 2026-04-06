@@ -32,6 +32,8 @@ SELECT DISTINCT ON (b.npi, b.hcpcs_code, b.place_of_service, b._source_year)
     b.average_medicare_payment_amt,
     b.average_medicare_stnd_amt,
     b._source_year,
+    b._source_hash,
+    b._source_file,
 
     -- Provider identity from NPPES (most recent year)
     COALESCE(n.provider_organization_name,
