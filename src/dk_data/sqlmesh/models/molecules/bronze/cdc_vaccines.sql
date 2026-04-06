@@ -33,6 +33,7 @@ SELECT DISTINCT ON (vaccine_id)
     response_body->>'_record_type'                                                  AS record_type,
 
     -- CVX fields
+    response_body->>'cvx_code'                                                      AS cvx_code,
     response_body->>'short_description'                                             AS vaccine_name,
     response_body->>'full_vaccine_name'                                             AS full_vaccine_name,
     response_body->>'vaccine_status'                                                AS vaccine_status,
