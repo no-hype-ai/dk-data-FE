@@ -24,9 +24,9 @@ SELECT
     r.mark_element,
     r.mark_type,
 
-    -- Status
+    -- Status (status_code is INTEGER in mol_raw.uspto_trademarks; cast to TEXT for silver UNION)
     r.status,
-    r.status_code,
+    r.status_code::TEXT AS status_code,
     r.status_date,
 
     -- Dates
