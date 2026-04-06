@@ -561,6 +561,36 @@ def transform_model(model_name: str) -> dict:
     return result
 
 
+def _check_upstream_has_rows(schema: str, table: str) -> bool:
+    """Return True if schema.table exists and has at least one row (item 9)."""
+    try:
+        import psycopg2
+        conn = psycopg2.connect(
+            host=os.getenv("POSTGRES_HOST", "localhost"),
+            port=int(os.getenv("POSTGRES_PORT", "5432")),
+            user=os.getenv("POSTGRES_USER", "postgres"),
+            password=os.getenv("POSTGRES_PASSWORD", ""),
+            dbname=os.getenv("POSTGRES_DB", "dk_data"),
+        )
+        cur = conn.cursor()
+        cur.execute(
+            "SELECT EXISTS(SELECT 1 FROM pg_tables WHERE schemaname = %s AND tablename = %s)",
+            (schema, table),
+        )
+        table_exists = bool(cur.fetchone()[0])
+        if not table_exists:
+            conn.close()
+            logger.warning(f"Upstream table {schema}.{table} does not exist yet — skipping pre-flight")
+            return True  # Don't block if table hasn't been created yet
+        cur.execute(f"SELECT EXISTS(SELECT 1 FROM {schema}.{table} LIMIT 1)")
+        has_rows = bool(cur.fetchone()[0])
+        conn.close()
+        return has_rows
+    except Exception as e:
+        logger.warning(f"Pre-flight check for {schema}.{table} failed: {e} — proceeding anyway")
+        return True  # Fail open: don't block pipeline on connectivity issues
+
+
 def transform_layer(layer: str) -> dict:
     """
     Run transformations for all models in a layer as a single SQLMesh invocation.
@@ -582,19 +612,33 @@ def transform_layer(layer: str) -> dict:
     logger.info(f"Transforming {layer} layer ({len(models)} models) in single sqlmesh run")
 
     # Build one command selecting all models in this layer
-    cmd = ['run']
+    # --max-workers 4: SQLMesh runs up to 4 model batches in parallel (item 1)
+    cmd = ['run', '--max-workers', '4']
     for model_name in models:
         cmd.extend(['--select-model', model_name])
 
     result = run_sqlmesh_command(cmd)
 
-    success_count = len(models) if result.get('status') == 'success' else 0
-    fail_count = 0 if result.get('status') == 'success' else len(models)
+    # Parse per-model outcomes from SQLMesh stdout (item 8).
+    # SQLMesh emits lines like:
+    #   [1/5] mol_bronze.chembl_molecules evaluated in 3.21s
+    #   [2/5] mol_bronze.pubchem failed in 1.02s
+    # Count individual successes/failures rather than treating the entire
+    # run as all-or-nothing (which swallowed partial failures before).
+    stdout = result.get('stdout', '') or ''
+    evaluated = len([l for l in stdout.splitlines() if 'evaluated in' in l.lower()])
+    failed_lines = len([l for l in stdout.splitlines() if ' failed in' in l.lower() or 'failed:' in l.lower()])
 
     if result.get('status') == 'success':
-        logger.info(f"Layer {layer}: all {len(models)} models complete")
+        # SQLMesh exited 0: trust stdout counts; fall back to len(models)
+        success_count = evaluated if evaluated > 0 else len(models)
+        fail_count = failed_lines
+        logger.info(f"Layer {layer}: {success_count}/{len(models)} models complete")
     else:
-        logger.error(f"Layer {layer} failed: {result.get('error')}")
+        # SQLMesh exited non-zero: some models failed
+        success_count = evaluated
+        fail_count = failed_lines if failed_lines > 0 else len(models) - evaluated
+        logger.error(f"Layer {layer} failed: {result.get('error')} ({fail_count} models failed)")
 
     return {
         'status': result.get('status', 'failed'),
@@ -636,6 +680,22 @@ def transform_all_layers() -> dict:
     # → 08:00 silver → 08:30 ind_silver → 09:00 hcs_silver → 10:30 ip_silver
     # → 11:00 mol_silver_ext → 12:00 gold → 13:00 ip_gold → 14:00 mol_gold_ext
     # → 14:30 cms-gold-refresh → 15:30 mart
+    #
+    # Upstream-layer table → downstream layer that depends on it (item 9).
+    # Before running a downstream layer we verify the upstream has rows so we
+    # don't silently produce empty silver/gold output from a stalled pipeline.
+    _upstream_check: dict[str, tuple[str, str]] = {
+        # downstream_layer: (upstream_schema, upstream_table_sample)
+        'silver':     ('mol_bronze', 'chembl_molecules'),
+        'hcs_silver': ('hcs_bronze', 'cms_care_compare'),
+        'ind_silver': ('ind_bronze', 'mesh_terms'),
+        'ip_silver':  ('ip_bronze',  'uspto_patents'),
+        'gold':       ('mol_silver', 'drugs'),
+        'ip_gold':    ('ip_silver',  'patents'),
+        'ind_gold':   ('ind_silver', 'mesh_terms'),
+        'mart':       ('mol_gold',   'drug_targets'),
+    }
+
     for layer in ['bronze', 'ip_bronze', 'mol_bronze_ext', 'hcs_bronze',
                   'ind_bronze', 'silver', 'ind_silver', 'hcs_silver',
                   'ip_silver', 'mol_silver_ext', 'gold', 'ip_gold',
@@ -643,6 +703,24 @@ def transform_all_layers() -> dict:
         logger.info(f"\n{'='*60}")
         logger.info(f"Processing {layer.upper()} layer")
         logger.info(f"{'='*60}")
+
+        # Pre-flight: verify upstream table has rows before running downstream (item 9).
+        # Skips the layer (does NOT abort) so the rest of the pipeline still runs.
+        if layer in _upstream_check:
+            schema, table = _upstream_check[layer]
+            upstream_ok = _check_upstream_has_rows(schema, table)
+            if not upstream_ok:
+                logger.warning(
+                    f"Skipping {layer}: upstream {schema}.{table} is empty or unreachable"
+                )
+                all_results[layer] = {
+                    'status': 'skipped',
+                    'layer': layer,
+                    'reason': f'upstream {schema}.{table} is empty',
+                    'success_count': 0,
+                    'fail_count': 0,
+                }
+                continue
 
         result = transform_layer(layer)
         all_results[layer] = result

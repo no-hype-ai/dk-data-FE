@@ -10,6 +10,12 @@ gateways:
       user: "{{ env_var('POSTGRES_USER', 'postgres') }}"
       password: "{{ env_var('POSTGRES_PASSWORD', '') }}"
       database: "{{ env_var('POSTGRES_DB', 'dk_data') }}"
+      # Connection pool tuning (item 2 — post-backfill performance).
+      # pool_size: steady-state connections held open; max_overflow: burst connections
+      # beyond pool_size (released immediately after use). 4 workers × 1 conn = 4 needed;
+      # headroom for plan + ad-hoc queries.
+      pool_size: 5
+      max_overflow: 5
 
 default_gateway: local
 
