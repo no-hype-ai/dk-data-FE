@@ -11,7 +11,7 @@ metadata:
     app.kubernetes.io/component: ingestion
     app.kubernetes.io/part-of: dk-data
 spec:
-  schedule: "0 6 1 * *"  # 1st of month, 6 AM UTC (aligns with NLM monthly release)
+  schedule: "0 1 2 * *"  # 2nd of month 01:00 UTC — staggered off 1st to reduce DB contention
   concurrencyPolicy: Forbid
   startingDeadlineSeconds: 3600
   successfulJobsHistoryLimit: 3

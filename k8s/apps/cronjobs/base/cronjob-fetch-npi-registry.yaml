@@ -7,7 +7,7 @@ metadata:
     component: npi-registry
     feature: "019-cms-puf"
 spec:
-  schedule: "0 5 1 * *"  # Monthly — 1st at 5AM UTC (NPI updates weekly but full refresh monthly)
+  schedule: "0 4 4 * *"  # 4th of month 04:00 UTC — staggered off 1st
   concurrencyPolicy: Forbid
   startingDeadlineSeconds: 3600
   successfulJobsHistoryLimit: 3

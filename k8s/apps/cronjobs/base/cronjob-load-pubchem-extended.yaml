@@ -18,7 +18,7 @@ metadata:
     component: pubchem-extended
     feature: "019-cms-puf"
 spec:
-  schedule: "0 4 1 * *"
+  schedule: "0 4 3 * *"  # 3rd of month 04:00 UTC — after pubchem on 1st; loads extended synonyms
   concurrencyPolicy: Forbid
   startingDeadlineSeconds: 3600
   successfulJobsHistoryLimit: 3

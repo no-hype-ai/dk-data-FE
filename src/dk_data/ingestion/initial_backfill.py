@@ -434,17 +434,31 @@ def run_sqlmesh_run(sqlmesh_dir: str) -> bool:
         return False
 
 
-def run_fetch_backfill(data_dir: str, workers: int = 1, dry_run: bool = False) -> dict:
-    """Fetch ALL sources.
+def run_fetch_backfill(
+    data_dir: str,
+    workers: int = 1,
+    dry_run: bool = False,
+    only_sources: list[str] | None = None,
+) -> dict:
+    """Fetch sources.
 
     With workers=1 (default): sequential, identical to prior behaviour.
     With workers>1: light/medium sources run in a thread pool; heavy sources
     run sequentially afterward (memory safety).
 
+    only_sources: if provided, restrict to exactly these source names (still
+    subject to SKIP_SOURCES; unknown names are warned and ignored).
+
     Returns dict of {source: status}.
     """
     days_back = compute_backfill_days()
-    sources_to_run = [s for s in SOURCES if s not in SKIP_SOURCES]
+    if only_sources:
+        unknown = set(only_sources) - set(SOURCES)
+        if unknown:
+            logger.warning("Unknown sources requested (will be ignored): %s", sorted(unknown))
+        sources_to_run = [s for s in only_sources if s in SOURCES and s not in SKIP_SOURCES]
+    else:
+        sources_to_run = [s for s in SOURCES if s not in SKIP_SOURCES]
 
     # Partition into (skip, heavy, light) — check skip first
     skip_list: list[tuple[str, str]] = []
@@ -577,6 +591,9 @@ Examples:
   python -m dk_data.ingestion.initial_backfill --workers 4 --dry-run
         """
     )
+    parser.add_argument('--sources', type=str, default=None,
+                        help='Comma-separated list of source names to backfill '
+                             '(default: all). Example: --sources pubchem,uniprot')
     parser.add_argument('--workers', type=int, default=1,
                         help='Parallel fetch workers for light/medium sources (default 1). '
                              'Recommended: 4 for the standard 4vCPU/8Gi pod.')
@@ -631,10 +648,12 @@ Examples:
         pool_size = max(10, args.workers * 3)
         init_connection_pool(minconn=2, maxconn=pool_size)
         try:
+            only_sources = [s.strip() for s in args.sources.split(',')] if args.sources else None
             fetch_results = run_fetch_backfill(
                 args.data_dir,
                 workers=args.workers,
                 dry_run=args.dry_run,
+                only_sources=only_sources,
             )
             failed_sources = [s for s, status in fetch_results.items()
                               if str(status).startswith(('failed', 'exception'))]

@@ -11,7 +11,7 @@ metadata:
     app.kubernetes.io/component: ingestion
     app.kubernetes.io/part-of: dk-data
 spec:
-  schedule: "0 13 * * *"  # Daily 1 PM UTC
+  schedule: "0 2 * * *"   # Daily 02:00 UTC — overnight before 06:00 transform
   concurrencyPolicy: Forbid
   startingDeadlineSeconds: 3600
   successfulJobsHistoryLimit: 3

@@ -11,7 +11,7 @@ metadata:
     app.kubernetes.io/component: ingestion
     app.kubernetes.io/part-of: dk-data
 spec:
-  schedule: "0 8 1 * *"  # 1st of month, 8 AM UTC (staggered 1h after who_inn)
+  schedule: "0 3 3 * *"  # 3rd of month 03:00 UTC — staggered off 1st
   concurrencyPolicy: Forbid
   startingDeadlineSeconds: 3600
   successfulJobsHistoryLimit: 3

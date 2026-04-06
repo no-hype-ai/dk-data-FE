@@ -11,7 +11,7 @@ metadata:
     app.kubernetes.io/component: ingestion
     app.kubernetes.io/part-of: dk-data
 spec:
-  schedule: "0 18 * * 0"  # Weekly Sunday 6 PM UTC
+  schedule: "0 20 * * 0"  # Sunday 20:00 UTC — staggered 2h from euipo (18:00)
   concurrencyPolicy: Forbid
   startingDeadlineSeconds: 3600
   successfulJobsHistoryLimit: 3

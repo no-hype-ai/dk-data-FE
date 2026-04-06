@@ -7,7 +7,7 @@ metadata:
     component: who-gho
     feature: "019-cms-puf"
 spec:
-  schedule: "0 7 1 * *"  # Monthly — 1st at 7AM UTC
+  schedule: "0 3 2 * *"  # 2nd of month 03:00 UTC — staggered off 1st
   concurrencyPolicy: Forbid
   startingDeadlineSeconds: 3600
   successfulJobsHistoryLimit: 3
