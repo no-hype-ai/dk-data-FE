@@ -18,21 +18,18 @@ MODEL (
     grain application_number
 );
 
+-- Each mol_raw.fda_drugs row is a single application record stored directly.
+-- The FDA API returns {"results": [...]} pages, but the ingestion layer stores individual
+-- application records extracted from those pages — one record per row in mol_raw.
 WITH expanded AS (
     SELECT
         r.id             AS raw_source_id,
         r.request_timestamp,
-        res.value        AS rec
-    FROM mol_raw.fda_drugs r,
-         LATERAL jsonb_array_elements(
-             CASE
-                 WHEN r.response_body ? 'results' THEN r.response_body->'results'
-                 ELSE '[]'::jsonb
-             END
-         ) AS res(value)
+        r.response_body  AS rec
+    FROM mol_raw.fda_drugs r
     WHERE r.response_status = 200
       AND r.processed_to_bronze = FALSE
-      AND r.response_body ? 'results'
+      AND r.response_body->>'application_number' IS NOT NULL
       AND r.request_timestamp BETWEEN @start_dt AND @end_dt
 ),
 

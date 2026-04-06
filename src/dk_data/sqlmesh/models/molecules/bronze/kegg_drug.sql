@@ -61,10 +61,29 @@ SELECT DISTINCT ON (kegg_id)
     COALESCE(entry->'pathway', entry->'pathways')   AS pathways,
     entry->'enzymes'    AS enzymes,
 
-    entry->>'drugbank_id' AS drugbank_id,
-    (entry->>'pubchem_sid')::BIGINT AS pubchem_sid,
-    entry->>'chembl_id'   AS chembl_id,
-    entry->>'cas_number'  AS cas_number,
+    -- KEGG flat-file DBLINKS is parsed as a JSON array of "Key: Value" strings.
+    -- e.g. dblinks = ["CAS: 65-49-6", "DrugBank: DB00551", "PubChem: 4", "ChEMBL: CHEMBL416"]
+    -- Use #>> '{}' to extract text from JSONB string elements without surrounding quotes.
+    (SELECT regexp_replace(elem #>> '{}', '^DrugBank: ', '')
+     FROM jsonb_array_elements(entry->'dblinks') AS elem
+     WHERE (elem #>> '{}') LIKE 'DrugBank: %'
+     LIMIT 1
+    ) AS drugbank_id,
+    (SELECT (regexp_replace(elem #>> '{}', '^PubChem: ', ''))::BIGINT
+     FROM jsonb_array_elements(entry->'dblinks') AS elem
+     WHERE (elem #>> '{}') LIKE 'PubChem: %'
+     LIMIT 1
+    ) AS pubchem_sid,
+    (SELECT regexp_replace(elem #>> '{}', '^ChEMBL: ', '')
+     FROM jsonb_array_elements(entry->'dblinks') AS elem
+     WHERE (elem #>> '{}') LIKE 'ChEMBL: %'
+     LIMIT 1
+    ) AS chembl_id,
+    (SELECT regexp_replace(elem #>> '{}', '^CAS: ', '')
+     FROM jsonb_array_elements(entry->'dblinks') AS elem
+     WHERE (elem #>> '{}') LIKE 'CAS: %'
+     LIMIT 1
+    ) AS cas_number,
     entry->'research_codes' AS research_codes,
     entry->'synonyms'     AS synonyms,
 

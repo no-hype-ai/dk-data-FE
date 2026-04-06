@@ -50,6 +50,25 @@ from_properties AS (
       AND r.response_body->'properties'->>'rxcui' IS NOT NULL
 ),
 
+-- minConceptGroup format: {"_tty": "IN", "minConceptGroup": {"minConcept": [{rxcui, name, tty}]}}
+-- This is the bulk-download format returned by /REST/allconcepts.json?sabs=RXNORM&tty=IN+BN
+from_min_concept AS (
+    SELECT
+        r.id AS raw_id,
+        r.ingested_at,
+        concept->>'rxcui'  AS rxcui,
+        concept->>'name'   AS name,
+        concept->>'tty'    AS tty,
+        NULL::TEXT         AS synonym,
+        NULL::TEXT         AS suppress,
+        r.response_body    AS raw_json
+    FROM mol_raw.rxnorm r,
+         jsonb_array_elements(r.response_body->'minConceptGroup'->'minConcept') AS concept
+    WHERE r.response_status = 200
+      AND r.response_body->'minConceptGroup' IS NOT NULL
+      AND concept->>'rxcui' IS NOT NULL
+),
+
 -- relatedGroup format: {"relatedGroup": {"conceptGroup": [{"conceptProperties": [{...}]}]}}
 from_related AS (
     SELECT
@@ -106,6 +125,8 @@ combined AS (
     SELECT * FROM from_properties
     UNION ALL
     SELECT * FROM from_related
+    UNION ALL
+    SELECT * FROM from_min_concept
 )
 
 SELECT DISTINCT ON (c.rxcui)

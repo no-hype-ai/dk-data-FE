@@ -33,10 +33,10 @@ from ..sources.pubchem import load_pubchem_data
 logger = logging.getLogger(__name__)
 
 _SDQ_URL = "https://pubchem.ncbi.nlm.nih.gov/sdq/sdqagent.cgi"
-_PAGE_SIZE = 10000
-_REQUEST_DELAY = 0.2
+_PAGE_SIZE = 10000  # SDQ endpoint max — returns HTTP 500 for limit > 10000
+_REQUEST_DELAY = 0.05  # Server response takes 2-8s per page; 0.05s is safe (tested 10 rapid requests with no throttling)
 _DEFAULT_MAX_RECORDS = None  # No cap — fetch all ~123M PubChem compounds
-_CHECKPOINT_INTERVAL = 10  # save checkpoint every 10 pages (= 100k records)
+_CHECKPOINT_INTERVAL = 5  # save checkpoint every 5 pages (= 50k records) for faster resume on pod kill
 
 
 class PubChemFetcher(BaseFetcher):
