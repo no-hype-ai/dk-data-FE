@@ -271,6 +271,101 @@ MODEL_GRAIN_COLUMN: dict[str, str] = {
 # Default SQLMesh project directory (relative path used when invoked from repo root).
 SQLMESH_DIR = 'src/dk_data/sqlmesh'
 
+# ---------------------------------------------------------------------------
+# Prioritized backfill order — fastest to slowest
+#
+# Nick's principle: "scale out, not up — simple modular functions, one at a time"
+# Never run more than 1 source concurrently during initial provisioning.
+# Each tier is a rough estimate; actual time depends on API rate limits.
+#
+# Tier 1 — fast reference data (<5 min each)
+# Tier 2 — medium API sources (5–30 min each)
+# Tier 3 — larger API/file sources (30 min–4 h each)
+# Tier 4 — heavy sequential (each needs its own day: 4–12 h)
+# Tier 5 — extreme last (pubchem: 85 h at rate limit)
+# ---------------------------------------------------------------------------
+BACKFILL_ORDER: list[str] = [
+    # ── Tier 1: fast reference data ──────────────────────────────────────
+    'who_inn',              # WHO INN drug names   (~200 rows)
+    'who_gho',              # WHO GHO indicators   (~1k rows)
+    'kegg_drug',            # KEGG drug DB         (~11k rows)
+    'rxnorm',               # NLM RxNorm concepts  (~100k rows, fast API)
+    'imgt',                 # IMGT antibody seqs   (~1k rows)
+    'cdc_vaccines',         # CDC CVX/MVX codes    (~300 rows)
+    'cms_nucc',             # NUCC taxonomy        (~900 rows)
+    'cms_rbcs',             # CMS RBCS codes       (~1k rows)
+    'cms_usp',              # CMS USP drug classes (~1k rows)
+    'cms_stabilis',         # CMS Stabilis drug info (~5k rows)
+    'cms_pos',              # CMS Place of Service (~100 rows)
+    'cms_chow',             # CMS CHOW ownership   (~10k rows)
+    'fda_rems',             # FDA REMS programs    (~70 programs)
+    'purple_book',          # FDA Biologics        (~3k rows)
+    'nice_hta',             # NICE HTA decisions   (~5k rows)
+    # ── Tier 2: medium API sources ───────────────────────────────────────
+    'pharmgkb',             # PharmGKB annotations (~8k rows)
+    'tdc_admet',            # TDC ADMET data       (~12k rows)
+    'sider',                # SIDER side effects   (~140k rows)
+    'ttd',                  # TTD drug targets     (~37k rows)
+    'orange_book',          # FDA Orange Book      (~100k rows)
+    'fda_drugs',            # FDA drug approvals   (~50k rows)
+    'reactome',             # Reactome pathways    (~15k rows)
+    'bindingdb',            # BindingDB affinities (~2.5M rows, batched)
+    'who_icd',              # WHO ICD-11 codes     (~80k rows)
+    'hrsa',                 # HRSA shortage areas  (~30k rows)
+    'ema',                  # EMA drug data        (~2k rows)
+    'dailymed',             # DailyMed labels      (~140k rows)
+    'pdb',                  # PDB structures       (~220k rows, weekly batch)
+    'cochrane',             # Cochrane reviews     (~10k rows)
+    'hta_bodies',           # HTA body decisions   (~5k rows)
+    'sec_edgar',            # SEC EDGAR filings    (~daily incremental)
+    'journal_rss',          # Journal RSS feeds    (~daily incremental)
+    'medical_news',         # Medical news         (~daily incremental)
+    'websearch',            # Web search results   (~small)
+    # ── Tier 3: larger API / file sources ────────────────────────────────
+    'europepmc',            # Europe PMC articles  (~500k rows)
+    'nih_reporter',         # NIH grants           (~200k rows)
+    'clinicaltrials',       # ClinicalTrials.gov   (~500k rows)
+    'openfda_labels',       # FDA drug labels      (~180k rows)
+    'fda_ndc',              # FDA NDC directory    (~800k rows)
+    'cms_coverage',         # CMS NCD coverage     (~100k rows)
+    'cms_medicare',         # CMS Medicare spend   (~large file)
+    'npi_registry',         # CMS NPI registry     (~8M rows, batched)
+    'openalex_ci',          # OpenAlex CI search   (~daily incremental)
+    'pubmed',               # PubMed articles      (~daily incremental)
+    'drugbank',             # DrugBank             (~14k drugs)
+    'epo_ops',              # EPO patents          (~weekly batch)
+    'uspto_trademarks',     # USPTO trademarks     (~weekly batch)
+    'euipo_designs',        # EUIPO designs        (~weekly batch)
+    'uspto_ci',             # USPTO CI patents     (~weekly batch)
+    'uspto_patents',        # USPTO patents        (~weekly batch)
+    # CMS facility / provider sources
+    'cms_care_compare',     'cms_hospital_affiliation', 'cms_hospital_quality',
+    'cms_hospital_general_info', 'cms_home_health',    'cms_formulary',
+    'cms_hospital_info',    'cms_hcris',               'cms_dmepos',
+    'cms_magnet',           'cms_ndc',                 'cms_pecos',
+    'cms_post_acute',       'cms_nppes',               'cms_geographic_variation',
+    # CMS PUF sources (annual releases)
+    'cms_inpatient_puf',    'cms_physician_puf',       'cms_physician_puf_services',
+    'cms_part_d_prescriber','cms_part_d_spending',     'cms_part_b_spending',
+    'cms_outpatient_puf',   'cms_opioid_puf',          'cms_ordering_providers',
+    'cms_referring_providers','cms_imaging_puf',       'cms_lab_services',
+    'cms_mental_health_puf','cms_telehealth_puf',      'cms_snf_puf',
+    'cms_hospice_puf',      'cms_dme_puf',             'cms_utilization_puf',
+    'cms_claim_type_puf',   'cms_enrollment_puf',      'cms_cost_reports_puf',
+    'cms_cost_reports_puf_lines', 'cms_inpatient',     'cms_cost_reports',
+    'cms_medicare_advantage','cms_medicaid_drug_spending','cms_chronic_conditions',
+    'cms_dual_eligible',    'cms_open_payments',
+    # Other HCS sources
+    'acc_tvc',              'hrsa',
+    # ── Tier 4: heavy sequential (4–12 h each) ───────────────────────────
+    'openfda_faers',        # OpenFDA FAERS adverse events (~20M rows)
+    'chembl_activities',    # ChEMBL activities            (~20M rows)
+    'uniprot',              # UniProt protein DB           (~250k entries, large XML)
+    'chembl_molecules',     # ChEMBL molecules             (~2.5M rows)
+    # ── Tier 5: extreme — run last, alone, over a weekend ────────────────
+    'pubchem',              # PubChem compounds — 123M rows, ~85h at rate limit
+]
+
 
 # ---------------------------------------------------------------------------
 # Stage 1: Fetch
@@ -541,33 +636,123 @@ def run_health_check(bronze_models: list[str], dry_run: bool) -> bool:
 # Main
 # ---------------------------------------------------------------------------
 
+def run_all_sequential(
+    args,
+    days_back: int,
+    stop_on_failure: bool,
+) -> int:
+    """Iterate through BACKFILL_ORDER, running fetch→transform→health for each source.
+
+    Skips sources that already have a recent last_successful_refresh.
+    Returns exit code: 0 = all passed, 1 = one or more failed.
+    """
+    from .initial_backfill import should_skip_source
+
+    total = len(BACKFILL_ORDER)
+    failed: list[str] = []
+    skipped: list[str] = []
+
+    logger.info("=" * 60)
+    logger.info("SEQUENTIAL FULL BACKFILL — %d sources in BACKFILL_ORDER", total)
+    logger.info("One source at a time. Stops on health failure unless --no-stop-on-failure.")
+    logger.info("=" * 60)
+
+    for idx, source in enumerate(BACKFILL_ORDER, 1):
+        if source not in SOURCE_TO_BRONZE_MODELS:
+            logger.warning("[%d/%d] %s — no bronze model mapping, skipping", idx, total, source)
+            skipped.append(source)
+            continue
+
+        should_skip, reason = should_skip_source(source)
+        if should_skip:
+            logger.info("[%d/%d] %s — SKIP (%s)", idx, total, source, reason)
+            skipped.append(source)
+            continue
+
+        logger.info("")
+        logger.info("[%d/%d] ━━━ %s ━━━", idx, total, source.upper())
+        bronze_models = SOURCE_TO_BRONZE_MODELS[source]
+
+        ok = True
+
+        if not (args.transform_only or args.health_only):
+            ok = run_fetch(source, days_back, args.data_dir, args.dry_run)
+            if not ok:
+                logger.error("[%d/%d] %s — fetch FAILED", idx, total, source)
+                failed.append(source)
+                if stop_on_failure:
+                    logger.error("Stopping (--stop-on-failure). Fix %s and re-run.", source)
+                    break
+                continue
+
+        if ok and not (args.fetch_only or args.health_only):
+            ok = run_bronze_transform(bronze_models, args.sqlmesh_dir, args.dry_run)
+            if not ok:
+                logger.error("[%d/%d] %s — bronze transform FAILED", idx, total, source)
+                failed.append(source)
+                if stop_on_failure:
+                    logger.error("Stopping (--stop-on-failure). Fix %s and re-run.", source)
+                    break
+                continue
+
+        if ok and not (args.fetch_only or args.transform_only):
+            ok = run_health_check(bronze_models, args.dry_run)
+            if not ok:
+                logger.error("[%d/%d] %s — health check FAILED", idx, total, source)
+                failed.append(source)
+                if stop_on_failure:
+                    logger.error("Stopping (--stop-on-failure). Investigate %s before continuing.", source)
+                    break
+                continue
+
+        logger.info("[%d/%d] %s — DONE", idx, total, source)
+
+    logger.info("")
+    logger.info("=" * 60)
+    logger.info("SEQUENTIAL BACKFILL COMPLETE")
+    logger.info("  Sources in order : %d", total)
+    logger.info("  Skipped          : %d", len(skipped))
+    logger.info("  Failed           : %d  %s", len(failed), failed if failed else "")
+    logger.info("=" * 60)
+
+    return 1 if failed else 0
+
+
 def main():
     parser = argparse.ArgumentParser(
         description='Per-source backfill: fetch → bronze transform → health check',
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
-  # Full pipeline for one source:
+  # Single source — full pipeline:
   python -m dk_data.ingestion.source_backfill --source chembl_molecules
 
-  # Fetch only (populate raw table):
-  python -m dk_data.ingestion.source_backfill --source pubchem --fetch-only
+  # Full sequential initial backfill (Nick's way — one source at a time):
+  python -m dk_data.ingestion.source_backfill --run-all
+  python -m dk_data.ingestion.source_backfill --run-all --stop-on-failure
 
-  # Transform only (raw already populated, run bronze SQLMesh model):
+  # Fetch only (populate raw, skip transform):
+  python -m dk_data.ingestion.source_backfill --source pubchem --fetch-only
+  python -m dk_data.ingestion.source_backfill --run-all --fetch-only
+
+  # Transform only (raw already populated):
   python -m dk_data.ingestion.source_backfill --source pubchem --transform-only
 
-  # Health check only (verify bronze table state):
+  # Health check only:
   python -m dk_data.ingestion.source_backfill --source pubchem --health-only
 
-  # Dry run (show what would happen):
-  python -m dk_data.ingestion.source_backfill --source clinicaltrials --dry-run
+  # Dry run (show what would happen without running):
+  python -m dk_data.ingestion.source_backfill --run-all --dry-run
 
   # Custom days-back window:
   python -m dk_data.ingestion.source_backfill --source nih_reporter --days-back 365
         """,
     )
-    parser.add_argument('--source', required=True,
-                        help='Source name to backfill (e.g. chembl_molecules, pubchem)')
+    source_group = parser.add_mutually_exclusive_group(required=True)
+    source_group.add_argument('--source',
+                        help='Single source name to backfill (e.g. chembl_molecules, pubchem)')
+    source_group.add_argument('--run-all', action='store_true',
+                        help='Run all sources in BACKFILL_ORDER sequentially (initial provisioning)')
     parser.add_argument('--days-back', type=int, default=None,
                         help='Number of days to fetch (default: compute from SQLMESH_START_DATE)')
     parser.add_argument('--data-dir', default='/tmp/data/raw',
@@ -580,6 +765,8 @@ Examples:
                         help='Only run the bronze transform stage')
     parser.add_argument('--health-only', action='store_true',
                         help='Only run the health check stage')
+    parser.add_argument('--stop-on-failure', action='store_true',
+                        help='(--run-all only) Stop the sequence on the first health-check failure')
     parser.add_argument('--dry-run', action='store_true',
                         help='Show what would be done without executing anything')
 
@@ -590,9 +777,25 @@ Examples:
     if sum(stage_flags) > 1:
         parser.error("--fetch-only, --transform-only, and --health-only are mutually exclusive")
 
+    days_back = args.days_back if args.days_back is not None else compute_backfill_days()
+
+    service_name = os.getenv("OTEL_SERVICE_NAME", "dk-data-source-backfill")
+    if _OBSERVABILITY_AVAILABLE:
+        setup_logging(service_name)
+        setup_telemetry(service_name)
+
+    # ── --run-all: sequential full backfill ──────────────────────────────
+    if args.run_all:
+        exit_code = run_all_sequential(
+            args,
+            days_back=days_back,
+            stop_on_failure=args.stop_on_failure,
+        )
+        sys.exit(exit_code)
+
+    # ── single source ────────────────────────────────────────────────────
     source = args.source
 
-    # Validate source is known
     if source not in SOURCES and source not in SOURCE_TO_BRONZE_MODELS:
         logger.warning(
             "Source %r is not in SOURCES registry — proceeding with bronze model mapping only",
@@ -601,57 +804,46 @@ Examples:
     if source not in SOURCE_TO_BRONZE_MODELS:
         logger.error(
             "Source %r has no bronze model mapping in SOURCE_TO_BRONZE_MODELS. "
-            "Add it to the mapping dict in source_backfill.py and retry.",
+            "Add it to the mapping in source_backfill.py and retry.",
             source,
         )
         sys.exit(1)
 
     bronze_models = SOURCE_TO_BRONZE_MODELS[source]
-    days_back = args.days_back if args.days_back is not None else compute_backfill_days()
-
-    # Set up logging/telemetry
-    service_name = os.getenv("OTEL_SERVICE_NAME", f"dk-data-source-backfill-{source}")
-    if _OBSERVABILITY_AVAILABLE:
-        setup_logging(service_name)
-        setup_telemetry(service_name)
 
     logger.info("=" * 60)
     logger.info("SOURCE BACKFILL — %s", source)
-    logger.info("Bronze models: %s", ', '.join(bronze_models))
-    logger.info("Days back: %d", days_back)
-    logger.info("Data dir: %s", args.data_dir)
-    logger.info("SQLMesh dir: %s", args.sqlmesh_dir)
+    logger.info("Bronze models : %s", ', '.join(bronze_models))
+    logger.info("Days back     : %d", days_back)
+    logger.info("Data dir      : %s", args.data_dir)
+    logger.info("SQLMesh dir   : %s", args.sqlmesh_dir)
     if args.dry_run:
         logger.info("DRY RUN — no actual work will be performed")
     logger.info("=" * 60)
 
-    # Determine which stages to run
-    run_all = not any(stage_flags)
-    do_fetch = run_all or args.fetch_only
-    do_transform = run_all or args.transform_only
-    do_health = run_all or args.health_only
+    run_all_stages = not any(stage_flags)
+    do_fetch     = run_all_stages or args.fetch_only
+    do_transform = run_all_stages or args.transform_only
+    do_health    = run_all_stages or args.health_only
 
     overall_start = time.monotonic()
 
-    # Stage 1: Fetch
     if do_fetch:
         ok = run_fetch(source, days_back, args.data_dir, args.dry_run)
         if not ok:
             logger.error("Fetch stage FAILED — aborting")
             sys.exit(1)
 
-    # Stage 2: Bronze transform
     if do_transform:
         ok = run_bronze_transform(bronze_models, args.sqlmesh_dir, args.dry_run)
         if not ok:
             logger.error("Bronze transform stage FAILED — aborting")
             sys.exit(2)
 
-    # Stage 3: Health check
     if do_health:
         ok = run_health_check(bronze_models, args.dry_run)
         if not ok:
-            logger.error("Health check FAILED — one or more bronze tables have issues")
+            logger.error("Health check FAILED — investigate before moving to the next source")
             sys.exit(3)
 
     elapsed = time.monotonic() - overall_start

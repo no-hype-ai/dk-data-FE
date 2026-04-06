@@ -1,52 +1,36 @@
-# Per-Source Backfill Job — fetch → bronze transform → health check for ONE source.
+# Source Backfill Job — fetch → bronze transform → health check, one source at a time.
 #
-# This is a MANUAL, ONE-OFF job. Apply it when you need to backfill a single
-# data source without running the full initial-backfill pipeline.
+# Nick's principle: "scale out not up — simple modular functions, never fire all at once."
+# This job runs ONE source and verifies it before you move to the next.
 #
-# HOW TO USE:
+# ── INITIAL PROVISIONING (recommended) ──────────────────────────────────────
+# Run the full BACKFILL_ORDER sequentially — smallest sources first, pubchem last:
+#   name: bf-all-sequential
+#   args: ["--run-all"]                        # continues on failure, logs which failed
+#   args: ["--run-all", "--stop-on-failure"]   # stops at first health-check failure
+#   args: ["--run-all", "--fetch-only"]        # fetch all raw, skip transforms
+#   args: ["--run-all", "--dry-run"]           # preview what would run
 #
-#   1. Copy this file or edit it in place.
-#      IMPORTANT: Rename the job (metadata.name) before each apply to avoid
-#      "already exists" errors — Kubernetes Jobs are immutable once created.
+# Skips sources already refreshed recently (idempotent — safe to re-run).
 #
-#   2. Set --source to the source name you want to backfill.
-#      See SOURCE_TO_BRONZE_MODELS in source_backfill.py for the full list.
+# ── SINGLE SOURCE ────────────────────────────────────────────────────────────
+# Rename job before each apply (Jobs are immutable — "already exists" if reused):
+#   name: bf-chembl-molecules
+#   args: ["--source", "chembl_molecules"]
 #
-#   3. (Optional) Adjust --days-back. Default: compute from SQLMESH_START_DATE.
+# Stage flags:
+#   --fetch-only       Fetch raw only (no transform, no health)
+#   --transform-only   Bronze SQLMesh model only (raw already populated)
+#   --health-only      Verify bronze table only
+#   --dry-run          Preview without running
+#   --days-back N      Override fetch window (default: days since 2024-01-01)
 #
-#   4. Apply and watch logs:
-#        kubectl apply -f job-source-backfill.yaml -n dk-data-prod
-#        kubectl logs -f job/bf-REPLACE_ME -n dk-data-prod
-#        kubectl delete job bf-REPLACE_ME -n dk-data-prod
+# Exit codes: 0=pass  1=fetch failed  2=transform failed  3=health failed
 #
-# STAGE FLAGS (set in args):
-#   --fetch-only       Only fetch raw data (skip transform + health)
-#   --transform-only   Only run bronze SQLMesh model (raw already populated)
-#   --health-only      Only run the health check (verify bronze table)
-#   --dry-run          Show what would happen without doing anything
-#
-# EXIT CODES:
-#   0 — all stages passed
-#   1 — fetch failed
-#   2 — bronze transform failed
-#   3 — health check failed (0 rows or null grain column)
-#
-# EXAMPLES:
-#   Full pipeline, 730 days back:
-#     name: bf-pubchem
-#     args: ["--source", "pubchem", "--days-back", "730"]
-#
-#   Fetch only:
-#     name: bf-pubchem-fetch
-#     args: ["--source", "pubchem", "--fetch-only"]
-#
-#   Transform only (raw already populated):
-#     name: bf-pubchem-xform
-#     args: ["--source", "pubchem", "--transform-only"]
-#
-#   Health check only:
-#     name: bf-pubchem-health
-#     args: ["--source", "pubchem", "--health-only"]
+# Apply + monitor:
+#   kubectl apply -f job-source-backfill.yaml -n dk-data-prod
+#   kubectl logs -f job/<name> -n dk-data-prod
+#   kubectl delete job <name> -n dk-data-prod   # cleanup when done
 #
 apiVersion: batch/v1
 kind: Job
