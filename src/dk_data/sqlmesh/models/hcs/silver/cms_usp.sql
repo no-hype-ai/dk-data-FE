@@ -28,6 +28,7 @@ SELECT
     COALESCE(mol_rxcui.molecule_id, mol_alias.molecule_id) AS molecule_id,
 
     b.source,
+    b.ingested_at,
     b.ingested_at                   AS source_updated_at,
     NOW()                           AS created_at
 

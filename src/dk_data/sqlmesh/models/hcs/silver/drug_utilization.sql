@@ -282,6 +282,8 @@ SELECT
             )
         END
     )                                       AS molecule_id,
+    a.code_type                             AS source,
+    NOW()                                   AS source_updated_at,
     NOW()                                   AS created_at,
     NOW()                                   AS updated_at
 FROM aggregated a;

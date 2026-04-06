@@ -1,25 +1,34 @@
-# Initial Backfill Job — run ONCE at platform initialization
+# Backfill Job — fetch one or more sources manually, then optionally run SQLMesh.
 #
-# What it does (fully automatic):
-#   1. Computes fetch window = days since 2024-01-01 (SQLMesh start date)
-#   2. Fetches EVERY registered source with that full historical window
-#      - API sources: uses computed days_back (e.g., pubmed: all articles since 2024-01-01)
-#      - File sources (CMS PUF, NPPES, etc.): downloads latest files (loaders are idempotent)
-#      - Skips sources already refreshed within 12h (safe to re-run)
-#   3. Runs `sqlmesh plan --auto-apply` — backfills ALL bronze/silver/gold models
-#      from 2024-01-01 to today (no --forward-only; this is the full historical fill)
-#   4. Runs `sqlmesh run` for any remaining current-day intervals
+# Usage patterns:
 #
-# Idempotent: safe to re-run. Sources with recent last_successful_refresh are skipped.
-# Use --sqlmesh-only flag if raw tables are already populated.
+#   Single source (recommended — sequential, controlled):
+#     Edit args below to: ["--sources", "pubchem", "--fetch-only", "--workers", "1"]
+#     kubectl apply -f job-initial-backfill.yaml -n dk-data-prod
+#     kubectl logs -f job/initial-backfill -n dk-data-prod
+#     kubectl delete job initial-backfill -n dk-data-prod
 #
-# Apply:
-#   kubectl apply -f k8s/apps/cronjobs/base/job-initial-backfill.yaml -n dk-data-prod
-#   kubectl logs -f job/initial-backfill -n dk-data-prod
-#   kubectl delete job initial-backfill -n dk-data-prod   # cleanup after completion
+#   Multiple sources (comma-separated, still runs sequentially with workers=1):
+#     args: ["--sources", "pubchem,uniprot,chembl", "--fetch-only", "--workers", "1"]
 #
-# WARNING: This job can take 4-12 hours. Do NOT set activeDeadlineSeconds.
-# Run during off-peak hours to avoid competing with live CronJobs.
+#   Full backfill — all sources + SQLMesh (original one-shot behaviour):
+#     args: ["--workers", "4"]
+#
+#   Fetch only — all sources, no SQLMesh:
+#     args: ["--workers", "4", "--fetch-only"]
+#
+#   SQLMesh only — raw tables already populated, just run the transform:
+#     args: ["--sqlmesh-only"]
+#
+#   Dry run — preview what would be fetched:
+#     args: ["--sources", "pubchem", "--dry-run"]
+#
+# Idempotent: sources with a recent last_successful_refresh are skipped unless
+# you reset them: UPDATE meta.data_sources SET last_successful_refresh = NULL
+#               WHERE source_name = 'pubchem';
+#
+# WARNING: Heavy sources (chembl, pubchem, openfda_faers, etc.) can take hours.
+# Do NOT set activeDeadlineSeconds.
 apiVersion: batch/v1
 kind: Job
 metadata:
@@ -61,13 +70,16 @@ spec:
             - python
             - -m
             - dk_data.ingestion.initial_backfill
-          # --workers 4: parallel light/medium fetch; heavy sources run sequentially after.
-          # Override examples:
-          #   ["--workers", "4", "--sqlmesh-only"]   — SQLMesh only (raw already populated)
-          #   ["--workers", "4", "--fetch-only"]     — fetch only, skip SQLMesh
-          #   ["--workers", "4", "--dry-run"]        — preview without running
-          #   ["--workers", "1"]                     — sequential (debug/throttle)
-          args: ["--workers", "4"]
+          # EDIT args before applying. Common patterns:
+          #   Single source (default):
+          #     ["--sources", "pubchem", "--fetch-only", "--workers", "1"]
+          #   Multiple sources, sequential:
+          #     ["--sources", "pubchem,uniprot", "--fetch-only", "--workers", "1"]
+          #   All sources, fetch only:
+          #     ["--fetch-only", "--workers", "4"]
+          #   SQLMesh transforms only (raw already populated):
+          #     ["--sqlmesh-only"]
+          args: ["--sources", "REPLACE_ME", "--fetch-only", "--workers", "1"]
           ports:
             - name: metrics
               containerPort: 8000

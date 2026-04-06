@@ -32,8 +32,11 @@ WITH hospital_info AS (
         hospital_type,
         hospital_ownership,
         emergency_services,
+        meets_criteria_for_birthing_friendly_designation,
         hospital_overall_rating,
-        _source_year
+        hospital_overall_rating_footnote,
+        _source_year,
+        _source_hash
     FROM hcs_bronze.cms_hospital_general_info
     WHERE facility_id IS NOT NULL
 ),
@@ -63,6 +66,12 @@ inpatient_agg AS (
     SELECT
         provider_id,
         _source_year,
+        MAX(provider_name)              AS ip_provider_name,
+        MAX(provider_city)              AS ip_city,
+        MAX(provider_state)             AS ip_state,
+        MAX(provider_zip_code)          AS ip_zip_code,
+        MAX(provider_state_fips)        AS ip_state_fips,
+        MAX(hospital_referral_region_desc) AS ip_hrr_desc,
         SUM(total_discharges)           AS ip_total_discharges,
         AVG(average_covered_charges)    AS ip_avg_covered_charges,
         AVG(average_total_payments)     AS ip_avg_total_payments,
@@ -78,10 +87,17 @@ outpatient_agg AS (
     SELECT
         provider_id,
         _source_year,
+        MAX(provider_name)                      AS op_provider_name,
+        MAX(provider_city)                      AS op_city,
+        MAX(provider_state)                     AS op_state,
+        MAX(provider_zip_code)                  AS op_zip_code,
         SUM(total_services)                     AS op_total_services,
+        SUM(bene_cnt)                           AS op_total_benes,
         AVG(average_estimated_submitted_charges) AS op_avg_submitted_charges,
+        AVG(average_medicare_allowed_amt)       AS op_avg_medicare_allowed,
         AVG(average_total_payments)             AS op_avg_total_payments,
         AVG(average_medicare_payments)          AS op_avg_medicare_payments,
+        AVG(average_medicare_stnd_amt)          AS op_avg_medicare_stnd,
         COUNT(DISTINCT apc)                     AS op_apc_count
     FROM hcs_bronze.cms_outpatient_puf
     WHERE provider_id IS NOT NULL
@@ -118,6 +134,7 @@ home_health AS (
         AVG(avg_hh_mdcr_pymt_amt)       AS hh_avg_medicare_payment,
         AVG(avg_hh_outlier_pymt)        AS hh_avg_outlier_payment,
         AVG(avg_age)                    AS hh_avg_patient_age,
+        AVG(female_pct)                 AS hh_avg_female_pct,
         AVG(dual_pct)                   AS hh_avg_dual_pct
     FROM hcs_bronze.cms_home_health
     WHERE provider_id IS NOT NULL
@@ -169,7 +186,9 @@ SELECT
     hi.hospital_type,
     hi.hospital_ownership,
     hi.emergency_services,
+    hi.meets_criteria_for_birthing_friendly_designation,
     hi.hospital_overall_rating,
+    hi.hospital_overall_rating_footnote,
     -- Financial performance (from cost reports)
     cr.fiscal_year_begin,
     cr.fiscal_year_end,
@@ -186,9 +205,12 @@ SELECT
     ip.ip_drg_count,
     -- Outpatient utilization
     op.op_total_services,
+    op.op_total_benes,
     op.op_avg_submitted_charges,
+    op.op_avg_medicare_allowed,
     op.op_avg_total_payments,
     op.op_avg_medicare_payments,
+    op.op_avg_medicare_stnd,
     op.op_apc_count,
     -- SNF
     snf.snf_total_benes,
@@ -204,6 +226,7 @@ SELECT
     hh.hh_avg_medicare_payment,
     hh.hh_avg_outlier_payment,
     hh.hh_avg_patient_age,
+    hh.hh_avg_female_pct,
     hh.hh_avg_dual_pct,
     -- Hospice
     hos.hospice_total_benes,

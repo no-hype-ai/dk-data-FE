@@ -41,9 +41,13 @@ WITH orcid_base AS (
         orcid_id,
         given_name,
         family_name,
+        credit_name,
+        biography,
         -- Primary affiliation: ORCIDFetcher._parse_employments() stores
         --   {"organization": "...", "role": "...", "department": "..."}
         affiliations->0->>'organization'        AS affiliation,
+        -- Full affiliations JSONB array preserved for downstream use
+        affiliations,
         -- Country not included in current_affiliations JSONB by the fetcher;
         -- NULL until fetcher is extended to capture address.country
         NULL::TEXT                              AS country,
@@ -52,6 +56,8 @@ WITH orcid_base AS (
         NULL::INTEGER                           AS h_index,
         research_areas,
         NULL::JSONB                             AS therapeutic_areas,
+        -- External identifiers from ORCID profile
+        external_ids,
         source,
         source_updated_at,
         created_at
@@ -88,12 +94,16 @@ SELECT
     orcid_id,
     given_name,
     family_name,
+    credit_name,
+    biography,
     affiliation,
+    affiliations,
     country,
     works_count,
     h_index,
     research_areas,
     therapeutic_areas,
+    external_ids,
     -- Grant count from NIH Reporter via name match (NULL if no match found)
     ngc.grant_count,
     source,

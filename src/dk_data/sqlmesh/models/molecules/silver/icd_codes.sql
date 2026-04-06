@@ -88,6 +88,11 @@ SELECT
     -- Coding hints (ICD-10 only): mandatory additional-code instructions on some chapters/blocks
     coding_hint                                          AS coding_hint,
 
+    -- Raw JSONB term arrays from bronze (complement text summaries above)
+    inclusion_terms,
+    exclusion_terms,
+    exclusion_terms2,
+
     source::TEXT                                         AS source,
     source_updated_at::TIMESTAMPTZ                       AS source_updated_at,
     NOW()                                                AS created_at,

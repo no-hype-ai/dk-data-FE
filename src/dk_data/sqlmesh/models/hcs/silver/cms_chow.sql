@@ -26,17 +26,31 @@ SELECT DISTINCT ON (b.ccn, b.effective_date)
     -- Facility context from Care Compare (canonical facility master)
     cc.facility_id,
     cc.facility_name,
+    cc.address,
     cc.city,
     cc.state,
     cc.zip_code,
+    cc.county_name,
+    cc.phone_number,
     cc.hospital_type,
     cc.hospital_ownership         AS current_ownership,
+    cc.emergency_services         AS cc_emergency_services,
+    cc.overall_rating,
 
     -- Operational detail from hospital general info
+    h.facility_name               AS hgi_facility_name,
+    h.city_town                   AS hgi_city,
+    h.county_parish,
+    h.telephone_number,
     h.hospital_type               AS hgi_hospital_type,
+    h.hospital_ownership          AS hgi_hospital_ownership,
     h.emergency_services,
+    h.meets_criteria_for_birthing_friendly_designation,
+    h.hospital_overall_rating,
+    h.hospital_overall_rating_footnote,
 
     b.source,
+    b.ingested_at,
     b.ingested_at                   AS source_updated_at,
     NOW()                           AS created_at
 

@@ -51,6 +51,7 @@ SELECT
 
     g.id                                                                    AS bronze_id,
     'who_gho'                                                               AS source,
+    g.ingested_at,
     g.source_updated_at,
     NOW()                                                                   AS created_at,
     NOW()                                                                   AS updated_at

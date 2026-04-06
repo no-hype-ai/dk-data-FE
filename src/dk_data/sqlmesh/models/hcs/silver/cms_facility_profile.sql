@@ -25,9 +25,18 @@ WITH inpatient_agg AS (
     SELECT
         provider_id                             AS ccn,
         SUM(total_discharges)                   AS total_discharges,
+        AVG(average_covered_charges)            AS avg_covered_charges,
+        AVG(average_total_payments)             AS avg_total_payments,
         SUM(total_discharges * average_medicare_payments)
             / NULLIF(SUM(total_discharges), 0)  AS weighted_avg_medicare_payment,
-        COUNT(DISTINCT drg_definition)          AS distinct_drg_count
+        COUNT(DISTINCT drg_definition)          AS distinct_drg_count,
+        MAX(provider_name)                      AS inp_provider_name,
+        MAX(provider_city)                      AS inp_city,
+        MAX(provider_state)                     AS inp_state,
+        MAX(provider_zip_code)                  AS inp_zip_code,
+        MAX(provider_state_fips)                AS inp_state_fips,
+        MAX(provider_ruca)                      AS inp_ruca,
+        MAX(hospital_referral_region_desc)      AS inp_hrr_desc
     FROM hcs_bronze.cms_inpatient_puf
     GROUP BY provider_id
 ),
@@ -36,7 +45,17 @@ outpatient_agg AS (
     SELECT
         provider_id                             AS ccn,
         SUM(total_services)                     AS total_outpatient_services,
-        COUNT(DISTINCT apc)                     AS distinct_apc_count
+        SUM(bene_cnt)                           AS total_outpatient_benes,
+        AVG(average_estimated_submitted_charges) AS avg_outpatient_submitted_charges,
+        AVG(average_medicare_allowed_amt)       AS avg_outpatient_medicare_allowed,
+        AVG(average_total_payments)             AS avg_outpatient_total_payments,
+        AVG(average_medicare_payments)          AS avg_outpatient_medicare_payments,
+        AVG(average_medicare_stnd_amt)          AS avg_outpatient_medicare_stnd,
+        COUNT(DISTINCT apc)                     AS distinct_apc_count,
+        MAX(provider_name)                      AS outp_provider_name,
+        MAX(provider_city)                      AS outp_city,
+        MAX(provider_state)                     AS outp_state,
+        MAX(provider_zip_code)                  AS outp_zip_code
     FROM hcs_bronze.cms_outpatient_puf
     GROUP BY provider_id
 ),
@@ -74,6 +93,8 @@ hcris_latest AS (
         fiscal_year_begin,
         fiscal_year_end,
         total_costs_proxy   AS total_costs,
+        net_deficit_proxy,
+        line_count          AS hcris_line_count,
         NULL::NUMERIC       AS total_revenue,   -- G-3 revenue lines require worksheet-specific logic
         NULL::NUMERIC       AS net_income       -- net income requires G-3 line 5 specifically
     FROM hcris_by_year
@@ -87,13 +108,19 @@ pecos_via_affiliation AS (
     SELECT DISTINCT ON (ha.facility_affiliations_certification_number)
         ha.facility_affiliations_certification_number AS ccn,
         pe.enrollment_type,
-        pe.enrollment_state
+        pe.enrollment_state,
+        pe.organization_name    AS pecos_organization_name,
+        pe.first_name           AS pecos_first_name,
+        pe.last_name            AS pecos_last_name
     FROM hcs_bronze.cms_hospital_affiliation ha
     INNER JOIN (
         SELECT DISTINCT ON (npi)
             npi,
             enrollment_type,
-            enrollment_state
+            enrollment_state,
+            organization_name,
+            first_name,
+            last_name
         FROM hcs_bronze.cms_pecos
         ORDER BY npi, ingested_at DESC
     ) pe ON ha.npi = pe.npi
@@ -128,6 +155,13 @@ SELECT
     COALESCE(hgi.hospital_ownership, pos.ownership_type)                        AS ownership_type,
     hgi.hospital_type,
 
+    -- Hospital general info extended fields
+    hgi.emergency_services,
+    hgi.meets_criteria_for_birthing_friendly_designation,
+    hgi.hospital_overall_rating_footnote,
+    hgi.county_parish,
+    hgi.telephone_number,
+
     -- Quality ratings (CMS Hospital Compare 5-star ratings via cms_hospital_quality)
     -- COALESCE: prefer dedicated quality bronze; fall back to hospital_general_info
     COALESCE(hq.overall_rating, hgi.hospital_overall_rating)                    AS overall_quality_rating,
@@ -140,10 +174,25 @@ SELECT
     -- Inpatient metrics
     COALESCE(inp.total_discharges, 0)                                           AS total_discharges,
     COALESCE(inp.distinct_drg_count, 0)                                         AS distinct_drg_count,
+    inp.avg_covered_charges,
+    inp.avg_total_payments                                                      AS inp_avg_total_payments,
     inp.weighted_avg_medicare_payment,
+    inp.inp_provider_name,
+    inp.inp_city,
+    inp.inp_state,
+    inp.inp_zip_code,
+    inp.inp_state_fips,
+    inp.inp_ruca,
+    inp.inp_hrr_desc,
 
     -- Outpatient metrics
     COALESCE(outp.total_outpatient_services, 0)                                 AS total_outpatient_services,
+    COALESCE(outp.total_outpatient_benes, 0)                                    AS total_outpatient_benes,
+    outp.avg_outpatient_submitted_charges,
+    outp.avg_outpatient_medicare_allowed,
+    outp.avg_outpatient_total_payments,
+    outp.avg_outpatient_medicare_payments,
+    outp.avg_outpatient_medicare_stnd,
     COALESCE(outp.distinct_apc_count, 0)                                        AS distinct_apc_count,
 
     -- Affiliation metrics
@@ -151,11 +200,17 @@ SELECT
 
     -- PECOS enrollment status (bridged via hospital_affiliation CCN→NPI→PECOS)
     pecos.enrollment_type                                                       AS enrollment_status,
+    pecos.enrollment_state                                                      AS pecos_enrollment_state,
+    pecos.pecos_organization_name,
+    pecos.pecos_first_name,
+    pecos.pecos_last_name,
 
     -- Financial metrics (HCRIS)
     hcris.total_costs,
     hcris.total_revenue,
     hcris.net_income,
+    hcris.net_deficit_proxy,
+    hcris.hcris_line_count,
     hcris.fiscal_year_begin                                                     AS hcris_fiscal_year_begin,
     hcris.fiscal_year_end                                                       AS hcris_fiscal_year_end,
 
@@ -163,6 +218,11 @@ SELECT
     COALESCE(mag.is_magnet, FALSE)                                              AS magnet_status,
     mag.designation_date                                                        AS magnet_designation_date,
 
+    -- Source tracking
+    pos.source                                                                  AS pos_source,
+    pos.ingested_at                                                             AS pos_ingested_at,
+    'cms_facility_profile'                                                      AS source,
+    NOW()                                                                       AS source_updated_at,
     NOW()                                                                       AS profile_built_at
 
 FROM hcs_bronze.cms_pos pos

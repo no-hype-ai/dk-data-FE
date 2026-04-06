@@ -1,0 +1,1091 @@
+GAPS  mol_silver.admet_properties: 4 missing columns
+  - dataset_name
+  - raw_id
+  - rec
+  - request_timestamp
+
+GAPS  mol_silver.adverse_events: 11 missing columns
+  - case_version
+  - medicinalproduct
+  - patient_age
+  - patient_age_unit
+  - patient_sex
+  - patient_weight
+  - raw_id
+  - receipt_date
+  - safety_report_id
+  - stitch_id_flat
+  - stitch_id_stereo
+
+GAPS  mol_silver.binding_affinities: 3 missing columns
+  - activity_value
+  - ingested_at
+  - raw_id
+
+GAPS  mol_silver.bioactivity: 4 missing columns
+  - act
+  - ingested_at
+  - mol
+  - request_timestamp
+
+GAPS  mol_silver.cdc_vaccines: 8 missing columns
+  - full_vaccine_name
+  - mvx_status
+  - nonvaccine
+  - notes
+  - record_type
+  - request_timestamp
+  - update_date
+  - vaccine_status
+
+GAPS  mol_silver.chembl: 2 missing columns
+  - mol
+  - request_timestamp
+
+GAPS  mol_silver.clinical_trials: 8 missing columns
+  - cas_number
+  - description
+  - drugbank_id
+  - indication
+  - name
+  - pharmacodynamics
+  - request_timestamp
+  - study
+
+GAPS  mol_silver.cms_coverage: 4 missing columns
+  - created_at
+  - ingested_at
+  - source
+  - source_updated_at
+
+GAPS  mol_silver.cms_medicare: 2 missing columns
+  - ingested_at
+  - row
+
+OK    mol_silver.cochrane_reviews
+GAPS  mol_silver.company_financials: 7 missing columns
+  - cik
+  - company_name
+  - description
+  - document_url
+  - filing_date
+  - filing_id
+  - filing_type
+
+GAPS  mol_silver.ct_gov_indication_stats: 4 missing columns
+  - active_count
+  - fetched_at
+  - request_timestamp
+  - total_count
+
+OK    mol_silver.dailymed_labels
+GAPS  mol_silver.drug_labels: 46 missing columns
+  - adverse_reactions
+  - application_numbers
+  - boxed_warning
+  - brand_name
+  - clinical_pharmacology
+  - clinical_studies
+  - contraindications
+  - created_at
+  - description
+  - dosage_and_administration
+  - dosage_forms
+  - drug_interactions
+  - effective_date
+  - generic_name
+  - geriatric_use
+  - has_boxed_warning
+  - how_supplied
+  - indications_and_usage
+  - is_original_packager
+  - manufacturer_name
+  - mechanism_of_action
+  - nui
+  - nursing_mothers
+  - overdosage
+  - pediatric_use
+  - pharm_class_epc
+  - pharm_class_moa
+  - pharmacodynamics
+  - pharmacokinetics
+  - pregnancy
+  - principal_display_panel
+  - product_type
+  - request_timestamp
+  - routes
+  - rxcui
+  - set_id
+  - source
+  - source_updated_at
+  - spl_id
+  - spl_set_ids
+  - spl_version
+  - storage_and_handling
+  - unii
+  - use_in_specific_populations
+  - warnings
+  - warnings_and_cautions
+
+OK    mol_silver.drug_pharmacology
+GAPS  mol_silver.drug_spending: 18 missing columns
+  - avg_spnd_per_bene
+  - avg_spnd_per_clm
+  - avg_spnd_per_dsg_unt
+  - avg_spnd_per_dsg_unt_wghtd
+  - bigint
+  - brnd_name
+  - gnrc_name
+  - hcpcs_cd
+  - hcpcs_desc
+  - mftr_name
+  - outlier_flag
+  - text
+  - timestamptz
+  - tot_benes
+  - tot_clms
+  - tot_dsg_unts
+  - tot_mftr
+  - tot_spndng
+
+GAPS  mol_silver.drug_synonyms: 2 missing columns
+  - ingested_at
+  - raw_id
+
+OK    mol_silver.drugbank
+GAPS  mol_silver.ema: 6 missing columns
+  - ingested_at
+  - inn
+  - raw_id
+  - source
+  - source_updated_at
+  - summary_url
+
+GAPS  mol_silver.ema_regulatory: 3 missing columns
+  - raw_id
+  - source
+  - source_updated_at
+
+GAPS  mol_silver.ema_regulatory_docs: 3 missing columns
+  - _loaded_at
+  - _source_file
+  - _source_hash
+
+GAPS  mol_silver.euipo_designs: 1 missing columns
+  - _loaded_at
+
+GAPS  mol_silver.fda_drugs: 2 missing columns
+  - rec
+  - request_timestamp
+
+GAPS  mol_silver.financial_data: 2 missing columns
+  - description
+  - filing_id
+
+GAPS  mol_silver.hcpcs_molecule_bridge: 5 missing columns
+  - bigint
+  - integer
+  - numeric
+  - text
+  - timestamptz
+
+OK    mol_silver.icd10_indicator_mapping
+GAPS  mol_silver.icd_codes: 10 missing columns
+  - child_uris
+  - coding_hint
+  - created_at
+  - exclusion_terms
+  - exclusion_terms2
+  - inclusion_terms
+  - parent_uris
+  - request_timestamp
+  - source
+  - source_updated_at
+
+GAPS  mol_silver.identifier_mappings: 10 missing columns
+  - cas_number
+  - description
+  - drugbank_id
+  - indication
+  - ingested_at
+  - mol
+  - name
+  - pharmacodynamics
+  - prod
+  - request_timestamp
+
+GAPS  mol_silver.imgt: 2 missing columns
+  - rec
+  - request_timestamp
+
+OK    mol_silver.indication_ontology
+OK    mol_silver.indication_revenue
+GAPS  mol_silver.journal_rss: 4 missing columns
+  - _loaded_at
+  - categories
+  - created_at
+  - source
+
+GAPS  mol_silver.molecule_aliases: 30 missing columns
+  - applicant
+  - application_number
+  - approval_date
+  - cas_number
+  - description
+  - df_route
+  - drug_product_patent
+  - drug_substance_patent
+  - drug_type
+  - drugbank_id
+  - exclusivity_code
+  - exclusivity_date
+  - indication
+  - ingested_at
+  - ingredient
+  - mol
+  - name
+  - patent_expiration
+  - patent_number
+  - patent_use_code
+  - pharmacodynamics
+  - product_number
+  - raw_id
+  - request_timestamp
+  - rld
+  - rs
+  - source_updated_at
+  - strength
+  - te_code
+  - trade_name
+
+GAPS  mol_silver.molecule_publications: 2 missing columns
+  - mol
+  - request_timestamp
+
+GAPS  mol_silver.molecule_targets: 6 missing columns
+  - cas_number
+  - description
+  - drugbank_id
+  - indication
+  - name
+  - pharmacodynamics
+
+GAPS  mol_silver.molecules: 8 missing columns
+  - cas_number
+  - description
+  - drugbank_id
+  - indication
+  - mol
+  - name
+  - pharmacodynamics
+  - request_timestamp
+
+GAPS  mol_silver.ndc_molecule_bridge: 2 missing columns
+  - ingested_at
+  - prod
+
+GAPS  mol_silver.news_signals: 15 missing columns
+  - _loaded_at
+  - abstract
+  - article_id
+  - authors
+  - categories
+  - created_at
+  - doi
+  - drug_mentions
+  - feed_source
+  - link
+  - source
+  - source_updated_at
+  - summary
+  - therapeutic_areas
+  - url
+
+GAPS  mol_silver.nice_hta: 3 missing columns
+  - ingested_at
+  - rec
+  - response_type
+
+GAPS  mol_silver.orange_book: 13 missing columns
+  - drug_product_patent
+  - drug_substance_patent
+  - drug_type
+  - exclusivity_code
+  - exclusivity_date
+  - ingested_at
+  - ingredient
+  - patent_expiration
+  - patent_number
+  - patent_use_code
+  - raw_id
+  - source
+  - source_updated_at
+
+GAPS  mol_silver.patent_exclusivities: 12 missing columns
+  - bla_number
+  - brand_name
+  - created_at
+  - df_route
+  - drug_type
+  - ingested_at
+  - ingredient
+  - patent_expiration
+  - query_name
+  - raw_id
+  - reference_product_brand
+  - rs
+
+GAPS  mol_silver.patents: 38 missing columns
+  - 1
+  - applicant
+  - application_number
+  - approval_date
+  - assignee_organization
+  - assignee_type
+  - cas_number
+  - cpc_codes
+  - description
+  - df_route
+  - drug_product_patent
+  - drug_substance_patent
+  - drug_type
+  - exclusivity_code
+  - exclusivity_date
+  - filing_date
+  - indication
+  - ingested_at
+  - ingredient
+  - inventors
+  - ipc_codes
+  - name
+  - num_claims
+  - patent_abstract
+  - patent_date
+  - patent_expiration
+  - patent_kind
+  - patent_title
+  - patent_type
+  - patent_use_code
+  - pharmacodynamics
+  - product_number
+  - raw_id
+  - rld
+  - rs
+  - strength
+  - te_code
+  - trade_name
+
+GAPS  mol_silver.pathways: 5 missing columns
+  - entry
+  - ingested_at
+  - raw_id
+  - rec
+  - request_timestamp
+
+GAPS  mol_silver.pharmacogenomics: 1 missing columns
+  - raw_id
+
+GAPS  mol_silver.physician_payments: 26 missing columns
+  - applicable_manufacturer_or_gpo_name
+  - associated_drug_or_biological_ndc_1
+  - associated_drug_or_biological_ndc_2
+  - associated_drug_or_biological_ndc_3
+  - associated_drug_or_biological_ndc_4
+  - associated_drug_or_biological_ndc_5
+  - covered_recipient_type
+  - date_of_payment
+  - form_of_payment_or_transfer_of_value
+  - name_of_drug_or_biological_or_device_or_medical_supply_1
+  - name_of_drug_or_biological_or_device_or_medical_supply_2
+  - name_of_drug_or_biological_or_device_or_medical_supply_3
+  - name_of_drug_or_biological_or_device_or_medical_supply_4
+  - name_of_drug_or_biological_or_device_or_medical_supply_5
+  - nature_of_payment_or_transfer_of_value
+  - number_of_payments_included_in_total_amount
+  - payment_publication_date
+  - physician_first_name
+  - physician_last_name
+  - physician_profile_id
+  - program_year
+  - recipient_city
+  - recipient_state
+  - recipient_zip_code
+  - record_id
+  - total_amount_of_payment_usdollars
+
+GAPS  mol_silver.physician_profiles: 2 missing columns
+  - primary_taxonomy_code
+  - taxonomy_codes
+
+OK    mol_silver.protein_structures
+GAPS  mol_silver.protein_targets: 6 missing columns
+  - deposit_date
+  - molecular_weight
+  - nonpolymer_entities
+  - pdb_id
+  - polymer_entities
+  - release_date
+
+GAPS  mol_silver.proteins: 1 missing columns
+  - ref
+
+OK    mol_silver.pubchem
+OK    mol_silver.publication_evidence
+GAPS  mol_silver.publications: 13 missing columns
+  - _loaded_at
+  - article_id
+  - author_list
+  - author_string
+  - authors
+  - categories
+  - europepmc_id
+  - europepmc_pmid
+  - feed_source
+  - journal_title
+  - link
+  - mag_id
+  - pub_date
+
+OK    mol_silver.pubmed_articles
+GAPS  mol_silver.regulatory_decisions: 37 missing columns
+  - applicant
+  - application_number
+  - approval_date
+  - atc_code
+  - authorization_date
+  - authorization_status
+  - created_at
+  - decision_id
+  - decision_type
+  - df_route
+  - document_url
+  - drug_product_patent
+  - drug_substance_patent
+  - drug_type
+  - epar_url
+  - exclusivity_code
+  - exclusivity_date
+  - ingested_at
+  - ingredient
+  - inn
+  - marketing_authorization_holder
+  - medicine_type
+  - patent_expiration
+  - patent_number
+  - patent_use_code
+  - pharmacotherapeutic_group
+  - product_name
+  - product_number
+  - raw_id
+  - revision_date
+  - rld
+  - rs
+  - strength
+  - summary
+  - summary_url
+  - te_code
+  - trade_name
+
+GAPS  mol_silver.regulatory_milestones: 2 missing columns
+  - rec
+  - request_timestamp
+
+GAPS  mol_silver.rems_programs: 2 missing columns
+  - app
+  - ingested_at
+
+GAPS  mol_silver.research_grants: 23 missing columns
+  - abstract_text
+  - activity_code
+  - appl_id
+  - award_amount
+  - created_at
+  - fiscal_year
+  - funding_mechanism
+  - mechanism_code
+  - organization_city
+  - organization_country
+  - organization_name
+  - organization_state
+  - pi_names
+  - program_officials
+  - project_end_date
+  - project_num
+  - project_start_date
+  - project_title
+  - source
+  - source_updated_at
+  - study_section
+  - terms
+  - total_cost
+
+GAPS  mol_silver.researchers: 23 missing columns
+  - abstract_text
+  - activity_code
+  - appl_id
+  - award_amount
+  - created_at
+  - fiscal_year
+  - funding_mechanism
+  - mechanism_code
+  - organization_city
+  - organization_country
+  - organization_name
+  - organization_state
+  - pi_names
+  - program_officials
+  - project_end_date
+  - project_num
+  - project_start_date
+  - project_title
+  - source
+  - source_updated_at
+  - study_section
+  - terms
+  - total_cost
+
+OK    mol_silver.rxnorm_concepts
+GAPS  mol_silver.side_effects: 3 missing columns
+  - raw_id
+  - stitch_id_flat
+  - stitch_id_stereo
+
+GAPS  mol_silver.targets: 11 missing columns
+  - alternative_names
+  - comments
+  - cross_references
+  - features
+  - genes
+  - lineage
+  - protein_name
+  - ref
+  - secondary_accessions
+  - sequence_checksum
+  - submission_names
+
+OK    mol_silver.trademark_status_changes
+GAPS  mol_silver.trademarks: 6 missing columns
+  - applicant_name
+  - application_number
+  - ingested_at
+  - mark_element
+  - mark_kind
+  - serial_number
+
+GAPS  mol_silver.ttd: 2 missing columns
+  - rec
+  - request_timestamp
+
+OK    mol_silver.web_content
+GAPS  mol_silver.who_inn_names: 2 missing columns
+  - ingested_at
+  - raw_id
+
+GAPS  hcs_silver.cms_care_compare: 1 missing columns
+  - ingested_at
+
+GAPS  hcs_silver.cms_chow: 24 missing columns
+  - _loaded_at
+  - _source_file
+  - _source_hash
+  - _source_year
+  - address
+  - city
+  - city_town
+  - county_name
+  - county_parish
+  - emergency_services
+  - facility_id
+  - facility_name
+  - hospital_overall_rating
+  - hospital_overall_rating_footnote
+  - hospital_ownership
+  - hospital_type
+  - ingested_at
+  - meets_criteria_for_birthing_friendly_designation
+  - overall_rating
+  - phone_number
+  - source
+  - state
+  - telephone_number
+  - zip_code
+
+GAPS  hcs_silver.cms_cost_reports_puf_lines: 18 missing columns
+  - _loaded_at
+  - _source_file
+  - _source_hash
+  - address
+  - city_town
+  - county_parish
+  - emergency_services
+  - facility_id
+  - facility_name
+  - hospital_overall_rating
+  - hospital_overall_rating_footnote
+  - hospital_ownership
+  - hospital_type
+  - integer
+  - meets_criteria_for_birthing_friendly_designation
+  - state
+  - telephone_number
+  - zip_code
+
+GAPS  hcs_silver.cms_dmepos: 12 missing columns
+  - bigint
+  - date
+  - ingested_at
+  - integer
+  - provider_business_mailing_address_country_code
+  - provider_business_mailing_address_fax_number
+  - provider_middle_name
+  - provider_name_prefix_text
+  - provider_name_suffix_text
+  - source
+  - text
+  - timestamptz
+
+GAPS  hcs_silver.cms_drug_market: 18 missing columns
+  - avg_spnd_per_bene
+  - avg_spnd_per_clm
+  - avg_spnd_per_dsg_unt
+  - avg_spnd_per_dsg_unt_wghtd
+  - bigint
+  - brnd_name
+  - gnrc_name
+  - hcpcs_cd
+  - hcpcs_desc
+  - mftr_name
+  - outlier_flag
+  - text
+  - timestamptz
+  - tot_benes
+  - tot_clms
+  - tot_dsg_unts
+  - tot_mftr
+  - tot_spndng
+
+GAPS  hcs_silver.cms_facility_profile: 58 missing columns
+  - _loaded_at
+  - _source_file
+  - _source_hash
+  - _source_year
+  - address
+  - beds
+  - bigint
+  - city
+  - city_town
+  - column_number
+  - county_parish
+  - designation_date
+  - designation_year
+  - emergency_services
+  - enrollment_id
+  - enrollment_state
+  - enrollment_type
+  - facility_affiliations_certification_number
+  - facility_id
+  - facility_name
+  - facility_type
+  - facility_type_certification_number
+  - first_name
+  - fiscal_year_begin
+  - fiscal_year_end
+  - hospital_overall_rating
+  - hospital_overall_rating_footnote
+  - hospital_ownership
+  - hospital_type
+  - ind_pac_id
+  - ingested_at
+  - integer
+  - last_name
+  - line_number
+  - meets_criteria_for_birthing_friendly_designation
+  - mortality_rating
+  - npi
+  - numeric
+  - organization_name
+  - overall_rating
+  - ownership_type
+  - patient_experience_rating
+  - provider_first_name
+  - provider_last_name
+  - provider_middle_name
+  - provider_type
+  - readmission_rating
+  - safety_rating
+  - source
+  - state
+  - street_address
+  - telephone_number
+  - text
+  - timeliness_rating
+  - timestamptz
+  - value
+  - worksheet
+  - zip_code
+
+GAPS  hcs_silver.cms_formulary: 1 missing columns
+  - ingested_at
+
+GAPS  hcs_silver.cms_hospital_affiliation: 30 missing columns
+  - _loaded_at
+  - _source_file
+  - _source_hash
+  - _source_year
+  - address
+  - bigint
+  - city_town
+  - county_parish
+  - date
+  - emergency_services
+  - facility_id
+  - facility_name
+  - facility_type
+  - hospital_overall_rating
+  - hospital_overall_rating_footnote
+  - hospital_ownership
+  - hospital_type
+  - ingested_at
+  - integer
+  - meets_criteria_for_birthing_friendly_designation
+  - provider_business_mailing_address_country_code
+  - provider_business_mailing_address_fax_number
+  - provider_name_prefix_text
+  - provider_name_suffix_text
+  - source
+  - state
+  - telephone_number
+  - text
+  - timestamptz
+  - zip_code
+
+GAPS  hcs_silver.cms_hospital_info: 1 missing columns
+  - source_hash
+
+GAPS  hcs_silver.cms_hospital_quality: 11 missing columns
+  - address
+  - city
+  - county_name
+  - emergency_services
+  - hospital_ownership
+  - hospital_type
+  - ingested_at
+  - phone_number
+  - source
+  - state
+  - zip_code
+
+GAPS  hcs_silver.cms_magnet: 4 missing columns
+  - county_name
+  - emergency_services
+  - ingested_at
+  - phone_number
+
+GAPS  hcs_silver.cms_ndc: 1 missing columns
+  - ingested_at
+
+GAPS  hcs_silver.cms_pecos: 12 missing columns
+  - bigint
+  - date
+  - ingested_at
+  - integer
+  - provider_business_mailing_address_country_code
+  - provider_business_mailing_address_fax_number
+  - provider_middle_name
+  - provider_name_prefix_text
+  - provider_name_suffix_text
+  - source
+  - text
+  - timestamptz
+
+GAPS  hcs_silver.cms_physician_puf_services: 11 missing columns
+  - bigint
+  - date
+  - integer
+  - numeric
+  - provider_business_mailing_address_country_code
+  - provider_business_mailing_address_fax_number
+  - provider_middle_name
+  - provider_name_prefix_text
+  - provider_name_suffix_text
+  - text
+  - timestamptz
+
+GAPS  hcs_silver.cms_pos: 20 missing columns
+  - _loaded_at
+  - _source_file
+  - _source_hash
+  - _source_year
+  - address
+  - city_town
+  - county_name
+  - county_parish
+  - emergency_services
+  - facility_id
+  - hospital_overall_rating
+  - hospital_overall_rating_footnote
+  - hospital_ownership
+  - hospital_type
+  - ingested_at
+  - meets_criteria_for_birthing_friendly_designation
+  - overall_rating
+  - phone_number
+  - source
+  - telephone_number
+
+GAPS  hcs_silver.cms_post_acute: 20 missing columns
+  - _loaded_at
+  - _source_file
+  - _source_hash
+  - _source_year
+  - address
+  - city_town
+  - county_parish
+  - emergency_services
+  - facility_id
+  - facility_name
+  - hospital_overall_rating
+  - hospital_overall_rating_footnote
+  - hospital_ownership
+  - hospital_type
+  - ingested_at
+  - meets_criteria_for_birthing_friendly_designation
+  - source
+  - state
+  - telephone_number
+  - zip_code
+
+GAPS  hcs_silver.cms_rbcs: 1 missing columns
+  - ingested_at
+
+GAPS  hcs_silver.cms_stabilis: 1 missing columns
+  - ingested_at
+
+GAPS  hcs_silver.cms_usp: 1 missing columns
+  - ingested_at
+
+GAPS  hcs_silver.drug_utilization: 29 missing columns
+  - _loaded_at
+  - _source_file
+  - _source_hash
+  - avg_spnd_per_bene
+  - avg_spnd_per_clm
+  - avg_spnd_per_dsg_unt
+  - avg_spnd_per_dsg_unt_wghtd
+  - bigint
+  - brnd_name
+  - gnrc_name
+  - hcpcs_cd
+  - hcpcs_desc
+  - integer
+  - medicaid_spndng_per_dosage_unit
+  - medicaid_spndng_per_prescription
+  - mftr_name
+  - numeric
+  - outlier_flag
+  - text
+  - timestamptz
+  - tot_benes
+  - tot_clms
+  - tot_dosage_units
+  - tot_dsg_unts
+  - tot_mftr
+  - tot_prescriptions
+  - tot_spndng
+  - unit_type
+  - util_type
+
+GAPS  hcs_silver.facility_profile: 21 missing columns
+  - _loaded_at
+  - _source_file
+  - _source_hash
+  - bigint
+  - city_town
+  - county_parish
+  - facility_id
+  - fiscal_year_begin
+  - fiscal_year_end
+  - hospital_name
+  - hospital_overall_rating_footnote
+  - integer
+  - meets_criteria_for_birthing_friendly_designation
+  - net_patient_revenue
+  - numeric
+  - operating_margin
+  - text
+  - timestamptz
+  - total_beds
+  - total_discharges
+  - total_operating_expenses
+
+GAPS  hcs_silver.geographic_health: 47 missing columns
+  - _loaded_at
+  - _source_file
+  - _source_hash
+  - avg_ip_los
+  - avg_mdcr_pymt_amt
+  - bene_age_lvl
+  - bene_cond
+  - bene_demo_desc
+  - bene_demo_lvl
+  - bene_geo_cd
+  - bene_geo_desc
+  - bene_geo_lvl
+  - bigint
+  - boolean
+  - clm_type
+  - clm_type_desc
+  - county_cd
+  - county_desc
+  - dsbl_benes
+  - dual_elgbl_desc
+  - dual_elgbl_full_benes
+  - dual_elgbl_lvl
+  - dual_elgbl_prtl_benes
+  - ed_visits_per_1000_benes
+  - esrd_benes
+  - ffs_benes
+  - integer
+  - ip_cvrd_stays_per_1000_benes
+  - lis_benes
+  - ma_benes
+  - non_dual_benes
+  - numeric
+  - orgnl_mdcr_benes
+  - phy_visits_per_bene
+  - prvlnc
+  - srvcs_per_bene
+  - state_cd
+  - state_name
+  - text
+  - timestamptz
+  - tot_benes
+  - tot_clms
+  - tot_mdcr_pymt_amt
+  - tot_mdcr_pymt_pc
+  - tot_mdcr_stdzd_pymt_pc
+  - tot_mdcr_stdzd_pymt_pct_chg
+  - year
+
+GAPS  hcs_silver.healthcare_facilities: 48 missing columns
+  - _fetched_at
+  - _loaded_at
+  - _source_file
+  - _source_hash
+  - _source_year
+  - address
+  - bigint
+  - certification_date
+  - certification_type
+  - city_town
+  - county
+  - county_name
+  - county_parish
+  - created_at
+  - designation_date
+  - designation_type
+  - discipline
+  - emergency_services
+  - expiration_date
+  - facility_address
+  - facility_id
+  - fiscal_year_begin
+  - fiscal_year_end
+  - hospital_name
+  - hospital_overall_rating
+  - hospital_overall_rating_footnote
+  - hospital_ownership
+  - hospital_type
+  - hpsa_id
+  - hpsa_name
+  - hpsa_score
+  - hpsa_type
+  - integer
+  - meets_criteria_for_birthing_friendly_designation
+  - net_patient_revenue
+  - numeric
+  - operating_margin
+  - request_timestamp
+  - rural_status
+  - score
+  - state_abbr
+  - status
+  - telephone_number
+  - text
+  - timestamptz
+  - total_beds
+  - total_operating_expenses
+  - zip_code
+
+GAPS  hcs_silver.open_payments_drug_linkage: 16 missing columns
+  - associated_drug_or_biological_ndc_1
+  - associated_drug_or_biological_ndc_2
+  - associated_drug_or_biological_ndc_3
+  - associated_drug_or_biological_ndc_4
+  - associated_drug_or_biological_ndc_5
+  - form_of_payment_or_transfer_of_value
+  - name_of_drug_or_biological_or_device_or_medical_supply_1
+  - name_of_drug_or_biological_or_device_or_medical_supply_2
+  - name_of_drug_or_biological_or_device_or_medical_supply_3
+  - name_of_drug_or_biological_or_device_or_medical_supply_4
+  - name_of_drug_or_biological_or_device_or_medical_supply_5
+  - number_of_payments_included_in_total_amount
+  - payment_publication_date
+  - program_year
+  - recipient_city
+  - recipient_zip_code
+
+GAPS  hcs_silver.part_d_prescribing: 5 missing columns
+  - _loaded_at
+  - _source_file
+  - _source_hash
+  - prscrbr_state_fips
+  - prscrbr_type_src
+
+GAPS  hcs_silver.provider_profile: 28 missing columns
+  - _loaded_at
+  - bigint
+  - boolean
+  - date
+  - integer
+  - is_telehealth
+  - numeric
+  - provider_business_mailing_address_country_code
+  - provider_business_mailing_address_fax_number
+  - provider_middle_name
+  - provider_name_prefix_text
+  - provider_name_suffix_text
+  - rfrd_npi
+  - rfrd_prvdr_last_org_name
+  - rfrd_prvdr_type
+  - rndrng_npi
+  - rndrng_prvdr_city
+  - rndrng_prvdr_first_name
+  - rndrng_prvdr_last_org_name
+  - rndrng_prvdr_state_abrvtn
+  - rndrng_prvdr_type
+  - rndrng_prvdr_zip5
+  - text
+  - timestamptz
+  - tot_benes
+  - tot_mdcr_alowd_amt
+  - tot_mdcr_pymt_amt
+  - tot_srvcs
+
+GAPS  hcs_silver.ref_nucc_taxonomy: 3 missing columns
+  - ingested_at
+  - source
+  - taxonomy_type
+
+GAPS  ind_silver.epidemiology: 1 missing columns
+  - ingested_at
+
+GAPS  ind_silver.icd11_ontology: 1 missing columns
+  - title
+
+
+============================================================
+Total models audited: 95
+Models with gaps: 81
+Total missing columns: 909
+Models complete: 14

@@ -7,7 +7,7 @@ metadata:
     component: cms-medicare
     feature: "019-cms-puf"
 spec:
-  schedule: "0 6 1 * *"  # Monthly — 1st at 6AM UTC (CMS updates annually but fetch monthly for new data)
+  schedule: "0 1 5 * *"  # 5th of month 01:00 UTC — staggered off 1st to reduce DB contention
   concurrencyPolicy: Forbid
   startingDeadlineSeconds: 3600
   successfulJobsHistoryLimit: 3

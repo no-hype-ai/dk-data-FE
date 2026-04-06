@@ -71,6 +71,7 @@ SELECT
     b.pdb_ids,
 
     'bindingdb'                                                 AS source,
+    b.ingested_at                                               AS source_updated_at,
     b.ingested_at                                               AS created_at
 
 FROM mol_bronze.bindingdb b

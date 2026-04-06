@@ -30,8 +30,13 @@ WITH geo_variation AS (
         tot_mdcr_stdzd_pymt_pc              AS stdz_payment_per_capita,
         tot_mdcr_pymt_pc                    AS payment_per_capita,
         tot_mdcr_stdzd_pymt_pct_chg        AS payment_pct_change,
+        tot_mdcr_alowd_amt_pc,
+        tot_benes                           AS gv_tot_benes,
         hosp_readmsn_rate,
-        er_visits_per_1000_benes
+        acute_hosp_readmsn_rate,
+        er_visits_per_1000_benes,
+        ip_cvrd_stays_per_1000_benes        AS gv_ip_cvrd_stays_per_1000,
+        ma_prtcptn_rate
     FROM hcs_bronze.cms_geographic_variation
     WHERE bene_geo_cd IS NOT NULL
 ),
@@ -52,7 +57,10 @@ chronic_agg AS (
         MAX(CASE WHEN LOWER(bene_cond) LIKE '%cancer%' THEN prvlnc END)         AS cancer_prevalence,
         AVG(prvlnc)                         AS avg_condition_prevalence,
         -- tot_mdcr_pymt_pc is per-capita payment; use as proxy for condition payment burden
-        AVG(tot_mdcr_pymt_pc)              AS chronic_avg_mdcr_pymt_pc
+        AVG(tot_mdcr_pymt_pc)              AS chronic_avg_mdcr_pymt_pc,
+        AVG(tot_mdcr_stdzd_pymt_pc)        AS chronic_avg_stdzd_pymt_pc,
+        AVG(hosp_readmsn_rate)             AS chronic_avg_readmsn_rate,
+        AVG(ed_visits_per_1000_benes)      AS chronic_avg_ed_visits_per_1000
     FROM hcs_bronze.cms_chronic_conditions
     WHERE bene_geo_cd IS NOT NULL
     GROUP BY bene_geo_cd, _source_year
@@ -71,7 +79,12 @@ opioid AS (
             ELSE NULL
         END                                         AS opioid_prescribing_rate,
         SUM(opioid_clms)                            AS opioid_prescriptions,
+        SUM(la_opioid_clms)                         AS la_opioid_prescriptions,
+        SUM(opioid_benes)                           AS opioid_benes,
+        SUM(la_opioid_benes)                        AS la_opioid_benes,
         SUM(tot_clms)                               AS total_prescriptions,
+        SUM(tot_benes)                              AS opioid_total_benes,
+        SUM(tot_drug_cst)                           AS opioid_total_drug_cost,
         NULL::INTEGER                               AS population  -- not available at prescriber-drug level
     FROM hcs_bronze.cms_opioid_puf
     WHERE prscrbr_state_fips IS NOT NULL
@@ -104,7 +117,8 @@ claim_type AS (
         SUM(tot_benes)                      AS claim_tot_benes,
         SUM(tot_mdcr_pymt_amt)              AS claim_total_mdcr_pymt,
         AVG(avg_mdcr_pymt_amt)              AS claim_avg_mdcr_pymt,
-        COUNT(DISTINCT clm_type)            AS claim_type_count
+        COUNT(DISTINCT clm_type)            AS claim_type_count,
+        STRING_AGG(DISTINCT clm_type_desc, ', ' ORDER BY clm_type_desc) AS claim_type_descriptions
     FROM hcs_bronze.cms_claim_type_puf
     WHERE bene_geo_desc IS NOT NULL
     GROUP BY bene_geo_lvl, bene_geo_desc, _source_year
@@ -133,8 +147,12 @@ dual_eligible AS (
         state_cd                            AS geo_code,
         _source_year,
         SUM(tot_benes)                      AS dual_tot_benes,
+        MAX(state_name)                     AS dual_state_name,
+        SUM(ffs_benes)                      AS dual_ffs_benes,
+        SUM(ma_benes)                       AS dual_ma_benes,
         SUM(dual_elgbl_full_benes)          AS dual_full_benes,
         SUM(dual_elgbl_prtl_benes)          AS dual_partial_benes,
+        SUM(non_dual_benes)                 AS dual_non_dual_benes,
         SUM(lis_benes)                      AS dual_lis_benes,
         CASE
             WHEN SUM(tot_benes) > 0
@@ -156,7 +174,9 @@ medicare_advantage AS (
         COUNT(DISTINCT contract_id)         AS ma_plan_count,
         AVG(avg_risk_score)                 AS ma_avg_risk_score,
         AVG(star_rating)                    AS ma_avg_star_rating,
-        AVG(ma_participation_rate)          AS ma_participation_rate
+        AVG(ma_participation_rate)          AS ma_participation_rate,
+        AVG(avg_age)                        AS ma_avg_age,
+        AVG(pct_female)                     AS ma_avg_pct_female
     FROM hcs_bronze.cms_medicare_advantage
     WHERE COALESCE(county_fips, fips_cd) IS NOT NULL
     GROUP BY COALESCE(county_fips, fips_cd), _source_year
@@ -190,8 +210,13 @@ SELECT
     gv.stdz_payment_per_capita,
     gv.payment_per_capita,
     gv.payment_pct_change,
+    gv.tot_mdcr_alowd_amt_pc,
+    gv.gv_tot_benes,
     gv.hosp_readmsn_rate,
+    gv.acute_hosp_readmsn_rate,
     gv.er_visits_per_1000_benes,
+    gv.gv_ip_cvrd_stays_per_1000,
+    gv.ma_prtcptn_rate,
     -- Chronic disease burden
     c.distinct_conditions_tracked,
     c.diabetes_prevalence,
@@ -202,10 +227,18 @@ SELECT
     c.cancer_prevalence,
     c.avg_condition_prevalence,
     c.chronic_avg_mdcr_pymt_pc,
+    c.chronic_avg_stdzd_pymt_pc,
+    c.chronic_avg_readmsn_rate,
+    c.chronic_avg_ed_visits_per_1000,
     -- Opioid burden
     o.opioid_prescribing_rate,
     o.opioid_prescriptions,
+    o.la_opioid_prescriptions,
+    o.opioid_benes,
+    o.la_opioid_benes,
     o.total_prescriptions,
+    o.opioid_total_benes,
+    o.opioid_total_drug_cost,
     o.population,
     -- Enrollment (raw CMS field names: tot_benes, dsbl_benes, esrd_benes)
     e.tot_benes,
@@ -214,9 +247,13 @@ SELECT
     e.esrd_benes,
     e.dsbl_benes,
     -- Dual eligible population
+    de.dual_state_name,
     de.dual_tot_benes,
+    de.dual_ffs_benes,
+    de.dual_ma_benes,
     de.dual_full_benes,
     de.dual_partial_benes,
+    de.dual_non_dual_benes,
     de.dual_lis_benes,
     de.dual_eligibility_rate,
     -- Medicare Advantage penetration
@@ -225,12 +262,15 @@ SELECT
     ma.ma_avg_risk_score,
     ma.ma_avg_star_rating,
     ma.ma_participation_rate,
+    ma.ma_avg_age,
+    ma.ma_avg_pct_female,
     -- FFS claim type aggregates
     ct.claim_total_clms,
     ct.claim_tot_benes,
     ct.claim_total_mdcr_pymt,
     ct.claim_avg_mdcr_pymt,
     ct.claim_type_count,
+    ct.claim_type_descriptions,
     -- Utilization metrics
     ug.util_srvcs_per_bene,
     ug.util_ip_cvrd_stays_per_1000,
@@ -250,6 +290,8 @@ SELECT
         ) / 3.0
         ELSE NULL
     END AS health_burden_index,
+    'cms_geographic_health'             AS source,
+    NOW()                               AS source_updated_at,
     NOW()                               AS created_at,
     NOW()                               AS updated_at
 FROM all_geos a

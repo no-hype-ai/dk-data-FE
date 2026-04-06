@@ -31,6 +31,7 @@ SELECT
     mol_b.molecule_id               AS molecule_id_b,
 
     b.source,
+    b.ingested_at,
     b.ingested_at                   AS source_updated_at,
     NOW()                           AS created_at
 

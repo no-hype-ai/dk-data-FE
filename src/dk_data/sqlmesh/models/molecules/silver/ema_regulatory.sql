@@ -45,6 +45,8 @@ SELECT
         ELSE 'unlinked'
     END AS link_strategy,
 
+    e.source,
+    e.source_updated_at,
     e.ingested_at
 
 FROM mol_bronze.ema AS e

@@ -7,7 +7,7 @@ metadata:
     component: openfda-faers
     feature: "019-cms-puf"
 spec:
-  schedule: "0 4 1 * *"  # Monthly — 1st at 4AM UTC (FAERS updates monthly)
+  schedule: "0 2 6 * *"  # 6th of month 02:00 UTC — staggered; FAERS monthly quarter release
   concurrencyPolicy: Forbid
   startingDeadlineSeconds: 3600
   successfulJobsHistoryLimit: 3

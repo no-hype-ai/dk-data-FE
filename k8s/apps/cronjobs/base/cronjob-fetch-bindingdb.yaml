@@ -14,7 +14,7 @@ metadata:
     app.kubernetes.io/component: ingestion
     app.kubernetes.io/part-of: dk-data
 spec:
-  schedule: "0 2 1 * *"  # 1st of month, 2 AM UTC (low-traffic window, large download)
+  schedule: "0 3 4 * *"  # 4th of month 03:00 UTC — staggered; chembl+pubchem run on 1st
   concurrencyPolicy: Forbid
   startingDeadlineSeconds: 3600
   successfulJobsHistoryLimit: 3

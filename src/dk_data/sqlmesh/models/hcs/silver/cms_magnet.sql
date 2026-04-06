@@ -27,11 +27,15 @@ SELECT
     cc.facility_id,
     cc.address,
     cc.zip_code,
+    cc.county_name,
+    cc.phone_number,
     cc.hospital_type,
     cc.hospital_ownership,
+    cc.emergency_services,
     cc.overall_rating,
 
     b.source,
+    b.ingested_at,
     b.ingested_at                   AS source_updated_at,
     NOW()                           AS created_at
 

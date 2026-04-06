@@ -28,7 +28,15 @@ WITH part_d AS (
         SUM(tot_clms)                                   AS total_claims,
         SUM(tot_benes)                                  AS total_beneficiaries,
         AVG(avg_spnd_per_clm)                           AS avg_spending_per_claim,
-        AVG(avg_spnd_per_bene)                          AS avg_spending_per_beneficiary
+        AVG(avg_spnd_per_bene)                          AS avg_spending_per_beneficiary,
+        -- Additional bronze domain columns
+        SUM(tot_dsg_unts)                               AS total_dosage_units,
+        SUM(tot_mftr)                                   AS total_manufacturers,
+        AVG(avg_spnd_per_dsg_unt_wghtd)                 AS avg_spending_per_dosage_unit,
+        MAX(outlier_flag)                               AS outlier_flag,
+        NULL::TEXT                                      AS hcpcs_code,
+        NULL::TEXT                                      AS manufacturer_name,
+        MAX(_source_hash)                               AS _source_hash
     FROM hcs_bronze.cms_part_d_spending
     WHERE gnrc_name IS NOT NULL
     GROUP BY gnrc_name, _source_year
@@ -44,7 +52,15 @@ part_b AS (
         SUM(tot_clms)                       AS total_claims,
         SUM(tot_benes)                      AS total_beneficiaries,
         AVG(avg_spnd_per_clm)               AS avg_spending_per_claim,
-        AVG(avg_spnd_per_bene)              AS avg_spending_per_beneficiary
+        AVG(avg_spnd_per_bene)              AS avg_spending_per_beneficiary,
+        -- Additional bronze domain columns
+        SUM(tot_dsg_unts)                   AS total_dosage_units,
+        SUM(tot_mftr)                       AS total_manufacturers,
+        AVG(avg_spnd_per_dsg_unt)           AS avg_spending_per_dosage_unit,
+        MAX(outlier_flag)                   AS outlier_flag,
+        MAX(hcpcs_cd)                       AS hcpcs_code,
+        MAX(mftr_name)                      AS manufacturer_name,
+        MAX(_source_hash)                   AS _source_hash
     FROM hcs_bronze.cms_part_b_spending
     WHERE hcpcs_desc IS NOT NULL
     GROUP BY hcpcs_desc, _source_year
@@ -71,6 +87,13 @@ linked AS (
         c.total_beneficiaries,
         c.avg_spending_per_claim,
         c.avg_spending_per_beneficiary,
+        c.total_dosage_units,
+        c.total_manufacturers,
+        c.avg_spending_per_dosage_unit,
+        c.outlier_flag,
+        c.hcpcs_code,
+        c.manufacturer_name,
+        c._source_hash,
         COALESCE(
             rx.molecule_id,
             m_exact.molecule_id,
@@ -114,6 +137,14 @@ SELECT
     total_beneficiaries,
     avg_spending_per_claim,
     avg_spending_per_beneficiary,
+    -- Additional bronze domain columns
+    total_dosage_units,
+    total_manufacturers,
+    avg_spending_per_dosage_unit,
+    outlier_flag,
+    hcpcs_code,
+    manufacturer_name,
+    _source_hash,
     NOW()                                   AS created_at,
     NOW()                                   AS updated_at
 FROM linked;

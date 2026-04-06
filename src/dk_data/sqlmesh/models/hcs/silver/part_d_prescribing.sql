@@ -39,7 +39,9 @@ WITH prescriber_drug AS (
         prscrbr_first_name,
         prscrbr_city,
         prscrbr_state_abrvtn,
+        prscrbr_state_fips,
         prscrbr_type,
+        prscrbr_type_src,
         brnd_name,
         gnrc_name,
         tot_clms,
@@ -54,7 +56,8 @@ WITH prescriber_drug AS (
         ge65_tot_day_suply,
         ge65_bene_sprsn_flag,
         ge65_tot_benes,
-        _source_year
+        _source_year,
+        _source_hash
     FROM hcs_bronze.cms_part_d_prescriber
     WHERE prscrbr_npi IS NOT NULL
       AND gnrc_name IS NOT NULL
@@ -114,7 +117,9 @@ SELECT
     pd.prscrbr_first_name,
     pd.prscrbr_city,
     pd.prscrbr_state_abrvtn,
+    pd.prscrbr_state_fips,
     pd.prscrbr_type,
+    pd.prscrbr_type_src,
 
     -- Drug (both raw name and resolved molecule)
     pd.gnrc_name,
@@ -143,6 +148,7 @@ SELECT
 
     -- Source year dimension
     pd._source_year,
+    pd._source_hash,
 
     -- Data quality: was the molecule resolved?
     CASE WHEN dm.molecule_id IS NOT NULL THEN TRUE ELSE FALSE END AS molecule_resolved,

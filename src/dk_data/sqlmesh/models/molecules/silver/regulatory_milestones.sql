@@ -29,7 +29,11 @@ WITH deduped AS (
         b.first_approval_date,
         b.products,
         b.submissions,
+        b.te_code,
+        b.reference_drug,
+        b.reference_standard,
         'fda_drugs' AS source,
+        b.ingested_at,
         b.source_updated_at
     FROM mol_bronze.fda_drugs b
     WHERE b.application_number IS NOT NULL
@@ -58,7 +62,12 @@ SELECT DISTINCT ON (d.application_number)
     END                                                 AS application_type,
     d.products,
     d.submissions,
+    -- Additional bronze domain columns
+    d.te_code,
+    d.reference_drug,
+    d.reference_standard,
     d.source,
+    d.ingested_at,
     d.source_updated_at,
     NOW()                                               AS created_at
 

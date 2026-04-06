@@ -30,6 +30,7 @@ SELECT
     b.synonyms,
     b.status,
     'who_inn'                                                       AS source,
+    b.ingested_at,
     b.source_updated_at,
     NOW()                                                           AS created_at
 

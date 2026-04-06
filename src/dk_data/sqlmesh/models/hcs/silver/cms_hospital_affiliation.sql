@@ -22,6 +22,7 @@ SELECT DISTINCT ON (b.npi, b.facility_affiliations_certification_number)
     b.provider_last_name,
     b.provider_first_name,
     b.provider_middle_name,
+    b.facility_type,
     b.facility_affiliations_certification_number,
     b.facility_type_certification_number,
 
@@ -30,14 +31,33 @@ SELECT DISTINCT ON (b.npi, b.facility_affiliations_certification_number)
     COALESCE(n.provider_organization_name,
              n.provider_last_name || ', ' || n.provider_first_name) AS provider_name,
     n.entity_type_code                                              AS provider_type,
+    n.provider_credential_text                                      AS provider_credentials,
+    n.provider_business_practice_location_address_city_name        AS provider_city,
     n.provider_business_practice_location_address_state_name       AS provider_state,
+    n.provider_business_practice_location_address_postal_code      AS provider_zip,
+    n.provider_business_practice_location_address_telephone_number AS provider_phone,
+    n.healthcare_provider_taxonomy_code_1                          AS taxonomy_code_1,
+    n.healthcare_provider_taxonomy_code_2                          AS taxonomy_code_2,
+    n.npi_deactivation_date,
+    n.npi_reactivation_date,
 
     -- Facility identity from hospital general info (most recent year via ORDER BY)
     h.facility_name,
+    h.address                       AS facility_address,
     h.city_town                     AS facility_city,
     h.state                         AS facility_state,
+    h.zip_code                      AS facility_zip_code,
+    h.county_parish,
+    h.telephone_number              AS facility_phone,
+    h.hospital_type,
+    h.hospital_ownership,
+    h.emergency_services,
+    h.meets_criteria_for_birthing_friendly_designation,
+    h.hospital_overall_rating,
+    h.hospital_overall_rating_footnote,
 
     b.source,
+    b.ingested_at,
     b.ingested_at                   AS source_updated_at,
     NOW()                           AS created_at
 

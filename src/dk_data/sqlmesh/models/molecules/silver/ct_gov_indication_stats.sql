@@ -20,6 +20,8 @@ SELECT
     COALESCE(m_exact.molecule_id, m_alias.molecule_id) AS molecule_id,
     b.condition_query,
     b.total_count                                       AS trial_count,
+    b.active_count,
+    b.fetched_at,
     'ct_gov_indication_stats'                           AS source,
     b.request_timestamp             AS source_updated_at,
     NOW()                                               AS created_at

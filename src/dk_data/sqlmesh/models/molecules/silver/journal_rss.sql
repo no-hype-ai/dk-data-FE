@@ -20,7 +20,7 @@ MODEL (
 -- DISTINCT ON (article_id) keeps the most recently updated record per unique article.
 WITH deduped_bronze AS (
     SELECT DISTINCT ON (article_id)
-        article_id, title, link, doi, feed_source, abstract, authors, pub_date, source_updated_at
+        article_id, title, link, doi, feed_source, abstract, authors, pub_date, categories, source_updated_at
     FROM mol_bronze.journal_rss
     WHERE article_id IS NOT NULL AND title IS NOT NULL
     ORDER BY article_id, source_updated_at DESC NULLS LAST
@@ -48,6 +48,7 @@ SELECT
     b.abstract,
     b.authors,
     b.pub_date                                          AS publication_date,
+    b.categories,
     'journal_rss'                                       AS source,
     b.source_updated_at,
     NOW()                                               AS created_at

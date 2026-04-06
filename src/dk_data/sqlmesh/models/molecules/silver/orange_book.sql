@@ -30,8 +30,22 @@ SELECT
     b.rld,
     b.rs,
     b.drug_type                         AS product_type,
+
+    -- Patent info
+    b.patent_number,
+    b.patent_expiration,
+    b.drug_substance_patent,
+    b.drug_product_patent,
+    b.patent_use_code,
+
+    -- Exclusivity info
+    b.exclusivity_code,
+    b.exclusivity_date,
+
     'products'::TEXT                    AS _file_type,
     m.molecule_id,
+    b.source,
+    b.source_updated_at,
     b.ingested_at                       AS _ingested_at,
     CURRENT_TIMESTAMP                   AS _silver_updated_at
 FROM mol_bronze.orange_book AS b

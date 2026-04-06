@@ -30,6 +30,7 @@ SELECT
     b.overall_rating,
 
     b.source,
+    b.ingested_at,
     b.ingested_at                   AS source_updated_at,
     NOW()                           AS created_at
 

@@ -30,9 +30,15 @@ SELECT
     c.city,
     c.state,
     c.zip_code,
+    c.county_name,
+    c.phone_number,
     c.hospital_type,
+    c.hospital_ownership,
+    c.emergency_services,
+    c.overall_rating                AS cc_overall_rating,
 
     b.source,
+    b.ingested_at,
     b.ingested_at                   AS source_updated_at,
     NOW()                           AS created_at
 

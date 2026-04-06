@@ -8,10 +8,28 @@ resources:
   # Idempotent: skips sources with last_successful_refresh < 12h old. No-op on re-deploys.
   - cronjob-platform-init.yaml
   - cronjob-refresh.yaml
-  # Transform pipeline — 14 staggered per-layer jobs covering all 205 SQLMesh models
-  # Full dependency schedule (UTC):
+  # Schedule design principle (Nick King): scale out not up — one job does one thing,
+  # max 2 jobs running concurrently, fetch window separate from transform window.
+  #
+  # FETCH WINDOW (00:00–05:00 UTC): all incremental fetches complete before transforms start.
+  #   Daily:   01:00 pubmed | 01:30 openalex-ci | 02:00 journal-rss | 02:30 news | 02:45 sec-edgar
+  #   Monthly (staggered across days 1–7, never more than 3 jobs/day):
+  #     Day 1:  02:00 chembl-molecules | 03:00 pubchem
+  #     Day 2:  01:00 rxnorm | 02:00 who-inn | 03:00 who-gho | 04:00 fda-rems
+  #     Day 3:  01:00 fda-ndc | 02:00 ema-mol | 03:00 pharmgkb | 04:00 load-pubchem-extended
+  #     Day 4:  01:00 reactome | 02:00 who-icd | 03:00 bindingdb | 04:00 npi-registry
+  #     Day 5:  01:00 cms-medicare | 02:00 tdc-admet | 03:00 hrsa
+  #     Day 6:  02:00 openfda-faers
+  #   Weekly (Sunday staggered, max 1 heavy per hour):
+  #     02:00 cms-all | 03:00 clinicaltrials | 04:00 openfda-labels | 04:00 dailymed
+  #     05:00 fda-drugs | 08:00 nice-hta | 10:00 europepmc | 10:00 nih-reporter
+  #     13:00 ema-reg | 14:00 hta | 14:00 uspto-ci | 15:00 epo
+  #     16:00 uspto-trademarks | 17:00 uspto-patents | 18:00 euipo | 18:30 euipo-designs
+  #     19:00 uniprot | 20:00 pdb | 20:00 kegg-drug
+  #
+  # TRANSFORM WINDOW (06:00–16:00 UTC): sequential per-layer, each depends on the prior.
   #   06:00  bronze             mol_bronze core (5 models: chembl, pubchem, clinicaltrials, openfda, faers)
-  #   06:30  ip_bronze          IP mol_bronze + 5 hcs_bronze (20 models, parallel)
+  #   06:30  ip_bronze          IP mol_bronze + 5 hcs_bronze (20 models, parallel with bronze)
   #   07:00  hcs_bronze         ALL 53 hcs_bronze.* (parallel with mol_bronze_ext)
   #   07:00  mol_bronze_ext     35 remaining mol_bronze models (drugbank, pubchem, rxnorm, etc.)
   #   07:30  ind                ind_bronze.icd11_codes → ind_silver.icd11_ontology (2 models)

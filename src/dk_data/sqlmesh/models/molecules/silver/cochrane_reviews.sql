@@ -25,9 +25,13 @@ SELECT DISTINCT ON (b.review_id)
     b.publication_date AS pub_date,
     b.review_type,
     b.authors,
+    b.interventions,
+    b.conditions,
+    b.conclusions,
     -- raw_data: mol_raw.cochrane_reviews uses flat columns (no response_body JSONB stored)
     NULL::JSONB                             AS raw_data,
     'cochrane_reviews'                      AS source,
+    b.source_updated_at,
     b.created_at
 
 FROM mol_bronze.cochrane_reviews b
