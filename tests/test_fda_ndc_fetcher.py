@@ -1,16 +1,23 @@
-"""Tests for FDA NDC fetcher.
+"""Tests for FDA NDC fetcher — bulk ZIP download implementation.
 
-Feature: 019-cms-puf-platform-reconciliation
+The fetcher was rewritten (PR #249) from a paginated openFDA API approach to
+downloading the daily bulk export ZIP from download.open.fda.gov.  These tests
+mock HTTP responses at the session.get() level and build in-memory ZIP files to
+avoid any real network calls.
 
-Tests use mocked HTTP responses — no external network calls are made.
 Verifies:
-- Pagination stops at 404 or FDA skip limit (25000)
-- product_type filter is applied as search param
-- max_records cap truncates to exact count
-- HTTP errors produce status='failed'
+- get_latest_url() points to the bulk download endpoint
+- Successful download returns status='success' with all records
+- max_records cap truncates to the exact count requested
+- A ZIP with no JSON file returns status='failed'
+- Connection errors return status='failed'
+- HTTP 500 returns status='failed'
 """
 
+import io
+import json
 import tempfile
+import zipfile
 from unittest.mock import MagicMock, patch
 
 
@@ -20,17 +27,21 @@ def _make_fetcher():
         return FDANDCFetcher(data_dir=tmpdir)
 
 
-def _mock_response(results, total=None, status_code=200):
+def _make_zip_response(products, json_name="drug-ndc-0001-of-0001.json", status_code=200):
+    """Build a mock response whose .content is a ZIP containing the given products list."""
+    payload = json.dumps({"results": products}).encode()
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
+        zf.writestr(json_name, payload)
+    zip_bytes = buf.getvalue()
+
     resp = MagicMock()
     resp.status_code = status_code
     if status_code >= 400:
         resp.raise_for_status.side_effect = Exception(f"HTTP {status_code}")
     else:
         resp.raise_for_status = MagicMock()
-    resp.json.return_value = {
-        "results": results,
-        "meta": {"results": {"total": total or len(results)}},
-    }
+    resp.content = zip_bytes
     return resp
 
 
@@ -62,23 +73,16 @@ def test_source_name():
 def test_get_latest_url():
     fetcher = _make_fetcher()
     url = fetcher.get_latest_url()
-    assert "api.fda.gov/drug/ndc.json" in url
+    assert "download.open.fda.gov" in url
+    assert url.endswith(".zip")
     assert url.startswith("https://")
 
 
 def test_fetch_returns_success_shape():
     fetcher = _make_fetcher()
     products = _sample_products(5)
-    call_count = [0]
 
-    def _side_effect(url, *a, **kw):
-        call_count[0] += 1
-        if call_count[0] == 1:
-            return _mock_response(products, total=5)
-        return _mock_response([])
-
-    with patch.object(fetcher.session, "get", side_effect=_side_effect), \
-         patch("time.sleep"):
+    with patch.object(fetcher.session, "get", return_value=_make_zip_response(products)):
         result = fetcher.fetch()
 
     assert result["status"] == "success"
@@ -91,61 +95,33 @@ def test_max_records_truncates_exactly():
     fetcher = _make_fetcher()
     products = _sample_products(100)
 
-    with patch.object(fetcher.session, "get", return_value=_mock_response(products, total=50000)), \
-         patch("time.sleep"):
+    with patch.object(fetcher.session, "get", return_value=_make_zip_response(products)):
         result = fetcher.fetch(max_records=50)
 
     assert result["record_count"] == 50
+    assert len(result["records"]) == 50
 
 
-def test_product_type_filter_passed_as_search_param():
-    # The fetcher now uses alphabetic partitioning on generic_name regardless
-    # of product_type. The search param is always "generic_name:<letter>*".
+def test_zip_with_no_json_returns_failed():
+    """A ZIP containing no JSON file should raise and return status='failed'."""
     fetcher = _make_fetcher()
-    captured_params = {}
 
-    def _side_effect(url, params=None, **kw):
-        captured_params.update(params or {})
-        return _mock_response([])
+    # Build a ZIP with a non-JSON file only
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w") as zf:
+        zf.writestr("readme.txt", "no json here")
+    zip_bytes = buf.getvalue()
 
-    with patch.object(fetcher.session, "get", side_effect=_side_effect):
-        fetcher.fetch()
+    resp = MagicMock()
+    resp.status_code = 200
+    resp.raise_for_status = MagicMock()
+    resp.content = zip_bytes
 
-    assert "search" in captured_params
-    assert captured_params["search"].startswith("generic_name:")
-
-
-def test_search_param_always_present():
-    # The fetcher always includes a generic_name partition in the search param.
-    fetcher = _make_fetcher()
-    captured_params = {}
-
-    def _side_effect(url, params=None, **kw):
-        captured_params.update(params or {})
-        return _mock_response([])
-
-    with patch.object(fetcher.session, "get", side_effect=_side_effect):
-        fetcher.fetch()
-
-    assert "search" in captured_params
-
-
-def test_404_stops_pagination():
-    fetcher = _make_fetcher()
-    with patch.object(fetcher.session, "get", return_value=_mock_response([], status_code=404)):
+    with patch.object(fetcher.session, "get", return_value=resp):
         result = fetcher.fetch()
 
-    assert result["status"] == "success"
-    assert result["record_count"] == 0
-
-
-def test_empty_first_page_returns_zero():
-    fetcher = _make_fetcher()
-    with patch.object(fetcher.session, "get", return_value=_mock_response([], total=0)):
-        result = fetcher.fetch()
-
-    assert result["status"] == "success"
-    assert result["record_count"] == 0
+    assert result["status"] == "failed"
+    assert "error" in result
 
 
 def test_connection_error_returns_failed():
@@ -159,7 +135,8 @@ def test_connection_error_returns_failed():
 
 def test_http_500_returns_failed():
     fetcher = _make_fetcher()
-    with patch.object(fetcher.session, "get", return_value=_mock_response([], status_code=500)):
+    resp = _make_zip_response([], status_code=500)
+    with patch.object(fetcher.session, "get", return_value=resp):
         result = fetcher.fetch()
 
     assert result["status"] == "failed"
