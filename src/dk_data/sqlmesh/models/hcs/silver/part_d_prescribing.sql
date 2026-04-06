@@ -56,7 +56,8 @@ WITH prescriber_drug AS (
         ge65_tot_day_suply,
         ge65_bene_sprsn_flag,
         ge65_tot_benes,
-        _source_year
+        _source_year,
+        _source_hash
     FROM hcs_bronze.cms_part_d_prescriber
     WHERE prscrbr_npi IS NOT NULL
       AND gnrc_name IS NOT NULL
@@ -147,6 +148,7 @@ SELECT
 
     -- Source year dimension
     pd._source_year,
+    pd._source_hash,
 
     -- Data quality: was the molecule resolved?
     CASE WHEN dm.molecule_id IS NOT NULL THEN TRUE ELSE FALSE END AS molecule_resolved,

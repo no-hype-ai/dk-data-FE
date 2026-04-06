@@ -14,10 +14,13 @@ MODEL (
 );
 
 SELECT
+    gen_random_uuid()                           AS id,
     taxonomy_code,
     taxonomy_type                               AS type,
     classification,
     specialization,
     source,
-    ingested_at                                 AS source_updated_at
+    ingested_at,
+    ingested_at                                 AS source_updated_at,
+    NOW()                                       AS created_at
 FROM hcs_bronze.cms_nucc;

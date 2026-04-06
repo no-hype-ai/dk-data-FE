@@ -66,7 +66,8 @@ WITH payment_drugs AS (
         recipient_zip_code,
         program_year,
         payment_publication_date,
-        _source_year
+        _source_year,
+        _source_hash
     FROM hcs_bronze.cms_open_payments
     WHERE name_of_drug_or_biological_or_device_or_medical_supply_1 IS NOT NULL
 
@@ -84,7 +85,7 @@ WITH payment_drugs AS (
            date_of_payment,
            nature_of_payment_or_transfer_of_value,
            recipient_city, recipient_state, recipient_zip_code,
-           program_year, payment_publication_date, _source_year
+           program_year, payment_publication_date, _source_year, _source_hash
     FROM hcs_bronze.cms_open_payments
     WHERE name_of_drug_or_biological_or_device_or_medical_supply_2 IS NOT NULL
 
@@ -102,7 +103,7 @@ WITH payment_drugs AS (
            date_of_payment,
            nature_of_payment_or_transfer_of_value,
            recipient_city, recipient_state, recipient_zip_code,
-           program_year, payment_publication_date, _source_year
+           program_year, payment_publication_date, _source_year, _source_hash
     FROM hcs_bronze.cms_open_payments
     WHERE name_of_drug_or_biological_or_device_or_medical_supply_3 IS NOT NULL
 
@@ -120,7 +121,7 @@ WITH payment_drugs AS (
            date_of_payment,
            nature_of_payment_or_transfer_of_value,
            recipient_city, recipient_state, recipient_zip_code,
-           program_year, payment_publication_date, _source_year
+           program_year, payment_publication_date, _source_year, _source_hash
     FROM hcs_bronze.cms_open_payments
     WHERE name_of_drug_or_biological_or_device_or_medical_supply_4 IS NOT NULL
 
@@ -138,7 +139,7 @@ WITH payment_drugs AS (
            date_of_payment,
            nature_of_payment_or_transfer_of_value,
            recipient_city, recipient_state, recipient_zip_code,
-           program_year, payment_publication_date, _source_year
+           program_year, payment_publication_date, _source_year, _source_hash
     FROM hcs_bronze.cms_open_payments
     WHERE name_of_drug_or_biological_or_device_or_medical_supply_5 IS NOT NULL
 ),
@@ -241,7 +242,10 @@ SELECT
     pd.recipient_zip_code,
     pd.program_year,
     pd.payment_publication_date,
+    pd._source_hash,
 
+    'cms_open_payments'                         AS source,
+    NOW()                                       AS source_updated_at,
     NOW()                                       AS created_at,
     NOW()                                       AS updated_at
 

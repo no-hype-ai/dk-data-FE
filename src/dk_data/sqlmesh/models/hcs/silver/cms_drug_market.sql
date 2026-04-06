@@ -175,6 +175,13 @@ SELECT
             LIMIT 1
         )
     )                                           AS molecule_id,
+    -- Source tracking
+    CASE
+        WHEN c.part_d_spending > 0 AND c.part_b_spending > 0 THEN 'cms_part_d_spending+cms_part_b_spending'
+        WHEN c.part_d_spending > 0 THEN 'cms_part_d_spending'
+        ELSE 'cms_part_b_spending'
+    END                                         AS source,
+    NOW()                                       AS source_updated_at,
     NOW()                                       AS created_at,
     NOW()                                       AS updated_at
 FROM combined c

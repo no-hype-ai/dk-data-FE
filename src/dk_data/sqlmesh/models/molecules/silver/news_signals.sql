@@ -32,10 +32,14 @@ MODEL (
 WITH combined AS (
     -- Medical news branch
     SELECT
+        article_id::TEXT                                          AS article_id,
         title::TEXT                                               AS title,
         source_name::TEXT                                         AS source_name,
+        summary::TEXT                                             AS summary,
         pub_date::DATE                                            AS pub_date,
         url::TEXT                                                 AS source_url,
+        NULL::TEXT                                                AS doi,
+        NULL::TEXT                                                AS authors,
         -- drug_mentions is JSONB array in mol_bronze.medical_news (to_jsonb of TEXT[] raw col)
         CASE
             WHEN drug_mentions IS NOT NULL AND jsonb_array_length(drug_mentions) > 0
@@ -54,6 +58,9 @@ WITH combined AS (
                 THEN therapeutic_areas->>0
             ELSE NULL
         END                                                       AS therapeutic_area,
+        -- Full therapeutic_areas JSONB array preserved for downstream multi-area lookups
+        therapeutic_areas,
+        NULL::JSONB                                               AS categories,
         NULL::NUMERIC                                             AS sentiment_score,
         'neutral'::TEXT                                           AS sentiment_polarity,
         source::TEXT                                              AS source,
@@ -65,10 +72,14 @@ WITH combined AS (
 
     -- Journal RSS branch
     SELECT
+        article_id::TEXT                                          AS article_id,
         title::TEXT                                               AS title,
         feed_source::TEXT                                         AS source_name,
+        abstract::TEXT                                            AS summary,
         pub_date::DATE                                            AS pub_date,
         link::TEXT                                                AS source_url,
+        doi::TEXT                                                 AS doi,
+        authors::TEXT                                             AS authors,
         -- journal_rss `categories` are RSS topic tags (e.g. "Oncology", "Clinical Trial"),
         -- NOT drug names. Setting to NULL prevents false matches in advocacy_sentiment
         -- when the gold model joins drug_mentions against mol_silver.molecules.canonical_name.
@@ -80,6 +91,8 @@ WITH combined AS (
             ELSE 'general'
         END                                                       AS signal_type,
         NULL::TEXT                                                AS therapeutic_area,
+        NULL::JSONB                                               AS therapeutic_areas,
+        categories                                                AS categories,
         NULL::NUMERIC                                             AS sentiment_score,
         'neutral'::TEXT                                           AS sentiment_polarity,
         source::TEXT                                              AS source,
@@ -91,8 +104,10 @@ WITH combined AS (
 -- Deduplicate on the unique key (source_url, pub_date); keep any one row per pair.
 deduped AS (
     SELECT DISTINCT ON (source_url, pub_date)
-        title, source_name, pub_date, source_url, drug_mentions,
-        signal_type, therapeutic_area, sentiment_score, sentiment_polarity,
+        article_id, title, source_name, summary, pub_date, source_url,
+        doi, authors, drug_mentions,
+        signal_type, therapeutic_area, therapeutic_areas, categories,
+        sentiment_score, sentiment_polarity,
         source, source_updated_at
     FROM combined
     ORDER BY source_url, pub_date, source_updated_at DESC NULLS LAST
@@ -100,13 +115,19 @@ deduped AS (
 
 SELECT
     gen_random_uuid()   AS id,
+    article_id,
     title,
     source_name,
+    summary,
     pub_date,
     source_url,
+    doi,
+    authors,
     drug_mentions,
     signal_type,
     therapeutic_area,
+    therapeutic_areas,
+    categories,
     sentiment_score,
     sentiment_polarity,
     source,

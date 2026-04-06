@@ -30,6 +30,7 @@ SELECT DISTINCT ON (b.formulary_id, b.rxcui)
     COALESCE(im.molecule_id, m_alias.molecule_id) AS molecule_id,
 
     b.source,
+    b.ingested_at,
     b.ingested_at                   AS source_updated_at,
     NOW()                           AS created_at
 

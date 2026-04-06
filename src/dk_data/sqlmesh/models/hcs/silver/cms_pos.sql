@@ -31,13 +31,24 @@ SELECT DISTINCT ON (b.ccn)
     cc.facility_id,
     cc.overall_rating,
     cc.hospital_type,
+    cc.hospital_ownership           AS cc_hospital_ownership,
     cc.emergency_services,
+    cc.county_name,
+    cc.phone_number                 AS cc_phone_number,
 
     -- Hospital general info cross-check (most recent year chosen by ORDER BY below)
+    h.facility_name                 AS hgi_facility_name,
+    h.address                       AS hgi_address,
     h.telephone_number,
     h.county_parish,
+    h.hospital_ownership            AS hgi_hospital_ownership,
+    h.hospital_overall_rating,
+    h.hospital_overall_rating_footnote,
+    h.meets_criteria_for_birthing_friendly_designation,
+    h.emergency_services            AS hgi_emergency_services,
 
     b.source,
+    b.ingested_at,
     b.ingested_at                   AS source_updated_at,
     NOW()                           AS created_at
 

@@ -55,6 +55,7 @@ uspto_patents AS (
         is_pharma_related,
         NULL::TEXT AS family_id,         -- family_id not tracked in PatentsView schema
         patent_type,
+        patent_kind,
         NULL::TEXT AS application_number, -- not exposed in PatentsView bulk data
         'uspto'::TEXT AS source,
         ingested_at
@@ -80,6 +81,7 @@ uspto_ci AS (
         is_pharma_related,
         NULL::TEXT AS family_id,         -- not tracked in USPTO CI
         NULL::TEXT AS patent_type,       -- not in USPTO CI schema
+        NULL::TEXT AS patent_kind,       -- not in USPTO CI schema
         NULL::TEXT AS application_number, -- not in USPTO CI schema
         'uspto_ci'::TEXT AS source,
         ingested_at
@@ -105,6 +107,7 @@ epo_patents AS (
         is_pharma_related,
         family_id,
         NULL::TEXT AS patent_type,       -- EPO uses different type taxonomy
+        NULL::TEXT AS patent_kind,       -- EPO uses different kind taxonomy
         NULL::TEXT AS application_number, -- not exposed in EPO OPS schema
         'epo'::TEXT AS source,
         ingested_at
@@ -120,6 +123,7 @@ orange_book_patents AS (
         trade_name AS title,
         NULL::TEXT AS abstract,          -- not in Orange Book
         NULL::DATE AS grant_date,        -- not in Orange Book (only expiry date)
+        patent_expiration AS ob_expiry_date, -- Orange Book patent expiration date
         NULL::DATE AS filing_date,       -- not in Orange Book
         applicant AS assignee,
         NULL::TEXT AS assignee_type,     -- not in Orange Book
@@ -130,7 +134,11 @@ orange_book_patents AS (
         TRUE AS is_pharma_related,
         NULL::TEXT AS family_id,         -- not in Orange Book
         NULL::TEXT AS patent_type,       -- not in Orange Book
+        NULL::TEXT AS patent_kind,       -- not in Orange Book
         application_number,              -- from Orange Book appl_no column
+        patent_use_code,                 -- FDA patent use code (e.g. U-xxxx)
+        drug_substance_patent,           -- Y/N flag: covers drug substance
+        drug_product_patent,             -- Y/N flag: covers drug product
         'orange_book'::TEXT AS source,
         ingested_at
     FROM mol_bronze.orange_book
@@ -152,8 +160,12 @@ combined AS (
         NULL::TEXT AS family_id,
         pediatric_extension, country,
         drug_name AS molecule_name,
-        NULL::TEXT AS patent_type,       -- not tracked in DrugBank patent records
+        NULL::TEXT AS patent_type,        -- not tracked in DrugBank patent records
+        NULL::TEXT AS patent_kind,        -- not tracked in DrugBank patent records
         NULL::TEXT AS application_number, -- not tracked in DrugBank patent records
+        NULL::TEXT AS patent_use_code,    -- not tracked in DrugBank patent records
+        NULL::BOOLEAN AS drug_substance_patent, -- not tracked in DrugBank patent records
+        NULL::BOOLEAN AS drug_product_patent,   -- not tracked in DrugBank patent records
         inchi_key,
         'drugbank' AS source,
         source_updated_at,
@@ -171,7 +183,11 @@ combined AS (
         NULL::BOOLEAN AS pediatric_extension, 'US' AS country,
         NULL AS molecule_name,
         patent_type,
+        patent_kind,
         application_number,
+        NULL::TEXT AS patent_use_code,
+        NULL::BOOLEAN AS drug_substance_patent,
+        NULL::BOOLEAN AS drug_product_patent,
         NULL::TEXT AS inchi_key,         -- not linked at patent level in PatentsView
         source,
         NOW() AS source_updated_at,
@@ -189,7 +205,11 @@ combined AS (
         NULL::BOOLEAN AS pediatric_extension, 'US' AS country,
         NULL AS molecule_name,
         patent_type,
+        patent_kind,
         application_number,
+        NULL::TEXT AS patent_use_code,
+        NULL::BOOLEAN AS drug_substance_patent,
+        NULL::BOOLEAN AS drug_product_patent,
         NULL::TEXT AS inchi_key,
         source,
         NOW() AS source_updated_at,
@@ -207,7 +227,11 @@ combined AS (
         NULL::BOOLEAN AS pediatric_extension, 'EP' AS country,
         NULL AS molecule_name,
         patent_type,
+        patent_kind,
         application_number,
+        NULL::TEXT AS patent_use_code,
+        NULL::BOOLEAN AS drug_substance_patent,
+        NULL::BOOLEAN AS drug_product_patent,
         NULL::TEXT AS inchi_key,
         source,
         NOW() AS source_updated_at,
@@ -219,14 +243,18 @@ combined AS (
     -- Feature 015: Orange Book
     SELECT
         patent_number, title, abstract,
-        filing_date, grant_date, NULL::DATE AS expiry_date,
+        filing_date, grant_date, ob_expiry_date AS expiry_date,
         assignee, assignee_type, inventors,
         cpc_codes, ipc_codes, num_claims,
         is_pharma_related, family_id,
         NULL::BOOLEAN AS pediatric_extension, 'US' AS country,
         NULL AS molecule_name,
         patent_type,
+        patent_kind,
         application_number,
+        patent_use_code,
+        drug_substance_patent,
+        drug_product_patent,
         NULL::TEXT AS inchi_key,
         source,
         NOW() AS source_updated_at,
@@ -248,6 +276,7 @@ SELECT DISTINCT ON (patent_number)
     NULL::TEXT AS assignee_normalized,   -- requires entity resolution, deferred
     inventors,
     patent_type,
+    patent_kind,
     country,
     cpc_codes,
     ipc_codes,
@@ -261,6 +290,10 @@ SELECT DISTINCT ON (patent_number)
     is_pharma_related,
     pediatric_extension,
     CASE WHEN pediatric_extension = TRUE THEN 180 ELSE 0 END AS extension_days,
+    -- Orange Book patent classification fields
+    patent_use_code,
+    drug_substance_patent,
+    drug_product_patent,
     NULL::JSONB AS related_patents,      -- requires patent citation network data (not ingested)
     -- Entity linking (priority order):
     --   1. InChIKey exact match (DrugBank only — USPTO/EPO lack inchi_key at patent level)

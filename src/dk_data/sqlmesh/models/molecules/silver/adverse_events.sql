@@ -98,8 +98,10 @@ faers_aggregated AS (
         NULL::NUMERIC AS frequency_lower,
         NULL::NUMERIC AS frequency_upper,
         NULL::TEXT AS frequency_raw,
+        NULL::TEXT AS frequency_category,
         NULL::TEXT AS placebo,
         NULL::TEXT AS umls_cui,
+        NULL::TEXT AS umls_cui_from_label,
         NULL::TEXT AS meddra_concept_type,
         MIN(receive_date) AS first_report_date,
         MAX(receive_date) AS last_report_date,
@@ -121,10 +123,12 @@ sider_linked AS (
         m.molecule_id,
         s.side_effect_name AS meddra_pt,
         s.umls_cui_side_effect AS umls_cui,
+        s.umls_cui_from_label,
         s.meddra_concept_type,
         s.lower_bound_freq AS frequency_lower,
         s.upper_bound_freq AS frequency_upper,
         s.frequency_raw,
+        s.frequency_category,
         s.placebo,
         s.ingested_at
     FROM mol_bronze.sider s
@@ -162,8 +166,12 @@ sider_aggregated AS (
         MAX(frequency_upper) AS frequency_upper,
         -- Take a representative frequency string
         MIN(frequency_raw) AS frequency_raw,
+        -- Derived frequency category from bronze (very_common, common, uncommon, rare, very_rare)
+        MIN(frequency_category) AS frequency_category,
         MIN(placebo) AS placebo,
         MIN(umls_cui) AS umls_cui,
+        -- UMLS CUI as mapped from the label text (may differ from umls_cui)
+        MIN(umls_cui_from_label) AS umls_cui_from_label,
         MIN(meddra_concept_type) AS meddra_concept_type,
         NULL::DATE AS first_report_date,
         NULL::DATE AS last_report_date,
