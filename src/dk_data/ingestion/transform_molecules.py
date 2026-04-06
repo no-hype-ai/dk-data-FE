@@ -626,8 +626,9 @@ def transform_layer(layer: str) -> dict:
     # Count individual successes/failures rather than treating the entire
     # run as all-or-nothing (which swallowed partial failures before).
     stdout = result.get('stdout', '') or ''
-    evaluated = len([l for l in stdout.splitlines() if 'evaluated in' in l.lower()])
-    failed_lines = len([l for l in stdout.splitlines() if ' failed in' in l.lower() or 'failed:' in l.lower()])
+    lines = stdout.splitlines()
+    evaluated = len([ln for ln in lines if 'evaluated in' in ln.lower()])
+    failed_lines = len([ln for ln in lines if ' failed in' in ln.lower() or 'failed:' in ln.lower()])
 
     if result.get('status') == 'success':
         # SQLMesh exited 0: trust stdout counts; fall back to len(models)
