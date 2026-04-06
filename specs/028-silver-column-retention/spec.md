@@ -34,8 +34,8 @@ A healthcare application queries `hcs_silver.cms_facility_profile` to display ho
 
 **Acceptance Scenarios**:
 
-1. **Given** an aggregation silver model that summarizes multiple bronze tables, **When** detail-level data is needed by consumers, **Then** companion detail-level silver tables exist alongside the aggregation (e.g., `hcs_silver.cms_inpatient_detail` alongside `hcs_silver.cms_facility_profile`)
-2. **Given** a bronze table with 20 columns, **When** the silver model aggregates it into 5 summary metrics, **Then** the remaining 15 columns are available in a detail-level silver table
+1. **Given** an aggregation silver model that summarizes multiple bronze tables, **When** detail-level data is needed by consumers, **Then** all missing bronze columns are added directly to the existing aggregation model
+2. **Given** a bronze table with 20 columns, **When** the silver model aggregates it into 5 summary metrics, **Then** the remaining 15 columns are also present in the same silver table
 
 ---
 
@@ -67,7 +67,7 @@ A safety analyst needs individual adverse event report data (patient demographic
 
 - **FR-001**: Every silver model MUST carry forward all domain columns from its upstream bronze source(s). Only system/ETL metadata columns may be excluded: `raw_json`, `raw_source_id`, `processed_to_bronze`, `processed_to_silver`, `_bronze_loaded_at`.
 - **FR-002**: Silver models that read from a single bronze source MUST include all bronze SELECT columns in their own SELECT (plus any entity-resolution joins like molecule_id).
-- **FR-003**: Silver models that aggregate multiple bronze sources into summary metrics MUST be accompanied by detail-level silver tables that preserve the full bronze columns with entity linkage.
+- **FR-003**: Silver models that aggregate multiple bronze sources MUST add all missing bronze columns directly into the existing model. No separate detail tables needed — all columns live in one silver table per entity.
 - **FR-004**: When multiple bronze sources have columns with the same name, the silver model MUST disambiguate by prefixing with the source name (e.g., `chembl_max_phase`, `drugbank_max_phase`).
 - **FR-005**: JSONB array columns (targets, pathways, interactions, synonyms, etc.) MUST be carried through to silver as JSONB — not dropped or flattened.
 - **FR-006**: Each modified silver model MUST compile successfully with `sqlmesh plan --dry-run`.
@@ -87,8 +87,14 @@ A safety analyst needs individual adverse event report data (patient demographic
 - **SC-001**: 100% of silver models carry forward all domain columns from their upstream bronze source(s), verified by automated column-diff audit.
 - **SC-002**: External application queries against silver return all fields previously requiring direct bronze queries — zero bronze bypass needed.
 - **SC-003**: All 95 silver models compile and run without errors after modification.
-- **SC-004**: Multi-source aggregation models (cms_facility_profile, adverse_events) have companion detail tables exposing full bronze column sets.
+- **SC-004**: Multi-source aggregation models (cms_facility_profile, adverse_events) include all bronze columns directly — no separate detail tables needed.
 - **SC-005**: No net increase in query latency for existing silver consumers (new columns are additive, not replacing existing ones).
+
+## Clarifications
+
+### Session 2026-04-06
+
+- Q: Should existing aggregation silver models (cms_facility_profile, adverse_events) be kept or replaced? → A: Keep aggregation models but add all missing columns directly into them (no separate detail tables).
 
 ## Assumptions
 

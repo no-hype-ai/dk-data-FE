@@ -28,6 +28,8 @@ Auto-generated from all feature plans. Last updated: 2026-01-30
 - Python 3.11+, SQL (PostgreSQL 16.4), YAML (Kubernetes manifests) + FastAPI, psycopg2-binary, SQLMesh, httpx (MCP adapters), PostgREST v12.2.3 (025-schema-integrity-stability)
 - Python 3.11+ (job-trigger FastAPI service, CronJob pods) + FastAPI, prometheus-client, psycopg2-binary, structlog, OpenTelemetry SDK, SQLMesh (026-fetcher-checkpoint-resume)
 - PostgreSQL 16.4 (CloudNativePG cluster, `postgresql.infra.svc.cluster.local:5432`, database `dk_data`). Schemas: `raw`, `mol_raw`, `mol_bronze`, `mol_silver`, `mol_gold`, `hcs_bronze`, `hcs_silver`, `hcs_gold`, `ip_bronze`, `ip_silver`, `ind_bronze`, `ind_silver`, `meta`, `api`, `staging` (026-fetcher-checkpoint-resume)
+- SQL (PostgreSQL 16.4 dialect) for SQLMesh models, Python 3.11+ for tooling + SQLMesh >=0.90, PostgreSQL 16.4 via CloudNativePG (028-silver-column-retention)
+- PostgreSQL — silver schemas (`mol_silver`, `hcs_silver`, `ind_silver`) (028-silver-column-retention)
 
 - Python 3.11+ (existing ingestion layer), SQL (PostgreSQL 16+) + PostgREST v12.x, SQLMesh, psycopg2, Pydantic, requests (001-data-layer-postgrest-gitops)
 
@@ -47,9 +49,9 @@ cd src [ONLY COMMANDS FOR ACTIVE TECHNOLOGIES][ONLY COMMANDS FOR ACTIVE TECHNOLO
 Python 3.11+ (existing ingestion layer), SQL (PostgreSQL 16+): Follow standard conventions
 
 ## Recent Changes
+- 028-silver-column-retention: Added SQL (PostgreSQL 16.4 dialect) for SQLMesh models, Python 3.11+ for tooling + SQLMesh >=0.90, PostgreSQL 16.4 via CloudNativePG
 - 026-fetcher-checkpoint-resume: Added Python 3.11+ (job-trigger FastAPI service, CronJob pods) + FastAPI, prometheus-client, psycopg2-binary, structlog, OpenTelemetry SDK, SQLMesh
 - 025-schema-integrity-stability: Added Python 3.11+, SQL (PostgreSQL 16.4), YAML (Kubernetes manifests) + FastAPI, psycopg2-binary, SQLMesh, httpx (MCP adapters), PostgREST v12.2.3
-- 019-cms-puf-platform-reconciliation: Added Python 3.11+ (`requires-python = ">=3.11"` in `pyproject.toml`) + FastAPI 0.109+, SQLMesh >=0.90, psycopg2-binary, pandas, requests + urllib3 (retry), tenacity, loguru, anthropic SDK (LiteLLM proxy routing), kubernetes clien
 
 
 <!-- MANUAL ADDITIONS START -->
