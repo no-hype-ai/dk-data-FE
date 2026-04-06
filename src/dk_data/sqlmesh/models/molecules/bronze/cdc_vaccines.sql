@@ -44,6 +44,14 @@ SELECT DISTINCT ON (vaccine_id)
     response_body->>'manufacturer_name'                                             AS manufacturer,
     response_body->>'mvx_status'                                                    AS mvx_status,
 
+    -- Schema-compatibility columns (present in mol_silver.cdc_vaccines linkage queries).
+    -- Socrata CVX/MVX records do not carry openfda substance/route/generic/date fields;
+    -- return NULL so downstream silver models can still compile and run.
+    NULL::TEXT                                                                      AS active_substance,
+    NULL::TEXT                                                                      AS generic_name,
+    NULL::TEXT                                                                      AS route,
+    NULL::TEXT                                                                      AS effective_date,
+
     -- Raw source tracking
     response_body                                                                   AS raw_json,
     r.id                                                                            AS raw_source_id,
