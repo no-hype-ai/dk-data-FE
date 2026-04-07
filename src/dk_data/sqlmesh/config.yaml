@@ -16,7 +16,7 @@ default_gateway: local
 # Model defaults
 model_defaults:
   dialect: postgres
-  start: '2024-01-01'
+  start: '2011-01-01'  # 15 years back — covers full drug development cycles
 
 # Physical schema mapping
 # Maps logical schema names to actual PostgreSQL schemas.

@@ -511,6 +511,45 @@ def ensure_sqlmesh_initialized() -> bool:
     if is_sqlmesh_initialized():
         return True
 
+    # Safety guard: if bronze tables already have data, re-initializing would
+    # reset interval tracking and cause duplicate rows on the next sqlmesh run.
+    # This happened on 2026-04-05 when prod env was re-initialized, causing 50%
+    # duplication in clinicaltrials and chembl_activities bronze tables.
+    # See issue #255 for details.
+    try:
+        import psycopg2
+        conn = psycopg2.connect(
+            host=os.getenv("POSTGRES_HOST", "localhost"),
+            port=int(os.getenv("POSTGRES_PORT", "5432")),
+            user=os.getenv("POSTGRES_USER", "postgres"),
+            password=os.getenv("POSTGRES_PASSWORD", ""),
+            dbname=os.getenv("POSTGRES_DB", "dk_data"),
+        )
+        cur = conn.cursor()
+        cur.execute("""
+            SELECT SUM(c.reltuples::bigint)
+            FROM pg_class c
+            JOIN pg_namespace n ON n.oid = c.relnamespace
+            WHERE n.nspname IN ('mol_bronze', 'hcs_bronze')
+              AND c.relkind = 'r'
+              AND c.reltuples > 0
+        """)
+        bronze_rows = cur.fetchone()[0] or 0
+        conn.close()
+        if bronze_rows > 1000:
+            logger.error(
+                "REFUSING to re-initialize SQLMesh: bronze tables contain %d rows. "
+                "Re-initialization would reset interval tracking and cause duplicate "
+                "rows on the next transform run. If you truly need to re-initialize, "
+                "TRUNCATE the bronze tables first or set SQLMESH_FORCE_REINIT=1.",
+                bronze_rows,
+            )
+            if not os.getenv("SQLMESH_FORCE_REINIT"):
+                return False
+            logger.warning("SQLMESH_FORCE_REINIT is set — proceeding despite existing bronze data")
+    except Exception as e:
+        logger.warning("Could not check bronze row counts: %s — proceeding with init", e)
+
     # Step 1: ensure state tables exist
     if not _sqlmesh_has_state_tables():
         logger.info(

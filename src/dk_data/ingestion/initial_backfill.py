@@ -92,7 +92,8 @@ logger = logging.getLogger(__name__)
 
 # The SQLMesh start date — all models backfill from this point.
 # Set to match config.yaml model_defaults.start.
-SQLMESH_START_DATE = date(2024, 1, 1)
+# 15 years back covers full drug development cycles (Phase I → approval).
+SQLMESH_START_DATE = date(2011, 1, 1)
 
 # Sources that should be skipped during backfill (either deprecated, disabled,
 # or handled by separate file-upload workflows).
@@ -144,135 +145,100 @@ API_RATE_GROUPS: dict[str, tuple[int, set[str]]] = {
     'ebi': (2, {'europepmc'}),
 }
 
-# Per-source kwargs to pass during backfill to override conservative defaults.
-# These raise record caps for API sources whose defaults are tuned for daily incremental runs.
+# Per-source kwargs to pass during backfill.
+#
+# DESIGN PRINCIPLE: No max_records caps. Every fetcher paginates and checkpoints —
+# it handles any volume. The only control is the date window (days_back) or
+# year list. Caps cause silent data loss.
+#
+# Date window categories:
+#   - Timeless/full-corpus: no days_back (fetch all records regardless of date)
+#   - Patents & IP: 20 years (patent life = 20 years from filing)
+#   - Clinical trials: 15 years (drug development cycle = 10-15 years)
+#   - Literature & research: 10 years (current research relevance)
+#   - CMS healthcare: 5 years (trend analysis, CMS publishes yearly with 12-18mo lag)
+#   - News/RSS: 1 year (only recent articles available)
+#
 BACKFILL_SOURCE_KWARGS: dict = {
-    # OpenFDA Labels: full backfill via year-by-year partitioning (2000→present).
-    # The FDA API caps skip at 25k per query; ~170-200k total SPL documents.
-    # full_backfill=True iterates effective_time:[YEAR0101 TO YEAR1231] per year
-    # (<25k per year on average) to retrieve all labels. Duplicates across years
-    # (re-issued labels) are deduplicated at the bronze layer by set_id.
-    'openfda_labels': {'full_backfill': True},
-    # ClinicalTrials: default max_records=10000; raise for multi-year window
-    'clinicaltrials': {'max_records': 50_000},
-    # UniProt: broaden query from kinases-only to all reviewed human proteins
-    # (DEFAULT_QUERY filters to GO:0004672 kinase activity only — ~500 proteins).
-    # "reviewed:true AND organism_id:9606" covers all Swiss-Prot human entries (~20k).
-    # Raise cap to match full dataset.
-    'uniprot': {
+    # ---------------------------------------------------------------------------
+    # Full-corpus / timeless sources — no date window, no caps
+    # These are canonical reference databases. Fetch everything.
+    # ---------------------------------------------------------------------------
+    'openfda_labels': {'full_backfill': True},       # Year-partitioned full backfill
+    'openfda_faers': {'full_backfill': True},         # Year-partitioned full backfill
+    'ema_regulatory': {'days_back': None},             # All ~2641 regulatory decisions
+    'hta_bodies': {'days_back': None},                 # Full NICE TA archive
+    'cochrane': {'days_back': None},                   # Full Cochrane review set
+    'uniprot': {                                       # All reviewed human proteins
         'query': 'reviewed:true AND organism_id:9606',
-        'max_results': 25_000,
     },
-    # PDB: raise to 50k — covers all drug-target-relevant crystal structures.
-    # The fetcher paginates via RCSB paginate.start offset (500 entries/page) and
-    # loops until the final page returns fewer than 500 results.
-    'pdb': {'max_results': 50_000},
-    # EMA regulatory: days_back=None fetches full dataset (all ~2641 records)
-    'ema_regulatory': {'days_back': None},
-    # Cochrane: raise to get full historical review set
-    'cochrane': {'max_records': 10_000, 'days_back': None},
-    # KEGG: raise to fetch all ~12,000 drug entries (default 5000)
-    'kegg_drug': {'max_entries': 15_000},
     # ---------------------------------------------------------------------------
-    # Incremental API sources — raise max_records for a 457-day backfill window.
-    # The orchestrator already passes days_back=compute_backfill_days()≈457 to
-    # every API source; without raised caps the fetchers hit their per-run
-    # defaults (5k-10k) and miss historical records.
+    # Patents & IP — 20 years (patent life from filing)
     # ---------------------------------------------------------------------------
-    # ChEMBL activities: remove 500k safety cap — fetch all ~17-20M bioactivity records.
-    # Paginated at 1000/req with 1s delay → ~5-6 hours. One-time cost for complete coverage.
-    # Set to None: the fetcher's `if max_records and count >= max_records` check is falsy.
-    'chembl_activities': {'max_records': None},
-    # Literature
-    'pubmed': {'max_records': 50_000},          # default: 10k; 457-day drug query can exceed that
-    'europepmc': {'max_records': 50_000},        # default: 10k
-    # Regulatory / CI (full-history fetches)
-    'hta_bodies': {'days_back': None},           # default: 90 days; fetch full NICE TA archive
-    'openalex_ci': {'max_records': 100_000},     # default: 10k; OpenAlex has cursor pagination
-    'sec_edgar': {'max_records': 20_000},        # default: 5k; pharma filings 457 days
-    # Patents (full 457-day window)
-    'epo_ops': {'max_records': 20_000},          # default: 5k; EPO patent family search
-    'uspto_patents': {'max_records': 50_000},    # default: 10k; PatentsView full history
-    'uspto_ci': {'max_records': 50_000},         # default: 10k; CI patent subset
-    # NIH Reporter: raise for full 457-day grant window
-    'nih_reporter': {'max_records': 50_000},     # default: 10k; active pharma grants
-    # FDA NDC: 100k+ products — paginator fetches all but explicit cap avoids early exit
-    'fda_ndc': {'max_records': 150_000},
-    # FDA drugs: ~30k applications
-    'fda_drugs': {'max_records': 35_000},
-    # FDA REMS: ~80 active REMS programs — small static set, full fetch
-    'fda_rems': {'max_records': 200},
+    'uspto_patents': {'days_back': 7300},
+    'uspto_ci': {'days_back': 7300},
+    'epo_ops': {'days_back': 7300},
+    'euipo_trademarks': {'days_back': 3650},           # 10yr (trademark renewal cycle)
+    'euipo_designs': {'days_back': 3650},              # 10yr
     # ---------------------------------------------------------------------------
-    # CMS PUF multi-year backfill (service years 2021-2023).
+    # Clinical trials — 15 years (full drug development cycle)
+    # ---------------------------------------------------------------------------
+    'clinicaltrials': {'days_back': 5475},
+    # ---------------------------------------------------------------------------
+    # Literature & research — 10 years
+    # ---------------------------------------------------------------------------
+    'pubmed': {'days_back': 3650},
+    'europepmc': {'days_back': 3650},
+    'openalex_ci': {'days_back': 3650},
+    'nih_reporter': {'days_back': 3650},
+    'sec_edgar': {'days_back': 3650},
+    # ---------------------------------------------------------------------------
+    # CMS PUF multi-year backfill — 5 years (2019-2023).
     # Year-specific sub-UUIDs are discovered dynamically from data.cms.gov/data.json
     # (cached 24h via cms_downloader._get_catalog). No hardcoded UUIDs needed.
     # The most recent available service year is 2023 (12-18 month CMS lag).
     # ---------------------------------------------------------------------------
-    # Physician & Other Practitioners — by Provider (NPI-level aggregate)
-    'cms_physician_puf': {'years': [2021, 2022, 2023]},
-    # Physician & Other Practitioners — by Provider and Service (HCPCS-level)
-    'cms_physician_puf_services': {'years': [2021, 2022, 2023]},
-    # Specialty subsets of physician_puf_services (same UUID, filtered by provider type)
-    'cms_imaging_puf': {'years': [2021, 2022, 2023]},
-    'cms_lab_services': {'years': [2021, 2022, 2023]},
-    'cms_mental_health_puf': {'years': [2021, 2022, 2023]},
-    'cms_telehealth_puf': {'years': [2021, 2022, 2023]},
+    # Physician & Other Practitioners
+    'cms_physician_puf': {'years': [2019, 2020, 2021, 2022, 2023]},
+    'cms_physician_puf_services': {'years': [2019, 2020, 2021, 2022, 2023]},
+    # Specialty subsets
+    'cms_imaging_puf': {'years': [2019, 2020, 2021, 2022, 2023]},
+    'cms_lab_services': {'years': [2019, 2020, 2021, 2022, 2023]},
+    'cms_mental_health_puf': {'years': [2019, 2020, 2021, 2022, 2023]},
+    'cms_telehealth_puf': {'years': [2019, 2020, 2021, 2022, 2023]},
     # Outpatient / Inpatient hospitals
-    'cms_outpatient_puf': {'years': [2021, 2022, 2023]},
-    'cms_inpatient_puf': {'years': [2021, 2022, 2023]},
-    # Part D Prescribers (and opioid subset that uses same UUID)
-    'cms_part_d_prescriber': {'years': [2021, 2022, 2023]},
-    'cms_opioid_puf': {'years': [2021, 2022, 2023]},
+    'cms_outpatient_puf': {'years': [2019, 2020, 2021, 2022, 2023]},
+    'cms_inpatient_puf': {'years': [2019, 2020, 2021, 2022, 2023]},
+    # Part D Prescribers
+    'cms_part_d_prescriber': {'years': [2019, 2020, 2021, 2022, 2023]},
+    'cms_opioid_puf': {'years': [2019, 2020, 2021, 2022, 2023]},
     # Post-acute care
-    'cms_dme_puf': {'years': [2021, 2022, 2023]},
-    'cms_hospice_puf': {'years': [2021, 2022, 2023]},
-    'cms_snf_puf': {'years': [2021, 2022, 2023]},
-    'cms_home_health': {'years': [2021, 2022, 2023]},
+    'cms_dme_puf': {'years': [2019, 2020, 2021, 2022, 2023]},
+    'cms_hospice_puf': {'years': [2019, 2020, 2021, 2022, 2023]},
+    'cms_snf_puf': {'years': [2019, 2020, 2021, 2022, 2023]},
+    'cms_home_health': {'years': [2019, 2020, 2021, 2022, 2023]},
     # Hospital cost reports
-    'cms_cost_reports_puf': {'years': [2021, 2022, 2023]},
-    'cms_cost_reports_puf_lines': {'years': [2021, 2022, 2023]},
+    'cms_cost_reports_puf': {'years': [2019, 2020, 2021, 2022, 2023]},
+    'cms_cost_reports_puf_lines': {'years': [2019, 2020, 2021, 2022, 2023]},
     # Geographic / enrollment / chronic conditions
-    'cms_geographic_variation': {'years': [2021, 2022, 2023]},
-    'cms_chronic_conditions': {'years': [2021, 2022, 2023]},
-    'cms_dual_eligible': {'years': [2021, 2022, 2023]},
-    'cms_enrollment_puf': {'years': [2021, 2022, 2023]},
-    'cms_claim_type_puf': {'years': [2021, 2022, 2023]},
-    'cms_utilization_puf': {'years': [2021, 2022, 2023]},
+    'cms_geographic_variation': {'years': [2019, 2020, 2021, 2022, 2023]},
+    'cms_chronic_conditions': {'years': [2019, 2020, 2021, 2022, 2023]},
+    'cms_dual_eligible': {'years': [2019, 2020, 2021, 2022, 2023]},
+    'cms_enrollment_puf': {'years': [2019, 2020, 2021, 2022, 2023]},
+    'cms_claim_type_puf': {'years': [2019, 2020, 2021, 2022, 2023]},
+    'cms_utilization_puf': {'years': [2019, 2020, 2021, 2022, 2023]},
     # Provider directory
-    'cms_nppes': {'years': [2021, 2022, 2023]},
-    'cms_referring_providers': {'years': [2021, 2022, 2023]},
-    'cms_ordering_providers': {'years': [2021, 2022, 2023]},
+    'cms_nppes': {'years': [2019, 2020, 2021, 2022, 2023]},
+    'cms_referring_providers': {'years': [2019, 2020, 2021, 2022, 2023]},
+    'cms_ordering_providers': {'years': [2019, 2020, 2021, 2022, 2023]},
     # Drug / payment
-    'cms_part_d_spending': {'years': [2021, 2022, 2023]},
-    'cms_part_b_spending': {'years': [2021, 2022, 2023]},
-    'cms_open_payments': {'years': [2021, 2022, 2023]},
-    'cms_medicaid_drug_spending': {'years': [2021, 2022, 2023]},
-    'cms_medicare_advantage': {'years': [2021, 2022, 2023]},
+    'cms_part_d_spending': {'years': [2019, 2020, 2021, 2022, 2023]},
+    'cms_part_b_spending': {'years': [2019, 2020, 2021, 2022, 2023]},
+    'cms_open_payments': {'years': [2019, 2020, 2021, 2022, 2023]},
+    'cms_medicaid_drug_spending': {'years': [2019, 2020, 2021, 2022, 2023]},
+    'cms_medicare_advantage': {'years': [2019, 2020, 2021, 2022, 2023]},
     # Hospital info
-    'cms_hospital_general_info': {'years': [2021, 2022, 2023]},
-    # ---------------------------------------------------------------------------
-    # New high-volume sources added in 019-cms-puf-platform-reconciliation
-    # ---------------------------------------------------------------------------
-    # ChEMBL molecules: ~2.4M compounds, paginated at 1000/req — full dataset needed.
-    # No days_back for bulk reference data; None removes the cap entirely.
-    'chembl_molecules': {'max_records': None},
-    # PubChem: drug-relevant compound subset; ~2M records paginated via SDQ API.
-    'pubchem': {'max_records': 2_000_000},
-    # OpenFDA FAERS: year-partitioned same as openfda_labels; ~20M total adverse events.
-    # full_backfill=True iterates receivedate:[YEAR0101 TO YEAR1231] per year.
-    'openfda_faers': {'full_backfill': True},
-    # NPI Registry: ~7M providers; fetcher paginates at 200/req with skip.
-    'npi_registry': {'max_records': 7_000_000},
-    # Purple Book (FDA BLAs): ~4k biological products — small dataset, no cap needed.
-    'purple_book': {'max_records': 10_000},
-    # Reactome: ~15k pathways; full reference dataset.
-    'reactome': {'max_records': 25_000},
-    # WHO GHO: health indicator data; moderate volume.
-    'who_gho': {'max_records': 10_000},
-    # NICE HTA: all guidance types (TA/HST/IPG/MTA); ~4k total records.
-    'nice_hta': {'max_records': 5_000},
-    # CMS Medicare: utilization/payment data; volume depends on dataset UUID.
-    'cms_medicare': {'max_records': None},
+    'cms_hospital_general_info': {'years': [2019, 2020, 2021, 2022, 2023]},
 }
 
 
