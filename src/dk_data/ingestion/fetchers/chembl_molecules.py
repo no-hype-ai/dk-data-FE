@@ -34,7 +34,7 @@ logger = logging.getLogger(__name__)
 _API_URL = "https://www.ebi.ac.uk/chembl/api/data/molecule.json"
 _PAGE_SIZE = 1000
 _REQUEST_DELAY = 0.2
-_CHECKPOINT_INTERVAL = 50  # save checkpoint every 50 pages (= 50k records)
+_CHECKPOINT_INTERVAL = 10  # flush every 10 pages (10k records) to stay within 512Mi pod limit
 
 
 class ChEMBLMoleculesFetcher(BaseFetcher):

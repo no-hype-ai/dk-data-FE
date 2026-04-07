@@ -46,7 +46,7 @@ REQUEST_DELAY_WITH_KEY = 0.1   # seconds between cursor pages (authenticated)
 REQUEST_DELAY_NO_KEY   = 0.5   # seconds between cursor pages (unauthenticated)
 
 # Flush to DB and checkpoint every N pages (200 records/page × 50 = 10 000 records per flush)
-CHECKPOINT_INTERVAL = 50
+CHECKPOINT_INTERVAL = 5  # flush every 5 pages (1,000 works) to stay within 512Mi pod limit
 
 
 class OpenAlexCIFetcher(BaseFetcher):

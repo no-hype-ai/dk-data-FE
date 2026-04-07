@@ -40,7 +40,7 @@ DEFAULT_MAX_RECORDS = None
 REQUEST_DELAY = 0.15
 
 # Flush to DB and checkpoint every N pages (200 studies/page × 25 = 5000 studies per flush)
-CHECKPOINT_INTERVAL = 25
+CHECKPOINT_INTERVAL = 5  # flush every 5 pages (1,000 studies) to stay within 512Mi pod limit
 
 
 class ClinicalTrialsFetcher(BaseFetcher):

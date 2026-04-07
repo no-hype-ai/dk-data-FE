@@ -49,7 +49,7 @@ MAX_RECORDS = None
 REQUEST_DELAY = 0.12
 
 # Flush to DB and checkpoint every N pages (100 records/page × 50 = 5000 records per flush)
-CHECKPOINT_INTERVAL = 50
+CHECKPOINT_INTERVAL = 5  # flush every 5 pages (1,000 articles) to stay within 512Mi pod limit
 
 
 class EuropePMCFetcher(BaseFetcher):

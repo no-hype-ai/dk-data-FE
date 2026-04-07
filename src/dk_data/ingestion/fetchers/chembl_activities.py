@@ -37,7 +37,7 @@ logger = logging.getLogger(__name__)
 _API_URL = "https://www.ebi.ac.uk/chembl/api/data/activity.json"
 _PAGE_SIZE = 1000
 _REQUEST_DELAY = 1.0   # 1 req/sec — ChEMBL fair-use recommendation
-_CHECKPOINT_INTERVAL = 50  # save checkpoint every 50 pages (= 50k activities)
+_CHECKPOINT_INTERVAL = 10  # flush every 10 pages (10k activities) to stay within 512Mi pod limit
 
 
 class ChEMBLActivitiesFetcher(BaseFetcher):
