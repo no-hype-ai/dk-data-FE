@@ -288,6 +288,10 @@ def _fetch_one(source: str, data_dir: str, days_back: int | None,
     try:
         extra_kwargs = BACKFILL_SOURCE_KWARGS.get(source, {})
 
+        # If extra_kwargs has days_back, it overrides the computed window.
+        # This allows per-source date depth (e.g., patents=20yr, literature=10yr).
+        effective_days_back = extra_kwargs.pop('days_back', days_back)
+
         # S7: retry transient failures with exponential backoff.
         # Individual fetcher HTTP sessions already retry 429/5xx at the request level;
         # this catches failures above that (connection reset, schema errors, etc.).
@@ -298,7 +302,7 @@ def _fetch_one(source: str, data_dir: str, days_back: int | None,
             return run_ingestion(
                 source=source,
                 data_dir=data_dir,
-                days_back=days_back,
+                days_back=effective_days_back,
                 **extra_kwargs,
             )
 
