@@ -19,7 +19,7 @@ MODEL (
     grain pmid
 );
 
-SELECT
+SELECT DISTINCT ON (b.pmid)
     gen_random_uuid()                                   AS id,
     -- Tier 1: MeSH term → alias_name_normalized exact match
     -- Tier 2: canonical_name substring in title (fallback for articles without drug MeSH terms)
@@ -55,4 +55,5 @@ SELECT
     NOW()                                               AS created_at
 
 FROM mol_bronze.pubmed b
-WHERE b.pmid IS NOT NULL;
+WHERE b.pmid IS NOT NULL
+ORDER BY b.pmid, b.source_updated_at DESC NULLS LAST;

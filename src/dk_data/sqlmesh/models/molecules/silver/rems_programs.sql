@@ -25,7 +25,7 @@ MODEL (
     grain (molecule_id, application_number)
 );
 
-SELECT
+SELECT DISTINCT ON (b.application_number)
     gen_random_uuid()                                               AS rems_id,
 
     -- molecule_id: 3-tier lookup
@@ -70,4 +70,5 @@ SELECT
 
 FROM mol_bronze.fda_rems b
 WHERE b.application_number IS NOT NULL
-  AND b.processed_to_silver = FALSE;
+  AND b.processed_to_silver = FALSE
+ORDER BY b.application_number, b.source_updated_at DESC NULLS LAST;

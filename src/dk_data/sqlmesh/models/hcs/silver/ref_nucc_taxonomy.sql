@@ -13,7 +13,7 @@ MODEL (
     grain (taxonomy_code)
 );
 
-SELECT
+SELECT DISTINCT ON (taxonomy_code)
     gen_random_uuid()                           AS id,
     taxonomy_code,
     taxonomy_type                               AS type,
@@ -23,4 +23,6 @@ SELECT
     ingested_at,
     ingested_at                                 AS source_updated_at,
     NOW()                                       AS created_at
-FROM hcs_bronze.cms_nucc;
+FROM hcs_bronze.cms_nucc
+WHERE taxonomy_code IS NOT NULL
+ORDER BY taxonomy_code, ingested_at DESC;

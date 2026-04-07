@@ -12,7 +12,7 @@ MODEL (
     grain content_hash
 );
 
-SELECT
+SELECT DISTINCT ON (content_hash)
     id,
     content_hash,
     molecule_id,
@@ -34,4 +34,5 @@ SELECT
     NOW() AS updated_at
 FROM mol_agents.publication_evidence_staging
 WHERE promoted_at IS NULL
-  AND confidence_score >= 0.40;
+  AND confidence_score >= 0.40
+ORDER BY content_hash, staged_at DESC NULLS LAST;

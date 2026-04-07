@@ -20,7 +20,7 @@ MODEL (
     grain project_num
 );
 
-SELECT
+SELECT DISTINCT ON (n.project_num)
     gen_random_uuid()       AS id,
 
     -- NIH identifiers (exact bronze column names from mol_bronze.nih_reporter)
@@ -75,4 +75,5 @@ SELECT
 FROM mol_bronze.nih_reporter n
 WHERE
     n.processed_to_silver = FALSE
-    AND n.project_num IS NOT NULL;
+    AND n.project_num IS NOT NULL
+ORDER BY n.project_num, n.source_updated_at DESC NULLS LAST;

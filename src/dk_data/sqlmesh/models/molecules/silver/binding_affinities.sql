@@ -22,7 +22,7 @@ MODEL (
     grain bindingdb_id
 );
 
-SELECT
+SELECT DISTINCT ON (b.bindingdb_id)
     gen_random_uuid()                                           AS id,
 
     -- Entity linkage: first matching strategy wins
@@ -99,4 +99,5 @@ LEFT JOIN mol_silver.pubchem pc_cid
       AND pc_cid.cid = b.pubchem_cid::BIGINT
 
 WHERE b.bindingdb_id IS NOT NULL
-  AND b.activity_value IS NOT NULL;
+  AND b.activity_value IS NOT NULL
+ORDER BY b.bindingdb_id, b.ingested_at DESC NULLS LAST;

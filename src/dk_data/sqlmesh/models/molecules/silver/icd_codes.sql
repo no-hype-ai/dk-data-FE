@@ -28,7 +28,7 @@ MODEL (
     grain icd_code
 );
 
-SELECT
+SELECT DISTINCT ON (icd_code)
     gen_random_uuid()                                    AS id,
     icd_code::TEXT                                       AS icd_code,
     title::TEXT                                          AS title,
@@ -102,4 +102,5 @@ FROM mol_bronze.who_icd
 WHERE
     processed_to_silver = FALSE
     AND icd_code IS NOT NULL
-    AND title IS NOT NULL;
+    AND title IS NOT NULL
+ORDER BY icd_code, source_updated_at DESC NULLS LAST;

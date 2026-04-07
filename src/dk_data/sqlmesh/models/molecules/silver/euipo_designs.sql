@@ -15,7 +15,7 @@ MODEL (
     grain application_number
 );
 
-SELECT
+SELECT DISTINCT ON (b.application_number)
     gen_random_uuid()               AS id,
     b.application_number,
     b.design_title,
@@ -40,3 +40,4 @@ SELECT
 FROM mol_bronze.euipo_designs b
 WHERE b.application_number IS NOT NULL
   AND b.is_healthcare_related = TRUE
+ORDER BY b.application_number, b._loaded_at DESC NULLS LAST

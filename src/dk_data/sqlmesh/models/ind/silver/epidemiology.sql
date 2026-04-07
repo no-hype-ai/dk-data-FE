@@ -18,7 +18,7 @@ MODEL (
 );
 
 -- WHO GHO epidemiology data joined via indicator mapping
-SELECT
+SELECT DISTINCT ON (m.icd10_code, g.spatial_dim, g.time_dim, g.source)
     gen_random_uuid()                                                       AS id,
     m.icd10_code,
     -- Ontology enrichment (therapeutic area + canonical indication name)
@@ -63,4 +63,5 @@ LEFT JOIN ind_silver.indication_ontology o
     ON o.icd10_code = m.icd10_code
 WHERE g.processed_to_silver = FALSE
   AND g.spatial_dim IS NOT NULL
-  AND g.time_dim IS NOT NULL;
+  AND g.time_dim IS NOT NULL
+ORDER BY m.icd10_code, g.spatial_dim, g.time_dim, g.source, g.ingested_at DESC;

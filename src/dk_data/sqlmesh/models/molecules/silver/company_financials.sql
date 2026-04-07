@@ -22,7 +22,7 @@ MODEL (
     grain filing_id
 );
 
-SELECT
+SELECT DISTINCT ON (e.filing_id)
     gen_random_uuid()           AS id,
 
     -- Filing identifiers (exact bronze column names from mol_bronze.sec_edgar)
@@ -48,4 +48,5 @@ SELECT
 FROM mol_bronze.sec_edgar e
 WHERE
     e.processed_to_silver = FALSE
-    AND e.cik IS NOT NULL;
+    AND e.cik IS NOT NULL
+ORDER BY e.filing_id, e.source_updated_at DESC NULLS LAST;

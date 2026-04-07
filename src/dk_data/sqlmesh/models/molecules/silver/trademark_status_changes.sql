@@ -24,7 +24,7 @@ MODEL (
     grain (trademark_identifier, source, changed_at)
 );
 
-SELECT
+SELECT DISTINCT ON (h.trademark_identifier, h.source, h.changed_at)
     h.trademark_identifier,
     h.source,
     h.old_status,
@@ -67,4 +67,5 @@ LEFT JOIN mol_silver.molecule_aliases ma
       AND LOWER(REGEXP_REPLACE(t.mark_name, '[^a-zA-Z0-9]', '', 'g'))
           = ma.alias_name_normalized
 LEFT JOIN mol_silver.molecules m_alias
-       ON m_alias.molecule_id = ma.molecule_id;
+       ON m_alias.molecule_id = ma.molecule_id
+ORDER BY h.trademark_identifier, h.source, h.changed_at, h.source_updated_at DESC NULLS LAST;

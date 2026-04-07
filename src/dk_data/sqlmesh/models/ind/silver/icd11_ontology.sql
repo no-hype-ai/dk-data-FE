@@ -40,7 +40,7 @@ MODEL (
     grain icd11_code
 );
 
-SELECT
+SELECT DISTINCT ON (b.icd11_code)
     gen_random_uuid()                   AS id,
     b.icd11_code,
     b.title,
@@ -99,4 +99,5 @@ SELECT
     NOW()                               AS updated_at
 
 FROM ind_bronze.icd11_codes b
-WHERE b.icd11_code IS NOT NULL;
+WHERE b.icd11_code IS NOT NULL
+ORDER BY b.icd11_code, b.source_updated_at DESC;

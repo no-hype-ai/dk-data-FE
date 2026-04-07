@@ -16,7 +16,7 @@ MODEL (
     grain (drug_a, drug_b)
 );
 
-SELECT
+SELECT DISTINCT ON (b.drug_a, b.drug_b)
     gen_random_uuid()               AS id,
     b.drug_a,
     b.drug_b,
@@ -59,3 +59,4 @@ LEFT JOIN LATERAL (
 
 WHERE b.drug_a IS NOT NULL
   AND b.drug_b IS NOT NULL
+ORDER BY b.drug_a, b.drug_b, b.ingested_at DESC
