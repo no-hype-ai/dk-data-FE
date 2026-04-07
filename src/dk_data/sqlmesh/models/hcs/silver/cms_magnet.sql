@@ -15,7 +15,7 @@ MODEL (
     grain (facility_name, city, state)
 );
 
-SELECT
+SELECT DISTINCT ON (b.facility_name, b.city, b.state)
     gen_random_uuid()               AS id,
     b.facility_name,
     b.city,
@@ -45,3 +45,4 @@ LEFT JOIN hcs_bronze.cms_care_compare cc
       AND LOWER(cc.city)          = LOWER(b.city)
       AND LOWER(cc.state)         = LOWER(b.state)
 WHERE b.facility_name IS NOT NULL
+ORDER BY b.facility_name, b.city, b.state, b.ingested_at DESC

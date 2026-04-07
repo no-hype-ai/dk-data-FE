@@ -14,7 +14,7 @@ MODEL (
     )
 );
 
-SELECT
+SELECT DISTINCT ON (b.search_query, b.result_url)
     gen_random_uuid()                                   AS id,
     COALESCE(m_exact.molecule_id, m_alias.molecule_id) AS molecule_id,
     b.search_query,
@@ -48,4 +48,5 @@ LEFT JOIN mol_silver.molecule_aliases ma
 LEFT JOIN mol_silver.molecules m_alias
        ON m_alias.molecule_id = ma.molecule_id
 WHERE b.result_url IS NOT NULL
-  AND b.search_query IS NOT NULL;
+  AND b.search_query IS NOT NULL
+ORDER BY b.search_query, b.result_url, b.source_updated_at DESC NULLS LAST;

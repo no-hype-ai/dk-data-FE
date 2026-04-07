@@ -16,7 +16,7 @@ MODEL (
     grain (application_number, product_number)
 );
 
-SELECT
+SELECT DISTINCT ON (b.application_number, b.product_number)
     b.application_number,
     b.product_number,
     b.ingredient                        AS active_ingredient,
@@ -52,3 +52,4 @@ FROM mol_bronze.orange_book AS b
 LEFT JOIN mol_silver.molecules AS m
     ON LOWER(TRIM(b.ingredient)) = LOWER(TRIM(m.canonical_name))
 WHERE b.application_number IS NOT NULL
+ORDER BY b.application_number, b.product_number, b.source_updated_at DESC NULLS LAST

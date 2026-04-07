@@ -16,7 +16,7 @@ MODEL (
     grain rxcui
 );
 
-SELECT
+SELECT DISTINCT ON (b.rxcui)
     gen_random_uuid()               AS id,
     b.rxcui,
     b.tty,
@@ -56,3 +56,4 @@ LEFT JOIN LATERAL (
 ) mol_alias ON TRUE
 
 WHERE b.rxcui IS NOT NULL
+ORDER BY b.rxcui, b.ingested_at DESC

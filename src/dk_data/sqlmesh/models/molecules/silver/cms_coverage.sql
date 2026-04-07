@@ -17,7 +17,7 @@ MODEL (
     grain coverage_id
 );
 
-SELECT
+SELECT DISTINCT ON (b.coverage_id)
     gen_random_uuid()               AS id,
     b.coverage_id,
     b.endpoint,
@@ -50,3 +50,4 @@ LEFT JOIN LATERAL (
     LIMIT 1
 ) alias_match ON TRUE
 WHERE b.coverage_id IS NOT NULL
+ORDER BY b.coverage_id, b.source_updated_at DESC NULLS LAST

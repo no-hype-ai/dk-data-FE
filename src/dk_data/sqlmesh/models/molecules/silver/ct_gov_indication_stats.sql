@@ -15,7 +15,7 @@ MODEL (
     grain condition_query
 );
 
-SELECT
+SELECT DISTINCT ON (b.condition_query)
     gen_random_uuid()                                   AS id,
     COALESCE(m_exact.molecule_id, m_alias.molecule_id) AS molecule_id,
     b.condition_query,
@@ -40,4 +40,5 @@ LEFT JOIN mol_silver.molecule_aliases ma
 LEFT JOIN mol_silver.molecules m_alias
        ON m_alias.molecule_id = ma.molecule_id
 WHERE b.condition_query IS NOT NULL
-  AND b.total_count IS NOT NULL;
+  AND b.total_count IS NOT NULL
+ORDER BY b.condition_query, b.request_timestamp DESC NULLS LAST;

@@ -17,7 +17,7 @@ MODEL (
     grain application_number
 );
 
-SELECT
+SELECT DISTINCT ON (b.application_number)
     b.application_number,
     b.application_type,
     b.sponsor_name,
@@ -43,3 +43,4 @@ FROM mol_bronze.fda_drugs AS b
 LEFT JOIN mol_silver.molecules AS m
     ON LOWER(TRIM(b.generic_name)) = LOWER(TRIM(m.canonical_name))
 WHERE b.application_number IS NOT NULL
+ORDER BY b.application_number, b.source_updated_at DESC NULLS LAST

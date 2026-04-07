@@ -14,7 +14,7 @@ MODEL (
     )
 );
 
-SELECT
+SELECT DISTINCT ON (b.cid)
     gen_random_uuid()                       AS pubchem_id,
     m.molecule_id,
     b.cid,
@@ -68,4 +68,5 @@ SELECT
 FROM mol_bronze.pubchem b
 LEFT JOIN mol_silver.molecules m ON LOWER(m.inchi_key) = LOWER(b.inchi_key)
 WHERE b.cid IS NOT NULL
-  AND b.inchi_key IS NOT NULL;
+  AND b.inchi_key IS NOT NULL
+ORDER BY b.cid, b.source_updated_at DESC NULLS LAST;

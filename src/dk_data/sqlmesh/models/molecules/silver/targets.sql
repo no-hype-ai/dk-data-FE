@@ -62,7 +62,7 @@ chembl_id_enrichment AS (
     WHERE chembl_target_id IS NOT NULL AND uniprot_id IS NOT NULL
 )
 
-SELECT
+SELECT DISTINCT ON (ut.uniprot_id)
     gen_random_uuid() AS id,
     ut.uniprot_id,
     ut.target_name,
@@ -105,7 +105,8 @@ SELECT
     NOW() AS created_at,
     NOW() AS updated_at
 FROM uniprot_targets ut
-LEFT JOIN chembl_id_enrichment ce ON ce.uniprot_id = ut.uniprot_id;
+LEFT JOIN chembl_id_enrichment ce ON ce.uniprot_id = ut.uniprot_id
+ORDER BY ut.uniprot_id, ut.source_updated_at DESC NULLS LAST;
 
 
 -- NOTE: Bronze processed_to_silver flag updates are handled outside SQLMesh.

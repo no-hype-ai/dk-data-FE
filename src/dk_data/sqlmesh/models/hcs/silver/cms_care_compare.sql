@@ -14,7 +14,7 @@ MODEL (
     grain facility_id
 );
 
-SELECT
+SELECT DISTINCT ON (b.facility_id)
     gen_random_uuid()               AS id,
     b.facility_id,
     b.facility_name,
@@ -36,3 +36,4 @@ SELECT
 
 FROM hcs_bronze.cms_care_compare b
 WHERE b.facility_id IS NOT NULL
+ORDER BY b.facility_id, b.ingested_at DESC

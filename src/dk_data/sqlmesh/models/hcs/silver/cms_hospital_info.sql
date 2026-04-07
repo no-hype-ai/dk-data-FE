@@ -14,7 +14,7 @@ MODEL (
     grain provider_id
 );
 
-SELECT
+SELECT DISTINCT ON (b.provider_id)
     gen_random_uuid()           AS id,
     b.provider_id,
     b.hospital_name,
@@ -35,3 +35,4 @@ SELECT
 
 FROM hcs_bronze.cms_hospital_info b
 WHERE b.provider_id IS NOT NULL
+ORDER BY b.provider_id, b.source_updated_at DESC

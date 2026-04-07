@@ -12,7 +12,7 @@ MODEL (
     )
 );
 
-SELECT
+SELECT DISTINCT ON (b.compound_id, b.dataset_name)
     gen_random_uuid()                                                   AS id,
 
     -- Entity linking (priority order):
@@ -51,4 +51,5 @@ LEFT JOIN mol_silver.identifier_mappings m_chembl
       AND m_chembl.identifier_value = TRIM('"' FROM b.compound_id)
 
 WHERE b.compound_id IS NOT NULL
-  AND b.dataset_name IS NOT NULL;
+  AND b.dataset_name IS NOT NULL
+ORDER BY b.compound_id, b.dataset_name, b.source_updated_at DESC NULLS LAST;

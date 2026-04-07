@@ -15,7 +15,7 @@ MODEL (
     )
 );
 
-SELECT
+SELECT DISTINCT ON (b.drugbank_id)
     gen_random_uuid()                       AS drugbank_silver_id,
     m.molecule_id,
     b.drugbank_id,
@@ -94,4 +94,5 @@ LEFT JOIN mol_silver.molecules m ON (
     -- Biologics (antibodies, proteins): no inchi_key, match via canonical name
     OR (b.inchi_key IS NULL AND LOWER(m.canonical_name) = LOWER(b.name))
 )
-WHERE b.drugbank_id IS NOT NULL;
+WHERE b.drugbank_id IS NOT NULL
+ORDER BY b.drugbank_id, b.source_updated_at DESC NULLS LAST;

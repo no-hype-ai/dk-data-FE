@@ -22,7 +22,7 @@ MODEL (
     grain uniprot_id
 );
 
-SELECT
+SELECT DISTINCT ON (u.uniprot_id)
     gen_random_uuid()           AS id,
 
     -- Link to mol_silver.molecules (may be NULL if protein has no small-molecule drug link)
@@ -80,4 +80,5 @@ LEFT JOIN mol_silver.identifier_mappings im
     AND im.identifier_value = u.uniprot_id
 WHERE
     u.processed_to_silver = FALSE
-    AND u.uniprot_id IS NOT NULL;
+    AND u.uniprot_id IS NOT NULL
+ORDER BY u.uniprot_id, u.source_updated_at DESC NULLS LAST;

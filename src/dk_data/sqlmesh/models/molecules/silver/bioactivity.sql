@@ -21,7 +21,7 @@ MODEL (
     grain activity_id
 );
 
-SELECT
+SELECT DISTINCT ON (b.activity_id)
     gen_random_uuid()                                               AS id,
     b.chembl_id,
 
@@ -86,4 +86,5 @@ SELECT
 FROM mol_bronze.chembl_activities b
 WHERE b.activity_id IS NOT NULL
   AND b.chembl_id IS NOT NULL
-  AND b.source_updated_at BETWEEN @start_dt AND @end_dt;
+  AND b.source_updated_at BETWEEN @start_dt AND @end_dt
+ORDER BY b.activity_id, b.source_updated_at DESC NULLS LAST;

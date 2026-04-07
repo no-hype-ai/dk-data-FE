@@ -17,7 +17,7 @@ MODEL (
     grain product_number
 );
 
-SELECT
+SELECT DISTINCT ON (b.product_number)
     b.product_number,
     b.product_name,
     b.active_substance,
@@ -42,3 +42,4 @@ LEFT JOIN mol_silver.molecules AS m
     ON LOWER(TRIM(b.active_substance)) = LOWER(TRIM(m.canonical_name))
 WHERE b.product_number IS NOT NULL
   AND b.product_name IS NOT NULL
+ORDER BY b.product_number, b.source_updated_at DESC NULLS LAST
