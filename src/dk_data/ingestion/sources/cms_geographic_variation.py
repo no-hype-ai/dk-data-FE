@@ -8,7 +8,10 @@ Column names follow the exact CMS GV PUF field names (mixed case with underscore
 
 import hashlib
 import logging
+from datetime import datetime, timezone
 from pathlib import Path
+from typing import List, Optional, Dict
+
 import pandas as pd
 from ..utils.database import apply_column_mapping, get_connection, get_cursor, upsert_records
 
@@ -78,44 +81,65 @@ def calculate_file_hash(filepath: str) -> str:
 
 
 def load_cms_geographic_variation(
-    filepath: str,
+    filepath: Optional[str] = None,
+    rows: Optional[List[Dict]] = None,
+    source_year: int = 2023,
+    max_records: int = 0,
+    source_hash: Optional[str] = None,
     year: int = None,
     batch_size: int = 1000,
-    max_records: int = 0,
 ) -> dict:
     """
-    Load CMS Geographic Variation PUF from a CSV file.
+    Load CMS Geographic Variation PUF from a CSV file or streaming rows.
 
     Args:
         filepath: Path to the CMS GV PUF CSV file.
-        year: Reference year of the data (e.g., 2022).
+        rows: List of dicts from API streaming mode.
+        source_year: Reference year of the data (e.g., 2022).
+        max_records: Max records to load (0 = unlimited).
+        source_hash: Optional pre-computed hash for lineage.
+        year: Alias for source_year (legacy compat).
         batch_size: Number of records to commit at once.
 
     Returns:
         Dictionary with ingestion statistics.
     """
-    logger.info(f"Loading CMS Geographic Variation ({year}) from {filepath}")
+    # Legacy compat: if year is passed but source_year is default, use year
+    if year is not None and source_year == 2023:
+        source_year = year
 
-    source_hash = calculate_file_hash(filepath)
-    source_file = Path(filepath).name
+    logger.info(f"Loading CMS Geographic Variation (year={source_year})")
 
-    # Idempotency check — skip if this exact file was already loaded
-    with get_cursor() as cur:
-        cur.execute("""
-            SELECT COUNT(*) FROM hcs_raw.cms_geographic_variation
-            WHERE _source_hash = %s
-        """, (source_hash,))
-        if cur.fetchone()[0] > 0:
-            logger.warning(f"File {source_file} already loaded. Skipping.")
-            return {'status': 'skipped', 'records_fetched': 0, 'records_inserted': 0, 'records_updated': 0, 'errors': []}
+    if rows is not None:
+        # Streaming mode: rows passed directly from API, no file needed
+        normalized = [{k: ('' if v is None else str(v)) for k, v in row.items()} for row in rows]
+        df = pd.DataFrame(normalized) if normalized else pd.DataFrame()
+        _source_hash = source_hash or f"api_stream_{source_year}"
+        source_file = f"api_stream_{source_year}"
+    else:
+        if filepath is None:
+            raise ValueError("Either filepath or rows must be provided")
+        source_file = Path(filepath).name
+        _source_hash = source_hash or calculate_file_hash(filepath)
 
-    # Read CSV — FIPS codes must be TEXT; suppress marker '*' becomes NaN
-    df = pd.read_csv(
-        filepath,
-        dtype=TEXT_COLUMNS,
-        na_values=['*', 'N/A', 'NR', ''],
-        low_memory=False,
-    )
+        # Idempotency check — skip if this exact file was already loaded
+        with get_cursor() as cur:
+            cur.execute("""
+                SELECT COUNT(*) FROM hcs_raw.cms_geographic_variation
+                WHERE _source_hash = %s
+            """, (_source_hash,))
+            if cur.fetchone()[0] > 0:
+                logger.warning(f"File {source_file} already loaded. Skipping.")
+                return {'status': 'skipped', 'records_fetched': 0, 'records_inserted': 0, 'records_updated': 0, 'errors': []}
+
+        # Read CSV — FIPS codes must be TEXT; suppress marker '*' becomes NaN
+        df = pd.read_csv(
+            filepath,
+            dtype=TEXT_COLUMNS,
+            na_values=['*', 'N/A', 'NR', ''],
+            low_memory=False,
+            nrows=max_records if max_records > 0 else None,
+        )
 
     # Rename to internal column names
     df = apply_column_mapping(df, COLUMN_MAPPING)
@@ -127,12 +151,11 @@ def load_cms_geographic_variation(
 
     # Add year column
     if 'year' not in df.columns:
-        df['year'] = year
+        df['year'] = source_year
 
     records_fetched = len(df)
     logger.info(f"Found {records_fetched} geographic variation records")
 
-    from datetime import datetime, timezone
     loaded_at = datetime.now(timezone.utc).isoformat()
     records = []
     errors = []
@@ -144,10 +167,11 @@ def load_cms_geographic_variation(
                 for col in df.columns
             }
             record['_source_file'] = source_file
-            record['_source_hash'] = source_hash
+            record['_source_hash'] = _source_hash
             record['_loaded_at'] = loaded_at
-            if year is not None and 'year' not in record:
-                record['year'] = year
+            record['_source_year'] = source_year
+            if 'year' not in record:
+                record['year'] = source_year
             records.append(record)
         except Exception as e:
             errors.append({'row': idx, 'error': str(e)})
@@ -160,7 +184,7 @@ def load_cms_geographic_variation(
     ) if records else 0
 
     logger.info(
-        f"CMS Geographic Variation ({year}) load complete: "
+        f"CMS Geographic Variation (year={source_year}) load complete: "
         f"{inserted} inserted, {len(errors)} failed"
     )
 
@@ -322,7 +346,7 @@ def main():
     import logging as _logging
     _logging.basicConfig(level=_logging.INFO)
 
-    result = load_cms_geographic_variation(args.filepath, args.year, args.batch_size)
+    result = load_cms_geographic_variation(filepath=args.filepath, year=args.year, batch_size=args.batch_size)
     print(f"Result: {result}")
 
 
