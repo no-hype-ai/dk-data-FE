@@ -409,6 +409,9 @@ def run_fetch_backfill(
     workers: int = 1,
     dry_run: bool = False,
     only_sources: list[str] | None = None,
+    cli_days_back: int | None = None,
+    cli_years: list[int] | None = None,
+    clear_checkpoint: bool = False,
 ) -> dict:
     """Fetch sources.
 
@@ -419,9 +422,37 @@ def run_fetch_backfill(
     only_sources: if provided, restrict to exactly these source names (still
     subject to SKIP_SOURCES; unknown names are warned and ignored).
 
+    cli_days_back: if set, overrides both the computed window and per-source
+    BACKFILL_SOURCE_KWARGS days_back for ALL sources.
+
+    cli_years: if set, overrides the years list for CMS multi-year sources.
+
+    clear_checkpoint: if True, clears checkpoint for specified sources before
+    fetching (forces fresh start).
+
     Returns dict of {source: status}.
     """
-    days_back = compute_backfill_days()
+    days_back = cli_days_back if cli_days_back is not None else compute_backfill_days()
+
+    # Apply CLI overrides to BACKFILL_SOURCE_KWARGS
+    if cli_days_back is not None:
+        # CLI --days-back overrides everything — set for all sources
+        for source_name in BACKFILL_SOURCE_KWARGS:
+            if 'days_back' in BACKFILL_SOURCE_KWARGS[source_name]:
+                BACKFILL_SOURCE_KWARGS[source_name]['days_back'] = cli_days_back
+
+    if cli_years is not None:
+        # CLI --years overrides CMS year lists
+        for source_name in BACKFILL_SOURCE_KWARGS:
+            if 'years' in BACKFILL_SOURCE_KWARGS[source_name]:
+                BACKFILL_SOURCE_KWARGS[source_name]['years'] = cli_years
+
+    if clear_checkpoint:
+        from .utils.checkpoint import clear_checkpoint as _clear_cp
+        for source_name in (only_sources or []):
+            _clear_cp(source_name)
+            logger.info("Cleared checkpoint for %s", source_name)
+
     if only_sources:
         unknown = set(only_sources) - set(SOURCES)
         if unknown:
@@ -551,8 +582,14 @@ Examples:
   # Full backfill, 4 parallel workers:
   python -m dk_data.ingestion.initial_backfill --workers 4
 
-  # Fetch only (no sqlmesh):
-  python -m dk_data.ingestion.initial_backfill --workers 4 --fetch-only
+  # Single source, last 12 months only:
+  python -m dk_data.ingestion.initial_backfill --sources pubmed --days-back 365 --fetch-only
+
+  # CMS source with specific years:
+  python -m dk_data.ingestion.initial_backfill --sources cms_opioid_puf --years 2022,2023 --fetch-only
+
+  # Force fresh start (clear checkpoint):
+  python -m dk_data.ingestion.initial_backfill --sources cms_imaging_puf --clear-checkpoint --fetch-only
 
   # SQLMesh backfill only (data already in raw tables):
   python -m dk_data.ingestion.initial_backfill --sqlmesh-only
@@ -573,6 +610,16 @@ Examples:
                         help='Only run SQLMesh plan (raw tables already populated)')
     parser.add_argument('--dry-run', action='store_true',
                         help='Show what would be fetched without actually running')
+    parser.add_argument('--days-back', type=int, default=None,
+                        help='Override days_back for all sources. Overrides both '
+                             'computed window and per-source BACKFILL_SOURCE_KWARGS. '
+                             'Example: --days-back 365 for last 12 months')
+    parser.add_argument('--years', type=str, default=None,
+                        help='Override years for CMS multi-year sources. '
+                             'Comma-separated. Example: --years 2022,2023')
+    parser.add_argument('--clear-checkpoint', action='store_true',
+                        help='Clear checkpoint for the specified --sources before '
+                             'fetching. Forces a fresh start (useful after schema changes)')
     parser.add_argument('--data-dir', default='/tmp/data/raw',
                         help='Directory for fetcher temp file storage')
     parser.add_argument('--sqlmesh-dir', default='src/dk_data/sqlmesh',
@@ -619,11 +666,15 @@ Examples:
         init_connection_pool(minconn=2, maxconn=pool_size)
         try:
             only_sources = [s.strip() for s in args.sources.split(',')] if args.sources else None
+            cli_years = [int(y.strip()) for y in args.years.split(',')] if args.years else None
             fetch_results = run_fetch_backfill(
                 args.data_dir,
                 workers=args.workers,
                 dry_run=args.dry_run,
                 only_sources=only_sources,
+                cli_days_back=args.days_back,
+                cli_years=cli_years,
+                clear_checkpoint=args.clear_checkpoint,
             )
             failed_sources = [s for s, status in fetch_results.items()
                               if str(status).startswith(('failed', 'exception'))]
