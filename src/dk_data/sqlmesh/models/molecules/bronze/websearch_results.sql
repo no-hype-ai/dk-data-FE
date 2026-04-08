@@ -32,7 +32,6 @@ WITH unnested AS (
     WHERE r.response_status = 200
       AND r.response_body IS NOT NULL
       AND r.processed_to_bronze = FALSE
-      AND r.request_timestamp BETWEEN @start_dt AND @end_dt
 )
 
 SELECT
