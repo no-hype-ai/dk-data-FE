@@ -651,8 +651,9 @@ def transform_layer(layer: str) -> dict:
     logger.info(f"Transforming {layer} layer ({len(models)} models) in single sqlmesh run")
 
     # Build one command selecting all models in this layer
-    # --max-workers 4: SQLMesh runs up to 4 model batches in parallel (item 1)
-    cmd = ['run', '--max-workers', '4']
+    # Note: --max-workers is not supported in SQLMesh 0.230.0;
+    # models within a layer run sequentially via the default single-worker.
+    cmd = ['run']
     for model_name in models:
         cmd.extend(['--select-model', model_name])
 
