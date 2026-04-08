@@ -12,7 +12,7 @@ metadata:
     app.kubernetes.io/component: transform
     app.kubernetes.io/part-of: dk-data
 spec:
-  schedule: "30 10 * * *"  # 10:30 UTC daily — after silver (08:00+2h) AND ip_bronze (06:30+2h)
+  schedule: "30 17 * * *"  # 10:30 UTC daily — after silver (08:00+2h) AND ip_bronze (06:30+2h)
                             # hcpcs_molecule_bridge depends on BOTH mol_silver.molecule_aliases
                             # (silver layer) AND hcs_bronze.* (ip_bronze layer)
   concurrencyPolicy: Forbid

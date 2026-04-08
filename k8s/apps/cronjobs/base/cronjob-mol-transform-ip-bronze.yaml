@@ -13,7 +13,7 @@ metadata:
     app.kubernetes.io/component: transform
     app.kubernetes.io/part-of: dk-data
 spec:
-  schedule: "30 6 * * *"  # 06:30 UTC daily — parallel with mol bronze (independent)
+  schedule: "30 8 * * *"  # 06:30 UTC daily — parallel with mol bronze (independent)
   concurrencyPolicy: Forbid
   startingDeadlineSeconds: 3600
   successfulJobsHistoryLimit: 3

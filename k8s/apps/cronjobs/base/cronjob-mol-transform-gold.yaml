@@ -12,7 +12,7 @@ metadata:
     app.kubernetes.io/component: transform
     app.kubernetes.io/part-of: dk-data
 spec:
-  schedule: "0 12 * * *"  # 12:00 UTC daily — 4h after silver start (08:00+4h)
+  schedule: "0 21 * * *"  # 12:00 UTC daily — 4h after silver start (08:00+4h)
                            # mol_gold aggregates from all mol_silver including
                            # molecule_aliases and identifier_mappings which need
                            # ample time to complete their chain
