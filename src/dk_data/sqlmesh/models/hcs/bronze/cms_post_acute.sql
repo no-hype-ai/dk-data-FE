@@ -4,9 +4,8 @@
 
 MODEL (
     name hcs_bronze.cms_post_acute,
-    kind INCREMENTAL_BY_TIME_RANGE (
-        time_column ingested_at,
-        batch_size 500
+    kind INCREMENTAL_BY_UNIQUE_KEY (
+        unique_key (ccn, year)
     ),
     cron '@daily',
     audits (not_null(columns := (ccn))),

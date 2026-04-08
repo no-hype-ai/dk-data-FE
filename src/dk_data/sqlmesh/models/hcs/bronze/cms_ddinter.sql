@@ -12,9 +12,8 @@
 
 MODEL (
     name hcs_bronze.cms_ddinter,
-    kind INCREMENTAL_BY_TIME_RANGE (
-        time_column ingested_at,
-        batch_size 500
+    kind INCREMENTAL_BY_UNIQUE_KEY (
+        unique_key (drug_a, drug_b)
     ),
     cron '@yearly',  -- retired source; run at most once yearly to avoid scheduler noise
     audits (not_null(columns := (drug_a, drug_b))),

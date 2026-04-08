@@ -27,9 +27,8 @@
 
 MODEL (
     name mol_bronze.bindingdb,
-    kind INCREMENTAL_BY_TIME_RANGE (
-        time_column ingested_at,
-        lookback 7
+    kind INCREMENTAL_BY_UNIQUE_KEY (
+        unique_key bindingdb_id
     ),
     cron '@daily',
     grain (bindingdb_id),

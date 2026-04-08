@@ -11,10 +11,11 @@
 
 MODEL (
     name mol_bronze.openalex,
-    kind INCREMENTAL_BY_TIME_RANGE (
-        time_column _loaded_at
+    kind INCREMENTAL_BY_UNIQUE_KEY (
+        unique_key openalex_id
     ),
     cron '@weekly',
+    grain openalex_id,
     audits (
         not_null(columns := (openalex_id))
     )

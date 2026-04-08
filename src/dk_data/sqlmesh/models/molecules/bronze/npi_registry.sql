@@ -20,9 +20,8 @@
 
 MODEL (
     name mol_bronze.npi_registry,
-    kind INCREMENTAL_BY_TIME_RANGE (
-        time_column ingested_at,
-        batch_size 500
+    kind INCREMENTAL_BY_UNIQUE_KEY (
+        unique_key npi
     ),
     cron '@monthly',
     audits (

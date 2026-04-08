@@ -71,10 +71,7 @@ class TestBronzeUSPTOPatents:
         assert "name mol_bronze.uspto_patents" in self.model_block
 
     def test_model_kind_incremental(self):
-        assert "INCREMENTAL_BY_TIME_RANGE" in self.model_block
-
-    def test_model_time_column(self):
-        assert "time_column ingested_at" in self.model_block
+        assert "INCREMENTAL_BY_UNIQUE_KEY" in self.model_block
 
     def test_model_grain(self):
         assert "grain" in self.model_block
@@ -133,7 +130,7 @@ class TestBronzeUSPTOCI:
         assert "name mol_bronze.uspto_ci" in self.model_block
 
     def test_model_kind_incremental(self):
-        assert "INCREMENTAL_BY_TIME_RANGE" in self.model_block
+        assert "INCREMENTAL_BY_UNIQUE_KEY" in self.model_block
 
     def test_model_grain(self):
         assert "patent_number" in self.model_block
@@ -172,7 +169,7 @@ class TestBronzeEPOPatents:
         assert "name mol_bronze.epo_patents" in self.model_block
 
     def test_model_kind_incremental(self):
-        assert "INCREMENTAL_BY_TIME_RANGE" in self.model_block
+        assert "INCREMENTAL_BY_UNIQUE_KEY" in self.model_block
 
     def test_model_grain(self):
         assert "patent_number" in self.model_block
@@ -218,7 +215,7 @@ class TestBronzeUSPTOTrademarks:
         assert "name mol_bronze.uspto_trademarks" in self.model_block
 
     def test_model_kind_incremental(self):
-        assert "INCREMENTAL_BY_TIME_RANGE" in self.model_block
+        assert "INCREMENTAL_BY_UNIQUE_KEY" in self.model_block
 
     def test_model_grain(self):
         assert "serial_number" in self.model_block
@@ -269,7 +266,7 @@ class TestBronzeEUIPOTrademarks:
         assert "name mol_bronze.euipo_trademarks" in self.model_block
 
     def test_model_kind_incremental(self):
-        assert "INCREMENTAL_BY_TIME_RANGE" in self.model_block
+        assert "INCREMENTAL_BY_UNIQUE_KEY" in self.model_block
 
     def test_model_grain(self):
         assert "application_number" in self.model_block
@@ -307,7 +304,7 @@ class TestBronzeEUIPOTrademarks:
 # Feature 015: Assessment Dashboard Integration — bronze models
 # ===========================================================================
 # Models split into two groups:
-#   True JSONB: extract from response_body, INCREMENTAL_BY_TIME_RANGE,
+#   True JSONB: extract from response_body, INCREMENTAL_BY_UNIQUE_KEY,
 #               time_column request_timestamp, filter on processed_to_bronze/response_status
 #   Flat-column: typed raw columns, INCREMENTAL_BY_UNIQUE_KEY or TIME_RANGE with _loaded_at
 # ===========================================================================
@@ -334,10 +331,7 @@ class _BronzeJSONBModelTestBase:
         assert f"name {self.MODEL_NAME}" in self.model_block
 
     def test_model_kind_incremental(self):
-        assert "INCREMENTAL_BY_TIME_RANGE" in self.model_block
-
-    def test_model_time_column(self):
-        assert "time_column request_timestamp" in self.model_block
+        assert "INCREMENTAL_BY_UNIQUE_KEY" in self.model_block
 
     def test_model_grain(self):
         assert self.GRAIN_COLUMN in self.model_block
@@ -402,7 +396,7 @@ class TestBronzeCmsInpatient:
         assert "name hcs_bronze.cms_inpatient" in self.model_block
 
     def test_model_kind_incremental(self):
-        assert "INCREMENTAL_BY_TIME_RANGE" in self.model_block
+        assert "INCREMENTAL_BY_UNIQUE_KEY" in self.model_block
 
     def test_model_grain(self):
         assert "record_id" in self.model_block
@@ -433,7 +427,7 @@ class TestBronzeAccTvc:
         assert "name hcs_bronze.acc_tvc" in self.model_block
 
     def test_model_kind_incremental(self):
-        assert "INCREMENTAL_BY_TIME_RANGE" in self.model_block
+        assert "INCREMENTAL_BY_UNIQUE_KEY" in self.model_block
 
     def test_model_grain(self):
         assert "facility_name" in self.model_block
@@ -464,7 +458,7 @@ class TestBronzeHrsa:
         assert "name hcs_bronze.hrsa" in self.model_block
 
     def test_model_kind_incremental(self):
-        assert "INCREMENTAL_BY_TIME_RANGE" in self.model_block
+        assert "INCREMENTAL_BY_UNIQUE_KEY" in self.model_block
 
     def test_model_grain(self):
         assert "hpsa_id" in self.model_block
@@ -612,7 +606,7 @@ class TestBronzeSecEdgar:
 
 
 class TestBronzeOrcid:
-    """mol_bronze.orcid — JSONB extraction, INCREMENTAL_BY_TIME_RANGE with fetched_at."""
+    """mol_bronze.orcid — JSONB extraction, INCREMENTAL_BY_UNIQUE_KEY with fetched_at."""
 
     @pytest.fixture(autouse=True)
     def setup(self):
@@ -623,10 +617,7 @@ class TestBronzeOrcid:
         assert "name mol_bronze.orcid" in self.model_block
 
     def test_model_kind_incremental(self):
-        assert "INCREMENTAL_BY_TIME_RANGE" in self.model_block
-
-    def test_model_time_column(self):
-        assert "time_column fetched_at" in self.model_block
+        assert "INCREMENTAL_BY_UNIQUE_KEY" in self.model_block
 
     def test_model_grain(self):
         assert "orcid_id" in self.model_block
@@ -649,7 +640,7 @@ class TestBronzeOrcid:
 
 
 class TestBronzeJournalRss:
-    """mol_bronze.journal_rss — flat typed columns, INCREMENTAL_BY_TIME_RANGE with _loaded_at."""
+    """mol_bronze.journal_rss — flat typed columns, INCREMENTAL_BY_UNIQUE_KEY with _loaded_at."""
 
     @pytest.fixture(autouse=True)
     def setup(self):
@@ -660,10 +651,7 @@ class TestBronzeJournalRss:
         assert "name mol_bronze.journal_rss" in self.model_block
 
     def test_model_kind_incremental(self):
-        assert "INCREMENTAL_BY_TIME_RANGE" in self.model_block
-
-    def test_model_time_column(self):
-        assert "time_column _loaded_at" in self.model_block
+        assert "INCREMENTAL_BY_UNIQUE_KEY" in self.model_block
 
     def test_model_grain(self):
         assert "article_id" in self.model_block
@@ -683,7 +671,7 @@ class TestBronzeJournalRss:
 
 
 class TestBronzeMedicalNews:
-    """mol_bronze.medical_news — flat typed columns, INCREMENTAL_BY_TIME_RANGE with _loaded_at."""
+    """mol_bronze.medical_news — flat typed columns, INCREMENTAL_BY_UNIQUE_KEY with _loaded_at."""
 
     @pytest.fixture(autouse=True)
     def setup(self):
@@ -694,10 +682,7 @@ class TestBronzeMedicalNews:
         assert "name mol_bronze.medical_news" in self.model_block
 
     def test_model_kind_incremental(self):
-        assert "INCREMENTAL_BY_TIME_RANGE" in self.model_block
-
-    def test_model_time_column(self):
-        assert "time_column _loaded_at" in self.model_block
+        assert "INCREMENTAL_BY_UNIQUE_KEY" in self.model_block
 
     def test_model_grain(self):
         assert "article_id" in self.model_block

@@ -4,9 +4,8 @@
 
 MODEL (
     name hcs_bronze.cms_magnet,
-    kind INCREMENTAL_BY_TIME_RANGE (
-        time_column ingested_at,
-        batch_size 500
+    kind INCREMENTAL_BY_UNIQUE_KEY (
+        unique_key (facility_name, city, state)
     ),
     cron '@daily',
     audits (not_null(columns := (facility_name))),

@@ -34,9 +34,8 @@
 
 MODEL (
     name mol_bronze.orange_book,
-    kind INCREMENTAL_BY_TIME_RANGE (
-        time_column ingested_at,
-        lookback 7
+    kind INCREMENTAL_BY_UNIQUE_KEY (
+        unique_key (application_number, product_number, patent_number)
     ),
     cron '@weekly',
     grain (application_number, product_number, patent_number),

@@ -369,6 +369,25 @@ def get_sqlmesh_config_path() -> Path:
     raise FileNotFoundError("SQLMesh config.yaml not found")
 
 
+def _dump_sqlmesh_logs_to_stderr(log_dir: str) -> None:
+    """Dump SQLMesh log files to stderr so Alloy→Loki captures them for debugging."""
+    try:
+        log_path = Path(log_dir)
+        if not log_path.exists():
+            return
+        for log_file in sorted(log_path.glob('*.log')):
+            size = log_file.stat().st_size
+            if size == 0:
+                continue
+            # Cap at 50KB per file to avoid flooding Loki
+            content = log_file.read_text(errors='replace')
+            if len(content) > 50_000:
+                content = f"... (truncated first {len(content) - 50_000} bytes) ...\n" + content[-50_000:]
+            logger.error(f"SQLMesh log [{log_file.name}, {size} bytes]:\n{content}")
+    except Exception as e:
+        logger.warning(f"Failed to dump SQLMesh logs: {e}")
+
+
 def run_sqlmesh_command(command: list[str], timeout: int = 3600) -> dict:
     """
     Run a SQLMesh command.
@@ -384,7 +403,11 @@ def run_sqlmesh_command(command: list[str], timeout: int = 3600) -> dict:
         config_path = get_sqlmesh_config_path()
         # SQLMesh --paths expects the project directory, not the config.yaml file itself
         project_dir = str(config_path.parent)
-        full_command = ['sqlmesh', '--paths', project_dir, '--log-file-dir', '/tmp/sqlmesh-logs'] + command
+        # Use the dedicated sqlmesh-logs volume mount (emptyDir mounted in CronJob spec).
+        # On failure, log contents are dumped to stderr so Alloy→Loki captures them.
+        log_dir = os.path.join(project_dir, 'logs')
+        os.makedirs(log_dir, exist_ok=True)
+        full_command = ['sqlmesh', '--paths', project_dir, '--log-file-dir', log_dir] + command
 
         logger.info(f"Running: {' '.join(full_command)}")
 
@@ -410,11 +433,13 @@ def run_sqlmesh_command(command: list[str], timeout: int = 3600) -> dict:
                 'stderr': result.stderr,
             }
         else:
-            # Always surface stderr so errors are visible in pod logs
+            # Always surface stderr so errors are visible in pod logs → Alloy → Loki
             if result.stderr:
                 logger.error(f"SQLMesh stderr: {result.stderr[:10000]}")
             if result.stdout:
                 logger.error(f"SQLMesh stdout: {result.stdout[:10000]}")
+            # Dump detailed SQLMesh log file to stderr so it persists in Loki
+            _dump_sqlmesh_logs_to_stderr(log_dir)
             return {
                 'status': 'failed',
                 'stdout': result.stdout,

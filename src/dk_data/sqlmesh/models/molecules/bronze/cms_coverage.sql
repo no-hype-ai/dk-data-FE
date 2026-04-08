@@ -9,9 +9,8 @@
 
 MODEL (
     name mol_bronze.cms_coverage,
-    kind INCREMENTAL_BY_TIME_RANGE (
-        time_column ingested_at,
-        lookback 7
+    kind INCREMENTAL_BY_UNIQUE_KEY (
+        unique_key (coverage_id, endpoint)
     ),
     cron '@weekly',
     audits (

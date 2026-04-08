@@ -4,9 +4,8 @@
 
 MODEL (
     name mol_bronze.who_gho,
-    kind INCREMENTAL_BY_TIME_RANGE (
-        time_column ingested_at,
-        batch_size 500
+    kind INCREMENTAL_BY_UNIQUE_KEY (
+        unique_key (indicator_code, spatial_dim, time_dim)
     ),
     cron '@monthly',
     audits (

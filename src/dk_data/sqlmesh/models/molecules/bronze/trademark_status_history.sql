@@ -11,9 +11,8 @@
 
 MODEL (
     name mol_bronze.trademark_status_history,
-    kind INCREMENTAL_BY_TIME_RANGE (
-        time_column changed_at,
-        batch_size  1000
+    kind INCREMENTAL_BY_UNIQUE_KEY (
+        unique_key (trademark_identifier, source, changed_at)
     ),
     cron '@daily',
     audits (
