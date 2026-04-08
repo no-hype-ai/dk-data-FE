@@ -343,18 +343,31 @@ class BaseFetcher(ABC):
         """Stream CMS data for multiple service years directly to DB.
 
         Discovers per-year dataset UUIDs from the CMS DCAT catalog, then streams
-        each year individually via _stream_cms_api_to_db. Clears the checkpoint
-        before each year so per-year offsets don't bleed across years.
+        each year individually via _stream_cms_api_to_db.
+
+        Checkpoint includes the current year so that a timeout mid-year resumes
+        from the correct offset within that year (not from offset 0).
 
         Returns:
             Tuple of (total_fetched, total_inserted).
         """
         from ..downloaders.cms_downloader import discover_year_uuids
-        from ..utils.checkpoint import clear_checkpoint
+        from ..utils.checkpoint import clear_checkpoint, load_checkpoint, save_checkpoint
 
         year_uuids = discover_year_uuids(parent_uuid)
         total_fetched = 0
         total_inserted = 0
+
+        # Load checkpoint to find which year we were on and which are done
+        cp = load_checkpoint(self.SOURCE_NAME)
+        completed_years: list = cp.get("completed_years", []) if cp else []
+        checkpoint_year: int = cp.get("checkpoint_year", 0) if cp else 0
+
+        if completed_years:
+            logger.info(
+                "[%s] Resuming multi-year: %d years complete, checkpoint_year=%d",
+                self.SOURCE_NAME, len(completed_years), checkpoint_year,
+            )
 
         for year in sorted(years):
             uuid = year_uuids.get(year)
@@ -364,10 +377,27 @@ class BaseFetcher(ABC):
                     self.SOURCE_NAME, year, parent_uuid,
                 )
                 continue
+
+            if year in completed_years:
+                logger.info("[%s] Skipping year=%d (already complete)", self.SOURCE_NAME, year)
+                continue
+
             logger.info(
                 "[%s] Streaming year=%d (UUID=%s...)", self.SOURCE_NAME, year, uuid[:8]
             )
-            clear_checkpoint(self.SOURCE_NAME)
+
+            # Only clear the per-page checkpoint if we're starting a NEW year
+            # (not resuming the same year that was interrupted)
+            if year != checkpoint_year:
+                clear_checkpoint(self.SOURCE_NAME)
+                # Save the year we're about to process so resume knows which year
+                save_checkpoint(self.SOURCE_NAME, {
+                    "completed_years": completed_years,
+                    "checkpoint_year": year,
+                    "offset": 0,
+                    "records_inserted": 0,
+                })
+
             try:
                 fetched, inserted = self._stream_cms_api_to_db(
                     uuid,
@@ -378,10 +408,23 @@ class BaseFetcher(ABC):
                 )
                 total_fetched += fetched
                 total_inserted += inserted
+
+                # Mark year as complete
+                completed_years.append(year)
+                save_checkpoint(self.SOURCE_NAME, {
+                    "completed_years": completed_years,
+                    "checkpoint_year": year,
+                    "offset": 0,
+                    "records_inserted": 0,
+                })
             except Exception as exc:
                 logger.warning(
-                    "[%s] Failed to stream year=%d: %s — skipping", self.SOURCE_NAME, year, exc
+                    "[%s] Failed to stream year=%d: %s — saving checkpoint and stopping",
+                    self.SOURCE_NAME, year, exc,
                 )
+                # Don't clear checkpoint — _stream_cms_api_to_db already saved
+                # the offset within this year. Next run resumes from here.
+                raise
 
         return total_fetched, total_inserted
 
