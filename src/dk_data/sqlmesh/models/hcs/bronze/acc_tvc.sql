@@ -12,9 +12,8 @@
 
 MODEL (
     name hcs_bronze.acc_tvc,
-    kind INCREMENTAL_BY_TIME_RANGE (
-        time_column _loaded_at,
-        batch_size 500
+    kind INCREMENTAL_BY_UNIQUE_KEY (
+        unique_key (facility_name, state, certification_type)
     ),
     cron '@daily',
     audits (

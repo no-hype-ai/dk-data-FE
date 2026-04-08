@@ -4,9 +4,8 @@
 
 MODEL (
     name mol_bronze.faers_events,
-    kind INCREMENTAL_BY_TIME_RANGE (
-        time_column request_timestamp,
-        batch_size 1000
+    kind INCREMENTAL_BY_UNIQUE_KEY (
+        unique_key (safety_report_id, case_version)
     ),
     cron '@weekly',
     audits (

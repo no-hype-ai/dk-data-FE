@@ -14,9 +14,8 @@
 
 MODEL (
     name mol_bronze.fda_ndc,
-    kind INCREMENTAL_BY_TIME_RANGE (
-        time_column ingested_at,
-        batch_size 1000
+    kind INCREMENTAL_BY_UNIQUE_KEY (
+        unique_key product_ndc
     ),
     cron '@monthly',
     audits (

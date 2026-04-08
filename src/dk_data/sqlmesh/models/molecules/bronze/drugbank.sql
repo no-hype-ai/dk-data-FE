@@ -12,9 +12,8 @@
 
 MODEL (
     name mol_bronze.drugbank,
-    kind INCREMENTAL_BY_TIME_RANGE (
-        time_column loaded_at,
-        batch_size 200
+    kind INCREMENTAL_BY_UNIQUE_KEY (
+        unique_key drugbank_id
     ),
     cron '@monthly',
     audits (

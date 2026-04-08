@@ -5,10 +5,7 @@
 
 MODEL (
     name mol_bronze.websearch,
-    kind INCREMENTAL_BY_TIME_RANGE (
-        time_column request_timestamp,
-        batch_size 1000
-    ),
+    kind FULL,
     cron '@daily',
     audits (
         not_null(columns := (search_query, result_url))

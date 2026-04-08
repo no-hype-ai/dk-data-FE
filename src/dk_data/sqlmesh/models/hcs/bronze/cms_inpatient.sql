@@ -5,9 +5,8 @@
 
 MODEL (
     name hcs_bronze.cms_inpatient,
-    kind INCREMENTAL_BY_TIME_RANGE (
-        time_column request_timestamp,
-        batch_size 500
+    kind INCREMENTAL_BY_UNIQUE_KEY (
+        unique_key record_id
     ),
     cron '@daily',
     audits (
