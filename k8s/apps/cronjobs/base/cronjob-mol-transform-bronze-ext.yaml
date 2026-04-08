@@ -15,7 +15,7 @@ metadata:
     app.kubernetes.io/component: transform
     app.kubernetes.io/part-of: dk-data
 spec:
-  schedule: "0 7 * * *"  # 07:00 UTC daily (after ip_bronze at 06:30)
+  schedule: "30 12 * * *"  # 07:00 UTC daily (after ip_bronze at 06:30)
   concurrencyPolicy: Forbid
   startingDeadlineSeconds: 3600
   successfulJobsHistoryLimit: 3
