@@ -2,7 +2,7 @@
 import logging
 from typing import Any, Dict, List, Optional
 
-from .base import BaseFetcher
+from .base import BaseFetcher, resolve_cms_latest_year
 
 logger = logging.getLogger(__name__)
 
@@ -20,7 +20,7 @@ class CMSCostReportsPUFFetcher(BaseFetcher):
     def fetch(self, **kwargs) -> Dict[str, Any]:
         max_records = kwargs.get("max_records")
         years: Optional[List[int]] = kwargs.get("years")
-        source_year = int(kwargs.get("fiscal_year") or kwargs.get("source_year") or 2023)
+        source_year = int(kwargs.get("fiscal_year") or kwargs.get("source_year") or resolve_cms_latest_year(self.DATASET_UUID))
         try:
             from ..sources.cms_cost_reports_puf import load_cms_cost_reports_puf
             from ..utils.checkpoint import clear_checkpoint
@@ -52,7 +52,7 @@ class CMSCostReportsPUFLinesFetcher(CMSCostReportsPUFFetcher):
     def fetch(self, **kwargs) -> Dict[str, Any]:
         max_records = kwargs.get("max_records")
         years: Optional[List[int]] = kwargs.get("years")
-        source_year = int(kwargs.get("fiscal_year") or kwargs.get("source_year") or 2023)
+        source_year = int(kwargs.get("fiscal_year") or kwargs.get("source_year") or resolve_cms_latest_year(self.DATASET_UUID))
         try:
             from ..sources.cms_cost_reports_puf_lines import load_cms_cost_reports_puf_lines
             from ..utils.checkpoint import clear_checkpoint

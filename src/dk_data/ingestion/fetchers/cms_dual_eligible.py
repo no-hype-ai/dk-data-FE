@@ -22,7 +22,7 @@ from typing import Any, Dict, List, Optional, Tuple
 
 import openpyxl
 
-from .base import BaseFetcher
+from .base import BaseFetcher, resolve_cms_latest_year
 
 logger = logging.getLogger(__name__)
 
@@ -120,7 +120,7 @@ class CMSDualEligibleFetcher(BaseFetcher):
         Returns:
             Dict with status, records (list of dicts), record_count, hash.
         """
-        source_year: int = int(kwargs.get("source_year", 2023))
+        source_year: int = int(kwargs.get("source_year") or resolve_cms_latest_year(self.DATASET_UUID))
         max_records: int = kwargs.get("max_records", 0) or 0
 
         try:

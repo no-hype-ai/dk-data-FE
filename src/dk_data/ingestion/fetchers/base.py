@@ -20,6 +20,28 @@ _CMS_PAGE_SIZE = 2000
 logger = logging.getLogger(__name__)
 
 
+def resolve_cms_latest_year(dataset_uuid: str) -> int:
+    """Discover the latest available year for a CMS dataset from the DCAT catalog.
+
+    Falls back to current year - 2 (CMS publishes with 12-18 month lag)
+    if catalog discovery fails or returns no results.
+    """
+    try:
+        from ..downloaders.cms_downloader import discover_year_uuids
+        year_uuids = discover_year_uuids(dataset_uuid)
+        if year_uuids:
+            latest = max(year_uuids.keys())
+            logger.debug("CMS catalog latest year for %s: %d", dataset_uuid[:8], latest)
+            return latest
+    except Exception as e:
+        logger.warning("Could not discover CMS years for %s: %s", dataset_uuid[:8], e)
+
+    # Fallback: current year - 2 (conservative estimate for CMS lag)
+    fallback = datetime.utcnow().year - 2
+    logger.info("Using fallback year %d for CMS dataset %s", fallback, dataset_uuid[:8])
+    return fallback
+
+
 class BaseFetcher(ABC):
     """Base class for all data fetchers."""
 
