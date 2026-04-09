@@ -687,7 +687,9 @@ def transform_layer(layer: str) -> dict:
     for model_name in models:
         cmd.extend(['--select-model', model_name])
 
-    result = run_sqlmesh_command(cmd)
+    # Scale timeout with model count: 10 min per model, minimum 1h, max 4h.
+    timeout = max(3600, min(14400, len(models) * 600))
+    result = run_sqlmesh_command(cmd, timeout=timeout)
 
     # Parse per-model outcomes from SQLMesh stdout (item 8).
     # SQLMesh emits lines like:
