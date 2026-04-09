@@ -404,9 +404,14 @@ def run_sqlmesh_command(command: list[str], timeout: int = 3600) -> dict:
         # SQLMesh --paths expects the project directory, not the config.yaml file itself
         project_dir = str(config_path.parent)
         # Use the dedicated sqlmesh-logs volume mount (emptyDir mounted in CronJob spec).
+        # Falls back to /tmp if project dir is read-only (e.g. running via kubectl exec).
         # On failure, log contents are dumped to stderr so Alloy→Loki captures them.
         log_dir = os.path.join(project_dir, 'logs')
-        os.makedirs(log_dir, exist_ok=True)
+        try:
+            os.makedirs(log_dir, exist_ok=True)
+        except OSError:
+            log_dir = '/tmp/sqlmesh-logs'
+            os.makedirs(log_dir, exist_ok=True)
         full_command = ['sqlmesh', '--paths', project_dir, '--log-file-dir', log_dir] + command
 
         logger.info(f"Running: {' '.join(full_command)}")
