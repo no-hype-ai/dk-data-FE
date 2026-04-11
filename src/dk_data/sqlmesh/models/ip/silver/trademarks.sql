@@ -1,137 +1,100 @@
--- SQLMesh Model: Silver Trademarks
--- Unified trademark data from USPTO TSDR and EUIPO TMview/IBM Gateway
--- Part of: 014-uspto-euipo-model-datasource
--- Migrated from mol_silver → ip_silver by 001-silver-medallion-rebuild (FR-006e)
+-- T041: ip_silver.trademarks — trademark hub (NEW)
+-- Hub architecture: one row per unique trademark keyed by (jurisdiction, registration_number).
+-- Sources: USPTO trademarks, EUIPO trademarks from bronze.
 
 MODEL (
     name ip_silver.trademarks,
     kind INCREMENTAL_BY_UNIQUE_KEY (
-        unique_key (trademark_identifier, source)
+        unique_key trademark_id
     ),
-    cron '@weekly',
-    audits (
-        not_null(columns := (trademark_identifier)),
-        not_null(columns := (source))
-    ),
-    grain (trademark_identifier, source)
+    grain trademark_id
 );
 
--- Staleness guard (FR-050)
-, staleness_check AS (
-  SELECT CASE
-    WHEN MAX(ingested_at) < NOW() - INTERVAL '6 hours'
-    THEN error('Bronze upstream is stale: ' || MAX(ingested_at)::text)
-  END FROM ip_bronze.uspto_trademarks
-)
-
--- USPTO trademarks
-, uspto AS (
+WITH uspto_trademarks AS (
     SELECT
-        serial_number AS trademark_identifier,
-        mark_element AS mark_name,
-        mark_type,
-        NULL::TEXT AS mark_feature,
-        status,
-        status_code,
-        status_date,
-        filing_date,
-        registration_number,
-        registration_date,
-        NULL::DATE AS expiry_date,
-        owner_name,
-        owner_entity_type,
+        ('x' || substr(md5('US:' || COALESCE(registration_number, serial_number)), 1, 16))::bit(64)::bigint AS trademark_id,
+        'US'                                                                     AS jurisdiction,
+        NULLIF(registration_number, '')                                          AS registration_number,
+        NULLIF(serial_number, '')                                                AS serial_number,
+        NULL::text                                                               AS wipo_madrid_number,
+        NULLIF(mark_text, '')                                                    AS mark_text,
+        NULLIF(mark_type, '')                                                    AS mark_type,
         nice_classes,
-        us_classes,
-        goods_and_services,
-        description_of_mark,
-        NULL::TEXT AS representative_name,
-        NULL::TEXT AS applicant_country,
-        NULL::TEXT AS mark_basis,
-        NULL::TEXT AS image_url,
-        is_pharma_related,
-        'uspto_trademarks' AS source,
-        ingested_at AS source_updated_at
+        registration_date::date                                                  AS registration_date,
+        expiry_date::date                                                        AS expiry_date,
+        NULLIF(status, '')                                                       AS status,
+        NULL::bigint                                                             AS owner_company_id,
+        1                                                                        AS src_priority,
+        ingested_at                                                              AS first_seen_at
     FROM ip_bronze.uspto_trademarks
-    WHERE processed_to_silver = FALSE
+    WHERE COALESCE(registration_number, serial_number) IS NOT NULL
+      AND mark_text IS NOT NULL
 ),
 
--- EUIPO trademarks
-euipo AS (
+euipo_trademarks AS (
     SELECT
-        application_number AS trademark_identifier,
-        mark_name,
-        mark_kind AS mark_type,
-        mark_feature,
-        status,
-        NULL::TEXT AS status_code,
-        NULL::DATE AS status_date,
-        filing_date,
-        NULL::TEXT AS registration_number,
+        ('x' || substr(md5('EU:' || COALESCE(registration_number, application_number)), 1, 16))::bit(64)::bigint AS trademark_id,
+        'EU'                                                                     AS jurisdiction,
+        NULLIF(registration_number, '')                                          AS registration_number,
+        NULLIF(application_number, '')                                           AS serial_number,
+        NULL::text                                                               AS wipo_madrid_number,
+        NULLIF(mark_text, '')                                                    AS mark_text,
+        NULLIF(mark_type, '')                                                    AS mark_type,
+        nice_classes,
+        registration_date::date                                                  AS registration_date,
+        expiry_date::date                                                        AS expiry_date,
+        NULLIF(status, '')                                                       AS status,
+        NULL::bigint                                                             AS owner_company_id,
+        2                                                                        AS src_priority,
+        ingested_at                                                              AS first_seen_at
+    FROM ip_bronze.euipo_trademarks
+    WHERE COALESCE(registration_number, application_number) IS NOT NULL
+      AND mark_text IS NOT NULL
+),
+
+all_trademarks AS (
+    SELECT * FROM uspto_trademarks
+    UNION ALL
+    SELECT * FROM euipo_trademarks
+),
+
+deduped AS (
+    SELECT DISTINCT ON (trademark_id)
+        trademark_id,
+        jurisdiction,
+        registration_number,
+        serial_number,
+        wipo_madrid_number,
+        mark_text,
+        mark_type,
+        nice_classes,
         registration_date,
         expiry_date,
-        applicant_name AS owner_name,
-        NULL::TEXT AS owner_entity_type,
-        nice_classes,
-        NULL::JSONB AS us_classes,
-        goods_and_services,
-        NULL::TEXT AS description_of_mark,
-        representative_name,
-        applicant_country,
-        mark_basis,
-        image_url,
-        is_pharma_related,
-        'euipo_trademarks' AS source,
-        ingested_at AS source_updated_at
-    FROM ip_bronze.euipo_trademarks
-    WHERE processed_to_silver = FALSE
-),
-
--- Combine both registries
-combined AS (
-    SELECT * FROM uspto
-    UNION ALL
-    SELECT * FROM euipo
+        status,
+        owner_company_id,
+        first_seen_at
+    FROM all_trademarks
+    ORDER BY trademark_id, src_priority ASC
 )
 
--- Within-registry dedup only (no cross-registry dedup)
-SELECT DISTINCT ON (trademark_identifier, source)
-    gen_random_uuid()   AS id,
-    c.trademark_identifier,
-    c.mark_name,
-    c.mark_type,
-    c.mark_feature,
-    c.status,
-    c.status_code,
-    c.status_date,
-    c.filing_date,
-    c.registration_number,
-    c.registration_date,
-    c.expiry_date,
-    c.owner_name,
-    c.owner_entity_type,
-    c.nice_classes,
-    c.us_classes,
-    c.goods_and_services,
-    c.description_of_mark,
-    c.representative_name,
-    c.applicant_country,
-    c.mark_basis,
-    c.image_url,
-    c.is_pharma_related,
-    -- molecule_id: mark_name is a brand/trademark name — match via alias bridge
-    -- Only links pharma-related trademarks; others will be NULL
-    CASE WHEN c.is_pharma_related
-        THEN (
-            SELECT ma.molecule_id
-            FROM mol_silver.molecule_aliases ma
-            WHERE LOWER(REGEXP_REPLACE(c.mark_name, '[^a-zA-Z0-9]', '', 'g'))
-                = ma.alias_name_normalized
-            LIMIT 1
-        )
-    END                 AS molecule_id,
-    c.source,
-    c.source_updated_at,
-    NOW()               AS created_at,
-    NOW()               AS updated_at
-FROM combined c
-ORDER BY trademark_identifier, source, source_updated_at DESC
+SELECT
+    trademark_id,
+    jurisdiction,
+    registration_number,
+    serial_number,
+    wipo_madrid_number,
+    mark_text,
+    mark_type,
+    nice_classes,
+    registration_date,
+    expiry_date,
+    status,
+    owner_company_id,
+    COALESCE(first_seen_at, NOW()) AS first_seen_at,
+    NOW()                          AS last_updated_at
+FROM deduped;
+
+-- CREATE INDEX IF NOT EXISTS ip_silver_tm_mark_text_idx ON ip_silver.trademarks (mark_text);
+-- CREATE INDEX IF NOT EXISTS ip_silver_tm_gin_mark_idx ON ip_silver.trademarks USING GIN (LOWER(mark_text) gin_trgm_ops);
+-- CREATE INDEX IF NOT EXISTS ip_silver_tm_gin_classes_idx ON ip_silver.trademarks USING GIN (nice_classes);
+-- CREATE INDEX IF NOT EXISTS ip_silver_tm_owner_idx ON ip_silver.trademarks (owner_company_id);

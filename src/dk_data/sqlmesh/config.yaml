@@ -58,7 +58,7 @@ physical_schema_mapping:
   # HCP / researcher / KOL domain
   hcp_silver: hcp_silver
   hcp_gold: hcp_gold
-  # IP (Intellectual Property) domain — patents, trademarks, designs
+  # IP (Intellectual Property) domain — patents, trademarks, designs (FR-006a)
   ip_raw: ip_raw
   ip_bronze: ip_bronze
   ip_silver: ip_silver

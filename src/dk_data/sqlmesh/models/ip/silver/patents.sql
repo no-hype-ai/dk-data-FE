@@ -1,337 +1,109 @@
--- SQLMesh Model: Silver Patents
--- Normalized patent data from DrugBank, USPTO Patents, USPTO CI, and EPO OPS
--- Part of: 014-uspto-euipo-model-datasource (extended from 012)
--- Migrated from mol_silver → ip_silver by 001-silver-medallion-rebuild (FR-006e)
+-- T040: ip_silver.patents — patent hub (NEW)
+-- Hub architecture: one row per unique patent, keyed by (jurisdiction, patent_number).
+-- Sources: USPTO patents, EPO patents from bronze.
 
 MODEL (
     name ip_silver.patents,
     kind INCREMENTAL_BY_UNIQUE_KEY (
-        unique_key patent_number
+        unique_key patent_id
     ),
-    cron '@monthly',
-    audits (
-        not_null(columns := (patent_number)),
-        unique_values(columns := (patent_number))
-    ),
-    grain patent_number
+    grain patent_id
 );
 
--- Staleness guard (FR-050)
-, staleness_check AS (
-  SELECT CASE
-    WHEN MAX(ingested_at) < NOW() - INTERVAL '6 hours'
-    THEN error('Bronze upstream is stale: ' || MAX(ingested_at)::text)
-  END FROM ip_bronze.uspto_patents
-)
-
--- Extract patent information from DrugBank drug records
-, drugbank_patents AS (
+WITH uspto_patents AS (
     SELECT
-        drugbank_id,
-        inchi_key,
-        name AS drug_name,
-        patent->>'number' AS patent_number,
-        patent->>'country' AS country,
-        (patent->>'approved')::DATE AS grant_date,
-        (patent->>'expires')::DATE AS expiry_date,
-        (patent->>'pediatric_extension')::BOOLEAN AS pediatric_extension,
-        source,
-        source_updated_at,
-        created_at
-    FROM mol_bronze.drugbank,
-         jsonb_array_elements(patents) AS patent
-    WHERE
-        processed_to_silver = FALSE
-        AND patents IS NOT NULL
-        AND jsonb_array_length(patents) > 0
-        AND patent->>'number' IS NOT NULL
-),
-
--- USPTO Patents (PatentsView direct)
-uspto_patents AS (
-    SELECT
-        patent_number,
-        patent_title AS title,
-        patent_abstract AS abstract,
-        patent_date AS grant_date,
-        filing_date,
-        assignee_organization AS assignee,
-        assignee_type,
-        inventors,
-        cpc_codes,
-        NULL::JSONB AS ipc_codes,        -- USPTO does not expose IPC codes in PatentsView
-        num_claims,
-        is_pharma_related,
-        NULL::TEXT AS family_id,         -- family_id not tracked in PatentsView schema
-        patent_type,
-        patent_kind,
-        NULL::TEXT AS application_number, -- not exposed in PatentsView bulk data
-        'uspto'::TEXT AS source,
-        ingested_at
-    FROM ip_bronze.uspto_patents
-    WHERE processed_to_silver = FALSE
-      AND patent_number IS NOT NULL
-),
-
--- USPTO CI (query-scoped)
-uspto_ci AS (
-    SELECT
-        patent_number,
-        patent_title AS title,
-        patent_abstract AS abstract,
-        patent_date AS grant_date,
-        filing_date,
-        assignee_organization AS assignee,
-        NULL::TEXT AS assignee_type,     -- not in USPTO CI query schema
-        inventors,
-        cpc_codes,
-        NULL::JSONB AS ipc_codes,        -- not in USPTO CI schema
-        num_claims,
-        is_pharma_related,
-        NULL::TEXT AS family_id,         -- not tracked in USPTO CI
-        NULL::TEXT AS patent_type,       -- not in USPTO CI schema
-        NULL::TEXT AS patent_kind,       -- not in USPTO CI schema
-        NULL::TEXT AS application_number, -- not in USPTO CI schema
-        'uspto_ci'::TEXT AS source,
-        ingested_at
-    FROM ip_bronze.uspto_ci
-    WHERE processed_to_silver = FALSE
-      AND patent_number IS NOT NULL
-),
-
--- EPO Patents (European)
-epo_patents AS (
-    SELECT
-        patent_number,
-        patent_title AS title,
-        patent_abstract AS abstract,
-        patent_date AS grant_date,
-        filing_date,
-        assignee_organization AS assignee,
-        NULL::TEXT AS assignee_type,     -- EPO uses different assignee classification
-        inventors,
+        ('x' || substr(md5('US:' || COALESCE(patent_number, application_number, publication_number)), 1, 16))::bit(64)::bigint AS patent_id,
+        'US'                                                                     AS jurisdiction,
+        NULLIF(patent_number, '')                                                AS patent_number,
+        NULLIF(application_number, '')                                           AS application_number,
+        NULLIF(publication_number, '')                                           AS publication_number,
+        NULL::text                                                               AS pct_application_number,
+        NULLIF(title, '')                                                        AS title,
+        NULLIF(abstract, '')                                                     AS abstract,
+        filing_date::date                                                        AS filing_date,
+        grant_date::date                                                         AS grant_date,
+        expiry_date::date                                                        AS expiry_date,
         cpc_codes,
         ipc_codes,
-        num_claims,
-        is_pharma_related,
-        family_id,
-        NULL::TEXT AS patent_type,       -- EPO uses different type taxonomy
-        NULL::TEXT AS patent_kind,       -- EPO uses different kind taxonomy
-        NULL::TEXT AS application_number, -- not exposed in EPO OPS schema
-        'epo'::TEXT AS source,
-        ingested_at
+        NULLIF(kind_code, '')                                                    AS kind_code,
+        NULLIF(status, '')                                                       AS status,
+        1                                                                        AS src_priority,
+        ingested_at                                                              AS first_seen_at
+    FROM ip_bronze.uspto_patents
+    WHERE COALESCE(patent_number, application_number, publication_number) IS NOT NULL
+),
+
+epo_patents AS (
+    SELECT
+        ('x' || substr(md5('EP:' || COALESCE(patent_number, application_number, publication_number)), 1, 16))::bit(64)::bigint AS patent_id,
+        'EP'                                                                     AS jurisdiction,
+        NULLIF(patent_number, '')                                                AS patent_number,
+        NULLIF(application_number, '')                                           AS application_number,
+        NULLIF(publication_number, '')                                           AS publication_number,
+        NULLIF(pct_application_number, '')                                       AS pct_application_number,
+        NULLIF(title, '')                                                        AS title,
+        NULLIF(abstract, '')                                                     AS abstract,
+        filing_date::date                                                        AS filing_date,
+        grant_date::date                                                         AS grant_date,
+        expiry_date::date                                                        AS expiry_date,
+        cpc_codes,
+        ipc_codes,
+        NULLIF(kind_code, '')                                                    AS kind_code,
+        NULLIF(status, '')                                                       AS status,
+        2                                                                        AS src_priority,
+        ingested_at                                                              AS first_seen_at
     FROM ip_bronze.epo_patents
-    WHERE processed_to_silver = FALSE
-      AND patent_number IS NOT NULL
+    WHERE COALESCE(patent_number, application_number, publication_number) IS NOT NULL
 ),
 
--- Feature 015: Orange Book patents
-orange_book_patents AS (
-    SELECT
+all_patents AS (
+    SELECT * FROM uspto_patents
+    UNION ALL
+    SELECT * FROM epo_patents
+),
+
+deduped AS (
+    SELECT DISTINCT ON (patent_id)
+        patent_id,
+        jurisdiction,
         patent_number,
-        trade_name AS title,
-        NULL::TEXT AS abstract,          -- not in Orange Book
-        NULL::DATE AS grant_date,        -- not in Orange Book (only expiry date)
-        patent_expiration AS ob_expiry_date, -- Orange Book patent expiration date
-        NULL::DATE AS filing_date,       -- not in Orange Book
-        applicant AS assignee,
-        NULL::TEXT AS assignee_type,     -- not in Orange Book
-        NULL::JSONB AS inventors,        -- not in Orange Book
-        NULL::JSONB AS cpc_codes,        -- not in Orange Book
-        NULL::JSONB AS ipc_codes,        -- not in Orange Book
-        NULL::INTEGER AS num_claims,     -- not in Orange Book
-        TRUE AS is_pharma_related,
-        NULL::TEXT AS family_id,         -- not in Orange Book
-        NULL::TEXT AS patent_type,       -- not in Orange Book
-        NULL::TEXT AS patent_kind,       -- not in Orange Book
-        application_number,              -- from Orange Book appl_no column
-        patent_use_code,                 -- FDA patent use code (e.g. U-xxxx)
-        drug_substance_patent,           -- Y/N flag: covers drug substance
-        drug_product_patent,             -- Y/N flag: covers drug product
-        'orange_book'::TEXT AS source,
-        ingested_at
-    FROM mol_bronze.orange_book
-    WHERE processed_to_silver = FALSE
-      AND patent_number IS NOT NULL
-),
-
--- Combine all sources
-combined AS (
-    -- DrugBank records (existing format)
-    SELECT
-        patent_number, NULL AS title, NULL AS abstract,
-        NULL::DATE AS filing_date, grant_date, expiry_date,
-        NULL AS assignee, NULL::TEXT AS assignee_type,
-        NULL::JSONB AS inventors,
-        NULL::JSONB AS cpc_codes, NULL::JSONB AS ipc_codes,
-        NULL::INTEGER AS num_claims,
-        NULL::BOOLEAN AS is_pharma_related,
-        NULL::TEXT AS family_id,
-        pediatric_extension, country,
-        drug_name AS molecule_name,
-        NULL::TEXT AS patent_type,        -- not tracked in DrugBank patent records
-        NULL::TEXT AS patent_kind,        -- not tracked in DrugBank patent records
-        NULL::TEXT AS application_number, -- not tracked in DrugBank patent records
-        NULL::TEXT AS patent_use_code,    -- not tracked in DrugBank patent records
-        NULL::BOOLEAN AS drug_substance_patent, -- not tracked in DrugBank patent records
-        NULL::BOOLEAN AS drug_product_patent,   -- not tracked in DrugBank patent records
-        inchi_key,
-        'drugbank' AS source,
-        source_updated_at,
-        created_at                      AS ingested_at
-    FROM drugbank_patents
-
-    UNION ALL
-
-    SELECT
-        patent_number, title, abstract,
-        filing_date, grant_date, NULL::DATE AS expiry_date,
-        assignee, assignee_type, inventors,
-        cpc_codes, ipc_codes, num_claims,
-        is_pharma_related, family_id,
-        NULL::BOOLEAN AS pediatric_extension, 'US' AS country,
-        NULL AS molecule_name,
-        patent_type,
-        patent_kind,
         application_number,
-        NULL::TEXT AS patent_use_code,
-        NULL::BOOLEAN AS drug_substance_patent,
-        NULL::BOOLEAN AS drug_product_patent,
-        NULL::TEXT AS inchi_key,         -- not linked at patent level in PatentsView
-        source,
-        NOW() AS source_updated_at,
-        ingested_at
-    FROM uspto_patents
-
-    UNION ALL
-
-    SELECT
-        patent_number, title, abstract,
-        filing_date, grant_date, NULL::DATE AS expiry_date,
-        assignee, assignee_type, inventors,
-        cpc_codes, ipc_codes, num_claims,
-        is_pharma_related, family_id,
-        NULL::BOOLEAN AS pediatric_extension, 'US' AS country,
-        NULL AS molecule_name,
-        patent_type,
-        patent_kind,
-        application_number,
-        NULL::TEXT AS patent_use_code,
-        NULL::BOOLEAN AS drug_substance_patent,
-        NULL::BOOLEAN AS drug_product_patent,
-        NULL::TEXT AS inchi_key,
-        source,
-        NOW() AS source_updated_at,
-        ingested_at
-    FROM uspto_ci
-
-    UNION ALL
-
-    SELECT
-        patent_number, title, abstract,
-        filing_date, grant_date, NULL::DATE AS expiry_date,
-        assignee, assignee_type, inventors,
-        cpc_codes, ipc_codes, num_claims,
-        is_pharma_related, family_id,
-        NULL::BOOLEAN AS pediatric_extension, 'EP' AS country,
-        NULL AS molecule_name,
-        patent_type,
-        patent_kind,
-        application_number,
-        NULL::TEXT AS patent_use_code,
-        NULL::BOOLEAN AS drug_substance_patent,
-        NULL::BOOLEAN AS drug_product_patent,
-        NULL::TEXT AS inchi_key,
-        source,
-        NOW() AS source_updated_at,
-        ingested_at
-    FROM epo_patents
-
-    UNION ALL
-
-    -- Feature 015: Orange Book
-    SELECT
-        patent_number, title, abstract,
-        filing_date, grant_date, ob_expiry_date AS expiry_date,
-        assignee, assignee_type, inventors,
-        cpc_codes, ipc_codes, num_claims,
-        is_pharma_related, family_id,
-        NULL::BOOLEAN AS pediatric_extension, 'US' AS country,
-        NULL AS molecule_name,
-        patent_type,
-        patent_kind,
-        application_number,
-        patent_use_code,
-        drug_substance_patent,
-        drug_product_patent,
-        NULL::TEXT AS inchi_key,
-        source,
-        NOW() AS source_updated_at,
-        ingested_at
-    FROM orange_book_patents
+        publication_number,
+        pct_application_number,
+        title,
+        abstract,
+        filing_date,
+        grant_date,
+        expiry_date,
+        cpc_codes,
+        ipc_codes,
+        kind_code,
+        status,
+        first_seen_at
+    FROM all_patents
+    ORDER BY patent_id, src_priority ASC
 )
 
-SELECT DISTINCT ON (patent_number)
-    gen_random_uuid() AS id,
+SELECT
+    patent_id,
+    jurisdiction,
     patent_number,
     application_number,
+    publication_number,
+    pct_application_number,
     title,
     abstract,
     filing_date,
     grant_date,
     expiry_date,
-    assignee,
-    assignee_type,
-    NULL::TEXT AS assignee_normalized,   -- requires entity resolution, deferred
-    inventors,
-    patent_type,
-    patent_kind,
-    country,
     cpc_codes,
     ipc_codes,
-    num_claims,
-    family_id,
-    CASE
-        WHEN expiry_date < CURRENT_DATE THEN 'expired'
-        WHEN grant_date IS NULL THEN 'pending'
-        ELSE 'active'
-    END AS status,
-    is_pharma_related,
-    pediatric_extension,
-    CASE WHEN pediatric_extension = TRUE THEN 180 ELSE 0 END AS extension_days,
-    -- Orange Book patent classification fields
-    patent_use_code,
-    drug_substance_patent,
-    drug_product_patent,
-    NULL::JSONB AS related_patents,      -- requires patent citation network data (not ingested)
-    -- Entity linking (priority order):
-    --   1. InChIKey exact match (DrugBank only — USPTO/EPO lack inchi_key at patent level)
-    --   2. molecule_name first-token alias match — catches salt forms like
-    --      "Imatinib Mesylate" → first token "imatinib" matches alias "imatinib"
-    COALESCE(m_ik.molecule_id, m_alias.molecule_id) AS molecule_id,
-    combined.source,
-    combined.ingested_at,
-    combined.source_updated_at,
-    NOW() AS created_at,
-    NOW() AS updated_at
-FROM combined
--- Strategy 1: InChIKey
-LEFT JOIN mol_silver.molecules m_ik
-       ON combined.inchi_key IS NOT NULL
-      AND combined.inchi_key = m_ik.inchi_key
--- Strategy 2: molecule_name first-token → alias_name_normalized
-LEFT JOIN mol_silver.molecule_aliases m_alias
-       ON m_ik.molecule_id IS NULL
-      AND combined.molecule_name IS NOT NULL
-      AND LOWER(REGEXP_REPLACE(
-              SPLIT_PART(combined.molecule_name, ' ', 1),
-              '[^a-zA-Z0-9]', '', 'g'
-          )) = m_alias.alias_name_normalized
-ORDER BY patent_number,
-    CASE combined.source
-        WHEN 'drugbank' THEN 1
-        WHEN 'uspto_patents' THEN 2
-        WHEN 'uspto_ci' THEN 3
-        WHEN 'epo_ops' THEN 4
-        WHEN 'orange_book' THEN 5
-    END
+    kind_code,
+    status,
+    COALESCE(first_seen_at, NOW()) AS first_seen_at,
+    NOW()                          AS last_updated_at
+FROM deduped;
+
+-- CREATE INDEX IF NOT EXISTS ip_silver_pat_filing_idx ON ip_silver.patents (filing_date);
+-- CREATE INDEX IF NOT EXISTS ip_silver_pat_cpc_gin_idx ON ip_silver.patents USING GIN (cpc_codes);
+-- CREATE INDEX IF NOT EXISTS ip_silver_pat_title_gin_idx ON ip_silver.patents USING GIN (LOWER(title) gin_trgm_ops);
