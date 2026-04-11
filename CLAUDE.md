@@ -46,3 +46,30 @@ Domain schemas in dk-data:
 - `ip_raw`, `ip_bronze`, `ip_silver`, `ip_gold` — Intellectual property / patents / trademarks / designs
 - `meta` — Job locks, refresh state, transform runs
 - `staging`, `xenon`, `mol_app`, `agents` — Application / infrastructure schemas
+
+## Silver Hub Architecture (feature/001-silver-medallion-rebuild)
+
+The silver layer was rebuilt on 10 canonical entity-resolution hubs:
+
+| Hub | Schema | Key Tables |
+|-----|--------|-----------|
+| Molecule | `mol_silver` | `molecules`, `molecule_identifiers`, `molecule_names` |
+| Drug Product | `mol_silver` | `drug_products`, `drug_product_identifiers`, `drug_product_names`, `drug_product_ingredients` |
+| Company | `mol_silver` | `companies`, `company_identifiers`, `company_names` |
+| Target | `mol_silver` | `targets`, `target_identifiers`, `target_names`, `target_sequences` |
+| Provider | `hcs_silver` | `providers`, `provider_identifiers`, `provider_names` |
+| Facility | `hcs_silver` | `facilities`, `facility_identifiers`, `facility_names` |
+| Condition | `ind_silver` | `conditions`, `condition_identifiers`, `condition_names` |
+| Researcher | `hcp_silver` | `researchers`, `researcher_identifiers`, `researcher_names` |
+| Patent | `ip_silver` | `patents`, `patent_identifiers`, `patent_names` |
+| Trademark | `ip_silver` | `trademarks`, `trademark_identifiers`, `trademark_names` |
+
+**Resolve functions**: `mol_silver.resolve_molecule()`, `hcs_silver.resolve_provider()`, etc. — STABLE PARALLEL SAFE with ≤10ms p99 target (SC-004).
+
+**Key rules**:
+- Silver models MUST obtain entity IDs by indexed equi-join to a hub crosswalk OR by calling a resolve function (FR-014). Never by inline fuzzy matching.
+- 5 banned antipatterns: S1 (OR-join hub IDs), S2 (leading-wildcard LIKE), S3 (correlated scalar subquery), S4 (DISTINCT ON over UNION ALL), S5 (similarity + = in OR).
+- `mol_silver.molecule_aliases` and `mol_silver.identifier_mappings` are being phased out — use `molecule_names` and `molecule_identifiers` instead.
+
+**Bootstrap procedures**: `src/dk_data/sql/migrations/031_silver_hub_rebuild/014_bootstrap_*.sql`
+**Runbook**: `docs/runbooks/silver-hub-bootstrap.md`
