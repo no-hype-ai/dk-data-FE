@@ -1,3 +1,8 @@
+-- T120 DELETION DEFERRED: As of Wave 4, this model is still referenced by 13 consumer models.
+-- Deletion requires updating all consumers to use mol_silver.molecule_identifiers (source, identifier).
+-- Track progress: grep -r "identifier_mappings" src/dk_data/sqlmesh/models/ --include="*.sql" -l
+-- When grep returns only this file, delete it and update tasks.md T120 to [x].
+
 -- SQLMesh Model: Silver Identifier Mappings
 -- Cross-source identifier mapping table for entity resolution
 -- Maps molecule_id to various external identifiers
