@@ -2,8 +2,8 @@
 -- Cross-payer drug/HCPCS utilization — Medicare Part D + Part B + Medicaid + DME + Lab + Imaging.
 -- Grain: (drug_or_hcpcs_code, code_type, _source_year)
 --
--- molecule_id linkage (019 addition):
---   • Part D / Part B / Medicaid drug names → alias exact → RxNorm name → first-token alias
+-- molecule_id linkage (T116 rewrite — S3→LATERAL, molecule_aliases→molecule_names):
+--   • Part D / Part B / Medicaid drug names → exact normalized name → first-token name (salt forms)
 --   • HCPCS codes (DME/Lab/Imaging)         → mol_silver.hcpcs_molecule_bridge
 --   NULL molecule_id = no match found; data is retained regardless.
 --
@@ -230,60 +230,44 @@ SELECT
     a.total_services,
     a.avg_medicare_allowed_amt,
     a.avg_medicare_payment_amt,
-    -- molecule_id: tiered linking strategy
+    -- molecule_id: tiered linking via LEFT JOIN LATERAL (replaces S3 CASE WHEN correlated subqueries)
     --   Drug name codes (Part D / Part B / Medicaid):
-    --     Tier 1a: exact alias on full stripped drug name
-    --     Tier 1b: RxNorm name match (handles CMS multi-word generics not in aliases)
-    --     Tier 1c: first-token alias (salt forms: "paclitaxel protein-bound" → "paclitaxel")
+    --     Tier 1a: exact name match on full stripped drug name via molecule_names hub
+    --     Tier 1b: first-token match (salt forms: "paclitaxel protein-bound" → "paclitaxel")
     --   HCPCS codes (DME, lab, imaging):
     --     Tier 2:  hcpcs_molecule_bridge by HCPCS code
-    COALESCE(
-        -- Tier 1a: exact alias match on full stripped drug name
-        CASE WHEN a.code_type IN ('part_d_drug', 'part_b_drug', 'medicaid_drug')
-            THEN (
-                SELECT ma.molecule_id
-                FROM mol_silver.molecule_aliases ma
-                WHERE LOWER(REGEXP_REPLACE(a.drug_or_hcpcs_code, '[^a-zA-Z0-9]', '', 'g'))
-                    = ma.alias_name_normalized
-                LIMIT 1
-            )
-        END,
-        -- Tier 1b: RxNorm name match
-        CASE WHEN a.code_type IN ('part_d_drug', 'part_b_drug', 'medicaid_drug')
-            THEN (
-                SELECT DISTINCT rx.molecule_id
-                FROM mol_silver.rxnorm_concepts rx
-                WHERE rx.molecule_id IS NOT NULL
-                  AND LOWER(rx.name) = a.drug_or_hcpcs_code
-                LIMIT 1
-            )
-        END,
-        -- Tier 1c: first-token alias (salt forms: "paclitaxel protein-bound" → "paclitaxel")
-        CASE WHEN a.code_type IN ('part_d_drug', 'part_b_drug', 'medicaid_drug')
-              AND LENGTH(SPLIT_PART(a.drug_or_hcpcs_code, ' ', 1)) >= 4
-            THEN (
-                SELECT ma.molecule_id
-                FROM mol_silver.molecule_aliases ma
-                WHERE LOWER(REGEXP_REPLACE(
-                          SPLIT_PART(a.drug_or_hcpcs_code, ' ', 1),
-                          '[^a-zA-Z0-9]', '', 'g'
-                      )) = ma.alias_name_normalized
-                LIMIT 1
-            )
-        END,
-        -- Tier 2: HCPCS bridge for DME/lab/imaging codes
-        CASE WHEN a.code_type NOT IN ('part_d_drug', 'part_b_drug', 'medicaid_drug')
-            THEN (
-                SELECT hb.molecule_id
-                FROM mol_silver.hcpcs_molecule_bridge hb
-                WHERE LOWER(a.drug_or_hcpcs_code) = LOWER(hb.hcpcs_code)
-                ORDER BY hb.confidence DESC
-                LIMIT 1
-            )
-        END
-    )                                       AS molecule_id,
+    COALESCE(name_full.molecule_id, name_first.molecule_id, hcpcs_link.molecule_id) AS molecule_id,
     a.code_type                             AS source,
     NOW()                                   AS source_updated_at,
     NOW()                                   AS created_at,
     NOW()                                   AS updated_at
-FROM aggregated a;
+FROM aggregated a
+
+-- Tier 1a: exact name match via molecule_names hub
+LEFT JOIN LATERAL (
+    SELECT mn.molecule_id
+    FROM mol_silver.molecule_names mn
+    WHERE a.code_type IN ('part_d_drug', 'part_b_drug', 'medicaid_drug')
+      AND mn.normalized_name = LOWER(REGEXP_REPLACE(a.drug_or_hcpcs_code, '[^a-zA-Z0-9]', '', 'g'))
+    ORDER BY mn.molecule_id LIMIT 1
+) name_full ON TRUE
+
+-- Tier 1b: first-token match (salt forms: "paclitaxel protein-bound" → "paclitaxel")
+LEFT JOIN LATERAL (
+    SELECT mn.molecule_id
+    FROM mol_silver.molecule_names mn
+    WHERE a.code_type IN ('part_d_drug', 'part_b_drug', 'medicaid_drug')
+      AND name_full.molecule_id IS NULL
+      AND LENGTH(SPLIT_PART(a.drug_or_hcpcs_code, ' ', 1)) >= 4
+      AND mn.normalized_name = LOWER(REGEXP_REPLACE(SPLIT_PART(a.drug_or_hcpcs_code, ' ', 1), '[^a-zA-Z0-9]', '', 'g'))
+    ORDER BY mn.molecule_id LIMIT 1
+) name_first ON TRUE
+
+-- Tier 2: HCPCS bridge for DME/lab/imaging codes
+LEFT JOIN LATERAL (
+    SELECT hb.molecule_id
+    FROM mol_silver.hcpcs_molecule_bridge hb
+    WHERE a.code_type NOT IN ('part_d_drug', 'part_b_drug', 'medicaid_drug')
+      AND LOWER(a.drug_or_hcpcs_code) = LOWER(hb.hcpcs_code)
+    ORDER BY hb.confidence DESC LIMIT 1
+) hcpcs_link ON TRUE;
