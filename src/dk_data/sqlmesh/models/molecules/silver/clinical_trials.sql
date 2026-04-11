@@ -4,19 +4,14 @@
 -- Updated: 019-cms-puf-platform-reconciliation — zero column loss audit pass
 --   All bronze columns now promoted; eligibility, locations, results, and oversight
 --   columns were previously dropped without justification.
+-- Updated: T115+T131 — converted from INCREMENTAL_BY_TIME_RANGE to INCREMENTAL_BY_UNIQUE_KEY
+--   (T170), replaced S3 correlated subquery with LEFT JOIN LATERAL, added condition_id
+--   linkage via MeSH (FR-032).
 
--- TODO(T170): Convert from INCREMENTAL_BY_TIME_RANGE → INCREMENTAL_BY_UNIQUE_KEY (unique_key nct_id).
--- INCREMENTAL_BY_TIME_RANGE on source_updated_at causes duplicate inserts when upstream rows are
--- reloaded with the same nct_id but a new source_updated_at. Safe to convert because nct_id is the
--- natural grain and the audits already enforce unique_values(nct_id).
--- Conversion: replace kind block with:
---   kind INCREMENTAL_BY_UNIQUE_KEY (unique_key nct_id)
--- Remove the time_column filter (@start_dt/@end_dt) and add a DISTINCT ON (nct_id) dedup CTE.
 MODEL (
     name mol_silver.clinical_trials,
-    kind INCREMENTAL_BY_TIME_RANGE (
-        time_column source_updated_at,
-        batch_size 1000
+    kind INCREMENTAL_BY_UNIQUE_KEY (
+        unique_key nct_id
     ),
     cron '@daily',
     audits (
@@ -29,6 +24,15 @@ MODEL (
         SET LOCAL work_mem = '128MB'
     ]
 );
+
+-- Dedup bronze: one row per nct_id, latest request_timestamp wins.
+WITH deduped_bronze AS (
+    SELECT DISTINCT ON (nct_id)
+        *
+    FROM mol_bronze.clinicaltrials
+    WHERE nct_id IS NOT NULL
+    ORDER BY nct_id, request_timestamp DESC
+)
 
 SELECT
     gen_random_uuid() AS trial_id,
@@ -119,33 +123,14 @@ SELECT
     (b.raw_json->'protocolSection'->'oversightModule'->>'isFdaRegulatedDevice')::BOOLEAN AS fda_regulated_device,
     (b.raw_json->'protocolSection'->'oversightModule'->>'humanSubjectReviewBoard' = 'Yes')::BOOLEAN AS has_dmc,
 
-    -- Entity resolution: derive molecule_id by matching DRUG intervention names.
-    -- Strategy 1: exact canonical name match.
-    -- Strategy 2: DrugBank synonym match — intervention name matches a known synonym
-    --   of a DrugBank drug whose canonical_name maps to a molecule.
-    -- First match wins (lowest priority value).
-    (
-        SELECT molecule_id FROM (
-            SELECT m.molecule_id, 1 AS priority
-            FROM jsonb_array_elements(COALESCE(b.interventions, '[]'::jsonb)) AS interv
-            JOIN mol_silver.molecules m
-                ON interv->>'type' = 'DRUG'
-               AND LOWER(m.canonical_name) = LOWER(interv->>'name')
+    -- Entity resolution: molecule_id via DRUG intervention name match against molecule_names hub.
+    -- LEFT JOIN LATERAL replaces S3 correlated subquery (T115).
+    -- Matches normalized intervention name to mol_silver.molecule_names.normalized_name.
+    mol_interv.molecule_id AS molecule_id,
 
-            UNION ALL
-
-            SELECT m.molecule_id, 2 AS priority
-            FROM jsonb_array_elements(COALESCE(b.interventions, '[]'::jsonb)) AS interv
-            JOIN mol_bronze.drugbank db
-                ON interv->>'type' = 'DRUG'
-               AND jsonb_typeof(COALESCE(db.synonyms, '[]'::jsonb)) = 'array'
-            JOIN jsonb_array_elements_text(COALESCE(db.synonyms, '[]'::jsonb)) AS syn ON TRUE
-            JOIN mol_silver.molecules m ON LOWER(m.canonical_name) = LOWER(db.name)
-            WHERE LOWER(syn) = LOWER(interv->>'name')
-        ) _matches
-        ORDER BY priority
-        LIMIT 1
-    ) AS molecule_id,
+    -- Condition linkage via MeSH (FR-032): match condition text from bronze conditions array
+    -- against ind_silver.condition_names.normalized_name (T131).
+    cond_link.condition_id AS condition_id,
 
     -- Source Tracking
     b.id AS bronze_id,
@@ -154,12 +139,25 @@ SELECT
     NOW() AS created_at,
     NOW() AS updated_at
 
-FROM (
-    SELECT DISTINCT ON (nct_id)
-        *
-    FROM mol_bronze.clinicaltrials
-    WHERE processed_to_silver = FALSE
-      AND nct_id IS NOT NULL
-      AND request_timestamp BETWEEN @start_dt AND @end_dt
-    ORDER BY nct_id, request_timestamp DESC
-) b;
+FROM deduped_bronze b
+
+-- Tier 1: molecule_id via DRUG intervention name normalized match
+LEFT JOIN LATERAL (
+    SELECT mn.molecule_id
+    FROM jsonb_array_elements(COALESCE(b.interventions, '[]'::jsonb)) AS interv
+    JOIN mol_silver.molecule_names mn
+        ON interv->>'type' = 'DRUG'
+        AND mn.normalized_name = LOWER(REGEXP_REPLACE(interv->>'name', '[^a-zA-Z0-9 ]', '', 'g'))
+    ORDER BY mn.molecule_id
+    LIMIT 1
+) mol_interv ON TRUE
+
+-- Condition linkage via MeSH condition names (FR-032)
+LEFT JOIN LATERAL (
+    SELECT ci.condition_id
+    FROM jsonb_array_elements_text(COALESCE(b.conditions, '[]'::jsonb)) AS cond(condition_text)
+    JOIN ind_silver.condition_names cn ON cn.normalized_name = LOWER(REGEXP_REPLACE(cond.condition_text, '[^a-zA-Z0-9 ]', '', 'g'))
+    JOIN ind_silver.condition_identifiers ci ON ci.condition_id = cn.condition_id
+    ORDER BY ci.condition_id
+    LIMIT 1
+) cond_link ON TRUE;
