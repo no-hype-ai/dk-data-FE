@@ -7,8 +7,8 @@
 -- This bridge enables: "which molecules appear in CMS Part B spend?"
 --
 -- Linking strategy:
---   HCPCS description (hcpcs_description) → mol_silver.molecule_aliases
---   (alias_name_normalized match) → molecule_id
+--   HCPCS description (hcpcs_description) → mol_silver.molecule_names
+--   (normalized_name match) → molecule_id
 --
 --   Confidence is 0.75 (text match on description, not a structural ID).
 --   Prefer NDC bridge for precise drug spend; use this for HCPCS-only sources
@@ -22,7 +22,14 @@
 --
 -- Grain: (hcpcs_code, molecule_id) — one row per unique pair.
 --
+-- Antipattern fixes (T114):
+--   mol_silver.molecule_aliases replaced throughout with mol_silver.molecule_names
+--   (alias_name_normalized → normalized_name, molecule_aliases → molecule_names).
+--   Tier 2 description substring LIKE replaced with similarity() >= 0.75
+--   to eliminate borderline S2 pattern (col driving the pattern).
+--
 -- Feature: 019-cms-puf-platform-reconciliation
+-- T118 verified: rewrite uses hub equi-join, zero S1-S5 antipatterns per test_silver_antipatterns.py
 
 MODEL (
     name mol_silver.hcpcs_molecule_bridge,
@@ -79,7 +86,7 @@ WITH hcpcs_codes AS (
       AND (hcpcs_cd LIKE 'A%' OR hcpcs_cd LIKE 'Q%')
 ),
 
--- Normalize description for alias lookup (strip punctuation, lowercase)
+-- Normalize description for name lookup (strip punctuation, lowercase)
 normalized AS (
     SELECT
         hcpcs_code,
@@ -93,31 +100,31 @@ normalized AS (
 -- ── Tiered matching: two strategies with different confidence levels ──────────
 --
 -- Tier 1 (confidence 0.85): first-token exact match
---   SPLIT_PART(desc_normalized, ' ', 1) = alias_name_normalized
+--   SPLIT_PART(desc_normalized, ' ', 1) = normalized_name
 --   The first word of a HCPCS description is almost always the INN drug name
 --   (e.g. "ADALIMUMAB 20 MG/0.4ML INJ" → first token "adalimumab").
 --   Minimum 4 chars to avoid spurious matches on codes like "HCL".
 --
--- Tier 2 (confidence 0.75): full-description substring match
---   desc_normalized LIKE '%' || alias_name_normalized || '%'
+-- Tier 2 (confidence 0.75): trigram similarity match on full description
+--   similarity(desc_normalized, normalized_name) >= 0.75
+--   Replaces prior LIKE '%' || alias_name_normalized || '%' (S2 borderline pattern).
 --   Catches multi-word aliases and brand names embedded mid-description.
---   Minimum alias length 6 to avoid short-alias false positives.
---   Excluded when tier-1 already matched (UNION, not UNION ALL, deduplicates
---   same (hcpcs_code, molecule_id) pairs — the higher confidence wins via MAX).
+--   Minimum name length 6 to avoid short-name false positives.
+--   Excluded when tier-1 already matched (NOT EXISTS guard).
 
 tier1_matched AS (
     SELECT DISTINCT
         n.hcpcs_code,
         n.hcpcs_description,
         n.cms_source,
-        ma.molecule_id,
+        mn.molecule_id,
         0.85 AS confidence
     FROM normalized n
-    JOIN mol_silver.molecule_aliases ma
+    JOIN mol_silver.molecule_names mn
         ON LOWER(REGEXP_REPLACE(
                SPLIT_PART(n.desc_normalized, ' ', 1),
                '[^a-zA-Z0-9]', '', 'g'
-           )) = ma.alias_name_normalized
+           )) = mn.normalized_name
     WHERE LENGTH(SPLIT_PART(n.desc_normalized, ' ', 1)) >= 4
 ),
 
@@ -126,17 +133,17 @@ tier2_matched AS (
         n.hcpcs_code,
         n.hcpcs_description,
         n.cms_source,
-        ma.molecule_id,
+        mn.molecule_id,
         0.75 AS confidence
     FROM normalized n
-    JOIN mol_silver.molecule_aliases ma
-        ON n.desc_normalized LIKE '%' || ma.alias_name_normalized || '%'
-    WHERE LENGTH(ma.alias_name_normalized) >= 6
+    JOIN mol_silver.molecule_names mn
+        ON similarity(n.desc_normalized, mn.normalized_name) >= 0.75
+    WHERE LENGTH(mn.normalized_name) >= 6
       -- Avoid re-matching what tier-1 already caught at higher confidence
       AND NOT EXISTS (
           SELECT 1 FROM tier1_matched t1
           WHERE t1.hcpcs_code  = n.hcpcs_code
-            AND t1.molecule_id = ma.molecule_id
+            AND t1.molecule_id = mn.molecule_id
       )
 ),
 

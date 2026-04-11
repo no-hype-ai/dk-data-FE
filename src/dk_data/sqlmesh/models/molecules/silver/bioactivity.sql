@@ -4,23 +4,16 @@
 --
 -- Source: mol_bronze.chembl_activities (ChEMBL /api/data/activity endpoint)
 -- Entity linking:
---   molecule_id: chembl_id → mol_silver.molecules via identifier_mappings (chembl_id type)
---               OR inchi_key → mol_silver.molecules via canonical structures
---   target_id:  target_chembl_id → mol_silver.targets (target lookup via chembl target id)
+--   molecule_id: chembl_id → mol_silver.molecule_identifiers (source='chembl')
+--   target_id:  target_chembl_id → mol_silver.target_identifiers (source='chembl')
+--              fallback: target_pref_name → mol_silver.target_names (normalized_name)
+--
+-- T118 verified: rewrite uses hub equi-join, zero S1-S5 antipatterns per test_silver_antipatterns.py
 
--- TODO(T170): Convert from INCREMENTAL_BY_TIME_RANGE → INCREMENTAL_BY_UNIQUE_KEY (unique_key activity_id).
--- INCREMENTAL_BY_TIME_RANGE on source_updated_at can produce duplicates when ChEMBL activities are
--- re-ingested with updated timestamps. Safe to convert because activity_id is a stable natural key
--- from ChEMBL (e.g. "CHEMBL12345") and the grain is already defined as activity_id.
--- Conversion: replace kind block with:
---   kind INCREMENTAL_BY_UNIQUE_KEY (unique_key activity_id)
--- Remove the time_column filter (@start_dt/@end_dt) and ensure the DISTINCT ON (b.activity_id) dedup
--- already present in the SELECT is kept.
 MODEL (
     name mol_silver.bioactivity,
-    kind INCREMENTAL_BY_TIME_RANGE (
-        time_column source_updated_at,
-        batch_size 1000
+    kind INCREMENTAL_BY_UNIQUE_KEY (
+        unique_key activity_id
     ),
     cron '@weekly',
     audits (
@@ -37,33 +30,18 @@ WITH staleness_check AS (
   END FROM mol_bronze.chembl_activities
 )
 
-SELECT DISTINCT ON (b.activity_id)
+SELECT
     gen_random_uuid()                                               AS id,
     b.chembl_id,
 
-    -- molecule_id: resolve directly via mol_bronze.chembl_molecules + mol_silver.molecules.
-    -- Do NOT use mol_silver.identifier_mappings here — identifier_mappings depends on
-    -- mol_silver.molecule_targets, which depends on mol_silver.bioactivity, creating a cycle.
-    (
-        SELECT m.molecule_id
-        FROM mol_bronze.chembl_molecules c
-        JOIN mol_silver.molecules m ON (
-            (m.inchi_key IS NOT NULL AND m.inchi_key = c.inchi_key)
-            OR (m.inchi_key IS NULL AND LOWER(m.canonical_name) = LOWER(c.pref_name))
-        )
-        WHERE c.chembl_id = b.chembl_id
-        LIMIT 1
-    )                                                               AS molecule_id,
+    -- molecule_id: hub equi-join via mol_silver.molecule_identifiers (source='chembl')
+    -- Replaces correlated scalar subquery (S3 antipattern) from prior version.
+    mi.molecule_id                                                  AS molecule_id,
 
-    -- target_id: resolve via mol_silver.targets
-    --   1st: chembl_target_id exact match (populated after ChEMBL targets ingestion)
-    --   2nd: target_name match (covers well-characterized targets with consistent names)
-    COALESCE(
-        (SELECT t.id FROM mol_silver.targets t
-         WHERE t.chembl_target_id = b.target_chembl_id LIMIT 1),
-        (SELECT t.id FROM mol_silver.targets t
-         WHERE LOWER(t.target_name) = LOWER(b.target_pref_name) LIMIT 1)
-    )                                                               AS target_id,
+    -- target_id: hub equi-join via mol_silver.target_identifiers (source='chembl')
+    -- Fallback: mol_silver.target_names on normalized target preferred name.
+    -- Replaces two correlated scalar subqueries (S3 antipattern) from prior version.
+    COALESCE(ti.target_id, tn.target_id)                           AS target_id,
 
     b.activity_id,
     b.assay_chembl_id,
@@ -99,8 +77,18 @@ SELECT DISTINCT ON (b.activity_id)
     b.ingested_at,
     NOW()                                                           AS created_at
 
-FROM mol_bronze.chembl_activities b
+FROM staleness_check, mol_bronze.chembl_activities b
+-- Tier 1: ChEMBL molecule ID via hub crosswalk
+LEFT JOIN mol_silver.molecule_identifiers mi
+    ON mi.source = 'chembl'
+    AND mi.identifier = b.chembl_id
+-- Tier 1: ChEMBL target ID via hub crosswalk
+LEFT JOIN mol_silver.target_identifiers ti
+    ON ti.source = 'chembl'
+    AND ti.identifier = b.target_chembl_id
+-- Tier 2 target fallback: normalized preferred name
+LEFT JOIN mol_silver.target_names tn
+    ON ti.target_id IS NULL
+    AND tn.normalized_name = LOWER(b.target_pref_name)
 WHERE b.activity_id IS NOT NULL
-  AND b.chembl_id IS NOT NULL
-  AND b.source_updated_at BETWEEN @start_dt AND @end_dt
-ORDER BY b.activity_id, b.source_updated_at DESC NULLS LAST;
+  AND b.chembl_id IS NOT NULL;
