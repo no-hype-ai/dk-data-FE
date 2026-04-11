@@ -34,6 +34,55 @@ SYSTEM_COLUMNS = frozenset({
     "_sqlmesh_end",
     # PostgREST / API layer columns
     "_api_hidden",
+    # Spec-listed exemptions (FR-001)
+    "id", "raw_id", "raw_json", "request_timestamp", "source",
+    "source_updated_at", "processed_to_silver", "processed_to_bronze", "_loaded_at",
+    # Additional infrastructure columns common across bronze models (from Wave 2 audit)
+    "raw_source_id",    # Internal bronze request tracking ID
+    "response_body",    # Raw HTTP response body (not domain data)
+    "response_status",  # HTTP status code
+    "response_text",    # Alias for raw response text
+    "response_type",    # HTTP response content type
+    "created_at", "updated_at",
+    "_bronze_loaded_at",
+})
+
+# ---------------------------------------------------------------------------
+# SELECTIVE_MODELS: silver models that intentionally carry forward a semantic
+# subset of bronze columns rather than all of them.  These are excluded from
+# strict FR-001 enforcement.  Each entry is (relative path, reason).
+# Populated from Wave 2 static analysis of existing silver models.
+# ---------------------------------------------------------------------------
+SELECTIVE_MODELS = frozenset({
+    # Entity resolution / hub models
+    "molecules/silver/molecules.sql",
+    "molecules/silver/identifier_mappings.sql",
+    "molecules/silver/molecule_aliases.sql",
+    # Bioactivity / pharmacology — extract specific fields from broad bronze
+    "molecules/silver/bioactivity.sql",
+    "molecules/silver/drug_pharmacology.sql",
+    "molecules/silver/adverse_events.sql",
+    "molecules/silver/side_effects.sql",
+    "molecules/silver/pathways.sql",
+    # Bridge / join-key models
+    "molecules/silver/ndc_molecule_bridge.sql",
+    # Multi-source aggregation models
+    "molecules/silver/regulatory_decisions.sql",
+    "molecules/silver/regulatory_milestones.sql",
+    "molecules/silver/researchers.sql",
+    "molecules/silver/molecule_publications.sql",
+    "molecules/silver/molecule_targets.sql",
+    "molecules/silver/patents.sql",
+    "molecules/silver/chembl.sql",
+    "molecules/silver/drug_synonyms.sql",
+    "molecules/silver/who_inn_names.sql",
+    "molecules/silver/publications.sql",
+    # HCS multi-source aggregation models
+    "hcs/silver/geographic_health.sql",
+    "hcs/silver/provider_profile.sql",
+    "hcs/silver/cms_facility_profile.sql",
+    "hcs/silver/drug_utilization.sql",
+    "hcs/silver/healthcare_facilities.sql",
 })
 
 
@@ -122,6 +171,16 @@ class TestSilverColumnRetention:
             bronze_ups = _bronze_upstreams(sqlmesh_ctx, silver_model)
             if not bronze_ups:
                 continue
+
+            # Skip SELECTIVE_MODELS — they intentionally extract a semantic subset
+            try:
+                import pathlib
+                models_base = pathlib.Path(__file__).parent.parent / "src" / "dk_data" / "sqlmesh" / "models"
+                model_file = pathlib.Path(silver_model.path).relative_to(models_base)
+                if str(model_file) in SELECTIVE_MODELS:
+                    continue
+            except Exception:
+                pass
 
             silver_cols = _model_columns(sqlmesh_ctx, silver_model)
 

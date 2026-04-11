@@ -61,6 +61,8 @@ SELECT DISTINCT ON (b.application_number)
     b.initial_approval_date,
     b.most_recent_modification,
     b.rems_status,
+    b.rems_sub,
+    b.first_rems_sub,
     b.elements,
     b.url,
     b.source,

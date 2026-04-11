@@ -34,6 +34,8 @@ SELECT DISTINCT ON (b.application_number)
     b.first_approval_date,
     b.products,
     b.submissions,
+    b.app_num,
+    b.approval_date_raw,
     m.molecule_id,
     b.source,
     b.source_updated_at,

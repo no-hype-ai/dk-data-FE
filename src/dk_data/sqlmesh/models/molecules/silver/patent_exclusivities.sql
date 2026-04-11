@@ -71,6 +71,7 @@ WITH orange_book_data AS (
         -- Additional bronze domain columns
         rs,
         drug_type,
+        NULL::TEXT AS query_name,  -- Orange Book does not have query_name (Purple Book only)
         ingested_at,
         NOW() AS source_updated_at
     FROM mol_bronze.orange_book
@@ -150,6 +151,7 @@ purple_book_data AS (
             ELSE NULL
         END::DATE AS interchangeable_exclusivity_end,
         -- Purple Book specific columns
+        query_name,
         license_type,
         presentation,
         status,
@@ -200,7 +202,7 @@ all_data AS (
         patent_type, exclusivity_code, exclusivity_date, source, source_book,
         is_biosimilar, is_interchangeable, reference_product_bla, reference_product_name,
         bpcia_data_exclusivity_end, bpcia_biosimilar_filing_date, orphan_exclusivity_end,
-        interchangeable_exclusivity_end, license_type, presentation, status, center,
+        interchangeable_exclusivity_end, query_name, license_type, presentation, status, center,
         first_licensure_date, exclusivity_expiry_date, ref_product_exclusivity_end,
         interchangeable_approval_date, has_patent_list, rs, drug_type, ingested_at,
         source_updated_at, NOW() AS created_at
@@ -216,7 +218,7 @@ all_data AS (
         patent_type, exclusivity_code, exclusivity_date, source, source_book,
         is_biosimilar, is_interchangeable, reference_product_bla, reference_product_name,
         bpcia_data_exclusivity_end, bpcia_biosimilar_filing_date, orphan_exclusivity_end,
-        interchangeable_exclusivity_end, license_type, presentation, status, center,
+        interchangeable_exclusivity_end, query_name, license_type, presentation, status, center,
         first_licensure_date, exclusivity_expiry_date, ref_product_exclusivity_end,
         interchangeable_approval_date, has_patent_list, rs, drug_type, ingested_at,
         source_updated_at, NOW() AS created_at
@@ -233,7 +235,7 @@ SELECT
     d.source, d.source_book, d.is_biosimilar, d.is_interchangeable,
     d.reference_product_bla, d.reference_product_name, d.bpcia_data_exclusivity_end,
     d.bpcia_biosimilar_filing_date, d.orphan_exclusivity_end, d.interchangeable_exclusivity_end,
-    d.license_type, d.presentation, d.status, d.center, d.first_licensure_date,
+    d.query_name, d.license_type, d.presentation, d.status, d.center, d.first_licensure_date,
     d.exclusivity_expiry_date, d.ref_product_exclusivity_end, d.interchangeable_approval_date,
     d.has_patent_list, d.rs, d.drug_type, d.ingested_at, d.source_updated_at, d.created_at
 FROM all_data d
