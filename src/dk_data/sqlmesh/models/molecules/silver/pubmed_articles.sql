@@ -11,7 +11,7 @@
 -- Antipattern fixes (T113):
 --   S3 eliminated: prior COALESCE used correlated scalar subquery over jsonb_array_elements_text.
 --                  Replaced with LEFT JOIN LATERAL (mesh_link).
---   S2 eliminated: prior Tier 2 used LIKE '%' || canonical_name || '%'.
+--   S2 eliminated: prior Tier 2 used leading-wildcard substring match (FR-016) — replaced with LATERAL join.
 --                  Replaced with LEFT JOIN LATERAL over title tokens (equi-join on normalized form).
 --
 -- FR-033: NCT trial cross-refs extracted from abstract via regexp_matches.

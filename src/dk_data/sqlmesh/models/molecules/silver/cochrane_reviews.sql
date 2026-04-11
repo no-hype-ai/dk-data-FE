@@ -17,7 +17,7 @@ MODEL (
 
 SELECT DISTINCT ON (b.review_id)
     gen_random_uuid()                       AS cochrane_silver_id,
-    m.molecule_id,
+    m.molecule_id    AS molecule_id,
     b.review_id,
     b.title,
     b.abstract,
@@ -35,9 +35,16 @@ SELECT DISTINCT ON (b.review_id)
     b.created_at
 
 FROM mol_bronze.cochrane_reviews b
-LEFT JOIN mol_silver.molecules m
-       ON LOWER(b.title) LIKE '%' || LOWER(m.canonical_name) || '%'
-      AND LENGTH(m.canonical_name) > 4
+-- S2 fix (FR-016): replace leading-wildcard LIKE with trigram similarity on molecule_names hub.
+-- similarity() uses a GIN pg_trgm index on normalized_name — no sequential scan.
+LEFT JOIN LATERAL (
+    SELECT mn.molecule_id
+    FROM mol_silver.molecule_names mn
+    WHERE LENGTH(mn.normalized_name) > 4
+      AND similarity(LOWER(b.title), mn.normalized_name) >= 0.3
+    ORDER BY similarity(LOWER(b.title), mn.normalized_name) DESC
+    LIMIT 1
+) m ON TRUE
 WHERE b.review_id IS NOT NULL
   AND b.title IS NOT NULL
 ORDER BY b.review_id, m.molecule_id NULLS LAST;

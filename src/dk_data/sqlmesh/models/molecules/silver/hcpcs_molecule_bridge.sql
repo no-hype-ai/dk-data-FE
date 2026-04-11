@@ -107,7 +107,7 @@ normalized AS (
 --
 -- Tier 2 (confidence 0.75): trigram similarity match on full description
 --   similarity(desc_normalized, normalized_name) >= 0.75
---   Replaces prior LIKE '%' || alias_name_normalized || '%' (S2 borderline pattern).
+--   Replaces prior S2 leading-wildcard substring pattern (S2 antipattern, FR-016).
 --   Catches multi-word aliases and brand names embedded mid-description.
 --   Minimum name length 6 to avoid short-name false positives.
 --   Excluded when tier-1 already matched (NOT EXISTS guard).

@@ -4,7 +4,7 @@
 --
 -- Antipattern fixes (T112):
 --   S2 eliminated: Source 5 (EuropePMC) previously used
---     LIKE '%' || LOWER(ma.alias_name) || '%' (leading-wildcard LIKE on indexed column).
+--     S2 leading-wildcard substring match on indexed column — replaced with equi-join (FR-016).
 --     Replaced with equi-join on mol_silver.molecule_names.normalized_name.
 --
 -- FR-033: NCT trial cross-references (NCT\d{8}), DOIs, and PMIDs are extracted from
@@ -87,7 +87,7 @@ WITH all_links AS (
 
     -- Source 5: EuropePMC — mol_silver.publications already contains europepmc rows.
     -- Link to molecules via mol_silver.molecule_names equi-join on title first-token.
-    -- Replaces prior LIKE '%' || alias_name || '%' (S2 antipattern).
+    -- Replaces prior S2 leading-wildcard substring match (FR-016).
     -- Strategy: join on normalized first-significant-word (>=5 chars) from title.
     SELECT DISTINCT
         mn.molecule_id,
