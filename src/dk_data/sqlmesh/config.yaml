@@ -57,6 +57,11 @@ physical_schema_mapping:
   # HCP / researcher / KOL domain
   hcp_silver: hcp_silver
   hcp_gold: hcp_gold
+  # Intellectual property domain (FR-006a — new schemas)
+  ip_raw: ip_raw
+  ip_bronze: ip_bronze
+  ip_silver: ip_silver
+  ip_gold: ip_gold
   # Agent output schemas (019-cms-puf-platform-reconciliation)
   hcs_agents: hcs_agents
   mol_agents: mol_agents
