@@ -1,3 +1,8 @@
+-- T119 DELETION DEFERRED: As of Wave 4, this model is still referenced by 27 consumer models.
+-- Deletion requires updating all consumers to use mol_silver.molecule_names (normalized_name).
+-- Track progress: grep -r "molecule_aliases" src/dk_data/sqlmesh/models/ --include="*.sql" -l
+-- When grep returns only this file, delete it and update tasks.md T119 to [x].
+
 -- SQLMesh Model: Silver Molecule Aliases
 -- Aggregated molecule name aliases from all sources
 -- Used for fuzzy name matching with pg_trgm
