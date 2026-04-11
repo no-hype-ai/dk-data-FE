@@ -10,6 +10,8 @@ from datetime import datetime
 from pathlib import Path
 from typing import Optional, Dict, Any, List, Callable, Tuple
 
+from dk_data.ingestion.utils.db_timing import timed_query
+
 import requests
 from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
@@ -318,12 +320,16 @@ class BaseFetcher(ABC):
                 break
 
             source_hash = f"api_stream_{source_year}"
-            result = loader_fn(
-                rows=page,
-                source_year=source_year,
-                source_hash=source_hash,
-                **loader_kwargs,
-            )
+            with timed_query(
+                f"loader_fn batch insert offset={current_offset}",
+                operation="INSERT",
+            ):
+                result = loader_fn(
+                    rows=page,
+                    source_year=source_year,
+                    source_hash=source_hash,
+                    **loader_kwargs,
+                )
             inserted = result.get("records_inserted", 0)
             total_inserted += inserted
             total_fetched += len(page)
@@ -511,11 +517,15 @@ class BaseFetcher(ABC):
                 break
 
             source_hash = f"api_stream_{source_year}"
-            result = loader_fn(
-                rows=page,
-                source_year=source_year,
-                source_hash=source_hash,
-            )
+            with timed_query(
+                f"open_payments loader_fn batch insert offset={current_offset}",
+                operation="INSERT",
+            ):
+                result = loader_fn(
+                    rows=page,
+                    source_year=source_year,
+                    source_hash=source_hash,
+                )
             inserted = result.get("records_inserted", 0)
             total_inserted += inserted
             total_fetched += len(page)

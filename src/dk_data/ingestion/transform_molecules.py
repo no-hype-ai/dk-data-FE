@@ -33,6 +33,14 @@ except ImportError:
 import logging
 logger = logging.getLogger(__name__)
 
+# T227: WAL measurement for FR-021 budget enforcement
+try:
+    from dk_data.ingestion.utils.wal_metrics import measure_wal
+    _WAL_METRICS_AVAILABLE = True
+except ImportError:
+    _WAL_METRICS_AVAILABLE = False
+    measure_wal = None
+
 
 # SQLMesh model definitions by layer
 LAYER_MODELS = {
@@ -72,15 +80,15 @@ LAYER_MODELS = {
         'mol_gold.financial_summary',
     ],
     # IP / Patent / Trademark models (014-uspto-euipo-model-datasource)
-    # These are all hcs_bronze + IP mol_bronze — fully independent of silver,
+    # These are all hcs_bronze + IP ip_bronze — fully independent of silver,
     # so they run in a parallel job at 06:30 alongside mol_bronze at 06:00.
     'ip_bronze': [
-        'mol_bronze.uspto_patents',
-        'mol_bronze.uspto_ci',
-        'mol_bronze.epo_patents',
-        'mol_bronze.uspto_trademarks',
-        'mol_bronze.euipo_trademarks',
-        'mol_bronze.euipo_designs',
+        'ip_bronze.uspto_patents',
+        'ip_bronze.uspto_ci',
+        'ip_bronze.epo_patents',
+        'ip_bronze.uspto_trademarks',
+        'ip_bronze.euipo_trademarks',
+        'ip_bronze.euipo_designs',
         # 015-assessment-dashboard-integration
         'mol_bronze.pubmed',
         'mol_bronze.ema',
@@ -103,8 +111,8 @@ LAYER_MODELS = {
     # AND mol_silver.molecule_aliases (silver) — it bridges both domains.
     # ndc_molecule_bridge and rxnorm_concepts also need mol_silver.molecule_aliases.
     'ip_silver': [
-        'mol_silver.patents',
-        'mol_silver.trademarks',
+        'ip_silver.patents',
+        'ip_silver.trademarks',
         # 015-assessment-dashboard-integration
         'mol_silver.publications',
         'mol_silver.regulatory_decisions',
@@ -117,7 +125,7 @@ LAYER_MODELS = {
         'mol_silver.ndc_molecule_bridge',      # NDC → molecule_id (used by hcs_silver.open_payments)
         'mol_silver.rxnorm_concepts',           # RxNorm CUIs → molecule_id
         'mol_silver.hcpcs_molecule_bridge',     # HCPCS codes → molecule_id (needs hcs_bronze + molecule_aliases)
-        'mol_silver.trademark_status_changes',  # Trademark audit trail with mol linkage (issue #171 M5)
+        'ip_silver.trademark_status_changes',   # Trademark audit trail with IP linkage (issue #171 M5)
         # Moved from hcs_silver (09:00): depends on ndc_molecule_bridge above — must run after it.
         'hcs_silver.open_payments_drug_linkage',  # hcs_bronze + mol_silver.ndc_molecule_bridge
     ],
@@ -127,10 +135,10 @@ LAYER_MODELS = {
         'ind_gold.indication_catalog',
     ],
     'ip_gold': [
-        'mol_gold.molecule_profile',
+        'ip_gold.molecule_profile',
         # 015-assessment-dashboard-integration
-        'mol_gold.kol_drug_associations',
-        'mol_gold.advocacy_groups',
+        'ip_gold.kol_drug_associations',
+        'ip_gold.advocacy_groups',
     ],
     # mol_gold_ext — 6 mol_gold models not in gold/ip_gold layers.
     # Runs at 14:00 UTC (after ip_gold 13:00 + mol_silver_ext 11:00).
@@ -472,18 +480,11 @@ def run_sqlmesh_command(command: list[str], timeout: int = 3600) -> dict:
 def _sqlmesh_has_state_tables() -> bool:
     """Check if SQLMesh state tables exist (migrate has been run)."""
     try:
-        import psycopg2
-        conn = psycopg2.connect(
-            host=os.getenv("POSTGRES_HOST", "localhost"),
-            port=int(os.getenv("POSTGRES_PORT", "5432")),
-            user=os.getenv("POSTGRES_USER", "postgres"),
-            password=os.getenv("POSTGRES_PASSWORD", ""),
-            dbname=os.getenv("POSTGRES_DB", "dk_data"),
-        )
-        cur = conn.cursor()
-        cur.execute("SELECT EXISTS(SELECT 1 FROM pg_tables WHERE schemaname='sqlmesh' AND tablename='_snapshots')")
-        result = bool(cur.fetchone()[0])
-        conn.close()
+        from dk_data.ingestion.utils.database import get_connection
+        with get_connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute("SELECT EXISTS(SELECT 1 FROM pg_tables WHERE schemaname='sqlmesh' AND tablename='_snapshots')")
+                result = bool(cur.fetchone()[0])
         return result
     except Exception as e:
         logger.warning(f"Could not check SQLMesh state tables: {e}")
@@ -498,23 +499,15 @@ def is_sqlmesh_initialized() -> bool:
     only created by running sqlmesh plan.
     """
     try:
-        import psycopg2
-        conn = psycopg2.connect(
-            host=os.getenv("POSTGRES_HOST", "localhost"),
-            port=int(os.getenv("POSTGRES_PORT", "5432")),
-            user=os.getenv("POSTGRES_USER", "postgres"),
-            password=os.getenv("POSTGRES_PASSWORD", ""),
-            dbname=os.getenv("POSTGRES_DB", "dk_data"),
-        )
-        cur = conn.cursor()
-        cur.execute("SELECT EXISTS(SELECT 1 FROM pg_tables WHERE schemaname='sqlmesh' AND tablename='_snapshots')")
-        has_tables = bool(cur.fetchone()[0])
-        if not has_tables:
-            conn.close()
-            return False
-        cur.execute("SELECT EXISTS(SELECT 1 FROM sqlmesh._environments WHERE name = 'prod')")
-        has_env = bool(cur.fetchone()[0])
-        conn.close()
+        from dk_data.ingestion.utils.database import get_connection
+        with get_connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute("SELECT EXISTS(SELECT 1 FROM pg_tables WHERE schemaname='sqlmesh' AND tablename='_snapshots')")
+                has_tables = bool(cur.fetchone()[0])
+                if not has_tables:
+                    return False
+                cur.execute("SELECT EXISTS(SELECT 1 FROM sqlmesh._environments WHERE name = 'prod')")
+                has_env = bool(cur.fetchone()[0])
         return has_env
     except Exception as e:
         logger.warning(f"Could not check SQLMesh init state: {e}")
@@ -660,6 +653,42 @@ def _check_upstream_has_rows(schema: str, table: str) -> bool:
         return True  # Fail open: don't block pipeline on connectivity issues
 
 
+def _run_sqlmesh_with_wal(cmd: list, timeout: int, layer: str) -> dict:
+    """Run a sqlmesh command wrapped in measure_wal() for FR-021 tracking.
+
+    Opens a short-lived direct psycopg2 connection just for WAL LSN reads;
+    falls back to running the command without WAL tracking if anything fails.
+    """
+    if not _WAL_METRICS_AVAILABLE:
+        return run_sqlmesh_command(cmd, timeout=timeout)
+
+    import contextlib
+    import psycopg2
+
+    try:
+        wal_conn = psycopg2.connect(
+            host=os.getenv("POSTGRES_HOST_DIRECT", os.getenv("POSTGRES_HOST", "localhost")),
+            port=int(os.getenv("POSTGRES_PORT", "5432")),
+            user=os.getenv("POSTGRES_USER", "postgres"),
+            password=os.getenv("POSTGRES_PASSWORD", ""),
+            dbname=os.getenv("POSTGRES_DB", "dk_data"),
+            application_name="transform-wal-metrics",
+        )
+        wal_conn.autocommit = True
+    except Exception as exc:
+        logger.debug("WAL metrics connection failed (%s) — skipping measure_wal", exc)
+        return run_sqlmesh_command(cmd, timeout=timeout)
+
+    try:
+        with measure_wal(f"transform_layer.{layer}", conn=wal_conn):
+            return run_sqlmesh_command(cmd, timeout=timeout)
+    finally:
+        try:
+            wal_conn.close()
+        except Exception:
+            pass
+
+
 def transform_layer(layer: str) -> dict:
     """
     Run transformations for all models in a layer as a single SQLMesh invocation.
@@ -689,7 +718,9 @@ def transform_layer(layer: str) -> dict:
 
     # Scale timeout with model count: 10 min per model, minimum 1h, max 4h.
     timeout = max(3600, min(14400, len(models) * 600))
-    result = run_sqlmesh_command(cmd, timeout=timeout)
+
+    # T227: Measure WAL consumed per transform layer for FR-021 budget tracking.
+    result = _run_sqlmesh_with_wal(cmd, timeout=timeout, layer=layer)
 
     # Parse per-model outcomes from SQLMesh stdout (item 8).
     # SQLMesh emits lines like:
