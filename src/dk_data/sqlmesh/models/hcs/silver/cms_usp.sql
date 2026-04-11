@@ -3,8 +3,8 @@
 -- Grain: rxcui
 --
 -- Linkage strategy (tiered):
---   Tier 1: rxcui → mol_silver.identifier_mappings (identifier_type='rxcui') — LATERAL LIMIT 1
---   Tier 2: branded_name → mol_silver.molecule_aliases (normalized) — LATERAL LIMIT 1
+--   Tier 1: rxcui → mol_silver.molecule_identifiers (source='rxnorm') — LATERAL LIMIT 1
+--   Tier 2: branded_name → mol_silver.molecule_names (normalized_name) — LATERAL LIMIT 1
 
 MODEL (
     name hcs_silver.cms_usp,
@@ -34,24 +34,24 @@ SELECT DISTINCT ON (b.rxcui)
 
 FROM hcs_bronze.cms_usp b
 
--- Tier 1: rxcui → identifier_mappings (multiple molecules may share rxcui; take first)
+-- Tier 1: rxcui → molecule_identifiers (source='rxnorm'; multiple molecules may share rxcui; take first)
 LEFT JOIN LATERAL (
-    SELECT im.molecule_id
-    FROM mol_silver.identifier_mappings im
-    WHERE im.identifier_type = 'rxcui'
-      AND im.identifier_value = b.rxcui
-    ORDER BY im.molecule_id
+    SELECT mi.molecule_id
+    FROM mol_silver.molecule_identifiers mi
+    WHERE mi.source = 'rxnorm'
+      AND mi.identifier = b.rxcui
+    ORDER BY mi.molecule_id
     LIMIT 1
 ) mol_rxcui ON TRUE
 
--- Tier 2: branded_name → molecule_aliases (when rxcui linkage returns nothing)
+-- Tier 2: branded_name → molecule_names (when rxcui linkage returns nothing)
 LEFT JOIN LATERAL (
-    SELECT ma.molecule_id
-    FROM mol_silver.molecule_aliases ma
+    SELECT mn.molecule_id
+    FROM mol_silver.molecule_names mn
     WHERE mol_rxcui.molecule_id IS NULL
       AND b.branded_name IS NOT NULL
-      AND LOWER(REGEXP_REPLACE(b.branded_name, '[^a-zA-Z0-9]', '', 'g')) = ma.alias_name_normalized
-    ORDER BY ma.molecule_id
+      AND LOWER(REGEXP_REPLACE(b.branded_name, '[^a-zA-Z0-9]', '', 'g')) = mn.normalized_name
+    ORDER BY mn.molecule_id
     LIMIT 1
 ) mol_alias ON TRUE
 
