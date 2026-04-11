@@ -15,6 +15,8 @@ MODEL (
     grain set_id
 );
 
+-- T133: openfda arrays available in mol_bronze.openfda_labels (unii, rxcui as JSONB arrays).
+-- Tiered linkage: UNII (most specific) → RxCUI → canonical name fallback (FR-031).
 WITH molecule_name_lookup AS (
     -- Stable molecule IDs indexed by lowercase canonical name for name-based entity resolution
     -- DISTINCT ON ensures one molecule_id per canonical name (prevents JOIN fan-out)
@@ -134,15 +136,42 @@ SELECT
     lv.is_original_packager,
     lv.spl_set_ids,
     lv.nui,
-    -- Entity resolution: match generic_name first, fall back to brand_name
-    COALESCE(m_generic.molecule_id, m_brand.molecule_id) AS molecule_id,
+    -- Entity resolution (FR-031): UNII → RxCUI → generic_name → brand_name
+    -- UNII and RxCUI are JSONB arrays; use LATERAL to extract first element match.
+    COALESCE(
+        unii_link.molecule_id,
+        rxcui_link.molecule_id,
+        m_generic.molecule_id,
+        m_brand.molecule_id
+    ) AS molecule_id,
     lv.source,
     lv.source_updated_at,
     NOW() AS created_at,
     NOW() AS updated_at
 FROM latest_version lv
 LEFT JOIN molecule_name_lookup m_generic ON LOWER(lv.generic_name) = m_generic.name_key
-LEFT JOIN molecule_name_lookup m_brand   ON LOWER(lv.brand_name)   = m_brand.name_key;
+LEFT JOIN molecule_name_lookup m_brand   ON LOWER(lv.brand_name)   = m_brand.name_key
+
+-- Tier 1: UNII match via molecule_identifiers (most specific — unique substance identifier)
+LEFT JOIN LATERAL (
+    SELECT mi.molecule_id
+    FROM mol_silver.molecule_identifiers mi
+    WHERE mi.source = 'unii'
+      AND lv.unii IS NOT NULL
+      AND mi.identifier = lv.unii->>'0'
+    LIMIT 1
+) unii_link ON TRUE
+
+-- Tier 2: RxCUI match via molecule_identifiers (falls back when UNII not matched)
+LEFT JOIN LATERAL (
+    SELECT mi.molecule_id
+    FROM mol_silver.molecule_identifiers mi
+    WHERE unii_link.molecule_id IS NULL
+      AND mi.source = 'rxnorm'
+      AND lv.rxcui IS NOT NULL
+      AND mi.identifier = lv.rxcui->>'0'
+    LIMIT 1
+) rxcui_link ON TRUE;
 
 
 -- NOTE: Bronze processed_to_silver flag updates are handled outside SQLMesh.

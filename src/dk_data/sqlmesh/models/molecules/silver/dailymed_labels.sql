@@ -1,3 +1,7 @@
+-- T133: openfda arrays not available in mol_bronze.dailymed bronze source yet; openfda linkage
+-- deferred until bronze schema includes openfda field. openfda linkage has been implemented in
+-- mol_silver.drug_labels (sources mol_bronze.openfda_labels which contains unii + rxcui arrays).
+
 -- SQLMesh Model: Silver DailyMed Label Metadata
 -- Links DailyMed SPL data to mol_silver.drug_labels via spl_set_id
 -- Part of: 003-molecule-assessment-dashboard
