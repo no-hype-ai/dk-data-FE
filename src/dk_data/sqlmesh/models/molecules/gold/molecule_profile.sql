@@ -156,7 +156,7 @@ patent_info AS (
         molecule_id,
         COUNT(*) AS patent_count,
         MIN(expiry_date) FILTER (WHERE expiry_date > CURRENT_DATE) AS earliest_patent_expiry
-    FROM mol_silver.patents
+    FROM ip_silver.patents
     WHERE molecule_id IS NOT NULL
     GROUP BY molecule_id
 ),
@@ -181,7 +181,7 @@ trademark_info AS (
         ) AS eu_trademark_count,
         (
             SELECT t2.status
-            FROM mol_silver.trademarks t2
+            FROM ip_silver.trademarks t2
             JOIN mol_silver.molecule_aliases ma2
                 ON LOWER(t2.mark_name) = LOWER(ma2.alias_name)
             WHERE ma2.molecule_id = ma.molecule_id
@@ -192,7 +192,7 @@ trademark_info AS (
         ) AS latest_us_trademark_status,
         (
             SELECT t3.status
-            FROM mol_silver.trademarks t3
+            FROM ip_silver.trademarks t3
             JOIN mol_silver.molecule_aliases ma3
                 ON LOWER(t3.mark_name) = LOWER(ma3.alias_name)
             WHERE ma3.molecule_id = ma.molecule_id
@@ -202,7 +202,7 @@ trademark_info AS (
             LIMIT 1
         ) AS latest_eu_trademark_status
     FROM mol_silver.molecule_aliases ma
-    JOIN mol_silver.trademarks t
+    JOIN ip_silver.trademarks t
         ON LOWER(t.mark_name) = LOWER(ma.alias_name)
     WHERE ma.alias_type IN ('brand', 'trade', 'product')
     GROUP BY ma.molecule_id

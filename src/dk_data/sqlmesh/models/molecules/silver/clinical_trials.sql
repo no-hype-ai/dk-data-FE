@@ -5,6 +5,13 @@
 --   All bronze columns now promoted; eligibility, locations, results, and oversight
 --   columns were previously dropped without justification.
 
+-- TODO(T170): Convert from INCREMENTAL_BY_TIME_RANGE → INCREMENTAL_BY_UNIQUE_KEY (unique_key nct_id).
+-- INCREMENTAL_BY_TIME_RANGE on source_updated_at causes duplicate inserts when upstream rows are
+-- reloaded with the same nct_id but a new source_updated_at. Safe to convert because nct_id is the
+-- natural grain and the audits already enforce unique_values(nct_id).
+-- Conversion: replace kind block with:
+--   kind INCREMENTAL_BY_UNIQUE_KEY (unique_key nct_id)
+-- Remove the time_column filter (@start_dt/@end_dt) and add a DISTINCT ON (nct_id) dedup CTE.
 MODEL (
     name mol_silver.clinical_trials,
     kind INCREMENTAL_BY_TIME_RANGE (
@@ -16,7 +23,11 @@ MODEL (
         not_null(columns := (nct_id, title)),
         unique_values(columns := (nct_id))
     ),
-    grain nct_id
+    grain nct_id,
+    -- T172: Large table with jsonb_array_elements + DISTINCT — set work_mem to avoid disk sort spills
+    pre_statements [
+        SET LOCAL work_mem = '128MB'
+    ]
 );
 
 SELECT

@@ -15,7 +15,11 @@ MODEL (
     audits (
         not_null(columns := (molecule_id, meddra_pt))
     ),
-    grain (molecule_id, meddra_pt, source)
+    grain (molecule_id, meddra_pt, source),
+    -- T172: Large FAERS/SIDER table with jsonb_array_elements + ORDER BY — set work_mem to avoid disk sort spills
+    pre_statements [
+        SET LOCAL work_mem = '128MB'
+    ]
 );
 
 -- ============================================================================

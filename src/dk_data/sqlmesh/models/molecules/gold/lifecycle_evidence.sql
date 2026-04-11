@@ -115,7 +115,7 @@ SELECT
     NOW() AS computed_at
 
 FROM mol_silver.molecules m
-JOIN mol_silver.patent_exclusivities pe ON pe.molecule_id = m.molecule_id
+JOIN ip_silver.patent_exclusivities pe ON pe.molecule_id = m.molecule_id
 WHERE m.needs_review = FALSE
   AND pe.patent_number IS NOT NULL
 

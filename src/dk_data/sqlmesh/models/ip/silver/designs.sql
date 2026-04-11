@@ -1,12 +1,13 @@
 -- SQLMesh Model: Silver EUIPO Design Registrations
--- Typed pass-through of EUIPO design registrations from mol_bronze.euipo_designs.
+-- Typed pass-through of EUIPO design registrations from ip_bronze.euipo_designs.
 -- Filtered to healthcare-related registrations (is_healthcare_related = TRUE).
 -- No direct drug identifier — molecule linkage not attempted at this layer.
 -- Consumers: IP landscape analysis, competitive intelligence dashboards.
 -- Part of: issue #172 H2
+-- Migrated from mol_silver.euipo_designs → ip_silver.designs by 001-silver-medallion-rebuild (FR-006e, T110j rename)
 
 MODEL (
-    name mol_silver.euipo_designs,
+    name ip_silver.designs,
     kind FULL,
     cron '@weekly',
     audits (
@@ -37,7 +38,7 @@ SELECT DISTINCT ON (b.application_number)
     b._loaded_at                    AS source_updated_at,
     NOW()                           AS created_at
 
-FROM mol_bronze.euipo_designs b
+FROM ip_bronze.euipo_designs b
 WHERE b.application_number IS NOT NULL
   AND b.is_healthcare_related = TRUE
 ORDER BY b.application_number, b._loaded_at DESC NULLS LAST

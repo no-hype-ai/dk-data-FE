@@ -1,9 +1,10 @@
 -- SQLMesh Model: Bronze EPO Patents
 -- Transforms raw EPO Open Patent Services data into typed bronze layer
 -- Part of: 014-uspto-euipo-model-datasource
+-- Migrated from mol_bronze → ip_bronze by 001-silver-medallion-rebuild (FR-006d)
 
 MODEL (
-    name mol_bronze.epo_patents,
+    name ip_bronze.epo_patents,
     kind INCREMENTAL_BY_UNIQUE_KEY (
         unique_key patent_number
     ),

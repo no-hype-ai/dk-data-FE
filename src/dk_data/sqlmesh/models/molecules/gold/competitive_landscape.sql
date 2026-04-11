@@ -2,9 +2,14 @@
 -- Pre-aggregated competitive analysis view for decision support
 -- Part of DK Molecule Data Platform (012-dk-data-platform)
 
+-- T173: Converted FULL → INCREMENTAL_BY_UNIQUE_KEY on molecule_id.
+-- Rationale: grain is molecule_id; model is a pure aggregation from mol_silver with no
+-- cross-row dependencies. Incremental mode avoids full table scans on large molecule sets.
 MODEL (
     name mol_gold.competitive_landscape,
-    kind FULL,
+    kind INCREMENTAL_BY_UNIQUE_KEY (
+        unique_key molecule_id
+    ),
     cron '@daily',
     audits (not_null(columns := (molecule_id))),
     grain (molecule_id)

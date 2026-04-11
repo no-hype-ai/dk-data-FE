@@ -1,9 +1,10 @@
 -- SQLMesh Model: Bronze USPTO Patents
 -- Transforms raw USPTO PatentSearch flat columns into typed bronze layer
 -- Part of: 014-uspto-euipo-model-datasource (fixes broken JSONB extraction from 012)
+-- Migrated from mol_bronze → ip_bronze by 001-silver-medallion-rebuild (FR-006d)
 
 MODEL (
-    name mol_bronze.uspto_patents,
+    name ip_bronze.uspto_patents,
     kind INCREMENTAL_BY_UNIQUE_KEY (
         unique_key patent_number
     ),

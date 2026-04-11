@@ -1,9 +1,10 @@
 -- SQLMesh Model: Bronze USPTO CI Patents
 -- Transforms raw USPTO PatentSearch CI (query-scoped) patents into typed bronze layer
 -- Part of: 014-uspto-euipo-model-datasource
+-- Migrated from mol_bronze → ip_bronze by 001-silver-medallion-rebuild (FR-006d)
 
 MODEL (
-    name mol_bronze.uspto_ci,
+    name ip_bronze.uspto_ci,
     kind INCREMENTAL_BY_UNIQUE_KEY (
         unique_key patent_number
     ),

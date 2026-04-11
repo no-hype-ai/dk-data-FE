@@ -1,9 +1,10 @@
 -- SQLMesh Model: Silver Trademarks
 -- Unified trademark data from USPTO TSDR and EUIPO TMview/IBM Gateway
 -- Part of: 014-uspto-euipo-model-datasource
+-- Migrated from mol_silver → ip_silver by 001-silver-medallion-rebuild (FR-006e)
 
 MODEL (
-    name mol_silver.trademarks,
+    name ip_silver.trademarks,
     kind INCREMENTAL_BY_UNIQUE_KEY (
         unique_key (trademark_identifier, source)
     ),
@@ -15,8 +16,16 @@ MODEL (
     grain (trademark_identifier, source)
 );
 
+-- Staleness guard (FR-050)
+, staleness_check AS (
+  SELECT CASE
+    WHEN MAX(ingested_at) < NOW() - INTERVAL '6 hours'
+    THEN error('Bronze upstream is stale: ' || MAX(ingested_at)::text)
+  END FROM ip_bronze.uspto_trademarks
+)
+
 -- USPTO trademarks
-WITH uspto AS (
+, uspto AS (
     SELECT
         serial_number AS trademark_identifier,
         mark_element AS mark_name,
@@ -42,7 +51,7 @@ WITH uspto AS (
         is_pharma_related,
         'uspto_trademarks' AS source,
         ingested_at AS source_updated_at
-    FROM mol_bronze.uspto_trademarks
+    FROM ip_bronze.uspto_trademarks
     WHERE processed_to_silver = FALSE
 ),
 
@@ -73,7 +82,7 @@ euipo AS (
         is_pharma_related,
         'euipo_trademarks' AS source,
         ingested_at AS source_updated_at
-    FROM mol_bronze.euipo_trademarks
+    FROM ip_bronze.euipo_trademarks
     WHERE processed_to_silver = FALSE
 ),
 

@@ -1,9 +1,10 @@
 -- SQLMesh Model: Bronze USPTO Trademarks
 -- Transforms raw USPTO TSDR trademark data into typed bronze layer
 -- Part of: 014-uspto-euipo-model-datasource
+-- Migrated from mol_bronze → ip_bronze by 001-silver-medallion-rebuild (FR-006d)
 
 MODEL (
-    name mol_bronze.uspto_trademarks,
+    name ip_bronze.uspto_trademarks,
     kind INCREMENTAL_BY_UNIQUE_KEY (
         unique_key serial_number
     ),

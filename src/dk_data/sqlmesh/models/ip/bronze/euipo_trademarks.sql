@@ -1,9 +1,10 @@
 -- SQLMesh Model: Bronze EUIPO Trademarks
 -- Transforms raw EUIPO TMview/IBM Gateway trademark data into typed bronze layer
 -- Part of: 014-uspto-euipo-model-datasource
+-- Migrated from mol_bronze → ip_bronze by 001-silver-medallion-rebuild (FR-006d)
 
 MODEL (
-    name mol_bronze.euipo_trademarks,
+    name ip_bronze.euipo_trademarks,
     kind INCREMENTAL_BY_UNIQUE_KEY (
         unique_key application_number
     ),

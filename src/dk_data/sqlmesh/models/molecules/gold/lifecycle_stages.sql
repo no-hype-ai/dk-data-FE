@@ -3,9 +3,15 @@
 -- Implements automatic stage detection based on evidence from all sources
 -- Part of DK Molecule Data Platform (012-dk-data-platform)
 
+-- T173: Converted FULL → INCREMENTAL_BY_UNIQUE_KEY on molecule_id.
+-- Rationale: grain is molecule_id; new/updated molecules should refresh their row.
+-- A last_modified watermark is not needed because the source (mol_silver.molecules) uses
+-- INCREMENTAL_BY_UNIQUE_KEY itself — SQLMesh propagates the incremental window correctly.
 MODEL (
     name mol_gold.lifecycle_stages,
-    kind FULL,
+    kind INCREMENTAL_BY_UNIQUE_KEY (
+        unique_key molecule_id
+    ),
     cron '@daily',
     grain (molecule_id)
 );
@@ -84,7 +90,7 @@ patent_evidence AS (
         MIN(expiry_date) FILTER (WHERE expiry_date > CURRENT_DATE) AS earliest_active_expiry,
         MAX(expiry_date) AS latest_expiry,
         bool_or(expiry_date < CURRENT_DATE) AS has_expired_patents
-    FROM mol_silver.patents
+    FROM ip_silver.patents
     WHERE molecule_id IS NOT NULL
     GROUP BY molecule_id
 ),

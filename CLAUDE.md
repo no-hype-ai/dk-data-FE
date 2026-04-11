@@ -35,3 +35,14 @@ The bar is: **simple, complete, senior**. Plan before code (3+ steps), verify be
 ## AI Agents
 
 Configured for: claude
+
+## Active PostgreSQL Schemas
+
+Domain schemas in dk-data:
+- `mol_raw`, `mol_bronze`, `mol_silver`, `mol_gold` — Molecule / drug / compound data
+- `hcs_raw`, `hcs_bronze`, `hcs_silver`, `hcs_gold` — Healthcare system / CMS / provider data
+- `ind_raw`, `ind_bronze`, `ind_silver`, `ind_gold` — Indication / disease / epidemiology data
+- `hcp_silver`, `hcp_gold` — Healthcare professional / KOL / researcher data
+- `ip_raw`, `ip_bronze`, `ip_silver`, `ip_gold` — Intellectual property / patents / trademarks / designs
+- `meta` — Job locks, refresh state, transform runs
+- `staging`, `xenon`, `mol_app`, `agents` — Application / infrastructure schemas

@@ -38,7 +38,15 @@ MODEL (
 -- DrugBank contributes structural identity here (precedence 4) and also populates
 -- identifier_mappings and molecule_aliases.
 
-WITH source_molecules AS (
+-- Staleness guard (FR-050): abort if ChEMBL molecules bronze is stale
+WITH staleness_check AS (
+  SELECT CASE
+    WHEN MAX(source_updated_at) < NOW() - INTERVAL '6 hours'
+    THEN error('Bronze upstream is stale: mol_bronze.chembl_molecules last updated ' || MAX(source_updated_at)::text)
+  END FROM mol_bronze.chembl_molecules
+),
+
+source_molecules AS (
     -- -------------------------------------------------------------------------
     -- Source 1: ChEMBL structural (inchi_key IS NOT NULL)
     -- Covers: SMALL_MOLECULE and any biologic type where ChEMBL has a structure

@@ -141,6 +141,113 @@ make sqlmesh-bootstrap-silver-hubs
 uv run pytest tests/ -k silver_hub -v
 ```
 
+## IP Domain Migration Verification
+
+After applying migrations 050–054 and running SQLMesh, verify the ip_* domain end-to-end:
+
+### 1. Confirm schemas exist
+
+```sql
+SELECT schema_name FROM information_schema.schemata
+WHERE schema_name LIKE 'ip_%'
+ORDER BY schema_name;
+-- Expect: ip_raw, ip_bronze, ip_silver, ip_gold
+```
+
+### 2. Verify bronze table row counts match mol_bronze sources
+
+```sql
+SELECT
+  'ip_bronze.uspto_patents'   AS table_name, COUNT(*) FROM ip_bronze.uspto_patents
+UNION ALL SELECT 'mol_bronze.uspto_patents',   COUNT(*) FROM mol_bronze.uspto_patents
+UNION ALL SELECT 'ip_bronze.uspto_ci',          COUNT(*) FROM ip_bronze.uspto_ci
+UNION ALL SELECT 'mol_bronze.uspto_ci',          COUNT(*) FROM mol_bronze.uspto_ci
+UNION ALL SELECT 'ip_bronze.uspto_trademarks',  COUNT(*) FROM ip_bronze.uspto_trademarks
+UNION ALL SELECT 'mol_bronze.uspto_trademarks', COUNT(*) FROM mol_bronze.uspto_trademarks
+UNION ALL SELECT 'ip_bronze.epo_patents',       COUNT(*) FROM ip_bronze.epo_patents
+UNION ALL SELECT 'mol_bronze.epo_patents',      COUNT(*) FROM mol_bronze.epo_patents
+UNION ALL SELECT 'ip_bronze.euipo_trademarks',  COUNT(*) FROM ip_bronze.euipo_trademarks
+UNION ALL SELECT 'mol_bronze.euipo_trademarks', COUNT(*) FROM mol_bronze.euipo_trademarks
+UNION ALL SELECT 'ip_bronze.euipo_designs',     COUNT(*) FROM ip_bronze.euipo_designs
+UNION ALL SELECT 'mol_bronze.euipo_designs',    COUNT(*) FROM mol_bronze.euipo_designs
+UNION ALL SELECT 'ip_bronze.trademark_status_history', COUNT(*) FROM ip_bronze.trademark_status_history
+UNION ALL SELECT 'mol_bronze.trademark_status_history', COUNT(*) FROM mol_bronze.trademark_status_history;
+-- Row counts in ip_bronze should be >= mol_bronze counts (>=99.9%).
+```
+
+### 3. Verify silver table row counts match mol_silver sources
+
+```sql
+SELECT 'ip_silver.patents'                   AS table_name, COUNT(*) FROM ip_silver.patents
+UNION ALL SELECT 'mol_silver.patents',         COUNT(*) FROM mol_silver.patents
+UNION ALL SELECT 'ip_silver.trademarks',       COUNT(*) FROM ip_silver.trademarks
+UNION ALL SELECT 'mol_silver.trademarks',      COUNT(*) FROM mol_silver.trademarks
+UNION ALL SELECT 'ip_silver.patent_exclusivities', COUNT(*) FROM ip_silver.patent_exclusivities
+UNION ALL SELECT 'mol_silver.patent_exclusivities', COUNT(*) FROM mol_silver.patent_exclusivities
+UNION ALL SELECT 'ip_silver.trademark_status_changes', COUNT(*) FROM ip_silver.trademark_status_changes
+UNION ALL SELECT 'mol_silver.trademark_status_changes', COUNT(*) FROM mol_silver.trademark_status_changes
+UNION ALL SELECT 'ip_silver.designs',          COUNT(*) FROM ip_silver.designs
+UNION ALL SELECT 'mol_silver.euipo_designs',   COUNT(*) FROM mol_silver.euipo_designs;
+```
+
+### 4. Verify migration state is completed
+
+```sql
+SELECT procedure_name, status, last_chunk_position, last_commit_at
+FROM meta.refresh_state
+WHERE procedure_name LIKE 'migrate_%'
+ORDER BY procedure_name;
+-- Expect: status = 'completed' for all migrate_* procedures.
+```
+
+### 5. Verify SQLMesh models resolve correctly
+
+```bash
+sqlmesh run ip_bronze.uspto_patents --start 2026-04-01 --end 2026-04-11
+sqlmesh run ip_bronze.epo_patents --start 2026-04-01 --end 2026-04-11
+sqlmesh run ip_silver.patents --start 2026-04-01 --end 2026-04-11
+sqlmesh run ip_silver.trademarks --start 2026-04-01 --end 2026-04-11
+sqlmesh run ip_silver.designs --start 2026-04-01 --end 2026-04-11
+```
+
+### 6. Verify PostgREST role grants
+
+```sql
+SET ROLE analyst;
+SELECT COUNT(*) FROM ip_silver.patents;
+SELECT COUNT(*) FROM ip_silver.trademarks;
+SELECT COUNT(*) FROM ip_silver.designs;
+RESET ROLE;
+```
+
+### 7. Verify gold model references updated
+
+```sql
+-- lifecycle_stages uses ip_silver.patents
+SELECT COUNT(*) FROM ip_silver.patents WHERE molecule_id IS NOT NULL;
+-- molecule_profile uses ip_silver.trademarks
+SELECT COUNT(*) FROM ip_silver.trademarks WHERE molecule_id IS NOT NULL;
+-- lifecycle_evidence uses ip_silver.patent_exclusivities
+SELECT COUNT(*) FROM ip_silver.patent_exclusivities WHERE molecule_id IS NOT NULL;
+```
+
+### 8. Cleanup — ONLY after full verification
+
+```sql
+DROP TABLE IF EXISTS mol_bronze.uspto_patents;
+DROP TABLE IF EXISTS mol_bronze.uspto_ci;
+DROP TABLE IF EXISTS mol_bronze.uspto_trademarks;
+DROP TABLE IF EXISTS mol_bronze.epo_patents;
+DROP TABLE IF EXISTS mol_bronze.euipo_trademarks;
+DROP TABLE IF EXISTS mol_bronze.euipo_designs;
+DROP TABLE IF EXISTS mol_bronze.trademark_status_history;
+DROP TABLE IF EXISTS mol_silver.patents;
+DROP TABLE IF EXISTS mol_silver.trademarks;
+DROP TABLE IF EXISTS mol_silver.patent_exclusivities;
+DROP TABLE IF EXISTS mol_silver.trademark_status_changes;
+DROP TABLE IF EXISTS mol_silver.euipo_designs;
+```
+
 ## Troubleshooting
 
 | Symptom | Likely cause | Fix |

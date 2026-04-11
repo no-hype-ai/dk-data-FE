@@ -1,9 +1,10 @@
 -- SQLMesh Model: Silver Patents
 -- Normalized patent data from DrugBank, USPTO Patents, USPTO CI, and EPO OPS
 -- Part of: 014-uspto-euipo-model-datasource (extended from 012)
+-- Migrated from mol_silver → ip_silver by 001-silver-medallion-rebuild (FR-006e)
 
 MODEL (
-    name mol_silver.patents,
+    name ip_silver.patents,
     kind INCREMENTAL_BY_UNIQUE_KEY (
         unique_key patent_number
     ),
@@ -15,8 +16,16 @@ MODEL (
     grain patent_number
 );
 
+-- Staleness guard (FR-050)
+, staleness_check AS (
+  SELECT CASE
+    WHEN MAX(ingested_at) < NOW() - INTERVAL '6 hours'
+    THEN error('Bronze upstream is stale: ' || MAX(ingested_at)::text)
+  END FROM ip_bronze.uspto_patents
+)
+
 -- Extract patent information from DrugBank drug records
-WITH drugbank_patents AS (
+, drugbank_patents AS (
     SELECT
         drugbank_id,
         inchi_key,
@@ -59,7 +68,7 @@ uspto_patents AS (
         NULL::TEXT AS application_number, -- not exposed in PatentsView bulk data
         'uspto'::TEXT AS source,
         ingested_at
-    FROM mol_bronze.uspto_patents
+    FROM ip_bronze.uspto_patents
     WHERE processed_to_silver = FALSE
       AND patent_number IS NOT NULL
 ),
@@ -85,7 +94,7 @@ uspto_ci AS (
         NULL::TEXT AS application_number, -- not in USPTO CI schema
         'uspto_ci'::TEXT AS source,
         ingested_at
-    FROM mol_bronze.uspto_ci
+    FROM ip_bronze.uspto_ci
     WHERE processed_to_silver = FALSE
       AND patent_number IS NOT NULL
 ),
@@ -111,7 +120,7 @@ epo_patents AS (
         NULL::TEXT AS application_number, -- not exposed in EPO OPS schema
         'epo'::TEXT AS source,
         ingested_at
-    FROM mol_bronze.epo_patents
+    FROM ip_bronze.epo_patents
     WHERE processed_to_silver = FALSE
       AND patent_number IS NOT NULL
 ),

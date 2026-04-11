@@ -1,6 +1,6 @@
 -- SQLMesh Model: Silver Trademark Status Changes
--- Enriches mol_bronze.trademark_status_history with molecule linkage and
--- full trademark context from mol_silver.trademarks.
+-- Enriches ip_bronze.trademark_status_history with molecule linkage and
+-- full trademark context from ip_silver.trademarks.
 --
 -- Grain: (trademark_identifier, source, changed_at)
 -- Dedup: INCREMENTAL_BY_UNIQUE_KEY on the three-column grain prevents duplicate
@@ -11,9 +11,10 @@
 --   with molecule_id = NULL for audit completeness.
 --
 -- Ref: issue #171 M5
+-- Migrated from mol_silver → ip_silver by 001-silver-medallion-rebuild (FR-006e)
 
 MODEL (
-    name mol_silver.trademark_status_changes,
+    name ip_silver.trademark_status_changes,
     kind INCREMENTAL_BY_UNIQUE_KEY (
         unique_key (trademark_identifier, source, changed_at)
     ),
@@ -48,10 +49,10 @@ SELECT DISTINCT ON (h.trademark_identifier, h.source, h.changed_at)
     h.source_updated_at,
     NOW()                                               AS created_at
 
-FROM mol_bronze.trademark_status_history h
+FROM ip_bronze.trademark_status_history h
 
 -- Join current trademark snapshot for context
-LEFT JOIN mol_silver.trademarks t
+LEFT JOIN ip_silver.trademarks t
        ON t.trademark_identifier = h.trademark_identifier
       AND t.source               = h.source
 

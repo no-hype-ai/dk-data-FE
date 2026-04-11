@@ -1,6 +1,7 @@
 -- SQLMesh Model: Silver Patent Exclusivities
 -- Unified patent + exclusivity data from Orange Book (NDA) and Purple Book (BLA)
 -- Part of: 003-molecule-assessment-dashboard
+-- Migrated from mol_silver → ip_silver by 001-silver-medallion-rebuild (FR-006e)
 --
 -- Orange Book: NDA/ANDA products with explicit patent numbers and expiry dates
 -- Purple Book: BLA products with real exclusivity dates from FDA Purple Book API
@@ -14,7 +15,7 @@
 -- FULL refresh ensures molecule_id is always current when new molecules are added.
 
 MODEL (
-    name mol_silver.patent_exclusivities,
+    name ip_silver.patent_exclusivities,
     kind FULL,
     cron '@weekly',
     audits (

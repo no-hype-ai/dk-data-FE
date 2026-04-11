@@ -2,9 +2,10 @@
 -- Transforms raw EUIPO design search flat columns into typed bronze layer.
 -- Source table: mol_raw.euipo_designs (flat typed columns, not JSONB envelope)
 -- Part of: 014-uspto-euipo-model-datasource
+-- Migrated from mol_bronze → ip_bronze by 001-silver-medallion-rebuild (FR-006d)
 
 MODEL (
-    name mol_bronze.euipo_designs,
+    name ip_bronze.euipo_designs,
     kind INCREMENTAL_BY_UNIQUE_KEY (
         unique_key application_number
     ),

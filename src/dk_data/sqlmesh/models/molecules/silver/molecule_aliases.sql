@@ -21,7 +21,11 @@ MODEL (
     audits (
         not_null(columns := (molecule_id)),
         not_null(columns := (alias_name))
-    )
+    ),
+    -- T172: Large multi-source alias table with jsonb_array_elements + DISTINCT ON — set work_mem
+    pre_statements [
+        SET LOCAL work_mem = '128MB'
+    ]
 );
 
 -- Collect aliases from all sources, then deduplicate on (molecule_id, alias_name_normalized).

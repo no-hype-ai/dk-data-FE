@@ -12,9 +12,14 @@
 --
 -- NOTE: All joins are LEFT — model degrades gracefully when any source is absent.
 
+-- T173: Converted FULL → INCREMENTAL_BY_UNIQUE_KEY on molecule_id.
+-- Rationale: 10-way LEFT JOIN aggregation keyed on molecule_id. Incremental avoids
+-- recomputing unchanged molecules every week. No cross-row dependencies.
 MODEL (
     name mol_gold.market_summary,
-    kind FULL,
+    kind INCREMENTAL_BY_UNIQUE_KEY (
+        unique_key molecule_id
+    ),
     cron '@weekly',
     audits (
         not_null(columns := (molecule_id))

@@ -8,9 +8,10 @@
 -- Grain: (trademark_identifier, source, changed_at)
 --
 -- Ref: issue #171 M5, #196 C3
+-- Migrated from mol_bronze → ip_bronze by 001-silver-medallion-rebuild (FR-006d)
 
 MODEL (
-    name mol_bronze.trademark_status_history,
+    name ip_bronze.trademark_status_history,
     kind INCREMENTAL_BY_UNIQUE_KEY (
         unique_key (trademark_identifier, source, changed_at)
     ),

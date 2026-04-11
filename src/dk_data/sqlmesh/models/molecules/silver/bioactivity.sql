@@ -8,6 +8,14 @@
 --               OR inchi_key → mol_silver.molecules via canonical structures
 --   target_id:  target_chembl_id → mol_silver.targets (target lookup via chembl target id)
 
+-- TODO(T170): Convert from INCREMENTAL_BY_TIME_RANGE → INCREMENTAL_BY_UNIQUE_KEY (unique_key activity_id).
+-- INCREMENTAL_BY_TIME_RANGE on source_updated_at can produce duplicates when ChEMBL activities are
+-- re-ingested with updated timestamps. Safe to convert because activity_id is a stable natural key
+-- from ChEMBL (e.g. "CHEMBL12345") and the grain is already defined as activity_id.
+-- Conversion: replace kind block with:
+--   kind INCREMENTAL_BY_UNIQUE_KEY (unique_key activity_id)
+-- Remove the time_column filter (@start_dt/@end_dt) and ensure the DISTINCT ON (b.activity_id) dedup
+-- already present in the SELECT is kept.
 MODEL (
     name mol_silver.bioactivity,
     kind INCREMENTAL_BY_TIME_RANGE (
@@ -20,6 +28,14 @@ MODEL (
     ),
     grain activity_id
 );
+
+-- Staleness guard (FR-050): abort if ChEMBL activities bronze is stale
+WITH staleness_check AS (
+  SELECT CASE
+    WHEN MAX(source_updated_at) < NOW() - INTERVAL '6 hours'
+    THEN error('Bronze upstream is stale: mol_bronze.chembl_activities last updated ' || MAX(source_updated_at)::text)
+  END FROM mol_bronze.chembl_activities
+)
 
 SELECT DISTINCT ON (b.activity_id)
     gen_random_uuid()                                               AS id,
