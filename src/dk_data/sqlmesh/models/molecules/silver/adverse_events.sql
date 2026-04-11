@@ -3,8 +3,21 @@
 -- Part of: 012-dk-data-platform
 --
 -- Linkage strategy:
---   FAERS → molecules via drug name (fuzzy match)
---   SIDER → molecules via PubChem CID (through identifier_mappings) or name
+--   FAERS → molecules via tiered resolution (FR-031):
+--     Tier 1: openfda_unii array   → mol_silver.molecule_identifiers (source='unii')
+--     Tier 2: openfda_rxcui array  → mol_silver.molecule_identifiers (source='rxnorm')
+--     Tier 3: drug_name equi-join  → mol_silver.molecule_names (normalized_name)
+--     Tier 4: similarity fallback  → mol_silver.molecule_names (similarity >= 0.8)
+--   SIDER → molecules via PubChem CID → mol_silver.molecule_identifiers (source='pubchem')
+--
+-- Antipattern fixes:
+--   S5 eliminated: similarity() and = no longer appear in the same OR clause;
+--   each tier is a separate UNION branch within a LATERAL subquery.
+--
+-- T118 verified: rewrite uses hub equi-join, zero S1-S5 antipatterns per test_silver_antipatterns.py
+-- T136 SC-013: FAERS adverse_events linkage rate must be >=70% non-null molecule_id,
+--   >=85% non-null condition_id post-rewrite. Verify post-deploy with:
+--   SELECT COUNT(*) FILTER (WHERE molecule_id IS NOT NULL)::FLOAT / COUNT(*) FROM mol_silver.adverse_events;
 
 MODEL (
     name mol_silver.adverse_events,
@@ -20,12 +33,16 @@ MODEL (
 
 -- ============================================================================
 -- FAERS (OpenFDA) adverse event reports
+-- Tiered molecule resolution via LATERAL (FR-031):
+--   Tier 1: openfda UNII array  → molecule_identifiers source='unii'
+--   Tier 2: openfda RxCUI array → molecule_identifiers source='rxnorm'
+--   Tier 3: drug_name equi-join → molecule_names normalized_name
+--   Tier 4: similarity fallback → molecule_names (only when tiers 1-3 return NULL)
+-- No S5: similarity is isolated in its own UNION branch, never mixed with = in OR.
 -- ============================================================================
 WITH faers_linked AS (
     SELECT
-        m.molecule_id,
-        m.inchi_key,
-        m.canonical_name,
+        mol_id_link.molecule_id,
         f.meddra_pts,
         f.serious,
         f.serious_death,
@@ -36,23 +53,47 @@ WITH faers_linked AS (
         f.serious_other,
         f.receive_date
     FROM mol_bronze.faers_events f
-    -- Deduplicate: similarity() can match multiple molecules per drug_name.
-    -- Pick highest-similarity match; fall back to exact match when no fuzzy match is better.
-    JOIN (
-        SELECT DISTINCT ON (LOWER(canonical_name))
-            molecule_id, inchi_key, canonical_name
-        FROM mol_silver.molecules
-        ORDER BY LOWER(canonical_name), molecule_id
-    ) m ON (
-        LOWER(f.drug_name) = LOWER(m.canonical_name)
-        -- Fuzzy threshold 0.8: validated against FAERS sample in 2024 — below 0.8 introduced
-        -- multi-word false positives (e.g. "aspirin" matching "aspirin-caffeine compound").
-        -- Above 0.85 missed common abbreviations and brand→INN matches. Tune via:
-        --   SELECT similarity(drug_name, canonical_name), drug_name, canonical_name
-        --   FROM mol_bronze.faers_events CROSS JOIN mol_silver.molecules
-        --   WHERE similarity(...) BETWEEN 0.75 AND 0.85 LIMIT 200;
-        OR similarity(LOWER(f.drug_name), LOWER(m.canonical_name)) > 0.8
-    )
+    LEFT JOIN LATERAL (
+        SELECT molecule_id, tier
+        FROM (
+            -- Tier 1: openfda UNII → molecule_identifiers
+            SELECT mi.molecule_id, 1 AS tier
+            FROM unnest(COALESCE(f.openfda_unii, ARRAY[]::TEXT[])) AS u(unii_val)
+            JOIN mol_silver.molecule_identifiers mi
+                ON mi.source = 'unii' AND mi.identifier = u.unii_val
+
+            UNION ALL
+
+            -- Tier 2: openfda RxCUI → molecule_identifiers
+            SELECT mi.molecule_id, 2 AS tier
+            FROM unnest(COALESCE(f.openfda_rxcui, ARRAY[]::TEXT[])) AS u(rxcui_val)
+            JOIN mol_silver.molecule_identifiers mi
+                ON mi.source = 'rxnorm' AND mi.identifier = u.rxcui_val
+
+            UNION ALL
+
+            -- Tier 3: drug_name equi-join → molecule_names
+            SELECT mn.molecule_id, 3 AS tier
+            FROM mol_silver.molecule_names mn
+            WHERE mn.normalized_name = LOWER(TRIM(f.drug_name))
+
+            UNION ALL
+
+            -- Tier 4: similarity fallback (only when no exact name match)
+            -- Guard: excluded when tier 3 would match (NOT EXISTS prevents duplicate effort)
+            SELECT mn.molecule_id, 4 AS tier
+            FROM mol_silver.molecule_names mn
+            WHERE similarity(mn.normalized_name, LOWER(TRIM(f.drug_name))) >= 0.8
+              AND NOT EXISTS (
+                  SELECT 1 FROM mol_silver.molecule_names mn2
+                  WHERE mn2.normalized_name = LOWER(TRIM(f.drug_name))
+              )
+            ORDER BY similarity(mn.normalized_name, LOWER(TRIM(f.drug_name))) DESC
+            LIMIT 1
+        ) tiers
+        ORDER BY tier
+        LIMIT 1
+    ) mol_id_link ON TRUE
     WHERE f.processed_to_silver = FALSE
       AND f.meddra_pts IS NOT NULL
 ),
@@ -60,8 +101,6 @@ WITH faers_linked AS (
 faers_expanded AS (
     SELECT
         molecule_id,
-        inchi_key,
-        canonical_name,
         meddra_pt,
         serious,
         serious_death,
@@ -114,13 +153,12 @@ faers_aggregated AS (
 
 -- ============================================================================
 -- SIDER (package insert) side effects
--- Linkage: STITCH pubchem_cid → identifier_mappings → molecule
+-- Linkage: STITCH pubchem_cid → mol_silver.molecule_identifiers (source='pubchem')
+-- Replaces prior join via mol_silver.identifier_mappings (legacy EAV table).
 -- ============================================================================
 sider_linked AS (
-    -- Link via PubChem CID: identifier_mappings is an EAV table
-    -- (identifier_type = 'pubchem_cid', identifier_value = CID as text)
-    SELECT DISTINCT ON (s.stitch_id_flat, s.umls_cui_side_effect, m.molecule_id)
-        m.molecule_id,
+    SELECT DISTINCT ON (s.stitch_id_flat, s.umls_cui_side_effect, mi.molecule_id)
+        mi.molecule_id,
         s.side_effect_name AS meddra_pt,
         s.umls_cui_side_effect AS umls_cui,
         s.umls_cui_from_label,
@@ -132,14 +170,13 @@ sider_linked AS (
         s.placebo,
         s.ingested_at
     FROM mol_bronze.sider s
-    JOIN mol_silver.identifier_mappings im
-        ON im.identifier_type = 'pubchem_cid'
-        AND im.identifier_value = s.pubchem_cid::TEXT
-    JOIN mol_silver.molecules m ON m.molecule_id = im.molecule_id
+    JOIN mol_silver.molecule_identifiers mi
+        ON mi.source = 'pubchem'
+        AND mi.identifier = s.pubchem_cid::TEXT
     WHERE s.processed_to_silver = FALSE
       AND s.pubchem_cid IS NOT NULL
       AND s.side_effect_name IS NOT NULL
-    ORDER BY s.stitch_id_flat, s.umls_cui_side_effect, m.molecule_id
+    ORDER BY s.stitch_id_flat, s.umls_cui_side_effect, mi.molecule_id
 ),
 
 sider_aggregated AS (
