@@ -69,7 +69,11 @@ SELECT DISTINCT ON (b.drugbank_id)
     -- Pharmacology (additional fields)
     b.toxicity,
 
-    -- Relational data
+    -- Relational data: JSONB arrays (FR-003 — carry as JSONB, not cast to TEXT)
+    b.targets,
+    b.enzymes,
+    b.carriers,
+    b.transporters,
     b.drug_interactions,
     b.food_interactions,
     b.pathways,

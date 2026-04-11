@@ -28,10 +28,22 @@ WITH uniprot_targets AS (
         taxonomy_id,
         sequence,
         sequence_length,
+        sequence_checksum,
         molecular_weight,
+        annotation_score,
         go_terms,
         pdb_structures,
         keywords,
+        -- Additional UniProt annotation columns (FR-001 carry-forward)
+        alternative_names,
+        submission_names,
+        genes,
+        secondary_accessions,
+        lineage,
+        features,
+        comments,
+        cross_references,
+        extra_attributes,
         -- Determine target type from entry type and keywords
         CASE
             WHEN keywords::TEXT ILIKE '%kinase%' THEN 'kinase'
@@ -76,7 +88,19 @@ SELECT DISTINCT ON (ut.uniprot_id)
     ut.taxonomy_id,
     ut.sequence,
     ut.sequence_length,
+    ut.sequence_checksum,
     ut.molecular_weight,
+    ut.annotation_score,
+    -- Additional UniProt annotation fields (FR-001 carry-forward)
+    ut.alternative_names,
+    ut.submission_names,
+    ut.genes,
+    ut.secondary_accessions,
+    ut.lineage,
+    ut.features,
+    ut.comments,
+    ut.cross_references,
+    ut.extra_attributes,
     -- Extract GO terms by ontology namespace
     -- UniProt encodes ontology in the GoTerm property prefix:
     --   P: = Biological Process, C: = Cellular Component, F: = Molecular Function

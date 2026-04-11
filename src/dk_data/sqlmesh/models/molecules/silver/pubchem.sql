@@ -45,6 +45,7 @@ SELECT DISTINCT ON (b.cid)
     -- Pharmacological / biological annotations
     b.pharmacological_actions,
     b.synonyms,
+    b.synonym_names,
     b.mesh_headings,
 
     -- Cross-references
