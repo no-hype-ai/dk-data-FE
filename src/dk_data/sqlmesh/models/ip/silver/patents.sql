@@ -1,6 +1,7 @@
 -- T040: ip_silver.patents — patent hub (NEW)
 -- Hub architecture: one row per unique patent, keyed by (jurisdiction, patent_number).
 -- Sources: USPTO patents, EPO patents from bronze.
+-- T117+T134: Added molecule_id via Orange Book LEFT JOIN LATERAL (FR-034).
 
 MODEL (
     name ip_silver.patents,
@@ -85,24 +86,38 @@ deduped AS (
 )
 
 SELECT
-    patent_id,
-    jurisdiction,
-    patent_number,
-    application_number,
-    publication_number,
-    pct_application_number,
-    title,
-    abstract,
-    filing_date,
-    grant_date,
-    expiry_date,
-    cpc_codes,
-    ipc_codes,
-    kind_code,
-    status,
-    COALESCE(first_seen_at, NOW()) AS first_seen_at,
-    NOW()                          AS last_updated_at
-FROM deduped;
+    d.patent_id,
+    d.jurisdiction,
+    d.patent_number,
+    d.application_number,
+    d.publication_number,
+    d.pct_application_number,
+    d.title,
+    d.abstract,
+    d.filing_date,
+    d.grant_date,
+    d.expiry_date,
+    d.cpc_codes,
+    d.ipc_codes,
+    d.kind_code,
+    d.status,
+    COALESCE(d.first_seen_at, NOW()) AS first_seen_at,
+    NOW()                             AS last_updated_at,
+    -- molecule_id via Orange Book join (FR-034): match patent_number against ob.patent_no,
+    -- then resolve to molecule via NDA application number in mol_silver.molecule_identifiers.
+    -- LEFT JOIN LATERAL ensures LIMIT 1 prevents fan-out.
+    ob_link.molecule_id               AS molecule_id
+FROM deduped d
+
+LEFT JOIN LATERAL (
+    SELECT mi.molecule_id
+    FROM mol_bronze.orange_book ob
+    JOIN mol_silver.molecule_identifiers mi ON mi.source = 'nda' AND mi.identifier = ob.appl_no
+    WHERE ob.patent_no = d.patent_number
+       OR ob.patent_no = REGEXP_REPLACE(d.patent_number, '^US0*', '')
+    ORDER BY mi.molecule_id
+    LIMIT 1
+) ob_link ON TRUE;
 
 -- CREATE INDEX IF NOT EXISTS ip_silver_pat_filing_idx ON ip_silver.patents (filing_date);
 -- CREATE INDEX IF NOT EXISTS ip_silver_pat_cpc_gin_idx ON ip_silver.patents USING GIN (cpc_codes);
