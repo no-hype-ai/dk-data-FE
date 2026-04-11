@@ -1,0 +1,19 @@
+schema_version: "1.0"
+
+# DK Extensions Configuration
+# Extensions can register hooks that run before/after dk command phases.
+#
+# Example:
+#   hooks:
+#     after_specify:
+#       command: git.commit
+#       optional: true
+#     after_plan:
+#       command: git.commit
+#       optional: true
+#     after_implement:
+#       command: git.commit
+#       optional: true
+
+extensions: {}
+hooks: {}
