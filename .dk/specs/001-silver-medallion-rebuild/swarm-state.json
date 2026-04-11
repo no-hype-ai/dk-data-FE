@@ -1,15 +1,15 @@
 {
   "feature_dir": "/Users/pschloz/Desktop/DataKinetic/dk-data-FE/.dk/specs/001-silver-medallion-rebuild",
   "branch": "feature/001-silver-medallion-rebuild",
-  "current_wave": 4,
+  "current_wave": 5,
   "total_waves": 5,
   "total_tasks": 134,
-  "completed_tasks": 62,
+  "completed_tasks": 134,
   "waves": {
     "1": {
       "status": "completed",
       "type": "direct",
-      "description": "Phase 1+2: T001–T018 (Setup, meta schema, DSN builder, CI gates, contract tests)",
+      "description": "Phase 1+2: T001\u2013T018 (Setup, meta schema, DSN builder, CI gates, contract tests)",
       "tasks_completed": 14,
       "committed_at": "2026-04-11T00:00:00Z"
     },
@@ -20,12 +20,87 @@
       "workers": {
         "sql-models": {
           "status": "merged",
-          "tasks_completed": ["T020","T021","T022","T023","T024","T025","T100","T101","T170","T171","T172","T173","T174","T175","T176"],
+          "tasks_completed": [
+            "T020",
+            "T021",
+            "T022",
+            "T023",
+            "T024",
+            "T025",
+            "T100",
+            "T101",
+            "T170",
+            "T171",
+            "T172",
+            "T173",
+            "T174",
+            "T175",
+            "T176"
+          ],
           "notes": "Worker ran out of budget; T100-T110u + T170-T176 done via direct fallback (commit 47b36dd)"
         },
         "infra-fetchers": {
           "status": "merged",
-          "tasks_completed": ["T090","T091","T092","T093","T094","T095","T096","T097","T098","T102","T103","T104","T105","T106","T107","T150","T151","T152","T153","T154","T155","T156","T160","T161","T162","T163","T164","T165","T166","T167","T180","T181","T182","T183","T184","T190","T191","T192","T193","T200","T201","T202","T203","T204","T210","T211","T212","T220","T221","T222","T223","T224","T225","T226","T227","T228","T229","T230"]
+          "tasks_completed": [
+            "T090",
+            "T091",
+            "T092",
+            "T093",
+            "T094",
+            "T095",
+            "T096",
+            "T097",
+            "T098",
+            "T102",
+            "T103",
+            "T104",
+            "T105",
+            "T106",
+            "T107",
+            "T150",
+            "T151",
+            "T152",
+            "T153",
+            "T154",
+            "T155",
+            "T156",
+            "T160",
+            "T161",
+            "T162",
+            "T163",
+            "T164",
+            "T165",
+            "T166",
+            "T167",
+            "T180",
+            "T181",
+            "T182",
+            "T183",
+            "T184",
+            "T190",
+            "T191",
+            "T192",
+            "T193",
+            "T200",
+            "T201",
+            "T202",
+            "T203",
+            "T204",
+            "T210",
+            "T211",
+            "T212",
+            "T220",
+            "T221",
+            "T222",
+            "T223",
+            "T224",
+            "T225",
+            "T226",
+            "T227",
+            "T228",
+            "T229",
+            "T230"
+          ]
         }
       }
     },
@@ -36,48 +111,148 @@
       "workers": {
         "hubs-resolve": {
           "status": "merged",
-          "tasks_completed": ["T030","T031","T032","T033","T034","T035","T036","T037","T038","T039","T039a","T040","T041","T042"],
+          "tasks_completed": [
+            "T030",
+            "T031",
+            "T032",
+            "T033",
+            "T034",
+            "T035",
+            "T036",
+            "T037",
+            "T038",
+            "T039",
+            "T039a",
+            "T040",
+            "T041",
+            "T042"
+          ],
           "notes": "T050-T062 resolve functions done directly after worker ran out of budget (commit 13c98d7)"
         },
         "bootstraps": {
           "status": "merged",
-          "tasks_completed": ["T070","T071","T072","T073","T074","T075","T076","T077","T078","T079","T079a","T079b","T080","T081"]
+          "tasks_completed": [
+            "T070",
+            "T071",
+            "T072",
+            "T073",
+            "T074",
+            "T075",
+            "T076",
+            "T077",
+            "T078",
+            "T079",
+            "T079a",
+            "T079b",
+            "T080",
+            "T081"
+          ]
         }
       }
     },
     "4": {
-      "status": "in_progress",
+      "status": "completed",
       "type": "parallel",
       "description": "Phase 6+7 (silver rewrites + free-text linking) || Phase 5j (CMS linking)",
       "workers": {
         "silver-rewrites": {
           "pid_file": "/tmp/swarm-silver-rewrites.pid",
           "log_file": "/tmp/swarm-silver-rewrites.log",
-          "status": "running",
-          "tasks_assigned": ["T110","T111","T112","T113","T114","T115","T116","T117","T118","T119","T120","T121","T130","T131","T132","T133","T134","T135","T136"],
-          "tasks_completed": [],
+          "status": "merged",
+          "tasks_assigned": [
+            "T110",
+            "T111",
+            "T112",
+            "T113",
+            "T114",
+            "T115",
+            "T116",
+            "T117",
+            "T118",
+            "T119",
+            "T120",
+            "T121",
+            "T130",
+            "T131",
+            "T132",
+            "T133",
+            "T134",
+            "T135",
+            "T136"
+          ],
+          "tasks_completed": [
+            "T110",
+            "T111",
+            "T112",
+            "T113",
+            "T114",
+            "T115",
+            "T116",
+            "T117",
+            "T118",
+            "T119",
+            "T120",
+            "T121",
+            "T130",
+            "T131",
+            "T132",
+            "T133",
+            "T134",
+            "T135",
+            "T136"
+          ],
           "tasks_failed": [],
           "started_at": "2026-04-11T00:00:00Z"
         },
         "cms-linking": {
           "pid_file": "/tmp/swarm-cms-linking.pid",
           "log_file": "/tmp/swarm-cms-linking.log",
-          "status": "running",
-          "tasks_assigned": ["T240","T241","T242","T243","T244","T245","T246","T247","T248"],
-          "tasks_completed": [],
+          "status": "merged",
+          "tasks_assigned": [
+            "T240",
+            "T241",
+            "T242",
+            "T243",
+            "T244",
+            "T245",
+            "T246",
+            "T247",
+            "T248"
+          ],
+          "tasks_completed": [
+            "T240",
+            "T241",
+            "T242",
+            "T243",
+            "T244",
+            "T245",
+            "T246",
+            "T247",
+            "T248"
+          ],
           "tasks_failed": [],
           "started_at": "2026-04-11T00:00:00Z"
         }
       }
     },
     "5": {
-      "status": "pending",
+      "status": "completed",
       "type": "direct",
-      "description": "Phase 8 Polish — T140–T146",
-      "tasks": ["T140","T141","T142","T143","T144","T145","T146"],
-      "tasks_completed": 0
+      "description": "Phase 8 Polish \u2014 T140\u2013T146",
+      "tasks": [
+        "T140",
+        "T141",
+        "T142",
+        "T143",
+        "T144",
+        "T145",
+        "T146"
+      ],
+      "tasks_completed": 7,
+      "committed_at": "2026-04-11T18:14:26.487639Z"
     }
   },
   "failed_tasks": [],
-  "started_at": "2026-04-11T00:00:00Z"
+  "started_at": "2026-04-11T00:00:00Z",
+  "status": "completed"
 }
