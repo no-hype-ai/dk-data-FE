@@ -33,6 +33,14 @@ except ImportError:
 import logging
 logger = logging.getLogger(__name__)
 
+# T227: WAL measurement for FR-021 budget enforcement
+try:
+    from dk_data.ingestion.utils.wal_metrics import measure_wal
+    _WAL_METRICS_AVAILABLE = True
+except ImportError:
+    _WAL_METRICS_AVAILABLE = False
+    measure_wal = None
+
 
 # SQLMesh model definitions by layer
 LAYER_MODELS = {
@@ -472,18 +480,11 @@ def run_sqlmesh_command(command: list[str], timeout: int = 3600) -> dict:
 def _sqlmesh_has_state_tables() -> bool:
     """Check if SQLMesh state tables exist (migrate has been run)."""
     try:
-        import psycopg2
-        conn = psycopg2.connect(
-            host=os.getenv("POSTGRES_HOST", "localhost"),
-            port=int(os.getenv("POSTGRES_PORT", "5432")),
-            user=os.getenv("POSTGRES_USER", "postgres"),
-            password=os.getenv("POSTGRES_PASSWORD", ""),
-            dbname=os.getenv("POSTGRES_DB", "dk_data"),
-        )
-        cur = conn.cursor()
-        cur.execute("SELECT EXISTS(SELECT 1 FROM pg_tables WHERE schemaname='sqlmesh' AND tablename='_snapshots')")
-        result = bool(cur.fetchone()[0])
-        conn.close()
+        from dk_data.ingestion.utils.database import get_connection
+        with get_connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute("SELECT EXISTS(SELECT 1 FROM pg_tables WHERE schemaname='sqlmesh' AND tablename='_snapshots')")
+                result = bool(cur.fetchone()[0])
         return result
     except Exception as e:
         logger.warning(f"Could not check SQLMesh state tables: {e}")
@@ -498,23 +499,15 @@ def is_sqlmesh_initialized() -> bool:
     only created by running sqlmesh plan.
     """
     try:
-        import psycopg2
-        conn = psycopg2.connect(
-            host=os.getenv("POSTGRES_HOST", "localhost"),
-            port=int(os.getenv("POSTGRES_PORT", "5432")),
-            user=os.getenv("POSTGRES_USER", "postgres"),
-            password=os.getenv("POSTGRES_PASSWORD", ""),
-            dbname=os.getenv("POSTGRES_DB", "dk_data"),
-        )
-        cur = conn.cursor()
-        cur.execute("SELECT EXISTS(SELECT 1 FROM pg_tables WHERE schemaname='sqlmesh' AND tablename='_snapshots')")
-        has_tables = bool(cur.fetchone()[0])
-        if not has_tables:
-            conn.close()
-            return False
-        cur.execute("SELECT EXISTS(SELECT 1 FROM sqlmesh._environments WHERE name = 'prod')")
-        has_env = bool(cur.fetchone()[0])
-        conn.close()
+        from dk_data.ingestion.utils.database import get_connection
+        with get_connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute("SELECT EXISTS(SELECT 1 FROM pg_tables WHERE schemaname='sqlmesh' AND tablename='_snapshots')")
+                has_tables = bool(cur.fetchone()[0])
+                if not has_tables:
+                    return False
+                cur.execute("SELECT EXISTS(SELECT 1 FROM sqlmesh._environments WHERE name = 'prod')")
+                has_env = bool(cur.fetchone()[0])
         return has_env
     except Exception as e:
         logger.warning(f"Could not check SQLMesh init state: {e}")
@@ -660,6 +653,42 @@ def _check_upstream_has_rows(schema: str, table: str) -> bool:
         return True  # Fail open: don't block pipeline on connectivity issues
 
 
+def _run_sqlmesh_with_wal(cmd: list, timeout: int, layer: str) -> dict:
+    """Run a sqlmesh command wrapped in measure_wal() for FR-021 tracking.
+
+    Opens a short-lived direct psycopg2 connection just for WAL LSN reads;
+    falls back to running the command without WAL tracking if anything fails.
+    """
+    if not _WAL_METRICS_AVAILABLE:
+        return run_sqlmesh_command(cmd, timeout=timeout)
+
+    import contextlib
+    import psycopg2
+
+    try:
+        wal_conn = psycopg2.connect(
+            host=os.getenv("POSTGRES_HOST_DIRECT", os.getenv("POSTGRES_HOST", "localhost")),
+            port=int(os.getenv("POSTGRES_PORT", "5432")),
+            user=os.getenv("POSTGRES_USER", "postgres"),
+            password=os.getenv("POSTGRES_PASSWORD", ""),
+            dbname=os.getenv("POSTGRES_DB", "dk_data"),
+            application_name="transform-wal-metrics",
+        )
+        wal_conn.autocommit = True
+    except Exception as exc:
+        logger.debug("WAL metrics connection failed (%s) — skipping measure_wal", exc)
+        return run_sqlmesh_command(cmd, timeout=timeout)
+
+    try:
+        with measure_wal(f"transform_layer.{layer}", conn=wal_conn):
+            return run_sqlmesh_command(cmd, timeout=timeout)
+    finally:
+        try:
+            wal_conn.close()
+        except Exception:
+            pass
+
+
 def transform_layer(layer: str) -> dict:
     """
     Run transformations for all models in a layer as a single SQLMesh invocation.
@@ -689,7 +718,9 @@ def transform_layer(layer: str) -> dict:
 
     # Scale timeout with model count: 10 min per model, minimum 1h, max 4h.
     timeout = max(3600, min(14400, len(models) * 600))
-    result = run_sqlmesh_command(cmd, timeout=timeout)
+
+    # T227: Measure WAL consumed per transform layer for FR-021 budget tracking.
+    result = _run_sqlmesh_with_wal(cmd, timeout=timeout, layer=layer)
 
     # Parse per-model outcomes from SQLMesh stdout (item 8).
     # SQLMesh emits lines like:

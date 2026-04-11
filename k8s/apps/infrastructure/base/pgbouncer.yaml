@@ -26,7 +26,10 @@ metadata:
 data:
   pgbouncer.ini: |
     [databases]
-    dk_data = host=postgresql.infra.svc.cluster.local port=5432 dbname=dk_data
+    ; Per-database pool_size overrides (T210)
+    dk_data = host=postgresql.infra.svc.cluster.local port=5432 dbname=dk_data pool_size=80
+    behavior_labs = host=postgresql.infra.svc.cluster.local port=5432 dbname=behavior_labs pool_size=50
+    litellm = host=postgresql.infra.svc.cluster.local port=5432 dbname=litellm pool_size=20
 
     [pgbouncer]
     listen_addr = 0.0.0.0
@@ -35,7 +38,7 @@ data:
     auth_file = /etc/pgbouncer/userlist.txt
 
     pool_mode = transaction
-    max_client_conn = 200
+    max_client_conn = 1000
     default_pool_size = 20
     reserve_pool_size = 5
     reserve_pool_timeout = 3

@@ -8,13 +8,13 @@ metadata:
     app.kubernetes.io/component: backup
     app.kubernetes.io/part-of: dk-data
 spec:
-  schedule: "0 2 * * *"
+  schedule: "0 12 * * *"  # Changed from 02:00 to 12:00 UTC (T200)
   concurrencyPolicy: Forbid
   successfulJobsHistoryLimit: 3
   failedJobsHistoryLimit: 3
   jobTemplate:
     spec:
-      activeDeadlineSeconds: 3600
+      activeDeadlineSeconds: 14400  # 4h (T201)
       backoffLimit: 2
       template:
         metadata:
