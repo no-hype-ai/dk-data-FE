@@ -72,15 +72,15 @@ LAYER_MODELS = {
         'mol_gold.financial_summary',
     ],
     # IP / Patent / Trademark models (014-uspto-euipo-model-datasource)
-    # These are all hcs_bronze + IP mol_bronze — fully independent of silver,
+    # These are all hcs_bronze + IP ip_bronze — fully independent of silver,
     # so they run in a parallel job at 06:30 alongside mol_bronze at 06:00.
     'ip_bronze': [
-        'mol_bronze.uspto_patents',
-        'mol_bronze.uspto_ci',
-        'mol_bronze.epo_patents',
-        'mol_bronze.uspto_trademarks',
-        'mol_bronze.euipo_trademarks',
-        'mol_bronze.euipo_designs',
+        'ip_bronze.uspto_patents',
+        'ip_bronze.uspto_ci',
+        'ip_bronze.epo_patents',
+        'ip_bronze.uspto_trademarks',
+        'ip_bronze.euipo_trademarks',
+        'ip_bronze.euipo_designs',
         # 015-assessment-dashboard-integration
         'mol_bronze.pubmed',
         'mol_bronze.ema',
@@ -103,8 +103,8 @@ LAYER_MODELS = {
     # AND mol_silver.molecule_aliases (silver) — it bridges both domains.
     # ndc_molecule_bridge and rxnorm_concepts also need mol_silver.molecule_aliases.
     'ip_silver': [
-        'mol_silver.patents',
-        'mol_silver.trademarks',
+        'ip_silver.patents',
+        'ip_silver.trademarks',
         # 015-assessment-dashboard-integration
         'mol_silver.publications',
         'mol_silver.regulatory_decisions',
@@ -117,7 +117,7 @@ LAYER_MODELS = {
         'mol_silver.ndc_molecule_bridge',      # NDC → molecule_id (used by hcs_silver.open_payments)
         'mol_silver.rxnorm_concepts',           # RxNorm CUIs → molecule_id
         'mol_silver.hcpcs_molecule_bridge',     # HCPCS codes → molecule_id (needs hcs_bronze + molecule_aliases)
-        'mol_silver.trademark_status_changes',  # Trademark audit trail with mol linkage (issue #171 M5)
+        'ip_silver.trademark_status_changes',   # Trademark audit trail with IP linkage (issue #171 M5)
         # Moved from hcs_silver (09:00): depends on ndc_molecule_bridge above — must run after it.
         'hcs_silver.open_payments_drug_linkage',  # hcs_bronze + mol_silver.ndc_molecule_bridge
     ],
@@ -127,10 +127,10 @@ LAYER_MODELS = {
         'ind_gold.indication_catalog',
     ],
     'ip_gold': [
-        'mol_gold.molecule_profile',
+        'ip_gold.molecule_profile',
         # 015-assessment-dashboard-integration
-        'mol_gold.kol_drug_associations',
-        'mol_gold.advocacy_groups',
+        'ip_gold.kol_drug_associations',
+        'ip_gold.advocacy_groups',
     ],
     # mol_gold_ext — 6 mol_gold models not in gold/ip_gold layers.
     # Runs at 14:00 UTC (after ip_gold 13:00 + mol_silver_ext 11:00).

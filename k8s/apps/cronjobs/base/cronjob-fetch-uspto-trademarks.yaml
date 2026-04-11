@@ -53,6 +53,8 @@ spec:
                   value: "http://alloy.infra.svc.cluster.local:4317"
                 - name: OTEL_ENABLED
                   value: "true"
+                - name: TARGET_SCHEMA
+                  value: "ip_raw"
               resources:
                 requests:
                   memory: "256Mi"
