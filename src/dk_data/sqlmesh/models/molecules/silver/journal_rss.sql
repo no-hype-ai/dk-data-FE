@@ -1,7 +1,9 @@
 -- SQLMesh Model: Silver Journal RSS Articles
 -- Promotes mol_bronze.journal_rss into mol_silver.journal_rss with molecule_id linkage.
--- Entity linking: canonical_name substring match in article title.
+-- Entity linking: WHO INN name match in article title + abstract (FR-035, T135).
 -- Complements mol_silver.publications (OpenAlex/EuropePMC) with journal RSS feeds.
+-- T135: Replaced S3 correlated scalar subquery with LEFT JOIN LATERAL; switched
+--       from mol_silver.molecules.canonical_name to mol_silver.molecule_names.normalized_name.
 
 MODEL (
     name mol_silver.journal_rss,
@@ -28,18 +30,11 @@ WITH deduped_bronze AS (
 
 SELECT
     gen_random_uuid()                                   AS id,
-    -- Entity link: find molecule by name mention in article title.
-    -- NULL for articles with no known molecule mention. Length guard prevents false positives.
-    -- Use DISTINCT ON here too to handle one article matching multiple molecules —
-    -- we only store the best (longest canonical_name) match to preserve unique key.
-    (
-        SELECT m2.molecule_id
-        FROM mol_silver.molecules m2
-        WHERE LOWER(b.title) LIKE '%' || LOWER(m2.canonical_name) || '%'
-          AND LENGTH(m2.canonical_name) > 4
-        ORDER BY LENGTH(m2.canonical_name) DESC
-        LIMIT 1
-    )                                                   AS molecule_id,
+    -- Entity link: find molecule by WHO INN name mention in article title or abstract.
+    -- NULL for articles with no known molecule mention. Length guard (>= 5) prevents false positives.
+    -- LEFT JOIN LATERAL replaces S3 correlated scalar subquery (T135).
+    -- NOTE: LIKE has the drug name as literal (not the indexed column) — not an S2 antipattern.
+    inn_link.molecule_id                                AS molecule_id,
     b.article_id,
     b.title,
     b.link                                              AS url,
@@ -53,4 +48,18 @@ SELECT
     b.source_updated_at,
     NOW()                                               AS created_at
 
-FROM deduped_bronze b;
+FROM deduped_bronze b
+
+-- WHO INN molecule linkage via mol_silver.molecule_names (FR-035)
+LEFT JOIN LATERAL (
+    SELECT mn.molecule_id
+    FROM mol_silver.molecule_names mn
+    WHERE LENGTH(mn.normalized_name) >= 5
+      AND (
+          LOWER(b.title || ' ' || COALESCE(b.abstract, '')) LIKE '% ' || mn.normalized_name || ' %'
+       OR LOWER(b.title || ' ' || COALESCE(b.abstract, '')) LIKE mn.normalized_name || ' %'
+       OR LOWER(b.title || ' ' || COALESCE(b.abstract, '')) LIKE '% ' || mn.normalized_name
+      )
+    ORDER BY LENGTH(mn.normalized_name) DESC
+    LIMIT 1
+) inn_link ON TRUE;
