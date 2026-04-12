@@ -22,34 +22,34 @@ BEGIN;
 -- PRIORITY 10 — HIGH-VALUE GAP FIXES (need historical depth extension)
 -- ============================================================================
 INSERT INTO meta.backfill_state (source_name, fetcher_args, category, expected_min_rows, expected_window_label, priority, status, notes) VALUES
-('clinicaltrials',    ARRAY['--days-back','5475'], 'clinical',   50000,     '15 years',  10, 'paused', '#256: 5.8K→50K pages. Drug dev cycles need 10-15yr.'),
-('pubmed',            ARRAY['--days-back','3650'], 'literature', 500000,    '10 years',  10, 'paused', '#256: 0→500K. Schema fix deployed.'),
-('uspto_patents',     ARRAY['--days-back','7300'], 'patents',    200000,    '20 years',  10, 'paused', '#256: 0→200K. Patent life = 20yr.'),
-('uspto_ci',          ARRAY['--days-back','7300'], 'patents',    100000,    '20 years',  10, 'paused', '#256: query-scoped CI patents.'),
-('epo_ops',           ARRAY['--days-back','7300'], 'patents',    100000,    '20 years',  10, 'paused', '#256: 11K→100K. EPO 20yr pharma.')
+('clinicaltrials',    ARRAY['--days-back','5475'], 'clinical',   50000,     '15 years',  10, 'active', '#256: 5.8K→50K pages. Drug dev cycles need 10-15yr.'),
+('pubmed',            ARRAY['--days-back','3650'], 'literature', 500000,    '10 years',  10, 'active', '#256: 0→500K. Schema fix deployed.'),
+('uspto_patents',     ARRAY['--days-back','7300'], 'patents',    200000,    '20 years',  10, 'active', '#256: 0→200K. Patent life = 20yr.'),
+('uspto_ci',          ARRAY['--days-back','7300'], 'patents',    100000,    '20 years',  10, 'active', '#256: query-scoped CI patents.'),
+('epo_ops',           ARRAY['--days-back','7300'], 'patents',    100000,    '20 years',  10, 'active', '#256: 11K→100K. EPO 20yr pharma.')
 ON CONFLICT (source_name) DO NOTHING;
 
 -- ============================================================================
 -- PRIORITY 20 — MEDIUM GAPS
 -- ============================================================================
 INSERT INTO meta.backfill_state (source_name, fetcher_args, category, expected_min_rows, expected_window_label, priority, status, notes) VALUES
-('europepmc',         ARRAY['--days-back','3650'], 'literature', 2000000,   '10 years',  20, 'paused', '#256: 530K→2M.'),
-('openalex_ci',       ARRAY['--days-back','3650'], 'literature', 5000000,   '10 years',  20, 'paused', '#256: 1M→5M.'),
-('nih_reporter',      ARRAY['--days-back','3650'], 'literature', 2000000,   '10 years',  20, 'paused', '#256: 554K→2M.'),
-('sec_edgar',         ARRAY['--days-back','3650'], 'patents',    20000,     '10 years',  20, 'paused', '#256: 2K→20K.'),
-('uspto_trademarks',  ARRAY['--days-back','7300'], 'patents',    50000,     '20 years',  20, 'paused', '#256: 457d→20yr.'),
-('euipo_trademarks',  ARRAY['--days-back','3650'], 'patents',    50000,     '10 years',  20, 'paused', '#256: 457d→10yr.'),
-('euipo_designs',     ARRAY['--days-back','3650'], 'patents',    25000,     '10 years',  20, 'paused', '#256: 457d→10yr.')
+('europepmc',         ARRAY['--days-back','3650'], 'literature', 2000000,   '10 years',  20, 'active', '#256: 530K→2M.'),
+('openalex_ci',       ARRAY['--days-back','3650'], 'literature', 5000000,   '10 years',  20, 'active', '#256: 1M→5M.'),
+('nih_reporter',      ARRAY['--days-back','3650'], 'literature', 2000000,   '10 years',  20, 'active', '#256: 554K→2M.'),
+('sec_edgar',         ARRAY['--days-back','3650'], 'patents',    20000,     '10 years',  20, 'active', '#256: 2K→20K.'),
+('uspto_trademarks',  ARRAY['--days-back','7300'], 'patents',    50000,     '20 years',  20, 'active', '#256: 457d→20yr.'),
+('euipo_trademarks',  ARRAY['--days-back','3650'], 'patents',    50000,     '10 years',  20, 'active', '#256: 457d→10yr.'),
+('euipo_designs',     ARRAY['--days-back','3650'], 'patents',    25000,     '10 years',  20, 'active', '#256: 457d→10yr.')
 ON CONFLICT (source_name) DO NOTHING;
 
 -- ============================================================================
 -- PRIORITY 30 — CHECKPOINT RESUMES (stalled mid-run; just need clean ticks)
 -- ============================================================================
 INSERT INTO meta.backfill_state (source_name, fetcher_args, category, expected_min_rows, expected_window_label, priority, status, notes) VALUES
-('chembl_activities', ARRAY[]::TEXT[], 'reference', 24000000,  'resume from checkpoint 18.3M', 30, 'paused', '#256: stalled at 18.3M/24.3M.'),
-('pubchem',           ARRAY[]::TEXT[], 'reference', 123000000, 'resume from CID 65M',          30, 'paused', '#256: 39M→123M. Shard crons handle bulk.'),
-('npi_registry',      ARRAY[]::TEXT[], 'reference', 8000000,   'resume from 2.2M',             30, 'paused', '#256: 4M→8M.'),
-('kegg_drug',         ARRAY[]::TEXT[], 'reference', 12000,     'resume',                        30, 'paused', '#256: 1283→12K.')
+('chembl_activities', ARRAY[]::TEXT[], 'reference', 24000000,  'resume from checkpoint 18.3M', 30, 'active', '#256: stalled at 18.3M/24.3M.'),
+('pubchem',           ARRAY[]::TEXT[], 'reference', 123000000, 'resume from CID 65M',          30, 'active', '#256: 39M→123M. Shard crons handle bulk.'),
+('npi_registry',      ARRAY[]::TEXT[], 'reference', 8000000,   'resume from 2.2M',             30, 'active', '#256: 4M→8M.'),
+('kegg_drug',         ARRAY[]::TEXT[], 'reference', 12000,     'resume',                        30, 'active', '#256: 1283→12K.')
 ON CONFLICT (source_name) DO NOTHING;
 
 -- ============================================================================
@@ -58,57 +58,57 @@ ON CONFLICT (source_name) DO NOTHING;
 -- FIRST new year to add; operator advances to the next year after each completes.
 -- ============================================================================
 INSERT INTO meta.backfill_state (source_name, fetcher_args, category, expected_min_rows, expected_window_label, priority, status, notes) VALUES
-('cms_open_payments',          ARRAY['--fiscal-year','2019'], 'cms', 50000000, '5yr (add 2019-2020)', 40, 'paused', '#256: 2M→50M.'),
-('cms_part_d_prescriber',      ARRAY['--fiscal-year','2019'], 'cms', 25000000, '5yr',                 40, 'paused', '#256: 3M→25M.'),
-('cms_opioid_puf',             ARRAY['--fiscal-year','2019'], 'cms', 40000000, '5yr',                 40, 'paused', '#256: 24M→40M.'),
-('cms_telehealth_puf',         ARRAY['--fiscal-year','2019'], 'cms', 15000000, '5yr',                 40, 'paused', '#256: 9.3M→15M.'),
-('cms_physician_puf_services', ARRAY['--fiscal-year','2019'], 'cms', 15000000, '5yr',                 40, 'paused', '#256: 9.7M→15M.'),
-('cms_inpatient_puf',          ARRAY['--fiscal-year','2019'], 'cms', NULL,     '5yr',                 40, 'paused', '#256 "all other CMS PUFs +60%".'),
-('cms_outpatient_puf',         ARRAY['--fiscal-year','2019'], 'cms', NULL,     '5yr',                 40, 'paused', '#256.'),
-('cms_dme_puf',                ARRAY['--fiscal-year','2019'], 'cms', NULL,     '5yr',                 40, 'paused', '#256.'),
-('cms_imaging_puf',            ARRAY['--fiscal-year','2019'], 'cms', NULL,     '5yr',                 40, 'paused', '#256.'),
-('cms_lab_services',           ARRAY['--fiscal-year','2019'], 'cms', NULL,     '5yr',                 40, 'paused', '#256.'),
-('cms_home_health',            ARRAY['--fiscal-year','2019'], 'cms', NULL,     '5yr',                 40, 'paused', '#256.'),
-('cms_hospice_puf',            ARRAY['--fiscal-year','2019'], 'cms', NULL,     '5yr',                 40, 'paused', '#256.'),
-('cms_snf_puf',                ARRAY['--fiscal-year','2019'], 'cms', NULL,     '5yr',                 40, 'paused', '#256.'),
-('cms_part_b_spending',        ARRAY['--fiscal-year','2019'], 'cms', NULL,     '5yr',                 40, 'paused', '#256.'),
-('cms_part_d_spending',        ARRAY['--fiscal-year','2019'], 'cms', NULL,     '5yr',                 40, 'paused', '#256.'),
-('cms_mental_health_puf',      ARRAY['--fiscal-year','2019'], 'cms', NULL,     '5yr',                 40, 'paused', '#256.'),
-('cms_utilization_puf',        ARRAY['--fiscal-year','2019'], 'cms', NULL,     '5yr',                 40, 'paused', '#256.'),
-('cms_medicare_advantage',     ARRAY['--fiscal-year','2019'], 'cms', NULL,     '5yr',                 40, 'paused', '#256.'),
-('cms_claim_type_puf',         ARRAY['--fiscal-year','2019'], 'cms', NULL,     '5yr',                 40, 'paused', '#256.'),
-('cms_dual_eligible',          ARRAY['--fiscal-year','2019'], 'cms', NULL,     '5yr',                 40, 'paused', '#256.'),
-('cms_enrollment_puf',         ARRAY['--fiscal-year','2019'], 'cms', NULL,     '5yr',                 40, 'paused', '#256.'),
-('cms_referring_providers',    ARRAY['--fiscal-year','2019'], 'cms', NULL,     '5yr',                 40, 'paused', '#256.'),
-('cms_ordering_providers',     ARRAY['--fiscal-year','2019'], 'cms', NULL,     '5yr',                 40, 'paused', '#256.'),
-('cms_physician_puf',          ARRAY['--fiscal-year','2019'], 'cms', NULL,     '5yr',                 40, 'paused', '#256.'),
-('cms_geographic_variation',   ARRAY['--fiscal-year','2019'], 'cms', NULL,     '5yr',                 40, 'paused', '#256.'),
-('cms_medicaid_drug_spending', ARRAY['--fiscal-year','2019'], 'cms', NULL,     '5yr',                 40, 'paused', '#256.')
+('cms_open_payments',          ARRAY['--fiscal-year','2019'], 'cms', 50000000, '5yr (add 2019-2020)', 40, 'active', '#256: 2M→50M.'),
+('cms_part_d_prescriber',      ARRAY['--fiscal-year','2019'], 'cms', 25000000, '5yr',                 40, 'active', '#256: 3M→25M.'),
+('cms_opioid_puf',             ARRAY['--fiscal-year','2019'], 'cms', 40000000, '5yr',                 40, 'active', '#256: 24M→40M.'),
+('cms_telehealth_puf',         ARRAY['--fiscal-year','2019'], 'cms', 15000000, '5yr',                 40, 'active', '#256: 9.3M→15M.'),
+('cms_physician_puf_services', ARRAY['--fiscal-year','2019'], 'cms', 15000000, '5yr',                 40, 'active', '#256: 9.7M→15M.'),
+('cms_inpatient_puf',          ARRAY['--fiscal-year','2019'], 'cms', NULL,     '5yr',                 40, 'active', '#256 "all other CMS PUFs +60%".'),
+('cms_outpatient_puf',         ARRAY['--fiscal-year','2019'], 'cms', NULL,     '5yr',                 40, 'active', '#256.'),
+('cms_dme_puf',                ARRAY['--fiscal-year','2019'], 'cms', NULL,     '5yr',                 40, 'active', '#256.'),
+('cms_imaging_puf',            ARRAY['--fiscal-year','2019'], 'cms', NULL,     '5yr',                 40, 'active', '#256.'),
+('cms_lab_services',           ARRAY['--fiscal-year','2019'], 'cms', NULL,     '5yr',                 40, 'active', '#256.'),
+('cms_home_health',            ARRAY['--fiscal-year','2019'], 'cms', NULL,     '5yr',                 40, 'active', '#256.'),
+('cms_hospice_puf',            ARRAY['--fiscal-year','2019'], 'cms', NULL,     '5yr',                 40, 'active', '#256.'),
+('cms_snf_puf',                ARRAY['--fiscal-year','2019'], 'cms', NULL,     '5yr',                 40, 'active', '#256.'),
+('cms_part_b_spending',        ARRAY['--fiscal-year','2019'], 'cms', NULL,     '5yr',                 40, 'active', '#256.'),
+('cms_part_d_spending',        ARRAY['--fiscal-year','2019'], 'cms', NULL,     '5yr',                 40, 'active', '#256.'),
+('cms_mental_health_puf',      ARRAY['--fiscal-year','2019'], 'cms', NULL,     '5yr',                 40, 'active', '#256.'),
+('cms_utilization_puf',        ARRAY['--fiscal-year','2019'], 'cms', NULL,     '5yr',                 40, 'active', '#256.'),
+('cms_medicare_advantage',     ARRAY['--fiscal-year','2019'], 'cms', NULL,     '5yr',                 40, 'active', '#256.'),
+('cms_claim_type_puf',         ARRAY['--fiscal-year','2019'], 'cms', NULL,     '5yr',                 40, 'active', '#256.'),
+('cms_dual_eligible',          ARRAY['--fiscal-year','2019'], 'cms', NULL,     '5yr',                 40, 'active', '#256.'),
+('cms_enrollment_puf',         ARRAY['--fiscal-year','2019'], 'cms', NULL,     '5yr',                 40, 'active', '#256.'),
+('cms_referring_providers',    ARRAY['--fiscal-year','2019'], 'cms', NULL,     '5yr',                 40, 'active', '#256.'),
+('cms_ordering_providers',     ARRAY['--fiscal-year','2019'], 'cms', NULL,     '5yr',                 40, 'active', '#256.'),
+('cms_physician_puf',          ARRAY['--fiscal-year','2019'], 'cms', NULL,     '5yr',                 40, 'active', '#256.'),
+('cms_geographic_variation',   ARRAY['--fiscal-year','2019'], 'cms', NULL,     '5yr',                 40, 'active', '#256.'),
+('cms_medicaid_drug_spending', ARRAY['--fiscal-year','2019'], 'cms', NULL,     '5yr',                 40, 'active', '#256.')
 ON CONFLICT (source_name) DO NOTHING;
 
 -- ============================================================================
 -- PRIORITY 50 — SMALL ONE-SHOT LOADS (fetchers that never ran or need a kick)
 -- ============================================================================
 INSERT INTO meta.backfill_state (source_name, fetcher_args, category, expected_min_rows, expected_window_label, priority, status, notes) VALUES
-('purple_book',               ARRAY[]::TEXT[], 'regulatory', 4000,   'one-shot', 50, 'paused', '#256: 0→4K. Never triggered.'),
-('fda_ndc',                   ARRAY[]::TEXT[], 'regulatory', 133000, 'one-shot', 50, 'paused', '#256: 0→133K. Lucene bug fixed.'),
-('fda_rems',                  ARRAY[]::TEXT[], 'regulatory', 200,    'one-shot', 50, 'paused', '#256: remove max_records.'),
-('cms_chronic_conditions',    ARRAY['--fiscal-year','2023'], 'cms', 5000,   'one-shot', 50, 'paused', '#256: 0→5K.'),
-('cms_hospital_general_info', ARRAY[]::TEXT[], 'cms',        5000,   'one-shot', 50, 'paused', '#256: 0→5K.'),
-('cms_ddinter',               ARRAY[]::TEXT[], 'cms',        1000,   'one-shot', 50, 'paused', '#256: 0→1K.'),
-('imgt',                      ARRAY[]::TEXT[], 'reference',  5000,   'one-shot', 50, 'paused', '#256: 0→5K. Bulk FASTA fix deployed.'),
-('nice_hta',                  ARRAY[]::TEXT[], 'regulatory', 4000,   'one-shot', 50, 'paused', '#256: 0→4K.'),
-('acc_tvc',                   ARRAY[]::TEXT[], 'reference',  500,    'one-shot', 50, 'paused', '#256: 0→500. Cronjob added.'),
-('hta_bodies',                ARRAY[]::TEXT[], 'regulatory', 4000,   'one-shot', 50, 'paused', '#256: HTA body directory.'),
-('cochrane',                  ARRAY[]::TEXT[], 'reference',  10000,  'all time', 50, 'paused', '#256: remove max_records cap.')
+('purple_book',               ARRAY[]::TEXT[], 'regulatory', 4000,   'one-shot', 50, 'active', '#256: 0→4K. Never triggered.'),
+('fda_ndc',                   ARRAY[]::TEXT[], 'regulatory', 133000, 'one-shot', 50, 'active', '#256: 0→133K. Lucene bug fixed.'),
+('fda_rems',                  ARRAY[]::TEXT[], 'regulatory', 200,    'one-shot', 50, 'active', '#256: remove max_records.'),
+('cms_chronic_conditions',    ARRAY['--fiscal-year','2023'], 'cms', 5000,   'one-shot', 50, 'active', '#256: 0→5K.'),
+('cms_hospital_general_info', ARRAY[]::TEXT[], 'cms',        5000,   'one-shot', 50, 'active', '#256: 0→5K.'),
+('cms_ddinter',               ARRAY[]::TEXT[], 'cms',        1000,   'one-shot', 50, 'active', '#256: 0→1K.'),
+('imgt',                      ARRAY[]::TEXT[], 'reference',  5000,   'one-shot', 50, 'active', '#256: 0→5K. Bulk FASTA fix deployed.'),
+('nice_hta',                  ARRAY[]::TEXT[], 'regulatory', 4000,   'one-shot', 50, 'active', '#256: 0→4K.'),
+('acc_tvc',                   ARRAY[]::TEXT[], 'reference',  500,    'one-shot', 50, 'active', '#256: 0→500. Cronjob added.'),
+('hta_bodies',                ARRAY[]::TEXT[], 'regulatory', 4000,   'one-shot', 50, 'active', '#256: HTA body directory.'),
+('cochrane',                  ARRAY[]::TEXT[], 'reference',  10000,  'all time', 50, 'active', '#256: remove max_records cap.')
 ON CONFLICT (source_name) DO NOTHING;
 
 -- ============================================================================
 -- PRIORITY 60 — LITERATURE 1-YEAR CATCH-UP
 -- ============================================================================
 INSERT INTO meta.backfill_state (source_name, fetcher_args, category, expected_min_rows, expected_window_label, priority, status, notes) VALUES
-('journal_rss',    ARRAY[]::TEXT[],            'literature', NULL, 'one-shot', 60, 'paused', 'RSS feeds only expose recent articles. --days-back is ignored by the fetcher.'),
-('medical_news',   ARRAY['--days-back','365'], 'literature', NULL, '1 year',  60, 'paused', 'News only recent.')
+('journal_rss',    ARRAY[]::TEXT[],            'literature', NULL, 'one-shot', 60, 'active', 'RSS feeds only expose recent articles. --days-back is ignored by the fetcher.'),
+('medical_news',   ARRAY['--days-back','365'], 'literature', NULL, '1 year',  60, 'active', 'News only recent.')
 ON CONFLICT (source_name) DO NOTHING;
 
 -- ============================================================================
