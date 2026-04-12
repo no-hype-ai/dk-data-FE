@@ -13,12 +13,12 @@
 
 BEGIN;
 
-DROP TABLE IF EXISTS mol_raw.uspto_patents;
-DROP TABLE IF EXISTS mol_raw.uspto_ci;
-DROP TABLE IF EXISTS mol_raw.uspto_trademarks;
-DROP TABLE IF EXISTS mol_raw.epo_patents;
-DROP TABLE IF EXISTS mol_raw.euipo_trademarks;
-DROP TABLE IF EXISTS mol_raw.euipo_designs;
-DROP TABLE IF EXISTS mol_raw.trademark_status_history;
+DROP TABLE IF EXISTS mol_raw.uspto_patents CASCADE;
+DROP TABLE IF EXISTS mol_raw.uspto_ci CASCADE;
+DROP TABLE IF EXISTS mol_raw.uspto_trademarks CASCADE;
+DROP TABLE IF EXISTS mol_raw.epo_patents CASCADE;
+DROP TABLE IF EXISTS mol_raw.euipo_trademarks CASCADE;
+DROP TABLE IF EXISTS mol_raw.euipo_designs CASCADE;
+DROP TABLE IF EXISTS mol_raw.trademark_status_history CASCADE;
 
 COMMIT;
