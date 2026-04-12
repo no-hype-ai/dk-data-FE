@@ -67,8 +67,11 @@ COMMIT;
 -- Step 3: Execute the chunked copy (each batch auto-commits inside the procedure)
 CALL _tmp_partition_copy_chembl_activities();
 
--- Step 4: Cleanup
+-- Step 4: Cleanup + recreate BRIN index on partitioned parent
 BEGIN;
 DROP TABLE mol_bronze.chembl_activities_nonpart;
 DROP PROCEDURE _tmp_partition_copy_chembl_activities();
+CREATE INDEX IF NOT EXISTS idx_chembl_activities_ingested_brin
+    ON mol_bronze.chembl_activities USING BRIN (ingested_at)
+    WITH (pages_per_range = 128);
 COMMIT;

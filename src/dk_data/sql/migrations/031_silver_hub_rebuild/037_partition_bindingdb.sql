@@ -64,8 +64,11 @@ COMMIT;
 -- Step 3: Execute the chunked copy
 CALL _tmp_partition_copy_bindingdb();
 
--- Step 4: Cleanup
+-- Step 4: Cleanup + recreate BRIN index on partitioned parent
 BEGIN;
 DROP TABLE mol_bronze.bindingdb_nonpart;
 DROP PROCEDURE _tmp_partition_copy_bindingdb();
+CREATE INDEX IF NOT EXISTS idx_bindingdb_ingested_brin
+    ON mol_bronze.bindingdb USING BRIN (ingested_at)
+    WITH (pages_per_range = 128);
 COMMIT;
