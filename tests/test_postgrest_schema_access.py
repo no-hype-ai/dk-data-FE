@@ -34,13 +34,13 @@ def _hub_tables_exist():
     except Exception:
         return False
 
-pytestmark = pytest.mark.skipif(
-    not _hub_tables_exist(),
-    reason="Hub tables not available (031_silver_hub_rebuild migrations not applied in CI)"
-)
-
-
-pytestmark = pytest.mark.integration
+pytestmark = [
+    pytest.mark.skipif(
+        not _hub_tables_exist(),
+        reason="Hub tables not available (031_silver_hub_rebuild migrations not applied in CI)"
+    ),
+    pytest.mark.integration,
+]
 
 POSTGREST_URL = os.getenv("POSTGREST_URL", "http://localhost:3030")
 JWT_SECRET = os.getenv("JWT_SECRET", "test-secret-must-be-at-least-32-chars")

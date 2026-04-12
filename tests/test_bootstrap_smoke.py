@@ -34,14 +34,13 @@ def _hub_tables_exist():
     except Exception:
         return False
 
-pytestmark = pytest.mark.skipif(
-    not _hub_tables_exist(),
-    reason="Hub tables not available (031_silver_hub_rebuild migrations not applied in CI)"
-)
-
-
-
-pytestmark = pytest.mark.integration
+pytestmark = [
+    pytest.mark.skipif(
+        not _hub_tables_exist(),
+        reason="Hub tables not available (031_silver_hub_rebuild migrations not applied in CI)"
+    ),
+    pytest.mark.integration,
+]
 
 # ---------------------------------------------------------------------------
 # Expected procedures in dependency/tier order (Tier 0 → Tier 1 → Tier 2+)
