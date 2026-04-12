@@ -11,7 +11,6 @@ test data source" decision.
 """
 
 import os
-import sys
 import pytest
 
 # ---------------------------------------------------------------------------
@@ -99,7 +98,7 @@ def _get_sqlmesh_context():
         )
         ctx = Context(paths=[sqlmesh_path], load=True)
         return ctx
-    except Exception as exc:
+    except Exception:
         return None
 
 

@@ -10,7 +10,6 @@ These tests mirror the CI grep jobs in ci.yaml but run as pytest so that:
   - pytest --tb=short gives a readable failure report
 """
 
-import os
 import re
 import pathlib
 import pytest
