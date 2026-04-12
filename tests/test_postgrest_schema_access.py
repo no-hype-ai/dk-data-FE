@@ -23,7 +23,7 @@ def _hub_tables_exist():
             port=os.environ.get("POSTGRES_PORT", "5432"),
             user=os.environ.get("POSTGRES_USER", "postgres"),
             password=os.environ.get("POSTGRES_PASSWORD", "postgres"),
-            dbname=os.environ.get("POSTGRES_DB", "dk_data_test"),
+            dbname=os.environ.get("POSTGRES_DB", "dk_data"),
         )
         cur = conn.cursor()
         cur.execute("SELECT 1 FROM information_schema.tables WHERE table_schema='meta' AND table_name='job_locks'")
