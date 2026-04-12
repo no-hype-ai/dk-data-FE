@@ -92,10 +92,23 @@ DECLARE
     v_today_wal_mb      NUMERIC;
     v_wal_dir_mb        NUMERIC;
     v_max_wal_mb        NUMERIC;
+    v_archiver_fails    BIGINT;
 BEGIN
-    -- Circuit breaker 1: actual WAL directory size vs max_wal_size
-    -- This is the REAL check — catches WAL accumulation from any source
-    -- (broken archiver, long-running transactions, replication lag, etc.)
+    -- Circuit breaker 1: WAL archiver health
+    -- If the archiver is actively failing, WAL cannot be recycled and will
+    -- accumulate regardless of how small our batches are. Pause immediately.
+    SELECT failed_count INTO v_archiver_fails FROM pg_stat_archiver;
+    IF v_archiver_fails > 0 AND EXISTS (
+        SELECT 1 FROM pg_stat_archiver
+        WHERE last_failed_time > NOW() - INTERVAL '30 minutes'
+    ) THEN
+        RAISE NOTICE 'backfill_orchestrator: skip — WAL archiver has recent failures (% total, last within 30 min)',
+            v_archiver_fails;
+        RETURN;
+    END IF;
+
+    -- Circuit breaker 2: actual WAL directory size vs max_wal_size
+    -- Catches WAL accumulation from any source (broken archiver, long txns, etc.)
     SELECT COALESCE(SUM(size), 0) / 1024.0 / 1024.0 INTO v_wal_dir_mb
     FROM pg_ls_waldir();
     SELECT setting::numeric INTO v_max_wal_mb
@@ -106,7 +119,7 @@ BEGIN
         RETURN;
     END IF;
 
-    -- Circuit breaker 2: cluster busy?
+    -- Circuit breaker 3: cluster busy?
     SELECT count(*) INTO v_active_pg_count
     FROM pg_stat_activity
     WHERE datname = current_database()
