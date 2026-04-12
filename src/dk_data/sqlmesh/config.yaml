@@ -16,6 +16,10 @@ gateways:
       # 128MB is half the per-session ceiling (256MB) to leave headroom for hash joins.
       pre_ping: true
       concurrent_tasks: 4
+      session_properties:
+        work_mem: "128MB"
+        statement_timeout: "600000"
+        idle_in_transaction_session_timeout: "300000"
 
 default_gateway: local
 
