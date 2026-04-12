@@ -28,27 +28,35 @@ DEFAULT_MIGRATIONS_DIR = str(
     Path(__file__).resolve().parent.parent / "sql" / "migrations"
 )
 
-# Database connection from environment
-DATABASE_URL = os.getenv("DATABASE_URL", "")
-
-# Fallback to individual env vars (matches catalog_refresh.py pattern)
-DB_CONFIG = {
-    "host": os.getenv("POSTGRES_HOST", "localhost"),
-    "port": int(os.getenv("POSTGRES_PORT", "5433")),
-    "user": os.getenv("POSTGRES_USER", "postgres"),
-    "password": os.getenv("POSTGRES_PASSWORD", "postgres"),
-    "database": os.getenv("POSTGRES_DB", "dk_data"),
-}
-
 # Regex to extract numeric prefix from migration filename
 PREFIX_RE = re.compile(r"^(\d+)")
 
 
 def get_connection():
-    """Get a database connection from DATABASE_URL or individual env vars."""
-    if DATABASE_URL:
-        return psycopg2.connect(DATABASE_URL)
-    return psycopg2.connect(**DB_CONFIG)
+    """Get a database connection. Individual POSTGRES_* vars take priority over DATABASE_URL.
+
+    Priority (matches api/dependencies.py and the rest of the codebase):
+      1. POSTGRES_HOST + individual vars  — set by k8s dk-data-secrets
+      2. DATABASE_URL                     — local dev fallback only
+      3. Hardcoded localhost defaults
+    """
+    if os.getenv("POSTGRES_HOST"):
+        return psycopg2.connect(
+            host=os.environ["POSTGRES_HOST"],
+            port=int(os.getenv("POSTGRES_PORT", "5432")),
+            user=os.getenv("POSTGRES_USER", "postgres"),
+            password=os.getenv("POSTGRES_PASSWORD", "postgres"),
+            database=os.getenv("POSTGRES_DB", "dk_data"),
+        )
+    if os.getenv("DATABASE_URL"):
+        return psycopg2.connect(os.environ["DATABASE_URL"])
+    return psycopg2.connect(
+        host="localhost",
+        port=int(os.getenv("POSTGRES_PORT", "5433")),
+        user="postgres",
+        password="postgres",
+        database="dk_data",
+    )
 
 
 def discover_migrations(migrations_dir: str) -> list[tuple[str, str, str]]:

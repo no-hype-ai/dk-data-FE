@@ -124,7 +124,16 @@ class BaseAgent(ABC):
     async def _get_db_pool(self) -> asyncpg.Pool:
         """Lazy-initialize asyncpg connection pool."""
         if self._db_pool is None:
-            dsn = os.environ["DATABASE_URL"]
+            if os.getenv("POSTGRES_HOST"):
+                dsn = (
+                    f"postgresql://{os.getenv('POSTGRES_USER', 'postgres')}"
+                    f":{os.getenv('POSTGRES_PASSWORD', '')}"
+                    f"@{os.environ['POSTGRES_HOST']}"
+                    f":{os.getenv('POSTGRES_PORT', '5432')}"
+                    f"/{os.getenv('POSTGRES_DB', 'dk_data')}"
+                )
+            else:
+                dsn = os.environ["DATABASE_URL"]
             self._db_pool = await asyncpg.create_pool(dsn=dsn, min_size=1, max_size=5)
         return self._db_pool
 
