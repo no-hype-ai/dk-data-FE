@@ -7,8 +7,7 @@
 
 MODEL (
     name mol_silver.drug_spending,
-    kind INCREMENTAL_BY_UNIQUE_KEY (
-        unique_key (generic_name, program, _source_year)
+    kind FULL
     ),
     cron '@monthly',
     audits (

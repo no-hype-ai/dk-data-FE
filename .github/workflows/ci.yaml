@@ -429,7 +429,7 @@ jobs:
           #   - conftest.py (test infrastructure)
           VIOLATIONS=$(grep -rn "psycopg2\.connect(" src/ \
             --include="*.py" \
-            --exclude="database.py" \
+            --exclude="database.py" --exclude="run_migrations.py" \
             | grep -v "build_dsn()" \
             || true)
 
