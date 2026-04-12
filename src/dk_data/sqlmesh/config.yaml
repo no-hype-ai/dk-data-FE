@@ -10,16 +10,12 @@ gateways:
       user: "{{ env_var('POSTGRES_USER', 'postgres') }}"
       password: "{{ env_var('POSTGRES_PASSWORD', '') }}"
       database: "{{ env_var('POSTGRES_DB', 'dk_data') }}"
-      # FR-021b: SET LOCAL work_mem = '128MB' for every SQLMesh session.
-      # This replaces per-model pre_statements (SQLMesh 0.230.0 parser bug prevents
-      # pre_statements from coexisting with INCREMENTAL_BY_UNIQUE_KEY + audits).
-      # 128MB is half the per-session ceiling (256MB) to leave headroom for hash joins.
+      # NOTE: work_mem/statement_timeout are set at the PostgreSQL role level
+      # (ALTER ROLE dk_data SET work_mem = '128MB') rather than per-session,
+      # because SQLMesh 0.230.0 postgres connector does not support
+      # session_properties or pre_statements with INCREMENTAL_BY_UNIQUE_KEY.
       pre_ping: true
       concurrent_tasks: 4
-      session_properties:
-        work_mem: "128MB"
-        statement_timeout: "600000"
-        idle_in_transaction_session_timeout: "300000"
 
 default_gateway: local
 
