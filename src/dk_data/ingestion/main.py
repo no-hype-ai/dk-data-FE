@@ -1282,10 +1282,20 @@ def run_ingestion(source: str, **kwargs) -> dict:
         # Compute incremental days_back from last successful refresh.
         # --days-back CLI override bypasses the computed window (for manual backfills).
         # kwargs consumed by run_ingestion itself — never forwarded to fetcher.fetch()
-        _INTERNAL_KWARGS = {'data_dir', 'filepath', 'fiscal_year', 'source_override',
+        _INTERNAL_KWARGS = {'data_dir', 'filepath', 'source_override',
                             'days_back', 'max_records', 'batch_size'}
 
         fetch_kwargs = {}
+
+        # Expand --fiscal-year N into a years=[N, N+1, ..., current_year] list so
+        # CMS fetchers use the multi-year streaming path instead of single-year.
+        if kwargs.get('fiscal_year') and not kwargs.get('years'):
+            from datetime import date
+            start_year = int(kwargs['fiscal_year'])
+            end_year = date.today().year
+            fetch_kwargs['years'] = list(range(start_year, end_year + 1))
+            fetch_kwargs['fiscal_year'] = start_year
+            logger.info("Expanded --fiscal-year %d to years %d–%d", start_year, start_year, end_year)
         if kwargs.get('days_back') is not None:
             # Explicit override: use the caller-specified window regardless of state.
             days_back = kwargs['days_back']
