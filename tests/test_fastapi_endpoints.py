@@ -78,16 +78,24 @@ class TestHealthEndpoint:
         assert data["status"] in ("healthy", "degraded", "unhealthy")
 
 
-@pytest.mark.skipif(
-    not __import__("os").environ.get("POSTGRES_HOST"),
-    reason="Jobs endpoint requires a fully-initialized DB with hub tables"
-)
 class TestJobsEndpoint:
-    def test_list_jobs_returns_200(self, client):
+    @patch("dk_data.ingestion.batch.api.psycopg2")
+    def test_list_jobs_returns_200(self, mock_pg, client):
+        mock_conn = MagicMock()
+        mock_cursor = MagicMock()
+        mock_pg.connect.return_value = mock_conn
+        mock_conn.cursor.return_value = mock_cursor
+        mock_cursor.fetchall.return_value = []
         response = client.get("/jobs")
         assert response.status_code == 200
 
-    def test_list_jobs_returns_list(self, client):
+    @patch("dk_data.ingestion.batch.api.psycopg2")
+    def test_list_jobs_returns_list(self, mock_pg, client):
+        mock_conn = MagicMock()
+        mock_cursor = MagicMock()
+        mock_pg.connect.return_value = mock_conn
+        mock_conn.cursor.return_value = mock_cursor
+        mock_cursor.fetchall.return_value = []
         response = client.get("/jobs")
         data = response.json()
         assert isinstance(data, list)
