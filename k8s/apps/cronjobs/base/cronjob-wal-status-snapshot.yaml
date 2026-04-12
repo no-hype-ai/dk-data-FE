@@ -57,7 +57,7 @@ spec:
               env:
                 - name: POSTGRES_HOST
                   # Use direct connection — WAL functions require replication privilege
-                  value: "postgresql.infra.svc.cluster.local"
+                  value: "postgres-cluster-rw.infra.svc.cluster.local"
                 - name: POSTGRES_USER
                   valueFrom:
                     secretKeyRef:

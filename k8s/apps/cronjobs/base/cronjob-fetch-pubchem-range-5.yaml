@@ -67,7 +67,7 @@ spec:
                 - name: PUBCHEM_CID_END
                   value: "100000000"
                 - name: POSTGRES_HOST_DIRECT
-                  value: "postgresql.infra.svc.cluster.local:5432"
+                  value: "postgres-cluster-rw.infra.svc.cluster.local:5432"
               resources:
                 requests:
                   memory: "2Gi"

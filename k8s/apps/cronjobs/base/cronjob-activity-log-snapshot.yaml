@@ -77,7 +77,7 @@ spec:
                   echo "Activity snapshot complete."
               env:
                 - name: POSTGRES_HOST
-                  value: "postgresql.infra.svc.cluster.local"
+                  value: "postgres-cluster-rw.infra.svc.cluster.local"
                 - name: POSTGRES_USER
                   valueFrom:
                     secretKeyRef:

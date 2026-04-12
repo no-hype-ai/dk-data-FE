@@ -1,7 +1,7 @@
 ---
 # PgBouncer — connection pooler for the dk_data PostgreSQL cluster (item 6)
 #
-# Sits in front of CloudNativePG at postgresql.infra.svc.cluster.local:5432.
+# Sits in front of CloudNativePG at postgres-cluster-rw.infra.svc.cluster.local:5432.
 # All application services (job-trigger, cronjob pods, SQLMesh, PostgREST)
 # point POSTGRES_HOST at pgbouncer.infra.svc.cluster.local:5432.
 #
@@ -27,9 +27,9 @@ data:
   pgbouncer.ini: |
     [databases]
     ; Per-database pool_size overrides (T210)
-    dk_data = host=postgresql.infra.svc.cluster.local port=5432 dbname=dk_data pool_size=80
-    behavior_labs = host=postgresql.infra.svc.cluster.local port=5432 dbname=behavior_labs pool_size=50
-    litellm = host=postgresql.infra.svc.cluster.local port=5432 dbname=litellm pool_size=20
+    dk_data = host=postgres-cluster-rw.infra.svc.cluster.local port=5432 dbname=dk_data pool_size=80
+    behavior_labs = host=postgres-cluster-rw.infra.svc.cluster.local port=5432 dbname=behavior_labs pool_size=50
+    litellm = host=postgres-cluster-rw.infra.svc.cluster.local port=5432 dbname=litellm pool_size=20
 
     [pgbouncer]
     listen_addr = 0.0.0.0

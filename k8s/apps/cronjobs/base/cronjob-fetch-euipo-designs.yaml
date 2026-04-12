@@ -53,7 +53,7 @@ spec:
                 - name: OTEL_ENABLED
                   value: "true"
                 - name: POSTGRES_HOST_DIRECT
-                  value: "postgresql.infra.svc.cluster.local:5432"
+                  value: "postgres-cluster-rw.infra.svc.cluster.local:5432"
                 - name: TARGET_SCHEMA
                   value: "ip_raw"
               resources:

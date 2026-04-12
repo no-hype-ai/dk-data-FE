@@ -73,7 +73,7 @@ spec:
                   echo "pg_basebackup complete"
               env:
                 - name: POSTGRES_HOST
-                  value: "postgresql.infra.svc.cluster.local"
+                  value: "postgres-cluster-rw.infra.svc.cluster.local"
                 - name: POSTGRES_PORT
                   value: "5432"
                 - name: POSTGRES_USER
