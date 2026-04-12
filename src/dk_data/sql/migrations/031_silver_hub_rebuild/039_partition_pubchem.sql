@@ -26,6 +26,17 @@ BEGIN
         RETURN;
     END IF;
 
+    -- Guard: skip if id column is not bigint (legacy table from migration 020 with UUID ids;
+    -- SQLMesh will replace it with the correct schema)
+    IF NOT EXISTS (
+        SELECT 1 FROM information_schema.columns
+        WHERE table_schema = 'mol_bronze' AND table_name = 'pubchem'
+          AND column_name = 'id' AND data_type = 'bigint'
+    ) THEN
+        RAISE NOTICE 'mol_bronze.pubchem has non-bigint id — skipping (legacy table)';
+        RETURN;
+    END IF;
+
     ALTER TABLE mol_bronze.pubchem RENAME TO pubchem_nonpart;
 
     CREATE TABLE mol_bronze.pubchem (

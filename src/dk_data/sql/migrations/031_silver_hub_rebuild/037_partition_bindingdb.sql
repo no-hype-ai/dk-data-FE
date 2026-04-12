@@ -26,6 +26,17 @@ BEGIN
         RETURN;
     END IF;
 
+    -- Guard: skip if id column is not bigint (legacy table from migration 020 with UUID ids;
+    -- SQLMesh will replace it with the correct schema)
+    IF NOT EXISTS (
+        SELECT 1 FROM information_schema.columns
+        WHERE table_schema = 'mol_bronze' AND table_name = 'bindingdb'
+          AND column_name = 'id' AND data_type = 'bigint'
+    ) THEN
+        RAISE NOTICE 'mol_bronze.bindingdb has non-bigint id — skipping (legacy table)';
+        RETURN;
+    END IF;
+
     ALTER TABLE mol_bronze.bindingdb RENAME TO bindingdb_nonpart;
 
     CREATE TABLE mol_bronze.bindingdb (
