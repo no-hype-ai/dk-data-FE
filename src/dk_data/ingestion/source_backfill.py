@@ -33,6 +33,7 @@ from pathlib import Path
 
 from .main import SOURCES, run_ingestion
 from .initial_backfill import compute_backfill_days
+from dk_data.ingestion.utils.database import build_dsn
 
 logging.basicConfig(
     level=logging.INFO,
@@ -472,13 +473,7 @@ def run_bronze_transform(bronze_models: list[str], sqlmesh_dir: str, dry_run: bo
 def _db_connect():
     """Open a psycopg2 connection using standard POSTGRES_* env vars."""
     import psycopg2
-    return psycopg2.connect(
-        host=os.getenv("POSTGRES_HOST", "localhost"),
-        port=int(os.getenv("POSTGRES_PORT", "5432")),
-        user=os.getenv("POSTGRES_USER", "postgres"),
-        password=os.getenv("POSTGRES_PASSWORD", ""),
-        dbname=os.getenv("POSTGRES_DB", "dk_data"),
-    )
+    return psycopg2.connect(build_dsn())
 
 
 def _check_model_health(schema: str, table: str, grain_col: str | None) -> dict:

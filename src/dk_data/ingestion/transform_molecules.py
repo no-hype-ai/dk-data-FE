@@ -31,6 +31,7 @@ except ImportError:
     _OBS_AVAILABLE = False
 
 import logging
+from dk_data.ingestion.utils.database import build_dsn
 logger = logging.getLogger(__name__)
 
 # T227: WAL measurement for FR-021 budget enforcement
@@ -541,13 +542,7 @@ def ensure_sqlmesh_initialized() -> bool:
     # See issue #255 for details.
     try:
         import psycopg2
-        conn = psycopg2.connect(
-            host=os.getenv("POSTGRES_HOST", "localhost"),
-            port=int(os.getenv("POSTGRES_PORT", "5432")),
-            user=os.getenv("POSTGRES_USER", "postgres"),
-            password=os.getenv("POSTGRES_PASSWORD", ""),
-            dbname=os.getenv("POSTGRES_DB", "dk_data"),
-        )
+        conn = psycopg2.connect(build_dsn())
         cur = conn.cursor()
         cur.execute("""
             SELECT SUM(c.reltuples::bigint)
@@ -627,13 +622,7 @@ def _check_upstream_has_rows(schema: str, table: str) -> bool:
     """Return True if schema.table exists and has at least one row (item 9)."""
     try:
         import psycopg2
-        conn = psycopg2.connect(
-            host=os.getenv("POSTGRES_HOST", "localhost"),
-            port=int(os.getenv("POSTGRES_PORT", "5432")),
-            user=os.getenv("POSTGRES_USER", "postgres"),
-            password=os.getenv("POSTGRES_PASSWORD", ""),
-            dbname=os.getenv("POSTGRES_DB", "dk_data"),
-        )
+        conn = psycopg2.connect(build_dsn())
         cur = conn.cursor()
         cur.execute(
             "SELECT EXISTS(SELECT 1 FROM pg_tables WHERE schemaname = %s AND tablename = %s)",
@@ -665,14 +654,7 @@ def _run_sqlmesh_with_wal(cmd: list, timeout: int, layer: str) -> dict:
     import psycopg2
 
     try:
-        wal_conn = psycopg2.connect(
-            host=os.getenv("POSTGRES_HOST_DIRECT", os.getenv("POSTGRES_HOST", "localhost")),
-            port=int(os.getenv("POSTGRES_PORT", "5432")),
-            user=os.getenv("POSTGRES_USER", "postgres"),
-            password=os.getenv("POSTGRES_PASSWORD", ""),
-            dbname=os.getenv("POSTGRES_DB", "dk_data"),
-            application_name="transform-wal-metrics",
-        )
+        wal_conn = psycopg2.connect(build_dsn())
         wal_conn.autocommit = True
     except Exception as exc:
         logger.debug("WAL metrics connection failed (%s) — skipping measure_wal", exc)

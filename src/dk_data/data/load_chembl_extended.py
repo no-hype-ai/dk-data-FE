@@ -37,6 +37,7 @@ from pathlib import Path
 import psycopg2
 from psycopg2.extras import execute_values
 from loguru import logger
+from dk_data.ingestion.utils.database import build_dsn
 
 try:
     import chembl_downloader
@@ -444,7 +445,7 @@ def main():
     sqlite_path = get_chembl_sqlite_path()
 
     logger.info("Connecting to PostgreSQL...")
-    pg_conn = psycopg2.connect(**DB_CONFIG)
+    pg_conn = psycopg2.connect(build_dsn())
     logger.info(f"Connected to {DB_CONFIG['host']}:{DB_CONFIG['port']}/{DB_CONFIG['database']}")
 
     ensure_extended_tables(pg_conn)

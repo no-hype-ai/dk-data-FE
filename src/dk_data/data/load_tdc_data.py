@@ -26,6 +26,7 @@ import argparse
 import psycopg2
 from loguru import logger
 from tqdm import tqdm
+from dk_data.ingestion.utils.database import build_dsn
 
 try:
     from tdc.single_pred import ADME, Tox
@@ -302,7 +303,7 @@ def main():
 
     logger.info("Starting TDC data loading")
 
-    conn = psycopg2.connect(**DB_CONFIG)
+    conn = psycopg2.connect(build_dsn())
     ensure_tables(conn)
 
     for category, datasets in TDC_DATASETS.items():

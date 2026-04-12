@@ -37,6 +37,7 @@ from psycopg2.extras import Json
 from loguru import logger
 from tqdm import tqdm
 import aiohttp
+from dk_data.ingestion.utils.database import build_dsn
 
 # Database config
 DB_CONFIG = {
@@ -350,7 +351,7 @@ async def main():
 
     logger.info(f"Starting PDB loader in {args.mode} mode")
 
-    conn = psycopg2.connect(**DB_CONFIG)
+    conn = psycopg2.connect(build_dsn())
     ensure_tables(conn)
 
     try:

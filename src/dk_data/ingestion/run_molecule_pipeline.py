@@ -12,9 +12,9 @@ Usage:
 
 import argparse
 import logging
-import os
 import sys
 from datetime import datetime
+from dk_data.ingestion.utils.database import build_dsn
 
 # Configure logging
 logging.basicConfig(
@@ -97,13 +97,7 @@ def run_resolution_phase() -> dict:
 
     try:
         # Get database connection
-        conn = psycopg2.connect(
-            host=os.getenv('POSTGRES_HOST', 'localhost'),
-            port=int(os.getenv('POSTGRES_PORT', '5432')),
-            user=os.getenv('POSTGRES_USER', 'postgres'),
-            password=os.getenv('POSTGRES_PASSWORD', ''),
-            dbname=os.getenv('POSTGRES_DB', 'dk_data'),
-        )
+        conn = psycopg2.connect(build_dsn())
 
         resolver = IdentifierResolver(conn)
 

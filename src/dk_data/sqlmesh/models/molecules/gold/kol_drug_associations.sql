@@ -27,7 +27,7 @@ WITH trial_associations AS (
         COUNT(DISTINCT ct.nct_id) AS evidence_count
     FROM mol_silver.researchers r
     JOIN mol_silver.clinical_trials ct
-        ON ct.lead_sponsor_name ILIKE '%' || r.family_name || '%'
+        ON similarity(LOWER(ct.lead_sponsor_name), LOWER(r.family_name)) >= 0.3
     JOIN mol_silver.molecules m
         ON ct.molecule_id = m.molecule_id
     WHERE ct.molecule_id IS NOT NULL
@@ -44,7 +44,7 @@ publication_associations AS (
         COUNT(DISTINCT p.doi) AS evidence_count
     FROM mol_silver.researchers r
     JOIN mol_silver.publications p
-        ON p.first_author_name ILIKE '%' || r.family_name || '%'
+        ON similarity(LOWER(p.first_author_name), LOWER(r.family_name)) >= 0.3
     JOIN mol_silver.molecule_publications mp
         ON mp.publication_id = p.id
     JOIN mol_silver.molecules m

@@ -39,6 +39,7 @@ from psycopg2.extras import Json
 from loguru import logger
 from tqdm import tqdm
 
+from dk_data.ingestion.utils.database import build_dsn
 from dk_data.services.external_apis.orange_book_client import (
     OrangeBookClient,
     OrangeBookProduct,
@@ -312,7 +313,7 @@ async def main():
         return
 
     # Connect to database
-    conn = psycopg2.connect(**DB_CONFIG)
+    conn = psycopg2.connect(build_dsn())
     ensure_tables(conn)
 
     try:

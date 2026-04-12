@@ -411,7 +411,7 @@ class TestBronzeCmsInpatient:
         assert "@start_dt" in self.sql and "@end_dt" in self.sql
 
     def test_expected_output_columns(self):
-        for col in ["provider_id", "drg_code", "total_discharges", "avg_charges", "avg_payments", "fiscal_year"]:
+        for col in ["provider_id", "drg_cd", "total_discharges", "average_covered_charges", "average_total_payments", "fiscal_year"]:
             assert col in self.sql, f"Expected column '{col}' not found in cms_inpatient.sql"
 
 
@@ -666,7 +666,7 @@ class TestBronzeJournalRss:
         assert "_loaded_at BETWEEN @start_dt AND @end_dt" in self.sql
 
     def test_expected_output_columns(self):
-        for col in ["title", "link", "pub_date", "feed_source", "abstract", "authors", "doi"]:
+        for col in ["title", "link", "publication_date", "feed_source", "abstract", "authors", "doi"]:
             assert col in self.sql, f"Expected column '{col}' not found in journal_rss.sql"
 
 
@@ -697,7 +697,7 @@ class TestBronzeMedicalNews:
         assert "_loaded_at BETWEEN @start_dt AND @end_dt" in self.sql
 
     def test_expected_output_columns(self):
-        for col in ["title", "url", "pub_date", "source_name", "summary", "drug_mentions", "therapeutic_areas"]:
+        for col in ["title", "url", "publication_date", "source_name", "summary", "drug_mentions", "therapeutic_areas"]:
             assert col in self.sql, f"Expected column '{col}' not found in medical_news.sql"
 
 
@@ -732,7 +732,7 @@ class TestBronzeCmsHospitalInfo:
         assert "_loaded_at BETWEEN @start_dt AND @end_dt" in self.sql
 
     def test_expected_output_columns(self):
-        for col in ["provider_id", "hospital_name", "city", "state", "hospital_type", "ownership", "rating"]:
+        for col in ["facility_id", "facility_name", "city_town", "state", "hospital_type", "hospital_ownership", "hospital_overall_rating"]:
             assert col in self.sql, f"Expected column '{col}' not found in cms_hospital_info.sql"
 
 
@@ -763,5 +763,5 @@ class TestBronzeCmsCostReports:
         assert "_loaded_at BETWEEN @start_dt AND @end_dt" in self.sql
 
     def test_expected_output_columns(self):
-        for col in ["provider_id", "fiscal_year_begin", "total_operating_expenses", "net_patient_revenue", "operating_margin", "bed_count"]:
+        for col in ["provider_id", "fiscal_year_begin", "total_operating_expenses", "net_patient_revenue", "operating_margin", "total_beds"]:
             assert col in self.sql, f"Expected column '{col}' not found in cms_cost_reports.sql"

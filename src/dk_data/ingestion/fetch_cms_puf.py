@@ -25,6 +25,7 @@ import pandas as pd
 import psycopg2
 from psycopg2 import sql
 
+from dk_data.ingestion.utils.database import build_dsn
 from dk_data.ingestion.downloaders.cms_downloader import (
     CMS_DATASET_REGISTRY,
     download_cms_file,
@@ -37,13 +38,7 @@ CHUNK_SIZE = 10_000
 
 
 def _db_connection():
-    return psycopg2.connect(
-        host=os.getenv("POSTGRES_HOST"),
-        port=int(os.getenv("POSTGRES_PORT", "5432")),
-        user=os.getenv("POSTGRES_USER"),
-        password=os.getenv("POSTGRES_PASSWORD"),
-        dbname=os.getenv("POSTGRES_DB"),
-    )
+    return psycopg2.connect(build_dsn())
 
 
 def _slug_identifier(name: str) -> str:

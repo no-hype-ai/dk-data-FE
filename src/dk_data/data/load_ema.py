@@ -37,6 +37,7 @@ import psycopg2
 from psycopg2.extras import Json
 from loguru import logger
 from tqdm import tqdm
+from dk_data.ingestion.utils.database import build_dsn
 
 try:
     import aiohttp
@@ -239,7 +240,7 @@ async def main():
     logger.info("Starting EMA loader")
 
     # Connect to database
-    conn = psycopg2.connect(**DB_CONFIG)
+    conn = psycopg2.connect(build_dsn())
     ensure_tables(conn)
 
     try:

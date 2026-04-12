@@ -10,6 +10,7 @@ This module provides metric UPDATE FUNCTIONS that query the database and set gau
 import time
 from typing import Optional
 from loguru import logger
+from dk_data.ingestion.utils.database import build_dsn
 
 try:
     from prometheus_client import CONTENT_TYPE_LATEST, generate_latest
@@ -245,7 +246,7 @@ def refresh_metrics_from_database_sync():
         db_url = f'postgresql://{db_user}:{db_pass}@{db_host}:{db_port}/{db_name}'
 
     try:
-        conn = psycopg2.connect(db_url)
+        conn = psycopg2.connect(build_dsn())
         cur = conn.cursor()
 
         # Get compound counts (molecules)

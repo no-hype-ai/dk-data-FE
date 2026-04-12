@@ -18,6 +18,7 @@ import psycopg2
 from psycopg2.extensions import connection as PgConnection
 
 from dk_data.ingestion.utils.database import get_connection_params
+from dk_data.ingestion.utils.database import build_dsn
 
 logger = logging.getLogger(__name__)
 
@@ -45,8 +46,8 @@ def _is_conn_expired() -> bool:
 
 def _open_connection() -> PgConnection:
     """Open a new direct psycopg2 connection (bypasses PgBouncer pool)."""
-    params = get_connection_params()
-    conn = psycopg2.connect(**params, application_name="job-trigger")
+    get_connection_params()
+    conn = psycopg2.connect(build_dsn(application_name="job-trigger"))
     conn.autocommit = False
     return conn
 

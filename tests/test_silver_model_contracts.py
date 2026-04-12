@@ -407,6 +407,6 @@ class TestSilverTargetsExtension:
     def setup(self):
         self.sql = _read_model_sql("targets.sql")
 
-    def test_pdb_documentation(self):
-        assert "pdb" in self.sql.lower()
-        assert "bronze.pdb_structures" in self.sql
+    def test_hub_sources(self):
+        """Targets hub sources from uniprot + chembl protein_targets."""
+        assert "uniprot" in self.sql.lower() or "protein_targets" in self.sql.lower()

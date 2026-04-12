@@ -19,6 +19,7 @@ from typing import Any
 
 import psycopg2
 from psycopg2.extras import RealDictCursor
+from dk_data.ingestion.utils.database import build_dsn
 
 # Import observability metrics
 try:
@@ -143,7 +144,7 @@ class LocalJobRunner(JobRunner):
         self.working_dir = os.getenv("WORKING_DIR", "/app")
 
     def _get_connection(self):
-        return psycopg2.connect(**self.db_config)
+        return psycopg2.connect(build_dsn())
 
     def _record_job_start(self, job_name: str, triggered_by: str, user: str | None) -> int:
         """Record job start in database and return run_id."""
@@ -352,7 +353,7 @@ class K8sJobRunner(JobRunner):
         return self._k8s_client
 
     def _get_connection(self):
-        return psycopg2.connect(**self.db_config)
+        return psycopg2.connect(build_dsn())
 
     def run_job(self, job_name: str, triggered_by: str, user: str | None = None) -> JobResult:
         """Create a Kubernetes Job from a CronJob template."""

@@ -24,6 +24,7 @@ from pathlib import Path
 from typing import Iterator
 
 import psycopg2
+from dk_data.ingestion.utils.database import build_dsn
 
 # ---------------------------------------------------------------------------
 # Paths
@@ -358,7 +359,7 @@ def _get_db_url() -> str:
 
 
 def persist_edges(edges: list[dict], db_url: str) -> None:
-    conn = psycopg2.connect(db_url)
+    conn = psycopg2.connect(build_dsn())
     try:
         with conn:
             with conn.cursor() as cur:

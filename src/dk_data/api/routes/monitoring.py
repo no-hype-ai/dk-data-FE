@@ -33,6 +33,7 @@ except ImportError:
     logger.warning("DK Data Platform metrics not available")
 
 # Import metric helpers from canonical source (013-dk-data-observability)
+from dk_data.ingestion.utils.database import build_dsn
 from dk_data.observability.metrics import (
     mark_job_success,
     record_job_records,
@@ -178,8 +179,8 @@ async def database_stats():
 
     try:
         import psycopg2
-        db_url = get_sync_db_url()
-        conn = psycopg2.connect(db_url)
+        get_sync_db_url()
+        conn = psycopg2.connect(build_dsn())
         cur = conn.cursor()
 
         # Table counts
@@ -265,9 +266,9 @@ async def pipeline_health():
     overall_status = "healthy"
 
     try:
-        db_url = get_sync_db_url()
+        get_sync_db_url()
 
-        conn = psycopg2.connect(db_url)
+        conn = psycopg2.connect(build_dsn())
         cur = conn.cursor()
 
         # Get Bronze source health from sync_schedules
@@ -392,9 +393,9 @@ async def list_recent_runs(
     total = 0
 
     try:
-        db_url = get_sync_db_url()
+        get_sync_db_url()
 
-        conn = psycopg2.connect(db_url)
+        conn = psycopg2.connect(build_dsn())
         cur = conn.cursor()
 
         # Build query with filters
@@ -499,9 +500,9 @@ async def list_data_sources():
     sources = []
 
     try:
-        db_url = get_sync_db_url()
+        get_sync_db_url()
 
-        conn = psycopg2.connect(db_url)
+        conn = psycopg2.connect(build_dsn())
         cur = conn.cursor()
 
         for source_id, config in source_configs.items():
@@ -806,9 +807,9 @@ async def get_sync_job_status(job_id: str):
     import psycopg2
 
     try:
-        db_url = get_sync_db_url()
+        get_sync_db_url()
 
-        conn = psycopg2.connect(db_url)
+        conn = psycopg2.connect(build_dsn())
         cur = conn.cursor()
 
         cur.execute("""

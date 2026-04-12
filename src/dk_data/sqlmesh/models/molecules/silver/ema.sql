@@ -9,9 +9,7 @@
 
 MODEL (
     name mol_silver.ema,
-    kind INCREMENTAL_BY_UNIQUE_KEY (
-        unique_key product_number
-    ),
+    kind FULL,
     cron '@monthly',
     audits (
         not_null(columns := (product_number, product_name))

@@ -12,7 +12,6 @@ Usage:
     python scripts/validate_performance.py [--api-only] [--ingestion-only]
 """
 
-import os
 import sys
 import time
 import json
@@ -25,6 +24,7 @@ from typing import Dict, Any, List
 
 import requests
 import psycopg2
+from dk_data.ingestion.utils.database import build_dsn
 
 # Add parent to path
 sys.path.insert(0, str(Path(__file__).parent.parent))
@@ -32,13 +32,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 
 def get_db_connection():
     """Get database connection from environment."""
-    return psycopg2.connect(
-        host=os.getenv('POSTGRES_HOST', 'localhost'),
-        port=int(os.getenv('POSTGRES_PORT', '5433')),
-        user=os.getenv('POSTGRES_USER', 'postgres'),
-        password=os.getenv('POSTGRES_PASSWORD', 'postgres'),
-        database=os.getenv('POSTGRES_DB', 'dk_data')
-    )
+    return psycopg2.connect(build_dsn())
 
 
 def validate_api_response_time(
