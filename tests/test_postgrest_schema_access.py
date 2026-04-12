@@ -26,7 +26,7 @@ def _hub_tables_exist():
             dbname=os.environ.get("POSTGRES_DB", "dk_data"),
         )
         cur = conn.cursor()
-        cur.execute("SELECT 1 FROM information_schema.tables WHERE table_schema='meta' AND table_name='job_locks'")
+        cur.execute("SELECT 1 FROM information_schema.tables WHERE table_schema='mol_silver' AND table_name='molecules'")
         exists = cur.fetchone() is not None
         cur.close()
         conn.close()
