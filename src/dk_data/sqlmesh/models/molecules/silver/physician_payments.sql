@@ -19,10 +19,7 @@ MODEL (
     grain record_id,
     audits (
         not_null(columns := (record_id, physician_profile_id))
-    ),
-    pre_statements [
-        SET LOCAL work_mem = '128MB'
-    ]
+    )
 );
 
 SELECT

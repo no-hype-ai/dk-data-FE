@@ -20,10 +20,7 @@ MODEL (
     name hcs_silver.acc_tvc,
     kind FULL,
     cron '@monthly',
-    grain (facility_name, state, certification_type),
-    pre_statements [
-        SET LOCAL work_mem = '128MB'
-    ]
+    grain (facility_name, state, certification_type)
 );
 
 SELECT DISTINCT ON (b.facility_name, b.state, b.certification_type)

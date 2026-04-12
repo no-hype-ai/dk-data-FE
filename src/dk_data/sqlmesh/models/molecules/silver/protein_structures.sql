@@ -16,10 +16,7 @@ MODEL (
         not_null(columns := (pdb_id)),
         unique_values(columns := (pdb_id))
     ),
-    grain pdb_id,
-    pre_statements [
-        SET LOCAL work_mem = '128MB'
-    ]
+    grain pdb_id
 );
 
 -- Deduplicate bronze first: PDB structures may be ingested multiple times

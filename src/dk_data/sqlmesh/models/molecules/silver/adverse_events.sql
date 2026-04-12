@@ -28,18 +28,7 @@ MODEL (
     audits (
         not_null(columns := (molecule_id, meddra_pt))
     ),
-    grain (molecule_id, meddra_pt, source),
-    -- T172: Large FAERS/SIDER table with jsonb_array_elements + ORDER BY — set work_mem to avoid disk sort spills
-    -- T6: staleness check — refuse to run if any upstream bronze is older than max age
-    pre_statements [
-        SET LOCAL work_mem = '128MB',
-        """DO $$ BEGIN
-            IF (SELECT COALESCE(MAX(ingested_at), '1900-01-01'::timestamptz) FROM mol_bronze.faers_events)
-               < NOW() - interval '24 hours' THEN
-                RAISE EXCEPTION 'mol_bronze.faers_events is stale (oldest tolerated: 24 hours)';
-            END IF;
-        END $$;"""
-    ]
+    grain (molecule_id, meddra_pt, source)
 );
 
 -- ============================================================================

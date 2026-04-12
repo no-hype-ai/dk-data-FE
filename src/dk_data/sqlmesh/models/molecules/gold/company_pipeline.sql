@@ -8,10 +8,7 @@ MODEL (
         unique_key (company, molecule_id)
     ),
     cron '@weekly',
-    grain (company, molecule_id),
-    pre_statements [
-        SET LOCAL work_mem = '128MB'
-    ]
+    grain (company, molecule_id)
 );
 
 SELECT

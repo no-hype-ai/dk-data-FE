@@ -15,10 +15,7 @@ MODEL (
     audits (
         not_null(columns := (drug_a, drug_b))
     ),
-    grain (drug_a, drug_b),
-    pre_statements [
-        SET LOCAL work_mem = '128MB'
-    ]
+    grain (drug_a, drug_b)
 );
 
 SELECT DISTINCT ON (b.drug_a, b.drug_b)

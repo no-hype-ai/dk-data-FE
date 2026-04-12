@@ -20,17 +20,6 @@ MODEL (
         not_null(columns := (activity_id, chembl_id))
     ),
     grain activity_id
-    ,
-    -- T6: staleness check — refuse to run if any upstream bronze is older than max age
-    pre_statements [
-        SET LOCAL work_mem = '128MB',
-        """DO $$ BEGIN
-            IF (SELECT COALESCE(MAX(ingested_at), '1900-01-01'::timestamptz) FROM mol_bronze.chembl_activities)
-               < NOW() - interval '168 hours' THEN
-                RAISE EXCEPTION 'mol_bronze.chembl_activities is stale (oldest tolerated: 168 hours)';
-            END IF;
-        END $$;"""
-    ]
 );
 
 -- Staleness guard (FR-050): abort if ChEMBL activities bronze is stale

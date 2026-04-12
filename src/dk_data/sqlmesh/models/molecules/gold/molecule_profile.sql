@@ -13,10 +13,7 @@ MODEL (
         not_null(columns := (molecule_id, canonical_name)),
         unique_values(columns := (molecule_id))
     ),
-    grain molecule_id,
-    pre_statements [
-        SET LOCAL work_mem = '128MB'
-    ]
+    grain molecule_id
 );
 
 WITH molecule_base AS (

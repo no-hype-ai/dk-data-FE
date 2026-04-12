@@ -12,10 +12,7 @@ MODEL (
     audits (
         not_null(columns := (npi))
     ),
-    grain (npi, facility_affiliations_certification_number),
-    pre_statements [
-        SET LOCAL work_mem = '128MB'
-    ]
+    grain (npi, facility_affiliations_certification_number)
 );
 
 SELECT DISTINCT ON (b.npi, b.facility_affiliations_certification_number)

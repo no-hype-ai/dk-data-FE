@@ -19,10 +19,7 @@ MODEL (
         not_null(columns := (filing_id, cik)),
         unique_values(columns := (filing_id))
     ),
-    grain filing_id,
-    pre_statements [
-        SET LOCAL work_mem = '128MB'
-    ]
+    grain filing_id
 );
 
 SELECT DISTINCT ON (e.filing_id)

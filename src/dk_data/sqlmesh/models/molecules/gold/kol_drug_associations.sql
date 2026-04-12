@@ -11,10 +11,7 @@ MODEL (
     audits (
         not_null(columns := (researcher_id, molecule_id))
     ),
-    grain (researcher_id, molecule_id),
-    pre_statements [
-        SET LOCAL work_mem = '128MB'
-    ]
+    grain (researcher_id, molecule_id)
 );
 
 -- Trial-based associations (researcher as investigator/sponsor)

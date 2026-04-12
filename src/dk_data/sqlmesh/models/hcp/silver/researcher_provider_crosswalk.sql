@@ -8,10 +8,7 @@ MODEL (
     kind INCREMENTAL_BY_UNIQUE_KEY (
         unique_key (researcher_id, provider_id)
     ),
-    grain (researcher_id, provider_id),
-    pre_statements [
-        SET LOCAL work_mem = '128MB'
-    ]
+    grain (researcher_id, provider_id)
 );
 
 -- Link via shared NPI in ORCID records that include an NPI reference

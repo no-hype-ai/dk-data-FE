@@ -15,10 +15,7 @@ MODEL (
     audits (
         not_null(columns := (cik, filing_type, filing_date))
     ),
-    grain (cik, filing_type, filing_date),
-    pre_statements [
-        SET LOCAL work_mem = '128MB'
-    ]
+    grain (cik, filing_type, filing_date)
 );
 
 -- Deduplicate on the unique key before MERGE.

@@ -16,10 +16,7 @@ MODEL (
     audits (
         not_null(columns := (rxcui)),
         unique_values(columns := (rxcui))
-    ),
-    pre_statements [
-        SET LOCAL work_mem = '128MB'
-    ]
+    )
 );
 
 SELECT

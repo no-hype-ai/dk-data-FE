@@ -9,10 +9,7 @@ MODEL (
         unique_key content_hash
     ),
     cron '@daily',
-    grain content_hash,
-    pre_statements [
-        SET LOCAL work_mem = '128MB'
-    ]
+    grain content_hash
 );
 
 SELECT DISTINCT ON (content_hash)

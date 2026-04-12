@@ -11,10 +11,7 @@ MODEL (
     cron '@daily',
     audits (
         not_null(columns := (result_url, search_query))
-    ),
-    pre_statements [
-        SET LOCAL work_mem = '128MB'
-    ]
+    )
 );
 
 SELECT DISTINCT ON (b.search_query, b.result_url)

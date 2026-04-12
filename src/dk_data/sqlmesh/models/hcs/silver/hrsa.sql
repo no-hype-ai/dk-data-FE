@@ -19,10 +19,7 @@ MODEL (
         unique_key hpsa_id
     ),
     cron '@monthly',
-    grain hpsa_id,
-    pre_statements [
-        SET LOCAL work_mem = '128MB'
-    ]
+    grain hpsa_id
 );
 
 SELECT

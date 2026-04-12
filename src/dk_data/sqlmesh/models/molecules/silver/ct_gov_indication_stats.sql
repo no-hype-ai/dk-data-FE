@@ -12,10 +12,7 @@ MODEL (
     audits (
         not_null(columns := (condition_query))
     ),
-    grain condition_query,
-    pre_statements [
-        SET LOCAL work_mem = '128MB'
-    ]
+    grain condition_query
 );
 
 SELECT DISTINCT ON (b.condition_query)

@@ -14,10 +14,7 @@ MODEL (
     audits (
         not_null(columns := (drug_name, agency, decision_date))
     ),
-    grain (molecule_id, agency, decision_date),
-    pre_statements [
-        SET LOCAL work_mem = '128MB'
-    ]
+    grain (molecule_id, agency, decision_date)
 );
 
 WITH regulatory AS (

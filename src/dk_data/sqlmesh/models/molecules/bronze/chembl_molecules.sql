@@ -32,10 +32,7 @@ MODEL (
         not_null(columns := (chembl_id)),
         unique_values(columns := (chembl_id))
     ),
-    grain chembl_id,
-    pre_statements [
-        SET LOCAL work_mem = '128MB'
-    ]
+    grain chembl_id
 );
 
 -- Unnest the molecules array from batch search API responses.

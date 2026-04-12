@@ -13,11 +13,7 @@ MODEL (
         not_null(columns := (chembl_id))
     ),
     grain chembl_id
-    ,
-    -- T4: large input — raise work_mem to keep sorts in memory (per-session 256MB ceiling per FR-021b)
-    pre_statements [
-        SET LOCAL work_mem = '128MB'
-    ]
+    
 );
 
 SELECT

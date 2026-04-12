@@ -16,10 +16,7 @@ MODEL (
     audits (
         not_null(columns := (inn_name)),
         unique_values(columns := (inn_name))
-    ),
-    pre_statements [
-        SET LOCAL work_mem = '128MB'
-    ]
+    )
 );
 
 SELECT

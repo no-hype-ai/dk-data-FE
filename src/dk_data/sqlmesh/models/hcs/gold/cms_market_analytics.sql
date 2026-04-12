@@ -18,10 +18,7 @@ MODEL (
     audits (
         not_null(columns := (geo_code, geo_level))
     ),
-    grain (geo_code, geo_level),
-    pre_statements [
-        SET LOCAL work_mem = '128MB'
-    ]
+    grain (geo_code, geo_level)
 );
 
 -- Take most recent year of data per geography

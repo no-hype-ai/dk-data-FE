@@ -8,11 +8,7 @@ MODEL (
         unique_key researcher_id
     ),
     grain researcher_id
-    ,
-    -- T4: large input — raise work_mem to keep sorts in memory (per-session 256MB ceiling per FR-021b)
-    pre_statements [
-        SET LOCAL work_mem = '128MB'
-    ]
+    
 );
 
 -- Hash determinism (FR-014): both branches must derive researcher_id from the same

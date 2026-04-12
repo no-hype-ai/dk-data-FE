@@ -9,10 +9,7 @@ MODEL (
     cron '@daily',
     audits (
         not_null(columns := (search_query, result_url))
-    ),
-    pre_statements [
-        SET LOCAL work_mem = '128MB'
-    ]
+    )
 );
 
 WITH unnested AS (

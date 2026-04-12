@@ -14,10 +14,7 @@ MODEL (
     audits (
         not_null(columns := (icd10_code, time_dim, source))
     ),
-    grain (icd10_code, spatial_dim, time_dim, source),
-    pre_statements [
-        SET LOCAL work_mem = '128MB'
-    ]
+    grain (icd10_code, spatial_dim, time_dim, source)
 );
 
 -- WHO GHO epidemiology data joined via indicator mapping

@@ -6,10 +6,7 @@ MODEL (
     kind INCREMENTAL_BY_UNIQUE_KEY (
         unique_key (normalized_name, condition_id, source)
     ),
-    grain (normalized_name, condition_id, source),
-    pre_statements [
-        SET LOCAL work_mem = '128MB'
-    ]
+    grain (normalized_name, condition_id, source)
 );
 
 WITH icd_names AS (

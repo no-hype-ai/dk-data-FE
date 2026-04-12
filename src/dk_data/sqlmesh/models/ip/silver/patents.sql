@@ -8,10 +8,7 @@ MODEL (
     kind INCREMENTAL_BY_UNIQUE_KEY (
         unique_key patent_id
     ),
-    grain patent_id,
-    pre_statements [
-        SET LOCAL work_mem = '128MB'
-    ]
+    grain patent_id
 );
 
 WITH uspto_patents AS (

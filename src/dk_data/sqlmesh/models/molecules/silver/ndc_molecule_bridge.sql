@@ -27,10 +27,7 @@ MODEL (
     audits (
         not_null(columns := (ndc, molecule_id))
     ),
-    grain (ndc, molecule_id),
-    pre_statements [
-        SET LOCAL work_mem = '128MB'
-    ]
+    grain (ndc, molecule_id)
 );
 
 -- Source 1: FDA NDC directory — product_ndc + package_ndcs, linked via generic_name alias match

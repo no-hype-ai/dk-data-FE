@@ -38,10 +38,7 @@ MODEL (
     audits (
         not_null(columns := (record_id, drug_slot, _source_year, drug_name))
     ),
-    grain (record_id, drug_slot, _source_year),
-    pre_statements [
-        SET LOCAL work_mem = '128MB'
-    ]
+    grain (record_id, drug_slot, _source_year)
 );
 
 -- ── Explode the 5 drug slots into one row per drug per payment ───────────────

@@ -14,10 +14,7 @@ MODEL (
     audits (
         not_null(columns := (review_id, title))
     ),
-    grain review_id,
-    pre_statements [
-        SET LOCAL work_mem = '128MB'
-    ]
+    grain review_id
 );
 
 SELECT DISTINCT ON (b.review_id)

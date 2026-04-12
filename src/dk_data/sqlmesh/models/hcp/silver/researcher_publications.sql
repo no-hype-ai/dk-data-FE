@@ -10,9 +10,6 @@ MODEL (
     grain (researcher_id, pub_key)
     ,
     -- T4: large input — raise work_mem to keep sorts in memory (per-session 256MB ceiling per FR-021b)
-    pre_statements [
-        SET LOCAL work_mem = '128MB'
-    ]
 );
 
 WITH europepmc_pubs AS (

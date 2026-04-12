@@ -14,10 +14,7 @@ MODEL (
     audits (
         not_null(columns := (product_number, product_name))
     ),
-    grain product_number,
-    pre_statements [
-        SET LOCAL work_mem = '128MB'
-    ]
+    grain product_number
 );
 
 SELECT DISTINCT ON (b.product_number)

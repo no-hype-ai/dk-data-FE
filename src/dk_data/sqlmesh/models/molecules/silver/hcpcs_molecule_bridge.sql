@@ -40,10 +40,7 @@ MODEL (
     audits (
         not_null(columns := (hcpcs_code, molecule_id))
     ),
-    grain (hcpcs_code, molecule_id),
-    pre_statements [
-        SET LOCAL work_mem = '128MB'
-    ]
+    grain (hcpcs_code, molecule_id)
 );
 
 -- Collect distinct HCPCS drug codes with descriptions from all CMS bronze sources

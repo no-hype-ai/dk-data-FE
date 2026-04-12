@@ -6,10 +6,7 @@ MODEL (
     kind INCREMENTAL_BY_UNIQUE_KEY (
         unique_key (target_id, sequence_db, accession)
     ),
-    grain (target_id, sequence_db, accession),
-    pre_statements [
-        SET LOCAL work_mem = '128MB'
-    ]
+    grain (target_id, sequence_db, accession)
 );
 
 WITH uniprot_seqs AS (

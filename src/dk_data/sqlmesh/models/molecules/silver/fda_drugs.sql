@@ -16,10 +16,7 @@ MODEL (
     audits (
         not_null(columns := (application_number))
     ),
-    grain application_number,
-    pre_statements [
-        SET LOCAL work_mem = '128MB'
-    ]
+    grain application_number
 );
 
 SELECT DISTINCT ON (b.application_number)

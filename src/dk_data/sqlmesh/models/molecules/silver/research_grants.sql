@@ -17,10 +17,7 @@ MODEL (
         not_null(columns := (project_num, project_title)),
         unique_values(columns := (project_num))
     ),
-    grain project_num,
-    pre_statements [
-        SET LOCAL work_mem = '128MB'
-    ]
+    grain project_num
 );
 
 SELECT DISTINCT ON (n.project_num)

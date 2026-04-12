@@ -14,10 +14,7 @@ MODEL (
     audits (
         not_null(columns := (ttd_id))
     ),
-    grain ttd_id,
-    pre_statements [
-        SET LOCAL work_mem = '128MB'
-    ]
+    grain ttd_id
 );
 
 -- Normalise both response shapes into a single record

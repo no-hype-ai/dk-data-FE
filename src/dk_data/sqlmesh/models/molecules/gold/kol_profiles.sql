@@ -28,10 +28,7 @@ MODEL (
         not_null(columns := (researcher_id, family_name)),
         unique_values(columns := (researcher_id))
     ),
-    grain researcher_id,
-    pre_statements [
-        SET LOCAL work_mem = '128MB'
-    ]
+    grain researcher_id
 );
 
 WITH researcher_base AS (

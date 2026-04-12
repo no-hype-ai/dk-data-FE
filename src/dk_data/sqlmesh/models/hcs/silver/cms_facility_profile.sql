@@ -20,10 +20,7 @@ MODEL (
         not_null(columns := (ccn)),
         unique_values(columns := (ccn))
     ),
-    grain (ccn),
-    pre_statements [
-        SET LOCAL work_mem = '128MB'
-    ]
+    grain (ccn)
 );
 
 WITH inpatient_agg AS (

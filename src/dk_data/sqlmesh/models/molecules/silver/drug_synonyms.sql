@@ -12,10 +12,7 @@ MODEL (
     audits (
         not_null(columns := (inn_name))
     ),
-    grain inn_name,
-    pre_statements [
-        SET LOCAL work_mem = '128MB'
-    ]
+    grain inn_name
 );
 
 SELECT

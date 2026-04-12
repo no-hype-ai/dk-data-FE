@@ -7,16 +7,12 @@
 
 MODEL (
     name mol_silver.drug_spending,
-    kind FULL
-    ),
+    kind FULL,
     cron '@monthly',
     audits (
         not_null(columns := (generic_name, program, _source_year))
     ),
-    grain (generic_name, program, _source_year),
-    pre_statements [
-        SET LOCAL work_mem = '128MB'
-    ]
+    grain (generic_name, program, _source_year)
 );
 
 WITH part_d AS (

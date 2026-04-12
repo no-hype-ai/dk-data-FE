@@ -16,10 +16,7 @@ MODEL (
     audits (
         not_null(columns := (coverage_id, source))
     ),
-    grain coverage_id,
-    pre_statements [
-        SET LOCAL work_mem = '128MB'
-    ]
+    grain coverage_id
 );
 
 SELECT DISTINCT ON (b.coverage_id)

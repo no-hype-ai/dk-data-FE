@@ -11,10 +11,7 @@ MODEL (
     cron '@monthly',
     audits (
         not_null(columns := (compound_id, dataset_name))
-    ),
-    pre_statements [
-        SET LOCAL work_mem = '128MB'
-    ]
+    )
 );
 
 SELECT DISTINCT ON (b.compound_id, b.dataset_name)

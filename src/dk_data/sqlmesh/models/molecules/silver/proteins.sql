@@ -19,10 +19,7 @@ MODEL (
         not_null(columns := (uniprot_id)),
         unique_values(columns := (uniprot_id))
     ),
-    grain uniprot_id,
-    pre_statements [
-        SET LOCAL work_mem = '128MB'
-    ]
+    grain uniprot_id
 );
 
 SELECT DISTINCT ON (u.uniprot_id)

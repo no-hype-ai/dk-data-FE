@@ -8,10 +8,7 @@ MODEL (
         unique_key (molecule_id, evidence_type, evidence_id)
     ),
     cron '@weekly',
-    grain (molecule_id, evidence_type, evidence_id),
-    pre_statements [
-        SET LOCAL work_mem = '128MB'
-    ]
+    grain (molecule_id, evidence_type, evidence_id)
 );
 
 -- Clinical trial evidence

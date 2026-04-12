@@ -15,10 +15,7 @@ MODEL (
     audits (
         not_null(columns := (cik, company_name))
     ),
-    grain (molecule_id, cik),
-    pre_statements [
-        SET LOCAL work_mem = '128MB'
-    ]
+    grain (molecule_id, cik)
 );
 
 WITH latest_filings AS (

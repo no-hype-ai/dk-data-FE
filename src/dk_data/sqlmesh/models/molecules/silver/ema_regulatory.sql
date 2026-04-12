@@ -18,10 +18,7 @@ MODEL (
     grain (molecule_id, product_number),
     audits (
         not_null(columns := (product_number, authorization_status))
-    ),
-    pre_statements [
-        SET LOCAL work_mem = '128MB'
-    ]
+    )
 );
 
 SELECT

@@ -23,10 +23,7 @@ MODEL (
     grain (application_number, product_number, source),
     audits (
         not_null(columns := (application_number, source))
-    ),
-    pre_statements [
-        SET LOCAL work_mem = '128MB'
-    ]
+    )
 );
 
 -- Orange Book: explicit patents and exclusivities for NDA/ANDA small molecules

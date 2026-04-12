@@ -11,10 +11,7 @@ MODEL (
     audits (
         not_null(columns := (npi, source))
     ),
-    grain npi,
-    pre_statements [
-        SET LOCAL work_mem = '128MB'
-    ]
+    grain npi
 );
 
 SELECT DISTINCT ON (b.npi)

@@ -6,10 +6,7 @@ MODEL (
     kind INCREMENTAL_BY_UNIQUE_KEY (
         unique_key (normalized_name, provider_id, source)
     ),
-    grain (normalized_name, provider_id, source),
-    pre_statements [
-        SET LOCAL work_mem = '128MB'
-    ]
+    grain (normalized_name, provider_id, source)
 );
 
 WITH pecos_names AS (

@@ -11,10 +11,7 @@ MODEL (
     audits (
         not_null(columns := (provider_id, source))
     ),
-    grain (provider_id, source),
-    pre_statements [
-        SET LOCAL work_mem = '128MB'
-    ]
+    grain (provider_id, source)
 );
 
 WITH cms_inpatient AS (

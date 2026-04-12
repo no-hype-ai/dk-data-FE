@@ -19,10 +19,7 @@ MODEL (
         not_null(columns := (icd10_code, therapeutic_area)),
         unique_values(columns := (icd10_code))
     ),
-    grain icd10_code,
-    pre_statements [
-        SET LOCAL work_mem = '128MB'
-    ]
+    grain icd10_code
 );
 
 -- ── Static WHO GHO indicator crossref ──────────────────────────────────────

@@ -15,10 +15,7 @@ MODEL (
     audits (
         not_null(columns := (vaccine_id))
     ),
-    grain vaccine_id,
-    pre_statements [
-        SET LOCAL work_mem = '128MB'
-    ]
+    grain vaccine_id
 );
 
 SELECT DISTINCT ON (vaccine_id)

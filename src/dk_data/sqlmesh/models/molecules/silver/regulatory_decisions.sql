@@ -18,10 +18,7 @@ MODEL (
     audits (
         not_null(columns := (agency, drug_name, decision_date))
     ),
-    grain (agency, drug_name, indication, decision_date),
-    pre_statements [
-        SET LOCAL work_mem = '128MB'
-    ]
+    grain (agency, drug_name, indication, decision_date)
 );
 
 WITH ema_decisions AS (

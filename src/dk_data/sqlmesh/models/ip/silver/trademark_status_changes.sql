@@ -22,10 +22,7 @@ MODEL (
     audits (
         not_null(columns := (trademark_identifier, source, new_status, changed_at))
     ),
-    grain (trademark_identifier, source, changed_at),
-    pre_statements [
-        SET LOCAL work_mem = '128MB'
-    ]
+    grain (trademark_identifier, source, changed_at)
 );
 
 SELECT DISTINCT ON (h.trademark_identifier, h.source, h.changed_at)

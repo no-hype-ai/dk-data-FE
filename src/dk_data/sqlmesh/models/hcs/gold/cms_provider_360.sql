@@ -19,10 +19,7 @@ MODEL (
         not_null(columns := (npi)),
         unique_values(columns := (npi))
     ),
-    grain (npi),
-    pre_statements [
-        SET LOCAL work_mem = '128MB'
-    ]
+    grain (npi)
 );
 
 -- Take the most recent year of data per NPI

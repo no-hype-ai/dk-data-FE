@@ -18,10 +18,7 @@ MODEL (
     audits (
         not_null(columns := (document_id))
     ),
-    grain document_id,
-    pre_statements [
-        SET LOCAL work_mem = '128MB'
-    ]
+    grain document_id
 );
 
 SELECT DISTINCT ON (b.document_id)

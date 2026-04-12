@@ -19,10 +19,7 @@ MODEL (
     audits (
         not_null(columns := (activity_id, chembl_id))
     ),
-    grain activity_id,
-    pre_statements [
-        SET LOCAL work_mem = '128MB'
-    ]
+    grain activity_id
 );
 
 WITH activities AS (

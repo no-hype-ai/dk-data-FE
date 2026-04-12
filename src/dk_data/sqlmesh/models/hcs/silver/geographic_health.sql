@@ -18,10 +18,7 @@ MODEL (
     audits (
         not_null(columns := (geo_code, geo_level, _source_year))
     ),
-    grain (geo_code, geo_level, _source_year),
-    pre_statements [
-        SET LOCAL work_mem = '128MB'
-    ]
+    grain (geo_code, geo_level, _source_year)
 );
 
 WITH geo_variation AS (

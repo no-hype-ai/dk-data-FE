@@ -21,10 +21,7 @@ MODEL (
     audits (
         not_null(columns := (product_ndc))
     ),
-    grain product_ndc,
-    pre_statements [
-        SET LOCAL work_mem = '128MB'
-    ]
+    grain product_ndc
 );
 
 WITH ndc_products AS (

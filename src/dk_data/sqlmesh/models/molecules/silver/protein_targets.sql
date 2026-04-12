@@ -11,10 +11,7 @@ MODEL (
         -- target_id may be NULL for PDB structures whose UniProt ID is not yet in mol_silver.targets.
         -- Audit on source only to ensure every row has a provenance label.
         not_null(columns := (source))
-    ),
-    pre_statements [
-        SET LOCAL work_mem = '128MB'
-    ]
+    )
 );
 
 -- PDB structures: link to target via uniprot_id, then to molecule via target

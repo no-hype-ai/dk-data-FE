@@ -12,10 +12,7 @@ MODEL (
     audits (
         not_null(columns := (molecule_id)),
         not_null(columns := (target_id))
-    ),
-    pre_statements [
-        SET LOCAL work_mem = '128MB'
-    ]
+    )
 );
 
 -- Extract molecule-target relationships from bioactivity data

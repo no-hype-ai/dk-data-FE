@@ -13,10 +13,7 @@ MODEL (
     audits (
         not_null(columns := (pdb_code))
     ),
-    grain pdb_code,
-    pre_statements [
-        SET LOCAL work_mem = '128MB'
-    ]
+    grain pdb_code
 );
 
 WITH normalised AS (

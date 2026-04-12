@@ -14,10 +14,7 @@ MODEL (
     audits (
         not_null(columns := (npi, hcpcs_code, _source_year))
     ),
-    grain (npi, hcpcs_code, place_of_service, _source_year),
-    pre_statements [
-        SET LOCAL work_mem = '128MB'
-    ]
+    grain (npi, hcpcs_code, place_of_service, _source_year)
 );
 
 SELECT DISTINCT ON (b.npi, b.hcpcs_code, b.place_of_service, b._source_year)

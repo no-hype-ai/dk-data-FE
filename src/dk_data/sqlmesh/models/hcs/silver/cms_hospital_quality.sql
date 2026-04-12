@@ -12,10 +12,7 @@ MODEL (
     audits (
         not_null(columns := (facility_id))
     ),
-    grain facility_id,
-    pre_statements [
-        SET LOCAL work_mem = '128MB'
-    ]
+    grain facility_id
 );
 
 SELECT DISTINCT ON (b.facility_id)

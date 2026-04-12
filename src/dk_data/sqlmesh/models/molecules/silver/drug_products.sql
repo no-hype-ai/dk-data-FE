@@ -8,23 +8,6 @@ MODEL (
         unique_key product_id
     ),
     grain product_id
-    ,
-    -- T6: staleness check — refuse to run if any upstream bronze is older than max age
-    pre_statements [
-        SET LOCAL work_mem = '128MB',
-        """DO $$ BEGIN
-            IF (SELECT COALESCE(MAX(ingested_at), '1900-01-01'::timestamptz) FROM mol_bronze.rxnorm)
-               < NOW() - interval '168 hours' THEN
-                RAISE EXCEPTION 'mol_bronze.rxnorm is stale (oldest tolerated: 168 hours)';
-            END IF;
-        END $$;""",
-        """DO $$ BEGIN
-            IF (SELECT COALESCE(MAX(ingested_at), '1900-01-01'::timestamptz) FROM mol_bronze.purple_book)
-               < NOW() - interval '720 hours' THEN
-                RAISE EXCEPTION 'mol_bronze.purple_book is stale (oldest tolerated: 720 hours)';
-            END IF;
-        END $$;"""
-    ]
 );
 
 WITH fda_products AS (

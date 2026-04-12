@@ -19,10 +19,7 @@ MODEL (
         not_null(columns := (ccn)),
         unique_values(columns := (ccn))
     ),
-    grain (ccn),
-    pre_statements [
-        SET LOCAL work_mem = '128MB'
-    ]
+    grain (ccn)
 );
 
 -- Most-recent year per facility from the 019 facility_profile silver

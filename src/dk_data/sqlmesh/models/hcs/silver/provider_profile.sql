@@ -15,10 +15,7 @@ MODEL (
     audits (
         not_null(columns := (npi, _source_year))
     ),
-    grain (npi, _source_year),
-    pre_statements [
-        SET LOCAL work_mem = '128MB'
-    ]
+    grain (npi, _source_year)
 );
 
 -- Source 1: NPPES — authoritative identity registry (entity type 1 = individual, 2 = org)

@@ -15,10 +15,7 @@ MODEL (
     audits (
         not_null(columns := (rxcui))
     ),
-    grain rxcui,
-    pre_statements [
-        SET LOCAL work_mem = '128MB'
-    ]
+    grain rxcui
 );
 
 SELECT DISTINCT ON (b.rxcui)

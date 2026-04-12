@@ -42,10 +42,7 @@ MODEL (
     audits (
         not_null(columns := (setid))
     ),
-    grain setid,
-    pre_statements [
-        SET LOCAL work_mem = '128MB'
-    ]
+    grain setid
 );
 
 SELECT

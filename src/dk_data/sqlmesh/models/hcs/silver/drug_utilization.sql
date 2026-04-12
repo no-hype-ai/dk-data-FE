@@ -18,10 +18,7 @@ MODEL (
     audits (
         not_null(columns := (drug_or_hcpcs_code, code_type, _source_year))
     ),
-    grain (drug_or_hcpcs_code, code_type, _source_year),
-    pre_statements [
-        SET LOCAL work_mem = '128MB'
-    ]
+    grain (drug_or_hcpcs_code, code_type, _source_year)
 );
 
 -- Medicare Part D (drug spending by generic name)

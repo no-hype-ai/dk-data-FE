@@ -18,18 +18,7 @@ MODEL (
         not_null(columns := (nct_id, title)),
         unique_values(columns := (nct_id))
     ),
-    grain nct_id,
-    -- T172: Large table with jsonb_array_elements + DISTINCT — set work_mem to avoid disk sort spills
-    -- T6: staleness check — refuse to run if any upstream bronze is older than max age
-    pre_statements [
-        SET LOCAL work_mem = '128MB',
-        """DO $$ BEGIN
-            IF (SELECT COALESCE(MAX(ingested_at), '1900-01-01'::timestamptz) FROM mol_bronze.clinicaltrials)
-               < NOW() - interval '24 hours' THEN
-                RAISE EXCEPTION 'mol_bronze.clinicaltrials is stale (oldest tolerated: 24 hours)';
-            END IF;
-        END $$;"""
-    ]
+    grain nct_id
 );
 
 -- Dedup bronze: one row per nct_id, latest request_timestamp wins.

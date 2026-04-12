@@ -18,10 +18,7 @@ MODEL (
         not_null(columns := (taxonomy_code)),
         unique_values(columns := (taxonomy_code))
     ),
-    grain taxonomy_code,
-    pre_statements [
-        SET LOCAL work_mem = '128MB'
-    ]
+    grain taxonomy_code
 );
 
 WITH provider_counts AS (

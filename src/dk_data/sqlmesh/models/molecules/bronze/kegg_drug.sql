@@ -14,10 +14,7 @@ MODEL (
     audits (
         not_null(columns := (kegg_id)),
         unique_values(columns := (kegg_id))
-    ),
-    pre_statements [
-        SET LOCAL work_mem = '128MB'
-    ]
+    )
 );
 
 WITH unnested AS (

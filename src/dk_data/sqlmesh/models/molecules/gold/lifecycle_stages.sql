@@ -13,10 +13,7 @@ MODEL (
         unique_key molecule_id
     ),
     cron '@weekly',
-    grain (molecule_id),
-    pre_statements [
-        SET LOCAL work_mem = '128MB'
-    ]
+    grain (molecule_id)
 );
 
 WITH molecule_base AS (

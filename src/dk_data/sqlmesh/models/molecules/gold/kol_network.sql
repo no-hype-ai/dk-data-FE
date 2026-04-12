@@ -11,10 +11,7 @@ MODEL (
     audits (
         not_null(columns := (source_researcher_id, target_researcher_id))
     ),
-    grain (source_researcher_id, target_researcher_id),
-    pre_statements [
-        SET LOCAL work_mem = '128MB'
-    ]
+    grain (source_researcher_id, target_researcher_id)
 );
 
 -- Build co-authorship edges by self-joining publications on shared DOIs

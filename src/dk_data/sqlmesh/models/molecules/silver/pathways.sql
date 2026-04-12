@@ -12,10 +12,7 @@ MODEL (
     grain (pathway_id, source),
     audits (
         not_null(columns := (pathway_id, pathway_name, source))
-    ),
-    pre_statements [
-        SET LOCAL work_mem = '128MB'
-    ]
+    )
 );
 
 -- Reactome pathways: linked to molecule via search query stored in request_params

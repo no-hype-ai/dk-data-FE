@@ -16,10 +16,7 @@ MODEL (
     audits (
         not_null(columns := (pharmgkb_id)),
         unique_values(columns := (pharmgkb_id))
-    ),
-    pre_statements [
-        SET LOCAL work_mem = '128MB'
-    ]
+    )
 );
 
 SELECT DISTINCT ON (pharmgkb_id)

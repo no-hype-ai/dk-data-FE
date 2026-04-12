@@ -12,10 +12,7 @@ MODEL (
     audits (
         not_null(columns := (pharmgkb_id))
     ),
-    grain pharmgkb_id,
-    pre_statements [
-        SET LOCAL work_mem = '128MB'
-    ]
+    grain pharmgkb_id
 );
 
 SELECT

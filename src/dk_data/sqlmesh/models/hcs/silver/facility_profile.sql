@@ -15,10 +15,7 @@ MODEL (
     audits (
         not_null(columns := (provider_id, _source_year))
     ),
-    grain (provider_id, _source_year),
-    pre_statements [
-        SET LOCAL work_mem = '128MB'
-    ]
+    grain (provider_id, _source_year)
 );
 
 -- Source 1: Hospital General Info — identity + quality ratings

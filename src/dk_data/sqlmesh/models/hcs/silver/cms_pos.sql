@@ -15,10 +15,7 @@ MODEL (
     audits (
         not_null(columns := (ccn))
     ),
-    grain ccn,
-    pre_statements [
-        SET LOCAL work_mem = '128MB'
-    ]
+    grain ccn
 );
 
 SELECT DISTINCT ON (b.ccn)

@@ -15,10 +15,7 @@ MODEL (
     audits (
         not_null(columns := (generic_name, source))
     ),
-    grain (generic_name, program, year),
-    pre_statements [
-        SET LOCAL work_mem = '128MB'
-    ]
+    grain (generic_name, program, year)
 );
 
 SELECT DISTINCT ON (b.generic_name, b.program, b.year)

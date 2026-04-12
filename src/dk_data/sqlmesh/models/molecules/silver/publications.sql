@@ -13,11 +13,7 @@ MODEL (
         not_null(columns := (title))
     ),
     grain doi
-    ,
-    -- T4: large input — raise work_mem to keep sorts in memory (per-session 256MB ceiling per FR-021b)
-    pre_statements [
-        SET LOCAL work_mem = '128MB'
-    ]
+    
 );
 
 WITH openalex_pubs AS (

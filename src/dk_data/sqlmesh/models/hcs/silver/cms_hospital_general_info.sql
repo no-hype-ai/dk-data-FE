@@ -19,10 +19,7 @@ MODEL (
     audits (
         not_null(columns := (facility_id))
     ),
-    grain (facility_id, _source_year),
-    pre_statements [
-        SET LOCAL work_mem = '128MB'
-    ]
+    grain (facility_id, _source_year)
 );
 
 SELECT

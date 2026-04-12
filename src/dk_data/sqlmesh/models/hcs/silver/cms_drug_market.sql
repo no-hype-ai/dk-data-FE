@@ -20,10 +20,7 @@ MODEL (
     audits (
         not_null(columns := (generic_name, _source_year))
     ),
-    grain (generic_name, _source_year),
-    pre_statements [
-        SET LOCAL work_mem = '128MB'
-    ]
+    grain (generic_name, _source_year)
 );
 
 WITH part_d AS (

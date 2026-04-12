@@ -18,10 +18,7 @@ MODEL (
         not_null(columns := (cid)),
         unique_values(columns := (cid))
     ),
-    grain cid,
-    pre_statements [
-        SET LOCAL work_mem = '128MB'
-    ]
+    grain cid
 );
 
 -- Aggregate cross-references per CID from mol_bronze.pubchem_xrefs (populated by load_pubchem_extended.py)

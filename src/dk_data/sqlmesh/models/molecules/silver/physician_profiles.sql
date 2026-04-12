@@ -26,10 +26,7 @@ MODEL (
         not_null(columns := (npi)),
         unique_values(columns := (npi))
     ),
-    grain npi,
-    pre_statements [
-        SET LOCAL work_mem = '128MB'
-    ]
+    grain npi
 );
 
 -- Latest year per NPI from the canonical entity hub

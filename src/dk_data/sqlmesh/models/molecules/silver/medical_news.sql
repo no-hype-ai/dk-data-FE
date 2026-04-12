@@ -12,10 +12,7 @@ MODEL (
     audits (
         not_null(columns := (article_id))
     ),
-    grain article_id,
-    pre_statements [
-        SET LOCAL work_mem = '128MB'
-    ]
+    grain article_id
 );
 
 -- Deduplicate by article_id before MERGE.

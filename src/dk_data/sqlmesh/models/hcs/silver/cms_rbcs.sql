@@ -12,10 +12,7 @@ MODEL (
     audits (
         not_null(columns := (hcpcs_code))
     ),
-    grain hcpcs_code,
-    pre_statements [
-        SET LOCAL work_mem = '128MB'
-    ]
+    grain hcpcs_code
 );
 
 SELECT DISTINCT ON (b.hcpcs_code)

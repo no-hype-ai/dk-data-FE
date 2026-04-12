@@ -11,10 +11,7 @@ MODEL (
     audits (
         not_null(columns := (organization_name))
     ),
-    grain (group_id),
-    pre_statements [
-        SET LOCAL work_mem = '128MB'
-    ]
+    grain (group_id)
 );
 
 -- Derive advocacy groups from news signals that mention organizations
