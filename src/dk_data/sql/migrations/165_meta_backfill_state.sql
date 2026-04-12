@@ -90,8 +90,23 @@ DECLARE
     v_active_pg_count   INT;
     v_running_count     INT;
     v_today_wal_mb      NUMERIC;
+    v_wal_dir_mb        NUMERIC;
+    v_max_wal_mb        NUMERIC;
 BEGIN
-    -- Circuit breaker 1: cluster busy?
+    -- Circuit breaker 1: actual WAL directory size vs max_wal_size
+    -- This is the REAL check — catches WAL accumulation from any source
+    -- (broken archiver, long-running transactions, replication lag, etc.)
+    SELECT COALESCE(SUM(size), 0) / 1024.0 / 1024.0 INTO v_wal_dir_mb
+    FROM pg_ls_waldir();
+    SELECT setting::numeric INTO v_max_wal_mb
+    FROM pg_settings WHERE name = 'max_wal_size';
+    IF v_wal_dir_mb > v_max_wal_mb * 0.75 THEN
+        RAISE NOTICE 'backfill_orchestrator: skip — WAL dir %.0f MB > 75%% of max_wal_size %.0f MB',
+            v_wal_dir_mb, v_max_wal_mb;
+        RETURN;
+    END IF;
+
+    -- Circuit breaker 2: cluster busy?
     SELECT count(*) INTO v_active_pg_count
     FROM pg_stat_activity
     WHERE datname = current_database()
@@ -103,7 +118,7 @@ BEGIN
         RETURN;
     END IF;
 
-    -- Circuit breaker 2: another backfill already running?
+    -- Circuit breaker 3: another backfill already running?
     SELECT count(*) INTO v_running_count
     FROM meta.backfill_state
     WHERE status = 'running';
@@ -112,8 +127,7 @@ BEGIN
         RETURN;
     END IF;
 
-    -- Circuit breaker 3: daily WAL budget
-    -- (Section 9 budget: < 50 GB/day total)
+    -- Circuit breaker 4: daily WAL budget (from our own accounting)
     SELECT COALESCE(SUM(wal_bytes / 1024.0 / 1024.0), 0) INTO v_today_wal_mb
     FROM meta.wal_usage
     WHERE recorded_at >= date_trunc('day', NOW());
