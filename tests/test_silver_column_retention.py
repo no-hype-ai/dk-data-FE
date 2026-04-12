@@ -71,7 +71,7 @@ SELECTIVE_MODELS = frozenset({
     "molecules/silver/researchers.sql",
     "molecules/silver/molecule_publications.sql",
     "molecules/silver/molecule_targets.sql",
-    "molecules/silver/patents.sql",
+    "ip/silver/patents.sql",
     "molecules/silver/chembl.sql",
     "molecules/silver/drug_synonyms.sql",
     "molecules/silver/who_inn_names.sql",

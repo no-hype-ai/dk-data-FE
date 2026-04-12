@@ -29,6 +29,9 @@ BRONZE_DIR = MODELS_DIR / "bronze"
 HCS_MODELS_DIR = Path(__file__).resolve().parent.parent / "src" / "dk_data" / "sqlmesh" / "models" / "hcs"
 HCS_BRONZE_DIR = HCS_MODELS_DIR / "bronze"
 
+IP_MODELS_DIR = Path(__file__).resolve().parent.parent / "src" / "dk_data" / "sqlmesh" / "models" / "ip"
+IP_BRONZE_DIR = IP_MODELS_DIR / "bronze"
+
 
 # ---------------------------------------------------------------------------
 # Helper: parse MODEL block from SQLMesh SQL file
@@ -48,6 +51,13 @@ def _read_hcs_model_sql(filename: str) -> str:
     return filepath.read_text()
 
 
+def _read_ip_model_sql(filename: str) -> str:
+    """Read an ip bronze model SQL file and return its contents."""
+    filepath = IP_BRONZE_DIR / filename
+    assert filepath.exists(), f"IP model file not found: {filepath}"
+    return filepath.read_text()
+
+
 def _extract_model_block(sql: str) -> str:
     """Extract the MODEL(...) block from SQL content."""
     match = re.search(r'MODEL\s*\((.*?)\);', sql, re.DOTALL)
@@ -64,11 +74,11 @@ class TestBronzeUSPTOPatents:
 
     @pytest.fixture(autouse=True)
     def setup(self):
-        self.sql = _read_model_sql("uspto_patents.sql")
+        self.sql = _read_ip_model_sql("uspto_patents.sql")
         self.model_block = _extract_model_block(self.sql)
 
     def test_model_name(self):
-        assert "name mol_bronze.uspto_patents" in self.model_block
+        assert "name ip_bronze.uspto_patents" in self.model_block
 
     def test_model_kind_incremental(self):
         assert "INCREMENTAL_BY_UNIQUE_KEY" in self.model_block
@@ -123,11 +133,11 @@ class TestBronzeUSPTOCI:
 
     @pytest.fixture(autouse=True)
     def setup(self):
-        self.sql = _read_model_sql("uspto_ci.sql")
+        self.sql = _read_ip_model_sql("uspto_ci.sql")
         self.model_block = _extract_model_block(self.sql)
 
     def test_model_name(self):
-        assert "name mol_bronze.uspto_ci" in self.model_block
+        assert "name ip_bronze.uspto_ci" in self.model_block
 
     def test_model_kind_incremental(self):
         assert "INCREMENTAL_BY_UNIQUE_KEY" in self.model_block
@@ -162,11 +172,11 @@ class TestBronzeEPOPatents:
 
     @pytest.fixture(autouse=True)
     def setup(self):
-        self.sql = _read_model_sql("epo_patents.sql")
+        self.sql = _read_ip_model_sql("epo_patents.sql")
         self.model_block = _extract_model_block(self.sql)
 
     def test_model_name(self):
-        assert "name mol_bronze.epo_patents" in self.model_block
+        assert "name ip_bronze.epo_patents" in self.model_block
 
     def test_model_kind_incremental(self):
         assert "INCREMENTAL_BY_UNIQUE_KEY" in self.model_block
@@ -208,11 +218,11 @@ class TestBronzeUSPTOTrademarks:
 
     @pytest.fixture(autouse=True)
     def setup(self):
-        self.sql = _read_model_sql("uspto_trademarks.sql")
+        self.sql = _read_ip_model_sql("uspto_trademarks.sql")
         self.model_block = _extract_model_block(self.sql)
 
     def test_model_name(self):
-        assert "name mol_bronze.uspto_trademarks" in self.model_block
+        assert "name ip_bronze.uspto_trademarks" in self.model_block
 
     def test_model_kind_incremental(self):
         assert "INCREMENTAL_BY_UNIQUE_KEY" in self.model_block
@@ -259,11 +269,11 @@ class TestBronzeEUIPOTrademarks:
 
     @pytest.fixture(autouse=True)
     def setup(self):
-        self.sql = _read_model_sql("euipo_trademarks.sql")
+        self.sql = _read_ip_model_sql("euipo_trademarks.sql")
         self.model_block = _extract_model_block(self.sql)
 
     def test_model_name(self):
-        assert "name mol_bronze.euipo_trademarks" in self.model_block
+        assert "name ip_bronze.euipo_trademarks" in self.model_block
 
     def test_model_kind_incremental(self):
         assert "INCREMENTAL_BY_UNIQUE_KEY" in self.model_block
