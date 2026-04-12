@@ -1174,7 +1174,7 @@ def design_schema(cnpg_meta_schemas, cnpg_conn):
     """)
     cnpg_conn.commit()
     cur.close()
-    _run_sql_file(cnpg_conn, "014_resolve_design.sql")
+    _run_sql_file(cnpg_conn, "013b_resolve_design.sql")
     yield
 
 
