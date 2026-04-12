@@ -13,15 +13,12 @@ DECLARE
   v_end_lsn pg_lsn;
   v_resume_pos TEXT;
 BEGIN
-  -- Guard: skip if source table does not exist (CI / fresh deploy)
+  -- Guard: skip if target schema has no tables (CI/fresh deploy — SQLMesh hasn't run yet)
   IF NOT EXISTS (
       SELECT 1 FROM information_schema.tables
-      WHERE table_schema = 'mol_bronze'
-  ) OR NOT EXISTS (
-      SELECT 1 FROM information_schema.tables
-      WHERE table_schema = 'meta' AND table_name = 'refresh_state'
+      WHERE table_schema = 'ip_bronze'
   ) THEN
-      RAISE NOTICE 'Source tables not available — skipping migration';
+      RAISE NOTICE 'ip_bronze has no tables — skipping migration';
       RETURN;
   END IF;
 

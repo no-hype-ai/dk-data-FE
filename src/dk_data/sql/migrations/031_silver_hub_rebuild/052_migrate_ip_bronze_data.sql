@@ -17,12 +17,12 @@ DECLARE
   v_end_lsn pg_lsn;
   v_resume_pos TEXT;
 BEGIN
-  -- Guard: skip if meta.refresh_state doesn't exist (CI/fresh deploy)
+  -- Guard: skip if target schema has no tables (CI/fresh deploy — SQLMesh hasn't run yet)
   IF NOT EXISTS (
       SELECT 1 FROM information_schema.tables
-      WHERE table_schema = 'meta' AND table_name = 'refresh_state'
+      WHERE table_schema = 'ip_bronze'
   ) THEN
-      RAISE NOTICE 'meta.refresh_state not available — skipping migration';
+      RAISE NOTICE 'ip_bronze has no tables — skipping migration';
       RETURN;
   END IF;
 
@@ -72,12 +72,12 @@ DECLARE
   v_end_lsn pg_lsn;
   v_resume_pos TEXT;
 BEGIN
-  -- Guard: skip if meta.refresh_state doesn't exist (CI/fresh deploy)
+  -- Guard: skip if target schema has no tables (CI/fresh deploy — SQLMesh hasn't run yet)
   IF NOT EXISTS (
       SELECT 1 FROM information_schema.tables
-      WHERE table_schema = 'meta' AND table_name = 'refresh_state'
+      WHERE table_schema = 'ip_bronze'
   ) THEN
-      RAISE NOTICE 'meta.refresh_state not available — skipping migration';
+      RAISE NOTICE 'ip_bronze has no tables — skipping migration';
       RETURN;
   END IF;
 
@@ -127,12 +127,12 @@ DECLARE
   v_end_lsn pg_lsn;
   v_resume_pos TEXT;
 BEGIN
-  -- Guard: skip if meta.refresh_state doesn't exist (CI/fresh deploy)
+  -- Guard: skip if target schema has no tables (CI/fresh deploy — SQLMesh hasn't run yet)
   IF NOT EXISTS (
       SELECT 1 FROM information_schema.tables
-      WHERE table_schema = 'meta' AND table_name = 'refresh_state'
+      WHERE table_schema = 'ip_bronze'
   ) THEN
-      RAISE NOTICE 'meta.refresh_state not available — skipping migration';
+      RAISE NOTICE 'ip_bronze has no tables — skipping migration';
       RETURN;
   END IF;
 
@@ -182,12 +182,12 @@ DECLARE
   v_end_lsn pg_lsn;
   v_resume_pos TEXT;
 BEGIN
-  -- Guard: skip if meta.refresh_state doesn't exist (CI/fresh deploy)
+  -- Guard: skip if target schema has no tables (CI/fresh deploy — SQLMesh hasn't run yet)
   IF NOT EXISTS (
       SELECT 1 FROM information_schema.tables
-      WHERE table_schema = 'meta' AND table_name = 'refresh_state'
+      WHERE table_schema = 'ip_bronze'
   ) THEN
-      RAISE NOTICE 'meta.refresh_state not available — skipping migration';
+      RAISE NOTICE 'ip_bronze has no tables — skipping migration';
       RETURN;
   END IF;
 
@@ -237,12 +237,12 @@ DECLARE
   v_end_lsn pg_lsn;
   v_resume_pos TEXT;
 BEGIN
-  -- Guard: skip if meta.refresh_state doesn't exist (CI/fresh deploy)
+  -- Guard: skip if target schema has no tables (CI/fresh deploy — SQLMesh hasn't run yet)
   IF NOT EXISTS (
       SELECT 1 FROM information_schema.tables
-      WHERE table_schema = 'meta' AND table_name = 'refresh_state'
+      WHERE table_schema = 'ip_bronze'
   ) THEN
-      RAISE NOTICE 'meta.refresh_state not available — skipping migration';
+      RAISE NOTICE 'ip_bronze has no tables — skipping migration';
       RETURN;
   END IF;
 
@@ -292,12 +292,12 @@ DECLARE
   v_end_lsn pg_lsn;
   v_resume_pos TEXT;
 BEGIN
-  -- Guard: skip if meta.refresh_state doesn't exist (CI/fresh deploy)
+  -- Guard: skip if target schema has no tables (CI/fresh deploy — SQLMesh hasn't run yet)
   IF NOT EXISTS (
       SELECT 1 FROM information_schema.tables
-      WHERE table_schema = 'meta' AND table_name = 'refresh_state'
+      WHERE table_schema = 'ip_bronze'
   ) THEN
-      RAISE NOTICE 'meta.refresh_state not available — skipping migration';
+      RAISE NOTICE 'ip_bronze has no tables — skipping migration';
       RETURN;
   END IF;
 
