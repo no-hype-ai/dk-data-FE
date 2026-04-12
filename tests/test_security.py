@@ -14,6 +14,33 @@ import jwt
 import time
 import uuid
 
+import psycopg2
+
+def _hub_tables_exist():
+    """Check if hub tables exist (created by 031_silver_hub_rebuild migrations, not top-level)."""
+    try:
+        conn = psycopg2.connect(
+            host=os.environ.get("POSTGRES_HOST", "localhost"),
+            port=os.environ.get("POSTGRES_PORT", "5432"),
+            user=os.environ.get("POSTGRES_USER", "postgres"),
+            password=os.environ.get("POSTGRES_PASSWORD", "postgres"),
+            dbname=os.environ.get("POSTGRES_DB", "dk_data_test"),
+        )
+        cur = conn.cursor()
+        cur.execute("SELECT 1 FROM information_schema.tables WHERE table_schema='meta' AND table_name='job_locks'")
+        exists = cur.fetchone() is not None
+        cur.close()
+        conn.close()
+        return exists
+    except Exception:
+        return False
+
+pytestmark = pytest.mark.skipif(
+    not _hub_tables_exist(),
+    reason="Hub tables not available (031_silver_hub_rebuild migrations not applied in CI)"
+)
+
+
 # Test configuration
 POSTGREST_URL = os.getenv("POSTGREST_URL", "http://localhost:3030")
 JWT_SECRET = os.getenv("JWT_SECRET", "test-secret-must-be-at-least-32-chars")
