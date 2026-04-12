@@ -62,7 +62,7 @@ FROM mol_raw.uspto_patents
 ON CONFLICT (patent_number) DO NOTHING;
     END IF;
 EXCEPTION WHEN OTHERS THEN
-    RAISE NOTICE 'ip_raw data copy skipped (%%): %%', SQLSTATE, SQLERRM;
+    RAISE NOTICE 'ip_raw data copy skipped: % %', SQLSTATE, SQLERRM;
 END $$;
 
 -- ============================================================================
@@ -103,7 +103,7 @@ FROM mol_raw.uspto_ci
 ON CONFLICT (patent_id) DO NOTHING;
     END IF;
 EXCEPTION WHEN OTHERS THEN
-    RAISE NOTICE 'ip_raw data copy skipped (%%): %%', SQLSTATE, SQLERRM;
+    RAISE NOTICE 'ip_raw data copy skipped: % %', SQLSTATE, SQLERRM;
 END $$;
 
 -- ============================================================================
@@ -150,7 +150,7 @@ FROM mol_raw.uspto_trademarks
 ON CONFLICT (serial_number) DO NOTHING;
     END IF;
 EXCEPTION WHEN OTHERS THEN
-    RAISE NOTICE 'ip_raw data copy skipped (%%): %%', SQLSTATE, SQLERRM;
+    RAISE NOTICE 'ip_raw data copy skipped: % %', SQLSTATE, SQLERRM;
 END $$;
 
 -- ============================================================================
@@ -190,7 +190,7 @@ FROM mol_raw.epo_patents
 ON CONFLICT (publication_id) DO NOTHING;
     END IF;
 EXCEPTION WHEN OTHERS THEN
-    RAISE NOTICE 'ip_raw data copy skipped (%%): %%', SQLSTATE, SQLERRM;
+    RAISE NOTICE 'ip_raw data copy skipped: % %', SQLSTATE, SQLERRM;
 END $$;
 
 -- ============================================================================
@@ -237,7 +237,7 @@ FROM mol_raw.euipo_trademarks
 ON CONFLICT (application_number) DO NOTHING;
     END IF;
 EXCEPTION WHEN OTHERS THEN
-    RAISE NOTICE 'ip_raw data copy skipped (%%): %%', SQLSTATE, SQLERRM;
+    RAISE NOTICE 'ip_raw data copy skipped: % %', SQLSTATE, SQLERRM;
 END $$;
 
 -- ============================================================================
@@ -284,7 +284,7 @@ FROM mol_raw.euipo_designs
 ON CONFLICT (application_number) DO NOTHING;
     END IF;
 EXCEPTION WHEN OTHERS THEN
-    RAISE NOTICE 'ip_raw data copy skipped (%%): %%', SQLSTATE, SQLERRM;
+    RAISE NOTICE 'ip_raw data copy skipped: % %', SQLSTATE, SQLERRM;
 END $$;
 
 -- ============================================================================
@@ -313,7 +313,7 @@ FROM mol_raw.trademark_status_history
 ON CONFLICT DO NOTHING;
     END IF;
 EXCEPTION WHEN OTHERS THEN
-    RAISE NOTICE 'ip_raw data copy skipped (%%): %%', SQLSTATE, SQLERRM;
+    RAISE NOTICE 'ip_raw data copy skipped: % %', SQLSTATE, SQLERRM;
 END $$;
 
 -- Grants follow migration 050_create_ip_schemas.sql (mol_data_ops gets DML on ip_raw)
