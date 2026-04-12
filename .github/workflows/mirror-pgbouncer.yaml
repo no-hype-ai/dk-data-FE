@@ -18,9 +18,35 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Pull, tag, and push
+      - name: Build and push PgBouncer from source
         run: |
-          docker pull bitnami/pgbouncer:1.22.1
-          docker tag bitnami/pgbouncer:1.22.1 ghcr.io/data-kinetic/pgbouncer:1.22.1
-          docker push ghcr.io/data-kinetic/pgbouncer:1.22.1
-          echo "Mirrored bitnami/pgbouncer:1.22.1 → ghcr.io/data-kinetic/pgbouncer:1.22.1"
+          # PgBouncer 1.23.0 — built from official source since no suitable
+          # pre-built image exists with this version on Docker Hub.
+          cat > /tmp/Dockerfile.pgbouncer << 'DOCKERFILE'
+          FROM debian:bookworm-slim AS builder
+          RUN apt-get update && apt-get install -y --no-install-recommends \
+              build-essential pkg-config libevent-dev libssl-dev curl ca-certificates \
+            && rm -rf /var/lib/apt/lists/*
+          RUN curl -fsSL https://www.pgbouncer.org/downloads/files/1.23.0/pgbouncer-1.23.0.tar.gz \
+            | tar xz -C /tmp \
+            && cd /tmp/pgbouncer-1.23.0 \
+            && ./configure --prefix=/usr/local \
+            && make -j$(nproc) \
+            && make install
+
+          FROM debian:bookworm-slim
+          RUN apt-get update && apt-get install -y --no-install-recommends \
+              libevent-2.1-7 libssl3 \
+            && rm -rf /var/lib/apt/lists/* \
+            && groupadd -r pgbouncer && useradd -r -g pgbouncer -u 70 pgbouncer \
+            && mkdir -p /etc/pgbouncer && chown pgbouncer:pgbouncer /etc/pgbouncer
+          COPY --from=builder /usr/local/bin/pgbouncer /usr/local/bin/pgbouncer
+          USER pgbouncer
+          EXPOSE 5432
+          ENTRYPOINT ["pgbouncer"]
+          CMD ["/etc/pgbouncer/pgbouncer.ini"]
+          DOCKERFILE
+
+          docker build -t ghcr.io/data-kinetic/pgbouncer:1.23.0 -f /tmp/Dockerfile.pgbouncer /tmp
+          docker push ghcr.io/data-kinetic/pgbouncer:1.23.0
+          echo "Built and pushed ghcr.io/data-kinetic/pgbouncer:1.23.0"

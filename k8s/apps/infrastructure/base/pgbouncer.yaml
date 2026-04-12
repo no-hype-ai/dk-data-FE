@@ -92,7 +92,7 @@ spec:
         # We write scram-sha-256 password hashes from the plain secret so the
         # password is never stored in cleartext on disk.
         - name: write-userlist
-          image: ghcr.io/data-kinetic/pgbouncer:1.22.1
+          image: ghcr.io/data-kinetic/pgbouncer:1.23.0
           command:
             - /bin/sh
             - -c
@@ -133,13 +133,13 @@ spec:
               drop: ["ALL"]
       containers:
         - name: pgbouncer
-          image: ghcr.io/data-kinetic/pgbouncer:1.22.1
+          image: ghcr.io/data-kinetic/pgbouncer:1.23.0
           ports:
             - containerPort: 5432
               name: pgbouncer
           volumeMounts:
             - name: pgbouncer-ini
-              mountPath: /bitnami/pgbouncer/conf/pgbouncer.ini
+              mountPath: /etc/pgbouncer/pgbouncer.ini
               subPath: pgbouncer.ini
               readOnly: true
             - name: pgbouncer-userlist
