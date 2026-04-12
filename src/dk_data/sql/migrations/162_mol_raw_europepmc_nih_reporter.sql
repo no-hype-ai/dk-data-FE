@@ -55,10 +55,20 @@ CREATE TABLE IF NOT EXISTS mol_raw.nih_reporter (
 CREATE INDEX IF NOT EXISTS idx_mol_raw_nih_reporter_processed ON mol_raw.nih_reporter (processed_to_bronze);
 CREATE INDEX IF NOT EXISTS idx_mol_raw_nih_reporter_ingested  ON mol_raw.nih_reporter (ingested_at);
 
--- BRIN on ingested_at for incremental processing (matches 035_brin_indexes pattern)
-CREATE INDEX IF NOT EXISTS idx_mol_raw_europepmc_ingested_brin
-    ON mol_raw.europepmc USING BRIN (_loaded_at) WITH (pages_per_range = 128);
-CREATE INDEX IF NOT EXISTS idx_mol_raw_nih_reporter_ingested_brin
-    ON mol_raw.nih_reporter USING BRIN (ingested_at) WITH (pages_per_range = 128);
+-- BRIN indexes for incremental processing — created conditionally so the
+-- migration succeeds even if the table schema differs from what's expected
+-- (e.g. in CI where an earlier migration may create a different version).
+DO $$ BEGIN
+    IF EXISTS (SELECT 1 FROM information_schema.columns
+               WHERE table_schema='mol_raw' AND table_name='europepmc' AND column_name='_loaded_at') THEN
+        EXECUTE 'CREATE INDEX IF NOT EXISTS idx_mol_raw_europepmc_ingested_brin
+                 ON mol_raw.europepmc USING BRIN (_loaded_at) WITH (pages_per_range = 128)';
+    END IF;
+    IF EXISTS (SELECT 1 FROM information_schema.columns
+               WHERE table_schema='mol_raw' AND table_name='nih_reporter' AND column_name='ingested_at') THEN
+        EXECUTE 'CREATE INDEX IF NOT EXISTS idx_mol_raw_nih_reporter_ingested_brin
+                 ON mol_raw.nih_reporter USING BRIN (ingested_at) WITH (pages_per_range = 128)';
+    END IF;
+END $$;
 
 COMMIT;
