@@ -8,10 +8,8 @@ Requires a real Postgres connection (cnpg_conn fixture from conftest.py).
 These tests are marked 'integration' — they are skipped in unit test runs.
 """
 
-import time
 import threading
 import pytest
-from datetime import datetime, timezone, timedelta
 
 
 pytestmark = pytest.mark.integration

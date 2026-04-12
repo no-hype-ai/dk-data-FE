@@ -4,7 +4,6 @@ Feature: 001-silver-medallion-rebuild
 Task: T011
 """
 
-import os
 import urllib.parse
 import pytest
 
