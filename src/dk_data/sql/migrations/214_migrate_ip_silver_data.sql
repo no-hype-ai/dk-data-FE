@@ -281,11 +281,6 @@ END;
 $$;
 
 -- Execute all silver migrations in sequence
-CALL migrate_mol_to_ip_silver_patents();
-CALL migrate_mol_to_ip_silver_trademarks();
-CALL migrate_mol_to_ip_silver_patent_exclusivities();
-CALL migrate_mol_to_ip_silver_trademark_status_changes();
-CALL migrate_mol_to_ip_silver_designs();
 
 -- NOTE: DROP TABLE mol_silver.<table> must be run AFTER verification in separate transactions.
 -- Recommended verification:
@@ -294,3 +289,11 @@ CALL migrate_mol_to_ip_silver_designs();
 --   UNION ALL SELECT 'patent_exclusivities', count(*) FROM ip_silver.patent_exclusivities
 --   UNION ALL SELECT 'trademark_status_changes', count(*) FROM ip_silver.trademark_status_changes
 --   UNION ALL SELECT 'designs', count(*) FROM ip_silver.designs;
+
+-- NOTE: These procedures are not called by this migration.
+-- Run them manually after SQLMesh has created the target tables:
+--   CALL migrate_mol_to_ip_silver_patents();
+--   CALL migrate_mol_to_ip_silver_trademarks();
+--   CALL migrate_mol_to_ip_silver_patent_exclusivities();
+--   CALL migrate_mol_to_ip_silver_trademark_status_changes();
+--   CALL migrate_mol_to_ip_silver_designs();

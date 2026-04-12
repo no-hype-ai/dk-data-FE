@@ -335,14 +335,17 @@ END;
 $$;
 
 -- Execute all migrations in sequence
-CALL migrate_mol_to_ip_bronze_uspto_ci();
-CALL migrate_mol_to_ip_bronze_uspto_trademarks();
-CALL migrate_mol_to_ip_bronze_epo_patents();
-CALL migrate_mol_to_ip_bronze_euipo_trademarks();
-CALL migrate_mol_to_ip_bronze_euipo_designs();
-CALL migrate_mol_to_ip_bronze_trademark_status_history();
 
 -- NOTE: DROP TABLE mol_bronze.<table> must be run AFTER verification in separate transactions.
 -- Verification queries:
 --   SELECT schemaname, tablename, n_live_tup FROM pg_stat_user_tables WHERE schemaname = 'ip_bronze';
 --   SELECT schemaname, tablename, n_live_tup FROM pg_stat_user_tables WHERE schemaname = 'mol_bronze' AND tablename IN ('uspto_ci','uspto_trademarks','epo_patents','euipo_trademarks','euipo_designs','trademark_status_history');
+
+-- NOTE: These procedures are not called by this migration.
+-- Run them manually after SQLMesh has created the target tables:
+--   CALL migrate_mol_to_ip_bronze_uspto_ci();
+--   CALL migrate_mol_to_ip_bronze_uspto_trademarks();
+--   CALL migrate_mol_to_ip_bronze_epo_patents();
+--   CALL migrate_mol_to_ip_bronze_euipo_trademarks();
+--   CALL migrate_mol_to_ip_bronze_euipo_designs();
+--   CALL migrate_mol_to_ip_bronze_trademark_status_history();

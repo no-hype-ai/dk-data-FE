@@ -54,10 +54,6 @@ def get_connection():
 def discover_migrations(migrations_dir: str) -> list[tuple[str, str, str]]:
     """Scan migrations directory for *.sql files, sorted by numeric prefix.
 
-    Supports one level of subdirectories: a directory named ``031_silver_hub_rebuild/``
-    is treated as a migration *group* whose children run between top-level prefix 031
-    and 032.  Children are sorted by their own numeric prefix within the group.
-
     Returns:
         List of (version, filename, filepath) tuples sorted by version.
     """
@@ -70,50 +66,23 @@ def discover_migrations(migrations_dir: str) -> list[tuple[str, str, str]]:
 
     for filepath in sorted(migrations_path.glob("*.sql")):
         filename = filepath.name
+        # Skip rollback files — they are never applied as forward migrations
         if "_rollback" in filename.lower():
             continue
         match = PREFIX_RE.match(filename)
         if match:
-            version = filepath.stem
+            # Use filename without .sql extension as the unique version key so
+            # that multiple files sharing the same numeric prefix (e.g.,
+            # 085_bindingdb_sider_catalog.sql and 085_cms_geographic_variation_raw.sql)
+            # are tracked as separate migrations and do not conflict.
+            version = filepath.stem  # e.g. "085_cms_geographic_variation_raw"
             migrations.append((version, filename, str(filepath)))
 
-    # Discover subdirectory migration groups (e.g. 031_silver_hub_rebuild/)
-    # Opt-in via MIGRATIONS_INCLUDE_SUBDIRS=1 — subdirectory migrations depend on
-    # SQLMesh tables existing, so they should only run in production (post-SQLMesh)
-    # or when explicitly enabled.
-    if os.getenv("MIGRATIONS_INCLUDE_SUBDIRS", ""):
-        for subdir in sorted(migrations_path.iterdir()):
-            if not subdir.is_dir():
-                continue
-            dir_match = PREFIX_RE.match(subdir.name)
-            if not dir_match:
-                continue
-            for filepath in sorted(subdir.glob("*.sql")):
-                filename = filepath.name
-                if "_rollback" in filename.lower():
-                    continue
-                child_match = PREFIX_RE.match(filename)
-                if child_match:
-                    version = f"{subdir.name}/{filepath.stem}"
-                    migrations.append((version, filename, str(filepath)))
-
+    # Sort by numeric prefix (as integer) then alphabetically by full filename
+    # so that 085_bindingdb_sider_catalog.sql runs before 085_cms_*.sql, etc.
     def sort_key(m):
-        version, filename, filepath = m
-        fp = Path(filepath)
-        parent_name = fp.parent.name
-
-        # Top-level file: sort by its own numeric prefix
-        parent_match = PREFIX_RE.match(parent_name)
-        if not parent_match or parent_name == migrations_path.name:
-            prefix_match = PREFIX_RE.match(filename)
-            return (int(prefix_match.group(1)) if prefix_match else 0, 0, filename)
-
-        # Subdirectory child: sort after the parent directory's prefix,
-        # then by the child's own numeric prefix within the group.
-        parent_prefix = int(parent_match.group(1))
-        child_match = PREFIX_RE.match(filename)
-        child_prefix = int(child_match.group(1)) if child_match else 0
-        return (parent_prefix, 1 + child_prefix, filename)
+        prefix_match = PREFIX_RE.match(m[1])  # m[1] is filename
+        return (int(prefix_match.group(1)) if prefix_match else 0, m[1])
 
     migrations.sort(key=sort_key)
     return migrations
@@ -196,80 +165,10 @@ def get_applied_migrations(conn) -> set[str]:
         return {row[0] for row in cur.fetchall()}
 
 
-def _needs_autocommit(sql: str) -> bool:
-    """Return True if the migration SQL contains CALL statements.
-
-    CALL with procedures that use transaction control (COMMIT/ROLLBACK inside
-    the procedure body) requires the session to be in autocommit mode —
-    PostgreSQL raises "invalid transaction termination" otherwise.
-    """
-    return bool(re.search(r"^\s*CALL\s+", sql, re.IGNORECASE | re.MULTILINE))
-
-
-def _split_statements(sql: str) -> list[str]:
-    """Split SQL text into top-level statements, respecting $$-delimited bodies.
-
-    Returns a list of non-empty statement strings. Semicolons inside $tag$...$tag$
-    blocks are NOT treated as statement separators. Comments are preserved.
-    """
-    statements: list[str] = []
-    current: list[str] = []
-    in_dollar = False
-    dollar_tag = ""
-    i = 0
-
-    while i < len(sql):
-        ch = sql[i]
-
-        # Detect $$ or $tag$ delimiter
-        if ch == "$" and not in_dollar:
-            # Find the closing $
-            j = sql.index("$", i + 1) if "$" in sql[i + 1 :] else -1
-            if j >= 0:
-                tag = sql[i : j + 1]
-                # Valid dollar-quote tag: $$ or $identifier$
-                if re.match(r"^\$[a-zA-Z_]*\$$", tag):
-                    in_dollar = True
-                    dollar_tag = tag
-                    current.append(tag)
-                    i = j + 1
-                    continue
-        elif in_dollar and ch == "$":
-            # Check if this is the closing tag
-            end = sql[i : i + len(dollar_tag)]
-            if end == dollar_tag:
-                in_dollar = False
-                current.append(dollar_tag)
-                i += len(dollar_tag)
-                continue
-
-        if ch == ";" and not in_dollar:
-            current.append(ch)
-            stmt = "".join(current).strip()
-            if stmt and stmt != ";":
-                statements.append(stmt)
-            current = []
-        else:
-            current.append(ch)
-        i += 1
-
-    # Trailing text without semicolon
-    remainder = "".join(current).strip()
-    if remainder:
-        statements.append(remainder)
-
-    return [s for s in statements if not s.startswith("--") or "\n" in s]
-
-
 def apply_migration(
     conn, filepath: str, version: str, filename: str, checksum: str
 ) -> int:
-    """Execute a single migration SQL file.
-
-    If the migration contains CALL statements, it runs with autocommit=True
-    and each top-level statement is executed individually so that CALL can
-    use transaction control (COMMIT per chunk, etc.).
-    Otherwise, the migration runs within the connection's implicit transaction.
+    """Execute a single migration SQL file within a transaction.
 
     Returns:
         Execution time in milliseconds.
@@ -280,51 +179,21 @@ def apply_migration(
     sql = Path(filepath).read_text(encoding="utf-8")
     start = time.monotonic()
 
-    if _needs_autocommit(sql):
-        # Commit any pending transaction before switching to autocommit
-        conn.commit()
-        old_autocommit = conn.autocommit
-        conn.autocommit = True
-        try:
-            with conn.cursor() as cur:
-                # Execute each statement individually so CALL gets its own
-                # top-level invocation (required for transaction control).
-                for stmt in _split_statements(sql):
-                    # Strip leading comment-only lines to check if there's real SQL
-                    lines = stmt.strip().splitlines()
-                    code_lines = [
-                        ln for ln in lines
-                        if ln.strip() and not ln.strip().startswith("--")
-                    ]
-                    if not code_lines:
-                        continue  # pure comment block, skip
-                    cur.execute(stmt)
-                elapsed_ms = int((time.monotonic() - start) * 1000)
-                cur.execute(
-                    """
-                    INSERT INTO meta.schema_migrations
-                        (version, filename, checksum, applied_by, execution_time_ms)
-                    VALUES (%s, %s, %s, %s, %s)
-                    """,
-                    (version, filename, checksum, "migration-runner", elapsed_ms),
-                )
-            return elapsed_ms
-        finally:
-            conn.autocommit = old_autocommit
-    else:
-        with conn.cursor() as cur:
-            cur.execute(sql)
-            elapsed_ms = int((time.monotonic() - start) * 1000)
-            cur.execute(
-                """
-                INSERT INTO meta.schema_migrations
-                    (version, filename, checksum, applied_by, execution_time_ms)
-                VALUES (%s, %s, %s, %s, %s)
-                """,
-                (version, filename, checksum, "migration-runner", elapsed_ms),
-            )
-        conn.commit()
-        return elapsed_ms
+    with conn.cursor() as cur:
+        cur.execute(sql)
+        elapsed_ms = int((time.monotonic() - start) * 1000)
+
+        cur.execute(
+            """
+            INSERT INTO meta.schema_migrations
+                (version, filename, checksum, applied_by, execution_time_ms)
+            VALUES (%s, %s, %s, %s, %s)
+            """,
+            (version, filename, checksum, "migration-runner", elapsed_ms),
+        )
+
+    conn.commit()
+    return elapsed_ms
 
 
 def apply_pending(conn, migrations_dir: str, dry_run: bool = False) -> bool:

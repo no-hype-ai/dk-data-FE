@@ -75,8 +75,11 @@ END;
 $$;
 
 -- Execute the migration
-CALL migrate_mol_to_ip_bronze_uspto_patents();
 
 -- NOTE: DROP TABLE mol_bronze.uspto_patents must be run AFTER verification in a separate transaction.
 -- Verify with: SELECT count(*) FROM ip_bronze.uspto_patents;
 --              SELECT count(*) FROM mol_bronze.uspto_patents;
+
+-- NOTE: These procedures are not called by this migration.
+-- Run them manually after SQLMesh has created the target tables:
+--   CALL migrate_mol_to_ip_bronze_uspto_patents();
