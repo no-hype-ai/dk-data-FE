@@ -92,7 +92,7 @@ class TestBronzeUSPTOPatents:
         assert "unique_values" in self.model_block
 
     def test_reads_from_raw_table(self):
-        assert "FROM mol_raw.uspto_patents" in self.sql
+        assert "FROM ip_raw.uspto_patents" in self.sql
 
     def test_no_jsonb_extraction(self):
         """Core bug fix: no JSONB array extraction from response_body; cpc_codes converted via to_jsonb."""
@@ -146,7 +146,7 @@ class TestBronzeUSPTOCI:
         assert "patent_number" in self.model_block
 
     def test_reads_from_raw_table(self):
-        assert "FROM mol_raw.uspto_ci" in self.sql
+        assert "FROM ip_raw.uspto_ci" in self.sql
 
     def test_patent_id_mapped_to_patent_number(self):
         """AC-2: patent_id is renamed to patent_number."""
@@ -185,7 +185,7 @@ class TestBronzeEPOPatents:
         assert "patent_number" in self.model_block
 
     def test_reads_from_raw_table(self):
-        assert "FROM mol_raw.epo_patents" in self.sql
+        assert "FROM ip_raw.epo_patents" in self.sql
 
     def test_publication_id_mapped(self):
         """AC-2: publication_id is mapped to patent_number."""
@@ -231,7 +231,7 @@ class TestBronzeUSPTOTrademarks:
         assert "serial_number" in self.model_block
 
     def test_reads_from_raw_table(self):
-        assert "FROM mol_raw.uspto_trademarks" in self.sql
+        assert "FROM ip_raw.uspto_trademarks" in self.sql
 
     def test_output_columns(self):
         assert "r.serial_number" in self.sql
@@ -246,7 +246,7 @@ class TestBronzeUSPTOTrademarks:
 
     def test_pharma_class_5(self):
         """AC-2: is_pharma_related is TRUE when Nice class 5 is present.
-        mol_raw.uspto_trademarks.nice_classes is JSONB, so detection uses
+        ip_raw.uspto_trademarks.nice_classes is JSONB, so detection uses
         JSONB containment (@>) rather than = ANY(array).
         """
         # JSONB containment: nice_classes @> '[5]'::JSONB
@@ -263,7 +263,7 @@ class TestBronzeUSPTOTrademarks:
 class TestBronzeEUIPOTrademarks:
     """Contract tests for mol_bronze.euipo_trademarks model.
 
-    Note: mol_raw.euipo_trademarks.nice_classes is JSONB (not TEXT[]/INT[]),
+    Note: ip_raw.euipo_trademarks.nice_classes is JSONB (not TEXT[]/INT[]),
     so pharma-class detection uses JSONB containment (@>) instead of = ANY().
     """
 
@@ -282,7 +282,7 @@ class TestBronzeEUIPOTrademarks:
         assert "application_number" in self.model_block
 
     def test_reads_from_raw_table(self):
-        assert "FROM mol_raw.euipo_trademarks" in self.sql
+        assert "FROM ip_raw.euipo_trademarks" in self.sql
 
     def test_euipo_specific_fields(self):
         """AC-2: EUIPO-specific fields are preserved."""
