@@ -44,9 +44,25 @@ CREATE TABLE mol_bronze.bindingdb_default
     PARTITION OF mol_bronze.bindingdb DEFAULT;
 
 -- Step 4: Copy data from non-partitioned table to partitioned parent
--- (Do this in chunks via the tray procedure for large tables)
-INSERT INTO mol_bronze.bindingdb
-SELECT * FROM mol_bronze.bindingdb_nonpart;
+-- Chunked to stay under max_wal_size = 4 GB (reviewer flag: PR #275)
+DO $$
+DECLARE
+    v_max_id BIGINT;
+    v_low    BIGINT := 0;
+    v_chunk  CONSTANT BIGINT := 50000;
+    v_rows   INT;
+BEGIN
+    SELECT COALESCE(MAX(id), 0) INTO v_max_id FROM mol_bronze.bindingdb_nonpart;
+    WHILE v_low < v_max_id LOOP
+        INSERT INTO mol_bronze.bindingdb
+        SELECT * FROM mol_bronze.bindingdb_nonpart
+        WHERE id > v_low AND id <= v_low + v_chunk;
+        GET DIAGNOSTICS v_rows = ROW_COUNT;
+        v_low := v_low + v_chunk;
+        COMMIT;
+        PERFORM pg_sleep(0.05);
+    END LOOP;
+END $$;
 
 -- Step 5: Drop old non-partitioned table
 DROP TABLE mol_bronze.bindingdb_nonpart;

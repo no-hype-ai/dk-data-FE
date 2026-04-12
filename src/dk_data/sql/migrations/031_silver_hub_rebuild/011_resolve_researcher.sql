@@ -80,6 +80,7 @@ BEGIN
         FROM hcp_silver.researcher_names rn
         JOIN hcp_silver.researchers r ON r.researcher_id = rn.researcher_id
         WHERE similarity(LOWER(rn.normalized_name), LOWER(TRIM(p_full_name))) >= 0.85
+        AND LENGTH(rn.normalized_name) >= 4 AND LENGTH(TRIM(p_full_name)) >= 4
           AND (p_institution IS NULL OR
                similarity(LOWER(COALESCE(r.primary_affiliation_institution, '')),
                           LOWER(TRIM(p_institution))) >= 0.75)

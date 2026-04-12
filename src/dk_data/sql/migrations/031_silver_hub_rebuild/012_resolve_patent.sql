@@ -75,6 +75,7 @@ BEGIN
         JOIN ip_silver.patents pt ON pt.patent_id = pn.patent_id
         WHERE pn.name_kind = 'title'
           AND similarity(LOWER(pn.normalized_name), LOWER(TRIM(p_title))) >= 0.85
+          AND LENGTH(pn.normalized_name) >= 4 AND LENGTH(TRIM(p_title)) >= 4
           AND (p_first_assignee IS NULL OR
                similarity(LOWER(COALESCE(pt.first_assignee, '')),
                           LOWER(TRIM(p_first_assignee))) >= 0.75)

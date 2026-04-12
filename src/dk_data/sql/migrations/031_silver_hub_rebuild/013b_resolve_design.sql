@@ -53,6 +53,7 @@ BEGIN
         FROM ip_silver.design_names dn
         JOIN ip_silver.designs d ON d.design_id = dn.design_id
         WHERE similarity(LOWER(dn.normalized_name), LOWER(TRIM(p_holder))) >= 0.85
+        AND LENGTH(dn.normalized_name) >= 4 AND LENGTH(TRIM(p_holder)) >= 4
           AND (p_locarno_classes IS NULL OR
                (SELECT ARRAY(SELECT unnest(d.locarno_classes) ORDER BY 1)) =
                (SELECT ARRAY(SELECT unnest(p_locarno_classes) ORDER BY 1)))

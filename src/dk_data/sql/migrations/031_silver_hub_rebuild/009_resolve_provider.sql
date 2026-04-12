@@ -54,6 +54,7 @@ BEGIN
         FROM hcs_silver.provider_names pn
         JOIN hcs_silver.providers pr ON pr.provider_id = pn.provider_id
         WHERE similarity(LOWER(pn.normalized_name), v_canonical_name) >= 0.85
+        AND LENGTH(pn.normalized_name) >= 4 AND LENGTH(v_canonical_name) >= 4
           AND (p_state    IS NULL OR UPPER(TRIM(pr.state))    = UPPER(TRIM(p_state)))
           AND (p_taxonomy IS NULL OR LOWER(TRIM(pr.taxonomy)) = LOWER(TRIM(p_taxonomy)))
         ORDER BY similarity(LOWER(pn.normalized_name), v_canonical_name) DESC, pn.provider_id ASC

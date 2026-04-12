@@ -114,6 +114,7 @@ BEGIN
         SELECT molecule_id INTO v_id
         FROM mol_silver.molecule_names
         WHERE similarity(LOWER(normalized_name), LOWER(p_name)) >= 0.85
+          AND LENGTH(normalized_name) >= 4 AND LENGTH(p_name) >= 4
         ORDER BY similarity(LOWER(normalized_name), LOWER(p_name)) DESC, molecule_id ASC
         LIMIT 1;
         IF FOUND THEN RETURN v_id; END IF;

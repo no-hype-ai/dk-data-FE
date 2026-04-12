@@ -64,6 +64,7 @@ BEGIN
         JOIN ip_silver.trademarks tm ON tm.trademark_id = tn.trademark_id
         WHERE tn.name_kind = 'mark_text'
           AND similarity(LOWER(tn.normalized_name), LOWER(TRIM(p_mark_text))) >= 0.85
+          AND LENGTH(tn.normalized_name) >= 4 AND LENGTH(TRIM(p_mark_text)) >= 4
           AND (p_jurisdiction IS NULL OR tm.jurisdiction = p_jurisdiction)
           AND (p_nice_classes IS NULL OR
                (SELECT ARRAY(SELECT unnest(tm.nice_classes) ORDER BY 1)) =

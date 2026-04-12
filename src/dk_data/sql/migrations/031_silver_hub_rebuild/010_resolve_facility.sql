@@ -59,6 +59,7 @@ BEGIN
         FROM hcs_silver.facility_names fn
         JOIN hcs_silver.facilities fac ON fac.facility_id = fn.facility_id
         WHERE similarity(LOWER(fn.normalized_name), LOWER(TRIM(p_facility_name))) >= 0.85
+        AND LENGTH(fn.normalized_name) >= 4 AND LENGTH(TRIM(p_facility_name)) >= 4
           AND (p_city  IS NULL OR LOWER(TRIM(fac.city))  = LOWER(TRIM(p_city)))
           AND (p_state IS NULL OR UPPER(TRIM(fac.state)) = UPPER(TRIM(p_state)))
           AND (p_zip   IS NULL OR LEFT(TRIM(fac.zip), 5) = LEFT(TRIM(p_zip), 5))
