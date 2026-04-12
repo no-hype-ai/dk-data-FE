@@ -99,6 +99,14 @@ spec:
 
                   echo "[$(date -u +%FT%TZ)] backfill orchestrator starting"
 
+                  # Wait for DNS resolution and DB connectivity (cross-namespace service
+                  # may not resolve immediately on pod start)
+                  for i in 1 2 3 4 5; do
+                      $PSQL -tAc "SELECT 1" >/dev/null 2>&1 && break
+                      echo "[$(date -u +%FT%TZ)] waiting for DB (attempt $i/5)..."
+                      sleep 3
+                  done
+
                   # 0. Release any orphaned 'running' locks from dead pods
                   RELEASED=$($PSQL -tAc "SELECT meta.backfill_orchestrator_cleanup_stuck(60)")
                   if [ "$RELEASED" != "0" ]; then
