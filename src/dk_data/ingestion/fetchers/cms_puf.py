@@ -8,7 +8,6 @@ files using the HTTP Range header. Used by individual PUF fetchers.
 """
 
 import logging
-import os
 from pathlib import Path
 from typing import Optional
 

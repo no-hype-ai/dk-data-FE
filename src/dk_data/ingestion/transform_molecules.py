@@ -662,7 +662,6 @@ def _run_sqlmesh_with_wal(cmd: list, timeout: int, layer: str) -> dict:
     if not _WAL_METRICS_AVAILABLE:
         return run_sqlmesh_command(cmd, timeout=timeout)
 
-    import contextlib
     import psycopg2
 
     try:

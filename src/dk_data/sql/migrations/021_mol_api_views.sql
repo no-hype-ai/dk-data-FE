@@ -20,21 +20,14 @@
 -- SQLMesh, so the views would fail on "relation does not exist". These stubs let
 -- the migration succeed; SQLMesh later takes ownership and adds the real data.
 -- =============================================================================
-CREATE TABLE IF NOT EXISTS mol_silver.molecules (
-    molecule_id BIGINT PRIMARY KEY,
-    inchi_key TEXT, inchi TEXT, canonical_smiles TEXT, sequence_hash TEXT,
-    is_biologic BOOLEAN, molecule_type TEXT, parent_molecule_id BIGINT,
-    canonical_name TEXT, max_phase INTEGER, first_approval INTEGER,
-    molecular_formula TEXT, molecular_weight NUMERIC,
-    mechanism_of_action TEXT, therapeutic_areas TEXT[],
-    first_seen_at TIMESTAMPTZ, last_updated_at TIMESTAMPTZ
-);
+-- mol_silver.molecules is already created by migration 020 (molecule_id UUID).
+-- Only the crosswalk tables need stubs. Use UUID to match 020's FK type.
 CREATE TABLE IF NOT EXISTS mol_silver.molecule_identifiers (
-    source TEXT, identifier TEXT, molecule_id BIGINT,
+    source TEXT, identifier TEXT, molecule_id UUID,
     is_primary BOOLEAN, first_seen_at TIMESTAMPTZ
 );
 CREATE TABLE IF NOT EXISTS mol_silver.molecule_names (
-    normalized_name TEXT, molecule_id BIGINT, name_kind TEXT,
+    normalized_name TEXT, molecule_id UUID, name_kind TEXT,
     source TEXT, confidence NUMERIC, display_name TEXT,
     first_seen_at TIMESTAMPTZ
 );
