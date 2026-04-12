@@ -1,24 +1,21 @@
 -- Migration 031/039_partition_pubchem.sql: Partition mol_bronze.pubchem by month on ingested_at
 -- Feature: 001-silver-medallion-rebuild / T163-T167
 --
--- Strategy: atomic ATTACH after backfill through tray (non-blocking with right timing).
--- This migration creates the partitioned parent table and attaches the first partition.
--- Existing data is moved via the tray procedure (030-034) before ATTACH.
+-- Strategy: rename existing table → create partitioned parent → copy data → drop old.
+-- The copy uses a chunked procedure (CALL) so each batch commits independently,
+-- keeping WAL below the CNPG cluster's 4 GB max_wal_size ceiling.
 --
--- NOTE: Run AFTER the corresponding tray procedure has loaded data into a clean table.
--- The swap is done via the tray rename, so ATTACH PARTITION is already on new data.
+-- If the table is empty (fresh deploy), the copy is a no-op and completes instantly.
 
+-- Step 1: DDL — rename, create partitioned parent, create partitions
 BEGIN;
 
--- Step 1: Rename target to preserve data during partition setup
 ALTER TABLE mol_bronze.pubchem RENAME TO pubchem_nonpart;
 
--- Step 2: Create partitioned parent table
 CREATE TABLE mol_bronze.pubchem (
     LIKE mol_bronze.pubchem_nonpart INCLUDING DEFAULTS INCLUDING CONSTRAINTS
 ) PARTITION BY RANGE (ingested_at);
 
--- Step 3: Create initial partitions (monthly, add more as needed)
 CREATE TABLE mol_bronze.pubchem_y2024m01
     PARTITION OF mol_bronze.pubchem
     FOR VALUES FROM ('2024-01-01') TO ('2024-02-01');
@@ -39,36 +36,36 @@ CREATE TABLE mol_bronze.pubchem_y2026m01
     PARTITION OF mol_bronze.pubchem
     FOR VALUES FROM ('2026-01-01') TO ('2026-02-01');
 
--- Default partition catches everything outside the above ranges
 CREATE TABLE mol_bronze.pubchem_default
     PARTITION OF mol_bronze.pubchem DEFAULT;
 
--- Step 4: Copy data from non-partitioned table to partitioned parent
--- Chunked to stay under max_wal_size = 4 GB (reviewer flag: PR #275)
-DO $$
+-- Step 2: Create a temporary procedure for chunked copy with per-batch COMMIT.
+CREATE OR REPLACE PROCEDURE _tmp_partition_copy_pubchem()
+LANGUAGE plpgsql AS $$
 DECLARE
     v_max_id BIGINT;
     v_low    BIGINT := 0;
     v_chunk  CONSTANT BIGINT := 50000;
-    v_rows   INT;
 BEGIN
     SELECT COALESCE(MAX(id), 0) INTO v_max_id FROM mol_bronze.pubchem_nonpart;
+    IF v_max_id = 0 THEN RETURN; END IF;
     WHILE v_low < v_max_id LOOP
         INSERT INTO mol_bronze.pubchem
         SELECT * FROM mol_bronze.pubchem_nonpart
         WHERE id > v_low AND id <= v_low + v_chunk;
-        GET DIAGNOSTICS v_rows = ROW_COUNT;
         v_low := v_low + v_chunk;
         COMMIT;
         PERFORM pg_sleep(0.05);
     END LOOP;
 END $$;
 
--- Step 5: Drop old non-partitioned table
-DROP TABLE mol_bronze.pubchem_nonpart;
-
 COMMIT;
 
--- NOTE: After partitioning, recreate BRIN indexes on each partition:
--- CREATE INDEX ON mol_bronze.pubchem_y2026m01 USING BRIN (ingested_at);
--- etc. (handled by 035_brin_indexes.sql on the parent)
+-- Step 3: Execute the chunked copy
+CALL _tmp_partition_copy_pubchem();
+
+-- Step 4: Cleanup
+BEGIN;
+DROP TABLE mol_bronze.pubchem_nonpart;
+DROP PROCEDURE _tmp_partition_copy_pubchem();
+COMMIT;

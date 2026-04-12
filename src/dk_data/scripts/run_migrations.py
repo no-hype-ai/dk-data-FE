@@ -54,6 +54,10 @@ def get_connection():
 def discover_migrations(migrations_dir: str) -> list[tuple[str, str, str]]:
     """Scan migrations directory for *.sql files, sorted by numeric prefix.
 
+    Supports one level of subdirectories: a directory named ``031_silver_hub_rebuild/``
+    is treated as a migration *group* whose children run between top-level prefix 031
+    and 032.  Children are sorted by their own numeric prefix within the group.
+
     Returns:
         List of (version, filename, filepath) tuples sorted by version.
     """
@@ -66,23 +70,48 @@ def discover_migrations(migrations_dir: str) -> list[tuple[str, str, str]]:
 
     for filepath in sorted(migrations_path.glob("*.sql")):
         filename = filepath.name
-        # Skip rollback files — they are never applied as forward migrations
         if "_rollback" in filename.lower():
             continue
         match = PREFIX_RE.match(filename)
         if match:
-            # Use filename without .sql extension as the unique version key so
-            # that multiple files sharing the same numeric prefix (e.g.,
-            # 085_bindingdb_sider_catalog.sql and 085_cms_geographic_variation_raw.sql)
-            # are tracked as separate migrations and do not conflict.
-            version = filepath.stem  # e.g. "085_cms_geographic_variation_raw"
+            version = filepath.stem
             migrations.append((version, filename, str(filepath)))
 
-    # Sort by numeric prefix (as integer) then alphabetically by full filename
-    # so that 085_bindingdb_sider_catalog.sql runs before 085_cms_*.sql, etc.
+    # Discover subdirectory migration groups (e.g. 031_silver_hub_rebuild/)
+    for subdir in sorted(migrations_path.iterdir()):
+        if not subdir.is_dir():
+            continue
+        dir_match = PREFIX_RE.match(subdir.name)
+        if not dir_match:
+            continue
+        for filepath in sorted(subdir.glob("*.sql")):
+            filename = filepath.name
+            if "_rollback" in filename.lower():
+                continue
+            child_match = PREFIX_RE.match(filename)
+            if child_match:
+                # Version key includes subdirectory to avoid collisions:
+                # e.g. "031_silver_hub_rebuild/004_resolve_molecule"
+                version = f"{subdir.name}/{filepath.stem}"
+                migrations.append((version, filename, str(filepath)))
+
     def sort_key(m):
-        prefix_match = PREFIX_RE.match(m[1])  # m[1] is filename
-        return (int(prefix_match.group(1)) if prefix_match else 0, m[1])
+        version, filename, filepath = m
+        fp = Path(filepath)
+        parent_name = fp.parent.name
+
+        # Top-level file: sort by its own numeric prefix
+        parent_match = PREFIX_RE.match(parent_name)
+        if not parent_match or parent_name == migrations_path.name:
+            prefix_match = PREFIX_RE.match(filename)
+            return (int(prefix_match.group(1)) if prefix_match else 0, 0, filename)
+
+        # Subdirectory child: sort after the parent directory's prefix,
+        # then by the child's own numeric prefix within the group.
+        parent_prefix = int(parent_match.group(1))
+        child_match = PREFIX_RE.match(filename)
+        child_prefix = int(child_match.group(1)) if child_match else 0
+        return (parent_prefix, 1 + child_prefix, filename)
 
     migrations.sort(key=sort_key)
     return migrations
@@ -165,10 +194,24 @@ def get_applied_migrations(conn) -> set[str]:
         return {row[0] for row in cur.fetchall()}
 
 
+def _needs_autocommit(sql: str) -> bool:
+    """Return True if the migration SQL contains CALL statements.
+
+    CALL with procedures that use transaction control (COMMIT/ROLLBACK inside
+    the procedure body) requires the session to be in autocommit mode —
+    PostgreSQL raises "invalid transaction termination" otherwise.
+    """
+    return bool(re.search(r"^\s*CALL\s+", sql, re.IGNORECASE | re.MULTILINE))
+
+
 def apply_migration(
     conn, filepath: str, version: str, filename: str, checksum: str
 ) -> int:
-    """Execute a single migration SQL file within a transaction.
+    """Execute a single migration SQL file.
+
+    If the migration contains CALL statements, it runs with autocommit=True
+    so that procedures can use transaction control (COMMIT per chunk, etc.).
+    Otherwise, the migration runs within the connection's implicit transaction.
 
     Returns:
         Execution time in milliseconds.
@@ -179,21 +222,40 @@ def apply_migration(
     sql = Path(filepath).read_text(encoding="utf-8")
     start = time.monotonic()
 
-    with conn.cursor() as cur:
-        cur.execute(sql)
-        elapsed_ms = int((time.monotonic() - start) * 1000)
-
-        cur.execute(
-            """
-            INSERT INTO meta.schema_migrations
-                (version, filename, checksum, applied_by, execution_time_ms)
-            VALUES (%s, %s, %s, %s, %s)
-            """,
-            (version, filename, checksum, "migration-runner", elapsed_ms),
-        )
-
-    conn.commit()
-    return elapsed_ms
+    if _needs_autocommit(sql):
+        # Commit any pending transaction before switching to autocommit
+        conn.commit()
+        old_autocommit = conn.autocommit
+        conn.autocommit = True
+        try:
+            with conn.cursor() as cur:
+                cur.execute(sql)
+                elapsed_ms = int((time.monotonic() - start) * 1000)
+                cur.execute(
+                    """
+                    INSERT INTO meta.schema_migrations
+                        (version, filename, checksum, applied_by, execution_time_ms)
+                    VALUES (%s, %s, %s, %s, %s)
+                    """,
+                    (version, filename, checksum, "migration-runner", elapsed_ms),
+                )
+            return elapsed_ms
+        finally:
+            conn.autocommit = old_autocommit
+    else:
+        with conn.cursor() as cur:
+            cur.execute(sql)
+            elapsed_ms = int((time.monotonic() - start) * 1000)
+            cur.execute(
+                """
+                INSERT INTO meta.schema_migrations
+                    (version, filename, checksum, applied_by, execution_time_ms)
+                VALUES (%s, %s, %s, %s, %s)
+                """,
+                (version, filename, checksum, "migration-runner", elapsed_ms),
+            )
+        conn.commit()
+        return elapsed_ms
 
 
 def apply_pending(conn, migrations_dir: str, dry_run: bool = False) -> bool:
