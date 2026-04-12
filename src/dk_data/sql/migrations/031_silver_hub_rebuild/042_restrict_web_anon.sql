@@ -1,5 +1,8 @@
--- Migration 031/042: Restrict web_anon access to api schema only
+-- Migration 031/042: Restrict web_anon from raw/bronze/staging/meta schemas
 -- Feature: 001-silver-medallion-rebuild / T181
+--
+-- web_anon should access silver/gold schemas (via PostgREST) and the api schema.
+-- Revoke from raw, bronze, staging, meta, and internal schemas only.
 
 DO $$
 DECLARE
@@ -10,17 +13,18 @@ BEGIN
         RETURN;
     END IF;
 
-    -- Revoke from non-api schemas
+    -- Revoke from raw/bronze/staging/meta schemas (data pipeline internals)
     FOR schema_name IN
         SELECT nspname FROM pg_namespace
-        WHERE nspname NOT IN ('api', 'pg_catalog', 'information_schema', 'pg_toast')
+        WHERE (nspname LIKE '%_raw' OR nspname LIKE '%_bronze'
+               OR nspname IN ('staging', 'meta', 'xenon'))
           AND nspname NOT LIKE 'pg_%'
     LOOP
         EXECUTE format('REVOKE ALL ON ALL TABLES IN SCHEMA %I FROM web_anon', schema_name);
         EXECUTE format('REVOKE USAGE ON SCHEMA %I FROM web_anon', schema_name);
     END LOOP;
 
-    -- Grant api schema access
+    -- Ensure api schema access
     EXECUTE 'CREATE SCHEMA IF NOT EXISTS api';
     EXECUTE 'GRANT USAGE ON SCHEMA api TO web_anon';
     EXECUTE 'GRANT SELECT ON ALL TABLES IN SCHEMA api TO web_anon';
