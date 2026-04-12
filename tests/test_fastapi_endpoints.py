@@ -78,6 +78,10 @@ class TestHealthEndpoint:
         assert data["status"] in ("healthy", "degraded", "unhealthy")
 
 
+@pytest.mark.skipif(
+    not __import__("os").environ.get("POSTGRES_HOST"),
+    reason="Jobs endpoint requires a fully-initialized DB with hub tables"
+)
 class TestJobsEndpoint:
     def test_list_jobs_returns_200(self, client):
         response = client.get("/jobs")

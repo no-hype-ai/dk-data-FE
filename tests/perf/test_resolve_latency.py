@@ -152,6 +152,16 @@ class TestResolveLatency:
         if not exists:
             pytest.skip(f"{func_name} not installed in test DB")
 
+        # Verify crosswalk tables exist (SQLMesh creates them, not migrations)
+        cur2 = cnpg_conn.cursor()
+        try:
+            cur2.execute("SELECT 1 FROM mol_silver.molecule_identifiers LIMIT 0")
+        except Exception:
+            cnpg_conn.rollback()
+            pytest.skip("Hub crosswalk tables not installed (SQLMesh-managed)")
+        finally:
+            cur2.close()
+
         latencies = self._run_benchmark(cnpg_conn, func_name, sample_args)
         if len(latencies) < 10:
             pytest.skip(f"Too few successful calls ({len(latencies)}) for {func_name}")

@@ -24,6 +24,18 @@ import pytest
 pytestmark = pytest.mark.perf
 
 P95_INCREASE_THRESHOLD = 0.10   # 10% max increase allowed (SC-009)
+
+def _hub_tables_exist(conn) -> bool:
+    """Check if SQLMesh-managed hub crosswalk tables exist."""
+    cur = conn.cursor()
+    try:
+        cur.execute("SELECT 1 FROM mol_silver.molecule_identifiers LIMIT 0")
+        return True
+    except Exception:
+        conn.rollback()
+        return False
+    finally:
+        cur.close()
 LOAD_DURATION_SECONDS = 30      # Duration for baseline + post-bootstrap measurement
 SAMPLE_QUERY_SQL = """
     SELECT mi.molecule_id, mn.normalized_name
@@ -70,6 +82,8 @@ class TestMultiTenantImpact:
     """SC-009: Hub bootstrap must not increase silver hub query p95 by > 10%."""
 
     def test_bootstrap_does_not_degrade_p95(self, cnpg_conn):
+        if not _hub_tables_exist(cnpg_conn):
+            pytest.skip("Hub crosswalk tables not installed (SQLMesh-managed)")
         """Measure baseline p95, simulate concurrent bootstrap load, verify ≤10% increase."""
         # Skip if molecule_identifiers not yet populated
         cur = cnpg_conn.cursor()
