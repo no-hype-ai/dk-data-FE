@@ -19,6 +19,10 @@
 
 BEGIN;
 
+-- Ensure ip_raw schema exists (normally created by 031_silver_hub_rebuild/050_create_ip_schemas.sql
+-- but the CI migration runner only scans top-level *.sql files, not subdirectories).
+CREATE SCHEMA IF NOT EXISTS ip_raw;
+
 -- ============================================================================
 -- ip_raw.uspto_patents
 -- ============================================================================
@@ -44,7 +48,9 @@ CREATE INDEX IF NOT EXISTS idx_ip_raw_uspto_patents_grant
 CREATE INDEX IF NOT EXISTS idx_ip_raw_uspto_patents_loaded_brin
     ON ip_raw.uspto_patents USING BRIN (_loaded_at) WITH (pages_per_range = 128);
 
-INSERT INTO ip_raw.uspto_patents (
+DO $$ BEGIN
+    IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='mol_raw' AND table_name='uspto_patents') THEN
+        INSERT INTO ip_raw.uspto_patents (
     patent_number, title, abstract, inventors, assignees,
     filing_date, grant_date, cpc_codes, claims_count, patent_type,
     _source_file, _source_hash, _loaded_at
@@ -54,6 +60,8 @@ SELECT patent_number, title, abstract, inventors, assignees,
        _source_file, _source_hash, _loaded_at
 FROM mol_raw.uspto_patents
 ON CONFLICT (patent_number) DO NOTHING;
+    END IF;
+END $$;
 
 -- ============================================================================
 -- ip_raw.uspto_ci
@@ -79,7 +87,9 @@ CREATE INDEX IF NOT EXISTS idx_ip_raw_uspto_ci_grant
 CREATE INDEX IF NOT EXISTS idx_ip_raw_uspto_ci_loaded_brin
     ON ip_raw.uspto_ci USING BRIN (_loaded_at) WITH (pages_per_range = 128);
 
-INSERT INTO ip_raw.uspto_ci (
+DO $$ BEGIN
+    IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='mol_raw' AND table_name='uspto_ci') THEN
+        INSERT INTO ip_raw.uspto_ci (
     patent_id, title, abstract, inventors, assignees,
     filing_date, grant_date, cpc_codes, claims_count,
     _source_file, _source_hash, _loaded_at
@@ -89,6 +99,8 @@ SELECT patent_id, title, abstract, inventors, assignees,
        _source_file, _source_hash, _loaded_at
 FROM mol_raw.uspto_ci
 ON CONFLICT (patent_id) DO NOTHING;
+    END IF;
+END $$;
 
 -- ============================================================================
 -- ip_raw.uspto_trademarks
@@ -118,7 +130,9 @@ CREATE TABLE IF NOT EXISTS ip_raw.uspto_trademarks (
 CREATE INDEX IF NOT EXISTS idx_ip_raw_uspto_trademarks_loaded_brin
     ON ip_raw.uspto_trademarks USING BRIN (_loaded_at) WITH (pages_per_range = 128);
 
-INSERT INTO ip_raw.uspto_trademarks (
+DO $$ BEGIN
+    IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='mol_raw' AND table_name='uspto_trademarks') THEN
+        INSERT INTO ip_raw.uspto_trademarks (
     serial_number, mark_element, mark_type, status, status_code, status_date,
     filing_date, registration_number, registration_date, nice_classes, us_classes,
     owner_name, owner_entity_type, goods_and_services, description_of_mark,
@@ -130,6 +144,8 @@ SELECT serial_number, mark_element, mark_type, status, status_code, status_date,
        _source_file, _source_hash, _loaded_at
 FROM mol_raw.uspto_trademarks
 ON CONFLICT (serial_number) DO NOTHING;
+    END IF;
+END $$;
 
 -- ============================================================================
 -- ip_raw.epo_patents
@@ -154,7 +170,9 @@ CREATE INDEX IF NOT EXISTS idx_ip_raw_epo_family ON ip_raw.epo_patents (family_i
 CREATE INDEX IF NOT EXISTS idx_ip_raw_epo_loaded_brin
     ON ip_raw.epo_patents USING BRIN (_loaded_at) WITH (pages_per_range = 128);
 
-INSERT INTO ip_raw.epo_patents (
+DO $$ BEGIN
+    IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='mol_raw' AND table_name='epo_patents') THEN
+        INSERT INTO ip_raw.epo_patents (
     publication_id, title, abstract, applicants, inventors,
     filing_date, publication_date, ipc_codes, family_id,
     _source_file, _source_hash, _loaded_at
@@ -164,6 +182,8 @@ SELECT publication_id, title, abstract, applicants, inventors,
        _source_file, _source_hash, _loaded_at
 FROM mol_raw.epo_patents
 ON CONFLICT (publication_id) DO NOTHING;
+    END IF;
+END $$;
 
 -- ============================================================================
 -- ip_raw.euipo_trademarks
@@ -193,7 +213,9 @@ CREATE TABLE IF NOT EXISTS ip_raw.euipo_trademarks (
 CREATE INDEX IF NOT EXISTS idx_ip_raw_euipo_trademarks_loaded_brin
     ON ip_raw.euipo_trademarks USING BRIN (_loaded_at) WITH (pages_per_range = 128);
 
-INSERT INTO ip_raw.euipo_trademarks (
+DO $$ BEGIN
+    IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='mol_raw' AND table_name='euipo_trademarks') THEN
+        INSERT INTO ip_raw.euipo_trademarks (
     application_number, mark_name, mark_kind, mark_feature, mark_basis,
     applicant_name, applicant_country, representative_name, status,
     filing_date, registration_date, expiry_date, nice_classes,
@@ -205,6 +227,8 @@ SELECT application_number, mark_name, mark_kind, mark_feature, mark_basis,
        goods_and_services, image_url, _source_file, _source_hash, _loaded_at
 FROM mol_raw.euipo_trademarks
 ON CONFLICT (application_number) DO NOTHING;
+    END IF;
+END $$;
 
 -- ============================================================================
 -- ip_raw.euipo_designs (matches the flat schema from migration 152)
@@ -234,7 +258,9 @@ CREATE TABLE IF NOT EXISTS ip_raw.euipo_designs (
 CREATE INDEX IF NOT EXISTS idx_ip_raw_euipo_designs_loaded_brin
     ON ip_raw.euipo_designs USING BRIN (_loaded_at) WITH (pages_per_range = 128);
 
-INSERT INTO ip_raw.euipo_designs (
+DO $$ BEGIN
+    IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='mol_raw' AND table_name='euipo_designs') THEN
+        INSERT INTO ip_raw.euipo_designs (
     application_number, design_title, applicant_name, applicant_country,
     representative_name, designer_name, status, filing_date, registration_date,
     expiry_date, publication_date, locarno_classes, product_indication,
@@ -246,6 +272,8 @@ SELECT application_number, design_title, applicant_name, applicant_country,
        image_url, number_of_designs, _source_file, _source_hash, _loaded_at
 FROM mol_raw.euipo_designs
 ON CONFLICT (application_number) DO NOTHING;
+    END IF;
+END $$;
 
 -- ============================================================================
 -- ip_raw.trademark_status_history
@@ -263,12 +291,16 @@ CREATE INDEX IF NOT EXISTS idx_ip_raw_tm_status_hist
 CREATE INDEX IF NOT EXISTS idx_ip_raw_tm_status_hist_changed_brin
     ON ip_raw.trademark_status_history USING BRIN (changed_at) WITH (pages_per_range = 128);
 
-INSERT INTO ip_raw.trademark_status_history (
+DO $$ BEGIN
+    IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='mol_raw' AND table_name='trademark_status_history') THEN
+        INSERT INTO ip_raw.trademark_status_history (
     trademark_identifier, source, old_status, new_status, changed_at
 )
 SELECT trademark_identifier, source, old_status, new_status, changed_at
 FROM mol_raw.trademark_status_history
 ON CONFLICT DO NOTHING;
+    END IF;
+END $$;
 
 -- Grants follow migration 050_create_ip_schemas.sql (mol_data_ops gets DML on ip_raw)
 -- Already covered there via GRANT ALL ON ALL TABLES IN SCHEMA + ALTER DEFAULT PRIVILEGES.
