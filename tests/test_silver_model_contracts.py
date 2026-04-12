@@ -55,7 +55,7 @@ class TestSilverPatents:
         self.model_block = _extract_model_block(self.sql)
 
     def test_model_name(self):
-        assert "name mol_silver.patents" in self.model_block
+        assert "name ip_silver.patents" in self.model_block
 
     def test_model_kind_incremental_by_unique_key(self):
         assert "INCREMENTAL_BY_UNIQUE_KEY" in self.model_block
@@ -177,7 +177,7 @@ class TestSilverTrademarks:
         self.model_block = _extract_model_block(self.sql)
 
     def test_model_name(self):
-        assert "name mol_silver.trademarks" in self.model_block
+        assert "name ip_silver.trademarks" in self.model_block
 
     def test_model_kind_incremental_by_unique_key(self):
         assert "INCREMENTAL_BY_UNIQUE_KEY" in self.model_block

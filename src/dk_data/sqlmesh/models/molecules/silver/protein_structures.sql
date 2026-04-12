@@ -10,9 +10,7 @@
 
 MODEL (
     name mol_silver.protein_structures,
-    kind INCREMENTAL_BY_UNIQUE_KEY (
-        unique_key pdb_id
-    ),
+    kind FULL,
     cron '@daily',
     audits (
         not_null(columns := (pdb_id)),
