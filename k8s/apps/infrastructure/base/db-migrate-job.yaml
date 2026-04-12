@@ -61,6 +61,8 @@ spec:
                 secretKeyRef:
                   name: dk-data-secrets
                   key: POSTGRES_DB
+            - name: MIGRATIONS_INCLUDE_SUBDIRS
+              value: "1"
           resources:
             requests:
               memory: "64Mi"

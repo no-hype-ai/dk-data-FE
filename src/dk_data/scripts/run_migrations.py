@@ -78,6 +78,12 @@ def discover_migrations(migrations_dir: str) -> list[tuple[str, str, str]]:
             migrations.append((version, filename, str(filepath)))
 
     # Discover subdirectory migration groups (e.g. 031_silver_hub_rebuild/)
+    # Opt-in via MIGRATIONS_INCLUDE_SUBDIRS=1 — subdirectory migrations depend on
+    # SQLMesh tables existing, so they should only run in production (post-SQLMesh)
+    # or when explicitly enabled.
+    if not os.getenv("MIGRATIONS_INCLUDE_SUBDIRS", ""):
+        return migrations
+
     for subdir in sorted(migrations_path.iterdir()):
         if not subdir.is_dir():
             continue
