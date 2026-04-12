@@ -71,5 +71,5 @@ The silver layer was rebuilt on 10 canonical entity-resolution hubs:
 - 5 banned antipatterns: S1 (OR-join hub IDs), S2 (leading-wildcard LIKE), S3 (correlated scalar subquery), S4 (DISTINCT ON over UNION ALL), S5 (similarity + = in OR).
 - `mol_silver.molecule_aliases` and `mol_silver.identifier_mappings` are being phased out — use `molecule_names` and `molecule_identifiers` instead.
 
-**Bootstrap procedures**: `src/dk_data/sql/migrations/031_silver_hub_rebuild/014_bootstrap_*.sql`
+**Bootstrap procedures**: `src/dk_data/sql/migrations/189_bootstrap_*.sql` through `200_bootstrap_*.sql`
 **Runbook**: `docs/runbooks/silver-hub-bootstrap.md`

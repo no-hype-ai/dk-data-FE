@@ -37,7 +37,7 @@ def _check_trgm(cnpg_conn):
 def _run_sql_file(cnpg_conn, filename):
     sql_path = os.path.abspath(os.path.join(
         os.path.dirname(__file__),
-        f"../src/dk_data/sql/migrations/031_silver_hub_rebuild/{filename}"
+        f"../src/dk_data/sql/migrations/{filename}"
     ))
     with open(sql_path) as fh:
         sql = fh.read()
@@ -95,7 +95,7 @@ def target_schema(cnpg_meta_schemas, cnpg_conn):
     """)
     cnpg_conn.commit()
     cur.close()
-    _run_sql_file(cnpg_conn, "006_resolve_target.sql")
+    _run_sql_file(cnpg_conn, "180_resolve_target.sql")
     yield
 
 
@@ -217,7 +217,7 @@ def condition_schema(cnpg_meta_schemas, cnpg_conn):
     """)
     cnpg_conn.commit()
     cur.close()
-    _run_sql_file(cnpg_conn, "007_resolve_condition.sql")
+    _run_sql_file(cnpg_conn, "181_resolve_condition.sql")
     yield
 
 
@@ -339,7 +339,7 @@ def company_schema(cnpg_meta_schemas, cnpg_conn):
     """)
     cnpg_conn.commit()
     cur.close()
-    _run_sql_file(cnpg_conn, "008_resolve_company.sql")
+    _run_sql_file(cnpg_conn, "182_resolve_company.sql")
     yield
 
 
@@ -467,7 +467,7 @@ def provider_schema(cnpg_meta_schemas, cnpg_conn):
     """)
     cnpg_conn.commit()
     cur.close()
-    _run_sql_file(cnpg_conn, "009_resolve_provider.sql")
+    _run_sql_file(cnpg_conn, "183_resolve_provider.sql")
     yield
 
 
@@ -601,7 +601,7 @@ def facility_schema(cnpg_meta_schemas, cnpg_conn):
     """)
     cnpg_conn.commit()
     cur.close()
-    _run_sql_file(cnpg_conn, "010_resolve_facility.sql")
+    _run_sql_file(cnpg_conn, "184_resolve_facility.sql")
     yield
 
 
@@ -739,7 +739,7 @@ def researcher_schema(cnpg_meta_schemas, cnpg_conn):
     """)
     cnpg_conn.commit()
     cur.close()
-    _run_sql_file(cnpg_conn, "011_resolve_researcher.sql")
+    _run_sql_file(cnpg_conn, "185_resolve_researcher.sql")
     yield
 
 
@@ -885,7 +885,7 @@ def patent_schema(cnpg_meta_schemas, cnpg_conn):
     """)
     cnpg_conn.commit()
     cur.close()
-    _run_sql_file(cnpg_conn, "012_resolve_patent.sql")
+    _run_sql_file(cnpg_conn, "186_resolve_patent.sql")
     yield
 
 
@@ -1034,7 +1034,7 @@ def trademark_schema(cnpg_meta_schemas, cnpg_conn):
     """)
     cnpg_conn.commit()
     cur.close()
-    _run_sql_file(cnpg_conn, "013_resolve_trademark.sql")
+    _run_sql_file(cnpg_conn, "187_resolve_trademark.sql")
     yield
 
 
@@ -1174,7 +1174,7 @@ def design_schema(cnpg_meta_schemas, cnpg_conn):
     """)
     cnpg_conn.commit()
     cur.close()
-    _run_sql_file(cnpg_conn, "013b_resolve_design.sql")
+    _run_sql_file(cnpg_conn, "188_resolve_design.sql")
     yield
 
 

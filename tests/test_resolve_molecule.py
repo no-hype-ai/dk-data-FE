@@ -91,7 +91,7 @@ def resolve_molecule_fn(mol_silver_schema, cnpg_conn):
     import os
     sql_path = os.path.join(
         os.path.dirname(__file__),
-        "../src/dk_data/sql/migrations/031_silver_hub_rebuild/004_resolve_molecule.sql"
+        "../src/dk_data/sql/migrations/178_resolve_molecule.sql"
     )
     sql_path = os.path.abspath(sql_path)
     with open(sql_path) as fh:

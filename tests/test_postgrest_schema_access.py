@@ -16,7 +16,7 @@ import pytest
 import psycopg2
 
 def _hub_tables_exist():
-    """Check if hub tables exist (created by 031_silver_hub_rebuild migrations, not top-level)."""
+    """Check if hub tables exist (created by SQLMesh, not migrations)."""
     try:
         conn = psycopg2.connect(
             host=os.environ.get("POSTGRES_HOST", "localhost"),
@@ -37,7 +37,7 @@ def _hub_tables_exist():
 pytestmark = [
     pytest.mark.skipif(
         not _hub_tables_exist(),
-        reason="Hub tables not available (031_silver_hub_rebuild migrations not applied in CI)"
+        reason="Hub tables not available (SQLMesh hub tables not available in CI)"
     ),
     pytest.mark.integration,
 ]

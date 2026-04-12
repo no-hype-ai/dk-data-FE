@@ -100,7 +100,7 @@ def resolve_drug_product_fn(drug_product_schema, cnpg_conn):
     import os
     sql_path = os.path.abspath(os.path.join(
         os.path.dirname(__file__),
-        "../src/dk_data/sql/migrations/031_silver_hub_rebuild/005_resolve_drug_product.sql"
+        "../src/dk_data/sql/migrations/179_resolve_drug_product.sql"
     ))
     with open(sql_path) as fh:
         sql = fh.read()
