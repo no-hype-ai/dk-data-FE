@@ -204,13 +204,69 @@ def _needs_autocommit(sql: str) -> bool:
     return bool(re.search(r"^\s*CALL\s+", sql, re.IGNORECASE | re.MULTILINE))
 
 
+def _split_statements(sql: str) -> list[str]:
+    """Split SQL text into top-level statements, respecting $$-delimited bodies.
+
+    Returns a list of non-empty statement strings. Semicolons inside $tag$...$tag$
+    blocks are NOT treated as statement separators. Comments are preserved.
+    """
+    statements: list[str] = []
+    current: list[str] = []
+    in_dollar = False
+    dollar_tag = ""
+    i = 0
+
+    while i < len(sql):
+        ch = sql[i]
+
+        # Detect $$ or $tag$ delimiter
+        if ch == "$" and not in_dollar:
+            # Find the closing $
+            j = sql.index("$", i + 1) if "$" in sql[i + 1 :] else -1
+            if j >= 0:
+                tag = sql[i : j + 1]
+                # Valid dollar-quote tag: $$ or $identifier$
+                if re.match(r"^\$[a-zA-Z_]*\$$", tag):
+                    in_dollar = True
+                    dollar_tag = tag
+                    current.append(tag)
+                    i = j + 1
+                    continue
+        elif in_dollar and ch == "$":
+            # Check if this is the closing tag
+            end = sql[i : i + len(dollar_tag)]
+            if end == dollar_tag:
+                in_dollar = False
+                current.append(dollar_tag)
+                i += len(dollar_tag)
+                continue
+
+        if ch == ";" and not in_dollar:
+            current.append(ch)
+            stmt = "".join(current).strip()
+            if stmt and stmt != ";":
+                statements.append(stmt)
+            current = []
+        else:
+            current.append(ch)
+        i += 1
+
+    # Trailing text without semicolon
+    remainder = "".join(current).strip()
+    if remainder:
+        statements.append(remainder)
+
+    return [s for s in statements if not s.startswith("--") or "\n" in s]
+
+
 def apply_migration(
     conn, filepath: str, version: str, filename: str, checksum: str
 ) -> int:
     """Execute a single migration SQL file.
 
     If the migration contains CALL statements, it runs with autocommit=True
-    so that procedures can use transaction control (COMMIT per chunk, etc.).
+    and each top-level statement is executed individually so that CALL can
+    use transaction control (COMMIT per chunk, etc.).
     Otherwise, the migration runs within the connection's implicit transaction.
 
     Returns:
@@ -229,7 +285,13 @@ def apply_migration(
         conn.autocommit = True
         try:
             with conn.cursor() as cur:
-                cur.execute(sql)
+                # Execute each statement individually so CALL gets its own
+                # top-level invocation (required for transaction control).
+                for stmt in _split_statements(sql):
+                    stmt_stripped = stmt.rstrip(";").strip()
+                    if not stmt_stripped or stmt_stripped.startswith("--"):
+                        continue
+                    cur.execute(stmt)
                 elapsed_ms = int((time.monotonic() - start) * 1000)
                 cur.execute(
                     """
