@@ -23,6 +23,9 @@ import pytest
 MODELS_DIR = Path(__file__).resolve().parent.parent / "src" / "dk_data" / "sqlmesh" / "models" / "molecules"
 SILVER_DIR = MODELS_DIR / "silver"
 
+IP_MODELS_DIR = Path(__file__).resolve().parent.parent / "src" / "dk_data" / "sqlmesh" / "models" / "ip"
+IP_SILVER_DIR = IP_MODELS_DIR / "silver"
+
 
 # ---------------------------------------------------------------------------
 # Helper: parse MODEL block from SQLMesh SQL file
@@ -32,6 +35,13 @@ def _read_model_sql(filename: str) -> str:
     """Read a silver model SQL file and return its contents."""
     filepath = SILVER_DIR / filename
     assert filepath.exists(), f"Model file not found: {filepath}"
+    return filepath.read_text()
+
+
+def _read_ip_model_sql(filename: str) -> str:
+    """Read an IP silver model SQL file and return its contents."""
+    filepath = IP_SILVER_DIR / filename
+    assert filepath.exists(), f"IP model file not found: {filepath}"
     return filepath.read_text()
 
 
@@ -51,7 +61,7 @@ class TestSilverPatents:
 
     @pytest.fixture(autouse=True)
     def setup(self):
-        self.sql = _read_model_sql("patents.sql")
+        self.sql = _read_ip_model_sql("patents.sql")
         self.model_block = _extract_model_block(self.sql)
 
     def test_model_name(self):
@@ -173,7 +183,7 @@ class TestSilverTrademarks:
 
     @pytest.fixture(autouse=True)
     def setup(self):
-        self.sql = _read_model_sql("trademarks.sql")
+        self.sql = _read_ip_model_sql("trademarks.sql")
         self.model_block = _extract_model_block(self.sql)
 
     def test_model_name(self):
@@ -391,7 +401,7 @@ class TestSilverPatentsExtension:
 
     @pytest.fixture(autouse=True)
     def setup(self):
-        self.sql = _read_model_sql("patents.sql")
+        self.sql = _read_ip_model_sql("patents.sql")
 
     def test_orange_book_source_added(self):
         assert "bronze.orange_book" in self.sql
