@@ -14,8 +14,8 @@ CREATE OR REPLACE FUNCTION _try_create_index(p_ddl text) RETURNS void
 LANGUAGE plpgsql AS $$
 BEGIN
     EXECUTE p_ddl;
-EXCEPTION WHEN undefined_table THEN
-    RAISE NOTICE 'Skipping (table not yet created by SQLMesh): %', left(p_ddl, 120);
+EXCEPTION WHEN OTHERS THEN
+    RAISE NOTICE 'Skipping (table/schema not yet created): %', left(p_ddl, 120);
 END;
 $$;
 

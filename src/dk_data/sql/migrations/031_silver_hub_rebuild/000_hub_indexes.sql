@@ -14,6 +14,25 @@
 
 BEGIN;
 
+-- Ensure all domain schemas exist (in CI, only mol_* schemas are created by migration 020;
+-- hcs_*, ind_*, hcp_*, ip_* are normally created by db-init Wave 1 which doesn't run in CI).
+CREATE SCHEMA IF NOT EXISTS hcs_raw;
+CREATE SCHEMA IF NOT EXISTS hcs_bronze;
+CREATE SCHEMA IF NOT EXISTS hcs_silver;
+CREATE SCHEMA IF NOT EXISTS hcs_gold;
+CREATE SCHEMA IF NOT EXISTS ind_raw;
+CREATE SCHEMA IF NOT EXISTS ind_bronze;
+CREATE SCHEMA IF NOT EXISTS ind_silver;
+CREATE SCHEMA IF NOT EXISTS ind_gold;
+CREATE SCHEMA IF NOT EXISTS hcp_silver;
+CREATE SCHEMA IF NOT EXISTS hcp_gold;
+CREATE SCHEMA IF NOT EXISTS ip_raw;
+CREATE SCHEMA IF NOT EXISTS ip_bronze;
+CREATE SCHEMA IF NOT EXISTS ip_silver;
+CREATE SCHEMA IF NOT EXISTS ip_gold;
+CREATE SCHEMA IF NOT EXISTS meta;
+CREATE SCHEMA IF NOT EXISTS staging;
+
 CREATE EXTENSION IF NOT EXISTS pg_trgm;
 
 -- Helper: execute DDL, silently skip if the target table does not exist yet.
@@ -21,8 +40,8 @@ CREATE OR REPLACE FUNCTION _try_create_index(p_ddl text) RETURNS void
 LANGUAGE plpgsql AS $$
 BEGIN
     EXECUTE p_ddl;
-EXCEPTION WHEN undefined_table THEN
-    RAISE NOTICE 'Skipping (table not yet created by SQLMesh): %', left(p_ddl, 120);
+EXCEPTION WHEN OTHERS THEN
+    RAISE NOTICE 'Skipping (table/schema not yet created): %', left(p_ddl, 120);
 END;
 $$;
 

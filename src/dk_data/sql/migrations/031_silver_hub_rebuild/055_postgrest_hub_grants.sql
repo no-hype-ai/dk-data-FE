@@ -21,7 +21,7 @@ DO $$ BEGIN
           mol_silver.companies, mol_silver.company_identifiers, mol_silver.company_names,
           mol_silver.targets, mol_silver.target_identifiers, mol_silver.target_names, mol_silver.target_sequences
       TO web_anon;
-    EXCEPTION WHEN undefined_table THEN
+    EXCEPTION WHEN OTHERS THEN
       RAISE NOTICE 'Skipping mol_silver hub grants to web_anon (tables not yet created by SQLMesh)';
     END;
 
@@ -30,7 +30,7 @@ DO $$ BEGIN
           hcs_silver.providers, hcs_silver.provider_identifiers, hcs_silver.provider_names,
           hcs_silver.facilities, hcs_silver.facility_identifiers, hcs_silver.facility_names
       TO web_anon;
-    EXCEPTION WHEN undefined_table THEN
+    EXCEPTION WHEN OTHERS THEN
       RAISE NOTICE 'Skipping hcs_silver hub grants to web_anon (tables not yet created by SQLMesh)';
     END;
 
@@ -38,7 +38,7 @@ DO $$ BEGIN
       GRANT SELECT ON TABLE
           ind_silver.conditions, ind_silver.condition_identifiers, ind_silver.condition_names
       TO web_anon;
-    EXCEPTION WHEN undefined_table THEN
+    EXCEPTION WHEN OTHERS THEN
       RAISE NOTICE 'Skipping ind_silver hub grants to web_anon (tables not yet created by SQLMesh)';
     END;
 
@@ -46,7 +46,7 @@ DO $$ BEGIN
       GRANT SELECT ON TABLE
           hcp_silver.researchers, hcp_silver.researcher_identifiers, hcp_silver.researcher_names
       TO web_anon;
-    EXCEPTION WHEN undefined_table THEN
+    EXCEPTION WHEN OTHERS THEN
       RAISE NOTICE 'Skipping hcp_silver hub grants to web_anon (tables not yet created by SQLMesh)';
     END;
 
@@ -56,7 +56,7 @@ DO $$ BEGIN
           ip_silver.trademarks, ip_silver.trademark_identifiers, ip_silver.trademark_names,
           ip_silver.designs, ip_silver.design_identifiers, ip_silver.design_names
       TO web_anon;
-    EXCEPTION WHEN undefined_table THEN
+    EXCEPTION WHEN OTHERS THEN
       RAISE NOTICE 'Skipping ip_silver hub grants to web_anon (tables not yet created by SQLMesh)';
     END;
 
@@ -92,7 +92,7 @@ DO $$ BEGIN
           mol_silver.companies, mol_silver.company_names,
           mol_silver.targets, mol_silver.target_names
       TO mol_viewer;
-    EXCEPTION WHEN undefined_table THEN
+    EXCEPTION WHEN OTHERS THEN
       RAISE NOTICE 'Skipping mol_silver hub grants to mol_viewer (tables not yet created by SQLMesh)';
     END;
   END IF;
