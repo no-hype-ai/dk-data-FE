@@ -114,9 +114,9 @@ BEGIN
 
     -- Circuit breaker 3: daily WAL budget
     -- (Section 9 budget: < 50 GB/day total)
-    SELECT COALESCE(SUM(wal_mb), 0) INTO v_today_wal_mb
+    SELECT COALESCE(SUM(wal_bytes / 1024.0 / 1024.0), 0) INTO v_today_wal_mb
     FROM meta.wal_usage
-    WHERE logged_at >= date_trunc('day', NOW());
+    WHERE recorded_at >= date_trunc('day', NOW());
     IF v_today_wal_mb > (p_daily_wal_budget_gb * 1024) THEN
         RAISE NOTICE 'backfill_orchestrator: skip — daily WAL budget exhausted (% MB > % GB)',
             v_today_wal_mb, p_daily_wal_budget_gb;

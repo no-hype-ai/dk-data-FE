@@ -166,7 +166,7 @@ spec:
                   if [ "$ROWS_DELTA" -lt 0 ]; then ROWS_DELTA=0; fi
 
                   # 6. Persist a row in meta.wal_usage so the wal-explosion alert sees it
-                  $PSQL -c "INSERT INTO meta.wal_usage (job_name, wal_mb, logged_at) VALUES ('backfill_$SOURCE', $WAL_MB, NOW())"
+                  $PSQL -c "INSERT INTO meta.wal_usage (procedure_name, wal_bytes, recorded_at) VALUES ('backfill_$SOURCE', ${WAL_MB}::numeric * 1024 * 1024, NOW())"
 
                   # 7. Update orchestrator state
                   if [ $FETCH_EXIT -eq 0 ]; then
