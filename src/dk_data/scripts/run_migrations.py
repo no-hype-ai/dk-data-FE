@@ -288,9 +288,14 @@ def apply_migration(
                 # Execute each statement individually so CALL gets its own
                 # top-level invocation (required for transaction control).
                 for stmt in _split_statements(sql):
-                    stmt_stripped = stmt.rstrip(";").strip()
-                    if not stmt_stripped or stmt_stripped.startswith("--"):
-                        continue
+                    # Strip leading comment-only lines to check if there's real SQL
+                    lines = stmt.strip().splitlines()
+                    code_lines = [
+                        ln for ln in lines
+                        if ln.strip() and not ln.strip().startswith("--")
+                    ]
+                    if not code_lines:
+                        continue  # pure comment block, skip
                     cur.execute(stmt)
                 elapsed_ms = int((time.monotonic() - start) * 1000)
                 cur.execute(
