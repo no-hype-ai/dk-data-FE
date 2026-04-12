@@ -13,7 +13,7 @@ resources:
 images:
 - name: ghcr.io/data-kinetic/dk-data-fe/job-trigger
   newName: ghcr.io/data-kinetic/dk-data-fe/job-trigger
-  newTag: main-2c6ee0d
+  newTag: main-b6d7032
 
   # PostgREST — 2 replicas for staging
 
