@@ -48,7 +48,7 @@ BEGIN
 
         WITH source_union AS (
             SELECT
-                ROW_NUMBER() OVER (ORDER BY source_priority, src_id) AS union_id,
+                source_priority * 1000000000000000::bigint + src_id::bigint AS union_id,
                 orcid_id,
                 scopus_author_id,
                 pubmed_author_signature,
@@ -61,7 +61,7 @@ BEGIN
                 ror_id
             FROM (
                 -- PubMed: extract from AuthorList JSONB (orcid in Identifier[@Source='ORCID'])
-                SELECT 1 AS source_priority, id AS src_id,
+                SELECT 1::bigint AS source_priority, id::bigint AS src_id,
                     -- ORCID extracted from author identifiers JSON
                     jsonb_path_query_first(
                         author_data,
@@ -180,14 +180,13 @@ BEGIN
 
         SELECT COALESCE(MAX(union_id), v_resume_pos) INTO v_new_pos
         FROM (
-            SELECT ROW_NUMBER() OVER (ORDER BY source_priority, src_id) AS union_id
+            SELECT source_priority * 1000000000000000::bigint + src_id::bigint AS union_id
             FROM (
-                SELECT 1 AS source_priority, id AS src_id
+                SELECT 1::bigint AS source_priority, id::bigint AS src_id
                 FROM mol_bronze.pubmed, jsonb_array_elements(author_list) AS a
                 WHERE author_list IS NOT NULL AND a->>'LastName' IS NOT NULL
                 UNION ALL
-                SELECT 2, id
-                FROM mol_bronze.openalex, jsonb_array_elements(authorships) AS a
+                SELECT 2::bigint, id::bigint FROM mol_bronze.openalex, jsonb_array_elements(authorships) AS a
                 WHERE authorships IS NOT NULL AND a->'author'->>'display_name' IS NOT NULL
             ) sub
         ) numbered

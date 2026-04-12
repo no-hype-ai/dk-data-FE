@@ -62,7 +62,7 @@ BEGIN
         SELECT condition_id INTO v_id
         FROM ind_silver.condition_names
         WHERE similarity(LOWER(normalized_name), LOWER(p_name)) >= 0.85
-        ORDER BY similarity(LOWER(normalized_name), LOWER(p_name)) DESC
+        ORDER BY similarity(LOWER(normalized_name), LOWER(p_name)) DESC, condition_id ASC
         LIMIT 1;
         IF FOUND THEN RETURN v_id; END IF;
     END IF;

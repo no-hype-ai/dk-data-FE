@@ -5,11 +5,16 @@
 
 MODEL (
     name mol_silver.admet_properties,
-    kind FULL,
+    kind INCREMENTAL_BY_UNIQUE_KEY (
+        unique_key (compound_id, dataset_name)
+    ),
     cron '@monthly',
     audits (
         not_null(columns := (compound_id, dataset_name))
-    )
+    ),
+    pre_statements [
+        SET LOCAL work_mem = '128MB'
+    ]
 );
 
 SELECT DISTINCT ON (b.compound_id, b.dataset_name)
@@ -26,7 +31,6 @@ SELECT DISTINCT ON (b.compound_id, b.dataset_name)
     b.inchi_key,
     b.dataset_name,
     b.dataset_type,
-    b.property_name,
     b.property_value,
     b.property_category,
     'tdc_admet'                                                         AS source,
@@ -43,12 +47,12 @@ LEFT JOIN mol_silver.molecules m_ik
 
 -- Strategy 2: ChEMBL ID via identifier_mappings
 --   compound_id may be stored with surrounding quotes (e.g. '"CHEMBL472"'); strip them.
-LEFT JOIN mol_silver.identifier_mappings m_chembl
+LEFT JOIN mol_silver.molecule_identifiers m_chembl
        ON m_ik.molecule_id IS NULL
       AND b.compound_id IS NOT NULL
       AND b.compound_id LIKE '%CHEMBL%'
-      AND m_chembl.identifier_type = 'chembl_id'
-      AND m_chembl.identifier_value = TRIM('"' FROM b.compound_id)
+      AND m_chembl.source = 'chembl'
+      AND m_chembl.identifier = TRIM('"' FROM b.compound_id)
 
 WHERE b.compound_id IS NOT NULL
   AND b.dataset_name IS NOT NULL

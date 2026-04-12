@@ -22,7 +22,10 @@ MODEL (
     audits (
         not_null(columns := (trademark_identifier, source, new_status, changed_at))
     ),
-    grain (trademark_identifier, source, changed_at)
+    grain (trademark_identifier, source, changed_at),
+    pre_statements [
+        SET LOCAL work_mem = '128MB'
+    ]
 );
 
 SELECT DISTINCT ON (h.trademark_identifier, h.source, h.changed_at)
@@ -62,11 +65,11 @@ LEFT JOIN mol_silver.molecules m_exact
       AND LOWER(TRIM(t.mark_name)) = LOWER(TRIM(m_exact.canonical_name))
 
 -- Tier 2: alias match when no canonical match
-LEFT JOIN mol_silver.molecule_aliases ma
+LEFT JOIN mol_silver.molecule_names ma
        ON m_exact.molecule_id IS NULL
       AND t.mark_name IS NOT NULL
       AND LOWER(REGEXP_REPLACE(t.mark_name, '[^a-zA-Z0-9]', '', 'g'))
-          = ma.alias_name_normalized
+          = ma.normalized_name
 LEFT JOIN mol_silver.molecules m_alias
        ON m_alias.molecule_id = ma.molecule_id
 ORDER BY h.trademark_identifier, h.source, h.changed_at, h.source_updated_at DESC NULLS LAST;

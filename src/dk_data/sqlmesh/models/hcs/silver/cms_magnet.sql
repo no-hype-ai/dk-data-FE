@@ -17,7 +17,10 @@ MODEL (
     audits (
         not_null(columns := (facility_name))
     ),
-    grain (facility_name, city, state)
+    grain (facility_name, city, state),
+    pre_statements [
+        SET LOCAL work_mem = '128MB'
+    ]
 );
 
 SELECT DISTINCT ON (b.facility_name, b.city, b.state)
@@ -43,7 +46,6 @@ SELECT DISTINCT ON (b.facility_name, b.city, b.state)
 
     b.source,
     b.ingested_at,
-    b.ingested_at                   AS source_updated_at,
     NOW()                           AS created_at
 
 FROM hcs_bronze.cms_magnet b

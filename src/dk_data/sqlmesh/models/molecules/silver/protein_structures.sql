@@ -18,7 +18,10 @@ MODEL (
         not_null(columns := (pdb_id)),
         unique_values(columns := (pdb_id))
     ),
-    grain pdb_id
+    grain pdb_id,
+    pre_statements [
+        SET LOCAL work_mem = '128MB'
+    ]
 );
 
 -- Deduplicate bronze first: PDB structures may be ingested multiple times
@@ -69,9 +72,9 @@ SELECT
     -- Use subquery to avoid fan-out when multiple molecules map to the same ligand.
     (
         SELECT im.molecule_id
-        FROM mol_silver.identifier_mappings im
-        WHERE im.identifier_type = 'pubchem_cid'
-          AND im.identifier_value = p.ligand_id
+        FROM mol_silver.molecule_identifiers im
+        WHERE im.source = 'pubchem'
+          AND im.identifier = p.ligand_id
         ORDER BY im.confidence DESC NULLS LAST
         LIMIT 1
     )                               AS molecule_id,

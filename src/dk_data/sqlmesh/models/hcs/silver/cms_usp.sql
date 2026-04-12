@@ -8,12 +8,17 @@
 
 MODEL (
     name hcs_silver.cms_usp,
-    kind FULL,
+    kind INCREMENTAL_BY_UNIQUE_KEY (
+        unique_key rxcui
+    ),
     cron '@monthly',
     audits (
         not_null(columns := (rxcui))
     ),
-    grain rxcui
+    grain rxcui,
+    pre_statements [
+        SET LOCAL work_mem = '128MB'
+    ]
 );
 
 SELECT DISTINCT ON (b.rxcui)
@@ -29,7 +34,6 @@ SELECT DISTINCT ON (b.rxcui)
 
     b.source,
     b.ingested_at,
-    b.ingested_at                   AS source_updated_at,
     NOW()                           AS created_at
 
 FROM hcs_bronze.cms_usp b

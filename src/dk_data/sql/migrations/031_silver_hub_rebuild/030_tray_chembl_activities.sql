@@ -1,117 +1,109 @@
 -- Migration 031/030: Tray procedure for mol_bronze.chembl_activities
 -- Feature: 001-silver-medallion-rebuild / T150
+-- Audit fix (2026-04-12): the previous version copied bronze→bronze, which was a no-op.
+-- This version reads from mol_raw.chembl_activities and applies the canonical bronze
+-- JSONB extraction (mirrors src/dk_data/sqlmesh/models/molecules/bronze/chembl_activities.sql).
 --
--- Creates mol_bronze.refresh_chembl_activities_via_tray() which rebuilds the
--- chembl_activities bronze table atomically via an unlogged tray table.
---
--- Pattern:
---   1. CREATE UNLOGGED tray table (LIKE target INCLUDING ALL)
---   2. Chunked COPY/INSERT into tray with meta.transform_runs accounting
---   3. SET TABLE tray LOGGED (WAL-flush before swap)
---   4. DROP non-essential indexes on target (preserves PKs/unique constraints)
---   5. Atomic swap via ALTER TABLE RENAME (target→old, tray→target)
---   6. DROP old table, recreate non-essential indexes
---
--- FR-021: Max chunk size 50K rows / 200 MB WAL. pg_sleep(0.05) between chunks.
+-- Boilerplate (lock, snapshot indexes, create tray, swap, recreate indexes) lives in
+-- mol_bronze._tray_setup() and mol_bronze._tray_finalize() (migration 029_tray_helpers.sql).
 
 CREATE OR REPLACE PROCEDURE mol_bronze.refresh_chembl_activities_via_tray()
 LANGUAGE plpgsql
 AS $$
 DECLARE
-    v_chunk_size    CONSTANT INT     := 50000;
-    v_sleep_ms      CONSTANT NUMERIC := 0.05;
-    v_tray_name     CONSTANT TEXT    := 'chembl_activities_tray';
-    v_target_name   CONSTANT TEXT    := 'chembl_activities';
-    v_old_name      CONSTANT TEXT    := 'chembl_activities_old';
-    v_schema        CONSTANT TEXT    := 'mol_bronze';
-    v_offset        INT              := 0;
-    v_rows_inserted INT              := 0;
-    v_chunk_rows    INT;
-    v_wal_start     pg_lsn;
-    v_wal_end       pg_lsn;
-    v_wal_bytes     BIGINT;
-    v_chunk_pos     INT              := 0;
-    v_run_id        BIGINT;
+    v_chunk_size CONSTANT BIGINT := 5000;
+    v_proc_name  CONSTANT TEXT := 'mol_bronze.refresh_chembl_activities_via_tray';
+    v_max_raw_id BIGINT;
+    v_low_id     BIGINT := 0;
+    v_high_id    BIGINT;
+    v_chunk_pos  INT := 0;
+    v_chunk_rows INT;
+    v_total_rows BIGINT := 0;
+    v_wal_start  pg_lsn;
+    v_wal_end    pg_lsn;
+    v_wal_bytes  BIGINT;
 BEGIN
-    -- ----------------------------------------------------------------
-    -- Step 1: Create unlogged tray table
-    -- ----------------------------------------------------------------
-    EXECUTE format(
-        'DROP TABLE IF EXISTS %I.%I CASCADE',
-        v_schema, v_tray_name
-    );
-    EXECUTE format(
-        'CREATE UNLOGGED TABLE %I.%I (LIKE %I.%I INCLUDING ALL)',
-        v_schema, v_tray_name, v_schema, v_target_name
-    );
+    CALL mol_bronze._tray_setup(v_proc_name, 'mol_bronze', 'chembl_activities', 'chembl_activities_tray');
+    SET LOCAL work_mem = '128MB';
 
-    -- ----------------------------------------------------------------
-    -- Step 2: Chunked INSERT into tray with WAL accounting
-    -- ----------------------------------------------------------------
-    LOOP
+    SELECT COALESCE(MAX(id), 0) INTO v_max_raw_id FROM mol_raw.chembl_activities;
+
+    WHILE v_low_id < v_max_raw_id LOOP
+        v_high_id := v_low_id + v_chunk_size;
         v_wal_start := pg_current_wal_lsn();
         v_chunk_pos := v_chunk_pos + 1;
 
-        EXECUTE format(
-            'INSERT INTO %I.%I
-             SELECT * FROM %I.%I
-             ORDER BY activity_id
-             LIMIT %L OFFSET %L',
-            v_schema, v_tray_name,
-            v_schema, v_target_name,
-            v_chunk_size, v_offset
-        );
+        WITH activities AS (
+            SELECT raw.id AS raw_source_id, raw.ingested_at, act.value AS act
+            FROM mol_raw.chembl_activities AS raw
+            CROSS JOIN LATERAL jsonb_array_elements(
+                COALESCE(raw.response_body->'activities', '[]'::JSONB)
+            ) AS act(value)
+            WHERE raw.id > v_low_id AND raw.id <= v_high_id
+              AND raw.response_status = 200
+        ),
+        deduped AS (
+            SELECT DISTINCT ON (act->>'activity_id')
+                raw_source_id, ingested_at, act
+            FROM activities
+            WHERE act->>'activity_id' IS NOT NULL
+            ORDER BY act->>'activity_id', ingested_at DESC
+        )
+        INSERT INTO mol_bronze.chembl_activities_tray (
+            id, activity_id, chembl_id, canonical_smiles,
+            assay_chembl_id, assay_type, assay_description,
+            target_chembl_id, target_pref_name, target_type, target_organism,
+            activity_type, activity_value, activity_unit, standard_relation, pchembl_value,
+            activity_comment, data_validity_comment, potential_duplicate,
+            document_chembl_id, publication_year,
+            raw_json, raw_source_id, source, ingested_at, source_updated_at,
+            processed_to_silver, created_at
+        )
+        SELECT
+            gen_random_uuid(),
+            act->>'activity_id',
+            act->>'molecule_chembl_id',
+            act->>'canonical_smiles',
+            act->>'assay_chembl_id',
+            act->>'assay_type',
+            act->>'assay_description',
+            act->>'target_chembl_id',
+            act->>'target_pref_name',
+            act->>'target_type',
+            act->>'target_organism',
+            act->>'standard_type',
+            (act->>'standard_value')::NUMERIC,
+            act->>'standard_units',
+            act->>'standard_relation',
+            (act->>'pchembl_value')::NUMERIC,
+            act->>'activity_comment',
+            act->>'data_validity_comment',
+            CASE act->>'potential_duplicate'
+                WHEN 'true' THEN TRUE WHEN '1' THEN TRUE
+                WHEN 'false' THEN FALSE WHEN '0' THEN FALSE
+                ELSE NULL
+            END,
+            act->>'document_chembl_id',
+            (act->>'document_year')::INTEGER,
+            act, raw_source_id, 'chembl', ingested_at, ingested_at, FALSE, NOW()
+        FROM deduped;
 
         GET DIAGNOSTICS v_chunk_rows = ROW_COUNT;
-        EXIT WHEN v_chunk_rows = 0;
+        v_total_rows := v_total_rows + v_chunk_rows;
 
-        v_wal_end   := pg_current_wal_lsn();
+        v_wal_end := pg_current_wal_lsn();
         v_wal_bytes := pg_wal_lsn_diff(v_wal_end, v_wal_start);
 
-        -- Record chunk in meta.transform_runs
-        INSERT INTO meta.transform_runs (
-            procedure_name, chunk_position, rows_processed, wal_bytes, started_at
-        ) VALUES (
-            'mol_bronze.refresh_chembl_activities_via_tray',
-            v_chunk_pos, v_chunk_rows, v_wal_bytes, NOW()
-        ) ON CONFLICT DO NOTHING;
+        INSERT INTO meta.transform_runs (procedure_name, chunk_position, rows_processed, wal_bytes, started_at)
+        VALUES (v_proc_name, v_chunk_pos, v_chunk_rows, v_wal_bytes, NOW());
 
-        v_rows_inserted := v_rows_inserted + v_chunk_rows;
-        v_offset        := v_offset + v_chunk_size;
-
-        PERFORM pg_sleep(v_sleep_ms);
+        v_low_id := v_high_id;
         COMMIT;
-
-        EXIT WHEN v_chunk_rows < v_chunk_size;
+        PERFORM pg_sleep(0.05);
     END LOOP;
 
-    -- ----------------------------------------------------------------
-    -- Step 3: Make tray LOGGED before swap
-    -- ----------------------------------------------------------------
-    EXECUTE format('ALTER TABLE %I.%I SET LOGGED', v_schema, v_tray_name);
-    COMMIT;
+    CALL mol_bronze._tray_finalize(v_proc_name, 'mol_bronze', 'chembl_activities', 'chembl_activities_tray');
 
-    -- ----------------------------------------------------------------
-    -- Step 4: Drop non-essential indexes on target
-    -- (Unique/PK constraints are preserved; lookup/perf indexes dropped)
-    -- NOTE: Once T161 index audit completes, list non-essential indexes here.
-    -- ----------------------------------------------------------------
-    -- Example: DROP INDEX CONCURRENTLY IF EXISTS mol_bronze.idx_chembl_activities_molregno;
-
-    -- ----------------------------------------------------------------
-    -- Step 5: Atomic swap
-    -- ----------------------------------------------------------------
-    EXECUTE format('ALTER TABLE %I.%I RENAME TO %I', v_schema, v_target_name, v_old_name);
-    EXECUTE format('ALTER TABLE %I.%I RENAME TO %I', v_schema, v_tray_name, v_target_name);
-    COMMIT;
-
-    -- ----------------------------------------------------------------
-    -- Step 6: Drop old table and recreate non-essential indexes
-    -- ----------------------------------------------------------------
-    EXECUTE format('DROP TABLE IF EXISTS %I.%I CASCADE', v_schema, v_old_name);
-    -- Example: CREATE INDEX CONCURRENTLY idx_chembl_activities_molregno ON mol_bronze.chembl_activities (molregno);
-    COMMIT;
-
-    RAISE NOTICE 'refresh_chembl_activities_via_tray complete: % rows inserted', v_rows_inserted;
+    RAISE NOTICE 'refresh_chembl_activities_via_tray complete: % rows inserted', v_total_rows;
 END;
 $$;

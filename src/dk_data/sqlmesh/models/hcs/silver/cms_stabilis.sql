@@ -8,12 +8,17 @@
 
 MODEL (
     name hcs_silver.cms_stabilis,
-    kind FULL,
+    kind INCREMENTAL_BY_UNIQUE_KEY (
+        unique_key (drug_a, drug_b)
+    ),
     cron '@monthly',
     audits (
         not_null(columns := (drug_a, drug_b))
     ),
-    grain (drug_a, drug_b)
+    grain (drug_a, drug_b),
+    pre_statements [
+        SET LOCAL work_mem = '128MB'
+    ]
 );
 
 SELECT DISTINCT ON (b.drug_a, b.drug_b)
@@ -32,7 +37,6 @@ SELECT DISTINCT ON (b.drug_a, b.drug_b)
 
     b.source,
     b.ingested_at,
-    b.ingested_at                   AS source_updated_at,
     NOW()                           AS created_at
 
 FROM hcs_bronze.cms_stabilis b

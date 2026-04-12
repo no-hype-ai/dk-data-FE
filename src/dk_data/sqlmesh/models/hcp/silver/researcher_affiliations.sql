@@ -7,7 +7,10 @@ MODEL (
     kind INCREMENTAL_BY_UNIQUE_KEY (
         unique_key (researcher_id, institution_name, affiliation_year_key)
     ),
-    grain (researcher_id, institution_name, affiliation_year_key)
+    grain (researcher_id, institution_name, affiliation_year_key),
+    pre_statements [
+        SET LOCAL work_mem = '128MB'
+    ]
 );
 
 WITH orcid_affiliations AS (

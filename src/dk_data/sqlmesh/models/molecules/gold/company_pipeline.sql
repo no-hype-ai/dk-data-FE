@@ -4,26 +4,38 @@
 
 MODEL (
     name mol_gold.company_pipeline,
-    kind FULL,
-    cron '@daily',
-    grain (company, molecule_id)
+    kind INCREMENTAL_BY_UNIQUE_KEY (
+        unique_key (company, molecule_id)
+    ),
+    cron '@weekly',
+    grain (company, molecule_id),
+    pre_statements [
+        SET LOCAL work_mem = '128MB'
+    ]
 );
 
 SELECT
-    ct.lead_sponsor AS company,
+    ct.lead_sponsor_name AS company,
     m.molecule_id AS molecule_id,
     m.inchi_key,
     m.canonical_name,
-    m.development_status,
+    CASE
+        WHEN m.max_phase >= 4 THEN 'approved'
+        WHEN m.max_phase = 3  THEN 'phase_3'
+        WHEN m.max_phase = 2  THEN 'phase_2'
+        WHEN m.max_phase = 1  THEN 'phase_1'
+        WHEN m.max_phase = 0  THEN 'preclinical'
+        ELSE 'unknown'
+    END                                     AS development_status,
 
     -- Highest phase from trials
     MAX(
         CASE
-            WHEN ct.phase LIKE '%Phase 4%' THEN 'Phase 4'
-            WHEN ct.phase LIKE '%Phase 3%' THEN 'Phase 3'
-            WHEN ct.phase LIKE '%Phase 2%' THEN 'Phase 2'
-            WHEN ct.phase LIKE '%Phase 1%' THEN 'Phase 1'
-            ELSE ct.phase
+            WHEN ct.phase_derived LIKE '%Phase 4%' THEN 'Phase 4'
+            WHEN ct.phase_derived LIKE '%Phase 3%' THEN 'Phase 3'
+            WHEN ct.phase_derived LIKE '%Phase 2%' THEN 'Phase 2'
+            WHEN ct.phase_derived LIKE '%Phase 1%' THEN 'Phase 1'
+            ELSE ct.phase_derived
         END
     ) AS phase,
 
@@ -58,7 +70,7 @@ SELECT
             SELECT jsonb_array_elements_text(COALESCE(ct2.conditions, '[]'::jsonb)) AS indication
             FROM mol_silver.clinical_trials ct2
             WHERE ct2.molecule_id = m.molecule_id
-              AND ct2.lead_sponsor = ct.lead_sponsor
+              AND ct2.lead_sponsor_name = ct.lead_sponsor_name
         ) i
         WHERE indication IS NOT NULL
     ) AS indications,
@@ -69,7 +81,7 @@ SELECT
     MIN(ct.start_date) AS earliest_trial_start,
 
     -- Enrollment totals
-    SUM(ct.enrollment) AS total_enrollment,
+    SUM(ct.enrollment_count) AS total_enrollment,
 
     -- Intervention types from ClinicalTrials.gov (e.g. "DRUG", "BIOLOGICAL", "DEVICE").
     -- Not mechanism of action — CT.gov does not expose MoA; renamed to avoid confusion.
@@ -78,7 +90,7 @@ SELECT
         FROM mol_silver.clinical_trials ct2,
              jsonb_array_elements(ct2.interventions) AS intervention
         WHERE ct2.molecule_id = m.molecule_id
-          AND ct2.lead_sponsor = ct.lead_sponsor
+          AND ct2.lead_sponsor_name = ct.lead_sponsor_name
           AND intervention->>'type' IS NOT NULL
     ) AS intervention_types,
 
@@ -89,8 +101,15 @@ SELECT
 
 FROM mol_silver.clinical_trials ct
 JOIN mol_silver.molecules m ON ct.molecule_id = m.molecule_id
-WHERE m.needs_review = FALSE
-  AND ct.lead_sponsor IS NOT NULL
-  AND ct.lead_sponsor != ''
-GROUP BY ct.lead_sponsor, m.molecule_id, m.inchi_key, m.canonical_name, m.development_status
-ORDER BY ct.lead_sponsor, trial_count DESC
+WHERE TRUE
+  AND ct.lead_sponsor_name IS NOT NULL
+  AND ct.lead_sponsor_name != ''
+GROUP BY ct.lead_sponsor_name, m.molecule_id, m.inchi_key, m.canonical_name, CASE
+        WHEN m.max_phase >= 4 THEN 'approved'
+        WHEN m.max_phase = 3  THEN 'phase_3'
+        WHEN m.max_phase = 2  THEN 'phase_2'
+        WHEN m.max_phase = 1  THEN 'phase_1'
+        WHEN m.max_phase = 0  THEN 'preclinical'
+        ELSE 'unknown'
+    END
+ORDER BY ct.lead_sponsor_name, trial_count DESC

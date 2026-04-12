@@ -25,9 +25,16 @@ SELECT
     r.fiscal_year_begin::DATE AS fiscal_year_begin,
     r.fiscal_year_end::DATE AS fiscal_year_end,
 
-    -- Capacity metrics (INTEGER)
-    r.total_beds::INTEGER AS bed_count,
-    r.total_discharges::INTEGER AS total_discharges,
+    -- Hospital identification (raw column names retained verbatim per FR-001)
+    r.hospital_name::TEXT                                                  AS hospital_name,
+    r.city::TEXT                                                           AS city,
+    r.state::TEXT                                                          AS state,
+    r.zip_code::TEXT                                                       AS zip_code,
+
+    -- Capacity metrics
+    r.total_beds::INTEGER                                                  AS total_beds,
+    r.total_beds::INTEGER                                                  AS bed_count,
+    r.total_discharges::INTEGER                                            AS total_discharges,
 
     -- Financial metrics (NUMERIC — raw table uses DECIMAL(15,2))
     r.net_patient_revenue::NUMERIC AS net_patient_revenue,

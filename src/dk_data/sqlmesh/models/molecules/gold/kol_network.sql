@@ -4,12 +4,17 @@
 
 MODEL (
     name mol_gold.kol_network,
-    kind FULL,
+    kind INCREMENTAL_BY_UNIQUE_KEY (
+        unique_key (source_researcher_id, target_researcher_id)
+    ),
     cron '@weekly',
     audits (
         not_null(columns := (source_researcher_id, target_researcher_id))
     ),
-    grain (source_researcher_id, target_researcher_id)
+    grain (source_researcher_id, target_researcher_id),
+    pre_statements [
+        SET LOCAL work_mem = '128MB'
+    ]
 );
 
 -- Build co-authorship edges by self-joining publications on shared DOIs

@@ -11,7 +11,10 @@ MODEL (
     audits (
         not_null(columns := (npi, source))
     ),
-    grain npi
+    grain npi,
+    pre_statements [
+        SET LOCAL work_mem = '128MB'
+    ]
 );
 
 SELECT DISTINCT ON (b.npi)
@@ -27,20 +30,19 @@ SELECT DISTINCT ON (b.npi)
     -- entity_type_code: '1' = individual, '2' = organization
     COALESCE(n.provider_organization_name,
              n.provider_last_name || ', ' || n.provider_first_name) AS provider_name,
-    n.entity_type_code                                              AS provider_type,
-    n.provider_credential_text                                      AS provider_credentials,
-    n.provider_business_practice_location_address_city_name        AS city,
-    n.provider_business_practice_location_address_state_name       AS state,
-    n.provider_business_practice_location_address_postal_code      AS zip_code,
-    n.provider_business_practice_location_address_telephone_number AS phone,
-    n.healthcare_provider_taxonomy_code_1                          AS taxonomy_code_1,
-    n.healthcare_provider_taxonomy_code_2                          AS taxonomy_code_2,
+    n.entity_type_code,
+    n.provider_credential_text,
+    n.provider_business_practice_location_address_city_name,
+    n.provider_business_practice_location_address_state_name,
+    n.provider_business_practice_location_address_postal_code,
+    n.provider_business_practice_location_address_telephone_number,
+    n.healthcare_provider_taxonomy_code_1,
+    n.healthcare_provider_taxonomy_code_2,
     n.npi_deactivation_date,
     n.npi_reactivation_date,
 
     b.source,
     b.ingested_at,
-    b.ingested_at                   AS source_updated_at,
     NOW()                           AS created_at
 
 FROM hcs_bronze.cms_dmepos b

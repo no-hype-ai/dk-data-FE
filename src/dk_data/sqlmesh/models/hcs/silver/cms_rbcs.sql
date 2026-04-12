@@ -12,7 +12,10 @@ MODEL (
     audits (
         not_null(columns := (hcpcs_code))
     ),
-    grain hcpcs_code
+    grain hcpcs_code,
+    pre_statements [
+        SET LOCAL work_mem = '128MB'
+    ]
 );
 
 SELECT DISTINCT ON (b.hcpcs_code)
@@ -25,7 +28,6 @@ SELECT DISTINCT ON (b.hcpcs_code)
 
     b.source,
     b.ingested_at,
-    b.ingested_at                   AS source_updated_at,
     NOW()                           AS created_at
 
 FROM hcs_bronze.cms_rbcs b

@@ -13,7 +13,10 @@ MODEL (
     audits (
         not_null(columns := (inn_name)),
         unique_values(columns := (inn_name))
-    )
+    ),
+    pre_statements [
+        SET LOCAL work_mem = '128MB'
+    ]
 );
 
 -- Direct INN entry format: response_body has inn_name, cas_number, inn_stem, research_codes, etc.

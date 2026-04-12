@@ -11,7 +11,10 @@ MODEL (
     cron '@daily',
     audits (
         not_null(columns := (result_url, search_query))
-    )
+    ),
+    pre_statements [
+        SET LOCAL work_mem = '128MB'
+    ]
 );
 
 SELECT DISTINCT ON (b.search_query, b.result_url)
@@ -40,11 +43,11 @@ LEFT JOIN mol_silver.molecules m_exact
        ON b.search_query IS NOT NULL
       AND LOWER(m_exact.canonical_name) = LOWER(SPLIT_PART(b.search_query, ' ', 1))
 -- Fallback: alias match on first word of query (drug name often first token)
-LEFT JOIN mol_silver.molecule_aliases ma
+LEFT JOIN mol_silver.molecule_names ma
        ON m_exact.molecule_id IS NULL
       AND b.search_query IS NOT NULL
       AND LOWER(REGEXP_REPLACE(SPLIT_PART(b.search_query, ' ', 1), '[^a-zA-Z0-9]', '', 'g'))
-          = ma.alias_name_normalized
+          = ma.normalized_name
 LEFT JOIN mol_silver.molecules m_alias
        ON m_alias.molecule_id = ma.molecule_id
 WHERE b.result_url IS NOT NULL

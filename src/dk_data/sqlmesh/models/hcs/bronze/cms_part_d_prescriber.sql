@@ -18,7 +18,10 @@ MODEL (
     audits (
         not_null(columns := (_source_year))
     ),
-    grain (prscrbr_npi, gnrc_name, _source_year)
+    grain (prscrbr_npi, gnrc_name, _source_year),
+    pre_statements [
+        SET LOCAL work_mem = '128MB'
+    ]
 );
 
 SELECT

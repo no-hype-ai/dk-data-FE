@@ -8,28 +8,32 @@
 
 MODEL (
     name mol_silver.orange_book,
-    kind FULL,
+    kind INCREMENTAL_BY_UNIQUE_KEY (
+        unique_key (application_number, product_number)
+    ),
     cron '@monthly',
     audits (
         not_null(columns := (application_number))
     ),
-    grain (application_number, product_number)
+    grain (application_number, product_number),
+    pre_statements [
+        SET LOCAL work_mem = '128MB'
+    ]
 );
 
 SELECT DISTINCT ON (b.application_number, b.product_number)
     b.application_number,
     b.product_number,
-    b.ingredient                        AS active_ingredient,
+    b.ingredient,
     b.trade_name,
     b.applicant,
-    b.applicant                         AS applicant_full_name,
     b.strength,
     b.df_route,
     b.approval_date,
     b.te_code,
     b.rld,
     b.rs,
-    b.drug_type                         AS product_type,
+    b.drug_type,
 
     -- Patent info
     b.patent_number,
@@ -46,7 +50,7 @@ SELECT DISTINCT ON (b.application_number, b.product_number)
     m.molecule_id,
     b.source,
     b.source_updated_at,
-    b.ingested_at                       AS _ingested_at,
+    b.ingested_at,
     CURRENT_TIMESTAMP                   AS _silver_updated_at
 FROM mol_bronze.orange_book AS b
 LEFT JOIN mol_silver.molecules AS m

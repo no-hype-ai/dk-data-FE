@@ -83,7 +83,7 @@ BEGIN
           AND (p_institution IS NULL OR
                similarity(LOWER(COALESCE(r.primary_affiliation_institution, '')),
                           LOWER(TRIM(p_institution))) >= 0.75)
-        ORDER BY similarity(LOWER(rn.normalized_name), LOWER(TRIM(p_full_name))) DESC
+        ORDER BY similarity(LOWER(rn.normalized_name), LOWER(TRIM(p_full_name))) DESC, rn.researcher_id ASC
         LIMIT 1;
         IF FOUND THEN RETURN v_id; END IF;
     END IF;

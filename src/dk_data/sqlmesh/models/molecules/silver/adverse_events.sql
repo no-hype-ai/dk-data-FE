@@ -30,8 +30,15 @@ MODEL (
     ),
     grain (molecule_id, meddra_pt, source),
     -- T172: Large FAERS/SIDER table with jsonb_array_elements + ORDER BY — set work_mem to avoid disk sort spills
+    -- T6: staleness check — refuse to run if any upstream bronze is older than max age
     pre_statements [
-        SET LOCAL work_mem = '128MB'
+        SET LOCAL work_mem = '128MB',
+        """DO $$ BEGIN
+            IF (SELECT COALESCE(MAX(ingested_at), '1900-01-01'::timestamptz) FROM mol_bronze.faers_events)
+               < NOW() - interval '24 hours' THEN
+                RAISE EXCEPTION 'mol_bronze.faers_events is stale (oldest tolerated: 24 hours)';
+            END IF;
+        END $$;"""
     ]
 );
 
@@ -158,7 +165,7 @@ faers_aggregated AS (
 -- ============================================================================
 -- SIDER (package insert) side effects
 -- Linkage: STITCH pubchem_cid → mol_silver.molecule_identifiers (source='pubchem')
--- Replaces prior join via mol_silver.identifier_mappings (legacy EAV table).
+-- Replaces prior join via mol_silver.molecule_identifiers (legacy EAV table).
 -- ============================================================================
 sider_linked AS (
     SELECT DISTINCT ON (s.stitch_id_flat, s.umls_cui_side_effect, mi.molecule_id)

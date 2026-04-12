@@ -68,7 +68,7 @@ BEGIN
           AND (p_nice_classes IS NULL OR
                (SELECT ARRAY(SELECT unnest(tm.nice_classes) ORDER BY 1)) =
                (SELECT ARRAY(SELECT unnest(p_nice_classes) ORDER BY 1)))
-        ORDER BY similarity(LOWER(tn.normalized_name), LOWER(TRIM(p_mark_text))) DESC
+        ORDER BY similarity(LOWER(tn.normalized_name), LOWER(TRIM(p_mark_text))) DESC, tn.trademark_id ASC
         LIMIT 1;
         IF FOUND THEN RETURN v_id; END IF;
     END IF;

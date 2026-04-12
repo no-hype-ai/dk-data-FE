@@ -21,7 +21,10 @@ MODEL (
     audits (
         not_null(columns := (application_number))
     ),
-    grain application_number
+    grain application_number,
+    pre_statements [
+        SET LOCAL work_mem = '128MB'
+    ]
 );
 
 WITH rems_apps AS (

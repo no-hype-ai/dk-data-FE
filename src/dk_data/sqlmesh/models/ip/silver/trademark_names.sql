@@ -5,7 +5,10 @@ MODEL (
     kind INCREMENTAL_BY_UNIQUE_KEY (
         unique_key (normalized_name, trademark_id, source)
     ),
-    grain (normalized_name, trademark_id, source)
+    grain (normalized_name, trademark_id, source),
+    pre_statements [
+        SET LOCAL work_mem = '128MB'
+    ]
 );
 
 WITH uspto_marks AS (

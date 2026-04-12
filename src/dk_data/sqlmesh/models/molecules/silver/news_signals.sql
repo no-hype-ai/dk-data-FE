@@ -22,7 +22,10 @@ MODEL (
     audits (
         not_null(columns := (title, pub_date))
     ),
-    grain (source_url, pub_date)
+    grain (source_url, pub_date),
+    pre_statements [
+        SET LOCAL work_mem = '128MB'
+    ]
 );
 
 -- Deduplicate across both sources before MERGE to prevent CardinalityViolation.

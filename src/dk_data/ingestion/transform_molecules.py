@@ -55,16 +55,16 @@ LAYER_MODELS = {
     # molecule_aliases and identifier_mappings are added here because they are
     # foundation tables for all subsequent HCS silver cross-domain joins:
     #   hcs_silver.part_d_prescribing, drug_utilization, open_payments_drug_linkage
-    #   all JOIN mol_silver.molecule_aliases to resolve drug names → molecule_ids.
+    #   all JOIN mol_silver.molecule_names to resolve drug names → molecule_ids.
     'silver': [
         'mol_silver.molecules_from_bronze',   # entity hub — must be first
         'mol_silver.targets',                  # protein targets (no mol dep)
         'mol_silver.drug_labels',              # needs molecules
         'mol_silver.clinical_trials',          # needs molecules
         'mol_silver.adverse_events',           # needs molecules + identifier_mappings
-        'mol_silver.molecule_aliases',         # needs molecules+drug_labels+clinical_trials
+        'mol_silver.molecule_names',         # needs molecules+drug_labels+clinical_trials
                                                # critical: HCS silver joins this for drug name resolution
-        'mol_silver.identifier_mappings',      # needs molecules+targets+drug_labels
+        'mol_silver.molecule_identifiers',      # needs molecules+targets+drug_labels
                                                # critical: adverse_events, binding lookups join this
     ],
     'gold': [
@@ -108,8 +108,8 @@ LAYER_MODELS = {
     ],
     # ip_silver runs AFTER both silver AND ip_bronze finish.
     # hcpcs_molecule_bridge reads hcs_bronze.cms_dme_puf/lab_services/imaging_puf (ip_bronze)
-    # AND mol_silver.molecule_aliases (silver) — it bridges both domains.
-    # ndc_molecule_bridge and rxnorm_concepts also need mol_silver.molecule_aliases.
+    # AND mol_silver.molecule_names (silver) — it bridges both domains.
+    # ndc_molecule_bridge and rxnorm_concepts also need mol_silver.molecule_names.
     'ip_silver': [
         'ip_silver.patents',
         'ip_silver.trademarks',
@@ -121,7 +121,7 @@ LAYER_MODELS = {
         'mol_silver.news_signals',
         'mol_silver.healthcare_facilities',
         'mol_silver.icd_codes',
-        # Cross-domain bridge tables (need mol_silver.molecule_aliases from silver layer):
+        # Cross-domain bridge tables (need mol_silver.molecule_names from silver layer):
         'mol_silver.ndc_molecule_bridge',      # NDC → molecule_id (used by hcs_silver.open_payments)
         'mol_silver.rxnorm_concepts',           # RxNorm CUIs → molecule_id
         'mol_silver.hcpcs_molecule_bridge',     # HCPCS codes → molecule_id (needs hcs_bronze + molecule_aliases)
@@ -280,7 +280,7 @@ LAYER_MODELS = {
     ],
     # mol_silver_ext — 44 mol_silver models not covered by silver/ip_silver layers.
     # Runs at 11:00 UTC — after mol_silver (08:00), mol_bronze_ext (07:00), ip_silver (10:30).
-    # Many depend on mol_silver.molecules (in this layer), mol_silver.molecule_aliases (silver),
+    # Many depend on mol_silver.molecules (in this layer), mol_silver.molecule_names (silver),
     # and mol_bronze_ext models (drugbank, pubchem, pharmgkb, etc.).
     # SQLMesh resolves intra-layer deps automatically.
     'mol_silver_ext': [
@@ -339,7 +339,7 @@ LAYER_MODELS = {
     ],
     # HCS silver — 9 of 10 hcs_silver.* models (019-cms-puf-platform-reconciliation).
     # Runs at 09:00 UTC — after hcs_bronze (07:00) AND mol_silver (08:00) complete.
-    # Requires mol_silver.molecule_aliases for drug name resolution joins.
+    # Requires mol_silver.molecule_names for drug name resolution joins.
     # NOTE: open_payments_drug_linkage is in ip_silver (10:30), not here,
     #       because it depends on mol_silver.ndc_molecule_bridge which ip_silver builds.
     'hcs_silver': [
@@ -350,8 +350,8 @@ LAYER_MODELS = {
         'hcs_silver.facility_profile',            # hcs_bronze only
         'hcs_silver.provider_profile',            # hcs_bronze only
         'hcs_silver.cms_drug_market',             # hcs_bronze (part_d/part_b)
-        'hcs_silver.drug_utilization',            # hcs_bronze + mol_silver.molecule_aliases
-        'hcs_silver.part_d_prescribing',          # hcs_bronze + mol_silver.molecule_aliases
+        'hcs_silver.drug_utilization',            # hcs_bronze + mol_silver.molecule_names
+        'hcs_silver.part_d_prescribing',          # hcs_bronze + mol_silver.molecule_names
     ],
 }
 

@@ -782,7 +782,7 @@ class DynamicSourceTransformer:
             entity_linking = options.get('entity_linking', {})
             # User-specified identifier from WebUI Phase 3
             user_identifier_field = entity_linking.get('identifier_field')
-            user_identifier_type = entity_linking.get('identifier_type')
+            user_identifier_type = entity_linking.get('source')
             has_specific_linking = bool(user_identifier_field and user_identifier_type)
 
             # Smart linking: auto-detect additional identifiers (enabled by default)
@@ -993,8 +993,8 @@ class DynamicSourceTransformer:
         and build a unified cache for multi-identifier resolution.
 
         Returns:
-            - cache: Dict mapping (identifier_type, value) -> molecule_id
-            - detected_fields: List of (identifier_type, field_name) tuples found
+            - cache: Dict mapping (source, value) -> molecule_id
+            - detected_fields: List of (source, field_name) tuples found
         """
         # Get column names from schema
         column_names = {c['name'].lower() for c in columns}
@@ -1042,14 +1042,14 @@ class DynamicSourceTransformer:
                     lookup_type = 'smiles'  # Stored as 'smiles' in identifier_mappings
 
                 rows = await conn.fetch("""
-                    SELECT identifier_value, molecule_id::text
-                    FROM mol_silver.identifier_mappings
-                    WHERE identifier_type = $1
-                    AND identifier_value = ANY($2)
+                    SELECT identifier, molecule_id::text
+                    FROM mol_silver.molecule_identifiers
+                    WHERE source = $1
+                    AND identifier = ANY($2)
                 """, lookup_type, list(values))
 
                 for row in rows:
-                    cache[(id_type, row['identifier_value'])] = row['molecule_id']
+                    cache[(id_type, row['identifier'])] = row['molecule_id']
 
                 logger.debug(f"Loaded {len(rows)} mappings for {id_type}")
             except Exception as e:
@@ -1117,10 +1117,10 @@ class DynamicSourceTransformer:
 
         Returns a dict mapping identifier values to molecule_id (UUID string).
         """
-        identifier_type = entity_linking.get('identifier_type', '').lower()
+        source = entity_linking.get('source', '').lower()
         identifier_field = entity_linking.get('identifier_field', '')
 
-        # Map user-facing identifier types to database identifier_type values
+        # Map user-facing identifier types to database source values
         # The identifier_mappings table uses underscore versions
         db_identifier_type_map = {
             'inchikey': 'inchi_key',
@@ -1145,11 +1145,11 @@ class DynamicSourceTransformer:
             'unii': None,
         }
 
-        db_identifier_type = db_identifier_type_map.get(identifier_type)
-        lookup_column = molecule_column_map.get(identifier_type)
+        db_identifier_type = db_identifier_type_map.get(source)
+        lookup_column = molecule_column_map.get(source)
 
         if not db_identifier_type:
-            logger.warning(f"Unknown identifier type: {identifier_type}")
+            logger.warning(f"Unknown identifier type: {source}")
             return {}
 
         # Extract unique identifiers from records
@@ -1167,14 +1167,14 @@ class DynamicSourceTransformer:
         # Look up in identifier_mappings table (primary lookup)
         try:
             rows = await conn.fetch("""
-                SELECT identifier_value, molecule_id::text
-                FROM mol_silver.identifier_mappings
-                WHERE identifier_type = $1
-                AND identifier_value = ANY($2)
+                SELECT identifier, molecule_id::text
+                FROM mol_silver.molecule_identifiers
+                WHERE source = $1
+                AND identifier = ANY($2)
             """, db_identifier_type, list(identifiers))
 
             for row in rows:
-                cache[row['identifier_value']] = row['molecule_id']
+                cache[row['identifier']] = row['molecule_id']
 
             logger.info(f"Loaded {len(cache)} identifier mappings for {db_identifier_type}")
         except Exception as e:
@@ -1199,7 +1199,7 @@ class DynamicSourceTransformer:
                 logger.warning(f"molecules table lookup failed: {e2}")
 
         # Also try drug_name_lookup for name-based matching
-        if identifier_type == 'drug_name' and identifiers:
+        if source == 'drug_name' and identifiers:
             try:
                 remaining = [i for i in identifiers if i not in cache and i.lower() not in cache]
                 if remaining:
@@ -1256,7 +1256,7 @@ class DynamicSourceTransformer:
                 return identifier_cache[primary_value]
 
             # For drug names, also try lowercase
-            if entity_linking.get('identifier_type') == 'drug_name':
+            if entity_linking.get('source') == 'drug_name':
                 if primary_value.lower() in identifier_cache:
                     return identifier_cache[primary_value.lower()]
 
@@ -1313,10 +1313,10 @@ class DynamicSourceTransformer:
                 # Use COPY for efficiency or batch insert
                 for val, mol_id in new_mappings:
                     await conn.execute("""
-                        INSERT INTO mol_silver.identifier_mappings
-                        (id, molecule_id, identifier_type, identifier_value, source, confidence, is_primary, created_at, updated_at)
+                        INSERT INTO mol_silver.molecule_identifiers
+                        (id, molecule_id, source, identifier, source, confidence, is_primary, created_at, updated_at)
                         VALUES (gen_random_uuid(), $1::uuid, $2, $3, $4, 0.8, false, NOW(), NOW())
-                        ON CONFLICT (molecule_id, identifier_type, identifier_value) DO NOTHING
+                        ON CONFLICT (molecule_id, source, identifier) DO NOTHING
                     """, mol_id, db_type, val, source)
 
                 added_count += len(new_mappings)
@@ -1774,7 +1774,7 @@ class DynamicSourceTransformer:
             options = config['options']
             entity_linking = options.get('entity_linking', {})
 
-            if not entity_linking.get('identifier_field') or not entity_linking.get('identifier_type'):
+            if not entity_linking.get('identifier_field') or not entity_linking.get('source'):
                 result.errors.append(f"Entity linking not configured for {source}")
                 return result
 

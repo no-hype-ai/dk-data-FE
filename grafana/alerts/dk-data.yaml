@@ -837,3 +837,292 @@ groups:
         annotations:
           summary: "Pod {{ $labels.pod }} memory usage >80%"
           description: "Pod {{ $labels.pod }} is using more than 80% of its memory limit."
+
+  # ─── dk-data Postgres performance budgets (Section 10.5 of low-tech-solutions doc) ──
+  # These alerts consume the meta.* monitoring tables populated by application code
+  # (db_timing.py) and the wal-status-snapshot / activity-log-snapshot CronJobs.
+  # They enforce the self-imposed budgets in Section 9 of the doc and would have
+  # caught the 2026-04-10 chembl_activities incident before it crashed the cluster.
+  - orgId: 1
+    name: dk-data-postgres-budgets
+    folder: Alerts
+    interval: 1m
+    rules:
+      - uid: dk-data-slow-query
+        title: "dk-data slow query (>10s)"
+        condition: C
+        noDataState: NoData
+        execErrState: Alerting
+        data:
+          - refId: A
+            relativeTimeRange:
+              from: 600
+              to: 0
+            datasourceUid: loki
+            model:
+              # Application-side timing helper logs every query >threshold to meta.slow_query_log
+              # AND emits a structured log line "slow_query label=... elapsed_ms=...".
+              # Alert when ANY query exceeds 10000 ms (10s) in the last 10 min.
+              expr: >
+                count_over_time({product="dk-data"} |~ "slow_query" |~ "elapsed_ms=([0-9]{5,})" [10m]) > 0
+              intervalMs: 1000
+              maxDataPoints: 43200
+          - refId: B
+            relativeTimeRange:
+              from: 600
+              to: 0
+            datasourceUid: __expr__
+            model:
+              expression: A
+              type: reduce
+              reducer: last
+          - refId: C
+            relativeTimeRange:
+              from: 600
+              to: 0
+            datasourceUid: __expr__
+            model:
+              conditions:
+                - evaluator:
+                    params: [0]
+                    type: gt
+              expression: B
+              type: threshold
+        for: 5m
+        labels:
+          team: data-platform
+          product: dk-data
+          severity: warning
+        annotations:
+          summary: "dk-data query exceeded 10s budget"
+          description: |
+            One or more dk-data SQL queries took longer than 10 seconds in the last 10 minutes.
+            Self-imposed budget per `transformation-reliability-low-tech-solutions.md` Section 9
+            is "statement runtime < 5 minutes" (this alert fires at the 10s warning level).
+            Inspect meta.slow_query_log for label, pod_name, and exact elapsed_ms.
+
+      - uid: dk-data-wal-explosion
+        title: "dk-data CronJob produced >5GB WAL"
+        condition: C
+        noDataState: NoData
+        execErrState: Alerting
+        data:
+          - refId: A
+            relativeTimeRange:
+              from: 3600
+              to: 0
+            datasourceUid: loki
+            model:
+              # The bootstrap procedures and chunked tray procedures write per-chunk WAL bytes
+              # to meta.transform_runs. Application-side fetcher loaders also push to
+              # meta.wal_usage. Either path emits a log line on completion that includes
+              # wal_mb=<n>. Alert when any single job's wal_mb exceeds 5000 (5 GB).
+              expr: >
+                count_over_time({product="dk-data"} |~ "wal_mb=([5-9][0-9]{3,}|[1-9][0-9]{4,})" [1h]) > 0
+              intervalMs: 1000
+              maxDataPoints: 43200
+          - refId: B
+            relativeTimeRange:
+              from: 3600
+              to: 0
+            datasourceUid: __expr__
+            model:
+              expression: A
+              type: reduce
+              reducer: last
+          - refId: C
+            relativeTimeRange:
+              from: 3600
+              to: 0
+            datasourceUid: __expr__
+            model:
+              conditions:
+                - evaluator:
+                    params: [0]
+                    type: gt
+              expression: B
+              type: threshold
+        for: 1m
+        labels:
+          team: data-platform
+          product: dk-data
+          severity: critical
+        annotations:
+          summary: "dk-data WAL explosion: a single job produced >5GB WAL"
+          description: |
+            A dk-data job produced more than 5 GB of WAL in the last hour. The cluster's
+            max_wal_size is 4 GB (single-node CNPG, see SC 9 in
+            transformation-reliability-low-tech-solutions.md). Anything >5 GB risks the
+            checkpoint storm that caused the 2026-04-10 incident. Inspect
+            meta.transform_runs and meta.wal_usage for the offending procedure_name / job_name.
+
+      - uid: dk-data-long-transaction
+        title: "dk-data transaction running >1 hour"
+        condition: C
+        noDataState: NoData
+        execErrState: Alerting
+        data:
+          - refId: A
+            relativeTimeRange:
+              from: 600
+              to: 0
+            datasourceUid: loki
+            model:
+              # cronjob-activity-log-snapshot.yaml runs every 60s and writes pg_stat_activity
+              # rows with query_age_seconds to meta.activity_log AND emits a log line for any
+              # transaction older than 1 hour. The xact_age_seconds field is parsed from the log.
+              expr: >
+                count_over_time({product="dk-data"} |~ "long_transaction.*xact_age_seconds=([4-9][0-9]{3}|[1-9][0-9]{4,})" [10m]) > 0
+              intervalMs: 1000
+              maxDataPoints: 43200
+          - refId: B
+            relativeTimeRange:
+              from: 600
+              to: 0
+            datasourceUid: __expr__
+            model:
+              expression: A
+              type: reduce
+              reducer: last
+          - refId: C
+            relativeTimeRange:
+              from: 600
+              to: 0
+            datasourceUid: __expr__
+            model:
+              conditions:
+                - evaluator:
+                    params: [0]
+                    type: gt
+              expression: B
+              type: threshold
+        for: 5m
+        labels:
+          team: data-platform
+          product: dk-data
+          severity: warning
+        annotations:
+          summary: "dk-data transaction has been running for over 1 hour"
+          description: |
+            A dk-data transaction (visible in pg_stat_activity) has been running for over 1
+            hour. Self-imposed budget per the low-tech-solutions doc Section 9 is
+            "connection holding time < 30 minutes". Long transactions hold a snapshot,
+            block VACUUM, and pin WAL on disk. Identify the offender via meta.activity_log
+            (snapshotted every 60s by cronjob-activity-log-snapshot.yaml) and either let it
+            finish or terminate via pg_terminate_backend(pid).
+
+      - uid: dk-data-backfill-stuck
+        title: "dk-data backfill source stuck (3+ consecutive failures)"
+        condition: C
+        noDataState: NoData
+        execErrState: Alerting
+        data:
+          - refId: A
+            relativeTimeRange:
+              from: 3600
+              to: 0
+            datasourceUid: loki
+            model:
+              # The orchestrator (cronjob-backfill-orchestrator.yaml) logs
+              # "FAIL source=<x> exit=<n>" on each failed chunk. Three consecutive
+              # failures move the source to status='failed' in meta.backfill_state
+              # and the orchestrator stops picking it. Alert when 3+ FAIL events
+              # appear within 1 hour.
+              expr: >
+                count_over_time({product="dk-data", app="backfill-orchestrator"} |~ "FAIL source=" [1h]) >= 3
+              intervalMs: 1000
+              maxDataPoints: 43200
+          - refId: B
+            relativeTimeRange:
+              from: 3600
+              to: 0
+            datasourceUid: __expr__
+            model:
+              expression: A
+              type: reduce
+              reducer: last
+          - refId: C
+            relativeTimeRange:
+              from: 3600
+              to: 0
+            datasourceUid: __expr__
+            model:
+              conditions:
+                - evaluator:
+                    params: [0]
+                    type: gt
+              expression: B
+              type: threshold
+        for: 10m
+        labels:
+          team: data-platform
+          product: dk-data
+          severity: warning
+        annotations:
+          summary: "dk-data backfill source has failed 3+ times in the last hour"
+          description: |
+            The backfill orchestrator has logged 3+ FAIL events in the last hour.
+            The source has been moved to status='failed' and the orchestrator skips
+            it on future ticks. Inspect:
+              SELECT source_name, last_failure_reason, consecutive_failures
+              FROM meta.backfill_progress WHERE status = 'failed';
+            Fix the underlying issue, then re-enable:
+              UPDATE meta.backfill_state SET status='active', consecutive_failures=0
+              WHERE source_name='<source>';
+
+      - uid: dk-data-activity-pile-up
+        title: "dk-data >50 active queries simultaneously"
+        condition: C
+        noDataState: NoData
+        execErrState: Alerting
+        data:
+          - refId: A
+            relativeTimeRange:
+              from: 300
+              to: 0
+            datasourceUid: loki
+            model:
+              # cronjob-activity-log-snapshot.yaml emits a snapshot summary line:
+              #   "pg_stat_activity_summary dk_data_active_count=<N>"
+              # Alert when N exceeds 50 (we get ~100 connections out of max_connections=200,
+              # but only ~50 should be actively executing — the rest should be idle).
+              expr: >
+                count_over_time({product="dk-data"} |~ "pg_stat_activity_summary.*dk_data_active_count=([5-9][0-9]|[1-9][0-9]{2,})" [5m]) > 0
+              intervalMs: 1000
+              maxDataPoints: 43200
+          - refId: B
+            relativeTimeRange:
+              from: 300
+              to: 0
+            datasourceUid: __expr__
+            model:
+              expression: A
+              type: reduce
+              reducer: last
+          - refId: C
+            relativeTimeRange:
+              from: 300
+              to: 0
+            datasourceUid: __expr__
+            model:
+              conditions:
+                - evaluator:
+                    params: [0]
+                    type: gt
+              expression: B
+              type: threshold
+        for: 5m
+        labels:
+          team: data-platform
+          product: dk-data
+          severity: warning
+        annotations:
+          summary: "dk-data has more than 50 active queries simultaneously"
+          description: |
+            More than 50 dk-data queries are simultaneously executing in pg_stat_activity.
+            Self-imposed concurrency budget per Section 9 of the low-tech-solutions doc is
+            "concurrent dk-data fetchers < 10, transforms < 3". A pile-up of 50+ active
+            queries indicates either: (a) a fetcher stampede that bypassed the staggered
+            schedule, (b) PgBouncer pool exhaustion forcing the server pool to fan out, or
+            (c) a wave of long-running queries blocking each other on locks. Investigate
+            meta.activity_log immediately.

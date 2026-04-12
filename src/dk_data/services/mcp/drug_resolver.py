@@ -4,7 +4,7 @@ Feature: 019-cms-puf-platform-reconciliation
 
 Resolves a raw drug name query into canonical name, brand names, synonyms,
 manufacturers, and SEC company names by querying:
-  1. Local DB (mol_silver.molecules + mol_silver.molecule_aliases)
+  1. Local DB (mol_silver.molecules + mol_silver.molecule_names)
   2. FDA OpenFDA drug labels API
   3. ChEMBL molecule API
   4. PubChem compound API
@@ -162,7 +162,7 @@ class DrugResolver:
     """Resolve a drug name to its canonical form and all known aliases.
 
     Resolution chain (first success wins):
-      1. Local DB — mol_silver.molecules / mol_silver.molecule_aliases
+      1. Local DB — mol_silver.molecules / mol_silver.molecule_names
       2. FDA OpenFDA drug/label API
       3. ChEMBL molecule API
       4. PubChem compound API
@@ -285,8 +285,8 @@ class DrugResolver:
                 alias_row = await conn.fetchrow(
                     """
                     SELECT ma.molecule_id
-                    FROM mol_silver.molecule_aliases ma
-                    WHERE ma.alias_name_normalized = $1
+                    FROM mol_silver.molecule_names ma
+                    WHERE ma.normalized_name = $1
                     LIMIT 1
                     """,
                     normalized,

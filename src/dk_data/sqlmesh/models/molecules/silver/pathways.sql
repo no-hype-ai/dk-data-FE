@@ -5,11 +5,17 @@
 
 MODEL (
     name mol_silver.pathways,
-    kind FULL,
+    kind INCREMENTAL_BY_UNIQUE_KEY (
+        unique_key (pathway_id, source)
+    ),
     cron '@monthly',
+    grain (pathway_id, source),
     audits (
         not_null(columns := (pathway_id, pathway_name, source))
-    )
+    ),
+    pre_statements [
+        SET LOCAL work_mem = '128MB'
+    ]
 );
 
 -- Reactome pathways: linked to molecule via search query stored in request_params
@@ -31,16 +37,16 @@ WITH reactome_linked AS (
     LEFT JOIN mol_silver.molecules m_name
            ON b.raw_json->>'query' IS NOT NULL
           AND LOWER(m_name.canonical_name) = LOWER(b.raw_json->>'query')
-    -- Deduplicated alias lookup — 375+ dup alias_name_normalized rows exist
+    -- Deduplicated alias lookup — 375+ dup normalized_name rows exist
     LEFT JOIN (
-        SELECT DISTINCT ON (alias_name_normalized)
-            alias_name_normalized, molecule_id
-        FROM mol_silver.molecule_aliases
-        ORDER BY alias_name_normalized, molecule_id
+        SELECT DISTINCT ON (normalized_name)
+            normalized_name, molecule_id
+        FROM mol_silver.molecule_names
+        ORDER BY normalized_name, molecule_id
     ) ma ON m_name.molecule_id IS NULL
           AND b.raw_json->>'query' IS NOT NULL
           AND LOWER(REGEXP_REPLACE(b.raw_json->>'query', '[^a-zA-Z0-9]', '', 'g'))
-              = ma.alias_name_normalized
+              = ma.normalized_name
     LEFT JOIN mol_silver.molecules m_alias ON m_alias.molecule_id = ma.molecule_id
     WHERE b.stable_id IS NOT NULL
 ),

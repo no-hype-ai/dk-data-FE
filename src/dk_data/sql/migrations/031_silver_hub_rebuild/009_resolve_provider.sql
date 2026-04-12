@@ -56,7 +56,7 @@ BEGIN
         WHERE similarity(LOWER(pn.normalized_name), v_canonical_name) >= 0.85
           AND (p_state    IS NULL OR UPPER(TRIM(pr.state))    = UPPER(TRIM(p_state)))
           AND (p_taxonomy IS NULL OR LOWER(TRIM(pr.taxonomy)) = LOWER(TRIM(p_taxonomy)))
-        ORDER BY similarity(LOWER(pn.normalized_name), v_canonical_name) DESC
+        ORDER BY similarity(LOWER(pn.normalized_name), v_canonical_name) DESC, pn.provider_id ASC
         LIMIT 1;
         IF FOUND THEN RETURN v_id; END IF;
     END IF;

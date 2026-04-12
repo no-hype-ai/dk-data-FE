@@ -6,12 +6,17 @@
 
 MODEL (
     name mol_silver.nice_hta,
-    kind FULL,
+    kind INCREMENTAL_BY_UNIQUE_KEY (
+        unique_key guidance_id
+    ),
     cron '@weekly',
     audits (
         not_null(columns := (guidance_id, source))
     ),
-    grain guidance_id
+    grain guidance_id,
+    pre_statements [
+        SET LOCAL work_mem = '128MB'
+    ]
 );
 
 SELECT DISTINCT ON (b.guidance_id)
@@ -39,10 +44,10 @@ LEFT JOIN mol_silver.molecules m_name
        ON b.drug_name IS NOT NULL
       AND LOWER(m_name.canonical_name) = LOWER(b.drug_name)
 
-LEFT JOIN mol_silver.molecule_aliases ma
+LEFT JOIN mol_silver.molecule_names ma
        ON m_name.molecule_id IS NULL
       AND b.drug_name IS NOT NULL
-      AND LOWER(ma.alias_name) = LOWER(b.drug_name)
+      AND LOWER(ma.display_name) = LOWER(b.drug_name)
 LEFT JOIN mol_silver.molecules m_alias
        ON m_alias.molecule_id = ma.molecule_id
 

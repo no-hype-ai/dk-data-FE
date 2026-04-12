@@ -5,12 +5,17 @@
 
 MODEL (
     name mol_silver.cdc_vaccines,
-    kind FULL,
+    kind INCREMENTAL_BY_UNIQUE_KEY (
+        unique_key vaccine_id
+    ),
     cron '@monthly',
     audits (
         not_null(columns := (vaccine_id))
     ),
-    grain vaccine_id
+    grain vaccine_id,
+    pre_statements [
+        SET LOCAL work_mem = '128MB'
+    ]
 );
 
 SELECT
@@ -55,12 +60,12 @@ LEFT JOIN mol_silver.molecules m_gen
       AND b.generic_name IS NOT NULL
       AND LOWER(m_gen.canonical_name) = LOWER(b.generic_name)
 -- Fallback: alias match on active_substance
-LEFT JOIN mol_silver.molecule_aliases ma
+LEFT JOIN mol_silver.molecule_names ma
        ON m_sub.molecule_id IS NULL
       AND m_gen.molecule_id IS NULL
       AND b.active_substance IS NOT NULL
       AND LOWER(REGEXP_REPLACE(b.active_substance, '[^a-zA-Z0-9]', '', 'g'))
-          = ma.alias_name_normalized
+          = ma.normalized_name
 LEFT JOIN mol_silver.molecules m_alias
        ON m_alias.molecule_id = ma.molecule_id
 WHERE b.vaccine_id IS NOT NULL;

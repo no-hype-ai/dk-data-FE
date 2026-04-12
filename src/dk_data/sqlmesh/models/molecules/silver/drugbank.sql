@@ -8,11 +8,17 @@
 
 MODEL (
     name mol_silver.drugbank,
-    kind FULL,
+    kind INCREMENTAL_BY_UNIQUE_KEY (
+        unique_key drugbank_id
+    ),
     cron '@monthly',
+    grain drugbank_id,
     audits (
         not_null(columns := (drugbank_id))
-    )
+    ),
+    pre_statements [
+        SET LOCAL work_mem = '128MB'
+    ]
 );
 
 SELECT DISTINCT ON (b.drugbank_id)
@@ -88,7 +94,7 @@ SELECT DISTINCT ON (b.drugbank_id)
     -- Source tracking
     'drugbank'                              AS source,
     b.source_updated_at,
-    b.loaded_at                             AS ingested_at,
+    b.loaded_at,
     b.created_at
 
 FROM mol_bronze.drugbank b

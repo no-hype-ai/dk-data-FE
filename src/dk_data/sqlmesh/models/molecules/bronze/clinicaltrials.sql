@@ -13,7 +13,10 @@ MODEL (
         not_null(columns := (nct_id)),
         unique_values(columns := (nct_id))
     ),
-    grain nct_id
+    grain nct_id,
+    pre_statements [
+        SET LOCAL work_mem = '128MB'
+    ]
 );
 
 -- Unnest the studies array from batch API responses.

@@ -1,8 +1,10 @@
 -- SQLMesh Model: Bronze Trademark Status History
--- Promotes mol_raw.trademark_status_history (audit trail written by USPTO/EUIPO loaders)
+-- Promotes ip_raw.trademark_status_history (audit trail written by USPTO/EUIPO loaders)
 -- to a typed bronze layer with molecule linkage hooks.
 --
--- Source: mol_raw.trademark_status_history (canonical since migration 137)
+-- Source: ip_raw.trademark_status_history (canonical since migration 163,
+--   which moved the table out of the mol_raw shadow into the ip_raw schema
+--   where the loaders had always been writing).
 --   Written by: load_uspto_trademarks.py and load_euipo_trademarks.py
 --   on every ingest when a trademark status change is detected.
 -- Grain: (trademark_identifier, source, changed_at)
@@ -43,8 +45,7 @@ SELECT
           OR h.new_status ILIKE '%review%'                    THEN 'contested'
         ELSE 'status_update'
     END                         AS transition_type,
-    h.changed_at                AS source_updated_at,
     NOW()                       AS created_at
 
-FROM mol_raw.trademark_status_history h
+FROM ip_raw.trademark_status_history h
 WHERE h.changed_at BETWEEN @start_dt AND @end_dt;

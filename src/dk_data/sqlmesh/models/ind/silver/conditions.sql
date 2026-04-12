@@ -8,6 +8,17 @@ MODEL (
         unique_key condition_id
     ),
     grain condition_id
+    ,
+    -- T6: staleness check — refuse to run if any upstream bronze is older than max age
+    pre_statements [
+        SET LOCAL work_mem = '128MB',
+        """DO $$ BEGIN
+            IF (SELECT COALESCE(MAX(ingested_at), '1900-01-01'::timestamptz) FROM ind_bronze.icd11_codes)
+               < NOW() - interval '720 hours' THEN
+                RAISE EXCEPTION 'ind_bronze.icd11_codes is stale (oldest tolerated: 720 hours)';
+            END IF;
+        END $$;"""
+    ]
 );
 
 WITH icd_conditions AS (

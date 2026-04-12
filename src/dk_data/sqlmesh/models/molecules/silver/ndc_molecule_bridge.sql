@@ -7,7 +7,7 @@
 --
 -- Sources:
 --   • mol_silver.drug_labels  — FDA labels have ndc_codes (JSONB array) + molecule_id
---   • mol_silver.identifier_mappings (ndc type) — second pass from identifier bridge
+--   • mol_silver.molecule_identifiers (ndc type) — second pass from identifier bridge
 --
 -- Grain: (ndc, molecule_id) — one row per unique NDC↔molecule pair.
 --   An NDC may map to multiple molecules (e.g. combination products).
@@ -27,7 +27,10 @@ MODEL (
     audits (
         not_null(columns := (ndc, molecule_id))
     ),
-    grain (ndc, molecule_id)
+    grain (ndc, molecule_id),
+    pre_statements [
+        SET LOCAL work_mem = '128MB'
+    ]
 );
 
 -- Source 1: FDA NDC directory — product_ndc + package_ndcs, linked via generic_name alias match
@@ -51,13 +54,13 @@ WITH from_labels AS (
 -- Source 2: identifier_mappings NDC entries (may cover additional formulations)
 from_id_mappings AS (
     SELECT DISTINCT
-        im.identifier_value     AS ndc,
+        im.identifier     AS ndc,
         im.molecule_id,
         'identifier_mappings'   AS source,
         im.confidence
-    FROM mol_silver.identifier_mappings im
-    WHERE im.identifier_type = 'ndc'
-      AND im.identifier_value IS NOT NULL
+    FROM mol_silver.molecule_identifiers im
+    WHERE im.source = 'ndc'
+      AND im.identifier IS NOT NULL
 ),
 
 combined AS (

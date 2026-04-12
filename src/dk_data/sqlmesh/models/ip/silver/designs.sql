@@ -7,7 +7,10 @@ MODEL (
     kind INCREMENTAL_BY_UNIQUE_KEY (
         unique_key design_id
     ),
-    grain design_id
+    grain design_id,
+    pre_statements [
+        SET LOCAL work_mem = '128MB'
+    ]
 );
 
 WITH euipo_designs AS (

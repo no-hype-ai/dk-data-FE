@@ -142,7 +142,7 @@ BEGIN
         FROM mol_silver.drug_product_names
         WHERE name_kind = 'brand'
           AND similarity(LOWER(normalized_name), LOWER(p_brand)) >= 0.85
-        ORDER BY similarity(LOWER(normalized_name), LOWER(p_brand)) DESC
+        ORDER BY similarity(LOWER(normalized_name), LOWER(p_brand)) DESC, product_id ASC
         LIMIT 1;
         IF FOUND THEN RETURN v_id; END IF;
     END IF;

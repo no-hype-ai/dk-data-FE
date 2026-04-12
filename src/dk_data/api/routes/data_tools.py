@@ -439,7 +439,7 @@ async def refresh_transform(
     Molecule resolution:
     - If molecule_id is provided, it is used directly (no DB lookup).
     - If only drug_name is provided, mol_silver.molecules and
-      mol_silver.molecule_aliases are searched; 404 if not found.
+      mol_silver.molecule_names are searched; 404 if not found.
     - At least one of molecule_id or drug_name must be supplied.
 
     Models can be restricted via the optional `models` list:
@@ -473,7 +473,7 @@ async def refresh_transform(
             )
             if row is None:
                 row = await conn.fetchrow(
-                    "SELECT molecule_id AS id FROM mol_silver.molecule_aliases WHERE alias_name_normalized = $1",
+                    "SELECT molecule_id AS id FROM mol_silver.molecule_names WHERE normalized_name = $1",
                     normalized,
                 )
         if row is None:

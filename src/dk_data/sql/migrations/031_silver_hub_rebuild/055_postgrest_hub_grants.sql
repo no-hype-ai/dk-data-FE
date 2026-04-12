@@ -61,6 +61,13 @@ DO $$ BEGIN
         ind_silver.condition_names
     TO web_anon;
 
+    -- hcp_silver hub tables (researcher / KOL — public bibliometric data only)
+    GRANT SELECT ON TABLE
+        hcp_silver.researchers,
+        hcp_silver.researcher_identifiers,
+        hcp_silver.researcher_names
+    TO web_anon;
+
     -- ip_silver hub tables
     GRANT SELECT ON TABLE
         ip_silver.patents,

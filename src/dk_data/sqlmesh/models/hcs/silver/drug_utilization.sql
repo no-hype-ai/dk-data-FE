@@ -11,12 +11,17 @@
 
 MODEL (
     name hcs_silver.drug_utilization,
-    kind FULL,
+    kind INCREMENTAL_BY_UNIQUE_KEY (
+        unique_key (drug_or_hcpcs_code, code_type, _source_year)
+    ),
     cron '@monthly',
     audits (
         not_null(columns := (drug_or_hcpcs_code, code_type, _source_year))
     ),
-    grain (drug_or_hcpcs_code, code_type, _source_year)
+    grain (drug_or_hcpcs_code, code_type, _source_year),
+    pre_statements [
+        SET LOCAL work_mem = '128MB'
+    ]
 );
 
 -- Medicare Part D (drug spending by generic name)
@@ -237,7 +242,6 @@ SELECT
     --   HCPCS codes (DME, lab, imaging):
     --     Tier 2:  hcpcs_molecule_bridge by HCPCS code
     COALESCE(name_full.molecule_id, name_first.molecule_id, hcpcs_link.molecule_id) AS molecule_id,
-    a.code_type                             AS source,
     NOW()                                   AS source_updated_at,
     NOW()                                   AS created_at,
     NOW()                                   AS updated_at

@@ -9,12 +9,17 @@
 
 MODEL (
     name mol_silver.ema,
-    kind FULL,
+    kind INCREMENTAL_BY_UNIQUE_KEY (
+        unique_key product_number
+    ),
     cron '@monthly',
     audits (
         not_null(columns := (product_number, product_name))
     ),
-    grain product_number
+    grain product_number,
+    pre_statements [
+        SET LOCAL work_mem = '128MB'
+    ]
 );
 
 SELECT DISTINCT ON (b.product_number)
@@ -35,7 +40,7 @@ SELECT DISTINCT ON (b.product_number)
     m.molecule_id,
     b.source,
     b.source_updated_at,
-    b.ingested_at                       AS _ingested_at,
+    b.ingested_at,
     CURRENT_TIMESTAMP                   AS _silver_updated_at
 FROM mol_bronze.ema AS b
 LEFT JOIN mol_silver.molecules AS m

@@ -1,0 +1,184 @@
+-- Migration 000: Indexes on silver hub crosswalk tables
+-- Part of: 001-silver-medallion-rebuild
+--
+-- The silver hub models declare INCREMENTAL_BY_UNIQUE_KEY but SQLMesh enforces the
+-- unique_key at upsert time only; it does not create SQL UNIQUE constraints or any
+-- secondary indexes on the materialized tables. Without these indexes, every
+-- resolve_*() call (e.g. WHERE source = ? AND identifier = ?) does a sequential scan
+-- of the entire crosswalk, and the gold-tier ≤10 ms p99 target (SC-004) is unreachable.
+--
+-- This migration creates:
+--   - UNIQUE (source, identifier) on every *_identifiers crosswalk
+--   - INDEX on the hub FK column on every *_identifiers and *_names crosswalk
+--   - GIN trigram index on LOWER(normalized_name) for every *_names crosswalk
+--
+-- Numbered 000_ so it runs before any bootstrap procedure (which expects the
+-- crosswalks to exist with indexes for the join planner).
+--
+-- All statements are CREATE INDEX IF NOT EXISTS / CREATE UNIQUE INDEX IF NOT EXISTS,
+-- so this migration is idempotent.
+
+BEGIN;
+
+CREATE EXTENSION IF NOT EXISTS pg_trgm;
+
+-- ============================================================
+-- mol_silver
+-- ============================================================
+
+-- molecules hub: enforce uniqueness on the deterministic product_id
+CREATE UNIQUE INDEX IF NOT EXISTS mol_silver_molecules_pk_idx
+    ON mol_silver.molecules (molecule_id);
+CREATE INDEX IF NOT EXISTS mol_silver_molecules_canon_idx
+    ON mol_silver.molecules (canonical_name);
+CREATE INDEX IF NOT EXISTS mol_silver_molecules_canon_trgm_idx
+    ON mol_silver.molecules USING GIN (LOWER(canonical_name) gin_trgm_ops);
+
+CREATE UNIQUE INDEX IF NOT EXISTS mol_silver_mol_ident_src_id_idx
+    ON mol_silver.molecule_identifiers (source, identifier);
+CREATE INDEX IF NOT EXISTS mol_silver_mol_ident_mol_idx
+    ON mol_silver.molecule_identifiers (molecule_id);
+
+CREATE INDEX IF NOT EXISTS mol_silver_mol_names_norm_idx
+    ON mol_silver.molecule_names (normalized_name);
+CREATE INDEX IF NOT EXISTS mol_silver_mol_names_trgm_idx
+    ON mol_silver.molecule_names USING GIN (LOWER(normalized_name) gin_trgm_ops);
+CREATE INDEX IF NOT EXISTS mol_silver_mol_names_mol_idx
+    ON mol_silver.molecule_names (molecule_id);
+
+-- drug_products hub
+CREATE UNIQUE INDEX IF NOT EXISTS mol_silver_drug_products_pk_idx
+    ON mol_silver.drug_products (product_id);
+CREATE UNIQUE INDEX IF NOT EXISTS mol_silver_dp_ident_src_id_idx
+    ON mol_silver.drug_product_identifiers (source, identifier);
+CREATE INDEX IF NOT EXISTS mol_silver_dp_ident_prod_idx
+    ON mol_silver.drug_product_identifiers (product_id);
+CREATE INDEX IF NOT EXISTS mol_silver_dp_names_norm_idx
+    ON mol_silver.drug_product_names (normalized_name);
+CREATE INDEX IF NOT EXISTS mol_silver_dp_names_trgm_idx
+    ON mol_silver.drug_product_names USING GIN (LOWER(normalized_name) gin_trgm_ops);
+CREATE INDEX IF NOT EXISTS mol_silver_dp_names_prod_idx
+    ON mol_silver.drug_product_names (product_id);
+CREATE INDEX IF NOT EXISTS mol_silver_dp_ingr_prod_idx
+    ON mol_silver.drug_product_ingredients (product_id);
+
+-- companies hub
+CREATE UNIQUE INDEX IF NOT EXISTS mol_silver_companies_pk_idx
+    ON mol_silver.companies (company_id);
+CREATE UNIQUE INDEX IF NOT EXISTS mol_silver_co_ident_src_id_idx
+    ON mol_silver.company_identifiers (source, identifier);
+CREATE INDEX IF NOT EXISTS mol_silver_co_ident_co_idx
+    ON mol_silver.company_identifiers (company_id);
+CREATE INDEX IF NOT EXISTS mol_silver_co_names_trgm_idx
+    ON mol_silver.company_names USING GIN (LOWER(normalized_name) gin_trgm_ops);
+CREATE INDEX IF NOT EXISTS mol_silver_co_names_co_idx
+    ON mol_silver.company_names (company_id);
+
+-- targets hub
+CREATE UNIQUE INDEX IF NOT EXISTS mol_silver_targets_pk_idx
+    ON mol_silver.targets (target_id);
+CREATE UNIQUE INDEX IF NOT EXISTS mol_silver_tgt_ident_src_id_idx
+    ON mol_silver.target_identifiers (source, identifier);
+CREATE INDEX IF NOT EXISTS mol_silver_tgt_ident_tgt_idx
+    ON mol_silver.target_identifiers (target_id);
+CREATE INDEX IF NOT EXISTS mol_silver_tgt_names_trgm_idx
+    ON mol_silver.target_names USING GIN (LOWER(normalized_name) gin_trgm_ops);
+CREATE INDEX IF NOT EXISTS mol_silver_tgt_names_tgt_idx
+    ON mol_silver.target_names (target_id);
+CREATE INDEX IF NOT EXISTS mol_silver_tgt_seq_hash_idx
+    ON mol_silver.target_sequences (sequence_hash);
+
+-- ============================================================
+-- hcs_silver
+-- ============================================================
+
+CREATE UNIQUE INDEX IF NOT EXISTS hcs_silver_providers_pk_idx
+    ON hcs_silver.providers (provider_id);
+CREATE UNIQUE INDEX IF NOT EXISTS hcs_silver_prov_ident_src_id_idx
+    ON hcs_silver.provider_identifiers (source, identifier);
+CREATE INDEX IF NOT EXISTS hcs_silver_prov_ident_prov_idx
+    ON hcs_silver.provider_identifiers (provider_id);
+CREATE INDEX IF NOT EXISTS hcs_silver_prov_names_trgm_idx
+    ON hcs_silver.provider_names USING GIN (LOWER(normalized_name) gin_trgm_ops);
+CREATE INDEX IF NOT EXISTS hcs_silver_prov_names_prov_idx
+    ON hcs_silver.provider_names (provider_id);
+
+CREATE UNIQUE INDEX IF NOT EXISTS hcs_silver_facilities_pk_idx
+    ON hcs_silver.facilities (facility_id);
+CREATE UNIQUE INDEX IF NOT EXISTS hcs_silver_fac_ident_src_id_idx
+    ON hcs_silver.facility_identifiers (source, identifier);
+CREATE INDEX IF NOT EXISTS hcs_silver_fac_ident_fac_idx
+    ON hcs_silver.facility_identifiers (facility_id);
+CREATE INDEX IF NOT EXISTS hcs_silver_fac_names_trgm_idx
+    ON hcs_silver.facility_names USING GIN (LOWER(normalized_name) gin_trgm_ops);
+CREATE INDEX IF NOT EXISTS hcs_silver_fac_names_fac_idx
+    ON hcs_silver.facility_names (facility_id);
+
+-- ============================================================
+-- ind_silver
+-- ============================================================
+
+CREATE UNIQUE INDEX IF NOT EXISTS ind_silver_conditions_pk_idx
+    ON ind_silver.conditions (condition_id);
+CREATE UNIQUE INDEX IF NOT EXISTS ind_silver_cond_ident_src_id_idx
+    ON ind_silver.condition_identifiers (source, identifier);
+CREATE INDEX IF NOT EXISTS ind_silver_cond_ident_cond_idx
+    ON ind_silver.condition_identifiers (condition_id);
+CREATE INDEX IF NOT EXISTS ind_silver_cond_names_trgm_idx
+    ON ind_silver.condition_names USING GIN (LOWER(normalized_name) gin_trgm_ops);
+CREATE INDEX IF NOT EXISTS ind_silver_cond_names_cond_idx
+    ON ind_silver.condition_names (condition_id);
+
+-- ============================================================
+-- hcp_silver
+-- ============================================================
+
+CREATE UNIQUE INDEX IF NOT EXISTS hcp_silver_researchers_pk_idx
+    ON hcp_silver.researchers (researcher_id);
+CREATE UNIQUE INDEX IF NOT EXISTS hcp_silver_res_ident_src_id_idx
+    ON hcp_silver.researcher_identifiers (source, identifier);
+CREATE INDEX IF NOT EXISTS hcp_silver_res_ident_res_idx
+    ON hcp_silver.researcher_identifiers (researcher_id);
+CREATE INDEX IF NOT EXISTS hcp_silver_res_names_trgm_idx
+    ON hcp_silver.researcher_names USING GIN (LOWER(normalized_name) gin_trgm_ops);
+CREATE INDEX IF NOT EXISTS hcp_silver_res_names_res_idx
+    ON hcp_silver.researcher_names (researcher_id);
+
+-- ============================================================
+-- ip_silver
+-- ============================================================
+
+CREATE UNIQUE INDEX IF NOT EXISTS ip_silver_patents_pk_idx
+    ON ip_silver.patents (patent_id);
+CREATE UNIQUE INDEX IF NOT EXISTS ip_silver_pat_ident_src_id_idx
+    ON ip_silver.patent_identifiers (source, identifier);
+CREATE INDEX IF NOT EXISTS ip_silver_pat_ident_pat_idx
+    ON ip_silver.patent_identifiers (patent_id);
+CREATE INDEX IF NOT EXISTS ip_silver_pat_names_trgm_idx
+    ON ip_silver.patent_names USING GIN (LOWER(normalized_name) gin_trgm_ops);
+CREATE INDEX IF NOT EXISTS ip_silver_pat_names_pat_idx
+    ON ip_silver.patent_names (patent_id);
+
+CREATE UNIQUE INDEX IF NOT EXISTS ip_silver_trademarks_pk_idx
+    ON ip_silver.trademarks (trademark_id);
+CREATE UNIQUE INDEX IF NOT EXISTS ip_silver_tm_ident_src_id_idx
+    ON ip_silver.trademark_identifiers (source, identifier);
+CREATE INDEX IF NOT EXISTS ip_silver_tm_ident_tm_idx
+    ON ip_silver.trademark_identifiers (trademark_id);
+CREATE INDEX IF NOT EXISTS ip_silver_tm_names_trgm_idx
+    ON ip_silver.trademark_names USING GIN (LOWER(normalized_name) gin_trgm_ops);
+CREATE INDEX IF NOT EXISTS ip_silver_tm_names_tm_idx
+    ON ip_silver.trademark_names (trademark_id);
+
+CREATE UNIQUE INDEX IF NOT EXISTS ip_silver_designs_pk_idx
+    ON ip_silver.designs (design_id);
+CREATE UNIQUE INDEX IF NOT EXISTS ip_silver_des_ident_src_id_idx
+    ON ip_silver.design_identifiers (source, identifier);
+CREATE INDEX IF NOT EXISTS ip_silver_des_ident_des_idx
+    ON ip_silver.design_identifiers (design_id);
+CREATE INDEX IF NOT EXISTS ip_silver_des_names_trgm_idx
+    ON ip_silver.design_names USING GIN (LOWER(normalized_name) gin_trgm_ops);
+CREATE INDEX IF NOT EXISTS ip_silver_des_names_des_idx
+    ON ip_silver.design_names (design_id);
+
+COMMIT;

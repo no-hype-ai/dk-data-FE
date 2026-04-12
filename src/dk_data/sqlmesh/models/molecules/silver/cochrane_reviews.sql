@@ -7,22 +7,28 @@
 
 MODEL (
     name mol_silver.cochrane_reviews,
-    kind FULL,
+    kind INCREMENTAL_BY_UNIQUE_KEY (
+        unique_key review_id
+    ),
     cron '@monthly',
     audits (
         not_null(columns := (review_id, title))
     ),
-    grain review_id
+    grain review_id,
+    pre_statements [
+        SET LOCAL work_mem = '128MB'
+    ]
 );
 
 SELECT DISTINCT ON (b.review_id)
     gen_random_uuid()                       AS cochrane_silver_id,
     m.molecule_id    AS molecule_id,
     b.review_id,
+    b.pmid,
     b.title,
     b.abstract,
     b.doi,
-    b.publication_date AS pub_date,
+    b.publication_date,
     b.review_type,
     b.authors,
     b.interventions,

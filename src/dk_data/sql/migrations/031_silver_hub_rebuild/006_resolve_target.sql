@@ -93,7 +93,7 @@ BEGIN
         SELECT target_id INTO v_id
         FROM mol_silver.target_names
         WHERE similarity(LOWER(normalized_name), LOWER(p_name)) >= 0.85
-        ORDER BY similarity(LOWER(normalized_name), LOWER(p_name)) DESC
+        ORDER BY similarity(LOWER(normalized_name), LOWER(p_name)) DESC, target_id ASC
         LIMIT 1;
         IF FOUND THEN RETURN v_id; END IF;
     END IF;

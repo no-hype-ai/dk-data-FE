@@ -62,7 +62,7 @@ BEGIN
           AND (p_city  IS NULL OR LOWER(TRIM(fac.city))  = LOWER(TRIM(p_city)))
           AND (p_state IS NULL OR UPPER(TRIM(fac.state)) = UPPER(TRIM(p_state)))
           AND (p_zip   IS NULL OR LEFT(TRIM(fac.zip), 5) = LEFT(TRIM(p_zip), 5))
-        ORDER BY similarity(LOWER(fn.normalized_name), LOWER(TRIM(p_facility_name))) DESC
+        ORDER BY similarity(LOWER(fn.normalized_name), LOWER(TRIM(p_facility_name))) DESC, fn.facility_id ASC
         LIMIT 1;
         IF FOUND THEN RETURN v_id; END IF;
     END IF;

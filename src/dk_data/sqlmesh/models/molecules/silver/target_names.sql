@@ -6,7 +6,10 @@ MODEL (
     kind INCREMENTAL_BY_UNIQUE_KEY (
         unique_key (normalized_name, target_id, source)
     ),
-    grain (normalized_name, target_id, source)
+    grain (normalized_name, target_id, source),
+    pre_statements [
+        SET LOCAL work_mem = '128MB'
+    ]
 );
 
 WITH chembl_names AS (

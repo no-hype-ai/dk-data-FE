@@ -80,7 +80,7 @@ BEGIN
                           LOWER(TRIM(p_first_assignee))) >= 0.75)
           AND (p_filing_year IS NULL OR
                EXTRACT(YEAR FROM pt.filing_date) = p_filing_year)
-        ORDER BY similarity(LOWER(pn.normalized_name), LOWER(TRIM(p_title))) DESC
+        ORDER BY similarity(LOWER(pn.normalized_name), LOWER(TRIM(p_title))) DESC, pn.patent_id ASC
         LIMIT 1;
         IF FOUND THEN RETURN v_id; END IF;
     END IF;

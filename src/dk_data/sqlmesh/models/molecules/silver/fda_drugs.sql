@@ -9,12 +9,17 @@
 
 MODEL (
     name mol_silver.fda_drugs,
-    kind FULL,
+    kind INCREMENTAL_BY_UNIQUE_KEY (
+        unique_key application_number
+    ),
     cron '@weekly',
     audits (
         not_null(columns := (application_number))
     ),
-    grain application_number
+    grain application_number,
+    pre_statements [
+        SET LOCAL work_mem = '128MB'
+    ]
 );
 
 SELECT DISTINCT ON (b.application_number)
@@ -39,7 +44,7 @@ SELECT DISTINCT ON (b.application_number)
     m.molecule_id,
     b.source,
     b.source_updated_at,
-    b.ingested_at                       AS _ingested_at,
+    b.ingested_at,
     CURRENT_TIMESTAMP                   AS _silver_updated_at
 FROM mol_bronze.fda_drugs AS b
 LEFT JOIN mol_silver.molecules AS m

@@ -18,7 +18,10 @@ MODEL (
         not_null(columns := (icd11_code, therapeutic_area)),
         unique_values(columns := (icd11_code))
     ),
-    grain icd11_code
+    grain icd11_code,
+    pre_statements [
+        SET LOCAL work_mem = '128MB'
+    ]
 );
 
 WITH ta_stats AS (
@@ -46,7 +49,7 @@ hierarchy_depth AS (
 
 SELECT
     s.icd11_code,
-    s.icd11_title,
+    s.title,
     s.definition,
     s.class_kind,
     s.parent_code,

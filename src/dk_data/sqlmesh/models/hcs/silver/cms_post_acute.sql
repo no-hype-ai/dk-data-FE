@@ -10,7 +10,10 @@ MODEL (
     audits (
         not_null(columns := (ccn))
     ),
-    grain (ccn, year)
+    grain (ccn, year),
+    pre_statements [
+        SET LOCAL work_mem = '128MB'
+    ]
 );
 
 SELECT DISTINCT ON (b.ccn, b.year)
@@ -24,11 +27,11 @@ SELECT DISTINCT ON (b.ccn, b.year)
     b.year,
 
     -- Facility enrichment from hospital general info (most recent year)
-    h.facility_name             AS hgi_facility_name,
-    h.address                   AS facility_address,
-    h.city_town                 AS facility_city,
-    h.state                     AS facility_state,
-    h.zip_code                  AS facility_zip_code,
+    h.facility_name,
+    h.address,
+    h.city_town,
+    h.state,
+    h.zip_code,
     h.county_parish,
     h.telephone_number,
     h.hospital_type,
@@ -40,7 +43,6 @@ SELECT DISTINCT ON (b.ccn, b.year)
 
     b.source,
     b.ingested_at,
-    b.ingested_at               AS source_updated_at,
     NOW()                       AS created_at
 
 FROM hcs_bronze.cms_post_acute b

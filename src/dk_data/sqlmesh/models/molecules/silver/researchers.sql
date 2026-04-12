@@ -32,7 +32,10 @@ MODEL (
         not_null(columns := (orcid_id)),
         unique_values(columns := (orcid_id))
     ),
-    grain orcid_id
+    grain orcid_id,
+    pre_statements [
+        SET LOCAL work_mem = '128MB'
+    ]
 );
 
 WITH orcid_base AS (

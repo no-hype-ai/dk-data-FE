@@ -7,12 +7,17 @@
 
 MODEL (
     name mol_silver.regulatory_milestones,
-    kind FULL,
+    kind INCREMENTAL_BY_UNIQUE_KEY (
+        unique_key application_number
+    ),
     cron '@weekly',
     audits (
         not_null(columns := (application_number, source))
     ),
-    grain application_number
+    grain application_number,
+    pre_statements [
+        SET LOCAL work_mem = '128MB'
+    ]
 );
 
 WITH deduped AS (
@@ -77,10 +82,10 @@ LEFT JOIN mol_silver.molecules m_name
        ON d.generic_name IS NOT NULL
       AND LOWER(m_name.canonical_name) = LOWER(d.generic_name)
 -- Fallback: via alias
-LEFT JOIN mol_silver.molecule_aliases ma
+LEFT JOIN mol_silver.molecule_names ma
        ON m_name.molecule_id IS NULL
       AND d.generic_name IS NOT NULL
-      AND LOWER(REGEXP_REPLACE(d.generic_name, '[^a-zA-Z0-9]', '', 'g')) = ma.alias_name_normalized
+      AND LOWER(REGEXP_REPLACE(d.generic_name, '[^a-zA-Z0-9]', '', 'g')) = ma.normalized_name
 LEFT JOIN mol_silver.molecules m_alias
        ON m_alias.molecule_id = ma.molecule_id
 ORDER BY d.application_number, COALESCE(m_name.molecule_id, m_alias.molecule_id) NULLS LAST;

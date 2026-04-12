@@ -20,7 +20,10 @@ MODEL (
     audits (
         not_null(columns := (molecule_id, canonical_name))
     ),
-    grain molecule_id
+    grain molecule_id,
+    pre_statements [
+        SET LOCAL work_mem = '128MB'
+    ]
 );
 
 WITH molecule_base AS (
@@ -29,7 +32,7 @@ WITH molecule_base AS (
         m.inchi_key,
         m.canonical_name
     FROM mol_silver.molecules m
-    WHERE m.needs_review = FALSE
+    WHERE TRUE
 ),
 
 -- Aggregate FAERS counts

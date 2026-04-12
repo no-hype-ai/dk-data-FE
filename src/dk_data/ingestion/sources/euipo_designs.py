@@ -27,7 +27,7 @@ def load_euipo_designs_data(
     source_file: Optional[str] = None,
     batch_size: int = BATCH_SIZE,
 ) -> Dict[str, Any]:
-    """Load EUIPO design records into mol_raw.euipo_designs.
+    """Load EUIPO design records into ip_raw.euipo_designs.
 
     Args:
         records: List of normalised design dicts from EUIPODesignsFetcher.

@@ -13,7 +13,7 @@ MODEL (
     cron '@monthly',
     grain (compound_id, dataset_name),
     audits (
-        not_null(columns := (compound_id, dataset_name, property_name))
+        not_null(columns := (compound_id, dataset_name))
     )
 );
 
@@ -67,7 +67,6 @@ SELECT
             THEN 'toxicity'
         ELSE 'other'
     END AS dataset_type,
-    dataset_name AS property_name,
     (COALESCE(rec->>'Y', rec->>'value', rec->>'label'))::NUMERIC AS property_value,
     CASE
         WHEN dataset_name ILIKE ANY(ARRAY['%Caco2%','%HIA%','%Pgp%','%Bioavailability%','%Solubility%'])

@@ -47,7 +47,7 @@ BEGIN
 
         WITH source_union AS (
             SELECT
-                ROW_NUMBER() OVER (ORDER BY source_priority, src_id) AS union_id,
+                source_priority * 1000000000000000::bigint + src_id::bigint AS union_id,
                 icd11_code,
                 icd10_code,
                 mesh_descriptor_id,
@@ -55,7 +55,7 @@ BEGIN
                 canonical_name,
                 therapeutic_area
             FROM (
-                SELECT 1 AS source_priority, id AS src_id,
+                SELECT 1::bigint AS source_priority, id::bigint AS src_id,
                     icd11_code, icd10_code, mesh_descriptor_id, NULL AS meddra_pt,
                     preferred_label AS canonical_name, therapeutic_area
                 FROM ind_bronze.icd_codes
@@ -131,13 +131,13 @@ BEGIN
 
         SELECT COALESCE(MAX(union_id), v_resume_pos) INTO v_new_pos
         FROM (
-            SELECT ROW_NUMBER() OVER (ORDER BY source_priority, src_id) AS union_id
+            SELECT source_priority * 1000000000000000::bigint + src_id::bigint AS union_id
             FROM (
-                SELECT 1 AS source_priority, id AS src_id FROM ind_bronze.icd_codes
+                SELECT 1::bigint AS source_priority, id::bigint AS src_id FROM ind_bronze.icd_codes
                 UNION ALL
-                SELECT 2, id FROM ind_bronze.mesh_terms
+                SELECT 2::bigint, id::bigint FROM ind_bronze.mesh_terms
                 UNION ALL
-                SELECT 3, id FROM ind_bronze.meddra_pts
+                SELECT 3::bigint, id::bigint FROM ind_bronze.meddra_pts
             ) sub
         ) numbered
         WHERE union_id > v_resume_pos

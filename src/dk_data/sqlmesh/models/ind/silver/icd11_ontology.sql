@@ -37,14 +37,16 @@ MODEL (
         not_null(columns := (icd11_code, therapeutic_area)),
         unique_values(columns := (icd11_code))
     ),
-    grain icd11_code
+    grain icd11_code,
+    pre_statements [
+        SET LOCAL work_mem = '128MB'
+    ]
 );
 
 SELECT DISTINCT ON (b.icd11_code)
     gen_random_uuid()                   AS id,
     b.icd11_code,
     b.title,
-    b.title                             AS icd11_title,
     b.definition,
     b.class_kind,
     b.parent_code,

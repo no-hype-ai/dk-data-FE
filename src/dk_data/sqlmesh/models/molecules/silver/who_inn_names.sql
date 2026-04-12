@@ -4,7 +4,7 @@
 -- pharmaceutical ingredients — the global equivalent of USAN (US Adopted Names).
 --
 -- Entity linking: inchi_key → mol_silver.molecules (when available), then name match.
--- Feeds downstream: mol_silver.molecule_aliases (inn alias type), mol_silver.identifier_mappings (inn_name).
+-- Feeds downstream: mol_silver.molecule_names (inn alias type), mol_silver.molecule_identifiers (inn_name).
 
 MODEL (
     name mol_silver.who_inn_names,
@@ -16,7 +16,10 @@ MODEL (
     audits (
         not_null(columns := (inn_name)),
         unique_values(columns := (inn_name))
-    )
+    ),
+    pre_statements [
+        SET LOCAL work_mem = '128MB'
+    ]
 );
 
 SELECT
@@ -50,15 +53,15 @@ LEFT JOIN mol_silver.molecules m_name
        ON m_ik.molecule_id IS NULL
       AND b.inn_name IS NOT NULL
       AND LOWER(m_name.canonical_name) = LOWER(b.inn_name)
--- Fallback: alias table — deduplicated to prevent fan-out from duplicate alias_name_normalized rows
+-- Fallback: alias table — deduplicated to prevent fan-out from duplicate normalized_name rows
 LEFT JOIN (
-    SELECT DISTINCT ON (alias_name_normalized)
-        alias_name_normalized, molecule_id
-    FROM mol_silver.molecule_aliases
-    ORDER BY alias_name_normalized, molecule_id
+    SELECT DISTINCT ON (normalized_name)
+        normalized_name, molecule_id
+    FROM mol_silver.molecule_names
+    ORDER BY normalized_name, molecule_id
 ) ma ON m_ik.molecule_id IS NULL AND m_name.molecule_id IS NULL
       AND b.inn_name IS NOT NULL
-      AND LOWER(REGEXP_REPLACE(b.inn_name, '[^a-zA-Z0-9]', '', 'g')) = ma.alias_name_normalized
+      AND LOWER(REGEXP_REPLACE(b.inn_name, '[^a-zA-Z0-9]', '', 'g')) = ma.normalized_name
 LEFT JOIN mol_silver.molecules m_alias ON m_alias.molecule_id = ma.molecule_id
 
 WHERE b.inn_name IS NOT NULL;

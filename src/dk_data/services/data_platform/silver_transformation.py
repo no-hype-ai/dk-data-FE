@@ -136,9 +136,9 @@ class SilverTransformationService:
             existing = await conn.fetchrow("""
                 SELECT m.id, m.data_sources
                 FROM mol_silver.molecules m
-                JOIN mol_silver.identifier_mappings im ON m.id = im.molecule_id
-                WHERE im.identifier_type = 'chembl_id'
-                  AND im.identifier_value = $1
+                JOIN mol_silver.molecule_identifiers im ON m.id = im.molecule_id
+                WHERE im.source = 'chembl_id'
+                  AND im.identifier = $1
             """, chembl_id)
 
         # Step 3: Create or update molecule
@@ -643,23 +643,23 @@ class SilverTransformationService:
     ):
         """Add an identifier mapping."""
         await conn.execute("""
-            INSERT INTO mol_silver.identifier_mappings (
-                molecule_id, identifier_type, identifier_value, source, is_primary
+            INSERT INTO mol_silver.molecule_identifiers (
+                molecule_id, source, identifier, source, is_primary
             ) VALUES ($1::uuid, $2, $3, $4, TRUE)
-            ON CONFLICT (molecule_id, identifier_type, identifier_value) DO NOTHING
+            ON CONFLICT (molecule_id, source, identifier) DO NOTHING
         """, molecule_id, id_type, id_value, source)
 
     async def _add_alias(
-        self, conn, molecule_id: str, alias_name: str, alias_type: str, source: str
+        self, conn, molecule_id: str, display_name: str, name_kind: str, source: str
     ):
         """Add a molecule alias."""
-        normalized = FuzzyMatcher.normalize_name(alias_name)
+        normalized = FuzzyMatcher.normalize_name(display_name)
         await conn.execute("""
-            INSERT INTO mol_silver.molecule_aliases (
-                molecule_id, alias_name, alias_type, alias_name_normalized, source
+            INSERT INTO mol_silver.molecule_names (
+                molecule_id, display_name, name_kind, normalized_name, source
             ) VALUES ($1::uuid, $2, $3, $4, $5)
-            ON CONFLICT (molecule_id, alias_name, alias_type) DO NOTHING
-        """, molecule_id, alias_name, alias_type, normalized, source)
+            ON CONFLICT (molecule_id, display_name, name_kind) DO NOTHING
+        """, molecule_id, display_name, name_kind, normalized, source)
 
     async def _queue_for_resolution(
         self, conn, identifier: str, id_type: str, source: str
@@ -667,7 +667,7 @@ class SilverTransformationService:
         """Add to resolution queue for manual review."""
         await conn.execute("""
             INSERT INTO mol_silver.resolution_queue (
-                original_identifier, identifier_type, confidence_score, status
+                original_identifier, source, confidence_score, status
             ) VALUES ($1, $2, 0.0, 'pending')
             ON CONFLICT DO NOTHING
         """, identifier, id_type)
@@ -1039,8 +1039,8 @@ class SilverTransformationService:
 
                     if not molecule_id and record['drugbank_id']:
                         existing = await conn.fetchrow("""
-                            SELECT molecule_id FROM mol_silver.identifier_mappings
-                            WHERE identifier_type = 'drugbank_id' AND identifier_value = $1
+                            SELECT molecule_id FROM mol_silver.molecule_identifiers
+                            WHERE source = 'drugbank_id' AND identifier = $1
                         """, record['drugbank_id'])
                         if existing:
                             molecule_id = existing['molecule_id']
@@ -1296,8 +1296,8 @@ class SilverTransformationService:
                     # Try DrugBank ID
                     if not molecule_id and record['drugbank_id']:
                         existing = await conn.fetchrow("""
-                            SELECT molecule_id FROM mol_silver.identifier_mappings
-                            WHERE identifier_type = 'drugbank_id' AND identifier_value = $1
+                            SELECT molecule_id FROM mol_silver.molecule_identifiers
+                            WHERE source = 'drugbank_id' AND identifier = $1
                         """, record['drugbank_id'])
                         if existing:
                             molecule_id = existing['molecule_id']
@@ -1305,8 +1305,8 @@ class SilverTransformationService:
                     # Try ChEMBL ID
                     if not molecule_id and record['chembl_id']:
                         existing = await conn.fetchrow("""
-                            SELECT molecule_id FROM mol_silver.identifier_mappings
-                            WHERE identifier_type = 'chembl_id' AND identifier_value = $1
+                            SELECT molecule_id FROM mol_silver.molecule_identifiers
+                            WHERE source = 'chembl_id' AND identifier = $1
                         """, record['chembl_id'])
                         if existing:
                             molecule_id = existing['molecule_id']

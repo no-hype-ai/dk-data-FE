@@ -31,7 +31,7 @@ def load_uspto_ci_data(
     source_file: Optional[str] = None,
     batch_size: int = BATCH_SIZE,
 ) -> Dict[str, Any]:
-    """Load USPTO CI patent records into mol_raw.uspto_ci.
+    """Load USPTO CI patent records into ip_raw.uspto_ci.
 
     Validates each record via the USPTOCIRecord Pydantic model and
     performs an upsert: INSERT ... ON CONFLICT (patent_id) DO UPDATE.

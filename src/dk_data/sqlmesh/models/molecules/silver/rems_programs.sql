@@ -22,7 +22,10 @@ MODEL (
     audits (
         not_null(columns := (application_number))
     ),
-    grain (molecule_id, application_number)
+    grain (molecule_id, application_number),
+    pre_statements [
+        SET LOCAL work_mem = '128MB'
+    ]
 );
 
 SELECT DISTINCT ON (b.application_number)
@@ -31,24 +34,24 @@ SELECT DISTINCT ON (b.application_number)
     -- molecule_id: 3-tier lookup
     COALESCE(
         -- Tier 1: exact normalized generic_name match
-        (SELECT ma.molecule_id FROM mol_silver.molecule_aliases ma
-         WHERE LOWER(REGEXP_REPLACE(b.generic_name, '[^a-zA-Z0-9]', '', 'g')) = ma.alias_name_normalized
+        (SELECT ma.molecule_id FROM mol_silver.molecule_names ma
+         WHERE LOWER(REGEXP_REPLACE(b.generic_name, '[^a-zA-Z0-9]', '', 'g')) = ma.normalized_name
          LIMIT 1),
         -- Tier 2: exact normalized brand_name match
-        (SELECT ma.molecule_id FROM mol_silver.molecule_aliases ma
-         WHERE LOWER(REGEXP_REPLACE(b.brand_name, '[^a-zA-Z0-9]', '', 'g')) = ma.alias_name_normalized
+        (SELECT ma.molecule_id FROM mol_silver.molecule_names ma
+         WHERE LOWER(REGEXP_REPLACE(b.brand_name, '[^a-zA-Z0-9]', '', 'g')) = ma.normalized_name
          LIMIT 1),
         -- Tier 3: salt/combination normalization on generic_name
         -- Strips common pharmaceutical salt suffixes (e.g. "Morphine Sulfate" → "Morphine")
         -- and combination suffixes (e.g. "Hydrocodone AND Acetaminophen" → "Hydrocodone")
-        (SELECT ma.molecule_id FROM mol_silver.molecule_aliases ma
+        (SELECT ma.molecule_id FROM mol_silver.molecule_names ma
          WHERE LOWER(REGEXP_REPLACE(
              REGEXP_REPLACE(
                  REGEXP_REPLACE(b.generic_name,
                      '\s+(HYDROCHLORIDE|HCL|SULFATE|SODIUM|POTASSIUM|PHOSPHATE|BITARTRATE|TARTRATE|ACETATE|MALEATE|FUMARATE|SUCCINATE|CITRATE|BROMIDE|MESYLATE|TOSYLATE|BESYLATE|OXALATE|GLUCONATE|LACTATE|MALATE|NITRATE|DIHYDRATE|MONOHYDRATE|HEMIHYDRATE)\s*$',
                      '', 'i'),
                  '\s+(AND|WITH)\s+.*$', '', 'i'),
-             '[^a-zA-Z0-9]', '', 'g')) = ma.alias_name_normalized
+             '[^a-zA-Z0-9]', '', 'g')) = ma.normalized_name
          LIMIT 1)
     )                                                               AS molecule_id,
 

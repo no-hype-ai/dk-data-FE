@@ -17,7 +17,10 @@ MODEL (
     audits (
         not_null(columns := (gnrc_name, _source_year))
     ),
-    grain (molecule_id, gnrc_name, _source_year)
+    grain (molecule_id, gnrc_name, _source_year),
+    pre_statements [
+        SET LOCAL work_mem = '128MB'
+    ]
 );
 
 WITH drug_year_agg AS (

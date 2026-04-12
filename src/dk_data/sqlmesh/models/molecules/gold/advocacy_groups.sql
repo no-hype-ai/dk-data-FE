@@ -4,12 +4,17 @@
 
 MODEL (
     name mol_gold.advocacy_groups,
-    kind FULL,
+    kind INCREMENTAL_BY_UNIQUE_KEY (
+        unique_key (group_id)
+    ),
     cron '@weekly',
     audits (
         not_null(columns := (organization_name))
     ),
-    grain (group_id)
+    grain (group_id),
+    pre_statements [
+        SET LOCAL work_mem = '128MB'
+    ]
 );
 
 -- Derive advocacy groups from news signals that mention organizations

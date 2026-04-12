@@ -26,7 +26,7 @@ SELECT
     r.filing_date,
     r.grant_date AS patent_date,
 
-    -- Classification (mol_raw.uspto_patents does not carry patent_type; default to 'utility')
+    -- Classification (ip_raw.uspto_patents does not carry patent_type; default to 'utility')
     'utility'::TEXT AS patent_type,
     NULL::TEXT AS patent_kind,
     to_jsonb(r.cpc_codes) AS cpc_codes,
@@ -41,7 +41,7 @@ SELECT
     -- Claims count
     r.claims_count AS num_claims,
 
-    -- Determine if pharma-related based on CPC codes (mol_raw.uspto_patents.cpc_codes is TEXT[]; cast first)
+    -- Determine if pharma-related based on CPC codes (ip_raw.uspto_patents.cpc_codes is TEXT[]; cast first)
     EXISTS (
         SELECT 1 FROM jsonb_array_elements_text(COALESCE(to_jsonb(r.cpc_codes), '[]'::JSONB)) AS code
         WHERE code LIKE 'A61K%' OR code LIKE 'A61P%'
@@ -52,6 +52,6 @@ SELECT
     FALSE AS processed_to_silver,
     r._loaded_at AS ingested_at
 
-FROM mol_raw.uspto_patents r
+FROM ip_raw.uspto_patents r
 WHERE r.patent_number IS NOT NULL
   AND _loaded_at BETWEEN @start_dt AND @end_dt

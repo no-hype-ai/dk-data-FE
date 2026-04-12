@@ -13,7 +13,10 @@ MODEL (
     audits (
         not_null(columns := (rxcui)),
         unique_values(columns := (rxcui))
-    )
+    ),
+    pre_statements [
+        SET LOCAL work_mem = '128MB'
+    ]
 );
 
 -- idGroup format: {"idGroup": {"rxnormId": ["12345"], "name": "...", "tty": "..."}}

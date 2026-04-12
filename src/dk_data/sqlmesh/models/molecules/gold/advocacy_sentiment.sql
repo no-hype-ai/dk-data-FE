@@ -11,7 +11,10 @@ MODEL (
     audits (
         not_null(columns := (molecule_id, source))
     ),
-    grain (molecule_id, source)
+    grain (molecule_id, source),
+    pre_statements [
+        SET LOCAL work_mem = '128MB'
+    ]
 );
 
 -- Link news signals to molecules via drug_mentions

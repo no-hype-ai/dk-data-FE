@@ -12,7 +12,10 @@ MODEL (
         not_null(columns := (set_id)),
         unique_values(columns := (set_id))
     ),
-    grain set_id
+    grain set_id,
+    pre_statements [
+        SET LOCAL work_mem = '128MB'
+    ]
 );
 
 -- T133: openfda arrays available in mol_bronze.openfda_labels (unii, rxcui as JSONB arrays).

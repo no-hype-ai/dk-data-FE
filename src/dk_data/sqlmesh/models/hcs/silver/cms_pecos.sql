@@ -6,12 +6,17 @@
 
 MODEL (
     name hcs_silver.cms_pecos,
-    kind FULL,
+    kind INCREMENTAL_BY_UNIQUE_KEY (
+        unique_key enrollment_id
+    ),
     cron '@monthly',
     audits (
         not_null(columns := (enrollment_id))
     ),
-    grain enrollment_id
+    grain enrollment_id,
+    pre_statements [
+        SET LOCAL work_mem = '128MB'
+    ]
 );
 
 SELECT DISTINCT ON (b.enrollment_id)
@@ -28,20 +33,19 @@ SELECT DISTINCT ON (b.enrollment_id)
     -- entity_type_code: '1' = individual, '2' = organization
     COALESCE(n.provider_organization_name,
              n.provider_last_name || ', ' || n.provider_first_name) AS provider_name,
-    n.entity_type_code                                              AS provider_type,
-    n.provider_credential_text                                      AS provider_credentials,
-    n.provider_business_practice_location_address_city_name        AS provider_city,
-    n.provider_business_practice_location_address_state_name       AS provider_state_nppes,
-    n.provider_business_practice_location_address_postal_code      AS provider_zip,
-    n.provider_business_practice_location_address_telephone_number AS provider_phone,
-    n.healthcare_provider_taxonomy_code_1                          AS taxonomy_code_1,
-    n.healthcare_provider_taxonomy_code_2                          AS taxonomy_code_2,
+    n.entity_type_code,
+    n.provider_credential_text,
+    n.provider_business_practice_location_address_city_name,
+    n.provider_business_practice_location_address_state_name,
+    n.provider_business_practice_location_address_postal_code,
+    n.provider_business_practice_location_address_telephone_number,
+    n.healthcare_provider_taxonomy_code_1,
+    n.healthcare_provider_taxonomy_code_2,
     n.npi_deactivation_date,
     n.npi_reactivation_date,
 
     b.source,
     b.ingested_at,
-    b.ingested_at                   AS source_updated_at,
     NOW()                           AS created_at
 
 FROM hcs_bronze.cms_pecos b

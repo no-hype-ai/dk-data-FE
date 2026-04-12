@@ -7,7 +7,7 @@
 -- Not a replacement — drug_labels remains the primary label source.
 --
 -- Antipattern fixes (T133):
---   mol_silver.molecule_aliases replaced with mol_silver.molecule_names (normalized_name).
+--   mol_silver.molecule_names replaced with mol_silver.molecule_names (normalized_name).
 --   Deduplication subquery replaced with LATERAL JOIN + LIMIT 1 to avoid DISTINCT ON fanout.
 --
 -- FR-031 openfda.* linking (T133):
@@ -42,7 +42,10 @@ MODEL (
     audits (
         not_null(columns := (setid))
     ),
-    grain setid
+    grain setid,
+    pre_statements [
+        SET LOCAL work_mem = '128MB'
+    ]
 );
 
 SELECT
@@ -51,7 +54,7 @@ SELECT
     -- Entity linking key to drug_labels
     dm.setid AS setid,              -- = drug_labels.spl_set_id
     -- Resolve molecule_id via tiered name matching: generic_name then brand_name
-    -- against mol_silver.molecule_names hub table (replaces mol_silver.molecule_aliases).
+    -- against mol_silver.molecule_names hub table (replaces mol_silver.molecule_names).
     -- When mol_bronze.dailymed exposes openfda JSONB, activate UNII/RxCUI tiers (see FR-031 comment above).
     COALESCE(
         mn_generic.molecule_id,
@@ -70,7 +73,6 @@ SELECT
     dm.query_name,
 
     -- Source tracking
-    dm.id AS bronze_id,
     dm.source,
     dm.source_updated_at,
     NOW() AS created_at,

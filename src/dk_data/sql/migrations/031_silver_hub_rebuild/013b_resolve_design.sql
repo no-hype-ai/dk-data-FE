@@ -58,7 +58,7 @@ BEGIN
                (SELECT ARRAY(SELECT unnest(p_locarno_classes) ORDER BY 1)))
           AND (p_filing_year IS NULL OR
                EXTRACT(YEAR FROM d.filing_date) = p_filing_year)
-        ORDER BY similarity(LOWER(dn.normalized_name), LOWER(TRIM(p_holder))) DESC
+        ORDER BY similarity(LOWER(dn.normalized_name), LOWER(TRIM(p_holder))) DESC, dn.design_id ASC
         LIMIT 1;
         IF FOUND THEN RETURN v_id; END IF;
     END IF;

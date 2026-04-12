@@ -8,11 +8,19 @@ MODEL (
         unique_key researcher_id
     ),
     grain researcher_id
+    ,
+    -- T4: large input — raise work_mem to keep sorts in memory (per-session 256MB ceiling per FR-021b)
+    pre_statements [
+        SET LOCAL work_mem = '128MB'
+    ]
 );
 
+-- Hash determinism (FR-014): both branches must derive researcher_id from the same
+-- canonical key expression. The pubmed signature is normalized identically here and
+-- in europepmc_researchers; the prefix label MUST also match.
 WITH orcid_researchers AS (
     SELECT
-        ('x' || substr(md5(COALESCE(orcid_id, 'scopus:' || scopus_author_id, 'pubmed:' || pubmed_author_signature, LOWER(full_name || '|' || COALESCE(institution, '')))), 1, 16))::bit(64)::bigint AS researcher_id,
+        ('x' || substr(md5(COALESCE(orcid_id, 'scopus:' || scopus_author_id, 'pubmed_sig:' || LOWER(pubmed_author_signature), LOWER(full_name || '|' || COALESCE(institution, '')))), 1, 16))::bit(64)::bigint AS researcher_id,
         NULLIF(orcid_id, '')                                                     AS orcid_id,
         NULLIF(scopus_author_id, '')                                             AS scopus_author_id,
         NULLIF(pubmed_author_signature, '')                                      AS pubmed_author_signature,

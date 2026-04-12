@@ -20,8 +20,15 @@ MODEL (
     ),
     grain nct_id,
     -- T172: Large table with jsonb_array_elements + DISTINCT — set work_mem to avoid disk sort spills
+    -- T6: staleness check — refuse to run if any upstream bronze is older than max age
     pre_statements [
-        SET LOCAL work_mem = '128MB'
+        SET LOCAL work_mem = '128MB',
+        """DO $$ BEGIN
+            IF (SELECT COALESCE(MAX(ingested_at), '1900-01-01'::timestamptz) FROM mol_bronze.clinicaltrials)
+               < NOW() - interval '24 hours' THEN
+                RAISE EXCEPTION 'mol_bronze.clinicaltrials is stale (oldest tolerated: 24 hours)';
+            END IF;
+        END $$;"""
     ]
 );
 
@@ -42,8 +49,8 @@ SELECT
     b.org_study_id,
     b.acronym,
 
-    -- Titles
-    b.brief_title AS title,
+    -- Titles (bronze names retained verbatim per FR-001)
+    b.brief_title,
     b.official_title,
 
     -- Summary
@@ -55,7 +62,7 @@ SELECT
     b.last_known_status,
     b.why_stopped,
 
-    -- Phase (derived string + original JSONB array)
+    -- Phase (derived string is a NEW computed column; bronze `phases` retained verbatim)
     CASE
         WHEN b.phases::TEXT LIKE '%PHASE1%' AND b.phases::TEXT LIKE '%PHASE2%' THEN 'Phase 1/2'
         WHEN b.phases::TEXT LIKE '%PHASE2%' AND b.phases::TEXT LIKE '%PHASE3%' THEN 'Phase 2/3'
@@ -65,13 +72,12 @@ SELECT
         WHEN b.phases::TEXT LIKE '%PHASE4%' THEN 'Phase 4'
         WHEN b.phases::TEXT LIKE '%EARLY%' THEN 'Early Phase 1'
         ELSE 'Not Applicable'
-    END AS phase,
-    b.phases AS phases_raw,
+    END AS phase_derived,
+    b.phases,
 
     -- Dates
     b.start_date,
     b.completion_date,
-    b.completion_date AS end_date,
     b.primary_completion_date,
     b.first_submit_date,
     b.first_post_date,
@@ -90,7 +96,7 @@ SELECT
     b.allocation,
     b.intervention_model,
     b.masking,
-    b.enrollment_count AS enrollment,
+    b.enrollment_count,
     b.enrollment_type,
 
     -- Eligibility (previously dropped — restored in 019)
@@ -101,7 +107,7 @@ SELECT
     b.eligibility_criteria,
 
     -- Sponsors
-    b.lead_sponsor_name AS lead_sponsor,
+    b.lead_sponsor_name,
     b.lead_sponsor_class,
     b.collaborators,
     b.responsible_party,
@@ -133,9 +139,9 @@ SELECT
     cond_link.condition_id AS condition_id,
 
     -- Source Tracking
-    b.id AS bronze_id,
+    b.id,
     'clinicaltrials_gov' AS source,
-    b.request_timestamp AS source_updated_at,
+    b.request_timestamp,
     NOW() AS created_at,
     NOW() AS updated_at
 

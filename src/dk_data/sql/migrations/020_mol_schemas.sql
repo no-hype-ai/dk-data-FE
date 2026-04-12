@@ -1,3 +1,12 @@
+-- ============================================================================
+-- DEPRECATED: This migration creates tables that are no longer the source of truth.
+-- mol_silver.molecule_aliases and mol_silver.identifier_mappings have been replaced
+-- by the hub-architecture crosswalks in 031_silver_hub_rebuild/:
+--   mol_silver.molecule_names       (was molecule_aliases)
+--   mol_silver.molecule_identifiers (was identifier_mappings)
+-- This migration remains for historical accuracy of the migration chain.
+-- All Python services and SQLMesh consumers have been migrated.
+-- ============================================================================
 -- Migration: 020_mol_schemas.sql
 -- Feature: 012-dk-data-platform
 -- Description: Create molecule data platform schemas and tables

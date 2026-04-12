@@ -25,7 +25,10 @@ MODEL (
         not_null(columns := (icd_code, title)),
         unique_values(columns := (icd_code))
     ),
-    grain icd_code
+    grain icd_code,
+    pre_statements [
+        SET LOCAL work_mem = '128MB'
+    ]
 );
 
 SELECT DISTINCT ON (icd_code)

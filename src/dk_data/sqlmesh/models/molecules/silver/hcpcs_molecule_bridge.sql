@@ -23,8 +23,8 @@
 -- Grain: (hcpcs_code, molecule_id) — one row per unique pair.
 --
 -- Antipattern fixes (T114):
---   mol_silver.molecule_aliases replaced throughout with mol_silver.molecule_names
---   (alias_name_normalized → normalized_name, molecule_aliases → molecule_names).
+--   mol_silver.molecule_names replaced throughout with mol_silver.molecule_names
+--   (normalized_name → normalized_name, molecule_aliases → molecule_names).
 --   Tier 2 description substring LIKE replaced with similarity() >= 0.75
 --   to eliminate borderline S2 pattern (col driving the pattern).
 --
@@ -40,7 +40,10 @@ MODEL (
     audits (
         not_null(columns := (hcpcs_code, molecule_id))
     ),
-    grain (hcpcs_code, molecule_id)
+    grain (hcpcs_code, molecule_id),
+    pre_statements [
+        SET LOCAL work_mem = '128MB'
+    ]
 );
 
 -- Collect distinct HCPCS drug codes with descriptions from all CMS bronze sources

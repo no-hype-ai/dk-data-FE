@@ -7,12 +7,17 @@
 
 MODEL (
     name mol_silver.drug_spending,
-    kind FULL,
+    kind INCREMENTAL_BY_UNIQUE_KEY (
+        unique_key (generic_name, program, _source_year)
+    ),
     cron '@monthly',
     audits (
         not_null(columns := (generic_name, program, _source_year))
     ),
-    grain (generic_name, program, _source_year)
+    grain (generic_name, program, _source_year),
+    pre_statements [
+        SET LOCAL work_mem = '128MB'
+    ]
 );
 
 WITH part_d AS (

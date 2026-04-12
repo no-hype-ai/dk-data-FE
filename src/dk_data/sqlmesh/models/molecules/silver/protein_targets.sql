@@ -11,7 +11,10 @@ MODEL (
         -- target_id may be NULL for PDB structures whose UniProt ID is not yet in mol_silver.targets.
         -- Audit on source only to ensure every row has a provenance label.
         not_null(columns := (source))
-    )
+    ),
+    pre_statements [
+        SET LOCAL work_mem = '128MB'
+    ]
 );
 
 -- PDB structures: link to target via uniprot_id, then to molecule via target
@@ -69,9 +72,9 @@ SELECT DISTINCT ON (structure_id)
     target_type,
     uniprot_id,
     structure_id,
-    title                       AS structure_title,
+    title,
     resolution,
-    method                      AS experimental_method,
+    method,
     molecular_weight,
     deposit_date,
     release_date,

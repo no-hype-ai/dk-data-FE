@@ -16,7 +16,10 @@ MODEL (
         not_null(columns := (who_indicator, icd10_code)),
         unique_values(columns := (who_indicator))
     ),
-    grain who_indicator
+    grain who_indicator,
+    pre_statements [
+        SET LOCAL work_mem = '128MB'
+    ]
 );
 
 -- Comprehensive static indicator registry with metric types.

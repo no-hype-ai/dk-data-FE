@@ -14,7 +14,10 @@ MODEL (
     audits (
         not_null(columns := (stable_id))
     ),
-    grain stable_id
+    grain stable_id,
+    pre_statements [
+        SET LOCAL work_mem = '128MB'
+    ]
 );
 
 -- Search results: {"results": [{stId, name, exactType, species, score}]}

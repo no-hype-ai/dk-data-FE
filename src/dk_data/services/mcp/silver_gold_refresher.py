@@ -68,7 +68,7 @@ class SilverGoldRefresher:
 
             # Try alias match
             row = await conn.fetchrow(
-                "SELECT molecule_id FROM mol_silver.molecule_aliases WHERE alias_name_normalized = $1",
+                "SELECT molecule_id FROM mol_silver.molecule_names WHERE normalized_name = $1",
                 normalized,
             )
             if row:
@@ -83,8 +83,8 @@ class SilverGoldRefresher:
 
             # Add alias
             await conn.execute("""
-                INSERT INTO mol_silver.molecule_aliases
-                (id, molecule_id, alias_name, alias_type, alias_name_normalized, source)
+                INSERT INTO mol_silver.molecule_names
+                (id, molecule_id, display_name, name_kind, normalized_name, source)
                 VALUES ($1, $2, $3, 'generic_name', $4, $5)
                 ON CONFLICT DO NOTHING
             """, str(uuid.uuid4()), mol_id, drug_name, normalized, source_name)
@@ -387,10 +387,10 @@ class SilverGoldRefresher:
 
             # Add ChEMBL ID mapping
             await conn.execute("""
-                INSERT INTO mol_silver.identifier_mappings
-                (id, molecule_id, identifier_type, identifier_value, source, is_primary)
+                INSERT INTO mol_silver.molecule_identifiers
+                (id, molecule_id, source, identifier, source, is_primary)
                 VALUES ($1, $2, 'chembl_id', $3, 'chembl', TRUE)
-                ON CONFLICT (molecule_id, identifier_type, identifier_value) DO NOTHING
+                ON CONFLICT (molecule_id, source, identifier) DO NOTHING
             """, str(uuid.uuid4()), molecule_id, chembl_id)
 
     async def _silver_drugbank(self, molecule_id: str, response: dict) -> None:
@@ -413,10 +413,10 @@ class SilverGoldRefresher:
             """, molecule_id, drug.get("mechanism-of-action") or drug.get("mechanism_of_action"))
 
             await conn.execute("""
-                INSERT INTO mol_silver.identifier_mappings
-                (id, molecule_id, identifier_type, identifier_value, source, is_primary)
+                INSERT INTO mol_silver.molecule_identifiers
+                (id, molecule_id, source, identifier, source, is_primary)
                 VALUES ($1, $2, 'drugbank_id', $3, 'drugbank', TRUE)
-                ON CONFLICT (molecule_id, identifier_type, identifier_value) DO NOTHING
+                ON CONFLICT (molecule_id, source, identifier) DO NOTHING
             """, str(uuid.uuid4()), molecule_id, db_id)
 
     async def _silver_pubchem(self, molecule_id: str, response: dict) -> None:
@@ -453,10 +453,10 @@ class SilverGoldRefresher:
             )
 
             await conn.execute("""
-                INSERT INTO mol_silver.identifier_mappings
-                (id, molecule_id, identifier_type, identifier_value, source, is_primary)
+                INSERT INTO mol_silver.molecule_identifiers
+                (id, molecule_id, source, identifier, source, is_primary)
                 VALUES ($1, $2, 'pubchem_cid', $3, 'pubchem', TRUE)
-                ON CONFLICT (molecule_id, identifier_type, identifier_value) DO NOTHING
+                ON CONFLICT (molecule_id, source, identifier) DO NOTHING
             """, str(uuid.uuid4()), molecule_id, cid)
 
     # Silver handler registry
@@ -588,10 +588,10 @@ class SilverGoldRefresher:
 
         # Fetch identifiers
         ids = await conn.fetch(
-            "SELECT identifier_type, identifier_value FROM mol_silver.identifier_mappings WHERE molecule_id::text = $1 AND is_primary = TRUE",
+            "SELECT source, identifier FROM mol_silver.molecule_identifiers WHERE molecule_id::text = $1 AND is_primary = TRUE",
             molecule_id,
         )
-        id_map = {r["identifier_type"]: r["identifier_value"] for r in ids}
+        id_map = {r["source"]: r["identifier"] for r in ids}
 
         # Pipeline indications from trials
         pipeline = await conn.fetch("""

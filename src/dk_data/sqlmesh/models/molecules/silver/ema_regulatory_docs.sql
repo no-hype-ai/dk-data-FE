@@ -6,17 +6,22 @@
 --
 -- Linkage strategy (tiered):
 --   Tier 1: active_substance → mol_silver.molecules (canonical_name exact match)
---   Tier 2: active_substance → mol_silver.molecule_aliases (normalized, LATERAL LIMIT 1)
+--   Tier 2: active_substance → mol_silver.molecule_names (normalized, LATERAL LIMIT 1)
 --   Tier 3: first token of active_substance → molecule_aliases (handles multi-word INN variants)
 
 MODEL (
     name mol_silver.ema_regulatory_docs,
-    kind FULL,
+    kind INCREMENTAL_BY_UNIQUE_KEY (
+        unique_key document_id
+    ),
     cron '@weekly',
     audits (
         not_null(columns := (document_id))
     ),
-    grain document_id
+    grain document_id,
+    pre_statements [
+        SET LOCAL work_mem = '128MB'
+    ]
 );
 
 SELECT DISTINCT ON (b.document_id)
@@ -59,17 +64,17 @@ LEFT JOIN mol_silver.molecules m_exact
 -- Tier 2+3: alias match — full normalized name, then first-token fallback
 LEFT JOIN LATERAL (
     SELECT ma.molecule_id
-    FROM mol_silver.molecule_aliases ma
+    FROM mol_silver.molecule_names ma
     WHERE m_exact.molecule_id IS NULL
       AND b.active_substance IS NOT NULL
       AND (
-          LOWER(REGEXP_REPLACE(b.active_substance, '[^a-zA-Z0-9]', '', 'g')) = ma.alias_name_normalized
+          LOWER(REGEXP_REPLACE(b.active_substance, '[^a-zA-Z0-9]', '', 'g')) = ma.normalized_name
           OR (
               LENGTH(SPLIT_PART(b.active_substance, ' ', 1)) >= 4
               AND LOWER(REGEXP_REPLACE(
                       SPLIT_PART(b.active_substance, ' ', 1),
                       '[^a-zA-Z0-9]', '', 'g'
-                  )) = ma.alias_name_normalized
+                  )) = ma.normalized_name
           )
       )
     ORDER BY ma.molecule_id

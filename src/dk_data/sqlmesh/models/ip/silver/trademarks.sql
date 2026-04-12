@@ -1,13 +1,24 @@
 -- T041: ip_silver.trademarks — trademark hub (NEW)
 -- Hub architecture: one row per unique trademark keyed by (jurisdiction, registration_number).
 -- Sources: USPTO trademarks, EUIPO trademarks from bronze.
+--
+-- Cross-source column-name reconciliation (FR-002 exception, applies only to hub
+-- consolidation models that UNION two bronzes whose source schemas differ):
+--   USPTO bronze uses `mark_text`     ─┐
+--   EUIPO bronze uses `mark_name`     ─┴── projected as `mark_text` in this hub
+-- The bronze tables themselves still expose their source-authoritative names
+-- (`ip_bronze.uspto_trademarks.mark_text`, `ip_bronze.euipo_trademarks.mark_name`)
+-- and are reachable directly when the source-of-truth name is required.
 
 MODEL (
     name ip_silver.trademarks,
     kind INCREMENTAL_BY_UNIQUE_KEY (
         unique_key trademark_id
     ),
-    grain trademark_id
+    grain trademark_id,
+    pre_statements [
+        SET LOCAL work_mem = '128MB'
+    ]
 );
 
 WITH uspto_trademarks AS (
@@ -20,6 +31,7 @@ WITH uspto_trademarks AS (
         NULLIF(mark_text, '')                                                    AS mark_text,
         NULLIF(mark_type, '')                                                    AS mark_type,
         nice_classes,
+        filing_date::date                                                        AS filing_date,
         registration_date::date                                                  AS registration_date,
         expiry_date::date                                                        AS expiry_date,
         NULLIF(status, '')                                                       AS status,
@@ -31,16 +43,20 @@ WITH uspto_trademarks AS (
       AND mark_text IS NOT NULL
 ),
 
+-- EUIPO branch: see header — mark_name is projected as mark_text to satisfy the
+-- UNION ALL same-column-name constraint. registration_date / expiry_date are not
+-- in the EUIPO bronze passthrough; expose as NULL.
 euipo_trademarks AS (
     SELECT
-        ('x' || substr(md5('EU:' || COALESCE(registration_number, application_number)), 1, 16))::bit(64)::bigint AS trademark_id,
+        ('x' || substr(md5('EU:' || application_number), 1, 16))::bit(64)::bigint AS trademark_id,
         'EU'                                                                     AS jurisdiction,
-        NULLIF(registration_number, '')                                          AS registration_number,
+        NULL::text                                                               AS registration_number,
         NULLIF(application_number, '')                                           AS serial_number,
         NULL::text                                                               AS wipo_madrid_number,
-        NULLIF(mark_text, '')                                                    AS mark_text,
-        NULLIF(mark_type, '')                                                    AS mark_type,
+        NULLIF(mark_name, '')                                                    AS mark_text,
+        NULLIF(mark_kind, '')                                                    AS mark_type,
         nice_classes,
+        filing_date::date                                                        AS filing_date,
         registration_date::date                                                  AS registration_date,
         expiry_date::date                                                        AS expiry_date,
         NULLIF(status, '')                                                       AS status,
@@ -48,8 +64,8 @@ euipo_trademarks AS (
         2                                                                        AS src_priority,
         ingested_at                                                              AS first_seen_at
     FROM ip_bronze.euipo_trademarks
-    WHERE COALESCE(registration_number, application_number) IS NOT NULL
-      AND mark_text IS NOT NULL
+    WHERE application_number IS NOT NULL
+      AND mark_name IS NOT NULL
 ),
 
 all_trademarks AS (
@@ -68,6 +84,7 @@ deduped AS (
         mark_text,
         mark_type,
         nice_classes,
+        filing_date,
         registration_date,
         expiry_date,
         status,
@@ -86,6 +103,7 @@ SELECT
     mark_text,
     mark_type,
     nice_classes,
+    filing_date,
     registration_date,
     expiry_date,
     status,

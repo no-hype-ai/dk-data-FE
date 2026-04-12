@@ -21,7 +21,10 @@ MODEL (
         not_null(columns := (drugbank_id)),
         unique_values(columns := (drugbank_id))
     ),
-    grain drugbank_id
+    grain drugbank_id,
+    pre_statements [
+        SET LOCAL work_mem = '128MB'
+    ]
 );
 
 SELECT

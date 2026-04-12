@@ -44,9 +44,13 @@ BEGIN
         v_started_at := clock_timestamp();
         v_start_lsn  := pg_current_wal_lsn();
 
+        -- Stable cursor: encode (source_priority, src_id) as a single bigint position
+        -- so resumption is deterministic across crashes and source-row inserts/deletes.
+        -- ROW_NUMBER()-based cursors shift whenever a bronze row is added/removed.
+        -- Encoding: position = source_priority * 10^15 + src_id (src_id fits 15 digits).
         WITH source_union AS (
             SELECT
-                ROW_NUMBER() OVER (ORDER BY source_priority, src_id) AS union_id,
+                source_priority * 1000000000000000::bigint + src_id::bigint AS union_id,
                 inchi_key,
                 canonical_smiles,
                 sequence_hash,
@@ -56,7 +60,7 @@ BEGIN
                 source_identifier
             FROM (
                 -- ChEMBL molecules (highest priority)
-                SELECT 1 AS source_priority, id AS src_id,
+                SELECT 1::bigint AS source_priority, id::bigint AS src_id,
                     standard_inchi_key AS inchi_key,
                     canonical_smiles,
                     NULL               AS sequence_hash,
@@ -70,7 +74,7 @@ BEGIN
                 UNION ALL
 
                 -- DrugBank drugs
-                SELECT 2, id,
+                SELECT 2::bigint, id::bigint,
                     inchikey, canonical_smiles, NULL,
                     (biotech = 'yes')::boolean,
                     name,
@@ -82,7 +86,7 @@ BEGIN
                 UNION ALL
 
                 -- PubChem compounds
-                SELECT 3, id,
+                SELECT 3::bigint, id::bigint,
                     inchikey, isomeric_smiles AS canonical_smiles, NULL,
                     false,
                     iupac_name AS canonical_name,
@@ -150,15 +154,17 @@ BEGIN
 
         v_end_lsn := pg_current_wal_lsn();
 
+        -- Advance cursor: pick the highest stable position consumed in this chunk.
+        -- Same encoding as source_union above so positions are comparable.
         SELECT COALESCE(MAX(union_id), v_resume_pos) INTO v_new_pos
         FROM (
-            SELECT ROW_NUMBER() OVER (ORDER BY source_priority, src_id) AS union_id
+            SELECT source_priority * 1000000000000000::bigint + src_id::bigint AS union_id
             FROM (
-                SELECT 1 AS source_priority, id AS src_id FROM mol_bronze.chembl_molecules WHERE standard_inchi_key IS NOT NULL
+                SELECT 1::bigint AS source_priority, id::bigint AS src_id FROM mol_bronze.chembl_molecules WHERE standard_inchi_key IS NOT NULL
                 UNION ALL
-                SELECT 2, id FROM mol_bronze.drugbank_drugs WHERE inchikey IS NOT NULL
+                SELECT 2::bigint, id::bigint FROM mol_bronze.drugbank_drugs WHERE inchikey IS NOT NULL
                 UNION ALL
-                SELECT 3, id FROM mol_bronze.pubchem WHERE inchikey IS NOT NULL
+                SELECT 3::bigint, id::bigint FROM mol_bronze.pubchem WHERE inchikey IS NOT NULL
             ) sub
         ) numbered
         WHERE union_id > v_resume_pos

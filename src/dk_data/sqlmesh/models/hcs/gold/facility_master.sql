@@ -17,7 +17,10 @@ MODEL (
         not_null(columns := (provider_id)),
         unique_values(columns := (provider_id))
     ),
-    grain provider_id
+    grain provider_id,
+    pre_statements [
+        SET LOCAL work_mem = '128MB'
+    ]
 );
 
 -- Aggregate across sources: best name, location, and available metrics per facility

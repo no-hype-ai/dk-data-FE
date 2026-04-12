@@ -46,7 +46,7 @@ BEGIN
 
         WITH source_union AS (
             SELECT
-                ROW_NUMBER() OVER (ORDER BY source_priority, src_id) AS union_id,
+                source_priority * 1000000000000000::bigint + src_id::bigint AS union_id,
                 jurisdiction,
                 registration_number,
                 serial_number,
@@ -57,7 +57,7 @@ BEGIN
                 source_name
             FROM (
                 -- EUIPO trademarks
-                SELECT 1 AS source_priority, id AS src_id,
+                SELECT 1::bigint AS source_priority, id::bigint AS src_id,
                     'EUIPO'             AS jurisdiction,
                     registration_number,
                     application_number  AS serial_number,
@@ -156,11 +156,11 @@ BEGIN
 
         SELECT COALESCE(MAX(union_id), v_resume_pos) INTO v_new_pos
         FROM (
-            SELECT ROW_NUMBER() OVER (ORDER BY source_priority, src_id) AS union_id
+            SELECT source_priority * 1000000000000000::bigint + src_id::bigint AS union_id
             FROM (
-                SELECT 1 AS source_priority, id AS src_id FROM ip_bronze.euipo_trademarks
+                SELECT 1::bigint AS source_priority, id::bigint AS src_id FROM ip_bronze.euipo_trademarks
                 UNION ALL
-                SELECT 2, id FROM ip_bronze.uspto_trademarks
+                SELECT 2::bigint, id::bigint FROM ip_bronze.uspto_trademarks
             ) sub
         ) numbered
         WHERE union_id > v_resume_pos

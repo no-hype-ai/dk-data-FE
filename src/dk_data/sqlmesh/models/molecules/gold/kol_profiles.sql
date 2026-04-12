@@ -10,7 +10,7 @@
 --   h_index*0.3 + publications*0.2 + citations*0.25 + trials*0.15 + grants*0.1
 --
 -- Fixed (019-cms-puf-platform-reconciliation):
---   - ct.lead_sponsor → ct.lead_sponsor
+--   - ct.lead_sponsor_name → ct.lead_sponsor_name
 --     (mol_silver.clinical_trials exposes lead_sponsor_name, not lead_sponsor)
 --   - pub_counts now joins via first_author_name ILIKE rather than first_author_id
 --     (mol_silver.publications does not expose first_author_id in its final SELECT;
@@ -28,7 +28,10 @@ MODEL (
         not_null(columns := (researcher_id, family_name)),
         unique_values(columns := (researcher_id))
     ),
-    grain researcher_id
+    grain researcher_id,
+    pre_statements [
+        SET LOCAL work_mem = '128MB'
+    ]
 );
 
 WITH researcher_base AS (
@@ -73,7 +76,7 @@ trial_counts AS (
     FROM mol_silver.researchers r
     JOIN mol_silver.clinical_trials ct
         ON LENGTH(r.family_name) >= 4
-       AND ct.lead_sponsor ~* ('\m' || r.family_name || '\M')
+       AND ct.lead_sponsor_name ~* ('\m' || r.family_name || '\M')
     GROUP BY r.id
 ),
 

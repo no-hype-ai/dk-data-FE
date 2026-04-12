@@ -24,7 +24,10 @@ MODEL (
     audits (
         not_null(columns := (molecule_id))
     ),
-    grain molecule_id
+    grain molecule_id,
+    pre_statements [
+        SET LOCAL work_mem = '128MB'
+    ]
 );
 
 WITH molecules AS (
@@ -123,7 +126,14 @@ SELECT
     m.molecule_id,
     m.canonical_name,
     m.molecule_type,
-    m.development_status,
+    CASE
+        WHEN m.max_phase >= 4 THEN 'approved'
+        WHEN m.max_phase = 3  THEN 'phase_3'
+        WHEN m.max_phase = 2  THEN 'phase_2'
+        WHEN m.max_phase = 1  THEN 'phase_1'
+        WHEN m.max_phase = 0  THEN 'preclinical'
+        ELSE 'unknown'
+    END                                     AS development_status,
     m.therapeutic_areas,
 
     -- Drug spending

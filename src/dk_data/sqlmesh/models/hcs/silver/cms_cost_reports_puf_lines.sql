@@ -10,7 +10,10 @@ MODEL (
     audits (
         not_null(columns := (provider_id, line_item_code, _source_year))
     ),
-    grain (provider_id, line_item_code, _source_year)
+    grain (provider_id, line_item_code, _source_year),
+    pre_statements [
+        SET LOCAL work_mem = '128MB'
+    ]
 );
 
 SELECT DISTINCT ON (b.provider_id, b.line_item_code, b._source_year)
@@ -27,10 +30,10 @@ SELECT DISTINCT ON (b.provider_id, b.line_item_code, b._source_year)
 
     -- Facility enrichment from hospital general info (most recent year)
     h.facility_name,
-    h.address                   AS facility_address,
-    h.city_town                 AS facility_city,
-    h.state                     AS facility_state,
-    h.zip_code                  AS facility_zip_code,
+    h.address,
+    h.city_town,
+    h.state,
+    h.zip_code,
     h.county_parish,
     h.telephone_number,
     h.hospital_type,
@@ -42,7 +45,7 @@ SELECT DISTINCT ON (b.provider_id, b.line_item_code, b._source_year)
 
     'cms_cost_reports_puf_lines' AS source,
     b._source_file,
-    b._loaded_at                AS source_updated_at,
+    b._loaded_at,
     NOW()                       AS created_at
 
 FROM hcs_bronze.cms_cost_reports_puf_lines b

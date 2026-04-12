@@ -9,7 +9,10 @@ MODEL (
     kind INCREMENTAL_BY_UNIQUE_KEY (
         unique_key provider_id
     ),
-    grain provider_id
+    grain provider_id,
+    pre_statements [
+        SET LOCAL work_mem = '128MB'
+    ]
 );
 
 WITH npi_providers AS (

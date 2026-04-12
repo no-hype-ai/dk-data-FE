@@ -45,6 +45,27 @@ spec:
                   echo "Snapshotting pg_stat_activity..."
                   psql -h "${POSTGRES_HOST}" -U "${POSTGRES_USER}" -d "${POSTGRES_DB}" \
                     -c "SELECT meta.snapshot_activity()"
+
+                  # Emit structured log lines that Loki / Alloy can match for alerting.
+                  # These power the dk-data-postgres-budgets alert group in
+                  # grafana/alerts/dk-data.yaml (Section 10.5 of low-tech-solutions doc).
+
+                  # 1. Activity pile-up: count of active dk_data queries right now
+                  ACTIVE_COUNT=$(psql -h "${POSTGRES_HOST}" -U "${POSTGRES_USER}" -d "${POSTGRES_DB}" -tAc \
+                    "SELECT count(*) FROM pg_stat_activity WHERE datname = 'dk_data' AND state = 'active'")
+                  echo "pg_stat_activity_summary dk_data_active_count=${ACTIVE_COUNT}"
+
+                  # 2. Long transactions: any dk_data xact older than 1 hour
+                  psql -h "${POSTGRES_HOST}" -U "${POSTGRES_USER}" -d "${POSTGRES_DB}" -tAF' ' -c \
+                    "SELECT 'long_transaction'
+                          , 'pid='||pid
+                          , 'application_name='||COALESCE(application_name, 'none')
+                          , 'xact_age_seconds='||EXTRACT(epoch FROM (now() - xact_start))::int
+                     FROM pg_stat_activity
+                     WHERE datname = 'dk_data'
+                       AND xact_start IS NOT NULL
+                       AND now() - xact_start > interval '1 hour'"
+
                   # Purge old rows once a day (idempotent at 00:00)
                   HOUR=$(date -u +%H)
                   MINUTE=$(date -u +%M)

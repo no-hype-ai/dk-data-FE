@@ -24,7 +24,7 @@ SELECT
     r.mark_element,
     r.mark_type,
 
-    -- Status (status_code is INTEGER in mol_raw.uspto_trademarks; cast to TEXT for silver UNION)
+    -- Status (status_code is INTEGER in ip_raw.uspto_trademarks; cast to TEXT for silver UNION)
     r.status,
     r.status_code::TEXT AS status_code,
     r.status_date,
@@ -63,6 +63,6 @@ SELECT
     FALSE AS processed_to_silver,
     r._loaded_at AS ingested_at
 
-FROM mol_raw.uspto_trademarks r
+FROM ip_raw.uspto_trademarks r
 WHERE r.serial_number IS NOT NULL
   AND _loaded_at BETWEEN @start_dt AND @end_dt

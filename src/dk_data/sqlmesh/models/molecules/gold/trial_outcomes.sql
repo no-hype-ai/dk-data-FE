@@ -4,24 +4,29 @@
 
 MODEL (
     name mol_gold.trial_outcomes,
-    kind FULL,
+    kind INCREMENTAL_BY_UNIQUE_KEY (
+        unique_key (molecule_id, trial_nct_id, endpoint_name, evidence_source)
+    ),
     cron '@weekly',
     audits (
         not_null(columns := (evidence_source, confidence_score))
     ),
-    grain (molecule_id, trial_nct_id, endpoint_name, evidence_source)
+    grain (molecule_id, trial_nct_id, endpoint_name, evidence_source),
+    pre_statements [
+        SET LOCAL work_mem = '128MB'
+    ]
 );
 
 -- Source 1: ClinicalTrials.gov structured results data
--- molecule_id is resolved by joining intervention drug names to mol_silver.molecule_aliases
+-- molecule_id is resolved by joining intervention drug names to mol_silver.molecule_names
 WITH trial_molecule_links AS (
     SELECT DISTINCT
         ct.nct_id,
         ma.molecule_id
     FROM mol_silver.clinical_trials ct
     CROSS JOIN LATERAL jsonb_array_elements(ct.interventions) AS iv
-    JOIN mol_silver.molecule_aliases ma
-      ON LOWER(iv->>'name') = LOWER(ma.alias_name)
+    JOIN mol_silver.molecule_names ma
+      ON LOWER(iv->>'name') = LOWER(ma.display_name)
     WHERE ct.interventions IS NOT NULL
 ),
 
@@ -34,7 +39,7 @@ registry_outcomes AS (
         NULL::NUMERIC AS hazard_ratio,
         NULL::NUMERIC AS p_value,
         NULL::NUMERIC AS response_rate,
-        ct.enrollment AS sample_size,
+        ct.enrollment_count AS sample_size,
         1.0::NUMERIC AS confidence_score,
         ct.start_date AS evidence_date
     FROM mol_silver.clinical_trials ct

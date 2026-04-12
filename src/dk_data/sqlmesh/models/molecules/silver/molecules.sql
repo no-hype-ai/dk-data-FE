@@ -10,6 +10,17 @@ MODEL (
         unique_key molecule_id
     ),
     grain molecule_id
+    ,
+    -- T6: staleness check — refuse to run if any upstream bronze is older than max age
+    pre_statements [
+        SET LOCAL work_mem = '128MB',
+        """DO $$ BEGIN
+            IF (SELECT COALESCE(MAX(ingested_at), '1900-01-01'::timestamptz) FROM mol_bronze.chembl_molecules)
+               < NOW() - interval '168 hours' THEN
+                RAISE EXCEPTION 'mol_bronze.chembl_molecules is stale (oldest tolerated: 168 hours)';
+            END IF;
+        END $$;"""
+    ]
 );
 
 WITH ranked AS (
@@ -17,11 +28,19 @@ WITH ranked AS (
     SELECT
         ('x' || substr(md5(COALESCE(inchi_key, 'bio:' || LOWER(COALESCE(pref_name, chembl_id)))), 1, 16))::bit(64)::bigint   AS molecule_id,
         COALESCE(inchi_key, NULL)                                    AS inchi_key,
+        inchi,
         canonical_smiles,
         NULL::text                                                    AS sequence_hash,
         (molecule_type NOT IN ('Small molecule', 'SMALL_MOLECULE'))  AS is_biologic,
+        molecule_type,
         NULL::bigint                                                  AS parent_molecule_id,
         COALESCE(pref_name, chembl_id)                               AS canonical_name,
+        max_phase,
+        first_approval,
+        molecular_formula,
+        molecular_weight,
+        NULL::text                                                    AS mechanism_of_action,
+        NULL::text[]                                                  AS therapeutic_areas,
         1                                                             AS src_priority,
         MIN(ingested_at) OVER (PARTITION BY COALESCE(inchi_key, 'bio:' || LOWER(COALESCE(pref_name, chembl_id))))  AS first_seen_at
     FROM mol_bronze.chembl_molecules
@@ -30,14 +49,28 @@ WITH ranked AS (
     UNION ALL
 
     -- Source 2: DrugBank (structural + biologic drugs)
+    -- Note: drugbank bronze uses different column names for molecule_type (drug_type),
+    -- molecular_weight (text; numeric is `average_mass`), and therapeutic_areas (atc_codes).
+    -- Per the no-aliases rule we project these columns as NULL here and rely on the
+    -- chembl branch (src_priority=1) to win on dedup for any molecule present in both sources.
+    -- Drugbank-only molecules will not have these enrichment fields populated; the
+    -- bronze names are still authoritative downstream via mol_bronze.drugbank directly.
     SELECT
         ('x' || substr(md5(COALESCE(inchi_key, 'bio:' || LOWER(name))), 1, 16))::bit(64)::bigint  AS molecule_id,
         inchi_key,
-        smiles                                                        AS canonical_smiles,
+        inchi,
+        NULL::text                                                    AS canonical_smiles,
         NULL::text                                                    AS sequence_hash,
         (drug_type IN ('biotech', 'Biotech'))                        AS is_biologic,
+        NULL::text                                                    AS molecule_type,
         NULL::bigint                                                  AS parent_molecule_id,
         name                                                          AS canonical_name,
+        NULL::integer                                                 AS max_phase,
+        NULL::integer                                                 AS first_approval,
+        molecular_formula,
+        NULL::numeric                                                 AS molecular_weight,
+        mechanism_of_action,
+        NULL::text[]                                                  AS therapeutic_areas,
         2                                                             AS src_priority,
         MIN(ingested_at) OVER (PARTITION BY COALESCE(inchi_key, 'bio:' || LOWER(name)))  AS first_seen_at
     FROM mol_bronze.drugbank
@@ -49,11 +82,19 @@ WITH ranked AS (
     SELECT
         ('x' || substr(md5(inchi_key), 1, 16))::bit(64)::bigint      AS molecule_id,
         inchi_key,
+        NULL::text                                                    AS inchi,
         canonical_smiles,
         NULL::text                                                    AS sequence_hash,
         FALSE                                                         AS is_biologic,
+        NULL::text                                                    AS molecule_type,
         NULL::bigint                                                  AS parent_molecule_id,
         COALESCE(iupac_name, 'pubchem:' || cid::text)                AS canonical_name,
+        NULL::integer                                                 AS max_phase,
+        NULL::integer                                                 AS first_approval,
+        molecular_formula,
+        molecular_weight,
+        NULL::text                                                    AS mechanism_of_action,
+        NULL::text[]                                                  AS therapeutic_areas,
         3                                                             AS src_priority,
         MIN(ingested_at) OVER (PARTITION BY inchi_key)               AS first_seen_at
     FROM mol_bronze.pubchem
@@ -65,11 +106,19 @@ deduped AS (
     SELECT DISTINCT ON (molecule_id)
         molecule_id,
         inchi_key,
+        inchi,
         canonical_smiles,
         sequence_hash,
         is_biologic,
+        molecule_type,
         parent_molecule_id,
         canonical_name,
+        max_phase,
+        first_approval,
+        molecular_formula,
+        molecular_weight,
+        mechanism_of_action,
+        therapeutic_areas,
         first_seen_at
     FROM ranked
     ORDER BY molecule_id, src_priority ASC
@@ -78,11 +127,19 @@ deduped AS (
 SELECT
     molecule_id,
     inchi_key,
+    inchi,
     canonical_smiles,
     sequence_hash,
     COALESCE(is_biologic, FALSE)   AS is_biologic,
+    molecule_type,
     parent_molecule_id,
     canonical_name,
+    max_phase,
+    first_approval,
+    molecular_formula,
+    molecular_weight,
+    mechanism_of_action,
+    therapeutic_areas,
     COALESCE(first_seen_at, NOW()) AS first_seen_at,
     NOW()                          AS last_updated_at
 FROM deduped;

@@ -8,7 +8,10 @@ MODEL (
     kind INCREMENTAL_BY_UNIQUE_KEY (
         unique_key facility_id
     ),
-    grain facility_id
+    grain facility_id,
+    pre_statements [
+        SET LOCAL work_mem = '128MB'
+    ]
 );
 
 WITH pos_facilities AS (

@@ -8,11 +8,26 @@ MODEL (
         unique_key company_id
     ),
     grain company_id
+    ,
+    -- T6: staleness check — refuse to run if any upstream bronze is older than max age
+    pre_statements [
+        SET LOCAL work_mem = '128MB',
+        """DO $$ BEGIN
+            IF (SELECT COALESCE(MAX(ingested_at), '1900-01-01'::timestamptz) FROM mol_bronze.sec_edgar)
+               < NOW() - interval '168 hours' THEN
+                RAISE EXCEPTION 'mol_bronze.sec_edgar is stale (oldest tolerated: 168 hours)';
+            END IF;
+        END $$;"""
+    ]
 );
 
+-- Hash determinism (FR-014): both source CTEs MUST hash on the same canonical key.
+-- CIK is stored in mol_silver.company_identifiers as an alternate id; it is NOT part
+-- of the hub product_id derivation, otherwise FDA-with-CIK and DrugBank-without-CIK
+-- rows for the same company would land in two distinct hub rows.
 WITH fda_companies AS (
     SELECT
-        ('x' || substr(md5(COALESCE(cik, LOWER(REGEXP_REPLACE(company_name, '\s*(Inc\.|Corp\.|Ltd\.|AG|SA|LLC|GmbH|PLC|SE|NV|BV)\s*$', '', 'gi')))), 1, 16))::bit(64)::bigint AS company_id,
+        ('x' || substr(md5(LOWER(REGEXP_REPLACE(company_name, '\s*(Inc\.|Corp\.|Ltd\.|AG|SA|LLC|GmbH|PLC|SE|NV|BV)\s*$', '', 'gi'))), 1, 16))::bit(64)::bigint AS company_id,
         cik,
         ticker,
         LOWER(REGEXP_REPLACE(company_name, '\s*(Inc\.|Corp\.|Ltd\.|AG|SA|LLC|GmbH|PLC|SE|NV|BV)\s*$', '', 'gi')) AS canonical_name,

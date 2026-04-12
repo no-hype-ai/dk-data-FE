@@ -5,7 +5,10 @@ MODEL (
     kind INCREMENTAL_BY_UNIQUE_KEY (
         unique_key (source, identifier)
     ),
-    grain (source, identifier)
+    grain (source, identifier),
+    pre_statements [
+        SET LOCAL work_mem = '128MB'
+    ]
 );
 
 WITH euipo_ids AS (

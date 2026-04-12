@@ -1,6 +1,6 @@
 -- SQLMesh Model: Bronze EUIPO Registered Community Designs
 -- Transforms raw EUIPO design search flat columns into typed bronze layer.
--- Source table: mol_raw.euipo_designs (flat typed columns, not JSONB envelope)
+-- Source table: ip_raw.euipo_designs (flat typed columns, not JSONB envelope)
 -- Part of: 014-uspto-euipo-model-datasource
 -- Migrated from mol_bronze → ip_bronze by 001-silver-medallion-rebuild (FR-006d)
 
@@ -61,6 +61,6 @@ SELECT
     FALSE                                    AS processed_to_silver,
     r._loaded_at
 
-FROM mol_raw.euipo_designs r
+FROM ip_raw.euipo_designs r
 WHERE r.application_number IS NOT NULL
   AND r._loaded_at BETWEEN @start_dt AND @end_dt

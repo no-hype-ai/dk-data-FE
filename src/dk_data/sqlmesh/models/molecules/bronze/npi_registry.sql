@@ -27,7 +27,10 @@ MODEL (
     audits (
         not_null(columns := (npi))
     ),
-    grain npi
+    grain npi,
+    pre_statements [
+        SET LOCAL work_mem = '128MB'
+    ]
 );
 
 -- Build a JSONB array of the first few non-null taxonomy codes from the 15 flat columns.

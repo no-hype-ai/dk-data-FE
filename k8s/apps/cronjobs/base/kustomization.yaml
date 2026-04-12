@@ -137,6 +137,8 @@ resources:
   - cronjob-fetch-pharmgkb.yaml
   - cronjob-fetch-kegg-drug.yaml
   - cronjob-fetch-tdc-admet.yaml
+  - cronjob-fetch-acc-tvc.yaml
+  - cronjob-backfill-orchestrator.yaml
   # Clinical data API sources (2 files — 019-cms-puf-platform-reconciliation)
   - cronjob-fetch-clinicaltrials.yaml
   - cronjob-fetch-openfda-labels.yaml

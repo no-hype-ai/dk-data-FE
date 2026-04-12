@@ -1,7 +1,7 @@
 -- SQLMesh Model: Silver CMS Part D Formulary
 -- Typed pass-through of CMS Part D formulary data from hcs_bronze.cms_formulary.
--- Links drugs to molecules via rxcui → mol_silver.identifier_mappings (identifier_type='rxcui'),
--- falling back to mol_silver.molecule_aliases when no identifier_mappings entry exists.
+-- Links drugs to molecules via rxcui → mol_silver.molecule_identifiers (source='rxnorm'),
+-- falling back to mol_silver.molecule_names when no identifier_mappings entry exists.
 -- Note: mol_silver.molecules has no rxcui column; rxcui→molecule_id resolution requires
 -- the identifier_mappings table (populated from drug_labels.rxcui via OpenFDA).
 -- Consumers: drug_utilization, part_d_prescribing, market access analysis.
@@ -9,12 +9,17 @@
 
 MODEL (
     name hcs_silver.cms_formulary,
-    kind FULL,
+    kind INCREMENTAL_BY_UNIQUE_KEY (
+        unique_key (formulary_id, rxcui)
+    ),
     cron '@monthly',
     audits (
         not_null(columns := (formulary_id, rxcui))
     ),
-    grain (formulary_id, rxcui)
+    grain (formulary_id, rxcui),
+    pre_statements [
+        SET LOCAL work_mem = '128MB'
+    ]
 );
 
 SELECT DISTINCT ON (b.formulary_id, b.rxcui)
@@ -31,22 +36,21 @@ SELECT DISTINCT ON (b.formulary_id, b.rxcui)
 
     b.source,
     b.ingested_at,
-    b.ingested_at                   AS source_updated_at,
     NOW()                           AS created_at
 
 FROM hcs_bronze.cms_formulary b
 
 -- Primary: rxcui → identifier_mappings (populated from drug_labels.rxcui JSONB via OpenFDA)
-LEFT JOIN mol_silver.identifier_mappings im
+LEFT JOIN mol_silver.molecule_identifiers im
        ON b.rxcui IS NOT NULL
-      AND im.identifier_type = 'rxcui'
-      AND im.identifier_value = b.rxcui::TEXT
+      AND im.source = 'rxnorm'
+      AND im.identifier = b.rxcui::TEXT
 
--- Fallback: rxcui as alias_name in molecule_aliases (edge case)
-LEFT JOIN mol_silver.molecule_aliases ma
+-- Fallback: rxcui as display_name in molecule_aliases (edge case)
+LEFT JOIN mol_silver.molecule_names ma
        ON im.molecule_id IS NULL
       AND b.rxcui IS NOT NULL
-      AND ma.alias_name = b.rxcui::TEXT
+      AND ma.display_name = b.rxcui::TEXT
 LEFT JOIN mol_silver.molecules m_alias
        ON m_alias.molecule_id = ma.molecule_id
 

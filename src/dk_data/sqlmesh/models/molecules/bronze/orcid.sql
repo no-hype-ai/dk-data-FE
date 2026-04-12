@@ -38,9 +38,9 @@ MODEL (
 SELECT
     gen_random_uuid()               AS id,
 
-    -- Researcher identifiers (structured columns from mol_raw.orcid)
+    -- Researcher identifiers (raw column names retained verbatim per FR-001)
     orcid_id,
-    given_names                     AS given_name,
+    given_names,
     family_name,
     credit_name,
 
@@ -49,14 +49,14 @@ SELECT
 
     -- Affiliations: JSONB array of {organization, role, department}
     -- populated by ORCIDFetcher._parse_employments()
-    current_affiliations            AS affiliations,
+    current_affiliations,
 
     -- Works count: integer column pre-computed by loader
     works_count,
 
     -- Research keywords: JSONB array of keyword strings
-    -- (ORCID person.keywords; used as research_areas proxy)
-    keywords                        AS research_areas,
+    -- (ORCID person.keywords)
+    keywords,
 
     -- External identifiers: dict of {type: value} (no column loss)
     external_ids,

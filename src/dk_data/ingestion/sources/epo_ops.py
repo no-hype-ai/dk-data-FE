@@ -30,7 +30,7 @@ def load_epo_ops_data(
     source_file: Optional[str] = None,
     batch_size: int = BATCH_SIZE,
 ) -> Dict[str, Any]:
-    """Load EPO patent records into mol_raw.epo_patents.
+    """Load EPO patent records into ip_raw.epo_patents.
 
     Validates each record using Pydantic and performs an upsert:
     INSERT ... ON CONFLICT (publication_id) DO UPDATE.

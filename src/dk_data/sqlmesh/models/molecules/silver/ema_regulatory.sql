@@ -11,12 +11,17 @@
 
 MODEL (
     name mol_silver.ema_regulatory,
-    kind FULL,
+    kind INCREMENTAL_BY_UNIQUE_KEY (
+        unique_key (molecule_id, product_number)
+    ),
     cron '@weekly',
     grain (molecule_id, product_number),
     audits (
         not_null(columns := (product_number, authorization_status))
-    )
+    ),
+    pre_statements [
+        SET LOCAL work_mem = '128MB'
+    ]
 );
 
 SELECT
@@ -71,17 +76,17 @@ LEFT JOIN mol_silver.molecules m ON m.molecule_id = mol_match.molecule_id
 -- multiple aliases (or the same alias for different molecules) match active_substance.
 LEFT JOIN LATERAL (
     SELECT ma2.molecule_id
-    FROM mol_silver.molecule_aliases ma2
+    FROM mol_silver.molecule_names ma2
     WHERE m.molecule_id IS NULL
       AND e.active_substance IS NOT NULL
       AND (
-          LOWER(REGEXP_REPLACE(e.active_substance, '[^a-zA-Z0-9]', '', 'g')) = ma2.alias_name_normalized
+          LOWER(REGEXP_REPLACE(e.active_substance, '[^a-zA-Z0-9]', '', 'g')) = ma2.normalized_name
           OR
           (LENGTH(SPLIT_PART(e.active_substance, ' ', 1)) >= 4
            AND LOWER(REGEXP_REPLACE(
                    SPLIT_PART(e.active_substance, ' ', 1),
                    '[^a-zA-Z0-9]', '', 'g'
-               )) = ma2.alias_name_normalized)
+               )) = ma2.normalized_name)
       )
     ORDER BY ma2.molecule_id
     LIMIT 1

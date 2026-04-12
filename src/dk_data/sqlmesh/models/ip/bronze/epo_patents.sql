@@ -26,7 +26,7 @@ SELECT
     r.filing_date,
     r.publication_date AS patent_date,
 
-    -- Classification: ipc_codes is TEXT[] in mol_raw.epo_patents; cpc_codes does not exist
+    -- Classification: ipc_codes is TEXT[] in ip_raw.epo_patents; cpc_codes does not exist
     CASE
         WHEN r.ipc_codes IS NOT NULL
         THEN to_jsonb(r.ipc_codes)
@@ -59,6 +59,6 @@ SELECT
     FALSE AS processed_to_silver,
     r._loaded_at AS ingested_at
 
-FROM mol_raw.epo_patents r
+FROM ip_raw.epo_patents r
 WHERE r.publication_id IS NOT NULL
   AND _loaded_at BETWEEN @start_dt AND @end_dt

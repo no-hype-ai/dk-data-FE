@@ -12,13 +12,18 @@
 
 MODEL (
     name hcs_silver.cms_facility_profile,
-    kind FULL,
-    cron '@daily',
+    kind INCREMENTAL_BY_UNIQUE_KEY (
+        unique_key (ccn)
+    ),
+    cron '@monthly',
     audits (
         not_null(columns := (ccn)),
         unique_values(columns := (ccn))
     ),
-    grain (ccn)
+    grain (ccn),
+    pre_statements [
+        SET LOCAL work_mem = '128MB'
+    ]
 );
 
 WITH inpatient_agg AS (
@@ -142,20 +147,21 @@ magnet_status AS (
 SELECT
     pos.ccn,
     pos.facility_name,
-    pos.provider_type                                                           AS facility_type,
-    pos.street_address                                                          AS address,
+    pos.provider_type,
+    pos.street_address,
     pos.city,
     pos.state,
     pos.zip_code,
 
     -- Bed capacity
-    pos.beds                                                                    AS total_beds,
+    pos.beds,
 
     -- Ownership from Hospital General Info (more detailed than POS)
     COALESCE(hgi.hospital_ownership, pos.ownership_type)                        AS ownership_type,
     hgi.hospital_type,
 
     -- Hospital general info extended fields
+    hgi.address,
     hgi.emergency_services,
     hgi.meets_criteria_for_birthing_friendly_designation,
     hgi.hospital_overall_rating_footnote,
@@ -219,8 +225,7 @@ SELECT
     mag.designation_date                                                        AS magnet_designation_date,
 
     -- Source tracking
-    pos.source                                                                  AS pos_source,
-    pos.ingested_at                                                             AS pos_ingested_at,
+    pos.ingested_at,
     'cms_facility_profile'                                                      AS source,
     NOW()                                                                       AS source_updated_at,
     NOW()                                                                       AS profile_built_at

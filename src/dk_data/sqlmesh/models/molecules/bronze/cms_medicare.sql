@@ -10,7 +10,10 @@ MODEL (
         unique_key (generic_name, program, year)
     ),
     cron '@monthly',
-    grain (generic_name, program, year)
+    grain (generic_name, program, year),
+    pre_statements [
+        SET LOCAL work_mem = '128MB'
+    ]
 );
 
 WITH expanded AS (

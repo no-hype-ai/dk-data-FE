@@ -27,6 +27,7 @@ SELECT
     r.abstract::TEXT             AS abstract,
     r.publication_date::DATE     AS publication_date,
     r.doi::TEXT                  AS doi,
+    r.pmid::TEXT                 AS pmid,
     r.review_type::TEXT          AS review_type,
 
     -- Intervention and condition arrays

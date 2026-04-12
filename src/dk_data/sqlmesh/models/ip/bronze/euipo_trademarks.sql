@@ -41,7 +41,7 @@ SELECT
     r.registration_date,
     r.expiry_date,
 
-    -- Classification (mol_raw.euipo_trademarks.nice_classes is INTEGER[]; cast to JSONB for bronze)
+    -- Classification (ip_raw.euipo_trademarks.nice_classes is INTEGER[]; cast to JSONB for bronze)
     to_jsonb(r.nice_classes) AS nice_classes,
 
     -- Description
@@ -57,6 +57,6 @@ SELECT
     FALSE AS processed_to_silver,
     r._loaded_at AS ingested_at
 
-FROM mol_raw.euipo_trademarks r
+FROM ip_raw.euipo_trademarks r
 WHERE r.application_number IS NOT NULL
   AND _loaded_at BETWEEN @start_dt AND @end_dt

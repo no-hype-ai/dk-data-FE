@@ -72,14 +72,14 @@ BEGIN
         SELECT company_id INTO v_id
         FROM mol_silver.company_names
         WHERE similarity(LOWER(normalized_name), v_stripped_name) >= 0.85
-        ORDER BY similarity(LOWER(normalized_name), v_stripped_name) DESC
+        ORDER BY similarity(LOWER(normalized_name), v_stripped_name) DESC, company_id ASC
         LIMIT 1;
         IF FOUND THEN RETURN v_id; END IF;
 
         SELECT company_id INTO v_id
         FROM mol_silver.company_names
         WHERE similarity(LOWER(normalized_name), LOWER(p_name)) >= 0.85
-        ORDER BY similarity(LOWER(normalized_name), LOWER(p_name)) DESC
+        ORDER BY similarity(LOWER(normalized_name), LOWER(p_name)) DESC, company_id ASC
         LIMIT 1;
         IF FOUND THEN RETURN v_id; END IF;
     END IF;

@@ -19,7 +19,10 @@ MODEL (
         not_null(columns := (filing_id, cik)),
         unique_values(columns := (filing_id))
     ),
-    grain filing_id
+    grain filing_id,
+    pre_statements [
+        SET LOCAL work_mem = '128MB'
+    ]
 );
 
 SELECT DISTINCT ON (e.filing_id)
@@ -27,6 +30,7 @@ SELECT DISTINCT ON (e.filing_id)
 
     -- Filing identifiers (exact bronze column names from mol_bronze.sec_edgar)
     e.filing_id,
+    e.accession_number,
     e.cik,
     e.company_name,
     e.filing_type,

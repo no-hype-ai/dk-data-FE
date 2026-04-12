@@ -28,8 +28,10 @@ SELECT
     -- Strip HTML anchor tags: <a href="...">text</a> → text
     regexp_replace(title, '<[^>]+>', '', 'g')::TEXT AS title,
     summary::TEXT                         AS summary,
-    -- Fall back to _loaded_at when publication_date is missing
-    COALESCE(publication_date, _loaded_at::DATE)::DATE AS pub_date,
+    -- Raw publication_date retained verbatim per FR-001; pub_date_filled is the
+    -- derived column that fills missing dates from _loaded_at.
+    publication_date,
+    COALESCE(publication_date, _loaded_at::DATE)::DATE AS pub_date_filled,
     url::TEXT                             AS url,
     to_jsonb(drug_mentions)              AS drug_mentions,
     to_jsonb(therapeutic_areas)          AS therapeutic_areas,

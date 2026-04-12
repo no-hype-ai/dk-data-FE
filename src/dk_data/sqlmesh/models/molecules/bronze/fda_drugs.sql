@@ -14,7 +14,10 @@ MODEL (
     audits (
         not_null(columns := (application_number))
     ),
-    grain application_number
+    grain application_number,
+    pre_statements [
+        SET LOCAL work_mem = '128MB'
+    ]
 );
 
 -- Each mol_raw.fda_drugs row is a single application record stored directly.

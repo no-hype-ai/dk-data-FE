@@ -565,7 +565,7 @@ SOURCE_METADATA = {
             "package_ndcs": {"description": "Array of 11-digit package-level NDC codes for this product", "type": "string[]"},
         },
         "staleness_threshold_hours": 720,
-        "target_tables": ["mol_raw.fda_ndc", "mol_bronze.fda_ndc", "mol_silver.identifier_mappings", "mol_silver.ndc_molecule_bridge"],
+        "target_tables": ["mol_raw.fda_ndc", "mol_bronze.fda_ndc", "mol_silver.molecule_identifiers", "mol_silver.ndc_molecule_bridge"],
     },
 }
 

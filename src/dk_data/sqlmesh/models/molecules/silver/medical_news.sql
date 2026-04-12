@@ -12,7 +12,10 @@ MODEL (
     audits (
         not_null(columns := (article_id))
     ),
-    grain article_id
+    grain article_id,
+    pre_statements [
+        SET LOCAL work_mem = '128MB'
+    ]
 );
 
 -- Deduplicate by article_id before MERGE.
@@ -20,7 +23,7 @@ MODEL (
 -- DISTINCT ON (article_id) keeps the most recently ingested record per unique article.
 WITH deduped_bronze AS (
     SELECT DISTINCT ON (article_id)
-        article_id, source_name, title, summary, pub_date, url,
+        article_id, source_name, title, summary, publication_date, pub_date_filled, url,
         drug_mentions, therapeutic_areas, source_updated_at
     FROM mol_bronze.medical_news
     WHERE article_id IS NOT NULL AND title IS NOT NULL
@@ -41,7 +44,8 @@ SELECT
     b.url,
     b.source_name,
     b.summary,
-    b.pub_date                                          AS publication_date,
+    b.publication_date,
+    b.pub_date_filled,
     b.drug_mentions,
     b.therapeutic_areas,
     'medical_news'                                      AS source,

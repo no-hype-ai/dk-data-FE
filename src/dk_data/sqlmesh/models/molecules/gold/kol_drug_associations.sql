@@ -11,7 +11,10 @@ MODEL (
     audits (
         not_null(columns := (researcher_id, molecule_id))
     ),
-    grain (researcher_id, molecule_id)
+    grain (researcher_id, molecule_id),
+    pre_statements [
+        SET LOCAL work_mem = '128MB'
+    ]
 );
 
 -- Trial-based associations (researcher as investigator/sponsor)
@@ -24,7 +27,7 @@ WITH trial_associations AS (
         COUNT(DISTINCT ct.nct_id) AS evidence_count
     FROM mol_silver.researchers r
     JOIN mol_silver.clinical_trials ct
-        ON ct.lead_sponsor ILIKE '%' || r.family_name || '%'
+        ON ct.lead_sponsor_name ILIKE '%' || r.family_name || '%'
     JOIN mol_silver.molecules m
         ON ct.molecule_id = m.molecule_id
     WHERE ct.molecule_id IS NOT NULL

@@ -1,0 +1,213 @@
+# Backfill Orchestrator CronJob
+# Feature: 001-silver-medallion-rebuild (audit followup 2026-04-12)
+# Issue: dk-data-FE#256 (historical fetch depth per datasource)
+#
+# This is the SOLE entry point for historical backfills. It replaces the
+# manual job-initial-backfill.yaml flow with a self-driving state machine.
+#
+# How it works:
+#   1. Every 10 minutes the orchestrator pod boots up
+#   2. It calls meta.backfill_orchestrator_cleanup_stuck() to release any
+#      orphaned 'running' locks (e.g. from a previous pod that died mid-run)
+#   3. It calls meta.backfill_orchestrator_pick() which:
+#      - Checks circuit breakers (cluster busy, WAL budget, concurrency cap)
+#      - Picks ONE source with status='active', highest priority, oldest last_success
+#      - Atomically marks it 'running' so concurrent ticks won't double-pick
+#   4. It runs the picked fetcher with the source's stored fetcher_args
+#   5. On exit it calls meta.backfill_orchestrator_complete() or _fail() to
+#      update accounting and decide next status
+#
+# Cluster parallelism (per the doc + analysis in 165_meta_backfill_state.sql):
+#   - Max 1 concurrent backfill at a time. The orchestrator function enforces
+#     this via the 'running' status check.
+#   - concurrencyPolicy: Forbid prevents two orchestrator pods from running
+#     simultaneously (though even if they did, the pick() function would only
+#     return one source via FOR UPDATE SKIP LOCKED).
+#   - 10-minute schedule gives a fetcher time to finish a chunk before the next
+#     tick. Most chunks finish in < 5 min; the activeDeadlineSeconds caps any
+#     runaway at 30 min.
+#
+# Health checks:
+#   - meta.backfill_state.consecutive_failures auto-paginates to 'failed' after 3
+#   - meta.backfill_state.consecutive_noops auto-paginates to 'complete' after 3
+#   - cleanup_stuck() releases orphaned locks > 60min old
+#   - Grafana alert dk-data-backfill-stuck fires on consecutive_failures >= 3
+#
+# To enable a source:
+#   UPDATE meta.backfill_state SET status='active', activated_at=NOW()
+#   WHERE source_name='clinicaltrials';
+#
+# To pause:
+#   UPDATE meta.backfill_state SET status='paused' WHERE source_name='...';
+#
+# To inspect progress:
+#   SELECT * FROM meta.backfill_progress;
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: backfill-orchestrator
+  labels:
+    app: backfill-orchestrator
+    app.kubernetes.io/name: backfill-orchestrator
+    app.kubernetes.io/component: orchestration
+    app.kubernetes.io/part-of: dk-data
+spec:
+  schedule: "*/10 * * * *"  # every 10 minutes
+  concurrencyPolicy: Forbid
+  startingDeadlineSeconds: 600
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 5
+  jobTemplate:
+    spec:
+      backoffLimit: 0  # don't retry — next tick will pick up
+      ttlSecondsAfterFinished: 86400
+      activeDeadlineSeconds: 1800  # 30 min hard cap per chunk
+      template:
+        metadata:
+          labels:
+            app: backfill-orchestrator
+            app.kubernetes.io/component: orchestration
+            app.kubernetes.io/part-of: dk-data
+            team: data-platform
+            service: dk-data
+            product: dk-data
+        spec:
+          restartPolicy: Never
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 1000
+            fsGroup: 1000
+            seccompProfile:
+              type: RuntimeDefault
+          imagePullSecrets:
+            - name: ghcr-credentials
+          containers:
+            - name: backfill-orchestrator
+              image: ghcr.io/data-kinetic/dk-data-fe/job-trigger:latest
+              securityContext:
+                allowPrivilegeEscalation: false
+                readOnlyRootFilesystem: true
+                capabilities:
+                  drop: ["ALL"]
+              command:
+                - /bin/sh
+                - -c
+                - |
+                  set -eu
+                  export PSQL="psql -h ${POSTGRES_HOST_DIRECT} -U ${POSTGRES_USER} -d ${POSTGRES_DB} -v ON_ERROR_STOP=1"
+
+                  echo "[$(date -u +%FT%TZ)] backfill orchestrator starting"
+
+                  # 0. Release any orphaned 'running' locks from dead pods
+                  RELEASED=$($PSQL -tAc "SELECT meta.backfill_orchestrator_cleanup_stuck(60)")
+                  if [ "$RELEASED" != "0" ]; then
+                      echo "[$(date -u +%FT%TZ)] released $RELEASED orphaned running locks"
+                  fi
+
+                  # 1. Pick the next source. The function enforces:
+                  #    - max 1 concurrent backfill (via status='running' check)
+                  #    - circuit breakers (pg_stat_activity, daily WAL budget)
+                  #    - priority + oldest last_success ordering
+                  PICKED=$($PSQL -tAF '|' -c \
+                      "SELECT source_name, fetcher_module, fetcher_args, category
+                       FROM meta.backfill_orchestrator_pick(1, 30, 50)")
+
+                  if [ -z "$PICKED" ]; then
+                      echo "[$(date -u +%FT%TZ)] orchestrator: nothing to do (circuit breaker open or no active sources)"
+                      exit 0
+                  fi
+
+                  SOURCE=$(echo "$PICKED" | cut -d'|' -f1)
+                  MODULE=$(echo "$PICKED" | cut -d'|' -f2)
+                  # fetcher_args comes back as a Postgres array literal: {--days-back,5475}
+                  # Strip braces and split on comma
+                  ARGS_RAW=$(echo "$PICKED" | cut -d'|' -f3 | tr -d '{}')
+                  CATEGORY=$(echo "$PICKED" | cut -d'|' -f4)
+
+                  echo "[$(date -u +%FT%TZ)] picked source=$SOURCE category=$CATEGORY args=$ARGS_RAW"
+
+                  # 2. Set up failure trap so the running lock is released even on crash
+                  trap 'echo "[$(date -u +%FT%TZ)] trap: releasing $SOURCE"; $PSQL -c "SELECT meta.backfill_orchestrator_release('"'"'"$SOURCE"'"'"')" || true' INT TERM EXIT
+
+                  # 3. Capture pre-run WAL position for accounting
+                  WAL_BEFORE=$($PSQL -tAc "SELECT pg_current_wal_lsn()::text")
+                  ROWS_BEFORE=$($PSQL -tAc "SELECT COALESCE(total_rows_loaded, 0) FROM meta.backfill_state WHERE source_name = '$SOURCE'" || echo 0)
+                  START_TS=$(date +%s)
+
+                  # 4. Run the fetcher
+                  set +e
+                  if [ -n "$ARGS_RAW" ]; then
+                      # Convert comma-separated args back to space-separated for the shell
+                      ARGS_LIST=$(echo "$ARGS_RAW" | tr ',' ' ')
+                      python -m "$MODULE" "$SOURCE" $ARGS_LIST
+                  else
+                      python -m "$MODULE" "$SOURCE"
+                  fi
+                  FETCH_EXIT=$?
+                  set -e
+
+                  END_TS=$(date +%s)
+                  DURATION=$((END_TS - START_TS))
+
+                  # 5. Compute WAL bytes generated and rows added
+                  WAL_MB=$($PSQL -tAc "SELECT ROUND((pg_wal_lsn_diff(pg_current_wal_lsn(), '$WAL_BEFORE')::numeric / 1024 / 1024)::numeric, 2)")
+                  # Best-effort row delta from meta.fetch_checkpoints
+                  ROWS_NOW=$($PSQL -tAc "SELECT COALESCE((checkpoint_data->>'records_inserted')::bigint, 0) FROM meta.fetch_checkpoints WHERE source_name = '$SOURCE'" || echo "$ROWS_BEFORE")
+                  ROWS_DELTA=$((ROWS_NOW - ROWS_BEFORE))
+                  if [ "$ROWS_DELTA" -lt 0 ]; then ROWS_DELTA=0; fi
+
+                  # 6. Persist a row in meta.wal_usage so the wal-explosion alert sees it
+                  $PSQL -c "INSERT INTO meta.wal_usage (job_name, wal_mb, logged_at) VALUES ('backfill_$SOURCE', $WAL_MB, NOW())"
+
+                  # 7. Update orchestrator state
+                  if [ $FETCH_EXIT -eq 0 ]; then
+                      $PSQL -c "SELECT meta.backfill_orchestrator_complete('$SOURCE', $ROWS_DELTA, $WAL_MB, $DURATION)"
+                      echo "[$(date -u +%FT%TZ)] OK source=$SOURCE rows=$ROWS_DELTA wal_mb=$WAL_MB duration_s=$DURATION"
+                  else
+                      $PSQL -c "SELECT meta.backfill_orchestrator_fail('$SOURCE', 'fetcher exit code '$FETCH_EXIT)"
+                      echo "[$(date -u +%FT%TZ)] FAIL source=$SOURCE exit=$FETCH_EXIT wal_mb=$WAL_MB duration_s=$DURATION"
+                      trap - INT TERM EXIT  # disable the trap so we don't double-release
+                      exit $FETCH_EXIT
+                  fi
+
+                  # Disarm the trap on success
+                  trap - INT TERM EXIT
+              envFrom:
+                - secretRef:
+                    name: dk-data-secrets
+              env:
+                - name: POSTGRES_HOST_DIRECT
+                  value: "postgresql.infra.svc.cluster.local"
+                - name: OTEL_EXPORTER_OTLP_ENDPOINT
+                  value: "http://alloy.infra.svc.cluster.local:4317"
+                - name: OTEL_ENABLED
+                  value: "true"
+                - name: OTEL_SERVICE_NAME
+                  value: "dk-data-backfill-orchestrator"
+                - name: K8S_NAMESPACE
+                  valueFrom:
+                    fieldRef:
+                      fieldPath: metadata.namespace
+                - name: APPLICATION_NAME
+                  value: "backfill-orchestrator"
+              resources:
+                requests:
+                  memory: "256Mi"
+                  cpu: "100m"
+                limits:
+                  memory: "1Gi"
+                  cpu: "500m"
+              volumeMounts:
+                - name: tmp
+                  mountPath: /tmp
+                - name: data
+                  mountPath: /tmp/data
+          volumes:
+            - name: tmp
+              emptyDir:
+                medium: ""
+                sizeLimit: 256Mi
+            - name: data
+              emptyDir:
+                medium: ""
+                sizeLimit: 4Gi

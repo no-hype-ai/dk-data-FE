@@ -12,8 +12,11 @@ MODEL (
     kind INCREMENTAL_BY_UNIQUE_KEY (
         unique_key molecule_id
     ),
-    cron '@daily',
-    grain (molecule_id)
+    cron '@weekly',
+    grain (molecule_id),
+    pre_statements [
+        SET LOCAL work_mem = '128MB'
+    ]
 );
 
 WITH molecule_base AS (
@@ -21,12 +24,19 @@ WITH molecule_base AS (
         m.molecule_id,
         m.inchi_key,
         m.canonical_name,
-        m.development_status,
+        CASE
+        WHEN m.max_phase >= 4 THEN 'approved'
+        WHEN m.max_phase = 3  THEN 'phase_3'
+        WHEN m.max_phase = 2  THEN 'phase_2'
+        WHEN m.max_phase = 1  THEN 'phase_1'
+        WHEN m.max_phase = 0  THEN 'preclinical'
+        ELSE 'unknown'
+    END                                     AS development_status,
         m.max_phase,
-        m.first_approval_year,
+        m.first_approval,
         NULL::DATE AS approval_date
     FROM mol_silver.molecules m
-    WHERE m.needs_review = FALSE
+    WHERE TRUE
 ),
 
 -- Clinical trial evidence

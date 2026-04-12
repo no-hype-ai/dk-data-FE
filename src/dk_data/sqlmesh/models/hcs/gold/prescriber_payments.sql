@@ -16,7 +16,10 @@ MODEL (
     audits (
         not_null(columns := (applicable_manufacturer_or_gpo_name, _source_year))
     ),
-    grain (molecule_id, applicable_manufacturer_or_gpo_name, _source_year)
+    grain (molecule_id, applicable_manufacturer_or_gpo_name, _source_year),
+    pre_statements [
+        SET LOCAL work_mem = '128MB'
+    ]
 );
 
 WITH payment_agg AS (

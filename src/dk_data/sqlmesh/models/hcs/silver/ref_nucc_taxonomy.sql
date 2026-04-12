@@ -10,18 +10,20 @@ MODEL (
         not_null(columns := (taxonomy_code)),
         unique_values(columns := (taxonomy_code))
     ),
-    grain (taxonomy_code)
+    grain (taxonomy_code),
+    pre_statements [
+        SET LOCAL work_mem = '128MB'
+    ]
 );
 
 SELECT DISTINCT ON (taxonomy_code)
     gen_random_uuid()                           AS id,
     taxonomy_code,
-    taxonomy_type                               AS type,
+    taxonomy_type,
     classification,
     specialization,
     source,
     ingested_at,
-    ingested_at                                 AS source_updated_at,
     NOW()                                       AS created_at
 FROM hcs_bronze.cms_nucc
 WHERE taxonomy_code IS NOT NULL

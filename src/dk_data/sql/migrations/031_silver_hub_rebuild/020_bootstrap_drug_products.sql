@@ -45,23 +45,28 @@ BEGIN
 
         WITH source_union AS (
             SELECT
-                ROW_NUMBER() OVER (ORDER BY source_priority, src_id) AS union_id,
+                source_priority * 1000000000000000::bigint + src_id::bigint AS union_id,
                 rxcui,
                 bla_number,
+                bla_product_number,
                 application_number,
                 brand_name,
                 generic_name,
                 dosage_form,
                 route,
                 is_biologic,
+                is_biosimilar,
+                reference_product_name,
+                reference_product_brand,
                 ndc_code,
                 source_name
             FROM (
                 -- RxNorm SCD/SBD (SCD=clinical drugs, SBD=branded drugs)
-                SELECT 1 AS source_priority, id AS src_id,
-                    rxcui, NULL AS bla_number, NULL AS application_number,
+                SELECT 1::bigint AS source_priority, id::bigint AS src_id,
+                    rxcui, NULL AS bla_number, NULL AS bla_product_number, NULL AS application_number,
                     brand_name, generic_name, dose_form AS dosage_form, route,
-                    false AS is_biologic,
+                    false AS is_biologic, false AS is_biosimilar,
+                    NULL AS reference_product_name, NULL AS reference_product_brand,
                     ndc AS ndc_code,
                     'rxnorm_scd' AS source_name
                 FROM mol_bronze.rxnorm_scd
@@ -71,22 +76,26 @@ BEGIN
 
                 -- FDA Drugs@FDA (NDA applications)
                 SELECT 2, id,
-                    NULL, NULL, application_number,
+                    NULL, NULL, NULL, application_number,
                     brand_name, generic_name, dosage_form, route,
-                    false,
+                    false, false,
+                    NULL, NULL,
                     NULL,
                     'fda_drugs'
                 FROM mol_bronze.fda_drugs
 
                 UNION ALL
 
-                -- Purple Book (biologics BLA)
+                -- Purple Book (biologics BLA — biosimilar status preserved from source)
                 SELECT 3, id,
-                    NULL, bla_number, NULL,
-                    proprietary_name AS brand_name,
-                    nonproprietary_name AS generic_name,
+                    NULL, bla_number, product_number, NULL,
+                    brand_name,
+                    generic_name,
                     dosage_form, route,
                     true,
+                    COALESCE(is_biosimilar, false),
+                    reference_product_name,
+                    reference_product_brand,
                     NULL,
                     'purple_book'
                 FROM mol_bronze.purple_book
@@ -103,28 +112,33 @@ BEGIN
             INSERT INTO mol_silver.drug_products (
                 rxcui,
                 bla_number,
+                bla_product_number,
                 application_number,
                 brand_name,
                 generic_name,
                 dosage_form,
                 route,
-                is_biologic
+                is_biologic,
+                is_biosimilar
             )
             SELECT
                 c.rxcui,
                 c.bla_number,
+                c.bla_product_number,
                 c.application_number,
                 c.brand_name,
                 c.generic_name,
                 c.dosage_form,
                 c.route,
-                COALESCE(c.is_biologic, false)
+                COALESCE(c.is_biologic, false),
+                COALESCE(c.is_biosimilar, false)
             FROM chunked c
             ON CONFLICT (rxcui) WHERE rxcui IS NOT NULL DO UPDATE SET
                 brand_name      = COALESCE(EXCLUDED.brand_name, mol_silver.drug_products.brand_name),
                 generic_name    = COALESCE(EXCLUDED.generic_name, mol_silver.drug_products.generic_name),
+                is_biosimilar   = mol_silver.drug_products.is_biosimilar OR EXCLUDED.is_biosimilar,
                 last_updated_at = NOW()
-            RETURNING product_id, rxcui, bla_number, application_number
+            RETURNING product_id, rxcui, bla_number, bla_product_number, application_number
         ),
         ndc_insert AS (
             -- NDC goes into drug_product_identifiers, NOT the hub column
@@ -140,6 +154,20 @@ BEGIN
                 OR (c.bla_number IS NOT NULL AND i.bla_number = c.bla_number)
                 OR (c.application_number IS NOT NULL AND i.application_number = c.application_number)
             WHERE c.ndc_code IS NOT NULL
+            ON CONFLICT (source, identifier) DO NOTHING
+        ),
+        bla_crosswalk AS (
+            -- BLA crosswalk: bla_number:product_number composite identifier
+            INSERT INTO mol_silver.drug_product_identifiers (source, identifier, product_id, is_primary)
+            SELECT
+                'bla',
+                c.bla_number || ':' || COALESCE(c.bla_product_number, '0'),
+                i.product_id,
+                true
+            FROM chunked c
+            JOIN inserted i ON i.bla_number = c.bla_number
+                AND COALESCE(i.bla_product_number, '0') = COALESCE(c.bla_product_number, '0')
+            WHERE c.bla_number IS NOT NULL
             ON CONFLICT (source, identifier) DO NOTHING
         ),
         name_insert AS (
@@ -169,13 +197,13 @@ BEGIN
 
         SELECT COALESCE(MAX(union_id), v_resume_pos) INTO v_new_pos
         FROM (
-            SELECT ROW_NUMBER() OVER (ORDER BY source_priority, src_id) AS union_id
+            SELECT source_priority * 1000000000000000::bigint + src_id::bigint AS union_id
             FROM (
-                SELECT 1 AS source_priority, id AS src_id FROM mol_bronze.rxnorm_scd WHERE tty IN ('SCD', 'SBD', 'GPCK', 'BPCK')
+                SELECT 1::bigint AS source_priority, id::bigint AS src_id FROM mol_bronze.rxnorm_scd WHERE tty IN ('SCD', 'SBD', 'GPCK', 'BPCK')
                 UNION ALL
-                SELECT 2, id FROM mol_bronze.fda_drugs
+                SELECT 2::bigint, id::bigint FROM mol_bronze.fda_drugs
                 UNION ALL
-                SELECT 3, id FROM mol_bronze.purple_book
+                SELECT 3::bigint, id::bigint FROM mol_bronze.purple_book
             ) sub
         ) numbered
         WHERE union_id > v_resume_pos
@@ -204,6 +232,41 @@ BEGIN
 
         PERFORM pg_sleep(0.05);
     END LOOP;
+
+    -- 3b. Resolve biosimilar→reference product linkage (FR-012a, Gap 9).
+    -- Run after the chunked load so all originator and biosimilar rows exist in the hub.
+    -- Equality-only join on lowercased brand_name; no LIKE/similarity (S2/S5 banned).
+    WITH originator AS (
+        SELECT DISTINCT ON (LOWER(brand_name))
+            LOWER(brand_name) AS norm_brand,
+            product_id        AS reference_product_id
+        FROM mol_silver.drug_products
+        WHERE brand_name IS NOT NULL
+          AND is_biologic = true
+          AND COALESCE(is_biosimilar, false) = false
+        ORDER BY LOWER(brand_name), product_id
+    ),
+    biosim AS (
+        SELECT DISTINCT
+            dp.product_id,
+            COALESCE(o1.reference_product_id, o2.reference_product_id) AS reference_product_id
+        FROM mol_silver.drug_products dp
+        JOIN mol_bronze.purple_book pb
+          ON pb.bla_number = dp.bla_number
+         AND COALESCE(pb.product_number, '0') = COALESCE(dp.bla_product_number, '0')
+        LEFT JOIN originator o1 ON o1.norm_brand = LOWER(NULLIF(pb.reference_product_brand, ''))
+        LEFT JOIN originator o2 ON o2.norm_brand = LOWER(NULLIF(pb.reference_product_name, ''))
+        WHERE COALESCE(dp.is_biosimilar, false) = true
+          AND dp.reference_product_id IS NULL
+    )
+    UPDATE mol_silver.drug_products dp
+    SET reference_product_id = b.reference_product_id,
+        last_updated_at      = NOW()
+    FROM biosim b
+    WHERE dp.product_id = b.product_id
+      AND b.reference_product_id IS NOT NULL;
+
+    COMMIT;
 
     -- 4. Mark completed
     UPDATE meta.refresh_state

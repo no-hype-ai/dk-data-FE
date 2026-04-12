@@ -15,7 +15,10 @@ MODEL (
     audits (
         not_null(columns := (cik, filing_type, filing_date))
     ),
-    grain (cik, filing_type, filing_date)
+    grain (cik, filing_type, filing_date),
+    pre_statements [
+        SET LOCAL work_mem = '128MB'
+    ]
 );
 
 -- Deduplicate on the unique key before MERGE.
@@ -29,6 +32,7 @@ WITH deduped AS (
         filing_type::TEXT       AS filing_type,
         filing_date::DATE       AS filing_date,
         filing_id::TEXT         AS filing_id,
+        accession_number::TEXT  AS accession_number,
         document_url::TEXT      AS document_url,
         description::TEXT       AS description,
         revenue::NUMERIC        AS revenue,
@@ -51,6 +55,7 @@ SELECT
     filing_type,
     filing_date,
     filing_id,
+    accession_number,
     document_url,
     description,
     revenue,

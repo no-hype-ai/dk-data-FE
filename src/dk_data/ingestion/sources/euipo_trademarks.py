@@ -5,7 +5,7 @@ Task: T015 — EUIPO trademark raw table loader
 
 Loads normalised EUIPO trademark records into ip_raw.euipo_trademarks
 with upsert semantics (ON CONFLICT DO UPDATE on application_number).
-Tracks status changes in mol_raw.trademark_status_history.
+Tracks status changes in ip_raw.trademark_status_history.
 
 Target table: ip_raw.euipo_trademarks (see migration 072_euipo_trademarks_raw.sql)
 """
@@ -31,7 +31,7 @@ def load_euipo_trademarks_data(
     source_file: Optional[str] = None,
     batch_size: int = BATCH_SIZE,
 ) -> Dict[str, Any]:
-    """Load EUIPO trademark records into mol_raw.euipo_trademarks.
+    """Load EUIPO trademark records into ip_raw.euipo_trademarks.
 
     Validates each record using Pydantic and performs an upsert:
     INSERT ... ON CONFLICT (application_number) DO UPDATE.
@@ -221,7 +221,7 @@ def _track_status_change(
     try:
         cur.execute(
             """
-            SELECT new_status FROM mol_raw.trademark_status_history
+            SELECT new_status FROM ip_raw.trademark_status_history
             WHERE trademark_identifier = %s AND source = %s
             ORDER BY changed_at DESC
             LIMIT 1
@@ -234,7 +234,7 @@ def _track_status_change(
         if old_status != new_status:
             cur.execute(
                 """
-                INSERT INTO mol_raw.trademark_status_history
+                INSERT INTO ip_raw.trademark_status_history
                     (trademark_identifier, source, old_status, new_status)
                 VALUES (%s, %s, %s, %s)
                 """,
