@@ -81,25 +81,21 @@ def discover_migrations(migrations_dir: str) -> list[tuple[str, str, str]]:
     # Opt-in via MIGRATIONS_INCLUDE_SUBDIRS=1 — subdirectory migrations depend on
     # SQLMesh tables existing, so they should only run in production (post-SQLMesh)
     # or when explicitly enabled.
-    if not os.getenv("MIGRATIONS_INCLUDE_SUBDIRS", ""):
-        return migrations
-
-    for subdir in sorted(migrations_path.iterdir()):
-        if not subdir.is_dir():
-            continue
-        dir_match = PREFIX_RE.match(subdir.name)
-        if not dir_match:
-            continue
-        for filepath in sorted(subdir.glob("*.sql")):
-            filename = filepath.name
-            if "_rollback" in filename.lower():
+    if os.getenv("MIGRATIONS_INCLUDE_SUBDIRS", ""):
+        for subdir in sorted(migrations_path.iterdir()):
+            if not subdir.is_dir():
                 continue
-            child_match = PREFIX_RE.match(filename)
-            if child_match:
-                # Version key includes subdirectory to avoid collisions:
-                # e.g. "031_silver_hub_rebuild/004_resolve_molecule"
-                version = f"{subdir.name}/{filepath.stem}"
-                migrations.append((version, filename, str(filepath)))
+            dir_match = PREFIX_RE.match(subdir.name)
+            if not dir_match:
+                continue
+            for filepath in sorted(subdir.glob("*.sql")):
+                filename = filepath.name
+                if "_rollback" in filename.lower():
+                    continue
+                child_match = PREFIX_RE.match(filename)
+                if child_match:
+                    version = f"{subdir.name}/{filepath.stem}"
+                    migrations.append((version, filename, str(filepath)))
 
     def sort_key(m):
         version, filename, filepath = m
