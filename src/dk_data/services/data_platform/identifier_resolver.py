@@ -161,7 +161,7 @@ class ResolutionResult:
     confidence: float = 0.0
     match_type: str = "none"  # exact, structure, fuzzy, new
     needs_review: bool = False
-    source: Optional[str] = None
+    identifier_type: Optional[str] = None
     all_identifiers: Dict[str, str] = field(default_factory=dict)
     resolution_path: List[str] = field(default_factory=list)
 
@@ -246,7 +246,7 @@ class IdentifierResolver:
 
         Args:
             identifier: The identifier to resolve
-            identifier_type: Type of identifier (auto-detected if not provided)
+            source: Type of identifier (auto-detected if not provided)
             source: Source of the identifier (for provenance)
 
         Returns:
@@ -256,12 +256,12 @@ class IdentifierResolver:
         identifier = identifier.strip()
 
         # Auto-detect identifier type if not provided
-        if identifier_type is None:
-            identifier_type = self.detect_identifier_type(identifier)
-            result.resolution_path.append(f"auto_detect:{identifier_type.value}")
+        if source is None:
+            source = self.detect_identifier_type(identifier)
+            result.resolution_path.append(f"auto_detect:{source.value}")
 
         # Step 1: Direct lookup in identifier_mappings
-        direct_result = await self._lookup_direct(identifier, identifier_type)
+        direct_result = await self._lookup_direct(identifier, source)
         if direct_result:
             result.molecule_id = direct_result['molecule_id']
             result.inchi_key = direct_result['inchi_key']
@@ -272,7 +272,7 @@ class IdentifierResolver:
             return result
 
         # Step 2: Structure-based resolution (SMILES → InChI Key)
-        if identifier_type == IdentifierType.SMILES and self._rdkit_available:
+        if source == IdentifierType.SMILES and self._rdkit_available:
             inchi_key = self._smiles_to_inchi_key(identifier)
             if inchi_key:
                 result.resolution_path.append("smiles_conversion")
@@ -293,9 +293,9 @@ class IdentifierResolver:
                     return result
 
         # Step 3: External API cross-reference
-        if identifier_type in [IdentifierType.CHEMBL_ID, IdentifierType.DRUGBANK_ID,
+        if source in [IdentifierType.CHEMBL_ID, IdentifierType.DRUGBANK_ID,
                                IdentifierType.PUBCHEM_CID, IdentifierType.NAME]:
-            api_result = await self._resolve_via_api(identifier, identifier_type)
+            api_result = await self._resolve_via_api(identifier, source)
             if api_result and api_result.get('inchi_key'):
                 result.resolution_path.append("external_api")
                 # Look up by API-provided InChI Key
@@ -318,7 +318,7 @@ class IdentifierResolver:
                     return result
 
         # Step 4: Fuzzy name matching (for NAME type)
-        if identifier_type == IdentifierType.NAME and self.fuzzy_matcher:
+        if source == IdentifierType.NAME and self.fuzzy_matcher:
             result.resolution_path.append("fuzzy_match")
             matches = await self.fuzzy_matcher.search(identifier, threshold=0.3, limit=5)
             if matches:
@@ -347,7 +347,7 @@ class IdentifierResolver:
     async def _lookup_direct(
         self,
         identifier: str,
-        identifier_type: IdentifierType
+        source: IdentifierType
     ) -> Optional[Dict[str, Any]]:
         """Look up identifier directly in identifier_mappings table."""
         async with self.db_pool.acquire() as conn:
@@ -357,14 +357,14 @@ class IdentifierResolver:
                     m.inchi_key,
                     m.canonical_name,
                     im.confidence
-                FROM mol_silver.identifier_mappings im
+                FROM mol_silver.molecule_identifiers im
                 JOIN mol_silver.molecules m ON im.molecule_id = m.id
-                WHERE im.identifier_value = $1
-                  AND im.identifier_type = $2
+                WHERE im.identifier = $1
+                  AND im.source = $2
                   AND m.needs_review = FALSE
                 ORDER BY im.confidence DESC, im.is_primary DESC
                 LIMIT 1
-            """, identifier, identifier_type.value)
+            """, identifier, source.value)
 
             if row:
                 return dict(row)
@@ -408,13 +408,13 @@ class IdentifierResolver:
     async def _resolve_via_api(
         self,
         identifier: str,
-        identifier_type: IdentifierType
+        source: IdentifierType
     ) -> Optional[Dict[str, Any]]:
         """Resolve identifier via external API (PubChem, ChEMBL, etc.)."""
         # Implementation depends on external API clients
         # This is a placeholder for the actual API integration
 
-        if 'pubchem' in self.external_apis and identifier_type in [
+        if 'pubchem' in self.external_apis and source in [
             IdentifierType.PUBCHEM_CID, IdentifierType.NAME
         ]:
             try:
@@ -422,7 +422,7 @@ class IdentifierResolver:
             except Exception as e:
                 logger.warning(f"PubChem resolution failed: {e}")
 
-        if 'chembl' in self.external_apis and identifier_type == IdentifierType.CHEMBL_ID:
+        if 'chembl' in self.external_apis and source == IdentifierType.CHEMBL_ID:
             try:
                 return await self.external_apis['chembl'].resolve(identifier)
             except Exception as e:

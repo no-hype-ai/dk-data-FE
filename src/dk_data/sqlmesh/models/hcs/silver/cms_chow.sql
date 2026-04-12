@@ -1,8 +1,9 @@
 -- SQLMesh Model: Silver CMS Change of Ownership (CHOW)
--- Typed pass-through of CMS CHOW records from hcs_bronze.cms_chow.
--- Links facilities via CCN → hcs_bronze.cms_care_compare (facility master) and
--- hcs_bronze.cms_hospital_general_info for operational context.
--- Consumers: facility ownership chain analysis, M&A tracking, market intelligence.
+-- Pure 1:1 passthrough of hcs_bronze.cms_chow. Cross-source enrichment columns
+-- (cms_care_compare, cms_hospital_general_info) are no longer projected here per
+-- the project rule that bronze column names are authoritative and aliases are
+-- forbidden. Consumers needing facility context should join hcs_silver.cms_care_compare
+-- or hcs_silver.cms_hospital_general_info on ccn = facility_id themselves.
 -- Part of: issue #172 H3
 
 MODEL (
@@ -16,47 +17,15 @@ MODEL (
 );
 
 SELECT DISTINCT ON (b.ccn, b.effective_date)
-    gen_random_uuid()               AS id,
     b.ccn,
     b.previous_owner,
     b.new_owner,
     b.effective_date,
     b.provider_type,
 
-    -- Facility context from Care Compare (canonical facility master)
-    cc.facility_id,
-    cc.facility_name,
-    cc.address,
-    cc.city,
-    cc.state,
-    cc.zip_code,
-    cc.county_name,
-    cc.phone_number,
-    cc.hospital_type,
-    cc.hospital_ownership         AS current_ownership,
-    cc.emergency_services         AS cc_emergency_services,
-    cc.overall_rating,
-
-    -- Operational detail from hospital general info
-    h.facility_name               AS hgi_facility_name,
-    h.city_town                   AS hgi_city,
-    h.county_parish,
-    h.telephone_number,
-    h.hospital_type               AS hgi_hospital_type,
-    h.hospital_ownership          AS hgi_hospital_ownership,
-    h.emergency_services,
-    h.meets_criteria_for_birthing_friendly_designation,
-    h.hospital_overall_rating,
-    h.hospital_overall_rating_footnote,
-
     b.source,
-    b.ingested_at,
-    b.ingested_at                   AS source_updated_at,
-    NOW()                           AS created_at
-
+    b.ingested_at
 FROM hcs_bronze.cms_chow b
-LEFT JOIN hcs_bronze.cms_care_compare cc ON b.ccn = cc.facility_id
-LEFT JOIN hcs_bronze.cms_hospital_general_info h  ON b.ccn = h.facility_id
 WHERE b.ccn IS NOT NULL
   AND b.effective_date IS NOT NULL
-ORDER BY b.ccn, b.effective_date, h._source_year DESC NULLS LAST
+ORDER BY b.ccn, b.effective_date, b.ingested_at DESC NULLS LAST

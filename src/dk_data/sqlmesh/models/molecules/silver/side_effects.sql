@@ -11,30 +11,34 @@
 
 MODEL (
     name mol_silver.side_effects,
-    kind FULL,
+    kind INCREMENTAL_BY_UNIQUE_KEY (
+        unique_key (stitch_id_flat, side_effect_name)
+    ),
     cron '@monthly',
     audits (
-        not_null(columns := (stitch_id, side_effect_name))
+        not_null(columns := (stitch_id_flat, side_effect_name))
     )
+    ,
+    -- T4: large input — raise work_mem to keep sorts in memory (per-session 256MB ceiling per FR-021b)
 );
 
 SELECT
     gen_random_uuid()                                       AS id,
     pc.molecule_id                                          AS molecule_id,
-    b.stitch_id_flat                                        AS stitch_id,
+    b.stitch_id_flat,
     b.pubchem_cid,
     -- drug_name from mol_silver.molecules via molecule_id JOIN (SIDER has no name field)
-    m.canonical_name                                        AS drug_name,
-    b.umls_cui_side_effect                                  AS meddra_concept_id,
+    m.canonical_name,
+    b.umls_cui_side_effect,
     b.side_effect_name,
-    b.meddra_concept_type                                   AS meddra_level,
+    b.meddra_concept_type,
     b.frequency_raw,
-    b.lower_bound_freq                                      AS frequency_lower,
-    b.upper_bound_freq                                      AS frequency_upper,
+    b.lower_bound_freq,
+    b.upper_bound_freq,
     -- SIDER has no free-text frequency description field
     NULL::TEXT                                              AS frequency_description,
     b.frequency_category,
-    b.placebo                                               AS placebo_frequency,
+    b.placebo,
 
     -- Additional SIDER identifiers
     b.stitch_id_stereo,
@@ -45,8 +49,7 @@ SELECT
     NULL::TEXT                                              AS indication,
     NULL::TEXT                                              AS indication_source,
     'sider'                                                 AS source,
-    b.ingested_at                                           AS source_updated_at,
-    b.ingested_at                                           AS created_at
+    b.ingested_at
 
 FROM mol_bronze.sider b
 -- Link via PubChem CID → mol_silver.pubchem → molecule_id

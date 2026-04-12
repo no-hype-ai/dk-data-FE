@@ -1,0 +1,93 @@
+# WAL status snapshot CronJob
+# Feature: 001-silver-medallion-rebuild / T229
+# Calls meta.snapshot_wal_status() every 10 minutes to record WAL position
+# and replication lag.  Data retained 30 days via meta.purge_wal_status().
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: wal-status-snapshot
+  labels:
+    app: dk-data-observability
+    app.kubernetes.io/name: wal-status-snapshot
+    app.kubernetes.io/component: monitoring
+    app.kubernetes.io/part-of: dk-data
+spec:
+  schedule: "*/10 * * * *"  # Every 10 minutes
+  concurrencyPolicy: Forbid
+  startingDeadlineSeconds: 120
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      backoffLimit: 0
+      ttlSecondsAfterFinished: 7200
+      activeDeadlineSeconds: 120  # 2 minutes max
+      template:
+        metadata:
+          labels:
+            app: wal-status-snapshot
+            app.kubernetes.io/component: monitoring
+            app.kubernetes.io/part-of: dk-data
+        spec:
+          restartPolicy: Never
+          securityContext:
+            fsGroup: 1000
+            seccompProfile:
+              type: RuntimeDefault
+          containers:
+            - name: wal-status-snapshot
+              image: postgres:16-alpine
+              command:
+                - /bin/sh
+                - -c
+                - |
+                  set -e
+                  echo "Snapshotting WAL status..."
+                  psql -h "${POSTGRES_HOST}" -U "${POSTGRES_USER}" -d "${POSTGRES_DB}" \
+                    -c "SELECT meta.snapshot_wal_status()"
+                  # Purge old rows once a day (idempotent near midnight)
+                  HOUR=$(date -u +%H)
+                  MINUTE=$(date -u +%M)
+                  if [ "${HOUR}" = "01" ] && [ "${MINUTE}" -lt 15 ]; then
+                    echo "Running monthly purge..."
+                    psql -h "${POSTGRES_HOST}" -U "${POSTGRES_USER}" -d "${POSTGRES_DB}" \
+                      -c "SELECT meta.purge_wal_status(30)"
+                  fi
+                  echo "WAL status snapshot complete."
+              env:
+                - name: POSTGRES_HOST
+                  # Use direct connection — WAL functions require replication privilege
+                  value: "postgresql.infra.svc.cluster.local"
+                - name: POSTGRES_USER
+                  valueFrom:
+                    secretKeyRef:
+                      name: dk-data-secrets
+                      key: POSTGRES_USER
+                - name: PGPASSWORD
+                  valueFrom:
+                    secretKeyRef:
+                      name: dk-data-secrets
+                      key: POSTGRES_PASSWORD
+                - name: POSTGRES_DB
+                  valueFrom:
+                    secretKeyRef:
+                      name: dk-data-secrets
+                      key: POSTGRES_DB
+              resources:
+                requests:
+                  memory: "64Mi"
+                  cpu: "50m"
+                limits:
+                  memory: "128Mi"
+                  cpu: "100m"
+              securityContext:
+                allowPrivilegeEscalation: false
+                readOnlyRootFilesystem: true
+                capabilities:
+                  drop: ["ALL"]
+              volumeMounts:
+                - name: tmp
+                  mountPath: /tmp
+          volumes:
+            - name: tmp
+              emptyDir: {}

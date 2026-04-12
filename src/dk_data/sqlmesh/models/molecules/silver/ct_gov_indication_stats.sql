@@ -19,11 +19,11 @@ SELECT DISTINCT ON (b.condition_query)
     gen_random_uuid()                                   AS id,
     COALESCE(m_exact.molecule_id, m_alias.molecule_id) AS molecule_id,
     b.condition_query,
-    b.total_count                                       AS trial_count,
+    b.total_count,
     b.active_count,
     b.fetched_at,
     'ct_gov_indication_stats'                           AS source,
-    b.request_timestamp             AS source_updated_at,
+    b.request_timestamp,
     NOW()                                               AS created_at
 
 FROM mol_bronze.ct_gov_indication_stats b
@@ -32,11 +32,11 @@ LEFT JOIN mol_silver.molecules m_exact
        ON b.condition_query IS NOT NULL
       AND LOWER(m_exact.canonical_name) = LOWER(b.condition_query)
 -- Fallback: alias match
-LEFT JOIN mol_silver.molecule_aliases ma
+LEFT JOIN mol_silver.molecule_names ma
        ON m_exact.molecule_id IS NULL
       AND b.condition_query IS NOT NULL
       AND LOWER(REGEXP_REPLACE(b.condition_query, '[^a-zA-Z0-9]', '', 'g'))
-          = ma.alias_name_normalized
+          = ma.normalized_name
 LEFT JOIN mol_silver.molecules m_alias
        ON m_alias.molecule_id = ma.molecule_id
 WHERE b.condition_query IS NOT NULL

@@ -241,9 +241,9 @@ class IdentifierLinkerService:
                     SELECT m.id, m.inchi_key, m.canonical_name
                     FROM mol_silver.molecules m
                     LEFT JOIN (
-                        SELECT molecule_id, COUNT(DISTINCT identifier_type) as id_count
-                        FROM mol_silver.identifier_mappings
-                        WHERE identifier_type IN ('chembl_id', 'drugbank_id', 'pubchem_cid', 'rxcui')
+                        SELECT molecule_id, COUNT(DISTINCT source) as id_count
+                        FROM mol_silver.molecule_identifiers
+                        WHERE source IN ('chembl_id', 'drugbank_id', 'pubchem_cid', 'rxcui')
                         GROUP BY molecule_id
                     ) im ON m.id = im.molecule_id
                     WHERE m.inchi_key IS NOT NULL
@@ -260,8 +260,8 @@ class IdentifierLinkerService:
                     SELECT m.id, m.inchi_key, m.canonical_name
                     FROM mol_silver.molecules m
                     LEFT JOIN (
-                        SELECT molecule_id, COUNT(DISTINCT identifier_type) as id_count
-                        FROM mol_silver.identifier_mappings
+                        SELECT molecule_id, COUNT(DISTINCT source) as id_count
+                        FROM mol_silver.molecule_identifiers
                         GROUP BY molecule_id
                     ) im ON m.id = im.molecule_id
                     WHERE m.inchi_key IS NOT NULL
@@ -304,13 +304,13 @@ class IdentifierLinkerService:
         async with self.db_pool.acquire() as conn:
             # Get existing identifiers
             existing = await conn.fetch("""
-                SELECT identifier_type, identifier_value
-                FROM mol_silver.identifier_mappings
+                SELECT source, identifier
+                FROM mol_silver.molecule_identifiers
                 WHERE molecule_id = $1::uuid
             """, molecule_id)
 
-            existing_types = {row['identifier_type'] for row in existing}
-            existing_values = {row['identifier_value'] for row in existing}
+            existing_types = {row['source'] for row in existing}
+            existing_values = {row['identifier'] for row in existing}
 
             # Determine which sources to check
             sources_to_check = self.CROSS_REF_SOURCES if check_all_sources else self.CROSS_REF_SOURCES[:4]
@@ -400,20 +400,20 @@ class IdentifierLinkerService:
         conn,
         molecule_id: str,
         identifier_type: str,
-        identifier_value: str,
+        identifier: str,
         source: str,
         confidence: float = 0.9
     ):
         """Add an identifier mapping to the database."""
         await conn.execute("""
-            INSERT INTO mol_silver.identifier_mappings (
-                molecule_id, identifier_type, identifier_value,
+            INSERT INTO mol_silver.molecule_identifiers (
+                molecule_id, source, identifier,
                 source, confidence, is_primary
             ) VALUES ($1::uuid, $2, $3, $4, $5, FALSE)
-            ON CONFLICT (molecule_id, identifier_type, identifier_value) DO UPDATE SET
-                confidence = GREATEST(mol_silver.identifier_mappings.confidence, EXCLUDED.confidence),
+            ON CONFLICT (molecule_id, source, identifier) DO UPDATE SET
+                confidence = GREATEST(mol_silver.molecule_identifiers.confidence, EXCLUDED.confidence),
                 updated_at = NOW()
-        """, molecule_id, identifier_type, identifier_value, source, confidence)
+        """, molecule_id, source, identifier, source, confidence)
 
     def _source_to_identifier_type(self, source: str) -> Optional[str]:
         """Convert UniChem source name to identifier type."""
@@ -446,8 +446,8 @@ class IdentifierLinkerService:
                     COUNT(*) as molecule_count
                 FROM mol_silver.molecules m
                 LEFT JOIN (
-                    SELECT molecule_id, COUNT(DISTINCT identifier_type) as id_count
-                    FROM mol_silver.identifier_mappings
+                    SELECT molecule_id, COUNT(DISTINCT source) as id_count
+                    FROM mol_silver.molecule_identifiers
                     GROUP BY molecule_id
                 ) im ON m.id = im.molecule_id
                 GROUP BY COALESCE(id_count, 0)
@@ -459,13 +459,13 @@ class IdentifierLinkerService:
 
             # Identifier type coverage
             type_coverage = await conn.fetch("""
-                SELECT identifier_type, COUNT(DISTINCT molecule_id) as molecule_count
-                FROM mol_silver.identifier_mappings
-                GROUP BY identifier_type
+                SELECT source, COUNT(DISTINCT molecule_id) as molecule_count
+                FROM mol_silver.molecule_identifiers
+                GROUP BY source
                 ORDER BY molecule_count DESC
             """)
             stats['identifier_type_coverage'] = {
-                row['identifier_type']: row['molecule_count'] for row in type_coverage
+                row['source']: row['molecule_count'] for row in type_coverage
             }
 
             # Molecules needing links (< 3 critical identifiers)
@@ -473,9 +473,9 @@ class IdentifierLinkerService:
                 SELECT COUNT(*)
                 FROM mol_silver.molecules m
                 LEFT JOIN (
-                    SELECT molecule_id, COUNT(DISTINCT identifier_type) as id_count
-                    FROM mol_silver.identifier_mappings
-                    WHERE identifier_type IN ('chembl_id', 'drugbank_id', 'pubchem_cid', 'rxcui')
+                    SELECT molecule_id, COUNT(DISTINCT source) as id_count
+                    FROM mol_silver.molecule_identifiers
+                    WHERE source IN ('chembl_id', 'drugbank_id', 'pubchem_cid', 'rxcui')
                     GROUP BY molecule_id
                 ) im ON m.id = im.molecule_id
                 WHERE m.inchi_key IS NOT NULL

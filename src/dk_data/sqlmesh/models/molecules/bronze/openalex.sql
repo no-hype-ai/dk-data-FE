@@ -24,7 +24,8 @@ MODEL (
 SELECT
     gen_random_uuid()                                                      AS id,
 
-    -- OpenAlex Identifiers
+    -- OpenAlex Identifiers (raw column names retained verbatim per FR-001)
+    r.work_id::TEXT                                                        AS work_id,
     r.work_id::TEXT                                                        AS openalex_id,
     r.doi::TEXT                                                            AS doi,
 
@@ -46,6 +47,8 @@ SELECT
     EXTRACT(YEAR FROM r.publication_date)::INTEGER                        AS publication_year,
     r.publication_date::DATE                                               AS publication_date,
 
+    -- primary_location: raw JSONB retained verbatim per FR-001
+    r.primary_location::JSONB                                              AS primary_location,
     -- Journal info from primary_location JSONB
     -- OpenAlex primary_location structure: {source: {display_name, issn_l, ...}, pdf_url, is_oa, ...}
     (r.primary_location->'source'->>'display_name')::TEXT                AS journal_name,
@@ -82,7 +85,10 @@ SELECT
     r.related_works::JSONB                                                 AS related_works,
     r.sustainable_development_goals::JSONB                                 AS sustainable_development_goals,
 
-    -- Access (stored in mol_raw.openalex_ci since migration 112)
+    -- Access (stored in mol_raw.openalex_ci since migration 112). Raw column
+    -- name retained verbatim per FR-001; legacy `open_access_info` alias kept
+    -- for downstream compat.
+    r.open_access::JSONB                                                   AS open_access,
     r.open_access::JSONB                                                   AS open_access_info,
     r.best_oa_location::JSONB                                              AS best_oa_location,
 

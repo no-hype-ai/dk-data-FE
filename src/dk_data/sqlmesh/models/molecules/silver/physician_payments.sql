@@ -12,39 +12,40 @@
 
 MODEL (
     name mol_silver.physician_payments,
-    kind FULL,
+    kind INCREMENTAL_BY_UNIQUE_KEY (
+        unique_key record_id
+    ),
     cron '@monthly',
+    grain record_id,
     audits (
-        not_null(columns := (source_record_id, physician_npi))
+        not_null(columns := (record_id, physician_profile_id))
     )
 );
 
 SELECT
-    gen_random_uuid()                                                           AS payment_id,
     m.molecule_id,
     -- physician_profile_id is the CMS-assigned profile ID (hcs_raw has no NPI column)
-    b.physician_profile_id                                                      AS physician_npi,
+    b.physician_profile_id,
     TRIM(COALESCE(b.physician_first_name, '') || ' ' || COALESCE(b.physician_last_name, '')) AS physician_name,
     b.physician_specialty,
-    b.recipient_state                                                           AS physician_state,
-    b.applicable_manufacturer_or_gpo_name                                      AS manufacturer_name,
-    b.total_amount_of_payment_usdollars                                        AS payment_amount,
-    b.nature_of_payment_or_transfer_of_value                                   AS payment_nature,
-    b.date_of_payment                                                           AS payment_date,
-    b.program_year                                                              AS payment_year,
-    b.form_of_payment_or_transfer_of_value                                     AS payment_form,
-    b.name_of_drug_or_biological_or_device_or_medical_supply_1                AS product_name,
-    b.name_of_drug_or_biological_or_device_or_medical_supply_1                AS associated_drug,
+    b.recipient_state,
+    b.applicable_manufacturer_or_gpo_name,
+    b.total_amount_of_payment_usdollars,
+    b.nature_of_payment_or_transfer_of_value,
+    b.date_of_payment,
+    b.program_year,
+    b.form_of_payment_or_transfer_of_value,
+    b.name_of_drug_or_biological_or_device_or_medical_supply_1,
     -- Additional bronze domain columns
     b.covered_recipient_type,
     b.number_of_payments_included_in_total_amount,
     b.recipient_city,
     b.recipient_zip_code,
     b.payment_publication_date,
-    b.name_of_drug_or_biological_or_device_or_medical_supply_2                AS product_name_2,
-    b.name_of_drug_or_biological_or_device_or_medical_supply_3                AS product_name_3,
-    b.name_of_drug_or_biological_or_device_or_medical_supply_4                AS product_name_4,
-    b.name_of_drug_or_biological_or_device_or_medical_supply_5                AS product_name_5,
+    b.name_of_drug_or_biological_or_device_or_medical_supply_2,
+    b.name_of_drug_or_biological_or_device_or_medical_supply_3,
+    b.name_of_drug_or_biological_or_device_or_medical_supply_4,
+    b.name_of_drug_or_biological_or_device_or_medical_supply_5,
     b.associated_drug_or_biological_ndc_1,
     b.associated_drug_or_biological_ndc_2,
     b.associated_drug_or_biological_ndc_3,
@@ -53,8 +54,8 @@ SELECT
     b._source_year,
     b._source_hash,
     'cms_open_payments'                                                         AS source,
-    b.record_id                                                                 AS source_record_id,
-    b._loaded_at                                                                AS created_at
+    b.record_id,
+    b._loaded_at
 
 FROM hcs_bronze.cms_open_payments b
 LEFT JOIN mol_silver.molecules m

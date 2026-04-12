@@ -13,7 +13,34 @@ import time
 import jwt as pyjwt
 import pytest
 
-pytestmark = pytest.mark.integration
+import psycopg2
+
+def _hub_tables_exist():
+    """Check if hub tables exist (created by SQLMesh, not migrations)."""
+    try:
+        conn = psycopg2.connect(
+            host=os.environ.get("POSTGRES_HOST", "localhost"),
+            port=os.environ.get("POSTGRES_PORT", "5432"),
+            user=os.environ.get("POSTGRES_USER", "postgres"),
+            password=os.environ.get("POSTGRES_PASSWORD", "postgres"),
+            dbname=os.environ.get("POSTGRES_DB", "dk_data"),
+        )
+        cur = conn.cursor()
+        cur.execute("SELECT 1 FROM information_schema.tables WHERE table_schema='mol_silver' AND table_name='molecules'")
+        exists = cur.fetchone() is not None
+        cur.close()
+        conn.close()
+        return exists
+    except Exception:
+        return False
+
+pytestmark = [
+    pytest.mark.skipif(
+        not _hub_tables_exist(),
+        reason="Hub tables not available (SQLMesh hub tables not available in CI)"
+    ),
+    pytest.mark.integration,
+]
 
 POSTGREST_URL = os.getenv("POSTGREST_URL", "http://localhost:3030")
 JWT_SECRET = os.getenv("JWT_SECRET", "test-secret-must-be-at-least-32-chars")

@@ -6,7 +6,7 @@
 --   all UniProt bronze columns to silver so protein sequence, domain, GO term,
 --   taxonomy, and annotation data are directly queryable.
 --
--- Linkage: uniprot_id → mol_silver.identifier_mappings (identifier_type = 'uniprot')
+-- Linkage: uniprot_id → mol_silver.molecule_identifiers (source = 'uniprot')
 --   to resolve molecule_id. Proteins with no drug link have molecule_id = NULL.
 
 MODEL (
@@ -75,9 +75,9 @@ SELECT DISTINCT ON (u.uniprot_id)
     NOW() AS updated_at
 
 FROM mol_bronze.uniprot u
-LEFT JOIN mol_silver.identifier_mappings im
-    ON im.identifier_type = 'uniprot_id'
-    AND im.identifier_value = u.uniprot_id
+LEFT JOIN mol_silver.molecule_identifiers im
+    ON im.source = 'uniprot'
+    AND im.identifier = u.uniprot_id
 WHERE
     u.processed_to_silver = FALSE
     AND u.uniprot_id IS NOT NULL

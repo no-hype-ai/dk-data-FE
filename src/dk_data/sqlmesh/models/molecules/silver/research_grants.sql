@@ -56,15 +56,9 @@ SELECT DISTINCT ON (n.project_num)
     n.project_end_date,
 
     -- Molecule linkage (NULL when no match found — data always retained)
-    -- Title-based match: canonical_name must be >4 chars to avoid false positives
-    (
-        SELECT m.molecule_id
-        FROM mol_silver.molecules m
-        WHERE
-            LOWER(n.project_title) LIKE '%' || LOWER(m.canonical_name) || '%'
-            AND LENGTH(m.canonical_name) > 4
-        LIMIT 1
-    ) AS molecule_id,
+    -- S2+S3 fix (FR-016/FR-017): replace leading-wildcard LIKE correlated subquery
+    -- with LEFT JOIN LATERAL on molecule_names hub using trigram similarity.
+    mol_link.molecule_id,
 
     -- Source tracking
     n.source,
@@ -73,6 +67,15 @@ SELECT DISTINCT ON (n.project_num)
     NOW() AS updated_at
 
 FROM mol_bronze.nih_reporter n
+-- Molecule linkage via trigram similarity on project title (replaces LIKE wildcard S2 + S3)
+LEFT JOIN LATERAL (
+    SELECT mn.molecule_id
+    FROM mol_silver.molecule_names mn
+    WHERE LENGTH(mn.normalized_name) > 4
+      AND similarity(LOWER(n.project_title), mn.normalized_name) >= 0.3
+    ORDER BY similarity(LOWER(n.project_title), mn.normalized_name) DESC
+    LIMIT 1
+) mol_link ON TRUE
 WHERE
     n.processed_to_silver = FALSE
     AND n.project_num IS NOT NULL

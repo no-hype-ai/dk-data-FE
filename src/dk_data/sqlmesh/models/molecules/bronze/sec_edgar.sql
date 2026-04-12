@@ -26,6 +26,7 @@ SELECT
         r.accession_number,
         r.cik || '_' || r.filing_type || '_' || r.filing_date::TEXT
     ) AS filing_id,
+    r.accession_number,
     r.cik::TEXT                      AS cik,
     r.company_name::TEXT             AS company_name,
     r.filing_type::TEXT              AS filing_type,

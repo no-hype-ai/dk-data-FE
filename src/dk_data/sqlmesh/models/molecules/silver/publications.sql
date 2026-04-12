@@ -13,6 +13,7 @@ MODEL (
         not_null(columns := (title))
     ),
     grain doi
+    
 );
 
 WITH openalex_pubs AS (

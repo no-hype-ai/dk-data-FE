@@ -10,9 +10,7 @@
 
 MODEL (
     name mol_silver.protein_structures,
-    kind INCREMENTAL_BY_UNIQUE_KEY (
-        unique_key pdb_id
-    ),
+    kind FULL,
     cron '@daily',
     audits (
         not_null(columns := (pdb_id)),
@@ -69,9 +67,9 @@ SELECT
     -- Use subquery to avoid fan-out when multiple molecules map to the same ligand.
     (
         SELECT im.molecule_id
-        FROM mol_silver.identifier_mappings im
-        WHERE im.identifier_type = 'pubchem_cid'
-          AND im.identifier_value = p.ligand_id
+        FROM mol_silver.molecule_identifiers im
+        WHERE im.source = 'pubchem'
+          AND im.identifier = p.ligand_id
         ORDER BY im.confidence DESC NULLS LAST
         LIMIT 1
     )                               AS molecule_id,

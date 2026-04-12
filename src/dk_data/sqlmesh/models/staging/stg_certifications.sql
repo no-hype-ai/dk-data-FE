@@ -44,10 +44,7 @@ matched_hospitals AS (
             UPPER(c.city) = UPPER(h.city_town)
             OR LEFT(c.zip_code, 5) = LEFT(h.zip_code, 5)
         )
-        AND (
-            UPPER(h.facility_name) LIKE '%' || UPPER(SPLIT_PART(c.facility_name, ' ', 1)) || '%'
-            OR UPPER(c.facility_name) LIKE '%' || UPPER(SPLIT_PART(h.facility_name, ' ', 1)) || '%'
-        )
+        AND similarity(LOWER(h.facility_name), LOWER(c.facility_name)) >= 0.3
     )
     WHERE c.facility_name IS NOT NULL
 )

@@ -44,7 +44,6 @@ SELECT DISTINCT ON (b.icd11_code)
     gen_random_uuid()                   AS id,
     b.icd11_code,
     b.title,
-    b.title                             AS icd11_title,
     b.definition,
     b.class_kind,
     b.parent_code,

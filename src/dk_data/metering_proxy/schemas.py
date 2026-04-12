@@ -35,6 +35,11 @@ KNOWN_SCHEMAS = {
     # HCP domain
     "hcp_silver",
     "hcp_gold",
+    # IP (Intellectual Property) domain — patents, trademarks, designs
+    "ip_raw",
+    "ip_bronze",
+    "ip_silver",
+    "ip_gold",
     # API / application schemas
     "api",
     "mart",

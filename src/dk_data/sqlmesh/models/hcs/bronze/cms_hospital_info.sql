@@ -18,27 +18,23 @@ MODEL (
 SELECT
     gen_random_uuid() AS id,
 
-    -- Hospital identifiers (facility_id maps to provider_id in downstream models)
-    r.facility_id::TEXT AS provider_id,
-    r.facility_name::TEXT AS hospital_name,
-
-    -- Location
-    r.address::TEXT AS address,
-    r.city_town::TEXT AS city,
-    r.state::TEXT AS state,
-    r.zip_code::TEXT AS zip_code,
-    r.county_parish::TEXT AS county_name,
-
-    -- Contact
-    r.telephone_number::TEXT AS phone_number,
-
-    -- Classification
-    r.hospital_type::TEXT AS hospital_type,
-    r.hospital_ownership::TEXT AS ownership,
-
-    -- Quality
-    r.emergency_services::BOOLEAN AS emergency_services,
-    r.hospital_overall_rating::INTEGER AS rating,
+    -- Raw column names retained verbatim per FR-001. The legacy `provider_id`
+    -- alias is kept alongside `facility_id` for downstream compat.
+    r.facility_id::TEXT                                      AS facility_id,
+    r.facility_id::TEXT                                      AS provider_id,
+    r.facility_name::TEXT                                    AS facility_name,
+    r.address::TEXT                                          AS address,
+    r.city_town::TEXT                                        AS city_town,
+    r.state::TEXT                                            AS state,
+    r.zip_code::TEXT                                         AS zip_code,
+    r.county_parish::TEXT                                    AS county_parish,
+    r.telephone_number::TEXT                                 AS telephone_number,
+    r.hospital_type::TEXT                                    AS hospital_type,
+    r.hospital_ownership::TEXT                               AS hospital_ownership,
+    r.emergency_services::BOOLEAN                            AS emergency_services,
+    r.hospital_overall_rating::INTEGER                       AS hospital_overall_rating,
+    r.hospital_overall_rating_footnote::TEXT                 AS hospital_overall_rating_footnote,
+    r.meets_criteria_for_birthing_friendly_designation::TEXT AS meets_criteria_for_birthing_friendly_designation,
 
     -- Source tracking
     r._source_hash::TEXT AS source_hash,

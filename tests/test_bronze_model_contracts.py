@@ -29,6 +29,9 @@ BRONZE_DIR = MODELS_DIR / "bronze"
 HCS_MODELS_DIR = Path(__file__).resolve().parent.parent / "src" / "dk_data" / "sqlmesh" / "models" / "hcs"
 HCS_BRONZE_DIR = HCS_MODELS_DIR / "bronze"
 
+IP_MODELS_DIR = Path(__file__).resolve().parent.parent / "src" / "dk_data" / "sqlmesh" / "models" / "ip"
+IP_BRONZE_DIR = IP_MODELS_DIR / "bronze"
+
 
 # ---------------------------------------------------------------------------
 # Helper: parse MODEL block from SQLMesh SQL file
@@ -48,6 +51,13 @@ def _read_hcs_model_sql(filename: str) -> str:
     return filepath.read_text()
 
 
+def _read_ip_model_sql(filename: str) -> str:
+    """Read an ip bronze model SQL file and return its contents."""
+    filepath = IP_BRONZE_DIR / filename
+    assert filepath.exists(), f"IP model file not found: {filepath}"
+    return filepath.read_text()
+
+
 def _extract_model_block(sql: str) -> str:
     """Extract the MODEL(...) block from SQL content."""
     match = re.search(r'MODEL\s*\((.*?)\);', sql, re.DOTALL)
@@ -64,11 +74,11 @@ class TestBronzeUSPTOPatents:
 
     @pytest.fixture(autouse=True)
     def setup(self):
-        self.sql = _read_model_sql("uspto_patents.sql")
+        self.sql = _read_ip_model_sql("uspto_patents.sql")
         self.model_block = _extract_model_block(self.sql)
 
     def test_model_name(self):
-        assert "name mol_bronze.uspto_patents" in self.model_block
+        assert "name ip_bronze.uspto_patents" in self.model_block
 
     def test_model_kind_incremental(self):
         assert "INCREMENTAL_BY_UNIQUE_KEY" in self.model_block
@@ -82,7 +92,7 @@ class TestBronzeUSPTOPatents:
         assert "unique_values" in self.model_block
 
     def test_reads_from_raw_table(self):
-        assert "FROM mol_raw.uspto_patents" in self.sql
+        assert "FROM ip_raw.uspto_patents" in self.sql
 
     def test_no_jsonb_extraction(self):
         """Core bug fix: no JSONB array extraction from response_body; cpc_codes converted via to_jsonb."""
@@ -123,11 +133,11 @@ class TestBronzeUSPTOCI:
 
     @pytest.fixture(autouse=True)
     def setup(self):
-        self.sql = _read_model_sql("uspto_ci.sql")
+        self.sql = _read_ip_model_sql("uspto_ci.sql")
         self.model_block = _extract_model_block(self.sql)
 
     def test_model_name(self):
-        assert "name mol_bronze.uspto_ci" in self.model_block
+        assert "name ip_bronze.uspto_ci" in self.model_block
 
     def test_model_kind_incremental(self):
         assert "INCREMENTAL_BY_UNIQUE_KEY" in self.model_block
@@ -136,7 +146,7 @@ class TestBronzeUSPTOCI:
         assert "patent_number" in self.model_block
 
     def test_reads_from_raw_table(self):
-        assert "FROM mol_raw.uspto_ci" in self.sql
+        assert "FROM ip_raw.uspto_ci" in self.sql
 
     def test_patent_id_mapped_to_patent_number(self):
         """AC-2: patent_id is renamed to patent_number."""
@@ -162,11 +172,11 @@ class TestBronzeEPOPatents:
 
     @pytest.fixture(autouse=True)
     def setup(self):
-        self.sql = _read_model_sql("epo_patents.sql")
+        self.sql = _read_ip_model_sql("epo_patents.sql")
         self.model_block = _extract_model_block(self.sql)
 
     def test_model_name(self):
-        assert "name mol_bronze.epo_patents" in self.model_block
+        assert "name ip_bronze.epo_patents" in self.model_block
 
     def test_model_kind_incremental(self):
         assert "INCREMENTAL_BY_UNIQUE_KEY" in self.model_block
@@ -175,7 +185,7 @@ class TestBronzeEPOPatents:
         assert "patent_number" in self.model_block
 
     def test_reads_from_raw_table(self):
-        assert "FROM mol_raw.epo_patents" in self.sql
+        assert "FROM ip_raw.epo_patents" in self.sql
 
     def test_publication_id_mapped(self):
         """AC-2: publication_id is mapped to patent_number."""
@@ -208,11 +218,11 @@ class TestBronzeUSPTOTrademarks:
 
     @pytest.fixture(autouse=True)
     def setup(self):
-        self.sql = _read_model_sql("uspto_trademarks.sql")
+        self.sql = _read_ip_model_sql("uspto_trademarks.sql")
         self.model_block = _extract_model_block(self.sql)
 
     def test_model_name(self):
-        assert "name mol_bronze.uspto_trademarks" in self.model_block
+        assert "name ip_bronze.uspto_trademarks" in self.model_block
 
     def test_model_kind_incremental(self):
         assert "INCREMENTAL_BY_UNIQUE_KEY" in self.model_block
@@ -221,7 +231,7 @@ class TestBronzeUSPTOTrademarks:
         assert "serial_number" in self.model_block
 
     def test_reads_from_raw_table(self):
-        assert "FROM mol_raw.uspto_trademarks" in self.sql
+        assert "FROM ip_raw.uspto_trademarks" in self.sql
 
     def test_output_columns(self):
         assert "r.serial_number" in self.sql
@@ -236,7 +246,7 @@ class TestBronzeUSPTOTrademarks:
 
     def test_pharma_class_5(self):
         """AC-2: is_pharma_related is TRUE when Nice class 5 is present.
-        mol_raw.uspto_trademarks.nice_classes is JSONB, so detection uses
+        ip_raw.uspto_trademarks.nice_classes is JSONB, so detection uses
         JSONB containment (@>) rather than = ANY(array).
         """
         # JSONB containment: nice_classes @> '[5]'::JSONB
@@ -253,17 +263,17 @@ class TestBronzeUSPTOTrademarks:
 class TestBronzeEUIPOTrademarks:
     """Contract tests for mol_bronze.euipo_trademarks model.
 
-    Note: mol_raw.euipo_trademarks.nice_classes is JSONB (not TEXT[]/INT[]),
+    Note: ip_raw.euipo_trademarks.nice_classes is JSONB (not TEXT[]/INT[]),
     so pharma-class detection uses JSONB containment (@>) instead of = ANY().
     """
 
     @pytest.fixture(autouse=True)
     def setup(self):
-        self.sql = _read_model_sql("euipo_trademarks.sql")
+        self.sql = _read_ip_model_sql("euipo_trademarks.sql")
         self.model_block = _extract_model_block(self.sql)
 
     def test_model_name(self):
-        assert "name mol_bronze.euipo_trademarks" in self.model_block
+        assert "name ip_bronze.euipo_trademarks" in self.model_block
 
     def test_model_kind_incremental(self):
         assert "INCREMENTAL_BY_UNIQUE_KEY" in self.model_block
@@ -272,7 +282,7 @@ class TestBronzeEUIPOTrademarks:
         assert "application_number" in self.model_block
 
     def test_reads_from_raw_table(self):
-        assert "FROM mol_raw.euipo_trademarks" in self.sql
+        assert "FROM ip_raw.euipo_trademarks" in self.sql
 
     def test_euipo_specific_fields(self):
         """AC-2: EUIPO-specific fields are preserved."""
@@ -411,7 +421,7 @@ class TestBronzeCmsInpatient:
         assert "@start_dt" in self.sql and "@end_dt" in self.sql
 
     def test_expected_output_columns(self):
-        for col in ["provider_id", "drg_code", "total_discharges", "avg_charges", "avg_payments", "fiscal_year"]:
+        for col in ["provider_id", "drg_cd", "total_discharges", "average_covered_charges", "average_total_payments", "fiscal_year"]:
             assert col in self.sql, f"Expected column '{col}' not found in cms_inpatient.sql"
 
 
@@ -666,7 +676,7 @@ class TestBronzeJournalRss:
         assert "_loaded_at BETWEEN @start_dt AND @end_dt" in self.sql
 
     def test_expected_output_columns(self):
-        for col in ["title", "link", "pub_date", "feed_source", "abstract", "authors", "doi"]:
+        for col in ["title", "link", "publication_date", "feed_source", "abstract", "authors", "doi"]:
             assert col in self.sql, f"Expected column '{col}' not found in journal_rss.sql"
 
 
@@ -697,7 +707,7 @@ class TestBronzeMedicalNews:
         assert "_loaded_at BETWEEN @start_dt AND @end_dt" in self.sql
 
     def test_expected_output_columns(self):
-        for col in ["title", "url", "pub_date", "source_name", "summary", "drug_mentions", "therapeutic_areas"]:
+        for col in ["title", "url", "publication_date", "source_name", "summary", "drug_mentions", "therapeutic_areas"]:
             assert col in self.sql, f"Expected column '{col}' not found in medical_news.sql"
 
 
@@ -732,7 +742,7 @@ class TestBronzeCmsHospitalInfo:
         assert "_loaded_at BETWEEN @start_dt AND @end_dt" in self.sql
 
     def test_expected_output_columns(self):
-        for col in ["provider_id", "hospital_name", "city", "state", "hospital_type", "ownership", "rating"]:
+        for col in ["facility_id", "facility_name", "city_town", "state", "hospital_type", "hospital_ownership", "hospital_overall_rating"]:
             assert col in self.sql, f"Expected column '{col}' not found in cms_hospital_info.sql"
 
 
@@ -763,5 +773,5 @@ class TestBronzeCmsCostReports:
         assert "_loaded_at BETWEEN @start_dt AND @end_dt" in self.sql
 
     def test_expected_output_columns(self):
-        for col in ["provider_id", "fiscal_year_begin", "total_operating_expenses", "net_patient_revenue", "operating_margin", "bed_count"]:
+        for col in ["provider_id", "fiscal_year_begin", "total_operating_expenses", "net_patient_revenue", "operating_margin", "total_beds"]:
             assert col in self.sql, f"Expected column '{col}' not found in cms_cost_reports.sql"

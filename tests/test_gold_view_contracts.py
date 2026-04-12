@@ -60,8 +60,8 @@ class TestGoldTrialOutcomes:
     def test_model_name(self):
         assert "name mol_gold.trial_outcomes" in self.model_block
 
-    def test_model_kind_full(self):
-        assert "FULL" in self.model_block
+    def test_model_kind_incremental(self):
+        assert "INCREMENTAL_BY_UNIQUE_KEY" in self.model_block
 
     def test_model_audits(self):
         assert "not_null" in self.model_block
@@ -183,8 +183,8 @@ class TestGoldKolNetwork:
     def test_model_name(self):
         assert "name mol_gold.kol_network" in self.model_block
 
-    def test_model_kind_full(self):
-        assert "FULL" in self.model_block
+    def test_model_kind_incremental(self):
+        assert "INCREMENTAL_BY_UNIQUE_KEY" in self.model_block
 
     def test_self_join_for_coauthorship(self):
         """Co-authorship via self-join on shared publications."""
@@ -259,8 +259,8 @@ class TestGoldAdvocacyGroups:
     def test_model_name(self):
         assert "name mol_gold.advocacy_groups" in self.model_block
 
-    def test_model_kind_full(self):
-        assert "FULL" in self.model_block
+    def test_model_kind_incremental(self):
+        assert "INCREMENTAL_BY_UNIQUE_KEY" in self.model_block
 
     def test_reads_from_news_signals(self):
         assert "silver.news_signals" in self.sql

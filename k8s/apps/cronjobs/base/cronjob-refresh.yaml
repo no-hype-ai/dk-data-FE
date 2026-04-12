@@ -22,7 +22,7 @@ spec:
         metadata:
           labels:
             app: catalog-refresh
-            app.kubernetes.io/component: batch-job
+            app.kubernetes.io/component: fetcher
             app.kubernetes.io/part-of: dk-data
             team: data-platform
             service: dk-data
@@ -50,6 +50,8 @@ spec:
                   value: "http://alloy.infra.svc.cluster.local:4317"
                 - name: OTEL_ENABLED
                   value: "true"
+                - name: POSTGRES_HOST_DIRECT
+                  value: "postgresql.infra.svc.cluster.local:5432"
                 - name: K8S_NAMESPACE
                   valueFrom:
                     fieldRef:

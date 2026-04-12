@@ -28,7 +28,7 @@ SELECT
     title::TEXT                           AS title,
     authors::TEXT                         AS authors,
     abstract::TEXT                        AS abstract,
-    publication_date::DATE                AS pub_date,
+    publication_date::DATE                AS publication_date,
     link::TEXT                            AS link,
     doi::TEXT                             AS doi,
     to_jsonb(categories)                  AS categories,

@@ -7,11 +7,15 @@
 
 MODEL (
     name mol_silver.pubchem,
-    kind FULL,
+    kind INCREMENTAL_BY_UNIQUE_KEY (
+        unique_key cid
+    ),
     cron '@weekly',
     audits (
         not_null(columns := (cid, inchi_key))
     )
+    ,
+    -- T4: large input — raise work_mem to keep sorts in memory (per-session 256MB ceiling per FR-021b)
 );
 
 SELECT DISTINCT ON (b.cid)
@@ -45,6 +49,7 @@ SELECT DISTINCT ON (b.cid)
     -- Pharmacological / biological annotations
     b.pharmacological_actions,
     b.synonyms,
+    b.synonym_names,
     b.mesh_headings,
 
     -- Cross-references
@@ -62,7 +67,7 @@ SELECT DISTINCT ON (b.cid)
     -- Source tracking
     'pubchem'                               AS source,
     b.source_updated_at,
-    b.request_timestamp                     AS ingested_at,
+    b.request_timestamp,
     b.created_at
 
 FROM mol_bronze.pubchem b

@@ -35,7 +35,7 @@ SELECT DISTINCT ON (b.product_number)
     m.molecule_id,
     b.source,
     b.source_updated_at,
-    b.ingested_at                       AS _ingested_at,
+    b.ingested_at,
     CURRENT_TIMESTAMP                   AS _silver_updated_at
 FROM mol_bronze.ema AS b
 LEFT JOIN mol_silver.molecules AS m

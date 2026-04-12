@@ -57,7 +57,7 @@ class MoleculeSearchResponse(BaseModel):
 class IdentifierResolutionRequest(BaseModel):
     """Request for identifier resolution."""
     identifier: str = Field(..., min_length=1, description="Identifier to resolve")
-    identifier_type: Optional[str] = Field(None, description="Type hint (auto-detected if not provided)")
+    source: Optional[str] = Field(None, description="Type hint (auto-detected if not provided)")
 
 
 class IdentifierResolutionResponse(BaseModel):
@@ -131,7 +131,7 @@ class QueueItemResponse(BaseModel):
     id: str
     molecule_id: Optional[str]
     original_identifier: str
-    identifier_type: str
+    source: str
     confidence_score: float
     candidate_matches: List[Dict[str, Any]]
     status: str
@@ -296,11 +296,11 @@ async def resolve_identifier(request: IdentifierResolutionRequest):
         # Try to get resolver service
         resolver = await get_resolver_service()
         if resolver:
-            result = await resolver.resolve(request.identifier, request.identifier_type)
+            result = await resolver.resolve(request.identifier, request.source)
             return IdentifierResolutionResponse(
                 success=result.success,
                 identifier=request.identifier,
-                detected_type=result.identifier_type.value if result.identifier_type else "unknown",
+                detected_type=result.source.value if result.source else "unknown",
                 molecule_id=str(result.molecule_id) if result.molecule_id else None,
                 inchi_key=result.inchi_key,
                 canonical_name=result.canonical_name,
@@ -317,7 +317,7 @@ async def resolve_identifier(request: IdentifierResolutionRequest):
             resolution_path = ["direct_lookup"]
 
             # Try to detect identifier type
-            detected_type = request.identifier_type or "name"
+            detected_type = request.source or "name"
 
             # Check if it's an InChI Key pattern
             if len(identifier) == 27 and '-' in identifier:
@@ -343,8 +343,8 @@ async def resolve_identifier(request: IdentifierResolutionRequest):
                 WHERE m.inchi_key = $1
                    OR LOWER(m.canonical_name) = LOWER($1)
                    OR EXISTS (
-                       SELECT 1 FROM mol_silver.identifier_mappings im
-                       WHERE im.molecule_id = m.id AND im.identifier_value = $1
+                       SELECT 1 FROM mol_silver.molecule_identifiers im
+                       WHERE im.molecule_id = m.id AND im.identifier = $1
                    )
                 LIMIT 1
             """, identifier)
@@ -443,12 +443,12 @@ async def get_molecule_profile(molecule_id: str):
                     m.inchi_key,
                     m.molecular_formula,
                     m.molecular_weight,
-                    (SELECT identifier_value FROM mol_silver.identifier_mappings WHERE molecule_id = m.id AND identifier_type = 'chembl_id' LIMIT 1) as chembl_id,
-                    (SELECT identifier_value FROM mol_silver.identifier_mappings WHERE molecule_id = m.id AND identifier_type = 'drugbank_id' LIMIT 1) as drugbank_id,
-                    (SELECT identifier_value FROM mol_silver.identifier_mappings WHERE molecule_id = m.id AND identifier_type = 'pubchem_cid' LIMIT 1) as pubchem_cid
+                    (SELECT identifier FROM mol_silver.molecule_identifiers WHERE molecule_id = m.id AND source = 'chembl_id' LIMIT 1) as chembl_id,
+                    (SELECT identifier FROM mol_silver.molecule_identifiers WHERE molecule_id = m.id AND source = 'drugbank_id' LIMIT 1) as drugbank_id,
+                    (SELECT identifier FROM mol_silver.molecule_identifiers WHERE molecule_id = m.id AND source = 'pubchem_cid' LIMIT 1) as pubchem_cid
                 FROM mol_silver.molecules m
                 WHERE m.id::text = $1 OR m.inchi_key = $1
-                   OR EXISTS (SELECT 1 FROM mol_silver.identifier_mappings im WHERE im.molecule_id = m.id AND im.identifier_value = $1)
+                   OR EXISTS (SELECT 1 FROM mol_silver.molecule_identifiers im WHERE im.molecule_id = m.id AND im.identifier = $1)
                 LIMIT 1
             """, molecule_id)
 
@@ -619,7 +619,7 @@ async def get_safety_signals(molecule_id: str):
 @router.get("/resolution-queue", response_model=QueueListResponse)
 async def list_resolution_queue(
     priority: Optional[str] = Query(None, description="Filter by priority: high, medium, low"),
-    identifier_type: Optional[str] = Query(None, description="Filter by identifier type"),
+    source: Optional[str] = Query(None, description="Filter by identifier type"),
     limit: int = Query(50, ge=1, le=200, description="Maximum items"),
     offset: int = Query(0, ge=0, description="Pagination offset")
 ):
@@ -657,9 +657,9 @@ async def list_resolution_queue(
                 params.extend([low, high])
                 param_idx += 2
 
-        if identifier_type:
-            conditions.append(f"identifier_type = ${param_idx}")
-            params.append(identifier_type)
+        if source:
+            conditions.append(f"source = ${param_idx}")
+            params.append(source)
             param_idx += 1
 
         async with pool.acquire() as conn:
@@ -677,7 +677,7 @@ async def list_resolution_queue(
                     rq.id::text,
                     rq.molecule_id::text,
                     rq.original_identifier,
-                    rq.identifier_type,
+                    rq.source,
                     rq.confidence_score,
                     rq.candidate_inchi_keys,
                     rq.status,
@@ -710,7 +710,7 @@ async def list_resolution_queue(
                     id=row['id'],
                     molecule_id=row['molecule_id'],
                     original_identifier=row['original_identifier'],
-                    identifier_type=row['identifier_type'],
+                    source=row['source'],
                     confidence_score=conf,
                     candidate_matches=candidates or [],
                     status=row['status'],
@@ -831,7 +831,7 @@ async def get_queue_item(item_id: str):
                     rq.id::text,
                     rq.molecule_id::text,
                     rq.original_identifier,
-                    rq.identifier_type,
+                    rq.source,
                     rq.confidence_score,
                     rq.candidate_inchi_keys,
                     rq.status,
@@ -862,7 +862,7 @@ async def get_queue_item(item_id: str):
                 id=row['id'],
                 molecule_id=row['molecule_id'],
                 original_identifier=row['original_identifier'],
-                identifier_type=row['identifier_type'],
+                source=row['source'],
                 confidence_score=conf,
                 candidate_matches=candidates or [],
                 status=row['status'],

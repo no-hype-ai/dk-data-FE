@@ -38,13 +38,13 @@ class QueueItem:
     id: str
     molecule_id: Optional[str]
     original_identifier: str
-    identifier_type: str
+    source: str
     confidence_score: float
     candidate_matches: List[Dict[str, Any]]
     status: str
     priority: str
     created_at: datetime
-    source: Optional[str] = None
+    identifier_type: Optional[str] = None
 
 
 @dataclass
@@ -89,18 +89,18 @@ class ResolutionQueueService:
     async def add_to_queue(
         self,
         original_identifier: str,
-        identifier_type: str,
+        source: str,
         confidence_score: float,
         molecule_id: Optional[str] = None,
         candidate_matches: Optional[List[Dict]] = None,
-        source: Optional[str] = None
+        identifier_type: Optional[str] = None
     ) -> str:
         """
         Add an item to the resolution queue.
 
         Args:
             original_identifier: The identifier that needs resolution
-            identifier_type: Type of identifier (name, chembl_id, etc.)
+            source: Type of identifier (name, chembl_id, etc.)
             confidence_score: Confidence of the match (0-1)
             molecule_id: Tentative molecule ID if one was assigned
             candidate_matches: List of potential matches
@@ -116,7 +116,7 @@ class ResolutionQueueService:
                 INSERT INTO mol_silver.resolution_queue (
                     molecule_id,
                     original_identifier,
-                    identifier_type,
+                    source,
                     confidence_score,
                     candidate_inchi_keys,
                     status
@@ -125,7 +125,7 @@ class ResolutionQueueService:
             """,
                 molecule_id,
                 original_identifier,
-                identifier_type,
+                source,
                 confidence_score,
                 json.dumps(candidate_matches or [])
             )
@@ -135,7 +135,7 @@ class ResolutionQueueService:
     async def get_pending_items(
         self,
         priority: Optional[QueuePriority] = None,
-        identifier_type: Optional[str] = None,
+        source: Optional[str] = None,
         limit: int = 50,
         offset: int = 0
     ) -> List[QueueItem]:
@@ -144,7 +144,7 @@ class ResolutionQueueService:
 
         Args:
             priority: Filter by priority level
-            identifier_type: Filter by identifier type
+            source: Filter by identifier type
             limit: Maximum items to return
             offset: Pagination offset
 
@@ -160,9 +160,9 @@ class ResolutionQueueService:
             params.append(confidence_range[1])
             conditions.append(f"confidence_score >= ${len(params) - 1} AND confidence_score < ${len(params)}")
 
-        if identifier_type:
-            params.append(identifier_type)
-            conditions.append(f"identifier_type = ${len(params)}")
+        if source:
+            params.append(source)
+            conditions.append(f"source = ${len(params)}")
 
         params.extend([limit, offset])
 
@@ -171,7 +171,7 @@ class ResolutionQueueService:
                 rq.id::text,
                 rq.molecule_id::text,
                 rq.original_identifier,
-                rq.identifier_type,
+                rq.source,
                 rq.confidence_score,
                 rq.candidate_inchi_keys,
                 rq.status,
@@ -198,7 +198,7 @@ class ResolutionQueueService:
                     id=row['id'],
                     molecule_id=row['molecule_id'],
                     original_identifier=row['original_identifier'],
-                    identifier_type=row['identifier_type'],
+                    source=row['source'],
                     confidence_score=float(row['confidence_score']),
                     candidate_matches=candidates or [],
                     status=row['status'],
@@ -216,7 +216,7 @@ class ResolutionQueueService:
                     rq.id::text,
                     rq.molecule_id::text,
                     rq.original_identifier,
-                    rq.identifier_type,
+                    rq.source,
                     rq.confidence_score,
                     rq.candidate_inchi_keys,
                     rq.status,
@@ -239,7 +239,7 @@ class ResolutionQueueService:
                 id=row['id'],
                 molecule_id=row['molecule_id'],
                 original_identifier=row['original_identifier'],
-                identifier_type=row['identifier_type'],
+                source=row['source'],
                 confidence_score=float(row['confidence_score']),
                 candidate_matches=candidates or [],
                 status=row['status'],
@@ -369,7 +369,7 @@ class ResolutionQueueService:
         async with self.db_pool.acquire() as conn:
             async with conn.transaction():
                 item = await conn.fetchrow("""
-                    SELECT molecule_id, original_identifier, identifier_type
+                    SELECT molecule_id, original_identifier, source
                     FROM mol_silver.resolution_queue
                     WHERE id = $1::uuid AND status = 'pending'
                 """, item_id)
@@ -393,12 +393,12 @@ class ResolutionQueueService:
 
                 # Add the original identifier as an alias on target
                 await conn.execute("""
-                    INSERT INTO mol_silver.molecule_aliases (
-                        molecule_id, alias_name, alias_type,
-                        alias_name_normalized, source
+                    INSERT INTO mol_silver.molecule_names (
+                        molecule_id, display_name, name_kind,
+                        normalized_name, source
                     ) VALUES ($1::uuid, $2, $3, LOWER($2), 'manual_resolution')
                     ON CONFLICT DO NOTHING
-                """, target_molecule_id, item['original_identifier'], item['identifier_type'])
+                """, target_molecule_id, item['original_identifier'], item['source'])
 
                 # Update queue item
                 await conn.execute("""
@@ -423,7 +423,7 @@ class ResolutionQueueService:
         """Transfer all relationships from source to target molecule."""
         # Transfer identifier mappings
         await conn.execute("""
-            UPDATE mol_silver.identifier_mappings
+            UPDATE mol_silver.molecule_identifiers
             SET molecule_id = $2::uuid
             WHERE molecule_id = $1::uuid
             ON CONFLICT DO NOTHING
@@ -431,7 +431,7 @@ class ResolutionQueueService:
 
         # Transfer aliases
         await conn.execute("""
-            UPDATE mol_silver.molecule_aliases
+            UPDATE mol_silver.molecule_names
             SET molecule_id = $2::uuid
             WHERE molecule_id = $1::uuid
             ON CONFLICT DO NOTHING

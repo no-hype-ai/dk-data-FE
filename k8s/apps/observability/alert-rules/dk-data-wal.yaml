@@ -1,0 +1,32 @@
+---
+# WAL accumulation alert rule for dk-data transforms
+# Feature: 001-silver-medallion-rebuild / T098
+# Fires when a single transform chunk writes >2 GB WAL (FR-021 ceiling)
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: dk-data-wal-alerts
+  labels:
+    app: dk-data
+    app.kubernetes.io/component: observability
+    app.kubernetes.io/part-of: dk-data
+    prometheus: kube-prometheus
+    role: alert-rules
+spec:
+  groups:
+    - name: dk-data.wal
+      interval: 30s
+      rules:
+        - alert: DkDataTransformChunkWALExplosion
+          expr: dk_data_transform_chunk_wal_bytes > 2e9
+          for: 1m
+          labels:
+            severity: critical
+            team: data-platform
+          annotations:
+            summary: "Transform chunk WAL write exceeds 2 GB ceiling (FR-021)"
+            description: >
+              Procedure {{ $labels.procedure_name }} chunk {{ $labels.chunk_position }}
+              has written {{ $value | humanize1024 }}B of WAL, exceeding the 2 GB
+              FR-021 ceiling. Investigate chunk size or split the procedure.
+            runbook_url: "https://github.com/data-kinetic/dk-data-fe/blob/main/docs/runbooks/wal-explosion.md"

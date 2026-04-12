@@ -126,13 +126,13 @@ class FuzzyMatcher:
                         m.id AS molecule_id,
                         m.inchi_key,
                         m.canonical_name,
-                        ma.alias_name AS matched_alias,
-                        similarity(ma.alias_name_normalized, $1) AS sim,
+                        ma.display_name AS matched_alias,
+                        similarity(ma.normalized_name, $1) AS sim,
                         'alias' AS match_type
                     FROM mol_silver.molecules m
-                    JOIN mol_silver.molecule_aliases ma ON m.id = ma.molecule_id
+                    JOIN mol_silver.molecule_names ma ON m.id = ma.molecule_id
                     WHERE m.needs_review = FALSE
-                      AND similarity(ma.alias_name_normalized, $1) > $2
+                      AND similarity(ma.normalized_name, $1) > $2
                 )
                 SELECT DISTINCT ON (molecule_id)
                     molecule_id,
@@ -194,9 +194,9 @@ class FuzzyMatcher:
                     m.inchi_key,
                     m.canonical_name
                 FROM mol_silver.molecules m
-                JOIN mol_silver.molecule_aliases ma ON m.id = ma.molecule_id
+                JOIN mol_silver.molecule_names ma ON m.id = ma.molecule_id
                 WHERE m.needs_review = FALSE
-                  AND ma.alias_name_normalized = $1
+                  AND ma.normalized_name = $1
 
                 LIMIT 1
             """, normalized_name)

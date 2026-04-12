@@ -46,7 +46,7 @@ latest_financials AS (
 
 -- Link companies to molecules via clinical trial sponsorship.
 -- Company names (e.g. "Pfizer Inc") never match molecule canonical names (e.g. "imatinib"),
--- so we bridge through mol_silver.clinical_trials.lead_sponsor instead.
+-- so we bridge through mol_silver.clinical_trials.lead_sponsor_name instead.
 -- One company sponsors many drugs, so the grain (molecule_id, cik) is correct here.
 molecule_linked AS (
     SELECT DISTINCT
@@ -61,7 +61,7 @@ molecule_linked AS (
         f.latest_filing_date
     FROM latest_financials f
     LEFT JOIN mol_silver.clinical_trials ct
-        ON LOWER(ct.lead_sponsor) = LOWER(f.company_name)
+        ON LOWER(ct.lead_sponsor_name) = LOWER(f.company_name)
         AND ct.molecule_id IS NOT NULL
 )
 

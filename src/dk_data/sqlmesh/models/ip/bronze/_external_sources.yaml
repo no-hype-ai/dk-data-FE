@@ -1,0 +1,23 @@
+# External source declarations for the ip_raw schema. These tables are
+# populated by the IP fetcher loaders (uspto_patents.py, uspto_ci.py,
+# uspto_trademarks.py, epo_ops.py, euipo_trademarks.py, euipo_designs.py)
+# and consumed by the ip_bronze SQLMesh models. Declared here so SQLMesh
+# does not attempt to manage their snapshots.
+#
+# DDL: src/dk_data/sql/migrations/163_ip_raw_tables_and_migrate.sql
+
+sources:
+  - name: ip_raw.uspto_patents
+    description: "USPTO PatentsView granted patents — populated by uspto_patents.py loader; consumed by ip_bronze.uspto_patents"
+  - name: ip_raw.uspto_ci
+    description: "USPTO continuous-ingest patents (chembl-driven query mode) — populated by uspto_ci.py loader; consumed by ip_bronze.uspto_ci"
+  - name: ip_raw.uspto_trademarks
+    description: "USPTO TSDR trademark registrations — populated by uspto_trademarks.py loader; consumed by ip_bronze.uspto_trademarks"
+  - name: ip_raw.epo_patents
+    description: "EPO Open Patent Services records — populated by epo_ops.py loader; consumed by ip_bronze.epo_patents"
+  - name: ip_raw.euipo_trademarks
+    description: "EUIPO TMview/IBM Gateway trademarks — populated by euipo_trademarks.py loader; consumed by ip_bronze.euipo_trademarks"
+  - name: ip_raw.euipo_designs
+    description: "EUIPO registered community designs — populated by euipo_designs.py loader; consumed by ip_bronze.euipo_designs"
+  - name: ip_raw.trademark_status_history
+    description: "USPTO/EUIPO trademark status change audit trail — populated by uspto_trademarks.py + euipo_trademarks.py loaders; consumed by ip_bronze.trademark_status_history"

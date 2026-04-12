@@ -11,8 +11,10 @@
 
 MODEL (
     name hcs_gold.cms_facility_360,
-    kind FULL,
-    cron '@daily',
+    kind INCREMENTAL_BY_UNIQUE_KEY (
+        unique_key (ccn)
+    ),
+    cron '@monthly',
     audits (
         not_null(columns := (ccn)),
         unique_values(columns := (ccn))
@@ -32,7 +34,7 @@ state_totals AS (
         state,
         SUM(total_discharges)                   AS state_total_discharges,
         SUM(total_outpatient_services)          AS state_total_outpatient_services,
-        SUM(total_beds)                         AS state_total_beds
+        SUM(beds)                               AS state_total_beds
     FROM hcs_silver.cms_facility_profile
     WHERE state IS NOT NULL
     GROUP BY state
@@ -41,14 +43,14 @@ state_totals AS (
 SELECT
     f.ccn,
     f.facility_name,
-    f.facility_type,
+    f.provider_type,
     f.address,
     f.city,
     f.state,
     f.zip_code,
 
     -- Capacity
-    f.total_beds,
+    f.beds,
     f.ownership_type,
     f.hospital_type,
 
@@ -110,8 +112,8 @@ SELECT
 
     -- Bed utilization estimate (discharges per bed per year)
     CASE
-        WHEN f.total_beds > 0
-        THEN ROUND(f.total_discharges::NUMERIC / f.total_beds, 2)
+        WHEN f.beds > 0
+        THEN ROUND(f.total_discharges::NUMERIC / f.beds, 2)
         ELSE NULL
     END                                                                         AS bed_utilization_ratio,
 
@@ -137,7 +139,7 @@ SELECT
     CASE
         WHEN st.state_total_beds > 0
         THEN ROUND(
-            f.total_beds::NUMERIC / st.state_total_beds * 100, 4
+            f.beds::NUMERIC / st.state_total_beds * 100, 4
         )
         ELSE NULL
     END                                                                         AS state_bed_market_share_pct,
@@ -155,7 +157,7 @@ SELECT
 
     RANK() OVER (
         PARTITION BY f.state
-        ORDER BY f.total_beds DESC
+        ORDER BY f.beds DESC
     )                                                                           AS state_rank_beds,
 
     RANK() OVER (

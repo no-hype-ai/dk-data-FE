@@ -244,6 +244,19 @@ ON CONFLICT (source_name) DO UPDATE SET
     refresh_frequency = EXCLUDED.refresh_frequency,
     is_active = EXCLUDED.is_active;
 
+-- T107a: Update domain_schema for IP sources (001-silver-medallion-rebuild)
+-- These sources feed ip_silver, not mol_silver
+UPDATE meta.data_sources SET domain_schema = 'ip_silver'
+WHERE source_name IN (
+    'uspto_patents',
+    'uspto_ci',
+    'uspto_trademarks',
+    'epo_ops',
+    'euipo_trademarks',
+    'euipo_designs'
+)
+  AND (domain_schema IS NULL OR domain_schema = 'mol_silver');
+
 -- Set initial expected refresh frequencies
 UPDATE meta.data_sources SET
     refresh_frequency = CASE source_name

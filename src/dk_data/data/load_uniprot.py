@@ -37,6 +37,7 @@ from loguru import logger
 from tqdm import tqdm
 
 from dk_data.services.external_apis.uniprot_client import UniProtClient, UniProtProtein
+from dk_data.ingestion.utils.database import build_dsn
 
 # Database config
 DB_CONFIG = {
@@ -255,7 +256,7 @@ async def main():
     logger.info(f"Starting UniProt loader in {args.mode} mode")
 
     # Connect to database
-    conn = psycopg2.connect(**DB_CONFIG)
+    conn = psycopg2.connect(build_dsn())
     ensure_tables(conn)
 
     # Initialize client

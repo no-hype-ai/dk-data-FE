@@ -1,0 +1,128 @@
+# pg_basebackup CronJob with replication slot
+# Feature: 001-silver-medallion-rebuild / T202
+# Creates a physical base backup using pg_basebackup against the primary.
+# Uses a replication slot to ensure WAL is retained during the backup.
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: pg-basebackup
+  labels:
+    app: pg-backup
+    app.kubernetes.io/name: pg-basebackup
+    app.kubernetes.io/component: backup
+    app.kubernetes.io/part-of: dk-data
+spec:
+  schedule: "0 14 * * 0"  # Weekly Sunday 14:00 UTC
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      activeDeadlineSeconds: 14400  # 4h
+      backoffLimit: 1
+      template:
+        metadata:
+          labels:
+            app: pg-backup
+            team: data-platform
+            service: dk-data
+            product: dk-data
+        spec:
+          restartPolicy: Never
+          securityContext:
+            fsGroup: 1000
+            seccompProfile:
+              type: RuntimeDefault
+          containers:
+            - name: pg-basebackup
+              image: postgres:16-alpine
+              command:
+                - /bin/sh
+                - -c
+                - |
+                  set -e
+
+                  SLOT_NAME="basebackup_slot_$(date +%Y%m%d)"
+                  BACKUP_DIR="/tmp/basebackup"
+                  TIMESTAMP=$(date +%Y%m%dT%H%M%S)
+                  S3_PATH="s3://${MINIO_BUCKET}/basebackup/${TIMESTAMP}/"
+
+                  echo "Creating replication slot: ${SLOT_NAME}"
+                  psql -h "${POSTGRES_HOST}" -U "${POSTGRES_USER}" -d "${POSTGRES_DB}" \
+                      -c "SELECT pg_create_physical_replication_slot('${SLOT_NAME}', true) WHERE NOT EXISTS (SELECT 1 FROM pg_replication_slots WHERE slot_name='${SLOT_NAME}')" || true
+
+                  echo "Starting pg_basebackup to ${BACKUP_DIR}"
+                  mkdir -p "${BACKUP_DIR}"
+                  pg_basebackup \
+                      -h "${POSTGRES_HOST}" \
+                      -U "${POSTGRES_USER}" \
+                      -D "${BACKUP_DIR}" \
+                      -Ft -z \
+                      --slot="${SLOT_NAME}" \
+                      --wal-method=stream \
+                      -P -v
+
+                  echo "Uploading to MinIO: ${S3_PATH}"
+                  mc alias set minio "http://${MINIO_ENDPOINT}" "${MINIO_ACCESS_KEY}" "${MINIO_SECRET_KEY}"
+                  mc cp --recursive "${BACKUP_DIR}/" "minio/${MINIO_BUCKET}/basebackup/${TIMESTAMP}/"
+
+                  echo "Dropping replication slot: ${SLOT_NAME}"
+                  psql -h "${POSTGRES_HOST}" -U "${POSTGRES_USER}" -d "${POSTGRES_DB}" \
+                      -c "SELECT pg_drop_replication_slot('${SLOT_NAME}') WHERE EXISTS (SELECT 1 FROM pg_replication_slots WHERE slot_name='${SLOT_NAME}')" || true
+
+                  echo "pg_basebackup complete"
+              env:
+                - name: POSTGRES_HOST
+                  value: "postgresql.infra.svc.cluster.local"
+                - name: POSTGRES_PORT
+                  value: "5432"
+                - name: POSTGRES_USER
+                  valueFrom:
+                    secretKeyRef:
+                      name: dk-data-secrets
+                      key: POSTGRES_USER
+                - name: PGPASSWORD
+                  valueFrom:
+                    secretKeyRef:
+                      name: dk-data-secrets
+                      key: POSTGRES_PASSWORD
+                - name: POSTGRES_DB
+                  valueFrom:
+                    secretKeyRef:
+                      name: dk-data-secrets
+                      key: POSTGRES_DB
+                - name: MINIO_ENDPOINT
+                  value: "minio.infra.svc.cluster.local:9000"
+                - name: MINIO_ACCESS_KEY
+                  valueFrom:
+                    secretKeyRef:
+                      name: minio-backup-credentials
+                      key: MINIO_ACCESS_KEY
+                - name: MINIO_SECRET_KEY
+                  valueFrom:
+                    secretKeyRef:
+                      name: minio-backup-credentials
+                      key: MINIO_SECRET_KEY
+                - name: MINIO_BUCKET
+                  value: "postgres-backups"
+                - name: MC_CONFIG_DIR
+                  value: "/tmp/mc"
+              resources:
+                requests:
+                  memory: "512Mi"
+                  cpu: "250m"
+                limits:
+                  memory: "2Gi"
+                  cpu: "1000m"
+              securityContext:
+                allowPrivilegeEscalation: false
+                readOnlyRootFilesystem: true
+                capabilities:
+                  drop: ["ALL"]
+              volumeMounts:
+                - name: tmp
+                  mountPath: /tmp
+          volumes:
+            - name: tmp
+              emptyDir:
+                sizeLimit: 50Gi

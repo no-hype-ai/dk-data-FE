@@ -1,0 +1,103 @@
+# API Materialized Views Refresh CronJob
+# Feature: 001-silver-medallion-rebuild / T184
+# Nightly refresh of api.facility_summary, api.molecule_summary, api.trial_summary
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: refresh-api-views
+  labels:
+    app: refresh-api-views
+    app.kubernetes.io/name: refresh-api-views
+    app.kubernetes.io/component: transform
+    app.kubernetes.io/part-of: dk-data
+spec:
+  schedule: "0 2 * * *"  # Daily at 2 AM UTC (after gold refresh completes)
+  concurrencyPolicy: Forbid
+  startingDeadlineSeconds: 3600
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      backoffLimit: 1
+      ttlSecondsAfterFinished: 86400
+      activeDeadlineSeconds: 3600
+      template:
+        metadata:
+          labels:
+            app: refresh-api-views
+            app.kubernetes.io/component: transform
+            app.kubernetes.io/part-of: dk-data
+            team: data-platform
+            service: dk-data
+            product: dk-data
+        spec:
+          restartPolicy: Never
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 1000
+            fsGroup: 1000
+            seccompProfile:
+              type: RuntimeDefault
+          imagePullSecrets:
+            - name: ghcr-credentials
+          containers:
+            - name: refresh-api-views
+              image: postgres:16-alpine
+              command: ["psql"]
+              args:
+                - "-v"
+                - "ON_ERROR_STOP=1"
+                - "-c"
+                - |
+                  REFRESH MATERIALIZED VIEW CONCURRENTLY api.facility_summary;
+                  REFRESH MATERIALIZED VIEW CONCURRENTLY api.molecule_summary;
+                  REFRESH MATERIALIZED VIEW CONCURRENTLY api.trial_summary;
+              envFrom:
+                - secretRef:
+                    name: dk-data-secrets
+              env:
+                - name: PGHOST
+                  valueFrom:
+                    secretKeyRef:
+                      name: dk-data-secrets
+                      key: POSTGRES_HOST
+                - name: PGPORT
+                  valueFrom:
+                    secretKeyRef:
+                      name: dk-data-secrets
+                      key: POSTGRES_PORT
+                - name: PGUSER
+                  valueFrom:
+                    secretKeyRef:
+                      name: dk-data-secrets
+                      key: POSTGRES_USER
+                - name: PGPASSWORD
+                  valueFrom:
+                    secretKeyRef:
+                      name: dk-data-secrets
+                      key: POSTGRES_PASSWORD
+                - name: PGDATABASE
+                  valueFrom:
+                    secretKeyRef:
+                      name: dk-data-secrets
+                      key: POSTGRES_DB
+                - name: POSTGRES_HOST_DIRECT
+                  value: "postgresql.infra.svc.cluster.local:5432"
+              resources:
+                requests:
+                  memory: "128Mi"
+                  cpu: "100m"
+                limits:
+                  memory: "256Mi"
+                  cpu: "200m"
+              securityContext:
+                allowPrivilegeEscalation: false
+                readOnlyRootFilesystem: true
+                capabilities:
+                  drop: ["ALL"]
+              volumeMounts:
+                - name: tmp
+                  mountPath: /tmp
+          volumes:
+            - name: tmp
+              emptyDir: {}

@@ -38,14 +38,14 @@ SELECT DISTINCT ON (b.npi, b.hcpcs_code, b.place_of_service, b._source_year)
     -- Provider identity from NPPES (most recent year)
     COALESCE(n.provider_organization_name,
              n.provider_last_name || ', ' || n.provider_first_name) AS provider_name,
-    n.entity_type_code                                              AS provider_entity_type,
-    n.provider_credential_text                                      AS provider_credentials,
-    n.healthcare_provider_taxonomy_code_1                           AS provider_specialty,
-    n.healthcare_provider_taxonomy_code_2                           AS provider_specialty_2,
-    n.provider_business_practice_location_address_city_name         AS provider_city,
-    n.provider_business_practice_location_address_state_name        AS provider_state,
-    n.provider_business_practice_location_address_postal_code       AS provider_zip,
-    n.provider_business_practice_location_address_telephone_number  AS provider_phone,
+    n.entity_type_code,
+    n.provider_credential_text,
+    n.healthcare_provider_taxonomy_code_1,
+    n.healthcare_provider_taxonomy_code_2,
+    n.provider_business_practice_location_address_city_name,
+    n.provider_business_practice_location_address_state_name,
+    n.provider_business_practice_location_address_postal_code,
+    n.provider_business_practice_location_address_telephone_number,
     n.npi_deactivation_date,
     n.npi_reactivation_date,
 
@@ -54,7 +54,7 @@ SELECT DISTINCT ON (b.npi, b.hcpcs_code, b.place_of_service, b._source_year)
     hb.confidence                                           AS molecule_link_confidence,
 
     'cms_physician_puf_services'                            AS source,
-    b._loaded_at                                            AS source_updated_at,
+    b._loaded_at,
     NOW()                                                   AS created_at
 
 FROM hcs_bronze.cms_physician_puf_services b

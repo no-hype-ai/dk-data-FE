@@ -5,7 +5,9 @@
 
 MODEL (
     name mol_silver.ttd,
-    kind FULL,
+    kind INCREMENTAL_BY_UNIQUE_KEY (
+        unique_key ttd_id
+    ),
     cron '@monthly',
     audits (
         not_null(columns := (ttd_id))
@@ -45,20 +47,20 @@ LEFT JOIN mol_silver.molecules m_exact
        ON m_ik.molecule_id IS NULL
       AND b.drug_name IS NOT NULL
       AND LOWER(m_exact.canonical_name) = LOWER(b.drug_name)
--- Fallback 2: full drug_name stripped → alias_name_normalized
+-- Fallback 2: full drug_name stripped → normalized_name
 --   Catches drugs where spaces are removed: "imatinibmesylate" matches stored alias
-LEFT JOIN mol_silver.molecule_aliases ma
+LEFT JOIN mol_silver.molecule_names ma
        ON m_ik.molecule_id IS NULL
       AND m_exact.molecule_id IS NULL
       AND b.drug_name IS NOT NULL
       AND LOWER(REGEXP_REPLACE(b.drug_name, '[^a-zA-Z0-9]', '', 'g'))
-          = ma.alias_name_normalized
+          = ma.normalized_name
 LEFT JOIN mol_silver.molecules m_alias
        ON m_alias.molecule_id = ma.molecule_id
 -- Fallback 3: first-token alias match for salt forms
 --   "Imatinib Mesylate" → first token "imatinib" → alias "imatinib"
 --   Minimum 4 chars to prevent short-token false positives
-LEFT JOIN mol_silver.molecule_aliases ma_tok
+LEFT JOIN mol_silver.molecule_names ma_tok
        ON m_ik.molecule_id IS NULL
       AND m_exact.molecule_id IS NULL
       AND m_alias.molecule_id IS NULL
@@ -67,7 +69,7 @@ LEFT JOIN mol_silver.molecule_aliases ma_tok
       AND LOWER(REGEXP_REPLACE(
               SPLIT_PART(b.drug_name, ' ', 1),
               '[^a-zA-Z0-9]', '', 'g'
-          )) = ma_tok.alias_name_normalized
+          )) = ma_tok.normalized_name
 LEFT JOIN mol_silver.molecules m_token
        ON m_token.molecule_id = ma_tok.molecule_id
 WHERE b.ttd_id IS NOT NULL

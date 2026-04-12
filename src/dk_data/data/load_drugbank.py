@@ -37,6 +37,7 @@ import psycopg2
 from psycopg2.extras import execute_values
 from loguru import logger
 from tqdm import tqdm
+from dk_data.ingestion.utils.database import build_dsn
 
 # Database config
 DB_CONFIG = {
@@ -498,7 +499,7 @@ def main():
         logger.error(f"XML file not found: {xml_path}")
         sys.exit(1)
 
-    conn = psycopg2.connect(**DB_CONFIG)
+    conn = psycopg2.connect(build_dsn())
 
     try:
         stats = load_drugbank(

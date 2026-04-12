@@ -374,6 +374,52 @@ test: ## Run all tests
 	@echo "$(BOLD)$(BLUE)$(ARROW) Running tests...$(NC)"
 	@cd $(COMPOSE_DIR) && python -m pytest tests/ -v || echo "No tests found"
 
+# ============================================================================
+# Feature: 001-silver-medallion-rebuild — T005
+# Silver hub bootstrap and contract test targets
+# ============================================================================
+
+.PHONY: sqlmesh-bootstrap-silver-hubs
+sqlmesh-bootstrap-silver-hubs: ## Run all 10 hub bootstrap procedures (full bootstrap ~105 min)
+	@echo "$(BOLD)$(BLUE)$(ARROW) Running silver hub bootstraps (smallest-first)...$(NC)"
+	@echo "Tier 0: facilities, companies, conditions, targets"
+	@$(DC) exec job-trigger psql -v ON_ERROR_STOP=1 \
+		-c "CALL hcs_silver.bootstrap_facilities()" \
+		-c "CALL mol_silver.bootstrap_companies()" \
+		-c "CALL ind_silver.bootstrap_conditions()" \
+		-c "CALL mol_silver.bootstrap_targets()" 2>&1
+	@echo "Tier 1: molecules, designs"
+	@$(DC) exec job-trigger psql -v ON_ERROR_STOP=1 \
+		-c "CALL mol_silver.bootstrap_molecules()" \
+		-c "CALL ip_silver.bootstrap_designs()" 2>&1
+	@echo "Tier 2: drug_products, trademarks"
+	@$(DC) exec job-trigger psql -v ON_ERROR_STOP=1 \
+		-c "CALL mol_silver.bootstrap_drug_products()" \
+		-c "CALL ip_silver.bootstrap_trademarks()" 2>&1
+	@echo "Tier 3: patents, providers, researchers, researcher_provider_crosswalk"
+	@$(DC) exec job-trigger psql -v ON_ERROR_STOP=1 \
+		-c "CALL ip_silver.bootstrap_patents()" \
+		-c "CALL hcs_silver.bootstrap_providers()" \
+		-c "CALL hcp_silver.bootstrap_researchers()" \
+		-c "CALL hcp_silver.bootstrap_researcher_provider_crosswalk()" 2>&1
+	@echo "$(GREEN)$(CHECK) Silver hub bootstrap complete$(NC)"
+
+.PHONY: test-silver-contracts
+test-silver-contracts: ## Run column-retention contract test (FR-005 / SC-001)
+	@echo "$(BOLD)$(BLUE)$(ARROW) Running silver column-retention contract test...$(NC)"
+	@python -m pytest tests/test_silver_column_retention.py -v
+	@echo "$(GREEN)$(CHECK) Contract test complete$(NC)"
+
+.PHONY: test-silver-antipatterns
+test-silver-antipatterns: ## Run silver antipattern grep (FR-015–FR-020 / SC-012)
+	@echo "$(BOLD)$(BLUE)$(ARROW) Running silver antipattern checks...$(NC)"
+	@python -m pytest tests/test_silver_antipatterns.py -v
+	@echo "$(GREEN)$(CHECK) Antipattern check complete$(NC)"
+
+.PHONY: test-silver-hub
+test-silver-hub: test-silver-contracts test-silver-antipatterns ## Run all silver hub validation tests
+	@echo "$(GREEN)$(CHECK) All silver hub validation tests passed$(NC)"
+
 .PHONY: lint
 lint: ## Run linters
 	@echo "$(BOLD)$(BLUE)$(ARROW) Running linters...$(NC)"

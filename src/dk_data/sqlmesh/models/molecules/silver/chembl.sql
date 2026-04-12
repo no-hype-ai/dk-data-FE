@@ -5,12 +5,15 @@
 
 MODEL (
     name mol_silver.chembl,
-    kind FULL,
+    kind INCREMENTAL_BY_UNIQUE_KEY (
+        unique_key chembl_id
+    ),
     cron '@daily',
     audits (
         not_null(columns := (chembl_id))
     ),
     grain chembl_id
+    
 );
 
 SELECT
@@ -42,7 +45,7 @@ SELECT
     b.cross_references,
     b.source,
     b.source_updated_at,
-    b.request_timestamp                 AS ingested_at,
+    b.request_timestamp,
     NOW()                               AS created_at
 
 FROM mol_bronze.chembl_molecules b
@@ -54,9 +57,9 @@ LEFT JOIN mol_silver.molecules m_ik
 
 -- Strategy 2: ChEMBL ID via identifier_mappings
 --   Fallback for biologics and compounds where inchi_key is not populated
-LEFT JOIN mol_silver.identifier_mappings m_chembl
+LEFT JOIN mol_silver.molecule_identifiers m_chembl
        ON m_ik.molecule_id IS NULL
-      AND m_chembl.identifier_type = 'chembl_id'
-      AND m_chembl.identifier_value = b.chembl_id
+      AND m_chembl.source = 'chembl'
+      AND m_chembl.identifier = b.chembl_id
 
 WHERE b.chembl_id IS NOT NULL;

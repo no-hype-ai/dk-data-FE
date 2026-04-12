@@ -14,25 +14,25 @@ MODEL (
     grain provider_id
 );
 
-SELECT DISTINCT ON (b.provider_id)
-    gen_random_uuid()           AS id,
+SELECT DISTINCT ON (b.facility_id)
+    b.facility_id,
     b.provider_id,
-    b.hospital_name,
+    b.facility_name,
     b.address,
-    b.city,
+    b.city_town,
     b.state,
     b.zip_code,
-    b.county_name,
-    b.phone_number,
+    b.county_parish,
+    b.telephone_number,
     b.hospital_type,
-    b.ownership,
+    b.hospital_ownership,
     b.emergency_services,
-    b.rating,
+    b.hospital_overall_rating,
+    b.hospital_overall_rating_footnote,
+    b.meets_criteria_for_birthing_friendly_designation,
     b.source_hash,
     b.source,
-    b.source_updated_at,
-    NOW()                       AS created_at
-
+    b.source_updated_at
 FROM hcs_bronze.cms_hospital_info b
-WHERE b.provider_id IS NOT NULL
-ORDER BY b.provider_id, b.source_updated_at DESC
+WHERE b.facility_id IS NOT NULL
+ORDER BY b.facility_id, b.source_updated_at DESC

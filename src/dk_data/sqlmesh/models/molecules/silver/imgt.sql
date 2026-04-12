@@ -6,7 +6,9 @@
 
 MODEL (
     name mol_silver.imgt,
-    kind FULL,
+    kind INCREMENTAL_BY_UNIQUE_KEY (
+        unique_key pdb_code
+    ),
     cron '@monthly',
     audits (
         not_null(columns := (pdb_code))
@@ -40,11 +42,11 @@ LEFT JOIN mol_silver.molecules m_exact
        ON b.drug_name IS NOT NULL
       AND LOWER(m_exact.canonical_name) = LOWER(b.drug_name)
 -- Fallback: alias match on drug_name
-LEFT JOIN mol_silver.molecule_aliases ma
+LEFT JOIN mol_silver.molecule_names ma
        ON m_exact.molecule_id IS NULL
       AND b.drug_name IS NOT NULL
       AND LOWER(REGEXP_REPLACE(b.drug_name, '[^a-zA-Z0-9]', '', 'g'))
-          = ma.alias_name_normalized
+          = ma.normalized_name
 LEFT JOIN mol_silver.molecules m_alias
        ON m_alias.molecule_id = ma.molecule_id
 -- Fallback: via uniprot_id → targets → molecule_targets → molecules

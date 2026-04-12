@@ -9,7 +9,9 @@
 
 MODEL (
     name mol_silver.fda_drugs,
-    kind FULL,
+    kind INCREMENTAL_BY_UNIQUE_KEY (
+        unique_key application_number
+    ),
     cron '@weekly',
     audits (
         not_null(columns := (application_number))
@@ -34,10 +36,12 @@ SELECT DISTINCT ON (b.application_number)
     b.first_approval_date,
     b.products,
     b.submissions,
+    b.app_num,
+    b.approval_date_raw,
     m.molecule_id,
     b.source,
     b.source_updated_at,
-    b.ingested_at                       AS _ingested_at,
+    b.ingested_at,
     CURRENT_TIMESTAMP                   AS _silver_updated_at
 FROM mol_bronze.fda_drugs AS b
 LEFT JOIN mol_silver.molecules AS m

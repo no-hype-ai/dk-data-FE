@@ -32,7 +32,7 @@ spec:
         metadata:
           labels:
             app: load-pubchem-extended
-            app.kubernetes.io/component: batch-job
+            app.kubernetes.io/component: fetcher
             app.kubernetes.io/part-of: dk-data
         spec:
           restartPolicy: OnFailure

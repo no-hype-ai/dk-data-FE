@@ -4,7 +4,9 @@
 
 MODEL (
     name mol_gold.advocacy_groups,
-    kind FULL,
+    kind INCREMENTAL_BY_UNIQUE_KEY (
+        unique_key (group_id)
+    ),
     cron '@weekly',
     audits (
         not_null(columns := (organization_name))

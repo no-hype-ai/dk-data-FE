@@ -4,8 +4,10 @@
 
 MODEL (
     name mol_gold.lifecycle_evidence,
-    kind FULL,
-    cron '@daily',
+    kind INCREMENTAL_BY_UNIQUE_KEY (
+        unique_key (molecule_id, evidence_type, evidence_id)
+    ),
+    cron '@weekly',
     grain (molecule_id, evidence_type, evidence_id)
 );
 
@@ -17,7 +19,7 @@ SELECT
     'clinical_trial' AS evidence_type,
     ct.nct_id AS evidence_id,
     ct.title AS evidence_title,
-    ct.phase AS evidence_detail,
+    ct.phase_derived AS evidence_detail,
     ct.overall_status AS evidence_status,
     'ClinicalTrials.gov' AS evidence_source,
     ct.start_date AS evidence_date,
@@ -26,7 +28,7 @@ SELECT
 
 FROM mol_silver.molecules m
 JOIN mol_silver.clinical_trials ct ON m.molecule_id = ct.molecule_id
-WHERE m.needs_review = FALSE
+WHERE TRUE
 
 UNION ALL
 
@@ -50,7 +52,7 @@ SELECT
 
 FROM mol_silver.molecules m
 JOIN mol_silver.drug_labels dl ON m.molecule_id = dl.molecule_id
-WHERE m.needs_review = FALSE
+WHERE TRUE
 
 UNION ALL
 
@@ -88,7 +90,7 @@ SELECT DISTINCT ON (m.molecule_id)
     NOW() AS computed_at
 
 FROM mol_silver.molecules m
-WHERE m.needs_review = FALSE
+WHERE TRUE
   AND EXISTS (
       SELECT 1 FROM mol_silver.adverse_events ae WHERE ae.molecule_id = m.molecule_id
   )
@@ -115,8 +117,8 @@ SELECT
     NOW() AS computed_at
 
 FROM mol_silver.molecules m
-JOIN mol_silver.patent_exclusivities pe ON pe.molecule_id = m.molecule_id
-WHERE m.needs_review = FALSE
+JOIN ip_silver.patent_exclusivities pe ON pe.molecule_id = m.molecule_id
+WHERE TRUE
   AND pe.patent_number IS NOT NULL
 
 ORDER BY molecule_id, evidence_date DESC NULLS LAST

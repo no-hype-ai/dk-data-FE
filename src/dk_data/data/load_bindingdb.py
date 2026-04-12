@@ -26,6 +26,7 @@ import psycopg2
 from psycopg2.extras import execute_values
 from loguru import logger
 from tqdm import tqdm
+from dk_data.ingestion.utils.database import build_dsn
 
 DB_CONFIG = {
     "host": os.getenv("POSTGRES_HOST", "localhost"),
@@ -108,7 +109,7 @@ def load_bindingdb(
     """Load BindingDB TSV into PostgreSQL."""
     logger.info(f"Loading BindingDB from: {tsv_path}")
 
-    conn = psycopg2.connect(**DB_CONFIG)
+    conn = psycopg2.connect(build_dsn())
     ensure_tables(conn)
     cursor = conn.cursor()
 

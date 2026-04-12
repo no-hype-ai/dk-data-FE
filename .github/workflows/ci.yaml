@@ -406,3 +406,127 @@ jobs:
           kubectl kustomize k8s/overlays/staging --enable-helm > /dev/null
           kubectl kustomize k8s/overlays/prod --enable-helm > /dev/null
           echo "Kubernetes manifests validated successfully"
+
+  # ---------------------------------------------------------------------------
+  # Feature: 001-silver-medallion-rebuild — T003
+  # FR-030 / SC-015: Enforce that every dk-data Python entry point obtains its
+  # DB connection via build_dsn() — no direct psycopg2.connect() outside
+  # database.py.  A match here is a CI failure.
+  # ---------------------------------------------------------------------------
+  enforce-build-dsn:
+    name: Enforce build_dsn() usage (FR-030)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Grep for direct psycopg2.connect() calls outside database.py
+        run: |
+          # Find any psycopg2.connect( call outside the canonical helper module.
+          # We exclude:
+          #   - database.py itself (the only allowed location)
+          #   - tests/ (test fixtures may use direct connections for schema setup)
+          #   - conftest.py (test infrastructure)
+          VIOLATIONS=$(grep -rn "psycopg2\.connect(" src/ \
+            --include="*.py" \
+            --exclude="database.py" --exclude="run_migrations.py" \
+            | grep -v "build_dsn" \
+            || true)
+
+          if [ -n "$VIOLATIONS" ]; then
+            echo "::error::FR-030 violation: direct psycopg2.connect() found outside database.py"
+            echo "All connections must go through dk_data.ingestion.utils.database.build_dsn()"
+            echo ""
+            echo "Violations:"
+            echo "$VIOLATIONS"
+            exit 1
+          fi
+
+          echo "FR-030 check passed: no direct psycopg2.connect() calls outside database.py"
+
+  # ---------------------------------------------------------------------------
+  # Feature: 001-silver-medallion-rebuild — T004
+  # FR-015–FR-020 / SC-012: Grep for the 5 banned silver antipattern signatures.
+  # Any match in src/dk_data/sqlmesh/models/ is a CI failure.
+  # ---------------------------------------------------------------------------
+  enforce-no-silver-antipatterns:
+    name: Enforce zero silver antipatterns (FR-015–FR-020)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: S1 — OR-join between two hub-eligible identifiers
+        run: |
+          # S1: OR-join pattern — e.g. a.inchi_key = b.inchi_key OR LOWER(a.name) = LOWER(b.name)
+          # This forces a hash join to degrade to a nested loop.
+          MATCHES=$(grep -rn \
+            --include="*.sql" \
+            -E "\.(inchi_key|chembl_id|pubchem_cid|unii|ndc|rxcui|npi|ccn|orcid|patent_number|trademark_id)\s*=.*\bOR\b.*\.(name|canonical_name|brand_name|generic_name)" \
+            src/dk_data/sqlmesh/models/ || true)
+          if [ -n "$MATCHES" ]; then
+            echo "::error::S1 antipattern (OR-join hub identifiers) found in silver models"
+            echo "$MATCHES"
+            exit 1
+          fi
+          echo "S1 check passed"
+
+      - name: S2 — Leading-wildcard LIKE against indexed columns
+        run: |
+          # S2: '%' || name || '%' — forces full table scan, kills index
+          MATCHES=$(grep -rn \
+            --include="*.sql" \
+            -E "LIKE\s+'%'\s*\|\|" \
+            src/dk_data/sqlmesh/models/ || true)
+          if [ -n "$MATCHES" ]; then
+            echo "::error::S2 antipattern (leading-wildcard LIKE) found in silver models"
+            echo "$MATCHES"
+            exit 1
+          fi
+          echo "S2 check passed"
+
+      - name: S3 — Correlated scalar subqueries in SELECT lists
+        run: |
+          # S3: (SELECT ... FROM ... WHERE outer_col = ...) in a SELECT list
+          # This runs once per output row — O(N) DB round trips.
+          MATCHES=$(grep -rn \
+            --include="*.sql" \
+            -P "SELECT\s+\(SELECT\s+\S.*?FROM\s+\S" \
+            src/dk_data/sqlmesh/models/ || true)
+          if [ -n "$MATCHES" ]; then
+            echo "::error::S3 antipattern (correlated scalar subquery in SELECT) found in silver models"
+            echo "$MATCHES"
+            exit 1
+          fi
+          echo "S3 check passed"
+
+      - name: S4 — Global DISTINCT ON over multi-way UNION ALL
+        run: |
+          # S4: DISTINCT ON (...) ... UNION ALL — sorts the entire union result
+          MATCHES=$(grep -rn \
+            --include="*.sql" \
+            -E "DISTINCT ON.*UNION ALL|UNION ALL.*DISTINCT ON" \
+            src/dk_data/sqlmesh/models/ || true)
+          if [ -n "$MATCHES" ]; then
+            echo "::error::S4 antipattern (DISTINCT ON over UNION ALL) found in silver models"
+            echo "$MATCHES"
+            exit 1
+          fi
+          echo "S4 check passed"
+
+      - name: S5 — similarity() combined with = in the same OR clause
+        run: |
+          # S5: similarity(...) >= 0.85 OR col = 'value' — forces sequential scan
+          MATCHES=$(grep -rn \
+            --include="*.sql" \
+            -E "similarity\s*\(.*\)\s*(>=|>|<=|<)\s*[0-9.]+\s+(OR|AND).*=" \
+            src/dk_data/sqlmesh/models/ || true)
+          if [ -n "$MATCHES" ]; then
+            echo "::error::S5 antipattern (similarity() mixed with = in OR) found in silver models"
+            echo "$MATCHES"
+            exit 1
+          fi
+          echo "S5 check passed"
+
+      - name: Summary
+        run: echo "All 5 silver antipattern checks passed (FR-015–FR-020 / SC-012)"

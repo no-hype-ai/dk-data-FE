@@ -33,25 +33,25 @@ WITH provider_counts AS (
 taxonomy_enriched AS (
     SELECT
         t.taxonomy_code,
-        t.type,
+        t.taxonomy_type,
         t.classification,
         t.specialization,
 
         -- Broad category for simplified filtering
         CASE
-            WHEN LOWER(t.type) LIKE '%physician%' OR LOWER(t.classification) LIKE '%physician%'
+            WHEN LOWER(t.taxonomy_type) LIKE '%physician%' OR LOWER(t.classification) LIKE '%physician%'
                 THEN 'Physician'
-            WHEN LOWER(t.type) LIKE '%nurse%' OR LOWER(t.classification) LIKE '%nurse%'
+            WHEN LOWER(t.taxonomy_type) LIKE '%nurse%' OR LOWER(t.classification) LIKE '%nurse%'
                 THEN 'Nursing'
-            WHEN LOWER(t.type) LIKE '%hospital%' OR LOWER(t.type) LIKE '%facility%'
+            WHEN LOWER(t.taxonomy_type) LIKE '%hospital%' OR LOWER(t.taxonomy_type) LIKE '%facility%'
                 THEN 'Facility'
-            WHEN LOWER(t.type) LIKE '%pharmacy%' OR LOWER(t.classification) LIKE '%pharmacy%'
+            WHEN LOWER(t.taxonomy_type) LIKE '%pharmacy%' OR LOWER(t.classification) LIKE '%pharmacy%'
                 THEN 'Pharmacy'
-            WHEN LOWER(t.type) LIKE '%dental%' OR LOWER(t.classification) LIKE '%dental%'
+            WHEN LOWER(t.taxonomy_type) LIKE '%dental%' OR LOWER(t.classification) LIKE '%dental%'
                 THEN 'Dental'
-            WHEN LOWER(t.type) LIKE '%behavioral%' OR LOWER(t.type) LIKE '%mental%'
+            WHEN LOWER(t.taxonomy_type) LIKE '%behavioral%' OR LOWER(t.taxonomy_type) LIKE '%mental%'
                 THEN 'Behavioral Health'
-            WHEN LOWER(t.type) LIKE '%supplier%' OR LOWER(t.type) LIKE '%equipment%'
+            WHEN LOWER(t.taxonomy_type) LIKE '%supplier%' OR LOWER(t.taxonomy_type) LIKE '%equipment%'
                 THEN 'DME/Supplier'
             ELSE 'Other'
         END                                 AS broad_category,
@@ -65,7 +65,7 @@ taxonomy_enriched AS (
 SELECT
     gen_random_uuid()               AS id,
     te.taxonomy_code,
-    te.type,
+    te.taxonomy_type,
     te.classification,
     te.specialization,
     te.broad_category,

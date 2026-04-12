@@ -95,3 +95,10 @@ data-samples/manifest.json
 .claude/
 !grafana/dashboards/*.json
 !grafana/alerts/*.yaml
+
+# DK - local state files
+.dk/debug-e2e-state.json
+.dk/debug-sweep-state.json
+.dk/debug-sweep-config.json
+.dk/specs/*/swarm-state.json
+.dk/specs/*/auto-decisions.json

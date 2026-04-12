@@ -1,5 +1,5 @@
 -- SQLMesh Model: Silver RxNorm Concepts
--- Promotes mol_bronze.rxnorm into mol_silver.identifier_mappings (rxcui entries)
+-- Promotes mol_bronze.rxnorm into mol_silver.molecule_identifiers (rxcui entries)
 -- and also provides a standalone mol_silver.rxnorm_concepts table for
 -- downstream use (drug utilization joins, HCS bridge tables).
 --
@@ -43,16 +43,16 @@ FROM mol_bronze.rxnorm b
 LEFT JOIN mol_silver.molecules m_name
        ON b.name IS NOT NULL
       AND LOWER(m_name.canonical_name) = LOWER(b.name)
--- Fallback: alias table — molecule_aliases has 375+ dup alias_name_normalized rows,
+-- Fallback: alias table — molecule_aliases has 375+ dup normalized_name rows,
 -- so pick one molecule_id per alias via DISTINCT ON to prevent fan-out.
 LEFT JOIN (
-    SELECT DISTINCT ON (alias_name_normalized)
-        alias_name_normalized, molecule_id
-    FROM mol_silver.molecule_aliases
-    ORDER BY alias_name_normalized, molecule_id
+    SELECT DISTINCT ON (normalized_name)
+        normalized_name, molecule_id
+    FROM mol_silver.molecule_names
+    ORDER BY normalized_name, molecule_id
 ) ma ON m_name.molecule_id IS NULL
       AND b.name IS NOT NULL
-      AND LOWER(REGEXP_REPLACE(b.name, '[^a-zA-Z0-9]', '', 'g')) = ma.alias_name_normalized
+      AND LOWER(REGEXP_REPLACE(b.name, '[^a-zA-Z0-9]', '', 'g')) = ma.normalized_name
 LEFT JOIN mol_silver.molecules m_alias ON m_alias.molecule_id = ma.molecule_id
 
 WHERE b.rxcui IS NOT NULL;

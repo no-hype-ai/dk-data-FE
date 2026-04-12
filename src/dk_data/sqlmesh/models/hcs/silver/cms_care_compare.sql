@@ -31,7 +31,6 @@ SELECT DISTINCT ON (b.facility_id)
 
     b.source,
     b.ingested_at,
-    b.ingested_at                   AS source_updated_at,
     NOW()                           AS created_at
 
 FROM hcs_bronze.cms_care_compare b

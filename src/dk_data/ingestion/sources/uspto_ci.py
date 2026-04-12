@@ -3,10 +3,10 @@
 Feature: 011-datasource-integration
 Task: T055-T057 — USPTO PatentsView CI source integration
 
-Loads normalized USPTO patent records into mol_raw.uspto_ci with upsert
+Loads normalized USPTO patent records into ip_raw.uspto_ci with upsert
 semantics (ON CONFLICT DO UPDATE on patent_id).
 
-Target table: mol_raw.uspto_ci (see migration 060_ci_source_tables.sql)
+Target table: ip_raw.uspto_ci (see migration 060_ci_source_tables.sql)
 """
 
 import json
@@ -31,7 +31,7 @@ def load_uspto_ci_data(
     source_file: Optional[str] = None,
     batch_size: int = BATCH_SIZE,
 ) -> Dict[str, Any]:
-    """Load USPTO CI patent records into mol_raw.uspto_ci.
+    """Load USPTO CI patent records into ip_raw.uspto_ci.
 
     Validates each record via the USPTOCIRecord Pydantic model and
     performs an upsert: INSERT ... ON CONFLICT (patent_id) DO UPDATE.
@@ -54,7 +54,7 @@ def load_uspto_ci_data(
             "errors": [],
         }
 
-    logger.info("Loading %d USPTO CI records into mol_raw.uspto_ci", len(records))
+    logger.info("Loading %d USPTO CI records into ip_raw.uspto_ci", len(records))
 
     records_inserted = 0
     records_failed = 0
@@ -91,7 +91,7 @@ def load_uspto_ci_data(
 
                     cur.execute(
                         """
-                        INSERT INTO mol_raw.uspto_ci (
+                        INSERT INTO ip_raw.uspto_ci (
                             patent_id, title, abstract,
                             inventors, assignees,
                             filing_date, grant_date,

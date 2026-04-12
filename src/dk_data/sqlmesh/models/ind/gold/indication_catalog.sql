@@ -46,7 +46,7 @@ hierarchy_depth AS (
 
 SELECT
     s.icd11_code,
-    s.icd11_title,
+    s.title,
     s.definition,
     s.class_kind,
     s.parent_code,

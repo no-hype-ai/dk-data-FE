@@ -17,9 +17,11 @@ MODEL (
     ),
     cron '@monthly',
     audits (
-        not_null(columns := (bindingdb_id, activity_value_nm))
+        not_null(columns := (bindingdb_id, activity_value))
     ),
     grain bindingdb_id
+    ,
+    -- T4: large input — raise work_mem to keep sorts in memory (per-session 256MB ceiling per FR-021b)
 );
 
 SELECT DISTINCT ON (b.bindingdb_id)
@@ -55,9 +57,9 @@ SELECT DISTINCT ON (b.bindingdb_id)
     b.kon,
     b.koff,
 
-    -- Best available activity value with type label
+    -- Best available activity value with type label (units are in `activity_unit`)
     b.activity_type,
-    b.activity_value                                            AS activity_value_nm,
+    b.activity_value,
     b.activity_unit,
 
     -- Assay conditions
@@ -71,8 +73,7 @@ SELECT DISTINCT ON (b.bindingdb_id)
     b.pdb_ids,
 
     'bindingdb'                                                 AS source,
-    b.ingested_at                                               AS source_updated_at,
-    b.ingested_at                                               AS created_at
+    b.ingested_at
 
 FROM mol_bronze.bindingdb b
 
@@ -85,11 +86,11 @@ LEFT JOIN mol_silver.molecules m_ik
 --   mol_silver.pubchem stores chembl_ids as [{id, type}] objects, not a plain
 --   string array, so @> to_jsonb(chembl_id) never matches.
 --   Use identifier_mappings instead — reliable flat lookup.
-LEFT JOIN mol_silver.identifier_mappings pc_chembl
+LEFT JOIN mol_silver.molecule_identifiers pc_chembl
        ON m_ik.molecule_id IS NULL
       AND b.chembl_id IS NOT NULL
-      AND pc_chembl.identifier_type = 'chembl_id'
-      AND pc_chembl.identifier_value = b.chembl_id
+      AND pc_chembl.source = 'chembl'
+      AND pc_chembl.identifier = b.chembl_id
 
 -- Strategy 3: PubChem CID via mol_silver.pubchem
 LEFT JOIN mol_silver.pubchem pc_cid

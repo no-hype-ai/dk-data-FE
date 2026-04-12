@@ -10,6 +10,7 @@ This module provides metric UPDATE FUNCTIONS that query the database and set gau
 import time
 from typing import Optional
 from loguru import logger
+from dk_data.ingestion.utils.database import build_dsn
 
 try:
     from prometheus_client import CONTENT_TYPE_LATEST, generate_latest
@@ -245,7 +246,7 @@ def refresh_metrics_from_database_sync():
         db_url = f'postgresql://{db_user}:{db_pass}@{db_host}:{db_port}/{db_name}'
 
     try:
-        conn = psycopg2.connect(db_url)
+        conn = psycopg2.connect(build_dsn())
         cur = conn.cursor()
 
         # Get compound counts (molecules)
@@ -323,7 +324,7 @@ def refresh_metrics_from_database_sync():
 
         # Entity resolution success rate — use identifier_mappings as proxy for resolved
         try:
-            cur.execute("SELECT COUNT(DISTINCT molecule_id) FROM mol_silver.identifier_mappings")
+            cur.execute("SELECT COUNT(DISTINCT molecule_id) FROM mol_silver.molecule_identifiers")
             resolved = cur.fetchone()[0] or 0
         except Exception:
             conn.rollback()
@@ -766,16 +767,16 @@ def refresh_metrics_from_database_sync():
         except Exception:
             conn.rollback()
 
-        # T035: dk_silver_identifier_mappings_total by identifier_type (026-observability)
+        # T035: dk_silver_identifier_mappings_total by source (026-observability)
         try:
             cur.execute("""
-                SELECT identifier_type, COUNT(*)
-                FROM mol_silver.identifier_mappings
-                WHERE identifier_type IS NOT NULL
-                GROUP BY identifier_type
+                SELECT source, COUNT(*)
+                FROM mol_silver.molecule_identifiers
+                WHERE source IS NOT NULL
+                GROUP BY source
             """)
             for id_type, count in cur.fetchall():
-                DK_SILVER_IDENTIFIER_MAPPINGS.labels(identifier_type=id_type).set(count or 0)
+                DK_SILVER_IDENTIFIER_MAPPINGS.labels(source=id_type).set(count or 0)
         except Exception:
             conn.rollback()
 

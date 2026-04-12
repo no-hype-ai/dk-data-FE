@@ -1,10 +1,10 @@
 """EUIPO Design Data Loader.
 
 Feature: 014-uspto-euipo-model-datasource
-Loads EUIPO registered community design records into mol_raw.euipo_designs
+Loads EUIPO registered community design records into ip_raw.euipo_designs
 with upsert semantics (ON CONFLICT DO UPDATE on application_number).
 
-Target table: mol_raw.euipo_designs
+Target table: ip_raw.euipo_designs
 """
 
 import logging
@@ -27,7 +27,7 @@ def load_euipo_designs_data(
     source_file: Optional[str] = None,
     batch_size: int = BATCH_SIZE,
 ) -> Dict[str, Any]:
-    """Load EUIPO design records into mol_raw.euipo_designs.
+    """Load EUIPO design records into ip_raw.euipo_designs.
 
     Args:
         records: List of normalised design dicts from EUIPODesignsFetcher.
@@ -47,7 +47,7 @@ def load_euipo_designs_data(
             "errors": [],
         }
 
-    logger.info("Loading %d EUIPO design records into mol_raw.euipo_designs", len(records))
+    logger.info("Loading %d EUIPO design records into ip_raw.euipo_designs", len(records))
 
     records_inserted = 0
     records_failed = 0
@@ -64,7 +64,7 @@ def load_euipo_designs_data(
 
                     cur.execute(
                         """
-                        INSERT INTO mol_raw.euipo_designs (
+                        INSERT INTO ip_raw.euipo_designs (
                             application_number, design_title,
                             applicant_name, applicant_country,
                             representative_name, designer_name,

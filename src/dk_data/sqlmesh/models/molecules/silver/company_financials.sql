@@ -27,6 +27,7 @@ SELECT DISTINCT ON (e.filing_id)
 
     -- Filing identifiers (exact bronze column names from mol_bronze.sec_edgar)
     e.filing_id,
+    e.accession_number,
     e.cik,
     e.company_name,
     e.filing_type,

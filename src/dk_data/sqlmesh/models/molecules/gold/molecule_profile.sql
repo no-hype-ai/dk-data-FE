@@ -8,7 +8,7 @@ MODEL (
     kind INCREMENTAL_BY_UNIQUE_KEY (
         unique_key molecule_id
     ),
-    cron '@daily',
+    cron '@weekly',
     audits (
         not_null(columns := (molecule_id, canonical_name)),
         unique_values(columns := (molecule_id))
@@ -28,32 +28,41 @@ WITH molecule_base AS (
         m.molecule_type,
         m.therapeutic_areas,
         m.mechanism_of_action,
-        m.development_status,
+        -- development_status derived from m.max_phase (the new hub does not store
+        -- this as a column; it is a categorisation, not source data).
+        CASE
+            WHEN m.max_phase >= 4 THEN 'approved'
+            WHEN m.max_phase = 3  THEN 'phase_3'
+            WHEN m.max_phase = 2  THEN 'phase_2'
+            WHEN m.max_phase = 1  THEN 'phase_1'
+            WHEN m.max_phase = 0  THEN 'preclinical'
+            ELSE 'unknown'
+        END                                     AS development_status,
         m.max_phase,
-        m.first_approval_year,
+        m.first_approval,
         -- approval_date: not stored in any current source; genuinely unavailable
         NULL::DATE                              AS approval_date,
-        m.resolution_confidence,
-        -- data_sources: silver stores as JSONB array; cast to TEXT[] for gold
-        ARRAY(SELECT jsonb_array_elements_text(COALESCE(m.data_sources, '[]'::JSONB))) AS data_sources,
-        m.name_source                           AS primary_source,
-        m.created_at,
-        m.updated_at
+        -- resolution_confidence / data_sources / primary_source: tracked in
+        -- meta.linkage_conflicts under the new hub schema, not on the hub itself.
+        NULL::NUMERIC                           AS resolution_confidence,
+        ARRAY[]::TEXT[]                         AS data_sources,
+        NULL::TEXT                              AS primary_source,
+        m.first_seen_at                         AS created_at,
+        m.last_updated_at                       AS updated_at
     FROM mol_silver.molecules m
-    WHERE m.needs_review = FALSE
 ),
 
 -- Get cross-reference identifiers
 cross_refs AS (
     SELECT
         molecule_id,
-        MAX(CASE WHEN identifier_type = 'drugbank_id' AND is_primary THEN identifier_value END) AS drugbank_id,
-        MAX(CASE WHEN identifier_type = 'chembl_id' AND is_primary THEN identifier_value END) AS molecule_chembl_id,
-        MAX(CASE WHEN identifier_type = 'pubchem_cid' AND is_primary THEN identifier_value::BIGINT END) AS pubchem_cid,
-        MAX(CASE WHEN identifier_type = 'unii' AND is_primary THEN identifier_value END) AS unii,
-        MAX(CASE WHEN identifier_type = 'cas_number' AND is_primary THEN identifier_value END) AS cas_number,
-        MAX(CASE WHEN identifier_type = 'rxcui' AND is_primary THEN identifier_value END) AS rxcui
-    FROM mol_silver.identifier_mappings
+        MAX(CASE WHEN source = 'drugbank' AND is_primary THEN identifier END) AS drugbank_id,
+        MAX(CASE WHEN source = 'chembl' AND is_primary THEN identifier END) AS molecule_chembl_id,
+        MAX(CASE WHEN source = 'pubchem' AND is_primary THEN identifier::BIGINT END) AS pubchem_cid,
+        MAX(CASE WHEN source = 'unii' AND is_primary THEN identifier END) AS unii,
+        MAX(CASE WHEN source = 'cas' AND is_primary THEN identifier END) AS cas_number,
+        MAX(CASE WHEN source = 'rxnorm' AND is_primary THEN identifier END) AS rxcui
+    FROM mol_silver.molecule_identifiers
     GROUP BY molecule_id
 ),
 
@@ -61,8 +70,8 @@ cross_refs AS (
 aliases AS (
     SELECT
         molecule_id,
-        jsonb_agg(DISTINCT alias_name) AS alias_list
-    FROM mol_silver.molecule_aliases
+        jsonb_agg(DISTINCT display_name) AS alias_list
+    FROM mol_silver.molecule_names
     GROUP BY molecule_id
 ),
 
@@ -156,7 +165,7 @@ patent_info AS (
         molecule_id,
         COUNT(*) AS patent_count,
         MIN(expiry_date) FILTER (WHERE expiry_date > CURRENT_DATE) AS earliest_patent_expiry
-    FROM mol_silver.patents
+    FROM ip_silver.patents
     WHERE molecule_id IS NOT NULL
     GROUP BY molecule_id
 ),
@@ -164,47 +173,47 @@ patent_info AS (
 -- Trademark info (IP trademark section)
 -- Links trademarks to molecules via molecule_aliases (brand/trade/product names)
 -- Rationale: Trademarks are registered as brand names, not generic names.
--- mol_silver.molecule_aliases already aggregates brand names from DrugBank, FDA labels,
+-- mol_silver.molecule_names already aggregates brand names from DrugBank, FDA labels,
 -- Orange Book trade names, etc. — these are exactly what mark_name matches against.
 trademark_info AS (
     SELECT
         ma.molecule_id,
-        COUNT(DISTINCT t.trademark_identifier || '|' || t.source) AS trademark_count,
-        COUNT(DISTINCT t.trademark_identifier || '|' || t.source) FILTER (
+        COUNT(DISTINCT t.trademark_id::text || '|' || t.jurisdiction) AS trademark_count,
+        COUNT(DISTINCT t.trademark_id::text || '|' || t.jurisdiction) FILTER (
             WHERE t.status IN ('Registered', 'REGISTERED')
         ) AS active_trademark_count,
-        COUNT(DISTINCT t.trademark_identifier || '|' || t.source) FILTER (
-            WHERE t.source = 'uspto_trademarks'
+        COUNT(DISTINCT t.trademark_id::text || '|' || t.jurisdiction) FILTER (
+            WHERE t.jurisdiction = 'US'
         ) AS us_trademark_count,
-        COUNT(DISTINCT t.trademark_identifier || '|' || t.source) FILTER (
-            WHERE t.source = 'euipo_trademarks'
+        COUNT(DISTINCT t.trademark_id::text || '|' || t.jurisdiction) FILTER (
+            WHERE t.jurisdiction = 'EU'
         ) AS eu_trademark_count,
         (
             SELECT t2.status
-            FROM mol_silver.trademarks t2
-            JOIN mol_silver.molecule_aliases ma2
-                ON LOWER(t2.mark_name) = LOWER(ma2.alias_name)
+            FROM ip_silver.trademarks t2
+            JOIN mol_silver.molecule_names ma2
+                ON LOWER(t2.mark_text) = LOWER(ma2.display_name)
             WHERE ma2.molecule_id = ma.molecule_id
-              AND t2.source = 'uspto_trademarks'
-              AND ma2.alias_type IN ('brand', 'trade', 'product')
+              AND t2.jurisdiction = 'US'
+              AND ma2.name_kind IN ('brand', 'trade', 'product')
             ORDER BY t2.filing_date DESC NULLS LAST
             LIMIT 1
         ) AS latest_us_trademark_status,
         (
             SELECT t3.status
-            FROM mol_silver.trademarks t3
-            JOIN mol_silver.molecule_aliases ma3
-                ON LOWER(t3.mark_name) = LOWER(ma3.alias_name)
+            FROM ip_silver.trademarks t3
+            JOIN mol_silver.molecule_names ma3
+                ON LOWER(t3.mark_text) = LOWER(ma3.display_name)
             WHERE ma3.molecule_id = ma.molecule_id
-              AND t3.source = 'euipo_trademarks'
-              AND ma3.alias_type IN ('brand', 'trade', 'product')
+              AND t3.jurisdiction = 'EU'
+              AND ma3.name_kind IN ('brand', 'trade', 'product')
             ORDER BY t3.filing_date DESC NULLS LAST
             LIMIT 1
         ) AS latest_eu_trademark_status
-    FROM mol_silver.molecule_aliases ma
-    JOIN mol_silver.trademarks t
-        ON LOWER(t.mark_name) = LOWER(ma.alias_name)
-    WHERE ma.alias_type IN ('brand', 'trade', 'product')
+    FROM mol_silver.molecule_names ma
+    JOIN ip_silver.trademarks t
+        ON LOWER(t.mark_text) = LOWER(ma.display_name)
+    WHERE ma.name_kind IN ('brand', 'trade', 'product')
     GROUP BY ma.molecule_id
 )
 
@@ -221,7 +230,7 @@ SELECT
     mb.mechanism_of_action,
     mb.development_status,
     mb.max_phase,
-    mb.first_approval_year,
+    mb.first_approval,
     mb.approval_date,
     mb.resolution_confidence,
     mb.data_sources,

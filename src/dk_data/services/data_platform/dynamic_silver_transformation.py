@@ -52,7 +52,7 @@ class DynamicSilverTransformation:
     1. Reads transformation rules from meta.silver_transformation_rules
     2. Executes transformations using SQL (no hardcoded Python logic)
     3. Links new entities to existing mol_silver.molecules
-    4. Extracts identifiers to mol_silver.identifier_mappings
+    4. Extracts identifiers to mol_silver.molecule_identifiers
     5. Extracts names to mol_silver.drug_name_lookup
     """
 
@@ -274,9 +274,9 @@ class DynamicSilverTransformation:
                     FROM {rule.source_table} s
                     WHERE s.{source_col} IS NOT NULL
                       AND EXISTS (
-                          SELECT 1 FROM mol_silver.identifier_mappings im
-                          WHERE im.identifier_type = '{id_type}'
-                            AND im.identifier_value = s.{source_col}::TEXT
+                          SELECT 1 FROM mol_silver.molecule_identifiers im
+                          WHERE im.source = '{id_type}'
+                            AND im.identifier = s.{source_col}::TEXT
                             AND im.molecule_id = m.id
                       )
                       AND NOT (m.data_sources ? '{rule.source_name}')
@@ -306,7 +306,7 @@ class DynamicSilverTransformation:
         conn,
         rule: TransformationRule
     ) -> Dict[str, Any]:
-        """Extract identifiers from source to mol_silver.identifier_mappings."""
+        """Extract identifiers from source to mol_silver.molecule_identifiers."""
         if not rule.identifier_mappings:
             return {'extracted': 0}
 
@@ -314,8 +314,8 @@ class DynamicSilverTransformation:
 
         for id_type, source_col in rule.identifier_mappings.items():
             extract_sql = f"""
-                INSERT INTO mol_silver.identifier_mappings (
-                    molecule_id, identifier_type, identifier_value, source,
+                INSERT INTO mol_silver.molecule_identifiers (
+                    molecule_id, source, identifier, source,
                     confidence, is_primary, source_date, created_at
                 )
                 SELECT
@@ -331,7 +331,7 @@ class DynamicSilverTransformation:
                 JOIN {rule.source_table} s ON m.inchi_key = s.inchi_key
                 WHERE s.{source_col} IS NOT NULL
                   AND m.needs_review = FALSE
-                ON CONFLICT (molecule_id, identifier_type, identifier_value) DO NOTHING
+                ON CONFLICT (molecule_id, source, identifier) DO NOTHING
             """
             try:
                 result = await conn.execute(extract_sql)

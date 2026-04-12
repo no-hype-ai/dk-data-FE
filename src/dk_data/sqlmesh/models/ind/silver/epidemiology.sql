@@ -24,7 +24,7 @@ SELECT DISTINCT ON (m.icd10_code, g.spatial_dim, g.time_dim, g.source)
     -- Ontology enrichment (therapeutic area + canonical indication name)
     o.therapeutic_area,
     o.indication_name,
-    m.indication_label                                                      AS indicator_label,
+    m.indication_label,
     g.indication_query,
     g.spatial_dim,
     g.time_dim,
@@ -49,7 +49,6 @@ SELECT DISTINCT ON (m.icd10_code, g.spatial_dim, g.time_dim, g.source)
     g.high,
     m.metric_type,
 
-    g.id                                                                    AS bronze_id,
     'who_gho'                                                               AS source,
     g.ingested_at,
     g.source_updated_at,

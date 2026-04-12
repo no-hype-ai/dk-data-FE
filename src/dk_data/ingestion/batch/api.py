@@ -19,6 +19,7 @@ from pydantic import BaseModel
 from psycopg2.extras import RealDictCursor
 
 from dk_data.ingestion.batch.job_runner import JobStatus, get_job_runner
+from dk_data.ingestion.utils.database import build_dsn
 
 # Import observability (must be before other imports that use logging)
 try:
@@ -236,7 +237,7 @@ class HealthResponse(BaseModel):
 
 def get_connection():
     """Get database connection."""
-    return psycopg2.connect(**DB_CONFIG)
+    return psycopg2.connect(build_dsn())
 
 
 @app.get("/health", response_model=HealthResponse)

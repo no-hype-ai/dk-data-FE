@@ -19,6 +19,7 @@ from typing import Any
 
 import psycopg2
 from psycopg2.extras import RealDictCursor, Json
+from dk_data.ingestion.utils.database import build_dsn
 
 # Database configuration from environment
 DB_CONFIG = {
@@ -565,14 +566,14 @@ SOURCE_METADATA = {
             "package_ndcs": {"description": "Array of 11-digit package-level NDC codes for this product", "type": "string[]"},
         },
         "staleness_threshold_hours": 720,
-        "target_tables": ["mol_raw.fda_ndc", "mol_bronze.fda_ndc", "mol_silver.identifier_mappings", "mol_silver.ndc_molecule_bridge"],
+        "target_tables": ["mol_raw.fda_ndc", "mol_bronze.fda_ndc", "mol_silver.molecule_identifiers", "mol_silver.ndc_molecule_bridge"],
     },
 }
 
 
 def get_connection():
     """Get database connection."""
-    return psycopg2.connect(**DB_CONFIG)
+    return psycopg2.connect(build_dsn())
 
 
 def get_current_sources(cursor) -> list[dict[str, Any]]:

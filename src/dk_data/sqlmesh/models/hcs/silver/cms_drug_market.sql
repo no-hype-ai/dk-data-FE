@@ -13,7 +13,9 @@
 
 MODEL (
     name hcs_silver.cms_drug_market,
-    kind FULL,
+    kind INCREMENTAL_BY_UNIQUE_KEY (
+        unique_key (generic_name, _source_year)
+    ),
     cron '@monthly',
     audits (
         not_null(columns := (generic_name, _source_year))
@@ -140,9 +142,9 @@ SELECT
         -- Tier 1a: exact alias match on full stripped generic_name (Part D / both)
         (
             SELECT ma.molecule_id
-            FROM mol_silver.molecule_aliases ma
+            FROM mol_silver.molecule_names ma
             WHERE LOWER(REGEXP_REPLACE(c.generic_name, '[^a-zA-Z0-9]', '', 'g'))
-                = ma.alias_name_normalized
+                = ma.normalized_name
             LIMIT 1
         ),
         -- Tier 1b: RxNorm name match (handles CMS multi-word generics not in aliases)
@@ -156,12 +158,12 @@ SELECT
         -- Tier 1c: first-token alias (salt forms: "paclitaxel protein-bound" → "paclitaxel")
         (
             SELECT ma.molecule_id
-            FROM mol_silver.molecule_aliases ma
+            FROM mol_silver.molecule_names ma
             WHERE LENGTH(SPLIT_PART(c.generic_name, ' ', 1)) >= 4
               AND LOWER(REGEXP_REPLACE(
                       SPLIT_PART(c.generic_name, ' ', 1),
                       '[^a-zA-Z0-9]', '', 'g'
-                  )) = ma.alias_name_normalized
+                  )) = ma.normalized_name
             LIMIT 1
         ),
         -- Tier 2: HCPCS bridge for Part B codes (c.hcpcs_code is comma-separated aggregate

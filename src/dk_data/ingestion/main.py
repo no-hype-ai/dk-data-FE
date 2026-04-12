@@ -249,6 +249,7 @@ except ImportError:
     def _prom_start_http_server(port): pass  # no-op when prometheus_client absent
 
 import logging
+from dk_data.ingestion.utils.database import build_dsn
 logger = logging.getLogger(__name__)
 
 # Available data sources
@@ -1524,7 +1525,7 @@ def _record_cronjob_run_to_db(
 
     try:
         import psycopg2
-        conn = psycopg2.connect(db_url)
+        conn = psycopg2.connect(build_dsn())
         cur = conn.cursor()
 
         # Resolve job_id from meta.batch_jobs, inserting a minimal row if missing.

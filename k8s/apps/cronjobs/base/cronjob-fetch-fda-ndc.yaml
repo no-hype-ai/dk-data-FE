@@ -21,7 +21,7 @@ spec:
         metadata:
           labels:
             app: fetch-fda-ndc
-            app.kubernetes.io/component: batch-job
+            app.kubernetes.io/component: fetcher
             app.kubernetes.io/part-of: dk-data
         spec:
           restartPolicy: OnFailure
