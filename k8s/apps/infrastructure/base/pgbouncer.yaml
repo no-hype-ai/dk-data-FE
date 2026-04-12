@@ -80,6 +80,8 @@ spec:
         service: dk-data
         product: dk-data
     spec:
+      imagePullSecrets:
+        - name: ghcr-credentials
       securityContext:
         runAsNonRoot: true
         runAsUser: 70  # pgbouncer uid in official image
@@ -139,7 +141,7 @@ spec:
               name: pgbouncer
           volumeMounts:
             - name: pgbouncer-ini
-              mountPath: /etc/pgbouncer/pgbouncer.ini
+              mountPath: /opt/pgbouncer/pgbouncer.ini
               subPath: pgbouncer.ini
               readOnly: true
             - name: pgbouncer-userlist

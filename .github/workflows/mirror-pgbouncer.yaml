@@ -44,7 +44,7 @@ jobs:
           USER pgbouncer
           EXPOSE 5432
           ENTRYPOINT ["pgbouncer"]
-          CMD ["/etc/pgbouncer/pgbouncer.ini"]
+          CMD ["/opt/pgbouncer/pgbouncer.ini"]
           DOCKERFILE
 
           docker build -t ghcr.io/data-kinetic/pgbouncer:1.23.0 -f /tmp/Dockerfile.pgbouncer /tmp
