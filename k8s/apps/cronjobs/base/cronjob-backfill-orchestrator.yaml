@@ -94,6 +94,7 @@ spec:
                 - -c
                 - |
                   set -eu
+                  export PGPASSWORD="${POSTGRES_PASSWORD}"
                   export PSQL="psql -h ${POSTGRES_HOST_DIRECT} -U ${POSTGRES_USER} -d ${POSTGRES_DB} -v ON_ERROR_STOP=1"
 
                   echo "[$(date -u +%FT%TZ)] backfill orchestrator starting"
