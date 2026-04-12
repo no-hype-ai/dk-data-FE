@@ -1,0 +1,26 @@
+name: Mirror PgBouncer Image
+on:
+  workflow_dispatch: {}
+  push:
+    paths:
+      - '.github/workflows/mirror-pgbouncer.yaml'
+
+jobs:
+  mirror:
+    runs-on: ubuntu-latest
+    permissions:
+      packages: write
+    steps:
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Pull, tag, and push
+        run: |
+          docker pull bitnami/pgbouncer:1.22.1
+          docker tag bitnami/pgbouncer:1.22.1 ghcr.io/data-kinetic/pgbouncer:1.22.1
+          docker push ghcr.io/data-kinetic/pgbouncer:1.22.1
+          echo "Mirrored bitnami/pgbouncer:1.22.1 → ghcr.io/data-kinetic/pgbouncer:1.22.1"

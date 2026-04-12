@@ -76,6 +76,9 @@ spec:
         app.kubernetes.io/name: pgbouncer
         app.kubernetes.io/component: connection-pooler
         app.kubernetes.io/part-of: dk-data
+        team: data-platform
+        service: dk-data
+        product: dk-data
     spec:
       securityContext:
         runAsNonRoot: true
@@ -89,7 +92,7 @@ spec:
         # We write scram-sha-256 password hashes from the plain secret so the
         # password is never stored in cleartext on disk.
         - name: write-userlist
-          image: bitnami/pgbouncer:1.22.1
+          image: ghcr.io/data-kinetic/pgbouncer:1.22.1
           command:
             - /bin/sh
             - -c
@@ -116,6 +119,13 @@ spec:
           volumeMounts:
             - name: pgbouncer-userlist
               mountPath: /etc/pgbouncer
+          resources:
+            requests:
+              memory: "32Mi"
+              cpu: "10m"
+            limits:
+              memory: "64Mi"
+              cpu: "50m"
           securityContext:
             allowPrivilegeEscalation: false
             readOnlyRootFilesystem: false
@@ -123,7 +133,7 @@ spec:
               drop: ["ALL"]
       containers:
         - name: pgbouncer
-          image: bitnami/pgbouncer:1.22.1
+          image: ghcr.io/data-kinetic/pgbouncer:1.22.1
           ports:
             - containerPort: 5432
               name: pgbouncer
