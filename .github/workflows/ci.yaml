@@ -430,7 +430,7 @@ jobs:
           VIOLATIONS=$(grep -rn "psycopg2\.connect(" src/ \
             --include="*.py" \
             --exclude="database.py" --exclude="run_migrations.py" \
-            | grep -v "build_dsn()" \
+            | grep -v "build_dsn" \
             || true)
 
           if [ -n "$VIOLATIONS" ]; then
