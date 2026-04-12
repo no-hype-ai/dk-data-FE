@@ -17,6 +17,15 @@ DECLARE
   v_end_lsn pg_lsn;
   v_resume_pos TEXT;
 BEGIN
+  -- Guard: skip if meta.refresh_state doesn't exist (CI/fresh deploy)
+  IF NOT EXISTS (
+      SELECT 1 FROM information_schema.tables
+      WHERE table_schema = 'meta' AND table_name = 'refresh_state'
+  ) THEN
+      RAISE NOTICE 'meta.refresh_state not available — skipping migration';
+      RETURN;
+  END IF;
+
   SELECT last_chunk_position INTO v_resume_pos
   FROM meta.refresh_state WHERE procedure_name = 'migrate_uspto_ci';
   IF FOUND AND v_resume_pos IS NOT NULL THEN v_offset := v_resume_pos::BIGINT; END IF;
@@ -63,6 +72,15 @@ DECLARE
   v_end_lsn pg_lsn;
   v_resume_pos TEXT;
 BEGIN
+  -- Guard: skip if meta.refresh_state doesn't exist (CI/fresh deploy)
+  IF NOT EXISTS (
+      SELECT 1 FROM information_schema.tables
+      WHERE table_schema = 'meta' AND table_name = 'refresh_state'
+  ) THEN
+      RAISE NOTICE 'meta.refresh_state not available — skipping migration';
+      RETURN;
+  END IF;
+
   SELECT last_chunk_position INTO v_resume_pos
   FROM meta.refresh_state WHERE procedure_name = 'migrate_uspto_trademarks';
   IF FOUND AND v_resume_pos IS NOT NULL THEN v_offset := v_resume_pos::BIGINT; END IF;
@@ -109,6 +127,15 @@ DECLARE
   v_end_lsn pg_lsn;
   v_resume_pos TEXT;
 BEGIN
+  -- Guard: skip if meta.refresh_state doesn't exist (CI/fresh deploy)
+  IF NOT EXISTS (
+      SELECT 1 FROM information_schema.tables
+      WHERE table_schema = 'meta' AND table_name = 'refresh_state'
+  ) THEN
+      RAISE NOTICE 'meta.refresh_state not available — skipping migration';
+      RETURN;
+  END IF;
+
   SELECT last_chunk_position INTO v_resume_pos
   FROM meta.refresh_state WHERE procedure_name = 'migrate_epo_patents';
   IF FOUND AND v_resume_pos IS NOT NULL THEN v_offset := v_resume_pos::BIGINT; END IF;
@@ -155,6 +182,15 @@ DECLARE
   v_end_lsn pg_lsn;
   v_resume_pos TEXT;
 BEGIN
+  -- Guard: skip if meta.refresh_state doesn't exist (CI/fresh deploy)
+  IF NOT EXISTS (
+      SELECT 1 FROM information_schema.tables
+      WHERE table_schema = 'meta' AND table_name = 'refresh_state'
+  ) THEN
+      RAISE NOTICE 'meta.refresh_state not available — skipping migration';
+      RETURN;
+  END IF;
+
   SELECT last_chunk_position INTO v_resume_pos
   FROM meta.refresh_state WHERE procedure_name = 'migrate_euipo_trademarks';
   IF FOUND AND v_resume_pos IS NOT NULL THEN v_offset := v_resume_pos::BIGINT; END IF;
@@ -201,6 +237,15 @@ DECLARE
   v_end_lsn pg_lsn;
   v_resume_pos TEXT;
 BEGIN
+  -- Guard: skip if meta.refresh_state doesn't exist (CI/fresh deploy)
+  IF NOT EXISTS (
+      SELECT 1 FROM information_schema.tables
+      WHERE table_schema = 'meta' AND table_name = 'refresh_state'
+  ) THEN
+      RAISE NOTICE 'meta.refresh_state not available — skipping migration';
+      RETURN;
+  END IF;
+
   SELECT last_chunk_position INTO v_resume_pos
   FROM meta.refresh_state WHERE procedure_name = 'migrate_euipo_designs';
   IF FOUND AND v_resume_pos IS NOT NULL THEN v_offset := v_resume_pos::BIGINT; END IF;
@@ -247,6 +292,15 @@ DECLARE
   v_end_lsn pg_lsn;
   v_resume_pos TEXT;
 BEGIN
+  -- Guard: skip if meta.refresh_state doesn't exist (CI/fresh deploy)
+  IF NOT EXISTS (
+      SELECT 1 FROM information_schema.tables
+      WHERE table_schema = 'meta' AND table_name = 'refresh_state'
+  ) THEN
+      RAISE NOTICE 'meta.refresh_state not available — skipping migration';
+      RETURN;
+  END IF;
+
   SELECT last_chunk_position INTO v_resume_pos
   FROM meta.refresh_state WHERE procedure_name = 'migrate_trademark_status_history';
   IF FOUND AND v_resume_pos IS NOT NULL THEN v_offset := v_resume_pos::BIGINT; END IF;

@@ -13,6 +13,18 @@ DECLARE
   v_end_lsn pg_lsn;
   v_resume_pos TEXT;
 BEGIN
+  -- Guard: skip if source table does not exist (CI / fresh deploy)
+  IF NOT EXISTS (
+      SELECT 1 FROM information_schema.tables
+      WHERE table_schema = 'mol_bronze'
+  ) OR NOT EXISTS (
+      SELECT 1 FROM information_schema.tables
+      WHERE table_schema = 'meta' AND table_name = 'refresh_state'
+  ) THEN
+      RAISE NOTICE 'Source tables not available — skipping migration';
+      RETURN;
+  END IF;
+
   -- Resume from last checkpoint
   SELECT last_chunk_position INTO v_resume_pos
   FROM meta.refresh_state WHERE procedure_name = 'migrate_uspto_patents';
