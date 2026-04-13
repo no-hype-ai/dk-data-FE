@@ -14,10 +14,9 @@ and fan-writes to the configured sink(s):
   - **loki** (default, production): HTTP push to Loki under
     `app=metering-proxy-audit`. Failures are counted in a drop metric
     and swallowed — audit must NEVER block.
-  - **postgres**: INSERT into `meta.api_audit_log` (reuses the table
-    created by feature 013-observability-governance). Intended for
-    consumers that want a queryable audit trail alongside Loki.
   - **stdout**: JSON lines to stdout for local dev.
+  - **disabled**: hot path records `emitted_total` for self-tests
+    but does not touch the queue (used by unit tests).
 
 Backpressure policy: if the queue fills (default 1024 events), the
 OLDEST record is dropped and a counter is incremented. This is the
@@ -40,7 +39,7 @@ from typing import Any, Literal
 
 logger = logging.getLogger("dk_data.metering_proxy.audit")
 
-AuditSink = Literal["loki", "postgres", "stdout", "disabled"]
+AuditSink = Literal["loki", "stdout", "disabled"]
 
 
 @dataclass
@@ -213,9 +212,6 @@ class AuditWriter:
         if self.sink == "loki":
             await self._write_loki(record)
             return
-        if self.sink == "postgres":
-            await self._write_postgres(record)
-            return
 
     async def _write_loki(self, record: AuditRecord) -> None:
         if not self.loki_push_url:
@@ -242,43 +238,11 @@ class AuditWriter:
             except Exception as e:  # noqa: BLE001
                 logger.debug("audit loki push error: %s", e)
 
-    async def _write_postgres(self, record: AuditRecord) -> None:
-        """Best-effort Postgres write via dk_data.db helpers.
-
-        If the Postgres path fails (e.g. connection lost), we log at
-        DEBUG and drop the record — audit must never cascade into a
-        request failure.
-        """
-        try:
-            # Lazy import so unit tests don't need the DB stack
-            from dk_data.db import get_pool  # type: ignore[attr-defined]
-        except Exception:
-            if self._stdout_fallback:
-                print(record.to_json_line(), flush=True)
-            return
-        try:
-            pool = await get_pool()
-            async with pool.acquire() as conn:
-                await conn.execute(
-                    """
-                    INSERT INTO meta.api_audit_log
-                        (request_id, timestamp, source, method, path,
-                         user_role, status_code, response_time_ms,
-                         action, category, details)
-                    VALUES
-                        ($1, to_timestamp($2), 'metering-proxy', $3, $4,
-                         $5, $6, $7, 'proxy', 'access', $8::jsonb)
-                    """,
-                    record.request_id or None,
-                    record.ts,
-                    record.method,
-                    record.path,
-                    record.consumer_id,
-                    record.status_code,
-                    record.latency_ms,
-                    json.dumps(
-                        {"schema": record.schema, **record.extra}, default=str
-                    ),
-                )
-        except Exception as e:  # noqa: BLE001
-            logger.debug("audit postgres write error: %s", e)
+    # A Postgres sink (writing directly to meta.api_audit_log) was
+    # considered for v0.1 but dropped. The metering proxy pod does not
+    # have a shared async connection pool helper, and wiring one up
+    # just for the audit path adds a failure mode to the hot path
+    # without a matching benefit (Loki is already the canonical audit
+    # sink). If a queryable audit trail becomes a hard requirement,
+    # revisit in v1.1 using the same pooling strategy as the FastAPI
+    # data-platform router.

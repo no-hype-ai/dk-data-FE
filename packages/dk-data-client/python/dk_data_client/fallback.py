@@ -28,13 +28,12 @@ from __future__ import annotations
 
 import enum
 from dataclasses import dataclass
-from typing import Any, Callable, Protocol
+from typing import Any, Protocol
 
 import httpx
 
 from dk_data_client.errors import (
     DkDataNotFoundError,
-    DkDataStaleError,
     DkDataUpstreamError,
 )
 

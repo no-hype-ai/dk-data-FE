@@ -194,7 +194,7 @@ class TelemetryEmitter:
         while True:
             try:
                 event = await asyncio.wait_for(self._queue.get(), timeout=0.5)
-            except asyncio.TimeoutError:
+            except TimeoutError:
                 return
             await self._push(event)
 
@@ -225,7 +225,7 @@ class TelemetryEmitter:
         if self._worker_task is not None:
             try:
                 await asyncio.wait_for(self._worker_task, timeout=1.0)
-            except asyncio.TimeoutError:
+            except TimeoutError:
                 self._worker_task.cancel()
         if self._http is not None:
             await self._http.aclose()

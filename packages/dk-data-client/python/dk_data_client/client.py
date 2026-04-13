@@ -12,6 +12,7 @@ server, or falling through to an upstream source.
 from __future__ import annotations
 
 import time
+from datetime import UTC
 from typing import Any, Literal
 
 import httpx
@@ -338,11 +339,11 @@ class DkDataClient:
             raise DkDataNotFoundError(f"404 from {path}", details={"body": body})
         if sc == 410:
             last = response.headers.get("X-Last-Refreshed-At") or ""
-            from datetime import datetime, timezone
+            from datetime import datetime
             try:
                 last_ts = datetime.fromisoformat(last.replace("Z", "+00:00"))
             except ValueError:
-                last_ts = datetime.now(timezone.utc)
+                last_ts = datetime.now(UTC)
             raise DkDataStaleError(
                 f"410 from {path}",
                 last_refreshed_at=last_ts,

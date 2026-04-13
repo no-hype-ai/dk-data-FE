@@ -1,16 +1,23 @@
 # Feature 002-external-integration-foundation (US-8, US-11, T144)
 #
 # Grafana unified-alerting rule: fire if any gold table has zero rows
-# for more than 24 hours. This is the earliest consumer-visible signal
-# that the SQLMesh gold transform has failed silently.
+# for more than 24 hours. Earliest consumer-visible signal that a
+# SQLMesh gold transform has failed silently.
 #
-# The rule reads `dk_table_record_count{layer="gold"}` — which is set
-# by the SQLMesh post-run hook after every transform. If the gauge
-# hasn't been refreshed OR the last observed count is 0, the alert
-# fires. Firing routes to the `#dk-data-oncall` PagerDuty service.
+# Depends on `dk_table_record_count{layer=~".+_gold"}` being emitted
+# by `src/dk_data/services/data_platform/metrics.py:set_table_record_count`.
+# The metric's real labels are `layer` (e.g. `hcs_gold`, `mol_gold`)
+# and `table_name`, so the alert uses a regex selector and interpolates
+# $labels.table_name in the annotation.
 #
-# Apply via ArgoCD or:
+# NOTE: this PrometheusRule is orphaned from kustomization for now.
+# Operators apply it by hand:
+#
 #   kubectl -n dk-data-prod apply -f grafana/alerts/gold-zero-rows.yaml
+#
+# Wiring it into the observability kustomization is a follow-up that
+# requires coordinating with the shared infra repo's prometheus-operator
+# install.
 apiVersion: monitoring.coreos.com/v1
 kind: PrometheusRule
 metadata:
@@ -25,50 +32,53 @@ spec:
     - name: dk-data.gold.zero_rows
       interval: 5m
       rules:
+        # "Table has been at 0 rows for 24 hours." Prometheus's `for`
+        # clause keeps the condition alive until it holds for 24h, so
+        # the expression itself is just `count == 0`.
         - alert: DkDataGoldTableZeroRows
-          expr: |
-            (
-              dk_table_record_count{layer="gold"} == 0
-            )
-            and
-            (
-              time() - dk_table_record_count{layer="gold"}[1m:] > 24 * 3600
-            )
-          for: 10m
+          expr: dk_table_record_count{layer=~".+_gold"} == 0
+          for: 24h
           labels:
             severity: critical
             service: dk-data
             component: gold
           annotations:
-            summary: "Gold table {{ $labels.table }} has 0 rows for >24h"
+            summary: "Gold table {{ $labels.layer }}.{{ $labels.table_name }} has 0 rows for >24h"
             description: |
-              Gold table {{ $labels.table }} (layer=gold) has reported
-              zero rows for the past 24 hours. This usually means the
-              SQLMesh transform cronjob failed silently or the table
-              was truncated without a rebuild.
+              Gold table {{ $labels.layer }}.{{ $labels.table_name }}
+              has reported zero rows for the past 24 hours. This
+              usually means the SQLMesh transform cronjob failed
+              silently or the table was truncated without a rebuild.
 
               Investigate:
-                - kubectl -n dk-data-prod get jobs.batch | grep mol-transform-gold
+                - kubectl -n dk-data-prod get jobs.batch | grep transform-gold
                 - kubectl -n dk-data-prod logs job/<latest-job>
+                - psql ... -c "SELECT COUNT(*) FROM {{ $labels.layer }}.{{ $labels.table_name }};"
 
               Runbook: docs/runbooks/verify-gold-backfill.md
 
-        - alert: DkDataGoldTableStale
+        # Data-source freshness alert. `dk_data_source_last_refresh_timestamp`
+        # has labels `source_id, source_name` (NOT `layer`), so the
+        # selector filters on `source_name` matching known gold sources.
+        # Add more sources to the regex as they come online.
+        - alert: DkDataGoldSourceStale
           expr: |
-            time() - dk_data_source_last_refresh_timestamp{layer="gold"} > 36 * 3600
+            time() - dk_data_source_last_refresh_timestamp{
+              source_name=~"(molecule_profile|safety_signals|lifecycle_stages|competitive_landscape|company_pipeline)"
+            } > 36 * 3600
           for: 15m
           labels:
             severity: warning
             service: dk-data
             component: gold
           annotations:
-            summary: "Gold table {{ $labels.source }} has not refreshed in >36h"
+            summary: "Gold source {{ $labels.source_name }} has not refreshed in >36h"
             description: |
-              The most recent refresh for gold source {{ $labels.source }}
-              is older than 36 hours (expected: daily at 22:00 UTC).
-              This is the upstream of the adapter
-              `molecules.getCompetitiveLandscape`, `.getProfile`, and
-              `.getSafety` methods — stale here means consumer-visible
-              staleness.
+              The most recent refresh for gold source
+              {{ $labels.source_name }} is older than 36 hours
+              (expected: daily at 22:00 UTC). This is the upstream of
+              the adapter `molecules.getCompetitiveLandscape`,
+              `.getProfile`, and `.getSafety` methods — stale here
+              means consumer-visible staleness.
 
               Runbook: docs/runbooks/verify-gold-backfill.md

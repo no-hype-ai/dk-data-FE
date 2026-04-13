@@ -31,7 +31,6 @@ from typing import Any
 
 import httpx
 
-from dk_data_client.errors import DkDataUpstreamError
 from dk_data_client.fallback import FallbackContext, UpstreamShim
 
 
