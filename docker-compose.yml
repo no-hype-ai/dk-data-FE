@@ -72,7 +72,10 @@ services:
       # SECURITY: No default password - must be set via environment or .env file
       # Accepts POSTGREST_PASSWORD or falls back to POSTGRES_PASSWORD (Doppler compat)
       PGRST_DB_URI: "postgres://authenticator:${POSTGREST_PASSWORD:-${POSTGRES_PASSWORD:?POSTGRES_PASSWORD must be set}}@postgres:5432/${POSTGRES_DB:-dk_data}"
-      PGRST_DB_SCHEMAS: "api,mol_silver,mol_gold,hcs_silver,hcs_gold,ind_silver,ind_gold,hcp_silver,hcp_gold,mart,scoring,xenon,staging,meta,application"
+      # Schemas exposed via PostgREST — MUST match k8s/apps/postgrest/base/configmap.yaml
+      # PGRST_DB_SCHEMAS in production. Feature 002-external-integration-foundation T011
+      # added mol_api, ip_api, hcs_agents, mol_agents, agents to match production state.
+      PGRST_DB_SCHEMAS: "api,mol_api,ip_api,mol_silver,mol_gold,hcs_silver,hcs_gold,ind_silver,ind_gold,hcp_silver,hcp_gold,hcs_agents,mol_agents,agents,xenon,meta,mart,scoring,staging,application"
       PGRST_DB_ANON_ROLE: "web_anon"
       PGRST_DB_POOL: "10"
       PGRST_DB_POOL_ACQUISITION_TIMEOUT: "10"
