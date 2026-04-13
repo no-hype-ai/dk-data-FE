@@ -101,6 +101,83 @@ NON_TRANSACTIONAL_MARKERS = (
 )
 
 
+def _iter_statements(sql: str):
+    """Yield individual SQL statements from a multi-statement string.
+
+    Splits on semicolons that are NOT inside dollar-quoted blocks
+    ($$...$$  or  $tag$...$tag$). Empty / comment-only fragments are
+    skipped so callers can safely execute every yielded statement.
+
+    Why this exists: calling cur.execute() with a full multi-statement
+    SQL string causes PostgreSQL's simple query protocol to wrap all
+    statements in an implicit transaction — even when the psycopg2
+    connection is in autocommit mode.  Executing each statement in a
+    separate cur.execute() call avoids that implicit transaction, which
+    is required for CREATE INDEX CONCURRENTLY and similar operations.
+    """
+    in_dollar_quote = False
+    dollar_tag: str | None = None
+    buf: list[str] = []
+    i = 0
+    n = len(sql)
+
+    while i < n:
+        # Inside a dollar-quoted block — look for the closing tag only.
+        if in_dollar_quote:
+            assert dollar_tag is not None
+            if sql[i:].startswith(dollar_tag):
+                buf.append(dollar_tag)
+                i += len(dollar_tag)
+                in_dollar_quote = False
+                dollar_tag = None
+            else:
+                buf.append(sql[i])
+                i += 1
+            continue
+
+        ch = sql[i]
+
+        # Detect the start of a dollar-quote ($$ or $tag$).
+        if ch == "$":
+            j = i + 1
+            while j < n and (sql[j].isalnum() or sql[j] == "_"):
+                j += 1
+            if j < n and sql[j] == "$":
+                tag = sql[i : j + 1]
+                buf.append(tag)
+                i = j + 1
+                in_dollar_quote = True
+                dollar_tag = tag
+                continue
+
+        # Statement terminator — yield whatever is buffered.
+        if ch == ";":
+            stmt = "".join(buf).strip()
+            if _stmt_has_code(stmt):
+                yield stmt
+            buf = []
+            i += 1
+            continue
+
+        buf.append(ch)
+        i += 1
+
+    # Flush any trailing content that has no closing semicolon.
+    if buf:
+        stmt = "".join(buf).strip()
+        if _stmt_has_code(stmt):
+            yield stmt
+
+
+def _stmt_has_code(stmt: str) -> bool:
+    """Return True if *stmt* contains at least one non-comment, non-blank line."""
+    for line in stmt.splitlines():
+        stripped = line.strip()
+        if stripped and not stripped.startswith("--"):
+            return True
+    return False
+
+
 def is_non_transactional(sql: str) -> bool:
     """Return True if the SQL contains any operation that requires
     running outside a transaction block.
@@ -264,16 +341,25 @@ def apply_migration(
 
     if is_non_transactional(sql):
         # CONCURRENTLY operations cannot run inside a transaction.
-        # Switch the connection to autocommit, run the SQL, then
-        # restore the previous mode.
+        # Switch the connection to autocommit, run each statement
+        # individually, then restore the previous mode.
+        #
+        # IMPORTANT: we call cur.execute() once per statement, NOT once
+        # for the whole file. Sending multiple semicolon-separated
+        # statements in a single execute() call causes PostgreSQL's
+        # simple query protocol to wrap them in an implicit transaction
+        # on the server side — even when psycopg2's autocommit=True is
+        # set — which makes CREATE INDEX CONCURRENTLY fail with
+        # "cannot run inside a transaction block".
         previous_autocommit = conn.autocommit
         try:
             conn.autocommit = True
-            with conn.cursor() as cur:
-                print(
-                    "  (running in autocommit mode — non-transactional migration)"
-                )
-                cur.execute(sql)
+            print(
+                "  (running in autocommit mode — non-transactional migration)"
+            )
+            for stmt in _iter_statements(sql):
+                with conn.cursor() as cur:
+                    cur.execute(stmt)
         finally:
             conn.autocommit = previous_autocommit
         elapsed_ms = int((time.monotonic() - start) * 1000)
