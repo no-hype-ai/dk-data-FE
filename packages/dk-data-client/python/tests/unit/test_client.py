@@ -14,7 +14,6 @@ Uses `respx` to mock httpx transport — no network calls. We verify:
 
 from __future__ import annotations
 
-import asyncio
 from typing import Any
 
 import httpx
@@ -31,10 +30,9 @@ from dk_data_client.errors import (
     DkDataStaleError,
 )
 from dk_data_client.fallback import (
-    FallbackContext,
-    UpstreamShim,
-    register_shim,
     _SHIM_REGISTRY,
+    FallbackContext,
+    register_shim,
 )
 
 

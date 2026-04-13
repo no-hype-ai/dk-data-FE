@@ -2,15 +2,14 @@
 
 from __future__ import annotations
 
-import asyncio
 from pathlib import Path
 
 import pytest
 
 from dk_data_client.cache import (
+    _NEVER_CACHE,
     SqliteCacheBackend,
     TwoTierCache,
-    _NEVER_CACHE,
     _ttl_for,
     build_cache,
     make_key,

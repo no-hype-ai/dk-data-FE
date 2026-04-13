@@ -47,6 +47,46 @@ CREATE SCHEMA IF NOT EXISTS mol_api;
 GRANT USAGE ON SCHEMA mol_api TO analyst, api_user;
 
 -- -----------------------------------------------------------------------------
+-- mol_gold.competitive_landscape
+--
+-- Migration 081 created this table; migration 144 dropped it as part of a
+-- legacy-bronze cleanup that inadvertently caught this gold table too. This
+-- migration re-creates it (idempotently) so mol_api.competitive_scores has
+-- a stable source to query.
+--
+-- Schema mirrors the version in 081 with the addition of active_trials,
+-- total_trials, sponsor_count, canonical_name, inchi_key, therapeutic_areas,
+-- indications, and sponsors — the fields actually needed by competitive_scores.
+-- -----------------------------------------------------------------------------
+
+CREATE TABLE IF NOT EXISTS mol_gold.competitive_landscape (
+    id                  TEXT PRIMARY KEY,
+    molecule_id         TEXT,
+    inchi_key           TEXT,
+    canonical_name      TEXT,
+    indication          TEXT,
+    therapeutic_areas   TEXT[],
+    development_status  TEXT,
+    max_phase           INTEGER,
+    active_trials       INTEGER,
+    total_trials        INTEGER,
+    sponsor_count       INTEGER,
+    indications         TEXT[],
+    sponsors            TEXT[],
+    snapshot_date       DATE DEFAULT CURRENT_DATE,
+    computed_at         TIMESTAMPTZ DEFAULT NOW(),
+    updated_at          TIMESTAMPTZ DEFAULT NOW(),
+    UNIQUE (molecule_id, indication, snapshot_date)
+);
+
+COMMENT ON TABLE mol_gold.competitive_landscape IS
+    'Gold-layer competitive landscape snapshot per molecule × indication × date. '
+    'Source of truth for mol_api.competitive_scores. Dropped by migration 144 '
+    '(legacy cleanup overshoot) and recreated by migration 216.';
+
+GRANT SELECT ON mol_gold.competitive_landscape TO analyst, api_user;
+
+-- -----------------------------------------------------------------------------
 -- mol_api.competitive_scores
 --
 -- Numeric competitive positioning score derived from

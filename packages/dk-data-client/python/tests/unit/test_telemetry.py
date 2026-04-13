@@ -9,8 +9,6 @@ from __future__ import annotations
 
 import asyncio
 
-import pytest
-
 from dk_data_client.telemetry import TelemetryEmitter, TelemetryEvent, hash_args
 
 

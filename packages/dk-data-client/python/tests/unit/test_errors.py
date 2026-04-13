@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 import pytest
 
@@ -41,7 +41,7 @@ class TestHierarchy:
 
 class TestRichErrors:
     def test_stale_error_carries_timestamp(self):
-        ts = datetime(2026, 4, 13, tzinfo=timezone.utc)
+        ts = datetime(2026, 4, 13, tzinfo=UTC)
         err = DkDataStaleError("gold stale", last_refreshed_at=ts)
         assert err.last_refreshed_at == ts
         assert str(err) == "gold stale"
@@ -78,7 +78,7 @@ class TestCatchability:
             (DkDataUpstreamError("x", upstream="y"),),
             (
                 DkDataStaleError(
-                    "x", last_refreshed_at=datetime.now(timezone.utc)
+                    "x", last_refreshed_at=datetime.now(UTC)
                 ),
             ),
         ]:

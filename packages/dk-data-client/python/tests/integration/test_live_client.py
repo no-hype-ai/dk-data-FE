@@ -21,7 +21,6 @@ import pytest
 from dk_data_client import DkDataClient
 from dk_data_client.errors import DkDataError
 
-
 INTEGRATION_URL = os.environ.get("DK_DATA_INTEGRATION_URL")
 INTEGRATION_KEY = os.environ.get("DK_DATA_INTEGRATION_KEY")
 
@@ -53,7 +52,7 @@ class TestHealthAndCatalog:
 
     async def test_catalog_returns_dict(self, client):
         result = await client.catalog()
-        assert isinstance(result, dict) or isinstance(result, list)
+        assert isinstance(result, (dict, list))
 
 
 @skipif_no_stack
