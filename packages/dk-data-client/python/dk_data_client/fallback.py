@@ -149,6 +149,61 @@ class ClinicalTrialsShim:
         ]
 
 
+class PubchemMoleculeSearchShim:
+    """PubChem fallback for molecules.search.
+
+    Without this, ``molecules.search(query=...)`` with ``fallback_mode="upstream"``
+    raises ``DkDataNotFoundError("no upstream shim registered")`` on a dk-data
+    404 — surprising because the other molecule methods DO have a shim.
+
+    PubChem name search returns a list of matching compounds by name/synonym.
+    Results are shaped to match the dk-data search result schema with a
+    ``fallthrough=True`` marker so callers can distinguish upstream results.
+    """
+
+    upstream_name = "pubchem"
+
+    async def fetch(self, ctx: FallbackContext, http: httpx.AsyncClient) -> Any:
+        query = ctx.args.get("query") or ctx.args.get("name_or_id") or ""
+        if not query:
+            raise DkDataNotFoundError(f"no query for {ctx.method}")
+        # PubChem name→property lookup — same endpoint as resolve shim but
+        # returns all matching compounds rather than just the first.
+        url = (
+            f"https://pubchem.ncbi.nlm.nih.gov/rest/pug/compound/"
+            f"name/{query}/property/InChIKey,CanonicalSMILES,"
+            f"MolecularFormula,IUPACName/JSON"
+        )
+        try:
+            resp = await http.get(url, timeout=10.0)
+        except httpx.HTTPError as e:
+            raise DkDataUpstreamError(
+                f"pubchem search failed: {e}", upstream=self.upstream_name
+            ) from e
+        if resp.status_code == 404:
+            raise DkDataNotFoundError(f"not found in pubchem: {query}")
+        if resp.status_code >= 500:
+            raise DkDataUpstreamError(
+                f"pubchem returned {resp.status_code}", upstream=self.upstream_name
+            )
+        data = resp.json()
+        props = data.get("PropertyTable", {}).get("Properties", [])
+        if not props:
+            raise DkDataNotFoundError(f"pubchem returned empty results: {query}")
+        return [
+            {
+                "id": f"PUBCHEM:{row.get('CID')}",
+                "inchi_key": row.get("InChIKey"),
+                "canonical_smiles": row.get("CanonicalSMILES"),
+                "molecular_formula": row.get("MolecularFormula"),
+                "canonical_name": row.get("IUPACName"),
+                "source": "pubchem",
+                "fallthrough": True,
+            }
+            for row in props
+        ]
+
+
 class EuropePMCShim:
     upstream_name = "europe-pmc"
 
@@ -190,6 +245,10 @@ class EuropePMCShim:
 _SHIM_REGISTRY: dict[str, UpstreamShim] = {
     "molecules.resolve": PubchemMoleculeShim(),
     "molecules.get": PubchemMoleculeShim(),
+    # molecules.search was missing — a 404 with fallback_mode="upstream" would
+    # raise DkDataNotFoundError("no upstream shim registered") instead of
+    # attempting PubChem.  PubchemMoleculeSearchShim returns a list of hits.
+    "molecules.search": PubchemMoleculeSearchShim(),
     "molecules.getClinicalTrials": ClinicalTrialsShim(),
     "publications.search": EuropePMCShim(),
 }

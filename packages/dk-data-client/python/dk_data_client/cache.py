@@ -20,6 +20,7 @@ import json
 import os
 import sqlite3
 import time
+import warnings
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from pathlib import Path
@@ -186,9 +187,26 @@ class RedisCacheBackend(CacheBackend):
 
 
 class SqliteCacheBackend(CacheBackend):
-    """SQLite-backed L2 cache for dev / single-process use."""
+    """SQLite-backed L2 cache for dev / single-process use.
+
+    .. warning::
+        SQLite performs **blocking I/O** on the asyncio event loop thread.
+        Every ``get()`` and ``set()`` call blocks the entire event loop for
+        the duration of the disk read/write.  This is acceptable for local
+        development and unit tests (single-process, low concurrency, fast
+        SSD) but will degrade throughput and latency under real load.
+
+        Use ``RedisCacheBackend`` in production.  If you see this warning
+        unexpectedly, check your ``DkDataClient(cache_backend=...)`` setting.
+    """
 
     def __init__(self, db_path: str | Path = "~/.dk-data-client.sqlite") -> None:
+        warnings.warn(
+            "SqliteCacheBackend performs blocking I/O on the asyncio event loop. "
+            "Use RedisCacheBackend in production (cache_backend='redis'). "
+            "SQLite is safe only for dev/test environments.",
+            stacklevel=2,
+        )
         resolved = Path(os.path.expanduser(str(db_path)))
         resolved.parent.mkdir(parents=True, exist_ok=True)
         self._conn = sqlite3.connect(str(resolved), isolation_level=None)

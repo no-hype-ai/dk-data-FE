@@ -130,6 +130,26 @@ class AuditWriter:
     async def start(self) -> None:
         if self._worker is None and not self._stopped:
             self._worker = asyncio.create_task(self._run(), name="audit-writer")
+            # Create a single persistent HTTP client for the lifetime of the
+            # writer.  The previous pattern of `async with httpx.AsyncClient()`
+            # per record opened a new TCP connection for every audit event,
+            # causing connection churn under load. One persistent client reuses
+            # keep-alive connections — identical to how TelemetryEmitter works.
+            if self.sink == "loki" and self.loki_push_url:
+                try:
+                    import httpx as _httpx
+                    self._loki_http: _httpx.AsyncClient | None = _httpx.AsyncClient(
+                        timeout=2.0,
+                        limits=_httpx.Limits(
+                            max_connections=4,
+                            max_keepalive_connections=2,
+                            keepalive_expiry=30.0,
+                        ),
+                    )
+                except ImportError:
+                    self._loki_http = None
+            else:
+                self._loki_http = None
 
     async def stop(self, *, drain_timeout: float = 1.0) -> None:
         self._stopped = True
@@ -148,6 +168,14 @@ class AuditWriter:
         except (asyncio.CancelledError, Exception):
             pass
         self._worker = None
+        # Close the persistent Loki HTTP client after the worker is done.
+        loki_http = getattr(self, "_loki_http", None)
+        if loki_http is not None:
+            try:
+                await loki_http.aclose()
+            except Exception:
+                pass
+            self._loki_http = None
 
     def emit(
         self,
@@ -218,25 +246,24 @@ class AuditWriter:
             if self._stdout_fallback:
                 print(record.to_json_line(), flush=True)
             return
-        try:
-            import httpx
-        except ImportError:  # pragma: no cover
+        http = getattr(self, "_loki_http", None)
+        if http is None:
+            # start() was not called or httpx is unavailable.
             if self._stdout_fallback:
                 print(record.to_json_line(), flush=True)
             return
-        async with httpx.AsyncClient(timeout=2.0) as http:
-            try:
-                response = await http.post(
-                    self.loki_push_url,
-                    json=record.to_loki_stream(),
-                    headers={"Content-Type": "application/json"},
+        try:
+            response = await http.post(
+                self.loki_push_url,
+                json=record.to_loki_stream(),
+                headers={"Content-Type": "application/json"},
+            )
+            if response.status_code >= 400:
+                logger.debug(
+                    "audit loki push returned %d", response.status_code
                 )
-                if response.status_code >= 400:
-                    logger.debug(
-                        "audit loki push returned %d", response.status_code
-                    )
-            except Exception as e:  # noqa: BLE001
-                logger.debug("audit loki push error: %s", e)
+        except Exception as e:  # noqa: BLE001
+            logger.debug("audit loki push error: %s", e)
 
     # A Postgres sink (writing directly to meta.api_audit_log) was
     # considered for v0.1 but dropped. The metering proxy pod does not

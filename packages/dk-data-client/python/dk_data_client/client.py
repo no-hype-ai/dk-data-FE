@@ -110,39 +110,31 @@ class DkDataClient:
         # HTTP/2 transport with a tuned connection pool. HTTP/2 lets
         # many concurrent requests share a single TCP connection which
         # dramatically cuts handshake cost and improves fairness
-        # under burst load. If the h2 package is not installed (it's
-        # an optional httpx extra), fall back to HTTP/1.1 gracefully.
+        # under burst load. httpx.AsyncClient(http2=True) does NOT raise
+        # ImportError at init — the error surfaces only at request time
+        # when h2 is missing.  Check availability explicitly up front so
+        # the fallback actually fires.
         try:
-            self._http = httpx.AsyncClient(
-                base_url=self._base_url,
-                headers={
-                    "Authorization": f"Bearer {api_key}",
-                    "Accept": "application/json",
-                    "User-Agent": f"dk-data-client/{client_version} (python)",
-                },
-                timeout=timeout,
-                http2=True,
-                limits=httpx.Limits(
-                    max_connections=100,
-                    max_keepalive_connections=50,
-                    keepalive_expiry=30.0,
-                ),
-            )
+            import h2 as _h2  # noqa: F401
+            _http2_available = True
         except ImportError:
-            self._http = httpx.AsyncClient(
-                base_url=self._base_url,
-                headers={
-                    "Authorization": f"Bearer {api_key}",
-                    "Accept": "application/json",
-                    "User-Agent": f"dk-data-client/{client_version} (python)",
-                },
-                timeout=timeout,
-                limits=httpx.Limits(
-                    max_connections=100,
-                    max_keepalive_connections=50,
-                    keepalive_expiry=30.0,
-                ),
-            )
+            _http2_available = False
+
+        self._http = httpx.AsyncClient(
+            base_url=self._base_url,
+            headers={
+                "Authorization": f"Bearer {api_key}",
+                "Accept": "application/json",
+                "User-Agent": f"dk-data-client/{client_version} (python)",
+            },
+            timeout=timeout,
+            http2=_http2_available,
+            limits=httpx.Limits(
+                max_connections=100,
+                max_keepalive_connections=50,
+                keepalive_expiry=30.0,
+            ),
+        )
 
         # Upstream fallback uses a separate client with no auth header
         # and HTTP/1.1 (most upstream APIs don't support HTTP/2).
