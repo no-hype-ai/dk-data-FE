@@ -159,8 +159,8 @@
 - [ ] T072 [US4] Write `tests/test_216_missing_mol_api_views.py` — verify `mol_api.competitive_scores` exists, grant is present, and the score formula produces expected values for known gold-layer rows — `tests/test_216_missing_mol_api_views.py` (US-14)
 - [x] T073 [US5] Wrote migration `217_resolve_function_grants.sql` — schema-wide EXECUTE grants on `mol_silver` / `ind_silver` / `hcs_silver` / `hcp_silver` / `ip_silver` to `analyst` + `api_user`; ALTER DEFAULT PRIVILEGES for future resolve functions. Uses DO blocks with EXCEPTION handlers so missing functions don't fail the migration. — `src/dk_data/sql/migrations/217_resolve_function_grants.sql`
 - [ ] T074 [US5] Write `tests/test_217_resolve_function_grants.py` — verify every resolve function is callable by analyst + api_user — `tests/test_217_resolve_function_grants.py` (US-14)
-- [ ] T075 [US5] Add 7 FastAPI wrapper routes: `/data-platform/{conditions,companies,providers,facilities,researchers,patents,trademarks}/resolve` — `src/dk_data/api/routes/data_platform.py`
-- [ ] T076 [US5] Write tests for new FastAPI resolve wrappers — `tests/test_resolve_wrappers.py` (US-14)
+- [x] T075 [US5] Added 7 FastAPI wrapper routes: `/data-platform/{conditions,companies,providers,facilities,researchers,patents,trademarks}/resolve`. All POST, all inherit `require_auth` from the router-level dep, all use a shared `ResolveRequest`/`ResolveResponse` Pydantic contract with `name_or_id` validation (min_length 1, max_length 500). Shared `_call_resolve_function` helper routes each request to its `<schema>.resolve_<entity>()` PL/pgSQL function. Router now has 41 routes (was 34). — `src/dk_data/api/routes/data_platform.py`
+- [x] T076 [US5] Wrote `tests/test_resolve_wrappers.py` with 21 test cases: routing assertions (all 7 paths registered, POST only, tagged for OpenAPI), auth inheritance (parametrized no-auth → 401 for all 7), invalid-JWT → 401, request validation (missing/empty/overlong name_or_id → 422, optional hint passes). All 21 pass. — `tests/test_resolve_wrappers.py`
 
 ### Phase 4b — web_anon drop (MUST be last)
 
