@@ -79,10 +79,10 @@
 
 ### Phase 2c — FastAPI auth (US-15, must land alongside web_anon drop)
 
-- [ ] T026 Create `src/dk_data/api/dependencies/auth.py` with `verify_jwt` function — `src/dk_data/api/dependencies/auth.py` (US-15)
-- [ ] T027 Apply `dependencies=[Depends(verify_jwt)]` at `/data-platform` router level — `src/dk_data/api/routes/data_platform.py` (US-15)
-- [ ] T028 Write `tests/api/test_data_platform_auth.py` — unauthenticated → 401, valid JWT → 200, bad role → 403 — `tests/api/test_data_platform_auth.py` (US-15, US-14)
-- [ ] T029 Update FastAPI tests to use JWT fixtures — `tests/api/conftest.py` (US-15)
+- [x] T026 **SCOPE REVISED (blocker B001)** — discovered existing `require_auth` in `src/dk_data/api/middleware/rbac.py` (backed by `JWTService` in `src/dk_data/services/auth/jwt_service.py`). No new `verify_jwt` function needed. Also fixed blocker B002: `JWTService` now reads `JWT_SECRET_KEY` with `JWT_SECRET` fallback so FastAPI, PostgREST, and the metering proxy all use the same signing key — `src/dk_data/services/auth/jwt_service.py`
+- [x] T027 Applied `dependencies=[Depends(require_auth)]` at `/data-platform` router level; all 34 routes now protected — `src/dk_data/api/routes/data_platform.py`
+- [x] T028 Wrote `tests/test_data_platform_auth.py` with 9 test cases covering missing/malformed/invalid/wrong-secret/expired/wrong-audience → 401 and valid JWT → non-401. All 9 pass — `tests/test_data_platform_auth.py`
+- [x] T029 **NOT NEEDED** — existing `tests/conftest.py` loads `.env` which already sets `JWT_SECRET_KEY`. The new test file mints tokens using the live `JWTService`'s actual secret, which is robust to any env configuration.
 
 ---
 

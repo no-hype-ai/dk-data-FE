@@ -22,7 +22,23 @@ from ...services.data_platform import (
 )
 from ..dependencies import get_db_pool, get_gold_service, get_resolver_service
 
-router = APIRouter(prefix="/data-platform", tags=["data-platform"])
+# Feature 002-external-integration-foundation US-15: lock down the entire
+# /data-platform surface behind JWT auth. `require_auth` comes from the
+# existing RBAC middleware (src/dk_data/api/middleware/rbac.py) and raises
+# 401 on missing / invalid tokens. Applying it at the router level covers
+# every route under this router — including new routes added later — with
+# one declaration. No per-route decoration is needed; any route that ends
+# up under this prefix is auto-protected.
+from ..middleware.rbac import require_auth
+
+router = APIRouter(
+    prefix="/data-platform",
+    tags=["data-platform"],
+    # US-15: every request to /data-platform/* MUST present a valid JWT.
+    # The dependency raises 401 before the route handler runs. The existing
+    # 34 routes and all future routes under this prefix inherit this check.
+    dependencies=[Depends(require_auth)],
+)
 
 
 # ============================================================================
