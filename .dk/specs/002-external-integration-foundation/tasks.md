@@ -51,7 +51,7 @@
 
 ### Phase 2a — Dev hygiene + metrics infra
 
-- [ ] T010 [P] Sync `src/dk_data/postgrest.conf` `db-schemas` to match k8s production — `src/dk_data/postgrest.conf` line 19 (US-9)
+- [x] T010 [P] Sync `src/dk_data/postgrest.conf` `db-schemas` to match k8s production — `src/dk_data/postgrest.conf` (US-9)
 - [ ] T011 [P] Sync `docker-compose.yml` `PGRST_DB_SCHEMAS` to match k8s production (add `mol_api`, `ip_api`, `hcs_agents`, `mol_agents`, `agents`) — `docker-compose.yml` line 75 (US-9)
 - [ ] T012 [P] Add `mol_api` and `ip_api` to the `_SKIP_SCHEMAS` set in the lineage builder (search for the existing `_SKIP_SCHEMAS` assignment) — `src/dk_data/ingestion/utils/build_model_lineage.py` (US-11)
 - [ ] T013 [P] Document resolve-function lineage limitation as code comment — `src/dk_data/ingestion/utils/build_model_lineage.py` (US-11)
