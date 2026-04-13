@@ -17,7 +17,7 @@ from typing import Any, Literal
 
 import httpx
 
-from dk_data_client.cache import TwoTierCache, build_cache
+from dk_data_client.cache import TwoTierCache, build_cache, make_key
 from dk_data_client.errors import (
     DkDataAuthError,
     DkDataError,
@@ -29,7 +29,51 @@ from dk_data_client.errors import (
     DkDataUpstreamError,
 )
 from dk_data_client.fallback import FallbackMode, fallback_to_upstream
+from dk_data_client.singleflight import SingleFlight
 from dk_data_client.telemetry import TelemetryEmitter
+
+# Per-method HTTP timeouts. Fast paths get a tight budget so a slow
+# method can't hold a connection open forever; expensive paths get
+# room to breathe. The client's default is the `_default` entry; any
+# method without a specific entry uses it.
+METHOD_TIMEOUTS: dict[str, float] = {
+    # Resolve (sub-10ms server p99) — 2s is already 200× worst case.
+    "molecules.resolve": 2.0,
+    "companies.resolve": 2.0,
+    "conditions.resolve": 2.0,
+    "providers.resolve": 2.0,
+    # Simple identifier lookups
+    "molecules.get": 3.0,
+    "companies.get": 3.0,
+    "providers.get": 3.0,
+    # Indexed search — still fast
+    "molecules.search": 5.0,
+    "conditions.search": 5.0,
+    # Gold-backed reads
+    "molecules.getProfile": 10.0,
+    "molecules.getSafety": 10.0,
+    "molecules.getDrugLabels": 10.0,
+    "molecules.getBoxedWarnings": 10.0,
+    "molecules.getContraindications": 10.0,
+    "companies.getPipeline": 10.0,
+    # Bulk reads
+    "molecules.getAdverseEvents": 15.0,
+    "molecules.getClinicalTrials": 15.0,
+    "publications.getByMolecule": 15.0,
+    "patents.getByMolecule": 15.0,
+    # Expensive aggregation
+    "molecules.getCompetitiveLandscape": 30.0,
+    # Full-text ilike — worst case, big limit before the trgm index
+    # migration lands
+    "publications.search": 30.0,
+    "patents.search": 30.0,
+    # Administrative / never-cached
+    "molecules.getResolutionQueue": 5.0,
+    "health": 2.0,
+    "catalog": 2.0,
+    "dataSources": 2.0,
+    "serverInfo": 2.0,
+}
 
 
 class DkDataClient:
@@ -63,17 +107,52 @@ class DkDataClient:
         self._fallback_mode = FallbackMode(fallback_mode)
         self._timeout = timeout
 
-        self._http = httpx.AsyncClient(
-            base_url=self._base_url,
-            headers={
-                "Authorization": f"Bearer {api_key}",
-                "Accept": "application/json",
-                "User-Agent": f"dk-data-client/{client_version} (python)",
-            },
+        # HTTP/2 transport with a tuned connection pool. HTTP/2 lets
+        # many concurrent requests share a single TCP connection which
+        # dramatically cuts handshake cost and improves fairness
+        # under burst load. If the h2 package is not installed (it's
+        # an optional httpx extra), fall back to HTTP/1.1 gracefully.
+        try:
+            self._http = httpx.AsyncClient(
+                base_url=self._base_url,
+                headers={
+                    "Authorization": f"Bearer {api_key}",
+                    "Accept": "application/json",
+                    "User-Agent": f"dk-data-client/{client_version} (python)",
+                },
+                timeout=timeout,
+                http2=True,
+                limits=httpx.Limits(
+                    max_connections=100,
+                    max_keepalive_connections=50,
+                    keepalive_expiry=30.0,
+                ),
+            )
+        except ImportError:
+            self._http = httpx.AsyncClient(
+                base_url=self._base_url,
+                headers={
+                    "Authorization": f"Bearer {api_key}",
+                    "Accept": "application/json",
+                    "User-Agent": f"dk-data-client/{client_version} (python)",
+                },
+                timeout=timeout,
+                limits=httpx.Limits(
+                    max_connections=100,
+                    max_keepalive_connections=50,
+                    keepalive_expiry=30.0,
+                ),
+            )
+
+        # Upstream fallback uses a separate client with no auth header
+        # and HTTP/1.1 (most upstream APIs don't support HTTP/2).
+        self._upstream_http = httpx.AsyncClient(
             timeout=timeout,
+            limits=httpx.Limits(
+                max_connections=20,
+                max_keepalive_connections=10,
+            ),
         )
-        # Upstream fallback uses a separate client with no auth header.
-        self._upstream_http = httpx.AsyncClient(timeout=timeout)
 
         self._cache: TwoTierCache = build_cache(
             cache_backend,
@@ -86,6 +165,11 @@ class DkDataClient:
             client_version=client_version,
             loki_push_url=loki_push_url,
         )
+
+        # Single-flight coalescing — N concurrent cache misses for the
+        # same key produce 1 server request, N waiters. The biggest
+        # single win for reducing server RPS under hot-key load.
+        self._singleflight = SingleFlight()
 
         # Lazy-initialized module accessors — see __getattr__ below.
         self._modules: dict[str, Any] = {}
@@ -186,7 +270,8 @@ class DkDataClient:
 
         Semantics:
           1. Look up L1 → L2
-          2. If miss, call the server
+          2. If miss, call the server via single-flight (N concurrent
+             misses for the same key → 1 server request, N waiters)
           3. If server returns 404 and we have a fallback shim, fall
              through to upstream
           4. Emit one telemetry event with the appropriate outcome
@@ -206,12 +291,31 @@ class DkDataClient:
             )
             return cache_hit.value
 
-        # Server call
-        try:
+        # Server call — wrapped in single-flight so concurrent misses
+        # for the same key coalesce into one server request.
+        sf_key = make_key(method, args)
+
+        async def _do_call() -> Any:
+            # Re-check cache inside the single-flight critical section
+            # — a waiter that arrived AFTER the first caller populated
+            # the cache should pick up the fresh value and skip the
+            # HTTP call entirely. This is race-free because both the
+            # set() and the waiter's get() run on the same event loop.
+            recheck = await self._cache.get(method, args)
+            if recheck is not None:
+                return recheck.value, "recheck_hit"
             value = await self._http_call(
-                path=path, params=params, http_method=http_method, json_body=json_body
+                path=path,
+                params=params,
+                http_method=http_method,
+                json_body=json_body,
+                method_timeout=METHOD_TIMEOUTS.get(method, self._timeout),
             )
             await self._cache.set(method, args, value)
+            return value, "miss"
+
+        try:
+            value, _outcome_kind = await self._singleflight.do(sf_key, _do_call)
             self._emit(
                 method=method,
                 args=args,
@@ -284,7 +388,11 @@ class DkDataClient:
         """Uncached, telemetry-only GET for catalog/health."""
         started = time.perf_counter()
         try:
-            value = await self._http_call(path=path, http_method="GET")
+            value = await self._http_call(
+                path=path,
+                http_method="GET",
+                method_timeout=METHOD_TIMEOUTS.get(method, self._timeout),
+            )
             self._emit(method=method, args={}, outcome="miss", started=started)
             return value
         except DkDataError as e:
@@ -304,13 +412,19 @@ class DkDataClient:
         params: dict[str, Any] | None = None,
         http_method: str = "GET",
         json_body: dict[str, Any] | None = None,
+        method_timeout: float | None = None,
     ) -> Any:
+        # Per-method timeout overrides the client-level default. This
+        # lets fast paths (resolve=2s) bail out before a slow path
+        # (competitive_landscape=30s) ties up the connection.
+        request_timeout = method_timeout if method_timeout is not None else self._timeout
         try:
             response = await self._http.request(
                 http_method,
                 path,
                 params=params,
                 json=json_body,
+                timeout=request_timeout,
             )
         except httpx.HTTPError as e:
             raise DkDataServerError(

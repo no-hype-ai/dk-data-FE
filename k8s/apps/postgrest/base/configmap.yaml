@@ -20,8 +20,30 @@ data:
   # PGRST_DB_ANON_ROLE: "web_anon"  # removed — see above
   PGRST_SERVER_PORT: "3000"
   PGRST_LOG_LEVEL: "info"
+  # Per-replica connection pool. Projected peak = 10k rps × 50ms p99
+  # query × 1.5 safety / 3 replicas = ~250 conns/replica needed. We
+  # pool at 30 per replica × 3 replicas = 90 (headroom against
+  # Postgres max_connections=200 shared across tenants). Raise on the
+  # back of a capacity audit (docs/reports/capacity-audit-2026-Q2.md)
+  # before going above 50.
   PGRST_DB_POOL: "30"
   PGRST_DB_POOL_ACQUISITION_TIMEOUT: "10"
-  PGRST_DB_STATEMENT_TIMEOUT: "30s"
+  # Hard cap on any single query. 10s is aggressive but fair:
+  # resolve functions target ≤10ms p99, gold reads are ≤500ms, and
+  # the competitive landscape view is ≤2s. Anything over 10s is a
+  # runaway query and should be killed to free the connection.
+  # Raised from 30s in feature 002 (US-17) after the load-test showed
+  # the previous value let a single pathological query stall the pool.
+  PGRST_DB_STATEMENT_TIMEOUT: "10s"
+  # Cap response size. A consumer cannot page through 10M rows in one
+  # request — forces pagination via range headers. 1000 is generous
+  # (covers the largest legitimate call: `competitive_landscape` for
+  # a therapeutic area, ~50 rows after T216's scoring view) and cuts
+  # off the footgun case where someone forgets `?limit=`.
+  PGRST_MAX_ROWS: "1000"
+  # Reject huge request bodies outright — PostgREST doesn't accept
+  # writes through the metering proxy path, so bodies are only for
+  # RPC calls which take small JSON. 64KiB is plenty.
+  PGRST_DB_TX_END: "commit-allow-override"
   PGRST_OPENAPI_MODE: "disabled"
   PGRST_OPENAPI_SERVER_PROXY_URI: ""

@@ -48,6 +48,10 @@ export interface TelemetryEmitterOptions {
   queueMaxSize?: number;
 }
 
+// Batching tunables. Same defaults as the Python client.
+const BATCH_SIZE = 100;
+const BATCH_WAIT_MS = 50;
+
 /** sha256(canonicalized args) — NEVER log raw args themselves. */
 export function hashArgs(args: Record<string, unknown>): string {
   const keys = Object.keys(args).sort();
@@ -155,25 +159,63 @@ export class TelemetryEmitter {
     this.flushing = true;
     try {
       while (this.queue.length > 0) {
-        const event = this.queue.shift();
-        if (!event) break;
-        await this.push(event);
+        // Batch up to BATCH_SIZE events into a single Loki POST.
+        // This is a 100× reduction in push call rate vs. per-event
+        // emission. The tradeoff: tail events of an idle burst may
+        // wait up to `batchWaitMs` before being flushed.
+        const batch = this.queue.splice(0, BATCH_SIZE);
+        await this.pushBatch(batch);
+
+        // If more events arrived while we were pushing, let the
+        // event loop run briefly so producers can add a few more
+        // before we drain the next batch. This keeps batches full
+        // under steady load without penalizing latency in tests.
+        if (this.queue.length > 0 && this.queue.length < BATCH_SIZE) {
+          await new Promise((resolve) => setTimeout(resolve, BATCH_WAIT_MS));
+        }
       }
     } finally {
       this.flushing = false;
     }
   }
 
-  private async push(event: TelemetryEvent): Promise<void> {
+  private async pushBatch(batch: TelemetryEvent[]): Promise<void> {
+    if (batch.length === 0) return;
     if (!this.lokiPushUrl) {
       // No Loki configured — structured log only
       return;
     }
+
+    // Merge events that share a label set (app/client/method/outcome)
+    // into ONE Loki stream entry. This is Loki's preferred payload
+    // shape and further reduces ingestion cost.
+    const streamsByKey = new Map<
+      string,
+      { stream: Record<string, string>; values: Array<[string, string]> }
+    >();
+    for (const event of batch) {
+      const rendered = eventToLokiStream(event) as {
+        streams: Array<{
+          stream: Record<string, string>;
+          values: Array<[string, string]>;
+        }>;
+      };
+      const stream = rendered.streams[0]!;
+      const key = `${stream.stream.app}|${stream.stream.client}|${stream.stream.method}|${stream.stream.outcome}`;
+      const existing = streamsByKey.get(key);
+      if (existing) {
+        existing.values.push(...stream.values);
+      } else {
+        streamsByKey.set(key, { stream: stream.stream, values: [...stream.values] });
+      }
+    }
+    const payload = { streams: Array.from(streamsByKey.values()) };
+
     try {
       await fetch(this.lokiPushUrl, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(eventToLokiStream(event)),
+        body: JSON.stringify(payload),
       });
     } catch {
       // Swallow — telemetry is best-effort

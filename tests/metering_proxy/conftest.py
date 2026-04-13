@@ -31,6 +31,7 @@ def _build_test_key_store() -> ConsumerKeyStore:
             alias="blai",
             allowed_schemas=["mol_silver", "mol_gold", "mol_api"],
             rpm_limit=500,
+            max_in_flight=1_000,  # large so tests don't 503 accidentally
             tier="high",
             api_keys=["dk_data_blai_test_key"],
         ),
@@ -39,6 +40,7 @@ def _build_test_key_store() -> ConsumerKeyStore:
             alias="dkos",
             allowed_schemas=["api", "meta"],
             rpm_limit=200,
+            max_in_flight=1_000,
             tier="standard",
             api_keys=["dk_data_dkos_test_key"],
         ),
@@ -48,6 +50,7 @@ def _build_test_key_store() -> ConsumerKeyStore:
             alias="load",
             allowed_schemas=["mol_silver", "api"],
             rpm_limit=0,  # 0 = unlimited
+            max_in_flight=10_000,
             tier="unlimited",
             api_keys=["dk_data_load_test_key"],
         ),
@@ -67,10 +70,12 @@ def patched_app(monkeypatch):
     - Stub out the upstream proxy so no network call happens
     - Reset rate limiter + audit state between tests
     """
+    from dk_data.metering_proxy.concurrency import ConsumerConcurrencyGuard
     from dk_data.metering_proxy.rate_limiter import RateLimiter
 
     monkeypatch.setattr(app_module, "key_store", _build_test_key_store())
     monkeypatch.setattr(app_module, "rate_limiter", RateLimiter())
+    monkeypatch.setattr(app_module, "concurrency_guard", ConsumerConcurrencyGuard())
     monkeypatch.setattr(app_module, "_seen_consumers", set())
 
     # Stub the upstream proxy to return a deterministic fake response

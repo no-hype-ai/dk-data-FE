@@ -27,6 +27,30 @@ from typing import Any, Literal
 
 from cachetools import TTLCache
 
+# orjson is ~5× faster than stdlib json for L2 cache serialization.
+# It's optional (installed via `dk-data-client[fast]`) so the package
+# stays slim by default. Fall back to stdlib if not present.
+try:
+    import orjson
+
+    def _json_dumps(value: Any) -> bytes:
+        return orjson.dumps(value, default=str)
+
+    def _json_loads(data: str | bytes) -> Any:
+        return orjson.loads(data)
+
+    _HAS_ORJSON = True
+except ImportError:  # pragma: no cover
+    def _json_dumps(value: Any) -> bytes:  # type: ignore[misc]
+        return json.dumps(value, default=str).encode("utf-8")
+
+    def _json_loads(data: str | bytes) -> Any:  # type: ignore[misc]
+        if isinstance(data, bytes):
+            data = data.decode("utf-8")
+        return json.loads(data)
+
+    _HAS_ORJSON = False
+
 CacheTier = Literal["l1", "l2", "none"]
 
 # -----------------------------------------------------------------------------
@@ -83,7 +107,12 @@ def _ttl_for(method: str) -> int | None:
 
 
 def make_key(method: str, args: dict[str, Any]) -> str:
-    """Content-addressed cache key: sha256 of method + canonicalized args."""
+    """Content-addressed cache key: sha256 of method + canonicalized args.
+
+    Uses stdlib json (not orjson) because we need sort_keys for
+    deterministic ordering regardless of how the caller constructed
+    the dict. orjson doesn't support sort_keys.
+    """
     payload = json.dumps({"method": method, "args": args}, sort_keys=True, default=str)
     digest = hashlib.sha256(payload.encode("utf-8")).hexdigest()
     return f"{method}:{digest}"
@@ -128,19 +157,22 @@ class RedisCacheBackend(CacheBackend):
             raise RuntimeError(
                 "Redis cache backend requires 'dk-data-client[redis]'; install the extra."
             ) from e
-        self._client = aioredis.from_url(url, decode_responses=True)
+        # decode_responses=False so we can store raw bytes from orjson
+        # and skip the str→bytes→str round trip on every operation.
+        self._client = aioredis.from_url(url, decode_responses=False)
 
     async def get(self, key: str) -> Any | None:
         raw = await self._client.get(key)
         if raw is None:
             return None
         try:
-            return json.loads(raw)
-        except json.JSONDecodeError:
+            return _json_loads(raw)
+        except Exception:
             return None
 
     async def set(self, key: str, value: Any, ttl_seconds: int) -> None:
-        await self._client.set(key, json.dumps(value, default=str), ex=ttl_seconds)
+        # orjson.dumps returns bytes directly — skip str encoding.
+        await self._client.set(key, _json_dumps(value), ex=ttl_seconds)
 
     async def close(self) -> None:
         await self._client.close()
@@ -177,15 +209,16 @@ class SqliteCacheBackend(CacheBackend):
             self._conn.execute("DELETE FROM cache WHERE key = ?", (key,))
             return None
         try:
-            return json.loads(value)
-        except json.JSONDecodeError:
+            return _json_loads(value)
+        except Exception:
             return None
 
     async def set(self, key: str, value: Any, ttl_seconds: int) -> None:
         expires_at = int(time.time()) + ttl_seconds
+        # SQLite's BLOB column type accepts raw bytes from orjson.
         self._conn.execute(
             "INSERT OR REPLACE INTO cache (key, value, expires_at) VALUES (?, ?, ?)",
-            (key, json.dumps(value, default=str), expires_at),
+            (key, _json_dumps(value), expires_at),
         )
 
     async def close(self) -> None:
@@ -212,7 +245,7 @@ class TwoTierCache:
         self,
         l2: CacheBackend | None,
         *,
-        l1_max_items: int = 1024,
+        l1_max_items: int = 4096,  # larger than v0.1 (1024) to absorb scan traffic
         l1_ttl_seconds: int = _DEFAULT_L1_TTL_SECONDS,
     ) -> None:
         self._l1: TTLCache[str, Any] = TTLCache(maxsize=l1_max_items, ttl=l1_ttl_seconds)

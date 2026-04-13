@@ -46,6 +46,14 @@ Outcome = Literal[
 ]
 CacheTier = Literal["l1", "l2", "none"]
 
+# Batching tunables. These are intentionally conservative — large
+# enough to amortize the HTTP push cost across many events, small
+# enough that a low-volume consumer still sees events appear in
+# Loki within a second of the activity they represent.
+_BATCH_SIZE = 100
+_BATCH_WAIT_SECONDS = 1.0
+_IDLE_TIMEOUT = 5.0
+
 
 @dataclass
 class TelemetryEvent:
@@ -187,38 +195,111 @@ class TelemetryEmitter:
             self._worker_task = asyncio.create_task(self._worker())
 
     async def _worker(self) -> None:
-        """Drain the queue, pushing batches to Loki."""
+        """Drain the queue in batches, pushing them to Loki.
+
+        Batching policy:
+          - Accumulate up to `_BATCH_SIZE` events OR wait up to
+            `_BATCH_WAIT_SECONDS` from the first enqueued event,
+            whichever comes first.
+          - Empty the batch into a single HTTP POST.
+          - Loop back to drain the next batch.
+          - Exit when the queue is empty for more than `_IDLE_TIMEOUT`
+            seconds (the emit path will re-spawn the worker on the
+            next call).
+
+        This trades some worst-case per-event latency (up to 1 second
+        on the tail event of an idle burst) for a 100× reduction in
+        Loki HTTP call rate. The tradeoff is the right one for
+        best-effort observability pipelines.
+        """
         if self._http is None:
             self._http = httpx.AsyncClient(timeout=5.0)
-        # Drain until the queue is empty to keep memory bounded.
-        while True:
-            try:
-                event = await asyncio.wait_for(self._queue.get(), timeout=0.5)
-            except TimeoutError:
-                return
-            await self._push(event)
 
-    async def _push(self, event: TelemetryEvent) -> None:
+        while True:
+            # Wait for the FIRST event with an idle timeout.
+            try:
+                first = await asyncio.wait_for(
+                    self._queue.get(), timeout=_IDLE_TIMEOUT
+                )
+            except TimeoutError:
+                # Queue has been empty for a while — worker exits.
+                # Next emit() will spawn a fresh worker task.
+                return
+
+            batch: list[TelemetryEvent] = [first]
+            # Collect more events without blocking, up to batch limits.
+            deadline = time.monotonic() + _BATCH_WAIT_SECONDS
+            while len(batch) < _BATCH_SIZE and time.monotonic() < deadline:
+                remaining = deadline - time.monotonic()
+                if remaining <= 0:
+                    break
+                try:
+                    event = await asyncio.wait_for(
+                        self._queue.get(), timeout=remaining
+                    )
+                    batch.append(event)
+                except TimeoutError:
+                    break
+
+            await self._push_batch(batch)
+
+    async def _push_batch(self, batch: list[TelemetryEvent]) -> None:
+        """Ship a batch of events to Loki in one HTTP call."""
+        if not batch:
+            return
         if not self._loki_push_url:
             # Structured log only — consumers running without a Loki URL
             # still see the events in their own log pipeline.
-            logger.debug("telemetry: %s", json.dumps(asdict(event), default=str))
+            for event in batch:
+                logger.debug(
+                    "telemetry: %s",
+                    json.dumps(asdict(event), default=str),
+                )
             return
         assert self._http is not None
+
+        # Merge events into ONE Loki push payload. Events that share
+        # the same label set (app/client/method/outcome) can share a
+        # stream with multiple `values` entries — this is the most
+        # compact representation Loki accepts.
+        streams_by_key: dict[tuple[str, str, str, str], dict[str, Any]] = {}
+        for event in batch:
+            stream = event.to_loki_stream()["streams"][0]
+            labels = stream["stream"]
+            key = (
+                labels["app"],
+                labels["client"],
+                labels["method"],
+                labels["outcome"],
+            )
+            if key not in streams_by_key:
+                streams_by_key[key] = {
+                    "stream": labels,
+                    "values": list(stream["values"]),
+                }
+            else:
+                streams_by_key[key]["values"].extend(stream["values"])
+        payload = {"streams": list(streams_by_key.values())}
+
         try:
             response = await self._http.post(
                 self._loki_push_url,
-                json=event.to_loki_stream(),
+                json=payload,
                 headers={"Content-Type": "application/json"},
             )
             if response.status_code >= 400:
                 logger.debug(
-                    "telemetry push got HTTP %d: %s",
+                    "telemetry push got HTTP %d: %s (batch of %d)",
                     response.status_code,
                     response.text[:200],
+                    len(batch),
                 )
         except httpx.HTTPError as e:
-            logger.debug("telemetry push failed: %s", e)
+            logger.debug(
+                "telemetry push failed: %s (batch of %d, dropped)",
+                e,
+                len(batch),
+            )
 
     async def aclose(self) -> None:
         """Drain the queue with a 1-second budget, then close the HTTP client."""

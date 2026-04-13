@@ -29,12 +29,20 @@ dependencies = [
 [project.optional-dependencies]
 redis = ["redis>=5.0,<6.0"]
 sqlite = []  # stdlib
+# HTTP/2 transport — pulls in the `h2` package. Recommended in
+# production for consumers with burst load (shared connection
+# multiplexing cuts handshake cost and improves fairness).
+http2 = ["httpx[http2]>=0.27,<1.0"]
+# Faster JSON encode/decode (~5x stdlib) for the L2 cache hot path.
+# If installed, dk-data-client uses orjson; otherwise stdlib json.
+fast = ["orjson>=3.9,<4.0"]
 dev = [
     "pytest>=8.0",
     "pytest-asyncio>=0.23",
     "respx>=0.20",
     "mypy>=1.8",
     "ruff>=0.3",
+    "httpx[http2]>=0.27,<1.0",  # enable HTTP/2 in tests
 ]
 
 [project.urls]

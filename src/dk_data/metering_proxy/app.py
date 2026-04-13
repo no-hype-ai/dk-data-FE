@@ -20,9 +20,12 @@ from prometheus_client import generate_latest, CONTENT_TYPE_LATEST
 
 from dk_data.metering_proxy.audit import AuditWriter
 from dk_data.metering_proxy.auth import ConsumerKeyStore
+from dk_data.metering_proxy.concurrency import ConsumerConcurrencyGuard
 from dk_data.metering_proxy.metrics import (
     ACTIVE_CONSUMERS,
     AUTH_FAILURES_TOTAL,
+    IN_FLIGHT_REQUESTS,
+    LOAD_SHED_TOTAL,
     RATE_LIMIT_REJECTIONS_TOTAL,
     REQUEST_DURATION_SECONDS,
     REQUESTS_TOTAL,
@@ -48,6 +51,7 @@ logger = structlog.get_logger(__name__)
 key_store = ConsumerKeyStore()
 rate_limiter: RateLimiter | RedisRateLimiter = RateLimiter()
 audit_writer = AuditWriter()
+concurrency_guard = ConsumerConcurrencyGuard()
 _seen_consumers: set[str] = set()
 
 
@@ -298,9 +302,68 @@ async def proxy_handler(request: Request, path: str):
             },
         )
 
-    # --- Proxy to PostgREST ---
-    response = await _forward_request(
-        request, full_path, consumer_alias, schema_label
+    # --- Concurrency guard (load-shedding) ---
+    # This is the backstop for cluster protection. If rate-limiting by
+    # RPM alone were sufficient, a 500rpm × 10-replica consumer could
+    # still hold 50 slow DB connections simultaneously. The semaphore
+    # caps in-flight requests per consumer so a single bad consumer
+    # cannot monopolize the Postgres connection pool.
+    async with concurrency_guard.acquire(
+        consumer_alias, consumer.max_in_flight
+    ) as acquired:
+        if not acquired:
+            LOAD_SHED_TOTAL.labels(consumer=consumer_alias).inc()
+            REQUESTS_TOTAL.labels(
+                consumer=consumer_alias,
+                schema=schema_label,
+                method=method,
+                status="503",
+            ).inc()
+            logger.warning(
+                "load_shed",
+                consumer=consumer_alias,
+                max_in_flight=consumer.max_in_flight,
+                active=concurrency_guard.active_count(consumer_alias),
+            )
+            audit_writer.emit(
+                consumer_id=consumer_alias,
+                method=method,
+                path=full_path,
+                schema=schema_label,
+                status_code=503,
+                latency_ms=_ms(start_time),
+                request_id=request_id,
+                extra={"reason": "load_shed", "max_in_flight": consumer.max_in_flight},
+            )
+            return JSONResponse(
+                status_code=503,
+                content={
+                    "error": "service_unavailable",
+                    "message": (
+                        f"Consumer '{consumer_alias}' has {consumer.max_in_flight} "
+                        "concurrent requests in flight. Back off and retry."
+                    ),
+                },
+                headers={
+                    "Retry-After": "1",
+                    "X-Consumer": consumer_alias,
+                    "X-In-Flight": str(concurrency_guard.active_count(consumer_alias)),
+                    "X-Max-In-Flight": str(consumer.max_in_flight),
+                },
+            )
+
+        IN_FLIGHT_REQUESTS.labels(consumer=consumer_alias).set(
+            concurrency_guard.active_count(consumer_alias)
+        )
+
+        # --- Proxy to PostgREST ---
+        response = await _forward_request(
+            request, full_path, consumer_alias, schema_label
+        )
+
+    # Concurrency guard released; update the gauge
+    IN_FLIGHT_REQUESTS.labels(consumer=consumer_alias).set(
+        concurrency_guard.active_count(consumer_alias)
     )
 
     # Add rate limit headers

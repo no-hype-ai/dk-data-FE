@@ -7,7 +7,7 @@
  * fallback.
  */
 
-import { TwoTierCache, type CacheTier, type L2Backend } from "./cache/index.js";
+import { TwoTierCache, makeKey, type CacheTier, type L2Backend } from "./cache/index.js";
 import {
   DkDataAuthError,
   DkDataError,
@@ -19,6 +19,7 @@ import {
   DkDataUpstreamError,
 } from "./errors.js";
 import { fallbackToUpstream, type FallbackMode } from "./fallback/index.js";
+import { SingleFlight } from "./singleflight.js";
 import { TelemetryEmitter, type Outcome } from "./telemetry.js";
 import { MoleculesModule } from "./modules/molecules.js";
 import { CompaniesModule } from "./modules/companies.js";
@@ -26,6 +27,40 @@ import { ConditionsModule } from "./modules/conditions.js";
 import { PublicationsModule } from "./modules/publications.js";
 import { PatentsModule } from "./modules/patents.js";
 import { ProvidersModule } from "./modules/providers.js";
+
+/**
+ * Per-method timeouts (ms). Matches the Python METHOD_TIMEOUTS table.
+ * Fast paths bail quickly; expensive paths get room to breathe.
+ */
+const METHOD_TIMEOUTS_MS: Record<string, number> = {
+  "molecules.resolve": 2_000,
+  "companies.resolve": 2_000,
+  "conditions.resolve": 2_000,
+  "providers.resolve": 2_000,
+  "molecules.get": 3_000,
+  "companies.get": 3_000,
+  "providers.get": 3_000,
+  "molecules.search": 5_000,
+  "conditions.search": 5_000,
+  "molecules.getProfile": 10_000,
+  "molecules.getSafety": 10_000,
+  "molecules.getDrugLabels": 10_000,
+  "molecules.getBoxedWarnings": 10_000,
+  "molecules.getContraindications": 10_000,
+  "companies.getPipeline": 10_000,
+  "molecules.getAdverseEvents": 15_000,
+  "molecules.getClinicalTrials": 15_000,
+  "publications.getByMolecule": 15_000,
+  "patents.getByMolecule": 15_000,
+  "molecules.getCompetitiveLandscape": 30_000,
+  "publications.search": 30_000,
+  "patents.search": 30_000,
+  "molecules.getResolutionQueue": 5_000,
+  health: 2_000,
+  catalog: 2_000,
+  dataSources: 2_000,
+  serverInfo: 2_000,
+};
 
 export interface DkDataClientConfig {
   meteringProxyUrl: string;
@@ -64,6 +99,7 @@ export class DkDataClient {
   private readonly fallbackMode: FallbackMode;
   private readonly cache: TwoTierCache;
   private readonly telemetry: TelemetryEmitter;
+  private readonly singleflight: SingleFlight;
 
   constructor(config: DkDataClientConfig) {
     if (!config.meteringProxyUrl) {
@@ -103,6 +139,11 @@ export class DkDataClient {
       clientVersion: config.clientVersion ?? "0.1.0",
       lokiPushUrl: config.lokiPushUrl,
     });
+
+    // Single-flight coalescing — concurrent misses for the same key
+    // produce one server request, everyone else waits on the same
+    // promise.
+    this.singleflight = new SingleFlight();
 
     this.molecules = new MoleculesModule(this);
     this.companies = new CompaniesModule(this);
@@ -156,8 +197,23 @@ export class DkDataClient {
     }
 
     try {
-      const value = await this.httpCall(opts);
-      await this.cache.set(opts.method, args, value);
+      // Single-flight coalescing: N concurrent callers with the same
+      // key produce one server request, the rest await the same
+      // promise. This is the biggest per-request optimization for
+      // reducing server RPS under hot-key load.
+      const sfKey = makeKey(opts.method, args);
+      const value = await this.singleflight.do(sfKey, async () => {
+        // Re-check cache inside the single-flight critical section
+        // so a late waiter that arrived after the first caller
+        // populated the cache picks up the fresh value.
+        const recheck = await this.cache.get<unknown>(opts.method, args);
+        if (recheck !== null) {
+          return recheck.value;
+        }
+        const v = await this.httpCall(opts);
+        await this.cache.set(opts.method, args, v);
+        return v;
+      });
       this.emit({ method: opts.method, args, outcome: "miss", started });
       return value;
     } catch (e) {
@@ -257,11 +313,17 @@ export class DkDataClient {
       if (v !== undefined) url.searchParams.set(k, String(v));
     }
 
+    // Per-method timeout overrides the client-level default. Fast
+    // paths (resolve=2s) bail out before a slow path (competitive
+    // landscape=30s) can tie up the connection longer than necessary.
+    const requestTimeoutMs =
+      METHOD_TIMEOUTS_MS[opts.method] ?? this.timeoutMs;
+
     const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), this.timeoutMs);
+    const timer = setTimeout(() => controller.abort(), requestTimeoutMs);
     let response: Response;
     try {
-      response = await fetch(url.toString(), {
+      const init: RequestInit = {
         method: opts.httpMethod ?? "GET",
         headers: {
           Authorization: `Bearer ${this.apiKey}`,
@@ -271,7 +333,14 @@ export class DkDataClient {
         },
         body: opts.jsonBody ? JSON.stringify(opts.jsonBody) : undefined,
         signal: controller.signal,
-      });
+        // `keepalive: true` is a Fetch API standard option that both
+        // Node's undici and browser fetch support. It tells the
+        // transport to keep the underlying TCP connection alive
+        // across requests (HTTP/1.1 keep-alive / HTTP/2 multiplexing)
+        // which cuts handshake cost under burst load.
+        keepalive: true,
+      };
+      response = await fetch(url.toString(), init);
     } catch (e) {
       clearTimeout(timer);
       throw new DkDataServerError(`transport error calling ${opts.path}: ${String(e)}`, {
