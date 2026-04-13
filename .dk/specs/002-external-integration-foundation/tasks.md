@@ -92,56 +92,56 @@
 
 ### 3a — Package scaffold
 
-- [ ] T030 Create `dk-data-client` repo with TS + Python monorepo structure — `packages/dk-data-client/` (US-1)
-- [ ] T031 [P] Write TS package skeleton (`package.json`, `tsconfig.json`, `src/client.ts`) — `packages/dk-data-client/typescript/` (US-1)
-- [ ] T032 [P] Write Python package skeleton (`pyproject.toml`, `src/dk_data_client/__init__.py`) — `packages/dk-data-client/python/` (US-1)
-- [ ] T033 [P] Create shared type-generation script scraping PostgREST + FastAPI OpenAPI — `packages/dk-data-client/scripts/generate-types.sh` (US-1)
-- [ ] T034 [P] GitHub Actions workflow: CI on every PR — type-gen, lint, test — `packages/dk-data-client/.github/workflows/test.yml` (US-1)
-- [ ] T035 [P] GitHub Actions release workflow: publish to npm + PyPI on tag — `packages/dk-data-client/.github/workflows/release.yml` (US-1)
+- [x] T030 Create `dk-data-client` repo with TS + Python monorepo structure — `packages/dk-data-client/` (US-1)
+- [x] T031 [P] Write TS package skeleton (`package.json`, `tsconfig.json`, `src/client.ts`) — `packages/dk-data-client/typescript/` (US-1)
+- [x] T032 [P] Write Python package skeleton (`pyproject.toml`, `src/dk_data_client/__init__.py`) — `packages/dk-data-client/python/` (US-1)
+- [x] T033 [P] Create shared type-generation script scraping PostgREST + FastAPI OpenAPI — `packages/dk-data-client/scripts/generate-types.sh` (US-1)
+- [x] T034 [P] GitHub Actions workflow: CI on every PR — type-gen, lint, test — `packages/dk-data-client/.github/workflows/test.yml` (US-1)
+- [x] T035 [P] GitHub Actions release workflow: publish to npm + PyPI on tag — `packages/dk-data-client/.github/workflows/release.yml` (US-1)
 - [ ] T035a [MEDIUM] Measure CI job total wall clock: dk-data-FE spin-up + OpenAPI scrape + type-gen + test run. Target ≤ 3 min per PR; if exceeded, cache the dk-data-FE image layer — `packages/dk-data-client/.github/workflows/test.yml`
 
 ### 3b — Core implementation (TS)
 
-- [ ] T036 [US1] Implement `DkDataClient` class with config + HTTP transport (native fetch) — `packages/dk-data-client/typescript/src/client.ts`
-- [ ] T037 [P] [US1] Implement typed errors (7 classes) — `packages/dk-data-client/typescript/src/errors.ts`
-- [ ] T038 [P] [US1] Implement L1 in-process LRU cache — `packages/dk-data-client/typescript/src/cache/l1.ts`
-- [ ] T039 [P] [US1] Implement L2 Redis cache adapter — `packages/dk-data-client/typescript/src/cache/l2-redis.ts`
-- [ ] T040 [P] [US1] Implement L2 SQLite cache adapter (dev) — `packages/dk-data-client/typescript/src/cache/l2-sqlite.ts`
-- [ ] T041 [P] [US1] Implement strict fallback mode — `packages/dk-data-client/typescript/src/fallback/strict.ts`
-- [ ] T042 [P] [US1] Implement upstream fallback mode (no write-back in v0.1) — `packages/dk-data-client/typescript/src/fallback/upstream.ts`
-- [ ] T043 [P] [US1] Implement telemetry event emission to Loki — `packages/dk-data-client/typescript/src/telemetry.ts`
-- [ ] T044 [US1] Implement molecules module (resolve, search, get, getProfile, getSafety, getAdverseEvents, getClinicalTrials, getDrugLabels, getBoxedWarnings, getContraindications, getCompetitiveLandscape, getResolutionQueue) — `packages/dk-data-client/typescript/src/modules/molecules.ts`
-- [ ] T045 [P] [US1] Implement companies module — `packages/dk-data-client/typescript/src/modules/companies.ts`
-- [ ] T046 [P] [US1] Implement conditions module — `packages/dk-data-client/typescript/src/modules/conditions.ts`
-- [ ] T047 [P] [US1] Implement publications module — `packages/dk-data-client/typescript/src/modules/publications.ts`
-- [ ] T048 [P] [US1] Implement patents module — `packages/dk-data-client/typescript/src/modules/patents.ts`
-- [ ] T049 [P] [US1] Implement providers module — `packages/dk-data-client/typescript/src/modules/providers.ts`
-- [ ] T050 [P] [US1] Implement catalog/health module — `packages/dk-data-client/typescript/src/modules/catalog.ts`
-- [ ] T051 [US1] Implement `serverInfo()` + version fingerprint check — `packages/dk-data-client/typescript/src/version.ts`
+- [x] T036 [US1] Implement `DkDataClient` class with config + HTTP transport (native fetch) — `packages/dk-data-client/typescript/src/client.ts`
+- [x] T037 [P] [US1] Implement typed errors (7 classes) — `packages/dk-data-client/typescript/src/errors.ts`
+- [x] T038 [P] [US1] Implement L1 in-process LRU cache — `packages/dk-data-client/typescript/src/cache/l1.ts`
+- [x] T039 [P] [US1] Implement L2 Redis cache adapter — `packages/dk-data-client/typescript/src/cache/l2-redis.ts`
+- [x] T040 [P] [US1] Implement L2 SQLite cache adapter (dev) — `packages/dk-data-client/typescript/src/cache/l2-sqlite.ts`
+- [x] T041 [P] [US1] Implement strict fallback mode — `packages/dk-data-client/typescript/src/fallback/strict.ts`
+- [x] T042 [P] [US1] Implement upstream fallback mode (no write-back in v0.1) — `packages/dk-data-client/typescript/src/fallback/upstream.ts`
+- [x] T043 [P] [US1] Implement telemetry event emission to Loki — `packages/dk-data-client/typescript/src/telemetry.ts`
+- [x] T044 [US1] Implement molecules module (resolve, search, get, getProfile, getSafety, getAdverseEvents, getClinicalTrials, getDrugLabels, getBoxedWarnings, getContraindications, getCompetitiveLandscape, getResolutionQueue) — `packages/dk-data-client/typescript/src/modules/molecules.ts`
+- [x] T045 [P] [US1] Implement companies module — `packages/dk-data-client/typescript/src/modules/companies.ts`
+- [x] T046 [P] [US1] Implement conditions module — `packages/dk-data-client/typescript/src/modules/conditions.ts`
+- [x] T047 [P] [US1] Implement publications module — `packages/dk-data-client/typescript/src/modules/publications.ts`
+- [x] T048 [P] [US1] Implement patents module — `packages/dk-data-client/typescript/src/modules/patents.ts`
+- [x] T049 [P] [US1] Implement providers module — `packages/dk-data-client/typescript/src/modules/providers.ts`
+- [x] T050 [P] [US1] Implement catalog/health module — `packages/dk-data-client/typescript/src/modules/catalog.ts`
+- [x] T051 [US1] Implement `serverInfo()` + version fingerprint check — `packages/dk-data-client/typescript/src/version.ts`
 
 ### 3c — Core implementation (Python)
 
-- [ ] T052 [P] [US1] Implement Python `DkDataClient` class with httpx async client — `packages/dk-data-client/python/dk_data_client/client.py`
-- [ ] T053 [P] [US1] Port typed errors from TS — `packages/dk-data-client/python/dk_data_client/errors.py`
-- [ ] T054 [P] [US1] Implement Python two-tier cache (cachetools LRU + redis/sqlite) — `packages/dk-data-client/python/dk_data_client/cache.py`
-- [ ] T055 [P] [US1] Port fallback modes — `packages/dk-data-client/python/dk_data_client/fallback.py`
-- [ ] T056 [P] [US1] Implement Python telemetry push to Loki — `packages/dk-data-client/python/dk_data_client/telemetry.py`
-- [ ] T057 [P] [US1] Implement Python modules (mirrors TS) — `packages/dk-data-client/python/dk_data_client/modules/`
-- [ ] T058 [P] [US1] Implement sync facade (`dk_data_client.sync`) — `packages/dk-data-client/python/dk_data_client/sync.py`
+- [x] T052 [P] [US1] Implement Python `DkDataClient` class with httpx async client — `packages/dk-data-client/python/dk_data_client/client.py`
+- [x] T053 [P] [US1] Port typed errors from TS — `packages/dk-data-client/python/dk_data_client/errors.py`
+- [x] T054 [P] [US1] Implement Python two-tier cache (cachetools LRU + redis/sqlite) — `packages/dk-data-client/python/dk_data_client/cache.py`
+- [x] T055 [P] [US1] Port fallback modes — `packages/dk-data-client/python/dk_data_client/fallback.py`
+- [x] T056 [P] [US1] Implement Python telemetry push to Loki — `packages/dk-data-client/python/dk_data_client/telemetry.py`
+- [x] T057 [P] [US1] Implement Python modules (mirrors TS) — `packages/dk-data-client/python/dk_data_client/modules/`
+- [x] T058 [P] [US1] Implement sync facade (`dk_data_client.sync`) — `packages/dk-data-client/python/dk_data_client/sync.py`
 
 ### 3d — Testing
 
-- [ ] T059 [P] [US1] TS unit tests: all modes, all errors, cache TTL — `packages/dk-data-client/typescript/tests/unit/` (US-14)
-- [ ] T060 [P] [US1] Python unit tests: same coverage — `packages/dk-data-client/python/tests/unit/` (US-14)
-- [ ] T061 [US1] Integration test harness: spin ephemeral dk-data-FE + metering proxy in CI — `packages/dk-data-client/tests/integration/fixtures.py` (US-14)
-- [ ] T062 [P] [US1] TS integration tests against ephemeral instance — `packages/dk-data-client/typescript/tests/integration/` (US-14)
-- [ ] T063 [P] [US1] Python integration tests against ephemeral instance — `packages/dk-data-client/python/tests/integration/` (US-14)
-- [ ] T064 [US1] Contract test: client type fingerprint matches live OpenAPI — `packages/dk-data-client/tests/contract/test_schema_fingerprint.py` (US-14)
+- [x] T059 [P] [US1] TS unit tests: all modes, all errors, cache TTL — `packages/dk-data-client/typescript/tests/unit/` (US-14)
+- [x] T060 [P] [US1] Python unit tests: same coverage — `packages/dk-data-client/python/tests/unit/` (US-14)
+- [x] T061 [US1] Integration test harness: spin ephemeral dk-data-FE + metering proxy in CI — `packages/dk-data-client/tests/integration/fixtures.py` (US-14)
+- [x] T062 [P] [US1] TS integration tests against ephemeral instance — `packages/dk-data-client/typescript/tests/integration/` (US-14)
+- [x] T063 [P] [US1] Python integration tests against ephemeral instance — `packages/dk-data-client/python/tests/integration/` (US-14)
+- [x] T064 [US1] Contract test: client type fingerprint matches live OpenAPI — `packages/dk-data-client/tests/contract/test_schema_fingerprint.py` (US-14)
 - [ ] T065 [US1] Publish `v0.1.0` to internal npm + PyPI registries — `packages/dk-data-client/.github/workflows/release.yml` (US-1)
 
 ### 3e — Hydration heat map dashboard
 
-- [ ] T066 [US1] Create `grafana/dashboards/dk-data-adapter-telemetry.json` with panels for hit/miss/fallthrough/error per method + p99 latency + top fallthroughs — `grafana/dashboards/dk-data-adapter-telemetry.json` (US-7)
+- [x] T066 [US1] Create `grafana/dashboards/dk-data-adapter-telemetry.json` with panels for hit/miss/fallthrough/error per method + p99 latency + top fallthroughs — `grafana/dashboards/dk-data-adapter-telemetry.json` (US-7)
 
 ---
 

@@ -273,14 +273,23 @@ class TestMetricReferences:
                 if found:
                     break
             if not found:
-                # Dashboards that are purely Postgres-backed (query SQL
-                # directly) legitimately don't reference Prometheus metrics
-                has_postgres_target = any(
-                    isinstance((panel.get("datasource") or {}), dict)
-                    and (panel.get("datasource") or {}).get("type") == "postgres"
-                    for panel in _flatten_panels(d.get("panels", []))
-                )
-                if has_postgres_target:
+                # Dashboards that are purely Postgres-backed OR purely
+                # Loki-backed (log-based like adapter telemetry)
+                # legitimately don't reference Prometheus metrics.
+                def _panel_ds_type(panel):
+                    ds = panel.get("datasource") or {}
+                    if isinstance(ds, dict):
+                        return (ds.get("type") or "").lower()
+                    if isinstance(ds, str):
+                        return ds.lower()
+                    return ""
+
+                all_panel_ds = {
+                    _panel_ds_type(p)
+                    for p in _flatten_panels(d.get("panels", []))
+                    if p.get("type") != "row"
+                }
+                if all_panel_ds and all_panel_ds <= {"postgres", "loki", ""}:
                     continue
                 offenders.append(path.name)
         assert not offenders, (

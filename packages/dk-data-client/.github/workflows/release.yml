@@ -1,0 +1,118 @@
+name: dk-data-client release
+
+on:
+  push:
+    tags:
+      - "dk-data-client-v*"  # e.g. dk-data-client-v0.1.0
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "semver to publish (e.g. 0.1.0)"
+        required: true
+        default: "0.1.0"
+
+defaults:
+  run:
+    working-directory: packages/dk-data-client
+
+concurrency:
+  group: dk-data-client-release
+  cancel-in-progress: false
+
+jobs:
+  # ---------------------------------------------------------------------------
+  # Pre-flight: run the full test suite before cutting a release.
+  # ---------------------------------------------------------------------------
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - uses: pnpm/action-setup@v3
+        with:
+          version: 9
+
+      - name: Typecheck + unit tests (TypeScript)
+        working-directory: packages/dk-data-client/typescript
+        run: |
+          pnpm install --frozen-lockfile
+          pnpm run typecheck
+          pnpm run test
+
+      - name: Unit tests (Python)
+        working-directory: packages/dk-data-client/python
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e ".[dev]"
+          pytest tests/unit/ -q
+
+  # ---------------------------------------------------------------------------
+  # Publish TypeScript package to npm.
+  # ---------------------------------------------------------------------------
+  npm:
+    needs: verify
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    environment: npm-publish
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          registry-url: "https://registry.npmjs.org"
+      - uses: pnpm/action-setup@v3
+        with:
+          version: 9
+
+      - name: Install and build
+        working-directory: packages/dk-data-client/typescript
+        run: |
+          pnpm install --frozen-lockfile
+          pnpm run build
+
+      - name: Publish (internal registry)
+        working-directory: packages/dk-data-client/typescript
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: |
+          # Internal registry — override publishConfig if needed.
+          # Use --access restricted for private packages under @datakinetic.
+          pnpm publish --access restricted --no-git-checks
+
+  # ---------------------------------------------------------------------------
+  # Publish Python package to PyPI (internal).
+  # ---------------------------------------------------------------------------
+  pypi:
+    needs: verify
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    environment: pypi-publish
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install build tooling
+        working-directory: packages/dk-data-client/python
+        run: |
+          python -m pip install --upgrade pip
+          pip install build twine
+
+      - name: Build sdist + wheel
+        working-directory: packages/dk-data-client/python
+        run: python -m build
+
+      - name: Publish to PyPI
+        working-directory: packages/dk-data-client/python
+        env:
+          TWINE_USERNAME: __token__
+          TWINE_PASSWORD: ${{ secrets.PYPI_TOKEN }}
+          TWINE_REPOSITORY_URL: ${{ vars.PYPI_REPOSITORY_URL }}  # e.g. internal artifactory
+        run: twine upload --non-interactive dist/*
