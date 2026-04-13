@@ -113,7 +113,7 @@ dk-data-FE/                          # Warehouse repo
 ├── README.md                                # UPDATE: adapter, auth, env vars
 └── CLAUDE.md                                # UPDATE: unprefixed-schema carve-out table (US-19)
 
-dk-data-client/                    # NEW separate repo (TS + Python)
+packages/dk-data-client/                    # NEW in-repo monorepo subdirectory (TS + Python)
 ├── typescript/
 │   ├── src/
 │   │   ├── client.ts              # DkDataClient main class
@@ -150,24 +150,13 @@ dk-data-client/                    # NEW separate repo (TS + Python)
 │   │   └── models.py              # GENERATED from OpenAPI (Pydantic)
 │   ├── tests/                     # pytest
 │   └── pyproject.toml
-└── .github/workflows/
-    ├── typegen.yml                # Scrape dk-data-FE OpenAPI → regenerate types
-    ├── test.yml                    # Unit + integration against ephemeral dk-data
-    └── release.yml                 # Semver publish to npm + PyPI
-
-[consuming app repos — separate]
-behavior-labs-ai/
-├── apps/admin/lib/dk-data/postgrest-client.ts  # DELETE or shim
-├── apps/api/src/competitive-intel/sources/dk-data-fe.client.ts  # UPDATE
-└── apps/api/src/research/agents/*.agent.ts     # UPDATE (4 agents)
-
-ground-truth-charlie/
-├── src/lib/adapters/pubmed-adapter.ts          # REPLACE with client call
-└── src/lib/adapters/openalex-adapter.ts        # REPLACE with client call
-
-trials-predictor/
-└── app/backend/sqlmesh_project/macros/identifier_utils.py  # UPDATE
+└── (CI workflows live under the existing .github/workflows/ — new workflows
+    for packages/dk-data-client/ get added to the same .github/workflows/
+    directory at the repo root. The client package is part of this monorepo,
+    not a separate CI system.)
 ```
+
+**Consuming-app repo changes (out of scope for THIS spec)**: behavior-labs-ai, ground-truth-charlie, and trials-predictor each have their own specs for the consumer-side migration to the `packages/dk-data-client/` package. Those specs track the file edits in their own repos (postgrest-client.ts replacement, research agent resolve-first flow, evidence pipeline strict-mode resolve, identifier_utils.py resolve integration). This spec explicitly does NOT own or duplicate those tasks — it just gates its own Phase 4b production web_anon drop on each consumer spec's completion (SC-030).
 
 ## Phase 0 — Research
 

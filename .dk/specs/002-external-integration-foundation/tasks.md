@@ -40,7 +40,7 @@
 - [ ] T001c Verify adapter connection routing: confirm all consumer→dk-data reads go through metering-proxy → PostgREST, NOT direct adapter→PostgreSQL. Add network policy if needed — `k8s/apps/metering-proxy/base/networkpolicy.yaml`
 - [ ] T001d [HIGH] Consumer audit for `hcs_silver` dependency via `web_anon`: query `pg_stat_activity` for last 30 days, identify which internal/carbon-5/dk-os services read `hcs_silver` or `hcs_gold`. Document dependencies. If any legitimate usage found, provision API key BEFORE migration 218 runs — `docs/reports/hcs-silver-consumer-audit.md` (US-2, US-3)
 - [ ] T002a [HIGH] Concurrent load test: on staging, simulate Phase 2 peak — SQLMesh transform job + backfill orchestrator + 10K adapter calls/min + metering proxy JWT minting. Measure query p99, CPU, connection pool. Alert if any exceeds 70% saturation — `tests/load/phase2_concurrent.py`
-- [ ] T004b [CRITICAL] Loki retention policy: set 30-day retention; calculate disk required for 7M events/day × 500 bytes × 30 days = ~105 GB; verify PVC size ≥ 200 GB (2× overhead) — `k8s/apps/loki/base/configmap.yaml`, `k8s/apps/loki/base/pvc.yaml`
+- [ ] T004b REMOVED — Loki retention + PVC size are infrastructure-repo concerns (k8s/apps/loki/ does not exist in dk-data-FE). File as a request to the infra team with required parameters: 30-day retention, PVC ≥ 200 GB, expected volume ~7M events/day × 500 bytes.
 - [ ] T004c [HIGH] Loki push rate limit test: load test HTTP push endpoint at 500 events/sec burst (5 consumers × 100 events/sec peak). If <5K events/sec sustained, document batching requirement for adapter v1.1 — `tests/load/loki_push.py`
 
 ---
@@ -92,52 +92,52 @@
 
 ### 3a — Package scaffold
 
-- [ ] T030 Create `dk-data-client` repo with TS + Python monorepo structure — `dk-data-client/` (US-1)
-- [ ] T031 [P] Write TS package skeleton (`package.json`, `tsconfig.json`, `src/client.ts`) — `dk-data-client/typescript/` (US-1)
-- [ ] T032 [P] Write Python package skeleton (`pyproject.toml`, `src/dk_data_client/__init__.py`) — `dk-data-client/python/` (US-1)
-- [ ] T033 [P] Create shared type-generation script scraping PostgREST + FastAPI OpenAPI — `dk-data-client/scripts/generate-types.sh` (US-1)
-- [ ] T034 [P] GitHub Actions workflow: CI on every PR — type-gen, lint, test — `dk-data-client/.github/workflows/test.yml` (US-1)
-- [ ] T035 [P] GitHub Actions release workflow: publish to npm + PyPI on tag — `dk-data-client/.github/workflows/release.yml` (US-1)
-- [ ] T035a [MEDIUM] Measure CI job total wall clock: dk-data-FE spin-up + OpenAPI scrape + type-gen + test run. Target ≤ 3 min per PR; if exceeded, cache the dk-data-FE image layer — `dk-data-client/.github/workflows/test.yml`
+- [ ] T030 Create `dk-data-client` repo with TS + Python monorepo structure — `packages/dk-data-client/` (US-1)
+- [ ] T031 [P] Write TS package skeleton (`package.json`, `tsconfig.json`, `src/client.ts`) — `packages/dk-data-client/typescript/` (US-1)
+- [ ] T032 [P] Write Python package skeleton (`pyproject.toml`, `src/dk_data_client/__init__.py`) — `packages/dk-data-client/python/` (US-1)
+- [ ] T033 [P] Create shared type-generation script scraping PostgREST + FastAPI OpenAPI — `packages/dk-data-client/scripts/generate-types.sh` (US-1)
+- [ ] T034 [P] GitHub Actions workflow: CI on every PR — type-gen, lint, test — `packages/dk-data-client/.github/workflows/test.yml` (US-1)
+- [ ] T035 [P] GitHub Actions release workflow: publish to npm + PyPI on tag — `packages/dk-data-client/.github/workflows/release.yml` (US-1)
+- [ ] T035a [MEDIUM] Measure CI job total wall clock: dk-data-FE spin-up + OpenAPI scrape + type-gen + test run. Target ≤ 3 min per PR; if exceeded, cache the dk-data-FE image layer — `packages/dk-data-client/.github/workflows/test.yml`
 
 ### 3b — Core implementation (TS)
 
-- [ ] T036 [US1] Implement `DkDataClient` class with config + HTTP transport (native fetch) — `dk-data-client/typescript/src/client.ts`
-- [ ] T037 [P] [US1] Implement typed errors (7 classes) — `dk-data-client/typescript/src/errors.ts`
-- [ ] T038 [P] [US1] Implement L1 in-process LRU cache — `dk-data-client/typescript/src/cache/l1.ts`
-- [ ] T039 [P] [US1] Implement L2 Redis cache adapter — `dk-data-client/typescript/src/cache/l2-redis.ts`
-- [ ] T040 [P] [US1] Implement L2 SQLite cache adapter (dev) — `dk-data-client/typescript/src/cache/l2-sqlite.ts`
-- [ ] T041 [P] [US1] Implement strict fallback mode — `dk-data-client/typescript/src/fallback/strict.ts`
-- [ ] T042 [P] [US1] Implement upstream fallback mode (no write-back in v0.1) — `dk-data-client/typescript/src/fallback/upstream.ts`
-- [ ] T043 [P] [US1] Implement telemetry event emission to Loki — `dk-data-client/typescript/src/telemetry.ts`
-- [ ] T044 [US1] Implement molecules module (resolve, search, get, getProfile, getSafety, getAdverseEvents, getClinicalTrials, getDrugLabels, getBoxedWarnings, getContraindications, getCompetitiveLandscape, getResolutionQueue) — `dk-data-client/typescript/src/modules/molecules.ts`
-- [ ] T045 [P] [US1] Implement companies module — `dk-data-client/typescript/src/modules/companies.ts`
-- [ ] T046 [P] [US1] Implement conditions module — `dk-data-client/typescript/src/modules/conditions.ts`
-- [ ] T047 [P] [US1] Implement publications module — `dk-data-client/typescript/src/modules/publications.ts`
-- [ ] T048 [P] [US1] Implement patents module — `dk-data-client/typescript/src/modules/patents.ts`
-- [ ] T049 [P] [US1] Implement providers module — `dk-data-client/typescript/src/modules/providers.ts`
-- [ ] T050 [P] [US1] Implement catalog/health module — `dk-data-client/typescript/src/modules/catalog.ts`
-- [ ] T051 [US1] Implement `serverInfo()` + version fingerprint check — `dk-data-client/typescript/src/version.ts`
+- [ ] T036 [US1] Implement `DkDataClient` class with config + HTTP transport (native fetch) — `packages/dk-data-client/typescript/src/client.ts`
+- [ ] T037 [P] [US1] Implement typed errors (7 classes) — `packages/dk-data-client/typescript/src/errors.ts`
+- [ ] T038 [P] [US1] Implement L1 in-process LRU cache — `packages/dk-data-client/typescript/src/cache/l1.ts`
+- [ ] T039 [P] [US1] Implement L2 Redis cache adapter — `packages/dk-data-client/typescript/src/cache/l2-redis.ts`
+- [ ] T040 [P] [US1] Implement L2 SQLite cache adapter (dev) — `packages/dk-data-client/typescript/src/cache/l2-sqlite.ts`
+- [ ] T041 [P] [US1] Implement strict fallback mode — `packages/dk-data-client/typescript/src/fallback/strict.ts`
+- [ ] T042 [P] [US1] Implement upstream fallback mode (no write-back in v0.1) — `packages/dk-data-client/typescript/src/fallback/upstream.ts`
+- [ ] T043 [P] [US1] Implement telemetry event emission to Loki — `packages/dk-data-client/typescript/src/telemetry.ts`
+- [ ] T044 [US1] Implement molecules module (resolve, search, get, getProfile, getSafety, getAdverseEvents, getClinicalTrials, getDrugLabels, getBoxedWarnings, getContraindications, getCompetitiveLandscape, getResolutionQueue) — `packages/dk-data-client/typescript/src/modules/molecules.ts`
+- [ ] T045 [P] [US1] Implement companies module — `packages/dk-data-client/typescript/src/modules/companies.ts`
+- [ ] T046 [P] [US1] Implement conditions module — `packages/dk-data-client/typescript/src/modules/conditions.ts`
+- [ ] T047 [P] [US1] Implement publications module — `packages/dk-data-client/typescript/src/modules/publications.ts`
+- [ ] T048 [P] [US1] Implement patents module — `packages/dk-data-client/typescript/src/modules/patents.ts`
+- [ ] T049 [P] [US1] Implement providers module — `packages/dk-data-client/typescript/src/modules/providers.ts`
+- [ ] T050 [P] [US1] Implement catalog/health module — `packages/dk-data-client/typescript/src/modules/catalog.ts`
+- [ ] T051 [US1] Implement `serverInfo()` + version fingerprint check — `packages/dk-data-client/typescript/src/version.ts`
 
 ### 3c — Core implementation (Python)
 
-- [ ] T052 [P] [US1] Implement Python `DkDataClient` class with httpx async client — `dk-data-client/python/dk_data_client/client.py`
-- [ ] T053 [P] [US1] Port typed errors from TS — `dk-data-client/python/dk_data_client/errors.py`
-- [ ] T054 [P] [US1] Implement Python two-tier cache (cachetools LRU + redis/sqlite) — `dk-data-client/python/dk_data_client/cache.py`
-- [ ] T055 [P] [US1] Port fallback modes — `dk-data-client/python/dk_data_client/fallback.py`
-- [ ] T056 [P] [US1] Implement Python telemetry push to Loki — `dk-data-client/python/dk_data_client/telemetry.py`
-- [ ] T057 [P] [US1] Implement Python modules (mirrors TS) — `dk-data-client/python/dk_data_client/modules/`
-- [ ] T058 [P] [US1] Implement sync facade (`dk_data_client.sync`) — `dk-data-client/python/dk_data_client/sync.py`
+- [ ] T052 [P] [US1] Implement Python `DkDataClient` class with httpx async client — `packages/dk-data-client/python/dk_data_client/client.py`
+- [ ] T053 [P] [US1] Port typed errors from TS — `packages/dk-data-client/python/dk_data_client/errors.py`
+- [ ] T054 [P] [US1] Implement Python two-tier cache (cachetools LRU + redis/sqlite) — `packages/dk-data-client/python/dk_data_client/cache.py`
+- [ ] T055 [P] [US1] Port fallback modes — `packages/dk-data-client/python/dk_data_client/fallback.py`
+- [ ] T056 [P] [US1] Implement Python telemetry push to Loki — `packages/dk-data-client/python/dk_data_client/telemetry.py`
+- [ ] T057 [P] [US1] Implement Python modules (mirrors TS) — `packages/dk-data-client/python/dk_data_client/modules/`
+- [ ] T058 [P] [US1] Implement sync facade (`dk_data_client.sync`) — `packages/dk-data-client/python/dk_data_client/sync.py`
 
 ### 3d — Testing
 
-- [ ] T059 [P] [US1] TS unit tests: all modes, all errors, cache TTL — `dk-data-client/typescript/tests/unit/` (US-14)
-- [ ] T060 [P] [US1] Python unit tests: same coverage — `dk-data-client/python/tests/unit/` (US-14)
-- [ ] T061 [US1] Integration test harness: spin ephemeral dk-data-FE + metering proxy in CI — `dk-data-client/tests/integration/fixtures.py` (US-14)
-- [ ] T062 [P] [US1] TS integration tests against ephemeral instance — `dk-data-client/typescript/tests/integration/` (US-14)
-- [ ] T063 [P] [US1] Python integration tests against ephemeral instance — `dk-data-client/python/tests/integration/` (US-14)
-- [ ] T064 [US1] Contract test: client type fingerprint matches live OpenAPI — `dk-data-client/tests/contract/test_schema_fingerprint.py` (US-14)
-- [ ] T065 [US1] Publish `v0.1.0` to internal npm + PyPI registries — `dk-data-client/.github/workflows/release.yml` (US-1)
+- [ ] T059 [P] [US1] TS unit tests: all modes, all errors, cache TTL — `packages/dk-data-client/typescript/tests/unit/` (US-14)
+- [ ] T060 [P] [US1] Python unit tests: same coverage — `packages/dk-data-client/python/tests/unit/` (US-14)
+- [ ] T061 [US1] Integration test harness: spin ephemeral dk-data-FE + metering proxy in CI — `packages/dk-data-client/tests/integration/fixtures.py` (US-14)
+- [ ] T062 [P] [US1] TS integration tests against ephemeral instance — `packages/dk-data-client/typescript/tests/integration/` (US-14)
+- [ ] T063 [P] [US1] Python integration tests against ephemeral instance — `packages/dk-data-client/python/tests/integration/` (US-14)
+- [ ] T064 [US1] Contract test: client type fingerprint matches live OpenAPI — `packages/dk-data-client/tests/contract/test_schema_fingerprint.py` (US-14)
+- [ ] T065 [US1] Publish `v0.1.0` to internal npm + PyPI registries — `packages/dk-data-client/.github/workflows/release.yml` (US-1)
 
 ### 3e — Hydration heat map dashboard
 
@@ -190,36 +190,15 @@
 
 ### 5a — behavior-labs-ai admin
 
-- [ ] T090 [US13] Install `@datakinetic/dk-data-client` in behavior-labs-ai admin — `behavior-labs-ai/apps/admin/package.json`
-- [ ] T091 [US13] Replace `apps/admin/lib/dk-data/postgrest-client.ts` with adapter import — `behavior-labs-ai/apps/admin/lib/dk-data/postgrest-client.ts`
-- [ ] T092 [US13] Update admin-app catch blocks to handle typed errors — `behavior-labs-ai/apps/admin/**/*.tsx`
-- [ ] T093 [US13] Run admin-app integration tests against staging dk-data — `behavior-labs-ai/apps/admin/tests/`
+**Phase 5 REMOVED — consumer-side migration is tracked in each consuming app's own spec (behavior-labs-ai, ground-truth-charlie, trials-predictor).** The work below stays as a reference pointer:
 
-### 5b — behavior-labs-ai CI client
+- Admin client migration → behavior-labs-ai spec (T090–T093 equivalent)
+- CI client migration → behavior-labs-ai spec (T094–T096 equivalent)
+- Research agent migration → behavior-labs-ai spec (T097–T100 equivalent)
+- Ground-truth adapter replacement → ground-truth-charlie spec (T101–T105 equivalent)
+- Trials-predictor resolve integration → trials-predictor spec (T106–T107 equivalent)
 
-- [ ] T094 [US13] Remove `http://localhost:3100` fallback from `dk-data-fe.client.ts` lines 74–98 — `behavior-labs-ai/apps/api/src/competitive-intel/sources/dk-data-fe.client.ts`
-- [ ] T095 [US13] Replace CI client fetches with adapter calls — same file
-- [ ] T096 [US13] Update CI pipeline tests for typed errors — `behavior-labs-ai/apps/api/tests/`
-
-### 5c — behavior-labs-ai research agents
-
-- [ ] T097 [P] [US13] Migrate MoleculeProfileAgent: first call becomes `client.molecules.resolve()`, PubChem/FDA become fallthrough — `behavior-labs-ai/apps/api/src/research/agents/molecule-profile.agent.ts`
-- [ ] T098 [P] [US13] Migrate RegulatoryStatusAgent — `behavior-labs-ai/apps/api/src/research/agents/regulatory-status.agent.ts`
-- [ ] T099 [P] [US13] Migrate ClinicalTrialAgent — `behavior-labs-ai/apps/api/src/research/agents/clinical-trial.agent.ts`
-- [ ] T100 [P] [US13] Migrate SafetyProfileAgent — `behavior-labs-ai/apps/api/src/research/agents/safety-profile.agent.ts`
-
-### 5d — ground-truth-charlie
-
-- [ ] T101 [P] [US13] Install `@datakinetic/dk-data-client` in ground-truth-charlie — `ground-truth-charlie/package.json`
-- [ ] T102 [P] [US13] Replace pubmed-adapter with `client.publications.search()` — `ground-truth-charlie/src/lib/adapters/pubmed-adapter.ts`
-- [ ] T103 [P] [US13] Replace openalex-adapter with `client.publications.search()` — `ground-truth-charlie/src/lib/adapters/openalex-adapter.ts`
-- [ ] T104 [P] [US13] Add molecule resolve step at evidence pipeline entry point (strict mode) — `ground-truth-charlie/src/lib/pipeline/evidence.ts`
-- [ ] T105 [P] [US13] Keep biorxiv/semantic-scholar/europe-pmc/dailymed/openfda adapters local (until US-7 ingestion) — documentation note in `ground-truth-charlie/src/lib/adapters/README.md`
-
-### 5e — trials-predictor
-
-- [ ] T106 [P] [US13] Install `dk-data-client` in trials-predictor — `trials-predictor/app/backend/pyproject.toml`
-- [ ] T107 [P] [US13] Add `client.molecules.resolve()` to `identifier_utils.py`; legacy normalization becomes fallback — `trials-predictor/app/backend/sqlmesh_project/macros/identifier_utils.py`
+SC-026 (client v0.2 published in this repo) and SC-030 (go/no-go before production web_anon drop) are the observable gates that tie dk-data-FE's Phase 4b rollout to consumer-side readiness. This spec does not implement the consumer work; it just refuses to ship the lockdown until those external specs have confirmed their migrations are done.
 
 ---
 
@@ -298,7 +277,7 @@
 ## Phase 9 — Polish & follow-up
 
 - [ ] T144 [P] Add Grafana alert on zero gold-table row counts for >24h — `grafana/dashboards/dk-data-transformations.json` (US-8, US-11)
-- [ ] T145 [P] Add `hydrate` fallback mode to client v1.0 (after Phase 4 ingestion endpoints verified idempotent) — `dk-data-client/typescript/src/fallback/hydrate.ts`, `dk-data-client/python/dk_data_client/fallback.py` (US-1)
+- [ ] T145 [P] Add `hydrate` fallback mode to client v1.0 (after Phase 4 ingestion endpoints verified idempotent) — `packages/dk-data-client/typescript/src/fallback/hydrate.ts`, `packages/dk-data-client/python/dk_data_client/fallback.py` (US-1)
 - [ ] T146 [P] Drop deprecated `api.*` aliases 30 days after last telemetry-verified consumer cutover — new migration file (US-6)
 - [ ] T147 [P] Cost/capacity sign-off from infrastructure team — `docs/reports/capacity-signoff.md` (US-17)
 - [ ] T148 [P] Update test.architect coverage report — verify `[TESTE]` tag satisfied for new code paths — `docs/reports/test-coverage-2026-04.md`
@@ -311,8 +290,8 @@
 
 ### 10a — Adapter version lifecycle
 
-- [ ] T149 [CRITICAL / D1] Adapter v0.2 type regeneration: immediately after migration 216 lands, run type-gen against the updated PostgREST OpenAPI; publish `@datakinetic/dk-data-client` v0.2.0 with the new types. Consumer apps bump via their own PR cycle — `dk-data-client/.github/workflows/release.yml`
-- [ ] T150 [D1] Client `serverInfo()` schema fingerprint check must warn on mismatch, NOT throw. Warn-only behavior preserves v0.1 consumers running against post-migration dk-data for the transition window — `dk-data-client/typescript/src/version.ts`, `dk-data-client/python/dk_data_client/client.py`
+- [ ] T149 [CRITICAL / D1] Adapter v0.2 type regeneration: immediately after migration 216 lands, run type-gen against the updated PostgREST OpenAPI; publish `@datakinetic/dk-data-client` v0.2.0 with the new types. Consumer apps bump via their own PR cycle — `packages/dk-data-client/.github/workflows/release.yml`
+- [ ] T150 [D1] Client `serverInfo()` schema fingerprint check must warn on mismatch, NOT throw. Warn-only behavior preserves v0.1 consumers running against post-migration dk-data for the transition window — `packages/dk-data-client/typescript/src/version.ts`, `packages/dk-data-client/python/dk_data_client/client.py`
 - [ ] T151 [D1] Document the v0.1 → v0.2 transition window in `docs/consumer-onboarding.md`: expect fingerprint warnings between migration 216 landing and consumer v0.2 upgrade. Target window ≤ 7 days — `docs/consumer-onboarding.md`
 
 ### 10b — Backfill orchestrator feature verification
@@ -338,7 +317,7 @@
 - [ ] T157 [HIGH / D7] Align L2 cache TTL with actual refresh cadence: gold table transform runs daily at 22:00 UTC, so `competitive_landscape` L2 TTL should be 24h, not 6h. Same for `lifecycle_stages`, `safety_signals`, `molecule_profile`, `company_pipeline`. Update cache TTL table in plan.md Phase 0, contracts/client-package-api.md, and data-model.md — `plan.md`, `contracts/client-package-api.md`, `data-model.md`
 - [ ] T158 [HIGH / D8] Re-audit the dead-metrics list at the start of Phase 6 (before T108): grep `src/dk_data/observability/metrics.py` and every call site, regenerate the list. Do NOT trust the 38-metric list from the dk.auto brief — it was snapshotted at audit time — `tests/observability/test_metric_coverage.py`
 - [ ] T159 [HIGH / D9] Rebase cadence: rebase `feature/002-external-integration-foundation` onto `main` at least weekly. Identify merge-conflict hotspots up front (data_platform.py, configmap.yaml, metrics.py, deployment.yaml, dashboard JSONs) and coordinate with anyone else editing them — `docs/reviews/rebase-log.md`
-- [ ] T160 [HIGH / D10] Cross-repo coordination: before starting Phase 5 consumer migrations, confirm with behavior-labs-ai, ground-truth-charlie, trials-predictor owners that their file paths (admin client, CI client, research agents, evidence pipeline, identifier_utils.py) are stable for the migration window. Pin specific commits if needed — coordination ticket
+- [ ] T160 [HIGH / D10] Pointer to each consuming app's spec: before T089a (production web_anon drop) fires, verify each consumer repo's spec has its migration tasks checked off. Reference the separate specs, do not own them. Capture outcome in `docs/reports/phase-5-coordination.md` — read-only coordination pointer
 
 ### 10f — Contract/implementation consistency
 
@@ -350,9 +329,9 @@
   - Q10 default (Python HTTP): `grep -r "import requests" python/dk_data_client/` → fail; `aiohttp` → fail. Only `httpx` allowed.
   - Q9 default (cache backend): `grep -r "from ['\"]memcached" typescript/src/ python/dk_data_client/` → fail. Only Redis or SQLite allowed.
   - Q13 default (telemetry): assert `telemetry.emit()` is called at most once per adapter method invocation; no batching logic in v0.1.
-  - Q11 default (monorepo): the client package must live in its own repo, not be co-located with dk-data-FE. CI failing if `dk-data-client/` path appears inside dk-data-FE.
+  - Q11 default (monorepo): the client package must live in its own repo, not be co-located with dk-data-FE. CI failing if `packages/dk-data-client/` path appears inside dk-data-FE.
   - Generated files regeneration: if `types.ts` or `models.py` is edited by a human (no CI regeneration comment header), fail.
-  — `dk-data-client/.github/workflows/lint.yml`
+  — `packages/dk-data-client/.github/workflows/lint.yml`
 - [ ] T165 [MEDIUM / D15] Document that `mol_raw.chembl` → `mol_raw.chembl_molecules` rename is explicitly OUT OF SCOPE for this initiative. Add guard migration if necessary — `spec.md` Non-Goals section
 
 ### 10g — Mid-implementation drift detection

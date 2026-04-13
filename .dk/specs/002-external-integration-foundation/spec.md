@@ -2,7 +2,11 @@
 
 ## Summary
 
-Establish dk-data-FE as the authoritative read surface for every DataKinetic consuming app (BehaviorLabs, ground-truth-charlie, trials-predictor) by shipping a standardized client package with auto-fallback and telemetry, closing every unauthenticated access path so the metering proxy gateway is the only way in, filling missing consumer-visible data surfaces, and driving future data hydration decisions from real usage telemetry instead of guesswork — so that consuming teams stop writing per-app connectors to upstream APIs and every external request is authenticated, metered, and observable.
+Make dk-data-FE the authoritative read surface for every external DataKinetic consumer by (1) shipping a standardized client package (TS + Python) from `packages/dk-data-client/` in this repo with auto-fallback, caching, and telemetry; (2) closing every unauthenticated access path so the metering proxy gateway is the only way in; (3) filling the missing consumer-visible data surfaces; and (4) driving future hydration decisions from real usage telemetry instead of guesswork — so that consuming teams stop writing per-app connectors to upstream APIs and every external request is authenticated, metered, and observable.
+
+## Scope
+
+**This spec covers everything that happens inside the dk-data-FE repository**, including the client package as an in-repo subdirectory under `packages/dk-data-client/`. The consuming-app-side migration (replacing hand-rolled clients inside behavior-labs-ai / ground-truth-charlie / trials-predictor repos) is tracked separately in each consumer's own spec and is **out of scope** here. Infrastructure repos (Loki retention, cluster-level configs not in `k8s/apps/`) are also out of scope.
 
 ## User Scenarios & Testing
 
@@ -382,45 +386,9 @@ Then all batch-job metrics (success timestamp, duration, records processed, fail
 
 ---
 
-### US-13: Consuming apps use the client end-to-end (P1)
+### US-13: REMOVED — consumer-side migration is tracked in the consuming-app repos
 
-**As a** developer of behavior-labs-ai, ground-truth-charlie, or trials-predictor, **I want to** have every direct dk-data call and every direct upstream-API call replaced with a client call, **so that** the authentication lockdown does not break my app and so that telemetry flows from my app into the hydration heat map.
-
-**Acceptance Scenarios:**
-
-```gherkin
-Given a consuming app with a hand-rolled dk-data client
-When the migration to the standardized client completes
-Then the hand-rolled client file is reduced to a thin shim or removed entirely
-
-Given a consuming app with a hardcoded localhost fallback for the dk-data URL
-When the migration completes
-Then the fallback is removed and the environment variable is required (no silent localhost fallback)
-
-Given a behavior-labs research agent that previously called an upstream API directly
-When the migration completes
-Then the agent's first call is a dk-data resolve step
-And the upstream API is reached only when dk-data lacks the data (via the client's fallthrough mode)
-
-Given ground-truth's evidence pipeline
-When it needs to link a claim to a molecule
-Then it calls the client resolve operation in strict mode (no implicit upstream fetch)
-
-Given trials-predictor's identifier normalization logic
-When the migration completes
-Then it uses the client resolve operation to deduplicate against canonical IDs
-And the legacy normalization logic is a fallback, not the primary path
-
-Given any consuming app's error handling code
-When the client throws a typed error
-Then the catch block handles each error type explicitly (no string matching)
-```
-
-**Edge Cases:**
-
-- A consuming app's build pipeline does not yet support the client's package format — the migration pauses that app's cutover until tooling catches up.
-- A consuming app has test fixtures that mock the hand-rolled client directly — the fixtures are updated to mock the client interface instead.
-- The client's version is older than the running dk-data version — the client detects this at startup and logs a warning; consumer apps must bump their client version.
+*US-13 covered behavior-labs-ai, ground-truth-charlie, and trials-predictor code changes that replace their hand-rolled dk-data clients with the standardized package. Those edits happen in separate repositories and are tracked in each consuming app's own spec. This spec no longer contains consumer-side tasks. FR-030 (API keys provisioned before role drop) and SC-024 (pre-drop consumer audit) still ensure dk-data-FE does not ship the lockdown until every consumer is verified working.*
 
 ---
 
@@ -685,10 +653,10 @@ And no scheduled job behavior regresses
 - **FR-044**: All 18 CMS-related metrics referenced by the CMS pipeline health dashboard MUST be emitted by the corresponding agent code paths.
 - **FR-045**: A continuous-integration check MUST fail the build on: a metric definition with zero emission sites, a dashboard reference to an undefined metric, a warehouse model without proper grants, a lineage edge that cannot be classified, or a cronjob source name that drifts from the backfill state.
 - **FR-046**: The three-way binding principle ("never add a metric definition without simultaneously adding an emission call site and a dashboard panel") MUST be recorded in the project-wide principles reference.
-- **FR-047**: Every consuming app's direct upstream-API call for data already available in dk-data MUST be replaced with a client call that falls through to upstream only when dk-data lacks the data.
-- **FR-048**: Every consuming app's hardcoded localhost fallback for the dk-data URL MUST be removed.
-- **FR-049**: Every consuming app's catch blocks MUST handle the client's typed error classes explicitly (no string matching).
-- **FR-050**: The client package test suite MUST cover all fallback modes and all typed error classes.
+- **FR-047**: REMOVED — consumer-app upstream-call replacement is tracked in each consumer's own spec.
+- **FR-048**: REMOVED — consumer-app localhost fallback removal is tracked in each consumer's own spec.
+- **FR-049**: REMOVED — consumer-app typed-error catch-block handling is tracked in each consumer's own spec.
+- **FR-050**: The client package test suite (in `packages/dk-data-client/`) MUST cover all fallback modes and all typed error classes.
 - **FR-051**: The migration test suite MUST verify each migration in this initiative applies cleanly, has correct grants, and is reversible where applicable.
 - **FR-052**: A dashboard smoke test MUST run in CI on every pull request that touches a dashboard file.
 - **FR-053**: A hydration heat-map dashboard MUST exist and be ingesting client telemetry.
@@ -698,7 +666,7 @@ And no scheduled job behavior regresses
 - **FR-057**: The operational documentation deliverables MUST all land in the same phase as the code.
 - **FR-058**: The existing k8s TCP health probes MUST continue to pass throughout the lockdown (no HTTP health dependency).
 - **FR-059**: The log-ingestion path for client telemetry MUST be verified to accept events from external apps before the lockdown ships.
-- **FR-060**: The log-ingestion capacity MUST be confirmed sufficient for the expected telemetry volume before the lockdown ships.
+- **FR-060**: REMOVED — Loki retention policy and disk capacity are infrastructure-repo concerns, not dk-data-FE concerns. Tracked separately by the infra team.
 
 ### Key Entities
 
@@ -721,7 +689,7 @@ And no scheduled job behavior regresses
 
 ## Success Criteria
 
-- **SC-001**: Every active consuming app reads dk-data through the standardized client package, and no consuming app contains a direct upstream-API call for data already available in dk-data.
+- **SC-001**: The standardized client package (`packages/dk-data-client/`) is published from this repo (npm + PyPI) with all fallback modes, typed errors, caching, and telemetry implemented. Consumer-side adoption is tracked and measured by each consuming-app's own spec, not this one.
 - **SC-002**: An unauthenticated request to any dk-data public endpoint (including the health endpoint) is rejected.
 - **SC-003**: The legacy anonymous read role does not exist in the database.
 - **SC-004**: The standalone and docker-compose gateway configurations expose the same schema list as production.
@@ -743,10 +711,10 @@ And no scheduled job behavior regresses
 - **SC-020**: The rollback of the anonymous-role drop (if ever needed) completes within 5 minutes.
 - **SC-021**: The public gateway (metering proxy) runs with ≥ 2 replicas and a `PodDisruptionBudget` with `minAvailable: 1`; a failover test (one replica killed) recovers in ≤ 5 seconds with no failed consumer requests.
 - **SC-022**: `PGRST_DB_POOL` and the cluster's `max_connections` are sized to accommodate the post-lockdown adapter fleet with at least 20% headroom. Documented in `docs/reports/capacity-audit-2026-Q2.md` before Phase 2 ships.
-- **SC-023**: Loki retention is configured for 30 days with PVC size ≥ 200 GB, verified before client telemetry begins flowing.
+- **SC-023**: REMOVED — Loki retention is an infra-repo concern, tracked separately.
 - **SC-024**: Consumer audit complete: no internal service currently reads `hcs_silver` or `hcs_gold` via `web_anon` (or if it does, an API key is provisioned before migration 218 runs).
 - **SC-025**: Migration 218 execution on staging completes within 60 seconds total wall clock and holds no single ACCESS EXCLUSIVE lock longer than 5 seconds.
-- **SC-026**: Adapter v0.2 is published within 7 days of migration 216 landing; all consuming apps verified on v0.2 within 14 days of migration 216 landing.
+- **SC-026**: Adapter v0.2.0 is published to npm + PyPI within 7 days of migration 216 landing. Consumer-side verification of v0.2 adoption is tracked in each consuming app's own spec.
 - **SC-027**: Feature branch is rebased onto main at least weekly during the active implementation window; any merge conflicts resolved within 2 business days.
 - **SC-028**: Every verification task (T001-T009, T067a, T088a-c) produces a dated artifact under `docs/reports/` before the task is marked complete.
 - **SC-029**: `.dk/memory/decisions.md` and `.dk/memory/tags.md` updates (D008-D015, tag activations) land in the same PR as feature merge — NOT before.
