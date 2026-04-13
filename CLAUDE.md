@@ -38,14 +38,44 @@ Configured for: claude
 
 ## Active PostgreSQL Schemas
 
-Domain schemas in dk-data:
-- `mol_raw`, `mol_bronze`, `mol_silver`, `mol_gold` — Molecule / drug / compound data
+### Domain schemas (always use the domain prefix)
+
+- `mol_raw`, `mol_bronze`, `mol_silver`, `mol_gold`, `mol_api` — Molecule / drug / compound data
 - `hcs_raw`, `hcs_bronze`, `hcs_silver`, `hcs_gold` — Healthcare system / CMS / provider data
 - `ind_raw`, `ind_bronze`, `ind_silver`, `ind_gold` — Indication / disease / epidemiology data
 - `hcp_silver`, `hcp_gold` — Healthcare professional / KOL / researcher data
-- `ip_raw`, `ip_bronze`, `ip_silver`, `ip_gold` — Intellectual property / patents / trademarks / designs
-- `meta` — Job locks, refresh state, transform runs
-- `staging`, `xenon`, `mol_app`, `agents` — Application / infrastructure schemas
+- `ip_raw`, `ip_bronze`, `ip_silver`, `ip_gold`, `ip_api` — Intellectual property / patents / trademarks / designs
+
+**Rule**: every new table, view, function, or materialized view lives in a domain-prefixed schema. If you find yourself wanting to put something in `api`, `public`, or an unprefixed name, stop and pick the right domain first.
+
+### Unprefixed-schema carve-outs (do NOT add domain data here)
+
+These schemas exist for cross-domain infrastructure and are the *only* exceptions to the domain-prefix rule:
+
+| Schema | Purpose | What belongs here |
+|---|---|---|
+| `meta` | Job orchestration | `job_locks`, `backfill_state`, `refresh_state`, `transform_runs`, `model_lineage` |
+| `staging` | Transient bronze→silver staging | Throwaway tables produced by ingestion pipelines |
+| `mart` | Cross-domain marts | Anything that joins 2+ domains (rare — prefer domain `_gold`) |
+| `scoring` | Cross-domain scoring models | ML-model-output tables that span domains |
+| `targeting` | Targeting workflows | Target-list-builder outputs |
+| `xenon` | Xenon service internals | Internal to the xenon service |
+| `application` | App-level state | Session, feature flag, app-config state |
+| `api` | PostgREST public surface | **Deprecated** — use domain-prefixed schemas instead. The only views that may stay in `api` are ones PostgREST explicitly publishes and that touch multiple domains |
+
+**When in doubt**: put it in a domain schema and ask during review. Unprefixed carve-outs are a one-way door — once something lands in `mart` or `xenon` it's expensive to relocate.
+
+### Agents schema collision (US-18)
+
+There are three `*agents*` schemas in production and only one of them is where agents actually live:
+
+| Schema | Status | Contents |
+|---|---|---|
+| `agents` | **Canonical** | Agent registrations, agent state, agent chat history |
+| `mol_agents` | Deprecated | Empty or stub tables left from an earlier naming pass — do not add to |
+| `hcs_agents` | Deprecated | Same — empty stubs |
+
+New agent data goes into `agents`. If you find yourself writing `mol_agents.something`, you have the wrong schema — switch to `agents`. Migration 221 (US-18 T132) consolidates `mol_agents` and `hcs_agents` into `agents` and drops the empty stubs.
 
 ## Silver Hub Architecture (feature/001-silver-medallion-rebuild)
 

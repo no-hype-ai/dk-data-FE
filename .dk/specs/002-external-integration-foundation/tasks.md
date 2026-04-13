@@ -75,7 +75,7 @@
 - [ ] T024c [HIGH] Measure metering proxy latency distribution: break down JWT mint cost vs PostgREST pass-through vs audit log write. Ensure total p99 fits inside the 200ms SLO budget — `tests/metering-proxy/test_latency_profile.py`
 - [ ] T024d [CRITICAL] Metering proxy HA validation: verify deployment has ≥2 replicas AND `PodDisruptionBudget minAvailable: 1` AND passes failover test (kill one replica, verify <5s recovery). After US-2 ships, metering proxy is the ONLY path into dk-data — single point of failure is unacceptable — `k8s/apps/metering-proxy/base/deployment.yaml`, `k8s/apps/metering-proxy/base/pdb.yaml`, `tests/metering-proxy/test_failover.py`
 - [ ] T024e [HIGH] Rate limit storage: confirm metering proxy rate-limit counters are in Redis (not per-replica in-memory). If in-memory, a multi-replica deployment would allow N × configured rate. Implement Redis-backed counters if needed — `src/dk_data/metering_proxy/rate_limit.py`
-- [ ] T025 Write `docs/runbooks/rotate-jwt-secret.md` — MUST include rolling update procedure: deploy new replicas first with BOTH old + new secret, then remove old secret from original replicas. Zero-downtime requirement — `docs/runbooks/rotate-jwt-secret.md` (US-3, US-16)
+- [x] T025 Write `docs/runbooks/rotate-jwt-secret.md` — MUST include rolling update procedure: deploy new replicas first with BOTH old + new secret, then remove old secret from original replicas. Zero-downtime requirement — `docs/runbooks/rotate-jwt-secret.md` (US-3, US-16)
 
 ### Phase 2c — FastAPI auth (US-15, must land alongside web_anon drop)
 
@@ -217,7 +217,7 @@ SC-026 (client v0.2 published in this repo) and SC-030 (go/no-go before producti
 - [ ] T114 [US12] Write dashboard smoke test — `tests/observability/test_dashboard_smoke.py` (US-14)
 - [ ] T114a [MEDIUM] Prometheus cardinality check: after US-12 cleanup, calculate estimated cardinality of live metrics. Alert if any metric exceeds 1K cardinality combinations. Add to `tests/observability/test_metric_coverage.py` — `tests/observability/test_metric_cardinality.py`
 - [ ] T115 [US12] Manual label-selector audit across all 5 dashboards — document outcomes in `docs/reports/dashboard-audit.md`
-- [ ] T116 [US12] Add three-way binding principle to `.dk/memory/principles.md` — `.dk/memory/principles.md`
+- [x] T116 [US12] Add three-way binding principle to `.dk/memory/principles.md` — `.dk/memory/principles.md`
 
 ---
 
@@ -227,16 +227,16 @@ SC-026 (client v0.2 published in this repo) and SC-030 (go/no-go before producti
 
 ### 7a — Runbooks & docs (US-16)
 
-- [ ] T117 [P] [US16] Write `docs/runbooks/metering-proxy-401-debug.md` — `docs/runbooks/metering-proxy-401-debug.md`
-- [ ] T118 [P] [US16] Write `docs/runbooks/adapter-fallthrough-spike.md` — `docs/runbooks/adapter-fallthrough-spike.md`
-- [ ] T119 [P] [US16] Write `docs/runbooks/dashboard-no-data.md` — `docs/runbooks/dashboard-no-data.md`
+- [x] T117 [P] [US16] Write `docs/runbooks/metering-proxy-401-debug.md` — `docs/runbooks/metering-proxy-401-debug.md`
+- [x] T118 [P] [US16] Write `docs/runbooks/adapter-fallthrough-spike.md` — `docs/runbooks/adapter-fallthrough-spike.md`
+- [x] T119 [P] [US16] Write `docs/runbooks/dashboard-no-data.md` — `docs/runbooks/dashboard-no-data.md`
 - [ ] T120 [P] [US16] Update `README.md` with adapter usage, auth model, env vars — `README.md`
 - [ ] T121 [P] [US16] Write `docs/consumer-onboarding.md` — `docs/consumer-onboarding.md`
 - [ ] T122 [P] [US16] Update `docs/architecture.md` with auth flow diagram — `docs/architecture.md`
 - [ ] T123 [P] [US16] Write `docs/data-catalog.md` (endpoint → schema → owner mapping) — `docs/data-catalog.md`
-- [ ] T124 [P] [US16] Update `.dk/memory/lessons.md` with 7 captured lessons — `.dk/memory/lessons.md`
-- [ ] T125 [P] [US19] Add unprefixed-schema carve-out table to `CLAUDE.md` "Active PostgreSQL Schemas" — `CLAUDE.md`
-- [ ] T126 [P] [US18] Document the three `agents`/`mol_agents`/`hcs_agents` schemas in CLAUDE.md schema reference — `CLAUDE.md`
+- [x] T124 [P] [US16] Update `.dk/memory/lessons.md` with 7 captured lessons — `.dk/memory/lessons.md`
+- [x] T125 [P] [US19] Add unprefixed-schema carve-out table to `CLAUDE.md` "Active PostgreSQL Schemas" — `CLAUDE.md`
+- [x] T126 [P] [US18] Document the three `agents`/`mol_agents`/`hcs_agents` schemas in CLAUDE.md schema reference — `CLAUDE.md`
 
 ### 7b — Cronjob cleanup (US-20 / issue #277)
 

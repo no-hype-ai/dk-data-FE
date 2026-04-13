@@ -49,3 +49,17 @@ Present the plan, wait for approval, then execute. Keep project root clean — p
 - No half-measures — if a fix is needed, fix it fully
 - Leave the codebase cleaner than you found it
 - No unnecessary dependencies
+
+### 6. Three-way binding for observability
+
+Every metric must be bound three ways in the same PR that introduces it:
+
+1. **Definition** — a `Counter`/`Gauge`/`Histogram` in `src/dk_data/observability/metrics.py`
+2. **Emission** — at least one production code path that calls `.inc()` / `.set()` / `.observe()` on it
+3. **Consumption** — a Grafana dashboard panel, alerting rule, or SLO query that reads it
+
+A metric that exists without all three is dead code. PRs that add (1) without (2) and (3) will be rejected. The CI check in `tests/observability/test_metric_coverage.py` (T113) enforces (1)+(2); reviewers enforce (3).
+
+**Why**: pre-feature-002 there were 38 metrics defined + helper function written + never called, because PR review accepted "definition + helper" as proof of wiring. See `.dk/memory/lessons.md` → "The 38 dead metrics pattern".
+
+The same rule applies in reverse: never delete a metric definition without deleting its emitters and removing it from any dashboard that queries it.
