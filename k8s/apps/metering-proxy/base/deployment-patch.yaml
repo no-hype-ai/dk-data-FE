@@ -57,10 +57,15 @@ spec:
             - name: consumers-config
               mountPath: /etc/dk-data
               readOnly: true
+          # Guaranteed QoS: requests == limits. The metering proxy
+          # is the SINGLE choke point for every external read after
+          # US-2 (web_anon dropped). OOM-kill = full read outage for
+          # every consumer, so this pod must never be eligible for
+          # eviction under memory pressure.
           resources:
             requests:
-              memory: "64Mi"
-              cpu: "50m"
+              memory: "256Mi"
+              cpu: "250m"
             limits:
               memory: "256Mi"
               cpu: "250m"

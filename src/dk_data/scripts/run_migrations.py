@@ -33,14 +33,41 @@ PREFIX_RE = re.compile(r"^(\d+)")
 
 
 def get_connection():
-    """Get a database connection. Individual POSTGRES_* vars take priority over DATABASE_URL.
+    """Get a database connection for the migration runner.
 
-    Priority (matches api/dependencies.py and the rest of the codebase):
-      1. POSTGRES_HOST + individual vars  — set by k8s dk-data-secrets
-      2. DATABASE_URL                     — local dev fallback only
-      3. Hardcoded localhost defaults
+    Migration runners MUST bypass PgBouncer because:
+      1. PgBouncer transaction mode wraps each statement in an
+         implicit transaction, which breaks `CREATE INDEX CONCURRENTLY`.
+      2. Session-scoped settings (advisory locks, `SET LOCAL`) don't
+         survive across statements in transaction mode.
+      3. We need autocommit control to handle CONCURRENTLY operations
+         that span multiple commits.
+
+    Priority:
+      1. POSTGRES_HOST_DIRECT — bypasses PgBouncer (preferred)
+      2. POSTGRES_HOST        — falls back if _DIRECT is unset; logs a
+                                warning because this is the WRONG path
+                                for migrations
+      3. DATABASE_URL         — local dev fallback only
+      4. Hardcoded localhost defaults
     """
+    direct_host = os.getenv("POSTGRES_HOST_DIRECT")
+    if direct_host:
+        return psycopg2.connect(
+            host=direct_host,
+            port=int(os.getenv("POSTGRES_PORT_DIRECT", os.getenv("POSTGRES_PORT", "5432"))),
+            user=os.getenv("POSTGRES_USER", "postgres"),
+            password=os.getenv("POSTGRES_PASSWORD", "postgres"),
+            database=os.getenv("POSTGRES_DB", "dk_data"),
+        )
     if os.getenv("POSTGRES_HOST"):
+        print(
+            "WARN: POSTGRES_HOST_DIRECT not set; falling back to POSTGRES_HOST. "
+            "If POSTGRES_HOST routes through PgBouncer, CREATE INDEX CONCURRENTLY "
+            "and similar non-transactional migrations will fail. Set "
+            "POSTGRES_HOST_DIRECT to bypass PgBouncer.",
+            file=sys.stderr,
+        )
         return psycopg2.connect(
             host=os.environ["POSTGRES_HOST"],
             port=int(os.getenv("POSTGRES_PORT", "5432")),
@@ -57,6 +84,42 @@ def get_connection():
         password="postgres",
         database="dk_data",
     )
+
+
+# Markers that signal a migration MUST run in autocommit mode
+# (cannot be wrapped in a transaction). The most common case is
+# `CREATE INDEX CONCURRENTLY`, but others exist (e.g. `VACUUM FULL`,
+# `REINDEX CONCURRENTLY`, `CLUSTER`).
+NON_TRANSACTIONAL_MARKERS = (
+    "CREATE INDEX CONCURRENTLY",
+    "DROP INDEX CONCURRENTLY",
+    "REINDEX CONCURRENTLY",
+    "ALTER SYSTEM",
+    "VACUUM FULL",
+    "VACUUM",
+    "CLUSTER",
+)
+
+
+def is_non_transactional(sql: str) -> bool:
+    """Return True if the SQL contains any operation that requires
+    running outside a transaction block.
+
+    The check is case-insensitive and ignores SQL line comments. Any
+    occurrence of one of NON_TRANSACTIONAL_MARKERS in non-comment
+    text triggers autocommit mode for the file.
+    """
+    code_only_lines = []
+    for line in sql.splitlines():
+        stripped = line.strip()
+        if stripped.startswith("--"):
+            continue
+        # Strip inline `-- comment` tail
+        if "--" in stripped:
+            stripped = stripped.split("--", 1)[0]
+        code_only_lines.append(stripped)
+    upper = "\n".join(code_only_lines).upper()
+    return any(marker in upper for marker in NON_TRANSACTIONAL_MARKERS)
 
 
 def discover_migrations(migrations_dir: str) -> list[tuple[str, str, str]]:
@@ -176,17 +239,59 @@ def get_applied_migrations(conn) -> set[str]:
 def apply_migration(
     conn, filepath: str, version: str, filename: str, checksum: str
 ) -> int:
-    """Execute a single migration SQL file within a transaction.
+    """Execute a single migration SQL file.
+
+    Most migrations run inside a transaction so a failure leaves the
+    DB in its pre-migration state. A migration containing CREATE
+    INDEX CONCURRENTLY (or any other non-transactional operation —
+    see NON_TRANSACTIONAL_MARKERS) is detected automatically and
+    runs in autocommit mode instead. The bookkeeping insert into
+    meta.schema_migrations always runs in its own transaction
+    immediately after.
 
     Returns:
         Execution time in milliseconds.
 
     Raises:
-        Exception: If migration SQL fails (transaction is rolled back).
+        Exception: If migration SQL fails. For transactional
+        migrations, the failed transaction is rolled back. For
+        autocommit (CONCURRENTLY) migrations, partial progress
+        (e.g. some indexes created, others failed) is preserved
+        and the operator must investigate manually.
     """
     sql = Path(filepath).read_text(encoding="utf-8")
     start = time.monotonic()
 
+    if is_non_transactional(sql):
+        # CONCURRENTLY operations cannot run inside a transaction.
+        # Switch the connection to autocommit, run the SQL, then
+        # restore the previous mode.
+        previous_autocommit = conn.autocommit
+        try:
+            conn.autocommit = True
+            with conn.cursor() as cur:
+                print(
+                    "  (running in autocommit mode — non-transactional migration)"
+                )
+                cur.execute(sql)
+        finally:
+            conn.autocommit = previous_autocommit
+        elapsed_ms = int((time.monotonic() - start) * 1000)
+
+        # Record bookkeeping in a separate transaction.
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                INSERT INTO meta.schema_migrations
+                    (version, filename, checksum, applied_by, execution_time_ms)
+                VALUES (%s, %s, %s, %s, %s)
+                """,
+                (version, filename, checksum, "migration-runner", elapsed_ms),
+            )
+        conn.commit()
+        return elapsed_ms
+
+    # Transactional path (default — every other migration).
     with conn.cursor() as cur:
         cur.execute(sql)
         elapsed_ms = int((time.monotonic() - start) * 1000)

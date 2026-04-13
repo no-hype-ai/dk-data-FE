@@ -77,10 +77,13 @@ spec:
               valueFrom:
                 fieldRef:
                   fieldPath: metadata.namespace
+          # Guaranteed QoS: requests == limits. job-trigger drives
+          # every cronjob and ingestion job — OOM-killing it during
+          # a backfill window leaves the cluster with no writer.
           resources:
             requests:
-              memory: "64Mi"
-              cpu: "50m"
+              memory: "256Mi"
+              cpu: "200m"
             limits:
               memory: "256Mi"
               cpu: "200m"
