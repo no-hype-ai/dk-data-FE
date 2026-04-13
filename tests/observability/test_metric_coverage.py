@@ -44,7 +44,6 @@ with a comment explaining why.
 
 from __future__ import annotations
 
-import json
 import re
 from pathlib import Path
 
@@ -200,7 +199,6 @@ def _extract_metrics() -> dict[str, str]:
     Gauge/Histogram defined in the canonical metrics.py file.
     """
     source = _read(METRICS_FILE)
-    object_names = [m.group(1) for m in METRIC_DEFINITION_PATTERN.finditer(source)]
 
     # Walk each definition block to find the first string literal (the metric
     # name argument). The Prometheus client library requires the metric name

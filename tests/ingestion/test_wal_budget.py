@@ -8,7 +8,6 @@ only need: SHOW, SET LOCAL, INSERT INTO ... VALUES (...), COMMIT.
 
 from __future__ import annotations
 
-from unittest.mock import MagicMock
 
 import pytest
 

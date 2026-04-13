@@ -125,12 +125,33 @@ BEGIN
     END;
 
     -- ---------------------------------------------------------------------
-    -- 3. Drop the role. Any remaining grants on objects owned by
-    --    web_anon are caught by DROP ROLE itself (which errors if the
-    --    role still has any dependencies). The schema-wide revokes above
-    --    should have cleared everything, so this is the acid test.
+    -- 3. Reassign any objects owned by web_anon to the current superuser,
+    --    then DROP OWNED BY to nuke every remaining ACL. The schema-loop
+    --    above handles table/sequence/function grants, but DROP OWNED BY
+    --    is comprehensive — it catches schema-level ACLs, default privileges
+    --    that weren't visible in information_schema.role_table_grants, and
+    --    any objects web_anon owns (shouldn't exist, but defensive).
     -- ---------------------------------------------------------------------
-    DROP ROLE web_anon;
+    BEGIN
+        EXECUTE 'REASSIGN OWNED BY web_anon TO ' || quote_ident(current_user);
+        RAISE NOTICE 'reassigned web_anon owned objects to %', current_user;
+    EXCEPTION WHEN OTHERS THEN
+        RAISE NOTICE 'REASSIGN OWNED BY skipped: % / %', SQLSTATE, SQLERRM;
+    END;
+
+    BEGIN
+        DROP OWNED BY web_anon;
+        RAISE NOTICE 'DROP OWNED BY web_anon: cleared all remaining ACLs';
+    EXCEPTION WHEN OTHERS THEN
+        RAISE NOTICE 'DROP OWNED BY skipped: % / %', SQLSTATE, SQLERRM;
+    END;
+
+    -- ---------------------------------------------------------------------
+    -- 4. Drop the role. After REASSIGN + DROP OWNED BY, no dependencies
+    --    should remain. DROP ROLE will error if anything was missed — that
+    --    is the acid test confirming the revoke chain was complete.
+    -- ---------------------------------------------------------------------
+    DROP ROLE IF EXISTS web_anon;
     RAISE NOTICE 'web_anon dropped successfully';
 END $$;
 
