@@ -230,10 +230,10 @@ SC-026 (client v0.2 published in this repo) and SC-030 (go/no-go before producti
 - [x] T117 [P] [US16] Write `docs/runbooks/metering-proxy-401-debug.md` — `docs/runbooks/metering-proxy-401-debug.md`
 - [x] T118 [P] [US16] Write `docs/runbooks/adapter-fallthrough-spike.md` — `docs/runbooks/adapter-fallthrough-spike.md`
 - [x] T119 [P] [US16] Write `docs/runbooks/dashboard-no-data.md` — `docs/runbooks/dashboard-no-data.md`
-- [ ] T120 [P] [US16] Update `README.md` with adapter usage, auth model, env vars — `README.md`
-- [ ] T121 [P] [US16] Write `docs/consumer-onboarding.md` — `docs/consumer-onboarding.md`
-- [ ] T122 [P] [US16] Update `docs/architecture.md` with auth flow diagram — `docs/architecture.md`
-- [ ] T123 [P] [US16] Write `docs/data-catalog.md` (endpoint → schema → owner mapping) — `docs/data-catalog.md`
+- [x] T120 [P] [US16] Update `README.md` with adapter usage, auth model, env vars — `README.md`
+- [x] T121 [P] [US16] Write `docs/consumer-onboarding.md` — `docs/consumer-onboarding.md`
+- [x] T122 [P] [US16] Update `docs/architecture.md` with auth flow diagram — `docs/architecture.md`
+- [x] T123 [P] [US16] Write `docs/data-catalog.md` (endpoint → schema → owner mapping) — `docs/data-catalog.md`
 - [x] T124 [P] [US16] Update `.dk/memory/lessons.md` with 7 captured lessons — `.dk/memory/lessons.md`
 - [x] T125 [P] [US19] Add unprefixed-schema carve-out table to `CLAUDE.md` "Active PostgreSQL Schemas" — `CLAUDE.md`
 - [x] T126 [P] [US18] Document the three `agents`/`mol_agents`/`hcs_agents` schemas in CLAUDE.md schema reference — `CLAUDE.md`
