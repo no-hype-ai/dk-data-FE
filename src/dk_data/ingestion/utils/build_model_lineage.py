@@ -227,9 +227,38 @@ _FROM_JOINS_RE = re.compile(
     r"(?:FROM|JOIN)\s+([a-z_][a-z0-9_]*\.[a-z_][a-z0-9_]*)", re.IGNORECASE
 )
 
-# Known non-table schema references to skip
+# Known non-table schema references to skip.
+#
+# Lineage tracking is for the medallion transform graph (raw → bronze →
+# silver → gold → mart/scoring). We deliberately exclude:
+#
+#   - Postgres internal schemas (information_schema, pg_catalog, extensions)
+#   - SQLMesh internal state (sqlmesh)
+#   - Operational schemas (ops)
+#   - The public schema and API-surface schemas (api, mol_api, ip_api).
+#
+# API-surface schemas are terminal presentation views, not transformation
+# stages — they join existing silver/gold tables into flatter shapes for
+# consumers. Tracking them would add leaf nodes with no downstream edges
+# and clutter the lineage graph without informational value. Their input
+# tables (mol_silver, mol_gold, etc.) remain tracked, so "what goes into
+# mol_api.molecules" is still answerable via the source silver lineage.
+#
+# Known limitation: this parser tracks schema.table references from
+# FROM/JOIN clauses only. SQL-function dependencies (e.g., a silver
+# model calling mol_silver.resolve_molecule()) are INVISIBLE to the
+# parser — function calls do not match the _FROM_JOINS_RE regex.
+# In practice the silver model usually also joins the hub identifier
+# crosswalk it resolves against, so the dependency is captured via the
+# JOIN even if the resolve-function call itself is not. If a future
+# model depends ONLY on a resolve function and never joins its hub
+# tables, that edge will be missing from meta.model_lineage. Accept
+# this limitation rather than re-engineer the parser — the alternative
+# is full SQL AST parsing, which is overkill for the few edge cases.
+# (Feature 002-external-integration-foundation T012/T013, F-D010.)
 _SKIP_SCHEMAS = {
-    "information_schema", "pg_catalog", "sqlmesh", "ops", "api",
+    "information_schema", "pg_catalog", "sqlmesh", "ops",
+    "api", "mol_api", "ip_api",
     "public", "extensions",
 }
 
