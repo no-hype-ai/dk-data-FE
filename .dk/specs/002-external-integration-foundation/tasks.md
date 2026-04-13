@@ -58,7 +58,7 @@
 - [ ] T014 [P] Add `prometheus.io/scrape` annotation to metering-proxy deployment — `k8s/apps/metering-proxy/base/deployment.yaml` (US-12 Fix 12.1)
 - [ ] T015 [P] Add `prometheus.io/scrape` annotation to batch-api deployment — `k8s/apps/batch-api/base/deployment.yaml` (US-12 Fix 12.1)
 - [ ] T016 [P] Verify Prometheus scrape job name is `dk-data-platform` (matches all 5 dashboards) — `k8s/apps/observability/**/*.yaml` (US-12 Fix 12.6)
-- [ ] T017 [P] Fix `POST /api/v1/monitoring/job-complete` to emit all 4 batch-job metrics (duration, records, failures, success). The handler currently only calls `mark_job_success`; add calls for `record_job_duration`, `report_job_records`, `inc_job_failures` — `src/dk_data/api/routes/monitoring.py` `job_complete` handler (US-12 Fix 12.4)
+- [x] T017 [P] **ALREADY COMPLETE (blocker B004)** — verified `src/dk_data/api/routes/monitoring.py` `report_job_completion` handler already calls `mark_job_success` + `record_job_records` on success, `increment_job_failure` on failure, and `record_job_duration` unconditionally. All 4 corresponding metrics (`BATCH_JOB_LAST_SUCCESS_TIMESTAMP`, `BATCH_JOB_RECORDS_PROCESSED`, `BATCH_JOB_FAILURES_TOTAL`, `BATCH_JOB_DURATION_SECONDS`) are emitted by their respective helpers in `src/dk_data/observability/metrics.py` lines 586–601. The brief's claim that the endpoint was "partially broken" was based on a stale snapshot — the code was already correct when this feature spec was written.
 - [ ] T018 [P] Create CronJob `cronjob-build-model-lineage.yaml` (schedule `*/30 * * * *`, 5-min timeout) — `k8s/apps/cronjobs/base/cronjob-build-model-lineage.yaml` (US-11)
 
 ### Phase 2b — Consumer gateway hardening (MUST land before T030)

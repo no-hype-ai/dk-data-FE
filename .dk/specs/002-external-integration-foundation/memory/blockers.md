@@ -48,4 +48,21 @@ The stub is in use by `alerts.py`. Replacing it now would change alerts.py's aut
 
 **Affects**: Follow-up task — audit and migrate every `from ..dependencies import get_current_user` call site.
 
+## B004 — T017 was already complete before the spec was written (2026-04-13)
+
+**Context**: The spec and US-12 Fix 12.4 claimed `POST /api/v1/monitoring/job-complete` was "partially broken" because it only emitted `BATCH_JOB_LAST_SUCCESS_TIMESTAMP` and did not call helpers for the other three batch-job metrics. Verified against current code: the handler at `src/dk_data/api/routes/monitoring.py` `report_job_completion` calls:
+
+- `mark_job_success(job_name)` on success → `BATCH_JOB_LAST_SUCCESS_TIMESTAMP.set(time.time())`
+- `record_job_records(job_name, records)` on success → `BATCH_JOB_RECORDS_PROCESSED.inc(count)`
+- `increment_job_failure(job_name)` on failure → `BATCH_JOB_FAILURES_TOTAL.inc()`
+- `record_job_duration(job_name, duration)` unconditionally → `BATCH_JOB_DURATION_SECONDS.observe(duration)`
+
+All four metric objects and all four helper functions exist in `src/dk_data/observability/metrics.py` lines 84–103 (defs) and 584–601 (helpers). The audit that produced the brief must have been based on a stale snapshot or a different code version.
+
+**Workaround**: Mark T017 `[x]` with a note. No code change required.
+
+**Status**: Resolved — already in a correct state.
+
+**Affects**: T017 only. Raises the question of whether the broader "38 dead metrics" claim in US-12 is also stale. T158 (re-audit at Phase 6 start) already handles this by regenerating the dead-metric list at execution time instead of trusting the brief's snapshot — that task is more important than ever now that we have concrete evidence the brief's metric audit is stale.
+
 <!-- Append blockers encountered during implementation -->
