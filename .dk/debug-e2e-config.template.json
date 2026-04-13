@@ -1,0 +1,42 @@
+{
+  "$schema_description": "Template for debug-e2e-config.json — the skill auto-generates this by introspecting the project. All values below are placeholders.",
+  "project": "{{PROJECT_NAME}}",
+  "deployment": {
+    "type": "{{k3s|vercel|docker|custom}}",
+    "environments": {
+      "local": {
+        "{{service}}": "http://localhost:{{port}}"
+      },
+      "staging": {
+        "{{service}}": "https://{{service}}.staging.{{domain}}"
+      },
+      "production": {
+        "{{service}}": "https://{{service}}.{{domain}}"
+      }
+    },
+    "default_environment": "local",
+    "health_endpoints": {
+      "{{service}}": "/api/health"
+    },
+    "logs_command": null
+  },
+  "auth": {
+    "provider": "{{clerk|auth0|nextauth|custom|none}}",
+    "sign_in_path": "/sign-in",
+    "sign_in_selectors": {
+      "email_input": "input[name='identifier']",
+      "password_input": "input[name='password']",
+      "continue_button": "button[type='submit']"
+    }
+  },
+  "route_discovery": {
+    "page_patterns": ["{{app_dir}}/**/page.tsx"],
+    "api_patterns": ["{{app_dir}}/api/**/route.ts"],
+    "webhook_patterns": [],
+    "cron_patterns": []
+  },
+  "github": {
+    "repo": "{{owner/repo}}",
+    "labels": ["dk-debug", "bug"]
+  }
+}
