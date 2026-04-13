@@ -20,7 +20,6 @@ level (every route declares the dep) to avoid the DB dependency.
 # [RBAC][TESTE]
 
 from datetime import datetime, timedelta
-import os
 
 import jwt
 import pytest

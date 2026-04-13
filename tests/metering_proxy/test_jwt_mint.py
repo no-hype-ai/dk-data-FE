@@ -22,7 +22,6 @@ The JWT signing path itself is exercised in
 
 from __future__ import annotations
 
-import pytest
 
 
 class TestConsumerAttribution:

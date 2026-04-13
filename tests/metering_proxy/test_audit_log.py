@@ -6,7 +6,6 @@ Feature: 002-external-integration-foundation (US-3, FR-015)
 
 from __future__ import annotations
 
-import asyncio
 import time
 
 import pytest

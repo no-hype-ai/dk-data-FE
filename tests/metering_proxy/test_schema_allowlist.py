@@ -9,7 +9,6 @@ targets the `mol_silver` schema.
 
 from __future__ import annotations
 
-import pytest
 
 
 class TestAllowlistEnforcement:

@@ -104,9 +104,20 @@ NON_TRANSACTIONAL_MARKERS = (
 def _iter_statements(sql: str):
     """Yield individual SQL statements from a multi-statement string.
 
-    Splits on semicolons that are NOT inside dollar-quoted blocks
-    ($$...$$  or  $tag$...$tag$). Empty / comment-only fragments are
-    skipped so callers can safely execute every yielded statement.
+    Splits on semicolons at the top level — i.e., NOT inside:
+      - Dollar-quoted blocks ($$...$$  or  $tag$...$tag$)
+      - Single-quoted string literals ('...')
+      - Line comments (-- ... until end of line)
+
+    This matters because line comments like
+      -- decides WHEN and WHICH; the fetcher decides HOW MUCH
+    contain semicolons that must NOT be treated as statement terminators.
+    Dollar-quoted PL/pgSQL bodies contain semicolons after every
+    statement, and single-quoted string literals can contain arbitrary
+    punctuation.
+
+    Empty / comment-only fragments are skipped so callers can safely
+    execute every yielded statement.
 
     Why this exists: calling cur.execute() with a full multi-statement
     SQL string causes PostgreSQL's simple query protocol to wrap all
@@ -117,12 +128,16 @@ def _iter_statements(sql: str):
     """
     in_dollar_quote = False
     dollar_tag: str | None = None
+    in_line_comment = False
+    in_single_quote = False
     buf: list[str] = []
     i = 0
     n = len(sql)
 
     while i < n:
-        # Inside a dollar-quoted block — look for the closing tag only.
+        ch = sql[i]
+
+        # ── Dollar-quoted block ────────────────────────────────────────────
         if in_dollar_quote:
             assert dollar_tag is not None
             if sql[i:].startswith(dollar_tag):
@@ -131,13 +146,49 @@ def _iter_statements(sql: str):
                 in_dollar_quote = False
                 dollar_tag = None
             else:
-                buf.append(sql[i])
+                buf.append(ch)
                 i += 1
             continue
 
-        ch = sql[i]
+        # ── Single-quoted string literal ───────────────────────────────────
+        if in_single_quote:
+            buf.append(ch)
+            i += 1
+            if ch == "'":
+                # Handle escaped quote: '' stays inside the literal
+                if i < n and sql[i] == "'":
+                    buf.append(sql[i])
+                    i += 1
+                else:
+                    in_single_quote = False
+            continue
 
-        # Detect the start of a dollar-quote ($$ or $tag$).
+        # ── Line comment ───────────────────────────────────────────────────
+        if in_line_comment:
+            buf.append(ch)
+            if ch == "\n":
+                in_line_comment = False
+            i += 1
+            continue
+
+        # ── Top-level character dispatch ───────────────────────────────────
+
+        # Detect start of a line comment (--)
+        if ch == "-" and i + 1 < n and sql[i + 1] == "-":
+            buf.append("-")
+            buf.append("-")
+            i += 2
+            in_line_comment = True
+            continue
+
+        # Detect start of a single-quoted string literal
+        if ch == "'":
+            buf.append(ch)
+            i += 1
+            in_single_quote = True
+            continue
+
+        # Detect start of a dollar-quote ($$ or $tag$).
         if ch == "$":
             j = i + 1
             while j < n and (sql[j].isalnum() or sql[j] == "_"):

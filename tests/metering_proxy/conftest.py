@@ -8,7 +8,6 @@ out per-test so we test the metering layer in isolation.
 
 from __future__ import annotations
 
-import asyncio
 from typing import Any
 
 import pytest

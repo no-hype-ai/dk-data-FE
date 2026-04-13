@@ -16,7 +16,6 @@ from __future__ import annotations
 import asyncio
 
 import pytest
-from fastapi.testclient import TestClient
 
 from dk_data.metering_proxy import app as app_module
 from dk_data.metering_proxy.auth import ConsumerConfig, ConsumerKeyStore

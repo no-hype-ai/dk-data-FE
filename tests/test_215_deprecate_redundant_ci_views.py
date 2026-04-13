@@ -113,7 +113,7 @@ class TestNoDestructiveDDL:
         # live in the post_sqlmesh/055 file or a dedicated grant migration.
         for view in EXPECTED_VIEWS:
             assert f"GRANT SELECT ON {view}" not in migration_sql
-            assert f"REVOKE" not in migration_sql or f"{view}" not in migration_sql.split("REVOKE", 1)[-1].split(";", 1)[0]
+            assert "REVOKE" not in migration_sql or f"{view}" not in migration_sql.split("REVOKE", 1)[-1].split(";", 1)[0]
 
 
 class TestSilverReplacementMapping:

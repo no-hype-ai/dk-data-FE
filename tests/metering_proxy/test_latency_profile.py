@@ -12,10 +12,8 @@ For a real load test, see `tests/load/phase2_concurrent.py`.
 
 from __future__ import annotations
 
-import statistics
 import time
 
-import pytest
 
 
 class TestProxyOverhead:
