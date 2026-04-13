@@ -139,6 +139,9 @@ resources:
   - cronjob-fetch-tdc-admet.yaml
   - cronjob-fetch-acc-tvc.yaml
   - cronjob-backfill-orchestrator.yaml
+  # Observability: rebuild SQLMesh model lineage graph every 30 min
+  # (feature 002-external-integration-foundation, US-11, T018)
+  - cronjob-build-model-lineage.yaml
   # Clinical data API sources (2 files — 019-cms-puf-platform-reconciliation)
   - cronjob-fetch-clinicaltrials.yaml
   - cronjob-fetch-openfda-labels.yaml

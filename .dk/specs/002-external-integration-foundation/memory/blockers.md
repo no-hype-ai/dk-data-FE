@@ -48,6 +48,23 @@ The stub is in use by `alerts.py`. Replacing it now would change alerts.py's aut
 
 **Affects**: Follow-up task — audit and migrate every `from ..dependencies import get_current_user` call site.
 
+## B005 — T015 batch-api deployment does not exist (2026-04-13)
+
+**Context**: The spec and US-12 Fix 12.1 listed three `/metrics` endpoints to annotate for Prometheus scraping: `job-trigger:8000`, `metering-proxy:3001`, `batch-api:8001`. The third one is orphan code.
+
+Verification:
+- `ls k8s/apps/` shows `cronjobs`, `infrastructure`, `job-trigger`, `metering-proxy`, `observability`, `postgrest` — **no `batch-api/` directory**
+- `grep -rn "ingestion.batch.api\|batch\.api:app\|batch_api"` in k8s/ and src/dk_data/ returns ONLY the `.pyc` binary caches. No source file imports from it; no manifest launches a uvicorn against it.
+- The FastAPI app at `src/dk_data/ingestion/batch/api.py` defines routes on port 8001 but nothing actually runs it. It's dead code.
+
+**Workaround**: T015 marked as N/A. The two real metrics endpoints (job-trigger already annotated, metering-proxy fixed in T014) cover the scrape requirement; adding a third target for code that isn't deployed would create phantom scrape failures in Prometheus.
+
+**Status**: Resolved — no action needed.
+
+**Affects**: T015. Raises a follow-up question: should `src/dk_data/ingestion/batch/api.py` be deleted as dead code? That's a separate cleanup PR, not this feature.
+
+---
+
 ## B004 — T017 was already complete before the spec was written (2026-04-13)
 
 **Context**: The spec and US-12 Fix 12.4 claimed `POST /api/v1/monitoring/job-complete` was "partially broken" because it only emitted `BATCH_JOB_LAST_SUCCESS_TIMESTAMP` and did not call helpers for the other three batch-job metrics. Verified against current code: the handler at `src/dk_data/api/routes/monitoring.py` `report_job_completion` calls:
