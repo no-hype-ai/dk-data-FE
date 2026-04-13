@@ -192,6 +192,11 @@ spec:
       containers:
         - name: pgbouncer
           image: ghcr.io/data-kinetic/pgbouncer:1.23.0
+          # Pass the ini path explicitly so pgbouncer reads from the
+          # subPath-mounted configmap at /opt/pgbouncer/pgbouncer.ini
+          # instead of its compiled-in default /etc/pgbouncer/pgbouncer.ini.
+          # (The /etc/pgbouncer dir is reserved for the userlist emptyDir.)
+          command: ["pgbouncer", "/opt/pgbouncer/pgbouncer.ini"]
           ports:
             - containerPort: 5432
               name: pgbouncer
