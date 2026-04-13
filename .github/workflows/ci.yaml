@@ -28,6 +28,19 @@ jobs:
       - name: Run ruff linting
         run: ruff check .
 
+      # T135 — source-name consistency check (feature 002 US-20).
+      # Fails the build if a PR reintroduces a deprecated source name
+      # that migration 220 renamed. See scripts/check_source_naming.py.
+      - name: Source-name consistency check
+        run: python scripts/check_source_naming.py
+
+      # T164 — open-question default lint (feature 002 D14).
+      # Ensures feature 002's open-question defaults are still
+      # enforced (strict JWT audience, no web_anon grants in new
+      # migrations, etc.).
+      - name: Open-question defaults lint
+        run: python scripts/check_feature_002_defaults.py
+
   test:
     name: Test
     runs-on: ubuntu-latest
@@ -197,7 +210,7 @@ jobs:
           docker run -d --name postgrest \
             --network host \
             -e PGRST_DB_URI="postgresql://authenticator:ci_test_password_32chars_min!!@localhost:5432/dk_data_test" \
-            -e PGRST_DB_ANON_ROLE="web_anon" \
+            -e PGRST_DB_ANON_ROLE="api_user" \
             -e PGRST_DB_SCHEMAS="api,mol_api,mol_gold,mol_silver,xenon,meta" \
             -e PGRST_JWT_SECRET="test-secret-must-be-at-least-32-chars" \
             -e PGRST_SERVER_PORT="3030" \

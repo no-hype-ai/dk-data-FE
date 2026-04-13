@@ -8,7 +8,10 @@ resources:
   - db-migrate-job.yaml
   - job-drugbank-seed.yaml
   # Pod disruption budgets
-  - pdb-postgrest.yaml
+  # NOTE: pdb-postgrest.yaml was removed — the canonical PDB lives in
+  # k8s/apps/postgrest/base/pdb.yaml (added by feature 002). Keeping
+  # both caused a kustomize "duplicate resource" error when the k8s/base
+  # kustomization includes both ../apps/postgrest/base and ../apps/infrastructure/base.
   - pdb-job-trigger.yaml
   # Networking
   - ingress.yaml

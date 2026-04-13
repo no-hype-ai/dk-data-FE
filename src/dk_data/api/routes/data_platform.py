@@ -22,7 +22,23 @@ from ...services.data_platform import (
 )
 from ..dependencies import get_db_pool, get_gold_service, get_resolver_service
 
-router = APIRouter(prefix="/data-platform", tags=["data-platform"])
+# Feature 002-external-integration-foundation US-15: lock down the entire
+# /data-platform surface behind JWT auth. `require_auth` comes from the
+# existing RBAC middleware (src/dk_data/api/middleware/rbac.py) and raises
+# 401 on missing / invalid tokens. Applying it at the router level covers
+# every route under this router — including new routes added later — with
+# one declaration. No per-route decoration is needed; any route that ends
+# up under this prefix is auto-protected.
+from ..middleware.rbac import require_auth
+
+router = APIRouter(
+    prefix="/data-platform",
+    tags=["data-platform"],
+    # US-15: every request to /data-platform/* MUST present a valid JWT.
+    # The dependency raises 401 before the route handler runs. The existing
+    # 34 routes and all future routes under this prefix inherit this check.
+    dependencies=[Depends(require_auth)],
+)
 
 
 # ============================================================================
@@ -3513,4 +3529,170 @@ async def trigger_on_demand_transform(
         layers=layer_results,
         total_duration_ms=total_duration,
         timestamp=datetime.utcnow().isoformat(),
+    )
+
+
+# ============================================================================
+# Silver-hub resolve wrappers (feature 002-external-integration-foundation US-5)
+# ----------------------------------------------------------------------------
+# Thin HTTP wrappers around the 10 non-molecule silver-hub resolve functions
+# that were granted EXECUTE to analyst + api_user in migration 217. Molecule
+# resolve is already exposed via POST /data-platform/resolve (defined earlier
+# in this file). These wrappers give the other 10 hub entity types a
+# first-class typed surface instead of forcing consumers to use PostgREST RPC.
+#
+# Each endpoint follows the same shape:
+#   - POST /data-platform/{entity_type}/resolve
+#   - Body: {nameOrId: str, hint: Optional[str]}
+#   - Response: {canonical_id, confidence, match_tier, alternatives?}
+#
+# Implementation: each route acquires a connection from the pool and calls
+# the corresponding `<schema>.resolve_<entity>()` function. The function
+# is STABLE PARALLEL SAFE (silver medallion spec contract) so we don't
+# wrap it in a transaction.
+#
+# The router already has `Depends(require_auth)` at the router level, so
+# every request below is guaranteed to have a valid JWT with role in
+# {analyst, api_user}.
+# ============================================================================
+
+
+class ResolveRequest(BaseModel):
+    """Generic resolve request body used by every non-molecule resolve wrapper."""
+
+    name_or_id: str = Field(
+        ...,
+        min_length=1,
+        max_length=500,
+        description="Name or identifier to resolve to a canonical entity.",
+    )
+    hint: Optional[str] = Field(
+        None,
+        description="Optional identifier type hint (e.g., 'npi' for providers, 'icd10' for conditions).",
+    )
+
+
+class ResolveResponse(BaseModel):
+    """Generic resolve response used by every non-molecule resolve wrapper."""
+
+    success: bool
+    entity_type: str
+    name_or_id: str
+    canonical_id: Optional[str]
+    confidence: float
+    match_tier: Optional[str]
+    canonical_name: Optional[str]
+    alternatives: Optional[List[Dict[str, Any]]] = None
+    timestamp: str
+
+
+async def _call_resolve_function(
+    schema: str,
+    function: str,
+    entity_type: str,
+    body: ResolveRequest,
+    pool,
+) -> ResolveResponse:
+    """Call a silver-hub resolve function and shape the response.
+
+    Every silver-hub resolve function takes (name_or_id TEXT, hint TEXT)
+    and returns (canonical_id, confidence, match_tier, canonical_name) per
+    the feature 001-silver-medallion-rebuild contract. The column names
+    may vary slightly per entity type (e.g., molecule_id vs provider_id),
+    but the positional shape is stable.
+    """
+    if pool is None:
+        raise HTTPException(status_code=503, detail="Database pool unavailable")
+
+    sql = f"SELECT * FROM {schema}.{function}($1::TEXT, $2::TEXT)"
+    async with pool.acquire() as conn:
+        try:
+            row = await conn.fetchrow(sql, body.name_or_id, body.hint)
+        except Exception as e:
+            logger.error(f"resolve {schema}.{function} failed: {e}")
+            raise HTTPException(status_code=500, detail=f"resolve failed: {e}")
+
+    if row is None:
+        return ResolveResponse(
+            success=True,
+            entity_type=entity_type,
+            name_or_id=body.name_or_id,
+            canonical_id=None,
+            confidence=0.0,
+            match_tier=None,
+            canonical_name=None,
+            timestamp=datetime.utcnow().isoformat(),
+        )
+
+    # The first column of each resolve function is the canonical ID
+    # (UUID or bigint depending on the hub). We coerce to str for the
+    # wire format.
+    cols = list(row.keys())
+    canonical_id = str(row[cols[0]]) if row[cols[0]] is not None else None
+
+    return ResolveResponse(
+        success=True,
+        entity_type=entity_type,
+        name_or_id=body.name_or_id,
+        canonical_id=canonical_id,
+        confidence=float(row.get("confidence", 0.0) or 0.0),
+        match_tier=row.get("match_tier"),
+        canonical_name=row.get("canonical_name"),
+        timestamp=datetime.utcnow().isoformat(),
+    )
+
+
+@router.post("/conditions/resolve", response_model=ResolveResponse, tags=["resolve"])
+async def resolve_condition(body: ResolveRequest, pool=Depends(get_db_pool)):
+    """Resolve a condition name or code to the canonical ind_silver condition."""
+    return await _call_resolve_function(
+        "ind_silver", "resolve_condition", "condition", body, pool
+    )
+
+
+@router.post("/companies/resolve", response_model=ResolveResponse, tags=["resolve"])
+async def resolve_company(body: ResolveRequest, pool=Depends(get_db_pool)):
+    """Resolve a company name or identifier to the canonical mol_silver company."""
+    return await _call_resolve_function(
+        "mol_silver", "resolve_company", "company", body, pool
+    )
+
+
+@router.post("/providers/resolve", response_model=ResolveResponse, tags=["resolve"])
+async def resolve_provider(body: ResolveRequest, pool=Depends(get_db_pool)):
+    """Resolve a provider NPI or name to the canonical hcs_silver provider."""
+    return await _call_resolve_function(
+        "hcs_silver", "resolve_provider", "provider", body, pool
+    )
+
+
+@router.post("/facilities/resolve", response_model=ResolveResponse, tags=["resolve"])
+async def resolve_facility(body: ResolveRequest, pool=Depends(get_db_pool)):
+    """Resolve a facility identifier or name to the canonical hcs_silver facility."""
+    return await _call_resolve_function(
+        "hcs_silver", "resolve_facility", "facility", body, pool
+    )
+
+
+@router.post("/researchers/resolve", response_model=ResolveResponse, tags=["resolve"])
+async def resolve_researcher(body: ResolveRequest, pool=Depends(get_db_pool)):
+    """Resolve a researcher name or identifier to the canonical hcp_silver researcher."""
+    return await _call_resolve_function(
+        "hcp_silver", "resolve_researcher", "researcher", body, pool
+    )
+
+
+@router.post("/patents/resolve", response_model=ResolveResponse, tags=["resolve"])
+async def resolve_patent(body: ResolveRequest, pool=Depends(get_db_pool)):
+    """Resolve a patent number or title to the canonical ip_silver patent."""
+    return await _call_resolve_function(
+        "ip_silver", "resolve_patent", "patent", body, pool
+    )
+
+
+@router.post("/trademarks/resolve", response_model=ResolveResponse, tags=["resolve"])
+async def resolve_trademark(body: ResolveRequest, pool=Depends(get_db_pool)):
+    """Resolve a trademark name to the canonical ip_silver trademark."""
+    return await _call_resolve_function(
+        "ip_silver", "resolve_trademark", "trademark", body, pool
     )

@@ -14,9 +14,8 @@ spec:
       targetPort: 3001
       protocol: TCP
       name: proxy
-    - port: 9090
-      targetPort: 9090
-      protocol: TCP
-      name: metrics
+    # Removed stale port 9090 "metrics" — nothing bound to it in the container.
+    # The /metrics endpoint is served from the same uvicorn process on port 3001
+    # (BYPASS_PATHS allows it to skip auth). Feature 002 T014.
   selector:
     app: postgrest

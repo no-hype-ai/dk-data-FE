@@ -32,6 +32,14 @@ class ConsumerConfig:
     rpm_limit: int
     tier: str
     api_keys: list[str] = field(default_factory=list)
+    # Concurrency cap: maximum in-flight requests per consumer at once.
+    # This is the KEY guard against cluster death — rate-limiting by
+    # RPM alone lets N slow queries (from M replicas) saturate the DB
+    # connection pool long before the RPM budget hits. Default 20 is
+    # headroom-sized against `PGRST_DB_POOL=30` per replica: one
+    # runaway consumer can hold 2/3 of the pool and still leave the
+    # rest of the fleet operational.
+    max_in_flight: int = 20
 
 
 class ConsumerKeyStore:
@@ -72,6 +80,7 @@ class ConsumerKeyStore:
                     rpm_limit=cfg.get("rpm_limit", 100),
                     tier=cfg.get("tier", "standard"),
                     api_keys=cfg.get("api_keys", []),
+                    max_in_flight=cfg.get("max_in_flight", 20),
                 )
                 self._consumers[consumer.alias] = consumer
                 for key in consumer.api_keys:

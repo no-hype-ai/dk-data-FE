@@ -8,10 +8,17 @@ metadata:
     app.kubernetes.io/component: api
     app.kubernetes.io/part-of: dk-data
 spec:
-  replicas: 1
+  # Feature 002 perf pass: minimum 2 replicas so the PDB
+  # (minAvailable: 1) can actually allow node drains. With only 1
+  # replica, the PDB blocks every drain forever. Production overlay
+  # may bump this further (target = 3 in capacity-signoff.md).
+  replicas: 2
   strategy:
     type: RollingUpdate
     rollingUpdate:
+      # +1 surge during rollout so we can update without dropping
+      # below the PDB minimum. With replicas=2, that means 3 pods
+      # exist briefly during a rolling update.
       maxSurge: 1
       maxUnavailable: 0
   selector:
@@ -27,6 +34,12 @@ spec:
         service: dk-data
         product: dk-data
     spec:
+      # PostgREST holds open DB connections; on shutdown it must be
+      # given time to close them cleanly so PgBouncer doesn't see
+      # abrupt disconnects (which trigger reset cycles). 60s is
+      # well above the 10s statement timeout, so any in-flight
+      # query has time to finish or be killed by the timeout.
+      terminationGracePeriodSeconds: 60
       securityContext:
         runAsNonRoot: true
         runAsUser: 1000
@@ -112,10 +125,14 @@ spec:
                   key: JWT_SECRET
             - name: PGRST_JWT_ROLE_CLAIM_KEY
               value: ".role"
+          # Guaranteed QoS: requests == limits. Critical so kubelet
+          # picks Burstable pods (NOT this one) first under memory
+          # pressure. PostgREST is on the read hot path; OOM-killing
+          # it would take down every dk-data consumer.
           resources:
             requests:
-              memory: "128Mi"
-              cpu: "100m"
+              memory: "512Mi"
+              cpu: "500m"
             limits:
               memory: "512Mi"
               cpu: "500m"
@@ -124,9 +141,12 @@ spec:
             readOnlyRootFilesystem: true
             capabilities:
               drop: ["ALL"]
-          # T038: Health probes - TCP for startup reliability, HTTP for application health
-          # NOTE: HTTP probes require api.health view to exist (created by db-init job)
-          #       and web_anon role to have USAGE on schema api + SELECT on api.health
+          # Health probes are TCP-only (not HTTP). The previous comment
+          # claiming HTTP probes required `api.health` + `web_anon` was
+          # stale — all three probes below use tcpSocket, not httpGet, so
+          # there is no dependency on a database view or anonymous role.
+          # Feature 002-external-integration-foundation T085 removed the
+          # stale comment; US-2 dropped the web_anon role in migration 218.
           startupProbe:
             tcpSocket:
               port: 3000

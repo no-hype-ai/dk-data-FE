@@ -64,6 +64,9 @@ src/dk_data/data/raw/
 !tests/fixtures/*.json
 !.specify/**/*.json
 !monitoring/dashboards/*.json
+!grafana/dashboards/*.json
+!packages/**/*.json
+!.dk/**/*.json
 
 # SQLMesh cache and state
 .sqlmesh/

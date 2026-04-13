@@ -6,6 +6,12 @@
 
 <!-- Next ID: D008 -->
 
+<!--
+  Feature-002 decisions D008-D015 were removed from global memory on 2026-04-13
+  per drift-audit fix D4. They live in .dk/specs/002-external-integration-foundation/memory/decisions.md
+  and will be promoted here on feature merge.
+-->
+
 ## D007 — Crosswalk dedupe and conflict policy — 2026-04-11
 
 **Context**: Hub bootstrap procedures need to be idempotent (FR-026). What happens if a re-run encounters a `(source, identifier)` that already exists but resolves to a different `hub_id` than the existing row?

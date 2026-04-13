@@ -12,7 +12,11 @@ metadata:
     argocd.argoproj.io/sync-wave: "2"
 spec:
   backoffLimit: 3
-  activeDeadlineSeconds: 1800
+  # Bumped from 1800s (30min) to 3600s (1h) to accommodate
+  # migration 225 — CREATE INDEX CONCURRENTLY × 7 GIN indexes on
+  # multi-million-row tables can take ~5 min each. Total ~35 min,
+  # well over the previous deadline.
+  activeDeadlineSeconds: 3600
   template:
     metadata:
       labels:
@@ -36,6 +40,27 @@ spec:
             - -m
             - dk_data.scripts.run_migrations
           env:
+            # IMPORTANT: migrations bypass PgBouncer.
+            # PgBouncer transaction mode wraps each statement in an
+            # implicit transaction, which breaks `CREATE INDEX
+            # CONCURRENTLY` (migration 225) and any other
+            # non-transactional operation. POSTGRES_HOST_DIRECT
+            # points at the CNPG primary directly. Same convention
+            # as cronjob-build-model-lineage.yaml + SQLMesh.
+            - name: POSTGRES_HOST_DIRECT
+              valueFrom:
+                secretKeyRef:
+                  name: dk-data-secrets
+                  key: POSTGRES_HOST_DIRECT
+            - name: POSTGRES_PORT_DIRECT
+              valueFrom:
+                secretKeyRef:
+                  name: dk-data-secrets
+                  key: POSTGRES_PORT_DIRECT
+                  optional: true
+            # Fallback values — the runner prefers _DIRECT but
+            # uses POSTGRES_HOST if _DIRECT is unset (with a
+            # WARN to stderr).
             - name: POSTGRES_HOST
               valueFrom:
                 secretKeyRef:

@@ -10,8 +10,16 @@ spec:
       labels:
         app: postgrest
       annotations:
+        # Feature 002-external-integration-foundation T014: fix prometheus
+        # scrape target. The metering proxy's /metrics endpoint is served
+        # by the SAME uvicorn process that serves the proxy on port 3001
+        # (see src/dk_data/metering_proxy/app.py line 86 — @app.get("/metrics")
+        # — and src/dk_data/metering_proxy/schemas.py BYPASS_PATHS which
+        # lets /metrics skip the auth check). There is no separate metrics
+        # port listening, despite the old containerPort: 9090 declaration
+        # below which was removed as part of the same fix.
         prometheus.io/scrape: "true"
-        prometheus.io/port: "9090"
+        prometheus.io/port: "3001"
         prometheus.io/path: "/metrics"
     spec:
       volumes:
@@ -34,9 +42,8 @@ spec:
             - containerPort: 3001
               name: proxy
               protocol: TCP
-            - containerPort: 9090
-              name: metrics
-              protocol: TCP
+            # Removed: containerPort 9090 "metrics" — nothing was bound to it.
+            # The metrics endpoint is served on port 3001 via /metrics (T014).
           env:
             - name: POSTGREST_URL
               value: "http://localhost:3000"
@@ -50,10 +57,15 @@ spec:
             - name: consumers-config
               mountPath: /etc/dk-data
               readOnly: true
+          # Guaranteed QoS: requests == limits. The metering proxy
+          # is the SINGLE choke point for every external read after
+          # US-2 (web_anon dropped). OOM-kill = full read outage for
+          # every consumer, so this pod must never be eligible for
+          # eviction under memory pressure.
           resources:
             requests:
-              memory: "64Mi"
-              cpu: "50m"
+              memory: "256Mi"
+              cpu: "250m"
             limits:
               memory: "256Mi"
               cpu: "250m"

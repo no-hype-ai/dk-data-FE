@@ -107,7 +107,9 @@ resources:
   - cronjob-fetch-cms-telehealth-puf.yaml
   - cronjob-fetch-cms-utilization-puf.yaml
   - cronjob-fetch-cms-physician-puf-services.yaml
-  - cronjob-fetch-cms-cost-reports-puf-lines.yaml
+  # cronjob-fetch-cms-cost-reports-puf-lines.yaml — DELETED by feature 002 T129
+  #   (HCRIS line-level data is not available via the CMS PUF API; this job
+  #   had never successfully fetched anything — see spec F-D015, issue #277)
   - cronjob-fetch-cms-medicare.yaml
   # CMS facility/provider/reference sources (ported from 016)
   - cronjob-fetch-cms-care-compare.yaml
@@ -139,6 +141,9 @@ resources:
   - cronjob-fetch-tdc-admet.yaml
   - cronjob-fetch-acc-tvc.yaml
   - cronjob-backfill-orchestrator.yaml
+  # Observability: rebuild SQLMesh model lineage graph every 30 min
+  # (feature 002-external-integration-foundation, US-11, T018)
+  - cronjob-build-model-lineage.yaml
   # Clinical data API sources (2 files — 019-cms-puf-platform-reconciliation)
   - cronjob-fetch-clinicaltrials.yaml
   - cronjob-fetch-openfda-labels.yaml

@@ -26,10 +26,39 @@ metadata:
 data:
   pgbouncer.ini: |
     [databases]
-    ; Per-database pool_size overrides (T210)
-    dk_data = host=postgres-cluster-rw.infra.svc.cluster.local port=5432 dbname=dk_data pool_size=80
-    behavior_labs = host=postgres-cluster-rw.infra.svc.cluster.local port=5432 dbname=behavior_labs pool_size=50
-    litellm = host=postgres-cluster-rw.infra.svc.cluster.local port=5432 dbname=litellm pool_size=20
+    ; Per-database pool_size overrides.
+    ;
+    ; CRITICAL sizing math (feature 002 perf pass):
+    ;
+    ; pool_size is PER PGBOUNCER REPLICA. With 2 pgbouncer replicas:
+    ;   actual_max_server_connections = pool_size × pgbouncer_replicas
+    ;
+    ; Postgres budget (assumes max_connections=200 — see
+    ; docs/reports/capacity-audit-2026-Q2.md to bump):
+    ;   - postgres superuser + replication + admin: 30 (reserved)
+    ;   - app workload available: 170
+    ;
+    ; Per-replica pool sizes that sum to ≤ 85 (× 2 replicas = 170):
+    ;   dk_data:        50 per replica × 2 = 100 total — covers
+    ;                   PostgREST 3 replicas × PGRST_DB_POOL=30 = 90
+    ;                   with 10 headroom
+    ;   behavior_labs:  25 per replica × 2 = 50  total
+    ;   litellm:        10 per replica × 2 = 20  total
+    ;
+    ; Total worst-case = 170 = budget. No headroom — if a 4th
+    ; database lands, raise max_connections first.
+    ;
+    ; Tradeoff: under a thundering-herd burst that lands entirely on
+    ; ONE pgbouncer replica, only 50 dk_data slots are available
+    ; (40 of 90 PostgREST connections will queue at the pgbouncer
+    ; client layer until the other replica picks up traffic). This
+    ; is acceptable: it bounds the worst case at "queue, not crash"
+    ; and the metering proxy's per-consumer concurrency guard
+    ; (max_in_flight=8 high-tier, 4 standard) caps how much of
+    ; the 90 PostgREST demand can come from any single consumer.
+    dk_data = host=postgres-cluster-rw.infra.svc.cluster.local port=5432 dbname=dk_data pool_size=50
+    behavior_labs = host=postgres-cluster-rw.infra.svc.cluster.local port=5432 dbname=behavior_labs pool_size=25
+    litellm = host=postgres-cluster-rw.infra.svc.cluster.local port=5432 dbname=litellm pool_size=10
 
     [pgbouncer]
     listen_addr = 0.0.0.0
@@ -65,7 +94,20 @@ metadata:
     app.kubernetes.io/component: connection-pooler
     app.kubernetes.io/part-of: dk-data
 spec:
-  replicas: 1
+  # Feature 002 perf pass: 2 replicas so a single pod restart
+  # doesn't take down every dk-data, behavior-labs, and litellm
+  # consumer simultaneously. PgBouncer is the cluster-wide DB
+  # gateway; one replica is unacceptable single-point-of-failure.
+  # NB: pool_size in [databases] is per-pgbouncer-instance, so
+  # 2 replicas × pool_size=100 = 200 max server connections to
+  # dk_data — exactly the postgres max_connections. The runbook
+  # docs/runbooks/wal-budget.md notes this trade-off.
+  replicas: 2
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
   selector:
     matchLabels:
       app: pgbouncer
@@ -80,6 +122,20 @@ spec:
         service: dk-data
         product: dk-data
     spec:
+      # Spread across nodes — both pgbouncer pods on the same node
+      # defeats the HA upgrade.
+      affinity:
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+            - weight: 100
+              podAffinityTerm:
+                labelSelector:
+                  matchLabels:
+                    app: pgbouncer
+                topologyKey: kubernetes.io/hostname
+      # PgBouncer holds active server connections; on shutdown it
+      # needs time to drain in-flight queries before SIGKILL.
+      terminationGracePeriodSeconds: 60
       imagePullSecrets:
         - name: ghcr-credentials
       securityContext:

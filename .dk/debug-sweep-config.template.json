@@ -1,0 +1,36 @@
+{
+  "_description": "Debug sweep configuration for /dk.sweep. Copy this file to debug-sweep-config.json and fill in project-specific values.",
+  "_docs": "https://github.com/tumeke-stealth/tumeke-tools",
+
+  "grafana": {
+    "url": "https://grafana.example.com",
+    "api_key_source": "doppler secrets get GRAFANA_API_KEY --plain -p <project> -c <env>",
+    "datasources": {
+      "loki_uid": "",
+      "mimir_uid": "",
+      "tempo_uid": ""
+    }
+  },
+
+  "targets": {
+    "services": ["example-api", "example-worker"],
+    "namespaces": ["default"],
+    "default_time_range_minutes": 30
+  },
+
+  "filters": {
+    "error_patterns": "(?i)(error|exception|traceback|failed|critical)",
+    "exclude_patterns": ["/health", "/metrics", "DeprecationWarning"]
+  },
+
+  "validation": {
+    "scripts": ["./scripts/validate.sh"],
+    "sync_scripts": ["./scripts/sync-all.sh"]
+  },
+
+  "execution": {
+    "max_parallel_agents": 5,
+    "max_iterations": 3,
+    "auto_merge": false
+  }
+}

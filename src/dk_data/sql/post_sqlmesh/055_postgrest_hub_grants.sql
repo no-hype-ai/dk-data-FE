@@ -11,56 +11,18 @@ BEGIN;
 DO $$ BEGIN
 
   -- ============================================================
-  -- web_anon role — read-only public API access
+  -- web_anon role — REMOVED by feature 002-external-integration-foundation
+  -- US-2 (migration 218_drop_web_anon.sql). The legacy anonymous read
+  -- role is no longer granted here. Every PostgREST request now requires
+  -- a valid JWT (enforced by `authenticator` role switching to a
+  -- JWT-supplied role). The IF EXISTS check is kept below as a defense-
+  -- in-depth guard — if `web_anon` somehow reappears, the old broad
+  -- grants are NOT reapplied; instead the script raises a loud warning
+  -- so operators can investigate.
   -- ============================================================
   IF EXISTS (SELECT FROM pg_roles WHERE rolname = 'web_anon') THEN
-    BEGIN
-      GRANT SELECT ON TABLE
-          mol_silver.molecules, mol_silver.molecule_identifiers, mol_silver.molecule_names,
-          mol_silver.drug_products, mol_silver.drug_product_identifiers, mol_silver.drug_product_names, mol_silver.drug_product_ingredients,
-          mol_silver.companies, mol_silver.company_identifiers, mol_silver.company_names,
-          mol_silver.targets, mol_silver.target_identifiers, mol_silver.target_names, mol_silver.target_sequences
-      TO web_anon;
-    EXCEPTION WHEN OTHERS THEN
-      RAISE NOTICE 'Skipping mol_silver hub grants to web_anon (tables not yet created by SQLMesh)';
-    END;
-
-    BEGIN
-      GRANT SELECT ON TABLE
-          hcs_silver.providers, hcs_silver.provider_identifiers, hcs_silver.provider_names,
-          hcs_silver.facilities, hcs_silver.facility_identifiers, hcs_silver.facility_names
-      TO web_anon;
-    EXCEPTION WHEN OTHERS THEN
-      RAISE NOTICE 'Skipping hcs_silver hub grants to web_anon (tables not yet created by SQLMesh)';
-    END;
-
-    BEGIN
-      GRANT SELECT ON TABLE
-          ind_silver.conditions, ind_silver.condition_identifiers, ind_silver.condition_names
-      TO web_anon;
-    EXCEPTION WHEN OTHERS THEN
-      RAISE NOTICE 'Skipping ind_silver hub grants to web_anon (tables not yet created by SQLMesh)';
-    END;
-
-    BEGIN
-      GRANT SELECT ON TABLE
-          hcp_silver.researchers, hcp_silver.researcher_identifiers, hcp_silver.researcher_names
-      TO web_anon;
-    EXCEPTION WHEN OTHERS THEN
-      RAISE NOTICE 'Skipping hcp_silver hub grants to web_anon (tables not yet created by SQLMesh)';
-    END;
-
-    BEGIN
-      GRANT SELECT ON TABLE
-          ip_silver.patents, ip_silver.patent_identifiers, ip_silver.patent_names,
-          ip_silver.trademarks, ip_silver.trademark_identifiers, ip_silver.trademark_names,
-          ip_silver.designs, ip_silver.design_identifiers, ip_silver.design_names
-      TO web_anon;
-    EXCEPTION WHEN OTHERS THEN
-      RAISE NOTICE 'Skipping ip_silver hub grants to web_anon (tables not yet created by SQLMesh)';
-    END;
-
-    RAISE NOTICE 'Processed hub table SELECT grants for web_anon';
+    RAISE WARNING
+      'web_anon role exists but should have been dropped by migration 218 (feature 002-external-integration-foundation US-2). Investigate — this role must not be re-granted on silver hub tables.';
   END IF;
 
   -- ============================================================

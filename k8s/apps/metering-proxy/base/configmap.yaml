@@ -12,28 +12,60 @@ data:
     # API keys are provisioned via the Platform API and synced here.
     # Format: dk_data_{alias}_{random_suffix}
     #
-    # rpm_limit: 0 means unlimited (internal/platform tier)
-    # allowed_schemas: ["*"] means all schemas
+    # rpm_limit: 0 means unlimited (reserved for internal jobs only)
+    # max_in_flight: per-consumer concurrency cap ENFORCED PER PROXY
+    #   REPLICA. A consumer can have at most `max_in_flight` requests
+    #   in flight per metering-proxy pod at any one moment. New
+    #   requests above the cap get HTTP 503 with Retry-After=1.
+    #
+    #   Budget math (IMPORTANT):
+    #     PGRST_DB_POOL × postgrest_replicas = 30 × 3 = 90 slots total
+    #     safe budget with 20% headroom                 = 72 slots
+    #     metering_proxy_replicas                       = 2
+    #     → sum(max_in_flight) per proxy replica ≤ 36
+    #
+    #   Current sum below = 32, leaving 4 slots per replica as headroom.
+    #   If you add a consumer, either re-verify against this budget OR
+    #   bump PGRST_DB_POOL first.
+    #
+    #   Why this matters: rate-limiting by RPM alone does NOT protect
+    #   the database. A 500rpm consumer running slow queries can hold
+    #   many concurrent connections well under their RPM budget. The
+    #   semaphore is what actually caps pool pressure.
+    # allowed_schemas: list of schemas — do NOT use ["*"] in production.
+    #
+    # Provisioning workflow: see docs/consumer-onboarding.md.
     consumers:
+      # ------------------------------------------------------------------
+      # External consumers (each owns its own repo + spec)
+      # ------------------------------------------------------------------
       behavior-labs-ai:
         alias: blai
         allowed_schemas:
           - mart
           - api
           - mol_api
+          - mol_silver
+          - mol_gold
+          - ip_api
+          - ip_silver
+          - ip_gold
           - scoring
         rpm_limit: 500
+        max_in_flight: 8  # high-tier; worst-case = 16 pool slots across 2 replicas
         tier: high
-        api_keys: []
+        api_keys: []  # populated by Platform API at deploy time
       carbon-5:
         alias: c5
         allowed_schemas:
           - mart
           - api
-          - bronze
-          - silver
-          - gold
+          - mol_silver
+          - mol_gold
+          - hcs_silver
+          - hcs_gold
         rpm_limit: 500
+        max_in_flight: 8
         tier: high
         api_keys: []
       dk-os:
@@ -42,12 +74,46 @@ data:
           - api
           - meta
         rpm_limit: 200
+        max_in_flight: 4
         tier: standard
         api_keys: []
+      ground-truth-charlie:
+        alias: gtc
+        allowed_schemas:
+          - mol_silver
+          - mol_gold
+          - ip_silver
+          - ind_silver
+        rpm_limit: 300
+        max_in_flight: 4
+        tier: standard
+        api_keys: []
+      trials-predictor:
+        alias: tp
+        allowed_schemas:
+          - mol_silver
+          - mol_gold
+          - ind_silver
+          - ind_gold
+        rpm_limit: 300
+        max_in_flight: 4
+        tier: standard
+        api_keys: []
+      # ------------------------------------------------------------------
+      # Internal cluster services — T020: explicit allowlist, no wildcard.
+      # ------------------------------------------------------------------
       internal:
         alias: internal
         allowed_schemas:
-          - "*"
-        rpm_limit: 0
+          - meta
+          - api
+          - mart
+          - xenon
+        rpm_limit: 0  # unlimited RPM; internal jobs
+        max_in_flight: 4  # still capped for DB-pool protection
         tier: unlimited
         api_keys: []
+    # Sum of max_in_flight above = 8+8+4+4+4+4 = 32 per proxy replica.
+    # × 2 proxy replicas = 64 worst-case pool slots held across all
+    # consumers under pathological slow-query conditions. Safe budget
+    # is 72, leaving 8 slots of headroom for PostgREST's own overhead.

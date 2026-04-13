@@ -1,0 +1,30 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+# Production overlay for PostgREST.
+#
+# Currently PINS replicas at 2 — DO NOT raise to 3 without first
+# bumping max_connections in the CNPG cluster spec from 200 → 300.
+#
+# Connection budget at replicas=2 (current):
+#   PGRST_DB_POOL=30 × 2 replicas = 60 PostgREST connections
+#   PgBouncer forwards these to the postgres pool (dk_data slot=100)
+#   → 40 slots of headroom within the 100-slot dk_data budget.
+#
+# Connection budget at replicas=3 (target, needs max_connections=300):
+#   PGRST_DB_POOL=30 × 3 replicas = 90 connections
+#   Still fits the 100-slot dk_data budget but leaves only 10 slack.
+#   Bumping max_connections to 300 first gives 95 slots of headroom
+#   per docs/reports/capacity-signoff.md.
+#
+# See docs/runbooks/postgres-tuning.md for the full connection budget.
+# See docs/reports/capacity-signoff.md for the infra team contract.
+
+resources:
+  - ../../base
+
+patches:
+  - path: replicas-patch.yaml
+    target:
+      kind: Deployment
+      name: postgrest

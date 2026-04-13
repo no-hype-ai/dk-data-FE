@@ -16,20 +16,26 @@ import structlog
 logger = structlog.get_logger(__name__)
 
 # Known PostgREST schemas in dk-data.
-# Must include ALL domain-prefixed schemas — bare names (bronze, silver, gold, raw)
-# are kept for backwards compatibility but the real schemas use domain prefixes.
+#
+# Adding a new schema here is REQUIRED before a consumer's
+# `allowed_schemas` entry in consumers.yaml will actually work — an
+# unrecognized first path segment falls through to the `api` default,
+# silently bypassing the per-schema allowlist.
 KNOWN_SCHEMAS = {
     # Molecule domain
     "mol_raw",
     "mol_bronze",
     "mol_silver",
     "mol_gold",
+    "mol_api",
     # HCS domain
     "hcs_raw",
     "hcs_bronze",
     "hcs_silver",
     "hcs_gold",
-    # Indicator domain
+    # Indicator / condition domain
+    "ind_raw",
+    "ind_bronze",
     "ind_silver",
     "ind_gold",
     # HCP domain
@@ -40,16 +46,23 @@ KNOWN_SCHEMAS = {
     "ip_bronze",
     "ip_silver",
     "ip_gold",
-    # API / application schemas
+    "ip_api",
+    # Cross-domain carve-outs (see CLAUDE.md — the only unprefixed
+    # schemas allowed in dk-data)
     "api",
     "mart",
-    "mol_api",
     "scoring",
-    "xenon",
-    "staging",
+    "targeting",
     "meta",
+    "staging",
+    "xenon",
     "application",
-    # Legacy bare names (no longer used in production; kept for compatibility)
+    # Agents schemas (US-18 — `agents` is canonical; `mol_agents` /
+    # `hcs_agents` are deprecated but still in production for now)
+    "agents",
+    "mol_agents",
+    "hcs_agents",
+    # Legacy bare names (no longer used in production; kept for compat)
     "bronze",
     "silver",
     "gold",

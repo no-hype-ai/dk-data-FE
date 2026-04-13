@@ -27,7 +27,10 @@ BEGIN
         $mat$;
         CREATE UNIQUE INDEX IF NOT EXISTS api_facility_summary_pk ON api.facility_summary (facility_id);
         CREATE INDEX IF NOT EXISTS api_facility_summary_state ON api.facility_summary (address_state);
-        GRANT SELECT ON api.facility_summary TO web_anon, analyst;
+        -- Feature 002-external-integration-foundation US-2: web_anon removed.
+        -- Materialized views now require an authenticated role. Grant to
+        -- analyst + api_user only.
+        GRANT SELECT ON api.facility_summary TO analyst, api_user;
     EXCEPTION WHEN OTHERS THEN
         RAISE NOTICE 'Skipping api.facility_summary (source table not yet created): %', SQLERRM;
     END;
@@ -45,7 +48,7 @@ BEGIN
         $mat$;
         CREATE UNIQUE INDEX IF NOT EXISTS api_molecule_summary_pk ON api.molecule_summary (molecule_id);
         CREATE INDEX IF NOT EXISTS api_molecule_summary_inchi ON api.molecule_summary (inchi_key);
-        GRANT SELECT ON api.molecule_summary TO web_anon, analyst;
+        GRANT SELECT ON api.molecule_summary TO analyst, api_user;
     EXCEPTION WHEN OTHERS THEN
         RAISE NOTICE 'Skipping api.molecule_summary (source table not yet created): %', SQLERRM;
     END;
@@ -64,7 +67,7 @@ BEGIN
         $mat$;
         CREATE UNIQUE INDEX IF NOT EXISTS api_trial_summary_pk ON api.trial_summary (trial_id);
         CREATE INDEX IF NOT EXISTS api_trial_summary_nct ON api.trial_summary (nct_id);
-        GRANT SELECT ON api.trial_summary TO web_anon, analyst;
+        GRANT SELECT ON api.trial_summary TO analyst, api_user;
     EXCEPTION WHEN OTHERS THEN
         RAISE NOTICE 'Skipping api.trial_summary (source table not yet created): %', SQLERRM;
     END;

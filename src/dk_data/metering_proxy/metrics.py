@@ -56,3 +56,17 @@ SCHEMA_ACCESS_DENIED_TOTAL = Counter(
     "Total schema access denied events",
     ["consumer", "schema"],
 )
+
+# Per-consumer in-flight request count (drives the 503 load-shed alert)
+IN_FLIGHT_REQUESTS = Gauge(
+    "dk_data_metering_in_flight_requests",
+    "Current in-flight requests per consumer",
+    ["consumer"],
+)
+
+# 503 load-shed events (consumer hit max_in_flight)
+LOAD_SHED_TOTAL = Counter(
+    "dk_data_metering_load_shed_total",
+    "Total requests rejected with 503 because the consumer hit max_in_flight",
+    ["consumer"],
+)

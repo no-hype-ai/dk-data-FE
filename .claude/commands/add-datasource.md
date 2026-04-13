@@ -304,26 +304,91 @@ def load_example_source_data(records, source_hash=None):
 
 **Always extend an existing silver model before creating a new one.** Determine which existing silver entity the source feeds:
 
+#### Molecule / Drug Domain (`mol_silver`)
+
+The silver layer uses **10 canonical hub tables**. Each hub has a primary entity table, an identifiers table, and a names table. Always link into the hub — never maintain a parallel identifier list.
+
+| Hub | Primary Table | Identifiers Table | Names Table | When to use |
+|-----|--------------|-------------------|-------------|-------------|
+| Molecule | `mol_silver.molecules` | `mol_silver.molecule_identifiers` | `mol_silver.molecule_names` | Drug/molecule sources: chembl, drugbank, pubchem, openfda |
+| Drug Product | `mol_silver.drug_products` | `mol_silver.drug_product_identifiers` | `mol_silver.drug_product_names` | Branded/generic drug products, NDC-level data |
+| Company | `mol_silver.companies` | `mol_silver.company_identifiers` | `mol_silver.company_names` | Sponsor/manufacturer data |
+| Target | `mol_silver.targets` | `mol_silver.target_identifiers` | `mol_silver.target_names` | Protein targets, UniProt-linked sources |
+| Patent | `ip_silver.patents` | `ip_silver.patent_identifiers` | `ip_silver.patent_names` | USPTO, EPO, WIPO patent data |
+| Trademark | `ip_silver.trademarks` | `ip_silver.trademark_identifiers` | `ip_silver.trademark_names` | USPTO, EUIPO trademark data |
+
+**Deprecated — do not use in new models:**
+- `mol_silver.molecule_aliases` → use `mol_silver.molecule_names` instead
+- `mol_silver.identifier_mappings` → use `mol_silver.molecule_identifiers` instead
+
+#### HCS Domain (`hcs_silver`)
+
 | Silver Model | Entity Key | When to extend |
 |-------------|------------|----------------|
-| `hcs_silver.provider_profile` | `npi` | Source has NPI: NPPES, physician_puf, referring/ordering providers, mental_health, telehealth, dme_puf |
-| `hcs_silver.facility_profile` | `provider_id` (CCN) | Source has CCN/provider_id: hospital_general_info, cost_reports_puf, inpatient/outpatient/snf/hospice/home_health |
+| `hcs_silver.providers` | `provider_id` (NPI) | Source has NPI: NPPES, physician_puf, referring/ordering providers, mental_health, telehealth, dme_puf |
+| `hcs_silver.provider_identifiers` | `provider_id` + `identifier_type` | Additional NPI cross-references |
+| `hcs_silver.facilities` | `facility_id` (CCN) | Source has CCN/provider_id: hospital_general_info, cost_reports_puf, inpatient/outpatient/snf/hospice/home_health |
+| `hcs_silver.facility_identifiers` | `facility_id` + `identifier_type` | Additional facility cross-references |
 | `hcs_silver.geographic_health` | `geo_code` + `geo_level` | Geographic/population aggregates: geographic_variation, chronic_conditions, enrollment_puf, opioid_puf, dual_eligible, medicare_advantage, claim_type_puf, utilization_puf |
 | `hcs_silver.drug_utilization` | `drug_or_hcpcs_code` + `code_type` | Drug utilization/spending: part_d_spending, part_b_spending, medicaid_drug_spending, dme_puf, lab_services, imaging_puf |
 | `hcs_silver.part_d_prescribing` | `prscrbr_npi` + `gnrc_name` | Part D prescribing: part_d_prescriber |
 | `hcs_silver.open_payments_drug_linkage` | `record_id` + `drug_slot` | Open payments: open_payments |
 | `hcs_silver.cms_drug_market` | `drug_or_hcpcs_code` + `year` | Market-level drug spending aggregates |
-| `mol_silver.molecules` | `molecule_id` | Drug/molecule sources: drugbank, chembl, pubchem, openfda |
-| `mol_silver.molecule_aliases` | `alias_name_normalized` | Any drug name source |
+
+#### Other Domains
+
+| Silver Model | Entity Key | When to use |
+|-------------|------------|-------------|
+| `ind_silver.conditions` | `condition_id` | Indication/disease sources: ICD-10, MeSH, SNOMED, WHO ICD |
+| `ind_silver.condition_identifiers` | `condition_id` + `identifier_type` | Condition code cross-references |
+| `hcp_silver.researchers` | `researcher_id` | HCP/researcher sources: ORCID, NIH Reporter, Scopus |
 | `mol_silver.publications` | `pmid` / `source_id` | Literature: europepmc, nih_reporter, pubmed |
 | `mol_silver.drug_labels` | `set_id` | Drug labeling: openfda_labels, dailymed |
 | `mol_silver.adverse_events` | `report_id` | Safety signals: openfda_faers |
 
+### Entity Linking — Use Resolve Functions
+
+When a new source contains drug names, company names, condition codes, or other entity identifiers that must link to a silver hub, **always use the resolve function** — never inline fuzzy matching.
+
+```sql
+-- In a SQLMesh model, link to mol_silver via resolve:
+SELECT
+    mol_silver.resolve_molecule(b.drug_name)   AS molecule_id,
+    hcs_silver.resolve_provider(b.npi)         AS provider_id,
+    hcs_silver.resolve_facility(b.ccn)         AS facility_id,
+    ind_silver.resolve_condition(b.icd10_code) AS condition_id,
+    mol_silver.resolve_company(b.sponsor_name) AS company_id,
+    b.*
+FROM mol_bronze.new_source b;
+```
+
+Available resolve functions (STABLE PARALLEL SAFE, ≤10ms p99):
+- `mol_silver.resolve_molecule(name_or_id TEXT) → UUID`
+- `hcs_silver.resolve_provider(npi_or_name TEXT) → UUID`
+- `hcs_silver.resolve_facility(ccn_or_name TEXT) → UUID`
+- `ind_silver.resolve_condition(name_or_code TEXT) → UUID`
+- `mol_silver.resolve_company(name TEXT) → UUID`
+- `mol_silver.resolve_target(name_or_id TEXT) → UUID`
+- `hcp_silver.resolve_researcher(name_or_orcid TEXT) → UUID`
+- `ip_silver.resolve_patent(patent_number TEXT) → UUID`
+
+### Banned Silver Antipatterns
+
+Never write these patterns in a silver model — they will be rejected in review:
+
+| Code | Pattern | Why banned | Fix |
+|------|---------|-----------|-----|
+| S1 | `WHERE hub_id = A OR hub_id = B` | OR-join causes seq scan on hub tables | Use `= ANY(ARRAY[A, B])` or two separate joins |
+| S2 | `WHERE name LIKE '%query%'` (leading wildcard) | Cannot use index | Use `similarity()` with threshold, or use `molecule_names` lookup |
+| S3 | Correlated scalar subquery per-row | N+1 query inside SELECT | Convert to a lateral join or CTE |
+| S4 | `DISTINCT ON ... UNION ALL` over hub tables | Disguises fan-out; expensive | Use a single hub join with explicit dedup key |
+| S5 | `similarity(name, q) > 0.8 OR name = q` | Mixed fuzzy+exact in OR clause | Split into two passes or use resolve function |
+
 Cross-domain links to always include when present:
-- Drug names/NDCs → `mol_silver.molecule_aliases.alias_name_normalized`
-- NDC codes → `mol_silver.ndc_molecule_bridge`
-- NPI → `hcs_silver.provider_profile`
-- CCN/provider_id → `hcs_silver.facility_profile`
+- Drug names/NDCs → `mol_silver.molecule_names` (not `molecule_aliases`)
+- Identifier cross-refs → `mol_silver.molecule_identifiers` (not `identifier_mappings`)
+- NPI → `hcs_silver.providers` via `hcs_silver.resolve_provider()`
+- CCN/provider_id → `hcs_silver.facilities` via `hcs_silver.resolve_facility()`
 
 ### Gold Models
 
@@ -620,17 +685,18 @@ kubectl kustomize k8s/overlays/staging > /dev/null && echo OK
 - **Gold models**: aggregate from ≥2 silver sources; add computed metrics; `kind FULL`
 - **API keys**: never hardcoded — always from environment via Doppler → `dk-data-fe` / `dk-data-secrets`
 - **DB host**: `postgres-cluster-rw.infra.svc.cluster.local:5432` (production)
-- **PostgREST grants**: `GRANT SELECT ON {view} TO web_anon, analyst;` in migration
-- **102 sources** currently registered — check `main.py` SOURCES dict before naming to avoid collisions
+- **PostgREST grants**: `GRANT SELECT ON {view} TO web_anon, analyst, api_user;` in migration. For `mol_api` views also add `GRANT USAGE ON SCHEMA mol_api TO web_anon, analyst, api_user;`
+- **PostgREST schemas**: PostgREST exposes `api` and `mol_api` schemas (`db-schemas = "api, mol_api"` in `postgrest.conf`). New mol domain views go in `mol_api`; platform/ops views go in `api`.
+- **100 sources** currently registered — check `main.py` SOURCES dict before naming to avoid collisions
 
-## Current Sources Reference (102 total)
+## Current Sources Reference (100 total)
 
 ```
 acc_tvc, bindingdb, cdc_vaccines, chembl_activities, chembl_molecules,
 clinicaltrials, cms_care_compare, cms_chow, cms_chronic_conditions,
 cms_claim_type_puf, cms_cost_reports, cms_cost_reports_puf,
-cms_cost_reports_puf_lines, cms_ddinter, cms_dme_puf, cms_dmepos,
-cms_dual_eligible, cms_enrollment_puf, cms_formulary,
+cms_cost_reports_puf_lines, cms_coverage, cms_ddinter, cms_dme_puf,
+cms_dmepos, cms_dual_eligible, cms_enrollment_puf, cms_formulary,
 cms_geographic_variation, cms_hcris, cms_home_health, cms_hospice_puf,
 cms_hospital_affiliation, cms_hospital_general_info, cms_hospital_info,
 cms_hospital_quality, cms_imaging_puf, cms_inpatient, cms_inpatient_puf,
