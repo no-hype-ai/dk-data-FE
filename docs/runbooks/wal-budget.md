@@ -23,12 +23,19 @@ the [WALMX] tag budget.
 
 ## What counts as "too much WAL"
 
+> **Infra freeze ceiling (2026-04-13)**: The CNPG cluster's `max_wal_size` is still at
+> the Postgres default of **1 GB** (the planned 8 GB value is a Group B parameter —
+> pending infra ticket, see `docs/runbooks/postgres-tuning.md`). With a 1 GB ceiling,
+> a checkpoint fires every ~1 GB of WAL and causes an IO spike that stalls readers.
+> **Treat 500 MB / load as the practical limit until the infra change lands.**
+
 | Volume | Classification | Action |
 |---|---|---|
 | < 100 MB / txn | Normal write path | No special handling |
-| 100 MB – 1 GB / txn | Bulk load | Use `bulk_load_session` + chunked commits |
-| 1 GB – 2 GB / txn | Large backfill | Chunk smaller (10k rows), run during off-peak |
-| > 2 GB / txn | **Danger** | Split across multiple cronjob ticks |
+| 100 MB – 500 MB / txn | Bulk load (infra-freeze safe) | Use `bulk_load_session` + 5k-row commits |
+| 500 MB – 1 GB / txn | **Infra-freeze danger zone** | Split into smaller ticks OR run off-peak only |
+| > 1 GB / txn | **Always dangerous** | Triggers checkpoint mid-load; split across multiple ticks |
+| > 2 GB / txn | **Cluster risk** | Split across multiple cronjob ticks; page on-call |
 
 ## Backend-side controls
 
@@ -62,7 +69,7 @@ def load_year(conn, year: int, rows: Iterator[tuple]) -> int:
             table="mol_raw.chembl_activities",
             columns=("activity_id", "molecule_id", "target_id", "phase", "year"),
             rows=rows,
-            chunk_size=10_000,
+            chunk_size=5_000,   # 5k under infra freeze (was 10k); restore when max_wal_size=8GB
             on_conflict="(activity_id) DO NOTHING",
         )
 ```
@@ -139,7 +146,32 @@ m.DK_BRONZE_WAL_BYTES_PER_TICK.labels(
 ).set(diff_bytes)
 ```
 
-Alert: if per-tick WAL exceeds 1 GB, warn. If > 1.5 GB, page.
+Alert: if per-tick WAL exceeds **800 MB**, warn (Grafana alert `dk-data-checkpoint-storm`
+in `grafana/alerts/dk-data.yaml`). This is the infra-freeze threshold — 200 MB below
+the 1 GB max_wal_size that triggers a checkpoint. If > 1.5 GB, escalate to critical.
+
+## Off-peak backfill scheduling
+
+Under the infra freeze (max_wal_size=1 GB), large backfills that generate 500 MB+ of WAL
+MUST run during off-peak hours to avoid starving PostgREST's read queries with checkpoint
+IO. PostgREST serves external consumers 24/7, so "off-peak" means the window when consumer
+API traffic is lowest.
+
+**Required off-peak window**: **02:00 – 06:00 UTC** (no consumer SLAs in effect).
+
+Affected cronjobs that must be scheduled in this window:
+- `cronjob-chembl-activities-backfill` — can generate 500 MB/tick at 17 years × ~30 MB/year
+- `cronjob-pubchem-consolidation` — can generate 300–800 MB depending on the compound range
+- Any manual backfill that uses `bulk_load_session` + `chunked_insert` for > 100k rows
+
+Implementation: all affected CronJob manifests must set their `schedule` to a cron
+expression that starts no earlier than `0 2 * * *` (02:00 UTC) and ends by `0 6 * * *`.
+
+**Alert**: a Grafana alert (`dk-data-checkpoint-storm`) fires when WAL per tick exceeds
+800 MB during peak hours (06:00 – 02:00 UTC). See `grafana/alerts/dk-data.yaml`.
+
+When the infra team applies `max_wal_size=8GB`, this off-peak restriction can be relaxed.
+Update this runbook's "Last verified" date and remove the off-peak requirement.
 
 ## Connection routing
 

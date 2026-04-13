@@ -14,7 +14,9 @@ import pytest
 
 from dk_data.ingestion.utils.wal_budget import (
     DEFAULT_CHUNK_SIZE,
+    DEFAULT_UPSERT_CHUNK_SIZE,
     WAL_BUDGET_BYTES,
+    WAL_INFRA_FREEZE_CEILING_BYTES,
     bulk_load_session,
     chunked_insert,
     estimate_wal_per_row,
@@ -168,8 +170,26 @@ class TestBudgetMath:
     def test_wal_budget_constant(self):
         assert WAL_BUDGET_BYTES == 2 * 1024 * 1024 * 1024
 
+    def test_infra_freeze_ceiling_constant(self):
+        # 500 MB practical ceiling under infra freeze (max_wal_size=1GB default).
+        assert WAL_INFRA_FREEZE_CEILING_BYTES == 500 * 1024 * 1024
+
+    def test_infra_freeze_ceiling_below_wal_budget(self):
+        # The freeze ceiling must be < the hard budget so we alert before danger.
+        assert WAL_INFRA_FREEZE_CEILING_BYTES < WAL_BUDGET_BYTES
+
     def test_default_chunk_size_reasonable(self):
+        # 5k under infra freeze (was 10k). Must be in [1k, 100k].
         assert 1_000 <= DEFAULT_CHUNK_SIZE <= 100_000
+
+    def test_default_chunk_size_reduced_for_infra_freeze(self):
+        # Explicit pin: must be ≤ 5k until max_wal_size=8GB lands.
+        # This test will fail when we deliberately relax the limit — that's the point.
+        assert DEFAULT_CHUNK_SIZE <= 5_000
+
+    def test_upsert_chunk_size_capped_for_infra_freeze(self):
+        # Reduced from 50k → 25k under infra freeze.
+        assert DEFAULT_UPSERT_CHUNK_SIZE <= 25_000
 
     def test_estimate_wal_per_row(self):
         # 200-byte row → ~400 bytes of WAL (2× raw for overhead)
@@ -177,9 +197,9 @@ class TestBudgetMath:
 
     def test_max_chunk_size_for_small_row(self):
         # 100-byte row → ~200 bytes WAL → 100MB / 200 = 524288 rows,
-        # but capped at 50_000 (DEFAULT_UPSERT_CHUNK_SIZE).
-        assert max_chunk_size_for_row(100) == 50_000
+        # but capped at DEFAULT_UPSERT_CHUNK_SIZE (now 25_000 under infra freeze).
+        assert max_chunk_size_for_row(100) == DEFAULT_UPSERT_CHUNK_SIZE
 
     def test_max_chunk_size_for_large_row(self):
-        # 10 KB row → ~20 KB WAL → 100MB / 20KB = ~5120 rows
+        # 10 KB row → ~20 KB WAL → 100MB / 20KB = ~5120 rows (under both caps)
         assert 4_000 <= max_chunk_size_for_row(10_000) <= 6_000

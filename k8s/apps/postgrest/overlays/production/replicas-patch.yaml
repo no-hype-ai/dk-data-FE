@@ -1,0 +1,18 @@
+# Production replica cap for PostgREST.
+#
+# HARD LIMIT: 2 replicas until max_connections is raised to 300 in
+# the CNPG cluster spec. See kustomization.yaml for the budget math.
+#
+# Raising this to 3 without the CNPG change would push PostgREST's
+# DB pool demand (30 × 3 = 90) to within 10 slots of the 100-slot
+# dk_data PgBouncer budget, leaving no headroom for migration-runner
+# connections, backfill jobs, or operator psql sessions.
+#
+# When the CNPG change is applied (max_connections=300), update this
+# to `replicas: 3` and update the comment in the base deployment.yaml.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: postgrest
+spec:
+  replicas: 2

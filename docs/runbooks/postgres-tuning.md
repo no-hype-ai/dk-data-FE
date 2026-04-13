@@ -19,42 +19,19 @@ too small). The capacity-audit and capacity-signoff reports in
 
 ## Required `postgresql.conf` parameters
 
+Parameters are grouped by urgency. File a single infra ticket per group — don't mix
+urgent and growth changes, since the urgent ones need to land first.
+
+### Group A — Required NOW for feature 002 to work correctly
+
+These are **blocking**. Without them, runtime failures occur (migrations fail,
+slow queries are invisible, WAL disk pressure is unmanaged).
+
 ```yaml
-# CNPG cluster spec — postgresql.parameters
+# CNPG cluster spec — postgresql.parameters (Group A — apply first)
 postgresql:
   parameters:
-    # ---- Connection budget ----
-    max_connections: "300"           # was 200; bumped per capacity-signoff.md
-    superuser_reserved_connections: "5"
-    # ---- Memory ----
-    shared_buffers: "8GB"            # 25% of node RAM (32GB nodes)
-    effective_cache_size: "24GB"     # 75% of node RAM
-    work_mem: "32MB"                 # raise via SET LOCAL for bulk loaders
-    maintenance_work_mem: "1GB"      # autovacuum + REINDEX
-    huge_pages: "try"
-    # ---- WAL / checkpoint ----
-    wal_level: "replica"
-    max_wal_size: "8GB"              # default 1GB → too small for our backfills
-    min_wal_size: "1GB"
-    checkpoint_timeout: "15min"
-    checkpoint_completion_target: "0.9"
-    wal_compression: "on"
-    wal_keep_size: "2GB"             # for replicas to catch up after lag
-    # ---- Query planner ----
-    random_page_cost: "1.1"          # SSD storage
-    effective_io_concurrency: "200"  # NVMe
-    default_statistics_target: "200" # higher = better plans, slower ANALYZE
-    # ---- Autovacuum ----
-    autovacuum_naptime: "30s"        # default 1min; we have hot tables
-    autovacuum_vacuum_scale_factor: "0.05"   # default 0.2 (20%); too lazy for 15M-row tables
-    autovacuum_analyze_scale_factor: "0.02"
-    autovacuum_max_workers: "5"       # default 3
-    # ---- Logging (slow query) ----
-    log_min_duration_statement: "500"   # log queries >500ms
-    log_lock_waits: "on"
-    log_temp_files: "10MB"              # find sorts/joins spilling to disk
-    log_autovacuum_min_duration: "5s"
-    # ---- Extensions ----
+    # ---- Extensions (blocking: migrations 225+226 land but don't populate without these) ----
     shared_preload_libraries: "pg_stat_statements,auto_explain"
     "pg_stat_statements.track": "all"
     "pg_stat_statements.max": "5000"
@@ -62,7 +39,73 @@ postgresql:
     "auto_explain.log_analyze": "off"        # too expensive in prod
     "auto_explain.log_buffers": "on"
     "auto_explain.log_format": "json"
+    # ---- WAL / checkpoint (blocking: chembl backfill triggers checkpoint storm at default 1GB) ----
+    max_wal_size: "8GB"              # default 1GB → too small for our backfills
+    min_wal_size: "1GB"
+    checkpoint_completion_target: "0.9"
+    wal_compression: "on"
+    # ---- Logging (blocking: without this we cannot diagnose production slowdowns) ----
+    log_min_duration_statement: "500"   # log queries >500ms
+    log_lock_waits: "on"
+    log_temp_files: "10MB"              # find sorts/joins spilling to disk
+    log_autovacuum_min_duration: "5s"
 ```
+
+### Group B — Required for planned scale (PostgREST 3 replicas + growth)
+
+These are **not immediately blocking** — dk-data works at 2 PostgREST replicas without
+them. Apply after Group A is confirmed stable. Raising PostgREST to 3 replicas depends
+on the max_connections bump.
+
+```yaml
+# CNPG cluster spec — postgresql.parameters (Group B — apply for scale-out)
+postgresql:
+  parameters:
+    # ---- Connection budget (current: 200, needed for 3-replica PostgREST: 300) ----
+    max_connections: "300"           # was 200; see capacity-signoff.md for budget math
+    superuser_reserved_connections: "5"
+    # ---- Memory (improves planner quality and autovacuum speed; not blocking) ----
+    shared_buffers: "8GB"            # 25% of node RAM (32GB nodes)
+    effective_cache_size: "24GB"     # 75% of node RAM
+    work_mem: "32MB"                 # raise via SET LOCAL for bulk loaders
+    maintenance_work_mem: "1GB"      # autovacuum + REINDEX
+    huge_pages: "try"
+    # ---- WAL ----
+    wal_level: "replica"
+    wal_keep_size: "2GB"             # for replicas to catch up after lag
+    checkpoint_timeout: "15min"
+    # ---- Query planner ----
+    random_page_cost: "1.1"          # SSD storage
+    effective_io_concurrency: "200"  # NVMe
+    default_statistics_target: "200" # higher = better plans, slower ANALYZE
+    # ---- Autovacuum (global defaults; per-table overrides applied by migration 227) ----
+    autovacuum_naptime: "30s"        # default 1min; we have hot tables
+    autovacuum_vacuum_scale_factor: "0.05"   # default 0.2 (20%); too lazy for 15M-row tables
+    autovacuum_analyze_scale_factor: "0.02"
+    autovacuum_max_workers: "5"       # default 3
+```
+
+> **Infra freeze note (2026-04-13)**: The cluster spec is frozen at the settings that
+> existed before feature 002. Only Group A parameters need an infra ticket. Group B
+> parameters are planned but not urgent — they unlock the 3-replica PostgREST scale
+> and better autovacuum defaults. Until Group B lands, per-table autovacuum overrides
+> are applied by **migration 227** (no infra ticket needed — ALTER TABLE is
+> application-side) and backfills must use 5k-row chunks (see `wal-budget.md`).
+
+### Connection budget at current max_connections=200
+
+| Consumer | Per-replica pool | Replicas | Total |
+|---|---|---|---|
+| postgres superuser + replication | — | — | 15 |
+| dk_data via PgBouncer | 50 | 2 | 100 |
+| behavior_labs via PgBouncer | 25 | 2 | 50 |
+| litellm via PgBouncer | 10 | 2 | 20 |
+| Migration-runner / backfill (direct) | — | — | 10 |
+| **Total** | — | — | **195** |
+| **Headroom** | — | — | **5** |
+
+At 5 slots of headroom, every additional direct-connection tool (SQLMesh, psql) must be
+used with care. This is why Group B (max_connections=300) is a planned priority.
 
 ## Required extensions
 
@@ -81,7 +124,8 @@ If `shared_preload_libraries` doesn't include `pg_stat_statements` and
 
 ## Connection budget breakdown
 
-Total = `max_connections = 300` (after the bump from 200):
+See Group A/B parameter tables above for the current (200) vs. target (300) budgets.
+The table below is the **target state** (Group B applied, max_connections=300):
 
 | Consumer | Per-replica | Replicas | Total |
 |---|---|---|---|
@@ -93,17 +137,14 @@ Total = `max_connections = 300` (after the bump from 200):
 | SQLMesh transform jobs (direct) | 10 | 1 | 10 |
 | Backup / monitoring | — | — | 10 |
 | **Total** | — | — | **205** |
-| **Headroom** | — | — | **95** |
+| **Headroom at max_connections=300** | — | — | **95** |
 
-The 95-slot headroom absorbs:
+The 95-slot headroom (target state) absorbs:
 - Migration runner connections (direct, bypassing PgBouncer)
 - Backfill cronjobs (direct)
 - pg_stat_statements collection
 - Ad-hoc operator psql sessions
-
-If `max_connections` cannot be raised to 300, the alternative is to
-shrink the PgBouncer pool budget — but doing so caps PostgREST's
-projected 3-replica scale.
+- A third PostgREST replica (adds 30 to the dk_data demand)
 
 ## Autovacuum tuning rationale
 

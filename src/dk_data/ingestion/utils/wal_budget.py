@@ -43,7 +43,7 @@ keep per-transaction WAL under 2 GB. This module enforces it.
             table="mol_raw.chembl_activities",
             columns=("activity_id", "molecule_id", "target_id", "phase"),
             rows=iter_rows_from_fetch(),
-            chunk_size=10_000,  # commits per chunk
+            chunk_size=5_000,  # commits per chunk (reduced from 10k under infra freeze)
         )
 
 ## Rules
@@ -75,13 +75,25 @@ logger = logging.getLogger("dk_data.ingestion.wal_budget")
 # on a shared cluster.
 WAL_BUDGET_BYTES = 2 * 1024 * 1024 * 1024  # 2 GiB
 
-# Default chunk size for INSERT loaders. Picked so that even wide
-# rows (~1KB each) produce < 10 MB of WAL per commit.
-DEFAULT_CHUNK_SIZE = 10_000
+# Practical WAL ceiling under infra freeze (2026-04-13):
+# The CNPG cluster's max_wal_size is still at the default 1 GB
+# (the planned 8 GB bump is a Group B parameter — pending infra ticket).
+# A checkpoint fires when WAL exceeds 1 GB, causing an IO spike that
+# stalls every reader. Keep per-chunk WAL well under 500 MB so a
+# checkpoint never fires mid-load. At ~1 KB/row × 2 (WAL overhead),
+# 5k rows = ~10 MB/commit — 50× below the 500 MB practical ceiling.
+WAL_INFRA_FREEZE_CEILING_BYTES = 500 * 1024 * 1024  # 500 MB
+
+# Default chunk size for INSERT loaders. Reduced from 10k → 5k to
+# lower checkpoint pressure under the current max_wal_size=1GB (default).
+# Restore to 10k when the infra team applies max_wal_size=8GB.
+# At ~1 KB/row, 5k rows produces ~10 MB of WAL per commit.
+DEFAULT_CHUNK_SIZE = 5_000
 
 # Upper bound for an UPSERT chunk. UPSERT no-ops don't write WAL so
-# we can afford bigger chunks here.
-DEFAULT_UPSERT_CHUNK_SIZE = 50_000
+# we can afford bigger chunks here, but cap at 25k (was 50k) for the
+# same infra-freeze checkpoint-pressure reason.
+DEFAULT_UPSERT_CHUNK_SIZE = 25_000
 
 
 @contextmanager
