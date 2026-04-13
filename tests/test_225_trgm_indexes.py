@@ -3,14 +3,22 @@
 Feature: 002-external-integration-foundation (perf pass)
 
 This migration adds `pg_trgm` GIN indexes so the client's ILIKE-based
-search methods stop sequential-scanning million-row tables. Contract
-checks:
+search methods stop sequential-scanning million-row tables.
 
+The migration uses regular CREATE INDEX (not CONCURRENTLY) inside DO blocks
+with IF EXISTS table guards and pg_indexes existence checks, wrapped in a
+standard BEGIN/COMMIT transaction. This is safe because the hub tables are
+written only by batch bootstrap procedures, not by live user traffic.
+
+Contract checks:
   - pg_trgm extension enabled
-  - All required GIN indexes declared
+  - All required GIN indexes declared via DO blocks
   - Each index uses `gin_trgm_ops` (not b-tree)
-  - Runs OUTSIDE a transaction (CREATE INDEX CONCURRENTLY requirement)
-  - No fire-a-shot-in-the-dark patterns (no missing IF NOT EXISTS)
+  - Wrapped in a transaction (regular CREATE INDEX runs fine inside one)
+  - No CONCURRENTLY (not needed; tables are batch-only)
+  - Each index has an IF NOT EXISTS guard via pg_indexes check
+  - Each DO block guards against missing tables (silver hub tables are
+    created by bootstrap, not migrations — they may not exist in CI)
 """
 
 from pathlib import Path
@@ -51,42 +59,48 @@ class TestMigrationShape:
     def test_creates_pg_trgm_extension(self, migration_sql):
         assert "CREATE EXTENSION IF NOT EXISTS pg_trgm" in migration_sql
 
-    def test_no_transaction_wrapper(self, migration_sql):
-        """CREATE INDEX CONCURRENTLY cannot run inside BEGIN/COMMIT."""
-        # We tolerate a BEGIN/COMMIT inside a DO block comment, but
-        # the migration itself MUST NOT start with BEGIN;
-        lines = [
-            ln.strip()
-            for ln in migration_sql.splitlines()
-            if ln.strip() and not ln.strip().startswith("--")
-        ]
-        executable = "\n".join(lines).upper()
-        assert "BEGIN;" not in executable, (
-            "Migration 225 must not be transaction-wrapped — "
-            "CREATE INDEX CONCURRENTLY errors inside BEGIN/COMMIT"
-        )
+    def test_transaction_wrapped(self, migration_sql):
+        """Regular CREATE INDEX runs inside BEGIN/COMMIT — no CONCURRENTLY needed.
+
+        The migration uses DO blocks with IF EXISTS guards so it is safe to
+        run transactionally; the silver hub tables are written only by batch
+        bootstrap procedures, not by live user traffic.
+        """
+        assert "BEGIN;" in migration_sql
+        assert "COMMIT;" in migration_sql
+
+    def test_no_create_index_concurrently(self, migration_sql):
+        """Migration uses IF EXISTS guards via DO blocks; CONCURRENTLY not needed."""
+        upper = migration_sql.upper()
+        assert "CREATE INDEX CONCURRENTLY" not in upper
 
 
 class TestIndexDeclarations:
     @pytest.mark.parametrize("index_name,table,column", EXPECTED_INDEXES)
     def test_index_declared(self, migration_sql, index_name, table, column):
-        # Must be CONCURRENTLY, must be IF NOT EXISTS, must be GIN
-        assert f"CREATE INDEX CONCURRENTLY IF NOT EXISTS {index_name}" in migration_sql
+        # Index is created via a regular CREATE INDEX inside a DO block
+        assert f"CREATE INDEX {index_name}" in migration_sql
         # Must target the right table
         assert f"ON {table}" in migration_sql
         # Must use trgm ops on the right column
         assert f"({column} gin_trgm_ops)" in migration_sql
+        # Must have an IF NOT EXISTS guard via pg_indexes system catalog
+        assert f"indexname = '{index_name}'" in migration_sql
 
     def test_all_indexes_use_gin(self, migration_sql):
         # Every CREATE INDEX in this file must be USING GIN
-        for line in migration_sql.splitlines():
-            if "CREATE INDEX" in line:
-                # Multi-line statement — the USING GIN may be on the next line,
-                # so check surrounding context by finding a contiguous chunk
-                pass  # structural check handled by test_index_declared above
-
+        assert "USING GIN" in migration_sql
         # No B-tree indexes sneaking in
         assert "USING btree" not in migration_sql.lower()
+
+    def test_all_indexes_guarded_for_missing_tables(self, migration_sql):
+        """Each DO block must check that the table exists before indexing.
+
+        Silver hub tables are created by bootstrap procedures, not migrations.
+        A fresh CI database will not have them; the guard makes the migration
+        idempotent and CI-safe.
+        """
+        assert "pg_tables" in migration_sql
 
     def test_no_destructive_operations(self, migration_sql):
         """Should be additive only — no DROP, no TRUNCATE, no ALTER TABLE."""

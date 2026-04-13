@@ -76,10 +76,13 @@ class TestNonTransactionalDetection:
             repo / "src" / "dk_data" / "sql" / "migrations"
             / "225_trgm_indexes_for_search.sql"
         ).read_text()
-        assert is_non_transactional(sql) is True, (
-            "Migration 225 contains CREATE INDEX CONCURRENTLY and must "
-            "be detected; otherwise the runner will fail with "
-            "'cannot run inside a transaction block'"
+        # Migration 225 was rewritten to use regular CREATE INDEX inside
+        # DO blocks with IF EXISTS guards, wrapped in BEGIN/COMMIT.
+        # It no longer uses CONCURRENTLY and runs as a normal transaction.
+        assert is_non_transactional(sql) is False, (
+            "Migration 225 no longer uses CONCURRENTLY — it uses regular "
+            "CREATE INDEX inside DO blocks with IF EXISTS guards and runs "
+            "as a normal transactional migration."
         )
 
     def test_real_migration_215_not_detected(self) -> None:

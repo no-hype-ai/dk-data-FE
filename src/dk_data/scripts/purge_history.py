@@ -17,7 +17,12 @@ from datetime import datetime, timedelta
 # Add parent directory to path for imports
 sys.path.insert(0, str(__file__).rsplit('/scripts', 1)[0])
 
-from ingestion.utils.database import get_cursor, get_connection, init_connection_pool, close_connection_pool
+try:
+    from ingestion.utils.database import get_cursor, get_connection, init_connection_pool, close_connection_pool
+except ImportError:
+    # Allow module import in unit-test environments where the ingestion
+    # stack is unavailable; purge_by_classification() takes conn directly.
+    get_cursor = get_connection = init_connection_pool = close_connection_pool = None  # type: ignore[assignment]
 
 logger = logging.getLogger(__name__)
 

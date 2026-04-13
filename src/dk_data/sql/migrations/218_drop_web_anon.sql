@@ -151,7 +151,7 @@ BEGIN
     --    should remain. DROP ROLE will error if anything was missed — that
     --    is the acid test confirming the revoke chain was complete.
     -- ---------------------------------------------------------------------
-    DROP ROLE IF EXISTS web_anon;
+    DROP ROLE web_anon;
     RAISE NOTICE 'web_anon dropped successfully';
 END $$;
 
