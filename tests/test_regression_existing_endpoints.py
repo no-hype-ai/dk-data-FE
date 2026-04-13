@@ -48,12 +48,18 @@ class TestHealthEndpointRegression:
         assert "status" in data[0]
         assert data[0]["status"] == "ok"
 
-    def test_health_accessible_with_web_anon(self, postgrest_client):
-        """web_anon should still access api.health."""
+    def test_health_rejects_web_anon_jwt(self, postgrest_client):
+        """JWT claiming web_anon role must be rejected — migration 218 dropped
+        the role entirely (US-2 / T077).  PostgREST cannot impersonate a role
+        that no longer exists and returns 4xx."""
         token = create_jwt_token("web_anon")
         headers = {"Authorization": f"Bearer {token}"}
         response = postgrest_client.get("/health", headers=headers)
-        assert response.status_code == 200
+        # 400 Bad Request — PostgREST rejects the JWT because the role is gone
+        assert response.status_code in (400, 401, 403), (
+            f"Expected 4xx for a dead web_anon JWT, got {response.status_code}. "
+            "If web_anon was somehow recreated, migration 218 did not run."
+        )
 
 
 class TestDataCatalogEndpointRegression:
