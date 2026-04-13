@@ -124,9 +124,12 @@ spec:
             readOnlyRootFilesystem: true
             capabilities:
               drop: ["ALL"]
-          # T038: Health probes - TCP for startup reliability, HTTP for application health
-          # NOTE: HTTP probes require api.health view to exist (created by db-init job)
-          #       and web_anon role to have USAGE on schema api + SELECT on api.health
+          # Health probes are TCP-only (not HTTP). The previous comment
+          # claiming HTTP probes required `api.health` + `web_anon` was
+          # stale — all three probes below use tcpSocket, not httpGet, so
+          # there is no dependency on a database view or anonymous role.
+          # Feature 002-external-integration-foundation T085 removed the
+          # stale comment; US-2 dropped the web_anon role in migration 218.
           startupProbe:
             tcpSocket:
               port: 3000

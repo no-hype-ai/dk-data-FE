@@ -9,7 +9,15 @@ metadata:
     app.kubernetes.io/part-of: dk-data
 data:
   PGRST_DB_SCHEMAS: "api,mol_api,mol_silver,mol_gold,hcs_silver,hcs_gold,ind_silver,ind_gold,hcp_silver,hcp_gold,hcs_agents,mol_agents,agents,xenon,meta,mart,scoring,staging,application"
-  PGRST_DB_ANON_ROLE: "web_anon"
+  # Feature 002-external-integration-foundation US-2: PGRST_DB_ANON_ROLE
+  # intentionally unset. Migration 218_drop_web_anon.sql drops the
+  # `web_anon` role. Every PostgREST request must present a valid JWT;
+  # unauthenticated requests return 401 at the protocol level, before
+  # any row-level grant logic runs. k8s liveness/readiness/startup probes
+  # are TCP-only (see deployment.yaml) so they keep working. Rollback:
+  # re-add this line alongside running 218_drop_web_anon_rollback.sql
+  # (see docs/runbooks/rollback-web-anon-drop.md).
+  # PGRST_DB_ANON_ROLE: "web_anon"  # removed — see above
   PGRST_SERVER_PORT: "3000"
   PGRST_LOG_LEVEL: "info"
   PGRST_DB_POOL: "30"
