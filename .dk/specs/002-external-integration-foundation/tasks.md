@@ -213,8 +213,8 @@ SC-026 (client v0.2 published in this repo) and SC-030 (go/no-go before producti
 - [ ] T110 [US12] Wire all 18 `cms_*` metrics from CMS PUF agent code paths (add 15 helpers to `services/data_platform/metrics.py`, call from agent code) — `src/dk_data/agents/cms_puf/**/*.py`, `src/dk_data/services/data_platform/metrics.py`
 - [ ] T111 [P] [US12] Delete dead metrics (**after T158 re-audit confirms they are still dead at Phase 6 start time**): `HTTP_REQUESTS_TOTAL`, `HTTP_REQUEST_DURATION_SECONDS`, `DB_QUERY_DURATION_SECONDS` — `src/dk_data/observability/metrics.py`
 - [ ] T112 [P] [US12] Wire up or delete the remaining dead `DK_*` metrics from the **re-audit output** (NOT the stale list from the brief — T158 regenerates it at Phase 6 start). The 38-count in the brief is a snapshot; actual count may differ — `src/dk_data/observability/metrics.py`, various call sites
-- [ ] T113 [US12] Write `tests/observability/test_metric_coverage.py` — fails CI on dead metrics or undefined dashboard refs — `tests/observability/test_metric_coverage.py` (US-14)
-- [ ] T114 [US12] Write dashboard smoke test — `tests/observability/test_dashboard_smoke.py` (US-14)
+- [x] T113 [US12] Write `tests/observability/test_metric_coverage.py` — fails CI on dead metrics or undefined dashboard refs — `tests/observability/test_metric_coverage.py` (US-14)
+- [x] T114 [US12] Write dashboard smoke test — `tests/observability/test_dashboard_smoke.py` (US-14)
 - [ ] T114a [MEDIUM] Prometheus cardinality check: after US-12 cleanup, calculate estimated cardinality of live metrics. Alert if any metric exceeds 1K cardinality combinations. Add to `tests/observability/test_metric_coverage.py` — `tests/observability/test_metric_cardinality.py`
 - [ ] T115 [US12] Manual label-selector audit across all 5 dashboards — document outcomes in `docs/reports/dashboard-audit.md`
 - [x] T116 [US12] Add three-way binding principle to `.dk/memory/principles.md` — `.dk/memory/principles.md`
@@ -250,7 +250,7 @@ SC-026 (client v0.2 published in this repo) and SC-030 (go/no-go before producti
 - [x] T130 [US20] `kubectl kustomize k8s/apps/cronjobs/base/` builds clean after the deletions. CronJob resource count: 125 → 124 (only one was registered; the other 24 files were unregistered dead weight). — verified
 - [x] T131 [US20] Wrote migration `220_align_source_naming.sql` — idempotent UPDATE of 5 source_name values in `meta.backfill_state` (epo_ops→epo_patents, cochrane→cochrane_reviews, ema_mol→ema, hta_bodies→hta_decisions, hrsa→hrsa_shortage_areas). Collision guard: skips target exists, warns if both old+new exist. ANALYZE after updates. chembl_molecules deferred per Non-Goals. — `src/dk_data/sql/migrations/220_align_source_naming.sql`
 - [ ] T132 [US20] Update Python ingestion modules + remaining cronjob YAMLs to use canonical source names — `src/dk_data/ingestion/sources/`, `k8s/apps/cronjobs/base/`
-- [ ] T133 [US20] Update `build_model_lineage.py` if subdomain lookup references any old names — `src/dk_data/ingestion/utils/build_model_lineage.py`
+- [x] T133 [US20] Update `build_model_lineage.py` if subdomain lookup references any old names — `src/dk_data/ingestion/utils/build_model_lineage.py`
 - [ ] T134 [US20] Update `consumers.yaml` allowlists if any referenced old source names — `k8s/apps/metering-proxy/base/configmap.yaml`
 - [ ] T135 [US20] Add CI check enforcing naming consistency (backfill_state ↔ raw tables ↔ Python modules). **Blocks on T131–T134 complete** — the check must pass on a green state before it can be enforced — `.github/workflows/ci.yaml`
 - [ ] T136 [US20] Close GitHub issue [#277](https://github.com/data-kinetic/cd-data-FE/issues/277)
@@ -292,7 +292,7 @@ SC-026 (client v0.2 published in this repo) and SC-030 (go/no-go before producti
 
 - [ ] T149 [CRITICAL / D1] Adapter v0.2 type regeneration: immediately after migration 216 lands, run type-gen against the updated PostgREST OpenAPI; publish `@datakinetic/dk-data-client` v0.2.0 with the new types. Consumer apps bump via their own PR cycle — `packages/dk-data-client/.github/workflows/release.yml`
 - [ ] T150 [D1] Client `serverInfo()` schema fingerprint check must warn on mismatch, NOT throw. Warn-only behavior preserves v0.1 consumers running against post-migration dk-data for the transition window — `packages/dk-data-client/typescript/src/version.ts`, `packages/dk-data-client/python/dk_data_client/client.py`
-- [ ] T151 [D1] Document the v0.1 → v0.2 transition window in `docs/consumer-onboarding.md`: expect fingerprint warnings between migration 216 landing and consumer v0.2 upgrade. Target window ≤ 7 days — `docs/consumer-onboarding.md`
+- [x] T151 [D1] Document the v0.1 → v0.2 transition window in `docs/consumer-onboarding.md`: expect fingerprint warnings between migration 216 landing and consumer v0.2 upgrade. Target window ≤ 7 days — `docs/consumer-onboarding.md`
 
 ### 10b — Backfill orchestrator feature verification
 

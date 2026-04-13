@@ -172,6 +172,28 @@ Keys rotate every 90 days or immediately on a suspected leak.
 
 This two-step process gives the consumer a graceful cutover without a 401 window.
 
+## dk-data-client v0.1 → v0.2 transition window
+
+When migration 216 lands and `mol_api.competitive_scores` goes live, the PostgREST OpenAPI changes shape. The `@datakinetic/dk-data-client` package regenerates its typed module fingerprints against the updated OpenAPI and ships as v0.2.0 (tracked in T149).
+
+**Expected consumer behavior during the transition window**:
+
+- Consumers still running `v0.1.x` will continue to function against the post-migration dk-data. The client's `serverInfo()` schema fingerprint check emits a **warning** (`serverInfo.schemaMismatch`) but does not throw (T150). This means the `dk_data_client_schema_mismatch_total` Prometheus counter will tick up for every `v0.1.x` consumer until they upgrade.
+- Consumers upgrade to `v0.2.0` via their own PR cycle. They need no other change — the new types compile against both the pre-migration and post-migration schema.
+- **Target transition window: ≤ 7 days** between migration 216 landing in production and every consumer running `v0.2.0`. Past 7 days, page the consumer's owner.
+
+**Why warn instead of throw**: a strict throw would turn migration 216 into a coordinated hard cutover — every consumer would need to ship `v0.2.0` at the exact moment the migration lands, or their pods would crash on startup. Warning-only gives each consumer squad a window to schedule the upgrade without blocking the migration.
+
+**Monitoring the window**: watch the `dk_data_client_schema_mismatch_total{consumer="..."}` counter in Grafana. When it goes flat (no new warnings for 1 hour), every consumer has upgraded and you can mark T151 complete.
+
+If a consumer is still on `v0.1.x` after 7 days, the decision is:
+
+| Situation | Action |
+|---|---|
+| Consumer is actively maintained | Page the owner, ask them to ship v0.2.0 |
+| Consumer is abandoned | Retire it — see "Decommissioning a consumer" below |
+| v0.2.0 broke something for the consumer | File a bug, keep them on v0.1.x, roll a v0.2.1 |
+
 ## Decommissioning a consumer
 
 When a consumer is retired:
