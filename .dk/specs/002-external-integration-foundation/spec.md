@@ -125,39 +125,43 @@ Then the internal consumer is scoped to an explicit list of schemas and any new 
 
 ---
 
-### US-4: Complete the molecule data surface that consumers already call (P1)
+### US-4: Add the one missing gold-derived aggregation (competitive scores) (P1) — REVISED
 
-**As a** consuming-app developer, **I want to** call every documented molecule endpoint (boxed warnings, contraindications, competitive scores, companies, publications) and receive real data, **so that** my admin UI stops showing "not found" for resources that the rest of the system implies should exist.
+**As a** consuming-app developer, **I want to** receive a numeric competitive positioning score for a molecule **so that** my admin UI can rank molecules comparatively without re-deriving the scoring formula on the consumer side.
+
+**Scope correction (2026-04-13):** The original US-4 listed 5 "missing" views (`boxed_warnings`, `contraindications`, `competitive_scores`, `companies`, `publications`). Inspection of the silver layer showed that **4 of the 5 are redundant with existing silver tables**:
+
+- **Boxed warnings** → `mol_silver.drug_labels.boxed_warning` (inline column); consumer filters with `?boxed_warning=not.is.null`
+- **Contraindications** → `mol_silver.drug_labels.contraindications` (inline column); consumer filters directly
+- **Companies** → `mol_silver.companies` (full silver hub with company_identifiers + company_names already granted to analyst and already exposed via `Accept-Profile: mol_silver`)
+- **Publications** → `mol_silver.publications` (unified) + `mol_silver.pubmed_articles` (per-source); already exposed and granted
+
+Only `mol_api.competitive_scores` remains, because it is a new derived aggregation (scoring formula on top of `mol_gold.competitive_landscape`) and is not a rename of anything that exists. Migration 216 creates only this one view.
 
 **Acceptance Scenarios:**
 
 ```gherkin
-Given dk-data has molecule data ingested
-When a consumer requests boxed warnings for a specific molecule
-Then a structured response is returned with the warning text and severity
+Given dk-data has competitive landscape data for a molecule
+When a consumer queries mol_api.competitive_scores for that molecule
+Then a numeric competitive_score is returned along with the underlying max_phase, active_trials, and indications
 
-Given dk-data has molecule data ingested
-When a consumer requests contraindications for a specific molecule
-Then a structured response is returned
+Given a consumer wants boxed warnings for a molecule
+When the consumer queries mol_silver.drug_labels directly with Accept-Profile: mol_silver and a filter on boxed_warning
+Then the structured warning text is returned without needing a dedicated mol_api view
 
-Given dk-data has competitive landscape data for an indication
-When a consumer requests competitive scores for a molecule in that indication
-Then numeric scores are returned
+Given a consumer wants publications for a molecule
+When the consumer queries mol_silver.publications directly with a molecule_id filter
+Then a unified PubMed + OpenAlex result is returned without needing a mol_api aggregation view
 
-Given dk-data has company hub data
-When a consumer requests a company by identifier
-Then a flattened company profile with identifiers and names is returned
-
-Given dk-data has publication data ingested
-When a consumer requests publications for a molecule
-Then a unified response with PubMed and OpenAlex entries is returned — the caller does not need to call two different endpoints
+Given the silver tables referenced above
+When the consumer inspects the PostgREST schema catalog
+Then mol_silver is already in PGRST_DB_SCHEMAS and analyst has SELECT on all relevant tables — no new grants required for this US beyond what already exists
 ```
 
 **Edge Cases:**
 
-- A molecule has no boxed warning — the endpoint returns an empty structured response, not a not-found error.
-- A molecule exists in silver but has no gold-layer aggregation — the endpoint returns what's available and flags the gap.
-- The publications endpoint encounters a row with a missing canonical field (DOI, PMID) — the row is still returned with null for the missing field.
+- A molecule has no row in `mol_gold.competitive_landscape` (never entered a clinical phase) — the scores view returns no row, consumer treats absence as "no competitive data"
+- Consumer queries `mol_silver.drug_labels` expecting a specific filter syntax — document the PostgREST filter operators in the consumer onboarding guide (already covered by US-16)
 
 ---
 
@@ -189,32 +193,54 @@ Then it is served from the client cache without contacting dk-data
 
 ---
 
-### US-6: Consistent domain-prefix naming across all data surfaces (P2)
+### US-6: Deprecate the 10 redundant api.* CI views; consumers read silver directly (P2) — REVISED
 
-**As a** dk-data developer, **I want to** ensure every publication, regulatory, patent, and news surface is named with its canonical domain prefix, **so that** the schema discipline used throughout the codebase is not broken by a legacy set of unprefixed endpoints.
+**Scope correction (2026-04-13):** The original US-6 proposed renaming 10 unprefixed `api.*` CI views (created by migration 061) to domain-prefixed `mol_api.*` and `ip_api.*` schemas, preserving the same data shape. Inspection of the silver layer found that **every one of those 10 views has a canonical silver-layer table that already exists, is already materialized by SQLMesh, is already in `PGRST_DB_SCHEMAS`, and is already granted to `analyst` via `post_sqlmesh/055_postgrest_hub_grants.sql`**. Renaming the api.* views to mol_api/ip_api would add another layer of indirection over data that's already available at the silver layer.
+
+The corrected US-6: **mark the api.* CI views as deprecated and point consumers at the silver tables that already exist.** A follow-up migration ~30 days after consumer cutover drops the api.* views entirely.
+
+**Silver coverage (verified):**
+
+| Legacy `api.*` view | Silver-layer canonical (already exposed + granted) |
+|---|---|
+| `api.pubmed_publications` | `mol_silver.pubmed_articles` + `mol_silver.publications` (unified) |
+| `api.openalex_publications` | `mol_silver.publications` (unified) |
+| `api.cochrane_reviews` | `mol_silver.cochrane_reviews` |
+| `api.medical_news` | `mol_silver.medical_news` + `mol_silver.news_signals` |
+| `api.journal_articles` | `mol_silver.journal_rss` |
+| `api.ema_regulatory_decisions` | `mol_silver.ema_regulatory` + `mol_silver.regulatory_decisions` + `mol_silver.ema_regulatory_docs` |
+| `api.hta_decisions` | `mol_silver.nice_hta` |
+| `api.sec_filings` | `mol_silver.financial_data` + `mol_silver.company_financials` |
+| `api.uspto_patents` | `ip_silver.patents` |
+| `api.epo_patents` | `ip_silver.patents` (unified IP hub) |
+
+**As a** dk-data maintainer, **I want to** mark the legacy api.* CI views as deprecated and direct consumers to the silver-layer canonical tables that already exist, **so that** the codebase has one canonical source per domain instead of a legacy presentation layer duplicating data already in silver.
 
 **Acceptance Scenarios:**
 
 ```gherkin
-Given the 10 unprefixed publication and regulatory surfaces exist in the legacy namespace
-When the rename completes
-Then each surface is available under its canonical domain-prefixed name
-And the legacy unprefixed name continues to work as a deprecated alias
+Given migration 215 has landed
+When a developer queries the catalog for the api.* CI views
+Then every view has a COMMENT ON VIEW marking it as deprecated and pointing at the mol_silver / ip_silver replacement
 
-Given consumers have migrated to the prefixed names
-When the follow-up cleanup runs
-Then the deprecated aliases are removed
-And no consumer references the legacy names
+Given a consumer still using api.pubmed_publications after migration 215 lands
+When the consumer makes the same query against mol_silver.pubmed_articles with Accept-Profile: mol_silver
+Then the response is equivalent (same underlying data, possibly more columns available)
 
-Given a new surface is added in the future
-When a reviewer checks the pull request
-Then the surface is in a domain-prefixed namespace or explicitly justified as a cross-domain exception
+Given the 30-day deprecation observation window has passed
+And telemetry shows no consumer is still calling the api.* CI views
+When the follow-up cleanup migration runs
+Then the 10 api.* CI views are dropped entirely and the silver tables become the only canonical source
+
+Given a developer proposing to add a new presentation wrapper view
+When a reviewer checks it
+Then the reviewer confirms the same data is not already in silver before approving (to avoid recreating the api.* redundancy)
 ```
 
 **Edge Cases:**
 
-- A consumer is still referencing the legacy unprefixed name after the rename — the deprecated alias serves the request but the access is logged for migration follow-up.
-- A surface spans multiple domains — the canonical home is documented and cross-linked.
+- A silver table has a different column shape than the corresponding api view (e.g., silver publications has more columns, or names them differently) — the consumer onboarding doc (US-16) lists the column-level differences per source.
+- A consumer queries the deprecated api.* view during the 30-day window — the query still works (the view is deprecated, not dropped); telemetry captures the call for migration tracking.
 
 ---
 
