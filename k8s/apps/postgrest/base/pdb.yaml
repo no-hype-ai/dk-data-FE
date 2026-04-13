@@ -1,0 +1,17 @@
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: postgrest-pdb
+  labels:
+    app.kubernetes.io/name: dk-data
+    app.kubernetes.io/component: postgrest
+    app.kubernetes.io/part-of: dk-data
+spec:
+  # T068a: PostgREST serves every external read after US-2. At least
+  # one replica must remain available during node drains and rolling
+  # updates so reads never hit a hard outage window.
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: dk-data
+      app.kubernetes.io/component: postgrest

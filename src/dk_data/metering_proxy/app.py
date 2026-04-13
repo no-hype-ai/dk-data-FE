@@ -8,7 +8,9 @@ Architecture:
     Consumer -> metering-proxy:3001 -> PostgREST:3000 (localhost)
 """
 
+import os
 import time
+import uuid
 from contextlib import asynccontextmanager
 
 import structlog
@@ -16,6 +18,7 @@ from fastapi import FastAPI, Request, Response
 from fastapi.responses import JSONResponse, PlainTextResponse
 from prometheus_client import generate_latest, CONTENT_TYPE_LATEST
 
+from dk_data.metering_proxy.audit import AuditWriter
 from dk_data.metering_proxy.auth import ConsumerKeyStore
 from dk_data.metering_proxy.metrics import (
     ACTIVE_CONSUMERS,
@@ -28,6 +31,10 @@ from dk_data.metering_proxy.metrics import (
 )
 from dk_data.metering_proxy.proxy import close_client, proxy_request
 from dk_data.metering_proxy.rate_limiter import RateLimiter
+from dk_data.metering_proxy.rate_limiter_redis import (
+    RedisRateLimiter,
+    build_redis_rate_limiter,
+)
 from dk_data.metering_proxy.schemas import (
     BYPASS_PATHS,
     check_schema_access,
@@ -39,20 +46,48 @@ logger = structlog.get_logger(__name__)
 
 # Global state
 key_store = ConsumerKeyStore()
-rate_limiter = RateLimiter()
+rate_limiter: RateLimiter | RedisRateLimiter = RateLimiter()
+audit_writer = AuditWriter()
 _seen_consumers: set[str] = set()
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Application lifespan: startup and shutdown."""
+    global rate_limiter
     setup_logging(service_name="metering-proxy")
     key_store.load()
+
+    # Try to upgrade to the Redis-backed rate limiter if the proxy is
+    # running with ≥2 replicas (see T024d). Fall back to in-memory on
+    # any failure — never block startup on Redis.
+    redis_url = os.getenv("METERING_PROXY_REDIS_URL")
+    if redis_url:
+        redis_limiter = await build_redis_rate_limiter(redis_url)
+        if redis_limiter is not None:
+            rate_limiter = redis_limiter
+            logger.info("rate_limiter_backend", backend="redis", url=redis_url)
+        else:
+            logger.warning(
+                "rate_limiter_redis_unavailable",
+                fallback="in-memory",
+                url=redis_url,
+            )
+    else:
+        logger.info("rate_limiter_backend", backend="in-memory")
+
+    # Start the async audit writer (T024a/b/b1)
+    await audit_writer.start()
+
     logger.info(
         "metering_proxy_started",
         consumers=key_store.consumer_count,
+        audit_sink=audit_writer.sink,
     )
     yield
+    await audit_writer.stop()
+    if isinstance(rate_limiter, RedisRateLimiter):
+        await rate_limiter.close()
     await close_client()
     logger.info("metering_proxy_stopped")
 
@@ -103,6 +138,10 @@ async def reload_config():
     return {"status": "ok", "consumers": key_store.consumer_count}
 
 
+def _ms(since: float) -> int:
+    return int((time.monotonic() - since) * 1000)
+
+
 @app.api_route(
     "/{path:path}",
     methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS", "HEAD"],
@@ -112,6 +151,7 @@ async def proxy_handler(request: Request, path: str):
     start_time = time.monotonic()
     full_path = f"/{path}"
     method = request.method
+    request_id = request.headers.get("x-request-id") or uuid.uuid4().hex
 
     # Bypass auth for health/metrics/ready paths
     if full_path in BYPASS_PATHS:
@@ -124,6 +164,16 @@ async def proxy_handler(request: Request, path: str):
         REQUESTS_TOTAL.labels(
             consumer="anonymous", schema="unknown", method=method, status="401"
         ).inc()
+        audit_writer.emit(
+            consumer_id="anonymous",
+            method=method,
+            path=full_path,
+            schema="unknown",
+            status_code=401,
+            latency_ms=_ms(start_time),
+            request_id=request_id,
+            extra={"reason": "missing_token"},
+        )
         return JSONResponse(
             status_code=401,
             content={
@@ -140,6 +190,16 @@ async def proxy_handler(request: Request, path: str):
         REQUESTS_TOTAL.labels(
             consumer="anonymous", schema="unknown", method=method, status="401"
         ).inc()
+        audit_writer.emit(
+            consumer_id="anonymous",
+            method=method,
+            path=full_path,
+            schema="unknown",
+            status_code=401,
+            latency_ms=_ms(start_time),
+            request_id=request_id,
+            extra={"reason": "invalid_key"},
+        )
         logger.warning("auth_failed", reason="invalid_key")
         return JSONResponse(
             status_code=401,
@@ -171,6 +231,16 @@ async def proxy_handler(request: Request, path: str):
                 method=method,
                 status="403",
             ).inc()
+            audit_writer.emit(
+                consumer_id=consumer_alias,
+                method=method,
+                path=full_path,
+                schema=target_schema,
+                status_code=403,
+                latency_ms=_ms(start_time),
+                request_id=request_id,
+                extra={"reason": "schema_denied"},
+            )
             return JSONResponse(
                 status_code=403,
                 content={
@@ -182,9 +252,15 @@ async def proxy_handler(request: Request, path: str):
     schema_label = target_schema or "default"
 
     # --- Rate Limiting ---
-    allowed, remaining, reset_secs = rate_limiter.check(
-        consumer_alias, consumer.rpm_limit
-    )
+    # Both in-memory (sync) and Redis-backed (async) limiters land here.
+    if isinstance(rate_limiter, RedisRateLimiter):
+        allowed, remaining, reset_secs = await rate_limiter.check(
+            consumer_alias, consumer.rpm_limit
+        )
+    else:
+        allowed, remaining, reset_secs = rate_limiter.check(
+            consumer_alias, consumer.rpm_limit
+        )
     if not allowed:
         RATE_LIMIT_REJECTIONS_TOTAL.labels(consumer=consumer_alias).inc()
         REQUESTS_TOTAL.labels(
@@ -197,6 +273,16 @@ async def proxy_handler(request: Request, path: str):
             "rate_limit_exceeded",
             consumer=consumer_alias,
             rpm_limit=consumer.rpm_limit,
+        )
+        audit_writer.emit(
+            consumer_id=consumer_alias,
+            method=method,
+            path=full_path,
+            schema=schema_label,
+            status_code=429,
+            latency_ms=_ms(start_time),
+            request_id=request_id,
+            extra={"reason": "rate_limited", "rpm_limit": consumer.rpm_limit},
         )
         return JSONResponse(
             status_code=429,
@@ -228,6 +314,16 @@ async def proxy_handler(request: Request, path: str):
     REQUEST_DURATION_SECONDS.labels(
         consumer=consumer_alias, schema=schema_label
     ).observe(duration)
+
+    audit_writer.emit(
+        consumer_id=consumer_alias,
+        method=method,
+        path=full_path,
+        schema=schema_label,
+        status_code=response.status_code,
+        latency_ms=int(duration * 1000),
+        request_id=request_id,
+    )
 
     return response
 

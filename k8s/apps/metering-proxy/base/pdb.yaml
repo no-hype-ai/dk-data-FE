@@ -1,0 +1,17 @@
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: metering-proxy-pdb
+  labels:
+    app.kubernetes.io/name: dk-data
+    app.kubernetes.io/component: metering-proxy
+    app.kubernetes.io/part-of: dk-data
+spec:
+  # T024d: after US-2 ships, the metering proxy is the ONLY path into
+  # dk-data. At least one replica must remain available during any
+  # voluntary disruption (node drain, cluster upgrade, rolling restart).
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: dk-data
+      app.kubernetes.io/component: metering-proxy

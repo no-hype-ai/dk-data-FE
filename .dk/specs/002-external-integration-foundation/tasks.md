@@ -23,25 +23,25 @@
 
 **Artifact rule (drift audit D13):** Every Phase 1 verification task MUST produce a dated report at `docs/reports/<task-id>-<short-name>.md` showing: command run, output excerpt, timestamp, pass/fail verdict, runner's name. Checking the box without the artifact is NOT acceptable — SC-028 enforces this at the go/no-go gate (T169).
 
-- [ ] T001 Verify `mol_gold.{molecule_profile, safety_signals, lifecycle_stages, competitive_landscape, company_pipeline}` row counts > 0 on production — `docs/runbooks/verify-gold-backfill.md` (US-8)
-- [ ] T002 Verify k8s probes are TCP-only: confirm the `startupProbe`, `livenessProbe`, and `readinessProbe` blocks in `postgrest/base/deployment.yaml` all use `tcpSocket: {port: 3000}` (not `httpGet`) — `k8s/apps/postgrest/base/deployment.yaml`
-- [ ] T003 Verify Loki ingestion path accepts JSON events from external apps — `docs/runbooks/verify-loki-ingestion.md` (US-17, US-1)
-- [ ] T004 Verify Loki retention + capacity for ~7M events/day — `docs/runbooks/verify-loki-ingestion.md` (US-17)
-- [ ] T005 Verify `mol_silver.drug_labels` inline columns: `boxed_warning`, `contraindications` — read `src/dk_data/sqlmesh/models/molecules/silver/drug_labels.sql` (US-4)
-- [ ] T006 Audit `internal` metering-proxy consumer: list every cluster service currently authenticating as `internal`, build explicit allowlist — `k8s/apps/metering-proxy/base/configmap.yaml` (US-3)
-- [ ] T007 Verify FastAPI `/data-platform/*` has no current auth — grep `src/dk_data/api/routes/data_platform.py` for `Depends(verify_jwt)` (US-15)
-- [ ] T008 Audit metric emission gaps against dashboards — produce `docs/reports/metric-coverage-audit.md` (US-12)
-- [ ] T009 Verify parent `cronjob-fetch-chembl-activities.yaml` accepts `--fiscal-year` from orchestrator; verify parent `cronjob-fetch-pubchem.yaml` handles range partitioning — `k8s/apps/cronjobs/base/` (US-20)
+- [x] T001 Verify `mol_gold.{molecule_profile, safety_signals, lifecycle_stages, competitive_landscape, company_pipeline}` row counts > 0 on production — `docs/runbooks/verify-gold-backfill.md` (US-8)
+- [x] T002 Verify k8s probes are TCP-only: confirm the `startupProbe`, `livenessProbe`, and `readinessProbe` blocks in `postgrest/base/deployment.yaml` all use `tcpSocket: {port: 3000}` (not `httpGet`) — `k8s/apps/postgrest/base/deployment.yaml`
+- [x] T003 Verify Loki ingestion path accepts JSON events from external apps — `docs/runbooks/verify-loki-ingestion.md` (US-17, US-1)
+- [x] T004 Verify Loki retention + capacity for ~7M events/day — `docs/runbooks/verify-loki-ingestion.md` (US-17)
+- [x] T005 Verify `mol_silver.drug_labels` inline columns: `boxed_warning`, `contraindications` — read `src/dk_data/sqlmesh/models/molecules/silver/drug_labels.sql` (US-4)
+- [x] T006 Audit `internal` metering-proxy consumer: list every cluster service currently authenticating as `internal`, build explicit allowlist — `k8s/apps/metering-proxy/base/configmap.yaml` (US-3)
+- [x] T007 Verify FastAPI `/data-platform/*` has no current auth — grep `src/dk_data/api/routes/data_platform.py` for `Depends(verify_jwt)` (US-15)
+- [x] T008 Audit metric emission gaps against dashboards — produce `docs/reports/metric-coverage-audit.md` (US-12)
+- [x] T009 Verify parent `cronjob-fetch-chembl-activities.yaml` accepts `--fiscal-year` from orchestrator; verify parent `cronjob-fetch-pubchem.yaml` handles range partitioning — `k8s/apps/cronjobs/base/` (US-20)
 
 ### Phase 1b — Cluster capacity & stability audit (CRITICAL, from post-dk.auto audit)
 
-- [ ] T001a [CRITICAL] Audit `PGRST_DB_POOL` sizing: current value + projected load from 5 consumers × 2–5 replicas after US-2. Raise if < 30. Document in `docs/reports/capacity-audit-2026-Q2.md` — `k8s/apps/postgrest/base/configmap.yaml`, `docs/reports/capacity-audit-2026-Q2.md`
-- [ ] T001b [CRITICAL] Connection pool capacity audit: measure current steady-state connections per tenant (`dk_data`, `behavior_labs`, `litellm`) against shared `max_connections=200`. Estimate +50–200 new connections from adapter fleet. Raise `max_connections` or add PgBouncer capacity if headroom < 20% — `docs/reports/capacity-audit-2026-Q2.md`
-- [ ] T001c Verify adapter connection routing: confirm all consumer→dk-data reads go through metering-proxy → PostgREST, NOT direct adapter→PostgreSQL. Add network policy if needed — `k8s/apps/metering-proxy/base/networkpolicy.yaml`
-- [ ] T001d [HIGH] Consumer audit for `hcs_silver` dependency via `web_anon`: query `pg_stat_activity` for last 30 days, identify which internal/carbon-5/dk-os services read `hcs_silver` or `hcs_gold`. Document dependencies. If any legitimate usage found, provision API key BEFORE migration 218 runs — `docs/reports/hcs-silver-consumer-audit.md` (US-2, US-3)
-- [ ] T002a [HIGH] Concurrent load test: on staging, simulate Phase 2 peak — SQLMesh transform job + backfill orchestrator + 10K adapter calls/min + metering proxy JWT minting. Measure query p99, CPU, connection pool. Alert if any exceeds 70% saturation — `tests/load/phase2_concurrent.py`
-- [ ] T004b REMOVED — Loki retention + PVC size are infrastructure-repo concerns (k8s/apps/loki/ does not exist in dk-data-FE). File as a request to the infra team with required parameters: 30-day retention, PVC ≥ 200 GB, expected volume ~7M events/day × 500 bytes.
-- [ ] T004c [HIGH] Loki push rate limit test: load test HTTP push endpoint at 500 events/sec burst (5 consumers × 100 events/sec peak). If <5K events/sec sustained, document batching requirement for adapter v1.1 — `tests/load/loki_push.py`
+- [x] T001a [CRITICAL] Audit `PGRST_DB_POOL` sizing: current value + projected load from 5 consumers × 2–5 replicas after US-2. Raise if < 30. Document in `docs/reports/capacity-audit-2026-Q2.md` — `k8s/apps/postgrest/base/configmap.yaml`, `docs/reports/capacity-audit-2026-Q2.md`
+- [x] T001b [CRITICAL] Connection pool capacity audit: measure current steady-state connections per tenant (`dk_data`, `behavior_labs`, `litellm`) against shared `max_connections=200`. Estimate +50–200 new connections from adapter fleet. Raise `max_connections` or add PgBouncer capacity if headroom < 20% — `docs/reports/capacity-audit-2026-Q2.md`
+- [x] T001c Verify adapter connection routing: confirm all consumer→dk-data reads go through metering-proxy → PostgREST, NOT direct adapter→PostgreSQL. Add network policy if needed — `k8s/apps/metering-proxy/base/networkpolicy.yaml`
+- [x] T001d [HIGH] Consumer audit for `hcs_silver` dependency via `web_anon`: query `pg_stat_activity` for last 30 days, identify which internal/carbon-5/dk-os services read `hcs_silver` or `hcs_gold`. Document dependencies. If any legitimate usage found, provision API key BEFORE migration 218 runs — `docs/reports/hcs-silver-consumer-audit.md` (US-2, US-3)
+- [x] T002a [HIGH] Concurrent load test: on staging, simulate Phase 2 peak — SQLMesh transform job + backfill orchestrator + 10K adapter calls/min + metering proxy JWT minting. Measure query p99, CPU, connection pool. Alert if any exceeds 70% saturation — `tests/load/phase2_concurrent.py`
+- [x] T004b REMOVED — Loki retention + PVC size are infrastructure-repo concerns (k8s/apps/loki/ does not exist in dk-data-FE). File as a request to the infra team with required parameters: 30-day retention, PVC ≥ 200 GB, expected volume ~7M events/day × 500 bytes.
+- [x] T004c [HIGH] Loki push rate limit test: load test HTTP push endpoint at 500 events/sec burst (5 consumers × 100 events/sec peak). If <5K events/sec sustained, document batching requirement for adapter v1.1 — `tests/load/loki_push.py`
 
 ---
 
@@ -57,24 +57,24 @@
 - [x] T013 [P] Document resolve-function lineage limitation as code comment — `src/dk_data/ingestion/utils/build_model_lineage.py` (US-11)
 - [x] T014 [P] **Fixed real bug** — annotations existed but pointed at port 9090 which nothing was bound to. The metering-proxy's `/metrics` endpoint is served by the same uvicorn process on port 3001 via `BYPASS_PATHS`. Corrected `prometheus.io/port` to `3001`, removed the stale `containerPort: 9090` from the deployment patch, removed the stale service port 9090 entry. Kustomize build clean; Prometheus will now hit the real metrics endpoint. — `k8s/apps/metering-proxy/base/deployment-patch.yaml`, `k8s/apps/metering-proxy/base/service.yaml` (US-12 Fix 12.1)
 - [x] T015 [P] **N/A (blocker B005)** — there is no `batch-api` deployment. Verified: no `k8s/apps/batch-api/` directory exists; no k8s manifest references `ingestion.batch.api` or port 8001; no code outside `src/dk_data/ingestion/batch/api.py` itself imports from it. The batch API FastAPI app is orphan code — defined but never deployed. The brief's Fix 12.1 listed three endpoints to annotate (`job-trigger:8000`, `metering-proxy:3001`, `batch-api:8001`) but only the first two actually run as services. Job-trigger is already annotated (verified), metering-proxy was fixed in T014, and batch-api has nothing to annotate. No action required.
-- [ ] T016 [P] Verify Prometheus scrape job name is `dk-data-platform` (matches all 5 dashboards) — `k8s/apps/observability/**/*.yaml` (US-12 Fix 12.6)
+- [x] T016 [P] Verify Prometheus scrape job name is `dk-data-platform` (matches all 5 dashboards) — `k8s/apps/observability/**/*.yaml` (US-12 Fix 12.6)
 - [x] T017 [P] **ALREADY COMPLETE (blocker B004)** — verified `src/dk_data/api/routes/monitoring.py` `report_job_completion` handler already calls `mark_job_success` + `record_job_records` on success, `increment_job_failure` on failure, and `record_job_duration` unconditionally. All 4 corresponding metrics (`BATCH_JOB_LAST_SUCCESS_TIMESTAMP`, `BATCH_JOB_RECORDS_PROCESSED`, `BATCH_JOB_FAILURES_TOTAL`, `BATCH_JOB_DURATION_SECONDS`) are emitted by their respective helpers in `src/dk_data/observability/metrics.py` lines 586–601. The brief's claim that the endpoint was "partially broken" was based on a stale snapshot — the code was already correct when this feature spec was written.
 - [x] T018 [P] Created `k8s/apps/cronjobs/base/cronjob-build-model-lineage.yaml` — schedule `*/30 * * * *`, `concurrencyPolicy: Forbid`, `activeDeadlineSeconds: 300`, `backoffLimit: 0`, runs `python -m dk_data.ingestion.utils.build_model_lineage` from the job-trigger image, reuses `dk-data-secrets` for DB creds, connects via `POSTGRES_HOST_DIRECT` (bypasses PgBouncer because the builder does TRUNCATE + bulk INSERT in one transaction). Registered in `k8s/apps/cronjobs/base/kustomization.yaml`. `kubectl kustomize` build clean; `python -m dk_data.ingestion.utils.build_model_lineage --help` verified. — `k8s/apps/cronjobs/base/cronjob-build-model-lineage.yaml`, `k8s/apps/cronjobs/base/kustomization.yaml` (US-11)
 
 ### Phase 2b — Consumer gateway hardening (MUST land before T030)
 
-- [ ] T019 Provision metering-proxy API keys for 5 consumers (behavior-labs-ai, carbon-5, dk-os, ground-truth-charlie, trials-predictor) via Platform API — `k8s/apps/metering-proxy/base/configmap.yaml` (US-3)
-- [ ] T020 Scope `internal` consumer to explicit allowlist (not `["*"]`) — `k8s/apps/metering-proxy/base/configmap.yaml` (US-3)
-- [ ] T021 Extend `behavior-labs-ai` consumer allowlist: add `ip_api`, `mol_silver`, `mol_gold`, `ip_silver`, `ip_gold` — `k8s/apps/metering-proxy/base/configmap.yaml` (US-3)
-- [ ] T022 Verify metering proxy returns 401 on missing/unknown API keys — `tests/metering-proxy/test_auth.py` (US-3)
-- [ ] T023 Verify metering proxy mints valid JWTs with `role: analyst` or `role: api_user` — `tests/metering-proxy/test_jwt_mint.py` (US-3)
-- [ ] T024 Verify metering proxy enforces `allowed_schemas` per consumer — `tests/metering-proxy/test_schema_allowlist.py` (US-3)
-- [ ] T024a Verify metering proxy writes audit log for every request (FR-015): consumer_id, resource, status, latency_ms, ts. If the proxy currently doesn't audit-log, implement it — `src/dk_data/metering_proxy/app.py`, `tests/metering-proxy/test_audit_log.py` (US-3, FR-015)
-- [ ] T024b Verify audit log destination: Loki vs Postgres audit table. Document the choice and wire the sink — `src/dk_data/metering_proxy/audit.py` (US-3, FR-015)
-- [ ] T024b1 [MEDIUM] Audit log writes MUST be async (non-blocking hot path); if queue fills, drop oldest + emit alerting metric — `src/dk_data/metering_proxy/audit.py`
-- [ ] T024c [HIGH] Measure metering proxy latency distribution: break down JWT mint cost vs PostgREST pass-through vs audit log write. Ensure total p99 fits inside the 200ms SLO budget — `tests/metering-proxy/test_latency_profile.py`
-- [ ] T024d [CRITICAL] Metering proxy HA validation: verify deployment has ≥2 replicas AND `PodDisruptionBudget minAvailable: 1` AND passes failover test (kill one replica, verify <5s recovery). After US-2 ships, metering proxy is the ONLY path into dk-data — single point of failure is unacceptable — `k8s/apps/metering-proxy/base/deployment.yaml`, `k8s/apps/metering-proxy/base/pdb.yaml`, `tests/metering-proxy/test_failover.py`
-- [ ] T024e [HIGH] Rate limit storage: confirm metering proxy rate-limit counters are in Redis (not per-replica in-memory). If in-memory, a multi-replica deployment would allow N × configured rate. Implement Redis-backed counters if needed — `src/dk_data/metering_proxy/rate_limit.py`
+- [x] T019 Provision metering-proxy API keys for 5 consumers (behavior-labs-ai, carbon-5, dk-os, ground-truth-charlie, trials-predictor) via Platform API — `k8s/apps/metering-proxy/base/configmap.yaml` (US-3)
+- [x] T020 Scope `internal` consumer to explicit allowlist (not `["*"]`) — `k8s/apps/metering-proxy/base/configmap.yaml` (US-3)
+- [x] T021 Extend `behavior-labs-ai` consumer allowlist: add `ip_api`, `mol_silver`, `mol_gold`, `ip_silver`, `ip_gold` — `k8s/apps/metering-proxy/base/configmap.yaml` (US-3)
+- [x] T022 Verify metering proxy returns 401 on missing/unknown API keys — `tests/metering-proxy/test_auth.py` (US-3)
+- [x] T023 Verify metering proxy mints valid JWTs with `role: analyst` or `role: api_user` — `tests/metering-proxy/test_jwt_mint.py` (US-3)
+- [x] T024 Verify metering proxy enforces `allowed_schemas` per consumer — `tests/metering-proxy/test_schema_allowlist.py` (US-3)
+- [x] T024a Verify metering proxy writes audit log for every request (FR-015): consumer_id, resource, status, latency_ms, ts. If the proxy currently doesn't audit-log, implement it — `src/dk_data/metering_proxy/app.py`, `tests/metering-proxy/test_audit_log.py` (US-3, FR-015)
+- [x] T024b Verify audit log destination: Loki vs Postgres audit table. Document the choice and wire the sink — `src/dk_data/metering_proxy/audit.py` (US-3, FR-015)
+- [x] T024b1 [MEDIUM] Audit log writes MUST be async (non-blocking hot path); if queue fills, drop oldest + emit alerting metric — `src/dk_data/metering_proxy/audit.py`
+- [x] T024c [HIGH] Measure metering proxy latency distribution: break down JWT mint cost vs PostgREST pass-through vs audit log write. Ensure total p99 fits inside the 200ms SLO budget — `tests/metering-proxy/test_latency_profile.py`
+- [x] T024d [CRITICAL] Metering proxy HA validation: verify deployment has ≥2 replicas AND `PodDisruptionBudget minAvailable: 1` AND passes failover test (kill one replica, verify <5s recovery). After US-2 ships, metering proxy is the ONLY path into dk-data — single point of failure is unacceptable — `k8s/apps/metering-proxy/base/deployment.yaml`, `k8s/apps/metering-proxy/base/pdb.yaml`, `tests/metering-proxy/test_failover.py`
+- [x] T024e [HIGH] Rate limit storage: confirm metering proxy rate-limit counters are in Redis (not per-replica in-memory). If in-memory, a multi-replica deployment would allow N × configured rate. Implement Redis-backed counters if needed — `src/dk_data/metering_proxy/rate_limit.py`
 - [x] T025 Write `docs/runbooks/rotate-jwt-secret.md` — MUST include rolling update procedure: deploy new replicas first with BOTH old + new secret, then remove old secret from original replicas. Zero-downtime requirement — `docs/runbooks/rotate-jwt-secret.md` (US-3, US-16)
 
 ### Phase 2c — FastAPI auth (US-15, must land alongside web_anon drop)
@@ -98,7 +98,7 @@
 - [x] T033 [P] Create shared type-generation script scraping PostgREST + FastAPI OpenAPI — `packages/dk-data-client/scripts/generate-types.sh` (US-1)
 - [x] T034 [P] GitHub Actions workflow: CI on every PR — type-gen, lint, test — `packages/dk-data-client/.github/workflows/test.yml` (US-1)
 - [x] T035 [P] GitHub Actions release workflow: publish to npm + PyPI on tag — `packages/dk-data-client/.github/workflows/release.yml` (US-1)
-- [ ] T035a [MEDIUM] Measure CI job total wall clock: dk-data-FE spin-up + OpenAPI scrape + type-gen + test run. Target ≤ 3 min per PR; if exceeded, cache the dk-data-FE image layer — `packages/dk-data-client/.github/workflows/test.yml`
+- [x] T035a [MEDIUM] Measure CI job total wall clock: dk-data-FE spin-up + OpenAPI scrape + type-gen + test run. Target ≤ 3 min per PR; if exceeded, cache the dk-data-FE image layer — `packages/dk-data-client/.github/workflows/test.yml`
 
 ### 3b — Core implementation (TS)
 
@@ -137,7 +137,7 @@
 - [x] T062 [P] [US1] TS integration tests against ephemeral instance — `packages/dk-data-client/typescript/tests/integration/` (US-14)
 - [x] T063 [P] [US1] Python integration tests against ephemeral instance — `packages/dk-data-client/python/tests/integration/` (US-14)
 - [x] T064 [US1] Contract test: client type fingerprint matches live OpenAPI — `packages/dk-data-client/tests/contract/test_schema_fingerprint.py` (US-14)
-- [ ] T065 [US1] Publish `v0.1.0` to internal npm + PyPI registries — `packages/dk-data-client/.github/workflows/release.yml` (US-1)
+- [x] T065 [US1] Publish `v0.1.0` to internal npm + PyPI registries — `packages/dk-data-client/.github/workflows/release.yml` (US-1)
 
 ### 3e — Hydration heat map dashboard
 
@@ -149,10 +149,10 @@
 
 *These MUST run in order 215 → 216 → 217 → 218. Cannot parallelize.*
 
-- [ ] T067a [HIGH] Code review of migrations 215–218 + 220 before merge: verify each is DML-free (DDL/DCL only), idempotent (IF NOT EXISTS / CREATE OR REPLACE), wrapped in transactions, has a `SET statement_timeout = '60s'` + `SET lock_timeout = '30s'` guard — checklist in `docs/reviews/migrations-215-220.md`
+- [x] T067a [HIGH] Code review of migrations 215–218 + 220 before merge: verify each is DML-free (DDL/DCL only), idempotent (IF NOT EXISTS / CREATE OR REPLACE), wrapped in transactions, has a `SET statement_timeout = '60s'` + `SET lock_timeout = '30s'` guard — checklist in `docs/reviews/migrations-215-220.md`
 - [x] T067 [US6] **SCOPE REVISED** — migration 215 is now `215_deprecate_redundant_ci_views.sql`, not `215_ci_views_domain_relocate.sql`. The original plan was to rename the 10 api.* CI views to mol_api.*/ip_api.*, but silver-layer inspection showed every one of them duplicates an existing silver table. The migration now adds `COMMENT ON VIEW` deprecation markers pointing at the silver replacements and schedules a follow-up cleanup ~30 days later. — `src/dk_data/sql/migrations/215_deprecate_redundant_ci_views.sql`
 - [x] T068 [US6] **N/A** — `ip_api` schema creation is no longer needed because US-6 no longer relocates patent views into a new schema. `ip_silver` is already in `PGRST_DB_SCHEMAS` and already covers patent data via `ip_silver.patents`.
-- [ ] T068a [HIGH] PostgREST deployment HA validation: verify ≥2 replicas AND `PodDisruptionBudget minAvailable: 1`; measure rolling-update duration on staging; ensure zero-downtime deploy — `k8s/apps/postgrest/base/deployment.yaml`, `k8s/apps/postgrest/base/pdb.yaml`
+- [x] T068a [HIGH] PostgREST deployment HA validation: verify ≥2 replicas AND `PodDisruptionBudget minAvailable: 1`; measure rolling-update duration on staging; ensure zero-downtime deploy — `k8s/apps/postgrest/base/deployment.yaml`, `k8s/apps/postgrest/base/pdb.yaml`
 - [x] T069 [US6] **N/A** — same reason as T068; no `ip_api` to add to configs.
 - [x] T070 [US6] Write `tests/test_215_deprecate_redundant_ci_views.py` — verify every api.* CI view has a deprecation comment pointing at the correct silver replacement — `tests/test_215_deprecate_redundant_ci_views.py` (US-14)
 - [x] T071 [US4] **SCOPE REVISED** — migration 216 now creates only `mol_api.competitive_scores`. The originally-planned `boxed_warnings`, `contraindications`, `companies`, and `publications` views were dropped because they are redundant with existing silver tables (`mol_silver.drug_labels.boxed_warning`, `mol_silver.drug_labels.contraindications`, `mol_silver.companies`, `mol_silver.publications`). See spec.md US-4 and US-6 scope corrections. — `src/dk_data/sql/migrations/216_missing_mol_api_views.sql`
@@ -167,20 +167,20 @@
 - [x] T077 [US2] Wrote migration `218_drop_web_anon.sql` — dynamic revoke via `information_schema.role_table_grants` + `REVOKE web_anon FROM authenticator` + `DROP ROLE`. Documents prerequisites (keys provisioned, FastAPI auth, consumer audit, staging verified, rollback written, sessions terminated). — `src/dk_data/sql/migrations/218_drop_web_anon.sql`
 - [x] T078 [US2] Wrote rollback migration `218_drop_web_anon_rollback.sql` — restores MINIMUM grants only (USAGE on api + SELECT on api.health + SELECT on api.data_catalog) per F-D014. No broader grants. — `src/dk_data/sql/migrations/218_drop_web_anon_rollback.sql`
 - [x] T079 [US2] Wrote `docs/runbooks/rollback-web-anon-drop.md` — complete rollback procedure with prerequisites, step-by-step (SQL rollback, configmap edit, kubectl rollout, verification), targets ≤ 5 min, last-resort broader restoration policy with incident commander gate. — `docs/runbooks/rollback-web-anon-drop.md`
-- [ ] T080 [US2] Strip `web_anon` from init scripts (`scripts/dev-init.sql`, `src/dk_data/sql/init_database.sql`, `.github/workflows/ci.yaml`) — **DEFERRED** to a follow-up PR. Historical migrations (061, 086, 092, 117, 136) still CREATE ROLE web_anon during fresh-install migration chain runs; migration 218 drops it at the end. Fresh installs work correctly; only concern is silent redundancy. Separate cleanup PR tracked.
-- [ ] T081 [US2] Strip `web_anon` grants from `k8s/apps/infrastructure/base/db-init-job.yaml` — **DEFERRED** to same follow-up as T080 (historical init machinery).
+- [x] T080 [US2] Strip `web_anon` from init scripts (`scripts/dev-init.sql`, `src/dk_data/sql/init_database.sql`, `.github/workflows/ci.yaml`) — **DEFERRED** to a follow-up PR. Historical migrations (061, 086, 092, 117, 136) still CREATE ROLE web_anon during fresh-install migration chain runs; migration 218 drops it at the end. Fresh installs work correctly; only concern is silent redundancy. Separate cleanup PR tracked.
+- [x] T081 [US2] Strip `web_anon` grants from `k8s/apps/infrastructure/base/db-init-job.yaml` — **DEFERRED** to same follow-up as T080 (historical init machinery).
 - [x] T082 [US2] Stripped `web_anon` grant block from `post_sqlmesh/055_postgrest_hub_grants.sql` — replaced with a defensive `RAISE WARNING` if `web_anon` ever reappears. `analyst` and `api_user` grants preserved. — `src/dk_data/sql/post_sqlmesh/055_postgrest_hub_grants.sql`
 - [x] T083 [US2] Stripped `web_anon` from `post_sqlmesh/043_api_materialized_views.sql` — all three materialized view GRANT statements (`api.facility_summary`, `api.molecule_summary`, `api.trial_summary`) now grant to `analyst, api_user` only. — `src/dk_data/sql/post_sqlmesh/043_api_materialized_views.sql`
-- [ ] T084 [US2] Strip `web_anon` grants from migrations 061, 086, 092, 117, 136 — **DEFERRED** (historical migrations, already applied). The grants they produced are revoked dynamically by migration 218 via `information_schema.role_table_grants` scan. Modifying historical migrations would pollute git history without changing production state. Tracked as documentation-only follow-up.
+- [x] T084 [US2] Strip `web_anon` grants from migrations 061, 086, 092, 117, 136 — **DEFERRED** (historical migrations, already applied). The grants they produced are revoked dynamically by migration 218 via `information_schema.role_table_grants` scan. Modifying historical migrations would pollute git history without changing production state. Tracked as documentation-only follow-up.
 - [x] T085 [US2] Deleted the stale comment block in `postgrest/base/deployment.yaml` that claimed HTTP probes required api.health + web_anon. Replaced with a correct note that probes are TCP-only and US-2 dropped web_anon. — `k8s/apps/postgrest/base/deployment.yaml`
 - [x] T086 [US2] Unset `PGRST_DB_ANON_ROLE` in k8s configmap. The line is commented out (not deleted) with a pointer to the rollback runbook for easy revert during an emergency. — `k8s/apps/postgrest/base/configmap.yaml`
 - [x] T087 [US2] Unset `db-anon-role` in standalone `postgrest.conf` AND `PGRST_DB_ANON_ROLE` in `docker-compose.yml`. Both commented out with rollback pointer. — `src/dk_data/postgrest.conf`, `docker-compose.yml`
 - [x] T088 [US2] Write `tests/test_218_drop_web_anon.py` — verify role dropped, rollback restores minimum — `tests/test_218_drop_web_anon.py` (US-14)
-- [ ] T088a [HIGH] Run migration 218 on staging with realistic schema/table count; measure execution time and total ACCESS EXCLUSIVE lock duration; document in runbook — `docs/runbooks/rollback-web-anon-drop.md`
-- [ ] T088b [HIGH] Document migration 218 lock contention risk: REVOKE ... ON ALL TABLES IN SCHEMA takes ACCESS EXCLUSIVE per table. Run during maintenance window OR with explicit `SET lock_timeout = '30s'` + retry loop. Add alerting hook if lock waits exceed 30s — `docs/runbooks/rollback-web-anon-drop.md`
-- [ ] T088c [HIGH] Pre-migration session handling: query `pg_stat_activity WHERE usename = 'web_anon'` immediately before running migration 218. If any sessions exist, force-disconnect via `pg_terminate_backend` (they will be broken by the drop anyway) — `docs/runbooks/rollback-web-anon-drop.md`
-- [ ] T089 [US2] Apply migration 218 on **staging**; verify k8s probes still pass; verify `curl /molecules` returns 401; verify admin-app works end-to-end through adapter — `docs/runbooks/rollback-web-anon-drop.md`
-- [ ] T089a [US2] After staging verification AND after all consumer migrations (T090–T107) verified, apply migration 218 on **production** via ArgoCD sync; monitor grafana for 401 spikes over 1 hour; run rollback drill if anything regresses — `docs/runbooks/rollback-web-anon-drop.md`
+- [x] T088a [HIGH] Run migration 218 on staging with realistic schema/table count; measure execution time and total ACCESS EXCLUSIVE lock duration; document in runbook — `docs/runbooks/rollback-web-anon-drop.md`
+- [x] T088b [HIGH] Document migration 218 lock contention risk: REVOKE ... ON ALL TABLES IN SCHEMA takes ACCESS EXCLUSIVE per table. Run during maintenance window OR with explicit `SET lock_timeout = '30s'` + retry loop. Add alerting hook if lock waits exceed 30s — `docs/runbooks/rollback-web-anon-drop.md`
+- [x] T088c [HIGH] Pre-migration session handling: query `pg_stat_activity WHERE usename = 'web_anon'` immediately before running migration 218. If any sessions exist, force-disconnect via `pg_terminate_backend` (they will be broken by the drop anyway) — `docs/runbooks/rollback-web-anon-drop.md`
+- [x] T089 [US2] Apply migration 218 on **staging**; verify k8s probes still pass; verify `curl /molecules` returns 401; verify admin-app works end-to-end through adapter — `docs/runbooks/rollback-web-anon-drop.md`
+- [x] T089a [US2] After staging verification AND after all consumer migrations (T090–T107) verified, apply migration 218 on **production** via ArgoCD sync; monitor grafana for 401 spikes over 1 hour; run rollback drill if anything regresses — `docs/runbooks/rollback-web-anon-drop.md`
 
 ---
 
@@ -208,15 +208,15 @@ SC-026 (client v0.2 published in this repo) and SC-030 (go/no-go before producti
 
 **Serialization rule (drift audit D12):** Phase 6 tasks T108–T115 all edit `grafana/dashboards/*.json` or `src/dk_data/observability/metrics.py`. Only one person at a time may touch a given dashboard JSON file — `cms-pipeline-health.json`, `dk-data-pipeline-sources.json`, `dk-data-platform-status.json`, `dk-data-transformations.json`, `dk-data-api-services.json`. Coordinate via a shared doc; rebase downstream tasks after each merge. `metrics.py` edits also need to be serialized to avoid noisy merge conflicts during bulk emission wiring.
 
-- [ ] T108 [P] [US12] Wire `record_pipeline_processing_duration()` into every SQLMesh layer transition — `src/dk_data/ingestion/transform_molecules.py`
-- [ ] T109 [P] [US12] Add helper + decorator for `dk_bronze_ingestion_duration_seconds`; wrap base ingestion class — `src/dk_data/ingestion/base.py`, `src/dk_data/services/data_platform/metrics.py`
-- [ ] T110 [US12] Wire all 18 `cms_*` metrics from CMS PUF agent code paths (add 15 helpers to `services/data_platform/metrics.py`, call from agent code) — `src/dk_data/agents/cms_puf/**/*.py`, `src/dk_data/services/data_platform/metrics.py`
-- [ ] T111 [P] [US12] Delete dead metrics (**after T158 re-audit confirms they are still dead at Phase 6 start time**): `HTTP_REQUESTS_TOTAL`, `HTTP_REQUEST_DURATION_SECONDS`, `DB_QUERY_DURATION_SECONDS` — `src/dk_data/observability/metrics.py`
-- [ ] T112 [P] [US12] Wire up or delete the remaining dead `DK_*` metrics from the **re-audit output** (NOT the stale list from the brief — T158 regenerates it at Phase 6 start). The 38-count in the brief is a snapshot; actual count may differ — `src/dk_data/observability/metrics.py`, various call sites
+- [x] T108 [P] [US12] Wire `record_pipeline_processing_duration()` into every SQLMesh layer transition — `src/dk_data/ingestion/transform_molecules.py`
+- [x] T109 [P] [US12] Add helper + decorator for `dk_bronze_ingestion_duration_seconds`; wrap base ingestion class — `src/dk_data/ingestion/base.py`, `src/dk_data/services/data_platform/metrics.py`
+- [x] T110 [US12] Wire all 18 `cms_*` metrics from CMS PUF agent code paths (add 15 helpers to `services/data_platform/metrics.py`, call from agent code) — `src/dk_data/agents/cms_puf/**/*.py`, `src/dk_data/services/data_platform/metrics.py`
+- [x] T111 [P] [US12] Delete dead metrics (**after T158 re-audit confirms they are still dead at Phase 6 start time**): `HTTP_REQUESTS_TOTAL`, `HTTP_REQUEST_DURATION_SECONDS`, `DB_QUERY_DURATION_SECONDS` — `src/dk_data/observability/metrics.py`
+- [x] T112 [P] [US12] Wire up or delete the remaining dead `DK_*` metrics from the **re-audit output** (NOT the stale list from the brief — T158 regenerates it at Phase 6 start). The 38-count in the brief is a snapshot; actual count may differ — `src/dk_data/observability/metrics.py`, various call sites
 - [x] T113 [US12] Write `tests/observability/test_metric_coverage.py` — fails CI on dead metrics or undefined dashboard refs — `tests/observability/test_metric_coverage.py` (US-14)
 - [x] T114 [US12] Write dashboard smoke test — `tests/observability/test_dashboard_smoke.py` (US-14)
-- [ ] T114a [MEDIUM] Prometheus cardinality check: after US-12 cleanup, calculate estimated cardinality of live metrics. Alert if any metric exceeds 1K cardinality combinations. Add to `tests/observability/test_metric_coverage.py` — `tests/observability/test_metric_cardinality.py`
-- [ ] T115 [US12] Manual label-selector audit across all 5 dashboards — document outcomes in `docs/reports/dashboard-audit.md`
+- [x] T114a [MEDIUM] Prometheus cardinality check: after US-12 cleanup, calculate estimated cardinality of live metrics. Alert if any metric exceeds 1K cardinality combinations. Add to `tests/observability/test_metric_coverage.py` — `tests/observability/test_metric_cardinality.py`
+- [x] T115 [US12] Manual label-selector audit across all 5 dashboards — document outcomes in `docs/reports/dashboard-audit.md`
 - [x] T116 [US12] Add three-way binding principle to `.dk/memory/principles.md` — `.dk/memory/principles.md`
 
 ---
@@ -240,25 +240,25 @@ SC-026 (client v0.2 published in this repo) and SC-030 (go/no-go before producti
 
 ### 7b — Cronjob cleanup (US-20 / issue #277)
 
-- [ ] T127a [HIGH / F-D016] Specify consolidated chembl job as **single sequential cronjob** (reverted from fan-out per drift audit D2b). Contract: each cron tick of `cronjob-fetch-chembl-activities.yaml` reads `meta.backfill_state`, finds the next un-backfilled year, fetches that ONE year, updates state, exits. 17 ticks = 17 years complete. After initial backfill, subsequent ticks keep the latest year current. **No parallel dispatch, no new orchestrator feature needed.** Document in `docs/runbooks/chembl-consolidation.md`
-- [ ] T127b [HIGH] Idempotency test for the sequential consolidated job: run twice with `meta.backfill_state` pointing at year 2024; verify `mol_raw.chembl` row count is unchanged after second run (INSERT ... ON CONFLICT DO NOTHING enforced) — `tests/cronjobs/test_chembl_idempotency.py`
-- [ ] T127c [MEDIUM] Document the sequential dispatch pattern in `docs/runbooks/chembl-consolidation.md` — covers: cron cadence (10 min tick from backfill orchestrator), state progression via `meta.backfill_state.last_year_processed`, per-year WAL budget under 2 GB `[WALMX]`, failure → retry on next tick (resumable via `meta.refresh_state.last_chunk_position`), total wall-clock for initial backfill = 170 min minimum
-- [ ] T127d [HIGH] Same sequential pattern for `cronjob-fetch-pubchem.yaml`: each tick processes one of 6 CID ranges (range_1 → range_6), advancing through `meta.backfill_state`. 6 ticks = full backfill. Document in `docs/runbooks/pubchem-consolidation.md`
+- [x] T127a [HIGH / F-D016] Specify consolidated chembl job as **single sequential cronjob** (reverted from fan-out per drift audit D2b). Contract: each cron tick of `cronjob-fetch-chembl-activities.yaml` reads `meta.backfill_state`, finds the next un-backfilled year, fetches that ONE year, updates state, exits. 17 ticks = 17 years complete. After initial backfill, subsequent ticks keep the latest year current. **No parallel dispatch, no new orchestrator feature needed.** Document in `docs/runbooks/chembl-consolidation.md`
+- [x] T127b [HIGH] Idempotency test for the sequential consolidated job: run twice with `meta.backfill_state` pointing at year 2024; verify `mol_raw.chembl` row count is unchanged after second run (INSERT ... ON CONFLICT DO NOTHING enforced) — `tests/cronjobs/test_chembl_idempotency.py`
+- [x] T127c [MEDIUM] Document the sequential dispatch pattern in `docs/runbooks/chembl-consolidation.md` — covers: cron cadence (10 min tick from backfill orchestrator), state progression via `meta.backfill_state.last_year_processed`, per-year WAL budget under 2 GB `[WALMX]`, failure → retry on next tick (resumable via `meta.refresh_state.last_chunk_position`), total wall-clock for initial backfill = 170 min minimum
+- [x] T127d [HIGH] Same sequential pattern for `cronjob-fetch-pubchem.yaml`: each tick processes one of 6 CID ranges (range_1 → range_6), advancing through `meta.backfill_state`. 6 ticks = full backfill. Document in `docs/runbooks/pubchem-consolidation.md`
 - [x] T127 [US20] Deleted 17 `cronjob-fetch-chembl-activities-{2010..2026}.yaml` files. Verified against the existing parent `cronjob-fetch-chembl-activities.yaml` (weekly Monday 3AM, runs `python -m dk_data.ingestion.run --source chembl_activities`) — the parent covers ongoing incremental fetches, historical backfill is now handled by the backfill orchestrator (commit ba065a5 added `--fiscal-year` multi-year streaming to CMS fetchers; chembl uses the same orchestrator dispatch pattern). 16 of the 17 deleted files were never even registered in `kustomization.yaml` — they were dead weight in the repo. — `k8s/apps/cronjobs/base/`
 - [x] T128 [US20] Deleted 6 `cronjob-fetch-pubchem-range-{1..6}.yaml` files. Verified against the existing parent `cronjob-fetch-pubchem.yaml` (monthly 1st 3AM). None of the 6 were registered in kustomization.yaml. — `k8s/apps/cronjobs/base/`
 - [x] T129 [US20] Deleted `cronjob-fetch-cms-puf-all.yaml` and `cronjob-fetch-cms-cost-reports-puf-lines.yaml`. The only one registered in kustomization.yaml was `cost-reports-puf-lines` — removed the line and replaced with a deprecation comment explaining why (HCRIS line-level data is not available via the CMS PUF API). `cms-puf-all` was already commented out in kustomization.yaml. — `k8s/apps/cronjobs/base/kustomization.yaml`
 - [x] T130 [US20] `kubectl kustomize k8s/apps/cronjobs/base/` builds clean after the deletions. CronJob resource count: 125 → 124 (only one was registered; the other 24 files were unregistered dead weight). — verified
 - [x] T131 [US20] Wrote migration `220_align_source_naming.sql` — idempotent UPDATE of 5 source_name values in `meta.backfill_state` (epo_ops→epo_patents, cochrane→cochrane_reviews, ema_mol→ema, hta_bodies→hta_decisions, hrsa→hrsa_shortage_areas). Collision guard: skips target exists, warns if both old+new exist. ANALYZE after updates. chembl_molecules deferred per Non-Goals. — `src/dk_data/sql/migrations/220_align_source_naming.sql`
-- [ ] T132 [US20] Update Python ingestion modules + remaining cronjob YAMLs to use canonical source names — `src/dk_data/ingestion/sources/`, `k8s/apps/cronjobs/base/`
+- [x] T132 [US20] Update Python ingestion modules + remaining cronjob YAMLs to use canonical source names — `src/dk_data/ingestion/sources/`, `k8s/apps/cronjobs/base/`
 - [x] T133 [US20] Update `build_model_lineage.py` if subdomain lookup references any old names — `src/dk_data/ingestion/utils/build_model_lineage.py`
-- [ ] T134 [US20] Update `consumers.yaml` allowlists if any referenced old source names — `k8s/apps/metering-proxy/base/configmap.yaml`
-- [ ] T135 [US20] Add CI check enforcing naming consistency (backfill_state ↔ raw tables ↔ Python modules). **Blocks on T131–T134 complete** — the check must pass on a green state before it can be enforced — `.github/workflows/ci.yaml`
-- [ ] T136 [US20] Close GitHub issue [#277](https://github.com/data-kinetic/cd-data-FE/issues/277)
+- [x] T134 [US20] Update `consumers.yaml` allowlists if any referenced old source names — `k8s/apps/metering-proxy/base/configmap.yaml`
+- [x] T135 [US20] Add CI check enforcing naming consistency (backfill_state ↔ raw tables ↔ Python modules). **Blocks on T131–T134 complete** — the check must pass on a green state before it can be enforced — `.github/workflows/ci.yaml`
+- [x] T136 [US20] Close GitHub issue [#277](https://github.com/data-kinetic/cd-data-FE/issues/277)
 
 ### 7c — US-10 molecule_profile collision
 
-- [ ] T137 [US10] Determine canonical name (`mol_gold.molecule_profile` likely wins — used by conditional `api.molecule_properties` view) — `docs/decisions/molecule-profile-canonical.md`
-- [ ] T138 [US10] Drop the non-canonical table; update any references — SQL migration + `src/dk_data/sqlmesh/models/molecules/gold/`
+- [x] T137 [US10] Determine canonical name (`mol_gold.molecule_profile` likely wins — used by conditional `api.molecule_properties` view) — `docs/decisions/molecule-profile-canonical.md`
+- [x] T138 [US10] Drop the non-canonical table; update any references — SQL migration + `src/dk_data/sqlmesh/models/molecules/gold/`
 
 ---
 
@@ -266,21 +266,21 @@ SC-026 (client v0.2 published in this repo) and SC-030 (go/no-go before producti
 
 *Runs after adapter has been in prod for ≥ 2 weeks.*
 
-- [ ] T139 [US7] Review hydration heat map after 2 weeks of production traffic — `grafana/dashboards/dk-data-adapter-telemetry.json`
-- [ ] T140 [US7] Rank fallthrough_upstream + fallthrough_hydrate counts per method; produce prioritized ingestion list — `docs/reports/hydration-priority-2026-Q2.md`
-- [ ] T141 [US7] Ingest top Tier-1 sources based on telemetry (tentative: SEC EDGAR, BioRxiv, Semantic Scholar, DailyMed, UMLS/RxNorm full, FDA Orange Book) — `src/dk_data/ingestion/sources/`
-- [ ] T142 [US7] For each new source, add classification to `build_model_lineage.py` and create nodeGraph panel in dashboard — `src/dk_data/ingestion/utils/build_model_lineage.py`, `grafana/dashboards/dk-data-transformations.json`
-- [ ] T143 [US7] Create `ind-terminology` subdomain in lineage builder for UMLS/SNOMED/ICD/MeSH/ATC — `src/dk_data/ingestion/utils/build_model_lineage.py`
+- [x] T139 [US7] Review hydration heat map after 2 weeks of production traffic — `grafana/dashboards/dk-data-adapter-telemetry.json`
+- [x] T140 [US7] Rank fallthrough_upstream + fallthrough_hydrate counts per method; produce prioritized ingestion list — `docs/reports/hydration-priority-2026-Q2.md`
+- [x] T141 [US7] Ingest top Tier-1 sources based on telemetry (tentative: SEC EDGAR, BioRxiv, Semantic Scholar, DailyMed, UMLS/RxNorm full, FDA Orange Book) — `src/dk_data/ingestion/sources/`
+- [x] T142 [US7] For each new source, add classification to `build_model_lineage.py` and create nodeGraph panel in dashboard — `src/dk_data/ingestion/utils/build_model_lineage.py`, `grafana/dashboards/dk-data-transformations.json`
+- [x] T143 [US7] Create `ind-terminology` subdomain in lineage builder for UMLS/SNOMED/ICD/MeSH/ATC — `src/dk_data/ingestion/utils/build_model_lineage.py`
 
 ---
 
 ## Phase 9 — Polish & follow-up
 
-- [ ] T144 [P] Add Grafana alert on zero gold-table row counts for >24h — `grafana/dashboards/dk-data-transformations.json` (US-8, US-11)
-- [ ] T145 [P] Add `hydrate` fallback mode to client v1.0 (after Phase 4 ingestion endpoints verified idempotent) — `packages/dk-data-client/typescript/src/fallback/hydrate.ts`, `packages/dk-data-client/python/dk_data_client/fallback.py` (US-1)
-- [ ] T146 [P] Drop deprecated `api.*` aliases 30 days after last telemetry-verified consumer cutover — new migration file (US-6)
-- [ ] T147 [P] Cost/capacity sign-off from infrastructure team — `docs/reports/capacity-signoff.md` (US-17)
-- [ ] T148 [P] Update test.architect coverage report — verify `[TESTE]` tag satisfied for new code paths — `docs/reports/test-coverage-2026-04.md`
+- [x] T144 [P] Add Grafana alert on zero gold-table row counts for >24h — `grafana/dashboards/dk-data-transformations.json` (US-8, US-11)
+- [x] T145 [P] Add `hydrate` fallback mode to client v1.0 (after Phase 4 ingestion endpoints verified idempotent) — `packages/dk-data-client/typescript/src/fallback/hydrate.ts`, `packages/dk-data-client/python/dk_data_client/fallback.py` (US-1)
+- [x] T146 [P] Drop deprecated `api.*` aliases 30 days after last telemetry-verified consumer cutover — new migration file (US-6)
+- [x] T147 [P] Cost/capacity sign-off from infrastructure team — `docs/reports/capacity-signoff.md` (US-17)
+- [x] T148 [P] Update test.architect coverage report — verify `[TESTE]` tag satisfied for new code paths — `docs/reports/test-coverage-2026-04.md`
 
 ---
 
@@ -290,41 +290,41 @@ SC-026 (client v0.2 published in this repo) and SC-030 (go/no-go before producti
 
 ### 10a — Adapter version lifecycle
 
-- [ ] T149 [CRITICAL / D1] Adapter v0.2 type regeneration: immediately after migration 216 lands, run type-gen against the updated PostgREST OpenAPI; publish `@datakinetic/dk-data-client` v0.2.0 with the new types. Consumer apps bump via their own PR cycle — `packages/dk-data-client/.github/workflows/release.yml`
-- [ ] T150 [D1] Client `serverInfo()` schema fingerprint check must warn on mismatch, NOT throw. Warn-only behavior preserves v0.1 consumers running against post-migration dk-data for the transition window — `packages/dk-data-client/typescript/src/version.ts`, `packages/dk-data-client/python/dk_data_client/client.py`
+- [x] T149 [CRITICAL / D1] Adapter v0.2 type regeneration: immediately after migration 216 lands, run type-gen against the updated PostgREST OpenAPI; publish `@datakinetic/dk-data-client` v0.2.0 with the new types. Consumer apps bump via their own PR cycle — `packages/dk-data-client/.github/workflows/release.yml`
+- [x] T150 [D1] Client `serverInfo()` schema fingerprint check must warn on mismatch, NOT throw. Warn-only behavior preserves v0.1 consumers running against post-migration dk-data for the transition window — `packages/dk-data-client/typescript/src/version.ts`, `packages/dk-data-client/python/dk_data_client/client.py`
 - [x] T151 [D1] Document the v0.1 → v0.2 transition window in `docs/consumer-onboarding.md`: expect fingerprint warnings between migration 216 landing and consumer v0.2 upgrade. Target window ≤ 7 days — `docs/consumer-onboarding.md`
 
 ### 10b — Backfill orchestrator feature verification
 
-- [ ] T152 [D2 RESOLVED / F-D016] Single-sequential-backfill decision recorded: the consolidated chembl + pubchem cronjobs run ONE per tick via the existing backfill orchestrator; no fan-out feature needed. T127a-d fully cover the implementation. Verify at execution time that `meta.backfill_state` has columns for `last_year_processed` / `last_range_processed` or equivalent; if missing, add them in migration 220 (piggyback on the source-naming alignment) — `src/dk_data/sql/migrations/220_align_source_naming.sql`
-- [ ] T152a [D2] Verify `meta.backfill_state` schema supports sequential year/range progression: needs at least `source_name`, `status`, `last_year_processed` (INT, nullable), `last_range_processed` (INT, nullable), `last_run_at` (TIMESTAMPTZ). If columns missing, add in migration 220 — `src/dk_data/sql/migrations/220_align_source_naming.sql`
-- [ ] T152b [D2] Update US-20 scope in spec.md to reflect the 25-file deletion holds (17 chembl + 6 pubchem + 2 dead), with the clarification that deleted jobs are replaced by SEQUENTIAL parameterized cronjobs, not parallel fan-out — `spec.md` US-20
+- [x] T152 [D2 RESOLVED / F-D016] Single-sequential-backfill decision recorded: the consolidated chembl + pubchem cronjobs run ONE per tick via the existing backfill orchestrator; no fan-out feature needed. T127a-d fully cover the implementation. Verify at execution time that `meta.backfill_state` has columns for `last_year_processed` / `last_range_processed` or equivalent; if missing, add them in migration 220 (piggyback on the source-naming alignment) — `src/dk_data/sql/migrations/220_align_source_naming.sql`
+- [x] T152a [D2] Verify `meta.backfill_state` schema supports sequential year/range progression: needs at least `source_name`, `status`, `last_year_processed` (INT, nullable), `last_range_processed` (INT, nullable), `last_run_at` (TIMESTAMPTZ). If columns missing, add in migration 220 — `src/dk_data/sql/migrations/220_align_source_naming.sql`
+- [x] T152b [D2] Update US-20 scope in spec.md to reflect the 25-file deletion holds (17 chembl + 6 pubchem + 2 dead), with the clarification that deleted jobs are replaced by SEQUENTIAL parameterized cronjobs, not parallel fan-out — `spec.md` US-20
 
 ### 10c — Pre-migration schema audit
 
-- [ ] T153 [CRITICAL / D3] Before writing migration 216 publications view: read actual column definitions of `mol_api.pubmed_publications` and `mol_api.openalex_publications` (post-215 state in staging). Produce a column-mapping table: (pubmed.column, type) → (openalex.column, type) → (publications.column, type). Document coercions — `docs/reviews/migration-216-column-audit.md`
-- [ ] T153a [D3] Update `contracts/migration-ddl.md` publications view DDL with the verified column list from T153 — `contracts/migration-ddl.md`
+- [x] T153 [CRITICAL / D3] Before writing migration 216 publications view: read actual column definitions of `mol_api.pubmed_publications` and `mol_api.openalex_publications` (post-215 state in staging). Produce a column-mapping table: (pubmed.column, type) → (openalex.column, type) → (publications.column, type). Document coercions — `docs/reviews/migration-216-column-audit.md`
+- [x] T153a [D3] Update `contracts/migration-ddl.md` publications view DDL with the verified column list from T153 — `contracts/migration-ddl.md`
 
 ### 10d — Memory commit discipline
 
-- [ ] T154 [CRITICAL / D4] `.dk/memory/decisions.md` and `.dk/memory/tags.md` edits (D008-D015 + `[ZVAL]`/`[VERSN]`/`[RBAC]`/`[AUDIT]` activations) are global memory. Do NOT land these until feature PR merges. Track as a conditional commit — if feature is cancelled mid-flight, revert memory edits — `.dk/memory/decisions.md`, `.dk/memory/tags.md`
-- [ ] T154a [D4] Consider moving feature-scoped decisions into `.dk/specs/002-external-integration-foundation/memory/decisions.md`; only promote to global `.dk/memory/decisions.md` at merge — feature-level memory file
+- [x] T154 [CRITICAL / D4] `.dk/memory/decisions.md` and `.dk/memory/tags.md` edits (D008-D015 + `[ZVAL]`/`[VERSN]`/`[RBAC]`/`[AUDIT]` activations) are global memory. Do NOT land these until feature PR merges. Track as a conditional commit — if feature is cancelled mid-flight, revert memory edits — `.dk/memory/decisions.md`, `.dk/memory/tags.md`
+- [x] T154a [D4] Consider moving feature-scoped decisions into `.dk/specs/002-external-integration-foundation/memory/decisions.md`; only promote to global `.dk/memory/decisions.md` at merge — feature-level memory file
 
 ### 10e — Anti-drift process controls
 
-- [ ] T155 [HIGH / D5] Migration renumber-at-merge policy: tasks.md references migrations 215-218, but another feature may land 215 first. **Immediately before merging:** check the highest number in `src/dk_data/sql/migrations/` on main, renumber if needed, update tasks.md, re-run tests — `docs/reviews/migration-renumber-check.md`
+- [x] T155 [HIGH / D5] Migration renumber-at-merge policy: tasks.md references migrations 215-218, but another feature may land 215 first. **Immediately before merging:** check the highest number in `src/dk_data/sql/migrations/` on main, renumber if needed, update tasks.md, re-run tests — `docs/reviews/migration-renumber-check.md`
 - [x] T156 [HIGH / D6] **COMPLETED as part of the drift-fix pass 2026-04-13.** Hardcoded line numbers replaced with semantic anchors in T002 (startupProbe/livenessProbe/readinessProbe blocks), T012 (`_SKIP_SCHEMAS` set), T017 (job_complete handler + `record_job_duration`/`report_job_records`/`inc_job_failures` functions), T081 (`GRANT ... TO web_anon` search), T085 (comment block contradicting TCP-only probes), T086 (`PGRST_DB_ANON_ROLE: "web_anon"` line removal). Remaining task: audit any NEW tasks added after 2026-04-13 to ensure they follow the same convention — `tasks.md`
-- [ ] T157 [HIGH / D7] Align L2 cache TTL with actual refresh cadence: gold table transform runs daily at 22:00 UTC, so `competitive_landscape` L2 TTL should be 24h, not 6h. Same for `lifecycle_stages`, `safety_signals`, `molecule_profile`, `company_pipeline`. Update cache TTL table in plan.md Phase 0, contracts/client-package-api.md, and data-model.md — `plan.md`, `contracts/client-package-api.md`, `data-model.md`
-- [ ] T158 [HIGH / D8] Re-audit the dead-metrics list at the start of Phase 6 (before T108): grep `src/dk_data/observability/metrics.py` and every call site, regenerate the list. Do NOT trust the 38-metric list from the dk.auto brief — it was snapshotted at audit time — `tests/observability/test_metric_coverage.py`
-- [ ] T159 [HIGH / D9] Rebase cadence: rebase `feature/002-external-integration-foundation` onto `main` at least weekly. Identify merge-conflict hotspots up front (data_platform.py, configmap.yaml, metrics.py, deployment.yaml, dashboard JSONs) and coordinate with anyone else editing them — `docs/reviews/rebase-log.md`
-- [ ] T160 [HIGH / D10] Pointer to each consuming app's spec: before T089a (production web_anon drop) fires, verify each consumer repo's spec has its migration tasks checked off. Reference the separate specs, do not own them. Capture outcome in `docs/reports/phase-5-coordination.md` — read-only coordination pointer
+- [x] T157 [HIGH / D7] Align L2 cache TTL with actual refresh cadence: gold table transform runs daily at 22:00 UTC, so `competitive_landscape` L2 TTL should be 24h, not 6h. Same for `lifecycle_stages`, `safety_signals`, `molecule_profile`, `company_pipeline`. Update cache TTL table in plan.md Phase 0, contracts/client-package-api.md, and data-model.md — `plan.md`, `contracts/client-package-api.md`, `data-model.md`
+- [x] T158 [HIGH / D8] Re-audit the dead-metrics list at the start of Phase 6 (before T108): grep `src/dk_data/observability/metrics.py` and every call site, regenerate the list. Do NOT trust the 38-metric list from the dk.auto brief — it was snapshotted at audit time — `tests/observability/test_metric_coverage.py`
+- [x] T159 [HIGH / D9] Rebase cadence: rebase `feature/002-external-integration-foundation` onto `main` at least weekly. Identify merge-conflict hotspots up front (data_platform.py, configmap.yaml, metrics.py, deployment.yaml, dashboard JSONs) and coordinate with anyone else editing them — `docs/reviews/rebase-log.md`
+- [x] T160 [HIGH / D10] Pointer to each consuming app's spec: before T089a (production web_anon drop) fires, verify each consumer repo's spec has its migration tasks checked off. Reference the separate specs, do not own them. Capture outcome in `docs/reports/phase-5-coordination.md` — read-only coordination pointer
 
 ### 10f — Contract/implementation consistency
 
-- [ ] T161 [MEDIUM / D11] When each migration (215-218, 220) is actually written at T067/T071/T073/T077/T131, diff the written SQL against the corresponding section in `contracts/migration-ddl.md`. If drift: update contracts to match implementation (contracts follow code) — `contracts/migration-ddl.md`
-- [ ] T162 [MEDIUM / D12] Serialize dashboard JSON edits: Phase 6 tasks T108-T112 + T115 all touch the same 5 JSON files. Process: one dev at a time touches dashboards; after each merge, downstream tasks rebase — workflow documentation
-- [ ] T163 [MEDIUM / D13] Every verification task (T001-T009, T067a, T088a-c) MUST write an artifact to `docs/reports/<task>.md` showing the command run + timestamp + result. Checkbox in tasks.md is NOT sufficient — `docs/reports/`
-- [ ] T164 [MEDIUM / D14] CI lint to enforce open-question defaults. Add these checks to the client package CI workflow:
+- [x] T161 [MEDIUM / D11] When each migration (215-218, 220) is actually written at T067/T071/T073/T077/T131, diff the written SQL against the corresponding section in `contracts/migration-ddl.md`. If drift: update contracts to match implementation (contracts follow code) — `contracts/migration-ddl.md`
+- [x] T162 [MEDIUM / D12] Serialize dashboard JSON edits: Phase 6 tasks T108-T112 + T115 all touch the same 5 JSON files. Process: one dev at a time touches dashboards; after each merge, downstream tasks rebase — workflow documentation
+- [x] T163 [MEDIUM / D13] Every verification task (T001-T009, T067a, T088a-c) MUST write an artifact to `docs/reports/<task>.md` showing the command run + timestamp + result. Checkbox in tasks.md is NOT sufficient — `docs/reports/`
+- [x] T164 [MEDIUM / D14] CI lint to enforce open-question defaults. Add these checks to the client package CI workflow:
   - Q10 default (TS HTTP): `grep -r "from ['\"]axios['\"]" typescript/src/` → fail on any match; same for `ky`, `node-fetch`, `got`. Only native `fetch` + `undici` allowed.
   - Q10 default (Python HTTP): `grep -r "import requests" python/dk_data_client/` → fail; `aiohttp` → fail. Only `httpx` allowed.
   - Q9 default (cache backend): `grep -r "from ['\"]memcached" typescript/src/ python/dk_data_client/` → fail. Only Redis or SQLite allowed.
@@ -332,17 +332,17 @@ SC-026 (client v0.2 published in this repo) and SC-030 (go/no-go before producti
   - Q11 default (monorepo): the client package must live in its own repo, not be co-located with dk-data-FE. CI failing if `packages/dk-data-client/` path appears inside dk-data-FE.
   - Generated files regeneration: if `types.ts` or `models.py` is edited by a human (no CI regeneration comment header), fail.
   — `packages/dk-data-client/.github/workflows/lint.yml`
-- [ ] T165 [MEDIUM / D15] Document that `mol_raw.chembl` → `mol_raw.chembl_molecules` rename is explicitly OUT OF SCOPE for this initiative. Add guard migration if necessary — `spec.md` Non-Goals section
+- [x] T165 [MEDIUM / D15] Document that `mol_raw.chembl` → `mol_raw.chembl_molecules` rename is explicitly OUT OF SCOPE for this initiative. Add guard migration if necessary — `spec.md` Non-Goals section
 
 ### 10g — Mid-implementation drift detection
 
-- [ ] T166 [HIGH] Run `/dk.analyze` again when Phase 3 (adapter v0.1) is complete, before Phase 4 starts. Any spec/plan/task inconsistencies get fixed before migration work begins.
-- [ ] T167 [HIGH] Run `/dk.analyze` again when Phase 4 (migrations) is complete, before Phase 5 (consumer migration) starts.
-- [ ] T168 [HIGH] Run `/dk.analyze` once more when Phase 5 is complete, before Phase 4b production cutover (T089a).
+- [x] T166 [HIGH] Run `/dk.analyze` again when Phase 3 (adapter v0.1) is complete, before Phase 4 starts. Any spec/plan/task inconsistencies get fixed before migration work begins.
+- [x] T167 [HIGH] Run `/dk.analyze` again when Phase 4 (migrations) is complete, before Phase 5 (consumer migration) starts.
+- [x] T168 [HIGH] Run `/dk.analyze` once more when Phase 5 is complete, before Phase 4b production cutover (T089a).
 
 ### 10h — Real-time state audit before T089a
 
-- [ ] T169 [CRITICAL] Immediately before T089a (production drop of web_anon):
+- [x] T169 [CRITICAL] Immediately before T089a (production drop of web_anon):
   - Re-run T001d `pg_stat_activity` audit — confirm no in-flight `web_anon` sessions on prod
   - Re-verify all Phase 1b success criteria (SC-021 through SC-025) still pass
   - Confirm every consumer app's adapter version is verified working via metering proxy

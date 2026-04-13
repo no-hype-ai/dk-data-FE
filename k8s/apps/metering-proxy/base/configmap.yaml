@@ -12,27 +12,43 @@ data:
     # API keys are provisioned via the Platform API and synced here.
     # Format: dk_data_{alias}_{random_suffix}
     #
-    # rpm_limit: 0 means unlimited (internal/platform tier)
-    # allowed_schemas: ["*"] means all schemas
+    # rpm_limit: 0 means unlimited (reserved for internal jobs only)
+    # allowed_schemas: list of schemas — do NOT use ["*"] in production.
+    #
+    # Provisioning workflow: see docs/consumer-onboarding.md.
+    #
+    # T019-T021 (feature 002): expanded allowlists for behavior-labs-ai,
+    # scoped the `internal` consumer off of "*" onto an explicit list of
+    # cluster-resident services, and added the 4 new consumers.
     consumers:
+      # ------------------------------------------------------------------
+      # External consumers (each owns its own repo + spec)
+      # ------------------------------------------------------------------
       behavior-labs-ai:
         alias: blai
         allowed_schemas:
+          # T021: admin app read surface — molecule + IP + published API
           - mart
           - api
           - mol_api
+          - mol_silver
+          - mol_gold
+          - ip_api
+          - ip_silver
+          - ip_gold
           - scoring
         rpm_limit: 500
         tier: high
-        api_keys: []
+        api_keys: []  # populated by Platform API at deploy time
       carbon-5:
         alias: c5
         allowed_schemas:
           - mart
           - api
-          - bronze
-          - silver
-          - gold
+          - mol_silver
+          - mol_gold
+          - hcs_silver
+          - hcs_gold
         rpm_limit: 500
         tier: high
         api_keys: []
@@ -44,10 +60,41 @@ data:
         rpm_limit: 200
         tier: standard
         api_keys: []
+      ground-truth-charlie:
+        alias: gtc
+        allowed_schemas:
+          - mol_silver
+          - mol_gold
+          - ip_silver
+          - ind_silver
+        rpm_limit: 300
+        tier: standard
+        api_keys: []
+      trials-predictor:
+        alias: tp
+        allowed_schemas:
+          - mol_silver
+          - mol_gold
+          - ind_silver
+          - ind_gold
+        rpm_limit: 300
+        tier: standard
+        api_keys: []
+      # ------------------------------------------------------------------
+      # Internal cluster services — T020: explicit allowlist, no wildcard.
+      # Any cluster-resident pod that previously authed via the
+      # `internal` shared alias must now present a scoped key.
+      # ------------------------------------------------------------------
       internal:
         alias: internal
         allowed_schemas:
-          - "*"
-        rpm_limit: 0
+          # Job orchestration + health + catalog — this is the minimum
+          # footprint the cluster's own pipelines need for observability
+          # and coordination. NOT a wildcard.
+          - meta
+          - api
+          - mart
+          - xenon
+        rpm_limit: 0  # unlimited ONLY because these are internal jobs
         tier: unlimited
         api_keys: []
