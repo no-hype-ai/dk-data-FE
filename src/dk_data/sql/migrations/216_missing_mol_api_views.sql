@@ -49,40 +49,52 @@ GRANT USAGE ON SCHEMA mol_api TO analyst, api_user;
 -- -----------------------------------------------------------------------------
 -- mol_gold.competitive_landscape
 --
--- Migration 081 created this table; migration 144 dropped it as part of a
--- legacy-bronze cleanup that inadvertently caught this gold table too. This
--- migration re-creates it (idempotently) so mol_api.competitive_scores has
--- a stable source to query.
+-- This relation may exist as either:
+--   (a) a SQLMesh-managed VIEW (relkind='v') — the normal case after SQLMesh runs
+--   (b) a TABLE (relkind='r') — created by migration 081, dropped by 144
+--   (c) not exist at all — fresh deploy before first SQLMesh run
 --
--- Schema mirrors the version in 081 with the addition of active_trials,
--- total_trials, sponsor_count, canonical_name, inchi_key, therapeutic_areas,
--- indications, and sponsors — the fields actually needed by competitive_scores.
+-- If SQLMesh already manages it as a view, skip the TABLE creation entirely.
+-- If it doesn't exist, create the table as a fallback so the API view below
+-- has something to query (SQLMesh will replace it on its next run).
 -- -----------------------------------------------------------------------------
 
-CREATE TABLE IF NOT EXISTS mol_gold.competitive_landscape (
-    id                  TEXT PRIMARY KEY,
-    molecule_id         TEXT,
-    inchi_key           TEXT,
-    canonical_name      TEXT,
-    indication          TEXT,
-    therapeutic_areas   TEXT[],
-    development_status  TEXT,
-    max_phase           INTEGER,
-    active_trials       INTEGER,
-    total_trials        INTEGER,
-    sponsor_count       INTEGER,
-    indications         TEXT[],
-    sponsors            TEXT[],
-    snapshot_date       DATE DEFAULT CURRENT_DATE,
-    computed_at         TIMESTAMPTZ DEFAULT NOW(),
-    updated_at          TIMESTAMPTZ DEFAULT NOW(),
-    UNIQUE (molecule_id, indication, snapshot_date)
-);
-
-COMMENT ON TABLE mol_gold.competitive_landscape IS
-    'Gold-layer competitive landscape snapshot per molecule × indication × date. '
-    'Source of truth for mol_api.competitive_scores. Dropped by migration 144 '
-    '(legacy cleanup overshoot) and recreated by migration 216.';
+DO $guard$
+BEGIN
+    -- Skip if mol_gold.competitive_landscape already exists (as view or table)
+    IF EXISTS (
+        SELECT 1 FROM pg_class c
+        JOIN pg_namespace n ON n.oid = c.relnamespace
+        WHERE n.nspname = 'mol_gold' AND c.relname = 'competitive_landscape'
+    ) THEN
+        RAISE NOTICE '216: mol_gold.competitive_landscape already exists (SQLMesh-managed), skipping table creation';
+    ELSE
+        RAISE NOTICE '216: mol_gold.competitive_landscape does not exist, creating fallback table';
+        CREATE TABLE mol_gold.competitive_landscape (
+            id                  TEXT PRIMARY KEY,
+            molecule_id         TEXT,
+            inchi_key           TEXT,
+            canonical_name      TEXT,
+            indication          TEXT,
+            therapeutic_areas   TEXT[],
+            development_status  TEXT,
+            max_phase           INTEGER,
+            active_trials       INTEGER,
+            total_trials        INTEGER,
+            sponsor_count       INTEGER,
+            indications         TEXT[],
+            sponsors            TEXT[],
+            snapshot_date       DATE DEFAULT CURRENT_DATE,
+            computed_at         TIMESTAMPTZ DEFAULT NOW(),
+            updated_at          TIMESTAMPTZ DEFAULT NOW(),
+            UNIQUE (molecule_id, indication, snapshot_date)
+        );
+        COMMENT ON TABLE mol_gold.competitive_landscape IS
+            'Gold-layer competitive landscape fallback table. SQLMesh will replace this '
+            'with a managed view on its next run. Created by migration 216.';
+    END IF;
+END
+$guard$;
 
 GRANT SELECT ON mol_gold.competitive_landscape TO analyst, api_user;
 
