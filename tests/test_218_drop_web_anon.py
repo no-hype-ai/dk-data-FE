@@ -159,6 +159,40 @@ class TestRollbackMinimumRestore:
         assert "GRANT SELECT ON api.data_catalog TO web_anon" in rollback_sql
 
 
+class TestIndependentOrdering:
+    """Regression guard against the early design that had a pre-flight DO block
+    inside migration 218 checking for a role created in 228. That ordering
+    coupling would have deadlocked the migration runner if 218 ran before 228.
+
+    These tests prove the two migrations are fully independent — each touches
+    only its own target role and has no reference to the other's role.
+    """
+
+    def test_migration_218_and_228_are_independent(self):
+        """218 must not mention api_user; 228 must not mention web_anon."""
+        drop_sql = DROP_MIGRATION.read_text()
+        grants_migration = (
+            REPO_ROOT
+            / "src"
+            / "dk_data"
+            / "sql"
+            / "migrations"
+            / "228_jwt_mint_schema_grants.sql"
+        )
+        grants_sql = grants_migration.read_text()
+
+        assert "api_user" not in drop_sql, (
+            "218_drop_web_anon.sql references api_user — this creates an ordering "
+            "dependency on migration 228. Remove the reference so the two migrations "
+            "are independent."
+        )
+        assert "web_anon" not in grants_sql, (
+            "228_jwt_mint_schema_grants.sql references web_anon — this creates an "
+            "ordering dependency on migration 218. Remove the reference so the two "
+            "migrations are independent."
+        )
+
+
 class TestRollbackDoesNotBroaden:
     """F-D014: rollback must not restore the full legacy grant set.
     Any hint of the old broad schemas is a regression."""
