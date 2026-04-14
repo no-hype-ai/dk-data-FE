@@ -10,6 +10,7 @@ from __future__ import annotations
 import os
 import time
 from pathlib import Path
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import jwt
 import pytest
@@ -129,3 +130,53 @@ class TestEveryConfiguredTierIsMapped:
             f"Consumers with tiers not in TIER_TO_ROLE: {unknown_tiers}. "
             "Add the tier(s) to jwt_mint.TIER_TO_ROLE."
         )
+
+
+# ---------------------------------------------------------------------------
+# T032 — load_secret_at_startup() validation
+# ---------------------------------------------------------------------------
+
+
+class TestLoadSecretAtStartup:
+    def test_missing_secret_fails_startup(self, monkeypatch):
+        """load_secret_at_startup() without JWT_SECRET must raise JWTMintError(secret_missing)."""
+        monkeypatch.delenv("JWT_SECRET", raising=False)
+        monkeypatch.setattr(jwt_mint, "_SECRET", None)
+        with pytest.raises(JWTMintError) as exc_info:
+            load_secret_at_startup()
+        assert exc_info.value.error_type == "secret_missing"
+
+    def test_short_secret_fails_startup(self, monkeypatch):
+        """load_secret_at_startup() with a too-short JWT_SECRET must raise JWTMintError(secret_too_short)."""
+        monkeypatch.setenv("JWT_SECRET", "tooshort!!!")
+        monkeypatch.setattr(jwt_mint, "_SECRET", None)
+        with pytest.raises(JWTMintError) as exc_info:
+            load_secret_at_startup()
+        assert exc_info.value.error_type == "secret_too_short"
+
+
+# ---------------------------------------------------------------------------
+# T033 — self_test() detects secret mismatch
+# ---------------------------------------------------------------------------
+
+
+class TestSelfTest:
+    @pytest.mark.asyncio
+    async def test_self_test_detects_secret_mismatch(self, monkeypatch):
+        """self_test() must raise JWTMintError(self_test_signature) on a 401 response."""
+        # Set the cached secret so mint() succeeds inside self_test.
+        monkeypatch.setattr(jwt_mint, "_SECRET", _TEST_SECRET)
+
+        mock_response = MagicMock()
+        mock_response.status_code = 401
+
+        mock_client = AsyncMock()
+        mock_client.get = AsyncMock(return_value=mock_response)
+        mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+        mock_client.__aexit__ = AsyncMock(return_value=None)
+
+        with patch("httpx.AsyncClient", return_value=mock_client):
+            with pytest.raises(JWTMintError) as exc_info:
+                await jwt_mint.self_test("http://localhost:3000")
+
+        assert exc_info.value.error_type == "self_test_signature"
