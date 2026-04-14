@@ -102,7 +102,7 @@ Blocking prerequisites for every user story. Complete the whole phase before sta
 - [x] **T074** Run the full local test suite (`uv run pytest tests/metering_proxy/ tests/sql/test_228_schema_grants.py tests/sql/test_218_preflight_guard.py tests/observability/test_metric_coverage.py`) and capture output in `memory/changelog.md`. File: `memory/changelog.md`.
 - [x] **T075** Run `uv run ruff check src/ tests/` and `uv run mypy src/dk_data/metering_proxy/` and fix any findings. No new file changes expected.
 - [x] **T076** Run `kubectl kustomize k8s/overlays/prod/ | kubectl apply --dry-run=client -f -` locally to verify the manifest changes are valid. No new file changes.
-- [ ] **T077** Open the PR against `main`, link to issue #283 in the description, paste the full plan checklist from `checklists/requirements.md`, and request review.
+- [x] **T077** Open the PR against `main`, link to issue #283 in the description, paste the full plan checklist from `checklists/requirements.md`, and request review.
 
 ---
 
