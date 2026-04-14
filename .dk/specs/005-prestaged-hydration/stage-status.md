@@ -207,4 +207,4 @@ gate itself.)
 
 ## Next action
 
-Run `/dk.implement` to start Stage 1 — 11 tasks, sequential. After Stage 1 merges, run `/dk.stage close` then proceed to Stage 2 via `/dk.swarm`.
+Stage 1 code committed at `5db8648`. Run exit-gate verification: `docker build -t dk-data:stage1 .` (confirms postgresql-client-16 installs), apply migration 229 in a staging or dev DB, then open a PR from `feature/005-prestaged-hydration` → `main`. After merge, run `/dk.stage close` to advance to Stage 2 and launch `/dk.swarm`.
