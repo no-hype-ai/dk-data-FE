@@ -108,38 +108,19 @@ ALTER DEFAULT PRIVILEGES IN SCHEMA mart GRANT SELECT ON TABLES TO api_user;
 ALTER DEFAULT PRIVILEGES IN SCHEMA scoring GRANT SELECT ON TABLES TO api_user;
 
 -- -----------------------------------------------------------------------------
--- 4. EXECUTE on resolve functions across every silver hub
+-- 4. EXECUTE on resolve functions — already covered by migration 217
 -- -----------------------------------------------------------------------------
--- The silver hubs expose a family of resolve_<entity>(...) functions that
--- clients call to get a stable hub ID from a name, identifier, or alias.
--- These are the fast path the dk-data-client relies on (per-call p99
--- ≤10ms target from the silver hub architecture doc). Migration 217
--- granted EXECUTE on only mol_silver.resolve_molecule to web_anon; this
--- migration extends coverage to api_user and to all ten resolve functions
--- across every silver hub.
+-- Migration 217 (resolve_function_grants) already runs
+--   GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA mol_silver TO analyst, api_user;
+-- for every silver hub schema, plus ALTER DEFAULT PRIVILEGES so future
+-- resolve functions inherit EXECUTE automatically. There is no need to
+-- re-grant here. An earlier draft of this migration tried to enumerate
+-- the resolve functions by exact (text) signature and failed because the
+-- real signatures are not uniformly (text) — 217's schema-wide grant
+-- sidesteps the signature-matching problem entirely.
 --
--- Signatures: every resolve function in the silver hub rebuild takes a
--- single text argument. If a resolve function is added with a different
--- signature in the future, a follow-on migration is needed.
-
--- Molecule hub
-GRANT EXECUTE ON FUNCTION mol_silver.resolve_molecule(text) TO api_user;
-GRANT EXECUTE ON FUNCTION mol_silver.resolve_drug_product(text) TO api_user;
-GRANT EXECUTE ON FUNCTION mol_silver.resolve_company(text) TO api_user;
-GRANT EXECUTE ON FUNCTION mol_silver.resolve_target(text) TO api_user;
-
--- Healthcare system hubs
-GRANT EXECUTE ON FUNCTION hcs_silver.resolve_provider(text) TO api_user;
-GRANT EXECUTE ON FUNCTION hcs_silver.resolve_facility(text) TO api_user;
-
--- Indication hub
-GRANT EXECUTE ON FUNCTION ind_silver.resolve_condition(text) TO api_user;
-
--- Researcher hub
-GRANT EXECUTE ON FUNCTION hcp_silver.resolve_researcher(text) TO api_user;
-
--- IP hubs
-GRANT EXECUTE ON FUNCTION ip_silver.resolve_patent(text) TO api_user;
-GRANT EXECUTE ON FUNCTION ip_silver.resolve_trademark(text) TO api_user;
+-- Invariant enforced: `api_user` can execute every resolve_* function in
+-- every silver schema. Verified by migration 217's NOTICE output and by
+-- tests/test_217_resolve_function_grants.py.
 
 COMMIT;

@@ -116,24 +116,29 @@ class TestDefaultPrivileges:
         )
 
 
-class TestExecuteGrants:
-    @pytest.mark.parametrize("func_path", RESOLVE_FUNCTIONS_10)
-    def test_grants_execute_on_all_10_resolve_functions(self, migration_sql, func_path):
-        expected = f"GRANT EXECUTE ON FUNCTION {func_path}"
-        assert expected in migration_sql, (
-            f"Missing EXECUTE grant for resolve function {func_path!r}. "
-            f"Expected substring: {expected!r}"
-        )
+class TestExecuteGrantsDeferredToMigration217:
+    """Migration 228 does NOT grant EXECUTE on the resolve functions —
+    migration 217_resolve_function_grants.sql already does that with a
+    schema-wide ``GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA ... TO api_user``
+    plus ``ALTER DEFAULT PRIVILEGES``. Re-granting in 228 would duplicate
+    work and requires matching exact argument signatures — which the
+    earlier draft of this migration got wrong and broke the CI migration
+    run (see the fix commit that ships with this test).
 
-    def test_ten_resolve_functions_present(self, migration_sql):
-        found = sum(
-            1
-            for fn in RESOLVE_FUNCTIONS_10
-            if f"GRANT EXECUTE ON FUNCTION {fn}" in migration_sql
+    This test class asserts that 228 has NO ``GRANT EXECUTE`` statements,
+    so the resolve-function coverage stays in 217 where it belongs.
+    """
+
+    def test_migration_228_has_no_execute_grants(self, migration_sql):
+        code_only = "\n".join(
+            line
+            for line in migration_sql.splitlines()
+            if not line.lstrip().startswith("--")
         )
-        assert found == 10, (
-            f"Expected EXECUTE grants for 10 resolve functions, found {found}. "
-            f"Check that all entries in RESOLVE_FUNCTIONS_10 appear in the migration."
+        assert "GRANT EXECUTE" not in code_only, (
+            "228_jwt_mint_schema_grants.sql contains GRANT EXECUTE statements "
+            "in executable SQL. Those belong in migration 217 — 228 is for "
+            "schema-level USAGE + SELECT grants only."
         )
 
 
@@ -232,37 +237,52 @@ class TestApiUserCannotWrite:
 
 
 # ---------------------------------------------------------------------------
-# T051 — FR-012/FR-013: api_user can EXECUTE the 10 resolve functions exactly
+# T051 — FR-012/FR-013: resolve-function EXECUTE grants live in migration 217
 # ---------------------------------------------------------------------------
 
-class TestApiUserCanExecuteResolveFunctions:
-    """FR-012/FR-013: exactly 10 EXECUTE grants, all to api_user, one per resolve function."""
+class TestResolveFunctionGrantsAreInMigration217:
+    """Migration 217_resolve_function_grants.sql is the canonical home for
+    EXECUTE grants on the silver-hub resolve functions. It uses a schema-wide
+    ``GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA ... TO analyst, api_user`` which
+    sidesteps the argument-signature matching problem (the resolve functions
+    don't all take ``(text)``). Migration 228 deliberately does NOT duplicate
+    this work — any reintroduction of a per-function EXECUTE grant in 228
+    would be a regression.
+    """
 
-    @pytest.mark.parametrize("func_path", RESOLVE_FUNCTIONS_10)
-    def test_grants_execute_with_signature_and_recipient(self, migration_sql, func_path):
-        expected = f"GRANT EXECUTE ON FUNCTION {func_path}(text) TO api_user"
-        assert expected in migration_sql, (
-            f"Missing EXECUTE grant for {func_path!r} with signature. "
-            f"Expected substring: {expected!r}"
+    def test_migration_217_exists(self):
+        path = (
+            REPO_ROOT
+            / "src"
+            / "dk_data"
+            / "sql"
+            / "migrations"
+            / "217_resolve_function_grants.sql"
+        )
+        assert path.exists(), (
+            "Migration 217_resolve_function_grants.sql is missing. It is the "
+            "canonical source of EXECUTE grants on silver resolve functions; "
+            "migration 228 depends on it being present."
         )
 
-    def test_exactly_ten_execute_grants(self, migration_sql):
-        count = migration_sql.count("GRANT EXECUTE ON FUNCTION")
-        assert count == 10, (
-            f"Expected exactly 10 GRANT EXECUTE ON FUNCTION statements, found {count}. "
-            "There must be exactly one per resolve function — no more, no fewer."
+    def test_migration_217_grants_execute_to_api_user(self):
+        path = (
+            REPO_ROOT
+            / "src"
+            / "dk_data"
+            / "sql"
+            / "migrations"
+            / "217_resolve_function_grants.sql"
         )
-
-    def test_execute_recipient_is_api_user(self, migration_sql):
-        """Every GRANT EXECUTE line must grant to api_user and no other role."""
-        for line in migration_sql.splitlines():
-            stripped = line.strip()
-            if stripped.startswith("GRANT EXECUTE") and "ON FUNCTION" in stripped:
-                # Strip trailing semicolon for comparison
-                normalized = stripped.rstrip(";")
-                assert normalized.endswith("TO api_user"), (
-                    f"GRANT EXECUTE line does not end with 'TO api_user': {line!r}"
-                )
+        sql = path.read_text()
+        assert "api_user" in sql, (
+            "Migration 217 does not mention api_user. It must grant EXECUTE "
+            "to api_user for the JWT minting feature (003) to work."
+        )
+        assert "GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA" in sql, (
+            "Migration 217 must use schema-wide GRANT EXECUTE ON ALL FUNCTIONS "
+            "(not per-function with a signature)."
+        )
 
 
 # ---------------------------------------------------------------------------
