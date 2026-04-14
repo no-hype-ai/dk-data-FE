@@ -22,6 +22,9 @@ spec:
       labels:
         app.kubernetes.io/name: db-migrate
         app.kubernetes.io/part-of: dk-data
+        team: data-platform
+        service: dk-data
+        product: dk-data
     spec:
       restartPolicy: OnFailure
       securityContext:
