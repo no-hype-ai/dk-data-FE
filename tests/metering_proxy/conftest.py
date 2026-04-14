@@ -69,6 +69,7 @@ def patched_app(monkeypatch):
     - Stub out the upstream proxy so no network call happens
     - Reset rate limiter + audit state between tests
     """
+    from dk_data.metering_proxy import jwt_mint
     from dk_data.metering_proxy.concurrency import ConsumerConcurrencyGuard
     from dk_data.metering_proxy.rate_limiter import RateLimiter
 
@@ -76,6 +77,21 @@ def patched_app(monkeypatch):
     monkeypatch.setattr(app_module, "rate_limiter", RateLimiter())
     monkeypatch.setattr(app_module, "concurrency_guard", ConsumerConcurrencyGuard())
     monkeypatch.setattr(app_module, "_seen_consumers", set())
+
+    # Feature 003: the real lifespan() calls jwt_mint.load_secret_at_startup()
+    # and awaits jwt_mint.self_test(POSTGREST_URL). In tests there is no
+    # PostgREST running on localhost:3000 and no JWT_SECRET env var, so we
+    # pre-load a deterministic secret into the module cache and no-op the
+    # self_test. This mirrors what a healthy startup looks like but without
+    # the external dependency.
+    monkeypatch.setattr(
+        jwt_mint, "_SECRET", "test-secret-for-unit-tests-at-least-32-chars-long"
+    )
+
+    async def _noop_self_test(postgrest_url: str) -> None:
+        return None
+
+    monkeypatch.setattr(jwt_mint, "self_test", _noop_self_test)
 
     # Stub the upstream proxy to return a deterministic fake response
     class FakeUpstreamResponse:

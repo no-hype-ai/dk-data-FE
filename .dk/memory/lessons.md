@@ -70,3 +70,21 @@
 **Root cause**: A previous PR migrated the probes from HTTP to TCP but left the explanatory comment untouched. The comment then accumulated authority over time and influenced spec decisions.
 **Lesson**: Treat code+config as the source of truth, not comments. When you find a comment that contradicts the code below it, delete the comment in the same PR — leaving stale comments is a documentation leak. Feature 002 T085 deletes the specific stale comment but the underlying lesson is broader.
 **Tags**: comments, drift, documentation, code-review
+
+## 2026-04-14 — Documented auth design that was never implemented
+
+**Context**: Feature 003 (metering-jwt-mint, issue #283) investigated why the dk-data-client kept returning "401 Invalid API key" for every consumer. Two things had to be fixed before the client could work end-to-end.
+
+**What happened**:
+1. `docs/consumer-onboarding.md` described a bcrypt-hashed API key scheme (raw keys generated with `openssl rand`, hashed with bcrypt, stored in `consumers.yaml` as `{name, hash}` objects).
+2. The running `src/dk_data/metering_proxy/auth.py` did a plain dict lookup of raw keys against the `api_keys` list in the ConfigMap — zero hashing, zero matching to the doc.
+3. Separately, `src/dk_data/metering_proxy/proxy.py` had a comment saying "PostgREST uses its own JWT auth" right next to code that *stripped* the Authorization header and never minted a replacement. Every request reached PostgREST as the anonymous role, which had USAGE on only 5 of the 19 exposed schemas.
+4. The runbook `docs/runbooks/metering-proxy-401-debug.md` described a JWT validation flow that also did not match the running code.
+
+**Root cause**: A design was documented before being implemented, then the implementation took a simpler (and different) path, and the docs were never updated. The drift then masked the real gap — feature 003 only happened because someone traced the auth code path end-to-end.
+
+**Lesson**: When a doc describes behavior that the code might not implement, verify by reading the code before trusting the doc. On the PR side: if you ship a design doc, link it to the code path that implements it and put a CI check that grep-matches the doc against the module's public surface. Code is the source of truth; documentation that isn't grounded in code becomes a coordination hazard.
+
+**Also**: a pre-flight DO guard inside an earlier migration is NOT a substitute for numeric ordering. The migration runner stops on first failure, so if a guarded migration runs first the deploy deadlocks. Always enforce ordering via filename numeric prefix (or by merging related migrations into one atomic migration), never via runtime guards that depend on something the runner hasn't applied yet.
+
+**Tags**: auth, drift, documentation, migration-ordering, spec-vs-implementation

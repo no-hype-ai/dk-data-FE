@@ -29,7 +29,15 @@ import pytest
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 DASHBOARDS_DIR = REPO_ROOT / "grafana" / "dashboards"
-METRICS_FILE = REPO_ROOT / "src" / "dk_data" / "observability" / "metrics.py"
+# Metrics can be defined in either location. `observability/metrics.py` holds
+# the main dk-data-platform metrics; `metering_proxy/metrics.py` holds the
+# sidecar metrics (feature 002) and feature 003's JWT mint counters. The
+# dashboard smoke test reads both so panels that reference metering-proxy
+# metrics still count as "defined metric" references.
+METRICS_FILES = [
+    REPO_ROOT / "src" / "dk_data" / "observability" / "metrics.py",
+    REPO_ROOT / "src" / "dk_data" / "metering_proxy" / "metrics.py",
+]
 
 KNOWN_DATASOURCES = {
     "prometheus",
@@ -147,14 +155,21 @@ def _extract_metric_names_from_expr(expr: str) -> set[str]:
 
 
 def _load_defined_metrics() -> set[str]:
-    source = METRICS_FILE.read_text()
     # Match Counter/Gauge/Histogram( ..., "metric_name", ... ). The metric
-    # name is the first positional argument.
+    # name is the first positional argument. We read every metric-defining
+    # file in METRICS_FILES and union the results so a dashboard that
+    # references a metering-proxy metric still counts.
     pattern = re.compile(
         r"(?:Counter|Gauge|Histogram)\s*\(\s*\"([a-z][a-z0-9_]*)\"",
         re.MULTILINE,
     )
-    return set(pattern.findall(source))
+    metrics: set[str] = set()
+    for metrics_file in METRICS_FILES:
+        if not metrics_file.exists():
+            continue
+        source = metrics_file.read_text()
+        metrics.update(pattern.findall(source))
+    return metrics
 
 
 # -----------------------------------------------------------------------------

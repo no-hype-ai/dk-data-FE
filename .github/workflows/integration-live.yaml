@@ -1,0 +1,62 @@
+name: Integration — Live cluster
+
+# Feature 003-metering-jwt-mint (issue #283): manual-trigger workflow that
+# exercises the dk-data-client against the real cluster path:
+#   client → metering-proxy (mints JWT) → PostgREST → silver data
+#
+# Run this after every production deploy of feature 003, after a suspected
+# regression in the auth path, or before cutting a new dk-data-client
+# release. Unit tests (per-PR CI) cover the regression bar; this workflow
+# validates the real cluster can actually serve a read through the minted
+# JWT — which is not something unit tests can prove without a real
+# PostgREST and real silver data.
+
+on:
+  workflow_dispatch:
+    inputs:
+      base_url:
+        description: "dk-data base URL to test against"
+        required: true
+        default: "https://data.behaviorlabs.ai"
+        type: string
+      api_key_secret:
+        description: "Name of the GitHub Actions secret holding the bearer key (e.g. DK_DATA_INTEGRATION_KEY)"
+        required: true
+        default: "DK_DATA_INTEGRATION_KEY"
+        type: string
+
+jobs:
+  live:
+    name: Live client integration
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install client package
+        working-directory: packages/dk-data-client/python
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e ".[dev]"
+
+      - name: Run live integration test
+        working-directory: packages/dk-data-client/python
+        env:
+          DK_DATA_BASE_URL: ${{ inputs.base_url }}
+          # The secret name is passed as an input so operators can point
+          # the workflow at a staging vs. prod credential without editing
+          # this file. The actual value is resolved via secrets context
+          # at step-run time.
+          DK_DATA_API_KEY: ${{ secrets[inputs.api_key_secret] }}
+        run: |
+          if [ -z "$DK_DATA_API_KEY" ]; then
+            echo "::error::Secret '${{ inputs.api_key_secret }}' is not set in this repo's Actions secrets"
+            exit 1
+          fi
+          pytest tests/integration/test_live_client.py -v --no-cov

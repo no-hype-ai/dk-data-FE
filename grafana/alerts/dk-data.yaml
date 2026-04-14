@@ -1191,3 +1191,124 @@ groups:
             schedule, (b) PgBouncer pool exhaustion forcing the server pool to fan out, or
             (c) a wave of long-running queries blocking each other on locks. Investigate
             meta.activity_log immediately.
+
+      # ─── Metering Proxy — JWT Minting (Feature 003, issue #283) ─────────────
+      - uid: dk-data-metering-proxy-jwt-mint-success-rate-low
+        title: "MeteringProxyJWTMintSuccessRateLow"
+        condition: C
+        noDataState: NoData
+        execErrState: Alerting
+        data:
+          - refId: A
+            relativeTimeRange:
+              from: 300
+              to: 0
+            datasourceUid: mimir
+            model:
+              expr: >
+                rate(dk_data_metering_jwt_minted_total[5m])
+                / (
+                    rate(dk_data_metering_jwt_minted_total[5m])
+                  + rate(dk_data_metering_jwt_mint_errors_total[5m])
+                  )
+              intervalMs: 1000
+              maxDataPoints: 43200
+          - refId: B
+            relativeTimeRange:
+              from: 300
+              to: 0
+            datasourceUid: __expr__
+            model:
+              expression: A
+              type: reduce
+              reducer: last
+          - refId: C
+            relativeTimeRange:
+              from: 300
+              to: 0
+            datasourceUid: __expr__
+            model:
+              conditions:
+                - evaluator:
+                    params: [0.999]
+                    type: lt
+              expression: B
+              type: threshold
+        for: 5m
+        labels:
+          team: data-platform
+          product: dk-data
+          severity: warning
+        annotations:
+          summary: "Metering proxy JWT mint success rate below 99.9%"
+          description: |
+            The metering proxy JWT mint success rate has been below 99.9% for 5 minutes.
+            This means a significant fraction of forwarded requests are failing to mint a JWT,
+            causing 500 errors to consumers.
+            To investigate:
+              1. Check metering-proxy logs for JWTMintError messages.
+              2. Verify JWT_SECRET is set correctly in the dk-data-secrets k8s secret
+                 (Doppler → k8s secret 'dk-data-secrets', key 'JWT_SECRET').
+              3. Check the jwt_mint_errors_total metric labels for the specific error_type.
+              4. If error_type is 'unknown_tier', a consumer's tier value is not in TIER_TO_ROLE
+                 in jwt_mint.py — add it.
+            Dashboard: grafana/dashboards/dk-data-adapter-telemetry.json panel 42.
+
+      - uid: dk-data-metering-proxy-requests-forwarded-without-jwt
+        title: "MeteringProxyRequestsForwardedWithoutJWT"
+        condition: C
+        noDataState: OK
+        execErrState: Alerting
+        data:
+          - refId: A
+            relativeTimeRange:
+              from: 120
+              to: 0
+            datasourceUid: mimir
+            model:
+              expr: >
+                rate(dk_data_metering_requests_forwarded_without_jwt_total[5m])
+              intervalMs: 1000
+              maxDataPoints: 43200
+          - refId: B
+            relativeTimeRange:
+              from: 120
+              to: 0
+            datasourceUid: __expr__
+            model:
+              expression: A
+              type: reduce
+              reducer: last
+          - refId: C
+            relativeTimeRange:
+              from: 120
+              to: 0
+            datasourceUid: __expr__
+            model:
+              conditions:
+                - evaluator:
+                    params: [0]
+                    type: gt
+              expression: B
+              type: threshold
+        for: 2m
+        labels:
+          team: data-platform
+          product: dk-data
+          severity: critical
+        annotations:
+          summary: "FR-010 VIOLATION: requests reaching PostgREST without a JWT"
+          description: |
+            One or more requests have been forwarded to PostgREST without a minted JWT
+            for at least 2 minutes. This is a critical FR-010 violation (feature 003).
+            Without a JWT the request lands as dk_data_no_anon, which has zero grants —
+            the query will fail with 'permission denied' and the consumer will receive a 403.
+            More critically, this indicates a bypass path in the metering proxy that skips
+            JWT minting, which is a security boundary regression.
+            To investigate:
+              1. Check proxy.py for any code path that calls proxy_request() without minting
+                 a JWT first (look for missing jwt_mint.mint() calls).
+              2. Check for recent changes to the request routing or auth bypass conditions.
+              3. Review the metering-proxy logs for the requests that triggered this counter.
+            Dashboard: grafana/dashboards/dk-data-adapter-telemetry.json panel 43.
+            Runbook: docs/runbooks/metering-proxy-401-debug.md

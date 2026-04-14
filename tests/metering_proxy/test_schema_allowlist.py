@@ -9,6 +9,8 @@ targets the `mol_silver` schema.
 
 from __future__ import annotations
 
+from prometheus_client import generate_latest
+
 
 
 class TestAllowlistEnforcement:
@@ -54,3 +56,46 @@ class TestAllowlistEnforcement:
         )
         # dkos has api in allowlist, so 200 — not 403
         assert response.status_code == 200
+
+
+# ---------------------------------------------------------------------------
+# T025a — allowlist rejection must not mint a JWT (FR-015)
+# ---------------------------------------------------------------------------
+
+
+class TestAllowlistRejectionsDoNotMintJWT:
+    """T025a: schema-denied requests (403) must not increment JWT_MINTED_TOTAL.
+
+    FR-015: the allowlist enforcement layer must reject BEFORE a JWT is
+    minted so the unauthorized schema never appears in any JWT claim.
+    """
+
+    def test_allowlist_rejection_does_not_mint_jwt(self, client):
+        """A 403 response must not increment JWT_MINTED_TOTAL for any tier."""
+
+        def _read_jwt_minted_total() -> float:
+            """Sum JWT_MINTED_TOTAL across all tier label-sets."""
+            output = generate_latest().decode()
+            total = 0.0
+            for line in output.splitlines():
+                if line.startswith("dk_data_metering_jwt_minted_total{") and not line.startswith("#"):
+                    try:
+                        total += float(line.split()[-1])
+                    except ValueError:
+                        pass
+            return total
+
+        before = _read_jwt_minted_total()
+
+        response = client.get(
+            "/hcs_silver/providers",
+            headers={"Authorization": "Bearer dk_data_blai_test_key"},
+        )
+
+        after = _read_jwt_minted_total()
+
+        assert response.status_code == 403
+        assert after == before, (
+            f"JWT_MINTED_TOTAL incremented on a 403: before={before}, after={after}. "
+            "The allowlist check must reject before jwt_mint.mint() is called."
+        )

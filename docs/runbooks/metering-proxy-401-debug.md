@@ -1,9 +1,9 @@
 # Runbook: Debugging "metering proxy returns 401"
 
-**Feature**: 002-external-integration-foundation, US-3
-**Last verified**: 2026-04-13
+**Feature**: 002-external-integration-foundation (US-3), 003-metering-jwt-mint
+**Last verified**: 2026-04-14
 
-After the US-2 lockdown, every dk-data request must present a valid API key to the metering proxy at `https://data.behaviorlabs.ai`. A 401 response means one of: missing key, unknown key, expired/invalid JWT after the proxy minted it, or the proxy can't reach the JWT signing secret. This runbook walks through diagnosing each.
+After the US-2 lockdown AND feature 003 (JWT minting) landed, every dk-data request must present a valid raw API key in `Authorization: Bearer <key>` to the metering proxy at `https://data.behaviorlabs.ai`. A 401 response means one of: missing key, unknown raw key, the proxy's startup self-test failed, or the JWT signing secret differs between the proxy sidecar and the PostgREST container. This runbook walks through diagnosing each.
 
 ## Symptoms
 
@@ -17,38 +17,47 @@ After the US-2 lockdown, every dk-data request must present a valid API key to t
 ```
 401 from data.behaviorlabs.ai
   │
-  ├─ Missing Authorization header?
+  ├─ Missing or malformed Authorization header?
   │   │
   │   ├─ YES → consumer is not setting DK_DATA_API_KEY env var
   │   │        → fix: set DK_DATA_API_KEY in the consumer's deployment
+  │   │               and restart it to pick up the env var
   │   │
-  │   └─ NO  → header is present, continue
+  │   └─ NO  → header is present and starts with "Bearer ", continue
   │
-  ├─ Unknown API key (proxy doesn't recognize it)?
+  ├─ Raw key not in consumers.yaml (proxy's consumer registry)?
   │   │
-  │   ├─ YES → key is not provisioned in consumers.yaml
+  │   ├─ YES → key is not provisioned
   │   │        → fix: add the key to the right consumer's api_keys[] list
-  │   │              and reload the metering proxy
+  │   │              in k8s/apps/metering-proxy/base/configmap.yaml,
+  │   │              commit + push, wait for ArgoCD sync,
+  │   │              then POST /-/reload on the metering proxy
   │   │
   │   └─ NO  → key matched a consumer, continue
   │
-  ├─ Schema not in consumer's allowed_schemas?
+  ├─ Metering proxy readiness probe is failing?
   │   │
-  │   ├─ YES → 403, not 401. Different runbook.
+  │   ├─ YES → startup self-test failed — JWT_SECRET mismatch between
+  │   │        metering proxy and PostgREST. See "JWT secret mismatch".
   │   │
-  │   └─ NO  → schema check passed, continue
+  │   └─ NO  → proxy is healthy, continue
   │
-  ├─ JWT signature verification failed at PostgREST?
+  ├─ Metering proxy returned 500 (not 401)?
   │   │
-  │   ├─ YES → JWT_SECRET mismatch between proxy and PostgREST
-  │   │        → see "JWT secret mismatch" below
+  │   ├─ YES → check metering_proxy_jwt_mint_errors_total metric.
+  │   │        Common causes:
+  │   │          - unknown_tier: the consumer's tier value isn't in
+  │   │            TIER_TO_ROLE (src/dk_data/metering_proxy/jwt_mint.py)
+  │   │          - not_loaded: the pod started without calling
+  │   │            load_secret_at_startup() — broken deploy, restart it
+  │   │          - secret_missing / secret_too_short: JWT_SECRET env
+  │   │            var missing from the sidecar container
   │   │
-  │   └─ NO  → JWT verified, continue
+  │   └─ NO  → proxy forwarded successfully, continue
   │
-  └─ JWT role claim not in {analyst, api_user}?
+  └─ PostgREST returned 401 (after receiving the minted JWT)?
        │
-       └─ YES → consumer's tier is misconfigured
-                → check consumers.yaml `tier:` field
+       └─ YES → JWT signature verification failed. See the section below.
 ```
 
 ## Step 1 — Confirm the request is reaching the proxy

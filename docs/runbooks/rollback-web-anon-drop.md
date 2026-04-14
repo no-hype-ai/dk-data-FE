@@ -151,10 +151,47 @@ Document the decision in the incident notes and schedule the narrower
 forward-fix for follow-up within 24 hours. Do NOT leave these grants
 in place longer than the incident window.
 
+## How feature 003 affects this runbook
+
+Feature 003 (metering-jwt-mint, issue #283) is **independent of this rollback**.
+Migration 228 (`228_jwt_mint_schema_grants.sql`) grants `api_user` USAGE + SELECT
+on 13 schemas and EXECUTE on 10 resolve functions. It does not touch `web_anon`,
+`authenticator`, or the `api` schema. The two migrations are independent by
+design — verified by the CI test
+`tests/test_218_drop_web_anon.py::TestIndependentOrdering`.
+
+**Scenario A — Roll back migration 218 only (keep feature 003 image)**
+
+Consumers routed through the metering proxy will continue to work because the
+proxy mints a JWT with `role=api_user` and `api_user` has the grants from
+migration 228. `web_anon` is recreated with minimum grants (health + data catalog
+only), but authenticated traffic never touches `web_anon`. This is the normal
+rollback path — use the procedure above.
+
+**Scenario B — Roll back BOTH migration 218 AND the feature 003 image**
+
+If you also roll back the metering proxy image to a pre-003 tag (before JWT
+minting was added), the proxy will no longer mint JWTs. Requests will reach
+PostgREST as `web_anon`. Consumers will fall back to the minimum grants restored
+by this rollback — `api.health` and `api.data_catalog` only. Broader silver/gold
+access will not be available. Follow up with a forward-fix to provision API keys
+and re-deploy feature 003.
+
+**About migration 228 during rollback**
+
+Do NOT undo migration 228 as part of this rollback. Migration 228's `api_user`
+grants are additive and harmless in every rollback scenario. Removing them would
+break any service or tool that accesses `api_user`-scoped resources, without any
+benefit to the `web_anon` rollback objective.
+
+---
+
 ## Related
 
 - `src/dk_data/sql/migrations/218_drop_web_anon.sql` — the migration being rolled back
 - `src/dk_data/sql/migrations/218_drop_web_anon_rollback.sql` — the rollback SQL
+- `src/dk_data/sql/migrations/228_jwt_mint_schema_grants.sql` — feature 003 grant migration (independent; do not roll back)
 - Feature 002 spec `.dk/specs/002-external-integration-foundation/spec.md` US-2
 - Feature 002 decisions `memory/decisions.md` F-D014 (minimum-only policy)
+- Feature 003 spec `.dk/specs/003-metering-jwt-mint/spec.md`
 - Success criterion SC-020 (rollback ≤ 5 min)
