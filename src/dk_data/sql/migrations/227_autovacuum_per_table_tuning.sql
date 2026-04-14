@@ -70,8 +70,8 @@ SET LOCAL lock_timeout = '10s';
 DO $$
 BEGIN
     IF EXISTS (
-        SELECT 1 FROM information_schema.tables
-        WHERE table_schema = 'mol_silver' AND table_name = 'publications'
+        SELECT 1 FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace
+        WHERE n.nspname = 'mol_silver' AND c.relname = 'publications' AND c.relkind = 'r'
     ) THEN
         EXECUTE $sql$
             ALTER TABLE mol_silver.publications SET (
@@ -90,8 +90,8 @@ END $$;
 DO $$
 BEGIN
     IF EXISTS (
-        SELECT 1 FROM information_schema.tables
-        WHERE table_schema = 'mol_raw' AND table_name = 'chembl_activities'
+        SELECT 1 FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace
+        WHERE n.nspname = 'mol_raw' AND c.relname = 'chembl_activities' AND c.relkind = 'r'
     ) THEN
         EXECUTE $sql$
             ALTER TABLE mol_raw.chembl_activities SET (
@@ -110,8 +110,8 @@ END $$;
 DO $$
 BEGIN
     IF EXISTS (
-        SELECT 1 FROM information_schema.tables
-        WHERE table_schema = 'meta' AND table_name = 'transform_runs'
+        SELECT 1 FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace
+        WHERE n.nspname = 'meta' AND c.relname = 'transform_runs' AND c.relkind = 'r'
     ) THEN
         EXECUTE $sql$
             ALTER TABLE meta.transform_runs SET (
@@ -129,8 +129,8 @@ END $$;
 DO $$
 BEGIN
     IF EXISTS (
-        SELECT 1 FROM information_schema.tables
-        WHERE table_schema = 'meta' AND table_name = 'api_audit_log'
+        SELECT 1 FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace
+        WHERE n.nspname = 'meta' AND c.relname = 'api_audit_log' AND c.relkind = 'r'
     ) THEN
         EXECUTE $sql$
             ALTER TABLE meta.api_audit_log SET (
@@ -148,8 +148,8 @@ END $$;
 DO $$
 BEGIN
     IF EXISTS (
-        SELECT 1 FROM information_schema.tables
-        WHERE table_schema = 'mol_silver' AND table_name = 'bioactivity'
+        SELECT 1 FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace
+        WHERE n.nspname = 'mol_silver' AND c.relname = 'bioactivity' AND c.relkind = 'r'
     ) THEN
         EXECUTE $sql$
             ALTER TABLE mol_silver.bioactivity SET (
