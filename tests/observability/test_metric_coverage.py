@@ -353,6 +353,90 @@ class TestDashboardCoverage:
             )
 
 
+class TestMeteringProxyJWTMetrics:
+    """Explicit three-way binding check for the three JWT minting metrics added in
+    feature 003 (issue #283). These metrics live in metering_proxy/metrics.py (not
+    in the canonical observability/metrics.py scanned above), so they need their
+    own coverage assertions.
+
+    The three metrics must be:
+      1. Defined in src/dk_data/metering_proxy/metrics.py
+      2. Emitted from at least one production call site (proxy.py or a helper)
+      3. Queried on a Grafana dashboard panel (dashboards fixture)
+
+    See .dk/memory/principles.md §6 (three-way binding).
+    """
+
+    EXPECTED_METRICS: list[tuple[str, str]] = [
+        # (python object name in metering_proxy/metrics.py, prometheus metric name)
+        ("JWT_MINTED_TOTAL", "dk_data_metering_jwt_minted_total"),
+        ("JWT_MINT_ERRORS_TOTAL", "dk_data_metering_jwt_mint_errors_total"),
+        (
+            "REQUESTS_FORWARDED_WITHOUT_JWT_TOTAL",
+            "dk_data_metering_requests_forwarded_without_jwt_total",
+        ),
+    ]
+
+    @pytest.fixture(scope="class")
+    def metering_proxy_metrics_src(self) -> str:
+        path = REPO_ROOT / "src" / "dk_data" / "metering_proxy" / "metrics.py"
+        assert path.exists(), f"metering_proxy/metrics.py not found at {path}"
+        return path.read_text(encoding="utf-8")
+
+    @pytest.fixture(scope="class")
+    def metering_proxy_source_files(self) -> list[Path]:
+        metering_dir = REPO_ROOT / "src" / "dk_data" / "metering_proxy"
+        return [
+            p
+            for p in metering_dir.rglob("*.py")
+            if "__pycache__" not in p.parts
+        ]
+
+    def test_jwt_metrics_defined(self, metering_proxy_metrics_src):
+        """All three JWT metrics must be defined in metering_proxy/metrics.py."""
+        missing = []
+        for obj_name, prom_name in self.EXPECTED_METRICS:
+            if obj_name not in metering_proxy_metrics_src:
+                missing.append(f"{obj_name} ({prom_name})")
+            if prom_name not in metering_proxy_metrics_src:
+                missing.append(f"prometheus name '{prom_name}' not found in metrics.py")
+        assert not missing, (
+            "JWT metric definitions missing from metering_proxy/metrics.py:\n"
+            + "\n".join(f"  - {m}" for m in missing)
+        )
+
+    def test_jwt_metrics_emitted(self, metering_proxy_source_files):
+        """All three JWT metrics must have at least one .inc()/.labels() call in
+        the metering proxy source tree (emission leg of three-way binding)."""
+        dead = []
+        for obj_name, prom_name in self.EXPECTED_METRICS:
+            call_pattern = re.compile(
+                rf"\b{re.escape(obj_name)}\s*\.\s*(inc|set|observe|labels|dec|info)\b"
+            )
+            if not any(
+                call_pattern.search(p.read_text(encoding="utf-8", errors="ignore"))
+                for p in metering_proxy_source_files
+            ):
+                dead.append(f"{obj_name} ({prom_name})")
+        assert not dead, (
+            "JWT metrics defined but never emitted from metering_proxy source:\n"
+            + "\n".join(f"  - {d}" for d in dead)
+            + "\n\nWire .inc() or .labels().inc() calls in proxy.py."
+        )
+
+    def test_jwt_metrics_on_dashboard(self, dashboards):
+        """All three JWT metric names must appear in at least one dashboard panel."""
+        missing = []
+        for _obj_name, prom_name in self.EXPECTED_METRICS:
+            if prom_name not in dashboards:
+                missing.append(prom_name)
+        assert not missing, (
+            "JWT metrics not found in any Grafana dashboard JSON:\n"
+            + "\n".join(f"  - {m}" for m in missing)
+            + "\n\nAdd panels to grafana/dashboards/dk-data-adapter-telemetry.json."
+        )
+
+
 class TestAllowlistDiscipline:
     """The allowlist itself is an allowed exception, but it must not grow
     without review. This test documents the current floor — if it drops,
