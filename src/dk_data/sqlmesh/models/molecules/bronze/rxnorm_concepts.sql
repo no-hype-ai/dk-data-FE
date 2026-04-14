@@ -26,7 +26,7 @@ WITH from_id_group AS (
         r.response_body->'idGroup'->>'tty'            AS tty,
         NULL::TEXT                                    AS synonym,
         NULL::TEXT                                    AS suppress,
-        r.response_body                               AS raw_json
+        r.response_body->'idGroup'                    AS raw_json
     FROM mol_raw.rxnorm r
     WHERE r.response_status = 200
       AND r.response_body->'idGroup' IS NOT NULL
@@ -43,7 +43,7 @@ from_properties AS (
         r.response_body->'properties'->>'tty'      AS tty,
         r.response_body->'properties'->>'synonym'  AS synonym,
         r.response_body->'properties'->>'suppress' AS suppress,
-        r.response_body                            AS raw_json
+        r.response_body->'properties'              AS raw_json
     FROM mol_raw.rxnorm r
     WHERE r.response_status = 200
       AND r.response_body->'properties' IS NOT NULL
@@ -61,7 +61,7 @@ from_min_concept AS (
         concept->>'tty'    AS tty,
         NULL::TEXT         AS synonym,
         NULL::TEXT         AS suppress,
-        r.response_body    AS raw_json
+        concept            AS raw_json
     FROM mol_raw.rxnorm r,
          jsonb_array_elements(r.response_body->'minConceptGroup'->'minConcept') AS concept
     WHERE r.response_status = 200
@@ -79,7 +79,7 @@ from_related AS (
         prop->>'tty'      AS tty,
         prop->>'synonym'  AS synonym,
         NULL::TEXT        AS suppress,
-        r.response_body   AS raw_json
+        prop              AS raw_json
     FROM mol_raw.rxnorm r,
          jsonb_array_elements(r.response_body->'relatedGroup'->'conceptGroup') AS cg,
          jsonb_array_elements(cg->'conceptProperties') AS prop
