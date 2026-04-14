@@ -46,7 +46,10 @@ spec:
                 - name: OTEL_ENABLED
                   value: "true"
                 - name: POSTGRES_HOST_DIRECT
-                  value: "postgres-cluster-rw.infra.svc.cluster.local:5432"
+                  valueFrom:
+                    secretKeyRef:
+                      name: dk-data-secrets
+                      key: POSTGRES_HOST
               resources:
                 requests:
                   memory: "256Mi"

@@ -111,7 +111,10 @@ spec:
                 # transaction; PgBouncer transaction mode would break the
                 # transaction boundary the upsert depends on.
                 - name: POSTGRES_HOST_DIRECT
-                  value: "postgres-cluster-rw.infra.svc.cluster.local"
+                  valueFrom:
+                    secretKeyRef:
+                      name: dk-data-secrets
+                      key: POSTGRES_HOST
                 - name: OTEL_EXPORTER_OTLP_ENDPOINT
                   value: "http://alloy.infra.svc.cluster.local:4317"
                 - name: OTEL_ENABLED

@@ -51,12 +51,12 @@ spec:
               valueFrom:
                 secretKeyRef:
                   name: dk-data-secrets
-                  key: POSTGRES_HOST_DIRECT
+                  key: POSTGRES_HOST
             - name: POSTGRES_PORT_DIRECT
               valueFrom:
                 secretKeyRef:
                   name: dk-data-secrets
-                  key: POSTGRES_PORT_DIRECT
+                  key: POSTGRES_PORT
                   optional: true
             # Fallback values — the runner prefers _DIRECT but
             # uses POSTGRES_HOST if _DIRECT is unset (with a
