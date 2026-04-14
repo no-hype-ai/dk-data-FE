@@ -263,6 +263,126 @@
         "legend": { "displayMode": "table", "placement": "right" },
         "tooltip": { "mode": "multi", "sort": "desc" }
       }
+    },
+    {
+      "id": 40,
+      "type": "row",
+      "title": "Metering Proxy — JWT Minting (Feature 003)",
+      "description": "JWT mint + inject metrics from the metering-proxy sidecar. Three-way binding: definition in metering_proxy/metrics.py, emission in proxy.py, consumption here.",
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 38 },
+      "collapsed": false,
+      "panels": []
+    },
+    {
+      "id": 41,
+      "type": "timeseries",
+      "title": "JWTs Minted (per second, by tier)",
+      "description": "Rate of successfully minted JWTs per consumer tier. One increment per request that reaches PostgREST with a valid Bearer JWT. Steady-state: proportional to request rate.",
+      "datasource": { "type": "prometheus", "uid": "mimir" },
+      "gridPos": { "h": 10, "w": 12, "x": 0, "y": 39 },
+      "targets": [
+        {
+          "expr": "sum by (tier) (rate(dk_data_metering_jwt_minted_total[1m]))",
+          "legendFormat": "{{tier}}",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "reqps",
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "smooth",
+            "lineWidth": 2,
+            "fillOpacity": 20,
+            "stacking": { "mode": "normal", "group": "A" }
+          },
+          "color": { "mode": "palette-classic" }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": { "displayMode": "table", "placement": "right" },
+        "tooltip": { "mode": "multi", "sort": "desc" }
+      }
+    },
+    {
+      "id": 42,
+      "type": "timeseries",
+      "title": "JWT Mint Errors (by error type)",
+      "description": "Rate of JWT mint failures by error type. Expected steady-state: zero. Non-zero means the proxy is 500-ing requests — check missing secret, unknown tier, or code bug.",
+      "datasource": { "type": "prometheus", "uid": "mimir" },
+      "gridPos": { "h": 10, "w": 12, "x": 12, "y": 39 },
+      "targets": [
+        {
+          "expr": "sum by (error_type) (rate(dk_data_metering_jwt_mint_errors_total[5m]))",
+          "legendFormat": "{{error_type}}",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "reqps",
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "smooth",
+            "lineWidth": 2,
+            "fillOpacity": 20
+          },
+          "color": { "mode": "fixed", "fixedColor": "red" },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "red", "value": 0.001 }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": { "displayMode": "table", "placement": "right" },
+        "tooltip": { "mode": "multi", "sort": "desc" }
+      }
+    },
+    {
+      "id": 43,
+      "type": "timeseries",
+      "title": "Requests Forwarded Without JWT (FR-010 bug-detector)",
+      "description": "FR-010: any request forwarded to PostgREST without a minted JWT lands as dk_data_no_anon (zero grants). Expected steady-state: zero. Any non-zero value is a bug — investigate bypass path in proxy.py.",
+      "datasource": { "type": "prometheus", "uid": "mimir" },
+      "gridPos": { "h": 10, "w": 24, "x": 0, "y": 49 },
+      "targets": [
+        {
+          "expr": "rate(dk_data_metering_requests_forwarded_without_jwt_total[5m])",
+          "legendFormat": "requests without JWT",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "reqps",
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "smooth",
+            "lineWidth": 2,
+            "fillOpacity": 30
+          },
+          "color": { "mode": "fixed", "fixedColor": "dark-red" },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "red", "value": 0.0001 }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": { "displayMode": "table", "placement": "bottom" },
+        "tooltip": { "mode": "single", "sort": "none" }
+      }
     }
   ],
   "refresh": "1m",
