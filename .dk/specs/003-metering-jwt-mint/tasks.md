@@ -74,9 +74,9 @@ Blocking prerequisites for every user story. Complete the whole phase before sta
 
 ## Phase 6 — US4: The target database role has exactly the schema access the product promises (P2)
 
-- [ ] **T050** [P] [US4] Extend `tests/test_228_schema_grants.py::test_api_user_cannot_write` — assert `api_user` attempting `INSERT INTO mol_silver.molecules` fails with `permission denied`. File: `tests/test_228_schema_grants.py`.
-- [ ] **T051** [P] [US4] Extend `tests/test_228_schema_grants.py::test_api_user_can_execute_resolve_functions` — call each resolve function from a session using `SET ROLE api_user`, assert no permission error. File: `tests/test_228_schema_grants.py`.
-- [ ] **T052** [P] [US4] Extend `tests/test_228_schema_grants.py::test_new_table_inherits_select_grant` — create a test table in `mol_silver`, assert `api_user` can SELECT without an explicit GRANT (tests `ALTER DEFAULT PRIVILEGES`). File: `tests/test_228_schema_grants.py`.
+- [x] **T050** [P] [US4] Extend `tests/test_228_schema_grants.py::test_api_user_cannot_write` — assert `api_user` attempting `INSERT INTO mol_silver.molecules` fails with `permission denied`. File: `tests/test_228_schema_grants.py`.
+- [x] **T051** [P] [US4] Extend `tests/test_228_schema_grants.py::test_api_user_can_execute_resolve_functions` — call each resolve function from a session using `SET ROLE api_user`, assert no permission error. File: `tests/test_228_schema_grants.py`.
+- [x] **T052** [P] [US4] Extend `tests/test_228_schema_grants.py::test_new_table_inherits_select_grant` — create a test table in `mol_silver`, assert `api_user` can SELECT without an explicit GRANT (tests `ALTER DEFAULT PRIVILEGES`). File: `tests/test_228_schema_grants.py`.
 
 **US4 checkpoint**: All grant tests green; no unexpected grant (write/DDL/administrative).
 
@@ -84,10 +84,10 @@ Blocking prerequisites for every user story. Complete the whole phase before sta
 
 ## Phase 7 — US5: Observability and operator confidence (P2)
 
-- [ ] **T060** [US5] Update `grafana/dashboards/dk-data-adapter-telemetry.json`: add a panel that plots `rate(metering_proxy_jwt_minted_total[1m])` broken down by `tier`, a second panel for `metering_proxy_jwt_mint_errors_total`, and a third panel for `metering_proxy_requests_forwarded_without_jwt_total` (expected to be zero at steady state — this satisfies FR-010's consumption binding). File: `grafana/dashboards/dk-data-adapter-telemetry.json`.
-- [ ] **T061** [US5] Add alerts to `grafana/alerts/dk-data.yaml`: `MeteringProxyJWTMintSuccessRateLow` (fires when minted success rate < 99.9% over 5m) AND `MeteringProxyRequestsAsAnonRoleDetected` (fires when `rate(metering_proxy_requests_forwarded_without_jwt_total[5m]) > 0` — this satisfies FR-010's alert requirement). File: `grafana/alerts/dk-data.yaml`.
-- [ ] **T062** [P] [US5] Update `tests/observability/test_metric_coverage.py` to include `metering_proxy_jwt_minted_total`, `metering_proxy_jwt_mint_errors_total`, AND `metering_proxy_requests_forwarded_without_jwt_total` in the expected-metrics list. File: `tests/observability/test_metric_coverage.py`.
-- [ ] **T063** [P] [US5] Write `tests/metering_proxy/test_nolog.py` — spy on the `structlog` processor chain, run one request through the proxy, assert no log record contains the raw API key string, the minted JWT, or the `JWT_SECRET` value. This test is the enforcement for the `[NOLOG]` tag on this feature. File: `tests/metering_proxy/test_nolog.py`.
+- [x] **T060** [US5] Update `grafana/dashboards/dk-data-adapter-telemetry.json`: add a panel that plots `rate(metering_proxy_jwt_minted_total[1m])` broken down by `tier`, a second panel for `metering_proxy_jwt_mint_errors_total`, and a third panel for `metering_proxy_requests_forwarded_without_jwt_total` (expected to be zero at steady state — this satisfies FR-010's consumption binding). File: `grafana/dashboards/dk-data-adapter-telemetry.json`.
+- [x] **T061** [US5] Add alerts to `grafana/alerts/dk-data.yaml`: `MeteringProxyJWTMintSuccessRateLow` (fires when minted success rate < 99.9% over 5m) AND `MeteringProxyRequestsAsAnonRoleDetected` (fires when `rate(metering_proxy_requests_forwarded_without_jwt_total[5m]) > 0` — this satisfies FR-010's alert requirement). File: `grafana/alerts/dk-data.yaml`.
+- [x] **T062** [P] [US5] Update `tests/observability/test_metric_coverage.py` to include `metering_proxy_jwt_minted_total`, `metering_proxy_jwt_mint_errors_total`, AND `metering_proxy_requests_forwarded_without_jwt_total` in the expected-metrics list. File: `tests/observability/test_metric_coverage.py`.
+- [x] **T063** [P] [US5] Write `tests/metering_proxy/test_nolog.py` — spy on the `structlog` processor chain, run one request through the proxy, assert no log record contains the raw API key string, the minted JWT, or the `JWT_SECRET` value. This test is the enforcement for the `[NOLOG]` tag on this feature. File: `tests/metering_proxy/test_nolog.py`.
 
 **US5 checkpoint**: Metric is bound three ways (definition in metrics.py, emission in proxy.py, consumption in dashboard + alert); the no-log regression test passes.
 
