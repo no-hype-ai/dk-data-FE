@@ -72,7 +72,6 @@ class TestAllowlistRejectionsDoNotMintJWT:
 
     def test_allowlist_rejection_does_not_mint_jwt(self, client):
         """A 403 response must not increment JWT_MINTED_TOTAL for any tier."""
-        from dk_data.metering_proxy import metrics
 
         def _read_jwt_minted_total() -> float:
             """Sum JWT_MINTED_TOTAL across all tier label-sets."""

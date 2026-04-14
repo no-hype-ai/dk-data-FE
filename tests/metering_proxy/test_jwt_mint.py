@@ -7,7 +7,6 @@ T024: every tier in consumers.yaml is a key in TIER_TO_ROLE.
 
 from __future__ import annotations
 
-import os
 import time
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch

@@ -28,7 +28,6 @@ import pytest
 import structlog.testing
 from fastapi.testclient import TestClient
 
-from dk_data.metering_proxy import app as app_module
 from dk_data.metering_proxy import jwt_mint
 
 # Must match the value in conftest.py test key store

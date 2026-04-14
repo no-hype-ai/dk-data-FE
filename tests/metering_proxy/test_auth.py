@@ -11,7 +11,6 @@ path — behavior-labs-ai has `mol_silver` in its allowlist.
 
 from __future__ import annotations
 
-import os
 
 import jwt
 import pytest
