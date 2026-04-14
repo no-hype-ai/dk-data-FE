@@ -1,65 +1,131 @@
-"""T023 — Metering proxy produces valid upstream responses with the
-expected role context.
+"""JWT minting unit tests — Feature 003 (issue #283).
 
-Feature: 002-external-integration-foundation (US-3)
-
-Scope note: the current metering proxy (src/dk_data/metering_proxy/)
-does not itself mint JWTs — PostgREST holds the `authenticator` role
-chain and does its own JWT verification against `PGRST_JWT_SECRET`.
-The proxy's job is to (a) validate the consumer API key, (b) enforce
-schema + rate limits, and (c) inject consumer metadata headers so
-PostgREST / downstream audit can attribute the call.
-
-This test file therefore verifies the slice the proxy DOES own:
-  - valid API key → upstream call goes through with `X-Consumer`
-    header set (consumer attribution)
-  - consumer tier is reflected in rate-limit headers
-  - upstream error responses are proxied through with status preserved
-
-The JWT signing path itself is exercised in
-`tests/test_data_platform_auth.py` against the shared `JWTService`.
+T022: mint() roundtrip — decode and verify all claims.
+T023: error cases — unknown tier and unloaded secret.
+T024: every tier in consumers.yaml is a key in TIER_TO_ROLE.
 """
 
 from __future__ import annotations
 
+import os
+import time
+from pathlib import Path
+
+import jwt
+import pytest
+import yaml
+
+from dk_data.metering_proxy import jwt_mint
+from dk_data.metering_proxy.jwt_mint import (
+    JWT_ALGORITHM,
+    JWT_ISSUER,
+    JWT_TTL_SECONDS,
+    JWTMintError,
+    TIER_TO_ROLE,
+    load_secret_at_startup,
+    mint,
+)
+
+# A deterministic 32-char test secret (never the real secret)
+_TEST_SECRET = "testsecret_abcdefghijklmnopqrstu"
 
 
-class TestConsumerAttribution:
-    def test_x_consumer_header_set_on_success(self, client):
-        response = client.get(
-            "/mol_silver/molecules",
-            headers={"Authorization": "Bearer dk_data_blai_test_key"},
+@pytest.fixture(autouse=True)
+def _reset_secret(monkeypatch):
+    """Ensure module-level _SECRET is reset before and after each test."""
+    monkeypatch.setattr(jwt_mint, "_SECRET", None)
+    yield
+    monkeypatch.setattr(jwt_mint, "_SECRET", None)
+
+
+@pytest.fixture
+def loaded_secret(monkeypatch):
+    """Set JWT_SECRET env var and call load_secret_at_startup()."""
+    monkeypatch.setenv("JWT_SECRET", _TEST_SECRET)
+    load_secret_at_startup()
+    return _TEST_SECRET
+
+
+# ---------------------------------------------------------------------------
+# T022 — mint() roundtrip
+# ---------------------------------------------------------------------------
+
+
+class TestMintRoundtrip:
+    def test_mint_roundtrip(self, loaded_secret):
+        """Mint a token for blai/high and verify all claims decode correctly."""
+        token = mint(consumer_alias="blai", tier="high")
+
+        decoded = jwt.decode(
+            token,
+            loaded_secret,
+            algorithms=[JWT_ALGORITHM],
+            options={"require": ["sub", "role", "iss", "iat", "exp"]},
         )
-        assert response.status_code == 200
-        assert response.headers.get("x-consumer") == "blai"
 
-    def test_different_consumers_get_different_x_consumer(self, client):
-        # Each consumer uses a schema in its own allowlist.
-        blai_resp = client.get(
-            "/mol_silver/molecules",
-            headers={"Authorization": "Bearer dk_data_blai_test_key"},
-        )
-        dkos_resp = client.get(
-            "/api/health",
-            headers={"Authorization": "Bearer dk_data_dkos_test_key"},
-        )
-        assert blai_resp.headers.get("x-consumer") == "blai"
-        assert dkos_resp.headers.get("x-consumer") == "dkos"
+        assert decoded["sub"] == "blai"
+        assert decoded["role"] == "api_user"
+        assert decoded["iss"] == JWT_ISSUER
+        assert decoded["exp"] - decoded["iat"] == JWT_TTL_SECONDS
+        assert abs(decoded["iat"] - int(time.time())) <= 5
 
 
-class TestRateLimitTierExposure:
-    def test_rate_limit_limit_matches_consumer_tier(self, client):
-        # behavior-labs-ai is 500 rpm
-        response = client.get(
-            "/mol_silver/molecules",
-            headers={"Authorization": "Bearer dk_data_blai_test_key"},
-        )
-        assert response.headers.get("x-ratelimit-limit") == "500"
+# ---------------------------------------------------------------------------
+# T023 — error cases
+# ---------------------------------------------------------------------------
 
-    def test_standard_consumer_tier_lower_limit(self, client):
-        # dk-os is 200 rpm
-        response = client.get(
-            "/api/health",
-            headers={"Authorization": "Bearer dk_data_dkos_test_key"},
+
+class TestMintErrors:
+    def test_unknown_tier_raises(self, loaded_secret):
+        """mint() with an unknown tier must raise JWTMintError(unknown_tier)."""
+        with pytest.raises(JWTMintError) as exc_info:
+            mint(consumer_alias="x", tier="nosuchtier")
+        assert exc_info.value.error_type == "unknown_tier"
+
+    def test_mint_before_startup_raises(self, monkeypatch):
+        """mint() before load_secret_at_startup() must raise JWTMintError(not_loaded)."""
+        monkeypatch.setattr(jwt_mint, "_SECRET", None)
+        with pytest.raises(JWTMintError) as exc_info:
+            mint(consumer_alias="x", tier="high")
+        assert exc_info.value.error_type == "not_loaded"
+
+
+# ---------------------------------------------------------------------------
+# T024 — every consumer tier in configmap.yaml is in TIER_TO_ROLE
+# ---------------------------------------------------------------------------
+
+# Locate the configmap relative to the repo root — works from any CWD.
+_REPO_ROOT = Path(__file__).resolve().parents[2]
+_CONFIGMAP_PATH = _REPO_ROOT / "k8s/apps/metering-proxy/base/configmap.yaml"
+
+
+class TestEveryConfiguredTierIsMapped:
+    def test_every_configured_tier_is_mapped(self):
+        """Regression: every tier used in consumers.yaml must be in TIER_TO_ROLE.
+
+        Adding a new consumer tier without extending TIER_TO_ROLE causes a
+        silent runtime 500 on the hot path. This test makes it a CI failure.
+        """
+        assert _CONFIGMAP_PATH.exists(), (
+            f"ConfigMap not found at {_CONFIGMAP_PATH}. "
+            "Update the path if the file was moved."
         )
-        assert response.headers.get("x-ratelimit-limit") == "200"
+
+        raw = yaml.safe_load(_CONFIGMAP_PATH.read_text())
+        # ConfigMap data.consumers.yaml is a string; parse the inner YAML.
+        consumers_yaml_str = raw["data"]["consumers.yaml"]
+        consumers_data = yaml.safe_load(consumers_yaml_str)
+
+        consumers = consumers_data.get("consumers", {})
+        assert consumers, "No consumers found in configmap.yaml"
+
+        unknown_tiers = []
+        for name, cfg in consumers.items():
+            tier = cfg.get("tier", "")
+            if tier not in TIER_TO_ROLE:
+                unknown_tiers.append((name, tier))
+
+        assert not unknown_tiers, (
+            f"Consumers with tiers not in TIER_TO_ROLE: {unknown_tiers}. "
+            "Add the tier(s) to jwt_mint.TIER_TO_ROLE."
+        )
