@@ -51,8 +51,14 @@ from pathlib import Path
 from threading import Semaphore
 
 from .main import SOURCES, _meta_name, get_last_successful_refresh, run_ingestion
-from .utils.database import init_connection_pool, close_connection_pool
+from .utils.database import init_connection_pool, close_connection_pool, build_dsn
 from .utils.retry import retry_with_backoff
+
+try:
+    from .utils.wal_metrics import check_wal_circuit_breaker, WALCircuitBreakerOpen
+    _WAL_CB_AVAILABLE = True
+except ImportError:
+    _WAL_CB_AVAILABLE = False
 
 try:
     from prometheus_client import start_http_server
@@ -658,6 +664,20 @@ Examples:
     logger.info("=" * 60)
 
     exit_code = 0
+
+    # Pre-flight: WAL circuit breaker
+    if _WAL_CB_AVAILABLE and not args.dry_run:
+        import psycopg2
+        try:
+            cb_conn = psycopg2.connect(build_dsn())
+            cb_conn.autocommit = True
+            check_wal_circuit_breaker(cb_conn, caller="initial_backfill")
+            cb_conn.close()
+        except WALCircuitBreakerOpen:
+            logger.warning("Initial backfill skipped — WAL circuit breaker open")
+            return 0
+        except Exception as exc:
+            logger.debug("WAL circuit breaker check failed (%s) — proceeding", exc)
 
     if not args.sqlmesh_only:
         # Connection pool sized to workers * 3:
