@@ -183,3 +183,109 @@ class TestReadOnly:
             f"Migration grants {write_privilege} to api_user — this role is "
             "read-only. Remove the write privilege grant."
         )
+
+
+# ---------------------------------------------------------------------------
+# T050 — FR-011: api_user must never receive write privileges (explicit class)
+# ---------------------------------------------------------------------------
+
+class TestApiUserCannotWrite:
+    """FR-011: api_user is strictly read-only — no write privilege may appear."""
+
+    @staticmethod
+    def _code_only(migration_sql: str) -> str:
+        return "\n".join(
+            line
+            for line in migration_sql.splitlines()
+            if not line.lstrip().startswith("--")
+        )
+
+    def test_does_not_grant_insert(self, migration_sql):
+        assert "GRANT INSERT" not in self._code_only(migration_sql), (
+            "Migration grants INSERT — api_user is read-only."
+        )
+
+    def test_does_not_grant_update(self, migration_sql):
+        assert "GRANT UPDATE" not in self._code_only(migration_sql), (
+            "Migration grants UPDATE — api_user is read-only."
+        )
+
+    def test_does_not_grant_delete(self, migration_sql):
+        assert "GRANT DELETE" not in self._code_only(migration_sql), (
+            "Migration grants DELETE — api_user is read-only."
+        )
+
+    def test_does_not_grant_truncate(self, migration_sql):
+        assert "GRANT TRUNCATE" not in self._code_only(migration_sql), (
+            "Migration grants TRUNCATE — api_user is read-only."
+        )
+
+    def test_does_not_grant_all_to_api_user(self, migration_sql):
+        """GRANT ALL would silently include write privileges even if not listed individually."""
+        code_only = self._code_only(migration_sql)
+        for line in code_only.splitlines():
+            if "GRANT ALL" in line:
+                assert "api_user" not in line, (
+                    f"GRANT ALL with api_user found: {line!r}. "
+                    "api_user is a read-only role — GRANT ALL is forbidden."
+                )
+
+
+# ---------------------------------------------------------------------------
+# T051 — FR-012/FR-013: api_user can EXECUTE the 10 resolve functions exactly
+# ---------------------------------------------------------------------------
+
+class TestApiUserCanExecuteResolveFunctions:
+    """FR-012/FR-013: exactly 10 EXECUTE grants, all to api_user, one per resolve function."""
+
+    @pytest.mark.parametrize("func_path", RESOLVE_FUNCTIONS_10)
+    def test_grants_execute_with_signature_and_recipient(self, migration_sql, func_path):
+        expected = f"GRANT EXECUTE ON FUNCTION {func_path}(text) TO api_user"
+        assert expected in migration_sql, (
+            f"Missing EXECUTE grant for {func_path!r} with signature. "
+            f"Expected substring: {expected!r}"
+        )
+
+    def test_exactly_ten_execute_grants(self, migration_sql):
+        count = migration_sql.count("GRANT EXECUTE ON FUNCTION")
+        assert count == 10, (
+            f"Expected exactly 10 GRANT EXECUTE ON FUNCTION statements, found {count}. "
+            "There must be exactly one per resolve function — no more, no fewer."
+        )
+
+    def test_execute_recipient_is_api_user(self, migration_sql):
+        """Every GRANT EXECUTE line must grant to api_user and no other role."""
+        for line in migration_sql.splitlines():
+            stripped = line.strip()
+            if stripped.startswith("GRANT EXECUTE") and "ON FUNCTION" in stripped:
+                # Strip trailing semicolon for comparison
+                normalized = stripped.rstrip(";")
+                assert normalized.endswith("TO api_user"), (
+                    f"GRANT EXECUTE line does not end with 'TO api_user': {line!r}"
+                )
+
+
+# ---------------------------------------------------------------------------
+# T052 — FR-014: default privileges apply to TABLES only (not functions/sequences)
+# ---------------------------------------------------------------------------
+
+class TestNewTableInheritsSelectGrant:
+    """FR-014: ALTER DEFAULT PRIVILEGES must target ON TABLES — not ON FUNCTIONS or ON SEQUENCES."""
+
+    def test_default_privileges_apply_to_tables_only(self, migration_sql):
+        """Every ALTER DEFAULT PRIVILEGES line must reference ON TABLES, not ON FUNCTIONS
+        or ON SEQUENCES. This ensures the auto-grant is scoped to new tables only."""
+        for line in migration_sql.splitlines():
+            stripped = line.strip()
+            if stripped.startswith("ALTER DEFAULT PRIVILEGES"):
+                assert "ON TABLES" in stripped, (
+                    f"ALTER DEFAULT PRIVILEGES line does not specify ON TABLES: {line!r}"
+                )
+                assert "ON FUNCTIONS" not in stripped, (
+                    f"ALTER DEFAULT PRIVILEGES line specifies ON FUNCTIONS — "
+                    f"only ON TABLES is permitted: {line!r}"
+                )
+                assert "ON SEQUENCES" not in stripped, (
+                    f"ALTER DEFAULT PRIVILEGES line specifies ON SEQUENCES — "
+                    f"only ON TABLES is permitted: {line!r}"
+                )
