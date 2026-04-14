@@ -8,7 +8,7 @@
 
 *Project initialization, config, image tooling. Serial.*
 
-- [ ] T001 Add `postgresql-client-16` to the ingestion container image build — `deploy/docker/ingestion.Dockerfile`
+- [ ] T001 Add `postgresql-client-16` (via PGDG apt repo) to the ingestion container image build — `Dockerfile` (repo root)
 - [ ] T002 Declare `tenacity` + `loguru` usage explicitly in a new `[project.optional-dependencies.prestaged]` group (already present in base deps; no new packages) — `pyproject.toml`
 - [ ] T003 Add `scripts/prestaged_smoke.sh` — small shell helper that dry-runs one tier against a local Postgres — `scripts/prestaged_smoke.sh`
 
@@ -23,7 +23,8 @@
 - [ ] T014 Extend `SOURCE_TO_BRONZE_MODELS` dict with `depends_on: list[str]` and `prestaged_kind: str` fields — `src/dk_data/ingestion/source_backfill.py:57`
 - [ ] T015 Add helper `compute_run_id(artifact_sha256s, cluster_fp)` per research.md R4 — `src/dk_data/ingestion/prestaged_types.py`
 - [ ] T016 [P] Add helper `is_restorable_target(conn, schema, table) -> bool` that filters on `pg_class.relkind='r'` (FR-015) — `src/dk_data/ingestion/prestaged_safety.py`
-- [ ] T017 [P] Add helper `transform_runs_writer(conn)` that discovers the actual column set via `information_schema.columns` and exposes `upsert(run_id, schema, table, **fields)` — `src/dk_data/ingestion/transform_runs_writer.py`
+- [ ] T017a Author migration `229_transform_runs_status_details.sql` adding `status text` and `details jsonb` columns to `meta.transform_runs`, plus indexes `meta_transform_runs_status_idx` and `meta_transform_runs_run_label_idx` — `src/dk_data/sql/migrations/229_transform_runs_status_details.sql` (also fixes P3 platform-api `column "status" does not exist` drift)
+- [ ] T017 [P] Add `transform_runs_writer(conn)` that issues the skip-if-complete idempotency query and appends new rows via `INSERT ... (procedure_name, chunk_position, started_at, ended_at, rows_processed, wal_bytes, status, details)` — depends on migration 229 applied — `src/dk_data/ingestion/transform_runs_writer.py`
 - [ ] T018 [P] Create small fixture `.dump` files (≤1 MB each) under `tests/fixtures/prestaged/` covering raw, bronze, silver layouts plus a multi-chunk case (`1_foo.dump`, `retry_foo.dump`) — `tests/fixtures/prestaged/`
 - [ ] T019 Verify `tests/conftest.py` provides a Postgres 16 fixture (testcontainers-python OR docker-compose helper); document usage in `quickstart.md` — `tests/conftest.py`, `.dk/specs/005-prestaged-hydration/quickstart.md`
 - [ ] T010a Create `src/dk_data/ingestion/prestaged.py` skeleton with named stub functions (`walk_prestaged_root`, `validate_magic_bytes`, `compute_sha256`, `group_by_table`, `select_highest_tier`, `dispatch_pg_restore`, `run_step`, `main`) each with docstrings and `raise NotImplementedError`, so Stage 2 swarm workers can fill disjoint function bodies without file-overlap conflicts — `src/dk_data/ingestion/prestaged.py`

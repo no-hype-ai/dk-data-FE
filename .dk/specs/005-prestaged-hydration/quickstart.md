@@ -15,6 +15,29 @@ export PRESTAGED_ROOT="$PWD/data"
 export PG_URL="postgresql://dk:dk@localhost:5432/dkdata_dev"
 ```
 
+### Test-only fixtures
+
+Pytest fixtures live in `tests/conftest.py`:
+
+| Fixture | Scope | Purpose |
+|---------|-------|---------|
+| `cnpg_conn` | session | Raw psycopg2 connection to `dk_data_test` |
+| `cnpg_cursor` | function | Per-test cursor with rollback |
+| `cnpg_meta_schemas` | session | Creates `meta.job_locks`, `meta.refresh_state`, `meta.linkage_conflicts`, `meta.transform_runs` (matches prod base schema) |
+| `prestaged_meta_schema` | session | Applies migration 229 effects (`status text`, `details jsonb`, partial indexes) on top of `cnpg_meta_schemas` |
+
+Hydration-feature tests MUST request `prestaged_meta_schema` (not
+`cnpg_meta_schemas`) so the writer's column assumptions match reality.
+
+Binary `.dump` fixtures are generated on demand:
+
+```bash
+PG_URL=postgresql://postgres:postgres@localhost:5432/postgres \
+  bash tests/fixtures/prestaged/generate_fixtures.sh
+```
+
+See `tests/fixtures/prestaged/README.md` for the layout produced.
+
 ## 2. Dry run
 
 ```bash

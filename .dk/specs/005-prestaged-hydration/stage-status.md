@@ -18,8 +18,8 @@ Legend: ✅ closed · ⏳ in progress or next up · ⏸ deferred · ⛔ blocked
 
 **Entry gate**: feature branch created; tasks.md, plan.md, spec.md committed (commit `86048a9`)
 **Exit gate type**: code-only-safe
-**Exit gate**: `mypy --strict src/dk_data/ingestion/prestaged_types.py src/dk_data/ingestion/prestaged_safety.py src/dk_data/ingestion/transform_runs_writer.py` exits 0; `pytest tests/ingestion/test_load_order.py` constructs plans without errors; `docker build -f deploy/docker/ingestion.Dockerfile .` succeeds locally; PR merged
-**Task range**: T001-T003, T010-T019, T010a
+**Exit gate**: `mypy --strict src/dk_data/ingestion/prestaged_types.py src/dk_data/ingestion/prestaged_safety.py src/dk_data/ingestion/transform_runs_writer.py` exits 0; `pytest tests/ingestion/test_load_order.py` constructs plans without errors; `docker build -f deploy/docker/ingestion.Dockerfile .` succeeds locally; migration `229_transform_runs_status_details.sql` lints and applies cleanly against a fresh Postgres; PR merged
+**Task range**: T001-T003, T010-T019, T010a, T017a
 **Delegated via**: /dk.implement
 **PR**: not opened
 
@@ -34,7 +34,8 @@ Legend: ✅ closed · ⏳ in progress or next up · ⏸ deferred · ⛔ blocked
 - ⏳ T014 — Extend SOURCE_TO_BRONZE_MODELS with depends_on/prestaged_kind
 - ⏳ T015 — compute_run_id() helper (deterministic hash)
 - ⏳ T016 — is_restorable_target() view-safety helper
-- ⏳ T017 — transform_runs_writer with column-drift tolerance
+- ⏳ T017a — Migration 229: add `status text` + `details jsonb` to `meta.transform_runs` (also fixes P3)
+- ⏳ T017 — transform_runs_writer using the post-229 schema (append-only INSERTs, skip-if-complete idempotency)
 - ⏳ T018 — Fixture .dump files under tests/fixtures/prestaged/
 - ⏳ T019 — Verify tests/conftest.py provides Postgres 16 fixture + document in quickstart.md
 
@@ -50,6 +51,7 @@ Legend: ✅ closed · ⏳ in progress or next up · ⏸ deferred · ⛔ blocked
 **Exit gate**: `pytest tests/ingestion/test_prestaged_discovery.py tests/ingestion/test_prestaged_validate.py tests/load/test_prestaged_e2e.py` green; `python -m dk_data.ingestion.prestaged --dry-run --source-list all` against a fixture emits ordered JSON plan; `kubectl --dry-run=client apply -f deploy/jobs/prestaged-hydrate.yaml` validates; PR merged
 **Task range**: T020-T032
 **Delegated via**: /dk.swarm (2 workers: `discovery-validate` → T020-T024,T028-T030; `dispatch-cli` → T025-T027,T031-T032)
+**Budget**: `--max-budget-usd 10` per worker (default); max $20 across the stage
 **PR**: not opened
 
 - ⏳ T020 — walk_prestaged_root() supporting both layouts
@@ -119,6 +121,7 @@ Legend: ✅ closed · ⏳ in progress or next up · ⏸ deferred · ⛔ blocked
 **Exit gate**: `pytest tests/ingestion/test_prestaged_fallback.py tests/load/test_prestaged_e2e.py` green; SC-006 rerun-is-noop test validates zero `pg_restore` subprocess calls on second invocation; `FETCHERS_SUSPENDED=patentsview` test confirms `no_source_available` path; PR merged
 **Task range**: T060-T065, T070-T075
 **Delegated via**: /dk.swarm (2 workers: `fallback-us4` → T060-T065; `idempotency-us5` → T070-T075)
+**Budget**: `--max-budget-usd 10` per worker (default); max $20 across the stage
 **PR**: not opened
 
 - ⏳ T060 — run_live_fetch() invoking main.run_ingestion

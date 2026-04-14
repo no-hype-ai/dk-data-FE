@@ -55,24 +55,25 @@ pending -->| running   |--+-- completed
                           +-- no_source_available
 ```
 
-### Transform Run (existing table `meta.transform_runs`)
+### Transform Run (existing table `meta.transform_runs` + migration 229)
 
-Columns used by writer:
+Prod schema verified 2026-04-14; migration 229 adds `status text` + `details jsonb`. See `contracts/meta-transform-runs.md` for the full column table and indexes.
 
 | Column | Write responsibility |
 |--------|----------------------|
-| `run_id` | Deterministic key (R4) |
-| `schema` | From LoadStep |
-| `table` | From LoadStep |
-| `source_kind` | pg_dump / bronze_ready / raw_csv / live_fetch |
-| `status` | State-machine value above |
-| `row_count` | `COUNT(*)` post-restore; `NULL` on failure |
-| `started_at` | UTC timestamp |
-| `finished_at` | UTC timestamp on terminal transition |
-| `artifact_sha256` | Comma-joined sha256s of all chunks; `NULL` for live_fetch |
-| `error_detail` | Truncated stderr on failure |
+| `run_id` | Autoincrement bigint (postgres-managed) |
+| `procedure_name` | `'prestaged:{target_schema}.{target_table}'` |
+| `chunk_position` | `str(chunk_index)` or `'-'` for single-chunk |
+| `started_at` | On `running` transition |
+| `ended_at` | On terminal transition |
+| `rows_processed` | post-restore `COUNT(*)`; 0 on failure |
+| `wal_bytes` | Measured via `pg_current_wal_lsn()` brackets; 0 if unmeasured |
+| `status` | State-machine value: pending / running / completed / failed / blocked / skipped_view / no_source_available |
+| `details` | JSONB: `{run_label, source_kind, target_schema, target_table, artifact_sha256, error_detail}` |
 
-**Note on schema drift**: This feature assumes the column is named `status` in prod. If the post-restore meta dump reveals a different column name (e.g. `state`), the writer reads the column list at connection time via `information_schema.columns` and maps to whatever is present. The list above is the canonical names this module uses internally.
+**Idempotency** (FR-011): the writer's skip predicate is `details->>'run_label' = :current_run_label AND status = 'completed'`, indexed via `meta_transform_runs_run_label_idx`.
+
+**No `ON CONFLICT`**: every terminal transition is a fresh INSERT; `run_id` autoincrements. Historical rows are preserved for audit. Idempotency is enforced on the read side (skip-if-complete query) not the write side.
 
 ### WAL Observation (existing view `meta.wal_usage`)
 
