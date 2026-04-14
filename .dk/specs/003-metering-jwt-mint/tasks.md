@@ -52,11 +52,11 @@ Blocking prerequisites for every user story. Complete the whole phase before sta
 
 ## Phase 4 — US2: Every authenticated request reaches the database as a real role, never as `web_anon` (P1)
 
-- [ ] **T030** [US2] Modify `src/dk_data/metering_proxy/app.py:lifespan()` to call `jwt_mint.load_secret_at_startup()` before any traffic is accepted; let `JWTMintError` propagate so the container fails readiness. File: `src/dk_data/metering_proxy/app.py`.
-- [ ] **T031** [US2] Extend `app.lifespan()` to call `jwt_mint.self_test(POSTGREST_URL)` after secret load; on failure, structured-log and raise so readiness stays failed. File: `src/dk_data/metering_proxy/app.py`.
-- [ ] **T032** [P] [US2] Add `tests/metering_proxy/test_jwt_mint.py::test_missing_secret_fails_startup` and `::test_short_secret_fails_startup`. File: `tests/metering_proxy/test_jwt_mint.py`.
-- [ ] **T033** [P] [US2] Add `tests/metering_proxy/test_jwt_mint.py::test_self_test_detects_secret_mismatch` — monkeypatch PostgREST response to 401, assert self_test raises `JWTMintError`. File: `tests/metering_proxy/test_jwt_mint.py`.
-- [ ] **T034** (NO-OP, kept for task-ID stability) — feature 002 already commented out `PGRST_DB_ANON_ROLE` in `k8s/apps/postgrest/base/configmap.yaml`, which is the right behavior for this feature too. No configmap change needed here.
+- [x] **T030** [US2] Modify `src/dk_data/metering_proxy/app.py:lifespan()` to call `jwt_mint.load_secret_at_startup()` before any traffic is accepted; let `JWTMintError` propagate so the container fails readiness. File: `src/dk_data/metering_proxy/app.py`.
+- [x] **T031** [US2] Extend `app.lifespan()` to call `jwt_mint.self_test(POSTGREST_URL)` after secret load; on failure, structured-log and raise so readiness stays failed. File: `src/dk_data/metering_proxy/app.py`.
+- [x] **T032** [P] [US2] Add `tests/metering_proxy/test_jwt_mint.py::test_missing_secret_fails_startup` and `::test_short_secret_fails_startup`. File: `tests/metering_proxy/test_jwt_mint.py`.
+- [x] **T033** [P] [US2] Add `tests/metering_proxy/test_jwt_mint.py::test_self_test_detects_secret_mismatch` — monkeypatch PostgREST response to 401, assert self_test raises `JWTMintError`. File: `tests/metering_proxy/test_jwt_mint.py`.
+- [x] **T034** (NO-OP, kept for task-ID stability) — feature 002 already commented out `PGRST_DB_ANON_ROLE` in `k8s/apps/postgrest/base/configmap.yaml`, which is the right behavior for this feature too. No configmap change needed here.
 
 **US2 checkpoint**: Startup self-test runs, readiness probe correctly reflects JWT_SECRET validity, PostgREST anon fallback points at a permission-less role.
 
@@ -64,9 +64,9 @@ Blocking prerequisites for every user story. Complete the whole phase before sta
 
 ## Phase 5 — US3: `web_anon` can be safely dropped without breaking the API (P1)
 
-- [ ] **T040** [US3] Extend `tests/test_218_drop_web_anon.py` with a new test that verifies migration 218 and migration 228 can be applied in either order on a fresh database (no dependency between them). This catches any regression where someone reintroduces a false ordering coupling. File: `tests/test_218_drop_web_anon.py`.
-- [ ] **T041** [US3] Write pytest `tests/test_228_schema_grants.py` — apply migration 228 against a temp database with the 13 target schemas, assert `has_schema_privilege('api_user', schema, 'USAGE')` and `has_table_privilege('api_user', table, 'SELECT')` for each schema and at least one representative table. File: `tests/test_228_schema_grants.py`.
-- [ ] **T042** [US3] Verify `docs/runbooks/rollback-web-anon-drop.md` is still accurate under the new design (no dk_data_no_anon role, migration number 218 unchanged). Update only the "restore PGRST_DB_ANON_ROLE" section to note that feature 003 does not change how the anon-role fallback works. File: `docs/runbooks/rollback-web-anon-drop.md`.
+- [x] **T040** [US3] Extend `tests/test_218_drop_web_anon.py` with a new test that verifies migration 218 and migration 228 can be applied in either order on a fresh database (no dependency between them). This catches any regression where someone reintroduces a false ordering coupling. File: `tests/test_218_drop_web_anon.py`.
+- [x] **T041** [US3] Write pytest `tests/test_228_schema_grants.py` — apply migration 228 against a temp database with the 13 target schemas, assert `has_schema_privilege('api_user', schema, 'USAGE')` and `has_table_privilege('api_user', table, 'SELECT')` for each schema and at least one representative table. File: `tests/test_228_schema_grants.py`.
+- [x] **T042** [US3] Verify `docs/runbooks/rollback-web-anon-drop.md` is still accurate under the new design (no dk_data_no_anon role, migration number 218 unchanged). Update only the "restore PGRST_DB_ANON_ROLE" section to note that feature 003 does not change how the anon-role fallback works. File: `docs/runbooks/rollback-web-anon-drop.md`.
 
 **US3 checkpoint**: Migrations 218 + 228 both apply cleanly on a fresh database; rollback runbook reflects the new layout.
 
