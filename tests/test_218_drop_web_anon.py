@@ -181,15 +181,23 @@ class TestIndependentOrdering:
         )
         grants_sql = grants_migration.read_text()
 
-        assert "api_user" not in drop_sql, (
-            "218_drop_web_anon.sql references api_user — this creates an ordering "
-            "dependency on migration 228. Remove the reference so the two migrations "
-            "are independent."
+        def strip_comments(sql: str) -> str:
+            return "\n".join(
+                line for line in sql.splitlines() if not line.lstrip().startswith("--")
+            )
+
+        drop_code = strip_comments(drop_sql)
+        grants_code = strip_comments(grants_sql)
+
+        assert "api_user" not in drop_code, (
+            "218_drop_web_anon.sql references api_user in executable SQL — this "
+            "creates an ordering dependency on migration 228. Remove the reference "
+            "so the two migrations are independent."
         )
-        assert "web_anon" not in grants_sql, (
-            "228_jwt_mint_schema_grants.sql references web_anon — this creates an "
-            "ordering dependency on migration 218. Remove the reference so the two "
-            "migrations are independent."
+        assert "web_anon" not in grants_code, (
+            "228_jwt_mint_schema_grants.sql references web_anon in executable SQL — "
+            "this creates an ordering dependency on migration 218. Remove the "
+            "reference so the two migrations are independent."
         )
 
 
