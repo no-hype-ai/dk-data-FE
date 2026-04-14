@@ -233,10 +233,13 @@ def is_non_transactional(sql: str) -> bool:
     """Return True if the SQL contains any operation that requires
     running outside a transaction block.
 
-    The check is case-insensitive and ignores SQL line comments. Any
-    occurrence of one of NON_TRANSACTIONAL_MARKERS in non-comment
-    text triggers autocommit mode for the file.
+    The check is case-insensitive and ignores SQL line comments and
+    string literals. A migration that contains an explicit BEGIN
+    statement is always considered transactional regardless of
+    marker matches (string literals inside PL/pgSQL blocks may
+    contain false positives like 'CLUSTER' or 'VACUUM').
     """
+    import re
     code_only_lines = []
     for line in sql.splitlines():
         stripped = line.strip()
@@ -247,7 +250,15 @@ def is_non_transactional(sql: str) -> bool:
             stripped = stripped.split("--", 1)[0]
         code_only_lines.append(stripped)
     upper = "\n".join(code_only_lines).upper()
-    return any(marker in upper for marker in NON_TRANSACTIONAL_MARKERS)
+    # If the migration has an explicit BEGIN, it manages its own transaction.
+    # Non-transactional operations (CREATE INDEX CONCURRENTLY) cannot appear
+    # inside BEGIN...COMMIT, so the presence of BEGIN means transactional.
+    if re.search(r"(?:^|[\s;])BEGIN\s*;", upper, re.MULTILINE):
+        return False
+    for marker in NON_TRANSACTIONAL_MARKERS:
+        if re.search(r"(?:^|[\s;])" + re.escape(marker) + r"(?:\s|;|$)", upper, re.MULTILINE):
+            return True
+    return False
 
 
 def discover_migrations(migrations_dir: str) -> list[tuple[str, str, str]]:
