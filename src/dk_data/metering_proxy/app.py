@@ -20,6 +20,7 @@ from prometheus_client import generate_latest, CONTENT_TYPE_LATEST
 
 from dk_data.metering_proxy.audit import AuditWriter
 from dk_data.metering_proxy.auth import ConsumerKeyStore
+from dk_data.metering_proxy.jwt_mint import JWTMintError
 from dk_data.metering_proxy.concurrency import ConsumerConcurrencyGuard
 from dk_data.metering_proxy.metrics import (
     ACTIVE_CONSUMERS,
@@ -357,9 +358,28 @@ async def proxy_handler(request: Request, path: str):
         )
 
         # --- Proxy to PostgREST ---
-        response = await _forward_request(
-            request, full_path, consumer_alias, schema_label
-        )
+        try:
+            response = await _forward_request(
+                request,
+                full_path,
+                consumer_alias,
+                schema_label,
+                consumer_alias=consumer.alias,
+                tier=consumer.tier,
+            )
+        except JWTMintError as e:
+            logger.error(
+                "jwt_mint_failed",
+                consumer=consumer.alias,
+                error_type=e.error_type,
+            )
+            return JSONResponse(
+                status_code=500,
+                content={
+                    "error": "internal",
+                    "message": "jwt mint failure",
+                },
+            )
 
     # Concurrency guard released; update the gauge
     IN_FLIGHT_REQUESTS.labels(consumer=consumer_alias).set(
@@ -396,8 +416,14 @@ async def _forward_request(
     path: str,
     consumer: str,
     schema: str,
+    consumer_alias: str | None = None,
+    tier: str | None = None,
 ) -> Response:
-    """Forward request to PostgREST and record metrics."""
+    """Forward request to PostgREST and record metrics.
+
+    JWTMintError is intentionally NOT caught here — it propagates up
+    to proxy_handler which returns a 500 with a safe error body.
+    """
     method = request.method
 
     # Read body for POST/PUT/PATCH
@@ -426,7 +452,12 @@ async def _forward_request(
             headers=headers,
             body=body,
             query_string=str(request.query_params),
+            consumer_alias=consumer_alias,
+            tier=tier,
         )
+    except JWTMintError:
+        # Re-raise so proxy_handler can return a 500 with the correct body.
+        raise
     except Exception:
         REQUESTS_TOTAL.labels(
             consumer=consumer, schema=schema, method=method, status="502"
