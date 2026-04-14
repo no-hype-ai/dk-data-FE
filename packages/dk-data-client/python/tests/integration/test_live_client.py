@@ -24,9 +24,21 @@ from dk_data_client.errors import DkDataError
 INTEGRATION_URL = os.environ.get("DK_DATA_INTEGRATION_URL")
 INTEGRATION_KEY = os.environ.get("DK_DATA_INTEGRATION_KEY")
 
+# T026: live JWT-mint smoke test requires the deployed metering proxy.
+# Set these env vars to the running stack (metering-proxy URL + consumer key).
+# Skipped in normal unit-test runs — only exercised by the manual-trigger
+# workflow (see .github/workflows/jwt-mint-smoke.yml, created in T072).
+DK_DATA_BASE_URL = os.environ.get("DK_DATA_BASE_URL")
+DK_DATA_API_KEY = os.environ.get("DK_DATA_API_KEY")
+
 skipif_no_stack = pytest.mark.skipif(
     not (INTEGRATION_URL and INTEGRATION_KEY),
     reason="ephemeral dk-data-FE stack not available (set DK_DATA_INTEGRATION_URL/_KEY)",
+)
+
+skipif_no_live_stack = pytest.mark.skipif(
+    not (DK_DATA_BASE_URL and DK_DATA_API_KEY),
+    reason="live dk-data stack not available (set DK_DATA_BASE_URL and DK_DATA_API_KEY)",
 )
 
 
@@ -53,6 +65,46 @@ class TestHealthAndCatalog:
     async def test_catalog_returns_dict(self, client):
         result = await client.catalog()
         assert isinstance(result, (dict, list))
+
+
+@skipif_no_live_stack
+class TestJWTMintSmoke:
+    """T026: end-to-end smoke test for the JWT minting path.
+
+    Requires ``DK_DATA_BASE_URL`` and ``DK_DATA_API_KEY`` env vars pointing
+    at a running metering-proxy stack. Skipped in normal CI unit-test runs —
+    only exercised by the manual-trigger workflow (T072).
+
+    The ``"fallthrough": False`` assertion proves that the silver hub
+    `mol_silver.resolve_molecule()` responded directly, not the upstream
+    fallback shim. A JWT-related failure (wrong secret, missing role grant)
+    would surface here as a non-200 HTTP error inside DkDataClient.
+    """
+
+    @pytest.fixture
+    async def live_client(self):
+        from dk_data_client import DkDataClient
+
+        c = DkDataClient(
+            metering_proxy_url=DK_DATA_BASE_URL,
+            api_key=DK_DATA_API_KEY,
+            fallback_mode="strict",
+            cache_backend="none",
+            client_name="jwt-mint-smoke-test",
+        )
+        c.set_telemetry_enabled(False)
+        yield c
+        await c.aclose()
+
+    async def test_molecules_resolve_aspirin_no_fallthrough(self, live_client):
+        """molecules.resolve('aspirin') must succeed and not fall through to shim."""
+        result = await live_client.molecules.resolve("aspirin")
+        # Must not raise — any JWT/auth failure raises DkDataError
+        assert result is not None
+        # fallthrough: False proves the silver hub answered, not the shim
+        assert result.get("fallthrough") is False, (
+            f"Expected fallthrough=False (silver hub answered), got: {result!r}"
+        )
 
 
 @skipif_no_stack
