@@ -18,6 +18,7 @@ from fastapi import FastAPI, Request, Response
 from fastapi.responses import JSONResponse, PlainTextResponse
 from prometheus_client import generate_latest, CONTENT_TYPE_LATEST
 
+from dk_data.metering_proxy import jwt_mint
 from dk_data.metering_proxy.audit import AuditWriter
 from dk_data.metering_proxy.auth import ConsumerKeyStore
 from dk_data.metering_proxy.jwt_mint import JWTMintError
@@ -33,7 +34,7 @@ from dk_data.metering_proxy.metrics import (
     RESPONSE_BYTES_TOTAL,
     SCHEMA_ACCESS_DENIED_TOTAL,
 )
-from dk_data.metering_proxy.proxy import close_client, proxy_request
+from dk_data.metering_proxy.proxy import POSTGREST_URL, close_client, proxy_request
 from dk_data.metering_proxy.rate_limiter import RateLimiter
 from dk_data.metering_proxy.rate_limiter_redis import (
     RedisRateLimiter,
@@ -61,6 +62,9 @@ async def lifespan(app: FastAPI):
     """Application lifespan: startup and shutdown."""
     global rate_limiter
     setup_logging(service_name="metering-proxy")
+    jwt_mint.load_secret_at_startup()
+    await jwt_mint.self_test(POSTGREST_URL)
+    logger.info("jwt_self_test_ok")
     key_store.load()
 
     # Try to upgrade to the Redis-backed rate limiter if the proxy is
