@@ -39,9 +39,16 @@ spec:
         - name: db-migrate
           image: ghcr.io/data-kinetic/dk-data-fe/job-trigger:latest
           command:
-            - python
-            - -m
-            - dk_data.scripts.run_migrations
+            - /bin/sh
+            - -c
+            - |
+              # Wait for DB connectivity (cross-namespace DNS may lag on pod start)
+              for i in 1 2 3 4 5; do
+                python -c "import psycopg2,os; psycopg2.connect(host=os.environ.get('POSTGRES_HOST_DIRECT',os.environ['POSTGRES_HOST']),port=os.environ.get('POSTGRES_PORT','5432'),user=os.environ['POSTGRES_USER'],password=os.environ['POSTGRES_PASSWORD'],database=os.environ['POSTGRES_DB']).close()" 2>/dev/null && break
+                echo "Waiting for DB (attempt $i/5)..."
+                sleep 3
+              done
+              python -m dk_data.scripts.run_migrations
           env:
             # IMPORTANT: migrations bypass PgBouncer.
             # PgBouncer transaction mode wraps each statement in an
