@@ -17,9 +17,9 @@
 
 ## Phase 1 — Setup
 
-- [ ] **T001** Verify working tree is clean on branch `feature/003-metering-jwt-mint` and pull latest `main` into the branch (`git fetch origin && git rebase origin/main`). No file changes.
-- [ ] **T002** [P] Confirm `pyjwt` is already in `pyproject.toml` dependencies (no change needed); record version in `plan.md` if different from `jwt_service.py`'s expectation. File: `pyproject.toml`.
-- [ ] **T003** [P] Confirm `uv sync --all-extras` succeeds on the branch; capture output in `memory/changelog.md`. No file changes.
+- [x] **T001** Verify working tree is clean on branch `feature/003-metering-jwt-mint` and pull latest `main` into the branch (`git fetch origin && git rebase origin/main`). No file changes.
+- [x] **T002** [P] Confirm `pyjwt` is already in `pyproject.toml` dependencies (no change needed); record version in `plan.md` if different from `jwt_service.py`'s expectation. File: `pyproject.toml`. — verified `pyjwt>=2.8.0,<3.0` present.
+- [x] **T003** [P] Confirm `uv sync --all-extras` succeeds on the branch; capture output in `memory/changelog.md`. No file changes.
 
 ---
 
@@ -27,11 +27,11 @@
 
 Blocking prerequisites for every user story. Complete the whole phase before starting US1.
 
-- [ ] **T010** Create `src/dk_data/metering_proxy/jwt_mint.py` with the `TIER_TO_ROLE` constant, `JWTMintError`, `load_secret_at_startup()`, `mint()`, and `self_test()` functions exactly as specified in `contracts/jwt-mint-api.md`. Include module-level docstring referencing issue #283 and the spec path. File: `src/dk_data/metering_proxy/jwt_mint.py`.
-- [ ] **T011** Add counters to `src/dk_data/metering_proxy/metrics.py`: `JWT_MINTED_TOTAL` (labels: `tier`) and `JWT_MINT_ERRORS_TOTAL` (labels: `error_type`) for the happy path, and `REQUESTS_FORWARDED_WITHOUT_JWT_TOTAL` (unlabeled) for FR-010. The third counter is incremented in `proxy.py` in any code path that forwards a request without calling `jwt_mint.mint()` — its steady-state value is zero and any non-zero value is a bug (a request should never reach PostgREST without a JWT after this feature lands). This is the proxy-side proxy for "requests reached PostgREST as anon role" that FR-010 requires. File: `src/dk_data/metering_proxy/metrics.py`.
-- [ ] **T012** Add `JWT_SECRET` to the metering-proxy sidecar container env block in `k8s/apps/postgrest/base/deployment.yaml`, sourced from `dk-data-secrets.JWT_SECRET`. File: `k8s/apps/postgrest/base/deployment.yaml`.
-- [ ] **T013** Write migration `src/dk_data/sql/migrations/228_jwt_mint_schema_grants.sql`: create `dk_data_no_anon` role (NOINHERIT NOLOGIN), `GRANT USAGE` + `GRANT SELECT ON ALL TABLES` + `ALTER DEFAULT PRIVILEGES` on the 13 target schemas, `GRANT EXECUTE` on the 10 resolve functions. Idempotent via `IF NOT EXISTS` for the role and pure-grant statements for the rest. File: `src/dk_data/sql/migrations/228_jwt_mint_schema_grants.sql`.
-- [ ] **T014** Rename the drop-web-anon migration from `218_drop_web_anon.sql` to `229_drop_web_anon.sql` AND from `218_drop_web_anon_rollback.sql` to `229_drop_web_anon_rollback.sql`. No content change. This ensures the migration runner applies 228 (this feature) before 229 (drop web_anon) in natural numeric order. Files: `src/dk_data/sql/migrations/218_drop_web_anon.sql` → `229_drop_web_anon.sql`, `src/dk_data/sql/migrations/218_drop_web_anon_rollback.sql` → `229_drop_web_anon_rollback.sql`. Also update any references in `tests/test_218_drop_web_anon.py` (rename file and update migration-filename assertions) and in any runbook or document that says "migration 218".
+- [x] **T010** Create `src/dk_data/metering_proxy/jwt_mint.py` with the `TIER_TO_ROLE` constant, `JWTMintError`, `load_secret_at_startup()`, `mint()`, and `self_test()` functions. File: `src/dk_data/metering_proxy/jwt_mint.py`.
+- [x] **T011** Add counters to `src/dk_data/metering_proxy/metrics.py`: `JWT_MINTED_TOTAL` (labels: `tier`), `JWT_MINT_ERRORS_TOTAL` (labels: `error_type`), and `REQUESTS_FORWARDED_WITHOUT_JWT_TOTAL` (unlabeled, FR-010 bug-detector). File: `src/dk_data/metering_proxy/metrics.py`.
+- [x] **T012** Add `JWT_SECRET` env var to the metering-proxy sidecar container in `k8s/apps/metering-proxy/base/deployment-patch.yaml` (the sidecar is defined in the metering-proxy base patch, not in postgrest/base/deployment.yaml as the original task text said), sourced from `dk-data-secrets.JWT_SECRET`. File: `k8s/apps/metering-proxy/base/deployment-patch.yaml`.
+- [x] **T013** Write migration `src/dk_data/sql/migrations/228_jwt_mint_schema_grants.sql`: `GRANT USAGE` + `GRANT SELECT ON ALL TABLES` + `ALTER DEFAULT PRIVILEGES` on the 13 target schemas for `api_user`, plus `GRANT EXECUTE` on the 10 resolve functions. Idempotent. No role creation — `api_user` already exists, and feature 002's unset `PGRST_DB_ANON_ROLE` handles the "no anonymous access" side without a new role. File: `src/dk_data/sql/migrations/228_jwt_mint_schema_grants.sql`.
+- [x] **T014** (NO-OP, kept for task-ID stability) — no migration rename is needed. Migration 218 (drop `web_anon`) and migration 228 (grant `api_user`) are independent. The earlier plan to rename 218 → 229 was based on a false ordering constraint and has been reverted.
 
 ---
 
@@ -56,7 +56,7 @@ Blocking prerequisites for every user story. Complete the whole phase before sta
 - [ ] **T031** [US2] Extend `app.lifespan()` to call `jwt_mint.self_test(POSTGREST_URL)` after secret load; on failure, structured-log and raise so readiness stays failed. File: `src/dk_data/metering_proxy/app.py`.
 - [ ] **T032** [P] [US2] Add `tests/metering_proxy/test_jwt_mint.py::test_missing_secret_fails_startup` and `::test_short_secret_fails_startup`. File: `tests/metering_proxy/test_jwt_mint.py`.
 - [ ] **T033** [P] [US2] Add `tests/metering_proxy/test_jwt_mint.py::test_self_test_detects_secret_mismatch` — monkeypatch PostgREST response to 401, assert self_test raises `JWTMintError`. File: `tests/metering_proxy/test_jwt_mint.py`.
-- [ ] **T034** [US2] Change `PGRST_DB_ANON_ROLE` from `web_anon` to `dk_data_no_anon` in `k8s/apps/postgrest/base/configmap.yaml`. File: `k8s/apps/postgrest/base/configmap.yaml`.
+- [ ] **T034** (NO-OP, kept for task-ID stability) — feature 002 already commented out `PGRST_DB_ANON_ROLE` in `k8s/apps/postgrest/base/configmap.yaml`, which is the right behavior for this feature too. No configmap change needed here.
 
 **US2 checkpoint**: Startup self-test runs, readiness probe correctly reflects JWT_SECRET validity, PostgREST anon fallback points at a permission-less role.
 
@@ -64,9 +64,9 @@ Blocking prerequisites for every user story. Complete the whole phase before sta
 
 ## Phase 5 — US3: `web_anon` can be safely dropped without breaking the API (P1)
 
-- [ ] **T040** [US3] Write pytest `tests/test_229_drop_web_anon_ordering.py` — apply migration 229 against a temp database that does NOT have `dk_data_no_anon`, assert PostgREST's anon role is unaffected (because 229 does not reference `dk_data_no_anon`); then apply 228 followed by 229 in a fresh database and assert both succeed. This test exists to catch any regression where someone accidentally reintroduces a broken pre-flight guard. File: `tests/test_229_drop_web_anon_ordering.py`.
+- [ ] **T040** [US3] Extend `tests/test_218_drop_web_anon.py` with a new test that verifies migration 218 and migration 228 can be applied in either order on a fresh database (no dependency between them). This catches any regression where someone reintroduces a false ordering coupling. File: `tests/test_218_drop_web_anon.py`.
 - [ ] **T041** [US3] Write pytest `tests/test_228_schema_grants.py` — apply migration 228 against a temp database with the 13 target schemas, assert `has_schema_privilege('api_user', schema, 'USAGE')` and `has_table_privilege('api_user', table, 'SELECT')` for each schema and at least one representative table. File: `tests/test_228_schema_grants.py`.
-- [ ] **T042** [US3] Update `docs/runbooks/rollback-web-anon-drop.md` to reference the new `dk_data_no_anon` fallback path and the SQL needed to recreate `web_anon` with the original grants. Also update every mention of "migration 218" in the runbook to "migration 229". File: `docs/runbooks/rollback-web-anon-drop.md`.
+- [ ] **T042** [US3] Verify `docs/runbooks/rollback-web-anon-drop.md` is still accurate under the new design (no dk_data_no_anon role, migration number 218 unchanged). Update only the "restore PGRST_DB_ANON_ROLE" section to note that feature 003 does not change how the anon-role fallback works. File: `docs/runbooks/rollback-web-anon-drop.md`.
 
 **US3 checkpoint**: Migrations 218 + 228 both apply cleanly on a fresh database; rollback runbook reflects the new layout.
 

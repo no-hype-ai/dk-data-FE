@@ -53,6 +53,18 @@ spec:
               value: "INFO"
             - name: LOG_FORMAT
               value: "json"
+            # Feature 003-metering-jwt-mint (issue #283): the proxy
+            # mints a short-lived HS256 JWT signed with this secret
+            # and injects it as the Authorization header on every
+            # forwarded request. Same secret key as PGRST_JWT_SECRET
+            # on the postgrest container above — PostgREST and the
+            # proxy MUST see the same value or the startup self-test
+            # fails and readiness stays red.
+            - name: JWT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: dk-data-secrets
+                  key: JWT_SECRET
           volumeMounts:
             - name: consumers-config
               mountPath: /etc/dk-data

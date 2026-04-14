@@ -242,8 +242,8 @@ And no traffic is routed to the pod until the mismatch is resolved
 
 ### Session 2026-04-14 (autonomous, dk.auto)
 
-- **Q:** How should PostgREST reject unauthenticated requests — unset `PGRST_DB_ANON_ROLE` entirely, or point it at a permission-less role?
-  **A:** Create a new permission-less database role `dk_data_no_anon` with zero grants on any schema, and point `PGRST_DB_ANON_ROLE` at it. Unsetting is not an option because PostgREST 12.2.3 requires the setting. Reusing `web_anon` with stripped grants conflicts with migration 218 which drops it. This is the minimal defensive pattern.
+- **Q:** How should PostgREST reject unauthenticated requests?
+  **A:** Leave `PGRST_DB_ANON_ROLE` unset (which feature 002 already did in `k8s/apps/postgrest/base/configmap.yaml` via T086). PostgREST 12.2.3 treats an unset anon role as "no anonymous access" and returns 401 for any request without a valid JWT. No new database role is needed. (An earlier version of this spec proposed creating a permission-less `dk_data_no_anon` role to work around a mis-remembered claim that PostgREST requires the setting; that turned out to be wrong — the configmap has it commented out and CI runs fine with it either set or unset.)
 
 - **Q:** Does the proxy support dual-secret rotation for the JWT signing secret, or does it rely on short TTL + per-request minting to make rotation safe?
   **A:** Rely on short TTL + per-request minting. A 60-second JWT TTL means a secret rotation propagates to every in-flight token within sixty seconds with zero dual-secret complexity. Dual-secret support is deferred to a follow-on if operators ever hit a real rotation scenario this does not cover.
@@ -251,16 +251,16 @@ And no traffic is routed to the pod until the mismatch is resolved
 - **Q:** Is the end-to-end self-test (mint a token, call PostgREST, verify acceptance) startup-only or periodic?
   **A:** Startup-only. A periodic self-test would add a hot-loop call to PostgREST and is only useful if the signing secret can change under a running process — which it cannot, because the secret is read once at startup. Rolling-deploy readiness probes catch the same condition with zero extra code.
 
-- **Q:** How is the ordering guaranteed so that the drop-`web_anon` migration runs AFTER the schema-grant migration?
-  **A:** Rename the drop-`web_anon` migration from `218_drop_web_anon.sql` to `229_drop_web_anon.sql` on this feature branch (same for its rollback companion). The new schema-grant migration is 228. The migration runner sorts by numeric prefix, so 228 applies before 229. This is safe because 218 was merged in PR #280 but has not been applied to any environment yet — the rename is effectively "the migration was always 229". (The original design used a pre-flight DO block inside 218, but that design is broken because the runner stops on first failure: if 218 runs before 228, the DO block raises and 228 never runs. Rename is the correct fix.)
+- **Q:** Is there an ordering dependency between migration 218 (drop `web_anon`) and the new migration 228 (grant `api_user`)?
+  **A:** No. 218 only touches `web_anon`; 228 only touches `api_user`. Neither migration references the other's target role, so either order works. The migration runner will apply them in numeric order (218 first, then 228). (An earlier draft of this spec proposed renaming 218 to 229 to enforce an ordering that turned out to be unnecessary; that rename was reverted.)
 
 - **Q:** How does the live integration test run — in CI on every pull request, in a scheduled job, or only manually?
   **A:** Manual-trigger GitHub Actions workflow (`workflow_dispatch`) that runs against `data.behaviorlabs.ai` with a test consumer API key stored in GitHub Actions secrets. CI-on-every-PR would require a disposable cluster or a fixture-based stub that would not validate the cluster path. Unit tests cover the regression bar; the integration workflow captures the intent of "does it actually work end-to-end against the real cluster".
 
 ### Integration of decisions into the spec
 
-- FR-016 is interpreted to mean: PostgREST is configured with `PGRST_DB_ANON_ROLE=dk_data_no_anon`, and `dk_data_no_anon` is created in migration 228 with zero schema grants.
-- FR-017's ordering enforcement is implemented by renaming the drop-web-anon migration from 218 to 229 so it sorts after 228 in the migration runner (a DO-block pre-flight guard is not used because the runner stops on first failure, which would deadlock 228 behind a guard in 218).
+- FR-016 is satisfied by feature 002's already-committed change in `k8s/apps/postgrest/base/configmap.yaml` (`PGRST_DB_ANON_ROLE` commented out). PostgREST treats an unset anon role as "no anonymous access" and returns 401 for any unauthenticated request. No new database role is created by this feature.
+- FR-017 is satisfied by numeric ordering alone — migration 218 (drop `web_anon`) and migration 228 (grant `api_user`) are independent and the runner applies them in numeric order. No pre-flight guard and no rename.
 - FR-018's live integration test is a manual-trigger GitHub Actions workflow, not part of per-PR CI.
 - FR-008's self-test runs once at container startup, not periodically.
 - The JWT TTL is exactly 60 seconds and the proxy does NOT support dual-secret rotation in this release.
