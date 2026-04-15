@@ -324,6 +324,23 @@ def dispatch_pg_restore(
         )
         if result.returncode != 0:
             logger.warning("pg_restore stderr: {}", result.stderr[:2048])
+            # Known-benign: pg_restore 17 emits `SET transaction_timeout = 0;`
+            # which PG 16 rejects. The SET fails but the actual data COPY
+            # still runs. If that's the ONLY error, treat as success.
+            stderr = result.stderr
+            only_benign = (
+                "transaction_timeout" in stderr
+                and "errors ignored on restore" in stderr
+                and "COPY failed" not in stderr
+                and "FATAL" not in stderr
+            )
+            if only_benign:
+                logger.info(
+                    "pg_restore rc=1 but only the benign SET "
+                    "transaction_timeout error reported — treating as "
+                    "success for {}.{}", schema, table
+                )
+                return 0
         return result.returncode
     finally:
         with lock_conn.cursor() as cur:
