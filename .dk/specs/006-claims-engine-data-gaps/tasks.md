@@ -110,11 +110,11 @@ Phase 6 (Polish)
 
 ### Item 26: CMS NPPES expansion
 
-- [ ] T025 [P1] New migration: add ~280 missing columns to `hcs_raw.cms_nppes` DDL -- taxonomies 3-15 (52 columns), other_provider_identifier 1-50 (200 columns), practice location addresses, authorized official details, deactivation/reactivation fields, entity-type-specific fields, `last_update_date`, `certification_date`.
-- [ ] T026 [P1] Update NPPES loader to parse all ~330 columns from monthly dissemination file. Consider ingesting `pl_pfile_<date>.csv` as `hcs_raw.cms_nppes_practice_locations` child table.
-- [ ] T027 [P1] Extend `hcs_bronze.cms_nppes` SQLMesh model passthrough to include every new column.
-- [ ] T028 [P1] Add index on `other_provider_identifier_type_code_N` / `other_provider_identifier_N` for DEA-number and state-license joins.
-- [ ] T029 [P1] Execute full NPPES backfill via tray pattern (UNLOGGED staging -> chunked load -> SET LOGGED -> atomic swap) for ~7M rows. Verify taxonomy slot 5 populated for multi-certified physicians, DEA numbers visible, practice-location addresses non-null, total column count >= 300.
+- [x] T025 [P1] New migration `src/dk_data/sql/migrations/233_cms_nppes_loader_expansion.sql`: add ~280 missing columns to `hcs_raw.cms_nppes` DDL -- taxonomies 3-15 (52 columns), other_provider_identifier 1-50 (200 columns), practice location addresses, authorized official details, deactivation/reactivation fields, entity-type-specific fields, `last_update_date`, `certification_date`.
+- [x] T026 [P1] Update NPPES loader to parse all ~330 columns from monthly dissemination file. Dynamic kwargs construction with dict-comprehension column mappings. CMSNPPESRecord uses extra='allow' for 252 slot columns.
+- [x] T027 [P1] Extend `hcs_bronze.cms_nppes` SQLMesh model passthrough to include every new column (~284 columns total in SELECT).
+- [x] T028 [P1] Add composite indexes on `(other_provider_identifier_type_code_N, other_provider_identifier_N)` for slots 1-5 (included in migration 233, CONCURRENTLY after COMMIT).
+- [ ] T029 [P1] **SKIPPED -- backfill requires cluster access.** Execute full NPPES backfill via tray pattern (UNLOGGED staging -> chunked load -> SET LOGGED -> atomic swap) for ~7M rows. Verify taxonomy slot 5 populated for multi-certified physicians, DEA numbers visible, practice-location addresses non-null, total column count >= 300.
 
 ---
 
