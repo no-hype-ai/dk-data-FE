@@ -376,6 +376,29 @@ SELECT DISTINCT ON (doi)
     conclusions,
     interventions_reviewed,
     conditions_reviewed,
+    -- Evidence tier classification (A-D, U=unclassified, never NULL)
+    CASE
+        WHEN source = 'cochrane_reviews'
+             OR publication_type ILIKE '%systematic review%'
+             OR publication_type ILIKE '%meta-analysis%'
+        THEN 'A'
+        WHEN publication_type ILIKE '%randomized%'
+             OR publication_type ILIKE '%clinical trial%'
+             OR publication_type ILIKE '%controlled%'
+        THEN 'B'
+        WHEN publication_type ILIKE '%observational%'
+             OR publication_type ILIKE '%cohort%'
+             OR publication_type ILIKE '%case-control%'
+             OR publication_type ILIKE '%real-world%'
+        THEN 'C'
+        WHEN publication_type ILIKE '%case report%'
+             OR publication_type ILIKE '%editorial%'
+             OR publication_type ILIKE '%comment%'
+             OR publication_type ILIKE '%letter%'
+             OR publication_type ILIKE '%opinion%'
+        THEN 'D'
+        ELSE 'U'
+    END::VARCHAR(1)         AS evidence_tier,
     source,
     source_updated_at,
     NOW()                   AS created_at,
