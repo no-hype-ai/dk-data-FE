@@ -602,7 +602,13 @@ def main(argv: list[str] | None = None) -> int:
         "keepalives_count": 3,
     }
     conn = psycopg2.connect(pg_url, **KEEPALIVE)
-    conn.autocommit = False
+    # autocommit=True on the writer conn: every statement commits
+    # immediately. Prevents `idle_in_transaction_session_timeout`
+    # (5 min on prod) from killing the writer during long pg_restore
+    # subprocesses where the writer conn sits idle. All writes to
+    # meta.transform_runs are single-statement INSERTs; no
+    # multi-statement atomicity needed.
+    conn.autocommit = True
     writer = TransformRunsWriter(conn)
 
     # FR-007/008: configurable from env at call site; defaults match plan.md
@@ -708,7 +714,7 @@ def main(argv: list[str] | None = None) -> int:
             except Exception:  # noqa: BLE001
                 pass
             conn = psycopg2.connect(pg_url, **KEEPALIVE)
-            conn.autocommit = False
+            conn.autocommit = True
             writer = TransformRunsWriter(conn)
             if throttle is not None:
                 throttle.conn = conn
