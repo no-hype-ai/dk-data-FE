@@ -106,6 +106,37 @@
   .empty { color: var(--fg2); font-style: italic; padding: 18px; text-align: center; }
   .err-msg { color: var(--red); font-family: var(--mono); font-size: 11px; max-width: 280px; }
   abbr { text-decoration: none; cursor: help; border-bottom: 1px dotted var(--fg2); }
+
+  /* Token-input modal — shown when no JWT is available */
+  .token-modal {
+    position: fixed; inset: 0; background: rgba(13,17,23,0.92);
+    display: none; align-items: center; justify-content: center;
+    z-index: 99; padding: 18px;
+  }
+  .token-modal.show { display: flex; }
+  .token-card {
+    background: var(--bg2); border: 1px solid var(--border); border-radius: 8px;
+    padding: 24px; max-width: 580px; width: 100%;
+  }
+  .token-card h3 { margin: 0 0 12px; color: var(--fg); font-size: 16px; }
+  .token-card p { color: var(--fg2); font-size: 12px; margin: 6px 0; }
+  .token-card pre {
+    background: var(--bg3); padding: 8px 10px; border-radius: 4px;
+    font-family: var(--mono); font-size: 11px; color: var(--fg);
+    overflow-x: auto; white-space: pre-wrap; word-break: break-all;
+  }
+  .token-card textarea {
+    width: 100%; min-height: 80px; margin-top: 12px;
+    background: var(--bg3); color: var(--fg); border: 1px solid var(--border);
+    border-radius: 4px; padding: 8px; font-family: var(--mono); font-size: 11px;
+    resize: vertical; box-sizing: border-box;
+  }
+  .token-card .actions { margin-top: 12px; display: flex; gap: 8px; }
+  .token-card button {
+    background: var(--blue); color: white; border: 0; border-radius: 4px;
+    padding: 8px 16px; font: 600 12px system-ui, sans-serif; cursor: pointer;
+  }
+  .token-card button.secondary { background: var(--bg3); color: var(--fg2); }
 </style>
 </head>
 <body>
@@ -173,6 +204,26 @@
   </section>
 </main>
 
+<div id="token-modal" class="token-modal">
+  <div class="token-card">
+    <h3>JWT required</h3>
+    <p>This dashboard polls PostgREST which requires a Bearer JWT for the
+       <code>api_user</code> role. Mint one and paste it below; it gets
+       saved to localStorage so refresh works after this.</p>
+    <p>From the project root:</p>
+    <pre>./dashboards/open-dashboard.sh    # easiest — auto-mints &amp; opens
+# OR manually:
+JWT_SECRET=$(kubectl -n dk-data-prod get secret dk-data-secrets -o jsonpath='{.data.JWT_SECRET}' | base64 -d)
+JWT_SECRET="$JWT_SECRET" .venv/bin/python -c \
+  'import os, time, jwt; print(jwt.encode({"role":"api_user","exp":int(time.time())+8*3600}, os.environ["JWT_SECRET"], algorithm="HS256"))'</pre>
+    <textarea id="token-input" placeholder="paste JWT here…"></textarea>
+    <div class="actions">
+      <button id="token-save">save &amp; reload</button>
+      <button id="token-clear" class="secondary">clear stored token</button>
+    </div>
+  </div>
+</div>
+
 <footer>
   <h2>WAL pressure</h2>
   <svg class="sparkline" id="spark" viewBox="0 0 600 60" preserveAspectRatio="none"></svg>
@@ -191,8 +242,38 @@
   // Config from URL query params
   // ------------------------------------------------------------
   const params = new URLSearchParams(location.search);
-  const POSTGREST = (params.get("postgrest") || "https://prod-postgrest.dk-data.local").replace(/\/$/, "");
-  const TOKEN = params.get("token") || "";
+  // Default to the local kubectl port-forward tunnel so opening the bare
+  // file:// URL works once the tunnel is up. Override with ?postgrest=...
+  // for any other environment (staging, in-cluster, etc.).
+  const POSTGREST = (params.get("postgrest") || "http://localhost:3001").replace(/\/$/, "");
+
+  // Token resolution priority: ?token= URL param → localStorage → modal prompt.
+  // Once the user pastes a token, persist it for the dashboard's lifetime
+  // so a stale tab without ?token= still works after a refresh.
+  let TOKEN = params.get("token") || localStorage.getItem("hydration_dashboard_jwt") || "";
+  if (params.get("token")) {
+    // URL-supplied token wins and overwrites stored one.
+    localStorage.setItem("hydration_dashboard_jwt", params.get("token"));
+  }
+
+  // Wire token modal
+  const modal = document.getElementById("token-modal");
+  document.getElementById("token-save").onclick = () => {
+    const v = document.getElementById("token-input").value.trim();
+    if (!v) return;
+    localStorage.setItem("hydration_dashboard_jwt", v);
+    location.reload();
+  };
+  document.getElementById("token-clear").onclick = () => {
+    localStorage.removeItem("hydration_dashboard_jwt");
+    location.reload();
+  };
+  function showTokenModal() {
+    document.getElementById("token-input").value = TOKEN || "";
+    modal.classList.add("show");
+  }
+  if (!TOKEN) showTokenModal();
+
   let intervalMs = parseInt(params.get("interval") || "5000", 10);
   document.getElementById("interval").value = String(intervalMs);
 
@@ -223,10 +304,18 @@
   // Polling
   // ------------------------------------------------------------
   async function fetchJson(path) {
-    const headers = { Accept: "application/json" };
+    const headers = {
+      Accept: "application/json",
+      // The hydration views live in meta; PostgREST default profile is api.
+      "Accept-Profile": "meta",
+    };
     if (TOKEN) headers.Authorization = "Bearer " + TOKEN;
     const r = await fetch(POSTGREST + path, { headers, mode: "cors" });
-    if (!r.ok) throw new Error(`${path} → HTTP ${r.status}`);
+    if (!r.ok) {
+      let body = "";
+      try { body = await r.text(); } catch {}
+      throw new Error(`${path} → HTTP ${r.status}${body ? " " + body.slice(0, 120) : ""}`);
+    }
     return r.json();
   }
 
@@ -248,6 +337,10 @@
       lastError = e.message || String(e);
       renderError();
       setPollState("err");
+      // Auth failures bubble up the token modal so the user can paste fresh creds.
+      if (lastError.includes("HTTP 401") || lastError.includes("HTTP 403")) {
+        showTokenModal();
+      }
     }
     document.getElementById("last-refresh").textContent =
       "last: " + new Date().toLocaleTimeString();

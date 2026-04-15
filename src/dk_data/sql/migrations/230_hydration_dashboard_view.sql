@@ -89,20 +89,38 @@ COMMENT ON VIEW meta.hydration_summary IS
     'doughnut chart in dashboards/hydration-dashboard.html.';
 
 -- ---------------------------------------------------------------------------
--- 3. meta.hydration_wal — recent WAL pressure observations
+-- 3. meta.hydration_wal — recent per-chunk WAL write events
 -- ---------------------------------------------------------------------------
--- Reads from the existing meta.wal_usage view (added in commit 3b1c1e7).
--- Limits to the last 60 rows so the sparkline stays bounded.
+-- meta.wal_usage tracks per-chunk writes (recorded_at, procedure_name,
+-- chunk_index, wal_bytes, rows_processed, duration_ms, pod_name,
+-- exceeded_limit). It is NOT a live WAL-pressure timeline. We expose
+-- the most recent 60 writes so the dashboard can show write throughput
+-- and any rows where exceeded_limit=true.
 
 CREATE OR REPLACE VIEW meta.hydration_wal AS
-SELECT observed_at, current_wal_bytes, max_wal_size, pct_used
+SELECT
+    recorded_at AS observed_at,                         -- alias for dashboard compatibility
+    procedure_name,
+    chunk_index,
+    wal_bytes,
+    rows_processed,
+    duration_ms,
+    pod_name,
+    exceeded_limit,
+    -- Synthetic "pct_used" so the dashboard's sparkline still has
+    -- something to plot. Maps wal_bytes against the legacy 2 GB
+    -- per-write soft ceiling: 100% means we hit 2 GB on a single chunk.
+    -- This is NOT a live WAL-pressure measurement (no such view exists).
+    LEAST(100.0::numeric, (wal_bytes::numeric / 2147483648.0) * 100.0)
+        AS pct_used
   FROM meta.wal_usage
- ORDER BY observed_at DESC
+ ORDER BY recorded_at DESC
  LIMIT 60;
 
 COMMENT ON VIEW meta.hydration_wal IS
-    'Most-recent 60 WAL pressure observations. Drives the sparkline '
-    'in the hydration dashboard. 70% red line, 40% green line.';
+    'Most-recent 60 per-chunk WAL write events from meta.wal_usage. '
+    'pct_used is synthetic: wal_bytes / 2GB * 100, capped at 100. '
+    'Drives the sparkline in dashboards/hydration-dashboard.html.';
 
 -- ---------------------------------------------------------------------------
 -- 4. PostgREST exposure — GRANT SELECT to api_user

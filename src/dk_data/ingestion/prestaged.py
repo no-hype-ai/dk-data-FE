@@ -279,7 +279,27 @@ def dispatch_pg_restore(
         cmd += ["--clean", "--if-exists"]
     cmd.append(str(artifact.path))
 
-    logger.info("pg_restore command: {}", " ".join(cmd))
+    # `--section=data` skips DDL, so `--clean` does NOT drop the target
+    # table's existing rows. For a first-chunk restore we need to clear
+    # any leftover data so the COPY doesn't conflict with existing PKs.
+    # This runs in a separate connection so it commits before pg_restore.
+    if first_chunk:
+        try:
+            with psycopg2.connect(pg_url) as truncate_conn:
+                truncate_conn.autocommit = True
+                with truncate_conn.cursor() as cur:
+                    # Quote schema/table to be safe with reserved names.
+                    cur.execute(f'TRUNCATE TABLE "{schema}"."{table}" CASCADE;')
+            logger.info(f"truncated {schema}.{table} before first chunk")
+        except psycopg2.Error as exc:
+            # If the table doesn't exist yet (e.g. raw staging tables created
+            # implicitly by the dump), TRUNCATE will error. Swallow that —
+            # pg_restore will create it.
+            logger.info(
+                f"TRUNCATE on {schema}.{table} skipped: {exc}"
+            )
+
+    logger.info(f"pg_restore command: {' '.join(cmd)}")
 
     lock_conn = psycopg2.connect(pg_url)
     lock_conn.autocommit = True
