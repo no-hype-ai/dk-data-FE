@@ -10,6 +10,7 @@ Tracks status changes in ip_raw.trademark_status_history.
 Target table: ip_raw.euipo_trademarks (see migration 072_euipo_trademarks_raw.sql)
 """
 
+import json
 import logging
 from datetime import date, datetime
 from typing import Any, Dict, List, Optional
@@ -72,6 +73,15 @@ def load_euipo_trademarks_data(
                     # Validate with Pydantic
                     record = EUIPOTrademarkRecord(**raw_record)
 
+                    # T067: serialize new JSONB expansion fields
+                    oppositions_json = _json_or_none(raw_record.get("oppositions"))
+                    cancellations_json = _json_or_none(raw_record.get("cancellations"))
+                    seniorities_json = _json_or_none(raw_record.get("seniorities"))
+                    priority_claims_json = _json_or_none(raw_record.get("priority_claims"))
+                    vienna_codes_json = _json_or_none(raw_record.get("vienna_codes"))
+                    publication_events_json = _json_or_none(raw_record.get("publication_events"))
+                    owner_change_history_json = _json_or_none(raw_record.get("owner_change_history"))
+
                     cur.execute(
                         """
                         INSERT INTO ip_raw.euipo_trademarks (
@@ -81,6 +91,9 @@ def load_euipo_trademarks_data(
                             representative_name,
                             status, filing_date, registration_date, expiry_date,
                             nice_classes, goods_and_services, image_url,
+                            oppositions, cancellations, seniorities,
+                            priority_claims, vienna_codes, publication_events,
+                            owner_change_history, acquired_distinctiveness_flag,
                             _source_file, _source_hash
                         ) VALUES (
                             %s, %s, %s,
@@ -89,6 +102,9 @@ def load_euipo_trademarks_data(
                             %s,
                             %s, %s, %s, %s,
                             %s, %s, %s,
+                            %s, %s, %s,
+                            %s, %s, %s,
+                            %s, %s,
                             %s, %s
                         )
                         ON CONFLICT (application_number) DO UPDATE SET
@@ -106,6 +122,14 @@ def load_euipo_trademarks_data(
                             nice_classes = EXCLUDED.nice_classes,
                             goods_and_services = EXCLUDED.goods_and_services,
                             image_url = EXCLUDED.image_url,
+                            oppositions = EXCLUDED.oppositions,
+                            cancellations = EXCLUDED.cancellations,
+                            seniorities = EXCLUDED.seniorities,
+                            priority_claims = EXCLUDED.priority_claims,
+                            vienna_codes = EXCLUDED.vienna_codes,
+                            publication_events = EXCLUDED.publication_events,
+                            owner_change_history = EXCLUDED.owner_change_history,
+                            acquired_distinctiveness_flag = EXCLUDED.acquired_distinctiveness_flag,
                             _source_file = EXCLUDED._source_file,
                             _source_hash = EXCLUDED._source_hash,
                             _loaded_at = NOW()
@@ -126,6 +150,14 @@ def load_euipo_trademarks_data(
                             record.nice_classes,
                             record.goods_and_services,
                             record.image_url,
+                            oppositions_json,
+                            cancellations_json,
+                            seniorities_json,
+                            priority_claims_json,
+                            vienna_codes_json,
+                            publication_events_json,
+                            owner_change_history_json,
+                            raw_record.get("acquired_distinctiveness_flag"),
                             source_file or "euipo_tmview",
                             source_hash,
                         ),
@@ -178,6 +210,13 @@ def load_euipo_trademarks_data(
         "records_failed": records_failed,
         "errors": errors[:10],
     }
+
+
+def _json_or_none(value: Any) -> Optional[str]:
+    """Serialize a value to JSON string, or return None if empty/None."""
+    if value is None:
+        return None
+    return json.dumps(value)
 
 
 def _parse_date(value: Any) -> Optional[date]:

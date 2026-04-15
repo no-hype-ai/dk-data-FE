@@ -388,6 +388,15 @@ class EUIPOTrademarksFetcher(BaseFetcher):
                 elif isinstance(c, str) and c.isdigit():
                     nice_classes.append(int(c))
 
+        # Acquired distinctiveness flag
+        ad_raw = raw.get("acquiredDistinctiveness") or raw.get("acquired_distinctiveness_flag")
+        acquired_distinctiveness_flag = None
+        if ad_raw is not None:
+            if isinstance(ad_raw, bool):
+                acquired_distinctiveness_flag = ad_raw
+            elif isinstance(ad_raw, str):
+                acquired_distinctiveness_flag = ad_raw.lower() in ("true", "yes", "1")
+
         return {
             "application_number": str(application_number),
             "mark_name": raw.get("tradeMarkName") or raw.get("mark_name"),
@@ -404,4 +413,13 @@ class EUIPOTrademarksFetcher(BaseFetcher):
             "nice_classes": sorted(set(nice_classes)) if nice_classes else None,
             "goods_and_services": raw.get("goodsAndServices") or raw.get("goods_and_services"),
             "image_url": raw.get("imageUrl") or raw.get("image_url"),
+            # T066/T067 expansion fields
+            "oppositions": raw.get("oppositions"),
+            "cancellations": raw.get("cancellations"),
+            "seniorities": raw.get("seniorities"),
+            "priority_claims": raw.get("priorityClaims") or raw.get("priority_claims"),
+            "vienna_codes": raw.get("viennaCodes") or raw.get("vienna_codes"),
+            "publication_events": raw.get("publicationEvents") or raw.get("publication_events"),
+            "owner_change_history": raw.get("ownerChangeHistory") or raw.get("owner_change_history"),
+            "acquired_distinctiveness_flag": acquired_distinctiveness_flag,
         }
