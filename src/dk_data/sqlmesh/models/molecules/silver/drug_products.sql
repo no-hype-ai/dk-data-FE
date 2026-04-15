@@ -145,6 +145,56 @@ biosimilar_resolution AS (
       ON rl_name.norm_brand = LOWER(NULLIF(pb.reference_product_name, ''))
     WHERE pb.bla_number IS NOT NULL
       AND COALESCE(pb.is_biosimilar, FALSE) = TRUE
+),
+
+-- T012: ATC code resolution by priority (DrugBank → ChEMBL → KEGG).
+-- Joined via mol_silver.drug_product_ingredients (product_id → molecule_id bridge).
+-- Each CTE aggregates ATC codes per product across all ingredients.
+atc_from_drugbank AS (
+    SELECT
+        dpi.product_id,
+        ARRAY_AGG(DISTINCT elem) AS atc_codes
+    FROM mol_silver.drug_product_ingredients dpi
+    JOIN mol_silver.drugbank db USING (molecule_id)
+    CROSS JOIN LATERAL jsonb_array_elements_text(
+        CASE WHEN jsonb_typeof(db.atc_codes) = 'array' THEN db.atc_codes ELSE '[]'::jsonb END
+    ) AS elem
+    WHERE elem IS NOT NULL AND elem <> ''
+    GROUP BY dpi.product_id
+),
+
+atc_from_chembl AS (
+    SELECT
+        dpi.product_id,
+        ARRAY_AGG(DISTINCT cls.val->>'level5') AS atc_codes
+    FROM mol_silver.drug_product_ingredients dpi
+    JOIN mol_silver.molecule_identifiers mi
+      ON mi.molecule_id = dpi.molecule_id AND mi.source = 'chembl'
+    JOIN mol_bronze.chembl_molecules cm ON cm.chembl_id = mi.identifier
+    CROSS JOIN LATERAL jsonb_array_elements(
+        CASE WHEN jsonb_typeof(cm.raw_json->'atc_classifications') = 'array'
+             THEN cm.raw_json->'atc_classifications'
+             ELSE '[]'::jsonb END
+    ) AS cls(val)
+    WHERE cls.val->>'level5' IS NOT NULL AND cls.val->>'level5' <> ''
+    GROUP BY dpi.product_id
+),
+
+atc_from_kegg AS (
+    SELECT
+        dpi.product_id,
+        ARRAY_AGG(DISTINCT elem) AS atc_codes
+    FROM mol_silver.drug_product_ingredients dpi
+    JOIN mol_silver.molecules mol_m USING (molecule_id)
+    JOIN mol_bronze.kegg_drug kd
+      ON LOWER(kd.inchi_key) = LOWER(mol_m.inchi_key)
+     AND kd.inchi_key IS NOT NULL
+     AND mol_m.inchi_key IS NOT NULL
+    CROSS JOIN LATERAL jsonb_array_elements_text(
+        CASE WHEN jsonb_typeof(kd.atc_codes) = 'array' THEN kd.atc_codes ELSE '[]'::jsonb END
+    ) AS elem
+    WHERE elem IS NOT NULL AND elem <> ''
+    GROUP BY dpi.product_id
 )
 
 SELECT
@@ -166,9 +216,18 @@ SELECT
     COALESCE(d.is_biosimilar, FALSE)   AS is_biosimilar,
     COALESCE(br.reference_product_id, d.reference_product_id) AS reference_product_id,
     COALESCE(d.first_seen_at, NOW())   AS first_seen_at,
-    NOW()                              AS last_updated_at
+    NOW()                              AS last_updated_at,
+    -- T012: ATC codes by priority: DrugBank → ChEMBL → KEGG
+    COALESCE(
+        atc_db.atc_codes,
+        atc_cm.atc_codes,
+        atc_kg.atc_codes
+    )::TEXT[]                          AS atc_code
 FROM deduped d
-LEFT JOIN biosimilar_resolution br USING (product_id);
+LEFT JOIN biosimilar_resolution br USING (product_id)
+LEFT JOIN atc_from_drugbank atc_db ON atc_db.product_id = d.product_id
+LEFT JOIN atc_from_chembl   atc_cm ON atc_cm.product_id = d.product_id
+LEFT JOIN atc_from_kegg     atc_kg ON atc_kg.product_id = d.product_id;
 
 -- CREATE INDEX IF NOT EXISTS mol_silver_dp_brand_idx ON mol_silver.drug_products (brand_name);
 -- CREATE INDEX IF NOT EXISTS mol_silver_dp_generic_idx ON mol_silver.drug_products (generic_name);
