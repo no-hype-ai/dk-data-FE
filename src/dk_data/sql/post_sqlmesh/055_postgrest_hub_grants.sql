@@ -81,6 +81,29 @@ DO $$ BEGIN
     END;
   END IF;
 
+  -- ============================================================
+  -- T076: mol_silver.fda_enforcement_actions — unified enforcement table
+  -- Part of: 006-claims-engine-data-gaps
+  -- Already covered by schema-wide GRANT / ALTER DEFAULT PRIVILEGES
+  -- above; explicit grant here ensures coverage even if table was
+  -- created outside the default-privilege session.
+  -- ============================================================
+  IF EXISTS (SELECT FROM pg_roles WHERE rolname = 'analyst') THEN
+    BEGIN
+      GRANT SELECT ON TABLE mol_silver.fda_enforcement_actions TO analyst;
+    EXCEPTION WHEN OTHERS THEN
+      RAISE NOTICE 'Skipping mol_silver.fda_enforcement_actions grant to analyst (table not yet created by SQLMesh)';
+    END;
+  END IF;
+
+  IF EXISTS (SELECT FROM pg_roles WHERE rolname = 'mol_viewer') THEN
+    BEGIN
+      GRANT SELECT ON TABLE mol_silver.fda_enforcement_actions TO mol_viewer;
+    EXCEPTION WHEN OTHERS THEN
+      RAISE NOTICE 'Skipping mol_silver.fda_enforcement_actions grant to mol_viewer (table not yet created by SQLMesh)';
+    END;
+  END IF;
+
 END $$;
 
 COMMIT;
