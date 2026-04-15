@@ -139,23 +139,23 @@ Phase 6 (Polish)
 
 **27a. CMS Part D Prescriber:**
 - [x] T036 [P2] New migration: expand `hcs_raw.cms_part_d_prescriber` DDL to ~25-30 columns -- add `opioid_prescriber_rate`, `opioid_day_supply`, `long_acting_opioid_*`, antibiotic breakouts, branded-vs-generic splits.
-- [ ] T037 [P2] Update Part D Prescriber loader to read all new columns from CMS PUF.
-- [ ] T038 [P2] Extend `hcs_bronze.cms_part_d_prescriber` SQLMesh model passthrough. Verify column count >= 25.
+- [x] T037 [P2] Update Part D Prescriber loader to read all new columns from CMS PUF.
+- [x] T038 [P2] Extend `hcs_bronze.cms_part_d_prescriber` SQLMesh model passthrough. Verify column count >= 25.
 
 **27b. CMS Hospital General Info:**
-- [ ] T039 [P2] New migration: expand `hcs_raw.cms_hospital_general_info` DDL to ~40+ columns -- add 26+ per-measure quality ratings (mortality, readmission, safety, patient experience, timeliness, imaging, HAI rates).
-- [ ] T040 [P2] Update Hospital General Info loader to read all quality rating columns.
-- [ ] T041 [P2] Extend `hcs_bronze.cms_hospital_general_info` SQLMesh model passthrough. Verify >= 20 quality rating columns present.
+- [x] T039 [P2] New migration: expand `hcs_raw.cms_hospital_general_info` DDL to ~40+ columns -- add 26+ per-measure quality ratings (mortality, readmission, safety, patient experience, timeliness, imaging, HAI rates).
+- [x] T040 [P2] Update Hospital General Info loader to read all quality rating columns.
+- [x] T041 [P2] Extend `hcs_bronze.cms_hospital_general_info` SQLMesh model passthrough. Verify >= 20 quality rating columns present.
 
 **27c. CMS Physician PUF:**
-- [ ] T042 [P2] New migration: create child table `hcs_raw.cms_physician_puf_services` for per-HCPCS line items (`hcpcs_code`, `hcpcs_description`, `place_of_service`, `number_of_services`, `number_of_medicare_beneficiaries`, `average_medicare_allowed_amt`, `average_submitted_charge_amt`, `average_medicare_payment_amt`, `average_medicare_standardized_amt`, beneficiary breakouts).
-- [ ] T043 [P2] Update Physician PUF loader to ingest per-HCPCS line items into child table.
-- [ ] T044 [P2] Create `hcs_bronze.cms_physician_puf_services` SQLMesh model passthrough. Verify per-HCPCS line items populated.
+- [x] T042 [P2] New migration: create child table `hcs_raw.cms_physician_puf_services` for per-HCPCS line items (`hcpcs_code`, `hcpcs_description`, `place_of_service`, `number_of_services`, `number_of_medicare_beneficiaries`, `average_medicare_allowed_amt`, `average_submitted_charge_amt`, `average_medicare_payment_amt`, `average_medicare_standardized_amt`, beneficiary breakouts).
+- [x] T043 [P2] Update Physician PUF loader to ingest per-HCPCS line items into child table.
+- [x] T044 [P2] Create `hcs_bronze.cms_physician_puf_services` SQLMesh model passthrough. Verify per-HCPCS line items populated.
 
 **27d. HRSA:**
-- [ ] T045 [P2] New migration: expand `hcs_raw.hrsa` DDL to ~20-25 columns -- add `hpsa_status_code`, `designation_history` (JSONB), `provider_count`, `primary_care_physician_count`, `dental_provider_count`, `mental_health_provider_count`, `mua_status`, `mua_score`, `withdrawn_date`.
-- [ ] T046 [P2] Update HRSA loader to read all new fields.
-- [ ] T047 [P2] Extend `hcs_bronze.hrsa` SQLMesh model passthrough. Verify `hpsa_status_code`, `provider_count`, `primary_care_physician_count` columns present.
+- [x] T045 [P2] New migration: expand `hcs_raw.hrsa` DDL to ~20-25 columns -- add `hpsa_status_code`, `designation_history` (JSONB), `provider_count`, `primary_care_physician_count`, `dental_provider_count`, `mental_health_provider_count`, `mua_status`, `mua_score`, `withdrawn_date`.
+- [x] T046 [P2] Update HRSA loader to read all new fields.
+- [x] T047 [P2] Extend `hcs_bronze.hrsa` SQLMesh model passthrough. Verify `hpsa_status_code`, `provider_count`, `primary_care_physician_count` columns present.
 
 ---
 
