@@ -250,6 +250,15 @@ class USPTOTrademarksFetcher(BaseFetcher):
             "owner_entity_type": owner_entity_type,
             "goods_and_services": raw.get("goodsAndServicesText") or raw.get("goods_and_services"),
             "description_of_mark": raw.get("descriptionOfMark") or raw.get("description_of_mark"),
+            # T063/T064 expansion fields
+            "case_file_statements": raw.get("caseFileStatements") or raw.get("case_file_statements"),
+            "owner_events": raw.get("ownerEvents") or raw.get("owner_events"),
+            "assignments": raw.get("assignments"),
+            "prosecution_history": raw.get("prosecutionHistory") or raw.get("prosecution_history"),
+            "tta_proceedings": raw.get("ttaProceedings") or raw.get("tta_proceedings"),
+            "renewal_events": raw.get("renewalEvents") or raw.get("renewal_events"),
+            "madrid_linkage": raw.get("madridLinkage") or raw.get("madrid_linkage"),
+            "mark_image_url": raw.get("markImageUrl") or raw.get("mark_image_url"),
         }
 
     def _load_serial_numbers_from_db(self) -> List[str]:

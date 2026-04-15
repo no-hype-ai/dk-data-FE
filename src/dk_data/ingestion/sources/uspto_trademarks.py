@@ -10,6 +10,7 @@ Tracks status changes in ip_raw.trademark_status_history.
 Target table: ip_raw.uspto_trademarks (see migration 071_uspto_trademarks_raw.sql)
 """
 
+import json
 import logging
 from datetime import date, datetime
 from typing import Any, Dict, List, Optional
@@ -72,6 +73,14 @@ def load_uspto_trademarks_data(
                     # Validate with Pydantic
                     record = USPTOTrademarkRecord(**raw_record)
 
+                    # T064: serialize new JSONB expansion fields
+                    case_file_statements_json = _json_or_none(raw_record.get("case_file_statements"))
+                    owner_events_json = _json_or_none(raw_record.get("owner_events"))
+                    assignments_json = _json_or_none(raw_record.get("assignments"))
+                    prosecution_history_json = _json_or_none(raw_record.get("prosecution_history"))
+                    tta_proceedings_json = _json_or_none(raw_record.get("tta_proceedings"))
+                    renewal_events_json = _json_or_none(raw_record.get("renewal_events"))
+
                     cur.execute(
                         """
                         INSERT INTO ip_raw.uspto_trademarks (
@@ -81,6 +90,9 @@ def load_uspto_trademarks_data(
                             nice_classes, us_classes,
                             owner_name, owner_entity_type,
                             goods_and_services, description_of_mark,
+                            case_file_statements, owner_events, assignments,
+                            prosecution_history, tta_proceedings, renewal_events,
+                            madrid_linkage, mark_image_url,
                             _source_file, _source_hash
                         ) VALUES (
                             %s, %s, %s,
@@ -88,6 +100,9 @@ def load_uspto_trademarks_data(
                             %s, %s, %s,
                             %s, %s,
                             %s, %s,
+                            %s, %s,
+                            %s, %s, %s,
+                            %s, %s, %s,
                             %s, %s,
                             %s, %s
                         )
@@ -106,6 +121,14 @@ def load_uspto_trademarks_data(
                             owner_entity_type = EXCLUDED.owner_entity_type,
                             goods_and_services = EXCLUDED.goods_and_services,
                             description_of_mark = EXCLUDED.description_of_mark,
+                            case_file_statements = EXCLUDED.case_file_statements,
+                            owner_events = EXCLUDED.owner_events,
+                            assignments = EXCLUDED.assignments,
+                            prosecution_history = EXCLUDED.prosecution_history,
+                            tta_proceedings = EXCLUDED.tta_proceedings,
+                            renewal_events = EXCLUDED.renewal_events,
+                            madrid_linkage = EXCLUDED.madrid_linkage,
+                            mark_image_url = EXCLUDED.mark_image_url,
                             _source_file = EXCLUDED._source_file,
                             _source_hash = EXCLUDED._source_hash,
                             _loaded_at = NOW()
@@ -126,6 +149,14 @@ def load_uspto_trademarks_data(
                             record.owner_entity_type,
                             record.goods_and_services,
                             record.description_of_mark,
+                            case_file_statements_json,
+                            owner_events_json,
+                            assignments_json,
+                            prosecution_history_json,
+                            tta_proceedings_json,
+                            renewal_events_json,
+                            raw_record.get("madrid_linkage"),
+                            raw_record.get("mark_image_url"),
                             source_file or "tsdr_api",
                             source_hash,
                         ),
@@ -178,6 +209,13 @@ def load_uspto_trademarks_data(
         "records_failed": records_failed,
         "errors": errors[:10],
     }
+
+
+def _json_or_none(value: Any) -> Optional[str]:
+    """Serialize a value to JSON string, or return None if empty/None."""
+    if value is None:
+        return None
+    return json.dumps(value)
 
 
 def _parse_date(value: Any) -> Optional[date]:
