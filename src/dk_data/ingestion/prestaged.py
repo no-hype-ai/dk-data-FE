@@ -33,6 +33,8 @@ from dk_data.ingestion.load_order import (
     OUT_OF_SCOPE_SCHEMA_PREFIXES,
     SOURCE_LOAD_ORDER,
     WAL_MODE_TABLES,
+    plan_load,
+    propagate_blocked,
 )
 from dk_data.ingestion.prestaged_safety import is_restorable_target
 from dk_data.ingestion.prestaged_types import (
@@ -428,50 +430,14 @@ def main(argv: list[str] | None = None) -> int:
         art = compute_sha256(art)
         valid_artifacts.append(art)
 
-    grouped = group_by_table(valid_artifacts)
-    table_entries: dict[tuple[str, str], tuple[Tier, list[PrestagedArtifact]]] = {}
-    for key, group in grouped.items():
-        tier, chosen = select_highest_tier(group)
-        table_entries[key] = (tier, chosen)
-
-    cluster_fingerprint = pg_url
-    all_sha256s = [
-        a.sha256 for arts in table_entries.values() for a in arts[1] if a.sha256
-    ]
-    run_label = compute_run_id(all_sha256s, cluster_fingerprint)
-
-    # Build ordered steps
-    steps: list[LoadStep] = []
-    for descriptor in SOURCE_LOAD_ORDER:
-        if any(
-            descriptor.schema.startswith(prefix)
-            for prefix in OUT_OF_SCOPE_SCHEMA_PREFIXES
-        ):
-            continue
-        if args.only_tier is not None and descriptor.tier != args.only_tier:
-            continue
-        if requested_sources is not None and descriptor.source_id not in requested_sources:
-            continue
-
-        key = (descriptor.schema, descriptor.table)
-        if key in table_entries:
-            tier, artifacts = table_entries[key]
-            kind: SourceKind = "pg_dump"
-        else:
-            artifacts = []
-            tier = "raw"
-            kind = "live_fetch"
-
-        wal_mode = (descriptor.schema, descriptor.table) in WAL_MODE_TABLES
-        steps.append(LoadStep(
-            source_id=descriptor.source_id,
-            target_schema=descriptor.schema,
-            target_table=descriptor.table,
-            tier=tier, kind=kind, artifacts=artifacts,
-            depends_on=descriptor.depends_on, wal_mode=wal_mode,
-        ))
-
-    plan = LoadPlan(run_label=run_label, sources=steps, wal_mode_tables=WAL_MODE_TABLES)
+    # Stage 3: plan_load encapsulates ordering + tier-precedence + filtering.
+    plan = plan_load(
+        valid_artifacts,
+        cluster_fingerprint=pg_url,
+        requested_sources=requested_sources,
+        only_tier=args.only_tier,
+    )
+    run_label = plan.run_label
 
     # Dry-run (FR-012)
     if args.dry_run:
@@ -507,12 +473,24 @@ def main(argv: list[str] | None = None) -> int:
     writer = TransformRunsWriter(conn)
 
     completed_ids: set[str] = set()
+    failed_ids: set[str] = set()
     failed_count = 0
     total_count = len(plan.sources)
 
     for step in plan.sources:
-        blocked_by = [dep for dep in step.depends_on if dep not in completed_ids]
-        if blocked_by:
+        # Stage 3: blocked-state propagation via the declarative helper.
+        # Compared against current failed_ids only (not future failures —
+        # those will block their own downstream in subsequent iterations).
+        blocked_map = propagate_blocked(
+            LoadPlan(
+                run_label=run_label,
+                sources=[step],
+                wal_mode_tables=WAL_MODE_TABLES,
+            ),
+            failed_ids,
+        )
+        if step.source_id in blocked_map:
+            blocked_by = blocked_map[step.source_id]
             started_at = _dt.datetime.now(_dt.timezone.utc)
             writer.record(
                 run_label=run_label, schema=step.target_schema, table=step.target_table,
@@ -528,6 +506,7 @@ def main(argv: list[str] | None = None) -> int:
                 "status": "blocked", "row_count": 0, "duration_s": 0.0,
             }))
             failed_count += 1
+            failed_ids.add(step.source_id)
             continue
 
         if not step.artifacts and step.kind == "live_fetch":
@@ -545,6 +524,7 @@ def main(argv: list[str] | None = None) -> int:
                     "run_id": run_label, "source_id": step.source_id,
                     "status": "no_source_available", "row_count": 0, "duration_s": 0.0,
                 }))
+                failed_ids.add(step.source_id)
                 continue
 
         t_start = _dt.datetime.now(_dt.timezone.utc)
@@ -562,6 +542,7 @@ def main(argv: list[str] | None = None) -> int:
             completed_ids.add(step.source_id)
         else:
             failed_count += 1
+            failed_ids.add(step.source_id)
 
     conn.close()
 

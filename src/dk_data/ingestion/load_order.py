@@ -4,10 +4,15 @@ A single Python list — no DAG framework. Encodes the 8-tier hub → spoke
 sequence from ``.dk/specs/005-prestaged-hydration/plan.md`` (§load_order)
 so that silver/gold transforms succeed first-try after hydration (US2).
 
-Consumed by ``prestaged.plan_load()`` (Stage 3, T040) which:
-  - filters SOURCE_LOAD_ORDER by what artifacts were actually discovered
-  - resolves ``depends_on`` (blocked steps emit ``status='blocked'``)
-  - emits a :class:`dk_data.ingestion.prestaged_types.LoadPlan`.
+Public entry points:
+  - :data:`SOURCE_LOAD_ORDER` — the 8-tier descriptor list.
+  - :data:`WAL_MODE_TABLES` — the 5 tables >5 GB needing throttle.
+  - :data:`OUT_OF_SCOPE_SCHEMA_PREFIXES` — never appear in any plan.
+  - :func:`plan_load` — pure function that combines a discovered artifact
+    set + the descriptor list into a :class:`LoadPlan`. Used by
+    ``prestaged.main()``.
+  - :func:`propagate_blocked` — given a set of failed source_ids,
+    returns the transitively-blocked downstream steps.
 
 The "tiers" are declared by grouping; they are not a distinct construct.
 A step in tier N does not start until every step in tiers <N has
@@ -18,6 +23,16 @@ no_source_available).
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from typing import Iterable
+
+from dk_data.ingestion.prestaged_types import (
+    LoadPlan,
+    LoadStep,
+    PrestagedArtifact,
+    SourceKind,
+    Tier,
+    compute_run_id,
+)
 
 
 @dataclass(frozen=True)
@@ -205,3 +220,149 @@ WAL_MODE_TABLES: frozenset[tuple[str, str]] = frozenset(
 OUT_OF_SCOPE_SCHEMA_PREFIXES: frozenset[str] = frozenset(
     {"ip_", "ind_", "hcp_silver"}
 )
+
+
+# ---------------------------------------------------------------------------
+# T040 — plan_load: pure plan construction (no I/O, no DB)
+# ---------------------------------------------------------------------------
+
+def plan_load(
+    artifacts: Iterable[PrestagedArtifact],
+    *,
+    cluster_fingerprint: str,
+    requested_sources: set[str] | None = None,
+    only_tier: int | None = None,
+    descriptors: list[SourceDescriptor] | None = None,
+) -> LoadPlan:
+    """Build a :class:`LoadPlan` from a discovered artifact set.
+
+    Pure function — no DB connection, no filesystem I/O. The ``artifacts``
+    parameter must already be validated (magic bytes ok) and hashed
+    (``sha256`` populated) by the caller; ``plan_load`` only consults
+    metadata, never opens files.
+
+    Selection logic per (schema, table) group:
+      - silver dump beats bronze beats raw (FR-003);
+      - lower-tier artifacts in the same group are discarded.
+
+    Filters:
+      - ``requested_sources``: when not ``None``, only descriptors whose
+        ``source_id`` is in the set are emitted.
+      - ``only_tier``: when not ``None``, only descriptors with the
+        matching ``tier`` are emitted.
+      - :data:`OUT_OF_SCOPE_SCHEMA_PREFIXES`: descriptors whose schema
+        starts with any prefix are dropped unconditionally (FR-014).
+
+    Args:
+        artifacts: validated, hashed PrestagedArtifact instances.
+        cluster_fingerprint: stable identifier for the target cluster
+            (e.g. ``"host:port/db"``); mixed into ``run_label``.
+        requested_sources: optional set of source_ids to keep.
+        only_tier: optional tier filter (1..8).
+        descriptors: optional override of :data:`SOURCE_LOAD_ORDER`
+            (used by tests).
+
+    Returns:
+        :class:`LoadPlan` with steps in declared order. Each step's
+        ``kind`` is ``"pg_dump"`` if at least one artifact matches its
+        ``(schema, table)``, else ``"live_fetch"``. ``wal_mode`` is set
+        from :data:`WAL_MODE_TABLES`. ``run_label`` is deterministic
+        per the artifact set + cluster.
+    """
+    descriptors = descriptors if descriptors is not None else SOURCE_LOAD_ORDER
+
+    # Group artifacts by (schema, table) and select highest tier per group
+    grouped: dict[tuple[str, str], list[PrestagedArtifact]] = {}
+    for art in artifacts:
+        grouped.setdefault((art.target_schema, art.target_table), []).append(art)
+
+    table_entries: dict[tuple[str, str], tuple[Tier, list[PrestagedArtifact]]] = {}
+    for key, group in grouped.items():
+        best_tier: Tier = max(group, key=lambda a: _TIER_RANK[a.tier]).tier
+        chosen = sorted(
+            (a for a in group if a.tier == best_tier),
+            key=lambda a: a.chunk_index,
+        )
+        table_entries[key] = (best_tier, chosen)
+
+    # Deterministic run label across the selected artifact set
+    selected_sha256s = [
+        a.sha256 for _, arts in table_entries.values() for a in arts if a.sha256
+    ]
+    run_label = compute_run_id(selected_sha256s, cluster_fingerprint)
+
+    steps: list[LoadStep] = []
+    for d in descriptors:
+        if any(d.schema.startswith(p) for p in OUT_OF_SCOPE_SCHEMA_PREFIXES):
+            continue
+        if only_tier is not None and d.tier != only_tier:
+            continue
+        if requested_sources is not None and d.source_id not in requested_sources:
+            continue
+
+        key = (d.schema, d.table)
+        if key in table_entries:
+            tier, arts = table_entries[key]
+            kind: SourceKind = "pg_dump"
+        else:
+            tier = "raw"
+            arts = []
+            kind = "live_fetch"
+
+        steps.append(
+            LoadStep(
+                source_id=d.source_id,
+                target_schema=d.schema,
+                target_table=d.table,
+                tier=tier,
+                kind=kind,
+                artifacts=arts,
+                depends_on=list(d.depends_on),
+                wal_mode=(d.schema, d.table) in WAL_MODE_TABLES,
+            )
+        )
+
+    return LoadPlan(
+        run_label=run_label,
+        sources=steps,
+        wal_mode_tables=WAL_MODE_TABLES,
+    )
+
+
+# Internal: tier precedence used by plan_load (silver > bronze > raw, FR-003).
+_TIER_RANK: dict[str, int] = {"raw": 0, "bronze": 1, "silver": 2}
+
+
+# ---------------------------------------------------------------------------
+# T041 — propagate_blocked: transitively mark downstream steps as blocked
+# ---------------------------------------------------------------------------
+
+def propagate_blocked(
+    plan: LoadPlan,
+    failed_source_ids: set[str],
+) -> dict[str, list[str]]:
+    """Compute which steps must be marked ``blocked`` because at least
+    one (transitive) ancestor failed or was itself blocked.
+
+    Walks the dependency graph in declared order — since
+    :data:`SOURCE_LOAD_ORDER` is already a topological sort by tier and
+    by intra-tier declaration order, a single forward pass suffices.
+
+    Args:
+        plan: the LoadPlan whose steps to evaluate.
+        failed_source_ids: source_ids that already reached a
+            non-completed terminal state (failed / no_source_available).
+
+    Returns:
+        A mapping from blocked source_id to the list of immediate
+        ancestor source_ids that caused the block. Sources without any
+        failed ancestor are absent from the mapping.
+    """
+    blocked: dict[str, list[str]] = {}
+    bad: set[str] = set(failed_source_ids)
+    for step in plan.sources:
+        offenders = [d for d in step.depends_on if d in bad]
+        if offenders:
+            blocked[step.source_id] = offenders
+            bad.add(step.source_id)
+    return blocked
