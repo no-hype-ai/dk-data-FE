@@ -59,6 +59,28 @@ DO $$ BEGIN
     END;
   END IF;
 
+  -- ============================================================
+  -- T013: mol_silver.atc_classifications — ATC hierarchy table
+  -- Part of: 006-claims-engine-data-gaps
+  -- mol_silver is already in PGRST_DB_SCHEMAS; grants follow the
+  -- same exception-wrapped pattern as above.
+  -- ============================================================
+  IF EXISTS (SELECT FROM pg_roles WHERE rolname = 'analyst') THEN
+    BEGIN
+      GRANT SELECT ON TABLE mol_silver.atc_classifications TO analyst;
+    EXCEPTION WHEN OTHERS THEN
+      RAISE NOTICE 'Skipping mol_silver.atc_classifications grant to analyst (table not yet created by SQLMesh)';
+    END;
+  END IF;
+
+  IF EXISTS (SELECT FROM pg_roles WHERE rolname = 'mol_viewer') THEN
+    BEGIN
+      GRANT SELECT ON TABLE mol_silver.atc_classifications TO mol_viewer;
+    EXCEPTION WHEN OTHERS THEN
+      RAISE NOTICE 'Skipping mol_silver.atc_classifications grant to mol_viewer (table not yet created by SQLMesh)';
+    END;
+  END IF;
+
 END $$;
 
 COMMIT;
