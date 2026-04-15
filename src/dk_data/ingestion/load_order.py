@@ -290,10 +290,20 @@ def plan_load(
     table_entries: dict[tuple[str, str], tuple[Tier, list[PrestagedArtifact]]] = {}
     for key, group in grouped.items():
         best_tier: Tier = max(group, key=lambda a: _TIER_RANK[a.tier]).tier
-        chosen = sorted(
+        chosen_all = sorted(
             (a for a in group if a.tier == best_tier),
-            key=lambda a: a.chunk_index,
+            key=lambda a: (a.path.parent.name, a.chunk_index),
         )
+        # A single (schema, table) can have multiple .dump files — e.g.,
+        # `mol_raw.chembl` exists in both the April-14 and April-15 archive
+        # batches as full-table snapshots. pg_dump does NOT split tables
+        # across files; every .dump is a complete snapshot. Restoring more
+        # than one collides on PK. Take the LEXICALLY-LAST artifact
+        # (newest archive, by path.parent.name which includes the
+        # ISO-8601 timestamp). For genuinely prefixed chunks ('1_foo',
+        # 'retry_foo'), 'retry' sorts after numeric so a retry wins —
+        # correct.
+        chosen = chosen_all[-1:] if chosen_all else []
         table_entries[key] = (best_tier, chosen)
 
     # Deterministic run label across the selected artifact set

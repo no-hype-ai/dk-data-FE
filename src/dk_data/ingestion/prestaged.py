@@ -682,7 +682,27 @@ def main(argv: list[str] | None = None) -> int:
             continue
 
         t_start = _dt.datetime.now(_dt.timezone.utc)
-        outcome = run_step(conn, step, run_label, writer, throttle=throttle)
+        # Defense-in-depth: if a prior pg_restore failure terminated the
+        # writer's session (common after --single-transaction rollback),
+        # reconnect before the next step. Otherwise psycopg2.InterfaceError
+        # cascades through the whole loop and exits the orchestrator.
+        try:
+            if conn.closed:
+                raise psycopg2.InterfaceError("connection closed before run_step")
+            outcome = run_step(conn, step, run_label, writer, throttle=throttle)
+        except (psycopg2.InterfaceError, psycopg2.OperationalError) as exc:
+            logger.warning(
+                f"connection lost before/during {step.source_id} ({exc}) "
+                f"— reconnecting and retrying once"
+            )
+            try:
+                conn.close()
+            except Exception:  # noqa: BLE001
+                pass
+            conn = psycopg2.connect(pg_url)
+            conn.autocommit = False
+            writer = TransformRunsWriter(conn)
+            outcome = run_step(conn, step, run_label, writer, throttle=throttle)
         t_end = _dt.datetime.now(_dt.timezone.utc)
         duration_s = (t_end - t_start).total_seconds()
 
