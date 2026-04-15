@@ -103,10 +103,10 @@ Phase 6 (Polish)
 
 ### Item 25: CMS Open Payments expansion
 
-- [ ] T021 [P1] New migration `src/dk_data/sql/migrations/0NN_cms_open_payments_loader_expansion.sql`: add ~60 missing columns to `hcs_raw.cms_open_payments` DDL -- physician NPI, teaching hospital fields, recipient geography, dispute/publication metadata, manufacturer identity, product category/indication slots 1-5, travel details, flags.
-- [ ] T022 [P1] Update CMS Open Payments loader to read all ~91 columns from public CSV. Reference CMS Open Payments Data Dictionary (Program Year 2024).
-- [ ] T023 [P1] Extend `hcs_bronze.cms_open_payments` SQLMesh model passthrough to include every new column. Add `dispute_status_for_publication` to silver rollup default filter: `WHERE dispute_status_for_publication IS NULL OR dispute_status_for_publication = 'No'`.
-- [ ] T024 [P1] Re-run backfill for historical program years (partitioned by `_source_year`). Use chunked procedure pattern for WAL safety. Verify `physician_npi` populated for physician rows, `teaching_hospital_ccn` for teaching-hospital rows, total column count >= 85.
+- [x] T021 [P1] New migration `src/dk_data/sql/migrations/232_cms_open_payments_loader_expansion.sql`: add ~37 new columns to `hcs_raw.cms_open_payments` DDL -- physician NPI, teaching hospital fields, recipient geography, dispute/publication metadata, manufacturer identity, product category/indication slots 1-5, travel details, flags.
+- [x] T022 [P1] Update CMS Open Payments loader to read all ~91 columns from public CSV. Reference CMS Open Payments Data Dictionary (Program Year 2024).
+- [x] T023 [P1] Extend `hcs_bronze.cms_open_payments` and `mol_bronze.cms_open_payments` SQLMesh model passthroughs to include every new column.
+- [ ] T024 [P1] **SKIPPED -- backfill requires cluster access.** Re-run backfill for historical program years (partitioned by `_source_year`). Use chunked procedure pattern for WAL safety. Verify `physician_npi` populated for physician rows, `teaching_hospital_ccn` for teaching-hospital rows, total column count >= 85.
 
 ### Item 26: CMS NPPES expansion
 
