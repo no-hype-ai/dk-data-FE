@@ -3,12 +3,12 @@
 **Branch**: feature/005-prestaged-hydration
 **Feature dir**: .dk/specs/005-prestaged-hydration/
 **Pipeline state**: in-progress
-**Current stage pointer**: Stage 4
-**Last updated by**: manual close (Stage 3) at 2026-04-15T00:55:00Z
+**Current stage pointer**: Stage 5
+**Last updated by**: manual close (Stage 4) at 2026-04-15T01:10:00Z
 
 ## Dashboard
 
-Stage 1 ✅  Stage 2 ✅  Stage 3 ✅  Stage 4 ⏳  Stage 5 ⏳  Stage 6 ⏳  Stage 7 ⏳
+Stage 1 ✅  Stage 2 ✅  Stage 3 ✅  Stage 4 ✅  Stage 5 ⏳  Stage 6 ⏳  Stage 7 ⏳
 
 Legend: ✅ closed · ⏳ in progress or next up · ⏸ deferred · ⛔ blocked
 
@@ -93,7 +93,7 @@ Legend: ✅ closed · ⏳ in progress or next up · ⏸ deferred · ⛔ blocked
 
 ---
 
-## Stage 4 — WAL-aware throttling ⏳
+## Stage 4 — WAL-aware throttling ✅
 
 **Entry gate**: Stage 3 merged + post-merge validation passed
 **Exit gate type**: code-only-safe
@@ -102,12 +102,12 @@ Legend: ✅ closed · ⏳ in progress or next up · ⏸ deferred · ⛔ blocked
 **Delegated via**: /dk.implement
 **PR**: not opened
 
-- ⏳ T050 — wal_pressure() reading meta.wal_usage
-- ⏳ T051 — pause_until_below() with budget cap
-- ⏳ T052 — Wire pre-restore WAL check on WAL_MODE_TABLES
-- ⏳ T053 — Two-consecutive-pauses → halve chunk size
-- ⏳ T054 — Integration test: injected 80% WAL → restore pauses
-- ⏳ T055 — Integration test: two pauses → chunk size halved
+- ✅ T050 — wal_pressure() reading meta.wal_usage
+- ✅ T051 — pause_until_below() with budget cap
+- ✅ T052 — Wire pre-restore WAL check on WAL_MODE_TABLES
+- ✅ T053 — Two-consecutive-pauses → halve chunk size
+- ✅ T054 — Integration test: injected 80% WAL → restore pauses
+- ✅ T055 — Integration test: two pauses → chunk size halved
 
 **Deferred from Stage 4** (with explicit reason + natural reschedule):
 - (none yet)
