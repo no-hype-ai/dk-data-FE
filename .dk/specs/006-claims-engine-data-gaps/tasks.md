@@ -54,7 +54,7 @@ Phase 6 (Polish)
 
 ## Phase 1: Setup / Foundation
 
-- [ ] T001 [P0] Confirm WAL circuit breaker infrastructure: verify `meta.transform_runs` WAL accounting is active for all write paths; confirm chunked procedure pattern is available (<=50K rows / <=200 MB WAL per chunk); verify tray pattern procedures exist for tables >1M rows. Gate for Phase 3+ loader backfills.
+- [x] T001 [P0] Confirm WAL circuit breaker infrastructure: verify `meta.transform_runs` WAL accounting is active for all write paths; confirm chunked procedure pattern is available (<=50K rows / <=200 MB WAL per chunk); verify tray pattern procedures exist for tables >1M rows. Gate for Phase 3+ loader backfills.
 
 ---
 
