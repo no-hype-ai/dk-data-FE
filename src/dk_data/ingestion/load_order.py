@@ -169,15 +169,26 @@ SOURCE_LOAD_ORDER: list[SourceDescriptor] = [
 
     # -------------------------------------------------------------------
     # Tier 7 — HCS silver aggregates.
+    #
+    # T126 — depends_on declarations: silver aggregates that read from
+    # the bronze CMS tables wait for them to be restored. cms_pecos is
+    # the foundational provider hub; provider_profile + facility_profile
+    # both block on it. The other 3 silver aggregates can run any time
+    # after their bronze inputs land (left blocked-only-by-tier).
     # -------------------------------------------------------------------
-    SourceDescriptor("hcs_silver.provider_profile", "hcs_silver", "provider_profile", 7),
-    SourceDescriptor("hcs_silver.facility_profile", "hcs_silver", "facility_profile", 7),
+    SourceDescriptor("hcs_silver.provider_profile", "hcs_silver", "provider_profile", 7,
+                     depends_on=["hcs_bronze.cms_pecos"]),
+    SourceDescriptor("hcs_silver.facility_profile", "hcs_silver", "facility_profile", 7,
+                     depends_on=["hcs_bronze.cms_pecos"]),
     SourceDescriptor("hcs_silver.cms_facility_profile", "hcs_silver",
-                     "cms_facility_profile", 7),
+                     "cms_facility_profile", 7,
+                     depends_on=["hcs_bronze.cms_open_payments"]),
     SourceDescriptor("hcs_silver.healthcare_facilities", "hcs_silver",
-                     "healthcare_facilities", 7),
+                     "healthcare_facilities", 7,
+                     depends_on=["hcs_bronze.cms_pecos"]),
     SourceDescriptor("hcs_silver.geographic_health", "hcs_silver",
-                     "geographic_health", 7),
+                     "geographic_health", 7,
+                     depends_on=["hcs_bronze.cms_opioid_puf"]),
 
     # -------------------------------------------------------------------
     # Tier 8 — gold via SQLMesh. No dumps exist; these are rebuilt from
@@ -321,6 +332,42 @@ def plan_load(
                 wal_mode=(d.schema, d.table) in WAL_MODE_TABLES,
             )
         )
+
+    # ------------------------------------------------------------------
+    # T125 — Auto-merge: any (schema, table) the walker found but that's
+    # NOT in SOURCE_LOAD_ORDER gets appended at the tail with empty
+    # depends_on. Catches the long-tail spokes (cms_* PUFs, hcs_raw
+    # variations) without forcing 122 hand-enumerated SourceDescriptors.
+    # ------------------------------------------------------------------
+    declared_keys = {(d.schema, d.table) for d in descriptors}
+    declared_skipped_by_filter = {
+        (d.schema, d.table) for d in descriptors
+        if (only_tier is not None and d.tier != only_tier)
+        or (requested_sources is not None and d.source_id not in requested_sources)
+    }
+    for (schema, table), (tier, arts) in table_entries.items():
+        if (schema, table) in declared_keys:
+            continue  # already emitted above (or filtered out intentionally)
+        if any(schema.startswith(p) for p in OUT_OF_SCOPE_SCHEMA_PREFIXES):
+            continue
+        source_id = f"{schema}.{table}"
+        if requested_sources is not None and source_id not in requested_sources:
+            continue
+        steps.append(
+            LoadStep(
+                source_id=source_id,
+                target_schema=schema,
+                target_table=table,
+                tier=tier,
+                kind="pg_dump",
+                artifacts=arts,
+                depends_on=[],
+                wal_mode=(schema, table) in WAL_MODE_TABLES,
+            )
+        )
+    # Discard the read of declared_skipped_by_filter — kept above only to
+    # make the filter intent legible. (Not used; deliberate.)
+    _ = declared_skipped_by_filter
 
     return LoadPlan(
         run_label=run_label,

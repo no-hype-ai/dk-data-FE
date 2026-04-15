@@ -232,3 +232,98 @@ def _tier_for_schema(schema: str) -> str:
 
 def _is_out_of_scope(schema: str) -> bool:
     return any(schema.startswith(p) for p in OUT_OF_SCOPE_SCHEMA_PREFIXES)
+
+
+# ---------------------------------------------------------------------------
+# T127: auto-merge — undeclared sources from the walker get appended to
+#       the LoadPlan tail with empty depends_on
+# ---------------------------------------------------------------------------
+
+
+def test_plan_load_auto_merges_undeclared_sources() -> None:
+    """Walker discovered 4 (schema, table) pairs; only 2 are in
+    SOURCE_LOAD_ORDER. The other 2 must be auto-appended at the tail
+    as kind='pg_dump' with empty depends_on, so they're not silently
+    skipped.
+    """
+    descriptors = [
+        SourceDescriptor("hcs_raw.cms_pecos", "hcs_raw", "cms_pecos", 6),
+        SourceDescriptor("mol_raw.chembl", "mol_raw", "chembl", 2),
+    ]
+
+    artifacts = [
+        # Two declared:
+        _make_artifact("hcs_raw", "cms_pecos", tier="raw", sha256="a" * 64),
+        _make_artifact("mol_raw", "chembl", tier="raw", sha256="b" * 64),
+        # Two NOT in descriptors — should be auto-merged at the tail:
+        _make_artifact("hcs_raw", "cms_undeclared_puf", tier="raw", sha256="c" * 64),
+        _make_artifact("mol_bronze", "tdc_admet", tier="bronze", sha256="d" * 64),
+    ]
+
+    plan = plan_load(
+        artifacts,
+        cluster_fingerprint="t:1/d",
+        descriptors=descriptors,
+    )
+
+    # All 4 sources flow through to the LoadPlan
+    plan_ids = [s.source_id for s in plan.sources]
+    assert "hcs_raw.cms_pecos" in plan_ids
+    assert "mol_raw.chembl" in plan_ids
+    assert "hcs_raw.cms_undeclared_puf" in plan_ids
+    assert "mol_bronze.tdc_admet" in plan_ids
+    assert len(plan.sources) == 4
+
+    # The 2 declared ones come first (in declared order), then the
+    # auto-merged ones at the tail.
+    assert plan_ids.index("hcs_raw.cms_pecos") < plan_ids.index(
+        "hcs_raw.cms_undeclared_puf"
+    )
+    assert plan_ids.index("mol_raw.chembl") < plan_ids.index("mol_bronze.tdc_admet")
+
+    # Auto-merged steps carry kind='pg_dump' (artifacts are present)
+    auto_merged = [s for s in plan.sources
+                   if s.source_id in {"hcs_raw.cms_undeclared_puf",
+                                      "mol_bronze.tdc_admet"}]
+    for s in auto_merged:
+        assert s.kind == "pg_dump"
+        assert s.depends_on == []
+        assert len(s.artifacts) == 1
+
+
+def test_plan_load_auto_merge_respects_out_of_scope_filter() -> None:
+    """Even if the walker discovered an out-of-scope schema (ip_*,
+    ind_*, hcp_silver), auto-merge MUST drop it — FR-014 takes
+    precedence over auto-merge."""
+    artifacts = [
+        _make_artifact("ip_silver", "patents", tier="silver"),
+        _make_artifact("mol_raw", "chembl", tier="raw"),
+    ]
+
+    plan = plan_load(
+        artifacts,
+        cluster_fingerprint="t:1/d",
+        descriptors=[],   # nothing declared — both go through auto-merge path
+    )
+
+    plan_ids = {s.source_id for s in plan.sources}
+    assert "mol_raw.chembl" in plan_ids
+    assert "ip_silver.patents" not in plan_ids
+
+
+def test_plan_load_auto_merge_respects_requested_sources_filter() -> None:
+    """If the user passes --source-list filter, auto-merged sources
+    obey it too."""
+    artifacts = [
+        _make_artifact("hcs_raw", "wanted", tier="raw"),
+        _make_artifact("hcs_raw", "unwanted", tier="raw"),
+    ]
+
+    plan = plan_load(
+        artifacts,
+        cluster_fingerprint="t:1/d",
+        requested_sources={"hcs_raw.wanted"},
+        descriptors=[],
+    )
+
+    assert [s.source_id for s in plan.sources] == ["hcs_raw.wanted"]
