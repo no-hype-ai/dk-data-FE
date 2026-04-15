@@ -69,6 +69,29 @@ SELECT DISTINCT ON (rec->>'application_number')
         ELSE NULL
     END                                                                 AS first_approval_date,
 
+    -- FDA designation flags (extracted from submissions JSONB array)
+    EXISTS(
+        SELECT 1 FROM jsonb_array_elements(COALESCE(rec->'submissions', '[]'::JSONB)) sub
+        WHERE UPPER(sub->>'submission_class_code') LIKE 'PRIORITY%'
+           OR UPPER(sub->>'review_priority') = 'PRIORITY'
+    )                                                                   AS is_priority_review,
+    EXISTS(
+        SELECT 1 FROM jsonb_array_elements(COALESCE(rec->'submissions', '[]'::JSONB)) sub
+        WHERE UPPER(sub->>'submission_class_code') LIKE 'ORPHAN%'
+    )                                                                   AS is_orphan_designation,
+    EXISTS(
+        SELECT 1 FROM jsonb_array_elements(COALESCE(rec->'submissions', '[]'::JSONB)) sub
+        WHERE UPPER(sub->>'submission_class_code') LIKE 'BREAKTHROUGH%'
+    )                                                                   AS is_breakthrough_designation,
+    EXISTS(
+        SELECT 1 FROM jsonb_array_elements(COALESCE(rec->'submissions', '[]'::JSONB)) sub
+        WHERE UPPER(sub->>'submission_class_code') LIKE 'FAST%TRACK%'
+    )                                                                   AS is_fast_track,
+    EXISTS(
+        SELECT 1 FROM jsonb_array_elements(COALESCE(rec->'submissions', '[]'::JSONB)) sub
+        WHERE UPPER(sub->>'submission_class_code') LIKE 'ACCELERATED%'
+    )                                                                   AS is_accelerated_approval,
+
     rec->'products'                                                     AS products,
     rec->'submissions'                                                  AS submissions,
     rec                                                                 AS raw_json,
