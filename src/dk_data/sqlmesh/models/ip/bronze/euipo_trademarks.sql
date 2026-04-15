@@ -50,6 +50,16 @@ SELECT
     -- Trademark image
     r.image_url,
 
+    -- T066/T068: expansion fields
+    r.oppositions,
+    r.cancellations,
+    r.seniorities,
+    r.priority_claims,
+    r.vienna_codes,
+    r.publication_events,
+    r.owner_change_history,
+    r.acquired_distinctiveness_flag,
+
     -- Pharma relevance: Nice Class 5 = Pharmaceuticals
     to_jsonb(COALESCE(r.nice_classes, '{}')) @> '[5]'::jsonb AS is_pharma_related,
 
