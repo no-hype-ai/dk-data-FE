@@ -9,7 +9,8 @@ MODEL (
     ),
     cron '@monthly',
     audits (
-        not_null(columns := (bla_number))
+        not_null(columns := (bla_number)),
+        row_count_at_least(threshold := 1000)
     ),
     grain (bla_number, product_number)
 );
@@ -17,9 +18,9 @@ MODEL (
 SELECT
     gen_random_uuid() AS id,
 
-    -- BLA identifiers
-    prod->>'bla_number' AS bla_number,
-    prod->>'applicant' AS applicant,
+    -- BLA identifiers (application-level from app)
+    app->>'application_number' AS bla_number,
+    app->>'applicant_full_name' AS applicant,
     prod->>'brand_name' AS brand_name,
     prod->>'generic_name' AS generic_name,
     prod->>'license_type' AS license_type,
@@ -64,8 +65,10 @@ SELECT
     NOW() AS created_at
 
 FROM mol_raw.purple_book r,
-     jsonb_array_elements(response_body->'_normalized_products') AS prod
+     jsonb_array_elements(response_body->'results') AS app,
+     LATERAL jsonb_array_elements(app->'products') AS prod
 WHERE
-    response_body->'_normalized_products' IS NOT NULL
-    AND jsonb_array_length(response_body->'_normalized_products') > 0
+    response_body->'results' IS NOT NULL
+    AND jsonb_array_length(response_body->'results') > 0
+    AND app->>'application_number' LIKE 'BLA%'
     AND ingested_at BETWEEN @start_dt AND @end_dt;
