@@ -54,6 +54,34 @@ from dk_data.ingestion.wal_throttle import WalThrottle
 # within a single process (FR-002 performance note).
 _SHA_CACHE: dict[int, str] = {}
 
+
+# T073 — Best-effort OTLP emission. Wrapped in try/except so any failure
+# (alloy down, opentelemetry not installed, network blip) is silently
+# absorbed. The hydration writer in meta.transform_runs remains the
+# single source of truth (FR-009); OTLP is signal-only.
+
+def _emit_otlp(step: LoadStep, run_label: str, status: str, row_count: int) -> None:
+    """Emit one OpenTelemetry span event per terminal transition.
+
+    Never raises. If opentelemetry-api isn't installed, or the configured
+    exporter is unreachable, the function logs once at DEBUG and returns.
+    """
+    try:
+        from opentelemetry import trace  # lazy
+        tracer = trace.get_tracer("dk_data.ingestion.prestaged")
+        with tracer.start_as_current_span("hydrate.step") as span:
+            span.set_attribute("hydrate.run_label", run_label)
+            span.set_attribute("hydrate.source_id", step.source_id)
+            span.set_attribute("hydrate.target_schema", step.target_schema)
+            span.set_attribute("hydrate.target_table", step.target_table)
+            span.set_attribute("hydrate.kind", step.kind)
+            span.set_attribute("hydrate.status", status)
+            span.set_attribute("hydrate.row_count", row_count)
+            span.set_attribute("hydrate.wal_mode", step.wal_mode)
+    except Exception:  # noqa: BLE001
+        # Never let observability break ingestion. [WALBUD adjacent: FR-009]
+        logger.debug("OTLP emission failed (silently swallowed)")
+
 # Precedence for select_highest_tier (FR-003): silver beats bronze beats raw.
 _TIER_RANK: dict[str, int] = {"raw": 0, "bronze": 1, "silver": 2}
 
@@ -380,6 +408,69 @@ def run_step(
         return RunStepOutcome(status="failed", row_count=0, error_detail=error_detail)
 
 
+def run_live_fetch(
+    conn,  # type: ignore[no-untyped-def]
+    step: LoadStep,
+    run_label: str,
+    writer: TransformRunsWriter,
+) -> "RunStepOutcome":
+    """Fall through to the existing live fetcher for a source with no
+    pre-staged artifact (FR-010).
+
+    Lazy-imports :func:`dk_data.ingestion.main.run_ingestion` to avoid
+    pulling its 70 KB of FastAPI / kubernetes / sqlmesh transitive deps
+    into the prestaged module's import graph.
+
+    Args:
+        conn: live psycopg2 connection (used to commit the writer row).
+        step: the LoadStep — must have ``kind='live_fetch'`` and empty
+            ``artifacts``.
+        run_label: deterministic hydration run label.
+        writer: TransformRunsWriter for the run.
+
+    Returns:
+        RunStepOutcome with status ``'completed'`` on fetcher success,
+        ``'failed'`` on any exception (which is logged and recorded).
+    """
+    started_at = _dt.datetime.now(_dt.timezone.utc)
+    schema = step.target_schema
+    table = step.target_table
+
+    # source_id format is "{schema}.{table}"; the fetcher SOURCES dict
+    # is keyed by the table-level name (e.g. "chembl", "drugbank").
+    source_basename = step.source_id.split(".")[-1]
+
+    try:
+        from dk_data.ingestion.main import run_ingestion  # lazy
+        result = run_ingestion(source_basename)
+        ended_at = _dt.datetime.now(_dt.timezone.utc)
+        status: RunStatus = "completed"
+        row_count = int(result.get("row_count", 0)) if isinstance(result, dict) else 0
+        writer.record(
+            run_label=run_label, schema=schema, table=table,
+            chunk_position="-", source_kind="live_fetch", status=status,
+            started_at=started_at, ended_at=ended_at,
+            rows_processed=row_count,
+        )
+        conn.commit()
+        return RunStepOutcome(status=status, row_count=row_count, error_detail=None)
+    except Exception as exc:  # noqa: BLE001
+        ended_at = _dt.datetime.now(_dt.timezone.utc)
+        error_detail = str(exc)[:4096]
+        logger.error(f"run_live_fetch failed for {step.source_id}: {error_detail}")
+        try:
+            writer.record(
+                run_label=run_label, schema=schema, table=table,
+                chunk_position="-", source_kind="live_fetch", status="failed",
+                started_at=started_at, ended_at=ended_at,
+                rows_processed=0, error_detail=error_detail,
+            )
+            conn.commit()
+        except Exception:  # noqa: BLE001
+            pass
+        return RunStepOutcome(status="failed", row_count=0, error_detail=error_detail)
+
+
 def main(argv: list[str] | None = None) -> int:
     """CLI entry point (see ``contracts/cli.md``). Tag: [DRYBK]."""
     parser = argparse.ArgumentParser(
@@ -526,6 +617,7 @@ def main(argv: list[str] | None = None) -> int:
             }))
             failed_count += 1
             failed_ids.add(step.source_id)
+            _emit_otlp(step, run_label, "blocked", 0)
             continue
 
         if not step.artifacts and step.kind == "live_fetch":
@@ -544,7 +636,26 @@ def main(argv: list[str] | None = None) -> int:
                     "status": "no_source_available", "row_count": 0, "duration_s": 0.0,
                 }))
                 failed_ids.add(step.source_id)
+                _emit_otlp(step, run_label, "no_source_available", 0)
                 continue
+
+            # Source is enabled — invoke the live fetcher (FR-010, T060)
+            t_start = _dt.datetime.now(_dt.timezone.utc)
+            outcome = run_live_fetch(conn, step, run_label, writer)
+            t_end = _dt.datetime.now(_dt.timezone.utc)
+            duration_s = (t_end - t_start).total_seconds()
+            print(json.dumps({
+                "run_id": run_label, "source_id": step.source_id,
+                "status": outcome.status, "row_count": outcome.row_count,
+                "duration_s": round(duration_s, 1),
+            }))
+            _emit_otlp(step, run_label, outcome.status, outcome.row_count)
+            if outcome.status == "completed":
+                completed_ids.add(step.source_id)
+            else:
+                failed_count += 1
+                failed_ids.add(step.source_id)
+            continue
 
         t_start = _dt.datetime.now(_dt.timezone.utc)
         outcome = run_step(conn, step, run_label, writer, throttle=throttle)
@@ -556,6 +667,7 @@ def main(argv: list[str] | None = None) -> int:
             "status": outcome.status, "row_count": outcome.row_count,
             "duration_s": round(duration_s, 1),
         }))
+        _emit_otlp(step, run_label, outcome.status, outcome.row_count)
 
         if outcome.status == "completed":
             completed_ids.add(step.source_id)
