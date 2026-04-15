@@ -34,13 +34,15 @@ DO $$ BEGIN
     GRANT SELECT ON ALL TABLES IN SCHEMA hcs_silver TO analyst;
     GRANT SELECT ON ALL TABLES IN SCHEMA ind_silver TO analyst;
     GRANT SELECT ON ALL TABLES IN SCHEMA hcp_silver TO analyst;
+    GRANT SELECT ON ALL TABLES IN SCHEMA ip_silver  TO analyst;
 
     ALTER DEFAULT PRIVILEGES IN SCHEMA mol_silver GRANT SELECT ON TABLES TO analyst;
     ALTER DEFAULT PRIVILEGES IN SCHEMA hcs_silver GRANT SELECT ON TABLES TO analyst;
     ALTER DEFAULT PRIVILEGES IN SCHEMA ind_silver GRANT SELECT ON TABLES TO analyst;
     ALTER DEFAULT PRIVILEGES IN SCHEMA hcp_silver GRANT SELECT ON TABLES TO analyst;
+    ALTER DEFAULT PRIVILEGES IN SCHEMA ip_silver  GRANT SELECT ON TABLES TO analyst;
 
-    RAISE NOTICE 'Granted all silver schema SELECT to analyst';
+    RAISE NOTICE 'Granted all silver schema SELECT to analyst (incl. ip_silver)';
   END IF;
 
   -- ============================================================
@@ -101,6 +103,26 @@ DO $$ BEGIN
       GRANT SELECT ON TABLE mol_silver.fda_enforcement_actions TO mol_viewer;
     EXCEPTION WHEN OTHERS THEN
       RAISE NOTICE 'Skipping mol_silver.fda_enforcement_actions grant to mol_viewer (table not yet created by SQLMesh)';
+    END;
+  END IF;
+
+  -- ============================================================
+  -- T081: mol_silver.conference_abstracts — conference abstract data
+  -- Part of: 006-claims-engine-data-gaps
+  -- ============================================================
+  IF EXISTS (SELECT FROM pg_roles WHERE rolname = 'analyst') THEN
+    BEGIN
+      GRANT SELECT ON TABLE mol_silver.conference_abstracts TO analyst;
+    EXCEPTION WHEN OTHERS THEN
+      RAISE NOTICE 'Skipping mol_silver.conference_abstracts grant to analyst (table not yet created by SQLMesh)';
+    END;
+  END IF;
+
+  IF EXISTS (SELECT FROM pg_roles WHERE rolname = 'mol_viewer') THEN
+    BEGIN
+      GRANT SELECT ON TABLE mol_silver.conference_abstracts TO mol_viewer;
+    EXCEPTION WHEN OTHERS THEN
+      RAISE NOTICE 'Skipping mol_silver.conference_abstracts grant to mol_viewer (table not yet created by SQLMesh)';
     END;
   END IF;
 
