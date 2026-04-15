@@ -1241,6 +1241,52 @@ class CMSOpenPaymentsRecord(CMSPUFBaseRecord):
     payment_publication_date: Optional[str] = None
     record_id: Optional[str] = None
     program_year: Optional[str] = None
+    # Physician identity (T022)
+    physician_npi: Optional[str] = None
+    physician_middle_name: Optional[str] = None
+    physician_name_suffix: Optional[str] = None
+    physician_primary_type: Optional[str] = None
+    physician_specialty_2: Optional[str] = None
+    # Teaching hospitals (T022)
+    teaching_hospital_ccn: Optional[str] = None
+    teaching_hospital_id: Optional[str] = None
+    teaching_hospital_name: Optional[str] = None
+    # Recipient geography (T022)
+    recipient_country: Optional[str] = None
+    recipient_primary_business_street_address_line_1: Optional[str] = None
+    recipient_primary_business_street_address_line_2: Optional[str] = None
+    recipient_postal_code: Optional[str] = None
+    recipient_province: Optional[str] = None
+    # Publication / dispute metadata (T022)
+    dispute_status_for_publication: Optional[str] = None
+    delay_in_publication_indicator: Optional[str] = None
+    change_type: Optional[str] = None
+    # Manufacturer identity (T022)
+    applicable_manufacturer_or_applicable_gpo_making_payment_id: Optional[str] = None
+    applicable_manufacturer_or_applicable_gpo_making_payment_state: Optional[str] = None
+    applicable_manufacturer_or_applicable_gpo_making_payment_country: Optional[str] = None
+    # Product category / therapeutic area slots (T022)
+    product_category_or_therapeutic_area_1: Optional[str] = None
+    product_category_or_therapeutic_area_2: Optional[str] = None
+    product_category_or_therapeutic_area_3: Optional[str] = None
+    product_category_or_therapeutic_area_4: Optional[str] = None
+    product_category_or_therapeutic_area_5: Optional[str] = None
+    # Product indication slots (T022)
+    product_indication_1: Optional[str] = None
+    product_indication_2: Optional[str] = None
+    product_indication_3: Optional[str] = None
+    product_indication_4: Optional[str] = None
+    product_indication_5: Optional[str] = None
+    # Travel details (T022)
+    city_of_travel: Optional[str] = None
+    state_of_travel: Optional[str] = None
+    country_of_travel: Optional[str] = None
+    # Flags (T022)
+    physician_ownership_indicator: Optional[str] = None
+    third_party_payment_recipient_indicator: Optional[str] = None
+    charity_indicator: Optional[str] = None
+    contextual_information: Optional[str] = None
+    # Drug/biological name slots
     name_of_drug_or_biological_or_device_or_medical_supply_1: Optional[str] = None
     name_of_drug_or_biological_or_device_or_medical_supply_2: Optional[str] = None
     name_of_drug_or_biological_or_device_or_medical_supply_3: Optional[str] = None

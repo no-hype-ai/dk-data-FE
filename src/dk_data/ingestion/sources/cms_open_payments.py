@@ -22,7 +22,7 @@ COLUMN_MAPPING = {
     'Teaching_Hospital_CCN': 'teaching_hospital_ccn',
     'Teaching_Hospital_ID': 'teaching_hospital_id',
     'Teaching_Hospital_Name': 'teaching_hospital_name',
-    # Legacy CSV names
+    # Legacy CSV names — physician identity
     'Physician_Profile_ID': 'physician_profile_id',
     'Physician_First_Name': 'physician_first_name',
     'Physician_Middle_Name': 'physician_middle_name',
@@ -30,6 +30,8 @@ COLUMN_MAPPING = {
     'Physician_Name_Suffix': 'physician_name_suffix',
     'Physician_Primary_Type': 'physician_primary_type',
     'Physician_Specialty': 'physician_specialty',
+    'Physician_NPI': 'physician_npi',
+    'Physician_Specialty_2': 'physician_specialty_2',
     # API-specific names (openpaymentsdata.cms.gov DKAN format)
     'covered_recipient_profile_id': 'physician_profile_id',
     'covered_recipient_first_name': 'physician_first_name',
@@ -38,16 +40,23 @@ COLUMN_MAPPING = {
     'covered_recipient_name_suffix': 'physician_name_suffix',
     'covered_recipient_primary_type_1': 'physician_primary_type',
     'covered_recipient_specialty_1': 'physician_specialty',
+    'covered_recipient_npi': 'physician_npi',
+    'covered_recipient_specialty_2': 'physician_specialty_2',
     # Recipient address
-    'Recipient_Primary_Business_Street_Address_Line1': 'recipient_primary_business_street_address_line1',
+    'Recipient_Primary_Business_Street_Address_Line1': 'recipient_primary_business_street_address_line_1',
+    'Recipient_Primary_Business_Street_Address_Line2': 'recipient_primary_business_street_address_line_2',
     'Recipient_City': 'recipient_city',
     'Recipient_State': 'recipient_state',
     'Recipient_Zip_Code': 'recipient_zip_code',
     'Recipient_Country': 'recipient_country',
+    'Recipient_Postal_Code': 'recipient_postal_code',
+    'Recipient_Province': 'recipient_province',
     # Payer / manufacturer
     'Submitting_Applicable_Manufacturer_or_Applicable_GPO_Name': 'submitting_applicable_manufacturer_or_applicable_gpo_name',
     'Applicable_Manufacturer_or_Applicable_GPO_Making_Payment_ID': 'applicable_manufacturer_or_applicable_gpo_making_payment_id',
     'Applicable_Manufacturer_or_Applicable_GPO_Making_Payment_Name': 'applicable_manufacturer_or_gpo_name',
+    'Applicable_Manufacturer_or_Applicable_GPO_Making_Payment_State': 'applicable_manufacturer_or_applicable_gpo_making_payment_state',
+    'Applicable_Manufacturer_or_Applicable_GPO_Making_Payment_Country': 'applicable_manufacturer_or_applicable_gpo_making_payment_country',
     # Payment details
     'Total_Amount_of_Payment_USDollars': 'total_amount_of_payment_usdollars',
     'Date_of_Payment': 'date_of_payment',
@@ -68,6 +77,7 @@ COLUMN_MAPPING = {
     'Record_ID': 'record_id',
     'Dispute_Status_for_Publication': 'dispute_status_for_publication',
     'Related_Product_Indicator': 'related_product_indicator',
+    'Change_Type': 'change_type',
     # Program
     'Program_Year': 'program_year',
     'Payment_Publication_Date': 'payment_publication_date',
@@ -94,6 +104,12 @@ COLUMN_MAPPING = {
     'Product_Category_or_Therapeutic_Area_3': 'product_category_or_therapeutic_area_3',
     'Product_Category_or_Therapeutic_Area_4': 'product_category_or_therapeutic_area_4',
     'Product_Category_or_Therapeutic_Area_5': 'product_category_or_therapeutic_area_5',
+    # Product indication slots (1-5)
+    'Product_Indication_1': 'product_indication_1',
+    'Product_Indication_2': 'product_indication_2',
+    'Product_Indication_3': 'product_indication_3',
+    'Product_Indication_4': 'product_indication_4',
+    'Product_Indication_5': 'product_indication_5',
     # NDC slots — structural join key to mol_silver.ndc_molecule_bridge
     'Associated_Drug_or_Biological_NDC_1': 'associated_drug_or_biological_ndc_1',
     'Associated_Drug_or_Biological_NDC_2': 'associated_drug_or_biological_ndc_2',
@@ -162,6 +178,51 @@ def load_cms_open_payments(filepath: Optional[str] = None, rows: Optional[List[D
                 payment_publication_date=row.get('payment_publication_date'),
                 record_id=row.get('record_id'),
                 program_year=row.get('program_year'),
+                # Physician identity (T022)
+                physician_npi=row.get('physician_npi') or None,
+                physician_middle_name=row.get('physician_middle_name') or None,
+                physician_name_suffix=row.get('physician_name_suffix') or None,
+                physician_primary_type=row.get('physician_primary_type') or None,
+                physician_specialty_2=row.get('physician_specialty_2') or None,
+                # Teaching hospitals (T022)
+                teaching_hospital_ccn=row.get('teaching_hospital_ccn') or None,
+                teaching_hospital_id=row.get('teaching_hospital_id') or None,
+                teaching_hospital_name=row.get('teaching_hospital_name') or None,
+                # Recipient geography (T022)
+                recipient_country=row.get('recipient_country') or None,
+                recipient_primary_business_street_address_line_1=row.get('recipient_primary_business_street_address_line_1') or None,
+                recipient_primary_business_street_address_line_2=row.get('recipient_primary_business_street_address_line_2') or None,
+                recipient_postal_code=row.get('recipient_postal_code') or None,
+                recipient_province=row.get('recipient_province') or None,
+                # Publication / dispute metadata (T022)
+                dispute_status_for_publication=row.get('dispute_status_for_publication') or None,
+                delay_in_publication_indicator=row.get('delay_in_publication_indicator') or None,
+                change_type=row.get('change_type') or None,
+                # Manufacturer identity (T022)
+                applicable_manufacturer_or_applicable_gpo_making_payment_id=row.get('applicable_manufacturer_or_applicable_gpo_making_payment_id') or None,
+                applicable_manufacturer_or_applicable_gpo_making_payment_state=row.get('applicable_manufacturer_or_applicable_gpo_making_payment_state') or None,
+                applicable_manufacturer_or_applicable_gpo_making_payment_country=row.get('applicable_manufacturer_or_applicable_gpo_making_payment_country') or None,
+                # Product category / therapeutic area slots (T022)
+                product_category_or_therapeutic_area_1=row.get('product_category_or_therapeutic_area_1') or None,
+                product_category_or_therapeutic_area_2=row.get('product_category_or_therapeutic_area_2') or None,
+                product_category_or_therapeutic_area_3=row.get('product_category_or_therapeutic_area_3') or None,
+                product_category_or_therapeutic_area_4=row.get('product_category_or_therapeutic_area_4') or None,
+                product_category_or_therapeutic_area_5=row.get('product_category_or_therapeutic_area_5') or None,
+                # Product indication slots (T022)
+                product_indication_1=row.get('product_indication_1') or None,
+                product_indication_2=row.get('product_indication_2') or None,
+                product_indication_3=row.get('product_indication_3') or None,
+                product_indication_4=row.get('product_indication_4') or None,
+                product_indication_5=row.get('product_indication_5') or None,
+                # Travel details (T022)
+                city_of_travel=row.get('city_of_travel') or None,
+                state_of_travel=row.get('state_of_travel') or None,
+                country_of_travel=row.get('country_of_travel') or None,
+                # Flags (T022)
+                physician_ownership_indicator=row.get('physician_ownership_indicator') or None,
+                third_party_payment_recipient_indicator=row.get('third_party_payment_recipient_indicator') or None,
+                charity_indicator=row.get('charity_indicator') or None,
+                contextual_information=row.get('contextual_information') or None,
                 # Drug/biological name slots — exact CMS field name is
                 # "Name_of_Drug_or_Biological_or_Device_or_Medical_Supply_N"
                 name_of_drug_or_biological_or_device_or_medical_supply_1=row.get('name_of_drug_or_biological_or_device_or_medical_supply_1') or None,
