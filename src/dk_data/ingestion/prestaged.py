@@ -48,6 +48,7 @@ from dk_data.ingestion.prestaged_types import (
     compute_run_id,
 )
 from dk_data.ingestion.transform_runs_writer import TransformRunsWriter
+from dk_data.ingestion.wal_throttle import WalThrottle
 
 # Module-level inode → sha256 cache; avoids re-reading the same file twice
 # within a single process (FR-002 performance note).
@@ -279,11 +280,16 @@ def run_step(
     step: LoadStep,
     run_label: str,
     writer: TransformRunsWriter,
+    throttle: WalThrottle | None = None,
 ) -> "RunStepOutcome":
     """Orchestrate one step end-to-end: view-safety pre-flight → per-chunk
     dispatch → row-count → ``meta.transform_runs`` upsert.
 
-    Tags: [AUDIT] [IDMPT] [VIEWSAFE]
+    When ``step.wal_mode`` is True and a ``throttle`` is supplied, calls
+    :meth:`WalThrottle.maybe_pause` after the view-safety check and before
+    the first ``pg_restore`` invocation (FR-007).
+
+    Tags: [AUDIT] [IDMPT] [VIEWSAFE] [WALBUD]
     """
     pg_url = os.environ.get("PG_URL", "")
     schema = step.target_schema
@@ -309,6 +315,10 @@ def run_step(
         )
         conn.commit()
         return RunStepOutcome(status="skipped_view", row_count=0, error_detail=None)
+
+    # 2b. WAL-aware pre-flight (FR-007/FR-008) for the 5 tables >5 GB
+    if step.wal_mode and throttle is not None:
+        throttle.maybe_pause()
 
     # 3. Per-chunk dispatch
     try:
@@ -472,6 +482,15 @@ def main(argv: list[str] | None = None) -> int:
     conn.autocommit = False
     writer = TransformRunsWriter(conn)
 
+    # FR-007/008: configurable from env at call site; defaults match plan.md
+    throttle = WalThrottle(
+        conn=conn,
+        high_pct=float(os.environ.get("WAL_PAUSE_HIGH_PCT", "70")),
+        low_pct=float(os.environ.get("WAL_PAUSE_LOW_PCT", "40")),
+        downshift_threshold=int(os.environ.get("WAL_PAUSE_DOWNSHIFT_THRESHOLD", "2")),
+        budget_s=int(os.environ.get("WAL_PAUSE_BUDGET_SECONDS", "600")),
+    )
+
     completed_ids: set[str] = set()
     failed_ids: set[str] = set()
     failed_count = 0
@@ -528,7 +547,7 @@ def main(argv: list[str] | None = None) -> int:
                 continue
 
         t_start = _dt.datetime.now(_dt.timezone.utc)
-        outcome = run_step(conn, step, run_label, writer)
+        outcome = run_step(conn, step, run_label, writer, throttle=throttle)
         t_end = _dt.datetime.now(_dt.timezone.utc)
         duration_s = (t_end - t_start).total_seconds()
 
