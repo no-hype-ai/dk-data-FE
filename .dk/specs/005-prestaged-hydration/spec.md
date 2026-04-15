@@ -113,7 +113,10 @@ Then every source has a row with a terminal status, row count, and finished_at
 - **FR-010**: System MUST fall back to the existing live-fetch path for any source present in the load order but absent from the artifact inventory, provided the source's live fetcher is not explicitly suspended.
 - **FR-011**: System MUST be idempotent across restarts: a re-run MUST skip tables already marked complete in `meta.transform_runs` where `details->>'run_label'` matches the current run's deterministic hash (sha256 of sorted artifact sha256s + cluster fingerprint) and `status='completed'`.
 - **FR-012**: System MUST provide a dry-run mode that emits the ordered plan (source, kind, target, artifact paths, validation result) without performing any write.
-- **FR-013**: System MUST run as a one-shot Kubernetes Job capable of mounting the pre-staged data volume and executing a single hydration pass.
+- **FR-013**: System MUST be runnable in either of two equivalent invocation modes:
+  - As a one-shot Kubernetes Job (`deploy/jobs/prestaged-hydrate.yaml`, optionally invoked via the CronJob wrapper at `deploy/cronjobs/prestaged-hydrate-cronjob.yaml` so `kubectl create job --from=cronjob/prestaged-hydrate` works).
+  - As a local Python invocation on an operator's machine, against a tunneled `PG_URL` (e.g. `kubectl port-forward svc/pgbouncer 6432:5432`).
+  Both modes MUST produce identical writes via the same `dk_data.ingestion.prestaged.main()` code path; the only difference is the location of the orchestrator process.
 - **FR-014**: System MUST NOT attempt to hydrate explicitly out-of-scope domains (`ip_*`, `ind_*`, `hcp_silver`) even if fetchers exist.
 - **FR-015**: System MUST NOT drop or replace relations whose `pg_class.relkind` is not `'r'` (e.g. SQLMesh-managed views); an artifact targeting such a relation MUST be skipped with a recorded warning. This check takes precedence over FR-003 tier selection — a silver dump targeting a view is still skipped; the loader then falls through to bronze/raw for the same hub.
 - **FR-016**: System MUST derive a single discovery base path from env var `PRESTAGED_ROOT` (prod default `/data/prestaged`, local default `./data`) and MUST fail fast if that path is absent or unreadable.
@@ -137,6 +140,9 @@ Then every source has a row with a terminal status, row count, and finished_at
 - **SC-005**: All gold-layer transforms (`ind_gold.indication_catalog`, `ip_gold.molecule_profile`, `mol_gold_ext.safety_signals`, `mol_gold_ext.lifecycle_stages`) complete without error after hydration.
 - **SC-006**: A second invocation of the same hydration job, with no changes to artifacts, completes in under 5 minutes and performs zero table restores (full idempotency).
 - **SC-007**: For every source listed in the load order, `meta.transform_runs` contains exactly one terminal-status row per run, queryable without errors.
+- **SC-008**: Prod hydration completes within 6 hours of user-issued "go full inventory", with the orchestrator running locally on the operator's mac against a tunneled prod PgBouncer.
+- **SC-009**: Backfill SQLMesh runs (silver-from-bronze for sources without silver dumps; all gold) complete within 2 hours of hydration termination.
+- **SC-010**: Staging is brought to a usable state by cloning from prod via `pg_dump` + the same `prestaged.py` driver, with zero re-download of Drive artifacts (the SC-001 inventory is used at most once across both environments).
 
 ## Assumptions
 

@@ -116,7 +116,11 @@ def walk_prestaged_root(root: Path) -> list[PrestagedArtifact]:
         for suffix, tier in (("_raw", "raw"), ("_bronze", "bronze"), ("_silver", "silver")):
             if schema.endswith(suffix):
                 return tier  # type: ignore[return-value]
-        raise ValueError(f"Cannot derive tier from schema name: {schema!r}")
+        # Special schemas (meta, sqlmesh, ...) without a tier suffix:
+        # treat as raw — they're never the target of multi-tier
+        # competition, so the precedence rule in select_highest_tier
+        # never sees them in a contest.
+        return "raw"
 
     def _chunk_index(filename: str) -> str:
         for prefix in ("retry_", "1_", "3_"):

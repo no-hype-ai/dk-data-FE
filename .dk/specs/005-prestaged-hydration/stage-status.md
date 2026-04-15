@@ -4,11 +4,11 @@
 **Feature dir**: .dk/specs/005-prestaged-hydration/
 **Pipeline state**: in-progress
 **Current stage pointer**: Stage 7
-**Last updated by**: manual close (Stage 6) at 2026-04-15T01:50:00Z
+**Last updated by**: extended Stages 7-10 + dashboard at 2026-04-15T02:10:00Z
 
 ## Dashboard
 
-Stage 1 ✅  Stage 2 ✅  Stage 3 ✅  Stage 4 ✅  Stage 5 ✅  Stage 6 ✅  Stage 7 ⏳
+Stage 1 ✅  Stage 2 ✅  Stage 3 ✅  Stage 4 ✅  Stage 5 ✅  Stage 6 ✅  Stage 7 ⏳  Stage 8 ⏳  Stage 9 ⏳  Stage 10 ⏳
 
 Legend: ✅ closed · ⏳ in progress or next up · ⏸ deferred · ⛔ blocked
 
@@ -162,21 +162,86 @@ Legend: ✅ closed · ⏳ in progress or next up · ⏸ deferred · ⛔ blocked
 
 ---
 
-## Stage 7 — Staging rehearsal (operator-gated) ⏳
+## Stage 7 — Local-orchestrator small-source rehearsal against prod + dashboard ⏳
 
-**Entry gate**: Stage 6 merged + image `main-<sha>` pushed to ghcr.io
+**Entry gate**: Stage 6 closed; SSH tunnel to prod PgBouncer reachable; venv ready locally
 **Exit gate type**: runtime-green
-**Exit gate**: `kubectl -n dk-data-staging create job --from=cronjob/prestaged-hydrate prestaged-hydrate-rehearsal-<date>` → Completed; `SELECT schema, "table", status, row_count FROM meta.transform_runs WHERE run_id=:rehearsal_run_id` shows terminal state for ≥5 sources; `SELECT count(*) FROM meta.wal_usage WHERE pct_used > 70 AND observed_at >= :run_start` returns 0; sample-count against `mol_silver.molecules` within 1% of manifest; operator sign-off recorded in verification/stage-7.md; PR (rehearsal artifacts) merged
-**Task range**: (verification-only — no tasks.md items)
-**Delegated via**: human-driven
+**Exit gate**: `mol_raw.kegg_drug` restored to prod via local orchestrator; `meta.transform_runs` shows `status='completed'` for it; `pg_dump -Fc` snapshot of impacted schemas captured pre-run; dashboard renders correctly in browser; operator sign-off in `verification/stage-7.md`
+**Task range**: T100, T101, T102, T103, T104, T105, T106, T121, T122, T123, T124
+**Delegated via**: /dk.implement
 **PR**: not opened
 
-- (no tasks — this is a runtime verification stage)
+- ⏳ T100 — CronJob manifest + kustomize patch (optional, for future in-cluster invocations)
+- ⏳ T101 — Pre-snapshot prod schemas via kubectl exec | pg_dump
+- ⏳ T102 — Apply migration 229 to prod (kubectl exec | psql)
+- ⏳ T103 — Open SSH tunnel from mac to prod PgBouncer
+- ⏳ T104 — Local --dry-run against prod for mol_raw.kegg_drug
+- ⏳ T105 — Local live restore of mol_raw.kegg_drug against prod
+- ⏳ T106 — Author + sign verification/stage-7.md
+- ⏳ T121 — Author migration 230 (3 hydration views + grants)
+- ⏳ T122 — GRANT SELECT on hydration views to api_user (in 230)
+- ⏳ T123 — Build dashboards/hydration-dashboard.html via playground skill
+- ⏳ T124 — Apply migration 230 to prod + open dashboard in browser
 
 **Deferred from Stage 7** (with explicit reason + natural reschedule):
 - (none yet)
 
-**Operator sign-off preconditions doc**: verification/stage-7.md (create at Stage 7 entry)
+**Operator sign-off preconditions doc**: verification/stage-7.md (create at T106)
+
+---
+
+## Stage 8 — Full prod hydration (local orchestrator, all sources) ⏳
+
+**Entry gate**: Stage 7 signed; user explicitly says "go full inventory"
+**Exit gate type**: runtime-green
+**Exit gate**: `meta.transform_runs` shows ≥110 rows with `details->>'run_label' = '<prod_run_label>'` and `status='completed'`; zero `meta.wal_usage` rows above 70% during the run; `mol_silver.molecules` and `hcs_silver.provider_profile` non-empty; operator sign-off in `verification/stage-8.md`
+**Task range**: T107, T108, T109, T110
+**Delegated via**: /dk.implement
+**PR**: not opened
+
+- ⏳ T107 — Local full-inventory restore (caffeinate -is python -m dk_data.ingestion.prestaged --source-list all)
+- ⏳ T108 — Watch WAL pressure + completion progress + dashboard
+- ⏳ T109 — Verify acceptance queries; record any failed rows
+- ⏳ T110 — Author + sign verification/stage-8.md
+
+**Deferred from Stage 8**: (none yet)
+
+---
+
+## Stage 9 — SQLMesh backfill (post-hydration) ⏳
+
+**Entry gate**: Stage 8 signed
+**Exit gate type**: runtime-green
+**Exit gate**: SQLMesh `audit` reports zero failures for `mol_silver.*`, `hcs_silver.*`, `mol_gold.*`, `mol_gold_ext.*`; PostgREST smokes return non-empty for molecule_profile + provider_profile
+**Task range**: T111, T112, T113, T114, T115
+**Delegated via**: /dk.swarm (2 workers: `mol-backfill` → T111+T113; `hcs-backfill` → T112)
+**Budget**: --max-budget-usd 10 per worker; max $20
+
+- ⏳ T111 — [Swarm A] SQLMesh mol_silver.* backfill for non-dump-covered spokes
+- ⏳ T112 — [Swarm B] SQLMesh hcs_silver.* backfill
+- ⏳ T113 — [Swarm A] SQLMesh mol_gold.* + mol_gold_ext.* rebuild
+- ⏳ T114 — PostgREST smoke against prod
+- ⏳ T115 — Stakeholder ping: dark surfaces (ip/ind/hcp) acknowledged per FR-014
+
+**Deferred from Stage 9**: (none yet)
+
+---
+
+## Stage 10 — Clone staging from prod (no second hydration cycle) ⏳
+
+**Entry gate**: Stage 9 signed; staging Postgres reachable
+**Exit gate type**: runtime-green
+**Exit gate**: staging `meta.transform_runs` shows full hydration row set under a staging run_label; PostgREST smoke returns non-empty for staging molecule_profile + provider_profile; SC-010 satisfied (no re-download of Drive artifacts)
+**Task range**: T116, T117, T118, T119, T120
+**Delegated via**: /dk.implement
+
+- ⏳ T116 — Generate prod-schema dumps for staging clone (kubectl exec | pg_dump per schema)
+- ⏳ T117 — Apply migration 229 to staging Postgres
+- ⏳ T118 — Run prestaged.py against staging using prod-derived dumps
+- ⏳ T119 — SQLMesh backfill on staging (mirror of T111-T113)
+- ⏳ T120 — PostgREST smoke against staging
+
+**Deferred from Stage 10**: (none yet)
 
 ---
 
@@ -209,6 +274,16 @@ gate itself.)
 
 ## Next action
 
-Stage 1 + Stage 2 committed (HEAD `95b7644`). Local exit gates passed: module imports clean, `--dry-run` against empty fixture root emits 62 ordered JSON lines + summary (exit 0), `kubectl --dry-run=client apply -f deploy/jobs/prestaged-hydrate.yaml` validates. Remaining gates are user-driven: run the integration tests against a real Postgres + apply migration 229 on staging.
+Stages 1-6 closed (code complete). Stage 7 prep underway:
+1. T100, T121, T122 (CronJob + migration 230 + grants) ready to author
+2. T123 dashboard built via `playground` skill
+3. T101 pre-snapshot prod (read-only, safe)
+4. T103 SSH tunnel to prod PgBouncer (read-only TCP forward)
+5. T104 local --dry-run against prod (zero writes)
 
-Then advance to Stage 3 (load ordering + dependency resolution, T040–T044, sequential via `/dk.implement`).
+Then surface gates for user go-ahead:
+- T102 + T124: apply migrations 229 + 230 to prod (additive, ~50ms each)
+- T105: single-source live restore against prod (mol_raw.kegg_drug only)
+- T106: operator sign-off, then Stage 8 full inventory
+
+Drive Stages 7-8-10 with `/dk.implement`. Stage 9 (SQLMesh backfill) uses `/dk.swarm` with 2 workers (mol-backfill, hcs-backfill) at $10/worker cap.

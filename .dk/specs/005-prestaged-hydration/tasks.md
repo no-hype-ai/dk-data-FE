@@ -137,3 +137,49 @@ Phase 1 (Setup, T001-T003) — serial
 - Phases: 8
 - User stories: 5 (all represented)
 - Parallel opportunities: 11 tasks tagged [P]
+
+## Phase 9 — Deployment + Hydration (Stages 7-10)
+
+*Added when Stage 6 closed: actually run the thing in prod. Drives by `/dk.implement` for sequential stages and `/dk.swarm` for Stage 9 SQLMesh backfill.*
+
+### Stage 7 — Single-source rehearsal against prod + dashboard (US-1, US-5)
+
+- [ ] T100 [P] Author `deploy/cronjobs/prestaged-hydrate-cronjob.yaml` + add to `k8s/apps/cronjobs/base/kustomization.yaml` (optional — needed for future in-cluster invocations) — `deploy/cronjobs/prestaged-hydrate-cronjob.yaml`, `k8s/apps/cronjobs/base/kustomization.yaml`
+- [ ] T101 Pre-snapshot prod schemas (`pg_dump -Fc` of meta + mol/hcs schemas via `kubectl exec`, kubectl-cp locally) — `~/dk-data-prod-snapshots/pre_hydration_<date>.dump`
+- [ ] T102 Apply migration 229 to prod via `kubectl exec | psql` — `src/dk_data/sql/migrations/229_transform_runs_status_details.sql`
+- [ ] T103 Open SSH tunnel from mac to prod PgBouncer (`kubectl port-forward svc/pgbouncer 6432:5432`)
+- [ ] T104 Local `--dry-run` against prod with single source `mol_raw.kegg_drug` — verify zero writes, JSON output, plan correctness
+- [ ] T105 Local live restore against prod for the single source — verify terminal row in `meta.transform_runs`, row count matches
+- [ ] T106 Author + sign `verification/stage-7.md` (operator sign-off doc)
+
+### Stage 7 supplement — Dashboard
+
+- [ ] T121 Author migration `230_hydration_dashboard_view.sql` (3 views: `hydration_dashboard`, `hydration_summary`, `hydration_wal`) — `src/dk_data/sql/migrations/230_hydration_dashboard_view.sql`
+- [ ] T122 GRANT SELECT on the 3 views to `api_user` (in same migration)
+- [ ] T123 Build `dashboards/hydration-dashboard.html` via `playground` skill — single self-contained HTML, polls PostgREST every 5 s — `dashboards/hydration-dashboard.html`
+- [ ] T124 Apply migration 230 to prod (same `kubectl exec | psql` path as T102) and `open` the dashboard before Stage 8 fires
+
+### Stage 8 — Full prod hydration (US-1, US-3)
+
+- [ ] T107 Local full-inventory restore against prod (`caffeinate -is python -m dk_data.ingestion.prestaged --source-list all`)
+- [ ] T108 Watch WAL pressure (`watch -n 10 …`) + completion progress (`watch -n 30 …`) in two shells; dashboard in browser
+- [ ] T109 Verify acceptance queries (status counts, zero WAL excursions >70%, PostgREST smoke). Record any `failed` rows + `error_detail`
+- [ ] T110 Author + sign `verification/stage-8.md`
+
+### Stage 9 — SQLMesh backfill (US-2)
+
+*`/dk.swarm` with 2 workers: `mol-backfill` and `hcs-backfill`.*
+
+- [ ] T111 [Swarm A] SQLMesh `mol_silver.*` backfill for spokes without silver dumps (silver-from-bronze)
+- [ ] T112 [Swarm B] SQLMesh `hcs_silver.*` backfill
+- [ ] T113 [Swarm A] SQLMesh `mol_gold.*` + `mol_gold_ext.*` rebuild
+- [ ] T114 PostgREST smoke against prod (`/molecule_profile?limit=5`, `/provider_profile?limit=5`)
+- [ ] T115 Stakeholder ping: dark surfaces (ip/ind/hcp) acknowledged per FR-014
+
+### Stage 10 — Clone staging from prod (US-1 staging)
+
+- [ ] T116 Generate prod-schema dumps for staging clone (`pg_dump -Fc` per schema, kubectl-cp locally into `data/_staging/from-prod/...`)
+- [ ] T117 Apply migration 229 to staging Postgres (`kubectl exec | psql`)
+- [ ] T118 Run `prestaged.py` against staging using prod-derived dumps (`PRESTAGED_ROOT` points at the from-prod dir)
+- [ ] T119 SQLMesh backfill on staging (mirror of T111-T113)
+- [ ] T120 PostgREST smoke against staging
