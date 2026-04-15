@@ -116,6 +116,7 @@ from .sources.who_gho import load_who_gho_data
 from .sources.nice_hta import load_nice_hta_data
 from .sources.cms_medicare import load_cms_medicare_data
 from .sources.cms_coverage import load_cms_coverage_data
+from .sources.fda_orphan_designation import load_fda_orphan_designation_data
 
 from .fetchers import (
     PubMedFetcher,
@@ -217,6 +218,7 @@ from .fetchers import (
     NICEHTAFetcher,
     CMSMedicareFetcher,
     CMSCoverageFetcher,
+    FDAOrphanDesignationFetcher,
 )
 from .downloaders.cms_downloader import CMS_DATASET_REGISTRY
 
@@ -1113,6 +1115,14 @@ SOURCES = {
         'loader': load_cms_coverage_data,
         'requires_file': False,
         'default_days_back': None,  # Full snapshot — ~2,400 static coverage decisions
+    },
+    'fda_orphan_designation': {
+        'name': 'FDA Orphan Drug Designations (OOPD)',
+        'description': 'FDA Office of Orphan Products Development designation database (CSV)',
+        'fetcher': FDAOrphanDesignationFetcher,
+        'loader': load_fda_orphan_designation_data,
+        'requires_file': False,
+        'default_days_back': None,  # Full snapshot — static OOPD export
     },
 }
 

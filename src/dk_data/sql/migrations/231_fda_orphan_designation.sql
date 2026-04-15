@@ -1,24 +1,32 @@
--- Migration 231: Create mol_raw.fda_orphan_designation table
+-- Migration 231: mol_raw.fda_orphan_designation
+-- FDA Office of Orphan Products Development (OOPD) designation database
+-- Standard mol_raw pattern (request_id, response_body JSONB, etc.)
 -- Feature: 006-claims-engine-data-gaps (T018)
--- Source: FDA Orphan Drug Designations and Approvals
 
 BEGIN;
 
 CREATE TABLE IF NOT EXISTS mol_raw.fda_orphan_designation (
     id                      BIGSERIAL PRIMARY KEY,
-    designation_number      TEXT,
-    generic_name            TEXT,
-    trade_name              TEXT,
-    sponsor                 TEXT,
-    designation_date        DATE,
-    designated_indication   TEXT,
-    marketing_approval_date DATE,
-    ingested_at             TIMESTAMPTZ DEFAULT NOW()
+    request_id              TEXT        NOT NULL UNIQUE,
+    api_endpoint            TEXT,
+    api_version             TEXT,
+    request_params          JSONB,
+    response_status         INTEGER,
+    response_body           JSONB,
+    response_body_hash      TEXT,
+    source_id               TEXT        NOT NULL DEFAULT 'fda_orphan_designation',
+    request_timestamp       TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    processed_to_bronze     BOOLEAN     NOT NULL DEFAULT FALSE,
+    ingested_at             TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    created_at              TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
--- Index on designation_number for bronze model INCREMENTAL_BY_UNIQUE_KEY
-CREATE INDEX IF NOT EXISTS idx_fda_orphan_designation_number
-    ON mol_raw.fda_orphan_designation (designation_number);
+CREATE INDEX IF NOT EXISTS mol_raw_fda_orphan_designation_processed_idx
+    ON mol_raw.fda_orphan_designation (processed_to_bronze)
+    WHERE processed_to_bronze = FALSE;
+
+CREATE INDEX IF NOT EXISTS mol_raw_fda_orphan_designation_ingested_idx
+    ON mol_raw.fda_orphan_designation (ingested_at);
 
 -- Grant to mol_data_ops if the role exists (non-fatal if it doesn't)
 DO $$

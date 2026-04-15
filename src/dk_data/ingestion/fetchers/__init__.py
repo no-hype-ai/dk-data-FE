@@ -103,6 +103,7 @@ from .who_gho import WHOGHOFetcher
 from .nice_hta import NICEHTAFetcher
 from .cms_medicare import CMSMedicareFetcher
 from .cms_coverage import CMSCoverageFetcher
+from .fda_orphan_designation import FDAOrphanDesignationFetcher
 
 __all__ = [
     'BaseFetcher',
@@ -209,4 +210,5 @@ __all__ = [
     'NICEHTAFetcher',
     'CMSMedicareFetcher',
     'CMSCoverageFetcher',
+    'FDAOrphanDesignationFetcher',
 ]
