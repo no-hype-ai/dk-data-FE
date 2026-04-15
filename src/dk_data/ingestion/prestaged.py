@@ -592,8 +592,16 @@ def main(argv: list[str] | None = None) -> int:
         }))
         return 0
 
-    # Non-dry-run: execute steps sequentially
-    conn = psycopg2.connect(pg_url)
+    # Non-dry-run: execute steps sequentially.
+    # Keepalives reduce PgBouncer-side connection drops while long
+    # pg_restore subprocesses sit blocked on our control connection.
+    KEEPALIVE = {
+        "keepalives": 1,
+        "keepalives_idle": 30,
+        "keepalives_interval": 10,
+        "keepalives_count": 3,
+    }
+    conn = psycopg2.connect(pg_url, **KEEPALIVE)
     conn.autocommit = False
     writer = TransformRunsWriter(conn)
 
@@ -681,28 +689,55 @@ def main(argv: list[str] | None = None) -> int:
                 failed_ids.add(step.source_id)
             continue
 
-        t_start = _dt.datetime.now(_dt.timezone.utc)
-        # Defense-in-depth: if a prior pg_restore failure terminated the
-        # writer's session (common after --single-transaction rollback),
-        # reconnect before the next step. Otherwise psycopg2.InterfaceError
-        # cascades through the whole loop and exits the orchestrator.
-        try:
-            if conn.closed:
-                raise psycopg2.InterfaceError("connection closed before run_step")
-            outcome = run_step(conn, step, run_label, writer, throttle=throttle)
-        except (psycopg2.InterfaceError, psycopg2.OperationalError) as exc:
-            logger.warning(
-                f"connection lost before/during {step.source_id} ({exc}) "
-                f"— reconnecting and retrying once"
-            )
+        # Ping-and-reconnect BEFORE every run_step. The writer conn sits
+        # idle for the duration of each pg_restore subprocess (can be
+        # 10+ minutes for large tables), during which PgBouncer may
+        # close the client-pooler connection. Reconnecting here is
+        # cheap (<10ms) and makes every source start with a live conn.
+        def _ensure_live():
+            nonlocal conn, writer, throttle
+            try:
+                with conn.cursor() as _pingc:
+                    _pingc.execute("SELECT 1")
+                return
+            except (psycopg2.InterfaceError, psycopg2.OperationalError):
+                pass
+            logger.info(f"writer conn stale — reconnecting for {step.source_id}")
             try:
                 conn.close()
             except Exception:  # noqa: BLE001
                 pass
-            conn = psycopg2.connect(pg_url)
+            conn = psycopg2.connect(pg_url, **KEEPALIVE)
             conn.autocommit = False
             writer = TransformRunsWriter(conn)
+            if throttle is not None:
+                throttle.conn = conn
+
+        _ensure_live()
+
+        t_start = _dt.datetime.now(_dt.timezone.utc)
+        try:
             outcome = run_step(conn, step, run_label, writer, throttle=throttle)
+        except (psycopg2.InterfaceError, psycopg2.OperationalError) as exc:
+            # Mid-step conn loss. Reconnect + retry once; on second
+            # failure, record as failed and move on rather than crash
+            # the whole orchestrator.
+            logger.warning(
+                f"conn lost mid-run_step for {step.source_id} ({exc}) — "
+                f"reconnecting and retrying once"
+            )
+            _ensure_live()
+            try:
+                outcome = run_step(conn, step, run_label, writer, throttle=throttle)
+            except (psycopg2.InterfaceError, psycopg2.OperationalError) as exc2:
+                logger.error(
+                    f"second attempt also lost conn for {step.source_id} ({exc2}) "
+                    f"— marking failed and continuing"
+                )
+                outcome = RunStepOutcome(
+                    status="failed", row_count=0,
+                    error_detail=f"connection lost twice: {exc2}",
+                )
         t_end = _dt.datetime.now(_dt.timezone.utc)
         duration_s = (t_end - t_start).total_seconds()
 
