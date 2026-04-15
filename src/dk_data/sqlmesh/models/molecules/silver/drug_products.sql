@@ -195,6 +195,29 @@ atc_from_kegg AS (
     ) AS elem
     WHERE elem IS NOT NULL AND elem <> ''
     GROUP BY dpi.product_id
+),
+
+-- T019: Orphan designation lookup — Purple Book orphan_exclusivity_end OR
+-- FDA Orphan Drug Designation match by generic_name (equi-join, no fuzzy).
+orphan_from_purple_book AS (
+    SELECT DISTINCT ON (product_id)
+        ('x' || substr(md5('bla:' || pb.bla_number || ':' || COALESCE(pb.product_number, '0')), 1, 16))::bit(64)::bigint AS product_id,
+        TRUE AS has_orphan
+    FROM mol_bronze.purple_book pb
+    WHERE pb.orphan_exclusivity_end IS NOT NULL
+      AND pb.orphan_exclusivity_end <> ''
+      AND pb.bla_number IS NOT NULL
+),
+
+orphan_from_fda AS (
+    SELECT DISTINCT ON (d.product_id)
+        d.product_id,
+        TRUE AS has_orphan
+    FROM deduped d
+    JOIN mol_bronze.fda_orphan_designation fod
+      ON LOWER(TRIM(fod.generic_name)) = LOWER(TRIM(d.generic_name))
+    WHERE d.generic_name IS NOT NULL
+      AND fod.generic_name IS NOT NULL
 )
 
 SELECT
@@ -222,12 +245,16 @@ SELECT
         atc_db.atc_codes,
         atc_cm.atc_codes,
         atc_kg.atc_codes
-    )::TEXT[]                          AS atc_code
+    )::TEXT[]                          AS atc_code,
+    -- T019: Orphan designation from Purple Book or FDA Orphan Drug Designations
+    COALESCE(orph_pb.has_orphan, orph_fda.has_orphan, FALSE) AS has_orphan_designation
 FROM deduped d
 LEFT JOIN biosimilar_resolution br USING (product_id)
 LEFT JOIN atc_from_drugbank atc_db ON atc_db.product_id = d.product_id
 LEFT JOIN atc_from_chembl   atc_cm ON atc_cm.product_id = d.product_id
-LEFT JOIN atc_from_kegg     atc_kg ON atc_kg.product_id = d.product_id;
+LEFT JOIN atc_from_kegg     atc_kg ON atc_kg.product_id = d.product_id
+LEFT JOIN orphan_from_purple_book orph_pb ON orph_pb.product_id = d.product_id
+LEFT JOIN orphan_from_fda         orph_fda ON orph_fda.product_id = d.product_id;
 
 -- CREATE INDEX IF NOT EXISTS mol_silver_dp_brand_idx ON mol_silver.drug_products (brand_name);
 -- CREATE INDEX IF NOT EXISTS mol_silver_dp_generic_idx ON mol_silver.drug_products (generic_name);
