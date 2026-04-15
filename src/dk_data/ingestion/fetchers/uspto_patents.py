@@ -315,6 +315,45 @@ class USPTOPatentsFetcher(BaseFetcher):
             except (ValueError, TypeError):
                 claims_count = None
 
+        # --- T055/T056 expansion fields ---
+        # Citations
+        cited_patents = patent.get("citedPatents") or patent.get("cited_patents")
+        citing_patents = patent.get("citingPatents") or patent.get("citing_patents")
+        npl_citations = patent.get("nplCitations") or patent.get("npl_citations")
+
+        # Continuity
+        parent_application = patent.get("parentApplication") or patent.get("parent_application")
+        child_applications = patent.get("childApplications") or patent.get("child_applications")
+        continuation_type = patent.get("continuationType") or patent.get("continuation_type")
+
+        # Claims full text
+        claims_full_text = patent.get("claimsText") or patent.get("claims_full_text")
+
+        # Assignments
+        assignment_events = patent.get("assignmentEvents") or patent.get("assignment_events")
+
+        # Examiner
+        examiner_first_name = patent.get("examinerFirstName") or patent.get("examiner_first_name")
+        examiner_last_name = patent.get("examinerLastName") or patent.get("examiner_last_name")
+        examiner_art_unit = patent.get("examinerArtUnit") or patent.get("examiner_art_unit")
+
+        # Family
+        family_id = patent.get("familyId") or patent.get("family_id")
+        equivalent_foreign_patents = (
+            patent.get("equivalentForeignPatents")
+            or patent.get("equivalent_foreign_patents")
+        )
+
+        # Additional identifiers
+        application_number = patent.get("applicationNumber") or patent.get("application_number")
+        publication_number = patent.get("publicationNumber") or patent.get("publication_number")
+        priority_date = patent.get("priorityDate") or patent.get("priority_date")
+
+        # IPC codes
+        ipc_codes = patent.get("ipcCodes") or patent.get("ipc_codes")
+        if ipc_codes and isinstance(ipc_codes, list) and ipc_codes and isinstance(ipc_codes[0], dict):
+            ipc_codes = list({c.get("ipc_code") for c in ipc_codes if c.get("ipc_code")})
+
         return {
             "patent_number": patent_number,
             "title": patent.get("patentTitle") or patent.get("patent_title"),
@@ -326,4 +365,22 @@ class USPTOPatentsFetcher(BaseFetcher):
             "grant_date": grant_date,
             "cpc_codes": cpc_codes,
             "claims_count": claims_count,
+            # T055/T056 expansion fields
+            "cited_patents": cited_patents,
+            "citing_patents": citing_patents,
+            "npl_citations": npl_citations,
+            "parent_application": parent_application,
+            "child_applications": child_applications,
+            "continuation_type": continuation_type,
+            "claims_full_text": claims_full_text,
+            "assignment_events": assignment_events,
+            "examiner_first_name": examiner_first_name,
+            "examiner_last_name": examiner_last_name,
+            "examiner_art_unit": examiner_art_unit,
+            "family_id": family_id,
+            "equivalent_foreign_patents": equivalent_foreign_patents,
+            "application_number": application_number,
+            "publication_number": publication_number,
+            "priority_date": priority_date,
+            "ipc_codes": ipc_codes,
         }

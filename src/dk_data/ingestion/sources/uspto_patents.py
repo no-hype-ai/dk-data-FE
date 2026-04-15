@@ -96,6 +96,15 @@ def load_uspto_patents_data(
                         else None
                     )
 
+                    # T056: serialize new JSONB expansion fields
+                    cited_patents_json = _json_or_none(raw_record.get("cited_patents"))
+                    citing_patents_json = _json_or_none(raw_record.get("citing_patents"))
+                    npl_citations_json = _json_or_none(raw_record.get("npl_citations"))
+                    child_applications_json = _json_or_none(raw_record.get("child_applications"))
+                    assignment_events_json = _json_or_none(raw_record.get("assignment_events"))
+                    equivalent_foreign_patents_json = _json_or_none(raw_record.get("equivalent_foreign_patents"))
+                    ipc_codes_json = _json_or_none(raw_record.get("ipc_codes"))
+
                     cur.execute(
                         """
                         INSERT INTO ip_raw.uspto_patents (
@@ -103,12 +112,26 @@ def load_uspto_patents_data(
                             inventors, assignees,
                             filing_date, grant_date,
                             cpc_codes, claims_count, patent_type,
+                            cited_patents, citing_patents, npl_citations,
+                            parent_application, child_applications, continuation_type,
+                            claims_full_text, assignment_events,
+                            examiner_first_name, examiner_last_name, examiner_art_unit,
+                            family_id, equivalent_foreign_patents,
+                            application_number, publication_number, priority_date,
+                            ipc_codes,
                             _source_file, _source_hash
                         ) VALUES (
                             %s, %s, %s,
                             %s, %s,
                             %s, %s,
                             %s, %s, %s,
+                            %s, %s, %s,
+                            %s, %s, %s,
+                            %s, %s,
+                            %s, %s, %s,
+                            %s, %s,
+                            %s, %s, %s,
+                            %s,
                             %s, %s
                         )
                         ON CONFLICT (patent_number) DO UPDATE SET
@@ -121,6 +144,23 @@ def load_uspto_patents_data(
                             cpc_codes = EXCLUDED.cpc_codes,
                             claims_count = EXCLUDED.claims_count,
                             patent_type = EXCLUDED.patent_type,
+                            cited_patents = EXCLUDED.cited_patents,
+                            citing_patents = EXCLUDED.citing_patents,
+                            npl_citations = EXCLUDED.npl_citations,
+                            parent_application = EXCLUDED.parent_application,
+                            child_applications = EXCLUDED.child_applications,
+                            continuation_type = EXCLUDED.continuation_type,
+                            claims_full_text = EXCLUDED.claims_full_text,
+                            assignment_events = EXCLUDED.assignment_events,
+                            examiner_first_name = EXCLUDED.examiner_first_name,
+                            examiner_last_name = EXCLUDED.examiner_last_name,
+                            examiner_art_unit = EXCLUDED.examiner_art_unit,
+                            family_id = EXCLUDED.family_id,
+                            equivalent_foreign_patents = EXCLUDED.equivalent_foreign_patents,
+                            application_number = EXCLUDED.application_number,
+                            publication_number = EXCLUDED.publication_number,
+                            priority_date = EXCLUDED.priority_date,
+                            ipc_codes = EXCLUDED.ipc_codes,
                             _source_file = EXCLUDED._source_file,
                             _source_hash = EXCLUDED._source_hash,
                             _loaded_at = NOW()
@@ -136,6 +176,23 @@ def load_uspto_patents_data(
                             record.cpc_codes if record.cpc_codes else None,
                             record.claims_count,
                             record.patent_type,
+                            cited_patents_json,
+                            citing_patents_json,
+                            npl_citations_json,
+                            raw_record.get("parent_application"),
+                            child_applications_json,
+                            raw_record.get("continuation_type"),
+                            raw_record.get("claims_full_text"),
+                            assignment_events_json,
+                            raw_record.get("examiner_first_name"),
+                            raw_record.get("examiner_last_name"),
+                            raw_record.get("examiner_art_unit"),
+                            raw_record.get("family_id"),
+                            equivalent_foreign_patents_json,
+                            raw_record.get("application_number"),
+                            raw_record.get("publication_number"),
+                            _parse_date(raw_record.get("priority_date")),
+                            ipc_codes_json,
                             source_file or "patentsview_api",
                             source_hash,
                         ),
@@ -186,6 +243,13 @@ def load_uspto_patents_data(
         "records_failed": records_failed,
         "errors": errors[:10],
     }
+
+
+def _json_or_none(value: Any) -> Optional[str]:
+    """Serialize a value to JSON string, or return None if empty/None."""
+    if value is None:
+        return None
+    return json.dumps(value)
 
 
 def _parse_date(value: Any) -> Optional[date]:
