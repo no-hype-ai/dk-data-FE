@@ -39,17 +39,65 @@ SELECT
     recipient_state,
     recipient_zip_code,
     program_year::INTEGER                               AS program_year,
-    payment_publication_date::DATE                      AS payment_publication_date,
+    -- Physician identity (T023)
+    physician_npi,
+    physician_middle_name,
+    physician_name_suffix,
+    physician_primary_type,
+    physician_specialty_2,
+    -- Teaching hospitals (T023)
+    teaching_hospital_ccn,
+    teaching_hospital_id,
+    teaching_hospital_name,
+    -- Recipient geography (T023)
+    recipient_country,
+    recipient_primary_business_street_address_line_1,
+    recipient_primary_business_street_address_line_2,
+    recipient_postal_code,
+    recipient_province,
+    -- Publication / dispute metadata (T023)
+    dispute_status_for_publication,
+    delay_in_publication_indicator,
+    change_type,
+    payment_publication_date,
+    -- Manufacturer identity (T023)
+    applicable_manufacturer_or_applicable_gpo_making_payment_id,
+    applicable_manufacturer_or_applicable_gpo_making_payment_state,
+    applicable_manufacturer_or_applicable_gpo_making_payment_country,
+    -- Product category / therapeutic area slots (T023)
+    product_category_or_therapeutic_area_1,
+    product_category_or_therapeutic_area_2,
+    product_category_or_therapeutic_area_3,
+    product_category_or_therapeutic_area_4,
+    product_category_or_therapeutic_area_5,
+    -- Product indication slots (T023)
+    product_indication_1,
+    product_indication_2,
+    product_indication_3,
+    product_indication_4,
+    product_indication_5,
+    -- Travel details (T023)
+    city_of_travel,
+    state_of_travel,
+    country_of_travel,
+    -- Flags (T023)
+    physician_ownership_indicator,
+    third_party_payment_recipient_indicator,
+    charity_indicator,
+    contextual_information,
+    -- Drug/biological name slots
     name_of_drug_or_biological_or_device_or_medical_supply_1,
     name_of_drug_or_biological_or_device_or_medical_supply_2,
     name_of_drug_or_biological_or_device_or_medical_supply_3,
     name_of_drug_or_biological_or_device_or_medical_supply_4,
     name_of_drug_or_biological_or_device_or_medical_supply_5,
+    -- NDC slots
     associated_drug_or_biological_ndc_1,
     associated_drug_or_biological_ndc_2,
     associated_drug_or_biological_ndc_3,
     associated_drug_or_biological_ndc_4,
     associated_drug_or_biological_ndc_5,
+    -- Pre-normalized drug names
     drug_name_1_normalized,
     drug_name_2_normalized,
     drug_name_3_normalized,
