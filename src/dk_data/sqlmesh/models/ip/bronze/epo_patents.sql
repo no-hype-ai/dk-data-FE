@@ -46,6 +46,17 @@ SELECT
     -- EPO-specific: patent family ID
     r.family_id,
 
+    -- T059/T061: expansion fields
+    r.priority_claims,
+    r.family_members,
+    r.abstract_en,
+    r.abstract_fr,
+    r.abstract_de,
+    r.legal_status_events,
+    r.designated_states,
+    r.grant_date,
+    r.cited_documents,
+
     -- Determine if pharma-related based on IPC codes (ipc_codes is TEXT[])
     (
         EXISTS (
