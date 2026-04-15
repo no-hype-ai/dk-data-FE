@@ -56,6 +56,16 @@ SELECT
     r.goods_and_services,
     r.description_of_mark,
 
+    -- T063/T065: expansion fields
+    r.case_file_statements,
+    r.owner_events,
+    r.assignments,
+    r.prosecution_history,
+    r.tta_proceedings,
+    r.renewal_events,
+    r.madrid_linkage,
+    r.mark_image_url,
+
     -- Pharma relevance: Nice Class 5 = Pharmaceuticals (nice_classes is INTEGER[]; cast first)
     COALESCE(to_jsonb(r.nice_classes), '[]'::JSONB) @> '[5]'::JSONB AS is_pharma_related,
 
