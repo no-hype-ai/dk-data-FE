@@ -3,12 +3,12 @@
 **Branch**: feature/005-prestaged-hydration
 **Feature dir**: .dk/specs/005-prestaged-hydration/
 **Pipeline state**: in-progress
-**Current stage pointer**: Stage 3
-**Last updated by**: manual close (Stages 1+2) at 2026-04-15T00:38:00Z
+**Current stage pointer**: Stage 4
+**Last updated by**: manual close (Stage 3) at 2026-04-15T00:55:00Z
 
 ## Dashboard
 
-Stage 1 ✅  Stage 2 ✅  Stage 3 ⏳  Stage 4 ⏳  Stage 5 ⏳  Stage 6 ⏳  Stage 7 ⏳
+Stage 1 ✅  Stage 2 ✅  Stage 3 ✅  Stage 4 ⏳  Stage 5 ⏳  Stage 6 ⏳  Stage 7 ⏳
 
 Legend: ✅ closed · ⏳ in progress or next up · ⏸ deferred · ⛔ blocked
 
@@ -73,7 +73,7 @@ Legend: ✅ closed · ⏳ in progress or next up · ⏸ deferred · ⛔ blocked
 
 ---
 
-## Stage 3 — Load ordering + dependency resolution ⏳
+## Stage 3 — Load ordering + dependency resolution ✅
 
 **Entry gate**: Stage 2 merged + post-merge validation passed
 **Exit gate type**: code-only-safe
@@ -82,11 +82,11 @@ Legend: ✅ closed · ⏳ in progress or next up · ⏸ deferred · ⛔ blocked
 **Delegated via**: /dk.implement
 **PR**: not opened
 
-- ⏳ T040 — plan_load() with tier ordering + depends_on resolution
-- ⏳ T041 — Blocked-state propagation to downstream steps
-- ⏳ T042 — Unit tests: full-inventory produces 8 tiers in declared order
-- ⏳ T043 — Unit tests: missing hub blocks dependent spokes
-- ⏳ T044 — Unit tests: silver dump suppresses lower tiers
+- ✅ T040 — plan_load() with tier ordering + depends_on resolution
+- ✅ T041 — Blocked-state propagation to downstream steps
+- ✅ T042 — Unit tests: full-inventory produces 8 tiers in declared order
+- ✅ T043 — Unit tests: missing hub blocks dependent spokes
+- ✅ T044 — Unit tests: silver dump suppresses lower tiers
 
 **Deferred from Stage 3** (with explicit reason + natural reschedule):
 - (none yet)
