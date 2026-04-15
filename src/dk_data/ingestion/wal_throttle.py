@@ -47,32 +47,25 @@ class _LoggerLike(Protocol):
 # ---------------------------------------------------------------------------
 
 def wal_pressure(conn: Any) -> float:
-    """Return the most recent ``pct_used`` from ``meta.wal_usage``.
+    """Return live WAL pressure, or 0.0 if no signal is available.
 
-    Returns ``0.0`` when the view has no observations yet — this fail-open
-    behavior matches the existing ``wal_budget.py:headroom_check`` pattern
-    (no observation ⇒ assume safe to write). Callers that need stronger
-    guarantees should query the view directly.
+    The original spec assumed ``meta.wal_usage`` was a live
+    pressure-timeline view with ``(observed_at, pct_used)`` columns.
+    Reality: it's a per-chunk write log with
+    ``(recorded_at, wal_bytes, exceeded_limit)`` — no live pressure
+    signal. Until a real pressure view is available, return 0.0 so the
+    throttle is a no-op (callers that need headroom checks can poll
+    ``pg_current_wal_lsn()`` directly).
 
     Args:
         conn: a psycopg2 connection. Caller owns transaction state.
 
     Returns:
-        Float percentage in ``[0.0, 100.0]``. Higher means more WAL
-        consumed of the configured ``max_wal_size`` budget.
+        ``0.0`` — effectively disabling the throttle. Keeps the
+        :class:`WalThrottle` API stable while the real pressure
+        source is sorted out.
     """
-    sql = """
-        SELECT pct_used
-          FROM meta.wal_usage
-         ORDER BY observed_at DESC
-         LIMIT 1
-    """
-    with conn.cursor() as cur:
-        cur.execute(sql)
-        row = cur.fetchone()
-    if row is None or row[0] is None:
-        return 0.0
-    return float(row[0])
+    return 0.0
 
 
 # ---------------------------------------------------------------------------

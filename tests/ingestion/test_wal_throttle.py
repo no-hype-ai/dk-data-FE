@@ -81,19 +81,17 @@ def _make_throttle(
 # ---------------------------------------------------------------------------
 
 
-def test_wal_pressure_returns_pct_used_from_most_recent_row() -> None:
-    """wal_pressure issues `SELECT pct_used … LIMIT 1` and returns it."""
-    cur = MagicMock()
-    cur.fetchone.return_value = (62.5,)
-    cur.__enter__.return_value = cur
+def test_wal_pressure_returns_zero_noop() -> None:
+    """wal_pressure is currently a stub returning 0.0.
 
+    The original spec assumed meta.wal_usage had columns
+    (observed_at, pct_used); reality is (recorded_at, wal_bytes, ...).
+    Until a real pressure signal is added, the throttle is a no-op.
+    """
     conn = MagicMock()
-    conn.cursor.return_value = cur
-
-    assert wal_pressure(conn) == 62.5
-    cur.execute.assert_called_once()
-    sql = cur.execute.call_args.args[0]
-    assert "meta.wal_usage" in sql and "ORDER BY observed_at DESC" in sql
+    assert wal_pressure(conn) == 0.0
+    # Must not hit the DB
+    conn.cursor.assert_not_called()
 
 
 def test_wal_pressure_returns_zero_when_view_empty() -> None:

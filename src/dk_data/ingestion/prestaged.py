@@ -266,12 +266,18 @@ def dispatch_pg_restore(
     table = step.target_table
     lock_key_expr = f"prestaged:{schema}.{table}"
 
+    # Dropped --single-transaction: pg_restore 17 (what the in-cluster
+    # image ships) emits `SET transaction_timeout = 0;` as its first
+    # statement, which PG 16 (prod server) rejects with
+    # `unrecognized configuration parameter`. With --single-transaction
+    # this is fatal (whole restore rolls back). Without, it's a warning
+    # and the subsequent COPY commands still run fine. Per-source
+    # atomicity is recoverable via TRUNCATE+retry on re-run.
     cmd = [
         "pg_restore",
         "-Fc",
         "--no-owner",
         "--no-privileges",
-        "--single-transaction",
         "--section=data",
         f"--dbname={pg_url}",
     ]
