@@ -3,12 +3,12 @@
 **Branch**: feature/005-prestaged-hydration
 **Feature dir**: .dk/specs/005-prestaged-hydration/
 **Pipeline state**: in-progress
-**Current stage pointer**: Stage 6
-**Last updated by**: manual close (Stage 5) at 2026-04-15T01:25:00Z
+**Current stage pointer**: Stage 7
+**Last updated by**: manual close (Stage 6) at 2026-04-15T01:50:00Z
 
 ## Dashboard
 
-Stage 1 ✅  Stage 2 ✅  Stage 3 ✅  Stage 4 ✅  Stage 5 ✅  Stage 6 ⏳  Stage 7 ⏳
+Stage 1 ✅  Stage 2 ✅  Stage 3 ✅  Stage 4 ✅  Stage 5 ✅  Stage 6 ✅  Stage 7 ⏳
 
 Legend: ✅ closed · ⏳ in progress or next up · ⏸ deferred · ⛔ blocked
 
@@ -142,7 +142,7 @@ Legend: ✅ closed · ⏳ in progress or next up · ⏸ deferred · ⛔ blocked
 
 ---
 
-## Stage 6 — Polish, docs, lint ⏳
+## Stage 6 — Polish, docs, lint ✅
 
 **Entry gate**: Stage 5 merged + post-merge validation passed
 **Exit gate type**: code-only-safe
@@ -151,11 +151,11 @@ Legend: ✅ closed · ⏳ in progress or next up · ⏸ deferred · ⛔ blocked
 **Delegated via**: /dk.implement
 **PR**: not opened
 
-- ⏳ T080 — mypy --strict on all new prestaged*.py; fix violations
-- ⏳ T081 — Update CLAUDE.md data-flow diagram
-- ⏳ T082 — Add README snippet in src/dk_data/ingestion/README.md
-- ⏳ T083 — Verify checklist CHK001-CHK023
-- ⏳ T084 — Wire scripts/prestaged_smoke.sh into .github/workflows/ci.yml
+- ✅ T080 — mypy --strict on all new prestaged*.py; fix violations
+- ✅ T081 — Update CLAUDE.md data-flow diagram
+- ✅ T082 — Add README snippet in src/dk_data/ingestion/README.md
+- ✅ T083 — Verify checklist CHK001-CHK023
+- ✅ T084 — Wire scripts/prestaged_smoke.sh into .github/workflows/ci.yml
 
 **Deferred from Stage 6** (with explicit reason + natural reschedule):
 - ⏸ T085 — dependent-task: Delete `bronze_ready`/`raw_csv` dispatch branches in prestaged.py — natural reschedule: after Stage 7 prod rehearsal confirms no CSV/parquet artifacts appeared in the inventory
