@@ -46,25 +46,41 @@ COLUMN_MAPPING = {
     'Provider Business Practice Location Address Country Code (If outside U.S.)': 'provider_business_practice_location_address_country_code',
     'Provider Business Practice Location Address Telephone Number': 'provider_business_practice_location_address_telephone_number',
     'Provider Business Practice Location Address Fax Number': 'provider_business_practice_location_address_fax_number',
-    # Taxonomy codes 1-15
-    'Healthcare Provider Taxonomy Code_1': 'healthcare_provider_taxonomy_code_1',
-    'Healthcare Provider Taxonomy Code_2': 'healthcare_provider_taxonomy_code_2',
-    'Healthcare Provider Taxonomy Code_3': 'healthcare_provider_taxonomy_code_3',
-    'Healthcare Provider Taxonomy Code_4': 'healthcare_provider_taxonomy_code_4',
-    'Healthcare Provider Taxonomy Code_5': 'healthcare_provider_taxonomy_code_5',
-    'Healthcare Provider Taxonomy Code_6': 'healthcare_provider_taxonomy_code_6',
-    'Healthcare Provider Taxonomy Code_7': 'healthcare_provider_taxonomy_code_7',
-    'Healthcare Provider Taxonomy Code_8': 'healthcare_provider_taxonomy_code_8',
-    'Healthcare Provider Taxonomy Code_9': 'healthcare_provider_taxonomy_code_9',
-    'Healthcare Provider Taxonomy Code_10': 'healthcare_provider_taxonomy_code_10',
-    'Healthcare Provider Taxonomy Code_11': 'healthcare_provider_taxonomy_code_11',
-    'Healthcare Provider Taxonomy Code_12': 'healthcare_provider_taxonomy_code_12',
-    'Healthcare Provider Taxonomy Code_13': 'healthcare_provider_taxonomy_code_13',
-    'Healthcare Provider Taxonomy Code_14': 'healthcare_provider_taxonomy_code_14',
-    'Healthcare Provider Taxonomy Code_15': 'healthcare_provider_taxonomy_code_15',
-    # Deactivation status
+    # Taxonomy codes 1-15 (T026)
+    **{f'Healthcare Provider Taxonomy Code_{i}': f'healthcare_provider_taxonomy_code_{i}' for i in range(1, 16)},
+    # Primary taxonomy switch 1-15 (T026)
+    **{f'Healthcare Provider Primary Taxonomy Switch_{i}': f'healthcare_provider_primary_taxonomy_switch_{i}' for i in range(1, 16)},
+    # Provider license numbers 1-15 (T026)
+    **{f'Provider License Number_{i}': f'provider_license_number_{i}' for i in range(1, 16)},
+    # Provider license number state codes 1-15 (T026)
+    **{f'Provider License Number State Code_{i}': f'provider_license_number_state_code_{i}' for i in range(1, 16)},
+    # Other provider identifiers 1-50 (T026)
+    **{f'Other Provider Identifier_{i}': f'other_provider_identifier_{i}' for i in range(1, 51)},
+    **{f'Other Provider Identifier Type Code_{i}': f'other_provider_identifier_type_code_{i}' for i in range(1, 51)},
+    **{f'Other Provider Identifier State_{i}': f'other_provider_identifier_state_{i}' for i in range(1, 51)},
+    **{f'Other Provider Identifier Issuer_{i}': f'other_provider_identifier_issuer_{i}' for i in range(1, 51)},
+    # Authorized official details (T026)
+    'Authorized Official Last Name': 'authorized_official_last_name',
+    'Authorized Official First Name': 'authorized_official_first_name',
+    'Authorized Official Middle Name': 'authorized_official_middle_name',
+    'Authorized Official Title or Position': 'authorized_official_title_or_position',
+    'Authorized Official Telephone Number': 'authorized_official_telephone_number',
+    'Authorized Official Name Prefix Text': 'authorized_official_name_prefix_text',
+    'Authorized Official Name Suffix Text': 'authorized_official_name_suffix_text',
+    'Authorized Official Credential Text': 'authorized_official_credential_text',
+    # Deactivation status (T026)
+    'NPI Deactivation Reason Code': 'npi_deactivation_reason_code',
     'NPI Deactivation Date': 'npi_deactivation_date',
     'NPI Reactivation Date': 'npi_reactivation_date',
+    # Entity-type-specific (T026)
+    'Is Sole Proprietor': 'is_sole_proprietor',
+    'Is Organization Subpart': 'is_organization_subpart',
+    'Parent Organization LBN': 'parent_organization_lbn',
+    'Parent Organization TIN': 'parent_organization_tin',
+    # Other (T026)
+    'Provider Enumeration Date': 'provider_enumeration_date',
+    'Last Update Date': 'last_update_date',
+    'Certification Date': 'certification_date',
 }
 
 TABLE = 'cms_nppes'
@@ -99,67 +115,20 @@ def load_cms_nppes(filepath: str, source_year: int = 2023, max_records: int = 0)
     errors = []
     loaded_at = datetime.now(timezone.utc).isoformat()
 
+    # Build the set of all target column names from COLUMN_MAPPING values
+    _all_target_cols = set(COLUMN_MAPPING.values())
+
     for idx, row in df.iterrows():
         try:
-            rec = CMSNPPESRecord(
-                npi=row.get('npi'),
-                entity_type_code=row.get('entity_type_code'),
-                provider_last_name=row.get('provider_last_name'),
-                provider_first_name=row.get('provider_first_name'),
-                provider_organization_name=row.get('provider_organization_name'),
-                provider_credential_text=row.get('provider_credential_text'),
-                # Mailing address fields
-                provider_first_line_business_mailing_address=row.get(
-                    'provider_first_line_business_mailing_address'
-                ),
-                provider_second_line_business_mailing_address=row.get(
-                    'provider_second_line_business_mailing_address'
-                ),
-                provider_business_mailing_address_city_name=row.get(
-                    'provider_business_mailing_address_city_name'
-                ),
-                provider_business_mailing_address_state_name=row.get(
-                    'provider_business_mailing_address_state_name'
-                ),
-                provider_business_mailing_address_postal_code=row.get(
-                    'provider_business_mailing_address_postal_code'
-                ),
-                provider_business_mailing_address_telephone_number=row.get(
-                    'provider_business_mailing_address_telephone_number'
-                ),
-                # Practice location fields
-                provider_business_practice_location_address_state_name=row.get(
-                    'provider_business_practice_location_address_state_name'
-                ),
-                provider_business_practice_location_address_telephone_number=row.get(
-                    'provider_business_practice_location_address_telephone_number'
-                ),
-                provider_business_practice_location_address_fax_number=row.get(
-                    'provider_business_practice_location_address_fax_number'
-                ),
-                provider_first_line_business_practice_location_address=row.get(
-                    'provider_first_line_business_practice_location_address'
-                ),
-                provider_second_line_business_practice_location_address=row.get(
-                    'provider_second_line_business_practice_location_address'
-                ),
-                provider_business_practice_location_address_city_name=row.get(
-                    'provider_business_practice_location_address_city_name'
-                ),
-                provider_business_practice_location_address_postal_code=row.get(
-                    'provider_business_practice_location_address_postal_code'
-                ),
-                provider_business_practice_location_address_country_code=row.get(
-                    'provider_business_practice_location_address_country_code'
-                ),
-                # Taxonomy codes
-                healthcare_provider_taxonomy_code_1=row.get('healthcare_provider_taxonomy_code_1'),
-                healthcare_provider_taxonomy_code_2=row.get('healthcare_provider_taxonomy_code_2'),
-                # Deactivation status
-                npi_deactivation_date=row.get('npi_deactivation_date') or None,
-                npi_reactivation_date=row.get('npi_reactivation_date') or None,
-                _source_year=source_year,
-            )
+            # Dynamically build kwargs for all mapped columns present in the row
+            kwargs = {}
+            for col in _all_target_cols:
+                val = row.get(col)
+                if val is not None and val != '':
+                    kwargs[col] = val
+            kwargs['_source_year'] = source_year
+
+            rec = CMSNPPESRecord(**kwargs)
             d = rec.model_dump(by_alias=True)
             d['_source_hash'] = source_hash
             d['_source_file'] = source_file

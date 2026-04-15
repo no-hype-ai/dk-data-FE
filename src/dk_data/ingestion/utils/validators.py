@@ -1172,22 +1172,36 @@ class CMSMentalHealthRecord(CMSPUFBaseRecord):
 
 
 class CMSNPPESRecord(CMSPUFBaseRecord):
-    """Validation model for CMS NPPES National Provider Identifier data."""
+    """Validation model for CMS NPPES National Provider Identifier data.
 
-    model_config = ConfigDict(str_strip_whitespace=True)
+    Supports all ~330 columns from the NPPES monthly dissemination file.
+    Repetitive slot columns (taxonomy 1-15, other_provider_identifier 1-50)
+    are accepted via model_config extra='allow' to avoid 252 field definitions.
+    """
+
+    model_config = ConfigDict(str_strip_whitespace=True, extra='allow')
 
     npi: Optional[str] = None
     entity_type_code: Optional[str] = None
+    replacement_npi: Optional[str] = None
+    employer_identification_number: Optional[str] = None
     provider_last_name: Optional[str] = None
     provider_first_name: Optional[str] = None
-    provider_organization_name: Optional[str] = None
+    provider_middle_name: Optional[str] = None
+    provider_name_prefix_text: Optional[str] = None
+    provider_name_suffix_text: Optional[str] = None
     provider_credential_text: Optional[str] = None
+    provider_organization_name: Optional[str] = None
+    # Mailing address
     provider_first_line_business_mailing_address: Optional[str] = None
     provider_second_line_business_mailing_address: Optional[str] = None
     provider_business_mailing_address_city_name: Optional[str] = None
     provider_business_mailing_address_state_name: Optional[str] = None
     provider_business_mailing_address_postal_code: Optional[str] = None
+    provider_business_mailing_address_country_code: Optional[str] = None
     provider_business_mailing_address_telephone_number: Optional[str] = None
+    provider_business_mailing_address_fax_number: Optional[str] = None
+    # Practice location
     provider_first_line_business_practice_location_address: Optional[str] = None
     provider_second_line_business_practice_location_address: Optional[str] = None
     provider_business_practice_location_address_city_name: Optional[str] = None
@@ -1196,11 +1210,46 @@ class CMSNPPESRecord(CMSPUFBaseRecord):
     provider_business_practice_location_address_country_code: Optional[str] = None
     provider_business_practice_location_address_telephone_number: Optional[str] = None
     provider_business_practice_location_address_fax_number: Optional[str] = None
+    # Taxonomy codes 1-2 (explicit; 3-15 handled via extra='allow')
     healthcare_provider_taxonomy_code_1: Optional[str] = None
     healthcare_provider_taxonomy_code_2: Optional[str] = None
+    # Primary taxonomy switches 1-2 (explicit; 3-15 via extra='allow')
+    healthcare_provider_primary_taxonomy_switch_1: Optional[str] = None
+    healthcare_provider_primary_taxonomy_switch_2: Optional[str] = None
+    # Provider license numbers 1-2 (explicit; 3-15 via extra='allow')
+    provider_license_number_1: Optional[str] = None
+    provider_license_number_2: Optional[str] = None
+    provider_license_number_state_code_1: Optional[str] = None
+    provider_license_number_state_code_2: Optional[str] = None
+    # Authorized official (T026)
+    authorized_official_last_name: Optional[str] = None
+    authorized_official_first_name: Optional[str] = None
+    authorized_official_middle_name: Optional[str] = None
+    authorized_official_title_or_position: Optional[str] = None
+    authorized_official_telephone_number: Optional[str] = None
+    authorized_official_name_prefix_text: Optional[str] = None
+    authorized_official_name_suffix_text: Optional[str] = None
+    authorized_official_credential_text: Optional[str] = None
+    # Deactivation (T026)
+    npi_deactivation_reason_code: Optional[str] = None
     npi_deactivation_date: Optional[date] = None
     npi_reactivation_date: Optional[date] = None
+    # Entity-type-specific (T026)
+    is_sole_proprietor: Optional[str] = None
+    is_organization_subpart: Optional[str] = None
+    parent_organization_lbn: Optional[str] = None
+    parent_organization_tin: Optional[str] = None
+    # Other (T026)
+    provider_enumeration_date: Optional[str] = None
+    last_update_date: Optional[str] = None
+    certification_date: Optional[str] = None
     _source_year: Optional[int] = None
+
+    # Note: taxonomy slots 3-15, primary_taxonomy_switch 3-15,
+    # provider_license_number 3-15, provider_license_number_state_code 3-15,
+    # other_provider_identifier 1-50, other_provider_identifier_type_code 1-50,
+    # other_provider_identifier_state 1-50, other_provider_identifier_issuer 1-50
+    # are all accepted via extra='allow' and passed through in model_dump().
 
     @field_validator('npi_deactivation_date', 'npi_reactivation_date', mode='before')
     @classmethod
