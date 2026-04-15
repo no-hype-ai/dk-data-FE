@@ -50,4 +50,4 @@ def is_restorable_target(conn: Any, schema: str, table: str) -> bool:
         # Relation doesn't exist — first chunk will create it. Safe.
         return True
     relkind = row[0]
-    return relkind == "r"
+    return bool(relkind == "r")

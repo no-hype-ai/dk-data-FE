@@ -421,6 +421,74 @@ jobs:
           echo "Kubernetes manifests validated successfully"
 
   # ---------------------------------------------------------------------------
+  # Feature: 005-prestaged-hydration — T084
+  # Smoke test: import the new prestaged module + run it in --dry-run mode
+  # against an empty fixture root. Catches import errors, missing deps, and
+  # any breakage in plan_load() before it ships. Non-blocking by design — the
+  # full e2e test is gated behind @pytest.mark.integration and lives in
+  # tests/load/test_prestaged_e2e.py.
+  #
+  # Note: no untrusted GitHub event inputs are referenced in any run: block
+  # below — only fixed paths and PYTHONPATH=src.
+  # ---------------------------------------------------------------------------
+  prestaged-smoke:
+    name: Prestaged Hydration Smoke (005)
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install pydantic loguru psycopg2-binary tenacity pytest mypy
+
+      - name: Run prestaged unit tests
+        env:
+          PYTHONPATH: src
+        run: |
+          python -m pytest \
+            tests/ingestion/test_load_order.py \
+            tests/ingestion/test_wal_throttle.py \
+            tests/ingestion/test_prestaged_discovery.py \
+            tests/ingestion/test_prestaged_validate.py \
+            tests/ingestion/test_prestaged_fallback.py \
+            tests/ingestion/test_prestaged_idempotency.py \
+            --override-ini="addopts="
+
+      - name: mypy --strict on new modules
+        run: |
+          cd src && python -m mypy --strict --ignore-missing-imports \
+            dk_data/ingestion/prestaged_types.py \
+            dk_data/ingestion/prestaged_safety.py \
+            dk_data/ingestion/transform_runs_writer.py \
+            dk_data/ingestion/load_order.py \
+            dk_data/ingestion/wal_throttle.py \
+            dk_data/ingestion/prestaged.py
+
+      - name: CLI dry-run against empty PRESTAGED_ROOT
+        env:
+          PYTHONPATH: src
+        run: |
+          mkdir -p /tmp/empty_prestaged
+          PRESTAGED_ROOT=/tmp/empty_prestaged \
+            python -m dk_data.ingestion.prestaged --dry-run --source-list all \
+            > /tmp/dry-run.json
+          tail -1 /tmp/dry-run.json | python -c "import json,sys; d=json.loads(sys.stdin.read()); assert d.get('summary'), d; assert d['total_steps'] > 50, d; print('OK', d['total_steps'], 'steps')"
+
+      - name: kubectl dry-run on Job manifest
+        run: |
+          curl -LO "https://dl.k8s.io/release/$(curl -L -s https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl"
+          chmod +x kubectl && sudo mv kubectl /usr/local/bin/
+          kubectl --dry-run=client apply -f deploy/jobs/prestaged-hydrate.yaml
+
+  # ---------------------------------------------------------------------------
   # Feature: 001-silver-medallion-rebuild — T003
   # FR-030 / SC-015: Enforce that every dk-data Python entry point obtains its
   # DB connection via build_dsn() — no direct psycopg2.connect() outside

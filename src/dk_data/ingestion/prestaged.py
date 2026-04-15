@@ -24,7 +24,7 @@ import sys
 from collections import defaultdict
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Iterable
+from typing import Any, Iterable
 
 import psycopg2
 from loguru import logger
@@ -304,7 +304,7 @@ def dispatch_pg_restore(
 
 
 def run_step(
-    conn,  # type: ignore[no-untyped-def]
+    conn: Any,
     step: LoadStep,
     run_label: str,
     writer: TransformRunsWriter,
@@ -409,7 +409,7 @@ def run_step(
 
 
 def run_live_fetch(
-    conn,  # type: ignore[no-untyped-def]
+    conn: Any,
     step: LoadStep,
     run_label: str,
     writer: TransformRunsWriter,
