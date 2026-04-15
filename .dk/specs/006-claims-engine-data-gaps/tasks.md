@@ -87,19 +87,19 @@ Phase 6 (Polish)
 
 ### Item 6: Publication evidence tier
 
-- [ ] T014 [P1] Add derived `evidence_tier` column (VARCHAR(1) -- A/B/C/D/U) to `src/dk_data/sqlmesh/models/molecules/silver/publications.sql` via CASE expression. Per-source fallback logic: PubMed `publication_type_list` mapping (Systematic Review/Meta-Analysis -> A; RCT/Clinical Trial -> B; Observational/Cohort/Case-Control -> C; Case Reports/Editorial/Comment/Letter -> D; else -> U). OpenAlex `type` mapping with Cochrane override. All Cochrane-sourced records -> A. Never NULL, always U for unclassifiable.
-- [ ] T015 [P1] Create fixture tests: 50 publications per tier covering PubMed, OpenAlex, and Cochrane sources. Verify >= 95% population rate, Cochrane review = 'A', case report = 'D', unclassifiable = 'U'.
+- [x] T014 [P1] Add derived `evidence_tier` column (VARCHAR(1) -- A/B/C/D/U) to `src/dk_data/sqlmesh/models/molecules/silver/publications.sql` via CASE expression. Per-source fallback logic: PubMed `publication_type_list` mapping (Systematic Review/Meta-Analysis -> A; RCT/Clinical Trial -> B; Observational/Cohort/Case-Control -> C; Case Reports/Editorial/Comment/Letter -> D; else -> U). OpenAlex `type` mapping with Cochrane override. All Cochrane-sourced records -> A. Never NULL, always U for unclassifiable.
+- [x] T015 [P1] Create fixture tests: 50 publications per tier covering PubMed, OpenAlex, and Cochrane sources. Verify >= 95% population rate, Cochrane review = 'A', case report = 'D', unclassifiable = 'U'.
 
 ### Item 7: FDA designation flags
 
-- [ ] T016 [P1] Update `src/dk_data/sqlmesh/models/molecules/bronze/fda_drugs.sql`: add 5 boolean designation flags from `submissions` JSONB via `EXISTS` subqueries over `jsonb_array_elements(COALESCE(rec->'submissions', '[]'::JSONB))`: `is_priority_review`, `is_orphan_designation`, `is_breakthrough_designation`, `is_fast_track`, `is_accelerated_approval`. Confirm exact `submission_class_code` strings against sample raw data before committing.
-- [ ] T017 [P1] Update silver passthrough for `mol_silver.fda_drugs` to include all 5 designation flags. Verify a known Breakthrough-designated drug has `is_breakthrough_designation = TRUE`.
-- [ ] T018 [P1] Create new bronze source `mol_bronze.fda_orphan_designation`: new fetcher/loader for FDA Orphan Drug Designation database, new migration for DDL (`designation_number`, `generic_name`, `trade_name`, `sponsor`, `designation_date`, `designated_indication`, `marketing_approval_date`), new SQLMesh bronze model. Verify >= 500 rows.
-- [ ] T019 [P1] Add unified `has_orphan_designation` BOOLEAN on `mol_silver.drug_products` combining Purple Book `orphan_exclusivity_end IS NOT NULL` (biologics) with `mol_bronze.fda_orphan_designation` linkage (small molecules). Verify TRUE for both a known biologic orphan and a known small-molecule orphan.
+- [x] T016 [P1] Update `src/dk_data/sqlmesh/models/molecules/bronze/fda_drugs.sql`: add 5 boolean designation flags from `submissions` JSONB via `EXISTS` subqueries over `jsonb_array_elements(COALESCE(rec->'submissions', '[]'::JSONB))`: `is_priority_review`, `is_orphan_designation`, `is_breakthrough_designation`, `is_fast_track`, `is_accelerated_approval`. Confirm exact `submission_class_code` strings against sample raw data before committing.
+- [x] T017 [P1] Update silver passthrough for `mol_silver.fda_drugs` to include all 5 designation flags. Verify a known Breakthrough-designated drug has `is_breakthrough_designation = TRUE`.
+- [x] T018 [P1] Create new bronze source `mol_bronze.fda_orphan_designation`: new fetcher/loader for FDA Orphan Drug Designation database, new migration for DDL (`designation_number`, `generic_name`, `trade_name`, `sponsor`, `designation_date`, `designated_indication`, `marketing_approval_date`), new SQLMesh bronze model. Verify >= 500 rows.
+- [x] T019 [P1] Add unified `has_orphan_designation` BOOLEAN on `mol_silver.drug_products` combining Purple Book `orphan_exclusivity_end IS NOT NULL` (biologics) with `mol_bronze.fda_orphan_designation` linkage (small molecules). Verify TRUE for both a known biologic orphan and a known small-molecule orphan.
 
 ### Item 11: Drug label changes
 
-- [ ] T020 [P2] Create materialized view `mol_silver.drug_label_changes` at `src/dk_data/sqlmesh/models/molecules/silver/drug_label_changes.sql` with columns: `set_id`, `from_version`, `to_version`, `section_name`, `change_type` ('added'|'removed'|'modified'), `diff_text`, `detected_at`. Compute section-level diffs between consecutive (set_id, version) pairs. Expose via PostgREST. Verify a known boxed-warning change produces a row with `section_name = 'boxed_warning'`, `change_type = 'modified'`.
+- [x] T020 [P2] Create materialized view `mol_silver.drug_label_changes` at `src/dk_data/sqlmesh/models/molecules/silver/drug_label_changes.sql` with columns: `set_id`, `from_version`, `to_version`, `section_name`, `change_type` ('added'|'removed'|'modified'), `diff_text`, `detected_at`. Compute section-level diffs between consecutive (set_id, version) pairs. Expose via PostgREST. Verify a known boxed-warning change produces a row with `section_name = 'boxed_warning'`, `change_type = 'modified'`.
 
 ### Item 25: CMS Open Payments expansion
 
