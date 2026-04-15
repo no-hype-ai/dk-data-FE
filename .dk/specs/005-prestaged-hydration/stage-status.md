@@ -3,12 +3,12 @@
 **Branch**: feature/005-prestaged-hydration
 **Feature dir**: .dk/specs/005-prestaged-hydration/
 **Pipeline state**: in-progress
-**Current stage pointer**: Stage 5
-**Last updated by**: manual close (Stage 4) at 2026-04-15T01:10:00Z
+**Current stage pointer**: Stage 6
+**Last updated by**: manual close (Stage 5) at 2026-04-15T01:25:00Z
 
 ## Dashboard
 
-Stage 1 ✅  Stage 2 ✅  Stage 3 ✅  Stage 4 ✅  Stage 5 ⏳  Stage 6 ⏳  Stage 7 ⏳
+Stage 1 ✅  Stage 2 ✅  Stage 3 ✅  Stage 4 ✅  Stage 5 ✅  Stage 6 ⏳  Stage 7 ⏳
 
 Legend: ✅ closed · ⏳ in progress or next up · ⏸ deferred · ⛔ blocked
 
@@ -114,7 +114,7 @@ Legend: ✅ closed · ⏳ in progress or next up · ⏸ deferred · ⛔ blocked
 
 ---
 
-## Stage 5 — Fallback + idempotency + dry-run ⏳
+## Stage 5 — Fallback + idempotency + dry-run ✅
 
 **Entry gate**: Stage 4 merged + post-merge validation passed
 **Exit gate type**: code-only-safe
@@ -124,18 +124,18 @@ Legend: ✅ closed · ⏳ in progress or next up · ⏸ deferred · ⛔ blocked
 **Budget**: `--max-budget-usd 10` per worker (default); max $20 across the stage
 **PR**: not opened
 
-- ⏳ T060 — run_live_fetch() invoking main.run_ingestion
-- ⏳ T061 — FETCHERS_SUSPENDED parsing + no_source_available recording
-- ⏳ T062 — Skip out-of-scope domains in LoadPlan (FR-014)
-- ⏳ T063 — Unit test: missing artifact + enabled fetcher → run_live_fetch invoked
-- ⏳ T064 — Unit test: suspended fetcher → no_source_available, no call
-- ⏳ T065 — Unit test: out-of-scope source absent from LoadPlan
-- ⏳ T070 — --dry-run branch emitting per-step JSON lines
-- ⏳ T071 — Idempotency guard: skip completed steps under same run_id
-- ⏳ T072 — Terminal-transition JSON lines per contracts/cli.md
-- ⏳ T073 — Best-effort OTLP emission wrapped in try/except
-- ⏳ T074 — Integration test: rerun completes in <5 s with zero pg_restore calls (SC-006)
-- ⏳ T075 — Integration test: exactly one terminal row per source (SC-007)
+- ✅ T060 — run_live_fetch() invoking main.run_ingestion
+- ✅ T061 — FETCHERS_SUSPENDED parsing + no_source_available recording
+- ✅ T062 — Skip out-of-scope domains in LoadPlan (FR-014)
+- ✅ T063 — Unit test: missing artifact + enabled fetcher → run_live_fetch invoked
+- ✅ T064 — Unit test: suspended fetcher → no_source_available, no call
+- ✅ T065 — Unit test: out-of-scope source absent from LoadPlan
+- ✅ T070 — --dry-run branch emitting per-step JSON lines
+- ✅ T071 — Idempotency guard: skip completed steps under same run_id
+- ✅ T072 — Terminal-transition JSON lines per contracts/cli.md
+- ✅ T073 — Best-effort OTLP emission wrapped in try/except
+- ✅ T074 — Integration test: rerun completes in <5 s with zero pg_restore calls (SC-006)
+- ✅ T075 — Integration test: exactly one terminal row per source (SC-007)
 
 **Deferred from Stage 5** (with explicit reason + natural reschedule):
 - (none yet)
