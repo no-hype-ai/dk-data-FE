@@ -376,27 +376,87 @@ SELECT DISTINCT ON (doi)
     conclusions,
     interventions_reviewed,
     conditions_reviewed,
-    -- Evidence tier classification (A-D, U=unclassified, never NULL)
+    -- Evidence tier classification (Oxford CEBM-inspired: A/B/C/D/U, never NULL)
+    -- A = systematic review/meta-analysis, B = RCT, C = observational, D = case/opinion, U = unclassified
     CASE
+        -- Cochrane override: always Tier A regardless of other fields
         WHEN source = 'cochrane_reviews'
-             OR publication_type ILIKE '%systematic review%'
-             OR publication_type ILIKE '%meta-analysis%'
+          OR doi LIKE '10.1002/14651858%'
         THEN 'A'
-        WHEN publication_type ILIKE '%randomized%'
-             OR publication_type ILIKE '%clinical trial%'
-             OR publication_type ILIKE '%controlled%'
-        THEN 'B'
-        WHEN publication_type ILIKE '%observational%'
-             OR publication_type ILIKE '%cohort%'
-             OR publication_type ILIKE '%case-control%'
-             OR publication_type ILIKE '%real-world%'
-        THEN 'C'
-        WHEN publication_type ILIKE '%case report%'
-             OR publication_type ILIKE '%editorial%'
-             OR publication_type ILIKE '%comment%'
-             OR publication_type ILIKE '%letter%'
-             OR publication_type ILIKE '%opinion%'
-        THEN 'D'
+
+        -- PubMed: classify by publication_types JSONB array elements
+        WHEN source = 'pubmed'
+        THEN CASE
+            WHEN EXISTS (
+                SELECT 1 FROM jsonb_array_elements_text(COALESCE(publication_types, '[]'::JSONB)) t
+                WHERE t ILIKE '%systematic review%'
+                   OR t ILIKE '%meta-analysis%'
+                   OR t ILIKE '%cochrane%'
+            ) THEN 'A'
+            WHEN EXISTS (
+                SELECT 1 FROM jsonb_array_elements_text(COALESCE(publication_types, '[]'::JSONB)) t
+                WHERE t ILIKE '%randomized controlled trial%'
+                   OR t ILIKE '%controlled clinical trial%'
+            ) THEN 'B'
+            WHEN EXISTS (
+                SELECT 1 FROM jsonb_array_elements_text(COALESCE(publication_types, '[]'::JSONB)) t
+                WHERE t ILIKE '%observational study%'
+                   OR t ILIKE '%cohort%'
+                   OR t ILIKE '%case-control%'
+                   OR t ILIKE '%real-world%'
+            ) THEN 'C'
+            WHEN EXISTS (
+                SELECT 1 FROM jsonb_array_elements_text(COALESCE(publication_types, '[]'::JSONB)) t
+                WHERE t ILIKE '%case report%'
+                   OR t ILIKE '%case series%'
+                   OR t ILIKE '%editorial%'
+                   OR t ILIKE '%expert opinion%'
+                   OR t ILIKE '%comment%'
+                   OR t ILIKE '%letter%'
+            ) THEN 'D'
+            ELSE 'U'
+        END
+
+        -- OpenAlex: classify by LOWER(publication_type) exact values
+        WHEN source = 'openalex'
+        THEN CASE
+            WHEN LOWER(publication_type) IN ('systematic-review', 'meta-analysis', 'cochrane-review')
+            THEN 'A'
+            WHEN LOWER(publication_type) IN ('randomized-controlled-trial', 'controlled-clinical-trial', 'clinical-trial')
+            THEN 'B'
+            WHEN LOWER(publication_type) IN ('observational-study', 'cohort-study', 'case-control', 'retrospective-study', 'prospective-study')
+            THEN 'C'
+            WHEN LOWER(publication_type) IN ('case-report', 'case-series', 'editorial', 'letter', 'comment', 'expert-opinion')
+            THEN 'D'
+            ELSE 'U'
+        END
+
+        -- EuropePMC: classify by LOWER(publication_type) LIKE patterns
+        WHEN source = 'europepmc'
+        THEN CASE
+            WHEN LOWER(publication_type) LIKE '%systematic review%'
+              OR LOWER(publication_type) LIKE '%meta-analysis%'
+              OR LOWER(publication_type) LIKE '%cochrane%'
+            THEN 'A'
+            WHEN LOWER(publication_type) LIKE '%randomized controlled trial%'
+              OR LOWER(publication_type) LIKE '%controlled clinical trial%'
+            THEN 'B'
+            WHEN LOWER(publication_type) LIKE '%observational%'
+              OR LOWER(publication_type) LIKE '%cohort%'
+              OR LOWER(publication_type) LIKE '%case-control%'
+              OR LOWER(publication_type) LIKE '%real-world%'
+            THEN 'C'
+            WHEN LOWER(publication_type) LIKE '%case report%'
+              OR LOWER(publication_type) LIKE '%case series%'
+              OR LOWER(publication_type) LIKE '%editorial%'
+              OR LOWER(publication_type) LIKE '%expert opinion%'
+              OR LOWER(publication_type) LIKE '%comment%'
+              OR LOWER(publication_type) LIKE '%letter%'
+            THEN 'D'
+            ELSE 'U'
+        END
+
+        -- Everything else (journal_rss, etc.) → unclassified
         ELSE 'U'
     END::VARCHAR(1)         AS evidence_tier,
     source,
