@@ -11,7 +11,7 @@ Target table: ip_raw.epo_patents (see migration 060_ci_source_tables.sql)
 
 import json
 import logging
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Union
 
 from pydantic import ValidationError
 
@@ -78,6 +78,13 @@ def load_epo_ops_data(
                         else None
                     )
 
+                    # T060: serialize new JSONB expansion fields
+                    priority_claims_json = _json_or_none(raw_record.get("priority_claims"))
+                    family_members_json = _json_or_none(raw_record.get("family_members"))
+                    legal_status_events_json = _json_or_none(raw_record.get("legal_status_events"))
+                    designated_states_json = _json_or_none(raw_record.get("designated_states"))
+                    cited_documents_json = _json_or_none(raw_record.get("cited_documents"))
+
                     cur.execute(
                         """
                         INSERT INTO ip_raw.epo_patents (
@@ -85,10 +92,18 @@ def load_epo_ops_data(
                             applicants, inventors,
                             filing_date, publication_date,
                             ipc_codes, family_id,
+                            priority_claims, family_members,
+                            abstract_en, abstract_fr, abstract_de,
+                            legal_status_events, designated_states,
+                            grant_date, cited_documents,
                             _source_file, _source_hash
                         ) VALUES (
                             %s, %s, %s,
                             %s, %s,
+                            %s, %s,
+                            %s, %s,
+                            %s, %s,
+                            %s, %s, %s,
                             %s, %s,
                             %s, %s,
                             %s, %s
@@ -102,6 +117,15 @@ def load_epo_ops_data(
                             publication_date = EXCLUDED.publication_date,
                             ipc_codes = EXCLUDED.ipc_codes,
                             family_id = EXCLUDED.family_id,
+                            priority_claims = EXCLUDED.priority_claims,
+                            family_members = EXCLUDED.family_members,
+                            abstract_en = EXCLUDED.abstract_en,
+                            abstract_fr = EXCLUDED.abstract_fr,
+                            abstract_de = EXCLUDED.abstract_de,
+                            legal_status_events = EXCLUDED.legal_status_events,
+                            designated_states = EXCLUDED.designated_states,
+                            grant_date = EXCLUDED.grant_date,
+                            cited_documents = EXCLUDED.cited_documents,
                             _source_file = EXCLUDED._source_file,
                             _source_hash = EXCLUDED._source_hash,
                             _loaded_at = NOW()
@@ -116,6 +140,15 @@ def load_epo_ops_data(
                             record.publication_date,
                             record.ipc_codes,
                             record.family_id,
+                            priority_claims_json,
+                            family_members_json,
+                            raw_record.get("abstract_en"),
+                            raw_record.get("abstract_fr"),
+                            raw_record.get("abstract_de"),
+                            legal_status_events_json,
+                            designated_states_json,
+                            raw_record.get("grant_date"),
+                            cited_documents_json,
                             source_file or "epo_ops_api",
                             source_hash,
                         ),
@@ -151,3 +184,10 @@ def load_epo_ops_data(
         "records_failed": records_failed,
         "errors": errors[:10],
     }
+
+
+def _json_or_none(value: Any) -> Optional[str]:
+    """Serialize a value to JSON string, or return None if empty/None."""
+    if value is None:
+        return None
+    return json.dumps(value)

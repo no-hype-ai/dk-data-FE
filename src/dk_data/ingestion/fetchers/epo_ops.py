@@ -423,6 +423,72 @@ class EPOOPSFetcher(BaseFetcher):
         # Family ID
         family_id = doc.get("family-id")
 
+        # --- T059/T060 expansion fields ---
+
+        # Priority claims
+        priority_claims = []
+        for prio in doc.findall(".//epo:priority-claim", ns):
+            prio_country = prio.find("epo:document-id/epo:country", ns)
+            prio_num = prio.find("epo:document-id/epo:doc-number", ns)
+            prio_date = prio.find("epo:document-id/epo:date", ns)
+            if prio_num is not None and prio_num.text:
+                priority_claims.append({
+                    "country": prio_country.text.strip() if prio_country is not None and prio_country.text else None,
+                    "doc_number": prio_num.text.strip(),
+                    "date": self._parse_date(prio_date.text.strip()) if prio_date is not None and prio_date.text else None,
+                })
+
+        # Multilingual abstracts
+        abstract_en = abstract  # already extracted above (English preferred)
+        abstract_fr = None
+        abstract_de = None
+        for abs_elem in doc.findall(".//epo:abstract", ns):
+            lang = abs_elem.get("lang", "")
+            p_elem = abs_elem.find("epo:p", ns)
+            if p_elem is not None and p_elem.text:
+                if lang == "fr":
+                    abstract_fr = p_elem.text.strip()
+                elif lang == "de":
+                    abstract_de = p_elem.text.strip()
+
+        # Grant date (from publication reference with kind B1/B2)
+        grant_date = None
+        for pub_ref in doc.findall(".//epo:publication-reference/epo:document-id", ns):
+            kind_elem = pub_ref.find("epo:kind", ns)
+            date_elem = pub_ref.find("epo:date", ns)
+            if kind_elem is not None and kind_elem.text and kind_elem.text.startswith("B"):
+                if date_elem is not None and date_elem.text:
+                    grant_date = self._parse_date(date_elem.text.strip())
+                    break
+
+        # Cited documents
+        cited_documents = []
+        for citation in doc.findall(".//epo:references-cited/epo:citation", ns):
+            cite_doc = citation.find("epo:patcit/epo:document-id", ns)
+            if cite_doc is not None:
+                cite_country = cite_doc.find("epo:country", ns)
+                cite_num = cite_doc.find("epo:doc-number", ns)
+                cite_kind = cite_doc.find("epo:kind", ns)
+                if cite_num is not None and cite_num.text:
+                    cited_documents.append({
+                        "country": cite_country.text.strip() if cite_country is not None and cite_country.text else None,
+                        "doc_number": cite_num.text.strip(),
+                        "kind": cite_kind.text.strip() if cite_kind is not None and cite_kind.text else None,
+                    })
+            # NPL citations
+            npl_elem = citation.find("epo:nplcit", ns)
+            if npl_elem is not None and npl_elem.text:
+                cited_documents.append({
+                    "type": "npl",
+                    "text": npl_elem.text.strip(),
+                })
+
+        # Designated states
+        designated_states = []
+        for state in doc.findall(".//epo:designation-of-states//epo:country", ns):
+            if state.text:
+                designated_states.append(state.text.strip())
+
         return {
             "publication_id": publication_id,
             "title": title,
@@ -434,6 +500,14 @@ class EPOOPSFetcher(BaseFetcher):
             "ipc_codes": ipc_codes if ipc_codes else None,
             "cpc_codes": cpc_codes if cpc_codes else None,
             "family_id": family_id,
+            # T059/T060 expansion fields
+            "priority_claims": priority_claims if priority_claims else None,
+            "abstract_en": abstract_en,
+            "abstract_fr": abstract_fr,
+            "abstract_de": abstract_de,
+            "grant_date": grant_date,
+            "cited_documents": cited_documents if cited_documents else None,
+            "designated_states": designated_states if designated_states else None,
         }
 
     @staticmethod
