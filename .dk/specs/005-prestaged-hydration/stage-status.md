@@ -2,19 +2,19 @@
 
 **Branch**: feature/005-prestaged-hydration
 **Feature dir**: .dk/specs/005-prestaged-hydration/
-**Pipeline state**: init
-**Current stage pointer**: Stage 1
-**Last updated by**: manual init at 2026-04-14T22:20:00Z
+**Pipeline state**: in-progress
+**Current stage pointer**: Stage 3
+**Last updated by**: manual close (Stages 1+2) at 2026-04-15T00:38:00Z
 
 ## Dashboard
 
-Stage 1 ⏳  Stage 2 ⏳  Stage 3 ⏳  Stage 4 ⏳  Stage 5 ⏳  Stage 6 ⏳  Stage 7 ⏳
+Stage 1 ✅  Stage 2 ✅  Stage 3 ⏳  Stage 4 ⏳  Stage 5 ⏳  Stage 6 ⏳  Stage 7 ⏳
 
 Legend: ✅ closed · ⏳ in progress or next up · ⏸ deferred · ⛔ blocked
 
 ---
 
-## Stage 1 — Foundation: types, load-order, packaging scaffold ⏳
+## Stage 1 — Foundation: types, load-order, packaging scaffold ✅
 
 **Entry gate**: feature branch created; tasks.md, plan.md, spec.md committed (commit `86048a9`)
 **Exit gate type**: code-only-safe
@@ -23,28 +23,28 @@ Legend: ✅ closed · ⏳ in progress or next up · ⏸ deferred · ⛔ blocked
 **Delegated via**: /dk.implement
 **PR**: not opened
 
-- ⏳ T001 — Add `postgresql-client-16` to ingestion container image
-- ⏳ T002 — Declare prestaged optional-deps group in pyproject.toml
-- ⏳ T003 — Add scripts/prestaged_smoke.sh helper
-- ⏳ T010 — Pydantic models: PrestagedArtifact, LoadStep, LoadPlan
-- ⏳ T010a — prestaged.py skeleton with named stub functions (enables Stage 2 swarm file-disjoint)
-- ⏳ T011 — SOURCE_LOAD_ORDER list (8 tiers, 120 sources)
-- ⏳ T012 — WAL_MODE_TABLES set (5 tables >5 GB)
-- ⏳ T013 — prestaged_manifest.schema.json
-- ⏳ T014 — Extend SOURCE_TO_BRONZE_MODELS with depends_on/prestaged_kind
-- ⏳ T015 — compute_run_id() helper (deterministic hash)
-- ⏳ T016 — is_restorable_target() view-safety helper
-- ⏳ T017a — Migration 229: add `status text` + `details jsonb` to `meta.transform_runs` (also fixes P3)
-- ⏳ T017 — transform_runs_writer using the post-229 schema (append-only INSERTs, skip-if-complete idempotency)
-- ⏳ T018 — Fixture .dump files under tests/fixtures/prestaged/
-- ⏳ T019 — Verify tests/conftest.py provides Postgres 16 fixture + document in quickstart.md
+- ✅ T001 — Add `postgresql-client-16` to ingestion container image
+- ✅ T002 — Declare prestaged optional-deps group in pyproject.toml
+- ✅ T003 — Add scripts/prestaged_smoke.sh helper
+- ✅ T010 — Pydantic models: PrestagedArtifact, LoadStep, LoadPlan
+- ✅ T010a — prestaged.py skeleton with named stub functions (enables Stage 2 swarm file-disjoint)
+- ✅ T011 — SOURCE_LOAD_ORDER list (8 tiers, 120 sources)
+- ✅ T012 — WAL_MODE_TABLES set (5 tables >5 GB)
+- ✅ T013 — prestaged_manifest.schema.json
+- ✅ T014 — Extend SOURCE_TO_BRONZE_MODELS with depends_on/prestaged_kind
+- ✅ T015 — compute_run_id() helper (deterministic hash)
+- ✅ T016 — is_restorable_target() view-safety helper
+- ✅ T017a — Migration 229: add `status text` + `details jsonb` to `meta.transform_runs` (also fixes P3)
+- ✅ T017 — transform_runs_writer using the post-229 schema (append-only INSERTs, skip-if-complete idempotency)
+- ✅ T018 — Fixture .dump files under tests/fixtures/prestaged/
+- ✅ T019 — Verify tests/conftest.py provides Postgres 16 fixture + document in quickstart.md
 
 **Deferred from Stage 1** (with explicit reason + natural reschedule):
 - (none yet)
 
 ---
 
-## Stage 2 — Core restore engine + k8s manifest ⏳
+## Stage 2 — Core restore engine + k8s manifest ✅
 
 **Entry gate**: Stage 1 merged + post-merge validation passed
 **Exit gate type**: code-only-safe
@@ -54,19 +54,19 @@ Legend: ✅ closed · ⏳ in progress or next up · ⏸ deferred · ⛔ blocked
 **Budget**: `--max-budget-usd 10` per worker (default); max $20 across the stage
 **PR**: not opened
 
-- ⏳ T020 — walk_prestaged_root() supporting both layouts
-- ⏳ T021 — validate_magic_bytes() PGDMP check
-- ⏳ T022 — compute_sha256() with inode cache
-- ⏳ T023 — group_by_table() with lexical chunk ordering
-- ⏳ T024 — select_highest_tier() precedence resolver
-- ⏳ T025 — dispatch_pg_restore() subprocess with advisory lock
-- ⏳ T026 — run_step() orchestrator (view-check → restore → row-count → upsert)
-- ⏳ T027 — CLI main(argv) per contracts/cli.md
-- ⏳ T028 — Unit tests: walk_prestaged_root discovers both layouts
-- ⏳ T029 — Unit tests: validation rejects non-PGDMP file
-- ⏳ T030 — Unit tests: group_by_table orders numbered + retry_ chunks
-- ⏳ T031 — Integration test: restore small fixture .dump
-- ⏳ T032 — k8s Job manifest deploy/jobs/prestaged-hydrate.yaml
+- ✅ T020 — walk_prestaged_root() supporting both layouts
+- ✅ T021 — validate_magic_bytes() PGDMP check
+- ✅ T022 — compute_sha256() with inode cache
+- ✅ T023 — group_by_table() with lexical chunk ordering
+- ✅ T024 — select_highest_tier() precedence resolver
+- ✅ T025 — dispatch_pg_restore() subprocess with advisory lock
+- ✅ T026 — run_step() orchestrator (view-check → restore → row-count → upsert)
+- ✅ T027 — CLI main(argv) per contracts/cli.md
+- ✅ T028 — Unit tests: walk_prestaged_root discovers both layouts
+- ✅ T029 — Unit tests: validation rejects non-PGDMP file
+- ✅ T030 — Unit tests: group_by_table orders numbered + retry_ chunks
+- ✅ T031 — Integration test: restore small fixture .dump
+- ✅ T032 — k8s Job manifest deploy/jobs/prestaged-hydrate.yaml
 
 **Deferred from Stage 2** (with explicit reason + natural reschedule):
 - (none yet)
@@ -184,8 +184,10 @@ Legend: ✅ closed · ⏳ in progress or next up · ⏸ deferred · ⛔ blocked
 
 | Change | Where | Reversal |
 |---|---|---|
-
-(Populated as each stage closes. Empty until Stage 1 closes.)
+| Stage 1: migration 229 ALTER TABLE meta.transform_runs ADD COLUMN status text, details jsonb + 2 partial indexes | `meta.transform_runs` (applied when migration runner picks up 229) | `ALTER TABLE meta.transform_runs DROP COLUMN status, DROP COLUMN details;` (drops dependent indexes) |
+| Stage 1: Dockerfile installs postgresql-client-16 from PGDG | container image `dk-data` | revert Dockerfile commit |
+| Stage 1+2: new Python surface in `src/dk_data/ingestion/` (prestaged*.py, load_order.py, transform_runs_writer.py); not yet imported by any existing path | source tree only | `git revert` the merge commits; no DB rollback needed |
+| Stage 2: `deploy/jobs/prestaged-hydrate.yaml` shipped in repo, NOT yet auto-applied by ArgoCD | source tree | leave dormant or delete the file |
 
 ---
 
@@ -207,4 +209,6 @@ gate itself.)
 
 ## Next action
 
-Stage 1 code committed at `5db8648`. Run exit-gate verification: `docker build -t dk-data:stage1 .` (confirms postgresql-client-16 installs), apply migration 229 in a staging or dev DB, then open a PR from `feature/005-prestaged-hydration` → `main`. After merge, run `/dk.stage close` to advance to Stage 2 and launch `/dk.swarm`.
+Stage 1 + Stage 2 committed (HEAD `95b7644`). Local exit gates passed: module imports clean, `--dry-run` against empty fixture root emits 62 ordered JSON lines + summary (exit 0), `kubectl --dry-run=client apply -f deploy/jobs/prestaged-hydrate.yaml` validates. Remaining gates are user-driven: run the integration tests against a real Postgres + apply migration 229 on staging.
+
+Then advance to Stage 3 (load ordering + dependency resolution, T040–T044, sequential via `/dk.implement`).
