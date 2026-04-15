@@ -122,23 +122,23 @@ Phase 6 (Polish)
 
 ### Item 14: EMA PRAC safety signals
 
-- [ ] T030 [P2] Create `mol_silver.ema_prac_signals` SQLMesh model parsing PRAC records from `mol_bronze.ema` based on `action_type` / `document_type` field. Columns: `signal_id`, `drug_name`, `active_substance`, `signal_type`, `signal_date`, `outcome`, `document_url`. Add molecule crosswalk. Verify >= 50 rows, a known EMA safety review appears.
+- [x] T030 [P2] Create `mol_silver.ema_prac_signals` SQLMesh model parsing PRAC records from `mol_bronze.ema` based on `action_type` / `document_type` field. Columns: `signal_id`, `drug_name`, `active_substance`, `signal_type`, `signal_date`, `outcome`, `document_url`. Add molecule crosswalk. Verify >= 50 rows, a known EMA safety review appears.
 
 ### Item 15: FDA Drug Shortages
 
-- [ ] T031 [P2] Create fetcher + loader for openFDA Drug Shortages endpoint (`https://api.fda.gov/drug/drugshortages.json`). Write to `mol_raw.fda_drug_shortages`.
-- [ ] T032 [P2] Create bronze model `mol_bronze.fda_drug_shortages` with columns: `shortage_id`, `generic_name`, `brand_name`, `company`, `status`, `shortage_reason`, `shortage_start_date`, `shortage_end_date`, `affected_products` (JSONB), `notes`. Set cron to daily refresh.
-- [ ] T033 [P2] Create `mol_silver.fda_drug_shortages` with molecule crosswalk via normalized generic_name. Expose via PostgREST. Verify a known active shortage appears with correct status and start date.
+- [x] T031 [P2] Create fetcher + loader for openFDA Drug Shortages endpoint (`https://api.fda.gov/drug/drugshortages.json`). Write to `mol_raw.fda_drug_shortages`.
+- [x] T032 [P2] Create bronze model `mol_bronze.fda_drug_shortages` with columns: `shortage_id`, `generic_name`, `brand_name`, `company`, `status`, `shortage_reason`, `shortage_start_date`, `shortage_end_date`, `affected_products` (JSONB), `notes`. Set cron to daily refresh.
+- [x] T033 [P2] Create `mol_silver.fda_drug_shortages` with molecule crosswalk via normalized generic_name. Expose via PostgREST. Verify a known active shortage appears with correct status and start date.
 
 ### Item 16: FDA Companion Diagnostics
 
-- [ ] T034 [P2] Create scraper + loader for FDA CDx pairing list. Write to `mol_raw.fda_cdx_pairs`.
-- [ ] T035 [P2] Create bronze model `mol_bronze.fda_cdx_pairs` with columns: `cdx_id`, `device_name`, `manufacturer`, `intended_use`, `drug_trade_name`, `drug_generic_name`, `approval_date`, `submission_type`, `source_url`. Silver crosswalk to molecules via drug_generic_name. Verify >= 50 rows.
+- [x] T034 [P2] Create scraper + loader for FDA CDx pairing list. Write to `mol_raw.fda_cdx_pairs`.
+- [x] T035 [P2] Create bronze model `mol_bronze.fda_cdx_pairs` with columns: `cdx_id`, `device_name`, `manufacturer`, `intended_use`, `drug_trade_name`, `drug_generic_name`, `approval_date`, `submission_type`, `source_url`. Silver crosswalk to molecules via drug_generic_name. Verify >= 50 rows.
 
 ### Item 27: Other CMS/HRSA loader expansions
 
 **27a. CMS Part D Prescriber:**
-- [ ] T036 [P2] New migration: expand `hcs_raw.cms_part_d_prescriber` DDL to ~25-30 columns -- add `opioid_prescriber_rate`, `opioid_day_supply`, `long_acting_opioid_*`, antibiotic breakouts, branded-vs-generic splits.
+- [x] T036 [P2] New migration: expand `hcs_raw.cms_part_d_prescriber` DDL to ~25-30 columns -- add `opioid_prescriber_rate`, `opioid_day_supply`, `long_acting_opioid_*`, antibiotic breakouts, branded-vs-generic splits.
 - [ ] T037 [P2] Update Part D Prescriber loader to read all new columns from CMS PUF.
 - [ ] T038 [P2] Extend `hcs_bronze.cms_part_d_prescriber` SQLMesh model passthrough. Verify column count >= 25.
 
