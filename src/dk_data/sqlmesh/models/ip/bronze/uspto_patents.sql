@@ -41,6 +41,25 @@ SELECT
     -- Claims count
     r.claims_count AS num_claims,
 
+    -- T055/T057: expansion fields
+    r.cited_patents,
+    r.citing_patents,
+    r.npl_citations,
+    r.parent_application,
+    r.child_applications,
+    r.continuation_type,
+    r.claims_full_text,
+    r.assignment_events,
+    r.examiner_first_name,
+    r.examiner_last_name,
+    r.examiner_art_unit,
+    r.family_id,
+    r.equivalent_foreign_patents,
+    r.application_number,
+    r.publication_number,
+    r.priority_date,
+    r.ipc_codes,
+
     -- Determine if pharma-related based on CPC codes (ip_raw.uspto_patents.cpc_codes is TEXT[]; cast first)
     EXISTS (
         SELECT 1 FROM jsonb_array_elements_text(COALESCE(to_jsonb(r.cpc_codes), '[]'::JSONB)) AS code
