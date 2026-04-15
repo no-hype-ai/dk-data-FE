@@ -163,45 +163,45 @@ Phase 6 (Polish)
 
 ### Item 8: Treatment guidelines feed
 
-- [ ] T048 [P0] Create fetcher/loader infrastructure for guidelines. Create bronze model `mol_bronze.guidelines` with columns: `id` (UUID), `body` (TEXT), `title` (TEXT), `publication_date` (DATE), `version` (TEXT), `indication_icd11` (TEXT), `indication_name` (TEXT), `source_url` (TEXT), `full_text` (TEXT), `sections` (JSONB), `recommendations` (JSONB).
-- [ ] T049 [P0] Manual curation: ingest top 10-15 guidelines per therapeutic area. Target bodies: AAD, ACR, EADV, GINA, GOLD, NCCN, ESMO, ASCO. Verify >= 50 guidelines ingested.
-- [ ] T050 [P0] Create silver model `mol_silver.guidelines` with molecule and condition crosswalks. Expose via PostgREST. Verify AAD, ACR, GINA, NCCN each represented; each guideline has parseable `sections` JSONB.
-- [ ] T051 [P0] Establish quarterly maintenance cadence: document review schedule, add automated scraping for bodies with predictable formats, create monitoring for stale guidelines (> 6 months since last check).
+- [x] T048 [P0] Create fetcher/loader infrastructure for guidelines. Create bronze model `mol_bronze.guidelines` with columns: `id` (UUID), `body` (TEXT), `title` (TEXT), `publication_date` (DATE), `version` (TEXT), `indication_icd11` (TEXT), `indication_name` (TEXT), `source_url` (TEXT), `full_text` (TEXT), `sections` (JSONB), `recommendations` (JSONB).
+- [x] T049 [P0] Manual curation: ingest top 10-15 guidelines per therapeutic area. Target bodies: AAD, ACR, EADV, GINA, GOLD, NCCN, ESMO, ASCO. Verify >= 50 guidelines ingested.
+- [x] T050 [P0] Create silver model `mol_silver.guidelines` with molecule and condition crosswalks. Expose via PostgREST. Verify AAD, ACR, GINA, NCCN each represented; each guideline has parseable `sections` JSONB.
+- [x] T051 [P0] Establish quarterly maintenance cadence: document review schedule, add automated scraping for bodies with predictable formats, create monitoring for stale guidelines (> 6 months since last check).
 
 ### Item 10: EMA SmPC parser
 
-- [ ] T052 [P0] Build PDF parser for EMA SmPC canonical section structure: map 4.1-5.3 sections to FDA-equivalent column names (4.1 -> `indications_and_usage`, 4.2 -> `dosage_and_administration`, 4.3 -> `contraindications`, 4.4 -> `warnings_and_cautions`, 4.5 -> `drug_interactions`, 4.6 -> `pregnancy` + `nursing_mothers`, 4.7 -> `use_in_specific_populations`, 4.8 -> `adverse_reactions`, 4.9 -> `overdosage`, 5.1 -> `pharmacodynamics`, 5.2 -> `pharmacokinetics`, 5.3 -> `nonclinical_toxicology`).
-- [ ] T053 [P0] Create silver model `mol_silver.drug_labels_ema` with same column structure as `mol_silver.drug_labels`. Crosswalk to molecules via `mol_silver.ema_regulatory` linkage. Expose via PostgREST.
-- [ ] T054 [P0] Validate parsing quality: run parser against 50-SmPC validation set, verify >= 90% section-header accuracy. Verify Dupixent EU SmPC sections 4.1-5.3 parsed and non-null. Verify >= 500 SmPCs total.
+- [x] T052 [P0] Build PDF parser for EMA SmPC canonical section structure: map 4.1-5.3 sections to FDA-equivalent column names (4.1 -> `indications_and_usage`, 4.2 -> `dosage_and_administration`, 4.3 -> `contraindications`, 4.4 -> `warnings_and_cautions`, 4.5 -> `drug_interactions`, 4.6 -> `pregnancy` + `nursing_mothers`, 4.7 -> `use_in_specific_populations`, 4.8 -> `adverse_reactions`, 4.9 -> `overdosage`, 5.1 -> `pharmacodynamics`, 5.2 -> `pharmacokinetics`, 5.3 -> `nonclinical_toxicology`).
+- [x] T053 [P0] Create silver model `mol_silver.drug_labels_ema` with same column structure as `mol_silver.drug_labels`. Crosswalk to molecules via `mol_silver.ema_regulatory` linkage. Expose via PostgREST.
+- [x] T054 [P0] Validate parsing quality: run parser against 50-SmPC validation set, verify >= 90% section-header accuracy. Verify Dupixent EU SmPC sections 4.1-5.3 parsed and non-null. Verify >= 500 SmPCs total.
 
 ### Item 28: IP patent/trademark loader expansions
 
 **28a. USPTO Patents:**
-- [ ] T055 [P1] New migration: expand `ip_raw.uspto_patents` DDL from ~10 to ~50 columns -- add `cited_patents` (JSONB), `citing_patents` (JSONB), `npl_citations` (JSONB), `parent_application` (TEXT), `child_applications` (JSONB), `continuation_type` (TEXT), `claims_full_text` (TEXT), `assignment_events` (JSONB), `examiner_first_name`, `examiner_last_name`, `examiner_art_unit`, `family_id`, `equivalent_foreign_patents` (JSONB), `application_number`, `publication_number`, `priority_date`, IPC codes (TEXT[]).
-- [ ] T056 [P1] Update USPTO patents loader to read all fields from PatentsView API. Preserve deeply nested fields (citations, family members, assignment events) as JSONB arrays.
-- [ ] T057 [P1] Extend `ip_bronze.uspto_patents` SQLMesh model passthrough to include every new column.
-- [ ] T058 [P1] Verify `cited_patents`, `citing_patents`, `parent_application`, `claims_full_text` populated.
+- [x] T055 [P1] New migration: expand `ip_raw.uspto_patents` DDL from ~10 to ~50 columns -- add `cited_patents` (JSONB), `citing_patents` (JSONB), `npl_citations` (JSONB), `parent_application` (TEXT), `child_applications` (JSONB), `continuation_type` (TEXT), `claims_full_text` (TEXT), `assignment_events` (JSONB), `examiner_first_name`, `examiner_last_name`, `examiner_art_unit`, `family_id`, `equivalent_foreign_patents` (JSONB), `application_number`, `publication_number`, `priority_date`, IPC codes (TEXT[]).
+- [x] T056 [P1] Update USPTO patents loader to read all fields from PatentsView API. Preserve deeply nested fields (citations, family members, assignment events) as JSONB arrays.
+- [x] T057 [P1] Extend `ip_bronze.uspto_patents` SQLMesh model passthrough to include every new column.
+- [x] T058 [P1] Verify `cited_patents`, `citing_patents`, `parent_application`, `claims_full_text` populated.
 
 **28b. EPO Patents:**
-- [ ] T059 [P1] New migration: expand `ip_raw.epo_patents` DDL from ~9 to ~35 columns -- add `priority_claims` (JSONB), `family_members` (JSONB), `abstract_en`, `abstract_fr`, `abstract_de`, `legal_status_events` (JSONB), `designated_states` (JSONB), `grant_date`, `cited_patents` (JSONB).
-- [ ] T060 [P1] Update EPO patents loader to read all fields from EPO OPS API.
-- [ ] T061 [P1] Extend `ip_bronze.epo_patents` SQLMesh model passthrough.
-- [ ] T062 [P1] Verify `family_members`, `priority_claims`, `legal_status_events` populated.
+- [x] T059 [P1] New migration: expand `ip_raw.epo_patents` DDL from ~9 to ~35 columns -- add `priority_claims` (JSONB), `family_members` (JSONB), `abstract_en`, `abstract_fr`, `abstract_de`, `legal_status_events` (JSONB), `designated_states` (JSONB), `grant_date`, `cited_patents` (JSONB).
+- [x] T060 [P1] Update EPO patents loader to read all fields from EPO OPS API.
+- [x] T061 [P1] Extend `ip_bronze.epo_patents` SQLMesh model passthrough.
+- [x] T062 [P1] Verify `family_members`, `priority_claims`, `legal_status_events` populated.
 
 **28c. USPTO Trademarks:**
-- [ ] T063 [P1] New migration: expand `ip_raw.uspto_trademarks` DDL from ~15 to ~40 columns -- add `case_file_statements` (JSONB), `owner_events` (JSONB), `assignments` (JSONB), `prosecution_history` (JSONB), `tta_proceedings` (JSONB), `renewal_events` (JSONB), Madrid Protocol linkage (TEXT), `mark_image_url` (TEXT).
-- [ ] T064 [P1] Update USPTO trademarks loader to read all fields from TESS/TSDR.
-- [ ] T065 [P1] Extend `ip_bronze.uspto_trademarks` SQLMesh model passthrough. Verify `case_file_statements`, `oppositions` (via `tta_proceedings`), `assignments` populated.
+- [x] T063 [P1] New migration: expand `ip_raw.uspto_trademarks` DDL from ~15 to ~40 columns -- add `case_file_statements` (JSONB), `owner_events` (JSONB), `assignments` (JSONB), `prosecution_history` (JSONB), `tta_proceedings` (JSONB), `renewal_events` (JSONB), Madrid Protocol linkage (TEXT), `mark_image_url` (TEXT).
+- [x] T064 [P1] Update USPTO trademarks loader to read all fields from TESS/TSDR.
+- [x] T065 [P1] Extend `ip_bronze.uspto_trademarks` SQLMesh model passthrough. Verify `case_file_statements`, `oppositions` (via `tta_proceedings`), `assignments` populated.
 
 **28d. EUIPO Trademarks:**
-- [ ] T066 [P1] New migration: expand `ip_raw.euipo_trademarks` DDL from ~15 to ~35 columns -- add `oppositions` (JSONB), `cancellations` (JSONB), `seniorities` (JSONB), `priority_claims` (JSONB), `vienna_codes` (JSONB), `publication_events` (JSONB), owner change history (JSONB), `acquired_distinctiveness_flag` (BOOLEAN).
-- [ ] T067 [P1] Update EUIPO trademarks loader to read all fields from EUIPO/TMview JSON API.
-- [ ] T068 [P1] Extend `ip_bronze.euipo_trademarks` SQLMesh model passthrough. Verify `oppositions`, `cancellations`, `seniorities` populated.
+- [x] T066 [P1] New migration: expand `ip_raw.euipo_trademarks` DDL from ~15 to ~35 columns -- add `oppositions` (JSONB), `cancellations` (JSONB), `seniorities` (JSONB), `priority_claims` (JSONB), `vienna_codes` (JSONB), `publication_events` (JSONB), owner change history (JSONB), `acquired_distinctiveness_flag` (BOOLEAN).
+- [x] T067 [P1] Update EUIPO trademarks loader to read all fields from EUIPO/TMview JSON API.
+- [x] T068 [P1] Extend `ip_bronze.euipo_trademarks` SQLMesh model passthrough. Verify `oppositions`, `cancellations`, `seniorities` populated.
 
 **New silver views (depend on bronze tasks above):**
-- [ ] T069 [P1] Create `ip_silver.patent_families` -- one row per `family_id` with member patents from both USPTO and EPO. Verify dupilumab composition-of-matter family returns all members.
-- [ ] T070 [P1] Create `ip_silver.patent_citations` -- edge list of patent-to-patent citations from both USPTO and EPO.
-- [ ] T071 [P1] Create `ip_silver.trademark_oppositions` -- one row per opposition event from both USPTO (via `tta_proceedings`) and EUIPO (via `oppositions`).
+- [x] T069 [P1] Create `ip_silver.patent_families` -- one row per `family_id` with member patents from both USPTO and EPO. Verify dupilumab composition-of-matter family returns all members.
+- [x] T070 [P1] Create `ip_silver.patent_citations` -- edge list of patent-to-patent citations from both USPTO and EPO.
+- [x] T071 [P1] Create `ip_silver.trademark_oppositions` -- one row per opposition event from both USPTO (via `tta_proceedings`) and EUIPO (via `oppositions`).
 
 ### Item 9: FDA enforcement actions
 
