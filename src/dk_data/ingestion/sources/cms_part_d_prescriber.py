@@ -58,6 +58,27 @@ COLUMN_MAPPING = {
     # CMS suppression flag: 'Y' when beneficiary count is suppressed
     'GE65_Bene_Sprsn_Flag':   'ge65_bene_sprsn_flag',
     'GE65_Tot_Benes':         'ge65_tot_benes',
+    # Opioid metrics
+    'Opioid_Prscrbr_Rate':    'opioid_prescriber_rate',
+    'Opioid_Tot_Day_Suply':   'opioid_day_supply',
+    'Opioid_LA_Tot_Clms':     'long_acting_opioid_claims',
+    'Opioid_LA_Tot_Drug_Cst': 'long_acting_opioid_cost',
+    'LA_Opioid_Tot_Clms':     'long_acting_opioid_claims',
+    'LA_Opioid_Tot_Drug_Cst': 'long_acting_opioid_cost',
+    # Antibiotic metrics
+    'Antbtc_Tot_Clms':        'antibiotic_claims',
+    'Antbtc_Tot_Drug_Cst':    'antibiotic_cost',
+    # Branded vs generic metrics
+    'Brnd_Tot_Clms':          'branded_claims',
+    'Brnd_Tot_Drug_Cst':      'branded_cost',
+    'Gnrc_Tot_Clms':          'generic_claims',
+    'Gnrc_Tot_Drug_Cst':      'generic_cost',
+    # Beneficiary demographics
+    'Bene_Age_65_74_Cnt':     'beneficiary_age_65_74_count',
+    'Bene_Age_75_84_Cnt':     'beneficiary_age_75_84_count',
+    'Bene_Age_GT84_Cnt':      'beneficiary_age_85plus_count',
+    'Bene_Feml_Cnt':          'beneficiary_female_count',
+    'Bene_Male_Cnt':          'beneficiary_male_count',
 }
 
 TABLE  = 'cms_part_d_prescriber'
@@ -151,6 +172,21 @@ def load_cms_part_d_prescriber(filepath: Optional[str] = None, rows: Optional[Li
                 ge65_tot_day_suply=int(float(row['ge65_tot_day_suply'])) if pd.notna(row.get('ge65_tot_day_suply')) else None,
                 ge65_bene_sprsn_flag=row.get('ge65_bene_sprsn_flag') or None,
                 ge65_tot_benes=int(float(row['ge65_tot_benes'])) if pd.notna(row.get('ge65_tot_benes')) else None,
+                opioid_prescriber_rate=float(row['opioid_prescriber_rate']) if pd.notna(row.get('opioid_prescriber_rate')) else None,
+                opioid_day_supply=float(row['opioid_day_supply']) if pd.notna(row.get('opioid_day_supply')) else None,
+                long_acting_opioid_claims=float(row['long_acting_opioid_claims']) if pd.notna(row.get('long_acting_opioid_claims')) else None,
+                long_acting_opioid_cost=float(row['long_acting_opioid_cost']) if pd.notna(row.get('long_acting_opioid_cost')) else None,
+                antibiotic_claims=float(row['antibiotic_claims']) if pd.notna(row.get('antibiotic_claims')) else None,
+                antibiotic_cost=float(row['antibiotic_cost']) if pd.notna(row.get('antibiotic_cost')) else None,
+                branded_claims=float(row['branded_claims']) if pd.notna(row.get('branded_claims')) else None,
+                branded_cost=float(row['branded_cost']) if pd.notna(row.get('branded_cost')) else None,
+                generic_claims=float(row['generic_claims']) if pd.notna(row.get('generic_claims')) else None,
+                generic_cost=float(row['generic_cost']) if pd.notna(row.get('generic_cost')) else None,
+                beneficiary_age_65_74_count=int(float(row['beneficiary_age_65_74_count'])) if pd.notna(row.get('beneficiary_age_65_74_count')) else None,
+                beneficiary_age_75_84_count=int(float(row['beneficiary_age_75_84_count'])) if pd.notna(row.get('beneficiary_age_75_84_count')) else None,
+                beneficiary_age_85plus_count=int(float(row['beneficiary_age_85plus_count'])) if pd.notna(row.get('beneficiary_age_85plus_count')) else None,
+                beneficiary_female_count=int(float(row['beneficiary_female_count'])) if pd.notna(row.get('beneficiary_female_count')) else None,
+                beneficiary_male_count=int(float(row['beneficiary_male_count'])) if pd.notna(row.get('beneficiary_male_count')) else None,
                 _source_year=source_year,
             )
             d = rec.model_dump(by_alias=True)

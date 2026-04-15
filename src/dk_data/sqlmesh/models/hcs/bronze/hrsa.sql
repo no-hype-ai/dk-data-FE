@@ -36,6 +36,17 @@ SELECT
     hpsa_score::INTEGER AS score,
     rural_status::TEXT AS status,
 
+    -- Item 27d: HRSA expansion columns
+    hpsa_status_code,
+    designation_history,
+    provider_count,
+    primary_care_physician_count,
+    dental_provider_count,
+    mental_health_provider_count,
+    mua_status,
+    mua_score,
+    withdrawn_date,
+
     -- Raw source tracking
     id::BIGINT AS raw_source_id,
     'hrsa_shortage_areas' AS source,
