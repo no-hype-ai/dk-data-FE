@@ -53,6 +53,15 @@ except Exception:  # pragma: no cover — defensive
 
     DK_ARTIFACT_SIZE_MISMATCH_TOTAL = _NoopCounter()
 
+# Provenance writer is optional at import time — when the ingestion DB is
+# unreachable (local tooling, unit tests without a DB), provenance writes
+# become no-ops. Import failure here must never prevent a download; see
+# plan §C.4 ("Failure in record() must NOT fail the download").
+try:
+    from dk_data.ingestion.common.integrity import ArtifactProvenanceWriter
+except Exception:  # pragma: no cover — defensive
+    ArtifactProvenanceWriter = None  # type: ignore[assignment, misc]
+
 DOWNLOAD_DIR = Path(os.getenv("CMS_DOWNLOAD_DIR", "/tmp/cms_downloads"))
 _CATALOG_CACHE_PATH = DOWNLOAD_DIR / "_cms_catalog.json"
 _CATALOG_MAX_AGE_DAYS = 1
@@ -541,26 +550,35 @@ def _stream_to_file(
 
 def _attempt_download(
     url: str, tmp_path: Path, source_name: str
-) -> tuple[Optional[int], Optional[int], Optional[str]]:
+) -> tuple[Optional[int], Optional[int], Optional[str], dict]:
     """Single download attempt.
 
-    Returns ``(written, content_length, content_type)`` on success, or
-    ``(None, None, None)`` on size-mismatch/empty/network failure.  The
+    Returns ``(written, content_length, content_type, headers)`` on success,
+    or ``(None, None, None, {})`` on empty/network failure.  On Content-
+    Length mismatch returns ``(None, content_length, content_type, headers)``
+    so the caller can still log provenance for the failed attempt.  The
     caller owns deletion of ``tmp_path`` on ``None`` responses.
+
+    ``headers`` is a plain-dict snapshot of the HTTP response headers, with
+    the keys preserved as the server sent them — the integrity writer does
+    a case-insensitive lookup so either casing works downstream.
     """
     try:
         resp = requests.get(url, stream=True, timeout=REQUEST_TIMEOUT)
         resp.raise_for_status()
     except requests.RequestException as exc:
         logger.error(f"Download failed for {source_name}: {exc}")
-        return None, None, None
+        return None, None, None, {}
 
+    # Snapshot headers before we consume the body — after iter_content the
+    # connection may be closed and server trailers lost.
+    headers = dict(resp.headers)
     content_type = resp.headers.get("content-type", "")
     written, content_length = _stream_to_file(resp, tmp_path)
 
     if written == 0:
         logger.error(f"Downloaded empty file for {source_name}")
-        return None, content_length, content_type
+        return None, content_length, content_type, headers
 
     if content_length is not None and written != content_length:
         logger.warning(
@@ -571,9 +589,9 @@ def _attempt_download(
             url,
         )
         DK_ARTIFACT_SIZE_MISMATCH_TOTAL.labels(source=source_name).inc()
-        return None, content_length, content_type
+        return None, content_length, content_type, headers
 
-    return written, content_length, content_type
+    return written, content_length, content_type, headers
 
 
 def _write_sidecar(
@@ -595,6 +613,64 @@ def _write_sidecar(
     if content_length is not None:
         lines.append(f"content_length={content_length}")
     sidecar.write_text("\n".join(lines) + "\n")
+
+
+def _derive_source_name_from_cache(cache_path: Path) -> str:
+    """Derive a stable source_name from a cache-file path.
+
+    The CMS cache layout puts every artifact at a path like
+    ``/tmp/cms_downloads/cms_part_d_spending_2023.csv`` (or ``.zip``,
+    ``.json``). For provenance grouping we want ``cms_part_d_spending`` —
+    the source key, independent of year and extension. The public API
+    ``download_cms_files`` receives ``source_name`` directly, so this
+    helper is only used as a fallback / sanity check.
+    """
+    stem = cache_path.stem  # drop extension
+    # Trailing _NNNN (4-digit year) is the common case. Anything else is
+    # already a bare source key.
+    parts = stem.rsplit("_", 1)
+    if len(parts) == 2 and parts[1].isdigit() and len(parts[1]) == 4:
+        return parts[0]
+    return stem
+
+
+def _record_provenance(
+    *,
+    source_name: str,
+    source_url: str,
+    local_path: Path,
+    headers: dict,
+    bytes_written: int,
+    sha256: str,
+) -> None:
+    """Best-effort write to ``meta.artifact_provenance``.
+
+    Per plan §C.4 a provenance-write failure MUST NOT fail the download —
+    any exception (including the optional import itself being absent) is
+    swallowed here so the caller never has to guard.
+    """
+    if ArtifactProvenanceWriter is None:
+        return
+    writer = None
+    try:
+        writer = ArtifactProvenanceWriter()
+        writer.record_swallow(
+            source_name=source_name,
+            source_url=source_url,
+            local_path=str(local_path),
+            headers_dict=headers,
+            bytes_written=bytes_written,
+            sha256=sha256,
+        )
+    except Exception as exc:  # noqa: BLE001 — defensive, record_swallow is already non-raising
+        logger.warning(
+            "Provenance writer could not be constructed for %s (%s); continuing",
+            source_name,
+            exc,
+        )
+    finally:
+        if writer is not None:
+            writer.close()
 
 
 def _extract_all(zip_path: Path, target_dir: Path) -> list[Path]:
@@ -704,8 +780,9 @@ def download_cms_files(
 
     tmp_path = cache_path.with_suffix(".tmp")
 
+    headers: dict = {}
     for attempt in (1, 2):
-        written, content_length, content_type = _attempt_download(
+        written, content_length, content_type, headers = _attempt_download(
             url, tmp_path, source_name
         )
         if written is not None:
@@ -760,6 +837,14 @@ def download_cms_files(
 
             sha256 = _compute_file_sha256(cache_path)
             _write_sidecar(source_name, year, cache_path, content_length, sha256)
+            _record_provenance(
+                source_name=source_name,
+                source_url=url,
+                local_path=cache_path,
+                headers=headers,
+                bytes_written=cache_path.stat().st_size,
+                sha256=sha256,
+            )
 
             total_bytes = sum(p.stat().st_size for p in extracted)
             logger.info(
@@ -777,6 +862,14 @@ def download_cms_files(
         tmp_path.rename(cache_path)
         sha256 = _compute_file_sha256(cache_path)
         _write_sidecar(source_name, year, cache_path, content_length, sha256)
+        _record_provenance(
+            source_name=source_name,
+            source_url=url,
+            local_path=cache_path,
+            headers=headers,
+            bytes_written=cache_path.stat().st_size,
+            sha256=sha256,
+        )
         logger.info(
             "Downloaded %s year=%d: %.1f MB, sha256=%s",
             source_name,
