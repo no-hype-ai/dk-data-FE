@@ -4,17 +4,18 @@
   },
   "dashboard": {
     "uid": "dk-data-fe-source-registry",
-    "title": "dk-data Source Registry (stub)",
-    "description": "Stub \u2014 see plan.md \u00a7J.3, \u00a7D.2, \u00a7F",
+    "title": "dk-data Source Registry",
+    "description": "Source inventory health: freshness buckets, stale-source count, per-source last-success heatmap (plan.md \u00a7C.6, \u00a7D.2, \u00a7F).",
     "tags": [
       "dk-data-fe",
-      "stub"
+      "source-registry",
+      "observability"
     ],
     "schemaVersion": 39,
     "editable": true,
-    "refresh": "",
+    "refresh": "1m",
     "time": {
-      "from": "now-6h",
+      "from": "now-24h",
       "to": "now"
     },
     "timepicker": {},
@@ -29,17 +30,375 @@
       {
         "id": 1,
         "type": "text",
-        "title": "TODO",
+        "title": "About this dashboard",
         "gridPos": {
-          "h": 8,
+          "h": 3,
           "w": 24,
           "x": 0,
           "y": 0
         },
         "options": {
           "mode": "markdown",
-          "content": "## TODO \u2014 placeholder stub\n\n**Plan section:** plan.md \u00a7J.3, \u00a7D.2, \u00a7F\n\nSource count by tier/domain/status (stub/fetcher_ready/live), onboarding velocity. TODO: depends on meta.source_registry migration.\n\nThis dashboard will be fleshed out in a follow-up PR once the upstream migrations / views referenced above land. The UID is locked in now so links from runbooks and alerts resolve as soon as content ships."
+          "content": "**Source-registry observability** \u2014 plan.md \u00a7C.6, \u00a7D.2, \u00a7F. Cross-cutting view across all sources: how many are fresh vs stale, which are the oldest, total download volume. Emission depends on the feature/005-prestaged-hydration follow-up."
         }
+      },
+      {
+        "id": 2,
+        "type": "stat",
+        "title": "Total sources reporting",
+        "description": "Number of distinct sources that have emitted at least one dk_source_last_success_timestamp.",
+        "datasource": {
+          "type": "prometheus",
+          "uid": "prometheus"
+        },
+        "gridPos": {
+          "h": 4,
+          "w": 6,
+          "x": 0,
+          "y": 3
+        },
+        "fieldConfig": {
+          "defaults": {
+            "unit": "none",
+            "color": {
+              "mode": "thresholds"
+            },
+            "thresholds": {
+              "mode": "absolute",
+              "steps": [
+                { "color": "red", "value": null },
+                { "color": "yellow", "value": 10 },
+                { "color": "green", "value": 50 }
+              ]
+            }
+          },
+          "overrides": []
+        },
+        "options": {
+          "colorMode": "background",
+          "graphMode": "area",
+          "justifyMode": "auto",
+          "reduceOptions": {
+            "calcs": ["lastNotNull"],
+            "fields": "",
+            "values": false
+          },
+          "textMode": "value"
+        },
+        "targets": [
+          {
+            "expr": "count(dk_source_last_success_timestamp)",
+            "legendFormat": "sources",
+            "refId": "A"
+          }
+        ]
+      },
+      {
+        "id": 3,
+        "type": "stat",
+        "title": "Fresh (< 1 h)",
+        "description": "Sources successfully hydrated within the last hour.",
+        "datasource": {
+          "type": "prometheus",
+          "uid": "prometheus"
+        },
+        "gridPos": {
+          "h": 4,
+          "w": 6,
+          "x": 6,
+          "y": 3
+        },
+        "fieldConfig": {
+          "defaults": {
+            "unit": "none",
+            "color": {
+              "mode": "thresholds"
+            },
+            "thresholds": {
+              "mode": "absolute",
+              "steps": [
+                { "color": "red", "value": null },
+                { "color": "yellow", "value": 1 },
+                { "color": "green", "value": 10 }
+              ]
+            }
+          },
+          "overrides": []
+        },
+        "options": {
+          "colorMode": "background",
+          "graphMode": "area",
+          "justifyMode": "auto",
+          "reduceOptions": {
+            "calcs": ["lastNotNull"],
+            "fields": "",
+            "values": false
+          },
+          "textMode": "value"
+        },
+        "targets": [
+          {
+            "expr": "count(((time() - dk_source_last_success_timestamp) / 3600) < 1)",
+            "legendFormat": "< 1 h",
+            "refId": "A"
+          }
+        ]
+      },
+      {
+        "id": 4,
+        "type": "stat",
+        "title": "Stale (1 h \u2013 24 h)",
+        "description": "Sources whose last success is between 1 hour and 24 hours ago.",
+        "datasource": {
+          "type": "prometheus",
+          "uid": "prometheus"
+        },
+        "gridPos": {
+          "h": 4,
+          "w": 6,
+          "x": 12,
+          "y": 3
+        },
+        "fieldConfig": {
+          "defaults": {
+            "unit": "none",
+            "color": {
+              "mode": "thresholds"
+            },
+            "thresholds": {
+              "mode": "absolute",
+              "steps": [
+                { "color": "green", "value": null },
+                { "color": "yellow", "value": 5 },
+                { "color": "red", "value": 20 }
+              ]
+            }
+          },
+          "overrides": []
+        },
+        "options": {
+          "colorMode": "background",
+          "graphMode": "area",
+          "justifyMode": "auto",
+          "reduceOptions": {
+            "calcs": ["lastNotNull"],
+            "fields": "",
+            "values": false
+          },
+          "textMode": "value"
+        },
+        "targets": [
+          {
+            "expr": "count(((time() - dk_source_last_success_timestamp) / 3600 >= 1) and ((time() - dk_source_last_success_timestamp) / 3600 < 24))",
+            "legendFormat": "1 h\u201324 h",
+            "refId": "A"
+          }
+        ]
+      },
+      {
+        "id": 5,
+        "type": "stat",
+        "title": "Stale > 24 h (alertable)",
+        "description": "Sources whose last success is older than 24 hours. Default SLO breach threshold \u2014 three consecutive samples here fire the HydrationSourceStale alert.",
+        "datasource": {
+          "type": "prometheus",
+          "uid": "prometheus"
+        },
+        "gridPos": {
+          "h": 4,
+          "w": 6,
+          "x": 18,
+          "y": 3
+        },
+        "fieldConfig": {
+          "defaults": {
+            "unit": "none",
+            "color": {
+              "mode": "thresholds"
+            },
+            "thresholds": {
+              "mode": "absolute",
+              "steps": [
+                { "color": "green", "value": null },
+                { "color": "yellow", "value": 1 },
+                { "color": "red", "value": 5 }
+              ]
+            }
+          },
+          "overrides": []
+        },
+        "options": {
+          "colorMode": "background",
+          "graphMode": "area",
+          "justifyMode": "auto",
+          "reduceOptions": {
+            "calcs": ["lastNotNull"],
+            "fields": "",
+            "values": false
+          },
+          "textMode": "value"
+        },
+        "targets": [
+          {
+            "expr": "count(((time() - dk_source_last_success_timestamp) / 3600) >= 24)",
+            "legendFormat": "> 24 h",
+            "refId": "A"
+          }
+        ]
+      },
+      {
+        "id": 6,
+        "type": "bargauge",
+        "title": "Sources by freshness bucket",
+        "description": "Count of sources in each bucket: < 1 h, 1\u201324 h, 1\u20137 d, > 7 d. Uses dk_source_last_success_timestamp.",
+        "datasource": {
+          "type": "prometheus",
+          "uid": "prometheus"
+        },
+        "gridPos": {
+          "h": 10,
+          "w": 12,
+          "x": 0,
+          "y": 7
+        },
+        "fieldConfig": {
+          "defaults": {
+            "unit": "none",
+            "color": {
+              "mode": "thresholds"
+            },
+            "thresholds": {
+              "mode": "absolute",
+              "steps": [
+                { "color": "green", "value": null }
+              ]
+            }
+          },
+          "overrides": []
+        },
+        "options": {
+          "displayMode": "gradient",
+          "orientation": "horizontal",
+          "reduceOptions": {
+            "calcs": ["lastNotNull"],
+            "fields": "",
+            "values": false
+          },
+          "showUnfilled": true
+        },
+        "targets": [
+          {
+            "expr": "count(((time() - dk_source_last_success_timestamp)) < 3600)",
+            "legendFormat": "< 1 h",
+            "refId": "A"
+          },
+          {
+            "expr": "count(((time() - dk_source_last_success_timestamp) >= 3600) and ((time() - dk_source_last_success_timestamp) < 86400))",
+            "legendFormat": "1 h \u2013 24 h",
+            "refId": "B"
+          },
+          {
+            "expr": "count(((time() - dk_source_last_success_timestamp) >= 86400) and ((time() - dk_source_last_success_timestamp) < 604800))",
+            "legendFormat": "1 \u2013 7 d",
+            "refId": "C"
+          },
+          {
+            "expr": "count(((time() - dk_source_last_success_timestamp) >= 604800))",
+            "legendFormat": "> 7 d",
+            "refId": "D"
+          }
+        ]
+      },
+      {
+        "id": 7,
+        "type": "table",
+        "title": "Per-source freshness (hours since last success)",
+        "description": "Ranked table of every source by staleness. Uses dk_source_last_success_timestamp. Top of the list = needs attention.",
+        "datasource": {
+          "type": "prometheus",
+          "uid": "prometheus"
+        },
+        "gridPos": {
+          "h": 10,
+          "w": 12,
+          "x": 12,
+          "y": 7
+        },
+        "fieldConfig": {
+          "defaults": {
+            "unit": "h",
+            "decimals": 1,
+            "custom": {
+              "align": "right"
+            }
+          },
+          "overrides": []
+        },
+        "options": {
+          "showHeader": true,
+          "sortBy": [
+            {
+              "desc": true,
+              "displayName": "Value"
+            }
+          ]
+        },
+        "targets": [
+          {
+            "expr": "(time() - dk_source_last_success_timestamp) / 3600",
+            "format": "table",
+            "instant": true,
+            "legendFormat": "__auto",
+            "refId": "A"
+          }
+        ]
+      },
+      {
+        "id": 8,
+        "type": "timeseries",
+        "title": "Total bytes downloaded across all sources (rate)",
+        "description": "Aggregate download throughput. Cross-reference with per-source bytes panel on the Hydration dashboard to see which source is driving volume spikes.",
+        "datasource": {
+          "type": "prometheus",
+          "uid": "prometheus"
+        },
+        "gridPos": {
+          "h": 8,
+          "w": 24,
+          "x": 0,
+          "y": 17
+        },
+        "fieldConfig": {
+          "defaults": {
+            "unit": "Bps",
+            "color": {
+              "mode": "palette-classic"
+            },
+            "custom": {
+              "drawStyle": "line",
+              "lineInterpolation": "linear",
+              "fillOpacity": 20
+            }
+          },
+          "overrides": []
+        },
+        "options": {
+          "legend": {
+            "displayMode": "list",
+            "placement": "bottom"
+          },
+          "tooltip": {
+            "mode": "multi",
+            "sort": "desc"
+          }
+        },
+        "targets": [
+          {
+            "expr": "sum by (kind) (rate(dk_artifact_bytes_total[5m]))",
+            "legendFormat": "{{kind}}",
+            "refId": "A"
+          }
+        ]
       }
     ]
   }

@@ -176,6 +176,27 @@ EMISSION_ALLOWLIST: dict[str, str] = {
     for name in _DEAD_METRICS_002_RATCHET
 }
 
+# -----------------------------------------------------------------------------
+# Horizon 2 / plan §C.6 — hydration observability expansion.
+#
+# These three metrics are DEFINED in observability/metrics.py and VISUALIZED
+# on grafana/dashboards/applications/dk-data-fe-{hydration,source-registry}.json.
+# Their EMISSION sites live in the prestaged hydration pipeline on
+# feature/005-prestaged-hydration and will land in a follow-up PR after
+# feature/005 merges to main. Allowlisted until that follow-up — the follow-up
+# PR must remove these entries in the same commit that wires up the emission.
+# -----------------------------------------------------------------------------
+_HYDRATION_C6_PENDING = [
+    "DK_HYDRATION_PHASE_SECONDS",
+    "DK_ARTIFACT_BYTES_TOTAL",
+    "DK_SOURCE_LAST_SUCCESS_TIMESTAMP",
+]
+for _name in _HYDRATION_C6_PENDING:
+    EMISSION_ALLOWLIST[_name] = (
+        "plan §C.6 — emission lands with feature/005-prestaged-hydration "
+        "follow-up; dashboards already consume the metric"
+    )
+
 METRIC_DEFINITION_PATTERN = re.compile(
     r"^([A-Z][A-Z0-9_]+)\s*=\s*(Counter|Gauge|Histogram)\s*\(",
     re.MULTILINE,
