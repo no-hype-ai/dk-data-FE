@@ -67,6 +67,9 @@ src/dk_data/data/raw/
 !grafana/dashboards/*.json
 !packages/**/*.json
 !.dk/**/*.json
+# Source-of-truth JSON schemas checked into the ingestion package
+# (plan.md §B.3 — prestaged manifest gate).
+!src/dk_data/**/*.schema.json
 
 # SQLMesh cache and state
 .sqlmesh/
