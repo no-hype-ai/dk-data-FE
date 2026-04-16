@@ -393,9 +393,12 @@ def run_step(
         conn.commit()
         return RunStepOutcome(status="skipped_view", row_count=0, error_detail=None)
 
-    # 2b. WAL-aware pre-flight (FR-007/FR-008) for the 5 tables >5 GB
+    # 2b. WAL-aware pre-flight (FR-007/FR-008) for the 5 tables >5 GB.
+    # Pass step.source_id so the throttle enforces the per-source pause
+    # budget (plan §C.2 / DEFAULT_PER_SOURCE_BUDGET_SECONDS) — one bad
+    # source cannot drain the entire run-level budget.
     if step.wal_mode and throttle is not None:
-        throttle.maybe_pause()
+        throttle.maybe_pause(source_id=step.source_id)
 
     # 3. Per-chunk dispatch
     # pg_url is computed lazily here (not at function entry) so idempotency /
@@ -736,12 +739,19 @@ def main(argv: list[str] | None = None) -> int:
     writer = TransformRunsWriter(conn)
 
     # FR-007/008: configurable from env at call site; defaults match plan.md
+    # WAL_PAUSE_BUDGET_PER_SOURCE_SECONDS (plan §C.2) caps how much of
+    # the run-level budget any one source can consume — defaults to half
+    # of the typical p95 pause (180s) so a single pathological source
+    # cannot drain the whole budget.
     throttle = WalThrottle(
         conn=conn,
         high_pct=float(os.environ.get("WAL_PAUSE_HIGH_PCT", "70")),
         low_pct=float(os.environ.get("WAL_PAUSE_LOW_PCT", "40")),
         downshift_threshold=int(os.environ.get("WAL_PAUSE_DOWNSHIFT_THRESHOLD", "2")),
         budget_s=int(os.environ.get("WAL_PAUSE_BUDGET_SECONDS", "600")),
+        per_source_budget_s=int(
+            os.environ.get("WAL_PAUSE_BUDGET_PER_SOURCE_SECONDS", "180")
+        ),
     )
 
     completed_ids: set[str] = set()

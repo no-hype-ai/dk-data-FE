@@ -1,7 +1,11 @@
 """Tests for src/dk_data/ingestion/wal_throttle.py.
 
-Stage 4 (T054, T055) of 005-prestaged-hydration. Mocks the psycopg2
-connection and time.sleep so tests are pure-CPU and deterministic.
+Stage 4 (T054, T055) of 005-prestaged-hydration — original tests kept.
+Horizon 2 / plan §C.2 — new tests for the meta.wal_pressure query path,
+hysteresis edge behaviour, and per-source pause budget.
+
+Mocks the psycopg2 connection and time.sleep so tests are pure-CPU and
+deterministic.
 """
 
 from __future__ import annotations
@@ -12,8 +16,10 @@ from unittest.mock import MagicMock
 
 import pytest
 
+import dk_data.ingestion.wal_throttle as wal_throttle_module
 from dk_data.ingestion.wal_throttle import (
     DEFAULT_CHUNK_SIZE,
+    DEFAULT_PER_SOURCE_BUDGET_SECONDS,
     WalThrottle,
     wal_pressure,
 )
@@ -77,32 +83,75 @@ def _make_throttle(
 
 
 # ---------------------------------------------------------------------------
-# wal_pressure: simple SQL-result mapping
+# wal_pressure: reads meta.wal_pressure view (plan §C.2 / FR-007)
 # ---------------------------------------------------------------------------
 
 
-def test_wal_pressure_returns_zero_noop() -> None:
-    """wal_pressure is currently a stub returning 0.0.
-
-    The original spec assumed meta.wal_usage had columns
-    (observed_at, pct_used); reality is (recorded_at, wal_bytes, ...).
-    Until a real pressure signal is added, the throttle is a no-op.
+def _make_conn_returning(row: Any) -> MagicMock:
+    """Build a MagicMock psycopg2-style conn whose cursor().fetchone()
+    returns ``row``. Context-manager compatible.
     """
+    cur = MagicMock()
+    cur.fetchone.return_value = row
+    cur.__enter__.return_value = cur
+    cur.__exit__.return_value = False
     conn = MagicMock()
-    assert wal_pressure(conn) == 0.0
-    # Must not hit the DB
-    conn.cursor.assert_not_called()
+    conn.cursor.return_value = cur
+    return conn
+
+
+@pytest.fixture(autouse=True)
+def _reset_view_missing_flag() -> None:
+    """Clear the once-per-process "view missing" sentinel so each test
+    gets a fresh state. Tests that exercise the DEBUG log path rely on
+    this."""
+    wal_throttle_module._VIEW_MISSING_LOGGED = False
+    yield
+    wal_throttle_module._VIEW_MISSING_LOGGED = False
+
+
+def test_wal_pressure_happy_path_returns_view_value() -> None:
+    """View returns (55.0,) → wal_pressure returns 55.0 as float."""
+    conn = _make_conn_returning((55.0,))
+    assert wal_pressure(conn) == 55.0
+    # Confirm the query actually hit meta.wal_pressure
+    conn.cursor.assert_called_once()
+    cur = conn.cursor.return_value
+    called_sql = cur.execute.call_args.args[0]
+    assert "meta.wal_pressure" in called_sql
+    assert "pct_used" in called_sql
 
 
 def test_wal_pressure_returns_zero_when_view_empty() -> None:
-    """No observations yet → fail-open with 0.0."""
+    """No observations yet (fetchone → None) → fail-open with 0.0."""
+    conn = _make_conn_returning(None)
+    assert wal_pressure(conn) == 0.0
+
+
+def test_wal_pressure_returns_zero_on_db_error() -> None:
+    """Any DB error (missing view, connection drop, etc.) → 0.0.
+
+    The throttle must never leak exceptions back to callers; the worst
+    case is a no-op gate. Rollback is best-effort so the caller's
+    transaction state isn't left aborted.
+    """
     cur = MagicMock()
-    cur.fetchone.return_value = None
+    cur.execute.side_effect = RuntimeError("relation \"meta.wal_pressure\" does not exist")
     cur.__enter__.return_value = cur
+    cur.__exit__.return_value = False
     conn = MagicMock()
     conn.cursor.return_value = cur
 
     assert wal_pressure(conn) == 0.0
+    # Best-effort rollback should have been attempted.
+    conn.rollback.assert_called_once()
+
+
+def test_wal_pressure_casts_numeric_to_float() -> None:
+    """View returns a Decimal (psycopg2 default for NUMERIC) → float."""
+    from decimal import Decimal
+    conn = _make_conn_returning((Decimal("72.50"),))
+    assert wal_pressure(conn) == 72.5
 
 
 # ---------------------------------------------------------------------------
@@ -229,3 +278,161 @@ def test_no_pause_then_pause_resets_counter_correctly() -> None:
     t.maybe_pause()
     assert t.consecutive_pauses == 1
     assert t.chunk_size == DEFAULT_CHUNK_SIZE
+
+
+# ---------------------------------------------------------------------------
+# plan §C.2 — hysteresis transitions (70/40 edge behaviour)
+# ---------------------------------------------------------------------------
+
+
+def test_hysteresis_60_pct_does_not_pause() -> None:
+    """Pressure at 60% is below high_pct(70) — no pause."""
+    t, sleep, _ = _make_throttle(pressures=[60.0])
+    assert t.maybe_pause() is False
+    assert sleep.calls == []
+
+
+def test_hysteresis_72_pct_triggers_pause() -> None:
+    """Crossing the 70% high-water mark triggers a pause that runs
+    until pressure falls below the 40% low-water mark."""
+    # 72 → 68 (still above low) → 38 (below low, exit).
+    t, sleep, pressure = _make_throttle(
+        pressures=[72.0, 68.0, 38.0],
+        poll_interval_s=10.0,
+    )
+    assert t.maybe_pause() is True
+    assert pressure.calls == 3
+    # Slept twice (for the two readings still above low_pct)
+    assert len(sleep.calls) == 2
+
+
+def test_hysteresis_stays_paused_at_68_then_resumes_at_38() -> None:
+    """Between low(40) and high(70), an already-paused throttle keeps
+    waiting — 68 is >= low_pct so we do not exit the wait loop. 38 is
+    below low_pct so the loop exits and subsequent calls resume."""
+    # First call: enter at 72, poll 68 (still waiting), poll 38 (exit).
+    t, sleep, _ = _make_throttle(
+        pressures=[72.0, 68.0, 38.0],
+        poll_interval_s=10.0,
+    )
+    assert t.maybe_pause() is True
+    assert len(sleep.calls) == 2  # two polls before 38 cleared
+
+    # Second call: pressure is now stable at 38 (below high), no pause.
+    t.pressure_fn = _FakePressureFn([38.0])
+    assert t.maybe_pause() is False
+
+
+def test_hysteresis_transition_logging_fires_once_per_edge(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """Paused ↔ running transitions must log at INFO exactly once per
+    edge (plan §C.2 requirement).
+    """
+    caplog.set_level(logging.INFO, logger="test")
+    t, _, _ = _make_throttle(
+        pressures=[80.0, 35.0],
+        poll_interval_s=5.0,
+    )
+
+    # First call: no prior state → records state but does not log a
+    # transition. After the pause, final pressure is 35 → running.
+    t.maybe_pause()
+    t.pressure_fn = _FakePressureFn([35.0])
+    # Second call: running → running (no transition, no log).
+    t.maybe_pause()
+    # Third call: running → paused (1 transition log).
+    t.pressure_fn = _FakePressureFn([80.0, 35.0])
+    t.maybe_pause()
+
+    transition_logs = [
+        r for r in caplog.records
+        if "WAL throttle transition" in r.getMessage()
+    ]
+    # We expect at least one transition in this sequence — exiting the
+    # first pause (paused → running) and re-entering (running → paused).
+    assert len(transition_logs) >= 1
+
+
+# ---------------------------------------------------------------------------
+# plan §C.2 — per-source pause budget
+# ---------------------------------------------------------------------------
+
+
+def test_per_source_budget_default_is_180s() -> None:
+    """Regression guard — the plan pins the default at 180s."""
+    assert DEFAULT_PER_SOURCE_BUDGET_SECONDS == 180
+
+
+def test_per_source_budget_exhaustion_stops_pausing_for_that_source() -> None:
+    """After a source has consumed its per-source budget, subsequent
+    maybe_pause(source_id=that) calls must not pause — even if pressure
+    is high — while a different source_id continues to pause normally.
+    """
+    # Per-source budget = 100s, global budget = 10000s (effectively
+    # unbounded), poll_interval = 50s. First source burns 100s across
+    # two polls; second source still has its own full budget.
+    t, sleep, _ = _make_throttle(
+        pressures=[80.0, 75.0, 70.0, 65.0, 35.0],
+        budget_s=10_000,
+        poll_interval_s=50.0,
+    )
+    t.per_source_budget_s = 100
+
+    # Call #1: source_a at 80% → pauses. Budget caps at 100s → two
+    # 50s polls, then the per-source cap triggers and the loop exits.
+    paused = t.maybe_pause(source_id="source_a")
+    assert paused is True
+    # Per-source consumption should be at cap.
+    assert t._per_source_consumed_s["source_a"] >= 100
+    # Budget-exhausted counter fires exactly once for this source.
+    assert "source_a" in t._budget_exhausted_sources
+
+    # Call #2: source_a again at high pressure → NO pause (budget used).
+    sleep.calls.clear()
+    t.pressure_fn = _FakePressureFn([90.0])
+    paused = t.maybe_pause(source_id="source_a")
+    assert paused is False
+    assert sleep.calls == []
+
+    # Call #3: source_b at high pressure → still pauses (own budget).
+    t.pressure_fn = _FakePressureFn([80.0, 35.0])
+    paused = t.maybe_pause(source_id="source_b")
+    assert paused is True
+    assert t._per_source_consumed_s.get("source_b", 0.0) > 0
+    # source_b did NOT hit its cap in this single pause.
+    assert "source_b" not in t._budget_exhausted_sources
+
+
+def test_per_source_budget_at_181s_stops_pausing() -> None:
+    """Per the plan's example: after 181s pause for one source, the
+    next call does not pause for that source but still pauses for a
+    different one.
+    """
+    # Preload consumption above the default 180s cap for source_a.
+    t, sleep, _ = _make_throttle(pressures=[90.0])
+    t._per_source_consumed_s["source_a"] = 181.0
+
+    # source_a: over-budget → no pause, no sleep.
+    paused = t.maybe_pause(source_id="source_a")
+    assert paused is False
+    assert sleep.calls == []
+
+    # source_b: untouched budget → pauses as normal.
+    t.pressure_fn = _FakePressureFn([80.0, 35.0])
+    paused = t.maybe_pause(source_id="source_b")
+    assert paused is True
+
+
+def test_per_source_budget_untracked_when_source_id_absent() -> None:
+    """Calling maybe_pause() without source_id preserves the pre-§C.2
+    behaviour — only the global budget applies, per-source dict stays
+    empty.
+    """
+    t, _, _ = _make_throttle(
+        pressures=[80.0, 35.0],
+        poll_interval_s=5.0,
+    )
+    t.maybe_pause()  # no source_id
+    assert t._per_source_consumed_s == {}
+    assert t._budget_exhausted_sources == set()
