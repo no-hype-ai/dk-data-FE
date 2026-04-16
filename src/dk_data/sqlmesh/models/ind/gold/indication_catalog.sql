@@ -16,7 +16,10 @@ MODEL (
     cron '@monthly',
     audits (
         not_null(columns := (icd11_code, therapeutic_area)),
-        unique_values(columns := (icd11_code))
+        unique_values(columns := (icd11_code)),
+        -- ICD-11 has ~17k leaf codes; we project a subset into gold.
+        row_count_above(min_rows := 1000),
+        freshness_threshold(time_column := gold_updated_at, max_age_seconds := 5184000)
     ),
     grain icd11_code
 );

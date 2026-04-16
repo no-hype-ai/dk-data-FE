@@ -7,6 +7,11 @@ MODEL (
     kind INCREMENTAL_BY_UNIQUE_KEY (
         unique_key target_id
     ),
+    audits (
+        -- Entity-resolution key integrity (FR-014 Silver Hub Architecture).
+        not_null(columns := (target_id, canonical_name)),
+        unique_values(columns := (target_id))
+    ),
     grain target_id
 );
 

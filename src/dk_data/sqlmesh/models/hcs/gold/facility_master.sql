@@ -15,7 +15,9 @@ MODEL (
     cron '@monthly',
     audits (
         not_null(columns := (provider_id)),
-        unique_values(columns := (provider_id))
+        unique_values(columns := (provider_id)),
+        row_count_above(min_rows := 3000),
+        freshness_threshold(time_column := gold_built_at, max_age_seconds := 5184000)
     ),
     grain provider_id
 );

@@ -36,6 +36,7 @@ from dk_data.ingestion.load_order import (
     plan_load,
     propagate_blocked,
 )
+from dk_data.ingestion.utils.database import build_dsn
 from dk_data.ingestion.prestaged_safety import is_restorable_target
 from dk_data.ingestion.prestaged_types import (
     PGDMP_MAGIC,
@@ -291,7 +292,7 @@ def dispatch_pg_restore(
     # This runs in a separate connection so it commits before pg_restore.
     if first_chunk:
         try:
-            with psycopg2.connect(pg_url) as truncate_conn:
+            with psycopg2.connect(pg_url) as truncate_conn:  # pg_url via build_dsn()
                 truncate_conn.autocommit = True
                 with truncate_conn.cursor() as cur:
                     # Quote schema/table to be safe with reserved names.
@@ -307,7 +308,7 @@ def dispatch_pg_restore(
 
     logger.info(f"pg_restore command: {' '.join(cmd)}")
 
-    lock_conn = psycopg2.connect(pg_url)
+    lock_conn = psycopg2.connect(pg_url)  # pg_url via build_dsn()
     lock_conn.autocommit = True
     try:
         with lock_conn.cursor() as cur:
@@ -366,7 +367,7 @@ def run_step(
 
     Tags: [AUDIT] [IDMPT] [VIEWSAFE] [WALBUD]
     """
-    pg_url = os.environ.get("PG_URL", "")
+    pg_url = os.environ.get("PG_URL") or build_dsn(application_name="dk-data.prestaged")
     schema = step.target_schema
     table = step.target_table
     started_at = _dt.datetime.now(_dt.timezone.utc)
@@ -546,7 +547,7 @@ def main(argv: list[str] | None = None) -> int:
         logger.error("PRESTAGED_ROOT={} does not exist (FR-016)", prestaged_root)
         return 1
 
-    pg_url = os.environ.get("PG_URL", "")
+    pg_url = os.environ.get("PG_URL") or build_dsn(application_name="dk-data.prestaged")
     if not pg_url and not args.dry_run:
         logger.error("PG_URL not set — required for non-dry-run mode")
         return 1
@@ -624,7 +625,7 @@ def main(argv: list[str] | None = None) -> int:
         "keepalives_interval": 10,
         "keepalives_count": 3,
     }
-    conn = psycopg2.connect(pg_url, **KEEPALIVE)
+    conn = psycopg2.connect(pg_url, **KEEPALIVE)  # pg_url via build_dsn()
     # autocommit=True on the writer conn: every statement commits
     # immediately. Prevents `idle_in_transaction_session_timeout`
     # (5 min on prod) from killing the writer during long pg_restore
@@ -736,7 +737,7 @@ def main(argv: list[str] | None = None) -> int:
                 conn.close()
             except Exception:  # noqa: BLE001
                 pass
-            conn = psycopg2.connect(pg_url, **KEEPALIVE)
+            conn = psycopg2.connect(pg_url, **KEEPALIVE)  # pg_url via build_dsn()  # pg_url via build_dsn()
             conn.autocommit = True
             writer = TransformRunsWriter(conn)
             if throttle is not None:

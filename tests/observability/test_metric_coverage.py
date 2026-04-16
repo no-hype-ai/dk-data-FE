@@ -102,6 +102,9 @@ DASHBOARD_ALLOWLIST: dict[str, str] = {
     "DK_SILVER_TRANSFORMATION_ERRORS": "dead metric — cleanup in T111/T112",
     "DK_SOURCE_RECORDS_TOTAL": "dead metric — cleanup in T111/T112",
     "DK_TRIALS_BY_PHASE": "dead metric — cleanup in T111/T112",
+    "DK_ARTIFACT_SIZE_MISMATCH_TOTAL": "ingestion integrity counter — surfaced via PrometheusRule alert (DkArtifactSizeMismatch, PR-304 follow-up) not a dashboard panel. Telemetry drives incident alerting, not visual inspection.",
+    "DK_ARTIFACT_CHANGED_TOTAL": "download-integrity signal (Horizon 2 / plan §C.4) — increments when an upstream artifact's sha256 differs from the prior provenance row, driving downstream rebuild alerting. Consumed by the DkArtifactChanged PrometheusRule (signals a source-change event), not by a dashboard panel — a visual 'changed N times' trend is not the primary UX here, alerting is.",
+    "DK_ARTIFACT_PROVENANCE_WRITE_ERRORS_TOTAL": "self-telemetry (Horizon 2 / plan §C.4) — counts provenance writes that failed after being swallowed so the download could continue. Consumed by the DkProvenanceWriteErrors PrometheusRule (any non-zero rate is anomalous); no dashboard panel — this metric tracks the health of the integrity pipeline itself, which lives in alerting space, not in a visual dashboard.",
 }
 
 # Some metrics are emitted from production code paths that this test's grep
@@ -174,6 +177,27 @@ EMISSION_ALLOWLIST: dict[str, str] = {
     name: "dead metric pre-feature-002 — ratchet entry, tracked in T111/T112"
     for name in _DEAD_METRICS_002_RATCHET
 }
+
+# -----------------------------------------------------------------------------
+# Horizon 2 / plan §C.6 — hydration observability expansion.
+#
+# These three metrics are DEFINED in observability/metrics.py and VISUALIZED
+# on grafana/dashboards/applications/dk-data-fe-{hydration,source-registry}.json.
+# Their EMISSION sites live in the prestaged hydration pipeline on
+# feature/005-prestaged-hydration and will land in a follow-up PR after
+# feature/005 merges to main. Allowlisted until that follow-up — the follow-up
+# PR must remove these entries in the same commit that wires up the emission.
+# -----------------------------------------------------------------------------
+_HYDRATION_C6_PENDING = [
+    "DK_HYDRATION_PHASE_SECONDS",
+    "DK_ARTIFACT_BYTES_TOTAL",
+    "DK_SOURCE_LAST_SUCCESS_TIMESTAMP",
+]
+for _name in _HYDRATION_C6_PENDING:
+    EMISSION_ALLOWLIST[_name] = (
+        "plan §C.6 — emission lands with feature/005-prestaged-hydration "
+        "follow-up; dashboards already consume the metric"
+    )
 
 METRIC_DEFINITION_PATTERN = re.compile(
     r"^([A-Z][A-Z0-9_]+)\s*=\s*(Counter|Gauge|Histogram)\s*\(",
@@ -255,7 +279,7 @@ def _has_emission_call(obj_name: str, source_files: list[Path]) -> bool:
 def _dashboard_queries() -> str:
     """Concatenate every dashboard JSON into one haystack for substring search."""
     chunks: list[str] = []
-    for dashboard in sorted(DASHBOARDS_DIR.glob("*.json")):
+    for dashboard in sorted(DASHBOARDS_DIR.glob("**/*.json")):
         try:
             chunks.append(_read(dashboard))
         except OSError:

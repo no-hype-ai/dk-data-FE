@@ -1,0 +1,46 @@
+{
+  "__metadata": {
+    "folder": "applications"
+  },
+  "dashboard": {
+    "uid": "dk-data-fe-seaweedfs-artifacts",
+    "title": "dk-data SeaweedFS Artifacts (stub)",
+    "description": "Stub \u2014 see plan.md \u00a7J.3, \u00a7C.4",
+    "tags": [
+      "dk-data-fe",
+      "stub"
+    ],
+    "schemaVersion": 39,
+    "editable": true,
+    "refresh": "",
+    "time": {
+      "from": "now-6h",
+      "to": "now"
+    },
+    "timepicker": {},
+    "timezone": "",
+    "templating": {
+      "list": []
+    },
+    "annotations": {
+      "list": []
+    },
+    "panels": [
+      {
+        "id": 1,
+        "type": "text",
+        "title": "TODO",
+        "gridPos": {
+          "h": 8,
+          "w": 24,
+          "x": 0,
+          "y": 0
+        },
+        "options": {
+          "mode": "markdown",
+          "content": "## TODO \u2014 placeholder stub\n\n**Plan section:** plan.md \u00a7J.3, \u00a7C.4\n\nmeta.artifact_provenance freshness, download bytes/min, size-mismatch events. TODO: depends on C.4 pipeline + C.1 SeaweedFS cutover.\n\nThis dashboard will be fleshed out in a follow-up PR once the upstream migrations / views referenced above land. The UID is locked in now so links from runbooks and alerts resolve as soon as content ships."
+        }
+      }
+    ]
+  }
+}

@@ -9,6 +9,11 @@ MODEL (
     kind INCREMENTAL_BY_UNIQUE_KEY (
         unique_key molecule_id
     ),
+    audits (
+        -- Entity-resolution key integrity (FR-014 Silver Hub Architecture).
+        not_null(columns := (molecule_id, canonical_name)),
+        unique_values(columns := (molecule_id))
+    ),
     grain molecule_id
 );
 

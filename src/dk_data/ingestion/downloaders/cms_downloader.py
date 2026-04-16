@@ -30,6 +30,7 @@ import json
 import logging
 import os
 import time
+import zipfile
 from pathlib import Path
 from typing import Optional
 from urllib.parse import urlparse
@@ -37,6 +38,29 @@ from urllib.parse import urlparse
 import requests
 
 logger = logging.getLogger(__name__)
+
+# Metric is optional at import time — tests / tooling may import this module
+# without the full prometheus_client stack. Fall back to a no-op if unavailable.
+try:
+    from dk_data.observability.metrics import DK_ARTIFACT_SIZE_MISMATCH_TOTAL
+except Exception:  # pragma: no cover — defensive
+    class _NoopCounter:
+        def labels(self, *_, **__):
+            return self
+
+        def inc(self, *_):
+            return None
+
+    DK_ARTIFACT_SIZE_MISMATCH_TOTAL = _NoopCounter()
+
+# Provenance writer is optional at import time — when the ingestion DB is
+# unreachable (local tooling, unit tests without a DB), provenance writes
+# become no-ops. Import failure here must never prevent a download; see
+# plan §C.4 ("Failure in record() must NOT fail the download").
+try:
+    from dk_data.ingestion.common.integrity import ArtifactProvenanceWriter
+except Exception:  # pragma: no cover — defensive
+    ArtifactProvenanceWriter = None  # type: ignore[assignment, misc]
 
 DOWNLOAD_DIR = Path(os.getenv("CMS_DOWNLOAD_DIR", "/tmp/cms_downloads"))
 _CATALOG_CACHE_PATH = DOWNLOAD_DIR / "_cms_catalog.json"
@@ -454,7 +478,21 @@ def _get_download_url(source_name: str, year: int) -> Optional[str]:
 
 
 def _compute_file_hash(filepath: Path) -> str:
+    """Compute MD5 hash of a file.
+
+    Retained for callers that keyed their state on the md5 digest.  New
+    integrity checks use :func:`_compute_file_sha256`.
+    """
     h = hashlib.md5()
+    with open(filepath, "rb") as f:
+        for chunk in iter(lambda: f.read(65536), b""):
+            h.update(chunk)
+    return h.hexdigest()
+
+
+def _compute_file_sha256(filepath: Path) -> str:
+    """Compute SHA256 hash of a file (used for download-integrity sidecars)."""
+    h = hashlib.sha256()
     with open(filepath, "rb") as f:
         for chunk in iter(lambda: f.read(65536), b""):
             h.update(chunk)
@@ -466,8 +504,206 @@ def _cache_path(source_name: str, year: int) -> Path:
     return DOWNLOAD_DIR / f"{source_name}_{year}.csv"
 
 
+def _extract_dir(source_name: str, year: int) -> Path:
+    """Per-source subdirectory used for zip extractions.
+
+    Every extracted file from a single source+year bundle lands in this
+    directory so callers can enumerate all artifacts.  The directory is
+    re-created on every download to avoid stale files from prior releases.
+    """
+    return DOWNLOAD_DIR / f"{source_name}_{year}_extracted"
+
+
 def _hash_file_path(source_name: str, year: int) -> Path:
     return DOWNLOAD_DIR / f"{source_name}_{year}.md5"
+
+
+def _looks_like_zip(filename: str, content_type: str) -> bool:
+    return (
+        filename.lower().endswith(".zip")
+        or content_type.startswith("application/zip")
+        or content_type.startswith("application/x-zip")
+    )
+
+
+def _stream_to_file(
+    resp: requests.Response, tmp_path: Path
+) -> tuple[int, Optional[int]]:
+    """Stream response body to ``tmp_path``.
+
+    Returns ``(bytes_written, content_length_header)``.  ``content_length_header``
+    is ``None`` when the upstream did not advertise a length (e.g. chunked
+    transfer) — in that case the caller must not treat a size mismatch as an
+    error because there is no source of truth.
+    """
+    header_value = resp.headers.get("Content-Length")
+    content_length = int(header_value) if header_value and header_value.isdigit() else None
+
+    written = 0
+    with open(tmp_path, "wb") as f:
+        for chunk in resp.iter_content(chunk_size=65536):
+            if chunk:
+                f.write(chunk)
+                written += len(chunk)
+    return written, content_length
+
+
+def _attempt_download(
+    url: str, tmp_path: Path, source_name: str
+) -> tuple[Optional[int], Optional[int], Optional[str], dict]:
+    """Single download attempt.
+
+    Returns ``(written, content_length, content_type, headers)`` on success,
+    or ``(None, None, None, {})`` on empty/network failure.  On Content-
+    Length mismatch returns ``(None, content_length, content_type, headers)``
+    so the caller can still log provenance for the failed attempt.  The
+    caller owns deletion of ``tmp_path`` on ``None`` responses.
+
+    ``headers`` is a plain-dict snapshot of the HTTP response headers, with
+    the keys preserved as the server sent them — the integrity writer does
+    a case-insensitive lookup so either casing works downstream.
+    """
+    try:
+        resp = requests.get(url, stream=True, timeout=REQUEST_TIMEOUT)
+        resp.raise_for_status()
+    except requests.RequestException as exc:
+        logger.error(f"Download failed for {source_name}: {exc}")
+        return None, None, None, {}
+
+    # Snapshot headers before we consume the body — after iter_content the
+    # connection may be closed and server trailers lost.
+    headers = dict(resp.headers)
+    content_type = resp.headers.get("content-type", "")
+    written, content_length = _stream_to_file(resp, tmp_path)
+
+    if written == 0:
+        logger.error(f"Downloaded empty file for {source_name}")
+        return None, content_length, content_type, headers
+
+    if content_length is not None and written != content_length:
+        logger.warning(
+            "Content-Length mismatch for %s: header=%d written=%d (url=%s)",
+            source_name,
+            content_length,
+            written,
+            url,
+        )
+        DK_ARTIFACT_SIZE_MISMATCH_TOTAL.labels(source=source_name).inc()
+        return None, content_length, content_type, headers
+
+    return written, content_length, content_type, headers
+
+
+def _write_sidecar(
+    source_name: str,
+    year: int,
+    primary_path: Path,
+    content_length: Optional[int],
+    sha256: str,
+) -> None:
+    """Write the ``<cache>.md5`` sidecar capturing Content-Length + SHA256.
+
+    The name ``.md5`` is kept for compatibility with the existing 30-day cache
+    convention but the body is now a multi-line document.  Legacy callers that
+    read the first line unchanged still get a valid hex digest.
+    """
+    sidecar = _hash_file_path(source_name, year)
+    md5 = _compute_file_hash(primary_path)
+    lines = [md5, f"sha256={sha256}"]
+    if content_length is not None:
+        lines.append(f"content_length={content_length}")
+    sidecar.write_text("\n".join(lines) + "\n")
+
+
+def _derive_source_name_from_cache(cache_path: Path) -> str:
+    """Derive a stable source_name from a cache-file path.
+
+    The CMS cache layout puts every artifact at a path like
+    ``/tmp/cms_downloads/cms_part_d_spending_2023.csv`` (or ``.zip``,
+    ``.json``). For provenance grouping we want ``cms_part_d_spending`` —
+    the source key, independent of year and extension. The public API
+    ``download_cms_files`` receives ``source_name`` directly, so this
+    helper is only used as a fallback / sanity check.
+    """
+    stem = cache_path.stem  # drop extension
+    # Trailing _NNNN (4-digit year) is the common case. Anything else is
+    # already a bare source key.
+    parts = stem.rsplit("_", 1)
+    if len(parts) == 2 and parts[1].isdigit() and len(parts[1]) == 4:
+        return parts[0]
+    return stem
+
+
+def _record_provenance(
+    *,
+    source_name: str,
+    source_url: str,
+    local_path: Path,
+    headers: dict,
+    bytes_written: int,
+    sha256: str,
+) -> None:
+    """Best-effort write to ``meta.artifact_provenance``.
+
+    Per plan §C.4 a provenance-write failure MUST NOT fail the download —
+    any exception (including the optional import itself being absent) is
+    swallowed here so the caller never has to guard.
+    """
+    if ArtifactProvenanceWriter is None:
+        return
+    writer = None
+    try:
+        writer = ArtifactProvenanceWriter()
+        writer.record_swallow(
+            source_name=source_name,
+            source_url=source_url,
+            local_path=str(local_path),
+            headers_dict=headers,
+            bytes_written=bytes_written,
+            sha256=sha256,
+        )
+    except Exception as exc:  # noqa: BLE001 — defensive, record_swallow is already non-raising
+        logger.warning(
+            "Provenance writer could not be constructed for %s (%s); continuing",
+            source_name,
+            exc,
+        )
+    finally:
+        if writer is not None:
+            writer.close()
+
+
+def _extract_all(zip_path: Path, target_dir: Path) -> list[Path]:
+    """Extract every member of ``zip_path`` into ``target_dir``.
+
+    Replaces the legacy "largest CSV wins" behaviour that silently discarded
+    every other file in a multi-file bundle (see plan §A.1 / §B.4 — NPPES).
+    Returns the list of absolute paths actually written (directories are
+    skipped).  Zip-slip is defended against via ``Path.resolve`` comparison.
+    """
+    target_dir.mkdir(parents=True, exist_ok=True)
+    resolved_target = target_dir.resolve()
+    extracted: list[Path] = []
+
+    with zipfile.ZipFile(zip_path) as zf:
+        for info in zf.infolist():
+            if info.is_dir():
+                continue
+            dest = (target_dir / info.filename).resolve()
+            try:
+                dest.relative_to(resolved_target)
+            except ValueError:
+                raise RuntimeError(
+                    f"Refusing to extract {info.filename!r}: escapes target "
+                    f"directory {target_dir}"
+                )
+            dest.parent.mkdir(parents=True, exist_ok=True)
+            with zf.open(info) as src, open(dest, "wb") as out:
+                for chunk in iter(lambda: src.read(65536), b""):
+                    out.write(chunk)
+            extracted.append(dest)
+
+    return extracted
 
 
 def download_cms_file(
@@ -477,81 +713,176 @@ def download_cms_file(
 ) -> tuple[Optional[str], bool]:
     """Download a CMS bulk file for the given source and year.
 
-    Returns:
-        (filepath, was_new): filepath is the local path to the downloaded file,
-        was_new=True if the file was newly downloaded, False if using cache.
-        Returns (None, False) if download failed or source is not available.
+    Returns ``(filepath, was_new)``.  ``filepath`` is the local path to the
+    primary file — for plain CSV downloads that is the downloaded file; for
+    zip bundles it is the *largest* extracted member (legacy behaviour for
+    callers that only handle one file).  *All* files inside the zip are
+    extracted to :func:`_extract_dir` and can be enumerated via
+    :func:`download_cms_files`.  ``was_new`` is ``True`` when the download
+    actually ran, ``False`` when cache was reused.  Returns ``(None, False)``
+    on failure or when the source is not publicly available.
+
+    Backwards-compatible with callers that expect a single-path return.  To
+    access every extracted file (e.g. NPPES multi-file zips) call
+    :func:`download_cms_files` instead.
+    """
+    paths, was_new = download_cms_files(source_name, year=year, force=force)
+    if not paths:
+        return None, False
+    return str(paths[0]), was_new
+
+
+def download_cms_files(
+    source_name: str,
+    year: int = 2023,
+    force: bool = False,
+) -> tuple[list[Path], bool]:
+    """Download a CMS bulk file and return *every* artifact it produces.
+
+    For plain CSV/JSON downloads this returns a single-element list.  For
+    ``.zip`` downloads this returns every file extracted from the bundle,
+    ordered so the largest file is first (legacy primary-path convention).
+
+    Behaviour vs :func:`download_cms_file`:
+      * single-file callers can keep using ``download_cms_file`` unchanged
+      * multi-file callers get the full list, which is the new baseline for
+        plan §B.4 (fix truncation at zip extraction)
+
+    Content-Length integrity is enforced on every attempt.  On mismatch the
+    partial ``.tmp`` is deleted, a warning logged, and the download is retried
+    once.  A second mismatch fails loudly (returns ``([], False)``) and the
+    ``dk_artifact_size_mismatch_total{source}`` counter is incremented for
+    each failed attempt.
     """
     cache_path = _cache_path(source_name, year)
-    hash_path = _hash_file_path(source_name, year)
+    extract_dir = _extract_dir(source_name, year)
 
+    # Cache hit — return the primary file plus any previously-extracted siblings.
     if not force and cache_path.exists():
         age_days = (time.time() - cache_path.stat().st_mtime) / 86400
         if age_days <= MAX_FILE_AGE_DAYS:
             logger.info(
                 f"Using cached {source_name} file (age: {age_days:.1f}d): {cache_path}"
             )
-            return str(cache_path), False
+            cached: list[Path] = [cache_path]
+            if extract_dir.exists():
+                for p in sorted(extract_dir.rglob("*")):
+                    if p.is_file() and p.resolve() != cache_path.resolve():
+                        cached.append(p)
+            return cached, False
 
     url = _get_download_url(source_name, year)
     if not url:
         logger.error(f"Cannot determine download URL for {source_name} year={year}")
-        return None, False
+        return [], False
 
     logger.info(f"Downloading {source_name} year={year} from {url}")
 
-    try:
-        resp = requests.get(url, stream=True, timeout=REQUEST_TIMEOUT)
-        resp.raise_for_status()
+    tmp_path = cache_path.with_suffix(".tmp")
 
-        tmp_path = cache_path.with_suffix(".tmp")
-        written = 0
-        with open(tmp_path, "wb") as f:
-            for chunk in resp.iter_content(chunk_size=65536):
-                if chunk:
-                    f.write(chunk)
-                    written += len(chunk)
-
-        if written == 0:
-            logger.error(f"Downloaded empty file for {source_name}")
-            tmp_path.unlink(missing_ok=True)
-            return None, False
-
-        # Handle ZIP files: extract the largest CSV inside
-        filename = urlparse(url).path.split("/")[-1].lower()
-        content_type = resp.headers.get("content-type", "")
-        if filename.endswith(".zip") or content_type.startswith("application/zip"):
-            import zipfile
-
-            with zipfile.ZipFile(tmp_path) as zf:
-                csv_names = [n for n in zf.namelist() if n.lower().endswith(".csv")]
-                if not csv_names:
-                    logger.error(f"No CSV found in ZIP for {source_name}")
-                    tmp_path.unlink(missing_ok=True)
-                    return None, False
-                csv_names.sort(key=lambda n: zf.getinfo(n).file_size, reverse=True)
-                zf.extract(csv_names[0], DOWNLOAD_DIR)
-                extracted = DOWNLOAD_DIR / csv_names[0]
-                extracted.rename(cache_path)
-            tmp_path.unlink(missing_ok=True)
-        else:
-            tmp_path.rename(cache_path)
-
-        file_hash = _compute_file_hash(cache_path)
-        hash_path.write_text(file_hash)
-
-        logger.info(
-            f"Downloaded {source_name} year={year}: "
-            f"{cache_path.stat().st_size / 1024 / 1024:.1f} MB, hash={file_hash[:8]}"
+    headers: dict = {}
+    for attempt in (1, 2):
+        written, content_length, content_type, headers = _attempt_download(
+            url, tmp_path, source_name
         )
-        return str(cache_path), True
+        if written is not None:
+            break
+        tmp_path.unlink(missing_ok=True)
+        if attempt == 1:
+            logger.info("Retrying %s after failed download attempt", source_name)
+        else:
+            logger.error(
+                "Download failed twice for %s (content-length or empty); giving up",
+                source_name,
+            )
+            return [], False
 
-    except requests.RequestException as e:
-        logger.error(f"Download failed for {source_name}: {e}")
-        return None, False
-    except Exception as e:
-        logger.error(f"Unexpected error downloading {source_name}: {e}")
-        return None, False
+    try:
+        filename = urlparse(url).path.split("/")[-1]
+        is_zip = _looks_like_zip(filename, content_type or "")
+
+        if is_zip:
+            # Re-create the extraction directory so stale files from previous
+            # releases cannot leak through.
+            if extract_dir.exists():
+                for p in sorted(extract_dir.rglob("*"), reverse=True):
+                    if p.is_file():
+                        p.unlink(missing_ok=True)
+                    elif p.is_dir():
+                        p.rmdir()
+                extract_dir.rmdir()
+
+            try:
+                extracted = _extract_all(tmp_path, extract_dir)
+            except zipfile.BadZipFile as exc:
+                logger.error(f"Corrupt ZIP for {source_name}: {exc}")
+                tmp_path.unlink(missing_ok=True)
+                return [], False
+
+            if not extracted:
+                logger.error(f"ZIP contained no extractable files for {source_name}")
+                tmp_path.unlink(missing_ok=True)
+                return [], False
+
+            # Pick primary = largest file (historical convention for single-
+            # path callers).  Every other file is still returned in the list.
+            extracted.sort(key=lambda p: p.stat().st_size, reverse=True)
+            primary_src = extracted[0]
+
+            # Copy (not move) the primary into the legacy cache_path so single-
+            # file callers keep finding it at the old location, while the
+            # extracted directory remains the source of truth for everyone.
+            cache_path.write_bytes(primary_src.read_bytes())
+            tmp_path.unlink(missing_ok=True)
+
+            sha256 = _compute_file_sha256(cache_path)
+            _write_sidecar(source_name, year, cache_path, content_length, sha256)
+            _record_provenance(
+                source_name=source_name,
+                source_url=url,
+                local_path=cache_path,
+                headers=headers,
+                bytes_written=cache_path.stat().st_size,
+                sha256=sha256,
+            )
+
+            total_bytes = sum(p.stat().st_size for p in extracted)
+            logger.info(
+                "Downloaded %s year=%d: %d files, %.1f MB total, sha256=%s",
+                source_name,
+                year,
+                len(extracted),
+                total_bytes / 1024 / 1024,
+                sha256[:12],
+            )
+            # Primary first, then the rest (including primary's sibling copy).
+            return [cache_path, *[p for p in extracted if p != primary_src]], True
+
+        # Plain (non-zip) download.
+        tmp_path.rename(cache_path)
+        sha256 = _compute_file_sha256(cache_path)
+        _write_sidecar(source_name, year, cache_path, content_length, sha256)
+        _record_provenance(
+            source_name=source_name,
+            source_url=url,
+            local_path=cache_path,
+            headers=headers,
+            bytes_written=cache_path.stat().st_size,
+            sha256=sha256,
+        )
+        logger.info(
+            "Downloaded %s year=%d: %.1f MB, sha256=%s",
+            source_name,
+            year,
+            cache_path.stat().st_size / 1024 / 1024,
+            sha256[:12],
+        )
+        return [cache_path], True
+
+    except Exception as exc:
+        logger.error(f"Unexpected error processing download for {source_name}: {exc}")
+        tmp_path.unlink(missing_ok=True)
+        return [], False
 
 
 def download_all_cms_sources(year: int = 2023, force: bool = False) -> dict[str, str]:

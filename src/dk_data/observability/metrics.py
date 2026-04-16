@@ -553,6 +553,86 @@ CMS_RATE_LIMIT_REJECTIONS_TOTAL = Counter(
     ["source"],
 )
 
+# Download integrity (Horizon 1 / plan §B.4)
+DK_ARTIFACT_SIZE_MISMATCH_TOTAL = Counter(
+    "dk_artifact_size_mismatch_total",
+    "Total downloads where bytes written != Content-Length header",
+    ["source"],
+)
+
+# =============================================================================
+# Hydration observability expansion (Horizon 2 / plan §C.6)
+#
+# These three metrics are DEFINED here but EMISSION happens in the pre-staged
+# hydration pipeline on feature/005-prestaged-hydration (follow-up PR after
+# feature/005 merges to main). The dashboards at
+# grafana/dashboards/applications/dk-data-fe-hydration.json and
+# grafana/dashboards/applications/dk-data-fe-source-registry.json already
+# reference them so they light up the moment emission lands.
+# =============================================================================
+
+# HIGH-CARDINALITY WARNING: labels = source × schema × table × phase. With
+# ~73 sources × ~3 schemas × ~15 tables × 5 phases this can reach ~16k active
+# series per bucket boundary. Prefer aggregating at dashboard-query time
+# (sum by (source, phase, le) ...) rather than per-(schema, table). If the
+# series count becomes a pressure point, drop `table` from the label set and
+# fold it into a per-table `info` counter.
+DK_HYDRATION_PHASE_SECONDS = Histogram(
+    "dk_hydration_phase_seconds",
+    "Time spent in each hydration phase per (source, schema, table); "
+    "phase ∈ {download, validate, restore, rowcount, manifest_lookup}. "
+    "Emitted by src/dk_data/ingestion/prestaged.py (feature/005).",
+    ["source", "schema", "table", "phase"],
+    buckets=(0.1, 0.5, 1, 5, 10, 30, 60, 120, 300, 600, 1800, 3600),
+)
+
+# Bytes moved during hydration. kind ∈ {download, extracted} — `download` is
+# wire bytes (Content-Length), `extracted` is on-disk bytes after tarball /
+# zip / pg_dump expansion. Both are monotonically-increasing counters.
+DK_ARTIFACT_BYTES_TOTAL = Counter(
+    "dk_artifact_bytes_total",
+    "Total bytes moved during hydration, by source and kind "
+    "(kind ∈ {download, extracted}). Emitted by prestaged hydration and "
+    "live-fetcher ingestion paths (feature/005 follow-up).",
+    ["source", "kind"],
+)
+
+# Unix timestamp (seconds) of the most recent successful end-to-end hydration
+# for a source. Consumers: freshness dashboards + "stale source" alerts
+# (time() - dk_source_last_success_timestamp > sla_seconds).
+DK_SOURCE_LAST_SUCCESS_TIMESTAMP = Gauge(
+    "dk_source_last_success_timestamp",
+    "Unix timestamp of the last successful hydration per source. "
+    "Set on successful completion of run_ingestion() / prestaged loader "
+    "(feature/005 follow-up). Panels compute freshness as "
+    "(time() - dk_source_last_success_timestamp).",
+    ["source"],
+)
+
+# =============================================================================
+# Download integrity pipeline (Horizon 2 / plan §C.4)
+# =============================================================================
+
+# Incremented when a re-downloaded (source, url) has a sha256 that differs
+# from the most recent prior row in meta.artifact_provenance. Signals that
+# downstream transforms (bronze → silver) must re-run even if row counts
+# match — the bits changed, the semantics may have changed.
+DK_ARTIFACT_CHANGED_TOTAL = Counter(
+    "dk_artifact_changed_total",
+    "Total re-downloads where sha256 differs from the prior provenance row",
+    ["source"],
+)
+
+# Incremented when the provenance writer itself fails (DB error, network
+# blip, transient) — the download still succeeds (failure is swallowed so
+# it cannot fail the ingestion), but we need visibility into how often
+# provenance writes miss so we can detect silent drift.
+DK_ARTIFACT_PROVENANCE_WRITE_ERRORS_TOTAL = Counter(
+    "dk_artifact_provenance_write_errors_total",
+    "Total failures writing to meta.artifact_provenance (swallowed, non-fatal)",
+    ["source"],
+)
+
 CMS_GOLD_VIEW_LAST_REFRESH_TIMESTAMP = Gauge(
     "cms_gold_view_last_refresh_timestamp",
     "Unix timestamp of last hcs_gold view refresh",

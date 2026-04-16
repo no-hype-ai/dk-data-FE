@@ -18,7 +18,13 @@ MODEL (
     ),
     cron '@weekly',
     audits (
-        not_null(columns := (molecule_id, canonical_name))
+        not_null(columns := (molecule_id, canonical_name)),
+        unique_values(columns := (molecule_id)),
+        -- Partial coverage by design (header comment): only molecules with
+        -- FAERS reports / boxed warnings. Floor is intentionally low — the
+        -- model is allowed to contract when safety reports are retracted.
+        row_count_above(min_rows := 500),
+        freshness_threshold(time_column := generated_at, max_age_seconds := 1209600)
     ),
     grain molecule_id
 );

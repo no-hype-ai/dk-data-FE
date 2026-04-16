@@ -97,7 +97,10 @@ data-samples/manifest.json
 !data-samples/**/.gitkeep
 .claude/
 !grafana/dashboards/*.json
+!grafana/dashboards/**/*.json
 !grafana/alerts/*.yaml
+!grafana/scripts/lib/
+!grafana/scripts/lib/**
 
 # DK - local state files
 .dk/debug-e2e-state.json

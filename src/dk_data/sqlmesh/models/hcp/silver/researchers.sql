@@ -7,8 +7,14 @@ MODEL (
     kind INCREMENTAL_BY_UNIQUE_KEY (
         unique_key researcher_id
     ),
+    audits (
+        -- Entity-resolution key integrity (FR-011b / FR-014 Silver Hub Architecture).
+        -- canonical_full_name is WHERE-clause-enforced in the final SELECT.
+        not_null(columns := (researcher_id, canonical_full_name)),
+        unique_values(columns := (researcher_id))
+    ),
     grain researcher_id
-    
+
 );
 
 -- Hash determinism (FR-014): both branches must derive researcher_id from the same
