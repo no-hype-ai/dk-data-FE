@@ -7,16 +7,16 @@ labels:
 - pairs:
     environment: production
 
-resources:
-- ../../base
 # Per-source DopplerSecret CRs (Horizon 3 §D.5). Each CR scopes one key to
 # one Doppler config so rotation blast-radius is a single source.
+resources:
+- ../../base
 - ../../apps/secrets/per-source
 
 images:
 - name: ghcr.io/data-kinetic/dk-data-fe/job-trigger
   newName: ghcr.io/data-kinetic/dk-data-fe/job-trigger
-  newTag: prod-715bc3a
+  newTag: prod-aee3830
 
   # PostgREST — 3 replicas for HA with production resources
 
