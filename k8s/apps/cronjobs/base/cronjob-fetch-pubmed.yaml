@@ -58,6 +58,18 @@ spec:
                     secretKeyRef:
                       name: dk-data-secrets
                       key: POSTGRES_HOST
+                # Per-source credential (Horizon 3 §D.5, issue #319) —
+                # NCBI_API_KEY is pulled from the dedicated
+                # dk-data-secrets-ncbi Secret, NOT the monolithic
+                # dk-data-secrets. Rotating NCBI's key touches this
+                # Secret only; no other source is affected. Explicit env
+                # overrides any inherited value from envFrom above.
+                - name: NCBI_API_KEY
+                  valueFrom:
+                    secretKeyRef:
+                      name: dk-data-secrets-ncbi
+                      key: NCBI_API_KEY
+                      optional: true
               resources:
                 requests:
                   memory: "256Mi"
