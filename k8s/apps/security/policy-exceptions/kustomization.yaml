@@ -1,0 +1,9 @@
+# Kustomization for dk-data-FE Kyverno PolicyExceptions.
+#
+# Ships in Audit mode (inherits from each upstream policy); enforcement
+# decisions live in dk-alchemy §10. See docs/runbooks/node-role-isolation.md.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+resources:
+  - hydrate-taint-exception.yaml
