@@ -61,6 +61,12 @@ dev = [
     "respx>=0.20.0,<1.0",
     "ruff>=0.1.0,<1.0",
     "email-validator>=2.0.0,<3.0",
+    # SeaweedFS S3 client (Horizon 2 / C.1). boto3 is promoted from dev
+    # to runtime the moment a consumer actually imports ObjectStore from
+    # a non-test path — for now it lives here so CI runs the moto-backed
+    # unit tests.
+    "boto3>=1.34.0,<2.0",
+    "moto[s3]>=5.0.0,<6.0",
 ]
 
 [build-system]
