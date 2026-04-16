@@ -64,6 +64,7 @@ from dk_data.ingestion.load_order import (
     SOURCE_LOAD_ORDER,
     SourceDescriptor,
 )
+from dk_data.ingestion.resource_budget import ResourceBudget
 from dk_data.ingestion.transform_runs_writer import TransformRunsWriter
 from dk_data.ingestion.utils.database import get_connection_pool, init_connection_pool
 
@@ -83,6 +84,20 @@ TERMINAL_STATUSES: Set[str] = {
 
 DEFAULT_POLL_INTERVAL_SECONDS = 10
 DEFAULT_MAX_PARALLEL = 4
+
+
+# ---------------------------------------------------------------------------
+# Sentinel — disambiguates the three outcomes of a per-source dispatch call
+# once the admission wrapper (plan §D.3) is applied.
+#
+# ``_dispatch_one`` used to return Optional[StepResult] where None meant
+# "Job created, now in-flight." With budget.decorate_dispatch() wrapped
+# around it, a ``None`` coming back from the wrapper means "try_reserve
+# denied, defer this source." We need to distinguish those two cases, so
+# the underlying ``_dispatch_one`` now returns this sentinel for the
+# in-flight case instead of None.
+# ---------------------------------------------------------------------------
+_DISPATCH_IN_FLIGHT: Any = object()
 
 
 @dataclass
@@ -253,6 +268,7 @@ class HydrateDispatcher:
         backlog: Optional[HydrationBacklogWriter] = None,
         kube_client: Optional[KubeJobClient] = None,
         descriptors: Optional[List[SourceDescriptor]] = None,
+        budget: Optional[ResourceBudget] = None,
     ) -> None:
         if max_parallel < 1:
             raise ValueError(f"max_parallel must be >= 1 (got {max_parallel})")
@@ -294,6 +310,27 @@ class HydrateDispatcher:
         # once the Job reaches a terminal state.
         self._sem = threading.Semaphore(self.max_parallel)
 
+        # Admission control by budget (plan §D.3). Caller may inject a
+        # ``ResourceBudget`` (tests, or an orchestrator that shares one
+        # handle across components); production path lazy-creates one so
+        # importing this module on a laptop never opens a DB connection.
+        # ``_owns_budget`` mirrors the pattern used for ``_writer_conn`` —
+        # the dispatcher only closes what it constructed itself.
+        if budget is not None:
+            self.budget = budget
+            self._owns_budget = False
+        else:
+            self.budget = ResourceBudget()
+            self._owns_budget = True
+
+        # Wrap the per-source dispatch callable with the admission
+        # decorator. Wrapped signature is identical to _dispatch_one
+        # (``SourceDescriptor -> StepResult | _DISPATCH_IN_FLIGHT | None``);
+        # ``None`` now unambiguously means "budget denied, defer this
+        # source" — the inner function returns ``_DISPATCH_IN_FLIGHT`` for
+        # the Job-created case to disambiguate.
+        self._dispatch = self.budget.decorate_dispatch(self._dispatch_one)
+
     # ------------------------------------------------------------------
     # Dispatch loop
     # ------------------------------------------------------------------
@@ -327,11 +364,41 @@ class HydrateDispatcher:
                     # block so the watcher runs for already-in-flight work.
                     if not self._sem.acquire(blocking=False):
                         break
+
+                    # Route through the admission-decorated dispatch
+                    # callable (plan §D.3). Three possible outcomes:
+                    #   1. None                  — budget denied; defer.
+                    #   2. _DISPATCH_IN_FLIGHT   — Job created.
+                    #   3. StepResult            — short-circuit terminal.
+                    result = self._dispatch(desc)
+
+                    if result is None:
+                        # Budget denied — release the semaphore slot we
+                        # held speculatively and DO NOT mark launched so
+                        # the source is retried on the next tick (natural
+                        # backpressure via poll_interval_seconds). Emit
+                        # the deferred counter so operators can see which
+                        # sources are being throttled.
+                        self._sem.release()
+                        try:
+                            from dk_data.observability.metrics import (
+                                DK_HYDRATION_DISPATCH_DEFERRED_TOTAL,
+                            )
+                            DK_HYDRATION_DISPATCH_DEFERRED_TOTAL.labels(
+                                source=desc.source_id
+                            ).inc()
+                        except Exception:  # pragma: no cover — defensive
+                            pass
+                        # Break the ready loop so we fall through to the
+                        # poll/sleep step — otherwise a fully-saturated
+                        # budget would spin this batch hot.
+                        break
+
                     launched.add(desc.source_id)
 
-                    result = self._dispatch_one(desc)
-                    if result is not None:
-                        # Short-circuit terminal state (quarantined / OOS).
+                    if result is not _DISPATCH_IN_FLIGHT:
+                        # Short-circuit terminal state (quarantined / OOS /
+                        # create-failed). ``result`` is a StepResult.
                         self._sem.release()
                         self._record_terminal(result)
                         results.append(result)
@@ -394,11 +461,19 @@ class HydrateDispatcher:
     # Per-source helpers
     # ------------------------------------------------------------------
 
-    def _dispatch_one(self, desc: SourceDescriptor) -> Optional[StepResult]:
+    def _dispatch_one(self, desc: SourceDescriptor) -> Any:
         """Create (or short-circuit) the per-source Job.
 
-        Returns a StepResult if the source was short-circuited (quarantined
-        etc.) or None if a real Job was created (caller adds to in-flight).
+        Returns:
+            A :class:`StepResult` if the source was short-circuited
+            (quarantined / create-failed / etc.), or the module-level
+            :data:`_DISPATCH_IN_FLIGHT` sentinel if a real Job was created
+            and the caller should add it to the in-flight table.
+
+        Never returns ``None``. The admission wrapper in
+        :meth:`ResourceBudget.decorate_dispatch` reserves ``None`` as the
+        "budget denied, defer" signal and would otherwise collide with the
+        Job-created case.
         """
         started_at = _now_utc()
         # 1. Quarantine short-circuit (C.3).
@@ -444,7 +519,7 @@ class HydrateDispatcher:
                 error_detail=f"kube create_job: {exc}",
                 depends_on=list(desc.depends_on),
             )
-        return None
+        return _DISPATCH_IN_FLIGHT
 
     def _poll_terminal(self, job_name: str) -> Optional[str]:
         """Poll the Job once; return terminal status or None if still running."""
@@ -678,7 +753,7 @@ class HydrateDispatcher:
     # ------------------------------------------------------------------
 
     def close(self) -> None:
-        """Return pool connections and close the backlog writer."""
+        """Return pool connections and close the backlog + budget writers."""
         if self._owns_writer_conn and self._writer_conn is not None:
             try:
                 pool = get_connection_pool()
@@ -689,6 +764,15 @@ class HydrateDispatcher:
         if self.backlog is not None:
             try:
                 self.backlog.close()
+            except Exception:  # pragma: no cover — defensive
+                pass
+        # Close the admission-control budget last — it holds its own
+        # pool-leased connection (see ResourceBudget.__init__). Only close
+        # if we constructed it ourselves; an injected budget is the
+        # caller's responsibility.
+        if self._owns_budget and self.budget is not None:
+            try:
+                self.budget.close()
             except Exception:  # pragma: no cover — defensive
                 pass
 
