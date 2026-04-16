@@ -1247,8 +1247,22 @@ async def trigger_source_ingestion(
 
         job_id = str(uuid4())
 
+        # Write job record so GET /monitoring/sync-jobs/{job_id} can track it
+        async with pool.acquire() as conn:
+            await conn.execute(
+                """INSERT INTO meta.ingestion_jobs (job_id, source, status)
+                   VALUES ($1, $2, 'pending')
+                   ON CONFLICT (job_id) DO NOTHING""",
+                job_id, source,
+            )
+
         async def run_ingestion():
             try:
+                async with pool.acquire() as conn:
+                    await conn.execute(
+                        "UPDATE meta.ingestion_jobs SET status='processing', started_at=now() WHERE job_id=$1",
+                        job_id,
+                    )
                 result = await run_pipeline(
                     sources=[source],
                     tier='manual',
@@ -1258,8 +1272,18 @@ async def trigger_source_ingestion(
                     skip_silver=False,
                     skip_gold=False,
                 )
+                async with pool.acquire() as conn:
+                    await conn.execute(
+                        "UPDATE meta.ingestion_jobs SET status='completed', completed_at=now() WHERE job_id=$1",
+                        job_id,
+                    )
                 logger.info(f"Ingestion job {job_id} completed: {result['status']}")
             except Exception as e:
+                async with pool.acquire() as conn:
+                    await conn.execute(
+                        "UPDATE meta.ingestion_jobs SET status='failed', completed_at=now(), error_message=$2 WHERE job_id=$1",
+                        job_id, str(e),
+                    )
                 logger.error(f"Ingestion job {job_id} failed: {e}")
 
         background_tasks.add_task(run_ingestion)

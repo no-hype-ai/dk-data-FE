@@ -146,6 +146,8 @@ services:
       LITELLM_API_KEY: "${LITELLM_API_KEY:-}"
       LITELLM_BASE_URL: "${LITELLM_BASE_URL:-}"
       LITELLM_MODEL_ALIAS: "${LITELLM_MODEL_ALIAS:-}"
+      # JWT secret — must match PostgREST so tokens are interoperable
+      JWT_SECRET: "${JWT_SECRET:-${PGRST_JWT_SECRET:-}}"
     volumes:
       # Mount scripts from canonical location
       - ./src/dk_data/scripts:/app/scripts:ro

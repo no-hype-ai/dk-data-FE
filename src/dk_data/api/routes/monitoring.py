@@ -813,10 +813,10 @@ async def get_sync_job_status(job_id: str):
         cur = conn.cursor()
 
         cur.execute("""
-            SELECT id, source, job_type, status, started_at, completed_at,
-                   records_processed, records_failed, error_message, options
+            SELECT job_id, source, status, started_at, completed_at,
+                   records_processed, error_message, error_details
             FROM meta.ingestion_jobs
-            WHERE id::text = %s
+            WHERE job_id::text = %s
         """, (job_id,))
         row = cur.fetchone()
 
@@ -827,21 +827,21 @@ async def get_sync_job_status(job_id: str):
             raise HTTPException(status_code=404, detail="Job not found")
 
         duration = None
-        if row[4] and row[5]:  # started_at and completed_at
-            duration = (row[5] - row[4]).total_seconds()
+        if row[3] and row[4]:  # started_at and completed_at
+            duration = (row[4] - row[3]).total_seconds()
 
         return {
             "job_id": str(row[0]),
             "source": row[1],
-            "job_type": row[2] or "bronze_ingest",
-            "status": row[3],
-            "started_at": row[4].isoformat() if row[4] else None,
-            "completed_at": row[5].isoformat() if row[5] else None,
+            "job_type": "bronze_ingest",
+            "status": row[2],
+            "started_at": row[3].isoformat() if row[3] else None,
+            "completed_at": row[4].isoformat() if row[4] else None,
             "duration_seconds": duration,
-            "records_processed": row[6] or 0,
-            "records_failed": row[7] or 0,
-            "error_message": row[8],
-            "options": row[9] if row[9] else {},
+            "records_processed": row[5] or 0,
+            "records_failed": 0,
+            "error_message": row[6],
+            "options": row[7] if row[7] else {},
         }
 
     except HTTPException:
