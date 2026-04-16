@@ -716,6 +716,46 @@ DK_HYDRATION_DLQ_SKIPPED_TOTAL = Counter(
 )
 
 
+# =============================================================================
+# Admission control by budget (Horizon 3 / plan §D.3)
+#
+# Emitted by src/dk_data/ingestion/resource_budget.py — the ResourceBudget
+# client that gates per-source dispatch on capacity in meta.resource_budget.
+# Three metrics, one role each:
+#   - DK_BUDGET_REMAINING       : per-key free headroom (ratio-able against
+#                                  DK_BUDGET_TOTAL_CAPACITY on the dashboard)
+#   - DK_BUDGET_TOTAL_CAPACITY  : per-key declared capacity — changes only
+#                                  when an operator tunes the seed row
+#   - DK_BUDGET_RESERVATION_DENIED_TOTAL : counter incremented when
+#                                  try_reserve() fails; consumed by the
+#                                  DkBudgetReservationDenied alert rule
+#                                  (allowlisted out of the dashboard test).
+# The dashboard at grafana/dashboards/applications/dk-data-fe-resource-budget.json
+# plots DK_BUDGET_REMAINING / DK_BUDGET_TOTAL_CAPACITY per budget_key.
+# =============================================================================
+
+DK_BUDGET_REMAINING = Gauge(
+    "dk_budget_remaining",
+    "Remaining admission-budget capacity per budget_key (plan §D.3). "
+    "Set by ResourceBudget.publish_snapshot() from meta.resource_budget.",
+    ["key"],
+)
+
+DK_BUDGET_TOTAL_CAPACITY = Gauge(
+    "dk_budget_total_capacity",
+    "Declared total admission-budget capacity per budget_key (plan §D.3). "
+    "Changes only when an operator tunes meta.resource_budget rows.",
+    ["key"],
+)
+
+DK_BUDGET_RESERVATION_DENIED_TOTAL = Counter(
+    "dk_budget_reservation_denied_total",
+    "Total try_reserve() calls that were denied for lack of capacity on "
+    "a given budget_key (plan §D.3). Per-key so the alert can point at "
+    "the saturated budget.",
+    ["key"],
+)
+
 
 CMS_GOLD_VIEW_LAST_REFRESH_TIMESTAMP = Gauge(
     "cms_gold_view_last_refresh_timestamp",
