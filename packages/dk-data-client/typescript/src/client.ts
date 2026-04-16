@@ -62,6 +62,25 @@ const METHOD_TIMEOUTS_MS: Record<string, number> = {
   serverInfo: 2_000,
 };
 
+// Upper bound (seconds) on a Retry-After delay we honor automatically.
+// Beyond this the automatic retry still fires but we wait at most this
+// long — the explicit exception path (DkDataRateLimitError on 429) lets
+// the caller pick a longer wait.
+const RETRY_AFTER_CAP_SECONDS = 5;
+// Default delay (seconds) when Retry-After is missing or unparseable.
+const RETRY_AFTER_DEFAULT_SECONDS = 1;
+
+function parseRetryAfter(value: string | null): number {
+  if (value === null) return RETRY_AFTER_DEFAULT_SECONDS;
+  const delta = Number(value);
+  if (!Number.isFinite(delta) || delta < 0) return RETRY_AFTER_DEFAULT_SECONDS;
+  return Math.min(delta, RETRY_AFTER_CAP_SECONDS);
+}
+
+function sleepMs(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
 export interface DkDataClientConfig {
   meteringProxyUrl: string;
   apiKey: string;
@@ -319,36 +338,69 @@ export class DkDataClient {
     const requestTimeoutMs =
       METHOD_TIMEOUTS_MS[opts.method] ?? this.timeoutMs;
 
-    const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), requestTimeoutMs);
-    let response: Response;
-    try {
-      const init: RequestInit = {
-        method: opts.httpMethod ?? "GET",
-        headers: {
-          Authorization: `Bearer ${this.apiKey}`,
-          Accept: "application/json",
-          "User-Agent": `dk-data-client/0.1.0 (typescript)`,
-          ...(opts.jsonBody ? { "Content-Type": "application/json" } : {}),
-        },
-        body: opts.jsonBody ? JSON.stringify(opts.jsonBody) : undefined,
-        signal: controller.signal,
-        // `keepalive: true` is a Fetch API standard option that both
-        // Node's undici and browser fetch support. It tells the
-        // transport to keep the underlying TCP connection alive
-        // across requests (HTTP/1.1 keep-alive / HTTP/2 multiplexing)
-        // which cuts handshake cost under burst load.
-        keepalive: true,
-      };
-      response = await fetch(url.toString(), init);
-    } catch (e) {
+    // One automatic retry with backoff on transient failures (issue
+    // #281). Callers own any further retry strategy. Retries fire only
+    // on:
+    //   * transport errors (network failure / abort) — 0.5s + 0-0.5s
+    //     jitter
+    //   * 503 + Retry-After — wait header seconds, capped at 5s
+    //   * 429 + Retry-After — wait header seconds, capped at 5s
+    // Explicitly NOT retried: 401/403/404 (semantic), 410 (stale is a
+    // state not a transient failure), 5xx other than 503, 2xx/3xx.
+    let response: Response | null = null;
+    for (let attempt = 0; attempt < 2; attempt++) {
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), requestTimeoutMs);
+      try {
+        const init: RequestInit = {
+          method: opts.httpMethod ?? "GET",
+          headers: {
+            Authorization: `Bearer ${this.apiKey}`,
+            Accept: "application/json",
+            "User-Agent": `dk-data-client/0.1.0 (typescript)`,
+            ...(opts.jsonBody ? { "Content-Type": "application/json" } : {}),
+          },
+          body: opts.jsonBody ? JSON.stringify(opts.jsonBody) : undefined,
+          signal: controller.signal,
+          // `keepalive: true` is a Fetch API standard option that both
+          // Node's undici and browser fetch support. It tells the
+          // transport to keep the underlying TCP connection alive
+          // across requests (HTTP/1.1 keep-alive / HTTP/2 multiplexing)
+          // which cuts handshake cost under burst load.
+          keepalive: true,
+        };
+        response = await fetch(url.toString(), init);
+      } catch (e) {
+        clearTimeout(timer);
+        if (attempt === 0) {
+          // Transport error on the first try — back off briefly and
+          // retry once. Jitter avoids dogpiling an upstream that is
+          // coming back up from a brief blip.
+          await sleepMs(500 + Math.random() * 500);
+          continue;
+        }
+        throw new DkDataServerError(`transport error calling ${opts.path}: ${String(e)}`, {
+          statusCode: 0,
+        });
+      }
       clearTimeout(timer);
-      throw new DkDataServerError(`transport error calling ${opts.path}: ${String(e)}`, {
-        statusCode: 0,
-      });
-    }
-    clearTimeout(timer);
 
+      // Respect Retry-After on 503 (load-shed) and 429 (rate limit).
+      // Cap the delay so a misconfigured server can't wedge the caller
+      // indefinitely.
+      if (attempt === 0 && (response.status === 503 || response.status === 429)) {
+        const delaySeconds = parseRetryAfter(response.headers.get("Retry-After"));
+        await sleepMs(delaySeconds * 1000);
+        continue;
+      }
+
+      break;
+    }
+
+    // Loop either sets `response` or throws; TS can't narrow that here.
+    if (response === null) {
+      throw new DkDataServerError(`transport error calling ${opts.path}`, { statusCode: 0 });
+    }
     return this.handleResponse(response, opts.path);
   }
 
