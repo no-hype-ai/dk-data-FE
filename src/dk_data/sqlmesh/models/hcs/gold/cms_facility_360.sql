@@ -17,7 +17,11 @@ MODEL (
     cron '@monthly',
     audits (
         not_null(columns := (ccn)),
-        unique_values(columns := (ccn))
+        unique_values(columns := (ccn)),
+        -- CMS POS + PECOS: observed steady-state ~6k CCNs.
+        row_count_above(min_rows := 3000),
+        -- Monthly cron → 60-day staleness budget (1 skipped run + slack).
+        freshness_threshold(time_column := gold_built_at, max_age_seconds := 5184000)
     ),
     grain (ccn)
 );

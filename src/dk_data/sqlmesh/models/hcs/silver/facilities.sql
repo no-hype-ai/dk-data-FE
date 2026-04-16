@@ -8,6 +8,13 @@ MODEL (
     kind INCREMENTAL_BY_UNIQUE_KEY (
         unique_key facility_id
     ),
+    audits (
+        -- Entity-resolution key integrity (FR-014 Silver Hub Architecture).
+        -- facility_name is load-bearing for display and is asserted non-null by
+        -- the final SELECT's WHERE clause — this audit surfaces regressions.
+        not_null(columns := (facility_id, facility_name)),
+        unique_values(columns := (facility_id))
+    ),
     grain facility_id
 );
 

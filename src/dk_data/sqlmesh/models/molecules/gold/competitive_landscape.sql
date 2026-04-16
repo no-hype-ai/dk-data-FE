@@ -14,7 +14,12 @@ MODEL (
         unique_key molecule_id
     ),
     cron '@weekly',
-    audits (not_null(columns := (molecule_id))),
+    audits (
+        not_null(columns := (molecule_id)),
+        unique_values(columns := (molecule_id)),
+        row_count_above(min_rows := 10000),
+        freshness_threshold(time_column := computed_at, max_age_seconds := 1209600)
+    ),
     grain (molecule_id)
 );
 

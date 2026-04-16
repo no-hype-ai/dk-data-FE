@@ -11,7 +11,13 @@ MODEL (
     cron '@weekly',
     audits (
         not_null(columns := (molecule_id, canonical_name)),
-        unique_values(columns := (molecule_id))
+        unique_values(columns := (molecule_id)),
+        -- Silent-drop floor: molecule hub observed steady-state ~200k+ rows.
+        -- 50k is well below the post-bootstrap floor but still fails on a
+        -- catastrophic empty-out. Tighten after 90 days of stable runs.
+        row_count_above(min_rows := 50000),
+        -- Weekly cron → 14-day staleness budget (1 skipped run + slack).
+        freshness_threshold(time_column := updated_at, max_age_seconds := 1209600)
     ),
     grain molecule_id
 );

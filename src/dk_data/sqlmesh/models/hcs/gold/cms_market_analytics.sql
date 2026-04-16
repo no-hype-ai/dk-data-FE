@@ -16,7 +16,11 @@ MODEL (
     kind FULL,
     cron '@daily',
     audits (
-        not_null(columns := (geo_code, geo_level))
+        not_null(columns := (geo_code, geo_level)),
+        unique_combination_of_columns(columns := (geo_code, geo_level)),
+        -- Aggregated at state (51) + 3-digit-zip (~900) levels — expect ~1k.
+        row_count_above(min_rows := 100),
+        freshness_threshold(time_column := gold_built_at, max_age_seconds := 172800)
     ),
     grain (geo_code, geo_level)
 );
