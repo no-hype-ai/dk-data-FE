@@ -1,0 +1,29 @@
+# CMS Open Payments — annual CSV, T1 priority:top15 onboarding.
+#
+# Open Payments (Sunshine Act) reports payments + transfers of value from
+# drug/device manufacturers to physicians + teaching hospitals. Annual
+# refresh with an October release; we schedule just after that drop to
+# pick up the fresh program year.
+#
+# Orchestration tier: 5 (depends on provider + drug product hubs being
+# resolved so the transfers can link to HCPs and drugs). Matches the
+# existing row in SOURCE_LOAD_ORDER:
+# ``hcs_raw.cms_open_payments`` at tier 6 — we pick tier 5 here as the
+# raw landing tier; bronze/silver/gold consumers will slot above.
+# Accessibility tier (GH label): T1 — stable CSV URL, no auth.
+
+name: cms_open_payments
+domain: hcs
+tier: 5
+depends_on: []
+fetch:
+  kind: http_csv
+  url: https://download.cms.gov/openpayments/PGYR2024_P01302025.zip
+schedule: "0 6 15 10 *"  # 06:00 UTC on October 15th (annual release window)
+credentials_ref: none
+expected_row_count_fn: "SELECT reltuples::bigint FROM pg_class WHERE relname='cms_open_payments'"
+sla_seconds: 7200
+manifest: .dk/sources/cms_open_payments.manifest.json
+consumes:
+  wal_headroom_pct: 3
+  db_connections: 2
