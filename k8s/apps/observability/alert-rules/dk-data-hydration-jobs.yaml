@@ -1,0 +1,71 @@
+---
+# Hydration Job PrometheusRule alerts for dk-data
+# Plan ref: Horizon 1, Part B.5 (PR-04)
+# Covers: hydration Job failure + manifest row-count mismatch.
+# Context: 2026-04-15/16 incident — the monolithic hydrate Job failed silently
+# in ways no alert picked up. The row-mismatch counter ships via PR-02
+# (B.3); this alert is wired now so PR-02 fires the page the moment it lands.
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: dk-data-hydration-jobs
+  labels:
+    app: dk-data
+    app.kubernetes.io/name: dk-data-hydration-jobs
+    app.kubernetes.io/component: alerting
+    app.kubernetes.io/part-of: dk-data
+    prometheus: kube-prometheus
+    role: alert-rules
+spec:
+  groups:
+    - name: dk-data.hydrate.jobs
+      interval: 60s
+      rules:
+        - alert: DkHydrationJobFailed
+          # kube-state-metrics exposes per-Job failure counts. Any non-zero
+          # value for a job whose name contains "hydrate" is a page — we
+          # never want a hydration Job to fail silently (backoffLimit lands
+          # in PR-01 but we still want the alert on the first failure).
+          expr: |
+            kube_job_status_failed{job_name=~".*hydrate.*"} > 0
+          for: 0m
+          labels:
+            severity: critical
+            team: dk-data
+            service: hydrate
+          annotations:
+            summary: "Hydration Job {{ $labels.job_name }} failed"
+            description: >
+              Job {{ $labels.job_name }} in namespace {{ $labels.namespace }}
+              has at least one failed pod. Pull pod logs with
+              `kubectl -n {{ $labels.namespace }} logs job/{{ $labels.job_name }}`,
+              check `meta.transform_runs` for the matching `run_label`, and
+              consult the CNPG runbook if the failure coincides with a node
+              DiskPressure event.
+            runbook_url: "../../docs/runbooks/cnpg-operator-deadlock.md"
+
+        - alert: DkHydrationRowMismatch
+          # Counter emitted by prestaged.py after PR-02 lands the manifest
+          # row-count gate (B.3). Until then this alert stays silent because
+          # the metric does not exist — that is the intended behavior
+          # (Prometheus treats an unknown series as absent and the rule
+          # evaluates to empty, not to a firing alert).
+          expr: |
+            increase(dk_hydration_row_mismatch_total[1h]) > 0
+          for: 0m
+          labels:
+            severity: critical
+            team: dk-data
+            service: hydrate
+          annotations:
+            summary: "Row-count mismatch in hydrated table {{ $labels.schema }}.{{ $labels.table }}"
+            description: >
+              Source {{ $labels.source }} loaded
+              {{ $labels.schema }}.{{ $labels.table }} with a row count that
+              does not match the manifest's expected_row_count. The step
+              will not be promoted — inspect the artifact on SeaweedFS,
+              re-check the source-side dump, and review
+              `meta.transform_runs` for the run_label. This usually means
+              the upstream zip dropped a file (see PR-03) or the dump was
+              truncated in transit.
+            runbook_url: "../../docs/runbooks/cnpg-operator-deadlock.md"
