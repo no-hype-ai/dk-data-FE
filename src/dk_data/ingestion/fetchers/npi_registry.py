@@ -168,14 +168,34 @@ class NPIRegistryFetcher(BaseFetcher):
         logger.info("NPI Registry: download complete, parsing zip...")
 
         with zipfile.ZipFile(zip_buffer) as zf:
-            # Find the main NPI data CSV (npidata_pfile_*.csv)
+            # Find the main NPI data CSV (npidata_pfile_*.csv).
+            #
+            # NOTE: the NPPES bundle also ships othername_pfile_*.csv,
+            # pl_pfile_*.csv, and endpoint_pfile_*.csv — those are ingested by
+            # the cms_nppes fetcher, which extracts every CSV.  This fetcher
+            # intentionally only consumes npidata_pfile because it populates
+            # the narrow npi_registry provider table; the siblings belong to
+            # other tables.  Do NOT re-introduce a "largest CSV" heuristic
+            # here — that was the root cause of the NPPES truncation bug
+            # (plan §A.1 / §B.4).
+            all_members = zf.namelist()
             csv_name = next(
-                (n for n in zf.namelist() if n.startswith("npidata_pfile") and n.endswith(".csv")),
+                (n for n in all_members if n.startswith("npidata_pfile") and n.endswith(".csv")),
                 None,
             )
             if not csv_name:
                 raise RuntimeError(
-                    f"NPI Registry: main CSV not found in zip. Contents: {zf.namelist()}"
+                    f"NPI Registry: main CSV not found in zip. Contents: {all_members}"
+                )
+            other_csvs = [
+                n for n in all_members
+                if n.endswith(".csv") and not n.startswith("npidata_pfile")
+            ]
+            if other_csvs:
+                logger.info(
+                    "NPI Registry: ignoring %d sibling CSV(s) (handled by cms_nppes): %s",
+                    len(other_csvs),
+                    other_csvs,
                 )
             logger.info("NPI Registry: parsing %s", csv_name)
 

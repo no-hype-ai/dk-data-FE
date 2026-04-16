@@ -553,6 +553,13 @@ CMS_RATE_LIMIT_REJECTIONS_TOTAL = Counter(
     ["source"],
 )
 
+# Download integrity (Horizon 1 / plan §B.4)
+DK_ARTIFACT_SIZE_MISMATCH_TOTAL = Counter(
+    "dk_artifact_size_mismatch_total",
+    "Total downloads where bytes written != Content-Length header",
+    ["source"],
+)
+
 CMS_GOLD_VIEW_LAST_REFRESH_TIMESTAMP = Gauge(
     "cms_gold_view_last_refresh_timestamp",
     "Unix timestamp of last hcs_gold view refresh",
