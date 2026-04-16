@@ -1,0 +1,53 @@
+---
+# PgBouncer PrometheusRule alerts for dk-data
+# Plan ref: Horizon 1, Part B.5 (PR-04)
+# Covers: per-pool server-connection saturation.
+# Context: Plan A.2 #9 — "PgBouncer pool at ceiling, 'no headroom'". Pool
+# split lands in Horizon 2 (C.5); this alert warns when any pool's
+# server-side utilization crosses 90% so we see saturation before writes
+# queue indefinitely.
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: dk-data-pgbouncer
+  labels:
+    app: dk-data
+    app.kubernetes.io/name: dk-data-pgbouncer
+    app.kubernetes.io/component: alerting
+    app.kubernetes.io/part-of: dk-data
+    prometheus: kube-prometheus
+    role: alert-rules
+spec:
+  groups:
+    - name: dk-data.pgbouncer.saturation
+      interval: 60s
+      rules:
+        - alert: DkPgBouncerPoolSaturation
+          # The prometheus-pgbouncer-exporter exposes per-pool gauges:
+          #   pgbouncer_pools_server_active_connections — in-use server conns
+          #   pgbouncer_pools_server_connections        — total server conns
+          # Utilization = active / total. Guard against divide-by-zero for
+          # pools that have not yet opened any server connection.
+          expr: |
+            (
+              pgbouncer_pools_server_active_connections
+              /
+              (pgbouncer_pools_server_connections > 0)
+            ) > 0.9
+          for: 5m
+          labels:
+            severity: warning
+            team: dk-data
+            service: pgbouncer
+          annotations:
+            summary: "PgBouncer pool {{ $labels.database }}/{{ $labels.user }} >90% saturated"
+            description: >
+              PgBouncer pool database={{ $labels.database }}
+              user={{ $labels.user }} on instance {{ $labels.instance }}
+              has been above 90% server-connection utilization for 5m.
+              New sessions will queue. Check
+              `SHOW POOLS;` / `SHOW CLIENTS;` on the PgBouncer admin
+              console, raise `default_pool_size` if headroom exists on
+              Postgres, and consider splitting the hydration traffic onto
+              its own pool (plan C.5).
+            runbook_url: "../../docs/runbooks/cnpg-operator-deadlock.md"

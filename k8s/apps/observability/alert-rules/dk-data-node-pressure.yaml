@@ -1,0 +1,72 @@
+---
+# Node pressure PrometheusRule alerts for dk-data
+# Plan ref: Horizon 1, Part B.5 (PR-04)
+# Covers: control-plane disk-pressure eviction, ephemeral-storage headroom.
+# Context: 2026-04-15/16 incident — hydration Job filled k3s-master-1 ephemeral
+# storage -> node tainted DiskPressure -> CNPG operator evicted -> no Postgres
+# primary -> all writes blocked (issue #637). Neither condition alerted today.
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: dk-data-node-pressure
+  labels:
+    app: dk-data
+    app.kubernetes.io/name: dk-data-node-pressure
+    app.kubernetes.io/component: alerting
+    app.kubernetes.io/part-of: dk-data
+    # Required by Prometheus Operator to load this rule
+    prometheus: kube-prometheus
+    role: alert-rules
+spec:
+  groups:
+    - name: dk-data.node.pressure
+      interval: 60s
+      rules:
+        - alert: DkNodeDiskPressure
+          # kube-state-metrics emits one series per (node, condition, status).
+          # Fire as soon as any node reports DiskPressure=True.
+          expr: |
+            kube_node_status_condition{condition="DiskPressure",status="true"} == 1
+          for: 1m
+          labels:
+            severity: critical
+            team: dk-data
+            service: hydrate
+          annotations:
+            summary: "Node {{ $labels.node }} is under DiskPressure"
+            description: >
+              Node {{ $labels.node }} reports condition DiskPressure=True. The
+              kubelet will start evicting pods; CNPG operator + PgBouncer can
+              be thrown off the node and Postgres writes may stall. Check the
+              node's ephemeral disk (`/var/lib/containerd`, `/var/log`,
+              hydration scratch) and cordon the node if the pressure does not
+              clear within a few minutes. See the CNPG deadlock runbook for
+              the full recovery path.
+            runbook_url: "../../docs/runbooks/cnpg-operator-deadlock.md"
+
+        - alert: DkNodeEphemeralStorageHigh
+          # node_exporter reports per-mountpoint size/avail. The root fs (/)
+          # is where kubelet stores pod ephemeral storage + container images.
+          # Fire when <15% free for 5m so transient spikes do not page.
+          expr: |
+            (
+              node_filesystem_avail_bytes{mountpoint="/",fstype!~"tmpfs|overlay"}
+              /
+              node_filesystem_size_bytes{mountpoint="/",fstype!~"tmpfs|overlay"}
+            ) < 0.15
+          for: 5m
+          labels:
+            severity: warning
+            team: dk-data
+            service: hydrate
+          annotations:
+            summary: "Node {{ $labels.instance }} root filesystem <15% free"
+            description: >
+              Root filesystem on {{ $labels.instance }} is under 15% free
+              ({{ $value | humanizePercentage }}). Kubelet will raise
+              DiskPressure once it crosses its eviction threshold (default
+              10%). Investigate hydration scratch dirs, large container
+              images, orphaned pod volumes, and
+              `/var/lib/containerd/tmpmounts`. Clear headroom before the
+              node tips into DiskPressure and evicts the CNPG operator.
+            runbook_url: "../../docs/runbooks/cnpg-operator-deadlock.md"
