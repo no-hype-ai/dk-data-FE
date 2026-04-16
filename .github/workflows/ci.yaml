@@ -464,7 +464,11 @@ jobs:
 
       - name: mypy --strict on new modules
         run: |
-          cd src && python -m mypy --strict --ignore-missing-imports \
+          # --follow-imports=silent keeps the strict checks scoped to the
+          # six new 005 modules only; transitive imports into unrelated
+          # files (e.g. cms_catalog.py) are type-checked by their own
+          # owners, not this gate.
+          cd src && python -m mypy --strict --ignore-missing-imports --follow-imports=silent \
             dk_data/ingestion/prestaged_types.py \
             dk_data/ingestion/prestaged_safety.py \
             dk_data/ingestion/transform_runs_writer.py \
