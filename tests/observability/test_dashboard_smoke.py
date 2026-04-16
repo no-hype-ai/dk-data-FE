@@ -123,7 +123,12 @@ def _load_dashboards() -> list[tuple[Path, dict]]:
     out: list[tuple[Path, dict]] = []
     for path in sorted(DASHBOARDS_DIR.glob("**/*.json")):
         try:
-            out.append((path, json.loads(path.read_text())))
+            data = json.loads(path.read_text())
+            # Grafana API-upload envelope wraps the dashboard spec under "dashboard".
+            # Accept both shapes so tests work before and after PR-09's move into applications/.
+            if isinstance(data, dict) and "dashboard" in data and isinstance(data["dashboard"], dict):
+                data = data["dashboard"]
+            out.append((path, data))
         except json.JSONDecodeError as e:
             pytest.fail(f"{path.name} is not valid JSON: {e}")
     return out
