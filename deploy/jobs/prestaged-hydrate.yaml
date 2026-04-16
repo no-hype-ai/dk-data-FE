@@ -185,6 +185,20 @@ spec:
               value: "70"
             - name: WAL_PAUSE_LOW_PCT
               value: "40"
+            # Per-source credential (Horizon 3 §D.5) — DRUGBANK_API_KEY is
+            # pulled from the dedicated dk-data-secrets-drugbank Secret, NOT
+            # the monolithic dk-data-secrets. Rotating DrugBank's key touches
+            # this Secret only; no other source is affected.
+            #
+            # This is the proof-of-pattern for D.5. Remaining per-source keys
+            # (OPENFDA, NCBI, OPENALEX, USPTO, TTD) are tracked as a follow-up
+            # sweep across all fetcher manifests — see PR body for the issue.
+            - name: DRUGBANK_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: dk-data-secrets-drugbank
+                  key: DRUGBANK_API_KEY
+                  optional: true
           # B.1 — Resource budget.
           # CPU requests bumped off the 10m scheduling-hack value used in the
           # -17-slave repair manifest (obs 2527–2534 — 10m thrashes QoS).

@@ -9,6 +9,9 @@ labels:
 
 resources:
 - ../../base
+# Per-source DopplerSecret CRs (Horizon 3 §D.5). Each CR scopes one key to
+# one Doppler config so rotation blast-radius is a single source.
+- ../../apps/secrets/per-source
 
 images:
 - name: ghcr.io/data-kinetic/dk-data-fe/job-trigger
@@ -82,6 +85,69 @@ patches:
   target:
     kind: DopplerSecret
     name: doppler-ghcr
+# Per-source DopplerSecrets — staging overlay points each at its `-stg` config.
+# Base manifests use the production config name (`drugbank`, `openfda`, ...).
+# Horizon 3 §D.5.
+- patch: |-
+    apiVersion: secrets.doppler.com/v1alpha1
+    kind: DopplerSecret
+    metadata:
+      name: dk-data-secrets-drugbank
+    spec:
+      config: drugbank-stg
+  target:
+    kind: DopplerSecret
+    name: dk-data-secrets-drugbank
+- patch: |-
+    apiVersion: secrets.doppler.com/v1alpha1
+    kind: DopplerSecret
+    metadata:
+      name: dk-data-secrets-openfda
+    spec:
+      config: openfda-stg
+  target:
+    kind: DopplerSecret
+    name: dk-data-secrets-openfda
+- patch: |-
+    apiVersion: secrets.doppler.com/v1alpha1
+    kind: DopplerSecret
+    metadata:
+      name: dk-data-secrets-ncbi
+    spec:
+      config: ncbi-stg
+  target:
+    kind: DopplerSecret
+    name: dk-data-secrets-ncbi
+- patch: |-
+    apiVersion: secrets.doppler.com/v1alpha1
+    kind: DopplerSecret
+    metadata:
+      name: dk-data-secrets-openalex
+    spec:
+      config: openalex-stg
+  target:
+    kind: DopplerSecret
+    name: dk-data-secrets-openalex
+- patch: |-
+    apiVersion: secrets.doppler.com/v1alpha1
+    kind: DopplerSecret
+    metadata:
+      name: dk-data-secrets-uspto
+    spec:
+      config: uspto-stg
+  target:
+    kind: DopplerSecret
+    name: dk-data-secrets-uspto
+- patch: |-
+    apiVersion: secrets.doppler.com/v1alpha1
+    kind: DopplerSecret
+    metadata:
+      name: dk-data-secrets-ttd
+    spec:
+      config: ttd-stg
+  target:
+    kind: DopplerSecret
+    name: dk-data-secrets-ttd
 - patch: |-
     apiVersion: v1
     kind: ConfigMap

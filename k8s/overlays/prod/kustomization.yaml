@@ -9,6 +9,9 @@ labels:
 
 resources:
 - ../../base
+# Per-source DopplerSecret CRs (Horizon 3 §D.5). Each CR scopes one key to
+# one Doppler config so rotation blast-radius is a single source.
+- ../../apps/secrets/per-source
 
 images:
 - name: ghcr.io/data-kinetic/dk-data-fe/job-trigger
