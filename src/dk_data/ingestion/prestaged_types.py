@@ -24,6 +24,13 @@ RunStatus = Literal[
     "blocked",
     "skipped_view",
     "no_source_available",
+    # B.3 — post-restore COUNT(*) deviated from manifest `row_count`
+    # beyond tolerance. Distinct from "failed": the restore itself
+    # succeeded at the pg_restore layer, but data integrity is
+    # violated (truncated or short-written upstream). See plan.md §B.3
+    # and session memory observation #2245 ("end of file" treated as
+    # benign by pg_restore 17 → data loss slipped through).
+    "row_mismatch",
 ]
 
 PGDMP_MAGIC = b"PGDMP"

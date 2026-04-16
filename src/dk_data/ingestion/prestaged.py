@@ -35,6 +35,11 @@ from dk_data.ingestion.load_order import (
     plan_load,
     propagate_blocked,
 )
+from dk_data.ingestion.prestaged_manifest import (
+    DEFAULT_ROW_TOLERANCE_PCT,
+    is_row_count_mismatch,
+    load_manifest,
+)
 from dk_data.ingestion.utils.database import build_dsn
 from dk_data.ingestion.prestaged_safety import is_restorable_target
 from dk_data.ingestion.prestaged_types import (
@@ -434,6 +439,88 @@ def run_step(
             if result is not None:
                 row_count = int(result[0])
 
+        # 4b. Manifest row-count gate (plan.md §B.3, PR-02).
+        #
+        # Context: session memory #2245 — pg_restore 17 emits a benign
+        # `SET transaction_timeout = 0` error that we treat as success.
+        # That tolerance is necessary for the PG-16 target, but it means
+        # an upstream truncation (short download, partial dump, zero-byte
+        # chunk) rides through pg_restore and lands as a silently-short
+        # table. The manifest gate is the only place we detect that.
+        #
+        # Contract:
+        #   - Manifest present + count mismatches beyond tolerance →
+        #     status="row_mismatch", increment row_mismatch_total, return
+        #     a non-zero per-step code (caller folds this into
+        #     failed_count, triggering the Job's non-zero exit in main()).
+        #   - Manifest absent → preserve current behavior (log + proceed),
+        #     but increment manifest_missing_total so the gap is visible.
+        #   - Manifest present, counts match → fall through to the normal
+        #     "completed" terminal write.
+        #
+        # We key on the last chunk's artifact — by construction all chunks
+        # for a (schema, table) share the same manifest (one manifest per
+        # source), so picking the trailing artifact is deterministic.
+        tolerance_pct = float(os.environ.get(
+            "HYDRATION_ROW_TOLERANCE_PCT",
+            str(DEFAULT_ROW_TOLERANCE_PCT),
+        ))
+        manifest_entry = None
+        if step.artifacts:
+            manifest_entry = load_manifest(step.artifacts[-1])
+
+        if manifest_entry is None:
+            # Emit the gap metric. Import locally so the prestaged module
+            # doesn't hard-depend on prometheus_client being present at
+            # import time (keeps unit tests import-light).
+            try:
+                from dk_data.observability.metrics import (
+                    DK_HYDRATION_MANIFEST_MISSING_TOTAL,
+                )
+                DK_HYDRATION_MANIFEST_MISSING_TOTAL.labels(
+                    source=step.source_id, schema=schema, table=table,
+                ).inc()
+            except Exception:  # noqa: BLE001 — metrics must never break ingestion
+                logger.debug("manifest_missing metric emission failed")
+        elif is_row_count_mismatch(
+            expected=manifest_entry.expected_row_count,
+            actual=row_count,
+            tolerance_pct=tolerance_pct,
+        ):
+            try:
+                from dk_data.observability.metrics import (
+                    DK_HYDRATION_ROW_MISMATCH_TOTAL,
+                )
+                DK_HYDRATION_ROW_MISMATCH_TOTAL.labels(
+                    source=step.source_id, schema=schema, table=table,
+                ).inc()
+            except Exception:  # noqa: BLE001
+                logger.debug("row_mismatch metric emission failed")
+
+            detail = (
+                f"row_mismatch: expected={manifest_entry.expected_row_count} "
+                f"actual={row_count} tolerance_pct={tolerance_pct}"
+            )
+            logger.error("{}.{} {}", schema, table, detail)
+            ended_at = _dt.datetime.now(_dt.timezone.utc)
+            writer.record(
+                run_label=run_label, schema=schema, table=table,
+                chunk_position=(
+                    step.artifacts[-1].chunk_index if step.artifacts else "-"
+                ),
+                source_kind=step.kind, status="row_mismatch",
+                started_at=started_at, ended_at=ended_at,
+                rows_processed=row_count,
+                artifact_sha256=",".join(all_sha256s) if all_sha256s else None,
+                error_detail=detail,
+            )
+            conn.commit()
+            return RunStepOutcome(
+                status="row_mismatch",
+                row_count=row_count,
+                error_detail=detail,
+            )
+
         # 5. Write terminal completed row
         ended_at = _dt.datetime.now(_dt.timezone.utc)
         writer.record(
@@ -737,7 +824,7 @@ def main(argv: list[str] | None = None) -> int:
         # 10+ minutes for large tables), during which PgBouncer may
         # close the client-pooler connection. Reconnecting here is
         # cheap (<10ms) and makes every source start with a live conn.
-        def _ensure_live():
+        def _ensure_live() -> None:
             nonlocal conn, writer, throttle
             try:
                 with conn.cursor() as _pingc:

@@ -461,6 +461,34 @@ DK_ALERTS_DELIVERED = Counter(
 
 
 # =============================================================================
+# Prestaged Hydration Row-Count Gate (plan.md §B.3 / PR-02)
+# =============================================================================
+# Emitted by src/dk_data/ingestion/prestaged.py after the post-restore
+# COUNT(*) block. Two counters, zero gauges: gauges would reset across
+# job restarts and we only care about cumulative events for alerting
+# (DkHydrationRowMismatch in plan.md §B.5).
+
+DK_HYDRATION_ROW_MISMATCH_TOTAL = Counter(
+    "dk_hydration_row_mismatch_total",
+    (
+        "Count of prestaged hydration steps where post-restore COUNT(*) "
+        "deviated from the manifest's expected row_count beyond tolerance."
+    ),
+    ["source", "schema", "table"],
+)
+
+DK_HYDRATION_MANIFEST_MISSING_TOTAL = Counter(
+    "dk_hydration_manifest_missing_total",
+    (
+        "Count of prestaged hydration steps where no manifest entry was "
+        "found for the (schema, table). Row-count gate is disabled for "
+        "this step; metric makes the gap visible instead of silent."
+    ),
+    ["source", "schema", "table"],
+)
+
+
+# =============================================================================
 # NEW: Quarantine Metric (013-dk-data-observability — RC8)
 # =============================================================================
 
