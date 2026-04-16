@@ -16,7 +16,7 @@ resources:
 images:
 - name: ghcr.io/data-kinetic/dk-data-fe/job-trigger
   newName: ghcr.io/data-kinetic/dk-data-fe/job-trigger
-  newTag: prod-51a37d8
+  newTag: prod-36f6f57
 
   # PostgREST — 3 replicas for HA with production resources
 
