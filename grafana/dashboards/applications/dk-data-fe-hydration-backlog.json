@@ -4,23 +4,44 @@
   },
   "dashboard": {
     "uid": "dk-data-fe-hydration-backlog",
-    "title": "dk-data Hydration Backlog (stub)",
-    "description": "Stub \u2014 see plan.md \u00a7J.3, \u00a7C.3",
+    "title": "dk-data Hydration Backlog (DLQ)",
+    "description": "Hydration dead-letter queue (meta.hydration_backlog) + quarantine telemetry. Plan.md \u00a7C.3. Reads dk_hydration_dlq_added_total / dk_hydration_dlq_quarantined_total / dk_hydration_dlq_skipped_total from the prestaged dispatcher; latest-row panel reads meta.hydration_backlog via the postgres datasource.",
     "tags": [
       "dk-data-fe",
-      "stub"
+      "hydration",
+      "dlq",
+      "observability"
     ],
     "schemaVersion": 39,
     "editable": true,
-    "refresh": "",
+    "refresh": "1m",
     "time": {
-      "from": "now-6h",
+      "from": "now-24h",
       "to": "now"
     },
     "timepicker": {},
     "timezone": "",
     "templating": {
-      "list": []
+      "list": [
+        {
+          "name": "source",
+          "type": "query",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "refresh": 2,
+          "query": "label_values(dk_hydration_dlq_added_total, source)",
+          "includeAll": true,
+          "multi": true,
+          "allValue": ".*",
+          "current": {
+            "selected": false,
+            "text": "All",
+            "value": "$__all"
+          }
+        }
+      ]
     },
     "annotations": {
       "list": []
@@ -28,17 +49,363 @@
     "panels": [
       {
         "id": 1,
-        "type": "text",
-        "title": "TODO",
+        "type": "stat",
+        "title": "DLQ failures (last 24h)",
+        "description": "Total hydration failures recorded to meta.hydration_backlog in the last 24 hours, summed across sources. Dashboard-side approximation \u2014 the counter dk_hydration_dlq_added_total increments on every failure, not only on first-time inserts.",
+        "datasource": {
+          "type": "prometheus",
+          "uid": "prometheus"
+        },
         "gridPos": {
-          "h": 8,
-          "w": 24,
+          "h": 4,
+          "w": 8,
           "x": 0,
           "y": 0
         },
+        "fieldConfig": {
+          "defaults": {
+            "unit": "short",
+            "color": {
+              "mode": "thresholds"
+            },
+            "thresholds": {
+              "mode": "absolute",
+              "steps": [
+                { "color": "green", "value": null },
+                { "color": "yellow", "value": 1 },
+                { "color": "orange", "value": 10 },
+                { "color": "red", "value": 50 }
+              ]
+            },
+            "mappings": []
+          },
+          "overrides": []
+        },
+        "options": {
+          "colorMode": "background",
+          "graphMode": "area",
+          "justifyMode": "auto",
+          "orientation": "auto",
+          "reduceOptions": {
+            "calcs": ["lastNotNull"],
+            "fields": "",
+            "values": false
+          },
+          "textMode": "auto"
+        },
+        "pluginVersion": "10.0.0",
+        "targets": [
+          {
+            "expr": "sum(increase(dk_hydration_dlq_added_total{source=~\"$source\"}[24h]))",
+            "legendFormat": "failures_24h",
+            "refId": "A"
+          }
+        ]
+      },
+      {
+        "id": 2,
+        "type": "stat",
+        "title": "Quarantine events (last 24h)",
+        "description": "Count of source quarantine transitions in the last 24 hours. Each event is a one-shot increment \u2014 a source can quarantine, be unquarantined by the operator CLI, then re-enter quarantine on the next failure (two events).",
+        "datasource": {
+          "type": "prometheus",
+          "uid": "prometheus"
+        },
+        "gridPos": {
+          "h": 4,
+          "w": 8,
+          "x": 8,
+          "y": 0
+        },
+        "fieldConfig": {
+          "defaults": {
+            "unit": "short",
+            "color": {
+              "mode": "thresholds"
+            },
+            "thresholds": {
+              "mode": "absolute",
+              "steps": [
+                { "color": "green", "value": null },
+                { "color": "red", "value": 1 }
+              ]
+            },
+            "mappings": []
+          },
+          "overrides": []
+        },
+        "options": {
+          "colorMode": "background",
+          "graphMode": "none",
+          "justifyMode": "auto",
+          "orientation": "auto",
+          "reduceOptions": {
+            "calcs": ["lastNotNull"],
+            "fields": "",
+            "values": false
+          },
+          "textMode": "auto"
+        },
+        "pluginVersion": "10.0.0",
+        "targets": [
+          {
+            "expr": "sum(increase(dk_hydration_dlq_quarantined_total{source=~\"$source\"}[24h]))",
+            "legendFormat": "quarantined_24h",
+            "refId": "A"
+          }
+        ]
+      },
+      {
+        "id": 3,
+        "type": "stat",
+        "title": "Skipped steps (last 24h)",
+        "description": "Hydration steps skipped because the source was quarantined. Elevated skip counts without new quarantine events mean a quarantine has been outstanding too long \u2014 operator must investigate and either fix the source or run `--unquarantine`.",
+        "datasource": {
+          "type": "prometheus",
+          "uid": "prometheus"
+        },
+        "gridPos": {
+          "h": 4,
+          "w": 8,
+          "x": 16,
+          "y": 0
+        },
+        "fieldConfig": {
+          "defaults": {
+            "unit": "short",
+            "color": {
+              "mode": "thresholds"
+            },
+            "thresholds": {
+              "mode": "absolute",
+              "steps": [
+                { "color": "green", "value": null },
+                { "color": "yellow", "value": 1 },
+                { "color": "orange", "value": 50 }
+              ]
+            },
+            "mappings": []
+          },
+          "overrides": []
+        },
+        "options": {
+          "colorMode": "background",
+          "graphMode": "area",
+          "justifyMode": "auto",
+          "orientation": "auto",
+          "reduceOptions": {
+            "calcs": ["lastNotNull"],
+            "fields": "",
+            "values": false
+          },
+          "textMode": "auto"
+        },
+        "pluginVersion": "10.0.0",
+        "targets": [
+          {
+            "expr": "sum(increase(dk_hydration_dlq_skipped_total{source=~\"$source\"}[24h]))",
+            "legendFormat": "skipped_24h",
+            "refId": "A"
+          }
+        ]
+      },
+      {
+        "id": 4,
+        "type": "timeseries",
+        "title": "DLQ failures added per hour by source",
+        "description": "Rate of hydration failures recorded to meta.hydration_backlog, broken down by source. A sustained non-zero rate from a single source is the leading indicator of a quarantine event.",
+        "datasource": {
+          "type": "prometheus",
+          "uid": "prometheus"
+        },
+        "gridPos": {
+          "h": 9,
+          "w": 12,
+          "x": 0,
+          "y": 4
+        },
+        "fieldConfig": {
+          "defaults": {
+            "unit": "short",
+            "color": {
+              "mode": "palette-classic"
+            },
+            "custom": {
+              "drawStyle": "line",
+              "lineInterpolation": "linear",
+              "fillOpacity": 10
+            }
+          },
+          "overrides": []
+        },
+        "options": {
+          "legend": {
+            "displayMode": "table",
+            "placement": "bottom",
+            "calcs": ["mean", "max"]
+          },
+          "tooltip": {
+            "mode": "multi",
+            "sort": "desc"
+          }
+        },
+        "targets": [
+          {
+            "expr": "sum by (source) (rate(dk_hydration_dlq_added_total{source=~\"$source\"}[1h]))",
+            "legendFormat": "{{source}}",
+            "refId": "A"
+          }
+        ]
+      },
+      {
+        "id": 5,
+        "type": "timeseries",
+        "title": "Quarantine events",
+        "description": "Increase in dk_hydration_dlq_quarantined_total over a 24h window, per source. A spike here is a ticketed event \u2014 the DkHydrationSourceQuarantined PrometheusRule pages on-call. Use this panel to visually confirm the alert fired for the source you expect.",
+        "datasource": {
+          "type": "prometheus",
+          "uid": "prometheus"
+        },
+        "gridPos": {
+          "h": 9,
+          "w": 12,
+          "x": 12,
+          "y": 4
+        },
+        "fieldConfig": {
+          "defaults": {
+            "unit": "short",
+            "color": {
+              "mode": "palette-classic"
+            },
+            "custom": {
+              "drawStyle": "bars",
+              "lineInterpolation": "linear",
+              "fillOpacity": 60
+            }
+          },
+          "overrides": []
+        },
+        "options": {
+          "legend": {
+            "displayMode": "table",
+            "placement": "bottom",
+            "calcs": ["sum", "max"]
+          },
+          "tooltip": {
+            "mode": "multi",
+            "sort": "desc"
+          }
+        },
+        "targets": [
+          {
+            "expr": "sum by (source) (increase(dk_hydration_dlq_quarantined_total{source=~\"$source\"}[24h]))",
+            "legendFormat": "{{source}}",
+            "refId": "A"
+          }
+        ]
+      },
+      {
+        "id": 6,
+        "type": "timeseries",
+        "title": "Skipped-due-to-quarantine (rate)",
+        "description": "Dispatcher skips per second, per source. A sustained non-zero rate means a quarantine has been outstanding long enough that scheduled hydration runs are repeatedly no-oping the source. The DkHydrationDlqSkipRate PrometheusRule alerts on this.",
+        "datasource": {
+          "type": "prometheus",
+          "uid": "prometheus"
+        },
+        "gridPos": {
+          "h": 9,
+          "w": 24,
+          "x": 0,
+          "y": 13
+        },
+        "fieldConfig": {
+          "defaults": {
+            "unit": "ops",
+            "color": {
+              "mode": "palette-classic"
+            },
+            "custom": {
+              "drawStyle": "line",
+              "lineInterpolation": "linear",
+              "fillOpacity": 10
+            }
+          },
+          "overrides": []
+        },
+        "options": {
+          "legend": {
+            "displayMode": "table",
+            "placement": "bottom",
+            "calcs": ["mean", "max"]
+          },
+          "tooltip": {
+            "mode": "multi",
+            "sort": "desc"
+          }
+        },
+        "targets": [
+          {
+            "expr": "sum by (source) (rate(dk_hydration_dlq_skipped_total{source=~\"$source\"}[5m]))",
+            "legendFormat": "{{source}}",
+            "refId": "A"
+          }
+        ]
+      },
+      {
+        "id": 7,
+        "type": "table",
+        "title": "Current backlog (meta.hydration_backlog)",
+        "description": "Latest backlog rows per (source, schema, table) with failure signature, last_error excerpt, and quarantine state. Sourced directly from meta.hydration_backlog via the postgres datasource. If the postgres datasource isn't provisioned in this Grafana instance, the panel shows `No data` \u2014 counter-based panels above still work.",
+        "datasource": {
+          "type": "postgres",
+          "uid": "postgres"
+        },
+        "gridPos": {
+          "h": 10,
+          "w": 24,
+          "x": 0,
+          "y": 22
+        },
+        "fieldConfig": {
+          "defaults": {
+            "custom": {
+              "align": "left"
+            }
+          },
+          "overrides": []
+        },
+        "options": {
+          "showHeader": true,
+          "footer": {
+            "show": false,
+            "reducer": ["sum"],
+            "fields": ""
+          }
+        },
+        "targets": [
+          {
+            "rawSql": "SELECT source, schema_name, table_name, failure_count, failure_signature, LEFT(last_error, 200) AS last_error, quarantined, last_attempt_at FROM meta.hydration_backlog ORDER BY last_attempt_at DESC NULLS LAST LIMIT 100",
+            "format": "table",
+            "rawQuery": true,
+            "refId": "A"
+          }
+        ]
+      },
+      {
+        "id": 8,
+        "type": "text",
+        "title": "Operator notes",
+        "gridPos": {
+          "h": 5,
+          "w": 24,
+          "x": 0,
+          "y": 32
+        },
         "options": {
           "mode": "markdown",
-          "content": "## TODO \u2014 placeholder stub\n\n**Plan section:** plan.md \u00a7J.3, \u00a7C.3\n\nRows from meta.hydration_backlog with failure signature, last_error, quarantine reason. TODO: wire queries once migration lands.\n\nThis dashboard will be fleshed out in a follow-up PR once the upstream migrations / views referenced above land. The UID is locked in now so links from runbooks and alerts resolve as soon as content ships."
+          "content": "### What this dashboard shows\n\n- **Stat row**: 24h totals for failures added, quarantine events, and skipped steps.\n- **Timeseries**: failure rate, quarantine events, and skip rate \u2014 each broken down by `source`.\n- **Current backlog table**: latest rows from `meta.hydration_backlog` (requires a `postgres` datasource; falls back to `No data` otherwise).\n\n### How to un-quarantine a source\n\nAfter fixing the underlying cause (e.g. upstream dump now valid, credentials rotated), clear the quarantine with the prestaged CLI:\n\n```\npython -m dk_data.ingestion.prestaged --unquarantine <source>\n```\n\nThis clears the `quarantined` flag in `meta.hydration_backlog` so the next dispatcher run will re-attempt the source. Failures that recur re-quarantine automatically.\n\nSee `docs/runbooks/` for the full DLQ / quarantine playbook (plan \u00a7C.3)."
         }
       }
     ]
