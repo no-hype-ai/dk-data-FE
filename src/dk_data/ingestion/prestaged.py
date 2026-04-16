@@ -824,7 +824,7 @@ def main(argv: list[str] | None = None) -> int:
         # 10+ minutes for large tables), during which PgBouncer may
         # close the client-pooler connection. Reconnecting here is
         # cheap (<10ms) and makes every source start with a live conn.
-        def _ensure_live():
+        def _ensure_live() -> None:
             nonlocal conn, writer, throttle
             try:
                 with conn.cursor() as _pingc:

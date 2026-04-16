@@ -11,7 +11,7 @@ import json
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
-from dk_data.ingestion.prestaged import RunStepOutcome, run_step
+from dk_data.ingestion.prestaged import run_step
 from dk_data.ingestion.prestaged_types import LoadStep, PrestagedArtifact
 
 
