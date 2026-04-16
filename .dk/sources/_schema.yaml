@@ -1,0 +1,120 @@
+# Source descriptor v1 — one-per-source, committed to .dk/sources/<name>.yaml.
+# Plan §D.2. Mirrors the sketch in plan.md.
+#
+# This file is the human-readable spec; `src/dk_data/ingestion/source_registry.py`
+# holds the machine-readable validator and upserts rows into
+# `meta.source_registry` (migration 233). JSON-Schema form is embedded below
+# under `json_schema:` so the Python loader can validate without a separate
+# schema file to keep in sync.
+#
+# Descriptor name rule: ^[a-z][a-z0-9_]*$ (matches the PK CHECK in migration 233).
+#
+# Canonical enumerations (keep in sync with CLAUDE.md § "Active PostgreSQL
+# Schemas" and src/dk_data/ingestion/load_order.py):
+#   - domain: mol | hcs | hcp | ind | ip | dev
+#   - tier:   1..8   (orchestration tier, NOT the T1..T4 accessibility label)
+#   - fetch.kind: postgres_dump | http_csv | http_json_paginated | zip | api_key
+#   - status (in DB only — not written to descriptor): stub | fetcher_ready | live
+
+version: 1
+
+# ---------------------------------------------------------------------------
+# Required fields, with inline examples.
+# ---------------------------------------------------------------------------
+required_fields:
+  name:          "chembl_molecules"           # ^[a-z][a-z0-9_]*$, matches filename
+  domain:        "mol"                        # one of mol|hcs|hcp|ind|ip|dev
+  tier:          2                            # 1..8 — load-order tier
+  depends_on:    []                           # list of source names (empty for hubs)
+  fetch:                                      # dict; keys vary by `kind`
+    kind:        "postgres_dump"              # postgres_dump|http_csv|http_json_paginated|zip|api_key
+    # kind=postgres_dump → artifact_uri required (s3://... for SeaweedFS)
+    # kind=http_*        → url required
+    # kind=zip           → url required
+    # kind=api_key       → url + credentials_ref required
+    artifact_uri: "s3://dk-data-prestaged/chembl/molecules.dump"
+  schedule:      "0 3 * * 0"                  # cron (5-field; '@' shorthands also accepted by the loader)
+  credentials_ref: "none"                     # DopplerSecret name, or the literal "none"
+  sla_seconds:   1800                         # hard SLA budget (seconds); breach triggers §C.6 alert
+
+# ---------------------------------------------------------------------------
+# Optional fields.
+# ---------------------------------------------------------------------------
+optional_fields:
+  expected_row_count_fn: "SELECT reltuples::bigint FROM pg_class WHERE relname='molecules'"
+  manifest:             ".dk/sources/chembl_molecules.manifest.json"
+  consumes:                                    # budget reservation — enforcement in D.3
+    wal_headroom_pct:   5
+    db_connections:     2
+
+# ---------------------------------------------------------------------------
+# Embedded JSON-Schema (Draft 2020-12).
+# ---------------------------------------------------------------------------
+# Consumed by source_registry.load_descriptor() via jsonschema-style
+# validation. Kept here (not in a separate *.json file) to ensure the
+# human-readable sketch above and the machine validator never drift.
+json_schema:
+  $schema: "https://json-schema.org/draft/2020-12/schema"
+  title: "DK Source Descriptor v1"
+  type: object
+  additionalProperties: false
+  required:
+    - name
+    - domain
+    - tier
+    - depends_on
+    - fetch
+    - schedule
+    - credentials_ref
+    - sla_seconds
+  properties:
+    name:
+      type: string
+      pattern: "^[a-z][a-z0-9_]*$"
+      minLength: 1
+      maxLength: 64
+    domain:
+      type: string
+      enum: ["mol", "hcs", "hcp", "ind", "ip", "dev"]
+    tier:
+      type: integer
+      minimum: 1
+      maximum: 8
+    depends_on:
+      type: array
+      items:
+        type: string
+        pattern: "^[a-z][a-z0-9_]*$"
+      uniqueItems: true
+    fetch:
+      type: object
+      required: ["kind"]
+      properties:
+        kind:
+          type: string
+          enum: ["postgres_dump", "http_csv", "http_json_paginated", "zip", "api_key"]
+        artifact_uri: { type: string, format: uri }
+        url:          { type: string, format: uri }
+        headers:      { type: object }
+        rate_limit_per_minute: { type: integer, minimum: 1 }
+    schedule:
+      type: string
+      minLength: 1
+    credentials_ref:
+      type: string
+      minLength: 1
+    expected_row_count_fn:
+      type: string
+    sla_seconds:
+      type: integer
+      minimum: 1
+      maximum: 604800  # 7d hard ceiling — longer-than-a-week SLA is a smell
+    manifest:
+      type: string
+    consumes:
+      type: object
+      additionalProperties: true
+      properties:
+        wal_headroom_pct: { type: number, minimum: 0, maximum: 100 }
+        db_connections:   { type: integer, minimum: 0 }
+        concurrent_restores: { type: integer, minimum: 0 }

@@ -1,0 +1,29 @@
+# ChEMBL molecules — pre-staged pg_dump, monthly cadence.
+#
+# ChEMBL is a bioactivity database of drug-like molecules. We hydrate it
+# via a postgres_dump artifact because the upstream ships a full Postgres
+# dump (orders of magnitude faster than the per-row REST API) and the
+# dump is stable for ~30 days between releases.
+#
+# Orchestration tier: 2 (molecule hub depends on tier 1 identifier seeds).
+# Accessibility tier (GH label): T1 — free bulk download, no auth.
+# Matches the existing fetcher at src/dk_data/ingestion/fetchers/chembl_molecules.py;
+# this descriptor declares the pre-staged path that prestaged.py already
+# walks (SOURCE_LOAD_ORDER includes ``mol_raw.chembl_molecules`` at tier 2).
+
+name: chembl_molecules
+domain: mol
+tier: 2
+depends_on: []
+fetch:
+  kind: postgres_dump
+  artifact_uri: s3://dk-data-prestaged/chembl/molecules.dump
+schedule: "0 3 1 * *"  # 03:00 UTC on the 1st of each month (ChEMBL monthly release)
+credentials_ref: none
+expected_row_count_fn: "SELECT reltuples::bigint FROM pg_class WHERE relname='chembl_molecules'"
+sla_seconds: 1800
+manifest: .dk/sources/chembl_molecules.manifest.json
+consumes:
+  wal_headroom_pct: 5
+  db_connections: 2
+  concurrent_restores: 1
