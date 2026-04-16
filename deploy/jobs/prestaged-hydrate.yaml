@@ -47,19 +47,22 @@ spec:
           type: RuntimeDefault
       imagePullSecrets:
         - name: ghcr-credentials
-      # B.1 + B.10 — node placement
+      # B.1 + B.10 + D.4 — node placement
       #
-      # Two nodeSelectorTerms (OR semantics). Either term satisfies scheduling:
-      #   1. `dk.role In (general)` — preferred, aligns with the dk-alchemy
-      #      §2 node taxonomy (penguin=control, krang=general, scarecrow=bulk).
-      #   2. `kubernetes.io/hostname NotIn (k3s-master-1)` — fallback for the
-      #      window where retroactive `dk.role` labels aren't yet applied
-      #      (dk-alchemy Phase 3 issue #651). Ensures we never land on the
-      #      control-plane node (penguin) which is what caused the
-      #      DiskPressure / CNPG eviction incident (obs 2482, 2541, 2608).
+      # Single nodeSelectorTerm: `dk.role In (general)`. This aligns with the
+      # dk-alchemy §2 node taxonomy (penguin=control, krang=general,
+      # scarecrow=bulk) and — as of dk-alchemy #651 — every node carries the
+      # `dk.role` label, so the previous `kubernetes.io/hostname NotIn
+      # (k3s-master-1)` fallback is no longer needed and has been removed
+      # (plan.md §D.4).
       #
-      # Once #651 is resolved and `dk.role` is present on every node, the
-      # fallback term becomes redundant and can be removed.
+      # Defense-in-depth: dk-alchemy #660 adds a
+      # `node.datakinetic.com/role=control-plane:NoSchedule` taint on every
+      # control-plane / observability / CNPG node. Even if the `dk.role`
+      # label were missing or mutated, this Job still cannot schedule on a
+      # tainted node because we do NOT tolerate that taint. That is the
+      # structural fix the 2026-04-15 DiskPressure incident demanded
+      # (dk-alchemy #637, obs 2482/2541/2608).
       affinity:
         nodeAffinity:
           requiredDuringSchedulingIgnoredDuringExecution:
@@ -68,13 +71,16 @@ spec:
                   - key: dk.role
                     operator: In
                     values: [general]
-              - matchExpressions:
-                  - key: kubernetes.io/hostname
-                    operator: NotIn
-                    values: [k3s-master-1]
+      # Tolerations — only the GPU taint.
+      #
       # Today `dk.role=general` resolves to krang (k3s-slave-1), which carries
       # the `nvidia.com/gpu=true:NoSchedule` taint. We don't use the GPU, but
       # we must tolerate the taint to be schedulable there.
+      #
+      # We INTENTIONALLY do not tolerate
+      # `node.datakinetic.com/role=control-plane:NoSchedule` (dk-alchemy #660)
+      # — the absence of that toleration is what makes this Job structurally
+      # incapable of landing on the control plane, regardless of label drift.
       tolerations:
         - key: nvidia.com/gpu
           operator: Equal
