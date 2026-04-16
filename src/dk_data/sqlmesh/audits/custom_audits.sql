@@ -81,19 +81,32 @@ FROM (SELECT COUNT(*) AS n FROM @this_model) c
 WHERE c.n < @min_rows;
 
 -- ---------------------------------------------------------------------------
--- row_count_within_pct — drift-vs-baseline audit (standalone).
+-- row_count_within_pct — drift-vs-baseline audit (parameterized template).
 --
 -- Compares current row count to a recorded baseline in
 -- meta.sqlmesh_row_count_baseline (populated out-of-band by a separate job —
 -- see docs/sqlmesh/audits.md §"Baseline maintenance"). Fails when the
 -- absolute delta exceeds @tolerance_pct of the baseline.
 --
--- Standalone so it can run even when the row baseline table is not present
--- in test fixtures. @model_name must match the baseline.model_name column.
+-- Intentionally NOT declared `standalone true` — the baseline table is not
+-- populated yet (follow-up work, see docs/sqlmesh/audits.md §"Percentage
+-- drift audits"). Declaring it standalone would force SQLMesh to resolve
+-- @tolerance_pct / @target_model / @model_name at plan time with no binding,
+-- which fails compilation. Leaving it as a parameterized audit keeps the
+-- definition dormant until a model opts in by invoking it with concrete args:
+--
+--   audits (
+--     row_count_within_pct(
+--       target_model := mol_gold.molecule_profile,
+--       model_name := 'mol_gold.molecule_profile',
+--       tolerance_pct := 10
+--     )
+--   )
+--
+-- Once activated, @model_name must match baseline.model_name exactly.
 -- ---------------------------------------------------------------------------
 AUDIT (
-  name row_count_within_pct,
-  standalone true
+  name row_count_within_pct
 );
 SELECT curr.n AS current_count,
        base.row_count AS baseline_count,

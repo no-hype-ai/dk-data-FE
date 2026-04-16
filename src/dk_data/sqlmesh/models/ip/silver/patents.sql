@@ -13,8 +13,8 @@ MODEL (
         not_null(columns := (patent_id, jurisdiction)),
         unique_values(columns := (patent_id)),
         -- FR-034: patents crosswalk to the molecule hub via Orange Book.
-        -- molecule_id is nullable (most patents are not drug-linked); audit
-        -- only enforces that non-null FKs resolve to a live hub row.
+        -- molecule_id is nullable since most patents are not drug-linked;
+        -- audit only enforces that non-null FKs resolve to a live hub row.
         referential_integrity(
             parent_model := mol_silver.molecules,
             parent_key := molecule_id,

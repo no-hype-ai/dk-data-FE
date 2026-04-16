@@ -21,7 +21,7 @@ Related code:
 | **`referential_integrity`** | custom | A child FK does not resolve in the parent hub | Silver hub crosswalks — enforces FR-014 |
 | **`freshness_threshold`** | custom | `MAX(time_column)` older than `max_age_seconds` | Gold models with known crons |
 | **`row_count_above`** | custom | `COUNT(*)` < `min_rows` | Gold models (silent-drop guard) |
-| **`row_count_within_pct`** | custom (standalone) | |current − baseline| > `tolerance_pct` of `meta.sqlmesh_row_count_baseline.row_count` | Gold models with a recorded baseline |
+| **`row_count_within_pct`** | custom (parameterized, dormant) | |current − baseline| > `tolerance_pct` of `meta.sqlmesh_row_count_baseline.row_count` | Gold models with a recorded baseline |
 
 The four custom audits are defined in `src/dk_data/sqlmesh/audits/custom_audits.sql`. SQLMesh auto-discovers any `.sql` file in that directory.
 
@@ -74,13 +74,15 @@ Tighten the freshness budget once the cron is reliably completing for 30+ days; 
 
 ## Percentage drift audits
 
-`row_count_within_pct` is a **standalone audit** (declared with `standalone true` in `custom_audits.sql`). It compares the current `COUNT(*)` of `@target_model` against `meta.sqlmesh_row_count_baseline.row_count` for the matching `model_name`.
+`row_count_within_pct` is a **parameterized audit template** in `custom_audits.sql`. It compares the current `COUNT(*)` of `@target_model` against `meta.sqlmesh_row_count_baseline.row_count` for the matching `model_name`.
+
+The audit is intentionally **not declared `standalone true`**: SQLMesh would otherwise try to resolve `@tolerance_pct`, `@target_model`, and `@model_name` at plan time and fail because those macro variables have no binding. Keeping it non-standalone leaves the definition dormant until a model opts in by invoking it with concrete args (see the example in `custom_audits.sql`).
 
 The baseline table is **not populated by this PR**. To activate these audits:
 
 1. Create `meta.sqlmesh_row_count_baseline (model_name text, row_count bigint, recorded_at timestamptz)`.
 2. Populate from the last 7 runs of `meta.transform_runs` with a helper job: for each gold model, insert the 90th-percentile row count as the baseline.
-3. Declare the standalone audit in a top-level audit file or a `standalone_audit.sql` block.
+3. Invoke `row_count_within_pct(target_model := <model>, model_name := '<model>', tolerance_pct := N)` from the model's `audits (...)` block.
 4. Re-record the baseline monthly to track legitimate growth.
 
 Until that infrastructure lands, prefer `row_count_above(min_rows := N)` — it catches the same silent-drop failure class (~empty model) without requiring external state.
