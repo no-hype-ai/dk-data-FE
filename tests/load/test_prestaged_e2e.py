@@ -15,13 +15,12 @@ Tag coverage: [AUDIT] [IDMPT] [VIEWSAFE] [TESTE]
 
 from __future__ import annotations
 
-import datetime as _dt
 import os
 from pathlib import Path
 
 import pytest
 
-from dk_data.ingestion.prestaged import RunStepOutcome, run_step
+from dk_data.ingestion.prestaged import run_step
 from dk_data.ingestion.prestaged_types import LoadStep, PrestagedArtifact
 from dk_data.ingestion.transform_runs_writer import TransformRunsWriter
 

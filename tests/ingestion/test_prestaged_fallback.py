@@ -11,7 +11,6 @@ import sys
 import types
 from unittest.mock import MagicMock, patch
 
-import pytest
 
 from dk_data.ingestion.load_order import (
     OUT_OF_SCOPE_SCHEMA_PREFIXES,

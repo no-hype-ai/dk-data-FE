@@ -8,7 +8,6 @@ from __future__ import annotations
 
 from pathlib import Path
 
-import pytest
 
 from dk_data.ingestion.load_order import (
     OUT_OF_SCOPE_SCHEMA_PREFIXES,
@@ -17,7 +16,7 @@ from dk_data.ingestion.load_order import (
     plan_load,
     propagate_blocked,
 )
-from dk_data.ingestion.prestaged_types import LoadPlan, PrestagedArtifact
+from dk_data.ingestion.prestaged_types import PrestagedArtifact
 
 
 def _make_artifact(

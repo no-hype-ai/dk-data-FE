@@ -8,7 +8,6 @@ from __future__ import annotations
 import hashlib
 from pathlib import Path
 
-import pytest
 
 from dk_data.ingestion.prestaged import compute_sha256, validate_magic_bytes
 from dk_data.ingestion.prestaged_types import PGDMP_MAGIC, PrestagedArtifact

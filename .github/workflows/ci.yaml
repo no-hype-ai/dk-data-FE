@@ -447,7 +447,7 @@ jobs:
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install pydantic loguru psycopg2-binary tenacity pytest mypy
+          pip install pydantic loguru psycopg2-binary tenacity pytest mypy httpx
 
       - name: Run prestaged unit tests
         env:

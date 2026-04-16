@@ -30,7 +30,6 @@ import psycopg2
 from loguru import logger
 
 from dk_data.ingestion.load_order import (
-    OUT_OF_SCOPE_SCHEMA_PREFIXES,
     SOURCE_LOAD_ORDER,
     WAL_MODE_TABLES,
     plan_load,
@@ -44,9 +43,7 @@ from dk_data.ingestion.prestaged_types import (
     LoadStep,
     PrestagedArtifact,
     RunStatus,
-    SourceKind,
     Tier,
-    compute_run_id,
 )
 from dk_data.ingestion.transform_runs_writer import TransformRunsWriter
 from dk_data.ingestion.wal_throttle import WalThrottle

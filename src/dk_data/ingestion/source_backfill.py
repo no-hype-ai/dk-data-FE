@@ -177,7 +177,7 @@ SOURCE_TO_BRONZE_MODELS: dict[str, list[str]] = {
 # so other ingestion code paths can ask "what kind of source is this?"
 # without importing load_order.
 
-from typing import TypedDict
+from typing import TypedDict  # noqa: E402 — intentional mid-file import after documentation block
 
 
 class PrestagedSourceMeta(TypedDict, total=False):
