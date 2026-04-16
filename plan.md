@@ -8,6 +8,42 @@ The next hydration window opens in ~24 hours. This plan commits three horizons (
 
 ---
 
+## Status snapshot — 2026-04-16
+
+| Horizon | Item | Status | Reference |
+|---|---|---|---|
+| H1 | B.1 hardened hydrate Job manifest | ✅ | #303 (+ #317 tightening) |
+| H1 | B.2 Job-level resilience | ✅ | #303 |
+| H1 | B.3 Manifest row-count gate | ✅ | #305 |
+| H1 | B.4 Zip extractor + Content-Length guard | ✅ | #307 |
+| H1 | B.5 Missing alert rules | ✅ | #304 |
+| H1 | B.6 CNPG deadlock runbook | ✅ | #300 |
+| H1 | B.7 Lessons captured | ✅ | #301 |
+| H1 | B.9 GH label taxonomy | ✅ | #299 + 46 labels created |
+| H1 | B.10 Node labels verified | ⚠️ | verified absent → dk-alchemy #651 opened |
+| H1 | B.11 Procurement issues | ✅ | #302 + issues #290–#298 |
+| H2 | C.1 SeaweedFS client module | ✅ | #311 |
+| H2 | C.2 Real WAL backpressure | ✅ | #315 (migration 231) |
+| H2 | C.3 DLQ / source quarantine | ✅ | #316 (migration 232) |
+| H2 | C.4 Download integrity pipeline | ✅ | #313 (migration 229) |
+| H2 | C.5 PgBouncer pool split | ✅ | #310 |
+| H2 | C.6 Observability metrics expansion | ✅ | #312 |
+| H2 | C.7 SQLMesh audits at boundaries | ✅ | #314 |
+| 005 | feature/005 prestaged hydration | ✅ | #309 (27-commit merge) |
+| H3 | D.1 Dispatcher + per-source Jobs | ⏳ | #322 (CI rerun in flight) |
+| H3 | D.2 Source descriptors | ✅ | #318 (migration 233) |
+| H3 | D.3 Admission control by budget | ✅ | #320 (migration 234) |
+| H3 | D.4 Control-plane node taint | ✅ | #317 + dk-alchemy #660 |
+| H3 | D.5 Per-source DopplerSecret CRs | ✅ | #321 + dk-alchemy #661 + sweep #319 |
+| J.1 | Push-via-API dashboards in-repo | ✅ | #306 (6 renamed + 6 stubs) |
+| J.2 | Grafana-operator migration | ⏸️ | deferred — dk-alchemy #647 |
+| Part F | CLI extension in dk-cli | ⏸️ | dk-cli #1, #2, #3 tracking |
+| Part E | Future-source stubs (~80) | ⏸️ | roadmap; priority:top15 labeled |
+
+**Cross-repo issues**: dk-alchemy #646 ✅ (orphan dashboards via #653); #647, #648, #649, #650, #651, #656, #659, #660, #661 open. dk-cli #1, #2, #3 open. dk-data-FE #290–#298 (T4 procurement), #319 (fetcher sweep) open.
+
+---
+
 ## Part A — Diagnosis summary
 
 ### A.1 The truncation question — answered
@@ -53,7 +89,7 @@ The next hydration window opens in ~24 hours. This plan commits three horizons (
 
 Goal: the next hydration run succeeds and cannot take down the cluster.
 
-### B.1 Isolate hydration workload from the control plane (aligned with dk-alchemy taxonomy)
+### B.1 Isolate hydration workload from the control plane (aligned with dk-alchemy taxonomy) ✅ #303
 - **Ephemeral-storage limits** on base Job `deploy/jobs/prestaged-hydrate.yaml`: `requests.ephemeral-storage: 5Gi`, `limits.ephemeral-storage: 20Gi`. An overrun evicts *the Job*, not the node.
 - **`nodeAffinity` using the existing `dk.role` label**:
   ```yaml
@@ -75,23 +111,23 @@ Goal: the next hydration run succeeds and cannot take down the cluster.
 - **Toleration scrub**: no tolerations for `node.kubernetes.io/disk-pressure` — jobs must be evicted, not ride through.
 - **Restore real CPU requests** (`500m`–`1`). The `10m` request in `deploy/jobs/prestaged-hydrate-incluster-17-slave.yaml:92-94` is a scheduling hack (obs 2527–2534) that thrashes QoS.
 
-### B.2 Job-level resilience
+### B.2 Job-level resilience ✅ #303
 - `activeDeadlineSeconds: 14400` on base (SC-002 is <4h)
 - `backoffLimit: 3` with exponential delay (relies on existing `run_label` idempotency at `prestaged.py:353-455`)
 - `restartPolicy: OnFailure` on hydrate container (loader is idempotent)
 - **initContainer db-connectivity precheck** copied from `k8s/apps/infrastructure/base/db-migrate-job.yaml:30-42` — 5-attempt `psycopg2.connect` loop before the loader ever opens a dump file.
 
-### B.3 Wire the manifest as a hard row-count gate
+### B.3 Wire the manifest as a hard row-count gate ✅ #305
 - In `prestaged.py` around line 426, require `expected_row_count` per `(schema, table)` from `prestaged_manifest.schema.json`; on mismatch beyond tolerance, status `row_mismatch` and non-zero per-step code.
 - Missing manifest entries preserve current behavior but increment `dk_hydration_manifest_missing_total{source,schema,table}` so gaps are visible, not silent.
 
-### B.4 Fix the zip extractor
+### B.4 Fix the zip extractor ✅ #307
 - Replace "largest CSV" logic at `cms_downloader.py:520-536` with `extractall` into a per-source subdirectory.
 - Emit one cached artifact per extracted file; each becomes its own manifest entry.
 - Audit every fetcher that handles zips (30 grep matches: `cms_hcris.py`, `npi_registry.py`, `fda_ndc.py`, `cms_dual_eligible.py`, `cms_formulary.py`, `bindingdb.py`, `drugbank.py`, and others).
 - Add `Content-Length` guard to `download_cms_file`: compare `written` against header; on mismatch, delete the `.tmp` and retry once.
 
-### B.5 Missing alerts (PrometheusRules)
+### B.5 Missing alerts (PrometheusRules) ✅ #304
 Add to `k8s/apps/observability/alert-rules/`:
 - `DkNodeDiskPressure` — `kube_node_status_condition{condition="DiskPressure",status="true"} == 1` → critical
 - `DkNodeEphemeralStorageHigh` — `node_filesystem_avail_bytes / node_filesystem_size_bytes < 0.15` → warn
@@ -100,7 +136,7 @@ Add to `k8s/apps/observability/alert-rules/`:
 - `DkHydrationRowMismatch` — `increase(dk_hydration_row_mismatch_total[1h]) > 0` → critical
 - `DkPgBouncerPoolSaturation` — `pgbouncer_pools_server_active_connections / pgbouncer_pools_server_connections > 0.9` → warn
 
-### B.6 CNPG disaster-recovery runbook (replaces any ArgoCD carve-out)
+### B.6 CNPG disaster-recovery runbook (replaces any ArgoCD carve-out) ✅ #300
 No changes to `selfHeal/prune` on `infra-cnpg-operator`. Instead, create `docs/runbooks/cnpg-operator-deadlock.md`:
 1. **Detection**: `kubectl -n cnpg-system get pods` shows 0 Ready; Cluster CR stuck in `Creating`/`Recovering`; all writes fail.
 2. **Triage**: confirm node conditions; if `DiskPressure: True`, ArgoCD will keep putting the operator back onto the tainted node.
@@ -111,12 +147,12 @@ No changes to `selfHeal/prune` on `infra-cnpg-operator`. Instead, create `docs/r
 4. **Postmortem**: capture in `.dk/memory/lessons.md` via the `lessons-learned` skill.
 5. **Prevention**: B.1 makes this runbook an edge-case tool.
 
-### B.7 Capture the incident in lessons
+### B.7 Capture the incident in lessons ✅ #301
 Two entries in `.dk/memory/lessons.md` (file is currently empty template):
 - "Hydration on control-plane hostPath evicts Postgres operator" (obs 2482/2541)
 - "ArgoCD selfHeal reconciles onto bad node — free the node, don't fight the reconciler" (obs 2608–2610)
 
-### B.9 GitHub issue label taxonomy (create now)
+### B.9 GitHub issue label taxonomy (create now) ✅ #299
 One-time creation via `gh label create --repo data-kinetic/dk-data-FE` (and `data-kinetic/dk-cli` where relevant):
 - `source:stub` / `source:fetcher_ready` / `source:live` — lifecycle state of a source entry
 - `domain:mol` / `domain:hcs` / `domain:hcp` / `domain:ind` / `domain:ip` / `domain:dev` — new `dev` domain for medical devices (E.3)
@@ -128,7 +164,7 @@ One-time creation via `gh label create --repo data-kinetic/dk-data-FE` (and `dat
 
 Label creation is idempotent (`gh label create` rejects duplicates — swallow that error).
 
-### B.10 Confirm node labels are applied (dk-alchemy responsibility, we verify)
+### B.10 Confirm node labels are applied (dk-alchemy responsibility, we verify) ⚠️ verified absent → dk-alchemy #651
 dk-alchemy §2 defines the labels `dk.role`, `dk.storage`, `topology.kubernetes.io/zone`. Per Phase 3 of the overview, retroactive labeling of penguin + krang happens during the Scarecrow join today (2026-04-16). Our job is to **verify** the labels are present before PR-01 opens so the affinity rule in B.1 actually binds:
 
 ```
@@ -143,7 +179,7 @@ If labels are missing, open a coordination comment on the dk-alchemy Phase 3 wor
 
 This replaces the earlier "add a new taint" idea entirely. No taint is needed; the existing taxonomy is sufficient.
 
-### B.11 Procurement tracking via GitHub issues
+### B.11 Procurement tracking via GitHub issues ✅ #302 + dk-data-FE #290–#298
 For every T4 licensed source (AHA Annual Survey, HCUP NIS/NEDS, IQVIA MIDAS, Scopus, Dimensions, HIMSS Analytics, UMLS/SNOMED-CT, ACS TQIP, STS National DB), open an issue via `gh issue create --repo data-kinetic/dk-data-FE` with labels `source:stub`, `tier:T4`, `procurement:pending`, and a body template:
 - Data use case driving the ask
 - Vendor / licensor + expected cost tier
@@ -165,7 +201,7 @@ This is the procurement "workflow" — no separate tracker needed.
 
 Goal: stabilize real-world failure modes, land SeaweedFS alignment, restore WAL backpressure, split the PgBouncer pool.
 
-### C.1 SeaweedFS alignment (stay aligned to siblings; respect consumer-coupling-check)
+### C.1 SeaweedFS alignment (stay aligned to siblings; respect consumer-coupling-check) ✅ #311
 - Endpoint **never hardcoded** in our manifests or code. The `consumer-coupling-check.yaml` CI gate blocks any diff adding literal `.infra.svc.cluster.local` URLs. Inject via a `DopplerSecret` that resolves to env vars `SEAWEEDFS_S3_ENDPOINT`, `SEAWEEDFS_S3_ACCESS_KEY`, `SEAWEEDFS_S3_SECRET_KEY`.
   - Target endpoint at runtime: `http://seaweedfs-s3.infra.svc.cluster.local:8333` (plain HTTP, S3 API on 8333 — not filer 8888, not master 9333).
   - SeaweedFS bulk data is mid-migration to the new 8 TB disk (dk-alchemy Phase 2.5 in-flight); cut dk-data-FE over **after** the rsync completes.
@@ -175,30 +211,30 @@ Goal: stabilize real-world failure modes, land SeaweedFS alignment, restore WAL 
 - Replace `hostPath` PVs in `deploy/jobs/prestaged-hydrate*.yaml` with an initContainer that pulls `s3://dk-data-prestaged/<run-label>/<schema>/<table>.dump` into the scratch PVC.
 - Mirror CNPG `barmanObjectStore` to SeaweedFS for WAL archive + base backup — this is dk-alchemy side (issue #3 in I.5), not dk-data-FE. Track dependency.
 
-### C.2 Real WAL backpressure (un-stub FR-007)
+### C.2 Real WAL backpressure (un-stub FR-007) ✅ #315 (migration 231)
 - Create view `meta.wal_pressure` returning live pct-used against `max_wal_size` via `pg_current_wal_lsn()` + `pg_last_wal_receive_lsn()` on replicas.
 - Replace the `0.0` stub at `src/dk_data/ingestion/wal_throttle.py:49-68`; preserve the 70/40 hysteresis (FR-007).
 - Per-source pause budget in addition to the global one so one bad source can't drain the whole run.
 
-### C.3 Dead-letter queue / source quarantine
+### C.3 Dead-letter queue / source quarantine ✅ #316 (migration 232)
 - Table `meta.hydration_backlog` (source_id, schema, table, last_failure_at, failure_count, last_error, next_retry_at, quarantined_by).
 - Auto-quarantine after N (default 5) consecutive same-signature failures; manual re-enqueue only.
 
-### C.4 Download integrity pipeline
+### C.4 Download integrity pipeline ✅ #313 (migration 229)
 - `meta.artifact_provenance` records `Content-Length`, `ETag`, `Last-Modified`, `sha256` per artifact.
 - Emit `dk_artifact_changed_total{source}` on upstream diff (signal for downstream rebuilds) and `dk_artifact_size_mismatch_total` on download/header mismatch.
 
-### C.5 PgBouncer pool split
+### C.5 PgBouncer pool split ✅ #310 (+ dk-alchemy #656 follow-up)
 - New pool `dk_data_hydration` with its own `max_client_conn` (default 20), separate from the PostgREST-facing `dk_data` pool.
 - Update `k8s/apps/infrastructure/base/pgbouncer.yaml:41-50` to express the budget as math, not aspiration.
 
-### C.6 Observability expansion
+### C.6 Observability expansion ✅ #312
 - `dk_hydration_phase_seconds{phase}` histogram (download/validate/restore/rowcount).
 - `dk_artifact_bytes_total{source,kind}` counter.
 - `dk_source_last_success_timestamp{source}` gauge.
 - SLO: per-source hydration within declared `sla_seconds` at p95; alert on three consecutive breaches.
 
-### C.7 SQLMesh audits at layer boundaries
+### C.7 SQLMesh audits at layer boundaries ✅ #314
 - Silver: `not_null` on ER keys, `unique` on natural keys, `referential_integrity` on hub crosswalks.
 - Gold: `row_count_within_pct` vs prior run, `freshness_seconds` budget.
 - Most silver models have none today.
@@ -209,7 +245,7 @@ Goal: stabilize real-world failure modes, land SeaweedFS alignment, restore WAL 
 
 Goal: 73 → 200+ sources without new controllers and without growing ops headcount.
 
-### D.1 Orchestrator decision — plain K8s Jobs per source, no workflow engine
+### D.1 Orchestrator decision — plain K8s Jobs per source, no workflow engine ⏳ #322 (CI rerun in flight)
 
 **Decision: one `Job` (or `CronJob`) per source + a thin dispatcher Job, ordered from a source-registry table, rendered by kustomize, synced by the existing ArgoCD Application.**
 
@@ -230,7 +266,7 @@ Tradeoff accepted: a custom dispatcher must enforce tier ordering. Argo Workflow
 4. Wire under `k8s/apps/hydrate/` and reference from `k8s/overlays/prod/kustomization.yaml`; the existing ArgoCD Application picks it up.
 5. Run new dispatcher parallel with the monolith for one cycle, compare `meta.transform_runs` rows for parity, then retire monolith manifests.
 
-### D.2 Sources as declarative config
+### D.2 Sources as declarative config ✅ #318 (migration 233)
 Descriptor schema (replaces bespoke fetcher modules over time):
 
 ```yaml
@@ -251,16 +287,16 @@ manifest: .dk/sources/chembl.manifest.json
 
 Descriptors drive: fetcher selection, manifest construction, Job rendering, dashboard rows, alert budgets. Behavior becomes data.
 
-### D.3 Admission control by budget
+### D.3 Admission control by budget ✅ #320 (migration 234)
 - `meta.resource_budget`: WAL headroom, PgBouncer slots, concurrent restores, SeaweedFS IOPS.
 - Descriptor declares `consumes:` (e.g., `wal_headroom: 5%`, `db_connections: 2`).
 - Dispatcher admits a source step only if budget has room; otherwise defers.
 
-### D.4 Hard control-plane / data-plane isolation
+### D.4 Hard control-plane / data-plane isolation ✅ #317 + dk-alchemy #660
 - Taint `node.datakinetic.com/role=control-plane:NoSchedule` on CNPG/ArgoCD/PgBouncer/observability nodes.
 - No data-plane workload schedulable there — removes the class of failure that hit today.
 
-### D.5 Per-source credential isolation
+### D.5 Per-source credential isolation ✅ #321 + dk-alchemy #661 + sweep #319
 - Replace single `dk-data-secrets` DopplerSecret with per-source DopplerSecret CRs (`dk-data-secrets-drugbank`, `-openfda`, …).
 - Rotation per source; compromise blast-radius is one source.
 
@@ -328,7 +364,7 @@ Each of these is a cache-a-file-and-parse job with no auth friction, no translat
 
 Rough totals: ~80 stubbed future sources; 35+ are T1/T2 (free and directly implementable).
 
-### E.4 Stub README + GitHub issue pattern (per user direction)
+### E.4 Stub README + GitHub issue pattern (per user direction) ⚠️ labels created; per-stub READMEs pending roadmap execution
 
 For every stub, land two artifacts together:
 
@@ -348,7 +384,7 @@ Both artifacts are generated by the CLI scaffold (Part F). The `source:stub` lab
 
 ## Part F — CLI strategy: target the new dk-cli (it's ready)
 
-### F.1 Readiness — **yes, the new dk-cli is ready to extend**
+### F.1 Readiness — **yes, the new dk-cli is ready to extend** ✅ confirmed
 Rechecked at the user's prompt. `/Users/nick/Code/dk-cli` is now a fresh-extracted monorepo (April 2026, v0.1.0) with git history preserved via `git filter-repo` from dk-alchemy:
 - `src/dk-cli/` — TypeScript/Bun CLI (entry `src/index.ts`, bin `dk`). Existing commands under `src/commands/`: `data.ts` (data-API keys), `labels.ts`, `onboard.ts`, `provision.ts`, `status.ts`, `preview.ts`, `plugin.ts`, `adopt.ts`, `create.ts`, `promote.ts`, `llm.ts`, etc. Shared `src/lib/`: `github.ts`, `api-client.ts`, `auth.ts`, `telemetry.ts`, `template.ts`.
 - `packages/dk-skills/` — Claude Code plugin (agents `cross-repo-triage`, `dk-audit`, `infra-health-check`, `milestone-checker`, `plan-alignment`, `preview-lifecycle`, `promotion-gate`; skills `dk-status`, `dk-create`, `dk-issues`, `dk-promote`, `dk-plan`, `dk-review`, `dk-health`, `dk-doppler`, `dk-labels`, `dk-llm`, …).
@@ -358,7 +394,7 @@ Rechecked at the user's prompt. `/Users/nick/Code/dk-cli` is now a fresh-extract
 
 The existing `src/dk-cli/src/commands/data.ts` is scoped to data-API-key lifecycle (create/list/rotate/update, usage, schemas, limits) against `platform-api`. The new hydration/source surface fits **beside** it as new `data` subgroups — no collision.
 
-### F.2 Subcommand surface (added to `data.ts`, mirroring the existing `keys` / `usage` / `schemas` / `limits` branches)
+### F.2 Subcommand surface (added to `data.ts`, mirroring the existing `keys` / `usage` / `schemas` / `limits` branches) ⏸️ dk-cli #1 open — not started
 
 ```
 dk data source add <name>        # interactive scaffold (descriptor + fetcher + manifest + Job + README + GH issue)
@@ -415,7 +451,7 @@ Each imports `src/dk_data/ingestion/common/{retry,integrity,metrics}.py` so new 
 - `deploy/hydrate/sources.yaml` entry (appended)
 - GitHub issue via `gh issue create`
 
-### F.5 Claude skill: `/dk.add-datasource`
+### F.5 Claude skill: `/dk.add-datasource` ⏸️ dk-cli #2 open — not started
 Restore (the old command was deleted in this working tree per `git status`). Skill flow:
 1. AskUserQuestion for domain, tier, cadence, fetch kind, auth, expected-row-count signal, SLA.
 2. Grep existing fetchers for similar kind; propose reusing templates before inventing.
@@ -434,13 +470,13 @@ Restore (the old command was deleted in this working tree per `git status`). Ski
 
 **Principle per user direction**: "stop teams from reaching into alchemy for their projects." Each project owns its own dashboards. dk-data-FE's observability surface lives in dk-data-FE, not in dk-alchemy.
 
-### J.1 Current situation
+### J.1 Current situation ✅ (captured; dk-data-FE owns its dashboards as of #306)
 - 6 dk-data JSON dashboards already exist at `grafana/dashboards/` in dk-data-FE (`dk-data-platform-status`, `dk-data-pipeline-sources`, `dk-data-transformations`, `dk-data-api-services`, `dk-data-adapter-telemetry`, `cms-pipeline-health`).
 - 7+ additional dk-data dashboards live **in dk-alchemy** at `grafana/dashboards/applications/dk-data-*.json` — the exact anti-pattern.
 - dk-alchemy runs plain `grafana/grafana:11.3.0` (`k8s/infrastructure/grafana/base/deployment.yaml`): **no grafana-operator, no sidecar dashboard loader, no provisioning mount.** Dashboards are pushed via HTTP API by a GitHub Action (`.github/workflows/grafana-dashboards.yaml`) that shells `grafana/scripts/sync-all.sh` → `import-dashboard.sh` → `curl` against `https://grafana.behaviorlabs.ai/api/dashboards/db`, using `GRAFANA_API_KEY` from Doppler `dk-infrastructure/prd`.
 - Grafana service: `grafana.infra.svc.cluster.local:3000`. Datasource UIDs (hard-coded in `configmap.yaml`): mimir `PAE45454D0EDB9216`, loki `P8E80F9AEF21F6940`, tempo `P214B5B846CF3925F`. Folders declared in `grafana/folders/folders.yaml` — `applications` already exists.
 
-### J.2 Recommendation — two-step
+### J.2 Recommendation — two-step ⏸️ Step 1 ✅ #306; Step 2 grafana-operator deferred — dk-alchemy #647
 **Step 1 (Horizon 2, zero touches to dk-alchemy): mirror the push-via-API pattern in dk-data-FE.**
 
 - Create in dk-data-FE:
@@ -472,7 +508,7 @@ Restore (the old command was deleted in this working tree per `git status`). Ski
 - **ArgoCD Application** for dashboards, owned by this repo — `.gitops/prod/apps/dk-data-fe-observability.yaml`, path `k8s/apps/observability/` in dk-data-FE, syncs alert rules + dashboard CRs. The existing Application for dk-data-FE (`.gitops/prod/apps/application.yaml`) stays focused on the app; observability gets its own Application to isolate sync scopes and make dashboard changes auditable without touching the app.
 - This step removes the Doppler-token cross-wiring from Step 1 and gives typed, namespaced, RBAC-scoped ownership.
 
-### J.3 Dashboards specifically needed for the work in this plan
+### J.3 Dashboards specifically needed for the work in this plan ⚠️ stubs exist; C.2/C.3/D.3 panel content pending follow-up
 Beyond the 6 existing, add:
 - `dk-data-fe-hydration` — per-source run status from `meta.transform_runs`, current step, row_count vs expected, p50/p95 per-source duration, failures in last 24h.
 - `dk-data-fe-hydration-backlog` — `meta.hydration_backlog` rows with failure signature, last_error, quarantine reason.
@@ -483,7 +519,7 @@ Beyond the 6 existing, add:
 
 Alert rules (Part B.5) co-locate under `k8s/apps/observability/alert-rules/` in dk-data-FE, deployed through the same ArgoCD Application — the dashboards show the alerts' underlying metrics in context.
 
-### J.4 Telemetry emission — repo-owned too
+### J.4 Telemetry emission — repo-owned too ✅ (pre-existing; no changes needed)
 - Prometheus metrics from `src/dk_data/observability/metrics.py` already scrape via Alloy → Mimir (dk-alchemy-hosted). No changes needed on the emitter side; what was missing is the dashboard side, solved by J.1–J.3.
 - OTLP traces: emitter already injects `trace_id`/`span_id` via `src/dk_data/observability/logging.py`. Targets dk-alchemy-hosted Tempo. No change.
 - The principle "repo owns its dashboards" doesn't mean repo owns Grafana/Tempo/Mimir — those remain platform-managed in dk-alchemy. The split: **platform hosts the observability backends; each project authors and ships its own views.**
@@ -544,7 +580,7 @@ Alert rules (Part B.5) co-locate under `k8s/apps/observability/alert-rules/` in 
 ### I.1 Coordination
 This is the sole agent working in the project — no cross-agent guard rails needed. PRs merge as soon as CI passes.
 
-### I.2 PR-per-subsection execution order (Horizon 1)
+### I.2 PR-per-subsection execution order (Horizon 1) ✅ all 11 H1 PRs landed
 
 Horizon 1 lands as **10 atomic PRs**. PR-01 bundles B.1 + B.2 + B.10 because all three edit `deploy/jobs/prestaged-hydrate*.yaml` — splitting would serialize unnecessarily. Every other PR touches a disjoint file set and can ship in any order.
 
@@ -565,7 +601,7 @@ Horizon 1 lands as **10 atomic PRs**. PR-01 bundles B.1 + B.2 + B.10 because all
 
 Horizon 2 and 3 PRs (SeaweedFS alignment, WAL backpressure, DLQ, integrity pipeline, pool split, SQLMesh audits, dispatcher + per-source Jobs, descriptors, admission control, per-source credentials, grafana-operator migration) follow the same per-subsection discipline and break into parallel waves by file-independence.
 
-### I.3 Remaining cross-repo items
+### I.3 Remaining cross-repo items ⏸️ tracked via dk-alchemy issues #646 (closed), #647–#651, #656, #659–#661
 1. **Delete the orphan dk-data dashboards from dk-alchemy** — PR-11 above, gated on PR-10. One dk-alchemy PR scoped to deletion.
 2. **Move to `grafana-operator` (Part J step 2)** — single dk-alchemy PR to install the operator + label the Grafana with `dashboards=behaviorlabs`. Unblocks CR-based dashboard ownership; defer until ≥2 sibling repos have migrated dashboards out of dk-alchemy.
 3. **CNPG `barmanObjectStore` cutover to SeaweedFS** — needs a short maintenance window + verified base backup before flipping the archive target.
