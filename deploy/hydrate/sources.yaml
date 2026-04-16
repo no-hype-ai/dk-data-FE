@@ -1,0 +1,521 @@
+# deploy/hydrate/sources.yaml
+#
+# Horizon 3 / plan §D.1 — source registry for the per-source Job fan-out.
+#
+# This file is the INPUT to ``scripts/render_hydrate_jobs.py`` which emits one
+# ``k8s/apps/hydrate/base/job-hydrate-<name>.yaml`` Job manifest per entry, and
+# is also read by ``src/dk_data/ingestion/hydrate_dispatcher.py`` to know which
+# Job name to apply for each source it dispatches.
+#
+# Entries are kept in 1-1 correspondence with
+# ``src/dk_data/ingestion/load_order.py:SOURCE_LOAD_ORDER``. The dispatcher
+# itself reads SOURCE_LOAD_ORDER at runtime for the tier / depends_on graph;
+# this file only exists so the renderer + ArgoCD have a plain-YAML surface to
+# iterate and render over (ArgoCD can't execute Python).
+#
+# When SOURCE_LOAD_ORDER changes:
+#   1. Edit src/dk_data/ingestion/load_order.py.
+#   2. Run ``python scripts/render_hydrate_jobs.py --sync`` — it regenerates
+#      this file from SOURCE_LOAD_ORDER *and* re-emits the per-source Job
+#      manifests. Renderer is idempotent; re-runs overwrite.
+#
+# Fields
+# ------
+# name         kebab-case Job name suffix. Used in ``hydrate-<name>-<date>``.
+# source_id    canonical ``"{schema}.{table}"`` key (matches SOURCE_LOAD_ORDER).
+# schema       target PG schema.
+# table        target PG relation.
+# tier         1..8 matching SOURCE_LOAD_ORDER (D.1 tier graph).
+# depends_on   list of upstream source_ids (defaults to []).
+# sla_seconds  activeDeadlineSeconds for the rendered Job. Defaults to 14400 (4h).
+#
+# Drift protection: every change lands via ArgoCD sync, never direct kubectl.
+
+sources:
+  # ------------------------------------------------------------------
+  # Tier 1 — metadata / SQLMesh lineage.
+  # ------------------------------------------------------------------
+  - name: meta-fetch-checkpoints
+    source_id: meta.fetch_checkpoints
+    schema: meta
+    table: fetch_checkpoints
+    tier: 1
+    sla_seconds: 1800
+    depends_on: []
+  - name: sqlmesh-snapshots
+    source_id: sqlmesh._snapshots
+    schema: sqlmesh
+    table: _snapshots
+    tier: 1
+    sla_seconds: 1800
+    depends_on: []
+
+  # ------------------------------------------------------------------
+  # Tier 2 — molecule hub raw.
+  # ------------------------------------------------------------------
+  - name: mol-raw-chembl
+    source_id: mol_raw.chembl
+    schema: mol_raw
+    table: chembl
+    tier: 2
+    sla_seconds: 14400
+    depends_on: []
+  - name: mol-raw-drugbank
+    source_id: mol_raw.drugbank
+    schema: mol_raw
+    table: drugbank
+    tier: 2
+    sla_seconds: 7200
+    depends_on: []
+  - name: mol-raw-pubchem
+    source_id: mol_raw.pubchem
+    schema: mol_raw
+    table: pubchem
+    tier: 2
+    sla_seconds: 14400  # 7.18 GB WAL-mode
+    depends_on: []
+  - name: mol-raw-fda-drugs
+    source_id: mol_raw.fda_drugs
+    schema: mol_raw
+    table: fda_drugs
+    tier: 2
+    sla_seconds: 3600
+    depends_on: []
+  - name: mol-raw-fda-ndc
+    source_id: mol_raw.fda_ndc
+    schema: mol_raw
+    table: fda_ndc
+    tier: 2
+    sla_seconds: 3600
+    depends_on: []
+  - name: mol-raw-rxnorm
+    source_id: mol_raw.rxnorm
+    schema: mol_raw
+    table: rxnorm
+    tier: 2
+    sla_seconds: 3600
+    depends_on: []
+  - name: mol-raw-kegg-drug
+    source_id: mol_raw.kegg_drug
+    schema: mol_raw
+    table: kegg_drug
+    tier: 2
+    sla_seconds: 3600
+    depends_on: []
+  - name: mol-raw-uniprot
+    source_id: mol_raw.uniprot
+    schema: mol_raw
+    table: uniprot
+    tier: 2
+    sla_seconds: 7200
+    depends_on: []
+
+  # ------------------------------------------------------------------
+  # Tier 3 — molecule bronze.
+  # ------------------------------------------------------------------
+  - name: mol-bronze-pubchem
+    source_id: mol_bronze.pubchem
+    schema: mol_bronze
+    table: pubchem
+    tier: 3
+    sla_seconds: 14400  # 7.59 GB WAL-mode
+    depends_on:
+      - mol_raw.pubchem
+  - name: mol-bronze-chembl-activities
+    source_id: mol_bronze.chembl_activities
+    schema: mol_bronze
+    table: chembl_activities
+    tier: 3
+    sla_seconds: 10800  # 2.48 GB WAL-mode
+    depends_on:
+      - mol_raw.chembl
+  - name: mol-bronze-drugbank-data
+    source_id: mol_bronze.drugbank_data
+    schema: mol_bronze
+    table: drugbank_data
+    tier: 3
+    sla_seconds: 3600
+    depends_on:
+      - mol_raw.drugbank
+  - name: mol-bronze-drugbank-targets
+    source_id: mol_bronze.drugbank_targets
+    schema: mol_bronze
+    table: drugbank_targets
+    tier: 3
+    sla_seconds: 3600
+    depends_on:
+      - mol_raw.drugbank
+  - name: mol-bronze-drugbank-interactions
+    source_id: mol_bronze.drugbank_interactions
+    schema: mol_bronze
+    table: drugbank_interactions
+    tier: 3
+    sla_seconds: 3600
+    depends_on:
+      - mol_raw.drugbank
+  - name: mol-bronze-orcid
+    source_id: mol_bronze.orcid
+    schema: mol_bronze
+    table: orcid
+    tier: 3
+    sla_seconds: 3600
+    depends_on: []
+  - name: mol-bronze-tdc-admet
+    source_id: mol_bronze.tdc_admet
+    schema: mol_bronze
+    table: tdc_admet
+    tier: 3
+    sla_seconds: 3600
+    depends_on: []
+
+  # ------------------------------------------------------------------
+  # Tier 4 — molecule silver hubs.
+  # ------------------------------------------------------------------
+  - name: mol-silver-molecules
+    source_id: mol_silver.molecules
+    schema: mol_silver
+    table: molecules
+    tier: 4
+    sla_seconds: 7200
+    depends_on:
+      - mol_bronze.chembl_activities
+      - mol_bronze.drugbank_data
+  - name: mol-silver-drug-labels
+    source_id: mol_silver.drug_labels
+    schema: mol_silver
+    table: drug_labels
+    tier: 4
+    sla_seconds: 3600
+    depends_on: []
+  - name: mol-silver-clinical-trials
+    source_id: mol_silver.clinical_trials
+    schema: mol_silver
+    table: clinical_trials
+    tier: 4
+    sla_seconds: 3600
+    depends_on: []
+
+  # ------------------------------------------------------------------
+  # Tier 5 — clinical / activity spokes.
+  # ------------------------------------------------------------------
+  - name: mol-raw-clinicaltrials
+    source_id: mol_raw.clinicaltrials
+    schema: mol_raw
+    table: clinicaltrials
+    tier: 5
+    sla_seconds: 14400  # 7.51 GB WAL-mode
+    depends_on: []
+  - name: mol-bronze-clinicaltrials
+    source_id: mol_bronze.clinicaltrials
+    schema: mol_bronze
+    table: clinicaltrials
+    tier: 5
+    sla_seconds: 10800  # 2.54 GB WAL-mode
+    depends_on:
+      - mol_raw.clinicaltrials
+  - name: mol-raw-openfda-faers
+    source_id: mol_raw.openfda_faers
+    schema: mol_raw
+    table: openfda_faers
+    tier: 5
+    sla_seconds: 7200
+    depends_on: []
+  - name: mol-raw-openfda-labels
+    source_id: mol_raw.openfda_labels
+    schema: mol_raw
+    table: openfda_labels
+    tier: 5
+    sla_seconds: 3600
+    depends_on: []
+  - name: mol-raw-europepmc
+    source_id: mol_raw.europepmc
+    schema: mol_raw
+    table: europepmc
+    tier: 5
+    sla_seconds: 7200
+    depends_on: []
+  - name: mol-raw-dailymed
+    source_id: mol_raw.dailymed
+    schema: mol_raw
+    table: dailymed
+    tier: 5
+    sla_seconds: 3600
+    depends_on: []
+  - name: mol-raw-sider
+    source_id: mol_raw.sider
+    schema: mol_raw
+    table: sider
+    tier: 5
+    sla_seconds: 1800
+    depends_on: []
+  - name: mol-raw-fda-rems
+    source_id: mol_raw.fda_rems
+    schema: mol_raw
+    table: fda_rems
+    tier: 5
+    sla_seconds: 1800
+    depends_on: []
+  - name: mol-raw-orange-book
+    source_id: mol_raw.orange_book
+    schema: mol_raw
+    table: orange_book
+    tier: 5
+    sla_seconds: 1800
+    depends_on: []
+  - name: mol-raw-purple-book
+    source_id: mol_raw.purple_book
+    schema: mol_raw
+    table: purple_book
+    tier: 5
+    sla_seconds: 1800
+    depends_on: []
+  - name: mol-raw-pharmgkb
+    source_id: mol_raw.pharmgkb
+    schema: mol_raw
+    table: pharmgkb
+    tier: 5
+    sla_seconds: 3600
+    depends_on: []
+  - name: mol-raw-ema
+    source_id: mol_raw.ema
+    schema: mol_raw
+    table: ema
+    tier: 5
+    sla_seconds: 3600
+    depends_on: []
+  - name: mol-raw-nih-reporter
+    source_id: mol_raw.nih_reporter
+    schema: mol_raw
+    table: nih_reporter
+    tier: 5
+    sla_seconds: 3600
+    depends_on: []
+  - name: mol-raw-sec-edgar
+    source_id: mol_raw.sec_edgar
+    schema: mol_raw
+    table: sec_edgar
+    tier: 5
+    sla_seconds: 7200
+    depends_on: []
+  - name: mol-raw-npi-registry
+    source_id: mol_raw.npi_registry
+    schema: mol_raw
+    table: npi_registry
+    tier: 5
+    sla_seconds: 7200
+    depends_on: []
+  - name: mol-raw-openalex-ci
+    source_id: mol_raw.openalex_ci
+    schema: mol_raw
+    table: openalex_ci
+    tier: 5
+    sla_seconds: 7200
+    depends_on: []
+  - name: mol-raw-bindingdb
+    source_id: mol_raw.bindingdb
+    schema: mol_raw
+    table: bindingdb
+    tier: 5
+    sla_seconds: 7200
+    depends_on: []
+  - name: mol-raw-pdb
+    source_id: mol_raw.pdb
+    schema: mol_raw
+    table: pdb
+    tier: 5
+    sla_seconds: 3600
+    depends_on: []
+  - name: mol-raw-orcid
+    source_id: mol_raw.orcid
+    schema: mol_raw
+    table: orcid
+    tier: 5
+    sla_seconds: 3600
+    depends_on: []
+  - name: mol-raw-cdc-vaccines
+    source_id: mol_raw.cdc_vaccines
+    schema: mol_raw
+    table: cdc_vaccines
+    tier: 5
+    sla_seconds: 1800
+    depends_on: []
+  - name: mol-raw-who-gho
+    source_id: mol_raw.who_gho
+    schema: mol_raw
+    table: who_gho
+    tier: 5
+    sla_seconds: 1800
+    depends_on: []
+  - name: mol-raw-who-icd
+    source_id: mol_raw.who_icd
+    schema: mol_raw
+    table: who_icd
+    tier: 5
+    sla_seconds: 1800
+    depends_on: []
+  - name: mol-raw-tdc-admet
+    source_id: mol_raw.tdc_admet
+    schema: mol_raw
+    table: tdc_admet
+    tier: 5
+    sla_seconds: 3600
+    depends_on: []
+  - name: mol-raw-chembl-activities
+    source_id: mol_raw.chembl_activities
+    schema: mol_raw
+    table: chembl_activities
+    tier: 5
+    sla_seconds: 7200
+    depends_on: []
+
+  # ------------------------------------------------------------------
+  # Tier 6 — HCS provider hub raw + HCS bronze.
+  # ------------------------------------------------------------------
+  - name: hcs-raw-cms-pecos
+    source_id: hcs_raw.cms_pecos
+    schema: hcs_raw
+    table: cms_pecos
+    tier: 6
+    sla_seconds: 3600
+    depends_on: []
+  - name: hcs-raw-cms-physician-puf-services
+    source_id: hcs_raw.cms_physician_puf_services
+    schema: hcs_raw
+    table: cms_physician_puf_services
+    tier: 6
+    sla_seconds: 3600
+    depends_on: []
+  - name: hcs-raw-cms-telehealth-puf
+    source_id: hcs_raw.cms_telehealth_puf
+    schema: hcs_raw
+    table: cms_telehealth_puf
+    tier: 6
+    sla_seconds: 3600
+    depends_on: []
+  - name: hcs-raw-cms-opioid-puf
+    source_id: hcs_raw.cms_opioid_puf
+    schema: hcs_raw
+    table: cms_opioid_puf
+    tier: 6
+    sla_seconds: 3600
+    depends_on: []
+  - name: hcs-raw-cms-open-payments
+    source_id: hcs_raw.cms_open_payments
+    schema: hcs_raw
+    table: cms_open_payments
+    tier: 6
+    sla_seconds: 3600
+    depends_on: []
+  - name: hcs-raw-hrsa-shortage-areas
+    source_id: hcs_raw.hrsa_shortage_areas
+    schema: hcs_raw
+    table: hrsa_shortage_areas
+    tier: 6
+    sla_seconds: 1800
+    depends_on: []
+  - name: hcs-bronze-cms-pecos
+    source_id: hcs_bronze.cms_pecos
+    schema: hcs_bronze
+    table: cms_pecos
+    tier: 6
+    sla_seconds: 3600
+    depends_on:
+      - hcs_raw.cms_pecos
+  - name: hcs-bronze-cms-physician-puf-services
+    source_id: hcs_bronze.cms_physician_puf_services
+    schema: hcs_bronze
+    table: cms_physician_puf_services
+    tier: 6
+    sla_seconds: 3600
+    depends_on:
+      - hcs_raw.cms_physician_puf_services
+  - name: hcs-bronze-cms-telehealth-puf
+    source_id: hcs_bronze.cms_telehealth_puf
+    schema: hcs_bronze
+    table: cms_telehealth_puf
+    tier: 6
+    sla_seconds: 3600
+    depends_on:
+      - hcs_raw.cms_telehealth_puf
+  - name: hcs-bronze-cms-opioid-puf
+    source_id: hcs_bronze.cms_opioid_puf
+    schema: hcs_bronze
+    table: cms_opioid_puf
+    tier: 6
+    sla_seconds: 3600
+    depends_on:
+      - hcs_raw.cms_opioid_puf
+  - name: hcs-bronze-cms-open-payments
+    source_id: hcs_bronze.cms_open_payments
+    schema: hcs_bronze
+    table: cms_open_payments
+    tier: 6
+    sla_seconds: 3600
+    depends_on:
+      - hcs_raw.cms_open_payments
+
+  # ------------------------------------------------------------------
+  # Tier 7 — HCS silver aggregates.
+  # ------------------------------------------------------------------
+  - name: hcs-silver-provider-profile
+    source_id: hcs_silver.provider_profile
+    schema: hcs_silver
+    table: provider_profile
+    tier: 7
+    sla_seconds: 3600
+    depends_on:
+      - hcs_bronze.cms_pecos
+  - name: hcs-silver-facility-profile
+    source_id: hcs_silver.facility_profile
+    schema: hcs_silver
+    table: facility_profile
+    tier: 7
+    sla_seconds: 3600
+    depends_on:
+      - hcs_bronze.cms_pecos
+  - name: hcs-silver-cms-facility-profile
+    source_id: hcs_silver.cms_facility_profile
+    schema: hcs_silver
+    table: cms_facility_profile
+    tier: 7
+    sla_seconds: 3600
+    depends_on:
+      - hcs_bronze.cms_open_payments
+  - name: hcs-silver-healthcare-facilities
+    source_id: hcs_silver.healthcare_facilities
+    schema: hcs_silver
+    table: healthcare_facilities
+    tier: 7
+    sla_seconds: 3600
+    depends_on:
+      - hcs_bronze.cms_pecos
+  - name: hcs-silver-geographic-health
+    source_id: hcs_silver.geographic_health
+    schema: hcs_silver
+    table: geographic_health
+    tier: 7
+    sla_seconds: 3600
+    depends_on:
+      - hcs_bronze.cms_opioid_puf
+
+  # ------------------------------------------------------------------
+  # Tier 8 — gold via SQLMesh. No dumps — the dispatcher still schedules
+  # these to kick the sqlmesh run, but the step body is a thin shell that
+  # invokes sqlmesh through the live-fetch fallback path in prestaged.py.
+  # Out-of-scope schemas (ip_/ind_) are filtered at plan_load() time and
+  # thus receive no Job; they appear here for reference only.
+  # ------------------------------------------------------------------
+  - name: mol-gold-ext-safety-signals
+    source_id: mol_gold_ext.safety_signals
+    schema: mol_gold_ext
+    table: safety_signals
+    tier: 8
+    sla_seconds: 3600
+    depends_on: []
+  - name: mol-gold-ext-lifecycle-stages
+    source_id: mol_gold_ext.lifecycle_stages
+    schema: mol_gold_ext
+    table: lifecycle_stages
+    tier: 8
+    sla_seconds: 3600
+    depends_on: []

@@ -777,6 +777,26 @@ def main(argv: list[str] | None = None) -> int:
                         help="Emit ordered plan without writing (FR-012).")
     parser.add_argument("--source-list", default="all",
                         help="Comma-separated source_ids or 'all'.")
+    # D.1 — single-source mode used by the per-source Jobs the hydrate
+    # dispatcher dispatches. Equivalent to --source-list=<name> but named
+    # separately so the per-source Job manifest reads naturally
+    # (`--source <name>`). Takes precedence over --source-list when both
+    # are provided.
+    parser.add_argument(
+        "--source", dest="single_source", default=None, metavar="SOURCE_ID",
+        help="Run only the named source (alias for --source-list=<name>).",
+    )
+    # D.1 — accept a dispatcher-provided run label so the per-source Job
+    # shares a label across all sources in one dispatcher invocation.
+    # If unset, plan_load() computes the standard artifact-derived label.
+    parser.add_argument(
+        "--run-label", dest="run_label_override", default=None,
+        metavar="LABEL",
+        help=(
+            "Override the auto-computed run_label (dispatcher-provided). "
+            "All meta.transform_runs rows from this invocation carry it."
+        ),
+    )
     parser.add_argument("--only-tier", type=int, default=None, metavar="N",
                         help="Only process tier N (1–8).")
     parser.add_argument("--verbose", "-v", action="store_true", default=False,
@@ -859,11 +879,17 @@ def main(argv: list[str] | None = None) -> int:
     )
     fetchers_suspended = {s.strip() for s in fetchers_suspended_raw.split(",") if s.strip()}
 
-    source_list_all = args.source_list.strip().lower() == "all"
-    requested_sources: set[str] | None = (
-        None if source_list_all
-        else {s.strip() for s in args.source_list.split(",") if s.strip()}
-    )
+    # D.1 — --source takes precedence over --source-list. The dispatcher
+    # passes one source per Job; the legacy monolith still uses --source-list.
+    if args.single_source:
+        requested_sources: set[str] | None = {args.single_source.strip()}
+        source_list_all = False
+    else:
+        source_list_all = args.source_list.strip().lower() == "all"
+        requested_sources = (
+            None if source_list_all
+            else {s.strip() for s in args.source_list.split(",") if s.strip()}
+        )
 
     # Build artifact inventory
     try:
@@ -888,7 +914,10 @@ def main(argv: list[str] | None = None) -> int:
         requested_sources=requested_sources,
         only_tier=args.only_tier,
     )
-    run_label = plan.run_label
+    # D.1 — dispatcher may inject a run_label so every per-source Job in a
+    # dispatcher invocation carries the same idempotency key. Fall back to
+    # the plan-computed label when absent.
+    run_label = args.run_label_override or plan.run_label
 
     # Dry-run (FR-012)
     if args.dry_run:
