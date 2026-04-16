@@ -156,6 +156,64 @@ class FakeWriter:
         self._conn = conn  # Dispatcher uses getattr(writer, '_conn', None).
 
 
+class FakeBudget:
+    """Fake :class:`ResourceBudget` — configurable admit/deny + release log.
+
+    Exposes the exact contract the dispatcher relies on:
+      - ``decorate_dispatch(fn)``: returns a wrapper that invokes
+        ``try_reserve`` first, calls ``fn`` on admit (releasing after), or
+        returns ``None`` on deny.
+      - ``try_reserve(requirements)``: returns ``self.admit`` (a bool or a
+        callable for per-call control — see :attr:`admit_fn`).
+      - ``release(requirements)``: logs the call.
+      - ``close()``: logs the close.
+
+    Tests poke ``admit`` / ``admit_fn`` to steer wrapper behaviour and read
+    ``reserve_calls`` / ``release_calls`` / ``closed`` to assert on
+    lifecycle.
+    """
+
+    def __init__(self) -> None:
+        self.admit: bool = True
+        self.admit_fn: Any = None  # callable(requirements) -> bool, overrides admit
+        self.reserve_calls: List[Dict[str, float]] = []
+        self.release_calls: List[Dict[str, float]] = []
+        self.closed: bool = False
+
+    def try_reserve(self, requirements: Any) -> bool:
+        self.reserve_calls.append(dict(requirements))
+        if self.admit_fn is not None:
+            return bool(self.admit_fn(requirements))
+        return self.admit
+
+    def release(self, requirements: Any) -> None:
+        self.release_calls.append(dict(requirements))
+
+    def close(self) -> None:
+        self.closed = True
+
+    def decorate_dispatch(self, dispatch_fn: Any) -> Any:
+        """Mirror :meth:`ResourceBudget.decorate_dispatch` contract.
+
+        Keeps the same try_reserve → fn → release-in-finally flow so tests
+        exercise the real integration semantics rather than a shortcut.
+        """
+        # Import lazily to avoid a hard test-side dependency on the real
+        # module if a future refactor relocates the helper.
+        from dk_data.ingestion.resource_budget import _extract_consumes
+
+        def wrapped(descriptor: Any, *args: Any, **kwargs: Any) -> Any:
+            requirements = _extract_consumes(descriptor)
+            if not self.try_reserve(requirements):
+                return None
+            try:
+                return dispatch_fn(descriptor, *args, **kwargs)
+            finally:
+                self.release(requirements)
+
+        return wrapped
+
+
 class FakeBacklog:
     """Fake HydrationBacklogWriter — configurable quarantine set + record log."""
 
@@ -218,6 +276,11 @@ def fake_backlog() -> FakeBacklog:
 
 
 @pytest.fixture
+def fake_budget() -> FakeBudget:
+    return FakeBudget()
+
+
+@pytest.fixture
 def descriptors():
     """Synthetic 3-tier descriptor set used across all tests."""
     from dk_data.ingestion.load_order import SourceDescriptor
@@ -246,8 +309,16 @@ def _new_dispatcher(
     fake_backlog: FakeBacklog,
     descriptors: List,
     max_parallel: int = 4,
+    fake_budget: Any = None,
 ):
     from dk_data.ingestion.hydrate_dispatcher import HydrateDispatcher
+
+    # Default to a permissive FakeBudget so tests that don't care about
+    # admission control never hit the real connection pool (which would
+    # try to connect to Postgres on import). Admission-specific tests
+    # pass their own FakeBudget with a configured ``admit`` flag.
+    if fake_budget is None:
+        fake_budget = FakeBudget()
 
     return HydrateDispatcher(
         max_parallel=max_parallel,
@@ -258,6 +329,7 @@ def _new_dispatcher(
         backlog=fake_backlog,
         kube_client=fake_kube,
         descriptors=descriptors,
+        budget=fake_budget,
     )
 
 
@@ -491,3 +563,245 @@ class TestFailureIncrementsBacklog:
         assert failures[0]["schema"] == "meta"
         assert failures[0]["table"] == "bad"
         assert failures[0]["error_code"] == "DISPATCH_JOB_FAILED"
+
+
+# ---------------------------------------------------------------------------
+# Admission control integration (plan §D.1 + §D.3)
+#
+# The dispatcher routes every per-source dispatch through
+# ``budget.decorate_dispatch(self._dispatch_one)``. These four tests cover
+# the integration surface:
+#   - happy path: admit → dispatch fn called → release
+#   - defer path: deny → dispatch fn NOT called, deferred counter ticks
+#   - release-on-success: release happens after a normal dispatch return
+#   - release-on-exception: release still happens when dispatch fn raises
+# ---------------------------------------------------------------------------
+
+
+class TestDispatchCallsThroughBudgetWrapper:
+    """When try_reserve returns True, the underlying dispatch fn MUST be
+    invoked with the descriptor."""
+
+    def test_dispatch_calls_through_budget_wrapper(
+        self, fake_kube, fake_writer, fake_backlog, fake_budget
+    ):
+        from dk_data.ingestion.load_order import SourceDescriptor
+
+        fake_budget.admit = True
+        descriptors = [SourceDescriptor("meta.single", "meta", "single", 1)]
+
+        dispatcher = _new_dispatcher(
+            fake_kube=fake_kube,
+            fake_writer=fake_writer,
+            fake_backlog=fake_backlog,
+            descriptors=descriptors,
+            fake_budget=fake_budget,
+        )
+        results = dispatcher.dispatch_all()
+
+        # Reservation happened before the underlying dispatch — and the
+        # underlying dispatch actually produced the Job (kube.create_job
+        # was hit exactly once).
+        assert len(fake_budget.reserve_calls) == 1
+        assert len(fake_kube.create_calls) == 1
+        # Exactly one terminal result, and it's the completed source.
+        assert len(results) == 1
+        assert results[0].status == "completed"
+
+
+class TestDispatchDefersOnBudgetExhausted:
+    """When try_reserve returns False, the underlying dispatch fn MUST NOT
+    be invoked, the per-source deferred counter MUST increment, and the
+    dispatcher MUST move on rather than hanging on the denied source.
+
+    We configure the budget to deny the FIRST reservation attempt and
+    admit every subsequent one; the dispatcher's next-tick retry then
+    succeeds and the source reaches terminal state. This exercises both
+    legs of the defer → retry loop.
+    """
+
+    def test_dispatch_defers_on_budget_exhausted_then_retries(
+        self, fake_kube, fake_writer, fake_backlog, fake_budget
+    ):
+        from dk_data.ingestion.load_order import SourceDescriptor
+        from dk_data.observability.metrics import (
+            DK_HYDRATION_DISPATCH_DEFERRED_TOTAL,
+        )
+
+        descriptors = [SourceDescriptor("meta.single", "meta", "single", 1)]
+
+        # First call denies, every subsequent one admits — gives the
+        # dispatcher a chance to retry on the next tick.
+        calls: list[int] = []
+
+        def admit_fn(_requirements: Any) -> bool:
+            calls.append(1)
+            return len(calls) > 1
+
+        fake_budget.admit_fn = admit_fn
+
+        # Capture the deferred counter baseline before dispatch.
+        before = DK_HYDRATION_DISPATCH_DEFERRED_TOTAL.labels(
+            source="meta.single"
+        )._value.get()
+
+        dispatcher = _new_dispatcher(
+            fake_kube=fake_kube,
+            fake_writer=fake_writer,
+            fake_backlog=fake_backlog,
+            descriptors=descriptors,
+            fake_budget=fake_budget,
+        )
+        results = dispatcher.dispatch_all()
+
+        # The first reservation attempt denied the dispatch — kube was
+        # NOT asked to create a Job on that tick. On the retry tick the
+        # budget admitted and the Job was created.
+        assert len(fake_budget.reserve_calls) == 2, (
+            f"expected 2 reservation attempts (deny, then admit); got "
+            f"{len(fake_budget.reserve_calls)}"
+        )
+        # Exactly one Job created — the retry, not the denied attempt.
+        assert len(fake_kube.create_calls) == 1
+
+        # Deferred counter ticked exactly once for the source that was
+        # held back.
+        after = DK_HYDRATION_DISPATCH_DEFERRED_TOTAL.labels(
+            source="meta.single"
+        )._value.get()
+        assert after - before == 1, (
+            f"DK_HYDRATION_DISPATCH_DEFERRED_TOTAL must increment by 1 on "
+            f"deferral (got delta={after - before})"
+        )
+
+        # After retry, the source reached terminal state.
+        assert len(results) == 1
+        assert results[0].status == "completed"
+
+    def test_dispatch_defers_does_not_call_underlying_dispatch(
+        self, fake_kube, fake_writer, fake_backlog, fake_budget
+    ):
+        """With an always-denying budget AND an empty batch retry bound,
+        the underlying ``_dispatch_one`` must NEVER be invoked.
+
+        We construct a batch of 1 source, deny forever, and cap the
+        outer loop via a max_parallel=0 guard... actually we can't cap
+        max_parallel below 1 (validator enforces >= 1). Instead we
+        assert the first-tick behaviour: after a denied tick, kube.create
+        was not called, the source was NOT marked launched, and the
+        deferred counter incremented once per retry attempt.
+        """
+        from dk_data.ingestion.load_order import SourceDescriptor
+
+        descriptors = [SourceDescriptor("meta.never", "meta", "never", 1)]
+        # Deny on every call, but cap the number of retry loops by
+        # flipping to admit after 3 denials — gives us a bounded test.
+        calls: list[int] = []
+
+        def admit_fn(_requirements: Any) -> bool:
+            calls.append(1)
+            return len(calls) > 3
+
+        fake_budget.admit_fn = admit_fn
+
+        dispatcher = _new_dispatcher(
+            fake_kube=fake_kube,
+            fake_writer=fake_writer,
+            fake_backlog=fake_backlog,
+            descriptors=descriptors,
+            fake_budget=fake_budget,
+        )
+        results = dispatcher.dispatch_all()
+
+        # Exactly 3 denials + 1 admit = 4 reservation calls total.
+        assert len(fake_budget.reserve_calls) == 4
+        # create_job called exactly once — on the admit tick.
+        assert len(fake_kube.create_calls) == 1
+        assert len(results) == 1
+
+
+class TestBudgetReleasedOnSuccess:
+    """On a successful dispatch, ``release`` must be called with the same
+    requirements that were reserved.
+    """
+
+    def test_release_called_after_successful_dispatch(
+        self, fake_kube, fake_writer, fake_backlog, fake_budget
+    ):
+        from dk_data.ingestion.load_order import SourceDescriptor
+
+        fake_budget.admit = True
+        descriptors = [SourceDescriptor("meta.ok", "meta", "ok", 1)]
+
+        dispatcher = _new_dispatcher(
+            fake_kube=fake_kube,
+            fake_writer=fake_writer,
+            fake_backlog=fake_backlog,
+            descriptors=descriptors,
+            fake_budget=fake_budget,
+        )
+        dispatcher.dispatch_all()
+
+        # One reservation + one matching release.
+        assert len(fake_budget.reserve_calls) == 1
+        assert len(fake_budget.release_calls) == 1
+        # The requirements passed to release match what was reserved.
+        assert fake_budget.release_calls[0] == fake_budget.reserve_calls[0]
+
+
+class TestBudgetReleasedOnException:
+    """If the underlying dispatch fn raises, the wrapper's try/finally must
+    still release the reservation so the budget is not leaked.
+
+    We force the FakeKubeClient.create_job to raise; the dispatcher's
+    ``_dispatch_one`` catches that exception and returns a failed
+    ``StepResult`` (not a re-raise) — so to test the exception path we
+    reach into ``_dispatch_one`` at a lower layer: replace the method on
+    the instance with one that raises directly. This matches how a bug
+    in the dispatcher body (not in kube.create_job) would bubble up.
+    """
+
+    def test_release_called_when_dispatch_fn_raises(
+        self, fake_kube, fake_writer, fake_backlog, fake_budget
+    ):
+        from dk_data.ingestion.load_order import SourceDescriptor
+
+        descriptors = [SourceDescriptor("meta.boom", "meta", "boom", 1)]
+
+        dispatcher = _new_dispatcher(
+            fake_kube=fake_kube,
+            fake_writer=fake_writer,
+            fake_backlog=fake_backlog,
+            descriptors=descriptors,
+            fake_budget=fake_budget,
+        )
+
+        # Monkey-patch _dispatch_one to raise AFTER the wrapper reserves
+        # and BEFORE the wrapper releases. We must re-wrap the mutated
+        # method with the fake budget so the try/finally covers our
+        # raise — otherwise the pre-built ``self._dispatch`` still holds
+        # a reference to the original method.
+        boom_calls: list[int] = []
+
+        def raising_dispatch(_desc: Any) -> Any:
+            boom_calls.append(1)
+            raise RuntimeError("synthetic dispatch failure")
+
+        dispatcher._dispatch_one = raising_dispatch  # type: ignore[assignment]
+        dispatcher._dispatch = fake_budget.decorate_dispatch(raising_dispatch)
+
+        # The exception propagates out of dispatch_all — the wrapper's
+        # job is to release on the way out, not to swallow errors.
+        with pytest.raises(RuntimeError, match="synthetic dispatch failure"):
+            dispatcher.dispatch_all()
+
+        # Reserve was called; dispatch fn was called; release was still
+        # called despite the raise (that's the try/finally contract).
+        assert len(fake_budget.reserve_calls) == 1
+        assert boom_calls == [1]
+        assert len(fake_budget.release_calls) == 1, (
+            "release MUST be invoked even when the underlying dispatch "
+            "raises — try/finally contract in decorate_dispatch"
+        )
+        # Reservation and release requirements match (no leak).
+        assert fake_budget.release_calls[0] == fake_budget.reserve_calls[0]

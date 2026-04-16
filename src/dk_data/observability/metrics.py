@@ -756,6 +756,23 @@ DK_BUDGET_RESERVATION_DENIED_TOTAL = Counter(
     ["key"],
 )
 
+# Incremented by src/dk_data/ingestion/hydrate_dispatcher.py each time the
+# admission-decorated dispatch callable returns ``None`` (budget denied).
+# The dispatcher releases its semaphore slot and leaves the source in the
+# ready set so the next poll-interval tick retries admission. Per-source
+# labels so operators can spot a single throttled source vs a global
+# budget exhaustion. Consumed by the DkHydrationDispatchDeferred
+# PrometheusRule (alert-driven — a sustained non-zero rate means the
+# dispatcher is being throttled and meta.resource_budget needs retuning
+# or the C.5 PgBouncer hydration pool is saturated).
+DK_HYDRATION_DISPATCH_DEFERRED_TOTAL = Counter(
+    "dk_hydration_dispatch_deferred_total",
+    "Total per-source dispatches deferred by admission control "
+    "(plan §D.1 + §D.3). Increments when ResourceBudget.try_reserve() "
+    "denies capacity; the source is retried on the next dispatcher tick.",
+    ["source"],
+)
+
 
 CMS_GOLD_VIEW_LAST_REFRESH_TIMESTAMP = Gauge(
     "cms_gold_view_last_refresh_timestamp",
