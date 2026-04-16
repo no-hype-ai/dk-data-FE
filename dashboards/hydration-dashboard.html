@@ -1,0 +1,611 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>dk-data hydration dashboard</title>
+<style>
+  :root {
+    --bg: #0d1117;
+    --bg2: #161b22;
+    --bg3: #21262d;
+    --fg: #e6edf3;
+    --fg2: #8b949e;
+    --border: #30363d;
+    --green: #3fb950;
+    --blue: #58a6ff;
+    --amber: #d29922;
+    --red: #f85149;
+    --grey: #6e7681;
+    --mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  }
+  * { box-sizing: border-box; }
+  html, body {
+    margin: 0; padding: 0;
+    background: var(--bg); color: var(--fg);
+    font: 13px/1.4 system-ui, -apple-system, sans-serif;
+    min-height: 100vh;
+  }
+  header {
+    display: flex; justify-content: space-between; align-items: center;
+    padding: 12px 18px;
+    background: var(--bg2);
+    border-bottom: 1px solid var(--border);
+    flex-wrap: wrap; gap: 12px;
+  }
+  header h1 {
+    margin: 0; font-size: 14px; font-weight: 600;
+    color: var(--fg2); letter-spacing: 0.05em; text-transform: uppercase;
+  }
+  .header-stats {
+    display: flex; gap: 24px; flex: 1; justify-content: center;
+    font-family: var(--mono); font-size: 12px;
+  }
+  .stat .label { color: var(--fg2); font-size: 10px; text-transform: uppercase; letter-spacing: 0.05em; }
+  .stat .val { font-size: 16px; color: var(--fg); }
+  .controls {
+    display: flex; gap: 12px; align-items: center;
+    font-family: var(--mono); font-size: 11px;
+  }
+  .controls select { background: var(--bg3); color: var(--fg); border: 1px solid var(--border); border-radius: 4px; padding: 4px 8px; font-family: inherit; font-size: 11px; }
+  .status-dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 6px; vertical-align: middle; }
+  .status-dot.ok { background: var(--green); box-shadow: 0 0 6px var(--green); }
+  .status-dot.err { background: var(--red); box-shadow: 0 0 6px var(--red); }
+  .status-dot.idle { background: var(--grey); }
+
+  main { display: grid; grid-template-columns: 40% 60%; gap: 1px; background: var(--border); }
+  @media (max-width: 800px) { main { grid-template-columns: 1fr; } }
+
+  .panel { background: var(--bg); padding: 18px; }
+  .panel h2 { margin: 0 0 12px; font-size: 11px; font-weight: 600; color: var(--fg2); text-transform: uppercase; letter-spacing: 0.06em; }
+
+  .doughnut-wrap { display: flex; gap: 18px; align-items: center; }
+  .doughnut {
+    width: 140px; height: 140px; border-radius: 50%;
+    flex-shrink: 0; position: relative;
+    background: conic-gradient(var(--bg3) 0 100%);
+    transition: background 0.6s ease;
+  }
+  .doughnut::after { content: ""; position: absolute; inset: 22px; border-radius: 50%; background: var(--bg); }
+  .doughnut-center { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; pointer-events: none; font-family: var(--mono); }
+  .doughnut-center .total { font-size: 22px; color: var(--fg); }
+  .doughnut-center .label { font-size: 9px; color: var(--fg2); text-transform: uppercase; letter-spacing: 0.05em; }
+
+  .legend { font-family: var(--mono); font-size: 11px; flex: 1; }
+  .legend-row { display: flex; align-items: center; gap: 8px; padding: 3px 0; }
+  .swatch { width: 10px; height: 10px; border-radius: 2px; flex-shrink: 0; }
+  .legend-label { color: var(--fg); flex: 1; }
+  .legend-count { color: var(--fg2); font-variant-numeric: tabular-nums; }
+
+  table { width: 100%; border-collapse: collapse; font-family: var(--mono); font-size: 11px; }
+  th { text-align: left; color: var(--fg2); font-weight: 500; padding: 6px 8px; border-bottom: 1px solid var(--border); font-size: 10px; text-transform: uppercase; letter-spacing: 0.05em; }
+  td { padding: 6px 8px; border-bottom: 1px solid var(--bg2); color: var(--fg); vertical-align: top; }
+  tr:hover td { background: var(--bg2); }
+  tr.has-error td { cursor: help; }
+  td.num { text-align: right; font-variant-numeric: tabular-nums; color: var(--fg2); }
+
+  .pill { display: inline-block; padding: 2px 8px; border-radius: 10px; font-size: 10px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.04em; border: 1px solid transparent; }
+  .pill.completed { background: rgba(63,185,80,0.15); color: var(--green); border-color: rgba(63,185,80,0.4); }
+  .pill.running { background: rgba(88,166,255,0.15); color: var(--blue); border-color: rgba(88,166,255,0.4); }
+  .pill.failed { background: rgba(248,81,73,0.15); color: var(--red); border-color: rgba(248,81,73,0.4); }
+  .pill.blocked { background: rgba(210,153,34,0.15); color: var(--amber); border-color: rgba(210,153,34,0.4); }
+  .pill.skipped_view { background: rgba(110,118,129,0.15); color: var(--grey); border-color: rgba(110,118,129,0.4); }
+  .pill.no_source_available { background: transparent; color: var(--grey); border: 1px dashed var(--grey); }
+  .pill.pending { background: rgba(110,118,129,0.1); color: var(--fg2); border-color: var(--border); }
+
+  footer { background: var(--bg2); border-top: 1px solid var(--border); padding: 12px 18px; display: flex; align-items: center; gap: 18px; }
+  footer h2 { margin: 0; font-size: 11px; font-weight: 600; color: var(--fg2); text-transform: uppercase; letter-spacing: 0.06em; width: 110px; flex-shrink: 0; }
+  .sparkline { flex: 1; height: 60px; }
+  .wal-now { font-family: var(--mono); text-align: right; min-width: 90px; }
+  .wal-now .pct { font-size: 26px; }
+  .wal-now .label { color: var(--fg2); font-size: 10px; text-transform: uppercase; letter-spacing: 0.05em; }
+  .wal-now.high .pct { color: var(--red); }
+  .wal-now.mid .pct { color: var(--amber); }
+  .wal-now.low .pct { color: var(--green); }
+
+  .empty { color: var(--fg2); font-style: italic; padding: 18px; text-align: center; }
+  .err-msg { color: var(--red); font-family: var(--mono); font-size: 11px; max-width: 280px; }
+  abbr { text-decoration: none; cursor: help; border-bottom: 1px dotted var(--fg2); }
+
+  /* Token-input modal — shown when no JWT is available */
+  .token-modal {
+    position: fixed; inset: 0; background: rgba(13,17,23,0.92);
+    display: none; align-items: center; justify-content: center;
+    z-index: 99; padding: 18px;
+  }
+  .token-modal.show { display: flex; }
+  .token-card {
+    background: var(--bg2); border: 1px solid var(--border); border-radius: 8px;
+    padding: 24px; max-width: 580px; width: 100%;
+  }
+  .token-card h3 { margin: 0 0 12px; color: var(--fg); font-size: 16px; }
+  .token-card p { color: var(--fg2); font-size: 12px; margin: 6px 0; }
+  .token-card pre {
+    background: var(--bg3); padding: 8px 10px; border-radius: 4px;
+    font-family: var(--mono); font-size: 11px; color: var(--fg);
+    overflow-x: auto; white-space: pre-wrap; word-break: break-all;
+  }
+  .token-card textarea {
+    width: 100%; min-height: 80px; margin-top: 12px;
+    background: var(--bg3); color: var(--fg); border: 1px solid var(--border);
+    border-radius: 4px; padding: 8px; font-family: var(--mono); font-size: 11px;
+    resize: vertical; box-sizing: border-box;
+  }
+  .token-card .actions { margin-top: 12px; display: flex; gap: 8px; }
+  .token-card button {
+    background: var(--blue); color: white; border: 0; border-radius: 4px;
+    padding: 8px 16px; font: 600 12px system-ui, sans-serif; cursor: pointer;
+  }
+  .token-card button.secondary { background: var(--bg3); color: var(--fg2); }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>dk-data hydration</h1>
+  <div class="header-stats">
+    <div class="stat">
+      <div class="label">run_label</div>
+      <div class="val"><abbr id="run-label" title="">—</abbr></div>
+    </div>
+    <div class="stat">
+      <div class="label">elapsed</div>
+      <div class="val" id="elapsed">—</div>
+    </div>
+    <div class="stat">
+      <div class="label">eta</div>
+      <div class="val" id="eta">—</div>
+    </div>
+  </div>
+  <div class="controls">
+    <span id="poll-state"><span class="status-dot idle"></span><span id="poll-label">idle</span></span>
+    <span id="last-refresh" style="color:var(--fg2)">—</span>
+    <select id="interval">
+      <option value="1000">1s</option>
+      <option value="5000" selected>5s</option>
+      <option value="15000">15s</option>
+      <option value="0">pause</option>
+    </select>
+  </div>
+</header>
+
+<main>
+  <section class="panel">
+    <h2>Status histogram</h2>
+    <div class="doughnut-wrap">
+      <div class="doughnut" id="doughnut">
+        <div class="doughnut-center">
+          <div class="total" id="dough-total">0</div>
+          <div class="label">sources</div>
+        </div>
+      </div>
+      <div class="legend" id="legend"></div>
+    </div>
+    <div id="err-summary" class="err-msg" style="margin-top:12px;"></div>
+  </section>
+
+  <section class="panel">
+    <h2>Most-recent 25 sources</h2>
+    <table id="sources-table">
+      <thead>
+        <tr>
+          <th>status</th>
+          <th>source</th>
+          <th>kind</th>
+          <th class="num">rows</th>
+          <th class="num">dur</th>
+          <th>finished</th>
+        </tr>
+      </thead>
+      <tbody id="sources-body">
+        <tr><td colspan="6" class="empty">awaiting first poll…</td></tr>
+      </tbody>
+    </table>
+  </section>
+</main>
+
+<div id="token-modal" class="token-modal">
+  <div class="token-card">
+    <h3>JWT required</h3>
+    <p>This dashboard polls PostgREST which requires a Bearer JWT for the
+       <code>api_user</code> role. Mint one and paste it below; it gets
+       saved to localStorage so refresh works after this.</p>
+    <p>From the project root:</p>
+    <pre>./dashboards/open-dashboard.sh    # easiest — auto-mints &amp; opens
+# OR manually:
+JWT_SECRET=$(kubectl -n dk-data-prod get secret dk-data-secrets -o jsonpath='{.data.JWT_SECRET}' | base64 -d)
+JWT_SECRET="$JWT_SECRET" .venv/bin/python -c \
+  'import os, time, jwt; print(jwt.encode({"role":"api_user","exp":int(time.time())+8*3600}, os.environ["JWT_SECRET"], algorithm="HS256"))'</pre>
+    <textarea id="token-input" placeholder="paste JWT here…"></textarea>
+    <div class="actions">
+      <button id="token-save">save &amp; reload</button>
+      <button id="token-clear" class="secondary">clear stored token</button>
+    </div>
+  </div>
+</div>
+
+<footer>
+  <h2>WAL pressure</h2>
+  <svg class="sparkline" id="spark" viewBox="0 0 600 60" preserveAspectRatio="none"></svg>
+  <div class="wal-now" id="wal-now">
+    <div class="pct" id="wal-pct">—</div>
+    <div class="label">pct used</div>
+  </div>
+</footer>
+
+<script>
+(() => {
+  // SVG namespace for safe element creation
+  const SVG_NS = "http://www.w3.org/2000/svg";
+
+  // ------------------------------------------------------------
+  // Config from URL query params
+  // ------------------------------------------------------------
+  const params = new URLSearchParams(location.search);
+  // Default to the local kubectl port-forward tunnel so opening the bare
+  // file:// URL works once the tunnel is up. Override with ?postgrest=...
+  // for any other environment (staging, in-cluster, etc.).
+  const POSTGREST = (params.get("postgrest") || "http://localhost:3001").replace(/\/$/, "");
+
+  // Token resolution priority: ?token= URL param → localStorage → modal prompt.
+  // Once the user pastes a token, persist it for the dashboard's lifetime
+  // so a stale tab without ?token= still works after a refresh.
+  let TOKEN = params.get("token") || localStorage.getItem("hydration_dashboard_jwt") || "";
+  if (params.get("token")) {
+    // URL-supplied token wins and overwrites stored one.
+    localStorage.setItem("hydration_dashboard_jwt", params.get("token"));
+  }
+
+  // Wire token modal
+  const modal = document.getElementById("token-modal");
+  document.getElementById("token-save").onclick = () => {
+    const v = document.getElementById("token-input").value.trim();
+    if (!v) return;
+    localStorage.setItem("hydration_dashboard_jwt", v);
+    location.reload();
+  };
+  document.getElementById("token-clear").onclick = () => {
+    localStorage.removeItem("hydration_dashboard_jwt");
+    location.reload();
+  };
+  function showTokenModal() {
+    document.getElementById("token-input").value = TOKEN || "";
+    modal.classList.add("show");
+  }
+  if (!TOKEN) showTokenModal();
+
+  let intervalMs = parseInt(params.get("interval") || "5000", 10);
+  document.getElementById("interval").value = String(intervalMs);
+
+  // ------------------------------------------------------------
+  // Status palette + ordering
+  // ------------------------------------------------------------
+  const STATUS_ORDER = [
+    ["completed",            "var(--green)"],
+    ["running",              "var(--blue)"],
+    ["pending",              "var(--fg2)"],
+    ["blocked",              "var(--amber)"],
+    ["failed",               "var(--red)"],
+    ["skipped_view",         "var(--grey)"],
+    ["no_source_available",  "var(--grey)"],
+  ];
+
+  // ------------------------------------------------------------
+  // State
+  // ------------------------------------------------------------
+  let lastSummary = null;
+  let lastSources = null;
+  let lastWal = null;
+  let lastError = null;
+  let timer = null;
+  let earliestStart = null;
+
+  // ------------------------------------------------------------
+  // Polling
+  // ------------------------------------------------------------
+  async function fetchJson(path) {
+    const headers = {
+      Accept: "application/json",
+      // The hydration views live in meta; PostgREST default profile is api.
+      "Accept-Profile": "meta",
+    };
+    if (TOKEN) headers.Authorization = "Bearer " + TOKEN;
+    const r = await fetch(POSTGREST + path, { headers, mode: "cors" });
+    if (!r.ok) {
+      let body = "";
+      try { body = await r.text(); } catch {}
+      throw new Error(`${path} → HTTP ${r.status}${body ? " " + body.slice(0, 120) : ""}`);
+    }
+    return r.json();
+  }
+
+  async function pollOnce() {
+    setPollState("polling");
+    try {
+      const [summary, sources, wal] = await Promise.all([
+        fetchJson("/hydration_summary"),
+        fetchJson("/hydration_dashboard?order=started_at.desc&limit=25"),
+        fetchJson("/hydration_wal"),
+      ]);
+      lastSummary = summary;
+      lastSources = sources;
+      lastWal = wal;
+      lastError = null;
+      renderAll();
+      setPollState("ok");
+    } catch (e) {
+      lastError = e.message || String(e);
+      renderError();
+      setPollState("err");
+      // Auth failures bubble up the token modal so the user can paste fresh creds.
+      if (lastError.includes("HTTP 401") || lastError.includes("HTTP 403")) {
+        showTokenModal();
+      }
+    }
+    document.getElementById("last-refresh").textContent =
+      "last: " + new Date().toLocaleTimeString();
+  }
+
+  function setPollState(s) {
+    const dot = document.querySelector("#poll-state .status-dot");
+    const lbl = document.getElementById("poll-label");
+    dot.className = "status-dot " + (s === "ok" ? "ok" : s === "err" ? "err" : "idle");
+    lbl.textContent = s;
+  }
+
+  function startPolling() {
+    if (timer) clearInterval(timer);
+    if (intervalMs > 0) {
+      pollOnce();
+      timer = setInterval(pollOnce, intervalMs);
+    } else {
+      setPollState("idle");
+    }
+  }
+
+  document.getElementById("interval").addEventListener("change", e => {
+    intervalMs = parseInt(e.target.value, 10);
+    startPolling();
+  });
+
+  // ------------------------------------------------------------
+  // Render
+  // ------------------------------------------------------------
+  function renderAll() {
+    renderDoughnut();
+    renderTable();
+    renderSpark();
+    renderHeader();
+  }
+
+  function renderDoughnut() {
+    const counts = {};
+    for (const [k] of STATUS_ORDER) counts[k] = 0;
+    let total = 0;
+    for (const r of (lastSummary || [])) {
+      counts[r.status] = (counts[r.status] || 0) + Number(r.n || 0);
+      total += Number(r.n || 0);
+    }
+
+    document.getElementById("dough-total").textContent = total.toLocaleString();
+
+    // Conic-gradient stops
+    const stops = [];
+    let cum = 0;
+    for (const [k, c] of STATUS_ORDER) {
+      const n = counts[k];
+      if (!n) continue;
+      const pct = (n / total) * 100;
+      stops.push(`${c} ${cum}% ${cum + pct}%`);
+      cum += pct;
+    }
+    if (stops.length === 0) stops.push("var(--bg3) 0 100%");
+    document.getElementById("doughnut").style.background =
+      `conic-gradient(${stops.join(", ")})`;
+
+    // Legend (DOM-safe — labels are constants)
+    const lg = document.getElementById("legend");
+    while (lg.firstChild) lg.removeChild(lg.firstChild);
+    for (const [k, c] of STATUS_ORDER) {
+      const row = document.createElement("div");
+      row.className = "legend-row";
+      const swatch = document.createElement("span");
+      swatch.className = "swatch";
+      swatch.style.background = c;
+      const label = document.createElement("span");
+      label.className = "legend-label";
+      label.textContent = k;
+      const count = document.createElement("span");
+      count.className = "legend-count";
+      count.textContent = String(counts[k]);
+      row.appendChild(swatch);
+      row.appendChild(label);
+      row.appendChild(count);
+      lg.appendChild(row);
+    }
+  }
+
+  function renderTable() {
+    const tb = document.getElementById("sources-body");
+    while (tb.firstChild) tb.removeChild(tb.firstChild);
+
+    if (!lastSources || lastSources.length === 0) {
+      const tr = document.createElement("tr");
+      const td = document.createElement("td");
+      td.colSpan = 6;
+      td.className = "empty";
+      td.textContent = "no rows yet";
+      tr.appendChild(td);
+      tb.appendChild(tr);
+      return;
+    }
+
+    for (const r of lastSources) {
+      const tr = document.createElement("tr");
+      if (r.error_detail) {
+        tr.classList.add("has-error");
+        tr.title = String(r.error_detail);   // textContent semantics — title is safe
+      }
+
+      // status pill
+      const tdStatus = document.createElement("td");
+      const pill = document.createElement("span");
+      const status = String(r.status || "");
+      // Whitelist the class against STATUS_ORDER to defang any DB-side surprises
+      const allowed = STATUS_ORDER.map(s => s[0]);
+      pill.className = "pill " + (allowed.includes(status) ? status : "pending");
+      pill.textContent = status || "?";
+      tdStatus.appendChild(pill);
+
+      // source identifier
+      const tdSource = document.createElement("td");
+      tdSource.textContent =
+        (r.target_schema || "?") + "." + (r.target_table || "?");
+
+      // source kind
+      const tdKind = document.createElement("td");
+      tdKind.textContent = r.source_kind || "—";
+
+      // rows
+      const tdRows = document.createElement("td");
+      tdRows.className = "num";
+      tdRows.textContent = r.rows_processed != null
+        ? Number(r.rows_processed).toLocaleString() : "—";
+
+      // duration
+      const tdDur = document.createElement("td");
+      tdDur.className = "num";
+      tdDur.textContent = r.duration_s != null
+        ? Number(r.duration_s).toFixed(1) + "s" : "—";
+
+      // finished_at
+      const tdFin = document.createElement("td");
+      tdFin.textContent = r.ended_at
+        ? new Date(r.ended_at).toLocaleTimeString() : "—";
+
+      tr.appendChild(tdStatus);
+      tr.appendChild(tdSource);
+      tr.appendChild(tdKind);
+      tr.appendChild(tdRows);
+      tr.appendChild(tdDur);
+      tr.appendChild(tdFin);
+      tb.appendChild(tr);
+    }
+
+    // Track earliest started_at for elapsed/ETA
+    let earliest = null;
+    for (const r of lastSources) {
+      if (r.started_at) {
+        const t = new Date(r.started_at);
+        if (!earliest || t < earliest) earliest = t;
+      }
+    }
+    earliestStart = earliest;
+  }
+
+  function renderSpark() {
+    const svg = document.getElementById("spark");
+    while (svg.firstChild) svg.removeChild(svg.firstChild);
+
+    if (!lastWal || lastWal.length === 0) return;
+    const data = [...lastWal].reverse();   // chronological
+    const W = 600, H = 60, pad = 4;
+    const xs = (i) => pad + (i / Math.max(1, data.length - 1)) * (W - 2*pad);
+    const ys = (v) => H - pad - (Math.max(0, Math.min(100, v)) / 100) * (H - 2*pad);
+
+    // Reference lines
+    for (const [pct, color] of [[40, "var(--green)"], [70, "var(--red)"]]) {
+      const y = ys(pct);
+      const ln = document.createElementNS(SVG_NS, "line");
+      ln.setAttribute("x1", "0");
+      ln.setAttribute("x2", String(W));
+      ln.setAttribute("y1", String(y));
+      ln.setAttribute("y2", String(y));
+      ln.setAttribute("stroke", color);
+      ln.setAttribute("stroke-opacity", "0.3");
+      ln.setAttribute("stroke-dasharray", "3,3");
+      svg.appendChild(ln);
+    }
+
+    // Data line
+    const d = data.map((r, i) =>
+      `${i === 0 ? "M" : "L"} ${xs(i)} ${ys(Number(r.pct_used) || 0)}`
+    ).join(" ");
+    const path = document.createElementNS(SVG_NS, "path");
+    path.setAttribute("d", d);
+    path.setAttribute("fill", "none");
+    path.setAttribute("stroke", "var(--blue)");
+    path.setAttribute("stroke-width", "1.5");
+    svg.appendChild(path);
+
+    // Current dot
+    const last = data[data.length - 1];
+    const dot = document.createElementNS(SVG_NS, "circle");
+    dot.setAttribute("cx", String(xs(data.length - 1)));
+    dot.setAttribute("cy", String(ys(Number(last.pct_used) || 0)));
+    dot.setAttribute("r", "3");
+    dot.setAttribute("fill", "var(--blue)");
+    svg.appendChild(dot);
+
+    // WAL "now" big number
+    const pct = Number(last.pct_used).toFixed(1);
+    const w = document.getElementById("wal-now");
+    document.getElementById("wal-pct").textContent = pct + "%";
+    w.classList.toggle("high", last.pct_used >= 70);
+    w.classList.toggle("mid",  last.pct_used >= 40 && last.pct_used < 70);
+    w.classList.toggle("low",  last.pct_used < 40);
+  }
+
+  function renderHeader() {
+    // run_label
+    const sources = lastSources || [];
+    const found = sources.find(r => r.run_label);
+    const rl = found ? String(found.run_label) : "";
+    const lbl = document.getElementById("run-label");
+    if (rl) {
+      lbl.textContent = rl.slice(0, 16) + "…";
+      lbl.title = rl;          // textContent semantics on .title — safe
+    } else {
+      lbl.textContent = "—"; lbl.title = "";
+    }
+
+    // elapsed
+    if (earliestStart) {
+      const sec = Math.floor((Date.now() - earliestStart.getTime()) / 1000);
+      document.getElementById("elapsed").textContent = fmtDuration(sec);
+    }
+
+    // ETA: completed/total * elapsed gives total estimate; remaining = est - elapsed
+    const summaryByStatus = Object.fromEntries(
+      (lastSummary || []).map(r => [r.status, Number(r.n)])
+    );
+    const completed = summaryByStatus.completed || 0;
+    const total = (lastSummary || []).reduce((s, r) => s + Number(r.n || 0), 0);
+    if (completed > 0 && total > completed && earliestStart) {
+      const elapsedSec = (Date.now() - earliestStart.getTime()) / 1000;
+      const remaining = (elapsedSec / completed) * (total - completed);
+      document.getElementById("eta").textContent = fmtDuration(Math.round(remaining));
+    } else {
+      document.getElementById("eta").textContent = "—";
+    }
+  }
+
+  function renderError() {
+    document.getElementById("err-summary").textContent =
+      lastError ? `poll error: ${lastError}` : "";
+  }
+
+  function fmtDuration(sec) {
+    if (sec < 60) return sec + "s";
+    if (sec < 3600) return `${Math.floor(sec / 60)}m ${sec % 60}s`;
+    const h = Math.floor(sec / 3600);
+    const m = Math.floor((sec % 3600) / 60);
+    return `${h}h ${m}m`;
+  }
+
+  // Init
+  startPolling();
+})();
+</script>
+</body>
+</html>

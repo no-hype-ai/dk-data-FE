@@ -161,6 +161,57 @@ SOURCE_TO_BRONZE_MODELS: dict[str, list[str]] = {
     'cms_ddinter':                  ['hcs_bronze.cms_ddinter'],
 }
 
+
+# ---------------------------------------------------------------------------
+# 005-prestaged-hydration metadata (non-breaking companion to the above)
+# ---------------------------------------------------------------------------
+# Sparse per-source metadata for the prestaged-hydration feature. Keys
+# here are the same source names used in SOURCE_TO_BRONZE_MODELS (the
+# live-fetcher name) when a mapping exists; otherwise a canonical
+# "{schema}.{table}" key. Sources not in this dict default to
+# prestaged_kind='live_fetch' with an empty depends_on list.
+#
+# Authoritative load ordering lives in
+# src/dk_data/ingestion/load_order.py:SOURCE_LOAD_ORDER. That list
+# supersedes this dict for the hydration pipeline; this dict exists only
+# so other ingestion code paths can ask "what kind of source is this?"
+# without importing load_order.
+
+from typing import TypedDict  # noqa: E402 — intentional mid-file import after documentation block
+
+
+class PrestagedSourceMeta(TypedDict, total=False):
+    """Companion-dict value type for SOURCE_PRESTAGED_META."""
+    depends_on: list[str]
+    prestaged_kind: str  # "pg_dump" | "bronze_ready" | "raw_csv" | "live_fetch"
+
+
+SOURCE_PRESTAGED_META: dict[str, PrestagedSourceMeta] = {
+    # Only list sources whose metadata differs from the default
+    # (depends_on=[], prestaged_kind='live_fetch'). Extend as new dump
+    # layouts land in the inventory.
+    "chembl":            {"prestaged_kind": "pg_dump"},
+    "drugbank":          {"prestaged_kind": "pg_dump"},
+    "pubchem":           {"prestaged_kind": "pg_dump"},
+    "rxnorm":            {"prestaged_kind": "pg_dump"},
+    "uniprot":           {"prestaged_kind": "pg_dump"},
+    "kegg_drug":         {"prestaged_kind": "pg_dump"},
+    "fda_drugs":         {"prestaged_kind": "pg_dump"},
+    "fda_ndc":           {"prestaged_kind": "pg_dump"},
+    "chembl_activities": {"prestaged_kind": "pg_dump",
+                          "depends_on":     ["chembl"]},
+    "clinicaltrials":    {"prestaged_kind": "pg_dump"},
+    "openfda_faers":     {"prestaged_kind": "pg_dump"},
+    "openfda_labels":    {"prestaged_kind": "pg_dump"},
+    "npi_registry":      {"prestaged_kind": "pg_dump"},
+    "openalex_ci":       {"prestaged_kind": "pg_dump"},
+    "cms_opioid_puf":    {"prestaged_kind": "pg_dump"},
+    "cms_pecos":         {"prestaged_kind": "pg_dump"},
+    "cms_open_payments": {"prestaged_kind": "pg_dump"},
+    # Every other source defaults to live_fetch via main.run_ingestion.
+}
+
+
 # Grain column per bronze model — used for null-count health check.
 # If a model is not listed here, the null check is skipped (pass open).
 MODEL_GRAIN_COLUMN: dict[str, str] = {

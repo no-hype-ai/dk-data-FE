@@ -131,6 +131,36 @@ def cnpg_cursor(cnpg_conn):
 
 
 @pytest.fixture(scope="session")
+def prestaged_meta_schema(cnpg_meta_schemas, cnpg_conn):
+    """Apply 005-prestaged-hydration's post-migration-229 schema to
+    ``meta.transform_runs`` (status text, details jsonb + indexes).
+
+    Depends on ``cnpg_meta_schemas`` for the base table. Idempotent.
+    Scoped session-wide so every prestaged test sees the same state.
+    """
+    cur = cnpg_conn.cursor()
+    cur.execute("""
+        ALTER TABLE meta.transform_runs
+          ADD COLUMN IF NOT EXISTS status  text,
+          ADD COLUMN IF NOT EXISTS details jsonb;
+    """)
+    cur.execute("""
+        CREATE INDEX IF NOT EXISTS meta_transform_runs_status_idx
+            ON meta.transform_runs (status)
+         WHERE status IS NOT NULL
+           AND status <> 'legacy';
+    """)
+    cur.execute("""
+        CREATE INDEX IF NOT EXISTS meta_transform_runs_run_label_idx
+            ON meta.transform_runs ((details ->> 'run_label'))
+         WHERE details ? 'run_label';
+    """)
+    cnpg_conn.commit()
+    cur.close()
+    yield
+
+
+@pytest.fixture(scope="session")
 def cnpg_meta_schemas(cnpg_conn):
     """Ensure meta.* tables used by T016 / T017 exist in the test DB.
 

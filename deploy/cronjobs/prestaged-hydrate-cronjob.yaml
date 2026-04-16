@@ -1,0 +1,77 @@
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: prestaged-hydrate
+  namespace: dk-data-prod
+  labels:
+    app: prestaged-hydrate
+    feature: 005-prestaged-hydration
+  annotations:
+    description: |
+      CronJob WRAPPER around the prestaged-hydrate Job. Schedule is set
+      to year-once (effectively manual) — CronJobs only exist to enable
+      `kubectl create job --from=cronjob/prestaged-hydrate <name>` for
+      operator-triggered runs. The first prod hydration is run via the
+      LOCAL ORCHESTRATOR path (see verification/stage-7.md); this
+      CronJob exists for re-runs and emergencies.
+spec:
+  schedule: "0 0 1 1 *"          # 00:00 on Jan 1 — effectively manual-only
+  concurrencyPolicy: Forbid       # never overlap
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 5
+  startingDeadlineSeconds: 600    # don't run if missed by >10 min
+  suspend: true                   # belt-and-suspenders: never auto-fire
+  jobTemplate:
+    spec:
+      backoffLimit: 0             # re-run is a human decision; FR-011 idempotency
+      ttlSecondsAfterFinished: 604800  # 7 days
+      template:
+        spec:
+          restartPolicy: Never
+          containers:
+            - name: hydrate
+              image: ghcr.io/data-kinetic/dk-data:prod-latest   # overlay overrides this
+              command:
+                - python
+                - -m
+                - dk_data.ingestion.prestaged
+                - --source-list
+                - all
+              env:
+                - name: PRESTAGED_ROOT
+                  value: /data/prestaged
+                - name: PG_URL
+                  valueFrom:
+                    secretKeyRef:
+                      name: dk-data-db
+                      key: url
+                - name: WAL_PAUSE_HIGH_PCT
+                  value: "70"
+                - name: WAL_PAUSE_LOW_PCT
+                  value: "40"
+                - name: WAL_PAUSE_DOWNSHIFT_THRESHOLD
+                  value: "2"
+                - name: WAL_PAUSE_BUDGET_SECONDS
+                  value: "600"
+                - name: FETCHERS_SUSPENDED
+                  value: "patentsview,epo_ops,euipo,fda_ndc"
+              resources:
+                requests:
+                  cpu: 500m
+                  memory: 512Mi
+                limits:
+                  cpu: "2"
+                  memory: 4Gi
+              volumeMounts:
+                - name: prestaged
+                  mountPath: /data/prestaged
+                  readOnly: true
+          volumes:
+            - name: prestaged
+              # While MinIO is down: hostPath on k3s-master-1
+              hostPath:
+                path: /opt/dk-data-prestaged
+                type: Directory
+              # After MinIO returns: swap to PVC (no code change in the container)
+              # persistentVolumeClaim:
+              #   claimName: prestaged-dk-data

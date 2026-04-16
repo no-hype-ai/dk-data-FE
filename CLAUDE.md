@@ -27,6 +27,13 @@ Available commands (invoke as slash commands in your AI tool):
 - `.dk/specs/` — Feature specifications and plans
 - `.dk/scripts/` — Helper scripts
 
+## Hydration paths
+
+Two ways data lands in `dk_data_*` schemas:
+
+1. **Live fetchers** (default) — `dk_data.ingestion.main.run_ingestion(source)` invokes the per-source fetcher, then SQLMesh promotes raw → bronze → silver → gold.
+2. **Pre-staged dumps** (feature 005) — `python -m dk_data.ingestion.prestaged` walks `${PRESTAGED_ROOT}` for `pg_dump -Fc` `.dump` files, dispatches `pg_restore` per `(schema, table)` in declared hub→spoke order (see `src/dk_data/ingestion/load_order.py:SOURCE_LOAD_ORDER`), and falls through to path 1 for any source without an artifact. WAL-throttled via `meta.wal_usage`; idempotent across reruns via `details->>'run_label'` in `meta.transform_runs` (added by migration 229). Spec: `.dk/specs/005-prestaged-hydration/`.
+
 ## Principles
 
 This project honors `.dk/memory/principles.md` — read it before starting any task.
