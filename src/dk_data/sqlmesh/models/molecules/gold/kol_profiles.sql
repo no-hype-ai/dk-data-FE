@@ -26,7 +26,9 @@ MODEL (
     cron '@weekly',
     audits (
         not_null(columns := (researcher_id, family_name)),
-        unique_values(columns := (researcher_id))
+        unique_values(columns := (researcher_id)),
+        row_count_above(min_rows := 1000),
+        freshness_threshold(time_column := updated_at, max_age_seconds := 1209600)
     ),
     grain researcher_id
 );

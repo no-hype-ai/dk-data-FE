@@ -7,6 +7,12 @@ MODEL (
     kind INCREMENTAL_BY_UNIQUE_KEY (
         unique_key company_id
     ),
+    audits (
+        -- Entity-resolution key integrity (FR-014 Silver Hub Architecture).
+        -- canonical_name must be present: it drives the company_id hash.
+        not_null(columns := (company_id, canonical_name)),
+        unique_values(columns := (company_id))
+    ),
     grain company_id
 );
 

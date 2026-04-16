@@ -15,6 +15,18 @@ MODEL (
     kind INCREMENTAL_BY_UNIQUE_KEY (
         unique_key trademark_id
     ),
+    audits (
+        -- Entity-resolution key integrity (FR-014 Silver Hub Architecture).
+        not_null(columns := (trademark_id, jurisdiction, mark_text)),
+        unique_values(columns := (trademark_id)),
+        -- owner_company_id crosswalks to the company hub. Nullable today
+        -- (EUIPO branch does not emit owner). Audit skips NULL FKs.
+        referential_integrity(
+            parent_model := mol_silver.companies,
+            parent_key := company_id,
+            child_key := owner_company_id
+        )
+    ),
     grain trademark_id
 );
 

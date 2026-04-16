@@ -17,7 +17,13 @@ MODEL (
     cron '@daily',
     audits (
         not_null(columns := (npi)),
-        unique_values(columns := (npi))
+        unique_values(columns := (npi)),
+        -- NPPES NPI registry steady-state ~6M individual + org providers.
+        -- 1M is conservative — fails on a bronze-level fetch regression but
+        -- doesn't page on legitimate NPPES monthly decommissions.
+        row_count_above(min_rows := 1000000),
+        -- Daily cron → 2-day staleness budget.
+        freshness_threshold(time_column := gold_built_at, max_age_seconds := 172800)
     ),
     grain (npi)
 );
