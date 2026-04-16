@@ -14,7 +14,7 @@ from __future__ import annotations
 import io
 import zipfile
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Dict, List, Optional
 from unittest.mock import patch
 
 import pytest
@@ -155,8 +155,6 @@ def test_content_length_mismatch_retries_once_then_fails(isolated_download_dir):
         _FakeResponse(body, content_type="text/csv", content_length=1000),
         _FakeResponse(body, content_type="text/csv", content_length=1000),
     ]
-
-    counter_values: List[int] = []
 
     def fake_get(*_args, **_kwargs):
         return responses.pop(0)

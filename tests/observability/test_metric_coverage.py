@@ -102,6 +102,7 @@ DASHBOARD_ALLOWLIST: dict[str, str] = {
     "DK_SILVER_TRANSFORMATION_ERRORS": "dead metric — cleanup in T111/T112",
     "DK_SOURCE_RECORDS_TOTAL": "dead metric — cleanup in T111/T112",
     "DK_TRIALS_BY_PHASE": "dead metric — cleanup in T111/T112",
+    "DK_ARTIFACT_SIZE_MISMATCH_TOTAL": "ingestion integrity counter — surfaced via PrometheusRule alert (DkArtifactSizeMismatch, PR-304 follow-up) not a dashboard panel. Telemetry drives incident alerting, not visual inspection.",
 }
 
 # Some metrics are emitted from production code paths that this test's grep
