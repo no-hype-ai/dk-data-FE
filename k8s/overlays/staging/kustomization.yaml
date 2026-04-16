@@ -7,16 +7,16 @@ labels:
 - pairs:
     environment: staging
 
-resources:
-- ../../base
 # Per-source DopplerSecret CRs (Horizon 3 §D.5). Each CR scopes one key to
 # one Doppler config so rotation blast-radius is a single source.
+resources:
+- ../../base
 - ../../apps/secrets/per-source
 
 images:
 - name: ghcr.io/data-kinetic/dk-data-fe/job-trigger
   newName: ghcr.io/data-kinetic/dk-data-fe/job-trigger
-  newTag: main-715bc3a
+  newTag: main-aee3830
 
   # PostgREST — 2 replicas for staging
 
@@ -33,6 +33,9 @@ images:
   # Ingress — staging hostname and middleware namespace
 # Fix minio-backup-credentials DopplerSecret for staging (base hardcodes config: prd)
 # Fix MINIO_ENDPOINT for staging backup CronJobs (base hardcodes infra namespace)
+# Per-source DopplerSecrets — staging overlay points each at its `-stg` config.
+# Base manifests use the production config name (`drugbank`, `openfda`, ...).
+# Horizon 3 §D.5.
 patches:
 - patch: |-
     apiVersion: apps/v1
@@ -85,9 +88,6 @@ patches:
   target:
     kind: DopplerSecret
     name: doppler-ghcr
-# Per-source DopplerSecrets — staging overlay points each at its `-stg` config.
-# Base manifests use the production config name (`drugbank`, `openfda`, ...).
-# Horizon 3 §D.5.
 - patch: |-
     apiVersion: secrets.doppler.com/v1alpha1
     kind: DopplerSecret
