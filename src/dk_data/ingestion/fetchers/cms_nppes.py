@@ -59,17 +59,28 @@ class CMSNPPESFetcher(BaseFetcher):
             logger.info("[%s] Downloading %s", self.SOURCE_NAME, fname)
             zip_path = self.download_file(url, fname)
 
+            # Extract EVERY CSV in the NPPES bundle — the zip ships four distinct
+            # files (npidata_*, othername_*, pl_*, endpoint_*) and the previous
+            # "only npidata" filter silently dropped 3 of 4 (plan §A.1 / §B.4).
+            # Downstream consumers pick which file(s) they need by filename.
+            extract_dir = tempfile.mkdtemp(prefix="cms_nppes_")
             csv_files: List[str] = []
             with zipfile.ZipFile(zip_path, 'r') as zf:
                 for name in zf.namelist():
-                    if name.lower().endswith('.csv') and 'npidata' in name.lower():
-                        extract_dir = tempfile.mkdtemp(prefix="cms_nppes_")
+                    if name.lower().endswith('.csv'):
                         zf.extract(name, extract_dir)
                         csv_files.append(os.path.join(extract_dir, name))
 
             if not csv_files:
-                logger.warning("[%s] No NPI CSV files found in ZIP", self.SOURCE_NAME)
+                logger.warning("[%s] No CSV files found in ZIP", self.SOURCE_NAME)
                 return {"status": "success", "records": 0, "record_count": 0, "hash": None, "extracted_files": []}
+
+            logger.info(
+                "[%s] Extracted %d CSV files from NPPES bundle: %s",
+                self.SOURCE_NAME,
+                len(csv_files),
+                [os.path.basename(p) for p in csv_files],
+            )
 
             return {
                 "status": "success",

@@ -171,6 +171,24 @@ def _log_refresh(conn, source_key: str, status: str, records_fetched: int, error
 
 
 def _resolve_csv_path(filepath: Path) -> Path:
+    """Return a CSV path for the given download artefact.
+
+    For historical CMS PUF sources the bundle is a single-CSV zip and the
+    "largest" file was also the only relevant file — but several CMS zips
+    (NPPES, formulary, cost-reports) ship multiple CSVs and the old
+    "largest-only" logic silently discarded the rest (plan §A.1).
+
+    This loader still needs a single primary CSV (it bulk-loads one table per
+    call), so we now:
+
+      * extract *every* CSV member to the extraction directory
+      * return the largest as the primary path, matching the legacy caller
+        contract
+
+    Callers that need the full set can walk ``filepath.parent /
+    f"{filepath.stem}_extracted"`` directly.  Non-CSV zip contents are
+    extracted alongside so they remain visible for downstream audits.
+    """
     if filepath.suffix.lower() == ".csv":
         return filepath
 
@@ -180,12 +198,29 @@ def _resolve_csv_path(filepath: Path) -> Path:
     extract_dir = filepath.parent / f"{filepath.stem}_extracted"
     extract_dir.mkdir(parents=True, exist_ok=True)
 
+    resolved_target = extract_dir.resolve()
     with zipfile.ZipFile(filepath, "r") as zip_file:
-        csv_members = [m for m in zip_file.infolist() if m.filename.lower().endswith(".csv")]
+        members = [m for m in zip_file.infolist() if not m.is_dir()]
+        if not members:
+            raise ValueError(f"ZIP has no extractable members: {filepath}")
+
+        csv_members = [m for m in members if m.filename.lower().endswith(".csv")]
         if not csv_members:
             raise ValueError(f"ZIP has no CSV members: {filepath}")
+
+        # Extract every member (CSV + siblings) so nothing is silently dropped.
+        for member in members:
+            dest = (extract_dir / member.filename).resolve()
+            try:
+                dest.relative_to(resolved_target)
+            except ValueError:
+                raise RuntimeError(
+                    f"Refusing to extract {member.filename!r} from {filepath}: "
+                    "path escapes extraction directory"
+                )
+            zip_file.extract(member, extract_dir)
+
         largest = max(csv_members, key=lambda m: m.file_size)
-        zip_file.extract(largest, extract_dir)
         return extract_dir / largest.filename
 
 
