@@ -679,6 +679,44 @@ DK_WAL_SOURCE_BUDGET_EXHAUSTED_TOTAL = Counter(
     ["source"],
 )
 
+# =============================================================================
+# Hydration DLQ / source quarantine (Horizon 2 / plan §C.3)
+#
+# Three counters wired by src/dk_data/ingestion/prestaged.py via the
+# HydrationBacklogWriter in src/dk_data/ingestion/hydration_backlog.py:
+#   - ADDED:        every failure recorded to meta.hydration_backlog
+#   - QUARANTINED:  a failure tipped the row into auto-quarantine (once per
+#                   quarantine transition, not per subsequent failure)
+#   - SKIPPED:      dispatcher skipped a step because the source was
+#                   already quarantined
+# Consumed by alert rules in k8s/apps/observability/alert-rules/ (a
+# non-zero rate of QUARANTINED or a sudden spike in SKIPPED both page the
+# data team).
+# =============================================================================
+
+DK_HYDRATION_DLQ_ADDED_TOTAL = Counter(
+    "dk_hydration_dlq_added_total",
+    "Total hydration failures recorded to meta.hydration_backlog "
+    "(incremented on every failure, not just on first backlog insert).",
+    ["source"],
+)
+
+DK_HYDRATION_DLQ_QUARANTINED_TOTAL = Counter(
+    "dk_hydration_dlq_quarantined_total",
+    "Total sources that transitioned into auto-quarantine "
+    "(once per quarantine event, not per subsequent skip).",
+    ["source"],
+)
+
+DK_HYDRATION_DLQ_SKIPPED_TOTAL = Counter(
+    "dk_hydration_dlq_skipped_total",
+    "Total hydration steps skipped because the source was quarantined "
+    "in meta.hydration_backlog.",
+    ["source"],
+)
+
+
+
 CMS_GOLD_VIEW_LAST_REFRESH_TIMESTAMP = Gauge(
     "cms_gold_view_last_refresh_timestamp",
     "Unix timestamp of last hcs_gold view refresh",

@@ -52,6 +52,10 @@ from dk_data.ingestion.prestaged_types import (
 )
 from dk_data.ingestion.transform_runs_writer import TransformRunsWriter
 from dk_data.ingestion.wal_throttle import WalThrottle
+# C.3 — DLQ / quarantine. Optional at module-import time because
+# hydration_backlog.py pulls psycopg2 from the pool lazily and some tests
+# import prestaged.py without full DB wiring. See plan §C.3.
+from dk_data.ingestion.hydration_backlog import HydrationBacklogWriter
 
 # Module-level inode → sha256 cache; avoids re-reading the same file twice
 # within a single process (FR-002 performance note).
@@ -353,12 +357,106 @@ def dispatch_pg_restore(
         lock_conn.close()
 
 
+# ---------------------------------------------------------------------------
+# DLQ error-code normalisation (plan §C.3)
+# ---------------------------------------------------------------------------
+# The backlog writer stores a short stable error_code (plus the free-text
+# error_detail). The code drives the "same signature" check that triggers
+# auto-quarantine. We keep the set small and shape-stable — heuristics on
+# the detail string, not the full class hierarchy — so a retry of the same
+# failure reliably produces the same code.
+
+def _record_dlq_failure(
+    backlog: HydrationBacklogWriter | None,
+    source_id: str,
+    schema: str,
+    table: str,
+    *,
+    exc: BaseException | None = None,
+    detail: str | None = None,
+) -> None:
+    """Best-effort DLQ failure record (plan §C.3).
+
+    Wrapped in a broad try/except because a DLQ write failure MUST NOT
+    fail the step. Same tolerant pattern as
+    :meth:`ArtifactProvenanceWriter.record_swallow`.
+    """
+    if backlog is None:
+        return
+    try:
+        from dk_data.observability.metrics import (
+            DK_HYDRATION_DLQ_ADDED_TOTAL,
+            DK_HYDRATION_DLQ_QUARANTINED_TOTAL,
+        )
+    except Exception:  # noqa: BLE001
+        DK_HYDRATION_DLQ_ADDED_TOTAL = None  # type: ignore[assignment]
+        DK_HYDRATION_DLQ_QUARANTINED_TOTAL = None  # type: ignore[assignment]
+    code = _normalise_error_code(exc, detail)
+    try:
+        row = backlog.record_failure(
+            source_id=source_id,
+            schema=schema,
+            table=table,
+            error_code=code,
+            error_detail=detail or (str(exc) if exc else ""),
+        )
+        try:
+            if DK_HYDRATION_DLQ_ADDED_TOTAL is not None:
+                DK_HYDRATION_DLQ_ADDED_TOTAL.labels(source=source_id).inc()
+            if (
+                DK_HYDRATION_DLQ_QUARANTINED_TOTAL is not None
+                and row.get("quarantined_by") == "auto"
+                and row.get("quarantined_at") is not None
+            ):
+                DK_HYDRATION_DLQ_QUARANTINED_TOTAL.labels(source=source_id).inc()
+        except Exception:  # noqa: BLE001
+            logger.debug("dlq metric emission failed")
+    except Exception as exc2:  # noqa: BLE001
+        logger.warning(
+            "backlog.record_failure swallowed for {}: {} (continuing)",
+            source_id, exc2,
+        )
+
+
+def _normalise_error_code(exc: BaseException | None, detail: str | None) -> str:
+    """Return a short stable DLQ error_code for a failure.
+
+    Known-stable codes:
+      - ``CONN_LOST``           — psycopg2 InterfaceError / OperationalError
+      - ``PG_RESTORE_FATAL``    — pg_restore non-zero RC (detail contains rc hint)
+      - ``ROW_MISMATCH``        — caller passes explicit row_mismatch status
+      - ``UNKNOWN_PG_ERROR``    — psycopg2.Error other than the connection family
+      - ``UNKNOWN_ERROR``       — everything else
+
+    ``exc`` takes precedence when present; otherwise the ``detail`` string is
+    scanned for the ``pg_restore returned exit code`` substring emitted by
+    :func:`dispatch_pg_restore`.
+    """
+    if exc is not None:
+        # Order matters: InterfaceError subclasses OperationalError in some
+        # psycopg2 versions, so check the narrower types first.
+        if isinstance(exc, (psycopg2.InterfaceError, psycopg2.OperationalError)):
+            return "CONN_LOST"
+        if isinstance(exc, psycopg2.Error):
+            return "UNKNOWN_PG_ERROR"
+        return "UNKNOWN_ERROR"
+    if detail:
+        if "pg_restore returned exit code" in detail:
+            return "PG_RESTORE_FATAL"
+        if "row_mismatch" in detail:
+            return "ROW_MISMATCH"
+        if "connection lost" in detail.lower():
+            return "CONN_LOST"
+    return "UNKNOWN_ERROR"
+
+
 def run_step(
     conn: Any,
     step: LoadStep,
     run_label: str,
     writer: TransformRunsWriter,
     throttle: WalThrottle | None = None,
+    backlog: HydrationBacklogWriter | None = None,
 ) -> "RunStepOutcome":
     """Orchestrate one step end-to-end: view-safety pre-flight → per-chunk
     dispatch → row-count → ``meta.transform_runs`` upsert.
@@ -367,11 +465,51 @@ def run_step(
     :meth:`WalThrottle.maybe_pause` after the view-safety check and before
     the first ``pg_restore`` invocation (FR-007).
 
-    Tags: [AUDIT] [IDMPT] [VIEWSAFE] [WALBUD]
+    When ``backlog`` is supplied (plan §C.3), the step is SKIPPED with
+    outcome ``status='quarantined'`` if the source is currently
+    quarantined in ``meta.hydration_backlog``. On any terminal ``failed``
+    / ``row_mismatch`` outcome, a failure is recorded (best-effort — any
+    backlog error is swallowed so a DLQ write failure never fails the
+    step itself).
+
+    Tags: [AUDIT] [IDMPT] [VIEWSAFE] [WALBUD] [DLQ]
     """
     schema = step.target_schema
     table = step.target_table
     started_at = _dt.datetime.now(_dt.timezone.utc)
+
+    # 0. DLQ quarantine pre-flight (plan §C.3). Runs BEFORE the
+    #    is_completed check so a quarantined source that somehow had a
+    #    successful completed row in a prior run still reports
+    #    "quarantined" deterministically — operators expect
+    #    quarantine to be the loudest signal.
+    if backlog is not None:
+        try:
+            if backlog.is_quarantined(step.source_id, schema, table):
+                try:
+                    from dk_data.observability.metrics import (
+                        DK_HYDRATION_DLQ_SKIPPED_TOTAL,
+                    )
+                    DK_HYDRATION_DLQ_SKIPPED_TOTAL.labels(source=step.source_id).inc()
+                except Exception:  # noqa: BLE001
+                    logger.debug("dlq_skipped metric emission failed")
+                logger.warning(
+                    "skipping {} — quarantined in meta.hydration_backlog",
+                    step.source_id,
+                )
+                return RunStepOutcome(
+                    status="quarantined",
+                    row_count=0,
+                    error_detail="dlq quarantined",
+                )
+        except Exception as exc:  # noqa: BLE001
+            # Backlog lookup failure MUST NOT fail the run — fall through
+            # to normal processing. Same tolerant pattern as the provenance
+            # writer (plan §C.4, record_swallow).
+            logger.warning(
+                "backlog.is_quarantined lookup failed for {}: {} (proceeding)",
+                step.source_id, exc,
+            )
 
     # 1. Skip-if-complete (FR-011 idempotency)
     if writer.is_completed(run_label, schema, table):
@@ -430,6 +568,10 @@ def run_step(
                     error_detail=stderr_hint,
                 )
                 conn.commit()
+                _record_dlq_failure(
+                    backlog, step.source_id, schema, table,
+                    detail=stderr_hint,
+                )
                 return RunStepOutcome(status="failed", row_count=0, error_detail=stderr_hint)
             if artifact.sha256:
                 all_sha256s.append(artifact.sha256)
@@ -518,6 +660,10 @@ def run_step(
                 error_detail=detail,
             )
             conn.commit()
+            _record_dlq_failure(
+                backlog, step.source_id, schema, table,
+                detail=detail,
+            )
             return RunStepOutcome(
                 status="row_mismatch",
                 row_count=row_count,
@@ -551,6 +697,10 @@ def run_step(
             conn.commit()
         except Exception:  # noqa: BLE001
             pass
+        _record_dlq_failure(
+            backlog, step.source_id, schema, table,
+            exc=exc, detail=error_detail,
+        )
         return RunStepOutcome(status="failed", row_count=0, error_detail=error_detail)
 
 
@@ -631,10 +781,59 @@ def main(argv: list[str] | None = None) -> int:
                         help="Only process tier N (1–8).")
     parser.add_argument("--verbose", "-v", action="store_true", default=False,
                         help="Enable debug-level logging.")
+    # C.3 — DLQ operator surface (plan §C.3)
+    parser.add_argument(
+        "--list-backlog", action="store_true", default=False,
+        help="Print every row of meta.hydration_backlog as JSON, then exit.",
+    )
+    parser.add_argument(
+        "--unquarantine", nargs=4, default=None,
+        metavar=("SOURCE", "SCHEMA", "TABLE", "REASON"),
+        help=(
+            "Clear quarantine for <source> <schema> <table> and write an "
+            "audit row to meta.transform_runs (procedure_name='dlq:unquarantine'). "
+            "No hydration work runs in this mode."
+        ),
+    )
     args = parser.parse_args(argv)
 
     logger.remove()
     logger.add(sys.stderr, level="DEBUG" if args.verbose else "INFO")
+
+    # --list-backlog / --unquarantine short-circuit BEFORE any hydration
+    # setup: these operator flags must work even if PRESTAGED_ROOT is
+    # unset. The HydrationBacklogWriter consults the pool at __init__,
+    # which requires POSTGRES_PASSWORD — no fallback here because these
+    # commands are DB-read / DB-write by definition.
+    if args.list_backlog:
+        backlog = HydrationBacklogWriter()
+        try:
+            rows = backlog.list_all()
+            # datetime fields must be stringified to be JSON-serializable.
+            for r in rows:
+                for k, v in list(r.items()):
+                    if hasattr(v, "isoformat"):
+                        r[k] = v.isoformat()
+            print(json.dumps(rows, indent=2, default=str))
+        finally:
+            backlog.close()
+        return 0
+
+    if args.unquarantine is not None:
+        src, sch, tbl, reason = args.unquarantine
+        backlog = HydrationBacklogWriter()
+        try:
+            backlog.unquarantine(src, sch, tbl, reason)
+        finally:
+            backlog.close()
+        print(json.dumps({
+            "status": "unquarantined",
+            "source_id": src,
+            "schema": sch,
+            "table": tbl,
+            "reason": reason,
+        }))
+        return 0
 
     prestaged_root_str = os.environ.get("PRESTAGED_ROOT", "")
     if not prestaged_root_str:
@@ -754,6 +953,18 @@ def main(argv: list[str] | None = None) -> int:
         ),
     )
 
+    # C.3 — DLQ writer. Tolerant constructor: if Postgres creds are
+    # missing (tests / dry-ish runs), log and proceed with backlog=None
+    # so quarantine checks + failure records become no-ops.
+    backlog: HydrationBacklogWriter | None
+    try:
+        backlog = HydrationBacklogWriter()
+    except Exception as exc:  # noqa: BLE001
+        logger.warning(
+            "HydrationBacklogWriter init failed ({}); DLQ recording disabled", exc,
+        )
+        backlog = None
+
     completed_ids: set[str] = set()
     failed_ids: set[str] = set()
     failed_count = 0
@@ -857,7 +1068,7 @@ def main(argv: list[str] | None = None) -> int:
 
         t_start = _dt.datetime.now(_dt.timezone.utc)
         try:
-            outcome = run_step(conn, step, run_label, writer, throttle=throttle)
+            outcome = run_step(conn, step, run_label, writer, throttle=throttle, backlog=backlog)
         except (psycopg2.InterfaceError, psycopg2.OperationalError) as exc:
             # Mid-step conn loss. Reconnect + retry once; on second
             # failure, record as failed and move on rather than crash
@@ -868,7 +1079,7 @@ def main(argv: list[str] | None = None) -> int:
             )
             _ensure_live()
             try:
-                outcome = run_step(conn, step, run_label, writer, throttle=throttle)
+                outcome = run_step(conn, step, run_label, writer, throttle=throttle, backlog=backlog)
             except (psycopg2.InterfaceError, psycopg2.OperationalError) as exc2:
                 logger.error(
                     f"second attempt also lost conn for {step.source_id} ({exc2}) "
@@ -895,6 +1106,11 @@ def main(argv: list[str] | None = None) -> int:
             failed_ids.add(step.source_id)
 
     conn.close()
+    if backlog is not None:
+        try:
+            backlog.close()
+        except Exception:  # noqa: BLE001
+            pass
 
     if failed_count == 0:
         return 0

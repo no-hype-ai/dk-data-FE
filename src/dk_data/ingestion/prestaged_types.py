@@ -31,6 +31,12 @@ RunStatus = Literal[
     # and session memory observation #2245 ("end of file" treated as
     # benign by pg_restore 17 → data loss slipped through).
     "row_mismatch",
+    # C.3 — source has a non-NULL quarantined_by row in
+    # meta.hydration_backlog (plan §C.3). Distinct from "blocked":
+    # "blocked" means an upstream dependency failed in THIS run;
+    # "quarantined" means repeated failures in prior runs took the
+    # source out of rotation until an operator unquarantines.
+    "quarantined",
 ]
 
 PGDMP_MAGIC = b"PGDMP"
