@@ -57,6 +57,18 @@ spec:
                     secretKeyRef:
                       name: dk-data-secrets
                       key: POSTGRES_HOST
+                # Per-source credential (Horizon 3 §D.5, issue #319) —
+                # OPENFDA_API_KEY is pulled from the dedicated
+                # dk-data-secrets-openfda Secret, NOT the monolithic
+                # dk-data-secrets. Rotating openFDA's key touches this
+                # Secret only; no other source is affected. Explicit env
+                # overrides any inherited value from envFrom above.
+                - name: OPENFDA_API_KEY
+                  valueFrom:
+                    secretKeyRef:
+                      name: dk-data-secrets-openfda
+                      key: OPENFDA_API_KEY
+                      optional: true
               resources:
                 requests:
                   memory: "256Mi"

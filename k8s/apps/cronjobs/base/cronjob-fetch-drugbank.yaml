@@ -58,6 +58,18 @@ spec:
                     secretKeyRef:
                       name: dk-data-secrets
                       key: POSTGRES_HOST
+                # Per-source credential (Horizon 3 §D.5, issue #319) —
+                # DRUGBANK_API_KEY is pulled from the dedicated
+                # dk-data-secrets-drugbank Secret, NOT the monolithic
+                # dk-data-secrets. Rotating DrugBank's key touches this
+                # Secret only; no other source is affected. Explicit env
+                # overrides any inherited value from envFrom above.
+                - name: DRUGBANK_API_KEY
+                  valueFrom:
+                    secretKeyRef:
+                      name: dk-data-secrets-drugbank
+                      key: DRUGBANK_API_KEY
+                      optional: true
               resources:
                 requests:
                   memory: "256Mi"
