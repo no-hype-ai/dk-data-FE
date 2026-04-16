@@ -661,6 +661,24 @@ DK_ARTIFACT_PROVENANCE_WRITE_ERRORS_TOTAL = Counter(
     ["source"],
 )
 
+# =============================================================================
+# WAL backpressure — per-source budget exhaustion (Horizon 2 / plan §C.2)
+# =============================================================================
+
+# Incremented exactly once per (run, source) when a single source has
+# consumed its WAL_PAUSE_BUDGET_PER_SOURCE_SECONDS share of the pause
+# budget. After exhaustion, the throttle stops pausing for that source
+# (so it races through without backpressure for the rest of the run)
+# but continues to honour per-source budgets for every other source.
+# Consumed by the DkWalSourceBudgetExhausted PrometheusRule (alert-
+# driven, not a dashboard panel — any non-zero rate is an anomaly that
+# pages on-call).
+DK_WAL_SOURCE_BUDGET_EXHAUSTED_TOTAL = Counter(
+    "dk_wal_source_budget_exhausted_total",
+    "Total times a source exhausted its per-source WAL pause budget (plan §C.2)",
+    ["source"],
+)
+
 CMS_GOLD_VIEW_LAST_REFRESH_TIMESTAMP = Gauge(
     "cms_gold_view_last_refresh_timestamp",
     "Unix timestamp of last hcs_gold view refresh",
