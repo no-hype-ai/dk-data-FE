@@ -40,7 +40,7 @@ The next hydration window opens in ~24 hours. This plan commits three horizons (
 | Part F | CLI extension in dk-cli | ✅ | dk-cli #1 ✅, #2 ✅ (shipped via dk-cli PR #4 Stage 1–4); #3 tracking open |
 | Part E | Future-source stubs (~80) | ⏸️ | roadmap; priority:top15 labeled |
 
-**Cross-repo issues**: dk-alchemy #646 ✅ (orphan dashboards via #653); #647, #648, #649, #650, #651, #656, #659, #660, #661 open. dk-cli #1, #2, #3 open. dk-data-FE #290–#298 (T4 procurement), #319 (fetcher sweep) open.
+**Cross-repo issues** (snapshot 2026-04-16 08:40 CDT): dk-alchemy #646 ✅, #651 ✅, #656 ✅ (PR #665, ArgoCD sync pending), #661 ✅; #660 reopened (taint not applied); #647, #648, #649, #650, #659 still open. dk-cli #1/#2/#3 ✅ (PRs #4, #5, #6 shipped H1+H2+H3 CLI surface). dk-data-FE #319 ✅ via PR #323; #290–#298 T4 procurement still awaiting legal.
 
 ---
 
