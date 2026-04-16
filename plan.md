@@ -20,7 +20,7 @@ The next hydration window opens in ~24 hours. This plan commits three horizons (
 | H1 | B.6 CNPG deadlock runbook | ✅ | #300 |
 | H1 | B.7 Lessons captured | ✅ | #301 |
 | H1 | B.9 GH label taxonomy | ✅ | #299 + 46 labels created |
-| H1 | B.10 Node labels verified | ⚠️ | verified absent → dk-alchemy #651 opened |
+| H1 | B.10 Node labels verified | ⚠️ | verified absent; dk-alchemy #651 closed prematurely, REOPENED with live-cluster evidence |
 | H1 | B.11 Procurement issues | ✅ | #302 + issues #290–#298 |
 | H2 | C.1 SeaweedFS client module | ✅ | #311 |
 | H2 | C.2 Real WAL backpressure | ✅ | #315 (migration 231) |
@@ -37,7 +37,7 @@ The next hydration window opens in ~24 hours. This plan commits three horizons (
 | H3 | D.5 Per-source DopplerSecret CRs | ✅ | #321 + dk-alchemy #661 + sweep #319 |
 | J.1 | Push-via-API dashboards in-repo | ✅ | #306 (6 renamed + 6 stubs) |
 | J.2 | Grafana-operator migration | ⏸️ | deferred — dk-alchemy #647 |
-| Part F | CLI extension in dk-cli | ⏸️ | dk-cli #1, #2, #3 tracking |
+| Part F | CLI extension in dk-cli | ✅ | dk-cli #1 ✅, #2 ✅ (shipped via dk-cli PR #4 Stage 1–4); #3 tracking open |
 | Part E | Future-source stubs (~80) | ⏸️ | roadmap; priority:top15 labeled |
 
 **Cross-repo issues**: dk-alchemy #646 ✅ (orphan dashboards via #653); #647, #648, #649, #650, #651, #656, #659, #660, #661 open. dk-cli #1, #2, #3 open. dk-data-FE #290–#298 (T4 procurement), #319 (fetcher sweep) open.
@@ -394,7 +394,7 @@ Rechecked at the user's prompt. `/Users/nick/Code/dk-cli` is now a fresh-extract
 
 The existing `src/dk-cli/src/commands/data.ts` is scoped to data-API-key lifecycle (create/list/rotate/update, usage, schemas, limits) against `platform-api`. The new hydration/source surface fits **beside** it as new `data` subgroups — no collision.
 
-### F.2 Subcommand surface (added to `data.ts`, mirroring the existing `keys` / `usage` / `schemas` / `limits` branches) ⏸️ dk-cli #1 open — not started
+### F.2 Subcommand surface (added to `data.ts`, mirroring the existing `keys` / `usage` / `schemas` / `limits` branches) ✅ dk-cli PR #4 — Stage 1 scaffold, Stage 2 validate/lint/sync/list/bench, Stage 3 hydrate, Stage 4 skill+manifest
 
 ```
 dk data source add <name>        # interactive scaffold (descriptor + fetcher + manifest + Job + README + GH issue)
@@ -451,7 +451,7 @@ Each imports `src/dk_data/ingestion/common/{retry,integrity,metrics}.py` so new 
 - `deploy/hydrate/sources.yaml` entry (appended)
 - GitHub issue via `gh issue create`
 
-### F.5 Claude skill: `/dk.add-datasource` ⏸️ dk-cli #2 open — not started
+### F.5 Claude skill: `/dk.add-datasource` ✅ `packages/dk-skills/skills/dk-data-source.md` landed via dk-cli PR #4 Stage 4
 Restore (the old command was deleted in this working tree per `git status`). Skill flow:
 1. AskUserQuestion for domain, tier, cadence, fetch kind, auth, expected-row-count signal, SLA.
 2. Grep existing fetchers for similar kind; propose reusing templates before inventing.
