@@ -30,7 +30,7 @@ The next hydration window opens in ~24 hours. This plan commits three horizons (
 | H2 | C.6 Observability metrics expansion | ✅ | #312 |
 | H2 | C.7 SQLMesh audits at boundaries | ✅ | #314 |
 | 005 | feature/005 prestaged hydration | ✅ | #309 (27-commit merge) |
-| H3 | D.1 Dispatcher + per-source Jobs | ⏳ | #322 (CI rerun in flight) |
+| H3 | D.1 Dispatcher + per-source Jobs | ✅ | #322 |
 | H3 | D.2 Source descriptors | ✅ | #318 (migration 233) |
 | H3 | D.3 Admission control by budget | ✅ | #320 (migration 234) |
 | H3 | D.4 Control-plane node taint | ✅ | #317 + dk-alchemy #660 |
@@ -245,7 +245,7 @@ Goal: stabilize real-world failure modes, land SeaweedFS alignment, restore WAL 
 
 Goal: 73 → 200+ sources without new controllers and without growing ops headcount.
 
-### D.1 Orchestrator decision — plain K8s Jobs per source, no workflow engine ⏳ #322 (CI rerun in flight)
+### D.1 Orchestrator decision — plain K8s Jobs per source, no workflow engine ✅ #322
 
 **Decision: one `Job` (or `CronJob`) per source + a thin dispatcher Job, ordered from a source-registry table, rendered by kustomize, synced by the existing ArgoCD Application.**
 
