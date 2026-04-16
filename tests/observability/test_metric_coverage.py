@@ -255,7 +255,7 @@ def _has_emission_call(obj_name: str, source_files: list[Path]) -> bool:
 def _dashboard_queries() -> str:
     """Concatenate every dashboard JSON into one haystack for substring search."""
     chunks: list[str] = []
-    for dashboard in sorted(DASHBOARDS_DIR.glob("*.json")):
+    for dashboard in sorted(DASHBOARDS_DIR.glob("**/*.json")):
         try:
             chunks.append(_read(dashboard))
         except OSError:

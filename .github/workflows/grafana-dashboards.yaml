@@ -1,0 +1,149 @@
+name: Grafana Dashboard Sync
+
+# Pushes every dashboard under grafana/dashboards/** to behaviorlabs Grafana
+# via the HTTP API. Pattern mirrored from dk-alchemy/.github/workflows/
+# grafana-dashboards.yaml (plan.md §J.2 step 1) so both repos stay aligned
+# until the grafana-operator migration (Part J step 2) lands.
+#
+# REQUIRED GitHub Actions repo secret: DOPPLER_TOKEN
+#   - Service token scoped to the dk-infrastructure/prd Doppler project
+#     (same project dk-alchemy reads GRAFANA_API_KEY from).
+#   - See plan.md §J.2 step 1.
+
+on:
+  push:
+    branches:
+      - main
+      - staging
+    paths:
+      - 'grafana/**'
+  workflow_dispatch:
+    inputs:
+      sync_type:
+        description: 'Type of resources to sync'
+        required: true
+        default: 'all'
+        type: choice
+        options:
+          - all
+          - dashboards
+          - folders
+      dry_run:
+        description: 'Dry run (preview changes without applying)'
+        required: false
+        default: false
+        type: boolean
+
+env:
+  GRAFANA_URL: https://grafana.behaviorlabs.ai
+
+jobs:
+  sync:
+    name: Sync to Grafana
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y jq curl
+          sudo wget https://github.com/mikefarah/yq/releases/latest/download/yq_linux_amd64 -O /usr/bin/yq
+          sudo chmod +x /usr/bin/yq
+
+      - name: Install Doppler CLI
+        uses: dopplerhq/cli-action@v3
+
+      - name: Fetch Grafana API Key
+        id: secrets
+        env:
+          DOPPLER_TOKEN: ${{ secrets.DOPPLER_TOKEN }}
+        run: |
+          GRAFANA_API_KEY=$(doppler secrets get GRAFANA_API_KEY --plain --project dk-infrastructure --config prd)
+          echo "::add-mask::$GRAFANA_API_KEY"
+          echo "GRAFANA_API_KEY=$GRAFANA_API_KEY" >> "$GITHUB_ENV"
+
+      - name: Determine sync options
+        id: options
+        env:
+          # Both inputs are constrained choice / boolean in workflow_dispatch,
+          # so they can't contain arbitrary text — bind them to env vars
+          # anyway so the shell never expands untrusted template strings.
+          SYNC_TYPE: ${{ github.event.inputs.sync_type || 'all' }}
+          DRY_RUN: ${{ github.event.inputs.dry_run || 'false' }}
+        run: |
+          # This repo does not own alert rules via this workflow — alerts
+          # live under k8s/apps/observability/alert-rules/ as PrometheusRules
+          # and are synced by ArgoCD. --no-alerts keeps the sync narrow so
+          # the vendored sync-all.sh does not touch grafana/alerts/*.yaml
+          # through the Grafana Provisioning API.
+          SYNC_FLAGS="--no-alerts"
+
+          case "$SYNC_TYPE" in
+            dashboards)
+              SYNC_FLAGS="--dashboards-only"
+              ;;
+            folders)
+              SYNC_FLAGS="--folders-only"
+              ;;
+            all)
+              # keep default (SYNC_FLAGS already = --no-alerts)
+              ;;
+          esac
+
+          if [ "$DRY_RUN" = "true" ]; then
+            SYNC_FLAGS="$SYNC_FLAGS --dry-run"
+          fi
+
+          echo "flags=$SYNC_FLAGS" >> "$GITHUB_OUTPUT"
+          echo "Sync flags: $SYNC_FLAGS"
+
+      - name: Validate resources
+        run: |
+          ./grafana/scripts/validate.sh grafana/dashboards
+
+      - name: Sync to Grafana
+        id: sync
+        env:
+          GRAFANA_URL: ${{ env.GRAFANA_URL }}
+          GRAFANA_API_KEY: ${{ env.GRAFANA_API_KEY }}
+          SYNC_FLAGS: ${{ steps.options.outputs.flags }}
+        run: |
+          set +e
+          # shellcheck disable=SC2086 # SYNC_FLAGS is a whitespace-separated flag list
+          OUTPUT=$(./grafana/scripts/sync-all.sh $SYNC_FLAGS 2>&1)
+          EXIT_CODE=$?
+          set -e
+
+          echo "$OUTPUT"
+
+          # Extract summary for job output
+          {
+            echo "summary<<EOF"
+            echo "$OUTPUT" | tail -20
+            echo "EOF"
+          } >> "$GITHUB_OUTPUT"
+
+          exit $EXIT_CODE
+
+      - name: Create workflow summary
+        if: always()
+        env:
+          SYNC_TYPE: ${{ github.event.inputs.sync_type || 'all' }}
+          DRY_RUN: ${{ github.event.inputs.dry_run || 'false' }}
+          SUMMARY: ${{ steps.sync.outputs.summary }}
+        run: |
+          {
+            echo "## Grafana Sync Results"
+            echo ""
+            echo "**Grafana URL:** $GRAFANA_URL"
+            echo "**Sync Type:** $SYNC_TYPE"
+            echo "**Dry Run:** $DRY_RUN"
+            echo ""
+            echo "### Output"
+            echo '```'
+            echo "$SUMMARY"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
