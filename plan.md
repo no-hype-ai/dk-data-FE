@@ -20,7 +20,7 @@ The next hydration window opens in ~24 hours. This plan commits three horizons (
 | H1 | B.6 CNPG deadlock runbook | ✅ | #300 |
 | H1 | B.7 Lessons captured | ✅ | #301 |
 | H1 | B.9 GH label taxonomy | ✅ | #299 + 46 labels created |
-| H1 | B.10 Node labels verified | ⚠️ | verified absent; dk-alchemy #651 closed prematurely, REOPENED with live-cluster evidence |
+| H1 | B.10 Node labels verified | ✅ | labels live on cluster (master=control/nvme-hdd, slave=general/nvme-hdd); dk-alchemy #651 closed |
 | H1 | B.11 Procurement issues | ✅ | #302 + issues #290–#298 |
 | H2 | C.1 SeaweedFS client module | ✅ | #311 |
 | H2 | C.2 Real WAL backpressure | ✅ | #315 (migration 231) |
@@ -33,7 +33,7 @@ The next hydration window opens in ~24 hours. This plan commits three horizons (
 | H3 | D.1 Dispatcher + per-source Jobs | ✅ | #322 |
 | H3 | D.2 Source descriptors | ✅ | #318 (migration 233) |
 | H3 | D.3 Admission control by budget | ✅ | #320 (migration 234) |
-| H3 | D.4 Control-plane node taint | ✅ | #317 + dk-alchemy #660 |
+| H3 | D.4 Control-plane node taint | ⚠️ | #317 shipped; dk-alchemy #660 closed prematurely — REOPENED (taint not on cluster) |
 | H3 | D.5 Per-source DopplerSecret CRs | ✅ | #321 + dk-alchemy #661 + sweep #319 |
 | J.1 | Push-via-API dashboards in-repo | ✅ | #306 (6 renamed + 6 stubs) |
 | J.2 | Grafana-operator migration | ⏸️ | deferred — dk-alchemy #647 |
@@ -164,7 +164,7 @@ One-time creation via `gh label create --repo data-kinetic/dk-data-FE` (and `dat
 
 Label creation is idempotent (`gh label create` rejects duplicates — swallow that error).
 
-### B.10 Confirm node labels are applied (dk-alchemy responsibility, we verify) ⚠️ verified absent → dk-alchemy #651
+### B.10 Confirm node labels are applied (dk-alchemy responsibility, we verify) ✅ labels live on cluster — dk-alchemy #651 closed
 dk-alchemy §2 defines the labels `dk.role`, `dk.storage`, `topology.kubernetes.io/zone`. Per Phase 3 of the overview, retroactive labeling of penguin + krang happens during the Scarecrow join today (2026-04-16). Our job is to **verify** the labels are present before PR-01 opens so the affinity rule in B.1 actually binds:
 
 ```
@@ -292,7 +292,7 @@ Descriptors drive: fetcher selection, manifest construction, Job rendering, dash
 - Descriptor declares `consumes:` (e.g., `wal_headroom: 5%`, `db_connections: 2`).
 - Dispatcher admits a source step only if budget has room; otherwise defers.
 
-### D.4 Hard control-plane / data-plane isolation ✅ #317 + dk-alchemy #660
+### D.4 Hard control-plane / data-plane isolation ⚠️ dk-data-FE side ✅ #317; cluster taint not yet applied — dk-alchemy #660 REOPENED
 - Taint `node.datakinetic.com/role=control-plane:NoSchedule` on CNPG/ArgoCD/PgBouncer/observability nodes.
 - No data-plane workload schedulable there — removes the class of failure that hit today.
 
