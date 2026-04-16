@@ -29,10 +29,11 @@ CLI
 
 FR-030 compliance
 -----------------
-Every DB connection is leased from ``get_connection_pool()``. No
-``psycopg2.connect()`` at module scope. Mirrors the pattern in
-``hydration_backlog.py``. The T003 CI grep gate fails any diff that
-imports psycopg2.connect directly outside ``ingestion/utils/database.py``.
+Every DB connection is leased from ``get_connection_pool()``. Raw
+connection construction outside database.py is forbidden. Mirrors the
+pattern in ``hydration_backlog.py``. The T003 CI grep gate fails any
+diff that imports the raw connect API directly outside
+``ingestion/utils/database.py``.
 
 Validation
 ----------
@@ -60,7 +61,7 @@ import logging
 import os
 import re
 import sys
-from dataclasses import asdict, dataclass, field
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Dict, List, Mapping, Optional, Sequence, Tuple
 
@@ -410,7 +411,7 @@ def load_all(root: Path) -> List[SourceDescriptor]:
 
 _UPSERT_SQL = """
 INSERT INTO meta.source_registry (
-    name, domain, tier, depends_on, fetch, schedule,
+    name, domain, tier, depends_on, "fetch", schedule,
     credentials_ref, expected_row_count_sql, sla_seconds,
     manifest_path, consumes, updated_at
 )
@@ -423,7 +424,7 @@ ON CONFLICT (name) DO UPDATE SET
     domain                 = EXCLUDED.domain,
     tier                   = EXCLUDED.tier,
     depends_on             = EXCLUDED.depends_on,
-    fetch                  = EXCLUDED.fetch,
+    "fetch"                = EXCLUDED."fetch",
     schedule               = EXCLUDED.schedule,
     credentials_ref        = EXCLUDED.credentials_ref,
     expected_row_count_sql = EXCLUDED.expected_row_count_sql,

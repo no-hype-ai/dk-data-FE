@@ -26,6 +26,9 @@
 --   * ``depends_on`` / ``fetch`` / ``consumes`` are JSONB so they can
 --     evolve without a DDL migration each time a descriptor field is
 --     added. JSON schema validation happens in the Python loader.
+--     NOTE: ``fetch`` is a SQL-reserved word (FETCH cursor syntax), so
+--     the column is double-quoted in DDL and in every query that
+--     references it. The descriptor YAML key stays bare ``fetch:``.
 --   * ``status`` is a soft enum (TEXT with CHECK) — 'stub' on initial
 --     registration, 'fetcher_ready' once the fetcher module exists,
 --     'live' once the source has a successful run in ``meta.transform_runs``.
@@ -54,7 +57,7 @@ CREATE TABLE IF NOT EXISTS meta.source_registry (
   tier                   INT  NOT NULL
                            CHECK (tier BETWEEN 1 AND 8),
   depends_on             JSONB NOT NULL DEFAULT '[]'::jsonb,
-  fetch                  JSONB NOT NULL,
+  "fetch"                JSONB NOT NULL,
   schedule               TEXT,
   credentials_ref        TEXT NOT NULL DEFAULT 'none',
   expected_row_count_sql TEXT,
@@ -82,7 +85,7 @@ COMMENT ON TABLE meta.source_registry IS
   'projected from .dk/sources/<name>.yaml via '
   'python -m dk_data.ingestion.source_registry --sync.';
 
-COMMENT ON COLUMN meta.source_registry.fetch IS
+COMMENT ON COLUMN meta.source_registry."fetch" IS
   'Fetch descriptor — JSONB with at least {kind: postgres_dump|http_csv|'
   'http_json_paginated|zip|api_key} plus kind-specific fields '
   '(artifact_uri for postgres_dump, url for http_*).';
