@@ -1,0 +1,135 @@
+# Horizon 3 / plan §D.1 — dispatcher Job for the per-source hydrate fan-out.
+#
+# Shape mirrors the hardened pattern from deploy/jobs/prestaged-hydrate.yaml
+# (H1 PR-01): node-affinity via dk.role=general (NotIn control-plane fallback),
+# priorityClassName=production-critical, ephemeral-storage limits,
+# tolerations for the GPU taint on krang. Image updater rewrites the tag
+# at deploy time via the prod-overlay kustomize image transformer.
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: hydrate-dispatch
+  namespace: dk-data-prod
+  labels:
+    app: prestaged-hydrate
+    app.kubernetes.io/name: hydrate-dispatcher
+    app.kubernetes.io/component: dispatcher
+    app.kubernetes.io/part-of: dk-data
+    feature: 005-prestaged-hydration
+    horizon: "3"
+    product: dk-data
+    service: dk-data
+    team: data-platform
+spec:
+  # Outer dispatcher deadline: the tier fan-out must complete within SC-002.
+  # The per-source Jobs each have their own activeDeadlineSeconds carried
+  # from the rendered manifest (descriptor.sla_seconds, default 14400).
+  activeDeadlineSeconds: 21600   # 6h — leaves headroom vs. 4h SC-002 ceiling
+  backoffLimit: 1                # dispatcher rerun is expensive; one retry only
+  ttlSecondsAfterFinished: 604800
+  template:
+    metadata:
+      labels:
+        app: prestaged-hydrate
+        app.kubernetes.io/name: hydrate-dispatcher
+        app.kubernetes.io/component: dispatcher
+        app.kubernetes.io/part-of: dk-data
+        feature: 005-prestaged-hydration
+        horizon: "3"
+        product: dk-data
+        service: dk-data
+        team: data-platform
+    spec:
+      restartPolicy: OnFailure
+      priorityClassName: production-critical
+      serviceAccountName: hydrate-dispatcher
+      securityContext:
+        fsGroup: 1000
+        runAsGroup: 1000
+        runAsNonRoot: true
+        runAsUser: 1000
+        seccompProfile:
+          type: RuntimeDefault
+      imagePullSecrets:
+        - name: ghcr-credentials
+      # Same placement contract as the base Job — see
+      # deploy/jobs/prestaged-hydrate.yaml for the rationale behind the
+      # two-term nodeSelectorTerms OR.
+      affinity:
+        nodeAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+              - matchExpressions:
+                  - key: dk.role
+                    operator: In
+                    values: [general]
+              - matchExpressions:
+                  - key: kubernetes.io/hostname
+                    operator: NotIn
+                    values: [k3s-master-1]
+      tolerations:
+        - key: nvidia.com/gpu
+          operator: Equal
+          value: "true"
+          effect: NoSchedule
+      containers:
+        - name: dispatcher
+          image: ghcr.io/data-kinetic/dk-data:prod-<sha>
+          imagePullPolicy: IfNotPresent
+          command:
+            - python
+            - -m
+            - dk_data.ingestion.hydrate_dispatcher
+            - --max-parallel
+            - "4"
+          env:
+            - name: POD_NAMESPACE
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.namespace
+            - name: POSTGRES_HOST
+              valueFrom:
+                secretKeyRef:
+                  name: dk-data-secrets
+                  key: POSTGRES_HOST
+            - name: POSTGRES_PORT
+              valueFrom:
+                secretKeyRef:
+                  name: dk-data-secrets
+                  key: POSTGRES_PORT
+            - name: POSTGRES_USER
+              valueFrom:
+                secretKeyRef:
+                  name: dk-data-secrets
+                  key: POSTGRES_USER
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: dk-data-secrets
+                  key: POSTGRES_PASSWORD
+            - name: POSTGRES_DB
+              valueFrom:
+                secretKeyRef:
+                  name: dk-data-secrets
+                  key: POSTGRES_DB
+          resources:
+            requests:
+              cpu: 100m
+              memory: 256Mi
+              ephemeral-storage: 1Gi
+            limits:
+              cpu: 500m
+              memory: 1Gi
+              ephemeral-storage: 5Gi
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: tmp
+          emptyDir:
+            sizeLimit: 1Gi
