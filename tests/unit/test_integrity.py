@@ -319,17 +319,26 @@ class TestRecordSwallow:
 
 
 class TestBuildDsnGate:
-    """FR-030: the default constructor must route through build_dsn()."""
+    """FR-030: the default constructor must route through the sanctioned pool, not raw psycopg2.connect()."""
 
     def test_default_constructor_calls_build_dsn(self):
         from dk_data.ingestion.common import integrity as integ
 
-        with patch.object(integ, "build_dsn", return_value="postgresql://fake") as m_dsn, \
-             patch.object(integ.psycopg2, "connect") as m_connect:
-            fake = MagicMock()
-            m_connect.return_value = fake
-            integ.ArtifactProvenanceWriter()
-            m_dsn.assert_called_once()
-            m_connect.assert_called_once_with("postgresql://fake")
+        leased = MagicMock()
+        leased.autocommit = False
+        fake_pool = MagicMock()
+        fake_pool.getconn.return_value = leased
+        with patch.object(integ, "get_connection_pool", return_value=fake_pool) as m_pool, \
+             patch.object(integ, "init_connection_pool") as m_init:
+            writer = integ.ArtifactProvenanceWriter()
+            # Pool was consulted and a connection leased (no direct psycopg2.connect).
+            m_pool.assert_called_once()
+            fake_pool.getconn.assert_called_once()
+            # init_connection_pool is only called if the pool was uninitialized (RuntimeError
+            # path); in the happy path it MUST NOT be invoked.
+            m_init.assert_not_called()
             # autocommit flipped on so individual INSERTs don't need txn management
-            assert fake.autocommit is True
+            assert leased.autocommit is True
+            # close() returns the pooled connection; does not close it.
+            writer.close()
+            fake_pool.putconn.assert_called_once_with(leased)

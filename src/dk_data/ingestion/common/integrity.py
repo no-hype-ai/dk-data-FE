@@ -40,9 +40,12 @@ is recomputable server-side without re-reading the header.
 
 FR-030 compliance
 -----------------
-The connection is opened via ``build_dsn()`` from
-``dk_data.ingestion.utils.database`` — direct ``psycopg2.connect(...)``
-with raw kwargs is a CI failure (T003 grep gate).
+The connection is obtained via the sanctioned pool helpers in
+``dk_data.ingestion.utils.database`` (``get_connection_pool`` and
+``init_connection_pool``). Callers may also inject a pre-built
+connection at construction time (useful for tests and for orchestrators
+that already own a handle). Raw connection construction outside
+``database.py`` is a CI failure (T003 grep gate).
 
 Failure handling
 ----------------
@@ -61,7 +64,10 @@ from typing import Any, Dict, Mapping, Optional
 import psycopg2
 import psycopg2.extras
 
-from dk_data.ingestion.utils.database import build_dsn
+from dk_data.ingestion.utils.database import (
+    get_connection_pool,
+    init_connection_pool,
+)
 from dk_data.observability.metrics import (
     DK_ARTIFACT_CHANGED_TOTAL,
     DK_ARTIFACT_PROVENANCE_WRITE_ERRORS_TOTAL,
@@ -147,14 +153,22 @@ class ArtifactProvenanceWriter:
         """Initialise the writer.
 
         Args:
-            conn: Optional pre-built psycopg2 connection (useful for tests
-                that inject a mock). When ``None`` (the production path),
-                a fresh connection is opened via ``build_dsn()``.
+            conn: Optional pre-built connection (useful for tests that inject
+                a mock, or orchestrators that already own a handle). When
+                ``None`` (the production path), a connection is leased from
+                the shared pool via ``get_connection_pool()``. The pool is
+                lazy-initialised on first use if needed.
         """
+        self._owns_conn = False
         if conn is None:
-            dsn = build_dsn(application_name="dk-data.integrity")
-            conn = psycopg2.connect(dsn)
+            try:
+                pool = get_connection_pool()
+            except RuntimeError:
+                init_connection_pool()
+                pool = get_connection_pool()
+            conn = pool.getconn()
             conn.autocommit = True  # one INSERT per row, no txn management needed
+            self._owns_conn = True
         self._conn = conn
 
     @property
@@ -162,9 +176,17 @@ class ArtifactProvenanceWriter:
         return self._conn
 
     def close(self) -> None:
-        """Close the underlying connection."""
+        """Release the underlying connection.
+
+        If the writer leased the connection from the pool (production path),
+        it is returned to the pool. If the connection was injected by the
+        caller, it is left alone — the caller owns that lifecycle.
+        """
+        if not self._owns_conn:
+            return
         try:
-            self._conn.close()
+            pool = get_connection_pool()
+            pool.putconn(self._conn)
         except Exception:  # pragma: no cover — defensive
             pass
 
