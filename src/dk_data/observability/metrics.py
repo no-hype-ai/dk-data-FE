@@ -609,6 +609,30 @@ DK_SOURCE_LAST_SUCCESS_TIMESTAMP = Gauge(
     ["source"],
 )
 
+# =============================================================================
+# Download integrity pipeline (Horizon 2 / plan §C.4)
+# =============================================================================
+
+# Incremented when a re-downloaded (source, url) has a sha256 that differs
+# from the most recent prior row in meta.artifact_provenance. Signals that
+# downstream transforms (bronze → silver) must re-run even if row counts
+# match — the bits changed, the semantics may have changed.
+DK_ARTIFACT_CHANGED_TOTAL = Counter(
+    "dk_artifact_changed_total",
+    "Total re-downloads where sha256 differs from the prior provenance row",
+    ["source"],
+)
+
+# Incremented when the provenance writer itself fails (DB error, network
+# blip, transient) — the download still succeeds (failure is swallowed so
+# it cannot fail the ingestion), but we need visibility into how often
+# provenance writes miss so we can detect silent drift.
+DK_ARTIFACT_PROVENANCE_WRITE_ERRORS_TOTAL = Counter(
+    "dk_artifact_provenance_write_errors_total",
+    "Total failures writing to meta.artifact_provenance (swallowed, non-fatal)",
+    ["source"],
+)
+
 CMS_GOLD_VIEW_LAST_REFRESH_TIMESTAMP = Gauge(
     "cms_gold_view_last_refresh_timestamp",
     "Unix timestamp of last hcs_gold view refresh",
