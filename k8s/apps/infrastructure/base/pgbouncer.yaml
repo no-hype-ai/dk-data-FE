@@ -10,9 +10,16 @@
 # psycopg2; it is NOT compatible with session-level features (SET, LISTEN/NOTIFY,
 # advisory locks) so those must use direct connections.
 #
-# pool_size 20 per user/db pair keeps the total CloudNativePG connection count
-# well below the default pg max_connections=100 even when multiple CronJobs run
-# concurrently.
+# Pools (pick the right one by setting POSTGRES_DB / PGBOUNCER_DB in the caller):
+#   dk_data           → PostgREST + app-tier writes (latency-sensitive).
+#   dk_data_hydration → batch ingestion (long-running pg_restore, acceptable
+#                       queuing — never share a pool with interactive traffic).
+#   behavior_labs     → behavior_labs database (separate workload).
+#   litellm           → litellm database (separate workload).
+#
+# Client consumers that want the hydration pool must set POSTGRES_DB=dk_data_hydration
+# (or PGBOUNCER_DB=dk_data_hydration if they compute the DSN separately). See
+# docs/runbooks/pgbouncer-pools.md for the matrix of which workloads use which pool.
 apiVersion: v1
 kind: ConfigMap
 metadata:
@@ -28,35 +35,49 @@ data:
     [databases]
     ; Per-database pool_size overrides.
     ;
-    ; CRITICAL sizing math (feature 002 perf pass):
+    ; BUDGET MATH (per PgBouncer replica — there are 2 replicas, so multiply
+    ; these numbers by 2 to get total server-side connections to Postgres):
     ;
-    ; pool_size is PER PGBOUNCER REPLICA. With 2 pgbouncer replicas:
-    ;   actual_max_server_connections = pool_size × pgbouncer_replicas
+    ;   Pool                 pool_size  consumers
+    ;   ──────────────────── ─────────  ─────────────────────────────────────────
+    ;   dk_data              50         PostgREST (3 replicas × PGRST_DB_POOL=30
+    ;                                   = 90 client slots via postgrest) +
+    ;                                   app-tier writes (job-trigger, cronjobs)
+    ;   dk_data_hydration    20         batch ingestion (prestaged restore Job,
+    ;                                   bulk backfills, SQLMesh backfills — any
+    ;                                   long-running write workload)
+    ;   behavior_labs        25         behavior_labs database clients
+    ;   litellm              10         litellm database clients
+    ;   ──────────────────── ─────────
+    ;   SUM per replica     105 ≤ max_db_connections=105 (enforced below)
+    ;   SUM × 2 replicas    210 ≤ postgres max_connections − reserved
     ;
-    ; Postgres budget (assumes max_connections=200 — see
-    ; docs/reports/capacity-audit-2026-Q2.md to bump):
-    ;   - postgres superuser + replication + admin: 30 (reserved)
-    ;   - app workload available: 170
+    ; Postgres side (CNPG cluster):
+    ;   postgres max_connections            = 200  (assumed — see
+    ;                                          docs/reports/capacity-audit-2026-Q2.md)
+    ;   reserved (superuser/replication/admin) = 30
+    ;   app workload available              = 170
     ;
-    ; Per-replica pool sizes that sum to ≤ 85 (× 2 replicas = 170):
-    ;   dk_data:        50 per replica × 2 = 100 total — covers
-    ;                   PostgREST 3 replicas × PGRST_DB_POOL=30 = 90
-    ;                   with 10 headroom
-    ;   behavior_labs:  25 per replica × 2 = 50  total
-    ;   litellm:        10 per replica × 2 = 20  total
+    ; TODAY'S INEQUALITY:   210 (app demand) > 170 (app budget)   <-- VIOLATED
     ;
-    ; Total worst-case = 170 = budget. No headroom — if a 4th
-    ; database lands, raise max_connections first.
+    ; This is a *ceiling* — we expect steady-state utilization well below the
+    ; sum. Hydration is not running on main today; once feature/005 ships and
+    ; starts driving sustained load on the hydration pool, Postgres
+    ; max_connections MUST be raised to ≥ 240 (= 30 reserved + 210 pools) or
+    ; one of the non-hydration pools must shrink. Until then, PgBouncer will
+    ; cap each replica at max_db_connections=105 and queue client connections
+    ; beyond that; no crash, only latency.
     ;
-    ; Tradeoff: under a thundering-herd burst that lands entirely on
-    ; ONE pgbouncer replica, only 50 dk_data slots are available
-    ; (40 of 90 PostgREST connections will queue at the pgbouncer
-    ; client layer until the other replica picks up traffic). This
-    ; is acceptable: it bounds the worst case at "queue, not crash"
-    ; and the metering proxy's per-consumer concurrency guard
-    ; (max_in_flight=8 high-tier, 4 standard) caps how much of
-    ; the 90 PostgREST demand can come from any single consumer.
+    ; IF YOU ADD A FIFTH POOL: re-derive the inequality above, bump
+    ; max_db_connections, and confirm Postgres max_connections can absorb
+    ; (new_sum × replicas) + reserved. Math lives next to the config so it
+    ; cannot drift.
+    ;
+    ; Pool-mode note: dk_data_hydration sets pool_mode=transaction explicitly
+    ; (matches global default, but called out so a future global change to
+    ; session mode does not silently break bulk-restore parallelism).
     dk_data = host=postgres-cluster-rw.infra.svc.cluster.local port=5432 dbname=dk_data pool_size=50
+    dk_data_hydration = host=postgres-cluster-rw.infra.svc.cluster.local port=5432 dbname=dk_data pool_size=20 pool_mode=transaction
     behavior_labs = host=postgres-cluster-rw.infra.svc.cluster.local port=5432 dbname=behavior_labs pool_size=25
     litellm = host=postgres-cluster-rw.infra.svc.cluster.local port=5432 dbname=litellm pool_size=10
 
@@ -71,6 +92,10 @@ data:
     default_pool_size = 20
     reserve_pool_size = 5
     reserve_pool_timeout = 3
+    ; Cap total server connections per PgBouncer replica to the sum of all
+    ; pool_size values above. This is the enforcement knob for the budget
+    ; math in [databases]. Update in lockstep when adding/resizing pools.
+    max_db_connections = 105
 
     log_connections = 0
     log_disconnections = 0
@@ -98,10 +123,12 @@ spec:
   # doesn't take down every dk-data, behavior-labs, and litellm
   # consumer simultaneously. PgBouncer is the cluster-wide DB
   # gateway; one replica is unacceptable single-point-of-failure.
-  # NB: pool_size in [databases] is per-pgbouncer-instance, so
-  # 2 replicas × pool_size=100 = 200 max server connections to
-  # dk_data — exactly the postgres max_connections. The runbook
-  # docs/runbooks/wal-budget.md notes this trade-off.
+  # NB: pool_size in [databases] is per-pgbouncer-instance. See the
+  # BUDGET MATH block in the ConfigMap above for the full per-replica
+  # sum; max_db_connections=105 caps server-side connections per
+  # replica so the two replicas together stay within the Postgres
+  # max_connections ceiling. The runbook docs/runbooks/wal-budget.md
+  # notes the upstream trade-off.
   replicas: 2
   strategy:
     type: RollingUpdate
@@ -149,6 +176,16 @@ spec:
         # PgBouncer requires "username" "password" pairs in its auth file.
         # We write scram-sha-256 password hashes from the plain secret so the
         # password is never stored in cleartext on disk.
+        #
+        # Pool ACL: both dk_data and dk_data_hydration authenticate against
+        # the same POSTGRES_USER today (i.e. the hydration pool is NOT
+        # isolated by a distinct DB role — only by a separate PgBouncer
+        # server-connection pool). Future hardening: provision a dedicated
+        # `dk_data_hydration` Postgres role with SELECT/INSERT/UPDATE on the
+        # ingestion schemas only, add HYDRATION_USER/HYDRATION_PASSWORD to
+        # dk-data-secrets (DopplerSecret), and append a third line to
+        # userlist.txt. That change belongs in a follow-up PR so this one
+        # stays pool-plumbing only.
         - name: write-userlist
           image: ghcr.io/data-kinetic/pgbouncer:1.23.0
           command:
