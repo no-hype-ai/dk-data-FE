@@ -1,0 +1,24 @@
+# FDA drug shortages — paginated JSON, weekly cadence.
+#
+# The openFDA /drug/shortages.json endpoint returns current and resolved
+# US drug shortages with reason, status, therapeutic category, and
+# reporting company. Weekly cadence keeps supply-risk data current.
+#
+# Orchestration tier: 2 (landing into mol_raw).
+# Accessibility tier (GH label): T2 — free openFDA API key recommended
+# but not required.
+
+name: fda_shortages
+domain: mol
+tier: 2
+depends_on: []
+fetch:
+  kind: http_json_paginated
+  url: https://api.fda.gov/drug/shortages.json
+  rate_limit_per_minute: 240  # openFDA: 240 req/min with API key, 40 without
+schedule: "0 6 * * 0"  # 06:00 UTC every Sunday
+credentials_ref: dk-data-secrets-openfda
+expected_row_count_fn: null
+sla_seconds: 1800
+consumes:
+  db_connections: 1

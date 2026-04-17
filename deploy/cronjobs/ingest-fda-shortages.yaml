@@ -1,0 +1,51 @@
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: ingest-fda-shortages
+  namespace: dk-data-prod
+  labels:
+    app: dk-data-ingestion
+    source: fda-shortages
+  annotations:
+    description: |
+      Weekly ingestion of FDA drug shortage data from openFDA
+      /drug/shortages.json. Closes #331.
+spec:
+  schedule: "0 6 * * 0"          # 06:00 UTC every Sunday
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 5
+  startingDeadlineSeconds: 600
+  jobTemplate:
+    spec:
+      backoffLimit: 2
+      ttlSecondsAfterFinished: 172800  # 2 days
+      template:
+        spec:
+          restartPolicy: Never
+          containers:
+            - name: ingest
+              image: ghcr.io/data-kinetic/dk-data:prod-latest
+              command:
+                - python
+                - -m
+                - dk_data.ingestion.main
+                - fda_shortages
+              env:
+                - name: PG_URL
+                  valueFrom:
+                    secretKeyRef:
+                      name: dk-data-db
+                      key: url
+                - name: OPENFDA_API_KEY
+                  valueFrom:
+                    secretKeyRef:
+                      name: dk-data-secrets-openfda
+                      key: api-key
+              resources:
+                requests:
+                  cpu: 250m
+                  memory: 256Mi
+                limits:
+                  cpu: "1"
+                  memory: 1Gi

@@ -3,7 +3,7 @@
 **Domain:** mol
 **Tier:** T2 — free openFDA API key recommended (40→240 req/min); usable without
 **Fetch:** http_json_paginated, daily
-**Status:** stub — tracking issue: #330
+**Status:** fetcher_ready — tracking issue: #330
 
 > Note: D.2 PR #318 seeded a descriptor at `.dk/sources/openfda_enforcement.yaml` for this endpoint. Plan §E.2 names this source `fda_enforcement`; onboarding should decide whether to alias/rename or keep the existing descriptor.
 
