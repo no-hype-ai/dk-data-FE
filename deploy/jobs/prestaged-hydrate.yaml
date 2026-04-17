@@ -154,7 +154,7 @@ spec:
       containers:
         - name: hydrate
           # Image must include postgresql-client-16 (pg_restore) + dk_data pkg.
-          image: ghcr.io/data-kinetic/dk-data:prod-<sha>
+          image: ghcr.io/data-kinetic/dk-data-fe/job-trigger:prod-a89d6ac
           imagePullPolicy: IfNotPresent
           command: ["python", "-m", "dk_data.ingestion.prestaged", "--source-list", "all"]
           env:

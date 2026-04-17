@@ -70,7 +70,7 @@ spec:
         effect: NoSchedule
       containers:
       - name: hydrate
-        image: ghcr.io/data-kinetic/dk-data:prod-<sha>
+        image: ghcr.io/data-kinetic/dk-data-fe/job-trigger:prod-a89d6ac
         imagePullPolicy: IfNotPresent
         command:
         - python
