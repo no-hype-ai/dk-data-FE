@@ -35,6 +35,12 @@ from .main import SOURCES, run_ingestion
 from .initial_backfill import compute_backfill_days
 from dk_data.ingestion.utils.database import build_dsn
 
+try:
+    from .utils.wal_metrics import check_wal_circuit_breaker, WALCircuitBreakerOpen
+    _WAL_CB_AVAILABLE = True
+except ImportError:
+    _WAL_CB_AVAILABLE = False
+
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s %(levelname)s %(name)s — %(message)s',
@@ -824,6 +830,20 @@ Examples:
         parser.error("--fetch-only, --transform-only, and --health-only are mutually exclusive")
 
     days_back = args.days_back if args.days_back is not None else compute_backfill_days()
+
+    # Pre-flight: WAL circuit breaker
+    if _WAL_CB_AVAILABLE and not args.dry_run:
+        import psycopg2
+        try:
+            cb_conn = psycopg2.connect(build_dsn())
+            cb_conn.autocommit = True
+            check_wal_circuit_breaker(cb_conn, caller=f"source_backfill.{args.source or 'run-all'}")
+            cb_conn.close()
+        except WALCircuitBreakerOpen:
+            logger.warning("Source backfill skipped — WAL circuit breaker open")
+            sys.exit(0)
+        except Exception as exc:
+            logger.debug("WAL circuit breaker check failed (%s) — proceeding", exc)
 
     service_name = os.getenv("OTEL_SERVICE_NAME", "dk-data-source-backfill")
     if _OBSERVABILITY_AVAILABLE:

@@ -36,11 +36,17 @@ logger = logging.getLogger(__name__)
 
 # T227: WAL measurement for FR-021 budget enforcement
 try:
-    from dk_data.ingestion.utils.wal_metrics import measure_wal
+    from dk_data.ingestion.utils.wal_metrics import (
+        measure_wal,
+        check_wal_circuit_breaker,
+        WALCircuitBreakerOpen,
+    )
     _WAL_METRICS_AVAILABLE = True
 except ImportError:
     _WAL_METRICS_AVAILABLE = False
     measure_wal = None
+    check_wal_circuit_breaker = None
+    WALCircuitBreakerOpen = Exception
 
 
 # SQLMesh model definitions by layer
@@ -686,6 +692,21 @@ def transform_layer(layer: str) -> dict:
     """
     if layer not in LAYER_MODELS:
         return {'status': 'failed', 'error': f'Unknown layer: {layer}'}
+
+    # Pre-flight: WAL circuit breaker — abort early if WAL is dangerously
+    # accumulated or the archiver is broken. Same checks as the backfill
+    # orchestrator (migration 165), applied to every transform path.
+    if _WAL_METRICS_AVAILABLE and check_wal_circuit_breaker is not None:
+        import psycopg2
+        try:
+            wal_conn = psycopg2.connect(build_dsn())
+            wal_conn.autocommit = True
+            check_wal_circuit_breaker(wal_conn, caller=f"transform_layer.{layer}")
+            wal_conn.close()
+        except WALCircuitBreakerOpen:
+            return {'status': 'skipped', 'error': f'WAL circuit breaker open for {layer}'}
+        except Exception as exc:
+            logger.debug("WAL circuit breaker check failed (%s) — proceeding anyway", exc)
 
     models = LAYER_MODELS[layer]
     logger.info(f"Transforming {layer} layer ({len(models)} models) in single sqlmesh run")

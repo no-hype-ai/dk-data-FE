@@ -24,6 +24,91 @@ WAL_LIMIT_BYTES: int = 2 * 1024 * 1024 * 1024  # 2 GiB
 _POD_NAME = os.environ.get("HOSTNAME", "")
 
 
+class WALCircuitBreakerOpen(Exception):
+    """Raised when pre-flight WAL/archiver checks fail.
+
+    Callers should catch this and exit cleanly (exit 0) so the CronJob
+    doesn't count as a failure — the next scheduled tick will re-check.
+    """
+
+
+def check_wal_circuit_breaker(
+    conn,
+    *,
+    max_wal_pct: float = 0.75,
+    archiver_fail_window_minutes: int = 30,
+    caller: str = "unknown",
+) -> None:
+    """Pre-flight check: abort if WAL is dangerously accumulated.
+
+    Mirrors the circuit breakers in meta.backfill_orchestrator_pick()
+    (migration 165) but runs in Python so every transform entry point
+    can call it before doing any work.
+
+    Checks (in order):
+      1. WAL archiver health — if pg_stat_archiver shows recent failures,
+         WAL cannot be recycled and will grow regardless of batch size.
+      2. WAL directory size — if pg_ls_waldir() exceeds max_wal_pct of
+         max_wal_size, we're already in danger territory.
+
+    Args:
+        conn: Open psycopg2 connection (autocommit=True recommended).
+        max_wal_pct: Fraction of max_wal_size that triggers the breaker.
+        archiver_fail_window_minutes: Only consider archiver failures
+            within this many minutes as "recent".
+        caller: Name of the calling transform (for log messages).
+
+    Raises:
+        WALCircuitBreakerOpen: If any check fails.
+    """
+    with conn.cursor() as cur:
+        # Check 1: WAL archiver health
+        cur.execute(
+            "SELECT failed_count, last_failed_time FROM pg_stat_archiver"
+        )
+        row = cur.fetchone()
+        if row and row[0] and row[0] > 0 and row[1] is not None:
+            cur.execute(
+                "SELECT last_failed_time > NOW() - INTERVAL '%s minutes' "
+                "FROM pg_stat_archiver",
+                (archiver_fail_window_minutes,),
+            )
+            recent = cur.fetchone()[0]
+            if recent:
+                msg = (
+                    f"WAL circuit breaker OPEN ({caller}): "
+                    f"archiver has {row[0]} failures, last within "
+                    f"{archiver_fail_window_minutes}min — skipping transform"
+                )
+                logger.warning(msg)
+                raise WALCircuitBreakerOpen(msg)
+
+        # Check 2: WAL directory size vs max_wal_size
+        cur.execute(
+            "SELECT COALESCE(SUM(size), 0) / 1024.0 / 1024.0 FROM pg_ls_waldir()"
+        )
+        wal_dir_mb = cur.fetchone()[0] or 0
+
+        cur.execute(
+            "SELECT setting::numeric FROM pg_settings WHERE name = 'max_wal_size'"
+        )
+        max_wal_mb = cur.fetchone()[0] or 4096
+
+        if wal_dir_mb > max_wal_mb * max_wal_pct:
+            msg = (
+                f"WAL circuit breaker OPEN ({caller}): "
+                f"WAL dir {wal_dir_mb:.0f} MB > {max_wal_pct*100:.0f}% of "
+                f"max_wal_size {max_wal_mb:.0f} MB — skipping transform"
+            )
+            logger.warning(msg)
+            raise WALCircuitBreakerOpen(msg)
+
+    logger.info(
+        "WAL circuit breaker OK (%s): wal_dir=%.0f MB, max_wal=%.0f MB, archiver_ok",
+        caller, wal_dir_mb, max_wal_mb,
+    )
+
+
 @contextmanager
 def measure_wal(
     procedure_name: str,
