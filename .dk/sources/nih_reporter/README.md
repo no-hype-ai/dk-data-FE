@@ -3,7 +3,7 @@
 **Domain:** hcp
 **Tier:** T1 — free NIH ExPORTER bulk download, no auth
 **Fetch:** http_csv, weekly
-**Status:** stub — tracking issue: #329
+**Status:** live — tracking issue: #329
 
 ## Purpose
 NIH RePORTER / ExPORTER publishes weekly dumps of NIH-funded projects, abstracts, publications, and patents tied to grants. Landing this feeds `hcp_silver.researchers` with grant-linked affiliation history and fuels translational-research scoring that connects bench researchers to clinical pipelines — a prerequisite for any KOL-identification use case grounded in funding.
