@@ -1,0 +1,24 @@
+# CMS VBP — annual CSV, hospital quality trio.
+#
+# Hospital Value-Based Purchasing (VBP) Program publishes total performance
+# scores across clinical outcomes, person-and-community engagement, safety,
+# and efficiency domains, plus payment-adjustment factors.
+#
+# Orchestration tier: 6 (raw landing; no upstream hub dependencies).
+# Accessibility tier: T1 — free CMS Provider Data portal, no auth.
+
+name: cms_vbp
+domain: hcs
+tier: 6
+depends_on: []
+fetch:
+  kind: http_csv
+  url: https://data.cms.gov/provider-data/dataset/ypbt-wvdk
+schedule: "0 0 1 2 *"  # 00:00 UTC on February 1st (annual — CMS publishes FY results ~Oct, we refresh in Feb)
+credentials_ref: none
+expected_row_count_fn: "SELECT reltuples::bigint FROM pg_class WHERE relname='cms_vbp'"
+sla_seconds: 1800
+manifest: .dk/sources/cms_vbp.manifest.json
+consumes:
+  wal_headroom_pct: 1
+  db_connections: 1

@@ -116,6 +116,9 @@ from .sources.who_gho import load_who_gho_data
 from .sources.nice_hta import load_nice_hta_data
 from .sources.cms_medicare import load_cms_medicare_data
 from .sources.cms_coverage import load_cms_coverage_data
+from .sources.cms_hac_reduction import load_cms_hac_reduction_data
+from .sources.cms_hrrp import load_cms_hrrp_data
+from .sources.cms_vbp import load_cms_vbp_data
 
 from .fetchers import (
     PubMedFetcher,
@@ -217,6 +220,9 @@ from .fetchers import (
     NICEHTAFetcher,
     CMSMedicareFetcher,
     CMSCoverageFetcher,
+    CMSHACReductionFetcher,
+    CMSHRRPFetcher,
+    CMSVBPFetcher,
 )
 from .downloaders.cms_downloader import CMS_DATASET_REGISTRY
 
@@ -1113,6 +1119,31 @@ SOURCES = {
         'loader': load_cms_coverage_data,
         'requires_file': False,
         'default_days_back': None,  # Full snapshot — ~2,400 static coverage decisions
+    },
+    # --- CMS hospital quality trio (wave-b/cms-quality-trio) ---
+    'cms_hac_reduction': {
+        'name': 'CMS HAC Reduction Program',
+        'description': 'Hospital-Acquired Condition Reduction Program penalties and scores',
+        'fetcher': CMSHACReductionFetcher,
+        'loader': load_cms_hac_reduction_data,
+        'requires_file': False,
+        'default_days_back': None,
+    },
+    'cms_hrrp': {
+        'name': 'CMS HRRP',
+        'description': 'Hospital Readmissions Reduction Program excess-readmission ratios',
+        'fetcher': CMSHRRPFetcher,
+        'loader': load_cms_hrrp_data,
+        'requires_file': False,
+        'default_days_back': None,
+    },
+    'cms_vbp': {
+        'name': 'CMS VBP',
+        'description': 'Hospital Value-Based Purchasing total performance scores',
+        'fetcher': CMSVBPFetcher,
+        'loader': load_cms_vbp_data,
+        'requires_file': False,
+        'default_days_back': None,
     },
 }
 

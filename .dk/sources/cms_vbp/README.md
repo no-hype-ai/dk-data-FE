@@ -3,7 +3,7 @@
 **Domain:** hcs
 **Tier:** T1 — free CMS provider-data portal CSV, no auth
 **Fetch:** http_csv, annual
-**Status:** stub — tracking issue: #326
+**Status:** fetcher_ready — tracking issue: #326
 
 ## Purpose
 CMS Hospital Value-Based Purchasing (VBP) Program publishes total performance scores across clinical outcomes, person-and-community engagement, safety, and efficiency domains, plus payment-adjustment factors. Completes the hospital-quality trio (HAC/HRRP/VBP) required for a defensible `hcs_gold.facility_quality` scorecard.

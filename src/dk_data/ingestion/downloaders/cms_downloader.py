@@ -230,6 +230,26 @@ CMS_DATASET_REGISTRY: dict[str, dict] = {
         "note": "No standalone utilization PUF in catalog; using Physician PUF as substitute.",
     },
 
+    # Hospital quality programs (HAC / HRRP / VBP)
+    "cms_hac_reduction": {
+        # Provider Data portal — HAC Reduction Program
+        "catalog_uuid": "yq43-i98g",
+        "catalog_base": "https://data.cms.gov/provider-data/api/1/metastore/schemas/dataset/items",
+        "description": "Hospital-Acquired Condition (HAC) Reduction Program",
+    },
+    "cms_hrrp": {
+        # Provider Data portal — Hospital Readmissions Reduction Program
+        "catalog_uuid": "9n3s-kdb3",
+        "catalog_base": "https://data.cms.gov/provider-data/api/1/metastore/schemas/dataset/items",
+        "description": "Hospital Readmissions Reduction Program",
+    },
+    "cms_vbp": {
+        # Provider Data portal — Hospital Value-Based Purchasing
+        "catalog_uuid": "ypbt-wvdk",
+        "catalog_base": "https://data.cms.gov/provider-data/api/1/metastore/schemas/dataset/items",
+        "description": "Hospital Value-Based Purchasing (HVBP)",
+    },
+
     # NPPES — special: stable URL template on download.cms.gov, not in data.json
     "cms_nppes": {
         "nppes_url_template": (

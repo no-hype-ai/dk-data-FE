@@ -1,0 +1,24 @@
+# CMS HRRP — annual CSV, hospital quality trio.
+#
+# Hospital Readmissions Reduction Program publishes excess-readmission
+# ratios and payment-reduction factors per hospital across six condition
+# cohorts (AMI, HF, pneumonia, COPD, CABG, THA/TKA).
+#
+# Orchestration tier: 6 (raw landing; no upstream hub dependencies).
+# Accessibility tier: T1 — free CMS Provider Data portal, no auth.
+
+name: cms_hrrp
+domain: hcs
+tier: 6
+depends_on: []
+fetch:
+  kind: http_csv
+  url: https://data.cms.gov/provider-data/dataset/9n3s-kdb3
+schedule: "0 0 1 2 *"  # 00:00 UTC on February 1st (annual — CMS publishes FY results ~Oct, we refresh in Feb)
+credentials_ref: none
+expected_row_count_fn: "SELECT reltuples::bigint FROM pg_class WHERE relname='cms_hrrp'"
+sla_seconds: 1800
+manifest: .dk/sources/cms_hrrp.manifest.json
+consumes:
+  wal_headroom_pct: 1
+  db_connections: 1

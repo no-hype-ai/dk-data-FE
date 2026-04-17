@@ -3,7 +3,7 @@
 **Domain:** hcs
 **Tier:** T1 — free CMS provider-data portal CSV, no auth
 **Fetch:** http_csv, annual
-**Status:** stub — tracking issue: #325
+**Status:** fetcher_ready — tracking issue: #325
 
 ## Purpose
 CMS Hospital Readmissions Reduction Program (HRRP) publishes excess-readmission ratios and payment-reduction factors per hospital across six condition cohorts (AMI, HF, pneumonia, COPD, CABG, THA/TKA). Core hospital-quality benchmark; pairs with HAC and VBP for `hcs_gold` facility scorecards used in commercial targeting and payer analytics.
