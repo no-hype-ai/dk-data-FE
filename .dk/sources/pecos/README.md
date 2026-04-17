@@ -3,7 +3,7 @@
 **Domain:** hcp
 **Tier:** T1 — free CMS provider-characteristics download, no auth
 **Fetch:** http_csv, monthly
-**Status:** stub — tracking issue: #328
+**Status:** live — tracking issue: #328
 
 ## Purpose
 PECOS (Provider Enrollment, Chain, and Ownership System) publishes monthly CSV extracts of Medicare-enrolled providers and suppliers — the enrollment-truth companion to NPPES. Landing PECOS lets `hcp_silver.resolve_researcher` and `hcs_silver.resolve_provider` disambiguate active billing entities from inactive/historical NPI registrations.
