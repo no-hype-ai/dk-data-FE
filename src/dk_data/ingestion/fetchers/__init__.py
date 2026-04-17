@@ -96,6 +96,8 @@ from .fda_ndc import FDANDCFetcher
 from .chembl_molecules import ChEMBLMoleculesFetcher
 from .pubchem import PubChemFetcher
 from .openfda_faers import OpenFDAFAERSFetcher
+from .fda_enforcement import FDAEnforcementFetcher
+from .fda_shortages import FDAShortagesFetcher
 from .npi_registry import NPIRegistryFetcher
 from .purple_book import PurpleBookFetcher
 from .reactome import ReactomeFetcher
@@ -202,6 +204,8 @@ __all__ = [
     'ChEMBLMoleculesFetcher',
     'PubChemFetcher',
     'OpenFDAFAERSFetcher',
+    'FDAEnforcementFetcher',
+    'FDAShortagesFetcher',
     'NPIRegistryFetcher',
     'PurpleBookFetcher',
     'ReactomeFetcher',

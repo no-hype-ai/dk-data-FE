@@ -109,6 +109,8 @@ from .sources.cms_ddinter import load_cms_ddinter_data
 from .sources.chembl_molecules import load_chembl_molecules_data
 from .sources.pubchem import load_pubchem_data
 from .sources.openfda_faers import load_openfda_faers_data
+from .sources.fda_enforcement import load_fda_enforcement_data
+from .sources.fda_shortages import load_fda_shortages_data
 from .sources.npi_registry import load_npi_registry_data
 from .sources.purple_book import load_purple_book_data
 from .sources.reactome import load_reactome_data
@@ -210,6 +212,8 @@ from .fetchers import (
     ChEMBLMoleculesFetcher,
     PubChemFetcher,
     OpenFDAFAERSFetcher,
+    FDAEnforcementFetcher,
+    FDAShortagesFetcher,
     NPIRegistryFetcher,
     PurpleBookFetcher,
     ReactomeFetcher,
@@ -1056,6 +1060,22 @@ SOURCES = {
         'loader': load_openfda_faers_data,
         'requires_file': False,
         'default_days_back': 90,
+    },
+    'fda_enforcement': {
+        'name': 'FDA Enforcement / Recalls',
+        'description': 'FDA drug enforcement reports and recalls via openFDA',
+        'fetcher': FDAEnforcementFetcher,
+        'loader': load_fda_enforcement_data,
+        'requires_file': False,
+        'default_days_back': 90,
+    },
+    'fda_shortages': {
+        'name': 'FDA Drug Shortages',
+        'description': 'FDA current and resolved drug shortages via openFDA',
+        'fetcher': FDAShortagesFetcher,
+        'loader': load_fda_shortages_data,
+        'requires_file': False,
+        'default_days_back': None,  # full dataset each run (~1.5k records)
     },
     'npi_registry': {
         'name': 'NPI Registry',

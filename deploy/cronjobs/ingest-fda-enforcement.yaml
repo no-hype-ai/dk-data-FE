@@ -1,0 +1,51 @@
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: ingest-fda-enforcement
+  namespace: dk-data-prod
+  labels:
+    app: dk-data-ingestion
+    source: fda-enforcement
+  annotations:
+    description: |
+      Daily ingestion of FDA drug enforcement/recall data from openFDA
+      /drug/enforcement.json. Closes #330.
+spec:
+  schedule: "0 5 * * *"          # 05:00 UTC daily
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 5
+  startingDeadlineSeconds: 600
+  jobTemplate:
+    spec:
+      backoffLimit: 2
+      ttlSecondsAfterFinished: 172800  # 2 days
+      template:
+        spec:
+          restartPolicy: Never
+          containers:
+            - name: ingest
+              image: ghcr.io/data-kinetic/dk-data:prod-latest
+              command:
+                - python
+                - -m
+                - dk_data.ingestion.main
+                - fda_enforcement
+              env:
+                - name: PG_URL
+                  valueFrom:
+                    secretKeyRef:
+                      name: dk-data-db
+                      key: url
+                - name: OPENFDA_API_KEY
+                  valueFrom:
+                    secretKeyRef:
+                      name: dk-data-secrets-openfda
+                      key: api-key
+              resources:
+                requests:
+                  cpu: 250m
+                  memory: 256Mi
+                limits:
+                  cpu: "1"
+                  memory: 1Gi

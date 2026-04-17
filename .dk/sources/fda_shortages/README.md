@@ -3,7 +3,7 @@
 **Domain:** mol
 **Tier:** T2 — free openFDA API key recommended (40→240 req/min); usable without
 **Fetch:** http_json_paginated, weekly
-**Status:** stub — tracking issue: #331
+**Status:** fetcher_ready — tracking issue: #331
 
 ## Purpose
 openFDA `/drug/shortages.json` tracks current and resolved US drug shortages including reason, status, therapeutic category, and reporting company. Weekly cadence gives dk-data a timely supply-risk feed that integrates with drug_product commercial flows and payer coverage decisions in `mol_gold`.
