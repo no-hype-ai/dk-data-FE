@@ -22,7 +22,7 @@ spec:
       restartPolicy: OnFailure
       containers:
         - name: db-init
-          image: postgres:16.4
+          image: ghcr.io/cloudnative-pg/postgresql:16.4
           env:
             - name: PGHOST
               valueFrom:
