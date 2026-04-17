@@ -81,7 +81,10 @@ from .cms_enrollment_puf import CMSEnrollmentPUFFetcher
 from .cms_claim_type_puf import CMSClaimTypePUFFetcher
 from .cms_utilization_puf import CMSUtilizationPUFFetcher
 from .cms_cost_reports_puf import CMSCostReportsPUFFetcher, CMSCostReportsPUFLinesFetcher
+from .ema_epar import EMAEparFetcher
 from .ema_mol import EMAMolFetcher
+from .health_canada_dpd import HealthCanadaDPDFetcher
+from .research_orgs_ror import ResearchOrgsRORFetcher
 from .orange_book import OrangeBookFetcher
 from .dailymed import DailyMedFetcher
 from .fda_drugs import FDADrugsFetcher
@@ -192,7 +195,10 @@ __all__ = [
     'CMSUtilizationPUFFetcher',
     'CMSCostReportsPUFFetcher',
     'CMSCostReportsPUFLinesFetcher',
+    'EMAEparFetcher',
     'EMAMolFetcher',
+    'HealthCanadaDPDFetcher',
+    'ResearchOrgsRORFetcher',
     'OrangeBookFetcher',
     'DailyMedFetcher',
     'FDADrugsFetcher',
