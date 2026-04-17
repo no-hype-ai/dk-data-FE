@@ -46,6 +46,17 @@ spec:
                 secretKeyRef:
                   name: dk-data-secrets
                   key: POSTGREST_PASSWORD
+          # PreSync hook that runs psql DDL once against an already-provisioned
+          # Postgres — memory usage stays flat. Sized to match the other
+          # infrastructure PreSync Jobs (db-migrate). Added to satisfy
+          # dk-alchemy Kyverno `require-resource-limits` (Wave 4).
+          resources:
+            requests:
+              memory: "64Mi"
+              cpu: "50m"
+            limits:
+              memory: "256Mi"
+              cpu: "200m"
           command:
             - /bin/bash
             - -c

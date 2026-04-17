@@ -77,6 +77,16 @@ spec:
                 secretKeyRef:
                   name: dk-data-secrets
                   key: JWT_SECRET
+          # Minimal budget — the validator shells out to `wc -c` once and
+          # exits. Added to satisfy dk-alchemy Kyverno `require-resource-limits`
+          # `check-init-container-limits` rule (Wave 4).
+          resources:
+            requests:
+              memory: "16Mi"
+              cpu: "10m"
+            limits:
+              memory: "32Mi"
+              cpu: "50m"
           securityContext:
             allowPrivilegeEscalation: false
             readOnlyRootFilesystem: true
