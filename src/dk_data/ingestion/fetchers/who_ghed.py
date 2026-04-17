@@ -20,7 +20,6 @@ import hashlib
 import io
 import json
 import logging
-import tempfile
 import zipfile
 from typing import Any, Dict, List
 
