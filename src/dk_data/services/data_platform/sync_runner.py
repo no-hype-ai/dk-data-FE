@@ -564,6 +564,33 @@ async def run_raw_ingestion(
                 result = await service.fetch_vaccine_products()
                 results[source] = 1 if result else 0
 
+            elif source == 'cochrane':
+                # CochraneFetcher uses synchronous requests — run in thread executor
+                def _run_cochrane():
+                    from dk_data.ingestion.fetchers.cochrane import CochraneFetcher
+                    from dk_data.ingestion.sources.cochrane import load_cochrane_data
+                    fetcher = CochraneFetcher()
+                    fetch_result = fetcher.fetch(days_back=90)
+                    if fetch_result.get('status') == 'success' and fetch_result.get('records'):
+                        load_cochrane_data(fetch_result['records'], source_hash=fetch_result.get('hash'))
+                    return fetch_result.get('record_count', 0)
+
+                loop = asyncio.get_event_loop()
+                count = await loop.run_in_executor(None, _run_cochrane)
+                results[source] = count
+
+            elif source == 'europepmc':
+                # EuropePMCFetcher streams directly to DB — run in thread executor
+                def _run_europepmc():
+                    from dk_data.ingestion.fetchers.europepmc import EuropePMCFetcher
+                    fetcher = EuropePMCFetcher()
+                    fetch_result = fetcher.fetch(days_back=30, max_records=5000)
+                    return fetch_result.get('record_count', 0)
+
+                loop = asyncio.get_event_loop()
+                count = await loop.run_in_executor(None, _run_europepmc)
+                results[source] = count
+
             else:
                 # Try to handle as dynamically onboarded source
                 results[source] = await run_dynamic_source_ingestion(pool, source, metrics)

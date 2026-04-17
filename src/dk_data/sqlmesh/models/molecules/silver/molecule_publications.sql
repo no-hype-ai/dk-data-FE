@@ -108,10 +108,10 @@ WITH all_links AS (
     FROM mol_silver.publications p
     -- Equi-join: normalize each space-delimited title token and match against molecule_names
     JOIN LATERAL (
-        SELECT mn_inner.molecule_id
+        SELECT ma_inner.molecule_id
         FROM regexp_split_to_table(LOWER(p.title), '\s+') AS tok(word)
-        JOIN mol_silver.molecule_names mn_inner
-            ON mn_inner.normalized_name = LOWER(REGEXP_REPLACE(tok.word, '[^a-zA-Z0-9]', '', 'g'))
+        JOIN mol_silver.molecule_aliases ma_inner
+            ON ma_inner.alias_name_normalized = LOWER(REGEXP_REPLACE(tok.word, '[^a-zA-Z0-9]', '', 'g'))
         WHERE LENGTH(tok.word) >= 5
         ORDER BY LENGTH(tok.word) DESC
         LIMIT 1

@@ -60,22 +60,23 @@ SELECT DISTINCT ON (b.pmid)
 
 FROM mol_bronze.pubmed b
 
--- Tier 1: MeSH → molecule_names equi-join (replaces S3 correlated subquery)
+-- Tier 1: MeSH → molecule_aliases equi-join (replaces S3 correlated subquery)
+-- mesh_terms is text[] in physical table, use unnest() not jsonb_array_elements_text()
 LEFT JOIN LATERAL (
-    SELECT mn.molecule_id
-    FROM jsonb_array_elements_text(COALESCE(b.mesh_terms, '[]'::JSONB)) AS mt(term)
-    JOIN mol_silver.molecule_names mn
-        ON mn.normalized_name = LOWER(REGEXP_REPLACE(mt.term, '[^a-zA-Z0-9]', '', 'g'))
-    ORDER BY mn.molecule_id
+    SELECT ma.molecule_id
+    FROM unnest(COALESCE(b.mesh_terms, ARRAY[]::TEXT[])) AS mt(term)
+    JOIN mol_silver.molecule_aliases ma
+        ON ma.alias_name_normalized = LOWER(REGEXP_REPLACE(mt.term, '[^a-zA-Z0-9]', '', 'g'))
+    ORDER BY ma.molecule_id
     LIMIT 1
 ) mesh_link ON TRUE
 
--- Tier 2: title tokens → molecule_names equi-join (replaces S2 leading-wildcard LIKE)
+-- Tier 2: title tokens → molecule_aliases equi-join (replaces S2 leading-wildcard LIKE)
 LEFT JOIN LATERAL (
-    SELECT mn.molecule_id
+    SELECT ma.molecule_id
     FROM regexp_split_to_table(LOWER(b.title), '\s+') AS tok(word)
-    JOIN mol_silver.molecule_names mn
-        ON mn.normalized_name = LOWER(REGEXP_REPLACE(tok.word, '[^a-zA-Z0-9]', '', 'g'))
+    JOIN mol_silver.molecule_aliases ma
+        ON ma.alias_name_normalized = LOWER(REGEXP_REPLACE(tok.word, '[^a-zA-Z0-9]', '', 'g'))
     WHERE LENGTH(tok.word) >= 6
     ORDER BY LENGTH(tok.word) DESC
     LIMIT 1

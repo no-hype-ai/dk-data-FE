@@ -187,10 +187,15 @@ class EMARegulatoryCIFetcher(BaseFetcher):
         """
         Map a raw EMA API item to the raw.ema_regulatory schema.
 
+        Handles both the official bulk JSON export field names (snake_case with
+        underscores, e.g. name_of_medicine, ema_product_number) and legacy
+        camelCase field names from the unofficial paginated API.
+
         Returns None when the item lacks a usable document ID.
         """
         document_id = (
-            item.get("id")
+            item.get("ema_product_number")       # bulk JSON: "EMEA/H/C/001234"
+            or item.get("id")
             or item.get("document_id")
             or item.get("medicine_id")
             or item.get("product_number")
@@ -204,10 +209,25 @@ class EMARegulatoryCIFetcher(BaseFetcher):
 
         document_id = str(document_id).strip()
 
-        # Parse decision date from multiple possible fields.
-        # EMA bulk JSON uses camelCase; older API uses snake_case.
-        decision_date = (
-            item.get("decision_date")
+        # Parse decision date — bulk JSON stores dates as DD/MM/YYYY strings.
+        # Try marketing authorisation date first, then EC decision date, then other fields.
+        def _parse_date(raw: Optional[str]) -> Optional[str]:
+            if not raw:
+                return None
+            raw = str(raw).strip()
+            # DD/MM/YYYY → YYYY-MM-DD
+            if len(raw) == 10 and raw[2] == "/" and raw[5] == "/":
+                try:
+                    d, m, y = raw.split("/")
+                    return f"{y}-{m}-{d}"
+                except ValueError:
+                    pass
+            return raw[:10]  # Already ISO or truncate
+
+        decision_date = _parse_date(
+            item.get("marketing_authorisation_date")
+            or item.get("european_commission_decision_date")
+            or item.get("decision_date")
             or item.get("date")
             or item.get("revision_date")
             or item.get("authorisationDate")
@@ -215,16 +235,20 @@ class EMARegulatoryCIFetcher(BaseFetcher):
             or item.get("opinionDate")
             or item.get("marketingAuthorisationDate")
         )
-        if decision_date:
-            decision_date = str(decision_date)[:10]  # YYYY-MM-DD
 
-        # Normalise decision_type
-        raw_decision_type = str(
-            item.get("decision_type")
-            or item.get("type")
-            or item.get("category")
-            or ""
-        ).lower().replace(" ", "_").replace("-", "_")
+        # Infer decision_type from medicine_status (bulk JSON)
+        medicine_status = str(item.get("medicine_status") or "").lower()
+        if "authorised" in medicine_status and "withdrawn" not in medicine_status:
+            raw_decision_type = "authorisation"
+        elif "withdrawn" in medicine_status:
+            raw_decision_type = "withdrawal"
+        else:
+            raw_decision_type = str(
+                item.get("decision_type")
+                or item.get("type")
+                or item.get("category")
+                or ""
+            ).lower().replace(" ", "_").replace("-", "_")
 
         decision_type: Optional[str] = (
             raw_decision_type if raw_decision_type in self.VALID_DECISION_TYPES else None
@@ -234,20 +258,24 @@ class EMARegulatoryCIFetcher(BaseFetcher):
             "document_id": document_id,
             "document_type": doc_type,
             "product_name": (
-                item.get("product_name")
+                item.get("name_of_medicine")          # bulk JSON
+                or item.get("product_name")
                 or item.get("name")
                 or item.get("medicineName")
                 or item.get("brandName")
             ),
             "active_substance": (
-                item.get("active_substance")
+                item.get("international_non_proprietary_name_common_name")  # bulk JSON INN
+                or item.get("active_substance")
                 or item.get("inn")
                 or item.get("active_ingredients")
                 or item.get("activeSubstance")
                 or item.get("internationalNonproprietaryName")
             ),
             "therapeutic_area": (
-                item.get("therapeutic_area")
+                item.get("therapeutic_area_mesh")     # bulk JSON
+                or item.get("pharmacotherapeutic_group_human")
+                or item.get("therapeutic_area")
                 or item.get("atc_code")
                 or item.get("therapeuticArea")
                 or item.get("atcCode")
@@ -255,7 +283,11 @@ class EMARegulatoryCIFetcher(BaseFetcher):
             "decision_date": decision_date,
             "decision_type": decision_type,
             "document_url": item.get("url") or item.get("document_url"),
-            "summary": item.get("summary") or item.get("description"),
+            "summary": (
+                item.get("therapeutic_indication")    # bulk JSON
+                or item.get("summary")
+                or item.get("description")
+            ),
         }
 
     @staticmethod
