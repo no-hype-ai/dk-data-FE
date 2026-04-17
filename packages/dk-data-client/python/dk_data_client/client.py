@@ -11,6 +11,8 @@ server, or falling through to an upstream source.
 
 from __future__ import annotations
 
+import asyncio
+import random
 import time
 from datetime import UTC
 from typing import Any, Literal
@@ -74,6 +76,34 @@ METHOD_TIMEOUTS: dict[str, float] = {
     "dataSources": 2.0,
     "serverInfo": 2.0,
 }
+
+# Upper bound on the Retry-After delay we honor automatically. Beyond
+# this we still retry, but we don't block the caller for longer than
+# this — the explicit exception (DkDataRateLimitError on 429 with
+# retry_after still populated) lets the caller decide to wait longer.
+_RETRY_AFTER_CAP_SECONDS: float = 5.0
+# Default delay when Retry-After is missing or unparseable.
+_RETRY_AFTER_DEFAULT_SECONDS: float = 1.0
+
+
+def _parse_retry_after(value: str | None) -> float:
+    """Parse the Retry-After header, capped at _RETRY_AFTER_CAP_SECONDS.
+
+    Accepts the HTTP Retry-After value as a delta-seconds integer (per
+    RFC 7231). HTTP-date form is rare in practice for 503/429 and is
+    not honored here — we fall back to the default delay. An unparseable
+    value also falls back to the default rather than raising so a
+    misbehaving server cannot surface as a client exception.
+    """
+    if value is None:
+        return _RETRY_AFTER_DEFAULT_SECONDS
+    try:
+        delta = float(value)
+    except ValueError:
+        return _RETRY_AFTER_DEFAULT_SECONDS
+    if delta < 0:
+        return _RETRY_AFTER_DEFAULT_SECONDS
+    return min(delta, _RETRY_AFTER_CAP_SECONDS)
 
 
 class DkDataClient:
@@ -410,19 +440,48 @@ class DkDataClient:
         # lets fast paths (resolve=2s) bail out before a slow path
         # (competitive_landscape=30s) ties up the connection.
         request_timeout = method_timeout if method_timeout is not None else self._timeout
-        try:
-            response = await self._http.request(
-                http_method,
-                path,
-                params=params,
-                json=json_body,
-                timeout=request_timeout,
-            )
-        except httpx.HTTPError as e:
-            raise DkDataServerError(
-                f"transport error calling {path}: {e}", status_code=0
-            ) from e
 
+        # One automatic retry with backoff on transient failures (issue
+        # #281). Caller owns any further retry strategy. Retries fire
+        # only on:
+        #   * transport errors (connection reset, timeout) — 0.5s + 0-0.5s
+        #     jitter
+        #   * 503 + Retry-After — wait header seconds, capped at 5s
+        #   * 429 + Retry-After — wait header seconds, capped at 5s
+        # Explicitly NOT retried: 401/403/404 (semantic), 410 (stale is
+        # a state not a transient failure), 5xx other than 503, 2xx/3xx.
+        response: httpx.Response | None = None
+        for attempt in range(2):  # initial + at most 1 retry
+            try:
+                response = await self._http.request(
+                    http_method,
+                    path,
+                    params=params,
+                    json=json_body,
+                    timeout=request_timeout,
+                )
+            except httpx.HTTPError as e:
+                if attempt == 0:
+                    # Transport error on the first try — back off briefly
+                    # and retry once. Jitter avoids dogpiling an upstream
+                    # that is coming back up after a brief blip.
+                    await asyncio.sleep(0.5 + random.random() * 0.5)
+                    continue
+                raise DkDataServerError(
+                    f"transport error calling {path}: {e}", status_code=0
+                ) from e
+
+            # Respect Retry-After on 503 (load-shed) and 429 (rate
+            # limit). Cap at 5s so a misconfigured server can't wedge
+            # the caller indefinitely.
+            if attempt == 0 and response.status_code in (503, 429):
+                delay = _parse_retry_after(response.headers.get("Retry-After"))
+                await asyncio.sleep(delay)
+                continue
+
+            break
+
+        assert response is not None  # loop exits with either response set or raise
         return self._raise_for_status(response, path=path)
 
     def _raise_for_status(self, response: httpx.Response, *, path: str) -> Any:
