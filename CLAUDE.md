@@ -50,7 +50,7 @@ Configured for: claude
 - `mol_raw`, `mol_bronze`, `mol_silver`, `mol_gold`, `mol_api` — Molecule / drug / compound data
 - `hcs_raw`, `hcs_bronze`, `hcs_silver`, `hcs_gold` — Healthcare system / CMS / provider data
 - `ind_raw`, `ind_bronze`, `ind_silver`, `ind_gold` — Indication / disease / epidemiology data
-- `hcp_silver`, `hcp_gold` — Healthcare professional / KOL / researcher data
+- `hcp_raw`, `hcp_silver`, `hcp_gold` — Healthcare professional / KOL / researcher data
 - `ip_raw`, `ip_bronze`, `ip_silver`, `ip_gold`, `ip_api` — Intellectual property / patents / trademarks / designs
 
 **Rule**: every new table, view, function, or materialized view lives in a domain-prefixed schema. If you find yourself wanting to put something in `api`, `public`, or an unprefixed name, stop and pick the right domain first.

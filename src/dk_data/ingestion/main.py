@@ -93,7 +93,10 @@ from .sources.cms_claim_type_puf import load_cms_claim_type_puf
 from .sources.cms_utilization_puf import load_cms_utilization_puf
 from .sources.cms_cost_reports_puf import load_cms_cost_reports_puf
 from .sources.cms_cost_reports_puf_lines import load_cms_cost_reports_puf_lines
+from .sources.ema_epar import load_ema_epar_data
 from .sources.ema_mol import load_ema_mol_data
+from .sources.health_canada_dpd import load_health_canada_dpd_data
+from .sources.research_orgs_ror import load_research_orgs_ror_data
 from .sources.orange_book import load_orange_book_data
 from .sources.dailymed import load_dailymed_data
 from .sources.fda_drugs import load_fda_drugs_data
@@ -199,7 +202,10 @@ from .fetchers import (
     CMSCostReportsPUFFetcher,
     CMSCostReportsPUFLinesFetcher,
     HRSAFetcher,
+    EMAEparFetcher,
     EMAMolFetcher,
+    HealthCanadaDPDFetcher,
+    ResearchOrgsRORFetcher,
     OrangeBookFetcher,
     DailyMedFetcher,
     FDADrugsFetcher,
@@ -1164,6 +1170,31 @@ SOURCES = {
         'loader': load_cms_vbp_data,
         'requires_file': False,
         'default_days_back': None,
+    },
+    # --- Wave B: HCP / research sources ---
+    'ema_epar': {
+        'name': 'EMA EPAR Assessment Reports',
+        'description': 'EMA European Public Assessment Reports (EPAR) — procedure-level assessment data',
+        'fetcher': EMAEparFetcher,
+        'loader': load_ema_epar_data,
+        'requires_file': False,
+        'default_days_back': None,  # Bulk snapshot — full CSV every run
+    },
+    'health_canada_dpd': {
+        'name': 'Health Canada DPD',
+        'description': 'Health Canada Drug Product Database — drug products, ingredients, companies',
+        'fetcher': HealthCanadaDPDFetcher,
+        'loader': load_health_canada_dpd_data,
+        'requires_file': False,
+        'default_days_back': None,  # Bulk snapshot — full ZIP every run
+    },
+    'research_orgs_ror': {
+        'name': 'Research Organization Registry (ROR)',
+        'description': 'ROR research organisation data — ~110k institutions from Zenodo data dump',
+        'fetcher': ResearchOrgsRORFetcher,
+        'loader': load_research_orgs_ror_data,
+        'requires_file': False,
+        'default_days_back': None,  # Bulk snapshot — full JSON dump every run
     },
 }
 

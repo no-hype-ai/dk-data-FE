@@ -41,6 +41,19 @@ See:
 | `load_order.py` | `SOURCE_LOAD_ORDER`, `WAL_MODE_TABLES`, `plan_load()`, `propagate_blocked()` |
 | `wal_throttle.py` | `WalThrottle` gate against `meta.wal_usage` |
 
+## Wave B: HCP / research sources
+
+Three new sources onboarded in `wave-b/hcp-research-sources`:
+
+| Source key | Schema.Table | Origin | Fetcher | Schedule |
+|---|---|---|---|---|
+| `ema_epar` | `mol_raw.ema_epar` | EMA EPAR assessment reports (bulk CSV) | `EMAEparFetcher` | Monthly |
+| `health_canada_dpd` | `mol_raw.health_canada_dpd` | Health Canada Drug Product Database (ZIP of pipe-delimited TXT) | `HealthCanadaDPDFetcher` | Monthly |
+| `research_orgs_ror` | `hcp_raw.research_orgs_ror` | Research Organization Registry via Zenodo JSON dump (~110k orgs) | `ResearchOrgsRORFetcher` | Monthly |
+
+`hcp_raw` schema created by migration 235. The ROR source is the first
+to land in the HCP domain raw layer.
+
 ## Tests
 
 | Path | Speed | What |

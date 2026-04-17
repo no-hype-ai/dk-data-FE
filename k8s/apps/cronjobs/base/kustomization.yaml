@@ -181,6 +181,10 @@ resources:
   - cronjob-agent-staffing-decomposition.yaml
   # PubChem extended enrichment (synonyms, xrefs, safety) — monthly
   - cronjob-load-pubchem-extended.yaml
+  # Wave B: HCP / research sources — monthly
+  - cronjob-fetch-ema-epar.yaml
+  - cronjob-fetch-health-canada-dpd.yaml
+  - cronjob-fetch-research-orgs-ror.yaml
   # Gold view refresh (runs after nightly data loads)
   - cronjob-cms-gold-refresh.yaml
   - molecule-pipeline-config.yaml
