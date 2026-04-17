@@ -105,6 +105,10 @@ from .npi_registry import NPIRegistryFetcher
 from .purple_book import PurpleBookFetcher
 from .reactome import ReactomeFetcher
 from .who_gho import WHOGHOFetcher
+from .who_ghed import WHOGHEDFetcher
+from .worldbank_health import WorldBankHealthFetcher
+from .oecd_health import OECDHealthFetcher
+from .pbs_australia import PBSAustraliaFetcher
 from .nice_hta import NICEHTAFetcher
 from .cms_medicare import CMSMedicareFetcher
 from .cms_coverage import CMSCoverageFetcher
@@ -219,6 +223,10 @@ __all__ = [
     'PurpleBookFetcher',
     'ReactomeFetcher',
     'WHOGHOFetcher',
+    'WHOGHEDFetcher',
+    'WorldBankHealthFetcher',
+    'OECDHealthFetcher',
+    'PBSAustraliaFetcher',
     'NICEHTAFetcher',
     'CMSMedicareFetcher',
     'CMSCoverageFetcher',

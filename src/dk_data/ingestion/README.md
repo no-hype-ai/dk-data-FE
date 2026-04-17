@@ -54,6 +54,17 @@ Three new sources onboarded in `wave-b/hcp-research-sources`:
 `hcp_raw` schema created by migration 235. The ROR source is the first
 to land in the HCP domain raw layer.
 
+## International health data sources (wave-b)
+
+| Source | Schema.Table | Fetcher | Loader | Schedule |
+|--------|-------------|---------|--------|----------|
+| WHO GHED | `hcs_raw.who_ghed` | `fetchers/who_ghed.py` | `sources/who_ghed.py` | Annual (Jan 15) |
+| World Bank Health | `hcs_raw.worldbank_health` | `fetchers/worldbank_health.py` | `sources/worldbank_health.py` | Annual (Feb 1) |
+| OECD Health | `hcs_raw.oecd_health` | `fetchers/oecd_health.py` | `sources/oecd_health.py` | Annual (Jul 15) |
+| PBS Australia | `mol_raw.pbs_australia` | `fetchers/pbs_australia.py` | `sources/pbs_australia.py` | Monthly (3rd) |
+
+All four are T1 free/open sources with no authentication required.
+
 ## Tests
 
 | Path | Speed | What |
