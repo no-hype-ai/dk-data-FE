@@ -1,0 +1,7 @@
+# Grafana folders for dk-data-FE dashboards.
+# The sync script creates these before pushing dashboards.
+# The `applications` folder already exists in Grafana (created by dk-alchemy),
+# but we declare it here so our sync is self-contained.
+folders:
+  - uid: applications
+    title: Applications
