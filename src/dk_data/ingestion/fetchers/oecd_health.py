@@ -166,8 +166,8 @@ class OECDHealthFetcher(BaseFetcher):
         observations = datasets[0].get("observations", {})
         # Dimensions are encoded as colon-separated keys
         dimensions = data.get("structure", {}).get("dimensions", {})
-        obs_dims = dimensions.get("observation", [])
-        series_dims = dimensions.get("series", [])
+        _obs_dims = dimensions.get("observation", [])  # noqa: F841 — reserved for SDMX dimension parsing
+        _series_dims = dimensions.get("series", [])  # noqa: F841 — reserved for SDMX dimension parsing
 
         for obs_key, obs_values in observations.items():
             if len(records) >= max_records:
