@@ -118,6 +118,10 @@ from .sources.npi_registry import load_npi_registry_data
 from .sources.purple_book import load_purple_book_data
 from .sources.reactome import load_reactome_data
 from .sources.who_gho import load_who_gho_data
+from .sources.who_ghed import load_who_ghed_data
+from .sources.worldbank_health import load_worldbank_health_data
+from .sources.oecd_health import load_oecd_health_data
+from .sources.pbs_australia import load_pbs_australia_data
 from .sources.nice_hta import load_nice_hta_data
 from .sources.cms_medicare import load_cms_medicare_data
 from .sources.cms_coverage import load_cms_coverage_data
@@ -227,6 +231,10 @@ from .fetchers import (
     PurpleBookFetcher,
     ReactomeFetcher,
     WHOGHOFetcher,
+    WHOGHEDFetcher,
+    WorldBankHealthFetcher,
+    OECDHealthFetcher,
+    PBSAustraliaFetcher,
     NICEHTAFetcher,
     CMSMedicareFetcher,
     CMSCoverageFetcher,
@@ -1121,6 +1129,39 @@ SOURCES = {
         'loader': load_who_gho_data,
         'requires_file': False,
         'default_days_back': None,
+    },
+    # --- International health expenditure sources (wave-b) ---
+    'who_ghed': {
+        'name': 'WHO Global Health Expenditure Database',
+        'description': 'WHO GHED country-level health expenditure indicators (CHE, OOP, govt share)',
+        'fetcher': WHOGHEDFetcher,
+        'loader': load_who_ghed_data,
+        'requires_file': False,
+        'default_days_back': None,  # Annual bulk dataset, no incremental
+    },
+    'worldbank_health': {
+        'name': 'World Bank Health Indicators',
+        'description': 'World Bank health expenditure and outcomes (% GDP, per-capita, life expectancy)',
+        'fetcher': WorldBankHealthFetcher,
+        'loader': load_worldbank_health_data,
+        'requires_file': False,
+        'default_days_back': None,  # Annual indicators, full refresh
+    },
+    'oecd_health': {
+        'name': 'OECD Health Statistics',
+        'description': 'OECD SHA health expenditure data via SDMX (37 member countries)',
+        'fetcher': OECDHealthFetcher,
+        'loader': load_oecd_health_data,
+        'requires_file': False,
+        'default_days_back': None,  # Annual bulk dataset, no incremental
+    },
+    'pbs_australia': {
+        'name': 'PBS Australia Schedule',
+        'description': 'Australian Pharmaceutical Benefits Scheme drug schedule (pricing, restrictions)',
+        'fetcher': PBSAustraliaFetcher,
+        'loader': load_pbs_australia_data,
+        'requires_file': False,
+        'default_days_back': None,  # Monthly schedule update
     },
     'nice_hta': {
         'name': 'NICE HTA Guidance',

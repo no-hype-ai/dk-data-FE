@@ -1,0 +1,49 @@
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: ingest-oecd-health
+  namespace: dk-data-prod
+  labels:
+    app: dk-data-ingestion
+    source: oecd-health
+    domain: hcs
+  annotations:
+    description: |
+      Annual refresh of OECD Health Statistics (SHA dataset).
+      OECD publishes updated SHA data annually (typically June/July).
+      Schedule: Jul 15 03:00 UTC.
+spec:
+  schedule: "0 3 15 7 *"          # 03:00 UTC on Jul 15 — annual
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 5
+  startingDeadlineSeconds: 600
+  jobTemplate:
+    spec:
+      backoffLimit: 2
+      ttlSecondsAfterFinished: 604800
+      template:
+        spec:
+          restartPolicy: Never
+          containers:
+            - name: ingest
+              image: ghcr.io/data-kinetic/dk-data:prod-latest
+              command:
+                - python
+                - -m
+                - dk_data.ingestion.main
+                - --source
+                - oecd_health
+              env:
+                - name: PG_URL
+                  valueFrom:
+                    secretKeyRef:
+                      name: dk-data-db
+                      key: url
+              resources:
+                requests:
+                  cpu: 250m
+                  memory: 256Mi
+                limits:
+                  cpu: "1"
+                  memory: 1Gi
