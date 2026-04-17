@@ -24,9 +24,22 @@ from .base import BaseFetcher
 
 logger = logging.getLogger(__name__)
 
-_EPAR_CSV_URL = (
+_EPAR_URLS = [
+    # Primary: XLSX endpoint (same pattern as the working ema_mol.py fetcher)
+    ("https://www.ema.europa.eu/en/documents/report/"
+     "medicines-output-european-public-assessment-reports_en.xlsx", "xlsx"),
+    # Fallback: CSV variant (returned 404 on 2026-04-17; keep for retry)
+    ("https://www.ema.europa.eu/en/documents/report/"
+     "medicines-output-european-public-assessment-reports_en.csv", "csv"),
+    # Legacy: older URL pattern that EMA sometimes redirects to
+    ("https://www.ema.europa.eu/sites/default/files/"
+     "Medicines_output_european_public_assessment_reports.xlsx", "xlsx"),
+]
+# Keep single-URL compat for source_url property
+_EPAR_CSV_URL = _EPAR_URLS[0][0]
+_EPAR_PRIMARY_URL = (
     "https://www.ema.europa.eu/en/documents/report/"
-    "medicines-output-european-public-assessment-reports_en.csv"
+    "medicines-output-european-public-assessment-reports_en.xlsx"
 )
 
 
@@ -48,8 +61,24 @@ class EMAEparFetcher(BaseFetcher):
         max_records: Optional[int] = kwargs.get("max_records")
 
         try:
-            logger.info("EMA EPAR: downloading CSV from %s", _EPAR_CSV_URL)
-            resp = self.session.get(_EPAR_CSV_URL, timeout=120)
+            resp = None
+            used_url = None
+            for url, fmt in _EPAR_URLS:
+                logger.info("EMA EPAR: trying %s (%s)", url, fmt)
+                try:
+                    resp = self.session.get(url, timeout=120)
+                    if resp.status_code == 200:
+                        used_url = url
+                        logger.info("EMA EPAR: success from %s (%d bytes)", url, len(resp.content))
+                        break
+                    logger.warning("EMA EPAR: %s returned %d, trying next", url, resp.status_code)
+                except Exception as exc:
+                    logger.warning("EMA EPAR: %s failed (%s), trying next", url, exc)
+            if resp is None or resp.status_code != 200:
+                logger.error("EMA EPAR: all URLs exhausted, source unavailable")
+                return {"status": "source_unavailable", "records": [], "error": "all EMA EPAR URLs returned non-200"}
+            # Use the successful response
+            _EPAR_CSV_URL_USED = used_url  # noqa: F841 — for debug logging
             resp.raise_for_status()
 
             content = resp.content
