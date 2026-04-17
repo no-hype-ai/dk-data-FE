@@ -105,6 +105,9 @@ from .who_gho import WHOGHOFetcher
 from .nice_hta import NICEHTAFetcher
 from .cms_medicare import CMSMedicareFetcher
 from .cms_coverage import CMSCoverageFetcher
+from .cms_hac_reduction import CMSHACReductionFetcher
+from .cms_hrrp import CMSHRRPFetcher
+from .cms_vbp import CMSVBPFetcher
 
 __all__ = [
     'BaseFetcher',
@@ -213,4 +216,7 @@ __all__ = [
     'NICEHTAFetcher',
     'CMSMedicareFetcher',
     'CMSCoverageFetcher',
+    'CMSHACReductionFetcher',
+    'CMSHRRPFetcher',
+    'CMSVBPFetcher',
 ]

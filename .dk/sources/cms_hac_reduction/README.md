@@ -3,7 +3,7 @@
 **Domain:** hcs
 **Tier:** T1 — free CMS provider-data portal CSV, no auth
 **Fetch:** http_csv, annual
-**Status:** stub — tracking issue: #324
+**Status:** fetcher_ready — tracking issue: #324
 
 ## Purpose
 CMS Hospital-Acquired Condition (HAC) Reduction Program publishes annual penalties for hospitals in the worst-performing quartile on HAC measures (CLABSI, CAUTI, SSI, MRSA, CDI, PSI 90). Landing this alongside HRRP and VBP completes dk-data's hospital-quality trio and feeds facility scorecards consumed by drug-product commercial teams and payer coverage analytics in `hcs_gold`.

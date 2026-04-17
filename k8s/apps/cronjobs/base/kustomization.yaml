@@ -167,6 +167,10 @@ resources:
   - cronjob-fetch-who-gho.yaml
   - cronjob-fetch-nice-hta.yaml
   - cronjob-fetch-cms-coverage.yaml
+  # CMS hospital quality trio (HAC / HRRP / VBP) — annual
+  - cronjob-fetch-cms-hac-reduction.yaml
+  - cronjob-fetch-cms-hrrp.yaml
+  - cronjob-fetch-cms-vbp.yaml
   # Silver enrichment agents (7 files)
   - cronjob-agent-contact-verification.yaml
   - cronjob-agent-equipment-inventory.yaml
