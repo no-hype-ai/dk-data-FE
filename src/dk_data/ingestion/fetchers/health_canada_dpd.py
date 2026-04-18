@@ -9,7 +9,7 @@ Primary URL:
   drug-products/drug-product-database/extracts.html
 
 The all-files ZIP URL (allfiles.zip) bundles every extract:
-  https://health-products.canada.ca/api/drug/allfiles?type=allfiles&lang=en
+  https://open.canada.ca/data/dataset/.../download/allfiles.zip (Open Government Portal)
 
 Each TXT file is pipe-delimited (|) with a header row.
 All files are concatenated into a single record list, tagged with their
@@ -34,7 +34,8 @@ from .base import BaseFetcher
 logger = logging.getLogger(__name__)
 
 _ALLFILES_URL = (
-    "https://health-products.canada.ca/api/drug/allfiles?type=allfiles&lang=en"
+    "https://open.canada.ca/data/dataset/bf55e42a-63cb-4556-bfd8-44f26e5a36fe/"
+    "resource/b05ae610-0366-478f-993f-b4afbdaadbc6/download/allfiles.zip"
 )
 
 # Expected TXT files inside the ZIP and their human-readable labels
