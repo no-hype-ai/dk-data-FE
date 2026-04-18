@@ -87,12 +87,12 @@ def check_wal_circuit_breaker(
         cur.execute(
             "SELECT COALESCE(SUM(size), 0) / 1024.0 / 1024.0 FROM pg_ls_waldir()"
         )
-        wal_dir_mb = cur.fetchone()[0] or 0
+        wal_dir_mb = float(cur.fetchone()[0] or 0)
 
         cur.execute(
             "SELECT setting::numeric FROM pg_settings WHERE name = 'max_wal_size'"
         )
-        max_wal_mb = cur.fetchone()[0] or 4096
+        max_wal_mb = float(cur.fetchone()[0] or 4096)
 
         if wal_dir_mb > max_wal_mb * max_wal_pct:
             msg = (
