@@ -104,3 +104,35 @@
 **Root cause**: ArgoCD's `selfHeal: true` + `prune: true` is designed to enforce Git as the single source of truth. Editing live resources during an incident works against that contract by design — the controller will always win the race. The instinct to "just patch it" was wrong for the tool in use.
 **Lesson**: When ArgoCD is reconciling pods onto a bad node, do not edit the `Application` or the live resource. Instead: `kubectl cordon <bad-node>` → ArgoCD's next reconcile will reschedule the pod onto a healthy node (it re-evaluates placement on every sync, because the old node is no longer schedulable) → once the underlying issue is fixed, `kubectl uncordon <bad-node>`. This respects the GitOps contract and achieves the same operational outcome in seconds rather than hours. Documented in plan.md §B.6 and shipping as `docs/runbooks/cnpg-operator-deadlock.md` in PR-05.
 **Tags**: argocd, selfheal, cnpg, incident-response, runbook
+
+## 2026-04-17 — Wave B raw table schema mismatch blocks all new source INSERTs
+
+**Context**: 15 new data sources onboarded via Wave B (5 parallel worker PRs). Each source had a fetcher, loader, CronJob, and descriptor. Migration 236 created raw tables with a minimal schema (id, api_endpoint, response_body, source_year, ingested_at).
+**What happened**: First CronJob run for `cms_hac_reduction` failed with "current transaction is aborted, commands ignored until end of transaction block." All 9 Wave B raw tables had the same issue — zero rows loaded.
+**Root cause**: The Wave B loaders use the standard raw-layer INSERT pattern (request_id, response_status, response_body_hash for idempotency, source_id for lineage) but migration 236 created tables with only 5 columns. The first INSERT fails on "column does not exist," PostgreSQL aborts the transaction, and all subsequent INSERTs in the same batch fail silently.
+**Lesson**: When generating fetcher code and table schemas in parallel workers, verify the INSERT column list matches the CREATE TABLE schema BEFORE merging. A quick `diff <(grep INSERT loader.py) <(grep CREATE migration.sql)` catches this. Fixed via migration 237 (ALTER TABLE ADD COLUMN IF NOT EXISTS for all 9 tables).
+**Tags**: wave-b, schema-mismatch, parallel-workers, migration, raw-layer
+
+## 2026-04-17 — ArgoCD blocks sync on never-run Jobs (health-wait deadlock)
+
+**Context**: Horizon 3 shipped a per-source Job dispatcher (62 Job manifests) managed by ArgoCD with `selfHeal: true, prune: true`.
+**What happened**: ArgoCD created all 62 Jobs on the first sync but then blocked indefinitely: "waiting for healthy state of batch/Job/hydrate-dispatch and 186 more resources." The sync never completed, blocking all subsequent manifest deployments.
+**Root cause**: ArgoCD treats batch/Jobs as "Progressing" health until the Pod reaches a terminal state (Succeeded/Failed). Never-triggered Jobs have no Pod, so they're permanently "Progressing." With 62 Jobs in this state, the sync's health aggregation never reaches "Healthy."
+**Lesson**: One-shot Jobs (dispatchers, hydration runs) should NOT be ArgoCD-managed resources. Keep RBAC (ServiceAccount, Role, RoleBinding) in kustomize for ArgoCD to sync; keep the Jobs themselves out of the kustomize tree and trigger manually via `kubectl apply` or `dk data hydrate run`. This matches the existing CronJob-as-template pattern (CronJobs are created by ArgoCD; individual Job runs are spawned from them).
+**Tags**: argocd, jobs, health-check, sync-deadlock, dispatcher
+
+## 2026-04-17 — CI image build succeeds but manifest push blocked by branch protection
+
+**Context**: `.github/workflows/build-deploy.yaml` builds the Docker image and tags it, then commits the new image tag to `k8s/overlays/*/kustomization.yaml` and pushes directly to main.
+**What happened**: Image built and pushed to ghcr.io successfully, but the "Commit and push manifest updates" step failed: "GH006: Protected branch update failed — Changes must be made through a pull request."
+**Root cause**: dk-alchemy #650 (staging branch) applied branch protection rules to main requiring PRs. The default `GITHUB_TOKEN` in GitHub Actions cannot bypass branch protection, even with `contents: write` permission.
+**Lesson**: When branch protection is active, CI manifest-update steps must create a PR instead of pushing directly. Or configure a GitHub App with bypass permissions. For now, manual image-tag updates via `sed + git push` work (human pushes bypass protection). The CI fix (PR-based manifest update) is committed but deferred.
+**Tags**: ci-cd, branch-protection, github-actions, image-tag, manifest-update
+
+## 2026-04-17 — Grafana API key needs Admin role for folder creation
+
+**Context**: Dashboard sync workflow pushes 12 dashboards to Grafana via the REST API. The `GRAFANA_API_KEY` in Doppler was expired (HTTP 401).
+**What happened**: Created a new service account with "Editor" role — key worked for API auth (HTTP 200) but dashboard sync failed: "Forbidden — insufficient permissions." All 12 dashboards rejected.
+**Root cause**: The sync script creates/updates folders before pushing dashboards. Folder creation requires Grafana "Admin" role, not "Editor." The service account had Editor scope.
+**Lesson**: Grafana service accounts for dashboard-sync automation need Admin role (not Editor). After upgrading the SA role via `PATCH /api/serviceaccounts/<id>`, the sync succeeded. Store the key in Doppler at `dk-infrastructure/prd/GRAFANA_API_KEY`.
+**Tags**: grafana, api-key, dashboard-sync, doppler, permissions
