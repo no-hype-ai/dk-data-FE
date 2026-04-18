@@ -30,7 +30,7 @@ spec:
           restartPolicy: Never
           containers:
             - name: hydrate
-              image: ghcr.io/data-kinetic/dk-data:prod-latest   # overlay overrides this
+              image: ghcr.io/data-kinetic/dk-data-fe/job-trigger:main-937c9f6   # overlay overrides this
               command:
                 - python
                 - -m

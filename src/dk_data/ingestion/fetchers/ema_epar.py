@@ -25,13 +25,13 @@ from .base import BaseFetcher
 logger = logging.getLogger(__name__)
 
 _EPAR_URLS = [
-    # Primary: XLSX endpoint (same pattern as the working ema_mol.py fetcher)
+    # Primary: /system/files/ path (confirmed working 2026-04-18, XLSX 607KB)
+    ("https://www.ema.europa.eu/system/files/documents/other/"
+     "medicines_output_european_public_assessment_reports_en.xlsx", "xlsx"),
+    # Fallback: /en/documents/report/ path (returned 404/429 as of 2026-04-17)
     ("https://www.ema.europa.eu/en/documents/report/"
      "medicines-output-european-public-assessment-reports_en.xlsx", "xlsx"),
-    # Fallback: CSV variant (returned 404 on 2026-04-17; keep for retry)
-    ("https://www.ema.europa.eu/en/documents/report/"
-     "medicines-output-european-public-assessment-reports_en.csv", "csv"),
-    # Legacy: older URL pattern that EMA sometimes redirects to
+    # Legacy: old /sites/default/files/ path
     ("https://www.ema.europa.eu/sites/default/files/"
      "Medicines_output_european_public_assessment_reports.xlsx", "xlsx"),
 ]

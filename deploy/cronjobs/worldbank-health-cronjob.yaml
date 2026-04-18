@@ -27,7 +27,7 @@ spec:
           restartPolicy: Never
           containers:
             - name: ingest
-              image: ghcr.io/data-kinetic/dk-data:prod-latest
+              image: ghcr.io/data-kinetic/dk-data-fe/job-trigger:main-937c9f6
               command:
                 - python
                 - -m
