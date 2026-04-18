@@ -136,3 +136,11 @@
 **Root cause**: The sync script creates/updates folders before pushing dashboards. Folder creation requires Grafana "Admin" role, not "Editor." The service account had Editor scope.
 **Lesson**: Grafana service accounts for dashboard-sync automation need Admin role (not Editor). After upgrading the SA role via `PATCH /api/serviceaccounts/<id>`, the sync succeeded. Store the key in Doppler at `dk-infrastructure/prd/GRAFANA_API_KEY`.
 **Tags**: grafana, api-key, dashboard-sync, doppler, permissions
+
+## 2026-04-18 — WAL circuit breaker correctly blocks transforms when archiver is broken
+
+**Context**: All SQLMesh transforms (bronze/silver/gold) complete in 5-7 seconds with "Status: skipped — WAL circuit breaker open." Investigated assuming the breaker was misconfigured since WAL pressure was 0.39%.
+**What happened**: The WAL pressure view (`meta.wal_pressure`) showed 0.39% — but that measures current write rate against max_wal_size. The circuit breaker (`wal_metrics.py`) checks `pg_stat_archiver` for RECENT archiver failures, which is a completely different signal. The archiver had 1,944 failures with the last within 30 minutes, and WAL had accumulated to 23GB (5.75× over the 4GB max).
+**Root cause**: Barman→SeaweedFS WAL archiving was broken (dk-alchemy #648 closed prematurely). The archiver couldn't ship WAL segments to S3, so they accumulated. The circuit breaker correctly detected this via `pg_stat_archiver.last_failed_time` and blocked all transforms to prevent generating MORE unarchivable WAL.
+**Lesson**: WAL "pressure" (pct of max_wal_size consumed by current write rate) and WAL "archiver health" (can segments be shipped to backup storage) are orthogonal signals. A system can have low pressure but a broken archiver — or high pressure with a healthy archiver. The circuit breaker checks BOTH, which is correct. Don't override it just because one signal looks fine.
+**Tags**: wal, circuit-breaker, archiver, sqlmesh, transforms, barman, seaweedfs
