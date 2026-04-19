@@ -40,6 +40,18 @@ spec:
       # well above the 10s statement timeout, so any in-flight
       # query has time to finish or be killed by the timeout.
       terminationGracePeriodSeconds: 60
+      # Control-plane taint toleration (dk-alchemy/003 Phase 4, scope of #696).
+      # Matches dk-alchemy's node.datakinetic.com/role=control-plane:NoSchedule
+      # on k3s-master-1 so a postgrest pod that restarts or reschedules can
+      # still land on master-1 as a last resort rather than stranding Pending.
+      # Defensive only: scheduler still prefers dk.role=general nodes when
+      # available (see podAntiAffinity below). See
+      # data-kinetic/dk-alchemy/docs/runbooks/node-taints.md.
+      tolerations:
+        - key: node.datakinetic.com/role
+          operator: Equal
+          value: control-plane
+          effect: NoSchedule
       securityContext:
         runAsNonRoot: true
         runAsUser: 1000

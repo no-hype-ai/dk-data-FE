@@ -1,0 +1,276 @@
+# Dual-branch build for dk-data-fe / job-trigger image.
+#
+# Feature: dk-alchemy feature/003 Phase 4 (staging-branch adoption, T039-T048).
+# See: data-kinetic/dk-alchemy .dk/specs/003-staging-branch-adoption/memory/phase-4-decisions.md
+#
+# Why this file is named `build-dk-data-fe.yaml` (and not `build-deploy.yaml`):
+#
+# * The dk-alchemy consumer-enrollment-check reusable workflow globs for
+#   `.github/workflows/build-*.yaml` when probing the `dual-branch-ci`
+#   invariant (see `scripts/dk-alchemy-3/phase5_5_audit.py::_check_dual_branch_ci`).
+#   A file literally named `build-deploy.yaml` matches the glob, but
+#   keeping it that way blocked the status-check-name contract: branch
+#   protection requires jobs called `image-build-main` and
+#   `image-build-staging`. The minimum-viable rename preserves the
+#   contract alignment with platform-api (Phase 2) and surgeo (Phase 3).
+#
+# What changed vs. the old build-deploy.yaml (FR-004 + FR-006):
+#
+# * Pre-Phase-4: a single build-and-push job ran on pushes to BOTH
+#   branches AND wrote the built tag ALWAYS into
+#   `k8s/overlays/staging/kustomization.yaml` -- so pushing to main
+#   overwrote the staging overlay's image tag. That crossed the
+#   atomic-filter-split invariant (FR-006): main-derived tags ended up
+#   in staging's image ref, and the `promote-to-prod.yaml` workflow had
+#   to read them back out of the staging overlay to derive a prod tag.
+# * Post-Phase-4: two disjoint jobs gated on `github.ref`:
+#     - `image-build-main`    runs on push to main, writes to
+#       `k8s/overlays/prod/kustomization.yaml` with a `main-<sha>` tag.
+#     - `image-build-staging` runs on push to staging, writes to
+#       `k8s/overlays/staging/kustomization.yaml` with a `staging-<sha>`
+#       tag. Staging-derived tags never touch the prod overlay, and
+#       main-derived tags never touch the staging overlay.
+#
+# Preserved (mature pattern -- wrap, not replace):
+#
+# * The manifest-commit-via-PR promotion model carries over from the
+#   old workflow. dk-alchemy/platform-api uses ArgoCD image-updater
+#   instead, but dk-data-fe predates that pattern and the PR-driven
+#   model is actually more auditable.
+# * `promote-to-prod.yaml` (release-like crane-retag at main-merge
+#   time) is **untouched** by this PR. A Stage 6C operator decision
+#   will determine whether it coexists with main->prod direct writes
+#   (likely redundant after Phase 4) or is deprecated. Flagged in
+#   dk-alchemy/memory/phase-4-decisions.md F1 so downstream phases
+#   don't regress the finding.
+#
+# Security note: every shell `run:` block consumes values through
+# env-bound variables. No `${{ github.event.* }}` string interpolation
+# reaches a shell command -- see
+# https://github.blog/security/vulnerability-research/how-to-catch-github-actions-workflow-injections-before-attackers-do/
+
+name: Build and Push dk-data-fe Image
+
+on:
+  push:
+    branches:
+      - main
+      - staging
+  pull_request:
+    branches:
+      - main
+      - staging
+    paths:
+      - 'src/**'
+      - 'Dockerfile'
+      - 'pyproject.toml'
+      - 'uv.lock'
+      - 'k8s/overlays/**'
+      - '.github/workflows/build-dk-data-fe.yaml'
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: data-kinetic/dk-data-fe/job-trigger
+
+jobs:
+  # -------------------------------------------------------------------
+  # image-build-main -- runs on push to main, writes prod overlay
+  # -------------------------------------------------------------------
+  image-build-main:
+    name: image-build-main
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      packages: write
+      pull-requests: write
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          lfs: true
+
+      - name: Set short SHA
+        id: vars
+        env:
+          HEAD_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          SHORT="${HEAD_SHA:0:7}"
+          echo "sha_short=${SHORT}" >> "$GITHUB_OUTPUT"
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Extract metadata (main)
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          tags: |
+            type=raw,value=main-${{ steps.vars.outputs.sha_short }}
+            type=raw,value=latest
+
+      - name: Build and push Docker image (main)
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: Dockerfile
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+
+      - name: Update prod overlay image tag
+        env:
+          NEW_TAG: main-${{ steps.vars.outputs.sha_short }}
+        run: |
+          set -euo pipefail
+          echo "Updating prod overlay image tag to: ${NEW_TAG}"
+          cd k8s/overlays/prod
+          kustomize edit set image \
+            "ghcr.io/data-kinetic/dk-data-fe/job-trigger=ghcr.io/data-kinetic/dk-data-fe/job-trigger:${NEW_TAG}"
+
+      - name: Open manifest PR (prod overlay -> main)
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          NEW_TAG: main-${{ steps.vars.outputs.sha_short }}
+          RUN_ID: ${{ github.run_id }}
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          BRANCH="chore/prod-image-tag-${RUN_ID}"
+          git checkout -b "$BRANCH"
+          git add k8s/overlays/prod/kustomization.yaml
+          if git diff --staged --quiet; then
+            echo "no overlay change"
+            exit 0
+          fi
+          git commit -m "chore: update prod image tag to ${NEW_TAG}"
+          git push -u origin "$BRANCH"
+          gh pr create --base main \
+            --title "chore: update prod image tag to ${NEW_TAG}" \
+            --body "Auto-generated by build-dk-data-fe.yaml (image-build-main)." \
+            --label ci/cd
+          gh pr merge "$BRANCH" --squash --auto --delete-branch
+
+  # -------------------------------------------------------------------
+  # image-build-staging -- runs on push to staging, writes staging overlay
+  # -------------------------------------------------------------------
+  image-build-staging:
+    name: image-build-staging
+    if: github.event_name == 'push' && github.ref == 'refs/heads/staging'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      packages: write
+      pull-requests: write
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          lfs: true
+
+      - name: Set short SHA
+        id: vars
+        env:
+          HEAD_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          SHORT="${HEAD_SHA:0:7}"
+          echo "sha_short=${SHORT}" >> "$GITHUB_OUTPUT"
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Extract metadata (staging)
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          tags: |
+            type=raw,value=staging-${{ steps.vars.outputs.sha_short }}
+
+      - name: Build and push Docker image (staging)
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: Dockerfile
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+
+      - name: Update staging overlay image tag
+        env:
+          NEW_TAG: staging-${{ steps.vars.outputs.sha_short }}
+        run: |
+          set -euo pipefail
+          echo "Updating staging overlay image tag to: ${NEW_TAG}"
+          cd k8s/overlays/staging
+          kustomize edit set image \
+            "ghcr.io/data-kinetic/dk-data-fe/job-trigger=ghcr.io/data-kinetic/dk-data-fe/job-trigger:${NEW_TAG}"
+
+      - name: Open manifest PR (staging overlay -> staging)
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          NEW_TAG: staging-${{ steps.vars.outputs.sha_short }}
+          RUN_ID: ${{ github.run_id }}
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          BRANCH="chore/staging-image-tag-${RUN_ID}"
+          git checkout -b "$BRANCH"
+          git add k8s/overlays/staging/kustomization.yaml
+          if git diff --staged --quiet; then
+            echo "no overlay change"
+            exit 0
+          fi
+          git commit -m "chore: update staging image tag to ${NEW_TAG}"
+          git push -u origin "$BRANCH"
+          gh pr create --base staging \
+            --title "chore: update staging image tag to ${NEW_TAG}" \
+            --body "Auto-generated by build-dk-data-fe.yaml (image-build-staging)." \
+            --label ci/cd
+          gh pr merge "$BRANCH" --squash --auto --delete-branch
+
+  # -------------------------------------------------------------------
+  # pr-verify -- on pull_request only: build without pushing, ensures
+  # the Dockerfile + pyproject.toml state is buildable before merge.
+  # -------------------------------------------------------------------
+  pr-verify:
+    name: pr-verify
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: read
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          lfs: true
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build (no push) for PR verify
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: Dockerfile
+          push: false
+          tags: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:pr-verify
