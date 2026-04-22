@@ -137,6 +137,22 @@ SELECT _try_create_index('CREATE INDEX IF NOT EXISTS ip_silver_des_ident_des_idx
 SELECT _try_create_index('CREATE INDEX IF NOT EXISTS ip_silver_des_names_trgm_idx ON ip_silver.design_names USING GIN (LOWER(normalized_name) gin_trgm_ops)');
 SELECT _try_create_index('CREATE INDEX IF NOT EXISTS ip_silver_des_names_des_idx ON ip_silver.design_names (design_id)');
 
+-- ============================================================
+-- dev_silver — devices hub (12th hub, added 2026-04-21)
+-- ============================================================
+SELECT _try_create_index('CREATE UNIQUE INDEX IF NOT EXISTS dev_silver_devices_pk_idx ON dev_silver.devices (device_id)');
+SELECT _try_create_index('CREATE INDEX IF NOT EXISTS dev_silver_devices_product_code_idx ON dev_silver.devices (product_code)');
+SELECT _try_create_index('CREATE INDEX IF NOT EXISTS dev_silver_devices_device_class_idx ON dev_silver.devices (device_class)');
+SELECT _try_create_index('CREATE INDEX IF NOT EXISTS dev_silver_devices_canon_trgm_idx ON dev_silver.devices USING GIN (LOWER(canonical_name) gin_trgm_ops)');
+
+SELECT _try_create_index('CREATE UNIQUE INDEX IF NOT EXISTS dev_silver_dev_ident_src_id_idx ON dev_silver.device_identifiers (source, identifier)');
+SELECT _try_create_index('CREATE INDEX IF NOT EXISTS dev_silver_dev_ident_device_idx ON dev_silver.device_identifiers (device_id)');
+
+-- Trigram GIN powering resolve_device tier 5 (fuzzy name ≥0.85, SC-004 p99 ≤10ms)
+SELECT _try_create_index('CREATE INDEX IF NOT EXISTS dev_silver_dev_names_trgm_idx ON dev_silver.device_names USING GIN (LOWER(normalized_name) gin_trgm_ops)');
+SELECT _try_create_index('CREATE INDEX IF NOT EXISTS dev_silver_dev_names_norm_idx ON dev_silver.device_names (normalized_name)');
+SELECT _try_create_index('CREATE INDEX IF NOT EXISTS dev_silver_dev_names_device_idx ON dev_silver.device_names (device_id)');
+
 -- Cleanup helper
 DROP FUNCTION _try_create_index(text);
 

@@ -161,6 +161,16 @@ resources:
   - cronjob-fetch-chembl-molecules.yaml
   - cronjob-fetch-pubchem.yaml
   - cronjob-fetch-openfda-faers.yaml
+  # FDA medical devices (added 2026-04-21)
+  - cronjob-fetch-openfda-device-510k.yaml
+  - cronjob-fetch-openfda-device-pma.yaml
+  - cronjob-fetch-openfda-device-classification.yaml
+  # TGA Australia — Tier A (added 2026-04-21)
+  - cronjob-fetch-tga-artg-medicines.yaml
+  - cronjob-fetch-tga-artg-devices.yaml
+  - cronjob-fetch-tga-sara-recalls.yaml
+  - cronjob-fetch-tga-medicine-shortages.yaml
+  - cronjob-fetch-tga-orphan-designations.yaml
   - cronjob-fetch-npi-registry.yaml
   - cronjob-fetch-purple-book.yaml
   - cronjob-fetch-reactome.yaml

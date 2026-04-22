@@ -104,6 +104,14 @@ from .nice_hta import NICEHTAFetcher
 from .cms_medicare import CMSMedicareFetcher
 from .cms_coverage import CMSCoverageFetcher
 from .fda_orphan_designation import FDAOrphanDesignationFetcher
+from .openfda_device_510k import OpenFDADevice510kFetcher
+from .openfda_device_pma import OpenFDADevicePMAFetcher
+from .openfda_device_classification import OpenFDADeviceClassificationFetcher
+from .tga_artg_medicines import TgaArtgMedicinesFetcher
+from .tga_artg_devices import TgaArtgDevicesFetcher
+from .tga_sara_recalls import TgaSaraRecallsFetcher
+from .tga_medicine_shortages import TgaMedicineShortagesFetcher
+from .tga_orphan_designations import TgaOrphanDesignationsFetcher
 
 __all__ = [
     'BaseFetcher',
@@ -211,4 +219,12 @@ __all__ = [
     'CMSMedicareFetcher',
     'CMSCoverageFetcher',
     'FDAOrphanDesignationFetcher',
+    'OpenFDADevice510kFetcher',
+    'OpenFDADevicePMAFetcher',
+    'OpenFDADeviceClassificationFetcher',
+    'TgaArtgMedicinesFetcher',
+    'TgaArtgDevicesFetcher',
+    'TgaSaraRecallsFetcher',
+    'TgaMedicineShortagesFetcher',
+    'TgaOrphanDesignationsFetcher',
 ]

@@ -45,6 +45,7 @@ Configured for: claude
 - `ind_raw`, `ind_bronze`, `ind_silver`, `ind_gold` — Indication / disease / epidemiology data
 - `hcp_silver`, `hcp_gold` — Healthcare professional / KOL / researcher data
 - `ip_raw`, `ip_bronze`, `ip_silver`, `ip_gold`, `ip_api` — Intellectual property / patents / trademarks / designs
+- `dev_raw`, `dev_bronze`, `dev_silver`, `dev_gold` — Medical devices (FDA 510(k), PMA, classification, UDI)
 
 **Rule**: every new table, view, function, or materialized view lives in a domain-prefixed schema. If you find yourself wanting to put something in `api`, `public`, or an unprefixed name, stop and pick the right domain first.
 
@@ -79,7 +80,7 @@ New agent data goes into `agents`. If you find yourself writing `mol_agents.some
 
 ## Silver Hub Architecture (feature/001-silver-medallion-rebuild)
 
-The silver layer was rebuilt on 10 canonical entity-resolution hubs:
+The silver layer is built on **12 canonical entity-resolution hubs**:
 
 | Hub | Schema | Key Tables |
 |-----|--------|-----------|
@@ -93,8 +94,16 @@ The silver layer was rebuilt on 10 canonical entity-resolution hubs:
 | Researcher | `hcp_silver` | `researchers`, `researcher_identifiers`, `researcher_names` |
 | Patent | `ip_silver` | `patents`, `patent_identifiers`, `patent_names` |
 | Trademark | `ip_silver` | `trademarks`, `trademark_identifiers`, `trademark_names` |
+| Design | `ip_silver` | `designs`, `design_identifiers`, `design_names` |
+| **Device** | `dev_silver` | `devices`, `device_identifiers`, `device_names` (added 2026-04-21) |
 
-**Resolve functions**: `mol_silver.resolve_molecule()`, `hcs_silver.resolve_provider()`, etc. — STABLE PARALLEL SAFE with ≤10ms p99 target (SC-004).
+**Resolve functions** (STABLE PARALLEL SAFE, ≤10ms p99 target SC-004) — all return `bigint`:
+`mol_silver.resolve_molecule`, `resolve_drug_product`, `resolve_company`, `resolve_target`;
+`hcs_silver.resolve_provider`, `resolve_facility`;
+`ind_silver.resolve_condition`;
+`hcp_silver.resolve_researcher`;
+`ip_silver.resolve_patent`, `resolve_trademark`, `resolve_design`;
+`dev_silver.resolve_device`.
 
 **Key rules**:
 - Silver models MUST obtain entity IDs by indexed equi-join to a hub crosswalk OR by calling a resolve function (FR-014). Never by inline fuzzy matching.

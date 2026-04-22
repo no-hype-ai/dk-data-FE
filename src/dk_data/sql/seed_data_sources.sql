@@ -236,7 +236,27 @@ VALUES
 
     -- CMS Coverage / US HTA (021-post-deploy-fixes)
     ('cms_coverage', 'api', 'https://api.coverage.cms.gov/v1/data/',
-     'CMS Medicare Coverage Database: NCDs, NCAs, and Technology Assessments (US HTA equivalent)', 'weekly', TRUE)
+     'CMS Medicare Coverage Database: NCDs, NCAs, and Technology Assessments (US HTA equivalent)', 'weekly', TRUE),
+
+    -- FDA Medical Devices (added 2026-04-21)
+    ('openfda_device_510k', 'api', 'https://api.fda.gov/device/510k.json',
+     'FDA openFDA 510(k) premarket notification clearances for medical devices including drug-delivery devices', 'weekly', TRUE),
+    ('openfda_device_pma', 'api', 'https://api.fda.gov/device/pma.json',
+     'FDA openFDA premarket approvals (PMA) for high-risk devices including drug-eluting stents and implantable pumps', 'weekly', TRUE),
+    ('openfda_device_classification', 'api', 'https://api.fda.gov/device/classification.json',
+     'FDA openFDA device classification catalog mapping product codes to device class, medical specialty, and regulation number', 'monthly', TRUE),
+
+    -- TGA (Therapeutic Goods Administration, Australia) — Tier A (added 2026-04-21)
+    ('tga_artg_medicines', 'csv_extract', 'https://www.tga.gov.au/resources/artg/artg-search-visualisation-tool',
+     'Australian Register of Therapeutic Goods — prescription, OTC, biological, and complementary medicines', 'weekly', TRUE),
+    ('tga_artg_devices', 'csv_extract', 'https://www.tga.gov.au/resources/artg/artg-search-visualisation-tool',
+     'Australian Register of Therapeutic Goods — medical device entries with GMDN codes and device classifications', 'weekly', TRUE),
+    ('tga_sara_recalls', 'api', 'https://apps.tga.gov.au/prod/sara/',
+     'System for Australian Recall Actions (SARA) — medicine and medical device recalls (routed to mol/dev by regulatory_type)', 'daily', TRUE),
+    ('tga_medicine_shortages', 'api', 'https://apps.tga.gov.au/prod/MSI/search',
+     'TGA Medicine Shortages Information portal — current and resolved shortages in Australia', 'daily', TRUE),
+    ('tga_orphan_designations', 'csv_extract', 'https://www.tga.gov.au/resources/orphan-drug-designations',
+     'TGA Orphan Drug Designations — annual list of designated rare-disease therapies with sponsor and indication', 'monthly', TRUE)
 
 ON CONFLICT (source_name) DO UPDATE SET
     source_url = EXCLUDED.source_url,

@@ -36,13 +36,22 @@ DO $$ BEGIN
     GRANT SELECT ON ALL TABLES IN SCHEMA hcp_silver TO analyst;
     GRANT SELECT ON ALL TABLES IN SCHEMA ip_silver  TO analyst;
 
+    -- dev_silver (12th hub — medical devices, added 2026-04-21)
+    -- USAGE grant added here because the schema is newly created in migration 248
+    -- and DO-block guards the case where migration 248 hasn't run yet.
+    IF EXISTS (SELECT FROM information_schema.schemata WHERE schema_name = 'dev_silver') THEN
+      GRANT USAGE ON SCHEMA dev_silver TO analyst;
+      GRANT SELECT ON ALL TABLES IN SCHEMA dev_silver TO analyst;
+      ALTER DEFAULT PRIVILEGES IN SCHEMA dev_silver GRANT SELECT ON TABLES TO analyst;
+    END IF;
+
     ALTER DEFAULT PRIVILEGES IN SCHEMA mol_silver GRANT SELECT ON TABLES TO analyst;
     ALTER DEFAULT PRIVILEGES IN SCHEMA hcs_silver GRANT SELECT ON TABLES TO analyst;
     ALTER DEFAULT PRIVILEGES IN SCHEMA ind_silver GRANT SELECT ON TABLES TO analyst;
     ALTER DEFAULT PRIVILEGES IN SCHEMA hcp_silver GRANT SELECT ON TABLES TO analyst;
     ALTER DEFAULT PRIVILEGES IN SCHEMA ip_silver  GRANT SELECT ON TABLES TO analyst;
 
-    RAISE NOTICE 'Granted all silver schema SELECT to analyst (incl. ip_silver)';
+    RAISE NOTICE 'Granted all silver schema SELECT to analyst (incl. ip_silver, dev_silver)';
   END IF;
 
   -- ============================================================

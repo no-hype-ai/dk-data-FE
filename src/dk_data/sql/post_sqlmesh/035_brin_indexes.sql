@@ -57,6 +57,40 @@ SELECT _try_brin_index(
     'SELECT 1',
     'CREATE INDEX IF NOT EXISTS idx_openfda_faers_ingested_brin ON mol_bronze.openfda_faers USING BRIN (ingested_at) WITH (pages_per_range = 128)');
 
+-- FDA medical devices (added 2026-04-21)
+SELECT _try_brin_index(
+    'SELECT 1',
+    'CREATE INDEX IF NOT EXISTS idx_dev_raw_openfda_device_510k_ingested_brin ON dev_raw.openfda_device_510k USING BRIN (ingested_at) WITH (pages_per_range = 64)');
+
+SELECT _try_brin_index(
+    'SELECT 1',
+    'CREATE INDEX IF NOT EXISTS idx_dev_raw_openfda_device_pma_ingested_brin ON dev_raw.openfda_device_pma USING BRIN (ingested_at) WITH (pages_per_range = 64)');
+
+SELECT _try_brin_index(
+    'SELECT 1',
+    'CREATE INDEX IF NOT EXISTS idx_dev_raw_openfda_device_classification_ingested_brin ON dev_raw.openfda_device_classification USING BRIN (ingested_at) WITH (pages_per_range = 32)');
+
+-- TGA (Australia) sources — Tier A (added 2026-04-21)
+SELECT _try_brin_index(
+    'SELECT 1',
+    'CREATE INDEX IF NOT EXISTS idx_mol_raw_tga_artg_medicines_ingested_brin ON mol_raw.tga_artg_medicines USING BRIN (ingested_at) WITH (pages_per_range = 64)');
+
+SELECT _try_brin_index(
+    'SELECT 1',
+    'CREATE INDEX IF NOT EXISTS idx_dev_raw_tga_artg_devices_ingested_brin ON dev_raw.tga_artg_devices USING BRIN (ingested_at) WITH (pages_per_range = 64)');
+
+SELECT _try_brin_index(
+    'SELECT 1',
+    'CREATE INDEX IF NOT EXISTS idx_mol_raw_tga_sara_recalls_ingested_brin ON mol_raw.tga_sara_recalls USING BRIN (ingested_at) WITH (pages_per_range = 32)');
+
+SELECT _try_brin_index(
+    'SELECT 1',
+    'CREATE INDEX IF NOT EXISTS idx_mol_raw_tga_medicine_shortages_ingested_brin ON mol_raw.tga_medicine_shortages USING BRIN (ingested_at) WITH (pages_per_range = 32)');
+
+SELECT _try_brin_index(
+    'SELECT 1',
+    'CREATE INDEX IF NOT EXISTS idx_mol_raw_tga_orphan_designations_ingested_brin ON mol_raw.tga_orphan_designations USING BRIN (ingested_at) WITH (pages_per_range = 32)');
+
 DROP FUNCTION _try_brin_index(text, text);
 
 COMMIT;

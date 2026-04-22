@@ -1,0 +1,80 @@
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: fetch-openfda-device-classification
+  labels:
+    app: dk-data-ingestion
+    component: openfda-device-classification
+    feature: "fda-devices"
+spec:
+  schedule: "0 5 8 1,4,7,10 *"  # Quarterly (Jan/Apr/Jul/Oct) — reference catalog, changes slowly
+  concurrencyPolicy: Forbid
+  startingDeadlineSeconds: 3600
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      backoffLimit: 2
+      ttlSecondsAfterFinished: 86400
+      activeDeadlineSeconds: 1800  # 30min — catalog is ~6K records
+      template:
+        metadata:
+          labels:
+            app: fetch-openfda-device-classification
+            app.kubernetes.io/component: fetcher
+            app.kubernetes.io/part-of: dk-data
+            team: data-platform
+            service: dk-data
+            product: dk-data
+        spec:
+          restartPolicy: Never
+          imagePullSecrets:
+            - name: ghcr-credentials
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 1000
+            fsGroup: 1000
+            seccompProfile:
+              type: RuntimeDefault
+          containers:
+            - name: fetch-openfda-device-classification
+              image: ghcr.io/data-kinetic/dk-data-fe/job-trigger:latest
+              securityContext:
+                allowPrivilegeEscalation: false
+                readOnlyRootFilesystem: false
+                capabilities:
+                  drop: ["ALL"]
+              command:
+                - /bin/sh
+                - -c
+                - |
+                  set -e
+                  echo "Fetching OpenFDA Device Classification catalog..."
+                  python -m dk_data.ingestion.run --source openfda_device_classification
+                  echo "OpenFDA Device Classification fetch complete."
+              envFrom:
+                - secretRef:
+                    name: dk-data-secrets
+              env:
+                - name: OTEL_EXPORTER_OTLP_ENDPOINT
+                  value: "http://alloy.infra.svc.cluster.local:4317"
+                - name: OTEL_SERVICE_NAME
+                  value: "dk-data-fetch-openfda-device-classification"
+              resources:
+                requests:
+                  memory: "256Mi"
+                  cpu: "100m"
+                limits:
+                  memory: "1Gi"
+                  cpu: "500m"
+              volumeMounts:
+                - name: data
+                  mountPath: /data/raw
+                - name: tmp
+                  mountPath: /tmp
+          volumes:
+            - name: data
+              emptyDir:
+                sizeLimit: 1Gi
+            - name: tmp
+              emptyDir: {}

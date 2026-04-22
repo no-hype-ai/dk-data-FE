@@ -109,6 +109,14 @@ from .sources.cms_ddinter import load_cms_ddinter_data
 from .sources.chembl_molecules import load_chembl_molecules_data
 from .sources.pubchem import load_pubchem_data
 from .sources.openfda_faers import load_openfda_faers_data
+from .sources.openfda_device_510k import load_openfda_device_510k_data
+from .sources.openfda_device_pma import load_openfda_device_pma_data
+from .sources.openfda_device_classification import load_openfda_device_classification_data
+from .sources.tga_artg_medicines import load_tga_artg_medicines_data
+from .sources.tga_artg_devices import load_tga_artg_devices_data
+from .sources.tga_sara_recalls import load_tga_sara_recalls_data
+from .sources.tga_medicine_shortages import load_tga_medicine_shortages_data
+from .sources.tga_orphan_designations import load_tga_orphan_designations_data
 from .sources.npi_registry import load_npi_registry_data
 from .sources.purple_book import load_purple_book_data
 from .sources.reactome import load_reactome_data
@@ -219,6 +227,14 @@ from .fetchers import (
     CMSMedicareFetcher,
     CMSCoverageFetcher,
     FDAOrphanDesignationFetcher,
+    OpenFDADevice510kFetcher,
+    OpenFDADevicePMAFetcher,
+    OpenFDADeviceClassificationFetcher,
+    TgaArtgMedicinesFetcher,
+    TgaArtgDevicesFetcher,
+    TgaSaraRecallsFetcher,
+    TgaMedicineShortagesFetcher,
+    TgaOrphanDesignationsFetcher,
 )
 from .downloaders.cms_downloader import CMS_DATASET_REGISTRY
 
@@ -1058,6 +1074,71 @@ SOURCES = {
         'loader': load_openfda_faers_data,
         'requires_file': False,
         'default_days_back': 90,
+    },
+    'openfda_device_510k': {
+        'name': 'OpenFDA Device 510(k) Clearances',
+        'description': 'FDA Premarket Notification (510(k)) clearances for medical devices — drug-device combos, delivery devices',
+        'fetcher': OpenFDADevice510kFetcher,
+        'loader': load_openfda_device_510k_data,
+        'requires_file': False,
+        'default_days_back': 90,
+    },
+    'openfda_device_pma': {
+        'name': 'OpenFDA Device PMA',
+        'description': 'FDA Premarket Approval (PMA) for high-risk devices — drug-eluting stents, implantable pumps, insulin pumps',
+        'fetcher': OpenFDADevicePMAFetcher,
+        'loader': load_openfda_device_pma_data,
+        'requires_file': False,
+        'default_days_back': 90,
+    },
+    'openfda_device_classification': {
+        'name': 'OpenFDA Device Classification',
+        'description': 'FDA device product-code reference catalog (product_code → device class / medical specialty / regulation number)',
+        'fetcher': OpenFDADeviceClassificationFetcher,
+        'loader': load_openfda_device_classification_data,
+        'requires_file': False,
+        'default_days_back': None,  # reference catalog — full-scan each run
+    },
+    # TGA (Therapeutic Goods Administration, Australia) — Tier A sources (2026-04-21)
+    'tga_artg_medicines': {
+        'name': 'TGA ARTG Medicines',
+        'description': 'Australian Register of Therapeutic Goods — prescription, OTC, biological, and complementary medicines',
+        'fetcher': TgaArtgMedicinesFetcher,
+        'loader': load_tga_artg_medicines_data,
+        'requires_file': False,
+        'default_days_back': None,  # full extract per run
+    },
+    'tga_artg_devices': {
+        'name': 'TGA ARTG Medical Devices',
+        'description': 'Australian Register of Therapeutic Goods — medical device entries (ARTG numbers, sponsors, GMDN codes)',
+        'fetcher': TgaArtgDevicesFetcher,
+        'loader': load_tga_artg_devices_data,
+        'requires_file': False,
+        'default_days_back': None,
+    },
+    'tga_sara_recalls': {
+        'name': 'TGA SARA Recalls',
+        'description': 'System for Australian Recall Actions — medicine and medical device recalls routed to mol/dev silver by regulatory_type',
+        'fetcher': TgaSaraRecallsFetcher,
+        'loader': load_tga_sara_recalls_data,
+        'requires_file': False,
+        'default_days_back': 30,
+    },
+    'tga_medicine_shortages': {
+        'name': 'TGA Medicine Shortages',
+        'description': 'Medicine Shortages Information portal — current and resolved medicine shortages in Australia',
+        'fetcher': TgaMedicineShortagesFetcher,
+        'loader': load_tga_medicine_shortages_data,
+        'requires_file': False,
+        'default_days_back': None,  # snapshot — full-scan each run
+    },
+    'tga_orphan_designations': {
+        'name': 'TGA Orphan Drug Designations',
+        'description': 'Annual list of TGA orphan drug designations (molecule + sponsor + indication)',
+        'fetcher': TgaOrphanDesignationsFetcher,
+        'loader': load_tga_orphan_designations_data,
+        'requires_file': False,
+        'default_days_back': None,
     },
     'npi_registry': {
         'name': 'NPI Registry',

@@ -193,6 +193,11 @@ LAYER_MODELS = {
         'mol_bronze.nice_hta',
         'mol_bronze.cms_coverage',
         'mol_bronze.ema_regulatory',
+        # TGA (Australia) — medicines + recalls + shortages + orphan designations (2026-04-21)
+        'mol_bronze.tga_artg_medicines',
+        'mol_bronze.tga_sara_recalls',
+        'mol_bronze.tga_medicine_shortages',
+        'mol_bronze.tga_orphan_designations',
         # Literature / clinical
         'mol_bronze.europepmc',
         'mol_bronze.nih_reporter',
@@ -337,6 +342,11 @@ LAYER_MODELS = {
         'mol_silver.company_financials',
         'mol_silver.journal_rss',
         'mol_silver.web_content',
+        # TGA (Australia) silver — medicines, recalls, shortages, orphan designations (2026-04-21)
+        'mol_silver.tga_artg_medicines',
+        'mol_silver.tga_medicine_recalls',     # filtered from tga_sara_recalls by regulatory_type
+        'mol_silver.tga_medicine_shortages',
+        'mol_silver.tga_orphan_designations',
     ],
     # HCS silver — 9 of 10 hcs_silver.* models (019-cms-puf-platform-reconciliation).
     # Runs at 09:00 UTC — after hcs_bronze (07:00) AND mol_silver (08:00) complete.
@@ -353,6 +363,29 @@ LAYER_MODELS = {
         'hcs_silver.cms_drug_market',             # hcs_bronze (part_d/part_b)
         'hcs_silver.drug_utilization',            # hcs_bronze + mol_silver.molecule_names
         'hcs_silver.part_d_prescribing',          # hcs_bronze + mol_silver.molecule_names
+    ],
+    # dev_bronze — Medical devices domain bronze layer (added 2026-04-21).
+    # 12th canonical hub; separate from mol_* because devices are not molecules.
+    'dev_bronze': [
+        'dev_bronze.openfda_device_classification',  # reference catalog
+        'dev_bronze.openfda_device_510k',            # 510(k) clearances
+        'dev_bronze.openfda_device_pma',             # PMA approvals
+        'dev_bronze.tga_artg_devices',               # TGA ARTG medical devices (AU)
+    ],
+    # dev_silver — hub tables first, then fact tables that call resolve_device
+    # and resolve_company. Fact tables (fda_510k, fda_pma) depend on the hub
+    # tables being populated; classification is independent reference.
+    'dev_silver': [
+        # Hub (must run before fact tables — resolve_device reads from these)
+        'dev_silver.devices',
+        'dev_silver.device_identifiers',
+        'dev_silver.device_names',
+        # Reference / fact tables
+        'dev_silver.fda_classification',
+        'dev_silver.fda_510k',                        # calls resolve_device + resolve_company
+        'dev_silver.fda_pma',                         # calls resolve_device + resolve_company
+        'dev_silver.tga_artg_devices',                # TGA ARTG devices — resolve_device + resolve_company
+        'dev_silver.tga_device_recalls',              # routed from mol_bronze.tga_sara_recalls by regulatory_type
     ],
 }
 

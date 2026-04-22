@@ -33,16 +33,22 @@ If the input is empty, ask the user what data source they want to add.
 
 ## Medallion Architecture Overview
 
-Every data source flows through four layers. Schema prefix is determined by domain:
+Every data source flows through four layers. Schema prefix is determined by domain (per CLAUDE.md domain-prefix rule):
 
-| Domain | Prefix | Examples |
-|--------|--------|---------|
-| Healthcare system / CMS | `hcs_` | `hcs_raw`, `hcs_bronze`, `hcs_silver`, `hcs_gold` |
-| Molecules / drugs | `mol_` | `mol_raw`, `mol_bronze`, `mol_silver`, `mol_gold` |
-| Indications / disease | `ind_` | `ind_raw`, `ind_bronze`, `ind_silver`, `ind_gold` |
-| Healthcare professionals | `hcp_` | `hcp_raw`, `hcp_bronze`, `hcp_silver`, `hcp_gold` |
+| Domain | Prefix | Existing layers | Typical sources |
+|--------|--------|-----------------|-----------------|
+| Molecule / drug / compound | `mol_` | `mol_raw`, `mol_bronze`, `mol_silver`, `mol_gold`, `mol_api` | ChEMBL, DrugBank, PubChem, FDA, OpenFDA drug, ClinicalTrials.gov, EuropePMC, PubMed, DailyMed |
+| Healthcare system / CMS | `hcs_` | `hcs_raw`, `hcs_bronze`, `hcs_silver`, `hcs_gold` | All CMS PUFs, NPPES, HRSA, Open Payments, hospital quality |
+| Indication / disease | `ind_` | `ind_raw`, `ind_bronze`, `ind_silver`, `ind_gold` | WHO ICD, MeSH, SNOMED; Orphanet + OMIM pending |
+| Healthcare professional | `hcp_` | `hcp_raw` (ROR only so far), `hcp_silver`, `hcp_gold` (empty) | ORCID, NIH Reporter, ROR, Scopus |
+| Intellectual property | `ip_` | `ip_raw`, `ip_bronze`, `ip_silver`, `ip_gold` (empty), `ip_api` | USPTO, EPO, EUIPO patents / trademarks / designs |
+| Medical devices | `dev_` | `dev_raw`, `dev_bronze`, `dev_silver`, `dev_gold` | OpenFDA 510(k), PMA, classification; UDI / MAUDE / enforcement pending |
 
-**Schemas vs tables**: Use schemas as prefixes (not table prefixes). One schema per layer per domain. Each data source gets its own table within the schema.
+**`hcp_bronze` does not exist yet.** Researcher bronze data is currently parasitic in `mol_bronze.orcid` / `mol_bronze.nih_reporter` — per CLAUDE.md this is a known domain-prefix violation. Ingest new researcher sources into `hcp_raw`; create `hcp_bronze` if it doesn't yet exist rather than propagating the violation.
+
+**`hcp_gold`, `ip_gold` exist as schemas but have no models yet.** Adding the first gold model requires creating the SQLMesh models directory.
+
+**Schemas vs tables**: one schema per layer per domain. Each data source gets its own table within the schema.
 
 **There are two distinct implementation patterns** based on how the source delivers data:
 
@@ -302,97 +308,244 @@ def load_example_source_data(records, source_hash=None):
 
 ### Strategy
 
-**Always extend an existing silver model before creating a new one.** Determine which existing silver entity the source feeds:
+**Always extend an existing silver hub before creating a new silver entity.** Determine which existing hub the source feeds.
 
-#### Molecule / Drug Domain (`mol_silver`)
+### The 12 canonical hubs
 
-The silver layer uses **10 canonical hub tables**. Each hub has a primary entity table, an identifiers table, and a names table. Always link into the hub — never maintain a parallel identifier list.
+Every hub has: a primary entity table (deterministic `bigint` PK), an `_identifiers` table (one row per external identifier), and a `_names` table (canonical + aliases with `normalized_name` for fuzzy resolve). Bootstrap migrations: `189_bootstrap_*.sql` through `200_bootstrap_*.sql` + `250_bootstrap_devices.sql`. Resolve functions: `178_resolve_*.sql` through `188_resolve_*.sql` + `249_resolve_device.sql`.
 
-| Hub | Primary Table | Identifiers Table | Names Table | When to use |
-|-----|--------------|-------------------|-------------|-------------|
-| Molecule | `mol_silver.molecules` | `mol_silver.molecule_identifiers` | `mol_silver.molecule_names` | Drug/molecule sources: chembl, drugbank, pubchem, openfda |
-| Drug Product | `mol_silver.drug_products` | `mol_silver.drug_product_identifiers` | `mol_silver.drug_product_names` | Branded/generic drug products, NDC-level data |
-| Company | `mol_silver.companies` | `mol_silver.company_identifiers` | `mol_silver.company_names` | Sponsor/manufacturer data |
-| Target | `mol_silver.targets` | `mol_silver.target_identifiers` | `mol_silver.target_names` | Protein targets, UniProt-linked sources |
-| Patent | `ip_silver.patents` | `ip_silver.patent_identifiers` | `ip_silver.patent_names` | USPTO, EPO, WIPO patent data |
-| Trademark | `ip_silver.trademarks` | `ip_silver.trademark_identifiers` | `ip_silver.trademark_names` | USPTO, EUIPO trademark data |
+| Hub | Primary table | Identifiers | Names | When to link a new source |
+|-----|---------------|-------------|-------|---------------------------|
+| Molecule | `mol_silver.molecules` | `mol_silver.molecule_identifiers` | `mol_silver.molecule_names` | Source has drug/molecule data: ChEMBL, DrugBank, PubChem, OpenFDA |
+| Drug Product | `mol_silver.drug_products` | `mol_silver.drug_product_identifiers` | `mol_silver.drug_product_names` | Branded/generic products, NDC-level data, Purple Book BLAs |
+| Company | `mol_silver.companies` | `mol_silver.company_identifiers` | `mol_silver.company_names` | Sponsor / manufacturer / MAH data |
+| Target | `mol_silver.targets` | `mol_silver.target_identifiers` | `mol_silver.target_names` | Protein targets, UniProt-linked |
+| Provider | `hcs_silver.providers` | `hcs_silver.provider_identifiers` | `hcs_silver.provider_names` | NPI-keyed sources: NPPES, physician PUFs |
+| Facility | `hcs_silver.facilities` | `hcs_silver.facility_identifiers` | `hcs_silver.facility_names` | CCN-keyed sources: hospital PUFs, cost reports |
+| Condition | `ind_silver.conditions` | `ind_silver.condition_identifiers` | `ind_silver.condition_names` | ICD-10, ICD-11, MeSH, SNOMED, Orphanet |
+| Researcher | `hcp_silver.researchers` | `hcp_silver.researcher_identifiers` | `hcp_silver.researcher_names` | ORCID, NIH Reporter, Scopus |
+| Patent | `ip_silver.patents` | `ip_silver.patent_identifiers` | `ip_silver.patent_names` | USPTO, EPO, WIPO |
+| Trademark | `ip_silver.trademarks` | `ip_silver.trademark_identifiers` | `ip_silver.trademark_names` | USPTO, EUIPO |
+| Design | `ip_silver.designs` | `ip_silver.design_identifiers` | `ip_silver.design_names` | EUIPO designs, USPTO designs |
+| **Device** | `dev_silver.devices` | `dev_silver.device_identifiers` | `dev_silver.device_names` | OpenFDA /device/510k, /pma, /classification; UDI / MAUDE pending |
 
 **Deprecated — do not use in new models:**
-- `mol_silver.molecule_aliases` → use `mol_silver.molecule_names` instead
-- `mol_silver.identifier_mappings` → use `mol_silver.molecule_identifiers` instead
+- `mol_silver.molecule_aliases` → use `mol_silver.molecule_names`
+- `mol_silver.identifier_mappings` → use `mol_silver.molecule_identifiers`
+- `mol_silver.researchers` (denormalized copy) → use canonical `hcp_silver.researchers`
 
-#### HCS Domain (`hcs_silver`)
+### Tables that look like hubs but are NOT — treat with care
 
-| Silver Model | Entity Key | When to extend |
-|-------------|------------|----------------|
-| `hcs_silver.providers` | `provider_id` (NPI) | Source has NPI: NPPES, physician_puf, referring/ordering providers, mental_health, telehealth, dme_puf |
-| `hcs_silver.provider_identifiers` | `provider_id` + `identifier_type` | Additional NPI cross-references |
-| `hcs_silver.facilities` | `facility_id` (CCN) | Source has CCN/provider_id: hospital_general_info, cost_reports_puf, inpatient/outpatient/snf/hospice/home_health |
-| `hcs_silver.facility_identifiers` | `facility_id` + `identifier_type` | Additional facility cross-references |
-| `hcs_silver.geographic_health` | `geo_code` + `geo_level` | Geographic/population aggregates: geographic_variation, chronic_conditions, enrollment_puf, opioid_puf, dual_eligible, medicare_advantage, claim_type_puf, utilization_puf |
-| `hcs_silver.drug_utilization` | `drug_or_hcpcs_code` + `code_type` | Drug utilization/spending: part_d_spending, part_b_spending, medicaid_drug_spending, dme_puf, lab_services, imaging_puf |
-| `hcs_silver.part_d_prescribing` | `prscrbr_npi` + `gnrc_name` | Part D prescribing: part_d_prescriber |
-| `hcs_silver.open_payments_drug_linkage` | `record_id` + `drug_slot` | Open payments: open_payments |
+These silver entities are currently denormalized fact tables with string PKs. Do not call them hubs; do not `resolve_*()` them; do not assume future sources can deduplicate against them cleanly.
+
+| Table | PK (string) | What it actually is |
+|-------|-------------|---------------------|
+| `mol_silver.clinical_trials` | `nct_id` | CT.gov fact table; `molecule_id` FK is nullable; `conditions` is JSONB. Belongs in a future `clin_*` domain per entity-linkage audit. |
+| `mol_silver.publications` | `doi` | Publications fact; many rows have no DOI; no deterministic `publication_id`. |
+| `mol_silver.adverse_events` | aggregated | Pre-aggregated FAERS signals, not case-level. Case-level lives in `mol_bronze.openfda_faers`. |
+| `mol_silver.drug_labels` | `set_id` | DailyMed/OpenFDA labels; `indications_and_usage` is free text — not resolved to `condition_id`. |
+
+If your source feeds one of these, keep using it for now, but add a task to promote it to a proper hub before linking new domains through it.
+
+### HCS non-hub silver models (keep extending these)
+
+| Silver model | Entity key | When to extend |
+|--------------|------------|----------------|
+| `hcs_silver.geographic_health` | `geo_code` + `geo_level` | Geographic aggregates: geographic_variation, chronic_conditions, enrollment_puf, opioid_puf, dual_eligible, medicare_advantage, claim_type_puf, utilization_puf |
+| `hcs_silver.drug_utilization` | `drug_or_hcpcs_code` + `code_type` | Drug spending: part_d_spending, part_b_spending, medicaid_drug_spending, dme_puf, lab_services, imaging_puf |
+| `hcs_silver.part_d_prescribing` | `prscrbr_npi` + `gnrc_name` | Part D prescriber-level: part_d_prescriber |
+| `hcs_silver.open_payments_drug_linkage` | `record_id` + `drug_slot` | Open Payments drug strings → `molecule_id` |
 | `hcs_silver.cms_drug_market` | `drug_or_hcpcs_code` + `year` | Market-level drug spending aggregates |
 
-#### Other Domains
+### Entity Linking — resolve functions (exact signatures)
 
-| Silver Model | Entity Key | When to use |
-|-------------|------------|-------------|
-| `ind_silver.conditions` | `condition_id` | Indication/disease sources: ICD-10, MeSH, SNOMED, WHO ICD |
-| `ind_silver.condition_identifiers` | `condition_id` + `identifier_type` | Condition code cross-references |
-| `hcp_silver.researchers` | `researcher_id` | HCP/researcher sources: ORCID, NIH Reporter, Scopus |
-| `mol_silver.publications` | `pmid` / `source_id` | Literature: europepmc, nih_reporter, pubmed |
-| `mol_silver.drug_labels` | `set_id` | Drug labeling: openfda_labels, dailymed |
-| `mol_silver.adverse_events` | `report_id` | Safety signals: openfda_faers |
+**Every resolve function takes multiple positional parameters with a priority-tiered lookup and returns `bigint`.** Calling them with a single positional arg will silently miss because the first param is usually a structural identifier the source doesn't have.
 
-### Entity Linking — Use Resolve Functions
+Always call with named-parameter syntax (`=>`) so the compiler catches wrong-parameter-name errors at validation time.
 
-When a new source contains drug names, company names, condition codes, or other entity identifiers that must link to a silver hub, **always use the resolve function** — never inline fuzzy matching.
+| Function | Signature | Priority tiers |
+|----------|-----------|----------------|
+| `mol_silver.resolve_molecule` | `(p_inchi_key, p_chembl_id, p_drugbank_id, p_pubchem_cid, p_unii, p_cas_number, p_rxcui, p_ndc, p_inn, p_name) → bigint` | InChIKey → ChEMBL → DrugBank → PubChem → UNII → CAS → RxCUI(IN/PIN) → NDC → INN → name fuzzy ≥0.85 |
+| `mol_silver.resolve_drug_product` | `(p_bla_number, p_nda_number, p_rxcui_scdf, p_ndc, p_brand_name) → bigint` | BLA → NDA → RxCUI(SCDF/SBDF) → NDC → brand name fuzzy ≥0.85 |
+| `mol_silver.resolve_company` | `(p_duns, p_cik, p_ror, p_chembl_src_id, p_fda_registration, p_name) → bigint` | DUNS → CIK → ROR → ChEMBL src → FDA reg → name fuzzy ≥0.85 |
+| `mol_silver.resolve_target` | `(p_uniprot_accession, p_gene_symbol, p_chembl_target_id, p_sequence_hash, p_name) → bigint` | UniProt → gene symbol → ChEMBL target ID → sequence hash → name fuzzy |
+| `hcs_silver.resolve_provider` | `(p_npi, p_state_license, p_dea, p_last_name, p_first_name) → bigint` | NPI → state license → DEA → name fuzzy |
+| `hcs_silver.resolve_facility` | `(p_ccn, p_cms_id, p_npi, p_state_license, p_name) → bigint` | CCN → CMS ID → NPI → state license → name fuzzy |
+| `ind_silver.resolve_condition` | `(p_icd10, p_icd11, p_mesh_id, p_snomed_id, p_orphanet_id, p_name) → bigint` | ICD-10 → ICD-11 → MeSH → SNOMED → Orphanet → name fuzzy |
+| `hcp_silver.resolve_researcher` | `(p_orcid, p_scopus_id, p_pubmed_signature, p_last_name, p_first_name) → bigint` | ORCID → Scopus → PubMed signature → name fuzzy |
+| `ip_silver.resolve_patent` | `(p_uspto_number, p_epo_number, p_wipo_number, p_title) → bigint` | USPTO → EPO → WIPO → title fuzzy |
+| `ip_silver.resolve_trademark` | `(p_uspto_serial, p_euipo_number, p_mark_text) → bigint` | USPTO serial → EUIPO number → mark text fuzzy |
+| `ip_silver.resolve_design` | `(p_uspto_number, p_euipo_number, p_title) → bigint` | USPTO → EUIPO → title fuzzy |
+| `dev_silver.resolve_device` | `(p_udi_di, p_k_number, p_pma_number, p_fei_number, p_name) → bigint` | UDI-DI → K-number → PMA number → FEI number → name fuzzy |
+
+**All STABLE PARALLEL SAFE; SC-004 target p99 ≤10ms.** Relies on trigram GIN indexes on `*_names.normalized_name` — registering a new `_names` table requires adding the index to `src/dk_data/sql/post_sqlmesh/000_hub_indexes.sql` (see "Post-SQLMesh Index Registration" below).
+
+**Correct call pattern — use named parameters:**
 
 ```sql
--- In a SQLMesh model, link to mol_silver via resolve:
 SELECT
-    mol_silver.resolve_molecule(b.drug_name)   AS molecule_id,
-    hcs_silver.resolve_provider(b.npi)         AS provider_id,
-    hcs_silver.resolve_facility(b.ccn)         AS facility_id,
-    ind_silver.resolve_condition(b.icd10_code) AS condition_id,
-    mol_silver.resolve_company(b.sponsor_name) AS company_id,
+    mol_silver.resolve_molecule(p_chembl_id => b.chembl_id, p_name => b.drug_name)  AS molecule_id,
+    mol_silver.resolve_drug_product(p_bla_number => b.bla, p_brand_name => b.brand) AS product_id,
+    mol_silver.resolve_company(p_name => b.sponsor_name)                            AS company_id,
+    hcs_silver.resolve_provider(p_npi => b.npi)                                     AS provider_id,
+    hcs_silver.resolve_facility(p_ccn => b.ccn)                                     AS facility_id,
+    ind_silver.resolve_condition(p_icd10 => b.icd10, p_name => b.condition_name)    AS condition_id,
     b.*
 FROM mol_bronze.new_source b;
 ```
 
-Available resolve functions (STABLE PARALLEL SAFE, ≤10ms p99):
-- `mol_silver.resolve_molecule(name_or_id TEXT) → UUID`
-- `hcs_silver.resolve_provider(npi_or_name TEXT) → UUID`
-- `hcs_silver.resolve_facility(ccn_or_name TEXT) → UUID`
-- `ind_silver.resolve_condition(name_or_code TEXT) → UUID`
-- `mol_silver.resolve_company(name TEXT) → UUID`
-- `mol_silver.resolve_target(name_or_id TEXT) → UUID`
-- `hcp_silver.resolve_researcher(name_or_orcid TEXT) → UUID`
-- `ip_silver.resolve_patent(patent_number TEXT) → UUID`
+**`molecule_id`, `product_id`, `company_id`, etc. are `bigint` — declare them `bigint` in the model output, not `UUID`.**
 
-### Banned Silver Antipatterns
+### `mol_silver.resolve_company()` is currently orphaned — wire it
 
-Never write these patterns in a silver model — they will be rejected in review:
+Per 2026-04-20 audit: `resolve_company()` has **zero callsites** across all SQLMesh silver models. FDA sponsor strings, EMA MAH strings, CT.gov `lead_sponsor_name`, Purple Book `applicant` — all are kept as strings and never resolved. **If your new source has a company-string column, it is your responsibility to call `resolve_company()` and emit a `company_id bigint` column.** Reviewers will reject any new mol-silver model that keeps a company string without the resolved ID.
+
+### Cross-hub bridges — extend these when your source spans two entities
+
+When a source carries information about a relationship between two entities (molecule ↔ target, drug_product ↔ molecule, etc.), add rows to the bridge table, not to either hub.
+
+**Existing bridges (FR-014 compliant):**
+
+| Bridge | Schema | Link |
+|--------|--------|------|
+| `molecule_targets` | `mol_silver` | molecule_id ↔ target_id (ChEMBL bioactivity, DrugBank targets) |
+| `molecule_publications` | `mol_silver` | molecule_id ↔ publication (still string-keyed pending publications hub) |
+| `drug_product_ingredients` | `mol_silver` | product_id ↔ molecule_id (RxNorm SCD/SBD path — name-join bug for biologics, see Hub ID section) |
+| `researcher_publications` | `hcp_silver` | researcher_id ↔ publication |
+| `researcher_provider_crosswalk` | `hcp_silver` | researcher_id ↔ provider_id (NPI+ORCID match) |
+| `ndc_molecule_bridge` | `mol_silver` | NDC ↔ molecule_id |
+| `hcpcs_molecule_bridge` | `mol_silver` | HCPCS ↔ molecule_id |
+
+**Bridges that do not yet exist but are commonly needed — create as `mol_silver.{left}_{right}` per left-side-owns convention:**
+
+- `molecule_companies` (molecule_id ↔ company_id + `role` enum)
+- `drug_product_companies` (product_id ↔ company_id + `role`)
+- `drug_product_indications` (product_id ↔ condition_id + `approval_status`)
+- `drug_product_facilities` (product_id ↔ facility_id + `role`)
+- `molecule_patents` (molecule_id ↔ patent_id + `link_basis`)
+- `ip_silver.patent_inventors` (patent_id ↔ researcher_id)
+
+If your source supplies data for one of these, create the bridge — do not invent a new silver fact table that carries both string-keys and expect downstream consumers to reconcile.
+
+### Banned silver antipatterns (CI-enforced where possible)
+
+Never write these patterns in a silver model — they will be rejected in review. Per 2026-04-20 audit, live S1/S5 violations exist in `mol_gold/kol_drug_associations.sql:27,44` (0.3 similarity threshold) and `mol_silver/drug_product_ingredients.sql:32` (string-equi-join bypassing resolve) — do not add more.
 
 | Code | Pattern | Why banned | Fix |
 |------|---------|-----------|-----|
-| S1 | `WHERE hub_id = A OR hub_id = B` | OR-join causes seq scan on hub tables | Use `= ANY(ARRAY[A, B])` or two separate joins |
-| S2 | `WHERE name LIKE '%query%'` (leading wildcard) | Cannot use index | Use `similarity()` with threshold, or use `molecule_names` lookup |
-| S3 | Correlated scalar subquery per-row | N+1 query inside SELECT | Convert to a lateral join or CTE |
-| S4 | `DISTINCT ON ... UNION ALL` over hub tables | Disguises fan-out; expensive | Use a single hub join with explicit dedup key |
-| S5 | `similarity(name, q) > 0.8 OR name = q` | Mixed fuzzy+exact in OR clause | Split into two passes or use resolve function |
+| S1 | `WHERE hub_id = A OR hub_id = B` | OR-join causes seq scan | `= ANY(ARRAY[A, B])` or two separate joins |
+| S2 | `WHERE name LIKE '%query%'` (leading wildcard) | Cannot use index | `similarity(LOWER(name), LOWER(query)) >= 0.85` with trigram GIN index |
+| S3 | Correlated scalar subquery per-row | N+1 in SELECT | Lateral join or CTE (see `competitive_landscape.sql` header for the fix pattern) |
+| S4 | `DISTINCT ON ... UNION ALL` over hub tables | Disguises fan-out | Single hub join with explicit dedup key |
+| S5 | `similarity(name, q) > 0.8 OR name = q` | Mixed fuzzy+exact in OR | Two passes (exact first, fuzzy fallback) or call the resolve function |
+
+**Additional rule — any fuzzy similarity threshold below 0.85 needs explicit justification** (the hub-resolve tier 10 fallback uses ≥0.85; lower thresholds at silver/gold create false joins).
 
 Cross-domain links to always include when present:
 - Drug names/NDCs → `mol_silver.molecule_names` (not `molecule_aliases`)
 - Identifier cross-refs → `mol_silver.molecule_identifiers` (not `identifier_mappings`)
-- NPI → `hcs_silver.providers` via `hcs_silver.resolve_provider()`
-- CCN/provider_id → `hcs_silver.facilities` via `hcs_silver.resolve_facility()`
+- NPI → `hcs_silver.providers` via `resolve_provider(p_npi => ...)`
+- CCN → `hcs_silver.facilities` via `resolve_facility(p_ccn => ...)`
+- Sponsor/applicant strings → `mol_silver.companies` via `resolve_company(p_name => ...)` — the orphan wiring above
+
+### Hub ID construction & canonicalization
+
+**Hub IDs are deterministic `bigint` hashes of a canonical identifier.** Two rules that silver models adding to hubs must honor:
+
+**Rule H1 — Immutability.** Once a hub row has an ID, never rehash it. Identifier evolution happens in `{entity}_identifiers`, never by recomputing the hub PK. If your source introduces a new identifier type for an existing entity, UPSERT into `_identifiers`, don't change the hub row.
+
+**Rule H2 — Canonical-identifier priority.** Hub ID is `md5(lower(canonical_identifier))` where `canonical_identifier` is the first non-null value from the hub's documented priority list. The priority list per hub matches the resolve function's tiers (molecule: inchi_key > unii > cas > chembl > drugbank > ...; drug_product: bla > nda > rxcui_scdf > ndc > brand_name; etc.).
+
+**Biologic / fusion-protein gotcha (active bug per entity-linkage audit §5.4).** The current `mol_silver.molecules` builds biologic hub IDs as `md5('bio:' || LOWER(COALESCE(pref_name, chembl_id)))` — no TRIM, no punctuation strip, no NFC. This means:
+- `'Rilonacept'` vs `'rilonacept '` vs `'Rilonacept (recombinant)'` → three molecule rows
+- ChEMBL NULL `pref_name` → hashes on `chembl_id`; DrugBank → hashes on `name`; split-brain for the same drug
+
+**When ingesting a biologic source**, either:
+(a) canonicalize aggressively before inserting — `md5('bio:' || regexp_replace(lower(trim(name)), '\s+', ' ', 'g'))` — and add a test confirming known biologics (rilonacept, adalimumab) land on one row, OR
+(b) load the row and map via `mol_silver.molecule_dedup_map` sidecar (if present) rather than through the hash PK.
+
+**`product_id` hash scheme (active bug per audit §5.6)**: `drug_product_ingredients.product_id = md5(rxcui_product)` does not match `purple_book.product_id = md5('bla:' + bla_number + ':' + product_number)` for the same ARCALYST BLA. When you write a new model that emits `product_id`, use `resolve_drug_product()` with the priority list — never compute `md5()` locally. Silver models that compute `product_id` inline will be rejected.
+
+**Research-code / pipeline-asset handling.** `resolve_molecule()` has no `research_code` parameter today. Sources ingesting pre-regulatory assets (KPL-387, KPL-1161) must:
+1. Write the research code to `mol_silver.molecule_names` with `source = 'research_code'`
+2. Rely on the name-fuzzy tier (similarity ≥ 0.85) for later sources to match
+
+Do not create a separate pipeline-assets table — extend the molecule hub.
+
+### Post-SQLMesh index registration
+
+Adding a new silver `_names` table, a new bronze partition, or a new gold view requires registering indexes/grants in the post-SQLMesh scripts (run after SQLMesh materializes tables). See cluster-access runbook §7.
+
+**When you add a new silver hub `_names` table**, append to `src/dk_data/sql/post_sqlmesh/000_hub_indexes.sql`:
+
+```sql
+SELECT _try_create_index('CREATE INDEX IF NOT EXISTS {domain}_silver_{entity}_names_trgm_idx ON {domain}_silver.{entity}_names USING GIN (LOWER(normalized_name) gin_trgm_ops)');
+SELECT _try_create_index('CREATE INDEX IF NOT EXISTS {domain}_silver_{entity}_names_norm_idx ON {domain}_silver.{entity}_names (normalized_name)');
+SELECT _try_create_index('CREATE INDEX IF NOT EXISTS {domain}_silver_{entity}_names_pk_idx ON {domain}_silver.{entity}_names ({entity}_id)');
+```
+
+Without the trigram GIN index, the resolve function's fuzzy-name tier degrades from p99 ≤10ms to seq-scan territory.
+
+**When you add a new bronze table with a time column**, append a BRIN index to `src/dk_data/sql/post_sqlmesh/035_brin_indexes.sql`:
+
+```sql
+SELECT _try_create_index('CREATE INDEX IF NOT EXISTS {domain}_bronze_{table}_ingested_at_brin ON {domain}_bronze.{table} USING BRIN (ingested_at) WITH (pages_per_range = 32)');
+```
+
+**When you add a new silver/gold view to expose via PostgREST**, append grants to `src/dk_data/sql/post_sqlmesh/055_postgrest_hub_grants.sql`:
+
+```sql
+GRANT SELECT ON {domain}_silver.{new_table} TO web_anon, analyst, api_user;
+```
+
+**When you add a high-write table**, tune autovacuum in `src/dk_data/sql/post_sqlmesh/036a_autovacuum_tuning.sql` to avoid bloat.
+
+Verify post-SQLMesh scripts apply cleanly:
+
+```bash
+export KUBECONFIG=/tmp/k3s-fresh.yaml
+JOB_POD=$(kubectl get pods -n dk-data-prod | grep job-trigger | grep Running | awk '{print $1}' | head -1)
+kubectl exec -n dk-data-prod $JOB_POD -- python3 -c "
+import psycopg2, os
+conn = psycopg2.connect(host=os.environ['POSTGRES_HOST'], port=os.environ['POSTGRES_PORT'],
+    dbname=os.environ['POSTGRES_DB'], user=os.environ['POSTGRES_USER'], password=os.environ['POSTGRES_PASSWORD'])
+conn.autocommit = True
+sql = open('/usr/local/lib/python3.11/site-packages/dk_data/sql/post_sqlmesh/000_hub_indexes.sql').read()
+conn.cursor().execute(sql)
+print('hub indexes OK')
+"
+```
+
+### Resolve-function performance fixtures
+
+`tests/perf/test_resolve_latency.py` enforces the SC-004 ≤10ms p99 target. **Test is currently `@pytest.mark.perf` gated — it does not run in default CI**, so regressions can land silently.
+
+When your new source introduces a new identifier type, synonym pattern, or biologic/fusion-protein class, add fixtures:
+
+```python
+# tests/perf/test_resolve_latency.py RESOLVE_FUNCTIONS entry
+(
+    "mol_silver.resolve_molecule",
+    [
+        # Add your new source's representative calls:
+        ("YOUR_INCHI_KEY", None, None, None, None, None, None, None, None, None),
+        (None, None, None, None, None, None, None, None, None, "rilonacept"),  # biologic name fallback
+        (None, None, None, None, None, None, None, None, None, "KPL-387"),     # research code
+    ],
+),
+```
+
+Run manually against production-like data:
+
+```bash
+pytest tests/perf/test_resolve_latency.py -m perf -v
+```
 
 ### Gold Models
 
 Gold models aggregate from ≥2 silver sources, add computed metrics (rankings, ratios, indices), and use `kind FULL, cron '@daily'`. Update existing gold models when extending existing silver entities. Create new gold models only for genuinely new entity types.
+
+`hcp_gold` and `ip_gold` have no models yet — adding one requires creating the SQLMesh directory (`src/dk_data/sqlmesh/models/hcp/gold/` or `src/dk_data/sqlmesh/models/ip/gold/`) and registering the layer in `transform_molecules.py` LAYER_MODELS.
 
 ---
 
@@ -401,7 +554,7 @@ Gold models aggregate from ≥2 silver sources, add computed metrics (rankings, 
 ### Phase 1: API Discovery
 
 1. Analyze user input — fetch URL/spec if provided, research via web search if description only.
-2. Determine: base URL, auth method, data format, pagination strategy, rate limits, natural key, domain (`hcs_`/`mol_`/`ind_`/`hcp_`), pattern (file-based vs API-based).
+2. Determine: base URL, auth method, data format, pagination strategy, rate limits, natural key, domain (`mol_`/`hcs_`/`ind_`/`hcp_`/`ip_`), pattern (file-based vs API-based).
 3. Present a summary for user confirmation before writing any code.
 
 ### Phase 2: Implementation Files
@@ -471,6 +624,21 @@ Layer assignment:
 - For OpenFDA sources: `{'full_backfill': True}` (year-partitioned)
 - For high-volume API sources: `{'max_records': N}` raising above the conservative default
 - For CMS PUF multi-year sources: `{'years': [2021, 2022, 2023]}`
+
+**i.2. Register in `meta.backfill_state`** (append to `src/dk_data/sql/seed_backfill_state.sql` or equivalent seed):
+
+The platform has two ingestion paths: **per-source CronJobs** (primary; fires on its own schedule) and the **`backfill-orchestrator`** CronJob (priority-queued, picks one source per 10-min tick from `meta.backfill_state WHERE status='active'`). Both must be registered:
+
+```sql
+INSERT INTO meta.backfill_state (source_name, status, priority, fetcher_args)
+VALUES ('example_source', 'active', 40, '{"max_records": 50000}'::jsonb)
+ON CONFLICT (source_name) DO UPDATE
+SET status = EXCLUDED.status, priority = EXCLUDED.priority, fetcher_args = EXCLUDED.fetcher_args;
+```
+
+Priority tiers in current use: `10` (critical IP/literature), `20` (secondary IP/research), `30` (high-volume molecular), `40` (CMS PUF bulk), `50` (reference/regulatory), `60` (news/feeds).
+
+**As of 2026-04-21 the orchestrator is inoperative** — WAL-dir circuit-breaker misreads actual WAL usage and skips every tick. Your per-source CronJob (step `l` below) is what actually runs. The orchestrator registration is still required so that when the breaker bug is fixed the source auto-enrolls.
 
 **j. Silver SQLMesh model** — extend existing or create new (see Strategy above):
 - File: `src/dk_data/sqlmesh/models/{domain}/silver/{model_name}.sql`
@@ -626,7 +794,7 @@ Common cadences:
 ## Validation
 
 ```bash
-# 1. Syntax check
+# 1. Syntax check — imports resolve
 python3 -c "
 from dk_data.ingestion.sources.{source_name} import load_{source_name}_data
 from dk_data.ingestion.fetchers.{source_name} import {SourceName}Fetcher
@@ -642,13 +810,23 @@ assert SOURCES['{source_name}']['fetcher'] == {SourceName}Fetcher
 print('OK')
 "
 
-# 3. Run tests
+# 3. Unit tests
 pytest tests/test_{source_name}*.py -v
 
-# 4. SQLMesh dry run
+# 4. Resolve-function calls use named params (not positional)
+grep -n 'resolve_molecule\|resolve_company\|resolve_condition\|resolve_drug_product' \
+  src/dk_data/sqlmesh/models/**/silver/{source_name}.sql && echo '⚠️ verify each call uses p_* named params'
+
+# 5. Post-SQLMesh index registration present for any new _names table
+grep -n '{source_name}\|{new_entity}_names' src/dk_data/sql/post_sqlmesh/000_hub_indexes.sql
+
+# 6. Resolve-latency perf test passes (p99 ≤10ms) — run manually, not in default CI
+pytest tests/perf/test_resolve_latency.py -m perf -v
+
+# 7. SQLMesh plan dry run
 cd src && python -m dk_data.ingestion.transform_molecules --plan
 
-# 5. Kustomize validation
+# 8. Kustomize validation
 kubectl kustomize k8s/overlays/staging > /dev/null && echo OK
 ```
 
@@ -659,60 +837,138 @@ kubectl kustomize k8s/overlays/staging > /dev/null && echo OK
 1. **Doppler secret** (if API key needed): `doppler secrets set {SOURCE_NAME_UPPER}_API_KEY --project dk-data-fe --config prd`
 2. **Migration**: `doppler run -- python -m dk_data.scripts.run_migrations src/dk_data/sql/migrations/NNN_{source_name}.sql`
 3. **Seed sources**: `doppler run -- psql $DATABASE_URL -f src/dk_data/sql/seed_data_sources.sql`
-4. **Test fetch** (1000 records): `doppler run -- python -m dk_data.ingestion.main {source_name} --max-records 1000`
-5. **Verify raw**: `SELECT COUNT(*) FROM {prefix}_raw.{source_name};`
-6. **SQLMesh plan + apply**: `doppler run -- python -m dk_data.ingestion.transform_molecules --layer {layer}`
-7. **Verify bronze**: `SELECT COUNT(*) FROM {prefix}_bronze.{source_name};`
-8. **Verify silver entity linking**: check NULL rates for `molecule_id` / `npi` / `provider_id`
-9. **Verify gold**: `SELECT COUNT(*) FROM {prefix}_gold.{mart_name};`
-10. **Deploy CronJob**: `kubectl apply -f k8s/apps/cronjobs/base/cronjob-fetch-{source-name}.yaml -n dk-data-prod`
+4. **Register in `meta.backfill_state`** (for orchestrator path): run the seed INSERT from step i.2
+5. **Test fetch** (1000 records): `doppler run -- python -m dk_data.ingestion.main {source_name} --max-records 1000`
+6. **Verify raw**: `SELECT COUNT(*) FROM {prefix}_raw.{source_name};`
+7. **SQLMesh plan + apply**: `doppler run -- python -m dk_data.ingestion.transform_molecules --layer {layer}`
+8. **Verify bronze**: `SELECT COUNT(*) FROM {prefix}_bronze.{source_name};`
+9. **Apply post-SQLMesh scripts** (trigram/BRIN indexes + grants for any new silver hub tables):
+   ```bash
+   export KUBECONFIG=/tmp/k3s-fresh.yaml
+   JOB_POD=$(kubectl get pods -n dk-data-prod | grep job-trigger | grep Running | awk '{print $1}' | head -1)
+   kubectl exec -n dk-data-prod $JOB_POD -- python3 -c "
+   import psycopg2, os
+   conn = psycopg2.connect(host=os.environ['POSTGRES_HOST'], port=os.environ['POSTGRES_PORT'],
+       dbname=os.environ['POSTGRES_DB'], user=os.environ['POSTGRES_USER'], password=os.environ['POSTGRES_PASSWORD'])
+   conn.autocommit = True
+   for f in ('000_hub_indexes.sql', '000a_gold_indexes.sql', '055_postgrest_hub_grants.sql', '035_brin_indexes.sql'):
+       sql = open(f'/usr/local/lib/python3.11/site-packages/dk_data/sql/post_sqlmesh/{f}').read()
+       conn.cursor().execute(sql)
+       print(f, 'OK')
+   "
+   ```
+10. **Verify silver entity linking** — NULL rates should be low for the resolved FKs:
+    ```sql
+    SELECT
+      COUNT(*) AS total,
+      COUNT(*) FILTER (WHERE molecule_id IS NULL) AS null_mol,
+      COUNT(*) FILTER (WHERE company_id IS NULL) AS null_co,
+      COUNT(*) FILTER (WHERE condition_id IS NULL) AS null_cond
+    FROM {prefix}_silver.{source_name};
+    ```
+    If `null_mol` or `null_co` ratio > 20%, investigate — likely a missing identifier tier or unnormalized name.
+11. **Verify gold**: `SELECT COUNT(*) FROM {prefix}_gold.{mart_name};`
+12. **Deploy CronJob**: `kubectl apply -f k8s/apps/cronjobs/base/cronjob-fetch-{source-name}.yaml -n dk-data-prod`
+13. **Verify orchestrator registration** (even while orchestrator bug blocks actual picks):
+    ```sql
+    SELECT source_name, status, priority, total_rows_loaded, last_success_at
+    FROM meta.backfill_state WHERE source_name = '{source_name}';
+    ```
 
 ---
 
 ## Key Rules
 
+### Naming & registration
 - **SOURCE_NAME in fetcher must exactly match the key in SOURCES dict** — mismatches break `_meta_name()` tracking
-- **Schema prefix**: `hcs_` for CMS/healthcare system, `mol_` for drugs/molecules, `ind_` for indications, `hcp_` for healthcare professionals
+- **Schema prefix per CLAUDE.md**: `mol_` (drugs), `hcs_` (CMS), `ind_` (disease), `hcp_` (researcher), `ip_` (patents/trademarks/designs). `api` schema is deprecated — new views go in `{domain}_api` or `{domain}_gold`.
 - **Source name**: always `snake_case` (e.g., `cms_physician_puf`, `nice_hta`)
 - **CronJob name**: always `kebab-case` with `fetch-` prefix (e.g., `fetch-cms-physician-puf`)
-- **HCS raw tables**: preserve API field names exactly; flat columns; `_source_year`+`_source_hash` required
-- **Mol raw tables**: standardized JSONB schema — never flat columns; `response_body JSONB` + expression indexes
-- **HCS bronze models**: `INCREMENTAL_BY_UNIQUE_KEY`; cast every column explicitly; never drop or rename columns
-- **Mol bronze models**: `INCREMENTAL_BY_TIME_RANGE` on `ingested_at`; JSONB extraction via `->>`; include `processed_to_silver`, `raw_json`, `source`, `created_at`
-- **HCS loaders**: always use `apply_column_mapping(df, COLUMN_MAPPING)` — never `df.rename()` (case-sensitive bug)
-- **Mol loaders**: direct `json.dumps(record)` JSONB insert with expression-index `ON CONFLICT`; skip records missing natural key
-- **Silver models**: include entity linking to mol/hcs/hcp/ind when identifiers are present; NULL molecule_id is acceptable when no drug data exists
-- **Gold models**: aggregate from ≥2 silver sources; add computed metrics; `kind FULL`
-- **API keys**: never hardcoded — always from environment via Doppler → `dk-data-fe` / `dk-data-secrets`
-- **DB host**: `postgres-cluster-rw.infra.svc.cluster.local:5432` (production)
-- **PostgREST grants**: `GRANT SELECT ON {view} TO web_anon, analyst, api_user;` in migration. For `mol_api` views also add `GRANT USAGE ON SCHEMA mol_api TO web_anon, analyst, api_user;`
-- **PostgREST schemas**: PostgREST exposes `api` and `mol_api` schemas (`db-schemas = "api, mol_api"` in `postgrest.conf`). New mol domain views go in `mol_api`; platform/ops views go in `api`.
-- **100 sources** currently registered — check `main.py` SOURCES dict before naming to avoid collisions
+- **Register in both paths**: `SOURCES` dict (per-source CronJob) AND `meta.backfill_state` (orchestrator queue)
 
-## Current Sources Reference (100 total)
+### Table shape
+- **HCS raw**: preserve API field names; flat columns; `_source_year`+`_source_hash` required
+- **Mol/IP/Ind/HCP raw**: standardized JSONB — `response_body JSONB` + `request_id` unique index + natural-key expression index + `processed_to_bronze` partial index + `ingested_at` index
+- **HCS bronze**: `INCREMENTAL_BY_UNIQUE_KEY`; cast every column; never drop/rename columns
+- **Mol/IP/Ind bronze**: `INCREMENTAL_BY_TIME_RANGE` on `ingested_at`; JSONB extraction via `->>`; include `processed_to_silver`, `raw_json`, `source`, `created_at`
+
+### Loaders
+- **HCS loaders**: `apply_column_mapping(df, COLUMN_MAPPING)` — never `df.rename()` (case-sensitive bug)
+- **Mol/IP/Ind/HCP loaders**: `json.dumps(record)` JSONB insert with expression-index `ON CONFLICT`; skip records missing natural key
+
+### Silver entity linking
+- **Resolve functions return `bigint`, not UUID** — declare hub FK columns `bigint`
+- **Call with named params** (`p_chembl_id => ..., p_name => ...`) — positional calls silently miss because first param is usually a structural identifier
+- **`resolve_company()` has zero callsites today** — any new mol source with a sponsor/applicant string must wire it and emit `company_id bigint`
+- **Never compute hub hashes locally** (`md5(...)` in a silver model) — always use `resolve_*()`; `product_id` hash scheme is scheme-inconsistent across existing models and a PR adding another local hash will be rejected
+- **Biologic names must be aggressively canonicalized** before feeding the molecule hub: `regexp_replace(lower(trim(name)), '\s+', ' ', 'g')` at minimum, or use the dedup sidecar
+- **NULL resolved-FK is acceptable only when the source genuinely lacks the identifier** — >20% NULL rate on `molecule_id` / `company_id` / `condition_id` indicates a missing tier or normalization bug
+- **Hub IDs are immutable** — never rehash a hub row; evolve identifiers via `*_identifiers` table
+
+### Silver antipatterns (rejected in review)
+- S1 OR-join hub IDs · S2 leading-wildcard LIKE · S3 correlated scalar subquery · S4 DISTINCT ON over UNION ALL · S5 similarity + = in OR
+- Any `similarity(...)` threshold below `0.85` without written justification
+- Bypassing `resolve_*()` with a string equi-join on a name column (active bug in `drug_product_ingredients.sql:32` — do not add more)
+
+### Gold models
+- Aggregate from ≥2 silver sources; add computed metrics; `kind FULL, cron '@daily'`
+
+### Performance
+- **Every new `_names` table** requires a trigram GIN index in `post_sqlmesh/000_hub_indexes.sql` — without it, fuzzy-name resolve degrades to seq-scan
+- **Every new bronze partition** gets a BRIN index in `post_sqlmesh/035_brin_indexes.sql`
+- **Resolve-latency test** (`tests/perf/test_resolve_latency.py`) is not CI-gated — add fixtures for your source's representative calls and run manually
+
+### Secrets & infra
+- **API keys**: from Doppler `dk-data-fe` / `dk-data-secrets` — never hardcoded
+- **DB host**: `postgres-cluster-rw.infra.svc.cluster.local:5432` (production); DO NOT use `postgres.postgres.svc.cluster.local` (the Doppler-managed `DATABASE_URL` points there but the host doesn't exist — override with individual `POSTGRES_*` env vars)
+- **Pipeline jobs bypass PgBouncer** — they connect directly to PostgreSQL (PgBouncer's transaction-mode breaks `SET LOCAL`, advisory locks, `LISTEN/NOTIFY`)
+
+### PostgREST
+- **Grants**: `GRANT SELECT ON {view} TO web_anon, analyst, api_user;` in migration. For `mol_api` views also `GRANT USAGE ON SCHEMA mol_api TO web_anon, analyst, api_user;`
+- **Exposed schemas**: `api` (deprecated) and `mol_api` per `postgrest.conf` `db-schemas`. New mol domain views → `mol_api`; platform/ops views → `api` only if they span multiple domains, else a domain-specific `*_api` schema
+- **103 sources registered** in `meta.backfill_state` (55 active, 48 complete as of 2026-04-21) — check `main.py` SOURCES dict and `meta.backfill_state` before naming to avoid collisions
+
+## Current Sources Reference (103 total)
+
+Pulled live from `meta.backfill_state` 2026-04-21 — re-verify before merging a new source:
 
 ```
 acc_tvc, bindingdb, cdc_vaccines, chembl_activities, chembl_molecules,
 clinicaltrials, cms_care_compare, cms_chow, cms_chronic_conditions,
-cms_claim_type_puf, cms_cost_reports, cms_cost_reports_puf,
-cms_cost_reports_puf_lines, cms_coverage, cms_ddinter, cms_dme_puf,
-cms_dmepos, cms_dual_eligible, cms_enrollment_puf, cms_formulary,
-cms_geographic_variation, cms_hcris, cms_home_health, cms_hospice_puf,
-cms_hospital_affiliation, cms_hospital_general_info, cms_hospital_info,
-cms_hospital_quality, cms_imaging_puf, cms_inpatient, cms_inpatient_puf,
-cms_lab_services, cms_magnet, cms_medicaid_drug_spending, cms_medicare,
+cms_claim_type_puf, cms_cost_reports, cms_cost_reports_puf, cms_coverage,
+cms_ddinter, cms_dme_puf, cms_dmepos, cms_dual_eligible,
+cms_enrollment_puf, cms_formulary, cms_geographic_variation, cms_hcris,
+cms_home_health, cms_hospice_puf, cms_hospital_affiliation,
+cms_hospital_general_info, cms_hospital_info, cms_hospital_quality,
+cms_imaging_puf, cms_inpatient, cms_inpatient_puf, cms_lab_services,
+cms_magnet, cms_medicaid_drug_spending, cms_medicare,
 cms_medicare_advantage, cms_mental_health_puf, cms_ndc, cms_nppes,
 cms_nucc, cms_open_payments, cms_opioid_puf, cms_ordering_providers,
 cms_outpatient_puf, cms_part_b_spending, cms_part_d_prescriber,
 cms_part_d_spending, cms_pecos, cms_physician_puf,
-cms_physician_puf_services, cms_pos, cms_post_acute, cms_rbcs,
+cms_physician_puf_services, cms_pos, cms_post_acute, cms_puf, cms_rbcs,
 cms_referring_providers, cms_snf_puf, cms_stabilis, cms_telehealth_puf,
-cms_usp, cms_utilization_puf, cochrane, dailymed, drugbank, ema,
-ema_regulatory, epo_ops, euipo_designs, euipo_trademarks, europepmc,
-fda_drugs, fda_ndc, fda_rems, hrsa, hta_bodies, imgt, journal_rss,
-kegg_drug, medical_news, nice_hta, nih_reporter, npi_registry,
-openalex_ci, openfda_faers, openfda_labels, orange_book, orcid, pdb,
-pharmgkb, pubchem, pubmed, purple_book, reactome, rxnorm, sec_edgar,
-sider, tdc_admet, ttd, uniprot, uspto_ci, uspto_patents,
+cms_usp, cms_utilization_puf, cochrane_reviews, dailymed, drugbank, ema,
+ema_regulatory, epo_patents, euipo_designs, euipo_trademarks, europepmc,
+fda_drugs, fda_ndc, fda_rems, hrsa_shortage_areas, hta_decisions, imgt,
+journal_rss, kegg_drug, medical_news, nice_hta, nih_reporter,
+npi_registry, openalex_ci, openfda_faers, openfda_labels, orange_book,
+orcid, pdb, pharmgkb, pubchem, pubmed, purple_book, reactome, rxnorm,
+sec_edgar, sider, tdc_admet, ttd, uniprot, uspto_ci, uspto_patents,
 uspto_trademarks, who_gho, who_icd, who_inn
+```
+
+Re-pull the current list any time before naming:
+
+```bash
+export KUBECONFIG=/tmp/k3s-fresh.yaml
+JOB_POD=$(kubectl get pods -n dk-data-prod | grep job-trigger | grep Running | awk '{print $1}' | head -1)
+kubectl exec -n dk-data-prod $JOB_POD -- python3 -c "
+import psycopg2, os
+conn = psycopg2.connect(host=os.environ['POSTGRES_HOST'], port=os.environ['POSTGRES_PORT'],
+    dbname=os.environ['POSTGRES_DB'], user=os.environ['POSTGRES_USER'], password=os.environ['POSTGRES_PASSWORD'])
+cur = conn.cursor()
+cur.execute('SELECT source_name FROM meta.backfill_state ORDER BY source_name')
+print(', '.join(r[0] for r in cur.fetchall()))
+"
 ```

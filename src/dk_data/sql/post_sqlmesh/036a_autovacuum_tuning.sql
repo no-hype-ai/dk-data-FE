@@ -37,7 +37,17 @@ DECLARE
         'mol_bronze.dailymed',
         'mol_bronze.pubmed',
         'mol_bronze.europepmc',
-        'mol_bronze.drugbank'
+        'mol_bronze.drugbank',
+        -- FDA medical devices (added 2026-04-21)
+        'dev_bronze.openfda_device_510k',
+        'dev_bronze.openfda_device_pma',
+        'dev_bronze.openfda_device_classification',
+        -- TGA Tier A (added 2026-04-21)
+        'mol_bronze.tga_artg_medicines',
+        'dev_bronze.tga_artg_devices',
+        'mol_bronze.tga_sara_recalls',
+        'mol_bronze.tga_medicine_shortages',
+        'mol_bronze.tga_orphan_designations'
     ];
 BEGIN
     FOREACH v_table IN ARRAY v_tables LOOP

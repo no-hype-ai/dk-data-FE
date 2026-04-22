@@ -1,0 +1,71 @@
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: fetch-tga-artg-medicines
+  labels:
+    app: dk-data-ingestion
+    component: tga-artg-medicines
+    feature: "tga-au"
+spec:
+  schedule: "0 20 9 * *"  # 9th of month 20:00 UTC — staggered
+  concurrencyPolicy: Forbid
+  startingDeadlineSeconds: 3600
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      backoffLimit: 2
+      ttlSecondsAfterFinished: 86400
+      activeDeadlineSeconds: 3600
+      template:
+        metadata:
+          labels:
+            app: fetch-tga-artg-medicines
+            app.kubernetes.io/component: fetcher
+            app.kubernetes.io/part-of: dk-data
+            team: data-platform
+            service: dk-data
+            product: dk-data
+        spec:
+          restartPolicy: Never
+          imagePullSecrets:
+            - name: ghcr-credentials
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 1000
+            fsGroup: 1000
+            seccompProfile:
+              type: RuntimeDefault
+          containers:
+            - name: fetch-tga-artg-medicines
+              image: ghcr.io/data-kinetic/dk-data-fe/job-trigger:latest
+              securityContext:
+                allowPrivilegeEscalation: false
+                readOnlyRootFilesystem: false
+                capabilities:
+                  drop: ["ALL"]
+              command:
+                - /bin/sh
+                - -c
+                - |
+                  set -e
+                  echo "Fetching TGA ARTG Medicines..."
+                  python -m dk_data.ingestion.run --source tga_artg_medicines
+                  echo "TGA ARTG Medicines fetch complete."
+              envFrom:
+                - secretRef:
+                    name: dk-data-secrets
+              env:
+                - name: OTEL_EXPORTER_OTLP_ENDPOINT
+                  value: "http://alloy.infra.svc.cluster.local:4317"
+                - name: OTEL_SERVICE_NAME
+                  value: "dk-data-fetch-tga-artg-medicines"
+              resources:
+                requests: {memory: "512Mi", cpu: "250m"}
+                limits:   {memory: "2Gi",   cpu: "500m"}
+              volumeMounts:
+                - {name: data, mountPath: /data/raw}
+                - {name: tmp,  mountPath: /tmp}
+          volumes:
+            - {name: data, emptyDir: {sizeLimit: 2Gi}}
+            - {name: tmp,  emptyDir: {}}

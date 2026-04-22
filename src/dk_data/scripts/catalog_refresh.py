@@ -568,6 +568,125 @@ SOURCE_METADATA = {
         "staleness_threshold_hours": 720,
         "target_tables": ["mol_raw.fda_ndc", "mol_bronze.fda_ndc", "mol_silver.molecule_identifiers", "mol_silver.ndc_molecule_bridge"],
     },
+    "openfda_device_510k": {
+        "topic_tags": ["fda", "device", "510k", "premarket_notification", "clearance", "drug_device_combo"],
+        "ai_description": "FDA 510(k) premarket notification clearances via openFDA. Covers the pathway used for most Class II medical devices, including drug-delivery devices (auto-injectors, prefilled syringes, infusion pumps), combination products, and most in-vitro diagnostics. Each record includes applicant (company), device name, FDA product code, decision code/date, clearance type (Traditional/Special/Abbreviated), and the openFDA-enriched device class / medical specialty.",
+        "column_descriptions": {
+            "k_number": {"description": "FDA 510(k) clearance number (e.g. K180001)", "type": "string"},
+            "applicant": {"description": "Submitting company name — resolved to company_id via mol_silver.resolve_company()", "type": "string"},
+            "device_name": {"description": "Applicant-provided device name as submitted on the 510(k)", "type": "string"},
+            "product_code": {"description": "3-letter FDA product classification code (joins to fda_device_classification)", "type": "string"},
+            "decision_date": {"description": "Date FDA issued the clearance decision", "type": "date"},
+            "clearance_type": {"description": "510(k) submission type (Traditional, Special, Abbreviated, De Novo)", "type": "string"},
+            "openfda_device_class": {"description": "FDA device class from openFDA enrichment: 1 (low risk), 2 (moderate), 3 (high risk)", "type": "string"},
+        },
+        "staleness_threshold_hours": 168,  # Weekly
+        "target_tables": ["dev_raw.openfda_device_510k", "dev_bronze.openfda_device_510k", "dev_silver.fda_510k", "dev_silver.devices"],
+    },
+    "openfda_device_pma": {
+        "topic_tags": ["fda", "device", "pma", "premarket_approval", "class_iii", "drug_device_combo"],
+        "ai_description": "FDA Premarket Approval (PMA) records via openFDA. Pathway for Class III high-risk devices including drug-eluting stents, implantable infusion pumps, insulin pumps, heart valves, and novel combination products. Covers original PMAs and their supplements (manufacturing changes, labeling updates, post-approval studies).",
+        "column_descriptions": {
+            "pma_number": {"description": "FDA PMA application number (e.g. P030004)", "type": "string"},
+            "supplement_number": {"description": "Supplement number; '0' for original, sequential for supplements", "type": "string"},
+            "applicant": {"description": "Sponsor/manufacturer — resolved to company_id via mol_silver.resolve_company()", "type": "string"},
+            "device_name": {"description": "Device name as submitted on the PMA", "type": "string"},
+            "trade_name": {"description": "Marketed trade name", "type": "string"},
+            "product_code": {"description": "3-letter FDA product code", "type": "string"},
+            "supplement_type": {"description": "Supplement category (e.g. 180-day, 30-day-notice, Real-Time, PAS)", "type": "string"},
+            "decision_date": {"description": "FDA decision date on the PMA or supplement", "type": "date"},
+        },
+        "staleness_threshold_hours": 168,
+        "target_tables": ["dev_raw.openfda_device_pma", "dev_bronze.openfda_device_pma", "dev_silver.fda_pma", "dev_silver.devices"],
+    },
+    "openfda_device_classification": {
+        "topic_tags": ["fda", "device", "classification", "product_code", "reference_catalog"],
+        "ai_description": "FDA device classification reference catalog via openFDA. Small (~6K rows) but critical join table mapping each 3-letter product code to device class (1/2/3), medical specialty, regulation number, review panel, and regulatory flags (GMP-exempt, implant, life-sustaining, third-party-eligible). Required for interpreting 510(k) and PMA records.",
+        "column_descriptions": {
+            "product_code": {"description": "3-letter FDA product classification code (natural PK, e.g. 'LNH')", "type": "string"},
+            "device_name": {"description": "Generic device name for the classification", "type": "string"},
+            "device_class": {"description": "FDA device class: 1 (general controls), 2 (special controls / 510k), 3 (PMA)", "type": "string"},
+            "medical_specialty_description": {"description": "FDA review panel medical specialty area", "type": "string"},
+            "regulation_number": {"description": "21 CFR citation (e.g. 868.5925)", "type": "string"},
+            "is_implant": {"description": "Whether the device type is implantable", "type": "boolean"},
+            "is_life_sustaining": {"description": "Whether the device is life-supporting/sustaining", "type": "boolean"},
+        },
+        "staleness_threshold_hours": 2160,  # Monthly × 3 — reference data changes slowly
+        "target_tables": ["dev_raw.openfda_device_classification", "dev_bronze.openfda_device_classification", "dev_silver.fda_classification"],
+    },
+    "tga_artg_medicines": {
+        "topic_tags": ["tga", "australia", "artg", "medicines", "prescription", "otc", "biological", "complementary"],
+        "ai_description": "Australian Register of Therapeutic Goods (ARTG) — complete list of medicines registered for supply in Australia. Covers prescription, OTC, biological, and complementary medicines. Each record carries ARTG number (natural key), product name, sponsor (company), active ingredients, dosage form, route of administration, schedule, and registration/commencement/cancellation dates. Silver layer resolves sponsor → company_id and active ingredient → molecule_id.",
+        "column_descriptions": {
+            "artg_number": {"description": "ARTG registration number (natural PK, e.g. '209341')", "type": "string"},
+            "medicine_type": {"description": "Therapeutic subtype: prescription | otc | biological | complementary", "type": "string"},
+            "product_name": {"description": "Product name as registered", "type": "string"},
+            "sponsor_name": {"description": "Sponsor (company) — resolved to company_id via mol_silver.resolve_company()", "type": "string"},
+            "active_ingredients": {"description": "Pipe-delimited active ingredients list", "type": "string"},
+            "schedule": {"description": "Poisons Standard schedule (S2/S3/S4/S8)", "type": "string"},
+            "registration_date": {"description": "Date registered on ARTG", "type": "date"},
+        },
+        "staleness_threshold_hours": 168,  # Weekly
+        "target_tables": ["mol_raw.tga_artg_medicines", "mol_bronze.tga_artg_medicines", "mol_silver.tga_artg_medicines"],
+    },
+    "tga_artg_devices": {
+        "topic_tags": ["tga", "australia", "artg", "medical_device", "gmdn"],
+        "ai_description": "Australian Register of Therapeutic Goods (ARTG) — medical device entries. Covers Class I/IIa/IIb/III/AIMD/IVD devices with GMDN codes, intended purpose, sponsor, and manufacturer. Lives in dev_ domain (12th hub). Silver resolves sponsor → company_id and product_name → device_id via dev_silver.resolve_device().",
+        "column_descriptions": {
+            "artg_number": {"description": "ARTG registration number for the device", "type": "string"},
+            "product_name": {"description": "Device name as registered", "type": "string"},
+            "sponsor_name": {"description": "Sponsor company", "type": "string"},
+            "manufacturer_name": {"description": "Manufacturer (may differ from sponsor)", "type": "string"},
+            "device_classification": {"description": "TGA device class (I/IIa/IIb/III/AIMD/IVD)", "type": "string"},
+            "gmdn_code": {"description": "Global Medical Device Nomenclature code", "type": "string"},
+            "intended_purpose": {"description": "Intended clinical use", "type": "string"},
+        },
+        "staleness_threshold_hours": 168,
+        "target_tables": ["dev_raw.tga_artg_devices", "dev_bronze.tga_artg_devices", "dev_silver.tga_artg_devices"],
+    },
+    "tga_sara_recalls": {
+        "topic_tags": ["tga", "australia", "recall", "safety_alert", "sara", "product_correction"],
+        "ai_description": "System for Australian Recall Actions (SARA) — TGA-issued recalls, hazard alerts, and product corrections. Covers BOTH medicines and medical devices; regulatory_type column routes rows to mol_silver.tga_medicine_recalls vs dev_silver.tga_device_recalls at the silver layer.",
+        "column_descriptions": {
+            "recall_number": {"description": "SARA recall action number (natural PK)", "type": "string"},
+            "regulatory_type": {"description": "'Medicine' / 'Biological' / 'OTC' / 'Medical device' / 'IVD' / 'AIMD'", "type": "string"},
+            "action_type": {"description": "'Recall' / 'Hazard alert' / 'Product correction'", "type": "string"},
+            "risk_classification": {"description": "Class I / II / III recall severity", "type": "string"},
+            "artg_number": {"description": "ARTG number of affected product", "type": "string"},
+            "sponsor_name": {"description": "Sponsor — resolved to company_id", "type": "string"},
+            "date_published": {"description": "Date TGA published the recall", "type": "date"},
+        },
+        "staleness_threshold_hours": 24,  # Daily
+        "target_tables": ["mol_raw.tga_sara_recalls", "mol_bronze.tga_sara_recalls", "mol_silver.tga_medicine_recalls", "dev_silver.tga_device_recalls"],
+    },
+    "tga_medicine_shortages": {
+        "topic_tags": ["tga", "australia", "shortage", "medicines", "supply_chain"],
+        "ai_description": "TGA Medicine Shortages Information portal — current, resolved, and anticipated medicine shortages in Australia. Covers shortage status, type (limited/unavailable/discontinued), impact (critical/significant/low), reason, and sponsor management strategy. Silver resolves sponsor → company_id, active ingredient → molecule_id, brand name → product_id.",
+        "column_descriptions": {
+            "shortage_id": {"description": "MSI shortage identifier (natural PK)", "type": "string"},
+            "product_name": {"description": "Affected product", "type": "string"},
+            "active_ingredient": {"description": "Active ingredient — resolved to molecule_id", "type": "string"},
+            "shortage_status": {"description": "current | resolved | anticipated", "type": "string"},
+            "impact": {"description": "critical | significant | low", "type": "string"},
+            "date_reported": {"description": "Date shortage was reported to TGA", "type": "date"},
+        },
+        "staleness_threshold_hours": 24,
+        "target_tables": ["mol_raw.tga_medicine_shortages", "mol_bronze.tga_medicine_shortages", "mol_silver.tga_medicine_shortages"],
+    },
+    "tga_orphan_designations": {
+        "topic_tags": ["tga", "australia", "orphan_drug", "rare_disease", "designation"],
+        "ai_description": "TGA Orphan Drug Designations — annual list of therapies granted orphan status (for rare diseases affecting <2,000 Australians). Silver resolves molecule (active ingredient), sponsor (company), and indication (condition). Australian equivalent of FDA orphan designations.",
+        "column_descriptions": {
+            "designation_number": {"description": "TGA designation reference number", "type": "string"},
+            "active_ingredient": {"description": "Designated molecule — resolved to molecule_id", "type": "string"},
+            "sponsor_name": {"description": "Sponsor company", "type": "string"},
+            "intended_indication": {"description": "Indication (rare disease) — resolved to condition_id via ind_silver.resolve_condition()", "type": "string"},
+            "designation_date": {"description": "Date designation granted", "type": "date"},
+            "status": {"description": "Current designation status", "type": "string"},
+        },
+        "staleness_threshold_hours": 720,  # Monthly
+        "target_tables": ["mol_raw.tga_orphan_designations", "mol_bronze.tga_orphan_designations", "mol_silver.tga_orphan_designations"],
+    },
 }
 
 
