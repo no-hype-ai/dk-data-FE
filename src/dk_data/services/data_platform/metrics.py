@@ -262,24 +262,28 @@ def refresh_metrics_from_database_sync():
             archived=0
         )
 
-        # Get clinical trial counts by status
-        cur.execute("""
-            SELECT status, COUNT(*) as cnt
-            FROM mol_silver.clinical_trials
-            WHERE status IS NOT NULL
-            GROUP BY status
-        """)
-        status_counts = {row[0].upper() if row[0] else 'UNKNOWN': row[1] for row in cur.fetchall()}
+        # Get clinical trial counts by status. The silver hub rebuild renamed
+        # the column to `overall_status` (matches ClinicalTrials.gov enum).
+        try:
+            cur.execute("""
+                SELECT overall_status, COUNT(*) as cnt
+                FROM mol_silver.clinical_trials
+                WHERE overall_status IS NOT NULL
+                GROUP BY overall_status
+            """)
+            status_counts = {row[0].upper() if row[0] else 'UNKNOWN': row[1] for row in cur.fetchall()}
 
-        active_statuses = ['RECRUITING', 'NOT YET RECRUITING', 'ACTIVE, NOT RECRUITING', 'ENROLLING BY INVITATION', 'ACTIVE']
-        completed_statuses = ['COMPLETED']
-        terminated_statuses = ['TERMINATED', 'WITHDRAWN', 'SUSPENDED']
+            active_statuses = ['RECRUITING', 'NOT YET RECRUITING', 'ACTIVE, NOT RECRUITING', 'ENROLLING BY INVITATION', 'ACTIVE']
+            completed_statuses = ['COMPLETED']
+            terminated_statuses = ['TERMINATED', 'WITHDRAWN', 'SUSPENDED']
 
-        active = sum(status_counts.get(s, 0) for s in active_statuses)
-        completed = sum(status_counts.get(s, 0) for s in completed_statuses)
-        terminated = sum(status_counts.get(s, 0) for s in terminated_statuses)
+            active = sum(status_counts.get(s, 0) for s in active_statuses)
+            completed = sum(status_counts.get(s, 0) for s in completed_statuses)
+            terminated = sum(status_counts.get(s, 0) for s in terminated_statuses)
 
-        set_clinical_trials_count(active=active, completed=completed, terminated=terminated)
+            set_clinical_trials_count(active=active, completed=completed, terminated=terminated)
+        except Exception:
+            conn.rollback()
 
         # Get adverse events count (tables may not exist yet)
         faers_count = 0

@@ -15,13 +15,11 @@ data:
     echo "Namespace: ${NAMESPACE}"
     echo "Timestamp: $(date -u +%Y-%m-%dT%H:%M:%SZ)"
 
-    echo "--- Installing MinIO client ---"
-    # Write to /tmp — container runs with readOnlyRootFilesystem: true
+    # MinIO client is pre-installed at /tmp/mc by the install-mc init container
+    # (postgres:16-alpine has no wget on read-only rootfs).
     MC=/tmp/mc
     export MC_CONFIG_DIR=/tmp/mc-config
     mkdir -p "${MC_CONFIG_DIR}"
-    wget -q https://dl.min.io/client/mc/release/linux-amd64/mc -O "${MC}"
-    chmod +x "${MC}"
 
     # Validate required environment variables
     for var in POSTGRES_HOST POSTGRES_PORT POSTGRES_USER POSTGRES_PASSWORD POSTGRES_DB \
@@ -113,13 +111,11 @@ data:
     echo "=== Backup Verification Script ==="
     echo "Namespace: ${NAMESPACE}"
 
-    echo "--- Installing MinIO client ---"
-    # Write to /tmp — container runs with readOnlyRootFilesystem: true
+    # MinIO client is pre-installed at /tmp/mc by the install-mc init container
+    # (postgres:16-alpine has no wget on read-only rootfs).
     MC=/tmp/mc
     export MC_CONFIG_DIR=/tmp/mc-config
     mkdir -p "${MC_CONFIG_DIR}"
-    wget -q https://dl.min.io/client/mc/release/linux-amd64/mc -O "${MC}"
-    chmod +x "${MC}"
 
     # Configure MinIO client
     ${MC} alias set backup "http://${MINIO_ENDPOINT}" "${MINIO_ACCESS_KEY}" "${MINIO_SECRET_KEY}" --api S3v4
