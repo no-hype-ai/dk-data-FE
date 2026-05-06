@@ -43,7 +43,7 @@ spec:
                   mountPath: /tmp
           containers:
             - name: pg-backup-verify
-              image: postgres:16-alpine
+              image: ghcr.io/cloudnative-pg/postgresql:16.4
               command: ["/bin/sh", "/scripts/verify.sh"]
               env:
                 - name: MINIO_ENDPOINT

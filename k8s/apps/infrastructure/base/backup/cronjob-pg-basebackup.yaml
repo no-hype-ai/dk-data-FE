@@ -47,7 +47,7 @@ spec:
                   mountPath: /tmp
           containers:
             - name: pg-basebackup
-              image: postgres:16-alpine
+              image: ghcr.io/cloudnative-pg/postgresql:16.4
               command:
                 - /bin/sh
                 - -c
@@ -75,8 +75,8 @@ spec:
                       -P -v
 
                   echo "Uploading to MinIO: ${S3_PATH}"
-                  mc alias set minio "http://${MINIO_ENDPOINT}" "${MINIO_ACCESS_KEY}" "${MINIO_SECRET_KEY}"
-                  mc cp --recursive "${BACKUP_DIR}/" "minio/${MINIO_BUCKET}/basebackup/${TIMESTAMP}/"
+                  /tmp/mc alias set minio "http://${MINIO_ENDPOINT}" "${MINIO_ACCESS_KEY}" "${MINIO_SECRET_KEY}"
+                  /tmp/mc cp --recursive "${BACKUP_DIR}/" "minio/${MINIO_BUCKET}/basebackup/${TIMESTAMP}/"
 
                   echo "Dropping replication slot: ${SLOT_NAME}"
                   psql -h "${POSTGRES_HOST}" -U "${POSTGRES_USER}" -d "${POSTGRES_DB}" \
@@ -118,7 +118,7 @@ spec:
                 - name: MINIO_BUCKET
                   value: "postgres-backups"
                 - name: MC_CONFIG_DIR
-                  value: "/tmp/mc"
+                  value: "/tmp/mc-config"
               resources:
                 requests:
                   memory: "512Mi"
