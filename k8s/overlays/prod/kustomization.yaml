@@ -62,10 +62,10 @@ patches:
             - name: job-trigger
               resources:
                 requests:
-                  memory: "128Mi"
+                  memory: "256Mi"
                   cpu: "100m"
                 limits:
-                  memory: "512Mi"
+                  memory: "1Gi"
                   cpu: "500m"
   target:
     kind: Deployment
