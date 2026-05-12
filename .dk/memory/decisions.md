@@ -4,13 +4,38 @@
 > Format: ID, title, date. Then Context, Decision, Rationale, Tags.
 > Only record decisions that a future developer or AI session needs to know about.
 
-<!-- Next ID: D008 -->
+<!-- Next ID: D009 -->
 
 <!--
   Feature-002 decisions D008-D015 were removed from global memory on 2026-04-13
   per drift-audit fix D4. They live in .dk/specs/002-external-integration-foundation/memory/decisions.md
   and will be promoted here on feature merge.
+
+  D008 below is reusing the next-available slot because the feature-002 D008
+  has not been promoted yet. On merge of feature-002, the future D008 there
+  will be renumbered up.
 -->
+
+## D008 — CI bot-PAT fallback for GH Enterprise PR-create restriction — 2026-05-12
+
+**Context**: `build-dk-data-fe.yaml` builds the job-trigger image and opens a chore-PR for the prod/staging overlay image-tag bump via `gh pr create`. Since 2026-04-19 the PR-creation step has failed: `GitHub Actions is not permitted to create or approve pull requests`. Repo admin API call to flip `can_approve_pull_request_reviews=true` returns HTTP 409: `"The enterprise does not allow GitHub Actions to create or approve pull requests"`. The constraint is at the GH Enterprise tier, above repo and org settings. Four orphan `chore/prod-image-tag-*` branches piled up before manual cleanup. Every push to main has required a human to open and merge the chore PR (PR #354, #358, #361, #362).
+
+**Decision**: Wire the workflow's `gh pr create` steps to prefer a user-owned bot PAT (`DK_BOT_PAT` workflow secret) and fall back to the default `GITHUB_TOKEN` if the secret is unset. The enterprise owner (nick) will flip the enterprise toggle in parallel; once that propagates and CI confirms `gh pr create` works with the default token, delete `DK_BOT_PAT` and CI returns to the default identity. Both prod and staging manifest-PR steps use `GH_TOKEN: ${{ secrets.DK_BOT_PAT || secrets.GITHUB_TOKEN }}`.
+
+**Rationale**: 
+- **Primary path (enterprise flip)** is the cleanest fix and the user owns it, but propagation timing is unknown.
+- **Bot PAT** is a 30-min unblock that works today and remains a fallback even after the enterprise flip (the `||` operator harmlessly prefers GITHUB_TOKEN when the secret is empty).
+- **GitHub App** (the durable production-grade alternative) was considered as a third path but rejected for this iteration — heavier to set up (per-org install, private-key rotation), and unnecessary if the enterprise flip lands. Reconsider if a single bot user becomes a bus-factor concern.
+- The 2026-04-17 lesson on CI manifest-push blocked by branch protection is a related earlier instance of the same root pattern: GH Enterprise constraints that need enterprise-admin (not repo-admin) to resolve.
+
+**Operational steps for activation** (owner: nick):
+1. Generate a fine-grained PAT on a bot account scoped to `data-kinetic/dk-data-FE` with `Contents: read+write` and `Pull requests: read+write`.
+2. `gh secret set DK_BOT_PAT --body "$PAT" -R data-kinetic/dk-data-FE`.
+3. Push any commit to main; verify the next CI run's `gh pr create` step succeeds.
+4. Track 90-day PAT expiry (fine-grained default).
+5. When enterprise toggle is flipped and a default-GITHUB_TOKEN run confirms PR creation works: `gh secret delete DK_BOT_PAT -R data-kinetic/dk-data-FE`.
+
+**Tags**: `[CICD]`, `[BOT]`, `[ENTERPRISE]`
 
 ## D007 — Crosswalk dedupe and conflict policy — 2026-04-11
 
