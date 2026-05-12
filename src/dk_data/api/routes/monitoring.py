@@ -48,14 +48,20 @@ from dk_data.observability.metrics import (
 # Router
 router = APIRouter(prefix="/monitoring", tags=["monitoring"])
 
-# Initialize metrics on module load
+# Initialize metrics on module load.
+#
+# We intentionally do NOT call refresh_metrics_from_database_sync() at
+# import time. That refresh opens a psycopg2 connection and runs SELECTs
+# across mol_silver/mol_bronze/hcs_gold/etc — minutes of work in prod —
+# which blocks uvicorn from binding :8000 until it completes. The
+# liveness probe then kills the pod before the HTTP server is up.
+#
+# The /metrics endpoint (line ~120) refreshes on demand on every scrape,
+# so removing the import-time call doesn't lose data — Prometheus just
+# gets demo values (zeros) for the first scrape cycle, then live values
+# from the next scrape onward.
 if DK_METRICS_AVAILABLE:
     initialize_demo_metrics()
-    # Initial refresh from database
-    try:
-        refresh_metrics_from_database_sync()
-    except Exception as e:
-        logger.warning(f"Initial metrics refresh failed: {e}")
 
 
 # ==========================================
