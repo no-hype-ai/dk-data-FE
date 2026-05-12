@@ -43,4 +43,9 @@ USER appuser
 
 EXPOSE 8000
 
-ENTRYPOINT ["uvicorn", "dk_data.ingestion.batch.api:app", "--host", "0.0.0.0", "--port", "8000"]
+# --workers 4: prevents single-worker self-DoS where a /metrics scrape (which
+# triggers refresh_metrics_from_database_sync over many silver/bronze tables)
+# saturates the worker for seconds and starves /health probe responses. With
+# multiple workers, scrape work on one process doesn't block probes on the
+# others. See PR #357 (Option C) + #359 (Option D) context.
+ENTRYPOINT ["uvicorn", "dk_data.ingestion.batch.api:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "4"]
