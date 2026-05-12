@@ -67,6 +67,20 @@ patches:
                 limits:
                   memory: "1Gi"
                   cpu: "500m"
+              livenessProbe:
+                httpGet:
+                  path: /health
+                  port: 8000
+                initialDelaySeconds: 60
+                periodSeconds: 30
+                failureThreshold: 5
+              readinessProbe:
+                httpGet:
+                  path: /health
+                  port: 8000
+                initialDelaySeconds: 30
+                periodSeconds: 10
+                failureThreshold: 5
   target:
     kind: Deployment
     name: job-trigger
