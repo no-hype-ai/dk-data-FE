@@ -44,7 +44,7 @@ spec:
           containers:
             - name: pg-backup-verify
               image: ghcr.io/cloudnative-pg/postgresql:16.4
-              command: ["/bin/sh", "/scripts/verify.sh"]
+              command: ["/bin/bash", "/scripts/verify.sh"]
               env:
                 - name: MINIO_ENDPOINT
                   value: "minio.infra.svc.cluster.local:9000"

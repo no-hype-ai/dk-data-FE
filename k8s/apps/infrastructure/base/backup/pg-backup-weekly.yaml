@@ -44,7 +44,7 @@ spec:
           containers:
             - name: pg-backup
               image: ghcr.io/cloudnative-pg/postgresql:16.4
-              command: ["/bin/sh", "/scripts/backup.sh"]
+              command: ["/bin/bash", "/scripts/backup.sh"]
               env:
                 - name: POSTGRES_HOST
                   valueFrom:
