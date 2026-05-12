@@ -138,7 +138,11 @@ jobs:
 
       - name: Open manifest PR (prod overlay -> main)
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # Prefer DK_BOT_PAT (user-owned bot PAT) so `gh pr create` succeeds
+          # even when the GH Enterprise "Allow GitHub Actions to create and
+          # approve pull requests" toggle is OFF. Falls back to GITHUB_TOKEN
+          # if the secret is unset. See .dk/memory/decisions.md D008.
+          GH_TOKEN: ${{ secrets.DK_BOT_PAT || secrets.GITHUB_TOKEN }}
           NEW_TAG: main-${{ steps.vars.outputs.sha_short }}
           RUN_ID: ${{ github.run_id }}
         run: |
@@ -224,7 +228,8 @@ jobs:
 
       - name: Open manifest PR (staging overlay -> staging)
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # See prod step above + .dk/memory/decisions.md D008.
+          GH_TOKEN: ${{ secrets.DK_BOT_PAT || secrets.GITHUB_TOKEN }}
           NEW_TAG: staging-${{ steps.vars.outputs.sha_short }}
           RUN_ID: ${{ github.run_id }}
         run: |
