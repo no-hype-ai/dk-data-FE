@@ -27,6 +27,7 @@ spec:
           restartPolicy: Never
           securityContext:
             fsGroup: 1000
+            runAsNonRoot: true
             seccompProfile:
               type: RuntimeDefault
           initContainers:
