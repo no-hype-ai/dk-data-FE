@@ -65,15 +65,22 @@ _refresher_thread = None
 
 def _metrics_refresher_loop(interval: float, jitter: float):
     import random
+    import threading
     import time
 
+    in_flight = threading.Lock()
     while True:
         sleep_for = interval + random.uniform(-jitter, jitter)
         time.sleep(max(5.0, sleep_for))
+        if not in_flight.acquire(blocking=False):
+            logger.debug("Skipping metrics refresh — previous refresh still running")
+            continue
         try:
             refresh_metrics_from_database_sync()
         except Exception as e:
             logger.warning(f"Background metrics refresh failed: {e}")
+        finally:
+            in_flight.release()
 
 
 def _start_metrics_refresher():
