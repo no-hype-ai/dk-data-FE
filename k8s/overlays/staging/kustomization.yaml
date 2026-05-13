@@ -198,14 +198,14 @@ patches:
 - patch: |-
     - op: replace
       path: /spec/jobTemplate/spec/template/spec/containers/0/env/5/value
-      value: "minio.infra-staging.svc.cluster.local:9000"
+      value: "seaweedfs-s3.infra.svc.cluster.local:8333"
   target:
     kind: CronJob
     name: pg-backup-daily
 - patch: |-
     - op: replace
       path: /spec/jobTemplate/spec/template/spec/containers/0/env/5/value
-      value: "minio.infra-staging.svc.cluster.local:9000"
+      value: "seaweedfs-s3.infra.svc.cluster.local:8333"
   target:
     kind: CronJob
     name: pg-backup-weekly
