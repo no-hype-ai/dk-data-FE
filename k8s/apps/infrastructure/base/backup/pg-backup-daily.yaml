@@ -35,6 +35,8 @@ spec:
               image: minio/minio:RELEASE.2024-11-07T00-52-20Z
               command: ["sh", "-c", "cp /usr/bin/mc /tmp/mc && chmod +x /tmp/mc"]
               securityContext:
+                runAsNonRoot: false
+                runAsUser: 0
                 allowPrivilegeEscalation: false
                 readOnlyRootFilesystem: true
                 capabilities:
