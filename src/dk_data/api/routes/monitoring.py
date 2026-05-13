@@ -48,20 +48,61 @@ from dk_data.observability.metrics import (
 # Router
 router = APIRouter(prefix="/monitoring", tags=["monitoring"])
 
-# Initialize metrics on module load.
+# Initialize metrics on module load + start the background refresher.
 #
-# We intentionally do NOT call refresh_metrics_from_database_sync() at
-# import time. That refresh opens a psycopg2 connection and runs SELECTs
-# across mol_silver/mol_bronze/hcs_gold/etc — minutes of work in prod —
-# which blocks uvicorn from binding :8000 until it completes. The
-# liveness probe then kills the pod before the HTTP server is up.
+# History: import-time refresh blocked uvicorn bind (probe killed pod);
+# moving the refresh on-demand into /metrics created a different problem
+# — every Prometheus scrape × every uvicorn worker triggered a fresh
+# psycopg2 connection and a barrage of SELECT COUNT(*) queries that
+# contended with pg_dump and autovacuum on the postgres primary.
 #
-# The /metrics endpoint (line ~120) refreshes on demand on every scrape,
-# so removing the import-time call doesn't lose data — Prometheus just
-# gets demo values (zeros) for the first scrape cycle, then live values
-# from the next scrape onward.
+# Final design: background daemon thread per worker process, refreshes
+# every METRICS_REFRESH_INTERVAL seconds (default 60s) with jitter to
+# de-synchronize across workers. /metrics returns cached gauge values
+# — fast, non-blocking, no DB I/O on the request path.
+_refresher_thread = None
+
+
+def _metrics_refresher_loop(interval: float, jitter: float):
+    import random
+    import time
+
+    while True:
+        sleep_for = interval + random.uniform(-jitter, jitter)
+        time.sleep(max(5.0, sleep_for))
+        try:
+            refresh_metrics_from_database_sync()
+        except Exception as e:
+            logger.warning(f"Background metrics refresh failed: {e}")
+
+
+def _start_metrics_refresher():
+    import os
+    import threading
+
+    global _refresher_thread
+    if _refresher_thread is not None and _refresher_thread.is_alive():
+        return
+
+    interval = float(os.getenv("METRICS_REFRESH_INTERVAL", "60"))
+    jitter = float(os.getenv("METRICS_REFRESH_JITTER", "15"))
+
+    _refresher_thread = threading.Thread(
+        target=_metrics_refresher_loop,
+        args=(interval, jitter),
+        name="metrics-refresher",
+        daemon=True,
+    )
+    _refresher_thread.start()
+    logger.info(
+        f"Metrics refresher started (interval={interval}s, jitter=±{jitter}s)"
+    )
+
+
 if DK_METRICS_AVAILABLE:
     initialize_demo_metrics()
+    if refresh_metrics_from_database_sync is not None:
+        _start_metrics_refresher()
 
 
 # ==========================================
@@ -121,16 +162,9 @@ class RunTriggerResponse(BaseModel):
 async def prometheus_metrics():
     """
     Prometheus metrics endpoint.
-    Returns metrics in Prometheus text format.
-    Refreshes from database on each call for live data.
+    Returns cached gauge values — background refresher updates them
+    every METRICS_REFRESH_INTERVAL seconds. No DB I/O on this path.
     """
-    # Refresh metrics from database before returning
-    if DK_METRICS_AVAILABLE and refresh_metrics_from_database_sync:
-        try:
-            refresh_metrics_from_database_sync()
-        except Exception as e:
-            logger.warning(f"Metrics refresh failed: {e}")
-
     return Response(
         content=generate_latest(),
         media_type=CONTENT_TYPE_LATEST,
