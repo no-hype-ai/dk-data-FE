@@ -46,24 +46,37 @@ spec:
               echo "Source: $ZIP_PATH"
               echo "Target: ${POSTGRES_HOST}:${POSTGRES_PORT}/${POSTGRES_DB} (bronze schema)"
 
-              # Skip if already loaded (more than 15,000 drugs present)
-              ROW_COUNT=$(python3 -c "
-              import psycopg2, os, sys
-              try:
-                conn = psycopg2.connect(
+              # Skip if already loaded (more than 15,000 drugs present).
+              # Retry the connection check up to 3 times so a transient connect
+              # error doesn't silently trigger a ~50min full reload — that path
+              # was hit on every Argo sync until this guard was added.
+              ROW_COUNT=""
+              for attempt in 1 2 3; do
+                if ROW_COUNT=$(python3 -c "
+              import psycopg2, os
+              conn = psycopg2.connect(
                   host=os.environ['POSTGRES_HOST'],
                   port=int(os.environ.get('POSTGRES_PORT', '5432')),
                   database=os.environ['POSTGRES_DB'],
                   user=os.environ['POSTGRES_USER'],
                   password=os.environ['POSTGRES_PASSWORD'],
-                )
-                cur = conn.cursor()
-                cur.execute(\"SELECT COUNT(*) FROM mol_bronze.drugbank_data\")
-                print(cur.fetchone()[0])
-                conn.close()
-              except Exception as e:
-                print(0)
-              " 2>/dev/null || echo "0")
+              )
+              cur = conn.cursor()
+              cur.execute('SELECT COUNT(*) FROM mol_bronze.drugbank_data')
+              print(cur.fetchone()[0])
+              conn.close()
+              " 2>&1); then
+                  break
+                fi
+                echo "Rowcount check failed (attempt ${attempt}/3): $ROW_COUNT"
+                ROW_COUNT=""
+                sleep 10
+              done
+              if [ -z "$ROW_COUNT" ]; then
+                echo "ERROR: could not check mol_bronze.drugbank_data row count after 3 attempts."
+                echo "Refusing to assume empty and trigger a full reload. Failing the job."
+                exit 1
+              fi
 
               if [ "$ROW_COUNT" -gt 15000 ]; then
                 echo "DrugBank already loaded ($ROW_COUNT drugs in mol_bronze.drugbank_data). Skipping."
