@@ -53,7 +53,7 @@ spec:
                       name: dk-data-secrets
                       key: POSTGRES_DB
                 - name: MINIO_ENDPOINT
-                  value: "minio.infra.svc.cluster.local:9000"
+                  value: "seaweedfs-s3.infra.svc.cluster.local:8333"
                 - name: MINIO_ACCESS_KEY
                   valueFrom:
                     secretKeyRef:
