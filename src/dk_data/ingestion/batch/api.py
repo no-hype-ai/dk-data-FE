@@ -281,19 +281,11 @@ async def readiness_check():
 async def metrics():
     """
     Prometheus metrics endpoint.
-    Feature: 002-production-readiness
-    Task: T060
-    Updated: 013-dk-data-observability — refresh DB gauges before scrape
+    DB-backed gauges are refreshed by the background thread in
+    api/routes/monitoring.py — no DB I/O on the request path.
     """
     if not OBSERVABILITY_AVAILABLE:
         raise HTTPException(status_code=501, detail="Observability not available")
-
-    # Refresh DB-backed gauges so Prometheus gets current values
-    try:
-        from dk_data.services.data_platform.metrics import refresh_metrics_from_database_sync
-        refresh_metrics_from_database_sync()
-    except Exception as e:
-        logger.warning(f"Failed to refresh DB metrics before scrape: {e}")
 
     return Response(
         content=get_metrics(),
