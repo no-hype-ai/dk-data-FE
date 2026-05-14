@@ -203,20 +203,26 @@ spec:
       ports:
         - protocol: TCP
           port: 5432
-    # MinIO (backup storage - prod)
+    # SeaweedFS S3 gateway (backup storage - prod)
+    # Was 9000 when this was MinIO; moved to 8333 with the SeaweedFS cluster
+    # migration. Both ports kept temporarily for any in-flight legacy paths.
     - to:
         - namespaceSelector:
             matchLabels:
               kubernetes.io/metadata.name: infra
       ports:
         - protocol: TCP
+          port: 8333
+        - protocol: TCP
           port: 9000
-    # MinIO (backup storage - staging)
+    # SeaweedFS S3 gateway (backup storage - staging)
     - to:
         - namespaceSelector:
             matchLabels:
               kubernetes.io/metadata.name: infra-staging
       ports:
+        - protocol: TCP
+          port: 8333
         - protocol: TCP
           port: 9000
     # Alloy (OTLP telemetry - prod)
