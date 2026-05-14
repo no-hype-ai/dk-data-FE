@@ -25,13 +25,17 @@ if [ -z "$SUBJECT" ]; then
 fi
 
 if [ -z "${JWT_SECRET:-}" ]; then
-  JWT_SECRET=$(doppler secrets get JWT_SECRET --plain --config "${DOPPLER_CONFIG:-dk-data-prod}" 2>/dev/null) || {
+  JWT_SECRET=$(doppler secrets get JWT_SECRET --plain \
+      --project "${DOPPLER_PROJECT:-dk-data-fe}" \
+      --config  "${DOPPLER_CONFIG:-prd}" 2>/dev/null) || {
     echo "Error: JWT_SECRET not in env and 'doppler secrets get' failed." >&2
-    echo "Set JWT_SECRET=... or ensure 'doppler' is logged in for project dk-data." >&2
+    echo "Set JWT_SECRET=..., or DOPPLER_PROJECT/DOPPLER_CONFIG, or ensure" >&2
+    echo "doppler is logged in for project dk-data-fe." >&2
     exit 1
   }
 fi
 
+export JWT_SECRET
 python3 - "$SUBJECT" "$EXP_DAYS" <<'PY'
 import json, os, sys, time, base64, hmac, hashlib
 
