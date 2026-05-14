@@ -24,7 +24,7 @@ data:
     #     metering_proxy_replicas                       = 2
     #     → sum(max_in_flight) per proxy replica ≤ 36
     #
-    #   Current sum below = 32, leaving 4 slots per replica as headroom.
+    #   Current sum below = 34, leaving 2 slots per replica as headroom.
     #   If you add a consumer, either re-verify against this budget OR
     #   bump PGRST_DB_POOL first.
     #
@@ -99,6 +99,17 @@ data:
         max_in_flight: 4
         tier: standard
         api_keys: []
+      edwards-meadow:
+        alias: em
+        allowed_schemas:
+          - hcs_silver
+          - hcs_gold
+          - meta
+        rpm_limit: 200
+        max_in_flight: 2  # read-only CLI; conservative to stay inside per-replica budget
+        tier: standard
+        api_keys:
+          - dk_data_em_c8c692ca01a8771112d1bc2823341b90
       # ------------------------------------------------------------------
       # Internal cluster services — T020: explicit allowlist, no wildcard.
       # ------------------------------------------------------------------
@@ -113,7 +124,8 @@ data:
         max_in_flight: 4  # still capped for DB-pool protection
         tier: unlimited
         api_keys: []
-    # Sum of max_in_flight above = 8+8+4+4+4+4 = 32 per proxy replica.
-    # × 2 proxy replicas = 64 worst-case pool slots held across all
+    # Sum of max_in_flight above = 8+8+4+4+4+2+4 = 34 per proxy replica.
+    # × 2 proxy replicas = 68 worst-case pool slots held across all
     # consumers under pathological slow-query conditions. Safe budget
-    # is 72, leaving 8 slots of headroom for PostgREST's own overhead.
+    # is 72, leaving 4 slots of headroom for PostgREST's own overhead.
+    # Update this comment whenever you add or change a max_in_flight.
