@@ -76,25 +76,34 @@ if [[ -f "$marker_file" ]]; then
   changed_handoffs=$(
     LC_ALL=C comm -12 <(echo "$prev_open") <(echo "$curr_open") \
       | while read -r name; do
-          [[ -z "$name" ]] && continue
+          if [[ -z "$name" ]]; then continue; fi
           f="${MESH_ROOT}/handoffs/${TAG}/open/$name"
           if stat -f '%m' "$f" >/dev/null 2>&1; then
             mt=$(stat -f '%m' "$f")
           else
             mt=$(stat -c '%Y' "$f")
           fi
-          [[ "$mt" -gt "$marker_mtime" ]] && echo "$name"
+          if [[ "$mt" -gt "$marker_mtime" ]]; then
+            echo "$name"
+          fi
         done | tr '\n' ',' | sed 's/,$//'
   )
 else
   changed_handoffs=""
 fi
 
-# Build summary.
+# Build summary. Note: `[[ test ]] && action` under `set -e` would exit when
+# the test is false, so use explicit `if` blocks instead.
 summary_parts=()
-[[ -n "$new_handoffs" ]] && summary_parts+=("$(echo "$new_handoffs" | tr ',' '\n' | wc -l | tr -d ' ') new")
-[[ -n "$closed_handoffs" ]] && summary_parts+=("$(echo "$closed_handoffs" | tr ',' '\n' | wc -l | tr -d ' ') closed")
-[[ -n "$changed_handoffs" ]] && summary_parts+=("$(echo "$changed_handoffs" | tr ',' '\n' | wc -l | tr -d ' ') changed")
+if [[ -n "$new_handoffs" ]]; then
+  summary_parts+=("$(echo "$new_handoffs" | tr ',' '\n' | wc -l | tr -d ' ') new")
+fi
+if [[ -n "$closed_handoffs" ]]; then
+  summary_parts+=("$(echo "$closed_handoffs" | tr ',' '\n' | wc -l | tr -d ' ') closed")
+fi
+if [[ -n "$changed_handoffs" ]]; then
+  summary_parts+=("$(echo "$changed_handoffs" | tr ',' '\n' | wc -l | tr -d ' ') changed")
+fi
 if [[ ${#summary_parts[@]} -eq 0 ]]; then
   # Hash differs but file-set + mtimes don't categorize — likely a peer status republish.
   summary_parts+=("peer status republish")
