@@ -128,6 +128,7 @@ from .sources.cms_coverage import load_cms_coverage_data
 from .sources.cms_hac_reduction import load_cms_hac_reduction_data
 from .sources.cms_hrrp import load_cms_hrrp_data
 from .sources.cms_vbp import load_cms_vbp_data
+from .sources.tavr_catalog_data_gov import load_tavr_catalog_data_gov_data
 
 from .fetchers import (
     PubMedFetcher,
@@ -241,6 +242,7 @@ from .fetchers import (
     CMSHACReductionFetcher,
     CMSHRRPFetcher,
     CMSVBPFetcher,
+    TavrCatalogDataGovFetcher,
 )
 from .downloaders.cms_downloader import CMS_DATASET_REGISTRY
 
@@ -1236,6 +1238,15 @@ SOURCES = {
         'loader': load_research_orgs_ror_data,
         'requires_file': False,
         'default_days_back': None,  # Bulk snapshot — full JSON dump every run
+    },
+    # --- TAVR Benchmark Lab Phase 0 (spec 006) — catalog discovery ---
+    'tavr_catalog_data_gov': {
+        'name': 'TAVR Catalog — Data.gov',
+        'description': 'CKAN package_search discovery on catalog.data.gov; populates hcs_bronze/silver/gold tavr_catalog tables with provenance discipline.',
+        'fetcher': TavrCatalogDataGovFetcher,
+        'loader': load_tavr_catalog_data_gov_data,
+        'requires_file': False,
+        'default_days_back': None,
     },
 }
 

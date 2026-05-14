@@ -115,6 +115,7 @@ from .cms_coverage import CMSCoverageFetcher
 from .cms_hac_reduction import CMSHACReductionFetcher
 from .cms_hrrp import CMSHRRPFetcher
 from .cms_vbp import CMSVBPFetcher
+from .tavr_catalog_data_gov import TavrCatalogDataGovFetcher
 
 __all__ = [
     'BaseFetcher',
@@ -233,4 +234,5 @@ __all__ = [
     'CMSHACReductionFetcher',
     'CMSHRRPFetcher',
     'CMSVBPFetcher',
+    'TavrCatalogDataGovFetcher',
 ]
