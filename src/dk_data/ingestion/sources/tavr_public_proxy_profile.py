@@ -26,7 +26,6 @@ Schema: migration 243.
 Spec: .dk/specs/011-tavr-public-proxy-profile-provisioning/spec.md
 """
 
-import json
 import logging
 from typing import Any, Dict, List, Optional
 
