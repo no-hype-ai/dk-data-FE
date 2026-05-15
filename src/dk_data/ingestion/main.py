@@ -133,6 +133,7 @@ from .sources.tavr_hospital_profile import load_tavr_hospital_profile_data
 from .sources.tavr_source_readiness import load_tavr_source_readiness_data
 from .sources.tavr_program_year import load_tavr_program_year_data
 from .sources.tavr_benchmark_inputs import load_tavr_benchmark_inputs_data
+from .sources.tavr_public_proxy_profile import load_tavr_public_proxy_profile_data
 
 from .fetchers import (
     PubMedFetcher,
@@ -250,6 +251,7 @@ from .fetchers import (
     TavrSourceReadinessFetcher,
     TavrProgramYearFetcher,
     TavrBenchmarkInputsFetcher,
+    TavrPublicProxyProfileFetcher,
 )
 from .downloaders.cms_downloader import CMS_DATASET_REGISTRY
 
@@ -1279,6 +1281,15 @@ SOURCES = {
         'description': 'Phase 1B denormalized scoring inputs per (ccn, year). Joins tavr_hospital_profile + tavr_program_year + CMS Hospital Service Area + MSPB / VBP / HRRP / HAC. Source lineage map in source_lineage JSONB.',
         'fetcher': TavrBenchmarkInputsFetcher,
         'loader': load_tavr_benchmark_inputs_data,
+        'requires_file': False,
+        'default_days_back': None,
+    },
+    # --- TAVR Benchmark Lab Phase 1B (spec 011) — public proxy approximation layer ---
+    'tavr_public_proxy_profile': {
+        'name': 'TAVR Public Proxy Profile',
+        'description': 'Phase 1B public approximation for licensed-style TAVR fields. Side-by-side public/licensed/selected schema; licensed columns NULL in v1. All seven red-flag detectors apply. coverage_class fixed to public_proxy.',
+        'fetcher': TavrPublicProxyProfileFetcher,
+        'loader': load_tavr_public_proxy_profile_data,
         'requires_file': False,
         'default_days_back': None,
     },
