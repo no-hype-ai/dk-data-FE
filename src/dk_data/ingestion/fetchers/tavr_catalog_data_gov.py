@@ -44,6 +44,9 @@ class TavrCatalogDataGovFetcher(BaseFetcher):
     SOURCE_NAME = "tavr_catalog_data_gov"
     BASE_URL = CKAN_ENDPOINT
 
+    def get_latest_url(self) -> str:
+        return CKAN_ENDPOINT
+
     def fetch(self, **kwargs) -> Dict[str, Any]:
         """Run package_search for each seed query and aggregate results.
 
