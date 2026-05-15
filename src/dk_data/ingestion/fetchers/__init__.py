@@ -117,6 +117,7 @@ from .cms_hrrp import CMSHRRPFetcher
 from .cms_vbp import CMSVBPFetcher
 from .tavr_catalog_data_gov import TavrCatalogDataGovFetcher
 from .tavr_source_readiness import TavrSourceReadinessFetcher
+from .tavr_program_year import TavrProgramYearFetcher
 
 __all__ = [
     'BaseFetcher',
@@ -237,4 +238,5 @@ __all__ = [
     'CMSVBPFetcher',
     'TavrCatalogDataGovFetcher',
     'TavrSourceReadinessFetcher',
+    'TavrProgramYearFetcher',
 ]
