@@ -120,6 +120,7 @@ from .tavr_hospital_profile import TavrHospitalProfileFetcher
 from .tavr_source_readiness import TavrSourceReadinessFetcher
 from .tavr_program_year import TavrProgramYearFetcher
 from .tavr_benchmark_inputs import TavrBenchmarkInputsFetcher
+from .tavr_public_proxy_profile import TavrPublicProxyProfileFetcher
 
 __all__ = [
     'BaseFetcher',
@@ -242,4 +243,5 @@ __all__ = [
     'TavrSourceReadinessFetcher',
     'TavrProgramYearFetcher',
     'TavrBenchmarkInputsFetcher',
+    'TavrPublicProxyProfileFetcher',
 ]
