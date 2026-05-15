@@ -131,6 +131,7 @@ from .sources.cms_vbp import load_cms_vbp_data
 from .sources.tavr_catalog_data_gov import load_tavr_catalog_data_gov_data
 from .sources.tavr_hospital_profile import load_tavr_hospital_profile_data
 from .sources.tavr_source_readiness import load_tavr_source_readiness_data
+from .sources.tavr_program_year import load_tavr_program_year_data
 
 from .fetchers import (
     PubMedFetcher,
@@ -246,6 +247,7 @@ from .fetchers import (
     CMSVBPFetcher,
     TavrCatalogDataGovFetcher,
     TavrSourceReadinessFetcher,
+    TavrProgramYearFetcher,
 )
 from .downloaders.cms_downloader import CMS_DATASET_REGISTRY
 
@@ -1257,6 +1259,15 @@ SOURCES = {
         'description': 'Derived gold classifier — one row per source_id with status (claim_eligible/context_only/blocked/absent) derived from meta.refresh_log + meta.table_health + hcs_gold.tavr_catalog_candidate_manifest.',
         'fetcher': TavrSourceReadinessFetcher,
         'loader': load_tavr_source_readiness_data,
+        'requires_file': False,
+        'default_days_back': None,
+    },
+    # --- TAVR Benchmark Lab Phase 1A (spec 009) — DRG 266/267 program-year facts ---
+    'tavr_program_year': {
+        'name': 'TAVR Program Year',
+        'description': 'DRG-grain TAVR program facts per (ccn, year). Aggregates CMS Inpatient PUF silver filtered to MS-DRG 266/267 with MCC capture proxy, YoY growth, national/state percentile.',
+        'fetcher': TavrProgramYearFetcher,
+        'loader': load_tavr_program_year_data,
         'requires_file': False,
         'default_days_back': None,
     },

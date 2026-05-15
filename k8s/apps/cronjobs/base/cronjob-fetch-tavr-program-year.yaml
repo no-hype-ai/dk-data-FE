@@ -1,0 +1,79 @@
+# TAVR Program Year — DRG 266/267 MedPAR-like proxy (data-researcher §4.5)
+# Phase 1A of edwards-meadow TAVR Benchmark Lab.
+# Spec: .dk/specs/009-tavr-program-year-provisioning/spec.md
+# Migration: 241_tavr_program_year.sql
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: fetch-tavr-program-year
+  labels:
+    app: fetch-tavr-program-year
+    app.kubernetes.io/name: fetch-tavr-program-year
+    app.kubernetes.io/component: ingestion
+    app.kubernetes.io/part-of: dk-data
+spec:
+  schedule: "30 6 * * 2"  # Tuesdays 06:30 UTC, weekly (after hospital-profile)
+  concurrencyPolicy: Forbid
+  startingDeadlineSeconds: 3600
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      backoffLimit: 2
+      ttlSecondsAfterFinished: 86400
+      activeDeadlineSeconds: 3600
+      template:
+        metadata:
+          labels:
+            app: fetch-tavr-program-year
+            app.kubernetes.io/component: fetcher
+            app.kubernetes.io/part-of: dk-data
+            team: data-platform
+            service: dk-data
+            product: dk-data
+        spec:
+          restartPolicy: Never
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 1000
+            fsGroup: 1000
+            seccompProfile:
+              type: RuntimeDefault
+          imagePullSecrets:
+            - name: ghcr-credentials
+          containers:
+            - name: fetch-tavr-program-year
+              image: ghcr.io/data-kinetic/dk-data-fe/job-trigger:latest
+              command: ["python", "-m", "dk_data.ingestion.main"]
+              args: ["tavr_program_year"]
+              envFrom:
+                - secretRef:
+                    name: dk-data-secrets
+              env:
+                - name: OTEL_EXPORTER_OTLP_ENDPOINT
+                  value: "http://alloy.infra.svc.cluster.local:4317"
+                - name: OTEL_ENABLED
+                  value: "true"
+                - name: POSTGRES_HOST_DIRECT
+                  valueFrom:
+                    secretKeyRef:
+                      name: dk-data-secrets
+                      key: POSTGRES_HOST
+              resources:
+                requests:
+                  memory: "256Mi"
+                  cpu: "100m"
+                limits:
+                  memory: "512Mi"
+                  cpu: "300m"
+              securityContext:
+                allowPrivilegeEscalation: false
+                readOnlyRootFilesystem: true
+                capabilities:
+                  drop: ["ALL"]
+              volumeMounts:
+                - name: tmp
+                  mountPath: /tmp
+          volumes:
+            - name: tmp
+              emptyDir: {}
