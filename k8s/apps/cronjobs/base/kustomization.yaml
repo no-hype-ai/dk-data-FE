@@ -156,6 +156,7 @@ resources:
   - cronjob-fetch-imgt.yaml
   - cronjob-fetch-cdc-vaccines.yaml
   - cronjob-fetch-tavr-catalog-data-gov.yaml
+  - cronjob-fetch-tavr-source-readiness.yaml
   - cronjob-fetch-chembl-activities.yaml
   - cronjob-fetch-fda-rems.yaml
   - cronjob-fetch-fda-ndc.yaml

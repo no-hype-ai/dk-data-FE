@@ -116,6 +116,7 @@ from .cms_hac_reduction import CMSHACReductionFetcher
 from .cms_hrrp import CMSHRRPFetcher
 from .cms_vbp import CMSVBPFetcher
 from .tavr_catalog_data_gov import TavrCatalogDataGovFetcher
+from .tavr_source_readiness import TavrSourceReadinessFetcher
 
 __all__ = [
     'BaseFetcher',
@@ -235,4 +236,5 @@ __all__ = [
     'CMSHRRPFetcher',
     'CMSVBPFetcher',
     'TavrCatalogDataGovFetcher',
+    'TavrSourceReadinessFetcher',
 ]
