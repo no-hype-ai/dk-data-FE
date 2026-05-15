@@ -129,6 +129,7 @@ from .sources.cms_hac_reduction import load_cms_hac_reduction_data
 from .sources.cms_hrrp import load_cms_hrrp_data
 from .sources.cms_vbp import load_cms_vbp_data
 from .sources.tavr_catalog_data_gov import load_tavr_catalog_data_gov_data
+from .sources.tavr_source_readiness import load_tavr_source_readiness_data
 
 from .fetchers import (
     PubMedFetcher,
@@ -243,6 +244,7 @@ from .fetchers import (
     CMSHRRPFetcher,
     CMSVBPFetcher,
     TavrCatalogDataGovFetcher,
+    TavrSourceReadinessFetcher,
 )
 from .downloaders.cms_downloader import CMS_DATASET_REGISTRY
 
@@ -1245,6 +1247,15 @@ SOURCES = {
         'description': 'CKAN package_search discovery on catalog.data.gov; populates hcs_bronze/silver/gold tavr_catalog tables with provenance discipline.',
         'fetcher': TavrCatalogDataGovFetcher,
         'loader': load_tavr_catalog_data_gov_data,
+        'requires_file': False,
+        'default_days_back': None,
+    },
+    # --- TAVR Benchmark Lab Phase 1A (spec 007) — source readiness classifier ---
+    'tavr_source_readiness': {
+        'name': 'TAVR Source Readiness',
+        'description': 'Derived gold classifier — one row per source_id with status (claim_eligible/context_only/blocked/absent) derived from meta.refresh_log + meta.table_health + hcs_gold.tavr_catalog_candidate_manifest.',
+        'fetcher': TavrSourceReadinessFetcher,
+        'loader': load_tavr_source_readiness_data,
         'requires_file': False,
         'default_days_back': None,
     },
