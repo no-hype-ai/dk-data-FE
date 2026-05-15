@@ -132,6 +132,7 @@ from .sources.tavr_catalog_data_gov import load_tavr_catalog_data_gov_data
 from .sources.tavr_hospital_profile import load_tavr_hospital_profile_data
 from .sources.tavr_source_readiness import load_tavr_source_readiness_data
 from .sources.tavr_program_year import load_tavr_program_year_data
+from .sources.tavr_benchmark_inputs import load_tavr_benchmark_inputs_data
 
 from .fetchers import (
     PubMedFetcher,
@@ -248,6 +249,7 @@ from .fetchers import (
     TavrCatalogDataGovFetcher,
     TavrSourceReadinessFetcher,
     TavrProgramYearFetcher,
+    TavrBenchmarkInputsFetcher,
 )
 from .downloaders.cms_downloader import CMS_DATASET_REGISTRY
 
@@ -1268,6 +1270,15 @@ SOURCES = {
         'description': 'DRG-grain TAVR program facts per (ccn, year). Aggregates CMS Inpatient PUF silver filtered to MS-DRG 266/267 with MCC capture proxy, YoY growth, national/state percentile.',
         'fetcher': TavrProgramYearFetcher,
         'loader': load_tavr_program_year_data,
+        'requires_file': False,
+        'default_days_back': None,
+    },
+    # --- TAVR Benchmark Lab Phase 1B (spec 010) — denormalized scoring inputs ---
+    'tavr_benchmark_inputs': {
+        'name': 'TAVR Benchmark Inputs',
+        'description': 'Phase 1B denormalized scoring inputs per (ccn, year). Joins tavr_hospital_profile + tavr_program_year + CMS Hospital Service Area + MSPB / VBP / HRRP / HAC. Source lineage map in source_lineage JSONB.',
+        'fetcher': TavrBenchmarkInputsFetcher,
+        'loader': load_tavr_benchmark_inputs_data,
         'requires_file': False,
         'default_days_back': None,
     },

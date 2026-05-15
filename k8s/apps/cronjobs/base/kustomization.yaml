@@ -159,6 +159,7 @@ resources:
   - cronjob-fetch-tavr-hospital-profile.yaml
   - cronjob-fetch-tavr-source-readiness.yaml
   - cronjob-fetch-tavr-program-year.yaml
+  - cronjob-fetch-tavr-benchmark-inputs.yaml
   - cronjob-fetch-chembl-activities.yaml
   - cronjob-fetch-fda-rems.yaml
   - cronjob-fetch-fda-ndc.yaml

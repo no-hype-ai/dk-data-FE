@@ -119,6 +119,7 @@ from .tavr_catalog_data_gov import TavrCatalogDataGovFetcher
 from .tavr_hospital_profile import TavrHospitalProfileFetcher
 from .tavr_source_readiness import TavrSourceReadinessFetcher
 from .tavr_program_year import TavrProgramYearFetcher
+from .tavr_benchmark_inputs import TavrBenchmarkInputsFetcher
 
 __all__ = [
     'BaseFetcher',
@@ -240,4 +241,5 @@ __all__ = [
     'TavrCatalogDataGovFetcher',
     'TavrSourceReadinessFetcher',
     'TavrProgramYearFetcher',
+    'TavrBenchmarkInputsFetcher',
 ]
