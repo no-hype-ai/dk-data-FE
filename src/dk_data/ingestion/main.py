@@ -129,6 +129,7 @@ from .sources.cms_hac_reduction import load_cms_hac_reduction_data
 from .sources.cms_hrrp import load_cms_hrrp_data
 from .sources.cms_vbp import load_cms_vbp_data
 from .sources.tavr_catalog_data_gov import load_tavr_catalog_data_gov_data
+from .sources.tavr_hospital_profile import load_tavr_hospital_profile_data
 from .sources.tavr_source_readiness import load_tavr_source_readiness_data
 
 from .fetchers import (
