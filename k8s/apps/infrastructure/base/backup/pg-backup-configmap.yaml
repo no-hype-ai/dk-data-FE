@@ -47,12 +47,30 @@ data:
 
     echo "--- Step 1: Creating pg_dump ---"
     export PGPASSWORD="${POSTGRES_PASSWORD}"
+
+    # Daily backups exclude the two structurally-oversized SQLMesh bronze
+    # tables — mol_bronze chembl_activities (~122GB) and pubchem (~111GB),
+    # together ~54% of the 434GB DB. Dumping them inside the daily window
+    # is structurally impossible: the job DeadlineExceeded mid-pubchem
+    # COPY even at the 12h deadline (mesh handoff 2026-05-05 cluster
+    # recovery, B-part; issue #406). They are SQLMesh-managed and
+    # re-derivable; the WEEKLY backup stays a FULL dump and is the
+    # recovery source for them (issue #406 tracks dedicated long-deadline
+    # weekly jobs for these two tables). Patterns are hash-agnostic so
+    # they survive SQLMesh physical-table rebuilds.
+    EXCLUDE_ARGS=()
+    if [ "${BACKUP_TYPE}" = "daily" ]; then
+      EXCLUDE_ARGS=(--exclude-table='mol_bronze.*chembl_activities*' --exclude-table='mol_bronze.*pubchem*')
+      echo "Daily backup: excluding oversized bronze tables (mol_bronze.*chembl_activities*, mol_bronze.*pubchem*)"
+    fi
+
     pg_dump \
       -h "${POSTGRES_HOST}" \
       -p "${POSTGRES_PORT}" \
       -U "${POSTGRES_USER}" \
       -d "${POSTGRES_DB}" \
       -Fc -Z6 \
+      "${EXCLUDE_ARGS[@]}" \
       -f "${LOCAL_PATH}"
 
     echo "Backup file created: ${LOCAL_PATH}"
