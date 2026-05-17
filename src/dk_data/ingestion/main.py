@@ -248,6 +248,7 @@ from .fetchers import (
     CMSHRRPFetcher,
     CMSVBPFetcher,
     TavrCatalogDataGovFetcher,
+    TavrHospitalProfileFetcher,
     TavrSourceReadinessFetcher,
     TavrProgramYearFetcher,
     TavrBenchmarkInputsFetcher,
@@ -1263,6 +1264,15 @@ SOURCES = {
         'description': 'Derived gold classifier — one row per source_id with status (claim_eligible/context_only/blocked/absent) derived from meta.refresh_log + meta.table_health + hcs_gold.tavr_catalog_candidate_manifest.',
         'fetcher': TavrSourceReadinessFetcher,
         'loader': load_tavr_source_readiness_data,
+        'requires_file': False,
+        'default_days_back': None,
+    },
+    # --- TAVR Benchmark Lab Phase 1A (spec 008) — AHD-like hospital profile ---
+    'tavr_hospital_profile': {
+        'name': 'TAVR Hospital Profile',
+        'description': 'data-researcher §4.1 AHD-like proxy — composes hcs_gold.tavr_hospital_profile (identity + facility scale) from CMS / HRSA silver at CCN grain; system_parent from CMS Hospital All Owners.',
+        'fetcher': TavrHospitalProfileFetcher,
+        'loader': load_tavr_hospital_profile_data,
         'requires_file': False,
         'default_days_back': None,
     },
