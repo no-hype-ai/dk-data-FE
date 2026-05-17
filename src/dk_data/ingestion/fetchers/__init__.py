@@ -240,6 +240,7 @@ __all__ = [
     'CMSHRRPFetcher',
     'CMSVBPFetcher',
     'TavrCatalogDataGovFetcher',
+    'TavrHospitalProfileFetcher',
     'TavrSourceReadinessFetcher',
     'TavrProgramYearFetcher',
     'TavrBenchmarkInputsFetcher',
