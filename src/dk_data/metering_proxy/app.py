@@ -226,7 +226,15 @@ async def proxy_handler(request: Request, path: str):
         ACTIVE_CONSUMERS.set(len(_seen_consumers))
 
     # --- Schema Access Control ---
-    target_schema = extract_schema_from_path(full_path)
+    # PostgREST picks the served schema from Accept-Profile (reads) /
+    # Content-Profile (writes); proxy forwards the header untouched, so
+    # we must authorize against the same signal (operator decision
+    # 2026-05-17, Option 1). Precedence: profile header > path > api.
+    if method in {"POST", "PUT", "PATCH", "DELETE"}:
+        profile_header = request.headers.get("content-profile")
+    else:
+        profile_header = request.headers.get("accept-profile")
+    target_schema = extract_schema_from_path(full_path, profile_header)
     if target_schema is not None:
         if not check_schema_access(
             consumer_alias, consumer.allowed_schemas, target_schema

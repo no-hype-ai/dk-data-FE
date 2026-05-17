@@ -76,22 +76,47 @@ BYPASS_PATHS = {"/health", "/metrics", "/ready", "/"}
 OPENAPI_PATH_PATTERN = re.compile(r"^/?$")
 
 
-def extract_schema_from_path(path: str) -> Optional[str]:
-    """Extract the target schema from a PostgREST request path.
+def extract_schema_from_path(
+    path: str, profile: Optional[str] = None
+) -> Optional[str]:
+    """Extract the target schema for a PostgREST request.
 
-    PostgREST uses the first path segment as the schema when
-    db-schemas has multiple schemas configured. If the first
-    segment matches a known schema, we return it. Otherwise,
-    the request targets the default schema (typically 'api').
+    Precedence (operator decision 2026-05-17, Option 1 — Accept-Profile
+    pass-through): an explicit PostgREST profile header wins over the
+    URL path segment, which in turn wins over the ``api`` default:
+
+        explicit profile header > path segment > ``api`` default
+
+    PostgREST uses ``Accept-Profile`` (reads) / ``Content-Profile``
+    (writes) to choose the schema it serves from, and proxy.py forwards
+    that header untouched. Authorizing against the path alone meant a
+    bare path like ``/tavr_program_year`` fell through to ``api`` and a
+    consumer entitled to ``hcs_gold`` (but not ``api``) was wrongly
+    denied. Honoring the profile makes the schema we authorize against
+    the same schema PostgREST will actually serve.
+
+    The profile is only honored when it names a *known* schema. An
+    unrecognized profile falls through to path/default so a bogus
+    header cannot widen access — and PostgREST itself rejects unknown
+    profiles, so the fallback stays consistent with what it serves.
 
     Args:
-        path: The URL path (e.g., '/mart/drugs' or '/drugs')
+        path: The URL path (e.g., '/mart/drugs' or '/drugs').
+        profile: The Accept-Profile / Content-Profile header value, if
+            the client sent one. None or empty means "no profile".
 
     Returns:
         The schema name, or None if the path should bypass checks.
     """
     if path in BYPASS_PATHS:
         return None
+
+    # Explicit profile header wins — but only if it names a schema we
+    # recognize (an unrecognized value must not become the auth target).
+    if profile:
+        profile_schema = profile.strip().lower()
+        if profile_schema in KNOWN_SCHEMAS:
+            return profile_schema
 
     # Strip leading slash and split
     parts = path.strip("/").split("/")

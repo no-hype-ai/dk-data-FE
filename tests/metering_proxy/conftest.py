@@ -43,6 +43,20 @@ def _build_test_key_store() -> ConsumerKeyStore:
             tier="standard",
             api_keys=["dk_data_dkos_test_key"],
         ),
+        # Mirrors k8s/apps/metering-proxy/base/configmap.yaml:102-106 —
+        # the edwards-meadow consumer used by the TAVR origin-readiness
+        # probe. Allowed hcs_* + meta but NOT `api`, so a bare path
+        # falls through to `api` and is denied unless Accept-Profile /
+        # Content-Profile routes it to an allowed schema.
+        "edwards-meadow": ConsumerConfig(
+            name="edwards-meadow",
+            alias="em",
+            allowed_schemas=["hcs_silver", "hcs_gold", "meta"],
+            rpm_limit=500,
+            max_in_flight=1_000,
+            tier="standard",
+            api_keys=["dk_data_em_test_key"],
+        ),
         # Dedicated unlimited consumer for load-sensitive tests
         "load-test": ConsumerConfig(
             name="load-test",
