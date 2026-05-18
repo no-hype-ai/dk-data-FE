@@ -348,9 +348,14 @@ def ensure_tracking_table(conn) -> None:
                       AND character_maximum_length IS NOT NULL
                       AND character_maximum_length < 255
                 ) THEN
-                    -- Capture the view definition before dropping it
-                    SELECT pg_get_viewdef('api.migration_status', true)
-                      INTO v_def;
+                    -- Capture the view definition before dropping it (if it exists)
+                    IF EXISTS (
+                        SELECT 1 FROM information_schema.views
+                        WHERE table_schema = 'api' AND table_name = 'migration_status'
+                    ) THEN
+                        SELECT pg_get_viewdef('api.migration_status', true)
+                          INTO v_def;
+                    END IF;
 
                     -- Drop the dependent view so the column alter can proceed
                     DROP VIEW IF EXISTS api.migration_status CASCADE;
