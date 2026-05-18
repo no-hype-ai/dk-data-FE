@@ -103,6 +103,39 @@ def ensure_tracking_table(conn) -> None:
             CREATE INDEX IF NOT EXISTS idx_schema_migrations_applied_at
                 ON meta.schema_migrations (applied_at DESC);
         """)
+        cur.execute("""
+            DO $$
+            DECLARE
+                v_def TEXT;
+            BEGIN
+                IF EXISTS (
+                    SELECT 1 FROM information_schema.columns
+                    WHERE table_schema = 'meta'
+                      AND table_name   = 'schema_migrations'
+                      AND column_name  = 'version'
+                      AND character_maximum_length IS NOT NULL
+                      AND character_maximum_length < 255
+                ) THEN
+                    IF EXISTS (
+                        SELECT 1 FROM information_schema.views
+                        WHERE table_schema = 'api' AND table_name = 'migration_status'
+                    ) THEN
+                        SELECT pg_get_viewdef('api.migration_status', true)
+                          INTO v_def;
+                    END IF;
+
+                    DROP VIEW IF EXISTS api.migration_status CASCADE;
+
+                    ALTER TABLE meta.schema_migrations
+                        ALTER COLUMN version TYPE VARCHAR(255);
+
+                    IF v_def IS NOT NULL THEN
+                        EXECUTE 'CREATE OR REPLACE VIEW api.migration_status AS ' || v_def;
+                    END IF;
+                END IF;
+            END $$;
+        """)
+
     conn.commit()
 
 

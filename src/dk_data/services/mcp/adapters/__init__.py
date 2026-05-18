@@ -8,6 +8,7 @@ from .hta_decisions import HtaDecisionsTool
 from .ema import EmaTool
 from .cochrane import CochraneTool
 from .ttd import TtdTool
+from .openfda_labels import OpenFDALabelsTool
 
 __all__ = [
     "FdaDrugsTool",
@@ -18,4 +19,5 @@ __all__ = [
     "EmaTool",
     "CochraneTool",
     "TtdTool",
+    "OpenFDALabelsTool",
 ]
