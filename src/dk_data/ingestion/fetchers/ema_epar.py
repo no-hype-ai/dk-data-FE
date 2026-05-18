@@ -14,11 +14,12 @@ rapporteur, EPAR URL, etc.
 Stores one JSONB record per row in mol_raw.ema_epar.
 """
 
-import csv
 import hashlib
 import io
 import logging
-from typing import Any, Dict, List, Optional
+from typing import Any, override
+
+import openpyxl
 
 from .base import BaseFetcher
 
@@ -46,19 +47,21 @@ _EPAR_PRIMARY_URL = (
 class EMAEparFetcher(BaseFetcher):
     """Fetcher for EMA EPAR assessment reports (bulk CSV)."""
 
-    SOURCE_NAME = "ema_epar"
-    BASE_URL = "https://www.ema.europa.eu"
+    SOURCE_NAME: str = "ema_epar"
+    BASE_URL: str = "https://www.ema.europa.eu"
 
+    @override
     def get_latest_url(self) -> str:
         return _EPAR_CSV_URL
 
-    def fetch(self, **kwargs) -> Dict[str, Any]:
+    @override
+    def fetch(self, **kwargs) -> dict[str, Any]:
         """Download the EMA EPAR CSV and parse all assessment report rows.
 
         Returns:
             Dict with keys: status, records, record_count, hash, error.
         """
-        max_records: Optional[int] = kwargs.get("max_records")
+        max_records: int | None = kwargs.get("max_records")
 
         try:
             resp = None
@@ -84,14 +87,14 @@ class EMAEparFetcher(BaseFetcher):
             content = resp.content
             content_hash = hashlib.sha256(content).hexdigest()
 
-            records = self._parse_csv(content, max_records)
+            records = self._parse_xlsx(content, max_records)
 
             logger.info("EMA EPAR: parsed %d assessment report rows", len(records))
 
             if not records:
                 msg = "EMA EPAR: parsed 0 rows — treating as source_unavailable"
                 logger.warning(msg)
-                result: Dict[str, Any] = {
+                result: dict[str, Any] = {
                     "status": "source_unavailable",
                     "records": [],
                     "record_count": 0,
@@ -123,24 +126,38 @@ class EMAEparFetcher(BaseFetcher):
             return result
 
     @staticmethod
-    def _parse_csv(content: bytes, max_records: Optional[int]) -> List[Dict[str, Any]]:
-        """Parse the EMA EPAR CSV into row dicts.
+    def _parse_xlsx(content: bytes, max_records: int | None) -> list[dict[str, Any]]:
+        """Parse EMA EPAR XLSX bytes into row dicts.
 
         Column names are normalised to lowercase with underscores.
         """
-        text = content.decode("utf-8-sig", errors="replace")
-        reader = csv.DictReader(io.StringIO(text))
-        records: List[Dict[str, Any]] = []
-        for row in reader:
+        wb = openpyxl.load_workbook(filename=io.BytesIO(content), read_only=True, data_only=True)
+        ws = wb.active
+        assert ws is not None
+
+        rows_iter = ws.iter_rows(values_only=True)
+        headers = None
+        records: list[dict[str, Any]] = []
+
+        for raw_row in rows_iter:
+            if headers is None:
+                headers = [
+                    (str(c).strip().lower().replace(" ", "_") if c is not None else f"col_{i}")
+                    for i, c in enumerate(raw_row)
+                ]
+                continue
+
             if max_records and len(records) >= max_records:
                 break
+
             record = {
-                k.strip().lower().replace(" ", "_"): (v.strip() if v else None)
-                for k, v in row.items()
-                if k is not None
+                headers[i]: (str(v).strip() if v is not None else None)
+                for i, v in enumerate(raw_row)
+                if i < len(headers)
             }
-            # Skip entirely blank rows
             if all(v is None for v in record.values()):
                 continue
             records.append(record)
+
+        wb.close()
         return records
