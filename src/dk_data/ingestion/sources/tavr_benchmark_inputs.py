@@ -174,29 +174,27 @@ def load_tavr_benchmark_inputs_data(
 ) -> Dict[str, Any]:
     """Refresh hcs_gold.tavr_benchmark_inputs by joining Phase 1A outputs."""
     import json
-    conn = get_connection()
     rows_written = 0
     total = 0
-    try:
-        with conn.cursor() as cur:
-            cur.execute(
-                _BUILD_GOLD_SQL,
-                (
-                    json.dumps(_SOURCE_LINEAGE),
-                    _DEFAULT_SOURCE_CLASS, _DEFAULT_COVERAGE_CLASS,
-                    _DEFAULT_USE_CLASS, _DEFAULT_GRAIN,
-                    SOURCE_ID, _DEFAULT_CONFIDENCE, _DEFAULT_CAVEAT,
-                ),
-            )
-            rows_written = cur.rowcount or 0
-            cur.execute(_COUNT_ROWS_SQL)
-            total = cur.fetchone()[0]
-        conn.commit()
-    except Exception:
-        conn.rollback()
-        raise
-    finally:
-        conn.close()
+    with get_connection() as conn:
+        try:
+            with conn.cursor() as cur:
+                cur.execute(
+                    _BUILD_GOLD_SQL,
+                    (
+                        json.dumps(_SOURCE_LINEAGE),
+                        _DEFAULT_SOURCE_CLASS, _DEFAULT_COVERAGE_CLASS,
+                        _DEFAULT_USE_CLASS, _DEFAULT_GRAIN,
+                        SOURCE_ID, _DEFAULT_CONFIDENCE, _DEFAULT_CAVEAT,
+                    ),
+                )
+                rows_written = cur.rowcount or 0
+                cur.execute(_COUNT_ROWS_SQL)
+                total = cur.fetchone()[0]
+            conn.commit()
+        except Exception:
+            conn.rollback()
+            raise
 
     logger.info(
         "[%s] upserted=%d total_rows=%d", SOURCE_ID, rows_written, total,
