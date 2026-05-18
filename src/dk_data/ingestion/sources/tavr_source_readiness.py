@@ -110,15 +110,19 @@ _COLLECT_SOURCES_SQL = """
 
 _HEALTH_LOOKUP_SQL = """
     SELECT
-      rl.last_successful_refresh,
-      rl.row_count,
+      ds.last_successful_refresh,
+      ds.record_count,
       th.health_status,
-      EXTRACT(EPOCH FROM (NOW() - rl.last_successful_refresh)) / 3600.0 AS age_hours
-    FROM meta.refresh_log rl
-    LEFT JOIN meta.table_health th
-      ON th.source_name = rl.source_name
-    WHERE rl.source_name = %s
-    ORDER BY rl.last_successful_refresh DESC NULLS LAST
+      EXTRACT(EPOCH FROM (NOW() - ds.last_successful_refresh)) / 3600.0 AS age_hours
+    FROM meta.data_sources ds
+    LEFT JOIN LATERAL (
+      SELECT health_status
+      FROM meta.table_health th
+      WHERE th.source_id = ds.source_id
+      ORDER BY th.check_timestamp DESC
+      LIMIT 1
+    ) th ON true
+    WHERE ds.source_name = %s
     LIMIT 1
 """
 

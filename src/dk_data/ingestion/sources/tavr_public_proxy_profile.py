@@ -196,28 +196,26 @@ def load_tavr_public_proxy_profile_data(
     source_hash: Optional[str] = None,
 ) -> Dict[str, Any]:
     """Refresh hcs_gold.tavr_public_proxy_profile from Phase 1A + physician silver."""
-    conn = get_connection()
     rows_written = 0
     total = 0
-    try:
-        with conn.cursor() as cur:
-            cur.execute(
-                _BUILD_GOLD_SQL,
-                (
-                    _DEFAULT_SOURCE_CLASS, _DEFAULT_COVERAGE_CLASS,
-                    _DEFAULT_USE_CLASS, _DEFAULT_GRAIN,
-                    SOURCE_ID, _DEFAULT_CONFIDENCE, _DEFAULT_CAVEAT,
-                ),
-            )
-            rows_written = cur.rowcount or 0
-            cur.execute(_COUNT_ROWS_SQL)
-            total = cur.fetchone()[0]
-        conn.commit()
-    except Exception:
-        conn.rollback()
-        raise
-    finally:
-        conn.close()
+    with get_connection() as conn:
+        try:
+            with conn.cursor() as cur:
+                cur.execute(
+                    _BUILD_GOLD_SQL,
+                    (
+                        _DEFAULT_SOURCE_CLASS, _DEFAULT_COVERAGE_CLASS,
+                        _DEFAULT_USE_CLASS, _DEFAULT_GRAIN,
+                        SOURCE_ID, _DEFAULT_CONFIDENCE, _DEFAULT_CAVEAT,
+                    ),
+                )
+                rows_written = cur.rowcount or 0
+                cur.execute(_COUNT_ROWS_SQL)
+                total = cur.fetchone()[0]
+            conn.commit()
+        except Exception:
+            conn.rollback()
+            raise
 
     logger.info(
         "[%s] upserted=%d total_rows=%d", SOURCE_ID, rows_written, total,
