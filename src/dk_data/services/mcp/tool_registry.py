@@ -123,6 +123,15 @@ TOOL_REGISTRY: Dict[str, ToolDefinition] = {
         adapter_module="dk_data.services.mcp.adapters.pubmed",
         api_base_url="https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esearch.fcgi",
     ),
+    "drug-labels-search": ToolDefinition(
+        name="drug-labels-search",
+        description="Unified drug label search — FDA text labels + EMA SmPC (lazy PDF extraction)",
+        tier="direct_query",
+        raw_table="ema_label_cache",
+        raw_schema="mol_raw",
+        adapter_module="dk_data.services.mcp.adapters.drug_labels",
+        api_base_url="https://api.fda.gov/drug/label.json",
+    ),
     "ema-search": ToolDefinition(
         name="ema-search",
         description="Search EMA for European medicine regulatory decisions",

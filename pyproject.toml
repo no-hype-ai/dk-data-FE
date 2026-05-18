@@ -51,6 +51,8 @@ dependencies = [
     "openai>=1.0.0,<2.0",
     # Pydantic email validation (required for EmailStr fields in API routers)
     "email-validator>=2.0.0,<3.0",
+    # PDF text extraction for EMA SmPC lazy loading
+    "pymupdf>=1.24.0,<2.0",
 ]
 
 [project.optional-dependencies]
