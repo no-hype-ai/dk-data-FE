@@ -8,6 +8,28 @@ Tests verify adapter normalize() outputs are parseable by bronze models (FR-025)
 
 import pytest
 
+# --- Registry backlog matrix (#415 Phase 0 T0.3) ---------------------------
+#
+# The full MCP adapter registry (~28 modules) is kept visible below as the
+# authoritative Phase 2+ backlog. Only a small subset is actually built today;
+# the rest are EXPECTED to be absent and are marked xfail(strict=True) so the
+# matrix stays green without hiding any backlog row.
+#
+# BUILT_ADAPTERS is the single source of truth for "which modules currently
+# ship a real importable Adapter(BaseAdapter) satisfying the contract". It was
+# derived EMPIRICALLY by importing every module + instantiating Adapter().
+#
+# strict=True is intentional: when Phase 2+ lands a backlog adapter, its xfail
+# will XPASS and FAIL this suite. That is the signal — the future worker MUST
+# add that module name to BUILT_ADAPTERS (and drop any class/method-level
+# xfail marker on its dedicated test class) so it runs as a real assertion.
+BUILT_ADAPTERS: set[str] = {
+    "ema_labels",
+    "openfda_labels",
+}
+
+_BACKLOG_XFAIL_REASON = "registry backlog — adapter not yet built (#415 Phase 2+)"
+
 
 class TestBaseAdapterInterface:
     """Verify BaseAdapter contract."""
@@ -61,6 +83,7 @@ class TestBaseAdapterInterface:
         assert adapter.validate_against_bronze({}) is True
 
 
+@pytest.mark.xfail(strict=True, reason=_BACKLOG_XFAIL_REASON)
 class TestClinicalTrialsAdapter:
     """Test ClinicalTrials.gov adapter normalization."""
 
@@ -82,6 +105,7 @@ class TestClinicalTrialsAdapter:
         assert isinstance(result, dict)
 
 
+@pytest.mark.xfail(strict=True, reason=_BACKLOG_XFAIL_REASON)
 class TestChEMBLAdapter:
     """Test ChEMBL adapter normalization."""
 
@@ -101,6 +125,7 @@ class TestChEMBLAdapter:
         assert isinstance(result, dict)
 
 
+@pytest.mark.xfail(strict=True, reason=_BACKLOG_XFAIL_REASON)
 class TestDrugBankAdapter:
     """Test DrugBank adapter normalization (most critical — REST JSON vs XML)."""
 
@@ -120,6 +145,7 @@ class TestDrugBankAdapter:
         assert isinstance(result, dict)
 
 
+@pytest.mark.xfail(strict=True, reason=_BACKLOG_XFAIL_REASON)
 class TestOpenFDAFaersAdapter:
     """Test OpenFDA FAERS adapter normalization."""
 
@@ -139,6 +165,7 @@ class TestOpenFDAFaersAdapter:
         assert isinstance(result, dict)
 
 
+@pytest.mark.xfail(strict=True, reason=_BACKLOG_XFAIL_REASON)
 class TestPubMedAdapter:
     """Test PubMed adapter."""
 
@@ -153,6 +180,7 @@ class TestPubMedAdapter:
         assert adapter.raw_schema == "mol_raw"
 
 
+@pytest.mark.xfail(strict=True, reason=_BACKLOG_XFAIL_REASON)
 class TestSecEdgarAdapter:
     """Test SEC EDGAR adapter."""
 
@@ -181,7 +209,20 @@ class TestAllAdaptersImportable:
         "acc_tvc", "hrsa", "pubchem",
     ]
 
-    @pytest.mark.parametrize("module_name", ADAPTER_MODULES)
+    @pytest.mark.parametrize(
+        "module_name",
+        [
+            name
+            if name in BUILT_ADAPTERS
+            else pytest.param(
+                name,
+                marks=pytest.mark.xfail(
+                    strict=True, reason=_BACKLOG_XFAIL_REASON
+                ),
+            )
+            for name in ADAPTER_MODULES
+        ],
+    )
     def test_adapter_importable(self, module_name):
         import importlib
         mod = importlib.import_module(f"dk_data.services.mcp.adapters.{module_name}")
