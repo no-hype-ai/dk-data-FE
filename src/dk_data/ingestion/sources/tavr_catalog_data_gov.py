@@ -207,106 +207,104 @@ def load_tavr_catalog_data_gov_data(
     gold_refused = 0
     drift_events = 0
 
-    conn = get_connection()
-    try:
-        with conn.cursor() as cur:
-            for rec in records:
-                pkg = rec.get("_package") or {}
-                pkg_id = pkg.get("id") or pkg.get("name")
-                if not pkg_id:
-                    continue
-                slug = pkg.get("name") or pkg_id
-                title = pkg.get("title") or slug
-                license_id = pkg.get("license_id") or pkg.get("license_title")
-                dist_urls = _extract_distribution_urls(pkg)
-                temporal = _extract_temporal_coverage(pkg)
-                search_query = rec.get("_search_query")
+    with get_connection() as conn:
+        try:
+            with conn.cursor() as cur:
+                for rec in records:
+                    pkg = rec.get("_package") or {}
+                    pkg_id = pkg.get("id") or pkg.get("name")
+                    if not pkg_id:
+                        continue
+                    slug = pkg.get("name") or pkg_id
+                    title = pkg.get("title") or slug
+                    license_id = pkg.get("license_id") or pkg.get("license_title")
+                    dist_urls = _extract_distribution_urls(pkg)
+                    temporal = _extract_temporal_coverage(pkg)
+                    search_query = rec.get("_search_query")
 
-                # Bronze: one row per fetch event.
-                cur.execute(
-                    _BRONZE_INSERT_SQL,
-                    (PUBLISHER, pkg_id, json.dumps(pkg), search_query),
-                )
-                raw_id = cur.fetchone()[0]
-                bronze_inserted += 1
-
-                # Silver: dedup by (publisher, package_id).
-                cur.execute(
-                    _SILVER_UPSERT_SQL,
-                    (
-                        pkg_id, PUBLISHER, slug, title, _DEFAULT_ACCESS_LEVEL,
-                        license_id, temporal, pkg.get("data_dictionary_url"),
-                        json.dumps(dist_urls), search_query, raw_id,
-                    ),
-                )
-                silver_upserted += 1
-
-                # Build gold row + provenance discipline check.
-                gold_row = {
-                    "catalog_package_id": pkg_id,
-                    "slug": slug,
-                    "title": title,
-                    "publisher": PUBLISHER,
-                    "access_level": _DEFAULT_ACCESS_LEVEL,
-                    "license": license_id,
-                    "temporal_coverage": temporal,
-                    "data_dictionary_url": pkg.get("data_dictionary_url"),
-                    "distribution_urls": dist_urls,
-                    "search_query": search_query,
-                    "source_class": _classify_source(pkg),
-                    "coverage_class": _DEFAULT_COVERAGE_CLASS,
-                    "use_class": _DEFAULT_USE_CLASS,
-                    "grain": _DEFAULT_GRAIN,
-                    "as_of_date": True,  # set by NOW() in SQL
-                    "source_id": SOURCE_ID,
-                    "confidence": _DEFAULT_CONFIDENCE,
-                    "caveat_text": _DEFAULT_CAVEAT,
-                }
-                ok, reason = _provenance_complete(gold_row)
-                if not ok:
-                    logger.warning(
-                        "[%s] gold refusal for %s: %s",
-                        SOURCE_ID, pkg_id, reason,
-                    )
-                    gold_refused += 1
-                    continue
-
-                # Detect drift BEFORE the upsert so prev values are still current.
-                drifts = _detect_drift(cur, pkg_id, gold_row)
-                for drift_kind, prev_val, new_val in drifts:
+                    # Bronze: one row per fetch event.
                     cur.execute(
-                        _DRIFT_INSERT_SQL,
+                        _BRONZE_INSERT_SQL,
+                        (PUBLISHER, pkg_id, json.dumps(pkg), search_query),
+                    )
+                    raw_id = cur.fetchone()[0]
+                    bronze_inserted += 1
+
+                    # Silver: dedup by (publisher, package_id).
+                    cur.execute(
+                        _SILVER_UPSERT_SQL,
                         (
-                            pkg_id, PUBLISHER, drift_kind,
-                            json.dumps(prev_val), json.dumps(new_val),
+                            pkg_id, PUBLISHER, slug, title, _DEFAULT_ACCESS_LEVEL,
+                            license_id, temporal, pkg.get("data_dictionary_url"),
+                            json.dumps(dist_urls), search_query, raw_id,
                         ),
                     )
-                    drift_events += 1
+                    silver_upserted += 1
 
-                cur.execute(
-                    _GOLD_UPSERT_SQL,
-                    (
-                        gold_row["catalog_package_id"], gold_row["slug"],
-                        gold_row["title"], gold_row["publisher"],
-                        gold_row["access_level"], gold_row["license"],
-                        gold_row["temporal_coverage"],
-                        gold_row["data_dictionary_url"],
-                        json.dumps(gold_row["distribution_urls"]),
-                        gold_row["search_query"],
-                        gold_row["source_class"], gold_row["coverage_class"],
-                        gold_row["use_class"], gold_row["grain"],
-                        gold_row["source_id"], gold_row["confidence"],
-                        gold_row["caveat_text"],
-                    ),
-                )
-                gold_upserted += 1
+                    # Build gold row + provenance discipline check.
+                    gold_row = {
+                        "catalog_package_id": pkg_id,
+                        "slug": slug,
+                        "title": title,
+                        "publisher": PUBLISHER,
+                        "access_level": _DEFAULT_ACCESS_LEVEL,
+                        "license": license_id,
+                        "temporal_coverage": temporal,
+                        "data_dictionary_url": pkg.get("data_dictionary_url"),
+                        "distribution_urls": dist_urls,
+                        "search_query": search_query,
+                        "source_class": _classify_source(pkg),
+                        "coverage_class": _DEFAULT_COVERAGE_CLASS,
+                        "use_class": _DEFAULT_USE_CLASS,
+                        "grain": _DEFAULT_GRAIN,
+                        "as_of_date": True,  # set by NOW() in SQL
+                        "source_id": SOURCE_ID,
+                        "confidence": _DEFAULT_CONFIDENCE,
+                        "caveat_text": _DEFAULT_CAVEAT,
+                    }
+                    ok, reason = _provenance_complete(gold_row)
+                    if not ok:
+                        logger.warning(
+                            "[%s] gold refusal for %s: %s",
+                            SOURCE_ID, pkg_id, reason,
+                        )
+                        gold_refused += 1
+                        continue
 
-        conn.commit()
-    except Exception:
-        conn.rollback()
-        raise
-    finally:
-        conn.close()
+                    # Detect drift BEFORE the upsert so prev values are still current.
+                    drifts = _detect_drift(cur, pkg_id, gold_row)
+                    for drift_kind, prev_val, new_val in drifts:
+                        cur.execute(
+                            _DRIFT_INSERT_SQL,
+                            (
+                                pkg_id, PUBLISHER, drift_kind,
+                                json.dumps(prev_val), json.dumps(new_val),
+                            ),
+                        )
+                        drift_events += 1
+
+                    cur.execute(
+                        _GOLD_UPSERT_SQL,
+                        (
+                            gold_row["catalog_package_id"], gold_row["slug"],
+                            gold_row["title"], gold_row["publisher"],
+                            gold_row["access_level"], gold_row["license"],
+                            gold_row["temporal_coverage"],
+                            gold_row["data_dictionary_url"],
+                            json.dumps(gold_row["distribution_urls"]),
+                            gold_row["search_query"],
+                            gold_row["source_class"], gold_row["coverage_class"],
+                            gold_row["use_class"], gold_row["grain"],
+                            gold_row["source_id"], gold_row["confidence"],
+                            gold_row["caveat_text"],
+                        ),
+                    )
+                    gold_upserted += 1
+
+            conn.commit()
+        except Exception:
+            conn.rollback()
+            raise
 
     logger.info(
         "[%s] bronze=%d silver=%d gold=%d refused=%d drift=%d",
