@@ -91,6 +91,15 @@ class BaseAdapter(ABC):
         """
         return True
 
+    async def db_query(self, drug_name: str, db_pool: Any) -> Optional[dict]:
+        """Query local DB instead of a live API.
+
+        Return a result dict to short-circuit HTTP fetching, or None to fall
+        through to the normal HTTP path.  Override in adapters backed by bulk
+        pipeline data (e.g. EMA) that have no real-time JSON API.
+        """
+        return None
+
     @property
     def full_table_name(self) -> str:
         """Full qualified table name (schema.table)."""

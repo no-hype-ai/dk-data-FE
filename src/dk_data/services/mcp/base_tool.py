@@ -82,6 +82,23 @@ class BaseMCPTool:
         drug_name: str = input_params.get("drug_name", "")
         resolution = input_params.get("_resolution")  # DrugResolution | None
 
+        # DB-backed adapters short-circuit HTTP entirely
+        if self.adapter is not None and self.db_pool is not None:
+            try:
+                db_result = await self.adapter.db_query(drug_name, self.db_pool)
+            except Exception as exc:
+                logger.warning("base_tool.db_query_failed", source=self.adapter.source_name, error=str(exc))
+                db_result = None
+            if db_result is not None:
+                return {
+                    "status": "ok",
+                    "source": self.adapter.source_name,
+                    "url": None,
+                    "drug_name": drug_name,
+                    "resolution_source": resolution.resolution_source if resolution else "none",
+                    "data": db_result,
+                }
+
         # Build ordered URL list — multi-URL when resolution is available
         urls: List[str] = self._build_urls(drug_name, resolution, input_params)
 
