@@ -16,6 +16,7 @@ from .adapters import (
     EmaTool,
     FdaDrugsTool,
     HtaDecisionsTool,
+    OpenFDALabelsTool,
     OrcidTool,
     PdbStructuresTool,
     TtdTool,
@@ -33,6 +34,7 @@ TOOL_REGISTRY = {
     "ema-search": EmaTool(),
     "cochrane-search": CochraneTool(),
     "ttd-search": TtdTool(),
+    "openfda-labels-search": OpenFDALabelsTool(),
 }
 
 
@@ -72,7 +74,12 @@ async def invoke_tool(tool: str, request: InvokeRequest) -> InvokeResponse:
     adapter = TOOL_REGISTRY[tool]
     try:
         result = await adapter.invoke(request.drug_name)
-        return InvokeResponse(**result)
+        return InvokeResponse(
+            tool=tool,
+            data=result.get("data"),
+            error=result.get("error"),
+            status_code=result.get("status_code"),
+        )
     except httpx.HTTPStatusError as exc:
         raise HTTPException(
             status_code=502,

@@ -25,6 +25,8 @@ from .base import BaseFetcher
 
 logger = logging.getLogger(__name__)
 
+_HEADER_ROW = 8
+
 _EPAR_URLS = [
     # Primary: /system/files/ path (confirmed working 2026-04-18, XLSX 607KB)
     ("https://www.ema.europa.eu/system/files/documents/other/"
@@ -133,15 +135,16 @@ class EMAEparFetcher(BaseFetcher):
         ws = wb.active
         assert ws is not None
 
-        rows_iter = ws.iter_rows(values_only=True)
-        headers = None
+        headers: list[str] = []
         records: list[dict[str, Any]] = []
 
-        for raw_row in rows_iter:
-            if headers is None:
+        for row_idx, raw_row in enumerate(ws.iter_rows(values_only=True)):
+            if row_idx < _HEADER_ROW:
+                continue
+            if row_idx == _HEADER_ROW:
                 headers = [
-                    (str(c).strip().lower().replace(" ", "_") if c is not None else f"col_{i}")
-                    for i, c in enumerate(raw_row)
+                    (str(c).strip().lower().replace(" ", "_") if c is not None else None)
+                    for c in raw_row
                 ]
                 continue
 
@@ -149,9 +152,9 @@ class EMAEparFetcher(BaseFetcher):
                 break
 
             record = {
-                headers[i]: (str(v).strip() if v is not None else None)
-                for i, v in enumerate(raw_row)
-                if i < len(headers)
+                h: (str(v).strip() if v is not None else None)
+                for h, v in zip(headers, raw_row)
+                if h is not None
             }
             if all(v is None for v in record.values()):
                 continue
