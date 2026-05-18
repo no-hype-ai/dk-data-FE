@@ -171,7 +171,7 @@ class TestAllAdaptersImportable:
     """Verify all 28 adapter modules are importable and have Adapter class."""
 
     ADAPTER_MODULES = [
-        "clinicaltrials", "chembl", "openfda_faers", "openfda_labels",
+        "clinicaltrials", "chembl", "openfda_faers", "openfda_labels", "ema_labels",
         "drugbank", "pubmed", "openalex", "uniprot",
         "ema", "hta_decisions", "cochrane", "orange_book",
         "uspto_patents", "epo_patents", "sec_edgar",
