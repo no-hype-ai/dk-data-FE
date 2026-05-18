@@ -17,7 +17,7 @@ Stores one JSONB record per row in mol_raw.ema_epar.
 import hashlib
 import io
 import logging
-from typing import Any, override
+from typing import Any
 
 import openpyxl
 
@@ -50,11 +50,9 @@ class EMAEparFetcher(BaseFetcher):
     SOURCE_NAME: str = "ema_epar"
     BASE_URL: str = "https://www.ema.europa.eu"
 
-    @override
     def get_latest_url(self) -> str:
         return _EPAR_CSV_URL
 
-    @override
     def fetch(self, **kwargs) -> dict[str, Any]:
         """Download the EMA EPAR CSV and parse all assessment report rows.
 
