@@ -1,28 +1,18 @@
-"""MCP Adapter: openfda_labels
-Feature: 015-assessment-dashboard-integration
+"""OpenFDA Drug Labels MCP adapter.
+
+Searches FDA drug label (SPL) data by generic name.
+API: https://api.fda.gov/drug/label.json
 """
+
 from urllib.parse import quote
 
-from .base import BaseAdapter
+from ..base_tool import BaseMCPTool
 
 
-class Adapter(BaseAdapter):
-    @property
-    def source_name(self) -> str:
-        return "openfda_labels"
+class OpenFDALabelsTool(BaseMCPTool):
+    tool_name = "openfda-labels-search"
+    base_url = "https://api.fda.gov/drug/label.json"
 
-    @property
-    def raw_table(self) -> str:
-        return "openfda_labels"
-
-    @property
-    def raw_schema(self) -> str:
-        return "mol_raw"
-
-    def build_url(self, base_url: str, drug_name: str, params: dict) -> str:
-        """OpenFDA drug/label uses search parameter with openfda field queries."""
-        return f'{base_url}?search=openfda.generic_name:"{quote(drug_name)}"&limit=5'
-
-    def normalize(self, api_response: dict) -> dict:
-        """Normalize OpenFDA drug/label response."""
-        return api_response
+    def build_url(self, drug_name: str) -> str:
+        encoded = quote(f'openfda.generic_name:"{drug_name}"')
+        return f"{self.base_url}?search={encoded}&limit=5"
