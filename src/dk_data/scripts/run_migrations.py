@@ -103,6 +103,91 @@ def ensure_tracking_table(conn) -> None:
             CREATE INDEX IF NOT EXISTS idx_schema_migrations_applied_at
                 ON meta.schema_migrations (applied_at DESC);
         """)
+        cur.execute("""
+            DO $$
+            DECLARE
+                v_def     TEXT;
+                v_relkind "char";
+            BEGIN
+                -- Only act when meta.schema_migrations.version is a
+                -- length-bounded type narrower than 255 chars. When it
+                -- is already >= 255 (or unbounded), do nothing.
+                IF NOT EXISTS (
+                    SELECT 1 FROM information_schema.columns
+                    WHERE table_schema = 'meta'
+                      AND table_name   = 'schema_migrations'
+                      AND column_name  = 'version'
+                      AND character_maximum_length IS NOT NULL
+                      AND character_maximum_length < 255
+                ) THEN
+                    RETURN;
+                END IF;
+
+                -- Detect api.migration_status via pg_catalog so that
+                -- BOTH plain views ('v') AND materialized views ('m')
+                -- are seen, regardless of role-visibility quirks that
+                -- can make information_schema.views omit the relation.
+                SELECT c.relkind
+                  INTO v_relkind
+                  FROM pg_catalog.pg_class c
+                  JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace
+                 WHERE n.nspname = 'api'
+                   AND c.relname = 'migration_status'
+                   AND c.relkind IN ('v', 'm');
+
+                IF v_relkind IS NULL THEN
+                    -- Relation does not exist as a view/matview. Nothing
+                    -- to preserve; widen the column and return.
+                    RAISE NOTICE
+                        'ensure_tracking_table: api.migration_status not '
+                        'present as view/matview; widening version only';
+                    ALTER TABLE meta.schema_migrations
+                        ALTER COLUMN version TYPE VARCHAR(255);
+                    RETURN;
+                END IF;
+
+                IF v_relkind = 'm' THEN
+                    -- Materialized view: a CREATE OR REPLACE VIEW
+                    -- round-trip cannot reconstruct it. Refuse to drop
+                    -- it. Roll the whole transaction back so the
+                    -- operator handles the matview by hand.
+                    RAISE EXCEPTION
+                        'ensure_tracking_table: api.migration_status is a '
+                        'MATERIALIZED VIEW; refusing to drop it to widen '
+                        'meta.schema_migrations.version. Drop/recreate the '
+                        'matview manually, then re-run migrations.';
+                END IF;
+
+                -- Plain view: capture its definition BEFORE any DROP.
+                SELECT pg_get_viewdef('api.migration_status', true)
+                  INTO v_def;
+
+                IF v_def IS NULL OR btrim(v_def) = '' THEN
+                    -- Exists per pg_catalog but the definition could not
+                    -- be captured. Never DROP blind: roll back instead.
+                    RAISE EXCEPTION
+                        'ensure_tracking_table: api.migration_status '
+                        'exists but its definition could not be captured; '
+                        'refusing to DROP it. Aborting (transaction '
+                        'rolled back).';
+                END IF;
+
+                RAISE NOTICE
+                    'ensure_tracking_table: captured api.migration_status '
+                    'definition before widening version: %', v_def;
+
+                -- Safe to drop now: definition is in hand and will be
+                -- recreated below.
+                DROP VIEW IF EXISTS api.migration_status CASCADE;
+
+                ALTER TABLE meta.schema_migrations
+                    ALTER COLUMN version TYPE VARCHAR(255);
+
+                EXECUTE 'CREATE OR REPLACE VIEW api.migration_status AS '
+                        || v_def;
+            END $$;
+        """)
+
     conn.commit()
 
 

@@ -197,15 +197,84 @@ class TestEnsureTrackingTable:
     """Tests for tracking table creation."""
 
     def test_executes_create_statements(self, mock_conn):
-        """Should execute CREATE SCHEMA and CREATE TABLE IF NOT EXISTS."""
+        """Should execute CREATE SCHEMA and CREATE TABLE IF NOT EXISTS.
+
+        ensure_tracking_table() now issues more than one cur.execute()
+        (DDL bootstrap + a hardening DO-block guard), so scan the full
+        call history rather than only the last call.
+        """
         conn, cursor = mock_conn
         ensure_tracking_table(conn)
         # Should have executed SQL via cursor
         assert cursor.execute.called
-        sql = cursor.execute.call_args[0][0]
-        assert "CREATE SCHEMA IF NOT EXISTS meta" in sql
-        assert "CREATE TABLE IF NOT EXISTS meta.schema_migrations" in sql
-        conn.commit.assert_called_once()
+        all_sql = "\n".join(
+            call.args[0] for call in cursor.execute.call_args_list if call.args
+        )
+        assert "CREATE SCHEMA IF NOT EXISTS meta" in all_sql
+        assert "CREATE TABLE IF NOT EXISTS meta.schema_migrations" in all_sql
+        # Commit must happen, but don't couple to exact call count.
+        assert conn.commit.called
+
+    def test_ensure_tracking_table_guard_is_matview_safe(self, mock_conn):
+        """The version-widening guard must not silently destroy
+        api.migration_status when it is a materialized view (or not
+        visible via information_schema.views).
+
+        Contract:
+        (a) The guard detects materialized views — it references
+            pg_matviews or pg_class.relkind = 'm' in addition to
+            information_schema.views (i.e. it does NOT rely solely on
+            information_schema.views, which omits matviews).
+        (b) The guard never unconditionally DROPs api.migration_status
+            before a definition has been captured: any DROP of
+            api.migration_status must be reachable only after the
+            definition was successfully captured, and the relation must
+            not be destroyed when it exists-but-defn-not-captured
+            (a RAISE EXCEPTION rolls the transaction back instead).
+        """
+        conn, cursor = mock_conn
+        ensure_tracking_table(conn)
+
+        all_sql = "\n".join(
+            call.args[0] for call in cursor.execute.call_args_list if call.args
+        )
+        guard = all_sql.lower()
+
+        # (a) Materialized views are detected, not just plain views.
+        detects_matview = (
+            "pg_matviews" in guard
+            or "relkind" in guard
+            and ("'m'" in guard or '"m"' in guard)
+        )
+        assert detects_matview, (
+            "guard must detect materialized views via pg_matviews or "
+            "pg_class.relkind='m' (information_schema.views omits matviews)"
+        )
+        # Still consult the plain-view catalog too (combined detection).
+        assert (
+            "pg_class" in guard or "information_schema.views" in guard
+        ), "guard must inspect a pg_catalog/views source for the relation"
+
+        # (b) Must capture the definition and guard against silent loss:
+        #     a RAISE EXCEPTION (transaction rollback) exists so the
+        #     relation is NOT dropped when it cannot be safely recreated.
+        assert "raise exception" in guard, (
+            "guard must RAISE EXCEPTION (roll back) rather than DROP when "
+            "the relation exists but its definition cannot be captured"
+        )
+
+        # (b cont.) The DROP must not be unconditional ahead of capture:
+        #     no `DROP VIEW IF EXISTS api.migration_status CASCADE;`
+        #     statement may sit before the definition is read. Assert the
+        #     definition capture (pg_get_viewdef) appears before any
+        #     DROP of api.migration_status in the emitted SQL.
+        drop_idx = guard.find("drop view if exists api.migration_status")
+        getdef_idx = guard.find("pg_get_viewdef")
+        if drop_idx != -1:
+            assert getdef_idx != -1 and getdef_idx < drop_idx, (
+                "definition must be captured (pg_get_viewdef) BEFORE any "
+                "DROP of api.migration_status"
+            )
 
 
 # ---------------------------------------------------------------------------
