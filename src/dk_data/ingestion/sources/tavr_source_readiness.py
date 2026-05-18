@@ -168,49 +168,47 @@ def load_tavr_source_readiness_data(
     rows_written = 0
     counts = {"claim_eligible": 0, "context_only": 0, "blocked": 0, "absent": 0}
 
-    conn = get_connection()
-    try:
-        with conn.cursor() as cur:
-            # Discover every source we know about.
-            cur.execute(_COLLECT_SOURCES_SQL)
-            discovered = {row[0] for row in cur.fetchall() if row[0]}
-            discovered.update(PRIORITY_1_SOURCES)
+    with get_connection() as conn:
+        try:
+            with conn.cursor() as cur:
+                # Discover every source we know about.
+                cur.execute(_COLLECT_SOURCES_SQL)
+                discovered = {row[0] for row in cur.fetchall() if row[0]}
+                discovered.update(PRIORITY_1_SOURCES)
 
-            for source_name in sorted(discovered):
-                cur.execute(_HEALTH_LOOKUP_SQL, (source_name,))
-                health_row = cur.fetchone()
-                if health_row is None:
-                    last_refresh = None
-                    row_count = None
-                    health_status = None
-                    age_hours = None
-                else:
-                    last_refresh, row_count, health_status, age_hours = health_row
+                for source_name in sorted(discovered):
+                    cur.execute(_HEALTH_LOOKUP_SQL, (source_name,))
+                    health_row = cur.fetchone()
+                    if health_row is None:
+                        last_refresh = None
+                        row_count = None
+                        health_status = None
+                        age_hours = None
+                    else:
+                        last_refresh, row_count, health_status, age_hours = health_row
 
-                source_class = _infer_source_class(source_name)
-                status = _classify_source(
-                    last_refresh, age_hours, health_status, source_class,
-                )
-                counts[status] += 1
+                    source_class = _infer_source_class(source_name)
+                    status = _classify_source(
+                        last_refresh, age_hours, health_status, source_class,
+                    )
+                    counts[status] += 1
 
-                cur.execute(
-                    _UPSERT_SQL,
-                    (
-                        source_name, status, row_count, last_refresh,
-                        age_hours, health_status, source_class,
-                        _DEFAULT_COVERAGE_CLASS_FOR_PRESENT if status != "absent" else "absent",
-                        _DEFAULT_USE_CLASS, _DEFAULT_GRAIN,
-                        _DEFAULT_CONFIDENCE, _DEFAULT_CAVEAT,
-                    ),
-                )
-                rows_written += 1
+                    cur.execute(
+                        _UPSERT_SQL,
+                        (
+                            source_name, status, row_count, last_refresh,
+                            age_hours, health_status, source_class,
+                            _DEFAULT_COVERAGE_CLASS_FOR_PRESENT if status != "absent" else "absent",
+                            _DEFAULT_USE_CLASS, _DEFAULT_GRAIN,
+                            _DEFAULT_CONFIDENCE, _DEFAULT_CAVEAT,
+                        ),
+                    )
+                    rows_written += 1
 
-        conn.commit()
-    except Exception:
-        conn.rollback()
-        raise
-    finally:
-        conn.close()
+            conn.commit()
+        except Exception:
+            conn.rollback()
+            raise
 
     logger.info(
         "[%s] rows=%d claim_eligible=%d context_only=%d blocked=%d absent=%d",
