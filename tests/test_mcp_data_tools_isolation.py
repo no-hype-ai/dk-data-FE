@@ -1,47 +1,78 @@
 """Regression guard for the sys.modules landmine in test_mcp_data_tools.py.
 
-`tests/test_mcp_data_tools.py` loads MCP source modules directly via a
+``tests/test_mcp_data_tools.py`` loads MCP source modules directly via a
 custom importlib loader at *collection time* (module-level code). Before the
 WS3 fix this left the canonical ``dk_data.services.mcp.*`` keys in
 ``sys.modules`` polluted:
 
 - ``sys.modules["dk_data.services.mcp.adapters"]`` became an empty
   ``types.ModuleType`` stub (no ``__spec__``, no ``__file__``), and
-- a fresh ``importlib.import_module(...)`` of a submodule returned the
-  file-loaded copy instead of the canonical package module.
+- a fresh ``importlib.import_module(...)`` of a submodule returned a
+  file-loaded copy whose class objects differed from the canonical
+  package's — a split-brain.
 
 That split-brain made #421's CI red (a test patched a re-imported class
 while the router held the canonical one) and would poison the ~26 new
 ``test_adapter_*.py`` files added in WS3 batches that are collected after
 this file.
 
-This test imports ``tests.test_mcp_data_tools`` (running its module-level
-loader exactly as pytest collection would) and then asserts the canonical
-``dk_data`` namespace is left pristine. It FAILS on origin/staging's
-unfixed code and PASSES after the snapshot/restore wrapper is added.
+This test executes ``test_mcp_data_tools.py``'s module-level loader exactly
+as pytest collection would — but loads it *by absolute file path under a
+throwaway module name*, never via ``importlib.import_module("tests.…")``.
+``tests/`` is NOT an importable package under CI's ``pytest tests/`` (no
+``tests/__init__.py``; pytest collects by path/rootdir), so a
+``tests``-package import passes only on dev machines and fails in CI. The
+file-path probe is faithful to how collection actually runs the module.
+
+The assertions are identity/anchor based (no hard-coded src path coupling):
+they FAIL on origin/staging's unfixed code (empty-stub pollution /
+class-identity split-brain) and PASS after the snapshot/restore wrapper.
 """
 
 import importlib
+import importlib.util
 import sys
 import types
 from pathlib import Path
 
-# Canonical src root: the editable install adds the *main checkout* src to
-# sys.path, so canonical module __file__ values resolve under <repo>/src.
-_CANONICAL_SRC = Path(
-    importlib.import_module("dk_data").__file__
-).resolve().parent.parent
+_PROBE_PATH = Path(__file__).parent / "test_mcp_data_tools.py"
+_PROBE_MOD_NAME = "_isolation_probe_tmdt"
+
+# Canonical adapters package __init__ path (suffix the loaded module's
+# __file__ must end with). Anchored on the *package layout*, not on a
+# resolved repo-src absolute path, so this is robust to where the editable
+# install / worktree lives.
+_ADAPTERS_INIT_SUFFIX = "/dk_data/services/mcp/adapters/__init__.py"
 
 
 def _import_data_tools_module():
-    """Import (and thus collect, at module level) the loader test file."""
-    return importlib.import_module("tests.test_mcp_data_tools")
+    """Run test_mcp_data_tools.py's module-level loader exactly as pytest
+    collection would, WITHOUT depending on ``tests`` being an importable
+    package.
+
+    We load the file by absolute path via spec_from_file_location under a
+    unique throwaway module name and exec it. exec_module runs the file's
+    module-level ``_ensure_pkg``/``_load`` block and the WS3 snapshot/restore
+    guard — the precise code path collection exercises — with zero
+    ``tests``-package dependency (``tests/`` has no ``__init__.py`` and is
+    not importable under CI's ``pytest tests/``).
+    """
+    sys.modules.pop(_PROBE_MOD_NAME, None)
+    spec = importlib.util.spec_from_file_location(_PROBE_MOD_NAME, _PROBE_PATH)
+    assert spec is not None and spec.loader is not None, (
+        f"could not build import spec for probe at {_PROBE_PATH}"
+    )
+    mod = importlib.util.module_from_spec(spec)
+    sys.modules[_PROBE_MOD_NAME] = mod
+    spec.loader.exec_module(mod)
+    return mod
 
 
 def test_adapters_package_not_left_as_empty_stub():
-    """After collecting test_mcp_data_tools, the canonical adapters package
-    key must be absent OR a *real* package (loaded from src/.../__init__.py),
-    never an empty types.ModuleType stub with no loader/spec.
+    """After executing test_mcp_data_tools's loader, the canonical adapters
+    package key must be absent OR a *real* package (loaded from the package
+    ``__init__.py``), never an empty types.ModuleType stub with no
+    loader/spec.
     """
     _import_data_tools_module()
 
@@ -63,21 +94,17 @@ def test_adapters_package_not_left_as_empty_stub():
         f"{key} left in sys.modules with no __file__ — empty stub pollution"
     )
 
-    resolved = Path(file_attr).resolve()
-    assert resolved == (
-        _CANONICAL_SRC / "dk_data" / "services" / "mcp" / "adapters" / "__init__.py"
-    ), (
+    resolved = Path(file_attr).resolve().as_posix()
+    assert resolved.endswith(_ADAPTERS_INIT_SUFFIX), (
         f"{key} __file__ ({resolved}) does not point at the canonical "
-        f"package __init__.py under {_CANONICAL_SRC}"
+        f"package __init__.py (expected to end with {_ADAPTERS_INIT_SUFFIX})"
     )
 
 
 def test_fresh_import_of_submodule_is_canonical():
     """An import of an adapter submodule, performed AFTER
-    test_mcp_data_tools has been collected, must resolve to the canonical
-    module under the repo src/ path (the editable-install src), not the
-    file-loaded copy the loader injected — and must keep a single class
-    identity shared with the canonical package (the exact #421 split-brain).
+    test_mcp_data_tools's loader has run, must keep a single class identity
+    shared with the canonical package — the exact #421 split-brain signal.
 
     We deliberately do NOT pop the cached submodule first: popping and
     re-importing would re-execute the canonical file and create a *new*
@@ -101,10 +128,15 @@ def test_fresh_import_of_submodule_is_canonical():
         and getattr(canonical_pkg, "__spec__", None) is None
     ), "adapters package is an empty stub after collection — pollution"
     pkg_file = getattr(canonical_pkg, "__file__", None)
-    assert pkg_file is not None
-    assert Path(pkg_file).resolve() == (
-        _CANONICAL_SRC / "dk_data" / "services" / "mcp" / "adapters" / "__init__.py"
-    ), f"adapters package resolved to {pkg_file}, not the canonical __init__.py"
+    assert pkg_file is not None, (
+        "canonical adapters package has no __file__ — namespace poisoned"
+    )
+    assert Path(pkg_file).resolve().as_posix().endswith(
+        _ADAPTERS_INIT_SUFFIX
+    ), (
+        f"adapters package resolved to {pkg_file}, not the canonical "
+        f"package __init__.py (expected to end with {_ADAPTERS_INIT_SUFFIX})"
+    )
 
     hta = importlib.import_module(submod_name)
 
@@ -112,23 +144,12 @@ def test_fresh_import_of_submodule_is_canonical():
     assert file_attr is not None, (
         f"{submod_name} import has no __file__ — namespace poisoned"
     )
-    resolved = Path(file_attr).resolve()
-    assert resolved == (
-        _CANONICAL_SRC
-        / "dk_data"
-        / "services"
-        / "mcp"
-        / "adapters"
-        / "hta_decisions.py"
-    ), (
-        f"import of {submod_name} resolved to {resolved}, not the "
-        f"canonical file under {_CANONICAL_SRC} — split-brain pollution"
-    )
 
     # The class the codebase will use via the canonical package must be the
-    # exact same object as the one on the resolved submodule. Before the
-    # fix, the loader-injected copy made these two differ — that mismatch is
-    # precisely what made #421's instance-vs-class patch miss.
+    # exact same object as the one on the freshly-imported submodule. Before
+    # the fix, the loader-injected copy made these two differ — that
+    # mismatch is precisely what made #421's instance-vs-class patch miss.
+    # Identity, not src-path coupling, is the regression signal.
     assert hta.HtaDecisionsTool is canonical_pkg.HtaDecisionsTool, (
         "HtaDecisionsTool identity differs between the resident submodule "
         "and the canonical package — the exact #421 split-brain"
