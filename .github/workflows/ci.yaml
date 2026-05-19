@@ -490,7 +490,11 @@ jobs:
         run: |
           curl -LO "https://dl.k8s.io/release/$(curl -L -s https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl"
           chmod +x kubectl && sudo mv kubectl /usr/local/bin/
-          kubectl --dry-run=client apply -f deploy/jobs/prestaged-hydrate.yaml
+          # --validate=false: client dry-run must not fetch the server
+          # OpenAPI schema (no cluster in CI -> localhost:8080 refused).
+          # Pre-existing kubectl-version-drift flake; structural YAML/
+          # kind checks still run offline. (WS4 B002b)
+          kubectl --dry-run=client --validate=false apply -f deploy/jobs/prestaged-hydrate.yaml
 
   # ---------------------------------------------------------------------------
   # Feature: 001-silver-medallion-rebuild — T003
