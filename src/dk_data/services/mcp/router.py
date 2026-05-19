@@ -16,7 +16,6 @@ from .adapters import (
     EmaTool,
     FdaDrugsTool,
     HtaDecisionsTool,
-    OpenFDALabelsTool,
     OrcidTool,
     PdbStructuresTool,
     TtdTool,
@@ -34,7 +33,6 @@ TOOL_REGISTRY = {
     "ema-search": EmaTool(),
     "cochrane-search": CochraneTool(),
     "ttd-search": TtdTool(),
-    "openfda-labels-search": OpenFDALabelsTool(),
 }
 
 
