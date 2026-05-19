@@ -29,8 +29,90 @@ metadata:
 data:
   restore.sh: |
     #!/bin/bash
-    echo "placeholder - replaced in Task 2"
-    exit 1
+    set -euo pipefail
+
+    echo "=== Staging Prestaged Restore ==="
+    echo "Timestamp: $(date -u +%Y-%m-%dT%H:%M:%SZ)"
+
+    MC=/tmp/mc
+    export MC_CONFIG_DIR=/tmp/mc-config
+    mkdir -p "${MC_CONFIG_DIR}"
+
+    for var in SRC_S3_ENDPOINT SRC_S3_ACCESS_KEY SRC_S3_SECRET_KEY SRC_BUCKET \
+               POSTGRES_HOST POSTGRES_PORT POSTGRES_USER POSTGRES_PASSWORD \
+               POSTGRES_DB RESTORE_JOBS SCRATCH_DIR; do
+      if [ -z "$(eval echo \$$var)" ]; then
+        echo "ERROR: required variable $var is not set"
+        exit 1
+      fi
+    done
+
+    SRC_PREFIX="${SRC_BUCKET}/dk-data-prod/daily/"
+    DUMP="${SCRATCH_DIR}/restore.dump"
+    DATESTAMP="$(date -u +%Y%m%d_%H%M%S)"
+    START_TS="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+
+    echo "--- Step 1: Configure source object store (prod SeaweedFS) ---"
+    ${MC} alias set src "http://${SRC_S3_ENDPOINT}" \
+      "${SRC_S3_ACCESS_KEY}" "${SRC_S3_SECRET_KEY}" --api S3v4
+
+    echo "--- Step 2: Find latest prod daily dump ---"
+    LATEST=$(${MC} ls "src/${SRC_PREFIX}" --json | tail -1)
+    if [ -z "${LATEST}" ]; then
+      echo "ERROR: no objects under src/${SRC_PREFIX}"
+      exit 1
+    fi
+    KEY=$(echo "${LATEST}" | grep -o '"key":"[^"]*"' | sed 's/"key":"//;s/"//')
+    echo "Latest object: ${KEY}"
+
+    echo "--- Step 3: Download ---"
+    ${MC} cp "src/${SRC_PREFIX}${KEY}" "${DUMP}"
+
+    echo "--- Step 4: Integrity gate ---"
+    OBJECT_COUNT=$(pg_restore --list "${DUMP}" | wc -l)
+    echo "Object count: ${OBJECT_COUNT}"
+    if [ "${OBJECT_COUNT}" -lt 10 ]; then
+      echo "ERROR: integrity gate failed - only ${OBJECT_COUNT} objects"
+      exit 1
+    fi
+    CHECKSUM=$(sha256sum "${DUMP}" | awk '{print $1}')
+    echo "SHA256: ${CHECKSUM}"
+
+    echo "--- Step 5: Restore into STAGING dk_data (in-place) ---"
+    export PGPASSWORD="${POSTGRES_PASSWORD}"
+    set +e
+    pg_restore \
+      --clean --if-exists --no-owner --no-privileges --no-acl \
+      --jobs="${RESTORE_JOBS}" \
+      -h "${POSTGRES_HOST}" -p "${POSTGRES_PORT}" -U "${POSTGRES_USER}" \
+      -d "${POSTGRES_DB}" \
+      "${DUMP}"
+    RESTORE_RC=$?
+    set -e
+    if [ "${RESTORE_RC}" -eq 0 ]; then
+      STATUS="completed"
+    else
+      STATUS="failed"
+      echo "WARN: pg_restore exited ${RESTORE_RC} (staging is a disposable"
+      echo "      mirror; recording outcome and continuing)"
+    fi
+
+    echo "--- Step 6: Breadcrumb to meta.transform_runs ---"
+    psql -h "${POSTGRES_HOST}" -p "${POSTGRES_PORT}" -U "${POSTGRES_USER}" \
+      -d "${POSTGRES_DB}" -v ON_ERROR_STOP=1 -c \
+      "INSERT INTO meta.transform_runs
+         (procedure_name, chunk_position, started_at, ended_at,
+          rows_processed, wal_bytes, status, details)
+       VALUES
+         ('staging-prestaged-restore', 'all',
+          '${START_TS}'::timestamptz, now(), 0, 0, '${STATUS}',
+          jsonb_build_object('run_label', 'prestaged-restore-${DATESTAMP}',
+                             'object', '${KEY}', 'sha256', '${CHECKSUM}',
+                             'restore_rc', ${RESTORE_RC}));"
+
+    rm -f "${DUMP}"
+    echo "--- Done: status=${STATUS} ---"
+    if [ "${STATUS}" = "failed" ]; then exit 1; fi
 ---
 apiVersion: secrets.doppler.com/v1alpha1
 kind: DopplerSecret

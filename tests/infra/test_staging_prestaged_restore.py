@@ -95,3 +95,67 @@ def test_manifest_has_no_hardcoded_namespace(docs):
         assert "namespace" not in d["metadata"], (
             f"{kind} must not hardcode metadata.namespace"
         )
+
+
+@pytest.fixture(scope="module")
+def restore_sh(docs) -> str:
+    return docs["ConfigMap"]["data"]["restore.sh"]
+
+
+def test_script_targets_prod_daily_prefix(restore_sh):
+    assert 'SRC_PREFIX="${SRC_BUCKET}/dk-data-prod/daily/"' in restore_sh
+    # latest-object selection, same idiom as verify.sh
+    assert 'mc ls' not in restore_sh or '| tail -1' in restore_sh
+    assert '${MC} ls "src/${SRC_PREFIX}" --json | tail -1' in restore_sh
+
+
+def test_script_restore_flags(restore_sh):
+    for flag in (
+        "--clean",
+        "--if-exists",
+        "--no-owner",
+        "--no-privileges",
+        "--no-acl",
+        '--jobs="${RESTORE_JOBS}"',
+    ):
+        assert flag in restore_sh, f"pg_restore must pass {flag}"
+
+
+def test_script_restores_into_staging_db_not_the_store(restore_sh):
+    # Restore target is the staging Postgres from dk-data-secrets, never
+    # the object store creds.
+    assert '-d "${POSTGRES_DB}"' in restore_sh
+    assert '-h "${POSTGRES_HOST}"' in restore_sh
+    assert "minio-backup-credentials" not in restore_sh
+
+
+def test_script_has_integrity_gate(restore_sh):
+    assert 'pg_restore --list' in restore_sh
+    assert '-lt 10' in restore_sh, "must keep the >=10-object gate"
+    assert "sha256sum" in restore_sh
+
+
+def test_script_writes_transform_runs_breadcrumb(restore_sh):
+    assert "INSERT INTO meta.transform_runs" in restore_sh
+    assert "'staging-prestaged-restore'" in restore_sh
+    assert "prestaged-restore-${DATESTAMP}" in restore_sh
+    # NOT NULL columns from migration 172 must all be supplied.
+    for col in (
+        "procedure_name",
+        "chunk_position",
+        "started_at",
+        "ended_at",
+        "rows_processed",
+        "wal_bytes",
+    ):
+        assert col in restore_sh, f"breadcrumb INSERT missing {col}"
+
+
+def test_script_bash_syntax(restore_sh):
+    bash = shutil.which("bash")
+    assert bash, "bash required"
+    with tempfile.NamedTemporaryFile("w", suffix=".sh", delete=False) as fh:
+        fh.write(restore_sh)
+        path = fh.name
+    res = subprocess.run([bash, "-n", path], capture_output=True, text=True)
+    assert res.returncode == 0, f"restore.sh syntax error:\n{res.stderr}"
