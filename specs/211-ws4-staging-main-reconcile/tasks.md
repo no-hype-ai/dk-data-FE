@@ -40,20 +40,20 @@ description: "Task list — WS4 staging/main reconcile"
 
 ### Tests first (RED) — write and confirm failing before any impl
 
-- [ ] T006 [P] [US1] `tests/test_mcp_adapters.py`: add test that `BaseAdapter.db_query` exists, is `async`, defaults to `None`, and does NOT remove feature-015 surface (`normalize`/`build_url`/`build_urls_with_resolution`/`validate_against_bronze`). (FR-001/FR-005)
-- [ ] T007 [P] [US1] NEW `tests/test_mcp_dbfirst_dispatch.py`: decision-table rows 1–5 (gate off; gate on + no adapter; gate on + `None`/empty → fallthrough; gate on + non-empty → served, no HTTP; gate on + raises → 502 `{"stage":"db_query"}`, NO fallthrough) using an in-process fake pool + `asyncio.run`. (FR-001/FR-003/FR-004, R4)
-- [ ] T008 [P] [US1] NEW `tests/test_mcp_data_tools_isolation.py`: sys.modules-landmine regression using a file-path probe under a throwaway name (NEVER `import tests.…`). (FR-006)
-- [ ] T009 [P] [US1] `tests/test_mcp_dbfirst_dispatch.py`: gate-config predicate tests (`MCP_DBFIRST_ENABLED` default false; `MCP_DBFIRST_SOURCES` csv; unknown source inert). (FR-002, contracts/gate-config.md)
-- [ ] T010 [P] [US1] `tests/test_mcp_dbfirst_dispatch.py`: assert `mcp_dbfirst_outcome_total{source,outcome}` increments for each of served/fallthrough/error/disabled. (R6, Constitution III)
-- [ ] T011 [US1] Run T006–T010 → confirm RED for the right reasons.
+- [x] T006 [P] [US1] `tests/test_mcp_adapters.py`: add test that `BaseAdapter.db_query` exists, is `async`, defaults to `None`, and does NOT remove feature-015 surface (`normalize`/`build_url`/`build_urls_with_resolution`/`validate_against_bronze`). (FR-001/FR-005)
+- [x] T007 [P] [US1] NEW `tests/test_mcp_dbfirst_dispatch.py`: decision-table rows 1–5 (gate off; gate on + no adapter; gate on + `None`/empty → fallthrough; gate on + non-empty → served, no HTTP; gate on + raises → 502 `{"stage":"db_query"}`, NO fallthrough) using an in-process fake pool + `asyncio.run`. (FR-001/FR-003/FR-004, R4)
+- [x] T008 [P] [US1] NEW `tests/test_mcp_data_tools_isolation.py`: sys.modules-landmine regression using a file-path probe under a throwaway name (NEVER `import tests.…`). (FR-006)
+- [x] T009 [P] [US1] `tests/test_mcp_dbfirst_dispatch.py`: gate-config predicate tests (`MCP_DBFIRST_ENABLED` default false; `MCP_DBFIRST_SOURCES` csv; unknown source inert). (FR-002, contracts/gate-config.md)
+- [x] T010 [P] [US1] `tests/test_mcp_dbfirst_dispatch.py`: assert `mcp_dbfirst_outcome_total{source,outcome}` increments for each of served/fallthrough/error/disabled. (R6, Constitution III)
+- [x] T011 [US1] Run T006–T010 → confirm RED for the right reasons.
 
 ### Implementation (GREEN) — additive only
 
-- [ ] T012 [US1] `src/dk_data/services/mcp/adapters/base.py`: add `async def db_query(self, drug_name, db_pool) -> dict | None` returning `None` + the H1 contract docstring; **do not** remove/alter feature-015 methods. → T006 GREEN.
-- [ ] T013 [US1] NEW `src/dk_data/services/mcp/dispatch.py`: parallel registry-driven DB-first dispatch per `contracts/dispatch-decision-table.md`; `_load_db_adapter` never raises on absent/older module. → T007/T008.
-- [ ] T014 [US1] Gate config reader (`MCP_DBFIRST_ENABLED` + `MCP_DBFIRST_SOURCES`) per `contracts/gate-config.md`. → T009.
-- [ ] T015 [US1] `src/dk_data/observability/metrics.py`: register `mcp_dbfirst_outcome_total{source,outcome}`; emit from dispatch. → T010.
-- [ ] T016 [US1] `src/dk_data/services/mcp/router.py`: add the SINGLE gated pre-check before the existing `adapter.invoke()` httpx call; existing path byte-unchanged when gate off. → T007 rows 1–3.
+- [x] T012 [US1] `src/dk_data/services/mcp/adapters/base.py`: add `async def db_query(self, drug_name, db_pool) -> dict | None` returning `None` + the H1 contract docstring; **do not** remove/alter feature-015 methods. → T006 GREEN.
+- [x] T013 [US1] NEW `src/dk_data/services/mcp/dispatch.py`: parallel registry-driven DB-first dispatch per `contracts/dispatch-decision-table.md`; `_load_db_adapter` never raises on absent/older module. → T007/T008.
+- [x] T014 [US1] Gate config reader (`MCP_DBFIRST_ENABLED` + `MCP_DBFIRST_SOURCES`) per `contracts/gate-config.md`. → T009.
+- [x] T015 [US1] `src/dk_data/observability/metrics.py`: register `mcp_dbfirst_outcome_total{source,outcome}`; emit from dispatch. → T010.
+- [x] T016 [US1] `src/dk_data/services/mcp/router.py`: add the SINGLE gated pre-check before the existing `adapter.invoke()` httpx call; existing path byte-unchanged when gate off. → T007 rows 1–3.
 - [ ] T017 [US1] Graft the 5 refined `db_query` bodies (`ema`, `ema_labels`, `openfda_labels` + Phase-1) onto `main`'s existing `Adapter` classes per `adapter-map.md`; add NEW `src/dk_data/services/mcp/adapters/ema_labels.py`.
 - [ ] T018 [P] [US1] Graft the 24 placeholder-ILIKE `db_query` bodies onto their `main` `Adapter` classes; each docstring states it is generic-pending-bronze/silver and gated-backlog. (FR-005)
 - [ ] T019 [US1] Run T006–T010 → all GREEN.
@@ -67,7 +67,7 @@ description: "Task list — WS4 staging/main reconcile"
 
 - [ ] T022 [US1] Full CI-faithful test run (quickstart cmd) — no regressions vs known baseline noise; feature-015 `test_mcp_adapters` T079 normalize tests still 100% pass (SC-006).
 - [ ] T023 [US1] `python -c "import dk_data.api.routes"` clean.
-- [ ] T024 [US1] Zero-diff baseline check: with gate off, representative `invoke_tool` outputs equal `baseline-mcp.json` (SC-001).
+- [x] T024 [US1] Zero-diff baseline check: with gate off, representative `invoke_tool` outputs equal `baseline-mcp.json` (SC-001).
 - [ ] T025 [US1] `ruff check .` (CI-faithful) clean — no `E402`/stray lint.
 - [ ] T026 [US1] Open PR to `main`; `gh pr checks <#>` shows Lint+Test+SQLMesh+Manifests = pass at the verified head SHA (`gh pr view --json headRefOid`; re-verify after any force-push). **No auto-merge.** Manual merge after green (FR-008/FR-013, SC-003).
 
