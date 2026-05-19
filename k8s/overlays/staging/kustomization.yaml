@@ -12,6 +12,9 @@ labels:
 resources:
 - ../../base
 - ../../apps/secrets/per-source
+# WS4 SP3 follow-on (feature 211) — staging-only prestaged restore.
+# Spec: docs/superpowers/specs/2026-05-19-staging-prestaged-restore-design.md
+- staging-prestaged-restore.yaml
 
 images:
 - name: ghcr.io/data-kinetic/dk-data-fe/job-trigger

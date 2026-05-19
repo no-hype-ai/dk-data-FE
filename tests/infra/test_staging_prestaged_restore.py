@@ -174,3 +174,61 @@ def test_breadcrumb_failure_cannot_skip_cleanup_or_gate_job(restore_sh):
     bc = restore_sh.index("Step 6: Breadcrumb")
     assert "set +e" in restore_sh[bc:], "breadcrumb psql must be set +e bracketed"
     assert "BREADCRUMB_RC=$?" in restore_sh
+
+
+def _resources(kustomization: Path) -> list[str]:
+    doc = yaml.safe_load(kustomization.read_text())
+    return doc.get("resources", [])
+
+
+def test_staging_overlay_lists_the_resource():
+    assert "staging-prestaged-restore.yaml" in _resources(STAGING_KUSTOMIZATION)
+
+
+def test_prod_overlay_does_not_list_the_resource():
+    res = _resources(PROD_KUSTOMIZATION)
+    assert "staging-prestaged-restore.yaml" not in res
+    assert not any("staging-prestaged-restore" in r for r in res)
+
+
+def test_sp3_suspend_patch_does_not_match_this_cronjob():
+    # The SP3 patch targets CronJob name "^fetch-.*". Static check that
+    # our name is outside that regex (defence-in-depth with the
+    # kubectl render test below).
+    text = STAGING_KUSTOMIZATION.read_text()
+    assert 'name: "^fetch-.*"' in text, "SP3 target regex changed - re-verify"
+    assert not re.match(r"^fetch-.*", "staging-prestaged-restore")
+
+
+@pytest.mark.skipif(
+    shutil.which("kubectl") is None, reason="kubectl not on PATH"
+)
+def test_kustomize_render_staging_only():
+    def render(overlay: str) -> list[dict]:
+        out = subprocess.run(
+            ["kubectl", "kustomize", str(REPO_ROOT / "k8s" / overlay)],
+            capture_output=True, text=True, check=True,
+        ).stdout
+        return [d for d in yaml.safe_load_all(out) if d]
+
+    staging = render("overlays/staging")
+    cronjobs = {
+        d["metadata"]["name"]: d
+        for d in staging
+        if d.get("kind") == "CronJob"
+    }
+    assert "staging-prestaged-restore" in cronjobs, "missing from staging render"
+    # SP3 must NOT have suspended it.
+    assert cronjobs["staging-prestaged-restore"]["spec"].get("suspend") in (
+        None, False,
+    ), "staging-prestaged-restore must stay un-suspended"
+    assert cronjobs["staging-prestaged-restore"]["metadata"]["namespace"] == (
+        "dk-data-staging"
+    )
+
+    prod = render("overlays/prod")
+    assert "staging-prestaged-restore" not in {
+        d["metadata"]["name"]
+        for d in prod
+        if d.get("kind") == "CronJob"
+    }, "must NOT render in prod"
