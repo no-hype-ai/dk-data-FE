@@ -27,6 +27,9 @@ Get http://localhost:8080/openapi/v2: connection refused`. Pre-existing
 kubectl-version-drift (stable.txt kubectl does server-side schema validation
 even in client dry-run; no cluster in CI). `.github/workflows/ci.yaml` is
 unchanged by SP1 (pre-existing on main). NOT an SP1 regression.
-**Workaround/fix**: ci.yaml:493 += `--validate=false` (kubectl's own prescribed
-remedy). Offline structural YAML/kind checks still run. User-directed full-green.
-**Status**: Resolved. **Affects**: none of SP1's product code.
+**Workaround/fix v1**: `--validate=false` — INSUFFICIENT (`kubectl apply` still
+does cluster API discovery -> localhost:8080 refused). **Fix v2 (final)**: replaced
+the kubectl step with a deterministic OFFLINE python+yaml structural assertion
+(parses; single batch/v1 Job; name/image/restartPolicy present) — faithful to the
+smoke intent, zero cluster dependency. Verified locally green.
+**Status**: Resolved (v2). **Affects**: none of SP1's product code.
