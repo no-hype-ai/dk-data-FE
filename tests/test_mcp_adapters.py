@@ -24,6 +24,7 @@ import pytest
 # add that module name to BUILT_ADAPTERS (and drop any class/method-level
 # xfail marker on its dedicated test class) so it runs as a real assertion.
 BUILT_ADAPTERS: set[str] = {
+    "ema",
     "ema_labels",
     "openfda_labels",
 }

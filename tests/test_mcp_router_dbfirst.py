@@ -226,17 +226,22 @@ def test_db_path_skipped_when_pool_is_none(monkeypatch):
 
 def test_db_path_skipped_when_module_has_no_adapter(monkeypatch):
     """When a tool's adapter_module does not export an Adapter class the router
-    must skip the DB path and fall through to the HTTP *Tool.invoke() path."""
+    must skip the DB path and fall through to the HTTP *Tool.invoke() path.
 
-    from dk_data.services.mcp.adapters import EmaTool  # noqa: PLC0415
+    Uses hta-decisions-search (HtaDecisionsTool) which genuinely has no
+    Adapter subclass — ema now has Adapter so it can no longer serve as
+    the "no Adapter" sentinel for this test.
+    """
+
+    from dk_data.services.mcp.adapters.hta_decisions import HtaDecisionsTool  # noqa: PLC0415
 
     monkeypatch.setattr(
-        EmaTool,
+        HtaDecisionsTool,
         "invoke",
         AsyncMock(
             return_value={
-                "tool": "ema-search",
-                "data": {"via": "http-ema"},
+                "tool": "hta-decisions-search",
+                "data": {"via": "http-hta"},
                 "status_code": 200,
                 "error": None,
             }
@@ -247,9 +252,9 @@ def test_db_path_skipped_when_module_has_no_adapter(monkeypatch):
     client = TestClient(app)
 
     resp = client.post(
-        "/api/v1/data-tools/ema-search/invoke",
+        "/api/v1/data-tools/hta-decisions-search/invoke",
         json={"drug_name": "aspirin"},
     )
 
     assert resp.status_code == 200, resp.text
-    assert resp.json()["data"] == {"via": "http-ema"}
+    assert resp.json()["data"] == {"via": "http-hta"}
