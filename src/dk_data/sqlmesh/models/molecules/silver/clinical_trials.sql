@@ -1,12 +1,17 @@
 -- SQLMesh Model: Silver Clinical Trials
 -- Transforms Bronze ClinicalTrials.gov data to normalized Silver layer
 -- Part of: 012-dk-data-platform
+-- Updated: 019-cms-puf-platform-reconciliation — zero column loss audit pass
+--   All bronze columns now promoted; eligibility, locations, results, and oversight
+--   columns were previously dropped without justification.
+-- Updated: T115+T131 — converted from INCREMENTAL_BY_TIME_RANGE to INCREMENTAL_BY_UNIQUE_KEY
+--   (T170), replaced S3 correlated subquery with LEFT JOIN LATERAL, added condition_id
+--   linkage via MeSH (FR-032).
 
 MODEL (
-    name silver.clinical_trials,
-    kind INCREMENTAL_BY_TIME_RANGE (
-        time_column ingested_at,
-        batch_size 1000
+    name mol_silver.clinical_trials,
+    kind INCREMENTAL_BY_UNIQUE_KEY (
+        unique_key nct_id
     ),
     cron '@daily',
     audits (
@@ -16,78 +21,138 @@ MODEL (
     grain nct_id
 );
 
+-- Dedup bronze: one row per nct_id, latest request_timestamp wins.
+WITH deduped_bronze AS (
+    SELECT DISTINCT ON (nct_id)
+        *
+    FROM mol_bronze.clinicaltrials
+    WHERE nct_id IS NOT NULL
+    ORDER BY nct_id, request_timestamp DESC
+)
+
 SELECT
     gen_random_uuid() AS trial_id,
 
     -- External Identifiers
-    raw_data->>'nctId' AS nct_id,
-    raw_data->'protocolSection'->'identificationModule'->>'orgStudyIdInfo' AS org_study_id,
+    b.nct_id,
+    b.org_study_id,
+    b.acronym,
 
-    -- Title
-    raw_data->'protocolSection'->'identificationModule'->>'briefTitle' AS title,
-    raw_data->'protocolSection'->'identificationModule'->>'officialTitle' AS official_title,
+    -- Titles (bronze names retained verbatim per FR-001)
+    b.brief_title,
+    b.official_title,
 
     -- Summary
-    raw_data->'protocolSection'->'descriptionModule'->>'briefSummary' AS brief_summary,
-    raw_data->'protocolSection'->'descriptionModule'->>'detailedDescription' AS detailed_description,
+    b.brief_summary,
+    b.detailed_description,
 
-    -- Phase & Status
+    -- Status
+    b.overall_status,
+    b.last_known_status,
+    b.why_stopped,
+
+    -- Phase (derived string is a NEW computed column; bronze `phases` retained verbatim)
     CASE
-        WHEN raw_data->'protocolSection'->'designModule'->>'phases' LIKE '%Phase 1%' AND
-             raw_data->'protocolSection'->'designModule'->>'phases' LIKE '%Phase 2%'
-        THEN 'Phase 1/2'
-        WHEN raw_data->'protocolSection'->'designModule'->>'phases' LIKE '%Phase 2%' AND
-             raw_data->'protocolSection'->'designModule'->>'phases' LIKE '%Phase 3%'
-        THEN 'Phase 2/3'
-        WHEN raw_data->'protocolSection'->'designModule'->>'phases' LIKE '%Phase 1%' THEN 'Phase 1'
-        WHEN raw_data->'protocolSection'->'designModule'->>'phases' LIKE '%Phase 2%' THEN 'Phase 2'
-        WHEN raw_data->'protocolSection'->'designModule'->>'phases' LIKE '%Phase 3%' THEN 'Phase 3'
-        WHEN raw_data->'protocolSection'->'designModule'->>'phases' LIKE '%Phase 4%' THEN 'Phase 4'
-        WHEN raw_data->'protocolSection'->'designModule'->>'phases' LIKE '%Early%' THEN 'Early Phase 1'
+        WHEN b.phases::TEXT LIKE '%PHASE1%' AND b.phases::TEXT LIKE '%PHASE2%' THEN 'Phase 1/2'
+        WHEN b.phases::TEXT LIKE '%PHASE2%' AND b.phases::TEXT LIKE '%PHASE3%' THEN 'Phase 2/3'
+        WHEN b.phases::TEXT LIKE '%PHASE1%' THEN 'Phase 1'
+        WHEN b.phases::TEXT LIKE '%PHASE2%' THEN 'Phase 2'
+        WHEN b.phases::TEXT LIKE '%PHASE3%' THEN 'Phase 3'
+        WHEN b.phases::TEXT LIKE '%PHASE4%' THEN 'Phase 4'
+        WHEN b.phases::TEXT LIKE '%EARLY%' THEN 'Early Phase 1'
         ELSE 'Not Applicable'
-    END AS phase,
-
-    raw_data->'protocolSection'->'statusModule'->>'overallStatus' AS overall_status,
+    END AS phase_derived,
+    b.phases,
 
     -- Dates
-    (raw_data->'protocolSection'->'statusModule'->'startDateStruct'->>'date')::DATE AS start_date,
-    (raw_data->'protocolSection'->'statusModule'->'completionDateStruct'->>'date')::DATE AS completion_date,
-    (raw_data->'protocolSection'->'statusModule'->'primaryCompletionDateStruct'->>'date')::DATE AS primary_completion_date,
+    b.start_date,
+    b.completion_date,
+    b.primary_completion_date,
+    b.first_submit_date,
+    b.first_post_date,
+    b.last_update_date,
 
-    -- Conditions (as JSONB array)
-    raw_data->'protocolSection'->'conditionsModule'->'conditions' AS conditions,
+    -- Conditions and Keywords
+    b.conditions,
+    b.keywords,
 
-    -- Interventions
-    raw_data->'protocolSection'->'armsInterventionsModule'->'interventions' AS interventions,
+    -- Interventions and Arms
+    b.interventions,
+    b.arm_groups,
 
     -- Study Design
-    raw_data->'protocolSection'->'designModule'->>'studyType' AS study_type,
-    raw_data->'protocolSection'->'designModule'->'designInfo'->>'allocation' AS allocation,
-    raw_data->'protocolSection'->'designModule'->'designInfo'->>'interventionModel' AS intervention_model,
-    raw_data->'protocolSection'->'designModule'->'designInfo'->'maskingInfo'->>'masking' AS masking,
-    (raw_data->'protocolSection'->'designModule'->'enrollmentInfo'->>'count')::INTEGER AS enrollment,
+    b.study_type,
+    b.allocation,
+    b.intervention_model,
+    b.masking,
+    b.enrollment_count,
+    b.enrollment_type,
+
+    -- Eligibility (previously dropped — restored in 019)
+    b.eligibility_sex,
+    b.minimum_age,
+    b.maximum_age,
+    b.healthy_volunteers,
+    b.eligibility_criteria,
 
     -- Sponsors
-    raw_data->'protocolSection'->'sponsorCollaboratorsModule'->'leadSponsor'->>'name' AS lead_sponsor,
-    raw_data->'protocolSection'->'sponsorCollaboratorsModule'->'collaborators' AS collaborators,
+    b.lead_sponsor_name,
+    b.lead_sponsor_class,
+    b.collaborators,
+    b.responsible_party,
+
+    -- Contacts and Locations (previously dropped — restored in 019)
+    b.central_contacts,
+    b.locations,
 
     -- Outcomes
-    raw_data->'protocolSection'->'outcomesModule'->'primaryOutcomes' AS primary_outcomes,
-    raw_data->'protocolSection'->'outcomesModule'->'secondaryOutcomes' AS secondary_outcomes,
+    b.primary_outcomes,
+    b.secondary_outcomes,
 
-    -- Results
-    (raw_data->'hasResults')::BOOLEAN AS has_results,
+    -- Results (previously dropped — restored in 019)
+    b.has_results,
+    b.results_section,
+
+    -- Oversight (extracted directly from raw_json — not in typed bronze columns)
+    (b.raw_json->'protocolSection'->'oversightModule'->>'isFdaRegulatedDrug')::BOOLEAN AS fda_regulated_drug,
+    (b.raw_json->'protocolSection'->'oversightModule'->>'isFdaRegulatedDevice')::BOOLEAN AS fda_regulated_device,
+    (b.raw_json->'protocolSection'->'oversightModule'->>'humanSubjectReviewBoard' = 'Yes')::BOOLEAN AS has_dmc,
+
+    -- Entity resolution: molecule_id via DRUG intervention name match against molecule_names hub.
+    -- LEFT JOIN LATERAL replaces S3 correlated subquery (T115).
+    -- Matches normalized intervention name to mol_silver.molecule_names.normalized_name.
+    mol_interv.molecule_id AS molecule_id,
+
+    -- Condition linkage via MeSH (FR-032): match condition text from bronze conditions array
+    -- against ind_silver.condition_names.normalized_name (T131).
+    cond_link.condition_id AS condition_id,
 
     -- Source Tracking
-    id AS bronze_id,
+    b.id,
     'clinicaltrials_gov' AS source,
-    ingested_at,
-    ingested_at AS source_updated_at,
+    b.request_timestamp,
     NOW() AS created_at,
     NOW() AS updated_at
 
-FROM bronze_clinicaltrials
-WHERE
-    processed_to_silver = FALSE
-    AND raw_data->>'nctId' IS NOT NULL
-    AND ingested_at BETWEEN @start_dt AND @end_dt;
+FROM deduped_bronze b
+
+-- Tier 1: molecule_id via DRUG intervention name normalized match
+LEFT JOIN LATERAL (
+    SELECT mn.molecule_id
+    FROM jsonb_array_elements(COALESCE(b.interventions, '[]'::jsonb)) AS interv
+    JOIN mol_silver.molecule_names mn
+        ON interv->>'type' = 'DRUG'
+        AND mn.normalized_name = LOWER(REGEXP_REPLACE(interv->>'name', '[^a-zA-Z0-9 ]', '', 'g'))
+    ORDER BY mn.molecule_id
+    LIMIT 1
+) mol_interv ON TRUE
+
+-- Condition linkage via MeSH condition names (FR-032)
+LEFT JOIN LATERAL (
+    SELECT ci.condition_id
+    FROM jsonb_array_elements_text(COALESCE(b.conditions, '[]'::jsonb)) AS cond(condition_text)
+    JOIN ind_silver.condition_names cn ON cn.normalized_name = LOWER(REGEXP_REPLACE(cond.condition_text, '[^a-zA-Z0-9 ]', '', 'g'))
+    JOIN ind_silver.condition_identifiers ci ON ci.condition_id = cn.condition_id
+    ORDER BY ci.condition_id
+    LIMIT 1
+) cond_link ON TRUE;

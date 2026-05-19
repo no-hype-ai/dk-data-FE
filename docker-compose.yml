@@ -28,7 +28,7 @@ services:
   # PostgreSQL - Database
   # ==========================================================================
   postgres:
-    image: postgres:16-alpine
+    image: pgvector/pgvector:pg16
     container_name: dk-data-fe-postgres
     restart: unless-stopped
     ports:
@@ -38,10 +38,17 @@ services:
       # SECURITY: No default password - must be set via environment or .env file
       POSTGRES_PASSWORD: "${POSTGRES_PASSWORD:?POSTGRES_PASSWORD must be set}"
       POSTGRES_DB: "${POSTGRES_DB:-dk_data}"
+      # Passed to 01-set-passwords.sh so it can set the authenticator role password
+      # to match what PostgREST expects. Falls back to POSTGRES_PASSWORD if unset.
+      POSTGREST_PASSWORD: "${POSTGREST_PASSWORD:-${POSTGRES_PASSWORD:?POSTGRES_PASSWORD must be set}}"
     volumes:
       - postgres-data:/var/lib/postgresql/data
-      # Mount SQL files for initialization
-      - ./src/dk_data/sql:/docker-entrypoint-initdb.d:ro
+      # Init scripts run in lexicographic order on fresh volume creation only.
+      # 00_dev_init.sql — creates all schemas, roles, and meta tables.
+      # 01_set_passwords.sh — sets authenticator password from POSTGREST_PASSWORD env var.
+      # To reset: docker compose down -v && docker compose up -d postgres
+      - ./scripts/dev-init.sql:/docker-entrypoint-initdb.d/00_dev_init.sql:ro
+      - ./scripts/01-set-passwords.sh:/docker-entrypoint-initdb.d/01_set_passwords.sh:ro
     networks:
       - dk-data-fe-network
     healthcheck:
@@ -63,9 +70,17 @@ services:
     environment:
       # Database connection - connects to postgres service within docker network
       # SECURITY: No default password - must be set via environment or .env file
-      PGRST_DB_URI: "postgres://authenticator:${POSTGREST_PASSWORD:?POSTGREST_PASSWORD must be set}@postgres:5432/${POSTGRES_DB:-dk_data}"
-      PGRST_DB_SCHEMAS: "api"
-      PGRST_DB_ANON_ROLE: "web_anon"
+      # Accepts POSTGREST_PASSWORD or falls back to POSTGRES_PASSWORD (Doppler compat)
+      PGRST_DB_URI: "postgres://authenticator:${POSTGREST_PASSWORD:-${POSTGRES_PASSWORD:?POSTGRES_PASSWORD must be set}}@postgres:5432/${POSTGRES_DB:-dk_data}"
+      # Schemas exposed via PostgREST — MUST match k8s/apps/postgrest/base/configmap.yaml
+      # PGRST_DB_SCHEMAS in production. Feature 002-external-integration-foundation T011
+      # added mol_api, ip_api, hcs_agents, mol_agents, agents to match production state.
+      PGRST_DB_SCHEMAS: "api,mol_api,ip_api,mol_silver,mol_gold,hcs_silver,hcs_gold,ind_silver,ind_gold,hcp_silver,hcp_gold,hcs_agents,mol_agents,agents,xenon,meta,mart,scoring,staging,application"
+      # Feature 002-external-integration-foundation US-2: web_anon role
+      # dropped by migration 218. Every PostgREST request requires a
+      # valid JWT. Uncomment below only to temporarily revert the lockdown
+      # (after running 218_drop_web_anon_rollback.sql).
+      # PGRST_DB_ANON_ROLE: "web_anon"
       PGRST_DB_POOL: "10"
       PGRST_DB_POOL_ACQUISITION_TIMEOUT: "10"
       PGRST_SERVER_HOST: "0.0.0.0"
@@ -75,12 +90,15 @@ services:
       PGRST_DB_PREPARED_STATEMENTS: "true"
       PGRST_OPENAPI_MODE: "follow-privileges"
       # JWT configuration for role-based access
-      PGRST_JWT_SECRET: "${PGRST_JWT_SECRET:-}"
+      # Accepts PGRST_JWT_SECRET or falls back to JWT_SECRET (Doppler compat)
+      PGRST_JWT_SECRET: "${PGRST_JWT_SECRET:-${JWT_SECRET:-}}"
       PGRST_JWT_ROLE_CLAIM_KEY: ".role"
     networks:
       - dk-data-fe-network
     healthcheck:
-      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:3000/"]
+      # PostgREST image is minimal (no curl/wget/nc). K8s probes use httpGet.
+      # Locally we just check the process is alive via shell builtin.
+      test: ["CMD-SHELL", "true"]
       interval: 30s
       timeout: 10s
       retries: 3
@@ -94,7 +112,7 @@ services:
   # ==========================================================================
   job-trigger:
     build:
-      context: ./src/dk_data/ingestion/batch
+      context: .
       dockerfile: Dockerfile
     container_name: dk-data-fe-job-trigger
     restart: unless-stopped
@@ -109,15 +127,31 @@ services:
       POSTGRES_DB: "${POSTGRES_DB:-dk_data}"
       # For local dev, use subprocess runner instead of K8s
       JOB_RUNNER_MODE: "local"
-      LOG_LEVEL: "info"
+      LOG_LEVEL: "${LOG_LEVEL:-info}"
+      # External API credentials (injected via Doppler)
+      WHO_ICD_CLIENT_ID: "${WHO_ICD_CLIENT_ID:-}"
+      WHO_ICD_CLIENT_SECRET: "${WHO_ICD_CLIENT_SECRET:-}"
+      EPO_CONSUMER_KEY: "${EPO_CONSUMER_KEY:-}"
+      EPO_CONSUMER_SECRET: "${EPO_CONSUMER_SECRET:-}"
+      EUIPO_API_KEY: "${EUIPO_API_KEY:-}"
+      EUIPO_SECRET_KEY: "${EUIPO_SECRET_KEY:-}"
+      USPTO_API_KEY: "${USPTO_API_KEY:-}"
+      USPTO_TSDR_API_KEY: "${USPTO_TSDR_API_KEY:-}"
+      OPENALEX_API_KEY: "${OPENALEX_API_KEY:-}"
+      OPENFDA_API_KEY: "${OPENFDA_API_KEY:-}"
+      NCBI_API_KEY: "${NCBI_API_KEY:-}"
+      DRUGBANK_API_KEY: "${DRUGBANK_API_KEY:-}"
+      SEC_USER_AGENT: "${SEC_USER_AGENT:-}"
+      ANTHROPIC_API_KEY: "${ANTHROPIC_API_KEY:-}"
+      LITELLM_API_KEY: "${LITELLM_API_KEY:-}"
+      LITELLM_BASE_URL: "${LITELLM_BASE_URL:-}"
+      LITELLM_MODEL_ALIAS: "${LITELLM_MODEL_ALIAS:-}"
     volumes:
       # Mount scripts from canonical location
       - ./src/dk_data/scripts:/app/scripts:ro
       # Data and logs directories
       - ./data:/app/data
       - ./logs:/app/logs
-      # Mount ingestion module for fetch jobs
-      - ./src/dk_data/ingestion:/app/ingestion:ro
     networks:
       - dk-data-fe-network
     healthcheck:

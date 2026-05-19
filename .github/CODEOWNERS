@@ -1,0 +1,4 @@
+* @data-kinetic/data-platform
+.gitops/ @data-kinetic/data-platform @data-kinetic/platform
+k8s/ @data-kinetic/data-platform @data-kinetic/platform
+.github/workflows/ @data-kinetic/data-platform @data-kinetic/platform

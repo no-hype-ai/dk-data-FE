@@ -1,79 +1,119 @@
-# dk-data-fe Development Guidelines
+# /Users/pschloz/Desktop/DataKinetic/dk-data-FE
 
-Auto-generated from all feature plans. Last updated: 2026-01-30
+This project uses [dk](https://github.com/tumeke-stealth/tumeke-tools) for spec-driven development.
 
-## Active Technologies
-- Python 3.11+ (Job Trigger FastAPI service), SQL (PostgreSQL 16.4), YAML (Kubernetes manifests) + PostgREST v12.2.3, FastAPI, uvicorn, psycopg2-binary, opentelemetry-*, structlog, prometheus-client, kubernetes clien (003-alchemy-cluster-deploy)
-- Shared CloudNativePG PostgreSQL 16.4 cluster (`postgresql.infra.svc.cluster.local:5432`), dedicated `dk_data` database (003-alchemy-cluster-deploy)
-- Python 3.11+ + FastAPI, psycopg2-binary, httpx (new), pyjwt (new), SQLMesh, Pydantic, structlog, OpenTelemetry, prometheus-client, kubernetes (004-molecule-platform-integration)
-- PostgreSQL 16+ via PostgREST v12.x, 12 schemas (6 existing + 6 new molecule schemas) (004-molecule-platform-integration)
-- Python 3.11+, SQL (PostgreSQL 16.4), YAML (Kubernetes manifests) + PostgREST v12.2.3, FastAPI, uvicorn, psycopg2-binary, opentelemetry-*, structlog, prometheus-clien (005-prioritized-issue-resolution)
-- SQL (PostgreSQL 16.4), YAML (Kubernetes manifests), TypeScript (Admin App components) + PostgREST v12.2.3, PostgreSQL 16.4, Next.js (Admin App) (006-006-admin-integration)
-- Python 3.11+, SQL (PostgreSQL 16.4), YAML (Kubernetes manifests), Bash (backup/setup scripts) + FastAPI, PostgREST v12.2.3, psycopg2-binary, pytest-cov (new), responses (new), Kustomize, crane (new CI tool) (010-platform-stabilization)
-- PostgreSQL 16.4 (shared infra namespace), MinIO (backup storage, infra namespace) (010-platform-stabilization)
-- Python 3.11+ (existing codebase) + psycopg2-binary, Pydantic, httpx, requests, structlog, opentelemetry-sdk, pandas, feedparser (new, for RSS) (011-datasource-integration)
-- PostgreSQL 16.4 via CloudNativePG — schemas: `mol_raw`, `mol_bronze`, `mol_silver`, `mol_gold`, `raw`, `staging`, `meta`, `api` (011-datasource-integration)
-- Python 3.11+ (existing codebase) + psycopg2-binary, Pydantic, httpx, requests, structlog, opentelemetry-sdk, feedparser, uv (new — dependency management) (012-platform-hardening)
-- PostgreSQL 16.4 via CloudNativePG — schemas: raw, staging, meta, api, mol_raw, mol_bronze, mol_silver, mol_gold (012-platform-hardening)
-- Python 3.11+, SQL (PostgreSQL 16.4), YAML (Kubernetes manifests) + FastAPI, psycopg2-binary, Pydantic, prometheus-client, structlog, PostgREST v12.2.3 (013-observability-governance)
-- PostgreSQL 16.4 via CloudNativePG (shared `postgresql.infra.svc.cluster.local:5432`) (013-observability-governance)
-- Python 3.11+ + FastAPI, SQLMesh, Pydantic, psycopg2-binary, requests, responses (test), structlog, OpenTelemetry, prometheus-client, kubernetes (014-uspto-euipo-model-datasource)
-- PostgreSQL 16.4 (CloudNativePG cluster, `postgresql.infra.svc.cluster.local:5432`, database `dk_data`) (014-uspto-euipo-model-datasource)
+## DK Commands
 
-- Python 3.11+ (existing ingestion layer), SQL (PostgreSQL 16+) + PostgREST v12.x, SQLMesh, psycopg2, Pydantic, requests (001-data-layer-postgrest-gitops)
+Available commands (invoke as slash commands in your AI tool):
+
+- `/dk.constitution` — Establish project context and conventions
+- `/dk.specify` — Generate feature specification from a brief
+- `/dk.clarify` — Resolve ambiguities in specifications
+- `/dk.plan` — Create technical implementation plan
+- `/dk.tasks` — Generate dependency-ordered task breakdown
+- `/dk.implement` — Execute implementation tasks
+- `/dk.analyze` — Cross-artifact consistency audit
+- `/dk.checklist` — Pre-merge verification checklist
+- `/dk.taskstoissues` — Convert tasks to GitHub issues
+- `/dk.auto` — Autonomous pipeline (specify -> plan -> tasks -> analyze)
+- `/dk.debug` — End-to-end app audit with Chrome DevTools
+- `/dk.swarm` — Parallel implementation via git worktrees
 
 ## Project Structure
 
-```text
-src/
-tests/
-```
+- `.dk/` — DK configuration and artifacts
+- `.dk/config.yaml` — Project configuration
+- `.dk/memory/` — Persistent project memory (constitution, etc.)
+- `.dk/specs/` — Feature specifications and plans
+- `.dk/scripts/` — Helper scripts
 
-## Commands
+## Hydration paths
 
-cd src [ONLY COMMANDS FOR ACTIVE TECHNOLOGIES][ONLY COMMANDS FOR ACTIVE TECHNOLOGIES] pytest [ONLY COMMANDS FOR ACTIVE TECHNOLOGIES][ONLY COMMANDS FOR ACTIVE TECHNOLOGIES] ruff check .
+Two ways data lands in `dk_data_*` schemas:
 
-## Code Style
+1. **Live fetchers** (default) — `dk_data.ingestion.main.run_ingestion(source)` invokes the per-source fetcher, then SQLMesh promotes raw → bronze → silver → gold.
+2. **Pre-staged dumps** (feature 005) — `python -m dk_data.ingestion.prestaged` walks `${PRESTAGED_ROOT}` for `pg_dump -Fc` `.dump` files, dispatches `pg_restore` per `(schema, table)` in declared hub→spoke order (see `src/dk_data/ingestion/load_order.py:SOURCE_LOAD_ORDER`), and falls through to path 1 for any source without an artifact. WAL-throttled via `meta.wal_usage`; idempotent across reruns via `details->>'run_label'` in `meta.transform_runs` (added by migration 229). Spec: `.dk/specs/005-prestaged-hydration/`.
 
-Python 3.11+ (existing ingestion layer), SQL (PostgreSQL 16+): Follow standard conventions
+## Principles
+
+This project honors `.dk/memory/principles.md` — read it before starting any task.
+The bar is: **simple, complete, senior**. Plan before code (3+ steps), verify before done.
+
+## AI Agents
+
+Configured for: claude
+
+## Active PostgreSQL Schemas
+
+### Domain schemas (always use the domain prefix)
+
+- `mol_raw`, `mol_bronze`, `mol_silver`, `mol_gold`, `mol_api` — Molecule / drug / compound data
+- `hcs_raw`, `hcs_bronze`, `hcs_silver`, `hcs_gold` — Healthcare system / CMS / provider data
+- `ind_raw`, `ind_bronze`, `ind_silver`, `ind_gold` — Indication / disease / epidemiology data
+- `hcp_raw`, `hcp_silver`, `hcp_gold` — Healthcare professional / KOL / researcher data
+- `ip_raw`, `ip_bronze`, `ip_silver`, `ip_gold`, `ip_api` — Intellectual property / patents / trademarks / designs
+
+**Rule**: every new table, view, function, or materialized view lives in a domain-prefixed schema. If you find yourself wanting to put something in `api`, `public`, or an unprefixed name, stop and pick the right domain first.
+
+### Unprefixed-schema carve-outs (do NOT add domain data here)
+
+These schemas exist for cross-domain infrastructure and are the *only* exceptions to the domain-prefix rule:
+
+| Schema | Purpose | What belongs here |
+|---|---|---|
+| `meta` | Job orchestration | `job_locks`, `backfill_state`, `refresh_state`, `transform_runs`, `model_lineage` |
+| `staging` | Transient bronze→silver staging | Throwaway tables produced by ingestion pipelines |
+| `mart` | Cross-domain marts | Anything that joins 2+ domains (rare — prefer domain `_gold`) |
+| `scoring` | Cross-domain scoring models | ML-model-output tables that span domains |
+| `targeting` | Targeting workflows | Target-list-builder outputs |
+| `xenon` | Xenon service internals | Internal to the xenon service |
+| `application` | App-level state | Session, feature flag, app-config state |
+| `api` | PostgREST public surface | **Deprecated** — use domain-prefixed schemas instead. The only views that may stay in `api` are ones PostgREST explicitly publishes and that touch multiple domains |
+
+**When in doubt**: put it in a domain schema and ask during review. Unprefixed carve-outs are a one-way door — once something lands in `mart` or `xenon` it's expensive to relocate.
+
+### Agents schema collision (US-18)
+
+There are three `*agents*` schemas in production and only one of them is where agents actually live:
+
+| Schema | Status | Contents |
+|---|---|---|
+| `agents` | **Canonical** | Agent registrations, agent state, agent chat history |
+| `mol_agents` | Deprecated | Empty or stub tables left from an earlier naming pass — do not add to |
+| `hcs_agents` | Deprecated | Same — empty stubs |
+
+New agent data goes into `agents`. If you find yourself writing `mol_agents.something`, you have the wrong schema — switch to `agents`. Migration 221 (US-18 T132) consolidates `mol_agents` and `hcs_agents` into `agents` and drops the empty stubs.
+
+## Silver Hub Architecture (feature/001-silver-medallion-rebuild)
+
+The silver layer was rebuilt on 10 canonical entity-resolution hubs:
+
+| Hub | Schema | Key Tables |
+|-----|--------|-----------|
+| Molecule | `mol_silver` | `molecules`, `molecule_identifiers`, `molecule_names` |
+| Drug Product | `mol_silver` | `drug_products`, `drug_product_identifiers`, `drug_product_names`, `drug_product_ingredients` |
+| Company | `mol_silver` | `companies`, `company_identifiers`, `company_names` |
+| Target | `mol_silver` | `targets`, `target_identifiers`, `target_names`, `target_sequences` |
+| Provider | `hcs_silver` | `providers`, `provider_identifiers`, `provider_names` |
+| Facility | `hcs_silver` | `facilities`, `facility_identifiers`, `facility_names` |
+| Condition | `ind_silver` | `conditions`, `condition_identifiers`, `condition_names` |
+| Researcher | `hcp_silver` | `researchers`, `researcher_identifiers`, `researcher_names` |
+| Patent | `ip_silver` | `patents`, `patent_identifiers`, `patent_names` |
+| Trademark | `ip_silver` | `trademarks`, `trademark_identifiers`, `trademark_names` |
+
+**Resolve functions**: `mol_silver.resolve_molecule()`, `hcs_silver.resolve_provider()`, etc. — STABLE PARALLEL SAFE with ≤10ms p99 target (SC-004).
+
+**Key rules**:
+- Silver models MUST obtain entity IDs by indexed equi-join to a hub crosswalk OR by calling a resolve function (FR-014). Never by inline fuzzy matching.
+- 5 banned antipatterns: S1 (OR-join hub IDs), S2 (leading-wildcard LIKE), S3 (correlated scalar subquery), S4 (DISTINCT ON over UNION ALL), S5 (similarity + = in OR).
+- `mol_silver.molecule_aliases` and `mol_silver.identifier_mappings` are being phased out — use `molecule_names` and `molecule_identifiers` instead.
+
+**Bootstrap procedures**: `src/dk_data/sql/migrations/189_bootstrap_*.sql` through `200_bootstrap_*.sql`
+**Runbook**: `docs/runbooks/silver-hub-bootstrap.md`
+
+## Active Technologies
+- Python 3.11+ (`requires-python = ">=3.11"`) + FastAPI; asyncpg (already used on `main` — (211-ws4-staging-main-reconcile)
+- PostgreSQL 16.4 (CloudNativePG); adapter `raw`/`bronze`/`silver` (211-ws4-staging-main-reconcile)
 
 ## Recent Changes
-- 014-uspto-euipo-model-datasource: Added Python 3.11+ + FastAPI, SQLMesh, Pydantic, psycopg2-binary, requests, responses (test), structlog, OpenTelemetry, prometheus-client, kubernetes
-- 013-observability-governance: Added Python 3.11+, SQL (PostgreSQL 16.4), YAML (Kubernetes manifests) + FastAPI, psycopg2-binary, Pydantic, prometheus-client, structlog, PostgREST v12.2.3
-- 012-platform-hardening: Added Python 3.11+ (existing codebase) + psycopg2-binary, Pydantic, httpx, requests, structlog, opentelemetry-sdk, feedparser, uv (new — dependency management)
-
-
-<!-- MANUAL ADDITIONS START -->
-
-## Feature 005: Prioritized Issue Resolution (Completed 2026-01-30)
-
-Security and infrastructure improvements addressing critical GitHub issues:
-
-### Key Changes
-- **Security**: JWT secret validation (min 256-bit), restricted `web_anon` role permissions
-- **Database**: API views (`api.health`, `api.data_catalog`, `api.targets`, `api.scoring`, `api.data_sources`)
-- **CI/CD**: New PR testing workflow (`.github/workflows/ci.yaml`), branch+SHA image tags
-- **Health**: HTTP readiness probe on PostgREST `/health`, job-trigger enabled (staging:1, prod:2)
-- **Observability**: ServiceMonitor and PrometheusRule ready (require Prometheus Operator CRDs)
-
-### Testing
-```bash
-# Run security and API tests
-pytest tests/test_security.py tests/test_api.py -v
-
-# Validate manifests
-kubectl kustomize k8s/overlays/staging --enable-helm > /dev/null
-```
-
-### Verification
-```bash
-# Anonymous access test
-curl https://data.preview.behaviorlabs.ai/health  # Should succeed
-curl https://data.preview.behaviorlabs.ai/targets # Should return 401/403
-
-# Authenticated access
-export TOKEN=$(python3 -c "import jwt; print(jwt.encode({'role':'analyst','exp':...}, 'secret'))")
-curl -H "Authorization: Bearer $TOKEN" https://data.preview.behaviorlabs.ai/targets
-```
-
-<!-- MANUAL ADDITIONS END -->
+- 211-ws4-staging-main-reconcile: Added Python 3.11+ (`requires-python = ">=3.11"`) + FastAPI; asyncpg (already used on `main` —

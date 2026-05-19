@@ -5,10 +5,10 @@ Load SIDER (Side Effect Resource) data into PostgreSQL.
 Downloads SIDER 4.1 data files and loads side effects, indications, and drug info.
 
 Tables populated:
-- bronze.sider_drugs: Drug information
-- bronze.sider_side_effects: Side effect associations
-- bronze.sider_indications: Drug indications
-- bronze.sider_frequencies: Side effect frequencies
+- mol_bronze.sider_drugs: Drug information
+- mol_bronze.sider_side_effects: Side effect associations
+- mol_bronze.sider_indications: Drug indications
+- mol_bronze.sider_frequencies: Side effect frequencies
 
 Data source: http://sideeffects.embl.de/
 
@@ -31,6 +31,7 @@ import psycopg2
 from psycopg2.extras import execute_values
 from loguru import logger
 from tqdm import tqdm
+from dk_data.ingestion.utils.database import build_dsn
 
 DB_CONFIG = {
     "host": os.getenv("POSTGRES_HOST", "localhost"),
@@ -56,7 +57,7 @@ def ensure_tables(conn):
     cursor = conn.cursor()
 
     cursor.execute("""
-        CREATE TABLE IF NOT EXISTS bronze.sider_drugs (
+        CREATE TABLE IF NOT EXISTS mol_bronze.sider_drugs (
             id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
             stitch_id_flat VARCHAR(20),
             stitch_id_stereo VARCHAR(20),
@@ -67,12 +68,12 @@ def ensure_tables(conn):
             UNIQUE(stitch_id_flat)
         );
 
-        CREATE INDEX IF NOT EXISTS idx_sider_drugs_stitch ON bronze.sider_drugs(stitch_id_flat);
-        CREATE INDEX IF NOT EXISTS idx_sider_drugs_name ON bronze.sider_drugs(drug_name);
+        CREATE INDEX IF NOT EXISTS idx_sider_drugs_stitch ON mol_bronze.sider_drugs(stitch_id_flat);
+        CREATE INDEX IF NOT EXISTS idx_sider_drugs_name ON mol_bronze.sider_drugs(drug_name);
     """)
 
     cursor.execute("""
-        CREATE TABLE IF NOT EXISTS bronze.sider_side_effects (
+        CREATE TABLE IF NOT EXISTS mol_bronze.sider_side_effects (
             id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
             stitch_id_flat VARCHAR(20),
             stitch_id_stereo VARCHAR(20),
@@ -86,13 +87,13 @@ def ensure_tables(conn):
             UNIQUE(stitch_id_flat, umls_cui_meddra, meddra_type)
         );
 
-        CREATE INDEX IF NOT EXISTS idx_sider_se_stitch ON bronze.sider_side_effects(stitch_id_flat);
-        CREATE INDEX IF NOT EXISTS idx_sider_se_name ON bronze.sider_side_effects(side_effect_name);
-        CREATE INDEX IF NOT EXISTS idx_sider_se_processed ON bronze.sider_side_effects(processed_to_silver);
+        CREATE INDEX IF NOT EXISTS idx_sider_se_stitch ON mol_bronze.sider_side_effects(stitch_id_flat);
+        CREATE INDEX IF NOT EXISTS idx_sider_se_name ON mol_bronze.sider_side_effects(side_effect_name);
+        CREATE INDEX IF NOT EXISTS idx_sider_se_processed ON mol_bronze.sider_side_effects(processed_to_silver);
     """)
 
     cursor.execute("""
-        CREATE TABLE IF NOT EXISTS bronze.sider_indications (
+        CREATE TABLE IF NOT EXISTS mol_bronze.sider_indications (
             id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
             stitch_id_flat VARCHAR(20),
             umls_cui_label VARCHAR(20),
@@ -107,12 +108,12 @@ def ensure_tables(conn):
             UNIQUE(stitch_id_flat, umls_cui_meddra, meddra_type)
         );
 
-        CREATE INDEX IF NOT EXISTS idx_sider_ind_stitch ON bronze.sider_indications(stitch_id_flat);
-        CREATE INDEX IF NOT EXISTS idx_sider_ind_name ON bronze.sider_indications(meddra_name);
+        CREATE INDEX IF NOT EXISTS idx_sider_ind_stitch ON mol_bronze.sider_indications(stitch_id_flat);
+        CREATE INDEX IF NOT EXISTS idx_sider_ind_name ON mol_bronze.sider_indications(meddra_name);
     """)
 
     cursor.execute("""
-        CREATE TABLE IF NOT EXISTS bronze.sider_frequencies (
+        CREATE TABLE IF NOT EXISTS mol_bronze.sider_frequencies (
             id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
             stitch_id_flat VARCHAR(20),
             stitch_id_stereo VARCHAR(20),
@@ -129,7 +130,7 @@ def ensure_tables(conn):
             UNIQUE(stitch_id_flat, umls_cui_meddra, frequency_type)
         );
 
-        CREATE INDEX IF NOT EXISTS idx_sider_freq_stitch ON bronze.sider_frequencies(stitch_id_flat);
+        CREATE INDEX IF NOT EXISTS idx_sider_freq_stitch ON mol_bronze.sider_frequencies(stitch_id_flat);
     """)
 
     conn.commit()
@@ -200,7 +201,7 @@ class SIDERLoader:
             execute_values(
                 cursor,
                 """
-                INSERT INTO bronze.sider_drugs (stitch_id_flat, stitch_id_stereo, drug_name, atc_codes)
+                INSERT INTO mol_bronze.sider_drugs (stitch_id_flat, stitch_id_stereo, drug_name, atc_codes)
                 VALUES %s
                 ON CONFLICT (stitch_id_flat) DO UPDATE SET
                     drug_name = EXCLUDED.drug_name
@@ -244,7 +245,7 @@ class SIDERLoader:
                     execute_values(
                         cursor,
                         """
-                        INSERT INTO bronze.sider_side_effects (
+                        INSERT INTO mol_bronze.sider_side_effects (
                             stitch_id_flat, stitch_id_stereo, umls_cui_label,
                             meddra_type, umls_cui_meddra, side_effect_name
                         ) VALUES %s
@@ -260,7 +261,7 @@ class SIDERLoader:
             execute_values(
                 cursor,
                 """
-                INSERT INTO bronze.sider_side_effects (
+                INSERT INTO mol_bronze.sider_side_effects (
                     stitch_id_flat, stitch_id_stereo, umls_cui_label,
                     meddra_type, umls_cui_meddra, side_effect_name
                 ) VALUES %s
@@ -307,7 +308,7 @@ class SIDERLoader:
                     execute_values(
                         cursor,
                         """
-                        INSERT INTO bronze.sider_indications (
+                        INSERT INTO mol_bronze.sider_indications (
                             stitch_id_flat, umls_cui_label, detection_method,
                             concept_name, meddra_type, umls_cui_meddra, meddra_name
                         ) VALUES %s
@@ -323,7 +324,7 @@ class SIDERLoader:
             execute_values(
                 cursor,
                 """
-                INSERT INTO bronze.sider_indications (
+                INSERT INTO mol_bronze.sider_indications (
                     stitch_id_flat, umls_cui_label, detection_method,
                     concept_name, meddra_type, umls_cui_meddra, meddra_name
                 ) VALUES %s
@@ -381,7 +382,7 @@ class SIDERLoader:
                     execute_values(
                         cursor,
                         """
-                        INSERT INTO bronze.sider_frequencies (
+                        INSERT INTO mol_bronze.sider_frequencies (
                             stitch_id_flat, stitch_id_stereo, umls_cui_label,
                             placebo, frequency_type, frequency_lower, frequency_upper,
                             meddra_type, umls_cui_meddra, side_effect_name
@@ -398,7 +399,7 @@ class SIDERLoader:
             execute_values(
                 cursor,
                 """
-                INSERT INTO bronze.sider_frequencies (
+                INSERT INTO mol_bronze.sider_frequencies (
                     stitch_id_flat, stitch_id_stereo, umls_cui_label,
                     placebo, frequency_type, frequency_lower, frequency_upper,
                     meddra_type, umls_cui_meddra, side_effect_name
@@ -427,7 +428,7 @@ def main():
     args = parser.parse_args()
 
     logger.info("Connecting to PostgreSQL...")
-    conn = psycopg2.connect(**DB_CONFIG)
+    conn = psycopg2.connect(build_dsn())
     logger.info(f"Connected to {DB_CONFIG['host']}:{DB_CONFIG['port']}/{DB_CONFIG['database']}")
 
     ensure_tables(conn)
@@ -457,9 +458,9 @@ def main():
         cursor = conn.cursor()
         logger.info("\n=== Summary ===")
         for table in ['sider_drugs', 'sider_side_effects', 'sider_indications', 'sider_frequencies']:
-            cursor.execute(f"SELECT COUNT(*) FROM bronze.{table}")
+            cursor.execute(f"SELECT COUNT(*) FROM mol_bronze.{table}")
             count = cursor.fetchone()[0]
-            logger.info(f"bronze.{table}: {count:,}")
+            logger.info(f"mol_bronze.{table}: {count:,}")
 
     finally:
         conn.close()

@@ -8,56 +8,21 @@ labels:
     includeSelectors: false
 
 resources:
-  # PostgREST API
-  - postgrest/deployment.yaml
-  - postgrest/service.yaml
-  - postgrest/configmap.yaml
-  # Ingestion services
-  - ingestion/job-trigger-deployment.yaml
-  - ingestion/job-trigger-service.yaml
-  - ingestion/cronjob-cms-all.yaml
-  - ingestion/cronjob-fetch-cms-puf-all.yaml
-  - ingestion/cronjob-refresh.yaml
-  # Molecule platform ingestion (004-molecule-platform-integration)
-  - ingestion/cronjob-mol-transform.yaml
-  - ingestion/job-postsync-backfill.yaml
-  # CI source ingestion (011-datasource-integration)
-  - ingestion/cronjob-fetch-pubmed.yaml
-  - ingestion/cronjob-fetch-ema-reg.yaml
-  - ingestion/cronjob-fetch-openalex-ci.yaml
-  - ingestion/cronjob-fetch-drugbank.yaml
-  - ingestion/cronjob-fetch-fda-ndc.yaml
-  - ingestion/cronjob-fetch-uspto-patents.yaml
-  - ingestion/cronjob-fetch-journal-rss.yaml
-  - ingestion/cronjob-fetch-uspto-ci.yaml
-  - ingestion/cronjob-fetch-hta.yaml
-  - ingestion/cronjob-fetch-epo.yaml
-  - ingestion/cronjob-fetch-cochrane.yaml
-  - ingestion/cronjob-fetch-news.yaml
-  - ingestion/cronjob-fetch-sec-edgar.yaml
-  # Molecule data sources (012-platform-hardening)
-  - ingestion/cronjob-fetch-uniprot.yaml
-  - ingestion/cronjob-fetch-pdb.yaml
-  - ingestion/cronjob-fetch-orcid.yaml
-  # Trademark data sources (014-uspto-euipo-model-datasource)
-  - ingestion/cronjob-fetch-uspto-trademarks.yaml
-  - ingestion/cronjob-fetch-euipo.yaml
-  - ingestion/molecule-pipeline-config.yaml
-  # Backup
-  - backup/pg-backup-configmap.yaml
-  - backup/minio-credentials.yaml
-  - backup/pg-backup-daily.yaml
-  - backup/pg-backup-weekly.yaml
-  - backup/pg-backup-verify.yaml
-  # Database initialization
-  - db-init-job.yaml
-  # Networking
-  - ingress.yaml
-  - middleware-rate-limit.yaml
-  - networkpolicy.yaml
-  # Secrets
-  - doppler-secret.yaml
-  - ghcr-secret.yaml
-  # Observability (requires Prometheus Operator CRDs)
-  - service-monitor.yaml
-  - alert-rules.yaml
+  - ../apps/job-trigger/base
+  - ../apps/postgrest/base
+  - ../apps/metering-proxy/base
+  - ../apps/cronjobs/base
+  - ../apps/infrastructure/base
+  # Horizon 3 / plan §D.1 — hydrate RBAC only (SA + Role + RoleBinding).
+  # The hydrate JOBS are excluded from ArgoCD sync because ArgoCD treats
+  # never-run Jobs as "Progressing" and blocks the entire sync. Jobs are
+  # triggered manually: `dk data hydrate run` or `kubectl apply -f
+  # k8s/apps/hydrate/base/job-hydrate-dispatch.yaml`.
+  - ../apps/hydrate/rbac
+
+patches:
+  # Add metering proxy sidecar to PostgREST deployment
+  - path: metering-proxy-patch.yaml
+    target:
+      kind: Deployment
+      name: postgrest

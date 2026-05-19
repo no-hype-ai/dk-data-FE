@@ -1,17 +1,17 @@
-# TAVR Data Platform - API Examples
+# API Examples
 
-This document provides example queries for the PostgREST API endpoints.
+Last Updated: 2026-03-28
 
-## Base URL
+## Base URLs
 
-```
-Development: http://localhost:3030
-Production: https://api.your-domain.com
-```
+| Environment | URL |
+|-------------|-----|
+| Production | `https://data.behaviorlabs.ai` |
+| Staging | `https://data.staging.behaviorlabs.ai` |
+| Local (PostgREST) | `http://localhost:3000` |
+| Local (Job Trigger) | `http://localhost:8000` |
 
 ## Authentication
-
-Some endpoints require JWT authentication. Generate a token:
 
 ```python
 import jwt
@@ -19,237 +19,182 @@ from datetime import datetime, timedelta
 
 token = jwt.encode(
     {"role": "analyst", "exp": datetime.utcnow() + timedelta(hours=24)},
-    "your-jwt-secret",
+    "YOUR_JWT_SECRET",  # From Doppler: JWT_SECRET
     algorithm="HS256"
 )
 ```
 
-Use in requests:
 ```bash
-curl -H "Authorization: Bearer <token>" http://localhost:3030/catalog
+export TOKEN="<jwt-from-above>"
+curl -H "Authorization: Bearer $TOKEN" https://data.behaviorlabs.ai/data_catalog
+```
+
+### Database Roles
+
+| Role | Access |
+|------|--------|
+| `web_anon` | `api.health`, `api.data_catalog` only (no auth needed) |
+| `analyst` | All `api.*` views, `mol_gold.*`, `mol_silver.*` (read-only) |
+| `api_user` | All schemas (read-only) |
+
+---
+
+## Health & Catalog
+
+```bash
+# Health check (public)
+curl https://data.behaviorlabs.ai/health
+
+# Data source catalog with freshness (authenticated)
+curl -H "Authorization: Bearer $TOKEN" \
+  "https://data.behaviorlabs.ai/data_catalog"
+
+# Only active sources
+curl -H "Authorization: Bearer $TOKEN" \
+  "https://data.behaviorlabs.ai/data_catalog?is_active=eq.true"
+
+# Stale sources (no refresh in >48h)
+curl -H "Authorization: Bearer $TOKEN" \
+  "https://data.behaviorlabs.ai/data_catalog?health_status=neq.healthy"
 ```
 
 ---
 
-## Data Catalog
-
-### List All Data Sources (Public)
+## Molecule Profile (Gold)
 
 ```bash
-curl "http://localhost:3030/catalog_public"
-```
-
-### Full Catalog with Health Status (Authenticated)
-
-```bash
+# Molecule profile by ChEMBL ID
 curl -H "Authorization: Bearer $TOKEN" \
-  "http://localhost:3030/catalog"
-```
+  "https://data.behaviorlabs.ai/molecule_profile?chembl_id=eq.CHEMBL25"
 
-### Filter by Topic Tags
-
-```bash
-# Sources tagged with 'cms'
-curl "http://localhost:3030/catalog_public?topic_tags=cs.{cms}"
-
-# Sources tagged with 'hospital' AND 'quality'
-curl "http://localhost:3030/catalog_public?topic_tags=cs.{hospital,quality}"
-```
-
-### Filter by Health Status
-
-```bash
-# Only healthy sources
+# Top 10 molecules in Phase 3 clinical trials
 curl -H "Authorization: Bearer $TOKEN" \
-  "http://localhost:3030/catalog?health_status=eq.healthy"
+  "https://data.behaviorlabs.ai/molecule_profile?max_phase=eq.3&order=citation_count.desc&limit=10"
 
-# Unhealthy or stale sources
+# Select specific fields
 curl -H "Authorization: Bearer $TOKEN" \
-  "http://localhost:3030/catalog?health_status=neq.healthy"
-```
-
-### Select Specific Fields
-
-```bash
-curl "http://localhost:3030/catalog_public?select=source_name,health_status,freshness_hours"
+  "https://data.behaviorlabs.ai/molecule_profile?select=chembl_id,canonical_name,max_phase,molecule_type,mechanism_of_action"
 ```
 
 ---
 
-## System Health
-
-### Health Check
+## Molecules (Silver)
 
 ```bash
-curl "http://localhost:3030/health"
-```
+# Find molecule by InChI Key
+curl -H "Authorization: Bearer $TOKEN" \
+  "https://data.behaviorlabs.ai/molecules?inchi_key=eq.XUJNEKJLAYQKCS-UHFFFAOYSA-N"
 
-Response:
-```json
-{
-  "status": "healthy",
-  "timestamp": "2024-01-15T10:30:00Z",
-  "components": {
-    "database": "up",
-    "postgrest": "up",
-    "catalog": {
-      "total_sources": 5,
-      "healthy_count": 4,
-      "stale_count": 1,
-      "unhealthy_count": 0
-    },
-    "jobs": {
-      "total_jobs": 7,
-      "running_jobs": 0
-    }
-  }
-}
+# Small molecules only, approved (max_phase=4)
+curl -H "Authorization: Bearer $TOKEN" \
+  "https://data.behaviorlabs.ai/molecules?molecule_type=eq.small_molecule&max_phase=eq.4&limit=50"
+
+# Molecules by molecule_type with Lipinski properties
+curl -H "Authorization: Bearer $TOKEN" \
+  "https://data.behaviorlabs.ai/molecules?molecule_type=eq.small_molecule&select=chembl_id,canonical_name,molecular_weight,alogp,hbd,hba,num_ro5_violations"
 ```
 
 ---
 
-## Batch Jobs
-
-### List All Jobs (Authenticated)
+## Clinical Trials (Silver)
 
 ```bash
+# Trials for a specific molecule (by molecule_id)
+MOL_ID="<uuid-from-molecules-query>"
 curl -H "Authorization: Bearer $TOKEN" \
-  "http://localhost:3030/jobs"
-```
+  "https://data.behaviorlabs.ai/clinical_trials?molecule_id=eq.$MOL_ID"
 
-### Filter Enabled Jobs Only
-
-```bash
+# Active Phase 3 trials
 curl -H "Authorization: Bearer $TOKEN" \
-  "http://localhost:3030/jobs?is_enabled=eq.true"
-```
+  "https://data.behaviorlabs.ai/clinical_trials?phase=eq.PHASE3&overall_status=eq.RECRUITING&order=enrollment.desc&limit=20"
 
-### Get Job with Associated Sources
-
-```bash
+# Trials with results
 curl -H "Authorization: Bearer $TOKEN" \
-  "http://localhost:3030/jobs?select=job_name,description,cron_schedule,source_names"
-```
-
-### Job Run History
-
-```bash
-# Last 10 runs
-curl -H "Authorization: Bearer $TOKEN" \
-  "http://localhost:3030/job_runs?limit=10"
-
-# Failed runs only
-curl -H "Authorization: Bearer $TOKEN" \
-  "http://localhost:3030/job_runs?status=eq.failure"
-
-# Runs for a specific job
-curl -H "Authorization: Bearer $TOKEN" \
-  "http://localhost:3030/job_runs?job_name=eq.fetch-cms-all"
+  "https://data.behaviorlabs.ai/clinical_trials?has_results=eq.true&select=nct_id,title,phase,overall_status,completion_date"
 ```
 
 ---
 
-## Targets
-
-### List All Targets (Public - Limited Fields)
+## Adverse Events (Silver)
 
 ```bash
-curl "http://localhost:3030/targets_public"
-```
-
-### Full Target Details (Authenticated)
-
-```bash
+# Adverse events for a molecule, sorted by report count
 curl -H "Authorization: Bearer $TOKEN" \
-  "http://localhost:3030/targets"
-```
+  "https://data.behaviorlabs.ai/adverse_events?molecule_id=eq.$MOL_ID&order=report_count.desc&limit=20"
 
-### Filter by Tier
-
-```bash
-# Tier A targets only
-curl "http://localhost:3030/targets_public?tier_classification=eq.A"
-
-# Tier A or B
-curl "http://localhost:3030/targets_public?tier_classification=in.(A,B)"
-```
-
-### Filter by State
-
-```bash
-curl "http://localhost:3030/targets_public?state=eq.CA"
-```
-
-### Sort by Score
-
-```bash
-# Highest scores first (full data)
+# Most fatal adverse events (death_count > 10)
 curl -H "Authorization: Bearer $TOKEN" \
-  "http://localhost:3030/targets?order=total_trs.desc"
-```
-
-### Pagination
-
-```bash
-# First 20 results
-curl "http://localhost:3030/targets_public?limit=20&offset=0"
-
-# Next 20 results
-curl "http://localhost:3030/targets_public?limit=20&offset=20"
-```
-
-### Combined Filters
-
-```bash
-# Top 10 Tier A targets in California, sorted by score
-curl -H "Authorization: Bearer $TOKEN" \
-  "http://localhost:3030/targets?tier_classification=eq.A&state=eq.CA&order=total_trs.desc&limit=10"
+  "https://data.behaviorlabs.ai/adverse_events?death_count=gt.10&order=death_count.desc&limit=20"
 ```
 
 ---
 
-## Hospitals
-
-### List All Hospitals
+## Binding Affinities (Silver)
 
 ```bash
-curl "http://localhost:3030/hospitals"
-```
+# High-affinity binders (Ki < 10 nM) for a molecule
+curl -H "Authorization: Bearer $TOKEN" \
+  "https://data.behaviorlabs.ai/binding_affinities?molecule_id=eq.$MOL_ID&ki_nm=lt.10&order=ki_nm.asc"
 
-### Filter by TAVR Certification
-
-```bash
-curl "http://localhost:3030/hospitals?has_tavr_certification=eq.true"
-```
-
-### Filter by State and Type
-
-```bash
-curl "http://localhost:3030/hospitals?state=eq.TX&hospital_type=eq.Acute Care Hospitals"
-```
-
-### HPSA Designated Hospitals
-
-```bash
-curl "http://localhost:3030/hospitals?is_hpsa_primary_care=eq.true"
+# Filter by UniProt target
+curl -H "Authorization: Bearer $TOKEN" \
+  "https://data.behaviorlabs.ai/binding_affinities?uniprot_id=eq.P00533&order=activity_value_nm.asc&limit=50"
 ```
 
 ---
 
-## Scoring Details
-
-### Get Scoring Breakdown for a Hospital (Authenticated)
+## Competitive Landscape (Gold)
 
 ```bash
+# Competitive landscape for a therapeutic area
 curl -H "Authorization: Bearer $TOKEN" \
-  "http://localhost:3030/scoring_details?hospital_id=eq.030064"
+  "https://data.behaviorlabs.ai/competitive_landscape?select=chembl_id,canonical_name,phase,company,indication"
+
+# Company pipeline
+curl -H "Authorization: Bearer $TOKEN" \
+  "https://data.behaviorlabs.ai/company_pipeline?company=ilike.*pfizer*&order=max_phase.desc"
 ```
 
-### Filter by Domain
+---
+
+## Molecule Aliases / Identifier Lookup
 
 ```bash
+# Find molecule by brand name (FAERS-style alias lookup)
 curl -H "Authorization: Bearer $TOKEN" \
-  "http://localhost:3030/scoring_details?domain=eq.clinical_readiness"
+  "https://data.behaviorlabs.ai/molecule_aliases?alias_name_normalized=eq.keytruda&select=molecule_id,alias_name,alias_type"
+
+# All identifiers for a molecule
+curl -H "Authorization: Bearer $TOKEN" \
+  "https://data.behaviorlabs.ai/identifier_mappings?molecule_id=eq.$MOL_ID&order=confidence.desc"
+```
+
+---
+
+## Publications (Silver)
+
+```bash
+# Recent publications for a molecule
+curl -H "Authorization: Bearer $TOKEN" \
+  "https://data.behaviorlabs.ai/publications?molecule_id=eq.$MOL_ID&order=publication_date.desc&limit=20"
+
+# High-citation publications
+curl -H "Authorization: Bearer $TOKEN" \
+  "https://data.behaviorlabs.ai/publications?cited_by_count=gt.100&order=cited_by_count.desc&limit=20"
+```
+
+---
+
+## KOL Profiles (Gold)
+
+```bash
+# Top KOLs by publication count
+curl -H "Authorization: Bearer $TOKEN" \
+  "https://data.behaviorlabs.ai/kol_profiles?order=publication_count.desc&limit=20"
+
+# KOLs associated with a molecule
+curl -H "Authorization: Bearer $TOKEN" \
+  "https://data.behaviorlabs.ai/kol_drug_associations?molecule_id=eq.$MOL_ID&order=association_strength.desc"
 ```
 
 ---
@@ -258,96 +203,68 @@ curl -H "Authorization: Bearer $TOKEN" \
 
 The Job Trigger service runs on port 8000.
 
-### List Available Jobs
-
 ```bash
-curl "http://localhost:8000/jobs"
-```
+# Health check
+curl http://localhost:8000/health
 
-### Trigger a Job
+# Data source freshness
+curl http://localhost:8000/api/v1/monitoring/freshness
 
-```bash
-curl -X POST "http://localhost:8000/jobs/fetch-cms-all/trigger"
+# Trigger a specific ingestion job (by CronJob name)
+curl -X POST http://localhost:8000/api/v1/jobs/fetch-pubmed/trigger
 
-# With user attribution
-curl -X POST "http://localhost:8000/jobs/fetch-cms-all/trigger?user=jsmith"
-```
-
-### Check Job Status
-
-```bash
-curl "http://localhost:8000/runs/123"
-```
-
-### List Recent Runs
-
-```bash
-curl "http://localhost:8000/runs?limit=20"
-
-# Filter by status
-curl "http://localhost:8000/runs?status=running"
-```
-
-### Health Check
-
-```bash
-curl "http://localhost:8000/health"
+# View recent job runs
+curl http://localhost:8000/api/v1/monitoring/sources
 ```
 
 ---
 
 ## PostgREST Operators Reference
 
-| Operator | Description | Example |
-|----------|-------------|---------|
-| `eq` | Equals | `?state=eq.CA` |
-| `neq` | Not equals | `?status=neq.healthy` |
-| `gt` | Greater than | `?total_trs=gt.800` |
-| `gte` | Greater than or equal | `?total_trs=gte.600` |
-| `lt` | Less than | `?total_trs=lt.400` |
-| `lte` | Less than or equal | `?total_trs=lte.200` |
-| `like` | Pattern match (case-sensitive) | `?hospital_name=like.*Medical*` |
-| `ilike` | Pattern match (case-insensitive) | `?hospital_name=ilike.*medical*` |
-| `in` | In list | `?state=in.(CA,TX,FL)` |
-| `is` | Is null/true/false | `?completed_at=is.null` |
-| `cs` | Contains (arrays) | `?topic_tags=cs.{cms}` |
-| `cd` | Contained by (arrays) | `?topic_tags=cd.{cms,hospital}` |
-| `ov` | Overlaps (arrays) | `?topic_tags=ov.{cms,hrsa}` |
-
-### Ordering
-
-```bash
-# Ascending (default)
-?order=created_at.asc
-
-# Descending
-?order=total_trs.desc
-
-# Multiple columns
-?order=state.asc,total_trs.desc
-```
-
-### Pagination
-
-```bash
-?limit=50&offset=0    # First 50
-?limit=50&offset=50   # Next 50
-```
-
-### Field Selection
-
-```bash
-?select=hospital_id,hospital_name,state,total_trs
-```
+| Operator | Meaning | Example |
+|----------|---------|---------|
+| `eq` | Equals | `?max_phase=eq.4` |
+| `neq` | Not equals | `?status=neq.inactive` |
+| `gt`, `gte` | Greater than (or equal) | `?ki_nm=gt.10` |
+| `lt`, `lte` | Less than (or equal) | `?ki_nm=lt.1` |
+| `in` | In set | `?phase=in.(PHASE2,PHASE3)` |
+| `like` | Case-sensitive pattern | `?canonical_name=like.*formin*` |
+| `ilike` | Case-insensitive pattern | `?canonical_name=ilike.*formin*` |
+| `is` | NULL check | `?inchi_key=is.null` |
+| `cs` | Array contains | `?conditions=cs.{diabetes}` |
+| `order` | Sort | `?order=report_count.desc` |
+| `limit`, `offset` | Pagination | `?limit=50&offset=100` |
+| `select` | Column projection | `?select=chembl_id,canonical_name` |
 
 ---
 
-## OpenAPI Specification
-
-PostgREST automatically generates an OpenAPI specification:
+## Direct Database Queries (in-cluster)
 
 ```bash
-curl "http://localhost:3030/"
-```
+# Via job-trigger pod
+kubectl exec -n dk-data-prod deploy/job-trigger -- python3 -c "
+import psycopg2, os
+conn = psycopg2.connect(
+    host=os.environ['POSTGRES_HOST'], port=os.environ['POSTGRES_PORT'],
+    user=os.environ['POSTGRES_USER'], password=os.environ['POSTGRES_PASSWORD'],
+    dbname=os.environ['POSTGRES_DB']
+)
+cur = conn.cursor()
+cur.execute(\"SELECT source_name, last_successful_refresh, record_count FROM meta.data_sources ORDER BY last_successful_refresh DESC NULLS LAST\")
+for r in cur.fetchall(): print(r)
+conn.close()
+"
 
-This returns the full OpenAPI 3.0 spec documenting all available endpoints.
+# Check raw layer record counts
+kubectl exec -n dk-data-prod deploy/job-trigger -- python3 -c "
+import psycopg2, os
+conn = psycopg2.connect(host=os.environ['POSTGRES_HOST'], port=os.environ['POSTGRES_PORT'],
+    user=os.environ['POSTGRES_USER'], password=os.environ['POSTGRES_PASSWORD'],
+    dbname=os.environ['POSTGRES_DB'])
+cur = conn.cursor()
+for table in ['pubmed', 'bindingdb', 'sider', 'clinicaltrials', 'openfda_faers']:
+    cur.execute(f'SELECT COUNT(*) FROM mol_raw.{table}')
+    print(f'mol_raw.{table}:', cur.fetchone()[0])
+conn.close()
+"
+```

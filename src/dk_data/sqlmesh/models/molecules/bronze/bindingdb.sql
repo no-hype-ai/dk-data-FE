@@ -1,12 +1,34 @@
 -- SQLMesh Model: Bronze BindingDB
--- Transforms raw BindingDB API responses into typed bronze layer
+-- Transforms raw BindingDB TSV data (stored as JSONB) into typed bronze layer
+-- BindingDB provides drug-target binding affinity measurements
 -- Part of DK Molecule Data Platform (012-dk-data-platform)
+--
+-- BindingDB TSV fields (stored verbatim as JSONB keys):
+--   "BindingDB Reactant_set_id"  — internal BindingDB record ID
+--   "Ligand InChIKey"            — standard InChIKey for the ligand
+--   "Ligand SMILES"              — SMILES string
+--   "PubChem CID"                — PubChem compound ID
+--   "ChEMBL ID of Ligand"        — ChEMBL ID
+--   "Target Name Assigned by Curator or DataSource"
+--   "Target Source Organism According to Curator or DataSource"
+--   "UniProt (SwissProt) Primary ID of Target Chain"
+--   "Ki (nM)"                    — inhibition constant in nanomolar
+--   "IC50 (nM)"                  — half maximal inhibitory concentration
+--   "Kd (nM)"                    — dissociation constant
+--   "EC50 (nM)"                  — half maximal effective concentration
+--   "kon (M-1-s-1)"              — association rate constant
+--   "koff (s-1)"                 — dissociation rate constant
+--   "pH"                         — assay pH
+--   "Temp (C)"                   — assay temperature
+--   "Curation/DataSource"        — data source name
+--   "Article DOI"                — publication DOI
+--   "PMID"                       — PubMed ID
+--   "PDB ID(s) for Ligand-Target Complex" — PDB co-crystal IDs
 
 MODEL (
-    name bronze.bindingdb,
-    kind INCREMENTAL_BY_TIME_RANGE (
-        time_column ingested_at,
-        lookback 7  -- days
+    name mol_bronze.bindingdb,
+    kind INCREMENTAL_BY_UNIQUE_KEY (
+        unique_key bindingdb_id
     ),
     cron '@daily',
     grain (bindingdb_id),
@@ -17,64 +39,75 @@ MODEL (
 );
 
 SELECT
-    -- Generate UUID for id
     uuid_generate_v4() AS id,
     r.id AS raw_id,
 
-    -- Ligand info
-    COALESCE(
-        r.response_body->>'monomerid',
-        r.response_body->>'ligandid'
-    ) AS bindingdb_id,
-    r.response_body->>'name' AS ligand_name,
-    r.response_body->>'smiles' AS smiles,
-    r.response_body->>'inchi' AS inchi,
-    COALESCE(
-        r.response_body->>'inchi_key',
-        r.response_body->>'inchikey'
-    ) AS inchi_key,
+    -- BindingDB record identifier
+    r.response_body->>'BindingDB Reactant_set_id' AS bindingdb_id,
 
-    -- Target info
-    COALESCE(
-        r.response_body->>'target',
-        r.response_body->>'target_name'
-    ) AS target_name,
-    COALESCE(
-        r.response_body->>'target_source',
-        'UniProt'
-    ) AS target_source,
-    COALESCE(
-        r.response_body->>'uniprot_id',
-        r.response_body->>'target_uniprot'
-    ) AS target_source_id,
-    r.response_body->>'organism' AS target_organism,
+    -- Ligand identifiers
+    r.response_body->>'Ligand InChIKey' AS inchi_key,
+    r.response_body->>'Ligand SMILES' AS smiles,
+    (r.response_body->>'PubChem CID')::BIGINT AS pubchem_cid,
+    r.response_body->>'ChEMBL ID of Ligand' AS chembl_id,
 
-    -- Binding affinity data
-    (r.response_body->>'ki_nm')::NUMERIC AS ki_nm,
-    (r.response_body->>'kd_nm')::NUMERIC AS kd_nm,
-    (r.response_body->>'ic50_nm')::NUMERIC AS ic50_nm,
-    (r.response_body->>'ec50_nm')::NUMERIC AS ec50_nm,
-    r.response_body->>'activity_type' AS activity_type,
-    (r.response_body->>'activity_value')::NUMERIC AS activity_value,
-    r.response_body->>'activity_unit' AS activity_unit,
+    -- Target information
+    r.response_body->>'Target Name Assigned by Curator or DataSource' AS target_name,
+    r.response_body->>'Target Source Organism According to Curator or DataSource' AS target_organism,
+    r.response_body->>'UniProt (SwissProt) Primary ID of Target Chain' AS uniprot_id,
+
+    -- Binding affinity measurements (all in nanomolar)
+    -- BindingDB uses qualitative prefixes like ">79400" for values above detection limit.
+    -- Strip any non-numeric prefix (>, <, ~, =, spaces) before casting to NUMERIC.
+    NULLIF(REGEXP_REPLACE(COALESCE(r.response_body->>'Ki (nM)', ''), '[^0-9.]', '', 'g'), '')::NUMERIC AS ki_nm,
+    NULLIF(REGEXP_REPLACE(COALESCE(r.response_body->>'IC50 (nM)', ''), '[^0-9.]', '', 'g'), '')::NUMERIC AS ic50_nm,
+    NULLIF(REGEXP_REPLACE(COALESCE(r.response_body->>'Kd (nM)', ''), '[^0-9.]', '', 'g'), '')::NUMERIC AS kd_nm,
+    NULLIF(REGEXP_REPLACE(COALESCE(r.response_body->>'EC50 (nM)', ''), '[^0-9.]', '', 'g'), '')::NUMERIC AS ec50_nm,
+
+    -- Kinetics (optional)
+    NULLIF(REGEXP_REPLACE(COALESCE(r.response_body->>'kon (M-1-s-1)', ''), '[^0-9.eE+-]', '', 'g'), '')::NUMERIC AS kon,
+    NULLIF(REGEXP_REPLACE(COALESCE(r.response_body->>'koff (s-1)', ''), '[^0-9.eE+-]', '', 'g'), '')::NUMERIC AS koff,
+
+    -- Assay conditions
+    -- pH is always a plain numeric value in BindingDB
+    NULLIF(REGEXP_REPLACE(COALESCE(r.response_body->>'pH', ''), '[^0-9.]', '', 'g'), '')::NUMERIC AS assay_ph,
+    -- Temperature may include " C" suffix (e.g. "25.00 C") — strip non-numeric suffix
+    NULLIF(REGEXP_REPLACE(COALESCE(r.response_body->>'Temp (C)', ''), '[^0-9.]', '', 'g'), '')::NUMERIC AS assay_temp_c,
+
+    -- Best available affinity value (prefer Ki > Kd > IC50 > EC50)
+    -- Only classify as a type if the numeric value is usable (strip qualifier prefix check)
+    CASE
+        WHEN r.response_body->>'Ki (nM)' IS NOT NULL
+             AND REGEXP_REPLACE(r.response_body->>'Ki (nM)', '[^0-9.]', '', 'g') != '' THEN 'Ki'
+        WHEN r.response_body->>'Kd (nM)' IS NOT NULL
+             AND REGEXP_REPLACE(r.response_body->>'Kd (nM)', '[^0-9.]', '', 'g') != '' THEN 'Kd'
+        WHEN r.response_body->>'IC50 (nM)' IS NOT NULL
+             AND REGEXP_REPLACE(r.response_body->>'IC50 (nM)', '[^0-9.]', '', 'g') != '' THEN 'IC50'
+        WHEN r.response_body->>'EC50 (nM)' IS NOT NULL
+             AND REGEXP_REPLACE(r.response_body->>'EC50 (nM)', '[^0-9.]', '', 'g') != '' THEN 'EC50'
+        ELSE NULL
+    END AS activity_type,
+    COALESCE(
+        NULLIF(REGEXP_REPLACE(COALESCE(r.response_body->>'Ki (nM)', ''), '[^0-9.]', '', 'g'), '')::NUMERIC,
+        NULLIF(REGEXP_REPLACE(COALESCE(r.response_body->>'Kd (nM)', ''), '[^0-9.]', '', 'g'), '')::NUMERIC,
+        NULLIF(REGEXP_REPLACE(COALESCE(r.response_body->>'IC50 (nM)', ''), '[^0-9.]', '', 'g'), '')::NUMERIC,
+        NULLIF(REGEXP_REPLACE(COALESCE(r.response_body->>'EC50 (nM)', ''), '[^0-9.]', '', 'g'), '')::NUMERIC
+    ) AS activity_value,
+    'nM' AS activity_unit,
 
     -- Source tracking
-    COALESCE(
-        r.response_body->>'pmid',
-        r.response_body->>'pubmed_id'
-    ) AS pmid,
-    r.response_body->>'doi' AS doi,
-    r.response_body->>'patent_id' AS patent_id,
+    r.response_body->>'PMID' AS pmid,
+    r.response_body->>'Article DOI' AS doi,
+    r.response_body->>'Curation/DataSource' AS data_source,
+    r.response_body->>'PDB ID(s) for Ligand-Target Complex' AS pdb_ids,
 
     -- Processing metadata
     FALSE AS processed_to_silver,
-    NOW() AS ingested_at
+    r.ingested_at
 
-FROM raw.bindingdb r
+FROM mol_raw.bindingdb r
 WHERE r.response_status = 200
   AND r.processed_to_bronze = FALSE
   AND r.response_body IS NOT NULL
-  AND COALESCE(
-      r.response_body->>'monomerid',
-      r.response_body->>'ligandid'
-  ) IS NOT NULL
+  AND r.response_body->>'BindingDB Reactant_set_id' IS NOT NULL
+  AND r.ingested_at BETWEEN @start_dt AND @end_dt

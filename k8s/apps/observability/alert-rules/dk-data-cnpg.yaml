@@ -1,0 +1,53 @@
+---
+# CNPG PrometheusRule alerts for dk-data
+# Plan ref: Horizon 1, Part B.5 (PR-04)
+# Covers: Postgres primary-absent in the CNPG cluster that backs dk-data.
+# Context: 2026-04-15/16 incident — CNPG operator evicted off tainted node,
+# no pod ready to serve as primary, every write blocked. The in-cluster CNPG
+# exporter ships `cnpg_pg_replication_in_recovery` (0 = primary, 1 = replica)
+# per Pod; primary-absent == no series equal to 0 for the cluster.
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: dk-data-cnpg
+  labels:
+    app: dk-data
+    app.kubernetes.io/name: dk-data-cnpg
+    app.kubernetes.io/component: alerting
+    app.kubernetes.io/part-of: dk-data
+    prometheus: kube-prometheus
+    role: alert-rules
+spec:
+  groups:
+    - name: dk-data.cnpg.primary
+      interval: 30s
+      rules:
+        - alert: DkCnpgNoPrimary
+          # `cnpg_pg_replication_in_recovery` is emitted per Pod by the
+          # CNPG exporter; 0 means the Pod is the primary, 1 means it is
+          # a replica. If no Pod reports 0 for a given cluster, that
+          # cluster has no primary and is read-only at best.
+          #
+          # `count by (cluster)` collapses the per-Pod series into one
+          # value per Cluster CR. The rule fires when that count is 0 —
+          # i.e. no primary reported — for 2 minutes.
+          expr: |
+            count by (cluster) (
+              cnpg_pg_replication_in_recovery == 0
+            ) == 0
+          for: 2m
+          labels:
+            severity: critical
+            team: dk-data
+            service: cnpg
+          annotations:
+            summary: "CNPG cluster {{ $labels.cluster }} has no primary"
+            description: >
+              CNPG cluster {{ $labels.cluster }} has reported no primary
+              for 2+ minutes. All writes into dk-data schemas are blocked.
+              Check `kubectl -n cnpg-system get pods` for evicted or
+              crashing operator pods, inspect node conditions for
+              DiskPressure, and follow the emergency unblock path in the
+              runbook (free disk, cordon the tainted node, let ArgoCD
+              reconcile the operator onto a healthy node).
+            runbook_url: "../../docs/runbooks/cnpg-operator-deadlock.md"

@@ -655,9 +655,9 @@ END $$;
 -- ============================================================================
 
 -- Silver ADMET Predictions Table
-CREATE TABLE IF NOT EXISTS silver.admet_predictions (
+CREATE TABLE IF NOT EXISTS mol_silver.admet_predictions (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-    molecule_id UUID REFERENCES silver.molecules(id),
+    molecule_id UUID REFERENCES mol_silver.molecules(id),
     inchi_key VARCHAR(27),
 
     -- ADMET property
@@ -681,15 +681,15 @@ CREATE TABLE IF NOT EXISTS silver.admet_predictions (
     UNIQUE(molecule_id, property_name, source)
 );
 
-CREATE INDEX IF NOT EXISTS idx_silver_admet_molecule ON silver.admet_predictions(molecule_id);
-CREATE INDEX IF NOT EXISTS idx_silver_admet_inchi ON silver.admet_predictions(inchi_key);
-CREATE INDEX IF NOT EXISTS idx_silver_admet_property ON silver.admet_predictions(property_name);
-CREATE INDEX IF NOT EXISTS idx_silver_admet_category ON silver.admet_predictions(property_category);
+CREATE INDEX IF NOT EXISTS idx_silver_admet_molecule ON mol_silver.admet_predictions(molecule_id);
+CREATE INDEX IF NOT EXISTS idx_silver_admet_inchi ON mol_silver.admet_predictions(inchi_key);
+CREATE INDEX IF NOT EXISTS idx_silver_admet_property ON mol_silver.admet_predictions(property_name);
+CREATE INDEX IF NOT EXISTS idx_silver_admet_category ON mol_silver.admet_predictions(property_category);
 
 -- Silver Pharmacogenomics Table
-CREATE TABLE IF NOT EXISTS silver.pharmacogenomics (
+CREATE TABLE IF NOT EXISTS mol_silver.pharmacogenomics (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-    molecule_id UUID REFERENCES silver.molecules(id),
+    molecule_id UUID REFERENCES mol_silver.molecules(id),
 
     -- Gene/Variant info
     gene_symbol VARCHAR(50) NOT NULL,
@@ -715,26 +715,26 @@ CREATE TABLE IF NOT EXISTS silver.pharmacogenomics (
     UNIQUE(molecule_id, gene_symbol, variant_id, source)
 );
 
-CREATE INDEX IF NOT EXISTS idx_silver_pgx_molecule ON silver.pharmacogenomics(molecule_id);
-CREATE INDEX IF NOT EXISTS idx_silver_pgx_gene ON silver.pharmacogenomics(gene_symbol);
-CREATE INDEX IF NOT EXISTS idx_silver_pgx_variant ON silver.pharmacogenomics(variant_id);
-CREATE INDEX IF NOT EXISTS idx_silver_pgx_evidence ON silver.pharmacogenomics(level_of_evidence);
+CREATE INDEX IF NOT EXISTS idx_silver_pgx_molecule ON mol_silver.pharmacogenomics(molecule_id);
+CREATE INDEX IF NOT EXISTS idx_silver_pgx_gene ON mol_silver.pharmacogenomics(gene_symbol);
+CREATE INDEX IF NOT EXISTS idx_silver_pgx_variant ON mol_silver.pharmacogenomics(variant_id);
+CREATE INDEX IF NOT EXISTS idx_silver_pgx_evidence ON mol_silver.pharmacogenomics(level_of_evidence);
 
 -- Silver Bioactivity Table — already created in 040_silver_layer_tables.sql
 -- Add columns that 040 may not include (idempotent ALTER)
 DO $$
 BEGIN
-    ALTER TABLE silver.bioactivity ADD COLUMN IF NOT EXISTS target_id UUID;
-    ALTER TABLE silver.bioactivity ADD COLUMN IF NOT EXISTS source_id VARCHAR(100);
-    ALTER TABLE silver.bioactivity ADD COLUMN IF NOT EXISTS pmid VARCHAR(20);
-    ALTER TABLE silver.bioactivity ADD COLUMN IF NOT EXISTS doi VARCHAR(200);
-    ALTER TABLE silver.bioactivity ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ DEFAULT NOW();
+    ALTER TABLE mol_silver.bioactivity ADD COLUMN IF NOT EXISTS target_id UUID;
+    ALTER TABLE mol_silver.bioactivity ADD COLUMN IF NOT EXISTS source_id VARCHAR(100);
+    ALTER TABLE mol_silver.bioactivity ADD COLUMN IF NOT EXISTS pmid VARCHAR(20);
+    ALTER TABLE mol_silver.bioactivity ADD COLUMN IF NOT EXISTS doi VARCHAR(200);
+    ALTER TABLE mol_silver.bioactivity ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ DEFAULT NOW();
 EXCEPTION WHEN undefined_table THEN
     NULL;  -- table does not exist yet, 040 will create it
 END $$;
 
-CREATE INDEX IF NOT EXISTS idx_silver_bioact_molecule ON silver.bioactivity(molecule_id);
-CREATE INDEX IF NOT EXISTS idx_silver_bioact_type ON silver.bioactivity(activity_type);
+CREATE INDEX IF NOT EXISTS idx_silver_bioact_molecule ON mol_silver.bioactivity(molecule_id);
+CREATE INDEX IF NOT EXISTS idx_silver_bioact_type ON mol_silver.bioactivity(activity_type);
 
 -- ============================================================================
 -- STEP 5: PIPELINE JOBS TABLE FOR LINKING HISTORY

@@ -1,0 +1,49 @@
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: ingest-pbs-australia
+  namespace: dk-data-prod
+  labels:
+    app: dk-data-ingestion
+    source: pbs-australia
+    domain: mol
+  annotations:
+    description: |
+      Monthly refresh of Australian PBS Schedule.
+      PBS publishes an updated schedule on the 1st of each month.
+      Schedule: 3rd of each month at 03:00 UTC (buffer for publication lag).
+spec:
+  schedule: "0 3 3 * *"           # 03:00 UTC on 3rd of each month — monthly
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 5
+  startingDeadlineSeconds: 600
+  jobTemplate:
+    spec:
+      backoffLimit: 2
+      ttlSecondsAfterFinished: 604800
+      template:
+        spec:
+          restartPolicy: Never
+          containers:
+            - name: ingest
+              image: ghcr.io/data-kinetic/dk-data-fe/job-trigger:main-937c9f6
+              command:
+                - python
+                - -m
+                - dk_data.ingestion.main
+                - --source
+                - pbs_australia
+              env:
+                - name: PG_URL
+                  valueFrom:
+                    secretKeyRef:
+                      name: dk-data-secrets
+                      key: url
+              resources:
+                requests:
+                  cpu: 250m
+                  memory: 256Mi
+                limits:
+                  cpu: "1"
+                  memory: 1Gi

@@ -31,43 +31,334 @@ except ImportError:
     _OBS_AVAILABLE = False
 
 import logging
+from dk_data.ingestion.utils.database import build_dsn
 logger = logging.getLogger(__name__)
+
+# T227: WAL measurement for FR-021 budget enforcement
+try:
+    from dk_data.ingestion.utils.wal_metrics import (
+        measure_wal,
+        check_wal_circuit_breaker,
+        WALCircuitBreakerOpen,
+    )
+    _WAL_METRICS_AVAILABLE = True
+except ImportError:
+    _WAL_METRICS_AVAILABLE = False
+    measure_wal = None
+    check_wal_circuit_breaker = None
+    WALCircuitBreakerOpen = Exception
 
 
 # SQLMesh model definitions by layer
 LAYER_MODELS = {
     'bronze': [
         'mol_bronze.chembl_molecules',
-        'mol_bronze.pubchem_compounds',
-        'mol_bronze.clinical_trials',
         'mol_bronze.openfda_labels',
-        'mol_bronze.openfda_faers',
     ],
+    # Silver — molecule entity resolution hub.
+    # ORDERING: SQLMesh resolves intra-layer deps from SQL, but the declared list
+    # controls which models get selected. molecules_from_bronze must be first so
+    # the molecule entity hub exists before alias/bridge tables reference it.
+    # molecule_aliases and identifier_mappings are added here because they are
+    # foundation tables for all subsequent HCS silver cross-domain joins:
+    #   hcs_silver.part_d_prescribing, drug_utilization, open_payments_drug_linkage
+    #   all JOIN mol_silver.molecule_names to resolve drug names → molecule_ids.
     'silver': [
-        'mol_silver.molecules_from_bronze',
-        'mol_silver.clinical_trials',
-        'mol_silver.drug_labels',
-        'mol_silver.adverse_events',
+        'mol_silver.molecules_from_bronze',   # entity hub — must be first
+        'mol_silver.targets',                  # protein targets (no mol dep)
+        'mol_silver.drug_labels',              # needs molecules
+        'mol_silver.clinical_trials',          # needs molecules
+        'mol_silver.adverse_events',           # needs molecules + identifier_mappings
+        'mol_silver.molecule_names',         # needs molecules+drug_labels+clinical_trials
+                                               # critical: HCS silver joins this for drug name resolution
+        'mol_silver.molecule_identifiers',      # needs molecules+targets+drug_labels
+                                               # critical: adverse_events, binding lookups join this
     ],
     'gold': [
         'mol_gold.molecule_profiles_agg',
         'mol_gold.safety_signals_agg',
         'mol_gold.trial_analytics_agg',
+        # 015-assessment-dashboard-integration
+        'mol_gold.kol_profiles',
+        'mol_gold.kol_network',
+        'mol_gold.advocacy_sentiment',
+        'mol_gold.trial_outcomes',
+        'mol_gold.regulatory_timeline',
+        'mol_gold.financial_summary',
     ],
     # IP / Patent / Trademark models (014-uspto-euipo-model-datasource)
+    # These are all hcs_bronze + IP ip_bronze — fully independent of silver,
+    # so they run in a parallel job at 06:30 alongside mol_bronze at 06:00.
     'ip_bronze': [
-        'bronze.uspto_patents',
-        'bronze.uspto_ci',
-        'bronze.epo_patents',
-        'bronze.uspto_trademarks',
-        'bronze.euipo_trademarks',
+        'ip_bronze.uspto_patents',
+        'ip_bronze.uspto_ci',
+        'ip_bronze.epo_patents',
+        'ip_bronze.uspto_trademarks',
+        'ip_bronze.euipo_trademarks',
+        'ip_bronze.euipo_designs',
+        # 015-assessment-dashboard-integration
+        'mol_bronze.pubmed',
+        'mol_bronze.ema',
+        'mol_bronze.hta_decisions',
+        'mol_bronze.cochrane_reviews',
+        'mol_bronze.sec_edgar',
+        'mol_bronze.orcid',
+        'mol_bronze.journal_rss',
+        'mol_bronze.medical_news',
+        'hcs_bronze.cms_inpatient',
+        'hcs_bronze.cms_hospital_info',
+        'hcs_bronze.cms_cost_reports',
+        'hcs_bronze.acc_tvc',
+        'hcs_bronze.hrsa',
+        'mol_bronze.pdb_structures',
+        'mol_bronze.who_icd',
     ],
+    # ip_silver runs AFTER both silver AND ip_bronze finish.
+    # hcpcs_molecule_bridge reads hcs_bronze.cms_dme_puf/lab_services/imaging_puf (ip_bronze)
+    # AND mol_silver.molecule_names (silver) — it bridges both domains.
+    # ndc_molecule_bridge and rxnorm_concepts also need mol_silver.molecule_names.
     'ip_silver': [
-        'silver.patents',
-        'silver.trademarks',
+        'ip_silver.patents',
+        'ip_silver.trademarks',
+        # 015-assessment-dashboard-integration
+        'mol_silver.publications',
+        'mol_silver.regulatory_decisions',
+        'mol_silver.financial_data',
+        'mol_silver.researchers',
+        'mol_silver.news_signals',
+        'mol_silver.healthcare_facilities',
+        'mol_silver.icd_codes',
+        # Cross-domain bridge tables (need mol_silver.molecule_names from silver layer):
+        'mol_silver.ndc_molecule_bridge',      # NDC → molecule_id (used by hcs_silver.open_payments)
+        'mol_silver.rxnorm_concepts',           # RxNorm CUIs → molecule_id
+        'mol_silver.hcpcs_molecule_bridge',     # HCPCS codes → molecule_id (needs hcs_bronze + molecule_aliases)
+        'ip_silver.trademark_status_changes',   # Trademark audit trail with IP linkage (issue #171 M5)
+        # Moved from hcs_silver (09:00): depends on ndc_molecule_bridge above — must run after it.
+        'hcs_silver.open_payments_drug_linkage',  # hcs_bronze + mol_silver.ndc_molecule_bridge
+    ],
+    # ind_gold — IND domain gold layer (issue #171 H1).
+    # Runs after ip_silver finishes (ind_silver.icd11_ontology is an upstream dep).
+    'ind_gold': [
+        'ind_gold.indication_catalog',
     ],
     'ip_gold': [
-        'gold.molecule_profile',
+        'ip_gold.molecule_profile',
+        # 015-assessment-dashboard-integration
+        'ip_gold.kol_drug_associations',
+        'ip_gold.advocacy_groups',
+    ],
+    # mol_gold_ext — 6 mol_gold models not in gold/ip_gold layers.
+    # Runs at 14:00 UTC (after ip_gold 13:00 + mol_silver_ext 11:00).
+    'mol_gold_ext': [
+        'mol_gold.safety_signals',
+        'mol_gold.lifecycle_stages',
+        'mol_gold.lifecycle_evidence',
+        'mol_gold.company_pipeline',
+        'mol_gold.competitive_landscape',
+        'mol_gold.market_summary',
+    ],
+    # mart — data mart + scoring + targeting (all write to hcs_gold schema).
+    # Runs at 15:30 UTC (after cms-gold-refresh 14:30 + mol_gold_ext 14:00).
+    # mart models read from staging.* (legacy TAVR) and hcs_gold.*
+    'mart': [
+        'hcs_gold.dim_hospital',
+        'hcs_gold.fact_financial_metrics',
+        'hcs_gold.fact_tavr_program',
+        'hcs_gold.score_factors',
+        'hcs_gold.target_scores',
+        'hcs_gold.targeting_scores',
+        'hcs_gold.targeting_summary',
+    ],
+    # mol_bronze_ext — 35 mol_bronze models not covered by bronze/ip_bronze layers.
+    # Runs at 07:00 UTC in parallel with hcs_bronze (both after ip_bronze 06:30).
+    # Includes vocabulary (rxnorm, pharmgkb, bindingdb), FDA (orange_book, fda_drugs,
+    # fda_ndc, fda_rems), literature (europepmc, nih_reporter), and clinical (clinicaltrials).
+    'mol_bronze_ext': [
+        # Vocabulary / reference
+        'mol_bronze.rxnorm',
+        'mol_bronze.pharmgkb',
+        'mol_bronze.bindingdb',
+        'mol_bronze.sider',
+        'mol_bronze.tdc_admet',
+        'mol_bronze.ttd',
+        'mol_bronze.uniprot',
+        'mol_bronze.pubchem',
+        'mol_bronze.cdc_vaccines',
+        'mol_bronze.imgt',
+        'mol_bronze.kegg_drug',
+        'mol_bronze.who_inn',
+        'mol_bronze.who_gho',
+        'mol_bronze.purple_book',
+        'mol_bronze.reactome',
+        # FDA / regulatory
+        'mol_bronze.orange_book',
+        'mol_bronze.fda_drugs',
+        'mol_bronze.trademark_status_history',
+        'mol_bronze.fda_ndc',
+        'mol_bronze.fda_rems',
+        'mol_bronze.nice_hta',
+        'mol_bronze.cms_coverage',
+        'mol_bronze.ema_regulatory',
+        # Literature / clinical
+        'mol_bronze.europepmc',
+        'mol_bronze.nih_reporter',
+        'mol_bronze.clinicaltrials',
+        'mol_bronze.ct_gov_indication_stats',
+        # Drug data
+        'mol_bronze.drugbank',
+        'mol_bronze.dailymed',
+        'mol_bronze.chembl_activities',
+        # CMS cross-domain
+        'mol_bronze.cms_medicare',
+        'mol_bronze.cms_open_payments',
+        'mol_bronze.npi_registry',
+        # Bio / omics
+        'mol_bronze.openalex',
+        'mol_bronze.faers_events',
+        'mol_bronze.websearch',
+    ],
+    # HCS bronze — all 53 hcs_bronze.* models (019-cms-puf-platform-reconciliation).
+    # Runs at 07:00 UTC (after ip_bronze at 06:30 which covers 5 hcs_bronze models).
+    # SQLMesh is idempotent: models already current from ip_bronze are skipped.
+    'hcs_bronze': [
+        'hcs_bronze.acc_tvc',
+        'hcs_bronze.cms_care_compare',
+        'hcs_bronze.cms_chow',
+        'hcs_bronze.cms_chronic_conditions',
+        'hcs_bronze.cms_claim_type_puf',
+        'hcs_bronze.cms_cost_reports',
+        'hcs_bronze.cms_cost_reports_puf',
+        'hcs_bronze.cms_cost_reports_puf_lines',
+        'hcs_bronze.cms_ddinter',
+        'hcs_bronze.cms_dme_puf',
+        'hcs_bronze.cms_dmepos',
+        'hcs_bronze.cms_dual_eligible',
+        'hcs_bronze.cms_enrollment_puf',
+        'hcs_bronze.cms_formulary',
+        'hcs_bronze.cms_geographic_variation',
+        'hcs_bronze.cms_hcris',
+        'hcs_bronze.cms_home_health',
+        'hcs_bronze.cms_hospice_puf',
+        'hcs_bronze.cms_hospital_affiliation',
+        'hcs_bronze.cms_hospital_general_info',
+        'hcs_bronze.cms_hospital_info',
+        'hcs_bronze.cms_hospital_quality',
+        'hcs_bronze.cms_imaging_puf',
+        'hcs_bronze.cms_inpatient',
+        'hcs_bronze.cms_inpatient_puf',
+        'hcs_bronze.cms_lab_services',
+        'hcs_bronze.cms_magnet',
+        'hcs_bronze.cms_medicaid_drug_spending',
+        'hcs_bronze.cms_medicare_advantage',
+        'hcs_bronze.cms_mental_health_puf',
+        'hcs_bronze.cms_ndc',
+        'hcs_bronze.cms_nppes',
+        'hcs_bronze.cms_nucc',
+        'hcs_bronze.cms_open_payments',
+        'hcs_bronze.cms_opioid_puf',
+        'hcs_bronze.cms_ordering_providers',
+        'hcs_bronze.cms_outpatient_puf',
+        'hcs_bronze.cms_part_b_spending',
+        'hcs_bronze.cms_part_d_prescriber',
+        'hcs_bronze.cms_part_d_spending',
+        'hcs_bronze.cms_pecos',
+        'hcs_bronze.cms_physician_puf',
+        'hcs_bronze.cms_physician_puf_services',
+        'hcs_bronze.cms_pos',
+        'hcs_bronze.cms_post_acute',
+        'hcs_bronze.cms_rbcs',
+        'hcs_bronze.cms_referring_providers',
+        'hcs_bronze.cms_snf_puf',
+        'hcs_bronze.cms_stabilis',
+        'hcs_bronze.cms_telehealth_puf',
+        'hcs_bronze.cms_usp',
+        'hcs_bronze.cms_utilization_puf',
+        'hcs_bronze.hrsa',
+    ],
+    # ind_bronze — ICD-11 codes (reads mol_bronze.who_icd from ip_bronze at 06:30).
+    # Runs at 07:30 UTC (after ip_bronze 06:30).
+    'ind_bronze': [
+        'ind_bronze.icd11_codes',
+    ],
+    # ind_silver — ICD-11 ontology (reads ind_bronze.icd11_codes).
+    # Runs at 08:30 UTC (after ind_bronze 07:30).
+    'ind_silver': [
+        'ind_silver.icd11_ontology',
+    ],
+    # mol_silver_ext — 44 mol_silver models not covered by silver/ip_silver layers.
+    # Runs at 11:00 UTC — after mol_silver (08:00), mol_bronze_ext (07:00), ip_silver (10:30).
+    # Many depend on mol_silver.molecules (in this layer), mol_silver.molecule_names (silver),
+    # and mol_bronze_ext models (drugbank, pubchem, pharmgkb, etc.).
+    # SQLMesh resolves intra-layer deps automatically.
+    'mol_silver_ext': [
+        # Entity resolution (depends on mol_bronze.pubchem, drugbank, chembl)
+        'mol_silver.molecules',
+        'mol_silver.drug_synonyms',
+        'mol_silver.molecule_targets',
+        'mol_silver.molecule_publications',
+        # Drug pharmacology & properties
+        'mol_silver.drugbank',
+        'mol_silver.admet_properties',
+        'mol_silver.drug_pharmacology',
+        'mol_silver.binding_affinities',
+        'mol_silver.bioactivity',
+        'mol_silver.side_effects',
+        'mol_silver.chembl',
+        'mol_silver.pathways',
+        'mol_silver.proteins',
+        'mol_silver.protein_targets',
+        'mol_silver.protein_structures',
+        # Clinical data
+        'mol_silver.pubmed_articles',
+        'mol_silver.cochrane_reviews',
+        'mol_silver.research_grants',
+        'mol_silver.publication_evidence',
+        'mol_silver.ct_gov_indication_stats',
+        # FDA / regulatory
+        'mol_silver.orange_book',
+        'mol_silver.fda_drugs',
+        'mol_silver.ema',
+        'mol_silver.ema_regulatory',
+        'mol_silver.dailymed_labels',
+        'mol_silver.rems_programs',
+        'mol_silver.patent_exclusivities',
+        'mol_silver.regulatory_milestones',
+        # Indication / epidemiology
+        'mol_silver.indication_ontology',
+        'mol_silver.indication_epidemiology',
+        'mol_silver.indication_revenue',
+        'mol_silver.icd10_indicator_mapping',
+        # HCS-adjacent
+        'mol_silver.physician_payments',
+        'mol_silver.physician_profiles',
+        'mol_silver.drug_spending',
+        # Vocabulary
+        'mol_silver.pharmacogenomics',
+        'mol_silver.imgt',
+        'mol_silver.cdc_vaccines',
+        'mol_silver.who_inn_names',
+        'mol_silver.pubchem',
+        'mol_silver.ttd',
+        # Misc / enrichment
+        'mol_silver.company_financials',
+        'mol_silver.journal_rss',
+        'mol_silver.web_content',
+    ],
+    # HCS silver — 9 of 10 hcs_silver.* models (019-cms-puf-platform-reconciliation).
+    # Runs at 09:00 UTC — after hcs_bronze (07:00) AND mol_silver (08:00) complete.
+    # Requires mol_silver.molecule_names for drug name resolution joins.
+    # NOTE: open_payments_drug_linkage is in ip_silver (10:30), not here,
+    #       because it depends on mol_silver.ndc_molecule_bridge which ip_silver builds.
+    'hcs_silver': [
+        'hcs_silver.ref_nucc_taxonomy',          # reference — no upstream dep on mol_silver
+        'hcs_silver.geographic_health',           # hcs_bronze only
+        'hcs_silver.healthcare_facilities',       # hcs_bronze only
+        'hcs_silver.cms_facility_profile',        # hcs_bronze only
+        'hcs_silver.facility_profile',            # hcs_bronze only
+        'hcs_silver.provider_profile',            # hcs_bronze only
+        'hcs_silver.cms_drug_market',             # hcs_bronze (part_d/part_b)
+        'hcs_silver.drug_utilization',            # hcs_bronze + mol_silver.molecule_names
+        'hcs_silver.part_d_prescribing',          # hcs_bronze + mol_silver.molecule_names
     ],
 }
 
@@ -93,6 +384,25 @@ def get_sqlmesh_config_path() -> Path:
     raise FileNotFoundError("SQLMesh config.yaml not found")
 
 
+def _dump_sqlmesh_logs_to_stderr(log_dir: str) -> None:
+    """Dump SQLMesh log files to stderr so Alloy→Loki captures them for debugging."""
+    try:
+        log_path = Path(log_dir)
+        if not log_path.exists():
+            return
+        for log_file in sorted(log_path.glob('*.log')):
+            size = log_file.stat().st_size
+            if size == 0:
+                continue
+            # Cap at 50KB per file to avoid flooding Loki
+            content = log_file.read_text(errors='replace')
+            if len(content) > 50_000:
+                content = f"... (truncated first {len(content) - 50_000} bytes) ...\n" + content[-50_000:]
+            logger.error(f"SQLMesh log [{log_file.name}, {size} bytes]:\n{content}")
+    except Exception as e:
+        logger.warning(f"Failed to dump SQLMesh logs: {e}")
+
+
 def run_sqlmesh_command(command: list[str], timeout: int = 3600) -> dict:
     """
     Run a SQLMesh command.
@@ -106,7 +416,18 @@ def run_sqlmesh_command(command: list[str], timeout: int = 3600) -> dict:
     """
     try:
         config_path = get_sqlmesh_config_path()
-        full_command = ['sqlmesh', '-c', str(config_path)] + command
+        # SQLMesh --paths expects the project directory, not the config.yaml file itself
+        project_dir = str(config_path.parent)
+        # Use the dedicated sqlmesh-logs volume mount (emptyDir mounted in CronJob spec).
+        # Falls back to /tmp if project dir is read-only (e.g. running via kubectl exec).
+        # On failure, log contents are dumped to stderr so Alloy→Loki captures them.
+        log_dir = os.path.join(project_dir, 'logs')
+        try:
+            os.makedirs(log_dir, exist_ok=True)
+        except OSError:
+            log_dir = '/tmp/sqlmesh-logs'
+            os.makedirs(log_dir, exist_ok=True)
+        full_command = ['sqlmesh', '--paths', project_dir, '--log-file-dir', log_dir] + command
 
         logger.info(f"Running: {' '.join(full_command)}")
 
@@ -115,9 +436,13 @@ def run_sqlmesh_command(command: list[str], timeout: int = 3600) -> dict:
             capture_output=True,
             text=True,
             timeout=timeout,
+            cwd=project_dir,  # run from project dir so SQLMesh creates logs/ there (writable volumeMount)
             env={
                 **os.environ,
                 'SQLMESH_CONFIG': str(config_path),
+                # Point HOME to /tmp so SQLMesh analytics (~/.sqlmesh) doesn't hit read-only FS.
+                # The container user home dir is read-only (readOnlyRootFilesystem: true).
+                'HOME': '/tmp',
             }
         )
 
@@ -128,6 +453,13 @@ def run_sqlmesh_command(command: list[str], timeout: int = 3600) -> dict:
                 'stderr': result.stderr,
             }
         else:
+            # Always surface stderr so errors are visible in pod logs → Alloy → Loki
+            if result.stderr:
+                logger.error(f"SQLMesh stderr: {result.stderr[:10000]}")
+            if result.stdout:
+                logger.error(f"SQLMesh stdout: {result.stdout[:10000]}")
+            # Dump detailed SQLMesh log file to stderr so it persists in Loki
+            _dump_sqlmesh_logs_to_stderr(log_dir)
             return {
                 'status': 'failed',
                 'stdout': result.stdout,
@@ -152,6 +484,124 @@ def run_sqlmesh_command(command: list[str], timeout: int = 3600) -> dict:
         }
 
 
+def _sqlmesh_has_state_tables() -> bool:
+    """Check if SQLMesh state tables exist (migrate has been run)."""
+    try:
+        from dk_data.ingestion.utils.database import get_connection
+        with get_connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute("SELECT EXISTS(SELECT 1 FROM pg_tables WHERE schemaname='sqlmesh' AND tablename='_snapshots')")
+                result = bool(cur.fetchone()[0])
+        return result
+    except Exception as e:
+        logger.warning(f"Could not check SQLMesh state tables: {e}")
+        return False
+
+
+def is_sqlmesh_initialized() -> bool:
+    """Check whether SQLMesh state tables AND a 'prod' environment exist.
+
+    State tables existing (migrate ran) is not enough — sqlmesh run also
+    requires a 'prod' environment entry in sqlmesh._environments, which is
+    only created by running sqlmesh plan.
+    """
+    try:
+        from dk_data.ingestion.utils.database import get_connection
+        with get_connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute("SELECT EXISTS(SELECT 1 FROM pg_tables WHERE schemaname='sqlmesh' AND tablename='_snapshots')")
+                has_tables = bool(cur.fetchone()[0])
+                if not has_tables:
+                    return False
+                cur.execute("SELECT EXISTS(SELECT 1 FROM sqlmesh._environments WHERE name = 'prod')")
+                has_env = bool(cur.fetchone()[0])
+        return has_env
+    except Exception as e:
+        logger.warning(f"Could not check SQLMesh init state: {e}")
+        return False
+
+
+def ensure_sqlmesh_initialized() -> bool:
+    """Ensure SQLMesh state tables exist and 'prod' environment is registered.
+
+    Two-step bootstrap:
+    1. `sqlmesh migrate` — creates sqlmesh schema and state tables
+       (_snapshots, _environments, _intervals, _versions, etc.).
+       Idempotent; safe to run on an already-migrated DB.
+    2. `sqlmesh plan --auto-apply --skip-backfill` — registers all models
+       in _snapshots and creates the 'prod' environment entry in
+       _environments. Without this, `sqlmesh run` exits with
+       "Environment 'prod' was not found."
+
+    Note: `plan` variants fail on a completely fresh DB (before migrate).
+    Always run migrate first, then plan.
+
+    Returns True if already initialized or bootstrap succeeded, False on failure.
+    """
+    if is_sqlmesh_initialized():
+        return True
+
+    # Safety guard: if bronze tables already have data, re-initializing would
+    # reset interval tracking and cause duplicate rows on the next sqlmesh run.
+    # This happened on 2026-04-05 when prod env was re-initialized, causing 50%
+    # duplication in clinicaltrials and chembl_activities bronze tables.
+    # See issue #255 for details.
+    try:
+        import psycopg2
+        conn = psycopg2.connect(build_dsn())
+        cur = conn.cursor()
+        cur.execute("""
+            SELECT SUM(c.reltuples::bigint)
+            FROM pg_class c
+            JOIN pg_namespace n ON n.oid = c.relnamespace
+            WHERE n.nspname IN ('mol_bronze', 'hcs_bronze')
+              AND c.relkind = 'r'
+              AND c.reltuples > 0
+        """)
+        bronze_rows = cur.fetchone()[0] or 0
+        conn.close()
+        if bronze_rows > 1000:
+            logger.error(
+                "REFUSING to re-initialize SQLMesh: bronze tables contain %d rows. "
+                "Re-initialization would reset interval tracking and cause duplicate "
+                "rows on the next transform run. If you truly need to re-initialize, "
+                "TRUNCATE the bronze tables first or set SQLMESH_FORCE_REINIT=1.",
+                bronze_rows,
+            )
+            if not os.getenv("SQLMESH_FORCE_REINIT"):
+                return False
+            logger.warning("SQLMESH_FORCE_REINIT is set — proceeding despite existing bronze data")
+    except Exception as e:
+        logger.warning("Could not check bronze row counts: %s — proceeding with init", e)
+
+    # Step 1: ensure state tables exist
+    if not _sqlmesh_has_state_tables():
+        logger.info(
+            "SQLMesh state tables missing. Running 'sqlmesh migrate' to bootstrap..."
+        )
+        result = run_sqlmesh_command(['migrate'], timeout=120)
+        if result.get('status') != 'success':
+            logger.error(f"SQLMesh migrate failed: {result.get('error')}")
+            return False
+        logger.info("SQLMesh migrate complete — state tables created")
+
+    # Step 2: register models and create the prod environment
+    logger.info(
+        "SQLMesh 'prod' environment not found. "
+        "Running 'sqlmesh plan --auto-apply --skip-backfill' to register models..."
+    )
+    result = run_sqlmesh_command(
+        ['plan', '--auto-apply', '--skip-backfill'],
+        timeout=600,
+    )
+    if result.get('status') == 'success':
+        logger.info("SQLMesh plan complete — prod environment registered")
+        return True
+
+    logger.error(f"SQLMesh plan failed: {result.get('error')}")
+    return False
+
+
 def transform_model(model_name: str) -> dict:
     """
     Run transformation for a specific model.
@@ -174,12 +624,68 @@ def transform_model(model_name: str) -> dict:
     return result
 
 
+def _check_upstream_has_rows(schema: str, table: str) -> bool:
+    """Return True if schema.table exists and has at least one row (item 9)."""
+    try:
+        import psycopg2
+        conn = psycopg2.connect(build_dsn())
+        cur = conn.cursor()
+        cur.execute(
+            "SELECT EXISTS(SELECT 1 FROM pg_tables WHERE schemaname = %s AND tablename = %s)",
+            (schema, table),
+        )
+        table_exists = bool(cur.fetchone()[0])
+        if not table_exists:
+            conn.close()
+            logger.warning(f"Upstream table {schema}.{table} does not exist yet — skipping pre-flight")
+            return True  # Don't block if table hasn't been created yet
+        cur.execute(f"SELECT EXISTS(SELECT 1 FROM {schema}.{table} LIMIT 1)")
+        has_rows = bool(cur.fetchone()[0])
+        conn.close()
+        return has_rows
+    except Exception as e:
+        logger.warning(f"Pre-flight check for {schema}.{table} failed: {e} — proceeding anyway")
+        return True  # Fail open: don't block pipeline on connectivity issues
+
+
+def _run_sqlmesh_with_wal(cmd: list, timeout: int, layer: str) -> dict:
+    """Run a sqlmesh command wrapped in measure_wal() for FR-021 tracking.
+
+    Opens a short-lived direct psycopg2 connection just for WAL LSN reads;
+    falls back to running the command without WAL tracking if anything fails.
+    """
+    if not _WAL_METRICS_AVAILABLE:
+        return run_sqlmesh_command(cmd, timeout=timeout)
+
+    import psycopg2
+
+    try:
+        wal_conn = psycopg2.connect(build_dsn())
+        wal_conn.autocommit = True
+    except Exception as exc:
+        logger.debug("WAL metrics connection failed (%s) — skipping measure_wal", exc)
+        return run_sqlmesh_command(cmd, timeout=timeout)
+
+    try:
+        with measure_wal(f"transform_layer.{layer}", conn=wal_conn):
+            return run_sqlmesh_command(cmd, timeout=timeout)
+    finally:
+        try:
+            wal_conn.close()
+        except Exception:
+            pass
+
+
 def transform_layer(layer: str) -> dict:
     """
-    Run transformations for all models in a layer.
+    Run transformations for all models in a layer as a single SQLMesh invocation.
+
+    Batching all models in one `sqlmesh run` call (via multiple --select-model
+    flags) is far more efficient than 51 separate subprocess calls: one DB
+    connection, one config load, and SQLMesh handles internal concurrency.
 
     Args:
-        layer: Layer name (bronze, silver, gold)
+        layer: Layer name (bronze, silver, gold, ip_bronze, ip_silver, ip_gold)
 
     Returns:
         Combined results dictionary
@@ -187,30 +693,63 @@ def transform_layer(layer: str) -> dict:
     if layer not in LAYER_MODELS:
         return {'status': 'failed', 'error': f'Unknown layer: {layer}'}
 
+    # Pre-flight: WAL circuit breaker — abort early if WAL is dangerously
+    # accumulated or the archiver is broken. Same checks as the backfill
+    # orchestrator (migration 165), applied to every transform path.
+    if _WAL_METRICS_AVAILABLE and check_wal_circuit_breaker is not None:
+        import psycopg2
+        try:
+            wal_conn = psycopg2.connect(build_dsn())
+            wal_conn.autocommit = True
+            check_wal_circuit_breaker(wal_conn, caller=f"transform_layer.{layer}")
+            wal_conn.close()
+        except WALCircuitBreakerOpen:
+            return {'status': 'skipped', 'error': f'WAL circuit breaker open for {layer}'}
+        except Exception as exc:
+            logger.debug("WAL circuit breaker check failed (%s) — proceeding anyway", exc)
+
     models = LAYER_MODELS[layer]
-    results = {}
-    success_count = 0
-    fail_count = 0
+    logger.info(f"Transforming {layer} layer ({len(models)} models) in single sqlmesh run")
 
-    logger.info(f"Transforming {layer} layer ({len(models)} models)")
-
+    # Build one command selecting all models in this layer
+    # Note: --max-workers is not supported in SQLMesh 0.230.0;
+    # models within a layer run sequentially via the default single-worker.
+    cmd = ['run']
     for model_name in models:
-        logger.info(f"\n{'-'*40}")
-        logger.info(f"Model: {model_name}")
-        logger.info(f"{'-'*40}")
+        cmd.extend(['--select-model', model_name])
 
-        result = transform_model(model_name)
-        results[model_name] = result
+    # Scale timeout with model count: 10 min per model, minimum 1h, max 4h.
+    timeout = max(3600, min(14400, len(models) * 600))
 
-        if result.get('status') == 'success':
-            success_count += 1
-        else:
-            fail_count += 1
+    # T227: Measure WAL consumed per transform layer for FR-021 budget tracking.
+    result = _run_sqlmesh_with_wal(cmd, timeout=timeout, layer=layer)
+
+    # Parse per-model outcomes from SQLMesh stdout (item 8).
+    # SQLMesh emits lines like:
+    #   [1/5] mol_bronze.chembl_molecules evaluated in 3.21s
+    #   [2/5] mol_bronze.pubchem failed in 1.02s
+    # Count individual successes/failures rather than treating the entire
+    # run as all-or-nothing (which swallowed partial failures before).
+    stdout = result.get('stdout', '') or ''
+    lines = stdout.splitlines()
+    evaluated = len([ln for ln in lines if 'evaluated in' in ln.lower()])
+    failed_lines = len([ln for ln in lines if ' failed in' in ln.lower() or 'failed:' in ln.lower()])
+
+    if result.get('status') == 'success':
+        # SQLMesh exited 0: trust stdout counts; fall back to len(models)
+        success_count = evaluated if evaluated > 0 else len(models)
+        fail_count = failed_lines
+        logger.info(f"Layer {layer}: {success_count}/{len(models)} models complete")
+    else:
+        # SQLMesh exited non-zero: some models failed
+        success_count = evaluated
+        fail_count = failed_lines if failed_lines > 0 else len(models) - evaluated
+        logger.error(f"Layer {layer} failed: {result.get('error')} ({fail_count} models failed)")
 
     return {
-        'status': 'success' if fail_count == 0 else 'partial',
+        'status': result.get('status', 'failed'),
         'layer': layer,
-        'models': results,
+        'models': {m: result for m in models},
         'success_count': success_count,
         'fail_count': fail_count,
     }
@@ -227,11 +766,67 @@ def transform_all_layers() -> dict:
     total_success = 0
     total_fail = 0
 
-    # Process layers in order: molecule pipeline then IP pipeline
-    for layer in ['bronze', 'silver', 'gold', 'ip_bronze', 'ip_silver', 'ip_gold']:
+    # Always run plan --auto-apply --skip-backfill before the first run so new
+    # models added to the codebase are registered in SQLMesh's _snapshots table.
+    # Without this, sqlmesh run silently skips models not yet in state.
+    # --skip-backfill avoids a 15-month data backfill while still registering new models.
+    logger.info("Running sqlmesh plan --auto-apply --skip-backfill to register new models...")
+    plan_result = run_sqlmesh_command(
+        ['plan', '--auto-apply', '--skip-backfill'],
+        timeout=600,
+    )
+    if plan_result.get('status') != 'success':
+        logger.warning(
+            "sqlmesh plan --auto-apply failed (non-fatal): %s",
+            plan_result.get('error', 'unknown error'),
+        )
+
+    # Full pipeline dependency sequence (UTC schedule when run as individual CronJobs):
+    # 06:00 bronze → 06:30 ip_bronze → 07:00 hcs_bronze+mol_bronze_ext → 07:30 ind_bronze
+    # → 08:00 silver → 08:30 ind_silver → 09:00 hcs_silver → 10:30 ip_silver
+    # → 11:00 mol_silver_ext → 12:00 gold → 13:00 ip_gold → 14:00 mol_gold_ext
+    # → 14:30 cms-gold-refresh → 15:30 mart
+    #
+    # Upstream-layer table → downstream layer that depends on it (item 9).
+    # Before running a downstream layer we verify the upstream has rows so we
+    # don't silently produce empty silver/gold output from a stalled pipeline.
+    _upstream_check: dict[str, tuple[str, str]] = {
+        # downstream_layer: (upstream_schema, upstream_table_sample)
+        'silver':     ('mol_bronze', 'chembl_molecules'),
+        'hcs_silver': ('hcs_bronze', 'cms_care_compare'),
+        'ind_silver': ('ind_bronze', 'mesh_terms'),
+        'ip_silver':  ('ip_bronze',  'uspto_patents'),
+        'gold':       ('mol_silver', 'drugs'),
+        'ip_gold':    ('ip_silver',  'patents'),
+        'ind_gold':   ('ind_silver', 'mesh_terms'),
+        'mart':       ('mol_gold',   'drug_targets'),
+    }
+
+    for layer in ['bronze', 'ip_bronze', 'mol_bronze_ext', 'hcs_bronze',
+                  'ind_bronze', 'silver', 'ind_silver', 'hcs_silver',
+                  'ip_silver', 'mol_silver_ext', 'gold', 'ip_gold',
+                  'ind_gold', 'mol_gold_ext', 'mart']:
         logger.info(f"\n{'='*60}")
         logger.info(f"Processing {layer.upper()} layer")
         logger.info(f"{'='*60}")
+
+        # Pre-flight: verify upstream table has rows before running downstream (item 9).
+        # Skips the layer (does NOT abort) so the rest of the pipeline still runs.
+        if layer in _upstream_check:
+            schema, table = _upstream_check[layer]
+            upstream_ok = _check_upstream_has_rows(schema, table)
+            if not upstream_ok:
+                logger.warning(
+                    f"Skipping {layer}: upstream {schema}.{table} is empty or unreachable"
+                )
+                all_results[layer] = {
+                    'status': 'skipped',
+                    'layer': layer,
+                    'reason': f'upstream {schema}.{table} is empty',
+                    'success_count': 0,
+                    'fail_count': 0,
+                }
+                continue
 
         result = transform_layer(layer)
         all_results[layer] = result
@@ -340,7 +935,10 @@ Examples:
 
     parser.add_argument(
         '--layer', '-l',
-        choices=['bronze', 'silver', 'gold', 'ip_bronze', 'ip_silver', 'ip_gold', 'all'],
+        choices=['bronze', 'silver', 'gold', 'ip_bronze', 'ip_silver', 'ip_gold',
+                 'hcs_bronze', 'hcs_silver',
+                 'mol_bronze_ext', 'mol_silver_ext', 'mol_gold_ext',
+                 'ind_bronze', 'ind_silver', 'ind_gold', 'mart', 'all'],
         help='Layer to transform'
     )
     parser.add_argument(
@@ -390,6 +988,13 @@ Examples:
         tracer = get_tracer(__name__) if _OBS_AVAILABLE else None
 
         def _do_transform():
+            # Ensure SQLMesh state is bootstrapped before any run/transform.
+            # Runs plan --auto-apply --forward-only on first ever execution so
+            # sqlmesh run doesn't exit 2 with "no environments found".
+            if not args.plan:
+                if not ensure_sqlmesh_initialized():
+                    return {'status': 'failed', 'error': 'SQLMesh initialization failed', 'success_count': 0, 'fail_count': 1}
+
             if args.plan:
                 return run_plan()
             elif args.apply:

@@ -1,0 +1,169 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: pg-backup-script
+  labels:
+    app: pg-backup
+    app.kubernetes.io/part-of: dk-data
+data:
+  backup.sh: |
+    #!/bin/sh
+    set -euo pipefail
+
+    echo "=== PostgreSQL Backup Script ==="
+    echo "Type: ${BACKUP_TYPE}"
+    echo "Namespace: ${NAMESPACE}"
+    echo "Timestamp: $(date -u +%Y-%m-%dT%H:%M:%SZ)"
+
+    # MinIO client is pre-installed at /tmp/mc by the install-mc init container
+    # (postgres:16-alpine has no wget on read-only rootfs).
+    MC=/tmp/mc
+    export MC_CONFIG_DIR=/tmp/mc-config
+    mkdir -p "${MC_CONFIG_DIR}"
+
+    # Validate required environment variables
+    for var in POSTGRES_HOST POSTGRES_PORT POSTGRES_USER POSTGRES_PASSWORD POSTGRES_DB \
+               MINIO_ENDPOINT MINIO_ACCESS_KEY MINIO_SECRET_KEY MINIO_BUCKET BACKUP_TYPE NAMESPACE; do
+      if [ -z "$(eval echo \$$var)" ]; then
+        echo "ERROR: Required variable $var is not set"
+        exit 1
+      fi
+    done
+
+    TIMESTAMP=$(date -u +%Y%m%d_%H%M%S)
+    FILENAME="dk_data_${TIMESTAMP}_${BACKUP_TYPE}.dump"
+    LOCAL_PATH="/tmp/${FILENAME}"
+    REMOTE_PATH="${MINIO_BUCKET}/${NAMESPACE}/${BACKUP_TYPE}/${FILENAME}"
+
+    # Set retention period based on backup type
+    if [ "${BACKUP_TYPE}" = "daily" ]; then
+      RETENTION_DAYS=7
+    elif [ "${BACKUP_TYPE}" = "weekly" ]; then
+      RETENTION_DAYS=30
+    else
+      echo "ERROR: BACKUP_TYPE must be 'daily' or 'weekly', got '${BACKUP_TYPE}'"
+      exit 1
+    fi
+
+    echo "--- Step 1: Creating pg_dump ---"
+    export PGPASSWORD="${POSTGRES_PASSWORD}"
+
+    # Daily backups exclude the two structurally-oversized SQLMesh bronze
+    # tables — mol_bronze chembl_activities (~122GB) and pubchem (~111GB),
+    # together ~54% of the 434GB DB. Dumping them inside the daily window
+    # is structurally impossible: the job DeadlineExceeded mid-pubchem
+    # COPY even at the 12h deadline (mesh handoff 2026-05-05 cluster
+    # recovery, B-part; issue #406). They are SQLMesh-managed and
+    # re-derivable; the WEEKLY backup stays a FULL dump and is the
+    # recovery source for them (issue #406 tracks dedicated long-deadline
+    # weekly jobs for these two tables). Patterns are hash-agnostic so
+    # they survive SQLMesh physical-table rebuilds.
+    EXCLUDE_ARGS=()
+    if [ "${BACKUP_TYPE}" = "daily" ]; then
+      EXCLUDE_ARGS=(--exclude-table='mol_bronze.*chembl_activities*' --exclude-table='mol_bronze.*pubchem*')
+      echo "Daily backup: excluding oversized bronze tables (mol_bronze.*chembl_activities*, mol_bronze.*pubchem*)"
+    fi
+
+    pg_dump \
+      -h "${POSTGRES_HOST}" \
+      -p "${POSTGRES_PORT}" \
+      -U "${POSTGRES_USER}" \
+      -d "${POSTGRES_DB}" \
+      -Fc -Z6 \
+      "${EXCLUDE_ARGS[@]}" \
+      -f "${LOCAL_PATH}"
+
+    echo "Backup file created: ${LOCAL_PATH}"
+    FILE_SIZE=$(stat -c%s "${LOCAL_PATH}" 2>/dev/null || stat -f%z "${LOCAL_PATH}")
+    echo "File size: ${FILE_SIZE} bytes"
+
+    echo "--- Step 2: Verifying backup integrity ---"
+    OBJECT_COUNT=$(pg_restore --list "${LOCAL_PATH}" | wc -l)
+    echo "Object count: ${OBJECT_COUNT}"
+    if [ "${OBJECT_COUNT}" -lt 10 ]; then
+      echo "ERROR: Backup verification failed - only ${OBJECT_COUNT} objects (minimum: 10)"
+      exit 1
+    fi
+
+    echo "--- Step 3: Computing checksum ---"
+    CHECKSUM=$(sha256sum "${LOCAL_PATH}" | awk '{print $1}')
+    echo "SHA256: ${CHECKSUM}"
+
+    echo "--- Step 4: Configuring MinIO client ---"
+    ${MC} alias set backup "http://${MINIO_ENDPOINT}" "${MINIO_ACCESS_KEY}" "${MINIO_SECRET_KEY}" --api S3v4
+
+    # Ensure bucket and path exist
+    ${MC} mb --ignore-existing "backup/${MINIO_BUCKET}"
+
+    echo "--- Step 5: Uploading to MinIO ---"
+    ${MC} cp "${LOCAL_PATH}" "backup/${REMOTE_PATH}"
+
+    # Tag the object with metadata
+    ${MC} tag set "backup/${REMOTE_PATH}" "checksum=${CHECKSUM}&objects=${OBJECT_COUNT}&pg_version=16&type=${BACKUP_TYPE}"
+
+    # Verify upload size matches
+    REMOTE_SIZE=$(${MC} stat "backup/${REMOTE_PATH}" --json | grep -o '"size":[0-9]*' | grep -o '[0-9]*')
+    if [ "${FILE_SIZE}" != "${REMOTE_SIZE}" ]; then
+      echo "ERROR: Size mismatch - local: ${FILE_SIZE}, remote: ${REMOTE_SIZE}"
+      exit 1
+    fi
+    echo "Upload verified: sizes match (${FILE_SIZE} bytes)"
+
+    echo "--- Step 6: Retention cleanup ---"
+    CLEANUP_PATH="backup/${MINIO_BUCKET}/${NAMESPACE}/${BACKUP_TYPE}/"
+    DELETED=$(${MC} find "${CLEANUP_PATH}" --older-than "${RETENTION_DAYS}d" --exec "${MC} rm {}" 2>&1 | wc -l)
+    echo "Cleaned up ${DELETED} expired backups (older than ${RETENTION_DAYS} days)"
+
+    echo "--- Backup complete ---"
+    echo "File: ${FILENAME}"
+    echo "Path: ${REMOTE_PATH}"
+    echo "Size: ${FILE_SIZE} bytes"
+    echo "Checksum: ${CHECKSUM}"
+    echo "Objects: ${OBJECT_COUNT}"
+    echo "Retention: ${RETENTION_DAYS} days"
+
+  verify.sh: |
+    #!/bin/sh
+    set -euo pipefail
+
+    echo "=== Backup Verification Script ==="
+    echo "Namespace: ${NAMESPACE}"
+
+    # MinIO client is pre-installed at /tmp/mc by the install-mc init container
+    # (postgres:16-alpine has no wget on read-only rootfs).
+    MC=/tmp/mc
+    export MC_CONFIG_DIR=/tmp/mc-config
+    mkdir -p "${MC_CONFIG_DIR}"
+
+    # Configure MinIO client
+    ${MC} alias set backup "http://${MINIO_ENDPOINT}" "${MINIO_ACCESS_KEY}" "${MINIO_SECRET_KEY}" --api S3v4
+
+    # Find the latest daily backup
+    LATEST=$(${MC} ls "backup/${MINIO_BUCKET}/${NAMESPACE}/daily/" --json | tail -1)
+    if [ -z "${LATEST}" ]; then
+      echo "ERROR: No daily backups found"
+      exit 1
+    fi
+
+    LATEST_FILE=$(echo "${LATEST}" | grep -o '"key":"[^"]*"' | sed 's/"key":"//;s/"//')
+    echo "Latest backup: ${LATEST_FILE}"
+
+    # Download and verify
+    ${MC} cp "backup/${MINIO_BUCKET}/${NAMESPACE}/daily/${LATEST_FILE}" "/tmp/verify.dump"
+
+    OBJECT_COUNT=$(pg_restore --list "/tmp/verify.dump" | wc -l)
+    echo "Object count: ${OBJECT_COUNT}"
+
+    if [ "${OBJECT_COUNT}" -lt 10 ]; then
+      echo "FAIL: Backup contains only ${OBJECT_COUNT} objects"
+      exit 1
+    fi
+
+    # Verify checksum
+    COMPUTED_CHECKSUM=$(sha256sum "/tmp/verify.dump" | awk '{print $1}')
+    STORED_TAGS=$(${MC} tag list "backup/${MINIO_BUCKET}/${NAMESPACE}/daily/${LATEST_FILE}" --json 2>/dev/null || echo "{}")
+    echo "Computed checksum: ${COMPUTED_CHECKSUM}"
+    echo "Stored tags: ${STORED_TAGS}"
+
+    rm -f /tmp/verify.dump
+    echo "Verification passed"

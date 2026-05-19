@@ -19,6 +19,7 @@ from typing import Any
 
 import psycopg2
 from psycopg2.extras import RealDictCursor
+from dk_data.ingestion.utils.database import build_dsn
 
 # Import observability metrics
 try:
@@ -93,27 +94,49 @@ class LocalJobRunner(JobRunner):
 
     # Mapping of job names to commands
     # Scripts are organized under /app/scripts/{data,ops,utils}/
+    _INGEST = ["python", "-m", "dk_data.ingestion.main"]
+
     JOB_COMMANDS = {
-        # TAVR jobs (existing)
-        "fetch-cms-all": ["python", "-m", "ingestion.fetch_data", "--source", "all"],
-        "fetch-cms-hospitals": ["python", "-m", "ingestion.fetch_data", "--source", "cms_hospital_info"],
-        "fetch-cms-inpatient": ["python", "-m", "ingestion.fetch_data", "--source", "cms_inpatient"],
-        "fetch-acc-tvc": ["python", "-m", "ingestion.fetch_data", "--source", "acc_tvc"],
-        "fetch-hrsa": ["python", "-m", "ingestion.fetch_data", "--source", "hrsa"],
+        # CMS / HCS file-based jobs (require --file; use --skip-if-no-file in CronJobs)
+        "fetch-cms-all": _INGEST + ["cms_inpatient", "--skip-if-no-file"],
+        "fetch-cms-hospitals": _INGEST + ["cms_hospital_info", "--skip-if-no-file"],
+        "fetch-cms-inpatient": _INGEST + ["cms_inpatient", "--skip-if-no-file"],
+        "fetch-acc-tvc": _INGEST + ["acc_tvc", "--skip-if-no-file"],
+        # API-based jobs (no file required)
+        "fetch-hrsa": _INGEST + ["hrsa"],
+        "fetch-clinicaltrials": _INGEST + ["clinicaltrials"],
+        "fetch-openfda-labels": _INGEST + ["openfda_labels"],
+        "fetch-openfda-faers": _INGEST + ["openfda_faers"],
+        "fetch-chembl": _INGEST + ["chembl_molecules"],
+        "fetch-chembl-activities": _INGEST + ["chembl_activities"],
+        "fetch-pubchem": _INGEST + ["pubchem"],
+        "fetch-pubmed": _INGEST + ["pubmed"],
+        "fetch-drugbank": _INGEST + ["drugbank"],
+        "fetch-ema-regulatory": _INGEST + ["ema_regulatory"],
+        "fetch-epo": _INGEST + ["epo_ops"],
+        "fetch-fda-ndc": _INGEST + ["fda_ndc"],
+        "fetch-fda-rems": _INGEST + ["fda_rems"],
+        "fetch-hta": _INGEST + ["hta_bodies"],
+        "fetch-journal-rss": _INGEST + ["journal_rss"],
+        "fetch-news": _INGEST + ["medical_news"],
+        "fetch-openalex-ci": _INGEST + ["openalex_ci"],
+        "fetch-orcid": _INGEST + ["orcid"],
+        "fetch-pdb": _INGEST + ["pdb"],
+        "fetch-sec-edgar": _INGEST + ["sec_edgar"],
+        "fetch-sider": _INGEST + ["sider"],
+        "fetch-uniprot": _INGEST + ["uniprot"],
+        "fetch-uspto-ci": _INGEST + ["uspto_ci"],
+        "fetch-uspto-patents": _INGEST + ["uspto_patents"],
+        "fetch-cochrane": _INGEST + ["cochrane"],
+        # Utility / orchestration jobs
         "catalog-refresh": ["python", "scripts/data/catalog_refresh.py"],
-        "sqlmesh-run": ["bash", "scripts/data/run_sqlmesh.sh"],
-        "check-freshness": ["python", "scripts/data/check_freshness.py"],
-        "purge-history": ["python", "scripts/data/purge_history.py"],
-        # Molecule platform jobs (004-molecule-platform-integration)
-        "fetch-clinicaltrials": ["python", "-m", "dk_data.ingestion.fetch_molecules", "--source", "clinicaltrials"],
-        "fetch-openfda-labels": ["python", "-m", "dk_data.ingestion.fetch_molecules", "--source", "openfda_labels"],
-        "fetch-openfda-faers": ["python", "-m", "dk_data.ingestion.fetch_molecules", "--source", "openfda_faers"],
-        "fetch-chembl": ["python", "-m", "dk_data.ingestion.fetch_molecules", "--source", "chembl"],
-        "fetch-pubchem": ["python", "-m", "dk_data.ingestion.fetch_molecules", "--source", "pubchem"],
+        "sqlmesh-run": _INGEST + ["--list"],  # placeholder; real SQLMesh runs via transform_molecules
         "mol-bronze-transform": ["python", "-m", "dk_data.ingestion.transform_molecules", "--layer", "bronze"],
         "mol-silver-transform": ["python", "-m", "dk_data.ingestion.transform_molecules", "--layer", "silver"],
         "mol-gold-aggregate": ["python", "-m", "dk_data.ingestion.transform_molecules", "--layer", "gold"],
         "mol-pipeline-full": ["python", "-m", "dk_data.ingestion.run_molecule_pipeline"],
+        "mol-fetch-weekly": _INGEST + ["openfda_faers"],
+        "mol-fetch-monthly": _INGEST + ["sider"],
     }
 
     def __init__(self, db_config: dict[str, Any]):
@@ -121,7 +144,7 @@ class LocalJobRunner(JobRunner):
         self.working_dir = os.getenv("WORKING_DIR", "/app")
 
     def _get_connection(self):
-        return psycopg2.connect(**self.db_config)
+        return psycopg2.connect(build_dsn())
 
     def _record_job_start(self, job_name: str, triggered_by: str, user: str | None) -> int:
         """Record job start in database and return run_id."""
@@ -225,7 +248,10 @@ class LocalJobRunner(JobRunner):
                 logger.info(f"Job {job_name} completed successfully", duration=duration, run_id=run_id)
             else:
                 status = JobStatus.FAILURE
-                error_message = result.stderr[:1000] if result.stderr else "Unknown error"
+                # stdout contains structured logs; stderr has tracebacks — combine both
+                _stderr = result.stderr.strip() if result.stderr else ""
+                _stdout_tail = "\n".join(result.stdout.strip().splitlines()[-20:]) if result.stdout else ""
+                error_message = _stderr[:1000] if _stderr else (_stdout_tail[:1000] if _stdout_tail else "Unknown error")
                 increment_job_failure(job_name)
                 logger.error(f"Job {job_name} failed", error=error_message, duration=duration, run_id=run_id)
 
@@ -327,7 +353,7 @@ class K8sJobRunner(JobRunner):
         return self._k8s_client
 
     def _get_connection(self):
-        return psycopg2.connect(**self.db_config)
+        return psycopg2.connect(build_dsn())
 
     def run_job(self, job_name: str, triggered_by: str, user: str | None = None) -> JobResult:
         """Create a Kubernetes Job from a CronJob template."""

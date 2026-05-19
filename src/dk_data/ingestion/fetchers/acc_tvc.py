@@ -51,7 +51,7 @@ class ACCTVCFetcher(BaseFetcher):
         """Return the primary data URL (TVT metrics endpoint)."""
         return NCDR_TVT_METRICS_URL
 
-    def fetch(self, include_hospitals: bool = True) -> Dict[str, Any]:
+    def fetch(self, include_hospitals: bool = True, **kwargs) -> Dict[str, Any]:
         """Fetch ACC TVC certification and TVT Registry data.
 
         Tries, in order:

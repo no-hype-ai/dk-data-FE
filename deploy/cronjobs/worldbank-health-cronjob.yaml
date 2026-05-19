@@ -1,0 +1,49 @@
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: ingest-worldbank-health
+  namespace: dk-data-prod
+  labels:
+    app: dk-data-ingestion
+    source: worldbank-health
+    domain: hcs
+  annotations:
+    description: |
+      Annual refresh of World Bank health indicators.
+      World Bank updates health expenditure data annually (typically mid-year).
+      Schedule: Feb 1 03:00 UTC.
+spec:
+  schedule: "0 3 1 2 *"           # 03:00 UTC on Feb 1 — annual
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 5
+  startingDeadlineSeconds: 600
+  jobTemplate:
+    spec:
+      backoffLimit: 2
+      ttlSecondsAfterFinished: 604800
+      template:
+        spec:
+          restartPolicy: Never
+          containers:
+            - name: ingest
+              image: ghcr.io/data-kinetic/dk-data-fe/job-trigger:main-937c9f6
+              command:
+                - python
+                - -m
+                - dk_data.ingestion.main
+                - --source
+                - worldbank_health
+              env:
+                - name: PG_URL
+                  valueFrom:
+                    secretKeyRef:
+                      name: dk-data-secrets
+                      key: url
+              resources:
+                requests:
+                  cpu: 250m
+                  memory: 256Mi
+                limits:
+                  cpu: "1"
+                  memory: 1Gi

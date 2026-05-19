@@ -1,0 +1,114 @@
+# Backfill Job — fetch one or more sources manually, then optionally run SQLMesh.
+#
+# Usage patterns:
+#
+#   Single source (recommended — sequential, controlled):
+#     Edit args below to: ["--sources", "pubchem", "--fetch-only", "--workers", "1"]
+#     kubectl apply -f job-initial-backfill.yaml -n dk-data-prod
+#     kubectl logs -f job/initial-backfill -n dk-data-prod
+#     kubectl delete job initial-backfill -n dk-data-prod
+#
+#   Multiple sources (comma-separated, still runs sequentially with workers=1):
+#     args: ["--sources", "pubchem,uniprot,chembl", "--fetch-only", "--workers", "1"]
+#
+#   Full backfill — all sources + SQLMesh (original one-shot behaviour):
+#     args: ["--workers", "4"]
+#
+#   Fetch only — all sources, no SQLMesh:
+#     args: ["--workers", "4", "--fetch-only"]
+#
+#   SQLMesh only — raw tables already populated, just run the transform:
+#     args: ["--sqlmesh-only"]
+#
+#   Dry run — preview what would be fetched:
+#     args: ["--sources", "pubchem", "--dry-run"]
+#
+# Idempotent: sources with a recent last_successful_refresh are skipped unless
+# you reset them: UPDATE meta.data_sources SET last_successful_refresh = NULL
+#               WHERE source_name = 'pubchem';
+#
+# WARNING: Heavy sources (chembl, pubchem, openfda_faers, etc.) can take hours.
+# Do NOT set activeDeadlineSeconds.
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: initial-backfill
+  labels:
+    app: initial-backfill
+    app.kubernetes.io/name: initial-backfill
+    app.kubernetes.io/component: backfill
+    app.kubernetes.io/part-of: dk-data
+spec:
+  backoffLimit: 0        # Do not auto-retry — fix the failure and re-apply
+  ttlSecondsAfterFinished: 604800   # Keep for 7 days so logs are accessible
+  template:
+    metadata:
+      labels:
+        app: initial-backfill
+        app.kubernetes.io/component: batch-job
+        app.kubernetes.io/part-of: dk-data
+        team: data-platform
+    spec:
+      restartPolicy: Never
+      imagePullSecrets:
+        - name: ghcr-credentials
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        fsGroup: 1000
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: initial-backfill
+          image: ghcr.io/data-kinetic/dk-data-fe/job-trigger:latest
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+          command:
+            - python
+            - -m
+            - dk_data.ingestion.initial_backfill
+          # EDIT args before applying. Common patterns:
+          #   Single source (default):
+          #     ["--sources", "pubchem", "--fetch-only", "--workers", "1"]
+          #   Multiple sources, sequential:
+          #     ["--sources", "pubchem,uniprot", "--fetch-only", "--workers", "1"]
+          #   All sources, fetch only:
+          #     ["--fetch-only", "--workers", "4"]
+          #   SQLMesh transforms only (raw already populated):
+          #     ["--sqlmesh-only"]
+          args: ["--sources", "REPLACE_ME", "--fetch-only", "--workers", "1"]
+          ports:
+            - name: metrics
+              containerPort: 8000
+              protocol: TCP
+          envFrom:
+            - secretRef:
+                name: dk-data-secrets
+          env:
+            - name: OTEL_EXPORTER_OTLP_ENDPOINT
+              value: "http://alloy.infra.svc.cluster.local:4317"
+            - name: OTEL_SERVICE_NAME
+              value: "dk-data-initial-backfill"
+            - name: OTEL_ENABLED
+              value: "true"
+          resources:
+            requests:
+              memory: "2Gi"
+              cpu: "500m"
+            limits:
+              memory: "8Gi"     # Large downloads (NPPES ~1GB, PhysicianPUF, etc.)
+              cpu: "2000m"
+          volumeMounts:
+            - name: data
+              mountPath: /tmp/data
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: data
+          emptyDir:
+            sizeLimit: "20Gi"   # Large CMS file downloads (NPPES 1GB+, Physician PUF)
+        - name: tmp
+          emptyDir: {}

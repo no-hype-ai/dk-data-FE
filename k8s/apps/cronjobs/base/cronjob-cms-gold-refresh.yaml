@@ -1,0 +1,104 @@
+# Daily CMS/HCS gold view refresh via SQLMesh
+# Feature: 019-cms-puf-platform-reconciliation
+# Schedule: Daily at 14:30 UTC — after mol-transform-ip-gold (13:00) completes
+# Runs only hcs_gold.* and mol_gold.* models; does NOT backfill (forward-only init)
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: cms-gold-refresh
+  labels:
+    app: cms-gold-refresh
+    app.kubernetes.io/name: cms-gold-refresh
+    app.kubernetes.io/component: gold-refresh
+    app.kubernetes.io/part-of: dk-data
+spec:
+  schedule: "30 22 * * *"  # 14:30 UTC — 90m after ip-gold (13:00) to allow completion
+  concurrencyPolicy: Forbid
+  startingDeadlineSeconds: 3600
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      backoffLimit: 2
+      ttlSecondsAfterFinished: 86400
+      activeDeadlineSeconds: 3600
+      template:
+        metadata:
+          labels:
+            app: cms-gold-refresh
+            app.kubernetes.io/component: fetcher
+            app.kubernetes.io/part-of: dk-data
+        spec:
+          restartPolicy: OnFailure
+          imagePullSecrets:
+            - name: ghcr-credentials
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 1000
+            fsGroup: 1000
+            seccompProfile:
+              type: RuntimeDefault
+          containers:
+            - name: cms-gold-refresh
+              image: ghcr.io/data-kinetic/dk-data-fe/job-trigger:latest
+              securityContext:
+                allowPrivilegeEscalation: false
+                readOnlyRootFilesystem: true
+                capabilities:
+                  drop: ["ALL"]
+              command:
+                - /bin/sh
+                - -c
+                - |
+                  set -e
+                  echo "Checking SQLMesh initialization state..."
+                  INITIALIZED=$(python -c "
+                  import psycopg2, os, sys
+                  try:
+                      conn = psycopg2.connect(
+                          host=os.environ['POSTGRES_HOST'],
+                          port=int(os.environ.get('POSTGRES_PORT', 5432)),
+                          user=os.environ['POSTGRES_USER'],
+                          password=os.environ['POSTGRES_PASSWORD'],
+                          dbname=os.environ['POSTGRES_DB'],
+                      )
+                      cur = conn.cursor()
+                      cur.execute(\"SELECT EXISTS(SELECT 1 FROM pg_tables WHERE tablename = '_snapshots')\")
+                      print('1' if cur.fetchone()[0] else '0')
+                      conn.close()
+                  except Exception as e:
+                      print('0')
+                  ")
+                  if [ "$INITIALIZED" = "0" ]; then
+                    echo "SQLMesh not initialized — running forward-only plan to bootstrap state..."
+                    python -m sqlmesh plan --auto-apply --forward-only
+                    echo "SQLMesh initialized."
+                  else
+                    echo "SQLMesh already initialized."
+                  fi
+                  echo "Running scheduled gold models..."
+                  python -m sqlmesh run \
+                    --select-model "hcs_gold.*" \
+                    --select-model "mol_gold.*"
+                  echo "Gold refresh complete."
+              envFrom:
+                - secretRef:
+                    name: dk-data-secrets
+              env:
+                - name: OTEL_EXPORTER_OTLP_ENDPOINT
+                  value: "http://alloy.infra.svc.cluster.local:4317"
+                - name: OTEL_SERVICE_NAME
+                  value: "dk-data-cms-gold-refresh"
+              resources:
+                requests:
+                  memory: "512Mi"
+                  cpu: "200m"
+                limits:
+                  memory: "1Gi"
+                  cpu: "500m"
+              volumeMounts:
+                - name: tmp
+                  mountPath: /tmp
+          volumes:
+            - name: tmp
+              emptyDir: {}

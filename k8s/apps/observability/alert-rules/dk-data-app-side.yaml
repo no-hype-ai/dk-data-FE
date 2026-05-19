@@ -1,0 +1,104 @@
+# Application-side PrometheusRule alerts
+# Feature: 001-silver-medallion-rebuild / T230
+# Covers: slow query frequency, WAL limit breaches (app-measured), job failures,
+# and fetcher stall detection.
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: dk-data-app-side
+  labels:
+    app: dk-data
+    app.kubernetes.io/name: dk-data-app-side
+    app.kubernetes.io/component: alerting
+    app.kubernetes.io/part-of: dk-data
+    # Required by Prometheus Operator to load this rule
+    prometheus: kube-prometheus
+    role: alert-rules
+spec:
+  groups:
+    - name: dk-data.app-side.slow-queries
+      interval: 60s
+      rules:
+        - alert: DkDataFrequentSlowQueries
+          expr: |
+            increase(dk_data_slow_query_total[10m]) > 10
+          for: 5m
+          labels:
+            severity: warning
+            team: data-platform
+          annotations:
+            summary: "High slow-query rate in {{ $labels.service_name }}"
+            description: >
+              More than 10 slow queries (>5s) in the last 10 minutes for
+              {{ $labels.service_name }}.
+              Check meta.slow_query_log for details.
+
+    - name: dk-data.app-side.wal
+      interval: 60s
+      rules:
+        - alert: DkDataWalLimitExceededAppSide
+          expr: |
+            increase(dk_data_wal_limit_exceeded_total[1h]) > 0
+          for: 0m
+          labels:
+            severity: warning
+            team: data-platform
+          annotations:
+            summary: "FR-021 WAL limit exceeded by {{ $labels.procedure_name }}"
+            description: >
+              Transform procedure {{ $labels.procedure_name }} consumed more than
+              2 GiB of WAL in a single chunk. Review chunk sizing or add CHECKPOINT
+              calls within the procedure.
+
+    - name: dk-data.app-side.jobs
+      interval: 60s
+      rules:
+        - alert: DkDataJobRunStuck
+          expr: |
+            (time() - dk_data_job_run_started_timestamp) > 14400
+            and dk_data_job_run_status == 1
+          for: 5m
+          labels:
+            severity: warning
+            team: data-platform
+          annotations:
+            summary: "Job {{ $labels.job_name }} running for > 4 hours"
+            description: >
+              Job {{ $labels.job_name }} (pod {{ $labels.pod_name }}) has been in
+              'running' state for more than 4 hours. It may be stuck.
+
+        - alert: DkDataJobRunFailureRate
+          expr: |
+            increase(dk_data_job_run_failed_total[1h]) > 3
+          for: 5m
+          labels:
+            severity: warning
+            team: data-platform
+          annotations:
+            summary: "High job failure rate for {{ $labels.job_name }}"
+            description: >
+              More than 3 job runs for {{ $labels.job_name }} failed in the last hour.
+              Check meta.job_runs and pod logs.
+
+    - name: dk-data.app-side.fetchers
+      interval: 120s
+      rules:
+        - alert: DkDataFetcherStalled
+          # Fire if a fetcher CronJob pod has been running > 6h without completing
+          expr: |
+            (
+              kube_pod_status_phase{phase="Running", namespace="infra"}
+              * on(pod) group_left()
+              kube_pod_labels{label_app_kubernetes_io_component="fetcher", namespace="infra"}
+            )
+            and
+            (time() - kube_pod_start_time{namespace="infra"}) > 21600
+          for: 10m
+          labels:
+            severity: warning
+            team: data-platform
+          annotations:
+            summary: "Fetcher pod {{ $labels.pod }} stalled (> 6h)"
+            description: >
+              Fetcher pod {{ $labels.pod }} in namespace {{ $labels.namespace }}
+              has been running for more than 6 hours. Check for hangs or retries.

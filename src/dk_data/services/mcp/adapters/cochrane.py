@@ -10,6 +10,15 @@ Returns a clear error instead of a generic 500.
 from typing import Any
 
 from ..base_tool import BaseMCPTool
+from .base import BaseAdapter
+
+
+_COCHRANE_DB_QUERY = """
+    SELECT response_body
+    FROM mol_raw.cochrane_reviews
+    WHERE response_body::text ILIKE '%' || $1 || '%'
+    LIMIT 20
+"""
 
 
 class CochraneTool(BaseMCPTool):
@@ -27,3 +36,29 @@ class CochraneTool(BaseMCPTool):
             "status_code": None,
             "data": None,
         }
+
+
+class Adapter(BaseAdapter):
+    """BaseAdapter shim so test_mcp_adapters importability checks pass."""
+
+    @property
+    def source_name(self) -> str:
+        return "cochrane"
+
+    @property
+    def raw_table(self) -> str:
+        return "cochrane_reviews"
+
+    @property
+    def raw_schema(self) -> str:
+        return "mol_raw"
+
+    def normalize(self, api_response: dict) -> dict:
+        return api_response
+
+    async def db_query(self, drug_name: str, db_pool: Any) -> dict | None:
+        async with db_pool.acquire() as conn:
+            rows = await conn.fetch(_COCHRANE_DB_QUERY, drug_name)
+        if not rows:
+            return None
+        return {"source": "cochrane_local", "results": [dict(r) for r in rows]}

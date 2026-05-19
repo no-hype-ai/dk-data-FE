@@ -1,0 +1,90 @@
+# PubMed Fetch Daily CronJob
+# 011-datasource-integration
+# Fetches recent pharmaceutical literature from PubMed via NCBI E-utilities
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: fetch-pubmed
+  labels:
+    app: fetch-pubmed
+    app.kubernetes.io/name: fetch-pubmed
+    app.kubernetes.io/component: ingestion
+    app.kubernetes.io/part-of: dk-data
+spec:
+  schedule: "0 1 * * *"   # Daily 01:00 UTC — overnight before 06:00 transform
+  concurrencyPolicy: Forbid
+  startingDeadlineSeconds: 3600
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      backoffLimit: 2
+      ttlSecondsAfterFinished: 86400
+      activeDeadlineSeconds: 3600  # 1 hour timeout
+      template:
+        metadata:
+          labels:
+            app: fetch-pubmed
+            app.kubernetes.io/component: fetcher
+            app.kubernetes.io/part-of: dk-data
+            team: data-platform
+            service: dk-data
+            product: dk-data
+        spec:
+          restartPolicy: Never
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 1000
+            fsGroup: 1000
+            seccompProfile:
+              type: RuntimeDefault
+          imagePullSecrets:
+            - name: ghcr-credentials
+          containers:
+            - name: fetch-pubmed
+              image: ghcr.io/data-kinetic/dk-data-fe/job-trigger:latest
+              command: ["python", "-m", "dk_data.ingestion.main"]
+              args: ["pubmed"]
+              envFrom:
+                - secretRef:
+                    name: dk-data-secrets
+              env:
+                - name: OTEL_EXPORTER_OTLP_ENDPOINT
+                  value: "http://alloy.infra.svc.cluster.local:4317"
+                - name: OTEL_ENABLED
+                  value: "true"
+                - name: POSTGRES_HOST_DIRECT
+                  valueFrom:
+                    secretKeyRef:
+                      name: dk-data-secrets
+                      key: POSTGRES_HOST
+                # Per-source credential (Horizon 3 §D.5, issue #319) —
+                # NCBI_API_KEY is pulled from the dedicated
+                # dk-data-secrets-ncbi Secret, NOT the monolithic
+                # dk-data-secrets. Rotating NCBI's key touches this
+                # Secret only; no other source is affected. Explicit env
+                # overrides any inherited value from envFrom above.
+                - name: NCBI_API_KEY
+                  valueFrom:
+                    secretKeyRef:
+                      name: dk-data-secrets-ncbi
+                      key: NCBI_API_KEY
+                      optional: true
+              resources:
+                requests:
+                  memory: "256Mi"
+                  cpu: "100m"
+                limits:
+                  memory: "512Mi"
+                  cpu: "300m"
+              securityContext:
+                allowPrivilegeEscalation: false
+                readOnlyRootFilesystem: true
+                capabilities:
+                  drop: ["ALL"]
+              volumeMounts:
+                - name: tmp
+                  mountPath: /tmp
+          volumes:
+            - name: tmp
+              emptyDir: {}

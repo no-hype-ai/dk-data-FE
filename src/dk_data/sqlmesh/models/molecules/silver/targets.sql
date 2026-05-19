@@ -1,92 +1,78 @@
--- SQLMesh Model: Silver Targets
--- Normalized molecular target data from UniProt and ChEMBL
--- Part of: 012-dk-data-platform
+-- T035: mol_silver.targets — biological target hub
+-- Hub architecture: one row per unique target (protein/enzyme/receptor/etc.).
+-- Identity: UniProt ID (primary) or ChEMBL target ID or gene symbol.
 
 MODEL (
-    name silver.targets,
+    name mol_silver.targets,
     kind INCREMENTAL_BY_UNIQUE_KEY (
-        unique_key uniprot_id
+        unique_key target_id
     ),
-    cron '@monthly',
     audits (
-        not_null(columns := (uniprot_id, target_name)),
-        unique_values(columns := (uniprot_id))
+        -- Entity-resolution key integrity (FR-014 Silver Hub Architecture).
+        not_null(columns := (target_id, canonical_name)),
+        unique_values(columns := (target_id))
     ),
-    grain uniprot_id
+    grain target_id
 );
 
-WITH uniprot_targets AS (
+WITH chembl_targets AS (
     SELECT
+        ('x' || substr(md5(COALESCE(uniprot_id, chembl_target_id)), 1, 16))::bit(64)::bigint AS target_id,
+        NULLIF(uniprot_id, '')                                                   AS uniprot_id,
+        NULL::text                                                               AS sequence_hash,
+        COALESCE(pref_name, target_name, chembl_target_id)                      AS canonical_name,
+        target_type,
+        organism,
+        1                                                                        AS src_priority,
+        ingested_at                                                              AS first_seen_at
+    FROM mol_bronze.protein_targets
+    WHERE COALESCE(uniprot_id, chembl_target_id) IS NOT NULL
+),
+
+uniprot_targets AS (
+    SELECT
+        ('x' || substr(md5(accession), 1, 16))::bit(64)::bigint                 AS target_id,
+        accession                                                                AS uniprot_id,
+        sequence_hash,
+        COALESCE(protein_name, accession)                                        AS canonical_name,
+        'protein'                                                                AS target_type,
+        organism,
+        2                                                                        AS src_priority,
+        ingested_at                                                              AS first_seen_at
+    FROM mol_bronze.uniprot
+    WHERE accession IS NOT NULL
+),
+
+all_targets AS (
+    SELECT * FROM chembl_targets
+    UNION ALL
+    SELECT * FROM uniprot_targets
+),
+
+deduped AS (
+    SELECT DISTINCT ON (target_id)
+        target_id,
         uniprot_id,
-        protein_name AS target_name,
-        short_name,
-        gene_name,
-        entry_name,
-        entry_type,
-        organism_scientific,
-        organism_common,
-        taxonomy_id,
-        sequence,
-        sequence_length,
-        molecular_weight,
-        go_terms,
-        pdb_structures,
-        keywords,
-        -- Determine target type from entry type and keywords
-        CASE
-            WHEN keywords::TEXT ILIKE '%kinase%' THEN 'kinase'
-            WHEN keywords::TEXT ILIKE '%receptor%' THEN 'receptor'
-            WHEN keywords::TEXT ILIKE '%enzyme%' THEN 'enzyme'
-            WHEN keywords::TEXT ILIKE '%transporter%' THEN 'transporter'
-            WHEN keywords::TEXT ILIKE '%ion channel%' THEN 'ion_channel'
-            WHEN keywords::TEXT ILIKE '%protease%' THEN 'protease'
-            ELSE 'other'
-        END AS target_type,
-        source,
-        source_updated_at,
-        created_at
-    FROM bronze.uniprot
-    WHERE
-        processed_to_silver = FALSE
-        AND uniprot_id IS NOT NULL
-        AND protein_name IS NOT NULL
+        sequence_hash,
+        canonical_name,
+        target_type,
+        organism,
+        first_seen_at
+    FROM all_targets
+    ORDER BY target_id, src_priority ASC
 )
 
 SELECT
-    gen_random_uuid() AS id,
+    target_id,
     uniprot_id,
-    target_name,
-    short_name AS target_short_name,
-    gene_name AS gene_symbol,
-    entry_name,
+    sequence_hash,
+    canonical_name,
     target_type,
-    organism_scientific AS organism,
-    organism_common,
-    taxonomy_id,
-    sequence_length,
-    molecular_weight,
-    -- Extract GO terms as separate fields
-    (SELECT jsonb_agg(g->>'id')
-     FROM jsonb_array_elements(go_terms) AS g
-     WHERE g->>'id' LIKE 'GO:0008150%') AS go_biological_process,
-    (SELECT jsonb_agg(g->>'id')
-     FROM jsonb_array_elements(go_terms) AS g
-     WHERE g->>'id' LIKE 'GO:0005575%') AS go_cellular_component,
-    (SELECT jsonb_agg(g->>'id')
-     FROM jsonb_array_elements(go_terms) AS g
-     WHERE g->>'id' LIKE 'GO:0003674%') AS go_molecular_function,
-    -- PDB count
-    COALESCE(jsonb_array_length(pdb_structures), 0) AS pdb_structure_count,
-    pdb_structures,
-    keywords,
-    NULL::TEXT AS chembl_target_id,  -- To be linked if available
-    source,
-    source_updated_at,
-    NOW() AS created_at,
-    NOW() AS updated_at
-FROM uniprot_targets;
+    organism,
+    COALESCE(first_seen_at, NOW()) AS first_seen_at,
+    NOW()                          AS last_updated_at
+FROM deduped;
 
-
--- NOTE: Bronze processed_to_silver flag updates are handled outside SQLMesh.
--- Silver models use INCREMENTAL_BY_UNIQUE_KEY with INCREMENTAL_BY_UNIQUE_KEY (default: update all columns on match),
--- so reprocessing is idempotent.
+-- CREATE INDEX IF NOT EXISTS mol_silver_tgt_canonical_idx ON mol_silver.targets (canonical_name);
+-- CREATE INDEX IF NOT EXISTS mol_silver_tgt_gin_idx ON mol_silver.targets USING GIN (LOWER(canonical_name) gin_trgm_ops);
+-- CREATE INDEX IF NOT EXISTS mol_silver_tgt_seq_hash_idx ON mol_silver.targets (sequence_hash) WHERE sequence_hash IS NOT NULL;

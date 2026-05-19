@@ -363,7 +363,7 @@ class BulkOnboardingService:
                         # Direct insert if no bronze service
                         molecule_id = uuid4()
                         await conn.execute("""
-                            INSERT INTO bronze.molecules (
+                            INSERT INTO mol_bronze.molecules (
                                 id, source, raw_data, ingested_at
                             ) VALUES ($1, $2, $3, NOW())
                         """, molecule_id, "bulk_upload", json.dumps(record))

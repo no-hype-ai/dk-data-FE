@@ -11,7 +11,7 @@ Strategy:
 3. Batch fetch properties via PUG-REST (100 CIDs per request)
 
 Tables populated:
-- bronze.pubchem_compounds: PubChem compound properties
+- mol_bronze.pubchem_compounds: PubChem compound properties
 
 Usage:
     python -m dk_data.data.load_pubchem_bulk
@@ -34,6 +34,7 @@ from psycopg2.extras import execute_values
 from loguru import logger
 from tqdm import tqdm
 import requests
+from dk_data.ingestion.utils.database import build_dsn
 
 DB_CONFIG = {
     "host": os.getenv("POSTGRES_HOST", "localhost"),
@@ -62,7 +63,7 @@ def ensure_tables(conn):
     """Ensure PubChem tables exist."""
     cursor = conn.cursor()
     cursor.execute("""
-        CREATE TABLE IF NOT EXISTS bronze.pubchem_compounds (
+        CREATE TABLE IF NOT EXISTS mol_bronze.pubchem_compounds (
             id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
             cid BIGINT,
             inchi_key VARCHAR(27) UNIQUE,
@@ -85,9 +86,9 @@ def ensure_tables(conn):
             processed_to_silver BOOLEAN DEFAULT FALSE
         );
 
-        CREATE INDEX IF NOT EXISTS idx_pubchem_cid ON bronze.pubchem_compounds(cid);
-        CREATE INDEX IF NOT EXISTS idx_pubchem_inchi ON bronze.pubchem_compounds(inchi_key);
-        CREATE INDEX IF NOT EXISTS idx_pubchem_processed ON bronze.pubchem_compounds(processed_to_silver);
+        CREATE INDEX IF NOT EXISTS idx_pubchem_cid ON mol_bronze.pubchem_compounds(cid);
+        CREATE INDEX IF NOT EXISTS idx_pubchem_inchi ON mol_bronze.pubchem_compounds(inchi_key);
+        CREATE INDEX IF NOT EXISTS idx_pubchem_processed ON mol_bronze.pubchem_compounds(processed_to_silver);
     """)
     conn.commit()
     logger.info("PubChem tables ensured")
@@ -188,10 +189,10 @@ class PubChemBulkLoader:
         logger.info("Finding compounds to enrich...")
         cursor.execute("""
             SELECT DISTINCT b.inchi_key
-            FROM bronze.bindingdb_affinities b
+            FROM mol_bronze.bindingdb_affinities b
             WHERE b.inchi_key IS NOT NULL
               AND NOT EXISTS (
-                  SELECT 1 FROM bronze.pubchem_compounds p
+                  SELECT 1 FROM mol_bronze.pubchem_compounds p
                   WHERE p.inchi_key = b.inchi_key
               )
             ORDER BY b.inchi_key
@@ -262,7 +263,7 @@ class PubChemBulkLoader:
         execute_values(
             cursor,
             """
-            INSERT INTO bronze.pubchem_compounds (
+            INSERT INTO mol_bronze.pubchem_compounds (
                 cid, inchi_key, smiles_canonical, molecular_formula,
                 molecular_weight, exact_mass, monoisotopic_mass,
                 xlogp, tpsa, complexity, hbond_donor, hbond_acceptor,
@@ -270,8 +271,8 @@ class PubChemBulkLoader:
             ) VALUES %s
             ON CONFLICT (inchi_key) DO UPDATE SET
                 cid = EXCLUDED.cid,
-                smiles_canonical = COALESCE(EXCLUDED.smiles_canonical, bronze.pubchem_compounds.smiles_canonical),
-                molecular_weight = COALESCE(EXCLUDED.molecular_weight, bronze.pubchem_compounds.molecular_weight),
+                smiles_canonical = COALESCE(EXCLUDED.smiles_canonical, mol_bronze.pubchem_compounds.smiles_canonical),
+                molecular_weight = COALESCE(EXCLUDED.molecular_weight, mol_bronze.pubchem_compounds.molecular_weight),
                 fetched_at = CURRENT_TIMESTAMP
             """,
             records
@@ -298,7 +299,7 @@ def main():
         logger.info("Download complete.")
         return
 
-    conn = psycopg2.connect(**DB_CONFIG)
+    conn = psycopg2.connect(build_dsn())
     logger.info(f"Connected to {DB_CONFIG['host']}:{DB_CONFIG['port']}/{DB_CONFIG['database']}")
 
     ensure_tables(conn)

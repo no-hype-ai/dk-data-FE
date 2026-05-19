@@ -1,0 +1,29 @@
+# CMS PECOS — monthly CSV, T1 priority:top15 onboarding.
+#
+# PECOS (Provider Enrollment, Chain, and Ownership System) publishes
+# monthly CSV extracts of Medicare-enrolled providers and suppliers.
+# Landing PECOS lets hcp_silver.resolve_researcher and
+# hcs_silver.resolve_provider disambiguate active billing entities
+# from inactive/historical NPI registrations.
+#
+# Orchestration tier: 5 (depends on provider + drug product hubs being
+# resolved). Accessibility tier (GH label): T1 — stable CSV URL,
+# no auth.
+#
+# Fetcher: src/dk_data/ingestion/fetchers/cms_pecos.py
+# CronJob: k8s/apps/cronjobs/base/cronjob-fetch-cms-pecos.yaml
+
+name: pecos
+domain: hcp
+tier: 5
+depends_on: []
+fetch:
+  kind: http_csv
+  url: https://data.cms.gov/provider-characteristics/medicare-provider-supplier-enrollment
+schedule: "0 6 1 * *"  # 06:00 UTC on the 1st of each month (monthly release)
+credentials_ref: none
+expected_row_count_fn: "SELECT reltuples::bigint FROM pg_class WHERE relname='cms_pecos'"
+sla_seconds: 3600
+manifest: .dk/sources/pecos.manifest.json
+consumes:
+  db_connections: 2

@@ -1,0 +1,50 @@
+-- SQLMesh Model: Bronze PubMed Publications
+-- Transforms flat mol_raw.pubmed typed columns to Bronze canonical schema
+-- mol_raw.pubmed is populated by the PubMedFetcher + load_pubmed_data() loader
+-- (not a generic API response table — columns are already typed)
+-- Part of: 015-assessment-dashboard-integration
+
+MODEL (
+    name mol_bronze.pubmed,
+    kind INCREMENTAL_BY_UNIQUE_KEY (
+        unique_key pmid
+    ),
+    cron '@daily',
+    audits (
+        not_null(columns := (pmid)),
+        unique_values(columns := (pmid))
+    ),
+    grain pmid
+);
+
+SELECT
+    gen_random_uuid() AS id,
+
+    -- Publication identifiers (flat typed columns from mol_raw.pubmed)
+    r.pmid::TEXT                         AS pmid,
+    r.doi::TEXT                          AS doi,
+    r.title::TEXT                        AS title,
+    r.abstract::TEXT                     AS abstract,
+
+    -- Authors stored as JSONB by the loader (list of dicts with last_name, fore_name, etc.)
+    r.authors::JSONB                     AS authors,
+
+    -- Journal info
+    r.journal::TEXT                      AS journal,
+    r.publication_date::DATE             AS publication_date,
+
+    -- Classification
+    to_jsonb(r.mesh_terms)               AS mesh_terms,
+    to_jsonb(r.publication_types)        AS publication_types,
+    to_jsonb(r.keywords)                 AS keywords,
+
+    -- Source tracking
+    'pubmed'                             AS source,
+    r._loaded_at                         AS source_updated_at,
+    FALSE                                AS processed_to_silver,
+    NOW()                                AS created_at
+
+FROM mol_raw.pubmed r
+WHERE
+    r.pmid IS NOT NULL
+    AND r._loaded_at BETWEEN @start_dt AND @end_dt;

@@ -22,7 +22,23 @@ from ...services.data_platform import (
 )
 from ..dependencies import get_db_pool, get_gold_service, get_resolver_service
 
-router = APIRouter(prefix="/data-platform", tags=["data-platform"])
+# Feature 002-external-integration-foundation US-15: lock down the entire
+# /data-platform surface behind JWT auth. `require_auth` comes from the
+# existing RBAC middleware (src/dk_data/api/middleware/rbac.py) and raises
+# 401 on missing / invalid tokens. Applying it at the router level covers
+# every route under this router — including new routes added later — with
+# one declaration. No per-route decoration is needed; any route that ends
+# up under this prefix is auto-protected.
+from ..middleware.rbac import require_auth
+
+router = APIRouter(
+    prefix="/data-platform",
+    tags=["data-platform"],
+    # US-15: every request to /data-platform/* MUST present a valid JWT.
+    # The dependency raises 401 before the route handler runs. The existing
+    # 34 routes and all future routes under this prefix inherit this check.
+    dependencies=[Depends(require_auth)],
+)
 
 
 # ============================================================================
@@ -57,7 +73,7 @@ class MoleculeSearchResponse(BaseModel):
 class IdentifierResolutionRequest(BaseModel):
     """Request for identifier resolution."""
     identifier: str = Field(..., min_length=1, description="Identifier to resolve")
-    identifier_type: Optional[str] = Field(None, description="Type hint (auto-detected if not provided)")
+    source: Optional[str] = Field(None, description="Type hint (auto-detected if not provided)")
 
 
 class IdentifierResolutionResponse(BaseModel):
@@ -131,7 +147,7 @@ class QueueItemResponse(BaseModel):
     id: str
     molecule_id: Optional[str]
     original_identifier: str
-    identifier_type: str
+    source: str
     confidence_score: float
     candidate_matches: List[Dict[str, Any]]
     status: str
@@ -296,11 +312,11 @@ async def resolve_identifier(request: IdentifierResolutionRequest):
         # Try to get resolver service
         resolver = await get_resolver_service()
         if resolver:
-            result = await resolver.resolve(request.identifier, request.identifier_type)
+            result = await resolver.resolve(request.identifier, request.source)
             return IdentifierResolutionResponse(
                 success=result.success,
                 identifier=request.identifier,
-                detected_type=result.identifier_type.value if result.identifier_type else "unknown",
+                detected_type=result.source.value if result.source else "unknown",
                 molecule_id=str(result.molecule_id) if result.molecule_id else None,
                 inchi_key=result.inchi_key,
                 canonical_name=result.canonical_name,
@@ -317,7 +333,7 @@ async def resolve_identifier(request: IdentifierResolutionRequest):
             resolution_path = ["direct_lookup"]
 
             # Try to detect identifier type
-            detected_type = request.identifier_type or "name"
+            detected_type = request.source or "name"
 
             # Check if it's an InChI Key pattern
             if len(identifier) == 27 and '-' in identifier:
@@ -339,12 +355,12 @@ async def resolve_identifier(request: IdentifierResolutionRequest):
                     m.inchi_key,
                     m.canonical_name,
                     m.needs_review
-                FROM silver.molecules m
+                FROM mol_silver.molecules m
                 WHERE m.inchi_key = $1
                    OR LOWER(m.canonical_name) = LOWER($1)
                    OR EXISTS (
-                       SELECT 1 FROM silver.identifier_mappings im
-                       WHERE im.molecule_id = m.id AND im.identifier_value = $1
+                       SELECT 1 FROM mol_silver.molecule_identifiers im
+                       WHERE im.molecule_id = m.id AND im.identifier = $1
                    )
                 LIMIT 1
             """, identifier)
@@ -373,7 +389,7 @@ async def resolve_identifier(request: IdentifierResolutionRequest):
                     m.canonical_name,
                     m.needs_review,
                     similarity(LOWER(m.canonical_name), LOWER($1)) as sim
-                FROM silver.molecules m
+                FROM mol_silver.molecules m
                 WHERE similarity(LOWER(m.canonical_name), LOWER($1)) > 0.3
                 ORDER BY sim DESC
                 LIMIT 1
@@ -434,7 +450,7 @@ async def get_molecule_profile(molecule_id: str):
             raise HTTPException(status_code=503, detail="Database unavailable")
 
         async with pool.acquire() as conn:
-            # Get molecule from silver.molecules with identifiers - using medallion architecture
+            # Get molecule from mol_silver.molecules with identifiers - using medallion architecture
             mol = await conn.fetchrow("""
                 SELECT
                     m.id::text as molecule_id,
@@ -443,12 +459,12 @@ async def get_molecule_profile(molecule_id: str):
                     m.inchi_key,
                     m.molecular_formula,
                     m.molecular_weight,
-                    (SELECT identifier_value FROM silver.identifier_mappings WHERE molecule_id = m.id AND identifier_type = 'chembl_id' LIMIT 1) as chembl_id,
-                    (SELECT identifier_value FROM silver.identifier_mappings WHERE molecule_id = m.id AND identifier_type = 'drugbank_id' LIMIT 1) as drugbank_id,
-                    (SELECT identifier_value FROM silver.identifier_mappings WHERE molecule_id = m.id AND identifier_type = 'pubchem_cid' LIMIT 1) as pubchem_cid
-                FROM silver.molecules m
+                    (SELECT identifier FROM mol_silver.molecule_identifiers WHERE molecule_id = m.id AND source = 'chembl_id' LIMIT 1) as chembl_id,
+                    (SELECT identifier FROM mol_silver.molecule_identifiers WHERE molecule_id = m.id AND source = 'drugbank_id' LIMIT 1) as drugbank_id,
+                    (SELECT identifier FROM mol_silver.molecule_identifiers WHERE molecule_id = m.id AND source = 'pubchem_cid' LIMIT 1) as pubchem_cid
+                FROM mol_silver.molecules m
                 WHERE m.id::text = $1 OR m.inchi_key = $1
-                   OR EXISTS (SELECT 1 FROM silver.identifier_mappings im WHERE im.molecule_id = m.id AND im.identifier_value = $1)
+                   OR EXISTS (SELECT 1 FROM mol_silver.molecule_identifiers im WHERE im.molecule_id = m.id AND im.identifier = $1)
                 LIMIT 1
             """, molecule_id)
 
@@ -460,7 +476,7 @@ async def get_molecule_profile(molecule_id: str):
                 SELECT
                     COUNT(*) as total,
                     COUNT(*) FILTER (WHERE UPPER(status) IN ('RECRUITING', 'ACTIVE, NOT RECRUITING')) as active
-                FROM silver.clinical_trials
+                FROM mol_silver.clinical_trials
                 WHERE molecule_id = $1::uuid OR LOWER(interventions::text) LIKE LOWER($2)
             """, mol["molecule_id"], f'%{mol["canonical_name"]}%') if mol["canonical_name"] else {"total": 0, "active": 0}
 
@@ -469,13 +485,13 @@ async def get_molecule_profile(molecule_id: str):
                 SELECT
                     COALESCE(SUM(report_count), 0) as total,
                     COALESCE(SUM(serious_count), 0) as serious
-                FROM silver.adverse_events
+                FROM mol_silver.adverse_events
                 WHERE molecule_id = $1::uuid
             """, mol["molecule_id"]) or {"total": 0, "serious": 0}
 
             # Get publication count from molecule_publications junction table
             pub_count = await conn.fetchval("""
-                SELECT COUNT(*) FROM silver.molecule_publications
+                SELECT COUNT(*) FROM mol_silver.molecule_publications
                 WHERE molecule_id = $1::uuid
             """, mol["molecule_id"]) or 0
 
@@ -536,7 +552,7 @@ async def get_safety_signals(molecule_id: str):
             # Get molecule first
             mol = await conn.fetchrow("""
                 SELECT id, canonical_name, inchi_key
-                FROM silver.molecules
+                FROM mol_silver.molecules
                 WHERE id::text = $1 OR inchi_key = $1
                 LIMIT 1
             """, molecule_id)
@@ -554,7 +570,7 @@ async def get_safety_signals(molecule_id: str):
                     COALESCE(SUM(death_count), 0) as death_reports,
                     MIN(first_report_date) as first_report,
                     MAX(last_report_date) as last_report
-                FROM silver.adverse_events
+                FROM mol_silver.adverse_events
                 WHERE molecule_id = $1
             """, mol_id)
 
@@ -566,7 +582,7 @@ async def get_safety_signals(molecule_id: str):
                     serious_count,
                     prr_score,
                     ror_score
-                FROM silver.adverse_events
+                FROM mol_silver.adverse_events
                 WHERE molecule_id = $1
                 ORDER BY report_count DESC
                 LIMIT 10
@@ -586,7 +602,7 @@ async def get_safety_signals(molecule_id: str):
             # Get boxed warning from drug labels
             boxed_warning = await conn.fetchval("""
                 SELECT boxed_warning
-                FROM silver.drug_labels
+                FROM mol_silver.drug_labels
                 WHERE molecule_id = $1 AND boxed_warning IS NOT NULL
                 LIMIT 1
             """, mol_id)
@@ -619,7 +635,7 @@ async def get_safety_signals(molecule_id: str):
 @router.get("/resolution-queue", response_model=QueueListResponse)
 async def list_resolution_queue(
     priority: Optional[str] = Query(None, description="Filter by priority: high, medium, low"),
-    identifier_type: Optional[str] = Query(None, description="Filter by identifier type"),
+    source: Optional[str] = Query(None, description="Filter by identifier type"),
     limit: int = Query(50, ge=1, le=200, description="Maximum items"),
     offset: int = Query(0, ge=0, description="Pagination offset")
 ):
@@ -657,15 +673,15 @@ async def list_resolution_queue(
                 params.extend([low, high])
                 param_idx += 2
 
-        if identifier_type:
-            conditions.append(f"identifier_type = ${param_idx}")
-            params.append(identifier_type)
+        if source:
+            conditions.append(f"source = ${param_idx}")
+            params.append(source)
             param_idx += 1
 
         async with pool.acquire() as conn:
             # Get total count
             count_query = f"""
-                SELECT COUNT(*) FROM silver.resolution_queue
+                SELECT COUNT(*) FROM mol_silver.resolution_queue
                 WHERE {' AND '.join(conditions)}
             """
             total_count = await conn.fetchval(count_query, *params) or 0
@@ -677,14 +693,14 @@ async def list_resolution_queue(
                     rq.id::text,
                     rq.molecule_id::text,
                     rq.original_identifier,
-                    rq.identifier_type,
+                    rq.source,
                     rq.confidence_score,
                     rq.candidate_inchi_keys,
                     rq.status,
                     rq.created_at,
                     m.canonical_name AS molecule_name
-                FROM silver.resolution_queue rq
-                LEFT JOIN silver.molecules m ON rq.molecule_id = m.id
+                FROM mol_silver.resolution_queue rq
+                LEFT JOIN mol_silver.molecules m ON rq.molecule_id = m.id
                 WHERE {' AND '.join(conditions)}
                 ORDER BY rq.confidence_score DESC, rq.created_at ASC
                 LIMIT ${param_idx} OFFSET ${param_idx + 1}
@@ -710,7 +726,7 @@ async def list_resolution_queue(
                     id=row['id'],
                     molecule_id=row['molecule_id'],
                     original_identifier=row['original_identifier'],
-                    identifier_type=row['identifier_type'],
+                    source=row['source'],
                     confidence_score=conf,
                     candidate_matches=candidates or [],
                     status=row['status'],
@@ -762,7 +778,7 @@ async def get_queue_stats():
                         COUNT(*) FILTER (WHERE confidence_score >= 0.5 AND confidence_score < 0.8) AS high,
                         COUNT(*) FILTER (WHERE confidence_score >= 0.3 AND confidence_score < 0.5) AS medium,
                         COUNT(*) FILTER (WHERE confidence_score < 0.3) AS low
-                    FROM silver.resolution_queue
+                    FROM mol_silver.resolution_queue
                     WHERE status = 'pending'
                 """)
 
@@ -772,14 +788,14 @@ async def get_queue_stats():
                         COUNT(*) FILTER (WHERE resolution_action = 'approve') AS approved,
                         COUNT(*) FILTER (WHERE resolution_action = 'reject') AS rejected,
                         COUNT(*) FILTER (WHERE resolution_action = 'merge') AS merged
-                    FROM silver.resolution_queue
+                    FROM mol_silver.resolution_queue
                     WHERE reviewed_at >= CURRENT_DATE
                 """)
 
                 # Get average resolution time (last 30 days)
                 avg_time = await conn.fetchval("""
                     SELECT AVG(EXTRACT(EPOCH FROM (reviewed_at - created_at)) / 3600)
-                    FROM silver.resolution_queue
+                    FROM mol_silver.resolution_queue
                     WHERE reviewed_at IS NOT NULL
                       AND reviewed_at >= NOW() - INTERVAL '30 days'
                 """)
@@ -831,14 +847,14 @@ async def get_queue_item(item_id: str):
                     rq.id::text,
                     rq.molecule_id::text,
                     rq.original_identifier,
-                    rq.identifier_type,
+                    rq.source,
                     rq.confidence_score,
                     rq.candidate_inchi_keys,
                     rq.status,
                     rq.created_at,
                     m.canonical_name AS molecule_name
-                FROM silver.resolution_queue rq
-                LEFT JOIN silver.molecules m ON rq.molecule_id = m.id
+                FROM mol_silver.resolution_queue rq
+                LEFT JOIN mol_silver.molecules m ON rq.molecule_id = m.id
                 WHERE rq.id = $1::uuid
             """, item_id)
 
@@ -862,7 +878,7 @@ async def get_queue_item(item_id: str):
                 id=row['id'],
                 molecule_id=row['molecule_id'],
                 original_identifier=row['original_identifier'],
-                identifier_type=row['identifier_type'],
+                source=row['source'],
                 confidence_score=conf,
                 candidate_matches=candidates or [],
                 status=row['status'],
@@ -967,7 +983,7 @@ async def bulk_approve_queue_items(request: BulkApproveRequest):
                 try:
                     # Update resolution queue item status
                     result = await conn.execute("""
-                        UPDATE silver.resolution_queue
+                        UPDATE mol_silver.resolution_queue
                         SET status = 'approved',
                             reviewed_by = $1,
                             reviewed_at = NOW(),
@@ -982,11 +998,11 @@ async def bulk_approve_queue_items(request: BulkApproveRequest):
 
                         # Promote molecule to Gold layer by setting needs_review = FALSE
                         await conn.execute("""
-                            UPDATE silver.molecules
+                            UPDATE mol_silver.molecules
                             SET needs_review = FALSE,
                                 updated_at = NOW()
                             WHERE id = (
-                                SELECT molecule_id FROM silver.resolution_queue WHERE id = $1::uuid
+                                SELECT molecule_id FROM mol_silver.resolution_queue WHERE id = $1::uuid
                             )
                         """, item_id)
                     else:
@@ -1030,8 +1046,8 @@ async def find_potential_duplicates(
             # Get the queue item and its molecule
             item = await conn.fetchrow("""
                 SELECT rq.molecule_id, m.canonical_name, m.inchi_key
-                FROM silver.resolution_queue rq
-                LEFT JOIN silver.molecules m ON rq.molecule_id = m.id
+                FROM mol_silver.resolution_queue rq
+                LEFT JOIN mol_silver.molecules m ON rq.molecule_id = m.id
                 WHERE rq.id = $1::uuid
             """, item_id)
 
@@ -1055,7 +1071,7 @@ async def find_potential_duplicates(
                     m.data_sources,
                     m.development_status,
                     similarity(lower(m.canonical_name), lower($1)) AS name_similarity
-                FROM silver.molecules m
+                FROM mol_silver.molecules m
                 WHERE m.id != $2::uuid
                   AND m.needs_review = FALSE
                   AND similarity(lower(m.canonical_name), lower($1)) > $3
@@ -1116,24 +1132,24 @@ async def get_pipeline_status():
 
         async with pool.acquire() as conn:
             # Get molecule counts - using medallion architecture
-            mol_total = await conn.fetchval("SELECT COUNT(*) FROM silver.molecules") or 0
+            mol_total = await conn.fetchval("SELECT COUNT(*) FROM mol_silver.molecules") or 0
             mol_with_ids = await conn.fetchval(
-                "SELECT COUNT(*) FROM silver.molecules WHERE canonical_smiles IS NOT NULL AND inchi_key IS NOT NULL"
+                "SELECT COUNT(*) FROM mol_silver.molecules WHERE canonical_smiles IS NOT NULL AND inchi_key IS NOT NULL"
             ) or 0
 
             # Get trial counts - using medallion architecture
-            trials_total = await conn.fetchval("SELECT COUNT(*) FROM silver.clinical_trials") or 0
+            trials_total = await conn.fetchval("SELECT COUNT(*) FROM mol_silver.clinical_trials") or 0
             trials_active = await conn.fetchval("""
-                SELECT COUNT(*) FROM silver.clinical_trials
+                SELECT COUNT(*) FROM mol_silver.clinical_trials
                 WHERE UPPER(status) IN ('RECRUITING', 'ACTIVE, NOT RECRUITING', 'ENROLLING BY INVITATION')
             """) or 0
 
             # Get adverse event counts - dynamically from silver layer
             ae_molecules = await conn.fetchval(
-                "SELECT COUNT(DISTINCT molecule_id) FROM silver.adverse_events"
+                "SELECT COUNT(DISTINCT molecule_id) FROM mol_silver.adverse_events"
             ) or 0
             ae_reports = await conn.fetchval(
-                "SELECT COALESCE(SUM(report_count), 0) FROM silver.adverse_events"
+                "SELECT COALESCE(SUM(report_count), 0) FROM mol_silver.adverse_events"
             ) or 0
 
         return PipelineStatusResponse(
@@ -1202,7 +1218,7 @@ async def trigger_source_ingestion(
     """
     Trigger ingestion for a specific data source.
 
-    Supports all registered sources from the database (raw.sync_schedules).
+    Supports all registered sources from the database (meta.sync_schedules).
     """
     pool = await get_db_pool()
     if pool is None:
@@ -1211,13 +1227,13 @@ async def trigger_source_ingestion(
     # Check database for registered sources (fully dynamic)
     async with pool.acquire() as conn:
         exists = await conn.fetchval(
-            "SELECT 1 FROM raw.sync_schedules WHERE source = $1",
+            "SELECT 1 FROM meta.sync_schedules WHERE source = $1",
             source
         )
         if not exists:
             # Get available sources for error message
             available = await conn.fetch(
-                "SELECT source FROM raw.sync_schedules WHERE enabled = true ORDER BY source"
+                "SELECT source FROM meta.sync_schedules WHERE enabled = true ORDER BY source"
             )
             available_sources = [r['source'] for r in available]
             raise HTTPException(
@@ -1270,7 +1286,7 @@ async def trigger_full_pipeline(
 
     This runs the complete Raw → Bronze → Silver → Gold pipeline.
     Use transform_only=true to process existing data without fetching from APIs.
-    Sources are loaded dynamically from raw.sync_schedules based on tier.
+    Sources are loaded dynamically from meta.sync_schedules based on tier.
     """
     try:
         from uuid import uuid4
@@ -1287,12 +1303,12 @@ async def trigger_full_pipeline(
             if tier == 'manual':
                 # For manual, get all enabled sources
                 rows = await conn.fetch(
-                    "SELECT source FROM raw.sync_schedules WHERE enabled = true ORDER BY priority DESC"
+                    "SELECT source FROM meta.sync_schedules WHERE enabled = true ORDER BY priority DESC"
                 )
             else:
                 # Get sources for specific tier
                 rows = await conn.fetch(
-                    "SELECT source FROM raw.sync_schedules WHERE tier = $1 AND enabled = true ORDER BY priority DESC",
+                    "SELECT source FROM meta.sync_schedules WHERE tier = $1 AND enabled = true ORDER BY priority DESC",
                     tier
                 )
             sources = [r['source'] for r in rows]
@@ -1300,7 +1316,7 @@ async def trigger_full_pipeline(
         if not sources:
             raise HTTPException(
                 status_code=400,
-                detail=f"No enabled sources found for tier '{tier}'. Configure sources in raw.sync_schedules."
+                detail=f"No enabled sources found for tier '{tier}'. Configure sources in meta.sync_schedules."
             )
 
         async def run_full_pipeline():
@@ -1375,7 +1391,7 @@ async def get_competitive_landscape(
                     phase_distribution,
                     indications,
                     sponsors
-                FROM gold.competitive_landscape
+                FROM mol_gold.competitive_landscape
                 WHERE 1=1
             """
             params = []
@@ -1426,8 +1442,8 @@ async def get_competitive_landscape(
                         COUNT(DISTINCT ct.nct_id) FILTER (
                             WHERE ct.status IN ('Recruiting', 'Active, not recruiting')
                         ) as active_trials
-                    FROM silver.molecules m
-                    LEFT JOIN silver.clinical_trials ct ON m.id = ct.molecule_id
+                    FROM mol_silver.molecules m
+                    LEFT JOIN mol_silver.clinical_trials ct ON m.id = ct.molecule_id
                     WHERE m.needs_review = FALSE
                       AND m.development_status IN ('phase_1', 'phase_2', 'phase_3', 'approved')
                     GROUP BY m.id
@@ -1490,7 +1506,7 @@ async def get_company_pipeline(
                     indications,
                     trial_count,
                     latest_trial_start
-                FROM gold.company_pipeline
+                FROM mol_gold.company_pipeline
                 WHERE LOWER(company) LIKE LOWER($1)
             """
             params = [f'%{company}%']
@@ -1535,8 +1551,8 @@ async def get_company_pipeline(
                         ct.conditions as indications,
                         COUNT(DISTINCT ct.nct_id) as trial_count,
                         MAX(ct.start_date) as latest_trial_start
-                    FROM silver.clinical_trials ct
-                    JOIN silver.molecules m ON ct.molecule_id = m.id
+                    FROM mol_silver.clinical_trials ct
+                    JOIN mol_silver.molecules m ON ct.molecule_id = m.id
                     WHERE m.needs_review = FALSE
                       AND LOWER(ct.sponsor) LIKE LOWER($1)
                     GROUP BY ct.sponsor, m.id, m.inchi_key, m.canonical_name, m.development_status, ct.phase, ct.status, ct.conditions
@@ -1610,7 +1626,7 @@ async def get_lifecycle_evidence(
                     evidence_source,
                     evidence_date,
                     evidence_url
-                FROM gold.lifecycle_evidence
+                FROM mol_gold.lifecycle_evidence
                 WHERE molecule_id::text = $1 OR inchi_key = $1
             """
             params = [molecule_id]
@@ -1648,7 +1664,7 @@ async def get_lifecycle_evidence(
 
                 # Get molecule ID first
                 mol = await conn.fetchrow("""
-                    SELECT id FROM silver.molecules
+                    SELECT id FROM mol_silver.molecules
                     WHERE id::text = $1 OR inchi_key = $1
                     LIMIT 1
                 """, molecule_id)
@@ -1666,7 +1682,7 @@ async def get_lifecycle_evidence(
                                 overall_status as evidence_status,
                                 'ClinicalTrials.gov' as evidence_source,
                                 start_date as evidence_date
-                            FROM silver.clinical_trials
+                            FROM mol_silver.clinical_trials
                             WHERE molecule_id = $1
                             ORDER BY start_date DESC NULLS LAST
                             LIMIT $2
@@ -1695,7 +1711,7 @@ async def get_lifecycle_evidence(
                                 CASE WHEN boxed_warning IS NOT NULL THEN 'Has Boxed Warning' ELSE 'Active' END as evidence_status,
                                 'DailyMed' as evidence_source,
                                 effective_date as evidence_date
-                            FROM silver.drug_labels
+                            FROM mol_silver.drug_labels
                             WHERE molecule_id = $1
                             ORDER BY effective_date DESC NULLS LAST
                             LIMIT $2
@@ -1849,7 +1865,7 @@ async def list_gold_molecule_profiles(
             where_clause = " AND ".join(conditions)
 
             # Get total count
-            count_query = f"SELECT COUNT(*) FROM silver.molecules WHERE {where_clause}"
+            count_query = f"SELECT COUNT(*) FROM mol_silver.molecules WHERE {where_clause}"
             total_count = await conn.fetchval(count_query, *params) or 0
 
             # Get profiles with aggregated data
@@ -1871,22 +1887,22 @@ async def list_gold_molecule_profiles(
                     COALESCE(trial_counts.active_trials, 0) as active_trials,
                     COALESCE(ae_counts.total_reports, 0) as total_adverse_reports,
                     COALESCE(label_info.has_boxed_warning, FALSE) as has_boxed_warning
-                FROM silver.molecules m
+                FROM mol_silver.molecules m
                 LEFT JOIN LATERAL (
                     SELECT COUNT(*) FILTER (
                         WHERE status IN ('Recruiting', 'Active, not recruiting', 'Enrolling by invitation')
                     ) as active_trials
-                    FROM silver.clinical_trials
+                    FROM mol_silver.clinical_trials
                     WHERE molecule_id = m.id
                 ) trial_counts ON TRUE
                 LEFT JOIN LATERAL (
                     SELECT COALESCE(SUM(report_count), 0) as total_reports
-                    FROM silver.adverse_events
+                    FROM mol_silver.adverse_events
                     WHERE molecule_id = m.id
                 ) ae_counts ON TRUE
                 LEFT JOIN LATERAL (
                     SELECT EXISTS(
-                        SELECT 1 FROM silver.drug_labels
+                        SELECT 1 FROM mol_silver.drug_labels
                         WHERE molecule_id = m.id AND boxed_warning IS NOT NULL
                     ) as has_boxed_warning
                 ) label_info ON TRUE
@@ -1928,7 +1944,7 @@ async def list_gold_molecule_profiles(
                         0 as active_trials,
                         0 as total_adverse_reports,
                         FALSE as has_boxed_warning
-                    FROM silver.molecules m
+                    FROM mol_silver.molecules m
                     WHERE {where_clause}
                     ORDER BY m.canonical_name
                     LIMIT $1 OFFSET $2
@@ -2006,7 +2022,7 @@ async def list_gold_safety_signals(
                         has_boxed_warning,
                         top_event,
                         signal_score
-                    FROM gold.safety_signals
+                    FROM mol_gold.safety_signals
                     WHERE total_reports >= $1
                       AND ($2 = FALSE OR serious_reports > 0)
                       AND ($3 = FALSE OR has_boxed_warning = TRUE)
@@ -2025,11 +2041,11 @@ async def list_gold_safety_signals(
                         COALESCE(SUM(ae.serious_count), 0) as serious_reports,
                         COALESCE(SUM(ae.death_count), 0) as death_reports,
                         EXISTS(
-                            SELECT 1 FROM silver.drug_labels dl
+                            SELECT 1 FROM mol_silver.drug_labels dl
                             WHERE dl.molecule_id = m.id AND dl.boxed_warning IS NOT NULL
                         ) as has_boxed_warning,
                         (
-                            SELECT event_term FROM silver.adverse_events
+                            SELECT event_term FROM mol_silver.adverse_events
                             WHERE molecule_id = m.id
                             ORDER BY report_count DESC
                             LIMIT 1
@@ -2037,14 +2053,14 @@ async def list_gold_safety_signals(
                         -- Simple signal score: weighted combination
                         (COALESCE(SUM(ae.serious_count), 0) * 2.0 + COALESCE(SUM(ae.death_count), 0) * 5.0) /
                             NULLIF(COALESCE(SUM(ae.report_count), 1), 0) as signal_score
-                    FROM silver.molecules m
-                    LEFT JOIN silver.adverse_events ae ON ae.molecule_id = m.id
+                    FROM mol_silver.molecules m
+                    LEFT JOIN mol_silver.adverse_events ae ON ae.molecule_id = m.id
                     WHERE m.needs_review = FALSE
                     GROUP BY m.id, m.canonical_name, m.inchi_key
                     HAVING COALESCE(SUM(ae.report_count), 0) >= $1
                        AND ($2 = FALSE OR COALESCE(SUM(ae.serious_count), 0) > 0)
                        AND ($3 = FALSE OR EXISTS(
-                           SELECT 1 FROM silver.drug_labels dl
+                           SELECT 1 FROM mol_silver.drug_labels dl
                            WHERE dl.molecule_id = m.id AND dl.boxed_warning IS NOT NULL
                        ))
                     ORDER BY signal_score DESC NULLS LAST, total_reports DESC
@@ -2128,7 +2144,7 @@ async def list_gold_lifecycle_stages(
                         previous_stage,
                         days_in_current_stage,
                         next_expected_stage
-                    FROM gold.lifecycle_stages
+                    FROM mol_gold.lifecycle_stages
                     WHERE 1=1
                 """
                 if stage:
@@ -2170,7 +2186,7 @@ async def list_gold_lifecycle_stages(
                             WHEN 'phase_3' THEN 'approved'
                             ELSE NULL
                         END as next_expected_stage
-                    FROM silver.molecules m
+                    FROM mol_silver.molecules m
                     WHERE {' AND '.join(fallback_conditions)}
                     ORDER BY m.updated_at DESC NULLS LAST
                     LIMIT ${param_idx}
@@ -2192,7 +2208,7 @@ async def list_gold_lifecycle_stages(
             # Get stage distribution
             stage_dist = await conn.fetch("""
                 SELECT development_status as stage, COUNT(*) as count
-                FROM silver.molecules
+                FROM mol_silver.molecules
                 WHERE needs_review = FALSE AND development_status IS NOT NULL
                 GROUP BY development_status
                 ORDER BY count DESC
@@ -2246,7 +2262,7 @@ async def get_gold_data_quality():
                     COUNT(*) FILTER (WHERE therapeutic_areas IS NOT NULL AND ARRAY_LENGTH(therapeutic_areas, 1) > 0) as has_therapeutic_areas,
                     COUNT(*) FILTER (WHERE mechanism_of_action IS NOT NULL) as has_moa,
                     COUNT(*) FILTER (WHERE data_sources IS NOT NULL AND ARRAY_LENGTH(data_sources, 1) > 1) as multi_source
-                FROM silver.molecules
+                FROM mol_silver.molecules
             """)
 
             # Get source coverage
@@ -2254,7 +2270,7 @@ async def get_gold_data_quality():
                 SELECT
                     UNNEST(data_sources) as source,
                     COUNT(*) as molecule_count
-                FROM silver.molecules
+                FROM mol_silver.molecules
                 WHERE needs_review = FALSE
                 GROUP BY UNNEST(data_sources)
                 ORDER BY molecule_count DESC
@@ -2266,7 +2282,7 @@ async def get_gold_data_quality():
                     COUNT(*) as total_trials,
                     COUNT(*) FILTER (WHERE molecule_id IS NOT NULL) as linked_trials,
                     COUNT(DISTINCT molecule_id) as molecules_with_trials
-                FROM silver.clinical_trials
+                FROM mol_silver.clinical_trials
             """)
 
             # Get adverse event linking stats
@@ -2275,7 +2291,7 @@ async def get_gold_data_quality():
                     COUNT(*) as total_ae_records,
                     COUNT(*) FILTER (WHERE molecule_id IS NOT NULL) as linked_ae_records,
                     COUNT(DISTINCT molecule_id) as molecules_with_ae
-                FROM silver.adverse_events
+                FROM mol_silver.adverse_events
             """)
 
             # Get resolution queue stats
@@ -2284,7 +2300,7 @@ async def get_gold_data_quality():
                     COUNT(*) FILTER (WHERE status = 'pending') as pending_reviews,
                     COUNT(*) FILTER (WHERE status = 'approved') as approved_total,
                     COUNT(*) FILTER (WHERE status = 'rejected') as rejected_total
-                FROM silver.resolution_queue
+                FROM mol_silver.resolution_queue
             """)
 
             total_mols = mol_metrics['total_molecules'] or 1  # Avoid division by zero
@@ -2393,7 +2409,7 @@ async def get_scheduler_status():
                     next_run,
                     options,
                     updated_at
-                FROM raw.sync_schedules
+                FROM meta.sync_schedules
                 ORDER BY
                     CASE tier
                         WHEN 'daily' THEN 1
@@ -2476,7 +2492,7 @@ async def get_job_history(
             where_clause = f"WHERE {' AND '.join(conditions)}" if conditions else ""
 
             # Get total count
-            count_query = f"SELECT COUNT(*) FROM raw.ingestion_jobs {where_clause}"
+            count_query = f"SELECT COUNT(*) FROM meta.ingestion_jobs {where_clause}"
             total_count = await conn.fetchval(count_query, *params) or 0
 
             # Get jobs
@@ -2493,7 +2509,7 @@ async def get_job_history(
                     error_message,
                     error_details,
                     created_at
-                FROM raw.ingestion_jobs
+                FROM meta.ingestion_jobs
                 {where_clause}
                 ORDER BY started_at DESC NULLS LAST, created_at DESC
                 LIMIT ${param_idx} OFFSET ${param_idx + 1}
@@ -2538,7 +2554,7 @@ async def trigger_tier_sync(
     """
     Manually trigger a tier sync.
 
-    Tiers are loaded dynamically from raw.sync_schedules.
+    Tiers are loaded dynamically from meta.sync_schedules.
     Standard tiers: daily, weekly, monthly, on_demand
     """
     pool = await get_db_pool()
@@ -2549,7 +2565,7 @@ async def trigger_tier_sync(
     async with pool.acquire() as conn:
         # Validate tier exists
         valid_tiers = await conn.fetch(
-            "SELECT DISTINCT tier FROM raw.sync_schedules WHERE tier IS NOT NULL"
+            "SELECT DISTINCT tier FROM meta.sync_schedules WHERE tier IS NOT NULL"
         )
         valid_tier_names = [r['tier'] for r in valid_tiers]
 
@@ -2561,7 +2577,7 @@ async def trigger_tier_sync(
 
         # Get sources for this tier
         rows = await conn.fetch(
-            "SELECT source FROM raw.sync_schedules WHERE tier = $1 AND enabled = true ORDER BY priority DESC",
+            "SELECT source FROM meta.sync_schedules WHERE tier = $1 AND enabled = true ORDER BY priority DESC",
             tier
         )
         sources = [r['source'] for r in rows]
@@ -2640,7 +2656,7 @@ async def update_schedule(
         async with pool.acquire() as conn:
             # Check if source exists
             exists = await conn.fetchval(
-                "SELECT 1 FROM raw.sync_schedules WHERE source = $1",
+                "SELECT 1 FROM meta.sync_schedules WHERE source = $1",
                 source
             )
 
@@ -2679,7 +2695,7 @@ async def update_schedule(
             params.append(source)
 
             query = f"""
-                UPDATE raw.sync_schedules
+                UPDATE meta.sync_schedules
                 SET {', '.join(updates)}
                 WHERE source = ${param_idx}
                 RETURNING source, tier, cron_expression, priority, enabled
@@ -2718,17 +2734,17 @@ class SourceRegistrationRequest(BaseModel):
     column_mappings: Dict[str, str] = Field(
         ...,
         description="Bronze -> Silver column mappings",
-        example={"inchi_key": "inchi_key", "drug_name": "canonical_name"}
+        examples=[{"inchi_key": "inchi_key", "drug_name": "canonical_name"}],
     )
     identifier_mappings: Optional[Dict[str, str]] = Field(
         None,
         description="Identifier extraction rules",
-        example={"drugbank_id": "drugbank_id"}
+        examples=[{"drugbank_id": "drugbank_id"}],
     )
     name_mappings: Optional[Dict[str, str]] = Field(
         None,
         description="Name extraction rules",
-        example={"generic": "name", "synonyms": "synonyms"}
+        examples=[{"generic": "name", "synonyms": "synonyms"}],
     )
     source_precedence: int = Field(
         10,
@@ -3054,8 +3070,8 @@ async def list_transformation_sources(enabled_only: bool = True):
                     array_agg(m.model_name) FILTER (WHERE m.model_name IS NOT NULL),
                     ARRAY[]::text[]
                 ) AS models_generated
-            FROM raw.silver_transformation_rules r
-            LEFT JOIN raw.generated_sqlmesh_models m ON m.source_rule_id = r.id
+            FROM meta.silver_transformation_rules r
+            LEFT JOIN meta.generated_sqlmesh_models m ON m.source_rule_id = r.id
         """
         if enabled_only:
             query += " WHERE r.enabled = true"
@@ -3101,8 +3117,8 @@ async def get_transformation_source(source_name: str):
                     array_agg(m.model_name) FILTER (WHERE m.model_name IS NOT NULL),
                     ARRAY[]::text[]
                 ) AS models_generated
-            FROM raw.silver_transformation_rules r
-            LEFT JOIN raw.generated_sqlmesh_models m ON m.source_rule_id = r.id
+            FROM meta.silver_transformation_rules r
+            LEFT JOIN meta.generated_sqlmesh_models m ON m.source_rule_id = r.id
             WHERE r.source_name = $1
             GROUP BY r.id
         """, source_name)
@@ -3133,7 +3149,7 @@ async def disable_transformation_source(source_name: str):
 
     async with pool.acquire() as conn:
         result = await conn.execute("""
-            UPDATE raw.silver_transformation_rules
+            UPDATE meta.silver_transformation_rules
             SET enabled = false, updated_at = NOW()
             WHERE source_name = $1
         """, source_name)
@@ -3155,7 +3171,7 @@ async def enable_transformation_source(source_name: str):
 
     async with pool.acquire() as conn:
         result = await conn.execute("""
-            UPDATE raw.silver_transformation_rules
+            UPDATE meta.silver_transformation_rules
             SET enabled = true, updated_at = NOW()
             WHERE source_name = $1
         """, source_name)
@@ -3164,3 +3180,519 @@ async def enable_transformation_source(source_name: str):
         raise HTTPException(status_code=404, detail=f"Source not found: {source_name}")
 
     return {"message": f"Source '{source_name}' enabled"}
+
+
+# ============================================================================
+# On-Demand Transform Endpoint (015-assessment-dashboard-integration)
+# T054-T057: POST /transform-raw/{source}
+# ============================================================================
+
+import collections  # noqa: E402
+import time as _time  # noqa: E402
+import hashlib  # noqa: E402
+
+
+class TransformRequest(BaseModel):
+    """Request body for on-demand transform."""
+    molecule_id: Optional[str] = Field(None, description="Optional - scope transform to this molecule")
+    layers: List[str] = Field(
+        default=["bronze", "silver", "gold"],
+        description="Which layers to process"
+    )
+
+
+class TransformLayerResult(BaseModel):
+    """Result for a single layer transform."""
+    layer: str
+    model: str
+    rows_processed: int = 0
+    duration_ms: int = 0
+    status: str = "success"
+    error: Optional[str] = None
+
+
+class TransformResponse(BaseModel):
+    """Response from on-demand transform."""
+    source: str
+    status: str
+    schema_path: Optional[str] = None
+    layers: List[TransformLayerResult]
+    total_duration_ms: int
+    timestamp: str
+
+
+# Source → model routing map (T055)
+# Maps source name to its pipeline models (bronze, silver, gold)
+# mol_raw sources go through mol_bronze → mol_silver → mol_gold
+# raw sources go through bronze → silver → gold
+_SOURCE_MODEL_MAP: Dict[str, Dict[str, str]] = {
+    # mol_raw sources
+    "clinicaltrials": {
+        "bronze": "mol_bronze.clinical_trials",
+        "silver": "mol_silver.clinical_trials",
+        "gold": "mol_gold.molecule_profiles_agg",
+        "schema_path": "mol_raw→mol_bronze→mol_silver→mol_gold",
+    },
+    "chembl": {
+        "bronze": "mol_bronze.chembl_molecules",
+        "silver": "mol_silver.molecules_from_bronze",
+        "gold": "mol_gold.molecule_profiles_agg",
+        "schema_path": "mol_raw→mol_bronze→mol_silver→mol_gold",
+    },
+    "openfda_faers": {
+        "bronze": "mol_bronze.openfda_faers",
+        "silver": "mol_silver.adverse_events",
+        "gold": "mol_gold.safety_signals_agg",
+        "schema_path": "mol_raw→mol_bronze→mol_silver→mol_gold",
+    },
+    "openfda_labels": {
+        "bronze": "mol_bronze.openfda_labels",
+        "silver": "mol_silver.drug_labels",
+        "gold": "mol_gold.molecule_profiles_agg",
+        "schema_path": "mol_raw→mol_bronze→mol_silver→mol_gold",
+    },
+    "drugbank": {
+        "bronze": "mol_bronze.chembl_molecules",
+        "silver": "mol_silver.molecules_from_bronze",
+        "gold": "mol_gold.molecule_profiles_agg",
+        "schema_path": "mol_raw→mol_bronze→mol_silver→mol_gold",
+    },
+    "pubchem": {
+        "bronze": "mol_bronze.pubchem_compounds",
+        "silver": "mol_silver.molecules_from_bronze",
+        "gold": "mol_gold.molecule_profiles_agg",
+        "schema_path": "mol_raw→mol_bronze→mol_silver→mol_gold",
+    },
+    "openalex": {
+        "bronze": "bronze.openalex",
+        "silver": "mol_silver.publications",
+        "schema_path": "raw→bronze→silver→gold",
+    },
+    "uniprot": {
+        "bronze": "mol_bronze.uniprot",
+        "silver": "mol_silver.targets",
+        "schema_path": "mol_raw→mol_bronze→mol_silver→mol_gold",
+    },
+    # raw (IP) sources
+    "pubmed": {
+        "bronze": "bronze.pubmed",
+        "silver": "mol_silver.publications",
+        "schema_path": "raw→bronze→silver→gold",
+    },
+    "ema": {
+        "bronze": "bronze.ema",
+        "silver": "mol_silver.regulatory_decisions",
+        "gold": "mol_gold.regulatory_timeline",
+        "schema_path": "raw→bronze→silver→gold",
+    },
+    "hta_decisions": {
+        "bronze": "bronze.hta_decisions",
+        "silver": "mol_silver.regulatory_decisions",
+        "gold": "mol_gold.regulatory_timeline",
+        "schema_path": "raw→bronze→silver→gold",
+    },
+    "cochrane_reviews": {
+        "bronze": "bronze.cochrane_reviews",
+        "silver": "mol_silver.publications",
+        "schema_path": "raw→bronze→silver→gold",
+    },
+    "sec_edgar": {
+        "bronze": "bronze.sec_edgar",
+        "silver": "mol_silver.financial_data",
+        "gold": "mol_gold.financial_summary",
+        "schema_path": "raw→bronze→silver→gold",
+    },
+    "orcid": {
+        "bronze": "bronze.orcid",
+        "silver": "mol_silver.researchers",
+        "gold": "mol_gold.kol_profiles",
+        "schema_path": "raw→bronze→silver→gold",
+    },
+    "journal_rss": {
+        "bronze": "bronze.journal_rss",
+        "silver": "mol_silver.publications",
+        "schema_path": "raw→bronze→silver→gold",
+    },
+    "medical_news": {
+        "bronze": "bronze.medical_news",
+        "silver": "mol_silver.news_signals",
+        "gold": "mol_gold.advocacy_sentiment",
+        "schema_path": "raw→bronze→silver→gold",
+    },
+    "cms_medicare_inpatient": {
+        "bronze": "hcs_bronze.cms_inpatient_puf",
+        "silver": "hcs_silver.facility_profile",
+        "gold": "hcs_gold.cms_provider_360",
+        "schema_path": "hcs_raw→hcs_bronze→hcs_silver→hcs_gold",
+    },
+    "cms_hospital_info": {
+        "bronze": "hcs_bronze.cms_hospital_general_info",
+        "silver": "hcs_silver.facility_profile",
+        "gold": "hcs_gold.cms_provider_360",
+        "schema_path": "hcs_raw→hcs_bronze→hcs_silver→hcs_gold",
+    },
+    "cms_cost_reports": {
+        "bronze": "hcs_bronze.cms_cost_reports_puf",
+        "silver": "hcs_silver.facility_profile",
+        "gold": "hcs_gold.cms_facility_360",
+        "schema_path": "hcs_raw→hcs_bronze→hcs_silver→hcs_gold",
+    },
+    "acc_tvc": {
+        "bronze": "hcs_bronze.acc_tvc",
+        "silver": "hcs_silver.facility_profile",
+        "schema_path": "hcs_raw→hcs_bronze→hcs_silver→hcs_gold",
+    },
+    "hrsa": {
+        "bronze": "hcs_bronze.hrsa",
+        "silver": "hcs_silver.facility_profile",
+        "schema_path": "hcs_raw→hcs_bronze→hcs_silver→hcs_gold",
+    },
+    "pdb_structures": {
+        "bronze": "mol_bronze.pdb_structures",
+        "silver": "mol_silver.targets",
+        "schema_path": "mol_raw→mol_bronze→mol_silver→mol_gold",
+    },
+    "who_icd": {
+        "bronze": "mol_bronze.who_icd",
+        "silver": "mol_silver.icd_codes",
+        "schema_path": "mol_raw→mol_bronze→mol_silver→mol_gold",
+    },
+    "uspto_patents": {
+        "bronze": "mol_bronze.uspto_patents",
+        "silver": "mol_silver.patents",
+        "gold": "mol_gold.molecule_profile",
+        "schema_path": "mol_raw→mol_bronze→mol_silver→mol_gold",
+    },
+    "epo_patents": {
+        "bronze": "mol_bronze.epo_patents",
+        "silver": "mol_silver.patents",
+        "gold": "mol_gold.molecule_profile",
+        "schema_path": "mol_raw→mol_bronze→mol_silver→mol_gold",
+    },
+    "orange_book": {
+        "bronze": "mol_bronze.orange_book",
+        "silver": "mol_silver.patents",
+        "gold": "mol_gold.molecule_profile",
+        "schema_path": "mol_raw→mol_bronze→mol_silver→mol_gold",
+    },
+    "uspto_trademarks": {
+        "bronze": "mol_bronze.uspto_trademarks",
+        "silver": "mol_silver.trademarks",
+        "gold": "mol_gold.molecule_profile",
+        "schema_path": "mol_raw→mol_bronze→mol_silver→mol_gold",
+    },
+    "euipo_trademarks": {
+        "bronze": "mol_bronze.euipo_trademarks",
+        "silver": "mol_silver.trademarks",
+        "gold": "mol_gold.molecule_profile",
+        "schema_path": "mol_raw→mol_bronze→mol_silver→mol_gold",
+    },
+}
+
+
+# Rate limiting (T056): in-memory per-source counters
+_rate_limit_window: Dict[str, list] = collections.defaultdict(list)
+_RATE_LIMIT_MAX = 10  # requests per minute per source
+_RATE_LIMIT_WINDOW_SECONDS = 60
+
+
+def _check_rate_limit(source: str) -> Optional[int]:
+    """Check rate limit for a source. Returns retry_after seconds if limited, None if OK."""
+    now = _time.time()
+    window = _rate_limit_window[source]
+    # Prune old entries
+    _rate_limit_window[source] = [t for t in window if now - t < _RATE_LIMIT_WINDOW_SECONDS]
+    window = _rate_limit_window[source]
+
+    if len(window) >= _RATE_LIMIT_MAX:
+        oldest = min(window)
+        retry_after = int(_RATE_LIMIT_WINDOW_SECONDS - (now - oldest)) + 1
+        return max(retry_after, 1)
+    # Record this request
+    _rate_limit_window[source].append(now)
+    return None
+
+
+async def _acquire_advisory_lock(conn, source: str) -> bool:
+    """Attempt to acquire a PostgreSQL advisory lock for the source. Returns True if acquired."""
+    lock_key = int(hashlib.md5(source.encode()).hexdigest()[:8], 16)
+    result = await conn.fetchval("SELECT pg_try_advisory_xact_lock($1)", lock_key)
+    return result is True
+
+
+async def _run_transform_model(model_name: str) -> dict:
+    """Run a single SQLMesh model transform. Returns result dict."""
+    try:
+        from ...ingestion.transform_molecules import transform_model
+        result = transform_model(model_name)
+        return result
+    except Exception as e:
+        return {"status": "failed", "error": str(e)}
+
+
+@router.post("/transform-raw/{source}", tags=["on-demand-transform"])
+async def trigger_on_demand_transform(
+    source: str,
+    body: Optional[TransformRequest] = None,
+):
+    """
+    Trigger on-demand raw → bronze → silver → gold transformation for a specific source.
+
+    Uses same SQLMesh models as the daily batch pipeline.
+    Rate limited to 10 requests/minute/source.
+    Advisory locks prevent concurrent execution with batch transforms.
+    """
+    # Validate source exists in routing map
+    if source not in _SOURCE_MODEL_MAP:
+        raise HTTPException(status_code=404, detail=f"Unknown source: {source}")
+
+    # Rate limit check (T056)
+    retry_after = _check_rate_limit(source)
+    if retry_after is not None:
+        raise HTTPException(
+            status_code=429,
+            detail=f"Rate limit exceeded for source '{source}'",
+            headers={"Retry-After": str(retry_after)},
+        )
+
+    source_config = _SOURCE_MODEL_MAP[source]
+    schema_path = source_config.get("schema_path", "unknown")
+    requested_layers = (body.layers if body else ["bronze", "silver", "gold"])
+
+    start_total = _time.time()
+    layer_results: List[TransformLayerResult] = []
+    overall_status = "completed"
+
+    try:
+        pool = await get_db_pool()
+        if pool is None:
+            raise HTTPException(status_code=503, detail="Database unavailable")
+
+        # Advisory lock check (T057)
+        async with pool.acquire() as conn:
+            lock_acquired = await _acquire_advisory_lock(conn, source)
+            if not lock_acquired:
+                raise HTTPException(
+                    status_code=409,
+                    detail=f"Concurrent transform in progress for source '{source}'",
+                    headers={"Retry-After": "60"},
+                )
+
+            # Process each layer sequentially (bronze → silver → gold)
+            for layer in ["bronze", "silver", "gold"]:
+                if layer not in requested_layers:
+                    continue
+
+                model_name = source_config.get(layer)
+                if model_name is None:
+                    layer_results.append(TransformLayerResult(
+                        layer=layer, model="none", status="skipped",
+                    ))
+                    continue
+
+                layer_start = _time.time()
+                result = await _run_transform_model(model_name)
+                layer_duration = int((_time.time() - layer_start) * 1000)
+
+                layer_status = result.get("status", "failed")
+                rows = result.get("success_count", 0)
+
+                layer_results.append(TransformLayerResult(
+                    layer=layer,
+                    model=model_name,
+                    rows_processed=rows,
+                    duration_ms=layer_duration,
+                    status=layer_status,
+                    error=result.get("error"),
+                ))
+
+                if layer_status == "failed":
+                    overall_status = "partial"
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Transform failed for source {source}: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+    total_duration = int((_time.time() - start_total) * 1000)
+
+    # Check if any rows were processed
+    total_rows = sum(lr.rows_processed for lr in layer_results)
+    if total_rows == 0 and overall_status == "completed":
+        overall_status = "no_rows"
+
+    return TransformResponse(
+        source=source,
+        status=overall_status,
+        schema_path=schema_path,
+        layers=layer_results,
+        total_duration_ms=total_duration,
+        timestamp=datetime.utcnow().isoformat(),
+    )
+
+
+# ============================================================================
+# Silver-hub resolve wrappers (feature 002-external-integration-foundation US-5)
+# ----------------------------------------------------------------------------
+# Thin HTTP wrappers around the 10 non-molecule silver-hub resolve functions
+# that were granted EXECUTE to analyst + api_user in migration 217. Molecule
+# resolve is already exposed via POST /data-platform/resolve (defined earlier
+# in this file). These wrappers give the other 10 hub entity types a
+# first-class typed surface instead of forcing consumers to use PostgREST RPC.
+#
+# Each endpoint follows the same shape:
+#   - POST /data-platform/{entity_type}/resolve
+#   - Body: {nameOrId: str, hint: Optional[str]}
+#   - Response: {canonical_id, confidence, match_tier, alternatives?}
+#
+# Implementation: each route acquires a connection from the pool and calls
+# the corresponding `<schema>.resolve_<entity>()` function. The function
+# is STABLE PARALLEL SAFE (silver medallion spec contract) so we don't
+# wrap it in a transaction.
+#
+# The router already has `Depends(require_auth)` at the router level, so
+# every request below is guaranteed to have a valid JWT with role in
+# {analyst, api_user}.
+# ============================================================================
+
+
+class ResolveRequest(BaseModel):
+    """Generic resolve request body used by every non-molecule resolve wrapper."""
+
+    name_or_id: str = Field(
+        ...,
+        min_length=1,
+        max_length=500,
+        description="Name or identifier to resolve to a canonical entity.",
+    )
+    hint: Optional[str] = Field(
+        None,
+        description="Optional identifier type hint (e.g., 'npi' for providers, 'icd10' for conditions).",
+    )
+
+
+class ResolveResponse(BaseModel):
+    """Generic resolve response used by every non-molecule resolve wrapper."""
+
+    success: bool
+    entity_type: str
+    name_or_id: str
+    canonical_id: Optional[str]
+    confidence: float
+    match_tier: Optional[str]
+    canonical_name: Optional[str]
+    alternatives: Optional[List[Dict[str, Any]]] = None
+    timestamp: str
+
+
+async def _call_resolve_function(
+    schema: str,
+    function: str,
+    entity_type: str,
+    body: ResolveRequest,
+    pool,
+) -> ResolveResponse:
+    """Call a silver-hub resolve function and shape the response.
+
+    Every silver-hub resolve function takes (name_or_id TEXT, hint TEXT)
+    and returns (canonical_id, confidence, match_tier, canonical_name) per
+    the feature 001-silver-medallion-rebuild contract. The column names
+    may vary slightly per entity type (e.g., molecule_id vs provider_id),
+    but the positional shape is stable.
+    """
+    if pool is None:
+        raise HTTPException(status_code=503, detail="Database pool unavailable")
+
+    sql = f"SELECT * FROM {schema}.{function}($1::TEXT, $2::TEXT)"
+    async with pool.acquire() as conn:
+        try:
+            row = await conn.fetchrow(sql, body.name_or_id, body.hint)
+        except Exception as e:
+            logger.error(f"resolve {schema}.{function} failed: {e}")
+            raise HTTPException(status_code=500, detail=f"resolve failed: {e}")
+
+    if row is None:
+        return ResolveResponse(
+            success=True,
+            entity_type=entity_type,
+            name_or_id=body.name_or_id,
+            canonical_id=None,
+            confidence=0.0,
+            match_tier=None,
+            canonical_name=None,
+            timestamp=datetime.utcnow().isoformat(),
+        )
+
+    # The first column of each resolve function is the canonical ID
+    # (UUID or bigint depending on the hub). We coerce to str for the
+    # wire format.
+    cols = list(row.keys())
+    canonical_id = str(row[cols[0]]) if row[cols[0]] is not None else None
+
+    return ResolveResponse(
+        success=True,
+        entity_type=entity_type,
+        name_or_id=body.name_or_id,
+        canonical_id=canonical_id,
+        confidence=float(row.get("confidence", 0.0) or 0.0),
+        match_tier=row.get("match_tier"),
+        canonical_name=row.get("canonical_name"),
+        timestamp=datetime.utcnow().isoformat(),
+    )
+
+
+@router.post("/conditions/resolve", response_model=ResolveResponse, tags=["resolve"])
+async def resolve_condition(body: ResolveRequest, pool=Depends(get_db_pool)):
+    """Resolve a condition name or code to the canonical ind_silver condition."""
+    return await _call_resolve_function(
+        "ind_silver", "resolve_condition", "condition", body, pool
+    )
+
+
+@router.post("/companies/resolve", response_model=ResolveResponse, tags=["resolve"])
+async def resolve_company(body: ResolveRequest, pool=Depends(get_db_pool)):
+    """Resolve a company name or identifier to the canonical mol_silver company."""
+    return await _call_resolve_function(
+        "mol_silver", "resolve_company", "company", body, pool
+    )
+
+
+@router.post("/providers/resolve", response_model=ResolveResponse, tags=["resolve"])
+async def resolve_provider(body: ResolveRequest, pool=Depends(get_db_pool)):
+    """Resolve a provider NPI or name to the canonical hcs_silver provider."""
+    return await _call_resolve_function(
+        "hcs_silver", "resolve_provider", "provider", body, pool
+    )
+
+
+@router.post("/facilities/resolve", response_model=ResolveResponse, tags=["resolve"])
+async def resolve_facility(body: ResolveRequest, pool=Depends(get_db_pool)):
+    """Resolve a facility identifier or name to the canonical hcs_silver facility."""
+    return await _call_resolve_function(
+        "hcs_silver", "resolve_facility", "facility", body, pool
+    )
+
+
+@router.post("/researchers/resolve", response_model=ResolveResponse, tags=["resolve"])
+async def resolve_researcher(body: ResolveRequest, pool=Depends(get_db_pool)):
+    """Resolve a researcher name or identifier to the canonical hcp_silver researcher."""
+    return await _call_resolve_function(
+        "hcp_silver", "resolve_researcher", "researcher", body, pool
+    )
+
+
+@router.post("/patents/resolve", response_model=ResolveResponse, tags=["resolve"])
+async def resolve_patent(body: ResolveRequest, pool=Depends(get_db_pool)):
+    """Resolve a patent number or title to the canonical ip_silver patent."""
+    return await _call_resolve_function(
+        "ip_silver", "resolve_patent", "patent", body, pool
+    )
+
+
+@router.post("/trademarks/resolve", response_model=ResolveResponse, tags=["resolve"])
+async def resolve_trademark(body: ResolveRequest, pool=Depends(get_db_pool)):
+    """Resolve a trademark name to the canonical ip_silver trademark."""
+    return await _call_resolve_function(
+        "ip_silver", "resolve_trademark", "trademark", body, pool
+    )

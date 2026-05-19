@@ -1,12 +1,19 @@
 -- SQLMesh Model: Silver Bioactivity
--- Normalized bioactivity data from ChEMBL
--- Part of: 012-dk-data-platform
+-- Normalized bioactivity data from ChEMBL activity assay measurements.
+-- Feature: 019-cms-puf-platform-reconciliation
+--
+-- Source: mol_bronze.chembl_activities (ChEMBL /api/data/activity endpoint)
+-- Entity linking:
+--   molecule_id: chembl_id → mol_silver.molecule_identifiers (source='chembl')
+--   target_id:  target_chembl_id → mol_silver.target_identifiers (source='chembl')
+--              fallback: target_pref_name → mol_silver.target_names (normalized_name)
+--
+-- T118 verified: rewrite uses hub equi-join, zero S1-S5 antipatterns per test_silver_antipatterns.py
 
 MODEL (
-    name silver.bioactivity,
-    kind INCREMENTAL_BY_TIME_RANGE (
-        time_column source_updated_at,
-        batch_size 1000
+    name mol_silver.bioactivity,
+    kind INCREMENTAL_BY_UNIQUE_KEY (
+        unique_key activity_id
     ),
     cron '@weekly',
     audits (
@@ -15,61 +22,73 @@ MODEL (
     grain activity_id
 );
 
--- ChEMBL activity data comes from a separate API endpoint
--- For now, extract from cross_references in chembl_molecules
--- In production, there would be a raw.chembl_activities table
-
-WITH activity_data AS (
-    SELECT
-        gen_random_uuid() AS id,
-        chembl_id,
-        inchi_key,
-
-        -- Placeholder for actual activity data
-        -- Would come from ChEMBL Activity API
-        NULL::TEXT AS activity_id,
-        NULL::TEXT AS assay_chembl_id,
-        NULL::TEXT AS assay_type,
-        NULL::TEXT AS assay_description,
-        NULL::TEXT AS target_chembl_id,
-        NULL::TEXT AS target_name,
-        NULL::TEXT AS target_type,
-        NULL::TEXT AS target_organism,
-        NULL::TEXT AS uniprot_id,
-
-        -- Activity measurements
-        NULL::TEXT AS standard_type,
-        NULL::NUMERIC AS standard_value,
-        NULL::TEXT AS standard_units,
-        NULL::TEXT AS standard_relation,
-        NULL::NUMERIC AS pchembl_value,
-
-        -- Activity flags
-        NULL::TEXT AS activity_comment,
-        NULL::TEXT AS data_validity_comment,
-        NULL::BOOLEAN AS potential_duplicate,
-
-        -- Document reference
-        NULL::TEXT AS document_chembl_id,
-        NULL::TEXT AS pubmed_id,
-        NULL::INTEGER AS publication_year,
-
-        'chembl' AS source,
-        source_updated_at,
-        NOW() AS created_at
-
-    FROM bronze.chembl_molecules
-    WHERE
-        processed_to_silver = FALSE
-        AND chembl_id IS NOT NULL
+-- Staleness guard (FR-050): abort if ChEMBL activities bronze is stale
+WITH staleness_check AS (
+  SELECT CASE
+    WHEN MAX(source_updated_at) < NOW() - INTERVAL '6 hours'
+    THEN error('Bronze upstream is stale: mol_bronze.chembl_activities last updated ' || MAX(source_updated_at)::text)
+  END FROM mol_bronze.chembl_activities
 )
 
-SELECT * FROM activity_data WHERE 1=0;  -- Placeholder - no actual data yet
+SELECT
+    gen_random_uuid()                                               AS id,
+    b.chembl_id,
 
--- In production, this would be:
--- SELECT
---     gen_random_uuid() AS id,
---     response_body->>'activity_id' AS activity_id,
---     ...
--- FROM raw.chembl_activities
--- WHERE ...
+    -- molecule_id: hub equi-join via mol_silver.molecule_identifiers (source='chembl')
+    -- Replaces correlated scalar subquery (S3 antipattern) from prior version.
+    mi.molecule_id                                                  AS molecule_id,
+
+    -- target_id: hub equi-join via mol_silver.target_identifiers (source='chembl')
+    -- Fallback: mol_silver.target_names on normalized target preferred name.
+    -- Replaces two correlated scalar subqueries (S3 antipattern) from prior version.
+    COALESCE(ti.target_id, tn.target_id)                           AS target_id,
+
+    b.activity_id,
+    b.assay_chembl_id,
+    b.assay_type,
+    b.assay_description,
+    b.target_chembl_id,
+    b.target_pref_name,
+    b.target_type,
+    b.target_organism,
+
+    -- Activity measurements
+    b.activity_type,
+    b.activity_value,
+    b.activity_unit,
+    b.standard_relation,
+    b.pchembl_value,
+
+    -- Activity flags
+    b.activity_comment,
+    b.data_validity_comment,
+    b.potential_duplicate,
+
+    -- Ligand structure
+    b.canonical_smiles,
+
+    -- Document reference
+    b.document_chembl_id,
+    NULL::BIGINT                                                    AS pubmed_id,
+    b.publication_year,
+
+    b.source,
+    b.source_updated_at,
+    b.ingested_at,
+    NOW()                                                           AS created_at
+
+FROM staleness_check, mol_bronze.chembl_activities b
+-- Tier 1: ChEMBL molecule ID via hub crosswalk
+LEFT JOIN mol_silver.molecule_identifiers mi
+    ON mi.source = 'chembl'
+    AND mi.identifier = b.chembl_id
+-- Tier 1: ChEMBL target ID via hub crosswalk
+LEFT JOIN mol_silver.target_identifiers ti
+    ON ti.source = 'chembl'
+    AND ti.identifier = b.target_chembl_id
+-- Tier 2 target fallback: normalized preferred name
+LEFT JOIN mol_silver.target_names tn
+    ON ti.target_id IS NULL
+    AND tn.normalized_name = LOWER(b.target_pref_name)
+WHERE b.activity_id IS NOT NULL
+  AND b.chembl_id IS NOT NULL;

@@ -1,0 +1,410 @@
+{
+  "__metadata": {
+    "folder": "applications"
+  },
+  "dashboard": {
+    "uid": "dk-data-fe-resource-budget",
+    "title": "dk-data Resource Budget (Admission Control)",
+    "description": "Admission-control utilization for the prestaged dispatcher \u2014 WAL headroom, DB connections, concurrent restores, SeaweedFS IOPS. Panels read dk_budget_remaining / dk_budget_total_capacity / dk_budget_reservation_denied_total from Mimir; table reads meta.resource_budget via the postgres datasource (plan.md \u00a7D.3, feature/005 PR #320 migration 234).",
+    "tags": [
+      "dk-data-fe",
+      "hydration",
+      "admission-control",
+      "observability"
+    ],
+    "schemaVersion": 39,
+    "editable": true,
+    "refresh": "30s",
+    "time": {
+      "from": "now-6h",
+      "to": "now"
+    },
+    "timepicker": {},
+    "timezone": "",
+    "templating": {
+      "list": [
+        {
+          "name": "key",
+          "type": "query",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "refresh": 2,
+          "query": "label_values(dk_budget_total_capacity, key)",
+          "includeAll": true,
+          "multi": true,
+          "allValue": ".*",
+          "current": {
+            "selected": false,
+            "text": "All",
+            "value": "$__all"
+          }
+        }
+      ]
+    },
+    "annotations": {
+      "list": []
+    },
+    "panels": [
+      {
+        "id": 1,
+        "type": "bargauge",
+        "title": "wal_headroom \u2014 remaining / total",
+        "description": "Remaining WAL-headroom capacity for the dispatcher. Ratio of dk_budget_remaining / dk_budget_total_capacity. Green when plenty of headroom; red when the dispatcher is at saturation.",
+        "datasource": {
+          "type": "prometheus",
+          "uid": "prometheus"
+        },
+        "gridPos": {
+          "h": 6,
+          "w": 6,
+          "x": 0,
+          "y": 0
+        },
+        "fieldConfig": {
+          "defaults": {
+            "unit": "percentunit",
+            "min": 0,
+            "max": 1,
+            "decimals": 2,
+            "color": {
+              "mode": "thresholds"
+            },
+            "thresholds": {
+              "mode": "absolute",
+              "steps": [
+                { "color": "red", "value": null },
+                { "color": "orange", "value": 0.1 },
+                { "color": "yellow", "value": 0.25 },
+                { "color": "green", "value": 0.5 }
+              ]
+            }
+          },
+          "overrides": []
+        },
+        "options": {
+          "displayMode": "gradient",
+          "orientation": "horizontal",
+          "showUnfilled": true,
+          "reduceOptions": {
+            "calcs": ["lastNotNull"],
+            "fields": "",
+            "values": false
+          }
+        },
+        "pluginVersion": "10.0.0",
+        "targets": [
+          {
+            "expr": "dk_budget_remaining{key=\"wal_headroom\"} / clamp_min(dk_budget_total_capacity{key=\"wal_headroom\"}, 1)",
+            "legendFormat": "wal_headroom",
+            "refId": "A"
+          }
+        ]
+      },
+      {
+        "id": 2,
+        "type": "bargauge",
+        "title": "db_connections \u2014 remaining / total",
+        "description": "Remaining DB connection slots (PgBouncer pool share reserved for the dispatcher). Ratio of dk_budget_remaining / dk_budget_total_capacity.",
+        "datasource": {
+          "type": "prometheus",
+          "uid": "prometheus"
+        },
+        "gridPos": {
+          "h": 6,
+          "w": 6,
+          "x": 6,
+          "y": 0
+        },
+        "fieldConfig": {
+          "defaults": {
+            "unit": "percentunit",
+            "min": 0,
+            "max": 1,
+            "decimals": 2,
+            "color": {
+              "mode": "thresholds"
+            },
+            "thresholds": {
+              "mode": "absolute",
+              "steps": [
+                { "color": "red", "value": null },
+                { "color": "orange", "value": 0.1 },
+                { "color": "yellow", "value": 0.25 },
+                { "color": "green", "value": 0.5 }
+              ]
+            }
+          },
+          "overrides": []
+        },
+        "options": {
+          "displayMode": "gradient",
+          "orientation": "horizontal",
+          "showUnfilled": true,
+          "reduceOptions": {
+            "calcs": ["lastNotNull"],
+            "fields": "",
+            "values": false
+          }
+        },
+        "pluginVersion": "10.0.0",
+        "targets": [
+          {
+            "expr": "dk_budget_remaining{key=\"db_connections\"} / clamp_min(dk_budget_total_capacity{key=\"db_connections\"}, 1)",
+            "legendFormat": "db_connections",
+            "refId": "A"
+          }
+        ]
+      },
+      {
+        "id": 3,
+        "type": "bargauge",
+        "title": "concurrent_restores \u2014 remaining / total",
+        "description": "Remaining pg_restore concurrency slots. The dispatcher serializes restores when this hits zero rather than overrunning the DB's parallel-worker budget.",
+        "datasource": {
+          "type": "prometheus",
+          "uid": "prometheus"
+        },
+        "gridPos": {
+          "h": 6,
+          "w": 6,
+          "x": 12,
+          "y": 0
+        },
+        "fieldConfig": {
+          "defaults": {
+            "unit": "percentunit",
+            "min": 0,
+            "max": 1,
+            "decimals": 2,
+            "color": {
+              "mode": "thresholds"
+            },
+            "thresholds": {
+              "mode": "absolute",
+              "steps": [
+                { "color": "red", "value": null },
+                { "color": "orange", "value": 0.1 },
+                { "color": "yellow", "value": 0.25 },
+                { "color": "green", "value": 0.5 }
+              ]
+            }
+          },
+          "overrides": []
+        },
+        "options": {
+          "displayMode": "gradient",
+          "orientation": "horizontal",
+          "showUnfilled": true,
+          "reduceOptions": {
+            "calcs": ["lastNotNull"],
+            "fields": "",
+            "values": false
+          }
+        },
+        "pluginVersion": "10.0.0",
+        "targets": [
+          {
+            "expr": "dk_budget_remaining{key=\"concurrent_restores\"} / clamp_min(dk_budget_total_capacity{key=\"concurrent_restores\"}, 1)",
+            "legendFormat": "concurrent_restores",
+            "refId": "A"
+          }
+        ]
+      },
+      {
+        "id": 4,
+        "type": "bargauge",
+        "title": "seaweedfs_iops \u2014 remaining / total",
+        "description": "Remaining SeaweedFS IOPS budget. Hydration downloads share this budget with the rest of the platform (plan \u00a7C.1 SeaweedFS cutover).",
+        "datasource": {
+          "type": "prometheus",
+          "uid": "prometheus"
+        },
+        "gridPos": {
+          "h": 6,
+          "w": 6,
+          "x": 18,
+          "y": 0
+        },
+        "fieldConfig": {
+          "defaults": {
+            "unit": "percentunit",
+            "min": 0,
+            "max": 1,
+            "decimals": 2,
+            "color": {
+              "mode": "thresholds"
+            },
+            "thresholds": {
+              "mode": "absolute",
+              "steps": [
+                { "color": "red", "value": null },
+                { "color": "orange", "value": 0.1 },
+                { "color": "yellow", "value": 0.25 },
+                { "color": "green", "value": 0.5 }
+              ]
+            }
+          },
+          "overrides": []
+        },
+        "options": {
+          "displayMode": "gradient",
+          "orientation": "horizontal",
+          "showUnfilled": true,
+          "reduceOptions": {
+            "calcs": ["lastNotNull"],
+            "fields": "",
+            "values": false
+          }
+        },
+        "pluginVersion": "10.0.0",
+        "targets": [
+          {
+            "expr": "dk_budget_remaining{key=\"seaweedfs_iops\"} / clamp_min(dk_budget_total_capacity{key=\"seaweedfs_iops\"}, 1)",
+            "legendFormat": "seaweedfs_iops",
+            "refId": "A"
+          }
+        ]
+      },
+      {
+        "id": 5,
+        "type": "timeseries",
+        "title": "Reservation denials",
+        "description": "Rate of dk_budget_reservation_denied_total by key. A sustained non-zero rate for a key means ResourceBudget.try_reserve() is repeatedly failing for that budget \u2014 the dispatcher is being throttled and the budget may need retuning (or the source set is over-scheduled). The DkBudgetReservationDenied PrometheusRule alerts on this.",
+        "datasource": {
+          "type": "prometheus",
+          "uid": "prometheus"
+        },
+        "gridPos": {
+          "h": 9,
+          "w": 12,
+          "x": 0,
+          "y": 6
+        },
+        "fieldConfig": {
+          "defaults": {
+            "unit": "ops",
+            "color": {
+              "mode": "palette-classic"
+            },
+            "custom": {
+              "drawStyle": "line",
+              "lineInterpolation": "linear",
+              "fillOpacity": 10
+            }
+          },
+          "overrides": []
+        },
+        "options": {
+          "legend": {
+            "displayMode": "table",
+            "placement": "bottom",
+            "calcs": ["sum", "max"]
+          },
+          "tooltip": {
+            "mode": "multi",
+            "sort": "desc"
+          }
+        },
+        "targets": [
+          {
+            "expr": "sum by (key) (rate(dk_budget_reservation_denied_total{key=~\"$key\"}[5m]))",
+            "legendFormat": "{{key}}",
+            "refId": "A"
+          }
+        ]
+      },
+      {
+        "id": 6,
+        "type": "timeseries",
+        "title": "Utilization over time per key",
+        "description": "(total - remaining) / total \u2014 fraction of each budget in use. 0 = idle, 1 = saturated. Sustained high utilization is the leading indicator for a future denial spike.",
+        "datasource": {
+          "type": "prometheus",
+          "uid": "prometheus"
+        },
+        "gridPos": {
+          "h": 9,
+          "w": 12,
+          "x": 12,
+          "y": 6
+        },
+        "fieldConfig": {
+          "defaults": {
+            "unit": "percentunit",
+            "min": 0,
+            "max": 1,
+            "color": {
+              "mode": "palette-classic"
+            },
+            "custom": {
+              "drawStyle": "line",
+              "lineInterpolation": "linear",
+              "fillOpacity": 20
+            }
+          },
+          "overrides": []
+        },
+        "options": {
+          "legend": {
+            "displayMode": "table",
+            "placement": "bottom",
+            "calcs": ["mean", "max"]
+          },
+          "tooltip": {
+            "mode": "multi",
+            "sort": "desc"
+          }
+        },
+        "targets": [
+          {
+            "expr": "(dk_budget_total_capacity{key=~\"$key\"} - dk_budget_remaining{key=~\"$key\"}) / clamp_min(dk_budget_total_capacity{key=~\"$key\"}, 1)",
+            "legendFormat": "{{key}}",
+            "refId": "A"
+          }
+        ]
+      },
+      {
+        "id": 7,
+        "type": "table",
+        "title": "Current budget state (meta.resource_budget)",
+        "description": "One row per budget_key with total/reserved/remaining columns, sourced from meta.resource_budget. Useful for verifying that the Prometheus gauges above are in sync with the authoritative table state. If the postgres datasource isn't provisioned, this panel shows `No data` \u2014 the gauge panels above still work.",
+        "datasource": {
+          "type": "postgres",
+          "uid": "postgres"
+        },
+        "gridPos": {
+          "h": 8,
+          "w": 24,
+          "x": 0,
+          "y": 15
+        },
+        "fieldConfig": {
+          "defaults": {
+            "custom": {
+              "align": "left"
+            }
+          },
+          "overrides": []
+        },
+        "options": {
+          "showHeader": true,
+          "footer": {
+            "show": false,
+            "reducer": ["sum"],
+            "fields": ""
+          }
+        },
+        "targets": [
+          {
+            "rawSql": "SELECT budget_key, total_capacity, reserved, (total_capacity - reserved) AS remaining, updated_at FROM meta.resource_budget ORDER BY budget_key",
+            "format": "table",
+            "rawQuery": true,
+            "refId": "A"
+          }
+        ]
+      }
+    ]
+  }
+}

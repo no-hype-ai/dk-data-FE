@@ -174,6 +174,65 @@ curl -X POST http://localhost:8000/jobs/catalog-refresh/trigger
 curl http://localhost:8000/runs
 ```
 
+## Consumer Authentication
+
+Every external read of dk-data (`data.behaviorlabs.ai`) must present an API key. The metering proxy validates the key, mints a short-lived JWT, and forwards the request to PostgREST or the FastAPI data-platform router. There is no anonymous access — the legacy `web_anon` role was dropped in migration 218 (feature 002, US-2).
+
+**Auth flow**:
+
+```
+consumer app ──Bearer <API_KEY>──▶  metering-proxy (port 3001)
+                                       │
+                                       │  validates key in consumers.yaml
+                                       │  mints JWT with role=analyst|api_user
+                                       ▼
+                                  PostgREST / FastAPI (JWT verify)
+                                       │
+                                       ▼
+                                  PostgreSQL (role-switched)
+```
+
+**Provisioning a new consumer**: see `docs/consumer-onboarding.md`.
+
+**Debugging 401s**: see `docs/runbooks/metering-proxy-401-debug.md`.
+
+**Rotating the JWT signing secret**: see `docs/runbooks/rotate-jwt-secret.md` (target ≤ 5 minutes, cadence every 90 days).
+
+## dk-data Client (Adapter)
+
+Consumers should read dk-data through the first-party client package in `packages/dk-data-client/`, which handles auth, retries, local caching, and structured telemetry:
+
+- **TypeScript**: `packages/dk-data-client/typescript/` (npm name: `@datakinetic/dk-data-client`)
+- **Python**: `packages/dk-data-client/python/`
+
+Both export the same high-level methods (`molecules.getProfile`, `molecules.getClinicalTrials`, `publications.search`, etc.) and emit structured telemetry (`outcome="hit|miss|stale|fallthrough_upstream|..."`) that feeds the Adapter Hydration Heat Map dashboard. A fallthrough spike is the signal that dk-data is missing data its consumers want — see `docs/runbooks/adapter-fallthrough-spike.md`.
+
+**Example (TypeScript)**:
+
+```ts
+import { DkDataClient } from '@datakinetic/dk-data-client';
+
+const client = new DkDataClient({
+  baseUrl: 'https://data.behaviorlabs.ai',
+  apiKey: process.env.DK_DATA_API_KEY!,
+});
+
+const profile = await client.molecules.getProfile({ id: 'CHEMBL25' });
+```
+
+**Example (Python)**:
+
+```python
+from dk_data_client import DkDataClient
+
+client = DkDataClient(
+    base_url="https://data.behaviorlabs.ai",
+    api_key=os.environ["DK_DATA_API_KEY"],
+)
+
+profile = client.molecules.get_profile(id="CHEMBL25")
+```
+
 ## Project Structure
 
 ```
@@ -234,18 +293,28 @@ POSTGRES_PORT=5433
 POSTGRES_USER=postgres
 POSTGRES_PASSWORD=postgres
 POSTGRES_DB=dk_data
+POSTGRES_HOST_DIRECT=localhost   # bypasses PgBouncer for SQLMesh + PL/pgSQL
 
 # PostgREST
 POSTGREST_PORT=3030
-POSTGREST_PASSWORD=  # REQUIRED: set a secure password
+PGRST_DB_ANON_ROLE=              # MUST be unset in prod — web_anon is dropped
+PGRST_JWT_SECRET=                # same value as JWT_SECRET below
 
 # Job Trigger
 JOB_TRIGGER_PORT=8000
-JOB_RUNNER_MODE=local  # or 'k8s' for Kubernetes
+JOB_RUNNER_MODE=local            # or 'k8s' for Kubernetes
 
-# JWT (optional)
-PGRST_JWT_SECRET=your-secret-key
+# Auth / JWT
+JWT_SECRET=                      # shared HS256 signing secret
+JWT_SECRET_KEY=                  # legacy name — falls back to JWT_SECRET
+METERING_PROXY_URL=http://localhost:3001
+
+# dk-data Client (consumer-side)
+DK_DATA_API_KEY=                 # provisioned via consumers.yaml
+DK_DATA_BASE_URL=https://data.behaviorlabs.ai
 ```
+
+**JWT_SECRET vs JWT_SECRET_KEY**: `JWTService` reads `JWT_SECRET_KEY` first, then falls back to `JWT_SECRET`. This fallback exists because PostgREST expects `PGRST_JWT_SECRET` (from the shared secret `JWT_SECRET`) and pre-feature-002 code only looked at `JWT_SECRET_KEY` — which the k8s deployment never set, causing FastAPI to generate per-pod random signing keys. See `docs/runbooks/rotate-jwt-secret.md` for details.
 
 ## Troubleshooting
 

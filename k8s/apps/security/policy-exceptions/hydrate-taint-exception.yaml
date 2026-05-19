@@ -1,0 +1,73 @@
+# Kyverno PolicyException — hydrate-taint-exception
+#
+# Purpose: placeholder exception that, once dk-alchemy (§10) ships a
+# `require-role-toleration` enforcing ClusterPolicy, permits the
+# `prestaged-hydrate` Job in the `dk-data-prod` namespace to continue
+# scheduling on `dk.role=general` nodes *without* tolerating the
+# `node.datakinetic.com/role=control-plane:NoSchedule` taint applied by
+# dk-alchemy #660 (plan.md §D.4).
+#
+# Today the Job schedules cleanly because it targets a node that is NOT
+# tainted — so this exception is a no-op. It is shipped now, ahead of
+# enforcement, so the Audit signal is clean and reviewable before any
+# downstream Enforce switch is flipped.
+#
+# Ship mode: Audit (validationFailureAction on the upstream policy is
+# already Audit per dk-alchemy §10 Phase 6A batch 2). This manifest does
+# not itself set enforcement — PolicyExceptions inherit the policy's mode.
+#
+# Parses with:
+#   kustomize build k8s/apps/security/policy-exceptions
+#   python -c "import yaml,sys; list(yaml.safe_load_all(open(sys.argv[1])))" <this-file>
+#
+# References:
+# - dk-alchemy §10 (Kyverno policy roadmap)
+# - dk-alchemy issue #660 (taint application)
+# - docs/runbooks/node-role-isolation.md (this repo)
+# - Kyverno PolicyException docs: https://kyverno.io/docs/writing-policies/exceptions/
+---
+apiVersion: kyverno.io/v2
+kind: PolicyException
+metadata:
+  name: hydrate-taint-exception
+  namespace: dk-data-prod
+  labels:
+    app.kubernetes.io/name: prestaged-hydrate
+    app.kubernetes.io/part-of: dk-data
+    feature: 005-prestaged-hydration
+    team: data-platform
+    service: dk-data
+    product: dk-data
+  annotations:
+    policies.kyverno.io/title: Hydrate Job taint exception (D.4)
+    policies.kyverno.io/category: Scheduling
+    policies.kyverno.io/severity: low
+    policies.kyverno.io/description: >-
+      The prestaged-hydrate Job targets `dk.role=general` nodes (today
+      k3s-slave-1 / krang) and intentionally does NOT tolerate
+      `node.datakinetic.com/role=control-plane:NoSchedule` — that
+      non-toleration is the structural guarantee from plan §D.4 that
+      hydration cannot regress onto the control plane. If dk-alchemy
+      ever ships a cluster-wide `require-role-toleration` rule that
+      flags Pods lacking the toleration, this exception permits the
+      hydrate Job because it does not need to run on tainted nodes
+      in the first place.
+spec:
+  # Placeholder target: matches the (not-yet-existent)
+  # `require-role-toleration` ClusterPolicy. When that policy lands
+  # in dk-alchemy with a real rule name, update this reference.
+  exceptions:
+    - policyName: require-role-toleration
+      ruleNames:
+        - check-control-plane-toleration
+  match:
+    any:
+      - resources:
+          kinds:
+            - Pod
+            - Job
+          namespaces:
+            - dk-data-prod
+          selector:
+            matchLabels:
+              app: prestaged-hydrate

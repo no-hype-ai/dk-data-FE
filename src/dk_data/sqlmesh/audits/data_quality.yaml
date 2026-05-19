@@ -59,40 +59,40 @@ audits:
 
   - name: dim_hospital_unique_id
     description: Only one record per hospital_id
-    model: mart.dim_hospital
+    model: hcs_gold.dim_hospital
     query: |
       SELECT COUNT(*) as failures
       FROM (
         SELECT hospital_id
-        FROM mart.dim_hospital
+        FROM hcs_gold.dim_hospital
         GROUP BY hospital_id
         HAVING COUNT(*) > 1
       ) dups
 
   - name: dim_hospital_valid_tier
     description: Network tier must be valid
-    model: mart.dim_hospital
+    model: hcs_gold.dim_hospital
     query: |
       SELECT COUNT(*) as failures
-      FROM mart.dim_hospital
+      FROM hcs_gold.dim_hospital
       WHERE network_tier NOT IN ('Tier 1', 'Tier 2', 'Tier 3', 'Tier 4')
         AND network_tier IS NOT NULL
 
   - name: fact_tavr_program_valid_yoy
     description: YoY change should be within reasonable bounds (-1 to 10)
-    model: mart.fact_tavr_program
+    model: hcs_gold.fact_tavr_program
     query: |
       SELECT COUNT(*) as failures
-      FROM mart.fact_tavr_program
+      FROM hcs_gold.fact_tavr_program
       WHERE yoy_volume_change < -1.0  -- More than 100% decrease
          OR yoy_volume_change > 10.0  -- More than 1000% increase
 
   - name: fact_financial_valid_quartile
     description: Margin quartile must be 1-4
-    model: mart.fact_financial_metrics
+    model: hcs_gold.fact_financial_metrics
     query: |
       SELECT COUNT(*) as failures
-      FROM mart.fact_financial_metrics
+      FROM hcs_gold.fact_financial_metrics
       WHERE margin_quartile NOT IN (1, 2, 3, 4)
         AND margin_quartile IS NOT NULL
 
@@ -124,9 +124,9 @@ audits:
 
   - name: fact_tavr_hospital_key_valid
     description: All hospital_keys must reference valid dim_hospital records
-    model: mart.fact_tavr_program
+    model: hcs_gold.fact_tavr_program
     query: |
       SELECT COUNT(*) as failures
-      FROM mart.fact_tavr_program f
-      LEFT JOIN mart.dim_hospital h ON f.hospital_key = h.hospital_key
+      FROM hcs_gold.fact_tavr_program f
+      LEFT JOIN hcs_gold.dim_hospital h ON f.hospital_key = h.hospital_key
       WHERE h.hospital_key IS NULL

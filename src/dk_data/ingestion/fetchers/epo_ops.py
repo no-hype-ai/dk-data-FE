@@ -18,15 +18,22 @@ from datetime import datetime, timedelta
 from typing import Any, Dict, List, Optional
 from xml.etree import ElementTree as ET
 
+from ..sources.epo_ops import load_epo_ops_data
+from ..utils.checkpoint import clear_checkpoint, load_checkpoint, save_checkpoint
 from .base import BaseFetcher
 
 logger = logging.getLogger(__name__)
 
-# IPC codes for pharmaceutical patents
-PHARMA_IPC_CODES = ["A61K", "A61P", "C07D"]
+# IPC codes for pharmaceutical patents:
+#   A61K: pharmaceutical preparations (drugs, excipients, dosage forms)
+#   A61P: therapeutic activity (by disease/mechanism — ensures clinical relevance)
+#   C07D: heterocyclic compounds (small-molecule drugs)
+#   C07K: peptides (biologics, GLP-1s, monoclonal antibodies)
+#   C07H: nucleosides/nucleotides/nucleic acids (RNA therapeutics, mRNA vaccines)
+PHARMA_IPC_CODES = ["A61K", "A61P", "C07D", "C07K", "C07H"]
 
-# Maximum records per fetch run
-MAX_RECORDS = 5000
+# Maximum records per fetch run — None means unlimited
+MAX_RECORDS = None
 
 # OPS throttle: max 10 requests per minute for registered users
 OPS_REQUEST_DELAY = 6.5  # seconds between requests
@@ -39,8 +46,8 @@ class EPOOPSFetcher(BaseFetcher):
     BASE_URL = "https://ops.epo.org/3.2/rest-services"
     TOKEN_URL = "https://ops.epo.org/3.2/auth/accesstoken"
 
-    # OPS search endpoint
-    SEARCH_ENDPOINT = "/published-data/search"
+    # OPS search endpoint — /biblio returns full exchange-document elements with titles/abstracts/IPC
+    SEARCH_ENDPOINT = "/published-data/search/biblio"
 
     # Results per page (OPS max is 100)
     PAGE_SIZE = 100
@@ -88,8 +95,12 @@ class EPOOPSFetcher(BaseFetcher):
         """
         search_terms = kwargs.get("search_terms")
         ipc_codes = kwargs.get("ipc_codes", PHARMA_IPC_CODES)
-        max_records = kwargs.get("max_records", MAX_RECORDS)
-        days_back = kwargs.get("days_back", 30)
+        raw_max = kwargs.get("max_records", MAX_RECORDS)
+        max_records = int(raw_max) if raw_max is not None else None
+        # days_back=None means no date filter (full backfill) — default for initial load
+        days_back = kwargs.get("days_back", None)
+        if days_back is not None:
+            days_back = int(days_back) if days_back != 0 else None
 
         try:
             # Load search terms from DB if not provided
@@ -100,56 +111,97 @@ class EPOOPSFetcher(BaseFetcher):
                 search_terms = ["pharmaceutical", "drug therapy"]
 
             logger.info(
-                "Fetching EPO OPS patents (terms=%d, ipc=%s, days_back=%d)",
+                "Fetching EPO OPS patents (terms=%d, ipc=%s, days_back=%s)",
                 len(search_terms), ipc_codes, days_back,
             )
+
+            # Resume from checkpoint if available
+            cp = load_checkpoint(self.SOURCE_NAME)
+            start_term_index = 0
+            total_fetched = 0
+            if cp:
+                start_term_index = cp.get("term_index", 0)
+                total_fetched = cp.get("total_fetched", 0)
+                logger.info(
+                    "EPO OPS: resuming from checkpoint term_index=%d total=%d",
+                    start_term_index, total_fetched,
+                )
 
             # Authenticate
             self._ensure_token()
 
-            all_records: List[Dict[str, Any]] = []
-            seen_ids: set = set()
-
-            for term in search_terms:
-                if len(all_records) >= max_records:
+            for term_index, term in enumerate(search_terms):
+                if term_index < start_term_index:
+                    continue
+                if max_records is not None and total_fetched >= max_records:
                     break
 
-                records = self._search_patents(
+                term_count = self._stream_patents(
                     term,
+                    term_index=term_index,
                     ipc_codes=ipc_codes,
                     days_back=days_back,
-                    max_records=max_records - len(all_records),
+                    max_records=(max_records - total_fetched) if max_records is not None else None,
                 )
+                total_fetched += term_count
 
-                for rec in records:
-                    pub_id = rec.get("publication_id")
-                    if pub_id and pub_id not in seen_ids:
-                        seen_ids.add(pub_id)
-                        all_records.append(rec)
+                # Checkpoint after each term
+                save_checkpoint(self.SOURCE_NAME, {
+                    "term_index": term_index + 1,
+                    "total_fetched": total_fetched,
+                })
 
-            # Compute content hash
+            clear_checkpoint(self.SOURCE_NAME)
+
             content_hash = hashlib.md5(
-                str(sorted(seen_ids)).encode()
+                f"epo_ops:{total_fetched}".encode()
             ).hexdigest()
 
             result = {
                 "status": "success",
-                "records": all_records,
-                "record_count": len(all_records),
+                "records": [],  # already in DB
+                "record_count": total_fetched,
                 "hash": content_hash,
             }
-            self.log_fetch_result({"status": "success", "records": len(all_records)})
+            self.log_fetch_result({"status": "success", "records": total_fetched})
             return result
 
-        except Exception as e:
-            logger.exception("Failed to fetch EPO OPS data: %s", e)
+        except RuntimeError as e:
+            # Missing credentials — not a transient failure
+            logger.warning("EPO OPS: %s", e)
             result = {
-                "status": "failed",
+                "status": "source_unavailable",
                 "records": [],
                 "record_count": 0,
                 "hash": None,
                 "error": str(e),
             }
+            self.log_fetch_result(result)
+            return result
+        except Exception as e:
+            # Distinguish 401/403 (credential expiry) from generic failures
+            err_str = str(e)
+            if "401" in err_str or "403" in err_str:
+                logger.warning(
+                    "EPO OPS auth failure (401/403) — credentials may have expired. "
+                    "Rotate EPO_CONSUMER_KEY / EPO_CONSUMER_SECRET: %s", e
+                )
+                result = {
+                    "status": "source_unavailable",
+                    "records": [],
+                    "record_count": 0,
+                    "hash": None,
+                    "error": f"Auth failure (rotate EPO_CONSUMER_KEY/SECRET): {e}",
+                }
+            else:
+                logger.exception("Failed to fetch EPO OPS data: %s", e)
+                result = {
+                    "status": "failed",
+                    "records": [],
+                    "record_count": 0,
+                    "hash": None,
+                    "error": str(e),
+                }
             self.log_fetch_result(result)
             return result
 
@@ -187,35 +239,43 @@ class EPOOPSFetcher(BaseFetcher):
     # Search
     # ------------------------------------------------------------------
 
-    def _search_patents(
+    def _stream_patents(
         self,
         term: str,
         *,
+        term_index: int,
         ipc_codes: List[str],
-        days_back: int = 30,
-        max_records: int = 5000,
-    ) -> List[Dict[str, Any]]:
-        """Search OPS for patents matching a term and IPC codes."""
-        records: List[Dict[str, Any]] = []
+        days_back: Optional[int] = None,
+        max_records: Optional[int] = None,
+    ) -> int:
+        """Search OPS for patents matching a term, writing each page directly to DB.
 
-        # Build CQL query
-        ipc_filter = " OR ".join(f'ipc="{code}"' for code in ipc_codes)
-        date_from = (datetime.utcnow() - timedelta(days=days_back)).strftime("%Y%m%d")
-        cql = f'ta="{term}" AND ({ipc_filter}) AND pd>={date_from}'
+        Returns:
+            Number of patent records written to DB for this term.
+        """
+        # Build CQL query — OPS CQL uses bare IPC codes (no quotes)
+        ipc_filter = " OR ".join(f'ipc={code}' for code in ipc_codes)
+        if days_back:
+            date_from = (datetime.utcnow() - timedelta(days=days_back)).strftime("%Y%m%d")
+            cql = f'txt="{term}" AND ({ipc_filter}) AND pd>={date_from}'
+        else:
+            cql = f'txt="{term}" AND ({ipc_filter})'
 
         start = 1
+        total = 0
 
-        while len(records) < max_records:
-            end = min(start + self.PAGE_SIZE - 1, start + max_records - len(records) - 1)
+        while max_records is None or total < max_records:
+            remaining = (max_records - total) if max_records is not None else self.PAGE_SIZE
+            end = start + min(self.PAGE_SIZE, remaining) - 1
 
             try:
                 params = {
                     "q": cql,
+                    "Range": f"{start}-{end}",
                 }
                 headers = {
                     "Authorization": f"Bearer {self._access_token}",
                     "Accept": "application/xml",
-                    "Range": f"{start}-{end}",
                 }
 
                 response = self.session.get(
@@ -225,8 +285,11 @@ class EPOOPSFetcher(BaseFetcher):
                     timeout=60,
                 )
 
-                if response.status_code == 404:
-                    # No results
+                if response.status_code in (400, 404):
+                    logger.debug(
+                        "OPS %d for term '%s' — no results or invalid range",
+                        response.status_code, term,
+                    )
                     break
 
                 response.raise_for_status()
@@ -235,7 +298,9 @@ class EPOOPSFetcher(BaseFetcher):
                 if not batch:
                     break
 
-                records.extend(batch)
+                # Flush page directly to DB — bounded memory
+                load_epo_ops_data(batch)
+                total += len(batch)
 
                 if len(batch) < self.PAGE_SIZE:
                     break
@@ -247,7 +312,8 @@ class EPOOPSFetcher(BaseFetcher):
                 logger.warning("OPS search failed for term '%s' at range %d: %s", term, start, e)
                 break
 
-        return records
+        logger.info("EPO OPS term '%s' (index=%d): %d records", term, term_index, total)
+        return total
 
     def _parse_search_response(self, xml_content: bytes) -> List[Dict[str, Any]]:
         """Parse OPS search XML response into record dicts."""
@@ -348,6 +414,12 @@ class EPOOPSFetcher(BaseFetcher):
             if ipc.text:
                 ipc_codes.append(ipc.text.strip())
 
+        # CPC codes
+        cpc_codes = []
+        for cpc in doc.findall(".//epo:classification-cpc/epo:text", ns):
+            if cpc.text:
+                cpc_codes.append(cpc.text.strip())
+
         # Family ID
         family_id = doc.get("family-id")
 
@@ -360,6 +432,7 @@ class EPOOPSFetcher(BaseFetcher):
             "filing_date": filing_date,
             "publication_date": publication_date,
             "ipc_codes": ipc_codes if ipc_codes else None,
+            "cpc_codes": cpc_codes if cpc_codes else None,
             "family_id": family_id,
         }
 

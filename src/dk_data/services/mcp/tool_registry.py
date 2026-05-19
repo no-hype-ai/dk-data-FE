@@ -70,7 +70,7 @@ TOOL_REGISTRY: Dict[str, ToolDefinition] = {
     ),
     "openfda-labels-search": ToolDefinition(
         name="openfda-labels-search",
-        description="Search OpenFDA for drug labeling information (DB-first, API fallback)",
+        description="Search OpenFDA for drug labeling information",
         tier="direct_query",
         raw_table="openfda_labels",
         raw_schema="mol_raw",
@@ -122,15 +122,6 @@ TOOL_REGISTRY: Dict[str, ToolDefinition] = {
         raw_schema="mol_raw",
         adapter_module="dk_data.services.mcp.adapters.pubmed",
         api_base_url="https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esearch.fcgi",
-    ),
-    "ema-labels-search": ToolDefinition(
-        name="ema-labels-search",
-        description="Search EMA SmPC drug labels with lazy PDF extraction and DB cache",
-        tier="direct_query",
-        raw_table="ema_label_cache",
-        raw_schema="mol_raw",
-        adapter_module="dk_data.services.mcp.adapters.ema_labels",
-        api_base_url="https://www.ema.europa.eu/en/medicines",
     ),
     "ema-search": ToolDefinition(
         name="ema-search",

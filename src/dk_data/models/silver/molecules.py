@@ -94,7 +94,7 @@ class Molecule(MoleculeBase):
 class MoleculeWithIdentifiers(Molecule):
     """Molecule with cross-reference identifiers."""
     drugbank_id: Optional[str] = None
-    chembl_id: Optional[str] = None
+    molecule_chembl_id: Optional[str] = None
     pubchem_cid: Optional[int] = None
     unii: Optional[str] = None
     cas_number: Optional[str] = None

@@ -297,15 +297,15 @@ class PipelineMonitoringService:
 
             # Get record counts
             molecule_count = await conn.fetchval(
-                "SELECT COUNT(*) FROM silver.molecules WHERE needs_review = FALSE"
+                "SELECT COUNT(*) FROM mol_silver.molecules WHERE needs_review = FALSE"
             ) or 0
 
             quarantine_count = await conn.fetchval(
-                "SELECT COUNT(*) FROM silver.molecules WHERE needs_review = TRUE"
+                "SELECT COUNT(*) FROM mol_silver.molecules WHERE needs_review = TRUE"
             ) or 0
 
             queue_count = await conn.fetchval(
-                "SELECT COUNT(*) FROM silver.resolution_queue WHERE status = 'pending'"
+                "SELECT COUNT(*) FROM mol_silver.resolution_queue WHERE status = 'pending'"
             ) or 0
 
         # Build layer dict
@@ -485,7 +485,7 @@ class PipelineMonitoringService:
             # Update molecule counts by stage
             stage_counts = await conn.fetch("""
                 SELECT development_status, COUNT(*) as count
-                FROM silver.molecules
+                FROM mol_silver.molecules
                 WHERE needs_review = FALSE
                 GROUP BY development_status
             """)
@@ -502,7 +502,7 @@ class PipelineMonitoringService:
                         ELSE 'low'
                     END as priority,
                     COUNT(*) as count
-                FROM silver.resolution_queue
+                FROM mol_silver.resolution_queue
                 WHERE status = 'pending'
                 GROUP BY 1
             """)
@@ -515,7 +515,7 @@ class PipelineMonitoringService:
                 SELECT
                     COUNT(*) FILTER (WHERE status = 'approved') as approved,
                     COUNT(*) as total
-                FROM silver.resolution_queue
+                FROM mol_silver.resolution_queue
                 WHERE reviewed_at > NOW() - INTERVAL '30 days'
             """)
 

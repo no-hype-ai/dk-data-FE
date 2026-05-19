@@ -1,0 +1,21 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: dk-data-metering-proxy
+  labels:
+    app: postgrest
+    app.kubernetes.io/name: dk-data
+    app.kubernetes.io/component: metering-proxy
+    app.kubernetes.io/part-of: dk-data
+spec:
+  type: ClusterIP
+  ports:
+    - port: 3001
+      targetPort: 3001
+      protocol: TCP
+      name: proxy
+    # Removed stale port 9090 "metrics" — nothing bound to it in the container.
+    # The /metrics endpoint is served from the same uvicorn process on port 3001
+    # (BYPASS_PATHS allows it to skip auth). Feature 002 T014.
+  selector:
+    app: postgrest

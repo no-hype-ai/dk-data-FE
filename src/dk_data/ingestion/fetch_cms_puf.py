@@ -25,6 +25,7 @@ import pandas as pd
 import psycopg2
 from psycopg2 import sql
 
+from dk_data.ingestion.utils.database import build_dsn
 from dk_data.ingestion.downloaders.cms_downloader import (
     CMS_DATASET_REGISTRY,
     download_cms_file,
@@ -37,13 +38,7 @@ CHUNK_SIZE = 10_000
 
 
 def _db_connection():
-    return psycopg2.connect(
-        host=os.getenv("POSTGRES_HOST"),
-        port=int(os.getenv("POSTGRES_PORT", "5432")),
-        user=os.getenv("POSTGRES_USER"),
-        password=os.getenv("POSTGRES_PASSWORD"),
-        dbname=os.getenv("POSTGRES_DB"),
-    )
+    return psycopg2.connect(build_dsn())
 
 
 def _slug_identifier(name: str) -> str:
@@ -176,6 +171,24 @@ def _log_refresh(conn, source_key: str, status: str, records_fetched: int, error
 
 
 def _resolve_csv_path(filepath: Path) -> Path:
+    """Return a CSV path for the given download artefact.
+
+    For historical CMS PUF sources the bundle is a single-CSV zip and the
+    "largest" file was also the only relevant file — but several CMS zips
+    (NPPES, formulary, cost-reports) ship multiple CSVs and the old
+    "largest-only" logic silently discarded the rest (plan §A.1).
+
+    This loader still needs a single primary CSV (it bulk-loads one table per
+    call), so we now:
+
+      * extract *every* CSV member to the extraction directory
+      * return the largest as the primary path, matching the legacy caller
+        contract
+
+    Callers that need the full set can walk ``filepath.parent /
+    f"{filepath.stem}_extracted"`` directly.  Non-CSV zip contents are
+    extracted alongside so they remain visible for downstream audits.
+    """
     if filepath.suffix.lower() == ".csv":
         return filepath
 
@@ -185,12 +198,29 @@ def _resolve_csv_path(filepath: Path) -> Path:
     extract_dir = filepath.parent / f"{filepath.stem}_extracted"
     extract_dir.mkdir(parents=True, exist_ok=True)
 
+    resolved_target = extract_dir.resolve()
     with zipfile.ZipFile(filepath, "r") as zip_file:
-        csv_members = [m for m in zip_file.infolist() if m.filename.lower().endswith(".csv")]
+        members = [m for m in zip_file.infolist() if not m.is_dir()]
+        if not members:
+            raise ValueError(f"ZIP has no extractable members: {filepath}")
+
+        csv_members = [m for m in members if m.filename.lower().endswith(".csv")]
         if not csv_members:
             raise ValueError(f"ZIP has no CSV members: {filepath}")
+
+        # Extract every member (CSV + siblings) so nothing is silently dropped.
+        for member in members:
+            dest = (extract_dir / member.filename).resolve()
+            try:
+                dest.relative_to(resolved_target)
+            except ValueError:
+                raise RuntimeError(
+                    f"Refusing to extract {member.filename!r} from {filepath}: "
+                    "path escapes extraction directory"
+                )
+            zip_file.extract(member, extract_dir)
+
         largest = max(csv_members, key=lambda m: m.file_size)
-        zip_file.extract(largest, extract_dir)
         return extract_dir / largest.filename
 
 
@@ -199,8 +229,10 @@ def _create_table_if_needed(cur, source_key: str, csv_columns: list[str]) -> Non
     column_defs.extend(
         [
             sql.SQL("{} BIGSERIAL PRIMARY KEY").format(sql.Identifier("id")),
-            sql.SQL("{} INT").format(sql.Identifier("source_year")),
-            sql.SQL("{} TIMESTAMPTZ DEFAULT NOW()").format(sql.Identifier("created_at")),
+            sql.SQL("{} INT").format(sql.Identifier("_source_year")),
+            sql.SQL("{} TEXT").format(sql.Identifier("_source_hash")),
+            sql.SQL("{} TEXT").format(sql.Identifier("_source_file")),
+            sql.SQL("{} TIMESTAMPTZ NOT NULL DEFAULT NOW()").format(sql.Identifier("_loaded_at")),
         ]
     )
 
@@ -253,7 +285,8 @@ def _bulk_load_csv(conn, source_key: str, csv_path: Path, source_year: int | Non
         )
         conn.commit()
 
-    load_columns = csv_columns + ["source_year"]
+    file_hash = _compute_file_hash(csv_path)
+    load_columns = csv_columns + ["_source_year", "_source_hash", "_source_file"]
     copy_stmt = sql.SQL(
         "COPY {} ({}) FROM STDIN WITH (FORMAT CSV, HEADER FALSE)"
     ).format(
@@ -268,7 +301,9 @@ def _bulk_load_csv(conn, source_key: str, csv_path: Path, source_year: int | Non
         for chunk in chunks:
             chunk.columns = csv_columns
             chunk = chunk.fillna("")
-            chunk["source_year"] = source_year
+            chunk["_source_year"] = source_year
+            chunk["_source_hash"] = file_hash
+            chunk["_source_file"] = csv_path.name
 
             buf = StringIO()
             chunk[load_columns].to_csv(

@@ -1,0 +1,85 @@
+# Platform Staleness Check — daily data freshness monitor
+#
+# Runs daily at 02:00 UTC, queries meta.data_sources for stale or never-loaded
+# sources, and writes results to meta.data_quality. Grafana alerts
+# (monitoring/provisioning/alerts/pipeline-source-failures.yaml) handle
+# notification routing.
+#
+# This CronJob does NOT trigger a backfill. To backfill a fresh cluster:
+#   kubectl apply -f k8s/apps/cronjobs/base/job-initial-backfill.yaml -n dk-data-prod
+#   kubectl logs -f job/initial-backfill -n dk-data-prod
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: platform-init
+  labels:
+    app: platform-init
+    app.kubernetes.io/name: platform-init
+    app.kubernetes.io/component: monitoring
+    app.kubernetes.io/part-of: dk-data
+spec:
+  schedule: "0 2 * * *"  # 02:00 UTC daily
+  concurrencyPolicy: Forbid
+  startingDeadlineSeconds: 3600
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      backoffLimit: 1
+      ttlSecondsAfterFinished: 86400
+      activeDeadlineSeconds: 300  # staleness check should complete in < 5 minutes
+      template:
+        metadata:
+          labels:
+            app: platform-init
+            app.kubernetes.io/component: fetcher
+            app.kubernetes.io/part-of: dk-data
+            team: data-platform
+            service: dk-data
+            product: dk-data
+        spec:
+          restartPolicy: Never
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 1000
+            fsGroup: 1000
+            seccompProfile:
+              type: RuntimeDefault
+          imagePullSecrets:
+            - name: ghcr-credentials
+          containers:
+            - name: platform-init
+              image: ghcr.io/data-kinetic/dk-data-fe/job-trigger:latest
+              command: ["python", "src/dk_data/scripts/check_freshness.py"]
+              args: ["--json"]
+              envFrom:
+                - secretRef:
+                    name: dk-data-secrets
+              env:
+                - name: OTEL_EXPORTER_OTLP_ENDPOINT
+                  value: "http://alloy.infra.svc.cluster.local:4317"
+                - name: OTEL_ENABLED
+                  value: "true"
+                - name: POSTGRES_HOST_DIRECT
+                  valueFrom:
+                    secretKeyRef:
+                      name: dk-data-secrets
+                      key: POSTGRES_HOST
+              resources:
+                requests:
+                  memory: "128Mi"
+                  cpu: "50m"
+                limits:
+                  memory: "256Mi"
+                  cpu: "200m"
+              securityContext:
+                allowPrivilegeEscalation: false
+                readOnlyRootFilesystem: true
+                capabilities:
+                  drop: ["ALL"]
+              volumeMounts:
+                - name: tmp
+                  mountPath: /tmp
+          volumes:
+            - name: tmp
+              emptyDir: {}

@@ -12,39 +12,51 @@ from typing import Optional
 import pandas as pd
 from pydantic import ValidationError
 
-from ..utils.database import get_cursor, get_connection
+from ..utils.database import apply_column_mapping, get_cursor, get_connection
 from ..utils.validators import CMSHospitalInfoRecord
 
 logger = logging.getLogger(__name__)
 
 # CMS column mapping - supports multiple column name formats
+# CMS provider-data portal uses underscore-separated names (e.g., Facility_ID)
+# Older exports may use space-separated names (e.g., Facility ID)
 COLUMN_MAPPING = {
     # Provider ID variations
+    'Facility_ID': 'provider_id',
     'Facility ID': 'provider_id',
     # Hospital name variations
+    'Facility_Name': 'hospital_name',
     'Facility Name': 'hospital_name',
     # Address variations
     'Address': 'address',
     # City variations
-    'City': 'city',
+    'City_Town': 'city',
     'City/Town': 'city',
+    'City': 'city',
     # State variations
     'State': 'state',
     # ZIP Code variations
+    'ZIP_Code': 'zip_code',
     'ZIP Code': 'zip_code',
     # County variations
-    'County Name': 'county_name',
+    'County_Parish': 'county_name',
     'County/Parish': 'county_name',
+    'County Name': 'county_name',
     # Phone variations
+    'Phone_Number': 'phone_number',
     'Phone Number': 'phone_number',
     'Telephone Number': 'phone_number',
     # Hospital Type variations
+    'Hospital_Type': 'hospital_type',
     'Hospital Type': 'hospital_type',
     # Ownership variations
+    'Hospital_Ownership': 'hospital_ownership',
     'Hospital Ownership': 'hospital_ownership',
     # Emergency Services variations
+    'Emergency_Services': 'emergency_services',
     'Emergency Services': 'emergency_services',
     # Rating variations
+    'Hospital_overall_rating': 'hospital_overall_rating',
     'Hospital overall rating': 'hospital_overall_rating',
 }
 
@@ -84,7 +96,7 @@ def parse_rating(value) -> Optional[int]:
 def load_cms_hospital_info(
     filepath: str,
     batch_size: int = 1000
-) -> dict:
+, max_records: int = 0) -> dict:
     """
     Load CMS Hospital General Information from CSV file.
 
@@ -103,20 +115,27 @@ def load_cms_hospital_info(
     # Check if already loaded
     with get_cursor() as cur:
         cur.execute("""
-            SELECT COUNT(*) FROM raw.cms_hospital_info
+            SELECT COUNT(*) FROM hcs_raw.cms_hospital_info
             WHERE _source_hash = %s
         """, (source_hash,))
         if cur.fetchone()[0] > 0:
             logger.warning(f"File {source_file} already loaded. Skipping.")
             return {'status': 'skipped', 'reason': 'already_loaded'}
 
-    # Read CSV - handle both CMS format and direct column names
+    # Read CSV - handle both CMS underscore format (Facility_ID) and
+    # legacy space format (Facility ID) by specifying dtype for both variants
     df = pd.read_csv(
         filepath,
         dtype={
+            # Underscore format (current CMS provider-data portal)
+            'Facility_ID': str,
+            'ZIP_Code': str,
+            'Phone_Number': str,
+            # Space format (older exports)
             'Facility ID': str,
             'ZIP Code': str,
             'Phone Number': str,
+            # Post-rename names (in case file was pre-normalized)
             'provider_id': str,
             'zip_code': str,
             'phone_number': str,
@@ -125,7 +144,7 @@ def load_cms_hospital_info(
     )
 
     # Rename columns
-    df = df.rename(columns=COLUMN_MAPPING)
+    df = apply_column_mapping(df, COLUMN_MAPPING)
 
     logger.info(f"Found {len(df)} hospital records")
 
@@ -155,13 +174,12 @@ def load_cms_hospital_info(
                     )
 
                     cur.execute("""
-                        INSERT INTO raw.cms_hospital_info (
+                        INSERT INTO hcs_raw.cms_hospital_info (
                             provider_id, hospital_name, address, city, state,
                             zip_code, county_name, phone_number, hospital_type,
                             hospital_ownership, emergency_services, hospital_overall_rating,
                             _source_hash
                         ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
-                        ON CONFLICT (id) DO NOTHING
                     """, (
                         record.provider_id,
                         record.hospital_name,

@@ -1,0 +1,84 @@
+# Feature 002-external-integration-foundation (US-8, US-11, T144)
+#
+# Grafana unified-alerting rule: fire if any gold table has zero rows
+# for more than 24 hours. Earliest consumer-visible signal that a
+# SQLMesh gold transform has failed silently.
+#
+# Depends on `dk_table_record_count{layer=~".+_gold"}` being emitted
+# by `src/dk_data/services/data_platform/metrics.py:set_table_record_count`.
+# The metric's real labels are `layer` (e.g. `hcs_gold`, `mol_gold`)
+# and `table_name`, so the alert uses a regex selector and interpolates
+# $labels.table_name in the annotation.
+#
+# NOTE: this PrometheusRule is orphaned from kustomization for now.
+# Operators apply it by hand:
+#
+#   kubectl -n dk-data-prod apply -f grafana/alerts/gold-zero-rows.yaml
+#
+# Wiring it into the observability kustomization is a follow-up that
+# requires coordinating with the shared infra repo's prometheus-operator
+# install.
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: dk-data-gold-zero-rows
+  namespace: dk-data-prod
+  labels:
+    app.kubernetes.io/name: dk-data
+    app.kubernetes.io/component: alert
+    app.kubernetes.io/part-of: dk-data
+spec:
+  groups:
+    - name: dk-data.gold.zero_rows
+      interval: 5m
+      rules:
+        # "Table has been at 0 rows for 24 hours." Prometheus's `for`
+        # clause keeps the condition alive until it holds for 24h, so
+        # the expression itself is just `count == 0`.
+        - alert: DkDataGoldTableZeroRows
+          expr: dk_table_record_count{layer=~".+_gold"} == 0
+          for: 24h
+          labels:
+            severity: critical
+            service: dk-data
+            component: gold
+          annotations:
+            summary: "Gold table {{ $labels.layer }}.{{ $labels.table_name }} has 0 rows for >24h"
+            description: |
+              Gold table {{ $labels.layer }}.{{ $labels.table_name }}
+              has reported zero rows for the past 24 hours. This
+              usually means the SQLMesh transform cronjob failed
+              silently or the table was truncated without a rebuild.
+
+              Investigate:
+                - kubectl -n dk-data-prod get jobs.batch | grep transform-gold
+                - kubectl -n dk-data-prod logs job/<latest-job>
+                - psql ... -c "SELECT COUNT(*) FROM {{ $labels.layer }}.{{ $labels.table_name }};"
+
+              Runbook: docs/runbooks/verify-gold-backfill.md
+
+        # Data-source freshness alert. `dk_data_source_last_refresh_timestamp`
+        # has labels `source_id, source_name` (NOT `layer`), so the
+        # selector filters on `source_name` matching known gold sources.
+        # Add more sources to the regex as they come online.
+        - alert: DkDataGoldSourceStale
+          expr: |
+            time() - dk_data_source_last_refresh_timestamp{
+              source_name=~"(molecule_profile|safety_signals|lifecycle_stages|competitive_landscape|company_pipeline)"
+            } > 36 * 3600
+          for: 15m
+          labels:
+            severity: warning
+            service: dk-data
+            component: gold
+          annotations:
+            summary: "Gold source {{ $labels.source_name }} has not refreshed in >36h"
+            description: |
+              The most recent refresh for gold source
+              {{ $labels.source_name }} is older than 36 hours
+              (expected: daily at 22:00 UTC). This is the upstream of
+              the adapter `molecules.getCompetitiveLandscape`,
+              `.getProfile`, and `.getSafety` methods — stale here
+              means consumer-visible staleness.
+
+              Runbook: docs/runbooks/verify-gold-backfill.md

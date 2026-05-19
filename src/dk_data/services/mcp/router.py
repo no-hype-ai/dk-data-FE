@@ -1,7 +1,12 @@
 """FastAPI router for MCP data-tool endpoints.
 
-Mounts at: /api/v1/data-tools
-Endpoint:  POST /api/v1/data-tools/{tool}/invoke
+Mounts at: /api/v1/mcp-tools
+Endpoint:  POST /api/v1/mcp-tools/{tool}/invoke
+
+Prefix is /mcp-tools (not /data-tools) to avoid shadowing the ingestion
+data-tools gateway router (routes/data_tools.py) which also uses /data-tools.
+Both routers previously shared the same prefix, causing POST /{tool}/invoke
+to be silently shadowed by data_tools since it registers first.
 """
 
 from __future__ import annotations
@@ -21,7 +26,9 @@ from .adapters import (
     TtdTool,
 )
 
-router = APIRouter(prefix="/data-tools", tags=["data-tools"])
+from .dispatch import try_db_first
+
+router = APIRouter(prefix="/mcp-tools", tags=["mcp-data-tools"])
 
 # Registry maps URL slug → adapter instance
 TOOL_REGISTRY = {
@@ -69,15 +76,19 @@ async def invoke_tool(tool: str, request: InvokeRequest) -> InvokeResponse:
             },
         )
 
+    # WS4 SP1 (feature 211): additive, gated DB-first short-circuit.
+    # Off by default => byte-identical to the existing path (FR-003).
+    # Returns None on disabled/miss/empty (run existing path unchanged);
+    # raises HTTPException 502 {"stage":"db_query"} on a real DB error
+    # (never falls through — a DB outage is not a miss; FR-004).
+    db_result = await try_db_first(tool, request.drug_name)
+    if db_result is not None:
+        return InvokeResponse(**db_result)
+
     adapter = TOOL_REGISTRY[tool]
     try:
         result = await adapter.invoke(request.drug_name)
-        return InvokeResponse(
-            tool=tool,
-            data=result.get("data"),
-            error=result.get("error"),
-            status_code=result.get("status_code"),
-        )
+        return InvokeResponse(**result)
     except httpx.HTTPStatusError as exc:
         raise HTTPException(
             status_code=502,

@@ -4,6 +4,7 @@ Feature: 012-platform-hardening (US3)
 """
 
 import tempfile
+from unittest.mock import patch
 from urllib.parse import parse_qs, urlparse
 
 import pytest
@@ -11,6 +12,11 @@ import responses
 
 from dk_data.ingestion.fetchers.uniprot import UniProtFetcher
 from dk_data.ingestion.utils.validators import UniProtRecord
+
+_UNI_LOAD = "dk_data.ingestion.fetchers.uniprot.load_uniprot_data"
+_UNI_CP_LOAD = "dk_data.ingestion.fetchers.uniprot.load_checkpoint"
+_UNI_CP_SAVE = "dk_data.ingestion.fetchers.uniprot.save_checkpoint"
+_UNI_CP_CLEAR = "dk_data.ingestion.fetchers.uniprot.clear_checkpoint"
 
 
 UNIPROT_SEARCH_RESPONSE = {
@@ -76,14 +82,22 @@ class TestUniProtFetcher:
             status=200,
         )
 
-        with tempfile.TemporaryDirectory() as tmpdir:
-            fetcher = UniProtFetcher(data_dir=tmpdir)
-            result = fetcher.fetch()
+        with patch(_UNI_LOAD) as mock_load, patch(_UNI_CP_LOAD, return_value=None), \
+                patch(_UNI_CP_SAVE), patch(_UNI_CP_CLEAR):
+            with tempfile.TemporaryDirectory() as tmpdir:
+                fetcher = UniProtFetcher(data_dir=tmpdir)
+                result = fetcher.fetch()
 
         assert result["status"] == "success"
-        assert len(result["records"]) == 2
+        assert result["record_count"] == 2
+        assert result["records"] == []  # flushed to DB
         assert result["hash"] is not None
-        assert result["records"][0]["primaryAccession"] == "P00533"
+
+        # Verify records passed to loader
+        assert mock_load.called
+        flushed = mock_load.call_args[0][0]
+        assert flushed[0]["primaryAccession"] == "P00533"
+
         assert len(responses.calls) == 1
         request_url = responses.calls[0].request.url
         query_params = parse_qs(urlparse(request_url).query)
@@ -98,12 +112,13 @@ class TestUniProtFetcher:
             status=200,
         )
 
-        with tempfile.TemporaryDirectory() as tmpdir:
-            fetcher = UniProtFetcher(data_dir=tmpdir)
-            result = fetcher.fetch()
+        with patch(_UNI_CP_LOAD, return_value=None), patch(_UNI_CP_CLEAR):
+            with tempfile.TemporaryDirectory() as tmpdir:
+                fetcher = UniProtFetcher(data_dir=tmpdir)
+                result = fetcher.fetch()
 
         assert result["status"] == "success"
-        assert len(result["records"]) == 0
+        assert result["record_count"] == 0
 
     @responses.activate
     def test_fetch_http_error(self):
@@ -114,9 +129,10 @@ class TestUniProtFetcher:
             status=503,
         )
 
-        with tempfile.TemporaryDirectory() as tmpdir:
-            fetcher = UniProtFetcher(data_dir=tmpdir)
-            result = fetcher.fetch()
+        with patch(_UNI_CP_LOAD, return_value=None):
+            with tempfile.TemporaryDirectory() as tmpdir:
+                fetcher = UniProtFetcher(data_dir=tmpdir)
+                result = fetcher.fetch()
 
         assert result["status"] == "failed"
         assert result["error"]

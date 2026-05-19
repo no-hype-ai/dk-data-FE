@@ -1,0 +1,24 @@
+# CMS HAC Reduction Program — annual CSV, hospital quality trio.
+#
+# Hospital-Acquired Condition (HAC) Reduction Program publishes annual
+# penalties for hospitals in the worst-performing quartile on HAC measures
+# (CLABSI, CAUTI, SSI, MRSA, CDI, PSI 90).
+#
+# Orchestration tier: 6 (raw landing; no upstream hub dependencies).
+# Accessibility tier: T1 — free CMS Provider Data portal, no auth.
+
+name: cms_hac_reduction
+domain: hcs
+tier: 6
+depends_on: []
+fetch:
+  kind: http_csv
+  url: https://data.cms.gov/provider-data/dataset/yq43-i98g
+schedule: "0 0 1 2 *"  # 00:00 UTC on February 1st (annual — CMS publishes FY results ~Oct, we refresh in Feb)
+credentials_ref: none
+expected_row_count_fn: "SELECT reltuples::bigint FROM pg_class WHERE relname='cms_hac_reduction'"
+sla_seconds: 1800
+manifest: .dk/sources/cms_hac_reduction.manifest.json
+consumes:
+  wal_headroom_pct: 1
+  db_connections: 1

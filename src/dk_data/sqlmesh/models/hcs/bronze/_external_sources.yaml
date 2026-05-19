@@ -1,0 +1,165 @@
+# External source declarations for hcs_raw.* tables.
+# These are populated by CMS PUF file-based loaders and legacy HCS loaders,
+# not by SQLMesh models. Declaring them here lets HCS bronze models reference
+# them without SQLMesh attempting to manage their snapshots.
+# Feature: 019-cms-puf-platform-reconciliation (M2)
+
+sources:
+  - name: hcs_raw.acc_tvc_certification
+    description: "ACC Transcatheter Valve Certification data — populated by load_acc_tvc"
+
+  - name: hcs_raw.cms_care_compare
+    description: "CMS Care Compare hospital ratings — populated by CMSCareCompareFetcher"
+
+  - name: hcs_raw.cms_chow
+    description: "CMS Change of Ownership records — populated by CMSChowFetcher"
+
+  - name: hcs_raw.cms_chronic_conditions
+    description: "CMS Chronic Conditions PUF — populated by CMSChronicConditionsFetcher"
+
+  - name: hcs_raw.cms_claim_type_puf
+    description: "CMS Claim Type PUF — populated by CMSClaimTypePUFFetcher"
+
+  - name: hcs_raw.cms_cost_reports
+    description: "CMS Hospital Cost Reports (legacy hcs_raw table) — populated by load_cms_cost_reports"
+
+  - name: hcs_raw.cms_cost_reports_puf
+    description: "CMS Cost Reports PUF annual file — populated by CMSCostReportsPUFFetcher"
+
+  - name: hcs_raw.cms_cost_reports_puf_lines
+    description: "CMS Cost Reports PUF line-item detail — populated by CMSCostReportsPUFLinesFetcher"
+
+  - name: hcs_raw.cms_ddinter
+    description: "CMS Drug-Drug Interaction reference — populated by CMSDDInterFetcher"
+
+  - name: hcs_raw.cms_dme_puf
+    description: "CMS Durable Medical Equipment PUF — populated by CMSDMEPUFFetcher"
+
+  - name: hcs_raw.cms_dmepos
+    description: "CMS DMEPOS supplier directory — populated by CMSDMEPOSFetcher"
+
+  - name: hcs_raw.cms_dual_eligible
+    description: "CMS Dual Eligible beneficiary data — populated by CMSDualEligibleFetcher"
+
+  - name: hcs_raw.cms_enrollment_puf
+    description: "CMS Medicare Enrollment PUF — populated by CMSEnrollmentPUFFetcher"
+
+  - name: hcs_raw.cms_formulary
+    description: "CMS Part D Formulary reference — populated by CMSFormularyFetcher"
+
+  - name: hcs_raw.cms_geographic_variation
+    description: "CMS Geographic Variation PUF — populated by CMSGeographicVariationFetcher"
+
+  - name: hcs_raw.cms_hcris
+    description: "CMS Hospital Cost Report Information System — populated by CMSHCRISFetcher"
+
+  - name: hcs_raw.cms_home_health
+    description: "CMS Home Health Agency PUF — populated by CMSHomeHealthFetcher"
+
+  - name: hcs_raw.cms_hospice_puf
+    description: "CMS Hospice PUF — populated by CMSHospicePUFFetcher"
+
+  - name: hcs_raw.cms_hospital_affiliation
+    description: "CMS Hospital Affiliation records — populated by CMSHospitalAffiliationFetcher"
+
+  - name: hcs_raw.cms_hospital_general_info
+    description: "CMS Hospital General Information — populated by CMSHospitalGeneralInfoFetcher"
+
+  - name: hcs_raw.cms_hospital_info
+    description: "CMS Hospital Info (legacy hcs_raw table) — populated by load_cms_hospital_info"
+
+  - name: hcs_raw.cms_hospital_quality
+    description: "CMS Hospital Quality measures — populated by CMSHospitalQualityFetcher"
+
+  - name: hcs_raw.cms_imaging_puf
+    description: "CMS Imaging PUF — populated by CMSImagingPUFFetcher"
+
+  - name: hcs_raw.cms_inpatient_puf
+    description: "CMS Medicare Inpatient PUF — populated by CMSInpatientPUFFetcher"
+
+  - name: hcs_raw.cms_lab_services
+    description: "CMS Lab Services PUF — populated by CMSLabServicesFetcher"
+
+  - name: hcs_raw.cms_magnet
+    description: "CMS Magnet hospital designations — populated by CMSMagnetFetcher"
+
+  - name: hcs_raw.cms_medicaid_drug_spending
+    description: "CMS Medicaid Drug Spending data — populated by CMSMedicaidDrugSpendingFetcher"
+
+  - name: hcs_raw.cms_medicare_advantage
+    description: "CMS Medicare Advantage plan data — populated by CMSMedicareAdvantageFetcher"
+
+  - name: hcs_raw.cms_mental_health_puf
+    description: "CMS Mental Health PUF — populated by CMSMentalHealthPUFFetcher"
+
+  - name: hcs_raw.cms_ndc
+    description: "CMS NDC drug code reference — populated by CMSNDCFetcher"
+
+  - name: hcs_raw.cms_nppes
+    description: "CMS NPPES NPI Registry — populated by CMSNPPESFetcher"
+
+  - name: hcs_raw.cms_nucc
+    description: "CMS NUCC taxonomy codes — populated by CMSNUCCFetcher"
+
+  - name: hcs_raw.cms_open_payments
+    description: "CMS Open Payments (Sunshine Act) — populated by CMSOpenPaymentsFetcher"
+
+  - name: hcs_raw.cms_opioid_puf
+    description: "CMS Opioid PUF — populated by CMSOpioidPUFFetcher"
+
+  - name: hcs_raw.cms_ordering_providers
+    description: "CMS Ordering and Referring Providers PUF — populated by CMSOrderingProvidersFetcher"
+
+  - name: hcs_raw.cms_outpatient_puf
+    description: "CMS Outpatient PUF — populated by CMSOutpatientPUFFetcher"
+
+  - name: hcs_raw.cms_part_b_spending
+    description: "CMS Medicare Part B Drug Spending — populated by CMSPartBSpendingFetcher"
+
+  - name: hcs_raw.cms_part_d_prescriber
+    description: "CMS Part D Prescriber PUF — populated by CMSPartDPrescriberFetcher"
+
+  - name: hcs_raw.cms_part_d_spending
+    description: "CMS Medicare Part D Drug Spending — populated by CMSPartDSpendingFetcher"
+
+  - name: hcs_raw.cms_pecos
+    description: "CMS PECOS provider enrollment — populated by CMSPECOSFetcher"
+
+  - name: hcs_raw.cms_physician_puf
+    description: "CMS Medicare Physician PUF — populated by CMSPhysicianPUFFetcher"
+
+  - name: hcs_raw.cms_physician_puf_services
+    description: "CMS Physician PUF service-level detail — populated by CMSPhysicianPUFFetcher"
+
+  - name: hcs_raw.cms_pos
+    description: "CMS Provider of Services file — populated by CMSPOSFetcher"
+
+  - name: hcs_raw.cms_post_acute
+    description: "CMS Post-Acute Care records — populated by CMSPostAcuteFetcher"
+
+  - name: hcs_raw.cms_rbcs
+    description: "CMS RBCS procedure-to-service classification — populated by CMSRBCSFetcher"
+
+  - name: hcs_raw.cms_referring_providers
+    description: "CMS Referring Providers PUF — populated by CMSReferringProvidersFetcher"
+
+  - name: hcs_raw.cms_snf_puf
+    description: "CMS Skilled Nursing Facility PUF — populated by CMSSNFPUFFetcher"
+
+  - name: hcs_raw.cms_stabilis
+    description: "CMS Stabilis drug stability reference — populated by CMSStabilisFetcher"
+
+  - name: hcs_raw.cms_telehealth_puf
+    description: "CMS Telehealth PUF — populated by CMSTelehealthPUFFetcher"
+
+  - name: hcs_raw.cms_usp
+    description: "CMS USP drug classification — populated by CMSUSPFetcher"
+
+  - name: hcs_raw.cms_utilization_puf
+    description: "CMS Utilization PUF — populated by CMSUtilizationPUFFetcher"
+
+  - name: hcs_raw.hrsa_shortage_areas
+    description: "HRSA Health Professional Shortage Area designations — populated by load_hrsa"
+
+  - name: hcs_raw.cms_medicare_inpatient
+    description: "CMS Medicare Inpatient (legacy hcs_raw table for TAVR) — populated by load_cms_inpatient"

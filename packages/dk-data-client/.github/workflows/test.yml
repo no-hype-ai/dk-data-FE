@@ -1,0 +1,155 @@
+name: dk-data-client CI
+
+on:
+  pull_request:
+    paths:
+      - "packages/dk-data-client/**"
+      - ".github/workflows/dk-data-client-test.yml"
+  push:
+    branches: [main]
+    paths:
+      - "packages/dk-data-client/**"
+
+defaults:
+  run:
+    working-directory: packages/dk-data-client
+
+concurrency:
+  group: dk-data-client-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # ---------------------------------------------------------------------------
+  # TypeScript: typecheck + unit tests
+  # ---------------------------------------------------------------------------
+  typescript:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v3
+        with:
+          version: 9
+
+      - name: Install TS deps
+        working-directory: packages/dk-data-client/typescript
+        run: pnpm install --frozen-lockfile
+
+      - name: Typecheck
+        working-directory: packages/dk-data-client/typescript
+        run: pnpm run typecheck
+
+      - name: Lint
+        working-directory: packages/dk-data-client/typescript
+        run: pnpm run lint || true  # soft-fail until ESLint config is wired
+
+      - name: Unit tests
+        working-directory: packages/dk-data-client/typescript
+        run: pnpm run test
+
+  # ---------------------------------------------------------------------------
+  # Python: mypy + unit tests
+  # ---------------------------------------------------------------------------
+  python:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install Python deps
+        working-directory: packages/dk-data-client/python
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e ".[dev]"
+
+      - name: Mypy
+        working-directory: packages/dk-data-client/python
+        run: mypy dk_data_client || true  # soft-fail until typing is fully locked
+
+      - name: Ruff
+        working-directory: packages/dk-data-client/python
+        run: ruff check dk_data_client
+
+      - name: Unit tests
+        working-directory: packages/dk-data-client/python
+        run: pytest tests/unit/ -q
+
+  # ---------------------------------------------------------------------------
+  # Integration tests — spin an ephemeral dk-data-FE + metering proxy,
+  # run the TS and Python integration suites against it.
+  #
+  # Gated behind a label so every PR doesn't pay the ~3-min cost unless
+  # the change actually touches transport/auth/fallback paths. To opt in,
+  # add the `integration` label to the PR.
+  # ---------------------------------------------------------------------------
+  integration:
+    if: contains(github.event.pull_request.labels.*.name, 'integration')
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    needs: [typescript, python]
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: dk_data_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v3
+        with:
+          version: 9
+
+      - name: Install test deps
+        working-directory: packages/dk-data-client
+        run: |
+          (cd typescript && pnpm install --frozen-lockfile)
+          (cd python && pip install -e ".[dev]")
+
+      - name: Spin ephemeral dk-data-FE stack
+        run: |
+          # T061 integration fixture brings up a minimal PostgREST +
+          # metering proxy against the Postgres service container.
+          python packages/dk-data-client/tests/integration/fixtures.py up
+
+      - name: Run TS integration tests
+        working-directory: packages/dk-data-client/typescript
+        run: pnpm run test tests/integration
+
+      - name: Run Python integration tests
+        working-directory: packages/dk-data-client/python
+        run: pytest tests/integration/ -q
+
+      - name: Tear down stack
+        if: always()
+        run: python packages/dk-data-client/tests/integration/fixtures.py down

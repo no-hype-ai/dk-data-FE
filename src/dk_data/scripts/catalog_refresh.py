@@ -19,6 +19,7 @@ from typing import Any
 
 import psycopg2
 from psycopg2.extras import RealDictCursor, Json
+from dk_data.ingestion.utils.database import build_dsn
 
 # Database configuration from environment
 DB_CONFIG = {
@@ -522,12 +523,57 @@ SOURCE_METADATA = {
         "staleness_threshold_hours": 168,
         "target_tables": ["raw.orcid"],
     },
+    "chembl_activities": {
+        "topic_tags": ["chembl", "bioactivity", "ic50", "ki", "ec50", "assay", "molecule"],
+        "ai_description": "ChEMBL bioactivity assay measurements linking compounds to biological targets. Contains IC50, Ki, EC50 and other potency values with assay context, pChEMBL values, and quality flags. Critical for drug mechanism and potency analysis.",
+        "column_descriptions": {
+            "activity_id": {"description": "ChEMBL unique activity measurement identifier", "type": "string"},
+            "chembl_id": {"description": "ChEMBL compound identifier (molecule_chembl_id)", "type": "string"},
+            "assay_type": {"description": "Assay type code: B (binding), F (functional), A (ADME), T (toxicity), P (physicochemical), U (unclassified)", "type": "string"},
+            "target_chembl_id": {"description": "ChEMBL target identifier for the biological target", "type": "string"},
+            "activity_type": {"description": "Standard activity type (IC50, Ki, EC50, Kd, etc.)", "type": "string"},
+            "activity_value": {"description": "Numerical activity measurement in standard_units", "type": "decimal"},
+            "pchembl_value": {"description": "Negative log10 of molar IC50/EC50/Ki; values ≥5 indicate sub-10µM potency", "type": "decimal"},
+        },
+        "staleness_threshold_hours": 168,
+        "target_tables": ["mol_raw.chembl_activities", "mol_bronze.chembl_activities", "mol_silver.bioactivity"],
+    },
+    "fda_rems": {
+        "topic_tags": ["fda", "rems", "safety", "risk", "drug_approval", "molecule"],
+        "ai_description": "FDA Risk Evaluation and Mitigation Strategy (REMS) programs for high-risk approved drugs. Contains application numbers, REMS type (standard vs ETASU), approval dates, status, and required elements (MedGuides, ETASU elements, communication plans).",
+        "column_descriptions": {
+            "application_number": {"description": "FDA NDA/ANDA/BLA application number (e.g. NDA021935)", "type": "string"},
+            "sponsor_name": {"description": "Drug sponsor/manufacturer name", "type": "string"},
+            "brand_name": {"description": "FDA-approved brand name", "type": "string"},
+            "generic_name": {"description": "INN/generic drug name", "type": "string"},
+            "rems_type": {"description": "REMS submission class code (REMS, REMS-ETASU, etc.)", "type": "string"},
+            "rems_status": {"description": "Current REMS approval status", "type": "string"},
+            "elements": {"description": "Array of required REMS element file names (MedGuide, ETASU, etc.)", "type": "string[]"},
+        },
+        "staleness_threshold_hours": 720,
+        "target_tables": ["mol_raw.fda_rems", "mol_bronze.fda_rems", "mol_silver.rems_programs"],
+    },
+    "fda_ndc": {
+        "topic_tags": ["fda", "ndc", "drug_product", "labeler", "generic_name", "brand_name"],
+        "ai_description": "FDA National Drug Code directory with all marketed drug products. Maps product_ndc and package_ndc codes to generic name, brand name, labeler, dosage form, route, and active ingredients. Primary source for NDC → molecule_id entity resolution.",
+        "column_descriptions": {
+            "product_ndc": {"description": "FDA product-level NDC code (labeler-product format, e.g. 12345-678)", "type": "string"},
+            "generic_name": {"description": "INN/generic drug name as registered with FDA", "type": "string"},
+            "brand_name": {"description": "Proprietary/trade name", "type": "string"},
+            "labeler_name": {"description": "Drug manufacturer or distributor", "type": "string"},
+            "product_type": {"description": "Product type (HUMAN PRESCRIPTION DRUG, OTC, VACCINE, etc.)", "type": "string"},
+            "active_ingredients": {"description": "JSON array of active ingredient names and strengths", "type": "jsonb"},
+            "package_ndcs": {"description": "Array of 11-digit package-level NDC codes for this product", "type": "string[]"},
+        },
+        "staleness_threshold_hours": 720,
+        "target_tables": ["mol_raw.fda_ndc", "mol_bronze.fda_ndc", "mol_silver.molecule_identifiers", "mol_silver.ndc_molecule_bridge"],
+    },
 }
 
 
 def get_connection():
     """Get database connection."""
-    return psycopg2.connect(**DB_CONFIG)
+    return psycopg2.connect(build_dsn())
 
 
 def get_current_sources(cursor) -> list[dict[str, Any]]:

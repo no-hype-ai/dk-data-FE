@@ -38,13 +38,13 @@ class QueueItem:
     id: str
     molecule_id: Optional[str]
     original_identifier: str
-    identifier_type: str
+    source: str
     confidence_score: float
     candidate_matches: List[Dict[str, Any]]
     status: str
     priority: str
     created_at: datetime
-    source: Optional[str] = None
+    identifier_type: Optional[str] = None
 
 
 @dataclass
@@ -89,18 +89,18 @@ class ResolutionQueueService:
     async def add_to_queue(
         self,
         original_identifier: str,
-        identifier_type: str,
+        source: str,
         confidence_score: float,
         molecule_id: Optional[str] = None,
         candidate_matches: Optional[List[Dict]] = None,
-        source: Optional[str] = None
+        identifier_type: Optional[str] = None
     ) -> str:
         """
         Add an item to the resolution queue.
 
         Args:
             original_identifier: The identifier that needs resolution
-            identifier_type: Type of identifier (name, chembl_id, etc.)
+            source: Type of identifier (name, chembl_id, etc.)
             confidence_score: Confidence of the match (0-1)
             molecule_id: Tentative molecule ID if one was assigned
             candidate_matches: List of potential matches
@@ -113,10 +113,10 @@ class ResolutionQueueService:
 
         async with self.db_pool.acquire() as conn:
             row = await conn.fetchrow("""
-                INSERT INTO silver.resolution_queue (
+                INSERT INTO mol_silver.resolution_queue (
                     molecule_id,
                     original_identifier,
-                    identifier_type,
+                    source,
                     confidence_score,
                     candidate_inchi_keys,
                     status
@@ -125,7 +125,7 @@ class ResolutionQueueService:
             """,
                 molecule_id,
                 original_identifier,
-                identifier_type,
+                source,
                 confidence_score,
                 json.dumps(candidate_matches or [])
             )
@@ -135,7 +135,7 @@ class ResolutionQueueService:
     async def get_pending_items(
         self,
         priority: Optional[QueuePriority] = None,
-        identifier_type: Optional[str] = None,
+        source: Optional[str] = None,
         limit: int = 50,
         offset: int = 0
     ) -> List[QueueItem]:
@@ -144,7 +144,7 @@ class ResolutionQueueService:
 
         Args:
             priority: Filter by priority level
-            identifier_type: Filter by identifier type
+            source: Filter by identifier type
             limit: Maximum items to return
             offset: Pagination offset
 
@@ -160,9 +160,9 @@ class ResolutionQueueService:
             params.append(confidence_range[1])
             conditions.append(f"confidence_score >= ${len(params) - 1} AND confidence_score < ${len(params)}")
 
-        if identifier_type:
-            params.append(identifier_type)
-            conditions.append(f"identifier_type = ${len(params)}")
+        if source:
+            params.append(source)
+            conditions.append(f"source = ${len(params)}")
 
         params.extend([limit, offset])
 
@@ -171,14 +171,14 @@ class ResolutionQueueService:
                 rq.id::text,
                 rq.molecule_id::text,
                 rq.original_identifier,
-                rq.identifier_type,
+                rq.source,
                 rq.confidence_score,
                 rq.candidate_inchi_keys,
                 rq.status,
                 rq.created_at,
                 m.canonical_name AS molecule_name
-            FROM silver.resolution_queue rq
-            LEFT JOIN silver.molecules m ON rq.molecule_id = m.id
+            FROM mol_silver.resolution_queue rq
+            LEFT JOIN mol_silver.molecules m ON rq.molecule_id = m.id
             WHERE {' AND '.join(conditions)}
             ORDER BY rq.confidence_score DESC, rq.created_at ASC
             LIMIT ${len(params) - 1} OFFSET ${len(params)}
@@ -198,7 +198,7 @@ class ResolutionQueueService:
                     id=row['id'],
                     molecule_id=row['molecule_id'],
                     original_identifier=row['original_identifier'],
-                    identifier_type=row['identifier_type'],
+                    source=row['source'],
                     confidence_score=float(row['confidence_score']),
                     candidate_matches=candidates or [],
                     status=row['status'],
@@ -216,14 +216,14 @@ class ResolutionQueueService:
                     rq.id::text,
                     rq.molecule_id::text,
                     rq.original_identifier,
-                    rq.identifier_type,
+                    rq.source,
                     rq.confidence_score,
                     rq.candidate_inchi_keys,
                     rq.status,
                     rq.created_at,
                     m.canonical_name AS molecule_name
-                FROM silver.resolution_queue rq
-                LEFT JOIN silver.molecules m ON rq.molecule_id = m.id
+                FROM mol_silver.resolution_queue rq
+                LEFT JOIN mol_silver.molecules m ON rq.molecule_id = m.id
                 WHERE rq.id = $1::uuid
             """, item_id)
 
@@ -239,7 +239,7 @@ class ResolutionQueueService:
                 id=row['id'],
                 molecule_id=row['molecule_id'],
                 original_identifier=row['original_identifier'],
-                identifier_type=row['identifier_type'],
+                source=row['source'],
                 confidence_score=float(row['confidence_score']),
                 candidate_matches=candidates or [],
                 status=row['status'],
@@ -268,7 +268,7 @@ class ResolutionQueueService:
             async with conn.transaction():
                 # Get the queue item
                 item = await conn.fetchrow("""
-                    SELECT molecule_id FROM silver.resolution_queue
+                    SELECT molecule_id FROM mol_silver.resolution_queue
                     WHERE id = $1::uuid AND status = 'pending'
                 """, item_id)
 
@@ -277,7 +277,7 @@ class ResolutionQueueService:
 
                 # Update the molecule to remove quarantine flag
                 await conn.execute("""
-                    UPDATE silver.molecules
+                    UPDATE mol_silver.molecules
                     SET needs_review = FALSE,
                         resolution_confidence = 1.0,
                         review_reason = NULL,
@@ -287,7 +287,7 @@ class ResolutionQueueService:
 
                 # Update queue item
                 await conn.execute("""
-                    UPDATE silver.resolution_queue
+                    UPDATE mol_silver.resolution_queue
                     SET status = 'approved',
                         resolution_action = 'approve',
                         reviewed_by = $2,
@@ -320,7 +320,7 @@ class ResolutionQueueService:
         async with self.db_pool.acquire() as conn:
             async with conn.transaction():
                 item = await conn.fetchrow("""
-                    SELECT molecule_id FROM silver.resolution_queue
+                    SELECT molecule_id FROM mol_silver.resolution_queue
                     WHERE id = $1::uuid AND status = 'pending'
                 """, item_id)
 
@@ -330,13 +330,13 @@ class ResolutionQueueService:
                 if delete_molecule and item['molecule_id']:
                     # Delete the molecule (cascades to related tables)
                     await conn.execute("""
-                        DELETE FROM silver.molecules
+                        DELETE FROM mol_silver.molecules
                         WHERE id = $1::uuid
                     """, item['molecule_id'])
 
                 # Update queue item
                 await conn.execute("""
-                    UPDATE silver.resolution_queue
+                    UPDATE mol_silver.resolution_queue
                     SET status = 'rejected',
                         resolution_action = 'reject',
                         reviewed_by = $2,
@@ -369,8 +369,8 @@ class ResolutionQueueService:
         async with self.db_pool.acquire() as conn:
             async with conn.transaction():
                 item = await conn.fetchrow("""
-                    SELECT molecule_id, original_identifier, identifier_type
-                    FROM silver.resolution_queue
+                    SELECT molecule_id, original_identifier, source
+                    FROM mol_silver.resolution_queue
                     WHERE id = $1::uuid AND status = 'pending'
                 """, item_id)
 
@@ -387,22 +387,22 @@ class ResolutionQueueService:
 
                     # Delete the source molecule
                     await conn.execute("""
-                        DELETE FROM silver.molecules
+                        DELETE FROM mol_silver.molecules
                         WHERE id = $1::uuid
                     """, source_molecule_id)
 
                 # Add the original identifier as an alias on target
                 await conn.execute("""
-                    INSERT INTO silver.molecule_aliases (
-                        molecule_id, alias_name, alias_type,
-                        alias_name_normalized, source
+                    INSERT INTO mol_silver.molecule_names (
+                        molecule_id, display_name, name_kind,
+                        normalized_name, source
                     ) VALUES ($1::uuid, $2, $3, LOWER($2), 'manual_resolution')
                     ON CONFLICT DO NOTHING
-                """, target_molecule_id, item['original_identifier'], item['identifier_type'])
+                """, target_molecule_id, item['original_identifier'], item['source'])
 
                 # Update queue item
                 await conn.execute("""
-                    UPDATE silver.resolution_queue
+                    UPDATE mol_silver.resolution_queue
                     SET status = 'merged',
                         resolution_action = 'merge',
                         merge_target_id = $2::uuid,
@@ -423,7 +423,7 @@ class ResolutionQueueService:
         """Transfer all relationships from source to target molecule."""
         # Transfer identifier mappings
         await conn.execute("""
-            UPDATE silver.identifier_mappings
+            UPDATE mol_silver.molecule_identifiers
             SET molecule_id = $2::uuid
             WHERE molecule_id = $1::uuid
             ON CONFLICT DO NOTHING
@@ -431,7 +431,7 @@ class ResolutionQueueService:
 
         # Transfer aliases
         await conn.execute("""
-            UPDATE silver.molecule_aliases
+            UPDATE mol_silver.molecule_names
             SET molecule_id = $2::uuid
             WHERE molecule_id = $1::uuid
             ON CONFLICT DO NOTHING
@@ -439,14 +439,14 @@ class ResolutionQueueService:
 
         # Transfer clinical trials
         await conn.execute("""
-            UPDATE silver.clinical_trials
+            UPDATE mol_silver.clinical_trials
             SET molecule_id = $2::uuid
             WHERE molecule_id = $1::uuid
         """, source_id, target_id)
 
         # Transfer adverse events
         await conn.execute("""
-            UPDATE silver.adverse_events
+            UPDATE mol_silver.adverse_events
             SET molecule_id = $2::uuid
             WHERE molecule_id = $1::uuid
             ON CONFLICT DO NOTHING
@@ -454,14 +454,14 @@ class ResolutionQueueService:
 
         # Transfer drug labels
         await conn.execute("""
-            UPDATE silver.drug_labels
+            UPDATE mol_silver.drug_labels
             SET molecule_id = $2::uuid
             WHERE molecule_id = $1::uuid
         """, source_id, target_id)
 
         # Transfer bioactivity
         await conn.execute("""
-            UPDATE silver.bioactivity
+            UPDATE mol_silver.bioactivity
             SET molecule_id = $2::uuid
             WHERE molecule_id = $1::uuid
             ON CONFLICT DO NOTHING
@@ -469,7 +469,7 @@ class ResolutionQueueService:
 
         # Transfer molecule-target relationships
         await conn.execute("""
-            UPDATE silver.molecule_targets
+            UPDATE mol_silver.molecule_targets
             SET molecule_id = $2::uuid
             WHERE molecule_id = $1::uuid
             ON CONFLICT DO NOTHING
@@ -477,7 +477,7 @@ class ResolutionQueueService:
 
         # Transfer molecule-publication relationships
         await conn.execute("""
-            UPDATE silver.molecule_publications
+            UPDATE mol_silver.molecule_publications
             SET molecule_id = $2::uuid
             WHERE molecule_id = $1::uuid
             ON CONFLICT DO NOTHING
@@ -485,7 +485,7 @@ class ResolutionQueueService:
 
         # Transfer patents
         await conn.execute("""
-            UPDATE silver.patents
+            UPDATE mol_silver.patents
             SET molecule_id = $2::uuid
             WHERE molecule_id = $1::uuid
         """, source_id, target_id)
@@ -500,7 +500,7 @@ class ResolutionQueueService:
                     COUNT(*) FILTER (WHERE confidence_score >= 0.5) AS high,
                     COUNT(*) FILTER (WHERE confidence_score >= 0.3 AND confidence_score < 0.5) AS medium,
                     COUNT(*) FILTER (WHERE confidence_score < 0.3) AS low
-                FROM silver.resolution_queue
+                FROM mol_silver.resolution_queue
                 WHERE status = 'pending'
             """)
 
@@ -510,14 +510,14 @@ class ResolutionQueueService:
                     COUNT(*) FILTER (WHERE resolution_action = 'approve') AS approved,
                     COUNT(*) FILTER (WHERE resolution_action = 'reject') AS rejected,
                     COUNT(*) FILTER (WHERE resolution_action = 'merge') AS merged
-                FROM silver.resolution_queue
+                FROM mol_silver.resolution_queue
                 WHERE reviewed_at >= CURRENT_DATE
             """)
 
             # Average resolution time
             avg_time = await conn.fetchval("""
                 SELECT AVG(EXTRACT(EPOCH FROM (reviewed_at - created_at)) / 3600)
-                FROM silver.resolution_queue
+                FROM mol_silver.resolution_queue
                 WHERE reviewed_at IS NOT NULL
                   AND reviewed_at >= NOW() - INTERVAL '30 days'
             """)
@@ -553,7 +553,7 @@ class ResolutionQueueService:
         async with self.db_pool.acquire() as conn:
             # Get the molecule's name
             mol = await conn.fetchrow("""
-                SELECT canonical_name, inchi_key FROM silver.molecules
+                SELECT canonical_name, inchi_key FROM mol_silver.molecules
                 WHERE id = $1::uuid
             """, molecule_id)
 
@@ -568,7 +568,7 @@ class ResolutionQueueService:
                     m.inchi_key,
                     m.data_sources,
                     similarity(lower(m.canonical_name), lower($1)) AS name_similarity
-                FROM silver.molecules m
+                FROM mol_silver.molecules m
                 WHERE m.id != $2::uuid
                   AND m.needs_review = FALSE
                   AND similarity(lower(m.canonical_name), lower($1)) > $3

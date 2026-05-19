@@ -240,7 +240,7 @@ class EvidenceRequirementService:
         """Check for chemical structure."""
         row = await conn.fetchrow("""
             SELECT inchi_key, canonical_smiles, inchi
-            FROM silver.molecules WHERE id = $1
+            FROM mol_silver.molecules WHERE id = $1
         """, molecule_id)
 
         if row and (row['inchi_key'] or row['canonical_smiles']):
@@ -255,7 +255,7 @@ class EvidenceRequirementService:
         """Check for bioactivity data."""
         rows = await conn.fetch("""
             SELECT id, target_name, standard_type, standard_value, pchembl_value
-            FROM silver.bioactivity WHERE molecule_id = $1
+            FROM mol_silver.bioactivity WHERE molecule_id = $1
             LIMIT 10
         """, molecule_id)
 
@@ -265,8 +265,8 @@ class EvidenceRequirementService:
         """Check for target associations."""
         rows = await conn.fetch("""
             SELECT DISTINCT t.id, t.target_name, t.uniprot_id
-            FROM silver.targets t
-            JOIN silver.bioactivity b ON b.target_id = t.id
+            FROM mol_silver.targets t
+            JOIN mol_silver.bioactivity b ON b.target_id = t.id
             WHERE b.molecule_id = $1
             LIMIT 10
         """, molecule_id)
@@ -277,8 +277,8 @@ class EvidenceRequirementService:
         """Check for publications."""
         rows = await conn.fetch("""
             SELECT p.id, p.title, p.doi, p.publication_year
-            FROM silver.publications p
-            JOIN silver.molecule_publications mp ON mp.publication_id = p.id
+            FROM mol_silver.publications p
+            JOIN mol_silver.molecule_publications mp ON mp.publication_id = p.id
             WHERE mp.molecule_id = $1
             ORDER BY p.publication_year DESC
             LIMIT 20
@@ -293,7 +293,7 @@ class EvidenceRequirementService:
 
         query = """
             SELECT nct_id, title, phase, status, start_date
-            FROM silver.clinical_trials WHERE molecule_id = $1
+            FROM mol_silver.clinical_trials WHERE molecule_id = $1
         """
         params = [molecule_id]
 
@@ -318,7 +318,7 @@ class EvidenceRequirementService:
         """Check for FDA drug labels."""
         rows = await conn.fetch("""
             SELECT set_id, brand_name, generic_name, effective_date
-            FROM silver.drug_labels WHERE molecule_id = $1
+            FROM mol_silver.drug_labels WHERE molecule_id = $1
             ORDER BY effective_date DESC LIMIT 5
         """, molecule_id)
 
@@ -332,7 +332,7 @@ class EvidenceRequirementService:
         row = await conn.fetchrow("""
             SELECT COUNT(*) as total_reports,
                    COUNT(*) FILTER (WHERE serious_count > 0) as serious_reports
-            FROM silver.adverse_events WHERE molecule_id = $1
+            FROM mol_silver.adverse_events WHERE molecule_id = $1
         """, molecule_id)
 
         if row and row['total_reports'] >= (req.min_reports or 1):
@@ -343,7 +343,7 @@ class EvidenceRequirementService:
         """Check for approval date."""
         row = await conn.fetchrow("""
             SELECT approval_date, first_approval_year
-            FROM silver.molecules WHERE id = $1
+            FROM mol_silver.molecules WHERE id = $1
         """, molecule_id)
 
         if row and (row['approval_date'] or row['first_approval_year']):

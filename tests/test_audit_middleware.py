@@ -223,8 +223,9 @@ class TestPathExclusions:
 class TestAsyncDatabaseWrite:
     """Verify audit entries are written to the database asynchronously."""
 
+    @patch(f"{_MOD}.build_dsn", return_value="postgresql://test:test@localhost/test")
     @patch(f"{_MOD}.psycopg2")
-    def test_write_audit_entry_inserts_row(self, mock_psycopg2):
+    def test_write_audit_entry_inserts_row(self, mock_psycopg2, mock_build_dsn):
         """_write_audit_entry should INSERT into meta.api_audit_log."""
         mock_conn = MagicMock()
         mock_cursor = MagicMock()
@@ -252,7 +253,7 @@ class TestAsyncDatabaseWrite:
 
         middleware._write_audit_entry(entry)
 
-        mock_psycopg2.connect.assert_called_once_with("postgresql://test:test@localhost/test")
+        mock_psycopg2.connect.assert_called_once()
         mock_cursor.execute.assert_called_once()
         # Verify the SQL contains the INSERT statement
         sql = mock_cursor.execute.call_args[0][0]

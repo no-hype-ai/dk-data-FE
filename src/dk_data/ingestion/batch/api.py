@@ -13,11 +13,13 @@ from typing import Any
 
 import psycopg2
 from fastapi import FastAPI, HTTPException, Query, Response
+from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from psycopg2.extras import RealDictCursor
 
 from dk_data.ingestion.batch.job_runner import JobStatus, get_job_runner
+from dk_data.ingestion.utils.database import build_dsn
 
 # Import observability (must be before other imports that use logging)
 try:
@@ -38,6 +40,13 @@ try:
     FASTAPI_INSTRUMENTOR_AVAILABLE = True
 except ImportError:
     FASTAPI_INSTRUMENTOR_AVAILABLE = False
+
+# HTTP request metrics via prometheus-fastapi-instrumentator (026-observability T015)
+try:
+    from prometheus_fastapi_instrumentator import Instrumentator as _PFI
+    _PFI_AVAILABLE = True
+except ImportError:
+    _PFI_AVAILABLE = False
 
 # Initialize observability
 if OBSERVABILITY_AVAILABLE:
@@ -68,6 +77,14 @@ app = FastAPI(
 if OBSERVABILITY_AVAILABLE and FASTAPI_INSTRUMENTOR_AVAILABLE:
     FastAPIInstrumentor.instrument_app(app)
     logger.info("FastAPI auto-instrumented with OpenTelemetry")
+
+# HTTP request metrics via prometheus-fastapi-instrumentator (026-observability T015)
+# .instrument(app) adds middleware that emits http_requests_total and
+# http_request_duration_seconds_bucket. We do NOT call .expose(app) because
+# we already have a custom /metrics endpoint that serves generate_latest().
+if _PFI_AVAILABLE:
+    _PFI().instrument(app)
+    logger.info("HTTP request metrics instrumented (prometheus-fastapi-instrumentator)")
 
 # Molecule platform routers (004-molecule-platform-integration)
 # Try/except pattern for graceful degradation if molecule modules unavailable
@@ -106,9 +123,26 @@ try:
 except ImportError as e:
     logger.warning(f"Molecule alerts router not available: {e}")
 
+# Agents router (019-cms-puf-platform-reconciliation T041)
+try:
+    from dk_data.api.routes.agents import router as agents_router
+    app.include_router(agents_router, prefix="/api/v1", tags=["agents"])
+    logger.info("Loaded agents router")
+except ImportError as e:
+    logger.warning(f"Agents router not available: {e}")
+
+# Data tools gateway router (019-cms-puf-platform-reconciliation T048)
+try:
+    from dk_data.api.routes.data_tools import router as data_tools_router
+    app.include_router(data_tools_router, prefix="/api/v1", tags=["data-tools"])
+    logger.info("Loaded data-tools gateway router")
+except ImportError as e:
+    logger.warning(f"Data tools gateway router not available: {e}")
+
+# MCP data-tools router (PR #190 — issue #188)
 try:
     from dk_data.services.mcp.router import router as mcp_router
-    app.include_router(mcp_router, prefix="/api/v1", tags=["data-tools"])
+    app.include_router(mcp_router, prefix="/api/v1", tags=["mcp-data-tools"])
     logger.info("Loaded MCP data-tools router")
 except ImportError as e:
     logger.warning(f"MCP data-tools router not available: {e}")
@@ -133,6 +167,32 @@ try:
     logger.info("Audit logging middleware registered")
 except ImportError as e:
     logger.warning(f"Audit logging middleware not available: {e}")
+
+
+# ─── Audit log archival (weekly: move hot→cold after 365 days) ────────────────
+# Per FDA 21 CFR Part 11 & ICH E6(R3): audit data is NEVER deleted within the
+# regulatory retention period (min 2 years, up to 7-25 years).
+# This task only moves old rows from the fast hot table to the compressed archive.
+@app.on_event("startup")
+async def _schedule_audit_archive():
+    """Archive old audit log entries weekly via background loop."""
+    import asyncio
+    from dk_data.api.dependencies import get_db_pool
+
+    async def _archive_loop():
+        await asyncio.sleep(60)  # wait for db pool init
+        while True:
+            try:
+                pool = await get_db_pool()
+                async with pool.acquire() as conn:
+                    archived = await conn.fetchval("SELECT meta.archive_old_audit_logs(365)")
+                    if archived and archived > 0:
+                        logger.info(f"Audit log archival: moved {archived} rows older than 365 days to archive")
+            except Exception as e:
+                logger.debug(f"Audit log archival skipped: {e}")
+            await asyncio.sleep(604800)  # 7 days
+
+    asyncio.create_task(_archive_loop())
 
 
 # Pydantic models
@@ -177,7 +237,7 @@ class HealthResponse(BaseModel):
 
 def get_connection():
     """Get database connection."""
-    return psycopg2.connect(**DB_CONFIG)
+    return psycopg2.connect(build_dsn())
 
 
 @app.get("/health", response_model=HealthResponse)
@@ -202,23 +262,30 @@ async def health_check():
     )
 
 
+@app.get("/ready")
+async def readiness_check():
+    """Readiness probe endpoint. Returns 200 if the database is reachable, 503 otherwise."""
+    try:
+        conn = get_connection()
+        cursor = conn.cursor()
+        cursor.execute("SELECT 1")
+        cursor.close()
+        conn.close()
+        return {"status": "ready"}
+    except Exception as e:
+        logger.error(f"Readiness check failed: {e}")
+        return JSONResponse(status_code=503, content={"status": "not_ready"})
+
+
 @app.get("/metrics")
 async def metrics():
     """
     Prometheus metrics endpoint.
-    Feature: 002-production-readiness
-    Task: T060
-    Updated: 013-dk-data-observability — refresh DB gauges before scrape
+    DB-backed gauges are refreshed by the background thread in
+    api/routes/monitoring.py — no DB I/O on the request path.
     """
     if not OBSERVABILITY_AVAILABLE:
         raise HTTPException(status_code=501, detail="Observability not available")
-
-    # Refresh DB-backed gauges so Prometheus gets current values
-    try:
-        from dk_data.services.data_platform.metrics import refresh_metrics_from_database_sync
-        refresh_metrics_from_database_sync()
-    except Exception as e:
-        logger.warning(f"Failed to refresh DB metrics before scrape: {e}")
 
     return Response(
         content=get_metrics(),

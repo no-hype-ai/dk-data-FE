@@ -1,0 +1,117 @@
+# Source Backfill Job — fetch → bronze transform → health check, one source at a time.
+#
+# Nick's principle: "scale out not up — simple modular functions, never fire all at once."
+# This job runs ONE source and verifies it before you move to the next.
+#
+# ── INITIAL PROVISIONING (recommended) ──────────────────────────────────────
+# Run the full BACKFILL_ORDER sequentially — smallest sources first, pubchem last:
+#   name: bf-all-sequential
+#   args: ["--run-all"]                        # continues on failure, logs which failed
+#   args: ["--run-all", "--stop-on-failure"]   # stops at first health-check failure
+#   args: ["--run-all", "--fetch-only"]        # fetch all raw, skip transforms
+#   args: ["--run-all", "--dry-run"]           # preview what would run
+#
+# Skips sources already refreshed recently (idempotent — safe to re-run).
+#
+# ── SINGLE SOURCE ────────────────────────────────────────────────────────────
+# Rename job before each apply (Jobs are immutable — "already exists" if reused):
+#   name: bf-chembl-molecules
+#   args: ["--source", "chembl_molecules"]
+#
+# Stage flags:
+#   --fetch-only       Fetch raw only (no transform, no health)
+#   --transform-only   Bronze SQLMesh model only (raw already populated)
+#   --health-only      Verify bronze table only
+#   --dry-run          Preview without running
+#   --days-back N      Override fetch window (default: days since 2024-01-01)
+#
+# Exit codes: 0=pass  1=fetch failed  2=transform failed  3=health failed
+#
+# Apply + monitor:
+#   kubectl apply -f job-source-backfill.yaml -n dk-data-prod
+#   kubectl logs -f job/<name> -n dk-data-prod
+#   kubectl delete job <name> -n dk-data-prod   # cleanup when done
+#
+apiVersion: batch/v1
+kind: Job
+metadata:
+  # RENAME before each apply: bf-<source>[-stage] e.g. bf-pubchem, bf-chembl-fetch
+  name: bf-REPLACE_ME
+  labels:
+    app: source-backfill
+    app.kubernetes.io/name: source-backfill
+    app.kubernetes.io/component: backfill
+    app.kubernetes.io/part-of: dk-data
+spec:
+  backoffLimit: 0          # Do not auto-retry — fix the failure and re-apply
+  ttlSecondsAfterFinished: 604800   # Keep pod logs for 7 days
+  template:
+    metadata:
+      labels:
+        app: source-backfill
+        app.kubernetes.io/component: batch-job
+        app.kubernetes.io/part-of: dk-data
+        team: data-platform
+    spec:
+      restartPolicy: Never
+      imagePullSecrets:
+        - name: ghcr-credentials
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        fsGroup: 1000
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: source-backfill
+          image: ghcr.io/data-kinetic/dk-data-fe/job-trigger:latest
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+          command:
+            - python
+            - -m
+            - dk_data.ingestion.source_backfill
+          # EDIT --source and --days-back before applying.
+          # Common patterns:
+          #   Full pipeline, default window:
+          #     ["--source", "pubchem"]
+          #   Full pipeline, 730 days back:
+          #     ["--source", "pubchem", "--days-back", "730"]
+          #   Fetch only:
+          #     ["--source", "pubchem", "--fetch-only"]
+          #   Transform only (raw already populated):
+          #     ["--source", "pubchem", "--transform-only"]
+          #   Health check only:
+          #     ["--source", "pubchem", "--health-only"]
+          args: ["--source", "REPLACE_ME", "--days-back", "730"]
+          envFrom:
+            - secretRef:
+                name: dk-data-secrets
+          env:
+            - name: OTEL_EXPORTER_OTLP_ENDPOINT
+              value: "http://alloy.infra.svc.cluster.local:4317"
+            - name: OTEL_SERVICE_NAME
+              value: "dk-data-source-backfill"
+            - name: OTEL_ENABLED
+              value: "true"
+          resources:
+            requests:
+              memory: "1Gi"
+              cpu: "500m"
+            limits:
+              memory: "4Gi"   # Sufficient for single-source fetches; raise for large sources
+              cpu: "1000m"
+          volumeMounts:
+            - name: data
+              mountPath: /tmp/data
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: data
+          emptyDir:
+            sizeLimit: "10Gi"   # Single-source download; raise to 20Gi for NPPES / PUFs
+        - name: tmp
+          emptyDir: {}

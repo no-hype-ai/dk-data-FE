@@ -1,0 +1,138 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: drugbank-seed
+  labels:
+    app.kubernetes.io/name: drugbank-seed
+    app.kubernetes.io/component: database
+    app.kubernetes.io/part-of: dk-data
+  annotations:
+    # Runs after db-init (wave 1) — creates tables then loads data
+    argocd.argoproj.io/hook: Sync
+    argocd.argoproj.io/hook-delete-policy: BeforeHookCreation
+    argocd.argoproj.io/sync-wave: "2"
+spec:
+  # Idempotent: ON CONFLICT DO UPDATE in load_drugbank.py; safe to re-run
+  backoffLimit: 1
+  # DrugBank XML (~1.5 GB, 17k drugs + interactions) takes up to 2 hours
+  activeDeadlineSeconds: 7200
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: drugbank-seed
+        app.kubernetes.io/part-of: dk-data
+    spec:
+      restartPolicy: Never
+      imagePullSecrets:
+        - name: ghcr-credentials
+      containers:
+        - name: drugbank-seed
+          image: ghcr.io/data-kinetic/dk-data-fe/job-trigger:main
+          command:
+            - /bin/bash
+            - -c
+            - |
+              set -euo pipefail
+
+              ZIP_PATH="/app/data/drugbank/drugbank_all_full_database.xml.zip"
+
+              if [ ! -f "$ZIP_PATH" ]; then
+                echo "ERROR: DrugBank zip not found at $ZIP_PATH"
+                echo "Ensure the file is committed via Git LFS and baked into the image."
+                exit 1
+              fi
+
+              echo "=== DrugBank seed job ==="
+              echo "Source: $ZIP_PATH"
+              echo "Target: ${POSTGRES_HOST}:${POSTGRES_PORT}/${POSTGRES_DB} (bronze schema)"
+
+              # Skip if already loaded (more than 15,000 drugs present).
+              # Retry the connection check up to 3 times so a transient connect
+              # error doesn't silently trigger a ~50min full reload — that path
+              # was hit on every Argo sync until this guard was added.
+              ROW_COUNT=""
+              for attempt in 1 2 3; do
+                if ROW_COUNT=$(python3 -c "
+              import psycopg2, os
+              conn = psycopg2.connect(
+                  host=os.environ['POSTGRES_HOST'],
+                  port=int(os.environ.get('POSTGRES_PORT', '5432')),
+                  database=os.environ['POSTGRES_DB'],
+                  user=os.environ['POSTGRES_USER'],
+                  password=os.environ['POSTGRES_PASSWORD'],
+              )
+              cur = conn.cursor()
+              cur.execute('SELECT COUNT(*) FROM mol_bronze.drugbank_data')
+              print(cur.fetchone()[0])
+              conn.close()
+              " 2>&1); then
+                  break
+                fi
+                echo "Rowcount check failed (attempt ${attempt}/3): $ROW_COUNT"
+                ROW_COUNT=""
+                sleep 10
+              done
+              if [ -z "$ROW_COUNT" ]; then
+                echo "ERROR: could not check mol_bronze.drugbank_data row count after 3 attempts."
+                echo "Refusing to assume empty and trigger a full reload. Failing the job."
+                exit 1
+              fi
+
+              if [ "$ROW_COUNT" -gt 15000 ]; then
+                echo "DrugBank already loaded ($ROW_COUNT drugs in mol_bronze.drugbank_data). Skipping."
+                exit 0
+              fi
+
+              echo "mol_bronze.drugbank_data has $ROW_COUNT rows — starting full load..."
+              python -m dk_data.data.load_drugbank --xml "$ZIP_PATH"
+
+              FINAL_COUNT=$(python3 -c "
+              import psycopg2, os
+              conn = psycopg2.connect(
+                host=os.environ['POSTGRES_HOST'],
+                port=int(os.environ.get('POSTGRES_PORT', '5432')),
+                database=os.environ['POSTGRES_DB'],
+                user=os.environ['POSTGRES_USER'],
+                password=os.environ['POSTGRES_PASSWORD'],
+              )
+              cur = conn.cursor()
+              cur.execute(\"SELECT COUNT(*) FROM mol_bronze.drugbank_data\")
+              print(cur.fetchone()[0])
+              conn.close()
+              " 2>/dev/null || echo "unknown")
+
+              echo "=== DrugBank seed complete: $FINAL_COUNT drugs loaded ==="
+          env:
+            - name: POSTGRES_HOST
+              valueFrom:
+                secretKeyRef:
+                  name: dk-data-secrets
+                  key: POSTGRES_HOST
+            - name: POSTGRES_PORT
+              valueFrom:
+                secretKeyRef:
+                  name: dk-data-secrets
+                  key: POSTGRES_PORT
+            - name: POSTGRES_USER
+              valueFrom:
+                secretKeyRef:
+                  name: dk-data-secrets
+                  key: POSTGRES_USER
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: dk-data-secrets
+                  key: POSTGRES_PASSWORD
+            - name: POSTGRES_DB
+              valueFrom:
+                secretKeyRef:
+                  name: dk-data-secrets
+                  key: POSTGRES_DB
+          resources:
+            requests:
+              memory: "512Mi"
+              cpu: "200m"
+            limits:
+              # XML streaming is memory-efficient; 2Gi covers interaction batches
+              memory: "2Gi"
+              cpu: "500m"

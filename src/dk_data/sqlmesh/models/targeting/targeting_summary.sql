@@ -3,7 +3,7 @@
 -- Tasks: T043-T045
 
 MODEL (
-    name targeting.targeting_summary,
+    name hcs_gold.targeting_summary,
     kind VIEW,
     cron '@daily',
     description 'Aggregated targeting summary by segment and priority'
@@ -23,7 +23,7 @@ WITH targeting_with_segment AS (
             WHEN is_current_client THEN 'Optimization'
             ELSE 'Acceleration'
         END AS segment
-    FROM targeting.targeting_scores
+    FROM hcs_gold.targeting_scores
 )
 
 SELECT

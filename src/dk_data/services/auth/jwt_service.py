@@ -87,9 +87,23 @@ class JWTService:
             algorithm: JWT algorithm (default HS256)
             issuer: Token issuer claim
         """
-        self.secret_key = secret_key or os.getenv("JWT_SECRET_KEY")
+        # Read JWT secret from env with fallback to the k8s shared secret name.
+        # Feature 002-external-integration-foundation B002: the k8s deployment
+        # sources PostgREST's PGRST_JWT_SECRET from a secret named JWT_SECRET,
+        # but this service originally only read JWT_SECRET_KEY (which was never
+        # set in the deployment). Fall back to JWT_SECRET so FastAPI, PostgREST,
+        # and the metering proxy all use the same signing key.
+        self.secret_key = (
+            secret_key
+            or os.getenv("JWT_SECRET_KEY")
+            or os.getenv("JWT_SECRET")
+        )
         if not self.secret_key:
-            logger.warning("JWT_SECRET_KEY not set, generating random key (not suitable for production)")
+            logger.warning(
+                "Neither JWT_SECRET_KEY nor JWT_SECRET is set — generating a "
+                "random key per pod (NOT suitable for production; tokens minted "
+                "by other services will fail signature verification)."
+            )
             self.secret_key = secrets.token_hex(32)
 
         self.algorithm = algorithm

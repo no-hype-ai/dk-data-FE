@@ -18,7 +18,7 @@ logger = logging.getLogger(__name__)
 class HRSAFetcher(BaseFetcher):
     """Fetcher for HRSA Health Professional Shortage Area data."""
 
-    SOURCE_NAME = "hrsa_shortage_areas"
+    SOURCE_NAME = "hrsa"
     BASE_URL = "https://data.hrsa.gov"
 
     # HRSA Data API endpoints
@@ -35,45 +35,25 @@ class HRSAFetcher(BaseFetcher):
         """Get URL for HPSA data."""
         return f"{self.HPSA_API}/designations"
 
-    def fetch(self, hpsa_types: Optional[List[str]] = None, states: Optional[List[str]] = None) -> Dict[str, Any]:
+    def fetch(self, hpsa_types: Optional[List[str]] = None, states: Optional[List[str]] = None, **kwargs) -> Dict[str, Any]:
         """
         Fetch HRSA HPSA designation data.
 
+        The data.hrsa.gov JSON API redirects to HTML and is unreliable.
+        We use the bulk CSV download directly:
+          https://data.hrsa.gov/DataDownload/DD_Files/BCD_HPSA_FCT_DET_PC.csv
+
         Args:
-            hpsa_types: List of HPSA types to fetch (defaults to Primary Care only)
-            states: List of state abbreviations to filter
+            hpsa_types: Ignored (bulk download includes all types).
+            states: List of state abbreviations to filter.
+            max_records: Maximum records to return (default: all).
 
         Returns:
             Fetch result dictionary
         """
+        max_records: Optional[int] = kwargs.get("max_records")
         try:
-            types = hpsa_types or ['Primary Care']
-            logger.info(f"Fetching HRSA HPSA data for types: {types}")
-
-            all_records = []
-
-            for hpsa_type in types:
-                records = self._fetch_hpsa_type(hpsa_type, states)
-                all_records.extend(records)
-
-            if all_records:
-                filename = f"hrsa_hpsa_{datetime.now().strftime('%Y%m%d')}.json"
-                filepath = self.data_dir / filename
-
-                with open(filepath, 'w') as f:
-                    json.dump(all_records, f, indent=2)
-
-                result = {
-                    'status': 'success',
-                    'filepath': str(filepath),
-                    'records': len(all_records),
-                    'hash': self.calculate_hash(filepath),
-                    'hpsa_types': types,
-                }
-            else:
-                # Try bulk download
-                result = self._fetch_bulk_download()
-
+            result = self._fetch_bulk_download(states=states, max_records=max_records)
             self.log_fetch_result(result)
             return result
 
@@ -81,6 +61,9 @@ class HRSAFetcher(BaseFetcher):
             logger.exception(f"Failed to fetch HRSA data: {e}")
             result = {
                 'status': 'failed',
+                'records': [],
+                'record_count': 0,
+                'hash': None,
                 'error': str(e),
             }
             self.log_fetch_result(result)
@@ -152,56 +135,77 @@ class HRSAFetcher(BaseFetcher):
         logger.info(f"Fetched {len(records)} {hpsa_type} HPSA records")
         return records
 
-    def _fetch_bulk_download(self) -> Dict[str, Any]:
-        """
-        Fallback: Download bulk HPSA file.
+    def _fetch_bulk_download(
+        self,
+        states: Optional[List[str]] = None,
+        max_records: Optional[int] = None,
+    ) -> Dict[str, Any]:
+        """Download and parse the HRSA bulk HPSA CSV files.
+
+        Primary Care CSV is ~44 MB and contains all HPSA designations.
+        Mental Health CSV is included if max_records allows.
+
+        Args:
+            states: Optional list of state abbreviations to filter rows.
+            max_records: Stop after this many records (default: all).
 
         Returns:
-            Fetch result dictionary
+            Fetch result dictionary with status, records (list), hash.
         """
-        try:
-            # HRSA provides bulk downloads
-            bulk_urls = [
-                f"{self.DOWNLOAD_BASE}/BCD_HPSA_FCT_DET_PC.csv",  # Primary Care
-                f"{self.DOWNLOAD_BASE}/BCD_HPSA_FCT_DET_MH.csv",  # Mental Health
-            ]
+        import csv as _csv
+        import hashlib
+        import io
 
-            all_records = 0
-            filepaths = []
+        bulk_urls = [
+            f"{self.DOWNLOAD_BASE}/BCD_HPSA_FCT_DET_PC.csv",  # Primary Care (~44 MB)
+            f"{self.DOWNLOAD_BASE}/BCD_HPSA_FCT_DET_MH.csv",  # Mental Health
+        ]
 
-            for url in bulk_urls:
-                try:
-                    # Extract filename from URL
-                    filename = url.split('/')[-1]
-                    dated_filename = f"{filename.replace('.csv', '')}_{datetime.now().strftime('%Y%m%d')}.csv"
+        all_records: List[Dict[str, Any]] = []
 
-                    filepath = self.download_file(url, dated_filename)
-                    filepaths.append(str(filepath))
+        for url in bulk_urls:
+            if max_records is not None and len(all_records) >= max_records:
+                break
+            try:
+                logger.info("Downloading HRSA bulk CSV: %s", url)
+                response = self.session.get(url, timeout=300, stream=True)
+                response.raise_for_status()
 
-                    import pandas as pd
-                    df = pd.read_csv(filepath)
-                    all_records += len(df)
+                content = response.content
+                text = content.decode("utf-8", errors="replace")
+                reader = _csv.DictReader(io.StringIO(text))
 
-                except Exception as e:
-                    logger.warning(f"Failed to download {url}: {e}")
-                    continue
+                for row in reader:
+                    if max_records is not None and len(all_records) >= max_records:
+                        break
+                    if states:
+                        state_val = row.get("StateAbbr", row.get("State", row.get("state", "")))
+                        if state_val not in states:
+                            continue
+                    record = {k: (v.strip() if isinstance(v, str) and v.strip() else None) for k, v in row.items()}
+                    all_records.append(record)
 
-            if filepaths:
-                return {
-                    'status': 'success',
-                    'filepaths': filepaths,
-                    'records': all_records,
-                }
-            else:
-                return {
-                    'status': 'failed',
-                    'error': 'No bulk downloads succeeded',
-                }
+                logger.info("Parsed %d records from %s", len(all_records), url)
 
-        except Exception as e:
+            except Exception as e:
+                logger.warning("Failed to download HRSA bulk file %s: %s", url, e)
+                continue
+
+        if all_records:
+            content_hash = hashlib.md5(str(len(all_records)).encode()).hexdigest()
             return {
-                'status': 'failed',
-                'error': str(e),
+                "status": "success",
+                "records": all_records,
+                "record_count": len(all_records),
+                "hash": content_hash,
+            }
+        else:
+            return {
+                "status": "failed",
+                "error": "No records fetched from HRSA bulk CSV downloads",
+                "records": [],
+                "record_count": 0,
+                "hash": None,
             }
 
     def fetch_by_address(self, address: str, city: str, state: str, zip_code: str) -> Dict[str, Any]:

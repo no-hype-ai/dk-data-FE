@@ -5,7 +5,7 @@ Load ClinicalTrials.gov data into PostgreSQL.
 Uses the ClinicalTrials.gov API v2 to fetch trial data.
 
 Tables populated:
-- bronze.clinicaltrials: Clinical trial records
+- mol_bronze.clinicaltrials: Clinical trial records
 
 Usage:
     python -m dk_data.data.load_clinicaltrials
@@ -26,6 +26,7 @@ import psycopg2
 from psycopg2.extras import execute_values, Json
 from loguru import logger
 from tqdm import tqdm
+from dk_data.ingestion.utils.database import build_dsn
 
 DB_CONFIG = {
     "host": os.getenv("POSTGRES_HOST", "localhost"),
@@ -45,7 +46,7 @@ def ensure_tables(conn):
     cursor = conn.cursor()
 
     cursor.execute("""
-        CREATE TABLE IF NOT EXISTS bronze.clinicaltrials (
+        CREATE TABLE IF NOT EXISTS mol_bronze.clinicaltrials (
             id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
             nct_id VARCHAR(20) UNIQUE NOT NULL,
             org_study_id VARCHAR(100),
@@ -89,13 +90,13 @@ def ensure_tables(conn):
             processed_to_silver BOOLEAN DEFAULT FALSE
         );
 
-        CREATE INDEX IF NOT EXISTS idx_ct_nct ON bronze.clinicaltrials(nct_id);
-        CREATE INDEX IF NOT EXISTS idx_ct_status ON bronze.clinicaltrials(overall_status);
-        CREATE INDEX IF NOT EXISTS idx_ct_phase ON bronze.clinicaltrials(phase);
-        CREATE INDEX IF NOT EXISTS idx_ct_sponsor ON bronze.clinicaltrials(sponsor);
-        CREATE INDEX IF NOT EXISTS idx_ct_conditions ON bronze.clinicaltrials USING GIN(conditions);
-        CREATE INDEX IF NOT EXISTS idx_ct_interventions ON bronze.clinicaltrials USING GIN(intervention_names);
-        CREATE INDEX IF NOT EXISTS idx_ct_processed ON bronze.clinicaltrials(processed_to_silver);
+        CREATE INDEX IF NOT EXISTS idx_ct_nct ON mol_bronze.clinicaltrials(nct_id);
+        CREATE INDEX IF NOT EXISTS idx_ct_status ON mol_bronze.clinicaltrials(overall_status);
+        CREATE INDEX IF NOT EXISTS idx_ct_phase ON mol_bronze.clinicaltrials(phase);
+        CREATE INDEX IF NOT EXISTS idx_ct_sponsor ON mol_bronze.clinicaltrials(sponsor);
+        CREATE INDEX IF NOT EXISTS idx_ct_conditions ON mol_bronze.clinicaltrials USING GIN(conditions);
+        CREATE INDEX IF NOT EXISTS idx_ct_interventions ON mol_bronze.clinicaltrials USING GIN(intervention_names);
+        CREATE INDEX IF NOT EXISTS idx_ct_processed ON mol_bronze.clinicaltrials(processed_to_silver);
     """)
 
     conn.commit()
@@ -317,7 +318,7 @@ class ClinicalTrialsLoader:
         execute_values(
             cursor,
             """
-            INSERT INTO bronze.clinicaltrials (
+            INSERT INTO mol_bronze.clinicaltrials (
                 nct_id, org_study_id, brief_title, official_title, acronym,
                 overall_status, phase, study_type, enrollment, enrollment_type,
                 start_date, completion_date, primary_completion_date,
@@ -355,7 +356,7 @@ def main():
     args = parser.parse_args()
 
     logger.info("Connecting to PostgreSQL...")
-    conn = psycopg2.connect(**DB_CONFIG)
+    conn = psycopg2.connect(build_dsn())
     logger.info(f"Connected to {DB_CONFIG['host']}:{DB_CONFIG['port']}/{DB_CONFIG['database']}")
 
     ensure_tables(conn)
@@ -373,7 +374,7 @@ def main():
         )
 
         cursor = conn.cursor()
-        cursor.execute("SELECT COUNT(*) FROM bronze.clinicaltrials")
+        cursor.execute("SELECT COUNT(*) FROM mol_bronze.clinicaltrials")
         count = cursor.fetchone()[0]
 
         logger.info("\n=== Summary ===")

@@ -2,9 +2,22 @@
 
 Feature: 002-production-readiness
 Task: T022 - Graceful failure when secrets missing
+
+Feature: 001-silver-medallion-rebuild
+T010 - build_dsn() enforcing FR-022 / FR-023 / FR-030 / FR-021c / FR-021d
+  FR-022: statement_timeout, keepalives, idle_in_transaction_session_timeout, lock_timeout
+  FR-023: application_name set to pod name (APPLICATION_NAME env or hostname)
+  FR-030: single helper — every connection goes through build_dsn()
+  FR-021c: 5-min statement timeout for fetchers, 10-min for SQLMesh
+  FR-021d: 5-min idle_in_transaction_session_timeout
+
+All dk-data Python code that needs a DB connection MUST call build_dsn() (or
+get_connection / get_cursor which call it internally).  Direct psycopg2.connect()
+calls outside this module are a CI failure (enforced by T003 grep gate).
 """
 
 import os
+import socket
 import logging
 from contextlib import contextmanager
 from typing import Generator, Optional
@@ -19,6 +32,102 @@ load_dotenv('.env.local')
 load_dotenv('.env', override=True)
 
 logger = logging.getLogger(__name__)
+
+# ---------------------------------------------------------------------------
+# FR-030 / FR-022 / FR-023: canonical DSN builder
+# ---------------------------------------------------------------------------
+
+# Roles that get extended statement timeouts (SQLMesh, PL/pgSQL callers)
+_LONG_TIMEOUT_ROLES = frozenset({"sqlmesh", "plpgsql", "admin", "mol_admin"})
+
+
+def build_dsn(
+    *,
+    host: Optional[str] = None,
+    port: Optional[int] = None,
+    user: Optional[str] = None,
+    password: Optional[str] = None,
+    dbname: Optional[str] = None,
+    application_name: Optional[str] = None,
+    use_pgbouncer: bool = True,
+    is_long_running: bool = False,
+) -> str:
+    """Build a libpq DSN string that enforces all FR-022/FR-023/FR-030 requirements.
+
+    All dk-data Python entry points MUST obtain their connection via this
+    function.  Direct psycopg2.connect() calls outside database.py are a CI
+    failure (T003 grep gate).
+
+    Args:
+        host: Postgres/PgBouncer host.  Defaults to POSTGRES_HOST (PgBouncer)
+              or POSTGRES_HOST_DIRECT for long-running callers.
+        port: Port.  Defaults to POSTGRES_PORT (5432).
+        user: DB user.  Defaults to POSTGRES_USER.
+        password: Password.  Defaults to POSTGRES_PASSWORD.
+        dbname: Database name.  Defaults to POSTGRES_DB.
+        application_name: Value for `application_name`.  Defaults to the
+              APPLICATION_NAME env var, then the pod hostname (FR-023).
+        use_pgbouncer: If True, route through PgBouncer (default, FR-024).
+              Set False only for SQLMesh / PL/pgSQL procedure callers
+              (they need session-level GUCs unavailable in transaction mode).
+        is_long_running: If True, use 10-min statement_timeout (FR-021c).
+              If False (default), use 5-min timeout.
+
+    Returns:
+        A libpq connection URI string.
+
+    Raises:
+        MissingSecretError: If POSTGRES_PASSWORD is not set.
+    """
+    _check_required_secrets()
+
+    # Host selection: PgBouncer for normal pods, direct for SQLMesh/procedures
+    if host is None:
+        if use_pgbouncer:
+            host = os.getenv("POSTGRES_HOST", "pgbouncer.infra.svc.cluster.local")
+        else:
+            host = os.getenv("POSTGRES_HOST_DIRECT", os.getenv("POSTGRES_HOST", "localhost"))
+
+    port = port or int(os.getenv("POSTGRES_PORT", "5432"))
+    user = user or os.getenv("POSTGRES_USER", "postgres")
+    password = password or os.getenv("POSTGRES_PASSWORD")
+    dbname = dbname or os.getenv("POSTGRES_DB", "dk_data")
+
+    # FR-023: application_name = pod name for pg_stat_activity attribution
+    if application_name is None:
+        application_name = os.getenv(
+            "APPLICATION_NAME",
+            os.getenv("HOSTNAME", socket.gethostname()),
+        )
+
+    # FR-021c: per-role statement timeout
+    stmt_timeout_ms = 600_000 if is_long_running else 300_000  # 10 min / 5 min
+
+    # FR-022 connection-level safety options (encoded in options param)
+    options_parts = [
+        f"-c statement_timeout={stmt_timeout_ms}",
+        "-c idle_in_transaction_session_timeout=300000",  # FR-021d: 5 min
+        "-c lock_timeout=30000",                         # 30 s
+        f"-c application_name={application_name}",
+    ]
+    options = " ".join(options_parts)
+
+    # Encode password for URL safety
+    import urllib.parse
+    pw_encoded = urllib.parse.quote(password, safe="")
+
+    # FR-022 TCP keepalives (libpq URI supports keepalives params)
+    dsn = (
+        f"postgresql://{user}:{pw_encoded}@{host}:{port}/{dbname}"
+        f"?options={urllib.parse.quote(options, safe='')}"
+        f"&keepalives=1"
+        f"&keepalives_idle=60"
+        f"&keepalives_interval=10"
+        f"&keepalives_count=5"
+        f"&sslmode={os.getenv('POSTGRES_SSLMODE', 'prefer')}"
+    )
+
+    return dsn
 
 # Connection pool singleton
 _connection_pool: Optional[pool.ThreadedConnectionPool] = None
@@ -85,18 +194,25 @@ def get_connection_params() -> dict:
     }
 
 
-def init_connection_pool(minconn: int = 1, maxconn: int = 10) -> pool.ThreadedConnectionPool:
-    """Initialize the connection pool."""
+def init_connection_pool(
+    minconn: int = 1,
+    maxconn: int = 10,
+    is_long_running: bool = False,
+) -> pool.ThreadedConnectionPool:
+    """Initialize the connection pool using build_dsn() (FR-030)."""
     global _connection_pool
 
     if _connection_pool is None:
-        params = get_connection_params()
+        dsn = build_dsn(is_long_running=is_long_running)
         _connection_pool = pool.ThreadedConnectionPool(
             minconn=minconn,
             maxconn=maxconn,
-            **params
+            dsn=dsn,
         )
-        logger.info(f"Connection pool initialized: {params['host']}:{params['port']}/{params['database']}")
+        host = os.getenv("POSTGRES_HOST", "localhost")
+        port = os.getenv("POSTGRES_PORT", "5432")
+        dbname = os.getenv("POSTGRES_DB", "dk_data")
+        logger.info(f"Connection pool initialized: {host}:{port}/{dbname}")
 
     return _connection_pool
 
@@ -129,7 +245,7 @@ def get_connection() -> Generator[psycopg2.extensions.connection, None, None]:
     Usage:
         with get_connection() as conn:
             with conn.cursor() as cur:
-                cur.execute("SELECT * FROM raw.cms_medicare_inpatient")
+                cur.execute("SELECT * FROM hcs_raw.cms_inpatient_puf")
                 rows = cur.fetchall()
     """
     pool = get_connection_pool()
@@ -151,7 +267,7 @@ def get_cursor(dict_cursor: bool = False) -> Generator[psycopg2.extensions.curso
 
     Usage:
         with get_cursor(dict_cursor=True) as cur:
-            cur.execute("SELECT * FROM raw.cms_medicare_inpatient WHERE provider_id = %s", ('123456',))
+            cur.execute("SELECT * FROM hcs_raw.cms_inpatient_puf WHERE provider_id = %s", ('123456',))
             row = cur.fetchone()
             print(row['provider_name'])
     """
@@ -209,6 +325,25 @@ def truncate_table(schema: str, table: str) -> None:
     with get_cursor() as cur:
         cur.execute(f"TRUNCATE TABLE {schema}.{table} CASCADE")
         logger.info(f"Truncated table: {schema}.{table}")
+
+
+def apply_column_mapping(df, mapping: dict):
+    """Case-insensitive column rename against COLUMN_MAPPING.
+
+    CMS CSV files vary in column capitalization across years and dataset variants
+    (e.g. 'Prscrbr_NPI' vs 'PRSCRBR_NPI' vs 'prscrbr_npi').  A plain
+    ``df.rename(columns=mapping)`` silently misses any case-variant, leaving
+    every data column NULL in the DB.  This function normalises actual CSV
+    column names against mapping keys case-insensitively so the rename always
+    succeeds regardless of CMS casing changes.
+    """
+    lower_map = {k.lower(): v for k, v in mapping.items()}
+    df.columns = [lower_map.get(c.lower(), c) for c in df.columns]
+    # Drop duplicate column names keeping last occurrence — when multiple
+    # year-suffixed CMS columns (e.g. Tot_Spndng_2019…Tot_Spndng_2023) all
+    # map to the same target name, the last (most recent) value wins.
+    df = df.loc[:, ~df.columns.duplicated(keep='last')]
+    return df
 
 
 def upsert_records(

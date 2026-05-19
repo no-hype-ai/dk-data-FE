@@ -1,9 +1,9 @@
--- scoring.score_factors - Detailed breakdown of scoring factors
--- Source: scoring.target_scores, mart.*, staging.*
+-- hcs_gold.score_factors - Detailed breakdown of scoring factors
+-- Source: hcs_gold.target_scores, hcs_gold.*, staging.*
 -- Model type: FULL refresh
 
 MODEL (
-    name scoring.score_factors,
+    name hcs_gold.score_factors,
     kind FULL,
     cron '@daily',
     description 'Detailed factor breakdown for each hospital score'
@@ -30,19 +30,19 @@ WITH hospital_data AS (
         tp.yoy_volume_change,
         fm.operating_margin,
         fm.margin_quartile
-    FROM mart.dim_hospital h
+    FROM hcs_gold.dim_hospital h
     LEFT JOIN staging.hospitals sh ON h.hospital_id = sh.hospital_id
     LEFT JOIN staging.geographic_designations g ON h.hospital_id = g.hospital_id
-    LEFT JOIN mart.fact_tavr_program tp ON h.hospital_key = tp.hospital_key
-        AND tp.fiscal_year = (SELECT MAX(fiscal_year) FROM mart.fact_tavr_program WHERE hospital_key = h.hospital_key)
-    LEFT JOIN mart.fact_financial_metrics fm ON h.hospital_key = fm.hospital_key
-        AND fm.fiscal_year = (SELECT MAX(fiscal_year) FROM mart.fact_financial_metrics WHERE hospital_key = h.hospital_key)
+    LEFT JOIN hcs_gold.fact_tavr_program tp ON h.hospital_key = tp.hospital_key
+        AND tp.fiscal_year = (SELECT MAX(fiscal_year) FROM hcs_gold.fact_tavr_program WHERE hospital_key = h.hospital_key)
+    LEFT JOIN hcs_gold.fact_financial_metrics fm ON h.hospital_key = fm.hospital_key
+        AND fm.fiscal_year = (SELECT MAX(fiscal_year) FROM hcs_gold.fact_financial_metrics WHERE hospital_key = h.hospital_key)
 ),
 scores AS (
     SELECT
         ts.score_id,
         hd.*
-    FROM scoring.target_scores ts
+    FROM hcs_gold.target_scores ts
     JOIN hospital_data hd ON ts.hospital_key = hd.hospital_key
     WHERE ts.score_date = CURRENT_DATE
 )
@@ -184,8 +184,8 @@ SELECT
     score_id,
     'operational_readiness' AS domain,
     'emergency_services' AS factor_name,
-    CASE WHEN has_emergency_services THEN 'Yes' ELSE 'No' END AS raw_value,
-    CASE WHEN has_emergency_services = TRUE THEN 50 ELSE 0 END AS points_awarded,
+    CASE WHEN has_emergency_services = 'Yes' THEN 'Yes' ELSE 'No' END AS raw_value,
+    CASE WHEN has_emergency_services = 'Yes' THEN 50 ELSE 0 END AS points_awarded,
     50 AS max_points,
     'verified' AS confidence_level,
     'CMS Hospital Info' AS data_source,

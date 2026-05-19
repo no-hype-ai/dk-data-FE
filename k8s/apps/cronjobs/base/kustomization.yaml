@@ -1,0 +1,196 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  # cronjob-cms-all.yaml  # Disabled — redundant with per-source CronJobs (pubmed, ema-reg, openalex-ci, drugbank, etc.)
+  #                         # fetch_data.py --source all runs 18 legacy sources sequentially within 1h → always timeouts
+  #                         # All sources now have dedicated CronJobs with individual schedules and timeouts
+  # Platform init — runs at 02:00 UTC daily, auto-triggers full backfill on fresh deploy.
+  # Idempotent: skips sources with last_successful_refresh < 12h old. No-op on re-deploys.
+  - cronjob-platform-init.yaml
+  - cronjob-refresh.yaml
+  # Schedule design principle (Nick King): scale out not up — one job does one thing,
+  # max 2 jobs running concurrently, fetch window separate from transform window.
+  #
+  # FETCH WINDOW (00:00–05:00 UTC): all incremental fetches complete before transforms start.
+  #   Daily:   01:00 pubmed | 01:30 openalex-ci | 02:00 journal-rss | 02:30 news | 02:45 sec-edgar
+  #   Monthly (staggered across days 1–7, never more than 3 jobs/day):
+  #     Day 1:  02:00 chembl-molecules | 03:00 pubchem
+  #     Day 2:  01:00 rxnorm | 02:00 who-inn | 03:00 who-gho | 04:00 fda-rems
+  #     Day 3:  01:00 fda-ndc | 02:00 ema-mol | 03:00 pharmgkb | 04:00 load-pubchem-extended
+  #     Day 4:  01:00 reactome | 02:00 who-icd | 03:00 bindingdb | 04:00 npi-registry
+  #     Day 5:  01:00 cms-medicare | 02:00 tdc-admet | 03:00 hrsa
+  #     Day 6:  02:00 openfda-faers
+  #   Weekly (Sunday staggered, max 1 heavy per hour):
+  #     02:00 cms-all | 03:00 clinicaltrials | 04:00 openfda-labels | 04:00 dailymed
+  #     05:00 fda-drugs | 08:00 nice-hta | 10:00 europepmc | 10:00 nih-reporter
+  #     13:00 ema-reg | 14:00 hta | 14:00 uspto-ci | 15:00 epo
+  #     16:00 uspto-trademarks | 17:00 uspto-patents | 18:00 euipo | 18:30 euipo-designs
+  #     19:00 uniprot | 20:00 pdb | 20:00 kegg-drug
+  #
+  # TRANSFORM WINDOW (06:00–16:00 UTC): sequential per-layer, each depends on the prior.
+  #   06:00  bronze             mol_bronze core (5 models: chembl, pubchem, clinicaltrials, openfda, faers)
+  #   06:30  ip_bronze          IP mol_bronze + 5 hcs_bronze (20 models, parallel with bronze)
+  #   07:00  hcs_bronze         ALL 53 hcs_bronze.* (parallel with mol_bronze_ext)
+  #   07:00  mol_bronze_ext     35 remaining mol_bronze models (drugbank, pubchem, rxnorm, etc.)
+  #   07:30  ind                ind_bronze.icd11_codes → ind_silver.icd11_ontology (2 models)
+  #   08:00  silver             mol_silver core 7 models (molecule alias hub for HCS joins)
+  #   09:00  hcs_silver         ALL 10 hcs_silver.* (needs hcs_bronze + mol_silver)
+  #   10:30  ip_silver          bridge tables (ndc/hcpcs/rxnorm) + IP silver (12 models)
+  #   11:00  mol_silver_ext     44 remaining mol_silver models (needs mol_bronze_ext + ip_silver)
+  #   12:00  gold               mol_gold core 9 models
+  #   13:00  ip_gold            mol_gold IP aggregations (3 models)
+  #   14:00  mol_gold_ext       6 remaining mol_gold models (needs mol_silver_ext + ip_gold)
+  #   14:30  cms-gold-refresh   hcs_gold.* + mol_gold.* refresh
+  #   15:30  mart               dim_hospital, fact_*, target_scores, targeting (7 models)
+  - cronjob-mol-transform-bronze.yaml
+  - cronjob-mol-transform-ip-bronze.yaml
+  - cronjob-hcs-transform-bronze.yaml
+  - cronjob-mol-transform-bronze-ext.yaml
+  - cronjob-ind-transform.yaml
+  - cronjob-ind-gold-transform.yaml
+  - cronjob-mol-transform-silver.yaml
+  - cronjob-hcs-transform-silver.yaml
+  - cronjob-mol-transform-ip-silver.yaml
+  - cronjob-mol-transform-silver-ext.yaml
+  - cronjob-mol-transform-gold.yaml
+  - cronjob-mol-transform-ip-gold.yaml
+  - cronjob-mol-transform-gold-ext.yaml
+  - cronjob-mart-transform.yaml
+  - cronjob-fetch-pubmed.yaml
+  - cronjob-fetch-ema-reg.yaml
+  - cronjob-fetch-openalex-ci.yaml
+  - cronjob-fetch-drugbank.yaml
+  - cronjob-fetch-uspto-patents.yaml
+  - cronjob-fetch-journal-rss.yaml
+  - cronjob-fetch-uspto-ci.yaml
+  - cronjob-fetch-hta.yaml
+  - cronjob-fetch-epo.yaml
+  - cronjob-fetch-cochrane.yaml
+  - cronjob-fetch-news.yaml
+  - cronjob-fetch-sec-edgar.yaml
+  - cronjob-fetch-uniprot.yaml
+  - cronjob-fetch-pdb.yaml
+  # - cronjob-fetch-orcid.yaml  # Disabled — no ORCID membership; OpenAlex covers author data
+  - cronjob-fetch-uspto-trademarks.yaml
+  - cronjob-fetch-euipo.yaml
+  - cronjob-fetch-europepmc.yaml
+  - cronjob-fetch-nih-reporter.yaml
+  - cronjob-fetch-hrsa.yaml
+  # CMS PUF sources (28 files)
+  - cronjob-fetch-cms-chronic-conditions.yaml
+  - cronjob-fetch-cms-claim-type-puf.yaml
+  - cronjob-fetch-cms-cost-reports-puf.yaml
+  - cronjob-fetch-cms-dme-puf.yaml
+  - cronjob-fetch-cms-dual-eligible.yaml
+  - cronjob-fetch-cms-enrollment-puf.yaml
+  - cronjob-fetch-cms-geographic-variation.yaml
+  - cronjob-fetch-cms-home-health.yaml
+  - cronjob-fetch-cms-hospice-puf.yaml
+  - cronjob-fetch-cms-hospital-general-info.yaml
+  - cronjob-fetch-cms-imaging-puf.yaml
+  - cronjob-fetch-cms-inpatient-puf.yaml
+  - cronjob-fetch-cms-lab-services.yaml
+  - cronjob-fetch-cms-medicaid-drug-spending.yaml
+  - cronjob-fetch-cms-medicare-advantage.yaml
+  - cronjob-fetch-cms-mental-health-puf.yaml
+  - cronjob-fetch-cms-nppes.yaml
+  - cronjob-fetch-cms-open-payments.yaml
+  - cronjob-fetch-cms-opioid-puf.yaml
+  - cronjob-fetch-cms-ordering-providers.yaml
+  - cronjob-fetch-cms-outpatient-puf.yaml
+  - cronjob-fetch-cms-part-b-spending.yaml
+  - cronjob-fetch-cms-part-d-prescriber.yaml
+  - cronjob-fetch-cms-part-d-spending.yaml
+  - cronjob-fetch-cms-physician-puf.yaml
+  - cronjob-fetch-cms-referring-providers.yaml
+  - cronjob-fetch-cms-snf-puf.yaml
+  - cronjob-fetch-cms-telehealth-puf.yaml
+  - cronjob-fetch-cms-utilization-puf.yaml
+  - cronjob-fetch-cms-physician-puf-services.yaml
+  # cronjob-fetch-cms-cost-reports-puf-lines.yaml — DELETED by feature 002 T129
+  #   (HCRIS line-level data is not available via the CMS PUF API; this job
+  #   had never successfully fetched anything — see spec F-D015, issue #277)
+  - cronjob-fetch-cms-medicare.yaml
+  # CMS facility/provider/reference sources (ported from 016)
+  - cronjob-fetch-cms-care-compare.yaml
+  - cronjob-fetch-cms-chow.yaml
+  - cronjob-fetch-cms-dmepos.yaml
+  - cronjob-fetch-cms-formulary.yaml
+  - cronjob-fetch-cms-hcris.yaml
+  - cronjob-fetch-cms-hospital-affiliation.yaml
+  - cronjob-fetch-cms-hospital-quality.yaml
+  - cronjob-fetch-cms-magnet.yaml
+  - cronjob-fetch-cms-ndc.yaml
+  - cronjob-fetch-cms-nucc.yaml
+  - cronjob-fetch-cms-pecos.yaml
+  - cronjob-fetch-cms-pos.yaml
+  - cronjob-fetch-cms-post-acute.yaml
+  - cronjob-fetch-cms-rbcs.yaml
+  - cronjob-fetch-cms-stabilis.yaml
+  - cronjob-fetch-cms-usp.yaml
+  # - cronjob-fetch-cms-ddinter.yaml  # Removed: ddinter.scbdd.com inaccessible (Chinese host, blocked in prod)
+  - cronjob-fetch-euipo-designs.yaml
+  # Molecule vocabulary sources (8 files — monthly/weekly refresh)
+  - cronjob-fetch-bindingdb.yaml
+  - cronjob-fetch-sider.yaml
+  - cronjob-fetch-who-icd.yaml
+  - cronjob-fetch-rxnorm.yaml
+  - cronjob-fetch-who-inn.yaml
+  - cronjob-fetch-pharmgkb.yaml
+  - cronjob-fetch-kegg-drug.yaml
+  - cronjob-fetch-tdc-admet.yaml
+  - cronjob-fetch-acc-tvc.yaml
+  - cronjob-backfill-orchestrator.yaml
+  # Observability: rebuild SQLMesh model lineage graph every 30 min
+  # (feature 002-external-integration-foundation, US-11, T018)
+  - cronjob-build-model-lineage.yaml
+  # Clinical data API sources (2 files — 019-cms-puf-platform-reconciliation)
+  - cronjob-fetch-clinicaltrials.yaml
+  - cronjob-fetch-openfda-labels.yaml
+  # New molecule vocabulary sources (10 files — 019-cms-puf-platform-reconciliation)
+  - cronjob-fetch-ema-mol.yaml
+  - cronjob-fetch-orange-book.yaml
+  - cronjob-fetch-dailymed.yaml
+  - cronjob-fetch-fda-drugs.yaml
+  - cronjob-fetch-ttd.yaml
+  - cronjob-fetch-imgt.yaml
+  - cronjob-fetch-cdc-vaccines.yaml
+  - cronjob-fetch-tavr-catalog-data-gov.yaml
+  - cronjob-fetch-tavr-hospital-profile.yaml
+  - cronjob-fetch-tavr-source-readiness.yaml
+  - cronjob-fetch-tavr-program-year.yaml
+  - cronjob-fetch-tavr-benchmark-inputs.yaml
+  - cronjob-fetch-tavr-public-proxy-profile.yaml
+  - cronjob-fetch-chembl-activities.yaml
+  - cronjob-fetch-fda-rems.yaml
+  - cronjob-fetch-fda-ndc.yaml
+  - cronjob-fetch-chembl-molecules.yaml
+  - cronjob-fetch-pubchem.yaml
+  - cronjob-fetch-openfda-faers.yaml
+  - cronjob-fetch-npi-registry.yaml
+  - cronjob-fetch-purple-book.yaml
+  - cronjob-fetch-reactome.yaml
+  - cronjob-fetch-who-gho.yaml
+  - cronjob-fetch-nice-hta.yaml
+  - cronjob-fetch-cms-coverage.yaml
+  # CMS hospital quality trio (HAC / HRRP / VBP) — annual
+  - cronjob-fetch-cms-hac-reduction.yaml
+  - cronjob-fetch-cms-hrrp.yaml
+  - cronjob-fetch-cms-vbp.yaml
+  # Silver enrichment agents (7 files)
+  - cronjob-agent-contact-verification.yaml
+  - cronjob-agent-equipment-inventory.yaml
+  - cronjob-agent-idn-hierarchy.yaml
+  - cronjob-agent-publication-evidence.yaml
+  - cronjob-agent-referral-network.yaml
+  - cronjob-agent-service-line-inference.yaml
+  - cronjob-agent-staffing-decomposition.yaml
+  # PubChem extended enrichment (synonyms, xrefs, safety) — monthly
+  - cronjob-load-pubchem-extended.yaml
+  # Wave B: HCP / research sources — monthly
+  - cronjob-fetch-ema-epar.yaml
+  - cronjob-fetch-health-canada-dpd.yaml
+  - cronjob-fetch-research-orgs-ror.yaml
+  # Gold view refresh (runs after nightly data loads)
+  - cronjob-cms-gold-refresh.yaml
+  - molecule-pipeline-config.yaml

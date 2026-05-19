@@ -1,0 +1,60 @@
+# Horizon 3 / plan §D.1 — RBAC for the hydrate dispatcher.
+#
+# Minimum-privilege Role: batch/jobs verbs only. Scoped to the namespace;
+# NEVER cluster-wide (cluster-scoped job controllers are a separate
+# concern and belong to the dk-alchemy infrastructure tree, not here).
+#
+# Scope rationale
+# ---------------
+# create — dispatcher creates per-source Jobs from SOURCE_LOAD_ORDER.
+# get    — watches each created Job to a terminal state.
+# list   — used by the dispatcher when reconciling in-flight vs. declared
+#          state on restart (e.g. after its own Job is OOMKilled).
+# watch  — streams Job status transitions (poll fallback only; watch is
+#          preferred to avoid thundering-herd polling at scale).
+#
+# Explicitly NOT granted: delete, deletecollection, patch. Terminal cleanup
+# is handled by ``ttlSecondsAfterFinished: 604800`` on each rendered Job,
+# not by the dispatcher.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: hydrate-dispatcher
+  namespace: dk-data-prod
+  labels:
+    app: prestaged-hydrate
+    app.kubernetes.io/name: hydrate-dispatcher
+    app.kubernetes.io/component: dispatcher
+    app.kubernetes.io/part-of: dk-data
+    feature: 005-prestaged-hydration
+    horizon: "3"
+rules:
+  - apiGroups: ["batch"]
+    resources: ["jobs"]
+    verbs: ["create", "get", "list", "watch"]
+  # Read-only pod access — helpful for collecting terminal-Pod logs into
+  # transform_runs.details on failure. Never create/delete/patch Pods.
+  - apiGroups: [""]
+    resources: ["pods", "pods/log"]
+    verbs: ["get", "list"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: hydrate-dispatcher
+  namespace: dk-data-prod
+  labels:
+    app: prestaged-hydrate
+    app.kubernetes.io/name: hydrate-dispatcher
+    app.kubernetes.io/component: dispatcher
+    app.kubernetes.io/part-of: dk-data
+    feature: 005-prestaged-hydration
+    horizon: "3"
+subjects:
+  - kind: ServiceAccount
+    name: hydrate-dispatcher
+    namespace: dk-data-prod
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: hydrate-dispatcher

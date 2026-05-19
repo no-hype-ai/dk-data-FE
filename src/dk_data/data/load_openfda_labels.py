@@ -5,7 +5,7 @@ Load OpenFDA Drug Labels (SPL) data into PostgreSQL.
 Uses the OpenFDA Drug Label API to fetch structured product labeling.
 
 Tables populated:
-- bronze.openfda_labels: Drug label/SPL records
+- mol_bronze.openfda_labels: Drug label/SPL records
 
 Usage:
     python -m dk_data.data.load_openfda_labels
@@ -27,6 +27,7 @@ import psycopg2
 from psycopg2.extras import execute_values, Json
 from loguru import logger
 from tqdm import tqdm
+from dk_data.ingestion.utils.database import build_dsn
 
 DB_CONFIG = {
     "host": os.getenv("POSTGRES_HOST", "localhost"),
@@ -48,7 +49,7 @@ def ensure_tables(conn):
     cursor = conn.cursor()
 
     cursor.execute("""
-        CREATE TABLE IF NOT EXISTS bronze.openfda_labels (
+        CREATE TABLE IF NOT EXISTS mol_bronze.openfda_labels (
             id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
             spl_id VARCHAR(50) UNIQUE,
             spl_set_id VARCHAR(50),
@@ -89,13 +90,13 @@ def ensure_tables(conn):
             processed_to_silver BOOLEAN DEFAULT FALSE
         );
 
-        CREATE INDEX IF NOT EXISTS idx_labels_spl_id ON bronze.openfda_labels(spl_id);
-        CREATE INDEX IF NOT EXISTS idx_labels_brand ON bronze.openfda_labels(brand_name);
-        CREATE INDEX IF NOT EXISTS idx_labels_generic ON bronze.openfda_labels(generic_name);
-        CREATE INDEX IF NOT EXISTS idx_labels_manufacturer ON bronze.openfda_labels(manufacturer_name);
-        CREATE INDEX IF NOT EXISTS idx_labels_substance ON bronze.openfda_labels USING GIN(substance_name);
-        CREATE INDEX IF NOT EXISTS idx_labels_unii ON bronze.openfda_labels USING GIN(unii);
-        CREATE INDEX IF NOT EXISTS idx_labels_processed ON bronze.openfda_labels(processed_to_silver);
+        CREATE INDEX IF NOT EXISTS idx_labels_spl_id ON mol_bronze.openfda_labels(spl_id);
+        CREATE INDEX IF NOT EXISTS idx_labels_brand ON mol_bronze.openfda_labels(brand_name);
+        CREATE INDEX IF NOT EXISTS idx_labels_generic ON mol_bronze.openfda_labels(generic_name);
+        CREATE INDEX IF NOT EXISTS idx_labels_manufacturer ON mol_bronze.openfda_labels(manufacturer_name);
+        CREATE INDEX IF NOT EXISTS idx_labels_substance ON mol_bronze.openfda_labels USING GIN(substance_name);
+        CREATE INDEX IF NOT EXISTS idx_labels_unii ON mol_bronze.openfda_labels USING GIN(unii);
+        CREATE INDEX IF NOT EXISTS idx_labels_processed ON mol_bronze.openfda_labels(processed_to_silver);
     """)
 
     conn.commit()
@@ -279,7 +280,7 @@ class OpenFDALabelsLoader:
         execute_values(
             cursor,
             """
-            INSERT INTO bronze.openfda_labels (
+            INSERT INTO mol_bronze.openfda_labels (
                 spl_id, spl_set_id, effective_time, version,
                 product_type, brand_name, generic_name, manufacturer_name,
                 substance_name, route, dosage_form, ndc, unii, rxcui,
@@ -314,7 +315,7 @@ def main():
     args = parser.parse_args()
 
     logger.info("Connecting to PostgreSQL...")
-    conn = psycopg2.connect(**DB_CONFIG)
+    conn = psycopg2.connect(build_dsn())
     logger.info(f"Connected to {DB_CONFIG['host']}:{DB_CONFIG['port']}/{DB_CONFIG['database']}")
 
     ensure_tables(conn)
@@ -330,7 +331,7 @@ def main():
         )
 
         cursor = conn.cursor()
-        cursor.execute("SELECT COUNT(*) FROM bronze.openfda_labels")
+        cursor.execute("SELECT COUNT(*) FROM mol_bronze.openfda_labels")
         count = cursor.fetchone()[0]
 
         logger.info("\n=== Summary ===")

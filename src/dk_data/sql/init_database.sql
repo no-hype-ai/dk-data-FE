@@ -416,16 +416,13 @@ BEGIN
 END
 $$;
 
--- Create authenticator role
-DO $$
-BEGIN
-    IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = 'authenticator') THEN
-        EXECUTE format('CREATE ROLE authenticator NOINHERIT LOGIN PASSWORD %L', :'AUTHENTICATOR_PASSWORD');
-    ELSE
-        EXECUTE format('ALTER ROLE authenticator PASSWORD %L', :'AUTHENTICATOR_PASSWORD');
-    END IF;
-END
-$$;
+-- Create authenticator role (uses psql \if to avoid $$-quoting issues with :variables)
+SELECT NOT EXISTS (SELECT FROM pg_roles WHERE rolname = 'authenticator') AS needs_create \gset
+\if :needs_create
+CREATE ROLE authenticator NOINHERIT LOGIN PASSWORD :'AUTHENTICATOR_PASSWORD';
+\else
+ALTER ROLE authenticator PASSWORD :'AUTHENTICATOR_PASSWORD';
+\endif
 
 -- Grant roles to authenticator (for role switching via JWT)
 GRANT web_anon TO authenticator;

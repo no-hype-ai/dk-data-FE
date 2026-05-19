@@ -1,0 +1,733 @@
+#!/usr/bin/env python3
+"""Initial backfill entrypoint — fetches ALL external data + runs SQLMesh historical plan.
+
+This is a ONE-TIME job run at platform initialization. It:
+
+  1. Computes the historical fetch window automatically (from SQLMESH_START_DATE to today)
+  2. Fetches EVERY registered source with the full historical window
+  3. Skips sources that already have a recent last_successful_refresh (idempotent re-runs)
+  4. After all fetches complete, runs `sqlmesh plan --auto-apply` to backfill all
+     bronze → silver → gold models from SQLMESH_START_DATE to today
+  5. Then runs `sqlmesh run` to process any remaining current-day intervals
+
+Run via k8s Job (no activeDeadlineSeconds — allow as long as needed):
+  kubectl apply -f k8s/apps/cronjobs/base/job-initial-backfill.yaml -n dk-data-prod
+  kubectl logs -f job/initial-backfill -n dk-data-prod
+
+Can also be re-run safely: sources with fresh last_successful_refresh are skipped.
+Force re-fetch of a specific source: DELETE FROM meta.data_sources WHERE source_name='foo'
+  and last_successful_refresh=NULL will force re-fetch on next backfill run.
+
+Parallelism (--workers N):
+  Sources are split into three tiers by expected duration and API behaviour:
+
+  HEAVY   — run sequentially after all light/medium sources finish.
+            These are 2M-20M record fetches that each need several hours and
+            significant memory. Running them concurrently would exhaust the
+            pod's 8Gi memory limit.
+
+  API_RATE_GROUPS — sources sharing an upstream host get a per-group semaphore
+            capping how many can run simultaneously (default 2 for CMS, 1 for
+            OpenFDA). Prevents rate-limit 429s without sacrificing throughput
+            on other groups.
+
+  LIGHT   — everything else. Runs up to --workers concurrent fetches.
+
+  Recommended --workers values:
+    1  (default)  — sequential, backward-compatible
+    4             — safe for the 4 vCPU / 8 Gi pod spec; cuts wall-clock ~4x
+    6             — max before connection pool pressure becomes noticeable
+"""
+
+import argparse
+import logging
+import os
+import subprocess
+import sys
+import time
+from concurrent.futures import ThreadPoolExecutor, as_completed
+from datetime import date, datetime, timezone
+from pathlib import Path
+from threading import Semaphore
+
+from .main import SOURCES, _meta_name, get_last_successful_refresh, run_ingestion
+from .utils.database import init_connection_pool, close_connection_pool, build_dsn
+from .utils.retry import retry_with_backoff
+
+try:
+    from .utils.wal_metrics import check_wal_circuit_breaker, WALCircuitBreakerOpen
+    _WAL_CB_AVAILABLE = True
+except ImportError:
+    _WAL_CB_AVAILABLE = False
+
+try:
+    from prometheus_client import start_http_server
+    from dk_data.observability.metrics import (
+        record_job_duration,
+        record_job_records,
+        increment_job_failure,
+        mark_job_success,
+    )
+    _METRICS_AVAILABLE = True
+except ImportError:
+    _METRICS_AVAILABLE = False
+    def record_job_duration(job_name, duration_seconds): pass
+    def record_job_records(job_name, count): pass
+    def increment_job_failure(job_name): pass
+    def mark_job_success(job_name): pass
+    def start_http_server(port): pass
+
+try:
+    from dk_data.observability import setup_telemetry, setup_logging
+    _OBSERVABILITY_AVAILABLE = True
+except ImportError:
+    _OBSERVABILITY_AVAILABLE = False
+    def setup_telemetry(service_name, **kwargs): pass
+    def setup_logging(service_name, **kwargs): pass
+
+METRICS_PORT = 8000  # matches job-initial-backfill.yaml containerPort
+
+# Minimal fallback logging for module-level code (before main() runs setup_logging).
+# setup_logging() in main() will reconfigure structlog for JSON + trace-context injection.
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s %(levelname)s %(name)s — %(message)s',
+    stream=sys.stdout,
+)
+logger = logging.getLogger(__name__)
+
+# The SQLMesh start date — all models backfill from this point.
+# Set to match config.yaml model_defaults.start.
+# 15 years back covers full drug development cycles (Phase I → approval).
+SQLMESH_START_DATE = date(2011, 1, 1)
+
+# Sources that should be skipped during backfill (either deprecated, disabled,
+# or handled by separate file-upload workflows).
+SKIP_SOURCES = {
+    'acc_tvc',             # Manual file upload — no automated fetcher available
+    'cms_inpatient',       # Manual file upload — no automated fetcher available
+    'cms_cost_reports',    # Handled by fetch_all_years() inside fetcher; runs separately
+    'cms_hospital_info',   # File-download source; requires explicit --file path, no API fetcher
+}
+
+# Sources with no days_back window — full-corpus or file-based fetches that own
+# their own pagination/year logic. Includes API sources (uniprot, drugbank, pdb,
+# orcid) as well as file-download sources. No days_back override is applied.
+TIMELESS_SOURCES = {
+    source for source, info in SOURCES.items()
+    if info.get('default_days_back') is None and 'fetcher' in info
+}
+
+# How stale a prior refresh must be before we re-fetch during backfill.
+# If last_successful_refresh is within this many hours, skip (already fresh).
+SKIP_IF_REFRESHED_WITHIN_HOURS = 12
+
+# ---------------------------------------------------------------------------
+# Parallelism tiers
+# ---------------------------------------------------------------------------
+
+# Sources that run sequentially AFTER the parallel batch completes.
+# Each is a multi-hour, multi-GB fetch; running them concurrently would
+# exhaust pod memory and thrash the DB writer.
+HEAVY_SOURCES = {
+    'chembl_molecules',    # ~2.4M compounds, 4h+
+    'chembl_activities',   # ~17-20M bioactivity records, 5-6h
+    'pubchem',             # ~2M compounds, 6h+
+    'openfda_faers',       # full_backfill year-partitioned, 3-4h
+    'npi_registry',        # ~7M providers, 3h+
+}
+
+# Sources sharing an upstream host — per-group semaphore caps concurrency.
+# Key: semaphore limit (max concurrent fetches to that host).
+# Value: set of source names hitting that host.
+API_RATE_GROUPS: dict[str, tuple[int, set[str]]] = {
+    # data.cms.gov throttles hard above ~3 concurrent clients.
+    # Use 2 to leave headroom for other pods/CronJobs.
+    'cms': (2, {s for s in SOURCES if s.startswith('cms_') and SOURCES[s].get('enabled', True)} - HEAVY_SOURCES),
+    # openFDA (api.fda.gov) — 240 req/min authenticated, 40/min anon.
+    # 1 concurrent is safest given year-partitioned loops.
+    'openfda': (1, {'openfda_labels', 'fda_drugs', 'fda_ndc', 'fda_rems', 'purple_book'}),
+    # ebi.ac.uk (ChEMBL REST, EuropePMC) — polite pool; 2 concurrent fine.
+    'ebi': (2, {'europepmc'}),
+}
+
+# Per-source kwargs to pass during backfill.
+#
+# DESIGN PRINCIPLE: No max_records caps. Every fetcher paginates and checkpoints —
+# it handles any volume. The only control is the date window (days_back) or
+# year list. Caps cause silent data loss.
+#
+# Date window categories:
+#   - Timeless/full-corpus: no days_back (fetch all records regardless of date)
+#   - Patents & IP: 20 years (patent life = 20 years from filing)
+#   - Clinical trials: 15 years (drug development cycle = 10-15 years)
+#   - Literature & research: 10 years (current research relevance)
+#   - CMS healthcare: 5 years (trend analysis, CMS publishes yearly with 12-18mo lag)
+#   - News/RSS: 1 year (only recent articles available)
+#
+BACKFILL_SOURCE_KWARGS: dict = {
+    # ---------------------------------------------------------------------------
+    # Full-corpus / timeless sources — no date window, no caps
+    # These are canonical reference databases. Fetch everything.
+    # ---------------------------------------------------------------------------
+    'openfda_labels': {'full_backfill': True},       # Year-partitioned full backfill
+    'openfda_faers': {'full_backfill': True},         # Year-partitioned full backfill
+    'ema_regulatory': {'days_back': None},             # All ~2641 regulatory decisions
+    'hta_bodies': {'days_back': None},                 # Full NICE TA archive
+    'cochrane': {'days_back': None},                   # Full Cochrane review set
+    'uniprot': {                                       # All reviewed human proteins
+        'query': 'reviewed:true AND organism_id:9606',
+    },
+    # ---------------------------------------------------------------------------
+    # Patents & IP — 20 years (patent life from filing)
+    # ---------------------------------------------------------------------------
+    'uspto_patents': {'days_back': 7300},
+    'uspto_ci': {'days_back': 7300},
+    'epo_ops': {'days_back': 7300},
+    'euipo_trademarks': {'days_back': 3650},           # 10yr (trademark renewal cycle)
+    'euipo_designs': {'days_back': 3650},              # 10yr
+    # ---------------------------------------------------------------------------
+    # Clinical trials — 15 years (full drug development cycle)
+    # ---------------------------------------------------------------------------
+    'clinicaltrials': {'days_back': 5475},
+    # ---------------------------------------------------------------------------
+    # Literature & research — 10 years
+    # ---------------------------------------------------------------------------
+    'pubmed': {'days_back': 3650},
+    'europepmc': {'days_back': 3650},
+    'openalex_ci': {'days_back': 3650},
+    'nih_reporter': {'days_back': 3650},
+    'sec_edgar': {'days_back': 3650},
+    # ---------------------------------------------------------------------------
+    # CMS PUF multi-year backfill — 5 years (2019-2023).
+    # Year-specific sub-UUIDs are discovered dynamically from data.cms.gov/data.json
+    # (cached 24h via cms_downloader._get_catalog). No hardcoded UUIDs needed.
+    # The most recent available service year is 2023 (12-18 month CMS lag).
+    # ---------------------------------------------------------------------------
+    # Physician & Other Practitioners
+    'cms_physician_puf': {'years': [2019, 2020, 2021, 2022, 2023]},
+    'cms_physician_puf_services': {'years': [2019, 2020, 2021, 2022, 2023]},
+    # Specialty subsets
+    'cms_imaging_puf': {'years': [2019, 2020, 2021, 2022, 2023]},
+    'cms_lab_services': {'years': [2019, 2020, 2021, 2022, 2023]},
+    'cms_mental_health_puf': {'years': [2019, 2020, 2021, 2022, 2023]},
+    'cms_telehealth_puf': {'years': [2019, 2020, 2021, 2022, 2023]},
+    # Outpatient / Inpatient hospitals
+    'cms_outpatient_puf': {'years': [2019, 2020, 2021, 2022, 2023]},
+    'cms_inpatient_puf': {'years': [2019, 2020, 2021, 2022, 2023]},
+    # Part D Prescribers
+    'cms_part_d_prescriber': {'years': [2019, 2020, 2021, 2022, 2023]},
+    'cms_opioid_puf': {'years': [2019, 2020, 2021, 2022, 2023]},
+    # Post-acute care
+    'cms_dme_puf': {'years': [2019, 2020, 2021, 2022, 2023]},
+    'cms_hospice_puf': {'years': [2019, 2020, 2021, 2022, 2023]},
+    'cms_snf_puf': {'years': [2019, 2020, 2021, 2022, 2023]},
+    'cms_home_health': {'years': [2019, 2020, 2021, 2022, 2023]},
+    # Hospital cost reports
+    'cms_cost_reports_puf': {'years': [2019, 2020, 2021, 2022, 2023]},
+    'cms_cost_reports_puf_lines': {'years': [2019, 2020, 2021, 2022, 2023]},
+    # Geographic / enrollment / chronic conditions
+    'cms_geographic_variation': {'years': [2019, 2020, 2021, 2022, 2023]},
+    'cms_chronic_conditions': {'years': [2019, 2020, 2021, 2022, 2023]},
+    'cms_dual_eligible': {'years': [2019, 2020, 2021, 2022, 2023]},
+    'cms_enrollment_puf': {'years': [2019, 2020, 2021, 2022, 2023]},
+    'cms_claim_type_puf': {'years': [2019, 2020, 2021, 2022, 2023]},
+    'cms_utilization_puf': {'years': [2019, 2020, 2021, 2022, 2023]},
+    # Provider directory
+    'cms_nppes': {'years': [2019, 2020, 2021, 2022, 2023]},
+    'cms_referring_providers': {'years': [2019, 2020, 2021, 2022, 2023]},
+    'cms_ordering_providers': {'years': [2019, 2020, 2021, 2022, 2023]},
+    # Drug / payment
+    'cms_part_d_spending': {'years': [2019, 2020, 2021, 2022, 2023]},
+    'cms_part_b_spending': {'years': [2019, 2020, 2021, 2022, 2023]},
+    'cms_open_payments': {'years': [2019, 2020, 2021, 2022, 2023]},
+    'cms_medicaid_drug_spending': {'years': [2019, 2020, 2021, 2022, 2023]},
+    'cms_medicare_advantage': {'years': [2019, 2020, 2021, 2022, 2023]},
+    # Hospital info
+    'cms_hospital_general_info': {'years': [2019, 2020, 2021, 2022, 2023]},
+}
+
+
+def compute_backfill_days() -> int:
+    """Compute days_back needed to cover from SQLMESH_START_DATE to today."""
+    today = date.today()
+    delta = today - SQLMESH_START_DATE
+    # +2 day buffer for timezone edge cases
+    return delta.days + 2
+
+
+def should_skip_source(source: str) -> tuple[bool, str]:
+    """Check if a source should be skipped during backfill.
+
+    Returns (should_skip, reason).
+    """
+    if source in SKIP_SOURCES:
+        return True, "excluded from automated backfill"
+
+    source_info = SOURCES.get(source, {})
+    if source_info.get('requires_file') and not source_info.get('fetcher'):
+        return True, "file-required source with no automated fetcher"
+
+    # Check if recently refreshed (within SKIP_IF_REFRESHED_WITHIN_HOURS)
+    meta_source = _meta_name(source)
+    last_refresh = get_last_successful_refresh(meta_source)
+    if last_refresh is not None:
+        hours_ago = (datetime.now(timezone.utc) - last_refresh).total_seconds() / 3600
+        if hours_ago < SKIP_IF_REFRESHED_WITHIN_HOURS:
+            return True, f"already refreshed {hours_ago:.1f}h ago (< {SKIP_IF_REFRESHED_WITHIN_HOURS}h threshold)"
+
+    return False, ""
+
+
+def _fetch_one(source: str, data_dir: str, days_back: int | None,
+               semaphore: Semaphore | None) -> tuple[str, str, int]:
+    """Fetch a single source. Returns (source, status, records).
+
+    Acquires semaphore if provided (rate-group throttle), releases on exit.
+    Emits per-source Prometheus metrics: duration, record count, failure count.
+    """
+    if semaphore is not None:
+        t_wait = time.monotonic()
+        semaphore.acquire()
+        record_job_duration(f'backfill_semaphore_wait_{source}', time.monotonic() - t_wait)
+    t0 = time.monotonic()
+    try:
+        extra_kwargs = BACKFILL_SOURCE_KWARGS.get(source, {})
+
+        # If extra_kwargs has days_back, it overrides the computed window.
+        # This allows per-source date depth (e.g., patents=20yr, literature=10yr).
+        effective_days_back = extra_kwargs.pop('days_back', days_back)
+
+        # S7: retry transient failures with exponential backoff.
+        # Individual fetcher HTTP sessions already retry 429/5xx at the request level;
+        # this catches failures above that (connection reset, schema errors, etc.).
+        # Use shorter delays than the default (30s→60s→120s) since backfill is batch.
+        @retry_with_backoff(max_attempts=3, initial_delay=30, max_delay=120,
+                            exceptions=(Exception,))
+        def _run():
+            return run_ingestion(
+                source=source,
+                data_dir=data_dir,
+                days_back=effective_days_back,
+                **extra_kwargs,
+            )
+
+        result = _run()
+        status = result.get('status', 'unknown')
+        records = result.get('records_inserted', result.get('records_fetched', 0))
+        elapsed = time.monotonic() - t0
+        record_job_duration(f'backfill_fetch_{source}', elapsed)
+        record_job_records(f'backfill_fetch_{source}', records or 0)
+        if status in ('success', 'partial'):
+            # S8: emit per-source success timestamp for Prometheus staleness alerting
+            mark_job_success(f'backfill_fetch_{source}')
+        else:
+            increment_job_failure(f'backfill_fetch_{source}')
+        return source, status, records
+    except Exception:
+        elapsed = time.monotonic() - t0
+        record_job_duration(f'backfill_fetch_{source}', elapsed)
+        increment_job_failure(f'backfill_fetch_{source}')
+        raise
+    finally:
+        if semaphore is not None:
+            semaphore.release()
+
+
+def _build_semaphore_map() -> dict[str, Semaphore]:
+    """Build a {source_name: Semaphore} map from API_RATE_GROUPS.
+
+    Each named group gets its own Semaphore so groups with the same numeric limit
+    do not share slots (e.g. CMS limit=2 and EBI limit=2 stay independent).
+    Sources appearing in multiple groups get the most restrictive group's semaphore.
+    Sources not in any group get None (no throttle beyond the thread pool itself).
+    """
+    # One Semaphore per named group — never share across groups.
+    group_sems: dict[str, Semaphore] = {
+        group: Semaphore(limit)
+        for group, (limit, _) in API_RATE_GROUPS.items()
+    }
+
+    # For sources in multiple groups, pick the most restrictive (lowest limit) group.
+    source_best: dict[str, tuple[int, str]] = {}  # source -> (best_limit, group_name)
+    for group, (limit, sources) in API_RATE_GROUPS.items():
+        for s in sources:
+            if s not in source_best or limit < source_best[s][0]:
+                source_best[s] = (limit, group)
+
+    return {source: group_sems[group] for source, (_, group) in source_best.items()}
+
+
+def run_sqlmesh_backfill(sqlmesh_dir: str) -> bool:
+    """Run sqlmesh plan --auto-apply to backfill all models from SQLMESH_START_DATE."""
+    logger.info("=" * 60)
+    logger.info("SQLMESH BACKFILL: Running full historical plan from %s", SQLMESH_START_DATE)
+    logger.info("This transforms all raw data into bronze → silver → gold layers.")
+    logger.info("Expected duration: 30 minutes to several hours.")
+    logger.info("=" * 60)
+
+    start = time.monotonic()
+    try:
+        result = subprocess.run(
+            ['python', '-m', 'sqlmesh', '--path', sqlmesh_dir, 'plan', '--auto-apply'],
+            capture_output=False,  # let stdout/stderr stream directly
+            timeout=None,          # no timeout — allow as long as needed
+        )
+        elapsed = time.monotonic() - start
+        if result.returncode == 0:
+            logger.info("SQLMesh plan completed successfully in %.0fs", elapsed)
+            record_job_duration('backfill_sqlmesh_plan', elapsed)
+            mark_job_success('backfill_sqlmesh_plan')
+            return True
+        else:
+            logger.error("SQLMesh plan failed (exit %d) after %.0fs", result.returncode, elapsed)
+            record_job_duration('backfill_sqlmesh_plan', elapsed)
+            increment_job_failure('backfill_sqlmesh_plan')
+            return False
+    except Exception as e:
+        logger.error("SQLMesh plan raised exception: %s", e)
+        increment_job_failure('backfill_sqlmesh_plan')
+        return False
+
+
+def run_sqlmesh_run(sqlmesh_dir: str) -> bool:
+    """Run sqlmesh run to process any current-day intervals after the backfill."""
+    logger.info("Running sqlmesh run for current-day intervals...")
+    try:
+        result = subprocess.run(
+            ['python', '-m', 'sqlmesh', '--path', sqlmesh_dir, 'run'],
+            capture_output=False,
+            timeout=3600,
+        )
+        if result.returncode == 0:
+            logger.info("sqlmesh run completed successfully")
+            return True
+        else:
+            logger.warning("sqlmesh run exited %d — may be OK if no pending intervals", result.returncode)
+            return True  # non-fatal
+    except Exception as e:
+        logger.error("sqlmesh run raised exception: %s", e)
+        return False
+
+
+def run_fetch_backfill(
+    data_dir: str,
+    workers: int = 1,
+    dry_run: bool = False,
+    only_sources: list[str] | None = None,
+    cli_days_back: int | None = None,
+    cli_years: list[int] | None = None,
+    clear_checkpoint: bool = False,
+) -> dict:
+    """Fetch sources.
+
+    With workers=1 (default): sequential, identical to prior behaviour.
+    With workers>1: light/medium sources run in a thread pool; heavy sources
+    run sequentially afterward (memory safety).
+
+    only_sources: if provided, restrict to exactly these source names (still
+    subject to SKIP_SOURCES; unknown names are warned and ignored).
+
+    cli_days_back: if set, overrides both the computed window and per-source
+    BACKFILL_SOURCE_KWARGS days_back for ALL sources.
+
+    cli_years: if set, overrides the years list for CMS multi-year sources.
+
+    clear_checkpoint: if True, clears checkpoint for specified sources before
+    fetching (forces fresh start).
+
+    Returns dict of {source: status}.
+    """
+    days_back = cli_days_back if cli_days_back is not None else compute_backfill_days()
+
+    # Apply CLI overrides to BACKFILL_SOURCE_KWARGS
+    if cli_days_back is not None:
+        # CLI --days-back overrides everything — set for all sources
+        for source_name in BACKFILL_SOURCE_KWARGS:
+            if 'days_back' in BACKFILL_SOURCE_KWARGS[source_name]:
+                BACKFILL_SOURCE_KWARGS[source_name]['days_back'] = cli_days_back
+
+    if cli_years is not None:
+        # CLI --years overrides CMS year lists
+        for source_name in BACKFILL_SOURCE_KWARGS:
+            if 'years' in BACKFILL_SOURCE_KWARGS[source_name]:
+                BACKFILL_SOURCE_KWARGS[source_name]['years'] = cli_years
+
+    if clear_checkpoint:
+        from .utils.checkpoint import clear_checkpoint as _clear_cp
+        for source_name in (only_sources or []):
+            _clear_cp(source_name)
+            logger.info("Cleared checkpoint for %s", source_name)
+
+    if only_sources:
+        unknown = set(only_sources) - set(SOURCES)
+        if unknown:
+            logger.warning("Unknown sources requested (will be ignored): %s", sorted(unknown))
+        sources_to_run = [s for s in only_sources if s in SOURCES and s not in SKIP_SOURCES]
+    else:
+        sources_to_run = [s for s in SOURCES if s not in SKIP_SOURCES]
+
+    # Partition into (skip, heavy, light) — check skip first
+    skip_list: list[tuple[str, str]] = []
+    heavy_queue: list[str] = []
+    light_queue: list[str] = []
+
+    for source in sources_to_run:
+        skip, reason = should_skip_source(source)
+        if skip:
+            skip_list.append((source, reason))
+        elif source in HEAVY_SOURCES:
+            heavy_queue.append(source)
+        else:
+            light_queue.append(source)
+
+    total = len(light_queue) + len(heavy_queue)
+    logger.info("=" * 60)
+    logger.info("FETCH BACKFILL: %d sources (window=%d days since %s)",
+                total, days_back, SQLMESH_START_DATE)
+    logger.info("  Light/medium: %d  Heavy (sequential): %d  Skipped: %d  Workers: %d",
+                len(light_queue), len(heavy_queue), len(skip_list), workers)
+    logger.info("=" * 60)
+
+    results: dict[str, str] = {}
+    for source, reason in skip_list:
+        logger.info("SKIP %s: %s", source, reason)
+        results[source] = f"skipped: {reason}"
+
+    if dry_run:
+        for source in light_queue + heavy_queue:
+            is_file = source in TIMELESS_SOURCES
+            logger.info("DRY RUN %s: days_back=%s tier=%s",
+                        source,
+                        None if is_file else days_back,
+                        'heavy' if source in HEAVY_SOURCES else 'light')
+            results[source] = "dry-run"
+        return results
+
+    semaphore_map = _build_semaphore_map()
+    success: list[str] = []
+    failed: list[str] = []
+    completed = 0
+
+    # ----------------------------------------------------------------
+    # Phase 1: light/medium sources — parallel
+    # ----------------------------------------------------------------
+    if light_queue:
+        logger.info("Phase 1: parallel fetch (%d sources, %d workers)", len(light_queue), workers)
+        with ThreadPoolExecutor(max_workers=workers) as pool:
+            future_to_source = {
+                pool.submit(
+                    _fetch_one,
+                    source,
+                    data_dir,
+                    None if source in TIMELESS_SOURCES else days_back,
+                    semaphore_map.get(source),
+                ): source
+                for source in light_queue
+            }
+            for future in as_completed(future_to_source):
+                completed += 1
+                try:
+                    src, status, records = future.result()
+                    logger.info("[%d/%d] %s: %s (%d records)",
+                                completed, total, src, status.upper(), records)
+                    results[src] = status
+                    if status in ('success', 'partial'):
+                        success.append(src)
+                    else:
+                        failed.append(src)
+                except Exception as exc:
+                    src = future_to_source[future]
+                    logger.error("[%d/%d] %s: EXCEPTION — %s", completed, total, src, exc)
+                    results[src] = f"exception: {exc}"
+                    failed.append(src)
+
+    # ----------------------------------------------------------------
+    # Phase 2: heavy sources — sequential
+    # ----------------------------------------------------------------
+    if heavy_queue:
+        logger.info("Phase 2: sequential heavy fetch (%d sources)", len(heavy_queue))
+        for source in heavy_queue:
+            completed += 1
+            logger.info("[%d/%d] %s (heavy) — starting", completed, total, source)
+            try:
+                src, status, records = _fetch_one(
+                    source,
+                    data_dir,
+                    None if source in TIMELESS_SOURCES else days_back,
+                    semaphore_map.get(source),
+                )
+                logger.info("[%d/%d] %s: %s (%d records)",
+                            completed, total, src, status.upper(), records)
+                results[src] = status
+                if status in ('success', 'partial'):
+                    success.append(src)
+                else:
+                    failed.append(src)
+            except Exception as exc:
+                logger.error("[%d/%d] %s: EXCEPTION — %s", completed, total, source, exc)
+                results[source] = f"exception: {exc}"
+                failed.append(source)
+
+    logger.info("")
+    logger.info("FETCH BACKFILL COMPLETE:")
+    logger.info("  Succeeded: %d  Failed: %d  Skipped: %d",
+                len(success), len(failed), len(skip_list))
+    if failed:
+        logger.warning("  Failed sources: %s", ', '.join(failed))
+
+    return results
+
+
+def main():
+    parser = argparse.ArgumentParser(
+        description='Initial full backfill: fetch all sources + SQLMesh historical plan',
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog="""
+Examples:
+  # Full backfill, 4 parallel workers:
+  python -m dk_data.ingestion.initial_backfill --workers 4
+
+  # Single source, last 12 months only:
+  python -m dk_data.ingestion.initial_backfill --sources pubmed --days-back 365 --fetch-only
+
+  # CMS source with specific years:
+  python -m dk_data.ingestion.initial_backfill --sources cms_opioid_puf --years 2022,2023 --fetch-only
+
+  # Force fresh start (clear checkpoint):
+  python -m dk_data.ingestion.initial_backfill --sources cms_imaging_puf --clear-checkpoint --fetch-only
+
+  # SQLMesh backfill only (data already in raw tables):
+  python -m dk_data.ingestion.initial_backfill --sqlmesh-only
+
+  # Dry run to see what would be fetched:
+  python -m dk_data.ingestion.initial_backfill --workers 4 --dry-run
+        """
+    )
+    parser.add_argument('--sources', type=str, default=None,
+                        help='Comma-separated list of source names to backfill '
+                             '(default: all). Example: --sources pubchem,uniprot')
+    parser.add_argument('--workers', type=int, default=1,
+                        help='Parallel fetch workers for light/medium sources (default 1). '
+                             'Recommended: 4 for the standard 4vCPU/8Gi pod.')
+    parser.add_argument('--fetch-only', action='store_true',
+                        help='Only fetch data into raw tables, skip SQLMesh')
+    parser.add_argument('--sqlmesh-only', action='store_true',
+                        help='Only run SQLMesh plan (raw tables already populated)')
+    parser.add_argument('--dry-run', action='store_true',
+                        help='Show what would be fetched without actually running')
+    parser.add_argument('--days-back', type=int, default=None,
+                        help='Override days_back for all sources. Overrides both '
+                             'computed window and per-source BACKFILL_SOURCE_KWARGS. '
+                             'Example: --days-back 365 for last 12 months')
+    parser.add_argument('--years', type=str, default=None,
+                        help='Override years for CMS multi-year sources. '
+                             'Comma-separated. Example: --years 2022,2023')
+    parser.add_argument('--clear-checkpoint', action='store_true',
+                        help='Clear checkpoint for the specified --sources before '
+                             'fetching. Forces a fresh start (useful after schema changes)')
+    parser.add_argument('--data-dir', default='/tmp/data/raw',
+                        help='Directory for fetcher temp file storage')
+    parser.add_argument('--sqlmesh-dir', default='src/dk_data/sqlmesh',
+                        help='Path to SQLMesh project directory')
+
+    args = parser.parse_args()
+
+    if args.workers < 1:
+        parser.error("--workers must be >= 1")
+
+    Path(args.data_dir).mkdir(parents=True, exist_ok=True)
+
+    # Initialize structured logging (JSON for Loki log correlation) and OTel tracing.
+    # Must be called before any significant work so auto-instrumentation is active.
+    # setup_telemetry() reads OTEL_EXPORTER_OTLP_ENDPOINT and OTEL_ENABLED from env;
+    # it also auto-instruments requests, psycopg2, and httpx for distributed tracing.
+    service_name = os.getenv("OTEL_SERVICE_NAME", "dk-data-initial-backfill")
+    if _OBSERVABILITY_AVAILABLE:
+        setup_logging(service_name)
+        setup_telemetry(service_name)
+
+    # Start Prometheus HTTP scrape endpoint (L2 — required for PodMonitor scraping)
+    if _METRICS_AVAILABLE:
+        try:
+            start_http_server(METRICS_PORT)
+            logger.info("Prometheus metrics available on :%d/metrics", METRICS_PORT)
+        except Exception as e:
+            logger.warning("Could not start Prometheus HTTP server: %s", e)
+
+    overall_start = time.monotonic()
+    logger.info("=" * 60)
+    logger.info("INITIAL BACKFILL — dk-data platform")
+    logger.info("SQLMesh start date: %s", SQLMESH_START_DATE)
+    logger.info("Fetch window: %d days", compute_backfill_days())
+    logger.info("Workers: %d", args.workers)
+    logger.info("=" * 60)
+
+    exit_code = 0
+
+    # Pre-flight: WAL circuit breaker
+    if _WAL_CB_AVAILABLE and not args.dry_run:
+        import psycopg2
+        try:
+            cb_conn = psycopg2.connect(build_dsn())
+            cb_conn.autocommit = True
+            check_wal_circuit_breaker(cb_conn, caller="initial_backfill")
+            cb_conn.close()
+        except WALCircuitBreakerOpen:
+            logger.warning("Initial backfill skipped — WAL circuit breaker open")
+            return 0
+        except Exception as exc:
+            logger.debug("WAL circuit breaker check failed (%s) — proceeding", exc)
+
+    if not args.sqlmesh_only:
+        # Connection pool sized to workers * 3:
+        # each worker can hold up to ~2 connections (fetch + loader), plus headroom.
+        pool_size = max(10, args.workers * 3)
+        init_connection_pool(minconn=2, maxconn=pool_size)
+        try:
+            only_sources = [s.strip() for s in args.sources.split(',')] if args.sources else None
+            cli_years = [int(y.strip()) for y in args.years.split(',')] if args.years else None
+            fetch_results = run_fetch_backfill(
+                args.data_dir,
+                workers=args.workers,
+                dry_run=args.dry_run,
+                only_sources=only_sources,
+                cli_days_back=args.days_back,
+                cli_years=cli_years,
+                clear_checkpoint=args.clear_checkpoint,
+            )
+            failed_sources = [s for s, status in fetch_results.items()
+                              if str(status).startswith(('failed', 'exception'))]
+            if failed_sources:
+                logger.warning("%d sources failed during fetch — continuing to SQLMesh", len(failed_sources))
+                exit_code = 1  # partial failure, but continue
+        finally:
+            close_connection_pool()
+
+    if args.dry_run or args.fetch_only:
+        logger.info("Stopping here (--dry-run or --fetch-only specified)")
+        sys.exit(exit_code)
+
+    # Step 2: SQLMesh historical backfill
+    sqlmesh_ok = run_sqlmesh_backfill(args.sqlmesh_dir)
+    if not sqlmesh_ok:
+        logger.error("SQLMesh backfill FAILED — check logs above")
+        sys.exit(2)
+
+    # Step 3: SQLMesh run (current day)
+    run_sqlmesh_run(args.sqlmesh_dir)
+
+    elapsed = time.monotonic() - overall_start
+    record_job_duration('backfill_overall', elapsed)
+    if exit_code == 0:
+        mark_job_success('backfill_overall')
+    else:
+        increment_job_failure('backfill_overall')
+    logger.info("=" * 60)
+    logger.info("INITIAL BACKFILL COMPLETE in %.0f minutes", elapsed / 60)
+    logger.info("=" * 60)
+    sys.exit(exit_code)
+
+
+if __name__ == '__main__':
+    main()

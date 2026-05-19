@@ -26,9 +26,15 @@ _db_pool: Optional["asyncpg.Pool"] = None
 def get_database_url() -> str:
     """Build database URL from environment.
 
-    Required environment variables (set in .env file):
-    - POSTGRES_HOST, POSTGRES_PORT, POSTGRES_DB, POSTGRES_USER, POSTGRES_PASSWORD, OR
-    - DATABASE_URL: Full connection string (deprecated fallback when POSTGRES_HOST is unset)
+    Prefers individual POSTGRES_* variables when POSTGRES_HOST is set, to avoid
+    stale DATABASE_URL values (e.g. pointing at old postgres.postgres.svc hostnames).
+    Falls back to DATABASE_URL only when POSTGRES_HOST is absent (local dev without
+    individual vars set).
+
+    Required environment variables:
+    - POSTGRES_HOST, POSTGRES_PORT, POSTGRES_DB, POSTGRES_USER, POSTGRES_PASSWORD
+      (preferred — used in all k8s deployments via dk-data-secrets)
+    - DATABASE_URL: full connection string fallback for local dev only
     """
     db_host = os.getenv('POSTGRES_HOST')
     if db_host:
@@ -36,25 +42,17 @@ def get_database_url() -> str:
         db_name = os.getenv('POSTGRES_DB', 'dk_data')
         db_user = os.getenv('POSTGRES_USER', 'postgres')
         db_pass = os.getenv('POSTGRES_PASSWORD')
-
         if not db_pass:
             logger.warning("POSTGRES_PASSWORD not set in environment. Database connection may fail.")
             db_pass = ''
-
         return f'postgresql://{db_user}:{db_pass}@{db_host}:{db_port}/{db_name}'
 
     db_url = os.getenv('DATABASE_URL')
     if db_url:
-        logger.warning(
-            "Using deprecated DATABASE_URL fallback because POSTGRES_HOST is not set. "
-            "Prefer POSTGRES_* environment variables."
-        )
         return db_url
 
-    logger.error(
-        "Database configuration missing: set POSTGRES_HOST (preferred) or DATABASE_URL (fallback)."
-    )
-    return ''
+    logger.warning("Neither POSTGRES_HOST nor DATABASE_URL set; using localhost defaults.")
+    return 'postgresql://postgres:@localhost:5432/dk_data'
 
 
 def get_sync_db_url() -> str:

@@ -1,0 +1,294 @@
+{
+  "__metadata": {
+    "folder": "applications"
+  },
+  "dashboard": {
+    "uid": "dk-data-fe-wal-pressure",
+    "title": "dk-data WAL Pressure",
+    "description": "PostgreSQL WAL backpressure telemetry for the prestaged hydration pipeline. Reads meta.wal_pressure (migration 231) via the postgres datasource and dk_wal_source_budget_exhausted_total from Mimir (plan.md \u00a7C.2).",
+    "tags": [
+      "dk-data-fe",
+      "wal",
+      "hydration",
+      "observability"
+    ],
+    "schemaVersion": 39,
+    "editable": true,
+    "refresh": "30s",
+    "time": {
+      "from": "now-6h",
+      "to": "now"
+    },
+    "timepicker": {},
+    "timezone": "",
+    "templating": {
+      "list": [
+        {
+          "name": "source",
+          "type": "query",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "refresh": 2,
+          "query": "label_values(dk_wal_source_budget_exhausted_total, source)",
+          "includeAll": true,
+          "multi": true,
+          "allValue": ".*",
+          "current": {
+            "selected": false,
+            "text": "All",
+            "value": "$__all"
+          }
+        }
+      ]
+    },
+    "annotations": {
+      "list": []
+    },
+    "panels": [
+      {
+        "id": 1,
+        "type": "gauge",
+        "title": "WAL pressure \u2014 current pct_used",
+        "description": "Live read of meta.wal_pressure.pct_used. Expressed as a percentage of max_wal_size since the last checkpoint. The WAL throttle engages above 70% (high threshold) and releases below 40% (low threshold) \u2014 see the panel to the right for historical context.",
+        "datasource": {
+          "type": "postgres",
+          "uid": "postgres"
+        },
+        "gridPos": {
+          "h": 8,
+          "w": 8,
+          "x": 0,
+          "y": 0
+        },
+        "fieldConfig": {
+          "defaults": {
+            "unit": "percent",
+            "min": 0,
+            "max": 100,
+            "decimals": 1,
+            "color": {
+              "mode": "thresholds"
+            },
+            "thresholds": {
+              "mode": "absolute",
+              "steps": [
+                { "color": "green", "value": null },
+                { "color": "yellow", "value": 40 },
+                { "color": "orange", "value": 70 },
+                { "color": "red", "value": 90 }
+              ]
+            },
+            "mappings": []
+          },
+          "overrides": []
+        },
+        "options": {
+          "orientation": "auto",
+          "reduceOptions": {
+            "calcs": ["lastNotNull"],
+            "fields": "",
+            "values": false
+          },
+          "showThresholdLabels": true,
+          "showThresholdMarkers": true
+        },
+        "pluginVersion": "10.0.0",
+        "targets": [
+          {
+            "rawSql": "SELECT pct_used FROM meta.wal_pressure LIMIT 1",
+            "format": "table",
+            "rawQuery": true,
+            "refId": "A"
+          }
+        ]
+      },
+      {
+        "id": 2,
+        "type": "timeseries",
+        "title": "WAL pressure over time",
+        "description": "Historical pct_used, polled from meta.wal_pressure. The throttle is state-machine-hysteretic: it engages when pct_used crosses 70% upward and releases when pct_used crosses 40% downward (plan \u00a7C.2). No Prometheus gauge is emitted for this signal today \u2014 the panel queries Postgres directly via the postgres datasource. If the datasource isn't provisioned, this panel shows `No data`.",
+        "datasource": {
+          "type": "postgres",
+          "uid": "postgres"
+        },
+        "gridPos": {
+          "h": 8,
+          "w": 16,
+          "x": 8,
+          "y": 0
+        },
+        "fieldConfig": {
+          "defaults": {
+            "unit": "percent",
+            "min": 0,
+            "max": 100,
+            "color": {
+              "mode": "thresholds"
+            },
+            "thresholds": {
+              "mode": "absolute",
+              "steps": [
+                { "color": "green", "value": null },
+                { "color": "yellow", "value": 40 },
+                { "color": "orange", "value": 70 },
+                { "color": "red", "value": 90 }
+              ]
+            },
+            "custom": {
+              "drawStyle": "line",
+              "lineInterpolation": "linear",
+              "fillOpacity": 20,
+              "thresholdsStyle": {
+                "mode": "dashed"
+              }
+            }
+          },
+          "overrides": []
+        },
+        "options": {
+          "legend": {
+            "displayMode": "list",
+            "placement": "bottom"
+          },
+          "tooltip": {
+            "mode": "single",
+            "sort": "none"
+          }
+        },
+        "targets": [
+          {
+            "rawSql": "SELECT now() AS time, pct_used FROM meta.wal_pressure",
+            "format": "time_series",
+            "rawQuery": true,
+            "refId": "A"
+          }
+        ]
+      },
+      {
+        "id": 3,
+        "type": "timeseries",
+        "title": "Per-source pause-budget exhaustion",
+        "description": "Rate of dk_wal_source_budget_exhausted_total by source. A non-zero rate means a single source consumed its WAL_PAUSE_BUDGET_PER_SOURCE_SECONDS share and is racing through without backpressure for the rest of the run (other sources still throttle normally). The DkWalSourceBudgetExhausted PrometheusRule pages on any non-zero rate.",
+        "datasource": {
+          "type": "prometheus",
+          "uid": "prometheus"
+        },
+        "gridPos": {
+          "h": 9,
+          "w": 16,
+          "x": 0,
+          "y": 8
+        },
+        "fieldConfig": {
+          "defaults": {
+            "unit": "ops",
+            "color": {
+              "mode": "palette-classic"
+            },
+            "custom": {
+              "drawStyle": "line",
+              "lineInterpolation": "linear",
+              "fillOpacity": 10
+            }
+          },
+          "overrides": []
+        },
+        "options": {
+          "legend": {
+            "displayMode": "table",
+            "placement": "bottom",
+            "calcs": ["mean", "max"]
+          },
+          "tooltip": {
+            "mode": "multi",
+            "sort": "desc"
+          }
+        },
+        "targets": [
+          {
+            "expr": "sum by (source) (rate(dk_wal_source_budget_exhausted_total{source=~\"$source\"}[5m]))",
+            "legendFormat": "{{source}}",
+            "refId": "A"
+          }
+        ]
+      },
+      {
+        "id": 4,
+        "type": "stat",
+        "title": "Hysteresis thresholds",
+        "description": "Reference values baked into the WAL throttle (src/dk_data/ingestion/wal_throttle.py). The gate transitions state-machine-style: engages when pct_used \u2265 high_pct (70%), releases when pct_used \u2264 low_pct (40%). Change them by tuning DEFAULT_HIGH_PCT / DEFAULT_LOW_PCT \u2014 do NOT narrow the band, hysteresis is what prevents the throttle from oscillating. Values are hard-coded in PromQL (vector()) so this panel does not depend on any emitted metric.",
+        "datasource": {
+          "type": "prometheus",
+          "uid": "prometheus"
+        },
+        "gridPos": {
+          "h": 9,
+          "w": 8,
+          "x": 16,
+          "y": 8
+        },
+        "fieldConfig": {
+          "defaults": {
+            "unit": "percent",
+            "color": {
+              "mode": "thresholds"
+            },
+            "thresholds": {
+              "mode": "absolute",
+              "steps": [
+                { "color": "green", "value": null },
+                { "color": "orange", "value": 70 }
+              ]
+            },
+            "mappings": []
+          },
+          "overrides": []
+        },
+        "options": {
+          "colorMode": "background",
+          "graphMode": "none",
+          "justifyMode": "auto",
+          "orientation": "horizontal",
+          "reduceOptions": {
+            "calcs": ["lastNotNull"],
+            "fields": "",
+            "values": false
+          },
+          "textMode": "value_and_name"
+        },
+        "pluginVersion": "10.0.0",
+        "targets": [
+          {
+            "expr": "vector(70)",
+            "legendFormat": "high_pct (engage)",
+            "refId": "A",
+            "instant": true
+          },
+          {
+            "expr": "vector(40)",
+            "legendFormat": "low_pct (release)",
+            "refId": "B",
+            "instant": true
+          }
+        ]
+      },
+      {
+        "id": 5,
+        "type": "text",
+        "title": "About this dashboard",
+        "gridPos": {
+          "h": 5,
+          "w": 24,
+          "x": 0,
+          "y": 17
+        },
+        "options": {
+          "mode": "markdown",
+          "content": "### Hysteresis reference\n\n| Threshold | Value | Meaning |\n|---|---|---|\n| `high_pct` | **70%** | Throttle engages when `pct_used` crosses this upward |\n| `low_pct`  | **40%** | Throttle releases when `pct_used` crosses this downward |\n\nDefaults live in `src/dk_data/ingestion/wal_throttle.py` (`DEFAULT_HIGH_PCT` / `DEFAULT_LOW_PCT`). The 30-point hysteresis band is intentional \u2014 narrowing it causes the gate to oscillate under steady load.\n\n### Where data comes from\n\n- **Current pct_used + historical** panels: live `SELECT pct_used FROM meta.wal_pressure` against the platform Postgres via the `postgres` Grafana datasource. The view itself is defined by migration 231. If the datasource is not provisioned in this Grafana instance, the panel shows `No data`; there is no equivalent Prometheus gauge (the throttle reads Postgres directly rather than emitting a gauge \u2014 see `src/dk_data/ingestion/wal_throttle.py:wal_pressure`). Emitting a gauge is a TODO if we later need alerting on the signal.\n- **Per-source budget exhaustion** panel: `dk_wal_source_budget_exhausted_total` Counter, Mimir-backed.\n\nSpec ref: plan.md \u00a7C.2 (feature/005 PR #315, migration 231)."
+        }
+      }
+    ]
+  }
+}

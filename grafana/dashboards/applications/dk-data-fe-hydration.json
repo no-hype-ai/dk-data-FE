@@ -1,0 +1,307 @@
+{
+  "__metadata": {
+    "folder": "applications"
+  },
+  "dashboard": {
+    "uid": "dk-data-fe-hydration",
+    "title": "dk-data Hydration",
+    "description": "Per-source hydration throughput, phase latency, bytes moved, and freshness. Powered by dk_hydration_phase_seconds, dk_artifact_bytes_total, dk_source_last_success_timestamp (plan.md \u00a7C.6).",
+    "tags": [
+      "dk-data-fe",
+      "hydration",
+      "observability"
+    ],
+    "schemaVersion": 39,
+    "editable": true,
+    "refresh": "30s",
+    "time": {
+      "from": "now-6h",
+      "to": "now"
+    },
+    "timepicker": {},
+    "timezone": "",
+    "templating": {
+      "list": [
+        {
+          "name": "source",
+          "type": "query",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "refresh": 2,
+          "query": "label_values(dk_source_last_success_timestamp, source)",
+          "includeAll": true,
+          "multi": true,
+          "allValue": ".*",
+          "current": {
+            "selected": false,
+            "text": "All",
+            "value": "$__all"
+          }
+        }
+      ]
+    },
+    "annotations": {
+      "list": []
+    },
+    "panels": [
+      {
+        "id": 1,
+        "type": "text",
+        "title": "About this dashboard",
+        "gridPos": {
+          "h": 3,
+          "w": 24,
+          "x": 0,
+          "y": 0
+        },
+        "options": {
+          "mode": "markdown",
+          "content": "**Hydration observability** \u2014 plan.md \u00a7C.6. Panels visualize `dk_hydration_phase_seconds`, `dk_artifact_bytes_total`, `dk_source_last_success_timestamp`. Emission lands with the feature/005-prestaged-hydration follow-up; until then panels show `No data`. SLO: per-source hydration completes within declared `sla_seconds` at p95 \u2014 see `docs/slos/hydration.md`."
+        }
+      },
+      {
+        "id": 2,
+        "type": "timeseries",
+        "title": "Phase duration p95 by source",
+        "description": "95th percentile time spent in each hydration phase (download, validate, restore, rowcount, manifest_lookup), aggregated across schemas and tables. High cardinality \u2014 filter by $source.",
+        "datasource": {
+          "type": "prometheus",
+          "uid": "prometheus"
+        },
+        "gridPos": {
+          "h": 9,
+          "w": 12,
+          "x": 0,
+          "y": 3
+        },
+        "fieldConfig": {
+          "defaults": {
+            "unit": "s",
+            "color": {
+              "mode": "palette-classic"
+            },
+            "custom": {
+              "drawStyle": "line",
+              "lineInterpolation": "linear",
+              "fillOpacity": 10
+            }
+          },
+          "overrides": []
+        },
+        "options": {
+          "legend": {
+            "displayMode": "table",
+            "placement": "bottom",
+            "calcs": ["mean", "max"]
+          },
+          "tooltip": {
+            "mode": "multi",
+            "sort": "desc"
+          }
+        },
+        "targets": [
+          {
+            "expr": "histogram_quantile(0.95, sum by (source, phase, le) (rate(dk_hydration_phase_seconds_bucket{source=~\"$source\"}[5m])))",
+            "legendFormat": "{{source}} / {{phase}}",
+            "refId": "A"
+          }
+        ]
+      },
+      {
+        "id": 3,
+        "type": "timeseries",
+        "title": "Bytes downloaded per source (rate)",
+        "description": "Wire bytes per second by source (kind=download). Shows which sources are actively pulling artifacts. See dk_artifact_bytes_total{kind=extracted} for on-disk expansion rate.",
+        "datasource": {
+          "type": "prometheus",
+          "uid": "prometheus"
+        },
+        "gridPos": {
+          "h": 9,
+          "w": 12,
+          "x": 12,
+          "y": 3
+        },
+        "fieldConfig": {
+          "defaults": {
+            "unit": "Bps",
+            "color": {
+              "mode": "palette-classic"
+            },
+            "custom": {
+              "drawStyle": "line",
+              "lineInterpolation": "linear",
+              "fillOpacity": 20,
+              "stacking": {
+                "mode": "normal",
+                "group": "A"
+              }
+            }
+          },
+          "overrides": []
+        },
+        "options": {
+          "legend": {
+            "displayMode": "table",
+            "placement": "bottom",
+            "calcs": ["mean", "max"]
+          },
+          "tooltip": {
+            "mode": "multi",
+            "sort": "desc"
+          }
+        },
+        "targets": [
+          {
+            "expr": "sum by (source) (rate(dk_artifact_bytes_total{kind=\"download\", source=~\"$source\"}[5m]))",
+            "legendFormat": "{{source}}",
+            "refId": "A"
+          }
+        ]
+      },
+      {
+        "id": 4,
+        "type": "timeseries",
+        "title": "Bytes extracted per source (rate)",
+        "description": "On-disk bytes per second after tarball / pg_dump / zip expansion (kind=extracted). Divergence from download rate indicates compression ratio or extraction stalls.",
+        "datasource": {
+          "type": "prometheus",
+          "uid": "prometheus"
+        },
+        "gridPos": {
+          "h": 9,
+          "w": 12,
+          "x": 0,
+          "y": 12
+        },
+        "fieldConfig": {
+          "defaults": {
+            "unit": "Bps",
+            "color": {
+              "mode": "palette-classic"
+            },
+            "custom": {
+              "drawStyle": "line",
+              "lineInterpolation": "linear",
+              "fillOpacity": 20
+            }
+          },
+          "overrides": []
+        },
+        "options": {
+          "legend": {
+            "displayMode": "table",
+            "placement": "bottom",
+            "calcs": ["mean", "max"]
+          },
+          "tooltip": {
+            "mode": "multi",
+            "sort": "desc"
+          }
+        },
+        "targets": [
+          {
+            "expr": "sum by (source) (rate(dk_artifact_bytes_total{kind=\"extracted\", source=~\"$source\"}[5m]))",
+            "legendFormat": "{{source}}",
+            "refId": "A"
+          }
+        ]
+      },
+      {
+        "id": 5,
+        "type": "stat",
+        "title": "Source freshness (hours since last success)",
+        "description": "(time() - dk_source_last_success_timestamp) / 3600. Green < 24h, yellow < 7d, red beyond. A stat-per-source helps spot which source is the oldest.",
+        "datasource": {
+          "type": "prometheus",
+          "uid": "prometheus"
+        },
+        "gridPos": {
+          "h": 9,
+          "w": 12,
+          "x": 12,
+          "y": 12
+        },
+        "fieldConfig": {
+          "defaults": {
+            "unit": "h",
+            "decimals": 1,
+            "color": {
+              "mode": "thresholds"
+            },
+            "thresholds": {
+              "mode": "absolute",
+              "steps": [
+                { "color": "green", "value": null },
+                { "color": "yellow", "value": 24 },
+                { "color": "orange", "value": 72 },
+                { "color": "red", "value": 168 }
+              ]
+            },
+            "mappings": []
+          },
+          "overrides": []
+        },
+        "options": {
+          "colorMode": "background",
+          "graphMode": "none",
+          "justifyMode": "auto",
+          "orientation": "auto",
+          "reduceOptions": {
+            "calcs": ["lastNotNull"],
+            "fields": "",
+            "values": false
+          },
+          "textMode": "value_and_name"
+        },
+        "pluginVersion": "10.0.0",
+        "targets": [
+          {
+            "expr": "(time() - dk_source_last_success_timestamp{source=~\"$source\"}) / 3600",
+            "legendFormat": "{{source}}",
+            "refId": "A"
+          }
+        ]
+      },
+      {
+        "id": 6,
+        "type": "table",
+        "title": "Phase duration p95 \u2014 full breakdown (source \u00d7 phase)",
+        "description": "Tabular view of p95 for each (source, phase) pair. Useful when drilling into a single slow source. Full (source \u00d7 schema \u00d7 table \u00d7 phase) cardinality is intentionally NOT shown here \u2014 query ad-hoc in Explore if you need per-table breakdown.",
+        "datasource": {
+          "type": "prometheus",
+          "uid": "prometheus"
+        },
+        "gridPos": {
+          "h": 10,
+          "w": 24,
+          "x": 0,
+          "y": 21
+        },
+        "fieldConfig": {
+          "defaults": {
+            "unit": "s",
+            "custom": {
+              "align": "right"
+            }
+          },
+          "overrides": []
+        },
+        "options": {
+          "showHeader": true
+        },
+        "targets": [
+          {
+            "expr": "histogram_quantile(0.95, sum by (source, phase, le) (rate(dk_hydration_phase_seconds_bucket{source=~\"$source\"}[5m])))",
+            "format": "table",
+            "instant": true,
+            "legendFormat": "__auto",
+            "refId": "A"
+          }
+        ]
+      }
+    ]
+  }
+}

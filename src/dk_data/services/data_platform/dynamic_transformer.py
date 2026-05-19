@@ -50,7 +50,7 @@ class DynamicSourceTransformer:
         async with self.db_pool.acquire() as conn:
             row = await conn.fetchrow("""
                 SELECT source, tier, options
-                FROM raw.sync_schedules
+                FROM meta.sync_schedules
                 WHERE source = $1
             """, source)
 
@@ -239,7 +239,7 @@ class DynamicSourceTransformer:
 
             options = config['options']
             raw_table = options.get('target_table', f'raw.{source}_data')
-            bronze_table = raw_table.replace('raw.', 'bronze.')
+            bronze_table = raw_table.replace('raw.', 'mol_bronze.')
 
             # AUTO-DETECT schema from larger sample (100 records for better coverage)
             data_columns = await self._detect_schema_from_payload(raw_table, sample_size=100)
@@ -775,14 +775,14 @@ class DynamicSourceTransformer:
 
             options = config['options']
             raw_table = options.get('target_table', f'raw.{source}_data')
-            bronze_table = raw_table.replace('raw.', 'bronze.')
-            silver_table = raw_table.replace('raw.', 'silver.')
+            bronze_table = raw_table.replace('raw.', 'mol_bronze.')
+            silver_table = raw_table.replace('raw.', 'mol_silver.')
 
             # Get entity linking configuration from Phase 3 onboarding
             entity_linking = options.get('entity_linking', {})
             # User-specified identifier from WebUI Phase 3
             user_identifier_field = entity_linking.get('identifier_field')
-            user_identifier_type = entity_linking.get('identifier_type')
+            user_identifier_type = entity_linking.get('source')
             has_specific_linking = bool(user_identifier_field and user_identifier_type)
 
             # Smart linking: auto-detect additional identifiers (enabled by default)
@@ -993,8 +993,8 @@ class DynamicSourceTransformer:
         and build a unified cache for multi-identifier resolution.
 
         Returns:
-            - cache: Dict mapping (identifier_type, value) -> molecule_id
-            - detected_fields: List of (identifier_type, field_name) tuples found
+            - cache: Dict mapping (source, value) -> molecule_id
+            - detected_fields: List of (source, field_name) tuples found
         """
         # Get column names from schema
         column_names = {c['name'].lower() for c in columns}
@@ -1042,14 +1042,14 @@ class DynamicSourceTransformer:
                     lookup_type = 'smiles'  # Stored as 'smiles' in identifier_mappings
 
                 rows = await conn.fetch("""
-                    SELECT identifier_value, molecule_id::text
-                    FROM silver.identifier_mappings
-                    WHERE identifier_type = $1
-                    AND identifier_value = ANY($2)
+                    SELECT identifier, molecule_id::text
+                    FROM mol_silver.molecule_identifiers
+                    WHERE source = $1
+                    AND identifier = ANY($2)
                 """, lookup_type, list(values))
 
                 for row in rows:
-                    cache[(id_type, row['identifier_value'])] = row['molecule_id']
+                    cache[(id_type, row['identifier'])] = row['molecule_id']
 
                 logger.debug(f"Loaded {len(rows)} mappings for {id_type}")
             except Exception as e:
@@ -1060,7 +1060,7 @@ class DynamicSourceTransformer:
                 try:
                     rows = await conn.fetch("""
                         SELECT drug_name_lower, molecule_id::text
-                        FROM silver.drug_name_lookup
+                        FROM mol_silver.drug_name_lookup
                         WHERE drug_name_lower = ANY($1)
                     """, [v.lower() for v in values])
 
@@ -1117,10 +1117,10 @@ class DynamicSourceTransformer:
 
         Returns a dict mapping identifier values to molecule_id (UUID string).
         """
-        identifier_type = entity_linking.get('identifier_type', '').lower()
+        source = entity_linking.get('source', '').lower()
         identifier_field = entity_linking.get('identifier_field', '')
 
-        # Map user-facing identifier types to database identifier_type values
+        # Map user-facing identifier types to database source values
         # The identifier_mappings table uses underscore versions
         db_identifier_type_map = {
             'inchikey': 'inchi_key',
@@ -1145,11 +1145,11 @@ class DynamicSourceTransformer:
             'unii': None,
         }
 
-        db_identifier_type = db_identifier_type_map.get(identifier_type)
-        lookup_column = molecule_column_map.get(identifier_type)
+        db_identifier_type = db_identifier_type_map.get(source)
+        lookup_column = molecule_column_map.get(source)
 
         if not db_identifier_type:
-            logger.warning(f"Unknown identifier type: {identifier_type}")
+            logger.warning(f"Unknown identifier type: {source}")
             return {}
 
         # Extract unique identifiers from records
@@ -1167,14 +1167,14 @@ class DynamicSourceTransformer:
         # Look up in identifier_mappings table (primary lookup)
         try:
             rows = await conn.fetch("""
-                SELECT identifier_value, molecule_id::text
-                FROM silver.identifier_mappings
-                WHERE identifier_type = $1
-                AND identifier_value = ANY($2)
+                SELECT identifier, molecule_id::text
+                FROM mol_silver.molecule_identifiers
+                WHERE source = $1
+                AND identifier = ANY($2)
             """, db_identifier_type, list(identifiers))
 
             for row in rows:
-                cache[row['identifier_value']] = row['molecule_id']
+                cache[row['identifier']] = row['molecule_id']
 
             logger.info(f"Loaded {len(cache)} identifier mappings for {db_identifier_type}")
         except Exception as e:
@@ -1186,7 +1186,7 @@ class DynamicSourceTransformer:
                 remaining = [i for i in identifiers if i not in cache]
                 rows = await conn.fetch(f"""
                     SELECT {lookup_column} as identifier, id::text as molecule_id
-                    FROM silver.molecules
+                    FROM mol_silver.molecules
                     WHERE {lookup_column} = ANY($1)
                 """, remaining)
 
@@ -1199,13 +1199,13 @@ class DynamicSourceTransformer:
                 logger.warning(f"molecules table lookup failed: {e2}")
 
         # Also try drug_name_lookup for name-based matching
-        if identifier_type == 'drug_name' and identifiers:
+        if source == 'drug_name' and identifiers:
             try:
                 remaining = [i for i in identifiers if i not in cache and i.lower() not in cache]
                 if remaining:
                     rows = await conn.fetch("""
                         SELECT LOWER(name) as name, molecule_id::text
-                        FROM silver.drug_name_lookup
+                        FROM mol_silver.drug_name_lookup
                         WHERE LOWER(name) = ANY($1)
                     """, [n.lower() for n in remaining])
 
@@ -1256,7 +1256,7 @@ class DynamicSourceTransformer:
                 return identifier_cache[primary_value]
 
             # For drug names, also try lowercase
-            if entity_linking.get('identifier_type') == 'drug_name':
+            if entity_linking.get('source') == 'drug_name':
                 if primary_value.lower() in identifier_cache:
                     return identifier_cache[primary_value.lower()]
 
@@ -1313,10 +1313,10 @@ class DynamicSourceTransformer:
                 # Use COPY for efficiency or batch insert
                 for val, mol_id in new_mappings:
                     await conn.execute("""
-                        INSERT INTO silver.identifier_mappings
-                        (id, molecule_id, identifier_type, identifier_value, source, confidence, is_primary, created_at, updated_at)
+                        INSERT INTO mol_silver.molecule_identifiers
+                        (id, molecule_id, source, identifier, source, confidence, is_primary, created_at, updated_at)
                         VALUES (gen_random_uuid(), $1::uuid, $2, $3, $4, 0.8, false, NOW(), NOW())
-                        ON CONFLICT (molecule_id, identifier_type, identifier_value) DO NOTHING
+                        ON CONFLICT (molecule_id, source, identifier) DO NOTHING
                     """, mol_id, db_type, val, source)
 
                 added_count += len(new_mappings)
@@ -1334,7 +1334,7 @@ class DynamicSourceTransformer:
                     name = record.get(field_name)
                     if molecule_id and name and isinstance(name, str):
                         await conn.execute("""
-                            INSERT INTO silver.drug_name_lookup (drug_name_lower, molecule_id)
+                            INSERT INTO mol_silver.drug_name_lookup (drug_name_lower, molecule_id)
                             VALUES ($1, $2::uuid)
                             ON CONFLICT DO NOTHING
                         """, name.lower().strip(), molecule_id)
@@ -1369,7 +1369,7 @@ class DynamicSourceTransformer:
 
         # Add molecule_id column for entity linking (UUID stored as TEXT)
         if has_entity_linking:
-            col_defs.append("molecule_id TEXT")  # Links to silver.molecules (UUID)
+            col_defs.append("molecule_id TEXT")  # Links to mol_silver.molecules (UUID)
 
         ddl = f"""
             CREATE TABLE IF NOT EXISTS {table_name} (
@@ -1518,8 +1518,8 @@ class DynamicSourceTransformer:
 
             options = config['options']
             raw_table = options.get('target_table', f'raw.{source}_data')
-            silver_table = raw_table.replace('raw.', 'silver.')
-            gold_table = raw_table.replace('raw.', 'gold.')
+            silver_table = raw_table.replace('raw.', 'mol_silver.')
+            gold_table = raw_table.replace('raw.', 'mol_gold.')
 
             # Get columns from silver table
             columns = await self.get_table_columns(silver_table)
@@ -1774,12 +1774,12 @@ class DynamicSourceTransformer:
             options = config['options']
             entity_linking = options.get('entity_linking', {})
 
-            if not entity_linking.get('identifier_field') or not entity_linking.get('identifier_type'):
+            if not entity_linking.get('identifier_field') or not entity_linking.get('source'):
                 result.errors.append(f"Entity linking not configured for {source}")
                 return result
 
             raw_table = options.get('target_table', f'raw.{source}_data')
-            silver_table = raw_table.replace('raw.', 'silver.')
+            silver_table = raw_table.replace('raw.', 'mol_silver.')
 
             # Get columns from silver table
             columns = await self.get_table_columns(silver_table)
@@ -1923,7 +1923,7 @@ async def get_dynamic_sources(pool) -> List[str]:
 
     async with pool.acquire() as conn:
         rows = await conn.fetch("""
-            SELECT source FROM raw.sync_schedules
+            SELECT source FROM meta.sync_schedules
             WHERE options->>'target_table' IS NOT NULL
         """)
 

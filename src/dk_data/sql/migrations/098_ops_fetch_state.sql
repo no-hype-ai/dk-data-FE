@@ -1,0 +1,40 @@
+-- Migration: 098_ops_fetch_state.sql
+-- Purpose: Persistent fetch state for all ingestion fetchers.
+--
+-- Replaces the file-based manifest system (.manifests/<source>.json) with
+-- a PostgreSQL-backed store so that ETag, cursor, offset, and content-hash
+-- state survives Kubernetes pod restarts between CronJob runs.
+--
+-- BaseFetcher.load_manifest() / save_manifest() write here first;
+-- the file-based fallback is kept for local dev without a DB connection.
+--
+-- Ported from 016-cms-puf-datasource-integration (migration 133_fetch_state_table.sql)
+-- Date: 2026-03-27
+-- Feature: 019-cms-puf-platform-reconciliation
+
+BEGIN;
+
+-- Ensure ops schema exists
+CREATE SCHEMA IF NOT EXISTS ops;
+
+CREATE TABLE IF NOT EXISTS ops.fetch_state (
+    source_name  VARCHAR(100) PRIMARY KEY,
+    manifest     JSONB        NOT NULL DEFAULT '{}',
+    updated_at   TIMESTAMPTZ  NOT NULL DEFAULT NOW()
+);
+
+COMMENT ON TABLE ops.fetch_state IS
+    'Per-source fetch state persisted between Kubernetes CronJob runs. '
+    'Stores ETag, Last-Modified, cursor, offset, content hash, and run status.';
+
+COMMENT ON COLUMN ops.fetch_state.source_name IS
+    'Matches BaseFetcher.SOURCE_NAME (e.g. ''pubmed'', ''uniprot'').';
+
+COMMENT ON COLUMN ops.fetch_state.manifest IS
+    'JSON object with fields: last_run_at, last_run_status, total_records_fetched, '
+    'last_content_hash, etag, last_modified, last_cursor, last_offset, saved_at.';
+
+-- Grant ingestion CronJobs (api_user) read/write access
+GRANT SELECT, INSERT, UPDATE ON ops.fetch_state TO api_user;
+
+COMMIT;

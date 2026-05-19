@@ -1,0 +1,295 @@
+---
+# PgBouncer — connection pooler for the dk_data PostgreSQL cluster (item 6)
+#
+# Sits in front of CloudNativePG at postgres-cluster-rw.infra.svc.cluster.local:5432.
+# All application services (job-trigger, cronjob pods, SQLMesh, PostgREST)
+# point POSTGRES_HOST at pgbouncer.infra.svc.cluster.local:5432.
+#
+# Mode: transaction — each SQL transaction reuses a server connection from the
+# pool.  This is the lowest-overhead mode and is compatible with SQLMesh and
+# psycopg2; it is NOT compatible with session-level features (SET, LISTEN/NOTIFY,
+# advisory locks) so those must use direct connections.
+#
+# Pools (pick the right one by setting POSTGRES_DB / PGBOUNCER_DB in the caller):
+#   dk_data           → PostgREST + app-tier writes (latency-sensitive).
+#   dk_data_hydration → batch ingestion (long-running pg_restore, acceptable
+#                       queuing — never share a pool with interactive traffic).
+#   behavior_labs     → behavior_labs database (separate workload).
+#   litellm           → litellm database (separate workload).
+#
+# Client consumers that want the hydration pool must set POSTGRES_DB=dk_data_hydration
+# (or PGBOUNCER_DB=dk_data_hydration if they compute the DSN separately). See
+# docs/runbooks/pgbouncer-pools.md for the matrix of which workloads use which pool.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: pgbouncer-config
+  namespace: infra
+  labels:
+    app: pgbouncer
+    app.kubernetes.io/name: pgbouncer
+    app.kubernetes.io/component: connection-pooler
+    app.kubernetes.io/part-of: dk-data
+data:
+  pgbouncer.ini: |
+    [databases]
+    ; Per-database pool_size overrides.
+    ;
+    ; BUDGET MATH (per PgBouncer replica — there are 2 replicas, so multiply
+    ; these numbers by 2 to get total server-side connections to Postgres):
+    ;
+    ;   Pool                 pool_size  consumers
+    ;   ──────────────────── ─────────  ─────────────────────────────────────────
+    ;   dk_data              50         PostgREST (3 replicas × PGRST_DB_POOL=30
+    ;                                   = 90 client slots via postgrest) +
+    ;                                   app-tier writes (job-trigger, cronjobs)
+    ;   dk_data_hydration    20         batch ingestion (prestaged restore Job,
+    ;                                   bulk backfills, SQLMesh backfills — any
+    ;                                   long-running write workload)
+    ;   behavior_labs        25         behavior_labs database clients
+    ;   litellm              10         litellm database clients
+    ;   ──────────────────── ─────────
+    ;   SUM per replica     105 ≤ max_db_connections=105 (enforced below)
+    ;   SUM × 2 replicas    210 ≤ postgres max_connections − reserved
+    ;
+    ; Postgres side (CNPG cluster):
+    ;   postgres max_connections            = 200  (assumed — see
+    ;                                          docs/reports/capacity-audit-2026-Q2.md)
+    ;   reserved (superuser/replication/admin) = 30
+    ;   app workload available              = 170
+    ;
+    ; TODAY'S INEQUALITY:   210 (app demand) > 170 (app budget)   <-- VIOLATED
+    ;
+    ; This is a *ceiling* — we expect steady-state utilization well below the
+    ; sum. Hydration is not running on main today; once feature/005 ships and
+    ; starts driving sustained load on the hydration pool, Postgres
+    ; max_connections MUST be raised to ≥ 240 (= 30 reserved + 210 pools) or
+    ; one of the non-hydration pools must shrink. Until then, PgBouncer will
+    ; cap each replica at max_db_connections=105 and queue client connections
+    ; beyond that; no crash, only latency.
+    ;
+    ; IF YOU ADD A FIFTH POOL: re-derive the inequality above, bump
+    ; max_db_connections, and confirm Postgres max_connections can absorb
+    ; (new_sum × replicas) + reserved. Math lives next to the config so it
+    ; cannot drift.
+    ;
+    ; Pool-mode note: dk_data_hydration sets pool_mode=transaction explicitly
+    ; (matches global default, but called out so a future global change to
+    ; session mode does not silently break bulk-restore parallelism).
+    dk_data = host=postgres-cluster-rw.infra.svc.cluster.local port=5432 dbname=dk_data pool_size=50
+    dk_data_hydration = host=postgres-cluster-rw.infra.svc.cluster.local port=5432 dbname=dk_data pool_size=20 pool_mode=transaction
+    behavior_labs = host=postgres-cluster-rw.infra.svc.cluster.local port=5432 dbname=behavior_labs pool_size=25
+    litellm = host=postgres-cluster-rw.infra.svc.cluster.local port=5432 dbname=litellm pool_size=10
+
+    [pgbouncer]
+    listen_addr = 0.0.0.0
+    listen_port = 5432
+    auth_type = scram-sha-256
+    auth_file = /etc/pgbouncer/userlist.txt
+
+    pool_mode = transaction
+    max_client_conn = 1000
+    default_pool_size = 20
+    reserve_pool_size = 5
+    reserve_pool_timeout = 3
+    ; Cap total server connections per PgBouncer replica to the sum of all
+    ; pool_size values above. This is the enforcement knob for the budget
+    ; math in [databases]. Update in lockstep when adding/resizing pools.
+    max_db_connections = 105
+
+    log_connections = 0
+    log_disconnections = 0
+    log_stats = 1
+    stats_period = 60
+
+    server_reset_query = DISCARD ALL
+    server_check_query = SELECT 1
+    server_check_delay = 30
+
+    ignore_startup_parameters = extra_float_digits
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: pgbouncer
+  namespace: infra
+  labels:
+    app: pgbouncer
+    app.kubernetes.io/name: pgbouncer
+    app.kubernetes.io/component: connection-pooler
+    app.kubernetes.io/part-of: dk-data
+spec:
+  # Feature 002 perf pass: 2 replicas so a single pod restart
+  # doesn't take down every dk-data, behavior-labs, and litellm
+  # consumer simultaneously. PgBouncer is the cluster-wide DB
+  # gateway; one replica is unacceptable single-point-of-failure.
+  # NB: pool_size in [databases] is per-pgbouncer-instance. See the
+  # BUDGET MATH block in the ConfigMap above for the full per-replica
+  # sum; max_db_connections=105 caps server-side connections per
+  # replica so the two replicas together stay within the Postgres
+  # max_connections ceiling. The runbook docs/runbooks/wal-budget.md
+  # notes the upstream trade-off.
+  replicas: 2
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+  selector:
+    matchLabels:
+      app: pgbouncer
+  template:
+    metadata:
+      labels:
+        app: pgbouncer
+        app.kubernetes.io/name: pgbouncer
+        app.kubernetes.io/component: connection-pooler
+        app.kubernetes.io/part-of: dk-data
+        team: data-platform
+        service: dk-data
+        product: dk-data
+    spec:
+      # Spread across nodes — both pgbouncer pods on the same node
+      # defeats the HA upgrade.
+      affinity:
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+            - weight: 100
+              podAffinityTerm:
+                labelSelector:
+                  matchLabels:
+                    app: pgbouncer
+                topologyKey: kubernetes.io/hostname
+      # PgBouncer holds active server connections; on shutdown it
+      # needs time to drain in-flight queries before SIGKILL.
+      terminationGracePeriodSeconds: 60
+      imagePullSecrets:
+        - name: ghcr-credentials
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 70  # pgbouncer uid in official image
+        fsGroup: 70
+        seccompProfile:
+          type: RuntimeDefault
+      initContainers:
+        # Build userlist.txt from Doppler-managed secrets at pod start.
+        # PgBouncer requires "username" "password" pairs in its auth file.
+        # We write scram-sha-256 password hashes from the plain secret so the
+        # password is never stored in cleartext on disk.
+        #
+        # Pool ACL: both dk_data and dk_data_hydration authenticate against
+        # the same POSTGRES_USER today (i.e. the hydration pool is NOT
+        # isolated by a distinct DB role — only by a separate PgBouncer
+        # server-connection pool). Future hardening: provision a dedicated
+        # `dk_data_hydration` Postgres role with SELECT/INSERT/UPDATE on the
+        # ingestion schemas only, add HYDRATION_USER/HYDRATION_PASSWORD to
+        # dk-data-secrets (DopplerSecret), and append a third line to
+        # userlist.txt. That change belongs in a follow-up PR so this one
+        # stays pool-plumbing only.
+        - name: write-userlist
+          image: ghcr.io/data-kinetic/pgbouncer:1.23.0
+          command:
+            - /bin/sh
+            - -c
+            - |
+              echo "\"${POSTGRES_USER}\" \"${POSTGRES_PASSWORD}\"" > /etc/pgbouncer/userlist.txt
+              echo "\"authenticator\" \"${POSTGREST_PASSWORD}\"" >> /etc/pgbouncer/userlist.txt
+              chmod 600 /etc/pgbouncer/userlist.txt
+          env:
+            - name: POSTGRES_USER
+              valueFrom:
+                secretKeyRef:
+                  name: dk-data-secrets
+                  key: POSTGRES_USER
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: dk-data-secrets
+                  key: POSTGRES_PASSWORD
+            - name: POSTGREST_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: dk-data-secrets
+                  key: POSTGREST_PASSWORD
+          volumeMounts:
+            - name: pgbouncer-userlist
+              mountPath: /etc/pgbouncer
+          resources:
+            requests:
+              memory: "32Mi"
+              cpu: "10m"
+            limits:
+              memory: "64Mi"
+              cpu: "50m"
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: false
+            capabilities:
+              drop: ["ALL"]
+      containers:
+        - name: pgbouncer
+          image: ghcr.io/data-kinetic/pgbouncer:1.23.0
+          # Pass the ini path explicitly so pgbouncer reads from the
+          # subPath-mounted configmap at /opt/pgbouncer/pgbouncer.ini
+          # instead of its compiled-in default /etc/pgbouncer/pgbouncer.ini.
+          # (The /etc/pgbouncer dir is reserved for the userlist emptyDir.)
+          command: ["pgbouncer", "/opt/pgbouncer/pgbouncer.ini"]
+          ports:
+            - containerPort: 5432
+              name: pgbouncer
+          volumeMounts:
+            - name: pgbouncer-ini
+              mountPath: /opt/pgbouncer/pgbouncer.ini
+              subPath: pgbouncer.ini
+              readOnly: true
+            - name: pgbouncer-userlist
+              mountPath: /etc/pgbouncer
+          resources:
+            requests:
+              memory: "64Mi"
+              cpu: "50m"
+            limits:
+              memory: "256Mi"
+              cpu: "250m"
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: false
+            capabilities:
+              drop: ["ALL"]
+          livenessProbe:
+            tcpSocket:
+              port: 5432
+            initialDelaySeconds: 10
+            periodSeconds: 30
+            timeoutSeconds: 5
+          readinessProbe:
+            tcpSocket:
+              port: 5432
+            initialDelaySeconds: 5
+            periodSeconds: 10
+            timeoutSeconds: 3
+      volumes:
+        - name: pgbouncer-ini
+          configMap:
+            name: pgbouncer-config
+        - name: pgbouncer-userlist
+          emptyDir: {}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: pgbouncer
+  namespace: infra
+  labels:
+    app: pgbouncer
+    app.kubernetes.io/name: pgbouncer
+    app.kubernetes.io/component: connection-pooler
+    app.kubernetes.io/part-of: dk-data
+spec:
+  selector:
+    app: pgbouncer
+  ports:
+    - name: pgbouncer
+      port: 5432
+      targetPort: 5432
+  type: ClusterIP

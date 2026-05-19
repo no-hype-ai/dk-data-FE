@@ -1,0 +1,28 @@
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: dk-data-api
+  labels:
+    app.kubernetes.io/part-of: dk-data
+  annotations:
+    cert-manager.io/cluster-issuer: letsencrypt-prod
+    traefik.ingress.kubernetes.io/router.entrypoints: websecure
+    traefik.ingress.kubernetes.io/router.tls: "true"
+    traefik.ingress.kubernetes.io/router.middlewares: "dk-data-prod-dk-data-rate-limit@kubernetescrd"
+spec:
+  ingressClassName: traefik
+  tls:
+    - hosts:
+        - data.behaviorlabs.ai
+      secretName: data-behaviorlabs-ai-tls
+  rules:
+    - host: data.behaviorlabs.ai
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: dk-data-metering-proxy
+                port:
+                  number: 3001

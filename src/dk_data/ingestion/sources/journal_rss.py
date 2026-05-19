@@ -3,12 +3,13 @@
 Feature: 011-datasource-integration
 Task: T051-T054 — Journal RSS CI source integration
 
-Loads normalized journal RSS article records into raw.journal_rss
+Loads normalized journal RSS article records into mol_raw.journal_rss
 with upsert semantics (ON CONFLICT DO UPDATE on article_id).
 
-Target table: raw.journal_rss (see migration 060_ci_source_tables.sql)
+Target table: mol_raw.journal_rss (see migration 060_ci_source_tables.sql)
 """
 
+import json
 import logging
 from datetime import date, datetime
 from typing import Any, Dict, List, Optional
@@ -30,7 +31,7 @@ def load_journal_rss_data(
     source_file: Optional[str] = None,
     batch_size: int = BATCH_SIZE,
 ) -> Dict[str, Any]:
-    """Load journal RSS article records into raw.journal_rss.
+    """Load journal RSS article records into mol_raw.journal_rss.
 
     Validates each record via the JournalRSSRecord Pydantic model and
     performs an upsert: INSERT ... ON CONFLICT (article_id) DO UPDATE.
@@ -53,7 +54,7 @@ def load_journal_rss_data(
             "errors": [],
         }
 
-    logger.info("Loading %d journal RSS records into raw.journal_rss", len(records))
+    logger.info("Loading %d journal RSS records into mol_raw.journal_rss", len(records))
 
     records_inserted = 0
     records_failed = 0
@@ -63,6 +64,7 @@ def load_journal_rss_data(
         with conn.cursor() as cur:
             for idx, raw_record in enumerate(records):
                 try:
+                    cur.execute("SAVEPOINT sp_record")
                     # Validate via Pydantic model
                     validated = JournalRSSRecord(
                         article_id=raw_record.get("article_id", ""),
@@ -78,17 +80,25 @@ def load_journal_rss_data(
                         categories=raw_record.get("categories"),
                     )
 
+                    # authors and categories are JSONB columns — serialize Python values to JSON
+                    authors_json = (
+                        json.dumps(validated.authors) if validated.authors is not None else None
+                    )
+                    categories_json = (
+                        json.dumps(validated.categories) if validated.categories else None
+                    )
+
                     cur.execute(
                         """
-                        INSERT INTO raw.journal_rss (
+                        INSERT INTO mol_raw.journal_rss (
                             article_id, feed_source, title, authors,
                             abstract, publication_date, link, doi,
                             categories,
                             _source_file, _source_hash
                         ) VALUES (
+                            %s, %s, %s, %s::JSONB,
                             %s, %s, %s, %s,
-                            %s, %s, %s, %s,
-                            %s,
+                            %s::JSONB,
                             %s, %s
                         )
                         ON CONFLICT (article_id) DO UPDATE SET
@@ -108,16 +118,17 @@ def load_journal_rss_data(
                             validated.article_id,
                             validated.feed_source,
                             validated.title,
-                            validated.authors,
+                            authors_json,
                             validated.abstract,
                             validated.publication_date,
                             validated.link,
                             validated.doi,
-                            validated.categories if validated.categories else None,
+                            categories_json,
                             source_file or "journal_rss_feed",
                             source_hash,
                         ),
                     )
+                    cur.execute("RELEASE SAVEPOINT sp_record")
                     records_inserted += 1
 
                     if records_inserted % batch_size == 0:
@@ -125,6 +136,7 @@ def load_journal_rss_data(
                         logger.debug("Committed batch: %d records so far", records_inserted)
 
                 except ValidationError as e:
+                    cur.execute("ROLLBACK TO SAVEPOINT sp_record")
                     records_failed += 1
                     errors.append({
                         "index": idx,
@@ -138,6 +150,7 @@ def load_journal_rss_data(
                         )
 
                 except Exception as e:
+                    cur.execute("ROLLBACK TO SAVEPOINT sp_record")
                     records_failed += 1
                     errors.append({
                         "index": idx,

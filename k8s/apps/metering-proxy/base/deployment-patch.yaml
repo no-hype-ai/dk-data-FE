@@ -1,0 +1,108 @@
+# Strategic merge patch to add the metering proxy sidecar
+# to the PostgREST Deployment.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: postgrest
+spec:
+  template:
+    metadata:
+      labels:
+        app: postgrest
+      annotations:
+        # Feature 002-external-integration-foundation T014: fix prometheus
+        # scrape target. The metering proxy's /metrics endpoint is served
+        # by the SAME uvicorn process that serves the proxy on port 3001
+        # (see src/dk_data/metering_proxy/app.py line 86 — @app.get("/metrics")
+        # — and src/dk_data/metering_proxy/schemas.py BYPASS_PATHS which
+        # lets /metrics skip the auth check). There is no separate metrics
+        # port listening, despite the old containerPort: 9090 declaration
+        # below which was removed as part of the same fix.
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "3001"
+        prometheus.io/path: "/metrics"
+    spec:
+      volumes:
+        - name: consumers-config
+          configMap:
+            name: dk-data-consumers
+      containers:
+        - name: metering-proxy
+          image: ghcr.io/data-kinetic/dk-data-fe:latest
+          command:
+            - uvicorn
+            - dk_data.metering_proxy.app:app
+            - --host
+            - "0.0.0.0"
+            - --port
+            - "3001"
+            - --log-level
+            - info
+          ports:
+            - containerPort: 3001
+              name: proxy
+              protocol: TCP
+            # Removed: containerPort 9090 "metrics" — nothing was bound to it.
+            # The metrics endpoint is served on port 3001 via /metrics (T014).
+          env:
+            - name: POSTGREST_URL
+              value: "http://localhost:3000"
+            - name: CONSUMERS_CONFIG_PATH
+              value: "/etc/dk-data/consumers.yaml"
+            - name: LOG_LEVEL
+              value: "INFO"
+            - name: LOG_FORMAT
+              value: "json"
+            # Feature 003-metering-jwt-mint (issue #283): the proxy
+            # mints a short-lived HS256 JWT signed with this secret
+            # and injects it as the Authorization header on every
+            # forwarded request. Same secret key as PGRST_JWT_SECRET
+            # on the postgrest container above — PostgREST and the
+            # proxy MUST see the same value or the startup self-test
+            # fails and readiness stays red.
+            - name: JWT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: dk-data-secrets
+                  key: JWT_SECRET
+          volumeMounts:
+            - name: consumers-config
+              mountPath: /etc/dk-data
+              readOnly: true
+          # Guaranteed QoS: requests == limits. The metering proxy
+          # is the SINGLE choke point for every external read after
+          # US-2 (web_anon dropped). OOM-kill = full read outage for
+          # every consumer, so this pod must never be eligible for
+          # eviction under memory pressure.
+          resources:
+            requests:
+              memory: "256Mi"
+              cpu: "250m"
+            limits:
+              memory: "256Mi"
+              cpu: "250m"
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+          startupProbe:
+            httpGet:
+              path: /health
+              port: 3001
+            failureThreshold: 30
+            periodSeconds: 2
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 3001
+            initialDelaySeconds: 5
+            periodSeconds: 30
+            timeoutSeconds: 5
+          readinessProbe:
+            httpGet:
+              path: /ready
+              port: 3001
+            initialDelaySeconds: 3
+            periodSeconds: 10
+            timeoutSeconds: 5

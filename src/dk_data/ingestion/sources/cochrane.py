@@ -3,10 +3,10 @@
 Feature: 011-datasource-integration
 Task: T064-T066 — Cochrane systematic reviews
 
-Loads normalised Cochrane review records into raw.cochrane_reviews
+Loads normalised Cochrane review records into mol_raw.cochrane_reviews
 with upsert semantics (ON CONFLICT DO UPDATE on review_id).
 
-Target table: raw.cochrane_reviews (see migration 060_ci_source_tables.sql)
+Target table: mol_raw.cochrane_reviews (see migration 060_ci_source_tables.sql)
 """
 
 import logging
@@ -29,7 +29,7 @@ def load_cochrane_data(
     source_file: Optional[str] = None,
     batch_size: int = BATCH_SIZE,
 ) -> Dict[str, Any]:
-    """Load Cochrane review records into raw.cochrane_reviews.
+    """Load Cochrane review records into mol_raw.cochrane_reviews.
 
     Validates each record using Pydantic and performs an upsert:
     INSERT ... ON CONFLICT (review_id) DO UPDATE.
@@ -47,12 +47,13 @@ def load_cochrane_data(
         logger.warning("No Cochrane review records to load")
         return {
             "status": "success",
+            "records_fetched": 0,
             "records_inserted": 0,
-            "records_failed": 0,
+            "records_updated": 0,
             "errors": [],
         }
 
-    logger.info("Loading %d Cochrane review records into raw.cochrane_reviews", len(records))
+    logger.info("Loading %d Cochrane review records into mol_raw.cochrane_reviews", len(records))
 
     records_inserted = 0
     records_failed = 0
@@ -67,20 +68,21 @@ def load_cochrane_data(
 
                     cur.execute(
                         """
-                        INSERT INTO raw.cochrane_reviews (
-                            review_id, title, authors, abstract,
+                        INSERT INTO mol_raw.cochrane_reviews (
+                            review_id, pmid, title, authors, abstract,
                             publication_date, review_type,
                             interventions, conditions,
                             conclusions, doi,
                             _source_file, _source_hash
                         ) VALUES (
-                            %s, %s, %s, %s,
+                            %s, %s, %s, %s, %s,
                             %s, %s,
                             %s, %s,
                             %s, %s,
                             %s, %s
                         )
                         ON CONFLICT (review_id) DO UPDATE SET
+                            pmid = EXCLUDED.pmid,
                             title = EXCLUDED.title,
                             authors = EXCLUDED.authors,
                             abstract = EXCLUDED.abstract,
@@ -96,6 +98,7 @@ def load_cochrane_data(
                         """,
                         (
                             record.review_id,
+                            record.pmid,
                             record.title,
                             record.authors,
                             record.abstract,
@@ -136,7 +139,8 @@ def load_cochrane_data(
 
     return {
         "status": "success" if records_inserted > 0 or records_failed == 0 else "failed",
+        "records_fetched": len(records),
         "records_inserted": records_inserted,
-        "records_failed": records_failed,
+        "records_updated": 0,
         "errors": errors[:10],
     }

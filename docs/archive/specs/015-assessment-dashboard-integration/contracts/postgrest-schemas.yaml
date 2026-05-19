@@ -1,0 +1,161 @@
+# PostgREST Schema Access Contract
+# Defines which tables/views are accessible per role in newly exposed schemas
+
+config:
+  pgrst_db_schemas: "api,mol_api,mol_gold,mol_silver,xenon,meta"
+  pgrst_db_anon_role: "web_anon"
+
+schemas:
+  mol_gold:
+    description: Gold-layer aggregated molecule views (read-only)
+    access:
+      analyst: [SELECT]
+      web_anon: []  # No access
+    tables:
+      # Existing (accessible after GRANT)
+      - name: molecule_profiles_agg
+        type: table
+        description: Pre-aggregated molecule profiles
+      - name: safety_signals_agg
+        type: table
+        description: Aggregated adverse event signals
+      - name: trial_analytics_agg
+        type: table
+        description: Trial analytics aggregation
+      # Existing additional gold tables
+      - name: molecule_profile
+        type: table
+        description: Full molecule profile with cross-refs
+      - name: lifecycle_stages
+        type: table
+        description: Molecule lifecycle stage detection
+      - name: lifecycle_evidence
+        type: table
+        description: Evidence supporting lifecycle stages
+      - name: competitive_landscape
+        type: table
+        description: Competitive landscape per indication
+      - name: safety_signals
+        type: table
+        description: Detailed safety signals
+      - name: company_pipeline
+        type: table
+        description: Company pipeline data
+      # New views (this feature)
+      - name: kol_profiles
+        type: view
+        description: KOL researcher profiles with influence scoring
+      - name: kol_network
+        type: view
+        description: Co-authorship network relationships
+      - name: kol_drug_associations
+        type: view
+        description: Researcher-drug associations
+      - name: advocacy_groups
+        type: view
+        description: Patient advocacy organizations
+      - name: advocacy_sentiment
+        type: view
+        description: Media/news sentiment per molecule
+      - name: trial_outcomes
+        type: view
+        description: Unified trial outcomes (registry + publication UNION)
+      - name: regulatory_timeline
+        type: view
+        description: Per-molecule regulatory decision history
+      - name: financial_summary
+        type: view
+        description: Per-molecule financial metrics from SEC
+
+  mol_silver:
+    description: Silver-layer normalized molecule data (read-only)
+    access:
+      analyst: [SELECT]
+      web_anon: []
+    tables:
+      - name: molecules_from_bronze
+        type: table
+      - name: clinical_trials
+        type: table
+      - name: drug_labels
+        type: table
+      - name: adverse_events
+        type: table
+      - name: identifier_mappings
+        type: table
+      - name: molecule_aliases
+        type: table
+      - name: molecule_targets
+        type: table
+      - name: molecule_publications
+        type: table
+      - name: publications
+        type: table
+      - name: targets
+        type: table
+      - name: bioactivity
+        type: table
+
+  xenon:
+    description: Xenon application data (read+write for analyst)
+    access:
+      analyst: [SELECT, INSERT, UPDATE]
+      web_anon: []
+    tables:
+      - name: assessment_generated
+        type: table
+        description: AI-generated assessment content
+        operations:
+          SELECT: Read cached assessment sections
+          INSERT: Write new generated content
+          UPDATE: Update existing content (version bump)
+      - name: publication_evidence
+        type: table
+        description: LLM-extracted clinical evidence
+        operations:
+          SELECT: Read evidence for trial outcomes
+          INSERT: Write extracted evidence
+          UPDATE: Update confidence scores
+
+  meta:
+    description: Platform metadata (read-only)
+    access:
+      analyst: [SELECT]
+      web_anon: []
+    tables:
+      - name: data_source_config
+        type: table
+        description: Data source configuration and status
+      - name: sync_jobs
+        type: table
+        description: Sync job history
+      - name: schema_migrations
+        type: table
+        description: Migration tracking
+      - name: api_audit_log
+        type: table
+        description: API audit trail
+
+grants_sql: |
+  -- xenon schema creation
+  CREATE SCHEMA IF NOT EXISTS xenon;
+
+  -- Schema USAGE grants
+  GRANT USAGE ON SCHEMA mol_gold TO analyst;
+  GRANT USAGE ON SCHEMA mol_silver TO analyst;
+  GRANT USAGE ON SCHEMA xenon TO analyst;
+  GRANT USAGE ON SCHEMA meta TO analyst;
+
+  -- Read access (analyst)
+  GRANT SELECT ON ALL TABLES IN SCHEMA mol_gold TO analyst;
+  GRANT SELECT ON ALL TABLES IN SCHEMA mol_silver TO analyst;
+  GRANT SELECT ON ALL TABLES IN SCHEMA meta TO analyst;
+
+  -- Read+write access on xenon (analyst)
+  GRANT SELECT, INSERT, UPDATE ON ALL TABLES IN SCHEMA xenon TO analyst;
+
+  -- Default privileges for future tables
+  ALTER DEFAULT PRIVILEGES IN SCHEMA mol_gold GRANT SELECT ON TABLES TO analyst;
+  ALTER DEFAULT PRIVILEGES IN SCHEMA mol_silver GRANT SELECT ON TABLES TO analyst;
+  ALTER DEFAULT PRIVILEGES IN SCHEMA xenon GRANT SELECT, INSERT, UPDATE ON TABLES TO analyst;
+  ALTER DEFAULT PRIVILEGES IN SCHEMA meta GRANT SELECT ON TABLES TO analyst;

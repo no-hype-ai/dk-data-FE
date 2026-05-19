@@ -7,13 +7,16 @@ labels:
 - pairs:
     environment: production
 
+# Per-source DopplerSecret CRs (Horizon 3 §D.5). Each CR scopes one key to
+# one Doppler config so rotation blast-radius is a single source.
 resources:
 - ../../base
+- ../../apps/secrets/per-source
 
 images:
 - name: ghcr.io/data-kinetic/dk-data-fe/job-trigger
   newName: ghcr.io/data-kinetic/dk-data-fe/job-trigger
-  newTag: prod-4b78e3c
+  newTag: main-9e9ce95
 
   # PostgREST — 3 replicas for HA with production resources
 
@@ -59,11 +62,27 @@ patches:
             - name: job-trigger
               resources:
                 requests:
-                  memory: "128Mi"
+                  memory: "256Mi"
                   cpu: "100m"
                 limits:
-                  memory: "512Mi"
+                  memory: "1Gi"
                   cpu: "500m"
+              livenessProbe:
+                httpGet:
+                  path: /health
+                  port: 8000
+                initialDelaySeconds: 60
+                periodSeconds: 30
+                timeoutSeconds: 5
+                failureThreshold: 5
+              readinessProbe:
+                httpGet:
+                  path: /health
+                  port: 8000
+                initialDelaySeconds: 30
+                periodSeconds: 10
+                timeoutSeconds: 5
+                failureThreshold: 5
   target:
     kind: Deployment
     name: job-trigger
@@ -90,25 +109,3 @@ patches:
   target:
     kind: ConfigMap
     name: molecule-pipeline-config
-- patch: |-
-    apiVersion: batch/v1
-    kind: CronJob
-    metadata:
-      name: mol-transform
-    spec:
-      jobTemplate:
-        spec:
-          template:
-            spec:
-              containers:
-                - name: mol-transform
-                  resources:
-                    requests:
-                      memory: "1Gi"
-                      cpu: "500m"
-                    limits:
-                      memory: "2Gi"
-                      cpu: "1000m"
-  target:
-    kind: CronJob
-    name: mol-transform

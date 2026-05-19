@@ -1,0 +1,25 @@
+# FDA drug enforcement / recalls — paginated JSON, daily cadence.
+#
+# The openFDA /drug/enforcement.json endpoint returns drug recalls and
+# enforcement reports (Class I/II/III). Upstream updates nightly; we pull
+# daily to keep recall-tracking and safety-signal surfaces fresh.
+#
+# Orchestration tier: 2 (landing into mol_raw; drug-product hub depends
+# on resolved identifiers so we stay above the hub tier).
+# Accessibility tier (GH label): T2 — free openFDA API key recommended
+# but not required.
+
+name: fda_enforcement
+domain: mol
+tier: 2
+depends_on: []
+fetch:
+  kind: http_json_paginated
+  url: https://api.fda.gov/drug/enforcement.json
+  rate_limit_per_minute: 240  # openFDA: 240 req/min with API key, 40 without
+schedule: "0 5 * * *"  # 05:00 UTC daily
+credentials_ref: dk-data-secrets-openfda
+expected_row_count_fn: null
+sla_seconds: 1800
+consumes:
+  db_connections: 1

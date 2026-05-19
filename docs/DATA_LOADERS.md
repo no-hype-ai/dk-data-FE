@@ -1,513 +1,192 @@
 # Data Loaders Reference
 
-This document describes the available data loaders for populating the bronze layer.
+Last Updated: 2026-03-28
 
 ## Overview
 
-Data loaders fetch data from external sources and populate bronze layer tables. Each loader:
-- Creates required tables if they don't exist
-- Supports incremental loading (upsert on conflict)
-- Includes progress tracking
-- Handles rate limiting
+Data is ingested via the fetcher + loader pattern:
 
-## Quick Reference
+1. **Fetcher** (`src/dk_data/ingestion/fetchers/<source>.py`) — downloads data from the external API or file, normalizes to a list of dicts.
+2. **Loader** (`src/dk_data/ingestion/sources/<source>.py`) — inserts/upserts records into the `mol_raw.*` or `hcs_raw.*` tables using the JSONB envelope schema.
+3. **Orchestrator** (`src/dk_data/ingestion/main.py`) — ties fetcher + loader together, handles checkpoint state from `meta.data_sources.last_successful_refresh`.
 
-| Loader | Data Source | Tables | Priority |
-|--------|-------------|--------|----------|
-| `load_clinicaltrials` | ClinicalTrials.gov | `bronze.clinicaltrials` | Critical |
-| `load_openfda_faers` | OpenFDA FAERS | `bronze.openfda_faers` | Critical |
-| `load_openfda_labels` | OpenFDA Labels | `bronze.openfda_labels` | High |
-| `load_orange_book` | FDA Orange Book | `bronze.orange_book_*` | High |
-| `load_ema` | EMA | `bronze.ema` | High |
-| `load_drugbank` | DrugBank | `bronze.drugbank_*` | High |
-| `load_chembl_bulk` | ChEMBL | `bronze.chembl_activities` | High |
-| `load_chembl_extended` | ChEMBL | `bronze.chembl_drug_*` | Medium |
-| `load_pubchem_bulk` | PubChem | `bronze.pubchem_compounds` | High |
-| `load_pubchem_extended` | PubChem | `bronze.pubchem_*` | Medium |
-| `load_bindingdb` | BindingDB | `bronze.bindingdb_affinities` | High |
-| `load_sider` | SIDER | `bronze.sider_*` | High |
-| `load_tdc_data` | TDC | `bronze.tdc_*` | Medium |
-| `load_tdc_admet` | TDC | `bronze.tdc_admet_*` | Medium |
-| `load_uniprot` | UniProt | `bronze.uniprot` | Medium |
-| `load_pdb` | RCSB PDB | `bronze.pdb` | Medium |
-| `load_uspto_patents` | USPTO | `bronze.uspto_patents` | High |
-| `load_openalex` | OpenAlex | `bronze.openalex` | Medium |
-
-## Available Loaders
-
-### Clinical & Safety Data
-
-#### `load_clinicaltrials.py` - ClinicalTrials.gov
-
-Loads clinical trial data from ClinicalTrials.gov API v2.
+## Running a Source
 
 ```bash
-# Load all trials (paginated)
-python -m dk_data.data.load_clinicaltrials
+# Run a single source (inside the job-trigger container)
+python -m dk_data.ingestion.main <source_key>
 
-# Search by condition
-python -m dk_data.data.load_clinicaltrials --condition "diabetes"
+# Examples
+python -m dk_data.ingestion.main pubmed
+python -m dk_data.ingestion.main bindingdb
+python -m dk_data.ingestion.main cms_part_d_prescriber
 
-# Search by drug
-python -m dk_data.data.load_clinicaltrials --intervention "metformin"
+# File-based sources (require --file path)
+python -m dk_data.ingestion.main cms_inpatient --file /data/MedPAR_FY2023.csv --fiscal-year 2023
+python -m dk_data.ingestion.main acc_tvc --file /data/acc_tvc_certs.xlsx
 
-# Limit records
-python -m dk_data.data.load_clinicaltrials --limit 10000
+# Run all API sources (non-file)
+python -m dk_data.ingestion.main --all
 ```
 
-**Tables**:
-- `bronze.clinicaltrials`
+## Source Inventory
 
-**Data Source**: https://clinicaltrials.gov/
+### Molecule / Drug Data
 
----
+| Source Key | Description | Raw Table | Schedule | Rate Limit |
+|------------|-------------|-----------|----------|------------|
+| `pubmed` | PubMed via NCBI E-utilities | `mol_raw.pubmed` | Daily | 10/s (auth), 3/s (anon) |
+| `europepmc` | Europe PMC biomedical literature | `mol_raw.europepmc` | Daily | 10/s |
+| `openalex_ci` | OpenAlex pharma publications | `mol_raw.openalex_ci` | Daily | 10/s (auth) |
+| `journal_rss` | Journal RSS feeds (NEJM, Lancet, JAMA…) | `mol_raw.journal_rss` | Daily | No limit |
+| `medical_news` | Medical news RSS (Medscape, Healio…) | `mol_raw.medical_news` | Daily | No limit |
+| `nih_reporter` | NIH Reporter grant data | `mol_raw.nih_reporter` | Daily | ~1/s |
+| `sec_edgar` | SEC pharma filings (10-K, 10-Q, 8-K) | `mol_raw.sec_edgar` | Daily | 10/s |
+| `ema_regulatory` | EMA CHMP opinions and EPARs | `mol_raw.ema` | Weekly | No stated limit |
+| `hta_bodies` | HTA decisions (NICE, G-BA, HAS, PBAC) | `mol_raw.hta_decisions` | Weekly | ~0.5/s |
+| `cochrane` | Cochrane Library systematic reviews | `mol_raw.cochrane_reviews` | Monthly | ~0.5/s |
+| `uspto_patents` | USPTO PatentsView pharma patents | `mol_raw.uspto_patents` | Weekly | No stated limit |
+| `uspto_ci` | USPTO PatentsView CI patents | `mol_raw.uspto_ci` | Weekly | No stated limit |
+| `uspto_trademarks` | USPTO TSDR trademark status | `mol_raw.uspto_trademarks` | Weekly | 1/s |
+| `euipo_trademarks` | EUIPO trademarks | `mol_raw.euipo_trademarks` | Weekly | 30/min |
+| `euipo_designs` | EUIPO registered designs | `mol_raw.euipo_designs` | Weekly | 30/min |
+| `epo_ops` | EPO Open Patent Services | `mol_raw.epo_patents` | Weekly | 10/min (registered) |
+| `uniprot` | UniProt protein targets | `mol_raw.uniprot` | Weekly | No stated limit |
+| `pdb` | RCSB PDB protein structures | `mol_raw.pdb` | Weekly | No stated limit |
+| `orcid` | ORCID researcher profiles | `mol_raw.orcid` | Weekly | 24/s |
+| `drugbank` | DrugBank XML full database | `mol_raw.drugbank` | Monthly | N/A (file download) |
+| `bindingdb` | BindingDB binding affinities (2.8M rows) | `mol_raw.bindingdb` | Monthly | N/A (bulk TSV download) |
+| `sider` | SIDER drug side effects | `mol_raw.sider` | Monthly | N/A (bulk TSV download) |
+| `who_icd` | WHO ICD-11 / ICD-10 disease codes | `mol_raw.who_icd` | Monthly | 1/s |
+| `rxnorm` | NLM RxNorm drug vocabulary | `mol_raw.rxnorm` | Monthly | ~10/s |
+| `who_inn` | WHO INN drug names (via PubChem) | `mol_raw.who_inn` | Monthly | 5/s |
+| `pharmgkb` | PharmGKB pharmacogenomics | `mol_raw.pharmgkb` | Monthly | Credential-gated |
+| `kegg_drug` | KEGG Drug compound database | `mol_raw.kegg_drug` | Weekly | ~3/s |
+| `tdc_admet` | TDC ADMET benchmark datasets | `mol_raw.tdc_admet` | Monthly | N/A (static files) |
 
-#### `load_openfda_faers.py` - FDA Adverse Events
+### CMS / Healthcare System (API-based, no file needed)
 
-Loads adverse event reports from OpenFDA FAERS API.
+| Source Key | Description | Raw Table | Schedule |
+|------------|-------------|-----------|----------|
+| `cms_geographic_variation` | CMS Geographic Variation PUF | `hcs_raw.cms_geographic_variation` | Monthly |
+| `cms_care_compare` | Hospital Compare star ratings | `hcs_raw.cms_care_compare` | Monthly |
+| `cms_chow` | Change of Ownership records | `hcs_raw.cms_chow` | Monthly |
+| `cms_ddinter` | Drug-drug interaction data | `hcs_raw.cms_ddinter` | Monthly |
+| `cms_dmepos` | DMEPOS supplier utilization | `hcs_raw.cms_dmepos` | Monthly |
+| `cms_formulary` | Medicare Part D formulary | `hcs_raw.cms_formulary` | Monthly |
+| `cms_hcris` | Hospital Cost Report Info System | `hcs_raw.cms_hcris` | Monthly |
+| `cms_hospital_affiliation` | Hospital system affiliations | `hcs_raw.cms_hospital_affiliation` | Monthly |
+| `cms_hospital_quality` | HCAHPS quality measures | `hcs_raw.cms_hospital_quality` | Monthly |
+| `cms_magnet` | Magnet hospital designations | `hcs_raw.cms_magnet` | Monthly |
+| `cms_ndc` | National Drug Code directory | `hcs_raw.cms_ndc` | Monthly |
+| `cms_nucc` | NUCC provider taxonomy codes | `hcs_raw.cms_nucc` | Monthly |
+| `cms_pecos` | Provider Enrollment Chain & Ownership | `hcs_raw.cms_pecos` | Monthly |
+| `cms_pos` | Place of Service codes | `hcs_raw.cms_pos` | Monthly |
+| `cms_post_acute` | SNF/IRF/LTACH post-acute care | `hcs_raw.cms_post_acute` | Monthly |
+| `cms_rbcs` | Restructured BETOS Classification | `hcs_raw.cms_rbcs` | Monthly |
+| `cms_stabilis` | IV drug compatibility / stability | `hcs_raw.cms_stabilis` | Monthly |
+| `cms_usp` | USP drug classifications | `hcs_raw.cms_usp` | Monthly |
 
-```bash
-# Load all recent events
-python -m dk_data.data.load_openfda_faers --limit 10000
+### CMS PUF File Sources (downloaded via CMS CKAN/data.json)
 
-# Filter by drug
-python -m dk_data.data.load_openfda_faers --drug "aspirin"
+These are large file downloads managed by `seed_samples.py` or the `cronjob-cms-all` CronJob.
 
-# Filter by reaction
-python -m dk_data.data.load_openfda_faers --reaction "headache"
+| Source Key | Description |
+|------------|-------------|
+| `cms_nppes` | National Provider Identifier registry |
+| `cms_physician_puf` | Physician utilization PUF |
+| `cms_physician_puf_services` | Physician utilization by service |
+| `cms_part_d_spending` | Part D drug spending PUF |
+| `cms_part_b_spending` | Part B drug spending PUF |
+| `cms_open_payments` | Sunshine Act open payments |
+| `cms_inpatient_puf` | Inpatient hospital utilization PUF |
+| `cms_hospital_general_info` | Hospital General Information |
+| `cms_medicare_advantage` | Medicare Advantage enrollment |
+| `cms_medicaid_drug_spending` | Medicaid drug spending |
+| `cms_dme_puf` | DME utilization PUF |
+| `cms_home_health` | Home health agency PUF |
+| `cms_hospice_puf` | Hospice utilization PUF |
+| `cms_snf_puf` | Skilled nursing facility PUF |
+| `cms_outpatient_puf` | Outpatient hospital PUF |
+| `cms_referring_providers` | Referring provider PUF |
+| `cms_ordering_providers` | Ordering provider PUF |
+| `cms_lab_services` | Lab services PUF |
+| `cms_imaging_puf` | Imaging services PUF |
+| `cms_mental_health_puf` | Mental health services PUF |
+| `cms_opioid_puf` | Opioid prescribing PUF |
+| `cms_telehealth_puf` | Telehealth services PUF |
+| `cms_chronic_conditions` | Chronic conditions PUF |
+| `cms_dual_eligible` | Dual eligible beneficiaries |
+| `cms_enrollment_puf` | Medicare enrollment PUF |
+| `cms_claim_type_puf` | Claims by type PUF |
+| `cms_utilization_puf` | General utilization PUF |
+| `cms_cost_reports_puf` | Cost Reports PUF |
+| `cms_cost_reports_puf_lines` | Cost Reports PUF (line-level) |
+| `cms_part_d_prescriber` | Part D Prescribers by Provider and Drug (~25M rows, annual CSV) — loads to `hcs_raw.cms_part_d_prescriber`. Annual release (January); CronJob runs first Sunday of January. Use `--skip-if-no-file` flag. |
 
-# Only serious events
-python -m dk_data.data.load_openfda_faers --serious
+### Legacy File Sources (manual file path required)
+
+| Source Key | Description | Raw Table | `--file` required |
+|------------|-------------|-----------|-------------------|
+| `cms_inpatient` | CMS Medicare Inpatient (TAVR DRGs) | `hcs_raw.cms_medicare_inpatient` | Yes + `--fiscal-year` |
+| `cms_hospital_info` | CMS Hospital General Information | `hcs_raw.cms_hospital_info` | Yes |
+| `cms_cost_reports` | CMS HCRIS cost reports | `hcs_raw.cms_cost_reports` | Yes |
+| `acc_tvc` | ACC Transcatheter Valve Certifications | `hcs_raw.acc_tvc_certification` | Yes |
+| `hrsa` | HRSA shortage areas | `hcs_raw.hrsa_shortage_areas` | Optional |
+
+## Credential-Gated Sources
+
+These sources require API keys in Doppler. The fetcher fails gracefully (logs error, returns `status: failed`) if the key is absent.
+
+| Source | Required Secret |
+|--------|----------------|
+| `drugbank` | `DRUGBANK_API_KEY` |
+| `epo_ops` | `EPO_CONSUMER_KEY`, `EPO_CONSUMER_SECRET` |
+| `pharmgkb` | `PHARMGKB_API_KEY` |
+| `pubmed` | `NCBI_API_KEY` (optional — increases rate limit from 3/s to 10/s) |
+| `openalex_ci` | `OPENALEX_API_KEY` (required since Feb 2026) |
+| `who_icd` | `WHO_ICD_CLIENT_ID`, `WHO_ICD_CLIENT_SECRET` (optional — falls back to ICD-10 public API) |
+| `sec_edgar` | `SEC_EDGAR_USER_AGENT` (required per SEC policy — use `Name email@company.com` format) |
+| `uspto_patents` | `PATENTSVIEW_API_KEY` |
+
+## Loader Pattern (for new sources)
+
+Every loader follows the JSONB envelope upsert pattern:
+
+```python
+# Stable request_id — critical for correct ON CONFLICT deduplication
+request_id = f"{source_name}_{natural_key}"
+body_json = json.dumps(record)
+body_hash = hashlib.sha256(body_json.encode()).hexdigest()
+
+cur.execute("""
+    INSERT INTO mol_raw.my_source (
+        request_id, request_timestamp, api_endpoint, api_version,
+        request_params, response_status, response_body,
+        response_body_hash, response_size_bytes,
+        processed_to_bronze, ingested_at, source_id
+    ) VALUES (%s, %s, %s, %s, %s, 200, %s, %s, %s, FALSE, NOW(), 'my_source')
+    ON CONFLICT (request_id)
+    DO UPDATE SET
+        response_body      = EXCLUDED.response_body,
+        response_body_hash = EXCLUDED.response_body_hash,
+        processed_to_bronze = FALSE,
+        ingested_at        = NOW()
+    WHERE mol_raw.my_source.response_body_hash IS DISTINCT FROM EXCLUDED.response_body_hash
+""", (request_id, timestamp, endpoint, version, params_json,
+      body_json, body_hash, len(body_json.encode())))
 ```
 
-**Tables**:
-- `bronze.openfda_faers`
-
-**Data Source**: https://open.fda.gov/apis/drug/event/
-
-**Environment**: `OPENFDA_API_KEY` (optional, for higher rate limits)
-
----
-
-#### `load_openfda_labels.py` - FDA Drug Labels
-
-Loads structured product labeling (SPL) from OpenFDA.
-
-```bash
-# Load all labels
-python -m dk_data.data.load_openfda_labels --limit 5000
-
-# Filter by drug
-python -m dk_data.data.load_openfda_labels --drug "lipitor"
-
-# Filter by manufacturer
-python -m dk_data.data.load_openfda_labels --manufacturer "pfizer"
-```
-
-**Tables**:
-- `bronze.openfda_labels`
-
-**Data Source**: https://open.fda.gov/apis/drug/label/
-
-**Environment**: `OPENFDA_API_KEY` (optional)
-
----
-
-#### `load_sider.py` - SIDER Side Effects
-
-Loads side effects and indications from SIDER database.
-
-```bash
-# Download and load all SIDER data
-python -m dk_data.data.load_sider --download
-
-# Load from existing files
-python -m dk_data.data.load_sider --data-dir /path/to/sider
-
-# Load only side effects
-python -m dk_data.data.load_sider --side-effects-only
-```
-
-**Tables**:
-- `bronze.sider_drugs`
-- `bronze.sider_side_effects`
-- `bronze.sider_indications`
-- `bronze.sider_frequencies`
-
-**Data Source**: http://sideeffects.embl.de/
-
----
-
-### Regulatory & Approved Drugs
-
-#### `load_orange_book.py` - FDA Orange Book
-
-Loads FDA-approved drug products, patents, and exclusivities.
-
-```bash
-# Download and load
-python -m dk_data.data.load_orange_book --download
-
-# Search products
-python -m dk_data.data.load_orange_book --search "lipitor"
-
-# Limit records
-python -m dk_data.data.load_orange_book --limit 1000
-```
-
-**Tables**:
-- `bronze.orange_book_products`
-- `bronze.orange_book_patents`
-- `bronze.orange_book_exclusivities`
-
-**Data Source**: https://www.fda.gov/drugs/drug-approvals-and-databases/orange-book-data-files
-
----
-
-#### `load_ema.py` - EMA Medicines
-
-Loads European Medicines Agency authorized medicines.
-
-```bash
-# Download and load
-python -m dk_data.data.load_ema --download
-
-# Load from cache
-python -m dk_data.data.load_ema
-```
-
-**Tables**:
-- `bronze.ema`
-
-**Data Source**: https://www.ema.europa.eu/en/medicines/download-medicine-data
-
----
-
-#### `load_drugbank.py` - DrugBank Database
-
-Loads DrugBank XML database including drugs, interactions, and targets.
-
-```bash
-# Load all data
-python -m dk_data.data.load_drugbank --xml /path/to/full_database.xml
-
-# Drugs only (skip interactions)
-python -m dk_data.data.load_drugbank --xml /path/to/full_database.xml --drugs-only
-
-# Test with limit
-python -m dk_data.data.load_drugbank --xml /path/to/full_database.xml --limit 100
-```
-
-**Tables**:
-- `bronze.drugbank_data`
-- `bronze.drugbank_interactions`
-- `bronze.drugbank_targets`
-
-**Data Source**: https://go.drugbank.com/releases/latest (requires license)
-
----
-
-### Chemical & Molecular Data
-
-#### `load_chembl_bulk.py` - ChEMBL Bulk Loader
-
-Loads ChEMBL bioactivity data from the bulk SQLite download (~3GB).
-
-```bash
-# Download and load ChEMBL data
-python -m dk_data.data.load_chembl_bulk
-
-# Just download the database
-python -m dk_data.data.load_chembl_bulk --download-only
-
-# Load all activities (standalone, ~20M records)
-python -m dk_data.data.load_chembl_bulk --standalone
-
-# Limit activities
-python -m dk_data.data.load_chembl_bulk --limit 100000
-```
-
-**Tables**:
-- `bronze.chembl_activities`
-- `bronze.chembl_targets`
-
-**Data Source**: https://www.ebi.ac.uk/chembl/
-
-**Requirements**: `pip install chembl-downloader`
-
----
-
-#### `load_chembl_extended.py` - ChEMBL Extended Data
-
-Loads additional ChEMBL tables: mechanisms, indications, warnings.
-
-```bash
-# Load all extended tables
-python -m dk_data.data.load_chembl_extended
-
-# Load specific table
-python -m dk_data.data.load_chembl_extended --table drug_mechanism
-
-# List available tables
-python -m dk_data.data.load_chembl_extended --list-tables
-```
-
-**Tables**:
-- `bronze.chembl_drug_mechanism`
-- `bronze.chembl_drug_indication`
-- `bronze.chembl_drug_warning`
-- `bronze.chembl_component_sequences`
-
-**Data Source**: https://www.ebi.ac.uk/chembl/
-
----
-
-#### `load_pubchem_bulk.py` - PubChem Bulk Loader
-
-Bulk loads PubChem compound properties using FTP mapping files.
-
-```bash
-# Download mapping and load
-python -m dk_data.data.load_pubchem_bulk
-
-# Download only
-python -m dk_data.data.load_pubchem_bulk --download-only
-
-# Limit compounds
-python -m dk_data.data.load_pubchem_bulk --limit 10000
-```
-
-**Tables**:
-- `bronze.pubchem_compounds`
-
-**Data Source**: https://pubchem.ncbi.nlm.nih.gov/
-
----
-
-#### `load_pubchem_extended.py` - PubChem Extended Data
-
-Loads PubChem bioassays, cross-references, and safety data.
-
-```bash
-# Load all data types
-python -m dk_data.data.load_pubchem_extended --all
-
-# Load specific types
-python -m dk_data.data.load_pubchem_extended --bioassays --limit 1000
-python -m dk_data.data.load_pubchem_extended --xrefs --limit 1000
-python -m dk_data.data.load_pubchem_extended --safety --limit 1000
-```
-
-**Tables**:
-- `bronze.pubchem_bioassays`
-- `bronze.pubchem_xrefs`
-- `bronze.pubchem_safety`
-- `bronze.pubchem_pharmacology`
-
-**Data Source**: https://pubchem.ncbi.nlm.nih.gov/
-
----
-
-#### `load_bindingdb.py` - BindingDB
-
-Loads binding affinity data (Ki, IC50, Kd, EC50).
-
-```bash
-# Load from TSV
-python -m dk_data.data.load_bindingdb /path/to/BindingDB_All.tsv
-
-# Limit rows
-python -m dk_data.data.load_bindingdb --max-rows 100000
-```
-
-**Tables**:
-- `bronze.bindingdb_affinities`
-
-**Data Source**: https://www.bindingdb.org/rwd/bind/index.jsp
-
----
-
-#### `load_tdc_data.py` - TDC ADMET Datasets
-
-Loads Therapeutics Data Commons datasets with molecular descriptors.
-
-```bash
-# Load all datasets
-python -m dk_data.data.load_tdc_data
-
-# Load specific category
-python -m dk_data.data.load_tdc_data --category absorption
-
-# Load specific dataset
-python -m dk_data.data.load_tdc_data --dataset Caco2_Wang
-```
-
-**Tables**:
-- `bronze.tdc_datasets`
-- `bronze.tdc_compounds`
-- `bronze.compounds` (shared)
-
-**Data Source**: https://tdcommons.ai/
-
-**Requirements**: `pip install PyTDC rdkit`
-
----
-
-#### `load_tdc_admet.py` - TDC ADMET Benchmarks
-
-Loads all 22 TDC ADMET benchmark datasets with Y labels and scaffold splits.
-
-```bash
-# Load all 22 datasets
-python -m dk_data.data.load_tdc_admet
-
-# Load specific datasets
-python -m dk_data.data.load_tdc_admet --datasets caco2_wang hia_hou herg
-
-# Show dataset information
-python -m dk_data.data.load_tdc_admet --info
-```
-
-**Tables**:
-- `bronze.tdc_admet_datasets`
-- `bronze.tdc_admet_values`
-
-**Available Datasets**:
-- Absorption: caco2_wang, hia_hou, pgp_broccatelli, bioavailability_ma
-- Distribution: bbb_martins, ppbr_az, vdss_lombardo
-- Metabolism: cyp2c9_veith, cyp2d6_veith, cyp3a4_veith, half_life_obach, clearance_*
-- Toxicity: herg, ames, dili, ld50_zhu
-- Physicochemical: lipophilicity_astrazeneca, solubility_aqsoldb
-
-**Data Source**: https://tdcommons.ai/
-
-**Requirements**: `pip install PyTDC rdkit`
-
----
-
-### Protein & Target Data
-
-#### `load_uniprot.py` - UniProt Proteins
-
-Loads protein target data from UniProt.
-
-```bash
-# Drug targets
-python -m dk_data.data.load_uniprot --mode drug-targets
-
-# By gene names
-python -m dk_data.data.load_uniprot --mode genes --genes EGFR,VEGFA
-
-# Human reviewed proteins
-python -m dk_data.data.load_uniprot --mode human-reviewed --limit 1000
-```
-
-**Tables**:
-- `bronze.uniprot`
-
-**Data Source**: https://www.uniprot.org/
-
----
-
-#### `load_pdb.py` - Protein Structures
-
-Loads protein structure data from RCSB PDB.
-
-```bash
-# Drug-target structures
-python -m dk_data.data.load_pdb --mode drug-targets
-
-# By UniProt accessions
-python -m dk_data.data.load_pdb --mode uniprot --accessions P05112,P01308
-```
-
-**Tables**:
-- `bronze.pdb`
-
-**Data Source**: https://www.rcsb.org/
-
----
-
-### Patent & Publication Data
-
-#### `load_uspto_patents.py` - USPTO Patents
-
-Loads patent data from USPTO PatentsView API.
-
-```bash
-# Patents for drugs
-python -m dk_data.data.load_uspto_patents --mode drugs
-
-# By assignee
-python -m dk_data.data.load_uspto_patents --mode assignee --assignee "Pfizer"
-
-# Recent pharma patents
-python -m dk_data.data.load_uspto_patents --mode recent --days 365
-```
-
-**Tables**:
-- `bronze.uspto_patents`
-
-**Data Source**: https://patentsview.org/
-
-**Requirements**: `PATENTSVIEW_API_KEY` environment variable
-
----
-
-#### `load_openalex.py` - Scientific Publications
-
-Loads scientific publications from OpenAlex.
-
-```bash
-# Publications for drugs
-python -m dk_data.data.load_openalex --mode drugs
-
-# By concept
-python -m dk_data.data.load_openalex --mode concept --concept C89423630
-
-# Recent publications
-python -m dk_data.data.load_openalex --mode recent --days 30
-```
-
-**Tables**:
-- `bronze.openalex`
-
-**Data Source**: https://openalex.org/
-
----
-
-## Environment Variables
-
-All loaders use these database connection settings:
-
-```bash
-POSTGRES_HOST=localhost
-POSTGRES_PORT=5432
-POSTGRES_DB=dk_data
-POSTGRES_USER=postgres
-POSTGRES_PASSWORD=postgres
-```
-
-Some loaders require additional credentials:
-
-```bash
-# USPTO PatentsView
-PATENTSVIEW_API_KEY=your-api-key
-
-# OpenAlex (optional, for polite pool)
-OPENALEX_EMAIL=your-email@example.com
-```
-
-## Adding New Loaders
-
-To add a new data loader:
-
-1. Create `load_<source>.py` in `dk_data/data/`
-2. Follow the pattern:
-   ```python
-   def ensure_tables(conn): ...
-   def load_data(conn, ...): ...
-   def main(): ...
-   ```
-3. Add entry to `dk_data/data/__init__.py`
-4. Register in `raw.sync_schedules` for scheduling
+The `WHERE ... IS DISTINCT FROM` clause means records with unchanged content are **not** overwritten — `processed_to_bronze` stays `TRUE` for already-processed unchanged records.
+
+## Adding a New Source
+
+See `PLATFORM_GUIDE.md` § "Adding a New Data Source" for the full checklist.
+
+Quick summary:
+1. `src/dk_data/ingestion/fetchers/<source>.py` — fetcher class extending `BaseFetcher`
+2. `src/dk_data/ingestion/sources/<source>.py` — loader function
+3. `src/dk_data/sql/migrations/<NNN>_<source>_raw_table.sql` — raw table DDL
+4. Register in `src/dk_data/ingestion/main.py` `SOURCES` dict
+5. `k8s/apps/cronjobs/base/cronjob-fetch-<source>.yaml` + add to `kustomization.yaml`
+6. Add to `seed_samples.py` `API_SOURCES` or `CMS_SOURCES`

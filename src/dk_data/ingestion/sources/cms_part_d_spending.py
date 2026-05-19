@@ -1,0 +1,169 @@
+"""CMS Part D Drug Spending loader. Loads to hcs_raw.cms_part_d_spending."""
+
+import hashlib
+import logging
+from datetime import datetime, timezone
+from pathlib import Path
+from typing import List, Optional, Dict
+
+import pandas as pd
+from pydantic import ValidationError
+
+from ..utils.database import apply_column_mapping, get_cursor, upsert_records
+from ..utils.validators import CMSPartDSpendingRecord
+
+logger = logging.getLogger(__name__)
+
+COLUMN_MAPPING = {
+    # Brand/generic name: CMS API may use Drug_Name/Generic_Name variants
+    'Brnd_Name': 'brnd_name',
+    'Drug_Name': 'brnd_name',
+    'DRUG_NAME': 'brnd_name',
+    'Brand_Name': 'brnd_name',
+    'Gnrc_Name': 'gnrc_name',
+    'Generic_Name': 'gnrc_name',
+    'GENERIC_NAME': 'gnrc_name',
+    'Generic_Drug_Name': 'gnrc_name',
+    'Tot_Mftr': 'tot_mftr',
+    # Legacy (pre-2020) non-suffixed column names
+    'Tot_Spndng': 'tot_spndng',
+    'Tot_Dsg_Unts': 'tot_dsg_unts',
+    'Tot_Clms': 'tot_clms',
+    'Tot_Benes': 'tot_benes',
+    'Avg_Spnd_Per_Dsg_Unt_Wghtd': 'avg_spnd_per_dsg_unt_wghtd',
+    'Avg_Spnd_Per_Clm': 'avg_spnd_per_clm',
+    'Avg_Spnd_Per_Bene': 'avg_spnd_per_bene',
+    'Outlier_Flag': 'outlier_flag',
+    # Year-suffixed column names (CMS API format since 2020 onward).
+    # Most recent year wins since apply_column_mapping processes left-to-right.
+    'Tot_Spndng_2019': 'tot_spndng',
+    'Tot_Dsg_Unts_2019': 'tot_dsg_unts',
+    'Tot_Clms_2019': 'tot_clms',
+    'Tot_Benes_2019': 'tot_benes',
+    'Avg_Spnd_Per_Dsg_Unt_Wghtd_2019': 'avg_spnd_per_dsg_unt_wghtd',
+    'Avg_Spnd_Per_Clm_2019': 'avg_spnd_per_clm',
+    'Avg_Spnd_Per_Bene_2019': 'avg_spnd_per_bene',
+    'Outlier_Flag_2019': 'outlier_flag',
+    'Tot_Spndng_2020': 'tot_spndng',
+    'Tot_Dsg_Unts_2020': 'tot_dsg_unts',
+    'Tot_Clms_2020': 'tot_clms',
+    'Tot_Benes_2020': 'tot_benes',
+    'Avg_Spnd_Per_Dsg_Unt_Wghtd_2020': 'avg_spnd_per_dsg_unt_wghtd',
+    'Avg_Spnd_Per_Clm_2020': 'avg_spnd_per_clm',
+    'Avg_Spnd_Per_Bene_2020': 'avg_spnd_per_bene',
+    'Outlier_Flag_2020': 'outlier_flag',
+    'Tot_Spndng_2021': 'tot_spndng',
+    'Tot_Dsg_Unts_2021': 'tot_dsg_unts',
+    'Tot_Clms_2021': 'tot_clms',
+    'Tot_Benes_2021': 'tot_benes',
+    'Avg_Spnd_Per_Dsg_Unt_Wghtd_2021': 'avg_spnd_per_dsg_unt_wghtd',
+    'Avg_Spnd_Per_Clm_2021': 'avg_spnd_per_clm',
+    'Avg_Spnd_Per_Bene_2021': 'avg_spnd_per_bene',
+    'Outlier_Flag_2021': 'outlier_flag',
+    'Tot_Spndng_2022': 'tot_spndng',
+    'Tot_Dsg_Unts_2022': 'tot_dsg_unts',
+    'Tot_Clms_2022': 'tot_clms',
+    'Tot_Benes_2022': 'tot_benes',
+    'Avg_Spnd_Per_Dsg_Unt_Wghtd_2022': 'avg_spnd_per_dsg_unt_wghtd',
+    'Avg_Spnd_Per_Clm_2022': 'avg_spnd_per_clm',
+    'Avg_Spnd_Per_Bene_2022': 'avg_spnd_per_bene',
+    'Outlier_Flag_2022': 'outlier_flag',
+    'Tot_Spndng_2023': 'tot_spndng',
+    'Tot_Dsg_Unts_2023': 'tot_dsg_unts',
+    'Tot_Clms_2023': 'tot_clms',
+    'Tot_Benes_2023': 'tot_benes',
+    'Avg_Spnd_Per_Dsg_Unt_Wghtd_2023': 'avg_spnd_per_dsg_unt_wghtd',
+    'Avg_Spnd_Per_Clm_2023': 'avg_spnd_per_clm',
+    'Avg_Spnd_Per_Bene_2023': 'avg_spnd_per_bene',
+    'Outlier_Flag_2023': 'outlier_flag',
+    'Tot_Spndng_2024': 'tot_spndng',
+    'Tot_Dsg_Unts_2024': 'tot_dsg_unts',
+    'Tot_Clms_2024': 'tot_clms',
+    'Tot_Benes_2024': 'tot_benes',
+    'Avg_Spnd_Per_Dsg_Unt_Wghtd_2024': 'avg_spnd_per_dsg_unt_wghtd',
+    'Avg_Spnd_Per_Clm_2024': 'avg_spnd_per_clm',
+    'Avg_Spnd_Per_Bene_2024': 'avg_spnd_per_bene',
+    'Outlier_Flag_2024': 'outlier_flag',
+}
+
+TABLE = 'cms_part_d_spending'
+SCHEMA = 'hcs_raw'
+
+
+def load_cms_part_d_spending(filepath: Optional[str] = None, rows: Optional[List[Dict]] = None, source_year: int = 2023, max_records: int = 0, source_hash: Optional[str] = None) -> dict:
+    """Load CMS Part D Drug Spending data from CSV file."""
+    logger.info(f"Loading CMS Part D Spending (year={source_year})")
+
+    if rows is not None:
+        # Streaming mode: rows passed directly from API, no file needed
+        normalized = [{k: ('' if v is None else str(v)) for k, v in row.items()} for row in rows]
+        df = pd.DataFrame(normalized) if normalized else pd.DataFrame()
+        _source_hash = source_hash or f"api_stream_{source_year}"
+        source_file = f"api_stream_{source_year}"
+    else:
+        if filepath is None:
+            raise ValueError("Either filepath or rows must be provided")
+        source_file = Path(filepath).name
+        hash_md5 = hashlib.md5()
+        with open(filepath, 'rb') as f:
+            for chunk in iter(lambda: f.read(4096), b''):
+                hash_md5.update(chunk)
+        _source_hash = source_hash or hash_md5.hexdigest()
+
+        with get_cursor() as cur:
+            cur.execute(
+                f"SELECT COUNT(*) FROM {SCHEMA}.{TABLE} WHERE _source_hash = %s",
+                (_source_hash,)
+            )
+            if cur.fetchone()[0] > 0:
+                logger.info(f"File {source_file} already loaded. Skipping.")
+                return {"status": "skipped", "records_fetched": 0, "records_inserted": 0, "records_updated": 0, "errors": []}
+
+        df = pd.read_csv(filepath, dtype=str, low_memory=False, nrows=max_records if max_records > 0 else None)
+
+    df = apply_column_mapping(df, COLUMN_MAPPING)
+    records_fetched = len(df)
+
+    records = []
+    errors = []
+    loaded_at = datetime.now(timezone.utc).isoformat()
+
+    for idx, row in df.iterrows():
+        try:
+            rec = CMSPartDSpendingRecord(
+                brnd_name=row.get('brnd_name'),
+                gnrc_name=row.get('gnrc_name'),
+                tot_mftr=row.get('tot_mftr'),
+                tot_spndng=row.get('tot_spndng') or None,
+                tot_dsg_unts=row.get('tot_dsg_unts') or None,
+                tot_clms=row.get('tot_clms') or None,
+                tot_benes=row.get('tot_benes') or None,
+                avg_spnd_per_dsg_unt_wghtd=row.get('avg_spnd_per_dsg_unt_wghtd') or None,
+                avg_spnd_per_clm=row.get('avg_spnd_per_clm') or None,
+                avg_spnd_per_bene=row.get('avg_spnd_per_bene') or None,
+                outlier_flag=row.get('outlier_flag'),
+                _source_year=source_year,
+            )
+            d = rec.model_dump(by_alias=True)
+            d['_source_hash'] = _source_hash
+            d['_source_file'] = source_file
+            d['_loaded_at'] = loaded_at
+            d['_source_year'] = source_year
+            records.append(d)
+        except (ValidationError, Exception) as e:
+            errors.append(f"Row {idx}: {e}")
+
+    inserted = upsert_records(
+        SCHEMA, TABLE, records,
+        conflict_columns=['_source_hash', 'gnrc_name', '_source_year'],
+        update_columns=['tot_clms', 'tot_spndng', 'avg_spnd_per_clm', '_loaded_at'],
+    )
+
+    logger.info(f"Part D Spending load complete: {inserted} records processed, {len(errors)} errors")
+    return {
+        "status": "success",
+        "records_fetched": records_fetched,
+        "records_inserted": inserted,
+        "records_updated": 0,
+        "errors": errors[:10],
+    }

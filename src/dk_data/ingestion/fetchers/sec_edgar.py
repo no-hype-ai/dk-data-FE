@@ -5,7 +5,7 @@ Task: T070-T072 — SEC EDGAR pharmaceutical filings
 
 Fetches pharmaceutical company SEC filings (10-K, 10-Q, 8-K) from
 the EDGAR full-text search API. Filters by SIC codes 2830-2836
-(pharmaceutical preparations).
+(pharmaceutical preparations) and 8731 (biotech R&D).
 
 Source: https://efts.sec.gov/LATEST/search-index
 Rate limit: 10 requests per second (SEC fair-access policy)
@@ -15,15 +15,18 @@ import hashlib
 import logging
 import os
 import time
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional
 
 from .base import BaseFetcher
 
 logger = logging.getLogger(__name__)
 
-# Pharma SIC codes: 2830-2836 (pharmaceutical preparations)
-PHARMA_SIC_CODES = ["2830", "2833", "2834", "2835", "2836"]
+# Pharma SIC codes:
+#   2830-2836: pharmaceutical preparations, diagnostics, biologics
+#   8731: commercial physical & biological research (pure-play biotech R&D,
+#          e.g. gene therapy, cell therapy, RNA therapeutics companies)
+PHARMA_SIC_CODES = ["2830", "2833", "2834", "2835", "2836", "8731"]
 
 # Filing types of interest
 FILING_TYPES = ["10-K", "10-Q", "8-K"]
@@ -162,15 +165,16 @@ class SECEdgarFetcher(BaseFetcher):
     ) -> List[Dict[str, Any]]:
         """Search EDGAR for filings of a specific type."""
         records: List[Dict[str, Any]] = []
-        date_from = (datetime.utcnow() - timedelta(days=days_back)).strftime("%Y-%m-%d")
-        date_to = datetime.utcnow().strftime("%Y-%m-%d")
+        date_from = (datetime.now(timezone.utc) - timedelta(days=days_back)).strftime("%Y-%m-%d")
+        date_to = datetime.now(timezone.utc).strftime("%Y-%m-%d")
 
         start = 0
 
         while len(records) < max_records:
             try:
                 params = {
-                    "q": f'formType:"{filing_type}"',
+                    "q": "",           # Required by EDGAR EFTS even when fetching all forms
+                    "forms": filing_type,
                     "dateRange": "custom",
                     "startdt": date_from,
                     "enddt": date_to,
@@ -256,6 +260,13 @@ class SECEdgarFetcher(BaseFetcher):
         cik = source.get("cik") or source.get("entity_id")
         if cik:
             cik = str(cik).strip()
+
+        # EDGAR EFTS search-index does not return cik directly.
+        # Parse it from the accession number: first 10 digits = zero-padded CIK.
+        if not cik and accession_number:
+            raw_digits = accession_number.replace("-", "")[:10]
+            if raw_digits.isdigit():
+                cik = str(int(raw_digits))  # strip leading zeros
 
         # Filing date
         filing_date = (

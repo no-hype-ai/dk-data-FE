@@ -2,12 +2,15 @@
 -- Description: Create tables for sync scheduler and data freshness monitoring
 -- Date: 2026-01-24
 -- Part of: 012-dk-data-platform
+--
+-- NOTE: Tables created in meta.* (platform operational schema).
+-- Migration 103 handles existing databases that had these in raw.* from a prior version.
 
 -- ==========================================
 -- Sync Schedules Table
 -- ==========================================
 
-CREATE TABLE IF NOT EXISTS raw.sync_schedules (
+CREATE TABLE IF NOT EXISTS meta.sync_schedules (
     source VARCHAR(50) PRIMARY KEY,
     tier VARCHAR(20) NOT NULL CHECK (tier IN ('daily', 'weekly', 'monthly', 'on_demand')),
     cron_expression VARCHAR(50) NOT NULL,
@@ -24,7 +27,7 @@ CREATE TABLE IF NOT EXISTS raw.sync_schedules (
 -- Ingestion Jobs Table (if not exists)
 -- ==========================================
 
-CREATE TABLE IF NOT EXISTS raw.ingestion_jobs (
+CREATE TABLE IF NOT EXISTS meta.ingestion_jobs (
     job_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     source VARCHAR(50) NOT NULL,
     status VARCHAR(20) DEFAULT 'pending'
@@ -38,15 +41,15 @@ CREATE TABLE IF NOT EXISTS raw.ingestion_jobs (
     created_at TIMESTAMPTZ DEFAULT NOW()
 );
 
-CREATE INDEX IF NOT EXISTS idx_ingestion_jobs_source ON raw.ingestion_jobs(source);
-CREATE INDEX IF NOT EXISTS idx_ingestion_jobs_status ON raw.ingestion_jobs(status);
-CREATE INDEX IF NOT EXISTS idx_ingestion_jobs_started ON raw.ingestion_jobs(started_at DESC);
+CREATE INDEX IF NOT EXISTS idx_ingestion_jobs_source ON meta.ingestion_jobs(source);
+CREATE INDEX IF NOT EXISTS idx_ingestion_jobs_status ON meta.ingestion_jobs(status);
+CREATE INDEX IF NOT EXISTS idx_ingestion_jobs_started ON meta.ingestion_jobs(started_at DESC);
 
 -- ==========================================
 -- Insert Default Schedules
 -- ==========================================
 
-INSERT INTO raw.sync_schedules (source, tier, cron_expression, priority) VALUES
+INSERT INTO meta.sync_schedules (source, tier, cron_expression, priority) VALUES
     ('clinicaltrials_gov', 'daily', '0 2 * * *', 'critical'),
     ('openfda_faers', 'daily', '0 2 * * *', 'critical'),
     ('openfda_labels', 'daily', '30 2 * * *', 'high'),
@@ -61,7 +64,7 @@ ON CONFLICT (source) DO NOTHING;
 -- Source Status View
 -- ==========================================
 
-CREATE OR REPLACE VIEW raw.source_status AS
+CREATE OR REPLACE VIEW meta.source_status AS
 SELECT
     ss.source,
     ss.tier,
@@ -82,10 +85,10 @@ SELECT
         WHEN ss.tier = 'monthly' AND ss.last_run < NOW() - INTERVAL '32 days' THEN 'stale'
         ELSE 'healthy'
     END as status
-FROM raw.sync_schedules ss
+FROM meta.sync_schedules ss
 LEFT JOIN LATERAL (
     SELECT status, completed_at, records_processed, error_message
-    FROM raw.ingestion_jobs
+    FROM meta.ingestion_jobs
     WHERE source = ss.source
     ORDER BY started_at DESC
     LIMIT 1
@@ -95,7 +98,7 @@ LEFT JOIN LATERAL (
 -- Job Statistics View
 -- ==========================================
 
-CREATE OR REPLACE VIEW raw.ingestion_job_stats AS
+CREATE OR REPLACE VIEW meta.ingestion_job_stats AS
 SELECT
     source,
     COUNT(*) as total_jobs,
@@ -106,6 +109,6 @@ SELECT
     SUM(records_processed) as total_records_processed,
     MAX(completed_at) FILTER (WHERE status = 'completed') as last_success,
     MAX(started_at) as last_run
-FROM raw.ingestion_jobs
+FROM meta.ingestion_jobs
 WHERE started_at >= NOW() - INTERVAL '30 days'
 GROUP BY source;

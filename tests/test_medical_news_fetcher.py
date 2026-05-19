@@ -18,6 +18,7 @@ from datetime import date, datetime, timedelta
 
 import pytest
 import responses
+import time_machine
 
 from dk_data.ingestion.fetchers.medical_news import (
     MedicalNewsFetcher,
@@ -110,6 +111,7 @@ class TestMedicalNewsFetcherURL:
 class TestMedicalNewsFetcherFetch:
     """Tests for the fetch method with mocked HTTP responses."""
 
+    @time_machine.travel("2026-02-15")
     @responses.activate
     def test_fetch_success(self, tmp_path):
         """Test complete fetch with mocked RSS feeds."""
@@ -188,6 +190,7 @@ class TestMedicalNewsFetcherFetch:
         assert result["status"] == "success"
         assert result["record_count"] == 0
 
+    @time_machine.travel("2026-02-15")
     @responses.activate
     def test_fetch_multiple_feeds(self, tmp_path):
         """Test fetch from multiple RSS feeds."""
@@ -360,3 +363,95 @@ class TestMedicalNewsRecordInvalid:
         """Missing source_name is rejected."""
         with pytest.raises(Exception):
             MedicalNewsRecord(article_id="test123")
+
+
+# ---------------------------------------------------------------------------
+# Fetcher tests: date parsing (_parse_pub_date)
+# ---------------------------------------------------------------------------
+
+class TestParsePubDate:
+    """Tests for _parse_pub_date — regression coverage for truncated year bug.
+
+    Regression: medical_news source was emitting date strings like 'Feb 18, 20'
+    (year truncated to 2 digits). The original str(val)[:10] fallback returned
+    'Feb 18, 20' verbatim, causing 100% Pydantic validation failures on the
+    fetch-news CronJob for 19+ days (dk-alchemy#286).
+
+    These tests verify the fix rejects invalid/truncated dates and correctly
+    parses well-formed ones.
+    """
+
+    class _FakeEntry:
+        """Minimal feedparser entry stub with string date attributes."""
+        def __init__(self, *, published=None, updated=None, date=None,
+                     published_parsed=None, updated_parsed=None):
+            if published is not None:
+                self.published = published
+            if updated is not None:
+                self.updated = updated
+            if date is not None:
+                self.date = date
+            if published_parsed is not None:
+                self.published_parsed = published_parsed
+            if updated_parsed is not None:
+                self.updated_parsed = updated_parsed
+
+    def test_truncated_year_string_returns_none(self):
+        """Truncated year like 'Feb 18, 20' must return None, not a bad date string."""
+        entry = self._FakeEntry(published="Feb 18, 20")
+        result = MedicalNewsFetcher._parse_pub_date(entry)
+        assert result is None, (
+            f"Expected None for truncated year string, got {result!r}. "
+            "This would cause Pydantic validation failures on MedicalNewsRecord."
+        )
+
+    def test_truncated_year_published_parsed_returns_none(self):
+        """A struct_time with year < 2000 (e.g. AD 20) must be rejected."""
+        import time
+        # year=20 (AD 20) simulates feedparser parsing 'Feb 18, 20' with 2-digit year
+        fake_struct = time.struct_time((20, 2, 18, 0, 0, 0, 0, 0, 0))
+        entry = self._FakeEntry(published_parsed=fake_struct)
+        result = MedicalNewsFetcher._parse_pub_date(entry)
+        assert result is None, (
+            f"Expected None for year=20 struct_time, got {result!r}. "
+            "Year < 2000 dates indicate a truncated/malformed source date."
+        )
+
+    def test_valid_full_year_string(self):
+        """Well-formed 'Feb 18, 2026' parses correctly."""
+        entry = self._FakeEntry(published="Feb 18, 2026")
+        result = MedicalNewsFetcher._parse_pub_date(entry)
+        assert result == "2026-02-18"
+
+    def test_valid_iso_string(self):
+        """ISO date string '2026-02-18T12:00:00Z' parses to date-only."""
+        entry = self._FakeEntry(published="2026-02-18T12:00:00Z")
+        result = MedicalNewsFetcher._parse_pub_date(entry)
+        assert result == "2026-02-18"
+
+    def test_valid_published_parsed_struct_time(self):
+        """Standard struct_time with year >= 2000 parses correctly."""
+        import time
+        fake_struct = time.struct_time((2026, 2, 18, 12, 0, 0, 0, 49, 0))
+        entry = self._FakeEntry(published_parsed=fake_struct)
+        result = MedicalNewsFetcher._parse_pub_date(entry)
+        assert result == "2026-02-18"
+
+    def test_no_date_fields_returns_none(self):
+        """Entry with no date attributes returns None gracefully."""
+        entry = self._FakeEntry()
+        result = MedicalNewsFetcher._parse_pub_date(entry)
+        assert result is None
+
+    def test_various_month_formats(self):
+        """Both short and long month names parse correctly."""
+        cases = [
+            ("Feb 18, 2026", "2026-02-18"),
+            ("February 18, 2026", "2026-02-18"),
+            ("18 Feb 2026", "2026-02-18"),
+            ("18 February 2026", "2026-02-18"),
+        ]
+        for date_str, expected in cases:
+            entry = self._FakeEntry(published=date_str)
+            result = MedicalNewsFetcher._parse_pub_date(entry)
+            assert result == expected, f"Failed for {date_str!r}: got {result!r}"

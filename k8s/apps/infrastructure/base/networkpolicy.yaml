@@ -1,0 +1,262 @@
+---
+# Default deny all ingress and egress
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: dk-data-default-deny
+spec:
+  podSelector: {}
+  policyTypes:
+    - Ingress
+    - Egress
+
+---
+# Allow ingress to PostgREST from approved sources
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: dk-data-postgrest-ingress
+spec:
+  podSelector:
+    matchLabels:
+      app: postgrest
+  policyTypes:
+    - Ingress
+  ingress:
+    # Same-namespace access (job-trigger, CronJobs)
+    - from:
+        - podSelector: {}
+      ports:
+        - protocol: TCP
+          port: 3000
+    # Traefik ingress controller (public traffic)
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+      ports:
+        - protocol: TCP
+          port: 3000
+    # BehaviorLabs apps
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: behaviorlabs-prod
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: behaviorlabs-staging
+      ports:
+        - protocol: TCP
+          port: 3000
+    # Agent Mesh apps
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: agentmesh-prod
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: agentmesh-staging
+      ports:
+        - protocol: TCP
+          port: 3000
+    # Shared infrastructure (monitoring scrape)
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: infra
+      ports:
+        - protocol: TCP
+          port: 3000
+
+---
+# Allow ingress to metering proxy from approved sources
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: dk-data-metering-proxy-ingress
+spec:
+  podSelector:
+    matchLabels:
+      app: postgrest
+  policyTypes:
+    - Ingress
+  ingress:
+    # Traefik ingress controller (public traffic via metering proxy)
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+      ports:
+        - protocol: TCP
+          port: 3001
+    # BehaviorLabs apps
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: behaviorlabs-prod
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: behaviorlabs-staging
+      ports:
+        - protocol: TCP
+          port: 3001
+    # Agent Mesh apps
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: agentmesh-prod
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: agentmesh-staging
+      ports:
+        - protocol: TCP
+          port: 3001
+    # Monitoring scrape (Prometheus on metrics port)
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: infra
+      ports:
+        - protocol: TCP
+          port: 3001
+        - protocol: TCP
+          port: 9090
+    # Platform API health checks
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: infra
+      ports:
+        - protocol: TCP
+          port: 3001
+
+---
+# Allow ingress to Job Trigger from internal sources only
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: dk-data-job-trigger-ingress
+spec:
+  podSelector:
+    matchLabels:
+      app: job-trigger
+  policyTypes:
+    - Ingress
+  ingress:
+    # Same-namespace access (CronJobs, other dk-data pods)
+    - from:
+        - podSelector: {}
+      ports:
+        - protocol: TCP
+          port: 8000
+    # Monitoring scrape from infra
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: infra
+      ports:
+        - protocol: TCP
+          port: 8000
+
+---
+# Allow egress to required services
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: dk-data-egress
+spec:
+  podSelector: {}
+  policyTypes:
+    - Egress
+  egress:
+    # Intra-namespace (PostgREST, job-trigger)
+    - to:
+        - podSelector: {}
+      ports:
+        - protocol: TCP
+          port: 3000
+        - protocol: TCP
+          port: 8000
+    # DNS
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+      ports:
+        - protocol: UDP
+          port: 53
+        - protocol: TCP
+          port: 53
+    # PostgreSQL (shared CNPG cluster - prod)
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: infra
+      ports:
+        - protocol: TCP
+          port: 5432
+    # PostgreSQL (shared CNPG cluster - staging)
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: infra-staging
+      ports:
+        - protocol: TCP
+          port: 5432
+    # SeaweedFS S3 gateway (backup storage - prod)
+    # Was 9000 when this was MinIO; moved to 8333 with the SeaweedFS cluster
+    # migration. Both ports kept temporarily for any in-flight legacy paths.
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: infra
+      ports:
+        - protocol: TCP
+          port: 8333
+        - protocol: TCP
+          port: 9000
+    # SeaweedFS S3 gateway (backup storage - staging)
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: infra-staging
+      ports:
+        - protocol: TCP
+          port: 8333
+        - protocol: TCP
+          port: 9000
+    # Alloy (OTLP telemetry - prod)
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: infra
+      ports:
+        - protocol: TCP
+          port: 4317
+    # Alloy (OTLP telemetry - staging)
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: infra-staging
+      ports:
+        - protocol: TCP
+          port: 4317
+    # Alloy via hostNetwork — node IPs (Alloy DaemonSet uses hostNetwork: true,
+    # so OTLP traffic routes to node IPs not pod IPs)
+    - to:
+        - ipBlock:
+            cidr: 10.0.0.0/24
+      ports:
+        - protocol: TCP
+          port: 4317
+    # External HTTPS (CMS APIs, HRSA, ACC) — for CronJob pods
+    - to:
+        - ipBlock:
+            cidr: 0.0.0.0/0
+            except:
+              - 10.0.0.0/8
+              - 172.16.0.0/12
+              - 192.168.0.0/16
+      ports:
+        - protocol: TCP
+          port: 443

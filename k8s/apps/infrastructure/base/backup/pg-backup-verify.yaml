@@ -1,0 +1,96 @@
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: pg-backup-verify
+  labels:
+    app: pg-backup
+    app.kubernetes.io/name: pg-backup-verify
+    app.kubernetes.io/component: backup
+    app.kubernetes.io/part-of: dk-data
+spec:
+  schedule: "0 4 * * 1"
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      activeDeadlineSeconds: 14400  # 4h (T201)
+      backoffLimit: 1
+      template:
+        metadata:
+          labels:
+            app: pg-backup
+            team: data-platform
+            service: dk-data
+            product: dk-data
+        spec:
+          restartPolicy: Never
+          securityContext:
+            fsGroup: 1000
+            runAsNonRoot: true
+            seccompProfile:
+              type: RuntimeDefault
+          initContainers:
+            - name: install-mc
+              image: minio/minio:RELEASE.2024-11-07T00-52-20Z
+              command: ["sh", "-c", "cp /usr/bin/mc /tmp/mc && chmod +x /tmp/mc"]
+              securityContext:
+                runAsNonRoot: false
+                runAsUser: 0
+                allowPrivilegeEscalation: false
+                readOnlyRootFilesystem: true
+                capabilities:
+                  drop: ["ALL"]
+              volumeMounts:
+                - name: tmp
+                  mountPath: /tmp
+          containers:
+            - name: pg-backup-verify
+              image: ghcr.io/cloudnative-pg/postgresql:16.4
+              command: ["/bin/bash", "/scripts/verify.sh"]
+              env:
+                - name: MINIO_ENDPOINT
+                  value: "seaweedfs-s3.infra.svc.cluster.local:8333"
+                - name: MINIO_ACCESS_KEY
+                  valueFrom:
+                    secretKeyRef:
+                      name: minio-backup-credentials
+                      key: MINIO_ACCESS_KEY
+                - name: MINIO_SECRET_KEY
+                  valueFrom:
+                    secretKeyRef:
+                      name: minio-backup-credentials
+                      key: MINIO_SECRET_KEY
+                - name: MINIO_BUCKET
+                  value: "postgres-backups"
+                - name: NAMESPACE
+                  valueFrom:
+                    fieldRef:
+                      fieldPath: metadata.namespace
+                - name: MC_CONFIG_DIR
+                  value: "/tmp/mc"
+              resources:
+                requests:
+                  memory: "256Mi"
+                  cpu: "100m"
+                limits:
+                  memory: "1Gi"
+                  cpu: "500m"
+              securityContext:
+                allowPrivilegeEscalation: false
+                readOnlyRootFilesystem: true
+                capabilities:
+                  drop: ["ALL"]
+              volumeMounts:
+                - name: backup-script
+                  mountPath: /scripts
+                  readOnly: true
+                - name: tmp
+                  mountPath: /tmp
+          volumes:
+            - name: backup-script
+              configMap:
+                name: pg-backup-script
+                defaultMode: 0755
+            - name: tmp
+              emptyDir: {}

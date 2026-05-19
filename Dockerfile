@@ -18,6 +18,16 @@ FROM python:3.11-slim
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
     libpq5 \
+    curl \
+    ca-certificates \
+    gnupg \
+    && install -d /usr/share/postgresql-common/pgdg \
+    && curl -fsSL https://www.postgresql.org/media/keys/ACCC4CF8.asc -o /usr/share/postgresql-common/pgdg/apt.postgresql.org.asc \
+    && echo "deb [signed-by=/usr/share/postgresql-common/pgdg/apt.postgresql.org.asc] https://apt.postgresql.org/pub/repos/apt bookworm-pgdg main" > /etc/apt/sources.list.d/pgdg.list \
+    && apt-get update \
+    && apt-get install -y --no-install-recommends postgresql-client-16 \
+    && apt-get purge -y gnupg \
+    && apt-get autoremove -y \
     && rm -rf /var/lib/apt/lists/*
 
 RUN useradd --create-home --shell /bin/bash appuser
@@ -26,8 +36,16 @@ COPY --from=builder /install /usr/local
 
 WORKDIR /app
 
+# Bundle DrugBank seed data (tracked in Git LFS, used by seed job and MCP adapter)
+COPY --chown=appuser:appuser data/drugbank/ /app/data/drugbank/
+
 USER appuser
 
 EXPOSE 8000
 
-ENTRYPOINT ["uvicorn", "dk_data.ingestion.batch.api:app", "--host", "0.0.0.0", "--port", "8000"]
+# --workers 4: prevents single-worker self-DoS where a /metrics scrape (which
+# triggers refresh_metrics_from_database_sync over many silver/bronze tables)
+# saturates the worker for seconds and starves /health probe responses. With
+# multiple workers, scrape work on one process doesn't block probes on the
+# others. See PR #357 (Option C) + #359 (Option D) context.
+ENTRYPOINT ["uvicorn", "dk_data.ingestion.batch.api:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "4"]

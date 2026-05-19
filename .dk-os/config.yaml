@@ -1,0 +1,4 @@
+language: python
+framework: fastapi
+org: data-kinetic
+repo: dk-data-FE

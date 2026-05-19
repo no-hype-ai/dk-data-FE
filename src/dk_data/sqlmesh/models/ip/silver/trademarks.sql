@@ -1,0 +1,127 @@
+-- T041: ip_silver.trademarks — trademark hub (NEW)
+-- Hub architecture: one row per unique trademark keyed by (jurisdiction, registration_number).
+-- Sources: USPTO trademarks, EUIPO trademarks from bronze.
+--
+-- Cross-source column-name reconciliation (FR-002 exception, applies only to hub
+-- consolidation models that UNION two bronzes whose source schemas differ):
+--   USPTO bronze uses `mark_text`     ─┐
+--   EUIPO bronze uses `mark_name`     ─┴── projected as `mark_text` in this hub
+-- The bronze tables themselves still expose their source-authoritative names
+-- (`ip_bronze.uspto_trademarks.mark_text`, `ip_bronze.euipo_trademarks.mark_name`)
+-- and are reachable directly when the source-of-truth name is required.
+
+MODEL (
+    name ip_silver.trademarks,
+    kind INCREMENTAL_BY_UNIQUE_KEY (
+        unique_key trademark_id
+    ),
+    audits (
+        -- Entity-resolution key integrity (FR-014 Silver Hub Architecture).
+        not_null(columns := (trademark_id, jurisdiction, mark_text)),
+        unique_values(columns := (trademark_id)),
+        -- owner_company_id crosswalks to the company hub. Nullable today
+        -- (EUIPO branch does not emit owner). Audit skips NULL FKs.
+        referential_integrity(
+            parent_model := mol_silver.companies,
+            parent_key := company_id,
+            child_key := owner_company_id
+        )
+    ),
+    grain trademark_id
+);
+
+WITH uspto_trademarks AS (
+    SELECT
+        ('x' || substr(md5('US:' || COALESCE(registration_number, serial_number)), 1, 16))::bit(64)::bigint AS trademark_id,
+        'US'                                                                     AS jurisdiction,
+        NULLIF(registration_number, '')                                          AS registration_number,
+        NULLIF(serial_number, '')                                                AS serial_number,
+        NULL::text                                                               AS wipo_madrid_number,
+        NULLIF(mark_text, '')                                                    AS mark_text,
+        NULLIF(mark_type, '')                                                    AS mark_type,
+        nice_classes,
+        filing_date::date                                                        AS filing_date,
+        registration_date::date                                                  AS registration_date,
+        expiry_date::date                                                        AS expiry_date,
+        NULLIF(status, '')                                                       AS status,
+        NULL::bigint                                                             AS owner_company_id,
+        1                                                                        AS src_priority,
+        ingested_at                                                              AS first_seen_at
+    FROM ip_bronze.uspto_trademarks
+    WHERE COALESCE(registration_number, serial_number) IS NOT NULL
+      AND mark_text IS NOT NULL
+),
+
+-- EUIPO branch: see header — mark_name is projected as mark_text to satisfy the
+-- UNION ALL same-column-name constraint. registration_date / expiry_date are not
+-- in the EUIPO bronze passthrough; expose as NULL.
+euipo_trademarks AS (
+    SELECT
+        ('x' || substr(md5('EU:' || application_number), 1, 16))::bit(64)::bigint AS trademark_id,
+        'EU'                                                                     AS jurisdiction,
+        NULL::text                                                               AS registration_number,
+        NULLIF(application_number, '')                                           AS serial_number,
+        NULL::text                                                               AS wipo_madrid_number,
+        NULLIF(mark_name, '')                                                    AS mark_text,
+        NULLIF(mark_kind, '')                                                    AS mark_type,
+        nice_classes,
+        filing_date::date                                                        AS filing_date,
+        registration_date::date                                                  AS registration_date,
+        expiry_date::date                                                        AS expiry_date,
+        NULLIF(status, '')                                                       AS status,
+        NULL::bigint                                                             AS owner_company_id,
+        2                                                                        AS src_priority,
+        ingested_at                                                              AS first_seen_at
+    FROM ip_bronze.euipo_trademarks
+    WHERE application_number IS NOT NULL
+      AND mark_name IS NOT NULL
+),
+
+all_trademarks AS (
+    SELECT * FROM uspto_trademarks
+    UNION ALL
+    SELECT * FROM euipo_trademarks
+),
+
+deduped AS (
+    SELECT DISTINCT ON (trademark_id)
+        trademark_id,
+        jurisdiction,
+        registration_number,
+        serial_number,
+        wipo_madrid_number,
+        mark_text,
+        mark_type,
+        nice_classes,
+        filing_date,
+        registration_date,
+        expiry_date,
+        status,
+        owner_company_id,
+        first_seen_at
+    FROM all_trademarks
+    ORDER BY trademark_id, src_priority ASC
+)
+
+SELECT
+    trademark_id,
+    jurisdiction,
+    registration_number,
+    serial_number,
+    wipo_madrid_number,
+    mark_text,
+    mark_type,
+    nice_classes,
+    filing_date,
+    registration_date,
+    expiry_date,
+    status,
+    owner_company_id,
+    COALESCE(first_seen_at, NOW()) AS first_seen_at,
+    NOW()                          AS last_updated_at
+FROM deduped;
+
+-- CREATE INDEX IF NOT EXISTS ip_silver_tm_mark_text_idx ON ip_silver.trademarks (mark_text);
+-- CREATE INDEX IF NOT EXISTS ip_silver_tm_gin_mark_idx ON ip_silver.trademarks USING GIN (LOWER(mark_text) gin_trgm_ops);
+-- CREATE INDEX IF NOT EXISTS ip_silver_tm_gin_classes_idx ON ip_silver.trademarks USING GIN (nice_classes);
+-- CREATE INDEX IF NOT EXISTS ip_silver_tm_owner_idx ON ip_silver.trademarks (owner_company_id);

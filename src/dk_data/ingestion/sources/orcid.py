@@ -2,7 +2,7 @@
 
 Feature: 012-platform-hardening (US3)
 
-Loads ORCID researcher profiles into raw.orcid with upsert semantics.
+Loads ORCID researcher profiles into mol_raw.orcid with upsert semantics.
 """
 
 import json
@@ -23,7 +23,7 @@ def load_orcid_data(
     source_file: Optional[str] = None,
     batch_size: int = 500,
 ) -> Dict[str, Any]:
-    """Load ORCID researcher profiles into raw.orcid.
+    """Load ORCID researcher profiles into mol_raw.orcid.
 
     Args:
         records: Profile records from ORCIDFetcher.fetch().
@@ -38,7 +38,7 @@ def load_orcid_data(
         logger.info("No ORCID records to load")
         return {"status": "success", "records_inserted": 0, "records_failed": 0}
 
-    logger.info(f"Loading {len(records)} ORCID records into raw.orcid")
+    logger.info(f"Loading {len(records)} ORCID records into mol_raw.orcid")
 
     records_inserted = 0
     records_failed = 0
@@ -60,7 +60,7 @@ def load_orcid_data(
 
                     cur.execute(
                         """
-                        INSERT INTO raw.orcid (
+                        INSERT INTO mol_raw.orcid (
                             orcid_id, given_names, family_name, credit_name,
                             biography, keywords, current_affiliations,
                             works_count, external_ids, raw_response

@@ -1,0 +1,3 @@
+setup:
+  project: dk-data-applications
+  config: dev

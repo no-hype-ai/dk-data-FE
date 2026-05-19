@@ -78,6 +78,17 @@ DB_QUERY_DURATION_SECONDS = Histogram(
 
 
 # =============================================================================
+# MCP DB-First Metrics (WS4 SP1, feature 211)
+# =============================================================================
+
+MCP_DBFIRST_OUTCOME_TOTAL = Counter(
+    "mcp_dbfirst_outcome_total",
+    "MCP gated DB-first dispatch outcomes by source",
+    ["source", "outcome"],  # outcome: served | fallthrough | error | disabled
+)
+
+
+# =============================================================================
 # Batch Job Metrics
 # =============================================================================
 
@@ -120,6 +131,12 @@ DATA_SOURCE_LAST_REFRESH_TIMESTAMP = Gauge(
 DATA_SOURCE_ROW_COUNT = Gauge(
     "dk_data_source_row_count",
     "Current row count for data source",
+    ["source_id", "source_name"],
+)
+
+DATA_SOURCE_TABLE_SIZE_BYTES = Gauge(
+    "dk_data_source_table_size_bytes",
+    "Storage size of data source table in bytes",
     ["source_id", "source_name"],
 )
 
@@ -264,6 +281,18 @@ DK_BRONZE_UNPROCESSED = Gauge(
     ["source"],
 )
 
+DK_SILVER_UNPROCESSED = Gauge(
+    "dk_silver_unprocessed_total",
+    "Unprocessed records in silver layer (bronze records pending silver transformation)",
+    ["source"],
+)
+
+DK_GOLD_UNPROCESSED = Gauge(
+    "dk_gold_unprocessed_total",
+    "Unprocessed records in gold layer (silver molecules pending gold aggregation)",
+    ["source"],
+)
+
 DK_TABLE_RECORD_COUNT = Gauge(
     "dk_table_record_count",
     "Record count per table",
@@ -327,6 +356,12 @@ DK_BRONZE_INGESTION_ERRORS = Counter(
     "dk_bronze_ingestion_errors_total",
     "Total ingestion errors by source",
     ["source", "error_type"],
+)
+
+DK_PIPELINE_DUPLICATE_FETCHES = Counter(
+    "dk_pipeline_duplicate_fetches_total",
+    "Total duplicate fetches detected via response_body_hash match (insert skipped)",
+    ["source"],
 )
 
 DK_BRONZE_INGESTION_DURATION = Histogram(
@@ -437,12 +472,335 @@ DK_ALERTS_DELIVERED = Counter(
 
 
 # =============================================================================
+# Prestaged Hydration Row-Count Gate (plan.md §B.3 / PR-02)
+# =============================================================================
+# Emitted by src/dk_data/ingestion/prestaged.py after the post-restore
+# COUNT(*) block. Two counters, zero gauges: gauges would reset across
+# job restarts and we only care about cumulative events for alerting
+# (DkHydrationRowMismatch in plan.md §B.5).
+
+DK_HYDRATION_ROW_MISMATCH_TOTAL = Counter(
+    "dk_hydration_row_mismatch_total",
+    (
+        "Count of prestaged hydration steps where post-restore COUNT(*) "
+        "deviated from the manifest's expected row_count beyond tolerance."
+    ),
+    ["source", "schema", "table"],
+)
+
+DK_HYDRATION_MANIFEST_MISSING_TOTAL = Counter(
+    "dk_hydration_manifest_missing_total",
+    (
+        "Count of prestaged hydration steps where no manifest entry was "
+        "found for the (schema, table). Row-count gate is disabled for "
+        "this step; metric makes the gap visible instead of silent."
+    ),
+    ["source", "schema", "table"],
+)
+
+
+# =============================================================================
 # NEW: Quarantine Metric (013-dk-data-observability — RC8)
 # =============================================================================
 
 DK_QUARANTINE_COUNT = Gauge(
     "dk_quarantine_count",
-    "Number of molecules in quarantine status",
+    "Number of molecules in quarantine status (agents.agent_quarantine)",
+)
+
+
+# =============================================================================
+# CMS PUF Platform Metrics (019-cms-puf-platform-reconciliation)
+# =============================================================================
+
+CMS_SOURCE_HEALTH_STATUS = Gauge(
+    "cms_source_health_status",
+    "CMS data source health: 1=healthy (refreshed within threshold), 0=error",
+    ["source"],
+)
+
+CMS_SOURCE_LAST_SYNC_TIMESTAMP = Gauge(
+    "cms_source_last_sync_timestamp",
+    "Unix timestamp of last successful CMS source sync",
+    ["source"],
+)
+
+CMS_RECORDS_INGESTED_TOTAL = Counter(
+    "cms_records_ingested_total",
+    "Total records ingested per CMS data source",
+    ["source"],
+)
+
+CMS_BACKFILL_REQUESTS_TOTAL = Counter(
+    "cms_backfill_requests_total",
+    "Total backfill requests triggered via data-tools API",
+    ["source_name", "status"],
+)
+
+CMS_AGENT_COST_USD = Gauge(
+    "cms_agent_cost_usd",
+    "Estimated LLM cost (USD) for last agent run",
+    ["agent_name"],
+)
+
+CMS_AGENT_QUARANTINE_PENDING = Gauge(
+    "cms_agent_quarantine_pending",
+    "Records quarantined in the most recent agent run",
+    ["agent_name"],
+)
+
+CMS_AGENT_RECORDS_ENRICHED_TOTAL = Counter(
+    "cms_agent_records_enriched_total",
+    "Cumulative records successfully written to silver by agent",
+    ["agent_name"],
+)
+
+CMS_AGENT_RECORDS_QUARANTINED_TOTAL = Counter(
+    "cms_agent_records_quarantined_total",
+    "Cumulative records quarantined by agent (low-confidence or error)",
+    ["agent_name"],
+)
+
+CMS_AGENT_LAST_RUN_STATUS = Gauge(
+    "cms_agent_last_run_status",
+    "Status of last agent run: 1=success, 0=error",
+    ["agent_name"],
+)
+
+CMS_AGENT_EXECUTIONS_TOTAL = Counter(
+    "cms_agent_executions_total",
+    "Total agent run invocations",
+    ["agent_name"],
+)
+
+CMS_FETCH_DURATION_SECONDS = Histogram(
+    "cms_fetch_duration_seconds",
+    "Duration of CMS source fetch/ingestion jobs in seconds",
+    ["source"],
+    buckets=[30, 60, 120, 300, 600, 1200, 1800, 3600],
+)
+
+CMS_EXTERNAL_API_REQUESTS_TOTAL = Counter(
+    "cms_external_api_requests_total",
+    "Total HTTP requests made to external APIs (EuropePMC, NIH Reporter)",
+    ["source", "status"],
+)
+
+CMS_RATE_LIMIT_REJECTIONS_TOTAL = Counter(
+    "cms_rate_limit_rejections_total",
+    "Total rate-limit (429) responses from external APIs",
+    ["source"],
+)
+
+# Download integrity (Horizon 1 / plan §B.4)
+DK_ARTIFACT_SIZE_MISMATCH_TOTAL = Counter(
+    "dk_artifact_size_mismatch_total",
+    "Total downloads where bytes written != Content-Length header",
+    ["source"],
+)
+
+# =============================================================================
+# Hydration observability expansion (Horizon 2 / plan §C.6)
+#
+# These three metrics are DEFINED here but EMISSION happens in the pre-staged
+# hydration pipeline on feature/005-prestaged-hydration (follow-up PR after
+# feature/005 merges to main). The dashboards at
+# grafana/dashboards/applications/dk-data-fe-hydration.json and
+# grafana/dashboards/applications/dk-data-fe-source-registry.json already
+# reference them so they light up the moment emission lands.
+# =============================================================================
+
+# HIGH-CARDINALITY WARNING: labels = source × schema × table × phase. With
+# ~73 sources × ~3 schemas × ~15 tables × 5 phases this can reach ~16k active
+# series per bucket boundary. Prefer aggregating at dashboard-query time
+# (sum by (source, phase, le) ...) rather than per-(schema, table). If the
+# series count becomes a pressure point, drop `table` from the label set and
+# fold it into a per-table `info` counter.
+DK_HYDRATION_PHASE_SECONDS = Histogram(
+    "dk_hydration_phase_seconds",
+    "Time spent in each hydration phase per (source, schema, table); "
+    "phase ∈ {download, validate, restore, rowcount, manifest_lookup}. "
+    "Emitted by src/dk_data/ingestion/prestaged.py (feature/005).",
+    ["source", "schema", "table", "phase"],
+    buckets=(0.1, 0.5, 1, 5, 10, 30, 60, 120, 300, 600, 1800, 3600),
+)
+
+# Bytes moved during hydration. kind ∈ {download, extracted} — `download` is
+# wire bytes (Content-Length), `extracted` is on-disk bytes after tarball /
+# zip / pg_dump expansion. Both are monotonically-increasing counters.
+DK_ARTIFACT_BYTES_TOTAL = Counter(
+    "dk_artifact_bytes_total",
+    "Total bytes moved during hydration, by source and kind "
+    "(kind ∈ {download, extracted}). Emitted by prestaged hydration and "
+    "live-fetcher ingestion paths (feature/005 follow-up).",
+    ["source", "kind"],
+)
+
+# Unix timestamp (seconds) of the most recent successful end-to-end hydration
+# for a source. Consumers: freshness dashboards + "stale source" alerts
+# (time() - dk_source_last_success_timestamp > sla_seconds).
+DK_SOURCE_LAST_SUCCESS_TIMESTAMP = Gauge(
+    "dk_source_last_success_timestamp",
+    "Unix timestamp of the last successful hydration per source. "
+    "Set on successful completion of run_ingestion() / prestaged loader "
+    "(feature/005 follow-up). Panels compute freshness as "
+    "(time() - dk_source_last_success_timestamp).",
+    ["source"],
+)
+
+# =============================================================================
+# Download integrity pipeline (Horizon 2 / plan §C.4)
+# =============================================================================
+
+# Incremented when a re-downloaded (source, url) has a sha256 that differs
+# from the most recent prior row in meta.artifact_provenance. Signals that
+# downstream transforms (bronze → silver) must re-run even if row counts
+# match — the bits changed, the semantics may have changed.
+DK_ARTIFACT_CHANGED_TOTAL = Counter(
+    "dk_artifact_changed_total",
+    "Total re-downloads where sha256 differs from the prior provenance row",
+    ["source"],
+)
+
+# Incremented when the provenance writer itself fails (DB error, network
+# blip, transient) — the download still succeeds (failure is swallowed so
+# it cannot fail the ingestion), but we need visibility into how often
+# provenance writes miss so we can detect silent drift.
+DK_ARTIFACT_PROVENANCE_WRITE_ERRORS_TOTAL = Counter(
+    "dk_artifact_provenance_write_errors_total",
+    "Total failures writing to meta.artifact_provenance (swallowed, non-fatal)",
+    ["source"],
+)
+
+# =============================================================================
+# WAL backpressure — per-source budget exhaustion (Horizon 2 / plan §C.2)
+# =============================================================================
+
+# Incremented exactly once per (run, source) when a single source has
+# consumed its WAL_PAUSE_BUDGET_PER_SOURCE_SECONDS share of the pause
+# budget. After exhaustion, the throttle stops pausing for that source
+# (so it races through without backpressure for the rest of the run)
+# but continues to honour per-source budgets for every other source.
+# Consumed by the DkWalSourceBudgetExhausted PrometheusRule (alert-
+# driven, not a dashboard panel — any non-zero rate is an anomaly that
+# pages on-call).
+DK_WAL_SOURCE_BUDGET_EXHAUSTED_TOTAL = Counter(
+    "dk_wal_source_budget_exhausted_total",
+    "Total times a source exhausted its per-source WAL pause budget (plan §C.2)",
+    ["source"],
+)
+
+# =============================================================================
+# Hydration DLQ / source quarantine (Horizon 2 / plan §C.3)
+#
+# Three counters wired by src/dk_data/ingestion/prestaged.py via the
+# HydrationBacklogWriter in src/dk_data/ingestion/hydration_backlog.py:
+#   - ADDED:        every failure recorded to meta.hydration_backlog
+#   - QUARANTINED:  a failure tipped the row into auto-quarantine (once per
+#                   quarantine transition, not per subsequent failure)
+#   - SKIPPED:      dispatcher skipped a step because the source was
+#                   already quarantined
+# Consumed by alert rules in k8s/apps/observability/alert-rules/ (a
+# non-zero rate of QUARANTINED or a sudden spike in SKIPPED both page the
+# data team).
+# =============================================================================
+
+DK_HYDRATION_DLQ_ADDED_TOTAL = Counter(
+    "dk_hydration_dlq_added_total",
+    "Total hydration failures recorded to meta.hydration_backlog "
+    "(incremented on every failure, not just on first backlog insert).",
+    ["source"],
+)
+
+DK_HYDRATION_DLQ_QUARANTINED_TOTAL = Counter(
+    "dk_hydration_dlq_quarantined_total",
+    "Total sources that transitioned into auto-quarantine "
+    "(once per quarantine event, not per subsequent skip).",
+    ["source"],
+)
+
+DK_HYDRATION_DLQ_SKIPPED_TOTAL = Counter(
+    "dk_hydration_dlq_skipped_total",
+    "Total hydration steps skipped because the source was quarantined "
+    "in meta.hydration_backlog.",
+    ["source"],
+)
+
+
+# =============================================================================
+# Admission control by budget (Horizon 3 / plan §D.3)
+#
+# Emitted by src/dk_data/ingestion/resource_budget.py — the ResourceBudget
+# client that gates per-source dispatch on capacity in meta.resource_budget.
+# Three metrics, one role each:
+#   - DK_BUDGET_REMAINING       : per-key free headroom (ratio-able against
+#                                  DK_BUDGET_TOTAL_CAPACITY on the dashboard)
+#   - DK_BUDGET_TOTAL_CAPACITY  : per-key declared capacity — changes only
+#                                  when an operator tunes the seed row
+#   - DK_BUDGET_RESERVATION_DENIED_TOTAL : counter incremented when
+#                                  try_reserve() fails; consumed by the
+#                                  DkBudgetReservationDenied alert rule
+#                                  (allowlisted out of the dashboard test).
+# The dashboard at grafana/dashboards/applications/dk-data-fe-resource-budget.json
+# plots DK_BUDGET_REMAINING / DK_BUDGET_TOTAL_CAPACITY per budget_key.
+# =============================================================================
+
+DK_BUDGET_REMAINING = Gauge(
+    "dk_budget_remaining",
+    "Remaining admission-budget capacity per budget_key (plan §D.3). "
+    "Set by ResourceBudget.publish_snapshot() from meta.resource_budget.",
+    ["key"],
+)
+
+DK_BUDGET_TOTAL_CAPACITY = Gauge(
+    "dk_budget_total_capacity",
+    "Declared total admission-budget capacity per budget_key (plan §D.3). "
+    "Changes only when an operator tunes meta.resource_budget rows.",
+    ["key"],
+)
+
+DK_BUDGET_RESERVATION_DENIED_TOTAL = Counter(
+    "dk_budget_reservation_denied_total",
+    "Total try_reserve() calls that were denied for lack of capacity on "
+    "a given budget_key (plan §D.3). Per-key so the alert can point at "
+    "the saturated budget.",
+    ["key"],
+)
+
+# Incremented by src/dk_data/ingestion/hydrate_dispatcher.py each time the
+# admission-decorated dispatch callable returns ``None`` (budget denied).
+# The dispatcher releases its semaphore slot and leaves the source in the
+# ready set so the next poll-interval tick retries admission. Per-source
+# labels so operators can spot a single throttled source vs a global
+# budget exhaustion. Consumed by the DkHydrationDispatchDeferred
+# PrometheusRule (alert-driven — a sustained non-zero rate means the
+# dispatcher is being throttled and meta.resource_budget needs retuning
+# or the C.5 PgBouncer hydration pool is saturated).
+DK_HYDRATION_DISPATCH_DEFERRED_TOTAL = Counter(
+    "dk_hydration_dispatch_deferred_total",
+    "Total per-source dispatches deferred by admission control "
+    "(plan §D.1 + §D.3). Increments when ResourceBudget.try_reserve() "
+    "denies capacity; the source is retried on the next dispatcher tick.",
+    ["source"],
+)
+
+
+CMS_GOLD_VIEW_LAST_REFRESH_TIMESTAMP = Gauge(
+    "cms_gold_view_last_refresh_timestamp",
+    "Unix timestamp of last hcs_gold view refresh",
+    ["view"],
+)
+
+CMS_GOLD_VIEW_RECORD_COUNT = Gauge(
+    "cms_gold_view_record_count",
+    "Current record count in hcs_gold views",
+    ["view"],
+)
+
+CMS_GOLD_REFRESH_DURATION_SECONDS = Gauge(
+    "cms_gold_refresh_duration_seconds",
+    "Duration in seconds of last hcs_gold materialized view refresh",
+    ["view"],
 )
 
 
@@ -480,6 +838,7 @@ def record_data_source_refresh(
     source_name: str,
     row_count: int,
     refresh_timestamp: Optional[float] = None,
+    table_size_bytes: Optional[int] = None,
 ) -> None:
     """Record data source refresh metrics."""
     ts = refresh_timestamp or time.time()
@@ -489,6 +848,10 @@ def record_data_source_refresh(
     DATA_SOURCE_ROW_COUNT.labels(
         source_id=source_id, source_name=source_name
     ).set(row_count)
+    if table_size_bytes is not None:
+        DATA_SOURCE_TABLE_SIZE_BYTES.labels(
+            source_id=source_id, source_name=source_name
+        ).set(table_size_bytes)
 
 
 def get_metrics() -> bytes:
@@ -499,6 +862,76 @@ def get_metrics() -> bytes:
 def get_metrics_content_type() -> str:
     """Get content type for metrics endpoint."""
     return CONTENT_TYPE_LATEST
+
+
+_CMS_SOURCE_PREFIXES = (
+    "cms_", "fetch-cms-", "fetch_cms_",
+)
+
+
+def _is_cms_source(name: str) -> bool:
+    """Return True if the job/source name belongs to a CMS PUF source."""
+    return any(name.startswith(p) for p in _CMS_SOURCE_PREFIXES)
+
+
+def record_cms_source_sync(source_name: str, status: str, records: int = 0) -> None:
+    """Record a CMS source sync event (health + timestamp + ingested counter)."""
+    label = source_name.replace("-", "_").removeprefix("fetch_")
+    if status == "success":
+        CMS_SOURCE_HEALTH_STATUS.labels(source=label).set(1)
+        CMS_SOURCE_LAST_SYNC_TIMESTAMP.labels(source=label).set(time.time())
+        if records:
+            CMS_RECORDS_INGESTED_TOTAL.labels(source=label).inc(records)
+    else:
+        CMS_SOURCE_HEALTH_STATUS.labels(source=label).set(0)
+
+
+def record_cms_backfill(source_name: str, status: str) -> None:
+    """Increment the backfill request counter for a CMS source."""
+    CMS_BACKFILL_REQUESTS_TOTAL.labels(source_name=source_name, status=status).inc()
+
+
+def record_agent_run(
+    agent_name: str,
+    records_written: int = 0,
+    records_quarantined: int = 0,
+    cost_usd: float = 0.0,
+    status: str = "success",
+) -> None:
+    """Record agent run results: all CMS agent metrics."""
+    CMS_AGENT_EXECUTIONS_TOTAL.labels(agent_name=agent_name).inc()
+    CMS_AGENT_LAST_RUN_STATUS.labels(agent_name=agent_name).set(1 if status == "success" else 0)
+    CMS_AGENT_QUARANTINE_PENDING.labels(agent_name=agent_name).set(records_quarantined)
+    if records_written > 0:
+        CMS_AGENT_RECORDS_ENRICHED_TOTAL.labels(agent_name=agent_name).inc(records_written)
+    if records_quarantined > 0:
+        CMS_AGENT_RECORDS_QUARANTINED_TOTAL.labels(agent_name=agent_name).inc(records_quarantined)
+    if cost_usd > 0:
+        CMS_AGENT_COST_USD.labels(agent_name=agent_name).set(cost_usd)
+
+
+def record_cms_fetch_duration(source_name: str, duration_seconds: float) -> None:
+    """Record fetch/ingestion job duration for a CMS source."""
+    label = source_name.replace("-", "_").removeprefix("fetch_")
+    CMS_FETCH_DURATION_SECONDS.labels(source=label).observe(duration_seconds)
+
+
+def record_api_request(source: str, status: str = "success") -> None:
+    """Record an external API request (EuropePMC, NIH Reporter)."""
+    CMS_EXTERNAL_API_REQUESTS_TOTAL.labels(source=source, status=status).inc()
+
+
+def record_rate_limit_rejection(source: str) -> None:
+    """Record a 429 rate-limit rejection from an external API."""
+    CMS_RATE_LIMIT_REJECTIONS_TOTAL.labels(source=source).inc()
+
+
+def record_gold_view_refresh(view: str, record_count: int, duration_seconds: float = 0.0) -> None:
+    """Record an hcs_gold view refresh event."""
+    CMS_GOLD_VIEW_LAST_REFRESH_TIMESTAMP.labels(view=view).set(time.time())
+    CMS_GOLD_VIEW_RECORD_COUNT.labels(view=view).set(record_count)
+    if duration_seconds > 0:
+        CMS_GOLD_REFRESH_DURATION_SECONDS.labels(view=view).set(duration_seconds)
 
 
 def timed_job(job_name: str):

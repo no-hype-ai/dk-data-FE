@@ -164,8 +164,13 @@ class TestPubMedFetcher:
                 assert fetcher.api_key is None
 
     @responses.activate
-    def test_fetch_success(self):
-        """Full happy-path: esearch returns 2 PMIDs, efetch returns articles."""
+    @patch("dk_data.ingestion.fetchers.pubmed.load_pubmed_data")
+    @patch("dk_data.ingestion.fetchers.pubmed.clear_checkpoint")
+    @patch("dk_data.ingestion.fetchers.pubmed.load_checkpoint", return_value=None)
+    def test_fetch_success(self, mock_load_cp, mock_clear_cp, mock_load_data):
+        """Full happy-path: esearch returns 2 PMIDs, efetch returns articles, streamed to DB."""
+        mock_load_data.return_value = {"records_inserted": 2, "records_failed": 0}
+
         # Mock esearch
         responses.add(
             responses.GET,
@@ -188,33 +193,23 @@ class TestPubMedFetcher:
             result = fetcher.fetch(days_back=1)
 
         assert result["status"] == "success"
-        assert len(result["records"]) == 2
+        assert result["records"] == []  # streaming — records go to DB, not returned
+        assert result["record_count"] == 2
         assert result["hash"] is not None
 
-        # Verify first article parsed correctly
-        rec0 = result["records"][0]
-        assert rec0["pmid"] == "12345678"
-        assert rec0["title"] == "A Novel Drug Target in Oncology"
-        assert "Background text here" in rec0["abstract"]
-        assert "Methods text here" in rec0["abstract"]
-        assert len(rec0["authors"]) == 2
-        assert rec0["authors"][0]["last_name"] == "Smith"
-        assert rec0["journal"] == "The New England Journal of Medicine"
-        assert rec0["publication_date"] == "2026-02-10"
-        assert rec0["doi"] == "10.1056/NEJMoa2026372"
-        assert "Neoplasms" in rec0["mesh_terms"]
-        assert "Drug Therapy" in rec0["mesh_terms"]
-        assert "Clinical Trial" in rec0["publication_types"]
-        assert "oncology" in rec0["keywords"]
-
-        # Verify second article (minimal data)
-        rec1 = result["records"][1]
-        assert rec1["pmid"] == "87654321"
-        assert rec1["abstract"] is None
-        assert rec1["doi"] is None
+        # Verify load_pubmed_data was called with parsed articles
+        mock_load_data.assert_called_once()
+        loaded_records = mock_load_data.call_args[0][0]
+        assert len(loaded_records) == 2
+        assert loaded_records[0]["pmid"] == "12345678"
+        assert loaded_records[0]["title"] == "A Novel Drug Target in Oncology"
+        assert loaded_records[1]["pmid"] == "87654321"
 
     @responses.activate
-    def test_fetch_empty_results(self):
+    @patch("dk_data.ingestion.fetchers.pubmed.load_pubmed_data")
+    @patch("dk_data.ingestion.fetchers.pubmed.clear_checkpoint")
+    @patch("dk_data.ingestion.fetchers.pubmed.load_checkpoint", return_value=None)
+    def test_fetch_empty_results(self, mock_load_cp, mock_clear_cp, mock_load_data):
         """esearch returns zero results."""
         responses.add(
             responses.GET,
@@ -230,7 +225,8 @@ class TestPubMedFetcher:
 
         assert result["status"] == "success"
         assert result["records"] == []
-        assert result["hash"] is None
+        assert result["record_count"] == 0
+        mock_load_data.assert_not_called()
 
     @responses.activate
     def test_fetch_esearch_http_error(self):

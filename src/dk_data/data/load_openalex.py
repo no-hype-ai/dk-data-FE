@@ -6,7 +6,7 @@ Loads scientific publication data from OpenAlex API into PostgreSQL.
 Focuses on pharmaceutical and biomedical research.
 
 Tables populated:
-- bronze.openalex: Scientific works with citations, authors, concepts
+- mol_bronze.openalex: Scientific works with citations, authors, concepts
 
 Data Source: https://openalex.org/
 API Docs: https://docs.openalex.org/
@@ -41,6 +41,7 @@ from psycopg2.extras import Json
 from loguru import logger
 from tqdm import tqdm
 import aiohttp
+from dk_data.ingestion.utils.database import build_dsn
 
 # Database config
 DB_CONFIG = {
@@ -60,7 +61,7 @@ def ensure_tables(conn) -> None:
     """Create OpenAlex tables if they don't exist."""
     with conn.cursor() as cur:
         cur.execute("""
-            CREATE TABLE IF NOT EXISTS bronze.openalex (
+            CREATE TABLE IF NOT EXISTS mol_bronze.openalex (
                 id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
                 openalex_id TEXT UNIQUE NOT NULL,
                 doi TEXT,
@@ -89,12 +90,12 @@ def ensure_tables(conn) -> None:
                 processed_to_silver BOOLEAN DEFAULT FALSE
             );
 
-            CREATE INDEX IF NOT EXISTS idx_openalex_doi ON bronze.openalex(doi);
-            CREATE INDEX IF NOT EXISTS idx_openalex_year ON bronze.openalex(publication_year);
-            CREATE INDEX IF NOT EXISTS idx_openalex_cited ON bronze.openalex(cited_by_count);
-            CREATE INDEX IF NOT EXISTS idx_openalex_concepts ON bronze.openalex USING GIN(concepts);
-            CREATE INDEX IF NOT EXISTS idx_openalex_authors ON bronze.openalex USING GIN(authors);
-            CREATE INDEX IF NOT EXISTS idx_openalex_processed ON bronze.openalex(processed_to_silver);
+            CREATE INDEX IF NOT EXISTS idx_openalex_doi ON mol_bronze.openalex(doi);
+            CREATE INDEX IF NOT EXISTS idx_openalex_year ON mol_bronze.openalex(publication_year);
+            CREATE INDEX IF NOT EXISTS idx_openalex_cited ON mol_bronze.openalex(cited_by_count);
+            CREATE INDEX IF NOT EXISTS idx_openalex_concepts ON mol_bronze.openalex USING GIN(concepts);
+            CREATE INDEX IF NOT EXISTS idx_openalex_authors ON mol_bronze.openalex USING GIN(authors);
+            CREATE INDEX IF NOT EXISTS idx_openalex_processed ON mol_bronze.openalex(processed_to_silver);
         """)
         conn.commit()
     logger.info("OpenAlex tables ensured")
@@ -236,7 +237,7 @@ def insert_work(conn, work: Dict[str, Any]) -> bool:
     try:
         with conn.cursor() as cur:
             cur.execute("""
-                INSERT INTO bronze.openalex (
+                INSERT INTO mol_bronze.openalex (
                     openalex_id, doi, title, publication_date, publication_year,
                     type, open_access, cited_by_count, authors, institutions,
                     concepts, topics, journal_name, journal_issn, volume, issue,
@@ -275,13 +276,13 @@ async def load_for_drugs(conn, limit: int = None) -> int:
     """Load publications for drugs in the database."""
     total_inserted = 0
 
-    # Get drug names from silver.molecules if exists
+    # Get drug names from mol_silver.molecules if exists
     drug_names = []
     try:
         with conn.cursor() as cur:
             cur.execute("""
                 SELECT DISTINCT canonical_name
-                FROM silver.molecules
+                FROM mol_silver.molecules
                 WHERE canonical_name IS NOT NULL
                 ORDER BY canonical_name
                 LIMIT 100
@@ -376,7 +377,7 @@ async def main():
 
     logger.info(f"Starting OpenAlex loader in {args.mode} mode")
 
-    conn = psycopg2.connect(**DB_CONFIG)
+    conn = psycopg2.connect(build_dsn())
     ensure_tables(conn)
 
     try:

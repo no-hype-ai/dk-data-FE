@@ -1,0 +1,40 @@
+# dk-data-fe standards compliance configuration
+# See: dk-planning/plans/dk-data-fe/02-standards-and-governance.md
+version: "1.0"
+product: dk-data
+team: data-platform
+tiers: [1, 2, 3]
+
+services:
+  - name: job-trigger
+    port: 8000
+    health_endpoint: /health
+    ready_endpoint: /ready
+  - name: postgrest
+    port: 3000
+    health_endpoint: /
+    ready_endpoint: /
+  - name: metering-proxy
+    port: 8080
+    health_endpoint: /health
+    ready_endpoint: /health
+
+promotion:
+  staging:
+    approvers: []
+    auto_assign: true
+  production:
+    approvers: []
+    require_cross_approval: true
+    min_staging_soak_hours: 4
+
+checks:
+  claude_md: true
+  architecture_md: true
+  github_topics: true
+  issue_labels: true
+  ci_workflows: true
+  observability: true
+  security_context: true
+  pdb: true
+  arc_v2_runners: deferred    # G14 — awaiting ARC v2 service container support

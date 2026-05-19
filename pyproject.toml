@@ -5,9 +5,10 @@ description = "DK Data Platform - TAVR Hospital Intelligence + Molecule Data Pip
 requires-python = ">=3.11"
 dependencies = [
     # Core dependencies
-    "sqlmesh>=0.90.0,<1.0",
+    "sqlmesh==0.230.0",
     "psycopg2-binary>=2.9.9,<3.0",
     "pandas>=2.0.0,<3.0",
+    "openpyxl>=3.1.0,<4.0",
     "anthropic>=0.40.0,<1.0",
     "pydantic>=2.5.0,<3.0",
     "pydantic-settings>=2.0.0,<3.0",
@@ -27,6 +28,8 @@ dependencies = [
     "tenacity>=8.2.0,<9.0",
     "loguru>=0.7.0,<1.0",
     "tqdm>=4.66.0,<5.0",
+    # 005-prestaged-hydration reuses the four deps above (tenacity, loguru,
+    # psycopg2-binary, pydantic) plus pyyaml — no new packages introduced.
     "asyncpg>=0.29.0,<1.0",
     # API dependencies
     "fastapi>=0.109.0,<1.0",
@@ -44,7 +47,9 @@ dependencies = [
     "structlog>=24.0.0,<25.0",
     "prometheus-client>=0.19.0,<1.0",
     "prometheus-fastapi-instrumentator>=6.1.0,<7.0",
+    # Agent LLM client — routes via LiteLLM proxy (019-cms-puf-platform-reconciliation)
     "openai>=1.0.0,<2.0",
+    # Pydantic email validation (required for EmailStr fields in API routers)
     "email-validator>=2.0.0,<3.0",
 ]
 
@@ -52,10 +57,18 @@ dependencies = [
 dev = [
     "pytest>=8.0.0,<9.0",
     "pytest-cov>=6.0.0,<7.0",
+    "pytest-asyncio>=0.23.0,<1.0",
     "pytest-postgresql>=6.0.0,<7.0",
     "responses>=0.25.0,<1.0",
     "respx>=0.20.0,<1.0",
     "ruff>=0.1.0,<1.0",
+    "email-validator>=2.0.0,<3.0",
+    # SeaweedFS S3 client (Horizon 2 / C.1). boto3 is promoted from dev
+    # to runtime the moment a consumer actually imports ObjectStore from
+    # a non-test path — for now it lives here so CI runs the moto-backed
+    # unit tests.
+    "boto3>=1.34.0,<2.0",
+    "moto[s3]>=5.0.0,<6.0",
 ]
 
 [build-system]
@@ -67,6 +80,7 @@ packages = ["src/dk_data"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+asyncio_mode = "auto"
 addopts = [
     "--cov=src/dk_data",
     "--cov-report=term-missing",
@@ -90,3 +104,4 @@ exclude_lines = [
     "if __name__ == .__main__.",
     "if TYPE_CHECKING:",
 ]
+

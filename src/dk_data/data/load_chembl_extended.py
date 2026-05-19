@@ -12,13 +12,13 @@ Loads:
 - assays: Full assay descriptions
 
 Tables populated:
-- bronze.chembl_drug_mechanism
-- bronze.chembl_drug_indication
-- bronze.chembl_metabolism
-- bronze.chembl_drug_warning
-- bronze.chembl_cell_dictionary
-- bronze.chembl_component_sequences
-- bronze.chembl_assays
+- mol_bronze.chembl_drug_mechanism
+- mol_bronze.chembl_drug_indication
+- mol_bronze.chembl_metabolism
+- mol_bronze.chembl_drug_warning
+- mol_bronze.chembl_cell_dictionary
+- mol_bronze.chembl_component_sequences
+- mol_bronze.chembl_assays
 
 Usage:
     python -m dk_data.data.load_chembl_extended
@@ -37,6 +37,7 @@ from pathlib import Path
 import psycopg2
 from psycopg2.extras import execute_values
 from loguru import logger
+from dk_data.ingestion.utils.database import build_dsn
 
 try:
     import chembl_downloader
@@ -66,7 +67,7 @@ def ensure_extended_tables(conn):
     cursor = conn.cursor()
 
     cursor.execute("""
-        CREATE TABLE IF NOT EXISTS bronze.chembl_drug_mechanism (
+        CREATE TABLE IF NOT EXISTS mol_bronze.chembl_drug_mechanism (
             id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
             molregno INTEGER,
             chembl_id VARCHAR(20),
@@ -86,12 +87,12 @@ def ensure_extended_tables(conn):
             UNIQUE(chembl_id, target_chembl_id, mechanism_of_action)
         );
 
-        CREATE INDEX IF NOT EXISTS idx_mechanism_chembl ON bronze.chembl_drug_mechanism(chembl_id);
-        CREATE INDEX IF NOT EXISTS idx_mechanism_target ON bronze.chembl_drug_mechanism(target_chembl_id);
+        CREATE INDEX IF NOT EXISTS idx_mechanism_chembl ON mol_bronze.chembl_drug_mechanism(chembl_id);
+        CREATE INDEX IF NOT EXISTS idx_mechanism_target ON mol_bronze.chembl_drug_mechanism(target_chembl_id);
     """)
 
     cursor.execute("""
-        CREATE TABLE IF NOT EXISTS bronze.chembl_drug_indication (
+        CREATE TABLE IF NOT EXISTS mol_bronze.chembl_drug_indication (
             id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
             molregno INTEGER,
             chembl_id VARCHAR(20),
@@ -106,12 +107,12 @@ def ensure_extended_tables(conn):
             UNIQUE(chembl_id, mesh_id)
         );
 
-        CREATE INDEX IF NOT EXISTS idx_indication_chembl ON bronze.chembl_drug_indication(chembl_id);
-        CREATE INDEX IF NOT EXISTS idx_indication_mesh ON bronze.chembl_drug_indication(mesh_id);
+        CREATE INDEX IF NOT EXISTS idx_indication_chembl ON mol_bronze.chembl_drug_indication(chembl_id);
+        CREATE INDEX IF NOT EXISTS idx_indication_mesh ON mol_bronze.chembl_drug_indication(mesh_id);
     """)
 
     cursor.execute("""
-        CREATE TABLE IF NOT EXISTS bronze.chembl_metabolism (
+        CREATE TABLE IF NOT EXISTS mol_bronze.chembl_metabolism (
             id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
             drug_chembl_id VARCHAR(20),
             drug_name TEXT,
@@ -130,11 +131,11 @@ def ensure_extended_tables(conn):
             UNIQUE(drug_chembl_id, metabolite_chembl_id, enzyme_chembl_id)
         );
 
-        CREATE INDEX IF NOT EXISTS idx_metabolism_drug ON bronze.chembl_metabolism(drug_chembl_id);
+        CREATE INDEX IF NOT EXISTS idx_metabolism_drug ON mol_bronze.chembl_metabolism(drug_chembl_id);
     """)
 
     cursor.execute("""
-        CREATE TABLE IF NOT EXISTS bronze.chembl_drug_warning (
+        CREATE TABLE IF NOT EXISTS mol_bronze.chembl_drug_warning (
             id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
             molregno INTEGER,
             chembl_id VARCHAR(20),
@@ -150,11 +151,11 @@ def ensure_extended_tables(conn):
             UNIQUE(chembl_id, warning_type, warning_country)
         );
 
-        CREATE INDEX IF NOT EXISTS idx_warning_chembl ON bronze.chembl_drug_warning(chembl_id);
+        CREATE INDEX IF NOT EXISTS idx_warning_chembl ON mol_bronze.chembl_drug_warning(chembl_id);
     """)
 
     cursor.execute("""
-        CREATE TABLE IF NOT EXISTS bronze.chembl_cell_dictionary (
+        CREATE TABLE IF NOT EXISTS mol_bronze.chembl_cell_dictionary (
             id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
             cell_id INTEGER UNIQUE,
             cell_name VARCHAR(200),
@@ -172,11 +173,11 @@ def ensure_extended_tables(conn):
             created_at TIMESTAMPTZ DEFAULT NOW()
         );
 
-        CREATE INDEX IF NOT EXISTS idx_cell_name ON bronze.chembl_cell_dictionary(cell_name);
+        CREATE INDEX IF NOT EXISTS idx_cell_name ON mol_bronze.chembl_cell_dictionary(cell_name);
     """)
 
     cursor.execute("""
-        CREATE TABLE IF NOT EXISTS bronze.chembl_component_sequences (
+        CREATE TABLE IF NOT EXISTS mol_bronze.chembl_component_sequences (
             id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
             component_id INTEGER UNIQUE,
             component_type VARCHAR(50),
@@ -190,11 +191,11 @@ def ensure_extended_tables(conn):
             created_at TIMESTAMPTZ DEFAULT NOW()
         );
 
-        CREATE INDEX IF NOT EXISTS idx_component_accession ON bronze.chembl_component_sequences(accession);
+        CREATE INDEX IF NOT EXISTS idx_component_accession ON mol_bronze.chembl_component_sequences(accession);
     """)
 
     cursor.execute("""
-        CREATE TABLE IF NOT EXISTS bronze.chembl_assays (
+        CREATE TABLE IF NOT EXISTS mol_bronze.chembl_assays (
             id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
             assay_id INTEGER UNIQUE,
             assay_chembl_id VARCHAR(20),
@@ -223,8 +224,8 @@ def ensure_extended_tables(conn):
             created_at TIMESTAMPTZ DEFAULT NOW()
         );
 
-        CREATE INDEX IF NOT EXISTS idx_assay_chembl ON bronze.chembl_assays(assay_chembl_id);
-        CREATE INDEX IF NOT EXISTS idx_assay_target ON bronze.chembl_assays(target_chembl_id);
+        CREATE INDEX IF NOT EXISTS idx_assay_chembl ON mol_bronze.chembl_assays(assay_chembl_id);
+        CREATE INDEX IF NOT EXISTS idx_assay_target ON mol_bronze.chembl_assays(target_chembl_id);
     """)
 
     conn.commit()
@@ -269,7 +270,7 @@ def load_drug_mechanism(pg_conn, sqlite_path: Path, batch_size: int = 5000) -> i
         execute_values(
             pg_cursor,
             """
-            INSERT INTO bronze.chembl_drug_mechanism (
+            INSERT INTO mol_bronze.chembl_drug_mechanism (
                 molregno, chembl_id, mechanism_of_action, target_chembl_id,
                 target_name, target_type, action_type, direct_interaction,
                 molecular_mechanism, disease_efficacy, mechanism_comment,
@@ -314,7 +315,7 @@ def load_drug_indication(pg_conn, sqlite_path: Path, batch_size: int = 5000) -> 
         execute_values(
             pg_cursor,
             """
-            INSERT INTO bronze.chembl_drug_indication (
+            INSERT INTO mol_bronze.chembl_drug_indication (
                 molregno, chembl_id, mesh_id, mesh_heading,
                 efo_id, efo_term, max_phase_for_ind, indication_refs
             ) VALUES %s
@@ -358,7 +359,7 @@ def load_drug_warning(pg_conn, sqlite_path: Path, batch_size: int = 5000) -> int
         execute_values(
             pg_cursor,
             """
-            INSERT INTO bronze.chembl_drug_warning (
+            INSERT INTO mol_bronze.chembl_drug_warning (
                 molregno, chembl_id, warning_type, warning_class,
                 warning_description, warning_country, warning_year,
                 efo_term, efo_id
@@ -401,7 +402,7 @@ def load_component_sequences(pg_conn, sqlite_path: Path, batch_size: int = 5000)
         execute_values(
             pg_cursor,
             """
-            INSERT INTO bronze.chembl_component_sequences (
+            INSERT INTO mol_bronze.chembl_component_sequences (
                 component_id, component_type, accession, sequence,
                 sequence_md5sum, description, tax_id, organism
             ) VALUES %s
@@ -444,7 +445,7 @@ def main():
     sqlite_path = get_chembl_sqlite_path()
 
     logger.info("Connecting to PostgreSQL...")
-    pg_conn = psycopg2.connect(**DB_CONFIG)
+    pg_conn = psycopg2.connect(build_dsn())
     logger.info(f"Connected to {DB_CONFIG['host']}:{DB_CONFIG['port']}/{DB_CONFIG['database']}")
 
     ensure_extended_tables(pg_conn)

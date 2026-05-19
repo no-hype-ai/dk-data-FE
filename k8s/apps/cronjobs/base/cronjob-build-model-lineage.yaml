@@ -1,0 +1,146 @@
+# Model Lineage Rebuild CronJob
+# Feature: 002-external-integration-foundation (US-11, T018)
+#
+# Rebuilds the dk-data SQLMesh model lineage graph every 30 minutes by
+# walking `src/dk_data/sqlmesh/models/**/*.sql`, extracting target model
+# names and FROM/JOIN source references, and upserting edges into
+# `meta.model_lineage`. See:
+#   - src/dk_data/ingestion/utils/build_model_lineage.py
+#   - src/dk_data/sql/migrations/133_model_lineage.sql (table definition)
+#   - grafana/dashboards/dk-data-transformations.json (nodeGraph consumers)
+#
+# Why 30 minutes:
+#   - Fast enough that a new model lands on the lineage dashboard within
+#     one half-hour window (not the 24h window of the gold transform cron).
+#   - Slow enough that it doesn't compete with the backfill orchestrator
+#     (every 10 min) for the same postgres connection pool.
+#   - The builder is purely metadata — reads SQL files, writes one table —
+#     so 30 min is the natural cadence for "freshness vs cost" tradeoff.
+#
+# Idempotent:
+#   - The builder performs a full `TRUNCATE meta.model_lineage` followed by
+#     a bulk `INSERT ... ON CONFLICT DO NOTHING`, so running it twice in a
+#     row produces the same end state. No double-counting, no drift from
+#     partial writes, no coordination needed with the backfill orchestrator.
+#
+# Scoping:
+#   - Runs as a standalone Job template, NOT via the backfill orchestrator.
+#     The orchestrator is for ingestion sources; lineage rebuild is platform
+#     metadata and doesn't belong in backfill_state.
+#   - concurrencyPolicy: Forbid keeps two rebuilds from racing if one tick
+#     runs long (should never happen — the builder finishes in <30 seconds
+#     on the current model tree).
+#   - Resources sized small: reading a few hundred SQL files into memory
+#     is well under 128 MiB.
+#
+# Observability:
+#   - Logs go to stdout and are shipped via the cluster log collector.
+#   - The builder itself does not emit Prometheus metrics — freshness is
+#     observable via `SELECT MAX(updated_at) FROM meta.model_lineage`
+#     (a Grafana panel in dk-data-transformations.json can display the
+#     last rebuild timestamp). Add a metric later if cadence tuning
+#     requires it.
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: build-model-lineage
+  labels:
+    app: build-model-lineage
+    app.kubernetes.io/name: build-model-lineage
+    app.kubernetes.io/component: observability
+    app.kubernetes.io/part-of: dk-data
+spec:
+  # Every 30 minutes. Starts at :00 and :30 past every hour.
+  schedule: "*/30 * * * *"
+  # Don't double-run if a prior tick is still running. The builder is
+  # idempotent so this is a safety belt rather than a correctness gate.
+  concurrencyPolicy: Forbid
+  # If the cluster is down for a while and kubelet recovers, only run the
+  # rebuild if it's still useful (within 10 min of the scheduled time).
+  # Outside that window, skip — the next :00/:30 tick will pick up.
+  startingDeadlineSeconds: 600
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 5
+  jobTemplate:
+    spec:
+      # Don't retry — next tick will rebuild anyway.
+      backoffLimit: 0
+      # Cleanup finished Job objects after 24 hours.
+      ttlSecondsAfterFinished: 86400
+      # Hard cap: 5 minutes. The builder typically finishes in ~30 seconds;
+      # 5 minutes is generous but still short enough that a stuck pod gets
+      # killed before the next tick.
+      activeDeadlineSeconds: 300
+      template:
+        metadata:
+          labels:
+            app: build-model-lineage
+            app.kubernetes.io/component: observability
+            app.kubernetes.io/part-of: dk-data
+            team: data-platform
+            service: dk-data
+            product: dk-data
+        spec:
+          restartPolicy: Never
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 1000
+            fsGroup: 1000
+            seccompProfile:
+              type: RuntimeDefault
+          imagePullSecrets:
+            - name: ghcr-credentials
+          containers:
+            - name: build-model-lineage
+              image: ghcr.io/data-kinetic/dk-data-fe/job-trigger:latest
+              securityContext:
+                allowPrivilegeEscalation: false
+                readOnlyRootFilesystem: true
+                capabilities:
+                  drop: ["ALL"]
+              command:
+                - python
+                - -m
+                - dk_data.ingestion.utils.build_model_lineage
+              envFrom:
+                - secretRef:
+                    name: dk-data-secrets
+              env:
+                # Connect direct to the postgres primary (no pooler). The
+                # builder does a single TRUNCATE + bulk INSERT inside one
+                # transaction; PgBouncer transaction mode would break the
+                # transaction boundary the upsert depends on.
+                - name: POSTGRES_HOST_DIRECT
+                  valueFrom:
+                    secretKeyRef:
+                      name: dk-data-secrets
+                      key: POSTGRES_HOST
+                - name: OTEL_EXPORTER_OTLP_ENDPOINT
+                  value: "http://alloy.infra.svc.cluster.local:4317"
+                - name: OTEL_ENABLED
+                  value: "true"
+                - name: OTEL_SERVICE_NAME
+                  value: "dk-data-build-model-lineage"
+                - name: K8S_NAMESPACE
+                  valueFrom:
+                    fieldRef:
+                      fieldPath: metadata.namespace
+                - name: APPLICATION_NAME
+                  value: "build-model-lineage"
+              resources:
+                # Tiny footprint — reads SQL files, builds an in-memory
+                # graph, writes one table. 128 MiB is ample headroom.
+                requests:
+                  memory: "64Mi"
+                  cpu: "50m"
+                limits:
+                  memory: "128Mi"
+                  cpu: "250m"
+              volumeMounts:
+                - name: tmp
+                  mountPath: /tmp
+          volumes:
+            - name: tmp
+              emptyDir:
+                medium: ""
+                sizeLimit: 64Mi

@@ -7,8 +7,13 @@ Fetches pharmaceutical patent data from the PatentSearch API using
 API key authentication. Filters by CPC codes A61K, A61P, C07D
 for pharma-relevant patents. Weekly refresh cadence.
 
-Source: https://search.patentsview.org/api/v1/patent/
-Docs: https://search.patentsview.org/docs/docs/Search%20API/SearchAPIReference/
+Migration (March 20, 2026 — issue #131): search.patentsview.org → api.uspto.gov
+  New endpoint: https://api.uspto.gov/api/v1/patent/applications/search
+  New query format: string boolean (was JSON q/f/o); header X-API-KEY (was X-Api-Key)
+  Override via env: PATENTSVIEW_API_URL
+
+Source: https://api.uspto.gov/api/v1/patent/applications/search
+Docs: https://data.uspto.gov/apis/getting-started
 """
 
 import hashlib
@@ -35,10 +40,11 @@ class USPTOPatentsFetcher(BaseFetcher):
     """Fetcher for USPTO PatentSearch pharmaceutical patents."""
 
     SOURCE_NAME = "uspto_patents"
-    BASE_URL = "https://search.patentsview.org"
+    BASE_URL = "https://api.uspto.gov"
 
-    # PatentSearch API endpoint
-    PATENTS_API = "https://search.patentsview.org/api/v1/patent/"
+    # USPTO ODP endpoint (migrated from search.patentsview.org on 2026-03-20)
+    # Override via PATENTSVIEW_API_URL env var.
+    PATENTS_API = "https://api.uspto.gov/api/v1/patent/applications/search"
 
     def __init__(self, data_dir: Optional[str] = None):
         """Initialize the USPTO Patents fetcher.
@@ -49,17 +55,27 @@ class USPTOPatentsFetcher(BaseFetcher):
             data_dir: Directory to store downloaded files.
         """
         super().__init__(data_dir)
-        self.api_key: Optional[str] = os.environ.get("USPTO_API_KEY")
-        if self.api_key:
+        raw_key: Optional[str] = os.environ.get("USPTO_API_KEY")
+        # Treat placeholder / unset keys as absent
+        if raw_key and not raw_key.lower().startswith("changeme"):
+            self.api_key: Optional[str] = raw_key
             logger.info("USPTO API key detected")
         else:
-            logger.warning(
-                "No USPTO_API_KEY set; USPTO Patents fetch may fail or be rate-limited"
-            )
+            self.api_key = None
+            if raw_key:
+                logger.warning(
+                    "USPTO_API_KEY is a placeholder ('%s...'); "
+                    "set a real key from developer.uspto.gov to enable this source",
+                    raw_key[:12],
+                )
+            else:
+                logger.warning(
+                    "No USPTO_API_KEY set; USPTO Patents fetch will return source_unavailable"
+                )
 
     def get_latest_url(self) -> str:
-        """Get the PatentSearch API query endpoint URL."""
-        return self.PATENTS_API
+        """Get the USPTO ODP patent search endpoint URL."""
+        return os.environ.get("PATENTSVIEW_API_URL", self.PATENTS_API)
 
     def fetch(self, **kwargs) -> Dict[str, Any]:
         """Fetch pharmaceutical patents from the PatentSearch API.
@@ -81,6 +97,22 @@ class USPTOPatentsFetcher(BaseFetcher):
         cpc_codes = kwargs.get("cpc_codes", PHARMA_CPC_CODES)
         max_records = kwargs.get("max_records", MAX_RECORDS)
 
+        if not self.api_key:
+            msg = (
+                "USPTO_API_KEY not set or is a placeholder. "
+                "Obtain a key from https://developer.uspto.gov and set USPTO_API_KEY in Doppler."
+            )
+            logger.warning(msg)
+            result = {
+                "status": "source_unavailable",
+                "records": [],
+                "record_count": 0,
+                "hash": None,
+                "error": msg,
+            }
+            self.log_fetch_result(result)
+            return result
+
         try:
             logger.info(
                 "Fetching USPTO patents (days_back=%d, CPC codes=%s)",
@@ -89,18 +121,19 @@ class USPTOPatentsFetcher(BaseFetcher):
             )
 
             all_records: List[Dict[str, Any]] = []
-            after_cursor: Optional[str] = None
+            offset = 0
 
             while len(all_records) < max_records:
                 data = self._fetch_page(
                     days_back=days_back,
                     cpc_codes=cpc_codes,
-                    after=after_cursor,
+                    offset=offset,
                 )
 
-                patents = data.get("patents") or []
+                # USPTO ODP returns patents under 'patents' or 'results'
+                patents = data.get("patents") or data.get("results") or []
                 if not patents:
-                    logger.info("No more patents from PatentSearch API")
+                    logger.info("No more patents from USPTO ODP")
                     break
 
                 for patent in patents:
@@ -108,16 +141,10 @@ class USPTOPatentsFetcher(BaseFetcher):
                     if record:
                         all_records.append(record)
 
-                # Stop if we got fewer than a full page
                 if len(patents) < PAGE_SIZE:
                     break
 
-                # Cursor-based pagination: use last patent_id as cursor
-                last_patent = patents[-1]
-                after_cursor = str(last_patent.get("patent_id", ""))
-                if not after_cursor:
-                    break
-
+                offset += PAGE_SIZE
                 if len(all_records) >= max_records:
                     all_records = all_records[:max_records]
                     break
@@ -159,13 +186,15 @@ class USPTOPatentsFetcher(BaseFetcher):
         days_back: int = 7,
         cpc_codes: Optional[List[str]] = None,
         after: Optional[str] = None,
+        offset: int = 0,
     ) -> Dict[str, Any]:
-        """Fetch a single page of patents from the PatentSearch API.
+        """Fetch a single page of patents from the USPTO ODP API.
 
         Args:
             days_back: Look-back window in days.
             cpc_codes: CPC code prefixes to filter.
-            after: Cursor for pagination (last patent_id from previous page).
+            after: Unused (kept for signature compat); use offset instead.
+            offset: Page offset for pagination.
 
         Returns:
             Raw API response dict.
@@ -177,41 +206,21 @@ class USPTOPatentsFetcher(BaseFetcher):
             datetime.utcnow() - timedelta(days=days_back)
         ).strftime("%Y-%m-%d")
 
-        # Build the query filter for CPC codes (fully qualified nested field)
-        cpc_conditions = [
-            {"_begins": {"cpc_current.cpc_subgroup_id": code}}
-            for code in cpc_codes
-        ]
-
-        query = {
-            "_and": [
-                {"_gte": {"patent_date": since_date}},
-                {"_or": cpc_conditions},
-            ]
-        }
-
-        # Fields to return — PatentSearch API field names
-        fields = [
-            "patent_id",
-            "patent_title",
-            "patent_abstract",
-            "patent_date",
-            "patent_num_claims",
-            "inventors",
-            "assignees",
-            "cpc_current",
-            "application",
-        ]
-
-        # Cursor-based pagination
-        options: Dict[str, Any] = {"size": PAGE_SIZE}
-        if after:
-            options["after"] = after
+        # USPTO ODP uses string boolean query format (RSQL/Lucene style).
+        # cpcInventionFlat matches CPC codes; grantDate filters by date range.
+        cpc_terms = " OR ".join(f"{code}*" for code in cpc_codes)
+        q_string = f"(cpcInventionFlat:({cpc_terms})) AND grantDate:[{since_date} TO *]"
 
         payload = {
-            "q": query,
-            "f": fields,
-            "o": options,
+            "q": q_string,
+            "fields": (
+                "patentNumber,patentTitle,abstractText,grantDate,filingDate,"
+                "patentType,inventorName,assigneeEntityName,cpcInventionFlat,"
+                "numberOfClaims"
+            ),
+            "sort": "grantDate:desc",
+            "limit": PAGE_SIZE,
+            "offset": offset,
         }
 
         headers = {
@@ -219,9 +228,9 @@ class USPTOPatentsFetcher(BaseFetcher):
         }
 
         if self.api_key:
-            headers["X-Api-Key"] = self.api_key
+            headers["X-API-KEY"] = self.api_key
 
-        logger.debug("PatentSearch API request after=%s", after)
+        logger.debug("USPTO ODP request offset=%d", offset)
         response = self.session.post(
             self.get_latest_url(),
             json=payload,
@@ -241,60 +250,65 @@ class USPTOPatentsFetcher(BaseFetcher):
         Returns:
             Normalized record dict, or None if patent_id is missing.
         """
-        patent_id = patent.get("patent_id")
-        if not patent_id:
+        # ODP field: patentNumber; old field: patent_id
+        patent_number = patent.get("patentNumber") or patent.get("patent_id")
+        if not patent_number:
             return None
+        patent_number = str(patent_number).strip()
 
-        patent_number = str(patent_id).strip()
-
-        # Parse inventors (PatentSearch uses inventor_name_first/inventor_name_last)
+        # Inventors: ODP returns inventorName as string or list; old API used nested objects
         inventors = None
-        raw_inventors = patent.get("inventors")
-        if raw_inventors and isinstance(raw_inventors, list):
-            inventors = [
-                {
-                    "name_first": inv.get("inventor_name_first"),
-                    "name_last": inv.get("inventor_name_last"),
-                    "city": inv.get("inventor_city"),
-                    "state": inv.get("inventor_state"),
-                    "country": inv.get("inventor_country"),
-                }
-                for inv in raw_inventors
-            ]
+        raw_inventors = patent.get("inventors") or patent.get("inventorName")
+        if raw_inventors:
+            if isinstance(raw_inventors, list) and raw_inventors and isinstance(raw_inventors[0], dict):
+                inventors = [
+                    {
+                        "name_first": inv.get("inventor_name_first"),
+                        "name_last": inv.get("inventor_name_last"),
+                        "city": inv.get("inventor_city"),
+                        "state": inv.get("inventor_state"),
+                        "country": inv.get("inventor_country"),
+                    }
+                    for inv in raw_inventors
+                ]
+            else:
+                # ODP may return flat string or list of strings
+                names = raw_inventors if isinstance(raw_inventors, list) else [raw_inventors]
+                inventors = [{"name_full": n} for n in names if n]
 
-        # Parse assignees
+        # Assignees: ODP uses assigneeEntityName (string/list)
         assignees = None
-        raw_assignees = patent.get("assignees")
-        if raw_assignees and isinstance(raw_assignees, list):
-            assignees = [
-                {
-                    "organization": asg.get("assignee_organization"),
-                    "city": asg.get("assignee_city"),
-                    "state": asg.get("assignee_state"),
-                    "country": asg.get("assignee_country"),
-                }
-                for asg in raw_assignees
-            ]
+        raw_assignees = patent.get("assignees") or patent.get("assigneeEntityName")
+        if raw_assignees:
+            if isinstance(raw_assignees, list) and raw_assignees and isinstance(raw_assignees[0], dict):
+                assignees = [
+                    {
+                        "organization": asg.get("assignee_organization"),
+                        "city": asg.get("assignee_city"),
+                        "state": asg.get("assignee_state"),
+                        "country": asg.get("assignee_country"),
+                    }
+                    for asg in raw_assignees
+                ]
+            else:
+                names = raw_assignees if isinstance(raw_assignees, list) else [raw_assignees]
+                assignees = [{"organization": n} for n in names if n]
 
-        # Parse CPC codes (PatentSearch uses cpc_current instead of cpcs)
+        # CPC codes: ODP uses cpcInventionFlat (list of strings); old used cpc_current
         cpc_codes = None
-        raw_cpcs = patent.get("cpc_current")
+        raw_cpcs = patent.get("cpcInventionFlat") or patent.get("cpc_current")
         if raw_cpcs and isinstance(raw_cpcs, list):
-            cpc_codes = list({
-                cpc.get("cpc_subgroup_id")
-                for cpc in raw_cpcs
-                if cpc.get("cpc_subgroup_id")
-            })
+            if raw_cpcs and isinstance(raw_cpcs[0], dict):
+                cpc_codes = list({c.get("cpc_subgroup_id") for c in raw_cpcs if c.get("cpc_subgroup_id")})
+            else:
+                cpc_codes = list({str(c) for c in raw_cpcs if c})
 
-        # Parse filing date from nested application object
-        application = patent.get("application") or {}
-        filing_date = application.get("filing_date")
+        # Dates: ODP uses grantDate/filingDate; old used patent_date/application.filing_date
+        grant_date = patent.get("grantDate") or patent.get("patent_date")
+        filing_date = patent.get("filingDate") or (patent.get("application") or {}).get("filing_date")
 
-        # Grant date
-        grant_date = patent.get("patent_date")
-
-        # Claims count
-        claims_count = patent.get("patent_num_claims")
+        # Claims: ODP uses numberOfClaims; old used patent_num_claims
+        claims_count = patent.get("numberOfClaims") or patent.get("patent_num_claims")
         if claims_count is not None:
             try:
                 claims_count = int(claims_count)
@@ -303,8 +317,9 @@ class USPTOPatentsFetcher(BaseFetcher):
 
         return {
             "patent_number": patent_number,
-            "title": patent.get("patent_title"),
-            "abstract": patent.get("patent_abstract"),
+            "title": patent.get("patentTitle") or patent.get("patent_title"),
+            "abstract": patent.get("abstractText") or patent.get("patent_abstract"),
+            "patent_type": patent.get("patentType") or patent.get("patent_type"),
             "inventors": inventors,
             "assignees": assignees,
             "filing_date": filing_date,

@@ -1,0 +1,279 @@
+openapi: "3.1.0"
+info:
+  title: MCP Data Retrieval Tools API
+  version: "1.0.0"
+  description: |
+    28 on-demand data retrieval tools mounted on FastAPI.
+    JWT-authenticated (analyst role). Each tool fetches from an external API,
+    normalizes via per-source adapter, persists to raw table, triggers transform.
+
+servers:
+  - url: /api/v1/mcp
+    description: MCP tools endpoint prefix
+
+paths:
+  /tools:
+    get:
+      operationId: listTools
+      summary: List all available MCP tools
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: Tool registry
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  tools:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/ToolDefinition"
+                  count:
+                    type: integer
+                    example: 28
+
+  /tools/{tool_name}/invoke:
+    post:
+      operationId: invokeTool
+      summary: Invoke an MCP tool by name
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: tool_name
+          in: path
+          required: true
+          schema:
+            type: string
+            enum:
+              # Tier 1: Direct drug-name query (19)
+              - clinicaltrials-search
+              - fda-faers-query
+              - fda-drug-labels
+              - fda-orange-book
+              - openfda-approvals
+              - ema-regulatory
+              - hta-decisions
+              - cochrane-reviews
+              - chembl-molecule-lookup
+              - drugbank-lookup
+              - uniprot-proteins
+              - pdb-structures
+              - pubmed-search
+              - openalex-publications
+              - uspto-patents
+              - epo-patents
+              - sec-edgar-financials
+              - who-icd-lookup
+              - orcid-researchers
+              # Tier 2: Fetch and filter (4)
+              - journal-articles
+              - medical-news
+              - uspto-trademarks
+              - euipo-trademarks
+              # Tier 3: Supplementary context (5)
+              - cms-inpatient
+              - cms-hospital-info
+              - cms-cost-reports
+              - acc-tvc
+              - hrsa-hpsa
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ToolInvocationRequest"
+      responses:
+        "200":
+          description: Tool invocation successful
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ToolInvocationResponse"
+        "401":
+          description: Missing or invalid JWT token
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "403":
+          description: Insufficient role (requires analyst)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "408":
+          description: External API timeout (per-source timeout exceeded)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "429":
+          description: Rate limited (per-source limit exceeded)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "502":
+          description: External API error (upstream unavailable)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: JWT with "role":"analyst" claim
+
+  schemas:
+    ToolDefinition:
+      type: object
+      required: [name, description, tier, raw_table, input_schema]
+      properties:
+        name:
+          type: string
+          example: clinicaltrials-search
+        description:
+          type: string
+          example: Search ClinicalTrials.gov for drug-specific clinical trials
+        tier:
+          type: string
+          enum: [direct_query, fetch_filter, supplementary]
+        raw_table:
+          type: string
+          example: mol_raw.clinicaltrials
+        adapter:
+          type: string
+          description: Adapter classification
+          enum: [minimal, moderate, substantial]
+        input_schema:
+          type: object
+          description: JSON Schema for tool input parameters
+
+    ToolInvocationRequest:
+      type: object
+      required: [input]
+      properties:
+        input:
+          type: object
+          description: Tool-specific input matching the tool's input_schema. At least one of drug_name or query must be provided.
+          properties:
+            drug_name:
+              type: string
+              description: Drug/molecule name to search (primary input for Tier 1+2 tools)
+              example: durvalumab
+            query:
+              type: string
+              description: General search term (primary input for Tier 3 supplementary tools, e.g., state name, facility type)
+              example: California
+            molecule_id:
+              type: string
+              format: uuid
+              description: Optional molecule UUID for pipeline scoping
+            filters:
+              type: object
+              description: Optional tool-specific filters
+          oneOf:
+            - required: [drug_name]
+            - required: [query]
+        options:
+          type: object
+          properties:
+            skip_transform:
+              type: boolean
+              default: false
+              description: If true, skip on-demand transform after raw insert
+            max_results:
+              type: integer
+              default: 100
+              description: Maximum results to fetch from external API
+
+    ToolInvocationResponse:
+      type: object
+      required: [tool_name, status, data]
+      properties:
+        tool_name:
+          type: string
+          example: clinicaltrials-search
+        status:
+          type: string
+          enum: [success, empty, error]
+        data:
+          type: object
+          description: Tool-specific response data
+          properties:
+            records:
+              type: array
+              items:
+                type: object
+              description: Fetched and adapted records
+            record_count:
+              type: integer
+            source:
+              type: string
+              description: External API source
+        raw_insert:
+          type: object
+          description: Raw table persistence metadata
+          properties:
+            table:
+              type: string
+              example: mol_raw.clinicaltrials
+            request_id:
+              type: string
+              format: uuid
+            rows_inserted:
+              type: integer
+        transform:
+          type: object
+          description: On-demand transform result (if triggered)
+          properties:
+            triggered:
+              type: boolean
+            model:
+              type: string
+              description: SQLMesh model invoked
+            status:
+              type: string
+              enum: [completed, queued, skipped, failed]
+        execution:
+          type: object
+          properties:
+            duration_ms:
+              type: integer
+            api_response_time_ms:
+              type: integer
+            adapter_time_ms:
+              type: integer
+
+    ErrorResponse:
+      type: object
+      required: [error, code, tool_name]
+      properties:
+        error:
+          type: string
+          description: Human-readable error message
+        code:
+          type: string
+          enum:
+            - UNAUTHORIZED
+            - FORBIDDEN
+            - RATE_LIMITED
+            - TIMEOUT
+            - EXTERNAL_API_ERROR
+            - EXTERNAL_API_UNAVAILABLE
+            - VALIDATION_ERROR
+            - INTERNAL_ERROR
+        tool_name:
+          type: string
+        source:
+          type: string
+          description: External API that failed (if applicable)
+        retry_after:
+          type: integer
+          description: Seconds to wait before retrying (for 429)

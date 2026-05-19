@@ -1,0 +1,28 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  # Connection pooler
+  - pgbouncer.yaml
+  # Database initialization and seeding
+  - db-init-job.yaml
+  - db-migrate-job.yaml
+  - job-drugbank-seed.yaml
+  # Pod disruption budgets
+  # NOTE: pdb-postgrest.yaml was removed — the canonical PDB lives in
+  # k8s/apps/postgrest/base/pdb.yaml (added by feature 002). Keeping
+  # both caused a kustomize "duplicate resource" error when the k8s/base
+  # kustomization includes both ../apps/postgrest/base and ../apps/infrastructure/base.
+  - pdb-job-trigger.yaml
+  # Networking
+  - ingress.yaml
+  - middleware-rate-limit.yaml
+  - networkpolicy.yaml
+  # Secrets
+  - doppler-secret.yaml
+  - ghcr-secret.yaml
+  # Backup
+  - backup/pg-backup-configmap.yaml
+  - backup/minio-credentials.yaml
+  - backup/pg-backup-daily.yaml
+  - backup/pg-backup-weekly.yaml
+  - backup/pg-backup-verify.yaml

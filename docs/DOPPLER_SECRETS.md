@@ -31,12 +31,16 @@ These secrets are required only for specific data sources. The CronJob will fail
 
 | Secret Name | Purpose | Format | Required By | How to Obtain |
 |------------|---------|--------|-------------|---------------|
-| `NCBI_API_KEY` | NCBI E-utilities API key (higher rate limit) | String | fetch-pubmed CronJob | https://www.ncbi.nlm.nih.gov/account/settings/ |
+| `NCBI_API_KEY` | NCBI E-utilities API key (raises limit from 3/s to 10/s) | String | fetch-pubmed CronJob | https://www.ncbi.nlm.nih.gov/account/settings/ |
+| `OPENALEX_API_KEY` | OpenAlex API key (required since Feb 2026) | String | fetch-openalex-ci CronJob | https://openalex.org/settings/api |
 | `DRUGBANK_API_KEY` | DrugBank API access key | String | fetch-drugbank CronJob | https://go.drugbank.com/public_users/sign_up |
 | `EPO_CONSUMER_KEY` | EPO Open Patent Services OAuth2 client key | String | fetch-epo CronJob | https://developers.epo.org/ |
 | `EPO_CONSUMER_SECRET` | EPO Open Patent Services OAuth2 client secret | String | fetch-epo CronJob | https://developers.epo.org/ |
 | `PATENTSVIEW_API_KEY` | USPTO PatentsView API key | String | fetch-uspto-patents CronJob | https://patentsview.org/apis/keyrequest |
-| `SEC_EDGAR_USER_AGENT` | SEC EDGAR required User-Agent header | Email format (name email@domain) | fetch-sec-edgar CronJob | Use company email per SEC policy |
+| `SEC_EDGAR_USER_AGENT` | SEC EDGAR required User-Agent header (format: `Name email@domain`) | String | fetch-sec-edgar CronJob | Use company email per SEC policy |
+| `WHO_ICD_CLIENT_ID` | WHO ICD-11 API OAuth2 client ID | String | fetch-who-icd CronJob | https://icd.who.int/icdapi (optional — falls back to ICD-10 public API) |
+| `WHO_ICD_CLIENT_SECRET` | WHO ICD-11 API OAuth2 client secret | String | fetch-who-icd CronJob | https://icd.who.int/icdapi |
+| `PHARMGKB_API_KEY` | PharmGKB API key | String | fetch-pharmgkb CronJob | https://www.pharmgkb.org/page/apiAccess |
 
 ## Optional Secrets
 

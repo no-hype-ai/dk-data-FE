@@ -33,25 +33,83 @@ except ImportError:
     logger.warning("DK Data Platform metrics not available")
 
 # Import metric helpers from canonical source (013-dk-data-observability)
+from dk_data.ingestion.utils.database import build_dsn
 from dk_data.observability.metrics import (
     mark_job_success,
     record_job_records,
     record_job_duration,
     increment_job_failure,
     record_data_source_refresh,
+    _is_cms_source,
+    record_cms_source_sync,
+    record_cms_fetch_duration,
 )
 
 # Router
 router = APIRouter(prefix="/monitoring", tags=["monitoring"])
 
-# Initialize metrics on module load
+# Initialize metrics on module load + start the background refresher.
+#
+# History: import-time refresh blocked uvicorn bind (probe killed pod);
+# moving the refresh on-demand into /metrics created a different problem
+# — every Prometheus scrape × every uvicorn worker triggered a fresh
+# psycopg2 connection and a barrage of SELECT COUNT(*) queries that
+# contended with pg_dump and autovacuum on the postgres primary.
+#
+# Final design: background daemon thread per worker process, refreshes
+# every METRICS_REFRESH_INTERVAL seconds (default 60s) with jitter to
+# de-synchronize across workers. /metrics returns cached gauge values
+# — fast, non-blocking, no DB I/O on the request path.
+_refresher_thread = None
+
+
+def _metrics_refresher_loop(interval: float, jitter: float):
+    import random
+    import threading
+    import time
+
+    in_flight = threading.Lock()
+    while True:
+        sleep_for = interval + random.uniform(-jitter, jitter)
+        time.sleep(max(5.0, sleep_for))
+        if not in_flight.acquire(blocking=False):
+            logger.debug("Skipping metrics refresh — previous refresh still running")
+            continue
+        try:
+            refresh_metrics_from_database_sync()
+        except Exception as e:
+            logger.warning(f"Background metrics refresh failed: {e}")
+        finally:
+            in_flight.release()
+
+
+def _start_metrics_refresher():
+    import os
+    import threading
+
+    global _refresher_thread
+    if _refresher_thread is not None and _refresher_thread.is_alive():
+        return
+
+    interval = float(os.getenv("METRICS_REFRESH_INTERVAL", "60"))
+    jitter = float(os.getenv("METRICS_REFRESH_JITTER", "15"))
+
+    _refresher_thread = threading.Thread(
+        target=_metrics_refresher_loop,
+        args=(interval, jitter),
+        name="metrics-refresher",
+        daemon=True,
+    )
+    _refresher_thread.start()
+    logger.info(
+        f"Metrics refresher started (interval={interval}s, jitter=±{jitter}s)"
+    )
+
+
 if DK_METRICS_AVAILABLE:
     initialize_demo_metrics()
-    # Initial refresh from database
-    try:
-        refresh_metrics_from_database_sync()
-    except Exception as e:
-        logger.warning(f"Initial metrics refresh failed: {e}")
+    if refresh_metrics_from_database_sync is not None:
+        _start_metrics_refresher()
 
 
 # ==========================================
@@ -111,16 +169,9 @@ class RunTriggerResponse(BaseModel):
 async def prometheus_metrics():
     """
     Prometheus metrics endpoint.
-    Returns metrics in Prometheus text format.
-    Refreshes from database on each call for live data.
+    Returns cached gauge values — background refresher updates them
+    every METRICS_REFRESH_INTERVAL seconds. No DB I/O on this path.
     """
-    # Refresh metrics from database before returning
-    if DK_METRICS_AVAILABLE and refresh_metrics_from_database_sync:
-        try:
-            refresh_metrics_from_database_sync()
-        except Exception as e:
-            logger.warning(f"Metrics refresh failed: {e}")
-
     return Response(
         content=generate_latest(),
         media_type=CONTENT_TYPE_LATEST,
@@ -146,6 +197,12 @@ async def report_job_completion(report: JobCompletionReport):
             report.job_name, report.source_name, report.records_processed
         )
 
+    # CMS PUF: update per-source health, ingestion, and duration metrics (019)
+    source_key = report.source_name or report.job_name
+    if _is_cms_source(source_key):
+        record_cms_source_sync(source_key, report.status, report.records_processed)
+        record_cms_fetch_duration(source_key, report.duration_seconds)
+
     logger.info(
         f"Job completion recorded: {report.job_name} "
         f"status={report.status} duration={report.duration_seconds:.1f}s "
@@ -169,8 +226,8 @@ async def database_stats():
 
     try:
         import psycopg2
-        db_url = get_sync_db_url()
-        conn = psycopg2.connect(db_url)
+        get_sync_db_url()
+        conn = psycopg2.connect(build_dsn())
         cur = conn.cursor()
 
         # Table counts
@@ -256,15 +313,15 @@ async def pipeline_health():
     overall_status = "healthy"
 
     try:
-        db_url = get_sync_db_url()
+        get_sync_db_url()
 
-        conn = psycopg2.connect(db_url)
+        conn = psycopg2.connect(build_dsn())
         cur = conn.cursor()
 
         # Get Bronze source health from sync_schedules
         cur.execute("""
             SELECT source, tier, enabled, last_run, next_run
-            FROM raw.sync_schedules
+            FROM meta.sync_schedules
             WHERE enabled = TRUE
             ORDER BY last_run DESC NULLS LAST
             LIMIT 10
@@ -273,7 +330,7 @@ async def pipeline_health():
             source_name, tier, enabled, last_run, next_run = row
             # Check for recent errors
             cur.execute("""
-                SELECT COUNT(*) FROM raw.ingestion_jobs
+                SELECT COUNT(*) FROM meta.ingestion_jobs
                 WHERE source = %s AND status = 'failed'
                   AND started_at >= NOW() - INTERVAL '24 hours'
             """, (source_name,))
@@ -295,7 +352,7 @@ async def pipeline_health():
             ))
 
         # Get Silver layer health
-        cur.execute("SELECT COUNT(*), MAX(updated_at) FROM silver.molecules")
+        cur.execute("SELECT COUNT(*), MAX(updated_at) FROM mol_silver.molecules")
         result = cur.fetchone()
         silver_count = result[0] or 0
         silver_update = result[1]
@@ -309,7 +366,7 @@ async def pipeline_health():
         # Get Gold layer health (check if gold schema exists)
         try:
             cur.execute("""
-                SELECT COUNT(*) FROM silver.molecules WHERE needs_review = FALSE
+                SELECT COUNT(*) FROM mol_silver.molecules WHERE needs_review = FALSE
             """)
             gold_count = cur.fetchone()[0] or 0
             gold_health = LayerHealth(
@@ -383,9 +440,9 @@ async def list_recent_runs(
     total = 0
 
     try:
-        db_url = get_sync_db_url()
+        get_sync_db_url()
 
-        conn = psycopg2.connect(db_url)
+        conn = psycopg2.connect(build_dsn())
         cur = conn.cursor()
 
         # Build query with filters
@@ -400,7 +457,7 @@ async def list_recent_runs(
                 records_processed,
                 error_message,
                 error_details
-            FROM raw.ingestion_jobs
+            FROM meta.ingestion_jobs
             WHERE 1=1
         """
         params = []
@@ -434,7 +491,7 @@ async def list_recent_runs(
             })
 
         # Get total count
-        cur.execute("SELECT COUNT(*) FROM raw.ingestion_jobs")
+        cur.execute("SELECT COUNT(*) FROM meta.ingestion_jobs")
         total = cur.fetchone()[0] or 0
 
         cur.close()
@@ -476,7 +533,7 @@ async def list_data_sources():
         "faers": {"name": "FAERS", "type": "local_db", "table": "faers_events"},  # Fixed: was faers_adverse_events
         "regulatory_milestones": {"name": "Regulatory Milestones", "type": "local_db", "table": "regulatory_milestones"},
         "patents_local": {"name": "Patents (Local)", "type": "local_db", "table": "drugbank_patents"},  # Fixed: use drugbank_patents
-        "publications_local": {"name": "Publications (Local)", "type": "local_db", "table": "silver.publications", "schema": "silver"},
+        "publications_local": {"name": "Publications (Local)", "type": "local_db", "table": "mol_silver.publications", "schema": "silver"},
         # External API sources
         "clinicaltrials_gov": {"name": "ClinicalTrials.gov", "type": "external_api", "endpoint": "clinicaltrials.gov/api"},
         "openfda": {"name": "OpenFDA", "type": "external_api", "endpoint": "api.fda.gov"},
@@ -490,9 +547,9 @@ async def list_data_sources():
     sources = []
 
     try:
-        db_url = get_sync_db_url()
+        get_sync_db_url()
 
-        conn = psycopg2.connect(db_url)
+        conn = psycopg2.connect(build_dsn())
         cur = conn.cursor()
 
         for source_id, config in source_configs.items():
@@ -797,15 +854,15 @@ async def get_sync_job_status(job_id: str):
     import psycopg2
 
     try:
-        db_url = get_sync_db_url()
+        get_sync_db_url()
 
-        conn = psycopg2.connect(db_url)
+        conn = psycopg2.connect(build_dsn())
         cur = conn.cursor()
 
         cur.execute("""
             SELECT id, source, job_type, status, started_at, completed_at,
                    records_processed, records_failed, error_message, options
-            FROM raw.ingestion_jobs
+            FROM meta.ingestion_jobs
             WHERE id::text = %s
         """, (job_id,))
         row = cur.fetchone()

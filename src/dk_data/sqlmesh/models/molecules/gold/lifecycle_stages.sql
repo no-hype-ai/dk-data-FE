@@ -3,24 +3,37 @@
 -- Implements automatic stage detection based on evidence from all sources
 -- Part of DK Molecule Data Platform (012-dk-data-platform)
 
+-- T173: Converted FULL → INCREMENTAL_BY_UNIQUE_KEY on molecule_id.
+-- Rationale: grain is molecule_id; new/updated molecules should refresh their row.
+-- A last_modified watermark is not needed because the source (mol_silver.molecules) uses
+-- INCREMENTAL_BY_UNIQUE_KEY itself — SQLMesh propagates the incremental window correctly.
 MODEL (
-    name gold.lifecycle_stages,
-    kind FULL,
-    cron '@daily',
+    name mol_gold.lifecycle_stages,
+    kind INCREMENTAL_BY_UNIQUE_KEY (
+        unique_key molecule_id
+    ),
+    cron '@weekly',
     grain (molecule_id)
 );
 
 WITH molecule_base AS (
     SELECT
-        m.id AS molecule_id,
+        m.molecule_id,
         m.inchi_key,
         m.canonical_name,
-        m.development_status,
+        CASE
+        WHEN m.max_phase >= 4 THEN 'approved'
+        WHEN m.max_phase = 3  THEN 'phase_3'
+        WHEN m.max_phase = 2  THEN 'phase_2'
+        WHEN m.max_phase = 1  THEN 'phase_1'
+        WHEN m.max_phase = 0  THEN 'preclinical'
+        ELSE 'unknown'
+    END                                     AS development_status,
         m.max_phase,
-        m.first_approval_year,
-        m.approval_date
-    FROM silver.molecules m
-    WHERE m.needs_review = FALSE
+        m.first_approval,
+        NULL::DATE AS approval_date
+    FROM mol_silver.molecules m
+    WHERE TRUE
 ),
 
 -- Clinical trial evidence
@@ -33,12 +46,12 @@ trial_evidence AS (
                  WHEN phase LIKE '%1%' THEN 1
                  ELSE 0 END) AS max_trial_phase,
         COUNT(*) AS total_trials,
-        COUNT(*) FILTER (WHERE status IN ('Recruiting', 'Active, not recruiting', 'Enrolling by invitation')) AS active_trials,
-        COUNT(*) FILTER (WHERE status = 'Completed') AS completed_trials,
-        bool_or(status = 'Terminated' OR status = 'Suspended') AS has_terminated_trials,
+        COUNT(*) FILTER (WHERE overall_status IN ('Recruiting', 'Active, not recruiting', 'Enrolling by invitation')) AS active_trials,
+        COUNT(*) FILTER (WHERE overall_status = 'Completed') AS completed_trials,
+        bool_or(overall_status = 'Terminated' OR overall_status = 'Suspended') AS has_terminated_trials,
         MAX(start_date) AS latest_trial_start,
         MAX(completion_date) AS latest_trial_completion
-    FROM silver.clinical_trials
+    FROM mol_silver.clinical_trials
     WHERE molecule_id IS NOT NULL
     GROUP BY molecule_id
 ),
@@ -49,9 +62,12 @@ label_evidence AS (
         molecule_id,
         TRUE AS has_fda_label,
         effective_date AS approval_date,
-        marketing_status,
+        -- marketing_status: not in mol_silver.drug_labels; available in
+        -- mol_silver.regulatory_milestones — but that model joins back to
+        -- fda_drugs/fda_drugsfda bronze, not drug_labels. Leave NULL here.
+        NULL::TEXT AS marketing_status,
         boxed_warning IS NOT NULL AS has_boxed_warning
-    FROM silver.drug_labels
+    FROM mol_silver.drug_labels
     WHERE molecule_id IS NOT NULL
     ORDER BY molecule_id, effective_date DESC
 ),
@@ -68,7 +84,7 @@ adverse_evidence AS (
             WHEN SUM(report_count) > 100 THEN TRUE
             ELSE FALSE
         END AS has_significant_adverse_data
-    FROM silver.adverse_events
+    FROM mol_silver.adverse_events
     WHERE molecule_id IS NOT NULL
     GROUP BY molecule_id
 ),
@@ -81,7 +97,7 @@ patent_evidence AS (
         MIN(expiry_date) FILTER (WHERE expiry_date > CURRENT_DATE) AS earliest_active_expiry,
         MAX(expiry_date) AS latest_expiry,
         bool_or(expiry_date < CURRENT_DATE) AS has_expired_patents
-    FROM silver.patents
+    FROM ip_silver.patents
     WHERE molecule_id IS NOT NULL
     GROUP BY molecule_id
 ),
@@ -91,9 +107,9 @@ publication_evidence AS (
     SELECT
         molecule_id,
         COUNT(*) AS publication_count,
-        MIN(publication_date) AS first_publication,
-        MAX(publication_date) AS latest_publication
-    FROM silver.molecule_publications
+        MIN(created_at)::DATE AS first_publication,
+        MAX(created_at)::DATE AS latest_publication
+    FROM mol_silver.molecule_publications
     WHERE molecule_id IS NOT NULL
     GROUP BY molecule_id
 ),
@@ -104,7 +120,7 @@ bioactivity_evidence AS (
         molecule_id,
         COUNT(*) AS bioactivity_count,
         COUNT(DISTINCT target_id) AS targets_tested
-    FROM silver.bioactivity
+    FROM mol_silver.bioactivity
     WHERE molecule_id IS NOT NULL
     GROUP BY molecule_id
 ),

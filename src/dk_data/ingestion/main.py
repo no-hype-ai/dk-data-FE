@@ -8,12 +8,14 @@ Handles both file-based TAVR sources and API-based sources (fetch + load + log).
 import argparse
 import asyncio
 import json
+import os
 import sys
 import time
 from datetime import datetime, timezone
 from pathlib import Path
 
-from .sources import cms_inpatient, cms_hospital_info, cms_cost_reports, acc_tvc, hrsa
+from .sources import cms_inpatient, cms_hospital_info, cms_cost_reports, acc_tvc
+from .sources.hrsa import load_hrsa_shortage_areas_from_records
 from .sources.pubmed import load_pubmed_data
 from .sources.ema_regulatory import load_ema_regulatory_data
 from .sources.openalex_ci import load_openalex_ci_data
@@ -31,6 +33,107 @@ from .sources.pdb import load_pdb_data
 from .sources.orcid import load_orcid_data
 from .sources.uspto_trademarks import load_uspto_trademarks_data
 from .sources.euipo_trademarks import load_euipo_trademarks_data
+from .sources.who_icd import load_who_icd_data
+from .sources.bindingdb import load_bindingdb_data
+from .sources.sider import load_sider_data
+from .sources.europepmc import load_europepmc_data
+from .sources.nih_reporter import load_nih_reporter_data
+from .sources.cms_geographic_variation import (
+    load_cms_geographic_variation_from_records,
+)
+from .sources.cms_part_d_prescriber import load_cms_part_d_prescriber
+from .sources.cms_care_compare import load_cms_care_compare_data
+from .sources.cms_chow import load_cms_chow_data
+from .sources.cms_dmepos import load_cms_dmepos_data
+from .sources.cms_formulary import load_cms_formulary_data
+from .sources.cms_hcris import load_cms_hcris_data
+from .sources.cms_hospital_affiliation import load_cms_hospital_affiliation_data
+from .sources.cms_hospital_quality import load_cms_hospital_quality_data
+from .sources.cms_magnet import load_cms_magnet_data
+from .sources.cms_ndc import load_cms_ndc_data
+from .sources.cms_nucc import load_cms_nucc_data
+from .sources.cms_pecos import load_cms_pecos_data
+from .sources.cms_pos import load_cms_pos_data
+from .sources.cms_post_acute import load_cms_post_acute_data
+from .sources.cms_rbcs import load_cms_rbcs_data
+from .sources.cms_stabilis import load_cms_stabilis_data
+from .sources.cms_usp import load_cms_usp_data
+from .sources.euipo_designs import load_euipo_designs_data
+from .sources.rxnorm import load_rxnorm_data
+from .sources.who_inn import load_who_inn_data
+from .sources.pharmgkb import load_pharmgkb_data
+from .sources.kegg_drug import load_kegg_drug_data
+from .sources.tdc_admet import load_tdc_admet_data
+from .sources.cms_nppes import load_cms_nppes
+from .sources.cms_physician_puf import load_cms_physician_puf
+from .sources.cms_physician_puf_services import load_cms_physician_puf_services
+from .sources.cms_part_d_spending import load_cms_part_d_spending
+from .sources.cms_part_b_spending import load_cms_part_b_spending
+from .sources.cms_open_payments import load_cms_open_payments
+from .sources.cms_inpatient_puf import load_cms_inpatient_puf
+from .sources.cms_hospital_general_info import load_cms_hospital_general_info
+from .sources.cms_medicare_advantage import load_cms_medicare_advantage
+from .sources.cms_medicaid_drug_spending import load_cms_medicaid_drug_spending
+from .sources.cms_dme_puf import load_cms_dme_puf
+from .sources.cms_home_health import load_cms_home_health
+from .sources.cms_hospice_puf import load_cms_hospice_puf
+from .sources.cms_snf_puf import load_cms_snf_puf
+from .sources.cms_outpatient_puf import load_cms_outpatient_puf
+from .sources.cms_referring_providers import load_cms_referring_providers
+from .sources.cms_ordering_providers import load_cms_ordering_providers
+from .sources.cms_lab_services import load_cms_lab_services
+from .sources.cms_imaging_puf import load_cms_imaging_puf
+from .sources.cms_mental_health_puf import load_cms_mental_health_puf
+from .sources.cms_opioid_puf import load_cms_opioid_puf
+from .sources.cms_telehealth_puf import load_cms_telehealth_puf
+from .sources.cms_chronic_conditions import load_cms_chronic_conditions
+from .sources.cms_dual_eligible import load_cms_dual_eligible_data
+from .sources.cms_enrollment_puf import load_cms_enrollment_puf
+from .sources.cms_claim_type_puf import load_cms_claim_type_puf
+from .sources.cms_utilization_puf import load_cms_utilization_puf
+from .sources.cms_cost_reports_puf import load_cms_cost_reports_puf
+from .sources.cms_cost_reports_puf_lines import load_cms_cost_reports_puf_lines
+from .sources.ema_epar import load_ema_epar_data
+from .sources.ema_mol import load_ema_mol_data
+from .sources.health_canada_dpd import load_health_canada_dpd_data
+from .sources.research_orgs_ror import load_research_orgs_ror_data
+from .sources.orange_book import load_orange_book_data
+from .sources.dailymed import load_dailymed_data
+from .sources.fda_drugs import load_fda_drugs_data
+from .sources.ttd import load_ttd_data
+from .sources.imgt import load_imgt_data
+from .sources.cdc_vaccines import load_cdc_vaccines_data
+from .sources.clinicaltrials import load_clinicaltrials_data
+from .sources.openfda_labels import load_openfda_labels_data
+from .sources.chembl_activities import load_chembl_activities_data
+from .sources.fda_rems import load_fda_rems_data
+from .sources.fda_ndc import load_fda_ndc_data
+from .sources.cms_ddinter import load_cms_ddinter_data
+from .sources.chembl_molecules import load_chembl_molecules_data
+from .sources.pubchem import load_pubchem_data
+from .sources.openfda_faers import load_openfda_faers_data
+from .sources.fda_enforcement import load_fda_enforcement_data
+from .sources.fda_shortages import load_fda_shortages_data
+from .sources.npi_registry import load_npi_registry_data
+from .sources.purple_book import load_purple_book_data
+from .sources.reactome import load_reactome_data
+from .sources.who_gho import load_who_gho_data
+from .sources.who_ghed import load_who_ghed_data
+from .sources.worldbank_health import load_worldbank_health_data
+from .sources.oecd_health import load_oecd_health_data
+from .sources.pbs_australia import load_pbs_australia_data
+from .sources.nice_hta import load_nice_hta_data
+from .sources.cms_medicare import load_cms_medicare_data
+from .sources.cms_coverage import load_cms_coverage_data
+from .sources.cms_hac_reduction import load_cms_hac_reduction_data
+from .sources.cms_hrrp import load_cms_hrrp_data
+from .sources.cms_vbp import load_cms_vbp_data
+from .sources.tavr_catalog_data_gov import load_tavr_catalog_data_gov_data
+from .sources.tavr_hospital_profile import load_tavr_hospital_profile_data
+from .sources.tavr_source_readiness import load_tavr_source_readiness_data
+from .sources.tavr_program_year import load_tavr_program_year_data
+from .sources.tavr_benchmark_inputs import load_tavr_benchmark_inputs_data
+from .sources.tavr_public_proxy_profile import load_tavr_public_proxy_profile_data
 
 from .fetchers import (
     PubMedFetcher,
@@ -50,6 +153,106 @@ from .fetchers import (
     ORCIDFetcher,
     USPTOTrademarksFetcher,
     EUIPOTrademarksFetcher,
+    WHOICDFetcher,
+    BindingDBFetcher,
+    SIDERFetcher,
+    EuropePMCFetcher,
+    NIHReporterFetcher,
+    CMSGeographicVariationFetcher,
+    CMSPartDPrescriberFetcher,
+    CMSCareCompareFetcher,
+    CMSCHOWFetcher,
+    CMSDMEPOSFetcher,
+    CMSFormularyFetcher,
+    CMSHCRISFetcher,
+    CMSHospitalAffiliationFetcher,
+    CMSHospitalQualityFetcher,
+    CMSMagnetFetcher,
+    CMSNDCFetcher,
+    CMSNUCCFetcher,
+    CMSPECOSFetcher,
+    CMSPOSFetcher,
+    CMSPostAcuteFetcher,
+    CMSRBCSFetcher,
+    CMSStabilisFetcher,
+    CMSUSPFetcher,
+    EUIPODesignsFetcher,
+    RxNormFetcher,
+    WHOINNFetcher,
+    PharmGKBFetcher,
+    KEGGDrugFetcher,
+    TDCAdmetFetcher,
+    CMSNPPESFetcher,
+    CMSPhysicianPUFFetcher,
+    CMSPhysicianPUFServicesFetcher,
+    CMSPartDSpendingFetcher,
+    CMSPartBSpendingFetcher,
+    CMSOpenPaymentsFetcher,
+    CMSInpatientPUFFetcher,
+    CMSHospitalGeneralInfoFetcher,
+    CMSMedicareAdvantageFetcher,
+    CMSMedicaidDrugSpendingFetcher,
+    CMSDMEPUFFetcher,
+    CMSHomeHealthFetcher,
+    CMSHospicePUFFetcher,
+    CMSSNFPUFFetcher,
+    CMSOutpatientPUFFetcher,
+    CMSReferringProvidersFetcher,
+    CMSOrderingProvidersFetcher,
+    CMSLabServicesFetcher,
+    CMSImagingPUFFetcher,
+    CMSMentalHealthPUFFetcher,
+    CMSOpioidPUFFetcher,
+    CMSTelehealthPUFFetcher,
+    CMSChronicConditionsFetcher,
+    CMSDualEligibleFetcher,
+    CMSEnrollmentPUFFetcher,
+    CMSClaimTypePUFFetcher,
+    CMSUtilizationPUFFetcher,
+    CMSCostReportsPUFFetcher,
+    CMSCostReportsPUFLinesFetcher,
+    HRSAFetcher,
+    EMAEparFetcher,
+    EMAMolFetcher,
+    HealthCanadaDPDFetcher,
+    ResearchOrgsRORFetcher,
+    OrangeBookFetcher,
+    DailyMedFetcher,
+    FDADrugsFetcher,
+    TTDFetcher,
+    IMGTFetcher,
+    CDCVaccinesFetcher,
+    ClinicalTrialsFetcher,
+    OpenFDALabelsFetcher,
+    ChEMBLActivitiesFetcher,
+    FDARemsFetcher,
+    FDANDCFetcher,
+    CMSDDInterFetcher,
+    ChEMBLMoleculesFetcher,
+    PubChemFetcher,
+    OpenFDAFAERSFetcher,
+    FDAEnforcementFetcher,
+    FDAShortagesFetcher,
+    NPIRegistryFetcher,
+    PurpleBookFetcher,
+    ReactomeFetcher,
+    WHOGHOFetcher,
+    WHOGHEDFetcher,
+    WorldBankHealthFetcher,
+    OECDHealthFetcher,
+    PBSAustraliaFetcher,
+    NICEHTAFetcher,
+    CMSMedicareFetcher,
+    CMSCoverageFetcher,
+    CMSHACReductionFetcher,
+    CMSHRRPFetcher,
+    CMSVBPFetcher,
+    TavrCatalogDataGovFetcher,
+    TavrHospitalProfileFetcher,
+    TavrSourceReadinessFetcher,
+    TavrProgramYearFetcher,
+    TavrBenchmarkInputsFetcher,
+    TavrPublicProxyProfileFetcher,
 )
 from .downloaders.cms_downloader import CMS_DATASET_REGISTRY
 
@@ -60,11 +263,29 @@ try:
     from dk_data.observability import setup_telemetry, get_tracer
     from dk_data.observability.logging import setup_logging, get_logger
     from dk_data.observability.reporting import report_completion
+    from dk_data.observability.metrics import (
+        record_job_duration,
+        record_job_records,
+        increment_job_failure,
+        mark_job_success,
+    )
     _OBS_AVAILABLE = True
 except ImportError:
     _OBS_AVAILABLE = False
+    def record_job_duration(job_name, duration_seconds): pass
+    def record_job_records(job_name, count): pass
+    def increment_job_failure(job_name): pass
+    def mark_job_success(job_name): pass
+
+try:
+    from prometheus_client import start_http_server as _prom_start_http_server
+    _PROM_AVAILABLE = True
+except ImportError:
+    _PROM_AVAILABLE = False
+    def _prom_start_http_server(port): pass  # no-op when prometheus_client absent
 
 import logging
+from dk_data.ingestion.utils.database import build_dsn
 logger = logging.getLogger(__name__)
 
 # Available data sources
@@ -98,9 +319,10 @@ SOURCES = {
     'hrsa': {
         'name': 'HRSA Shortage Areas',
         'description': 'Health Professional Shortage Areas',
-        'loader': hrsa.load_hrsa_shortage_areas,
-        'requires_file': False,  # Can use API or file
-        'accepts_file': True,  # File is optional
+        'fetcher': HRSAFetcher,
+        'loader': load_hrsa_shortage_areas_from_records,
+        'requires_file': False,
+        'default_days_back': None,
         'meta_name': 'hrsa_shortage_areas',
     },
     # --- API-based sources (fetch + load) ---
@@ -120,7 +342,7 @@ SOURCES = {
         'fetcher': EMARegulatoryCIFetcher,
         'loader': load_ema_regulatory_data,
         'requires_file': False,
-        'default_days_back': 90,
+        'default_days_back': None,  # Bulk snapshot — always loads all ~2,641 records
     },
     'openalex_ci': {
         'name': 'OpenAlex CI',
@@ -128,7 +350,7 @@ SOURCES = {
         'fetcher': OpenAlexCIFetcher,
         'loader': load_openalex_ci_data,
         'requires_file': False,
-        'default_days_back': 90,
+        'default_days_back': None,  # checkpoint/resume — fetches all works, no date cap
     },
     'drugbank': {
         'name': 'DrugBank',
@@ -176,7 +398,7 @@ SOURCES = {
         'fetcher': EPOOPSFetcher,
         'loader': load_epo_ops_data,
         'requires_file': False,
-        'default_days_back': 90,
+        'default_days_back': None,  # checkpoint/resume — term-by-term pagination, no date cap
     },
     'cochrane': {
         'name': 'Cochrane Library',
@@ -241,6 +463,845 @@ SOURCES = {
         'loader': load_euipo_trademarks_data,
         'requires_file': False,
         'default_days_back': 90,
+    },
+    'who_icd': {
+        'name': 'WHO ICD',
+        'description': 'WHO ICD-11 (with ICD-10 fallback) disease classification codes',
+        'fetcher': WHOICDFetcher,
+        'loader': load_who_icd_data,
+        'requires_file': False,
+        'default_days_back': None,
+    },
+    'bindingdb': {
+        'name': 'BindingDB',
+        'description': 'BindingDB protein-ligand binding affinities',
+        'fetcher': BindingDBFetcher,
+        'loader': load_bindingdb_data,
+        'requires_file': False,
+        'default_days_back': None,
+        'streaming': True,       # Stream to DB in 50k-record chunks — full dataset >1.5M rows
+        'chunk_size': 50_000,
+    },
+    'sider': {
+        'name': 'SIDER',
+        'description': 'SIDER drug side effects (STITCH/MedDRA)',
+        'fetcher': SIDERFetcher,
+        'loader': load_sider_data,
+        'requires_file': False,
+        'default_days_back': None,
+    },
+    'europepmc': {
+        'name': 'Europe PMC',
+        'description': 'Europe PMC biomedical literature',
+        'fetcher': EuropePMCFetcher,
+        'loader': load_europepmc_data,
+        'requires_file': False,
+        'default_days_back': None,  # checkpoint/resume — fetches all literature, no date cap
+    },
+    'nih_reporter': {
+        'name': 'NIH Reporter',
+        'description': 'NIH Reporter grant and project data',
+        'fetcher': NIHReporterFetcher,
+        'loader': load_nih_reporter_data,
+        'requires_file': False,
+        'default_days_back': None,  # checkpoint/resume — uses _fetch_full_backfill() year-by-year
+    },
+    'cms_geographic_variation': {
+        'name': 'CMS Geographic Variation',
+        'description': 'CMS Medicare Geographic Variation PUF',
+        'fetcher': CMSGeographicVariationFetcher,
+        'loader': load_cms_geographic_variation_from_records,
+        'requires_file': True,
+        'default_days_back': None,
+    },
+    'cms_part_d_prescriber': {
+        'name': 'CMS Part D by Prescriber',
+        'description': 'CMS Medicare Part D Prescriber PUF',
+        'fetcher': CMSPartDPrescriberFetcher,
+        'loader': load_cms_part_d_prescriber,
+        'requires_file': False,
+        'self_loading': True,
+        'default_days_back': None,
+    },
+    # --- CMS facility/provider/reference sources (ported from 016) ---
+    'cms_care_compare': {
+        'name': 'CMS Care Compare',
+        'description': 'Hospital Compare star ratings and quality data',
+        'fetcher': CMSCareCompareFetcher,
+        'loader': load_cms_care_compare_data,
+        'requires_file': False,
+        'default_days_back': None,
+    },
+    'cms_chow': {
+        'name': 'CMS Change of Ownership',
+        'description': 'CMS CHOW facility ownership change records',
+        'fetcher': CMSCHOWFetcher,
+        'loader': load_cms_chow_data,
+        'requires_file': False,
+        'default_days_back': None,
+    },
+    'cms_dmepos': {
+        'name': 'CMS DMEPOS',
+        'description': 'CMS Durable Medical Equipment supplier utilization',
+        'fetcher': CMSDMEPOSFetcher,
+        'loader': load_cms_dmepos_data,
+        'requires_file': False,
+        'default_days_back': None,
+    },
+    'cms_formulary': {
+        'name': 'CMS Medicare Formulary',
+        'description': 'CMS Medicare Part D plan formulary data',
+        'fetcher': CMSFormularyFetcher,
+        'loader': load_cms_formulary_data,
+        'requires_file': False,
+        'default_days_back': None,
+    },
+    'cms_hcris': {
+        'name': 'CMS HCRIS',
+        'description': 'CMS Hospital Cost Report Information System',
+        'fetcher': CMSHCRISFetcher,
+        'loader': load_cms_hcris_data,
+        'requires_file': False,
+        'default_days_back': None,
+    },
+    'cms_hospital_affiliation': {
+        'name': 'CMS Hospital Affiliation',
+        'description': 'CMS hospital system affiliation data',
+        'fetcher': CMSHospitalAffiliationFetcher,
+        'loader': load_cms_hospital_affiliation_data,
+        'requires_file': False,
+        'default_days_back': None,
+    },
+    'cms_hospital_quality': {
+        'name': 'CMS Hospital Quality',
+        'description': 'CMS HCAHPS and hospital quality measures',
+        'fetcher': CMSHospitalQualityFetcher,
+        'loader': load_cms_hospital_quality_data,
+        'requires_file': False,
+        'default_days_back': None,
+    },
+    'cms_magnet': {
+        'name': 'CMS Magnet',
+        'description': 'CMS Magnet hospital designation data',
+        'fetcher': CMSMagnetFetcher,
+        'loader': load_cms_magnet_data,
+        'requires_file': False,
+        'default_days_back': None,
+    },
+    'cms_ndc': {
+        'name': 'CMS NDC Directory',
+        'description': 'CMS National Drug Code directory',
+        'fetcher': CMSNDCFetcher,
+        'loader': load_cms_ndc_data,
+        'requires_file': False,
+        'default_days_back': None,
+    },
+    'cms_nucc': {
+        'name': 'CMS NUCC Taxonomy',
+        'description': 'NUCC National Uniform Claim Committee provider taxonomy codes',
+        'fetcher': CMSNUCCFetcher,
+        'loader': load_cms_nucc_data,
+        'requires_file': False,
+        'default_days_back': None,
+    },
+    'cms_pecos': {
+        'name': 'CMS PECOS',
+        'description': 'CMS Provider Enrollment, Chain, and Ownership System',
+        'fetcher': CMSPECOSFetcher,
+        'loader': load_cms_pecos_data,
+        'requires_file': False,
+        'default_days_back': None,
+    },
+    'cms_pos': {
+        'name': 'CMS Place of Service',
+        'description': 'CMS Place of Service codes',
+        'fetcher': CMSPOSFetcher,
+        'loader': load_cms_pos_data,
+        'requires_file': False,
+        'default_days_back': None,
+    },
+    'cms_post_acute': {
+        'name': 'CMS Post-Acute Care',
+        'description': 'CMS SNF/IRF/LTACH post-acute care data',
+        'fetcher': CMSPostAcuteFetcher,
+        'loader': load_cms_post_acute_data,
+        'requires_file': False,
+        'default_days_back': None,
+    },
+    'cms_rbcs': {
+        'name': 'CMS RBCS',
+        'description': 'CMS Restructured BETOS Classification System',
+        'fetcher': CMSRBCSFetcher,
+        'loader': load_cms_rbcs_data,
+        'requires_file': False,
+        'default_days_back': None,
+    },
+    'cms_stabilis': {
+        'name': 'CMS Stabilis',
+        'description': 'IV drug compatibility and stability data',
+        'fetcher': CMSStabilisFetcher,
+        'loader': load_cms_stabilis_data,
+        'requires_file': False,
+        'default_days_back': None,
+    },
+    'cms_usp': {
+        'name': 'CMS USP Classifications',
+        'description': 'USP drug classification system',
+        'fetcher': CMSUSPFetcher,
+        'loader': load_cms_usp_data,
+        'requires_file': False,
+        'default_days_back': None,
+    },
+    'euipo_designs': {
+        'name': 'EUIPO Designs',
+        'description': 'EUIPO registered design data',
+        'fetcher': EUIPODesignsFetcher,
+        'loader': load_euipo_designs_data,
+        'requires_file': False,
+        'default_days_back': 90,
+    },
+    # --- CMS PUF file-based sources (019-cms-puf-platform-reconciliation) ---
+    'cms_nppes': {
+        'name': 'CMS NPPES',
+        'description': 'National Plan and Provider Enumeration System — NPI registry (weekly incremental)',
+        'fetcher': CMSNPPESFetcher,
+        'loader': load_cms_nppes,
+        'requires_file': True,
+        'default_days_back': None,
+    },
+    'cms_physician_puf': {
+        'name': 'CMS Physician PUF',
+        'description': 'CMS Medicare Physician & Other Suppliers PUF (provider-level)',
+        'fetcher': CMSPhysicianPUFFetcher,
+        'loader': load_cms_physician_puf,
+        'requires_file': False,
+        'self_loading': True,
+        'default_days_back': None,
+    },
+    'cms_physician_puf_services': {
+        'name': 'CMS Physician PUF Services',
+        'description': 'CMS Medicare Physician PUF at NPI × HCPCS service-line grain',
+        'fetcher': CMSPhysicianPUFServicesFetcher,
+        'loader': load_cms_physician_puf_services,
+        'requires_file': False,
+        'self_loading': True,
+        'default_days_back': None,
+    },
+    'cms_part_d_spending': {
+        'name': 'CMS Part D Drug Spending',
+        'description': 'Medicare Part D drug spending by drug (annual PUF)',
+        'fetcher': CMSPartDSpendingFetcher,
+        'loader': load_cms_part_d_spending,
+        'requires_file': False,
+        'self_loading': True,
+        'default_days_back': None,
+    },
+    'cms_part_b_spending': {
+        'name': 'CMS Part B Drug Spending',
+        'description': 'Medicare Part B drug and biological spending (annual PUF)',
+        'fetcher': CMSPartBSpendingFetcher,
+        'loader': load_cms_part_b_spending,
+        'requires_file': False,
+        'self_loading': True,
+        'default_days_back': None,
+    },
+    'cms_open_payments': {
+        'name': 'CMS Open Payments',
+        'description': 'Physician-industry payment data (Sunshine Act)',
+        'fetcher': CMSOpenPaymentsFetcher,
+        'loader': load_cms_open_payments,
+        'requires_file': False,
+        'self_loading': True,
+        'default_days_back': None,
+    },
+    'cms_inpatient_puf': {
+        'name': 'CMS Inpatient PUF',
+        'description': 'Medicare inpatient prospective payment system PUF (DRG level)',
+        'fetcher': CMSInpatientPUFFetcher,
+        'loader': load_cms_inpatient_puf,
+        'requires_file': False,
+        'self_loading': True,
+        'default_days_back': None,
+    },
+    'cms_hospital_general_info': {
+        'name': 'CMS Hospital General Info',
+        'description': 'Hospital Compare general information and overall ratings',
+        'fetcher': CMSHospitalGeneralInfoFetcher,
+        'loader': load_cms_hospital_general_info,
+        'requires_file': True,
+        'default_days_back': None,
+    },
+    'cms_medicare_advantage': {
+        'name': 'CMS Medicare Advantage',
+        'description': 'Medicare Advantage enrollment and plan data (monthly PUF)',
+        'fetcher': CMSMedicareAdvantageFetcher,
+        'loader': load_cms_medicare_advantage,
+        'requires_file': False,
+        'self_loading': True,
+        'default_days_back': None,
+    },
+    'cms_medicaid_drug_spending': {
+        'name': 'CMS Medicaid Drug Spending',
+        'description': 'Medicaid drug spending by drug (annual PUF)',
+        'fetcher': CMSMedicaidDrugSpendingFetcher,
+        'loader': load_cms_medicaid_drug_spending,
+        'requires_file': False,
+        'self_loading': True,
+        'default_days_back': None,
+    },
+    'cms_dme_puf': {
+        'name': 'CMS DME PUF',
+        'description': 'Medicare DME supplier utilization and payment (annual PUF)',
+        'fetcher': CMSDMEPUFFetcher,
+        'loader': load_cms_dme_puf,
+        'requires_file': False,
+        'self_loading': True,
+        'default_days_back': None,
+    },
+    'cms_home_health': {
+        'name': 'CMS Home Health PUF',
+        'description': 'Medicare home health agency utilization and payment (annual PUF)',
+        'fetcher': CMSHomeHealthFetcher,
+        'loader': load_cms_home_health,
+        'requires_file': False,
+        'self_loading': True,
+        'default_days_back': None,
+    },
+    'cms_hospice_puf': {
+        'name': 'CMS Hospice PUF',
+        'description': 'Medicare hospice provider utilization and payment (annual PUF)',
+        'fetcher': CMSHospicePUFFetcher,
+        'loader': load_cms_hospice_puf,
+        'requires_file': False,
+        'self_loading': True,
+        'default_days_back': None,
+    },
+    'cms_snf_puf': {
+        'name': 'CMS SNF PUF',
+        'description': 'Medicare skilled nursing facility utilization and payment (annual PUF)',
+        'fetcher': CMSSNFPUFFetcher,
+        'loader': load_cms_snf_puf,
+        'requires_file': False,
+        'self_loading': True,
+        'default_days_back': None,
+    },
+    'cms_outpatient_puf': {
+        'name': 'CMS Outpatient PUF',
+        'description': 'Medicare outpatient prospective payment system PUF (APC level)',
+        'fetcher': CMSOutpatientPUFFetcher,
+        'loader': load_cms_outpatient_puf,
+        'requires_file': False,
+        'self_loading': True,
+        'default_days_back': None,
+    },
+    'cms_referring_providers': {
+        'name': 'CMS Referring Providers',
+        'description': 'Medicare physician referral patterns PUF',
+        'fetcher': CMSReferringProvidersFetcher,
+        'loader': load_cms_referring_providers,
+        'requires_file': False,
+        'self_loading': True,
+        'default_days_back': None,
+    },
+    'cms_ordering_providers': {
+        'name': 'CMS Ordering Providers',
+        'description': 'Medicare ordering and referring provider utilization PUF',
+        'fetcher': CMSOrderingProvidersFetcher,
+        'loader': load_cms_ordering_providers,
+        'requires_file': False,
+        'self_loading': True,
+        'default_days_back': None,
+    },
+    'cms_lab_services': {
+        'name': 'CMS Lab Services PUF',
+        'description': 'Medicare clinical lab fee schedule utilization (annual PUF)',
+        'fetcher': CMSLabServicesFetcher,
+        'loader': load_cms_lab_services,
+        'requires_file': False,
+        'self_loading': True,
+        'default_days_back': None,
+    },
+    'cms_imaging_puf': {
+        'name': 'CMS Imaging PUF',
+        'description': 'Medicare imaging services utilization and payment (annual PUF)',
+        'fetcher': CMSImagingPUFFetcher,
+        'loader': load_cms_imaging_puf,
+        'requires_file': False,
+        'self_loading': True,
+        'default_days_back': None,
+    },
+    'cms_mental_health_puf': {
+        'name': 'CMS Mental Health PUF',
+        'description': 'Medicare mental health services utilization and payment (from Physician PUF, filtered by MH provider types)',
+        'fetcher': CMSMentalHealthPUFFetcher,
+        'loader': load_cms_mental_health_puf,
+        'requires_file': False,
+        'self_loading': True,
+        'default_days_back': None,
+    },
+    'cms_opioid_puf': {
+        'name': 'CMS Opioid PUF',
+        'description': 'Medicare opioid prescribing patterns at provider-drug grain',
+        'fetcher': CMSOpioidPUFFetcher,
+        'loader': load_cms_opioid_puf,
+        'requires_file': False,
+        'self_loading': True,
+        'default_days_back': None,
+    },
+    'cms_telehealth_puf': {
+        'name': 'CMS Telehealth PUF',
+        'description': 'Medicare telehealth services utilization and payment (annual PUF)',
+        'fetcher': CMSTelehealthPUFFetcher,
+        'loader': load_cms_telehealth_puf,
+        'requires_file': False,
+        'self_loading': True,
+        'default_days_back': None,
+    },
+    'cms_chronic_conditions': {
+        'name': 'CMS Chronic Conditions PUF',
+        'description': 'Medicare chronic condition prevalence — retired from public download; requires CMS CCW research access (https://www2.ccwdata.org)',
+        'fetcher': CMSChronicConditionsFetcher,
+        'loader': load_cms_chronic_conditions,
+        'requires_file': True,
+        'default_days_back': None,
+    },
+    'cms_dual_eligible': {
+        'name': 'CMS Dual Eligible',
+        'description': 'Medicare-Medicaid dual eligible beneficiary statistics by state (CY2023)',
+        'fetcher': CMSDualEligibleFetcher,
+        'loader': load_cms_dual_eligible_data,
+        'requires_file': True,
+        'default_days_back': None,
+    },
+    'cms_enrollment_puf': {
+        'name': 'CMS Enrollment PUF',
+        'description': 'Medicare beneficiary enrollment statistics by geography/demographics',
+        'fetcher': CMSEnrollmentPUFFetcher,
+        'loader': load_cms_enrollment_puf,
+        'requires_file': False,
+        'self_loading': True,
+        'default_days_back': None,
+    },
+    'cms_claim_type_puf': {
+        'name': 'CMS Claim Type PUF',
+        'description': 'Medicare claims by claim type and geography',
+        'fetcher': CMSClaimTypePUFFetcher,
+        'loader': load_cms_claim_type_puf,
+        'requires_file': False,
+        'self_loading': True,
+        'default_days_back': None,
+    },
+    'cms_utilization_puf': {
+        'name': 'CMS Utilization PUF',
+        'description': 'Medicare service utilization rates by beneficiary demographics/geography',
+        'fetcher': CMSUtilizationPUFFetcher,
+        'loader': load_cms_utilization_puf,
+        'requires_file': False,
+        'self_loading': True,
+        'default_days_back': None,
+    },
+    'cms_cost_reports_puf': {
+        'name': 'CMS Cost Reports PUF',
+        'description': 'Hospital cost report data (HCRIS PUF)',
+        'fetcher': CMSCostReportsPUFFetcher,
+        'loader': load_cms_cost_reports_puf,
+        'requires_file': False,
+        'self_loading': True,
+        'default_days_back': None,
+    },
+    'cms_cost_reports_puf_lines': {
+        'name': 'CMS Cost Reports PUF Lines',
+        'description': 'Hospital cost report worksheet line items (HCRIS PUF)',
+        'fetcher': CMSCostReportsPUFLinesFetcher,
+        'loader': load_cms_cost_reports_puf_lines,
+        'requires_file': False,
+        'self_loading': True,
+        'default_days_back': None,
+    },
+    # --- Legacy molecule sources (promoted from raw.* to mol_raw.* in migration 095) ---
+    'rxnorm': {
+        'name': 'NLM RxNorm',
+        'description': 'NLM RxNorm drug identifier vocabulary (ingredients and brand names)',
+        'fetcher': RxNormFetcher,
+        'loader': load_rxnorm_data,
+        'requires_file': False,
+        'default_days_back': None,  # full-refresh vocabulary, no date filter
+    },
+    'who_inn': {
+        'name': 'WHO INN',
+        'description': 'WHO International Nonproprietary Names (via PubChem synonyms)',
+        'fetcher': WHOINNFetcher,
+        'loader': load_who_inn_data,
+        'requires_file': False,
+        'default_days_back': None,
+    },
+    'pharmgkb': {
+        'name': 'PharmGKB',
+        'description': 'PharmGKB pharmacogenomics knowledge base',
+        'fetcher': PharmGKBFetcher,
+        'loader': load_pharmgkb_data,
+        'requires_file': False,
+        'default_days_back': None,
+    },
+    'kegg_drug': {
+        'name': 'KEGG Drug',
+        'description': 'KEGG Drug compound and pathway database',
+        'fetcher': KEGGDrugFetcher,
+        'loader': load_kegg_drug_data,
+        'requires_file': False,
+        'default_days_back': None,
+    },
+    'tdc_admet': {
+        'name': 'TDC ADMET',
+        'description': 'Therapeutics Data Commons ADMET prediction benchmarks',
+        'fetcher': TDCAdmetFetcher,
+        'loader': load_tdc_admet_data,
+        'requires_file': False,
+        'default_days_back': None,  # static benchmark datasets, monthly refresh
+    },
+    # --- New molecule vocabulary sources (019-cms-puf-platform-reconciliation) ---
+    'ema': {
+        'name': 'EMA EPAR',
+        'description': 'EMA European Public Assessment Reports (authorised medicines)',
+        'fetcher': EMAMolFetcher,
+        'loader': load_ema_mol_data,
+        'requires_file': False,
+        'default_days_back': None,
+    },
+    'orange_book': {
+        'name': 'FDA Orange Book',
+        'description': 'FDA Approved Drug Products with Therapeutic Equivalence Evaluations',
+        'fetcher': OrangeBookFetcher,
+        'loader': load_orange_book_data,
+        'requires_file': False,
+        'default_days_back': None,
+    },
+    'dailymed': {
+        'name': 'DailyMed',
+        'description': 'NLM DailyMed structured product labels (SPL)',
+        'fetcher': DailyMedFetcher,
+        'loader': load_dailymed_data,
+        'requires_file': False,
+        'default_days_back': None,
+    },
+    'fda_drugs': {
+        'name': 'FDA Drugs@FDA',
+        'description': 'FDA drug application approvals (NDA/ANDA/BLA)',
+        'fetcher': FDADrugsFetcher,
+        'loader': load_fda_drugs_data,
+        'requires_file': False,
+        'default_days_back': None,
+    },
+    'ttd': {
+        'name': 'TTD',
+        'description': 'Therapeutic Target Database — targets, drugs, and drug-target interactions',
+        'fetcher': TTDFetcher,
+        'loader': load_ttd_data,
+        'requires_file': False,
+        'default_days_back': None,
+    },
+    'imgt': {
+        'name': 'IMGT',
+        'description': 'IMGT immunogenetics gene database (IG/TR FASTA sequences)',
+        'fetcher': IMGTFetcher,
+        'loader': load_imgt_data,
+        'requires_file': False,
+        'default_days_back': None,
+    },
+    'cdc_vaccines': {
+        'name': 'CDC Vaccines',
+        'description': 'CDC CVX/MVX vaccine code sets',
+        'fetcher': CDCVaccinesFetcher,
+        'loader': load_cdc_vaccines_data,
+        'requires_file': False,
+        'default_days_back': None,
+    },
+    'clinicaltrials': {
+        'name': 'ClinicalTrials.gov',
+        'description': 'ClinicalTrials.gov v2 study data',
+        'fetcher': ClinicalTrialsFetcher,
+        'loader': load_clinicaltrials_data,
+        'requires_file': False,
+        'default_days_back': None,  # checkpoint/resume — fetches all studies, no date cap
+        'self_loading': True,  # fetcher streams directly to DB with checkpoint/resume
+    },
+    'openfda_labels': {
+        'name': 'OpenFDA Drug Labels',
+        'description': 'FDA drug label (SPL) data via openFDA API',
+        'fetcher': OpenFDALabelsFetcher,
+        'loader': load_openfda_labels_data,
+        'requires_file': False,
+        'default_days_back': None,  # checkpoint/resume — year-by-year full backfill on first run, incremental after
+    },
+    'chembl_activities': {
+        'name': 'ChEMBL Bioactivity',
+        'description': 'ChEMBL IC50/Ki/EC50 bioactivity measurements',
+        'fetcher': ChEMBLActivitiesFetcher,
+        'loader': load_chembl_activities_data,  # not called by run_ingestion (self_loading)
+        'requires_file': False,
+        'default_days_back': None,
+        'self_loading': True,  # fetcher streams directly to DB with checkpoint/resume
+    },
+    'fda_rems': {
+        'name': 'FDA REMS Programs',
+        'description': 'FDA Risk Evaluation and Mitigation Strategy programs',
+        'fetcher': FDARemsFetcher,
+        'loader': load_fda_rems_data,
+        'requires_file': False,
+        'default_days_back': None,
+    },
+    'fda_ndc': {
+        'name': 'FDA NDC Directory',
+        'description': 'FDA National Drug Code product directory',
+        'fetcher': FDANDCFetcher,
+        'loader': load_fda_ndc_data,
+        'requires_file': False,
+        'default_days_back': None,
+    },
+    'cms_ddinter': {
+        'name': 'CMS DDInter Drug-Drug Interactions',
+        'description': 'CMS drug-drug interaction data from DDInter database (ddinter.scbdd.com)',
+        'fetcher': CMSDDInterFetcher,
+        'loader': load_cms_ddinter_data,
+        'requires_file': False,
+        'default_days_back': None,
+        'enabled': False,   # ddinter.scbdd.com inaccessible — Chinese host, blocked in prod
+    },
+    'chembl_molecules': {
+        'name': 'ChEMBL Molecules',
+        'description': 'ChEMBL compound/molecule registry (~2.4M compounds)',
+        'fetcher': ChEMBLMoleculesFetcher,
+        'loader': load_chembl_molecules_data,  # not called by run_ingestion (self_loading)
+        'requires_file': False,
+        'default_days_back': None,
+        'self_loading': True,  # fetcher streams directly to DB with checkpoint/resume
+    },
+    'pubchem': {
+        'name': 'PubChem Compounds',
+        'description': 'PubChem drug-relevant compound records',
+        'fetcher': PubChemFetcher,
+        'loader': load_pubchem_data,  # not called by run_ingestion (self_loading)
+        'requires_file': False,
+        'default_days_back': None,
+        'self_loading': True,  # fetcher streams directly to DB with checkpoint/resume
+    },
+    'openfda_faers': {
+        'name': 'OpenFDA FAERS Adverse Events',
+        'description': 'FDA Adverse Event Reporting System via openFDA',
+        'fetcher': OpenFDAFAERSFetcher,
+        'loader': load_openfda_faers_data,
+        'requires_file': False,
+        'default_days_back': 90,
+    },
+    'fda_enforcement': {
+        'name': 'FDA Enforcement / Recalls',
+        'description': 'FDA drug enforcement reports and recalls via openFDA',
+        'fetcher': FDAEnforcementFetcher,
+        'loader': load_fda_enforcement_data,
+        'requires_file': False,
+        'default_days_back': 90,
+    },
+    'fda_shortages': {
+        'name': 'FDA Drug Shortages',
+        'description': 'FDA current and resolved drug shortages via openFDA',
+        'fetcher': FDAShortagesFetcher,
+        'loader': load_fda_shortages_data,
+        'requires_file': False,
+        'default_days_back': None,  # full dataset each run (~1.5k records)
+    },
+    'npi_registry': {
+        'name': 'NPI Registry',
+        'description': 'CMS National Provider Identifier registry (~7M providers)',
+        'fetcher': NPIRegistryFetcher,
+        'loader': load_npi_registry_data,  # not called by run_ingestion (self_loading)
+        'requires_file': False,
+        'default_days_back': None,
+        'self_loading': True,  # fetcher streams directly to DB with checkpoint/resume
+    },
+    'purple_book': {
+        'name': 'FDA Purple Book',
+        'description': 'FDA licensed biological products (BLAs)',
+        'fetcher': PurpleBookFetcher,
+        'loader': load_purple_book_data,
+        'requires_file': False,
+        'default_days_back': None,
+    },
+    'reactome': {
+        'name': 'Reactome Pathways',
+        'description': 'Reactome biological pathway database',
+        'fetcher': ReactomeFetcher,
+        'loader': load_reactome_data,
+        'requires_file': False,
+        'default_days_back': None,
+    },
+    'who_gho': {
+        'name': 'WHO Global Health Observatory',
+        'description': 'WHO GHO health indicators and statistics',
+        'fetcher': WHOGHOFetcher,
+        'loader': load_who_gho_data,
+        'requires_file': False,
+        'default_days_back': None,
+    },
+    # --- International health expenditure sources (wave-b) ---
+    'who_ghed': {
+        'name': 'WHO Global Health Expenditure Database',
+        'description': 'WHO GHED country-level health expenditure indicators (CHE, OOP, govt share)',
+        'fetcher': WHOGHEDFetcher,
+        'loader': load_who_ghed_data,
+        'requires_file': False,
+        'default_days_back': None,  # Annual bulk dataset, no incremental
+    },
+    'worldbank_health': {
+        'name': 'World Bank Health Indicators',
+        'description': 'World Bank health expenditure and outcomes (% GDP, per-capita, life expectancy)',
+        'fetcher': WorldBankHealthFetcher,
+        'loader': load_worldbank_health_data,
+        'requires_file': False,
+        'default_days_back': None,  # Annual indicators, full refresh
+    },
+    'oecd_health': {
+        'name': 'OECD Health Statistics',
+        'description': 'OECD SHA health expenditure data via SDMX (37 member countries)',
+        'fetcher': OECDHealthFetcher,
+        'loader': load_oecd_health_data,
+        'requires_file': False,
+        'default_days_back': None,  # Annual bulk dataset, no incremental
+    },
+    'pbs_australia': {
+        'name': 'PBS Australia Schedule',
+        'description': 'Australian Pharmaceutical Benefits Scheme drug schedule (pricing, restrictions)',
+        'fetcher': PBSAustraliaFetcher,
+        'loader': load_pbs_australia_data,
+        'requires_file': False,
+        'default_days_back': None,  # Monthly schedule update
+    },
+    'nice_hta': {
+        'name': 'NICE HTA Guidance',
+        'description': 'NICE technology appraisals and HTA guidance (UK)',
+        'fetcher': NICEHTAFetcher,
+        'loader': load_nice_hta_data,
+        'requires_file': False,
+        'default_days_back': None,
+    },
+    'cms_medicare': {
+        'name': 'CMS Medicare Data',
+        'description': 'CMS Medicare utilization and payment data',
+        'fetcher': CMSMedicareFetcher,
+        'loader': load_cms_medicare_data,
+        'requires_file': False,
+        'default_days_back': None,
+    },
+    'cms_coverage': {
+        'name': 'CMS Medicare Coverage Database',
+        'description': 'CMS NCDs, NCAs, and Technology Assessments (US HTA equivalent)',
+        'fetcher': CMSCoverageFetcher,
+        'loader': load_cms_coverage_data,
+        'requires_file': False,
+        'default_days_back': None,  # Full snapshot — ~2,400 static coverage decisions
+    },
+    # --- CMS hospital quality trio (wave-b/cms-quality-trio) ---
+    'cms_hac_reduction': {
+        'name': 'CMS HAC Reduction Program',
+        'description': 'Hospital-Acquired Condition Reduction Program penalties and scores',
+        'fetcher': CMSHACReductionFetcher,
+        'loader': load_cms_hac_reduction_data,
+        'requires_file': False,
+        'default_days_back': None,
+    },
+    'cms_hrrp': {
+        'name': 'CMS HRRP',
+        'description': 'Hospital Readmissions Reduction Program excess-readmission ratios',
+        'fetcher': CMSHRRPFetcher,
+        'loader': load_cms_hrrp_data,
+        'requires_file': False,
+        'default_days_back': None,
+    },
+    'cms_vbp': {
+        'name': 'CMS VBP',
+        'description': 'Hospital Value-Based Purchasing total performance scores',
+        'fetcher': CMSVBPFetcher,
+        'loader': load_cms_vbp_data,
+        'requires_file': False,
+        'default_days_back': None,
+    },
+    # --- Wave B: HCP / research sources ---
+    'ema_epar': {
+        'name': 'EMA EPAR Assessment Reports',
+        'description': 'EMA European Public Assessment Reports (EPAR) — procedure-level assessment data',
+        'fetcher': EMAEparFetcher,
+        'loader': load_ema_epar_data,
+        'requires_file': False,
+        'default_days_back': None,  # Bulk snapshot — full CSV every run
+    },
+    'health_canada_dpd': {
+        'name': 'Health Canada DPD',
+        'description': 'Health Canada Drug Product Database — drug products, ingredients, companies',
+        'fetcher': HealthCanadaDPDFetcher,
+        'loader': load_health_canada_dpd_data,
+        'requires_file': False,
+        'default_days_back': None,  # Bulk snapshot — full ZIP every run
+    },
+    'research_orgs_ror': {
+        'name': 'Research Organization Registry (ROR)',
+        'description': 'ROR research organisation data — ~110k institutions from Zenodo data dump',
+        'fetcher': ResearchOrgsRORFetcher,
+        'loader': load_research_orgs_ror_data,
+        'requires_file': False,
+        'default_days_back': None,  # Bulk snapshot — full JSON dump every run
+    },
+    # --- TAVR Benchmark Lab Phase 0 (spec 006) — catalog discovery ---
+    'tavr_catalog_data_gov': {
+        'name': 'TAVR Catalog — Data.gov',
+        'description': 'CKAN package_search discovery on catalog.data.gov; populates hcs_bronze/silver/gold tavr_catalog tables with provenance discipline.',
+        'fetcher': TavrCatalogDataGovFetcher,
+        'loader': load_tavr_catalog_data_gov_data,
+        'requires_file': False,
+        'default_days_back': None,
+    },
+    # --- TAVR Benchmark Lab Phase 1A (spec 007) — source readiness classifier ---
+    'tavr_source_readiness': {
+        'name': 'TAVR Source Readiness',
+        'description': 'Derived gold classifier — one row per source_id with status (claim_eligible/context_only/blocked/absent) derived from meta.refresh_log + meta.table_health + hcs_gold.tavr_catalog_candidate_manifest.',
+        'fetcher': TavrSourceReadinessFetcher,
+        'loader': load_tavr_source_readiness_data,
+        'requires_file': False,
+        'default_days_back': None,
+    },
+    # --- TAVR Benchmark Lab Phase 1A (spec 008) — AHD-like hospital profile ---
+    'tavr_hospital_profile': {
+        'name': 'TAVR Hospital Profile',
+        'description': 'data-researcher §4.1 AHD-like proxy — composes hcs_gold.tavr_hospital_profile (identity + facility scale) from CMS / HRSA silver at CCN grain; system_parent from CMS Hospital All Owners.',
+        'fetcher': TavrHospitalProfileFetcher,
+        'loader': load_tavr_hospital_profile_data,
+        'requires_file': False,
+        'default_days_back': None,
+    },
+    # --- TAVR Benchmark Lab Phase 1A (spec 009) — DRG 266/267 program-year facts ---
+    'tavr_program_year': {
+        'name': 'TAVR Program Year',
+        'description': 'DRG-grain TAVR program facts per (ccn, year). Aggregates CMS Inpatient PUF silver filtered to MS-DRG 266/267 with MCC capture proxy, YoY growth, national/state percentile.',
+        'fetcher': TavrProgramYearFetcher,
+        'loader': load_tavr_program_year_data,
+        'requires_file': False,
+        'default_days_back': None,
+    },
+    # --- TAVR Benchmark Lab Phase 1B (spec 010) — denormalized scoring inputs ---
+    'tavr_benchmark_inputs': {
+        'name': 'TAVR Benchmark Inputs',
+        'description': 'Phase 1B denormalized scoring inputs per (ccn, year). Joins tavr_hospital_profile + tavr_program_year + CMS Hospital Service Area + MSPB / VBP / HRRP / HAC. Source lineage map in source_lineage JSONB.',
+        'fetcher': TavrBenchmarkInputsFetcher,
+        'loader': load_tavr_benchmark_inputs_data,
+        'requires_file': False,
+        'default_days_back': None,
+    },
+    # --- TAVR Benchmark Lab Phase 1B (spec 011) — public proxy approximation layer ---
+    'tavr_public_proxy_profile': {
+        'name': 'TAVR Public Proxy Profile',
+        'description': 'Phase 1B public approximation for licensed-style TAVR fields. Side-by-side public/licensed/selected schema; licensed columns NULL in v1. All seven red-flag detectors apply. coverage_class fixed to public_proxy.',
+        'fetcher': TavrPublicProxyProfileFetcher,
+        'loader': load_tavr_public_proxy_profile_data,
+        'requires_file': False,
+        'default_days_back': None,
     },
 }
 
@@ -312,14 +1373,20 @@ def log_to_meta(source_name: str, result: dict) -> None:
     """Log ingestion result to meta.refresh_log."""
     try:
         with get_cursor() as cur:
-            # Get source_id
+            # Get or auto-register source — ensures last_successful_refresh is always
+            # tracked even for sources not pre-seeded in meta.data_sources.
+            cur.execute("""
+                INSERT INTO meta.data_sources (source_name)
+                VALUES (%s)
+                ON CONFLICT (source_name) DO NOTHING
+            """, (source_name,))
             cur.execute("""
                 SELECT source_id FROM meta.data_sources WHERE source_name = %s
             """, (source_name,))
             row = cur.fetchone()
 
             if row is None:
-                logger.warning(f"Source '{source_name}' not found in meta.data_sources")
+                logger.error(f"Could not register source '{source_name}' in meta.data_sources")
                 return
 
             source_id = row[0]
@@ -328,15 +1395,16 @@ def log_to_meta(source_name: str, result: dict) -> None:
             status = result.get('status', 'unknown')
             cur.execute("""
                 INSERT INTO meta.refresh_log (
-                    source_id, refresh_started_at, refresh_completed_at,
+                    source_id, source_name, refresh_started_at, refresh_completed_at,
                     status, records_fetched, records_inserted, records_updated,
                     error_message
                 ) VALUES (
-                    %s, %s, NOW(), %s, %s, %s, %s, %s
+                    %s, %s, %s, NOW(), %s, %s, %s, %s, %s
                 )
             """, (
                 source_id,
-                datetime.now(),
+                source_name,
+                datetime.now(timezone.utc),
                 status,
                 result.get('records_fetched', result.get('records_inserted', 0)),
                 result.get('records_inserted', 0),
@@ -353,7 +1421,7 @@ def log_to_meta(source_name: str, result: dict) -> None:
                         WHEN %s IN ('success', 'partial') THEN NOW()
                         ELSE last_successful_refresh
                     END,
-                    record_count = COALESCE(%s, record_count)
+                    record_count = COALESCE(NULLIF(%s::bigint, 0), record_count)
                 WHERE source_id = %s
             """, (
                 status,
@@ -378,35 +1446,205 @@ def run_ingestion(source: str, **kwargs) -> dict:
 
     source_info = SOURCES[source]
     meta_source = _meta_name(source)
+    _t0 = time.monotonic()
+
+    if not source_info.get('enabled', True):
+        logger.info("Skipping disabled source: %s (%s)", source, source_info.get('description', ''))
+        return {'status': 'skipped', 'source': source, 'reason': 'disabled'}
 
     logger.info(f"Starting ingestion for {source_info['name']}")
 
+    # File-based source with explicit --file: skip fetcher, go straight to loader.
+    # Many CMS PUF fetchers are stubs (the file is pre-downloaded by the CronJob or
+    # seed_samples.py). When a filepath is provided and the source requires a file,
+    # bypass the fetcher entirely so the loader actually runs.
+    if kwargs.get('filepath') and source_info.get('requires_file'):
+        pass  # fall through to the file-loader path below
+
     # API source: fetch then load
-    if 'fetcher' in source_info:
+    elif 'fetcher' in source_info:
         data_dir = kwargs.get('data_dir', '/tmp/data/raw')
         Path(data_dir).mkdir(parents=True, exist_ok=True)
 
         fetcher = source_info['fetcher'](data_dir=data_dir)
 
-        # Compute incremental days_back from last successful refresh
+        # Compute incremental days_back from last successful refresh.
+        # --days-back CLI override bypasses the computed window (for manual backfills).
+        # kwargs consumed by run_ingestion itself — never forwarded to fetcher.fetch()
+        _INTERNAL_KWARGS = {'data_dir', 'filepath', 'source_override',
+                            'days_back', 'max_records', 'batch_size'}
+
         fetch_kwargs = {}
-        days_back = _compute_days_back(source, source_info)
+
+        # Expand --fiscal-year N into a years=[N, N+1, ..., current_year] list so
+        # CMS fetchers use the multi-year streaming path instead of single-year.
+        if kwargs.get('fiscal_year') and not kwargs.get('years'):
+            from datetime import date
+            start_year = int(kwargs['fiscal_year'])
+            end_year = date.today().year
+            fetch_kwargs['years'] = list(range(start_year, end_year + 1))
+            fetch_kwargs['fiscal_year'] = start_year
+            logger.info("Expanded --fiscal-year %d to years %d–%d", start_year, start_year, end_year)
+        if kwargs.get('days_back') is not None:
+            # Explicit override: use the caller-specified window regardless of state.
+            days_back = kwargs['days_back']
+            logger.info("Using explicit days_back=%d override for %s", days_back, source)
+        else:
+            days_back = _compute_days_back(source, source_info)
         if days_back is not None:
             fetch_kwargs['days_back'] = days_back
+        if kwargs.get('max_records') is not None:
+            fetch_kwargs['max_records'] = kwargs['max_records']
+        # Pass through any source-specific kwargs (full_backfill, query, max_results,
+        # max_entries, years, etc.) from BACKFILL_SOURCE_KWARGS or CLI overrides.
+        for _k, _v in kwargs.items():
+            if _k not in _INTERNAL_KWARGS:
+                fetch_kwargs[_k] = _v
+
+        loader = source_info['loader']
+
+        # Self-loading sources (e.g. ChEMBL, PubChem, NPI Registry): the fetcher
+        # commits to DB internally using stream-and-commit with checkpoint/resume.
+        # records[] is always [] — record_count holds the total inserted.
+        if source_info.get('self_loading'):
+            fetch_result = fetcher.fetch(**fetch_kwargs)
+            if fetch_result.get('status') in ('failed', 'source_unavailable'):
+                logger.warning(f"Fetch failed for {source}: {fetch_result.get('error')}")
+                log_to_meta(meta_source, fetch_result)
+                return fetch_result
+            result = fetch_result
+            result['records_inserted'] = fetch_result.get('record_count', 0)
+            result['records_fetched'] = fetch_result.get('record_count', 0)
+            log_to_meta(meta_source, result)
+            _elapsed = time.monotonic() - _t0
+            _records = result.get('records_inserted', 0)
+            record_job_duration(f'ingestion_{source}', _elapsed)
+            record_job_records(f'ingestion_{source}', _records)
+            if result.get('status') not in ('success', 'partial'):
+                increment_job_failure(f'ingestion_{source}')
+            else:
+                mark_job_success(f'ingestion_{source}')
+            return result
+
+        # Streaming sources (e.g. BindingDB): fetch and load in chunks to bound
+        # peak memory usage. The fetcher calls loader_fn once per chunk.
+        if source_info.get('streaming'):
+            fetch_kwargs['loader_fn'] = loader
+            fetch_kwargs['chunk_size'] = source_info.get('chunk_size', 50_000)
+            fetch_result = fetcher.fetch(**fetch_kwargs)
+            if fetch_result.get('status') in ('failed', 'source_unavailable'):
+                logger.warning(f"Fetch failed for {source}: {fetch_result.get('error')}")
+                log_to_meta(meta_source, fetch_result)
+                return fetch_result
+            result = fetch_result
+            result['records_fetched'] = fetch_result.get('record_count', 0)
+            log_to_meta(meta_source, result)
+            _elapsed = time.monotonic() - _t0
+            _records = result.get('records_inserted', 0)
+            record_job_duration(f'ingestion_{source}', _elapsed)
+            record_job_records(f'ingestion_{source}', _records)
+            if result.get('status') not in ('success', 'partial'):
+                increment_job_failure(f'ingestion_{source}')
+            else:
+                mark_job_success(f'ingestion_{source}')
+            return result
 
         fetch_result = fetcher.fetch(**fetch_kwargs)
 
-        if fetch_result.get('status') == 'failed' or not fetch_result.get('records'):
+        if fetch_result.get('status') in ('failed', 'source_unavailable'):
+            logger.warning(f"Fetch failed for {source}: {fetch_result.get('error')}")
+            log_to_meta(meta_source, fetch_result)
+            return fetch_result
+
+        # File-path fetchers (e.g. GV PUF) return extracted_files + int records count.
+        # Call the loader once per extracted file using filepath + year kwargs.
+        if fetch_result.get('extracted_files'):
+            import inspect as _inspect
+            import csv as _csv
+            agg = {'status': 'success', 'records_inserted': 0, 'records_failed': 0, 'errors': []}
+            loader_params = set(_inspect.signature(loader).parameters.keys())
+            for fpath in fetch_result['extracted_files']:
+                loader_kw: dict = {'filepath': fpath}
+                # Pass source_year to loaders that accept it.  Precedence:
+                #   1. explicit --fiscal-year / fiscal_year kwarg
+                #   2. year returned by fetcher (fetch_result['year'])
+                #   3. YEAR column in the first row of the fetched CSV (most CMS datasets)
+                #   4. loader default (2023 — only used when none of the above apply)
+                if 'source_year' in loader_params:
+                    sy = kwargs.get('fiscal_year') or fetch_result.get('year')
+                    if sy is None:
+                        # Auto-detect year from the first data row of the CSV.
+                        try:
+                            with open(fpath, newline='', encoding='utf-8') as _f:
+                                _row = next(_csv.DictReader(_f), None)
+                            if _row:
+                                for _col in ('YEAR', 'Year', 'year'):
+                                    _yval = _row.get(_col, '')
+                                    if _yval and str(_yval).strip().isdigit():
+                                        sy = int(str(_yval).strip())
+                                        break
+                        except Exception:
+                            pass
+                    if sy is not None:
+                        loader_kw['source_year'] = int(sy)
+                # Legacy 'year' parameter name used by some older loaders
+                elif fetch_result.get('year') is not None and 'year' in loader_params:
+                    loader_kw['year'] = fetch_result['year']
+                if 'batch_size' in kwargs and 'batch_size' in loader_params:
+                    loader_kw['batch_size'] = kwargs['batch_size']
+                if kwargs.get('max_records') and 'max_records' in loader_params:
+                    loader_kw['max_records'] = kwargs['max_records']
+                r = loader(**loader_kw)
+                agg['records_inserted'] += r.get('records_inserted', 0)
+                agg['records_failed'] += r.get('records_failed', 0)
+                agg['errors'].extend(r.get('errors', []))
+            agg['records_fetched'] = fetch_result.get('records', 0)
+            log_to_meta(meta_source, agg)
+            _elapsed = time.monotonic() - _t0
+            _records = agg.get('records_inserted', 0)
+            record_job_duration(f'ingestion_{source}', _elapsed)
+            record_job_records(f'ingestion_{source}', _records)
+            if agg.get('status') not in ('success', 'partial'):
+                increment_job_failure(f'ingestion_{source}')
+            else:
+                mark_job_success(f'ingestion_{source}')
+            return agg
+
+        # Standard API fetchers return records as a list of dicts.
+        # Some fetchers (e.g. FAERS full_backfill) stream directly to DB and
+        # return records=[] with record_count>0 — treat those as self-loaded successes.
+        if not fetch_result.get('records'):
+            if fetch_result.get('record_count', 0) > 0:
+                result = fetch_result
+                result['records_inserted'] = fetch_result['record_count']
+                result['records_fetched'] = fetch_result['record_count']
+                log_to_meta(meta_source, result)
+                _elapsed = time.monotonic() - _t0
+                _records = result.get('records_inserted', 0)
+                record_job_duration(f'ingestion_{source}', _elapsed)
+                record_job_records(f'ingestion_{source}', _records)
+                if result.get('status') not in ('success', 'partial'):
+                    increment_job_failure(f'ingestion_{source}')
+                else:
+                    mark_job_success(f'ingestion_{source}')
+                return result
             logger.warning(f"Fetch returned no records for {source}")
             log_to_meta(meta_source, fetch_result)
             return fetch_result
 
-        loader = source_info['loader']
         result = loader(fetch_result['records'], source_hash=fetch_result.get('hash'))
         result['records_fetched'] = fetch_result.get(
             'record_count', len(fetch_result.get('records', []))
         )
         log_to_meta(meta_source, result)
+        _elapsed = time.monotonic() - _t0
+        _records = result.get('records_inserted', 0)
+        record_job_duration(f'ingestion_{source}', _elapsed)
+        record_job_records(f'ingestion_{source}', _records)
+        if result.get('status') not in ('success', 'partial'):
+            increment_job_failure(f'ingestion_{source}')
+        else:
+            mark_job_success(f'ingestion_{source}')
         return result
 
     # File source: existing pattern
@@ -428,8 +1666,18 @@ def run_ingestion(source: str, **kwargs) -> dict:
             raise ValueError(f"Source '{source}' requires fiscal_year")
         loader_kwargs['fiscal_year'] = kwargs['fiscal_year']
 
-    if 'batch_size' in kwargs:
+    # Pass source_year to any loader that accepts it (all CMS PUF loaders do).
+    import inspect as _inspect
+    _loader_params = set(_inspect.signature(loader).parameters.keys())
+    if 'source_year' in _loader_params and kwargs.get('fiscal_year'):
+        loader_kwargs['source_year'] = int(kwargs['fiscal_year'])
+
+    if 'batch_size' in kwargs and source_info.get('accepts_batch_size'):
         loader_kwargs['batch_size'] = kwargs['batch_size']
+
+    # Pass max_records to file loaders that support it (limits rows read from CSV)
+    if kwargs.get('max_records') and source_info.get('requires_file'):
+        loader_kwargs['max_records'] = kwargs['max_records']
 
     # Run loader
     result = loader(**loader_kwargs)
@@ -437,7 +1685,83 @@ def run_ingestion(source: str, **kwargs) -> dict:
     # Log to meta
     log_to_meta(meta_source, result)
 
+    # Emit Prometheus metrics for CLI and CronJob runs (initial_backfill.py also emits
+    # per-source metrics from _fetch_one; these cover direct run_ingestion() callers).
+    _elapsed = time.monotonic() - _t0
+    _records = result.get('records_inserted', result.get('records_fetched', 0)) or 0
+    _job = f'ingestion_{source}'
+    record_job_duration(_job, _elapsed)
+    record_job_records(_job, _records)
+    if result.get('status') not in ('success', 'partial'):
+        increment_job_failure(_job)
+    else:
+        mark_job_success(_job)
+
     return result
+
+
+def _record_cronjob_run_to_db(
+    job_name: str,
+    source: str | None,
+    status: str,
+    duration_seconds: float,
+    records_processed: int,
+) -> None:
+    """
+    Record CronJob completion directly to meta.batch_job_runs (T037, 026-observability).
+
+    This is a direct-DB fallback so scheduled CronJob executions are tracked even when
+    the job-trigger HTTP endpoint is unreachable.  Failures here are non-fatal.
+    """
+    db_url = os.getenv('DATABASE_URL')
+    if not db_url:
+        db_host = os.getenv('POSTGRES_HOST', 'postgres')
+        db_port = os.getenv('POSTGRES_PORT', '5432')
+        db_name = os.getenv('POSTGRES_DB', 'dk_data')
+        db_user = os.getenv('POSTGRES_USER', 'postgres')
+        db_pass = os.getenv('POSTGRES_PASSWORD', 'postgres')
+        db_url = f'postgresql://{db_user}:{db_pass}@{db_host}:{db_port}/{db_name}'
+
+    try:
+        import psycopg2
+        conn = psycopg2.connect(build_dsn())
+        cur = conn.cursor()
+
+        # Resolve job_id from meta.batch_jobs, inserting a minimal row if missing.
+        cur.execute(
+            "SELECT job_id FROM meta.batch_jobs WHERE job_name = %s",
+            (job_name,),
+        )
+        row = cur.fetchone()
+        if row:
+            job_id = row[0]
+        else:
+            cur.execute(
+                "INSERT INTO meta.batch_jobs (job_name, is_enabled) VALUES (%s, TRUE) "
+                "RETURNING job_id",
+                (job_name,),
+            )
+            job_id = cur.fetchone()[0]
+
+        k8s_job = os.getenv('JOB_NAME') or os.getenv('K8S_JOB_NAME')
+        cur.execute(
+            """
+            INSERT INTO meta.batch_job_runs
+                (job_id, triggered_by, started_at, completed_at, status,
+                 records_processed, k8s_job_name)
+            VALUES
+                (%s, 'scheduler',
+                 NOW() - (INTERVAL '1 second' * %s),
+                 NOW(),
+                 %s, %s, %s)
+            """,
+            (job_id, duration_seconds, status, records_processed, k8s_job),
+        )
+        conn.commit()
+        cur.close()
+        conn.close()
+    except Exception as e:
+        logger.debug(f"Could not record CronJob run to meta.batch_job_runs: {e}")
 
 
 def list_sources():
@@ -482,9 +1806,35 @@ Examples:
     parser.add_argument('--file', '-f', dest='filepath', help='Path to data file')
     parser.add_argument('--fiscal-year', '-y', type=int, help='Fiscal year of data')
     parser.add_argument('--batch-size', '-b', type=int, default=1000, help='Batch size for commits')
+    parser.add_argument('--max-records', '-m', type=int, default=None, help='Cap on records fetched (for seeding/testing)')
     parser.add_argument('--data-dir', '-d', default='/tmp/data/raw', help='Directory for fetcher temp storage')
+    parser.add_argument(
+        '--full-backfill',
+        action='store_true',
+        dest='full_backfill',
+        default=False,
+        help=(
+            'Pass full_backfill=True to the fetcher. Used for sources like openfda_faers '
+            'and openfda_labels that use a full_backfill kwarg to switch between '
+            'year-by-year historical mode and incremental mode.'
+        ),
+    )
+    parser.add_argument('--days-back', type=int, default=None,
+                        help='Override incremental days_back window (bypasses meta.data_sources state). '
+                             'Use for initial backfill: --days-back 730 fetches 2 years regardless of last_successful_refresh.')
     parser.add_argument('--list', '-l', action='store_true', help='List available sources')
     parser.add_argument('--verbose', '-v', action='store_true', help='Verbose output')
+    parser.add_argument(
+        '--skip-if-no-file',
+        action='store_true',
+        dest='skip_if_no_file',
+        help=(
+            'Exit 0 without error when the source requires a file (requires_file=True) '
+            'and no --file path is provided. Used by CronJobs for file-dependent sources '
+            'that must stay in the schedule for operator-triggered runs but should not fail '
+            'when the file has not been manually provided.'
+        ),
+    )
 
     args = parser.parse_args()
 
@@ -513,6 +1863,27 @@ Examples:
         parser.print_help()
         return 1
 
+    # --skip-if-no-file: exit 0 when source requires a manually provided file and none was given.
+    # This keeps file-dependent CronJobs in the schedule for operator-triggered runs without
+    # generating failure alerts when no file has been uploaded.
+    if getattr(args, 'skip_if_no_file', False) and not args.filepath:
+        source_info = SOURCES.get(source, {})
+        if source_info.get('requires_file'):
+            logger.info(
+                "Source '%s' requires a file (--file) but none was provided; "
+                "--skip-if-no-file set — exiting 0.",
+                source,
+            )
+            return 0
+
+    # Expose Prometheus /metrics on :8001 (fallback) so the CronJob pod can be scraped.
+    # Port 8000 is reserved for the uvicorn API server when running alongside job-trigger.
+    _metrics_port = int(os.getenv("METRICS_PORT", "8001"))
+    try:
+        _prom_start_http_server(_metrics_port)
+    except OSError:
+        pass  # Port already in use (e.g. running inside uvicorn container) — skip metrics server
+
     # Initialize connection pool
     init_connection_pool()
 
@@ -523,6 +1894,13 @@ Examples:
     try:
         tracer = get_tracer(__name__) if _OBS_AVAILABLE else None
 
+        # Build extra kwargs that pass through to fetcher.fetch() unchanged.
+        # full_backfill is only forwarded when explicitly set (--full-backfill flag)
+        # so that regular CronJob runs without the flag use the fetcher's own default.
+        extra_kwargs = {}
+        if args.full_backfill:
+            extra_kwargs['full_backfill'] = True
+
         if tracer:
             with tracer.start_as_current_span(f"{job_name}-execution") as span:
                 span.set_attribute("source", source)
@@ -532,7 +1910,10 @@ Examples:
                     filepath=args.filepath,
                     fiscal_year=args.fiscal_year,
                     batch_size=args.batch_size,
+                    max_records=args.max_records,
                     data_dir=args.data_dir,
+                    days_back=args.days_back,
+                    **extra_kwargs,
                 )
                 records = result.get('records_inserted', result.get('records_fetched', 0))
                 span.set_attribute("records_fetched", records)
@@ -542,7 +1923,10 @@ Examples:
                 filepath=args.filepath,
                 fiscal_year=args.fiscal_year,
                 batch_size=args.batch_size,
+                max_records=args.max_records,
                 data_dir=args.data_dir,
+                days_back=args.days_back,
+                **extra_kwargs,
             )
             records = result.get('records_inserted', result.get('records_fetched', 0))
 
@@ -557,7 +1941,10 @@ Examples:
             for err in result['errors'][:5]:
                 print(f"  - {err}")
 
-        if result.get('status') in ('success', 'skipped', 'partial'):
+        result_status = result.get('status')
+        # Loaders that succeed often return {records_inserted, records_skipped} with no 'status' key.
+        loader_succeeded = result_status is None and 'records_inserted' in result
+        if result_status in ('success', 'skipped', 'partial', 'source_unavailable') or loader_succeeded:
             status = "success"
             return 0
         else:
@@ -570,6 +1957,10 @@ Examples:
     finally:
         close_connection_pool()
         duration = time.monotonic() - start_time
+        # T037 (026-observability): Write CronJob completion directly to meta.batch_job_runs.
+        # This ensures scheduled runs are recorded even when the job-trigger HTTP endpoint is
+        # unreachable, and feeds the DB-backed pipeline metrics in refresh_metrics_from_database_sync().
+        _record_cronjob_run_to_db(job_name, source, status, duration, records)
         if _OBS_AVAILABLE:
             try:
                 asyncio.run(report_completion(

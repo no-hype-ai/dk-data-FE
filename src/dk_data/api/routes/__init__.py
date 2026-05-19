@@ -14,7 +14,14 @@ from .graph import router as graph_router
 from .kols import router as kols_router
 from .visualize import router as visualize_router
 from .data_sources import router as data_sources_router
-from ...services.mcp.router import router as mcp_router
+from .agents import router as agents_router
+from .data_tools import router as data_tools_router
+
+# MCP router is optional — httpx / adapter deps may not be present in all envs
+try:
+    from ...services.mcp.router import router as mcp_router
+except Exception:  # noqa: BLE001
+    mcp_router = None  # type: ignore[assignment]
 
 __all__ = [
     "data_platform_router",
@@ -27,5 +34,7 @@ __all__ = [
     "kols_router",
     "visualize_router",
     "data_sources_router",
+    "agents_router",
+    "data_tools_router",
     "mcp_router",
 ]

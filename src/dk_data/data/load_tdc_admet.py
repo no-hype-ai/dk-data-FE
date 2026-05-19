@@ -8,8 +8,8 @@ This loader downloads all 22 TDC ADMET benchmark datasets and stores:
 3. Links to existing compounds via InChI Key
 
 Tables populated:
-- bronze.tdc_admet_datasets: Dataset metadata
-- bronze.tdc_admet_values: Y labels for each compound-dataset pair
+- mol_bronze.tdc_admet_datasets: Dataset metadata
+- mol_bronze.tdc_admet_values: Y labels for each compound-dataset pair
 
 Usage:
     python -m dk_data.data.load_tdc_admet
@@ -28,6 +28,7 @@ import psycopg2
 from psycopg2.extras import execute_values
 from loguru import logger
 from tqdm import tqdm
+from dk_data.ingestion.utils.database import build_dsn
 
 try:
     from tdc.single_pred import ADME, Tox
@@ -101,7 +102,7 @@ def ensure_tables(conn):
     cursor = conn.cursor()
 
     cursor.execute("""
-        CREATE TABLE IF NOT EXISTS bronze.tdc_admet_datasets (
+        CREATE TABLE IF NOT EXISTS mol_bronze.tdc_admet_datasets (
             dataset_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
             dataset_name VARCHAR(100) UNIQUE NOT NULL,
             tdc_name VARCHAR(100) NOT NULL,
@@ -117,9 +118,9 @@ def ensure_tables(conn):
     """)
 
     cursor.execute("""
-        CREATE TABLE IF NOT EXISTS bronze.tdc_admet_values (
+        CREATE TABLE IF NOT EXISTS mol_bronze.tdc_admet_values (
             id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-            dataset_id UUID REFERENCES bronze.tdc_admet_datasets(dataset_id),
+            dataset_id UUID REFERENCES mol_bronze.tdc_admet_datasets(dataset_id),
             inchi_key VARCHAR(27) NOT NULL,
             smiles TEXT NOT NULL,
             y_value DOUBLE PRECISION NOT NULL,
@@ -131,9 +132,9 @@ def ensure_tables(conn):
             UNIQUE(dataset_id, inchi_key)
         );
 
-        CREATE INDEX IF NOT EXISTS idx_admet_dataset ON bronze.tdc_admet_values(dataset_id);
-        CREATE INDEX IF NOT EXISTS idx_admet_inchi ON bronze.tdc_admet_values(inchi_key);
-        CREATE INDEX IF NOT EXISTS idx_admet_split ON bronze.tdc_admet_values(split);
+        CREATE INDEX IF NOT EXISTS idx_admet_dataset ON mol_bronze.tdc_admet_values(dataset_id);
+        CREATE INDEX IF NOT EXISTS idx_admet_inchi ON mol_bronze.tdc_admet_values(inchi_key);
+        CREATE INDEX IF NOT EXISTS idx_admet_split ON mol_bronze.tdc_admet_values(split);
     """)
 
     conn.commit()
@@ -157,7 +158,7 @@ def load_tdc_dataset(dataset_name: str, conn, split_method: str = "scaffold") ->
 
     cursor = conn.cursor()
     cursor.execute("""
-        INSERT INTO bronze.tdc_admet_datasets (dataset_name, tdc_name, task_type, description)
+        INSERT INTO mol_bronze.tdc_admet_datasets (dataset_name, tdc_name, task_type, description)
         VALUES (%s, %s, %s, %s)
         ON CONFLICT (dataset_name) DO UPDATE SET
             tdc_name = EXCLUDED.tdc_name,
@@ -196,7 +197,7 @@ def load_tdc_dataset(dataset_name: str, conn, split_method: str = "scaffold") ->
                 execute_values(
                     cursor,
                     """
-                    INSERT INTO bronze.tdc_admet_values (dataset_id, inchi_key, smiles, y_value, split, drug_id)
+                    INSERT INTO mol_bronze.tdc_admet_values (dataset_id, inchi_key, smiles, y_value, split, drug_id)
                     VALUES %s
                     ON CONFLICT (dataset_id, inchi_key) DO UPDATE SET
                         y_value = EXCLUDED.y_value,
@@ -212,7 +213,7 @@ def load_tdc_dataset(dataset_name: str, conn, split_method: str = "scaffold") ->
                 raise
 
     cursor.execute("""
-        UPDATE bronze.tdc_admet_datasets SET
+        UPDATE mol_bronze.tdc_admet_datasets SET
             num_compounds = %s,
             num_train = %s,
             num_valid = %s,
@@ -255,7 +256,7 @@ def main():
         return
 
     logger.info("Connecting to PostgreSQL...")
-    conn = psycopg2.connect(**DB_CONFIG)
+    conn = psycopg2.connect(build_dsn())
     logger.info(f"Connected to {DB_CONFIG['host']}:{DB_CONFIG['port']}/{DB_CONFIG['database']}")
 
     ensure_tables(conn)
@@ -281,9 +282,9 @@ def main():
             logger.error(f"Failed to load {dataset_name}: {e}")
 
     cursor = conn.cursor()
-    cursor.execute("SELECT COUNT(*) FROM bronze.tdc_admet_datasets")
+    cursor.execute("SELECT COUNT(*) FROM mol_bronze.tdc_admet_datasets")
     dataset_count = cursor.fetchone()[0]
-    cursor.execute("SELECT COUNT(*) FROM bronze.tdc_admet_values")
+    cursor.execute("SELECT COUNT(*) FROM mol_bronze.tdc_admet_values")
     value_count = cursor.fetchone()[0]
 
     logger.info("\n=== Summary ===")

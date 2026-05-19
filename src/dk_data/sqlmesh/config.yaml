@@ -10,32 +10,73 @@ gateways:
       user: "{{ env_var('POSTGRES_USER', 'postgres') }}"
       password: "{{ env_var('POSTGRES_PASSWORD', '') }}"
       database: "{{ env_var('POSTGRES_DB', 'dk_data') }}"
+      # NOTE: work_mem/statement_timeout are set at the PostgreSQL role level
+      # (ALTER ROLE dk_data SET work_mem = '128MB') rather than per-session,
+      # because SQLMesh 0.230.0 postgres connector does not support
+      # session_properties or pre_statements with INCREMENTAL_BY_UNIQUE_KEY.
+      pre_ping: true
+      concurrent_tasks: 4
 
 default_gateway: local
 
 # Model defaults
 model_defaults:
   dialect: postgres
-  start: '2024-01-01'
+  start: '2011-01-01'  # 15 years back — covers full drug development cycles
 
 # Physical schema mapping
-# Maps logical schema names to actual PostgreSQL schemas
+# Maps logical schema names to actual PostgreSQL schemas.
+#
+# DOMAIN STRATEGY (019-cms-puf-platform-reconciliation):
+#   All bare logical names (raw/bronze/silver/gold) redirect to mol_* physical
+#   schemas. This means models declared as "silver.molecules" physically land in
+#   mol_silver, and "bronze.chembl_molecules" lands in mol_bronze — zero model
+#   renames required, enforced here.
+#
+#   Domain schemas:
+#     mol_*  — Molecule / drug / compound data
+#     hcs_*  — Healthcare system / CMS / provider data
+#     ind_*  — Indication / disease / epidemiology data
+#     hcp_*  — Healthcare professional / KOL / researcher data
+#     ip_*   — Intellectual property / patents / trademarks / designs
 physical_schema_mapping:
-  # TAVR schemas
-  raw: raw
-  staging: staging
-  mart: mart
-  scoring: scoring
-  # Molecule platform schemas
+  # Bare logical names → mol_* physical schemas (redirect, not rename)
+  raw: mol_raw
+  bronze: mol_bronze
+  silver: mol_silver
+  gold: mol_gold
+  # Molecule domain (explicit aliases — same physical target)
   mol_raw: mol_raw
   mol_bronze: mol_bronze
   mol_silver: mol_silver
   mol_gold: mol_gold
   mol_app: mol_app
-  # IP/patent/trademark schemas (014-uspto-euipo-model-datasource)
-  bronze: bronze
-  silver: silver
-  gold: gold
+  # HCS (Healthcare System / CMS) domain
+  hcs_raw: hcs_raw
+  hcs_bronze: hcs_bronze
+  hcs_silver: hcs_silver
+  hcs_gold: hcs_gold
+  # Indication / disease domain
+  ind_raw: ind_raw
+  ind_bronze: ind_bronze
+  ind_silver: ind_silver
+  ind_gold: ind_gold
+  # HCP / researcher / KOL domain
+  hcp_silver: hcp_silver
+  hcp_gold: hcp_gold
+  # IP (Intellectual Property) domain — patents, trademarks, designs (FR-006a)
+  ip_raw: ip_raw
+  ip_bronze: ip_bronze
+  ip_silver: ip_silver
+  ip_gold: ip_gold
+  # Agent output schemas (019-cms-puf-platform-reconciliation)
+  hcs_agents: hcs_agents
+  mol_agents: mol_agents
+  agents: agents
+  # Application / infrastructure schemas
+  staging: staging
+  xenon: xenon
+  meta: meta
 
 # Project metadata
 project: tavr_data_infrastructure
@@ -48,7 +89,12 @@ variables:
   postgres_password: "{{ env_var('POSTGRES_PASSWORD', '') }}"
   postgres_db: "{{ env_var('POSTGRES_DB', 'dk_data') }}"
 
-# Plan options
+# SQLMesh cache — write to /tmp/sqlmesh-cache (emptyDir, writable under readOnlyRootFilesystem)
+# The default cache_dir is {project_dir}/.cache which is inside the read-only image layer.
+cache_dir: /tmp/sqlmesh-cache
+
+# Plan options — auto_apply true so non-interactive environments (k8s jobs) can
+# run `sqlmesh plan --forward-only` without TTY prompts.
 plan:
-  auto_apply: false
+  auto_apply: true
   include_unmodified: false

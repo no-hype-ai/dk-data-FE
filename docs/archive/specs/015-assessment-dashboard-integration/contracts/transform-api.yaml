@@ -1,0 +1,195 @@
+openapi: "3.1.0"
+info:
+  title: On-Demand Transform API
+  version: "1.0.0"
+  description: |
+    Triggers raw → bronze → silver → gold transformation for a specific source.
+    Uses same SQLMesh models as daily batch pipeline. Rate limited to 10/min/source.
+    Prevents concurrent execution with batch transforms via advisory locks.
+
+servers:
+  - url: /api/v1/data-platform
+    description: Data platform API prefix
+
+paths:
+  /transform-raw/{source}:
+    post:
+      operationId: triggerOnDemandTransform
+      summary: Trigger on-demand transformation for a specific source
+      description: |
+        Processes unprocessed rows (processed_to_bronze=FALSE) through the
+        medallion pipeline using the same SQLMesh models as the daily batch.
+        Optionally scoped to a specific molecule.
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: source
+          in: path
+          required: true
+          description: Data source identifier matching LAYER_MODELS registry
+          schema:
+            type: string
+            enum:
+              # mol_raw sources
+              - clinicaltrials
+              - openfda_faers
+              - openfda_labels
+              - chembl
+              - drugbank
+              - pubchem
+              - openalex
+              - uniprot
+              # raw sources (IP pipeline)
+              - uspto_patents
+              - epo_patents
+              - uspto_trademarks
+              - euipo_trademarks
+              - orange_book
+              # raw sources (new pipeline)
+              - pubmed
+              - ema
+              - hta_decisions
+              - cochrane_reviews
+              - sec_edgar
+              - orcid
+              - journal_rss
+              - medical_news
+              - cms_medicare_inpatient
+              - cms_hospital_info
+              - cms_cost_reports
+              - acc_tvc
+              - hrsa
+              - pdb_structures
+              - who_icd
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/TransformRequest"
+      responses:
+        "200":
+          description: Transform completed successfully
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TransformResponse"
+        "202":
+          description: Transform queued (batch job currently running)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TransformQueuedResponse"
+        "401":
+          description: Missing or invalid JWT token
+        "403":
+          description: Insufficient role (requires analyst)
+        "409":
+          description: Concurrent transform conflict (advisory lock held)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ConflictResponse"
+        "429":
+          description: Rate limited (>10 requests/min for this source)
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error:
+                    type: string
+                  retry_after:
+                    type: integer
+                    description: Seconds until rate limit resets
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+
+  schemas:
+    TransformRequest:
+      type: object
+      properties:
+        molecule_id:
+          type: string
+          format: uuid
+          description: Optional - scope transform to rows matching this molecule
+        layers:
+          type: array
+          items:
+            type: string
+            enum: [bronze, silver, gold]
+          default: [bronze, silver, gold]
+          description: Which layers to process (default all)
+
+    TransformResponse:
+      type: object
+      required: [source, status, layers]
+      properties:
+        source:
+          type: string
+          example: clinicaltrials
+        status:
+          type: string
+          enum: [completed, partial, no_rows]
+        schema_path:
+          type: string
+          description: Pipeline path used
+          enum: [mol_raw→mol_bronze→mol_silver→mol_gold, raw→bronze→silver→gold]
+        layers:
+          type: array
+          items:
+            type: object
+            properties:
+              layer:
+                type: string
+                enum: [bronze, silver, gold]
+              model:
+                type: string
+                description: SQLMesh model name invoked
+                example: mol_bronze.clinical_trials
+              rows_processed:
+                type: integer
+              duration_ms:
+                type: integer
+              status:
+                type: string
+                enum: [success, skipped, failed]
+              error:
+                type: string
+                description: Error message if failed
+        total_duration_ms:
+          type: integer
+        timestamp:
+          type: string
+          format: date-time
+
+    TransformQueuedResponse:
+      type: object
+      properties:
+        source:
+          type: string
+        status:
+          type: string
+          enum: [queued]
+        reason:
+          type: string
+          example: Batch transform currently running
+        estimated_wait_seconds:
+          type: integer
+
+    ConflictResponse:
+      type: object
+      properties:
+        error:
+          type: string
+          example: Concurrent transform in progress for source 'clinicaltrials'
+        source:
+          type: string
+        retry_after:
+          type: integer
+          description: Suggested retry delay in seconds

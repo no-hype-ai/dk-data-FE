@@ -34,3 +34,13 @@ spec:
 
   orphanedResources:
     warn: true
+    ignore:
+      # Secrets managed by Doppler operator or created manually — not in Git
+      - kind: Secret
+        name: dk-data-secrets
+      - kind: Secret
+        name: doppler-token-secret
+      - kind: Secret
+        name: ghcr-credentials
+      - kind: Secret
+        name: minio-backup-credentials

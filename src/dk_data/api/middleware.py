@@ -18,6 +18,7 @@ from fastapi import Request, Response
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.types import ASGIApp
 from loguru import logger
+from dk_data.ingestion.utils.database import build_dsn
 
 # Thread pool for async audit writes (avoids blocking the event loop)
 _audit_executor = ThreadPoolExecutor(max_workers=2, thread_name_prefix="audit")
@@ -305,7 +306,7 @@ class AuditLoggingMiddleware(BaseHTTPMiddleware):
         """Write a single audit entry to meta.api_audit_log (runs in thread pool)."""
         conn = None
         try:
-            conn = psycopg2.connect(self.database_url)
+            conn = psycopg2.connect(build_dsn())
             cursor = conn.cursor()
             cursor.execute(
                 """

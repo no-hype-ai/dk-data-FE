@@ -1,0 +1,29 @@
+# NIH RePORTER — weekly CSV, T1 priority:top15 onboarding.
+#
+# NIH RePORTER / ExPORTER publishes weekly dumps of NIH-funded projects,
+# abstracts, publications, and patents tied to grants. Landing this
+# feeds hcp_silver.researchers with grant-linked affiliation history
+# and fuels translational-research scoring that connects bench
+# researchers to clinical pipelines.
+#
+# Orchestration tier: 5 (spoke-level — depends on researcher hub
+# being resolved). Accessibility tier (GH label): T1 — free bulk
+# download, no auth.
+#
+# Fetcher: src/dk_data/ingestion/fetchers/nih_reporter.py
+# CronJob: k8s/apps/cronjobs/base/cronjob-fetch-nih-reporter.yaml
+
+name: nih_reporter
+domain: hcp
+tier: 5
+depends_on: []
+fetch:
+  kind: http_csv
+  url: https://reporter.nih.gov/exporter
+schedule: "0 10 * * 0"  # 10:00 UTC every Sunday (weekly ExPORTER refresh)
+credentials_ref: none
+expected_row_count_fn: "SELECT reltuples::bigint FROM pg_class WHERE relname='nih_reporter'"
+sla_seconds: 3600
+manifest: .dk/sources/nih_reporter.manifest.json
+consumes:
+  db_connections: 2

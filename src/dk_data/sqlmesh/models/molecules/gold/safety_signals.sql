@@ -1,26 +1,41 @@
 -- SQLMesh Model: Gold Safety Signals
 -- Aggregated safety data from FAERS and drug labels
 -- Part of: 012-dk-data-platform
+--
+-- IMPORTANT — partial coverage by design:
+--   This table contains ONE ROW PER MOLECULE WITH SAFETY DATA only.
+--   Molecules with no FAERS reports AND no boxed warning are excluded by the final WHERE clause.
+--   Do NOT use this table to enumerate all molecules — join back to mol_silver.molecules
+--   for complete molecule coverage (e.g. LEFT JOIN mol_gold.safety_signals ON molecule_id).
+--
+-- soc_distribution is NULL — MedDRA PT→SOC hierarchy requires a license not held.
+--   See issue #174 for fix options. meddra_pt (preferred term) in top_adverse_events is populated.
 
 MODEL (
-    name gold.safety_signals,
+    name mol_gold.safety_signals,
     kind INCREMENTAL_BY_UNIQUE_KEY (
         unique_key molecule_id
     ),
     cron '@weekly',
     audits (
-        not_null(columns := (molecule_id, canonical_name))
+        not_null(columns := (molecule_id, canonical_name)),
+        unique_values(columns := (molecule_id)),
+        -- Partial coverage by design (header comment): only molecules with
+        -- FAERS reports / boxed warnings. Floor is intentionally low — the
+        -- model is allowed to contract when safety reports are retracted.
+        row_count_above(min_rows := 500),
+        freshness_threshold(time_column := generated_at, max_age_seconds := 1209600)
     ),
     grain molecule_id
 );
 
 WITH molecule_base AS (
     SELECT
-        m.id AS molecule_id,
+        m.molecule_id,
         m.inchi_key,
         m.canonical_name
-    FROM silver.molecules m
-    WHERE m.needs_review = FALSE
+    FROM mol_silver.molecules m
+    WHERE TRUE
 ),
 
 -- Aggregate FAERS counts
@@ -33,7 +48,7 @@ faers_summary AS (
         COALESCE(SUM(hospitalization_count), 0) AS hospitalization_reports,
         MIN(first_report_date) AS first_report_date,
         MAX(last_report_date) AS last_report_date
-    FROM silver.adverse_events
+    FROM mol_silver.adverse_events
     WHERE molecule_id IS NOT NULL
     GROUP BY molecule_id
 ),
@@ -66,32 +81,18 @@ top_adverse_events AS (
             prr,
             ror,
             ROW_NUMBER() OVER (PARTITION BY molecule_id ORDER BY report_count DESC) AS rn
-        FROM silver.adverse_events
+        FROM mol_silver.adverse_events
     ) ranked
     GROUP BY molecule_id
 ),
 
 -- Adverse events by System Organ Class
+-- NOTE: meddra_soc is always NULL in mol_silver.adverse_events — MedDRA PT→SOC hierarchy
+-- requires a MedDRA license (not available). soc_distribution is suppressed (NULL) rather
+-- than emitting a misleading {"Unknown": N} bucket. See issue #174 for fix options.
 soc_breakdown AS (
-    SELECT
-        molecule_id,
-        jsonb_object_agg(
-            COALESCE(meddra_soc, 'Unknown'),
-            jsonb_build_object(
-                'count', soc_count,
-                'serious_count', soc_serious
-            )
-        ) AS soc_distribution
-    FROM (
-        SELECT
-            molecule_id,
-            meddra_soc,
-            SUM(report_count) AS soc_count,
-            SUM(serious_count) AS soc_serious
-        FROM silver.adverse_events
-        GROUP BY molecule_id, meddra_soc
-    ) soc_agg
-    GROUP BY molecule_id
+    SELECT molecule_id, NULL::JSONB AS soc_distribution
+    FROM (SELECT DISTINCT molecule_id FROM mol_silver.adverse_events) _m
 ),
 
 -- Get boxed warning from latest label
@@ -100,7 +101,7 @@ boxed_warnings AS (
         molecule_id,
         boxed_warning,
         effective_date AS warning_effective_date
-    FROM silver.drug_labels
+    FROM mol_silver.drug_labels
     WHERE molecule_id IS NOT NULL
       AND boxed_warning IS NOT NULL
       AND boxed_warning != ''

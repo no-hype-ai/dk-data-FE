@@ -1,0 +1,86 @@
+# Molecule Transform — IP/HCS Bronze Layer
+# 020-drugbank-seed-schema-fix / sqlmesh-init
+# Runs ip_bronze models: 20 IP + HCS bronze models.
+# Runs in parallel with mol-transform-bronze (independent data lineage).
+# Heavier resource limits due to 20 models.
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: mol-transform-ip-bronze
+  labels:
+    app: mol-transform-ip-bronze
+    app.kubernetes.io/name: mol-transform-ip-bronze
+    app.kubernetes.io/component: transform
+    app.kubernetes.io/part-of: dk-data
+spec:
+  schedule: "30 8 * * *"  # 06:30 UTC daily — parallel with mol bronze (independent)
+  concurrencyPolicy: Forbid
+  startingDeadlineSeconds: 3600
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      backoffLimit: 1
+      ttlSecondsAfterFinished: 86400
+      activeDeadlineSeconds: 7200  # 2 hours — 20 models
+      template:
+        metadata:
+          labels:
+            app: mol-transform-ip-bronze
+            app.kubernetes.io/component: fetcher
+            app.kubernetes.io/part-of: dk-data
+            team: data-platform
+            service: dk-data
+            product: dk-data
+        spec:
+          restartPolicy: Never
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 1000
+            fsGroup: 1000
+            seccompProfile:
+              type: RuntimeDefault
+          imagePullSecrets:
+            - name: ghcr-credentials
+          containers:
+            - name: mol-transform-ip-bronze
+              image: ghcr.io/data-kinetic/dk-data-fe/job-trigger:latest
+              command: ["python", "-m", "dk_data.ingestion.transform_molecules"]
+              args: ["--layer", "ip_bronze"]
+              envFrom:
+                - secretRef:
+                    name: dk-data-secrets
+              env:
+                - name: OTEL_EXPORTER_OTLP_ENDPOINT
+                  value: "http://alloy.infra.svc.cluster.local:4317"
+                - name: OTEL_ENABLED
+                  value: "true"
+                - name: POSTGRES_HOST_DIRECT
+                  valueFrom:
+                    secretKeyRef:
+                      name: dk-data-secrets
+                      key: POSTGRES_HOST
+              resources:
+                requests:
+                  memory: "1Gi"
+                  cpu: "300m"
+                limits:
+                  memory: "4Gi"
+                  cpu: "1000m"
+              securityContext:
+                allowPrivilegeEscalation: false
+                readOnlyRootFilesystem: true
+                capabilities:
+                  drop: ["ALL"]
+              volumeMounts:
+                - name: tmp
+                  mountPath: /tmp
+                - name: sqlmesh-logs
+                  mountPath: /usr/local/lib/python3.11/site-packages/dk_data/sqlmesh/logs
+          volumes:
+            - name: tmp
+              emptyDir: {}
+            - name: sqlmesh-logs
+              emptyDir: 
+                medium: ""
+                sizeLimit: 512Mi

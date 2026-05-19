@@ -1,0 +1,40 @@
+# Invokes the reusable staging-branch enrollment auditor in dk-alchemy.
+#
+# Feature: dk-alchemy feature/003 Phase 4 (T042, FR-011).
+# Companion PR (dk-alchemy): feat/003-phase-4-dk-data-fe-alignment.
+# Reusable source-of-truth:
+#   data-kinetic/dk-alchemy/.github/workflows/consumer-enrollment-check.yaml@main
+#
+# Why pinned to @main: the reusable workflow evolves centrally in
+# dk-alchemy; floating the ref is intentional -- the monthly
+# enrollment-audit workflow running from dk-alchemy@main is the
+# authoritative checker of the invariant contract (FR-011 + FR-025..030).
+# Drift between the two ref tips is itself a first-class signal; surfacing
+# the drift here is by design.
+#
+# Runs on every PR targeting main or staging, plus weekly scheduled
+# sweeps so unenrolled state surfaces even if no PRs are open.
+
+name: Enrollment Check
+
+on:
+  pull_request:
+    branches:
+      - main
+      - staging
+  schedule:
+    # Weekly, Monday 09:00 UTC. Matches the dk-alchemy monthly audit
+    # cadence tier but at higher frequency for the enrollee side.
+    - cron: '0 9 * * 1'
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+  pull-requests: read
+
+jobs:
+  enrollment:
+    name: enrollment
+    uses: data-kinetic/dk-alchemy/.github/workflows/consumer-enrollment-check.yaml@main
+    with:
+      service: dk-data-fe

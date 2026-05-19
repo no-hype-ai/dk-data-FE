@@ -35,9 +35,10 @@ class EUIPOTrademarksFetcher(BaseFetcher):
     SOURCE_NAME = "euipo_trademarks"
     BASE_URL = "https://www.tmdn.org/tmview/api/search"
 
-    # IBM Gateway endpoints (EUIPO Official API)
+    # IBM Gateway endpoints (EUIPO Official API — the only supported integration path)
+    # TMview direct API (https://www.tmdn.org/tmview/api/search) is defunct as of 2026.
     IBM_GATEWAY_URL = "https://api.euipo.europa.eu/trademark-search/trademarks"
-    IBM_TOKEN_URL = "https://auth.euipo.europa.eu/oidc/accessToken"
+    IBM_TOKEN_URL = "https://euipo.europa.eu/cas-server-webapp/oidc/accessToken"
 
     def __init__(
         self,
@@ -48,12 +49,12 @@ class EUIPOTrademarksFetcher(BaseFetcher):
 
         Args:
             data_dir: Directory to store downloaded files.
-            backend: 'tmview' or 'ibm_gateway'. Defaults to env EUIPO_BACKEND
-                    or 'tmview' if not set.
+            backend: 'ibm_gateway' (default) or legacy 'tmview' (defunct).
+                    Override via env EUIPO_BACKEND.
         """
         super().__init__(data_dir)
 
-        self.backend = backend or os.environ.get("EUIPO_BACKEND", "tmview")
+        self.backend = backend or os.environ.get("EUIPO_BACKEND", "ibm_gateway")
         self.api_key: Optional[str] = os.environ.get("EUIPO_API_KEY")
         self.secret_key: Optional[str] = os.environ.get("EUIPO_SECRET_KEY")
         self._access_token: Optional[str] = None
@@ -61,10 +62,10 @@ class EUIPOTrademarksFetcher(BaseFetcher):
 
         if self.backend == "ibm_gateway" and not (self.api_key and self.secret_key):
             logger.warning(
-                "EUIPO_API_KEY or EUIPO_SECRET_KEY not set; "
-                "IBM Gateway calls will fail. Falling back to tmview."
+                "EUIPO_API_KEY or EUIPO_SECRET_KEY not set for IBM Gateway; "
+                "EUIPO trademark fetch will fail. "
+                "TMview direct API is defunct — no fallback available."
             )
-            self.backend = "tmview"
 
     def get_latest_url(self) -> str:
         """Return the active backend URL."""
@@ -101,6 +102,7 @@ class EUIPOTrademarksFetcher(BaseFetcher):
             )
 
             self._api_errors = 0
+            self._last_api_error: Optional[str] = None
 
             if self.backend == "ibm_gateway":
                 raw_records = self._fetch_ibm_gateway(nice_classes, date_from, max_records)
@@ -124,31 +126,69 @@ class EUIPOTrademarksFetcher(BaseFetcher):
             ).hexdigest()
 
             # Determine status: failed if API errors and no records
-            if not all_records and self._api_errors > 0:
+            last_err = self._last_api_error or ""
+            _is_unavailable = (
+                any(code in last_err for code in ("502", "503", "504", "500"))
+                or "Connection reset" in last_err
+                or "ConnectionResetError" in last_err
+                or "ConnectionRefusedError" in last_err
+                or "Connection aborted" in last_err
+                or "timed out" in last_err.lower()
+            )
+            if not all_records and self._api_errors > 0 and _is_unavailable:
+                status = "source_unavailable"
+            elif not all_records and self._api_errors > 0:
                 status = "failed"
             elif self._api_errors > 0:
                 status = "partial"
             else:
                 status = "success"
 
-            result = {
+            if not all_records and status == "success":
+                logger.warning(
+                    "EUIPO trademarks: 0 records returned with no API errors — "
+                    "possible silent auth failure or rate-limit (check EPO/EUIPO credentials)"
+                )
+
+            result: Dict[str, Any] = {
                 "status": status,
                 "records": all_records,
                 "record_count": len(all_records),
                 "hash": content_hash,
             }
-            self.log_fetch_result({"status": status, "records": len(all_records)})
+            if status in ("failed", "partial") and self._last_api_error:
+                result["error"] = self._last_api_error
+            self.log_fetch_result({"status": status, "records": len(all_records), **( {"error": result["error"]} if "error" in result else {})})
             return result
 
         except Exception as e:
-            logger.exception("Failed to fetch EUIPO trademark data: %s", e)
-            result = {
-                "status": "failed",
-                "records": [],
-                "record_count": 0,
-                "hash": None,
-                "error": str(e),
-            }
+            err_str = str(e)
+            # 5xx errors or connection-level failures = server outage, not a code bug
+            is_unavailable = (
+                any(code in err_str for code in ("502", "503", "504", "500"))
+                or "Connection reset" in err_str
+                or "ConnectionResetError" in err_str
+                or "ConnectionRefusedError" in err_str
+                or "Connection aborted" in err_str
+            )
+            if is_unavailable:
+                logger.warning("EUIPO trademark source unavailable: %s", e)
+                result = {
+                    "status": "source_unavailable",
+                    "records": [],
+                    "record_count": 0,
+                    "hash": None,
+                    "error": err_str,
+                }
+            else:
+                logger.exception("Failed to fetch EUIPO trademark data: %s", e)
+                result = {
+                    "status": "failed",
+                    "records": [],
+                    "record_count": 0,
+                    "hash": None,
+                    "error": err_str,
+                }
             self.log_fetch_result(result)
             return result
 
@@ -187,6 +227,7 @@ class EUIPOTrademarksFetcher(BaseFetcher):
                 if response.status_code >= 500:
                     logger.warning("TMview returned %d, stopping pagination", response.status_code)
                     self._api_errors += 1
+                    self._last_api_error = f"{response.status_code} Server Error from TMview"
                     break
 
                 response.raise_for_status()
@@ -207,6 +248,7 @@ class EUIPOTrademarksFetcher(BaseFetcher):
             except Exception as e:
                 logger.warning("TMview request failed at page %d: %s", page_index, e)
                 self._api_errors += 1
+                self._last_api_error = str(e)
                 break
 
         return records
@@ -219,25 +261,32 @@ class EUIPOTrademarksFetcher(BaseFetcher):
     ) -> List[Dict[str, Any]]:
         """Fetch from IBM API Gateway.
 
-        Uses OAuth2 token from EUIPO CAS server.
-        Adds X-IBM-Client-Id header.
+        IBM API Connect uses direct API key authentication via headers —
+        X-IBM-Client-Id + X-IBM-Client-Secret. No OAuth2 token required.
         """
         records: List[Dict[str, Any]] = []
 
-        # Authenticate
-        self._ensure_ibm_token()
+        if not self.api_key or not self.secret_key:
+            raise RuntimeError("EUIPO_API_KEY and EUIPO_SECRET_KEY are required for IBM Gateway")
 
         page_number = 0  # EUIPO Official API uses 0-based pagination
         while len(records) < max_records:
             headers = {
-                "Authorization": f"Bearer {self._access_token}",
                 "X-IBM-Client-Id": self.api_key,
+                "X-IBM-Client-Secret": self.secret_key,
+                "Accept": "application/json",
             }
 
+            # EUIPO API uses RSQL query syntax.
+            # niceClasses=in=(5) is integer; applicationDate uses >= operator.
+            nice_class_ints = ",".join(nice_classes)
+            rsql_query = (
+                f"niceClasses=in=({nice_class_ints})"
+                f";applicationDate>={date_from}"
+            )
+
             params = {
-                "niceClasses": ",".join(nice_classes),
-                "offices": "EM",
-                "applicationDateFrom": date_from,
+                "query": rsql_query,
                 "size": min(PAGE_SIZE, max_records - len(records)),
                 "page": page_number,
             }
@@ -273,6 +322,7 @@ class EUIPOTrademarksFetcher(BaseFetcher):
             except Exception as e:
                 logger.warning("IBM Gateway request failed at page %d: %s", page_number, e)
                 self._api_errors += 1
+                self._last_api_error = str(e)
                 break
 
         return records

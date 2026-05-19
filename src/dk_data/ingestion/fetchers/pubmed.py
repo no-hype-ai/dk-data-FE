@@ -3,9 +3,14 @@
 Feature: 011-datasource-integration
 Task: PubMed CI source integration
 
-Fetches recent pharmaceutical/clinical literature from PubMed using
-NCBI E-utilities (esearch + efetch).  Supports optional NCBI_API_KEY
-for higher rate limits (10 req/s vs 3 req/s).
+Fetches pharmaceutical/clinical literature from PubMed using NCBI
+E-utilities (esearch + efetch).  Supports optional NCBI_API_KEY for
+higher rate limits (10 req/s vs 3 req/s).
+
+Self-loading: streams records directly to DB in batches of FLUSH_SIZE
+(default 200) with checkpoint/resume. For large date windows (e.g.,
+10yr backfill), the fetcher processes year-by-year to avoid NCBI
+connection drops on very large result sets.
 
 Source: https://www.ncbi.nlm.nih.gov/books/NBK25497/
 """
@@ -15,11 +20,19 @@ import logging
 import os
 import time
 import xml.etree.ElementTree as ET
+from datetime import datetime, timedelta
 from typing import Any, Dict, List, Optional
 
 from .base import BaseFetcher
+from ..utils.checkpoint import clear_checkpoint, load_checkpoint, save_checkpoint
+from ..sources.pubmed import load_pubmed_data
 
 logger = logging.getLogger(__name__)
+
+# Flush to DB every FLUSH_SIZE records to stay within 512Mi pod limit
+FLUSH_SIZE = 200
+# Process year-by-year for windows larger than this (avoids NCBI disconnects)
+YEAR_CHUNK_THRESHOLD = 365
 
 
 class PubMedFetcher(BaseFetcher):
@@ -59,56 +72,49 @@ class PubMedFetcher(BaseFetcher):
         return f"{self.BASE_URL}/esearch.fcgi"
 
     def fetch(self, **kwargs) -> Dict[str, Any]:
-        """Fetch recent PubMed articles.
+        """Fetch PubMed articles with streaming DB insert and checkpoint/resume.
+
+        For large date windows (> 1 year), processes year-by-year to avoid
+        NCBI connection drops. Each batch of FLUSH_SIZE records is inserted
+        to DB immediately, keeping memory bounded.
 
         Keyword Args:
             query: Custom PubMed search query. Defaults to pharma terms.
-            days_back: Number of days to look back. Defaults to 1.
-            retmax: Maximum records per E-utilities batch. Defaults to 500.
-            max_results: Hard cap on total results. Defaults to 10000.
+            days_back: Number of days to look back. Defaults to 30.
+            retmax: Maximum PMIDs per esearch page. Defaults to 500.
 
         Returns:
-            Dict with keys: status, records, hash, error (on failure).
+            Dict with keys: status, records (always []), record_count, hash.
+            records is always [] — data is streamed directly to DB.
         """
         query: str = kwargs.get("query", self.DEFAULT_SEARCH_TERMS)
-        days_back: int = kwargs.get("days_back", 1)
+        days_back: int = kwargs.get("days_back", 30)
         retmax: int = min(kwargs.get("retmax", 500), self.MAX_BATCH_SIZE)
-        max_results: int = kwargs.get("max_results", self.MAX_BATCH_SIZE)
 
         try:
-            # Step 1: esearch to get PMIDs
-            pmids = self._esearch(query, days_back=days_back, retmax=retmax, max_results=max_results)
+            total_inserted = self._fetch_and_load(
+                query=query,
+                days_back=days_back,
+                retmax=retmax,
+            )
 
-            if not pmids:
-                result: Dict[str, Any] = {
-                    "status": "success",
-                    "records": [],
-                    "hash": None,
-                    "message": "No articles found for the given query/date range",
-                }
-                self.log_fetch_result(result)
-                return result
-
-            logger.info(f"esearch returned {len(pmids)} PMIDs")
-
-            # Step 2: efetch to retrieve article details in batches
-            records = self._efetch_batched(pmids, batch_size=200)
-
-            # Compute a deterministic hash over sorted PMIDs for change detection
             content_hash = hashlib.md5(
-                ",".join(sorted(pmids)).encode()
+                f"pubmed:{days_back}:{total_inserted}".encode()
             ).hexdigest()
 
-            result = {
+            clear_checkpoint(self.SOURCE_NAME)
+
+            result: Dict[str, Any] = {
                 "status": "success",
-                "records": records,
+                "records": [],
+                "record_count": total_inserted,
                 "hash": content_hash,
             }
-            self.log_fetch_result({**result, "records": len(records)})
+            self.log_fetch_result({"status": "success", "records": total_inserted})
             return result
 
         except Exception as e:
-            logger.exception(f"PubMed fetch failed: {e}")
+            logger.exception("PubMed fetch failed: %s", e)
             result = {
                 "status": "failed",
                 "records": [],
@@ -117,6 +123,132 @@ class PubMedFetcher(BaseFetcher):
             }
             self.log_fetch_result(result)
             return result
+
+    def _fetch_and_load(self, query: str, days_back: int, retmax: int) -> int:
+        """Fetch and stream PubMed articles to DB with checkpoint/resume.
+
+        For windows > YEAR_CHUNK_THRESHOLD days, splits into year-by-year
+        chunks to avoid NCBI connection drops on large result sets.
+
+        Returns total records inserted.
+        """
+        # Resume from checkpoint
+        cp = load_checkpoint(self.SOURCE_NAME)
+        total_inserted: int = cp.get("total_inserted", 0) if cp else 0
+        completed_years: list = cp.get("completed_years", []) if cp else []
+
+        if cp:
+            logger.info(
+                "PubMed: resuming from checkpoint, %d already inserted, %d years done",
+                total_inserted, len(completed_years),
+            )
+
+        # For large windows, split into yearly chunks
+        if days_back > YEAR_CHUNK_THRESHOLD:
+            now = datetime.utcnow()
+            start_date = now - timedelta(days=days_back)
+            current_year = now.year
+            start_year = start_date.year
+
+            for year in range(start_year, current_year + 1):
+                if year in completed_years:
+                    logger.info("PubMed: skipping year %d (already complete)", year)
+                    continue
+
+                year_start = max(
+                    datetime(year, 1, 1),
+                    start_date,
+                )
+                year_end = min(
+                    datetime(year, 12, 31),
+                    now,
+                )
+                year_days = (year_end - year_start).days + 1
+
+                logger.info(
+                    "PubMed: fetching year %d (%d days)",
+                    year, year_days,
+                )
+
+                year_count = self._fetch_year(
+                    query=query,
+                    days_back=year_days,
+                    retmax=retmax,
+                    min_date=year_start.strftime("%Y/%m/%d"),
+                    max_date=year_end.strftime("%Y/%m/%d"),
+                )
+                total_inserted += year_count
+                completed_years.append(year)
+
+                save_checkpoint(self.SOURCE_NAME, {
+                    "total_inserted": total_inserted,
+                    "completed_years": completed_years,
+                })
+                logger.info(
+                    "PubMed: year %d done (%d records), total=%d",
+                    year, year_count, total_inserted,
+                )
+        else:
+            # Short window — single pass
+            count = self._fetch_year(
+                query=query,
+                days_back=days_back,
+                retmax=retmax,
+            )
+            total_inserted += count
+
+        logger.info("PubMed: complete — %d total inserted", total_inserted)
+        return total_inserted
+
+    def _fetch_year(
+        self,
+        query: str,
+        days_back: int,
+        retmax: int,
+        min_date: Optional[str] = None,
+        max_date: Optional[str] = None,
+    ) -> int:
+        """Fetch one year (or date range) of PubMed articles, streaming to DB.
+
+        Returns number of records inserted.
+        """
+        # Step 1: esearch to get PMIDs
+        pmids = self._esearch(
+            query,
+            days_back=days_back,
+            retmax=retmax,
+            min_date=min_date,
+            max_date=max_date,
+        )
+
+        if not pmids:
+            return 0
+
+        logger.info("PubMed esearch: %d PMIDs for window", len(pmids))
+
+        # Step 2: efetch in batches, flush to DB every FLUSH_SIZE
+        inserted = 0
+        record_buffer: List[Dict[str, Any]] = []
+
+        for i in range(0, len(pmids), FLUSH_SIZE):
+            batch_pmids = pmids[i: i + FLUSH_SIZE]
+            records = self._efetch(batch_pmids)
+            record_buffer.extend(records)
+
+            # Flush to DB
+            if record_buffer:
+                result = load_pubmed_data(record_buffer)
+                inserted += result.get("records_inserted", 0)
+                record_buffer = []
+
+            self._rate_sleep()
+
+        # Flush remaining
+        if record_buffer:
+            result = load_pubmed_data(record_buffer)
+            inserted += result.get("records_inserted", 0)
+
+        return inserted
 
     # ------------------------------------------------------------------
     # Internal helpers
@@ -142,12 +274,13 @@ class PubMedFetcher(BaseFetcher):
         query: str,
         days_back: int = 1,
         retmax: int = 500,
-        max_results: int = 10000,
+        min_date: Optional[str] = None,
+        max_date: Optional[str] = None,
     ) -> List[str]:
         """Search PubMed and return a list of PMIDs.
 
-        Uses reldate (relative date) to restrict to recent articles.
-        Handles pagination via retstart.
+        Uses either reldate (relative date) or mindate/maxdate (absolute range).
+        Handles pagination via retstart. No max_results cap — fetches all matching PMIDs.
         """
         url = f"{self.BASE_URL}/esearch.fcgi"
         all_pmids: List[str] = []
@@ -157,25 +290,30 @@ class PubMedFetcher(BaseFetcher):
             params = {
                 **self._common_params(),
                 "term": query,
-                "reldate": str(days_back),
-                "datetype": "edat",  # Entrez date (date added to PubMed)
+                "datetype": "edat",
                 "retmax": str(retmax),
                 "retstart": str(retstart),
                 "retmode": "xml",
                 "usehistory": "n",
             }
 
-            logger.debug(f"esearch retstart={retstart}")
+            # Use absolute date range if provided, otherwise relative
+            if min_date and max_date:
+                params["mindate"] = min_date
+                params["maxdate"] = max_date
+            else:
+                params["reldate"] = str(days_back)
+
+            logger.debug("esearch retstart=%d", retstart)
             response = self.session.get(url, params=params, timeout=60)
             response.raise_for_status()
 
             root = ET.fromstring(response.content)
 
-            # Check for errors in the XML response
             error_list = root.find("ErrorList")
             if error_list is not None:
                 errors = [e.text for e in error_list]
-                logger.warning(f"esearch returned errors: {errors}")
+                logger.warning("esearch returned errors: %s", errors)
 
             id_list = root.find("IdList")
             if id_list is None:
@@ -187,17 +325,12 @@ class PubMedFetcher(BaseFetcher):
 
             all_pmids.extend(batch_ids)
 
-            # Check total count
             count_elem = root.find("Count")
             total_count = int(count_elem.text) if count_elem is not None and count_elem.text else 0
 
             retstart += retmax
 
-            # Stop conditions
             if retstart >= total_count:
-                break
-            if len(all_pmids) >= max_results:
-                all_pmids = all_pmids[:max_results]
                 break
 
             self._rate_sleep()
@@ -205,25 +338,6 @@ class PubMedFetcher(BaseFetcher):
         return all_pmids
 
     # -- efetch --------------------------------------------------------
-
-    def _efetch_batched(
-        self,
-        pmids: List[str],
-        batch_size: int = 200,
-    ) -> List[Dict[str, Any]]:
-        """Fetch article details for a list of PMIDs in batches."""
-        all_records: List[Dict[str, Any]] = []
-
-        for i in range(0, len(pmids), batch_size):
-            batch = pmids[i : i + batch_size]
-            logger.debug(f"efetch batch {i // batch_size + 1}: {len(batch)} PMIDs")
-
-            records = self._efetch(batch)
-            all_records.extend(records)
-            self._rate_sleep()
-
-        logger.info(f"efetch returned {len(all_records)} article records total")
-        return all_records
 
     def _efetch(self, pmids: List[str]) -> List[Dict[str, Any]]:
         """Fetch full article records for a batch of PMIDs.

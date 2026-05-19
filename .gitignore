@@ -50,15 +50,26 @@ Thumbs.db
 
 # Data files (large datasets should not be committed)
 # Store in MinIO instead: mc cp --recursive data/raw/ dk-minio/dk-data-fe/raw/
-/data/
+# Use /data/* (not /data/) so git traverses the directory and negations work
+/data/*
 !/data/README.md
 !/data/.gitkeep
+# Exception: DrugBank seed data (Git LFS, ~195MB zip baked into Docker image)
+!/data/drugbank/
+!/data/drugbank/*
 src/dk_data/data/raw/
 *.csv
 *.xlsx
 *.json
 !tests/fixtures/*.json
 !.specify/**/*.json
+!monitoring/dashboards/*.json
+!grafana/dashboards/*.json
+!packages/**/*.json
+!.dk/**/*.json
+# Source-of-truth JSON schemas checked into the ingestion package
+# (plan.md §B.3 — prestaged manifest gate).
+!src/dk_data/**/*.schema.json
 
 # SQLMesh cache and state
 .sqlmesh/
@@ -82,3 +93,21 @@ coverage.xml
 *.temp
 tmp/
 temp/
+
+# Data samples (generated — not committed)
+data-samples/**/*.csv
+data-samples/manifest.json
+!data-samples/**/.gitkeep
+.claude/
+!grafana/dashboards/*.json
+!grafana/dashboards/**/*.json
+!grafana/alerts/*.yaml
+!grafana/scripts/lib/
+!grafana/scripts/lib/**
+
+# DK - local state files
+.dk/debug-e2e-state.json
+.dk/debug-sweep-state.json
+.dk/debug-sweep-config.json
+.dk/specs/*/swarm-state.json
+.dk/specs/*/auto-decisions.json

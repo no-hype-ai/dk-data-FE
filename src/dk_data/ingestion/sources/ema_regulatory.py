@@ -4,9 +4,9 @@ Feature: 011-datasource-integration
 Task: Tier 4 CI source — EMA regulatory decisions
 
 Loads normalised EMA regulatory records (CHMP opinions, EPAR documents,
-safety signals) into raw.ema_regulatory.
+safety signals) into mol_raw.ema_regulatory.
 
-Target table: raw.ema_regulatory (see migration 060_ci_source_tables.sql)
+Target table: mol_raw.ema_regulatory (see migration 060_ci_source_tables.sql)
 """
 
 import logging
@@ -25,7 +25,7 @@ def load_ema_regulatory_data(
     source_hash: Optional[str] = None,
 ) -> Dict[str, Any]:
     """
-    Load EMA regulatory records into raw.ema_regulatory.
+    Load EMA regulatory records into mol_raw.ema_regulatory.
 
     Uses INSERT ... ON CONFLICT (document_id) DO UPDATE so that re-runs
     will refresh existing rows with the latest data.
@@ -45,8 +45,9 @@ def load_ema_regulatory_data(
         logger.warning("No EMA regulatory records to load")
         return {
             "status": "success",
+            "records_fetched": 0,
             "records_inserted": 0,
-            "records_failed": 0,
+            "records_updated": 0,
             "errors": [],
         }
 
@@ -75,7 +76,7 @@ def load_ema_regulatory_data(
 
                     cur.execute(
                         """
-                        INSERT INTO raw.ema_regulatory (
+                        INSERT INTO mol_raw.ema_regulatory (
                             document_id,
                             document_type,
                             product_name,
@@ -142,7 +143,8 @@ def load_ema_regulatory_data(
 
     return {
         "status": "success",
+        "records_fetched": len(records),
         "records_inserted": records_inserted,
-        "records_failed": records_failed,
+        "records_updated": 0,
         "errors": errors[:10],
     }

@@ -4,7 +4,7 @@ Feature: 011-datasource-integration
 Task: PubMed CI source integration
 
 Loads PubMed article records (from the PubMedFetcher output) into
-the raw.pubmed table with upsert semantics on the PMID.
+the mol_raw.pubmed table with upsert semantics on the PMID.
 """
 
 import json
@@ -26,7 +26,7 @@ def load_pubmed_data(
     source_file: Optional[str] = None,
     batch_size: int = 500,
 ) -> Dict[str, Any]:
-    """Load PubMed article records into raw.pubmed.
+    """Load PubMed article records into mol_raw.pubmed.
 
     Args:
         records: List of article dicts as returned by PubMedFetcher.fetch().
@@ -45,7 +45,7 @@ def load_pubmed_data(
             "records_failed": 0,
         }
 
-    logger.info(f"Loading {len(records)} PubMed records into raw.pubmed")
+    logger.info(f"Loading {len(records)} PubMed records into mol_raw.pubmed")
 
     records_inserted = 0
     records_failed = 0
@@ -71,7 +71,7 @@ def load_pubmed_data(
 
                     cur.execute(
                         """
-                        INSERT INTO raw.pubmed (
+                        INSERT INTO mol_raw.pubmed (
                             pmid, title, abstract, authors, journal,
                             publication_date, mesh_terms, doi,
                             publication_types, keywords,
@@ -103,10 +103,10 @@ def load_pubmed_data(
                             json.dumps(validated.authors) if validated.authors else None,
                             validated.journal,
                             validated.publication_date,
-                            validated.mesh_terms if validated.mesh_terms else None,
+                            json.dumps(validated.mesh_terms) if validated.mesh_terms else None,
                             validated.doi,
-                            validated.publication_types if validated.publication_types else None,
-                            validated.keywords if validated.keywords else None,
+                            json.dumps(validated.publication_types) if validated.publication_types else None,
+                            json.dumps(validated.keywords) if validated.keywords else None,
                             source_file,
                             source_hash,
                         ),

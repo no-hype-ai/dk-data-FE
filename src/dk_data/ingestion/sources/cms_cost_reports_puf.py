@@ -1,0 +1,134 @@
+"""CMS Cost Reports PUF loader. Loads to hcs_raw.cms_cost_reports_puf.
+
+NOTE: This is distinct from the existing cms_cost_reports.py which targets hcs_raw.cms_cost_reports.
+This loader targets hcs_raw.cms_cost_reports_puf as part of the PUF ingestion pipeline.
+"""
+
+import hashlib
+import logging
+from datetime import datetime, timezone
+from pathlib import Path
+from typing import List, Optional, Dict
+
+import pandas as pd
+from pydantic import ValidationError
+
+from ..utils.database import apply_column_mapping, get_cursor, upsert_records
+from ..utils.validators import CMSCostReportsPUFRecord
+
+logger = logging.getLogger(__name__)
+
+COLUMN_MAPPING = {
+    # Confirmed API column names (GET /data-api/v1/dataset/44060663/.../data?size=2, 2026-03-29):
+    # Provider CCN, Hospital Name, Street Address, City, State Code, Zip Code,
+    # Fiscal Year Begin Date, Fiscal Year End Date, Number of Beds,
+    # Total Discharges (V + XVIII + XIX + Unknown), Net Patient Revenue,
+    # Less Total Operating Expense, Net Income
+    'Provider ID': 'provider_id',
+    'Provider CCN': 'provider_id',
+    'Hospital Name': 'hospital_name',
+    'City': 'city',
+    'State': 'state',            # older variant
+    'State Code': 'state',       # confirmed API column
+    'Zip Code': 'zip_code',
+    'Fiscal Year Begin': 'fiscal_year_begin',           # older variant
+    'Fiscal Year Begin Date': 'fiscal_year_begin',      # confirmed API column
+    'Fiscal Year End': 'fiscal_year_end',               # older variant
+    'Fiscal Year End Date': 'fiscal_year_end',          # confirmed API column
+    'Number of Beds': 'total_beds',
+    'Total Discharges': 'total_discharges',                                       # older variant
+    'Total Discharges Title XVIII': 'total_discharges',                           # Medicare-only
+    'Total Discharges (V + XVIII + XIX + Unknown)': 'total_discharges',          # confirmed API column
+    'Net Patient Revenue': 'net_patient_revenue',
+    'Total Operating Expense': 'total_operating_expenses',       # older variant
+    'Less Total Operating Expense': 'total_operating_expenses',  # confirmed API column
+    'Operating Margin Percentage': 'operating_margin',
+    # lower-case passthrough variants
+    'provider_id': 'provider_id',
+    'hospital_name': 'hospital_name',
+}
+
+TABLE = 'cms_cost_reports_puf'
+SCHEMA = 'hcs_raw'
+
+
+def load_cms_cost_reports_puf(filepath: Optional[str] = None, rows: Optional[List[Dict]] = None, source_year: int = 2023, max_records: int = 0, source_hash: Optional[str] = None) -> dict:
+    """Load CMS Cost Reports PUF data from CSV file."""
+    logger.info(f"Loading CMS Cost Reports PUF (year={source_year})")
+
+    if rows is not None:
+        # Streaming mode: rows passed directly from API, no file needed
+        normalized = [{k: ('' if v is None else str(v)) for k, v in row.items()} for row in rows]
+        df = pd.DataFrame(normalized) if normalized else pd.DataFrame()
+        _source_hash = source_hash or f"api_stream_{source_year}"
+        source_file = f"api_stream_{source_year}"
+    else:
+        if filepath is None:
+            raise ValueError("Either filepath or rows must be provided")
+        source_file = Path(filepath).name
+        hash_md5 = hashlib.md5()
+        with open(filepath, 'rb') as f:
+            for chunk in iter(lambda: f.read(4096), b''):
+                hash_md5.update(chunk)
+        _source_hash = source_hash or hash_md5.hexdigest()
+
+        with get_cursor() as cur:
+            cur.execute(
+                f"SELECT COUNT(*) FROM {SCHEMA}.{TABLE} WHERE _source_hash = %s",
+                (_source_hash,)
+            )
+            if cur.fetchone()[0] > 0:
+                logger.info(f"File {source_file} already loaded. Skipping.")
+                return {"status": "skipped", "records_fetched": 0, "records_inserted": 0, "records_updated": 0, "errors": []}
+
+        df = pd.read_csv(filepath, dtype=str, low_memory=False, nrows=max_records if max_records > 0 else None)
+
+    df = apply_column_mapping(df, COLUMN_MAPPING)
+    records_fetched = len(df)
+
+    records = []
+    errors = []
+    loaded_at = datetime.now(timezone.utc).isoformat()
+
+    for idx, row in df.iterrows():
+        try:
+            rec = CMSCostReportsPUFRecord(
+                provider_id=row.get('provider_id'),
+                hospital_name=row.get('hospital_name'),
+                city=row.get('city'),
+                state=row.get('state'),
+                zip_code=row.get('zip_code'),
+                fiscal_year_begin=row.get('fiscal_year_begin') or None,
+                fiscal_year_end=row.get('fiscal_year_end') or None,
+                total_beds=int(float(row['total_beds'])) if pd.notna(row.get('total_beds')) else None,
+                total_discharges=int(float(row['total_discharges'])) if pd.notna(row.get('total_discharges')) else None,
+                net_patient_revenue=row.get('net_patient_revenue') or None,
+                total_operating_expenses=row.get('total_operating_expenses') or None,
+                operating_margin=row.get('operating_margin') or None,
+                _source_year=source_year,
+            )
+            d = rec.model_dump(by_alias=True)
+            d['_source_hash'] = _source_hash
+            d['_source_file'] = source_file
+            d['_loaded_at'] = loaded_at
+            d['_source_year'] = source_year
+            records.append(d)
+        except (ValidationError, Exception) as e:
+            errors.append(f"Row {idx}: {e}")
+
+    inserted = upsert_records(
+        SCHEMA, TABLE, records,
+        conflict_columns=['provider_id', 'fiscal_year_begin', '_source_year'],
+        update_columns=['hospital_name', 'total_beds', 'total_discharges',
+                        'net_patient_revenue', 'total_operating_expenses',
+                        'operating_margin', '_loaded_at'],
+    )
+
+    logger.info(f"Cost Reports PUF load complete: {inserted} records processed, {len(errors)} errors")
+    return {
+        "status": "success",
+        "records_fetched": records_fetched,
+        "records_inserted": inserted,
+        "records_updated": 0,
+        "errors": errors[:10],
+    }
