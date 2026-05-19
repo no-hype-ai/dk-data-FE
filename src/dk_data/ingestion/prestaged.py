@@ -820,6 +820,11 @@ def main(argv: list[str] | None = None) -> int:
     logger.remove()
     logger.add(sys.stderr, level="DEBUG" if args.verbose else "INFO")
 
+    # Single authoritative declaration (mypy --strict no-redef): the
+    # --list-backlog/--unquarantine short-circuits and the main DLQ
+    # flow below all (re)assign this; assignment narrows the type.
+    backlog: HydrationBacklogWriter | None = None
+
     # --list-backlog / --unquarantine short-circuit BEFORE any hydration
     # setup: these operator flags must work even if PRESTAGED_ROOT is
     # unset. The HydrationBacklogWriter consults the pool at __init__,
@@ -985,7 +990,6 @@ def main(argv: list[str] | None = None) -> int:
     # C.3 — DLQ writer. Tolerant constructor: if Postgres creds are
     # missing (tests / dry-ish runs), log and proceed with backlog=None
     # so quarantine checks + failure records become no-ops.
-    backlog: HydrationBacklogWriter | None
     try:
         backlog = HydrationBacklogWriter()
     except Exception as exc:  # noqa: BLE001

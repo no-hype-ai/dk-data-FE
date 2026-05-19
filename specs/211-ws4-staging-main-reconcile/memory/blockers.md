@@ -13,6 +13,9 @@ Incompatible types in assignment (None vs HydrationBacklogWriter)`.
 **Determination**: NOT an SP1 regression. `git diff origin/main..HEAD --
 src/dk_data/ingestion/` is empty; `prestaged.py` last changed on origin/main at
 #322 and is byte-identical on this branch. Pre-existing feature-005 mypy debt.
-**Status**: Active (pre-existing, out of SP1 scope — SP1 is additive to the MCP
-layer, not feature-005). Recommend a separate feature-005 fix; do NOT block SP1.
+**Status**: RESOLVED 2026-05-19 — user directed full-green before merge. Minimal
+correct fix: single authoritative `backlog: HydrationBacklogWriter | None = None`
+declaration in `main()` before first use; removed the redundant re-annotation at
+~988. Behaviour-preserving (assignment flow-narrows). Exact CI `mypy --strict`
+on the 6 modules → Success, 0 issues.
 **Affects**: none of T001-T026 (SP1 touches no ingestion/ file).
