@@ -722,6 +722,19 @@ def test_alert_targets_the_restore_job_failure(alert_doc):
     assert 'job_name=~"staging-prestaged-restore.*"' in exprs
     assert 'namespace="dk-data-staging"' in exprs
     assert any(r["labels"]["service"] == "dk-data" for r in rules)
+
+
+def test_alert_pins_both_alert_names_and_staleness_expr(alert_doc):
+    rules = [
+        r
+        for g in alert_doc["spec"]["groups"]
+        for r in g["rules"]
+    ]
+    exprs = " ".join(r["expr"] for r in rules)
+    alert_names = {r["alert"] for r in rules}
+    assert "StagingPrestagedRestoreFailed" in alert_names
+    assert "StagingPrestagedRestoreStale" in alert_names
+    assert "kube_job_status_completion_time" in exprs
 ```
 
 - [ ] **Step 2: Run tests to verify they fail**
