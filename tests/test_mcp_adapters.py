@@ -31,7 +31,10 @@ BUILT_ADAPTERS: set[str] = {
     "ema",
     "ema_labels",
     "epo_patents",
+    "euipo_trademarks",
     "hta_decisions",
+    "journal_rss",
+    "medical_news",
     "openalex",
     "openfda_faers",
     "openfda_labels",
@@ -43,6 +46,8 @@ BUILT_ADAPTERS: set[str] = {
     "sec_edgar",
     "uniprot",
     "uspto_patents",
+    "uspto_trademarks",
+    "who_icd",
 }
 
 _BACKLOG_XFAIL_REASON = "registry backlog — adapter not yet built (#415 Phase 2+)"
