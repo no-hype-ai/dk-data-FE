@@ -272,3 +272,33 @@ def test_alert_pins_both_alert_names_and_staleness_expr(alert_doc):
     assert "StagingPrestagedRestoreFailed" in alert_names
     assert "StagingPrestagedRestoreStale" in alert_names
     assert "kube_job_status_completion_time" in exprs
+
+
+DASHBOARD = (
+    REPO_ROOT
+    / "grafana"
+    / "dashboards"
+    / "applications"
+    / "dk-data-fe-staging-prestaged-restore.json"
+)
+
+
+def test_dashboard_is_valid_json_with_expected_shape():
+    doc = json.loads(DASHBOARD.read_text())
+    dash = doc["dashboard"]
+    assert dash["uid"] == "dk-data-fe-staging-prestaged-restore"
+    assert "feature-211" in dash["tags"]
+    panels = dash["panels"]
+    exprs_sql = " ".join(
+        t.get("rawSql", "")
+        for p in panels
+        for t in p.get("targets", [])
+    )
+    exprs_prom = " ".join(
+        t.get("expr", "")
+        for p in panels
+        for t in p.get("targets", [])
+    )
+    assert "meta.transform_runs" in exprs_sql
+    assert "staging-prestaged-restore" in exprs_sql
+    assert "kube_job_status_failed" in exprs_prom
