@@ -24,3 +24,14 @@
 ## Session 2026-05-19T06:53:59.174926Z (B002 fix)
 - Fixed B002 (feature-005 mypy no-redef/incompatible in prestaged.py main()).
   User-directed full-green-before-merge. mypy --strict 6 files: Success.
+
+## Session 2026-05-19T07:26:31.402424Z (SP1 merged + SP2 + SP3)
+- Items 1-4: B002 (mypy) + B002b (kubectl->offline stdlib smoke) fixed; ALL
+  PR#429 checks green @0b4cb45; main branch protection (Lint+Test) set.
+- SP1 squash-merged to main = ecc3c3b (PR #429). Verified on origin/main.
+- SP2: recovery tag staging-pre-ws4-reconcile=ee59038 pushed; staging
+  force-reset to main (ecc3c3b); SC-004 zero divergence; staging branch
+  protection (Lint+Test) set -> governance parity.
+- SP3: separate per-env Postgres confirmed (PLATFORM_GUIDE:490). Staging-
+  only kustomize patch suspends 112 ^fetch-* CronJobs (verified 109 rendered,
+  all fetch-, prod=0). Relies on feature-005 prestaged hydration. Own PR.
