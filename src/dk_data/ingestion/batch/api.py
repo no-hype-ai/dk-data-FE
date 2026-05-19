@@ -147,6 +147,14 @@ try:
 except ImportError as e:
     logger.warning(f"MCP data-tools router not available: {e}")
 
+# Drug label preview endpoints (FDA SPL + EMA SmPC URLs)
+try:
+    from dk_data.api.routes.labels import router as labels_router
+    app.include_router(labels_router, prefix="/api/v1", tags=["labels"])
+    logger.info("Loaded drug label preview router")
+except ImportError as e:
+    logger.warning(f"Drug label preview router not available: {e}")
+
 # CORS middleware
 app.add_middleware(
     CORSMiddleware,
