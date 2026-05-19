@@ -159,3 +159,18 @@ def test_script_bash_syntax(restore_sh):
         path = fh.name
     res = subprocess.run([bash, "-n", path], capture_output=True, text=True)
     assert res.returncode == 0, f"restore.sh syntax error:\n{res.stderr}"
+
+
+def test_breadcrumb_failure_cannot_skip_cleanup_or_gate_job(restore_sh):
+    # Approved plan deviation (Task 2 code-quality review): the
+    # meta.transform_runs breadcrumb is instrumentation, not the job
+    # gate. A psql failure must NOT (a) flip job status nor (b) skip the
+    # ~200GB dump cleanup (else the 250Gi scratch PVC fills and the next
+    # day's mc cp fails -> silent restore blackout). Cleanup must run
+    # after the breadcrumb, and the breadcrumb must be set +e bracketed.
+    assert restore_sh.index('rm -f "${DUMP}"') > restore_sh.index(
+        "INSERT INTO meta.transform_runs"
+    ), "rm -f must run AFTER the breadcrumb INSERT"
+    bc = restore_sh.index("Step 6: Breadcrumb")
+    assert "set +e" in restore_sh[bc:], "breadcrumb psql must be set +e bracketed"
+    assert "BREADCRUMB_RC=$?" in restore_sh
