@@ -431,7 +431,8 @@ def test_breadcrumb_failure_cannot_skip_cleanup_or_gate_job(restore_sh):
     # ~200GB dump cleanup (else the 250Gi scratch PVC fills and the next
     # day's mc cp fails -> silent restore blackout). Cleanup must run
     # after the breadcrumb, and the breadcrumb must be set +e bracketed.
-    assert restore_sh.index("rm -f") > restore_sh.index(
+    # match the command, not the 'rm -f' inside the rationale comment
+    assert restore_sh.index('rm -f "${DUMP}"') > restore_sh.index(
         "INSERT INTO meta.transform_runs"
     ), "rm -f must run AFTER the breadcrumb INSERT"
     bc = restore_sh.index("Step 6: Breadcrumb")
