@@ -95,3 +95,20 @@ class BaseAdapter(ABC):
     def full_table_name(self) -> str:
         """Full qualified table name (schema.table)."""
         return f"{self.raw_schema}.{self.raw_table}"
+
+    async def db_query(self, drug_name: str, db_pool: Any) -> Optional[dict]:
+        """Serve from the local warehouse, or ``None`` to fall through (H1).
+
+        Contract (load-bearing — WS4 SP1 / FR-001 / FR-004):
+          * return ``None``  -> no local hit; caller falls through to the
+            existing HTTP path.
+          * return a non-empty dict -> served from the warehouse (DB-first).
+          * RAISE -> a real error. The caller MUST surface it (502), not
+            silently treat it as a miss. A DB outage is not "not found";
+            do NOT catch-and-return-None.
+
+        Default: no DB path (``None``). Adapters override to implement
+        DB-first. Adding this method is additive — it does not change any
+        existing feature-015 adapter behaviour.
+        """
+        return None

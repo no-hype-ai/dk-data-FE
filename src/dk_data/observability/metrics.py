@@ -78,6 +78,17 @@ DB_QUERY_DURATION_SECONDS = Histogram(
 
 
 # =============================================================================
+# MCP DB-First Metrics (WS4 SP1, feature 211)
+# =============================================================================
+
+MCP_DBFIRST_OUTCOME_TOTAL = Counter(
+    "mcp_dbfirst_outcome_total",
+    "MCP gated DB-first dispatch outcomes by source",
+    ["source", "outcome"],  # outcome: served | fallthrough | error | disabled
+)
+
+
+# =============================================================================
 # Batch Job Metrics
 # =============================================================================
 

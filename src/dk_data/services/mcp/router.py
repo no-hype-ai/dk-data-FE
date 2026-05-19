@@ -26,6 +26,8 @@ from .adapters import (
     TtdTool,
 )
 
+from .dispatch import try_db_first
+
 router = APIRouter(prefix="/mcp-tools", tags=["mcp-data-tools"])
 
 # Registry maps URL slug → adapter instance
@@ -73,6 +75,15 @@ async def invoke_tool(tool: str, request: InvokeRequest) -> InvokeResponse:
                 "available_tools": list(TOOL_REGISTRY.keys()),
             },
         )
+
+    # WS4 SP1 (feature 211): additive, gated DB-first short-circuit.
+    # Off by default => byte-identical to the existing path (FR-003).
+    # Returns None on disabled/miss/empty (run existing path unchanged);
+    # raises HTTPException 502 {"stage":"db_query"} on a real DB error
+    # (never falls through — a DB outage is not a miss; FR-004).
+    db_result = await try_db_first(tool, request.drug_name)
+    if db_result is not None:
+        return InvokeResponse(**db_result)
 
     adapter = TOOL_REGISTRY[tool]
     try:
