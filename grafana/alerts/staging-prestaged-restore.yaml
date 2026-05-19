@@ -1,0 +1,84 @@
+# Feature 211 WS4 SP3 follow-on — staging prestaged restore health.
+# Spec: docs/superpowers/specs/2026-05-19-staging-prestaged-restore-design.md
+#
+# Convention mirrors grafana/alerts/gold-zero-rows.yaml: this
+# PrometheusRule is orphaned from kustomization on purpose. Operators
+# apply it by hand once the shared-infra prometheus-operator install is
+# coordinated:
+#
+#   kubectl -n dk-data-staging apply -f grafana/alerts/staging-prestaged-restore.yaml
+#
+# Depends on kube-state-metrics emitting kube_job_status_failed (already
+# scraped into the cluster Prometheus/Mimir). If kube-state-metrics is
+# absent the rule is simply inert (NoData), not a false positive.
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: staging-prestaged-restore
+  namespace: dk-data-staging
+  labels:
+    app.kubernetes.io/name: dk-data
+    app.kubernetes.io/component: alert
+    app.kubernetes.io/part-of: dk-data
+spec:
+  groups:
+    - name: dk-data.staging.prestaged_restore
+      interval: 5m
+      rules:
+        # Any failed restore Job in the last 24h. Staging raw goes stale
+        # if this keeps failing while SP3 has the fetchers suspended.
+        - alert: StagingPrestagedRestoreFailed
+          expr: |
+            max_over_time(
+              kube_job_status_failed{
+                namespace="dk-data-staging",
+                job_name=~"staging-prestaged-restore.*"
+              }[24h]
+            ) > 0
+          for: 10m
+          labels:
+            severity: warning
+            service: dk-data
+            component: prestaged-restore
+          annotations:
+            summary: "staging-prestaged-restore Job failed in the last 24h"
+            description: |
+              The staging prestaged-restore CronJob
+              (k8s/overlays/staging/staging-prestaged-restore.yaml) has a
+              failed Job in the last 24h. With WS4 SP3 suspending staging
+              ^fetch-* CronJobs, a persistently failing restore means
+              staging's dk_data raw layer is going stale.
+
+              Investigate:
+                - kubectl -n dk-data-staging get jobs.batch | grep staging-prestaged-restore
+                - kubectl -n dk-data-staging logs job/<latest> -c restore
+                - psql ... -c "SELECT status, details, ended_at FROM meta.transform_runs WHERE procedure_name='staging-prestaged-restore' ORDER BY ended_at DESC LIMIT 5;"
+
+              Rollback (resume staging fetchers): delete the
+              staging-prestaged-restore.yaml line from
+              k8s/overlays/staging/kustomization.yaml AND revert the SP3
+              ^fetch-* suspend patch.
+
+              Runbook: docs/runbooks/staging-prestaged-restore.md
+
+        # No successful restore for >36h (job not scheduled / stuck).
+        - alert: StagingPrestagedRestoreStale
+          expr: |
+            time() - max(
+              kube_job_status_completion_time{
+                namespace="dk-data-staging",
+                job_name=~"staging-prestaged-restore.*"
+              }
+            ) > 36 * 3600
+          for: 30m
+          labels:
+            severity: warning
+            service: dk-data
+            component: prestaged-restore
+          annotations:
+            summary: "No successful staging prestaged restore in >36h"
+            description: |
+              No staging-prestaged-restore Job has completed in >36h
+              (expected daily at 02:00 UTC). Staging raw data is
+              stale relative to prod. See
+              docs/runbooks/staging-prestaged-restore.md.

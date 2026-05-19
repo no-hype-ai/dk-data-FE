@@ -232,3 +232,30 @@ def test_kustomize_render_staging_only():
         for d in prod
         if d.get("kind") == "CronJob"
     }, "must NOT render in prod"
+
+
+ALERT = REPO_ROOT / "grafana" / "alerts" / "staging-prestaged-restore.yaml"
+
+
+@pytest.fixture(scope="module")
+def alert_doc() -> dict:
+    return yaml.safe_load(ALERT.read_text())
+
+
+def test_alert_is_a_prometheusrule(alert_doc):
+    assert alert_doc["apiVersion"] == "monitoring.coreos.com/v1"
+    assert alert_doc["kind"] == "PrometheusRule"
+    assert alert_doc["metadata"]["namespace"] == "dk-data-staging"
+
+
+def test_alert_targets_the_restore_job_failure(alert_doc):
+    rules = [
+        r
+        for g in alert_doc["spec"]["groups"]
+        for r in g["rules"]
+    ]
+    exprs = " ".join(r["expr"] for r in rules)
+    assert "kube_job_status_failed" in exprs
+    assert 'job_name=~"staging-prestaged-restore.*"' in exprs
+    assert 'namespace="dk-data-staging"' in exprs
+    assert any(r["labels"]["service"] == "dk-data" for r in rules)
