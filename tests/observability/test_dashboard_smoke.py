@@ -82,6 +82,8 @@ EXTERNAL_METRICS = {
     "kube_pod_status_phase",
     "kube_deployment_status_replicas",
     "kube_deployment_status_replicas_ready",
+    "kube_job_status_failed",
+    "kube_job_status_completion_time",
     # PgBouncer
     "pgbouncer_pools_server_active_connections",
     "pgbouncer_pools_client_active_connections",
@@ -175,6 +177,61 @@ def _load_defined_metrics() -> set[str]:
         source = metrics_file.read_text()
         metrics.update(pattern.findall(source))
     return metrics
+
+
+# Known-external metric names (kube-state, node, pg, process, …) minus the
+# histogram-suffix noise entries (`_bucket`/`_count`/`_sum`). A dashboard that
+# references one of these is legitimately "connected" to a real metric source
+# even though the name is not in dk-data's own registry. Excluding the
+# `_`-prefixed artifacts keeps an undefined/typo'd *app* metric from slipping
+# through on an accidental substring match (the app-metric contract is not
+# weakened by this allowance).
+_EXTERNAL_METRIC_NAMES = {m for m in EXTERNAL_METRICS if not m.startswith("_")}
+
+
+def _dashboard_is_connected(d: dict, defined_metrics: set[str]) -> bool:
+    """True if the dashboard is connected to a real metric source:
+
+    * some panel expr references a metric defined in the dk-data registry, OR
+    * some panel expr references a known-external metric (kube-state, node,
+      pg, process, … — see EXTERNAL_METRICS), OR
+    * every non-row panel is purely Postgres/Loki-backed (no Prometheus
+      metrics at all).
+
+    Smoke-scope: not pedantic about every expression (exhaustive label-selector
+    auditing is T115).
+    """
+    for panel in _flatten_panels(d.get("panels", [])):
+        if panel.get("type") == "row":
+            continue
+        for target in panel.get("targets", []) or []:
+            expr = target.get("expr") or target.get("query") or ""
+            if not isinstance(expr, str):
+                continue
+            # Strip histogram suffixes that prometheus_client auto-emits
+            normalized = re.sub(r"_(bucket|count|sum)\b", "", expr)
+            if any(m in normalized for m in defined_metrics):
+                return True
+            if any(m in normalized for m in _EXTERNAL_METRIC_NAMES):
+                return True
+
+    # No metric reference found. Dashboards that are purely Postgres-backed
+    # OR purely Loki-backed (log-based like adapter telemetry) legitimately
+    # don't reference Prometheus metrics.
+    def _panel_ds_type(panel):
+        ds = panel.get("datasource") or {}
+        if isinstance(ds, dict):
+            return (ds.get("type") or "").lower()
+        if isinstance(ds, str):
+            return ds.lower()
+        return ""
+
+    all_panel_ds = {
+        _panel_ds_type(p)
+        for p in _flatten_panels(d.get("panels", []))
+        if p.get("type") != "row"
+    }
+    return bool(all_panel_ds) and all_panel_ds <= {"postgres", "loki", ""}
 
 
 # -----------------------------------------------------------------------------
@@ -275,48 +332,69 @@ class TestMetricReferences:
     def test_each_dashboard_references_at_least_one_defined_metric(
         self, dashboards, defined_metrics
     ):
-        offenders: list[str] = []
-        for path, d in dashboards:
-            found = False
-            for panel in _flatten_panels(d.get("panels", [])):
-                if panel.get("type") == "row":
-                    continue
-                for target in panel.get("targets", []) or []:
-                    expr = target.get("expr") or target.get("query") or ""
-                    if not isinstance(expr, str):
-                        continue
-                    # Strip histogram suffixes that prometheus_client auto-emits
-                    normalized = re.sub(r"_(bucket|count|sum)\b", "", expr)
-                    if any(m in normalized for m in defined_metrics):
-                        found = True
-                        break
-                if found:
-                    break
-            if not found:
-                # Dashboards that are purely Postgres-backed OR purely
-                # Loki-backed (log-based like adapter telemetry)
-                # legitimately don't reference Prometheus metrics.
-                def _panel_ds_type(panel):
-                    ds = panel.get("datasource") or {}
-                    if isinstance(ds, dict):
-                        return (ds.get("type") or "").lower()
-                    if isinstance(ds, str):
-                        return ds.lower()
-                    return ""
-
-                all_panel_ds = {
-                    _panel_ds_type(p)
-                    for p in _flatten_panels(d.get("panels", []))
-                    if p.get("type") != "row"
-                }
-                if all_panel_ds and all_panel_ds <= {"postgres", "loki", ""}:
-                    continue
-                offenders.append(path.name)
+        offenders = [
+            path.name
+            for path, d in dashboards
+            if not _dashboard_is_connected(d, defined_metrics)
+        ]
         assert not offenders, (
-            "Dashboards with zero references to a defined metric "
-            "(and no postgres fallback):\n"
+            "Dashboards with zero references to a defined or known-external "
+            "metric (and no postgres/loki fallback):\n"
             + "\n".join(f"  - {o}" for o in offenders)
         )
+
+    def test_kube_job_status_metrics_are_allowlisted(self):
+        # Feature 211: the staging prestaged-restore dashboard is a Postgres
+        # breadcrumb table + kube-state job-health stats. These kube-state
+        # names are legitimately queried but not in dk-data's registry.
+        assert "kube_job_status_failed" in EXTERNAL_METRICS
+        assert "kube_job_status_completion_time" in EXTERNAL_METRICS
+
+    def test_external_metric_only_dashboard_is_connected(self):
+        """Regression for feature 211 (dk-data-fe-staging-prestaged-restore):
+        a Postgres breadcrumb table + Prometheus panels that reference only
+        kube-state job-health metrics is 'connected' even with no dk-data
+        registry metric. Red before Fix C (panel ds {postgres, prometheus}
+        is not a subset of {postgres, loki, ""}), green after."""
+        dash = {
+            "panels": [
+                {
+                    "id": 1,
+                    "type": "table",
+                    "datasource": {"type": "postgres", "uid": "postgres"},
+                    "targets": [
+                        {"rawSql": "SELECT 1 FROM meta.transform_runs"}
+                    ],
+                },
+                {
+                    "id": 2,
+                    "type": "stat",
+                    "datasource": {"type": "prometheus", "uid": "prometheus"},
+                    "targets": [
+                        {
+                            "expr": 'max_over_time(kube_job_status_failed{namespace="dk-data-staging"}[24h])'
+                        }
+                    ],
+                },
+            ]
+        }
+        assert _dashboard_is_connected(dash, set())
+
+    def test_undefined_app_metric_still_flagged(self):
+        """Contract not weakened: a dashboard whose only Prometheus panel
+        references a typo'd/undefined dk-data app metric (not in the registry
+        and not in EXTERNAL_METRICS) is still NOT connected."""
+        dash = {
+            "panels": [
+                {
+                    "id": 1,
+                    "type": "stat",
+                    "datasource": {"type": "prometheus", "uid": "prometheus"},
+                    "targets": [{"expr": "max(dk_moleculs_total)"}],
+                }
+            ]
+        }
+        assert not _dashboard_is_connected(dash, {"dk_molecules_total"})
 
 
 class TestDatasourceReferences:
