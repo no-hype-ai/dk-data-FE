@@ -422,6 +422,21 @@ def test_script_bash_syntax(restore_sh):
         path = fh.name
     res = subprocess.run([bash, "-n", path], capture_output=True, text=True)
     assert res.returncode == 0, f"restore.sh syntax error:\n{res.stderr}"
+
+
+def test_breadcrumb_failure_cannot_skip_cleanup_or_gate_job(restore_sh):
+    # Approved plan deviation (Task 2 code-quality review): the
+    # meta.transform_runs breadcrumb is instrumentation, not the job
+    # gate. A psql failure must NOT (a) flip job status nor (b) skip the
+    # ~200GB dump cleanup (else the 250Gi scratch PVC fills and the next
+    # day's mc cp fails -> silent restore blackout). Cleanup must run
+    # after the breadcrumb, and the breadcrumb must be set +e bracketed.
+    assert restore_sh.index("rm -f") > restore_sh.index(
+        "INSERT INTO meta.transform_runs"
+    ), "rm -f must run AFTER the breadcrumb INSERT"
+    bc = restore_sh.index("Step 6: Breadcrumb")
+    assert "set +e" in restore_sh[bc:], "breadcrumb psql must be set +e bracketed"
+    assert "BREADCRUMB_RC=$?" in restore_sh
 ```
 
 - [ ] **Step 2: Run tests to verify they fail**
@@ -505,7 +520,14 @@ data:
       echo "      mirror; recording outcome and continuing)"
     fi
 
+    # Step 6 is instrumentation. Bracket it in set +e so a transient
+    # psql failure can neither flip the job's exit status (which must
+    # reflect the RESTORE outcome, not the breadcrumb) nor skip the
+    # dump cleanup below — a skipped rm -f fills the 250Gi scratch PVC
+    # and silently blocks the next day's restore (Task 2 code-quality
+    # review, approved plan deviation).
     echo "--- Step 6: Breadcrumb to meta.transform_runs ---"
+    set +e
     psql -h "${POSTGRES_HOST}" -p "${POSTGRES_PORT}" -U "${POSTGRES_USER}" \
       -d "${POSTGRES_DB}" -v ON_ERROR_STOP=1 -c \
       "INSERT INTO meta.transform_runs
@@ -517,6 +539,12 @@ data:
           jsonb_build_object('run_label', 'prestaged-restore-${DATESTAMP}',
                              'object', '${KEY}', 'sha256', '${CHECKSUM}',
                              'restore_rc', ${RESTORE_RC}));"
+    BREADCRUMB_RC=$?
+    set -e
+    if [ "${BREADCRUMB_RC}" -ne 0 ]; then
+      echo "WARN: breadcrumb write failed (rc=${BREADCRUMB_RC});"
+      echo "      restore status was ${STATUS} — not gating the job on it"
+    fi
 
     rm -f "${DUMP}"
     echo "--- Done: status=${STATUS} ---"
