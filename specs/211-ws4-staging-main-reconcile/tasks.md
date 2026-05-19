@@ -26,8 +26,8 @@ description: "Task list — WS4 staging/main reconcile"
 
 **⚠️ No US1 implementation until this phase is complete.**
 
-- [ ] T004 [US1] Inventory the 34 staging `db_query` bodies vs `main`'s existing `Adapter` classes; produce a name-mapping table (33 graft targets + `ema_labels` new) in `specs/211-ws4-staging-main-reconcile/adapter-map.md`. Mark the 24 placeholder-ILIKE bodies as gated-backlog.
-- [ ] T005 [US1] Confirm the async DB handle source on `main` (`src/dk_data/api/dependencies.py`) and document the exact pool-acquisition wiring the dispatch will reuse (R1) in `adapter-map.md`.
+- [x] T004 [US1] Inventory the 34 staging `db_query` bodies vs `main`'s existing `Adapter` classes; produce a name-mapping table (33 graft targets + `ema_labels` new) in `specs/211-ws4-staging-main-reconcile/adapter-map.md`. Mark the 24 placeholder-ILIKE bodies as gated-backlog.
+- [x] T005 [US1] Confirm the async DB handle source on `main` (`src/dk_data/api/dependencies.py`) and document the exact pool-acquisition wiring the dispatch will reuse (R1) in `adapter-map.md`.
 
 **Checkpoint**: mapping + DB-handle wiring known → US1 may begin.
 
