@@ -54,21 +54,21 @@ description: "Task list — WS4 staging/main reconcile"
 - [x] T014 [US1] Gate config reader (`MCP_DBFIRST_ENABLED` + `MCP_DBFIRST_SOURCES`) per `contracts/gate-config.md`. → T009.
 - [x] T015 [US1] `src/dk_data/observability/metrics.py`: register `mcp_dbfirst_outcome_total{source,outcome}`; emit from dispatch. → T010.
 - [x] T016 [US1] `src/dk_data/services/mcp/router.py`: add the SINGLE gated pre-check before the existing `adapter.invoke()` httpx call; existing path byte-unchanged when gate off. → T007 rows 1–3.
-- [ ] T017 [US1] Graft the 5 refined `db_query` bodies (`ema`, `ema_labels`, `openfda_labels` + Phase-1) onto `main`'s existing `Adapter` classes per `adapter-map.md`; add NEW `src/dk_data/services/mcp/adapters/ema_labels.py`.
-- [ ] T018 [P] [US1] Graft the 24 placeholder-ILIKE `db_query` bodies onto their `main` `Adapter` classes; each docstring states it is generic-pending-bronze/silver and gated-backlog. (FR-005)
-- [ ] T019 [US1] Run T006–T010 → all GREEN.
+- [x] T017 [US1] Graft the 5 refined `db_query` bodies (`ema`, `ema_labels`, `openfda_labels` + Phase-1) onto `main`'s existing `Adapter` classes per `adapter-map.md`; add NEW `src/dk_data/services/mcp/adapters/ema_labels.py`.
+- [x] T018 [P] [US1] Graft the 24 placeholder-ILIKE `db_query` bodies onto their `main` `Adapter` classes; each docstring states it is generic-pending-bronze/silver and gated-backlog. (FR-005)
+- [x] T019 [US1] Run T006–T010 → all GREEN.
 
 ### Wiring & gate delivery
 
-- [ ] T020 [US1] Add `MCP_DBFIRST_ENABLED=false` + `MCP_DBFIRST_SOURCES=""` to BOTH `k8s/overlays/staging` and `k8s/overlays/prod` (+ Doppler `dk-data-staging`/`dk-data-prod`), default-off, to preserve Environment Parity (Constitution II, `[GITOP]`/`[SECRT]`).
-- [ ] T021 [US1] `kubectl kustomize k8s/base/` and both overlays succeed; no orphaned/forbidden CRDs (Constitution VI / Quality Gates).
+- [x] T020 [US1] Add `MCP_DBFIRST_ENABLED=false` + `MCP_DBFIRST_SOURCES=""` to BOTH `k8s/overlays/staging` and `k8s/overlays/prod` (+ Doppler `dk-data-staging`/`dk-data-prod`), default-off, to preserve Environment Parity (Constitution II, `[GITOP]`/`[SECRT]`).
+- [x] T021 [US1] `kubectl kustomize k8s/base/` and both overlays succeed; no orphaned/forbidden CRDs (Constitution VI / Quality Gates).
 
 ### US1 verification (maps to SC-001/002/003/006)
 
-- [ ] T022 [US1] Full CI-faithful test run (quickstart cmd) — no regressions vs known baseline noise; feature-015 `test_mcp_adapters` T079 normalize tests still 100% pass (SC-006).
-- [ ] T023 [US1] `python -c "import dk_data.api.routes"` clean.
+- [x] T022 [US1] Full CI-faithful test run (quickstart cmd) — no regressions vs known baseline noise; feature-015 `test_mcp_adapters` T079 normalize tests still 100% pass (SC-006).
+- [x] T023 [US1] `python -c "import dk_data.api.routes"` clean.
 - [x] T024 [US1] Zero-diff baseline check: with gate off, representative `invoke_tool` outputs equal `baseline-mcp.json` (SC-001).
-- [ ] T025 [US1] `ruff check .` (CI-faithful) clean — no `E402`/stray lint.
+- [x] T025 [US1] `ruff check .` (CI-faithful) clean — no `E402`/stray lint.
 - [ ] T026 [US1] Open PR to `main`; `gh pr checks <#>` shows Lint+Test+SQLMesh+Manifests = pass at the verified head SHA (`gh pr view --json headRefOid`; re-verify after any force-push). **No auto-merge.** Manual merge after green (FR-008/FR-013, SC-003).
 
 **Checkpoint US1 / SP1 complete** — the hard gate for SP2 is now satisfied.

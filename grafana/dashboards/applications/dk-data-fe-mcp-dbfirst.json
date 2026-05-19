@@ -1,0 +1,117 @@
+{
+  "__metadata": {
+    "folder": "applications"
+  },
+  "dashboard": {
+    "annotations": { "list": [] },
+    "description": "MCP gated DB-first dispatch outcomes (WS4 SP1, feature 211). Drives the safe per-source rollout of MCP_DBFIRST_SOURCES: widen the allowlist only when a source shows served>0 and error==0.",
+    "editable": true,
+    "fiscalYearStartMonth": 0,
+    "graphTooltip": 1,
+    "id": null,
+    "liveNow": false,
+    "panels": [
+      {
+        "id": 1,
+        "type": "timeseries",
+        "title": "DB-first outcomes by source (rate)",
+        "description": "served = warehouse hit (no HTTP); fallthrough = miss/empty -> existing HTTP path; error = db_query raised (502, no fallthrough); disabled = gate off / no adapter / no pool.",
+        "datasource": { "type": "prometheus", "uid": "prometheus" },
+        "gridPos": { "h": 9, "w": 24, "x": 0, "y": 0 },
+        "fieldConfig": {
+          "defaults": {
+            "color": { "mode": "palette-classic" },
+            "custom": { "drawStyle": "line", "fillOpacity": 10, "stacking": { "mode": "none" } },
+            "unit": "ops"
+          },
+          "overrides": []
+        },
+        "options": {
+          "legend": { "displayMode": "table", "placement": "right", "calcs": ["sum"] },
+          "tooltip": { "mode": "multi", "sort": "desc" }
+        },
+        "targets": [
+          {
+            "refId": "A",
+            "datasource": { "type": "prometheus", "uid": "prometheus" },
+            "expr": "sum by (source, outcome) (rate(mcp_dbfirst_outcome_total[5m]))",
+            "legendFormat": "{{source}} / {{outcome}}"
+          }
+        ]
+      },
+      {
+        "id": 2,
+        "type": "stat",
+        "title": "db_query errors (must stay 0)",
+        "description": "Any non-zero rate means an enabled source's db_query is raising — investigate before widening MCP_DBFIRST_SOURCES.",
+        "datasource": { "type": "prometheus", "uid": "prometheus" },
+        "gridPos": { "h": 5, "w": 8, "x": 0, "y": 9 },
+        "fieldConfig": {
+          "defaults": {
+            "color": { "mode": "thresholds" },
+            "thresholds": { "mode": "absolute", "steps": [ { "color": "green", "value": null }, { "color": "red", "value": 0.0001 } ] }
+          },
+          "overrides": []
+        },
+        "options": {
+          "colorMode": "background",
+          "graphMode": "area",
+          "justifyMode": "auto",
+          "orientation": "auto",
+          "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+          "textMode": "auto"
+        },
+        "targets": [
+          {
+            "refId": "A",
+            "datasource": { "type": "prometheus", "uid": "prometheus" },
+            "expr": "sum(rate(mcp_dbfirst_outcome_total{outcome=\"error\"}[5m]))",
+            "legendFormat": "errors"
+          }
+        ]
+      },
+      {
+        "id": 3,
+        "type": "stat",
+        "title": "served vs fallthrough (enabled sources)",
+        "datasource": { "type": "prometheus", "uid": "prometheus" },
+        "gridPos": { "h": 5, "w": 16, "x": 8, "y": 9 },
+        "fieldConfig": { "defaults": { "color": { "mode": "palette-classic" }, "unit": "ops" }, "overrides": [] },
+        "options": {
+          "colorMode": "value",
+          "graphMode": "area",
+          "justifyMode": "auto",
+          "orientation": "horizontal",
+          "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+          "textMode": "auto"
+        },
+        "targets": [
+          {
+            "refId": "A",
+            "datasource": { "type": "prometheus", "uid": "prometheus" },
+            "expr": "sum(rate(mcp_dbfirst_outcome_total{outcome=\"served\"}[5m]))",
+            "legendFormat": "served"
+          },
+          {
+            "refId": "B",
+            "datasource": { "type": "prometheus", "uid": "prometheus" },
+            "expr": "sum(rate(mcp_dbfirst_outcome_total{outcome=\"fallthrough\"}[5m]))",
+            "legendFormat": "fallthrough"
+          }
+        ]
+      }
+    ],
+    "refresh": "1m",
+    "schemaVersion": 39,
+    "style": "dark",
+    "tags": ["dk-data", "mcp", "dbfirst", "feature-211", "ws4"],
+    "templating": { "list": [] },
+    "time": { "from": "now-6h", "to": "now" },
+    "timepicker": {},
+    "timezone": "",
+    "title": "dk-data MCP DB-First Outcomes",
+    "uid": "dk-data-fe-mcp-dbfirst",
+    "version": 1,
+    "weekStart": ""
+  }
+}

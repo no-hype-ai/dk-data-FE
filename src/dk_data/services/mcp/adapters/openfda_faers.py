@@ -21,6 +21,14 @@ from .base import BaseAdapter
 _FAERS_URL = "https://api.fda.gov/drug/event.json"
 
 
+_DB_LOOKUP_QUERY = """
+    SELECT response_body
+    FROM mol_raw.openfda_faers
+    WHERE response_body::text ILIKE '%' || $1 || '%'
+    LIMIT 20
+"""
+
+
 class Adapter(BaseAdapter):
     """Adapter for OpenFDA drug/event (FAERS) API."""
 
@@ -100,3 +108,10 @@ class Adapter(BaseAdapter):
     def normalize(self, api_response: dict) -> dict:
         """Pass through the raw FAERS response unchanged."""
         return api_response
+
+    async def db_query(self, drug_name: str, db_pool: Any) -> dict | None:
+        async with db_pool.acquire() as conn:
+            rows = await conn.fetch(_DB_LOOKUP_QUERY, drug_name)
+        if not rows:
+            return None
+        return {"source": "openfda_faers_local", "results": [dict(r) for r in rows]}

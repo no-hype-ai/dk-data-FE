@@ -8,7 +8,17 @@ import json
 from urllib.parse import quote
 
 from ..base_tool import BaseMCPTool
+from typing import Any
+
 from .base import BaseAdapter
+
+
+_PDB_STRUCTURES_DB_QUERY = """
+    SELECT response_body
+    FROM mol_raw.pdb_structures
+    WHERE response_body::text ILIKE '%' || $1 || '%'
+    LIMIT 20
+"""
 
 
 class PdbStructuresTool(BaseMCPTool):
@@ -46,3 +56,10 @@ class Adapter(BaseAdapter):
 
     def normalize(self, api_response: dict) -> dict:
         return api_response
+
+    async def db_query(self, drug_name: str, db_pool: Any) -> dict | None:
+        async with db_pool.acquire() as conn:
+            rows = await conn.fetch(_PDB_STRUCTURES_DB_QUERY, drug_name)
+        if not rows:
+            return None
+        return {"source": "pdb_structures_local", "results": [dict(r) for r in rows]}
