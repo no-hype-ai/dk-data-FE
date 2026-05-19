@@ -1,0 +1,184 @@
+# WS4 SP3 follow-on (feature 211) — staging prestaged restore.
+# Spec: docs/superpowers/specs/2026-05-19-staging-prestaged-restore-design.md
+#
+# Staging-overlay-ONLY. Reuses prod's existing pg-backup-daily artifact
+# (postgres-backups/dk-data-prod/daily/*.dump) so external sources are
+# fetched once (prod) not twice. Name is deliberately NOT ^fetch-* so
+# SP3's suspension target leaves it running. Kustomize owns namespace +
+# labels — do not hardcode metadata.namespace here.
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: staging-restore-scratch
+  labels:
+    app: staging-prestaged-restore
+    app.kubernetes.io/part-of: dk-data
+spec:
+  accessModes: ["ReadWriteOnce"]
+  resources:
+    requests:
+      storage: 250Gi
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: staging-prestaged-restore-script
+  labels:
+    app: staging-prestaged-restore
+    app.kubernetes.io/part-of: dk-data
+data:
+  restore.sh: |
+    #!/bin/bash
+    echo "placeholder - replaced in Task 2"
+    exit 1
+---
+apiVersion: secrets.doppler.com/v1alpha1
+kind: DopplerSecret
+metadata:
+  name: dk-data-prestaged-src-credentials
+  labels:
+    app: staging-prestaged-restore
+    app.kubernetes.io/part-of: dk-data
+    app.kubernetes.io/managed-by: doppler-operator
+spec:
+  tokenSecret:
+    name: doppler-token-secret
+    key: serviceToken
+  project: dk-data-applications
+  config: prd
+  managedSecret:
+    name: dk-data-prestaged-src-credentials
+    type: Opaque
+  resyncSeconds: 300
+---
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: staging-prestaged-restore
+  labels:
+    app: staging-prestaged-restore
+    app.kubernetes.io/name: staging-prestaged-restore
+    app.kubernetes.io/component: prestaged-restore
+    app.kubernetes.io/part-of: dk-data
+    feature: 211-ws4-staging-main-reconcile
+    product: dk-data
+    service: dk-data
+    team: data-platform
+spec:
+  # Prod pg-backup-daily starts 12:00 UTC with a 12h deadline; 02:00
+  # next day clears it with margin.
+  schedule: "0 2 * * *"
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      activeDeadlineSeconds: 21600   # 6h for a ~200GB daily restore
+      backoffLimit: 1
+      ttlSecondsAfterFinished: 604800
+      template:
+        metadata:
+          labels:
+            app: staging-prestaged-restore
+            team: data-platform
+            service: dk-data
+            product: dk-data
+        spec:
+          restartPolicy: Never
+          securityContext:
+            fsGroup: 1000
+            runAsNonRoot: true
+            seccompProfile:
+              type: RuntimeDefault
+          initContainers:
+            - name: install-mc
+              image: minio/minio:RELEASE.2024-11-07T00-52-20Z
+              command: ["sh", "-c", "cp /usr/bin/mc /tmp/mc && chmod +x /tmp/mc"]
+              securityContext:
+                runAsNonRoot: false
+                runAsUser: 0
+                allowPrivilegeEscalation: false
+                readOnlyRootFilesystem: true
+                capabilities:
+                  drop: ["ALL"]
+              volumeMounts:
+                - name: tmp
+                  mountPath: /tmp
+          containers:
+            - name: restore
+              image: ghcr.io/cloudnative-pg/postgresql:16.4
+              command: ["/bin/bash", "/scripts/restore.sh"]
+              env:
+                - name: SRC_S3_ENDPOINT
+                  value: "seaweedfs-s3.infra.svc.cluster.local:8333"
+                - name: SRC_BUCKET
+                  value: "postgres-backups"
+                - name: SRC_S3_ACCESS_KEY
+                  valueFrom:
+                    secretKeyRef:
+                      name: dk-data-prestaged-src-credentials
+                      key: SRC_S3_ACCESS_KEY
+                - name: SRC_S3_SECRET_KEY
+                  valueFrom:
+                    secretKeyRef:
+                      name: dk-data-prestaged-src-credentials
+                      key: SRC_S3_SECRET_KEY
+                - name: RESTORE_JOBS
+                  value: "4"
+                - name: SCRATCH_DIR
+                  value: "/tmp/restore"
+                - name: POSTGRES_HOST
+                  valueFrom:
+                    secretKeyRef:
+                      name: dk-data-secrets
+                      key: POSTGRES_HOST
+                - name: POSTGRES_PORT
+                  valueFrom:
+                    secretKeyRef:
+                      name: dk-data-secrets
+                      key: POSTGRES_PORT
+                - name: POSTGRES_USER
+                  valueFrom:
+                    secretKeyRef:
+                      name: dk-data-secrets
+                      key: POSTGRES_USER
+                - name: POSTGRES_PASSWORD
+                  valueFrom:
+                    secretKeyRef:
+                      name: dk-data-secrets
+                      key: POSTGRES_PASSWORD
+                - name: POSTGRES_DB
+                  valueFrom:
+                    secretKeyRef:
+                      name: dk-data-secrets
+                      key: POSTGRES_DB
+              resources:
+                requests:
+                  memory: "512Mi"
+                  cpu: "500m"
+                limits:
+                  memory: "4Gi"
+                  cpu: "2"
+              securityContext:
+                allowPrivilegeEscalation: false
+                readOnlyRootFilesystem: true
+                capabilities:
+                  drop: ["ALL"]
+              volumeMounts:
+                - name: restore-script
+                  mountPath: /scripts
+                  readOnly: true
+                - name: scratch
+                  mountPath: /tmp/restore
+                - name: tmp
+                  mountPath: /tmp
+          volumes:
+            - name: restore-script
+              configMap:
+                name: staging-prestaged-restore-script
+                defaultMode: 0755
+            - name: scratch
+              persistentVolumeClaim:
+                claimName: staging-restore-scratch
+            - name: tmp
+              emptyDir: {}
