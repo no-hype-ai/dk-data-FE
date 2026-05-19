@@ -90,9 +90,9 @@ description: "Task list — WS4 staging/main reconcile"
 
 **⚠️ Follows SP2. Requires its own brainstorming→spec→plan cycle (FR-011/FR-012).**
 
-- [ ] T031 [US3] Enumerate any genuinely environment-specific data need BEFORE dedup cut-over (FR-012).
-- [ ] T032 [US3] Design single-origin ingestion (production-side once → shared warehouse; staging read-only): edit `k8s/.../cronjobs` + `deploy/` so each source is fetched ≤1×/cycle (SC-005).
-- [ ] T033 [US3] Verify both environments read identical data; no duplicate external fetches observed.
+- [x] T031 [US3] Enumerate any genuinely environment-specific data need BEFORE dedup cut-over (FR-012).
+- [x] T032 [US3] Design single-origin ingestion (production-side once → shared warehouse; staging read-only): edit `k8s/.../cronjobs` + `deploy/` so each source is fetched ≤1×/cycle (SC-005).
+- [x] T033 [US3] Verify both environments read identical data; no duplicate external fetches observed.
 
 ---
 
