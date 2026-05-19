@@ -13,7 +13,7 @@ from unittest.mock import AsyncMock
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-from dk_data.services.mcp.router import router
+from dk_data.services.mcp.router import TOOL_REGISTRY, router
 
 
 # ---------------------------------------------------------------------------
@@ -231,12 +231,21 @@ def test_db_path_skipped_when_module_has_no_adapter(monkeypatch):
     Uses hta-decisions-search (HtaDecisionsTool) which genuinely has no
     Adapter subclass — ema now has Adapter so it can no longer serve as
     the "no Adapter" sentinel for this test.
+
+    The mock is applied to the *exact instance* the dispatcher uses
+    (router.TOOL_REGISTRY["hta-decisions-search"]), NOT to a class
+    re-imported by module path. tests/test_mcp_data_tools.py installs a
+    custom sys.modules loader that replaces dk_data.services.mcp.adapters.*
+    module objects at collection time, so `from ...hta_decisions import
+    HtaDecisionsTool` can return a *different* class object than the one
+    backing the registry instance — patching that class would miss and the
+    real network-calling invoke() would run. Patching the instance attribute
+    is immune to that pollution and targets the true object under test.
     """
 
-    from dk_data.services.mcp.adapters.hta_decisions import HtaDecisionsTool  # noqa: PLC0415
-
+    hta_tool = TOOL_REGISTRY["hta-decisions-search"]
     monkeypatch.setattr(
-        HtaDecisionsTool,
+        hta_tool,
         "invoke",
         AsyncMock(
             return_value={
