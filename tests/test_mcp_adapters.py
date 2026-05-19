@@ -26,12 +26,17 @@ import pytest
 BUILT_ADAPTERS: set[str] = {
     "chembl",
     "clinicaltrials",
+    "cochrane",
     "drugbank",
     "ema",
     "ema_labels",
+    "hta_decisions",
     "openfda_faers",
     "openfda_labels",
+    "orcid",
+    "pdb_structures",
     "pubmed",
+    "sec_edgar",
 }
 
 _BACKLOG_XFAIL_REASON = "registry backlog — adapter not yet built (#415 Phase 2+)"
@@ -181,7 +186,6 @@ class TestPubMedAdapter:
         assert adapter.raw_schema == "mol_raw"
 
 
-@pytest.mark.xfail(strict=True, reason=_BACKLOG_XFAIL_REASON)
 class TestSecEdgarAdapter:
     """Test SEC EDGAR adapter."""
 

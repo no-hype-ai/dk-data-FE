@@ -228,29 +228,29 @@ def test_db_path_skipped_when_module_has_no_adapter(monkeypatch):
     """When a tool's adapter_module does not export an Adapter class the router
     must skip the DB path and fall through to the HTTP *Tool.invoke() path.
 
-    Uses hta-decisions-search (HtaDecisionsTool) which genuinely has no
-    Adapter subclass — ema now has Adapter so it can no longer serve as
+    Uses fda-drugs-search (FdaDrugsTool) which genuinely has no Adapter
+    subclass — hta_decisions now has Adapter so it can no longer serve as
     the "no Adapter" sentinel for this test.
 
     The mock is applied to the *exact instance* the dispatcher uses
-    (router.TOOL_REGISTRY["hta-decisions-search"]), NOT to a class
+    (router.TOOL_REGISTRY["fda-drugs-search"]), NOT to a class
     re-imported by module path. tests/test_mcp_data_tools.py installs a
     custom sys.modules loader that replaces dk_data.services.mcp.adapters.*
-    module objects at collection time, so `from ...hta_decisions import
-    HtaDecisionsTool` can return a *different* class object than the one
+    module objects at collection time, so `from ...fda_drugs import
+    FdaDrugsTool` can return a *different* class object than the one
     backing the registry instance — patching that class would miss and the
     real network-calling invoke() would run. Patching the instance attribute
     is immune to that pollution and targets the true object under test.
     """
 
-    hta_tool = TOOL_REGISTRY["hta-decisions-search"]
+    fda_tool = TOOL_REGISTRY["fda-drugs-search"]
     monkeypatch.setattr(
-        hta_tool,
+        fda_tool,
         "invoke",
         AsyncMock(
             return_value={
-                "tool": "hta-decisions-search",
-                "data": {"via": "http-hta"},
+                "tool": "fda-drugs-search",
+                "data": {"via": "http-fda"},
                 "status_code": 200,
                 "error": None,
             }
@@ -261,9 +261,9 @@ def test_db_path_skipped_when_module_has_no_adapter(monkeypatch):
     client = TestClient(app)
 
     resp = client.post(
-        "/api/v1/data-tools/hta-decisions-search/invoke",
+        "/api/v1/data-tools/fda-drugs-search/invoke",
         json={"drug_name": "aspirin"},
     )
 
     assert resp.status_code == 200, resp.text
-    assert resp.json()["data"] == {"via": "http-hta"}
+    assert resp.json()["data"] == {"via": "http-fda"}
