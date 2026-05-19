@@ -21,6 +21,8 @@ from urllib.parse import quote
 
 from loguru import logger
 
+from typing import Any
+
 from .base import BaseAdapter
 
 # DrugBank XML namespace
@@ -147,6 +149,14 @@ def get_drug_index() -> Optional[Dict[str, dict]]:
     return _DRUG_INDEX
 
 
+_DB_LOOKUP_QUERY = """
+    SELECT response_body
+    FROM mol_raw.drugbank
+    WHERE response_body::text ILIKE '%' || $1 || '%'
+    LIMIT 20
+"""
+
+
 class Adapter(BaseAdapter):
     @property
     def source_name(self) -> str:
@@ -167,3 +177,10 @@ class Adapter(BaseAdapter):
     def normalize(self, api_response: dict) -> dict:
         """Normalize DrugBank response."""
         return api_response
+
+    async def db_query(self, drug_name: str, db_pool: Any) -> dict | None:
+        async with db_pool.acquire() as conn:
+            rows = await conn.fetch(_DB_LOOKUP_QUERY, drug_name)
+        if not rows:
+            return None
+        return {"source": "drugbank_local", "results": [dict(r) for r in rows]}

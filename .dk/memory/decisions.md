@@ -4,7 +4,7 @@
 > Format: ID, title, date. Then Context, Decision, Rationale, Tags.
 > Only record decisions that a future developer or AI session needs to know about.
 
-<!-- Next ID: D009 -->
+<!-- Next ID: D010 -->
 
 <!--
   Feature-002 decisions D008-D015 were removed from global memory on 2026-04-13
@@ -15,6 +15,16 @@
   has not been promoted yet. On merge of feature-002, the future D008 there
   will be renumbered up.
 -->
+
+## D009 — WS4: additive gated DB-first port to canonical main; staging becomes a mirror — 2026-05-19
+
+**Context**: `main` (prod-promotion) and `staging` are on **unrelated git histories** (no merge-base; ~1,951-file diff, +17.7k/−220k main→staging). `main` is the canonical platform (feature-015 MCP layer: 63 HTTP-only adapters, TAVR/hydrate/prod-promotion). `staging` is a from-scratch Specify rewrite that added the PR #415 DB-first + "DB-outage ≠ not-found" (H1) hardening for a 34-adapter subset. The original #415 trigger ("prod import broke — no `base.py`") does NOT exist on `main` (it has feature-015 `base.py`/`tool_registry.py`). Stakeholder decisions: main stays canonical → port the full 34 hardened set additively (Approach A, gated default-off) → then replace `staging` with `main` → then dedupe ingestion.
+
+**Decision**: WS4 = three sequenced sub-projects. **SP1** (gate of SP2): additively add `db_query()` H1 contract to `main`'s `BaseAdapter` (keep feature-015 surface), a NEW parallel `dispatch.py` consulted by `router.py` only behind a per-source env gate (`MCP_DBFIRST_ENABLED` default false + `MCP_DBFIRST_SOURCES` allowlist), graft the 34 `db_query` bodies onto `main`'s existing `Adapter` classes (+ new `ema_labels`), port the sys.modules-isolation regression + an H1 matrix, add a `mcp_dbfirst_outcome_total` metric. Zero default behavior change; reversible by one switch + clean revert. **SP2**: after SP1 green on `main`, tag `staging-pre-ws4-reconcile`, reset `staging`→`origin/main` (mirror; unrelated-history merge rejected). **SP3**: ingestion runs once into the shared warehouse; staging reads read-only (own design cycle).
+
+**Rationale**: `main` is prod and must never be overwritten by staging (any `-X theirs`/ours-theirs/merge reconcile would delete ~220k lines of main-only TAVR/hydrate/prod work). Gated-default-off makes SP1 provably zero-risk and per-source-validatable. Empty/zero-row query result = fall-through (not "served empty") closes a silent-bug class. Governance: neither branch enforces required checks — every merge manually gated on verified-SHA green, no auto-merge; recommend making build/lint+test required on both.
+
+**Tags**: `[DSN]`, `[TESTE]`, `[GITOP]`, `[SECRT]`, `[ZVAL]`, `[VERSN]`
 
 ## D008 — CI bot-PAT fallback for GH Enterprise PR-create restriction — 2026-05-12
 

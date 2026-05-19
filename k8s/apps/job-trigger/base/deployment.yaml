@@ -89,6 +89,14 @@ spec:
               valueFrom:
                 fieldRef:
                   fieldPath: metadata.namespace
+            # WS4 SP1 (feature 211): gated DB-first. DEFAULT OFF in base so
+            # staging+prod inherit identical inert config (Constitution II,
+            # Environment Parity). Doppler dk-data-secrets may override the
+            # live value per-config to opt a validated source in (FR-002/007).
+            - name: MCP_DBFIRST_ENABLED
+              value: "false"
+            - name: MCP_DBFIRST_SOURCES
+              value: ""
           # Guaranteed QoS: requests == limits. job-trigger drives
           # every cronjob and ingestion job — OOM-killing it during
           # a backfill window leaves the cluster with no writer.

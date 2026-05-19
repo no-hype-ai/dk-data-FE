@@ -20,6 +20,14 @@ _EDGAR_SEARCH = "https://efts.sec.gov/LATEST/search-index"
 _DATE_FILTER = "&forms=10-K,10-Q,8-K&dateRange=custom&startdt=2020-01-01"
 
 
+_SEC_EDGAR_DB_QUERY = """
+    SELECT response_body
+    FROM mol_raw.sec_edgar
+    WHERE response_body::text ILIKE '%' || $1 || '%'
+    LIMIT 20
+"""
+
+
 class Adapter(BaseAdapter):
     """Adapter for SEC EDGAR full-text search API responses."""
 
@@ -108,3 +116,10 @@ class Adapter(BaseAdapter):
     def normalize(self, api_response: dict) -> dict:
         """Pass through the raw EDGAR response unchanged."""
         return api_response
+
+    async def db_query(self, drug_name: str, db_pool: Any) -> dict | None:
+        async with db_pool.acquire() as conn:
+            rows = await conn.fetch(_SEC_EDGAR_DB_QUERY, drug_name)
+        if not rows:
+            return None
+        return {"source": "sec_edgar_local", "results": [dict(r) for r in rows]}

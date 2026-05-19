@@ -48,16 +48,54 @@ def _load(dotted: str):
     spec.loader.exec_module(mod)
     return mod
 
-# Load in dependency order
-_base = _load("dk_data.services.mcp.base_tool")
-_fda = _load("dk_data.services.mcp.adapters.fda_drugs")
-_pdb = _load("dk_data.services.mcp.adapters.pdb_structures")
-_orcid = _load("dk_data.services.mcp.adapters.orcid")
-_cms = _load("dk_data.services.mcp.adapters.cms_part_d_spending")
-_hta = _load("dk_data.services.mcp.adapters.hta_decisions")
-_ema = _load("dk_data.services.mcp.adapters.ema")
-_cochrane = _load("dk_data.services.mcp.adapters.cochrane")
-_ttd = _load("dk_data.services.mcp.adapters.ttd")
+# ---------------------------------------------------------------------------
+# Snapshot/restore guard (issue #415, WS3).
+#
+# The _load() mechanism RELIES on sys.modules being populated *during*
+# exec_module so that relative imports inside the loaded files resolve
+# (`from ..base_tool import BaseMCPTool`, `from .base import BaseAdapter`).
+# But if those file-loaded copies and the _ensure_pkg() empty stubs are left
+# in sys.modules after this file is collected, they shadow the canonical
+# dk_data.services.mcp.* modules for every test file collected *afterwards*
+# (the ~26 WS3 test_adapter_*.py files), producing a class-identity
+# split-brain — exactly what made #421's CI red.
+#
+# So: snapshot the dk_data namespace, perform ALL loads (restore must NOT
+# happen between _load() calls — later loads depend on earlier ones being in
+# sys.modules), then restore the dk_data namespace to its pre-load state:
+# keys absent before are removed; keys present before are reset to their
+# original objects. This file keeps its own direct references (_fda,
+# FdaDrugsTool, the local TOOL_REGISTRY, ...) so its own tests still pass;
+# canonical sys.modules is left pristine for later-collected files.
+# ---------------------------------------------------------------------------
+
+def _dk_data_key(name: str) -> bool:
+    return name == "dk_data" or name.startswith("dk_data")
+
+
+# Snapshot ONLY the dk_data namespace (do not disturb pytest/respx/etc.).
+_DK_SNAPSHOT = {
+    name: mod for name, mod in sys.modules.items() if _dk_data_key(name)
+}
+
+try:
+    # Load in dependency order (sys.modules must stay populated throughout).
+    _base = _load("dk_data.services.mcp.base_tool")
+    _fda = _load("dk_data.services.mcp.adapters.fda_drugs")
+    _pdb = _load("dk_data.services.mcp.adapters.pdb_structures")
+    _orcid = _load("dk_data.services.mcp.adapters.orcid")
+    _cms = _load("dk_data.services.mcp.adapters.cms_part_d_spending")
+    _hta = _load("dk_data.services.mcp.adapters.hta_decisions")
+    _ema = _load("dk_data.services.mcp.adapters.ema")
+    _cochrane = _load("dk_data.services.mcp.adapters.cochrane")
+    _ttd = _load("dk_data.services.mcp.adapters.ttd")
+finally:
+    # Restore the dk_data namespace to its pre-load state.
+    for _name in [n for n in sys.modules if _dk_data_key(n)]:
+        if _name not in _DK_SNAPSHOT:
+            del sys.modules[_name]
+    for _name, _orig in _DK_SNAPSHOT.items():
+        sys.modules[_name] = _orig
 
 FdaDrugsTool = _fda.FdaDrugsTool
 PdbStructuresTool = _pdb.PdbStructuresTool

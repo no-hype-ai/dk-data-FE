@@ -110,3 +110,10 @@ The silver layer was rebuilt on 10 canonical entity-resolution hubs:
 
 **Bootstrap procedures**: `src/dk_data/sql/migrations/189_bootstrap_*.sql` through `200_bootstrap_*.sql`
 **Runbook**: `docs/runbooks/silver-hub-bootstrap.md`
+
+## Active Technologies
+- Python 3.11+ (`requires-python = ">=3.11"`) + FastAPI; asyncpg (already used on `main` — (211-ws4-staging-main-reconcile)
+- PostgreSQL 16.4 (CloudNativePG); adapter `raw`/`bronze`/`silver` (211-ws4-staging-main-reconcile)
+
+## Recent Changes
+- 211-ws4-staging-main-reconcile: Added Python 3.11+ (`requires-python = ">=3.11"`) + FastAPI; asyncpg (already used on `main` —
