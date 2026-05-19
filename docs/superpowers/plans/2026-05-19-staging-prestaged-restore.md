@@ -1126,3 +1126,24 @@ Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>"
 - [ ] **Step 5:** Commit `fix(211): accept known-external (kube-state) metrics in dashboard smoke test`. Push; re-run PR #435 CI; confirm `Test` + all required checks green before merge.
 
 **Blast radius (verified zero-regression):** the change only ever flips a *currently-failing* dashboard to pass, and only if its non-pg/loki exprs reference an allowlisted external metric; it cannot make any currently-passing dashboard fail, and cannot make an undefined dk-data app-metric reference pass (those names are in neither `defined_metrics` nor the cleaned `EXTERNAL_METRICS`). Consistent with the test's own documented "smoke, not pedantic — exhaustive auditing is T115" scope.
+
+---
+
+## Task 8: Operator precondition resolution (post-merge, cross-repo) — verified on live cluster 2026-05-19
+
+PR #435 CI is fully green and (per operator) merging. Before this can ArgoCD-sync usefully, the operator preconditions were **verified against the live K3s cluster**, not assumed. Findings + resolution:
+
+**Verified state (read-only cluster inspection):**
+
+- **(C) Capacity — HARD BLOCKER.** Prod `dk_data` = **434 GB** (live; prod CNPG is 500Gi for exactly this). Staging CNPG `infra-staging/postgres-cluster` was pinned at **50Gi** by `dk-alchemy` `k8s/infrastructure/postgres/overlays/staging/kustomization.yaml`. It schedules on **k3s-master-1** (control-plane fallback, dk-alchemy #660; no node carries `workload.dk-alchemy/env=staging` so the overlay nodeAffinity is inert). k3s-master-1 root fs `/dev/sda1` (backs `local-path-fast` at `/var/lib/rancher/k3s/storage`) = 1.2T, **91% used, ~116 GB free**. `rancher.io/local-path allowVolumeExpansion=true` is cosmetic (reserves no host disk). A full restore cannot fit and, if forced, would fill the control-plane node.
+- **(A) Doppler — needs human/console.** `minio-backup-credentials` (staging) has `MINIO_ACCESS_KEY/SECRET` but no `SRC_S3_*`. Doppler `dk-data-applications/prd` must gain read-only `SRC_S3_ACCESS_KEY`/`SRC_S3_SECRET_KEY` for prod SeaweedFS bucket `postgres-backups` (the `dk-data-prestaged-src-credentials` DopplerSecret materialises them). Production-secret action — not automatable here.
+- **(B) Egress — separate dk-data-FE GitOps change.** `dk-data-staging` has `dk-data-default-deny` (denies all egress) + `dk-data-egress` (allows 5432/9000/4317→infra+infra-staging, 443 ext, 53 DNS) but **no `8333/TCP → infra`**. The restore's `SRC_S3_ENDPOINT=seaweedfs-s3.infra.svc.cluster.local:8333` would be blocked. Fix lives in THIS repo: `k8s/apps/infrastructure/base/networkpolicy.yaml` (the `dk-data-egress` policy) — a separate reviewed PR, **not** bundled into #435; a manual `kubectl apply` would ArgoCD-drift-revert.
+- **(D) Ordering — currently safe.** SP3 `^fetch-*` suspension is **not live** on staging (0/20 fetch CronJobs suspended despite `main`==`staging`), and `staging-prestaged-restore` CronJob is `NotFound` (#435 not synced). So no active staleness gap; the "green-run before SP3 sync" risk has not materialised.
+
+**Resolution path (operator-directed: expand storage via dk-alchemy; coordinate via plan/git — mesh.mode is `off` for this project so git+plan are the source of truth):**
+
+1. **dk-alchemy DRAFT PR [#800](https://github.com/data-kinetic/dk-alchemy/pull/800)** (`feat/staging-postgres-500gi-prestaged-restore`): staging overlay `storage/size` 50Gi→500Gi (render-verified). **DRAFT, hard-gated** — must NOT merge/sync until the node backing `local-path-fast` has ≥~500 GB real disk, else a 434 GB restore fills the control-plane node.
+2. **Infra/Proxmox decision (owner: infra; gates #800):** provision a staging-affinity node labelled `workload.dk-alchemy/env=staging` with a dedicated ≥500Gi data disk (preferred — moves staging CNPG off the control-plane node), OR grow k3s-master-1's disk by ≥~450 GB. local-path PVCs don't grow in place → CNPG re-bootstrap onto the new capacity (acceptable: staging is disposable; #435 repopulates it from prod).
+3. Once #800 unblocked+merged + CNPG at 500Gi on real disk: provision (A) Doppler `prd` `SRC_S3_*`; land (B) the `8333→infra` egress PR in this repo; merge #435; ArgoCD-sync; manual green-run (`kubectl -n dk-data-staging create job --from=cronjob/staging-prestaged-restore …`); verify `meta.transform_runs` breadcrumb + dashboard; only then let SP3's `^fetch-*` suspension sync.
+
+**Status:** #435 (this feature) is complete and green — merge is human-gated. Precondition (C) is now actionable via dk-alchemy #800 but its real gate is the infra node-disk decision (out of this repo's scope; handed off in #800's body since mesh is off). (A) and (B) remain as noted.
