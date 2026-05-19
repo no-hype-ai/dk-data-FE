@@ -56,3 +56,20 @@ CI grep enforces no direct `psycopg2.connect(` calls outside the helper.
 ### Persistent job locks (added by feature 001-silver-medallion-rebuild)
 
 Cross-pod coordination uses `meta.job_locks (name, locked_by, locked_at, expires_at)` instead of `pg_try_advisory_lock` because PgBouncer transaction mode breaks session-scoped advisory locks.
+
+### Gated DB-first MCP dispatch (added by feature 211-ws4-staging-main-reconcile, SP1)
+
+Canonical `main`'s MCP data-tool layer is HTTP-only (feature-015, 63 adapters).
+SP1 adds an OPTIONAL DB-first serve **without** changing the live path:
+
+- `BaseAdapter.db_query(drug_name, db_pool) -> dict | None` — H1 contract:
+  `None`/empty = fall through to existing HTTP; non-empty dict = served from
+  warehouse; **raise = surfaced 502, never fall through** (DB outage ≠ miss).
+- A new parallel `services/mcp/dispatch.py` is consulted by `router.py` only
+  when the per-source gate is on; otherwise byte-identical to today.
+- Gate: `MCP_DBFIRST_ENABLED` (default false) + `MCP_DBFIRST_SOURCES` csv,
+  delivered via Doppler + both Kustomize overlays (Environment Parity).
+- Outcome metric `mcp_dbfirst_outcome_total{source,outcome}` (served /
+  fallthrough / error / disabled) — no dead metric.
+- Reuses `main`'s existing asyncpg DB access (no new pool); no new
+  `psycopg2.connect(` ([DSN]); adds no new external HTTP ([BRKR]).
