@@ -888,6 +888,8 @@ def test_dashboard_is_valid_json_with_expected_shape():
     assert "meta.transform_runs" in exprs_sql
     assert "staging-prestaged-restore" in exprs_sql
     assert "kube_job_status_failed" in exprs_prom
+    assert "kube_job_status_completion_time" in exprs_prom
+    assert len(panels) == 3
 ```
 
 - [ ] **Step 2: Run tests to verify they fail**
