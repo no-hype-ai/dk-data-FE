@@ -2,13 +2,24 @@
 
 Mounts at: /api/v1/data-tools
 Endpoint:  POST /api/v1/data-tools/{tool}/invoke
+
+Dispatch order (registry-driven, DB-first):
+  1. If a ToolDefinition exists with a built Adapter and a live db_pool,
+     call adapter.db_query() first:
+       - returns dict  → serve from DB (no HTTP call).
+       - returns None  → fall through to HTTP.
+       - raises        → return 502 {"stage": "db_query"} (not a miss).
+  2. HTTP fallthrough via the BaseMCPTool.invoke() path.
+  3. Neither available → 404.
 """
 
 from __future__ import annotations
 
-import httpx
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Request
 from pydantic import BaseModel
+
+from . import tool_registry as _tr
+from .dispatch import dispatch_invoke
 
 from .adapters import (
     CmsPartDSpendingTool,
@@ -24,7 +35,7 @@ from .adapters import (
 
 router = APIRouter(prefix="/data-tools", tags=["data-tools"])
 
-# Registry maps URL slug → adapter instance
+# HTTP-first registry: slug → BaseMCPTool instance (9 built adapters)
 TOOL_REGISTRY = {
     "fda-drugs-search": FdaDrugsTool(),
     "pdb-search": PdbStructuresTool(),
@@ -56,45 +67,26 @@ async def list_tools() -> dict:
 
 
 @router.post("/{tool}/invoke", response_model=InvokeResponse)
-async def invoke_tool(tool: str, request: InvokeRequest) -> InvokeResponse:
+async def invoke_tool(tool: str, body: InvokeRequest, request: Request) -> InvokeResponse:
     """Invoke a named data-tool adapter with a drug name.
 
-    Returns normalised data from the upstream API, or a structured error
-    for tools that are bulk-only or require credentials.
+    DB-first: attempts warehouse lookup via BaseAdapter.db_query() before
+    making any outbound HTTP call. A DB error surfaces as 502 — it is NOT
+    silently treated as a cache miss.
     """
-    if tool not in TOOL_REGISTRY:
-        raise HTTPException(
-            status_code=404,
-            detail={
-                "error": f"Tool '{tool}' not found.",
-                "available_tools": list(TOOL_REGISTRY.keys()),
-            },
-        )
+    db_pool = getattr(request.app.state, "db_pool", None)
 
-    adapter = TOOL_REGISTRY[tool]
-    try:
-        result = await adapter.invoke(request.drug_name)
-        return InvokeResponse(
-            tool=tool,
-            data=result.get("data"),
-            error=result.get("error"),
-            status_code=result.get("status_code"),
-        )
-    except httpx.HTTPStatusError as exc:
-        raise HTTPException(
-            status_code=502,
-            detail={
-                "error": f"Upstream API returned {exc.response.status_code}",
-                "tool": tool,
-            },
-        ) from exc
-    except httpx.TimeoutException:
-        raise HTTPException(
-            status_code=504,
-            detail={"error": "Upstream API timed out", "tool": tool},
-        )
-    except Exception as exc:  # noqa: BLE001
-        raise HTTPException(
-            status_code=500,
-            detail={"error": str(exc), "tool": tool},
-        ) from exc
+    result = await dispatch_invoke(
+        slug=tool,
+        drug_name=body.drug_name,
+        db_pool=db_pool,
+        http_tool_registry=TOOL_REGISTRY,
+        tool_definition_registry=_tr.TOOL_REGISTRY,
+    )
+
+    return InvokeResponse(
+        tool=result["tool"],
+        data=result.get("data"),
+        error=result.get("error"),
+        status_code=result.get("status_code"),
+    )

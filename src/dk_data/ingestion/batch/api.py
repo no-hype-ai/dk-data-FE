@@ -8,6 +8,7 @@ Includes OpenTelemetry instrumentation and Prometheus metrics.
 """
 
 import os
+from contextlib import asynccontextmanager
 from datetime import datetime
 from typing import Any
 
@@ -18,6 +19,13 @@ from pydantic import BaseModel
 from psycopg2.extras import RealDictCursor
 
 from dk_data.ingestion.batch.job_runner import JobStatus, get_job_runner
+
+# Async DB pool helpers — graceful degradation if asyncpg/module unavailable
+try:
+    from dk_data.api.dependencies import init_db_pool, get_db_pool, close_db_pool
+    _DB_DEPS_AVAILABLE = True
+except ImportError:
+    _DB_DEPS_AVAILABLE = False
 
 # Import observability (must be before other imports that use logging)
 try:
@@ -57,11 +65,30 @@ DB_CONFIG = {
     "database": os.getenv("POSTGRES_DB", "dk_data"),
 }
 
+@asynccontextmanager
+async def lifespan(app: FastAPI):  # noqa: ANN001
+    """Manage async resources (asyncpg pool) for the lifetime of the app.
+
+    Pool setup is inside the try so a partial-init failure still triggers
+    close_db_pool() in finally (no leaked pool / connections).
+    """
+    app.state.db_pool = None
+    try:
+        if _DB_DEPS_AVAILABLE:
+            await init_db_pool()
+            app.state.db_pool = await get_db_pool()
+        yield
+    finally:
+        if _DB_DEPS_AVAILABLE:
+            await close_db_pool()
+
+
 # FastAPI app
 app = FastAPI(
     title="DK Data Platform API",
     description="API for triggering and monitoring batch data jobs (TAVR + Molecule Platform)",
     version="2.0.0",
+    lifespan=lifespan,
 )
 
 # Auto-instrument FastAPI with OTel (013-dk-data-observability T022)
