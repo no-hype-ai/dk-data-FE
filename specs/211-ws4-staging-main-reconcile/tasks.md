@@ -69,7 +69,7 @@ description: "Task list — WS4 staging/main reconcile"
 - [x] T023 [US1] `python -c "import dk_data.api.routes"` clean.
 - [x] T024 [US1] Zero-diff baseline check: with gate off, representative `invoke_tool` outputs equal `baseline-mcp.json` (SC-001).
 - [x] T025 [US1] `ruff check .` (CI-faithful) clean — no `E402`/stray lint.
-- [ ] T026 [US1] Open PR to `main`; `gh pr checks <#>` shows Lint+Test+SQLMesh+Manifests = pass at the verified head SHA (`gh pr view --json headRefOid`; re-verify after any force-push). **No auto-merge.** Manual merge after green (FR-008/FR-013, SC-003).
+- [x] T026 [US1] Open PR to `main`; `gh pr checks <#>` shows Lint+Test+SQLMesh+Manifests = pass at the verified head SHA (`gh pr view --json headRefOid`; re-verify after any force-push). **No auto-merge.** Manual merge after green (FR-008/FR-013, SC-003).
 
 **Checkpoint US1 / SP1 complete** — the hard gate for SP2 is now satisfied.
 
@@ -98,7 +98,7 @@ description: "Task list — WS4 staging/main reconcile"
 
 ## Phase 6: Polish & Cross-Cutting (close-out)
 
-- [ ] T034 [P] Surface governance recommendation to stakeholder: make build/lint + test required status checks on BOTH `main` and `staging` (FR-013).
+- [x] T034 [P] Surface governance recommendation to stakeholder: make build/lint + test required status checks on BOTH `main` and `staging` (FR-013).
 - [ ] T035 [P] Update memory: promote D009 status, update `pr415-remediation-state.md` + `MEMORY.md`, mark remediation **task #7 complete** once SP1 lands on `main`.
 - [ ] T036 Write `auto-decisions.json` audit trail to `specs/211-ws4-staging-main-reconcile/auto-decisions.json` (done by `/dk.auto`).
 

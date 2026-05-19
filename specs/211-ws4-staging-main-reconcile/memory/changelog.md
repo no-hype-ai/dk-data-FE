@@ -9,3 +9,14 @@
   (SC-006); app import clean; kustomize base+both overlays OK; ruff clean.
 - Deviation: T006 base-contract assertions live in test_mcp_dbfirst_dispatch.py
   (cohesive; avoids mutating feature-015 T079). T003 -> B001 (gate-off invariant).
+
+## Session 2026-05-19T06:49:02.710283Z (cont.)
+- T026: PR #429 (DRAFT) opened to main. CI at verified head SHA 8a4fd53:
+  Lint/Test(4m31s)/Validate SQLMesh Models/Validate Kubernetes Manifests =
+  PASS (the 4 spec-required gate checks) + pr-verify/standards/FR-030/
+  silver-antipatterns PASS. ONE red: Prestaged Hydration Smoke (005) — B002,
+  pre-existing feature-005 mypy debt in prestaged.py (SP1 touches no
+  ingestion/ file), NOT an SP1 regression.
+- T034 governance surfaced (PR body + report): main has no required checks;
+  merge human-gated, no auto-merge; recommend required Lint+Test on both
+  branches. Task #7 remains OPEN (SP1 not yet merged to main).

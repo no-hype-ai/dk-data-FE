@@ -4,3 +4,15 @@
 **Workaround**: T003 reframed. main's MCP tools make live external HTTP; golden-response capture is flaky/non-deterministic and not senior. SC-001 ("zero default behavior change") is instead proven by a **gate-off invariant test** in `tests/test_mcp_dbfirst_dispatch.py`: with `MCP_DBFIRST_ENABLED` unset/false the dispatch helper returns `None` without resolving any adapter or touching a pool, so `router.invoke_tool` runs its existing httpx path byte-unchanged. No `baseline-mcp.json` artifact is produced.
 **Status**: Resolved (design decision)
 **Affects**: T003, T024 (T024 becomes "gate-off invariant test green" rather than golden diff)
+
+## B002 — Pre-existing red check "Prestaged Hydration Smoke (005)" (2026-05-19)
+**Symptom**: PR #429 CI shows `Prestaged Hydration Smoke (005)` = fail (23s),
+step `mypy --strict on new modules`: `dk_data/ingestion/prestaged.py:988
+error: Name "backlog" already defined on line 829 [no-redef]`; `:995
+Incompatible types in assignment (None vs HydrationBacklogWriter)`.
+**Determination**: NOT an SP1 regression. `git diff origin/main..HEAD --
+src/dk_data/ingestion/` is empty; `prestaged.py` last changed on origin/main at
+#322 and is byte-identical on this branch. Pre-existing feature-005 mypy debt.
+**Status**: Active (pre-existing, out of SP1 scope — SP1 is additive to the MCP
+layer, not feature-005). Recommend a separate feature-005 fix; do NOT block SP1.
+**Affects**: none of T001-T026 (SP1 touches no ingestion/ file).
