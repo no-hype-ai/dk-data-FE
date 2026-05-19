@@ -16,9 +16,9 @@ description: "Task list — WS4 staging/main reconcile"
 
 ## Phase 1: Setup (Shared Infrastructure)
 
-- [ ] T001 Confirm working branch `211-ws4-staging-main-reconcile` is based on canonical `origin/main` (worktree `.agents/ws4`); record base SHA in `specs/211-ws4-staging-main-reconcile/memory/context.md`.
-- [ ] T002 [P] Establish CI-faithful local harness per `quickstart.md` (`PYTHONPATH=$PWD/src .venv/bin/python -m pytest`; ruff at pyenv 3.14.3). NO `tests/conftest.py` sys.path hack.
-- [ ] T003 [P] Capture the pre-change MCP baseline for SC-001: record current `POST /api/v1/mcp-tools/{tool}/invoke` responses for a representative tool set into `specs/211-ws4-staging-main-reconcile/baseline-mcp.json` (used by the zero-diff assertion T024).
+- [x] T001 Confirm working branch `211-ws4-staging-main-reconcile` is based on canonical `origin/main` (worktree `.agents/ws4`); record base SHA in `specs/211-ws4-staging-main-reconcile/memory/context.md`.
+- [x] T002 [P] Establish CI-faithful local harness per `quickstart.md` (`PYTHONPATH=$PWD/src .venv/bin/python -m pytest`; ruff at pyenv 3.14.3). NO `tests/conftest.py` sys.path hack.
+- [x] T003 [P] Capture the pre-change MCP baseline for SC-001: record current `POST /api/v1/mcp-tools/{tool}/invoke` responses for a representative tool set into `specs/211-ws4-staging-main-reconcile/baseline-mcp.json` (used by the zero-diff assertion T024).
 
 ---
 

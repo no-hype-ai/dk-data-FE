@@ -44,3 +44,9 @@ required checks on both branches.
   HTTP-leg silent miss; ema_labels TTL on `ingested_at=None`; ema_mol
   pandas-fallback header; ema-labels-search 404-by-design) remain
   documented-accepted (FR-014).
+
+## Implementation base (SP1)
+
+- Worktree: `.agents/ws4` · branch `211-ws4-staging-main-reconcile`
+- Base commit (origin/main): `e3b21063123b28631026e3ee30fe37ab6f0ff827`
+- Harness: `PYTHONPATH=$PWD/src .venv/bin/python -m pytest … --no-cov --no-header -q -p no:cacheprovider`; ruff `~/.pyenv/versions/3.14.3/bin/ruff check . --exclude .claude`. NO tests/conftest.py sys.path hack.
