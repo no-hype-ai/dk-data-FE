@@ -24,9 +24,14 @@ import pytest
 # add that module name to BUILT_ADAPTERS (and drop any class/method-level
 # xfail marker on its dedicated test class) so it runs as a real assertion.
 BUILT_ADAPTERS: set[str] = {
+    "chembl",
+    "clinicaltrials",
+    "drugbank",
     "ema",
     "ema_labels",
+    "openfda_faers",
     "openfda_labels",
+    "pubmed",
 }
 
 _BACKLOG_XFAIL_REASON = "registry backlog — adapter not yet built (#415 Phase 2+)"
@@ -84,7 +89,6 @@ class TestBaseAdapterInterface:
         assert adapter.validate_against_bronze({}) is True
 
 
-@pytest.mark.xfail(strict=True, reason=_BACKLOG_XFAIL_REASON)
 class TestClinicalTrialsAdapter:
     """Test ClinicalTrials.gov adapter normalization."""
 
@@ -106,7 +110,6 @@ class TestClinicalTrialsAdapter:
         assert isinstance(result, dict)
 
 
-@pytest.mark.xfail(strict=True, reason=_BACKLOG_XFAIL_REASON)
 class TestChEMBLAdapter:
     """Test ChEMBL adapter normalization."""
 
@@ -126,7 +129,6 @@ class TestChEMBLAdapter:
         assert isinstance(result, dict)
 
 
-@pytest.mark.xfail(strict=True, reason=_BACKLOG_XFAIL_REASON)
 class TestDrugBankAdapter:
     """Test DrugBank adapter normalization (most critical — REST JSON vs XML)."""
 
@@ -146,7 +148,6 @@ class TestDrugBankAdapter:
         assert isinstance(result, dict)
 
 
-@pytest.mark.xfail(strict=True, reason=_BACKLOG_XFAIL_REASON)
 class TestOpenFDAFaersAdapter:
     """Test OpenFDA FAERS adapter normalization."""
 
@@ -166,7 +167,6 @@ class TestOpenFDAFaersAdapter:
         assert isinstance(result, dict)
 
 
-@pytest.mark.xfail(strict=True, reason=_BACKLOG_XFAIL_REASON)
 class TestPubMedAdapter:
     """Test PubMed adapter."""
 
