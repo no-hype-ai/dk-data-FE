@@ -30,13 +30,19 @@ BUILT_ADAPTERS: set[str] = {
     "drugbank",
     "ema",
     "ema_labels",
+    "epo_patents",
     "hta_decisions",
+    "openalex",
     "openfda_faers",
     "openfda_labels",
+    "orange_book",
     "orcid",
     "pdb_structures",
+    "pubchem",
     "pubmed",
     "sec_edgar",
+    "uniprot",
+    "uspto_patents",
 }
 
 _BACKLOG_XFAIL_REASON = "registry backlog — adapter not yet built (#415 Phase 2+)"
