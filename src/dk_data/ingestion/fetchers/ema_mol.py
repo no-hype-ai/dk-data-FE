@@ -25,6 +25,19 @@ from .base import BaseFetcher
 
 logger = logging.getLogger(__name__)
 
+# Lowercase substrings; at least ONE must appear in any header cell for the
+# header row to be considered valid.  Lenient by design.
+_EXPECTED_HEADER_TOKENS = ("medicine", "category", "name", "active", "substance", "product", "area", "status")
+
+
+class _EmaMolParseError(Exception):
+    """Downloaded bytes are not a usable workbook (corrupt/short/not-xlsx/no active sheet)."""
+
+
+class _EmaMolSchemaError(Exception):
+    """Workbook opened but the EMA export format changed (bad/absent header row, or 0 data rows from a non-empty file)."""
+
+
 # EMA medicines report — primary URL (updated daily)
 _EPAR_XLSX_URL = (
     "https://www.ema.europa.eu/en/documents/report/medicines-output-medicines-report_en.xlsx"
@@ -51,62 +64,137 @@ class EMAMolFetcher(BaseFetcher):
 
         Returns:
             Dict with keys: status, records, record_count, hash, error.
-            status='source_unavailable' when the URL is unreachable.
+
+        Status taxonomy:
+            success          — downloaded and parsed ≥1 rows.
+            source_unavailable — URL returned non-200 (EMA server down/unreachable).
+            parse_error      — 200 download succeeded but bytes are not a valid workbook.
+            schema_mismatch  — workbook opened but header row missing expected columns,
+                               or 0 data rows parsed from a non-empty 200 response.
+            failed           — unexpected error not covered by the above.
         """
         max_records: Optional[int] = kwargs.get("max_records")
 
-        for url, fmt in [(_EPAR_XLSX_URL, "xlsx")]:
+        try:
+            url = _EPAR_XLSX_URL
+            logger.info("EMA: downloading product list from %s", url)
             try:
-                logger.info("EMA: downloading product list from %s", url)
                 resp = self.session.get(url, timeout=120)
-                if resp.status_code == 404:
-                    logger.debug("EMA: 404 at %s, trying next URL", url)
-                    continue
-                resp.raise_for_status()
-
-                content = resp.content
-                content_hash = hashlib.sha256(content).hexdigest()
-
-                records = self._parse_xlsx(content, max_records)
-
-                logger.info("EMA: parsed %d product rows", len(records))
-
-                if not records:
-                    logger.warning("EMA: parsed 0 rows from %s — treating as source_unavailable", url)
-                    continue
-
-                result: Dict[str, Any] = {
-                    "status": "success",
-                    "records": records,
-                    "record_count": len(records),
-                    "hash": content_hash,
+                if resp.status_code != 200:
+                    # Primary (only) URL failed — must log at ERROR
+                    logger.error(
+                        "EMA PRIMARY url failed (%s): HTTP %d — source unavailable",
+                        url,
+                        resp.status_code,
+                    )
+                    result: Dict[str, Any] = {
+                        "status": "source_unavailable",
+                        "records": [],
+                        "record_count": 0,
+                        "hash": None,
+                        "error": f"EMA: primary URL {url!r} returned HTTP {resp.status_code}",
+                    }
+                    self.log_fetch_result(result)
+                    return result
+            except Exception as exc:
+                logger.error(
+                    "EMA PRIMARY url failed (%s): %s — source unavailable",
+                    url,
+                    exc,
+                )
+                result = {
+                    "status": "source_unavailable",
+                    "records": [],
+                    "record_count": 0,
+                    "hash": None,
+                    "error": f"EMA: primary URL {url!r} unreachable: {exc}",
                 }
-                self.log_fetch_result({"status": "success", "records": len(records)})
+                self.log_fetch_result(result)
                 return result
 
-            except Exception as exc:
-                logger.warning("EMA: fetch failed for %s: %s", url, exc)
-                continue
+            resp.raise_for_status()
+            content = resp.content
+            content_hash = hashlib.sha256(content).hexdigest()
 
-        msg = "EMA: all URLs failed or returned 404. EPAR list unavailable."
-        logger.warning(msg)
-        result = {"status": "source_unavailable", "records": [], "record_count": 0, "hash": None, "error": msg}
-        self.log_fetch_result(result)
-        return result
+            records = self._parse_xlsx(content, max_records)
+
+            logger.info("EMA: parsed %d product rows", len(records))
+
+            if not records:
+                raise _EmaMolSchemaError(
+                    f"EMA: downloaded {len(content)} bytes from {url!r} but parsed 0 rows — EMA format may have changed"
+                )
+
+            result = {
+                "status": "success",
+                "records": records,
+                "record_count": len(records),
+                "hash": content_hash,
+            }
+            self.log_fetch_result({"status": "success", "records": len(records)})
+            return result
+
+        except _EmaMolParseError as exc:
+            logger.error("EMA parse error: %s", exc)
+            result = {
+                "status": "parse_error",
+                "records": [],
+                "record_count": 0,
+                "hash": None,
+                "error": str(exc),
+            }
+            self.log_fetch_result(result)
+            return result
+
+        except _EmaMolSchemaError as exc:
+            logger.error("EMA schema mismatch: %s", exc)
+            result = {
+                "status": "schema_mismatch",
+                "records": [],
+                "record_count": 0,
+                "hash": None,
+                "error": str(exc),
+            }
+            self.log_fetch_result(result)
+            return result
+
+        except Exception as exc:
+            logger.exception("EMA fetch failed: %s", exc)
+            result = {
+                "status": "failed",
+                "records": [],
+                "record_count": 0,
+                "hash": None,
+                "error": str(exc),
+            }
+            self.log_fetch_result(result)
+            return result
 
     def _parse_xlsx(self, content: bytes, max_records: Optional[int]) -> List[Dict[str, Any]]:
         """Parse the EMA medicines report XLSX into row dicts.
 
         The file has metadata rows at the top; column headers appear at
         row index _HEADER_ROW (8). Rows before the header are skipped.
+
+        Raises:
+            _EmaMolParseError: if bytes cannot be opened as a workbook or no active sheet.
+            _EmaMolSchemaError: if the header row contains no recognised column names.
         """
         try:
             import openpyxl
         except ImportError:
             return self._parse_xlsx_pandas(content, max_records)
 
-        wb = openpyxl.load_workbook(io.BytesIO(content), read_only=True, data_only=True)
+        try:
+            wb = openpyxl.load_workbook(io.BytesIO(content), read_only=True, data_only=True)
+        except Exception as exc:
+            raise _EmaMolParseError(f"EMA medicines workbook unreadable: {exc}") from exc
+
         ws = wb.active
+        if ws is None:
+            wb.close()
+            raise _EmaMolParseError("EMA medicines workbook has no active worksheet")
+
         headers: List[str] = []
         records: List[Dict[str, Any]] = []
 
@@ -118,6 +206,15 @@ class EMAMolFetcher(BaseFetcher):
                     str(c).strip() if c else None
                     for c in row
                 ]
+                # Validate header: at least one cell must contain an expected token
+                non_none = [h.lower() for h in headers if h]
+                if not non_none or not any(
+                    token in h for h in non_none for token in _EXPECTED_HEADER_TOKENS
+                ):
+                    wb.close()
+                    raise _EmaMolSchemaError(
+                        f"EMA medicines header-row drift at row {_HEADER_ROW}: {headers!r}"
+                    )
                 continue
             if max_records and len(records) >= max_records:
                 break
@@ -131,6 +228,7 @@ class EMAMolFetcher(BaseFetcher):
                 continue
             records.append(rec)
 
+        wb.close()
         return records
 
     def _parse_xlsx_pandas(self, content: bytes, max_records: Optional[int]) -> List[Dict[str, Any]]:

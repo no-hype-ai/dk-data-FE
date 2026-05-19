@@ -157,13 +157,50 @@ def test_api_routes_import():
 
 ---
 
-## 5. Phase 1 (outline — detail after Phase 0 + decisions)
+## 5. Phase 1 — DB-first path works end-to-end (WS2, execution-ready)
 
-Goal: the EMA/openFDA DB-first path actually works end-to-end for behavior-labs-ai.
-- Router becomes registry-driven; FastAPI lifespan creates an `asyncpg` pool and injects it; `invoke()` tries `adapter.db_query(name, pool)` (None→HTTP, raise→5xx) before HTTP.
-- Port `ema`, `ema_labels`, `openfda_labels` onto `BaseAdapter`; reconcile `ema` to a single source of truth (build **`mol_silver.ema`** as a SQLMesh silver model from `bronze.ema` — template exists at `sqlmesh/models/molecules/silver/trademarks.sql`; a worktree `silver/ema.sql` exists to adapt).
-- Fix H1 (tag degraded fallback, error≠miss), H2 (don't cache empty/garbage PDF; TTL), H3 (guard `json.loads`/`**`), H4 (distinguish parser-error from source-down), H5 (primary-URL exception logged error, not silent).
-- Tests: db_query None→HTTP, raise→5xx; openfda DB-hit no-HTTP / miss→API / error→tagged; `_derive_smpc_url` pure-fn; `ema_epar._parse_xlsx` fixture.
+**Status:** Phase 0 merged to `staging` (`2bf123a`, #420). Branch all Phase-1 work off `origin/staging` as `fix/415-phase1-db-first-router` (one PR vs `staging`). Subagent-driven: fresh implementer per task, spec+quality review each. Each task = TDD (RED watched, minimal GREEN, commit). Run tests `.venv/bin/python -m pytest <path> --no-cov --no-header -q`; ruff via `~/.pyenv/versions/3.14.3/bin/ruff`.
+
+**Goal:** `ema-search` / `ema-labels-search` / `openfda-labels-search` actually serve DB-first via the router (currently the DB logic is unreachable dead code), backed by a real `mol_silver.ema`, with silent-failure H1–H5 closed.
+
+### Task 1.1 — Router consumes BaseAdapter `Adapter`s + DB pool injection
+**Files:** Modify `src/dk_data/services/mcp/router.py`, `src/dk_data/services/mcp/base_tool.py` (or a new `dispatch.py`), `src/dk_data/api/app.py` (FastAPI lifespan); Test `tests/test_mcp_router_dbfirst.py`.
+- RED: test that `POST /api/v1/data-tools/{slug}/invoke` for a slug whose `Adapter.db_query` returns a dict responds from DB **without** any outbound HTTP (patch httpx to assert not-called); and that `db_query` raising → router returns 5xx with a structured error (NOT a silent HTTP fallback).
+- GREEN: FastAPI lifespan creates one `asyncpg` pool (reuse existing DSN/config used by other asyncpg callers; if none, psycopg pool per existing pattern) and stores it on `app.state`; the invoke handler resolves the adapter, calls `await adapter.db_query(drug_name, pool)` first — `None` ⇒ fall through to existing HTTP `invoke()`, dict ⇒ return it, exception ⇒ 502/500 structured (do not swallow). Registry-driven: map slug→Adapter via `tool_registry.TOOL_REGISTRY` for built adapters, keeping existing `*Tool` HTTP path for the rest.
+- Commit `feat(mcp): registry-driven router with DB-first db_query + pool injection`.
+
+### Task 1.2 — Build `mol_silver.ema` (SQLMesh silver)
+**Files:** Create `src/dk_data/sqlmesh/models/molecules/silver/ema.sql` (adapt the worktree copy at `.claude/worktrees/agent-a3b53a1f/.../silver/ema.sql`; pattern-match `sqlmesh/models/molecules/silver/trademarks.sql`); Test `tests/test_silver_ema_model.py`.
+- RED: test asserting the SQLMesh model parses/renders and yields the columns `ema.py` selects (`product_number, product_name, active_substance, inn, atc_code, marketing_authorization_holder, authorization_status, authorization_date, medicine_type, therapeutic_area, pharmacotherapeutic_group, epar_url, summary_url, molecule_id`) keyed off `bronze.ema`.
+- GREEN: write the silver model selecting/normalizing from `bronze.ema` (which exists). Honor CLAUDE.md silver rules (no banned antipatterns S1–S5; entity ids via hub join/resolve, not inline fuzzy). Validate with the repo's SQLMesh validation (`Validate SQLMesh Models` CI job locally if a make target exists; else the model-render test).
+- Commit `feat(silver): mol_silver.ema from bronze.ema (backs ema-search)`.
+
+### Task 1.3 — Port `ema.py` onto BaseAdapter, single source of truth
+**Files:** Modify `src/dk_data/services/mcp/adapters/ema.py`; Test `tests/test_adapter_ema.py`.
+- RED: `EmaTool`/`Adapter` `db_query` returns rows from `mol_silver.ema` for a known substance via a mocked pool; the 6-way `OR` is replaced with an indexed-friendly query (no leading-wildcard LIKE — CLAUDE.md S2); `db_query` returning `None` when no row (not an error), raising on real DB error.
+- GREEN: implement as a `BaseAdapter` subclass; query `mol_silver.ema`; add it to `BUILT_ADAPTERS` in `tests/test_mcp_adapters.py` and drop its xfail (strict xfail will force this).
+- Commit `fix(mcp): ema adapter DB-first on mol_silver.ema (BaseAdapter)`.
+
+### Task 1.4 — H1: openfda_labels error≠miss
+**Files:** Modify `src/dk_data/services/mcp/adapters/openfda_labels.py`; Test `tests/test_adapter_openfda_labels.py`.
+- RED: DB hit → `source:"openfda_local"`, no HTTP; genuine miss (`None`) → API fallback; DB **exception** → either raise OR return `{"source":"openfda","degraded":true,"degraded_reason":"local_lookup_error"}` (decide: raise unless an explicit degrade flag) and log at error — NOT a silent identical-to-miss fallback.
+- GREEN: implement; remove the broad `except Exception: return None`.
+- Commit `fix(mcp): openfda_labels — DB error is not a silent miss (H1)`.
+
+### Task 1.5 — H2/H3: ema_labels cache integrity
+**Files:** Modify `src/dk_data/services/mcp/adapters/ema_labels.py`; Test `tests/test_adapter_ema_labels.py`.
+- RED: empty/garbage PDF extraction (`full_text` empty / `page_count`==0) is **not** written to `mol_raw.ema_label_cache`; a corrupt cached `extracted_text` row (`json.loads` raises or decodes non-dict) is skipped+logged (error id), not a 500; `_check_cache` honors a freshness TTL (stale row → re-extract). `_derive_smpc_url` pure-function unit tests (valid/invalid URLs → None).
+- GREEN: guard `_save_cache` (refuse empty/garbage), wrap `json.loads`/`**` in `_check_cache`, add TTL/`ingested_at` staleness check + re-extract path.
+- Commit `fix(mcp): ema_labels cache integrity — no poison, corrupt-row safe, TTL (H2,H3)`.
+
+### Task 1.6 — H4/H5: ema_epar parser vs source-down
+**Files:** Modify `src/dk_data/ingestion/fetchers/ema_epar.py`, `src/dk_data/ingestion/fetchers/ema_mol.py`; Test `tests/test_ema_epar_fetcher.py`.
+- RED: a malformed/short XLSX (fixture or mocked `openpyxl.load_workbook`) → status `parse_error`/`schema_mismatch` (NOT `source_unavailable`); a primary-URL exception is logged at **error** (not warning) before any fallback; header-row detection validated against an expected column (drift → `schema_mismatch`). Replace `assert ws is not None` with an explicit raise.
+- GREEN: implement the status distinction + header validation + error-level logging.
+- Commit `fix(ingestion): ema_epar parser-error ≠ source-down; loud primary failure (H4,H5)`.
+
+### Phase 1 exit gate
+`tests/` no NEW failures vs the post-#420 `staging` baseline (same env-noise carve-outs as Phase 0); app imports; `ema_labels`/`openfda_labels`/`ema` real-pass in `test_mcp_adapters.py` (xfail removed for built ones, `strict` satisfied); ruff clean (tracked tree); SQLMesh validation green. PR vs `staging`; merge on green CI. Then WS3 (parallel-sub-agent adapter tail) is unblocked.
 
 ## 6. Phase 2..N (outline)
 `tool_registry.py` = authoritative backlog. Each PR: pick 3–5 registry entries, TDD real `Adapter`s, flip their `xfail`→pass, register in router. Parallelizable across sub-agents. CI never red.

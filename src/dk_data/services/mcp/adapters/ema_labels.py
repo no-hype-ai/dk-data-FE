@@ -3,6 +3,7 @@
 import json
 import logging
 import re
+from datetime import datetime, timedelta, timezone
 from typing import Any
 
 import httpx
@@ -14,6 +15,7 @@ logger = logging.getLogger(__name__)
 _EMA_BASE = "https://www.ema.europa.eu"
 _SMP_URL_PATTERN = re.compile(r"/EPAR/([\w-]+)$", re.IGNORECASE)
 _PDF_HEADERS = {"User-Agent": "dk-data-platform research@dk-data.com"}
+_CACHE_TTL = timedelta(days=30)  # SmPC docs change slowly; re-extract after 30d
 _EMA_LOOKUP_QUERY = """
     SELECT
         response_body->>'Medicine URL' AS medicine_url,
@@ -25,6 +27,19 @@ _EMA_LOOKUP_QUERY = """
        OR LOWER(response_body->>'International non-proprietary name (INN) / common name') = LOWER($1)
     LIMIT 1
 """
+
+
+def _is_valid_extraction(extracted: Any) -> bool:
+    """An extraction is usable only if it has real text content.
+
+    Guards against blank/zero-page/whitespace PDFs poisoning the
+    UNIQUE(smpc_pdf_url) cache forever (H2).
+    """
+    return (
+        isinstance(extracted, dict)
+        and int(extracted.get("page_count") or 0) > 0
+        and bool(str(extracted.get("full_text") or "").strip())
+    )
 
 
 def _derive_smpc_url(medicine_url: str) -> str | None:
@@ -87,6 +102,12 @@ class Adapter(BaseAdapter):
         extracted = await self._download_and_extract(smpc_url)
         if not extracted:
             return None
+        if not _is_valid_extraction(extracted):
+            logger.warning(
+                "EMA SmPC extraction for %s was empty/garbage — not caching",
+                smpc_url,
+            )
+            return None
 
         medicine_name = ema_record["medicine_name"] or drug_name
         active_substance = ema_record["active_substance"]
@@ -107,7 +128,7 @@ class Adapter(BaseAdapter):
 
     async def _check_cache(self, drug_name: str, db_pool: Any) -> list[dict[str, Any]] | None:
         query = """
-            SELECT medicine_name, active_substance, smpc_pdf_url, extracted_text
+            SELECT medicine_name, active_substance, smpc_pdf_url, extracted_text, ingested_at
             FROM mol_raw.ema_label_cache
             WHERE LOWER(medicine_name) = LOWER($1)
                OR LOWER(active_substance) = LOWER($1)
@@ -121,16 +142,48 @@ class Adapter(BaseAdapter):
 
         results = []
         for row in rows:
+            # TTL staleness check (enforced in Python so unit tests with fake pools work)
+            ingested_at = row["ingested_at"]
+            if ingested_at is not None:
+                now = datetime.now(timezone.utc)
+                ts = ingested_at if ingested_at.tzinfo else ingested_at.replace(tzinfo=timezone.utc)
+                if now - ts > _CACHE_TTL:
+                    logger.info(
+                        "Stale ema_label_cache row ignored (smpc_pdf_url=%s, age>%s) — will re-extract",
+                        row["smpc_pdf_url"],
+                        _CACHE_TTL,
+                    )
+                    continue
+
+            # H3: safe JSON decode — skip corrupt rows rather than raising 500
             extracted = row["extracted_text"]
             if isinstance(extracted, str):
-                extracted = json.loads(extracted)
+                try:
+                    extracted = json.loads(extracted)
+                except (ValueError, TypeError) as exc:
+                    logger.error(
+                        "Corrupt ema_label_cache row skipped (smpc_pdf_url=%s): "
+                        "extracted_text is not valid JSON: %s",
+                        row["smpc_pdf_url"],
+                        exc,
+                    )
+                    continue
+            if not isinstance(extracted, dict):
+                logger.error(
+                    "Corrupt ema_label_cache row skipped (smpc_pdf_url=%s): "
+                    "extracted_text decoded to %s, expected dict",
+                    row["smpc_pdf_url"],
+                    type(extracted).__name__,
+                )
+                continue
+
             results.append({
                 "medicine_name": row["medicine_name"],
                 "active_substance": row["active_substance"],
                 "smpc_pdf_url": row["smpc_pdf_url"],
                 **extracted,
             })
-        return results
+        return results or None  # all rows corrupt/stale → treat as cache miss
 
     async def _get_ema_record(self, drug_name: str, db_pool: Any) -> dict[str, Any] | None:
         async with db_pool.acquire() as conn:
@@ -169,6 +222,16 @@ class Adapter(BaseAdapter):
         extracted: dict[str, Any],
         db_pool: Any,
     ) -> None:
+        if not _is_valid_extraction(extracted):
+            logger.error(
+                "Refusing to cache empty/garbage EMA extraction for %s "
+                "(page_count=%r, has_text=%r)",
+                smpc_url,
+                extracted.get("page_count") if isinstance(extracted, dict) else None,
+                bool(str((extracted or {}).get("full_text") or "").strip()) if isinstance(extracted, dict) else False,
+            )
+            return
+
         query = """
             INSERT INTO mol_raw.ema_label_cache
                 (medicine_name, active_substance, smpc_pdf_url, extracted_text)

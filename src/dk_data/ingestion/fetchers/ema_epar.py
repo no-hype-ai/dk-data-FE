@@ -27,6 +27,19 @@ logger = logging.getLogger(__name__)
 
 _HEADER_ROW = 8
 
+# Lowercase substrings; at least ONE must appear in any header cell for the
+# header row to be considered valid. Lenient by design — avoids false
+# schema_mismatch on minor EMA wording changes.
+_EXPECTED_HEADER_TOKENS = ("medicine", "epar", "name", "active_substance", "product")
+
+
+class _EparParseError(Exception):
+    """Downloaded bytes are not a usable workbook (corrupt/short/not-xlsx/no active sheet)."""
+
+
+class _EparSchemaError(Exception):
+    """Workbook opened but the EMA export format changed (bad/absent header row, or 0 data rows from a non-empty file)."""
+
 _EPAR_URLS = [
     # Primary: /system/files/ path (confirmed working 2026-04-18, XLSX 607KB)
     ("https://www.ema.europa.eu/system/files/documents/other/"
@@ -60,13 +73,22 @@ class EMAEparFetcher(BaseFetcher):
 
         Returns:
             Dict with keys: status, records, record_count, hash, error.
+
+        Status taxonomy:
+            success          — downloaded and parsed ≥1 rows.
+            source_unavailable — all URLs returned non-200 (EMA server down/unreachable).
+            parse_error      — 200 download succeeded but bytes are not a valid workbook.
+            schema_mismatch  — workbook opened but header row missing expected columns,
+                               or 0 data rows parsed from a non-empty 200 response.
+            failed           — unexpected error not covered by the above.
         """
         max_records: int | None = kwargs.get("max_records")
 
         try:
             resp = None
             used_url = None
-            for url, fmt in _EPAR_URLS:
+
+            for idx, (url, fmt) in enumerate(_EPAR_URLS):
                 logger.info("EMA EPAR: trying %s (%s)", url, fmt)
                 try:
                     resp = self.session.get(url, timeout=120)
@@ -74,12 +96,41 @@ class EMAEparFetcher(BaseFetcher):
                         used_url = url
                         logger.info("EMA EPAR: success from %s (%d bytes)", url, len(resp.content))
                         break
-                    logger.warning("EMA EPAR: %s returned %d, trying next", url, resp.status_code)
+                    # Non-200 response
+                    reason = f"HTTP {resp.status_code}"
+                    if idx == 0:
+                        logger.error(
+                            "EMA EPAR PRIMARY url failed (%s): %s — falling back to known-degraded URLs",
+                            url,
+                            reason,
+                        )
+                    else:
+                        logger.warning("EMA EPAR: %s returned %d, trying next", url, resp.status_code)
+                    resp = None  # mark as failed so we don't use it
                 except Exception as exc:
-                    logger.warning("EMA EPAR: %s failed (%s), trying next", url, exc)
+                    reason = str(exc)
+                    if idx == 0:
+                        logger.error(
+                            "EMA EPAR PRIMARY url failed (%s): %s — falling back to known-degraded URLs",
+                            url,
+                            reason,
+                        )
+                    else:
+                        logger.warning("EMA EPAR: %s failed (%s), trying next", url, exc)
+                    resp = None
+
             if resp is None or resp.status_code != 200:
                 logger.error("EMA EPAR: all URLs exhausted, source unavailable")
-                return {"status": "source_unavailable", "records": [], "error": "all EMA EPAR URLs returned non-200"}
+                result: dict[str, Any] = {
+                    "status": "source_unavailable",
+                    "records": [],
+                    "record_count": 0,
+                    "hash": None,
+                    "error": "all EMA EPAR URLs returned non-200",
+                }
+                self.log_fetch_result(result)
+                return result
+
             # Use the successful response
             _EPAR_CSV_URL_USED = used_url  # noqa: F841 — for debug logging
             resp.raise_for_status()
@@ -92,17 +143,9 @@ class EMAEparFetcher(BaseFetcher):
             logger.info("EMA EPAR: parsed %d assessment report rows", len(records))
 
             if not records:
-                msg = "EMA EPAR: parsed 0 rows — treating as source_unavailable"
-                logger.warning(msg)
-                result: dict[str, Any] = {
-                    "status": "source_unavailable",
-                    "records": [],
-                    "record_count": 0,
-                    "hash": None,
-                    "error": msg,
-                }
-                self.log_fetch_result(result)
-                return result
+                raise _EparSchemaError(
+                    f"EMA EPAR: downloaded {len(content)} bytes but parsed 0 rows — EMA format may have changed"
+                )
 
             result = {
                 "status": "success",
@@ -111,6 +154,30 @@ class EMAEparFetcher(BaseFetcher):
                 "hash": content_hash,
             }
             self.log_fetch_result({"status": "success", "records": len(records)})
+            return result
+
+        except _EparParseError as exc:
+            logger.error("EMA EPAR parse error: %s", exc)
+            result = {
+                "status": "parse_error",
+                "records": [],
+                "record_count": 0,
+                "hash": None,
+                "error": str(exc),
+            }
+            self.log_fetch_result(result)
+            return result
+
+        except _EparSchemaError as exc:
+            logger.error("EMA EPAR schema mismatch: %s", exc)
+            result = {
+                "status": "schema_mismatch",
+                "records": [],
+                "record_count": 0,
+                "hash": None,
+                "error": str(exc),
+            }
+            self.log_fetch_result(result)
             return result
 
         except Exception as exc:
@@ -130,10 +197,22 @@ class EMAEparFetcher(BaseFetcher):
         """Parse EMA EPAR XLSX bytes into row dicts.
 
         Column names are normalised to lowercase with underscores.
+
+        Raises:
+            _EparParseError: if the bytes cannot be opened as a workbook, or if the
+                workbook has no active worksheet.
+            _EparSchemaError: if the header row at _HEADER_ROW contains no recognised
+                column names (all cells blank or no expected token found).
         """
-        wb = openpyxl.load_workbook(filename=io.BytesIO(content), read_only=True, data_only=True)
+        try:
+            wb = openpyxl.load_workbook(filename=io.BytesIO(content), read_only=True, data_only=True)
+        except Exception as exc:
+            raise _EparParseError(f"EMA EPAR workbook unreadable: {exc}") from exc
+
         ws = wb.active
-        assert ws is not None
+        if ws is None:
+            wb.close()
+            raise _EparParseError("EMA EPAR workbook has no active worksheet")
 
         headers: list[str] = []
         records: list[dict[str, Any]] = []
@@ -146,6 +225,15 @@ class EMAEparFetcher(BaseFetcher):
                     (str(c).strip().lower().replace(" ", "_") if c is not None else None)
                     for c in raw_row
                 ]
+                # Validate header: at least one cell must contain an expected token
+                non_none_headers = [h for h in headers if h]
+                if not non_none_headers or not any(
+                    token in h for h in non_none_headers for token in _EXPECTED_HEADER_TOKENS
+                ):
+                    wb.close()
+                    raise _EparSchemaError(
+                        f"EMA EPAR header-row drift at row {_HEADER_ROW}: {headers!r}"
+                    )
                 continue
 
             if max_records and len(records) >= max_records:
