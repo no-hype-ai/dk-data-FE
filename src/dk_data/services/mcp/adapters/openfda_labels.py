@@ -65,17 +65,11 @@ class Adapter(BaseAdapter):
         return await self._api_lookup(drug_name)
 
     async def _db_lookup(self, drug_name: str, db_pool: Any) -> dict[str, Any] | None:
-        try:
-            async with db_pool.acquire() as conn:
-                rows = await conn.fetch(_DB_LOOKUP_QUERY, drug_name)
-        except Exception as exc:
-            logger.warning("FDA local DB lookup failed: %s", exc)
-            return None
-
+        async with db_pool.acquire() as conn:
+            rows = await conn.fetch(_DB_LOOKUP_QUERY, drug_name)
         results = [row["label_data"] for row in rows if row["label_data"]]
         if not results:
             return None
-
         return {"source": "openfda_local", "results": results}
 
     async def _api_lookup(self, drug_name: str) -> dict[str, Any] | None:
