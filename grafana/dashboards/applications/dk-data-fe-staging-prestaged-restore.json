@@ -1,0 +1,86 @@
+{
+  "__metadata": { "folder": "applications" },
+  "dashboard": {
+    "annotations": { "list": [] },
+    "description": "WS4 SP3 follow-on (feature 211): staging prestaged restore health. Tracks the latest pg_restore outcome of prod's daily dump into staging and any restore-Job failures.",
+    "editable": true,
+    "graphTooltip": 1,
+    "id": null,
+    "panels": [
+      {
+        "id": 1,
+        "type": "table",
+        "title": "Recent staging prestaged restores",
+        "datasource": { "type": "postgres", "uid": "postgres" },
+        "gridPos": { "h": 9, "w": 24, "x": 0, "y": 0 },
+        "targets": [
+          {
+            "refId": "A",
+            "datasource": { "type": "postgres", "uid": "postgres" },
+            "format": "table",
+            "rawSql": "SELECT ended_at, status, details->>'object' AS object, details->>'sha256' AS sha256, details->>'run_label' AS run_label FROM meta.transform_runs WHERE procedure_name = 'staging-prestaged-restore' ORDER BY ended_at DESC LIMIT 20;"
+          }
+        ]
+      },
+      {
+        "id": 2,
+        "type": "stat",
+        "title": "Restore Job failures (24h, must stay 0)",
+        "datasource": { "type": "prometheus", "uid": "prometheus" },
+        "gridPos": { "h": 5, "w": 12, "x": 0, "y": 9 },
+        "fieldConfig": {
+          "defaults": {
+            "color": { "mode": "thresholds" },
+            "thresholds": { "mode": "absolute", "steps": [ { "color": "green", "value": null }, { "color": "red", "value": 1 } ] }
+          },
+          "overrides": []
+        },
+        "options": {
+          "colorMode": "background",
+          "graphMode": "area",
+          "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false }
+        },
+        "targets": [
+          {
+            "refId": "A",
+            "datasource": { "type": "prometheus", "uid": "prometheus" },
+            "expr": "max_over_time(kube_job_status_failed{namespace=\"dk-data-staging\", job_name=~\"staging-prestaged-restore.*\"}[24h])",
+            "legendFormat": "failed"
+          }
+        ]
+      },
+      {
+        "id": 3,
+        "type": "stat",
+        "title": "Hours since last successful restore",
+        "datasource": { "type": "prometheus", "uid": "prometheus" },
+        "gridPos": { "h": 5, "w": 12, "x": 12, "y": 9 },
+        "fieldConfig": { "defaults": { "unit": "h", "color": { "mode": "thresholds" }, "thresholds": { "mode": "absolute", "steps": [ { "color": "green", "value": null }, { "color": "red", "value": 36 } ] } }, "overrides": [] },
+        "options": {
+          "colorMode": "value",
+          "graphMode": "none",
+          "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false }
+        },
+        "targets": [
+          {
+            "refId": "A",
+            "datasource": { "type": "prometheus", "uid": "prometheus" },
+            "expr": "(time() - max(kube_job_status_completion_time{namespace=\"dk-data-staging\", job_name=~\"staging-prestaged-restore.*\"})) / 3600",
+            "legendFormat": "hours"
+          }
+        ]
+      }
+    ],
+    "refresh": "5m",
+    "schemaVersion": 39,
+    "style": "dark",
+    "tags": ["dk-data", "staging", "prestaged-restore", "feature-211", "ws4"],
+    "templating": { "list": [] },
+    "time": { "from": "now-7d", "to": "now" },
+    "timezone": "",
+    "title": "dk-data Staging Prestaged Restore",
+    "uid": "dk-data-fe-staging-prestaged-restore",
+    "version": 1,
+    "weekStart": ""
+  }
+}
