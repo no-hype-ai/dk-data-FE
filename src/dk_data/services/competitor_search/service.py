@@ -58,14 +58,16 @@ class CompetitorSearchService:
         brand_name: str | None = None,
         mechanism_of_action: str | None = None,
         limit: int = 10,
-        db_pool: Any = None,  # reserved for future DB-first short-circuit
+        db_pool: Any = None,
     ) -> list[dict[str, Any]]:
         """Return up to `limit` competitor dicts shaped for the API response."""
         indication_names = [i["name"] for i in indications if i.get("name")]
         primary_indication = indication_names[0] if indication_names else None
+        secondary_indications = indication_names[1:]
 
         core_node_data: dict[str, Any] = {
             "primary_indication": primary_indication,
+            "secondary_indications": secondary_indications,
             "mechanism_of_action": mechanism_of_action,
             "brand_names": [brand_name] if brand_name else [],
         }
@@ -88,11 +90,14 @@ class CompetitorSearchService:
             molecule_name=molecule_name,
             config=config,
             core_node_data=core_node_data,
+            db_pool=db_pool,
         )
 
         competitors = [
-            n for n in graph.get_nodes_at_level(GraphLevel.N_PLUS_1)
-            if n.id != core_id and not self._is_same_as_input(n, molecule_name, brand_name)
+            n
+            for n in graph.get_nodes_at_level(GraphLevel.N_PLUS_1)
+            if n.id != core_id
+            and not self._is_same_as_input(n, molecule_name, brand_name)
         ]
 
         results = [
@@ -103,7 +108,8 @@ class CompetitorSearchService:
         # fall back to the full set if none match (keeps the response useful
         # when the caller only provided weak hints).
         relevant = [
-            r for r in results
+            r
+            for r in results
             if r["shared_indications"]
             or (mechanism_of_action and r["mechanism"] == mechanism_of_action)
         ]
@@ -123,17 +129,33 @@ class CompetitorSearchService:
     def _is_same_as_input(
         node: CompetitiveNode, molecule_name: str, brand_name: str | None
     ) -> bool:
-        """Exclude the input drug if the graph re-discovered it as a competitor."""
-        names = {molecule_name.strip().lower()}
-        if brand_name:
-            names.add(brand_name.strip().lower())
+        """Exclude the input drug — including biosimilars and combo products
+        that share the same INN root.
 
-        candidate_names = {node.name.lower()}
+        e.g. input "adalimumab" matches:
+            - "adalimumab"                              (exact)
+            - "ADALIMUMAB-ADAZ"                         (biosimilar suffix)
+            - "ADALIMUMAB AND HYALURONIDASE-FNJN"       (combo product)
+        """
+        inputs = {n for n in (molecule_name, brand_name) if n}
+        inputs = {n.strip().lower() for n in inputs}
+
+        candidates = {node.name.lower()}
         if node.generic_name:
-            candidate_names.add(node.generic_name.lower())
-            
-        candidate_names.update(b.lower() for b in node.brand_names)
-        return bool(names & candidate_names)
+            candidates.add(node.generic_name.lower())
+        candidates.update(b.lower() for b in node.brand_names)
+
+        for inp in inputs:
+            for cand in candidates:
+                if cand == inp:
+                    return True
+                # FDA biosimilar 4-letter suffix: "adalimumab-adaz"
+                if cand.startswith(inp + "-"):
+                    return True
+                # Combo product starting with input INN: "adalimumab and ..."
+                if cand.startswith(inp + " "):
+                    return True
+        return False
 
     def _to_result(
         self,

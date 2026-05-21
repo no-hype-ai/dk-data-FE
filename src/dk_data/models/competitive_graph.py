@@ -31,19 +31,29 @@ class CompetitiveDimension(str, Enum):
 
 
 class DevelopmentStage(str, Enum):
-    """Drug development stages."""
+    """Drug development stages. Tuple = (serialized value, ordinal rank).
 
-    PRECLINICAL = "preclinical"
-    PHASE_1 = "phase_1"
-    PHASE_1_2 = "phase_1_2"
-    PHASE_2 = "phase_2"
-    PHASE_2_3 = "phase_2_3"
-    PHASE_3 = "phase_3"
-    SUBMITTED = "submitted"
-    APPROVED = "approved"
-    MARKETED = "marketed"
-    WITHDRAWN = "withdrawn"
-    DISCONTINUED = "discontinued"
+    `rank` orders stages by progression. Ties allowed (APPROVED == MARKETED).
+    WITHDRAWN/DISCONTINUED rank 0 so they're treated as non-competing.
+    """
+
+    PRECLINICAL  = ("preclinical",  0)
+    PHASE_1      = ("phase_1",      1)
+    PHASE_1_2    = ("phase_1_2",    2)
+    PHASE_2      = ("phase_2",      3)
+    PHASE_2_3    = ("phase_2_3",    4)
+    PHASE_3      = ("phase_3",      5)
+    SUBMITTED    = ("submitted",    6)
+    APPROVED     = ("approved",     7)
+    MARKETED     = ("marketed",     7)
+    WITHDRAWN    = ("withdrawn",    0)
+    DISCONTINUED = ("discontinued", 0)
+
+    def __new__(cls, value: str, rank: int):
+        obj = str.__new__(cls, value)
+        obj._value_ = value
+        obj.rank = rank
+        return obj
 
 
 @dataclass
@@ -67,6 +77,7 @@ class CompetitiveNode:
     development_stage: DevelopmentStage = DevelopmentStage.PRECLINICAL
     mechanism_of_action: Optional[str] = None
     primary_indication: Optional[str] = None
+    secondary_indications: List[str] = field(default_factory=list)
     atc_codes: List[str] = field(default_factory=list)
     targets: List[str] = field(default_factory=list)
 
@@ -110,6 +121,7 @@ class CompetitiveNode:
             "development_stage": self.development_stage.value,
             "mechanism_of_action": self.mechanism_of_action,
             "primary_indication": self.primary_indication,
+            "secondary_indications": self.secondary_indications,
             "atc_codes": self.atc_codes,
             "targets": self.targets,
             "level": self.level.value,
@@ -135,6 +147,7 @@ class CompetitiveNode:
             development_stage=DevelopmentStage(data.get("development_stage", "preclinical")),
             mechanism_of_action=data.get("mechanism_of_action"),
             primary_indication=data.get("primary_indication"),
+            secondary_indications=data.get("secondary_indications", []),
             atc_codes=data.get("atc_codes", []),
             targets=data.get("targets", []),
             level=GraphLevel(data.get("level", 0)),
