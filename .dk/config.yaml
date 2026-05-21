@@ -1,5 +1,11 @@
-name: /Users/pschloz/Desktop/DataKinetic/dk-data-FE
+name: dk-data-FE
 ai:
 - claude
 version: 0.1.0
 branch_numbering: sequential
+mesh:
+  mode: on-gh-default
+  tag: dk
+  remote: null
+  stale_days: 7
+  session_start_hook: true
