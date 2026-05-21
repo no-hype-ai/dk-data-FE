@@ -915,7 +915,9 @@ class CompetitiveGraphService:
         """
         Enrich a competitor node with generic and brand names.
 
-        Modifies the node in place.
+        Tries RxNorm first; falls back to OpenFDA label search when RxNorm
+        returns no brands (common — RxNorm `get_concept` is flaky for many
+        biologic INNs). Modifies the node in place.
         """
         try:
             generic_name, brand_names = await self._resolve_drug_names(node.name)
@@ -925,6 +927,39 @@ class CompetitiveGraphService:
                 node.brand_names = brand_names
         except Exception as e:
             logger.debug(f"Failed to enrich names for {node.name}: {e}")
+
+        # OpenFDA fallback for missing brand info.
+        if not node.brand_names:
+            try:
+                brands = await self._brand_names_from_openfda(
+                    node.generic_name or node.name
+                )
+                if brands:
+                    node.brand_names = brands
+            except Exception as e:
+                logger.debug(f"OpenFDA brand fallback failed for {node.name}: {e}")
+
+    async def _brand_names_from_openfda(self, drug_name: str) -> list[str]:
+        """Look up brand names for a drug via OpenFDA labels."""
+        labels = await self._openfda.search_drug_labels(
+            query=drug_name,
+            search_field="openfda.generic_name",
+            limit=5,
+        )
+        seen: set[str] = set()
+        brands: list[str] = []
+        for lbl in labels:
+            name = lbl.brand_name
+            if not name:
+                continue
+            key = name.strip().lower()
+            if key in seen:
+                continue
+            seen.add(key)
+            brands.append(name.strip())
+            if len(brands) >= 3:
+                break
+        return brands
 
     async def _enrich_graph_with_names(
         self,
