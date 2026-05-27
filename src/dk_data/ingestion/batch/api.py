@@ -131,6 +131,17 @@ try:
 except ImportError as e:
     logger.warning(f"Agents router not available: {e}")
 
+# Composed competitor-search endpoint (ChEMBL + CT.gov + OpenFDA + DrugBank).
+# Must be registered BEFORE the generic data-tools gateway so the static path
+# `/data-tools/competitor-search/invoke` is matched ahead of the gateway's
+# `/data-tools/{tool_name}/invoke` placeholder route.
+try:
+    from dk_data.api.routes.competitor_search import router as competitor_search_router
+    app.include_router(competitor_search_router, prefix="/api/v1", tags=["competitor-search"])
+    logger.info("Loaded competitor-search router")
+except ImportError as e:
+    logger.warning(f"Competitor-search router not available: {e}")
+
 # Data tools gateway router (019-cms-puf-platform-reconciliation T048)
 try:
     from dk_data.api.routes.data_tools import router as data_tools_router
@@ -146,6 +157,14 @@ try:
     logger.info("Loaded MCP data-tools router")
 except ImportError as e:
     logger.warning(f"MCP data-tools router not available: {e}")
+
+# Drug label preview endpoints (FDA SPL + EMA SmPC URLs)
+try:
+    from dk_data.api.routes.labels import router as labels_router
+    app.include_router(labels_router, prefix="/api/v1", tags=["labels"])
+    logger.info("Loaded drug label preview router")
+except ImportError as e:
+    logger.warning(f"Drug label preview router not available: {e}")
 
 # CORS middleware
 app.add_middleware(

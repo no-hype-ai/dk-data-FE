@@ -1,56 +1,38 @@
-"""
-Competitive Graph Service.
+"""CompetitiveGraphService — N+1/N+2 competitive landscape builder.
 
-Implements T033-T044: CompetitiveGraphService for N+1/N+2 competitive landscape building.
+Discovers competitors across INDICATION (ClinicalTrials.gov), MOA (OpenFDA),
+TARGET (RxNorm), and CLASS (OpenFDA pharm_class_epc) dimensions, then ranks
+by threat score.
+
+Auxiliary modules:
+- ``normalizer``       — CT.gov intervention-name cleanup
+- ``moa_enrichment``   — caller-MOA → FDA pharm_class / targets / ATC mapping
+- ``config``           — ``GraphBuildConfig``, ``FailedRequest`` dataclasses
 """
+
+from __future__ import annotations
 
 import asyncio
 import time
-from dataclasses import dataclass, field
 from datetime import datetime
-from typing import Dict, List, Optional, Set, Any
+from typing import Any
+
 from loguru import logger
 
-from ...models.competitive_graph import (
-    CompetitiveNode,
+from....models.competitive_graph import (
+    CompetitiveDimension,
     CompetitiveEdge,
     CompetitiveLandscapeGraph,
-    CompetitiveDimension,
-    GraphLevel,
+    CompetitiveNode,
     DevelopmentStage,
+    GraphLevel,
 )
-from ..external_apis.openfda_client import OpenFDAClient
-from ..external_apis.clinicaltrials_client import ClinicalTrialsClient, ClinicalTrial
-from ..external_apis.rxnorm_client import RxNormClient
-from ..external_apis.umls_client import UMLSClient
-
-
-@dataclass
-class GraphBuildConfig:
-    """Configuration for building competitive graphs."""
-    depth: int = 1  # 1 = N+1 only, 2 = N+2
-    min_score: float = 0.1
-    dimensions: List[CompetitiveDimension] = field(
-        default_factory=lambda: [
-            CompetitiveDimension.INDICATION,
-            CompetitiveDimension.MOA,
-            CompetitiveDimension.TARGET,
-        ]
-    )
-    max_competitors_per_dimension: int = 50
-    include_preclinical: bool = False
-    queue_failed_requests: bool = True
-
-
-@dataclass
-class FailedRequest:
-    """A failed API request to retry later."""
-    source: str
-    query: str
-    dimension: CompetitiveDimension
-    error: str
-    timestamp: datetime = field(default_factory=datetime.utcnow)
-    retry_count: int = 0
+from ...external_apis.clinicaltrials_client import ClinicalTrial, ClinicalTrialsClient
+from ...external_apis.openfda_client import OpenFDAClient
+from ...external_apis.rxnorm_client import RxNormClient
+from .config import FailedRequest, GraphBuildConfig
+from .moa_enrichment import lookup_moa
+from .normalizer import normalize_intervention_name
 
 
 class CompetitiveGraphService:
@@ -70,7 +52,6 @@ class CompetitiveGraphService:
         CompetitiveDimension.MOA: 0.30,
         CompetitiveDimension.TARGET: 0.20,
         CompetitiveDimension.CLASS: 0.10,
-        CompetitiveDimension.STAGE: 0.05,
     }
 
     # Phase weights for threat scoring
@@ -90,115 +71,131 @@ class CompetitiveGraphService:
 
     def __init__(
         self,
-        openfda_client: Optional[OpenFDAClient] = None,
-        clinicaltrials_client: Optional[ClinicalTrialsClient] = None,
-        rxnorm_client: Optional[RxNormClient] = None,
-        umls_client: Optional[UMLSClient] = None,
-        dimension_weights: Optional[Dict[CompetitiveDimension, float]] = None,
+        openfda_client: OpenFDAClient | None = None,
+        clinicaltrials_client: ClinicalTrialsClient | None = None,
+        rxnorm_client: RxNormClient | None = None,
+        dimension_weights: dict[CompetitiveDimension, float] | None = None,
     ):
         self._openfda = openfda_client or OpenFDAClient()
         self._clinicaltrials = clinicaltrials_client or ClinicalTrialsClient()
         self._rxnorm = rxnorm_client or RxNormClient()
-        self._umls = umls_client
         self._dimension_weights = dimension_weights or self.DEFAULT_DIMENSION_WEIGHTS
-        self._failed_requests: List[FailedRequest] = []
+        self._failed_requests: list[FailedRequest] = []
 
     async def build_graph(
         self,
         molecule_id: str,
         molecule_name: str,
-        config: Optional[GraphBuildConfig] = None,
-        core_node_data: Optional[Dict[str, Any]] = None,
+        config: GraphBuildConfig | None = None,
+        core_node_data: dict[str, Any] | None = None,
+        db_pool: Any = None,
     ) -> CompetitiveLandscapeGraph:
-        """
-        Build a competitive landscape graph for a molecule.
+        """Build a competitive landscape graph for a molecule.
 
-        Args:
-            molecule_id: Unique identifier for the molecule
-            molecule_name: Name of the molecule (INN or brand)
-            config: Build configuration
-            core_node_data: Optional pre-populated data for core node
-
-        Returns:
-            CompetitiveLandscapeGraph with N+1 (and optionally N+2) competitors
+        Recipe (each step is one named action):
+            1. init empty graph
+            2. populate core node (N)
+            3. populate direct competitors (N+1)
+            4. populate competitors-of-competitors (N+2) if depth=2
+            5. score threats across all nodes
+            6. enrich nodes with generic / brand names
+            7. stamp build time
         """
         config = config or GraphBuildConfig()
         start_time = time.time()
-
         logger.info(f"Building competitive graph for {molecule_name} (depth={config.depth})")
 
-        # Initialize graph
-        graph = CompetitiveLandscapeGraph(
+        graph = self._init_graph(molecule_id, config)
+        await self._populate_core(
+            graph, molecule_id, molecule_name, core_node_data, db_pool
+        )
+        await self._populate_n_plus_1(graph, config)
+        if config.depth >= 2:
+            await self._populate_n_plus_2(graph, config)
+        await self._calculate_threat_scores(graph)
+        await self._enrich_graph_with_names(graph)
+        self._stamp_build_time(graph, start_time)
+        return graph
+
+    # ── recipe steps ────────────────────────────────────────────────────────
+
+    def _init_graph(
+        self, molecule_id: str, config: GraphBuildConfig
+    ) -> CompetitiveLandscapeGraph:
+        return CompetitiveLandscapeGraph(
             core_molecule_id=molecule_id,
             depth=config.depth,
             min_score=config.min_score,
             dimensions_included=config.dimensions,
         )
 
-        # Create and add core node
+    async def _populate_core(
+        self,
+        graph: CompetitiveLandscapeGraph,
+        molecule_id: str,
+        molecule_name: str,
+        core_node_data: dict[str, Any] | None,
+        db_pool: Any = None,
+    ) -> None:
         core_node = await self._create_core_node(
-            molecule_id, molecule_name, core_node_data
+            molecule_id, molecule_name, core_node_data, db_pool
         )
         graph.core_molecule = core_node
         graph.add_node(core_node)
 
-        # Find N+1 competitors
-        n_plus_1_nodes = await self._find_competitors(
-            core_node, GraphLevel.N_PLUS_1, config
+    async def _populate_n_plus_1(
+        self, graph: CompetitiveLandscapeGraph, config: GraphBuildConfig
+    ) -> None:
+        competitors = await self._find_competitors(
+            graph.core_molecule, GraphLevel.N_PLUS_1, config
+        )
+        self._absorb_competitors(graph, competitors)
+        logger.info(f"Found {len(competitors)} N+1 competitors")
+
+    async def _populate_n_plus_2(
+        self, graph: CompetitiveLandscapeGraph, config: GraphBuildConfig
+    ) -> None:
+        n1_nodes = graph.get_nodes_at_level(GraphLevel.N_PLUS_1)
+        results = await asyncio.gather(
+            *[self._find_competitors(n, GraphLevel.N_PLUS_2, config) for n in n1_nodes],
+            return_exceptions=True,
+        )
+        for result in results:
+            if isinstance(result, Exception):
+                logger.error(f"N+2 search failed: {result}")
+                continue
+            self._absorb_competitors(graph, result)
+        logger.info(
+            f"Found {len(graph.get_nodes_at_level(GraphLevel.N_PLUS_2))} N+2 competitors"
         )
 
-        for node, edges in n_plus_1_nodes:
+    def _absorb_competitors(
+        self,
+        graph: CompetitiveLandscapeGraph,
+        competitors: list[tuple],
+    ) -> None:
+        """Add competitor nodes + their edges into the graph, dedup-safe."""
+        for node, edges in competitors:
             if graph.add_node(node):
                 for edge in edges:
                     graph.add_edge(edge)
 
-        logger.info(f"Found {len(n_plus_1_nodes)} N+1 competitors")
-
-        # Find N+2 competitors if depth=2
-        if config.depth >= 2:
-            n_plus_1_list = graph.get_nodes_at_level(GraphLevel.N_PLUS_1)
-            n_plus_2_tasks = []
-
-            for n1_node in n_plus_1_list:
-                n_plus_2_tasks.append(
-                    self._find_competitors(n1_node, GraphLevel.N_PLUS_2, config)
-                )
-
-            n_plus_2_results = await asyncio.gather(*n_plus_2_tasks, return_exceptions=True)
-
-            for result in n_plus_2_results:
-                if isinstance(result, Exception):
-                    logger.error(f"N+2 search failed: {result}")
-                    continue
-                for node, edges in result:
-                    if graph.add_node(node):
-                        for edge in edges:
-                            graph.add_edge(edge)
-
-            logger.info(f"Found {len(graph.get_nodes_at_level(GraphLevel.N_PLUS_2))} N+2 competitors")
-
-        # Calculate threat scores for all competitors
-        await self._calculate_threat_scores(graph)
-
-        # Enrich nodes with generic and brand names
-        await self._enrich_graph_with_names(graph)
-
-        # Record build time
+    def _stamp_build_time(
+        self, graph: CompetitiveLandscapeGraph, start_time: float
+    ) -> None:
         graph.build_time_ms = int((time.time() - start_time) * 1000)
         graph.built_at = datetime.utcnow()
-
         logger.info(
             f"Graph built in {graph.build_time_ms}ms: "
             f"{len(graph.nodes)} nodes, {len(graph.edges)} edges"
         )
 
-        return graph
-
     async def _create_core_node(
         self,
         molecule_id: str,
         molecule_name: str,
-        data: Optional[Dict[str, Any]] = None,
+        data: dict[str, Any] | None = None,
+        db_pool: Any = None,
     ) -> CompetitiveNode:
         """Create the core node for the graph."""
         data = data or {}
@@ -220,6 +217,33 @@ class CompetitiveGraphService:
         if not generic_name:
             generic_name, brand_names = await self._resolve_drug_names(molecule_name)
 
+        # MOA-driven enrichment: when caller passes a recognized MOA but no
+        # targets / ATC codes, fill them in so the TARGET and CLASS fan-out
+        # branches have inputs to work with. Also stash an FDA pharm_class
+        # hint in metadata for `_find_by_moa` to use instead of the
+        # caller's free-text MOA (which OpenFDA's strict label match rejects).
+        targets = data.get("targets", []) or []
+        atc_codes = data.get("atc_codes", []) or []
+        metadata = data.get("metadata", {}) or {}
+        moa_enrich = await lookup_moa(
+            data.get("mechanism_of_action"),
+            db_pool=db_pool,
+            openfda_client=self._openfda,
+        )
+        if moa_enrich:
+            if not targets and moa_enrich.targets:
+                targets = list(moa_enrich.targets)
+            if not atc_codes and moa_enrich.atc_prefix:
+                atc_codes = [moa_enrich.atc_prefix]
+            if moa_enrich.fda_pharm_class_epc:
+                metadata.setdefault(
+                    "fda_pharm_class_epc", moa_enrich.fda_pharm_class_epc
+                )
+            if moa_enrich.fda_pharm_class_moa:
+                metadata.setdefault(
+                    "fda_pharm_class_moa", moa_enrich.fda_pharm_class_moa
+                )
+
         return CompetitiveNode(
             id=molecule_id,
             name=molecule_name,
@@ -232,11 +256,13 @@ class CompetitiveGraphService:
             ),
             mechanism_of_action=data.get("mechanism_of_action"),
             primary_indication=data.get("primary_indication"),
-            atc_codes=data.get("atc_codes", []),
-            targets=data.get("targets", []),
+            secondary_indications=data.get("secondary_indications", []),
+            atc_codes=atc_codes,
+            targets=targets,
             level=GraphLevel.CORE,
             sponsor=data.get("sponsor"),
             originator=data.get("originator"),
+            metadata=metadata,
         )
 
     async def _find_competitors(
@@ -244,13 +270,13 @@ class CompetitiveGraphService:
         source_node: CompetitiveNode,
         target_level: GraphLevel,
         config: GraphBuildConfig,
-    ) -> List[tuple[CompetitiveNode, List[CompetitiveEdge]]]:
+    ) -> list[tuple[CompetitiveNode, list[CompetitiveEdge]]]:
         """
         Find competitors for a node across all configured dimensions.
 
         Returns list of (node, edges) tuples.
         """
-        competitors: Dict[str, tuple[CompetitiveNode, List[CompetitiveEdge]]] = {}
+        competitors: dict[str, tuple[CompetitiveNode, list[CompetitiveEdge]]] = {}
 
         # Run searches in parallel for each dimension
         search_tasks = []
@@ -261,19 +287,13 @@ class CompetitiveGraphService:
             )
 
         if CompetitiveDimension.MOA in config.dimensions:
-            search_tasks.append(
-                self._find_by_moa(source_node, target_level, config)
-            )
+            search_tasks.append(self._find_by_moa(source_node, target_level, config))
 
         if CompetitiveDimension.TARGET in config.dimensions:
-            search_tasks.append(
-                self._find_by_target(source_node, target_level, config)
-            )
+            search_tasks.append(self._find_by_target(source_node, target_level, config))
 
         if CompetitiveDimension.CLASS in config.dimensions:
-            search_tasks.append(
-                self._find_by_class(source_node, target_level, config)
-            )
+            search_tasks.append(self._find_by_class(source_node, target_level, config))
 
         results = await asyncio.gather(*search_tasks, return_exceptions=True)
 
@@ -300,99 +320,151 @@ class CompetitiveGraphService:
         source_node: CompetitiveNode,
         target_level: GraphLevel,
         config: GraphBuildConfig,
-    ) -> List[tuple[CompetitiveNode, List[CompetitiveEdge]]]:
+    ) -> list[tuple[CompetitiveNode, list[CompetitiveEdge]]]:
         """
         Find competitors by shared indication.
 
-        Uses ClinicalTrials.gov to find drugs in trials for the same condition.
+        Iterates over `primary_indication` + `secondary_indications`, queries
+        ClinicalTrials.gov per indication, normalizes intervention strings
+        into INN candidates, validates each via RxNorm, drops trials below
+        the configured phase floor, and dedupes across indications.
         """
-        results = []
-        indication = source_node.primary_indication
-
-        if not indication:
-            return results
-
-        try:
-            # Search ClinicalTrials.gov for trials with same condition
-            trials = await self._clinicaltrials.search_by_condition(
-                condition=indication,
-                page_size=config.max_competitors_per_dimension,
+        indications = [
+            i
+            for i in (
+                [source_node.primary_indication] + source_node.secondary_indications
             )
+            if i
+        ]
+        if not indications:
+            return []
 
-            if not trials:
-                return results
+        min_rank = config.min_trial_phase.rank
+        source_name_lc = source_node.name.lower()
+        source_generic_lc = (source_node.generic_name or "").lower()
+        per_dim_cap = config.max_competitors_per_dimension
 
-            # Extract unique interventions
-            seen_drugs: Set[str] = set()
+        # Scale per-indication page size by indication count so total trial
+        # volume stays bounded. Floor at 5 to keep each indication useful.
+        per_ind_pages = max(5, per_dim_cap // max(1, len(indications)))
 
-            for trial in trials:
-                for intervention in trial.interventions:
-                    # Check for drug or biological interventions
-                    if intervention.intervention_type not in ["DRUG", "BIOLOGICAL"]:
+        # ── 1. Fan out CT.gov queries in parallel, one per indication ──
+        trial_lists = await asyncio.gather(
+            *[
+                self._clinicaltrials.search_by_condition(
+                    condition=ind,
+                    page_size=per_ind_pages,
+                )
+                for ind in indications
+            ],
+            return_exceptions=True,
+        )
+
+        # ── 2. Flatten (indication, trial) pairs, apply phase floor ──
+        pairs: list[tuple[str, Any, DevelopmentStage]] = []
+        for indication, trials in zip(indications, trial_lists):
+            if isinstance(trials, Exception):
+                logger.error(f"Indication search failed ({indication}): {trials}")
+                self._queue_failed_request(
+                    "clinicaltrials",
+                    indication,
+                    CompetitiveDimension.INDICATION,
+                    str(trials),
+                    config,
+                )
+                continue
+            for trial in trials or []:
+                trial_stage = self._trial_phase_to_stage(
+                    trial.phase.value if trial.phase else ""
+                )
+                if trial_stage.rank < min_rank:
+                    continue
+                pairs.append((indication, trial, trial_stage))
+
+        # ── 3. Collect unique normalized drug candidates (first-seen wins) ──
+        # Map[drug_lc] -> (original_name, indication, trial, stage)
+        candidates: dict[str, tuple[str, str, Any, DevelopmentStage]] = {}
+        for indication, trial, trial_stage in pairs:
+            for intervention in trial.interventions:
+                if intervention.intervention_type not in ("DRUG", "BIOLOGICAL"):
+                    continue
+                for drug_name in normalize_intervention_name(intervention.name):
+                    drug_lc = drug_name.lower()
+                    if drug_lc in (source_name_lc, source_generic_lc):
                         continue
+                    if drug_lc not in candidates:
+                        candidates[drug_lc] = (
+                            drug_name,
+                            indication,
+                            trial,
+                            trial_stage,
+                        )
 
-                    drug_name = intervention.name.strip()
-                    if not drug_name or drug_name.lower() == source_node.name.lower():
-                        continue
-                    if drug_name in seen_drugs:
-                        continue
+        if not candidates:
+            return []
 
-                    seen_drugs.add(drug_name)
+        # Pre-trim candidates before paying RxNorm cost. Keep a 3x buffer so
+        # validation failures still leave enough survivors to hit per_dim_cap.
+        if len(candidates) > per_dim_cap * 3:
+            candidates = dict(list(candidates.items())[: per_dim_cap * 3])
 
-                    # Get sponsor name
-                    sponsor_name = trial.lead_sponsor.name if trial.lead_sponsor else None
-
-                    # Build trial link data
-                    trial_link = {
-                        "nct_id": trial.nct_id,
-                        "title": trial.brief_title if hasattr(trial, 'brief_title') else trial.official_title,
-                        "phase": trial.phase.value if trial.phase else None,
-                        "status": trial.overall_status.value if trial.overall_status else None,
-                        "url": f"https://clinicaltrials.gov/study/{trial.nct_id}",
-                    }
-
-                    # Create competitor node with linked data
-                    node = CompetitiveNode(
-                        id=f"drug_{drug_name.lower().replace(' ', '_')}",
-                        name=drug_name,
-                        level=target_level,
-                        primary_indication=indication,
-                        development_stage=self._trial_phase_to_stage(
-                            trial.phase.value if trial.phase else ""
-                        ),
-                        sponsor=sponsor_name,
-                        discovered_via=[f"indication:{indication}"],
-                        metadata={
-                            "linked_trials": [trial_link],
-                            "external_links": {
-                                "clinicaltrials_gov": f"https://clinicaltrials.gov/search?term={drug_name.replace(' ', '+')}",
-                            },
-                        },
-                    )
-
-                    # Create edge
-                    edge = CompetitiveEdge(
-                        source_id=source_node.id,
-                        target_id=node.id,
-                        dimension=CompetitiveDimension.INDICATION,
-                        score=self._calculate_indication_score_from_trial(
-                            trial, source_node, node
-                        ),
-                        discovered_via=f"ClinicalTrials.gov:{trial.nct_id}",
-                        evidence=[f"Trial: {trial.nct_id}"],
-                    )
-
-                    results.append((node, [edge]))
-
-                    if len(results) >= config.max_competitors_per_dimension:
-                        break
-
-        except Exception as e:
-            logger.error(f"Indication search failed: {e}")
-            self._queue_failed_request(
-                "clinicaltrials", indication, CompetitiveDimension.INDICATION,
-                str(e), config
+        # ── 4. Fan out RxNorm validation in parallel ──
+        if config.validate_intervention_names:
+            items = list(candidates.items())
+            rxcuis = await asyncio.gather(
+                *[self._rxnorm.get_rxcui(drug_name) for _, (drug_name, *_) in items],
+                return_exceptions=True,
             )
+            candidates = {
+                key: ctx
+                for (key, ctx), rxcui in zip(items, rxcuis)
+                if not isinstance(rxcui, Exception) and rxcui
+            }
+
+        # ── 5. Build nodes + edges (insertion-ordered, capped) ──
+        results: list[tuple[CompetitiveNode, list[CompetitiveEdge]]] = []
+        for drug_lc, (drug_name, indication, trial, trial_stage) in candidates.items():
+            if len(results) >= per_dim_cap:
+                break
+            sponsor_name = trial.lead_sponsor.name if trial.lead_sponsor else None
+            trial_link = {
+                "nct_id": trial.nct_id,
+                "title": getattr(trial, "brief_title", None) or trial.official_title,
+                "phase": trial.phase.value if trial.phase else None,
+                "status": (
+                    trial.overall_status.value if trial.overall_status else None
+                ),
+                "url": f"https://clinicaltrials.gov/study/{trial.nct_id}",
+            }
+            node = CompetitiveNode(
+                id=f"drug_{drug_lc.replace(' ', '_')}",
+                name=drug_name,
+                level=target_level,
+                primary_indication=indication,
+                development_stage=trial_stage,
+                sponsor=sponsor_name,
+                discovered_via=[f"indication:{indication}"],
+                metadata={
+                    "linked_trials": [trial_link],
+                    "external_links": {
+                        "clinicaltrials_gov": (
+                            "https://clinicaltrials.gov/search?term="
+                            f"{drug_name.replace(' ', '+')}"
+                        ),
+                    },
+                },
+            )
+            edge = CompetitiveEdge(
+                source_id=source_node.id,
+                target_id=node.id,
+                dimension=CompetitiveDimension.INDICATION,
+                score=self._calculate_indication_score_from_trial(
+                    trial, source_node, node
+                ),
+                discovered_via=f"ClinicalTrials.gov:{trial.nct_id}",
+                evidence=[f"Trial: {trial.nct_id}"],
+            )
+            results.append((node, [edge]))
 
         return results
 
@@ -401,35 +473,44 @@ class CompetitiveGraphService:
         source_node: CompetitiveNode,
         target_level: GraphLevel,
         config: GraphBuildConfig,
-    ) -> List[tuple[CompetitiveNode, List[CompetitiveEdge]]]:
+    ) -> list[tuple[CompetitiveNode, list[CompetitiveEdge]]]:
         """
         Find competitors by shared mechanism of action.
 
-        Uses OpenFDA pharm_class_moa field.
+        OpenFDA's pharm_class_moa / pharm_class_epc fields require strict
+        label strings (e.g. "Tumor Necrosis Factor Blocker [EPC]"), not
+        free-text MOA. Prefer the enriched pharm_class from `lookup_moa`
+        stashed in `source_node.metadata` over the caller's raw MOA.
         """
         results = []
         moa = source_node.mechanism_of_action
+        meta = source_node.metadata or {}
+        pharm_class = meta.get("fda_pharm_class_epc") or meta.get("fda_pharm_class_moa")
+        class_type = "epc" if meta.get("fda_pharm_class_epc") else "moa"
+        query = pharm_class or moa
 
-        if not moa:
+        if not query:
             return results
 
         try:
-            # Search OpenFDA for drugs with same MOA
             fda_response = await self._openfda.search_by_pharm_class(
-                pharm_class=moa,
-                class_type="moa",
+                pharm_class=query,
+                class_type=class_type,
                 limit=config.max_competitors_per_dimension,
             )
 
             if not fda_response.success:
                 self._queue_failed_request(
-                    "openfda", moa, CompetitiveDimension.MOA,
-                    fda_response.error or "Unknown error", config
+                    "openfda",
+                    moa,
+                    CompetitiveDimension.MOA,
+                    fda_response.error or "Unknown error",
+                    config,
                 )
                 return results
 
             drugs = fda_response.data.get("drugs", [])
-            seen_drugs: Set[str] = set()
+            seen_drugs: set[str] = set()
 
             for drug in drugs:
                 drug_name = drug.get("generic_name") or drug.get("brand_name", "")
@@ -454,7 +535,7 @@ class CompetitiveGraphService:
 
                 # Build external links
                 external_links = {
-                    "openfda": f"https://api.fda.gov/drug/label.json?search=openfda.generic_name:\"{drug_name}\"",
+                    "openfda": f'https://api.fda.gov/drug/label.json?search=openfda.generic_name:"{drug_name}"',
                     "dailymed": f"https://dailymed.nlm.nih.gov/dailymed/search.cfm?query={drug_name.replace(' ', '+')}",
                 }
 
@@ -462,7 +543,9 @@ class CompetitiveGraphService:
                     id=f"drug_{drug_name.lower().replace(' ', '_')}",
                     name=drug_name,
                     generic_name=drug.get("generic_name"),
-                    brand_names=[drug.get("brand_name")] if drug.get("brand_name") else [],
+                    brand_names=[drug.get("brand_name")]
+                    if drug.get("brand_name")
+                    else [],
                     level=target_level,
                     mechanism_of_action=moa,
                     development_stage=DevelopmentStage.APPROVED,  # OpenFDA = approved
@@ -501,7 +584,7 @@ class CompetitiveGraphService:
         source_node: CompetitiveNode,
         target_level: GraphLevel,
         config: GraphBuildConfig,
-    ) -> List[tuple[CompetitiveNode, List[CompetitiveEdge]]]:
+    ) -> list[tuple[CompetitiveNode, list[CompetitiveEdge]]]:
         """
         Find competitors by shared molecular target.
 
@@ -524,7 +607,7 @@ class CompetitiveGraphService:
                     continue
 
                 drugs = rxnorm_response.data.get("drugs", [])
-                seen_drugs: Set[str] = set()
+                seen_drugs: set[str] = set()
 
                 for drug in drugs:
                     drug_name = drug.get("name", "")
@@ -567,7 +650,7 @@ class CompetitiveGraphService:
         source_node: CompetitiveNode,
         target_level: GraphLevel,
         config: GraphBuildConfig,
-    ) -> List[tuple[CompetitiveNode, List[CompetitiveEdge]]]:
+    ) -> list[tuple[CompetitiveNode, list[CompetitiveEdge]]]:
         """
         Find competitors by shared ATC drug class.
 
@@ -595,7 +678,7 @@ class CompetitiveGraphService:
                 return results
 
             drugs = fda_response.data.get("drugs", [])
-            seen_drugs: Set[str] = set()
+            seen_drugs: set[str] = set()
 
             for drug in drugs:
                 drug_name = drug.get("generic_name") or drug.get("brand_name", "")
@@ -644,7 +727,7 @@ class CompetitiveGraphService:
             edges = graph.get_edges_for_node(node.id)
 
             # Calculate dimension-weighted score
-            dimension_scores: Dict[CompetitiveDimension, float] = {}
+            dimension_scores: dict[CompetitiveDimension, float] = {}
             for edge in edges:
                 if edge.dimension not in dimension_scores:
                     dimension_scores[edge.dimension] = edge.score
@@ -667,26 +750,6 @@ class CompetitiveGraphService:
             phase_multiplier = self.PHASE_WEIGHTS.get(node.development_stage, 0.5)
             node.threat_score = round(base_score * phase_multiplier, 3)
 
-    def _calculate_indication_score(
-        self,
-        trial: Dict,
-        source: CompetitiveNode,
-        target: CompetitiveNode,
-    ) -> float:
-        """Calculate competitive score based on indication match (dict-based trial)."""
-        base_score = 0.7  # Base score for same indication
-
-        # Boost for same phase or later
-        target_phase = self._trial_phase_to_stage(trial.get("phase", ""))
-        if target_phase.value >= source.development_stage.value:
-            base_score += 0.1
-
-        # Boost for recruiting trials (active competition)
-        if trial.get("status") == "RECRUITING":
-            base_score += 0.1
-
-        return min(1.0, base_score)
-
     def _calculate_indication_score_from_trial(
         self,
         trial: "ClinicalTrial",
@@ -694,23 +757,26 @@ class CompetitiveGraphService:
         target: CompetitiveNode,
     ) -> float:
         """Calculate competitive score based on indication match (ClinicalTrial object)."""
-        from ..external_apis.clinicaltrials_client import TrialStatus
+        from ...external_apis.clinicaltrials_client import TrialStatus
 
         base_score = 0.7  # Base score for same indication
 
         # Boost for same phase or later
-        if target.development_stage.value >= source.development_stage.value:
+        if target.development_stage.rank >= source.development_stage.rank:
             base_score += 0.1
 
         # Boost for recruiting trials (active competition)
-        if trial.overall_status in [TrialStatus.RECRUITING, TrialStatus.ACTIVE_NOT_RECRUITING]:
+        if trial.overall_status in [
+            TrialStatus.RECRUITING,
+            TrialStatus.ACTIVE_NOT_RECRUITING,
+        ]:
             base_score += 0.1
 
         return min(1.0, base_score)
 
     def _calculate_moa_score(
         self,
-        drug: Dict,
+        drug: dict,
         source: CompetitiveNode,
         target: CompetitiveNode,
     ) -> float:
@@ -718,7 +784,10 @@ class CompetitiveGraphService:
         base_score = 0.6  # Base score for same MOA
 
         # Approved drugs are higher threat
-        if target.development_stage in [DevelopmentStage.APPROVED, DevelopmentStage.MARKETED]:
+        if target.development_stage in [
+            DevelopmentStage.APPROVED,
+            DevelopmentStage.MARKETED,
+        ]:
             base_score += 0.2
 
         return min(1.0, base_score)
@@ -732,7 +801,7 @@ class CompetitiveGraphService:
         """Calculate competitive score based on target match."""
         return 0.5  # Base score for target match
 
-    async def _get_moa_from_openfda(self, drug_name: str) -> Optional[str]:
+    async def _get_moa_from_openfda(self, drug_name: str) -> str | None:
         """Look up MOA from OpenFDA."""
         try:
             moas = await self._openfda.get_mechanism_of_action(drug_name)
@@ -742,7 +811,7 @@ class CompetitiveGraphService:
             logger.warning(f"Failed to get MOA for {drug_name}: {e}")
         return None
 
-    async def _get_primary_indication(self, drug_name: str) -> Optional[str]:
+    async def _get_primary_indication(self, drug_name: str) -> str | None:
         """Look up primary indication."""
         try:
             indications = await self._openfda.get_indications(drug_name)
@@ -788,33 +857,10 @@ class CompetitiveGraphService:
             )
         )
 
-    def get_failed_requests(self) -> List[FailedRequest]:
-        """Get list of failed requests."""
-        return self._failed_requests
-
-    def clear_failed_requests(self) -> None:
-        """Clear failed requests queue."""
-        self._failed_requests = []
-
-    async def get_competitors(
-        self,
-        molecule_id: str,
-        level: Optional[GraphLevel] = None,
-        min_score: float = 0.0,
-    ) -> List[Dict[str, Any]]:
-        """
-        Get competitors for a molecule from cached graph.
-
-        For production, this would load from database/cache.
-        """
-        # This would typically load from database
-        # Placeholder implementation
-        return []
-
     async def _resolve_drug_names(
         self,
         drug_name: str,
-    ) -> tuple[Optional[str], List[str]]:
+    ) -> tuple[str | None, list[str]]:
         """
         Resolve generic and brand names for a drug using RxNorm.
 
@@ -869,7 +915,9 @@ class CompetitiveGraphService:
         """
         Enrich a competitor node with generic and brand names.
 
-        Modifies the node in place.
+        Tries RxNorm first; falls back to OpenFDA label search when RxNorm
+        returns no brands (common — RxNorm `get_concept` is flaky for many
+        biologic INNs). Modifies the node in place.
         """
         try:
             generic_name, brand_names = await self._resolve_drug_names(node.name)
@@ -879,6 +927,39 @@ class CompetitiveGraphService:
                 node.brand_names = brand_names
         except Exception as e:
             logger.debug(f"Failed to enrich names for {node.name}: {e}")
+
+        # OpenFDA fallback for missing brand info.
+        if not node.brand_names:
+            try:
+                brands = await self._brand_names_from_openfda(
+                    node.generic_name or node.name
+                )
+                if brands:
+                    node.brand_names = brands
+            except Exception as e:
+                logger.debug(f"OpenFDA brand fallback failed for {node.name}: {e}")
+
+    async def _brand_names_from_openfda(self, drug_name: str) -> list[str]:
+        """Look up brand names for a drug via OpenFDA labels."""
+        labels = await self._openfda.search_drug_labels(
+            query=drug_name,
+            search_field="openfda.generic_name",
+            limit=5,
+        )
+        seen: set[str] = set()
+        brands: list[str] = []
+        for lbl in labels:
+            name = lbl.brand_name
+            if not name:
+                continue
+            key = name.strip().lower()
+            if key in seen:
+                continue
+            seen.add(key)
+            brands.append(name.strip())
+            if len(brands) >= 3:
+                break
+        return brands
 
     async def _enrich_graph_with_names(
         self,
@@ -893,7 +974,8 @@ class CompetitiveGraphService:
         import asyncio
 
         nodes_to_enrich = [
-            node for node in graph.nodes.values()
+            node
+            for node in graph.nodes.values()
             if node.level != GraphLevel.CORE  # Skip core node (already has names)
         ]
 
@@ -948,7 +1030,9 @@ class CompetitiveGraphService:
         existing_labels = existing_node.metadata.get("fda_labels", [])
         new_labels = new_node.metadata.get("fda_labels", [])
         if new_labels:
-            existing_app_nums = {lbl.get("application_number") for lbl in existing_labels if lbl}
+            existing_app_nums = {
+                lbl.get("application_number") for lbl in existing_labels if lbl
+            }
             for label in new_labels:
                 if label and label.get("application_number") not in existing_app_nums:
                     existing_labels.append(label)
@@ -965,7 +1049,8 @@ class CompetitiveGraphService:
 
         # Merge discovered_via paths
         existing_node.discovered_via.extend(
-            path for path in new_node.discovered_via
+            path
+            for path in new_node.discovered_via
             if path not in existing_node.discovered_via
         )
 
@@ -974,3 +1059,22 @@ class CompetitiveGraphService:
             existing_node.generic_name = new_node.generic_name
         if not existing_node.brand_names and new_node.brand_names:
             existing_node.brand_names = new_node.brand_names
+
+    # ════════════════════════════════════════════════════════════════════════
+    # ▼▼▼ PARKED — not used by the competitor-search endpoint ▼▼▼
+    #
+    # The methods below are kept only to satisfy the contract of legacy
+    # consumers (currently the unmounted `/api/v1/graph/*` routes in
+    # `api/routes/graph.py`). They are NOT exercised by any live endpoint
+    # in this PR and have not been validated. Treat as scaffolding —
+    # don't extend, don't take their return value at face value.
+    # ════════════════════════════════════════════════════════════════════════
+
+    async def get_competitors(
+        self,
+        molecule_id: str,
+        level: GraphLevel | None = None,
+        min_score: float = 0.0,
+    ) -> list[dict[str, Any]]:
+        """Placeholder — returns []. Would load from DB/cache in production."""
+        return []

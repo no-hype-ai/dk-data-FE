@@ -135,6 +135,17 @@ class OpenFDAFaersLoader:
         if serious is True:
             search_parts.append("serious:1")
         if date_start and date_end:
+            # OpenFDA rejects far-future upper bounds like 99991231 with 403.
+            # Replace any date beyond 20991231 with today's date + 1 year.
+            _MAX_VALID_DATE = "20991231"
+            if date_end > _MAX_VALID_DATE:
+                from datetime import datetime as _dt
+                date_end = (_dt.utcnow().replace(year=_dt.utcnow().year + 1)
+                            .strftime("%Y%m%d"))
+                logger.warning(
+                    "date_end was beyond 20991231; clamped to %s to avoid OpenFDA 403",
+                    date_end,
+                )
             search_parts.append(f"receivedate:[{date_start}+TO+{date_end}]")
 
         search_query = "+AND+".join(search_parts) if search_parts else None

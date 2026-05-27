@@ -121,10 +121,17 @@ class RawIngestionService:
         self._http_session = http_session
         self._owns_session = http_session is None
 
+    # Default timeouts: 120s total (covers slow APIs like KEGG, CDC, PDB search),
+    # 30s to establish a connection.  Bulk-download sources (BindingDB ~2 GB)
+    # override with a longer total timeout where needed.
+    _DEFAULT_TIMEOUT = aiohttp.ClientTimeout(total=120, connect=30)
+
     async def _get_session(self) -> aiohttp.ClientSession:
         """Get or create HTTP session."""
         if self._http_session is None:
-            self._http_session = aiohttp.ClientSession()
+            self._http_session = aiohttp.ClientSession(
+                timeout=self._DEFAULT_TIMEOUT
+            )
         return self._http_session
 
     async def close(self):
@@ -594,10 +601,16 @@ class BindingDBIngestion(RawIngestionService):
 
     BindingDB is a public database of measured binding affinities,
     focusing on interactions between proteins and drug-like molecules.
+
+    Bulk downloads (~2 GB zip) require an extended timeout beyond the
+    120s default; override with 1800s (30 min) for bulk fetch paths.
     """
 
     BASE_URL = "https://www.bindingdb.org/axis2/services/BDBService"
     BULK_URL = "https://www.bindingdb.org/bind/downloads"
+
+    # 30-minute timeout for bulk ~2 GB download
+    _BULK_TIMEOUT = aiohttp.ClientTimeout(total=1800, connect=30)
 
     async def fetch_by_ligand(
         self,

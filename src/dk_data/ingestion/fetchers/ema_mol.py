@@ -114,15 +114,18 @@ class EMAMolFetcher(BaseFetcher):
             if row_idx < _HEADER_ROW:
                 continue
             if row_idx == _HEADER_ROW:
-                # Use only non-None header cells; pad with positional names for extras
                 headers = [
-                    str(c).strip() if c else f"col_{i}"
-                    for i, c in enumerate(row)
+                    str(c).strip() if c else None
+                    for c in row
                 ]
                 continue
             if max_records and len(records) >= max_records:
                 break
-            rec = {h: (str(v).strip() if v is not None else None) for h, v in zip(headers, row)}
+            rec = {
+                h: (str(v).strip() if v is not None else None)
+                for h, v in zip(headers, row)
+                if h is not None
+            }
             # Skip entirely blank rows
             if all(v is None for v in rec.values()):
                 continue
