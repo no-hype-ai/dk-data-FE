@@ -111,3 +111,8 @@ data-samples/manifest.json
 .dk/debug-sweep-config.json
 .dk/specs/*/swarm-state.json
 .dk/specs/*/auto-decisions.json
+.env.local
+dk-blk.png
+*.png
+/.agents/tavr-silver/
+/.agents/ws4/

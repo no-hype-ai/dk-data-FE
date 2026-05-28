@@ -1,0 +1,34 @@
+# Declarative project inventory for `/dk.linear populate` on non-pnpm repos.
+# Consumed by Workflow repo .dk/scripts/linear/enumerate-packages.sh (manifest
+# fallback). Emits the SAME JSON schema as the pnpm path:
+#   {name, kind: app|lib|infra, subpath, package, purpose, internal_deps[]}
+# kind -> populate prefix:  app -> app/*  ·  lib -> pkg/*  ·  infra -> infra/*
+# Note: the parser strips '#' to end-of-line, so keep '#' out of values.
+projects:
+  - name: backend
+    kind: app
+    subpath: src/dk_data
+    package: dk-data
+    purpose: dk-data Platform Backend — FastAPI API, Claude agents, SQLMesh models, metering proxy, services
+    internal_deps: []
+
+  - name: data-ingestion
+    kind: app
+    subpath: src/dk_data/ingestion
+    package: dk-data.ingestion
+    purpose: Data ingestion orchestration + bulk loaders for 18 external datasets (ChEMBL, PubChem, UniProt, ...)
+    internal_deps: []
+
+  - name: dk-data-client
+    kind: lib
+    subpath: packages/dk-data-client
+    package: "@datakinetic/dk-data-client"
+    purpose: First-party dk-data client library (TypeScript + Python) — auth, caching, telemetry
+    internal_deps: []
+
+  - name: gitops
+    kind: infra
+    subpath: k8s
+    package: gitops
+    purpose: Kubernetes GitOps (9 apps, Kustomize overlays), GitHub Actions CI/CD, Grafana observability, deploy configs
+    internal_deps: []
