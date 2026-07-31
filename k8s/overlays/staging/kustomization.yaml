@@ -19,7 +19,7 @@ resources:
 images:
 - name: ghcr.io/data-kinetic/dk-data-fe/job-trigger
   newName: ghcr.io/data-kinetic/dk-data-fe/job-trigger
-  newTag: main-a89d6ac
+  newTag: staging-433b70b
 
   # PostgREST — 2 replicas for staging
 
@@ -39,6 +39,21 @@ images:
 # Per-source DopplerSecrets — staging overlay points each at its `-stg` config.
 # Base manifests use the production config name (`drugbank`, `openfda`, ...).
 # Horizon 3 §D.5.
+
+# ---------------------------------------------------------------------------
+# WS4 SP3 (feature 211) — data created once.
+# Staging uses a SEPARATE Postgres (postgresql.infra-staging; see
+# docs/PLATFORM_GUIDE.md:490), so to avoid double-fetching every external
+# source it consumes prod-produced data via the feature-005 prestaged-
+# hydration path (deploy/jobs/prestaged-hydrate.yaml). Therefore suspend
+# ONLY the external fetchers (CronJob name ^fetch-*, 112 jobs). All
+# transforms / *-gold-* / agents / hydrate / snapshots keep running on the
+# prestaged raw data. Staging-overlay ONLY: prod still fetches once.
+# Reversible: delete this patch (or flip suspend:false).
+# OPERATIONAL PRECONDITION: staging's prestaged-hydration pipeline must be
+# provisioned (PRESTAGED_ROOT + prod artifact store) or staging raw data
+# goes stale. See specs/211-ws4-staging-main-reconcile/sp3-design.md.
+# ---------------------------------------------------------------------------
 patches:
 - patch: |-
     apiVersion: apps/v1
@@ -212,21 +227,6 @@ patches:
   target:
     kind: CronJob
     name: pg-backup-weekly
-
-# ---------------------------------------------------------------------------
-# WS4 SP3 (feature 211) — data created once.
-# Staging uses a SEPARATE Postgres (postgresql.infra-staging; see
-# docs/PLATFORM_GUIDE.md:490), so to avoid double-fetching every external
-# source it consumes prod-produced data via the feature-005 prestaged-
-# hydration path (deploy/jobs/prestaged-hydrate.yaml). Therefore suspend
-# ONLY the external fetchers (CronJob name ^fetch-*, 112 jobs). All
-# transforms / *-gold-* / agents / hydrate / snapshots keep running on the
-# prestaged raw data. Staging-overlay ONLY: prod still fetches once.
-# Reversible: delete this patch (or flip suspend:false).
-# OPERATIONAL PRECONDITION: staging's prestaged-hydration pipeline must be
-# provisioned (PRESTAGED_ROOT + prod artifact store) or staging raw data
-# goes stale. See specs/211-ws4-staging-main-reconcile/sp3-design.md.
-# ---------------------------------------------------------------------------
 - patch: |-
     apiVersion: batch/v1
     kind: CronJob
@@ -236,4 +236,4 @@ patches:
       suspend: true
   target:
     kind: CronJob
-    name: "^fetch-.*"
+    name: ^fetch-.*
